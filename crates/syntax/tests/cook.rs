@@ -111,13 +111,41 @@ fn punct_stays_split_until_the_parser_glues() {
         &[
             r#"Ident 0..1 "x""#,
             r#"Whitespace 1..2 " ""#,
-            r#"Punct 2..3 ">""#,
-            r#"Punct 3..4 ">""#,
-            r#"Punct 4..5 "=""#,
+            r#"Gt 2..3 ">""#,
+            r#"Gt 3..4 ">""#,
+            r#"Eq 4..5 "=""#,
             r#"Whitespace 5..6 " ""#,
             r#"IntLiteral 6..7 "2""#,
         ],
     );
+}
+
+#[test]
+fn punctuation_classifies_per_character() {
+    let source = "( ) { } , : . = < > ! + - * / % & |";
+    let lexed = lex(source).unwrap();
+    let cooked = cook(source, &lexed);
+
+    let kinds: Vec<String> = (0..cooked.len())
+        .map(|index| format!("{:?}", cooked.kind(index)))
+        .filter(|kind| kind != "Whitespace")
+        .collect();
+    assert_eq!(
+        kinds,
+        [
+            "LParen", "RParen", "LBrace", "RBrace", "Comma", "Colon", "Dot", "Eq", "Lt", "Gt",
+            "Bang", "Plus", "Minus", "Star", "Slash", "Percent", "Amp", "Pipe",
+        ],
+    );
+    check_errors(source, &[]);
+}
+
+#[test]
+fn unused_punctuation_cooks_to_error() {
+    // The parser reports these with the text in hand; no cook error.
+    check(";", &[r#"Error 0..1 ";""#]);
+    check("[", &[r#"Error 0..1 "[""#]);
+    check_errors(";", &[]);
 }
 
 #[test]

@@ -39,9 +39,27 @@ pub enum SyntaxKind {
     RawStringLiteral,
     CharLiteral,
 
-    /// A single ASCII punctuation character. Splits into per-character kinds
-    /// when the parser's glue table needs them.
-    Punct,
+    // Punctuation, one kind per character; the table is
+    // [`from_punct`](SyntaxKind::from_punct). Compound operators (`==`,
+    // `->`) exist only as joint pairs the parser glues.
+    LParen,
+    RParen,
+    LBrace,
+    RBrace,
+    Comma,
+    Colon,
+    Dot,
+    Eq,
+    Lt,
+    Gt,
+    Bang,
+    Plus,
+    Minus,
+    Star,
+    Slash,
+    Percent,
+    Amp,
+    Pipe,
 
     /// A token with no meaning in the language: unrecognized characters and
     /// misplaced byte-order marks.
@@ -60,6 +78,33 @@ impl SyntaxKind {
             "mut" => Self::MutKw,
             "return" => Self::ReturnKw,
             "true" => Self::TrueKw,
+            _ => return None,
+        })
+    }
+
+    /// The kind for a punctuation character, if it has a role in the
+    /// language. Punctuation without one (`;`, `[`, `@`, …) has no kind and
+    /// cooks to [`Error`](Self::Error).
+    pub fn from_punct(byte: u8) -> Option<Self> {
+        Some(match byte {
+            b'(' => Self::LParen,
+            b')' => Self::RParen,
+            b'{' => Self::LBrace,
+            b'}' => Self::RBrace,
+            b',' => Self::Comma,
+            b':' => Self::Colon,
+            b'.' => Self::Dot,
+            b'=' => Self::Eq,
+            b'<' => Self::Lt,
+            b'>' => Self::Gt,
+            b'!' => Self::Bang,
+            b'+' => Self::Plus,
+            b'-' => Self::Minus,
+            b'*' => Self::Star,
+            b'/' => Self::Slash,
+            b'%' => Self::Percent,
+            b'&' => Self::Amp,
+            b'|' => Self::Pipe,
             _ => return None,
         })
     }
