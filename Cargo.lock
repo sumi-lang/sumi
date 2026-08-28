@@ -11,6 +11,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "jolt-syntax"
+version = "0.1.0"
+dependencies = [
+ "jolt-lexer",
+]
+
+[[package]]
 name = "jolt-text"
 version = "0.1.0"
 
