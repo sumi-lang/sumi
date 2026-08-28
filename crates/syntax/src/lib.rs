@@ -7,8 +7,10 @@
 //! operators are glued later, by the parser, using token adjacency.
 
 mod cook;
+mod input;
 mod kind;
 mod literal;
 
 pub use cook::{CookedFile, SyntaxError, SyntaxErrorKind, cook};
+pub use input::ParserInput;
 pub use kind::SyntaxKind;

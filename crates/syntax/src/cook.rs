@@ -41,7 +41,10 @@ pub fn cook(source: &str, lexed: &LexedFile) -> CookedFile {
                 literal::validate_char(lexed.text(source, index), lexed.flags(index), &mut error);
                 SyntaxKind::CharLiteral
             }
-            RawKind::Punct => SyntaxKind::Punct,
+            RawKind::Punct => {
+                let byte = lexed.text(source, index).as_bytes()[0];
+                SyntaxKind::from_punct(byte).unwrap_or(SyntaxKind::Error)
+            }
             RawKind::Unknown => SyntaxKind::Error,
         };
         kinds.push(kind);
