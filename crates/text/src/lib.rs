@@ -1,23 +1,23 @@
-/// A UTF-8 byte coordinate in a source file.
+/// A file-local UTF-8 byte offset or length.
 #[repr(transparent)]
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TextSize(u32);
 impl TextSize {
     pub const fn new(value: u32) -> Self {
         Self(value)
     }
 
-    pub const fn to_u32(&self) -> u32 {
+    pub const fn to_u32(self) -> u32 {
         self.0
     }
 
-    pub const fn to_usize(&self) -> usize {
+    pub const fn to_usize(self) -> usize {
         self.0 as usize
     }
 }
 
-/// A half-open range over UTF-8 bytes in a source file.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+/// A half-open `[start, end)` range over UTF-8 bytes in a source file.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct TextRange {
     start: TextSize,
     end: TextSize,
@@ -36,11 +36,18 @@ impl TextRange {
         self.end
     }
 
-    pub const fn is_empty(self) -> bool {
-        self.start.to_u32() == self.end.to_u32()
+    pub fn text(self, source: &str) -> &str {
+        &source[self.start.to_usize()..self.end.to_usize()]
     }
+}
 
-    pub fn text<'src>(&self, source: &'src str) -> &'src str {
-        &source[self.start.0 as usize..self.end.0 as usize]
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn range_slices_source() {
+        let range = TextRange::new(TextSize::new(3), TextSize::new(6));
+        assert_eq!(range.text("fn map"), "map");
     }
 }
