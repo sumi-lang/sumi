@@ -16,7 +16,6 @@ pub fn cook(source: &str, lexed: &LexedFile) -> CookedFile {
             RawKind::Bom | RawKind::HorizontalSpace => SyntaxKind::Whitespace,
             RawKind::Newline => SyntaxKind::Newline,
             RawKind::LineComment => SyntaxKind::LineComment,
-            RawKind::BlockComment => SyntaxKind::BlockComment,
             RawKind::Ident => {
                 SyntaxKind::from_keyword(lexed.text(source, index)).unwrap_or(SyntaxKind::Ident)
             }
