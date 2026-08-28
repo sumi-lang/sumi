@@ -31,9 +31,10 @@ pub enum SyntaxKind {
     ReturnKw,
     TrueKw,
 
-    /// An integer or float literal; the int/float split arrives with number
-    /// validation.
-    NumberLiteral,
+    /// A decimal integer literal.
+    IntLiteral,
+    /// A float literal: a fraction (`1.5`), an exponent (`1e3`), or both.
+    FloatLiteral,
     StringLiteral,
     RawStringLiteral,
     CharLiteral,

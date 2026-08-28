@@ -264,6 +264,8 @@ fn float_shapes() {
     check("1.5", &[r#"Number 0..3 "1.5""#]);
     check("2.5e-3", &[r#"Number 0..6 "2.5e-3""#]);
     check("1e5", &[r#"Number 0..3 "1e5""#]);
+    // Boundaries must not depend on marker case; the cooker rejects `E`.
+    check("1E-5", &[r#"Number 0..4 "1E-5""#]);
 }
 
 #[test]
@@ -292,32 +294,9 @@ fn dot_continues_a_number_only_before_a_digit() {
 fn number_suffixes_attach() {
     check("1u32", &[r#"Number 0..4 "1u32""#]);
     check("1e", &[r#"Number 0..2 "1e""#]);
-}
-
-#[test]
-fn based_numbers() {
-    check(
-        "0x1F 0b10 0o7",
-        &[
-            r#"Number 0..4 "0x1F""#,
-            r#"HorizontalSpace 4..5 " ""#,
-            r#"Number 5..9 "0b10""#,
-            r#"HorizontalSpace 9..10 " ""#,
-            r#"Number 10..13 "0o7""#,
-        ],
-    );
-}
-
-#[test]
-fn base_prefix_without_digits_is_an_error() {
-    check("0x", &[r#"Number 0..2 "0x" TokenFlags(EMPTY_BASE_DIGITS)"#]);
-    assert_eq!(
-        lex("0x").unwrap().errors(),
-        &[LexError {
-            token: 0,
-            kind: LexErrorKind::MissingBaseDigits
-        }],
-    );
+    // With no base prefixes in the language, `x1F` is just a suffix.
+    check("0x1F", &[r#"Number 0..4 "0x1F""#]);
+    assert_eq!(lex("0x1F").unwrap().errors(), &[]);
 }
 
 #[test]

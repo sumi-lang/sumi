@@ -40,7 +40,7 @@ pub enum RawKind {
     /// An identifier or keyword; also plain `_`.
     Ident,
 
-    /// An integer or float literal of any base, including any suffix.
+    /// A decimal integer or float literal, including any suffix.
     Number,
     /// A `"..."` literal, possibly multi-line.
     String,
@@ -72,16 +72,13 @@ impl TokenFlags {
     pub const DOC_INNER: Self = Self(1 << 3);
     /// A lone `\r` not followed by `\n`.
     pub const LONE_CR: Self = Self(1 << 4);
-    /// A number with a base prefix but no digits, like `0x`.
-    pub const EMPTY_BASE_DIGITS: Self = Self(1 << 5);
 
-    const NAMES: [(Self, &'static str); 6] = [
+    const NAMES: [(Self, &'static str); 5] = [
         (Self::UNTERMINATED, "UNTERMINATED"),
         (Self::HAS_ESCAPE, "HAS_ESCAPE"),
         (Self::DOC_OUTER, "DOC_OUTER"),
         (Self::DOC_INNER, "DOC_INNER"),
         (Self::LONE_CR, "LONE_CR"),
-        (Self::EMPTY_BASE_DIGITS, "EMPTY_BASE_DIGITS"),
     ];
 
     pub const fn is_empty(self) -> bool {
