@@ -1,15 +1,32 @@
-use jolt_lexer::LexedFile;
+use jolt_lexer::{LexedFile, RawKind};
 
 use crate::kind::SyntaxKind;
 
-/// Cook `lexed` into language-level token kinds.
+/// Cook `lexed` into language-level token kinds. `source` must be the string
+/// it was lexed from.
 ///
 /// Cooking is total and strictly 1:1: token `index` in the result classifies
 /// token `index` of `lexed`, so ranges, text, and flags stay queryable
 /// through the [`LexedFile`].
-pub fn cook(lexed: &LexedFile) -> CookedFile {
+pub fn cook(source: &str, lexed: &LexedFile) -> CookedFile {
     let kinds = (0..lexed.len())
-        .map(|index| SyntaxKind::from(lexed.kind(index)))
+        .map(|index| match lexed.kind(index) {
+            // The BOM is ignorable trivia to every downstream phase; its
+            // identity stays recoverable through the raw kind.
+            RawKind::Bom | RawKind::HorizontalSpace => SyntaxKind::Whitespace,
+            RawKind::Newline => SyntaxKind::Newline,
+            RawKind::LineComment => SyntaxKind::LineComment,
+            RawKind::BlockComment => SyntaxKind::BlockComment,
+            RawKind::Ident => {
+                SyntaxKind::from_keyword(lexed.text(source, index)).unwrap_or(SyntaxKind::Ident)
+            }
+            RawKind::Number => SyntaxKind::NumberLiteral,
+            RawKind::String => SyntaxKind::StringLiteral,
+            RawKind::RawString => SyntaxKind::RawStringLiteral,
+            RawKind::Char => SyntaxKind::CharLiteral,
+            RawKind::Punct => SyntaxKind::Punct,
+            RawKind::Unknown => SyntaxKind::Error,
+        })
         .collect();
 
     CookedFile { kinds }
