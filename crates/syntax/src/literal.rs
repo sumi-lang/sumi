@@ -3,7 +3,15 @@
 //! The raw lexer establishes literal *shape*; these checks establish
 //! *validity* under Jolt's rules: canonical numbers (no suffixes, no leading
 //! zeros, lowercase `e` exponents with no `+` and no zero padding,
-//! underscores only between digits).
+//! underscores only between digits) and the v0 escape set (`\n`, `\r`, `\t`,
+//! `\\`, `\"`, `\'`, `\0`, `\u{…}`). The escape walker is the single
+//! definition of the escape grammar; value decoding will reuse it when
+//! lowering needs it.
+//!
+//! A token the lexer already reported (unterminated literals) gets no
+//! further errors here: one primary error per token.
+
+use jolt_lexer::TokenFlags;
 
 use crate::cook::SyntaxErrorKind;
 use crate::kind::SyntaxKind;
@@ -114,4 +122,99 @@ fn eat_digits(bytes: &[u8], start: usize, misplaced_underscore: &mut bool) -> us
         }
     }
     position
+}
+
+/// Validate the escapes of a terminated string literal.
+pub(crate) fn validate_string(
+    text: &str,
+    flags: TokenFlags,
+    mut error: impl FnMut(SyntaxErrorKind),
+) {
+    if flags.contains(TokenFlags::UNTERMINATED) || !flags.contains(TokenFlags::HAS_ESCAPE) {
+        return;
+    }
+
+    let body = &text[1..text.len() - 1];
+    walk_escapes(body, |piece| {
+        if let Err(kind) = piece {
+            error(kind);
+        }
+    });
+}
+
+/// Validate the escapes and content length of a terminated character literal.
+pub(crate) fn validate_char(text: &str, flags: TokenFlags, mut error: impl FnMut(SyntaxErrorKind)) {
+    if flags.contains(TokenFlags::UNTERMINATED) {
+        return;
+    }
+
+    let body = &text[1..text.len() - 1];
+    let mut pieces = 0usize;
+    walk_escapes(body, |piece| {
+        pieces += 1;
+        if let Err(kind) = piece {
+            error(kind);
+        }
+    });
+
+    match pieces {
+        0 => error(SyntaxErrorKind::EmptyCharLiteral),
+        1 => {}
+        _ => error(SyntaxErrorKind::MoreThanOneChar),
+    }
+}
+
+/// Walk the body of a string or character literal, invoking `piece` once per
+/// literal character or escape sequence with that piece's validity.
+fn walk_escapes(body: &str, mut piece: impl FnMut(Result<(), SyntaxErrorKind>)) {
+    let mut chars = body.chars();
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            piece(Ok(()));
+            continue;
+        }
+
+        let result = match chars.next() {
+            Some('n' | 'r' | 't' | '\\' | '"' | '\'' | '0') => Ok(()),
+            Some('u') => scan_unicode_escape(&mut chars),
+            // Includes a backslash at the very end of the body.
+            _ => Err(SyntaxErrorKind::UnknownEscape),
+        };
+        piece(result);
+    }
+}
+
+/// Scan the `{1-6 hex digits}` payload of a `\u` escape. A malformed payload
+/// is consumed through its closing `}` when one exists, so it still counts as
+/// a single piece.
+fn scan_unicode_escape(chars: &mut std::str::Chars<'_>) -> Result<(), SyntaxErrorKind> {
+    if !chars.as_str().starts_with('{') {
+        return Err(SyntaxErrorKind::MalformedUnicodeEscape);
+    }
+    chars.next();
+
+    let mut digits = 0usize;
+    let mut value = 0u32;
+    let mut malformed = false;
+    loop {
+        match chars.next() {
+            None => return Err(SyntaxErrorKind::MalformedUnicodeEscape),
+            Some('}') => break,
+            Some(ch) => match ch.to_digit(16) {
+                Some(digit) if digits < 6 => {
+                    digits += 1;
+                    value = value * 16 + digit;
+                }
+                _ => malformed = true,
+            },
+        }
+    }
+
+    if malformed || digits == 0 {
+        Err(SyntaxErrorKind::MalformedUnicodeEscape)
+    } else if char::from_u32(value).is_none() {
+        Err(SyntaxErrorKind::InvalidUnicodeScalar)
+    } else {
+        Ok(())
+    }
 }
