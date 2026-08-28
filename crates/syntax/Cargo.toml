@@ -5,3 +5,6 @@ edition = "2024"
 
 [dependencies]
 jolt-lexer = { path = "../lexer" }
+
+[dev-dependencies]
+proptest = "1.11.0"
