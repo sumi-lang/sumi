@@ -111,14 +111,14 @@ fn punct_stays_split_until_the_parser_glues() {
 #[test]
 fn trivia_classification() {
     check(
-        "\u{feff}a // c\n/* b */",
+        "\u{feff}a // c\nb",
         &[
             r#"Whitespace 0..3 "\u{feff}""#,
             r#"Ident 3..4 "a""#,
             r#"Whitespace 4..5 " ""#,
             r#"LineComment 5..9 "// c""#,
             r#"Newline 9..10 "\n""#,
-            r#"BlockComment 10..17 "/* b */""#,
+            r#"Ident 10..11 "b""#,
         ],
     );
 }

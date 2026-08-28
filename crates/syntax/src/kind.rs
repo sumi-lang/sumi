@@ -15,7 +15,6 @@ pub enum SyntaxKind {
     Newline,
 
     LineComment,
-    BlockComment,
 
     /// An identifier that is not a keyword.
     Ident,

@@ -232,43 +232,16 @@ fn line_comment_doc_flavors() {
 }
 
 #[test]
-fn block_comments_nest() {
+fn slash_star_is_just_punctuation() {
+    // Jolt has line comments only; there is no block-comment syntax.
     check(
-        "/* a /* b */ c */ x",
+        "/* x",
         &[
-            r#"BlockComment 0..17 "/* a /* b */ c */""#,
-            r#"HorizontalSpace 17..18 " ""#,
-            r#"Ident 18..19 "x""#,
+            r#"Punct 0..1 "/""#,
+            r#"Punct 1..2 "*""#,
+            r#"HorizontalSpace 2..3 " ""#,
+            r#"Ident 3..4 "x""#,
         ],
-    );
-}
-
-#[test]
-fn block_comment_doc_flavors() {
-    check("/**/", &[r#"BlockComment 0..4 "/**/""#]);
-    check(
-        "/** d */",
-        &[r#"BlockComment 0..8 "/** d */" TokenFlags(DOC_OUTER)"#],
-    );
-    check(
-        "/*! d */",
-        &[r#"BlockComment 0..8 "/*! d */" TokenFlags(DOC_INNER)"#],
-    );
-    check("/*** d */", &[r#"BlockComment 0..9 "/*** d */""#]);
-}
-
-#[test]
-fn unterminated_block_comment() {
-    check(
-        "/* a /* b */",
-        &[r#"BlockComment 0..12 "/* a /* b */" TokenFlags(UNTERMINATED)"#],
-    );
-    assert_eq!(
-        lex("/* a /* b */").unwrap().errors(),
-        &[LexError {
-            token: 0,
-            kind: LexErrorKind::UnterminatedBlockComment
-        }],
     );
 }
 
@@ -441,6 +414,7 @@ fn clean_source_has_no_errors() {
 
 #[test]
 fn partition_smoke() {
-    let source = "\u{feff}fn main() {\r\n\tlet s = r#\"raw\"#; // trailing\n\t/* b /* n */ */ 'c' \"str\" 2.5e-3 0xFF\n}\n";
+    let source =
+        "\u{feff}fn main() {\r\n\tlet s = r#\"raw\"#; // trailing\n\t'c' \"str\" 2.5e-3 0xFF\n}\n";
     dump(source);
 }

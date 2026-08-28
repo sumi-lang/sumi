@@ -53,7 +53,6 @@ pub fn lex(source: &str) -> Result<LexedFile, SourceTooLarge> {
 fn lex_error(token: &RawToken, text: &str) -> Option<LexErrorKind> {
     let unterminated = token.flags.contains(TokenFlags::UNTERMINATED);
     match token.kind {
-        RawKind::BlockComment if unterminated => Some(LexErrorKind::UnterminatedBlockComment),
         RawKind::String if unterminated => Some(LexErrorKind::UnterminatedString),
         RawKind::RawString if unterminated => Some(LexErrorKind::UnterminatedRawString),
         RawKind::Char if unterminated => Some(LexErrorKind::UnterminatedChar),
@@ -145,7 +144,6 @@ pub struct LexError {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum LexErrorKind {
-    UnterminatedBlockComment,
     UnterminatedString,
     UnterminatedRawString,
     UnterminatedChar,

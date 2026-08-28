@@ -36,8 +36,6 @@ pub enum RawKind {
 
     /// `// ...` up to, not including, the end of the line.
     LineComment,
-    /// `/* ... */`, nesting.
-    BlockComment,
 
     /// An identifier or keyword; also plain `_`.
     Ident,
@@ -68,9 +66,9 @@ impl TokenFlags {
     pub const UNTERMINATED: Self = Self(1 << 0);
     /// A string or character literal contains at least one `\` escape.
     pub const HAS_ESCAPE: Self = Self(1 << 1);
-    /// An outer doc comment: `///` or `/**`.
+    /// An outer doc comment: `///`.
     pub const DOC_OUTER: Self = Self(1 << 2);
-    /// An inner doc comment: `//!` or `/*!`.
+    /// An inner doc comment: `//!`.
     pub const DOC_INNER: Self = Self(1 << 3);
     /// A lone `\r` not followed by `\n`.
     pub const LONE_CR: Self = Self(1 << 4);

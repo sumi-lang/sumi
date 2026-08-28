@@ -66,9 +66,6 @@ impl<'src> Lexer<'src> {
                 b'/' if self.remaining().starts_with("//") => {
                     (RawKind::LineComment, self.scan_line_comment())
                 }
-                b'/' if self.remaining().starts_with("/*") => {
-                    (RawKind::BlockComment, self.scan_block_comment())
-                }
                 b'0'..=b'9' => (RawKind::Number, self.scan_number()),
                 b'"' => (RawKind::String, self.scan_string()),
                 b'\'' => (RawKind::Char, self.scan_char()),
@@ -134,48 +131,6 @@ impl<'src> Lexer<'src> {
         let line_end = rest.find(['\n', '\r']).unwrap_or(rest.len());
         self.position += line_end;
 
-        flags
-    }
-
-    fn scan_block_comment(&mut self) -> TokenFlags {
-        self.bump_ascii();
-        self.bump_ascii();
-
-        let mut flags = match (self.peek_byte(), self.peek_byte_at(1)) {
-            // `/**` is an outer doc comment, but `/**/` is empty and `/***...`
-            // is decoration.
-            (Some(b'*'), next) if !matches!(next, Some(b'*' | b'/')) => TokenFlags::DOC_OUTER,
-            (Some(b'!'), _) => TokenFlags::DOC_INNER,
-            _ => TokenFlags::EMPTY,
-        };
-
-        // Only ASCII `/` and `*` are inspected, and ASCII bytes never occur
-        // inside a multi-byte UTF-8 character, so byte-wise iteration cannot
-        // leave the final position mid-character.
-        let bytes = self.source.as_bytes();
-        let mut index = self.position;
-        let mut depth = 1usize;
-        while index < bytes.len() {
-            match bytes[index] {
-                b'/' if bytes.get(index + 1) == Some(&b'*') => {
-                    depth += 1;
-                    index += 2;
-                }
-                b'*' if bytes.get(index + 1) == Some(&b'/') => {
-                    depth -= 1;
-                    index += 2;
-                    if depth == 0 {
-                        break;
-                    }
-                }
-                _ => index += 1,
-            }
-        }
-        self.position = index;
-
-        if depth > 0 {
-            flags |= TokenFlags::UNTERMINATED;
-        }
         flags
     }
 
