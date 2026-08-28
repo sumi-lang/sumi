@@ -66,7 +66,10 @@ impl<'src> Lexer<'src> {
                 b'/' if self.remaining().starts_with("//") => {
                     (RawKind::LineComment, self.scan_line_comment())
                 }
-                b'0'..=b'9' => (RawKind::Number, self.scan_number()),
+                b'0'..=b'9' => {
+                    self.scan_number();
+                    (RawKind::Number, TokenFlags::EMPTY)
+                }
                 b'"' => (RawKind::String, self.scan_string()),
                 b'\'' => (RawKind::Char, self.scan_char()),
                 b'r' if self.looks_like_raw_string() => {
@@ -134,67 +137,43 @@ impl<'src> Lexer<'src> {
         flags
     }
 
-    fn scan_number(&mut self) -> TokenFlags {
-        let mut flags = TokenFlags::EMPTY;
+    fn scan_number(&mut self) {
         let first = self.bump_ascii();
         debug_assert!(first.is_ascii_digit());
 
-        if first == b'0' && matches!(self.peek_byte(), Some(b'x' | b'o' | b'b')) {
+        self.eat_decimal_digits();
+
+        // A `.` continues the number only when a digit follows, so `1..2`
+        // and `1.foo` leave the dot to punctuation.
+        if self.peek_byte() == Some(b'.')
+            && self
+                .peek_byte_at(1)
+                .is_some_and(|byte| byte.is_ascii_digit())
+        {
             self.bump_ascii();
-
-            // The shape accepts any base's digits; the cooker validates them
-            // against the declared base, so `0b12` is one malformed token
-            // rather than two tokens.
-            let mut has_digits = false;
-            while let Some(byte) = self.peek_byte() {
-                match byte {
-                    b'0'..=b'9' | b'a'..=b'f' | b'A'..=b'F' => {
-                        has_digits = true;
-                        self.position += 1;
-                    }
-                    b'_' => self.position += 1,
-                    _ => break,
-                }
-            }
-            if !has_digits {
-                flags |= TokenFlags::EMPTY_BASE_DIGITS;
-            }
-        } else {
             self.eat_decimal_digits();
+        }
 
-            // A `.` continues the number only when a digit follows, so `1..2`
-            // and `1.foo` leave the dot to punctuation.
-            if self.peek_byte() == Some(b'.')
-                && self
-                    .peek_byte_at(1)
-                    .is_some_and(|byte| byte.is_ascii_digit())
-            {
+        // An exponent needs a digit after the optional sign; otherwise the
+        // `e` is left to the suffix, as in `1em`.
+        if matches!(self.peek_byte(), Some(b'e' | b'E')) {
+            let has_exponent = match (self.peek_byte_at(1), self.peek_byte_at(2)) {
+                (Some(byte), _) if byte.is_ascii_digit() => true,
+                (Some(b'+' | b'-'), Some(byte)) => byte.is_ascii_digit(),
+                _ => false,
+            };
+            if has_exponent {
                 self.bump_ascii();
-                self.eat_decimal_digits();
-            }
-
-            // An exponent needs a digit after the optional sign; otherwise the
-            // `e` is left to the suffix, as in `1em`.
-            if matches!(self.peek_byte(), Some(b'e' | b'E')) {
-                let has_exponent = match (self.peek_byte_at(1), self.peek_byte_at(2)) {
-                    (Some(byte), _) if byte.is_ascii_digit() => true,
-                    (Some(b'+' | b'-'), Some(byte)) => byte.is_ascii_digit(),
-                    _ => false,
-                };
-                if has_exponent {
+                if matches!(self.peek_byte(), Some(b'+' | b'-')) {
                     self.bump_ascii();
-                    if matches!(self.peek_byte(), Some(b'+' | b'-')) {
-                        self.bump_ascii();
-                    }
-                    self.eat_decimal_digits();
                 }
+                self.eat_decimal_digits();
             }
         }
 
         // Trailing identifier characters attach as a literal suffix (`1u32`)
         // for the cooker to validate.
         self.eat_ident_continue();
-        flags
     }
 
     fn eat_decimal_digits(&mut self) {

@@ -59,9 +59,6 @@ fn lex_error(token: &RawToken, text: &str) -> Option<LexErrorKind> {
         RawKind::Newline if token.flags.contains(TokenFlags::LONE_CR) => {
             Some(LexErrorKind::LoneCarriageReturn)
         }
-        RawKind::Number if token.flags.contains(TokenFlags::EMPTY_BASE_DIGITS) => {
-            Some(LexErrorKind::MissingBaseDigits)
-        }
         RawKind::Unknown if text == "\u{feff}" => Some(LexErrorKind::MisplacedBom),
         _ => None,
     }
@@ -149,8 +146,6 @@ pub enum LexErrorKind {
     UnterminatedChar,
     /// A `\r` line ending not followed by `\n`.
     LoneCarriageReturn,
-    /// A base prefix like `0x` with no digits after it.
-    MissingBaseDigits,
     /// A U+FEFF byte-order mark somewhere other than byte zero.
     MisplacedBom,
 }
