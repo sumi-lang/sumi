@@ -1,5 +1,3 @@
-use jolt_lexer::RawKind;
-
 /// The language-level kind of a token and, later, of a CST node.
 ///
 /// One flat vocabulary shared by cooked tokens and syntax tree nodes, kept
@@ -19,8 +17,20 @@ pub enum SyntaxKind {
     LineComment,
     BlockComment,
 
-    /// An identifier. Keyword classification arrives with the keyword table.
+    /// An identifier that is not a keyword.
     Ident,
+
+    // Reserved keywords. The v0 set covers functions, bindings, branching,
+    // and boolean literals only; the table is
+    // [`from_keyword`](SyntaxKind::from_keyword).
+    ElseKw,
+    FalseKw,
+    FnKw,
+    IfKw,
+    LetKw,
+    MutKw,
+    ReturnKw,
+    TrueKw,
 
     /// An integer or float literal; the int/float split arrives with number
     /// validation.
@@ -38,27 +48,19 @@ pub enum SyntaxKind {
     Error,
 }
 
-/// The context-free base classification of a raw token.
-///
-/// This is what a raw kind means before any text-sensitive refinement;
-/// [`cook`](crate::cook) applies it today and will layer keyword
-/// classification and literal validation on top of it.
-impl From<RawKind> for SyntaxKind {
-    fn from(kind: RawKind) -> Self {
-        match kind {
-            // The BOM is ignorable trivia to every downstream phase; its
-            // identity stays recoverable through the raw kind.
-            RawKind::Bom | RawKind::HorizontalSpace => Self::Whitespace,
-            RawKind::Newline => Self::Newline,
-            RawKind::LineComment => Self::LineComment,
-            RawKind::BlockComment => Self::BlockComment,
-            RawKind::Ident => Self::Ident,
-            RawKind::Number => Self::NumberLiteral,
-            RawKind::String => Self::StringLiteral,
-            RawKind::RawString => Self::RawStringLiteral,
-            RawKind::Char => Self::CharLiteral,
-            RawKind::Punct => Self::Punct,
-            RawKind::Unknown => Self::Error,
-        }
+impl SyntaxKind {
+    /// The keyword kind for `text`, if it is a reserved word.
+    pub fn from_keyword(text: &str) -> Option<Self> {
+        Some(match text {
+            "else" => Self::ElseKw,
+            "false" => Self::FalseKw,
+            "fn" => Self::FnKw,
+            "if" => Self::IfKw,
+            "let" => Self::LetKw,
+            "mut" => Self::MutKw,
+            "return" => Self::ReturnKw,
+            "true" => Self::TrueKw,
+            _ => return None,
+        })
     }
 }

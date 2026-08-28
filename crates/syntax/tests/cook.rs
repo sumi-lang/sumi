@@ -5,7 +5,7 @@ use jolt_syntax::cook;
 /// token: `SyntaxKind start..end "text"`.
 fn dump(source: &str) -> Vec<String> {
     let lexed = lex(source).expect("test sources fit in u32");
-    let cooked = cook(&lexed);
+    let cooked = cook(source, &lexed);
     assert_eq!(cooked.len(), lexed.len(), "cooking must stay 1:1");
 
     (0..cooked.len())
@@ -30,17 +30,64 @@ fn check(source: &str, expected: &[&str]) {
 #[test]
 fn empty_source_cooks_to_nothing() {
     check("", &[]);
-    assert!(cook(&lex("").unwrap()).is_empty());
+    assert!(cook("", &lex("").unwrap()).is_empty());
 }
 
 #[test]
-fn keywords_stay_idents_for_now() {
+fn keywords_classify() {
     check(
         "fn map",
         &[
-            r#"Ident 0..2 "fn""#,
+            r#"FnKw 0..2 "fn""#,
             r#"Whitespace 2..3 " ""#,
             r#"Ident 3..6 "map""#,
+        ],
+    );
+}
+
+#[test]
+fn every_v0_keyword_classifies() {
+    let source = "else false fn if let mut return true";
+    let lexed = lex(source).unwrap();
+    let cooked = cook(source, &lexed);
+
+    let keyword_kinds: Vec<String> = (0..cooked.len())
+        .map(|index| format!("{:?}", cooked.kind(index)))
+        .filter(|kind| kind.ends_with("Kw"))
+        .collect();
+    assert_eq!(
+        keyword_kinds,
+        [
+            "ElseKw", "FalseKw", "FnKw", "IfKw", "LetKw", "MutKw", "ReturnKw", "TrueKw",
+        ],
+    );
+}
+
+#[test]
+fn near_misses_stay_idents() {
+    check(
+        "fnx Fn lets _if",
+        &[
+            r#"Ident 0..3 "fnx""#,
+            r#"Whitespace 3..4 " ""#,
+            r#"Ident 4..6 "Fn""#,
+            r#"Whitespace 6..7 " ""#,
+            r#"Ident 7..11 "lets""#,
+            r#"Whitespace 11..12 " ""#,
+            r#"Ident 12..15 "_if""#,
+        ],
+    );
+}
+
+#[test]
+fn keywords_inside_strings_and_comments_stay_put() {
+    check(
+        "\"fn\" // let\n",
+        &[
+            r#"StringLiteral 0..4 "\"fn\"""#,
+            r#"Whitespace 4..5 " ""#,
+            r#"LineComment 5..11 "// let""#,
+            r#"Newline 11..12 "\n""#,
         ],
     );
 }
