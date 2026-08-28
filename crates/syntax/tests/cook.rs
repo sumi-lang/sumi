@@ -260,6 +260,64 @@ fn broken_exponents_get_a_targeted_error() {
 }
 
 #[test]
+fn lexer_reported_tokens_get_no_cook_errors() {
+    // Unterminated literals already carry a LexError.
+    check_errors("\"a\\q", &[]);
+    check_errors("'ab", &[]);
+}
+
+#[test]
+fn valid_escapes_pass() {
+    check_errors(r#""a\n\r\t\\\"\'\0b" '\n' '\u{1F600}'"#, &[]);
+}
+
+#[test]
+fn unknown_escapes_are_reported() {
+    check_errors(r#""a\qb""#, &[(0, SyntaxErrorKind::UnknownEscape)]);
+    check_errors(
+        r#""\q\q""#,
+        &[
+            (0, SyntaxErrorKind::UnknownEscape),
+            (0, SyntaxErrorKind::UnknownEscape),
+        ],
+    );
+}
+
+#[test]
+fn unicode_escape_validation() {
+    check_errors(r#""\u{41}""#, &[]);
+    check_errors(r#""\uX""#, &[(0, SyntaxErrorKind::MalformedUnicodeEscape)]);
+    check_errors(r#""\u{}""#, &[(0, SyntaxErrorKind::MalformedUnicodeEscape)]);
+    check_errors(
+        r#""\u{1234567}""#,
+        &[(0, SyntaxErrorKind::MalformedUnicodeEscape)],
+    );
+    check_errors(
+        r#""\u{zz}""#,
+        &[(0, SyntaxErrorKind::MalformedUnicodeEscape)],
+    );
+    check_errors(
+        r#""\u{d800}""#,
+        &[(0, SyntaxErrorKind::InvalidUnicodeScalar)],
+    );
+    check_errors(
+        r#""\u{110000}""#,
+        &[(0, SyntaxErrorKind::InvalidUnicodeScalar)],
+    );
+}
+
+#[test]
+fn char_content_validation() {
+    check_errors("'a'", &[]);
+    check_errors(r"'\''", &[]);
+    check_errors("''", &[(0, SyntaxErrorKind::EmptyCharLiteral)]);
+    check_errors("'ab'", &[(0, SyntaxErrorKind::MoreThanOneChar)]);
+    check_errors(r"'\u{41}b'", &[(0, SyntaxErrorKind::MoreThanOneChar)]);
+    // A bad escape is one piece: no cascading length error.
+    check_errors(r"'\q'", &[(0, SyntaxErrorKind::UnknownEscape)]);
+}
+
+#[test]
 fn unknown_cooks_to_error() {
     check(
         "a€b",

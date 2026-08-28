@@ -32,9 +32,15 @@ pub fn cook(source: &str, lexed: &LexedFile) -> CookedFile {
                 SyntaxKind::from_keyword(lexed.text(source, index)).unwrap_or(SyntaxKind::Ident)
             }
             RawKind::Number => literal::classify_number(lexed.text(source, index), &mut error),
-            RawKind::String => SyntaxKind::StringLiteral,
+            RawKind::String => {
+                literal::validate_string(lexed.text(source, index), lexed.flags(index), &mut error);
+                SyntaxKind::StringLiteral
+            }
             RawKind::RawString => SyntaxKind::RawStringLiteral,
-            RawKind::Char => SyntaxKind::CharLiteral,
+            RawKind::Char => {
+                literal::validate_char(lexed.text(source, index), lexed.flags(index), &mut error);
+                SyntaxKind::CharLiteral
+            }
             RawKind::Punct => SyntaxKind::Punct,
             RawKind::Unknown => SyntaxKind::Error,
         };
@@ -102,4 +108,14 @@ pub enum SyntaxErrorKind {
     LeadingZero,
     /// A digit-separator underscore without digits on both sides, as in `1_`.
     MisplacedUnderscore,
+    /// A `\` escape outside the supported set.
+    UnknownEscape,
+    /// A `\u` escape without a well-formed `{1-6 hex digits}` payload.
+    MalformedUnicodeEscape,
+    /// A `\u` escape naming a surrogate or a value beyond U+10FFFF.
+    InvalidUnicodeScalar,
+    /// A character literal with nothing in it: `''`.
+    EmptyCharLiteral,
+    /// A character literal containing more than one character.
+    MoreThanOneChar,
 }
