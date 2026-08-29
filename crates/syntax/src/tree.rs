@@ -120,7 +120,7 @@ impl Parse {
             parent: 0,
             depth: 0,
             paren: None,
-            closed: false,
+            closer: None,
             // Closed here once `body` returns, never by `complete`.
             completed: true,
         });
@@ -244,11 +244,12 @@ pub struct Marker<'p, 'a> {
     /// The innermost parenthesized construct still open around this node,
     /// by the significant position of its `(`.
     paren: Option<usize>,
-    /// Whether the stream closes the innermost bracket construct entered
-    /// around this node — this node itself, once it has entered one. A
-    /// closed construct owns everything up to its closer, so a `fn` inside
-    /// it is garbage there, not the next item.
-    closed: bool,
+    /// The closer the stream pairs with the innermost bracket construct
+    /// entered around this node — this node itself, once it has entered
+    /// one — by significant position; `None` when the stream closes none.
+    /// A closed construct owns everything up to its closer, so a `fn`
+    /// inside it is garbage there, not the next item.
+    closer: Option<usize>,
     completed: bool,
 }
 
@@ -288,7 +289,7 @@ impl<'a> Marker<'_, 'a> {
             parent: self.id,
             depth: self.depth + 1,
             paren: self.paren,
-            closed: self.closed,
+            closer: self.closer,
             completed: false,
         }
     }
@@ -310,7 +311,7 @@ impl<'a> Marker<'_, 'a> {
             parent: self.id,
             depth: self.depth + 1,
             paren: self.paren,
-            closed: self.closed,
+            closer: self.closer,
             completed: false,
         }
     }
@@ -405,9 +406,11 @@ impl<'a> Marker<'_, 'a> {
         index < self.builder.input.len() && self.builder.input.boundary_before(index)
     }
 
-    /// Whether the next token is a bracket the stream pairs with another.
+    /// Whether the next token is a bracket the stream pairs with another,
+    /// ahead or behind.
     pub(crate) fn partnered(&self) -> bool {
-        self.nth_partner(0).is_some()
+        let position = self.builder.position;
+        position < self.builder.input.len() && self.builder.input.partner(position).is_some()
     }
 
     /// The offset from the next token of the bracket matching the
@@ -444,7 +447,7 @@ impl<'a> Marker<'_, 'a> {
     /// token: it and the children opened from now on know whether the
     /// stream closes it.
     pub(crate) fn enter(&mut self) {
-        self.closed = self.builder.input.partner(self.start).is_some();
+        self.closer = self.builder.input.partner(self.start);
     }
 
     /// [Enter](Self::enter) a parenthesized construct whose `(` is its
@@ -457,14 +460,21 @@ impl<'a> Marker<'_, 'a> {
     /// Whether the stream closes the innermost bracket construct entered
     /// around this node.
     pub(crate) fn closed(&self) -> bool {
-        self.closed
+        self.closer.is_some()
+    }
+
+    /// Whether the closer the stream pairs with the innermost bracket
+    /// construct entered around this node lies ahead of the next token.
+    pub(crate) fn closer_ahead(&self) -> bool {
+        self.closer
+            .is_some_and(|closer| closer > self.builder.position)
     }
 
     /// Whether the next token is a `fn` beginning the next item: one no
     /// bracket construct the stream closes encloses. Recovery never takes
     /// it; whatever lost its closer ends there instead.
     pub(crate) fn at_item(&self) -> bool {
-        !self.closed && self.at(SyntaxKind::FnKw)
+        self.closer.is_none() && self.at(SyntaxKind::FnKw)
     }
 
     /// Attach the next token if it is `kind` and no statement boundary

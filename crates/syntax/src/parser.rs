@@ -99,14 +99,16 @@ fn starts_item(p: &Marker<'_, '_>) -> bool {
 /// the run itself adds no diagnostic. A matched bracket pair is taken
 /// whole, as the token stream pairs them, so `stop` is never consulted
 /// inside one. A closer met after the first token has no opener in the run:
-/// it belongs to something enclosing, or to nothing, and ends the run. So
-/// does a `fn` that no closed construct owns: it begins the next item,
-/// which no recovery may swallow.
+/// one the stream pairs belongs to something enclosing and ends the run,
+/// while an orphan belongs to nothing and is garbage like the rest. A `fn`
+/// that no closed construct owns ends the run too: it begins the next
+/// item, which no recovery may swallow.
 fn skip(p: &mut Marker<'_, '_>, stop: impl Fn(&Marker<'_, '_>) -> bool) -> CompletedMarker {
     let mut m = p.start();
     m.group();
     while let Some(kind) = m.current() {
-        if matches!(kind, T::RParen | T::RBrace) || m.at_item() || stop(&m) {
+        let closer = matches!(kind, T::RParen | T::RBrace) && m.partnered();
+        if closer || m.at_item() || stop(&m) {
             break;
         }
         m.group();
@@ -309,7 +311,13 @@ fn block(p: &mut Marker<'_, '_>) -> CompletedMarker {
                 m.error(ParseErrorKind::Expected(T::RBrace));
                 break;
             }
-            Some(T::RBrace) => {
+            // A `}` before the one the stream pairs with this block is a
+            // stray the stream left unpaired: the next round reports it as
+            // the statement it is not. The block's own `}` closes it, and
+            // so does any `}` once that one is gone or was never there —
+            // an unclosed block inside may have taken it — there being
+            // nothing better.
+            Some(T::RBrace) if !m.closer_ahead() => {
                 m.token();
                 break;
             }
@@ -358,7 +366,7 @@ fn statement(p: &mut Marker<'_, '_>) {
         _ => {
             if expr(p).is_none() {
                 p.error(ParseErrorKind::ExpectedStatement);
-                skip(p, |p| p.boundary() || p.at(T::RBrace));
+                skip(p, |p| p.boundary());
             }
         }
     }
