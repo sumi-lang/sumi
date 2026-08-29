@@ -1,6 +1,8 @@
-use sumi_lexer::{LexedFile, lex};
+mod common;
+
+use sumi_lexer::lex;
 use sumi_syntax::NodeKind::{self, *};
-use sumi_syntax::{CompletedMarker, Marker, ParserInput, SyntaxTree, cook};
+use sumi_syntax::{CompletedMarker, Marker, Parse, ParserInput, cook};
 
 /// Open a child of `parent`, run `body` inside it, and complete it as
 /// `kind`.
@@ -27,75 +29,16 @@ fn tokens(marker: &mut Marker<'_, '_>, count: usize) {
 }
 
 /// Lex, cook, and build a tree over `source` by running `build` inside the
-/// root; assert the tree invariants; and render one line per node: `Kind
-/// start..end` byte ranges, indented by depth, with the text of childless
-/// nodes appended.
+/// root, then dump it.
 fn dump(source: &str, build: impl FnOnce(&mut Marker<'_, '_>)) -> Vec<String> {
     let lexed = lex(source).expect("test sources fit in u32");
     let input = ParserInput::new(&cook(source, &lexed));
-    let tree = SyntaxTree::build(&input, build);
-
-    let mut lines = Vec::new();
-    let mut visited = 0usize;
-    render(&tree, &lexed, source, 0, 0, &mut lines, &mut visited);
-    assert_eq!(visited, tree.len(), "extents must partition the tree");
-    lines
-}
-
-fn render(
-    tree: &SyntaxTree,
-    lexed: &LexedFile,
-    source: &str,
-    node: usize,
-    depth: usize,
-    lines: &mut Vec<String>,
-    visited: &mut usize,
-) {
-    *visited += 1;
-    let first = tree.first_token(node);
-    let end = tree.end_token(node);
-    assert!(first <= end, "node {node} has a backwards token range");
-
-    let from = start_byte(lexed, first);
-    let to = if end > first {
-        lexed.range(end as usize - 1).end().to_u32()
-    } else {
-        from
-    };
-    let mut line = format!(
-        "{:indent$}{:?} {from}..{to}",
-        "",
-        tree.kind(node),
-        indent = depth * 2
+    let parse = Parse::build(&input, build);
+    assert!(
+        parse.errors().is_empty(),
+        "hand-built trees record no errors"
     );
-    if tree.children(node).next().is_none() {
-        line.push_str(&format!(" {:?}", &source[from as usize..to as usize]));
-    }
-    lines.push(line);
-
-    let mut previous_end = first;
-    for child in tree.children(node) {
-        assert!(
-            tree.first_token(child) >= previous_end,
-            "children must be ordered and disjoint"
-        );
-        assert!(
-            tree.end_token(child) <= end,
-            "a child must stay inside its parent"
-        );
-        previous_end = tree.end_token(child);
-        render(tree, lexed, source, child, depth + 1, lines, visited);
-    }
-}
-
-/// The start byte of raw token `token`, or the end of the source one past
-/// the last token.
-fn start_byte(lexed: &LexedFile, token: u32) -> u32 {
-    if (token as usize) < lexed.len() {
-        lexed.range(token as usize).start().to_u32()
-    } else {
-        lexed.source_len().to_u32()
-    }
+    common::dump(parse.tree(), &lexed, source)
 }
 
 #[track_caller]
@@ -262,22 +205,26 @@ fn statement_kinds_cover_their_tokens() {
                 tokens(b, 2); // _ =
                 let callee = leaf(b, NameExpr);
                 let mut m = b.precede(callee);
-                m.token(); // (
-                node(&mut m, ParenExpr, |b| {
+                node(&mut m, ArgList, |b| {
                     b.token(); // (
-                    leaf(b, NameExpr);
+                    node(b, ParenExpr, |b| {
+                        b.token(); // (
+                        leaf(b, NameExpr);
+                        b.token(); // )
+                    });
                     b.token(); // )
                 });
-                m.token(); // )
                 m.complete(CallExpr);
             });
             // An expression in statement position is a bare child: with no
             // `;`, statement or tail is a matter of position.
             let callee = leaf(b, NameExpr);
             let mut m = b.precede(callee);
-            m.token(); // (
-            leaf(&mut m, NameExpr);
-            m.token(); // )
+            node(&mut m, ArgList, |b| {
+                b.token(); // (
+                leaf(b, NameExpr);
+                b.token(); // )
+            });
             m.complete(CallExpr);
             node(b, ReturnStmt, |b| b.token());
         },
@@ -289,11 +236,13 @@ fn statement_kinds_cover_their_tokens() {
             "  DiscardStmt 11..21",
             "    CallExpr 15..21",
             r#"      NameExpr 15..16 "f""#,
-            "      ParenExpr 17..20",
-            r#"        NameExpr 18..19 "x""#,
+            "      ArgList 16..21",
+            "        ParenExpr 17..20",
+            r#"          NameExpr 18..19 "x""#,
             "  CallExpr 22..26",
             r#"    NameExpr 22..23 "g""#,
-            r#"    NameExpr 24..25 "x""#,
+            "    ArgList 23..26",
+            r#"      NameExpr 24..25 "x""#,
             r#"  ReturnStmt 27..33 "return""#,
         ],
     );

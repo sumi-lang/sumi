@@ -28,9 +28,10 @@ pub fn cook(source: &str, lexed: &LexedFile) -> CookedFile {
             RawKind::Bom | RawKind::HorizontalSpace => SyntaxKind::Whitespace,
             RawKind::Newline => SyntaxKind::Newline,
             RawKind::LineComment => SyntaxKind::LineComment,
-            RawKind::Ident => {
-                SyntaxKind::from_keyword(lexed.text(source, index)).unwrap_or(SyntaxKind::Ident)
-            }
+            RawKind::Ident => match lexed.text(source, index) {
+                "_" => SyntaxKind::Underscore,
+                text => SyntaxKind::from_keyword(text).unwrap_or(SyntaxKind::Ident),
+            },
             RawKind::Number => literal::classify_number(lexed.text(source, index), &mut error),
             RawKind::String => {
                 literal::validate_string(lexed.text(source, index), lexed.flags(index), &mut error);

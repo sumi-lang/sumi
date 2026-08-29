@@ -150,6 +150,12 @@ fn unused_punctuation_cooks_to_error() {
 }
 
 #[test]
+fn a_lone_underscore_is_its_own_kind() {
+    check("_", &[r#"Underscore 0..1 "_""#]);
+    check("_x", &[r#"Ident 0..2 "_x""#]);
+}
+
+#[test]
 fn trivia_classification() {
     check(
         "\u{feff}a // c\nb",

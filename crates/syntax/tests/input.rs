@@ -154,13 +154,14 @@ fn leading_operators_continue() {
     assert!(!has_boundary("a\n!= b"));
     assert!(!has_boundary("a\n&& b"));
     assert!(!has_boundary("a\n|| b"));
-    assert!(!has_boundary("a\n.b()"));
 
     // A lone `=`, `&`, `|`, or `!` is not a binary operator: fresh statement.
     assert!(has_boundary("a\n= b"));
     assert!(has_boundary("a\n& b"));
     assert!(has_boundary("a\n| b"));
     assert!(has_boundary("a\n!b"));
+    // Nor is `.`, until member access exists.
+    assert!(has_boundary("a\n.b()"));
 }
 
 #[test]
@@ -180,7 +181,9 @@ fn call_arguments_stay_on_the_callee_line() {
 }
 
 #[test]
-fn method_chains_continue() {
+fn leading_dots_do_not_continue_until_member_access_exists() {
+    // The continuation set mirrors the grammar, which has no `.` yet; a
+    // leading `.` joins it with member access, and this test flips then.
     check(
         "let value = base\n    .offset(dx)\n    .scale(2)\nlet other = 1",
         &[
@@ -188,12 +191,12 @@ fn method_chains_continue() {
             r#"Ident "value""#,
             r#"Eq "=""#,
             r#"Ident "base""#,
-            r#"Dot "." newline joint"#,
+            r#"Dot "." newline boundary joint"#,
             r#"Ident "offset" joint"#,
             r#"LParen "(" joint"#,
             r#"Ident "dx" joint"#,
             r#"RParen ")""#,
-            r#"Dot "." newline joint"#,
+            r#"Dot "." newline boundary joint"#,
             r#"Ident "scale" joint"#,
             r#"LParen "(" joint"#,
             r#"IntLiteral "2" joint"#,
@@ -207,9 +210,9 @@ fn method_chains_continue() {
 }
 
 #[test]
-fn chains_may_span_blank_lines_and_comments() {
-    assert!(!has_boundary("a // trailing\n.b"));
-    assert!(!has_boundary("a\n\n.b"));
+fn continuations_may_span_blank_lines_and_comments() {
+    assert!(!has_boundary("a // trailing\n+ b"));
+    assert!(!has_boundary("a\n\n+ b"));
 }
 
 #[test]

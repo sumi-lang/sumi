@@ -16,19 +16,19 @@
 //!
 //! # Building
 //!
-//! Trees come only from [`SyntaxTree::build`], which lends the root as a
-//! [`Marker`]: an open node. Starting a child reborrows the parent marker
-//! for as long as the child is open, so the borrow checker holds the stack
-//! of open nodes. A parent cannot take a token, start a sibling, or
-//! complete while a child is open; the root, only ever lent, cannot
-//! complete at all; and completing a marker is the one way to close its
-//! node. A [`CompletedMarker`] is plain data — holding one borrows nothing —
-//! and is wrapped after the fact from the marker that contained it. What
-//! types cannot express stays a run-time check, raised where the parser
-//! went wrong: a node is preceded only from the node that contained it,
-//! every node covers at least one token, a marker dropped uncompleted
-//! panics where it drops, and `build` rejects a token past the end of
-//! input or tokens left over.
+//! Trees come only from [`Parse::build`], which lends the root as a
+//! [`Marker`]: an open node, and the parser's cursor into the input.
+//! Starting a child reborrows the parent marker for as long as the child is
+//! open, so the borrow checker holds the stack of open nodes. A parent
+//! cannot take a token, start a sibling, or complete while a child is open;
+//! the root, only ever lent, cannot complete at all; and completing a
+//! marker is the one way to close its node. A [`CompletedMarker`] is plain
+//! data — holding one borrows nothing — and is wrapped after the fact from
+//! the marker that contained it. What types cannot express stays a run-time
+//! check, raised where the parser went wrong: a node is preceded only from
+//! the node that contained it, every node covers at least one token, a
+//! marker dropped uncompleted panics where it drops, and `build` rejects a
+//! token past the end of input or tokens left over.
 //!
 //! Internally the build records nodes as they complete, children before
 //! parents, and permutes them into preorder once the root closes. That is
@@ -38,7 +38,8 @@
 //! wraps an already-parsed left operand into a binary expression.
 
 use crate::input::ParserInput;
-use crate::kind::NodeKind;
+use crate::kind::{NodeKind, SyntaxKind};
+use crate::parser::{ParseError, ParseErrorKind};
 
 /// One node: its kind, its subtree extent (self included), and the
 /// half-open range of raw token indices it covers.
@@ -57,44 +58,6 @@ pub struct SyntaxTree {
 }
 
 impl SyntaxTree {
-    /// Build a tree over the significant tokens of `input`, in source
-    /// order: open the root, run `body` inside it, and close it. `body`
-    /// must attach every significant token.
-    pub fn build<'a>(input: &'a ParserInput, body: impl FnOnce(&mut Marker<'_, 'a>)) -> Self {
-        let mut builder = Builder {
-            input,
-            nodes: Vec::new(),
-            position: 0,
-            opened: 1,
-        };
-        body(&mut Marker {
-            builder: &mut builder,
-            first: 0,
-            start: 0,
-            id: 0,
-            parent: 0,
-            // Closed here once `body` returns, never by `complete`.
-            completed: true,
-        });
-        assert_eq!(
-            builder.position,
-            input.len(),
-            "every significant token must be consumed"
-        );
-        // The root closes last, over every token: edge trivia included,
-        // keeping the tree lossless end to end. It alone may be empty, over
-        // an empty file.
-        builder.nodes.push(Node {
-            kind: NodeKind::SourceFile,
-            extent: to_u32(builder.nodes.len() + 1),
-            first_token: 0,
-            end_token: input.raw_len(),
-        });
-        Self {
-            nodes: preorder(builder.nodes),
-        }
-    }
-
     /// The number of nodes: at least one, the root at index 0.
     #[expect(clippy::len_without_is_empty, reason = "a tree always has its root")]
     pub fn len(&self) -> usize {
@@ -130,6 +93,68 @@ impl SyntaxTree {
     }
 }
 
+/// A parsed file: the tree, and the errors met while building it.
+#[derive(Clone, Debug)]
+pub struct Parse {
+    tree: SyntaxTree,
+    errors: Box<[ParseError]>,
+}
+
+impl Parse {
+    /// Build a tree over the significant tokens of `input`, in source
+    /// order: open the root, run `body` inside it, and close it. `body`
+    /// must attach every significant token.
+    pub fn build<'a>(input: &'a ParserInput, body: impl FnOnce(&mut Marker<'_, 'a>)) -> Self {
+        let mut builder = Builder {
+            input,
+            nodes: Vec::new(),
+            position: 0,
+            opened: 1,
+            errors: Vec::new(),
+        };
+        body(&mut Marker {
+            builder: &mut builder,
+            first: 0,
+            start: 0,
+            id: 0,
+            parent: 0,
+            depth: 0,
+            in_parens: false,
+            // Closed here once `body` returns, never by `complete`.
+            completed: true,
+        });
+        assert_eq!(
+            builder.position,
+            input.len(),
+            "every significant token must be consumed"
+        );
+        // The root closes last, over every token: edge trivia included,
+        // keeping the tree lossless end to end. It alone may be empty, over
+        // an empty file.
+        builder.nodes.push(Node {
+            kind: NodeKind::SourceFile,
+            extent: to_u32(builder.nodes.len() + 1),
+            first_token: 0,
+            end_token: input.raw_len(),
+        });
+        Self {
+            tree: SyntaxTree {
+                nodes: preorder(builder.nodes),
+            },
+            errors: builder.errors.into_boxed_slice(),
+        }
+    }
+
+    pub fn tree(&self) -> &SyntaxTree {
+        &self.tree
+    }
+
+    /// The errors in source order, at most one per position.
+    pub fn errors(&self) -> &[ParseError] {
+        &self.errors
+    }
+}
+
 /// A build in progress.
 struct Builder<'a> {
     input: &'a ParserInput,
@@ -139,6 +164,7 @@ struct Builder<'a> {
     position: usize,
     /// Nodes opened so far, numbering the next one; the root is 0.
     opened: u32,
+    errors: Vec<ParseError>,
 }
 
 impl Builder<'_> {
@@ -147,9 +173,19 @@ impl Builder<'_> {
         self.opened += 1;
         id
     }
+
+    /// The raw index of the next significant token, or one past the last
+    /// raw token at end of input.
+    fn raw_position(&self) -> u32 {
+        if self.position < self.input.len() {
+            self.input.token(self.position)
+        } else {
+            self.input.raw_len()
+        }
+    }
 }
 
-/// An open node: the root, lent by [`SyntaxTree::build`], or a child from
+/// An open node: the root, lent by [`Parse::build`], or a child from
 /// [`start`](Self::start) or [`precede`](Self::precede). Tokens attach to
 /// the innermost open node. A child reborrows its parent for as long as it
 /// is open, so the parent is untouchable until the child completes: the
@@ -157,14 +193,19 @@ impl Builder<'_> {
 /// Completing a marker is the only way to close its node; dropping it
 /// instead is a parser bug and panics on the spot.
 ///
+/// Within the crate, the marker is also the parser's view of the input:
+/// lookahead, the stream facts (jointness, newlines, boundaries) at the
+/// cursor, and error recording, so one cursor serves building and reading
+/// alike.
+///
 /// Completing the outer of two open nodes is a borrow error:
 ///
 /// ```compile_fail,E0505
 /// use sumi_lexer::lex;
-/// use sumi_syntax::{NodeKind, ParserInput, SyntaxTree, cook};
+/// use sumi_syntax::{NodeKind, Parse, ParserInput, cook};
 ///
 /// let input = ParserInput::new(&cook("x y", &lex("x y").unwrap()));
-/// SyntaxTree::build(&input, |root| {
+/// Parse::build(&input, |root| {
 ///     let mut outer = root.start();
 ///     outer.token();
 ///     let mut inner = outer.start();
@@ -178,10 +219,10 @@ impl Builder<'_> {
 ///
 /// ```compile_fail,E0507
 /// use sumi_lexer::lex;
-/// use sumi_syntax::{NodeKind, ParserInput, SyntaxTree, cook};
+/// use sumi_syntax::{NodeKind, Parse, ParserInput, cook};
 ///
 /// let input = ParserInput::new(&cook("x", &lex("x").unwrap()));
-/// SyntaxTree::build(&input, |root| {
+/// Parse::build(&input, |root| {
 ///     root.token();
 ///     root.complete(NodeKind::SourceFile); // cannot move out of `*root`
 /// });
@@ -197,6 +238,10 @@ pub struct Marker<'p, 'a> {
     /// Identity, so a completed node can name the node that contained it.
     id: u32,
     parent: u32,
+    /// How many open nodes enclose this one; the root is at 0.
+    depth: u32,
+    /// Whether an open parenthesized construct encloses this node.
+    in_parens: bool,
     completed: bool,
 }
 
@@ -222,6 +267,8 @@ impl<'a> Marker<'_, 'a> {
             start,
             id,
             parent: self.id,
+            depth: self.depth + 1,
+            in_parens: self.in_parens,
             completed: false,
         }
     }
@@ -241,6 +288,8 @@ impl<'a> Marker<'_, 'a> {
             start: completed.start,
             id,
             parent: self.id,
+            depth: self.depth + 1,
+            in_parens: self.in_parens,
             completed: false,
         }
     }
@@ -264,6 +313,117 @@ impl<'a> Marker<'_, 'a> {
             start: self.start,
             parent: self.parent,
         }
+    }
+
+    /// How many open nodes enclose this one: the parser's nesting depth.
+    pub(crate) fn depth(&self) -> u32 {
+        self.depth
+    }
+
+    /// The kind of the next significant token, or `None` at end of input.
+    pub(crate) fn current(&self) -> Option<SyntaxKind> {
+        self.nth(0)
+    }
+
+    /// The kind of the significant token `n` past the next one.
+    pub(crate) fn nth(&self, n: usize) -> Option<SyntaxKind> {
+        let index = self.builder.position.checked_add(n)?;
+        self.builder.input.get(index)
+    }
+
+    pub(crate) fn at(&self, kind: SyntaxKind) -> bool {
+        self.current() == Some(kind)
+    }
+
+    /// Whether the next two tokens are `first` glued to `second`: a
+    /// compound operator such as `==` or `->`.
+    pub(crate) fn at_glued(&self, first: SyntaxKind, second: SyntaxKind) -> bool {
+        self.at(first) && self.joint() && self.nth(1) == Some(second)
+    }
+
+    /// Whether the next token is glued to the one after it.
+    pub(crate) fn joint(&self) -> bool {
+        self.nth_joint(0)
+    }
+
+    /// Whether the significant token `n` past the next one is glued to the
+    /// one after it.
+    pub(crate) fn nth_joint(&self, n: usize) -> bool {
+        self.builder.position.checked_add(n).is_some_and(|index| {
+            index < self.builder.input.len() && self.builder.input.is_joint(index)
+        })
+    }
+
+    /// Whether the next token is glued to the previous one.
+    pub(crate) fn joint_before(&self) -> bool {
+        self.builder.position > 0 && self.builder.input.is_joint(self.builder.position - 1)
+    }
+
+    /// Whether a line break precedes the next token.
+    pub(crate) fn newline(&self) -> bool {
+        self.nth_newline(0)
+    }
+
+    /// Whether a line break precedes the significant token `n` past the
+    /// next one.
+    pub(crate) fn nth_newline(&self, n: usize) -> bool {
+        self.builder.position.checked_add(n).is_some_and(|index| {
+            index < self.builder.input.len() && self.builder.input.newline_before(index)
+        })
+    }
+
+    /// Whether a statement boundary precedes the next token.
+    pub(crate) fn boundary(&self) -> bool {
+        let index = self.builder.position;
+        index < self.builder.input.len() && self.builder.input.boundary_before(index)
+    }
+
+    /// Whether an open parenthesized construct encloses this node, so that a
+    /// `)` met inside belongs to it rather than being garbage to skip.
+    pub(crate) fn in_parens(&self) -> bool {
+        self.in_parens
+    }
+
+    /// Mark this node's remaining contents as inside parentheses: children
+    /// opened from now on inherit it.
+    pub(crate) fn enter_parens(&mut self) {
+        self.in_parens = true;
+    }
+
+    /// Attach the next token if it is `kind` and no statement boundary
+    /// precedes it; otherwise record that `kind` was expected and leave the
+    /// token where it is.
+    pub(crate) fn expect(&mut self, kind: SyntaxKind) -> bool {
+        if self.at(kind) && !self.boundary() {
+            self.token();
+            true
+        } else {
+            self.error(ParseErrorKind::Expected(kind));
+            false
+        }
+    }
+
+    /// Record `kind` at the next token, or at end of input. Nothing is
+    /// recorded at a token with no meaning — a [`SyntaxKind::Error`], which
+    /// the lexer or cook reported — since a structural complaint about it
+    /// adds nothing; a malformed literal keeps its kind and is ordinary
+    /// here, its two problems being independent. Nor is anything recorded
+    /// at a position that has an error already: one diagnostic per position
+    /// keeps a single mistake from cascading.
+    pub(crate) fn error(&mut self, kind: ParseErrorKind) {
+        if self.at(SyntaxKind::Error) {
+            return;
+        }
+        let token = self.builder.raw_position();
+        if self
+            .builder
+            .errors
+            .last()
+            .is_some_and(|last| last.token == token)
+        {
+            return;
+        }
+        self.builder.errors.push(ParseError { token, kind });
     }
 }
 

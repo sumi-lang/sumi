@@ -19,6 +19,8 @@ pub enum SyntaxKind {
 
     /// An identifier that is not a keyword.
     Ident,
+    /// The identifier `_` on its own, reserved for discards.
+    Underscore,
 
     // Reserved keywords. The v0 set covers functions, bindings, branching,
     // and boolean literals only; the table is
@@ -133,6 +135,7 @@ pub enum NodeKind {
     BinaryExpr,
     ParenExpr,
     CallExpr,
+    ArgList,
     IfExpr,
     /// Covers tokens the parser could not parse.
     Error,

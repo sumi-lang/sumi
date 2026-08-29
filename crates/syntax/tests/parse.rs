@@ -1,0 +1,934 @@
+mod common;
+
+use sumi_lexer::lex;
+use sumi_syntax::{ParserInput, cook, parse};
+
+/// Parse `source`; assert the tree dump and the errors, each rendered as
+/// `Kind at byte`.
+#[track_caller]
+fn check(source: &str, tree: &[&str], errors: &[&str]) {
+    let lexed = lex(source).expect("test sources fit in u32");
+    let cooked = cook(source, &lexed);
+    let parse = parse(&ParserInput::new(&cooked));
+    assert_eq!(
+        common::dump(parse.tree(), &lexed, source),
+        tree,
+        "tree for {source:?}"
+    );
+    let actual: Vec<String> = parse
+        .errors()
+        .iter()
+        .map(|error| {
+            format!(
+                "{:?} at {}",
+                error.kind,
+                common::start_byte(&lexed, error.token)
+            )
+        })
+        .collect();
+    assert_eq!(actual, errors, "errors for {source:?}");
+}
+
+#[test]
+fn empty_file() {
+    check("", &[r#"SourceFile 0..0 """#], &[]);
+    check("// nothing\n", &[r#"SourceFile 0..11 "// nothing\n""#], &[]);
+}
+
+#[test]
+fn function_items() {
+    check(
+        "fn main() {}",
+        &[
+            "SourceFile 0..12",
+            "  FnItem 0..12",
+            r#"    ParamList 7..9 "()""#,
+            r#"    Block 10..12 "{}""#,
+        ],
+        &[],
+    );
+    check(
+        "fn add(a: int, b: int) -> int { a + b }",
+        &[
+            "SourceFile 0..39",
+            "  FnItem 0..39",
+            "    ParamList 6..22",
+            r#"      Param 7..13 "a: int""#,
+            r#"      Param 15..21 "b: int""#,
+            "    Block 30..39",
+            "      BinaryExpr 32..37",
+            r#"        NameExpr 32..33 "a""#,
+            r#"        NameExpr 36..37 "b""#,
+        ],
+        &[],
+    );
+    check(
+        "fn f(a: int,) {}",
+        &[
+            "SourceFile 0..16",
+            "  FnItem 0..16",
+            "    ParamList 4..13",
+            r#"      Param 5..11 "a: int""#,
+            r#"    Block 14..16 "{}""#,
+        ],
+        &[],
+    );
+}
+
+#[test]
+fn let_statements() {
+    check(
+        "fn f() {\n  let x = 1\n  let mut y: int = x\n}",
+        &[
+            "SourceFile 0..43",
+            "  FnItem 0..43",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..43",
+            "      LetStmt 11..20",
+            r#"        LiteralExpr 19..20 "1""#,
+            "      LetStmt 23..41",
+            r#"        NameExpr 40..41 "x""#,
+        ],
+        &[],
+    );
+}
+
+#[test]
+fn discard_and_return_statements() {
+    check(
+        "fn f() {\n  _ = g(1)\n  return\n}",
+        &[
+            "SourceFile 0..30",
+            "  FnItem 0..30",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..30",
+            "      DiscardStmt 11..19",
+            "        CallExpr 15..19",
+            r#"          NameExpr 15..16 "g""#,
+            "          ArgList 16..19",
+            r#"            LiteralExpr 17..18 "1""#,
+            r#"      ReturnStmt 22..28 "return""#,
+        ],
+        &[],
+    );
+}
+
+#[test]
+fn return_takes_a_value_only_on_its_own_line() {
+    check(
+        "fn f() {\n  return x\n  return\n  x\n}",
+        &[
+            "SourceFile 0..34",
+            "  FnItem 0..34",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..34",
+            "      ReturnStmt 11..19",
+            r#"        NameExpr 18..19 "x""#,
+            r#"      ReturnStmt 22..28 "return""#,
+            r#"      NameExpr 31..32 "x""#,
+        ],
+        &[],
+    );
+}
+
+#[test]
+fn precedence_climbs() {
+    check(
+        "fn f() { a || b && c == d + e * -f(g) }",
+        &[
+            "SourceFile 0..39",
+            "  FnItem 0..39",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..39",
+            "      BinaryExpr 9..37",
+            r#"        NameExpr 9..10 "a""#,
+            "        BinaryExpr 14..37",
+            r#"          NameExpr 14..15 "b""#,
+            "          BinaryExpr 19..37",
+            r#"            NameExpr 19..20 "c""#,
+            "            BinaryExpr 24..37",
+            r#"              NameExpr 24..25 "d""#,
+            "              BinaryExpr 28..37",
+            r#"                NameExpr 28..29 "e""#,
+            "                PrefixExpr 32..37",
+            "                  CallExpr 33..37",
+            r#"                    NameExpr 33..34 "f""#,
+            "                    ArgList 34..37",
+            r#"                      NameExpr 35..36 "g""#,
+        ],
+        &[],
+    );
+}
+
+#[test]
+fn binary_operators_associate_left() {
+    check(
+        "fn f() { a - b - c }",
+        &[
+            "SourceFile 0..20",
+            "  FnItem 0..20",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..20",
+            "      BinaryExpr 9..18",
+            "        BinaryExpr 9..14",
+            r#"          NameExpr 9..10 "a""#,
+            r#"          NameExpr 13..14 "b""#,
+            r#"        NameExpr 17..18 "c""#,
+        ],
+        &[],
+    );
+}
+
+#[test]
+fn prefix_binds_tighter_than_binary_and_looser_than_call() {
+    check(
+        "fn f() { -a * b }",
+        &[
+            "SourceFile 0..17",
+            "  FnItem 0..17",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..17",
+            "      BinaryExpr 9..15",
+            "        PrefixExpr 9..11",
+            r#"          NameExpr 10..11 "a""#,
+            r#"        NameExpr 14..15 "b""#,
+        ],
+        &[],
+    );
+}
+
+#[test]
+fn if_expressions_chain() {
+    check(
+        "fn f() { if a { 1 } else if b { 2 } else { 3 } }",
+        &[
+            "SourceFile 0..48",
+            "  FnItem 0..48",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..48",
+            "      IfExpr 9..46",
+            r#"        NameExpr 12..13 "a""#,
+            "        Block 14..19",
+            r#"          LiteralExpr 16..17 "1""#,
+            "        IfExpr 25..46",
+            r#"          NameExpr 28..29 "b""#,
+            "          Block 30..35",
+            r#"            LiteralExpr 32..33 "2""#,
+            "          Block 41..46",
+            r#"            LiteralExpr 43..44 "3""#,
+        ],
+        &[],
+    );
+    // `else` continues the line before it.
+    check(
+        "fn f() {\n  if a { 1 }\n  else { 2 }\n}",
+        &[
+            "SourceFile 0..36",
+            "  FnItem 0..36",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..36",
+            "      IfExpr 11..34",
+            r#"        NameExpr 14..15 "a""#,
+            "        Block 16..21",
+            r#"          LiteralExpr 18..19 "1""#,
+            "        Block 29..34",
+            r#"          LiteralExpr 31..32 "2""#,
+        ],
+        &[],
+    );
+}
+
+#[test]
+fn blocks_and_parentheses_are_expressions() {
+    check(
+        "fn f() { let x = { (1) } }",
+        &[
+            "SourceFile 0..26",
+            "  FnItem 0..26",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..26",
+            "      LetStmt 9..24",
+            "        Block 17..24",
+            "          ParenExpr 19..22",
+            r#"            LiteralExpr 20..21 "1""#,
+        ],
+        &[],
+    );
+}
+
+#[test]
+fn calls_take_argument_lists() {
+    check(
+        "fn f() { g()(a, b,) }",
+        &[
+            "SourceFile 0..21",
+            "  FnItem 0..21",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..21",
+            "      CallExpr 9..19",
+            "        CallExpr 9..12",
+            r#"          NameExpr 9..10 "g""#,
+            r#"          ArgList 10..12 "()""#,
+            "        ArgList 12..19",
+            r#"          NameExpr 13..14 "a""#,
+            r#"          NameExpr 16..17 "b""#,
+        ],
+        &[],
+    );
+    // Newlines inside parentheses never end a statement.
+    check(
+        "fn f() {\n  g(\n    a,\n    b\n  )\n}",
+        &[
+            "SourceFile 0..32",
+            "  FnItem 0..32",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..32",
+            "      CallExpr 11..30",
+            r#"        NameExpr 11..12 "g""#,
+            "        ArgList 12..30",
+            r#"          NameExpr 18..19 "a""#,
+            r#"          NameExpr 25..26 "b""#,
+        ],
+        &[],
+    );
+}
+
+#[test]
+fn leading_operators_continue_the_line_before() {
+    check(
+        "fn f() {\n  a\n  + b\n  && c\n}",
+        &[
+            "SourceFile 0..27",
+            "  FnItem 0..27",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..27",
+            "      BinaryExpr 11..25",
+            "        BinaryExpr 11..18",
+            r#"          NameExpr 11..12 "a""#,
+            r#"          NameExpr 17..18 "b""#,
+            r#"        NameExpr 24..25 "c""#,
+        ],
+        &[],
+    );
+}
+
+#[test]
+fn a_glued_minus_starts_a_statement_and_a_spaced_one_continues() {
+    check(
+        "fn f() {\n  a\n  -b\n  - c\n}",
+        &[
+            "SourceFile 0..25",
+            "  FnItem 0..25",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..25",
+            r#"      NameExpr 11..12 "a""#,
+            "      BinaryExpr 15..23",
+            "        PrefixExpr 15..17",
+            r#"          NameExpr 16..17 "b""#,
+            r#"        NameExpr 22..23 "c""#,
+        ],
+        &[],
+    );
+}
+
+#[test]
+fn unspaced_binary_operators_are_errors_recovered_as_binary() {
+    check(
+        "fn f() { a-b }",
+        &[
+            "SourceFile 0..14",
+            "  FnItem 0..14",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..14",
+            "      BinaryExpr 9..12",
+            r#"        NameExpr 9..10 "a""#,
+            r#"        NameExpr 11..12 "b""#,
+        ],
+        &["UnspacedBinaryOperator at 10"],
+    );
+    check(
+        "fn f() { a +b }",
+        &[
+            "SourceFile 0..15",
+            "  FnItem 0..15",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..15",
+            "      BinaryExpr 9..13",
+            r#"        NameExpr 9..10 "a""#,
+            r#"        NameExpr 12..13 "b""#,
+        ],
+        &["UnspacedBinaryOperator at 11"],
+    );
+}
+
+#[test]
+fn a_trailing_operator_is_an_error_recovered_as_binary() {
+    check(
+        "fn f() {\n  a +\n  b\n}",
+        &[
+            "SourceFile 0..20",
+            "  FnItem 0..20",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..20",
+            "      BinaryExpr 11..18",
+            r#"        NameExpr 11..12 "a""#,
+            r#"        NameExpr 17..18 "b""#,
+        ],
+        &["TrailingOperator at 13"],
+    );
+}
+
+#[test]
+fn a_spaced_prefix_operator_is_an_error_recovered_as_prefix() {
+    check(
+        "fn f() { - a }",
+        &[
+            "SourceFile 0..14",
+            "  FnItem 0..14",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..14",
+            "      PrefixExpr 9..12",
+            r#"        NameExpr 11..12 "a""#,
+        ],
+        &["SpacedPrefixOperator at 9"],
+    );
+}
+
+#[test]
+fn a_prefix_without_an_operand_reports_only_the_missing_operand() {
+    check(
+        "fn f() { - }",
+        &[
+            "SourceFile 0..12",
+            "  FnItem 0..12",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..12",
+            r#"      PrefixExpr 9..10 "-""#,
+        ],
+        &["ExpectedExpression at 11"],
+    );
+}
+
+#[test]
+fn comparisons_do_not_chain() {
+    check(
+        "fn f() { a < b < c }",
+        &[
+            "SourceFile 0..20",
+            "  FnItem 0..20",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..20",
+            "      Error 9..18",
+            "        BinaryExpr 9..14",
+            r#"          NameExpr 9..10 "a""#,
+            r#"          NameExpr 13..14 "b""#,
+            r#"        NameExpr 17..18 "c""#,
+        ],
+        &["ChainedComparison at 15"],
+    );
+    check(
+        "fn f() { (a < b) < c }",
+        &[
+            "SourceFile 0..22",
+            "  FnItem 0..22",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..22",
+            "      BinaryExpr 9..20",
+            "        ParenExpr 9..16",
+            "          BinaryExpr 10..15",
+            r#"            NameExpr 10..11 "a""#,
+            r#"            NameExpr 14..15 "b""#,
+            r#"        NameExpr 19..20 "c""#,
+        ],
+        &[],
+    );
+}
+
+#[test]
+fn missing_pieces_are_absent() {
+    check(
+        "fn f() {\n  let x =\n}",
+        &[
+            "SourceFile 0..20",
+            "  FnItem 0..20",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..20",
+            r#"      LetStmt 11..18 "let x =""#,
+        ],
+        &["ExpectedExpression at 19"],
+    );
+    check(
+        "fn (a: int) {}",
+        &[
+            "SourceFile 0..14",
+            "  FnItem 0..14",
+            "    ParamList 3..11",
+            r#"      Param 4..10 "a: int""#,
+            r#"    Block 12..14 "{}""#,
+        ],
+        &["ExpectedName at 3"],
+    );
+    check(
+        "fn f(a) {}",
+        &[
+            "SourceFile 0..10",
+            "  FnItem 0..10",
+            "    ParamList 4..7",
+            r#"      Param 5..6 "a""#,
+            r#"    Block 8..10 "{}""#,
+        ],
+        &["Expected(Colon) at 6"],
+    );
+    check(
+        "fn f(a: int",
+        &[
+            "SourceFile 0..11",
+            "  FnItem 0..11",
+            "    ParamList 4..11",
+            r#"      Param 5..11 "a: int""#,
+        ],
+        &["Expected(RParen) at 11"],
+    );
+}
+
+#[test]
+fn two_statements_on_one_line_are_an_error() {
+    check(
+        "fn f() { a b }",
+        &[
+            "SourceFile 0..14",
+            "  FnItem 0..14",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..14",
+            r#"      NameExpr 9..10 "a""#,
+            r#"      NameExpr 11..12 "b""#,
+        ],
+        &["ExpectedBoundary at 11"],
+    );
+}
+
+#[test]
+fn garbage_at_the_top_level_resynchronizes_at_fn() {
+    check(
+        "x = 1\nfn f() {}",
+        &[
+            "SourceFile 0..15",
+            r#"  Error 0..5 "x = 1""#,
+            "  FnItem 6..15",
+            r#"    ParamList 10..12 "()""#,
+            r#"    Block 13..15 "{}""#,
+        ],
+        &["ExpectedItem at 0"],
+    );
+}
+
+#[test]
+fn a_nested_fn_is_skipped_whole() {
+    check(
+        "fn f() {\n  fn g() {}\n}",
+        &[
+            "SourceFile 0..22",
+            "  FnItem 0..22",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..22",
+            r#"      Error 11..20 "fn g() {}""#,
+        ],
+        &["ExpectedStatement at 11"],
+    );
+}
+
+#[test]
+fn tokens_reported_earlier_are_absorbed_silently() {
+    check(
+        "fn f() {\n  a ;\n  b\n}",
+        &[
+            "SourceFile 0..20",
+            "  FnItem 0..20",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..20",
+            r#"      NameExpr 11..12 "a""#,
+            r#"      Error 13..14 ";""#,
+            r#"      NameExpr 17..18 "b""#,
+        ],
+        &[],
+    );
+}
+
+#[test]
+fn blocks_open_on_the_line_of_their_owner() {
+    check(
+        "fn f()\n{\n}",
+        &[
+            "SourceFile 0..10",
+            "  FnItem 0..10",
+            r#"    ParamList 4..6 "()""#,
+            r#"    Block 7..10 "{\n}""#,
+        ],
+        &["BlockOnNewLine at 7"],
+    );
+    check(
+        "fn f() { if a\n{ } }",
+        &[
+            "SourceFile 0..19",
+            "  FnItem 0..19",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..19",
+            "      IfExpr 9..17",
+            r#"        NameExpr 12..13 "a""#,
+            r#"        Block 14..17 "{ }""#,
+        ],
+        &["BlockOnNewLine at 14"],
+    );
+}
+
+#[test]
+fn unclosed_delimiters() {
+    check(
+        "fn f() { (a }",
+        &[
+            "SourceFile 0..13",
+            "  FnItem 0..13",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..13",
+            "      ParenExpr 9..11",
+            r#"        NameExpr 10..11 "a""#,
+        ],
+        &["Expected(RParen) at 12"],
+    );
+    check(
+        "fn f() { g(a",
+        &[
+            "SourceFile 0..12",
+            "  FnItem 0..12",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..12",
+            "      CallExpr 9..12",
+            r#"        NameExpr 9..10 "g""#,
+            "        ArgList 10..12",
+            r#"          NameExpr 11..12 "a""#,
+        ],
+        &["Expected(RParen) at 12"],
+    );
+}
+
+#[test]
+fn malformed_literals_are_structurally_ordinary() {
+    // `1e` carries a cook error; misplacing it is a second, independent
+    // problem, so the parser still reports it.
+    check(
+        "1e",
+        &["SourceFile 0..2", r#"  Error 0..2 "1e""#],
+        &["ExpectedItem at 0"],
+    );
+}
+
+#[test]
+fn list_recovery_leaves_enclosing_syntax_alone() {
+    // The block's `}` is not the argument list's to take.
+    check(
+        "fn f() { g( }",
+        &[
+            "SourceFile 0..13",
+            "  FnItem 0..13",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..13",
+            "      CallExpr 9..11",
+            r#"        NameExpr 9..10 "g""#,
+            r#"        ArgList 10..11 "(""#,
+        ],
+        &["Expected(RParen) at 12"],
+    );
+    // Nor is the next item's body the parameter list's, or the function's.
+    check(
+        "fn f(\nfn g() {}",
+        &[
+            "SourceFile 0..15",
+            "  FnItem 0..5",
+            r#"    ParamList 4..5 "(""#,
+            "  FnItem 6..15",
+            r#"    ParamList 10..12 "()""#,
+            r#"    Block 13..15 "{}""#,
+        ],
+        &["Expected(RParen) at 6"],
+    );
+}
+
+#[test]
+fn recovery_matches_brackets_inside_the_skipped_run() {
+    check(
+        "fn f() { g(:(x), y) }",
+        &[
+            "SourceFile 0..21",
+            "  FnItem 0..21",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..21",
+            "      CallExpr 9..19",
+            r#"        NameExpr 9..10 "g""#,
+            "        ArgList 10..19",
+            r#"          Error 11..15 ":(x)""#,
+            r#"          NameExpr 17..18 "y""#,
+        ],
+        &["ExpectedExpression at 11"],
+    );
+}
+
+#[test]
+fn recovery_never_takes_an_enclosing_closer() {
+    // The stray `{` must not let the run swallow the argument list's `)`.
+    check(
+        "fn f() { g(:{) }",
+        &[
+            "SourceFile 0..16",
+            "  FnItem 0..16",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..16",
+            "      CallExpr 9..14",
+            r#"        NameExpr 9..10 "g""#,
+            "        ArgList 10..14",
+            r#"          Error 11..13 ":{""#,
+        ],
+        &["ExpectedExpression at 11"],
+    );
+}
+
+/// Parse `source` and return its error kinds, asserting the tree is well
+/// formed.
+fn error_kinds(source: &str) -> Vec<sumi_syntax::ParseErrorKind> {
+    let lexed = lex(source).expect("test sources fit in u32");
+    let parse = parse(&ParserInput::new(&cook(source, &lexed)));
+    let _ = common::dump(parse.tree(), &lexed, source);
+    parse.errors().iter().map(|error| error.kind).collect()
+}
+
+#[test]
+fn a_block_yields_to_the_paren_that_encloses_it() {
+    // The `)` closes the `(` around the block: the block is unclosed, and
+    // the `)` is not its to skip.
+    check(
+        "fn f() { ({ ) }",
+        &[
+            "SourceFile 0..15",
+            "  FnItem 0..15",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..15",
+            "      ParenExpr 9..13",
+            r#"        Block 10..11 "{""#,
+        ],
+        &["Expected(RBrace) at 12"],
+    );
+    // A `)` with nothing to close is garbage, skipped where it stands.
+    check(
+        "fn f() { g(a)) }",
+        &[
+            "SourceFile 0..16",
+            "  FnItem 0..16",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..16",
+            "      CallExpr 9..13",
+            r#"        NameExpr 9..10 "g""#,
+            "        ArgList 10..13",
+            r#"          NameExpr 11..12 "a""#,
+            r#"      Error 13..14 ")""#,
+        ],
+        &["ExpectedBoundary at 13"],
+    );
+}
+
+#[test]
+fn a_block_does_not_yield_to_a_paren_opened_inside_it() {
+    // `(a` recovered before `b`; the later `)` is garbage in the block, not
+    // a closer the block must yield to.
+    check(
+        "fn f() { (a b) }",
+        &[
+            "SourceFile 0..16",
+            "  FnItem 0..16",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..16",
+            "      ParenExpr 9..11",
+            r#"        NameExpr 10..11 "a""#,
+            r#"      NameExpr 12..13 "b""#,
+            r#"      Error 13..14 ")""#,
+        ],
+        &["Expected(RParen) at 12", "ExpectedBoundary at 13"],
+    );
+    // The same with a block in between: the parser's own state, not the
+    // token stream's bracket matching, decides — so neither block yields.
+    check(
+        "fn f() { (a { b) } }",
+        &[
+            "SourceFile 0..20",
+            "  FnItem 0..20",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..20",
+            "      ParenExpr 9..11",
+            r#"        NameExpr 10..11 "a""#,
+            "      Block 12..18",
+            r#"        NameExpr 14..15 "b""#,
+            r#"        Error 15..16 ")""#,
+        ],
+        &["Expected(RParen) at 12", "ExpectedBoundary at 15"],
+    );
+}
+
+#[test]
+fn declarations_end_at_line_breaks() {
+    // `=`, `:`, and `->` never continue a line, so a declaration cannot
+    // pick them up from the next one.
+    check(
+        "fn f() {\n  let x\n  = 1\n}",
+        &[
+            "SourceFile 0..24",
+            "  FnItem 0..24",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..24",
+            r#"      LetStmt 11..16 "let x""#,
+            r#"      Error 19..22 "= 1""#,
+        ],
+        &["Expected(Eq) at 19"],
+    );
+    check(
+        "fn f() {\n  let x\n  : int = 1\n}",
+        &[
+            "SourceFile 0..30",
+            "  FnItem 0..30",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..30",
+            r#"      LetStmt 11..16 "let x""#,
+            r#"      Error 19..28 ": int = 1""#,
+        ],
+        &["Expected(Eq) at 19"],
+    );
+    check(
+        "fn f() {\n  _\n  = v\n}",
+        &[
+            "SourceFile 0..20",
+            "  FnItem 0..20",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..20",
+            r#"      DiscardStmt 11..12 "_""#,
+            r#"      Error 15..18 "= v""#,
+        ],
+        &["Expected(Eq) at 15"],
+    );
+    check(
+        "fn f()\n-> int {}",
+        &[
+            "SourceFile 0..16",
+            "  FnItem 0..6",
+            r#"    ParamList 4..6 "()""#,
+            r#"  Error 7..16 "-> int {}""#,
+        ],
+        &["Expected(LBrace) at 7"],
+    );
+    check(
+        "fn f\n() {}",
+        &[
+            "SourceFile 0..10",
+            r#"  FnItem 0..4 "fn f""#,
+            r#"  Error 5..10 "() {}""#,
+        ],
+        &["Expected(LParen) at 5"],
+    );
+}
+
+#[test]
+fn arguments_stay_on_the_callee_line_even_inside_parens() {
+    // Boundaries are suspended inside `(`, so the line break alone must
+    // keep `()` from attaching to `g`.
+    check(
+        "fn f() { (g\n()) }",
+        &[
+            "SourceFile 0..17",
+            "  FnItem 0..17",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..17",
+            "      ParenExpr 9..11",
+            r#"        NameExpr 10..11 "g""#,
+            r#"      ParenExpr 12..14 "()""#,
+            r#"      Error 14..15 ")""#,
+        ],
+        &[
+            "Expected(RParen) at 12",
+            "ExpectedExpression at 13",
+            "ExpectedBoundary at 14",
+        ],
+    );
+}
+
+#[test]
+fn a_paren_takes_its_closer_across_a_boundary_a_block_restored() {
+    // The block inside the parens restores boundaries, so one precedes the
+    // `)`; the block yields to it, and the paren still owns it.
+    check(
+        "fn f() { ({ a\n) }",
+        &[
+            "SourceFile 0..17",
+            "  FnItem 0..17",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..17",
+            "      ParenExpr 9..15",
+            "        Block 10..13",
+            r#"          NameExpr 12..13 "a""#,
+        ],
+        &["Expected(RBrace) at 14"],
+    );
+}
+
+#[test]
+fn recovery_over_many_brackets_is_linear() {
+    use sumi_syntax::ParseErrorKind::ExpectedItem;
+    let n = 50_000;
+    let source = format!(":{}{}{}", "{".repeat(n), "(".repeat(n), ")".repeat(n));
+    assert_eq!(error_kinds(&source), [ExpectedItem]);
+}
+
+#[test]
+fn nesting_is_bounded() {
+    use sumi_syntax::ParseErrorKind::{Expected, ExpectedExpression, NestingTooDeep};
+    use sumi_syntax::{MAX_DEPTH, SyntaxKind};
+    let deep = |n: usize| format!("fn f() {{ {}x{} }}", "(".repeat(n), ")".repeat(n));
+    assert_eq!(error_kinds(&deep(MAX_DEPTH as usize / 2)), []);
+    // At the limit with nothing left, or with a closer: no recovery run to
+    // take a token that is not an expression's.
+    let opens = |n: u32| format!("fn f() {{ {}", "(".repeat(n as usize));
+    assert_eq!(error_kinds(&opens(MAX_DEPTH - 2)), [ExpectedExpression]);
+    // The `)` closes the innermost paren; the rest stay open to the end.
+    assert_eq!(
+        error_kinds(&format!("{})", opens(MAX_DEPTH - 2))),
+        [ExpectedExpression, Expected(SyntaxKind::RParen)]
+    );
+    assert_eq!(
+        error_kinds(&opens(MAX_DEPTH + 40)),
+        [NestingTooDeep, Expected(SyntaxKind::RParen)]
+    );
+    // Far past the limit: one error, no crash, and the file still closes.
+    assert_eq!(error_kinds(&deep(100_000)), [NestingTooDeep]);
+    assert_eq!(
+        error_kinds(&format!("fn f() {{ {}x }}", "!".repeat(100_000))),
+        [NestingTooDeep]
+    );
+    assert_eq!(
+        error_kinds(&format!(
+            "fn f() {{ {}if a {{}} }}",
+            "if a {} else ".repeat(100_000)
+        )),
+        [NestingTooDeep]
+    );
+}
+
+#[test]
+fn underscore_is_not_a_name() {
+    check(
+        "fn f() { let _ = 1 }",
+        &[
+            "SourceFile 0..20",
+            "  FnItem 0..20",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..20",
+            "      LetStmt 9..18",
+            r#"        LiteralExpr 17..18 "1""#,
+        ],
+        &["ExpectedName at 13"],
+    );
+}
