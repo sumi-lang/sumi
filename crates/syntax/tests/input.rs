@@ -327,12 +327,126 @@ fn brackets_pair_and_closers_synchronize() {
             r#"RParen ")""#,
         ],
     );
-    // A closer with no match discards everything down to the bottom.
+    // A closer with no match is an orphan. A `}` with no `{` open abandons
+    // the `(`s left open; a `)` with no `(` open discards nothing, so the
+    // `{` it sits inside still pairs.
     check(
         "(a}",
         &[r#"LParen "(" joint"#, r#"Ident "a" joint"#, r#"RBrace "}""#],
     );
     check(")(", &[r#"RParen ")" joint"#, r#"LParen "(""#]);
+    check(
+        "{a)b}",
+        &[
+            r#"LBrace "{" joint partner 4"#,
+            r#"Ident "a" joint"#,
+            r#"RParen ")" joint"#,
+            r#"Ident "b" joint"#,
+            r#"RBrace "}" partner 0"#,
+        ],
+    );
+}
+
+#[test]
+fn a_body_closes_at_the_first_of_the_last_run_of_braces() {
+    // The `{` at the bottom of the stack is an item's body. A `}` reaching
+    // it with statements and a later `}` after it is a stray inside the
+    // body, so the body pairs with the later one.
+    check(
+        "{a}b}",
+        &[
+            r#"LBrace "{" joint partner 4"#,
+            r#"Ident "a" joint"#,
+            r#"RBrace "}" joint"#,
+            r#"Ident "b" joint"#,
+            r#"RBrace "}" partner 0"#,
+        ],
+    );
+    // One with nothing but closers after it is the body's end, and those
+    // closers are the strays.
+    check(
+        "{a}}",
+        &[
+            r#"LBrace "{" joint partner 2"#,
+            r#"Ident "a" joint"#,
+            r#"RBrace "}" joint partner 0"#,
+            r#"RBrace "}""#,
+        ],
+    );
+    check(
+        "{a})}",
+        &[
+            r#"LBrace "{" joint partner 2"#,
+            r#"Ident "a" joint"#,
+            r#"RBrace "}" joint partner 0"#,
+            r#"RParen ")" joint"#,
+            r#"RBrace "}""#,
+        ],
+    );
+    // The only `}` to reach the body is its end whatever follows: garbage
+    // between items is likelier than a stray with the real closer missing,
+    // and costs one error where the other reading costs two.
+    check(
+        "{a}b",
+        &[
+            r#"LBrace "{" joint partner 2"#,
+            r#"Ident "a" joint"#,
+            r#"RBrace "}" joint partner 0"#,
+            r#"Ident "b""#,
+        ],
+    );
+    check(
+        "{a}(b)",
+        &[
+            r#"LBrace "{" joint partner 2"#,
+            r#"Ident "a" joint"#,
+            r#"RBrace "}" joint partner 0"#,
+            r#"LParen "(" joint partner 5"#,
+            r#"Ident "b" joint"#,
+            r#"RParen ")" partner 3"#,
+        ],
+    );
+    check(
+        "{a}b fn g(){}",
+        &[
+            r#"LBrace "{" joint partner 2"#,
+            r#"Ident "a" joint"#,
+            r#"RBrace "}" joint partner 0"#,
+            r#"Ident "b""#,
+            r#"FnKw "fn""#,
+            r#"Ident "g" joint"#,
+            r#"LParen "(" joint partner 7"#,
+            r#"RParen ")" joint partner 6"#,
+            r#"LBrace "{" joint partner 9"#,
+            r#"RBrace "}" partner 8"#,
+        ],
+    );
+    // A `fn` settles it: the pairing never reaches into the next item.
+    check(
+        "{a} fn {b}",
+        &[
+            r#"LBrace "{" joint partner 2"#,
+            r#"Ident "a" joint"#,
+            r#"RBrace "}" partner 0"#,
+            r#"FnKw "fn""#,
+            r#"LBrace "{" joint partner 6"#,
+            r#"Ident "b" joint"#,
+            r#"RBrace "}" partner 4"#,
+        ],
+    );
+    // Inner braces pair as they come; only the bottom one waits.
+    check(
+        "{{a}}b}",
+        &[
+            r#"LBrace "{" joint partner 6"#,
+            r#"LBrace "{" joint partner 3"#,
+            r#"Ident "a" joint"#,
+            r#"RBrace "}" joint partner 1"#,
+            r#"RBrace "}" joint"#,
+            r#"Ident "b" joint"#,
+            r#"RBrace "}" partner 0"#,
+        ],
+    );
 }
 
 #[test]

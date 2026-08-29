@@ -171,8 +171,7 @@ fn a_malformed_signature_keeps_its_body() {
             "SourceFile 0..23",
             "  FnItem 0..23",
             r#"    ParamList 6..8 "()""#,
-            r#"    Error 9..10 "-""#,
-            r#"    Error 10..17 ") > int""#,
+            r#"    Error 9..17 "-) > int""#,
             "    Block 18..23",
             r#"      NameExpr 20..21 "b""#,
         ],
@@ -262,8 +261,7 @@ fn orphan_closers_at_the_top_level_are_one_episode() {
             "  FnItem 0..9",
             r#"    ParamList 4..6 "()""#,
             r#"    Block 7..9 "{}""#,
-            r#"  Error 10..11 ")""#,
-            r#"  Error 12..13 "}""#,
+            r#"  Error 10..13 ") }""#,
             "  FnItem 14..23",
             r#"    ParamList 18..20 "()""#,
             r#"    Block 21..23 "{}""#,
@@ -1354,5 +1352,44 @@ fn a_stray_token_after_a_statement_is_reported_as_one() {
             r#"      Error 11..15 "else""#,
         ],
         &["ExpectedStatement at 11"],
+    );
+}
+
+#[test]
+fn a_stray_brace_inside_a_body_is_a_stray_statement() {
+    // The stream pairs the body's `{` with the last `}` before the next
+    // item, so the `}` in the middle is a stray inside the body — reported
+    // as one, with the statements after it still in the body — rather than
+    // the body's end, with everything after it garbage between items.
+    check(
+        "fn f() {\n  a\n  } + b\n  c\n}\n\nfn g() {}",
+        &[
+            "SourceFile 0..37",
+            "  FnItem 0..26",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..26",
+            r#"      NameExpr 11..12 "a""#,
+            r#"      Error 15..20 "} + b""#,
+            r#"      NameExpr 23..24 "c""#,
+            "  FnItem 28..37",
+            r#"    ParamList 32..34 "()""#,
+            r#"    Block 35..37 "{}""#,
+        ],
+        &["ExpectedStatement at 15"],
+    );
+    // A doubled closer is the other way round: nothing but the second `}`
+    // follows the first, so the first is the body's end and the second is
+    // garbage between items — where the error belongs.
+    check(
+        "fn f() { a } }",
+        &[
+            "SourceFile 0..14",
+            "  FnItem 0..12",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..12",
+            r#"      NameExpr 9..10 "a""#,
+            r#"  Error 13..14 "}""#,
+        ],
+        &["ExpectedItem at 13"],
     );
 }
