@@ -43,7 +43,13 @@ pub fn cook(source: &str, lexed: &LexedFile) -> CookedFile {
             }
             RawKind::Punct => {
                 let byte = lexed.text(source, index).as_bytes()[0];
-                SyntaxKind::from_punct(byte).unwrap_or(SyntaxKind::Error)
+                match SyntaxKind::from_punct(byte) {
+                    Some(kind) => kind,
+                    None => {
+                        error(SyntaxErrorKind::UnknownPunctuation);
+                        SyntaxKind::Error
+                    }
+                }
             }
             RawKind::Unknown => SyntaxKind::Error,
         };
@@ -121,4 +127,6 @@ pub enum SyntaxErrorKind {
     EmptyCharLiteral,
     /// A character literal containing more than one character.
     MoreThanOneChar,
+    /// Punctuation with no role in the language, such as `;` or `[`.
+    UnknownPunctuation,
 }

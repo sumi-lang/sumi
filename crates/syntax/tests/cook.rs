@@ -142,10 +142,11 @@ fn punctuation_classifies_per_character() {
 
 #[test]
 fn unused_punctuation_cooks_to_error() {
-    // The parser reports these with the text in hand; no cook error.
+    // Reported here, where every later phase can treat an `Error` token as
+    // already diagnosed.
     check(";", &[r#"Error 0..1 ";""#]);
     check("[", &[r#"Error 0..1 "[""#]);
-    check_errors(";", &[]);
+    check_errors(";", &[(0, SyntaxErrorKind::UnknownPunctuation)]);
 }
 
 #[test]
