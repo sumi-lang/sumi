@@ -80,65 +80,20 @@ fn source_file(p: &mut Marker<'_, '_>) {
 
 /// Take the next token and every following one into an `Error` node, up to
 /// `stop` or end of input. The caller has reported what it expected there;
-/// the run itself adds no diagnostic. Brackets inside the run are matched
-/// the way the token stream matches them, so `stop` is consulted only
-/// outside them, and a closer with no opener in the run belongs to
-/// something enclosing: it is never taken.
+/// the run itself adds no diagnostic. A matched bracket pair is taken
+/// whole, as the token stream pairs them, so `stop` is never consulted
+/// inside one. A closer met after the first token has no opener in the run:
+/// it belongs to something enclosing, or to nothing, and ends the run.
 fn skip(p: &mut Marker<'_, '_>, stop: impl Fn(&Marker<'_, '_>) -> bool) -> CompletedMarker {
     let mut m = p.start();
-    let mut brackets = Brackets::default();
-    loop {
-        match m.current() {
-            Some(opener @ (T::LParen | T::LBrace)) => brackets.push(opener),
-            Some(T::RParen) => brackets.close(T::LParen),
-            Some(T::RBrace) => brackets.close(T::LBrace),
-            _ => {}
-        }
-        m.token();
-        let stops = match m.current() {
-            None => true,
-            Some(T::RParen) => brackets.parens == 0,
-            Some(T::RBrace) => brackets.braces == 0,
-            Some(_) => brackets.stack.is_empty() && stop(&m),
-        };
-        if stops {
+    m.group();
+    while let Some(kind) = m.current() {
+        if matches!(kind, T::RParen | T::RBrace) || stop(&m) {
             break;
         }
+        m.group();
     }
     m.complete(N::Error)
-}
-
-/// The unclosed openers of a skipped run, counted by kind so that whether
-/// a closer has anything to close is answered without a scan.
-#[derive(Default)]
-struct Brackets {
-    stack: Vec<T>,
-    parens: usize,
-    braces: usize,
-}
-
-impl Brackets {
-    fn push(&mut self, opener: T) {
-        match opener {
-            T::LParen => self.parens += 1,
-            _ => self.braces += 1,
-        }
-        self.stack.push(opener);
-    }
-
-    /// Pop openers until `opener` or the bottom: every closer is a
-    /// synchronization point, as in the token stream's boundary rule.
-    fn close(&mut self, opener: T) {
-        while let Some(top) = self.stack.pop() {
-            match top {
-                T::LParen => self.parens -= 1,
-                _ => self.braces -= 1,
-            }
-            if top == opener {
-                break;
-            }
-        }
-    }
 }
 
 fn fn_item(p: &mut Marker<'_, '_>) {
@@ -264,15 +219,15 @@ fn block(p: &mut Marker<'_, '_>) -> CompletedMarker {
                 m.token();
                 break;
             }
-            // Inside parentheses, a `)` belongs to the construct around this
-            // block: the block is unclosed, and the `)` is left to its owner.
-            Some(T::RParen) if m.in_parens() => {
+            // A `)` closing a paren still open around this block belongs to
+            // it: the block is unclosed, and the `)` is left to its owner.
+            Some(T::RParen) if m.closes_open_paren() => {
                 m.error(ParseErrorKind::Expected(T::RBrace));
                 break;
             }
             Some(_) => {
                 statement(&mut m);
-                let ends = m.boundary() || m.at(T::RBrace) || (m.at(T::RParen) && m.in_parens());
+                let ends = m.boundary() || m.at(T::RBrace) || m.closes_open_paren();
                 if !ends && m.current().is_some() {
                     m.error(ParseErrorKind::ExpectedBoundary);
                 }

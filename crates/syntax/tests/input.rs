@@ -3,8 +3,9 @@ use sumi_syntax::{ParserInput, SyntaxKind, cook};
 
 /// Lex, cook, and stream `source`, assert the stream invariants, and render
 /// one line per significant token: `Kind "text"` plus `newline`, `boundary`,
-/// and `joint` markers. `newline`/`boundary` describe the gap before the
-/// token; `joint` glues it to the next one.
+/// `joint`, and `partner N` markers. `newline`/`boundary` describe the gap
+/// before the token; `joint` glues it to the next one; `partner` names the
+/// bracket matching it.
 fn dump(source: &str) -> Vec<String> {
     let lexed = lex(source).expect("test sources fit in u32");
     let cooked = cook(source, &lexed);
@@ -42,6 +43,27 @@ fn dump(source: &str) -> Vec<String> {
             }
             if input.is_joint(index) {
                 line.push_str(" joint");
+            }
+            if let Some(partner) = input.partner(index) {
+                assert_eq!(
+                    input.partner(partner),
+                    Some(index),
+                    "partners must be mutual"
+                );
+                let (opener, closer) = if index < partner {
+                    (index, partner)
+                } else {
+                    (partner, index)
+                };
+                assert!(
+                    matches!(
+                        (input.get(opener), input.get(closer)),
+                        (Some(SyntaxKind::LParen), Some(SyntaxKind::RParen))
+                            | (Some(SyntaxKind::LBrace), Some(SyntaxKind::RBrace))
+                    ),
+                    "partners must be a matching pair"
+                );
+                line.push_str(&format!(" partner {partner}"));
             }
             line
         })
@@ -193,14 +215,14 @@ fn leading_dots_do_not_continue_until_member_access_exists() {
             r#"Ident "base""#,
             r#"Dot "." newline boundary joint"#,
             r#"Ident "offset" joint"#,
-            r#"LParen "(" joint"#,
+            r#"LParen "(" joint partner 8"#,
             r#"Ident "dx" joint"#,
-            r#"RParen ")""#,
+            r#"RParen ")" partner 6"#,
             r#"Dot "." newline boundary joint"#,
             r#"Ident "scale" joint"#,
-            r#"LParen "(" joint"#,
+            r#"LParen "(" joint partner 13"#,
             r#"IntLiteral "2" joint"#,
-            r#"RParen ")""#,
+            r#"RParen ")" partner 11"#,
             r#"LetKw "let" newline boundary"#,
             r#"Ident "other""#,
             r#"Eq "=""#,
@@ -222,11 +244,11 @@ fn parens_suspend_termination() {
         "f(a,\nb)",
         &[
             r#"Ident "f" joint"#,
-            r#"LParen "(" joint"#,
+            r#"LParen "(" joint partner 5"#,
             r#"Ident "a" joint"#,
             r#"Comma ",""#,
             r#"Ident "b" newline joint"#,
-            r#"RParen ")""#,
+            r#"RParen ")" partner 1"#,
         ],
     );
 }
@@ -237,12 +259,12 @@ fn braces_restore_termination() {
         "f({ a\nb })",
         &[
             r#"Ident "f" joint"#,
-            r#"LParen "(" joint"#,
-            r#"LBrace "{""#,
+            r#"LParen "(" joint partner 6"#,
+            r#"LBrace "{" partner 5"#,
             r#"Ident "a""#,
             r#"Ident "b" newline boundary"#,
-            r#"RBrace "}" joint"#,
-            r#"RParen ")""#,
+            r#"RBrace "}" joint partner 2"#,
+            r#"RParen ")" partner 1"#,
         ],
     );
 }
@@ -278,6 +300,39 @@ fn error_tokens_end_statements() {
     // Recovery: garbage ends at the line break instead of swallowing the
     // next statement.
     assert!(has_boundary("€\nx"));
+}
+
+#[test]
+fn brackets_pair_and_closers_synchronize() {
+    check(
+        "{(a)}",
+        &[
+            r#"LBrace "{" joint partner 4"#,
+            r#"LParen "(" joint partner 3"#,
+            r#"Ident "a" joint"#,
+            r#"RParen ")" joint partner 1"#,
+            r#"RBrace "}" partner 0"#,
+        ],
+    );
+    // A closer pops openers until its match: the `(` a `}` discards on the
+    // way to its `{` partners with nothing, and a `)` after that has
+    // nothing left to close.
+    check(
+        "{(a})",
+        &[
+            r#"LBrace "{" joint partner 3"#,
+            r#"LParen "(" joint"#,
+            r#"Ident "a" joint"#,
+            r#"RBrace "}" joint partner 0"#,
+            r#"RParen ")""#,
+        ],
+    );
+    // A closer with no match discards everything down to the bottom.
+    check(
+        "(a}",
+        &[r#"LParen "(" joint"#, r#"Ident "a" joint"#, r#"RBrace "}""#],
+    );
+    check(")(", &[r#"RParen ")" joint"#, r#"LParen "(""#]);
 }
 
 #[test]

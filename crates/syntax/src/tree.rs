@@ -119,7 +119,7 @@ impl Parse {
             id: 0,
             parent: 0,
             depth: 0,
-            in_parens: false,
+            paren: None,
             // Closed here once `body` returns, never by `complete`.
             completed: true,
         });
@@ -194,9 +194,9 @@ impl Builder<'_> {
 /// instead is a parser bug and panics on the spot.
 ///
 /// Within the crate, the marker is also the parser's view of the input:
-/// lookahead, the stream facts (jointness, newlines, boundaries) at the
-/// cursor, and error recording, so one cursor serves building and reading
-/// alike.
+/// lookahead, the stream facts (jointness, newlines, boundaries, bracket
+/// partners) at the cursor, and error recording, so one cursor serves
+/// building and reading alike.
 ///
 /// Completing the outer of two open nodes is a borrow error:
 ///
@@ -240,8 +240,9 @@ pub struct Marker<'p, 'a> {
     parent: u32,
     /// How many open nodes enclose this one; the root is at 0.
     depth: u32,
-    /// Whether an open parenthesized construct encloses this node.
-    in_parens: bool,
+    /// The innermost parenthesized construct still open around this node,
+    /// by the significant position of its `(`.
+    paren: Option<usize>,
     completed: bool,
 }
 
@@ -253,6 +254,18 @@ impl<'a> Marker<'_, 'a> {
             "token past end of input"
         );
         self.builder.position += 1;
+    }
+
+    /// Attach the next token and, when it opens a matched bracket pair,
+    /// every token through the pair's closer.
+    pub(crate) fn group(&mut self) {
+        let index = self.builder.position;
+        self.token();
+        if let Some(partner) = self.builder.input.partner(index)
+            && partner > index
+        {
+            self.builder.position = partner + 1;
+        }
     }
 
     /// Open a child at the next token; its kind is chosen when it
@@ -268,7 +281,7 @@ impl<'a> Marker<'_, 'a> {
             id,
             parent: self.id,
             depth: self.depth + 1,
-            in_parens: self.in_parens,
+            paren: self.paren,
             completed: false,
         }
     }
@@ -289,7 +302,7 @@ impl<'a> Marker<'_, 'a> {
             id,
             parent: self.id,
             depth: self.depth + 1,
-            in_parens: self.in_parens,
+            paren: self.paren,
             completed: false,
         }
     }
@@ -378,16 +391,27 @@ impl<'a> Marker<'_, 'a> {
         index < self.builder.input.len() && self.builder.input.boundary_before(index)
     }
 
-    /// Whether an open parenthesized construct encloses this node, so that a
-    /// `)` met inside belongs to it rather than being garbage to skip.
-    pub(crate) fn in_parens(&self) -> bool {
-        self.in_parens
+    /// Whether the next token is a `)` closing a parenthesized construct
+    /// still open around this node — the innermost, or one outside it — as
+    /// the stream pairs brackets. A `)` the stream pairs with a paren the
+    /// parser has already closed is garbage here: nothing is waiting for
+    /// it, so it is not a closer to yield to.
+    pub(crate) fn closes_open_paren(&self) -> bool {
+        let Some(paren) = self.paren else {
+            return false;
+        };
+        self.at(SyntaxKind::RParen)
+            && self
+                .builder
+                .input
+                .partner(self.builder.position)
+                .is_some_and(|partner| partner <= paren)
     }
 
-    /// Mark this node's remaining contents as inside parentheses: children
-    /// opened from now on inherit it.
+    /// Mark this node as a parenthesized construct whose `(` is its first
+    /// token: children opened from now on know it is open.
     pub(crate) fn enter_parens(&mut self) {
-        self.in_parens = true;
+        self.paren = Some(self.start);
     }
 
     /// Attach the next token if it is `kind` and no statement boundary
