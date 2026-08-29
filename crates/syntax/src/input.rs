@@ -2,7 +2,7 @@
 //! grammar needs once trivia is gone.
 //!
 //! Construction strips whitespace, newlines, and comments, and precomputes
-//! three per-token facts:
+//! four per-token facts:
 //!
 //! - **jointness**: no trivia separates the token from its successor. The
 //!   parser glues compound operators (`==`, `->`) from joint pairs, and the
@@ -12,6 +12,12 @@
 //!   the token.
 //! - **boundary before**: that line break ends a statement under the newline
 //!   rule below.
+//! - **partner**: for a bracket, the index of the bracket matching it, if
+//!   one does. Brackets pair the way the newline rule nests them: every
+//!   closer is a synchronization point, discarding unmatched openers above
+//!   its match, so an opener a stray closer discards partners with nothing.
+//!   The parser's recovery takes a matched pair whole, and a block yields a
+//!   `)` that closes a paren still open around it.
 //!
 //! # The newline rule
 //!
@@ -30,6 +36,8 @@
 //! unambiguous (trailing operators, unglued unary operators) are enforced by
 //! the parser, where the grammar position gives diagnostics their context.
 
+use std::num::NonZeroU32;
+
 use crate::cook::CookedFile;
 use crate::kind::SyntaxKind;
 
@@ -45,6 +53,10 @@ pub struct ParserInput {
     /// For each significant token, its index in the underlying token buffer.
     tokens: Box<[u32]>,
     flags: Box<[u8]>,
+    /// For each significant token, the index of its matching bracket plus
+    /// one, so the slot has a niche; `None` for anything that is not a
+    /// matched bracket.
+    partners: Box<[Option<NonZeroU32>]>,
     /// The length of the underlying token buffer.
     raw_len: u32,
 }
@@ -77,12 +89,16 @@ impl ParserInput {
         }
 
         // Boundaries look at the following token's jointness, so they need
-        // the fully built stream: a second pass.
-        let mut brackets: Vec<SyntaxKind> = Vec::new();
+        // the fully built stream: a second pass, which pairs brackets on the
+        // way since the boundary rule needs the innermost open one.
+        let mut partners: Vec<Option<NonZeroU32>> = vec![None; kinds.len()];
+        let mut openers: Vec<usize> = Vec::new();
         for index in 0..kinds.len() {
             if index > 0
                 && flags[index] & NEWLINE_BEFORE != 0
-                && brackets.last() != Some(&SyntaxKind::LParen)
+                && !openers
+                    .last()
+                    .is_some_and(|&opener| kinds[opener] == SyntaxKind::LParen)
                 && can_end_statement(kinds[index - 1])
                 && !continues_statement(&kinds, &flags, index)
             {
@@ -94,15 +110,17 @@ impl ParserInput {
             // nesting from wedging termination and makes recovery linear even
             // for long runs of opposite delimiters.
             match kinds[index] {
-                SyntaxKind::LParen | SyntaxKind::LBrace => brackets.push(kinds[index]),
+                SyntaxKind::LParen | SyntaxKind::LBrace => openers.push(index),
                 SyntaxKind::RParen | SyntaxKind::RBrace => {
                     let expected = if kinds[index] == SyntaxKind::RParen {
                         SyntaxKind::LParen
                     } else {
                         SyntaxKind::LBrace
                     };
-                    while let Some(opener) = brackets.pop() {
-                        if opener == expected {
+                    while let Some(opener) = openers.pop() {
+                        if kinds[opener] == expected {
+                            partners[opener] = NonZeroU32::new(index as u32 + 1);
+                            partners[index] = NonZeroU32::new(opener as u32 + 1);
                             break;
                         }
                     }
@@ -115,6 +133,7 @@ impl ParserInput {
             kinds: kinds.into_boxed_slice(),
             tokens: tokens.into_boxed_slice(),
             flags: flags.into_boxed_slice(),
+            partners: partners.into_boxed_slice(),
             raw_len: cooked.len() as u32,
         }
     }
@@ -162,6 +181,13 @@ impl ParserInput {
     /// the newline rule. Never true for the first token.
     pub fn boundary_before(&self, index: usize) -> bool {
         self.flags[index] & BOUNDARY_BEFORE != 0
+    }
+
+    /// The index of the bracket matching significant token `index`: an
+    /// opener's closer or a closer's opener. `None` for an unmatched
+    /// bracket, and for anything that is not one.
+    pub fn partner(&self, index: usize) -> Option<usize> {
+        self.partners[index].map(|partner| partner.get() as usize - 1)
     }
 }
 

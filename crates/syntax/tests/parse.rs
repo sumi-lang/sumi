@@ -772,6 +772,53 @@ fn a_block_does_not_yield_to_a_paren_opened_inside_it() {
 }
 
 #[test]
+fn a_block_yields_only_to_a_paren_the_parser_still_has_open() {
+    // The stream pairs the `)` with the `(` of `(a`, which recovery closed
+    // at the `{`: nothing is waiting for it. The inner block keeps it as
+    // garbage rather than cutting itself short, and every closer after it
+    // lands where it belongs.
+    check(
+        "fn f() { ({ (a { b) } }) }",
+        &[
+            "SourceFile 0..26",
+            "  FnItem 0..26",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..26",
+            "      ParenExpr 9..24",
+            "        Block 10..23",
+            "          ParenExpr 12..14",
+            r#"            NameExpr 13..14 "a""#,
+            "          Block 15..21",
+            r#"            NameExpr 17..18 "b""#,
+            r#"            Error 18..19 ")""#,
+        ],
+        &["Expected(RParen) at 15", "ExpectedBoundary at 18"],
+    );
+}
+
+#[test]
+fn an_opener_nothing_closes_does_not_extend_a_skipped_run() {
+    // The stream pairs the stray `(` with nothing — the `}` discards it —
+    // so the run does not nest at it: the `,` ends the run, and `b` is an
+    // argument after all.
+    check(
+        "fn f() { g(:(, b }",
+        &[
+            "SourceFile 0..18",
+            "  FnItem 0..18",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..18",
+            "      CallExpr 9..16",
+            r#"        NameExpr 9..10 "g""#,
+            "        ArgList 10..16",
+            r#"          Error 11..13 ":(""#,
+            r#"          NameExpr 15..16 "b""#,
+        ],
+        &["ExpectedExpression at 11", "Expected(RParen) at 17"],
+    );
+}
+
+#[test]
 fn declarations_end_at_line_breaks() {
     // `=`, `:`, and `->` never continue a line, so a declaration cannot
     // pick them up from the next one.

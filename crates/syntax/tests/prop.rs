@@ -125,6 +125,7 @@ proptest! {
         prop_assert_eq!(input.get(input.len()), None);
 
         let mut previous: Option<usize> = None;
+        let mut open: Vec<usize> = Vec::new();
         for index in 0..input.len() {
             let token = input.token(index) as usize;
             let kind = input.get(index).expect("indices below len are present");
@@ -157,8 +158,31 @@ proptest! {
                 prop_assert!(index > 0, "no boundary before the first token");
                 prop_assert!(input.newline_before(index), "boundaries need a newline");
             }
+
+            // Partners are mutual, of matching kinds, and nest: an opener
+            // whose partner lies ahead is pushed, and a closer must close
+            // the innermost open pair.
+            if let Some(partner) = input.partner(index) {
+                prop_assert!(partner < input.len());
+                prop_assert_eq!(input.partner(partner), Some(index), "partners must be mutual");
+                let (opener, closer) = if index < partner { (index, partner) } else { (partner, index) };
+                prop_assert!(
+                    matches!(
+                        (input.get(opener), input.get(closer)),
+                        (Some(SyntaxKind::LParen), Some(SyntaxKind::RParen))
+                            | (Some(SyntaxKind::LBrace), Some(SyntaxKind::RBrace))
+                    ),
+                    "tokens {} and {} are partners but not a matching pair", opener, closer
+                );
+                if partner > index {
+                    open.push(index);
+                } else {
+                    prop_assert_eq!(open.pop(), Some(partner), "pairs must nest");
+                }
+            }
             previous = Some(token);
         }
+        prop_assert!(open.is_empty(), "every pushed opener must have been closed");
 
         // Nothing significant may be dropped after the last kept token.
         for j in previous.map_or(0, |previous| previous + 1)..cooked.len() {
