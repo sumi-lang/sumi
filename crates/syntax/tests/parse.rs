@@ -1069,7 +1069,7 @@ fn a_block_yields_to_the_paren_that_encloses_it() {
             r#"          NameExpr 11..12 "a""#,
             r#"      Error 13..14 ")""#,
         ],
-        &["ExpectedBoundary at 13"],
+        &["ExpectedStatement at 13"],
     );
 }
 
@@ -1089,7 +1089,7 @@ fn a_block_does_not_yield_to_a_paren_opened_inside_it() {
             r#"      NameExpr 12..13 "b""#,
             r#"      Error 13..14 ")""#,
         ],
-        &["Expected(RParen) at 12", "ExpectedBoundary at 13"],
+        &["Expected(RParen) at 12", "ExpectedStatement at 13"],
     );
     // The same with a block in between: the parser's own state, not the
     // token stream's bracket matching, decides — so neither block yields.
@@ -1106,7 +1106,7 @@ fn a_block_does_not_yield_to_a_paren_opened_inside_it() {
             r#"        NameExpr 14..15 "b""#,
             r#"        Error 15..16 ")""#,
         ],
-        &["Expected(RParen) at 12", "ExpectedBoundary at 15"],
+        &["Expected(RParen) at 12", "ExpectedStatement at 15"],
     );
 }
 
@@ -1131,7 +1131,7 @@ fn a_block_yields_only_to_a_paren_the_parser_still_has_open() {
             r#"            NameExpr 17..18 "b""#,
             r#"            Error 18..19 ")""#,
         ],
-        &["Expected(RParen) at 15", "ExpectedBoundary at 18"],
+        &["Expected(RParen) at 15", "ExpectedStatement at 18"],
     );
 }
 
@@ -1237,7 +1237,7 @@ fn arguments_stay_on_the_callee_line_even_inside_parens() {
         &[
             "Expected(RParen) at 12",
             "ExpectedExpression at 13",
-            "ExpectedBoundary at 14",
+            "ExpectedStatement at 14",
         ],
     );
 }
@@ -1324,5 +1324,35 @@ fn underscore_is_not_a_name() {
             r#"        LiteralExpr 17..18 "1""#,
         ],
         &["ExpectedName at 13"],
+    );
+}
+
+#[test]
+fn a_stray_token_after_a_statement_is_reported_as_one() {
+    // Neither `=` nor `else` can start a statement, so a boundary before
+    // them would not help: they are the strays, and the report says so.
+    check(
+        "fn f() { x = 1 }",
+        &[
+            "SourceFile 0..16",
+            "  FnItem 0..16",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..16",
+            r#"      NameExpr 9..10 "x""#,
+            r#"      Error 11..14 "= 1""#,
+        ],
+        &["ExpectedStatement at 11"],
+    );
+    check(
+        "fn f() { x else }",
+        &[
+            "SourceFile 0..17",
+            "  FnItem 0..17",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..17",
+            r#"      NameExpr 9..10 "x""#,
+            r#"      Error 11..15 "else""#,
+        ],
+        &["ExpectedStatement at 11"],
     );
 }
