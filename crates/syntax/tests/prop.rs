@@ -1,9 +1,13 @@
 //! Property tests: cook and ParserInput invariants over generated sources
 //! instead of the hand-written corpus in `cook.rs` and `input.rs`.
 
+mod common;
+
+use std::collections::HashSet;
+
 use proptest::prelude::*;
-use sumi_lexer::{RawKind, lex};
-use sumi_syntax::{NodeKind, ParserInput, SyntaxKind, SyntaxTree, cook, parse};
+use sumi_lexer::{LexedFile, RawKind, lex};
+use sumi_syntax::{CookedFile, NodeKind, Parse, ParserInput, SyntaxKind, SyntaxTree, cook, parse};
 
 /// Source fragments, valid and pathological; concatenation composes the
 /// adjacencies goldens cannot enumerate.
@@ -497,4 +501,223 @@ fn program() -> BoxedStrategy<String> {
             text
         })
         .boxed()
+}
+
+// Recovery quality, measured. The tests above prove the parser is total and
+// accepts every well-formed program; these bound how badly it does on
+// nearly-well-formed ones: one edit to a well-formed program should cost
+// few errors, and should disturb only the statement or item it lands in.
+
+/// The most errors one edit may cost: the mistake itself, and at most two
+/// consequences.
+const MAX_ERRORS_PER_EDIT: usize = 3;
+
+/// One edit to a well-formed program, made at a significant token.
+#[derive(Clone, Copy, Debug)]
+enum Edit {
+    /// Remove the token.
+    Delete,
+    /// Insert a spaced copy of the token after it.
+    Duplicate,
+    /// Exchange the token with its neighbour, keeping the trivia between.
+    Swap,
+    /// Insert this text, spaced, before the token.
+    Insert(&'static str),
+}
+
+/// Tokens to insert: brackets above all, then keywords and operators that
+/// start or continue something.
+const INSERTS: &[&str] = &[
+    "(", ")", "{", "}", ",", "=", "fn", "let", "else", "x", "0", "+", "-",
+];
+
+fn edit() -> impl Strategy<Value = Edit> {
+    prop_oneof![
+        3 => Just(Edit::Delete),
+        2 => Just(Edit::Duplicate),
+        2 => Just(Edit::Swap),
+        3 => prop::sample::select(INSERTS).prop_map(Edit::Insert),
+    ]
+}
+
+/// Every front-end product for one source.
+struct Front {
+    lexed: LexedFile,
+    cooked: CookedFile,
+    input: ParserInput,
+    parse: Parse,
+}
+
+fn front(source: &str) -> Front {
+    let lexed = lex(source).expect("test sources fit in u32");
+    let cooked = cook(source, &lexed);
+    let input = ParserInput::new(&cooked);
+    let parse = parse(&input);
+    Front {
+        lexed,
+        cooked,
+        input,
+        parse,
+    }
+}
+
+impl Front {
+    /// The byte spans of the significant tokens.
+    fn spans(&self) -> Vec<(usize, usize)> {
+        (0..self.input.len())
+            .map(|index| {
+                let range = self.lexed.range(self.input.token(index) as usize);
+                (range.start().to_usize(), range.end().to_usize())
+            })
+            .collect()
+    }
+
+    /// The byte span of a node.
+    fn node_span(&self, node: usize) -> (usize, usize) {
+        let tree = self.parse.tree();
+        let (first, end) = (tree.first_token(node), tree.end_token(node));
+        let start = common::start_byte(&self.lexed, first) as usize;
+        let stop = if end > first {
+            self.lexed.range(end as usize - 1).end().to_usize()
+        } else {
+            start
+        };
+        (start, stop)
+    }
+
+    /// A node's text and the shape of its subtree: kinds with byte spans
+    /// relative to the node, in preorder.
+    fn shape(&self, source: &str, node: usize) -> (String, Vec<(NodeKind, usize, usize)>) {
+        let tree = self.parse.tree();
+        let (base, stop) = self.node_span(node);
+        let mut nodes = Vec::new();
+        let mut pending = vec![node];
+        while let Some(node) = pending.pop() {
+            let (start, end) = self.node_span(node);
+            nodes.push((tree.kind(node), start - base, end - base));
+            let children: Vec<usize> = tree.children(node).collect();
+            pending.extend(children.into_iter().rev());
+        }
+        (source[base..stop].to_owned(), nodes)
+    }
+
+    /// The items, and the statements of their bodies, that cover none of
+    /// the raw tokens in `touched`: what an edit there must leave alone.
+    fn guarded(&self, touched: &[u32]) -> Vec<usize> {
+        let tree = self.parse.tree();
+        let mut nodes = Vec::new();
+        for item in tree.children(0) {
+            nodes.push(item);
+            for child in tree.children(item) {
+                if tree.kind(child) == NodeKind::Block {
+                    nodes.extend(tree.children(child));
+                }
+            }
+        }
+        nodes.retain(|&node| {
+            !touched
+                .iter()
+                .any(|&token| tree.first_token(node) <= token && token < tree.end_token(node))
+        });
+        nodes
+    }
+}
+
+/// A well-formed program with at least two significant tokens, the index of
+/// one of them, and an edit to make there.
+fn edited_program() -> impl Strategy<Value = (String, usize, Edit)> {
+    program()
+        .prop_filter("an edit needs two tokens", |source| {
+            front(source).input.len() >= 2
+        })
+        .prop_flat_map(|source| {
+            let count = front(&source).input.len();
+            (Just(source), 0..count, edit())
+        })
+}
+
+/// Apply `edit` at significant token `index` of `source`: the edited text,
+/// and the significant indices the edit touches.
+///
+/// The touched indices include the tokens on either side of the edit: an
+/// inserted token joins whatever it lands next to — a leading operator or
+/// `else` continues the statement above, a `(` after a name makes a call —
+/// and a deleted token can leave a dangling operator that takes the next
+/// line as its operand. Those are the language's rules, not recovery, so
+/// the neighbours are the edit's own business.
+fn apply(source: &str, spans: &[(usize, usize)], index: usize, edit: Edit) -> (String, Vec<usize>) {
+    let (start, end) = spans[index];
+    let text = &source[start..end];
+    let (edited, left, right) = match edit {
+        Edit::Delete => (
+            format!("{}{}", &source[..start], &source[end..]),
+            index,
+            index,
+        ),
+        Edit::Duplicate => (
+            format!("{} {text}{}", &source[..end], &source[end..]),
+            index,
+            index,
+        ),
+        Edit::Insert(inserted) => (
+            format!("{}{inserted} {}", &source[..start], &source[start..]),
+            index,
+            index,
+        ),
+        Edit::Swap => {
+            let (left, right) = if index + 1 < spans.len() {
+                (index, index + 1)
+            } else {
+                (index - 1, index)
+            };
+            let ((ls, le), (rs, re)) = (spans[left], spans[right]);
+            let edited = format!(
+                "{}{}{}{}{}",
+                &source[..ls],
+                &source[rs..re],
+                &source[le..rs],
+                &source[ls..le],
+                &source[re..]
+            );
+            (edited, left, right)
+        }
+    };
+    let touched = (left.saturating_sub(1)..=(right + 1).min(spans.len() - 1)).collect();
+    (edited, touched)
+}
+
+proptest! {
+    #[test]
+    fn a_single_edit_costs_few_errors((source, index, edit) in edited_program()) {
+        let original = front(&source);
+        let (edited, _) = apply(&source, &original.spans(), index, edit);
+        let after = front(&edited);
+        check_tree(after.parse.tree(), &after.cooked)?;
+        let errors: Vec<_> = after.parse.errors().iter().map(|error| error.kind).collect();
+        prop_assert!(
+            errors.len() <= MAX_ERRORS_PER_EDIT,
+            "{:?} at token {} ({:?}) costs {} errors {:?}\n--- original ---\n{}\n--- edited ---\n{}",
+            edit, index, original.input.get(index), errors.len(), errors, source, edited
+        );
+    }
+
+    #[test]
+    fn a_single_edit_disturbs_only_where_it_lands((source, index, edit) in edited_program()) {
+        let original = front(&source);
+        let (edited, touched) = apply(&source, &original.spans(), index, edit);
+        let touched: Vec<u32> = touched.iter().map(|&index| original.input.token(index)).collect();
+        let after = front(&edited);
+        let survivors: HashSet<_> = (0..after.parse.tree().len())
+            .map(|node| after.shape(&edited, node))
+            .collect();
+        for node in original.guarded(&touched) {
+            let shape = original.shape(&source, node);
+            prop_assert!(
+                survivors.contains(&shape),
+                "{:?} at token {} ({:?}) disturbs the {:?} {:?}\n--- original ---\n{}\n--- edited ---\n{}\nerrors: {:?}",
+                edit, index, original.input.get(index), original.parse.tree().kind(node), shape.0,
+                source, edited, after.parse.errors()
+            );
+        }
+    }
 }
