@@ -325,8 +325,12 @@ fn block(p: &mut Marker<'_, '_>) -> CompletedMarker {
             }
             Some(_) => {
                 statement(&mut m);
+                // A statement following on the same line is missing its
+                // boundary. Anything else is a stray token, which the next
+                // round reports as such: a boundary would not make it a
+                // statement.
                 let ends = m.boundary() || m.at(T::RBrace) || m.closes_open_paren() || m.at_item();
-                if !ends && m.current().is_some() {
+                if !ends && m.current().is_some_and(starts_statement) {
                     m.error(ParseErrorKind::ExpectedBoundary);
                 }
             }
@@ -396,6 +400,11 @@ fn return_stmt(p: &mut Marker<'_, '_>) {
         operand(&mut m, 0);
     }
     m.complete(N::ReturnStmt);
+}
+
+/// Whether `kind` can begin a statement: the tokens [`statement`] takes.
+fn starts_statement(kind: T) -> bool {
+    matches!(kind, T::LetKw | T::Underscore | T::ReturnKw | T::Error) || starts_expression(kind)
 }
 
 fn starts_expression(kind: T) -> bool {
