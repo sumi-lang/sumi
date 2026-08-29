@@ -1,5 +1,5 @@
-use jolt_lexer::lex;
-use jolt_syntax::{ParserInput, SyntaxKind, cook};
+use sumi_lexer::lex;
+use sumi_syntax::{ParserInput, SyntaxKind, cook};
 
 /// Lex, cook, and stream `source`, assert the stream invariants, and render
 /// one line per significant token: `Kind "text"` plus `newline`, `boundary`,

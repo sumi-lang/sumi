@@ -1,6 +1,6 @@
-# Jolt Language Core
+# Sumi Language Core
 
-You're in the core repository for Jolt, a novel statically typed general-purpose programming language.
+You're in the core repository for Sumi, a novel statically typed general-purpose programming language.
 
 ## Git Rules
 

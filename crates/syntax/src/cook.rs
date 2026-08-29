@@ -1,4 +1,4 @@
-use jolt_lexer::{LexedFile, RawKind};
+use sumi_lexer::{LexedFile, RawKind};
 
 use crate::kind::SyntaxKind;
 use crate::literal;
@@ -96,7 +96,7 @@ pub struct SyntaxError {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SyntaxErrorKind {
-    /// A numeric literal carries trailing characters; Jolt has no literal
+    /// A numeric literal carries trailing characters; Sumi has no literal
     /// suffixes.
     UnknownSuffix,
     /// An `e` with no exponent digits after it, as in `1e` or `2.5e`.

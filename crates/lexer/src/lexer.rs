@@ -1,4 +1,4 @@
-use jolt_text::TextSize;
+use sumi_text::TextSize;
 
 use crate::token::{RawKind, RawToken, TokenFlags};
 

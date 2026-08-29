@@ -1,5 +1,5 @@
-use jolt_lexer::lex;
-use jolt_syntax::{SyntaxErrorKind, cook};
+use sumi_lexer::lex;
+use sumi_syntax::{SyntaxErrorKind, cook};
 
 /// Lex and cook `source`, assert the 1:1 invariant, and render one line per
 /// token: `SyntaxKind start..end "text"`.

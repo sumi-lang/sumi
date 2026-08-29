@@ -1,7 +1,7 @@
 use std::fmt;
 use std::ops::BitOrAssign;
 
-use jolt_text::TextSize;
+use sumi_text::TextSize;
 
 /// A transient scanner result: one raw lexical atom.
 ///

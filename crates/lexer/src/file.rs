@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::fmt;
 
-use jolt_text::{TextRange, TextSize};
+use sumi_text::{TextRange, TextSize};
 
 use crate::lexer::Lexer;
 use crate::token::{RawKind, RawToken, TokenFlags};

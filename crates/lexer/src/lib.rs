@@ -1,4 +1,4 @@
-//! Raw lexical analysis for Jolt.
+//! Raw lexical analysis for Sumi.
 //!
 //! The raw lexer is total, lossless, and context-free: any `&str` produces a
 //! token stream that exactly partitions the source, retaining whitespace,

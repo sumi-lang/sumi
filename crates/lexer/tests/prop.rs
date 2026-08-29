@@ -1,8 +1,8 @@
 //! Property tests: the partition invariants of `lex`, over generated sources
 //! instead of the hand-written corpus in `lex.rs`.
 
-use jolt_lexer::{RawKind, lex};
 use proptest::prelude::*;
+use sumi_lexer::{RawKind, lex};
 
 /// Fragments that each lex to exactly one token on their own, stay
 /// terminated, and do not absorb a following space-separated fragment.
