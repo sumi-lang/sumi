@@ -735,6 +735,138 @@ fn a_nested_fn_is_skipped_whole() {
 }
 
 #[test]
+fn an_unclosed_block_ends_at_the_next_item() {
+    // The stream never closes the body's `{`, so the `fn` that follows is
+    // where the `}` was meant to be, not a statement to skip; the item
+    // after it is intact.
+    check(
+        "fn foo() -> int { { b }\n\nfn a() {}",
+        &[
+            "SourceFile 0..34",
+            "  FnItem 0..23",
+            r#"    ParamList 6..8 "()""#,
+            "    Block 16..23",
+            "      Block 18..23",
+            r#"        NameExpr 20..21 "b""#,
+            "  FnItem 25..34",
+            r#"    ParamList 29..31 "()""#,
+            r#"    Block 32..34 "{}""#,
+        ],
+        &["Expected(RBrace) at 25"],
+    );
+    // Every unclosed block ends there, for one report.
+    check(
+        "fn f() { if c {\n x\nfn g() {}",
+        &[
+            "SourceFile 0..28",
+            "  FnItem 0..18",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..18",
+            "      IfExpr 9..18",
+            r#"        NameExpr 12..13 "c""#,
+            "        Block 14..18",
+            r#"          NameExpr 17..18 "x""#,
+            "  FnItem 19..28",
+            r#"    ParamList 23..25 "()""#,
+            r#"    Block 26..28 "{}""#,
+        ],
+        &["Expected(RBrace) at 19"],
+    );
+    // On the line of the last statement too.
+    check(
+        "fn f() { x fn g() {}",
+        &[
+            "SourceFile 0..20",
+            "  FnItem 0..10",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..10",
+            r#"      NameExpr 9..10 "x""#,
+            "  FnItem 11..20",
+            r#"    ParamList 15..17 "()""#,
+            r#"    Block 18..20 "{}""#,
+        ],
+        &["Expected(RBrace) at 11"],
+    );
+    // Statement recovery stops there too: the run beginning at `:` is
+    // inside the unclosed block, and the item is not its to take.
+    check(
+        "fn f() { : fn g() {}",
+        &[
+            "SourceFile 0..20",
+            "  FnItem 0..10",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..10",
+            r#"      Error 9..10 ":""#,
+            "  FnItem 11..20",
+            r#"    ParamList 15..17 "()""#,
+            r#"    Block 18..20 "{}""#,
+        ],
+        &["ExpectedStatement at 9", "Expected(RBrace) at 11"],
+    );
+    // A block the stream closes owns the `fn` like anything else in it.
+    check(
+        "fn f() { : fn g() {} }",
+        &[
+            "SourceFile 0..22",
+            "  FnItem 0..22",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..22",
+            r#"      Error 9..20 ": fn g() {}""#,
+        ],
+        &["ExpectedStatement at 9"],
+    );
+}
+
+#[test]
+fn a_closed_list_owns_everything_up_to_its_closer() {
+    // The stream pairs the `(` with the `)`, so a `{` before it is garbage
+    // in the list — not the body, whatever the list would otherwise yield
+    // to — and the body is where it was.
+    check(
+        "fn f(a: { int) { x }",
+        &[
+            "SourceFile 0..20",
+            "  FnItem 0..20",
+            "    ParamList 4..14",
+            r#"      Param 5..7 "a:""#,
+            r#"      Error 8..13 "{ int""#,
+            "    Block 15..20",
+            r#"      NameExpr 17..18 "x""#,
+        ],
+        &["ExpectedType at 8"],
+    );
+    check(
+        "fn x1(b: int, foo: int{ ) {}",
+        &[
+            "SourceFile 0..28",
+            "  FnItem 0..28",
+            "    ParamList 5..25",
+            r#"      Param 6..12 "b: int""#,
+            r#"      Param 14..22 "foo: int""#,
+            r#"      Error 22..23 "{""#,
+            r#"    Block 26..28 "{}""#,
+        ],
+        &["ExpectedName at 22"],
+    );
+    // The same for an argument list and a misplaced `fn`.
+    check(
+        "fn f() { g(fn, b) }",
+        &[
+            "SourceFile 0..19",
+            "  FnItem 0..19",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..19",
+            "      CallExpr 9..17",
+            r#"        NameExpr 9..10 "g""#,
+            "        ArgList 10..17",
+            r#"          Error 11..13 "fn""#,
+            r#"          NameExpr 15..16 "b""#,
+        ],
+        &["ExpectedExpression at 11"],
+    );
+}
+
+#[test]
 fn tokens_reported_earlier_are_absorbed_silently() {
     check(
         "fn f() {\n  a ;\n  b\n}",
@@ -895,6 +1027,16 @@ fn error_kinds(source: &str) -> Vec<sumi_syntax::ParseErrorKind> {
     let parse = parse(&ParserInput::new(&cook(source, &lexed)));
     let _ = common::dump(parse.tree(), &lexed, source);
     parse.errors().iter().map(|error| error.kind).collect()
+}
+
+/// How many `fn` items `source` parses into.
+fn items(source: &str) -> usize {
+    let lexed = lex(source).expect("test sources fit in u32");
+    let parse = parse(&ParserInput::new(&cook(source, &lexed)));
+    let tree = parse.tree();
+    (0..tree.len())
+        .filter(|&node| tree.kind(node) == sumi_syntax::NodeKind::FnItem)
+        .count()
 }
 
 #[test]
@@ -1146,6 +1288,14 @@ fn nesting_is_bounded() {
         error_kinds(&opens(MAX_DEPTH + 40)),
         [NestingTooDeep, Expected(SyntaxKind::RParen)]
     );
+    // The skip past the limit stops at the next item like any recovery:
+    // the parens are unclosed, so the `fn` is not theirs to take.
+    let next_item = format!("{}x fn g() {{}}", opens(MAX_DEPTH + 40));
+    assert_eq!(
+        error_kinds(&next_item),
+        [NestingTooDeep, Expected(SyntaxKind::RParen)]
+    );
+    assert_eq!(items(&next_item), 2);
     // Far past the limit: one error, no crash, and the file still closes.
     assert_eq!(error_kinds(&deep(100_000)), [NestingTooDeep]);
     assert_eq!(

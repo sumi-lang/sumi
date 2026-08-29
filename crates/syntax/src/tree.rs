@@ -120,6 +120,7 @@ impl Parse {
             parent: 0,
             depth: 0,
             paren: None,
+            closed: false,
             // Closed here once `body` returns, never by `complete`.
             completed: true,
         });
@@ -243,6 +244,11 @@ pub struct Marker<'p, 'a> {
     /// The innermost parenthesized construct still open around this node,
     /// by the significant position of its `(`.
     paren: Option<usize>,
+    /// Whether the stream closes the innermost bracket construct entered
+    /// around this node — this node itself, once it has entered one. A
+    /// closed construct owns everything up to its closer, so a `fn` inside
+    /// it is garbage there, not the next item.
+    closed: bool,
     completed: bool,
 }
 
@@ -282,6 +288,7 @@ impl<'a> Marker<'_, 'a> {
             parent: self.id,
             depth: self.depth + 1,
             paren: self.paren,
+            closed: self.closed,
             completed: false,
         }
     }
@@ -303,6 +310,7 @@ impl<'a> Marker<'_, 'a> {
             parent: self.id,
             depth: self.depth + 1,
             paren: self.paren,
+            closed: self.closed,
             completed: false,
         }
     }
@@ -432,10 +440,31 @@ impl<'a> Marker<'_, 'a> {
                 .is_some_and(|partner| partner <= paren)
     }
 
-    /// Mark this node as a parenthesized construct whose `(` is its first
-    /// token: children opened from now on know it is open.
+    /// Mark this node as a bracket construct whose opener is its first
+    /// token: it and the children opened from now on know whether the
+    /// stream closes it.
+    pub(crate) fn enter(&mut self) {
+        self.closed = self.builder.input.partner(self.start).is_some();
+    }
+
+    /// [Enter](Self::enter) a parenthesized construct whose `(` is its
+    /// first token: children opened from now on also know it is open.
     pub(crate) fn enter_parens(&mut self) {
+        self.enter();
         self.paren = Some(self.start);
+    }
+
+    /// Whether the stream closes the innermost bracket construct entered
+    /// around this node.
+    pub(crate) fn closed(&self) -> bool {
+        self.closed
+    }
+
+    /// Whether the next token is a `fn` beginning the next item: one no
+    /// bracket construct the stream closes encloses. Recovery never takes
+    /// it; whatever lost its closer ends there instead.
+    pub(crate) fn at_item(&self) -> bool {
+        !self.closed && self.at(SyntaxKind::FnKw)
     }
 
     /// Attach the next token if it is `kind` and no statement boundary
