@@ -69,13 +69,29 @@ pub const MAX_DEPTH: u32 = 256;
 
 fn source_file(p: &mut Marker<'_, '_>) {
     while p.current().is_some() {
-        if p.at(T::FnKw) {
+        if starts_item(p) {
             fn_item(p);
         } else {
             p.error(ParseErrorKind::ExpectedItem);
-            skip(p, |p| p.at(T::FnKw));
+            skip_all(p, starts_item);
         }
     }
+}
+
+/// Whether an item starts at the next token: `fn`, or a signature missing
+/// it — a name, a parenthesized list, and a body or return type after the
+/// list on its line, which nothing else at the top level looks like. A
+/// misplaced call has neither after its list, and stays garbage.
+fn starts_item(p: &Marker<'_, '_>) -> bool {
+    if p.at(T::FnKw) {
+        return true;
+    }
+    p.at(T::Ident)
+        && p.nth(1) == Some(T::LParen)
+        && p.nth_partner(1).is_some_and(|close| {
+            !p.nth_newline(close + 1)
+                && (p.nth(close + 1) == Some(T::LBrace) || p.nth_glued(close + 1, T::Minus, T::Gt))
+        })
 }
 
 /// Take the next token and every following one into an `Error` node, up to
@@ -96,25 +112,88 @@ fn skip(p: &mut Marker<'_, '_>, stop: impl Fn(&Marker<'_, '_>) -> bool) -> Compl
     m.complete(N::Error)
 }
 
+/// Skip into `Error` nodes until `stop` or end of input, closers included:
+/// where nothing encloses the run — the top level, a signature — a closer
+/// is garbage like anything else, so a run that ends at one is followed by
+/// another. One recovery episode, however many runs.
+fn skip_all(p: &mut Marker<'_, '_>, stop: impl Fn(&Marker<'_, '_>) -> bool) {
+    while p.current().is_some() && !stop(p) {
+        skip(p, &stop);
+    }
+}
+
+/// A function item. Each part of the signature is taken where it belongs
+/// or reported where it is missing, and garbage in its place is skipped up
+/// to the next part, so a malformed signature is recovered as the evident
+/// intent and the body is kept. Nothing is searched for past the end of
+/// the line: a declaration ends where its line does.
 fn fn_item(p: &mut Marker<'_, '_>) {
     let mut m = p.start();
-    m.token(); // fn
-    name(&mut m);
-    // The parameter list stays on the name's line: `(` never continues one.
-    if m.at(T::LParen) && !m.boundary() {
-        param_list(&mut m);
+    if m.at(T::FnKw) {
+        m.token();
     } else {
-        m.error(ParseErrorKind::Expected(T::LParen));
+        m.error(ParseErrorKind::Expected(T::FnKw));
+    }
+    let mut reported = false;
+    if !m.at(T::Ident) && !m.at(T::Underscore) {
+        missing(&mut m, ParseErrorKind::ExpectedName, &mut reported);
+        signature_garbage(&mut m, |m| {
+            m.at(T::Ident) || m.at(T::Underscore) || m.at(T::LParen)
+        });
+    }
+    if m.at(T::Ident) || m.at(T::Underscore) {
+        name(&mut m);
+    }
+    // The parameter list stays on the name's line: `(` never continues one.
+    if !m.at(T::LParen) || m.newline() {
+        missing(&mut m, ParseErrorKind::Expected(T::LParen), &mut reported);
+        signature_garbage(&mut m, |m| m.at(T::LParen) || m.at_glued(T::Minus, T::Gt));
+    }
+    if m.at(T::LParen) && !m.newline() {
+        param_list(&mut m);
     }
     // A return type on the line of the signature: a leading `->` never
     // continues a line.
-    if m.at_glued(T::Minus, T::Gt) && !m.boundary() {
+    let at_arrow = |m: &Marker<'_, '_>| m.at_glued(T::Minus, T::Gt) && !m.newline();
+    if !m.at(T::LBrace) && !at_arrow(&m) {
+        missing(&mut m, ParseErrorKind::Expected(T::LBrace), &mut reported);
+        signature_garbage(&mut m, at_arrow);
+    }
+    if at_arrow(&m) {
         m.token();
         m.token();
         type_ref(&mut m);
+        if !m.at(T::LBrace) {
+            missing(&mut m, ParseErrorKind::Expected(T::LBrace), &mut reported);
+            signature_garbage(&mut m, |_| false);
+        }
     }
-    block_here(&mut m);
+    if m.at(T::LBrace) {
+        block_here(&mut m);
+    }
     m.complete(N::FnItem);
+}
+
+/// Report a part of a signature missing at the cursor — unless the line
+/// has ended and a part was reported already: the rest are missing because
+/// the line ended, and the first report covers them.
+fn missing(m: &mut Marker<'_, '_>, kind: ParseErrorKind, reported: &mut bool) {
+    if !(*reported && m.newline()) {
+        m.error(kind);
+    }
+    *reported = true;
+}
+
+/// Skip garbage in a signature — tokens that belong to none of its parts —
+/// into `Error` nodes, up to `resume`, a body, the next item, or the end
+/// of the line. Nothing is skipped when already at one of those. A `{`
+/// counts as a body only when the stream pairs it with a `}`: an unclosed
+/// one where a part of the signature was expected is garbage, not the body
+/// that follows it.
+fn signature_garbage(m: &mut Marker<'_, '_>, resume: impl Fn(&Marker<'_, '_>) -> bool) {
+    skip_all(m, |m| {
+        resume(m) || m.at(T::FnKw) || m.newline() || (m.at(T::LBrace) && m.partnered())
+    });
 }
 
 /// A declared name. `_` is taken with an error: it reads as a name but
@@ -154,8 +233,14 @@ fn param_list(p: &mut Marker<'_, '_>) {
                 break;
             }
             // The body, the enclosing block's end, or the next item follows
-            // an unclosed list: enclosing syntax, left where it is.
-            Some(T::LBrace | T::RBrace | T::FnKw) => {
+            // an unclosed list: enclosing syntax, left where it is. A brace
+            // is only that when the stream pairs it; an unpaired one is
+            // garbage in the list.
+            Some(T::LBrace | T::RBrace) if m.partnered() => {
+                m.error(ParseErrorKind::Expected(T::RParen));
+                break;
+            }
+            Some(T::FnKw) => {
                 m.error(ParseErrorKind::Expected(T::RParen));
                 break;
             }
@@ -167,7 +252,10 @@ fn param_list(p: &mut Marker<'_, '_>) {
             Some(_) => {
                 m.error(ParseErrorKind::ExpectedName);
                 skip(&mut m, |m| {
-                    m.at(T::Comma) || m.at(T::RParen) || m.at(T::LBrace) || m.at(T::FnKw)
+                    m.at(T::Comma)
+                        || m.at(T::RParen)
+                        || (m.at(T::LBrace) && m.partnered())
+                        || m.at(T::FnKw)
                 });
             }
         }

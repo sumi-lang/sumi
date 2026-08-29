@@ -76,6 +76,203 @@ fn function_items() {
 }
 
 #[test]
+fn a_malformed_signature_keeps_its_body() {
+    // Garbage before the name.
+    check(
+        "fn } f() { x }",
+        &[
+            "SourceFile 0..14",
+            "  FnItem 0..14",
+            r#"    Error 3..4 "}""#,
+            r#"    ParamList 6..8 "()""#,
+            "    Block 9..14",
+            r#"      NameExpr 11..12 "x""#,
+        ],
+        &["ExpectedName at 3"],
+    );
+    // A missing name, with the rest intact.
+    check(
+        "fn () {}",
+        &[
+            "SourceFile 0..8",
+            "  FnItem 0..8",
+            r#"    ParamList 3..5 "()""#,
+            r#"    Block 6..8 "{}""#,
+        ],
+        &["ExpectedName at 3"],
+    );
+    // A duplicated name.
+    check(
+        "fn b b() {}",
+        &[
+            "SourceFile 0..11",
+            "  FnItem 0..11",
+            r#"    Error 5..6 "b""#,
+            r#"    ParamList 6..8 "()""#,
+            r#"    Block 9..11 "{}""#,
+        ],
+        &["Expected(LParen) at 5"],
+    );
+    // A missing `(`: the parameters are gone, the body is not.
+    check(
+        "fn a) { a }",
+        &[
+            "SourceFile 0..11",
+            "  FnItem 0..11",
+            r#"    Error 4..5 ")""#,
+            "    Block 6..11",
+            r#"      NameExpr 8..9 "a""#,
+        ],
+        &["Expected(LParen) at 4"],
+    );
+    // An unclosed `{` where the parameters belong is garbage, not the body:
+    // the body is the `{` the stream pairs with a `}`.
+    check(
+        "fn a{ () {}",
+        &[
+            "SourceFile 0..11",
+            "  FnItem 0..11",
+            r#"    Error 4..5 "{""#,
+            r#"    ParamList 6..8 "()""#,
+            r#"    Block 9..11 "{}""#,
+        ],
+        &["Expected(LParen) at 4"],
+    );
+    // Garbage between the parameters and the body, and after the return
+    // type.
+    check(
+        "fn f() ( { x }",
+        &[
+            "SourceFile 0..14",
+            "  FnItem 0..14",
+            r#"    ParamList 4..6 "()""#,
+            r#"    Error 7..8 "(""#,
+            "    Block 9..14",
+            r#"      NameExpr 11..12 "x""#,
+        ],
+        &["Expected(LBrace) at 7"],
+    );
+    check(
+        "fn f() -> int x { y }",
+        &[
+            "SourceFile 0..21",
+            "  FnItem 0..21",
+            r#"    ParamList 4..6 "()""#,
+            r#"    Error 14..15 "x""#,
+            "    Block 16..21",
+            r#"      NameExpr 18..19 "y""#,
+        ],
+        &["Expected(LBrace) at 14"],
+    );
+    // A closer in the garbage is garbage: nothing encloses a signature.
+    check(
+        "fn foo() -) > int { b }",
+        &[
+            "SourceFile 0..23",
+            "  FnItem 0..23",
+            r#"    ParamList 6..8 "()""#,
+            r#"    Error 9..10 "-""#,
+            r#"    Error 10..17 ") > int""#,
+            "    Block 18..23",
+            r#"      NameExpr 20..21 "b""#,
+        ],
+        &["Expected(LBrace) at 9"],
+    );
+    // A signature missing its `fn` is still an item; a misplaced call,
+    // with nothing after its list, is not.
+    check(
+        "a() { x }",
+        &[
+            "SourceFile 0..9",
+            "  FnItem 0..9",
+            r#"    ParamList 1..3 "()""#,
+            "    Block 4..9",
+            r#"      NameExpr 6..7 "x""#,
+        ],
+        &["Expected(FnKw) at 0"],
+    );
+    check(
+        "foo(2)\nfn f() {}",
+        &[
+            "SourceFile 0..16",
+            r#"  Error 0..6 "foo(2)""#,
+            "  FnItem 7..16",
+            r#"    ParamList 11..13 "()""#,
+            r#"    Block 14..16 "{}""#,
+        ],
+        &["ExpectedItem at 0"],
+    );
+    // An unpaired `{` in the parameter list is garbage in the list, not
+    // the body.
+    check(
+        "fn a({ ) { x }",
+        &[
+            "SourceFile 0..14",
+            "  FnItem 0..14",
+            "    ParamList 4..8",
+            r#"      Error 5..6 "{""#,
+            "    Block 9..14",
+            r#"      NameExpr 11..12 "x""#,
+        ],
+        &["ExpectedName at 5"],
+    );
+    // Nothing is searched for past the end of the line — the physical
+    // line, whatever the newline rule says about the tokens around it —
+    // and the parts missing once it has ended are covered by one report.
+    check(
+        "fn f() x\nfn g() {}",
+        &[
+            "SourceFile 0..18",
+            "  FnItem 0..8",
+            r#"    ParamList 4..6 "()""#,
+            r#"    Error 7..8 "x""#,
+            "  FnItem 9..18",
+            r#"    ParamList 13..15 "()""#,
+            r#"    Block 16..18 "{}""#,
+        ],
+        &["Expected(LBrace) at 7"],
+    );
+    check(
+        "fn f +\n() { x }",
+        &[
+            "SourceFile 0..15",
+            "  FnItem 0..6",
+            r#"    Error 5..6 "+""#,
+            r#"  Error 7..15 "() { x }""#,
+        ],
+        &["Expected(LParen) at 5", "ExpectedItem at 7"],
+    );
+    // A body or return type on the next line does not make a headless
+    // signature an item.
+    check(
+        "a()\n-> int {}",
+        &["SourceFile 0..13", r#"  Error 0..13 "a()\n-> int {}""#],
+        &["ExpectedItem at 0"],
+    );
+}
+
+#[test]
+fn orphan_closers_at_the_top_level_are_one_episode() {
+    // Nothing encloses the top level, so a closer there is garbage like
+    // anything else: one report, however many runs it takes.
+    check(
+        "fn f() {}\n) }\nfn g() {}",
+        &[
+            "SourceFile 0..23",
+            "  FnItem 0..9",
+            r#"    ParamList 4..6 "()""#,
+            r#"    Block 7..9 "{}""#,
+            r#"  Error 10..11 ")""#,
+            r#"  Error 12..13 "}""#,
+            "  FnItem 14..23",
+            r#"    ParamList 18..20 "()""#,
+            r#"    Block 21..23 "{}""#,
+        ],
+        &["ExpectedItem at 10"],
+    );
+}
+
+#[test]
 fn let_statements() {
     check(
         "fn f() {\n  let x = 1\n  let mut y: int = x\n}",
