@@ -1,9 +1,9 @@
 //! Property tests: cook and ParserInput invariants over generated sources
 //! instead of the hand-written corpus in `cook.rs` and `input.rs`.
 
-use jolt_lexer::{RawKind, lex};
-use jolt_syntax::{ParserInput, SyntaxKind, cook};
 use proptest::prelude::*;
+use sumi_lexer::{RawKind, lex};
+use sumi_syntax::{ParserInput, SyntaxKind, cook};
 
 /// Source fragments, valid and pathological; concatenation composes the
 /// adjacencies goldens cannot enumerate.

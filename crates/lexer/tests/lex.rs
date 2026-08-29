@@ -1,4 +1,4 @@
-use jolt_lexer::{LexError, LexErrorKind, lex};
+use sumi_lexer::{LexError, LexErrorKind, lex};
 
 /// Lex `source`, assert the partition invariants every lex must uphold, and
 /// render one line per token: `Kind start..end "text"` plus any flags.
@@ -233,7 +233,7 @@ fn line_comment_doc_flavors() {
 
 #[test]
 fn slash_star_is_just_punctuation() {
-    // Jolt has line comments only; there is no block-comment syntax.
+    // Sumi has line comments only; there is no block-comment syntax.
     check(
         "/* x",
         &[

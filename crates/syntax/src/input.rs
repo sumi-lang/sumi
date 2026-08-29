@@ -15,7 +15,7 @@
 //!
 //! # The newline rule
 //!
-//! Jolt has no `;`; statements end at line breaks. A newline is a statement
+//! Sumi has no `;`; statements end at line breaks. A newline is a statement
 //! boundary iff all of:
 //!
 //! 1. it is not inside parentheses — `(...)` suspends termination, and a

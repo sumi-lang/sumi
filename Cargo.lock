@@ -81,27 +81,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "jolt-lexer"
-version = "0.1.0"
-dependencies = [
- "jolt-text",
- "proptest",
- "unicode-ident",
-]
-
-[[package]]
-name = "jolt-syntax"
-version = "0.1.0"
-dependencies = [
- "jolt-lexer",
- "proptest",
-]
-
-[[package]]
-name = "jolt-text"
-version = "0.1.0"
-
-[[package]]
 name = "libc"
 version = "0.2.189"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -260,6 +239,27 @@ dependencies = [
  "tempfile",
  "wait-timeout",
 ]
+
+[[package]]
+name = "sumi-lexer"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "sumi-text",
+ "unicode-ident",
+]
+
+[[package]]
+name = "sumi-syntax"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "sumi-lexer",
+]
+
+[[package]]
+name = "sumi-text"
+version = "0.1.0"
 
 [[package]]
 name = "syn"

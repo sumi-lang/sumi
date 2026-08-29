@@ -1,7 +1,7 @@
 //! Validation of literal token text.
 //!
 //! The raw lexer establishes literal *shape*; these checks establish
-//! *validity* under Jolt's rules: canonical numbers (no suffixes, no leading
+//! *validity* under Sumi's rules: canonical numbers (no suffixes, no leading
 //! zeros, lowercase `e` exponents with no `+` and no zero padding,
 //! underscores only between digits) and the v0 escape set (`\n`, `\r`, `\t`,
 //! `\\`, `\"`, `\'`, `\0`, `\u{…}`). The escape walker is the single
@@ -11,7 +11,7 @@
 //! A token the lexer already reported (unterminated literals) gets no
 //! further errors here: one primary error per token.
 
-use jolt_lexer::TokenFlags;
+use sumi_lexer::TokenFlags;
 
 use crate::cook::SyntaxErrorKind;
 use crate::kind::SyntaxKind;

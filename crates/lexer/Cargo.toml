@@ -1,10 +1,10 @@
 [package]
-name = "jolt-lexer"
+name = "sumi-lexer"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-jolt-text = { path = "../text" }
+sumi-text = { path = "../text" }
 unicode-ident = "1.0.24"
 
 [dev-dependencies]
