@@ -44,6 +44,8 @@ pub struct ParserInput {
     /// For each significant token, its index in the underlying token buffer.
     tokens: Box<[u32]>,
     flags: Box<[u8]>,
+    /// The length of the underlying token buffer.
+    raw_len: u32,
 }
 
 impl ParserInput {
@@ -112,6 +114,7 @@ impl ParserInput {
             kinds: kinds.into_boxed_slice(),
             tokens: tokens.into_boxed_slice(),
             flags: flags.into_boxed_slice(),
+            raw_len: cooked.len() as u32,
         }
     }
 
@@ -134,6 +137,12 @@ impl ParserInput {
     /// buffers, for ranges, text, and flags.
     pub fn token(&self, index: usize) -> u32 {
         self.tokens[index]
+    }
+
+    /// The number of tokens in the underlying buffer: one past the last raw
+    /// index, where ranges that run to end of input stop.
+    pub(crate) fn raw_len(&self) -> u32 {
+        self.raw_len
     }
 
     /// Whether token `index` is glued to token `index + 1`: no trivia
