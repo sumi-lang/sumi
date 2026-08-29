@@ -1,11 +1,12 @@
-/// The language-level kind of a token and, later, of a CST node.
+/// The language-level kind of a token.
 ///
-/// One flat vocabulary shared by cooked tokens and syntax tree nodes, kept
-/// separate from the raw lexer's shape-only `RawKind`. Every kind occupies a
-/// source range: there is deliberately no EOF sentinel (end of input is the
-/// end of the token buffer, surfaced as `Option` by lookahead APIs), and
-/// compound-operator kinds appear only once the parser glues adjacent
-/// punctuation.
+/// Kept separate from the raw lexer's shape-only [`RawKind`](sumi_lexer::RawKind)
+/// below it and from the tree's [`NodeKind`] above it: nodes cover ranges of
+/// tokens rather than sitting among them, so the two vocabularies never share a
+/// slot. Every kind occupies a source range: there is deliberately no EOF
+/// sentinel (end of input is the end of the token buffer, surfaced as `Option`
+/// by lookahead APIs), and compound-operator kinds appear only once the parser
+/// glues adjacent punctuation.
 #[repr(u16)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SyntaxKind {
@@ -108,4 +109,31 @@ impl SyntaxKind {
             _ => return None,
         })
     }
+}
+
+/// The kind of a syntax tree node.
+///
+/// A node is structure only, so this vocabulary is disjoint from
+/// [`SyntaxKind`]: a tree slot never holds a token kind, and a
+/// token buffer slot never holds a node kind.
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum NodeKind {
+    SourceFile,
+    FnItem,
+    ParamList,
+    Param,
+    Block,
+    LetStmt,
+    DiscardStmt,
+    ReturnStmt,
+    NameExpr,
+    LiteralExpr,
+    PrefixExpr,
+    BinaryExpr,
+    ParenExpr,
+    CallExpr,
+    IfExpr,
+    /// Covers tokens the parser could not parse.
+    Error,
 }
