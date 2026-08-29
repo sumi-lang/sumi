@@ -99,12 +99,14 @@ fn starts_item(p: &Marker<'_, '_>) -> bool {
 /// the run itself adds no diagnostic. A matched bracket pair is taken
 /// whole, as the token stream pairs them, so `stop` is never consulted
 /// inside one. A closer met after the first token has no opener in the run:
-/// it belongs to something enclosing, or to nothing, and ends the run.
+/// it belongs to something enclosing, or to nothing, and ends the run. So
+/// does a `fn` that no closed construct owns: it begins the next item,
+/// which no recovery may swallow.
 fn skip(p: &mut Marker<'_, '_>, stop: impl Fn(&Marker<'_, '_>) -> bool) -> CompletedMarker {
     let mut m = p.start();
     m.group();
     while let Some(kind) = m.current() {
-        if matches!(kind, T::RParen | T::RBrace) || stop(&m) {
+        if matches!(kind, T::RParen | T::RBrace) || m.at_item() || stop(&m) {
             break;
         }
         m.group();
@@ -221,6 +223,10 @@ fn type_ref(p: &mut Marker<'_, '_>) {
 fn param_list(p: &mut Marker<'_, '_>) {
     let mut m = p.start();
     m.token(); // (
+    // A list the stream closes owns everything up to its `)`: whatever is
+    // in the way is garbage in the list. One it does not close ends at
+    // enclosing syntax — the body, an enclosing block's end, or the next
+    // item — a brace being that only when the stream pairs it.
     m.enter_parens();
     loop {
         match m.current() {
@@ -232,15 +238,11 @@ fn param_list(p: &mut Marker<'_, '_>) {
                 m.token();
                 break;
             }
-            // The body, the enclosing block's end, or the next item follows
-            // an unclosed list: enclosing syntax, left where it is. A brace
-            // is only that when the stream pairs it; an unpaired one is
-            // garbage in the list.
-            Some(T::LBrace | T::RBrace) if m.partnered() => {
+            Some(T::LBrace | T::RBrace) if !m.closed() && m.partnered() => {
                 m.error(ParseErrorKind::Expected(T::RParen));
                 break;
             }
-            Some(T::FnKw) => {
+            Some(T::FnKw) if m.at_item() => {
                 m.error(ParseErrorKind::Expected(T::RParen));
                 break;
             }
@@ -254,8 +256,7 @@ fn param_list(p: &mut Marker<'_, '_>) {
                 skip(&mut m, |m| {
                     m.at(T::Comma)
                         || m.at(T::RParen)
-                        || (m.at(T::LBrace) && m.partnered())
-                        || m.at(T::FnKw)
+                        || (!m.closed() && m.at(T::LBrace) && m.partnered())
                 });
             }
         }
@@ -297,6 +298,11 @@ fn block_here(p: &mut Marker<'_, '_>) {
 fn block(p: &mut Marker<'_, '_>) -> CompletedMarker {
     let mut m = p.start();
     m.token(); // {
+    // A block the stream never closes ends where the next item begins: its
+    // `}` is missing, and an item is not a statement — nor is it any
+    // recovery's to skip. One the stream does close keeps a misplaced `fn`
+    // as the statement it is not, skipped.
+    m.enter();
     loop {
         match m.current() {
             None => {
@@ -307,6 +313,10 @@ fn block(p: &mut Marker<'_, '_>) -> CompletedMarker {
                 m.token();
                 break;
             }
+            Some(T::FnKw) if m.at_item() => {
+                m.error(ParseErrorKind::Expected(T::RBrace));
+                break;
+            }
             // A `)` closing a paren still open around this block belongs to
             // it: the block is unclosed, and the `)` is left to its owner.
             Some(T::RParen) if m.closes_open_paren() => {
@@ -315,7 +325,7 @@ fn block(p: &mut Marker<'_, '_>) -> CompletedMarker {
             }
             Some(_) => {
                 statement(&mut m);
-                let ends = m.boundary() || m.at(T::RBrace) || m.closes_open_paren();
+                let ends = m.boundary() || m.at(T::RBrace) || m.closes_open_paren() || m.at_item();
                 if !ends && m.current().is_some() {
                     m.error(ParseErrorKind::ExpectedBoundary);
                 }
@@ -473,7 +483,7 @@ fn expr_bp(p: &mut Marker<'_, '_>, min_bp: u8) -> Option<CompletedMarker> {
 /// When the next expression would open a node past [`MAX_DEPTH`] — after
 /// `ahead` nodes the caller opens first — take the rest of the expression
 /// as one `Error` node instead of recursing: it ends at a boundary, a `,`,
-/// or an enclosing closer.
+/// an enclosing closer, or the next item.
 fn too_deep(p: &mut Marker<'_, '_>, ahead: u32) -> Option<CompletedMarker> {
     (p.depth() + ahead >= MAX_DEPTH).then(|| {
         p.error(ParseErrorKind::NestingTooDeep);
@@ -557,6 +567,9 @@ fn if_expr(p: &mut Marker<'_, '_>) -> CompletedMarker {
 fn arg_list(p: &mut Marker<'_, '_>) {
     let mut m = p.start();
     m.token(); // (
+    // A list the stream closes owns everything up to its `)`; one it does
+    // not close ends at enclosing syntax: an enclosing block's end, or the
+    // next item.
     m.enter_parens();
     loop {
         match m.current() {
@@ -568,9 +581,7 @@ fn arg_list(p: &mut Marker<'_, '_>) {
                 m.token();
                 break;
             }
-            // The enclosing block's end, or the next item, follows an
-            // unclosed list: enclosing syntax, left where it is.
-            Some(T::RBrace | T::FnKw) => {
+            Some(T::RBrace | T::FnKw) if !m.closed() => {
                 m.error(ParseErrorKind::Expected(T::RParen));
                 break;
             }
@@ -581,9 +592,7 @@ fn arg_list(p: &mut Marker<'_, '_>) {
             Some(kind) if starts_expression(kind) => operand(&mut m, 0),
             Some(_) => {
                 m.error(ParseErrorKind::ExpectedExpression);
-                skip(&mut m, |m| {
-                    m.at(T::Comma) || m.at(T::RParen) || m.at(T::FnKw)
-                });
+                skip(&mut m, |m| m.at(T::Comma) || m.at(T::RParen));
             }
         }
         if m.at(T::Comma) {
