@@ -20,10 +20,11 @@
 //!
 //! 1. it is not inside parentheses — `(...)` suspends termination, and a
 //!    `{...}` within restores it;
-//! 2. the token before it can end a statement: an identifier, a literal,
-//!    `true`/`false`, `return`, `)`, or `}`;
-//! 3. the token after it cannot continue one: `.`, `else`, and binary
-//!    operators continue the previous line; everything else starts fresh.
+//! 2. the token before it can end a statement: an identifier or `_`, a
+//!    literal, `true`/`false`, `return`, `)`, or `}`;
+//! 3. the token after it cannot continue one: `else` and binary operators
+//!    continue the previous line; everything else starts fresh. The set
+//!    mirrors the grammar — a leading `.` joins it with member access.
 //!
 //! The bits record where statements end; the bans that keep the rule
 //! unambiguous (trailing operators, unglued unary operators) are enforced by
@@ -170,6 +171,7 @@ fn can_end_statement(kind: SyntaxKind) -> bool {
     matches!(
         kind,
         SyntaxKind::Ident
+            | SyntaxKind::Underscore
             | SyntaxKind::TrueKw
             | SyntaxKind::FalseKw
             | SyntaxKind::ReturnKw
@@ -187,18 +189,18 @@ fn can_end_statement(kind: SyntaxKind) -> bool {
 /// Whether the token at `index` continues a statement left open on the
 /// previous line.
 ///
-/// Continuation tokens are ones that can never start a statement: `.`,
-/// `else`, and binary operators, compounds included. `-` is binary exactly
-/// when it is not glued to what follows — `- b` continues, `-b` opens a
-/// negation, and the `->` of an arrow never continues. `(` could not start a
+/// Continuation tokens are ones that can never start a statement: `else`
+/// and binary operators, compounds included. `-` is binary exactly when it
+/// is not glued to what follows — `- b` continues, `-b` opens a negation,
+/// and the `->` of an arrow never continues. `(` could not start a
 /// statement either, but deliberately does not continue: arguments must not
-/// attach to a callee across a line break.
+/// attach to a callee across a line break. The set mirrors the grammar: a
+/// leading `.` joins it with member access.
 fn continues_statement(kinds: &[SyntaxKind], flags: &[u8], index: usize) -> bool {
     let joint_to =
         |kind: SyntaxKind| flags[index] & JOINT != 0 && kinds.get(index + 1) == Some(&kind);
     match kinds[index] {
-        SyntaxKind::Dot
-        | SyntaxKind::ElseKw
+        SyntaxKind::ElseKw
         | SyntaxKind::Plus
         | SyntaxKind::Star
         | SyntaxKind::Slash
