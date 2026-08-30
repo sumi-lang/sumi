@@ -238,6 +238,20 @@ fn continuations_may_span_blank_lines_and_comments() {
 }
 
 #[test]
+fn unclosed_parens_do_not_suspend_termination() {
+    // A `(` the stream never closes would suspend termination to the end
+    // of the file; the line ends the statement instead.
+    assert!(has_boundary("f(a\nb"));
+    assert!(has_boundary("f(a\nb }"));
+    // A trailing `,` cannot end a statement, so the list continues.
+    assert!(!has_boundary("f(a,\nb"));
+    // A `(` inside restores nothing on its own.
+    assert!(!has_boundary("f((a\nb)"));
+    // An unclosed `{` inside a closed `(` still restores.
+    assert!(has_boundary("(a { b\nc )"));
+}
+
+#[test]
 fn parens_suspend_termination() {
     assert!(!has_boundary("f(a\nb)"));
     check(
@@ -327,9 +341,8 @@ fn brackets_pair_and_closers_synchronize() {
             r#"RParen ")""#,
         ],
     );
-    // A closer with no match is an orphan. A `}` with no `{` open abandons
-    // the `(`s left open; a `)` with no `(` open discards nothing, so the
-    // `{` it sits inside still pairs.
+    // A closer with no match is an orphan and discards nothing, so the `{`
+    // a stray `)` sits inside still pairs.
     check(
         "(a}",
         &[r#"LParen "(" joint"#, r#"Ident "a" joint"#, r#"RBrace "}""#],

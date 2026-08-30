@@ -258,9 +258,16 @@ fn param_list(p: &mut Marker<'_, '_>) {
                 skip(&mut m, |m| {
                     m.at(T::Comma)
                         || m.at(T::RParen)
-                        || (!m.closed() && m.at(T::LBrace) && m.partnered())
+                        || (!m.closed() && (m.boundary() || (m.at(T::LBrace) && m.partnered())))
                 });
             }
+        }
+        // A boundary ends a list the stream never closes: its line has. One
+        // the stream closes owns everything through its `)`, a boundary an
+        // unclosed `{` inside it restores included.
+        if !m.closed() && m.boundary() {
+            m.error(ParseErrorKind::Expected(T::RParen));
+            break;
         }
         if m.at(T::Comma) {
             m.token();
@@ -609,8 +616,17 @@ fn arg_list(p: &mut Marker<'_, '_>) {
             Some(kind) if starts_expression(kind) => operand(&mut m, 0),
             Some(_) => {
                 m.error(ParseErrorKind::ExpectedExpression);
-                skip(&mut m, |m| m.at(T::Comma) || m.at(T::RParen));
+                skip(&mut m, |m| {
+                    m.at(T::Comma) || m.at(T::RParen) || (!m.closed() && m.boundary())
+                });
             }
+        }
+        // A boundary ends a list the stream never closes: its line has. One
+        // the stream closes owns everything through its `)`, a boundary an
+        // unclosed `{` inside it restores included.
+        if !m.closed() && m.boundary() {
+            m.error(ParseErrorKind::Expected(T::RParen));
+            break;
         }
         if m.at(T::Comma) {
             m.token();

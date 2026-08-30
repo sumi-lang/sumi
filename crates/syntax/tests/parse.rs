@@ -1393,3 +1393,88 @@ fn a_stray_brace_inside_a_body_is_a_stray_statement() {
         &["ExpectedItem at 13"],
     );
 }
+
+#[test]
+fn an_unclosed_list_ends_where_its_line_does() {
+    // The stream never closes the `(`, so it suspends no boundaries: the
+    // line ends the list with one report, and `b` is the statement it is
+    // rather than a second argument or part of the garbage.
+    check(
+        "fn f() { g(a\n  b\n}",
+        &[
+            "SourceFile 0..18",
+            "  FnItem 0..18",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..18",
+            "      CallExpr 9..12",
+            r#"        NameExpr 9..10 "g""#,
+            "        ArgList 10..12",
+            r#"          NameExpr 11..12 "a""#,
+            r#"      NameExpr 15..16 "b""#,
+        ],
+        &["Expected(RParen) at 15"],
+    );
+    check(
+        "fn f() { g(* a\n  b\n}",
+        &[
+            "SourceFile 0..20",
+            "  FnItem 0..20",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..20",
+            "      CallExpr 9..14",
+            r#"        NameExpr 9..10 "g""#,
+            "        ArgList 10..14",
+            r#"          Error 11..14 "* a""#,
+            r#"      NameExpr 17..18 "b""#,
+        ],
+        &["ExpectedExpression at 11", "Expected(RParen) at 17"],
+    );
+    // A parameter list likewise: the next line is not a parameter.
+    check(
+        "fn f(a: int\n  x\nfn g() {}",
+        &[
+            "SourceFile 0..25",
+            "  FnItem 0..11",
+            "    ParamList 4..11",
+            r#"      Param 5..11 "a: int""#,
+            r#"  Error 14..15 "x""#,
+            "  FnItem 16..25",
+            r#"    ParamList 20..22 "()""#,
+            r#"    Block 23..25 "{}""#,
+        ],
+        &["Expected(RParen) at 14"],
+    );
+}
+
+#[test]
+fn a_closed_list_owns_a_boundary_an_unclosed_brace_restores() {
+    // The `)` pairs with the `(`, discarding the `{` in between; the `{`
+    // restores boundaries all the same, so one sits before `b` inside the
+    // closed list. The list owns everything through its `)` regardless.
+    check(
+        "fn f() { g(:{ a\nb) }",
+        &[
+            "SourceFile 0..20",
+            "  FnItem 0..20",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..20",
+            "      CallExpr 9..18",
+            r#"        NameExpr 9..10 "g""#,
+            "        ArgList 10..18",
+            r#"          Error 11..17 ":{ a\nb""#,
+        ],
+        &["ExpectedExpression at 11"],
+    );
+    check(
+        "fn f(a: { x\nb: int) {}",
+        &[
+            "SourceFile 0..22",
+            "  FnItem 0..22",
+            "    ParamList 4..19",
+            r#"      Param 5..7 "a:""#,
+            r#"      Error 8..18 "{ x\nb: int""#,
+            r#"    Block 20..22 "{}""#,
+        ],
+        &["ExpectedType at 8"],
+    );
+}
