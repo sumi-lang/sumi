@@ -1,0 +1,13 @@
+[package]
+name = "sumi-frontend"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+sumi-diagnostics = { path = "../diagnostics" }
+sumi-lexer = { path = "../lexer" }
+sumi-syntax = { path = "../syntax" }
+sumi-text = { path = "../text" }
+
+[dev-dependencies]
+proptest = "=1.11.0"

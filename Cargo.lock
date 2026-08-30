@@ -248,6 +248,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sumi-frontend"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "sumi-diagnostics",
+ "sumi-lexer",
+ "sumi-syntax",
+ "sumi-text",
+]
+
+[[package]]
 name = "sumi-lexer"
 version = "0.1.0"
 dependencies = [
