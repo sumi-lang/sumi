@@ -1812,6 +1812,28 @@ fn a_non_recovery_report_does_not_trigger_statement_recovery() {
 }
 
 #[test]
+fn lexer_error_suppression_does_not_hide_statement_recovery() {
+    // The lexer owns the diagnostic for `€`, but the parser still recovers
+    // over it. The ambiguous `c` therefore belongs to the malformed
+    // statement instead of becoming a new statement missing its boundary.
+    check(
+        "fn f() { a € + b c }",
+        &[
+            "SourceFile 0..22",
+            "  FnItem 0..22",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..22",
+            "      BinaryExpr 9..18",
+            r#"        NameExpr 9..10 "a""#,
+            r#"        Error 11..14 "€""#,
+            r#"        NameExpr 17..18 "b""#,
+            r#"      Error 19..20 "c""#,
+        ],
+        &[],
+    );
+}
+
+#[test]
 fn displaced_brackets_are_recovered_by_their_grammar_context() {
     // A `}` where an operand continues is garbage in the discard statement,
     // rather than the end of its enclosing block.

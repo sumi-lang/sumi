@@ -390,10 +390,10 @@ fn block(p: &mut Marker<'_, '_>) -> CompletedMarker {
                 break;
             }
             Some(_) => {
-                let reported = m.reported();
+                let recovery = m.recovery_checkpoint();
                 let garbage = m.at(T::Error);
                 statement(&mut m);
-                let failed = garbage || m.reported_since(reported);
+                let failed = garbage || m.recovered_since(recovery);
                 // A statement following on the same line is missing its
                 // boundary. Anything else begins a malformed suffix, which
                 // the next round reports: a boundary would not make it a
