@@ -513,8 +513,8 @@ fn program() -> BoxedStrategy<String> {
 // nearly-well-formed ones: one edit to a well-formed program should cost
 // few errors, and should disturb only the statement or item it lands in.
 
-/// The most errors one edit may cost: the mistake itself, and at most two
-/// consequences.
+/// The most errors of recovery's one edit may cost: the mistake itself, and
+/// at most two consequences.
 const MAX_ERRORS_PER_EDIT: usize = 3;
 
 /// One edit to a well-formed program, made at a significant token.
@@ -608,13 +608,17 @@ impl Front {
 
     /// The items, and the statements of their bodies, that cover none of
     /// the raw tokens in `touched`: what an edit there must leave alone.
-    fn guarded(&self, touched: &[u32]) -> Vec<usize> {
+    /// The statements of a body whose `{` is among the raw tokens in
+    /// `moved` are not among them: an edit that removes or moves the
+    /// delimiter they sit inside necessarily reparents them.
+    fn guarded(&self, touched: &[u32], moved: &[u32]) -> Vec<usize> {
         let tree = self.parse.tree();
         let mut nodes = Vec::new();
         for item in tree.children(0) {
             nodes.push(item);
             for child in tree.children(item) {
-                if tree.kind(child) == NodeKind::Block {
+                if tree.kind(child) == NodeKind::Block && !moved.contains(&tree.first_token(child))
+                {
                     nodes.extend(tree.children(child));
                 }
             }
@@ -642,7 +646,7 @@ fn edited_program() -> impl Strategy<Value = (String, usize, Edit)> {
 }
 
 /// Apply `edit` at significant token `index` of `source`: the edited text,
-/// and the significant indices the edit touches.
+/// the significant indices the edit touches, and those it removes or moves.
 ///
 /// The touched indices include the tokens on either side of the edit: an
 /// inserted token joins whatever it lands next to — a leading operator or
@@ -650,7 +654,12 @@ fn edited_program() -> impl Strategy<Value = (String, usize, Edit)> {
 /// and a deleted token can leave a dangling operator that takes the next
 /// line as its operand. Those are the language's rules, not recovery, so
 /// the neighbours are the edit's own business.
-fn apply(source: &str, spans: &[(usize, usize)], index: usize, edit: Edit) -> (String, Vec<usize>) {
+fn apply(
+    source: &str,
+    spans: &[(usize, usize)],
+    index: usize,
+    edit: Edit,
+) -> (String, Vec<usize>, Vec<usize>) {
     let (start, end) = spans[index];
     let text = &source[start..end];
     let (edited, left, right) = match edit {
@@ -688,34 +697,41 @@ fn apply(source: &str, spans: &[(usize, usize)], index: usize, edit: Edit) -> (S
         }
     };
     let touched = (left.saturating_sub(1)..=(right + 1).min(spans.len() - 1)).collect();
-    (edited, touched)
+    let moved = match edit {
+        Edit::Delete => vec![index],
+        Edit::Swap => vec![left, right],
+        Edit::Duplicate | Edit::Insert(_) => Vec::new(),
+    };
+    (edited, touched, moved)
 }
 
 proptest! {
     #[test]
     fn a_single_edit_costs_few_errors((source, index, edit) in edited_program()) {
         let original = front(&source);
-        let (edited, _) = apply(&source, &original.spans(), index, edit);
+        let (edited, _, _) = apply(&source, &original.spans(), index, edit);
         let after = front(&edited);
         check_tree(after.parse.tree(), &after.cooked)?;
         let errors: Vec<_> = after.parse.errors().iter().map(|error| error.kind).collect();
+        let recovery = errors.iter().filter(|kind| kind.is_recovery()).count();
         prop_assert!(
-            errors.len() <= MAX_ERRORS_PER_EDIT,
+            recovery <= MAX_ERRORS_PER_EDIT,
             "{:?} at token {} ({:?}) costs {} errors {:?}\n--- original ---\n{}\n--- edited ---\n{}",
-            edit, index, original.input.get(index), errors.len(), errors, source, edited
+            edit, index, original.input.get(index), recovery, errors, source, edited
         );
     }
 
     #[test]
     fn a_single_edit_disturbs_only_where_it_lands((source, index, edit) in edited_program()) {
         let original = front(&source);
-        let (edited, touched) = apply(&source, &original.spans(), index, edit);
+        let (edited, touched, moved) = apply(&source, &original.spans(), index, edit);
         let touched: Vec<u32> = touched.iter().map(|&index| original.input.token(index)).collect();
+        let moved: Vec<u32> = moved.iter().map(|&index| original.input.token(index)).collect();
         let after = front(&edited);
         let survivors: HashSet<_> = (0..after.parse.tree().len())
             .map(|node| after.shape(&edited, node))
             .collect();
-        for node in original.guarded(&touched) {
+        for node in original.guarded(&touched, &moved) {
             let shape = original.shape(&source, node);
             prop_assert!(
                 survivors.contains(&shape),

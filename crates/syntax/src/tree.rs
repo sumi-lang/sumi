@@ -470,11 +470,13 @@ impl<'a> Marker<'_, 'a> {
             .is_some_and(|closer| closer > self.builder.position)
     }
 
-    /// Whether the next token is a `fn` beginning the next item: one no
-    /// bracket construct the stream closes encloses. Recovery never takes
-    /// it; whatever lost its closer ends there instead.
+    /// Whether the next token is a `fn` beginning the next item: one that
+    /// no bracket construct the stream closes still encloses — its closer,
+    /// if it had one, lies behind, taken by something unclosed inside it.
+    /// Recovery never takes such a `fn`; whatever lost its closer ends
+    /// there instead.
     pub(crate) fn at_item(&self) -> bool {
-        self.closer.is_none() && self.at(SyntaxKind::FnKw)
+        !self.closer_ahead() && self.at(SyntaxKind::FnKw)
     }
 
     /// Attach the next token if it is `kind` and no statement boundary
@@ -497,6 +499,20 @@ impl<'a> Marker<'_, 'a> {
     /// here, its two problems being independent. Nor is anything recorded
     /// at a position that has an error already: one diagnostic per position
     /// keeps a single mistake from cascading.
+    /// How many errors have been reported so far.
+    pub(crate) fn reported(&self) -> usize {
+        self.builder.errors.len()
+    }
+
+    /// Whether recovery has reported anything since there were `reported`
+    /// errors: something missing, or a token that could not be taken. A
+    /// rule broken by syntax taken as it was does not count.
+    pub(crate) fn reported_since(&self, reported: usize) -> bool {
+        self.builder.errors[reported..]
+            .iter()
+            .any(|error| error.kind.is_recovery())
+    }
+
     pub(crate) fn error(&mut self, kind: ParseErrorKind) {
         if self.at(SyntaxKind::Error) {
             return;
