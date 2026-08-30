@@ -39,7 +39,10 @@
 
 use crate::input::ParserInput;
 use crate::kind::{NodeKind, SyntaxKind};
-use crate::parser::{ParseError, ParseErrorKind};
+use crate::parser::{
+    ParseAnchor, ParseEvidence, ParseExpected, ParseRecovery, ParseRecoveryKind, ParseViolation,
+    ParseViolationKind, RawGap, RawTokenRange,
+};
 
 /// One node: its kind, its subtree extent (self included), and the
 /// half-open range of raw token indices it covers.
@@ -93,11 +96,11 @@ impl SyntaxTree {
     }
 }
 
-/// A parsed file: the tree, and the errors met while building it.
+/// A parsed file: its tree and the evidence observed while building it.
 #[derive(Clone, Debug)]
 pub struct Parse {
     tree: SyntaxTree,
-    errors: Box<[ParseError]>,
+    evidence: Box<[ParseEvidence]>,
 }
 
 impl Parse {
@@ -111,7 +114,8 @@ impl Parse {
             position: 0,
             opened: 1,
             recoveries: 0,
-            errors: Vec::new(),
+            last_recovery_evidence: None,
+            evidence: Vec::new(),
         };
         body(&mut Marker {
             builder: &mut builder,
@@ -144,7 +148,11 @@ impl Parse {
             tree: SyntaxTree {
                 nodes: preorder(builder.nodes),
             },
-            errors: builder.errors.into_boxed_slice(),
+            evidence: builder
+                .evidence
+                .into_iter()
+                .map(EvidenceBuilder::finish)
+                .collect(),
         }
     }
 
@@ -152,9 +160,10 @@ impl Parse {
         &self.tree
     }
 
-    /// The errors in source order, at most one per position.
-    pub fn errors(&self) -> &[ParseError] {
-        &self.errors
+    /// Parser facts in observation order. Multiple independent facts may
+    /// share an anchor.
+    pub fn evidence(&self) -> &[ParseEvidence] {
+        &self.evidence
     }
 }
 
@@ -167,9 +176,11 @@ struct Builder<'a> {
     position: usize,
     /// Nodes opened so far, numbering the next one; the root is 0.
     opened: u32,
-    /// Structural recovery reports made while building the tree.
+    /// Structural recovery facts recorded while building the tree.
     recoveries: usize,
-    errors: Vec<ParseError>,
+    /// The evidence index of the cursor-nearest structural recovery.
+    last_recovery_evidence: Option<usize>,
+    evidence: Vec<EvidenceBuilder>,
 }
 
 impl Builder<'_> {
@@ -179,16 +190,60 @@ impl Builder<'_> {
         id
     }
 
-    /// The raw index of the next significant token, or one past the last
-    /// raw token at end of input.
-    fn raw_position(&self) -> u32 {
-        if self.position < self.input.len() {
-            self.input.token(self.position)
+    /// The nonempty raw range covered by significant positions `start..end`.
+    fn raw_range(&self, start: usize, end: usize) -> RawTokenRange {
+        assert!(start < end && end <= self.input.len());
+        RawTokenRange::new(self.input.token(start), self.input.token(end - 1) + 1)
+    }
+
+    /// The raw trivia interval at significant position `position`.
+    fn raw_gap(&self, position: usize) -> RawGap {
+        assert!(position <= self.input.len());
+        let trivia_start = if position == 0 {
+            0
         } else {
+            self.input.token(position - 1) + 1
+        };
+        let trivia_end = if position == self.input.len() {
             self.input.raw_len()
+        } else {
+            self.input.token(position)
+        };
+        RawGap::new(trivia_start, trivia_end)
+    }
+}
+
+enum EvidenceBuilder {
+    Recovery {
+        kind: ParseRecoveryKind,
+        anchor: ParseAnchor,
+        skipped: Vec<RawTokenRange>,
+    },
+    Violation(ParseViolation),
+}
+
+impl EvidenceBuilder {
+    fn finish(self) -> ParseEvidence {
+        match self {
+            Self::Recovery {
+                kind,
+                anchor,
+                skipped,
+            } => ParseEvidence::Recovery(ParseRecovery {
+                kind,
+                anchor,
+                skipped: skipped.into_boxed_slice(),
+            }),
+            Self::Violation(violation) => ParseEvidence::Violation(violation),
         }
     }
 }
+
+#[derive(Clone, Copy)]
+pub(crate) struct RecoveryCheckpoint(usize);
+
+#[derive(Clone, Copy)]
+pub(crate) struct RecoveryHandle(usize);
 
 /// An open node: the root, lent by [`Parse::build`], or a child from
 /// [`start`](Self::start) or [`precede`](Self::precede). Tokens attach to
@@ -200,7 +255,7 @@ impl Builder<'_> {
 ///
 /// Within the crate, the marker is also the parser's view of the input:
 /// lookahead, the stream facts (jointness, newlines, boundaries, bracket
-/// partners) at the cursor, and error recording, so one cursor serves
+/// partners) at the cursor, and evidence recording, so one cursor serves
 /// building and reading alike.
 ///
 /// Completing the outer of two open nodes is a borrow error:
@@ -569,48 +624,105 @@ impl<'a> Marker<'_, 'a> {
             self.token();
             true
         } else {
-            self.error(ParseErrorKind::Expected(kind));
+            self.missing(ParseExpected::Token(kind));
             false
         }
     }
 
     /// The current structural recovery epoch.
-    pub(crate) fn recovery_checkpoint(&self) -> usize {
-        self.builder.recoveries
+    pub(crate) fn recovery_checkpoint(&self) -> RecoveryCheckpoint {
+        RecoveryCheckpoint(self.builder.recoveries)
     }
 
     /// Whether structural recovery has happened since `checkpoint`.
-    pub(crate) fn recovered_since(&self, checkpoint: usize) -> bool {
-        self.builder.recoveries > checkpoint
+    pub(crate) fn recovered_since(&self, checkpoint: RecoveryCheckpoint) -> bool {
+        self.builder.recoveries > checkpoint.0
     }
 
-    /// Record `kind` at the next token, or at end of input. Nothing is
-    /// recorded at a token with no meaning — a [`SyntaxKind::Error`], which
-    /// the lexer or cook reported — since a structural complaint about it
-    /// adds nothing; a malformed literal keeps its kind and is ordinary
-    /// here, its two problems being independent. Nor is anything recorded
-    /// at a position that has an error already: one diagnostic per position
-    /// keeps a single mistake from cascading.
-    ///
-    /// Structural recovery is tracked before this suppression and
-    /// deduplication, so diagnostic policy cannot change parsing decisions.
-    pub(crate) fn error(&mut self, kind: ParseErrorKind) {
-        if kind.is_recovery() {
-            self.builder.recoveries += 1;
-        }
-        if self.at(SyntaxKind::Error) {
-            return;
-        }
-        let token = self.builder.raw_position();
-        if self
-            .builder
-            .errors
-            .last()
-            .is_some_and(|last| last.token == token)
-        {
-            return;
-        }
-        self.builder.errors.push(ParseError { token, kind });
+    /// The cursor-nearest structural recovery since `checkpoint`.
+    pub(crate) fn latest_recovery_since(
+        &self,
+        checkpoint: RecoveryCheckpoint,
+    ) -> Option<RecoveryHandle> {
+        (self.builder.recoveries > checkpoint.0).then(|| {
+            RecoveryHandle(
+                self.builder
+                    .last_recovery_evidence
+                    .expect("every recovery has evidence"),
+            )
+        })
+    }
+
+    /// Record syntax missing in the raw trivia gap at the cursor.
+    pub(crate) fn missing(&mut self, expected: ParseExpected) -> RecoveryHandle {
+        let anchor = ParseAnchor::Gap(self.builder.raw_gap(self.builder.position));
+        self.record_recovery(ParseRecoveryKind::Expected(expected), anchor)
+    }
+
+    /// Record structural recovery over `width` significant tokens at the
+    /// cursor.
+    pub(crate) fn recover_tokens(
+        &mut self,
+        kind: ParseRecoveryKind,
+        width: usize,
+    ) -> RecoveryHandle {
+        let range = self.raw_token_range(width);
+        self.recover_range(kind, range)
+    }
+
+    /// Record structural recovery over an already known raw token range.
+    pub(crate) fn recover_range(
+        &mut self,
+        kind: ParseRecoveryKind,
+        range: RawTokenRange,
+    ) -> RecoveryHandle {
+        let anchor = ParseAnchor::Tokens(range);
+        self.record_recovery(kind, anchor)
+    }
+
+    /// Record a rule broken by `width` significant tokens which the parser
+    /// accepts structurally.
+    pub(crate) fn violation(&mut self, kind: ParseViolationKind, width: usize) {
+        let range = self.raw_token_range(width);
+        self.builder
+            .evidence
+            .push(EvidenceBuilder::Violation(ParseViolation { kind, range }));
+    }
+
+    /// Attach a raw range skipped during `recovery`.
+    pub(crate) fn skipped(&mut self, recovery: RecoveryHandle, range: RawTokenRange) {
+        let EvidenceBuilder::Recovery { skipped, .. } = &mut self.builder.evidence[recovery.0]
+        else {
+            unreachable!("a recovery handle names recovery evidence")
+        };
+        skipped.push(range);
+    }
+
+    /// The nonempty raw range consumed since this marker opened.
+    pub(crate) fn covered_range(&self) -> RawTokenRange {
+        self.builder.raw_range(self.start, self.builder.position)
+    }
+
+    fn raw_token_range(&self, width: usize) -> RawTokenRange {
+        self.builder.raw_range(
+            self.builder.position,
+            self.builder
+                .position
+                .checked_add(width)
+                .expect("raw token range width does not overflow"),
+        )
+    }
+
+    fn record_recovery(&mut self, kind: ParseRecoveryKind, anchor: ParseAnchor) -> RecoveryHandle {
+        let evidence = self.builder.evidence.len();
+        self.builder.evidence.push(EvidenceBuilder::Recovery {
+            kind,
+            anchor,
+            skipped: Vec::new(),
+        });
+        self.builder.recoveries += 1;
+        self.builder.last_recovery_evidence = Some(evidence);
+        RecoveryHandle(evidence)
     }
 }
 
@@ -674,28 +786,24 @@ mod tests {
     use sumi_lexer::lex;
 
     #[test]
-    fn diagnostic_deduplication_does_not_hide_recovery() {
+    fn parser_evidence_retains_same_position_facts() {
         let lexed = lex("x").expect("test source fits in u32");
         let cooked = cook("x", &lexed);
         let input = ParserInput::new(&cooked);
         let parse = Parse::build(&input, |root| {
             let checkpoint = root.recovery_checkpoint();
-            root.error(ParseErrorKind::SpacedPrefixOperator);
+            root.violation(ParseViolationKind::SpacedPrefixOperator, 1);
             assert!(!root.recovered_since(checkpoint));
 
-            // The position is occupied, so this recovery is not retained as
-            // a diagnostic, but it must still advance parser recovery state.
-            root.error(ParseErrorKind::ExpectedExpression);
+            root.recover_tokens(ParseRecoveryKind::Expected(ParseExpected::Expression), 1);
             assert!(root.recovered_since(checkpoint));
             root.token();
         });
 
-        assert_eq!(
-            parse.errors(),
-            &[ParseError {
-                token: 0,
-                kind: ParseErrorKind::SpacedPrefixOperator,
-            }]
-        );
+        let [violation, recovery] = parse.evidence() else {
+            panic!("both same-position facts must be retained")
+        };
+        assert!(matches!(violation, ParseEvidence::Violation(_)));
+        assert!(matches!(recovery, ParseEvidence::Recovery(_)));
     }
 }
