@@ -119,6 +119,19 @@ proptest! {
                 "token {} has both a lex and a cook error", error.token
             );
         }
+
+        // The parser handles `Error` tokens silently because an earlier
+        // phase owns their diagnostics, so every one must have that evidence.
+        for index in 0..cooked.len() {
+            if cooked.kind(index) == SyntaxKind::Error {
+                let token = index as u32;
+                prop_assert!(
+                    lexed.errors().iter().any(|error| error.token == token)
+                        || cooked.errors().iter().any(|error| error.token == token),
+                    "error token {} has no lex or cook error", token
+                );
+            }
+        }
     }
 
     #[test]
