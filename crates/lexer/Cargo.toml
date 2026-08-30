@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 sumi-text = { path = "../text" }
-unicode-ident = "1.0.24"
+unicode-ident = "=1.0.24"
 
 [dev-dependencies]
-proptest = "1.11.0"
+proptest = "=1.11.0"
