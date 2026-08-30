@@ -1,4 +1,7 @@
+use std::ops::Range;
+
 use sumi_lexer::{LexedFile, RawKind};
+use sumi_text::{TextRange, TextSize};
 
 use crate::kind::SyntaxKind;
 use crate::literal;
@@ -15,9 +18,11 @@ pub fn cook(source: &str, lexed: &LexedFile) -> CookedFile {
     let mut errors = Vec::new();
 
     for index in 0..lexed.len() {
-        let mut error = |kind| {
+        let token_range = lexed.range(index);
+        let mut error = |relative, kind| {
             errors.push(SyntaxError {
                 token: index as u32,
+                range: absolute_range(token_range, relative),
                 kind,
             });
         };
@@ -47,7 +52,7 @@ pub fn cook(source: &str, lexed: &LexedFile) -> CookedFile {
                 match SyntaxKind::from_punct(byte) {
                     Some(kind) => kind,
                     None => {
-                        error(SyntaxErrorKind::UnknownPunctuation);
+                        error(0..1, SyntaxErrorKind::UnknownPunctuation);
                         SyntaxKind::Error
                     }
                 }
@@ -98,7 +103,23 @@ impl CookedFile {
 pub struct SyntaxError {
     /// Index of the offending token in the file's token buffer.
     pub token: u32,
+    /// The relevant file-local UTF-8 byte range, contained within `token` and
+    /// ending on character boundaries. May be empty when content is missing,
+    /// as in an empty character literal.
+    pub range: TextRange,
     pub kind: SyntaxErrorKind,
+}
+
+fn absolute_range(token: TextRange, relative: Range<usize>) -> TextRange {
+    let start = u32::try_from(relative.start).expect("token offset fits in u32");
+    let end = u32::try_from(relative.end).expect("token offset fits in u32");
+    let token_start = token.start().to_u32();
+    let token_len = token.end().to_u32() - token_start;
+    assert!(start <= end && end <= token_len);
+    TextRange::new(
+        TextSize::new(token_start + start),
+        TextSize::new(token_start + end),
+    )
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

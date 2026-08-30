@@ -31,10 +31,36 @@ fn check(source: &str, expected: &[&str]) {
 fn check_errors(source: &str, expected: &[(u32, SyntaxErrorKind)]) {
     let lexed = lex(source).expect("test sources fit in u32");
     let cooked = cook(source, &lexed);
+    for error in cooked.errors() {
+        let token = lexed.range(error.token as usize);
+        assert!(token.start() <= error.range.start());
+        assert!(error.range.end() <= token.end());
+        assert!(source.is_char_boundary(error.range.start().to_usize()));
+        assert!(source.is_char_boundary(error.range.end().to_usize()));
+    }
     let actual: Vec<(u32, SyntaxErrorKind)> = cooked
         .errors()
         .iter()
         .map(|error| (error.token, error.kind))
+        .collect();
+    assert_eq!(actual, expected, "for source {source:?}");
+}
+
+#[track_caller]
+fn check_error_ranges(source: &str, expected: &[(u32, u32, u32, SyntaxErrorKind)]) {
+    let lexed = lex(source).expect("test sources fit in u32");
+    let cooked = cook(source, &lexed);
+    let actual: Vec<_> = cooked
+        .errors()
+        .iter()
+        .map(|error| {
+            (
+                error.token,
+                error.range.start().to_u32(),
+                error.range.end().to_u32(),
+                error.kind,
+            )
+        })
         .collect();
     assert_eq!(actual, expected, "for source {source:?}");
 }
@@ -236,6 +262,36 @@ fn multiple_number_errors_report_in_source_order() {
             (0, SyntaxErrorKind::ExponentLeadingZero),
         ],
     );
+}
+
+#[test]
+fn errors_locate_the_offending_source_text() {
+    use SyntaxErrorKind as E;
+
+    check_error_ranges(
+        "x 1E+05",
+        &[
+            (2, 3, 4, E::UppercaseExponent),
+            (2, 4, 5, E::ExponentPlusSign),
+            (2, 5, 6, E::ExponentLeadingZero),
+        ],
+    );
+    check_error_ranges(
+        r#"Δ "é\q" ''"#,
+        &[
+            (2, 6, 8, E::UnknownEscape),
+            (4, 11, 11, E::EmptyCharLiteral),
+        ],
+    );
+    check_error_ranges("0123", &[(0, 0, 1, E::LeadingZero)]);
+    check_error_ranges("1_", &[(0, 1, 2, E::MisplacedUnderscore)]);
+    check_error_ranges("1u32", &[(0, 1, 4, E::UnknownSuffix)]);
+    check_error_ranges("1e", &[(0, 1, 2, E::MissingExponent)]);
+    check_error_ranges(r#""\uX""#, &[(0, 1, 3, E::MalformedUnicodeEscape)]);
+    check_error_ranges(r#""\u{}""#, &[(0, 1, 5, E::MalformedUnicodeEscape)]);
+    check_error_ranges(r#""\u{d800}""#, &[(0, 1, 9, E::InvalidUnicodeScalar)]);
+    check_error_ranges("'éx'", &[(0, 3, 4, E::MoreThanOneChar)]);
+    check_error_ranges(";", &[(0, 0, 1, E::UnknownPunctuation)]);
 }
 
 #[test]
