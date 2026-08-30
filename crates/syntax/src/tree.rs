@@ -121,6 +121,7 @@ impl Parse {
             depth: 0,
             paren: None,
             closer: None,
+            enclosing_closer: None,
             // Closed here once `body` returns, never by `complete`.
             completed: true,
         });
@@ -250,6 +251,10 @@ pub struct Marker<'p, 'a> {
     /// A closed construct owns everything up to its closer, so a `fn`
     /// inside it is garbage there, not the next item.
     closer: Option<usize>,
+    /// The nearest known closer outside `closer`. Entering an unclosed
+    /// construct retains this limit, so local recovery can take matched
+    /// groups whole without crossing a parser-owned enclosing closer.
+    enclosing_closer: Option<usize>,
     completed: bool,
 }
 
@@ -276,16 +281,27 @@ impl<'a> Marker<'_, 'a> {
     }
 
     /// Attach the next token and its matched bracket group only when that
-    /// group closes strictly inside the construct this marker is in. An
-    /// opener paired with the enclosing closer is malformed here and must
-    /// not carry recovery past that closer.
+    /// group closes strictly inside the nearest parser-owned construct. An
+    /// opener paired with that construct's closer is malformed here and
+    /// must not carry recovery past it. With no known closer, only a group
+    /// contained on the malformed statement's line is certainly local;
+    /// recovery keeps it atomic without swallowing later statements.
     pub(crate) fn group_inside(&mut self) {
         let index = self.builder.position;
+        let partner = self
+            .builder
+            .input
+            .partner(index)
+            .filter(|&partner| partner > index);
+        let limit = self.next_parser_closer();
+        let whole = partner.is_some_and(|partner| {
+            limit.is_some_and(|closer| partner < closer)
+                || (limit.is_none()
+                    && (index + 1..=partner)
+                        .all(|inside| !self.builder.input.boundary_before(inside)))
+        });
         self.token();
-        if let Some(partner) = self.builder.input.partner(index)
-            && partner > index
-            && self.closer.is_some_and(|closer| partner < closer)
-        {
+        if let Some(partner) = partner.filter(|_| whole) {
             self.builder.position = partner + 1;
         }
     }
@@ -305,6 +321,7 @@ impl<'a> Marker<'_, 'a> {
             depth: self.depth + 1,
             paren: self.paren,
             closer: self.closer,
+            enclosing_closer: self.enclosing_closer,
             completed: false,
         }
     }
@@ -327,6 +344,7 @@ impl<'a> Marker<'_, 'a> {
             depth: self.depth + 1,
             paren: self.paren,
             closer: self.closer,
+            enclosing_closer: self.enclosing_closer,
             completed: false,
         }
     }
@@ -477,10 +495,27 @@ impl<'a> Marker<'_, 'a> {
                 .is_none_or(|partner| partner <= paren)
     }
 
+    /// Whether the next token is the `)` owned by the innermost
+    /// parenthesized construct the parser still has open: its mechanically
+    /// paired closer, or an orphan available as a recovery closer. A `)`
+    /// paired with an earlier opener belongs to an enclosing construct.
+    pub(crate) fn owns_rparen(&self) -> bool {
+        let Some(paren) = self.paren else {
+            return false;
+        };
+        self.at(SyntaxKind::RParen)
+            && self
+                .builder
+                .input
+                .partner(self.builder.position)
+                .is_none_or(|partner| partner == paren)
+    }
+
     /// Mark this node as a bracket construct whose opener is its first
     /// token: it and the children opened from now on know whether the
     /// stream closes it.
     pub(crate) fn enter(&mut self) {
+        self.enclosing_closer = self.closer.or(self.enclosing_closer);
         self.closer = self.builder.input.partner(self.start);
     }
 
@@ -504,19 +539,23 @@ impl<'a> Marker<'_, 'a> {
             .is_some_and(|closer| closer > self.builder.position)
     }
 
-    /// Whether the next token is the closer of the innermost bracket
-    /// construct entered around this marker.
-    pub(crate) fn at_closer(&self) -> bool {
-        self.closer == Some(self.builder.position)
+    /// The nearest closer ahead which this or an enclosing parser construct
+    /// owns. A construct whose mechanical closer recovery already passed
+    /// yields to the nearest enclosing one retained when it was entered.
+    fn next_parser_closer(&self) -> Option<usize> {
+        [self.closer, self.enclosing_closer]
+            .into_iter()
+            .flatten()
+            .filter(|&closer| closer >= self.builder.position)
+            .min()
     }
 
     /// Whether the next token is a `fn` beginning the next item: one that
-    /// no bracket construct the stream closes still encloses — its closer,
-    /// if it had one, lies behind, taken by something unclosed inside it.
+    /// no parser-owned bracket construct with a closer ahead still encloses.
     /// Recovery never takes such a `fn`; whatever lost its closer ends
     /// there instead.
     pub(crate) fn at_item(&self) -> bool {
-        !self.closer_ahead() && self.at(SyntaxKind::FnKw)
+        self.next_parser_closer().is_none() && self.at(SyntaxKind::FnKw)
     }
 
     /// Attach the next token if it is `kind` and no statement boundary
