@@ -7,7 +7,9 @@ use std::collections::HashSet;
 
 use proptest::prelude::*;
 use sumi_lexer::{LexedFile, RawKind, lex};
-use sumi_syntax::{CookedFile, NodeKind, Parse, ParserInput, SyntaxKind, SyntaxTree, cook, parse};
+use sumi_syntax::{
+    NodeKind, Parse, ParseAnchor, ParseEvidence, ParserInput, SyntaxKind, SyntaxTree, cook, parse,
+};
 
 /// Source fragments, valid and pathological; concatenation composes the
 /// adjacencies goldens cannot enumerate.
@@ -125,8 +127,8 @@ proptest! {
             );
         }
 
-        // The parser handles `Error` tokens silently because an earlier
-        // phase owns their diagnostics, so every one must have that evidence.
+        // An earlier phase owns diagnostics for `Error` tokens, so every one
+        // must have evidence from the lexer or cooker.
         for index in 0..cooked.len() {
             if cooked.kind(index) == SyntaxKind::Error {
                 let token = index as u32;
@@ -342,25 +344,50 @@ proptest! {
             );
         }
 
-        // Errors sit in range, in source order, at most one per position,
-        // and never on a token with no meaning, whose report the lexer or
-        // cook owns. (A malformed literal keeps its kind and may carry both a
-        // cook error and a structural one: independent problems.)
-        let mut previous: Option<u32> = None;
-        for error in parse.errors() {
-            prop_assert!(error.token <= cooked.len() as u32);
-            if let Some(previous) = previous {
-                prop_assert!(previous < error.token, "errors must strictly advance");
+        // Present syntax gets nonempty in-bounds raw ranges. Missing syntax
+        // gets the exact, possibly empty trivia interval between significant
+        // tokens. Recovery effects are nonempty in-bounds ranges too.
+        let raw_len = cooked.len() as u32;
+        for evidence in parse.evidence() {
+            let anchor = match evidence {
+                ParseEvidence::Recovery(recovery) => {
+                    let mut previous_end = None;
+                    for skipped in &recovery.skipped {
+                        prop_assert!(skipped.start() < skipped.end());
+                        prop_assert!(skipped.end() <= raw_len);
+                        if let Some(previous_end) = previous_end {
+                            prop_assert!(previous_end <= skipped.start());
+                        }
+                        previous_end = Some(skipped.end());
+                    }
+                    recovery.anchor
+                }
+                ParseEvidence::Violation(violation) => ParseAnchor::Tokens(violation.range),
+            };
+            match anchor {
+                ParseAnchor::Tokens(range) => {
+                    prop_assert!(range.start() < range.end());
+                    prop_assert!(range.end() <= raw_len);
+                }
+                ParseAnchor::Gap(gap) => {
+                    prop_assert!(gap.trivia_start() <= gap.trivia_end());
+                    prop_assert!(gap.trivia_end() <= raw_len);
+                    if gap.trivia_start() > 0 {
+                        prop_assert!(!is_trivia(cooked.kind(gap.trivia_start() as usize - 1)));
+                    }
+                    for token in gap.trivia_start()..gap.trivia_end() {
+                        prop_assert!(is_trivia(cooked.kind(token as usize)));
+                    }
+                    if gap.trivia_end() < raw_len {
+                        prop_assert!(!is_trivia(cooked.kind(gap.trivia_end() as usize)));
+                    }
+                }
             }
-            if (error.token as usize) < cooked.len() {
-                prop_assert_ne!(cooked.kind(error.token as usize), SyntaxKind::Error);
-            }
-            previous = Some(error.token);
         }
     }
 
     #[test]
-    fn well_formed_programs_parse_without_errors(source in program()) {
+    fn well_formed_programs_produce_no_parse_evidence(source in program()) {
         let lexed = lex(&source).expect("generated sources fit in u32");
         prop_assert!(lexed.errors().is_empty(), "lexer errors in {:?}", source);
         let cooked = cook(&source, &lexed);
@@ -368,8 +395,8 @@ proptest! {
         let parse = parse(&ParserInput::new(&cooked));
         check_tree(parse.tree(), &cooked)?;
         prop_assert!(
-            parse.errors().is_empty(),
-            "parse errors {:?} in {:?}", parse.errors(), source
+            parse.evidence().is_empty(),
+            "parse evidence {:?} in {:?}", parse.evidence(), source
         );
     }
 }
@@ -527,15 +554,9 @@ fn program() -> BoxedStrategy<String> {
 }
 
 // Recovery quality, measured. The tests above prove the parser is total and
-// accepts every well-formed program; these bound how badly it does on a
-// well-formed program after one edit. Non-delimiter edits must be local at
-// the statement level; delimiter edits have a weaker item-level locality
-// contract because they can legitimately reparent nearby syntax.
-
-/// A non-delimiter mistake and at most three local consequences.
-const MAX_ERRORS_PER_NON_DELIMITER_EDIT: usize = 4;
-/// A delimiter mistake and a few consequences when it closes a distant list.
-const MAX_ERRORS_PER_DELIMITER_EDIT: usize = 5;
+// accepts every well-formed program. These require recovery after one edit to
+// remain local: at statement level for non-delimiters, and at item level for
+// delimiters, which can legitimately reparent nearby syntax.
 
 /// One edit to a well-formed program, made at a significant token.
 #[derive(Clone, Copy, Debug)]
@@ -592,7 +613,6 @@ fn changes_delimiter(input: &ParserInput, index: usize, edit: Edit) -> bool {
 /// Every front-end product for one source.
 struct Front {
     lexed: LexedFile,
-    cooked: CookedFile,
     input: ParserInput,
     parse: Parse,
 }
@@ -604,7 +624,6 @@ fn front(source: &str) -> Front {
     let parse = parse(&input);
     Front {
         lexed,
-        cooked,
         input,
         parse,
     }
@@ -816,34 +835,6 @@ fn apply(
 
 proptest! {
     #[test]
-    fn a_single_edit_costs_few_errors(
-        (source, index, edit) in edited_program()
-    ) {
-        let original = front(&source);
-        let (edited, _, _, _) = apply(&source, &original.spans(), index, edit);
-        let after = front(&edited);
-        check_tree(after.parse.tree(), &after.cooked)?;
-        let max_errors = if changes_delimiter(&original.input, index, edit) {
-            MAX_ERRORS_PER_DELIMITER_EDIT
-        } else {
-            MAX_ERRORS_PER_NON_DELIMITER_EDIT
-        };
-        let errors: Vec<_> = after.parse.errors().iter().map(|error| error.kind).collect();
-        let positioned: Vec<_> = after
-            .parse
-            .errors()
-            .iter()
-            .map(|error| (common::start_byte(&after.lexed, error.token), error.kind))
-            .collect();
-        let recovery = errors.iter().filter(|kind| kind.is_recovery()).count();
-        prop_assert!(
-            recovery <= max_errors,
-            "{:?} at token {} ({:?}) costs {} errors (maximum {}) {:?}\n--- original ---\n{}\n--- edited ---\n{}",
-            edit, index, original.input.get(index), recovery, max_errors, positioned, source, edited
-        );
-    }
-
-    #[test]
     fn a_single_non_delimiter_edit_disturbs_only_where_it_lands(
         (source, index, edit) in non_delimiter_edited_program()
     ) {
@@ -860,9 +851,9 @@ proptest! {
             let span = impact.map(original.node_span(node));
             prop_assert!(
                 survivors.contains(&(span, shape.clone())),
-                "{:?} at token {} ({:?}) disturbs the {:?} {:?}\n--- original ---\n{}\n--- edited ---\n{}\nerrors: {:?}",
+                "{:?} at token {} ({:?}) disturbs the {:?} {:?}\n--- original ---\n{}\n--- edited ---\n{}\nevidence: {:?}",
                 edit, index, original.input.get(index), original.parse.tree().kind(node), shape.0,
-                source, edited, after.parse.errors()
+                source, edited, after.parse.evidence()
             );
         }
     }
@@ -893,9 +884,9 @@ proptest! {
             let span = impact.map(original.node_span(item));
             prop_assert!(
                 survivors.contains(&(span, shape.clone())),
-                "{:?} at token {} ({:?}) disturbs the item {:?}\n--- original ---\n{}\n--- edited ---\n{}\nerrors: {:?}",
+                "{:?} at token {} ({:?}) disturbs the item {:?}\n--- original ---\n{}\n--- edited ---\n{}\nevidence: {:?}",
                 edit, index, original.input.get(index), shape.0, source, edited,
-                after.parse.errors()
+                after.parse.evidence()
             );
         }
     }

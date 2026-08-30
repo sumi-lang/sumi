@@ -17,5 +17,8 @@ mod tree;
 pub use cook::{CookedFile, SyntaxError, SyntaxErrorKind, cook};
 pub use input::ParserInput;
 pub use kind::{NodeKind, SyntaxKind};
-pub use parser::{MAX_DEPTH, ParseError, ParseErrorKind, parse};
+pub use parser::{
+    MAX_DEPTH, ParseAnchor, ParseEvidence, ParseExpected, ParseRecovery, ParseRecoveryKind,
+    ParseViolation, ParseViolationKind, RawGap, RawTokenRange, parse,
+};
 pub use tree::{CompletedMarker, Marker, Parse, SyntaxTree};

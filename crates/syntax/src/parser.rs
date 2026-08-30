@@ -4,51 +4,81 @@
 //! Every function is total and makes progress: no input panics, each loop
 //! either consumes a token or returns to a caller that will, and nesting is
 //! bounded — past [`MAX_DEPTH`] open nodes the rest of the expression is
-//! skipped with one error, so stack use is bounded too. Recovery skips into
-//! `Error` nodes and resynchronizes at statement boundaries, `}`, list
+//! skipped with one recovery fact, so stack use is bounded too. Recovery
+//! skips into `Error` nodes and resynchronizes at statement boundaries, `}`, list
 //! separators, or the next `fn`. Where an expression is required and
 //! garbage stands in its place on the line, the garbage is taken and the
 //! expression tried once more. Each construct owns the recovery up to its
 //! following delimiter; missing pieces are absent, never empty nodes, and
-//! the [`ParseError`] carries the position.
+//! [`ParseEvidence`] distinguishes gaps where syntax is missing from ranges
+//! of tokens which exist.
 //!
 //! Expressions are parsed by precedence climbing over the stream facts the
 //! [`ParserInput`] precomputed: a statement boundary ends an expression, a
 //! binary operator must be spaced on both sides and must not end its line,
 //! a prefix operator must be glued to its operand, and comparisons do not
-//! chain. Each violation is one error, recovered as the evident intent.
+//! chain. Each violation is retained while the evident structure is accepted.
 
 use crate::input::ParserInput;
 use crate::kind::{NodeKind as N, SyntaxKind as T};
-use crate::tree::{CompletedMarker, Marker, Parse};
+use crate::tree::{CompletedMarker, Marker, Parse, RecoveryHandle};
 
 /// Parse one file.
 pub fn parse(input: &ParserInput) -> Parse {
     Parse::build(input, source_file)
 }
 
-/// A parse error, attached to the token where the parser noticed it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct ParseError {
-    /// Index of the token in the file's token buffer, or one past the last
-    /// token for an error at end of input.
-    pub token: u32,
-    pub kind: ParseErrorKind,
+/// One parser fact: a structural recovery, or a rule broken by syntax which
+/// the parser accepted as written.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum ParseEvidence {
+    Recovery(ParseRecovery),
+    Violation(ParseViolation),
+}
+
+/// A structural recovery and the raw token ranges it skipped as a result.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct ParseRecovery {
+    pub kind: ParseRecoveryKind,
+    pub anchor: ParseAnchor,
+    pub skipped: Box<[RawTokenRange]>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum ParseErrorKind {
+pub enum ParseRecoveryKind {
+    Expected(ParseExpected),
+    /// A token inside an expression that neither continues nor ends it.
+    Unexpected,
+    /// Expressions nested more than [`MAX_DEPTH`] deep.
+    NestingTooDeep,
+    /// Recovery over tokens whose diagnostic belongs to the lexer or cooker.
+    PriorPhaseError,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ParseExpected {
     /// Something other than a `fn` item at the top level.
-    ExpectedItem,
+    Item,
     /// A token that cannot start a statement.
-    ExpectedStatement,
-    ExpectedExpression,
-    ExpectedName,
-    ExpectedType,
+    Statement,
+    Expression,
+    Name,
+    Type,
     /// A specific token, such as `)` or `=`.
-    Expected(T),
+    Token(T),
     /// A statement starts on the line of the previous one.
-    ExpectedBoundary,
+    Boundary,
+}
+
+/// A rule violation whose syntax remains structurally ordinary.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct ParseViolation {
+    pub kind: ParseViolationKind,
+    pub range: RawTokenRange,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ParseViolationKind {
     /// A block opens on the line after what it belongs to.
     BlockOnNewLine,
     /// A binary operator without spaces on both sides, as in `a-b`.
@@ -60,27 +90,62 @@ pub enum ParseErrorKind {
     SpacedPrefixOperator,
     /// A comparison applied to a comparison, as in `a < b < c`.
     ChainedComparison,
-    /// Expressions nested more than [`MAX_DEPTH`] deep; the rest of the
-    /// expression is skipped.
-    NestingTooDeep,
-    /// A token inside an expression that neither continues nor ends it,
-    /// skipped so that the expression can go on past it.
-    Unexpected,
 }
 
-impl ParseErrorKind {
-    /// Whether recovery reported this — something was missing, or a token
-    /// could not be taken — rather than a rule being broken by syntax the
-    /// parser took as it was, such as an unspaced operator.
-    pub fn is_recovery(self) -> bool {
-        !matches!(
-            self,
-            Self::UnspacedBinaryOperator
-                | Self::TrailingOperator
-                | Self::SpacedPrefixOperator
-                | Self::ChainedComparison
-                | Self::BlockOnNewLine
-        )
+/// What a parser fact anchors in the raw token buffer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ParseAnchor {
+    /// Syntax is missing in the trivia between significant tokens.
+    Gap(RawGap),
+    /// Syntax exists in this nonempty range.
+    Tokens(RawTokenRange),
+}
+
+/// A nonempty half-open range in the raw lexer/cooker token buffer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct RawTokenRange {
+    start: u32,
+    end: u32,
+}
+
+impl RawTokenRange {
+    pub(crate) fn new(start: u32, end: u32) -> Self {
+        assert!(start < end, "a raw token range must be nonempty");
+        Self { start, end }
+    }
+
+    pub fn start(self) -> u32 {
+        self.start
+    }
+
+    pub fn end(self) -> u32 {
+        self.end
+    }
+}
+
+/// The possibly empty raw trivia interval between adjacent significant
+/// tokens. At either edge of the file it includes leading or trailing trivia.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct RawGap {
+    trivia_start: u32,
+    trivia_end: u32,
+}
+
+impl RawGap {
+    pub(crate) fn new(trivia_start: u32, trivia_end: u32) -> Self {
+        assert!(trivia_start <= trivia_end, "a raw gap cannot run backwards");
+        Self {
+            trivia_start,
+            trivia_end,
+        }
+    }
+
+    pub fn trivia_start(self) -> u32 {
+        self.trivia_start
+    }
+
+    pub fn trivia_end(self) -> u32 {
+        self.trivia_end
     }
 }
 
@@ -94,8 +159,8 @@ fn source_file(p: &mut Marker<'_, '_>) {
         if starts_item(p) {
             fn_item(p);
         } else {
-            p.error(ParseErrorKind::ExpectedItem);
-            skip_all(p, starts_item);
+            let recovery = p.recover_tokens(ParseRecoveryKind::Expected(ParseExpected::Item), 1);
+            skip_all(p, recovery, starts_item);
         }
     }
 }
@@ -118,15 +183,19 @@ fn starts_item(p: &Marker<'_, '_>) -> bool {
 }
 
 /// Take the next token and every following one into an `Error` node, up to
-/// `stop` or end of input. The caller has reported what it expected there;
-/// the run itself adds no diagnostic. A matched bracket pair is taken
+/// `stop` or end of input. The caller has recorded the recovery cause; the
+/// run is attached to it as an effect. A matched bracket pair is taken
 /// whole, as the token stream pairs them, so `stop` is never consulted
 /// inside one. A closer met after the first token has no opener in the run:
 /// one the stream pairs belongs to something enclosing and ends the run,
 /// while an orphan belongs to nothing and is garbage like the rest. A `fn`
 /// that no closed construct owns ends the run too: it begins the next
 /// item, which no recovery may swallow.
-fn skip(p: &mut Marker<'_, '_>, stop: impl Fn(&Marker<'_, '_>) -> bool) -> CompletedMarker {
+fn skip(
+    p: &mut Marker<'_, '_>,
+    recovery: RecoveryHandle,
+    stop: impl Fn(&Marker<'_, '_>) -> bool,
+) -> CompletedMarker {
     let mut m = p.start();
     m.group();
     while let Some(kind) = m.current() {
@@ -136,15 +205,19 @@ fn skip(p: &mut Marker<'_, '_>, stop: impl Fn(&Marker<'_, '_>) -> bool) -> Compl
         }
         m.group();
     }
+    let skipped = m.covered_range();
+    m.skipped(recovery, skipped);
     m.complete(N::Error)
 }
 
 /// Take one token into an `Error` node without following a bracket partner.
 /// Used when grammar context, rather than pairing, has established that the
 /// token itself is garbage.
-fn skip_token(p: &mut Marker<'_, '_>) -> CompletedMarker {
+fn skip_token(p: &mut Marker<'_, '_>, recovery: RecoveryHandle) -> CompletedMarker {
     let mut m = p.start();
     m.token();
+    let skipped = m.covered_range();
+    m.skipped(recovery, skipped);
     m.complete(N::Error)
 }
 
@@ -152,7 +225,7 @@ fn skip_token(p: &mut Marker<'_, '_>) -> CompletedMarker {
 /// closer, the next item, or the next line to its owner. Matched groups
 /// wholly inside the enclosing construct stay whole; an opener paired with
 /// that construct's closer is taken alone.
-fn skip_statement_garbage(p: &mut Marker<'_, '_>) -> CompletedMarker {
+fn skip_statement_garbage(p: &mut Marker<'_, '_>, recovery: RecoveryHandle) -> CompletedMarker {
     let mut m = p.start();
     m.group_inside();
     while !(m.current().is_none()
@@ -164,6 +237,8 @@ fn skip_statement_garbage(p: &mut Marker<'_, '_>) -> CompletedMarker {
     {
         m.group_inside();
     }
+    let skipped = m.covered_range();
+    m.skipped(recovery, skipped);
     m.complete(N::Error)
 }
 
@@ -171,9 +246,13 @@ fn skip_statement_garbage(p: &mut Marker<'_, '_>) -> CompletedMarker {
 /// where nothing encloses the run — the top level, a signature — a closer
 /// is garbage like anything else, so a run that ends at one is followed by
 /// another. One recovery episode, however many runs.
-fn skip_all(p: &mut Marker<'_, '_>, stop: impl Fn(&Marker<'_, '_>) -> bool) {
+fn skip_all(
+    p: &mut Marker<'_, '_>,
+    recovery: RecoveryHandle,
+    stop: impl Fn(&Marker<'_, '_>) -> bool,
+) {
     while p.current().is_some() && !stop(p) {
-        skip(p, &stop);
+        skip(p, recovery, &stop);
     }
 }
 
@@ -187,12 +266,11 @@ fn fn_item(p: &mut Marker<'_, '_>) {
     if m.at(T::FnKw) {
         m.token();
     } else {
-        m.error(ParseErrorKind::Expected(T::FnKw));
+        m.missing(ParseExpected::Token(T::FnKw));
     }
-    let mut reported = false;
     if !m.at(T::Ident) && !m.at(T::Underscore) {
-        missing(&mut m, ParseErrorKind::ExpectedName, &mut reported);
-        signature_garbage(&mut m, |m| {
+        let recovery = m.missing(ParseExpected::Name);
+        signature_garbage(&mut m, recovery, |m| {
             m.at(T::Ident) || m.at(T::Underscore) || m.at(T::LParen)
         });
     }
@@ -201,8 +279,10 @@ fn fn_item(p: &mut Marker<'_, '_>) {
     }
     // The parameter list stays on the name's line: `(` never continues one.
     if !m.at(T::LParen) || m.newline() {
-        missing(&mut m, ParseErrorKind::Expected(T::LParen), &mut reported);
-        signature_garbage(&mut m, |m| m.at(T::LParen) || m.at_glued(T::Minus, T::Gt));
+        let recovery = m.missing(ParseExpected::Token(T::LParen));
+        signature_garbage(&mut m, recovery, |m| {
+            m.at(T::LParen) || m.at_glued(T::Minus, T::Gt)
+        });
     }
     if m.at(T::LParen) && !m.newline() {
         param_list(&mut m);
@@ -211,16 +291,16 @@ fn fn_item(p: &mut Marker<'_, '_>) {
     // continues a line.
     let at_arrow = |m: &Marker<'_, '_>| m.at_glued(T::Minus, T::Gt) && !m.newline();
     if !m.at(T::LBrace) && !at_arrow(&m) {
-        missing(&mut m, ParseErrorKind::Expected(T::LBrace), &mut reported);
-        signature_garbage(&mut m, at_arrow);
+        let recovery = m.missing(ParseExpected::Token(T::LBrace));
+        signature_garbage(&mut m, recovery, at_arrow);
     }
     if at_arrow(&m) {
         m.token();
         m.token();
         type_ref(&mut m);
         if !m.at(T::LBrace) {
-            missing(&mut m, ParseErrorKind::Expected(T::LBrace), &mut reported);
-            signature_garbage(&mut m, |_| false);
+            let recovery = m.missing(ParseExpected::Token(T::LBrace));
+            signature_garbage(&mut m, recovery, |_| false);
         }
     }
     if m.at(T::LBrace) {
@@ -229,38 +309,32 @@ fn fn_item(p: &mut Marker<'_, '_>) {
     m.complete(N::FnItem);
 }
 
-/// Report a part of a signature missing at the cursor — unless the line
-/// has ended and a part was reported already: the rest are missing because
-/// the line ended, and the first report covers them.
-fn missing(m: &mut Marker<'_, '_>, kind: ParseErrorKind, reported: &mut bool) {
-    if !(*reported && m.newline()) {
-        m.error(kind);
-    }
-    *reported = true;
-}
-
 /// Skip garbage in a signature — tokens that belong to none of its parts —
 /// into `Error` nodes, up to `resume`, a body, the next item, or the end
 /// of the line. Nothing is skipped when already at one of those. A `{`
 /// counts as a body only when the stream pairs it with a `}`: an unclosed
 /// one where a part of the signature was expected is garbage, not the body
 /// that follows it.
-fn signature_garbage(m: &mut Marker<'_, '_>, resume: impl Fn(&Marker<'_, '_>) -> bool) {
-    skip_all(m, |m| {
+fn signature_garbage(
+    m: &mut Marker<'_, '_>,
+    recovery: RecoveryHandle,
+    resume: impl Fn(&Marker<'_, '_>) -> bool,
+) {
+    skip_all(m, recovery, |m| {
         resume(m) || m.at(T::FnKw) || m.newline() || (m.at(T::LBrace) && m.partnered())
     });
 }
 
-/// A declared name. `_` is taken with an error: it reads as a name but
-/// binds nothing.
+/// A declared name. `_` is taken with recovery evidence: it reads as a name
+/// but binds nothing.
 fn name(p: &mut Marker<'_, '_>) {
     if p.at(T::Ident) {
         p.token();
+    } else if p.at(T::Underscore) {
+        p.recover_tokens(ParseRecoveryKind::Expected(ParseExpected::Name), 1);
+        p.token();
     } else {
-        p.error(ParseErrorKind::ExpectedName);
-        if p.at(T::Underscore) {
-            p.token();
-        }
+        p.missing(ParseExpected::Name);
     }
 }
 
@@ -269,7 +343,7 @@ fn type_ref(p: &mut Marker<'_, '_>) {
     if p.at(T::Ident) {
         p.token();
     } else {
-        p.error(ParseErrorKind::ExpectedType);
+        p.missing(ParseExpected::Type);
     }
 }
 
@@ -284,7 +358,7 @@ fn param_list(p: &mut Marker<'_, '_>) {
     loop {
         match m.current() {
             None => {
-                m.error(ParseErrorKind::Expected(T::RParen));
+                m.missing(ParseExpected::Token(T::RParen));
                 break;
             }
             Some(T::RParen) if m.owns_rparen() => {
@@ -292,27 +366,28 @@ fn param_list(p: &mut Marker<'_, '_>) {
                 break;
             }
             Some(T::RParen) if m.closes_open_paren() => {
-                m.error(ParseErrorKind::Expected(T::RParen));
+                m.missing(ParseExpected::Token(T::RParen));
                 break;
             }
             Some(T::LBrace | T::RBrace)
                 if !m.closed() && m.partnered() && !displaced_closer(&m) =>
             {
-                m.error(ParseErrorKind::Expected(T::RParen));
+                m.missing(ParseExpected::Token(T::RParen));
                 break;
             }
             Some(T::FnKw) if m.at_item() => {
-                m.error(ParseErrorKind::Expected(T::RParen));
+                m.missing(ParseExpected::Token(T::RParen));
                 break;
             }
             Some(T::Ident | T::Underscore) => param(&mut m),
             Some(T::Comma) => {
-                m.error(ParseErrorKind::ExpectedName);
+                m.missing(ParseExpected::Name);
                 m.token();
             }
             Some(_) => {
-                m.error(ParseErrorKind::ExpectedName);
-                skip(&mut m, |m| {
+                let recovery =
+                    m.recover_tokens(ParseRecoveryKind::Expected(ParseExpected::Name), 1);
+                skip(&mut m, recovery, |m| {
                     m.at(T::Comma)
                         || m.at(T::RParen)
                         || (!m.closed() && (m.boundary() || (m.at(T::LBrace) && m.partnered())))
@@ -323,7 +398,7 @@ fn param_list(p: &mut Marker<'_, '_>) {
         // the stream closes owns everything through its `)`, a boundary an
         // unclosed `{` inside it restores included.
         if !m.closed() && m.boundary() {
-            m.error(ParseErrorKind::Expected(T::RParen));
+            m.missing(ParseExpected::Token(T::RParen));
             break;
         }
         if m.at(T::Comma) {
@@ -332,7 +407,7 @@ fn param_list(p: &mut Marker<'_, '_>) {
             m.current(),
             None | Some(T::RParen | T::LBrace | T::RBrace | T::FnKw)
         ) {
-            m.error(ParseErrorKind::Expected(T::Comma));
+            m.missing(ParseExpected::Token(T::Comma));
         }
     }
     m.complete(N::ParamList);
@@ -352,11 +427,11 @@ fn param(p: &mut Marker<'_, '_>) {
 /// A block where one is required, on the line of what it belongs to.
 fn block_here(p: &mut Marker<'_, '_>) {
     if !p.at(T::LBrace) {
-        p.error(ParseErrorKind::Expected(T::LBrace));
+        p.missing(ParseExpected::Token(T::LBrace));
         return;
     }
     if p.newline() {
-        p.error(ParseErrorKind::BlockOnNewLine);
+        p.violation(ParseViolationKind::BlockOnNewLine, 1);
     }
     block(p);
 }
@@ -372,7 +447,7 @@ fn block(p: &mut Marker<'_, '_>) -> CompletedMarker {
     loop {
         match m.current() {
             None => {
-                m.error(ParseErrorKind::Expected(T::RBrace));
+                m.missing(ParseExpected::Token(T::RBrace));
                 break;
             }
             Some(T::RBrace) if !m.closer_ahead() => {
@@ -380,20 +455,19 @@ fn block(p: &mut Marker<'_, '_>) -> CompletedMarker {
                 break;
             }
             Some(T::FnKw) if m.at_item() => {
-                m.error(ParseErrorKind::Expected(T::RBrace));
+                m.missing(ParseExpected::Token(T::RBrace));
                 break;
             }
             // A `)` closing a paren still open around this block belongs to
             // it: the block is unclosed, and the `)` is left to its owner.
             Some(T::RParen) if m.closes_open_paren() => {
-                m.error(ParseErrorKind::Expected(T::RBrace));
+                m.missing(ParseExpected::Token(T::RBrace));
                 break;
             }
             Some(_) => {
                 let recovery = m.recovery_checkpoint();
-                let garbage = m.at(T::Error);
                 statement(&mut m);
-                let failed = garbage || m.recovered_since(recovery);
+                let failed = m.recovered_since(recovery);
                 // A statement following on the same line is missing its
                 // boundary. Anything else begins a malformed suffix, which
                 // the next round reports: a boundary would not make it a
@@ -405,9 +479,12 @@ fn block(p: &mut Marker<'_, '_>) -> CompletedMarker {
                     || m.at_item();
                 if !ends {
                     if failed && !begins_recovery_statement(&m) {
-                        skip_statement_garbage(&mut m);
+                        let recovery = m
+                            .latest_recovery_since(recovery)
+                            .expect("a failed statement has recovery evidence");
+                        skip_statement_garbage(&mut m, recovery);
                     } else if !failed && m.current().is_some_and(T::starts_statement) {
-                        m.error(ParseErrorKind::ExpectedBoundary);
+                        m.missing(ParseExpected::Boundary);
                     }
                 }
             }
@@ -433,18 +510,22 @@ fn statement(p: &mut Marker<'_, '_>) {
         Some(T::LetKw) => let_stmt(p),
         Some(T::Underscore) => discard_stmt(p),
         Some(T::ReturnKw) => return_stmt(p),
-        // Reported by an earlier phase; absorb the run silently.
+        // Diagnosed by an earlier phase; retain the run as parser evidence.
         Some(T::Error) => {
             let mut m = p.start();
             while m.at(T::Error) {
                 m.token();
             }
+            let skipped = m.covered_range();
+            let recovery = m.recover_range(ParseRecoveryKind::PriorPhaseError, skipped);
+            m.skipped(recovery, skipped);
             m.complete(N::Error);
         }
         _ => {
             if expr(p).is_none() {
-                p.error(ParseErrorKind::ExpectedStatement);
-                skip_statement_garbage(p);
+                let recovery =
+                    p.recover_tokens(ParseRecoveryKind::Expected(ParseExpected::Statement), 1);
+                skip_statement_garbage(p, recovery);
             }
         }
     }
@@ -491,7 +572,8 @@ fn return_stmt(p: &mut Marker<'_, '_>) {
 /// An expression where one is required. Garbage in its place on the same
 /// line is taken as such — up to the line's end, a `,`, or the start of
 /// an expression or statement — and the expression tried once more: one
-/// report for the garbage, and the expression it displaced still parses.
+/// recovery fact for the garbage, and the expression it displaced still
+/// parses.
 /// A token the construct around this one is waiting for, or that begins
 /// the next statement, is not garbage but the sign the expression is
 /// missing; so is anything on the next line.
@@ -504,11 +586,18 @@ fn operand_before(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) {
     if expr_bp(p, min_bp, follow).is_some() {
         return;
     }
-    p.error(ParseErrorKind::ExpectedExpression);
-    if p.newline() || p.at_item() || !displaces_expression(p) {
+    let displaced = !p.newline() && !p.at_item() && displaces_expression(p);
+    let recovery = if displaced {
+        p.recover_tokens(ParseRecoveryKind::Expected(ParseExpected::Expression), 1)
+    } else {
+        p.missing(ParseExpected::Expression)
+    };
+    if !displaced {
         return;
     }
-    skip(p, |p| p.newline() || p.at(T::Comma) || begins_statement(p));
+    skip(p, recovery, |p| {
+        p.newline() || p.at(T::Comma) || begins_statement(p)
+    });
     if !p.newline() && begins_expression(p) {
         expr_bp(p, min_bp, follow);
     }
@@ -625,10 +714,10 @@ fn expr_bp(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) -> Option<Com
             continue;
         }
         // One malformed token between the operand and what continues or
-        // ends the expression — an operator, a closer, a `,` — all on one line,
-        // is garbage in the way: taken as such, with one report, and the
-        // expression goes on. An operator is spaced on its left if anything
-        // separated the garbage from either side.
+        // ends the expression — an operator, a closer, a `,` — all on one
+        // line, is garbage in the way: taken as such, with one recovery fact,
+        // and the expression goes on. An operator is spaced on its left if
+        // anything separated the garbage from either side.
         let mut joint_left = p.joint_before();
         if !p.newline()
             && garbage_in_expression(p, follow)
@@ -636,8 +725,8 @@ fn expr_bp(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) -> Option<Com
             && (binary_op(p, 1).is_some()
                 || matches!(p.nth(1), Some(T::RParen | T::RBrace | T::Comma)))
         {
-            p.error(ParseErrorKind::Unexpected);
-            skip_token(p);
+            let recovery = p.recover_tokens(ParseRecoveryKind::Unexpected, 1);
+            skip_token(p, recovery);
             joint_left = joint_left && p.joint_before();
         }
         let Some((op, width)) = binary_op(p, 0) else {
@@ -648,14 +737,14 @@ fn expr_bp(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) -> Option<Com
             break;
         }
         if joint_left || p.nth_joint(width - 1) {
-            p.error(ParseErrorKind::UnspacedBinaryOperator);
+            p.violation(ParseViolationKind::UnspacedBinaryOperator, width);
         }
         if p.nth_newline(width) {
-            p.error(ParseErrorKind::TrailingOperator);
+            p.violation(ParseViolationKind::TrailingOperator, width);
         }
         let chained = comparison && op.is_comparison();
         if chained {
-            p.error(ParseErrorKind::ChainedComparison);
+            p.violation(ParseViolationKind::ChainedComparison, width);
         }
         let mut m = p.precede(lhs);
         for _ in 0..width {
@@ -687,8 +776,8 @@ fn block_starts_condition(p: &Marker<'_, '_>) -> bool {
 /// an enclosing closer, or the next item.
 fn too_deep(p: &mut Marker<'_, '_>, ahead: u32) -> Option<CompletedMarker> {
     (p.depth() + ahead >= MAX_DEPTH).then(|| {
-        p.error(ParseErrorKind::NestingTooDeep);
-        skip(p, |p| p.boundary() || p.at(T::Comma))
+        let recovery = p.recover_tokens(ParseRecoveryKind::NestingTooDeep, 1);
+        skip(p, recovery, |p| p.boundary() || p.at(T::Comma))
     })
 }
 
@@ -708,7 +797,7 @@ fn prefix_or_atom(p: &mut Marker<'_, '_>, follow: ExprFollow) -> Option<Complete
             // Spacing is a complaint about an operand that exists; a missing
             // one is reported as such below.
             if !m.joint() && m.nth(1).is_some_and(T::starts_expression) {
-                m.error(ParseErrorKind::SpacedPrefixOperator);
+                m.violation(ParseViolationKind::SpacedPrefixOperator, 1);
             }
             m.token();
             operand_before(&mut m, PREFIX_BP, follow);
@@ -733,7 +822,7 @@ fn prefix_or_atom(p: &mut Marker<'_, '_>, follow: ExprFollow) -> Option<Complete
             if m.owns_rparen() {
                 m.token();
             } else {
-                m.error(ParseErrorKind::Expected(T::RParen));
+                m.missing(ParseExpected::Token(T::RParen));
             }
             m.complete(N::ParenExpr)
         }
@@ -777,17 +866,24 @@ fn if_block(p: &mut Marker<'_, '_>) {
         block_here(p);
         return;
     }
-    p.error(ParseErrorKind::Expected(T::LBrace));
-    if p.current().is_none()
+    let displaced = !(p.current().is_none()
         || p.at_item()
         || p.at(T::RParen)
         || p.at(T::RBrace)
         || p.at(T::ElseKw)
-        || p.newline()
-    {
+        || p.newline());
+    let recovery = if displaced {
+        p.recover_tokens(
+            ParseRecoveryKind::Expected(ParseExpected::Token(T::LBrace)),
+            1,
+        )
+    } else {
+        p.missing(ParseExpected::Token(T::LBrace))
+    };
+    if !displaced {
         return;
     }
-    skip(p, |p| {
+    skip(p, recovery, |p| {
         p.at(T::LBrace) || p.at(T::RParen) || p.at(T::RBrace) || p.at(T::ElseKw) || p.newline()
     });
     if p.at(T::LBrace) {
@@ -805,7 +901,7 @@ fn arg_list(p: &mut Marker<'_, '_>) {
     loop {
         match m.current() {
             None => {
-                m.error(ParseErrorKind::Expected(T::RParen));
+                m.missing(ParseExpected::Token(T::RParen));
                 break;
             }
             Some(T::RParen) if m.owns_rparen() => {
@@ -813,25 +909,27 @@ fn arg_list(p: &mut Marker<'_, '_>) {
                 break;
             }
             Some(T::RParen) if m.closes_open_paren() => {
-                m.error(ParseErrorKind::Expected(T::RParen));
+                m.missing(ParseExpected::Token(T::RParen));
                 break;
             }
             Some(T::RBrace | T::FnKw) if !m.closed() && !displaced_closer(&m) => {
-                m.error(ParseErrorKind::Expected(T::RParen));
+                m.missing(ParseExpected::Token(T::RParen));
                 break;
             }
             Some(T::Comma) => {
-                m.error(ParseErrorKind::ExpectedExpression);
+                m.missing(ParseExpected::Expression);
                 m.token();
             }
             Some(T::LBrace) if !m.partnered() && m.nth(1) == Some(T::RParen) => {
-                m.error(ParseErrorKind::ExpectedExpression);
-                skip_token(&mut m);
+                let recovery =
+                    m.recover_tokens(ParseRecoveryKind::Expected(ParseExpected::Expression), 1);
+                skip_token(&mut m, recovery);
             }
             Some(_) if m.starts_expression() => operand(&mut m, 0),
             Some(_) => {
-                m.error(ParseErrorKind::ExpectedExpression);
-                skip(&mut m, |m| {
+                let recovery =
+                    m.recover_tokens(ParseRecoveryKind::Expected(ParseExpected::Expression), 1);
+                skip(&mut m, recovery, |m| {
                     m.at(T::Comma)
                         || m.at(T::RParen)
                         || (!m.closed() && m.boundary())
@@ -847,13 +945,13 @@ fn arg_list(p: &mut Marker<'_, '_>) {
         // the stream closes owns everything through its `)`, a boundary an
         // unclosed `{` inside it restores included.
         if !m.closed() && m.boundary() {
-            m.error(ParseErrorKind::Expected(T::RParen));
+            m.missing(ParseExpected::Token(T::RParen));
             break;
         }
         if m.at(T::Comma) {
             m.token();
         } else if !matches!(m.current(), None | Some(T::RParen | T::RBrace | T::FnKw)) {
-            m.error(ParseErrorKind::Expected(T::Comma));
+            m.missing(ParseExpected::Token(T::Comma));
         }
     }
     m.complete(N::ArgList);

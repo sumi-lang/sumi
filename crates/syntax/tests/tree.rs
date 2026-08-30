@@ -35,8 +35,8 @@ fn dump(source: &str, build: impl FnOnce(&mut Marker<'_, '_>)) -> Vec<String> {
     let input = ParserInput::new(&cook(source, &lexed));
     let parse = Parse::build(&input, build);
     assert!(
-        parse.errors().is_empty(),
-        "hand-built trees record no errors"
+        parse.evidence().is_empty(),
+        "hand-built trees record no parser evidence"
     );
     common::dump(parse.tree(), &lexed, source)
 }

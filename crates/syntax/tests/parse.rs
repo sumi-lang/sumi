@@ -1,12 +1,15 @@
 mod common;
 
-use sumi_lexer::lex;
-use sumi_syntax::{ParserInput, cook, parse};
+use sumi_lexer::{LexedFile, lex};
+use sumi_syntax::{
+    ParseAnchor, ParseEvidence, ParseExpected, ParseRecoveryKind, ParseViolationKind, ParserInput,
+    cook, parse,
+};
 
-/// Parse `source`; assert the tree dump and the errors, each rendered as
+/// Parse `source`; assert the tree dump and the evidence, each rendered as
 /// `Kind at byte`.
 #[track_caller]
-fn check(source: &str, tree: &[&str], errors: &[&str]) {
+fn check(source: &str, tree: &[&str], evidence: &[&str]) {
     let lexed = lex(source).expect("test sources fit in u32");
     let cooked = cook(source, &lexed);
     let parse = parse(&ParserInput::new(&cooked));
@@ -16,17 +19,118 @@ fn check(source: &str, tree: &[&str], errors: &[&str]) {
         "tree for {source:?}"
     );
     let actual: Vec<String> = parse
-        .errors()
+        .evidence()
         .iter()
-        .map(|error| {
+        .map(|evidence| {
             format!(
-                "{:?} at {}",
-                error.kind,
-                common::start_byte(&lexed, error.token)
+                "{} at {}",
+                evidence_name(evidence),
+                common::start_byte(&lexed, evidence_token(evidence))
             )
         })
         .collect();
-    assert_eq!(actual, errors, "errors for {source:?}");
+    assert_eq!(actual, evidence, "evidence for {source:?}");
+}
+
+fn evidence_name(evidence: &ParseEvidence) -> String {
+    match evidence {
+        ParseEvidence::Recovery(recovery) => match recovery.kind {
+            ParseRecoveryKind::Expected(expected) => match expected {
+                ParseExpected::Item => "ExpectedItem".into(),
+                ParseExpected::Statement => "ExpectedStatement".into(),
+                ParseExpected::Expression => "ExpectedExpression".into(),
+                ParseExpected::Name => "ExpectedName".into(),
+                ParseExpected::Type => "ExpectedType".into(),
+                ParseExpected::Token(kind) => format!("Expected({kind:?})"),
+                ParseExpected::Boundary => "ExpectedBoundary".into(),
+            },
+            kind => format!("{kind:?}"),
+        },
+        ParseEvidence::Violation(violation) => format!("{:?}", violation.kind),
+    }
+}
+
+fn evidence_token(evidence: &ParseEvidence) -> u32 {
+    match evidence {
+        ParseEvidence::Recovery(recovery) => match recovery.anchor {
+            ParseAnchor::Gap(gap) => gap.trivia_end(),
+            ParseAnchor::Tokens(range) => range.start(),
+        },
+        ParseEvidence::Violation(violation) => violation.range.start(),
+    }
+}
+
+fn raw_text<'a>(source: &'a str, lexed: &LexedFile, start: u32, end: u32) -> &'a str {
+    let start = common::start_byte(lexed, start) as usize;
+    let end = common::start_byte(lexed, end) as usize;
+    &source[start..end]
+}
+
+#[test]
+fn missing_syntax_anchors_the_raw_trivia_gap() {
+    let source = "fn f() { x // tail";
+    let lexed = lex(source).expect("test source fits in u32");
+    let parse = parse(&ParserInput::new(&cook(source, &lexed)));
+    let [ParseEvidence::Recovery(recovery)] = parse.evidence() else {
+        panic!("the unclosed block has one recovery")
+    };
+    assert_eq!(
+        recovery.kind,
+        ParseRecoveryKind::Expected(ParseExpected::Token(sumi_syntax::SyntaxKind::RBrace))
+    );
+    let ParseAnchor::Gap(gap) = recovery.anchor else {
+        panic!("missing syntax must anchor a gap")
+    };
+    assert_eq!(
+        raw_text(source, &lexed, gap.trivia_start(), gap.trivia_end()),
+        " // tail"
+    );
+    assert!(recovery.skipped.is_empty());
+}
+
+#[test]
+fn present_syntax_anchors_nonempty_token_ranges() {
+    let source = "fn f() { a==b }";
+    let lexed = lex(source).expect("test source fits in u32");
+    let parse = parse(&ParserInput::new(&cook(source, &lexed)));
+    let [ParseEvidence::Violation(violation)] = parse.evidence() else {
+        panic!("the unspaced operator has one violation")
+    };
+    assert_eq!(violation.kind, ParseViolationKind::UnspacedBinaryOperator);
+    assert_eq!(
+        raw_text(
+            source,
+            &lexed,
+            violation.range.start(),
+            violation.range.end()
+        ),
+        "=="
+    );
+}
+
+#[test]
+fn recovery_records_the_ranges_it_skips() {
+    let source = ": (x)";
+    let lexed = lex(source).expect("test source fits in u32");
+    let parse = parse(&ParserInput::new(&cook(source, &lexed)));
+    let [ParseEvidence::Recovery(recovery)] = parse.evidence() else {
+        panic!("top-level garbage has one recovery")
+    };
+    assert_eq!(
+        recovery.kind,
+        ParseRecoveryKind::Expected(ParseExpected::Item)
+    );
+    let ParseAnchor::Tokens(anchor) = recovery.anchor else {
+        panic!("rejected syntax must anchor tokens")
+    };
+    assert_eq!(raw_text(source, &lexed, anchor.start(), anchor.end()), ":");
+    let [skipped] = &*recovery.skipped else {
+        panic!("the recovery has one skipped range")
+    };
+    assert_eq!(
+        raw_text(source, &lexed, skipped.start(), skipped.end()),
+        source
+    );
 }
 
 #[test]
@@ -216,8 +320,8 @@ fn a_malformed_signature_keeps_its_body() {
         &["ExpectedName at 5"],
     );
     // Nothing is searched for past the end of the line — the physical
-    // line, whatever the newline rule says about the tokens around it —
-    // and the parts missing once it has ended are covered by one report.
+    // line, whatever the newline rule says about the tokens around it. Each
+    // part found missing there remains a distinct parser fact.
     check(
         "fn f() x\nfn g() {}",
         &[
@@ -239,7 +343,11 @@ fn a_malformed_signature_keeps_its_body() {
             r#"    Error 5..6 "+""#,
             r#"  Error 7..15 "() { x }""#,
         ],
-        &["Expected(LParen) at 5", "ExpectedItem at 7"],
+        &[
+            "Expected(LParen) at 5",
+            "Expected(LBrace) at 7",
+            "ExpectedItem at 7",
+        ],
     );
     // A body or return type on the next line does not make a headless
     // signature an item.
@@ -712,7 +820,7 @@ fn missing_pieces_are_absent() {
             "    ParamList 4..11",
             r#"      Param 5..11 "a: int""#,
         ],
-        &["Expected(RParen) at 11"],
+        &["Expected(RParen) at 11", "Expected(LBrace) at 11"],
     );
 }
 
@@ -798,7 +906,7 @@ fn an_unclosed_block_ends_at_the_next_item() {
             r#"    ParamList 23..25 "()""#,
             r#"    Block 26..28 "{}""#,
         ],
-        &["Expected(RBrace) at 19"],
+        &["Expected(RBrace) at 19", "Expected(RBrace) at 19"],
     );
     // On the line of the last statement too.
     check(
@@ -861,7 +969,7 @@ fn a_closed_list_owns_everything_up_to_its_closer() {
             "    Block 15..20",
             r#"      NameExpr 17..18 "x""#,
         ],
-        &["ExpectedType at 8"],
+        &["ExpectedType at 8", "ExpectedName at 8"],
     );
     check(
         "fn x1(b: int, foo: int{ ) {}",
@@ -895,9 +1003,10 @@ fn a_closed_list_owns_everything_up_to_its_closer() {
 }
 
 #[test]
-fn tokens_reported_earlier_are_absorbed_silently() {
+fn prior_phase_tokens_are_recorded_as_recovery() {
+    let source = "fn f() {\n  a ;\n  b\n}";
     check(
-        "fn f() {\n  a ;\n  b\n}",
+        source,
         &[
             "SourceFile 0..20",
             "  FnItem 0..20",
@@ -907,8 +1016,37 @@ fn tokens_reported_earlier_are_absorbed_silently() {
             r#"      Error 13..14 ";""#,
             r#"      NameExpr 17..18 "b""#,
         ],
-        &[],
+        &["ExpectedBoundary at 13", "PriorPhaseError at 13"],
     );
+
+    let lexed = lex(source).expect("test source fits in u32");
+    let parsed = parse(&ParserInput::new(&cook(source, &lexed)));
+    let ParseEvidence::Recovery(recovery) = &parsed.evidence()[1] else {
+        panic!("the prior-phase token starts a recovery")
+    };
+    assert_eq!(recovery.kind, ParseRecoveryKind::PriorPhaseError);
+    let ParseAnchor::Tokens(anchor) = recovery.anchor else {
+        panic!("prior-phase syntax must anchor its tokens")
+    };
+    assert_eq!(raw_text(source, &lexed, anchor.start(), anchor.end()), ";");
+    assert_eq!(recovery.skipped.as_ref(), &[anchor]);
+
+    // Adjacent tokens diagnosed by earlier phases form one recovery run.
+    let source = "fn f() { ; € }";
+    let lexed = lex(source).expect("test source fits in u32");
+    let parsed = parse(&ParserInput::new(&cook(source, &lexed)));
+    let [ParseEvidence::Recovery(recovery)] = parsed.evidence() else {
+        panic!("adjacent prior-phase tokens form one recovery")
+    };
+    assert_eq!(recovery.kind, ParseRecoveryKind::PriorPhaseError);
+    let ParseAnchor::Tokens(anchor) = recovery.anchor else {
+        panic!("prior-phase syntax must anchor its tokens")
+    };
+    assert_eq!(
+        raw_text(source, &lexed, anchor.start(), anchor.end()),
+        "; €"
+    );
+    assert_eq!(recovery.skipped.as_ref(), &[anchor]);
 }
 
 #[test]
@@ -964,7 +1102,7 @@ fn unclosed_delimiters() {
             "        ArgList 10..12",
             r#"          NameExpr 11..12 "a""#,
         ],
-        &["Expected(RParen) at 12"],
+        &["Expected(RParen) at 12", "Expected(RBrace) at 12"],
     );
 }
 
@@ -1006,7 +1144,7 @@ fn list_recovery_leaves_enclosing_syntax_alone() {
             r#"    ParamList 10..12 "()""#,
             r#"    Block 13..15 "{}""#,
         ],
-        &["Expected(RParen) at 6"],
+        &["Expected(RParen) at 6", "Expected(LBrace) at 6"],
     );
     // An unpaired block opener immediately before the list's `)` is local
     // garbage; it does not turn the rest of the enclosing expression into
@@ -1137,7 +1275,11 @@ fn recovery_ownership_regressions() {
             r#"              Error 16..17 "}""#,
             r#"              NameExpr 18..19 "x""#,
         ],
-        &["ExpectedExpression at 16", "Expected(RParen) at 20"],
+        &[
+            "ExpectedExpression at 16",
+            "Expected(RParen) at 20",
+            "Expected(RBrace) at 20",
+        ],
     );
     // A plain parenthesized expression follows the same ownership rule.
     check(
@@ -1153,17 +1295,21 @@ fn recovery_ownership_regressions() {
             r#"            Error 13..14 "}""#,
             r#"            NameExpr 15..16 "x""#,
         ],
-        &["ExpectedExpression at 13", "Expected(RParen) at 17"],
+        &[
+            "ExpectedExpression at 13",
+            "Expected(RParen) at 17",
+            "Expected(RBrace) at 17",
+        ],
     );
 }
 
-/// Parse `source` and return its error kinds, asserting the tree is well
+/// Parse `source` and return its evidence kinds, asserting the tree is well
 /// formed.
-fn error_kinds(source: &str) -> Vec<sumi_syntax::ParseErrorKind> {
+fn evidence_kinds(source: &str) -> Vec<String> {
     let lexed = lex(source).expect("test sources fit in u32");
     let parse = parse(&ParserInput::new(&cook(source, &lexed)));
     let _ = common::dump(parse.tree(), &lexed, source);
-    parse.errors().iter().map(|error| error.kind).collect()
+    parse.evidence().iter().map(evidence_name).collect()
 }
 
 /// How many `fn` items `source` parses into.
@@ -1306,7 +1452,7 @@ fn declarations_end_at_line_breaks() {
             r#"      LetStmt 11..16 "let x""#,
             r#"      Error 19..22 "= 1""#,
         ],
-        &["Expected(Eq) at 19"],
+        &["Expected(Eq) at 19", "ExpectedStatement at 19"],
     );
     check(
         "fn f() {\n  let x\n  : int = 1\n}",
@@ -1318,7 +1464,7 @@ fn declarations_end_at_line_breaks() {
             r#"      LetStmt 11..16 "let x""#,
             r#"      Error 19..28 ": int = 1""#,
         ],
-        &["Expected(Eq) at 19"],
+        &["Expected(Eq) at 19", "ExpectedStatement at 19"],
     );
     check(
         "fn f() {\n  _\n  = v\n}",
@@ -1330,7 +1476,7 @@ fn declarations_end_at_line_breaks() {
             r#"      DiscardStmt 11..12 "_""#,
             r#"      Error 15..18 "= v""#,
         ],
-        &["Expected(Eq) at 15"],
+        &["Expected(Eq) at 15", "ExpectedStatement at 15"],
     );
     check(
         "fn f()\n-> int {}",
@@ -1340,7 +1486,7 @@ fn declarations_end_at_line_breaks() {
             r#"    ParamList 4..6 "()""#,
             r#"  Error 7..16 "-> int {}""#,
         ],
-        &["Expected(LBrace) at 7"],
+        &["Expected(LBrace) at 7", "ExpectedItem at 7"],
     );
     check(
         "fn f\n() {}",
@@ -1349,7 +1495,11 @@ fn declarations_end_at_line_breaks() {
             r#"  FnItem 0..4 "fn f""#,
             r#"  Error 5..10 "() {}""#,
         ],
-        &["Expected(LParen) at 5"],
+        &[
+            "Expected(LParen) at 5",
+            "Expected(LBrace) at 5",
+            "ExpectedItem at 5",
+        ],
     );
 }
 
@@ -1393,51 +1543,60 @@ fn a_paren_takes_its_closer_across_a_boundary_a_block_restored() {
 
 #[test]
 fn recovery_over_many_brackets_is_linear() {
-    use sumi_syntax::ParseErrorKind::ExpectedItem;
     let n = 50_000;
     let source = format!(":{}{}{}", "{".repeat(n), "(".repeat(n), ")".repeat(n));
-    assert_eq!(error_kinds(&source), [ExpectedItem]);
+    assert_eq!(evidence_kinds(&source), ["ExpectedItem"]);
 }
 
 #[test]
 fn nesting_is_bounded() {
-    use sumi_syntax::ParseErrorKind::{Expected, ExpectedExpression, NestingTooDeep};
-    use sumi_syntax::{MAX_DEPTH, SyntaxKind};
+    use sumi_syntax::MAX_DEPTH;
     let deep = |n: usize| format!("fn f() {{ {}x{} }}", "(".repeat(n), ")".repeat(n));
-    assert_eq!(error_kinds(&deep(MAX_DEPTH as usize / 2)), []);
+    assert_eq!(
+        evidence_kinds(&deep(MAX_DEPTH as usize / 2)),
+        Vec::<String>::new()
+    );
     // At the limit with nothing left, or with a closer: no recovery run to
-    // take a token that is not an expression's.
+    // take a token that is not an expression's. Every open construct retains
+    // its own missing-closer fact at EOF.
     let opens = |n: u32| format!("fn f() {{ {}", "(".repeat(n as usize));
-    assert_eq!(error_kinds(&opens(MAX_DEPTH - 2)), [ExpectedExpression]);
+    let assert_unclosed = |evidence: &[String], first: &str| {
+        assert!(evidence.len() >= 2);
+        assert_eq!(evidence.first().map(String::as_str), Some(first));
+        assert_eq!(
+            evidence.last().map(String::as_str),
+            Some("Expected(RBrace)")
+        );
+        assert!(
+            evidence[1..evidence.len() - 1]
+                .iter()
+                .all(|kind| kind == "Expected(RParen)")
+        );
+    };
+    assert_unclosed(&evidence_kinds(&opens(MAX_DEPTH - 2)), "ExpectedExpression");
     // The `)` closes the innermost paren; the rest stay open to the end.
-    assert_eq!(
-        error_kinds(&format!("{})", opens(MAX_DEPTH - 2))),
-        [ExpectedExpression, Expected(SyntaxKind::RParen)]
+    assert_unclosed(
+        &evidence_kinds(&format!("{})", opens(MAX_DEPTH - 2))),
+        "ExpectedExpression",
     );
-    assert_eq!(
-        error_kinds(&opens(MAX_DEPTH + 40)),
-        [NestingTooDeep, Expected(SyntaxKind::RParen)]
-    );
+    assert_unclosed(&evidence_kinds(&opens(MAX_DEPTH + 40)), "NestingTooDeep");
     // The skip past the limit stops at the next item like any recovery:
     // the parens are unclosed, so the `fn` is not theirs to take.
     let next_item = format!("{}x fn g() {{}}", opens(MAX_DEPTH + 40));
-    assert_eq!(
-        error_kinds(&next_item),
-        [NestingTooDeep, Expected(SyntaxKind::RParen)]
-    );
+    assert_unclosed(&evidence_kinds(&next_item), "NestingTooDeep");
     assert_eq!(items(&next_item), 2);
     // Far past the limit: one error, no crash, and the file still closes.
-    assert_eq!(error_kinds(&deep(100_000)), [NestingTooDeep]);
+    assert_eq!(evidence_kinds(&deep(100_000)), ["NestingTooDeep"]);
     assert_eq!(
-        error_kinds(&format!("fn f() {{ {}x }}", "!".repeat(100_000))),
-        [NestingTooDeep]
+        evidence_kinds(&format!("fn f() {{ {}x }}", "!".repeat(100_000))),
+        ["NestingTooDeep"]
     );
     assert_eq!(
-        error_kinds(&format!(
+        evidence_kinds(&format!(
             "fn f() {{ {}if a {{}} }}",
             "if a {} else ".repeat(100_000)
         )),
-        [NestingTooDeep]
+        ["NestingTooDeep"]
     );
 }
 
@@ -1454,6 +1613,42 @@ fn underscore_is_not_a_name() {
             r#"        LiteralExpr 17..18 "1""#,
         ],
         &["ExpectedName at 13"],
+    );
+}
+
+#[test]
+fn a_malformed_suffix_belongs_to_the_latest_statement_recovery() {
+    let source = "fn f() { let _ x }";
+    check(
+        source,
+        &[
+            "SourceFile 0..18",
+            "  FnItem 0..18",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..18",
+            r#"      LetStmt 9..14 "let _""#,
+            r#"      Error 15..16 "x""#,
+        ],
+        &["ExpectedName at 13", "Expected(Eq) at 15"],
+    );
+
+    let lexed = lex(source).expect("test source fits in u32");
+    let parse = parse(&ParserInput::new(&cook(source, &lexed)));
+    let [ParseEvidence::Recovery(name), ParseEvidence::Recovery(eq)] = parse.evidence() else {
+        panic!("the malformed statement has two recovery causes")
+    };
+    assert_eq!(name.kind, ParseRecoveryKind::Expected(ParseExpected::Name));
+    assert!(name.skipped.is_empty());
+    assert_eq!(
+        eq.kind,
+        ParseRecoveryKind::Expected(ParseExpected::Token(sumi_syntax::SyntaxKind::Eq))
+    );
+    let [skipped] = &*eq.skipped else {
+        panic!("the latest recovery owns the malformed suffix")
+    };
+    assert_eq!(
+        raw_text(source, &lexed, skipped.start(), skipped.end()),
+        "x"
     );
 }
 
@@ -1589,7 +1784,11 @@ fn an_unclosed_list_ends_where_its_line_does() {
             r#"    ParamList 20..22 "()""#,
             r#"    Block 23..25 "{}""#,
         ],
-        &["Expected(RParen) at 14"],
+        &[
+            "Expected(RParen) at 14",
+            "Expected(LBrace) at 14",
+            "ExpectedItem at 14",
+        ],
     );
 }
 
@@ -1624,7 +1823,7 @@ fn a_closed_list_owns_a_boundary_an_unclosed_brace_restores() {
             r#"      Error 8..18 "{ x\nb: int""#,
             r#"    Block 20..22 "{}""#,
         ],
-        &["ExpectedType at 8"],
+        &["ExpectedType at 8", "ExpectedName at 8"],
     );
 }
 
@@ -1812,12 +2011,13 @@ fn a_non_recovery_report_does_not_trigger_statement_recovery() {
 }
 
 #[test]
-fn lexer_error_suppression_does_not_hide_statement_recovery() {
-    // The lexer owns the diagnostic for `€`, but the parser still recovers
-    // over it. The ambiguous `c` therefore belongs to the malformed
-    // statement instead of becoming a new statement missing its boundary.
+fn lexer_errors_do_not_hide_statement_recovery() {
+    // The lexer owns the primary diagnostic for `€`, while the parser retains
+    // the independent fact that it was unexpected. The ambiguous `c` belongs
+    // to the malformed statement rather than becoming a new statement.
+    let source = "fn f() { a € + b c }";
     check(
-        "fn f() { a € + b c }",
+        source,
         &[
             "SourceFile 0..22",
             "  FnItem 0..22",
@@ -1829,8 +2029,20 @@ fn lexer_error_suppression_does_not_hide_statement_recovery() {
             r#"        NameExpr 17..18 "b""#,
             r#"      Error 19..20 "c""#,
         ],
-        &[],
+        &["Unexpected at 11"],
     );
+
+    let lexed = lex(source).expect("test source fits in u32");
+    let parse = parse(&ParserInput::new(&cook(source, &lexed)));
+    let [ParseEvidence::Recovery(recovery)] = parse.evidence() else {
+        panic!("the malformed statement has one recovery cause")
+    };
+    let skipped: Vec<_> = recovery
+        .skipped
+        .iter()
+        .map(|range| raw_text(source, &lexed, range.start(), range.end()))
+        .collect();
+    assert_eq!(skipped, ["€", "c"]);
 }
 
 #[test]
@@ -2015,7 +2227,7 @@ fn a_surplus_brace_where_no_block_is_written_is_garbage() {
             r#"      Error 13..20 "{ a = 1""#,
             r#"      NameExpr 23..24 "b""#,
         ],
-        &["ExpectedName at 13"],
+        &["ExpectedName at 13", "Expected(Eq) at 13"],
     );
 }
 
