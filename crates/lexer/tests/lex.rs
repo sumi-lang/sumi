@@ -145,11 +145,25 @@ fn non_ascii_non_ident_is_unknown() {
             r#"Ident 4..5 "b""#,
         ],
     );
+    assert_eq!(
+        lex("a€b").unwrap().errors(),
+        &[LexError {
+            token: 1,
+            kind: LexErrorKind::UnknownCharacter,
+        }],
+    );
 }
 
 #[test]
 fn control_chars_are_unknown() {
     check("\u{1}", &[r#"Unknown 0..1 "\u{1}""#]);
+    assert_eq!(
+        lex("\u{1}").unwrap().errors(),
+        &[LexError {
+            token: 0,
+            kind: LexErrorKind::UnknownCharacter,
+        }],
+    );
 }
 
 #[test]

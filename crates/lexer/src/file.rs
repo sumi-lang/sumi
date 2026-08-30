@@ -60,6 +60,7 @@ fn lex_error(token: &RawToken, text: &str) -> Option<LexErrorKind> {
             Some(LexErrorKind::LoneCarriageReturn)
         }
         RawKind::Unknown if text == "\u{feff}" => Some(LexErrorKind::MisplacedBom),
+        RawKind::Unknown => Some(LexErrorKind::UnknownCharacter),
         _ => None,
     }
 }
@@ -148,6 +149,8 @@ pub enum LexErrorKind {
     LoneCarriageReturn,
     /// A U+FEFF byte-order mark somewhere other than byte zero.
     MisplacedBom,
+    /// A character with no lexical meaning in the language.
+    UnknownCharacter,
 }
 
 /// `source.len()` exceeds the `u32` coordinate space of [`TextSize`].
