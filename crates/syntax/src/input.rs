@@ -26,15 +26,15 @@
 //!   recovery takes a matched pair whole, and a block yields a `)` that
 //!   closes a paren still open around it.
 //! - **stray**: a bracket its neighbours show to be no bracket at all —
-//!   and one too many of its kind in its item, a bracket with a match to
-//!   be had being no stray however its neighbours look. A
+//!   and that pairing goes better without, a bracket with a match to be
+//!   had being no stray however its neighbours look. A
 //!   closer in the middle of a line, wrong on both sides — after a token
 //!   that cannot end a statement and before one that starts an operand —
 //!   is a stray, as is one before an `=` or `:`, which nothing closed can
 //!   precede; so is a `(` after a `}` and before a token nothing opened
-//!   can precede, such as `else` or `:`; and so is a `{` inside an open
-//!   `(` that a binary operator follows, the expression around it running
-//!   straight through it.
+//!   can precede, such as `else` or `:`; and so is a `{` before a token no
+//!   statement starts with, or after a `let` or a `:`, where no block is
+//!   written.
 //!   Pairing never sees a stray, so it discards and shifts nothing; the
 //!   parser skips it as garbage. A closer wrong on one side only — `x = }`
 //!   at the end of a line, as an editor leaves it while the line is typed,
@@ -116,43 +116,26 @@ impl ParserInput {
         // brackets open around them — whether an open `(` is ever closed —
         // so they need the stream fully built and paired: a pairing pass,
         // then a boundary pass over its result.
-        let balances = balances(&kinds);
-        let mut item = 0;
+        // Pair provisionally, then judge the strays: a bracket its
+        // neighbours show to be no bracket is one only if pairing goes
+        // better without it — fewer brackets left unpartnered — so a
+        // matched bracket is never blamed for a surplus that is another's.
+        let mut pairing = pair(&kinds, &flags);
+        let mut unpartnered = pairing.unpartnered(&kinds, &flags);
         for index in 0..kinds.len() {
-            if kinds[index] == SyntaxKind::FnKw {
-                item += 1;
-            }
-            if stray_bracket(&kinds, &flags, index, balances[item]) {
-                flags[index] |= STRAY;
-            }
-        }
-        let mut pairing = Pairing::new(kinds.len());
-        let mut item = 0;
-        for (index, &kind) in kinds.iter().enumerate() {
-            if kind == SyntaxKind::FnKw {
-                item += 1;
-            }
-            if flags[index] & STRAY != 0 {
-                pairing.token();
+            if !stray_candidate(&kinds, &flags, index, pairing.in_parens[index]) {
                 continue;
             }
-            match kind {
-                SyntaxKind::LBrace
-                    if pairing.parens > 0
-                        && balances[item].braces > 0
-                        && operator_after(&kinds, &flags, index) =>
-                {
-                    flags[index] |= STRAY;
-                    pairing.token();
-                }
-                SyntaxKind::LParen | SyntaxKind::LBrace => pairing.open(index, kind),
-                SyntaxKind::RParen => pairing.close(index, SyntaxKind::LParen),
-                SyntaxKind::RBrace => pairing.close(index, SyntaxKind::LBrace),
-                SyntaxKind::FnKw => pairing.settle(),
-                _ => pairing.token(),
+            flags[index] |= STRAY;
+            let trial = pair(&kinds, &flags);
+            let left = trial.unpartnered(&kinds, &flags);
+            if left < unpartnered {
+                unpartnered = left;
+                pairing = trial;
+            } else {
+                flags[index] &= !STRAY;
             }
         }
-        pairing.settle();
         let partners = pairing.partners;
 
         // The brackets open before each token, replayed from the pairs: an
@@ -288,6 +271,31 @@ struct Pairing {
     /// Whether only closers have come since `candidate`, so that the next
     /// `}` to reach the bottom joins its run rather than replacing it.
     trailing: bool,
+    /// For each `{`, whether a `(` was open where it opened.
+    in_parens: Vec<bool>,
+}
+
+/// Pair the brackets of `kinds`, those flagged stray aside.
+fn pair(kinds: &[SyntaxKind], flags: &[u8]) -> Pairing {
+    let mut pairing = Pairing::new(kinds.len());
+    for (index, &kind) in kinds.iter().enumerate() {
+        if flags[index] & STRAY != 0 {
+            pairing.token();
+            continue;
+        }
+        match kind {
+            SyntaxKind::LParen | SyntaxKind::LBrace => {
+                pairing.in_parens[index] = pairing.parens > 0;
+                pairing.open(index, kind);
+            }
+            SyntaxKind::RParen => pairing.close(index, SyntaxKind::LParen),
+            SyntaxKind::RBrace => pairing.close(index, SyntaxKind::LBrace),
+            SyntaxKind::FnKw => pairing.settle(),
+            _ => pairing.token(),
+        }
+    }
+    pairing.settle();
+    pairing
 }
 
 impl Pairing {
@@ -299,7 +307,24 @@ impl Pairing {
             braces: 0,
             candidate: None,
             trailing: false,
+            in_parens: vec![false; len],
         }
+    }
+
+    /// How many brackets — those flagged stray aside — pair with nothing.
+    fn unpartnered(&self, kinds: &[SyntaxKind], flags: &[u8]) -> usize {
+        (0..kinds.len())
+            .filter(|&index| {
+                matches!(
+                    kinds[index],
+                    SyntaxKind::LParen
+                        | SyntaxKind::RParen
+                        | SyntaxKind::LBrace
+                        | SyntaxKind::RBrace
+                ) && flags[index] & STRAY == 0
+                    && self.partners[index].is_none()
+            })
+            .count()
     }
 
     /// A token that is neither a bracket nor `fn`.
@@ -368,122 +393,89 @@ impl Pairing {
     }
 }
 
-/// Openers less closers of each kind in one item — the tokens from one
-/// `fn` to the next. A stray is one too many of its kind: a bracket with a
-/// match to be had is no stray however its neighbours look.
-#[derive(Clone, Copy, Default)]
-struct Balance {
-    parens: i32,
-    braces: i32,
-}
-
-/// The [`Balance`] of every item, the tokens before the first `fn` first.
-fn balances(kinds: &[SyntaxKind]) -> Vec<Balance> {
-    let mut balances = vec![Balance::default()];
-    for &kind in kinds {
-        let balance = balances.last_mut().expect("one item at least");
-        match kind {
-            SyntaxKind::FnKw => balances.push(Balance::default()),
-            SyntaxKind::LParen => balance.parens += 1,
-            SyntaxKind::RParen => balance.parens -= 1,
-            SyntaxKind::LBrace => balance.braces += 1,
-            SyntaxKind::RBrace => balance.braces -= 1,
-            _ => {}
-        }
-    }
-    balances
-}
-
-/// Whether the bracket at `index` is a stray: one too many of its kind in
-/// its item, and judged so by its neighbours. A closer is one when in the
-/// middle of a line and wrong on both sides — after a token that cannot
-/// end a statement, an opener and a `,` before a `)` aside, and before a
-/// token on the same line that starts an operand — or when before an `=`
-/// or `:`, which nothing closed can precede. A `(` is one after a `}` and
+/// Whether the neighbours of the bracket at `index` show it to be no
+/// bracket at all: a candidate stray, one if pairing goes better without
+/// it. A closer is one when in the middle of a line and wrong on both
+/// sides — after a token that cannot end a statement, an opener and a `,`
+/// before a `)` aside, and before a token on the same line that starts an
+/// operand — or when before an `=` or `:`, which nothing closed can
+/// precede. A `{` is one before a token on its line that no statement
+/// starts with, its own `}` aside — unless it follows a `)`, an `else`, a
+/// name or a literal outside any paren, where a body or an `if` block is
+/// written and the garbage is the block's — or after a `let`, `mut`, `:`,
+/// or `.`, which nothing opened can follow. A `(` is one after a `}` and
 /// before a token nothing opened can precede, such as `else`, `mut`, an
 /// `=` or a `:` — a call on a block is no call; after a name, garbage
 /// inside a real call is the likelier reading. A bracket wrong on one side
 /// only stays a bracket: `x = }` at the end of a line is how an editor
-/// leaves a block while its last line is typed, and one at the start of a
-/// line stands where a bracket is put.
-fn stray_bracket(kinds: &[SyntaxKind], flags: &[u8], index: usize, balance: Balance) -> bool {
-    let surplus = match kinds[index] {
-        SyntaxKind::LParen => balance.parens > 0,
-        SyntaxKind::RParen => balance.parens < 0,
-        SyntaxKind::RBrace => balance.braces < 0,
-        _ => return false,
-    };
-    if !surplus || flags[index] & NEWLINE_BEFORE != 0 {
+/// leaves a block while its last line is typed, and a closer or a `(` at
+/// the start of a line stands where one is put.
+fn stray_candidate(kinds: &[SyntaxKind], flags: &[u8], index: usize, in_parens: bool) -> bool {
+    let kind = kinds[index];
+    if !matches!(
+        kind,
+        SyntaxKind::LParen | SyntaxKind::RParen | SyntaxKind::LBrace | SyntaxKind::RBrace
+    ) || (kind != SyntaxKind::LBrace && flags[index] & NEWLINE_BEFORE != 0)
+    {
         return false;
     }
-    let Some(&next) = kinds
+    let previous = index.checked_sub(1).map(|index| kinds[index]);
+    let next = kinds
         .get(index + 1)
-        .filter(|_| flags[index + 1] & NEWLINE_BEFORE == 0)
-    else {
+        .copied()
+        .filter(|_| flags[index + 1] & NEWLINE_BEFORE == 0);
+    if kind == SyntaxKind::LBrace {
+        // After `)`, `else`, a name or a literal is where a body or an
+        // `if` block is written: garbage after such a `{` is garbage in the
+        // block, not a sign against the `{`. Inside a paren no body opens.
+        let block_written = !in_parens
+            && previous.is_some_and(|previous| {
+                can_end_statement(previous) || previous == SyntaxKind::ElseKw
+            });
+        return matches!(
+            previous,
+            Some(SyntaxKind::LetKw | SyntaxKind::MutKw | SyntaxKind::Colon | SyntaxKind::Dot)
+        ) || (!block_written && no_statement_after(kinds, flags, index));
+    }
+    let Some(next) = next else {
         return false;
     };
     // `==` and `!=` are operators, which may well follow a bracket.
     let glued_to_eq =
         flags[index + 1] & JOINT != 0 && kinds.get(index + 2) == Some(&SyntaxKind::Eq);
     let lone_eq = next == SyntaxKind::Eq && !glued_to_eq;
-    match kinds[index] {
-        SyntaxKind::LParen => {
-            let previous = index.checked_sub(1).map(|index| kinds[index]);
-            let after_wrong = lone_eq
-                || matches!(
-                    next,
-                    SyntaxKind::ElseKw
-                        | SyntaxKind::MutKw
-                        | SyntaxKind::LetKw
-                        | SyntaxKind::ReturnKw
-                        | SyntaxKind::FnKw
-                        | SyntaxKind::Colon
-                        | SyntaxKind::Dot
-                );
-            previous == Some(SyntaxKind::RBrace) && after_wrong
-        }
-        _ => {
-            if lone_eq || next == SyntaxKind::Colon {
-                return true;
-            }
-            let before_wrong = index > 0 && {
-                let previous = kinds[index - 1];
-                let fine = can_end_statement(previous)
-                    || matches!(previous, SyntaxKind::LParen | SyntaxKind::LBrace)
-                    || (previous == SyntaxKind::Comma && kinds[index] == SyntaxKind::RParen);
-                !fine
-            };
-            before_wrong && starts_operand(next) && !(next == SyntaxKind::Bang && glued_to_eq)
-        }
+    if kind == SyntaxKind::LParen {
+        let after_wrong = lone_eq
+            || matches!(
+                next,
+                SyntaxKind::ElseKw
+                    | SyntaxKind::MutKw
+                    | SyntaxKind::LetKw
+                    | SyntaxKind::ReturnKw
+                    | SyntaxKind::FnKw
+                    | SyntaxKind::Colon
+                    | SyntaxKind::Dot
+            );
+        return previous == Some(SyntaxKind::RBrace) && after_wrong;
     }
+    if lone_eq || next == SyntaxKind::Colon {
+        return true;
+    }
+    let before_wrong = previous.is_some_and(|previous| {
+        !(can_end_statement(previous)
+            || matches!(previous, SyntaxKind::LParen | SyntaxKind::LBrace)
+            || (previous == SyntaxKind::Comma && kind == SyntaxKind::RParen))
+    });
+    before_wrong && starts_operand(next) && !(next == SyntaxKind::Bang && glued_to_eq)
 }
 
-/// Whether a binary operator follows the `{` at `index` on its line: the
-/// expression around the `{` runs straight through it.
-fn operator_after(kinds: &[SyntaxKind], flags: &[u8], index: usize) -> bool {
-    let Some(&next) = kinds
+/// Whether the token after `index` on its line is one no statement starts
+/// with, a `}` aside.
+fn no_statement_after(kinds: &[SyntaxKind], flags: &[u8], index: usize) -> bool {
+    kinds
         .get(index + 1)
         .filter(|_| flags[index + 1] & NEWLINE_BEFORE == 0)
-    else {
-        return false;
-    };
-    let joint_to_eq =
-        flags[index + 1] & JOINT != 0 && kinds.get(index + 2) == Some(&SyntaxKind::Eq);
-    let doubled = flags[index + 1] & JOINT != 0 && kinds.get(index + 2) == Some(&next);
-    match next {
-        SyntaxKind::Plus
-        | SyntaxKind::Star
-        | SyntaxKind::Slash
-        | SyntaxKind::Percent
-        | SyntaxKind::Lt
-        | SyntaxKind::Gt => true,
-        // Only `&&` and `||` are operators.
-        SyntaxKind::Amp | SyntaxKind::Pipe => doubled,
-        // Glued to its operand, `-` or `!` starts a statement instead.
-        SyntaxKind::Minus => flags[index + 1] & JOINT == 0,
-        SyntaxKind::Bang | SyntaxKind::Eq => joint_to_eq,
-        _ => false,
-    }
+        .is_some_and(|&next| !next.starts_statement() && next != SyntaxKind::RBrace)
 }
 
 /// Whether a token of this kind starts an operand and could not follow a

@@ -586,9 +586,9 @@ fn a_bracket_wrong_on_both_sides_is_a_stray() {
 }
 
 #[test]
-fn a_brace_inside_parens_followed_by_no_statement_is_a_stray() {
-    // A block inside parens closes before the paren does, so a `{` there
-    // followed on its line by a token no statement starts with is no block.
+fn a_surplus_brace_where_no_block_is_written_is_a_stray() {
+    // Before a token no statement starts with: the expression around it
+    // runs straight through it, or a `)` closes over it.
     check(
         "({ * a)",
         &[
@@ -599,8 +599,28 @@ fn a_brace_inside_parens_followed_by_no_statement_is_a_stray() {
             r#"RParen ")" partner 0"#,
         ],
     );
-    // One its `}` balances is the block it opens, whatever the block holds;
-    // and a lone `&` or `|` is no operator.
+    check(
+        "a &{ & b",
+        &[
+            r#"Ident "a""#,
+            r#"Amp "&" joint"#,
+            r#"LBrace "{" stray"#,
+            r#"Amp "&""#,
+            r#"Ident "b""#,
+        ],
+    );
+    // After a `let`, where no block is written.
+    check(
+        "let { a = 1",
+        &[
+            r#"LetKw "let""#,
+            r#"LBrace "{" stray"#,
+            r#"Ident "a""#,
+            r#"Eq "=""#,
+            r#"IntLiteral "1""#,
+        ],
+    );
+    // One its `}` balances is the block it opens, whatever the block holds.
     check(
         "(if a { + b })",
         &[
@@ -611,16 +631,6 @@ fn a_brace_inside_parens_followed_by_no_statement_is_a_stray() {
             r#"Plus "+""#,
             r#"Ident "b""#,
             r#"RBrace "}" joint partner 3"#,
-            r#"RParen ")" partner 0"#,
-        ],
-    );
-    check(
-        "({ & a)",
-        &[
-            r#"LParen "(" joint partner 4"#,
-            r#"LBrace "{""#,
-            r#"Amp "&""#,
-            r#"Ident "a" joint"#,
             r#"RParen ")" partner 0"#,
         ],
     );
@@ -668,6 +678,29 @@ fn a_paren_after_a_block_before_what_nothing_opened_can_precede_is_a_stray() {
             r#"LParen "(" partner 3"#,
             r#"ElseKw "else" joint"#,
             r#"RParen ")" partner 1"#,
+        ],
+    );
+}
+
+#[test]
+fn a_matched_bracket_is_never_blamed_for_another_surplus() {
+    // The `if` block's `{` looks like a stray inside the paren, but pairing
+    // goes worse without it — its `}` would discard the `(` — so the final
+    // `{`, which nothing shows to be a stray, stays the unpartnered one.
+    check(
+        "{ (if a { + b }) } {",
+        &[
+            r#"LBrace "{" partner 9"#,
+            r#"LParen "(" joint partner 8"#,
+            r#"IfKw "if""#,
+            r#"Ident "a""#,
+            r#"LBrace "{" partner 7"#,
+            r#"Plus "+""#,
+            r#"Ident "b""#,
+            r#"RBrace "}" joint partner 4"#,
+            r#"RParen ")" partner 1"#,
+            r#"RBrace "}" partner 0"#,
+            r#"LBrace "{""#,
         ],
     );
 }
