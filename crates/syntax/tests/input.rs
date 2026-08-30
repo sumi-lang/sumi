@@ -38,9 +38,6 @@ fn dump(source: &str) -> Vec<String> {
             if input.newline_before(index) {
                 line.push_str(" newline");
             }
-            if input.is_stray(index) {
-                line.push_str(" stray");
-            }
             if input.boundary_before(index) {
                 line.push_str(" boundary");
             }
@@ -345,7 +342,7 @@ fn brackets_pair_and_closers_synchronize() {
         ],
     );
     // A closer with no match is an orphan and discards nothing, so the `{`
-    // a stray `)` sits inside still pairs.
+    // an orphan `)` sits inside still pairs.
     check(
         "(a}",
         &[r#"LParen "(" joint"#, r#"Ident "a" joint"#, r#"RBrace "}""#],
@@ -364,103 +361,27 @@ fn brackets_pair_and_closers_synchronize() {
 }
 
 #[test]
-fn a_body_closes_at_the_first_of_the_last_run_of_braces() {
-    // The `{` at the bottom of the stack is an item's body. A `}` reaching
-    // it with statements and a later `}` after it is a stray inside the
-    // body, so the body pairs with the later one.
+fn braces_pair_with_the_nearest_compatible_opener() {
     check(
         "{a}b}",
         &[
-            r#"LBrace "{" joint partner 4"#,
-            r#"Ident "a" joint"#,
-            r#"RBrace "}" joint"#,
-            r#"Ident "b" joint"#,
-            r#"RBrace "}" partner 0"#,
-        ],
-    );
-    // One with nothing but closers after it is the body's end, and those
-    // closers are the strays.
-    check(
-        "{a}}",
-        &[
             r#"LBrace "{" joint partner 2"#,
             r#"Ident "a" joint"#,
             r#"RBrace "}" joint partner 0"#,
+            r#"Ident "b" joint"#,
             r#"RBrace "}""#,
         ],
     );
-    check(
-        "{a})}",
-        &[
-            r#"LBrace "{" joint partner 2"#,
-            r#"Ident "a" joint"#,
-            r#"RBrace "}" joint partner 0"#,
-            r#"RParen ")" joint"#,
-            r#"RBrace "}""#,
-        ],
-    );
-    // The only `}` to reach the body is its end whatever follows: garbage
-    // between items is likelier than a stray with the real closer missing,
-    // and costs one error where the other reading costs two.
-    check(
-        "{a}b",
-        &[
-            r#"LBrace "{" joint partner 2"#,
-            r#"Ident "a" joint"#,
-            r#"RBrace "}" joint partner 0"#,
-            r#"Ident "b""#,
-        ],
-    );
-    check(
-        "{a}(b)",
-        &[
-            r#"LBrace "{" joint partner 2"#,
-            r#"Ident "a" joint"#,
-            r#"RBrace "}" joint partner 0"#,
-            r#"LParen "(" joint partner 5"#,
-            r#"Ident "b" joint"#,
-            r#"RParen ")" partner 3"#,
-        ],
-    );
-    check(
-        "{a}b fn g(){}",
-        &[
-            r#"LBrace "{" joint partner 2"#,
-            r#"Ident "a" joint"#,
-            r#"RBrace "}" joint partner 0"#,
-            r#"Ident "b""#,
-            r#"FnKw "fn""#,
-            r#"Ident "g" joint"#,
-            r#"LParen "(" joint partner 7"#,
-            r#"RParen ")" joint partner 6"#,
-            r#"LBrace "{" joint partner 9"#,
-            r#"RBrace "}" partner 8"#,
-        ],
-    );
-    // A `fn` settles it: the pairing never reaches into the next item.
-    check(
-        "{a} fn {b}",
-        &[
-            r#"LBrace "{" joint partner 2"#,
-            r#"Ident "a" joint"#,
-            r#"RBrace "}" partner 0"#,
-            r#"FnKw "fn""#,
-            r#"LBrace "{" joint partner 6"#,
-            r#"Ident "b" joint"#,
-            r#"RBrace "}" partner 4"#,
-        ],
-    );
-    // Inner braces pair as they come; only the bottom one waits.
     check(
         "{{a}}b}",
         &[
-            r#"LBrace "{" joint partner 6"#,
+            r#"LBrace "{" joint partner 4"#,
             r#"LBrace "{" joint partner 3"#,
             r#"Ident "a" joint"#,
             r#"RBrace "}" joint partner 1"#,
-            r#"RBrace "}" joint"#,
+            r#"RBrace "}" joint partner 0"#,
             r#"Ident "b" joint"#,
-            r#"RBrace "}" partner 0"#,
+            r#"RBrace "}""#,
         ],
     );
 }
@@ -485,222 +406,29 @@ fn large_opposite_delimiter_run_recovers() {
 }
 
 #[test]
-fn a_bracket_wrong_on_both_sides_is_a_stray() {
-    // After a token that cannot end a statement and before one that starts
-    // an operand on the same line: no bracket at all, paired with nothing.
+fn unmatched_brackets_remain_unpaired_regardless_of_grammar() {
     check(
         "a = } b",
-        &[
-            r#"Ident "a""#,
-            r#"Eq "=""#,
-            r#"RBrace "}" stray"#,
-            r#"Ident "b""#,
-        ],
+        &[r#"Ident "a""#, r#"Eq "=""#, r#"RBrace "}""#, r#"Ident "b""#],
     );
-    check(
-        "(a + ) b)",
-        &[
-            r#"LParen "(" joint partner 5"#,
-            r#"Ident "a""#,
-            r#"Plus "+""#,
-            r#"RParen ")" stray"#,
-            r#"Ident "b" joint"#,
-            r#"RParen ")" partner 0"#,
-        ],
-    );
-    // One with a match to be had is no stray however it looks: a `}` that
-    // its `{` balances closes it, whatever garbage follows.
-    check(
-        "{ a } = b",
-        &[
-            r#"LBrace "{" partner 2"#,
-            r#"Ident "a""#,
-            r#"RBrace "}" partner 0"#,
-            r#"Eq "=""#,
-            r#"Ident "b""#,
-        ],
-    );
-    check(
-        "(a + ) b",
-        &[
-            r#"LParen "(" joint partner 3"#,
-            r#"Ident "a""#,
-            r#"Plus "+""#,
-            r#"RParen ")" partner 0"#,
-            r#"Ident "b""#,
-        ],
-    );
-    // Before an `=` or `:`, which nothing closed can precede — `==` being an
-    // operator, and so following a closer as any other.
-    check(
-        "x } = 1",
-        &[
-            r#"Ident "x""#,
-            r#"RBrace "}" stray"#,
-            r#"Eq "=""#,
-            r#"IntLiteral "1""#,
-        ],
-    );
-    check(
-        "(a) == b",
-        &[
-            r#"LParen "(" joint partner 2"#,
-            r#"Ident "a" joint"#,
-            r#"RParen ")" partner 0"#,
-            r#"Eq "=" joint"#,
-            r#"Eq "=""#,
-            r#"Ident "b""#,
-        ],
-    );
-    // Wrong on one side only stays a closer: an editor leaves `x = }` at
-    // the end of a line while the line is typed.
-    check(
-        "x = }\ny",
-        &[
-            r#"Ident "x""#,
-            r#"Eq "=""#,
-            r#"RBrace "}""#,
-            r#"Ident "y" newline boundary"#,
-        ],
-    );
-    check(
-        "{ } x",
-        &[
-            r#"LBrace "{" partner 1"#,
-            r#"RBrace "}" partner 0"#,
-            r#"Ident "x""#,
-        ],
-    );
-    // A `,` before a `)` is a trailing comma, and a `,` after a `(` leaves
-    // the `(` an opener.
-    check(
-        "f(a, )",
-        &[
-            r#"Ident "f" joint"#,
-            r#"LParen "(" joint partner 4"#,
-            r#"Ident "a" joint"#,
-            r#"Comma ",""#,
-            r#"RParen ")" partner 1"#,
-        ],
-    );
-}
-
-#[test]
-fn a_surplus_brace_where_no_block_is_written_is_a_stray() {
-    // Before a token no statement starts with: the expression around it
-    // runs straight through it, or a `)` closes over it.
-    check(
-        "({ * a)",
-        &[
-            r#"LParen "(" joint partner 4"#,
-            r#"LBrace "{" stray"#,
-            r#"Star "*""#,
-            r#"Ident "a" joint"#,
-            r#"RParen ")" partner 0"#,
-        ],
-    );
-    check(
-        "a &{ & b",
-        &[
-            r#"Ident "a""#,
-            r#"Amp "&" joint"#,
-            r#"LBrace "{" stray"#,
-            r#"Amp "&""#,
-            r#"Ident "b""#,
-        ],
-    );
-    // After a `let`, where no block is written.
-    check(
-        "let { a = 1",
-        &[
-            r#"LetKw "let""#,
-            r#"LBrace "{" stray"#,
-            r#"Ident "a""#,
-            r#"Eq "=""#,
-            r#"IntLiteral "1""#,
-        ],
-    );
-    // One its `}` balances is the block it opens, whatever the block holds.
-    check(
-        "(if a { + b })",
-        &[
-            r#"LParen "(" joint partner 7"#,
-            r#"IfKw "if""#,
-            r#"Ident "a""#,
-            r#"LBrace "{" partner 6"#,
-            r#"Plus "+""#,
-            r#"Ident "b""#,
-            r#"RBrace "}" joint partner 3"#,
-            r#"RParen ")" partner 0"#,
-        ],
-    );
-    // One followed by a statement, or by nothing on its line, opens a
-    // block after all — one the `)` then discards.
-    check(
-        "({ a\n)",
-        &[
-            r#"LParen "(" joint partner 3"#,
-            r#"LBrace "{""#,
-            r#"Ident "a""#,
-            r#"RParen ")" newline boundary partner 0"#,
-        ],
-    );
-}
-
-#[test]
-fn a_paren_after_a_block_before_what_nothing_opened_can_precede_is_a_stray() {
-    // A call on a block is no call: a `(` after a `}` that is also wrong on
-    // its right is a stray.
     check(
         "{ } ( else",
         &[
             r#"LBrace "{" partner 1"#,
             r#"RBrace "}" partner 0"#,
-            r#"LParen "(" stray"#,
+            r#"LParen "(""#,
             r#"ElseKw "else""#,
         ],
     );
-    // At the start of a line, a `(` stands where an opener is put.
     check(
-        "{ }\n( else",
+        "(a + ) b)",
         &[
-            r#"LBrace "{" partner 1"#,
-            r#"RBrace "}" partner 0"#,
-            r#"LParen "(" newline boundary"#,
-            r#"ElseKw "else""#,
-        ],
-    );
-    // After a name, garbage inside a real call is the likelier reading.
-    check(
-        "f( else)",
-        &[
-            r#"Ident "f" joint"#,
-            r#"LParen "(" partner 3"#,
-            r#"ElseKw "else" joint"#,
-            r#"RParen ")" partner 1"#,
-        ],
-    );
-}
-
-#[test]
-fn a_matched_bracket_is_never_blamed_for_another_surplus() {
-    // The `if` block's `{` looks like a stray inside the paren, but pairing
-    // goes worse without it — its `}` would discard the `(` — so the final
-    // `{`, which nothing shows to be a stray, stays the unpartnered one.
-    check(
-        "{ (if a { + b }) } {",
-        &[
-            r#"LBrace "{" partner 9"#,
-            r#"LParen "(" joint partner 8"#,
-            r#"IfKw "if""#,
+            r#"LParen "(" joint partner 3"#,
             r#"Ident "a""#,
-            r#"LBrace "{" partner 7"#,
             r#"Plus "+""#,
-            r#"Ident "b""#,
-            r#"RBrace "}" joint partner 4"#,
-            r#"RParen ")" partner 1"#,
-            r#"RBrace "}" partner 0"#,
-            r#"LBrace "{""#,
+            r#"RParen ")" partner 0"#,
+            r#"Ident "b" joint"#,
+            r#"RParen ")""#,
         ],
     );
 }

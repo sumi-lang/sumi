@@ -275,6 +275,21 @@ impl<'a> Marker<'_, 'a> {
         }
     }
 
+    /// Attach the next token and its matched bracket group only when that
+    /// group closes strictly inside the construct this marker is in. An
+    /// opener paired with the enclosing closer is malformed here and must
+    /// not carry recovery past that closer.
+    pub(crate) fn group_inside(&mut self) {
+        let index = self.builder.position;
+        self.token();
+        if let Some(partner) = self.builder.input.partner(index)
+            && partner > index
+            && self.closer.is_some_and(|closer| partner < closer)
+        {
+            self.builder.position = partner + 1;
+        }
+    }
+
     /// Open a child at the next token; its kind is chosen when it
     /// completes.
     pub fn start(&mut self) -> Marker<'_, 'a> {
@@ -347,6 +362,11 @@ impl<'a> Marker<'_, 'a> {
         self.nth(0)
     }
 
+    /// Whether the next significant token is the first one in the file.
+    pub(crate) fn at_start(&self) -> bool {
+        self.builder.position == 0
+    }
+
     /// The kind of the significant token `n` past the next one.
     pub(crate) fn nth(&self, n: usize) -> Option<SyntaxKind> {
         let index = self.builder.position.checked_add(n)?;
@@ -402,22 +422,21 @@ impl<'a> Marker<'_, 'a> {
 
     /// Whether a statement boundary precedes the next token.
     pub(crate) fn boundary(&self) -> bool {
-        let index = self.builder.position;
-        index < self.builder.input.len() && self.builder.input.boundary_before(index)
+        self.nth_boundary(0)
     }
 
-    /// Whether the next token is a bracket the stream judged a stray: no
-    /// bracket at all, garbage where it stands.
-    pub(crate) fn stray(&self) -> bool {
-        let position = self.builder.position;
-        position < self.builder.input.len() && self.builder.input.is_stray(position)
+    /// Whether a statement boundary precedes the significant token `n` past
+    /// the next one.
+    pub(crate) fn nth_boundary(&self, n: usize) -> bool {
+        self.builder.position.checked_add(n).is_some_and(|index| {
+            index < self.builder.input.len() && self.builder.input.boundary_before(index)
+        })
     }
 
-    /// Whether the next token begins an expression: one of the kinds that
-    /// can, and not a bracket the stream judged a stray. Whatever parses an
+    /// Whether the next token begins an expression. Whatever parses an
     /// expression where this holds takes at least that token.
     pub(crate) fn starts_expression(&self) -> bool {
-        self.current().is_some_and(SyntaxKind::starts_expression) && !self.stray()
+        self.current().is_some_and(SyntaxKind::starts_expression)
     }
 
     /// Whether the next token is a bracket the stream pairs with another,
@@ -440,11 +459,12 @@ impl<'a> Marker<'_, 'a> {
             .checked_sub(self.builder.position)
     }
 
-    /// Whether the next token is a `)` closing a parenthesized construct
-    /// still open around this node — the innermost, or one outside it — as
-    /// the stream pairs brackets. A `)` the stream pairs with a paren the
-    /// parser has already closed is garbage here: nothing is waiting for
-    /// it, so it is not a closer to yield to.
+    /// Whether the next token is a `)` a parenthesized construct still open
+    /// around this node can own. A mechanically paired `)` belongs here only
+    /// when its opener is that construct or one outside it; an orphan `)`
+    /// also belongs here, since recovery may have skipped the closer that
+    /// pairing originally chose. One paired with a paren the parser already
+    /// closed is garbage instead.
     pub(crate) fn closes_open_paren(&self) -> bool {
         let Some(paren) = self.paren else {
             return false;
@@ -454,7 +474,7 @@ impl<'a> Marker<'_, 'a> {
                 .builder
                 .input
                 .partner(self.builder.position)
-                .is_some_and(|partner| partner <= paren)
+                .is_none_or(|partner| partner <= paren)
     }
 
     /// Mark this node as a bracket construct whose opener is its first
@@ -482,6 +502,12 @@ impl<'a> Marker<'_, 'a> {
     pub(crate) fn closer_ahead(&self) -> bool {
         self.closer
             .is_some_and(|closer| closer > self.builder.position)
+    }
+
+    /// Whether the next token is the closer of the innermost bracket
+    /// construct entered around this marker.
+    pub(crate) fn at_closer(&self) -> bool {
+        self.closer == Some(self.builder.position)
     }
 
     /// Whether the next token is a `fn` beginning the next item: one that

@@ -434,6 +434,36 @@ fn if_expressions_chain() {
 }
 
 #[test]
+fn a_malformed_if_condition_still_keeps_its_body() {
+    check(
+        "fn f() { if {} }",
+        &[
+            "SourceFile 0..16",
+            "  FnItem 0..16",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..16",
+            "      IfExpr 9..14",
+            r#"        Block 12..14 "{}""#,
+        ],
+        &["ExpectedExpression at 12"],
+    );
+    check(
+        "fn f() { if 1 1 {} }",
+        &[
+            "SourceFile 0..20",
+            "  FnItem 0..20",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..20",
+            "      IfExpr 9..18",
+            r#"        LiteralExpr 12..13 "1""#,
+            r#"        Error 14..15 "1""#,
+            r#"        Block 16..18 "{}""#,
+        ],
+        &["Expected(LBrace) at 14"],
+    );
+}
+
+#[test]
 fn blocks_and_parentheses_are_expressions() {
     check(
         "fn f() { let x = { (1) } }",
@@ -900,11 +930,11 @@ fn blocks_open_on_the_line_of_their_owner() {
             "  FnItem 0..19",
             r#"    ParamList 4..6 "()""#,
             "    Block 7..19",
-            "      IfExpr 9..17",
+            "      IfExpr 9..13",
             r#"        NameExpr 12..13 "a""#,
-            r#"        Block 14..17 "{ }""#,
+            r#"      Block 14..17 "{ }""#,
         ],
-        &["BlockOnNewLine at 14"],
+        &["Expected(LBrace) at 14"],
     );
 }
 
@@ -978,6 +1008,25 @@ fn list_recovery_leaves_enclosing_syntax_alone() {
         ],
         &["Expected(RParen) at 6"],
     );
+    // An unpaired block opener immediately before the list's `)` is local
+    // garbage; it does not turn the rest of the enclosing expression into
+    // an unclosed block.
+    check(
+        "fn f() { g(a, { ) x }",
+        &[
+            "SourceFile 0..21",
+            "  FnItem 0..21",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..21",
+            "      CallExpr 9..17",
+            r#"        NameExpr 9..10 "g""#,
+            "        ArgList 10..17",
+            r#"          NameExpr 11..12 "a""#,
+            r#"          Error 14..15 "{""#,
+            r#"      Error 18..19 "x""#,
+        ],
+        &["ExpectedExpression at 14"],
+    );
 }
 
 #[test]
@@ -1022,7 +1071,7 @@ fn garbage_before_an_argument_ends_where_the_argument_begins() {
 
 #[test]
 fn recovery_never_takes_an_enclosing_closer() {
-    // The stray `{` must not let the run swallow the argument list's `)`.
+    // The unmatched `{` must not let the run swallow the argument list's `)`.
     check(
         "fn f() { g(:{) }",
         &[
@@ -1060,8 +1109,8 @@ fn items(source: &str) -> usize {
 
 #[test]
 fn a_block_yields_to_the_paren_that_encloses_it() {
-    // A `{` inside a paren before its `)` is no block: the stream judges
-    // it a stray, and the paren takes its closer over it.
+    // A `{` is valid expression syntax, but the block cannot take the `)`
+    // owned by the enclosing paren during recovery.
     check(
         "fn f() { ({ ) }",
         &[
@@ -1070,11 +1119,11 @@ fn a_block_yields_to_the_paren_that_encloses_it() {
             r#"    ParamList 4..6 "()""#,
             "    Block 7..15",
             "      ParenExpr 9..13",
-            r#"        Error 10..11 "{""#,
+            r#"        Block 10..11 "{""#,
         ],
-        &["ExpectedExpression at 10"],
+        &["Expected(RBrace) at 12"],
     );
-    // A `)` with nothing to close is garbage, skipped where it stands.
+    // A `)` with nothing to close is garbage inside the expression.
     check(
         "fn f() { g(a)) }",
         &[
@@ -1088,14 +1137,14 @@ fn a_block_yields_to_the_paren_that_encloses_it() {
             r#"          NameExpr 11..12 "a""#,
             r#"      Error 13..14 ")""#,
         ],
-        &["ExpectedStatement at 13"],
+        &["Unexpected at 13"],
     );
 }
 
 #[test]
 fn a_block_does_not_yield_to_a_paren_opened_inside_it() {
-    // `(a` recovered before `b`; the later `)` is garbage in the block, not
-    // a closer the block must yield to.
+    // `(a` recovers before `b`; the remainder of that malformed statement
+    // stays one local error rather than becoming a plausible new statement.
     check(
         "fn f() { (a b) }",
         &[
@@ -1105,60 +1154,58 @@ fn a_block_does_not_yield_to_a_paren_opened_inside_it() {
             "    Block 7..16",
             "      ParenExpr 9..11",
             r#"        NameExpr 10..11 "a""#,
-            r#"      NameExpr 12..13 "b""#,
-            r#"      Error 13..14 ")""#,
+            r#"      Error 12..14 "b)""#,
         ],
         &["Expected(RParen) at 12"],
     );
-    // The same with a block in between: the parser's own state, not the
-    // token stream's bracket matching, decides — so neither block yields.
+    // The same with a brace in between: statement recovery owns the
+    // malformed suffix, then the nearest `}` closes the body.
     check(
         "fn f() { (a { b) } }",
         &[
             "SourceFile 0..20",
-            "  FnItem 0..20",
+            "  FnItem 0..18",
             r#"    ParamList 4..6 "()""#,
-            "    Block 7..20",
+            "    Block 7..18",
             "      ParenExpr 9..11",
             r#"        NameExpr 10..11 "a""#,
-            "      Block 12..18",
-            r#"        NameExpr 14..15 "b""#,
-            r#"        Error 15..16 ")""#,
+            r#"      Error 12..16 "{ b)""#,
+            r#"  Error 19..20 "}""#,
         ],
-        &["Expected(RParen) at 12", "ExpectedStatement at 15"],
+        &["Expected(RParen) at 12", "ExpectedItem at 19"],
     );
 }
 
 #[test]
 fn a_block_yields_only_to_a_paren_the_parser_still_has_open() {
-    // The stream pairs the `)` with the `(` of `(a`, which recovery closed
-    // at the `{`: nothing is waiting for it. The inner block keeps it as
-    // garbage rather than cutting itself short, and every closer after it
-    // lands where it belongs.
+    // The block-local recovery does not let a malformed inner statement
+    // steal syntax from constructs which enclose the block.
     check(
         "fn f() { ({ (a { b) } }) }",
         &[
             "SourceFile 0..26",
-            "  FnItem 0..26",
+            "  FnItem 0..23",
             r#"    ParamList 4..6 "()""#,
-            "    Block 7..26",
-            "      ParenExpr 9..24",
-            "        Block 10..23",
+            "    Block 7..23",
+            "      ParenExpr 9..21",
+            "        Block 10..21",
             "          ParenExpr 12..14",
             r#"            NameExpr 13..14 "a""#,
-            "          Block 15..21",
-            r#"            NameExpr 17..18 "b""#,
-            r#"            Error 18..19 ")""#,
+            r#"          Error 15..19 "{ b)""#,
+            r#"  Error 23..26 ") }""#,
         ],
-        &["Expected(RParen) at 15", "ExpectedStatement at 18"],
+        &[
+            "Expected(RParen) at 15",
+            "Expected(RParen) at 22",
+            "ExpectedItem at 23",
+        ],
     );
 }
 
 #[test]
 fn an_opener_nothing_closes_does_not_extend_a_skipped_run() {
-    // The stream pairs the stray `(` with nothing — the `}` discards it —
-    // so the run does not nest at it: the `,` ends the run, and `b` is an
-    // argument after all.
+    // The `}` mechanically discards the unmatched `(`, so the run does not
+    // nest at it: the `,` ends the run, and `b` is an argument after all.
     check(
         "fn f() { g(:(, b }",
         &[
@@ -1250,10 +1297,9 @@ fn arguments_stay_on_the_callee_line_even_inside_parens() {
             "    Block 7..17",
             "      ParenExpr 9..11",
             r#"        NameExpr 10..11 "g""#,
-            r#"      ParenExpr 12..14 "()""#,
-            r#"      Error 14..15 ")""#,
+            r#"      Error 12..15 "())""#,
         ],
-        &["Expected(RParen) at 12", "ExpectedExpression at 13"],
+        &["Expected(RParen) at 12"],
     );
 }
 
@@ -1343,9 +1389,9 @@ fn underscore_is_not_a_name() {
 }
 
 #[test]
-fn a_stray_token_after_a_statement_is_reported_as_one() {
+fn a_malformed_suffix_after_a_statement_is_reported_as_one() {
     // Neither `=` nor `else` can start a statement, so a boundary before
-    // them would not help: they are the strays, and the report says so.
+    // them would not help; each malformed suffix is one error run.
     check(
         "fn f() { x = 1 }",
         &[
@@ -1373,30 +1419,25 @@ fn a_stray_token_after_a_statement_is_reported_as_one() {
 }
 
 #[test]
-fn a_stray_brace_inside_a_body_is_a_stray_statement() {
-    // The stream pairs the body's `{` with the last `}` before the next
-    // item, so the `}` in the middle is a stray inside the body — reported
-    // as one, with the statements after it still in the body — rather than
-    // the body's end, with everything after it garbage between items.
+fn a_body_closes_at_the_nearest_matching_brace() {
+    // Mechanical pairing is stable under suffix edits: the first `}` closes
+    // the body and the malformed suffix stays at the top level.
     check(
         "fn f() {\n  a\n  } + b\n  c\n}\n\nfn g() {}",
         &[
             "SourceFile 0..37",
-            "  FnItem 0..26",
+            "  FnItem 0..16",
             r#"    ParamList 4..6 "()""#,
-            "    Block 7..26",
+            "    Block 7..16",
             r#"      NameExpr 11..12 "a""#,
-            r#"      Error 15..20 "} + b""#,
-            r#"      NameExpr 23..24 "c""#,
+            r#"  Error 17..26 "+ b\n  c\n}""#,
             "  FnItem 28..37",
             r#"    ParamList 32..34 "()""#,
             r#"    Block 35..37 "{}""#,
         ],
-        &["ExpectedStatement at 15"],
+        &["ExpectedItem at 17"],
     );
-    // A doubled closer is the other way round: nothing but the second `}`
-    // follows the first, so the first is the body's end and the second is
-    // garbage between items — where the error belongs.
+    // A doubled closer follows the same rule.
     check(
         "fn f() { a } }",
         &[
@@ -1408,6 +1449,25 @@ fn a_stray_brace_inside_a_body_is_a_stray_statement() {
             r#"  Error 13..14 "}""#,
         ],
         &["ExpectedItem at 13"],
+    );
+}
+
+#[test]
+fn an_orphan_closer_does_not_reparent_earlier_items() {
+    check(
+        "fn f() { a }\ng() {}\n}",
+        &[
+            "SourceFile 0..21",
+            "  FnItem 0..12",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..12",
+            r#"      NameExpr 9..10 "a""#,
+            "  FnItem 13..19",
+            r#"    ParamList 14..16 "()""#,
+            r#"    Block 17..19 "{}""#,
+            r#"  Error 20..21 "}""#,
+        ],
+        &["Expected(FnKw) at 13", "ExpectedItem at 20"],
     );
 }
 
@@ -1517,8 +1577,8 @@ fn garbage_where_an_expression_is_required_is_taken_as_such() {
         ],
         &["ExpectedExpression at 13"],
     );
-    // A closer wrong on both sides is no closer: the stream judges the `)`
-    // a stray, and it is garbage here like anything else.
+    // In condition grammar a `)` before the operand cannot close anything;
+    // it is garbage in the condition and the operand remains parseable.
     check(
         "fn f() { if ) x { a } }",
         &[
@@ -1600,14 +1660,30 @@ fn a_closer_where_an_expression_is_required_is_left_to_its_owner() {
         ],
         &["ExpectedExpression at 11"],
     );
+    // A missing prefix operand does not consume the argument list's closer,
+    // even when a binary operator follows that closer.
+    check(
+        "fn f() { g(- ) == x }",
+        &[
+            "SourceFile 0..21",
+            "  FnItem 0..21",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..21",
+            "      BinaryExpr 9..19",
+            "        CallExpr 9..14",
+            r#"          NameExpr 9..10 "g""#,
+            "          ArgList 10..14",
+            r#"            PrefixExpr 11..12 "-""#,
+            r#"        NameExpr 18..19 "x""#,
+        ],
+        &["ExpectedExpression at 13"],
+    );
 }
 
 #[test]
-fn what_follows_a_failed_statement_on_its_line_is_its_fallout() {
-    // The `+` fails at the `let`, which begins a statement: that statement
-    // is not missing a boundary, and the `= 2` after it is debris of the
-    // same failure, passed over in silence — the `2` as the statement it
-    // could be, so that debris never swallows one.
+fn each_failed_statement_owns_the_rest_of_its_line() {
+    // The `+` fails at the `let`, whose strong introducer starts a new
+    // statement. That malformed declaration then owns its `= 2` suffix.
     check(
         "fn f() { a + let b = 1 = 2 }",
         &[
@@ -1619,19 +1695,16 @@ fn what_follows_a_failed_statement_on_its_line_is_its_fallout() {
             r#"        NameExpr 9..10 "a""#,
             "      LetStmt 13..22",
             r#"        LiteralExpr 21..22 "1""#,
-            r#"      Error 23..24 "=""#,
-            r#"      LiteralExpr 25..26 "2""#,
+            r#"      Error 23..26 "= 2""#,
         ],
-        &["ExpectedExpression at 13"],
+        &["ExpectedExpression at 13", "ExpectedStatement at 23"],
     );
 }
 
 #[test]
 fn a_body_whose_closer_an_inner_block_took_ends_at_the_next_item() {
-    // The `)` discards the inner `{` in the stream, so the `}` is the
-    // body's; the parser's unclosed inner block takes it anyway, there
-    // being nothing better. The body's closer is then behind it, and the
-    // `fn` begins the next item rather than garbage the body owns.
+    // The malformed statement stays local. Its `{` does not consume the
+    // enclosing body's closer, and `fn` still begins the next item.
     check(
         "fn f() { (a { b) }\nfn g() {}",
         &[
@@ -1641,26 +1714,19 @@ fn a_body_whose_closer_an_inner_block_took_ends_at_the_next_item() {
             "    Block 7..18",
             "      ParenExpr 9..11",
             r#"        NameExpr 10..11 "a""#,
-            "      Block 12..18",
-            r#"        NameExpr 14..15 "b""#,
-            r#"        Error 15..16 ")""#,
+            r#"      Error 12..16 "{ b)""#,
             "  FnItem 19..28",
             r#"    ParamList 23..25 "()""#,
             r#"    Block 26..28 "{}""#,
         ],
-        &[
-            "Expected(RParen) at 12",
-            "ExpectedStatement at 15",
-            "Expected(RBrace) at 19",
-        ],
+        &["Expected(RParen) at 12"],
     );
 }
 
 #[test]
-fn a_report_on_the_way_does_not_make_the_line_fallout() {
+fn a_non_recovery_report_does_not_trigger_statement_recovery() {
     // The spaced `-` is complained about and taken; `- x` parses whole, so
-    // the `y` after it is a second statement missing its boundary, not
-    // fallout to pass over in silence.
+    // the `y` after it is a second statement missing its boundary.
     check(
         "fn f() { - x y }",
         &[
@@ -1677,10 +1743,9 @@ fn a_report_on_the_way_does_not_make_the_line_fallout() {
 }
 
 #[test]
-fn a_stray_bracket_is_garbage_where_it_stands() {
-    // The `}` is wrong on both sides, so the stream pairs it with nothing;
-    // the block it would have closed early runs on, and the `}` is garbage
-    // where the operand was.
+fn displaced_brackets_are_recovered_by_their_grammar_context() {
+    // A `}` where an operand continues is garbage in the discard statement,
+    // rather than the end of its enclosing block.
     check(
         "fn f() { _ = } r\"a\"\n  x\n}",
         &[
@@ -1712,9 +1777,8 @@ fn a_stray_bracket_is_garbage_where_it_stands() {
         ],
         &["Unexpected at 12"],
     );
-    // At the start of a line, where an argument list would have handed it
-    // to an expression parser that refuses it: taken as garbage, so that
-    // every loop makes progress.
+    // At an argument position `{` is valid block syntax. The missing comma
+    // is reported and the malformed block owns its contents.
     check(
         "fn f() { g(a\n  { % b) }",
         &[
@@ -1726,15 +1790,19 @@ fn a_stray_bracket_is_garbage_where_it_stands() {
             r#"        NameExpr 9..10 "g""#,
             "        ArgList 10..21",
             r#"          NameExpr 11..12 "a""#,
-            r#"          Error 15..18 "{ %""#,
-            r#"          NameExpr 19..20 "b""#,
+            "          Block 15..20",
+            r#"            Error 17..20 "% b""#,
         ],
-        &["Expected(Comma) at 15"],
+        &[
+            "Expected(Comma) at 15",
+            "ExpectedStatement at 17",
+            "Expected(RBrace) at 20",
+        ],
     );
 }
 
 #[test]
-fn a_bracket_with_a_match_to_be_had_is_no_stray() {
+fn a_matched_bracket_keeps_its_structural_role() {
     // The body's `}` is balanced by its `{`: it closes the body, and the
     // `= b` is garbage between items.
     check(
@@ -1769,9 +1837,9 @@ fn a_bracket_with_a_match_to_be_had_is_no_stray() {
 }
 
 #[test]
-fn an_unclosed_list_does_not_yield_to_a_stray_closer() {
-    // The `}` is one too many and wrong on its right: garbage in the list,
-    // which the line ends after all.
+fn an_unclosed_list_recovers_a_displaced_closer() {
+    // The `}` stands where the argument continues, so list recovery owns it
+    // and the line still ends the unclosed list.
     check(
         "fn f() { g(a } = b\nc\n}",
         &[
@@ -1814,8 +1882,8 @@ fn garbage_skipped_in_an_expression_leaves_the_operator_spaced() {
 #[test]
 fn a_surplus_brace_where_no_block_is_written_is_garbage() {
     // The `{` split an `&&`: a lone `&` on either side is wrong on both, so
-    // the `{` is a stray, the run of garbage ends at the line, and the body
-    // keeps its `}` and the statement after.
+    // statement recovery owns the whole malformed run. The body keeps its
+    // `}` and the statement after.
     check(
         "fn f() { a &{ & b\n  c\n}",
         &[
@@ -1862,9 +1930,8 @@ fn a_surplus_brace_where_no_block_is_written_is_garbage() {
 
 #[test]
 fn a_matched_block_is_never_blamed_for_another_surplus() {
-    // Each of these has one `{` too many, and a block whose `{` looks like
-    // a stray by its neighbours: the block keeps its `{`, since pairing
-    // goes worse without it, and the surplus `{` is the one with no `}`.
+    // Each source has one unmatched `{`. The mechanically matched blocks
+    // keep their structural role; the final opener is top-level garbage.
     check(
         "fn f() { (if a { + b }) } {",
         &[

@@ -8,9 +8,9 @@
 //! `Error` nodes and resynchronizes at statement boundaries, `}`, list
 //! separators, or the next `fn`. Where an expression is required and
 //! garbage stands in its place on the line, the garbage is taken and the
-//! expression tried once more; what follows a failed statement on its line
-//! is its fallout, parsed without further comment. Missing pieces are
-//! absent, never empty nodes; the [`ParseError`] carries the position.
+//! expression tried once more. Each construct owns the recovery up to its
+//! following delimiter; missing pieces are absent, never empty nodes, and
+//! the [`ParseError`] carries the position.
 //!
 //! Expressions are parsed by precedence climbing over the stream facts the
 //! [`ParserInput`] precomputed: a statement boundary ends an expression, a
@@ -108,7 +108,8 @@ fn starts_item(p: &Marker<'_, '_>) -> bool {
     if p.at(T::FnKw) {
         return true;
     }
-    p.at(T::Ident)
+    (p.at_start() || p.boundary())
+        && p.at(T::Ident)
         && p.nth(1) == Some(T::LParen)
         && p.nth_partner(1).is_some_and(|close| {
             !p.nth_newline(close + 1)
@@ -134,6 +135,34 @@ fn skip(p: &mut Marker<'_, '_>, stop: impl Fn(&Marker<'_, '_>) -> bool) -> Compl
             break;
         }
         m.group();
+    }
+    m.complete(N::Error)
+}
+
+/// Take one token into an `Error` node without following a bracket partner.
+/// Used when grammar context, rather than pairing, has established that the
+/// token itself is garbage.
+fn skip_token(p: &mut Marker<'_, '_>) -> CompletedMarker {
+    let mut m = p.start();
+    m.token();
+    m.complete(N::Error)
+}
+
+/// Take the rest of a malformed statement's line, leaving an enclosing
+/// closer, the next item, or the next line to its owner. Matched groups
+/// wholly inside the enclosing construct stay whole; an opener paired with
+/// that construct's closer is taken alone.
+fn skip_statement_garbage(p: &mut Marker<'_, '_>) -> CompletedMarker {
+    let mut m = p.start();
+    m.group_inside();
+    while !(m.current().is_none()
+        || m.boundary()
+        || begins_recovery_statement(&m)
+        || (m.at(T::RBrace) && !m.closer_ahead())
+        || m.closes_open_paren()
+        || m.at_item())
+    {
+        m.group_inside();
     }
     m.complete(N::Error)
 }
@@ -258,11 +287,13 @@ fn param_list(p: &mut Marker<'_, '_>) {
                 m.error(ParseErrorKind::Expected(T::RParen));
                 break;
             }
-            Some(T::RParen) if !m.stray() => {
+            Some(T::RParen) => {
                 m.token();
                 break;
             }
-            Some(T::LBrace | T::RBrace) if !m.closed() && m.partnered() => {
+            Some(T::LBrace | T::RBrace)
+                if !m.closed() && m.partnered() && !displaced_closer(&m) =>
+            {
                 m.error(ParseErrorKind::Expected(T::RParen));
                 break;
             }
@@ -316,7 +347,7 @@ fn param(p: &mut Marker<'_, '_>) {
 
 /// A block where one is required, on the line of what it belongs to.
 fn block_here(p: &mut Marker<'_, '_>) {
-    if !p.at(T::LBrace) || p.stray() {
+    if !p.at(T::LBrace) {
         p.error(ParseErrorKind::Expected(T::LBrace));
         return;
     }
@@ -334,27 +365,13 @@ fn block(p: &mut Marker<'_, '_>) -> CompletedMarker {
     // recovery's to skip. One the stream does close keeps a misplaced `fn`
     // as the statement it is not, skipped.
     m.enter();
-    // Whether the last statement on the line failed: recovery reported
-    // something in it — a piece missing, a token it could not take. What
-    // follows it on the line is its fallout, parsed without further
-    // comment: a statement there is not missing its boundary, and a stray
-    // token is not a second failure. A rule broken on the way, such as a
-    // spacing complaint about an operator taken all the same, is no
-    // failure, and what follows is not fallout. The next line starts clean.
-    let mut fallout = false;
     loop {
         match m.current() {
             None => {
                 m.error(ParseErrorKind::Expected(T::RBrace));
                 break;
             }
-            // A `}` before the one the stream pairs with this block is a
-            // stray the stream left unpaired: the next round reports it as
-            // the statement it is not. The block's own `}` closes it, and
-            // so does any `}` once that one is gone or was never there —
-            // an unclosed block inside may have taken it — there being
-            // nothing better.
-            Some(T::RBrace) if !m.stray() && !m.closer_ahead() => {
+            Some(T::RBrace) if !m.closer_ahead() => {
                 m.token();
                 break;
             }
@@ -364,14 +381,9 @@ fn block(p: &mut Marker<'_, '_>) -> CompletedMarker {
             }
             // A `)` closing a paren still open around this block belongs to
             // it: the block is unclosed, and the `)` is left to its owner.
-            Some(T::RParen) if m.closes_open_paren() => {
+            Some(T::RParen) if m.closes_open_paren() && !displaced_closer(&m) => {
                 m.error(ParseErrorKind::Expected(T::RBrace));
                 break;
-            }
-            Some(kind) if fallout && !kind.starts_statement() => {
-                skip(&mut m, |m| {
-                    m.boundary() || m.current().is_some_and(T::starts_statement)
-                });
             }
             Some(_) => {
                 let reported = m.reported();
@@ -379,21 +391,34 @@ fn block(p: &mut Marker<'_, '_>) -> CompletedMarker {
                 statement(&mut m);
                 let failed = garbage || m.reported_since(reported);
                 // A statement following on the same line is missing its
-                // boundary. Anything else is a stray token, which the next
-                // round reports as such: a boundary would not make it a
+                // boundary. Anything else begins a malformed suffix, which
+                // the next round reports: a boundary would not make it a
                 // statement.
-                let ends = m.boundary() || m.at(T::RBrace) || m.closes_open_paren() || m.at_item();
-                if !ends && !fallout && !failed && m.current().is_some_and(T::starts_statement) {
-                    m.error(ParseErrorKind::ExpectedBoundary);
+                let ends = m.current().is_none()
+                    || m.boundary()
+                    || (m.at(T::RBrace) && !m.closer_ahead() && !(failed && displaced_closer(&m)))
+                    || (m.closes_open_paren() && !displaced_closer(&m))
+                    || m.at_item();
+                if !ends {
+                    if failed && !begins_recovery_statement(&m) {
+                        skip_statement_garbage(&mut m);
+                    } else if !failed && m.current().is_some_and(T::starts_statement) {
+                        m.error(ParseErrorKind::ExpectedBoundary);
+                    }
                 }
-                fallout = fallout || failed;
             }
-        }
-        if m.boundary() {
-            fallout = false;
         }
     }
     m.complete(N::Block)
+}
+
+/// A statement introducer strong enough to survive a failed statement on
+/// the same line. Expression starts are ambiguous with a malformed suffix
+/// and stay with the failed statement; declaration keywords begin a fresh
+/// construct.
+fn begins_recovery_statement(p: &Marker<'_, '_>) -> bool {
+    p.current()
+        .is_some_and(|kind| matches!(kind, T::LetKw | T::ReturnKw | T::Underscore | T::Error))
 }
 
 /// One statement: a binding, a discard, a return, or an expression, which
@@ -415,7 +440,7 @@ fn statement(p: &mut Marker<'_, '_>) {
         _ => {
             if expr(p).is_none() {
                 p.error(ParseErrorKind::ExpectedStatement);
-                skip(p, |p| p.boundary());
+                skip_statement_garbage(p);
             }
         }
     }
@@ -467,7 +492,12 @@ fn return_stmt(p: &mut Marker<'_, '_>) {
 /// the next statement, is not garbage but the sign the expression is
 /// missing; so is anything on the next line.
 fn operand(p: &mut Marker<'_, '_>, min_bp: u8) {
-    if expr_bp(p, min_bp).is_some() {
+    operand_before(p, min_bp, ExprFollow::Anything);
+}
+
+/// Parse an expression required before `follow`.
+fn operand_before(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) {
+    if expr_bp(p, min_bp, follow).is_some() {
         return;
     }
     p.error(ParseErrorKind::ExpectedExpression);
@@ -476,7 +506,7 @@ fn operand(p: &mut Marker<'_, '_>, min_bp: u8) {
     }
     skip(p, |p| p.newline() || p.at(T::Comma) || begins_statement(p));
     if !p.newline() && begins_expression(p) {
-        expr_bp(p, min_bp);
+        expr_bp(p, min_bp, follow);
     }
 }
 
@@ -497,27 +527,53 @@ fn begins_statement(p: &Marker<'_, '_>) -> bool {
 }
 
 /// Whether the next token, found where an expression is required, is
-/// garbage in its place, rather than the end of the construct around it —
-/// a closer or a `,` — or the start of the statement after it. A bracket
-/// the stream judged a stray is garbage wherever it stands.
+/// garbage in its place, rather than the end of the construct around it or
+/// the start of the statement after it.
 fn displaces_expression(p: &Marker<'_, '_>) -> bool {
-    p.stray()
-        || p.current().is_some_and(|kind| {
-            !kind.starts_expression()
-                && !matches!(
-                    kind,
-                    T::RParen | T::RBrace | T::Comma | T::LetKw | T::ReturnKw | T::Underscore
-                )
-        })
+    if matches!(p.current(), Some(T::RParen | T::RBrace)) {
+        if p.at(T::RParen) && p.at_closer() {
+            return false;
+        }
+        return displaced_closer(p)
+            || (p.at(T::RParen) && !p.closes_open_paren() && !p.partnered());
+    }
+    p.current().is_some_and(|kind| {
+        !kind.starts_expression()
+            && !matches!(
+                kind,
+                T::RBrace | T::Comma | T::LetKw | T::ReturnKw | T::Underscore
+            )
+    })
+}
+
+/// Whether a closer stands where grammar context says an operand continues:
+/// before `=` or `:`, or before an operand on the same line. An expected
+/// closer is consumed by its construct before this question is asked.
+fn displaced_closer(p: &Marker<'_, '_>) -> bool {
+    if !matches!(p.current(), Some(T::RParen | T::RBrace)) || p.nth_newline(1) {
+        return false;
+    }
+    // `==` and `!=` are ordinary binary operators after a closer. A lone
+    // `=` or a prefix `!` followed by an operand cannot be.
+    if p.nth_glued(1, T::Eq, T::Eq) || p.nth_glued(1, T::Bang, T::Eq) {
+        return false;
+    }
+    p.nth(1).is_some_and(|next| {
+        matches!(
+            next,
+            T::Eq | T::Colon | T::LetKw | T::ReturnKw | T::Underscore | T::Error
+        ) || (next.starts_expression() && !matches!(next, T::Minus | T::LParen | T::LBrace))
+    })
 }
 
 /// Whether the next token, found after a complete operand, is garbage in
 /// the middle of the expression: neither an operator to continue it nor
 /// anything that ends it — a closer, a `,`, an `else`, an item's `fn`, or
 /// the start of a statement — nor an expression's own start.
-fn garbage_in_expression(p: &Marker<'_, '_>) -> bool {
-    p.stray()
-        || p.at(T::Error)
+fn garbage_in_expression(p: &Marker<'_, '_>, follow: ExprFollow) -> bool {
+    p.at(T::Error)
+        || (p.at(T::RParen) && !p.closes_open_paren())
+        || (follow == ExprFollow::Anything && p.at(T::LBrace))
         || p.current().is_some_and(|kind| {
             !kind.starts_statement()
                 && !matches!(kind, T::RParen | T::RBrace | T::Comma | T::ElseKw | T::FnKw)
@@ -526,15 +582,24 @@ fn garbage_in_expression(p: &Marker<'_, '_>) -> bool {
 }
 
 fn expr(p: &mut Marker<'_, '_>) -> Option<CompletedMarker> {
-    expr_bp(p, 0)
+    expr_bp(p, 0, ExprFollow::Anything)
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ExprFollow {
+    Anything,
+    Block,
 }
 
 /// Operands of a prefix operator: tighter than every binary operator, so
 /// only a call binds closer.
 const PREFIX_BP: u8 = 11;
 
-fn expr_bp(p: &mut Marker<'_, '_>, min_bp: u8) -> Option<CompletedMarker> {
-    let mut lhs = prefix_or_atom(p)?;
+fn expr_bp(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) -> Option<CompletedMarker> {
+    if follow == ExprFollow::Block && p.at(T::LBrace) && !block_starts_condition(p) {
+        return None;
+    }
+    let mut lhs = prefix_or_atom(p, follow)?;
     // Whether `lhs` is a comparison made here: another would chain it.
     let mut comparison = false;
     loop {
@@ -544,29 +609,32 @@ fn expr_bp(p: &mut Marker<'_, '_>, min_bp: u8) -> Option<CompletedMarker> {
         if p.boundary() {
             break;
         }
+        if follow == ExprFollow::Block && p.at(T::LBrace) {
+            break;
+        }
         // Arguments stay on the callee's line even inside parentheses, where
         // boundaries are suspended: a `(` on a new line is never a call.
-        if p.at(T::LParen) && !p.newline() && !p.stray() {
+        if p.at(T::LParen) && !p.newline() {
             let mut m = p.precede(lhs);
             arg_list(&mut m);
             lhs = m.complete(N::CallExpr);
             comparison = false;
             continue;
         }
-        // One stray token between the operand and what continues or ends
-        // the expression — an operator, a closer, a `,` — all on one line,
+        // One malformed token between the operand and what continues or
+        // ends the expression — an operator, a closer, a `,` — all on one line,
         // is garbage in the way: taken as such, with one report, and the
         // expression goes on. An operator is spaced on its left if anything
         // separated the garbage from either side.
         let mut joint_left = p.joint_before();
         if !p.newline()
-            && garbage_in_expression(p)
+            && garbage_in_expression(p, follow)
             && !p.nth_newline(1)
             && (binary_op(p, 1).is_some()
                 || matches!(p.nth(1), Some(T::RParen | T::RBrace | T::Comma)))
         {
             p.error(ParseErrorKind::Unexpected);
-            skip(p, |_| true);
+            skip_token(p);
             joint_left = joint_left && p.joint_before();
         }
         let Some((op, width)) = binary_op(p, 0) else {
@@ -590,11 +658,24 @@ fn expr_bp(p: &mut Marker<'_, '_>, min_bp: u8) -> Option<CompletedMarker> {
         for _ in 0..width {
             m.token();
         }
-        operand(&mut m, right_bp);
+        operand_before(&mut m, right_bp, follow);
         lhs = m.complete(if chained { N::Error } else { N::BinaryExpr });
         comparison = op.is_comparison() && !chained;
     }
     Some(lhs)
+}
+
+/// Whether a block at the start of an `if` condition is demonstrably the
+/// condition rather than the required body: its closer is followed by
+/// syntax that continues the expression, with a body or call on the same
+/// line as required by their grammar.
+fn block_starts_condition(p: &Marker<'_, '_>) -> bool {
+    p.nth_partner(0).is_some_and(|close| {
+        let next = close + 1;
+        !p.nth_boundary(next)
+            && ((!p.nth_newline(next) && matches!(p.nth(next), Some(T::LParen | T::LBrace)))
+                || binary_op(p, next).is_some())
+    })
 }
 
 /// When the next expression would open a node past [`MAX_DEPTH`] — after
@@ -608,7 +689,7 @@ fn too_deep(p: &mut Marker<'_, '_>, ahead: u32) -> Option<CompletedMarker> {
     })
 }
 
-fn prefix_or_atom(p: &mut Marker<'_, '_>) -> Option<CompletedMarker> {
+fn prefix_or_atom(p: &mut Marker<'_, '_>, follow: ExprFollow) -> Option<CompletedMarker> {
     // Settle that an expression starts here before the depth check: its
     // recovery takes the next token, which must be an expression's.
     if !p.starts_expression() {
@@ -627,7 +708,7 @@ fn prefix_or_atom(p: &mut Marker<'_, '_>) -> Option<CompletedMarker> {
                 m.error(ParseErrorKind::SpacedPrefixOperator);
             }
             m.token();
-            operand(&mut m, PREFIX_BP);
+            operand_before(&mut m, PREFIX_BP, follow);
             m.complete(N::PrefixExpr)
         }
         T::Ident => leaf(p, N::NameExpr),
@@ -645,7 +726,7 @@ fn prefix_or_atom(p: &mut Marker<'_, '_>) -> Option<CompletedMarker> {
             operand(&mut m, 0);
             // The owning paren takes its closer whatever precedes it: a
             // block inside may have restored boundaries.
-            if m.at(T::RParen) && !m.stray() {
+            if m.at(T::RParen) {
                 m.token();
             } else {
                 m.error(ParseErrorKind::Expected(T::RParen));
@@ -668,12 +749,12 @@ fn leaf(p: &mut Marker<'_, '_>, kind: N) -> CompletedMarker {
 fn if_expr(p: &mut Marker<'_, '_>) -> CompletedMarker {
     let mut m = p.start();
     m.token(); // if
-    operand(&mut m, 0);
-    block_here(&mut m);
+    operand_before(&mut m, 0, ExprFollow::Block);
+    if_block(&mut m);
     if m.at(T::ElseKw) {
         m.token();
         if !m.at(T::IfKw) {
-            block_here(&mut m);
+            if_block(&mut m);
         } else if too_deep(&mut m, 1).is_none() {
             // The nested `if` opens one node, and its condition another:
             // cut the chain before a condition trips and leaves a headless
@@ -682,6 +763,32 @@ fn if_expr(p: &mut Marker<'_, '_>) -> CompletedMarker {
         }
     }
     m.complete(N::IfExpr)
+}
+
+/// Parse a required `if` or `else` block. If another token displaced the
+/// block on the same line, keep that garbage inside the `if` and resume at
+/// the `{`; a line or enclosing delimiter belongs to the caller instead.
+fn if_block(p: &mut Marker<'_, '_>) {
+    if p.at(T::LBrace) && !p.newline() {
+        block_here(p);
+        return;
+    }
+    p.error(ParseErrorKind::Expected(T::LBrace));
+    if p.current().is_none()
+        || p.at_item()
+        || p.at(T::RParen)
+        || p.at(T::RBrace)
+        || p.at(T::ElseKw)
+        || p.newline()
+    {
+        return;
+    }
+    skip(p, |p| {
+        p.at(T::LBrace) || p.at(T::RParen) || p.at(T::RBrace) || p.at(T::ElseKw) || p.newline()
+    });
+    if p.at(T::LBrace) {
+        block_here(p);
+    }
 }
 
 fn arg_list(p: &mut Marker<'_, '_>) {
@@ -697,17 +804,21 @@ fn arg_list(p: &mut Marker<'_, '_>) {
                 m.error(ParseErrorKind::Expected(T::RParen));
                 break;
             }
-            Some(T::RParen) if !m.stray() => {
+            Some(T::RParen) => {
                 m.token();
                 break;
             }
-            Some(T::RBrace | T::FnKw) if !m.closed() && !m.stray() => {
+            Some(T::RBrace | T::FnKw) if !m.closed() && !displaced_closer(&m) => {
                 m.error(ParseErrorKind::Expected(T::RParen));
                 break;
             }
             Some(T::Comma) => {
                 m.error(ParseErrorKind::ExpectedExpression);
                 m.token();
+            }
+            Some(T::LBrace) if !m.partnered() && m.nth(1) == Some(T::RParen) => {
+                m.error(ParseErrorKind::ExpectedExpression);
+                skip_token(&mut m);
             }
             Some(_) if m.starts_expression() => operand(&mut m, 0),
             Some(_) => {
@@ -779,12 +890,10 @@ impl BinaryOp {
     }
 }
 
-/// The binary operator at the next token, if any, and how many tokens it
-/// spans: compound operators are glued pairs. A lone `=` is not an
-/// operator; a `-` here is subtraction, whatever its spacing, which the
-/// caller checks.
 /// The binary operator `n` significant tokens past the next one, if one
-/// starts there, and its width in tokens.
+/// starts there, and its width in tokens. Compound operators are glued
+/// pairs. A lone `=` is not an operator; a `-` here is subtraction,
+/// whatever its spacing, which the caller checks.
 fn binary_op(p: &Marker<'_, '_>, n: usize) -> Option<(BinaryOp, usize)> {
     Some(match p.nth(n)? {
         T::Pipe if p.nth_glued(n, T::Pipe, T::Pipe) => (BinaryOp::Or, 2),

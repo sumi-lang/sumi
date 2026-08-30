@@ -510,13 +510,13 @@ fn program() -> BoxedStrategy<String> {
 
 // Recovery quality, measured. The tests above prove the parser is total and
 // accepts every well-formed program; these bound how badly it does on a
-// well-formed program after one non-delimiter edit. Delimiter edits are
-// already covered by totality: one can legitimately reparent distant syntax,
-// so neither a local error bound nor locality is meaningful for one.
+// well-formed program after one edit. Non-delimiter edits must be local at
+// the statement level; delimiter edits have a weaker item-level locality
+// contract because they can legitimately reparent nearby syntax.
 
 /// The most errors of recovery's one edit may cost: the mistake itself, and
-/// at most two consequences.
-const MAX_ERRORS_PER_EDIT: usize = 3;
+/// a few consequences when a delimiter edit closes a distant list.
+const MAX_ERRORS_PER_EDIT: usize = 5;
 
 /// One edit to a well-formed program, made at a significant token.
 #[derive(Clone, Copy, Debug)]
@@ -676,6 +676,12 @@ fn non_delimiter_edited_program() -> impl Strategy<Value = (String, usize, Edit)
     })
 }
 
+fn delimiter_edited_program() -> impl Strategy<Value = (String, usize, Edit)> {
+    edited_program().prop_filter("the edit changes a delimiter", |(source, index, edit)| {
+        changes_delimiter(&front(source).input, *index, *edit)
+    })
+}
+
 /// The replaced byte interval in the original and where it ends afterward.
 #[derive(Clone, Copy)]
 struct EditSpan {
@@ -706,12 +712,14 @@ impl EditSpan {
 /// the significant indices the edit touches, those it removes or moves, and
 /// the replaced byte interval for mapping unaffected nodes.
 ///
-/// The touched indices include the tokens on either side of the edit: an
+/// The touched indices include two tokens on either side of the edit: an
 /// inserted token joins whatever it lands next to — a leading operator or
 /// `else` continues the statement above, a `(` after a name makes a call —
 /// and a deleted token can leave a dangling operator that takes the next
-/// line as its operand. Those are the language's rules, not recovery, so
-/// the neighbours are the edit's own business.
+/// line as its operand. Jointness can change the arity of that neighbouring
+/// operator and therefore the boundary after the token before it. Those are
+/// the language's rules, not recovery, so this local context is the edit's
+/// own business.
 fn apply(
     source: &str,
     spans: &[(usize, usize)],
@@ -778,7 +786,7 @@ fn apply(
             )
         }
     };
-    let touched = (left.saturating_sub(1)..=(right + 1).min(spans.len() - 1)).collect();
+    let touched = (left.saturating_sub(2)..=(right + 2).min(spans.len() - 1)).collect();
     let moved = match edit {
         Edit::Delete => vec![index],
         Edit::Swap => vec![left, right],
@@ -789,19 +797,25 @@ fn apply(
 
 proptest! {
     #[test]
-    fn a_single_non_delimiter_edit_costs_few_errors(
-        (source, index, edit) in non_delimiter_edited_program()
+    fn a_single_edit_costs_few_errors(
+        (source, index, edit) in edited_program()
     ) {
         let original = front(&source);
         let (edited, _, _, _) = apply(&source, &original.spans(), index, edit);
         let after = front(&edited);
         check_tree(after.parse.tree(), &after.cooked)?;
         let errors: Vec<_> = after.parse.errors().iter().map(|error| error.kind).collect();
+        let positioned: Vec<_> = after
+            .parse
+            .errors()
+            .iter()
+            .map(|error| (common::start_byte(&after.lexed, error.token), error.kind))
+            .collect();
         let recovery = errors.iter().filter(|kind| kind.is_recovery()).count();
         prop_assert!(
             recovery <= MAX_ERRORS_PER_EDIT,
             "{:?} at token {} ({:?}) costs {} errors {:?}\n--- original ---\n{}\n--- edited ---\n{}",
-            edit, index, original.input.get(index), recovery, errors, source, edited
+            edit, index, original.input.get(index), recovery, positioned, source, edited
         );
     }
 
@@ -825,6 +839,39 @@ proptest! {
                 "{:?} at token {} ({:?}) disturbs the {:?} {:?}\n--- original ---\n{}\n--- edited ---\n{}\nerrors: {:?}",
                 edit, index, original.input.get(index), original.parse.tree().kind(node), shape.0,
                 source, edited, after.parse.errors()
+            );
+        }
+    }
+
+    #[test]
+    fn a_single_delimiter_edit_preserves_unaffected_items(
+        (source, index, edit) in delimiter_edited_program()
+    ) {
+        let original = front(&source);
+        let (edited, touched, _, impact) = apply(&source, &original.spans(), index, edit);
+        let touched: Vec<u32> = touched.iter().map(|&index| original.input.token(index)).collect();
+        let after = front(&edited);
+        let tree = after.parse.tree();
+        let survivors: HashSet<_> = tree
+            .children(0)
+            .filter(|&node| tree.kind(node) == NodeKind::FnItem)
+            .map(|node| (after.node_span(node), after.shape(&edited, node)))
+            .collect();
+
+        let tree = original.parse.tree();
+        for item in tree.children(0).filter(|&node| {
+            tree.kind(node) == NodeKind::FnItem
+                && !touched.iter().any(|&token| {
+                    tree.first_token(node) <= token && token < tree.end_token(node)
+                })
+        }) {
+            let shape = original.shape(&source, item);
+            let span = impact.map(original.node_span(item));
+            prop_assert!(
+                survivors.contains(&(span, shape.clone())),
+                "{:?} at token {} ({:?}) disturbs the item {:?}\n--- original ---\n{}\n--- edited ---\n{}\nerrors: {:?}",
+                edit, index, original.input.get(index), shape.0, source, edited,
+                after.parse.errors()
             );
         }
     }
