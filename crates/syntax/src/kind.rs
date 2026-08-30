@@ -70,6 +70,35 @@ pub enum SyntaxKind {
 }
 
 impl SyntaxKind {
+    /// Whether a token of this kind can begin an expression.
+    pub(crate) fn starts_expression(self) -> bool {
+        matches!(
+            self,
+            Self::Ident
+                | Self::IntLiteral
+                | Self::FloatLiteral
+                | Self::StringLiteral
+                | Self::RawStringLiteral
+                | Self::CharLiteral
+                | Self::TrueKw
+                | Self::FalseKw
+                | Self::Minus
+                | Self::Bang
+                | Self::LParen
+                | Self::LBrace
+                | Self::IfKw
+        )
+    }
+
+    /// Whether a token of this kind can begin a statement: what the parser
+    /// takes at statement position, an `Error` run included.
+    pub(crate) fn starts_statement(self) -> bool {
+        matches!(
+            self,
+            Self::LetKw | Self::Underscore | Self::ReturnKw | Self::Error
+        ) || self.starts_expression()
+    }
+
     /// The keyword kind for `text`, if it is a reserved word.
     pub fn from_keyword(text: &str) -> Option<Self> {
         Some(match text {

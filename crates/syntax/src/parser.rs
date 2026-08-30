@@ -63,6 +63,9 @@ pub enum ParseErrorKind {
     /// Expressions nested more than [`MAX_DEPTH`] deep; the rest of the
     /// expression is skipped.
     NestingTooDeep,
+    /// A token inside an expression that neither continues nor ends it,
+    /// skipped so that the expression can go on past it.
+    Unexpected,
 }
 
 impl ParseErrorKind {
@@ -255,7 +258,7 @@ fn param_list(p: &mut Marker<'_, '_>) {
                 m.error(ParseErrorKind::Expected(T::RParen));
                 break;
             }
-            Some(T::RParen) => {
+            Some(T::RParen) if !m.stray() => {
                 m.token();
                 break;
             }
@@ -313,7 +316,7 @@ fn param(p: &mut Marker<'_, '_>) {
 
 /// A block where one is required, on the line of what it belongs to.
 fn block_here(p: &mut Marker<'_, '_>) {
-    if !p.at(T::LBrace) {
+    if !p.at(T::LBrace) || p.stray() {
         p.error(ParseErrorKind::Expected(T::LBrace));
         return;
     }
@@ -351,7 +354,7 @@ fn block(p: &mut Marker<'_, '_>) -> CompletedMarker {
             // so does any `}` once that one is gone or was never there —
             // an unclosed block inside may have taken it — there being
             // nothing better.
-            Some(T::RBrace) if !m.closer_ahead() => {
+            Some(T::RBrace) if !m.stray() && !m.closer_ahead() => {
                 m.token();
                 break;
             }
@@ -365,9 +368,9 @@ fn block(p: &mut Marker<'_, '_>) -> CompletedMarker {
                 m.error(ParseErrorKind::Expected(T::RBrace));
                 break;
             }
-            Some(kind) if fallout && !starts_statement(kind) => {
+            Some(kind) if fallout && !kind.starts_statement() => {
                 skip(&mut m, |m| {
-                    m.boundary() || m.current().is_some_and(starts_statement)
+                    m.boundary() || m.current().is_some_and(T::starts_statement)
                 });
             }
             Some(_) => {
@@ -380,7 +383,7 @@ fn block(p: &mut Marker<'_, '_>) -> CompletedMarker {
                 // round reports as such: a boundary would not make it a
                 // statement.
                 let ends = m.boundary() || m.at(T::RBrace) || m.closes_open_paren() || m.at_item();
-                if !ends && !fallout && !failed && m.current().is_some_and(starts_statement) {
+                if !ends && !fallout && !failed && m.current().is_some_and(T::starts_statement) {
                     m.error(ParseErrorKind::ExpectedBoundary);
                 }
                 fallout = fallout || failed;
@@ -450,34 +453,10 @@ fn return_stmt(p: &mut Marker<'_, '_>) {
     let mut m = p.start();
     m.token(); // return
     // A value only on the same line: `return` alone ends a statement.
-    if !m.boundary() && m.current().is_some_and(starts_expression) {
+    if !m.boundary() && m.starts_expression() {
         operand(&mut m, 0);
     }
     m.complete(N::ReturnStmt);
-}
-
-/// Whether `kind` can begin a statement: the tokens [`statement`] takes.
-fn starts_statement(kind: T) -> bool {
-    matches!(kind, T::LetKw | T::Underscore | T::ReturnKw | T::Error) || starts_expression(kind)
-}
-
-fn starts_expression(kind: T) -> bool {
-    matches!(
-        kind,
-        T::Ident
-            | T::IntLiteral
-            | T::FloatLiteral
-            | T::StringLiteral
-            | T::RawStringLiteral
-            | T::CharLiteral
-            | T::TrueKw
-            | T::FalseKw
-            | T::Minus
-            | T::Bang
-            | T::LParen
-            | T::LBrace
-            | T::IfKw
-    )
 }
 
 /// An expression where one is required. Garbage in its place on the same
@@ -492,7 +471,7 @@ fn operand(p: &mut Marker<'_, '_>, min_bp: u8) {
         return;
     }
     p.error(ParseErrorKind::ExpectedExpression);
-    if p.newline() || p.at_item() || !p.current().is_some_and(displaces_expression) {
+    if p.newline() || p.at_item() || !displaces_expression(p) {
         return;
     }
     skip(p, |p| p.newline() || p.at(T::Comma) || begins_statement(p));
@@ -506,7 +485,7 @@ fn operand(p: &mut Marker<'_, '_>, min_bp: u8) {
 /// excepted — it began nothing, and is garbage like the rest.
 fn begins_expression(p: &Marker<'_, '_>) -> bool {
     p.current().is_some_and(|kind| {
-        starts_expression(kind) && (!matches!(kind, T::LParen | T::LBrace) || p.partnered())
+        kind.starts_expression() && (!matches!(kind, T::LParen | T::LBrace) || p.partnered())
     })
 }
 
@@ -517,15 +496,33 @@ fn begins_statement(p: &Marker<'_, '_>) -> bool {
             .is_some_and(|kind| matches!(kind, T::LetKw | T::ReturnKw | T::Underscore | T::Error))
 }
 
-/// Whether a token found where an expression is required is garbage in its
-/// place, rather than the end of the construct around it — a closer or a
-/// `,` — or the start of the statement after it.
-fn displaces_expression(kind: T) -> bool {
-    !starts_expression(kind)
-        && !matches!(
-            kind,
-            T::RParen | T::RBrace | T::Comma | T::LetKw | T::ReturnKw | T::Underscore
-        )
+/// Whether the next token, found where an expression is required, is
+/// garbage in its place, rather than the end of the construct around it —
+/// a closer or a `,` — or the start of the statement after it. A bracket
+/// the stream judged a stray is garbage wherever it stands.
+fn displaces_expression(p: &Marker<'_, '_>) -> bool {
+    p.stray()
+        || p.current().is_some_and(|kind| {
+            !kind.starts_expression()
+                && !matches!(
+                    kind,
+                    T::RParen | T::RBrace | T::Comma | T::LetKw | T::ReturnKw | T::Underscore
+                )
+        })
+}
+
+/// Whether the next token, found after a complete operand, is garbage in
+/// the middle of the expression: neither an operator to continue it nor
+/// anything that ends it — a closer, a `,`, an `else`, an item's `fn`, or
+/// the start of a statement — nor an expression's own start.
+fn garbage_in_expression(p: &Marker<'_, '_>) -> bool {
+    p.stray()
+        || p.at(T::Error)
+        || p.current().is_some_and(|kind| {
+            !kind.starts_statement()
+                && !matches!(kind, T::RParen | T::RBrace | T::Comma | T::ElseKw | T::FnKw)
+                && binary_op(p, 0).is_none()
+        })
 }
 
 fn expr(p: &mut Marker<'_, '_>) -> Option<CompletedMarker> {
@@ -549,21 +546,35 @@ fn expr_bp(p: &mut Marker<'_, '_>, min_bp: u8) -> Option<CompletedMarker> {
         }
         // Arguments stay on the callee's line even inside parentheses, where
         // boundaries are suspended: a `(` on a new line is never a call.
-        if p.at(T::LParen) && !p.newline() {
+        if p.at(T::LParen) && !p.newline() && !p.stray() {
             let mut m = p.precede(lhs);
             arg_list(&mut m);
             lhs = m.complete(N::CallExpr);
             comparison = false;
             continue;
         }
-        let Some((op, width)) = binary_op(p) else {
+        // One stray token between the operand and an operator continuing
+        // it, all on one line, is garbage in the way: taken as such, with
+        // one report, and the expression goes on. The operator is spaced on
+        // its left if anything separated the garbage from either side.
+        let mut joint_left = p.joint_before();
+        if !p.newline()
+            && garbage_in_expression(p)
+            && !p.nth_newline(1)
+            && binary_op(p, 1).is_some()
+        {
+            p.error(ParseErrorKind::Unexpected);
+            skip(p, |_| true);
+            joint_left = joint_left && p.joint_before();
+        }
+        let Some((op, width)) = binary_op(p, 0) else {
             break;
         };
         let (left_bp, right_bp) = op.binding_power();
         if left_bp < min_bp {
             break;
         }
-        if p.joint_before() || p.nth_joint(width - 1) {
+        if joint_left || p.nth_joint(width - 1) {
             p.error(ParseErrorKind::UnspacedBinaryOperator);
         }
         if p.nth_newline(width) {
@@ -598,7 +609,10 @@ fn too_deep(p: &mut Marker<'_, '_>, ahead: u32) -> Option<CompletedMarker> {
 fn prefix_or_atom(p: &mut Marker<'_, '_>) -> Option<CompletedMarker> {
     // Settle that an expression starts here before the depth check: its
     // recovery takes the next token, which must be an expression's.
-    let kind = p.current().filter(|&kind| starts_expression(kind))?;
+    if !p.starts_expression() {
+        return None;
+    }
+    let kind = p.current()?;
     if let Some(skipped) = too_deep(p, 0) {
         return Some(skipped);
     }
@@ -607,7 +621,7 @@ fn prefix_or_atom(p: &mut Marker<'_, '_>) -> Option<CompletedMarker> {
             let mut m = p.start();
             // Spacing is a complaint about an operand that exists; a missing
             // one is reported as such below.
-            if !m.joint() && m.nth(1).is_some_and(starts_expression) {
+            if !m.joint() && m.nth(1).is_some_and(T::starts_expression) {
                 m.error(ParseErrorKind::SpacedPrefixOperator);
             }
             m.token();
@@ -629,7 +643,7 @@ fn prefix_or_atom(p: &mut Marker<'_, '_>) -> Option<CompletedMarker> {
             operand(&mut m, 0);
             // The owning paren takes its closer whatever precedes it: a
             // block inside may have restored boundaries.
-            if m.at(T::RParen) {
+            if m.at(T::RParen) && !m.stray() {
                 m.token();
             } else {
                 m.error(ParseErrorKind::Expected(T::RParen));
@@ -681,11 +695,11 @@ fn arg_list(p: &mut Marker<'_, '_>) {
                 m.error(ParseErrorKind::Expected(T::RParen));
                 break;
             }
-            Some(T::RParen) => {
+            Some(T::RParen) if !m.stray() => {
                 m.token();
                 break;
             }
-            Some(T::RBrace | T::FnKw) if !m.closed() => {
+            Some(T::RBrace | T::FnKw) if !m.closed() && !m.stray() => {
                 m.error(ParseErrorKind::Expected(T::RParen));
                 break;
             }
@@ -693,7 +707,7 @@ fn arg_list(p: &mut Marker<'_, '_>) {
                 m.error(ParseErrorKind::ExpectedExpression);
                 m.token();
             }
-            Some(kind) if starts_expression(kind) => operand(&mut m, 0),
+            Some(_) if m.starts_expression() => operand(&mut m, 0),
             Some(_) => {
                 m.error(ParseErrorKind::ExpectedExpression);
                 skip(&mut m, |m| {
@@ -767,14 +781,16 @@ impl BinaryOp {
 /// spans: compound operators are glued pairs. A lone `=` is not an
 /// operator; a `-` here is subtraction, whatever its spacing, which the
 /// caller checks.
-fn binary_op(p: &Marker<'_, '_>) -> Option<(BinaryOp, usize)> {
-    Some(match p.current()? {
-        T::Pipe if p.at_glued(T::Pipe, T::Pipe) => (BinaryOp::Or, 2),
-        T::Amp if p.at_glued(T::Amp, T::Amp) => (BinaryOp::And, 2),
-        T::Eq if p.at_glued(T::Eq, T::Eq) => (BinaryOp::Eq, 2),
-        T::Bang if p.at_glued(T::Bang, T::Eq) => (BinaryOp::Ne, 2),
-        T::Lt if p.at_glued(T::Lt, T::Eq) => (BinaryOp::Le, 2),
-        T::Gt if p.at_glued(T::Gt, T::Eq) => (BinaryOp::Ge, 2),
+/// The binary operator `n` significant tokens past the next one, if one
+/// starts there, and its width in tokens.
+fn binary_op(p: &Marker<'_, '_>, n: usize) -> Option<(BinaryOp, usize)> {
+    Some(match p.nth(n)? {
+        T::Pipe if p.nth_glued(n, T::Pipe, T::Pipe) => (BinaryOp::Or, 2),
+        T::Amp if p.nth_glued(n, T::Amp, T::Amp) => (BinaryOp::And, 2),
+        T::Eq if p.nth_glued(n, T::Eq, T::Eq) => (BinaryOp::Eq, 2),
+        T::Bang if p.nth_glued(n, T::Bang, T::Eq) => (BinaryOp::Ne, 2),
+        T::Lt if p.nth_glued(n, T::Lt, T::Eq) => (BinaryOp::Le, 2),
+        T::Gt if p.nth_glued(n, T::Gt, T::Eq) => (BinaryOp::Ge, 2),
         T::Lt => (BinaryOp::Lt, 1),
         T::Gt => (BinaryOp::Gt, 1),
         T::Plus => (BinaryOp::Add, 1),

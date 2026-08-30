@@ -406,6 +406,20 @@ impl<'a> Marker<'_, 'a> {
         index < self.builder.input.len() && self.builder.input.boundary_before(index)
     }
 
+    /// Whether the next token is a bracket the stream judged a stray: no
+    /// bracket at all, garbage where it stands.
+    pub(crate) fn stray(&self) -> bool {
+        let position = self.builder.position;
+        position < self.builder.input.len() && self.builder.input.is_stray(position)
+    }
+
+    /// Whether the next token begins an expression: one of the kinds that
+    /// can, and not a bracket the stream judged a stray. Whatever parses an
+    /// expression where this holds takes at least that token.
+    pub(crate) fn starts_expression(&self) -> bool {
+        self.current().is_some_and(SyntaxKind::starts_expression) && !self.stray()
+    }
+
     /// Whether the next token is a bracket the stream pairs with another,
     /// ahead or behind.
     pub(crate) fn partnered(&self) -> bool {

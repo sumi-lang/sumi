@@ -38,6 +38,9 @@ fn dump(source: &str) -> Vec<String> {
             if input.newline_before(index) {
                 line.push_str(" newline");
             }
+            if input.is_stray(index) {
+                line.push_str(" stray");
+            }
             if input.boundary_before(index) {
                 line.push_str(" boundary");
             }
@@ -479,4 +482,192 @@ fn large_opposite_delimiter_run_recovers() {
     source.push_str(&"}".repeat(4096));
     source.push_str("\nx");
     assert!(has_boundary(&source));
+}
+
+#[test]
+fn a_bracket_wrong_on_both_sides_is_a_stray() {
+    // After a token that cannot end a statement and before one that starts
+    // an operand on the same line: no bracket at all, paired with nothing.
+    check(
+        "a = } b",
+        &[
+            r#"Ident "a""#,
+            r#"Eq "=""#,
+            r#"RBrace "}" stray"#,
+            r#"Ident "b""#,
+        ],
+    );
+    check(
+        "(a + ) b)",
+        &[
+            r#"LParen "(" joint partner 5"#,
+            r#"Ident "a""#,
+            r#"Plus "+""#,
+            r#"RParen ")" stray"#,
+            r#"Ident "b" joint"#,
+            r#"RParen ")" partner 0"#,
+        ],
+    );
+    // One with a match to be had is no stray however it looks: a `}` that
+    // its `{` balances closes it, whatever garbage follows.
+    check(
+        "{ a } = b",
+        &[
+            r#"LBrace "{" partner 2"#,
+            r#"Ident "a""#,
+            r#"RBrace "}" partner 0"#,
+            r#"Eq "=""#,
+            r#"Ident "b""#,
+        ],
+    );
+    check(
+        "(a + ) b",
+        &[
+            r#"LParen "(" joint partner 3"#,
+            r#"Ident "a""#,
+            r#"Plus "+""#,
+            r#"RParen ")" partner 0"#,
+            r#"Ident "b""#,
+        ],
+    );
+    // Before an `=` or `:`, which nothing closed can precede — `==` being an
+    // operator, and so following a closer as any other.
+    check(
+        "x } = 1",
+        &[
+            r#"Ident "x""#,
+            r#"RBrace "}" stray"#,
+            r#"Eq "=""#,
+            r#"IntLiteral "1""#,
+        ],
+    );
+    check(
+        "(a) == b",
+        &[
+            r#"LParen "(" joint partner 2"#,
+            r#"Ident "a" joint"#,
+            r#"RParen ")" partner 0"#,
+            r#"Eq "=" joint"#,
+            r#"Eq "=""#,
+            r#"Ident "b""#,
+        ],
+    );
+    // Wrong on one side only stays a closer: an editor leaves `x = }` at
+    // the end of a line while the line is typed.
+    check(
+        "x = }\ny",
+        &[
+            r#"Ident "x""#,
+            r#"Eq "=""#,
+            r#"RBrace "}""#,
+            r#"Ident "y" newline boundary"#,
+        ],
+    );
+    check(
+        "{ } x",
+        &[
+            r#"LBrace "{" partner 1"#,
+            r#"RBrace "}" partner 0"#,
+            r#"Ident "x""#,
+        ],
+    );
+    // A `,` before a `)` is a trailing comma, and a `,` after a `(` leaves
+    // the `(` an opener.
+    check(
+        "f(a, )",
+        &[
+            r#"Ident "f" joint"#,
+            r#"LParen "(" joint partner 4"#,
+            r#"Ident "a" joint"#,
+            r#"Comma ",""#,
+            r#"RParen ")" partner 1"#,
+        ],
+    );
+}
+
+#[test]
+fn a_brace_inside_parens_followed_by_no_statement_is_a_stray() {
+    // A block inside parens closes before the paren does, so a `{` there
+    // followed on its line by a token no statement starts with is no block.
+    check(
+        "({ * a)",
+        &[
+            r#"LParen "(" joint partner 4"#,
+            r#"LBrace "{" stray"#,
+            r#"Star "*""#,
+            r#"Ident "a" joint"#,
+            r#"RParen ")" partner 0"#,
+        ],
+    );
+    // One its `}` balances is the block it opens, whatever the block holds;
+    // and a lone `&` or `|` is no operator.
+    check(
+        "(if a { + b })",
+        &[
+            r#"LParen "(" joint partner 7"#,
+            r#"IfKw "if""#,
+            r#"Ident "a""#,
+            r#"LBrace "{" partner 6"#,
+            r#"Plus "+""#,
+            r#"Ident "b""#,
+            r#"RBrace "}" joint partner 3"#,
+            r#"RParen ")" partner 0"#,
+        ],
+    );
+    check(
+        "({ & a)",
+        &[
+            r#"LParen "(" joint partner 4"#,
+            r#"LBrace "{""#,
+            r#"Amp "&""#,
+            r#"Ident "a" joint"#,
+            r#"RParen ")" partner 0"#,
+        ],
+    );
+    // One followed by a statement, or by nothing on its line, opens a
+    // block after all — one the `)` then discards.
+    check(
+        "({ a\n)",
+        &[
+            r#"LParen "(" joint partner 3"#,
+            r#"LBrace "{""#,
+            r#"Ident "a""#,
+            r#"RParen ")" newline boundary partner 0"#,
+        ],
+    );
+}
+
+#[test]
+fn a_paren_after_a_block_before_what_nothing_opened_can_precede_is_a_stray() {
+    // A call on a block is no call: a `(` after a `}` that is also wrong on
+    // its right is a stray.
+    check(
+        "{ } ( else",
+        &[
+            r#"LBrace "{" partner 1"#,
+            r#"RBrace "}" partner 0"#,
+            r#"LParen "(" stray"#,
+            r#"ElseKw "else""#,
+        ],
+    );
+    // At the start of a line, a `(` stands where an opener is put.
+    check(
+        "{ }\n( else",
+        &[
+            r#"LBrace "{" partner 1"#,
+            r#"RBrace "}" partner 0"#,
+            r#"LParen "(" newline boundary"#,
+            r#"ElseKw "else""#,
+        ],
+    );
+    // After a name, garbage inside a real call is the likelier reading.
+    check(
+        "f( else)",
+        &[
+            r#"Ident "f" joint"#,
+            r#"LParen "(" partner 3"#,
+            r#"ElseKw "else" joint"#,
+            r#"RParen ")" partner 1"#,
+        ],
+    );
 }
