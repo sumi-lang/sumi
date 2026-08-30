@@ -9,7 +9,9 @@
 //! lowering needs it.
 //!
 //! A token the lexer already reported (unterminated literals) gets no
-//! further errors here: one primary error per token.
+//! further errors here.
+
+use std::ops::Range;
 
 use sumi_lexer::TokenFlags;
 
@@ -21,9 +23,12 @@ use crate::kind::SyntaxKind;
 ///
 /// The shape re-scan must mirror the raw lexer's maximal munch exactly, so
 /// the suffix boundary lands where the lexer stopped attaching digits.
-pub(crate) fn classify_number(text: &str, mut error: impl FnMut(SyntaxErrorKind)) -> SyntaxKind {
+pub(crate) fn classify_number(
+    text: &str,
+    mut error: impl FnMut(Range<usize>, SyntaxErrorKind),
+) -> SyntaxKind {
     let bytes = text.as_bytes();
-    let mut misplaced_underscore = false;
+    let mut misplaced_underscore = None;
 
     let mut position = eat_digits(bytes, 0, &mut misplaced_underscore);
     let mut is_float = false;
@@ -31,7 +36,7 @@ pub(crate) fn classify_number(text: &str, mut error: impl FnMut(SyntaxErrorKind)
     // A leading zero is rejected rather than accepted as decimal, because
     // `0123` means octal in several other languages.
     if bytes[0] == b'0' && bytes[1..position].iter().any(u8::is_ascii_digit) {
-        error(SyntaxErrorKind::LeadingZero);
+        error(0..1, SyntaxErrorKind::LeadingZero);
     }
 
     if bytes.get(position) == Some(&b'.')
@@ -56,12 +61,12 @@ pub(crate) fn classify_number(text: &str, mut error: impl FnMut(SyntaxErrorKind)
             // Syntax markers are lowercase: the shape munches `1E5` so the
             // token stays whole, and the marker's case is rejected here.
             if bytes[position] == b'E' {
-                error(SyntaxErrorKind::UppercaseExponent);
+                error(position..position + 1, SyntaxErrorKind::UppercaseExponent);
             }
             position += 1;
             if matches!(bytes.get(position), Some(b'+' | b'-')) {
                 if bytes[position] == b'+' {
-                    error(SyntaxErrorKind::ExponentPlusSign);
+                    error(position..position + 1, SyntaxErrorKind::ExponentPlusSign);
                 }
                 position += 1;
             }
@@ -72,7 +77,10 @@ pub(crate) fn classify_number(text: &str, mut error: impl FnMut(SyntaxErrorKind)
                     .iter()
                     .any(u8::is_ascii_digit)
             {
-                error(SyntaxErrorKind::ExponentLeadingZero);
+                error(
+                    exponent_start..exponent_start + 1,
+                    SyntaxErrorKind::ExponentLeadingZero,
+                );
             }
         }
     }
@@ -83,14 +91,14 @@ pub(crate) fn classify_number(text: &str, mut error: impl FnMut(SyntaxErrorKind)
         // after a real exponent (`1e5e5`) it is just an unknown suffix.
         if !consumed_exponent && matches!(bytes[position], b'e' | b'E') {
             is_float = true;
-            error(SyntaxErrorKind::MissingExponent);
+            error(position..position + 1, SyntaxErrorKind::MissingExponent);
         } else {
-            error(SyntaxErrorKind::UnknownSuffix);
+            error(position..text.len(), SyntaxErrorKind::UnknownSuffix);
         }
     }
 
-    if misplaced_underscore {
-        error(SyntaxErrorKind::MisplacedUnderscore);
+    if let Some(position) = misplaced_underscore {
+        error(position..position + 1, SyntaxErrorKind::MisplacedUnderscore);
     }
 
     if is_float {
@@ -103,7 +111,7 @@ pub(crate) fn classify_number(text: &str, mut error: impl FnMut(SyntaxErrorKind)
 /// Advance over a digit run, flagging any `_` that is not surrounded by
 /// digits on both sides. Reported at most once per token: grouping style is
 /// free, but `1_`, `1__0`, and `1_.5` are typo-shaped.
-fn eat_digits(bytes: &[u8], start: usize, misplaced_underscore: &mut bool) -> usize {
+fn eat_digits(bytes: &[u8], start: usize, misplaced_underscore: &mut Option<usize>) -> usize {
     let mut position = start;
     while position < bytes.len() {
         match bytes[position] {
@@ -114,7 +122,7 @@ fn eat_digits(bytes: &[u8], start: usize, misplaced_underscore: &mut bool) -> us
                     .get(position + 1)
                     .is_some_and(|byte| byte.is_ascii_digit());
                 if !(digit_before && digit_after) {
-                    *misplaced_underscore = true;
+                    misplaced_underscore.get_or_insert(position);
                 }
                 position += 1;
             }
@@ -128,49 +136,64 @@ fn eat_digits(bytes: &[u8], start: usize, misplaced_underscore: &mut bool) -> us
 pub(crate) fn validate_string(
     text: &str,
     flags: TokenFlags,
-    mut error: impl FnMut(SyntaxErrorKind),
+    mut error: impl FnMut(Range<usize>, SyntaxErrorKind),
 ) {
     if flags.contains(TokenFlags::UNTERMINATED) || !flags.contains(TokenFlags::HAS_ESCAPE) {
         return;
     }
 
     let body = &text[1..text.len() - 1];
-    walk_escapes(body, |piece| {
-        if let Err(kind) = piece {
-            error(kind);
+    walk_escapes(body, |start, end, result| {
+        if let Err(kind) = result {
+            error(start + 1..end + 1, kind);
         }
     });
 }
 
 /// Validate the escapes and content length of a terminated character literal.
-pub(crate) fn validate_char(text: &str, flags: TokenFlags, mut error: impl FnMut(SyntaxErrorKind)) {
+pub(crate) fn validate_char(
+    text: &str,
+    flags: TokenFlags,
+    mut error: impl FnMut(Range<usize>, SyntaxErrorKind),
+) {
     if flags.contains(TokenFlags::UNTERMINATED) {
         return;
     }
 
     let body = &text[1..text.len() - 1];
     let mut pieces = 0usize;
-    walk_escapes(body, |piece| {
+    let mut extra_start = None;
+    walk_escapes(body, |start, end, result| {
+        if pieces == 1 {
+            extra_start = Some(start);
+        }
         pieces += 1;
-        if let Err(kind) = piece {
-            error(kind);
+        if let Err(kind) = result {
+            error(start + 1..end + 1, kind);
         }
     });
 
     match pieces {
-        0 => error(SyntaxErrorKind::EmptyCharLiteral),
+        0 => error(1..1, SyntaxErrorKind::EmptyCharLiteral),
         1 => {}
-        _ => error(SyntaxErrorKind::MoreThanOneChar),
+        _ => error(
+            extra_start.expect("a second piece was seen") + 1..text.len() - 1,
+            SyntaxErrorKind::MoreThanOneChar,
+        ),
     }
 }
 
 /// Walk the body of a string or character literal, invoking `piece` once per
-/// literal character or escape sequence with that piece's validity.
-fn walk_escapes(body: &str, mut piece: impl FnMut(Result<(), SyntaxErrorKind>)) {
+/// literal character or escape sequence with its body-relative byte range and
+/// validity.
+fn walk_escapes(body: &str, mut piece: impl FnMut(usize, usize, Result<(), SyntaxErrorKind>)) {
     let mut chars = body.chars();
-    while let Some(ch) = chars.next() {
+    while !chars.as_str().is_empty() {
+        let start = body.len() - chars.as_str().len();
+        let ch = chars.next().expect("the remaining body is not empty");
         if ch != '\\' {
-            piece(Ok(()));
+            let end = body.len() - chars.as_str().len();
+            piece(start, end, Ok(()));
             continue;
         }
 
@@ -180,7 +203,8 @@ fn walk_escapes(body: &str, mut piece: impl FnMut(Result<(), SyntaxErrorKind>)) 
             // Includes a backslash at the very end of the body.
             _ => Err(SyntaxErrorKind::UnknownEscape),
         };
-        piece(result);
+        let end = body.len() - chars.as_str().len();
+        piece(start, end, result);
     }
 }
 

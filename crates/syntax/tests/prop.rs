@@ -112,6 +112,11 @@ proptest! {
 
         for error in cooked.errors() {
             prop_assert!((error.token as usize) < cooked.len());
+            let token = lexed.range(error.token as usize);
+            prop_assert!(token.start() <= error.range.start());
+            prop_assert!(error.range.end() <= token.end());
+            prop_assert!(source.is_char_boundary(error.range.start().to_usize()));
+            prop_assert!(source.is_char_boundary(error.range.end().to_usize()));
             // Diagnostic ownership does not overlap: a token the lexer
             // reported gets no further errors from the cook.
             prop_assert!(
