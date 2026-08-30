@@ -110,6 +110,7 @@ impl Parse {
             nodes: Vec::new(),
             position: 0,
             opened: 1,
+            recoveries: 0,
             errors: Vec::new(),
         };
         body(&mut Marker {
@@ -166,6 +167,8 @@ struct Builder<'a> {
     position: usize,
     /// Nodes opened so far, numbering the next one; the root is 0.
     opened: u32,
+    /// Structural recovery reports made while building the tree.
+    recoveries: usize,
     errors: Vec<ParseError>,
 }
 
@@ -571,6 +574,16 @@ impl<'a> Marker<'_, 'a> {
         }
     }
 
+    /// The current structural recovery epoch.
+    pub(crate) fn recovery_checkpoint(&self) -> usize {
+        self.builder.recoveries
+    }
+
+    /// Whether structural recovery has happened since `checkpoint`.
+    pub(crate) fn recovered_since(&self, checkpoint: usize) -> bool {
+        self.builder.recoveries > checkpoint
+    }
+
     /// Record `kind` at the next token, or at end of input. Nothing is
     /// recorded at a token with no meaning — a [`SyntaxKind::Error`], which
     /// the lexer or cook reported — since a structural complaint about it
@@ -578,21 +591,13 @@ impl<'a> Marker<'_, 'a> {
     /// here, its two problems being independent. Nor is anything recorded
     /// at a position that has an error already: one diagnostic per position
     /// keeps a single mistake from cascading.
-    /// How many errors have been reported so far.
-    pub(crate) fn reported(&self) -> usize {
-        self.builder.errors.len()
-    }
-
-    /// Whether recovery has reported anything since there were `reported`
-    /// errors: something missing, or a token that could not be taken. A
-    /// rule broken by syntax taken as it was does not count.
-    pub(crate) fn reported_since(&self, reported: usize) -> bool {
-        self.builder.errors[reported..]
-            .iter()
-            .any(|error| error.kind.is_recovery())
-    }
-
+    ///
+    /// Structural recovery is tracked before this suppression and
+    /// deduplication, so diagnostic policy cannot change parsing decisions.
     pub(crate) fn error(&mut self, kind: ParseErrorKind) {
+        if kind.is_recovery() {
+            self.builder.recoveries += 1;
+        }
         if self.at(SyntaxKind::Error) {
             return;
         }
@@ -660,4 +665,37 @@ fn preorder(nodes: Vec<Node>) -> Box<[Node]> {
 /// length the way token indices are, so the narrowing is checked.
 fn to_u32(count: usize) -> u32 {
     u32::try_from(count).expect("count fits in u32")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cook;
+    use sumi_lexer::lex;
+
+    #[test]
+    fn diagnostic_deduplication_does_not_hide_recovery() {
+        let lexed = lex("x").expect("test source fits in u32");
+        let cooked = cook("x", &lexed);
+        let input = ParserInput::new(&cooked);
+        let parse = Parse::build(&input, |root| {
+            let checkpoint = root.recovery_checkpoint();
+            root.error(ParseErrorKind::SpacedPrefixOperator);
+            assert!(!root.recovered_since(checkpoint));
+
+            // The position is occupied, so this recovery is not retained as
+            // a diagnostic, but it must still advance parser recovery state.
+            root.error(ParseErrorKind::ExpectedExpression);
+            assert!(root.recovered_since(checkpoint));
+            root.token();
+        });
+
+        assert_eq!(
+            parse.errors(),
+            &[ParseError {
+                token: 0,
+                kind: ParseErrorKind::SpacedPrefixOperator,
+            }]
+        );
+    }
 }
