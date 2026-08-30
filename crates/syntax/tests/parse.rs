@@ -982,6 +982,25 @@ fn list_recovery_leaves_enclosing_syntax_alone() {
 
 #[test]
 fn recovery_matches_brackets_inside_the_skipped_run() {
+    // The run takes the block whole, as the stream pairs it: the boundary
+    // inside it is never consulted.
+    check(
+        "fn f() { x = { a\nb } }",
+        &[
+            "SourceFile 0..22",
+            "  FnItem 0..22",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..22",
+            r#"      NameExpr 9..10 "x""#,
+            r#"      Error 11..20 "= { a\nb }""#,
+        ],
+        &["ExpectedStatement at 11"],
+    );
+}
+
+#[test]
+fn garbage_before_an_argument_ends_where_the_argument_begins() {
+    // The `:` displaced the argument, which is still there to parse.
     check(
         "fn f() { g(:(x), y) }",
         &[
@@ -992,7 +1011,9 @@ fn recovery_matches_brackets_inside_the_skipped_run() {
             "      CallExpr 9..19",
             r#"        NameExpr 9..10 "g""#,
             "        ArgList 10..19",
-            r#"          Error 11..15 ":(x)""#,
+            r#"          Error 11..12 ":""#,
+            "          ParenExpr 12..15",
+            r#"            NameExpr 13..14 "x""#,
             r#"          NameExpr 17..18 "y""#,
         ],
         &["ExpectedExpression at 11"],
@@ -1087,7 +1108,7 @@ fn a_block_does_not_yield_to_a_paren_opened_inside_it() {
             r#"      NameExpr 12..13 "b""#,
             r#"      Error 13..14 ")""#,
         ],
-        &["Expected(RParen) at 12", "ExpectedStatement at 13"],
+        &["Expected(RParen) at 12"],
     );
     // The same with a block in between: the parser's own state, not the
     // token stream's bracket matching, decides — so neither block yields.
@@ -1232,11 +1253,7 @@ fn arguments_stay_on_the_callee_line_even_inside_parens() {
             r#"      ParenExpr 12..14 "()""#,
             r#"      Error 14..15 ")""#,
         ],
-        &[
-            "Expected(RParen) at 12",
-            "ExpectedExpression at 13",
-            "ExpectedStatement at 14",
-        ],
+        &["Expected(RParen) at 12", "ExpectedExpression at 13"],
     );
 }
 
@@ -1424,7 +1441,8 @@ fn an_unclosed_list_ends_where_its_line_does() {
             "      CallExpr 9..14",
             r#"        NameExpr 9..10 "g""#,
             "        ArgList 10..14",
-            r#"          Error 11..14 "* a""#,
+            r#"          Error 11..12 "*""#,
+            r#"          NameExpr 13..14 "a""#,
             r#"      NameExpr 17..18 "b""#,
         ],
         &["ExpectedExpression at 11", "Expected(RParen) at 17"],
@@ -1461,9 +1479,11 @@ fn a_closed_list_owns_a_boundary_an_unclosed_brace_restores() {
             "      CallExpr 9..18",
             r#"        NameExpr 9..10 "g""#,
             "        ArgList 10..18",
-            r#"          Error 11..17 ":{ a\nb""#,
+            r#"          Error 11..13 ":{""#,
+            r#"          NameExpr 14..15 "a""#,
+            r#"          NameExpr 16..17 "b""#,
         ],
-        &["ExpectedExpression at 11"],
+        &["ExpectedExpression at 11", "Expected(Comma) at 16"],
     );
     check(
         "fn f(a: { x\nb: int) {}",
@@ -1476,5 +1496,163 @@ fn a_closed_list_owns_a_boundary_an_unclosed_brace_restores() {
             r#"    Block 20..22 "{}""#,
         ],
         &["ExpectedType at 8"],
+    );
+}
+
+#[test]
+fn garbage_where_an_expression_is_required_is_taken_as_such() {
+    // The `*` displaced the operand, which is still there to parse: one
+    // report, and the expression it was in stays whole.
+    check(
+        "fn f() { a + * b }",
+        &[
+            "SourceFile 0..18",
+            "  FnItem 0..18",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..18",
+            "      BinaryExpr 9..16",
+            r#"        NameExpr 9..10 "a""#,
+            r#"        Error 13..14 "*""#,
+            r#"        NameExpr 15..16 "b""#,
+        ],
+        &["ExpectedExpression at 13"],
+    );
+    check(
+        "fn f() { if else c { a } }",
+        &[
+            "SourceFile 0..26",
+            "  FnItem 0..26",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..26",
+            "      IfExpr 9..24",
+            r#"        Error 12..16 "else""#,
+            r#"        NameExpr 17..18 "c""#,
+            "        Block 19..24",
+            r#"          NameExpr 21..22 "a""#,
+        ],
+        &["ExpectedExpression at 12"],
+    );
+}
+
+#[test]
+fn a_statement_keyword_where_an_expression_is_required_begins_a_statement() {
+    // The initializer is missing and the next statement has begun — on the
+    // same line or, as while typing, the next: `let` is not garbage to
+    // take, and the statement it begins is not missing a boundary.
+    check(
+        "fn f() { let x = let y = 1 }",
+        &[
+            "SourceFile 0..28",
+            "  FnItem 0..28",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..28",
+            r#"      LetStmt 9..16 "let x =""#,
+            "      LetStmt 17..26",
+            r#"        LiteralExpr 25..26 "1""#,
+        ],
+        &["ExpectedExpression at 17"],
+    );
+    check(
+        "fn f() {\n  let x =\n  let y = 1\n}",
+        &[
+            "SourceFile 0..32",
+            "  FnItem 0..32",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..32",
+            r#"      LetStmt 11..18 "let x =""#,
+            "      LetStmt 21..30",
+            r#"        LiteralExpr 29..30 "1""#,
+        ],
+        &["ExpectedExpression at 21"],
+    );
+}
+
+#[test]
+fn a_closer_where_an_expression_is_required_is_left_to_its_owner() {
+    // The paren is waiting for its `)`: the operand is missing, not the
+    // closer garbage.
+    check(
+        "fn f() { !() }",
+        &[
+            "SourceFile 0..14",
+            "  FnItem 0..14",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..14",
+            "      PrefixExpr 9..12",
+            r#"        ParenExpr 10..12 "()""#,
+        ],
+        &["ExpectedExpression at 11"],
+    );
+}
+
+#[test]
+fn what_follows_a_failed_statement_on_its_line_is_its_fallout() {
+    // The `if` fails at the `)`, which nothing owns. The rest of the line
+    // is parsed without further comment: `x` is not missing a boundary and
+    // the `)` is not a second failure.
+    check(
+        "fn f() { if ) x { a } }",
+        &[
+            "SourceFile 0..23",
+            "  FnItem 0..23",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..23",
+            r#"      IfExpr 9..11 "if""#,
+            r#"      Error 12..13 ")""#,
+            r#"      NameExpr 14..15 "x""#,
+            "      Block 16..21",
+            r#"        NameExpr 18..19 "a""#,
+        ],
+        &["ExpectedExpression at 12"],
+    );
+}
+
+#[test]
+fn a_body_whose_closer_an_inner_block_took_ends_at_the_next_item() {
+    // The `)` discards the inner `{` in the stream, so the `}` is the
+    // body's; the parser's unclosed inner block takes it anyway, there
+    // being nothing better. The body's closer is then behind it, and the
+    // `fn` begins the next item rather than garbage the body owns.
+    check(
+        "fn f() { (a { b) }\nfn g() {}",
+        &[
+            "SourceFile 0..28",
+            "  FnItem 0..18",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..18",
+            "      ParenExpr 9..11",
+            r#"        NameExpr 10..11 "a""#,
+            "      Block 12..18",
+            r#"        NameExpr 14..15 "b""#,
+            r#"        Error 15..16 ")""#,
+            "  FnItem 19..28",
+            r#"    ParamList 23..25 "()""#,
+            r#"    Block 26..28 "{}""#,
+        ],
+        &[
+            "Expected(RParen) at 12",
+            "ExpectedStatement at 15",
+            "Expected(RBrace) at 19",
+        ],
+    );
+}
+
+#[test]
+fn a_report_on_the_way_does_not_make_the_line_fallout() {
+    // The spaced `-` is complained about and taken; `- x` parses whole, so
+    // the `y` after it is a second statement missing its boundary, not
+    // fallout to pass over in silence.
+    check(
+        "fn f() { - x y }",
+        &[
+            "SourceFile 0..16",
+            "  FnItem 0..16",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..16",
+            "      PrefixExpr 9..12",
+            r#"        NameExpr 11..12 "x""#,
+            r#"      NameExpr 13..14 "y""#,
+        ],
+        &["SpacedPrefixOperator at 9", "ExpectedBoundary at 13"],
     );
 }

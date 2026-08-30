@@ -6,8 +6,11 @@
 //! bounded — past [`MAX_DEPTH`] open nodes the rest of the expression is
 //! skipped with one error, so stack use is bounded too. Recovery skips into
 //! `Error` nodes and resynchronizes at statement boundaries, `}`, list
-//! separators, or the next `fn`. Missing pieces are absent, never empty
-//! nodes; the [`ParseError`] carries the position.
+//! separators, or the next `fn`. Where an expression is required and
+//! garbage stands in its place on the line, the garbage is taken and the
+//! expression tried once more; what follows a failed statement on its line
+//! is its fallout, parsed without further comment. Missing pieces are
+//! absent, never empty nodes; the [`ParseError`] carries the position.
 //!
 //! Expressions are parsed by precedence climbing over the stream facts the
 //! [`ParserInput`] precomputed: a statement boundary ends an expression, a
@@ -60,6 +63,22 @@ pub enum ParseErrorKind {
     /// Expressions nested more than [`MAX_DEPTH`] deep; the rest of the
     /// expression is skipped.
     NestingTooDeep,
+}
+
+impl ParseErrorKind {
+    /// Whether recovery reported this — something was missing, or a token
+    /// could not be taken — rather than a rule being broken by syntax the
+    /// parser took as it was, such as an unspaced operator.
+    pub fn is_recovery(self) -> bool {
+        !matches!(
+            self,
+            Self::UnspacedBinaryOperator
+                | Self::TrailingOperator
+                | Self::SpacedPrefixOperator
+                | Self::ChainedComparison
+                | Self::BlockOnNewLine
+        )
+    }
 }
 
 /// The most open nodes an expression may sit inside. Every level of
@@ -312,6 +331,14 @@ fn block(p: &mut Marker<'_, '_>) -> CompletedMarker {
     // recovery's to skip. One the stream does close keeps a misplaced `fn`
     // as the statement it is not, skipped.
     m.enter();
+    // Whether the last statement on the line failed: recovery reported
+    // something in it — a piece missing, a token it could not take. What
+    // follows it on the line is its fallout, parsed without further
+    // comment: a statement there is not missing its boundary, and a stray
+    // token is not a second failure. A rule broken on the way, such as a
+    // spacing complaint about an operator taken all the same, is no
+    // failure, and what follows is not fallout. The next line starts clean.
+    let mut fallout = false;
     loop {
         match m.current() {
             None => {
@@ -338,17 +365,29 @@ fn block(p: &mut Marker<'_, '_>) -> CompletedMarker {
                 m.error(ParseErrorKind::Expected(T::RBrace));
                 break;
             }
+            Some(kind) if fallout && !starts_statement(kind) => {
+                skip(&mut m, |m| {
+                    m.boundary() || m.current().is_some_and(starts_statement)
+                });
+            }
             Some(_) => {
+                let reported = m.reported();
+                let garbage = m.at(T::Error);
                 statement(&mut m);
+                let failed = garbage || m.reported_since(reported);
                 // A statement following on the same line is missing its
                 // boundary. Anything else is a stray token, which the next
                 // round reports as such: a boundary would not make it a
                 // statement.
                 let ends = m.boundary() || m.at(T::RBrace) || m.closes_open_paren() || m.at_item();
-                if !ends && m.current().is_some_and(starts_statement) {
+                if !ends && !fallout && !failed && m.current().is_some_and(starts_statement) {
                     m.error(ParseErrorKind::ExpectedBoundary);
                 }
+                fallout = fallout || failed;
             }
+        }
+        if m.boundary() {
+            fallout = false;
         }
     }
     m.complete(N::Block)
@@ -441,11 +480,52 @@ fn starts_expression(kind: T) -> bool {
     )
 }
 
-/// An expression where one is required.
+/// An expression where one is required. Garbage in its place on the same
+/// line is taken as such — up to the line's end, a `,`, or the start of
+/// an expression or statement — and the expression tried once more: one
+/// report for the garbage, and the expression it displaced still parses.
+/// A token the construct around this one is waiting for, or that begins
+/// the next statement, is not garbage but the sign the expression is
+/// missing; so is anything on the next line.
 fn operand(p: &mut Marker<'_, '_>, min_bp: u8) {
-    if expr_bp(p, min_bp).is_none() {
-        p.error(ParseErrorKind::ExpectedExpression);
+    if expr_bp(p, min_bp).is_some() {
+        return;
     }
+    p.error(ParseErrorKind::ExpectedExpression);
+    if p.newline() || p.at_item() || !p.current().is_some_and(displaces_expression) {
+        return;
+    }
+    skip(p, |p| p.newline() || p.at(T::Comma) || begins_statement(p));
+    if !p.newline() && begins_expression(p) {
+        expr_bp(p, min_bp);
+    }
+}
+
+/// Whether the next token begins an expression a garbage run should end
+/// at: one that starts an expression, an opener the stream never closes
+/// excepted — it began nothing, and is garbage like the rest.
+fn begins_expression(p: &Marker<'_, '_>) -> bool {
+    p.current().is_some_and(|kind| {
+        starts_expression(kind) && (!matches!(kind, T::LParen | T::LBrace) || p.partnered())
+    })
+}
+
+/// Whether the next token begins a statement a garbage run should end at.
+fn begins_statement(p: &Marker<'_, '_>) -> bool {
+    begins_expression(p)
+        || p.current()
+            .is_some_and(|kind| matches!(kind, T::LetKw | T::ReturnKw | T::Underscore | T::Error))
+}
+
+/// Whether a token found where an expression is required is garbage in its
+/// place, rather than the end of the construct around it — a closer or a
+/// `,` — or the start of the statement after it.
+fn displaces_expression(kind: T) -> bool {
+    !starts_expression(kind)
+        && !matches!(
+            kind,
+            T::RParen | T::RBrace | T::Comma | T::LetKw | T::ReturnKw | T::Underscore
+        )
 }
 
 fn expr(p: &mut Marker<'_, '_>) -> Option<CompletedMarker> {
@@ -617,8 +697,15 @@ fn arg_list(p: &mut Marker<'_, '_>) {
             Some(_) => {
                 m.error(ParseErrorKind::ExpectedExpression);
                 skip(&mut m, |m| {
-                    m.at(T::Comma) || m.at(T::RParen) || (!m.closed() && m.boundary())
+                    m.at(T::Comma)
+                        || m.at(T::RParen)
+                        || (!m.closed() && m.boundary())
+                        || begins_expression(m)
                 });
+                // The garbage displaced an argument, not the `,` after one.
+                if begins_expression(&m) {
+                    continue;
+                }
             }
         }
         // A boundary ends a list the stream never closes: its line has. One
