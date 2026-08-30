@@ -16,9 +16,7 @@
 //!   one does. Brackets pair the way the newline rule nests them: a closer
 //!   with a match is a synchronization point, discarding unmatched openers
 //!   above its match, so an opener a stray closer discards partners with
-//!   nothing; a closer with no match is an orphan, and only a `}` — with
-//!   no `{` open — discards the `(`s left open, which would otherwise
-//!   suspend termination for good.
+//!   nothing; a closer with no match is an orphan and discards nothing.
 //!   The `{` at the bottom of the stack — an item's body — pairs with the
 //!   last `}` to reach it before the next `fn` or the end of the file,
 //!   except that of several such `}` with nothing but closers between
@@ -33,8 +31,10 @@
 //! Sumi has no `;`; statements end at line breaks. A newline is a statement
 //! boundary iff all of:
 //!
-//! 1. it is not inside parentheses — `(...)` suspends termination, and a
-//!    `{...}` within restores it;
+//! 1. it is not inside parentheses the stream closes — `(...)` suspends
+//!    termination, and a `{...}` within restores it; a `(` never closed
+//!    suspends nothing, so the line ends the statement it would otherwise
+//!    swallow;
 //! 2. the token before it can end a statement: an identifier or `_`, a
 //!    literal, `true`/`false`, `return`, `)`, or `}`;
 //! 3. the token after it cannot continue one: `else` and binary operators
@@ -97,21 +97,14 @@ impl ParserInput {
             newline = false;
         }
 
-        // Boundaries look at the following token's jointness, so they need
-        // the fully built stream: a second pass, which pairs brackets on the
-        // way since the boundary rule needs the innermost open one.
+        // Boundaries look at the following token's jointness and at the
+        // brackets open around them — whether an open `(` is ever closed —
+        // so they need the stream fully built and paired: a pairing pass,
+        // then a boundary pass over its result.
         let mut pairing = Pairing::new(kinds.len());
-        for index in 0..kinds.len() {
-            if index > 0
-                && flags[index] & NEWLINE_BEFORE != 0
-                && !pairing.in_parens()
-                && can_end_statement(kinds[index - 1])
-                && !continues_statement(&kinds, &flags, index)
-            {
-                flags[index] |= BOUNDARY_BEFORE;
-            }
-            match kinds[index] {
-                SyntaxKind::LParen | SyntaxKind::LBrace => pairing.open(index, kinds[index]),
+        for (index, &kind) in kinds.iter().enumerate() {
+            match kind {
+                SyntaxKind::LParen | SyntaxKind::LBrace => pairing.open(index, kind),
                 SyntaxKind::RParen => pairing.close(index, SyntaxKind::LParen),
                 SyntaxKind::RBrace => pairing.close(index, SyntaxKind::LBrace),
                 SyntaxKind::FnKw => pairing.settle(),
@@ -119,12 +112,43 @@ impl ParserInput {
             }
         }
         pairing.settle();
+        let partners = pairing.partners;
+
+        // The brackets open before each token, replayed from the pairs: an
+        // opener is open until its partner closes it, which discards
+        // whatever opened inside and never closed; an orphan closer opens
+        // and closes nothing. Only a `(` the stream closes suspends
+        // termination — one it never closes would suspend it to the end of
+        // the file, so the line ends the statement instead.
+        let mut open: Vec<usize> = Vec::new();
+        for index in 0..kinds.len() {
+            if index > 0
+                && flags[index] & NEWLINE_BEFORE != 0
+                && !open.last().is_some_and(|&opener| {
+                    kinds[opener] == SyntaxKind::LParen && partners[opener].is_some()
+                })
+                && can_end_statement(kinds[index - 1])
+                && !continues_statement(&kinds, &flags, index)
+            {
+                flags[index] |= BOUNDARY_BEFORE;
+            }
+            match kinds[index] {
+                SyntaxKind::LParen | SyntaxKind::LBrace => open.push(index),
+                SyntaxKind::RParen | SyntaxKind::RBrace => {
+                    if let Some(partner) = partners[index] {
+                        let opener = partner.get() as usize - 1;
+                        while open.pop().is_some_and(|popped| popped != opener) {}
+                    }
+                }
+                _ => {}
+            }
+        }
 
         Self {
             kinds: kinds.into_boxed_slice(),
             tokens: tokens.into_boxed_slice(),
             flags: flags.into_boxed_slice(),
-            partners: pairing.partners.into_boxed_slice(),
+            partners: partners.into_boxed_slice(),
             raw_len: cooked.len() as u32,
         }
     }
@@ -183,14 +207,13 @@ impl ParserInput {
 }
 
 /// Bracket pairing over the significant tokens: a stack of open brackets,
-/// with two departures from plain matching that keep malformed nesting
-/// from wedging termination while reading the likelier intent.
+/// with two departures from plain matching that read the likelier intent
+/// of malformed nesting.
 ///
 /// A closer with a match is a synchronization point: it discards the
 /// unmatched openers above its match, which then partner with nothing. A
-/// closer with no match open is an orphan: a `}` abandons the open `(`s,
-/// which would otherwise suspend termination for good, while a `)`
-/// discards nothing, a `{` suspending nothing. And the `{` at the bottom
+/// closer with no match open is an orphan and discards nothing: whatever
+/// is open may yet be closed. And the `{` at the bottom
 /// of the stack — an item's body — does not pair with the first `}` to
 /// reach it: it pairs with the last one before the next `fn` or the end,
 /// except that of several with nothing but closers between them the first
@@ -236,13 +259,6 @@ impl Pairing {
         self.trailing = false;
     }
 
-    /// Whether the innermost open bracket is a `(`.
-    fn in_parens(&self) -> bool {
-        self.openers
-            .last()
-            .is_some_and(|&(_, kind)| kind == SyntaxKind::LParen)
-    }
-
     fn count(&mut self, kind: SyntaxKind) -> &mut usize {
         if kind == SyntaxKind::LParen {
             &mut self.parens
@@ -259,20 +275,9 @@ impl Pairing {
 
     /// Close the innermost open `expected`, discarding the openers above
     /// it — or defer, when it is the bottom `{`.
-    ///
-    /// A closer with none open is an orphan. A `}` with no `{` open
-    /// abandons every open `(` — the stack holds nothing else — since
-    /// nothing legitimately opens a paren around a `}` without its `{`,
-    /// and an unclosed `(` would otherwise suspend statement boundaries
-    /// from here to the end of the file. A `)` with no `(` open discards
-    /// nothing: a `{` suspends nothing, and may be a body still to close
-    /// around a stray.
+    /// A closer with none open is an orphan and discards nothing.
     fn close(&mut self, index: usize, expected: SyntaxKind) {
         if *self.count(expected) == 0 {
-            if expected == SyntaxKind::LBrace {
-                self.openers.clear();
-                self.parens = 0;
-            }
             return;
         }
         while let Some((opener, kind)) = self.openers.pop() {

@@ -73,13 +73,15 @@ const FRAGMENTS: &[&str] = &[
     "€",
 ];
 
-/// Fragments free of `)` and `}` (each would close the wrapping paren) and
-/// of `{` (it would restore termination), for
+/// Fragments free of `)` and `}` (each would close the wrapping paren), of
+/// `{` (it would restore termination), and of a lone `(` (it would take
+/// the wrapping paren's closer, leaving the wrapper unclosed and suspending
+/// nothing) — nested parens come closed — for
 /// [`newlines_inside_parens_never_terminate`].
 const PAREN_SAFE: &[&str] = &[
     "fn", "let", "if", "else", "return", "true", "x", "foo", "0", "1.5", "2.5e-3", "1e", "\"s\"",
-    "'a'", "r\"a\"", "(", ",", ":", ".", "=", "<", ">", "!", "+", "-", "*", "/", "%", "&", "|",
-    " ", "\t", "\n", "\r\n", "// c",
+    "'a'", "r\"a\"", "(x)", "(\nx\n)", ",", ":", ".", "=", "<", ">", "!", "+", "-", "*", "/", "%",
+    "&", "|", " ", "\t", "\n", "\r\n", "// c\n",
 ];
 
 fn fragment() -> impl Strategy<Value = String> {
@@ -238,6 +240,9 @@ proptest! {
         let source = format!("f({})", pieces.concat());
         let lexed = lex(&source).expect("generated sources fit in u32");
         let input = ParserInput::new(&cook(&source, &lexed));
+        // Pieces can form a `//` that hides the wrapping paren's closer;
+        // only a `(` the stream closes suspends termination.
+        prop_assume!(input.partner(1) == Some(input.len() - 1));
         for index in 0..input.len() {
             prop_assert!(
                 !input.boundary_before(index),
