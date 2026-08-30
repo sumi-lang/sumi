@@ -1517,6 +1517,23 @@ fn garbage_where_an_expression_is_required_is_taken_as_such() {
         ],
         &["ExpectedExpression at 13"],
     );
+    // A closer wrong on both sides is no closer: the stream judges the `)`
+    // a stray, and it is garbage here like anything else.
+    check(
+        "fn f() { if ) x { a } }",
+        &[
+            "SourceFile 0..23",
+            "  FnItem 0..23",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..23",
+            "      IfExpr 9..21",
+            r#"        Error 12..13 ")""#,
+            r#"        NameExpr 14..15 "x""#,
+            "        Block 16..21",
+            r#"          NameExpr 18..19 "a""#,
+        ],
+        &["ExpectedExpression at 12"],
+    );
     check(
         "fn f() { if else c { a } }",
         &[
@@ -1587,23 +1604,25 @@ fn a_closer_where_an_expression_is_required_is_left_to_its_owner() {
 
 #[test]
 fn what_follows_a_failed_statement_on_its_line_is_its_fallout() {
-    // The `if` fails at the `)`, which nothing owns. The rest of the line
-    // is parsed without further comment: `x` is not missing a boundary and
-    // the `)` is not a second failure.
+    // The `+` fails at the `let`, which begins a statement: that statement
+    // is not missing a boundary, and the `= 2` after it is debris of the
+    // same failure, passed over in silence — the `2` as the statement it
+    // could be, so that debris never swallows one.
     check(
-        "fn f() { if ) x { a } }",
+        "fn f() { a + let b = 1 = 2 }",
         &[
-            "SourceFile 0..23",
-            "  FnItem 0..23",
+            "SourceFile 0..28",
+            "  FnItem 0..28",
             r#"    ParamList 4..6 "()""#,
-            "    Block 7..23",
-            r#"      IfExpr 9..11 "if""#,
-            r#"      Error 12..13 ")""#,
-            r#"      NameExpr 14..15 "x""#,
-            "      Block 16..21",
-            r#"        NameExpr 18..19 "a""#,
+            "    Block 7..28",
+            "      BinaryExpr 9..12",
+            r#"        NameExpr 9..10 "a""#,
+            "      LetStmt 13..22",
+            r#"        LiteralExpr 21..22 "1""#,
+            r#"      Error 23..24 "=""#,
+            r#"      LiteralExpr 25..26 "2""#,
         ],
-        &["ExpectedExpression at 12"],
+        &["ExpectedExpression at 13"],
     );
 }
 
@@ -1654,5 +1673,140 @@ fn a_report_on_the_way_does_not_make_the_line_fallout() {
             r#"      NameExpr 13..14 "y""#,
         ],
         &["SpacedPrefixOperator at 9", "ExpectedBoundary at 13"],
+    );
+}
+
+#[test]
+fn a_stray_bracket_is_garbage_where_it_stands() {
+    // The `}` is wrong on both sides, so the stream pairs it with nothing;
+    // the block it would have closed early runs on, and the `}` is garbage
+    // where the operand was.
+    check(
+        "fn f() { _ = } r\"a\"\n  x\n}",
+        &[
+            "SourceFile 0..25",
+            "  FnItem 0..25",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..25",
+            "      DiscardStmt 9..19",
+            r#"        Error 13..14 "}""#,
+            r#"        LiteralExpr 15..19 "r\"a\"""#,
+            r#"      NameExpr 22..23 "x""#,
+        ],
+        &["ExpectedExpression at 13"],
+    );
+    // A `{` inside a paren that an operator follows is no block: the
+    // expression runs straight through it, with one report.
+    check(
+        "fn f() { (a { * b) }",
+        &[
+            "SourceFile 0..20",
+            "  FnItem 0..20",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..20",
+            "      ParenExpr 9..18",
+            "        BinaryExpr 10..17",
+            r#"          NameExpr 10..11 "a""#,
+            r#"          Error 12..13 "{""#,
+            r#"          NameExpr 16..17 "b""#,
+        ],
+        &["Unexpected at 12"],
+    );
+    // At the start of a line, where an argument list would have handed it
+    // to an expression parser that refuses it: taken as garbage, so that
+    // every loop makes progress.
+    check(
+        "fn f() { g(a\n  { % b) }",
+        &[
+            "SourceFile 0..23",
+            "  FnItem 0..23",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..23",
+            "      CallExpr 9..21",
+            r#"        NameExpr 9..10 "g""#,
+            "        ArgList 10..21",
+            r#"          NameExpr 11..12 "a""#,
+            r#"          Error 15..18 "{ %""#,
+            r#"          NameExpr 19..20 "b""#,
+        ],
+        &["Expected(Comma) at 15"],
+    );
+}
+
+#[test]
+fn a_bracket_with_a_match_to_be_had_is_no_stray() {
+    // The body's `}` is balanced by its `{`: it closes the body, and the
+    // `= b` is garbage between items.
+    check(
+        "fn f() { a } = b",
+        &[
+            "SourceFile 0..16",
+            "  FnItem 0..12",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..12",
+            r#"      NameExpr 9..10 "a""#,
+            r#"  Error 13..16 "= b""#,
+        ],
+        &["ExpectedItem at 13"],
+    );
+    // The `if`'s block is balanced by its `}`: it is the block, and the
+    // `+ b` is garbage inside it.
+    check(
+        "fn f() { (if a { + b }) }",
+        &[
+            "SourceFile 0..25",
+            "  FnItem 0..25",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..25",
+            "      ParenExpr 9..23",
+            "        IfExpr 10..22",
+            r#"          NameExpr 13..14 "a""#,
+            "          Block 15..22",
+            r#"            Error 17..20 "+ b""#,
+        ],
+        &["ExpectedStatement at 17"],
+    );
+}
+
+#[test]
+fn an_unclosed_list_does_not_yield_to_a_stray_closer() {
+    // The `}` is one too many and wrong on its right: garbage in the list,
+    // which the line ends after all.
+    check(
+        "fn f() { g(a } = b\nc\n}",
+        &[
+            "SourceFile 0..22",
+            "  FnItem 0..22",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..22",
+            "      CallExpr 9..18",
+            r#"        NameExpr 9..10 "g""#,
+            "        ArgList 10..18",
+            r#"          NameExpr 11..12 "a""#,
+            r#"          Error 13..16 "} =""#,
+            r#"          NameExpr 17..18 "b""#,
+            r#"      NameExpr 19..20 "c""#,
+        ],
+        &["ExpectedExpression at 13", "Expected(RParen) at 19"],
+    );
+}
+
+#[test]
+fn garbage_skipped_in_an_expression_leaves_the_operator_spaced() {
+    // Without the `:`, `a + b` is spaced as it should be: the space before
+    // the garbage counts for the operator.
+    check(
+        "fn f() { a :+ b }",
+        &[
+            "SourceFile 0..17",
+            "  FnItem 0..17",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..17",
+            "      BinaryExpr 9..15",
+            r#"        NameExpr 9..10 "a""#,
+            r#"        Error 11..12 ":""#,
+            r#"        NameExpr 14..15 "b""#,
+        ],
+        &["Unexpected at 11"],
     );
 }
