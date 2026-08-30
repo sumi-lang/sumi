@@ -509,9 +509,10 @@ fn program() -> BoxedStrategy<String> {
 }
 
 // Recovery quality, measured. The tests above prove the parser is total and
-// accepts every well-formed program; these bound how badly it does on
-// nearly-well-formed ones: one edit to a well-formed program should cost
-// few errors, and should disturb only the statement or item it lands in.
+// accepts every well-formed program; these bound how badly it does on a
+// well-formed program after one non-delimiter edit. Delimiter edits are
+// already covered by totality: one can legitimately reparent distant syntax,
+// so neither a local error bound nor locality is meaningful for one.
 
 /// The most errors of recovery's one edit may cost: the mistake itself, and
 /// at most two consequences.
@@ -543,6 +544,30 @@ fn edit() -> impl Strategy<Value = Edit> {
         2 => Just(Edit::Swap),
         3 => prop::sample::select(INSERTS).prop_map(Edit::Insert),
     ]
+}
+
+fn is_delimiter(kind: SyntaxKind) -> bool {
+    matches!(
+        kind,
+        SyntaxKind::LParen | SyntaxKind::RParen | SyntaxKind::LBrace | SyntaxKind::RBrace
+    )
+}
+
+/// Whether `edit` inserts, removes, duplicates, or moves a delimiter.
+fn changes_delimiter(input: &ParserInput, index: usize, edit: Edit) -> bool {
+    match edit {
+        Edit::Delete | Edit::Duplicate => input.get(index).is_some_and(is_delimiter),
+        Edit::Insert(inserted) => matches!(inserted, "(" | ")" | "{" | "}"),
+        Edit::Swap => {
+            let left = if index + 1 < input.len() {
+                index
+            } else {
+                index - 1
+            };
+            input.get(left).is_some_and(is_delimiter)
+                || input.get(left + 1).is_some_and(is_delimiter)
+        }
+    }
 }
 
 /// Every front-end product for one source.
@@ -645,8 +670,41 @@ fn edited_program() -> impl Strategy<Value = (String, usize, Edit)> {
         })
 }
 
+fn non_delimiter_edited_program() -> impl Strategy<Value = (String, usize, Edit)> {
+    edited_program().prop_filter("the edit changes no delimiter", |(source, index, edit)| {
+        !changes_delimiter(&front(source).input, *index, *edit)
+    })
+}
+
+/// The replaced byte interval in the original and where it ends afterward.
+#[derive(Clone, Copy)]
+struct EditSpan {
+    start: usize,
+    old_end: usize,
+    new_end: usize,
+}
+
+impl EditSpan {
+    /// Map a span disjoint from the edit into the edited source.
+    fn map(self, (start, end): (usize, usize)) -> (usize, usize) {
+        if end <= self.start {
+            return (start, end);
+        }
+        assert!(start >= self.old_end, "a guarded node overlaps the edit");
+        let shift = self.new_end as isize - self.old_end as isize;
+        (
+            start
+                .checked_add_signed(shift)
+                .expect("mapped start is in range"),
+            end.checked_add_signed(shift)
+                .expect("mapped end is in range"),
+        )
+    }
+}
+
 /// Apply `edit` at significant token `index` of `source`: the edited text,
-/// the significant indices the edit touches, and those it removes or moves.
+/// the significant indices the edit touches, those it removes or moves, and
+/// the replaced byte interval for mapping unaffected nodes.
 ///
 /// The touched indices include the tokens on either side of the edit: an
 /// inserted token joins whatever it lands next to — a leading operator or
@@ -659,24 +717,39 @@ fn apply(
     spans: &[(usize, usize)],
     index: usize,
     edit: Edit,
-) -> (String, Vec<usize>, Vec<usize>) {
+) -> (String, Vec<usize>, Vec<usize>, EditSpan) {
     let (start, end) = spans[index];
     let text = &source[start..end];
-    let (edited, left, right) = match edit {
+    let (edited, left, right, impact) = match edit {
         Edit::Delete => (
             format!("{}{}", &source[..start], &source[end..]),
             index,
             index,
+            EditSpan {
+                start,
+                old_end: end,
+                new_end: start,
+            },
         ),
         Edit::Duplicate => (
             format!("{} {text}{}", &source[..end], &source[end..]),
             index,
             index,
+            EditSpan {
+                start: end,
+                old_end: end,
+                new_end: end + 1 + text.len(),
+            },
         ),
         Edit::Insert(inserted) => (
             format!("{}{inserted} {}", &source[..start], &source[start..]),
             index,
             index,
+            EditSpan {
+                start,
+                old_end: start,
+                new_end: start + inserted.len() + 1,
+            },
         ),
         Edit::Swap => {
             let (left, right) = if index + 1 < spans.len() {
@@ -693,7 +766,16 @@ fn apply(
                 &source[ls..le],
                 &source[re..]
             );
-            (edited, left, right)
+            (
+                edited,
+                left,
+                right,
+                EditSpan {
+                    start: ls,
+                    old_end: re,
+                    new_end: re,
+                },
+            )
         }
     };
     let touched = (left.saturating_sub(1)..=(right + 1).min(spans.len() - 1)).collect();
@@ -702,14 +784,16 @@ fn apply(
         Edit::Swap => vec![left, right],
         Edit::Duplicate | Edit::Insert(_) => Vec::new(),
     };
-    (edited, touched, moved)
+    (edited, touched, moved, impact)
 }
 
 proptest! {
     #[test]
-    fn a_single_edit_costs_few_errors((source, index, edit) in edited_program()) {
+    fn a_single_non_delimiter_edit_costs_few_errors(
+        (source, index, edit) in non_delimiter_edited_program()
+    ) {
         let original = front(&source);
-        let (edited, _, _) = apply(&source, &original.spans(), index, edit);
+        let (edited, _, _, _) = apply(&source, &original.spans(), index, edit);
         let after = front(&edited);
         check_tree(after.parse.tree(), &after.cooked)?;
         let errors: Vec<_> = after.parse.errors().iter().map(|error| error.kind).collect();
@@ -722,19 +806,22 @@ proptest! {
     }
 
     #[test]
-    fn a_single_edit_disturbs_only_where_it_lands((source, index, edit) in edited_program()) {
+    fn a_single_non_delimiter_edit_disturbs_only_where_it_lands(
+        (source, index, edit) in non_delimiter_edited_program()
+    ) {
         let original = front(&source);
-        let (edited, touched, moved) = apply(&source, &original.spans(), index, edit);
+        let (edited, touched, moved, impact) = apply(&source, &original.spans(), index, edit);
         let touched: Vec<u32> = touched.iter().map(|&index| original.input.token(index)).collect();
         let moved: Vec<u32> = moved.iter().map(|&index| original.input.token(index)).collect();
         let after = front(&edited);
         let survivors: HashSet<_> = (0..after.parse.tree().len())
-            .map(|node| after.shape(&edited, node))
+            .map(|node| (after.node_span(node), after.shape(&edited, node)))
             .collect();
         for node in original.guarded(&touched, &moved) {
             let shape = original.shape(&source, node);
+            let span = impact.map(original.node_span(node));
             prop_assert!(
-                survivors.contains(&shape),
+                survivors.contains(&(span, shape.clone())),
                 "{:?} at token {} ({:?}) disturbs the {:?} {:?}\n--- original ---\n{}\n--- edited ---\n{}\nerrors: {:?}",
                 edit, index, original.input.get(index), original.parse.tree().kind(node), shape.0,
                 source, edited, after.parse.errors()

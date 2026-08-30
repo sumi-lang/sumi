@@ -553,15 +553,17 @@ fn expr_bp(p: &mut Marker<'_, '_>, min_bp: u8) -> Option<CompletedMarker> {
             comparison = false;
             continue;
         }
-        // One stray token between the operand and an operator continuing
-        // it, all on one line, is garbage in the way: taken as such, with
-        // one report, and the expression goes on. The operator is spaced on
-        // its left if anything separated the garbage from either side.
+        // One stray token between the operand and what continues or ends
+        // the expression — an operator, a closer, a `,` — all on one line,
+        // is garbage in the way: taken as such, with one report, and the
+        // expression goes on. An operator is spaced on its left if anything
+        // separated the garbage from either side.
         let mut joint_left = p.joint_before();
         if !p.newline()
             && garbage_in_expression(p)
             && !p.nth_newline(1)
-            && binary_op(p, 1).is_some()
+            && (binary_op(p, 1).is_some()
+                || matches!(p.nth(1), Some(T::RParen | T::RBrace | T::Comma)))
         {
             p.error(ParseErrorKind::Unexpected);
             skip(p, |_| true);

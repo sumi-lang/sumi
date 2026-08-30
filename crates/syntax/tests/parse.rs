@@ -1060,8 +1060,8 @@ fn items(source: &str) -> usize {
 
 #[test]
 fn a_block_yields_to_the_paren_that_encloses_it() {
-    // The `)` closes the `(` around the block: the block is unclosed, and
-    // the `)` is not its to skip.
+    // A `{` inside a paren before its `)` is no block: the stream judges
+    // it a stray, and the paren takes its closer over it.
     check(
         "fn f() { ({ ) }",
         &[
@@ -1070,9 +1070,9 @@ fn a_block_yields_to_the_paren_that_encloses_it() {
             r#"    ParamList 4..6 "()""#,
             "    Block 7..15",
             "      ParenExpr 9..13",
-            r#"        Block 10..11 "{""#,
+            r#"        Error 10..11 "{""#,
         ],
-        &["Expected(RBrace) at 12"],
+        &["ExpectedExpression at 10"],
     );
     // A `)` with nothing to close is garbage, skipped where it stands.
     check(
@@ -1808,5 +1808,106 @@ fn garbage_skipped_in_an_expression_leaves_the_operator_spaced() {
             r#"        NameExpr 14..15 "b""#,
         ],
         &["Unexpected at 11"],
+    );
+}
+
+#[test]
+fn a_surplus_brace_where_no_block_is_written_is_garbage() {
+    // The `{` split an `&&`: a lone `&` on either side is wrong on both, so
+    // the `{` is a stray, the run of garbage ends at the line, and the body
+    // keeps its `}` and the statement after.
+    check(
+        "fn f() { a &{ & b\n  c\n}",
+        &[
+            "SourceFile 0..23",
+            "  FnItem 0..23",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..23",
+            r#"      NameExpr 9..10 "a""#,
+            r#"      Error 11..17 "&{ & b""#,
+            r#"      NameExpr 20..21 "c""#,
+        ],
+        &["ExpectedStatement at 11"],
+    );
+    // Inside a paren before its `)`: garbage between the operand and the
+    // closer, skipped so that the paren closes.
+    check(
+        "fn f() { (foo{ ) }",
+        &[
+            "SourceFile 0..18",
+            "  FnItem 0..18",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..18",
+            "      ParenExpr 9..16",
+            r#"        NameExpr 10..13 "foo""#,
+            r#"        Error 13..14 "{""#,
+        ],
+        &["Unexpected at 13"],
+    );
+    // After a `let`, where no block is written.
+    check(
+        "fn f() { let { a = 1\n  b\n}",
+        &[
+            "SourceFile 0..26",
+            "  FnItem 0..26",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..26",
+            r#"      LetStmt 9..12 "let""#,
+            r#"      Error 13..20 "{ a = 1""#,
+            r#"      NameExpr 23..24 "b""#,
+        ],
+        &["ExpectedName at 13"],
+    );
+}
+
+#[test]
+fn a_matched_block_is_never_blamed_for_another_surplus() {
+    // Each of these has one `{` too many, and a block whose `{` looks like
+    // a stray by its neighbours: the block keeps its `{`, since pairing
+    // goes worse without it, and the surplus `{` is the one with no `}`.
+    check(
+        "fn f() { (if a { + b }) } {",
+        &[
+            "SourceFile 0..27",
+            "  FnItem 0..25",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..25",
+            "      ParenExpr 9..23",
+            "        IfExpr 10..22",
+            r#"          NameExpr 13..14 "a""#,
+            "          Block 15..22",
+            r#"            Error 17..20 "+ b""#,
+            r#"  Error 26..27 "{""#,
+        ],
+        &["ExpectedStatement at 17", "ExpectedItem at 26"],
+    );
+    check(
+        "fn f() { let x = { + b } } {",
+        &[
+            "SourceFile 0..28",
+            "  FnItem 0..26",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..26",
+            "      LetStmt 9..24",
+            "        Block 17..24",
+            r#"          Error 19..22 "+ b""#,
+            r#"  Error 27..28 "{""#,
+        ],
+        &["ExpectedStatement at 19", "ExpectedItem at 27"],
+    );
+    // A `fn` inside a block is garbage the block owns, not an item that
+    // starts the count of brackets afresh.
+    check(
+        "fn f() { ({ fn }) }",
+        &[
+            "SourceFile 0..19",
+            "  FnItem 0..19",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..19",
+            "      ParenExpr 9..17",
+            "        Block 10..16",
+            r#"          Error 12..14 "fn""#,
+        ],
+        &["ExpectedStatement at 12"],
     );
 }
