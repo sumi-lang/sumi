@@ -1088,6 +1088,75 @@ fn recovery_never_takes_an_enclosing_closer() {
     );
 }
 
+#[test]
+fn recovery_ownership_regressions() {
+    // A matched group inside malformed statement syntax remains local even
+    // when its enclosing block is unclosed. Its `fn` is not reparented into
+    // a top-level item.
+    check(
+        "fn f() { : { fn g() {} }",
+        &[
+            "SourceFile 0..24",
+            "  FnItem 0..24",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..24",
+            r#"      Error 9..24 ": { fn g() {} }""#,
+        ],
+        &["ExpectedStatement at 9", "Expected(RBrace) at 24"],
+    );
+    // The same remains true in an unclosed block nested under a known outer
+    // closer: recovery may take the local group, but not that outer `)`.
+    check(
+        "fn f() { ({ : { fn g() {} } ) }",
+        &[
+            "SourceFile 0..31",
+            "  FnItem 0..31",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..31",
+            "      ParenExpr 9..29",
+            "        Block 10..27",
+            r#"          Error 12..27 ": { fn g() {} }""#,
+        ],
+        &["ExpectedStatement at 12", "Expected(RBrace) at 28"],
+    );
+    // The inner unclosed list yields the `)` mechanically paired with the
+    // enclosing paren instead of stealing it as a recovery closer.
+    check(
+        "fn f() { ({ g(a } x ) }",
+        &[
+            "SourceFile 0..23",
+            "  FnItem 0..23",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..23",
+            "      ParenExpr 9..21",
+            "        Block 10..19",
+            "          CallExpr 12..19",
+            r#"            NameExpr 12..13 "g""#,
+            "            ArgList 13..19",
+            r#"              NameExpr 14..15 "a""#,
+            r#"              Error 16..17 "}""#,
+            r#"              NameExpr 18..19 "x""#,
+        ],
+        &["ExpectedExpression at 16", "Expected(RParen) at 20"],
+    );
+    // A plain parenthesized expression follows the same ownership rule.
+    check(
+        "fn f() { ({ (} x ) }",
+        &[
+            "SourceFile 0..20",
+            "  FnItem 0..20",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..20",
+            "      ParenExpr 9..18",
+            "        Block 10..16",
+            "          ParenExpr 12..16",
+            r#"            Error 13..14 "}""#,
+            r#"            NameExpr 15..16 "x""#,
+        ],
+        &["ExpectedExpression at 13", "Expected(RParen) at 17"],
+    );
+}
+
 /// Parse `source` and return its error kinds, asserting the tree is well
 /// formed.
 fn error_kinds(source: &str) -> Vec<sumi_syntax::ParseErrorKind> {

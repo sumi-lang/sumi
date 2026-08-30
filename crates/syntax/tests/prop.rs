@@ -514,9 +514,10 @@ fn program() -> BoxedStrategy<String> {
 // the statement level; delimiter edits have a weaker item-level locality
 // contract because they can legitimately reparent nearby syntax.
 
-/// The most errors of recovery's one edit may cost: the mistake itself, and
-/// a few consequences when a delimiter edit closes a distant list.
-const MAX_ERRORS_PER_EDIT: usize = 5;
+/// A non-delimiter mistake and at most three local consequences.
+const MAX_ERRORS_PER_NON_DELIMITER_EDIT: usize = 4;
+/// A delimiter mistake and a few consequences when it closes a distant list.
+const MAX_ERRORS_PER_DELIMITER_EDIT: usize = 5;
 
 /// One edit to a well-formed program, made at a significant token.
 #[derive(Clone, Copy, Debug)]
@@ -804,6 +805,11 @@ proptest! {
         let (edited, _, _, _) = apply(&source, &original.spans(), index, edit);
         let after = front(&edited);
         check_tree(after.parse.tree(), &after.cooked)?;
+        let max_errors = if changes_delimiter(&original.input, index, edit) {
+            MAX_ERRORS_PER_DELIMITER_EDIT
+        } else {
+            MAX_ERRORS_PER_NON_DELIMITER_EDIT
+        };
         let errors: Vec<_> = after.parse.errors().iter().map(|error| error.kind).collect();
         let positioned: Vec<_> = after
             .parse
@@ -813,9 +819,9 @@ proptest! {
             .collect();
         let recovery = errors.iter().filter(|kind| kind.is_recovery()).count();
         prop_assert!(
-            recovery <= MAX_ERRORS_PER_EDIT,
-            "{:?} at token {} ({:?}) costs {} errors {:?}\n--- original ---\n{}\n--- edited ---\n{}",
-            edit, index, original.input.get(index), recovery, positioned, source, edited
+            recovery <= max_errors,
+            "{:?} at token {} ({:?}) costs {} errors (maximum {}) {:?}\n--- original ---\n{}\n--- edited ---\n{}",
+            edit, index, original.input.get(index), recovery, max_errors, positioned, source, edited
         );
     }
 

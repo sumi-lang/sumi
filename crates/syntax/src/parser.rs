@@ -287,8 +287,12 @@ fn param_list(p: &mut Marker<'_, '_>) {
                 m.error(ParseErrorKind::Expected(T::RParen));
                 break;
             }
-            Some(T::RParen) => {
+            Some(T::RParen) if m.owns_rparen() => {
                 m.token();
+                break;
+            }
+            Some(T::RParen) if m.closes_open_paren() => {
+                m.error(ParseErrorKind::Expected(T::RParen));
                 break;
             }
             Some(T::LBrace | T::RBrace)
@@ -381,7 +385,7 @@ fn block(p: &mut Marker<'_, '_>) -> CompletedMarker {
             }
             // A `)` closing a paren still open around this block belongs to
             // it: the block is unclosed, and the `)` is left to its owner.
-            Some(T::RParen) if m.closes_open_paren() && !displaced_closer(&m) => {
+            Some(T::RParen) if m.closes_open_paren() => {
                 m.error(ParseErrorKind::Expected(T::RBrace));
                 break;
             }
@@ -397,7 +401,7 @@ fn block(p: &mut Marker<'_, '_>) -> CompletedMarker {
                 let ends = m.current().is_none()
                     || m.boundary()
                     || (m.at(T::RBrace) && !m.closer_ahead() && !(failed && displaced_closer(&m)))
-                    || (m.closes_open_paren() && !displaced_closer(&m))
+                    || m.closes_open_paren()
                     || m.at_item();
                 if !ends {
                     if failed && !begins_recovery_statement(&m) {
@@ -531,11 +535,10 @@ fn begins_statement(p: &Marker<'_, '_>) -> bool {
 /// the start of the statement after it.
 fn displaces_expression(p: &Marker<'_, '_>) -> bool {
     if matches!(p.current(), Some(T::RParen | T::RBrace)) {
-        if p.at(T::RParen) && p.at_closer() {
+        if p.at(T::RParen) && p.closes_open_paren() {
             return false;
         }
-        return displaced_closer(p)
-            || (p.at(T::RParen) && !p.closes_open_paren() && !p.partnered());
+        return displaced_closer(p) || (p.at(T::RParen) && !p.partnered());
     }
     p.current().is_some_and(|kind| {
         !kind.starts_expression()
@@ -724,9 +727,10 @@ fn prefix_or_atom(p: &mut Marker<'_, '_>, follow: ExprFollow) -> Option<Complete
             m.token(); // (
             m.enter_parens();
             operand(&mut m, 0);
-            // The owning paren takes its closer whatever precedes it: a
-            // block inside may have restored boundaries.
-            if m.at(T::RParen) {
+            // Take only this paren's mechanical closer or an orphan recovery
+            // closer. One paired with an earlier opener belongs to that
+            // enclosing construct.
+            if m.owns_rparen() {
                 m.token();
             } else {
                 m.error(ParseErrorKind::Expected(T::RParen));
@@ -804,8 +808,12 @@ fn arg_list(p: &mut Marker<'_, '_>) {
                 m.error(ParseErrorKind::Expected(T::RParen));
                 break;
             }
-            Some(T::RParen) => {
+            Some(T::RParen) if m.owns_rparen() => {
                 m.token();
+                break;
+            }
+            Some(T::RParen) if m.closes_open_paren() => {
+                m.error(ParseErrorKind::Expected(T::RParen));
                 break;
             }
             Some(T::RBrace | T::FnKw) if !m.closed() && !displaced_closer(&m) => {
