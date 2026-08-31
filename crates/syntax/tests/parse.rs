@@ -1549,6 +1549,40 @@ fn recovery_over_many_brackets_is_linear() {
 }
 
 #[test]
+fn a_group_spanning_a_boundary_stays_open_in_an_unclosed_body() {
+    // With no parser-owned closer ahead, recovery takes a matched group
+    // whole only when no statement boundary lies inside it: the statement
+    // after the break is kept, not swallowed with the garbage.
+    check(
+        "fn f() {\n: { { x\ny } }\n",
+        &[
+            "SourceFile 0..23",
+            "  FnItem 0..20",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..20",
+            r#"      Error 9..16 ": { { x""#,
+            r#"      NameExpr 17..18 "y""#,
+            r#"  Error 21..22 "}""#,
+        ],
+        &["ExpectedStatement at 9", "ExpectedItem at 21"],
+    );
+}
+
+#[test]
+fn recovery_over_nested_groups_spanning_a_boundary_is_linear() {
+    // Every group of the ladder spans the central boundary inside an
+    // unclosed body, so each is rejected and entered one token at a time;
+    // rejecting one must not rescan its interior.
+    let n = 50_000;
+    let source = format!("fn f() {{\n: {}x\ny {}\n", "{ ".repeat(n), "} ".repeat(n));
+    assert_eq!(
+        evidence_kinds(&source),
+        ["ExpectedStatement", "ExpectedItem"]
+    );
+    assert_eq!(items(&source), 1);
+}
+
+#[test]
 fn nesting_is_bounded() {
     use sumi_syntax::MAX_DEPTH;
     let deep = |n: usize| format!("fn f() {{ {}x{} }}", "(".repeat(n), ")".repeat(n));

@@ -33,6 +33,11 @@ fn dump(source: &str) -> Vec<String> {
                 assert!(index > 0, "no boundary before the first token");
                 assert!(input.newline_before(index), "boundaries need a newline");
             }
+            assert_eq!(
+                input.boundary_in(index..index + 1),
+                input.boundary_before(index),
+                "prefix sums must agree with the boundary bits"
+            );
 
             let mut line = format!("{:?} {:?}", kind, lexed.text(source, token));
             if input.newline_before(index) {
@@ -314,6 +319,24 @@ fn error_tokens_end_statements() {
     // Recovery: garbage ends at the line break instead of swallowing the
     // next statement.
     assert!(has_boundary("€\nx"));
+}
+
+#[test]
+fn boundary_in_agrees_with_the_boundary_bits() {
+    let source = "a\nb + (c\nd) {\ne }\nf\n";
+    dump(source); // invariants
+    let lexed = lex(source).expect("test sources fit in u32");
+    let input = ParserInput::new(&cook(source, &lexed));
+    assert!((0..input.len()).any(|index| input.boundary_before(index)));
+    for start in 0..=input.len() {
+        for end in start..=input.len() {
+            assert_eq!(
+                input.boundary_in(start..end),
+                (start..end).any(|index| input.boundary_before(index)),
+                "boundary_in({start}..{end}) for {source:?}"
+            );
+        }
+    }
 }
 
 #[test]
