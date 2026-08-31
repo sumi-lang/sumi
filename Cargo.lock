@@ -623,6 +623,7 @@ dependencies = [
  "sumi-diagnostics",
  "sumi-lexer",
  "sumi-syntax",
+ "sumi-test",
  "sumi-text",
 ]
 

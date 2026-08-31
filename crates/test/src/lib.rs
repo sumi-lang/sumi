@@ -7,6 +7,7 @@
 //! measuring it must draw from the same distributions. Nothing here ships
 //! in the compiler: production crates must not depend on this one.
 
+pub mod corpus;
 mod edit;
 mod front;
 mod program;

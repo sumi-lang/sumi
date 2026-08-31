@@ -1,11 +1,10 @@
-mod corpus;
-
 use criterion::{
     BatchSize, BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main,
 };
 use sumi_frontend::parse_source;
 use sumi_lexer::lex;
 use sumi_syntax::{ParserInput, cook, parse};
+use sumi_test::corpus;
 
 const KIB: usize = 1024;
 
