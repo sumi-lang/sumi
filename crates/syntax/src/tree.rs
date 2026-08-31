@@ -114,14 +114,55 @@ impl SyntaxTree {
     /// file. A token attached to no node — trivia between two children —
     /// resolves to the nearest node whose range spans it, at worst the root.
     pub fn covering(&self, token: u32) -> usize {
+        self.covering_chain(token)
+            .next()
+            .expect("the root covers every token in the file")
+    }
+
+    /// The nodes covering raw token `token`, innermost first: the node
+    /// [`covering`](Self::covering) answers, then each enclosing node out
+    /// to the root — every node's parent is the entry after it. Never
+    /// empty, since the root covers every token; `token` must lie in the
+    /// file. The chain sifts every completion from the covering node to
+    /// the root, so a consumer resolving many positions builds
+    /// [`parents`](Self::parents) once instead.
+    pub fn covering_chain(&self, token: u32) -> impl Iterator<Item = usize> + '_ {
+        assert!(
+            token < self.nodes[self.root()].end_token,
+            "token must be within the file"
+        );
+        // TODO: descending from the root instead — hopping over later
+        // siblings by extent at each level — would visit only the path and
+        // its siblings, several times faster and no longer growing with
+        // file size; take that trade once a consumer feels this scan.
+        //
         // `end_token` is non-decreasing in completion order, so everything
         // ending at or before `token` drops out by binary search. Of the
         // rest, a node either covers `token` or lies wholly past it, and
         // covering nodes — an ancestor chain — complete innermost first.
         let from = self.nodes.partition_point(|node| node.end_token <= token);
-        (from..self.nodes.len())
-            .find(|&index| self.nodes[index].first_token <= token)
-            .expect("the root covers every token in the file")
+        (from..self.nodes.len()).filter(move |&index| self.nodes[index].first_token <= token)
+    }
+
+    /// The parent of every node, one `u32` per node from one reverse pass;
+    /// the root names itself. The tree stores no parent links — the
+    /// covering chain answers parents for positional queries — so a
+    /// consumer needing random-access parents builds this table on demand.
+    pub fn parents(&self) -> Vec<u32> {
+        let mut parents = vec![0u32; self.nodes.len()];
+        // The open ancestors, innermost last: node index and where its
+        // subtree begins. Reverse postorder reaches a parent before its
+        // children, and leaves a subtree exactly when the index drops
+        // below its start.
+        let mut stack: Vec<(u32, usize)> = Vec::new();
+        for index in (0..self.nodes.len()).rev() {
+            while stack.last().is_some_and(|&(_, start)| start > index) {
+                stack.pop();
+            }
+            parents[index] = stack.last().map_or(index as u32, |&(node, _)| node);
+            stack.push((index as u32, index + 1 - self.nodes[index].extent as usize));
+        }
+        parents
     }
 }
 
