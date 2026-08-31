@@ -89,6 +89,11 @@ impl CookedFile {
         self.kinds[index]
     }
 
+    /// Every cooked kind, parallel to the lexed tokens.
+    pub(crate) fn kinds(&self) -> &[SyntaxKind] {
+        &self.kinds
+    }
+
     pub fn errors(&self) -> &[SyntaxError] {
         &self.errors
     }
