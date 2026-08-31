@@ -4,7 +4,7 @@ use criterion::{
 use sumi_format::{normalize, reprint};
 use sumi_frontend::parse_source;
 use sumi_lexer::lex;
-use sumi_syntax::{MAX_DEPTH, ParseEvidence, ParserInput, cook, parse};
+use sumi_syntax::{MAX_DEPTH, ParseEvidence, ParserInput, parse, validate};
 use sumi_test::corpus;
 use sumi_text::{LineIndex, TextSize};
 
@@ -74,8 +74,7 @@ fn bench_pipeline_phases(c: &mut Criterion) {
 
 fn bench_phases(c: &mut Criterion, corpus_name: &str, source: &str, valid: bool) {
     let lexed = lex(source).expect("benchmark corpus fits in Sumi's source coordinate space");
-    let cooked = cook(source, &lexed);
-    let input = ParserInput::new(&cooked);
+    let input = ParserInput::new(&lexed);
 
     let parsed = parse_source(source.to_owned().into_boxed_str())
         .expect("benchmark corpus fits in Sumi's source coordinate space");
@@ -93,20 +92,23 @@ fn bench_phases(c: &mut Criterion, corpus_name: &str, source: &str, valid: bool)
             lex(black_box(source)).expect("benchmark corpus fits in Sumi's source coordinate space")
         });
     });
+    // The `cook` IDs predate the stage's rename to `validate`; they stay so
+    // CodSpeed's measurement history stays continuous.
     group.bench_function("cook", |b| {
-        b.iter_with_large_drop(|| cook(black_box(source), black_box(&lexed)));
+        b.iter_with_large_drop(|| validate(black_box(source), black_box(&lexed)));
     });
-    // Both halves together, ahead of any fusion of them: the combined
-    // measurement keeps its history when the phase boundary moves.
+    // Both halves together: the combined measurement carries its history
+    // across the fusion that moved the phase boundary.
     group.bench_function("lex+cook", |b| {
         b.iter_with_large_drop(|| {
             let lexed = lex(black_box(source))
                 .expect("benchmark corpus fits in Sumi's source coordinate space");
-            cook(black_box(source), &lexed)
+            let errors = validate(black_box(source), &lexed);
+            (lexed, errors)
         });
     });
     group.bench_function("parser-input", |b| {
-        b.iter_with_large_drop(|| ParserInput::new(black_box(&cooked)));
+        b.iter_with_large_drop(|| ParserInput::new(black_box(&lexed)));
     });
     group.bench_function("parse", |b| {
         b.iter_with_large_drop(|| parse(black_box(&input)));
@@ -216,7 +218,7 @@ fn bench_adversarial(c: &mut Criterion) {
 fn bench_queries(c: &mut Criterion) {
     let source = corpus::generate(64 * KIB, MEDIUM_SEED);
     let lexed = lex(&source).expect("benchmark corpus fits in Sumi's source coordinate space");
-    let input = ParserInput::new(&cook(&source, &lexed));
+    let input = ParserInput::new(&lexed);
     let parsed = parse(&input);
     let tree = parsed.tree();
     let index = LineIndex::new(&source);
@@ -281,7 +283,7 @@ fn bench_queries(c: &mut Criterion) {
 fn bench_format(c: &mut Criterion) {
     let source = corpus::generate(64 * KIB, MEDIUM_SEED);
     let lexed = lex(&source).expect("benchmark corpus fits in Sumi's source coordinate space");
-    let parsed = parse(&ParserInput::new(&cook(&source, &lexed)));
+    let parsed = parse(&ParserInput::new(&lexed));
     assert_eq!(
         reprint(parsed.tree(), &lexed, &source),
         source,
@@ -293,8 +295,7 @@ fn bench_format(c: &mut Criterion) {
     // in the string literals the generator emits.
     let glued = source.replace(" + ", "+").replace(" * ", "*");
     let glued_lexed = lex(&glued).expect("benchmark corpus fits in Sumi's source coordinate space");
-    let glued_cooked = cook(&glued, &glued_lexed);
-    let glued_parse = parse(&ParserInput::new(&glued_cooked));
+    let glued_parse = parse(&ParserInput::new(&glued_lexed));
     let violations = glued_parse
         .evidence()
         .iter()
@@ -315,9 +316,7 @@ fn bench_format(c: &mut Criterion) {
     let mut group = c.benchmark_group("format/medium-glued");
     group.throughput(Throughput::Bytes(glued.len() as u64));
     group.bench_function("normalize", |b| {
-        b.iter_with_large_drop(|| {
-            normalize(black_box(&glued), &glued_lexed, &glued_cooked, &glued_parse)
-        });
+        b.iter_with_large_drop(|| normalize(black_box(&glued), &glued_lexed, &glued_parse));
     });
     group.finish();
 }

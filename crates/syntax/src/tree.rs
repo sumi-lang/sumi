@@ -368,9 +368,9 @@ pub(crate) struct RecoveryHandle(usize);
 ///
 /// ```compile_fail,E0505
 /// use sumi_lexer::lex;
-/// use sumi_syntax::{NodeKind, Parse, ParserInput, cook};
+/// use sumi_syntax::{NodeKind, Parse, ParserInput};
 ///
-/// let input = ParserInput::new(&cook("x y", &lex("x y").unwrap()));
+/// let input = ParserInput::new(&lex("x y").unwrap());
 /// Parse::build(&input, |root| {
 ///     let mut outer = root.start();
 ///     outer.token();
@@ -385,9 +385,9 @@ pub(crate) struct RecoveryHandle(usize);
 ///
 /// ```compile_fail,E0507
 /// use sumi_lexer::lex;
-/// use sumi_syntax::{NodeKind, Parse, ParserInput, cook};
+/// use sumi_syntax::{NodeKind, Parse, ParserInput};
 ///
-/// let input = ParserInput::new(&cook("x", &lex("x").unwrap()));
+/// let input = ParserInput::new(&lex("x").unwrap());
 /// Parse::build(&input, |root| {
 ///     root.token();
 ///     root.complete(NodeKind::SourceFile); // cannot move out of `*root`
@@ -615,7 +615,7 @@ impl<'a> Marker<'_, 'a> {
     /// Whether the next token begins an expression. Whatever parses an
     /// expression where this holds takes at least that token.
     pub(crate) fn starts_expression(&self) -> bool {
-        self.current().is_some_and(SyntaxKind::starts_expression)
+        self.current().is_some_and(crate::kind::starts_expression)
     }
 
     /// Whether the next token is a bracket the stream pairs with another,
@@ -874,14 +874,13 @@ fn to_u32(count: usize) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cook;
+
     use sumi_lexer::lex;
 
     #[test]
     fn parser_evidence_retains_same_position_facts() {
         let lexed = lex("x").expect("test source fits in u32");
-        let cooked = cook("x", &lexed);
-        let input = ParserInput::new(&cooked);
+        let input = ParserInput::new(&lexed);
         let parse = Parse::build(&input, |root| {
             let checkpoint = root.recovery_checkpoint();
             root.violation(ParseViolationKind::SpacedPrefixOperator, 1);

@@ -24,7 +24,7 @@
 //! chain. Each violation is retained while the evident structure is accepted.
 
 use crate::input::ParserInput;
-use crate::kind::{NodeKind as N, SyntaxKind as T};
+use crate::kind::{NodeKind as N, SyntaxKind as T, starts_expression, starts_statement};
 use crate::tree::{CompletedMarker, Marker, Parse, RecoveryHandle};
 
 /// Parse one file.
@@ -55,7 +55,8 @@ pub enum ParseRecoveryKind {
     Unexpected,
     /// Expressions nested more than [`MAX_DEPTH`] deep.
     NestingTooDeep,
-    /// Recovery over tokens whose diagnostic belongs to the lexer or cooker.
+    /// Recovery over tokens whose diagnostic belongs to the lexer or
+    /// validator.
     PriorPhaseError,
 }
 
@@ -105,7 +106,7 @@ pub enum ParseAnchor {
     Tokens(RawTokenRange),
 }
 
-/// A nonempty half-open range in the raw lexer/cooker token buffer.
+/// A nonempty half-open range in the raw lexer token buffer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct RawTokenRange {
     start: u32,
@@ -471,7 +472,7 @@ fn block(p: &mut Marker<'_, '_>) -> CompletedMarker {
                             .latest_recovery_since(recovery)
                             .expect("a failed statement has recovery evidence");
                         skip_statement_garbage(&mut m, recovery);
-                    } else if !failed && m.current().is_some_and(T::starts_statement) {
+                    } else if !failed && m.current().is_some_and(starts_statement) {
                         m.missing(ParseExpected::Boundary);
                     }
                 }
@@ -596,7 +597,7 @@ fn operand_before(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) {
 /// excepted — it began nothing, and is garbage like the rest.
 fn begins_expression(p: &Marker<'_, '_>) -> bool {
     p.current().is_some_and(|kind| {
-        kind.starts_expression() && (!matches!(kind, T::LParen | T::LBrace) || p.partnered())
+        starts_expression(kind) && (!matches!(kind, T::LParen | T::LBrace) || p.partnered())
     })
 }
 
@@ -618,7 +619,7 @@ fn displaces_expression(p: &Marker<'_, '_>) -> bool {
         return displaced_closer(p) || (p.at(T::RParen) && !p.partnered());
     }
     p.current().is_some_and(|kind| {
-        !kind.starts_expression()
+        !starts_expression(kind)
             && !matches!(
                 kind,
                 T::RBrace | T::Comma | T::LetKw | T::ReturnKw | T::Underscore
@@ -642,7 +643,7 @@ fn displaced_closer(p: &Marker<'_, '_>) -> bool {
         matches!(
             next,
             T::Eq | T::Colon | T::LetKw | T::ReturnKw | T::Underscore | T::Error
-        ) || (next.starts_expression() && !matches!(next, T::Minus | T::LParen | T::LBrace))
+        ) || (starts_expression(next) && !matches!(next, T::Minus | T::LParen | T::LBrace))
     })
 }
 
@@ -655,7 +656,7 @@ fn garbage_in_expression(p: &Marker<'_, '_>, follow: ExprFollow) -> bool {
         || (p.at(T::RParen) && !p.closes_open_paren())
         || (follow == ExprFollow::Anything && p.at(T::LBrace))
         || p.current().is_some_and(|kind| {
-            !kind.starts_statement()
+            !starts_statement(kind)
                 && !matches!(kind, T::RParen | T::RBrace | T::Comma | T::ElseKw | T::FnKw)
                 && binary_op(p, 0).is_none()
         })
@@ -784,7 +785,7 @@ fn prefix_or_atom(p: &mut Marker<'_, '_>, follow: ExprFollow) -> Option<Complete
             let mut m = p.start();
             // Spacing is a complaint about an operand that exists; a missing
             // one is reported as such below.
-            if !m.joint() && m.nth(1).is_some_and(T::starts_expression) {
+            if !m.joint() && m.nth(1).is_some_and(starts_expression) {
                 m.violation(ParseViolationKind::SpacedPrefixOperator, 1);
             }
             m.token();

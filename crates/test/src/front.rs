@@ -2,7 +2,7 @@
 //! the recovery measurements compare across an edit.
 
 use sumi_lexer::{LexedFile, lex};
-use sumi_syntax::{NodeKind, Parse, ParserInput, cook, parse};
+use sumi_syntax::{NodeKind, Parse, ParserInput, parse};
 
 /// Every front-end product for one source.
 pub struct Front {
@@ -13,8 +13,7 @@ pub struct Front {
 
 pub fn front(source: &str) -> Front {
     let lexed = lex(source).expect("test sources fit in u32");
-    let cooked = cook(source, &lexed);
-    let input = ParserInput::new(&cooked);
+    let input = ParserInput::new(&lexed);
     let parse = parse(&input);
     Front {
         lexed,

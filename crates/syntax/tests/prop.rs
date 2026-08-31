@@ -1,5 +1,6 @@
-//! Property tests: cook and ParserInput invariants over generated sources
-//! instead of the hand-written corpus in `cook.rs` and `input.rs`.
+//! Property tests: validation and ParserInput invariants over generated
+//! sources instead of the hand-written corpus in `validate.rs` and
+//! `input.rs`.
 //!
 //! The well-formed program generator and the single-edit machinery live in
 //! `sumi-test`, shared with any harness that measures recovery quality.
@@ -7,9 +8,9 @@
 use std::collections::HashSet;
 
 use proptest::prelude::*;
-use sumi_lexer::{RawKind, lex};
+use sumi_lexer::{LexedFile, RawKind, TokenFlags, lex};
 use sumi_syntax::{
-    NodeKind, ParseAnchor, ParseEvidence, ParserInput, SyntaxKind, SyntaxTree, cook, parse,
+    NodeKind, ParseAnchor, ParseEvidence, ParserInput, SyntaxKind, SyntaxTree, parse, validate,
 };
 use sumi_test::{apply, delimiter_edited_program, front, non_delimiter_edited_program, program};
 
@@ -100,6 +101,17 @@ fn soup() -> impl Strategy<Value = String> {
     proptest::collection::vec(fragment(), 0..64).prop_map(|fragments| fragments.concat())
 }
 
+/// Number-shaped fragments: digit runs, separators, dots, exponent pieces,
+/// and suffixes, glued into the adversarial adjacencies the number scan and
+/// the validator must judge identically.
+fn number_soup() -> impl Strategy<Value = String> {
+    const PIECES: &[&str] = &[
+        "0", "1", "9", "123", "_", "__", ".", "..", "e", "E", "+", "-", "5", "u32", "f", "x", " ",
+    ];
+    proptest::collection::vec(prop::sample::select(PIECES).prop_map(str::to_owned), 1..12)
+        .prop_map(|fragments| fragments.concat())
+}
+
 fn is_trivia(kind: SyntaxKind) -> bool {
     matches!(
         kind,
@@ -109,47 +121,68 @@ fn is_trivia(kind: SyntaxKind) -> bool {
 
 proptest! {
     #[test]
-    fn cook_is_total_and_one_to_one(source in soup()) {
+    fn validate_is_total_and_errors_stay_inside_their_tokens(source in soup()) {
         let lexed = lex(&source).expect("generated sources fit in u32");
-        let cooked = cook(&source, &lexed);
-        prop_assert_eq!(cooked.len(), lexed.len(), "cooking must stay 1:1");
+        let errors = validate(&source, &lexed);
 
-        for error in cooked.errors() {
-            prop_assert!((error.token as usize) < cooked.len());
+        for error in &errors {
+            prop_assert!((error.token as usize) < lexed.len());
             let token = lexed.range(error.token as usize);
             prop_assert!(token.start() <= error.range.start());
             prop_assert!(error.range.end() <= token.end());
             prop_assert!(source.is_char_boundary(error.range.start().to_usize()));
             prop_assert!(source.is_char_boundary(error.range.end().to_usize()));
             // Diagnostic ownership does not overlap: a token the lexer
-            // reported gets no further errors from the cook.
+            // reported gets no further errors from the validator.
             prop_assert!(
                 !lexed.errors().iter().any(|lex_error| lex_error.token == error.token),
-                "token {} has both a lex and a cook error", error.token
+                "token {} has both a lex and a validation error", error.token
             );
         }
 
         // An earlier phase owns diagnostics for `Error` tokens, so every one
-        // must have evidence from the lexer or cooker.
-        for index in 0..cooked.len() {
-            if cooked.kind(index) == SyntaxKind::Error {
+        // must have evidence from the lexer or validator.
+        for index in 0..lexed.len() {
+            if lexed.kind(index) == SyntaxKind::Error {
                 let token = index as u32;
                 prop_assert!(
                     lexed.errors().iter().any(|error| error.token == token)
-                        || cooked.errors().iter().any(|error| error.token == token),
-                    "error token {} has no lex or cook error", token
+                        || errors.iter().any(|error| error.token == token),
+                    "error token {} has no lex or validation error", token
                 );
             }
+        }
+    }
+
+    /// The number munch holds one grammar in two places: the scan flags
+    /// while cache-hot, the validator re-derives the precise errors. The
+    /// flag must predict the errors exactly — and the validator's internal
+    /// debug assertions check both scans classify int/float alike along the
+    /// way.
+    #[test]
+    fn the_number_scan_and_the_validator_agree(source in number_soup()) {
+        let lexed = lex(&source).expect("generated sources fit in u32");
+        let errors = validate(&source, &lexed);
+        for index in 0..lexed.len() {
+            if lexed.raw_kind(index) != RawKind::Number {
+                continue;
+            }
+            let flagged = lexed.flags(index).contains(TokenFlags::MALFORMED_NUMBER);
+            let owed = errors.iter().any(|error| error.token == index as u32);
+            prop_assert_eq!(
+                flagged, owed,
+                "number {:?} flagged={} but owed-errors={}",
+                lexed.text(&source, index), flagged, owed
+            );
         }
     }
 
     #[test]
     fn parser_input_invariants(source in soup()) {
         let lexed = lex(&source).expect("generated sources fit in u32");
-        let cooked = cook(&source, &lexed);
-        let input = ParserInput::new(&cooked);
+        let input = ParserInput::new(&lexed);
 
-        prop_assert!(input.len() <= cooked.len());
+        prop_assert!(input.len() <= lexed.len());
         prop_assert_eq!(input.get(input.len()), None);
 
         let mut previous: Option<usize> = None;
@@ -160,15 +193,15 @@ proptest! {
             if let Some(previous) = previous {
                 prop_assert!(previous < token, "token mappings must strictly increase");
             }
-            prop_assert_eq!(kind, cooked.kind(token), "kinds must come from the cook");
+            prop_assert_eq!(kind, lexed.kind(token), "kinds must come from the scan");
             prop_assert!(!is_trivia(kind), "token {} is trivia", index);
 
             // Everything skipped between kept tokens must be trivia, and the
             // newline fact must match what was skipped.
             let skipped = previous.map_or(0, |previous| previous + 1)..token;
-            let newline = skipped.clone().any(|j| cooked.kind(j) == SyntaxKind::Newline);
+            let newline = skipped.clone().any(|j| lexed.kind(j) == SyntaxKind::Newline);
             for j in skipped {
-                prop_assert!(is_trivia(cooked.kind(j)), "token {} was dropped", j);
+                prop_assert!(is_trivia(lexed.kind(j)), "token {} was dropped", j);
             }
             prop_assert_eq!(input.newline_before(index), newline);
 
@@ -213,8 +246,8 @@ proptest! {
         prop_assert!(open.is_empty(), "every pushed opener must have been closed");
 
         // Nothing significant may be dropped after the last kept token.
-        for j in previous.map_or(0, |previous| previous + 1)..cooked.len() {
-            prop_assert!(is_trivia(cooked.kind(j)), "token {} was dropped", j);
+        for j in previous.map_or(0, |previous| previous + 1)..lexed.len() {
+            prop_assert!(is_trivia(lexed.kind(j)), "token {} was dropped", j);
         }
     }
 
@@ -224,7 +257,7 @@ proptest! {
         let mut widened = String::new();
         for index in 0..lexed.len() {
             widened.push_str(lexed.text(&source, index));
-            if lexed.kind(index) == RawKind::HorizontalSpace {
+            if lexed.raw_kind(index) == RawKind::HorizontalSpace {
                 widened.push(' ');
             }
         }
@@ -235,14 +268,12 @@ proptest! {
         let widened_lexed = lex(&widened).expect("widened sources fit in u32");
         prop_assert_eq!(widened_lexed.len(), lexed.len());
 
-        let cooked = cook(&source, &lexed);
-        let widened_cooked = cook(&widened, &widened_lexed);
-        for index in 0..cooked.len() {
-            prop_assert_eq!(cooked.kind(index), widened_cooked.kind(index));
+        for index in 0..lexed.len() {
+            prop_assert_eq!(lexed.kind(index), widened_lexed.kind(index));
         }
 
-        let input = ParserInput::new(&cooked);
-        let widened_input = ParserInput::new(&widened_cooked);
+        let input = ParserInput::new(&lexed);
+        let widened_input = ParserInput::new(&widened_lexed);
         prop_assert_eq!(input.len(), widened_input.len());
         for index in 0..input.len() {
             prop_assert_eq!(input.token(index), widened_input.token(index));
@@ -261,7 +292,7 @@ proptest! {
     ) {
         let source = format!("f({})", pieces.concat());
         let lexed = lex(&source).expect("generated sources fit in u32");
-        let input = ParserInput::new(&cook(&source, &lexed));
+        let input = ParserInput::new(&lexed);
         // Pieces can form a `//` that hides the wrapping paren's closer;
         // only a `(` the stream closes suspends termination.
         prop_assume!(input.partner(1) == Some(input.len() - 1));
@@ -278,8 +309,8 @@ proptest! {
 /// nodes; children are ordered, disjoint, and inside their parent; every
 /// node but the root covers at least one token and starts and ends on a
 /// significant one; the root covers the whole buffer.
-fn check_tree(tree: &SyntaxTree, cooked: &sumi_syntax::CookedFile) -> Result<(), TestCaseError> {
-    let raw_len = cooked.len() as u32;
+fn check_tree(tree: &SyntaxTree, lexed: &LexedFile) -> Result<(), TestCaseError> {
+    let raw_len = lexed.len() as u32;
     let root = tree.root();
     prop_assert_eq!(tree.kind(root), NodeKind::SourceFile);
     prop_assert_eq!((tree.first_token(root), tree.end_token(root)), (0, raw_len));
@@ -292,12 +323,12 @@ fn check_tree(tree: &SyntaxTree, cooked: &sumi_syntax::CookedFile) -> Result<(),
         if node != root {
             prop_assert!(first < end, "node {} is empty", node);
             prop_assert!(
-                !is_trivia(cooked.kind(first as usize)),
+                !is_trivia(lexed.kind(first as usize)),
                 "node {} starts on trivia",
                 node
             );
             prop_assert!(
-                !is_trivia(cooked.kind(end as usize - 1)),
+                !is_trivia(lexed.kind(end as usize - 1)),
                 "node {} ends on trivia",
                 node
             );
@@ -328,11 +359,10 @@ proptest! {
     #[test]
     fn parse_is_total_and_trees_are_well_formed(source in soup()) {
         let lexed = lex(&source).expect("generated sources fit in u32");
-        let cooked = cook(&source, &lexed);
-        let input = ParserInput::new(&cooked);
+        let input = ParserInput::new(&lexed);
         let parse = parse(&input);
         let tree = parse.tree();
-        check_tree(tree, &cooked)?;
+        check_tree(tree, &lexed)?;
 
         // The tree is lossless: walking its elements reprints the source.
         prop_assert_eq!(&sumi_format::reprint(tree, &lexed, &source), &source);
@@ -356,7 +386,7 @@ proptest! {
         // Present syntax gets nonempty in-bounds raw ranges. Missing syntax
         // gets the exact, possibly empty trivia interval between significant
         // tokens. Recovery effects are nonempty in-bounds ranges too.
-        let raw_len = cooked.len() as u32;
+        let raw_len = lexed.len() as u32;
         for evidence in parse.evidence() {
             let anchor = match evidence {
                 ParseEvidence::Recovery(recovery) => {
@@ -382,13 +412,13 @@ proptest! {
                     prop_assert!(gap.trivia_start() <= gap.trivia_end());
                     prop_assert!(gap.trivia_end() <= raw_len);
                     if gap.trivia_start() > 0 {
-                        prop_assert!(!is_trivia(cooked.kind(gap.trivia_start() as usize - 1)));
+                        prop_assert!(!is_trivia(lexed.kind(gap.trivia_start() as usize - 1)));
                     }
                     for token in gap.trivia_start()..gap.trivia_end() {
-                        prop_assert!(is_trivia(cooked.kind(token as usize)));
+                        prop_assert!(is_trivia(lexed.kind(token as usize)));
                     }
                     if gap.trivia_end() < raw_len {
-                        prop_assert!(!is_trivia(cooked.kind(gap.trivia_end() as usize)));
+                        prop_assert!(!is_trivia(lexed.kind(gap.trivia_end() as usize)));
                     }
                 }
             }
@@ -399,10 +429,10 @@ proptest! {
     fn well_formed_programs_produce_no_parse_evidence(source in program()) {
         let lexed = lex(&source).expect("generated sources fit in u32");
         prop_assert!(lexed.errors().is_empty(), "lexer errors in {:?}", source);
-        let cooked = cook(&source, &lexed);
-        prop_assert!(cooked.errors().is_empty(), "cook errors in {:?}", source);
-        let parse = parse(&ParserInput::new(&cooked));
-        check_tree(parse.tree(), &cooked)?;
+        let errors = validate(&source, &lexed);
+        prop_assert!(errors.is_empty(), "validation errors in {:?}", source);
+        let parse = parse(&ParserInput::new(&lexed));
+        check_tree(parse.tree(), &lexed)?;
         prop_assert!(
             parse.evidence().is_empty(),
             "parse evidence {:?} in {:?}", parse.evidence(), source

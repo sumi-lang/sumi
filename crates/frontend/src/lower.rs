@@ -1,7 +1,7 @@
 use sumi_diagnostics::{Diagnostic, DiagnosticCode, Label, Location, Severity};
 use sumi_lexer::{LexErrorKind, LexedFile};
 use sumi_syntax::{
-    CookedFile, Parse, ParseAnchor, ParseEvidence, ParseExpected, ParseRecovery, ParseRecoveryKind,
+    Parse, ParseAnchor, ParseEvidence, ParseExpected, ParseRecovery, ParseRecoveryKind,
     ParseViolation, ParseViolationKind, RawGap, RawTokenRange, SyntaxError, SyntaxErrorKind,
     SyntaxKind, raw_boundary,
 };
@@ -11,13 +11,13 @@ use crate::codes;
 
 pub(crate) fn diagnostics(
     lexed: &LexedFile,
-    cooked: &CookedFile,
+    errors: &[SyntaxError],
     parse: &Parse,
 ) -> Box<[Diagnostic]> {
     let mut diagnostics = Vec::new();
     lower_lex(lexed, &mut diagnostics);
-    lower_cook(cooked, &mut diagnostics);
-    lower_parse(lexed, cooked, parse, &mut diagnostics);
+    lower_validate(errors, &mut diagnostics);
+    lower_parse(lexed, parse, &mut diagnostics);
 
     // This sort is stable: phase precedence and producer observation order
     // break ties at the same source location.
@@ -64,8 +64,7 @@ fn lower_lex(lexed: &LexedFile, diagnostics: &mut Vec<Diagnostic>) {
     }
 }
 
-fn lower_cook(cooked: &CookedFile, diagnostics: &mut Vec<Diagnostic>) {
-    let errors = cooked.errors();
+fn lower_validate(errors: &[SyntaxError], diagnostics: &mut Vec<Diagnostic>) {
     let mut start = 0;
     while start < errors.len() {
         let token = errors[start].token;
@@ -221,24 +220,19 @@ fn lower_token_errors(errors: &[SyntaxError], diagnostics: &mut Vec<Diagnostic>)
     diagnostics.extend(emitted.into_iter().map(|(_, diagnostic)| diagnostic));
 }
 
-fn lower_parse(
-    lexed: &LexedFile,
-    cooked: &CookedFile,
-    parse: &Parse,
-    diagnostics: &mut Vec<Diagnostic>,
-) {
+fn lower_parse(lexed: &LexedFile, parse: &Parse, diagnostics: &mut Vec<Diagnostic>) {
     for evidence in parse.evidence() {
         match evidence {
             ParseEvidence::Recovery(recovery) => {
                 if recovery.kind == ParseRecoveryKind::PriorPhaseError
-                    || anchor_has_error(recovery.anchor, cooked)
+                    || anchor_has_error(recovery.anchor, lexed)
                 {
                     continue;
                 }
                 diagnostics.push(lower_recovery(recovery, lexed));
             }
             ParseEvidence::Violation(violation) => {
-                if !tokens_have_error(violation.range, cooked) {
+                if !tokens_have_error(violation.range, lexed) {
                     diagnostics.push(lower_violation(*violation, lexed));
                 }
             }
@@ -402,18 +396,18 @@ fn lower_raw_range(range: RawTokenRange, lexed: &LexedFile) -> TextRange {
     )
 }
 
-fn anchor_has_error(anchor: ParseAnchor, cooked: &CookedFile) -> bool {
+fn anchor_has_error(anchor: ParseAnchor, lexed: &LexedFile) -> bool {
     match anchor {
-        ParseAnchor::Gap(gap) => gap_before_error(gap, cooked),
-        ParseAnchor::Tokens(range) => tokens_have_error(range, cooked),
+        ParseAnchor::Gap(gap) => gap_before_error(gap, lexed),
+        ParseAnchor::Tokens(range) => tokens_have_error(range, lexed),
     }
 }
 
-fn gap_before_error(gap: RawGap, cooked: &CookedFile) -> bool {
-    (gap.trivia_end() as usize) < cooked.len()
-        && cooked.kind(gap.trivia_end() as usize) == SyntaxKind::Error
+fn gap_before_error(gap: RawGap, lexed: &LexedFile) -> bool {
+    (gap.trivia_end() as usize) < lexed.len()
+        && lexed.kind(gap.trivia_end() as usize) == SyntaxKind::Error
 }
 
-fn tokens_have_error(range: RawTokenRange, cooked: &CookedFile) -> bool {
-    (range.start()..range.end()).any(|raw| cooked.kind(raw as usize) == SyntaxKind::Error)
+fn tokens_have_error(range: RawTokenRange, lexed: &LexedFile) -> bool {
+    (range.start()..range.end()).any(|raw| lexed.kind(raw as usize) == SyntaxKind::Error)
 }

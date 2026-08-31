@@ -10,8 +10,8 @@
 
 use sumi_lexer::{LexedFile, lex};
 use sumi_syntax::{
-    CookedFile, Parse, ParseEvidence, ParseViolationKind, ParserInput, SyntaxKind, SyntaxTree,
-    cook, parse, raw_boundary,
+    Parse, ParseEvidence, ParseViolationKind, ParserInput, SyntaxKind, SyntaxTree, parse,
+    raw_boundary, starts_expression,
 };
 
 /// One element of a node: a raw token attached directly to it, or a child
@@ -85,7 +85,7 @@ fn reprint_node(tree: &SyntaxTree, lexed: &LexedFile, source: &str, node: usize,
 /// damage, what the parser makes of a line can turn on where the line
 /// breaks — a moved operator or brace may hand recovery a different
 /// reading — and no local check on the tokens settles it.
-pub fn normalize(source: &str, lexed: &LexedFile, cooked: &CookedFile, parsed: &Parse) -> String {
+pub fn normalize(source: &str, lexed: &LexedFile, parsed: &Parse) -> String {
     let mut edits = Vec::new();
     for evidence in parsed.evidence() {
         let ParseEvidence::Violation(violation) = evidence else {
@@ -97,7 +97,7 @@ pub fn normalize(source: &str, lexed: &LexedFile, cooked: &CookedFile, parsed: &
             // included — follows it instead.
             ParseViolationKind::BlockOnNewLine => {
                 let owner =
-                    prev_significant(cooked, start).expect("a misplaced block follows its owner");
+                    prev_significant(lexed, start).expect("a misplaced block follows its owner");
                 edits.push(Edit::insert(token_end(lexed, owner), " {"));
                 edits.push(Edit::delete(
                     token_start(lexed, start),
@@ -106,10 +106,10 @@ pub fn normalize(source: &str, lexed: &LexedFile, cooked: &CookedFile, parsed: &
             }
             // Space the operator on each side another token is glued to.
             ParseViolationKind::UnspacedBinaryOperator => {
-                if start > 0 && significant(cooked, start - 1) {
+                if start > 0 && significant(lexed, start - 1) {
                     edits.push(Edit::insert(token_start(lexed, start), " "));
                 }
-                if (end as usize) < cooked.len() && significant(cooked, end) {
+                if (end as usize) < lexed.len() && significant(lexed, end) {
                     edits.push(Edit::insert(token_start(lexed, end), " "));
                 }
             }
@@ -119,8 +119,8 @@ pub fn normalize(source: &str, lexed: &LexedFile, cooked: &CookedFile, parsed: &
             // operator moved in front of its own operand leaves the parse
             // unchanged, and anything else stays as written.
             ParseViolationKind::TrailingOperator => {
-                let operand = next_significant(cooked, end)
-                    .filter(|&raw| cooked.kind(raw as usize).starts_expression());
+                let operand = next_significant(lexed, end)
+                    .filter(|&raw| starts_expression(lexed.kind(raw as usize)));
                 if let Some(operand) = operand {
                     let (op_start, op_end) = (token_start(lexed, start), token_end(lexed, end - 1));
                     edits.push(Edit::delete(op_start, op_end));
@@ -133,10 +133,10 @@ pub fn normalize(source: &str, lexed: &LexedFile, cooked: &CookedFile, parsed: &
             // Glue the operator to its operand — unless a comment sits in
             // the gap, which no layout edit may delete.
             ParseViolationKind::SpacedPrefixOperator => {
-                let operand = next_significant(cooked, start + 1)
+                let operand = next_significant(lexed, start + 1)
                     .expect("a spaced prefix operator has an operand");
                 if (start + 1..operand)
-                    .all(|raw| cooked.kind(raw as usize) != SyntaxKind::LineComment)
+                    .all(|raw| lexed.kind(raw as usize) != SyntaxKind::LineComment)
                 {
                     edits.push(Edit::delete(
                         token_end(lexed, start),
@@ -165,7 +165,7 @@ fn reparses_alike(candidate: &str, tree: &SyntaxTree) -> bool {
     let Ok(lexed) = lex(candidate) else {
         return false;
     };
-    let reparse = parse(&ParserInput::new(&cook(candidate, &lexed)));
+    let reparse = parse(&ParserInput::new(&lexed));
     let after = reparse.tree();
     after.len() == tree.len()
         && (0..tree.len()).all(|node| after.kind(node) == tree.kind(node))
@@ -213,21 +213,21 @@ fn apply(source: &str, mut edits: Vec<Edit>) -> String {
     out
 }
 
-fn significant(cooked: &CookedFile, raw: u32) -> bool {
+fn significant(lexed: &LexedFile, raw: u32) -> bool {
     !matches!(
-        cooked.kind(raw as usize),
+        lexed.kind(raw as usize),
         SyntaxKind::Whitespace | SyntaxKind::Newline | SyntaxKind::LineComment
     )
 }
 
 /// The nearest significant token before `raw`.
-fn prev_significant(cooked: &CookedFile, raw: u32) -> Option<u32> {
-    (0..raw).rev().find(|&raw| significant(cooked, raw))
+fn prev_significant(lexed: &LexedFile, raw: u32) -> Option<u32> {
+    (0..raw).rev().find(|&raw| significant(lexed, raw))
 }
 
 /// The nearest significant token at or after `raw`.
-fn next_significant(cooked: &CookedFile, raw: u32) -> Option<u32> {
-    (raw..cooked.len() as u32).find(|&raw| significant(cooked, raw))
+fn next_significant(lexed: &LexedFile, raw: u32) -> Option<u32> {
+    (raw..lexed.len() as u32).find(|&raw| significant(lexed, raw))
 }
 
 fn token_start(lexed: &LexedFile, raw: u32) -> usize {

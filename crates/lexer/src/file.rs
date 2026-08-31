@@ -3,6 +3,7 @@ use std::fmt;
 
 use sumi_text::{TextRange, TextSize};
 
+use crate::kind::SyntaxKind;
 use crate::lexer::Lexer;
 use crate::token::{RawKind, RawToken, TokenFlags};
 
@@ -37,6 +38,7 @@ pub fn lex(source: &str) -> Result<LexedFile, SourceTooLarge> {
         tokens.push(StoredToken {
             start: TextSize::new(start),
             kind: token.kind,
+            raw: token.raw,
             flags: token.flags,
         });
     }
@@ -52,7 +54,7 @@ pub fn lex(source: &str) -> Result<LexedFile, SourceTooLarge> {
 
 fn lex_error(token: &RawToken, text: &str) -> Option<LexErrorKind> {
     let unterminated = token.flags.contains(TokenFlags::UNTERMINATED);
-    match token.kind {
+    match token.raw {
         RawKind::String if unterminated => Some(LexErrorKind::UnterminatedString),
         RawKind::RawString if unterminated => Some(LexErrorKind::UnterminatedRawString),
         RawKind::Char if unterminated => Some(LexErrorKind::UnterminatedChar),
@@ -65,7 +67,7 @@ fn lex_error(token: &RawToken, text: &str) -> Option<LexErrorKind> {
     }
 }
 
-/// The raw token buffer for one source file.
+/// The token buffer for one source file.
 ///
 /// Tokens exactly partition the source: the first starts at zero, each ends
 /// where the next begins, and the last ends at
@@ -79,7 +81,7 @@ pub struct LexedFile {
 }
 
 impl LexedFile {
-    /// The number of raw tokens.
+    /// The number of tokens.
     pub fn len(&self) -> usize {
         self.tokens.len()
     }
@@ -93,8 +95,21 @@ impl LexedFile {
         self.source_len
     }
 
-    pub fn kind(&self, index: usize) -> RawKind {
+    /// The language-level kind of the token, assigned during the scan.
+    pub fn kind(&self, index: usize) -> SyntaxKind {
         self.tokens[index].kind
+    }
+
+    /// Every token's language-level kind, in order: the stream a
+    /// whole-file pass reads without per-index bounds checks.
+    pub fn kinds(&self) -> impl ExactSizeIterator<Item = SyntaxKind> + Clone + '_ {
+        self.tokens.iter().map(|token| token.kind)
+    }
+
+    /// The shape-only kind of the token, for phases that reason about
+    /// lexical shape rather than language meaning.
+    pub fn raw_kind(&self, index: usize) -> RawKind {
+        self.tokens[index].raw
     }
 
     pub fn flags(&self, index: usize) -> TokenFlags {
@@ -150,9 +165,12 @@ impl LexedFile {
 #[derive(Clone, Copy, Debug)]
 struct StoredToken {
     start: TextSize,
-    kind: RawKind,
+    kind: SyntaxKind,
+    raw: RawKind,
     flags: TokenFlags,
 }
+
+const _: () = assert!(size_of::<StoredToken>() == 8, "tokens stay eight bytes");
 
 /// A context-free lexical error, attached to the token that produced it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
