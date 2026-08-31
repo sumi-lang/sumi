@@ -1,6 +1,5 @@
 //! Language-level classification, assigned during the scan: keywords,
-//! punctuation roles, literal kinds, and trivia. Validation of literal
-//! *content* lives one phase up, in the literal validator.
+//! punctuation roles, literal kinds, and trivia.
 
 use sumi_lexer::lex;
 
@@ -127,8 +126,8 @@ fn punctuation_classifies_per_character() {
 
 #[test]
 fn unused_punctuation_classifies_to_error() {
-    // The validator reports these, where every later phase can treat an
-    // `Error` token as already diagnosed.
+    // Collection reports these, so every later phase can treat an `Error`
+    // token as already diagnosed.
     check(";", &[r#"Error 0..1 ";""#]);
     check("[", &[r#"Error 0..1 "[""#]);
 }

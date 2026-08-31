@@ -2,7 +2,7 @@
 //! instead of the hand-written corpus in `lex.rs`.
 
 use proptest::prelude::*;
-use sumi_lexer::{RawKind, lex};
+use sumi_lexer::{RawKind, SyntaxKind, TokenFlags, lex};
 
 /// Fragments that each lex to exactly one token on their own, stay
 /// terminated, and do not absorb a following space-separated fragment.
@@ -114,6 +114,14 @@ fn soup() -> impl Strategy<Value = String> {
     proptest::collection::vec(fragment(), 0..64).prop_map(|fragments| fragments.concat())
 }
 
+fn number_soup() -> impl Strategy<Value = String> {
+    const PIECES: &[&str] = &[
+        "0", "1", "9", "123", "_", "__", ".", "..", "e", "E", "+", "-", "5", "u32", "f", "x", " ",
+    ];
+    proptest::collection::vec(prop::sample::select(PIECES).prop_map(str::to_owned), 1..12)
+        .prop_map(|fragments| fragments.concat())
+}
+
 proptest! {
     #[test]
     fn lex_is_total_and_partitions(source in soup()) {
@@ -144,6 +152,37 @@ proptest! {
         }
         for error in file.errors() {
             prop_assert!((error.token as usize) < file.len());
+            let token = file.range(error.token as usize);
+            prop_assert!(token.start() <= error.range.start());
+            prop_assert!(error.range.end() <= token.end());
+            prop_assert!(source.is_char_boundary(error.range.start().to_usize()));
+            prop_assert!(source.is_char_boundary(error.range.end().to_usize()));
+        }
+
+        for index in 0..file.len() {
+            if file.kind(index) == SyntaxKind::Error {
+                prop_assert!(
+                    file.errors().iter().any(|error| error.token == index as u32),
+                    "error token {} has no lexical error", index
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_number_scan_and_validation_agree(source in number_soup()) {
+        let file = lex(&source).expect("generated sources fit in u32");
+        for index in 0..file.len() {
+            if file.raw_kind(index) != RawKind::Number {
+                continue;
+            }
+            let flagged = file.flags(index).contains(TokenFlags::MALFORMED_NUMBER);
+            let has_error = file.errors().iter().any(|error| error.token == index as u32);
+            prop_assert_eq!(
+                flagged, has_error,
+                "number {:?} flagged={} but has-error={}",
+                file.text(&source, index), flagged, has_error
+            );
         }
     }
 

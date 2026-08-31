@@ -1,22 +1,16 @@
 use sumi_diagnostics::{Diagnostic, DiagnosticCode, Label, Location, Severity};
-use sumi_lexer::{LexErrorKind, LexedFile};
+use sumi_lexer::{LexError, LexErrorKind, LexedFile};
 use sumi_syntax::{
     Parse, ParseAnchor, ParseEvidence, ParseExpected, ParseRecovery, ParseRecoveryKind,
-    ParseViolation, ParseViolationKind, RawGap, RawTokenRange, SyntaxError, SyntaxErrorKind,
-    SyntaxKind, raw_boundary,
+    ParseViolation, ParseViolationKind, RawGap, RawTokenRange, SyntaxKind, raw_boundary,
 };
 use sumi_text::TextRange;
 
 use crate::codes;
 
-pub(crate) fn diagnostics(
-    lexed: &LexedFile,
-    errors: &[SyntaxError],
-    parse: &Parse,
-) -> Box<[Diagnostic]> {
+pub(crate) fn diagnostics(lexed: &LexedFile, parse: &Parse) -> Box<[Diagnostic]> {
     let mut diagnostics = Vec::new();
-    lower_lex(lexed, &mut diagnostics);
-    lower_validate(errors, &mut diagnostics);
+    lower_lex(lexed.errors(), &mut diagnostics);
     lower_parse(lexed, parse, &mut diagnostics);
 
     // This sort is stable: phase precedence and producer observation order
@@ -30,41 +24,7 @@ pub(crate) fn diagnostics(
     diagnostics.into_boxed_slice()
 }
 
-fn lower_lex(lexed: &LexedFile, diagnostics: &mut Vec<Diagnostic>) {
-    for error in lexed.errors() {
-        let (code, message) = match error.kind {
-            LexErrorKind::UnterminatedString => {
-                (codes::UNTERMINATED_STRING, "unterminated string literal")
-            }
-            LexErrorKind::UnterminatedRawString => (
-                codes::UNTERMINATED_RAW_STRING,
-                "unterminated raw string literal",
-            ),
-            LexErrorKind::UnterminatedChar => {
-                (codes::UNTERMINATED_CHAR, "unterminated character literal")
-            }
-            LexErrorKind::LoneCarriageReturn => (
-                codes::LONE_CARRIAGE_RETURN,
-                "carriage return must be followed by a line feed",
-            ),
-            LexErrorKind::MisplacedBom => (
-                codes::MISPLACED_BOM,
-                "byte-order mark is only allowed at the start of a file",
-            ),
-            LexErrorKind::UnknownCharacter => (
-                codes::UNKNOWN_CHARACTER,
-                "character has no meaning in Sumi source",
-            ),
-        };
-        diagnostics.push(primary(
-            code,
-            message,
-            Location::Range(lexed.range(error.token as usize)),
-        ));
-    }
-}
-
-fn lower_validate(errors: &[SyntaxError], diagnostics: &mut Vec<Diagnostic>) {
+fn lower_lex(errors: &[LexError], diagnostics: &mut Vec<Diagnostic>) {
     let mut start = 0;
     while start < errors.len() {
         let token = errors[start].token;
@@ -83,38 +43,86 @@ struct NumberFact {
     message: &'static str,
 }
 
-fn lower_token_errors(errors: &[SyntaxError], diagnostics: &mut Vec<Diagnostic>) {
+fn lower_token_errors(errors: &[LexError], diagnostics: &mut Vec<Diagnostic>) {
     let mut emitted = Vec::new();
     let mut number_facts = Vec::new();
 
     for (order, error) in errors.iter().enumerate() {
         match error.kind {
-            SyntaxErrorKind::LeadingZero => number_facts.push(NumberFact {
+            LexErrorKind::UnterminatedString => emitted.push((
+                order,
+                primary(
+                    codes::UNTERMINATED_STRING,
+                    "unterminated string literal",
+                    Location::Range(error.range),
+                ),
+            )),
+            LexErrorKind::UnterminatedRawString => emitted.push((
+                order,
+                primary(
+                    codes::UNTERMINATED_RAW_STRING,
+                    "unterminated raw string literal",
+                    Location::Range(error.range),
+                ),
+            )),
+            LexErrorKind::UnterminatedChar => emitted.push((
+                order,
+                primary(
+                    codes::UNTERMINATED_CHAR,
+                    "unterminated character literal",
+                    Location::Range(error.range),
+                ),
+            )),
+            LexErrorKind::LoneCarriageReturn => emitted.push((
+                order,
+                primary(
+                    codes::LONE_CARRIAGE_RETURN,
+                    "carriage return must be followed by a line feed",
+                    Location::Range(error.range),
+                ),
+            )),
+            LexErrorKind::MisplacedBom => emitted.push((
+                order,
+                primary(
+                    codes::MISPLACED_BOM,
+                    "byte-order mark is only allowed at the start of a file",
+                    Location::Range(error.range),
+                ),
+            )),
+            LexErrorKind::UnknownCharacter => emitted.push((
+                order,
+                primary(
+                    codes::UNKNOWN_CHARACTER,
+                    "character has no meaning in Sumi source",
+                    Location::Range(error.range),
+                ),
+            )),
+            LexErrorKind::LeadingZero => number_facts.push(NumberFact {
                 order,
                 range: error.range,
                 message: "integer part has leading zeros",
             }),
-            SyntaxErrorKind::MisplacedUnderscore => number_facts.push(NumberFact {
+            LexErrorKind::MisplacedUnderscore => number_facts.push(NumberFact {
                 order,
                 range: error.range,
                 message: "underscore must be between two digits",
             }),
-            SyntaxErrorKind::UppercaseExponent => number_facts.push(NumberFact {
+            LexErrorKind::UppercaseExponent => number_facts.push(NumberFact {
                 order,
                 range: error.range,
                 message: "exponent marker must be lowercase `e`",
             }),
-            SyntaxErrorKind::ExponentPlusSign => number_facts.push(NumberFact {
+            LexErrorKind::ExponentPlusSign => number_facts.push(NumberFact {
                 order,
                 range: error.range,
                 message: "`+` is not allowed in an exponent",
             }),
-            SyntaxErrorKind::ExponentLeadingZero => number_facts.push(NumberFact {
+            LexErrorKind::ExponentLeadingZero => number_facts.push(NumberFact {
                 order,
                 range: error.range,
                 message: "exponent has leading zeros",
             }),
-            SyntaxErrorKind::UnknownSuffix => emitted.push((
+            LexErrorKind::UnknownSuffix => emitted.push((
                 order,
                 primary(
                     codes::UNKNOWN_SUFFIX,
@@ -122,7 +130,7 @@ fn lower_token_errors(errors: &[SyntaxError], diagnostics: &mut Vec<Diagnostic>)
                     Location::Range(error.range),
                 ),
             )),
-            SyntaxErrorKind::MissingExponent => emitted.push((
+            LexErrorKind::MissingExponent => emitted.push((
                 order,
                 primary(
                     codes::MISSING_EXPONENT,
@@ -130,7 +138,7 @@ fn lower_token_errors(errors: &[SyntaxError], diagnostics: &mut Vec<Diagnostic>)
                     Location::Range(error.range),
                 ),
             )),
-            SyntaxErrorKind::UnknownEscape => emitted.push((
+            LexErrorKind::UnknownEscape => emitted.push((
                 order,
                 primary(
                     codes::UNKNOWN_ESCAPE,
@@ -138,7 +146,7 @@ fn lower_token_errors(errors: &[SyntaxError], diagnostics: &mut Vec<Diagnostic>)
                     Location::Range(error.range),
                 ),
             )),
-            SyntaxErrorKind::MalformedUnicodeEscape => emitted.push((
+            LexErrorKind::MalformedUnicodeEscape => emitted.push((
                 order,
                 primary(
                     codes::MALFORMED_UNICODE_ESCAPE,
@@ -146,7 +154,7 @@ fn lower_token_errors(errors: &[SyntaxError], diagnostics: &mut Vec<Diagnostic>)
                     Location::Range(error.range),
                 ),
             )),
-            SyntaxErrorKind::InvalidUnicodeScalar => emitted.push((
+            LexErrorKind::InvalidUnicodeScalar => emitted.push((
                 order,
                 primary(
                     codes::INVALID_UNICODE_SCALAR,
@@ -154,7 +162,7 @@ fn lower_token_errors(errors: &[SyntaxError], diagnostics: &mut Vec<Diagnostic>)
                     Location::Range(error.range),
                 ),
             )),
-            SyntaxErrorKind::EmptyCharLiteral => emitted.push((
+            LexErrorKind::EmptyCharLiteral => emitted.push((
                 order,
                 primary(
                     codes::EMPTY_CHAR_LITERAL,
@@ -162,7 +170,7 @@ fn lower_token_errors(errors: &[SyntaxError], diagnostics: &mut Vec<Diagnostic>)
                     Location::Range(error.range),
                 ),
             )),
-            SyntaxErrorKind::MoreThanOneChar => emitted.push((
+            LexErrorKind::MoreThanOneChar => emitted.push((
                 order,
                 primary(
                     codes::MORE_THAN_ONE_CHAR,
@@ -170,7 +178,7 @@ fn lower_token_errors(errors: &[SyntaxError], diagnostics: &mut Vec<Diagnostic>)
                     Location::Range(error.range),
                 ),
             )),
-            SyntaxErrorKind::UnknownPunctuation => emitted.push((
+            LexErrorKind::UnknownPunctuation => emitted.push((
                 order,
                 primary(
                     codes::UNKNOWN_PUNCTUATION,

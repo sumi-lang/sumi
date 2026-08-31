@@ -1114,7 +1114,7 @@ fn unclosed_delimiters() {
 
 #[test]
 fn malformed_literals_are_structurally_ordinary() {
-    // `1e` carries a validation error; misplacing it is a second,
+    // `1e` carries a lexer error; misplacing it is a second,
     // independent problem, so the parser still reports it.
     check(
         "1e",

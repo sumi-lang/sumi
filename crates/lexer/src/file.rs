@@ -1,11 +1,13 @@
 use std::error::Error;
 use std::fmt;
+use std::ops::Range;
 
 use sumi_text::{TextRange, TextSize};
 
 use crate::kind::SyntaxKind;
 use crate::lexer::Lexer;
-use crate::token::{RawKind, TokenFlags};
+use crate::literal;
+use crate::token::{RawKind, RawToken, TokenFlags};
 
 /// Lex `source` into a [`LexedFile`].
 ///
@@ -27,25 +29,29 @@ pub fn lex(source: &str) -> Result<LexedFile, SourceTooLarge> {
         let start = position;
         position += token.len.to_u32();
 
-        let unterminated = token.flags.contains(TokenFlags::UNTERMINATED);
-        let error = match token.raw {
-            RawKind::String if unterminated => Some(LexErrorKind::UnterminatedString),
-            RawKind::RawString if unterminated => Some(LexErrorKind::UnterminatedRawString),
-            RawKind::Char if unterminated => Some(LexErrorKind::UnterminatedChar),
-            RawKind::Newline if token.flags.contains(TokenFlags::LONE_CR) => {
-                Some(LexErrorKind::LoneCarriageReturn)
+        let needs_errors = match token.raw {
+            RawKind::Number => {
+                token.flags.contains(TokenFlags::MALFORMED_NUMBER) || cfg!(debug_assertions)
             }
-            RawKind::Unknown if &source[start as usize..position as usize] == "\u{feff}" => {
-                Some(LexErrorKind::MisplacedBom)
+            RawKind::String => {
+                token.flags.contains(TokenFlags::UNTERMINATED)
+                    || token.flags.contains(TokenFlags::HAS_ESCAPE)
             }
-            RawKind::Unknown => Some(LexErrorKind::UnknownCharacter),
-            _ => None,
+            RawKind::RawString => token.flags.contains(TokenFlags::UNTERMINATED),
+            RawKind::Char | RawKind::Unknown => true,
+            RawKind::Newline => token.flags.contains(TokenFlags::LONE_CR),
+            RawKind::Punct => token.kind == SyntaxKind::Error,
+            _ => false,
         };
-        if let Some(kind) = error {
-            errors.push(LexError {
-                token: tokens.len() as u32,
-                kind,
-            });
+        if needs_errors {
+            let text = &source[start as usize..position as usize];
+            collect_errors(
+                &token,
+                text,
+                tokens.len() as u32,
+                TextSize::new(start),
+                &mut errors,
+            );
         }
 
         tokens.push(StoredToken {
@@ -63,6 +69,74 @@ pub fn lex(source: &str) -> Result<LexedFile, SourceTooLarge> {
         tokens: tokens.into_boxed_slice(),
         errors: errors.into_boxed_slice(),
     })
+}
+
+fn collect_errors(
+    token: &RawToken,
+    text: &str,
+    index: u32,
+    start: TextSize,
+    errors: &mut Vec<LexError>,
+) {
+    let unterminated = token.flags.contains(TokenFlags::UNTERMINATED);
+    let primary = match token.raw {
+        RawKind::String if unterminated => Some(LexErrorKind::UnterminatedString),
+        RawKind::RawString if unterminated => Some(LexErrorKind::UnterminatedRawString),
+        RawKind::Char if unterminated => Some(LexErrorKind::UnterminatedChar),
+        RawKind::Newline if token.flags.contains(TokenFlags::LONE_CR) => {
+            Some(LexErrorKind::LoneCarriageReturn)
+        }
+        RawKind::Unknown if text == "\u{feff}" => Some(LexErrorKind::MisplacedBom),
+        RawKind::Unknown => Some(LexErrorKind::UnknownCharacter),
+        _ => None,
+    };
+    if let Some(kind) = primary {
+        errors.push(LexError {
+            token: index,
+            range: absolute_range(start, text.len(), 0..text.len()),
+            kind,
+        });
+        return;
+    }
+
+    let mut error = |relative, kind| {
+        errors.push(LexError {
+            token: index,
+            range: absolute_range(start, text.len(), relative),
+            kind,
+        });
+    };
+    match token.kind {
+        SyntaxKind::IntLiteral | SyntaxKind::FloatLiteral => {
+            if token.flags.contains(TokenFlags::MALFORMED_NUMBER) {
+                let derived = literal::number_errors(text, &mut error);
+                debug_assert_eq!(derived, token.kind, "the lexer passes must agree");
+            } else if cfg!(debug_assertions) {
+                let mut faults = 0usize;
+                let derived = literal::number_errors(text, &mut |_, _| faults += 1);
+                debug_assert_eq!(faults, 0, "an unflagged number must be canonical");
+                debug_assert_eq!(derived, token.kind, "the lexer passes must agree");
+            }
+        }
+        SyntaxKind::StringLiteral if token.flags.contains(TokenFlags::HAS_ESCAPE) => {
+            literal::validate_string(text, &mut error);
+        }
+        SyntaxKind::CharLiteral => literal::validate_char(text, &mut error),
+        SyntaxKind::Error if token.raw == RawKind::Punct => {
+            error(0..1, LexErrorKind::UnknownPunctuation);
+        }
+        _ => {}
+    }
+}
+
+fn absolute_range(start: TextSize, token_len: usize, relative: Range<usize>) -> TextRange {
+    assert!(relative.start <= relative.end && relative.end <= token_len);
+    let relative_start = u32::try_from(relative.start).expect("token offset fits in u32");
+    let relative_end = u32::try_from(relative.end).expect("token offset fits in u32");
+    TextRange::new(
+        TextSize::new(start.to_u32() + relative_start),
+        TextSize::new(start.to_u32() + relative_end),
+    )
 }
 
 /// The token buffer for one source file.
@@ -170,11 +244,14 @@ struct StoredToken {
 
 const _: () = assert!(size_of::<StoredToken>() == 8, "tokens stay eight bytes");
 
-/// A context-free lexical error, attached to the token that produced it.
+/// A context-free token error, attached to the token that produced it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct LexError {
     /// Index of the offending token in the [`LexedFile`].
     pub token: u32,
+    /// The relevant file-local UTF-8 byte range, contained within `token` and
+    /// ending on character boundaries. May be empty when content is missing.
+    pub range: TextRange,
     pub kind: LexErrorKind,
 }
 
@@ -189,6 +266,33 @@ pub enum LexErrorKind {
     MisplacedBom,
     /// A character with no lexical meaning in the language.
     UnknownCharacter,
+    /// A numeric literal carries trailing characters; Sumi has no literal
+    /// suffixes.
+    UnknownSuffix,
+    /// An `e` with no exponent digits after it, as in `1e` or `2.5e`.
+    MissingExponent,
+    /// An uppercase exponent marker, as in `1E5`; exponents are lowercase.
+    UppercaseExponent,
+    /// A redundant `+` sign in an exponent, as in `1e+5`.
+    ExponentPlusSign,
+    /// A zero-padded exponent, as in `1e05`.
+    ExponentLeadingZero,
+    /// A leading zero in an integer literal, as in `0123`.
+    LeadingZero,
+    /// A digit-separator underscore without digits on both sides, as in `1_`.
+    MisplacedUnderscore,
+    /// A `\` escape outside the supported set.
+    UnknownEscape,
+    /// A `\u` escape without a well-formed `{1-6 hex digits}` payload.
+    MalformedUnicodeEscape,
+    /// A `\u` escape naming a surrogate or a value beyond U+10FFFF.
+    InvalidUnicodeScalar,
+    /// A character literal with nothing in it: `''`.
+    EmptyCharLiteral,
+    /// A character literal containing more than one character.
+    MoreThanOneChar,
+    /// Punctuation with no role in the language, such as `;` or `[`.
+    UnknownPunctuation,
 }
 
 /// `source.len()` exceeds the `u32` coordinate space of [`TextSize`].
