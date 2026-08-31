@@ -41,7 +41,7 @@
 //! how a Pratt parser wraps an already-parsed left operand into a binary
 //! expression.
 
-use crate::input::ParserInput;
+use crate::input::{ParserInput, Slot};
 use crate::kind::{NodeKind, SyntaxKind};
 use crate::parser::{
     ParseAnchor, ParseEvidence, ParseExpected, ParseRecovery, ParseRecoveryKind, ParseViolation,
@@ -141,7 +141,7 @@ impl Parse {
             input,
             nodes: Vec::new(),
             position: 0,
-            kinds: input.kinds(),
+            slots: input.slots(),
             opened: 1,
             recoveries: 0,
             last_recovery_evidence: None,
@@ -204,12 +204,12 @@ struct Builder<'a> {
     nodes: Vec<Node>,
     /// The next significant token to attach.
     position: usize,
-    /// The kinds up to the input horizon: lookahead reads this prefix of
-    /// the input's kinds, so nothing can be seen or consumed at or past
+    /// The slots up to the input horizon: lookahead reads this prefix of
+    /// the input's slots, so nothing can be seen or consumed at or past
     /// its end. `source_file` moves the horizon from one item start to the
     /// next, which makes recovery inside an item unable to take another
     /// item's tokens — there is no rule to get wrong.
-    kinds: &'a [SyntaxKind],
+    slots: &'a [Slot],
     /// Nodes opened so far, numbering the next one; the root is 0.
     opened: u32,
     /// Structural recovery facts recorded while building the tree.
@@ -356,7 +356,7 @@ impl<'a> Marker<'_, 'a> {
     /// Attach the next significant token to this node.
     pub fn token(&mut self) {
         assert!(
-            self.builder.position < self.builder.kinds.len(),
+            self.builder.position < self.builder.slots.len(),
             "token past the input horizon"
         );
         self.builder.position += 1;
@@ -479,7 +479,7 @@ impl<'a> Marker<'_, 'a> {
     /// or past the input horizon.
     pub(crate) fn nth(&self, n: usize) -> Option<SyntaxKind> {
         let index = self.builder.position.checked_add(n)?;
-        self.builder.kinds.get(index).copied()
+        self.builder.slots.get(index).map(|slot| slot.kind)
     }
 
     pub(crate) fn at(&self, kind: SyntaxKind) -> bool {
@@ -661,7 +661,7 @@ impl<'a> Marker<'_, 'a> {
     /// input.
     pub(crate) fn set_limit(&mut self, limit: usize) {
         debug_assert!(self.builder.position <= limit);
-        self.builder.kinds = &self.builder.input.kinds()[..limit];
+        self.builder.slots = &self.builder.input.slots()[..limit];
     }
 
     /// Attach the next token if it is `kind` and no statement boundary

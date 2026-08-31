@@ -55,22 +55,30 @@ const JOINT: u8 = 1 << 0;
 const NEWLINE_BEFORE: u8 = 1 << 1;
 const BOUNDARY_BEFORE: u8 = 1 << 2;
 
+/// One significant token's stream facts, packed so the kind, flags, raw
+/// index, and partner the parser reads at one cursor position share a cache
+/// line instead of four allocations.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Slot {
+    pub(crate) kind: SyntaxKind,
+    flags: u8,
+    /// The token's index in the underlying token buffer.
+    token: u32,
+    /// The index of the bracket matching this one plus one, so the field
+    /// has a niche; `None` for anything that is not a matched bracket.
+    partner: Option<NonZeroU32>,
+}
+
 /// The significant tokens of one cooked file, with jointness and statement
 /// boundaries precomputed.
 #[derive(Clone, Debug)]
 pub struct ParserInput {
-    kinds: Box<[SyntaxKind]>,
-    /// For each significant token, its index in the underlying token buffer.
-    tokens: Box<[u32]>,
-    flags: Box<[u8]>,
+    slots: Box<[Slot]>,
     /// Prefix sums of the boundary bits: entry `index` counts the statement
     /// boundaries before tokens `0..index`, so any-boundary-in-range is two
     /// lookups however long the range.
     boundaries: Box<[u32]>,
-    /// For each significant token, the index of its matching bracket plus
-    /// one, so the slot has a niche; `None` for anything that is not a
-    /// matched bracket.
-    partners: Box<[Option<NonZeroU32>]>,
     /// The significant indices where top-level items start, in order.
     items: Box<[u32]>,
     /// The length of the underlying token buffer.
@@ -79,13 +87,24 @@ pub struct ParserInput {
 
 impl ParserInput {
     pub fn new(cooked: &CookedFile) -> Self {
-        let mut kinds: Vec<SyntaxKind> = Vec::new();
-        let mut tokens: Vec<u32> = Vec::new();
-        let mut flags: Vec<u8> = Vec::new();
+        // Sized exactly and filled once: counting the significant tokens
+        // first is one cheap scan, and spares both the doubling
+        // reallocations of a growing vector and a final shrink.
+        let kinds = cooked.kinds();
+        let significant = kinds.iter().filter(|&&kind| !is_trivia(kind)).count();
+        let mut build = Build {
+            slots: Vec::with_capacity(significant),
+            openers: Vec::new(),
+            parens: 0,
+            braces: 0,
+        };
 
+        // One pass strips trivia and pairs brackets as their closers
+        // arrive. Boundaries and item starts replay the same opener stack
+        // but need pairs whose closers lie ahead — whether an open `(` is
+        // ever closed — so they wait for the second pass below.
         let mut newline = false;
-        for index in 0..cooked.len() {
-            let kind = cooked.kind(index);
+        for (raw, &kind) in kinds.iter().enumerate() {
             match kind {
                 SyntaxKind::Whitespace | SyntaxKind::LineComment => continue,
                 SyntaxKind::Newline => {
@@ -94,21 +113,9 @@ impl ParserInput {
                 }
                 _ => {}
             }
-
-            if tokens.last().is_some_and(|&last| last + 1 == index as u32) {
-                *flags.last_mut().expect("flags stay parallel to tokens") |= JOINT;
-            }
-            kinds.push(kind);
-            tokens.push(index as u32);
-            flags.push(if newline { NEWLINE_BEFORE } else { 0 });
+            build.push(kind, raw as u32, newline);
             newline = false;
         }
-
-        // Boundaries look at the following token's jointness and at the
-        // brackets open around them — whether an open `(` is ever closed —
-        // so they need the stream fully built and paired: a pairing pass,
-        // then a boundary pass over its result.
-        let partners = pair(&kinds).partners;
 
         // The brackets open before each token, replayed from the pairs: an
         // opener is open until its partner closes it, which discards
@@ -121,37 +128,44 @@ impl ParserInput {
         // everything up to its closer, so item starts exist only while
         // `matched` is zero. An unmatched opener encloses nothing for good
         // and hides no item.
-        let mut open: Vec<usize> = Vec::new();
-        let mut boundaries: Vec<u32> = Vec::with_capacity(kinds.len() + 1);
+        let Build {
+            mut slots,
+            openers: mut open,
+            ..
+        } = build;
+        open.clear();
+        let mut boundaries: Vec<u32> = Vec::with_capacity(slots.len() + 1);
         let mut boundary_count: u32 = 0;
         let mut items: Vec<u32> = Vec::new();
         let mut matched = 0usize;
-        for index in 0..kinds.len() {
+        for index in 0..slots.len() {
             boundaries.push(boundary_count);
+            let slot = slots[index];
             if index > 0
-                && flags[index] & NEWLINE_BEFORE != 0
+                && slot.flags & NEWLINE_BEFORE != 0
                 && !open.last().is_some_and(|&opener| {
-                    kinds[opener] == SyntaxKind::LParen && partners[opener].is_some()
+                    let opener = slots[opener as usize];
+                    opener.kind == SyntaxKind::LParen && opener.partner.is_some()
                 })
-                && can_end_statement(kinds[index - 1])
-                && !continues_statement(&kinds, &flags, index)
+                && can_end_statement(slots[index - 1].kind)
+                && !continues_statement(&slots, index)
             {
-                flags[index] |= BOUNDARY_BEFORE;
+                slots[index].flags |= BOUNDARY_BEFORE;
                 boundary_count += 1;
             }
-            if matched == 0 && starts_item(&kinds, &flags, &partners, index) {
+            if matched == 0 && starts_item(&slots, index) {
                 items.push(index as u32);
             }
-            match kinds[index] {
+            match slot.kind {
                 SyntaxKind::LParen | SyntaxKind::LBrace => {
-                    open.push(index);
-                    if partners[index].is_some() {
+                    open.push(index as u32);
+                    if slot.partner.is_some() {
                         matched += 1;
                     }
                 }
                 SyntaxKind::RParen | SyntaxKind::RBrace => {
-                    if let Some(partner) = partners[index] {
-                        let opener = partner.get() as usize - 1;
+                    if let Some(partner) = slot.partner {
+                        let opener = partner.get() - 1;
                         while open.pop().is_some_and(|popped| popped != opener) {}
                         matched -= 1;
                     }
@@ -162,11 +176,8 @@ impl ParserInput {
         boundaries.push(boundary_count);
 
         Self {
-            kinds: kinds.into_boxed_slice(),
-            tokens: tokens.into_boxed_slice(),
-            flags: flags.into_boxed_slice(),
+            slots: slots.into_boxed_slice(),
             boundaries: boundaries.into_boxed_slice(),
-            partners: partners.into_boxed_slice(),
             items: items.into_boxed_slice(),
             raw_len: cooked.len() as u32,
         }
@@ -174,23 +185,23 @@ impl ParserInput {
 
     /// The number of significant tokens.
     pub fn len(&self) -> usize {
-        self.kinds.len()
+        self.slots.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.kinds.is_empty()
+        self.slots.is_empty()
     }
 
     /// The kind of significant token `index`, or `None` past the end. End of
     /// input is the end of the buffer, never a sentinel kind.
     pub fn get(&self, index: usize) -> Option<SyntaxKind> {
-        self.kinds.get(index).copied()
+        self.slots.get(index).map(|slot| slot.kind)
     }
 
     /// The index of significant token `index` in the lexed and cooked token
     /// buffers, for ranges, text, and flags.
     pub fn token(&self, index: usize) -> u32 {
-        self.tokens[index]
+        self.slots[index].token
     }
 
     /// The number of tokens in the underlying buffer: one past the last raw
@@ -202,19 +213,19 @@ impl ParserInput {
     /// Whether token `index` is glued to token `index + 1`: no trivia
     /// between them.
     pub fn is_joint(&self, index: usize) -> bool {
-        self.flags[index] & JOINT != 0
+        self.slots[index].flags & JOINT != 0
     }
 
     /// Whether at least one line break sits between token `index` and the
     /// previous significant token.
     pub fn newline_before(&self, index: usize) -> bool {
-        self.flags[index] & NEWLINE_BEFORE != 0
+        self.slots[index].flags & NEWLINE_BEFORE != 0
     }
 
     /// Whether a statement boundary immediately precedes token `index` under
     /// the newline rule. Never true for the first token.
     pub fn boundary_before(&self, index: usize) -> bool {
-        self.flags[index] & BOUNDARY_BEFORE != 0
+        self.slots[index].flags & BOUNDARY_BEFORE != 0
     }
 
     /// Whether a statement boundary precedes any token in `range`. Answered
@@ -229,7 +240,9 @@ impl ParserInput {
     /// opener's closer or a closer's opener. `None` for an unmatched
     /// bracket, and for anything that is not one.
     pub fn partner(&self, index: usize) -> Option<usize> {
-        self.partners[index].map(|partner| partner.get() as usize - 1)
+        self.slots[index]
+            .partner
+            .map(|partner| partner.get() as usize - 1)
     }
 
     /// The significant indices where top-level items start, in order: a
@@ -239,79 +252,60 @@ impl ParserInput {
         &self.items
     }
 
-    /// The significant token kinds as a slice, so the parser can hold a
+    /// The significant token slots as a slice, so the parser can hold a
     /// prefix of it as its input horizon.
-    pub(crate) fn kinds(&self) -> &[SyntaxKind] {
-        &self.kinds
+    pub(crate) fn slots(&self) -> &[Slot] {
+        &self.slots
     }
 }
 
-/// Whether a top-level item starts at significant token `index`: `fn`, or
-/// a signature missing it — a name, a parenthesized list, and a body or
-/// return type after the list on its line, which nothing else at the top
-/// level looks like. A misplaced call has neither after its list, and
-/// stays garbage. The caller has established that no matched bracket pair
-/// encloses `index`.
-fn starts_item(
-    kinds: &[SyntaxKind],
-    flags: &[u8],
-    partners: &[Option<NonZeroU32>],
-    index: usize,
-) -> bool {
-    if kinds[index] == SyntaxKind::FnKw {
-        return true;
-    }
-    (index == 0 || flags[index] & BOUNDARY_BEFORE != 0)
-        && kinds[index] == SyntaxKind::Ident
-        && kinds.get(index + 1) == Some(&SyntaxKind::LParen)
-        && partners[index + 1].is_some_and(|partner| {
-            // The partner encoding is the closer's index plus one: exactly
-            // the token after the list.
-            let after = partner.get() as usize;
-            after < kinds.len()
-                && flags[after] & NEWLINE_BEFORE == 0
-                && (kinds[after] == SyntaxKind::LBrace
-                    || (kinds[after] == SyntaxKind::Minus
-                        && flags[after] & JOINT != 0
-                        && kinds.get(after + 1) == Some(&SyntaxKind::Gt)))
-        })
+fn is_trivia(kind: SyntaxKind) -> bool {
+    matches!(
+        kind,
+        SyntaxKind::Whitespace | SyntaxKind::Newline | SyntaxKind::LineComment
+    )
 }
 
-/// Mechanical bracket pairing over the significant tokens. A closer with a
-/// compatible opener discards unmatched openers above its nearest match; an
-/// orphan closer changes nothing. Every opener is pushed and popped at most
-/// once, so pairing is linear even over long runs of opposite delimiters.
-struct Pairing {
-    partners: Vec<Option<NonZeroU32>>,
-    /// The brackets still open, innermost last.
-    openers: Vec<(usize, SyntaxKind)>,
+/// The build in progress: the slots so far, and mechanical bracket pairing
+/// threaded through the same pass. A closer with a compatible opener
+/// discards unmatched openers above its nearest match; an orphan closer
+/// changes nothing. Every opener is pushed and popped at most once, so
+/// pairing is linear even over long runs of opposite delimiters.
+struct Build {
+    slots: Vec<Slot>,
+    /// The brackets still open, innermost last, by slot index.
+    openers: Vec<u32>,
     /// How many of them are `(`, and how many `{`, so an orphan closer is
     /// known without a search.
     parens: usize,
     braces: usize,
 }
 
-fn pair(kinds: &[SyntaxKind]) -> Pairing {
-    let mut pairing = Pairing::new(kinds.len());
-    for (index, &kind) in kinds.iter().enumerate() {
-        match kind {
-            SyntaxKind::LParen | SyntaxKind::LBrace => pairing.open(index, kind),
-            SyntaxKind::RParen => pairing.close(index, SyntaxKind::LParen),
-            SyntaxKind::RBrace => pairing.close(index, SyntaxKind::LBrace),
-            _ => {}
+impl Build {
+    /// Append one significant token: glue it to a raw-adjacent predecessor,
+    /// and pair it if it is a bracket.
+    fn push(&mut self, kind: SyntaxKind, raw: u32, newline: bool) {
+        if let Some(last) = self.slots.last_mut()
+            && last.token + 1 == raw
+        {
+            last.flags |= JOINT;
         }
-    }
-    pairing
-}
-
-impl Pairing {
-    fn new(len: usize) -> Self {
-        Self {
-            partners: vec![None; len],
-            openers: Vec::new(),
-            parens: 0,
-            braces: 0,
-        }
+        let index = self.slots.len() as u32;
+        let partner = match kind {
+            SyntaxKind::LParen | SyntaxKind::LBrace => {
+                self.open(index, kind);
+                None
+            }
+            SyntaxKind::RParen => self.close(index, SyntaxKind::LParen),
+            SyntaxKind::RBrace => self.close(index, SyntaxKind::LBrace),
+            _ => None,
+        };
+        self.slots.push(Slot {
+            kind,
+            flags: if newline { NEWLINE_BEFORE } else { 0 },
+            token: raw,
+            partner,
+        });
     }
 
     fn count(&mut self, kind: SyntaxKind) -> &mut usize {
@@ -322,31 +316,56 @@ impl Pairing {
         }
     }
 
-    fn open(&mut self, index: usize, kind: SyntaxKind) {
-        self.openers.push((index, kind));
+    fn open(&mut self, index: u32, kind: SyntaxKind) {
+        self.openers.push(index);
         *self.count(kind) += 1;
     }
 
-    /// Close the innermost open `expected`, discarding openers above it.
-    /// A closer with none open is an orphan and discards nothing.
-    fn close(&mut self, index: usize, expected: SyntaxKind) {
+    /// Close the innermost open `expected`, discarding openers above it,
+    /// and hand back the closer's own partner value. A closer with none
+    /// open is an orphan and discards nothing.
+    fn close(&mut self, closer: u32, expected: SyntaxKind) -> Option<NonZeroU32> {
         if *self.count(expected) == 0 {
-            return;
+            return None;
         }
-        while let Some((opener, kind)) = self.openers.pop() {
+        while let Some(opener) = self.openers.pop() {
+            let kind = self.slots[opener as usize].kind;
             *self.count(kind) -= 1;
             if kind != expected {
                 continue;
             }
-            self.pair(opener, index);
-            return;
+            self.slots[opener as usize].partner = NonZeroU32::new(closer + 1);
+            return NonZeroU32::new(opener + 1);
         }
+        unreachable!("a nonzero count keeps a matching opener on the stack")
     }
+}
 
-    fn pair(&mut self, opener: usize, closer: usize) {
-        self.partners[opener] = NonZeroU32::new(closer as u32 + 1);
-        self.partners[closer] = NonZeroU32::new(opener as u32 + 1);
+/// Whether a top-level item starts at significant token `index`: `fn`, or
+/// a signature missing it — a name, a parenthesized list, and a body or
+/// return type after the list on its line, which nothing else at the top
+/// level looks like. A misplaced call has neither after its list, and
+/// stays garbage. The caller has established that no matched bracket pair
+/// encloses `index`.
+fn starts_item(slots: &[Slot], index: usize) -> bool {
+    if slots[index].kind == SyntaxKind::FnKw {
+        return true;
     }
+    (index == 0 || slots[index].flags & BOUNDARY_BEFORE != 0)
+        && slots[index].kind == SyntaxKind::Ident
+        && slots.get(index + 1).map(|slot| slot.kind) == Some(SyntaxKind::LParen)
+        && slots[index + 1].partner.is_some_and(|partner| {
+            // The partner encoding is the closer's index plus one: exactly
+            // the token after the list.
+            let after = partner.get() as usize;
+            slots.get(after).is_some_and(|next| {
+                next.flags & NEWLINE_BEFORE == 0
+                    && (next.kind == SyntaxKind::LBrace
+                        || (next.kind == SyntaxKind::Minus
+                            && next.flags & JOINT != 0
+                            && slots.get(after + 1).map(|slot| slot.kind) == Some(SyntaxKind::Gt)))
+            })
+        })
 }
 
 /// Whether a statement can end after a token of this kind: values and
@@ -380,10 +399,11 @@ fn can_end_statement(kind: SyntaxKind) -> bool {
 /// statement either, but deliberately does not continue: arguments must not
 /// attach to a callee across a line break. The set mirrors the grammar: a
 /// leading `.` joins it with member access.
-fn continues_statement(kinds: &[SyntaxKind], flags: &[u8], index: usize) -> bool {
-    let joint_to =
-        |kind: SyntaxKind| flags[index] & JOINT != 0 && kinds.get(index + 1) == Some(&kind);
-    match kinds[index] {
+fn continues_statement(slots: &[Slot], index: usize) -> bool {
+    let joint_to = |kind: SyntaxKind| {
+        slots[index].flags & JOINT != 0 && slots.get(index + 1).map(|slot| slot.kind) == Some(kind)
+    };
+    match slots[index].kind {
         SyntaxKind::ElseKw
         | SyntaxKind::Plus
         | SyntaxKind::Star
@@ -391,7 +411,7 @@ fn continues_statement(kinds: &[SyntaxKind], flags: &[u8], index: usize) -> bool
         | SyntaxKind::Percent
         | SyntaxKind::Lt
         | SyntaxKind::Gt => true,
-        SyntaxKind::Minus => flags[index] & JOINT == 0,
+        SyntaxKind::Minus => slots[index].flags & JOINT == 0,
         SyntaxKind::Eq | SyntaxKind::Bang => joint_to(SyntaxKind::Eq),
         SyntaxKind::Amp => joint_to(SyntaxKind::Amp),
         SyntaxKind::Pipe => joint_to(SyntaxKind::Pipe),
