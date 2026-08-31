@@ -30,8 +30,8 @@ pub enum Element {
 /// interleaved with its children.
 pub fn elements(tree: &SyntaxTree, index: usize) -> impl Iterator<Item = Element> + '_ {
     // The tree yields children last first; elements read in source order.
-    // TODO: the reversal buys a Vec per node — a reversed element walk
-    // over one shared stack would make reprint allocation-free.
+    // The public lazy iterator owns this reversal; reprinting instead walks
+    // with one shared stack so it does not allocate once per node.
     let mut children: Vec<usize> = tree.children(index).collect();
     children.reverse();
     let mut children = children.into_iter().peekable();
@@ -59,16 +59,33 @@ pub fn elements(tree: &SyntaxTree, index: usize) -> impl Iterator<Item = Element
 /// `lexed` and `source` must be the file and text the tree was parsed from.
 pub fn reprint(tree: &SyntaxTree, lexed: &LexedFile, source: &str) -> String {
     let mut out = String::with_capacity(source.len());
-    reprint_node(tree, lexed, source, tree.root(), &mut out);
+    let mut pending = Vec::new();
+    reprint_node(tree, lexed, source, tree.root(), &mut pending, &mut out);
     out
 }
 
-fn reprint_node(tree: &SyntaxTree, lexed: &LexedFile, source: &str, node: usize, out: &mut String) {
-    for element in elements(tree, node) {
-        match element {
-            Element::Token(token) => out.push_str(lexed.text(source, token as usize)),
-            Element::Node(child) => reprint_node(tree, lexed, source, child, out),
+fn reprint_node(
+    tree: &SyntaxTree,
+    lexed: &LexedFile,
+    source: &str,
+    node: usize,
+    pending: &mut Vec<usize>,
+    out: &mut String,
+) {
+    let base = pending.len();
+    pending.extend(tree.children(node));
+    let mut cursor = tree.first_token(node);
+
+    while pending.len() > base {
+        let child = pending.pop().expect("a pending child exists above base");
+        for token in cursor..tree.first_token(child) {
+            out.push_str(lexed.text(source, token as usize));
         }
+        reprint_node(tree, lexed, source, child, pending, out);
+        cursor = tree.end_token(child);
+    }
+    for token in cursor..tree.end_token(node) {
+        out.push_str(lexed.text(source, token as usize));
     }
 }
 
