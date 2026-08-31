@@ -615,12 +615,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "sumi-format"
+version = "0.1.0"
+dependencies = [
+ "sumi-lexer",
+ "sumi-syntax",
+]
+
+[[package]]
 name = "sumi-frontend"
 version = "0.1.0"
 dependencies = [
  "codspeed-criterion-compat",
  "proptest",
  "sumi-diagnostics",
+ "sumi-format",
  "sumi-lexer",
  "sumi-syntax",
  "sumi-test",
@@ -641,6 +650,7 @@ name = "sumi-syntax"
 version = "0.1.0"
 dependencies = [
  "proptest",
+ "sumi-format",
  "sumi-lexer",
  "sumi-test",
  "sumi-text",

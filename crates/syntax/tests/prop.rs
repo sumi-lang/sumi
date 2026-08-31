@@ -334,6 +334,9 @@ proptest! {
         let tree = parse.tree();
         check_tree(tree, &cooked)?;
 
+        // The tree is lossless: walking its elements reprints the source.
+        prop_assert_eq!(&sumi_format::reprint(tree, &lexed, &source), &source);
+
         // The parser attaches no token to the root itself: every significant
         // token lies in some item or top-level error node.
         let mut items: Vec<usize> = tree.children(tree.root()).collect();
