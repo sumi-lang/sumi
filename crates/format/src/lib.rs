@@ -8,9 +8,10 @@
 //! block placement — into canonical form, leaving every other byte,
 //! comments included, in place.
 
-use sumi_lexer::LexedFile;
+use sumi_lexer::{LexedFile, lex};
 use sumi_syntax::{
-    CookedFile, ParseEvidence, ParseViolationKind, SyntaxKind, SyntaxTree, raw_boundary,
+    CookedFile, Parse, ParseEvidence, ParseViolationKind, ParserInput, SyntaxKind, SyntaxTree,
+    cook, parse, raw_boundary,
 };
 
 /// One element of a node: a raw token attached directly to it, or a child
@@ -71,21 +72,22 @@ fn reprint_node(tree: &SyntaxTree, lexed: &LexedFile, source: &str, node: usize,
     }
 }
 
-/// Rewrite the layout violations in `evidence` into canonical form: space
+/// Rewrite the layout violations of `parsed` into canonical form: space
 /// binary operators, glue prefix operators, lead continuation lines with
 /// their operator, and open blocks on the line of their owner. Every other
 /// byte keeps its place; a comment is never deleted, at worst the gap it
 /// blocks stays as written. Chained comparisons are structural, not layout,
 /// and stay as written too, as does a trailing operator whose continuation
 /// line does not begin its operand.
-pub fn normalize(
-    source: &str,
-    lexed: &LexedFile,
-    cooked: &CookedFile,
-    evidence: &[ParseEvidence],
-) -> String {
+///
+/// The rewrite proves it changed only layout: the result reparses to the
+/// same tree shape, or the source comes back as written. Around recovered
+/// damage, what the parser makes of a line can turn on where the line
+/// breaks — a moved operator or brace may hand recovery a different
+/// reading — and no local check on the tokens settles it.
+pub fn normalize(source: &str, lexed: &LexedFile, cooked: &CookedFile, parsed: &Parse) -> String {
     let mut edits = Vec::new();
-    for evidence in evidence {
+    for evidence in parsed.evidence() {
         let ParseEvidence::Violation(violation) = evidence else {
             continue;
         };
@@ -145,7 +147,29 @@ pub fn normalize(
             ParseViolationKind::ChainedComparison => {}
         }
     }
-    apply(source, edits)
+    if edits.is_empty() {
+        return source.to_owned();
+    }
+    let candidate = apply(source, edits);
+    if reparses_alike(&candidate, parsed.tree()) {
+        candidate
+    } else {
+        source.to_owned()
+    }
+}
+
+/// Whether `candidate` parses to the same tree shape as `tree`: node for
+/// node the same kinds and the same parents, with only byte positions free
+/// to have moved.
+fn reparses_alike(candidate: &str, tree: &SyntaxTree) -> bool {
+    let Ok(lexed) = lex(candidate) else {
+        return false;
+    };
+    let reparse = parse(&ParserInput::new(&cook(candidate, &lexed)));
+    let after = reparse.tree();
+    after.len() == tree.len()
+        && (0..tree.len()).all(|node| after.kind(node) == tree.kind(node))
+        && after.parents() == tree.parents()
 }
 
 /// One replacement of a byte range with new text.

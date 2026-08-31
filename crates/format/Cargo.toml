@@ -6,3 +6,6 @@ edition = "2024"
 [dependencies]
 sumi-lexer = { path = "../lexer" }
 sumi-syntax = { path = "../syntax" }
+
+[dev-dependencies]
+proptest = "=1.11.0"

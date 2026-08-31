@@ -53,12 +53,7 @@ fn violations(front: &Front) -> Vec<ParseViolationKind> {
 #[track_caller]
 fn check_normalize(source: &str, expected: &str) {
     let before = front(source);
-    let normalized = normalize(
-        source,
-        &before.lexed,
-        &before.cooked,
-        before.parse.evidence(),
-    );
+    let normalized = normalize(source, &before.lexed, &before.cooked, &before.parse);
     assert_eq!(normalized, expected, "normalize of {source:?}");
 
     let after = front(&normalized);
@@ -73,12 +68,7 @@ fn check_normalize(source: &str, expected: &str) {
         "normalize changed the shape of {source:?}"
     );
 
-    let again = normalize(
-        &normalized,
-        &after.lexed,
-        &after.cooked,
-        after.parse.evidence(),
-    );
+    let again = normalize(&normalized, &after.lexed, &after.cooked, &after.parse);
     assert_eq!(
         again, normalized,
         "normalize of {source:?} is not idempotent"
@@ -224,17 +214,32 @@ fn normalize_leaves_a_trailing_operator_missing_its_operand() {
             violations(&before).contains(&ParseViolationKind::TrailingOperator),
             "the trailing operator must be recorded for {source:?}"
         );
-        let normalized = normalize(
-            source,
-            &before.lexed,
-            &before.cooked,
-            before.parse.evidence(),
-        );
+        let normalized = normalize(source, &before.lexed, &before.cooked, &before.parse);
         assert_eq!(
             normalized, source,
             "an operandless trailing operator stays as written"
         );
     }
+}
+
+#[test]
+fn normalize_yields_when_the_rewrite_would_change_the_parse() {
+    // Recovery entangled with the operator: the continuation is a real
+    // operand, but the garbage between the operands means the moved
+    // operator hands recovery a different reading — which no check on the
+    // tokens foresees. The reparse gate catches it and yields the source
+    // as written. Found by the normalize property.
+    let source = "fn f() { true&<\ntrue }";
+    let before = front(source);
+    let normalized = normalize(source, &before.lexed, &before.cooked, &before.parse);
+    assert_eq!(normalized, source, "an entangled rewrite stays as written");
+
+    // When only the move is unsafe, the independent spacing edit still
+    // lands and passes the gate.
+    let source = "fn f() { true<\n) }";
+    let before = front(source);
+    let normalized = normalize(source, &before.lexed, &before.cooked, &before.parse);
+    assert_eq!(normalized, "fn f() { true <\n) }");
 }
 
 #[test]
@@ -265,12 +270,7 @@ fn normalize_leaves_chained_comparisons_as_written() {
         [ParseViolationKind::ChainedComparison],
         "the chain is the only violation"
     );
-    let normalized = normalize(
-        source,
-        &before.lexed,
-        &before.cooked,
-        before.parse.evidence(),
-    );
+    let normalized = normalize(source, &before.lexed, &before.cooked, &before.parse);
     assert_eq!(normalized, source);
 }
 
@@ -282,11 +282,6 @@ fn normalize_never_deletes_a_comment_from_a_prefix_gap() {
         violations(&before),
         [ParseViolationKind::SpacedPrefixOperator]
     );
-    let normalized = normalize(
-        source,
-        &before.lexed,
-        &before.cooked,
-        before.parse.evidence(),
-    );
+    let normalized = normalize(source, &before.lexed, &before.cooked, &before.parse);
     assert_eq!(normalized, source, "a comment-blocked gap stays as written");
 }

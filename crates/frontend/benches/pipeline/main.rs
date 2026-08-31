@@ -316,12 +316,7 @@ fn bench_format(c: &mut Criterion) {
     group.throughput(Throughput::Bytes(glued.len() as u64));
     group.bench_function("normalize", |b| {
         b.iter_with_large_drop(|| {
-            normalize(
-                black_box(&glued),
-                &glued_lexed,
-                &glued_cooked,
-                glued_parse.evidence(),
-            )
+            normalize(black_box(&glued), &glued_lexed, &glued_cooked, &glued_parse)
         });
     });
     group.finish();
