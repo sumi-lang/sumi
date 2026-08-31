@@ -37,12 +37,8 @@ fn render(
     let end = tree.end_token(node);
     assert!(first <= end, "node {node} has a backwards token range");
 
-    let from = start_byte(lexed, first);
-    let to = if end > first {
-        lexed.range(end as usize - 1).end().to_u32()
-    } else {
-        from
-    };
+    let range = tree.byte_range(node, lexed);
+    let (from, to) = (range.start().to_u32(), range.end().to_u32());
     let mut line = format!(
         "{:indent$}{:?} {from}..{to}",
         "",
@@ -75,9 +71,5 @@ fn render(
 /// The start byte of raw token `token`, or the end of the source one past
 /// the last token.
 pub fn start_byte(lexed: &LexedFile, token: u32) -> u32 {
-    if (token as usize) < lexed.len() {
-        lexed.range(token as usize).start().to_u32()
-    } else {
-        lexed.source_len().to_u32()
-    }
+    sumi_syntax::raw_boundary(lexed, token).to_u32()
 }

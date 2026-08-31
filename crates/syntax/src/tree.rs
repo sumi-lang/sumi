@@ -41,12 +41,27 @@
 //! how a Pratt parser wraps an already-parsed left operand into a binary
 //! expression.
 
+use sumi_lexer::LexedFile;
+use sumi_text::{TextRange, TextSize};
+
 use crate::input::{ParserInput, Slot};
 use crate::kind::{NodeKind, SyntaxKind};
 use crate::parser::{
     ParseAnchor, ParseEvidence, ParseExpected, ParseRecovery, ParseRecoveryKind, ParseViolation,
     ParseViolationKind, RawGap, RawTokenRange,
 };
+
+/// The byte offset where raw token `raw` begins, or the end of the source
+/// for the boundary one past the last token: how the raw token indices in
+/// trees and parse evidence project into the file. `lexed` must be the file
+/// the indices came from.
+pub fn raw_boundary(lexed: &LexedFile, raw: u32) -> TextSize {
+    if raw as usize == lexed.len() {
+        lexed.source_len()
+    } else {
+        lexed.range(raw as usize).start()
+    }
+}
 
 /// One node: its kind, its subtree extent (self included), and the
 /// half-open range of raw token indices it covers.
@@ -89,6 +104,20 @@ impl SyntaxTree {
     /// the root can be empty, over an empty file.
     pub fn end_token(&self, index: usize) -> u32 {
         self.nodes[index].end_token
+    }
+
+    /// The byte range node `index` covers: from the start of its first
+    /// token to the end of its last one. `lexed` must be the file this tree
+    /// was parsed from. Only the root can be empty, over an empty file.
+    pub fn byte_range(&self, index: usize, lexed: &LexedFile) -> TextRange {
+        let node = &self.nodes[index];
+        let start = raw_boundary(lexed, node.first_token);
+        let end = if node.end_token > node.first_token {
+            lexed.range(node.end_token as usize - 1).end()
+        } else {
+            start
+        };
+        TextRange::new(start, end)
     }
 
     /// The direct children of node `index`, last child first — the order a

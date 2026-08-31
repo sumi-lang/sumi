@@ -36,15 +36,8 @@ impl Front {
 
     /// The byte span of a node.
     pub fn node_span(&self, node: usize) -> (usize, usize) {
-        let tree = self.parse.tree();
-        let (first, end) = (tree.first_token(node), tree.end_token(node));
-        let start = start_byte(&self.lexed, first) as usize;
-        let stop = if end > first {
-            self.lexed.range(end as usize - 1).end().to_usize()
-        } else {
-            start
-        };
-        (start, stop)
+        let range = self.parse.tree().byte_range(node, &self.lexed);
+        (range.start().to_usize(), range.end().to_usize())
     }
 
     /// A node's text and the shape of its subtree: kinds with byte spans
@@ -93,9 +86,5 @@ impl Front {
 /// The start byte of raw token `token`, or the end of the source one past
 /// the last token.
 pub fn start_byte(lexed: &LexedFile, token: u32) -> u32 {
-    if (token as usize) < lexed.len() {
-        lexed.range(token as usize).start().to_u32()
-    } else {
-        lexed.source_len().to_u32()
-    }
+    sumi_syntax::raw_boundary(lexed, token).to_u32()
 }

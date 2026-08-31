@@ -23,11 +23,7 @@ fn location_text(front: &ParsedSource, location: Location) -> &str {
 }
 
 fn raw_boundary(front: &ParsedSource, raw: u32) -> TextSize {
-    if raw as usize == front.lexed().len() {
-        front.lexed().source_len()
-    } else {
-        front.lexed().range(raw as usize).start()
-    }
+    sumi_syntax::raw_boundary(front.lexed(), raw)
 }
 
 #[test]

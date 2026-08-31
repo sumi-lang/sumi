@@ -3,9 +3,9 @@ use sumi_lexer::{LexErrorKind, LexedFile};
 use sumi_syntax::{
     CookedFile, Parse, ParseAnchor, ParseEvidence, ParseExpected, ParseRecovery, ParseRecoveryKind,
     ParseViolation, ParseViolationKind, RawGap, RawTokenRange, SyntaxError, SyntaxErrorKind,
-    SyntaxKind,
+    SyntaxKind, raw_boundary,
 };
-use sumi_text::{TextRange, TextSize};
+use sumi_text::TextRange;
 
 use crate::codes;
 
@@ -400,14 +400,6 @@ fn lower_raw_range(range: RawTokenRange, lexed: &LexedFile) -> TextRange {
         raw_boundary(lexed, range.start()),
         raw_boundary(lexed, range.end()),
     )
-}
-
-fn raw_boundary(lexed: &LexedFile, raw: u32) -> TextSize {
-    if raw as usize == lexed.len() {
-        lexed.source_len()
-    } else {
-        lexed.range(raw as usize).start()
-    }
 }
 
 fn anchor_has_error(anchor: ParseAnchor, cooked: &CookedFile) -> bool {

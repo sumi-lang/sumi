@@ -21,4 +21,4 @@ pub use parser::{
     MAX_DEPTH, ParseAnchor, ParseEvidence, ParseExpected, ParseRecovery, ParseRecoveryKind,
     ParseViolation, ParseViolationKind, RawGap, RawTokenRange, parse,
 };
-pub use tree::{CompletedMarker, Marker, Parse, SyntaxTree};
+pub use tree::{CompletedMarker, Marker, Parse, SyntaxTree, raw_boundary};
