@@ -1,3 +1,7 @@
+mod line_index;
+
+pub use line_index::{LineCol, LineIndex, Utf16LineCol};
+
 /// A file-local UTF-8 byte offset or length.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
