@@ -91,6 +91,11 @@ fn missing_syntax_points_at_the_parser_cursor() {
         diagnostic.primary.location,
         Location::Point(TextSize::new(source.len() as u32))
     );
+    let [opener] = &*diagnostic.secondary else {
+        panic!("the missing closer must retain its opener")
+    };
+    assert_eq!(location_text(&front, opener.location), "{");
+    assert_eq!(opener.message.as_deref(), Some("opening delimiter is here"));
 
     let [ParseEvidence::Recovery(recovery)] = front.parse().evidence() else {
         panic!("the parse retains the missing closer evidence")

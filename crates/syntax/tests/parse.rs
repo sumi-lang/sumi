@@ -46,6 +46,7 @@ fn evidence_name(evidence: &ParseEvidence) -> String {
                 ParseExpected::Name => "ExpectedName".into(),
                 ParseExpected::Type => "ExpectedType".into(),
                 ParseExpected::Token(kind) => format!("Expected({kind:?})"),
+                ParseExpected::Closer { kind, .. } => format!("Expected({kind:?})"),
                 ParseExpected::Boundary => "ExpectedBoundary".into(),
             },
             kind => format!("{kind:?}"),
@@ -71,17 +72,18 @@ fn raw_text<'a>(source: &'a str, lexed: &LexedFile, start: u32, end: u32) -> &'a
 }
 
 #[test]
-fn missing_syntax_anchors_the_raw_trivia_gap() {
+fn a_missing_closer_retains_its_opener_and_insertion_gap() {
     let source = "fn f() { x // tail";
     let lexed = lex(source).expect("test source fits in u32");
     let parse = parse(&ParserInput::new(&lexed));
     let [ParseEvidence::Recovery(recovery)] = parse.evidence() else {
         panic!("the unclosed block has one recovery")
     };
-    assert_eq!(
-        recovery.kind,
-        ParseRecoveryKind::Expected(ParseExpected::Token(sumi_syntax::SyntaxKind::RBrace))
-    );
+    let ParseRecoveryKind::Expected(ParseExpected::Closer { kind, opener }) = recovery.kind else {
+        panic!("the expected closer must retain its opener")
+    };
+    assert_eq!(kind, sumi_syntax::SyntaxKind::RBrace);
+    assert_eq!(raw_text(source, &lexed, opener.start(), opener.end()), "{");
     let ParseAnchor::Gap(gap) = recovery.anchor else {
         panic!("missing syntax must anchor a gap")
     };
