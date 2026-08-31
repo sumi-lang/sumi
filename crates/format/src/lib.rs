@@ -76,7 +76,8 @@ fn reprint_node(tree: &SyntaxTree, lexed: &LexedFile, source: &str, node: usize,
 /// their operator, and open blocks on the line of their owner. Every other
 /// byte keeps its place; a comment is never deleted, at worst the gap it
 /// blocks stays as written. Chained comparisons are structural, not layout,
-/// and stay as written too.
+/// and stay as written too, as does a trailing operator whose continuation
+/// line does not begin its operand.
 pub fn normalize(
     source: &str,
     lexed: &LexedFile,
@@ -110,16 +111,22 @@ pub fn normalize(
                     edits.push(Edit::insert(token_start(lexed, end), " "));
                 }
             }
-            // Lead the continuation line with the operator instead.
+            // Lead the continuation line with the operator instead. The
+            // parser records the violation before parsing the operand, so
+            // the continuation may turn out not to hold one; only an
+            // operator moved in front of its own operand leaves the parse
+            // unchanged, and anything else stays as written.
             ParseViolationKind::TrailingOperator => {
-                let continuation = next_significant(cooked, end)
-                    .expect("a trailing operator has a continuation line");
-                let (op_start, op_end) = (token_start(lexed, start), token_end(lexed, end - 1));
-                edits.push(Edit::delete(op_start, op_end));
-                edits.push(Edit::insert(
-                    token_start(lexed, continuation),
-                    format!("{} ", &source[op_start..op_end]),
-                ));
+                let operand = next_significant(cooked, end)
+                    .filter(|&raw| cooked.kind(raw as usize).starts_expression());
+                if let Some(operand) = operand {
+                    let (op_start, op_end) = (token_start(lexed, start), token_end(lexed, end - 1));
+                    edits.push(Edit::delete(op_start, op_end));
+                    edits.push(Edit::insert(
+                        token_start(lexed, operand),
+                        format!("{} ", &source[op_start..op_end]),
+                    ));
+                }
             }
             // Glue the operator to its operand — unless a comment sits in
             // the gap, which no layout edit may delete.

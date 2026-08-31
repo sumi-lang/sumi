@@ -215,6 +215,29 @@ fn normalize_moves_trailing_operators_to_the_continuation_line() {
 }
 
 #[test]
+fn normalize_leaves_a_trailing_operator_missing_its_operand() {
+    // The parser records the violation before parsing the operand; moving
+    // the operator in front of anything else would change the parse.
+    for source in ["fn f() { a +\n: b }", "fn f() { a +\n}"] {
+        let before = front(source);
+        assert!(
+            violations(&before).contains(&ParseViolationKind::TrailingOperator),
+            "the trailing operator must be recorded for {source:?}"
+        );
+        let normalized = normalize(
+            source,
+            &before.lexed,
+            &before.cooked,
+            before.parse.evidence(),
+        );
+        assert_eq!(
+            normalized, source,
+            "an operandless trailing operator stays as written"
+        );
+    }
+}
+
+#[test]
 fn normalize_glues_spaced_prefix_operators() {
     check_normalize("fn f() { let x = - 1 }", "fn f() { let x = -1 }");
     check_normalize("fn f() { let x = ! \t flag }", "fn f() { let x = !flag }");
