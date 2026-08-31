@@ -1,6 +1,5 @@
-//! Property tests: validation and ParserInput invariants over generated
-//! sources instead of the hand-written corpus in `validate.rs` and
-//! `input.rs`.
+//! Property tests: ParserInput invariants over generated sources instead of
+//! the hand-written corpus in `input.rs`.
 //!
 //! The well-formed program generator and the single-edit machinery live in
 //! `sumi-test`, shared with any harness that measures recovery quality.
@@ -8,9 +7,9 @@
 use std::collections::HashSet;
 
 use proptest::prelude::*;
-use sumi_lexer::{LexedFile, RawKind, TokenFlags, lex};
+use sumi_lexer::{LexedFile, RawKind, lex};
 use sumi_syntax::{
-    NodeKind, ParseAnchor, ParseEvidence, ParserInput, SyntaxKind, SyntaxTree, parse, validate,
+    NodeKind, ParseAnchor, ParseEvidence, ParserInput, SyntaxKind, SyntaxTree, parse,
 };
 use sumi_test::{apply, delimiter_edited_program, front, non_delimiter_edited_program, program};
 
@@ -101,17 +100,6 @@ fn soup() -> impl Strategy<Value = String> {
     proptest::collection::vec(fragment(), 0..64).prop_map(|fragments| fragments.concat())
 }
 
-/// Number-shaped fragments: digit runs, separators, dots, exponent pieces,
-/// and suffixes, glued into the adversarial adjacencies the number scan and
-/// the validator must judge identically.
-fn number_soup() -> impl Strategy<Value = String> {
-    const PIECES: &[&str] = &[
-        "0", "1", "9", "123", "_", "__", ".", "..", "e", "E", "+", "-", "5", "u32", "f", "x", " ",
-    ];
-    proptest::collection::vec(prop::sample::select(PIECES).prop_map(str::to_owned), 1..12)
-        .prop_map(|fragments| fragments.concat())
-}
-
 fn is_trivia(kind: SyntaxKind) -> bool {
     matches!(
         kind,
@@ -120,63 +108,6 @@ fn is_trivia(kind: SyntaxKind) -> bool {
 }
 
 proptest! {
-    #[test]
-    fn validate_is_total_and_errors_stay_inside_their_tokens(source in soup()) {
-        let lexed = lex(&source).expect("generated sources fit in u32");
-        let errors = validate(&source, &lexed);
-
-        for error in &errors {
-            prop_assert!((error.token as usize) < lexed.len());
-            let token = lexed.range(error.token as usize);
-            prop_assert!(token.start() <= error.range.start());
-            prop_assert!(error.range.end() <= token.end());
-            prop_assert!(source.is_char_boundary(error.range.start().to_usize()));
-            prop_assert!(source.is_char_boundary(error.range.end().to_usize()));
-            // Diagnostic ownership does not overlap: a token the lexer
-            // reported gets no further errors from the validator.
-            prop_assert!(
-                !lexed.errors().iter().any(|lex_error| lex_error.token == error.token),
-                "token {} has both a lex and a validation error", error.token
-            );
-        }
-
-        // An earlier phase owns diagnostics for `Error` tokens, so every one
-        // must have evidence from the lexer or validator.
-        for index in 0..lexed.len() {
-            if lexed.kind(index) == SyntaxKind::Error {
-                let token = index as u32;
-                prop_assert!(
-                    lexed.errors().iter().any(|error| error.token == token)
-                        || errors.iter().any(|error| error.token == token),
-                    "error token {} has no lex or validation error", token
-                );
-            }
-        }
-    }
-
-    /// The number munch holds one grammar in two places: the scan flags
-    /// while cache-hot, the validator re-derives the precise errors. The
-    /// flag must predict the errors exactly — and the validator's internal
-    /// debug assertions check both scans classify int/float alike along the
-    /// way.
-    #[test]
-    fn the_number_scan_and_the_validator_agree(source in number_soup()) {
-        let lexed = lex(&source).expect("generated sources fit in u32");
-        let errors = validate(&source, &lexed);
-        for index in 0..lexed.len() {
-            if lexed.raw_kind(index) != RawKind::Number {
-                continue;
-            }
-            let flagged = lexed.flags(index).contains(TokenFlags::MALFORMED_NUMBER);
-            let owed = errors.iter().any(|error| error.token == index as u32);
-            prop_assert_eq!(
-                flagged, owed,
-                "number {:?} flagged={} but owed-errors={}",
-                lexed.text(&source, index), flagged, owed
-            );
-        }
-    }
-
     #[test]
     fn parser_input_invariants(source in soup()) {
         let lexed = lex(&source).expect("generated sources fit in u32");
@@ -429,8 +360,6 @@ proptest! {
     fn well_formed_programs_produce_no_parse_evidence(source in program()) {
         let lexed = lex(&source).expect("generated sources fit in u32");
         prop_assert!(lexed.errors().is_empty(), "lexer errors in {:?}", source);
-        let errors = validate(&source, &lexed);
-        prop_assert!(errors.is_empty(), "validation errors in {:?}", source);
         let parse = parse(&ParserInput::new(&lexed));
         check_tree(parse.tree(), &lexed)?;
         prop_assert!(

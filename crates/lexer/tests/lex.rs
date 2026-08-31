@@ -1,4 +1,13 @@
 use sumi_lexer::{LexError, LexErrorKind, lex};
+use sumi_text::{TextRange, TextSize};
+
+fn error(token: u32, start: u32, end: u32, kind: LexErrorKind) -> LexError {
+    LexError {
+        token,
+        range: TextRange::new(TextSize::new(start), TextSize::new(end)),
+        kind,
+    }
+}
 
 /// Lex `source`, assert the partition invariants every lex must uphold, and
 /// render one line per token: `RawKind start..end "text"` plus any flags.
@@ -147,10 +156,7 @@ fn non_ascii_non_ident_is_unknown() {
     );
     assert_eq!(
         lex("a€b").unwrap().errors(),
-        &[LexError {
-            token: 1,
-            kind: LexErrorKind::UnknownCharacter,
-        }],
+        &[error(1, 1, 4, LexErrorKind::UnknownCharacter)],
     );
 }
 
@@ -159,10 +165,7 @@ fn control_chars_are_unknown() {
     check("\u{1}", &[r#"Unknown 0..1 "\u{1}""#]);
     assert_eq!(
         lex("\u{1}").unwrap().errors(),
-        &[LexError {
-            token: 0,
-            kind: LexErrorKind::UnknownCharacter,
-        }],
+        &[error(0, 0, 1, LexErrorKind::UnknownCharacter)],
     );
 }
 
@@ -181,10 +184,7 @@ fn bom_elsewhere_is_unknown_with_error() {
     check(source, &[r#"Ident 0..1 "x""#, r#"Unknown 1..4 "\u{feff}""#]);
     assert_eq!(
         lex(source).unwrap().errors(),
-        &[LexError {
-            token: 1,
-            kind: LexErrorKind::MisplacedBom
-        }],
+        &[error(1, 1, 4, LexErrorKind::MisplacedBom)],
     );
 }
 
@@ -212,10 +212,7 @@ fn lone_carriage_return_is_an_error() {
     check("\r", &[r#"Newline 0..1 "\r" TokenFlags(LONE_CR)"#]);
     assert_eq!(
         lex("\r").unwrap().errors(),
-        &[LexError {
-            token: 0,
-            kind: LexErrorKind::LoneCarriageReturn
-        }],
+        &[error(0, 0, 1, LexErrorKind::LoneCarriageReturn)],
     );
 }
 
@@ -278,7 +275,7 @@ fn float_shapes() {
     check("1.5", &[r#"Number 0..3 "1.5""#]);
     check("2.5e-3", &[r#"Number 0..6 "2.5e-3""#]);
     check("1e5", &[r#"Number 0..3 "1e5""#]);
-    // Boundaries must not depend on marker case; the validator rejects `E`.
+    // Boundaries must not depend on marker case; collection rejects `E`.
     check(
         "1E-5",
         &[r#"Number 0..4 "1E-5" TokenFlags(MALFORMED_NUMBER)"#],
@@ -319,7 +316,10 @@ fn number_suffixes_attach() {
         "0x1F",
         &[r#"Number 0..4 "0x1F" TokenFlags(MALFORMED_NUMBER)"#],
     );
-    assert_eq!(lex("0x1F").unwrap().errors(), &[]);
+    assert_eq!(
+        lex("0x1F").unwrap().errors(),
+        &[error(0, 1, 4, LexErrorKind::UnknownSuffix)],
+    );
 }
 
 #[test]
@@ -341,10 +341,7 @@ fn unterminated_string() {
     check("\"ab", &[r#"String 0..3 "\"ab" TokenFlags(UNTERMINATED)"#]);
     assert_eq!(
         lex("\"ab").unwrap().errors(),
-        &[LexError {
-            token: 0,
-            kind: LexErrorKind::UnterminatedString
-        }],
+        &[error(0, 0, 3, LexErrorKind::UnterminatedString)],
     );
 }
 
@@ -365,10 +362,7 @@ fn char_literals_end_at_newline() {
     );
     assert_eq!(
         lex("'a\n").unwrap().errors(),
-        &[LexError {
-            token: 0,
-            kind: LexErrorKind::UnterminatedChar
-        }],
+        &[error(0, 0, 2, LexErrorKind::UnterminatedChar)],
     );
 }
 
@@ -387,10 +381,7 @@ fn raw_string_needs_matching_hashes() {
     );
     assert_eq!(
         lex(source).unwrap().errors(),
-        &[LexError {
-            token: 0,
-            kind: LexErrorKind::UnterminatedRawString
-        }],
+        &[error(0, 0, 7, LexErrorKind::UnterminatedRawString)],
     );
 }
 
@@ -410,7 +401,7 @@ fn r_without_quote_is_an_ident() {
 
 #[test]
 fn clean_source_has_no_errors() {
-    let source = "fn main() {\n    x >>= 2;\n}\n";
+    let source = "fn main() {\n    x >>= 2\n}\n";
     assert_eq!(lex(source).unwrap().errors(), &[]);
 }
 

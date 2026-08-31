@@ -2,7 +2,7 @@
 //!
 //! [`parse_source`] runs every syntactic phase and lowers their immutable,
 //! phase-local evidence into canonical diagnostics. Detection remains in
-//! the lexer, validator, and parser; cross-phase wording, grouping,
+//! the lexer and parser; cross-phase wording, grouping,
 //! suppression, and ordering live here.
 
 mod lower;
@@ -14,7 +14,7 @@ pub use sumi_diagnostics::{
 };
 pub use sumi_lexer::SourceTooLarge;
 use sumi_lexer::{LexedFile, lex};
-use sumi_syntax::{Parse, ParserInput, parse, validate};
+use sumi_syntax::{Parse, ParserInput, parse};
 
 /// Parse one immutable source snapshot.
 ///
@@ -22,10 +22,9 @@ use sumi_syntax::{Parse, ParserInput, parse, validate};
 /// is a source too large for Sumi's `u32` file-local coordinate space.
 pub fn parse_source(source: Box<str>) -> Result<ParsedSource, SourceTooLarge> {
     let lexed = lex(&source)?;
-    let errors = validate(&source, &lexed);
     let input = ParserInput::new(&lexed);
     let parse = parse(&input);
-    let diagnostics = lower::diagnostics(&lexed, &errors, &parse);
+    let diagnostics = lower::diagnostics(&lexed, &parse);
 
     Ok(ParsedSource {
         source,

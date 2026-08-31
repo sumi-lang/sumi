@@ -55,8 +55,7 @@ pub enum ParseRecoveryKind {
     Unexpected,
     /// Expressions nested more than [`MAX_DEPTH`] deep.
     NestingTooDeep,
-    /// Recovery over tokens whose diagnostic belongs to the lexer or
-    /// validator.
+    /// Recovery over tokens whose diagnostic belongs to the lexer.
     PriorPhaseError,
 }
 

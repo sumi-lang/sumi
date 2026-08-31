@@ -8,15 +8,15 @@
 //! the single definition of the escape grammar; value decoding will reuse it
 //! when lowering needs it.
 //!
-//! The validator filters: numbers are re-scanned only when the lexer flagged
+//! The collector filters: numbers are re-scanned only when the scanner flagged
 //! them malformed, strings only when escaped and terminated, and characters
-//! only when terminated, so a token the lexer already reported gets no
-//! further errors here.
+//! only when terminated, so a token with a scanner error gets no further
+//! errors here.
 
 use std::ops::Range;
 
+use crate::file::LexErrorKind;
 use crate::kind::SyntaxKind;
-use crate::validate::SyntaxErrorKind;
 
 /// Report the errors of a number token the lexer flagged as malformed, and
 /// return the kind its shape implies so callers can check it against the
@@ -27,7 +27,7 @@ use crate::validate::SyntaxErrorKind;
 /// every error range stays inside the token.
 pub(crate) fn number_errors(
     text: &str,
-    mut error: impl FnMut(Range<usize>, SyntaxErrorKind),
+    mut error: impl FnMut(Range<usize>, LexErrorKind),
 ) -> SyntaxKind {
     let bytes = text.as_bytes();
     let mut misplaced_underscore = None;
@@ -38,7 +38,7 @@ pub(crate) fn number_errors(
     // A leading zero is rejected rather than accepted as decimal, because
     // `0123` means octal in several other languages.
     if bytes[0] == b'0' && bytes[1..position].iter().any(u8::is_ascii_digit) {
-        error(0..1, SyntaxErrorKind::LeadingZero);
+        error(0..1, LexErrorKind::LeadingZero);
     }
 
     if bytes.get(position) == Some(&b'.')
@@ -63,12 +63,12 @@ pub(crate) fn number_errors(
             // Syntax markers are lowercase: the shape munches `1E5` so the
             // token stays whole, and the marker's case is rejected here.
             if bytes[position] == b'E' {
-                error(position..position + 1, SyntaxErrorKind::UppercaseExponent);
+                error(position..position + 1, LexErrorKind::UppercaseExponent);
             }
             position += 1;
             if matches!(bytes.get(position), Some(b'+' | b'-')) {
                 if bytes[position] == b'+' {
-                    error(position..position + 1, SyntaxErrorKind::ExponentPlusSign);
+                    error(position..position + 1, LexErrorKind::ExponentPlusSign);
                 }
                 position += 1;
             }
@@ -81,7 +81,7 @@ pub(crate) fn number_errors(
             {
                 error(
                     exponent_start..exponent_start + 1,
-                    SyntaxErrorKind::ExponentLeadingZero,
+                    LexErrorKind::ExponentLeadingZero,
                 );
             }
         }
@@ -93,14 +93,14 @@ pub(crate) fn number_errors(
         // after a real exponent (`1e5e5`) it is just an unknown suffix.
         if !consumed_exponent && matches!(bytes[position], b'e' | b'E') {
             is_float = true;
-            error(position..position + 1, SyntaxErrorKind::MissingExponent);
+            error(position..position + 1, LexErrorKind::MissingExponent);
         } else {
-            error(position..text.len(), SyntaxErrorKind::UnknownSuffix);
+            error(position..text.len(), LexErrorKind::UnknownSuffix);
         }
     }
 
     if let Some(position) = misplaced_underscore {
-        error(position..position + 1, SyntaxErrorKind::MisplacedUnderscore);
+        error(position..position + 1, LexErrorKind::MisplacedUnderscore);
     }
 
     if is_float {
@@ -135,7 +135,7 @@ fn eat_digits(bytes: &[u8], start: usize, misplaced_underscore: &mut Option<usiz
 }
 
 /// Validate the escapes of a terminated string literal.
-pub(crate) fn validate_string(text: &str, mut error: impl FnMut(Range<usize>, SyntaxErrorKind)) {
+pub(crate) fn validate_string(text: &str, mut error: impl FnMut(Range<usize>, LexErrorKind)) {
     let body = &text[1..text.len() - 1];
     walk_escapes(body, |start, end, result| {
         if let Err(kind) = result {
@@ -145,7 +145,7 @@ pub(crate) fn validate_string(text: &str, mut error: impl FnMut(Range<usize>, Sy
 }
 
 /// Validate the escapes and content length of a terminated character literal.
-pub(crate) fn validate_char(text: &str, mut error: impl FnMut(Range<usize>, SyntaxErrorKind)) {
+pub(crate) fn validate_char(text: &str, mut error: impl FnMut(Range<usize>, LexErrorKind)) {
     let body = &text[1..text.len() - 1];
     let mut pieces = 0usize;
     let mut extra_start = None;
@@ -160,11 +160,11 @@ pub(crate) fn validate_char(text: &str, mut error: impl FnMut(Range<usize>, Synt
     });
 
     match pieces {
-        0 => error(1..1, SyntaxErrorKind::EmptyCharLiteral),
+        0 => error(1..1, LexErrorKind::EmptyCharLiteral),
         1 => {}
         _ => error(
             extra_start.expect("a second piece was seen") + 1..text.len() - 1,
-            SyntaxErrorKind::MoreThanOneChar,
+            LexErrorKind::MoreThanOneChar,
         ),
     }
 }
@@ -172,7 +172,7 @@ pub(crate) fn validate_char(text: &str, mut error: impl FnMut(Range<usize>, Synt
 /// Walk the body of a string or character literal, invoking `piece` once per
 /// literal character or escape sequence with its body-relative byte range and
 /// validity.
-fn walk_escapes(body: &str, mut piece: impl FnMut(usize, usize, Result<(), SyntaxErrorKind>)) {
+fn walk_escapes(body: &str, mut piece: impl FnMut(usize, usize, Result<(), LexErrorKind>)) {
     let mut chars = body.chars();
     while !chars.as_str().is_empty() {
         let start = body.len() - chars.as_str().len();
@@ -187,7 +187,7 @@ fn walk_escapes(body: &str, mut piece: impl FnMut(usize, usize, Result<(), Synta
             Some('n' | 'r' | 't' | '\\' | '"' | '\'' | '0') => Ok(()),
             Some('u') => scan_unicode_escape(&mut chars),
             // Includes a backslash at the very end of the body.
-            _ => Err(SyntaxErrorKind::UnknownEscape),
+            _ => Err(LexErrorKind::UnknownEscape),
         };
         let end = body.len() - chars.as_str().len();
         piece(start, end, result);
@@ -197,9 +197,9 @@ fn walk_escapes(body: &str, mut piece: impl FnMut(usize, usize, Result<(), Synta
 /// Scan the `{1-6 hex digits}` payload of a `\u` escape. A malformed payload
 /// is consumed through its closing `}` when one exists, so it still counts as
 /// a single piece.
-fn scan_unicode_escape(chars: &mut std::str::Chars<'_>) -> Result<(), SyntaxErrorKind> {
+fn scan_unicode_escape(chars: &mut std::str::Chars<'_>) -> Result<(), LexErrorKind> {
     if !chars.as_str().starts_with('{') {
-        return Err(SyntaxErrorKind::MalformedUnicodeEscape);
+        return Err(LexErrorKind::MalformedUnicodeEscape);
     }
     chars.next();
 
@@ -208,7 +208,7 @@ fn scan_unicode_escape(chars: &mut std::str::Chars<'_>) -> Result<(), SyntaxErro
     let mut malformed = false;
     loop {
         match chars.next() {
-            None => return Err(SyntaxErrorKind::MalformedUnicodeEscape),
+            None => return Err(LexErrorKind::MalformedUnicodeEscape),
             Some('}') => break,
             Some(ch) => match ch.to_digit(16) {
                 Some(digit) if digits < 6 => {
@@ -221,9 +221,9 @@ fn scan_unicode_escape(chars: &mut std::str::Chars<'_>) -> Result<(), SyntaxErro
     }
 
     if malformed || digits == 0 {
-        Err(SyntaxErrorKind::MalformedUnicodeEscape)
+        Err(LexErrorKind::MalformedUnicodeEscape)
     } else if char::from_u32(value).is_none() {
-        Err(SyntaxErrorKind::InvalidUnicodeScalar)
+        Err(LexErrorKind::InvalidUnicodeScalar)
     } else {
         Ok(())
     }

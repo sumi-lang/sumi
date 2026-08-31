@@ -161,7 +161,7 @@ impl<'src> Lexer<'src> {
     /// Scan a number and classify it as an int or float literal. The scan
     /// also decides whether the token breaks a literal rule, so canonical
     /// numbers — the overwhelming majority — never get re-scanned by the
-    /// validator.
+    /// collector.
     fn scan_number(&mut self) -> (SyntaxKind, TokenFlags) {
         let start = self.position;
         let first = self.bump_ascii();
@@ -223,7 +223,7 @@ impl<'src> Lexer<'src> {
         }
 
         // Trailing identifier characters attach as a literal suffix (`1u32`)
-        // for the validator to reject. An `e`-leading suffix on a number with
+        // for the collector to reject. An `e`-leading suffix on a number with
         // no exponent is a broken exponent, and the intended shape was a
         // float.
         let suffix_start = self.position;

@@ -76,7 +76,7 @@ impl TokenFlags {
     pub const LONE_CR: Self = Self(1 << 4);
     /// A number literal that breaks at least one literal rule — a suffix, a
     /// leading zero, a misplaced underscore, or a malformed exponent — so
-    /// the validator owes it errors. Unflagged numbers are canonical and
+    /// the collector owes it errors. Unflagged numbers are canonical and
     /// skip validation entirely.
     pub const MALFORMED_NUMBER: Self = Self(1 << 5);
 

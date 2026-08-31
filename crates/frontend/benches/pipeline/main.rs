@@ -4,7 +4,7 @@ use criterion::{
 use sumi_format::{normalize, reprint};
 use sumi_frontend::parse_source;
 use sumi_lexer::lex;
-use sumi_syntax::{MAX_DEPTH, ParseEvidence, ParserInput, parse, validate};
+use sumi_syntax::{MAX_DEPTH, ParseEvidence, ParserInput, parse};
 use sumi_test::corpus;
 use sumi_text::{LineIndex, TextSize};
 
@@ -87,24 +87,11 @@ fn bench_phases(c: &mut Criterion, corpus_name: &str, source: &str, valid: bool)
 
     let mut group = c.benchmark_group(format!("pipeline-phases/{corpus_name}"));
     group.throughput(Throughput::Bytes(source.len() as u64));
-    group.bench_function("lex", |b| {
-        b.iter_with_large_drop(|| {
-            lex(black_box(source)).expect("benchmark corpus fits in Sumi's source coordinate space")
-        });
-    });
-    // The `cook` IDs predate the stage's rename to `validate`; they stay so
-    // CodSpeed's measurement history stays continuous.
-    group.bench_function("cook", |b| {
-        b.iter_with_large_drop(|| validate(black_box(source), black_box(&lexed)));
-    });
-    // Both halves together: the combined measurement carries its history
-    // across the fusion that moved the phase boundary.
+    // This ID measured the old scan plus cook stages together, so it remains
+    // the comparable history for the now-unified operation.
     group.bench_function("lex+cook", |b| {
         b.iter_with_large_drop(|| {
-            let lexed = lex(black_box(source))
-                .expect("benchmark corpus fits in Sumi's source coordinate space");
-            let errors = validate(black_box(source), &lexed);
-            (lexed, errors)
+            lex(black_box(source)).expect("benchmark corpus fits in Sumi's source coordinate space")
         });
     });
     group.bench_function("parser-input", |b| {
