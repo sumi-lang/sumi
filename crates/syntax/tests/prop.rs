@@ -278,15 +278,16 @@ proptest! {
 /// significant one; the root covers the whole buffer.
 fn check_tree(tree: &SyntaxTree, cooked: &sumi_syntax::CookedFile) -> Result<(), TestCaseError> {
     let raw_len = cooked.len() as u32;
-    prop_assert_eq!(tree.kind(0), NodeKind::SourceFile);
-    prop_assert_eq!((tree.first_token(0), tree.end_token(0)), (0, raw_len));
+    let root = tree.root();
+    prop_assert_eq!(tree.kind(root), NodeKind::SourceFile);
+    prop_assert_eq!((tree.first_token(root), tree.end_token(root)), (0, raw_len));
 
     let mut visited = 0usize;
-    let mut pending = vec![0usize];
+    let mut pending = vec![root];
     while let Some(node) = pending.pop() {
         visited += 1;
         let (first, end) = (tree.first_token(node), tree.end_token(node));
-        if node != 0 {
+        if node != root {
             prop_assert!(first < end, "node {} is empty", node);
             prop_assert!(
                 !is_trivia(cooked.kind(first as usize)),
@@ -299,20 +300,21 @@ fn check_tree(tree: &SyntaxTree, cooked: &sumi_syntax::CookedFile) -> Result<(),
                 node
             );
         }
-        let mut previous_end = first;
+        // Children come last first, so ordering is checked back to front.
+        let mut next_start = end;
         for child in tree.children(node) {
             prop_assert!(
-                tree.first_token(child) >= previous_end,
+                tree.end_token(child) <= next_start,
                 "children of {} overlap",
                 node
             );
             prop_assert!(
-                tree.end_token(child) <= end,
+                tree.first_token(child) >= first,
                 "child {} escapes {}",
                 child,
                 node
             );
-            previous_end = tree.end_token(child);
+            next_start = tree.first_token(child);
             pending.push(child);
         }
     }
@@ -332,7 +334,9 @@ proptest! {
 
         // The parser attaches no token to the root itself: every significant
         // token lies in some item or top-level error node.
-        let mut children = tree.children(0).peekable();
+        let mut items: Vec<usize> = tree.children(tree.root()).collect();
+        items.reverse();
+        let mut children = items.into_iter().peekable();
         for index in 0..input.len() {
             let token = input.token(index);
             while children.peek().is_some_and(|&child| tree.end_token(child) <= token) {
@@ -663,8 +667,9 @@ impl Front {
         while let Some(node) = pending.pop() {
             let (start, end) = self.node_span(node);
             nodes.push((tree.kind(node), start - base, end - base));
-            let children: Vec<usize> = tree.children(node).collect();
-            pending.extend(children.into_iter().rev());
+            // Children come last first, so pushing them as yielded pops the
+            // first child next: the walk stays preorder.
+            pending.extend(tree.children(node));
         }
         (source[base..stop].to_owned(), nodes)
     }
@@ -677,7 +682,7 @@ impl Front {
     fn guarded(&self, touched: &[u32], moved: &[u32]) -> Vec<usize> {
         let tree = self.parse.tree();
         let mut nodes = Vec::new();
-        for item in tree.children(0) {
+        for item in tree.children(tree.root()) {
             nodes.push(item);
             for child in tree.children(item) {
                 if tree.kind(child) == NodeKind::Block && !moved.contains(&tree.first_token(child))
@@ -868,13 +873,13 @@ proptest! {
         let after = front(&edited);
         let tree = after.parse.tree();
         let survivors: HashSet<_> = tree
-            .children(0)
+            .children(tree.root())
             .filter(|&node| tree.kind(node) == NodeKind::FnItem)
             .map(|node| (after.node_span(node), after.shape(&edited, node)))
             .collect();
 
         let tree = original.parse.tree();
-        for item in tree.children(0).filter(|&node| {
+        for item in tree.children(tree.root()).filter(|&node| {
             tree.kind(node) == NodeKind::FnItem
                 && !touched.iter().any(|&token| {
                     tree.first_token(node) <= token && token < tree.end_token(node)

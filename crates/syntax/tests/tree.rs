@@ -283,6 +283,29 @@ fn if_expressions_and_error_nodes() {
     );
 }
 
+#[test]
+fn covering_finds_the_innermost_node() {
+    let source = "let x = 1\ny";
+    let lexed = lex(source).expect("test sources fit in u32");
+    let input = ParserInput::new(&cook(source, &lexed));
+    let parse = Parse::build(&input, |b| {
+        node(b, LetStmt, |b| {
+            tokens(b, 3); // let x =
+            leaf(b, LiteralExpr);
+        });
+        leaf(b, NameExpr);
+    });
+    let tree = parse.tree();
+    assert_eq!(tree.kind(tree.root()), SourceFile);
+
+    let kind_at = |token| tree.kind(tree.covering(token));
+    assert_eq!(kind_at(0), LetStmt); // `let`, attached to the statement
+    assert_eq!(kind_at(1), LetStmt); // trivia inside the statement
+    assert_eq!(kind_at(6), LiteralExpr); // `1`, under the statement
+    assert_eq!(kind_at(7), SourceFile); // the newline between children
+    assert_eq!(kind_at(8), NameExpr); // `y`
+}
+
 // What the types cannot rule out is checked at run time. (What they can —
 // completing a parent before its child, completing the root — is pinned by
 // the `compile_fail` examples on `Marker`.)
