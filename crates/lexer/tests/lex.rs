@@ -1,7 +1,7 @@
 use sumi_lexer::{LexError, LexErrorKind, lex};
 
 /// Lex `source`, assert the partition invariants every lex must uphold, and
-/// render one line per token: `Kind start..end "text"` plus any flags.
+/// render one line per token: `RawKind start..end "text"` plus any flags.
 fn dump(source: &str) -> Vec<String> {
     let file = lex(source).expect("test sources fit in u32");
 
@@ -39,7 +39,7 @@ fn dump(source: &str) -> Vec<String> {
             let flags = file.flags(index);
             let mut line = format!(
                 "{:?} {}..{} {:?}",
-                file.kind(index),
+                file.raw_kind(index),
                 range.start().to_u32(),
                 range.end().to_u32(),
                 file.text(source, index),
@@ -278,8 +278,11 @@ fn float_shapes() {
     check("1.5", &[r#"Number 0..3 "1.5""#]);
     check("2.5e-3", &[r#"Number 0..6 "2.5e-3""#]);
     check("1e5", &[r#"Number 0..3 "1e5""#]);
-    // Boundaries must not depend on marker case; the cooker rejects `E`.
-    check("1E-5", &[r#"Number 0..4 "1E-5""#]);
+    // Boundaries must not depend on marker case; the validator rejects `E`.
+    check(
+        "1E-5",
+        &[r#"Number 0..4 "1E-5" TokenFlags(MALFORMED_NUMBER)"#],
+    );
 }
 
 #[test]
@@ -306,10 +309,16 @@ fn dot_continues_a_number_only_before_a_digit() {
 
 #[test]
 fn number_suffixes_attach() {
-    check("1u32", &[r#"Number 0..4 "1u32""#]);
-    check("1e", &[r#"Number 0..2 "1e""#]);
+    check(
+        "1u32",
+        &[r#"Number 0..4 "1u32" TokenFlags(MALFORMED_NUMBER)"#],
+    );
+    check("1e", &[r#"Number 0..2 "1e" TokenFlags(MALFORMED_NUMBER)"#]);
     // With no base prefixes in the language, `x1F` is just a suffix.
-    check("0x1F", &[r#"Number 0..4 "0x1F""#]);
+    check(
+        "0x1F",
+        &[r#"Number 0..4 "0x1F" TokenFlags(MALFORMED_NUMBER)"#],
+    );
     assert_eq!(lex("0x1F").unwrap().errors(), &[]);
 }
 

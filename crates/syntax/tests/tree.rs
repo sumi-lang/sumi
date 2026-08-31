@@ -2,7 +2,7 @@ mod common;
 
 use sumi_lexer::lex;
 use sumi_syntax::NodeKind::{self, *};
-use sumi_syntax::{CompletedMarker, Marker, Parse, ParserInput, cook};
+use sumi_syntax::{CompletedMarker, Marker, Parse, ParserInput};
 
 /// Open a child of `parent`, run `body` inside it, and complete it as
 /// `kind`.
@@ -28,11 +28,11 @@ fn tokens(marker: &mut Marker<'_, '_>, count: usize) {
     }
 }
 
-/// Lex, cook, and build a tree over `source` by running `build` inside the
+/// Lex `source` and build a tree over it by running `build` inside the
 /// root, then dump it.
 fn dump(source: &str, build: impl FnOnce(&mut Marker<'_, '_>)) -> Vec<String> {
     let lexed = lex(source).expect("test sources fit in u32");
-    let input = ParserInput::new(&cook(source, &lexed));
+    let input = ParserInput::new(&lexed);
     let parse = Parse::build(&input, build);
     assert!(
         parse.evidence().is_empty(),
@@ -287,7 +287,7 @@ fn if_expressions_and_error_nodes() {
 fn covering_finds_the_innermost_node() {
     let source = "let x = 1\ny";
     let lexed = lex(source).expect("test sources fit in u32");
-    let input = ParserInput::new(&cook(source, &lexed));
+    let input = ParserInput::new(&lexed);
     let parse = Parse::build(&input, |b| {
         node(b, LetStmt, |b| {
             tokens(b, 3); // let x =

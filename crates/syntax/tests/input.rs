@@ -1,15 +1,14 @@
 use sumi_lexer::lex;
-use sumi_syntax::{ParserInput, SyntaxKind, cook};
+use sumi_syntax::{ParserInput, SyntaxKind};
 
-/// Lex, cook, and stream `source`, assert the stream invariants, and render
+/// Lex and stream `source`, assert the stream invariants, and render
 /// one line per significant token: `Kind "text"` plus `newline`, `boundary`,
 /// `joint`, and `partner N` markers. `newline`/`boundary` describe the gap
 /// before the token; `joint` glues it to the next one; `partner` names the
 /// bracket matching it.
 fn dump(source: &str) -> Vec<String> {
     let lexed = lex(source).expect("test sources fit in u32");
-    let cooked = cook(source, &lexed);
-    let input = ParserInput::new(&cooked);
+    let input = ParserInput::new(&lexed);
 
     let mut previous = None;
     (0..input.len())
@@ -24,7 +23,7 @@ fn dump(source: &str) -> Vec<String> {
                 ),
                 "token {index} is trivia"
             );
-            assert_eq!(kind, cooked.kind(token), "kinds must come from the cook");
+            assert_eq!(kind, lexed.kind(token), "kinds must come from the scan");
             if let Some(previous) = previous {
                 assert!(token > previous, "token indices must increase");
             }
@@ -85,7 +84,7 @@ fn check(source: &str, expected: &[&str]) {
 fn has_boundary(source: &str) -> bool {
     dump(source); // invariants
     let lexed = lex(source).expect("test sources fit in u32");
-    let input = ParserInput::new(&cook(source, &lexed));
+    let input = ParserInput::new(&lexed);
     (0..input.len()).any(|index| input.boundary_before(index))
 }
 
@@ -94,7 +93,7 @@ fn empty_and_trivia_only_sources_have_no_tokens() {
     check("", &[]);
     check("  // c\n\n", &[]);
 
-    let input = ParserInput::new(&cook("", &lex("").unwrap()));
+    let input = ParserInput::new(&lex("").unwrap());
     assert!(input.is_empty());
     assert_eq!(input.get(0), None);
 }
@@ -114,7 +113,7 @@ fn trivia_is_stripped() {
 
 #[test]
 fn lookahead_past_the_end_is_none() {
-    let input = ParserInput::new(&cook("x", &lex("x").unwrap()));
+    let input = ParserInput::new(&lex("x").unwrap());
     assert_eq!(input.get(0), Some(SyntaxKind::Ident));
     assert_eq!(input.get(1), None);
     assert!(!input.is_joint(0));
@@ -326,7 +325,7 @@ fn boundary_in_agrees_with_the_boundary_bits() {
     let source = "a\nb + (c\nd) {\ne }\nf\n";
     dump(source); // invariants
     let lexed = lex(source).expect("test sources fit in u32");
-    let input = ParserInput::new(&cook(source, &lexed));
+    let input = ParserInput::new(&lexed);
     assert!((0..input.len()).any(|index| input.boundary_before(index)));
     for start in 0..=input.len() {
         for end in start..=input.len() {

@@ -48,8 +48,8 @@
 use std::num::NonZeroU32;
 use std::ops::Range;
 
-use crate::cook::CookedFile;
 use crate::kind::SyntaxKind;
+use sumi_lexer::LexedFile;
 
 const JOINT: u8 = 1 << 0;
 const NEWLINE_BEFORE: u8 = 1 << 1;
@@ -70,7 +70,7 @@ pub(crate) struct Slot {
     partner: Option<NonZeroU32>,
 }
 
-/// The significant tokens of one cooked file, with jointness and statement
+/// The significant tokens of one lexed file, with jointness and statement
 /// boundaries precomputed.
 #[derive(Clone, Debug)]
 pub struct ParserInput {
@@ -86,12 +86,11 @@ pub struct ParserInput {
 }
 
 impl ParserInput {
-    pub fn new(cooked: &CookedFile) -> Self {
+    pub fn new(lexed: &LexedFile) -> Self {
         // Sized exactly and filled once: counting the significant tokens
         // first is one cheap scan, and spares both the doubling
         // reallocations of a growing vector and a final shrink.
-        let kinds = cooked.kinds();
-        let significant = kinds.iter().filter(|&&kind| !is_trivia(kind)).count();
+        let significant = lexed.kinds().filter(|&kind| !is_trivia(kind)).count();
         let mut build = Build {
             slots: Vec::with_capacity(significant),
             openers: Vec::new(),
@@ -104,7 +103,7 @@ impl ParserInput {
         // but need pairs whose closers lie ahead — whether an open `(` is
         // ever closed — so they wait for the second pass below.
         let mut newline = false;
-        for (raw, &kind) in kinds.iter().enumerate() {
+        for (raw, kind) in lexed.kinds().enumerate() {
             match kind {
                 SyntaxKind::Whitespace | SyntaxKind::LineComment => continue,
                 SyntaxKind::Newline => {
@@ -179,7 +178,7 @@ impl ParserInput {
             slots: slots.into_boxed_slice(),
             boundaries: boundaries.into_boxed_slice(),
             items: items.into_boxed_slice(),
-            raw_len: cooked.len() as u32,
+            raw_len: lexed.len() as u32,
         }
     }
 
@@ -198,8 +197,8 @@ impl ParserInput {
         self.slots.get(index).map(|slot| slot.kind)
     }
 
-    /// The index of significant token `index` in the lexed and cooked token
-    /// buffers, for ranges, text, and flags.
+    /// The index of significant token `index` in the raw lexed token
+    /// buffer, for ranges, text, and flags.
     pub fn token(&self, index: usize) -> u32 {
         self.slots[index].token
     }

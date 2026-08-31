@@ -1,25 +1,18 @@
 use sumi_format::{Element, elements, normalize, reprint};
 use sumi_lexer::{LexedFile, lex};
 use sumi_syntax::{
-    CookedFile, NodeKind, Parse, ParseEvidence, ParseViolationKind, ParserInput, SyntaxTree, cook,
-    parse,
+    NodeKind, Parse, ParseEvidence, ParseViolationKind, ParserInput, SyntaxTree, parse,
 };
 
 struct Front {
     lexed: LexedFile,
-    cooked: CookedFile,
     parse: Parse,
 }
 
 fn front(source: &str) -> Front {
     let lexed = lex(source).expect("test sources fit in u32");
-    let cooked = cook(source, &lexed);
-    let parse = parse(&ParserInput::new(&cooked));
-    Front {
-        lexed,
-        cooked,
-        parse,
-    }
+    let parse = parse(&ParserInput::new(&lexed));
+    Front { lexed, parse }
 }
 
 /// The tree's shape: depth and kind per node, in preorder.
@@ -53,7 +46,7 @@ fn violations(front: &Front) -> Vec<ParseViolationKind> {
 #[track_caller]
 fn check_normalize(source: &str, expected: &str) {
     let before = front(source);
-    let normalized = normalize(source, &before.lexed, &before.cooked, &before.parse);
+    let normalized = normalize(source, &before.lexed, &before.parse);
     assert_eq!(normalized, expected, "normalize of {source:?}");
 
     let after = front(&normalized);
@@ -68,7 +61,7 @@ fn check_normalize(source: &str, expected: &str) {
         "normalize changed the shape of {source:?}"
     );
 
-    let again = normalize(&normalized, &after.lexed, &after.cooked, &after.parse);
+    let again = normalize(&normalized, &after.lexed, &after.parse);
     assert_eq!(
         again, normalized,
         "normalize of {source:?} is not idempotent"
@@ -214,7 +207,7 @@ fn normalize_leaves_a_trailing_operator_missing_its_operand() {
             violations(&before).contains(&ParseViolationKind::TrailingOperator),
             "the trailing operator must be recorded for {source:?}"
         );
-        let normalized = normalize(source, &before.lexed, &before.cooked, &before.parse);
+        let normalized = normalize(source, &before.lexed, &before.parse);
         assert_eq!(
             normalized, source,
             "an operandless trailing operator stays as written"
@@ -231,14 +224,14 @@ fn normalize_yields_when_the_rewrite_would_change_the_parse() {
     // as written. Found by the normalize property.
     let source = "fn f() { true&<\ntrue }";
     let before = front(source);
-    let normalized = normalize(source, &before.lexed, &before.cooked, &before.parse);
+    let normalized = normalize(source, &before.lexed, &before.parse);
     assert_eq!(normalized, source, "an entangled rewrite stays as written");
 
     // When only the move is unsafe, the independent spacing edit still
     // lands and passes the gate.
     let source = "fn f() { true<\n) }";
     let before = front(source);
-    let normalized = normalize(source, &before.lexed, &before.cooked, &before.parse);
+    let normalized = normalize(source, &before.lexed, &before.parse);
     assert_eq!(normalized, "fn f() { true <\n) }");
 }
 
@@ -270,7 +263,7 @@ fn normalize_leaves_chained_comparisons_as_written() {
         [ParseViolationKind::ChainedComparison],
         "the chain is the only violation"
     );
-    let normalized = normalize(source, &before.lexed, &before.cooked, &before.parse);
+    let normalized = normalize(source, &before.lexed, &before.parse);
     assert_eq!(normalized, source);
 }
 
@@ -282,6 +275,6 @@ fn normalize_never_deletes_a_comment_from_a_prefix_gap() {
         violations(&before),
         [ParseViolationKind::SpacedPrefixOperator]
     );
-    let normalized = normalize(source, &before.lexed, &before.cooked, &before.parse);
+    let normalized = normalize(source, &before.lexed, &before.parse);
     assert_eq!(normalized, source, "a comment-blocked gap stays as written");
 }

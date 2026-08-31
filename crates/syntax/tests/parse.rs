@@ -3,7 +3,7 @@ mod common;
 use sumi_lexer::{LexedFile, lex};
 use sumi_syntax::{
     ParseAnchor, ParseEvidence, ParseExpected, ParseRecoveryKind, ParseViolationKind, ParserInput,
-    cook, parse,
+    parse,
 };
 
 /// Parse `source`; assert the tree dump and the evidence, each rendered as
@@ -11,8 +11,7 @@ use sumi_syntax::{
 #[track_caller]
 fn check(source: &str, tree: &[&str], evidence: &[&str]) {
     let lexed = lex(source).expect("test sources fit in u32");
-    let cooked = cook(source, &lexed);
-    let parse = parse(&ParserInput::new(&cooked));
+    let parse = parse(&ParserInput::new(&lexed));
     assert_eq!(
         common::dump(parse.tree(), &lexed, source),
         tree,
@@ -75,7 +74,7 @@ fn raw_text<'a>(source: &'a str, lexed: &LexedFile, start: u32, end: u32) -> &'a
 fn missing_syntax_anchors_the_raw_trivia_gap() {
     let source = "fn f() { x // tail";
     let lexed = lex(source).expect("test source fits in u32");
-    let parse = parse(&ParserInput::new(&cook(source, &lexed)));
+    let parse = parse(&ParserInput::new(&lexed));
     let [ParseEvidence::Recovery(recovery)] = parse.evidence() else {
         panic!("the unclosed block has one recovery")
     };
@@ -97,7 +96,7 @@ fn missing_syntax_anchors_the_raw_trivia_gap() {
 fn present_syntax_anchors_nonempty_token_ranges() {
     let source = "fn f() { a==b }";
     let lexed = lex(source).expect("test source fits in u32");
-    let parse = parse(&ParserInput::new(&cook(source, &lexed)));
+    let parse = parse(&ParserInput::new(&lexed));
     let [ParseEvidence::Violation(violation)] = parse.evidence() else {
         panic!("the unspaced operator has one violation")
     };
@@ -117,7 +116,7 @@ fn present_syntax_anchors_nonempty_token_ranges() {
 fn recovery_records_the_ranges_it_skips() {
     let source = ": (x)";
     let lexed = lex(source).expect("test source fits in u32");
-    let parse = parse(&ParserInput::new(&cook(source, &lexed)));
+    let parse = parse(&ParserInput::new(&lexed));
     let [ParseEvidence::Recovery(recovery)] = parse.evidence() else {
         panic!("top-level garbage has one recovery")
     };
@@ -1025,7 +1024,7 @@ fn prior_phase_tokens_are_recorded_as_recovery() {
     );
 
     let lexed = lex(source).expect("test source fits in u32");
-    let parsed = parse(&ParserInput::new(&cook(source, &lexed)));
+    let parsed = parse(&ParserInput::new(&lexed));
     let ParseEvidence::Recovery(recovery) = &parsed.evidence()[1] else {
         panic!("the prior-phase token starts a recovery")
     };
@@ -1039,7 +1038,7 @@ fn prior_phase_tokens_are_recorded_as_recovery() {
     // Adjacent tokens diagnosed by earlier phases form one recovery run.
     let source = "fn f() { ; € }";
     let lexed = lex(source).expect("test source fits in u32");
-    let parsed = parse(&ParserInput::new(&cook(source, &lexed)));
+    let parsed = parse(&ParserInput::new(&lexed));
     let [ParseEvidence::Recovery(recovery)] = parsed.evidence() else {
         panic!("adjacent prior-phase tokens form one recovery")
     };
@@ -1113,8 +1112,8 @@ fn unclosed_delimiters() {
 
 #[test]
 fn malformed_literals_are_structurally_ordinary() {
-    // `1e` carries a cook error; misplacing it is a second, independent
-    // problem, so the parser still reports it.
+    // `1e` carries a validation error; misplacing it is a second,
+    // independent problem, so the parser still reports it.
     check(
         "1e",
         &["SourceFile 0..2", r#"  Error 0..2 "1e""#],
@@ -1312,7 +1311,7 @@ fn recovery_ownership_regressions() {
 /// formed.
 fn evidence_kinds(source: &str) -> Vec<String> {
     let lexed = lex(source).expect("test sources fit in u32");
-    let parse = parse(&ParserInput::new(&cook(source, &lexed)));
+    let parse = parse(&ParserInput::new(&lexed));
     let _ = common::dump(parse.tree(), &lexed, source);
     parse.evidence().iter().map(evidence_name).collect()
 }
@@ -1320,7 +1319,7 @@ fn evidence_kinds(source: &str) -> Vec<String> {
 /// How many `fn` items `source` parses into.
 fn items(source: &str) -> usize {
     let lexed = lex(source).expect("test sources fit in u32");
-    let parse = parse(&ParserInput::new(&cook(source, &lexed)));
+    let parse = parse(&ParserInput::new(&lexed));
     let tree = parse.tree();
     (0..tree.len())
         .filter(|&node| tree.kind(node) == sumi_syntax::NodeKind::FnItem)
@@ -1672,7 +1671,7 @@ fn a_malformed_suffix_belongs_to_the_latest_statement_recovery() {
     );
 
     let lexed = lex(source).expect("test source fits in u32");
-    let parse = parse(&ParserInput::new(&cook(source, &lexed)));
+    let parse = parse(&ParserInput::new(&lexed));
     let [ParseEvidence::Recovery(name), ParseEvidence::Recovery(eq)] = parse.evidence() else {
         panic!("the malformed statement has two recovery causes")
     };
@@ -2072,7 +2071,7 @@ fn lexer_errors_do_not_hide_statement_recovery() {
     );
 
     let lexed = lex(source).expect("test source fits in u32");
-    let parse = parse(&ParserInput::new(&cook(source, &lexed)));
+    let parse = parse(&ParserInput::new(&lexed));
     let [ParseEvidence::Recovery(recovery)] = parse.evidence() else {
         panic!("the malformed statement has one recovery cause")
     };

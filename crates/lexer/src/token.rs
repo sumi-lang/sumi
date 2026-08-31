@@ -3,25 +3,27 @@ use std::ops::BitOrAssign;
 
 use sumi_text::TextSize;
 
-/// A transient scanner result: one raw lexical atom.
+use crate::kind::SyntaxKind;
+
+/// A transient scanner result: one lexical atom, classified both ways.
 ///
 /// Raw tokens never own source text and carry no absolute position; the
 /// collector tracks offsets while accumulating a [`LexedFile`](crate::LexedFile).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct RawToken {
-    pub(crate) kind: RawKind,
+    pub(crate) kind: SyntaxKind,
+    pub(crate) raw: RawKind,
     /// Length in UTF-8 bytes. Always positive; EOF is iterator `None`.
     pub(crate) len: TextSize,
     pub(crate) flags: TokenFlags,
 }
 
-/// The shape of a raw lexical atom.
+/// The shape of a lexical atom, stored beside its [`SyntaxKind`].
 ///
-/// Raw kinds are context-free and language-version-independent: keywords are
-/// [`Ident`](RawKind::Ident)s, compound operators are sequences of
-/// single-character [`Punct`](RawKind::Punct)s, and malformed tokens keep
-/// their intended kind, with details in [`TokenFlags`] and the file's error
-/// list.
+/// Raw kinds are context-free: keywords are [`Ident`](RawKind::Ident)s,
+/// compound operators are sequences of single-character
+/// [`Punct`](RawKind::Punct)s, and malformed tokens keep their intended
+/// kind, with details in [`TokenFlags`] and the file's error list.
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum RawKind {
@@ -72,13 +74,19 @@ impl TokenFlags {
     pub const DOC_INNER: Self = Self(1 << 3);
     /// A lone `\r` not followed by `\n`.
     pub const LONE_CR: Self = Self(1 << 4);
+    /// A number literal that breaks at least one literal rule — a suffix, a
+    /// leading zero, a misplaced underscore, or a malformed exponent — so
+    /// the validator owes it errors. Unflagged numbers are canonical and
+    /// skip validation entirely.
+    pub const MALFORMED_NUMBER: Self = Self(1 << 5);
 
-    const NAMES: [(Self, &'static str); 5] = [
+    const NAMES: [(Self, &'static str); 6] = [
         (Self::UNTERMINATED, "UNTERMINATED"),
         (Self::HAS_ESCAPE, "HAS_ESCAPE"),
         (Self::DOC_OUTER, "DOC_OUTER"),
         (Self::DOC_INNER, "DOC_INNER"),
         (Self::LONE_CR, "LONE_CR"),
+        (Self::MALFORMED_NUMBER, "MALFORMED_NUMBER"),
     ];
 
     pub const fn is_empty(self) -> bool {

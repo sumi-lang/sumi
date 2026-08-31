@@ -3,7 +3,7 @@
 use proptest::prelude::*;
 use sumi_format::normalize;
 use sumi_lexer::{LexedFile, lex};
-use sumi_syntax::{CookedFile, NodeKind, Parse, ParserInput, SyntaxKind, SyntaxTree, cook, parse};
+use sumi_syntax::{NodeKind, Parse, ParserInput, SyntaxKind, SyntaxTree, parse};
 
 /// Source fragments, valid and pathological, echoing the parser soup
 /// property; concatenation composes the adjacencies goldens cannot
@@ -28,19 +28,13 @@ fn soup() -> impl Strategy<Value = String> {
 
 struct Front {
     lexed: LexedFile,
-    cooked: CookedFile,
     parse: Parse,
 }
 
 fn front(source: &str) -> Front {
     let lexed = lex(source).expect("generated sources fit in u32");
-    let cooked = cook(source, &lexed);
-    let parse = parse(&ParserInput::new(&cooked));
-    Front {
-        lexed,
-        cooked,
-        parse,
-    }
+    let parse = parse(&ParserInput::new(&lexed));
+    Front { lexed, parse }
 }
 
 /// The tree's shape: depth and kind per node, in preorder — everything
@@ -58,22 +52,22 @@ fn shape(tree: &SyntaxTree) -> Vec<(usize, NodeKind)> {
 /// The significant tokens, kinds and texts in order: the stream normalize
 /// may respace but never rewrite.
 fn significant<'src>(front: &Front, source: &'src str) -> Vec<(SyntaxKind, &'src str)> {
-    (0..front.cooked.len())
+    (0..front.lexed.len())
         .filter(|&index| {
             !matches!(
-                front.cooked.kind(index),
+                front.lexed.kind(index),
                 SyntaxKind::Whitespace | SyntaxKind::Newline | SyntaxKind::LineComment
             )
         })
-        .map(|index| (front.cooked.kind(index), front.lexed.text(source, index)))
+        .map(|index| (front.lexed.kind(index), front.lexed.text(source, index)))
         .collect()
 }
 
 /// The comments in order: an operator may hop one, but none is ever
 /// deleted or reordered against another.
 fn comments<'src>(front: &Front, source: &'src str) -> Vec<&'src str> {
-    (0..front.cooked.len())
-        .filter(|&index| front.cooked.kind(index) == SyntaxKind::LineComment)
+    (0..front.lexed.len())
+        .filter(|&index| front.lexed.kind(index) == SyntaxKind::LineComment)
         .map(|index| front.lexed.text(source, index))
         .collect()
 }
@@ -82,7 +76,7 @@ proptest! {
     #[test]
     fn normalize_preserves_the_parse_and_settles(source in soup()) {
         let before = front(&source);
-        let normalized = normalize(&source, &before.lexed, &before.cooked, &before.parse);
+        let normalized = normalize(&source, &before.lexed, &before.parse);
         let after = front(&normalized);
 
         // Layout edits keep every significant token and every comment.
@@ -105,7 +99,7 @@ proptest! {
         );
 
         // A second pass finds nothing left to do.
-        let again = normalize(&normalized, &after.lexed, &after.cooked, &after.parse);
+        let again = normalize(&normalized, &after.lexed, &after.parse);
         prop_assert_eq!(&again, &normalized, "normalize of {:?} is not idempotent", source);
     }
 }

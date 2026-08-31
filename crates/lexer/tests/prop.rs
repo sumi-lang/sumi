@@ -158,7 +158,7 @@ proptest! {
         let file = lex(&source).expect("generated sources fit in u32");
 
         let tokens: Vec<&str> = (0..file.len())
-            .filter(|&index| file.kind(index) != RawKind::HorizontalSpace)
+            .filter(|&index| file.raw_kind(index) != RawKind::HorizontalSpace)
             .map(|index| file.text(&source, index))
             .collect();
         let expected: Vec<&str> = fragments.iter().map(String::as_str).collect();

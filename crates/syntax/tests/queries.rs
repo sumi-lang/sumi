@@ -2,7 +2,7 @@
 
 use sumi_lexer::lex;
 use sumi_syntax::NodeKind::{self, *};
-use sumi_syntax::{Marker, Parse, ParserInput, SyntaxTree, cook, parse};
+use sumi_syntax::{Marker, Parse, ParserInput, SyntaxTree, parse};
 
 /// Every node whose token range contains `token`, by scanning the whole
 /// tree: the exhaustive reference `covering_chain` must match. Covering
@@ -19,8 +19,7 @@ fn covering_reference(tree: &SyntaxTree, token: u32) -> Vec<usize> {
 #[track_caller]
 fn check_queries(source: &str) {
     let lexed = lex(source).expect("test sources fit in u32");
-    let cooked = cook(source, &lexed);
-    let input = ParserInput::new(&cooked);
+    let input = ParserInput::new(&lexed);
     let tree_parse = parse(&input);
     let tree = tree_parse.tree();
 
@@ -87,7 +86,7 @@ fn node(parent: &mut Marker<'_, '_>, kind: NodeKind, body: impl FnOnce(&mut Mark
 fn trivia_between_children_belongs_to_the_spanning_node() {
     let source = "let x = 1 // c";
     let lexed = lex(source).expect("test sources fit in u32");
-    let input = ParserInput::new(&cook(source, &lexed));
+    let input = ParserInput::new(&lexed);
     let built = Parse::build(&input, |root| {
         node(root, LetStmt, |stmt| {
             stmt.token(); // let
@@ -114,7 +113,7 @@ fn trivia_between_children_belongs_to_the_spanning_node() {
 fn covering_a_token_past_the_file_panics() {
     let source = "x";
     let lexed = lex(source).expect("test sources fit in u32");
-    let input = ParserInput::new(&cook(source, &lexed));
+    let input = ParserInput::new(&lexed);
     let built = Parse::build(&input, |root| {
         node(root, NameExpr, |name| name.token());
     });

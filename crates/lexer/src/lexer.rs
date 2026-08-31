@@ -1,5 +1,6 @@
 use sumi_text::TextSize;
 
+use crate::kind::SyntaxKind;
 use crate::token::{RawKind, RawToken, TokenFlags};
 
 const fn is_ascii_ident_start(byte: u8) -> bool {
@@ -53,40 +54,59 @@ impl<'src> Lexer<'src> {
     fn scan_token(&mut self) -> RawToken {
         let start = self.position;
 
-        let (kind, flags) = if self.position == 0 && self.remaining().starts_with('\u{feff}') {
+        let (kind, raw, flags) = if self.position == 0 && self.remaining().starts_with('\u{feff}') {
             self.bump_char();
-            (RawKind::Bom, TokenFlags::EMPTY)
+            // The BOM is ignorable trivia to every downstream phase; its
+            // identity stays recoverable through the raw kind.
+            (SyntaxKind::Whitespace, RawKind::Bom, TokenFlags::EMPTY)
         } else {
             match self.peek_byte().expect("scan_token called at EOF") {
                 b' ' | b'\t' => {
                     self.scan_horizontal_space();
-                    (RawKind::HorizontalSpace, TokenFlags::EMPTY)
+                    (
+                        SyntaxKind::Whitespace,
+                        RawKind::HorizontalSpace,
+                        TokenFlags::EMPTY,
+                    )
                 }
-                b'\n' | b'\r' => (RawKind::Newline, self.scan_newline()),
-                b'/' if self.remaining().starts_with("//") => {
-                    (RawKind::LineComment, self.scan_line_comment())
-                }
+                b'\n' | b'\r' => (SyntaxKind::Newline, RawKind::Newline, self.scan_newline()),
+                b'/' if self.remaining().starts_with("//") => (
+                    SyntaxKind::LineComment,
+                    RawKind::LineComment,
+                    self.scan_line_comment(),
+                ),
                 b'0'..=b'9' => {
-                    self.scan_number();
-                    (RawKind::Number, TokenFlags::EMPTY)
+                    let (kind, flags) = self.scan_number();
+                    (kind, RawKind::Number, flags)
                 }
-                b'"' => (RawKind::String, self.scan_string()),
-                b'\'' => (RawKind::Char, self.scan_char()),
-                b'r' if self.looks_like_raw_string() => {
-                    (RawKind::RawString, self.scan_raw_string())
-                }
+                b'"' => (
+                    SyntaxKind::StringLiteral,
+                    RawKind::String,
+                    self.scan_string(),
+                ),
+                b'\'' => (SyntaxKind::CharLiteral, RawKind::Char, self.scan_char()),
+                b'r' if self.looks_like_raw_string() => (
+                    SyntaxKind::RawStringLiteral,
+                    RawKind::RawString,
+                    self.scan_raw_string(),
+                ),
                 byte if is_ascii_ident_start(byte) => {
                     self.scan_ident();
-                    (RawKind::Ident, TokenFlags::EMPTY)
+                    (
+                        self.classify_ident(start),
+                        RawKind::Ident,
+                        TokenFlags::EMPTY,
+                    )
                 }
                 byte if byte.is_ascii_punctuation() => {
                     self.bump_ascii();
-                    (RawKind::Punct, TokenFlags::EMPTY)
+                    let kind = SyntaxKind::from_punct(byte).unwrap_or(SyntaxKind::Error);
+                    (kind, RawKind::Punct, TokenFlags::EMPTY)
                 }
-                byte if !byte.is_ascii() => self.scan_unicode(),
+                byte if !byte.is_ascii() => self.scan_unicode(start),
                 _ => {
                     self.bump_ascii();
-                    (RawKind::Unknown, TokenFlags::EMPTY)
+                    (SyntaxKind::Error, RawKind::Unknown, TokenFlags::EMPTY)
                 }
             }
         };
@@ -96,6 +116,7 @@ impl<'src> Lexer<'src> {
 
         RawToken {
             kind,
+            raw,
             len: TextSize::new(u32::try_from(len).expect("source length fits in u32")),
             flags,
         }
@@ -137,11 +158,29 @@ impl<'src> Lexer<'src> {
         flags
     }
 
-    fn scan_number(&mut self) {
+    /// Scan a number and classify it as an int or float literal. The scan
+    /// also decides whether the token breaks a literal rule, so canonical
+    /// numbers — the overwhelming majority — never get re-scanned by the
+    /// validator.
+    fn scan_number(&mut self) -> (SyntaxKind, TokenFlags) {
+        let start = self.position;
         let first = self.bump_ascii();
         debug_assert!(first.is_ascii_digit());
 
-        self.eat_decimal_digits();
+        let mut malformed = false;
+        self.eat_decimal_digits(&mut malformed);
+
+        // A leading zero is a literal error (`0123` means octal in several
+        // other languages); `0_` alone is only a misplaced underscore.
+        if first == b'0'
+            && self.source.as_bytes()[start + 1..self.position]
+                .iter()
+                .any(u8::is_ascii_digit)
+        {
+            malformed = true;
+        }
+
+        let mut is_float = false;
 
         // A `.` continues the number only when a digit follows, so `1..2`
         // and `1.foo` leave the dot to punctuation.
@@ -150,38 +189,86 @@ impl<'src> Lexer<'src> {
                 .peek_byte_at(1)
                 .is_some_and(|byte| byte.is_ascii_digit())
         {
+            is_float = true;
             self.bump_ascii();
-            self.eat_decimal_digits();
+            self.eat_decimal_digits(&mut malformed);
         }
 
         // An exponent needs a digit after the optional sign; otherwise the
         // `e` is left to the suffix, as in `1em`.
+        let mut has_exponent = false;
         if matches!(self.peek_byte(), Some(b'e' | b'E')) {
-            let has_exponent = match (self.peek_byte_at(1), self.peek_byte_at(2)) {
+            has_exponent = match (self.peek_byte_at(1), self.peek_byte_at(2)) {
                 (Some(byte), _) if byte.is_ascii_digit() => true,
                 (Some(b'+' | b'-'), Some(byte)) => byte.is_ascii_digit(),
                 _ => false,
             };
             if has_exponent {
-                self.bump_ascii();
-                if matches!(self.peek_byte(), Some(b'+' | b'-')) {
-                    self.bump_ascii();
+                is_float = true;
+                // The shape munches `1E5` and `1e+5` so the token stays
+                // whole; an uppercase marker or a `+` sign is an error.
+                if self.bump_ascii() == b'E' {
+                    malformed = true;
                 }
-                self.eat_decimal_digits();
+                if matches!(self.peek_byte(), Some(b'+' | b'-')) && self.bump_ascii() == b'+' {
+                    malformed = true;
+                }
+                let exponent_start = self.position;
+                self.eat_decimal_digits(&mut malformed);
+                let digits = &self.source.as_bytes()[exponent_start..self.position];
+                if digits[0] == b'0' && digits[1..].iter().any(u8::is_ascii_digit) {
+                    malformed = true;
+                }
             }
         }
 
         // Trailing identifier characters attach as a literal suffix (`1u32`)
-        // for the cooker to validate.
+        // for the validator to reject. An `e`-leading suffix on a number with
+        // no exponent is a broken exponent, and the intended shape was a
+        // float.
+        let suffix_start = self.position;
         self.eat_ident_continue();
+        if self.position > suffix_start {
+            malformed = true;
+            if !has_exponent && matches!(self.source.as_bytes()[suffix_start], b'e' | b'E') {
+                is_float = true;
+            }
+        }
+
+        (
+            if is_float {
+                SyntaxKind::FloatLiteral
+            } else {
+                SyntaxKind::IntLiteral
+            },
+            if malformed {
+                TokenFlags::MALFORMED_NUMBER
+            } else {
+                TokenFlags::EMPTY
+            },
+        )
     }
 
-    fn eat_decimal_digits(&mut self) {
+    /// Advance over a digit run, flagging any `_` that is not surrounded by
+    /// digits on both sides: grouping style is free, but `1_`, `1__0`, and
+    /// `1_.5` are typo-shaped.
+    fn eat_decimal_digits(&mut self, malformed: &mut bool) {
         while let Some(byte) = self.peek_byte() {
-            if byte.is_ascii_digit() || byte == b'_' {
-                self.position += 1;
-            } else {
-                break;
+            match byte {
+                b'0'..=b'9' => self.position += 1,
+                b'_' => {
+                    // A number's first byte is a digit, so `position - 1`
+                    // stays inside the token.
+                    let digit_before = self.source.as_bytes()[self.position - 1].is_ascii_digit();
+                    let digit_after = self
+                        .peek_byte_at(1)
+                        .is_some_and(|byte| byte.is_ascii_digit());
+                    if !(digit_before && digit_after) {
+                        *malformed = true;
+                    }
+                    self.position += 1;
+                }
+                _ => break,
             }
         }
     }
@@ -290,6 +377,15 @@ impl<'src> Lexer<'src> {
         self.eat_ident_continue();
     }
 
+    /// Classify the identifier just scanned from `start`, while its bytes
+    /// are still cache-hot: a discard, a keyword, or a plain identifier.
+    fn classify_ident(&self, start: usize) -> SyntaxKind {
+        match &self.source[start..self.position] {
+            "_" => SyntaxKind::Underscore,
+            text => SyntaxKind::from_keyword(text).unwrap_or(SyntaxKind::Ident),
+        }
+    }
+
     fn eat_ident_continue(&mut self) {
         while let Some(ch) = self.remaining().chars().next() {
             if !is_ident_continue(ch) {
@@ -299,7 +395,7 @@ impl<'src> Lexer<'src> {
         }
     }
 
-    fn scan_unicode(&mut self) -> (RawKind, TokenFlags) {
+    fn scan_unicode(&mut self, start: usize) -> (SyntaxKind, RawKind, TokenFlags) {
         let ch = self
             .remaining()
             .chars()
@@ -309,10 +405,14 @@ impl<'src> Lexer<'src> {
 
         if unicode_ident::is_xid_start(ch) {
             self.scan_ident();
-            (RawKind::Ident, TokenFlags::EMPTY)
+            (
+                self.classify_ident(start),
+                RawKind::Ident,
+                TokenFlags::EMPTY,
+            )
         } else {
             self.bump_char();
-            (RawKind::Unknown, TokenFlags::EMPTY)
+            (SyntaxKind::Error, RawKind::Unknown, TokenFlags::EMPTY)
         }
     }
 }

@@ -1,145 +1,42 @@
-/// The language-level kind of a token.
+/// The language-level kind of a token, assigned by the fused lexer and
+/// re-exported here where the grammar consumes it.
 ///
-/// Kept separate from the raw lexer's shape-only [`RawKind`](sumi_lexer::RawKind)
-/// below it and from the tree's [`NodeKind`] above it: nodes cover ranges of
-/// tokens rather than sitting among them, so the two vocabularies never share a
-/// slot. Every kind occupies a source range: there is deliberately no EOF
-/// sentinel (end of input is the end of the token buffer, surfaced as `Option`
-/// by lookahead APIs), and compound-operator kinds appear only once the parser
-/// glues adjacent punctuation.
-#[repr(u16)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum SyntaxKind {
-    /// Horizontal whitespace, or the byte-order mark.
-    Whitespace,
-    /// One line break.
-    Newline,
+/// Kept separate from the tree's [`NodeKind`] above it: nodes cover ranges
+/// of tokens rather than sitting among them, so the two vocabularies never
+/// share a slot.
+pub use sumi_lexer::SyntaxKind;
 
-    LineComment,
-
-    /// An identifier that is not a keyword.
-    Ident,
-    /// The identifier `_` on its own, reserved for discards.
-    Underscore,
-
-    // Reserved keywords. The v0 set covers functions, bindings, branching,
-    // and boolean literals only; the table is
-    // [`from_keyword`](SyntaxKind::from_keyword).
-    ElseKw,
-    FalseKw,
-    FnKw,
-    IfKw,
-    LetKw,
-    MutKw,
-    ReturnKw,
-    TrueKw,
-
-    /// A decimal integer literal.
-    IntLiteral,
-    /// A float literal: a fraction (`1.5`), an exponent (`1e3`), or both.
-    FloatLiteral,
-    StringLiteral,
-    RawStringLiteral,
-    CharLiteral,
-
-    // Punctuation, one kind per character; the table is
-    // [`from_punct`](SyntaxKind::from_punct). Compound operators (`==`,
-    // `->`) exist only as joint pairs the parser glues.
-    LParen,
-    RParen,
-    LBrace,
-    RBrace,
-    Comma,
-    Colon,
-    Dot,
-    Eq,
-    Lt,
-    Gt,
-    Bang,
-    Plus,
-    Minus,
-    Star,
-    Slash,
-    Percent,
-    Amp,
-    Pipe,
-
-    /// A token with no meaning in the language: unrecognized characters and
-    /// misplaced byte-order marks.
-    Error,
+/// Whether a token of this kind can begin an expression.
+///
+/// A free function rather than a method: the kind is defined where the
+/// lexer assigns it, but what begins an expression is grammar, and grammar
+/// lives here.
+pub fn starts_expression(kind: SyntaxKind) -> bool {
+    matches!(
+        kind,
+        SyntaxKind::Ident
+            | SyntaxKind::IntLiteral
+            | SyntaxKind::FloatLiteral
+            | SyntaxKind::StringLiteral
+            | SyntaxKind::RawStringLiteral
+            | SyntaxKind::CharLiteral
+            | SyntaxKind::TrueKw
+            | SyntaxKind::FalseKw
+            | SyntaxKind::Minus
+            | SyntaxKind::Bang
+            | SyntaxKind::LParen
+            | SyntaxKind::LBrace
+            | SyntaxKind::IfKw
+    )
 }
 
-impl SyntaxKind {
-    /// Whether a token of this kind can begin an expression.
-    pub fn starts_expression(self) -> bool {
-        matches!(
-            self,
-            Self::Ident
-                | Self::IntLiteral
-                | Self::FloatLiteral
-                | Self::StringLiteral
-                | Self::RawStringLiteral
-                | Self::CharLiteral
-                | Self::TrueKw
-                | Self::FalseKw
-                | Self::Minus
-                | Self::Bang
-                | Self::LParen
-                | Self::LBrace
-                | Self::IfKw
-        )
-    }
-
-    /// Whether a token of this kind can begin a statement: what the parser
-    /// takes at statement position, an `Error` run included.
-    pub(crate) fn starts_statement(self) -> bool {
-        matches!(
-            self,
-            Self::LetKw | Self::Underscore | Self::ReturnKw | Self::Error
-        ) || self.starts_expression()
-    }
-
-    /// The keyword kind for `text`, if it is a reserved word.
-    pub fn from_keyword(text: &str) -> Option<Self> {
-        Some(match text {
-            "else" => Self::ElseKw,
-            "false" => Self::FalseKw,
-            "fn" => Self::FnKw,
-            "if" => Self::IfKw,
-            "let" => Self::LetKw,
-            "mut" => Self::MutKw,
-            "return" => Self::ReturnKw,
-            "true" => Self::TrueKw,
-            _ => return None,
-        })
-    }
-
-    /// The kind for a punctuation character, if it has a role in the
-    /// language. Punctuation without one (`;`, `[`, `@`, …) has no kind and
-    /// cooks to [`Error`](Self::Error).
-    pub fn from_punct(byte: u8) -> Option<Self> {
-        Some(match byte {
-            b'(' => Self::LParen,
-            b')' => Self::RParen,
-            b'{' => Self::LBrace,
-            b'}' => Self::RBrace,
-            b',' => Self::Comma,
-            b':' => Self::Colon,
-            b'.' => Self::Dot,
-            b'=' => Self::Eq,
-            b'<' => Self::Lt,
-            b'>' => Self::Gt,
-            b'!' => Self::Bang,
-            b'+' => Self::Plus,
-            b'-' => Self::Minus,
-            b'*' => Self::Star,
-            b'/' => Self::Slash,
-            b'%' => Self::Percent,
-            b'&' => Self::Amp,
-            b'|' => Self::Pipe,
-            _ => return None,
-        })
-    }
+/// Whether a token of this kind can begin a statement: what the parser
+/// takes at statement position, an `Error` run included.
+pub(crate) fn starts_statement(kind: SyntaxKind) -> bool {
+    matches!(
+        kind,
+        SyntaxKind::LetKw | SyntaxKind::Underscore | SyntaxKind::ReturnKw | SyntaxKind::Error
+    ) || starts_expression(kind)
 }
 
 /// The kind of a syntax tree node.

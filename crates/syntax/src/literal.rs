@@ -1,29 +1,31 @@
 //! Validation of literal token text.
 //!
-//! The raw lexer establishes literal *shape*; these checks establish
-//! *validity* under Sumi's rules: canonical numbers (no suffixes, no leading
-//! zeros, lowercase `e` exponents with no `+` and no zero padding,
-//! underscores only between digits) and the v0 escape set (`\n`, `\r`, `\t`,
-//! `\\`, `\"`, `\'`, `\0`, `\u{…}`). The escape walker is the single
-//! definition of the escape grammar; value decoding will reuse it when
-//! lowering needs it.
+//! The raw lexer establishes literal *shape* and classification; these
+//! checks establish *validity* under Sumi's rules: canonical numbers (no
+//! suffixes, no leading zeros, lowercase `e` exponents with no `+` and no
+//! zero padding, underscores only between digits) and the v0 escape set
+//! (`\n`, `\r`, `\t`, `\\`, `\"`, `\'`, `\0`, `\u{…}`). The escape walker is
+//! the single definition of the escape grammar; value decoding will reuse it
+//! when lowering needs it.
 //!
-//! A token the lexer already reported (unterminated literals) gets no
+//! The validator filters: numbers are re-scanned only when the lexer flagged
+//! them malformed, strings only when escaped and terminated, and characters
+//! only when terminated, so a token the lexer already reported gets no
 //! further errors here.
 
 use std::ops::Range;
 
-use sumi_lexer::TokenFlags;
-
-use crate::cook::SyntaxErrorKind;
 use crate::kind::SyntaxKind;
+use crate::validate::SyntaxErrorKind;
 
-/// Classify a raw number token as an int or float literal, reporting any
-/// trailing suffix.
+/// Report the errors of a number token the lexer flagged as malformed, and
+/// return the kind its shape implies so callers can check it against the
+/// lexer's classification.
 ///
 /// The shape re-scan must mirror the raw lexer's maximal munch exactly, so
-/// the suffix boundary lands where the lexer stopped attaching digits.
-pub(crate) fn classify_number(
+/// the suffix boundary lands where the lexer stopped attaching digits and
+/// every error range stays inside the token.
+pub(crate) fn number_errors(
     text: &str,
     mut error: impl FnMut(Range<usize>, SyntaxErrorKind),
 ) -> SyntaxKind {
@@ -133,15 +135,7 @@ fn eat_digits(bytes: &[u8], start: usize, misplaced_underscore: &mut Option<usiz
 }
 
 /// Validate the escapes of a terminated string literal.
-pub(crate) fn validate_string(
-    text: &str,
-    flags: TokenFlags,
-    mut error: impl FnMut(Range<usize>, SyntaxErrorKind),
-) {
-    if flags.contains(TokenFlags::UNTERMINATED) || !flags.contains(TokenFlags::HAS_ESCAPE) {
-        return;
-    }
-
+pub(crate) fn validate_string(text: &str, mut error: impl FnMut(Range<usize>, SyntaxErrorKind)) {
     let body = &text[1..text.len() - 1];
     walk_escapes(body, |start, end, result| {
         if let Err(kind) = result {
@@ -151,15 +145,7 @@ pub(crate) fn validate_string(
 }
 
 /// Validate the escapes and content length of a terminated character literal.
-pub(crate) fn validate_char(
-    text: &str,
-    flags: TokenFlags,
-    mut error: impl FnMut(Range<usize>, SyntaxErrorKind),
-) {
-    if flags.contains(TokenFlags::UNTERMINATED) {
-        return;
-    }
-
+pub(crate) fn validate_char(text: &str, mut error: impl FnMut(Range<usize>, SyntaxErrorKind)) {
     let body = &text[1..text.len() - 1];
     let mut pieces = 0usize;
     let mut extra_start = None;
