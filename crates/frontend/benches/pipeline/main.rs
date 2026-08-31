@@ -5,6 +5,7 @@ use sumi_frontend::parse_source;
 use sumi_lexer::lex;
 use sumi_syntax::{MAX_DEPTH, ParserInput, cook, parse};
 use sumi_test::corpus;
+use sumi_text::{LineIndex, TextSize};
 
 const KIB: usize = 1024;
 
@@ -31,6 +32,25 @@ const DAMAGE_STRIDE: usize = 600;
 // the last must trip the depth guard and recover past thousands of
 // unconsumed closers.
 const NESTED_RUNGS: [(usize, bool); 4] = [(4, true), (32, true), (224, true), (4096, false)];
+
+// The positional query batches: unrelated draws, unlike a stride, so
+// lookups cannot ride the branch predictor.
+const QUERY_SEED: u64 = 0xC0FFEE;
+const QUERY_BATCH: usize = 1024;
+
+/// The corpus module keeps its generator private; the query batches only
+/// need a pinned stream of bounded draws.
+struct Lcg(u64);
+
+impl Lcg {
+    fn below(&mut self, n: u32) -> u32 {
+        self.0 = self
+            .0
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        ((self.0 >> 33) as u32) % n
+    }
+}
 
 fn bench_pipeline_phases(c: &mut Criterion) {
     bench_phases(
@@ -192,10 +212,76 @@ fn bench_adversarial(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_queries(c: &mut Criterion) {
+    let source = corpus::generate(64 * KIB, MEDIUM_SEED);
+    let lexed = lex(&source).expect("benchmark corpus fits in Sumi's source coordinate space");
+    let input = ParserInput::new(&cook(&source, &lexed));
+    let parsed = parse(&input);
+    let tree = parsed.tree();
+    let index = LineIndex::new(&source);
+
+    let mut rng = Lcg(QUERY_SEED);
+    let offsets: Vec<TextSize> = (0..QUERY_BATCH)
+        .map(|_| TextSize::new(rng.below(source.len() as u32)))
+        .collect();
+    let tokens: Vec<u32> = (0..QUERY_BATCH)
+        .map(|_| rng.below(lexed.len() as u32))
+        .collect();
+
+    let mut group = c.benchmark_group("queries/medium-valid");
+    group.throughput(Throughput::Bytes(source.len() as u64));
+    group.bench_function("line-index", |b| {
+        b.iter_with_large_drop(|| LineIndex::new(black_box(&source)));
+    });
+    group.bench_function("parents", |b| {
+        b.iter_with_large_drop(|| black_box(tree).parents());
+    });
+
+    group.throughput(Throughput::Elements(QUERY_BATCH as u64));
+    group.bench_function("line-col", |b| {
+        b.iter(|| {
+            black_box(&offsets)
+                .iter()
+                .map(|&offset| u64::from(index.line_col(offset).line))
+                .sum::<u64>()
+        });
+    });
+    group.bench_function("token-at", |b| {
+        b.iter(|| {
+            black_box(&offsets)
+                .iter()
+                .map(|&offset| {
+                    lexed
+                        .token_at(offset)
+                        .expect("query offsets lie below the source length")
+                })
+                .sum::<usize>()
+        });
+    });
+    group.bench_function("covering", |b| {
+        b.iter(|| {
+            black_box(&tokens)
+                .iter()
+                .map(|&token| tree.covering(token))
+                .sum::<usize>()
+        });
+    });
+    group.bench_function("covering-chain", |b| {
+        b.iter(|| {
+            black_box(&tokens)
+                .iter()
+                .map(|&token| tree.covering_chain(token).count())
+                .sum::<usize>()
+        });
+    });
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_pipeline_phases,
     bench_frontend,
-    bench_adversarial
+    bench_adversarial,
+    bench_queries
 );
 criterion_main!(benches);
