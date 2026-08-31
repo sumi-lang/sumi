@@ -28,7 +28,7 @@
 //! check, raised where the parser went wrong: a node is preceded only from
 //! the node that contained it, every node covers at least one token, a
 //! marker dropped uncompleted panics where it drops, and `build` rejects a
-//! token past the end of input or tokens left over.
+//! token past the input horizon or tokens left over.
 //!
 //! Internally the build records nodes as they complete, children before
 //! parents, and permutes them into preorder once the root closes. That is
@@ -112,6 +112,7 @@ impl Parse {
             input,
             nodes: Vec::new(),
             position: 0,
+            kinds: input.kinds(),
             opened: 1,
             recoveries: 0,
             last_recovery_evidence: None,
@@ -174,6 +175,12 @@ struct Builder<'a> {
     nodes: Vec<Node>,
     /// The next significant token to attach.
     position: usize,
+    /// The kinds up to the input horizon: lookahead reads this prefix of
+    /// the input's kinds, so nothing can be seen or consumed at or past
+    /// its end. `source_file` moves the horizon from one item start to the
+    /// next, which makes recovery inside an item unable to take another
+    /// item's tokens — there is no rule to get wrong.
+    kinds: &'a [SyntaxKind],
     /// Nodes opened so far, numbering the next one; the root is 0.
     opened: u32,
     /// Structural recovery facts recorded while building the tree.
@@ -320,8 +327,8 @@ impl<'a> Marker<'_, 'a> {
     /// Attach the next significant token to this node.
     pub fn token(&mut self) {
         assert!(
-            self.builder.position < self.builder.input.len(),
-            "token past end of input"
+            self.builder.position < self.builder.kinds.len(),
+            "token past the input horizon"
         );
         self.builder.position += 1;
     }
@@ -431,20 +438,19 @@ impl<'a> Marker<'_, 'a> {
         self.depth
     }
 
-    /// The kind of the next significant token, or `None` at end of input.
+    /// The kind of the next significant token, or `None` at end of input —
+    /// the input horizon included: past it, lookahead reports the input
+    /// exhausted, and every recovery unwinds exactly as it does at the end
+    /// of the file.
     pub(crate) fn current(&self) -> Option<SyntaxKind> {
         self.nth(0)
     }
 
-    /// Whether the next significant token is the first one in the file.
-    pub(crate) fn at_start(&self) -> bool {
-        self.builder.position == 0
-    }
-
-    /// The kind of the significant token `n` past the next one.
+    /// The kind of the significant token `n` past the next one; `None` at
+    /// or past the input horizon.
     pub(crate) fn nth(&self, n: usize) -> Option<SyntaxKind> {
         let index = self.builder.position.checked_add(n)?;
-        self.builder.input.get(index)
+        self.builder.kinds.get(index).copied()
     }
 
     pub(crate) fn at(&self, kind: SyntaxKind) -> bool {
@@ -606,12 +612,27 @@ impl<'a> Marker<'_, 'a> {
             .min()
     }
 
-    /// Whether the next token is a `fn` beginning the next item: one that
-    /// no parser-owned bracket construct with a closer ahead still encloses.
-    /// Recovery never takes such a `fn`; whatever lost its closer ends
-    /// there instead.
-    pub(crate) fn at_item(&self) -> bool {
-        self.next_parser_closer().is_none() && self.at(SyntaxKind::FnKw)
+    /// The number of top-level items the input stream found.
+    pub(crate) fn item_count(&self) -> usize {
+        self.builder.input.item_starts().len()
+    }
+
+    /// Where item `index` starts, or the end of the input for the position
+    /// one past the last item: the horizon for the segment before it.
+    pub(crate) fn item_limit(&self, index: usize) -> usize {
+        self.builder
+            .input
+            .item_starts()
+            .get(index)
+            .map_or(self.builder.input.len(), |&start| start as usize)
+    }
+
+    /// Move the input horizon. Only `source_file` does, once per item
+    /// segment; the horizon never moves back past the cursor or beyond the
+    /// input.
+    pub(crate) fn set_limit(&mut self, limit: usize) {
+        debug_assert!(self.builder.position <= limit);
+        self.builder.kinds = &self.builder.input.kinds()[..limit];
     }
 
     /// Attach the next token if it is `kind` and no statement boundary

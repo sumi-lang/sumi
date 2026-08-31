@@ -19,6 +19,13 @@
 //!   meaningful where it appears. The parser's recovery takes a matched
 //!   pair whole only where the surrounding construct owns it.
 //!
+//! Construction also emits the **item segments**: the indices where
+//! top-level items start — a `fn`, or the headless signature shape
+//! [`starts_item`] recognizes, outside every matched bracket pair. A `fn`
+//! inside a matched pair belongs to whatever construct owns the pair; one
+//! outside begins the next item wherever the grammar stands, so the parser
+//! turns each start into a hard end limit for the item before it.
+//!
 //! # The newline rule
 //!
 //! Sumi has no `;`; statements end at line breaks. A newline is a statement
@@ -64,6 +71,8 @@ pub struct ParserInput {
     /// one, so the slot has a niche; `None` for anything that is not a
     /// matched bracket.
     partners: Box<[Option<NonZeroU32>]>,
+    /// The significant indices where top-level items start, in order.
+    items: Box<[u32]>,
     /// The length of the underlying token buffer.
     raw_len: u32,
 }
@@ -107,9 +116,16 @@ impl ParserInput {
         // and closes nothing. Only a `(` the stream closes suspends
         // termination — one it never closes would suspend it to the end of
         // the file, so the line ends the statement instead.
+        //
+        // The same replay finds the item starts: a matched opener encloses
+        // everything up to its closer, so item starts exist only while
+        // `matched` is zero. An unmatched opener encloses nothing for good
+        // and hides no item.
         let mut open: Vec<usize> = Vec::new();
         let mut boundaries: Vec<u32> = Vec::with_capacity(kinds.len() + 1);
         let mut boundary_count: u32 = 0;
+        let mut items: Vec<u32> = Vec::new();
+        let mut matched = 0usize;
         for index in 0..kinds.len() {
             boundaries.push(boundary_count);
             if index > 0
@@ -123,12 +139,21 @@ impl ParserInput {
                 flags[index] |= BOUNDARY_BEFORE;
                 boundary_count += 1;
             }
+            if matched == 0 && starts_item(&kinds, &flags, &partners, index) {
+                items.push(index as u32);
+            }
             match kinds[index] {
-                SyntaxKind::LParen | SyntaxKind::LBrace => open.push(index),
+                SyntaxKind::LParen | SyntaxKind::LBrace => {
+                    open.push(index);
+                    if partners[index].is_some() {
+                        matched += 1;
+                    }
+                }
                 SyntaxKind::RParen | SyntaxKind::RBrace => {
                     if let Some(partner) = partners[index] {
                         let opener = partner.get() as usize - 1;
                         while open.pop().is_some_and(|popped| popped != opener) {}
+                        matched -= 1;
                     }
                 }
                 _ => {}
@@ -142,6 +167,7 @@ impl ParserInput {
             flags: flags.into_boxed_slice(),
             boundaries: boundaries.into_boxed_slice(),
             partners: partners.into_boxed_slice(),
+            items: items.into_boxed_slice(),
             raw_len: cooked.len() as u32,
         }
     }
@@ -205,6 +231,50 @@ impl ParserInput {
     pub fn partner(&self, index: usize) -> Option<usize> {
         self.partners[index].map(|partner| partner.get() as usize - 1)
     }
+
+    /// The significant indices where top-level items start, in order: a
+    /// `fn`, or the headless signature shape, outside every matched
+    /// bracket pair.
+    pub fn item_starts(&self) -> &[u32] {
+        &self.items
+    }
+
+    /// The significant token kinds as a slice, so the parser can hold a
+    /// prefix of it as its input horizon.
+    pub(crate) fn kinds(&self) -> &[SyntaxKind] {
+        &self.kinds
+    }
+}
+
+/// Whether a top-level item starts at significant token `index`: `fn`, or
+/// a signature missing it — a name, a parenthesized list, and a body or
+/// return type after the list on its line, which nothing else at the top
+/// level looks like. A misplaced call has neither after its list, and
+/// stays garbage. The caller has established that no matched bracket pair
+/// encloses `index`.
+fn starts_item(
+    kinds: &[SyntaxKind],
+    flags: &[u8],
+    partners: &[Option<NonZeroU32>],
+    index: usize,
+) -> bool {
+    if kinds[index] == SyntaxKind::FnKw {
+        return true;
+    }
+    (index == 0 || flags[index] & BOUNDARY_BEFORE != 0)
+        && kinds[index] == SyntaxKind::Ident
+        && kinds.get(index + 1) == Some(&SyntaxKind::LParen)
+        && partners[index + 1].is_some_and(|partner| {
+            // The partner encoding is the closer's index plus one: exactly
+            // the token after the list.
+            let after = partner.get() as usize;
+            after < kinds.len()
+                && flags[after] & NEWLINE_BEFORE == 0
+                && (kinds[after] == SyntaxKind::LBrace
+                    || (kinds[after] == SyntaxKind::Minus
+                        && flags[after] & JOINT != 0
+                        && kinds.get(after + 1) == Some(&SyntaxKind::Gt)))
+        })
 }
 
 /// Mechanical bracket pairing over the significant tokens. A closer with a

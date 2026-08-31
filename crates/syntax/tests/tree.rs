@@ -328,7 +328,7 @@ fn a_dropped_marker_panics_where_it_drops() {
 }
 
 #[test]
-#[should_panic(expected = "token past end of input")]
+#[should_panic(expected = "token past the input horizon")]
 fn a_token_past_the_end_panics() {
     dump("x", |b| tokens(b, 2));
 }
