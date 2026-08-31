@@ -651,6 +651,7 @@ name = "sumi-test"
 version = "0.0.0"
 dependencies = [
  "proptest",
+ "sumi-frontend",
  "sumi-lexer",
  "sumi-syntax",
 ]
