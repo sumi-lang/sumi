@@ -5,7 +5,7 @@ use sumi_text::{TextRange, TextSize};
 
 use crate::kind::SyntaxKind;
 use crate::lexer::Lexer;
-use crate::token::{RawKind, RawToken, TokenFlags};
+use crate::token::{RawKind, TokenFlags};
 
 /// Lex `source` into a [`LexedFile`].
 ///
@@ -27,8 +27,21 @@ pub fn lex(source: &str) -> Result<LexedFile, SourceTooLarge> {
         let start = position;
         position += token.len.to_u32();
 
-        let text = &source[start as usize..position as usize];
-        if let Some(kind) = lex_error(&token, text) {
+        let unterminated = token.flags.contains(TokenFlags::UNTERMINATED);
+        let error = match token.raw {
+            RawKind::String if unterminated => Some(LexErrorKind::UnterminatedString),
+            RawKind::RawString if unterminated => Some(LexErrorKind::UnterminatedRawString),
+            RawKind::Char if unterminated => Some(LexErrorKind::UnterminatedChar),
+            RawKind::Newline if token.flags.contains(TokenFlags::LONE_CR) => {
+                Some(LexErrorKind::LoneCarriageReturn)
+            }
+            RawKind::Unknown if &source[start as usize..position as usize] == "\u{feff}" => {
+                Some(LexErrorKind::MisplacedBom)
+            }
+            RawKind::Unknown => Some(LexErrorKind::UnknownCharacter),
+            _ => None,
+        };
+        if let Some(kind) = error {
             errors.push(LexError {
                 token: tokens.len() as u32,
                 kind,
@@ -50,21 +63,6 @@ pub fn lex(source: &str) -> Result<LexedFile, SourceTooLarge> {
         tokens: tokens.into_boxed_slice(),
         errors: errors.into_boxed_slice(),
     })
-}
-
-fn lex_error(token: &RawToken, text: &str) -> Option<LexErrorKind> {
-    let unterminated = token.flags.contains(TokenFlags::UNTERMINATED);
-    match token.raw {
-        RawKind::String if unterminated => Some(LexErrorKind::UnterminatedString),
-        RawKind::RawString if unterminated => Some(LexErrorKind::UnterminatedRawString),
-        RawKind::Char if unterminated => Some(LexErrorKind::UnterminatedChar),
-        RawKind::Newline if token.flags.contains(TokenFlags::LONE_CR) => {
-            Some(LexErrorKind::LoneCarriageReturn)
-        }
-        RawKind::Unknown if text == "\u{feff}" => Some(LexErrorKind::MisplacedBom),
-        RawKind::Unknown => Some(LexErrorKind::UnknownCharacter),
-        _ => None,
-    }
 }
 
 /// The token buffer for one source file.
