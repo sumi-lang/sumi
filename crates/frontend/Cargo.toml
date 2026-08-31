@@ -15,4 +15,5 @@ proptest = "=1.11.0"
 
 [[bench]]
 name = "pipeline"
+path = "benches/pipeline/main.rs"
 harness = false
