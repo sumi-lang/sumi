@@ -4,9 +4,13 @@
 //! Every function is total and makes progress: no input panics, each loop
 //! either consumes a token or returns to a caller that will, and nesting is
 //! bounded — past [`MAX_DEPTH`] open nodes the rest of the expression is
-//! skipped with one recovery fact, so stack use is bounded too. Recovery
-//! skips into `Error` nodes and resynchronizes at statement boundaries, `}`, list
-//! separators, or the next `fn`. Where an expression is required and
+//! skipped with one recovery fact, so stack use is bounded too. Parsing is
+//! two-tier: the token stream precomputes where top-level items start, and
+//! `source_file` walks those segments, holding the input horizon at the
+//! next item's start while each item parses — inside an item, the next one
+//! reads as end of input, so no rule or recovery can leak across items.
+//! Recovery skips into `Error` nodes and resynchronizes at statement
+//! boundaries, `}`, list separators, or the horizon. Where an expression is required and
 //! garbage stands in its place on the line, the garbage is taken and the
 //! expression tried once more. Each construct owns the recovery up to its
 //! following delimiter; missing pieces are absent, never empty nodes, and
@@ -154,43 +158,34 @@ impl RawGap {
 /// bounds the parser's stack; real code nests a few dozen deep at most.
 pub const MAX_DEPTH: u32 = 256;
 
+/// Walk the item segments the token stream precomputed. Each item parses
+/// under a horizon at the next item's start; tokens between an item's end
+/// and that horizon are garbage in one recovery episode. What counts as an
+/// item start — `fn`, or the headless signature shape, outside every
+/// matched bracket pair — is the stream's
+/// [`item_starts`](crate::ParserInput::item_starts).
 fn source_file(p: &mut Marker<'_, '_>) {
-    while p.current().is_some() {
-        if starts_item(p) {
-            fn_item(p);
-        } else {
+    for item in 0..=p.item_count() {
+        p.set_limit(p.item_limit(item));
+        if p.current().is_some() {
             let recovery = p.recover_tokens(ParseRecoveryKind::Expected(ParseExpected::Item), 1);
-            skip_all(p, recovery, starts_item);
+            skip_all(p, recovery, |_| false);
+        }
+        if item < p.item_count() {
+            p.set_limit(p.item_limit(item + 1));
+            fn_item(p);
         }
     }
 }
 
-/// Whether an item starts at the next token: `fn`, or a signature missing
-/// it — a name, a parenthesized list, and a body or return type after the
-/// list on its line, which nothing else at the top level looks like. A
-/// misplaced call has neither after its list, and stays garbage.
-fn starts_item(p: &Marker<'_, '_>) -> bool {
-    if p.at(T::FnKw) {
-        return true;
-    }
-    (p.at_start() || p.boundary())
-        && p.at(T::Ident)
-        && p.nth(1) == Some(T::LParen)
-        && p.nth_partner(1).is_some_and(|close| {
-            !p.nth_newline(close + 1)
-                && (p.nth(close + 1) == Some(T::LBrace) || p.nth_glued(close + 1, T::Minus, T::Gt))
-        })
-}
-
 /// Take the next token and every following one into an `Error` node, up to
-/// `stop` or end of input. The caller has recorded the recovery cause; the
+/// `stop` or end of input — the horizon at the next item included, which
+/// no recovery may cross. The caller has recorded the recovery cause; the
 /// run is attached to it as an effect. A matched bracket pair is taken
 /// whole, as the token stream pairs them, so `stop` is never consulted
 /// inside one. A closer met after the first token has no opener in the run:
 /// one the stream pairs belongs to something enclosing and ends the run,
-/// while an orphan belongs to nothing and is garbage like the rest. A `fn`
-/// that no closed construct owns ends the run too: it begins the next
-/// item, which no recovery may swallow.
+/// while an orphan belongs to nothing and is garbage like the rest.
 fn skip(
     p: &mut Marker<'_, '_>,
     recovery: RecoveryHandle,
@@ -200,7 +195,7 @@ fn skip(
     m.group();
     while let Some(kind) = m.current() {
         let closer = matches!(kind, T::RParen | T::RBrace) && m.partnered();
-        if closer || m.at_item() || stop(&m) {
+        if closer || stop(&m) {
             break;
         }
         m.group();
@@ -232,8 +227,7 @@ fn skip_statement_garbage(p: &mut Marker<'_, '_>, recovery: RecoveryHandle) -> C
         || m.boundary()
         || begins_recovery_statement(&m)
         || (m.at(T::RBrace) && !m.closer_ahead())
-        || m.closes_open_paren()
-        || m.at_item())
+        || m.closes_open_paren())
     {
         m.group_inside();
     }
@@ -310,18 +304,18 @@ fn fn_item(p: &mut Marker<'_, '_>) {
 }
 
 /// Skip garbage in a signature — tokens that belong to none of its parts —
-/// into `Error` nodes, up to `resume`, a body, the next item, or the end
-/// of the line. Nothing is skipped when already at one of those. A `{`
-/// counts as a body only when the stream pairs it with a `}`: an unclosed
-/// one where a part of the signature was expected is garbage, not the body
-/// that follows it.
+/// into `Error` nodes, up to `resume`, a body, the next item's horizon, or
+/// the end of the line. Nothing is skipped when already at one of those. A
+/// `{` counts as a body only when the stream pairs it with a `}`: an
+/// unclosed one where a part of the signature was expected is garbage, not
+/// the body that follows it.
 fn signature_garbage(
     m: &mut Marker<'_, '_>,
     recovery: RecoveryHandle,
     resume: impl Fn(&Marker<'_, '_>) -> bool,
 ) {
     skip_all(m, recovery, |m| {
-        resume(m) || m.at(T::FnKw) || m.newline() || (m.at(T::LBrace) && m.partnered())
+        resume(m) || m.newline() || (m.at(T::LBrace) && m.partnered())
     });
 }
 
@@ -353,7 +347,8 @@ fn param_list(p: &mut Marker<'_, '_>) {
     // A list the stream closes owns everything up to its `)`: whatever is
     // in the way is garbage in the list. One it does not close ends at
     // enclosing syntax — the body, an enclosing block's end, or the next
-    // item — a brace being that only when the stream pairs it.
+    // item's horizon, where the input reads as exhausted — a brace being
+    // that only when the stream pairs it.
     m.enter_parens();
     loop {
         match m.current() {
@@ -372,10 +367,6 @@ fn param_list(p: &mut Marker<'_, '_>) {
             Some(T::LBrace | T::RBrace)
                 if !m.closed() && m.partnered() && !displaced_closer(&m) =>
             {
-                m.missing(ParseExpected::Token(T::RParen));
-                break;
-            }
-            Some(T::FnKw) if m.at_item() => {
                 m.missing(ParseExpected::Token(T::RParen));
                 break;
             }
@@ -439,10 +430,12 @@ fn block_here(p: &mut Marker<'_, '_>) {
 fn block(p: &mut Marker<'_, '_>) -> CompletedMarker {
     let mut m = p.start();
     m.token(); // {
-    // A block the stream never closes ends where the next item begins: its
-    // `}` is missing, and an item is not a statement — nor is it any
-    // recovery's to skip. One the stream does close keeps a misplaced `fn`
-    // as the statement it is not, skipped.
+    // A block the stream never closes ends at the next item's horizon,
+    // where the input reads as exhausted: its `}` is missing, and an item
+    // is not a statement — nor is it any recovery's to skip. One the
+    // stream does close lies wholly inside the current item, so its
+    // horizon sits beyond it: a misplaced `fn` inside stays the statement
+    // it is not, skipped.
     m.enter();
     loop {
         match m.current() {
@@ -452,10 +445,6 @@ fn block(p: &mut Marker<'_, '_>) -> CompletedMarker {
             }
             Some(T::RBrace) if !m.closer_ahead() => {
                 m.token();
-                break;
-            }
-            Some(T::FnKw) if m.at_item() => {
-                m.missing(ParseExpected::Token(T::RBrace));
                 break;
             }
             // A `)` closing a paren still open around this block belongs to
@@ -475,8 +464,7 @@ fn block(p: &mut Marker<'_, '_>) -> CompletedMarker {
                 let ends = m.current().is_none()
                     || m.boundary()
                     || (m.at(T::RBrace) && !m.closer_ahead() && !(failed && displaced_closer(&m)))
-                    || m.closes_open_paren()
-                    || m.at_item();
+                    || m.closes_open_paren();
                 if !ends {
                     if failed && !begins_recovery_statement(&m) {
                         let recovery = m
@@ -586,7 +574,7 @@ fn operand_before(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) {
     if expr_bp(p, min_bp, follow).is_some() {
         return;
     }
-    let displaced = !p.newline() && !p.at_item() && displaces_expression(p);
+    let displaced = !p.newline() && displaces_expression(p);
     let recovery = if displaced {
         p.recover_tokens(ParseRecoveryKind::Expected(ParseExpected::Expression), 1)
     } else {
@@ -867,7 +855,6 @@ fn if_block(p: &mut Marker<'_, '_>) {
         return;
     }
     let displaced = !(p.current().is_none()
-        || p.at_item()
         || p.at(T::RParen)
         || p.at(T::RBrace)
         || p.at(T::ElseKw)
@@ -896,7 +883,7 @@ fn arg_list(p: &mut Marker<'_, '_>) {
     m.token(); // (
     // A list the stream closes owns everything up to its `)`; one it does
     // not close ends at enclosing syntax: an enclosing block's end, or the
-    // next item.
+    // next item's horizon, where the input reads as exhausted.
     m.enter_parens();
     loop {
         match m.current() {
@@ -912,7 +899,7 @@ fn arg_list(p: &mut Marker<'_, '_>) {
                 m.missing(ParseExpected::Token(T::RParen));
                 break;
             }
-            Some(T::RBrace | T::FnKw) if !m.closed() && !displaced_closer(&m) => {
+            Some(T::RBrace) if !m.closed() && !displaced_closer(&m) => {
                 m.missing(ParseExpected::Token(T::RParen));
                 break;
             }
