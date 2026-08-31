@@ -1,7 +1,8 @@
 use std::collections::HashSet;
 
 use sumi_diagnostics::{Diagnostic, DiagnosticCode, Fix, Label, Location, Severity};
-use sumi_lexer::{LexError, LexErrorKind, LexedFile};
+use sumi_format::layout_violation_edits;
+use sumi_lexer::{LexError, LexErrorKind, LexedFile, canonicalize_number_literal};
 use sumi_syntax::{
     Parse, ParseAnchor, ParseEvidence, ParseExpected, ParseRecovery, ParseRecoveryKind,
     ParseViolation, ParseViolationKind, RawGap, RawTokenRange, SyntaxKind, raw_boundary,
@@ -10,10 +11,10 @@ use sumi_text::{TextEdit, TextRange};
 
 use crate::codes;
 
-pub(crate) fn diagnostics(lexed: &LexedFile, parse: &Parse) -> Box<[Diagnostic]> {
+pub(crate) fn diagnostics(source: &str, lexed: &LexedFile, parse: &Parse) -> Box<[Diagnostic]> {
     let mut diagnostics = Vec::new();
-    lower_lex(lexed.errors(), &mut diagnostics);
-    lower_parse(lexed, parse, &mut diagnostics);
+    lower_lex(source, lexed, &mut diagnostics);
+    lower_parse(source, lexed, parse, &mut diagnostics);
 
     // This sort is stable: phase precedence and producer observation order
     // break ties at the same source location.
@@ -26,7 +27,8 @@ pub(crate) fn diagnostics(lexed: &LexedFile, parse: &Parse) -> Box<[Diagnostic]>
     diagnostics.into_boxed_slice()
 }
 
-fn lower_lex(errors: &[LexError], diagnostics: &mut Vec<Diagnostic>) {
+fn lower_lex(source: &str, lexed: &LexedFile, diagnostics: &mut Vec<Diagnostic>) {
+    let errors = lexed.errors();
     let mut start = 0;
     while start < errors.len() {
         let token = errors[start].token;
@@ -34,7 +36,7 @@ fn lower_lex(errors: &[LexError], diagnostics: &mut Vec<Diagnostic>) {
         while end < errors.len() && errors[end].token == token {
             end += 1;
         }
-        lower_token_errors(&errors[start..end], diagnostics);
+        lower_token_errors(source, lexed, &errors[start..end], diagnostics);
         start = end;
     }
 }
@@ -45,7 +47,12 @@ struct NumberFact {
     message: &'static str,
 }
 
-fn lower_token_errors(errors: &[LexError], diagnostics: &mut Vec<Diagnostic>) {
+fn lower_token_errors(
+    source: &str,
+    lexed: &LexedFile,
+    errors: &[LexError],
+    diagnostics: &mut Vec<Diagnostic>,
+) {
     let mut emitted = Vec::new();
     let mut number_facts = Vec::new();
 
@@ -206,6 +213,12 @@ fn lower_token_errors(errors: &[LexError], diagnostics: &mut Vec<Diagnostic>) {
         });
         let mut facts = number_facts.into_iter();
         let first = facts.next().expect("a numeric fact exists");
+        let token = errors[0].token as usize;
+        let token_range = lexed.range(token);
+        let fix = canonicalize_number_literal(lexed.text(source, token)).map(|replacement| Fix {
+            message: "canonicalize numeric literal".into(),
+            edits: vec![TextEdit::new(token_range, replacement)].into_boxed_slice(),
+        });
         emitted.push((
             order,
             Diagnostic {
@@ -222,7 +235,7 @@ fn lower_token_errors(errors: &[LexError], diagnostics: &mut Vec<Diagnostic>) {
                         message: Some(fact.message.into()),
                     })
                     .collect(),
-                fix: None,
+                fix,
             },
         ));
     }
@@ -231,7 +244,11 @@ fn lower_token_errors(errors: &[LexError], diagnostics: &mut Vec<Diagnostic>) {
     diagnostics.extend(emitted.into_iter().map(|(_, diagnostic)| diagnostic));
 }
 
-fn lower_parse(lexed: &LexedFile, parse: &Parse, diagnostics: &mut Vec<Diagnostic>) {
+fn lower_parse(source: &str, lexed: &LexedFile, parse: &Parse, diagnostics: &mut Vec<Diagnostic>) {
+    let has_recovery = parse
+        .evidence()
+        .iter()
+        .any(|evidence| matches!(evidence, ParseEvidence::Recovery(_)));
     let unterminated_literals: HashSet<u32> = lexed
         .errors()
         .iter()
@@ -263,7 +280,7 @@ fn lower_parse(lexed: &LexedFile, parse: &Parse, diagnostics: &mut Vec<Diagnosti
             }
             ParseEvidence::Violation(violation) => {
                 if !tokens_have_error(violation.range, lexed) {
-                    diagnostics.push(lower_violation(*violation, lexed));
+                    diagnostics.push(lower_violation(*violation, source, lexed, has_recovery));
                 }
             }
         }
@@ -423,7 +440,12 @@ fn token_description(kind: SyntaxKind) -> &'static str {
     }
 }
 
-fn lower_violation(violation: ParseViolation, lexed: &LexedFile) -> Diagnostic {
+fn lower_violation(
+    violation: ParseViolation,
+    source: &str,
+    lexed: &LexedFile,
+    has_recovery: bool,
+) -> Diagnostic {
     let (code, message) = match violation.kind {
         ParseViolationKind::BlockOnNewLine => (
             codes::BLOCK_ON_NEW_LINE,
@@ -446,11 +468,33 @@ fn lower_violation(violation: ParseViolation, lexed: &LexedFile) -> Diagnostic {
             "comparison operators cannot be chained",
         ),
     };
-    primary(
+    let movement = matches!(
+        violation.kind,
+        ParseViolationKind::BlockOnNewLine | ParseViolationKind::TrailingOperator
+    );
+    let fix = (!movement || !has_recovery)
+        .then(|| layout_violation_edits(source, lexed, violation))
+        .flatten()
+        .map(|edits| Fix {
+            message: match violation.kind {
+                ParseViolationKind::BlockOnNewLine => "move block to its owner's line",
+                ParseViolationKind::UnspacedBinaryOperator => "space binary operator",
+                ParseViolationKind::TrailingOperator => "move operator to the continuation line",
+                ParseViolationKind::SpacedPrefixOperator => "remove space after prefix operator",
+                ParseViolationKind::ChainedComparison => {
+                    unreachable!("chained comparisons have no mechanical layout fix")
+                }
+            }
+            .into(),
+            edits,
+        });
+    let mut diagnostic = primary(
         code,
         message,
         Location::Range(lower_raw_range(violation.range, lexed)),
-    )
+    );
+    diagnostic.fix = fix;
+    diagnostic
 }
 
 fn primary(code: DiagnosticCode, message: impl Into<Box<str>>, location: Location) -> Diagnostic {
