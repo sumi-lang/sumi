@@ -9,3 +9,4 @@ sumi-text = { path = "../text" }
 
 [dev-dependencies]
 proptest = "=1.11.0"
+sumi-test = { path = "../test" }

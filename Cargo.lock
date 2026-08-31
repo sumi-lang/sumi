@@ -641,7 +641,17 @@ version = "0.1.0"
 dependencies = [
  "proptest",
  "sumi-lexer",
+ "sumi-test",
  "sumi-text",
+]
+
+[[package]]
+name = "sumi-test"
+version = "0.0.0"
+dependencies = [
+ "proptest",
+ "sumi-lexer",
+ "sumi-syntax",
 ]
 
 [[package]]
