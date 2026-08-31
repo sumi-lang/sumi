@@ -1,3 +1,5 @@
+mod corpus;
+
 use criterion::{
     BatchSize, BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main,
 };
@@ -18,39 +20,15 @@ const SMALL_VALID: &str = r#"fn transform(value: int, limit: int) -> int {
 }
 "#;
 
-const VALID_ITEM: &str = r##"// Exercise declarations, trivia, literals, precedence, calls, and branches.
-fn transform(value: int, limit: int) -> int {
-  let doubled = value * 2
-  let adjusted = if doubled > limit {
-    doubled - limit
-  } else {
-    blend(
-      doubled + 16,
-      limit,
-    )
-  }
-  _ = record(adjusted, "value", r#"raw"#, 'λ')
-  return adjusted
-}
-"##;
-
-const MALFORMED_ITEM: &str = r#"fn broken(value int, limit: int {
-  let doubled value * 2
-  let adjusted = if doubled > {
-    doubled - limit;
-  else {
-    blend(doubled,, limit)
-  }
-  return adjusted €
-}
-"#;
-
-fn repeated_corpus(fragment: &str, minimum_len: usize) -> String {
-    fragment.repeat(minimum_len.div_ceil(fragment.len()))
-}
+// The seeds and damage parameters define the benchmark corpora; see the
+// baseline note in `corpus.rs` before touching them.
+const MEDIUM_SEED: u64 = 0xBEEF;
+const LARGE_SEED: u64 = 0xDECAF;
+const DAMAGE_SEED: u64 = 7;
+const DAMAGE_STRIDE: usize = 600;
 
 fn bench_pipeline_phases(c: &mut Criterion) {
-    let source = repeated_corpus(VALID_ITEM, 64 * KIB);
+    let source = corpus::generate(64 * KIB, MEDIUM_SEED);
     let lexed = lex(&source).expect("benchmark corpus fits in Sumi's source coordinate space");
     let cooked = cook(&source, &lexed);
     let input = ParserInput::new(&cooked);
@@ -86,11 +64,19 @@ fn bench_pipeline_phases(c: &mut Criterion) {
 fn bench_frontend(c: &mut Criterion) {
     let corpora = [
         ("small-valid", SMALL_VALID.to_owned(), true),
-        ("medium-valid", repeated_corpus(VALID_ITEM, 64 * KIB), true),
-        ("large-valid", repeated_corpus(VALID_ITEM, 512 * KIB), true),
+        (
+            "medium-valid",
+            corpus::generate(64 * KIB, MEDIUM_SEED),
+            true,
+        ),
+        ("large-valid", corpus::generate(512 * KIB, LARGE_SEED), true),
         (
             "medium-malformed",
-            repeated_corpus(MALFORMED_ITEM, 64 * KIB),
+            corpus::corrupt(
+                &corpus::generate(64 * KIB, MEDIUM_SEED),
+                DAMAGE_SEED,
+                DAMAGE_STRIDE,
+            ),
             false,
         ),
     ];
