@@ -10,7 +10,15 @@ use sumi_syntax::SyntaxTree;
 pub fn dump(tree: &SyntaxTree, lexed: &LexedFile, source: &str) -> Vec<String> {
     let mut lines = Vec::new();
     let mut visited = 0usize;
-    render(tree, lexed, source, 0, 0, &mut lines, &mut visited);
+    render(
+        tree,
+        lexed,
+        source,
+        tree.root(),
+        0,
+        &mut lines,
+        &mut visited,
+    );
     assert_eq!(visited, tree.len(), "extents must partition the tree");
     lines
 }
@@ -46,8 +54,11 @@ fn render(
     }
     lines.push(line);
 
+    // The tree yields children last first; the dump reads in source order.
+    let mut children: Vec<usize> = tree.children(node).collect();
+    children.reverse();
     let mut previous_end = first;
-    for child in tree.children(node) {
+    for child in children {
         assert!(
             tree.first_token(child) >= previous_end,
             "children must be ordered and disjoint"

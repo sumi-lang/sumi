@@ -1,11 +1,15 @@
-//! The syntax tree: flat, preorder, token-anchored.
+//! The syntax tree: flat, postorder, token-anchored.
 //!
 //! A [`SyntaxTree`] stores structure only. Each node is a kind, a subtree
 //! extent, and a half-open range of raw token indices; text, spans, and
 //! trivia stay in the token buffers, so the tree holds no second copy of the
-//! source. Nodes lie in preorder — node `index`'s subtree occupies
-//! `index..index + extent` — so children are found by walking extents and
-//! dumps read in source order. Node 0 is the root.
+//! source. Nodes lie in postorder — the order they complete in, children
+//! before parents — so node `index`'s subtree occupies
+//! `index + 1 - extent..=index` and children are found by walking extents
+//! backward from `index - 1`, last child first. The root is the last node,
+//! and because a node completes only as the cursor passes its last token,
+//! `end_token` is non-decreasing across the array: the node covering a
+//! token is found by binary search on it.
 //!
 //! A node's range runs from its first significant token to just past its
 //! last one, and every node but the root covers at least one token, so a
@@ -30,12 +34,12 @@
 //! marker dropped uncompleted panics where it drops, and `build` rejects a
 //! token past the input horizon or tokens left over.
 //!
-//! Internally the build records nodes as they complete, children before
-//! parents, and permutes them into preorder once the root closes. That is
-//! what lets a parser choose a node's kind after its children exist, and
-//! wrap a node it has already completed: a wrapper's subtree is simply
-//! everything completed since the wrapped node began — how a Pratt parser
-//! wraps an already-parsed left operand into a binary expression.
+//! The build records nodes as they complete, and completion order is the
+//! stored order. That is what lets a parser choose a node's kind after its
+//! children exist, and wrap a node it has already completed: a wrapper's
+//! subtree is simply everything completed since the wrapped node began —
+//! how a Pratt parser wraps an already-parsed left operand into a binary
+//! expression.
 
 use crate::input::ParserInput;
 use crate::kind::{NodeKind, SyntaxKind};
@@ -54,17 +58,22 @@ struct Node {
     end_token: u32,
 }
 
-/// A parsed file: its nodes in preorder.
+/// A parsed file: its nodes in postorder.
 #[derive(Clone, Debug)]
 pub struct SyntaxTree {
     nodes: Box<[Node]>,
 }
 
 impl SyntaxTree {
-    /// The number of nodes: at least one, the root at index 0.
+    /// The number of nodes: at least one, the root.
     #[expect(clippy::len_without_is_empty, reason = "a tree always has its root")]
     pub fn len(&self) -> usize {
         self.nodes.len()
+    }
+
+    /// The root, which completes last: the last node.
+    pub fn root(&self) -> usize {
+        self.nodes.len() - 1
     }
 
     pub fn kind(&self, index: usize) -> NodeKind {
@@ -82,17 +91,37 @@ impl SyntaxTree {
         self.nodes[index].end_token
     }
 
-    /// The direct children of node `index`, in source order.
+    /// The direct children of node `index`, last child first — the order a
+    /// stack walk wants: popping a node and pushing its children visits the
+    /// tree in preorder. Collect and reverse for source order.
     pub fn children(&self, index: usize) -> impl Iterator<Item = usize> + '_ {
-        let end = index + self.nodes[index].extent as usize;
-        let mut child = index + 1;
+        // Nodes of the subtree still unvisited, all below `child`.
+        let mut remaining = self.nodes[index].extent as usize - 1;
+        let mut child = index;
         std::iter::from_fn(move || {
-            (child < end).then(|| {
+            (remaining > 0).then(|| {
+                child -= 1;
+                let size = self.nodes[child].extent as usize;
+                remaining -= size;
                 let current = child;
-                child += self.nodes[child].extent as usize;
+                child -= size - 1;
                 current
             })
         })
+    }
+
+    /// The innermost node covering raw token `token`, which must lie in the
+    /// file. A token attached to no node — trivia between two children —
+    /// resolves to the nearest node whose range spans it, at worst the root.
+    pub fn covering(&self, token: u32) -> usize {
+        // `end_token` is non-decreasing in completion order, so everything
+        // ending at or before `token` drops out by binary search. Of the
+        // rest, a node either covers `token` or lies wholly past it, and
+        // covering nodes — an ancestor chain — complete innermost first.
+        let from = self.nodes.partition_point(|node| node.end_token <= token);
+        (from..self.nodes.len())
+            .find(|&index| self.nodes[index].first_token <= token)
+            .expect("the root covers every token in the file")
     }
 }
 
@@ -147,7 +176,7 @@ impl Parse {
         });
         Self {
             tree: SyntaxTree {
-                nodes: preorder(builder.nodes),
+                nodes: builder.nodes.into_boxed_slice(),
             },
             evidence: builder
                 .evidence
@@ -764,32 +793,6 @@ pub struct CompletedMarker {
     start: usize,
     /// Identity of the node it completed inside.
     parent: u32,
-}
-
-/// Permute `nodes` from completion order, children before parents with the
-/// root last, into preorder.
-fn preorder(nodes: Vec<Node>) -> Box<[Node]> {
-    let root = nodes.len() - 1;
-    let mut ordered = vec![nodes[root]; nodes.len()];
-    // Nodes still to place: index in `nodes`, slot in `ordered`.
-    let mut pending = vec![(root, 0usize)];
-    while let Some((node, slot)) = pending.pop() {
-        ordered[slot] = nodes[node];
-        let extent = nodes[node].extent as usize;
-        // A node's children lie just below it, last child first, each
-        // ending where the previous one begins; they take the slots after
-        // the node, handed out from the end of its range.
-        let bottom = node + 1 - extent;
-        let (mut child, mut end) = (node, slot + extent);
-        while child > bottom {
-            child -= 1;
-            let size = nodes[child].extent as usize;
-            end -= size;
-            pending.push((child, end));
-            child -= size - 1;
-        }
-    }
-    ordered.into_boxed_slice()
 }
 
 /// Node counts are stored as `u32`; nothing bounds them by the source
