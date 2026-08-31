@@ -1,13 +1,11 @@
 [package]
-name = "sumi-syntax"
+name = "sumi-format"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
 sumi-lexer = { path = "../lexer" }
-sumi-text = { path = "../text" }
+sumi-syntax = { path = "../syntax" }
 
 [dev-dependencies]
 proptest = "=1.11.0"
-sumi-format = { path = "../format" }
-sumi-test = { path = "../test" }

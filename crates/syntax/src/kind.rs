@@ -71,7 +71,7 @@ pub enum SyntaxKind {
 
 impl SyntaxKind {
     /// Whether a token of this kind can begin an expression.
-    pub(crate) fn starts_expression(self) -> bool {
+    pub fn starts_expression(self) -> bool {
         matches!(
             self,
             Self::Ident

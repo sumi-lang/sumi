@@ -12,6 +12,7 @@ sumi-text = { path = "../text" }
 [dev-dependencies]
 criterion = { package = "codspeed-criterion-compat", version = "=5.0.1", default-features = false, features = ["cargo_bench_support"] }
 proptest = "=1.11.0"
+sumi-format = { path = "../format" }
 sumi-test = { path = "../test" }
 
 [[bench]]

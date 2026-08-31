@@ -7,7 +7,7 @@ use sumi_syntax::{
 };
 
 /// Parse `source`; assert the tree dump and the evidence, each rendered as
-/// `Kind at byte`.
+/// `Kind at byte` — and that the tree reprints the source byte for byte.
 #[track_caller]
 fn check(source: &str, tree: &[&str], evidence: &[&str]) {
     let lexed = lex(source).expect("test sources fit in u32");
@@ -17,6 +17,11 @@ fn check(source: &str, tree: &[&str], evidence: &[&str]) {
         common::dump(parse.tree(), &lexed, source),
         tree,
         "tree for {source:?}"
+    );
+    assert_eq!(
+        sumi_format::reprint(parse.tree(), &lexed, source),
+        source,
+        "reprint for {source:?}"
     );
     let actual: Vec<String> = parse
         .evidence()

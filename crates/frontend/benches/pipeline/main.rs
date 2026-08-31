@@ -1,9 +1,10 @@
 use criterion::{
     BatchSize, BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main,
 };
+use sumi_format::{normalize, reprint};
 use sumi_frontend::parse_source;
 use sumi_lexer::lex;
-use sumi_syntax::{MAX_DEPTH, ParserInput, cook, parse};
+use sumi_syntax::{MAX_DEPTH, ParseEvidence, ParserInput, cook, parse};
 use sumi_test::corpus;
 use sumi_text::{LineIndex, TextSize};
 
@@ -277,11 +278,56 @@ fn bench_queries(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_format(c: &mut Criterion) {
+    let source = corpus::generate(64 * KIB, MEDIUM_SEED);
+    let lexed = lex(&source).expect("benchmark corpus fits in Sumi's source coordinate space");
+    let parsed = parse(&ParserInput::new(&cook(&source, &lexed)));
+    assert_eq!(
+        reprint(parsed.tree(), &lexed, &source),
+        source,
+        "the tree must reprint its corpus byte for byte"
+    );
+
+    // The valid corpus spaces every binary operator; gluing two of them
+    // degrades layout without touching structure. Neither pattern occurs
+    // in the string literals the generator emits.
+    let glued = source.replace(" + ", "+").replace(" * ", "*");
+    let glued_lexed = lex(&glued).expect("benchmark corpus fits in Sumi's source coordinate space");
+    let glued_cooked = cook(&glued, &glued_lexed);
+    let glued_parse = parse(&ParserInput::new(&glued_cooked));
+    let violations = glued_parse
+        .evidence()
+        .iter()
+        .filter(|evidence| matches!(evidence, ParseEvidence::Violation(_)))
+        .count();
+    assert!(
+        violations > 500,
+        "the glued corpus must be violation-rich, found {violations}"
+    );
+
+    let mut group = c.benchmark_group("format/medium-valid");
+    group.throughput(Throughput::Bytes(source.len() as u64));
+    group.bench_function("reprint", |b| {
+        b.iter_with_large_drop(|| reprint(black_box(parsed.tree()), &lexed, &source));
+    });
+    group.finish();
+
+    let mut group = c.benchmark_group("format/medium-glued");
+    group.throughput(Throughput::Bytes(glued.len() as u64));
+    group.bench_function("normalize", |b| {
+        b.iter_with_large_drop(|| {
+            normalize(black_box(&glued), &glued_lexed, &glued_cooked, &glued_parse)
+        });
+    });
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_pipeline_phases,
     bench_frontend,
     bench_adversarial,
-    bench_queries
+    bench_queries,
+    bench_format
 );
 criterion_main!(benches);
