@@ -1,4 +1,4 @@
-//! Deterministic Sumi source generation for the frontend benchmarks.
+//! Deterministic Sumi source generation for benchmarks and harnesses.
 //!
 //! The clean generator emits strictly valid Sumi — spaced binary
 //! operators, glued prefix operators, blocks on the line of their owner,
@@ -8,8 +8,9 @@
 //! to exercise recovery paths.
 //!
 //! Every benchmark baseline hangs off these exact bytes: the generation
-//! logic and the seeds pinned in `main.rs` define the corpora, and
-//! changing either resets the performance history CodSpeed tracks.
+//! logic here and the seeds its consumers pin define the corpora, and
+//! changing either resets the performance history CodSpeed tracks. The
+//! fingerprint test below fails on any accidental drift.
 
 pub struct Rng(u64);
 
@@ -386,5 +387,37 @@ pub fn corrupt(source: &str, seed: u64, stride: usize) -> String {
 fn remove_next(bytes: &mut Vec<u8>, from: usize, needle: u8) {
     if let Some(at) = (from..bytes.len().min(from + 2000)).find(|&p| bytes[p] == needle) {
         bytes.remove(at);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fingerprint(text: &str) -> u64 {
+        let mut hash = 0xcbf2_9ce4_8422_2325u64;
+        for &byte in text.as_bytes() {
+            hash = (hash ^ byte as u64).wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        hash
+    }
+
+    /// The corpora are benchmark baselines: any drift in the generated
+    /// bytes silently resets the performance history CodSpeed tracks, so
+    /// drift must be a conscious choice made by updating these pins.
+    #[test]
+    fn generated_corpora_are_pinned() {
+        let medium = generate(64 * 1024, 0xBEEF);
+        assert_eq!(
+            (medium.len(), fingerprint(&medium)),
+            (65826, 9466254703433476004),
+            "medium"
+        );
+        let damaged = corrupt(&medium, 7, 600);
+        assert_eq!(
+            (damaged.len(), fingerprint(&damaged)),
+            (65815, 17876929023411404082),
+            "damaged"
+        );
     }
 }
