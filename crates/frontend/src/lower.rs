@@ -1,10 +1,12 @@
-use sumi_diagnostics::{Diagnostic, DiagnosticCode, Label, Location, Severity};
+use std::collections::HashSet;
+
+use sumi_diagnostics::{Diagnostic, DiagnosticCode, Fix, Label, Location, Severity};
 use sumi_lexer::{LexError, LexErrorKind, LexedFile};
 use sumi_syntax::{
     Parse, ParseAnchor, ParseEvidence, ParseExpected, ParseRecovery, ParseRecoveryKind,
     ParseViolation, ParseViolationKind, RawGap, RawTokenRange, SyntaxKind, raw_boundary,
 };
-use sumi_text::TextRange;
+use sumi_text::{TextEdit, TextRange};
 
 use crate::codes;
 
@@ -220,6 +222,7 @@ fn lower_token_errors(errors: &[LexError], diagnostics: &mut Vec<Diagnostic>) {
                         message: Some(fact.message.into()),
                     })
                     .collect(),
+                fix: None,
             },
         ));
     }
@@ -229,6 +232,20 @@ fn lower_token_errors(errors: &[LexError], diagnostics: &mut Vec<Diagnostic>) {
 }
 
 fn lower_parse(lexed: &LexedFile, parse: &Parse, diagnostics: &mut Vec<Diagnostic>) {
+    let unterminated_literals: HashSet<u32> = lexed
+        .errors()
+        .iter()
+        .filter(|error| {
+            matches!(
+                error.kind,
+                LexErrorKind::UnterminatedString
+                    | LexErrorKind::UnterminatedRawString
+                    | LexErrorKind::UnterminatedChar
+            )
+        })
+        .map(|error| error.token)
+        .collect();
+    let mut closer_fix_sites = HashSet::new();
     for evidence in parse.evidence() {
         match evidence {
             ParseEvidence::Recovery(recovery) => {
@@ -237,7 +254,12 @@ fn lower_parse(lexed: &LexedFile, parse: &Parse, diagnostics: &mut Vec<Diagnosti
                 {
                     continue;
                 }
-                diagnostics.push(lower_recovery(recovery, lexed));
+                diagnostics.push(lower_recovery(
+                    recovery,
+                    lexed,
+                    &unterminated_literals,
+                    &mut closer_fix_sites,
+                ));
             }
             ParseEvidence::Violation(violation) => {
                 if !tokens_have_error(violation.range, lexed) {
@@ -248,7 +270,12 @@ fn lower_parse(lexed: &LexedFile, parse: &Parse, diagnostics: &mut Vec<Diagnosti
     }
 }
 
-fn lower_recovery(recovery: &ParseRecovery, lexed: &LexedFile) -> Diagnostic {
+fn lower_recovery(
+    recovery: &ParseRecovery,
+    lexed: &LexedFile,
+    unterminated_literals: &HashSet<u32>,
+    closer_fix_sites: &mut HashSet<(SyntaxKind, u32)>,
+) -> Diagnostic {
     let location = lower_anchor(recovery.anchor, lexed);
     let (code, message) = match recovery.kind {
         ParseRecoveryKind::Expected(expected) => expected_diagnostic(expected),
@@ -285,6 +312,7 @@ fn lower_recovery(recovery: &ParseRecovery, lexed: &LexedFile) -> Diagnostic {
                 }),
         )
         .collect();
+    let fix = closer_fix(recovery, lexed, unterminated_literals, closer_fix_sites);
 
     Diagnostic {
         code,
@@ -295,7 +323,44 @@ fn lower_recovery(recovery: &ParseRecovery, lexed: &LexedFile) -> Diagnostic {
             message: None,
         },
         secondary,
+        fix,
     }
+}
+
+fn closer_fix(
+    recovery: &ParseRecovery,
+    lexed: &LexedFile,
+    unterminated_literals: &HashSet<u32>,
+    sites: &mut HashSet<(SyntaxKind, u32)>,
+) -> Option<Fix> {
+    let (ParseRecoveryKind::Expected(ParseExpected::Closer { kind, .. }), ParseAnchor::Gap(gap)) =
+        (recovery.kind, recovery.anchor)
+    else {
+        return None;
+    };
+    let replacement = match kind {
+        SyntaxKind::RParen => ")",
+        SyntaxKind::RBrace => "}",
+        _ => unreachable!("closer evidence names a closing delimiter"),
+    };
+    // A delimiter immediately after an unterminated literal becomes part of
+    // that token and repairs nothing. Keep the diagnostic, but offer no edit.
+    let previous = gap.trivia_start().checked_sub(1);
+    if previous.is_some_and(|token| unterminated_literals.contains(&token)) {
+        return None;
+    }
+    let at = raw_boundary(lexed, gap.trivia_start());
+    let site = (kind, at.to_u32());
+    // At one site a closer binds the innermost same-kind opener, regardless
+    // of which diagnostic offered it. Fix that one now; a reparse can then
+    // offer the next outer closer without a misleading duplicate action.
+    if !sites.insert(site) {
+        return None;
+    }
+    Some(Fix {
+        message: format!("insert {}", token_description(kind)).into(),
+        edits: vec![TextEdit::new(TextRange::new(at, at), replacement)].into_boxed_slice(),
+    })
 }
 
 fn expected_diagnostic(expected: ParseExpected) -> (DiagnosticCode, Box<str>) {
@@ -398,6 +463,7 @@ fn primary(code: DiagnosticCode, message: impl Into<Box<str>>, location: Locatio
             message: None,
         },
         secondary: Box::new([]),
+        fix: None,
     }
 }
 

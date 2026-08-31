@@ -10,11 +10,12 @@ mod lower;
 pub mod codes;
 
 pub use sumi_diagnostics::{
-    Diagnostic, DiagnosticCode, DiagnosticGroup, Label, Location, Severity,
+    Diagnostic, DiagnosticCode, DiagnosticGroup, Fix, Label, Location, Severity,
 };
 pub use sumi_lexer::SourceTooLarge;
 use sumi_lexer::{LexedFile, lex};
 use sumi_syntax::{Parse, ParserInput, parse};
+pub use sumi_text::TextEdit;
 
 /// Parse one immutable source snapshot.
 ///
