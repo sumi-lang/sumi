@@ -71,6 +71,14 @@ pub enum ParseExpected {
     Type,
     /// A specific token, such as `)` or `=`.
     Token(T),
+    /// A closing delimiter, tied to the opener which requires it. The
+    /// recovery anchor remains the gap where the closer is missing; this
+    /// range preserves the other end of that relationship for diagnostics
+    /// and source-aware tooling.
+    Closer {
+        kind: T,
+        opener: RawTokenRange,
+    },
     /// A statement starts on the line of the previous one.
     Boundary,
 }
@@ -354,7 +362,7 @@ fn param_list(p: &mut Marker<'_, '_>) {
     loop {
         match m.current() {
             None => {
-                m.missing(ParseExpected::Token(T::RParen));
+                m.missing_closer();
                 break;
             }
             Some(T::RParen) if m.owns_rparen() => {
@@ -362,13 +370,13 @@ fn param_list(p: &mut Marker<'_, '_>) {
                 break;
             }
             Some(T::RParen) if m.closes_open_paren() => {
-                m.missing(ParseExpected::Token(T::RParen));
+                m.missing_closer();
                 break;
             }
             Some(T::LBrace | T::RBrace)
                 if !m.closed() && m.partnered() && !displaced_closer(&m) =>
             {
-                m.missing(ParseExpected::Token(T::RParen));
+                m.missing_closer();
                 break;
             }
             Some(T::Ident | T::Underscore) => param(&mut m),
@@ -390,7 +398,7 @@ fn param_list(p: &mut Marker<'_, '_>) {
         // the stream closes owns everything through its `)`, a boundary an
         // unclosed `{` inside it restores included.
         if !m.closed() && m.boundary() {
-            m.missing(ParseExpected::Token(T::RParen));
+            m.missing_closer();
             break;
         }
         if m.at(T::Comma) {
@@ -441,7 +449,7 @@ fn block(p: &mut Marker<'_, '_>) -> CompletedMarker {
     loop {
         match m.current() {
             None => {
-                m.missing(ParseExpected::Token(T::RBrace));
+                m.missing_closer();
                 break;
             }
             Some(T::RBrace) if !m.closer_ahead() => {
@@ -451,7 +459,7 @@ fn block(p: &mut Marker<'_, '_>) -> CompletedMarker {
             // A `)` closing a paren still open around this block belongs to
             // it: the block is unclosed, and the `)` is left to its owner.
             Some(T::RParen) if m.closes_open_paren() => {
-                m.missing(ParseExpected::Token(T::RBrace));
+                m.missing_closer();
                 break;
             }
             Some(_) => {
@@ -811,7 +819,7 @@ fn prefix_or_atom(p: &mut Marker<'_, '_>, follow: ExprFollow) -> Option<Complete
             if m.owns_rparen() {
                 m.token();
             } else {
-                m.missing(ParseExpected::Token(T::RParen));
+                m.missing_closer();
             }
             m.complete(N::ParenExpr)
         }
@@ -889,7 +897,7 @@ fn arg_list(p: &mut Marker<'_, '_>) {
     loop {
         match m.current() {
             None => {
-                m.missing(ParseExpected::Token(T::RParen));
+                m.missing_closer();
                 break;
             }
             Some(T::RParen) if m.owns_rparen() => {
@@ -897,11 +905,11 @@ fn arg_list(p: &mut Marker<'_, '_>) {
                 break;
             }
             Some(T::RParen) if m.closes_open_paren() => {
-                m.missing(ParseExpected::Token(T::RParen));
+                m.missing_closer();
                 break;
             }
             Some(T::RBrace) if !m.closed() && !displaced_closer(&m) => {
-                m.missing(ParseExpected::Token(T::RParen));
+                m.missing_closer();
                 break;
             }
             Some(T::Comma) => {
@@ -933,7 +941,7 @@ fn arg_list(p: &mut Marker<'_, '_>) {
         // the stream closes owns everything through its `)`, a boundary an
         // unclosed `{` inside it restores included.
         if !m.closed() && m.boundary() {
-            m.missing(ParseExpected::Token(T::RParen));
+            m.missing_closer();
             break;
         }
         if m.at(T::Comma) {

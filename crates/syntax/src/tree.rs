@@ -777,6 +777,18 @@ impl<'a> Marker<'_, 'a> {
         self.record_recovery(ParseRecoveryKind::Expected(expected), anchor)
     }
 
+    /// Record a closing delimiter missing from the cursor gap, retaining
+    /// the opening delimiter at this node's first token as its counterpart.
+    pub(crate) fn missing_closer(&mut self) -> RecoveryHandle {
+        let kind = match self.builder.input.get(self.start) {
+            Some(SyntaxKind::LParen) => SyntaxKind::RParen,
+            Some(SyntaxKind::LBrace) => SyntaxKind::RBrace,
+            _ => unreachable!("a missing closer belongs to a bracket node"),
+        };
+        let opener = self.builder.raw_range(self.start, self.start + 1);
+        self.missing(ParseExpected::Closer { kind, opener })
+    }
+
     /// Record structural recovery over `width` significant tokens at the
     /// cursor.
     pub(crate) fn recover_tokens(

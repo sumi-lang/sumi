@@ -256,15 +256,26 @@ fn lower_recovery(recovery: &ParseRecovery, lexed: &LexedFile) -> Diagnostic {
             unreachable!("prior-phase recovery is suppressed before lowering")
         }
     };
-    let secondary = recovery
-        .skipped
-        .iter()
-        .map(|&range| Location::Range(lower_raw_range(range, lexed)))
-        .filter(|&skipped| skipped != location)
-        .map(|location| Label {
-            location,
-            message: Some("skipped while recovering".into()),
-        })
+    let opener = match recovery.kind {
+        ParseRecoveryKind::Expected(ParseExpected::Closer { opener, .. }) => Some(Label {
+            location: Location::Range(lower_raw_range(opener, lexed)),
+            message: Some("opening delimiter is here".into()),
+        }),
+        _ => None,
+    };
+    let secondary = opener
+        .into_iter()
+        .chain(
+            recovery
+                .skipped
+                .iter()
+                .map(|&range| Location::Range(lower_raw_range(range, lexed)))
+                .filter(|&skipped| skipped != location)
+                .map(|location| Label {
+                    location,
+                    message: Some("skipped while recovering".into()),
+                }),
+        )
         .collect();
 
     Diagnostic {
@@ -286,7 +297,7 @@ fn expected_diagnostic(expected: ParseExpected) -> (DiagnosticCode, Box<str>) {
         ParseExpected::Expression => (codes::EXPECTED_EXPRESSION, "expected an expression".into()),
         ParseExpected::Name => (codes::EXPECTED_NAME, "expected a name".into()),
         ParseExpected::Type => (codes::EXPECTED_TYPE, "expected a type".into()),
-        ParseExpected::Token(kind) => (
+        ParseExpected::Token(kind) | ParseExpected::Closer { kind, .. } => (
             codes::EXPECTED_TOKEN,
             format!("expected {}", token_description(kind)).into(),
         ),
