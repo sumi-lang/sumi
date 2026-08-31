@@ -3,7 +3,7 @@ use criterion::{
 };
 use sumi_frontend::parse_source;
 use sumi_lexer::lex;
-use sumi_syntax::{ParserInput, cook, parse};
+use sumi_syntax::{MAX_DEPTH, ParserInput, cook, parse};
 use sumi_test::corpus;
 
 const KIB: usize = 1024;
@@ -26,30 +26,63 @@ const LARGE_SEED: u64 = 0xDECAF;
 const DAMAGE_SEED: u64 = 7;
 const DAMAGE_STRIDE: usize = 600;
 
+// Nesting depths for the adversarial ladder, pinned so the benchmark names
+// stay stable. The first three rungs must parse clean under [`MAX_DEPTH`];
+// the last must trip the depth guard and recover past thousands of
+// unconsumed closers.
+const NESTED_RUNGS: [(usize, bool); 4] = [(4, true), (32, true), (224, true), (4096, false)];
+
 fn bench_pipeline_phases(c: &mut Criterion) {
-    let source = corpus::generate(64 * KIB, MEDIUM_SEED);
-    let lexed = lex(&source).expect("benchmark corpus fits in Sumi's source coordinate space");
-    let cooked = cook(&source, &lexed);
+    bench_phases(
+        c,
+        "medium-valid",
+        &corpus::generate(64 * KIB, MEDIUM_SEED),
+        true,
+    );
+    bench_phases(
+        c,
+        "medium-malformed",
+        &corpus::corrupt(
+            &corpus::generate(64 * KIB, MEDIUM_SEED),
+            DAMAGE_SEED,
+            DAMAGE_STRIDE,
+        ),
+        false,
+    );
+}
+
+fn bench_phases(c: &mut Criterion, corpus_name: &str, source: &str, valid: bool) {
+    let lexed = lex(source).expect("benchmark corpus fits in Sumi's source coordinate space");
+    let cooked = cook(source, &lexed);
     let input = ParserInput::new(&cooked);
 
-    let parsed = parse_source(source.clone().into_boxed_str())
+    let parsed = parse_source(source.to_owned().into_boxed_str())
         .expect("benchmark corpus fits in Sumi's source coordinate space");
-    assert!(
+    assert_eq!(
         parsed.diagnostics().is_empty(),
-        "valid benchmark corpus must remain valid: {:?}",
+        valid,
+        "benchmark corpus validity changed for {corpus_name}: {:?}",
         parsed.diagnostics().first()
     );
 
-    let mut group = c.benchmark_group("pipeline-phases/medium-valid");
+    let mut group = c.benchmark_group(format!("pipeline-phases/{corpus_name}"));
     group.throughput(Throughput::Bytes(source.len() as u64));
     group.bench_function("lex", |b| {
         b.iter_with_large_drop(|| {
-            lex(black_box(source.as_str()))
-                .expect("benchmark corpus fits in Sumi's source coordinate space")
+            lex(black_box(source)).expect("benchmark corpus fits in Sumi's source coordinate space")
         });
     });
     group.bench_function("cook", |b| {
-        b.iter_with_large_drop(|| cook(black_box(source.as_str()), black_box(&lexed)));
+        b.iter_with_large_drop(|| cook(black_box(source), black_box(&lexed)));
+    });
+    // Both halves together, ahead of any fusion of them: the combined
+    // measurement keeps its history when the phase boundary moves.
+    group.bench_function("lex+cook", |b| {
+        b.iter_with_large_drop(|| {
+            let lexed = lex(black_box(source))
+                .expect("benchmark corpus fits in Sumi's source coordinate space");
+            cook(black_box(source), &lexed)
+        });
     });
     group.bench_function("parser-input", |b| {
         b.iter_with_large_drop(|| ParserInput::new(black_box(&cooked)));
@@ -108,5 +141,61 @@ fn bench_frontend(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_pipeline_phases, bench_frontend);
+/// Functions whose bodies each return one expression nested `depth` groups
+/// deep, repeated until the file reaches `total` bytes. Group pairing, Pratt
+/// recursion, and the depth guard all scale with nesting, which the
+/// realistic corpora keep shallow.
+fn nested_groups(total: usize, depth: usize) -> String {
+    let mut source = String::with_capacity(total + 64 + 2 * depth);
+    let mut index = 0;
+    while source.len() < total {
+        source.push_str("fn nest");
+        source.push_str(&index.to_string());
+        source.push_str("() -> int {\n  return ");
+        for _ in 0..depth {
+            source.push('(');
+        }
+        source.push('1');
+        for _ in 0..depth {
+            source.push(')');
+        }
+        source.push_str("\n}\n");
+        index += 1;
+    }
+    source
+}
+
+fn bench_adversarial(c: &mut Criterion) {
+    let mut group = c.benchmark_group("adversarial/nested-groups");
+    for (depth, valid) in NESTED_RUNGS {
+        let source = nested_groups(64 * KIB, depth);
+        let parsed = parse_source(source.clone().into_boxed_str())
+            .expect("benchmark corpus fits in Sumi's source coordinate space");
+        assert_eq!(
+            parsed.diagnostics().is_empty(),
+            valid,
+            "nesting depth {depth} landed on the wrong side of MAX_DEPTH ({MAX_DEPTH}): {:?}",
+            parsed.diagnostics().first()
+        );
+        group.throughput(Throughput::Bytes(source.len() as u64));
+        group.bench_with_input(BenchmarkId::from_parameter(depth), &source, |b, source| {
+            b.iter_batched(
+                || source.clone().into_boxed_str(),
+                |source| {
+                    parse_source(source)
+                        .expect("benchmark corpus fits in Sumi's source coordinate space")
+                },
+                BatchSize::LargeInput,
+            );
+        });
+    }
+    group.finish();
+}
+
+criterion_group!(
+    benches,
+    bench_pipeline_phases,
+    bench_frontend,
+    bench_adversarial
+);
 criterion_main!(benches);
