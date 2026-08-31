@@ -352,11 +352,9 @@ impl<'a> Marker<'_, 'a> {
             .partner(index)
             .filter(|&partner| partner > index);
         let limit = self.next_parser_closer();
-        let whole = partner.is_some_and(|partner| {
-            limit.is_some_and(|closer| partner < closer)
-                || (limit.is_none()
-                    && (index + 1..=partner)
-                        .all(|inside| !self.builder.input.boundary_before(inside)))
+        let whole = partner.is_some_and(|partner| match limit {
+            Some(closer) => partner < closer,
+            None => !self.builder.input.boundary_in(index + 1..partner + 1),
         });
         self.token();
         if let Some(partner) = partner.filter(|_| whole) {

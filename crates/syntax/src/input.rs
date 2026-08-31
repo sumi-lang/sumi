@@ -39,6 +39,7 @@
 //! the parser, where the grammar position gives diagnostics their context.
 
 use std::num::NonZeroU32;
+use std::ops::Range;
 
 use crate::cook::CookedFile;
 use crate::kind::SyntaxKind;
@@ -55,6 +56,10 @@ pub struct ParserInput {
     /// For each significant token, its index in the underlying token buffer.
     tokens: Box<[u32]>,
     flags: Box<[u8]>,
+    /// Prefix sums of the boundary bits: entry `index` counts the statement
+    /// boundaries before tokens `0..index`, so any-boundary-in-range is two
+    /// lookups however long the range.
+    boundaries: Box<[u32]>,
     /// For each significant token, the index of its matching bracket plus
     /// one, so the slot has a niche; `None` for anything that is not a
     /// matched bracket.
@@ -103,7 +108,10 @@ impl ParserInput {
         // termination — one it never closes would suspend it to the end of
         // the file, so the line ends the statement instead.
         let mut open: Vec<usize> = Vec::new();
+        let mut boundaries: Vec<u32> = Vec::with_capacity(kinds.len() + 1);
+        let mut boundary_count: u32 = 0;
         for index in 0..kinds.len() {
+            boundaries.push(boundary_count);
             if index > 0
                 && flags[index] & NEWLINE_BEFORE != 0
                 && !open.last().is_some_and(|&opener| {
@@ -113,6 +121,7 @@ impl ParserInput {
                 && !continues_statement(&kinds, &flags, index)
             {
                 flags[index] |= BOUNDARY_BEFORE;
+                boundary_count += 1;
             }
             match kinds[index] {
                 SyntaxKind::LParen | SyntaxKind::LBrace => open.push(index),
@@ -125,11 +134,13 @@ impl ParserInput {
                 _ => {}
             }
         }
+        boundaries.push(boundary_count);
 
         Self {
             kinds: kinds.into_boxed_slice(),
             tokens: tokens.into_boxed_slice(),
             flags: flags.into_boxed_slice(),
+            boundaries: boundaries.into_boxed_slice(),
             partners: partners.into_boxed_slice(),
             raw_len: cooked.len() as u32,
         }
@@ -178,6 +189,14 @@ impl ParserInput {
     /// the newline rule. Never true for the first token.
     pub fn boundary_before(&self, index: usize) -> bool {
         self.flags[index] & BOUNDARY_BEFORE != 0
+    }
+
+    /// Whether a statement boundary precedes any token in `range`. Answered
+    /// from the boundary prefix sums, so the cost does not grow with the
+    /// range; recovery leans on this to reject a bracket group spanning a
+    /// boundary without rescanning its interior. `range.end` may be `len()`.
+    pub fn boundary_in(&self, range: Range<usize>) -> bool {
+        self.boundaries[range.end] > self.boundaries[range.start]
     }
 
     /// The index of the bracket matching significant token `index`: an
