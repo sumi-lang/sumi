@@ -355,11 +355,9 @@ fn closer_fix(
     else {
         return None;
     };
-    let replacement = match kind {
-        SyntaxKind::RParen => ")",
-        SyntaxKind::RBrace => "}",
-        _ => unreachable!("closer evidence names a closing delimiter"),
-    };
+    let replacement = kind
+        .text()
+        .unwrap_or_else(|| unreachable!("closer evidence names a closing delimiter"));
     // A delimiter immediately after an unterminated literal becomes part of
     // that token and repairs nothing. Keep the diagnostic, but offer no edit.
     let previous = gap.trivia_start().checked_sub(1);

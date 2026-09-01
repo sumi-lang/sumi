@@ -557,15 +557,9 @@ impl<'a> Marker<'_, 'a> {
     }
 
     /// Whether the next two tokens are `first` glued to `second`: a
-    /// compound operator such as `==` or `->`.
+    /// compound such as `->`.
     pub(crate) fn at_glued(&self, first: SyntaxKind, second: SyntaxKind) -> bool {
-        self.nth_glued(0, first, second)
-    }
-
-    /// Whether the significant tokens `n` and `n + 1` past the next one are
-    /// `first` glued to `second`.
-    pub(crate) fn nth_glued(&self, n: usize, first: SyntaxKind, second: SyntaxKind) -> bool {
-        self.nth(n) == Some(first) && self.nth_joint(n) && self.nth(n + 1) == Some(second)
+        self.at(first) && self.joint() && self.nth(1) == Some(second)
     }
 
     /// Whether the next token is glued to the one after it.

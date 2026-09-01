@@ -166,6 +166,11 @@ pub fn is_closer(kind: SyntaxKind) -> bool {
     opener(kind).is_some()
 }
 
+/// Whether a token of this kind opens or closes a bracket pair.
+pub fn is_bracket(kind: SyntaxKind) -> bool {
+    is_opener(kind) || is_closer(kind)
+}
+
 /// The binding power of a prefix operator's operand: tighter than every
 /// binary operator, so only a call binds closer.
 pub const PREFIX_BP: u8 = 11;

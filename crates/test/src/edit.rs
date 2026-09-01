@@ -2,7 +2,7 @@
 //! mapping that carries unaffected spans into the edited source.
 
 use proptest::prelude::*;
-use sumi_syntax::{ParserInput, SyntaxKind, is_closer, is_opener};
+use sumi_syntax::{ParserInput, SyntaxKind, is_bracket};
 
 use crate::front::front;
 use crate::program::program;
@@ -35,25 +35,20 @@ pub fn edit() -> impl Strategy<Value = Edit> {
     ]
 }
 
-pub fn is_delimiter(kind: SyntaxKind) -> bool {
-    is_opener(kind) || is_closer(kind)
-}
-
-/// Whether `edit` inserts, removes, duplicates, or moves a delimiter.
+/// Whether `edit` inserts, removes, duplicates, or moves a bracket.
 pub fn changes_delimiter(input: &ParserInput, index: usize, edit: Edit) -> bool {
     match edit {
-        Edit::Delete | Edit::Duplicate => input.get(index).is_some_and(is_delimiter),
+        Edit::Delete | Edit::Duplicate => input.get(index).is_some_and(is_bracket),
         Edit::Insert(inserted) => SyntaxKind::ALL
             .iter()
-            .any(|&kind| is_delimiter(kind) && kind.text() == Some(inserted)),
+            .any(|&kind| is_bracket(kind) && kind.text() == Some(inserted)),
         Edit::Swap => {
             let left = if index + 1 < input.len() {
                 index
             } else {
                 index - 1
             };
-            input.get(left).is_some_and(is_delimiter)
-                || input.get(left + 1).is_some_and(is_delimiter)
+            input.get(left).is_some_and(is_bracket) || input.get(left + 1).is_some_and(is_bracket)
         }
     }
 }

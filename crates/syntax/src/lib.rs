@@ -15,8 +15,8 @@ mod tree;
 pub use input::ParserInput;
 pub use kind::{
     BRACKET_PAIRS, BinaryOp, NodeKind, SyntaxKind, binary_operator, can_end_statement, closer,
-    continues_statement, introduces_statement, is_closer, is_opener, is_prefix_operator, opener,
-    starts_expression, starts_item, starts_statement,
+    continues_statement, introduces_statement, is_bracket, is_closer, is_opener,
+    is_prefix_operator, opener, starts_expression, starts_item, starts_statement,
 };
 pub use parser::{
     MAX_DEPTH, ParseAnchor, ParseEvidence, ParseExpected, ParseRecovery, ParseRecoveryKind,

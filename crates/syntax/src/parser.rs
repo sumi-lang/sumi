@@ -236,7 +236,7 @@ fn skip_statement_garbage(p: &mut Marker<'_, '_>, recovery: RecoveryHandle) -> C
     m.group_inside();
     while !(m.current().is_none()
         || m.boundary()
-        || begins_recovery_statement(&m)
+        || m.current().is_some_and(introduces_statement)
         || (m.at(T::RBrace) && !m.closer_ahead())
         || m.closes_open_paren())
     {
@@ -479,7 +479,10 @@ fn block(p: &mut Marker<'_, '_>) -> CompletedMarker {
                     || (m.at(T::RBrace) && !m.closer_ahead() && !(failed && displaced_closer(&m)))
                     || m.closes_open_paren();
                 if !ends {
-                    if failed && !begins_recovery_statement(&m) {
+                    // Only a statement introducer survives a failed
+                    // statement on the same line: an expression start is
+                    // ambiguous with a malformed suffix and stays with it.
+                    if failed && !m.current().is_some_and(introduces_statement) {
                         let recovery = m
                             .latest_recovery_since(recovery)
                             .expect("a failed statement has recovery evidence");
@@ -492,14 +495,6 @@ fn block(p: &mut Marker<'_, '_>) -> CompletedMarker {
         }
     }
     m.complete(N::Block)
-}
-
-/// A statement introducer strong enough to survive a failed statement on
-/// the same line. Expression starts are ambiguous with a malformed suffix
-/// and stay with the failed statement; declaration keywords begin a fresh
-/// construct.
-fn begins_recovery_statement(p: &Marker<'_, '_>) -> bool {
-    p.current().is_some_and(introduces_statement)
 }
 
 /// One statement: a binding, assignment, discard, return, or expression,
@@ -648,23 +643,17 @@ fn displaced_closer(p: &Marker<'_, '_>) -> bool {
     if !p.current().is_some_and(is_closer) || p.nth_newline(1) {
         return false;
     }
-    // `==` and `!=` are ordinary binary operators after a closer. A lone
-    // `=` or a prefix `!` followed by an operand cannot be.
-    if p.nth_glued(1, T::Eq, T::Eq) || p.nth_glued(1, T::Bang, T::Eq) {
+    // A binary operator after a closer continues the expression, `-`
+    // whatever its spacing; a lone `=` or a prefix `!` cannot.
+    if binary_op(p, 1).is_some() {
         return false;
     }
+    // An opener could instead continue the operand: a call, or a body.
     p.nth(1).is_some_and(|next| {
         matches!(next, T::Eq | T::Colon)
             || introduces_statement(next)
-            || (starts_expression(next) && !continues_operand(next))
+            || (starts_expression(next) && !is_opener(next))
     })
-}
-
-/// Whether a token that begins an expression could instead continue the
-/// operand before it: an opener, as a call or a body, or a prefix operator
-/// that is binary when spaced.
-fn continues_operand(kind: T) -> bool {
-    is_opener(kind) || (is_prefix_operator(kind) && binary_operator(kind, None).is_some())
 }
 
 /// Whether the next token, found after a complete operand, is garbage in
