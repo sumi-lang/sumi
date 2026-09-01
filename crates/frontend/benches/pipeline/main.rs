@@ -11,7 +11,8 @@ use sumi_text::{LineIndex, TextSize};
 const KIB: usize = 1024;
 
 const SMALL_VALID: &str = r#"fn transform(value: int, limit: int) -> int {
-  let doubled = value * 2
+  let mut doubled = value * 2
+  doubled = doubled + 1
   let adjusted = if doubled > limit {
     doubled - limit
   } else {

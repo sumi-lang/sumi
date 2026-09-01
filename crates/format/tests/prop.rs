@@ -9,10 +9,10 @@ use sumi_syntax::{NodeKind, Parse, ParserInput, SyntaxKind, SyntaxTree, parse};
 /// property; concatenation composes the adjacencies goldens cannot
 /// enumerate.
 const FRAGMENTS: &[&str] = &[
-    "fn", "let", "if", "else", "return", "true", "false", "mut", "x", "foo", "_", "Δx", "0", "123",
-    "1.5", "2.5e-3", "1e", "0123", "1u32", "\"abc\"", "\"open", "'a'", "r\"a\"", "(", ")", "{",
-    "}", ",", ":", ".", "=", "<", ">", "!", "+", "-", "*", "/", "%", "&", "|", ";", "[", " ", "\t",
-    "\n", "\r\n", "\r", "// c", "€",
+    "fn", "let", "if", "else", "return", "true", "false", "mut", "x", "foo", "_", "Δx", "x = y",
+    "0", "123", "1.5", "2.5e-3", "1e", "0123", "1u32", "\"abc\"", "\"open", "'a'", "r\"a\"", "(",
+    ")", "{", "}", ",", ":", ".", "=", "<", ">", "!", "+", "-", "*", "/", "%", "&", "|", ";", "[",
+    " ", "\t", "\n", "\r\n", "\r", "// c", "€",
 ];
 
 /// Token soup, half the time wrapped in a function body: violations are

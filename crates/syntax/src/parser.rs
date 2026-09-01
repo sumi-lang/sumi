@@ -498,9 +498,10 @@ fn begins_recovery_statement(p: &Marker<'_, '_>) -> bool {
         .is_some_and(|kind| matches!(kind, T::LetKw | T::ReturnKw | T::Underscore | T::Error))
 }
 
-/// One statement: a binding, a discard, a return, or an expression, which
-/// is a bare child of the block — with no `;`, statement or tail is a
-/// matter of position.
+/// One statement: a binding, assignment, discard, return, or expression,
+/// which is a bare child of the block — with no `;`, statement or tail is a
+/// matter of position. Assignment is recognized only here, after its left
+/// expression, so `=` is not an expression operator.
 fn statement(p: &mut Marker<'_, '_>) {
     match p.current() {
         Some(T::LetKw) => let_stmt(p),
@@ -518,7 +519,15 @@ fn statement(p: &mut Marker<'_, '_>) {
             m.complete(N::Error);
         }
         _ => {
-            if expr(p).is_none() {
+            let recovery = p.recovery_checkpoint();
+            if let Some(lhs) = expr(p) {
+                if !p.recovered_since(recovery) && p.at(T::Eq) && !p.boundary() {
+                    let mut m = p.precede(lhs);
+                    m.token(); // =
+                    operand(&mut m, 0);
+                    m.complete(N::AssignStmt);
+                }
+            } else {
                 let recovery =
                     p.recover_tokens(ParseRecoveryKind::Expected(ParseExpected::Statement), 1);
                 skip_statement_garbage(p, recovery);
@@ -664,7 +673,10 @@ fn garbage_in_expression(p: &Marker<'_, '_>, follow: ExprFollow) -> bool {
         || (follow == ExprFollow::Anything && p.at(T::LBrace))
         || p.current().is_some_and(|kind| {
             !starts_statement(kind)
-                && !matches!(kind, T::RParen | T::RBrace | T::Comma | T::ElseKw | T::FnKw)
+                && !matches!(
+                    kind,
+                    T::Eq | T::RParen | T::RBrace | T::Comma | T::ElseKw | T::FnKw
+                )
                 && binary_op(p, 0).is_none()
         })
 }

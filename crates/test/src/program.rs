@@ -96,6 +96,7 @@ fn statement(expr: BoxedStrategy<String>) -> BoxedStrategy<String> {
             let ty = if typed { ": int" } else { "" };
             format!("let {mutable}{name}{ty} = {init}")
         }),
+        2 => (expr.clone(), expr.clone()).prop_map(|(target, value)| format!("{target} = {value}")),
         1 => expr.clone().prop_map(|e| format!("_ = {e}")),
         1 => prop::option::of(expr).prop_map(|value| match value {
             Some(value) => format!("return {value}"),

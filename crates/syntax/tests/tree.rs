@@ -192,7 +192,7 @@ fn function_items_nest() {
 #[test]
 fn statement_kinds_cover_their_tokens() {
     check(
-        "let x = -1\n_ = f((x))\ng(x)\nreturn",
+        "let x = -1\nx = 2\n_ = f((x))\ng(x)\nreturn",
         |b| {
             node(b, LetStmt, |b| {
                 tokens(b, 3); // let x =
@@ -200,6 +200,11 @@ fn statement_kinds_cover_their_tokens() {
                     b.token(); // -
                     leaf(b, LiteralExpr);
                 });
+            });
+            node(b, AssignStmt, |b| {
+                leaf(b, NameExpr);
+                b.token(); // =
+                leaf(b, LiteralExpr);
             });
             node(b, DiscardStmt, |b| {
                 tokens(b, 2); // _ =
@@ -229,21 +234,24 @@ fn statement_kinds_cover_their_tokens() {
             node(b, ReturnStmt, |b| b.token());
         },
         &[
-            "SourceFile 0..33",
+            "SourceFile 0..39",
             "  LetStmt 0..10",
             "    PrefixExpr 8..10",
             r#"      LiteralExpr 9..10 "1""#,
-            "  DiscardStmt 11..21",
-            "    CallExpr 15..21",
-            r#"      NameExpr 15..16 "f""#,
-            "      ArgList 16..21",
-            "        ParenExpr 17..20",
-            r#"          NameExpr 18..19 "x""#,
-            "  CallExpr 22..26",
-            r#"    NameExpr 22..23 "g""#,
-            "    ArgList 23..26",
-            r#"      NameExpr 24..25 "x""#,
-            r#"  ReturnStmt 27..33 "return""#,
+            "  AssignStmt 11..16",
+            r#"    NameExpr 11..12 "x""#,
+            r#"    LiteralExpr 15..16 "2""#,
+            "  DiscardStmt 17..27",
+            "    CallExpr 21..27",
+            r#"      NameExpr 21..22 "f""#,
+            "      ArgList 22..27",
+            "        ParenExpr 23..26",
+            r#"          NameExpr 24..25 "x""#,
+            "  CallExpr 28..32",
+            r#"    NameExpr 28..29 "g""#,
+            "    ArgList 29..32",
+            r#"      NameExpr 30..31 "x""#,
+            r#"  ReturnStmt 33..39 "return""#,
         ],
     );
 }

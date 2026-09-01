@@ -53,6 +53,7 @@ pub enum NodeKind {
     Param,
     Block,
     LetStmt,
+    AssignStmt,
     DiscardStmt,
     ReturnStmt,
     NameExpr,

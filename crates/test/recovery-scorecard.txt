@@ -13,7 +13,7 @@ Reading the numbers:
   two orders of magnitude: no single-token edit has ever disturbed an
   untouched top-level item.
 - Part B partner churn tops out at the bracket nesting depth around the
-  edit (max 8 tokens of ~218k), boundary churn at 1, items disturbed at 0:
+  edit (max 8 tokens of ~223k), boundary churn at 1, items disturbed at 0:
   one unmatched opener or deleted closer does not re-pair the rest of the
   file. Nearest-match pairing strands the damaged opener instead of
   cascading, and a closer can only pair across an item boundary when two
@@ -23,46 +23,46 @@ Reading the numbers:
 recovery-scorecard
 
 == Part A: recovery scorecard ==
-7473 programs generated; 10000 measured pairs per class; preservation is
+7614 programs generated; 10000 measured pairs per class; preservation is
 over untouched top-level items (edits guarding none are counted apart).
 
 class                   edits  guarded  pres_mean  pres_p95  pres_min
-delete/delimiter        10000     4783    1.00000   1.00000   1.00000
-delete/non-delim        10000     4851    1.00000   1.00000   1.00000
-duplicate/delimiter     10000     4765    1.00000   1.00000   1.00000
-duplicate/non-delim     10000     4864    1.00000   1.00000   1.00000
-swap/delimiter          10000     4672    1.00000   1.00000   1.00000
-swap/non-delim          10000     4906    1.00000   1.00000   1.00000
-insert/delimiter        10000     4861    1.00000   1.00000   1.00000
-insert/non-delim        10000     4843    1.00000   1.00000   1.00000
+delete/delimiter        10000     4811    1.00000   1.00000   1.00000
+delete/non-delim        10000     4869    1.00000   1.00000   1.00000
+duplicate/delimiter     10000     4793    1.00000   1.00000   1.00000
+duplicate/non-delim     10000     4879    1.00000   1.00000   1.00000
+swap/delimiter          10000     4710    1.00000   1.00000   1.00000
+swap/non-delim          10000     4914    1.00000   1.00000   1.00000
+insert/delimiter        10000     4884    1.00000   1.00000   1.00000
+insert/non-delim        10000     4886    1.00000   1.00000   1.00000
 
 class                  diags_mean diags_p95  skipped_mean skipped_p95  evidence_mean evidence_p95
-delete/delimiter            1.661         3        36.622         204          1.661            3
-delete/non-delim            0.956         2        10.647          64          0.956            2
-duplicate/delimiter         1.487         3        30.746         179          1.487            3
-duplicate/non-delim         1.319         3         7.421          33          1.319            3
-swap/delimiter              1.568         3        22.140         122          1.568            3
-swap/non-delim              1.498         3        17.410         104          1.497            3
-insert/delimiter            1.607         3        27.525         166          1.607            3
-insert/non-delim            1.241         3        12.460          73          1.238            3
+delete/delimiter            1.683         3        51.488         278          1.683            3
+delete/non-delim            0.964         2        17.062         106          0.964            2
+duplicate/delimiter         1.507         3        45.274         267          1.507            3
+duplicate/non-delim         1.300         3        15.948         100          1.300            3
+swap/delimiter              1.561         3        33.397         187          1.560            3
+swap/non-delim              1.480         3        25.791         150          1.478            3
+insert/delimiter            1.640         4        42.828         244          1.640            4
+insert/non-delim            1.219         3        21.625         132          1.215            3
 
 == Part B: delimiter-breaking churn over clean corpora ==
 churn = original significant tokens (edit site excluded) whose partner()
 or boundary_before() changed; items_disturbed = untouched top-level items
 that no longer survive with identical span and shape.
 
-clean_8k: 1801 significant tokens, 14 top-level items
-  insert {  n=200  unaligned=0   partner p50/p95/max 2/6/6  boundary 0/1/1  any 2/6/7  items_disturbed 0/0/0
-  insert (  n=200  unaligned=0   partner p50/p95/max 0/6/8  boundary 0/1/1  any 0/6/8  items_disturbed 0/0/0
-  delete }  n=200  unaligned=0   partner p50/p95/max 3/5/7  boundary 0/0/0  any 3/5/7  items_disturbed 0/0/0
+clean_8k: 1931 significant tokens, 11 top-level items
+  insert {  n=200  unaligned=0   partner p50/p95/max 0/4/6  boundary 0/1/1  any 0/4/7  items_disturbed 0/0/0
+  insert (  n=200  unaligned=0   partner p50/p95/max 0/4/8  boundary 0/1/1  any 1/4/8  items_disturbed 0/0/0
+  delete }  n=200  unaligned=0   partner p50/p95/max 3/7/7  boundary 0/0/0  any 3/7/7  items_disturbed 0/0/0
   delete )  n=200  unaligned=0   partner p50/p95/max 1/5/7  boundary 0/1/1  any 1/5/7  items_disturbed 0/0/0
-clean_64k: 14186 significant tokens, 79 top-level items
-  insert {  n=200  unaligned=0   partner p50/p95/max 0/6/6  boundary 0/0/1  any 0/6/6  items_disturbed 0/0/0
+clean_64k: 14694 significant tokens, 95 top-level items
+  insert {  n=200  unaligned=0   partner p50/p95/max 0/6/6  boundary 0/1/1  any 0/6/7  items_disturbed 0/0/0
   insert (  n=200  unaligned=0   partner p50/p95/max 0/6/8  boundary 0/1/1  any 1/6/8  items_disturbed 0/0/0
-  delete }  n=200  unaligned=0   partner p50/p95/max 3/5/7  boundary 0/0/0  any 3/5/7  items_disturbed 0/0/0
-  delete )  n=200  unaligned=0   partner p50/p95/max 1/5/7  boundary 0/0/1  any 2/5/7  items_disturbed 0/0/0
-clean_1m: 218456 significant tokens, 1253 top-level items
-  insert {  n=50   unaligned=0   partner p50/p95/max 0/6/6  boundary 0/0/1  any 0/6/6  items_disturbed 0/0/0
-  insert (  n=50   unaligned=0   partner p50/p95/max 0/8/8  boundary 0/1/1  any 1/8/8  items_disturbed 0/0/0
-  delete }  n=50   unaligned=0   partner p50/p95/max 3/5/7  boundary 0/0/0  any 3/5/7  items_disturbed 0/0/0
-  delete )  n=50   unaligned=0   partner p50/p95/max 1/5/7  boundary 0/1/1  any 2/5/7  items_disturbed 0/0/0
+  delete }  n=200  unaligned=0   partner p50/p95/max 3/5/5  boundary 0/0/0  any 3/5/5  items_disturbed 0/0/0
+  delete )  n=200  unaligned=0   partner p50/p95/max 1/5/7  boundary 0/0/1  any 1/5/7  items_disturbed 0/0/0
+clean_1m: 222983 significant tokens, 1395 top-level items
+  insert {  n=50   unaligned=0   partner p50/p95/max 0/4/6  boundary 0/0/1  any 0/4/6  items_disturbed 0/0/0
+  insert (  n=50   unaligned=0   partner p50/p95/max 0/6/6  boundary 0/1/1  any 1/6/6  items_disturbed 0/0/0
+  delete }  n=50   unaligned=0   partner p50/p95/max 3/5/5  boundary 0/0/0  any 3/5/5  items_disturbed 0/0/0
+  delete )  n=50   unaligned=0   partner p50/p95/max 1/7/7  boundary 0/1/1  any 2/7/7  items_disturbed 0/0/0
