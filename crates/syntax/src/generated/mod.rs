@@ -11,6 +11,9 @@
 /// share a slot.
 pub use sumi_lexer::SyntaxKind;
 
+/// The typed views over the tree, generated beside this module.
+pub mod ast;
+
 /// The kind of a syntax tree node.
 ///
 /// A node is structure only, so this vocabulary is disjoint from

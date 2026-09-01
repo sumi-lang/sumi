@@ -7,12 +7,14 @@
 //! classes, bracket pairs, and operator tables — is generated from
 //! `sumi.grammar` at the workspace root.
 
+mod fields;
 mod generated;
 mod index;
 mod input;
 mod parser;
 mod tree;
 
+pub use generated::ast;
 pub use generated::{
     BRACKET_PAIRS, BinaryOp, NodeKind, SyntaxKind, binary_operator, can_end_statement, closer,
     continues_statement, introduces_statement, is_bracket, is_closer, is_opener,

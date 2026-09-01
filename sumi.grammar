@@ -10,6 +10,10 @@
 //                                       and descriptions
 //   crates/syntax/src/generated/mod.rs  NodeKind, the token classes,
 //                                       bracket pairs, and operator tables
+//   crates/syntax/src/generated/ast.rs  the typed views: a struct per node
+//                                       kind with an accessor per labeled
+//                                       or rule-typed child, and an enum
+//                                       per category
 //   docs/reference/generated/grammar.md the grammar reference chapter
 //
 // CI runs `cargo xtask codegen --check` and fails when any of them drifts.
@@ -45,6 +49,10 @@
 //                               category and is not a node kind. The
 //                               operator tables stand in for the implicit
 //                               PrefixOperator and BinaryOperator rules.
+//                               `label:` before a child names the accessor
+//                               the typed views give it; an unlabeled
+//                               child is named after its kind, and two
+//                               children of one kind must be labeled.
 //
 // The `Error` node kind, covering tokens the parser could not parse, is
 // implied: recovery needs it whatever the grammar says.
@@ -140,10 +148,10 @@ binary Rem "%" 5
 
 // ----------------------------------------------------------------- nodes
 
-SourceFile = FnItem*
+SourceFile = items:FnItem*
 
-FnItem = 'fn' Name ParamList ('->' TypeRef)? Block
-ParamList = '(' (Param (',' Param)* ','?)? ')'
+FnItem = 'fn' Name ParamList ('->' ret:TypeRef)? body:Block
+ParamList = '(' params:(Param (',' Param)* ','?)? ')'
 Param = Name ':' TypeRef
 
 /// A declaring occurrence of a name: what an item, a parameter, or a
@@ -153,7 +161,7 @@ Name = Ident
 /// A type reference: a name, until types grow more shapes.
 TypeRef = Ident
 
-Block = '{' Stmt* '}'
+Block = '{' stmts:Stmt* '}'
 
 Stmt =
   LetStmt
@@ -162,10 +170,10 @@ Stmt =
 | ReturnStmt
 | Expr
 
-LetStmt = 'let' 'mut'? Name (':' TypeRef)? '=' Expr
-AssignStmt = Expr '=' Expr
-DiscardStmt = '_' '=' Expr
-ReturnStmt = 'return' Expr?
+LetStmt = 'let' 'mut'? Name (':' TypeRef)? '=' initializer:Expr
+AssignStmt = target:Expr '=' value:Expr
+DiscardStmt = '_' '=' value:Expr
+ReturnStmt = 'return' value:Expr?
 
 Expr =
   NameRef
@@ -187,9 +195,9 @@ LiteralExpr =
 | CharLiteral
 | 'true'
 | 'false'
-PrefixExpr = PrefixOperator Expr
-BinaryExpr = Expr BinaryOperator Expr
-ParenExpr = '(' Expr ')'
-CallExpr = Expr ArgList
-ArgList = '(' (Expr (',' Expr)* ','?)? ')'
-IfExpr = 'if' Expr Block ('else' (IfExpr | Block))?
+PrefixExpr = PrefixOperator operand:Expr
+BinaryExpr = lhs:Expr BinaryOperator rhs:Expr
+ParenExpr = '(' inner:Expr ')'
+CallExpr = callee:Expr ArgList
+ArgList = '(' args:(Expr (',' Expr)* ','?)? ')'
+IfExpr = 'if' condition:Expr then_branch:Block ('else' else_branch:(IfExpr | Block))?

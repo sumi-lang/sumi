@@ -90,6 +90,11 @@ pub enum Node {
     Alt(Vec<Node>),
     Opt(Box<Node>),
     Rep(Box<Node>),
+    /// A child named for the typed views: `label:Atom`.
+    Labeled {
+        label: String,
+        node: Box<Node>,
+    },
 }
 
 /// The rule names the operator tables define implicitly.
@@ -98,6 +103,31 @@ pub const BINARY_OPERATOR_RULE: &str = "BinaryOperator";
 
 /// The node kind every grammar has, for tokens the parser could not parse.
 pub const ERROR_NODE: &str = "Error";
+
+/// The types the generated views use beside the ones they generate, which
+/// no rule or label may generate.
+const RESERVED_VIEW_TYPES: &[&str] = &["AstNode", "NodeIdx", "NodeKind", "SyntaxTree"];
+
+/// The methods every generated view has, which no field may be named.
+const VIEW_METHODS: &[&str] = &["cast", "node"];
+
+/// The rule names a category lists, or a single rule's name.
+pub fn alternatives(body: &Node) -> Vec<String> {
+    match body {
+        Node::Alt(items) => items.iter().flat_map(alternatives).collect(),
+        Node::Name(name) => vec![name.clone()],
+        _ => Vec::new(),
+    }
+}
+
+/// The first name listed twice.
+fn duplicate(names: &[String]) -> Option<&str> {
+    names
+        .iter()
+        .enumerate()
+        .find(|(index, name)| names[..*index].contains(name))
+        .map(|(_, name)| name.as_str())
+}
 
 /// The highest binary operator level: binding powers are twice the level,
 /// and the prefix power one more than the highest, all of which must fit
@@ -351,6 +381,49 @@ impl Grammar {
             self.resolve(&rule.body)
                 .map_err(|error| format!("in rule {}: {error}", rule.name))?;
         }
+        // Every rule and every labeled alternation becomes a type in the
+        // generated views, beside the trait and the tree types they use;
+        // one namespace, so nothing generated can shadow anything else.
+        let mut generated: Vec<String> = Vec::new();
+        let mut generate = |name: String, what: String| -> Result<(), String> {
+            if RESERVED_VIEW_TYPES.contains(&name.as_str()) {
+                return Err(format!(
+                    "{what} would generate {name}, which the views reserve"
+                ));
+            }
+            if generated.contains(&name) {
+                return Err(format!(
+                    "{what} would generate {name}, which another rule or label already does"
+                ));
+            }
+            generated.push(name);
+            Ok(())
+        };
+        for rule in &self.rules {
+            generate(rule.name.clone(), format!("rule {}", rule.name))?;
+            if self.is_category(rule)
+                && let Some(twice) = duplicate(&alternatives(&rule.body))
+            {
+                return Err(format!("in rule {}: {twice} is listed twice", rule.name));
+            }
+        }
+        for rule in self.nodes() {
+            let fields = self
+                .fields(rule)
+                .map_err(|error| format!("in rule {}: {error}", rule.name))?;
+            for field in fields {
+                if let FieldType::Alt(_) = field.ty {
+                    let name = camel_case(&field.name);
+                    if self.token(&name).is_some() {
+                        return Err(format!(
+                            "in rule {}: label {} would generate {name}, which is already a kind",
+                            rule.name, field.name
+                        ));
+                    }
+                    generate(name, format!("in rule {}: label {}", rule.name, field.name))?;
+                }
+            }
+        }
         if self.rules.is_empty() {
             return Err("no node rules are declared".into());
         }
@@ -403,9 +476,242 @@ impl Grammar {
                 }
             }
             Node::Opt(inner) | Node::Rep(inner) => self.resolve(inner)?,
+            Node::Labeled { label, node } => {
+                rust_identifier(label, "label")?;
+                self.resolve(node)?;
+            }
         }
         Ok(())
     }
+
+    /// The typed fields of a node rule, in order: every child that is a
+    /// rule, named by its label or its kind, with a repeated or
+    /// comma-separated child as one many-valued field. Tokens have no
+    /// fields.
+    pub fn fields(&self, rule: &Rule) -> Result<Vec<Field>, String> {
+        let mut fields = Vec::new();
+        self.collect_fields(&rule.body, None, false, false, &mut fields)?;
+        for (index, field) in fields.iter().enumerate() {
+            if fields[..index].iter().any(|other| other.name == field.name) {
+                return Err(format!(
+                    "two children are both named {}; label one of them",
+                    field.name
+                ));
+            }
+            rust_identifier(&field.name, "field")?;
+            if VIEW_METHODS.contains(&field.name.as_str()) {
+                return Err(format!(
+                    "field {} is a method every view has; label the child otherwise",
+                    field.name
+                ));
+            }
+        }
+        let many = fields.iter().filter(|field| field.many).count();
+        if many > 1 || (many == 1 && fields.len() > 1) {
+            return Err(
+                "a repeated child cannot share a rule with other typed children, which the \
+                 accessors could not tell apart"
+                    .into(),
+            );
+        }
+        Ok(fields)
+    }
+
+    fn collect_fields(
+        &self,
+        node: &Node,
+        label: Option<&str>,
+        many: bool,
+        optional: bool,
+        out: &mut Vec<Field>,
+    ) -> Result<(), String> {
+        match node {
+            Node::Labeled { label, node } => {
+                self.collect_fields(node, Some(label), many, optional, out)
+            }
+            Node::Name(name) if self.rule(name).is_some() => {
+                out.push(Field {
+                    name: field_name(label, name, many),
+                    ty: FieldType::Rule(name.clone()),
+                    many,
+                    required: !optional,
+                });
+                Ok(())
+            }
+            Node::Name(_) | Node::Text(_) => Ok(()),
+            Node::Opt(inner) => self.collect_fields(inner, label, many, true, out),
+            Node::Rep(inner) => self.collect_fields(inner, label, true, optional, out),
+            Node::Seq(items) => {
+                if let Some(element) = self.comma_list(items) {
+                    out.push(Field {
+                        name: field_name(label, element, true),
+                        ty: FieldType::Rule(element.to_owned()),
+                        many: true,
+                        required: false,
+                    });
+                    return Ok(());
+                }
+                if let Some(label) = label {
+                    return Err(format!(
+                        "label {label} must name one child or a comma-separated list, not a sequence"
+                    ));
+                }
+                for item in items {
+                    self.collect_fields(item, None, many, optional, out)?;
+                }
+                Ok(())
+            }
+            Node::Alt(items) => {
+                let rules: Option<Vec<String>> = items
+                    .iter()
+                    .map(|item| match item {
+                        Node::Name(name) if self.rule(name).is_some() => Some(name.clone()),
+                        _ => None,
+                    })
+                    .collect();
+                match (rules, label) {
+                    (Some(rules), Some(label)) => {
+                        if let Some(twice) = duplicate(&rules) {
+                            return Err(format!("{twice} is listed twice under label {label}"));
+                        }
+                        out.push(Field {
+                            name: label.to_owned(),
+                            ty: FieldType::Alt(rules),
+                            many,
+                            required: !optional,
+                        });
+                        Ok(())
+                    }
+                    (Some(_), None) => {
+                        Err("an alternation of rules needs a label to name its accessor".into())
+                    }
+                    (None, _) if items.iter().any(|item| self.mentions_rule(item)) => {
+                        Err("an alternation mixing rules and tokens has no typed view".into())
+                    }
+                    (None, _) => Ok(()),
+                }
+            }
+        }
+    }
+
+    /// The element rule of `Element (sep Element)* sep?`, the shape of a
+    /// separated list.
+    fn comma_list<'a>(&self, items: &'a [Node]) -> Option<&'a str> {
+        let [Node::Name(first), Node::Rep(repeat), rest @ ..] = items else {
+            return None;
+        };
+        self.rule(first)?;
+        let Node::Seq(pair) = &**repeat else {
+            return None;
+        };
+        let [Node::Text(_), Node::Name(second)] = pair.as_slice() else {
+            return None;
+        };
+        if second != first {
+            return None;
+        }
+        match rest {
+            [] => Some(first),
+            [Node::Opt(trailing)] if matches!(&**trailing, Node::Text(_)) => Some(first),
+            _ => None,
+        }
+    }
+
+    fn mentions_rule(&self, node: &Node) -> bool {
+        match node {
+            Node::Name(name) => self.rule(name).is_some(),
+            Node::Text(_) => false,
+            Node::Seq(items) | Node::Alt(items) => {
+                items.iter().any(|item| self.mentions_rule(item))
+            }
+            Node::Opt(inner) | Node::Rep(inner) | Node::Labeled { node: inner, .. } => {
+                self.mentions_rule(inner)
+            }
+        }
+    }
+}
+
+/// A typed view's accessor: a child of a node rule, matched among the
+/// node's children by type.
+#[derive(Clone, Debug)]
+pub struct Field {
+    pub name: String,
+    pub ty: FieldType,
+    /// A repeated child, yielded as an iterator.
+    pub many: bool,
+    /// Whether the rule requires the child: outside every `?` group. A
+    /// node without an error has all of its required children.
+    pub required: bool,
+}
+
+#[derive(Clone, Debug)]
+pub enum FieldType {
+    /// A node rule or a category, by name.
+    Rule(String),
+    /// A labeled alternation of rules, which generates an enum named after
+    /// the label.
+    Alt(Vec<String>),
+}
+
+impl FieldType {
+    /// The Rust type of the field's values, given the field's name.
+    pub fn type_name(&self, field: &str) -> String {
+        match self {
+            Self::Rule(rule) => rule.clone(),
+            Self::Alt(_) => camel_case(field),
+        }
+    }
+}
+
+fn field_name(label: Option<&str>, kind: &str, many: bool) -> String {
+    match label {
+        Some(label) => label.to_owned(),
+        None if many => snake_case(kind) + "s",
+        None => snake_case(kind),
+    }
+}
+
+pub fn snake_case(name: &str) -> String {
+    let mut out = String::new();
+    for (index, c) in name.chars().enumerate() {
+        if c.is_ascii_uppercase() && index > 0 {
+            out.push('_');
+        }
+        out.push(c.to_ascii_lowercase());
+    }
+    out
+}
+
+pub fn camel_case(name: &str) -> String {
+    name.split('_')
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                Some(first) => first.to_ascii_uppercase().to_string() + chars.as_str(),
+                None => String::new(),
+            }
+        })
+        .collect()
+}
+
+/// A label or field name, which becomes a method name in the typed views.
+fn rust_identifier(name: &str, what: &str) -> Result<(), String> {
+    const KEYWORDS: &[&str] = &[
+        "as", "async", "await", "break", "const", "continue", "crate", "dyn", "else", "enum",
+        "extern", "false", "fn", "for", "gen", "if", "impl", "in", "let", "loop", "match", "mod",
+        "move", "mut", "pub", "ref", "return", "self", "static", "struct", "super", "trait",
+        "true", "try", "type", "unsafe", "use", "where", "while",
+    ];
+    let mut chars = name.chars();
+    let identifier = chars.next().is_some_and(|c| c.is_ascii_lowercase())
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_');
+    if !identifier {
+        return Err(format!("{what} {name} must be a lowercase identifier"));
+    }
+    if KEYWORDS.contains(&name) {
+        return Err(format!("{what} {name} is a Rust keyword"));
+    }
+    Ok(())
 }
 
 fn is_kind_name(name: &str) -> bool {
@@ -471,6 +777,10 @@ impl fmt::Display for Node {
                 grouped(inner, f)?;
                 f.write_str("*")
             }
+            Node::Labeled { label, node } => {
+                write!(f, "{label}:")?;
+                grouped(node, f)
+            }
         }
     }
 }
@@ -523,7 +833,7 @@ fn tokenize(source: &str) -> Result<Vec<(usize, Tok)>, String> {
                     toks.push((number, Tok::Str(rest[1..1 + end].to_owned())));
                     rest = &rest[end + 2..];
                 }
-                '=' | '|' | '(' | ')' | '?' | '*' => {
+                '=' | '|' | '(' | ')' | '?' | '*' | ':' => {
                     toks.push((number, Tok::Punct(c)));
                     rest = &rest[1..];
                 }
@@ -709,6 +1019,20 @@ impl<'a> Parser<'a> {
 
     fn atom(&mut self) -> Result<Option<Node>, String> {
         self.skip_newlines();
+        if let Some(Tok::Word(label)) = self.peek()
+            && !is_kind_name(label)
+            && matches!(self.toks.get(self.pos + 1), Some((_, Tok::Punct(':'))))
+        {
+            let label = label.clone();
+            self.pos += 2;
+            let Some(node) = self.atom()? else {
+                return Err(self.error("expected a child after the label"));
+            };
+            return Ok(Some(Node::Labeled {
+                label,
+                node: Box::new(node),
+            }));
+        }
         let starts_rule = matches!(self.toks.get(self.pos + 1), Some((_, Tok::Punct('='))));
         let node = match self.peek() {
             Some(Tok::Str(text)) => {
@@ -904,11 +1228,80 @@ PrefixExpr = PrefixOperator Expr
             ("token Space trivia \"x\" end", "takes no flags"),
             ("/// Lost.\n\nItem2 = Ident", "directly precede"),
             ("Empty =\n", "rule atom"),
+            ("Two = Expr '(' Expr ')'", "both named expr"),
+            ("Mixed = Expr Expr*", "repeated child"),
+            ("Bare = Expr (NameExpr | PrefixExpr)", "needs a label"),
+            ("Kw = type:Expr", "Rust keyword"),
+            ("Seqd = both:(Expr Expr)", "not a sequence"),
+            ("Clash = name_expr:(Expr | NameExpr)", "already"),
+            ("Dangling = label:", "after the label"),
+            ("Method = node:Expr", "method every view has"),
+            ("Twice = pick:(Item | Item)", "listed twice"),
+            ("Both = Expr | Expr", "listed twice"),
+            ("NodeKind = Ident", "the views reserve"),
+            (
+                "One = one:(Item | Expr)\nOther = one:(Item | Expr)",
+                "already does",
+            ),
         ] {
             let source = format!("{GRAMMAR}{line}\n");
             let error = Grammar::parse(&source).unwrap_err();
             assert!(error.contains(needle), "{line:?} gave {error:?}");
         }
+    }
+
+    #[test]
+    fn labels_name_typed_fields() {
+        let source = format!(
+            "{GRAMMAR}token Comma punct \",\"\ntoken IfKw keyword \"if\" expr\ntoken ElseKw keyword \"else\" continue\nArgs = '(' args:(Expr (',' Expr)* ','?)? ')'\n\
+             If = 'if' cond:Expr then:Item ('else' other:(Item | Expr))?\n\
+             Plain = Item PrefixExpr\n"
+        );
+        let grammar = Grammar::parse(&source).unwrap();
+        let fields = |name: &str| -> Vec<(String, String, bool)> {
+            grammar
+                .fields(grammar.rule(name).unwrap())
+                .unwrap()
+                .iter()
+                .map(|field| {
+                    (
+                        field.name.clone(),
+                        field.ty.type_name(&field.name),
+                        field.many,
+                    )
+                })
+                .collect()
+        };
+        assert_eq!(fields("Args"), [("args".into(), "Expr".into(), true)]);
+        assert_eq!(
+            fields("If"),
+            [
+                ("cond".into(), "Expr".into(), false),
+                ("then".into(), "Item".into(), false),
+                ("other".into(), "Other".into(), false),
+            ]
+        );
+        assert_eq!(
+            fields("Plain"),
+            [
+                ("item".into(), "Item".into(), false),
+                ("prefix_expr".into(), "PrefixExpr".into(), false),
+            ]
+        );
+        assert_eq!(fields("NameExpr"), []);
+        assert_eq!(
+            grammar.rule("If").unwrap().body.to_string(),
+            "'if' cond:Expr then:Item ('else' other:(Item | Expr))?"
+        );
+        let required: Vec<bool> = grammar
+            .fields(grammar.rule("If").unwrap())
+            .unwrap()
+            .iter()
+            .map(|field| field.required)
+            .collect();
+        assert_eq!(required, [true, true, false]);
+        assert_eq!(snake_case("ParamList"), "param_list");
+        assert_eq!(camel_case("else_branch"), "ElseBranch");
     }
 
     #[test]
