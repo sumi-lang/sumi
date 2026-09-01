@@ -235,10 +235,7 @@ fn apply(source: &str, mut edits: Vec<TextEdit>) -> String {
 }
 
 fn significant(lexed: &LexedFile, raw: u32) -> bool {
-    !matches!(
-        lexed.kind(raw as usize),
-        SyntaxKind::Whitespace | SyntaxKind::Newline | SyntaxKind::LineComment
-    )
+    !lexed.kind(raw as usize).is_trivia()
 }
 
 fn lex_error_in(lexed: &LexedFile, start: u32, end: u32) -> bool {

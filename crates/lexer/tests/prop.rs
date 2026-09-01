@@ -4,23 +4,14 @@
 use proptest::prelude::*;
 use sumi_lexer::{RawKind, SyntaxKind, TokenFlags, lex};
 
-/// Fragments that each lex to exactly one token on their own, stay
-/// terminated, and do not absorb a following space-separated fragment.
-/// [`spaced_tokens_roundtrip`] depends on all three; keep new entries within
-/// them.
-const SINGLE_TOKENS: &[&str] = &[
-    // Keywords and identifiers.
-    "fn",
-    "let",
-    "if",
-    "else",
-    "return",
-    "true",
-    "false",
-    "mut",
+/// Fragments beyond every keyword and punctuation text of the language that
+/// each lex to exactly one token on their own, stay terminated, and do not
+/// absorb a following space-separated fragment. [`spaced_tokens_roundtrip`]
+/// depends on all three; keep new entries within them.
+const EXTRA_SINGLE_TOKENS: &[&str] = &[
+    // Identifiers.
     "x",
     "foo",
-    "_",
     "_a",
     "Δx",
     "μ2",
@@ -51,25 +42,7 @@ const SINGLE_TOKENS: &[&str] = &[
     "''",
     "r\"a\"",
     "r#\"q\"#",
-    // Punctuation, in and out of the language.
-    "(",
-    ")",
-    "{",
-    "}",
-    ",",
-    ":",
-    ".",
-    "=",
-    "<",
-    ">",
-    "!",
-    "+",
-    "-",
-    "*",
-    "/",
-    "%",
-    "&",
-    "|",
+    // Punctuation outside the language.
     ";",
     "[",
     "]",
@@ -79,6 +52,16 @@ const SINGLE_TOKENS: &[&str] = &[
     // A character with no token to belong to.
     "€",
 ];
+
+/// Every keyword and punctuation text of the language, then
+/// [`EXTRA_SINGLE_TOKENS`].
+fn single_tokens() -> Vec<&'static str> {
+    SyntaxKind::ALL
+        .iter()
+        .filter_map(|kind| kind.text())
+        .chain(EXTRA_SINGLE_TOKENS.iter().copied())
+        .collect()
+}
 
 /// Fragments that are only safe in free concatenation: trivia, comments,
 /// unterminated literals, and a misplaced byte-order mark.
@@ -101,7 +84,7 @@ const LOOSE_FRAGMENTS: &[&str] = &[
 
 fn fragment() -> impl Strategy<Value = String> {
     prop_oneof![
-        6 => prop::sample::select(SINGLE_TOKENS).prop_map(str::to_owned),
+        6 => prop::sample::select(single_tokens()).prop_map(str::to_owned),
         3 => prop::sample::select(LOOSE_FRAGMENTS).prop_map(str::to_owned),
         1 => proptest::collection::vec(any::<char>(), 0..4)
             .prop_map(|chars| chars.into_iter().collect::<String>()),
@@ -189,7 +172,7 @@ proptest! {
     #[test]
     fn spaced_tokens_roundtrip(
         fragments in proptest::collection::vec(
-            prop::sample::select(SINGLE_TOKENS).prop_map(str::to_owned),
+            prop::sample::select(single_tokens()).prop_map(str::to_owned),
             0..32,
         ),
     ) {

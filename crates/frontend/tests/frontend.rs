@@ -1,6 +1,6 @@
 use proptest::prelude::*;
 use sumi_frontend::{DiagnosticCode, Location, ParsedSource, Severity, codes, parse_source};
-use sumi_syntax::{ParseAnchor, ParseEvidence};
+use sumi_syntax::{ParseAnchor, ParseEvidence, SyntaxKind};
 use sumi_text::TextSize;
 
 fn parsed(source: &str) -> ParsedSource {
@@ -411,13 +411,19 @@ fn independent_same_token_facts_remain_independent() {
     );
 }
 
-const FRAGMENTS: &[&str] = &[
-    "fn", "let", "if", "else", "return", "x", "_", "Δ", "0", "01_", "1E+05", "1e", r#""\q""#,
-    "'ab'", "(", ")", "{", "}", ",", ":", "=", "+", "-", ";", " ", "\n", "// c", "€",
+/// Source fragments beyond every keyword and punctuation text of the
+/// language: names, malformed literals, roleless punctuation, and trivia.
+const EXTRA_FRAGMENTS: &[&str] = &[
+    "x", "Δ", "0", "01_", "1E+05", "1e", r#""\q""#, "'ab'", ";", " ", "\n", "// c", "€",
 ];
 
 fn source() -> impl Strategy<Value = String> {
-    proptest::collection::vec(prop::sample::select(FRAGMENTS), 0..64)
+    let fragments: Vec<&'static str> = SyntaxKind::ALL
+        .iter()
+        .filter_map(|kind| kind.text())
+        .chain(EXTRA_FRAGMENTS.iter().copied())
+        .collect();
+    proptest::collection::vec(prop::sample::select(fragments), 0..64)
         .prop_map(|pieces| pieces.concat())
 }
 

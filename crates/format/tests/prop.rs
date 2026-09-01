@@ -5,20 +5,23 @@ use sumi_format::normalize;
 use sumi_lexer::{LexedFile, lex};
 use sumi_syntax::{NodeKind, Parse, ParserInput, SyntaxKind, SyntaxTree, parse};
 
-/// Source fragments, valid and pathological, echoing the parser soup
-/// property; concatenation composes the adjacencies goldens cannot
-/// enumerate.
-const FRAGMENTS: &[&str] = &[
-    "fn", "let", "if", "else", "return", "true", "false", "mut", "x", "foo", "_", "Δx", "x = y",
-    "0", "123", "1.5", "2.5e-3", "1e", "0123", "1u32", "\"abc\"", "\"open", "'a'", "r\"a\"", "(",
-    ")", "{", "}", ",", ":", ".", "=", "<", ">", "!", "+", "-", "*", "/", "%", "&", "|", ";", "[",
-    " ", "\t", "\n", "\r\n", "\r", "// c", "€",
+/// Source fragments beyond every keyword and punctuation text of the
+/// language, valid and pathological, echoing the parser soup property;
+/// concatenation composes the adjacencies goldens cannot enumerate.
+const EXTRA_FRAGMENTS: &[&str] = &[
+    "x", "foo", "Δx", "x = y", "0", "123", "1.5", "2.5e-3", "1e", "0123", "1u32", "\"abc\"",
+    "\"open", "'a'", "r\"a\"", ";", "[", " ", "\t", "\n", "\r\n", "\r", "// c", "€",
 ];
 
 /// Token soup, half the time wrapped in a function body: violations are
 /// recorded while parsing expressions, which live in blocks.
 fn soup() -> impl Strategy<Value = String> {
-    let fragments = proptest::collection::vec(prop::sample::select(FRAGMENTS), 0..48)
+    let fragments: Vec<&'static str> = SyntaxKind::ALL
+        .iter()
+        .filter_map(|kind| kind.text())
+        .chain(EXTRA_FRAGMENTS.iter().copied())
+        .collect();
+    let fragments = proptest::collection::vec(prop::sample::select(fragments), 0..48)
         .prop_map(|fragments| fragments.concat());
     prop_oneof![
         1 => fragments.clone(),
@@ -53,12 +56,7 @@ fn shape(tree: &SyntaxTree) -> Vec<(usize, NodeKind)> {
 /// may respace but never rewrite.
 fn significant<'src>(front: &Front, source: &'src str) -> Vec<(SyntaxKind, &'src str)> {
     (0..front.lexed.len())
-        .filter(|&index| {
-            !matches!(
-                front.lexed.kind(index),
-                SyntaxKind::Whitespace | SyntaxKind::Newline | SyntaxKind::LineComment
-            )
-        })
+        .filter(|&index| !front.lexed.kind(index).is_trivia())
         .map(|index| (front.lexed.kind(index), front.lexed.text(source, index)))
         .collect()
 }

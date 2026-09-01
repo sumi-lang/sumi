@@ -24,7 +24,10 @@
 //! chain. Each violation is retained while the evident structure is accepted.
 
 use crate::input::ParserInput;
-use crate::kind::{NodeKind as N, SyntaxKind as T, starts_expression, starts_statement};
+use crate::kind::{
+    BinaryOp, NodeKind as N, PREFIX_BP, SyntaxKind as T, binary_operator, introduces_statement,
+    is_closer, is_opener, is_prefix_operator, starts_expression, starts_item, starts_statement,
+};
 use crate::tree::{CompletedMarker, Marker, Parse, RecoveryHandle};
 
 /// Parse one file.
@@ -202,7 +205,7 @@ fn skip(
     let mut m = p.start();
     m.group();
     while let Some(kind) = m.current() {
-        let closer = matches!(kind, T::RParen | T::RBrace) && m.partnered();
+        let closer = is_closer(kind) && m.partnered();
         if closer || stop(&m) {
             break;
         }
@@ -404,10 +407,10 @@ fn param_list(p: &mut Marker<'_, '_>) {
         }
         if m.at(T::Comma) {
             m.token();
-        } else if !matches!(
-            m.current(),
-            None | Some(T::RParen | T::LBrace | T::RBrace | T::FnKw)
-        ) {
+        } else if !m
+            .current()
+            .is_none_or(|kind| is_closer(kind) || kind == T::LBrace || starts_item(kind))
+        {
             m.missing(ParseExpected::Token(T::Comma));
         }
     }
@@ -496,8 +499,7 @@ fn block(p: &mut Marker<'_, '_>) -> CompletedMarker {
 /// and stay with the failed statement; declaration keywords begin a fresh
 /// construct.
 fn begins_recovery_statement(p: &Marker<'_, '_>) -> bool {
-    p.current()
-        .is_some_and(|kind| matches!(kind, T::LetKw | T::ReturnKw | T::Underscore | T::Error))
+    p.current().is_some_and(introduces_statement)
 }
 
 /// One statement: a binding, assignment, discard, return, or expression,
@@ -614,42 +616,36 @@ fn operand_before(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) {
 /// at: one that starts an expression, an opener the stream never closes
 /// excepted — it began nothing, and is garbage like the rest.
 fn begins_expression(p: &Marker<'_, '_>) -> bool {
-    p.current().is_some_and(|kind| {
-        starts_expression(kind) && (!matches!(kind, T::LParen | T::LBrace) || p.partnered())
-    })
+    p.current()
+        .is_some_and(|kind| starts_expression(kind) && (!is_opener(kind) || p.partnered()))
 }
 
 /// Whether the next token begins a statement a garbage run should end at.
 fn begins_statement(p: &Marker<'_, '_>) -> bool {
-    begins_expression(p)
-        || p.current()
-            .is_some_and(|kind| matches!(kind, T::LetKw | T::ReturnKw | T::Underscore | T::Error))
+    begins_expression(p) || p.current().is_some_and(introduces_statement)
 }
 
 /// Whether the next token, found where an expression is required, is
 /// garbage in its place, rather than the end of the construct around it or
 /// the start of the statement after it.
 fn displaces_expression(p: &Marker<'_, '_>) -> bool {
-    if matches!(p.current(), Some(T::RParen | T::RBrace)) {
+    if p.current().is_some_and(is_closer) {
         if p.at(T::RParen) && p.closes_open_paren() {
             return false;
         }
         return displaced_closer(p) || (p.at(T::RParen) && !p.partnered());
     }
-    p.current().is_some_and(|kind| {
-        !starts_expression(kind)
-            && !matches!(
-                kind,
-                T::RBrace | T::Comma | T::LetKw | T::ReturnKw | T::Underscore
-            )
-    })
+    // Garbage displaces; so does anything that neither begins an expression
+    // or a statement nor separates arguments.
+    p.current()
+        .is_some_and(|kind| kind == T::Error || !(starts_statement(kind) || kind == T::Comma))
 }
 
 /// Whether a closer stands where grammar context says an operand continues:
 /// before `=` or `:`, or before an operand on the same line. An expected
 /// closer is consumed by its construct before this question is asked.
 fn displaced_closer(p: &Marker<'_, '_>) -> bool {
-    if !matches!(p.current(), Some(T::RParen | T::RBrace)) || p.nth_newline(1) {
+    if !p.current().is_some_and(is_closer) || p.nth_newline(1) {
         return false;
     }
     // `==` and `!=` are ordinary binary operators after a closer. A lone
@@ -658,11 +654,17 @@ fn displaced_closer(p: &Marker<'_, '_>) -> bool {
         return false;
     }
     p.nth(1).is_some_and(|next| {
-        matches!(
-            next,
-            T::Eq | T::Colon | T::LetKw | T::ReturnKw | T::Underscore | T::Error
-        ) || (starts_expression(next) && !matches!(next, T::Minus | T::LParen | T::LBrace))
+        matches!(next, T::Eq | T::Colon)
+            || introduces_statement(next)
+            || (starts_expression(next) && !continues_operand(next))
     })
+}
+
+/// Whether a token that begins an expression could instead continue the
+/// operand before it: an opener, as a call or a body, or a prefix operator
+/// that is binary when spaced.
+fn continues_operand(kind: T) -> bool {
+    is_opener(kind) || (is_prefix_operator(kind) && binary_operator(kind, None).is_some())
 }
 
 /// Whether the next token, found after a complete operand, is garbage in
@@ -675,10 +677,9 @@ fn garbage_in_expression(p: &Marker<'_, '_>, follow: ExprFollow) -> bool {
         || (follow == ExprFollow::Anything && p.at(T::LBrace))
         || p.current().is_some_and(|kind| {
             !starts_statement(kind)
-                && !matches!(
-                    kind,
-                    T::Eq | T::RParen | T::RBrace | T::Comma | T::ElseKw | T::FnKw
-                )
+                && !matches!(kind, T::Eq | T::Comma | T::ElseKw)
+                && !is_closer(kind)
+                && !starts_item(kind)
                 && binary_op(p, 0).is_none()
         })
 }
@@ -692,10 +693,6 @@ enum ExprFollow {
     Anything,
     Block,
 }
-
-/// Operands of a prefix operator: tighter than every binary operator, so
-/// only a call binds closer.
-const PREFIX_BP: u8 = 11;
 
 fn expr_bp(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) -> Option<CompletedMarker> {
     if follow == ExprFollow::Block && p.at(T::LBrace) && !block_starts_condition(p) {
@@ -733,7 +730,8 @@ fn expr_bp(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) -> Option<Com
             && garbage_in_expression(p, follow)
             && !p.nth_newline(1)
             && (binary_op(p, 1).is_some()
-                || matches!(p.nth(1), Some(T::RParen | T::RBrace | T::Comma)))
+                || p.nth(1)
+                    .is_some_and(|next| is_closer(next) || next == T::Comma))
         {
             let recovery = p.recover_tokens(ParseRecoveryKind::Unexpected, 1);
             skip_token(p, recovery);
@@ -775,7 +773,7 @@ fn block_starts_condition(p: &Marker<'_, '_>) -> bool {
     p.nth_partner(0).is_some_and(|close| {
         let next = close + 1;
         !p.nth_boundary(next)
-            && ((!p.nth_newline(next) && matches!(p.nth(next), Some(T::LParen | T::LBrace)))
+            && ((!p.nth_newline(next) && p.nth(next).is_some_and(is_opener))
                 || binary_op(p, next).is_some())
     })
 }
@@ -802,7 +800,7 @@ fn prefix_or_atom(p: &mut Marker<'_, '_>, follow: ExprFollow) -> Option<Complete
         return Some(skipped);
     }
     Some(match kind {
-        T::Minus | T::Bang => {
+        _ if is_prefix_operator(kind) => {
             let mut m = p.start();
             // Spacing is a complaint about an operand that exists; a missing
             // one is reported as such below.
@@ -876,11 +874,7 @@ fn if_block(p: &mut Marker<'_, '_>) {
         block_here(p);
         return;
     }
-    let displaced = !(p.current().is_none()
-        || p.at(T::RParen)
-        || p.at(T::RBrace)
-        || p.at(T::ElseKw)
-        || p.newline());
+    let displaced = !(p.current().is_none_or(is_closer) || p.at(T::ElseKw) || p.newline());
     let recovery = if displaced {
         p.recover_tokens(
             ParseRecoveryKind::Expected(ParseExpected::Token(T::LBrace)),
@@ -893,7 +887,7 @@ fn if_block(p: &mut Marker<'_, '_>) {
         return;
     }
     skip(p, recovery, |p| {
-        p.at(T::LBrace) || p.at(T::RParen) || p.at(T::RBrace) || p.at(T::ElseKw) || p.newline()
+        p.at(T::LBrace) || p.current().is_some_and(is_closer) || p.at(T::ElseKw) || p.newline()
     });
     if p.at(T::LBrace) {
         block_here(p);
@@ -959,71 +953,21 @@ fn arg_list(p: &mut Marker<'_, '_>) {
         }
         if m.at(T::Comma) {
             m.token();
-        } else if !matches!(m.current(), None | Some(T::RParen | T::RBrace | T::FnKw)) {
+        } else if !m
+            .current()
+            .is_none_or(|kind| is_closer(kind) || starts_item(kind))
+        {
             m.missing(ParseExpected::Token(T::Comma));
         }
     }
     m.complete(N::ArgList);
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum BinaryOp {
-    Or,
-    And,
-    Eq,
-    Ne,
-    Lt,
-    Le,
-    Gt,
-    Ge,
-    Add,
-    Sub,
-    Mul,
-    Div,
-    Rem,
-}
-
-impl BinaryOp {
-    /// Left and right binding powers. Left-associative operators bind
-    /// tighter on the right; comparisons too, so a chain parses left to
-    /// right and is then rejected.
-    fn binding_power(self) -> (u8, u8) {
-        match self {
-            Self::Or => (1, 2),
-            Self::And => (3, 4),
-            Self::Eq | Self::Ne | Self::Lt | Self::Le | Self::Gt | Self::Ge => (5, 6),
-            Self::Add | Self::Sub => (7, 8),
-            Self::Mul | Self::Div | Self::Rem => (9, 10),
-        }
-    }
-
-    fn is_comparison(self) -> bool {
-        matches!(
-            self,
-            Self::Eq | Self::Ne | Self::Lt | Self::Le | Self::Gt | Self::Ge
-        )
-    }
-}
-
 /// The binary operator `n` significant tokens past the next one, if one
-/// starts there, and its width in tokens. Compound operators are glued
-/// pairs. A lone `=` is not an operator; a `-` here is subtraction,
-/// whatever its spacing, which the caller checks.
+/// starts there, and its width in tokens: the grammar's operator table over
+/// the token and what it is glued to. A `-` here is subtraction, whatever
+/// its spacing, which the caller checks.
 fn binary_op(p: &Marker<'_, '_>, n: usize) -> Option<(BinaryOp, usize)> {
-    Some(match p.nth(n)? {
-        T::Pipe if p.nth_glued(n, T::Pipe, T::Pipe) => (BinaryOp::Or, 2),
-        T::Amp if p.nth_glued(n, T::Amp, T::Amp) => (BinaryOp::And, 2),
-        T::Eq if p.nth_glued(n, T::Eq, T::Eq) => (BinaryOp::Eq, 2),
-        T::Bang if p.nth_glued(n, T::Bang, T::Eq) => (BinaryOp::Ne, 2),
-        T::Lt if p.nth_glued(n, T::Lt, T::Eq) => (BinaryOp::Le, 2),
-        T::Gt if p.nth_glued(n, T::Gt, T::Eq) => (BinaryOp::Ge, 2),
-        T::Lt => (BinaryOp::Lt, 1),
-        T::Gt => (BinaryOp::Gt, 1),
-        T::Plus => (BinaryOp::Add, 1),
-        T::Minus => (BinaryOp::Sub, 1),
-        T::Star => (BinaryOp::Mul, 1),
-        T::Slash => (BinaryOp::Div, 1),
-        T::Percent => (BinaryOp::Rem, 1),
-        _ => return None,
-    })
+    let glued = if p.nth_joint(n) { p.nth(n + 1) } else { None };
+    binary_operator(p.nth(n)?, glued)
 }

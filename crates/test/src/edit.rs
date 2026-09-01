@@ -2,7 +2,7 @@
 //! mapping that carries unaffected spans into the edited source.
 
 use proptest::prelude::*;
-use sumi_syntax::{ParserInput, SyntaxKind};
+use sumi_syntax::{ParserInput, SyntaxKind, is_closer, is_opener};
 
 use crate::front::front;
 use crate::program::program;
@@ -36,17 +36,16 @@ pub fn edit() -> impl Strategy<Value = Edit> {
 }
 
 pub fn is_delimiter(kind: SyntaxKind) -> bool {
-    matches!(
-        kind,
-        SyntaxKind::LParen | SyntaxKind::RParen | SyntaxKind::LBrace | SyntaxKind::RBrace
-    )
+    is_opener(kind) || is_closer(kind)
 }
 
 /// Whether `edit` inserts, removes, duplicates, or moves a delimiter.
 pub fn changes_delimiter(input: &ParserInput, index: usize, edit: Edit) -> bool {
     match edit {
         Edit::Delete | Edit::Duplicate => input.get(index).is_some_and(is_delimiter),
-        Edit::Insert(inserted) => matches!(inserted, "(" | ")" | "{" | "}"),
+        Edit::Insert(inserted) => SyntaxKind::ALL
+            .iter()
+            .any(|&kind| is_delimiter(kind) && kind.text() == Some(inserted)),
         Edit::Swap => {
             let left = if index + 1 < input.len() {
                 index
