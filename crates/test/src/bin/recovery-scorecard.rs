@@ -21,10 +21,8 @@
 
 use std::collections::HashSet;
 
-use sumi_syntax::{NodeKind, ParseEvidence, ParserInput, SyntaxKind};
-use sumi_test::{
-    Edit, EditSpan, Front, Programs, apply, changes_delimiter, corpus, front, is_delimiter,
-};
+use sumi_syntax::{NodeKind, ParseEvidence, ParserInput, SyntaxKind, is_bracket};
+use sumi_test::{Edit, EditSpan, Front, Programs, apply, changes_delimiter, corpus, front};
 
 /// Measured (program, edit) pairs per Part A class.
 const CLASS_TARGET: usize = 10_000;
@@ -222,10 +220,10 @@ fn scorecard() {
         let spans = original.spans();
 
         let delimiter: Vec<usize> = (0..len)
-            .filter(|&index| original.input.get(index).is_some_and(is_delimiter))
+            .filter(|&index| original.input.get(index).is_some_and(is_bracket))
             .collect();
         let non_delimiter: Vec<usize> = (0..len)
-            .filter(|&index| !original.input.get(index).is_some_and(is_delimiter))
+            .filter(|&index| !original.input.get(index).is_some_and(is_bracket))
             .collect();
         let swap_delimiter: Vec<usize> = (0..len)
             .filter(|&index| changes_delimiter(&original.input, index, Edit::Swap))

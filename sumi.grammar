@@ -1,0 +1,189 @@
+// The Sumi grammar.
+//
+// This file is the one declaration of the token vocabulary, the node
+// vocabulary, and every token class the lexer, the newline rule, the
+// parser, and diagnostics derive from them. `cargo xtask codegen`
+// regenerates from it:
+//
+//   crates/lexer/src/kind.rs     SyntaxKind, the keyword and punctuation
+//                                tables, token texts and descriptions
+//   crates/syntax/src/kind.rs    NodeKind, the token classes, bracket
+//                                pairs, and the operator tables
+//   docs/reference/grammar.md    the grammar chapter of the reference
+//
+// CI runs `cargo xtask codegen --check` and fails when any of them drifts.
+//
+// One declaration per line, except node rules, which may continue over
+// following lines. `//` starts a comment; `///` lines document the
+// declaration below them, here and in the generated Rust. Kind names are
+// capitalized; declaration keywords are lowercase.
+//
+//   token Kind shape ["text"] ["description"] flags…
+//       shape        trivia | ident | keyword "text" | punct "c" | literal | error
+//       description  how the token reads after "expected" in a diagnostic;
+//                    a keyword or punctuation token defaults to its text in
+//                    backticks
+//       flags        expr      can begin an expression
+//                    stmt      begins a statement that is not an expression
+//                    end       a statement can end after it
+//                    item      begins a top-level item
+//                    continue  continues the previous line's statement
+//                              (operators need no flag: the tables below
+//                              decide for them)
+//   pair Opener Closer          a bracket pair the token stream matches
+//   compound "text"             adjacent punctuation the parser glues into
+//                               one operator; the lexer never produces it
+//   prefix "text"               a prefix operator
+//   binary Name "text" level    a binary operator; higher levels bind
+//          [comparison]         tighter, every operator associates left,
+//                               and comparisons do not chain
+//   Node = rule                 a node kind and the shape of a valid one,
+//                               in ungrammar notation: 'text' and Kind
+//                               atoms, `?`, `*`, `|`, and parentheses.
+//                               A rule that only lists other rules names a
+//                               category and is not a node kind. The
+//                               operator tables stand in for the implicit
+//                               PrefixOperator and BinaryOperator rules.
+//
+// The `Error` node kind, covering tokens the parser could not parse, is
+// implied: recovery needs it whatever the grammar says.
+
+// ---------------------------------------------------------------- tokens
+
+/// Horizontal whitespace, or the byte-order mark.
+token Whitespace trivia "whitespace"
+/// One line break.
+token Newline trivia "a line break"
+token LineComment trivia "a line comment"
+
+/// An identifier that is not a keyword.
+token Ident ident "a name" expr end
+/// The identifier `_` on its own, reserved for discards.
+token Underscore keyword "_" stmt end
+
+// Reserved keywords. The v0 set covers functions, bindings, branching, and
+// boolean literals only.
+token ElseKw keyword "else" continue
+token FalseKw keyword "false" expr end
+token FnKw keyword "fn" item
+token IfKw keyword "if" expr
+token LetKw keyword "let" stmt
+token MutKw keyword "mut"
+token ReturnKw keyword "return" stmt end
+token TrueKw keyword "true" expr end
+
+/// A decimal integer literal.
+token IntLiteral literal "an integer literal" expr end
+/// A float literal: a fraction (`1.5`), an exponent (`1e3`), or both.
+token FloatLiteral literal "a floating-point literal" expr end
+token StringLiteral literal "a string literal" expr end
+token RawStringLiteral literal "a raw string literal" expr end
+token CharLiteral literal "a character literal" expr end
+
+// Punctuation, one kind per character. Punctuation without a role in the
+// language (`;`, `[`, `@`, …) has no kind and lexes to `Error`.
+token LParen punct "(" expr
+token RParen punct ")" end
+token LBrace punct "{" expr
+token RBrace punct "}" end
+token Comma punct ","
+token Colon punct ":"
+token Dot punct "."
+token Eq punct "="
+token Lt punct "<"
+token Gt punct ">"
+token Bang punct "!" expr
+token Plus punct "+"
+token Minus punct "-" expr
+token Star punct "*"
+token Slash punct "/"
+token Percent punct "%"
+token Amp punct "&"
+token Pipe punct "|"
+
+/// A token with no meaning in the language: unrecognized characters,
+/// misplaced byte-order marks, and punctuation without a role.
+token Error error "valid syntax" stmt end
+
+// -------------------------------------------------------------- brackets
+
+pair LParen RParen
+pair LBrace RBrace
+
+// ------------------------------------------------------------- operators
+
+compound "->"
+compound "=="
+compound "!="
+compound "<="
+compound ">="
+compound "&&"
+compound "||"
+
+prefix "-"
+prefix "!"
+
+binary Or "||" 1
+binary And "&&" 2
+binary Eq "==" 3 comparison
+binary Ne "!=" 3 comparison
+binary Lt "<" 3 comparison
+binary Le "<=" 3 comparison
+binary Gt ">" 3 comparison
+binary Ge ">=" 3 comparison
+binary Add "+" 4
+binary Sub "-" 4
+binary Mul "*" 5
+binary Div "/" 5
+binary Rem "%" 5
+
+// ----------------------------------------------------------------- nodes
+
+SourceFile = FnItem*
+
+FnItem = 'fn' Ident ParamList ('->' TypeRef)? Block
+ParamList = '(' (Param (',' Param)* ','?)? ')'
+Param = Ident ':' TypeRef
+
+/// A type reference: a name, until types grow more shapes.
+TypeRef = Ident
+
+Block = '{' Stmt* '}'
+
+Stmt =
+  LetStmt
+| AssignStmt
+| DiscardStmt
+| ReturnStmt
+| Expr
+
+LetStmt = 'let' 'mut'? Ident (':' TypeRef)? '=' Expr
+AssignStmt = Expr '=' Expr
+DiscardStmt = '_' '=' Expr
+ReturnStmt = 'return' Expr?
+
+Expr =
+  NameExpr
+| LiteralExpr
+| PrefixExpr
+| BinaryExpr
+| ParenExpr
+| CallExpr
+| IfExpr
+| Block
+
+NameExpr = Ident
+LiteralExpr =
+  IntLiteral
+| FloatLiteral
+| StringLiteral
+| RawStringLiteral
+| CharLiteral
+| 'true'
+| 'false'
+PrefixExpr = PrefixOperator Expr
+BinaryExpr = Expr BinaryOperator Expr
+ParenExpr = '(' Expr ')'
+CallExpr = Expr ArgList
+ArgList = '(' (Expr (',' Expr)* ','?)? ')'
+IfExpr = 'if' Expr Block ('else' (IfExpr | Block))?

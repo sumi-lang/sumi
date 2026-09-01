@@ -378,12 +378,10 @@ impl<'src> Lexer<'src> {
     }
 
     /// Classify the identifier just scanned from `start`, while its bytes
-    /// are still cache-hot: a discard, a keyword, or a plain identifier.
+    /// are still cache-hot: a reserved word — `_` included — or a plain
+    /// identifier.
     fn classify_ident(&self, start: usize) -> SyntaxKind {
-        match &self.source[start..self.position] {
-            "_" => SyntaxKind::Underscore,
-            text => SyntaxKind::from_keyword(text).unwrap_or(SyntaxKind::Ident),
-        }
+        SyntaxKind::from_keyword(&self.source[start..self.position]).unwrap_or(SyntaxKind::Ident)
     }
 
     fn eat_ident_continue(&mut self) {

@@ -21,7 +21,7 @@
 //!
 //! Construction also emits the **item segments**: the indices where
 //! top-level items start — a `fn`, or the headless signature shape
-//! [`starts_item`] recognizes, outside every matched bracket pair. A `fn`
+//! [`item_starts_at`] recognizes, outside every matched bracket pair. A `fn`
 //! inside a matched pair belongs to whatever construct owns the pair; one
 //! outside begins the next item wherever the grammar stands, so the parser
 //! turns each start into a hard end limit for the item before it.
@@ -38,8 +38,8 @@
 //! 2. the token before it can end a statement: an identifier or `_`, a
 //!    literal, `true`/`false`, `return`, `)`, or `}`;
 //! 3. the token after it cannot continue one: `else` and binary operators
-//!    continue the previous line; everything else starts fresh. The set
-//!    mirrors the grammar — a leading `.` joins it with member access.
+//!    continue the previous line; everything else starts fresh. Both sets
+//!    are the grammar's, generated from `sumi.grammar`.
 //!
 //! The bits record where statements end; the bans that keep the rule
 //! unambiguous (trailing operators, unglued unary operators) are enforced by
@@ -48,7 +48,10 @@
 use std::num::NonZeroU32;
 use std::ops::Range;
 
-use crate::kind::SyntaxKind;
+use crate::kind::{
+    BRACKET_PAIRS, SyntaxKind, can_end_statement, continues_statement, is_closer, is_opener,
+    opener, starts_item,
+};
 use sumi_lexer::LexedFile;
 
 const JOINT: u8 = 1 << 0;
@@ -90,12 +93,11 @@ impl ParserInput {
         // Sized exactly and filled once: counting the significant tokens
         // first is one cheap scan, and spares both the doubling
         // reallocations of a growing vector and a final shrink.
-        let significant = lexed.kinds().filter(|&kind| !is_trivia(kind)).count();
+        let significant = lexed.kinds().filter(|kind| !kind.is_trivia()).count();
         let mut build = Build {
             slots: Vec::with_capacity(significant),
             openers: Vec::new(),
-            parens: 0,
-            braces: 0,
+            open_counts: [0; BRACKET_PAIRS.len()],
         };
 
         // One pass strips trivia and pairs brackets as their closers
@@ -104,13 +106,9 @@ impl ParserInput {
         // ever closed — so they wait for the second pass below.
         let mut newline = false;
         for (raw, kind) in lexed.kinds().enumerate() {
-            match kind {
-                SyntaxKind::Whitespace | SyntaxKind::LineComment => continue,
-                SyntaxKind::Newline => {
-                    newline = true;
-                    continue;
-                }
-                _ => {}
+            if kind.is_trivia() {
+                newline |= kind == SyntaxKind::Newline;
+                continue;
             }
             build.push(kind, raw as u32, newline);
             newline = false;
@@ -147,29 +145,25 @@ impl ParserInput {
                     opener.kind == SyntaxKind::LParen && opener.partner.is_some()
                 })
                 && can_end_statement(slots[index - 1].kind)
-                && !continues_statement(&slots, index)
+                && !continues_line(&slots, index)
             {
                 slots[index].flags |= BOUNDARY_BEFORE;
                 boundary_count += 1;
             }
-            if matched == 0 && starts_item(&slots, index) {
+            if matched == 0 && item_starts_at(&slots, index) {
                 items.push(index as u32);
             }
-            match slot.kind {
-                SyntaxKind::LParen | SyntaxKind::LBrace => {
-                    open.push(index as u32);
-                    if slot.partner.is_some() {
-                        matched += 1;
-                    }
+            if is_opener(slot.kind) {
+                open.push(index as u32);
+                if slot.partner.is_some() {
+                    matched += 1;
                 }
-                SyntaxKind::RParen | SyntaxKind::RBrace => {
-                    if let Some(partner) = slot.partner {
-                        let opener = partner.get() - 1;
-                        while open.pop().is_some_and(|popped| popped != opener) {}
-                        matched -= 1;
-                    }
-                }
-                _ => {}
+            } else if is_closer(slot.kind)
+                && let Some(partner) = slot.partner
+            {
+                let opener = partner.get() - 1;
+                while open.pop().is_some_and(|popped| popped != opener) {}
+                matched -= 1;
             }
         }
         boundaries.push(boundary_count);
@@ -258,13 +252,6 @@ impl ParserInput {
     }
 }
 
-fn is_trivia(kind: SyntaxKind) -> bool {
-    matches!(
-        kind,
-        SyntaxKind::Whitespace | SyntaxKind::Newline | SyntaxKind::LineComment
-    )
-}
-
 /// The build in progress: the slots so far, and mechanical bracket pairing
 /// threaded through the same pass. A closer with a compatible opener
 /// discards unmatched openers above its nearest match; an orphan closer
@@ -274,10 +261,9 @@ struct Build {
     slots: Vec<Slot>,
     /// The brackets still open, innermost last, by slot index.
     openers: Vec<u32>,
-    /// How many of them are `(`, and how many `{`, so an orphan closer is
-    /// known without a search.
-    parens: usize,
-    braces: usize,
+    /// How many of them belong to each pair, in [`BRACKET_PAIRS`] order, so
+    /// an orphan closer is known without a search.
+    open_counts: [usize; BRACKET_PAIRS.len()],
 }
 
 impl Build {
@@ -290,14 +276,11 @@ impl Build {
             last.flags |= JOINT;
         }
         let index = self.slots.len() as u32;
-        let partner = match kind {
-            SyntaxKind::LParen | SyntaxKind::LBrace => {
-                self.open(index, kind);
-                None
-            }
-            SyntaxKind::RParen => self.close(index, SyntaxKind::LParen),
-            SyntaxKind::RBrace => self.close(index, SyntaxKind::LBrace),
-            _ => None,
+        let partner = if is_opener(kind) {
+            self.open(index, kind);
+            None
+        } else {
+            opener(kind).and_then(|expected| self.close(index, expected))
         };
         self.slots.push(Slot {
             kind,
@@ -307,12 +290,13 @@ impl Build {
         });
     }
 
-    fn count(&mut self, kind: SyntaxKind) -> &mut usize {
-        if kind == SyntaxKind::LParen {
-            &mut self.parens
-        } else {
-            &mut self.braces
-        }
+    /// The open count of the pair `opener` begins.
+    fn count(&mut self, opener: SyntaxKind) -> &mut usize {
+        let pair = BRACKET_PAIRS
+            .iter()
+            .position(|&(candidate, _)| candidate == opener)
+            .expect("only openers are counted");
+        &mut self.open_counts[pair]
     }
 
     fn open(&mut self, index: u32, kind: SyntaxKind) {
@@ -346,8 +330,8 @@ impl Build {
 /// level looks like. A misplaced call has neither after its list, and
 /// stays garbage. The caller has established that no matched bracket pair
 /// encloses `index`.
-fn starts_item(slots: &[Slot], index: usize) -> bool {
-    if slots[index].kind == SyntaxKind::FnKw {
+fn item_starts_at(slots: &[Slot], index: usize) -> bool {
+    if starts_item(slots[index].kind) {
         return true;
     }
     (index == 0 || slots[index].flags & BOUNDARY_BEFORE != 0)
@@ -367,53 +351,16 @@ fn starts_item(slots: &[Slot], index: usize) -> bool {
         })
 }
 
-/// Whether a statement can end after a token of this kind: values and
-/// closers can; operators, openers, and introducer keywords need more.
-fn can_end_statement(kind: SyntaxKind) -> bool {
-    matches!(
-        kind,
-        SyntaxKind::Ident
-            | SyntaxKind::Underscore
-            | SyntaxKind::TrueKw
-            | SyntaxKind::FalseKw
-            | SyntaxKind::ReturnKw
-            | SyntaxKind::IntLiteral
-            | SyntaxKind::FloatLiteral
-            | SyntaxKind::StringLiteral
-            | SyntaxKind::RawStringLiteral
-            | SyntaxKind::CharLiteral
-            | SyntaxKind::RParen
-            | SyntaxKind::RBrace
-            | SyntaxKind::Error
-    )
-}
-
-/// Whether the token at `index` continues a statement left open on the
-/// previous line.
-///
-/// Continuation tokens are ones that can never start a statement: `else`
-/// and binary operators, compounds included. `-` is binary exactly when it
-/// is not glued to what follows — `- b` continues, `-b` opens a negation,
-/// and the `->` of an arrow never continues. `(` could not start a
-/// statement either, but deliberately does not continue: arguments must not
-/// attach to a callee across a line break. The set mirrors the grammar: a
-/// leading `.` joins it with member access.
-fn continues_statement(slots: &[Slot], index: usize) -> bool {
-    let joint_to = |kind: SyntaxKind| {
-        slots[index].flags & JOINT != 0 && slots.get(index + 1).map(|slot| slot.kind) == Some(kind)
+/// Whether the token at `index` continues the statement left open on the
+/// previous line: the grammar's [`continues_statement`] over its kind and
+/// the kind it is glued to. `(` could not start a statement either, but
+/// deliberately does not continue: arguments must not attach to a callee
+/// across a line break.
+fn continues_line(slots: &[Slot], index: usize) -> bool {
+    let glued = if slots[index].flags & JOINT != 0 {
+        slots.get(index + 1).map(|slot| slot.kind)
+    } else {
+        None
     };
-    match slots[index].kind {
-        SyntaxKind::ElseKw
-        | SyntaxKind::Plus
-        | SyntaxKind::Star
-        | SyntaxKind::Slash
-        | SyntaxKind::Percent
-        | SyntaxKind::Lt
-        | SyntaxKind::Gt => true,
-        SyntaxKind::Minus => slots[index].flags & JOINT == 0,
-        SyntaxKind::Eq | SyntaxKind::Bang => joint_to(SyntaxKind::Eq),
-        SyntaxKind::Amp => joint_to(SyntaxKind::Amp),
-        SyntaxKind::Pipe => joint_to(SyntaxKind::Pipe),
-        _ => false,
-    }
+    continues_statement(slots[index].kind, glued)
 }

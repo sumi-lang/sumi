@@ -13,20 +13,12 @@ use sumi_syntax::{
 };
 use sumi_test::{apply, delimiter_edited_program, front, non_delimiter_edited_program, program};
 
-/// Source fragments, valid and pathological; concatenation composes the
-/// adjacencies goldens cannot enumerate.
-const FRAGMENTS: &[&str] = &[
-    "fn",
-    "let",
-    "if",
-    "else",
-    "return",
-    "true",
-    "false",
-    "mut",
+/// Source fragments beyond every keyword and punctuation text of the
+/// language, valid and pathological; concatenation composes the adjacencies
+/// goldens cannot enumerate.
+const EXTRA_FRAGMENTS: &[&str] = &[
     "x",
     "foo",
-    "_",
     "Δx",
     "0",
     "123",
@@ -46,24 +38,6 @@ const FRAGMENTS: &[&str] = &[
     "'ab'",
     "r\"a\"",
     "r##\"a\"#",
-    "(",
-    ")",
-    "{",
-    "}",
-    ",",
-    ":",
-    ".",
-    "=",
-    "<",
-    ">",
-    "!",
-    "+",
-    "-",
-    "*",
-    "/",
-    "%",
-    "&",
-    "|",
     ";",
     "[",
     " ",
@@ -76,6 +50,15 @@ const FRAGMENTS: &[&str] = &[
     "\u{feff}",
     "€",
 ];
+
+/// Every fixed token text of the language, then [`EXTRA_FRAGMENTS`].
+fn fragments() -> Vec<&'static str> {
+    SyntaxKind::ALL
+        .iter()
+        .filter_map(|kind| kind.text())
+        .chain(EXTRA_FRAGMENTS.iter().copied())
+        .collect()
+}
 
 /// Fragments free of `)` and `}` (each would close the wrapping paren), of
 /// `{` (it would restore termination), and of a lone `(` (it would take
@@ -90,7 +73,7 @@ const PAREN_SAFE: &[&str] = &[
 
 fn fragment() -> impl Strategy<Value = String> {
     prop_oneof![
-        9 => prop::sample::select(FRAGMENTS).prop_map(str::to_owned),
+        9 => prop::sample::select(fragments()).prop_map(str::to_owned),
         1 => proptest::collection::vec(any::<char>(), 0..4)
             .prop_map(|chars| chars.into_iter().collect::<String>()),
     ]

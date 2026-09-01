@@ -355,11 +355,9 @@ fn closer_fix(
     else {
         return None;
     };
-    let replacement = match kind {
-        SyntaxKind::RParen => ")",
-        SyntaxKind::RBrace => "}",
-        _ => unreachable!("closer evidence names a closing delimiter"),
-    };
+    let replacement = kind
+        .text()
+        .unwrap_or_else(|| unreachable!("closer evidence names a closing delimiter"));
     // A delimiter immediately after an unterminated literal becomes part of
     // that token and repairs nothing. Keep the diagnostic, but offer no edit.
     let previous = gap.trivia_start().checked_sub(1);
@@ -375,7 +373,7 @@ fn closer_fix(
         return None;
     }
     Some(Fix {
-        message: format!("insert {}", token_description(kind)).into(),
+        message: format!("insert {}", kind.describe()).into(),
         edits: vec![TextEdit::new(TextRange::new(at, at), replacement)].into_boxed_slice(),
     })
 }
@@ -389,54 +387,12 @@ fn expected_diagnostic(expected: ParseExpected) -> (DiagnosticCode, Box<str>) {
         ParseExpected::Type => (codes::EXPECTED_TYPE, "expected a type".into()),
         ParseExpected::Token(kind) | ParseExpected::Closer { kind, .. } => (
             codes::EXPECTED_TOKEN,
-            format!("expected {}", token_description(kind)).into(),
+            format!("expected {}", kind.describe()).into(),
         ),
         ParseExpected::Boundary => (
             codes::EXPECTED_BOUNDARY,
             "expected a line break between statements".into(),
         ),
-    }
-}
-
-fn token_description(kind: SyntaxKind) -> &'static str {
-    match kind {
-        SyntaxKind::Whitespace => "whitespace",
-        SyntaxKind::Newline => "a line break",
-        SyntaxKind::LineComment => "a line comment",
-        SyntaxKind::Ident => "a name",
-        SyntaxKind::Underscore => "`_`",
-        SyntaxKind::ElseKw => "`else`",
-        SyntaxKind::FalseKw => "`false`",
-        SyntaxKind::FnKw => "`fn`",
-        SyntaxKind::IfKw => "`if`",
-        SyntaxKind::LetKw => "`let`",
-        SyntaxKind::MutKw => "`mut`",
-        SyntaxKind::ReturnKw => "`return`",
-        SyntaxKind::TrueKw => "`true`",
-        SyntaxKind::IntLiteral => "an integer literal",
-        SyntaxKind::FloatLiteral => "a floating-point literal",
-        SyntaxKind::StringLiteral => "a string literal",
-        SyntaxKind::RawStringLiteral => "a raw string literal",
-        SyntaxKind::CharLiteral => "a character literal",
-        SyntaxKind::LParen => "`(`",
-        SyntaxKind::RParen => "`)`",
-        SyntaxKind::LBrace => "`{`",
-        SyntaxKind::RBrace => "`}`",
-        SyntaxKind::Comma => "`,`",
-        SyntaxKind::Colon => "`:`",
-        SyntaxKind::Dot => "`.`",
-        SyntaxKind::Eq => "`=`",
-        SyntaxKind::Lt => "`<`",
-        SyntaxKind::Gt => "`>`",
-        SyntaxKind::Bang => "`!`",
-        SyntaxKind::Plus => "`+`",
-        SyntaxKind::Minus => "`-`",
-        SyntaxKind::Star => "`*`",
-        SyntaxKind::Slash => "`/`",
-        SyntaxKind::Percent => "`%`",
-        SyntaxKind::Amp => "`&`",
-        SyntaxKind::Pipe => "`|`",
-        SyntaxKind::Error => "valid syntax",
     }
 }
 

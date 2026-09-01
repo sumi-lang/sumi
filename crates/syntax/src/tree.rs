@@ -557,15 +557,9 @@ impl<'a> Marker<'_, 'a> {
     }
 
     /// Whether the next two tokens are `first` glued to `second`: a
-    /// compound operator such as `==` or `->`.
+    /// compound such as `->`.
     pub(crate) fn at_glued(&self, first: SyntaxKind, second: SyntaxKind) -> bool {
-        self.nth_glued(0, first, second)
-    }
-
-    /// Whether the significant tokens `n` and `n + 1` past the next one are
-    /// `first` glued to `second`.
-    pub(crate) fn nth_glued(&self, n: usize, first: SyntaxKind, second: SyntaxKind) -> bool {
-        self.nth(n) == Some(first) && self.nth_joint(n) && self.nth(n + 1) == Some(second)
+        self.at(first) && self.joint() && self.nth(1) == Some(second)
     }
 
     /// Whether the next token is glued to the one after it.
@@ -780,11 +774,12 @@ impl<'a> Marker<'_, 'a> {
     /// Record a closing delimiter missing from the cursor gap, retaining
     /// the opening delimiter at this node's first token as its counterpart.
     pub(crate) fn missing_closer(&mut self) -> RecoveryHandle {
-        let kind = match self.builder.input.get(self.start) {
-            Some(SyntaxKind::LParen) => SyntaxKind::RParen,
-            Some(SyntaxKind::LBrace) => SyntaxKind::RBrace,
-            _ => unreachable!("a missing closer belongs to a bracket node"),
-        };
+        let kind = self
+            .builder
+            .input
+            .get(self.start)
+            .and_then(crate::kind::closer)
+            .unwrap_or_else(|| unreachable!("a missing closer belongs to a bracket node"));
         let opener = self.builder.raw_range(self.start, self.start + 1);
         self.missing(ParseExpected::Closer { kind, opener })
     }
