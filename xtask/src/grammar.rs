@@ -99,6 +99,24 @@ pub const BINARY_OPERATOR_RULE: &str = "BinaryOperator";
 /// The node kind every grammar has, for tokens the parser could not parse.
 pub const ERROR_NODE: &str = "Error";
 
+/// The highest binary operator level: binding powers are twice the level,
+/// and the prefix power one more than the highest, all of which must fit
+/// the parser's `u8`.
+pub const MAX_LEVEL: u8 = 127;
+
+/// How many variants a `#[repr(u8)]` enum holds.
+const MAX_VARIANTS: usize = 256;
+
+/// Left and right binding powers of a level. Every operator associates
+/// left, so the right side binds tighter.
+pub fn binding_power(level: u8) -> (u8, u8) {
+    let right = level
+        .checked_mul(2)
+        .filter(|_| level <= MAX_LEVEL)
+        .expect("levels are validated to MAX_LEVEL");
+    (right.saturating_sub(1), right)
+}
+
 impl Grammar {
     pub fn parse(source: &str) -> Result<Self, String> {
         let toks = tokenize(source)?;
@@ -162,8 +180,11 @@ impl Grammar {
         self.rules.iter().filter(|rule| !self.is_category(rule))
     }
 
-    pub fn max_level(&self) -> u8 {
-        self.binary.iter().map(|op| op.level).max().unwrap_or(0)
+    /// The binding power of a prefix operator's operand: above the right
+    /// binding power of the tightest binary level.
+    pub fn prefix_binding_power(&self) -> u8 {
+        let max_level = self.binary.iter().map(|op| op.level).max().unwrap_or(0);
+        binding_power(max_level).1 + 1
     }
 
     fn validate(&self) -> Result<(), String> {
@@ -179,13 +200,28 @@ impl Grammar {
             Ok(())
         }
         for token in &self.tokens {
-            if !is_kind_name(&token.name) {
+            kind_name(&token.name, "token kind")?;
+            unique(&mut kinds, &token.name, "token kind")?;
+            let flags = token.flags;
+            let flagged = flags.expr || flags.stmt || flags.end || flags.item || flags.continues;
+            if token.shape == Shape::Trivia && flagged {
                 return Err(format!(
-                    "token kind {} must be a capitalized identifier",
+                    "{} is trivia, which the grammar never sees, so it takes no flags",
                     token.name
                 ));
             }
-            unique(&mut kinds, &token.name, "token kind")?;
+            if flags.expr && flags.stmt {
+                return Err(format!(
+                    "{} cannot both begin an expression (expr) and a statement that is not one (stmt)",
+                    token.name
+                ));
+            }
+            if flags.continues && (flags.expr || flags.stmt) {
+                return Err(format!(
+                    "{} cannot continue a statement (continue) and also begin one (expr or stmt)",
+                    token.name
+                ));
+            }
             match (token.shape, token.text.as_deref()) {
                 (Shape::Keyword, Some(text)) => {
                     let mut chars = text.chars();
@@ -261,23 +297,18 @@ impl Grammar {
             }
         }
         for op in &self.binary {
-            if !is_kind_name(&op.name) {
-                return Err(format!(
-                    "binary operator {} must be a capitalized identifier",
-                    op.name
-                ));
-            }
+            kind_name(&op.name, "binary operator")?;
             unique(&mut operators, &op.name, "binary operator")?;
             let tokens = self.operator_text(&op.text)?;
-            if tokens.len() > 2 {
+            if !(1..=2).contains(&tokens.len()) {
                 return Err(format!(
-                    "binary operator {:?} is wider than the two tokens the parser glues",
+                    "binary operator {:?} must be one token, or two the parser glues",
                     op.text
                 ));
             }
-            if op.level == 0 {
+            if !(1..=MAX_LEVEL).contains(&op.level) {
                 return Err(format!(
-                    "binary operator {:?} needs a level of 1 or more",
+                    "binary operator {:?} needs a level from 1 to {MAX_LEVEL}",
                     op.text
                 ));
             }
@@ -307,12 +338,7 @@ impl Grammar {
             }
         }
         for rule in &self.rules {
-            if !is_kind_name(&rule.name) {
-                return Err(format!(
-                    "rule {} must be a capitalized identifier",
-                    rule.name
-                ));
-            }
+            kind_name(&rule.name, "rule")?;
             if [PREFIX_OPERATOR_RULE, BINARY_OPERATOR_RULE, ERROR_NODE]
                 .contains(&rule.name.as_str())
             {
@@ -327,6 +353,19 @@ impl Grammar {
         }
         if self.rules.is_empty() {
             return Err("no node rules are declared".into());
+        }
+        if self.tokens.len() > MAX_VARIANTS {
+            return Err(format!(
+                "{} token kinds are declared, but a `#[repr(u8)]` enum holds {MAX_VARIANTS}",
+                self.tokens.len()
+            ));
+        }
+        let nodes = self.nodes().count();
+        if nodes >= MAX_VARIANTS {
+            return Err(format!(
+                "{nodes} node kinds are declared, but with the implicit {ERROR_NODE} a `#[repr(u8)]` enum holds {}",
+                MAX_VARIANTS - 1
+            ));
         }
         Ok(())
     }
@@ -372,6 +411,18 @@ impl Grammar {
 fn is_kind_name(name: &str) -> bool {
     let mut chars = name.chars();
     chars.next().is_some_and(|c| c.is_ascii_uppercase()) && chars.all(|c| c.is_ascii_alphanumeric())
+}
+
+/// A kind, operator, or rule name, which must also be a legal Rust enum
+/// variant.
+fn kind_name(name: &str, what: &str) -> Result<(), String> {
+    if !is_kind_name(name) {
+        return Err(format!("{what} {name} must be a capitalized identifier"));
+    }
+    if name == "Self" {
+        return Err(format!("{what} {name} is reserved by Rust"));
+    }
+    Ok(())
 }
 
 impl Node {
@@ -843,7 +894,14 @@ PrefixExpr = PrefixOperator Expr
             ("compound \"-\"", "at least two"),
             ("prefix \"->\"", "one token"),
             ("binary Arrow \"->\" 1\nprefix \"-\"", "declared twice"),
-            ("binary Gt2 \">\" 0", "level of 1"),
+            ("binary Gt2 \">\" 0", "level from 1"),
+            ("binary Gt2 \">\" 128", "level from 1"),
+            ("binary Empty \"\" 1", "one token, or two"),
+            ("token Self ident \"x\"", "reserved"),
+            ("binary Self \">\" 1", "reserved"),
+            ("token Both ident \"x\" expr stmt", "both begin"),
+            ("token Cont ident \"x\" expr continue", "also begin"),
+            ("token Space trivia \"x\" end", "takes no flags"),
             ("/// Lost.\n\nItem2 = Ident", "directly precede"),
             ("Empty =\n", "rule atom"),
         ] {
@@ -851,5 +909,27 @@ PrefixExpr = PrefixOperator Expr
             let error = Grammar::parse(&source).unwrap_err();
             assert!(error.contains(needle), "{line:?} gave {error:?}");
         }
+    }
+
+    #[test]
+    fn binding_powers_fit_the_parser() {
+        assert_eq!(binding_power(1), (1, 2));
+        assert_eq!(binding_power(MAX_LEVEL), (253, 254));
+        let source = format!("{GRAMMAR}binary Top \">\" {MAX_LEVEL}\n");
+        assert_eq!(Grammar::parse(&source).unwrap().prefix_binding_power(), 255);
+    }
+
+    #[test]
+    fn rejects_enums_past_u8() {
+        let tokens: String = (0..MAX_VARIANTS)
+            .map(|index| format!("token T{index} ident \"x\"\n"))
+            .collect();
+        let error = Grammar::parse(&format!("{GRAMMAR}{tokens}")).unwrap_err();
+        assert!(error.contains("token kinds"), "{error}");
+        let nodes: String = (0..MAX_VARIANTS)
+            .map(|index| format!("N{index} = Ident\n"))
+            .collect();
+        let error = Grammar::parse(&format!("{GRAMMAR}{nodes}")).unwrap_err();
+        assert!(error.contains("node kinds"), "{error}");
     }
 }
