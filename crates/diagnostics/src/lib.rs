@@ -4,7 +4,7 @@
 //! source snapshot and assigns stable codes, wording, and labels. Renderers
 //! only project this canonical representation for their audience.
 
-use sumi_text::{TextRange, TextSize};
+use sumi_text::{TextEdit, TextRange, TextSize};
 
 /// A namespace for related diagnostic codes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -101,6 +101,15 @@ pub struct Label {
     pub message: Option<Box<str>>,
 }
 
+/// One source action offered for a diagnostic. Every edit is relative to
+/// the same source snapshot and applies atomically. Edits must not overlap;
+/// their order is retained for insertions at the same byte boundary.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Fix {
+    pub message: Box<str>,
+    pub edits: Box<[TextEdit]>,
+}
+
 /// One canonical diagnostic, independent of terminal, protocol, or editor
 /// presentation.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -110,6 +119,8 @@ pub struct Diagnostic {
     pub message: Box<str>,
     pub primary: Label,
     pub secondary: Box<[Label]>,
+    /// A source action safe to apply to the diagnostic's source snapshot.
+    pub fix: Option<Fix>,
 }
 
 #[cfg(test)]

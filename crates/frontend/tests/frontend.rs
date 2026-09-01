@@ -22,6 +22,19 @@ fn location_text(front: &ParsedSource, location: Location) -> &str {
     }
 }
 
+fn apply_fix(source: &str, diagnostic: &sumi_frontend::Diagnostic) -> String {
+    let fix = diagnostic.fix.as_ref().expect("diagnostic has a fix");
+    let mut result = source.to_owned();
+    for edit in fix.edits.iter().rev() {
+        let range = edit.range();
+        result.replace_range(
+            range.start().to_usize()..range.end().to_usize(),
+            edit.replacement(),
+        );
+    }
+    result
+}
+
 fn raw_boundary(front: &ParsedSource, raw: u32) -> TextSize {
     sumi_syntax::raw_boundary(front.lexed(), raw)
 }
@@ -79,6 +92,7 @@ fn missing_syntax_points_at_the_parser_cursor() {
         diagnostic.primary.location,
         Location::Point(TextSize::new(source.find('f').unwrap() as u32))
     );
+    assert!(diagnostic.fix.is_none());
 
     let source = "fn f() { x // tail";
     let front = parsed(source);
@@ -96,6 +110,23 @@ fn missing_syntax_points_at_the_parser_cursor() {
     };
     assert_eq!(location_text(&front, opener.location), "{");
     assert_eq!(opener.message.as_deref(), Some("opening delimiter is here"));
+    let fix = diagnostic
+        .fix
+        .as_ref()
+        .expect("the missing closer has a fix");
+    assert_eq!(fix.message.as_ref(), "insert `}`");
+    let [edit] = &*fix.edits else {
+        panic!("inserting a closer is one edit")
+    };
+    let insertion = TextSize::new(source.find(" // tail").unwrap() as u32);
+    assert_eq!(
+        edit.range(),
+        sumi_text::TextRange::new(insertion, insertion)
+    );
+    assert_eq!(edit.replacement(), "}");
+    let fixed = apply_fix(source, diagnostic);
+    assert_eq!(fixed, "fn f() { x} // tail");
+    assert!(parsed(&fixed).diagnostics().is_empty());
 
     let [ParseEvidence::Recovery(recovery)] = front.parse().evidence() else {
         panic!("the parse retains the missing closer evidence")
@@ -142,6 +173,67 @@ fn an_error_in_a_skipped_effect_does_not_suppress_a_valid_cause() {
 }
 
 #[test]
+fn closers_after_unterminated_literals_have_no_fix() {
+    for literal in ["\"tail", "r\"tail", "'tail"] {
+        let source = format!("fn f() {{ ({literal}");
+        let front = parsed(&source);
+        let closers: Vec<_> = front
+            .diagnostics()
+            .iter()
+            .filter(|diagnostic| {
+                matches!(diagnostic.message.as_ref(), "expected `)`" | "expected `}`")
+            })
+            .collect();
+
+        assert!(
+            closers
+                .iter()
+                .any(|diagnostic| diagnostic.message.as_ref() == "expected `)`"),
+            "nested paren closer is reported for {source:?}"
+        );
+        assert!(
+            closers
+                .iter()
+                .any(|diagnostic| diagnostic.message.as_ref() == "expected `}`"),
+            "block closer is reported for {source:?}"
+        );
+        assert!(
+            closers.iter().all(|diagnostic| diagnostic.fix.is_none()),
+            "a closer cannot be inserted after the unterminated literal in {source:?}"
+        );
+    }
+}
+
+#[test]
+fn nested_same_kind_closers_are_fixed_inside_out() {
+    for (source, message, after_first) in [
+        ("fn f() { if true {", "expected `}`", "fn f() { if true {}"),
+        ("fn f() { ((1 }", "expected `)`", "fn f() { ((1) }"),
+    ] {
+        let front = parsed(source);
+        let closers: Vec<_> = front
+            .diagnostics()
+            .iter()
+            .filter(|diagnostic| diagnostic.message.as_ref() == message)
+            .collect();
+        assert_eq!(closers.len(), 2, "two nested closers for {source:?}");
+        assert!(closers[0].fix.is_some(), "innermost closer is fixable");
+        assert!(closers[1].fix.is_none(), "outer closer waits for reparse");
+
+        let fixed = apply_fix(source, closers[0]);
+        assert_eq!(fixed, after_first);
+        let reparsed = parsed(&fixed);
+        let remaining: Vec<_> = reparsed
+            .diagnostics()
+            .iter()
+            .filter(|diagnostic| diagnostic.message.as_ref() == message)
+            .collect();
+        assert_eq!(remaining.len(), 1, "only the outer closer remains");
+        assert!(remaining[0].fix.is_some(), "outer closer is now fixable");
+    }
+}
+
+#[test]
 fn diagnostics_are_globally_sorted_with_stable_ties() {
     // The lexer observes the later `€` before parser diagnostics are lowered,
     // so source sorting must move the missing `:` ahead of it.
@@ -161,6 +253,11 @@ fn diagnostics_are_globally_sorted_with_stable_ties() {
         front.diagnostics()[0].primary.location,
         front.diagnostics()[1].primary.location
     );
+    assert_eq!(
+        apply_fix("fn f(a: int", &front.diagnostics()[0]),
+        "fn f(a: int)"
+    );
+    assert!(front.diagnostics()[1].fix.is_none());
 }
 
 #[test]
@@ -248,6 +345,22 @@ proptest! {
                 if let Location::Point(point) = label.location {
                     prop_assert_eq!(point.to_usize(), start);
                     prop_assert_eq!(start, end);
+                }
+            }
+            if let Some(fix) = &diagnostic.fix {
+                prop_assert!(!fix.edits.is_empty());
+                let mut previous_end = None;
+                for edit in &fix.edits {
+                    let range = edit.range();
+                    let start = range.start().to_usize();
+                    let end = range.end().to_usize();
+                    prop_assert!(start <= end && end <= source.len());
+                    prop_assert!(source.is_char_boundary(start));
+                    prop_assert!(source.is_char_boundary(end));
+                    if let Some(previous_end) = previous_end {
+                        prop_assert!(previous_end <= start);
+                    }
+                    previous_end = Some(end);
                 }
             }
         }

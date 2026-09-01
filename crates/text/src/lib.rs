@@ -45,6 +45,30 @@ impl TextRange {
     }
 }
 
+/// One replacement of a byte range in a source snapshot.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct TextEdit {
+    range: TextRange,
+    replacement: Box<str>,
+}
+
+impl TextEdit {
+    pub fn new(range: TextRange, replacement: impl Into<Box<str>>) -> Self {
+        Self {
+            range,
+            replacement: replacement.into(),
+        }
+    }
+
+    pub const fn range(&self) -> TextRange {
+        self.range
+    }
+
+    pub fn replacement(&self) -> &str {
+        &self.replacement
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -53,5 +77,14 @@ mod tests {
     fn range_slices_source() {
         let range = TextRange::new(TextSize::new(3), TextSize::new(6));
         assert_eq!(range.text("fn map"), "map");
+    }
+
+    #[test]
+    fn text_edits_retain_their_range_and_replacement() {
+        let point = TextSize::new(6);
+        let edit = TextEdit::new(TextRange::new(point, point), ")");
+
+        assert_eq!(edit.range(), TextRange::new(point, point));
+        assert_eq!(edit.replacement(), ")");
     }
 }
