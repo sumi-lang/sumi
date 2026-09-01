@@ -375,3 +375,28 @@ fn a_token_past_the_end_panics() {
 fn leftover_tokens_panic_at_build() {
     dump("x y", |b| b.token());
 }
+
+#[test]
+#[should_panic(expected = "wrap a node of its own kind over the same tokens")]
+fn wrapping_a_node_of_its_own_kind_over_its_tokens_panics() {
+    dump("x", |b| {
+        let name = leaf(b, NameRef);
+        b.precede(name).complete(NameRef);
+    });
+}
+
+#[test]
+fn wrapping_a_node_of_another_kind_over_its_tokens_is_fine() {
+    check(
+        "x",
+        |b| {
+            let name = leaf(b, NameRef);
+            b.precede(name).complete(ParenExpr);
+        },
+        &[
+            "SourceFile 0..1",
+            "  ParenExpr 0..1",
+            r#"    NameRef 0..1 "x""#,
+        ],
+    );
+}

@@ -32,8 +32,9 @@
 //! data — holding one borrows nothing — and is wrapped after the fact from
 //! the marker that contained it. What types cannot express stays a run-time
 //! check, raised where the parser went wrong: a node is preceded only from
-//! the node that contained it, every node covers at least one token, a
-//! marker dropped uncompleted panics where it drops, and `build` rejects a
+//! the node that contained it, every node covers at least one token, no
+//! node wraps one of its own kind over exactly its tokens (a debug-build
+//! check; the parser never does), a marker dropped uncompleted panics where it drops, and `build` rejects a
 //! token past the input horizon or tokens left over.
 //!
 //! The build records nodes as they complete, and completion order is the
@@ -218,6 +219,63 @@ impl SyntaxTree {
         }
         parents
     }
+
+    /// The pointer naming node `index`: its kind and byte range, which is
+    /// what a later phase keeps to find the node again. `lexed` must be the
+    /// file this tree was parsed from.
+    pub fn ptr(&self, index: NodeIdx, lexed: &LexedFile) -> NodePtr {
+        NodePtr {
+            kind: self.kind(index),
+            range: self.byte_range(index, lexed),
+        }
+    }
+
+    /// The node `ptr` names in this tree: the one of its kind over exactly
+    /// its byte range, if there is one. `lexed` must be the file this tree
+    /// was parsed from. A pointer taken from another parse resolves here
+    /// when the node it named still stands at the same bytes — a reparse
+    /// of the same text, or of text edited only after the node — and
+    /// answers `None` once the node has moved, changed kind, or gone. A
+    /// pointer names at most one node: the parser never wraps a node in
+    /// one of its own kind over exactly the same tokens, and debug builds
+    /// reject a hand-built tree that does.
+    pub fn resolve(&self, ptr: NodePtr, lexed: &LexedFile) -> Option<NodeIdx> {
+        let root = self.root();
+        if ptr.range.start() == ptr.range.end() {
+            // Only the root of an empty file is empty.
+            let empty_root = lexed.is_empty() && ptr.kind == self.kind(root);
+            return empty_root.then_some(root);
+        }
+        // The range must begin and end on token boundaries.
+        let first = lexed.token_at(ptr.range.start())?;
+        let last = lexed.token_before(ptr.range.end())?;
+        if lexed.range(first).start() != ptr.range.start()
+            || lexed.range(last).end() != ptr.range.end()
+        {
+            return None;
+        }
+        let end = last + 1;
+        // `end_token` is non-decreasing in postorder, so the nodes ending
+        // at `end` are contiguous; among them the kind and the first token
+        // pick the node.
+        let from = self.nodes.partition_point(|node| node.end_token < end);
+        self.nodes[from..]
+            .iter()
+            .take_while(|node| node.end_token == end)
+            .position(|node| node.first_token == first && node.kind == ptr.kind)
+            .map(|offset| node_idx(from + offset))
+    }
+}
+
+/// A node's identity independent of the tree that holds it: its kind and
+/// byte range, which name at most one node in any parsed tree. Semantic phases keep pointers, not indices, so their
+/// results can point back into a tree that has since been reparsed;
+/// [`SyntaxTree::resolve`] finds the node again while it stands at the
+/// same bytes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct NodePtr {
+    pub kind: NodeKind,
+    pub range: TextRange,
 }
 
 /// A parsed file: its tree and the evidence observed while building it.
@@ -557,12 +615,33 @@ impl<'a> Marker<'_, 'a> {
         // opened; any other node has an error exactly when recovery
         // happened while it was open, its descendants included.
         let has_error = kind == NodeKind::Error || builder.recoveries > self.recoveries;
+        let first_token = builder.input.token(self.start);
+        let end_token = builder.input.token(builder.position - 1) + 1;
+        // A node wrapping one of its own kind over exactly its tokens would
+        // be indistinguishable from it by kind and range, which is how a
+        // [`NodePtr`] names a node. The parser never builds one, and debug
+        // builds — every test run, the property tests over garbage input
+        // included — reject the shape; in release the two compares per node
+        // measured two percent of the parser, so it trusts the parser. Such
+        // a chain is sole children all the way down, so it hangs off the
+        // last node, and only a last child over the same tokens needs the
+        // walk.
+        if cfg!(debug_assertions)
+            && let Some(child) = builder
+                .nodes
+                .get(self.first.to_usize()..)
+                .and_then(<[Node]>::last)
+            && child.first_token == first_token
+            && child.end_token == end_token
+        {
+            reject_same_kind_chain(&builder.nodes[self.first.to_usize()..], kind);
+        }
         builder.nodes.push(Node {
             kind,
             has_error,
             extent: to_u32(builder.nodes.len() - self.first.to_usize() + 1),
-            first_token: builder.input.token(self.start),
-            end_token: builder.input.token(builder.position - 1) + 1,
+            first_token,
+            end_token,
         });
         self.completed = true;
         CompletedMarker {
@@ -933,6 +1012,32 @@ pub struct CompletedMarker {
     recoveries: u32,
     /// Identity of the node it completed inside.
     parent: u32,
+}
+
+/// Panic if the chain of nodes covering exactly the same tokens as the
+/// node being completed — `subtree`'s last node and its sole children down
+/// from it — contains `kind`. Out of the completion path: a last child
+/// over the same tokens is rare, and the walk is shorter than it.
+#[cold]
+#[inline(never)]
+fn reject_same_kind_chain(subtree: &[Node], kind: NodeKind) {
+    let last = subtree.len() - 1;
+    let (first_token, end_token) = (subtree[last].first_token, subtree[last].end_token);
+    let mut index = last;
+    loop {
+        let child = subtree[index];
+        if child.first_token != first_token || child.end_token != end_token {
+            break;
+        }
+        assert!(
+            child.kind != kind,
+            "a node must not wrap a node of its own kind over the same tokens"
+        );
+        if child.extent == 1 || index == 0 {
+            break;
+        }
+        index -= 1;
+    }
 }
 
 /// Node counts are stored as `u32`; nothing bounds them by the source
