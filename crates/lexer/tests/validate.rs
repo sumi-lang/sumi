@@ -6,7 +6,7 @@ use sumi_lexer::{LexErrorKind, canonicalize_number_literal, lex};
 fn check_errors(source: &str, expected: &[(u32, LexErrorKind)]) {
     let lexed = lex(source).expect("test sources fit in u32");
     for error in lexed.errors() {
-        let token = lexed.range(error.token as usize);
+        let token = lexed.range(error.token);
         assert!(token.start() <= error.range.start());
         assert!(error.range.end() <= token.end());
         assert!(source.is_char_boundary(error.range.start().to_usize()));
@@ -15,7 +15,7 @@ fn check_errors(source: &str, expected: &[(u32, LexErrorKind)]) {
     let actual: Vec<(u32, LexErrorKind)> = lexed
         .errors()
         .iter()
-        .map(|error| (error.token, error.kind))
+        .map(|error| (error.token.to_u32(), error.kind))
         .collect();
     assert_eq!(actual, expected, "for source {source:?}");
 }
@@ -28,7 +28,7 @@ fn check_error_ranges(source: &str, expected: &[(u32, u32, u32, LexErrorKind)]) 
         .iter()
         .map(|error| {
             (
-                error.token,
+                error.token.to_u32(),
                 error.range.start().to_u32(),
                 error.range.end().to_u32(),
                 error.kind,

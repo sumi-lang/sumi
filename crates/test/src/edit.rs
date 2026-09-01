@@ -2,7 +2,7 @@
 //! mapping that carries unaffected spans into the edited source.
 
 use proptest::prelude::*;
-use sumi_syntax::{ParserInput, SyntaxKind, is_bracket};
+use sumi_syntax::{ParserInput, SigIdx, SyntaxKind, is_bracket};
 
 use crate::front::front;
 use crate::program::program;
@@ -35,10 +35,16 @@ pub fn edit() -> impl Strategy<Value = Edit> {
     ]
 }
 
+/// The significant index of position `index` in a program's spans.
+fn sig(index: usize) -> SigIdx {
+    SigIdx::new(u32::try_from(index).expect("significant positions fit in u32"))
+}
+
 /// Whether `edit` inserts, removes, duplicates, or moves a bracket.
 pub fn changes_delimiter(input: &ParserInput, index: usize, edit: Edit) -> bool {
+    let bracket_at = |index: usize| input.get(sig(index)).is_some_and(is_bracket);
     match edit {
-        Edit::Delete | Edit::Duplicate => input.get(index).is_some_and(is_bracket),
+        Edit::Delete | Edit::Duplicate => bracket_at(index),
         Edit::Insert(inserted) => SyntaxKind::ALL
             .iter()
             .any(|&kind| is_bracket(kind) && kind.text() == Some(inserted)),
@@ -48,7 +54,7 @@ pub fn changes_delimiter(input: &ParserInput, index: usize, edit: Edit) -> bool 
             } else {
                 index - 1
             };
-            input.get(left).is_some_and(is_bracket) || input.get(left + 1).is_some_and(is_bracket)
+            bracket_at(left) || bracket_at(left + 1)
         }
     }
 }

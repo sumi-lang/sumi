@@ -41,10 +41,11 @@
 //! how a Pratt parser wraps an already-parsed left operand into a binary
 //! expression.
 
-use sumi_lexer::LexedFile;
+use sumi_lexer::{LexedFile, RawIdx};
 use sumi_text::{TextRange, TextSize};
 
 use crate::generated::{NodeKind, SyntaxKind};
+use crate::index::{NodeIdx, SigIdx};
 use crate::input::{ParserInput, Slot};
 use crate::parser::{
     ParseAnchor, ParseEvidence, ParseExpected, ParseRecovery, ParseRecoveryKind, ParseViolation,
@@ -55,11 +56,11 @@ use crate::parser::{
 /// for the boundary one past the last token: how the raw token indices in
 /// trees and parse evidence project into the file. `lexed` must be the file
 /// the indices came from.
-pub fn raw_boundary(lexed: &LexedFile, raw: u32) -> TextSize {
-    if raw as usize == lexed.len() {
+pub fn raw_boundary(lexed: &LexedFile, raw: RawIdx) -> TextSize {
+    if raw == lexed.end() {
         lexed.source_len()
     } else {
-        lexed.range(raw as usize).start()
+        lexed.range(raw).start()
     }
 }
 
@@ -69,8 +70,8 @@ pub fn raw_boundary(lexed: &LexedFile, raw: u32) -> TextSize {
 struct Node {
     kind: NodeKind,
     extent: u32,
-    first_token: u32,
-    end_token: u32,
+    first_token: RawIdx,
+    end_token: RawIdx,
 }
 
 /// A parsed file: its nodes in postorder.
@@ -87,33 +88,38 @@ impl SyntaxTree {
     }
 
     /// The root, which completes last: the last node.
-    pub fn root(&self) -> usize {
-        self.nodes.len() - 1
+    pub fn root(&self) -> NodeIdx {
+        node_idx(self.nodes.len() - 1)
     }
 
-    pub fn kind(&self, index: usize) -> NodeKind {
-        self.nodes[index].kind
+    /// Every node's index, in postorder.
+    pub fn nodes(&self) -> impl DoubleEndedIterator<Item = NodeIdx> + ExactSizeIterator {
+        NodeIdx::new(0).until(node_idx(self.nodes.len()))
+    }
+
+    pub fn kind(&self, index: NodeIdx) -> NodeKind {
+        self.nodes[index.to_usize()].kind
     }
 
     /// The raw index of the first token node `index` covers.
-    pub fn first_token(&self, index: usize) -> u32 {
-        self.nodes[index].first_token
+    pub fn first_token(&self, index: NodeIdx) -> RawIdx {
+        self.nodes[index.to_usize()].first_token
     }
 
     /// One past the raw index of the last token node `index` covers. Only
     /// the root can be empty, over an empty file.
-    pub fn end_token(&self, index: usize) -> u32 {
-        self.nodes[index].end_token
+    pub fn end_token(&self, index: NodeIdx) -> RawIdx {
+        self.nodes[index.to_usize()].end_token
     }
 
     /// The byte range node `index` covers: from the start of its first
     /// token to the end of its last one. `lexed` must be the file this tree
     /// was parsed from. Only the root can be empty, over an empty file.
-    pub fn byte_range(&self, index: usize, lexed: &LexedFile) -> TextRange {
-        let node = &self.nodes[index];
+    pub fn byte_range(&self, index: NodeIdx, lexed: &LexedFile) -> TextRange {
+        let node = &self.nodes[index.to_usize()];
         let start = raw_boundary(lexed, node.first_token);
         let end = if node.end_token > node.first_token {
-            lexed.range(node.end_token as usize - 1).end()
+            lexed.range(node.end_token - 1).end()
         } else {
             start
         };
@@ -123,10 +129,10 @@ impl SyntaxTree {
     /// The direct children of node `index`, last child first — the order a
     /// stack walk wants: popping a node and pushing its children visits the
     /// tree in preorder. Collect and reverse for source order.
-    pub fn children(&self, index: usize) -> impl Iterator<Item = usize> + '_ {
+    pub fn children(&self, index: NodeIdx) -> impl Iterator<Item = NodeIdx> + '_ {
         // Nodes of the subtree still unvisited, all below `child`.
-        let mut remaining = self.nodes[index].extent as usize - 1;
-        let mut child = index;
+        let mut remaining = self.nodes[index.to_usize()].extent as usize - 1;
+        let mut child = index.to_usize();
         std::iter::from_fn(move || {
             (remaining > 0).then(|| {
                 child -= 1;
@@ -134,7 +140,7 @@ impl SyntaxTree {
                 remaining -= size;
                 let current = child;
                 child -= size - 1;
-                current
+                node_idx(current)
             })
         })
     }
@@ -142,7 +148,7 @@ impl SyntaxTree {
     /// The innermost node covering raw token `token`, which must lie in the
     /// file. A token attached to no node — trivia between two children —
     /// resolves to the nearest node whose range spans it, at worst the root.
-    pub fn covering(&self, token: u32) -> usize {
+    pub fn covering(&self, token: RawIdx) -> NodeIdx {
         self.covering_chain(token)
             .next()
             .expect("the root covers every token in the file")
@@ -155,9 +161,9 @@ impl SyntaxTree {
     /// file. The chain sifts every completion from the covering node to
     /// the root, so a consumer resolving many positions builds
     /// [`parents`](Self::parents) once instead.
-    pub fn covering_chain(&self, token: u32) -> impl Iterator<Item = usize> + '_ {
+    pub fn covering_chain(&self, token: RawIdx) -> impl Iterator<Item = NodeIdx> + '_ {
         assert!(
-            token < self.nodes[self.root()].end_token,
+            token < self.nodes[self.root().to_usize()].end_token,
             "token must be within the file"
         );
         // TODO: descending from the root instead — hopping over later
@@ -170,26 +176,29 @@ impl SyntaxTree {
         // rest, a node either covers `token` or lies wholly past it, and
         // covering nodes — an ancestor chain — complete innermost first.
         let from = self.nodes.partition_point(|node| node.end_token <= token);
-        (from..self.nodes.len()).filter(move |&index| self.nodes[index].first_token <= token)
+        (from..self.nodes.len())
+            .filter(move |&index| self.nodes[index].first_token <= token)
+            .map(node_idx)
     }
 
-    /// The parent of every node, one `u32` per node from one reverse pass;
+    /// The parent of every node, one entry per node from one reverse pass;
     /// the root names itself. The tree stores no parent links — the
     /// covering chain answers parents for positional queries — so a
     /// consumer needing random-access parents builds this table on demand.
-    pub fn parents(&self) -> Vec<u32> {
-        let mut parents = vec![0u32; self.nodes.len()];
+    pub fn parents(&self) -> Vec<NodeIdx> {
+        let mut parents = vec![NodeIdx::new(0); self.nodes.len()];
         // The open ancestors, innermost last: node index and where its
         // subtree begins. Reverse postorder reaches a parent before its
         // children, and leaves a subtree exactly when the index drops
         // below its start.
-        let mut stack: Vec<(u32, usize)> = Vec::new();
+        let mut stack: Vec<(NodeIdx, usize)> = Vec::new();
         for index in (0..self.nodes.len()).rev() {
             while stack.last().is_some_and(|&(_, start)| start > index) {
                 stack.pop();
             }
-            parents[index] = stack.last().map_or(index as u32, |&(node, _)| node);
-            stack.push((index as u32, index + 1 - self.nodes[index].extent as usize));
+            let node = node_idx(index);
+            parents[index] = stack.last().map_or(node, |&(parent, _)| parent);
+            stack.push((node, index + 1 - self.nodes[index].extent as usize));
         }
         parents
     }
@@ -210,7 +219,7 @@ impl Parse {
         let mut builder = Builder {
             input,
             nodes: Vec::new(),
-            position: 0,
+            position: SigIdx::new(0),
             slots: input.slots(),
             opened: 1,
             recoveries: 0,
@@ -219,8 +228,8 @@ impl Parse {
         };
         body(&mut Marker {
             builder: &mut builder,
-            first: 0,
-            start: 0,
+            first: NodeIdx::new(0),
+            start: SigIdx::new(0),
             id: 0,
             parent: 0,
             depth: 0,
@@ -232,7 +241,7 @@ impl Parse {
         });
         assert_eq!(
             builder.position,
-            input.len(),
+            input.end(),
             "every significant token must be consumed"
         );
         // The root closes last, over every token: edge trivia included,
@@ -241,7 +250,7 @@ impl Parse {
         builder.nodes.push(Node {
             kind: NodeKind::SourceFile,
             extent: to_u32(builder.nodes.len() + 1),
-            first_token: 0,
+            first_token: RawIdx::new(0),
             end_token: input.raw_len(),
         });
         Self {
@@ -273,7 +282,7 @@ struct Builder<'a> {
     /// Completed nodes, children before parents.
     nodes: Vec<Node>,
     /// The next significant token to attach.
-    position: usize,
+    position: SigIdx,
     /// The slots up to the input horizon: lookahead reads this prefix of
     /// the input's slots, so nothing can be seen or consumed at or past
     /// its end. `source_file` moves the horizon from one item start to the
@@ -297,20 +306,19 @@ impl Builder<'_> {
     }
 
     /// The nonempty raw range covered by significant positions `start..end`.
-    fn raw_range(&self, start: usize, end: usize) -> RawTokenRange {
-        assert!(start < end && end <= self.input.len());
+    fn raw_range(&self, start: SigIdx, end: SigIdx) -> RawTokenRange {
+        assert!(start < end && end <= self.input.end());
         RawTokenRange::new(self.input.token(start), self.input.token(end - 1) + 1)
     }
 
     /// The raw trivia interval at significant position `position`.
-    fn raw_gap(&self, position: usize) -> RawGap {
-        assert!(position <= self.input.len());
-        let trivia_start = if position == 0 {
-            0
-        } else {
-            self.input.token(position - 1) + 1
+    fn raw_gap(&self, position: SigIdx) -> RawGap {
+        assert!(position <= self.input.end());
+        let trivia_start = match position.checked_sub(1) {
+            Some(previous) => self.input.token(previous) + 1,
+            None => RawIdx::new(0),
         };
-        let trivia_end = if position == self.input.len() {
+        let trivia_end = if position == self.input.end() {
             self.input.raw_len()
         } else {
             self.input.token(position)
@@ -398,9 +406,9 @@ pub struct Marker<'p, 'a> {
     builder: &'p mut Builder<'a>,
     /// Where the node's subtree begins among the completed nodes: every
     /// node completed since is inside it.
-    first: usize,
+    first: NodeIdx,
     /// The significant position the node opens at.
-    start: usize,
+    start: SigIdx,
     /// Identity, so a completed node can name the node that contained it.
     id: u32,
     parent: u32,
@@ -408,17 +416,17 @@ pub struct Marker<'p, 'a> {
     depth: u32,
     /// The innermost parenthesized construct still open around this node,
     /// by the significant position of its `(`.
-    paren: Option<usize>,
+    paren: Option<SigIdx>,
     /// The closer the stream pairs with the innermost bracket construct
     /// entered around this node — this node itself, once it has entered
     /// one — by significant position; `None` when the stream closes none.
     /// A closed construct owns everything up to its closer, so a `fn`
     /// inside it is garbage there, not the next item.
-    closer: Option<usize>,
+    closer: Option<SigIdx>,
     /// The nearest known closer outside `closer`. Entering an unclosed
     /// construct retains this limit, so local recovery can take matched
     /// groups whole without crossing a parser-owned enclosing closer.
-    enclosing_closer: Option<usize>,
+    enclosing_closer: Option<SigIdx>,
     completed: bool,
 }
 
@@ -426,7 +434,7 @@ impl<'a> Marker<'_, 'a> {
     /// Attach the next significant token to this node.
     pub fn token(&mut self) {
         assert!(
-            self.builder.position < self.builder.slots.len(),
+            self.builder.position.to_usize() < self.builder.slots.len(),
             "token past the input horizon"
         );
         self.builder.position += 1;
@@ -471,7 +479,7 @@ impl<'a> Marker<'_, 'a> {
     /// Open a child at the next token; its kind is chosen when it
     /// completes.
     pub fn start(&mut self) -> Marker<'_, 'a> {
-        let first = self.builder.nodes.len();
+        let first = NodeIdx::new(to_u32(self.builder.nodes.len()));
         let start = self.builder.position;
         let id = self.builder.open();
         Marker {
@@ -520,7 +528,7 @@ impl<'a> Marker<'_, 'a> {
         );
         builder.nodes.push(Node {
             kind,
-            extent: to_u32(builder.nodes.len() - self.first + 1),
+            extent: to_u32(builder.nodes.len() - self.first.to_usize() + 1),
             first_token: builder.input.token(self.start),
             end_token: builder.input.token(builder.position - 1) + 1,
         });
@@ -548,8 +556,11 @@ impl<'a> Marker<'_, 'a> {
     /// The kind of the significant token `n` past the next one; `None` at
     /// or past the input horizon.
     pub(crate) fn nth(&self, n: usize) -> Option<SyntaxKind> {
-        let index = self.builder.position.checked_add(n)?;
-        self.builder.slots.get(index).map(|slot| slot.kind)
+        let index = self.builder.position.checked_add(n as u32)?;
+        self.builder
+            .slots
+            .get(index.to_usize())
+            .map(|slot| slot.kind)
     }
 
     pub(crate) fn at(&self, kind: SyntaxKind) -> bool {
@@ -570,14 +581,20 @@ impl<'a> Marker<'_, 'a> {
     /// Whether the significant token `n` past the next one is glued to the
     /// one after it.
     pub(crate) fn nth_joint(&self, n: usize) -> bool {
-        self.builder.position.checked_add(n).is_some_and(|index| {
-            index < self.builder.input.len() && self.builder.input.is_joint(index)
-        })
+        self.builder
+            .position
+            .checked_add(n as u32)
+            .is_some_and(|index| {
+                index.to_usize() < self.builder.input.len() && self.builder.input.is_joint(index)
+            })
     }
 
     /// Whether the next token is glued to the previous one.
     pub(crate) fn joint_before(&self) -> bool {
-        self.builder.position > 0 && self.builder.input.is_joint(self.builder.position - 1)
+        self.builder
+            .position
+            .checked_sub(1)
+            .is_some_and(|previous| self.builder.input.is_joint(previous))
     }
 
     /// Whether a line break precedes the next token.
@@ -588,9 +605,13 @@ impl<'a> Marker<'_, 'a> {
     /// Whether a line break precedes the significant token `n` past the
     /// next one.
     pub(crate) fn nth_newline(&self, n: usize) -> bool {
-        self.builder.position.checked_add(n).is_some_and(|index| {
-            index < self.builder.input.len() && self.builder.input.newline_before(index)
-        })
+        self.builder
+            .position
+            .checked_add(n as u32)
+            .is_some_and(|index| {
+                index.to_usize() < self.builder.input.len()
+                    && self.builder.input.newline_before(index)
+            })
     }
 
     /// Whether a statement boundary precedes the next token.
@@ -601,9 +622,13 @@ impl<'a> Marker<'_, 'a> {
     /// Whether a statement boundary precedes the significant token `n` past
     /// the next one.
     pub(crate) fn nth_boundary(&self, n: usize) -> bool {
-        self.builder.position.checked_add(n).is_some_and(|index| {
-            index < self.builder.input.len() && self.builder.input.boundary_before(index)
-        })
+        self.builder
+            .position
+            .checked_add(n as u32)
+            .is_some_and(|index| {
+                index.to_usize() < self.builder.input.len()
+                    && self.builder.input.boundary_before(index)
+            })
     }
 
     /// Whether the next token begins an expression. Whatever parses an
@@ -617,20 +642,22 @@ impl<'a> Marker<'_, 'a> {
     /// ahead or behind.
     pub(crate) fn partnered(&self) -> bool {
         let position = self.builder.position;
-        position < self.builder.input.len() && self.builder.input.partner(position).is_some()
+        position.to_usize() < self.builder.input.len()
+            && self.builder.input.partner(position).is_some()
     }
 
     /// The offset from the next token of the bracket matching the
     /// significant token `n` past it, when that bracket lies ahead.
     pub(crate) fn nth_partner(&self, n: usize) -> Option<usize> {
-        let index = self.builder.position.checked_add(n)?;
-        if index >= self.builder.input.len() {
+        let index = self.builder.position.checked_add(n as u32)?;
+        if index.to_usize() >= self.builder.input.len() {
             return None;
         }
-        self.builder
-            .input
-            .partner(index)?
-            .checked_sub(self.builder.position)
+        let partner = self.builder.input.partner(index)?;
+        partner
+            .to_u32()
+            .checked_sub(self.builder.position.to_u32())
+            .map(|offset| offset as usize)
     }
 
     /// Whether the next token is a `)` a parenthesized construct still open
@@ -698,7 +725,7 @@ impl<'a> Marker<'_, 'a> {
     /// The nearest closer ahead which this or an enclosing parser construct
     /// owns. A construct whose mechanical closer recovery already passed
     /// yields to the nearest enclosing one retained when it was entered.
-    fn next_parser_closer(&self) -> Option<usize> {
+    fn next_parser_closer(&self) -> Option<SigIdx> {
         [self.closer, self.enclosing_closer]
             .into_iter()
             .flatten()
@@ -713,20 +740,20 @@ impl<'a> Marker<'_, 'a> {
 
     /// Where item `index` starts, or the end of the input for the position
     /// one past the last item: the horizon for the segment before it.
-    pub(crate) fn item_limit(&self, index: usize) -> usize {
+    pub(crate) fn item_limit(&self, index: usize) -> SigIdx {
         self.builder
             .input
             .item_starts()
             .get(index)
-            .map_or(self.builder.input.len(), |&start| start as usize)
+            .map_or(self.builder.input.end(), |&start| start)
     }
 
     /// Move the input horizon. Only `source_file` does, once per item
     /// segment; the horizon never moves back past the cursor or beyond the
     /// input.
-    pub(crate) fn set_limit(&mut self, limit: usize) {
+    pub(crate) fn set_limit(&mut self, limit: SigIdx) {
         debug_assert!(self.builder.position <= limit);
-        self.builder.slots = &self.builder.input.slots()[..limit];
+        self.builder.slots = &self.builder.input.slots()[..limit.to_usize()];
     }
 
     /// Attach the next token if it is `kind` and no statement boundary
@@ -834,7 +861,7 @@ impl<'a> Marker<'_, 'a> {
             self.builder.position,
             self.builder
                 .position
-                .checked_add(width)
+                .checked_add(width as u32)
                 .expect("raw token range width does not overflow"),
         )
     }
@@ -866,17 +893,26 @@ impl Drop for Marker<'_, '_> {
 /// node that contained it. Plain data: holding one borrows nothing.
 pub struct CompletedMarker {
     /// Where the node's subtree begins among the completed nodes.
-    first: usize,
+    first: NodeIdx,
     /// The significant position the node opened at.
-    start: usize,
+    start: SigIdx,
     /// Identity of the node it completed inside.
     parent: u32,
 }
 
 /// Node counts are stored as `u32`; nothing bounds them by the source
 /// length the way token indices are, so the narrowing is checked.
+#[inline]
 fn to_u32(count: usize) -> u32 {
     u32::try_from(count).expect("count fits in u32")
+}
+
+/// A node index from a position in the node array. The array's length was
+/// checked to fit `u32` as it grew, so the narrowing cannot truncate, and
+/// the positional queries skip a check per node.
+#[inline]
+fn node_idx(index: usize) -> NodeIdx {
+    NodeIdx::new(index as u32)
 }
 
 #[cfg(test)]

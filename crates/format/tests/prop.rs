@@ -55,7 +55,9 @@ fn shape(tree: &SyntaxTree) -> Vec<(usize, NodeKind)> {
 /// The significant tokens, kinds and texts in order: the stream normalize
 /// may respace but never rewrite.
 fn significant<'src>(front: &Front, source: &'src str) -> Vec<(SyntaxKind, &'src str)> {
-    (0..front.lexed.len())
+    front
+        .lexed
+        .indices()
         .filter(|&index| !front.lexed.kind(index).is_trivia())
         .map(|index| (front.lexed.kind(index), front.lexed.text(source, index)))
         .collect()
@@ -64,7 +66,9 @@ fn significant<'src>(front: &Front, source: &'src str) -> Vec<(SyntaxKind, &'src
 /// The comments in order: an operator may hop one, but none is ever
 /// deleted or reordered against another.
 fn comments<'src>(front: &Front, source: &'src str) -> Vec<&'src str> {
-    (0..front.lexed.len())
+    front
+        .lexed
+        .indices()
         .filter(|&index| front.lexed.kind(index) == SyntaxKind::LineComment)
         .map(|index| front.lexed.text(source, index))
         .collect()

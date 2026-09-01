@@ -1,7 +1,7 @@
 use sumi_format::{Element, elements, layout_violation_edits, normalize, reprint};
 use sumi_lexer::{LexedFile, lex};
 use sumi_syntax::{
-    NodeKind, Parse, ParseEvidence, ParseViolationKind, ParserInput, SyntaxTree, parse,
+    NodeIdx, NodeKind, Parse, ParseEvidence, ParseViolationKind, ParserInput, SyntaxTree, parse,
 };
 
 struct Front {
@@ -119,10 +119,10 @@ fn check_roundtrip(source: &str) {
 }
 
 /// Render a node's elements: token texts and child node kinds, in order.
-fn render_elements(front: &Front, source: &str, node: usize) -> Vec<String> {
+fn render_elements(front: &Front, source: &str, node: NodeIdx) -> Vec<String> {
     elements(front.parse.tree(), node)
         .map(|element| match element {
-            Element::Token(token) => format!("{:?}", front.lexed.text(source, token as usize)),
+            Element::Token(token) => format!("{:?}", front.lexed.text(source, token)),
             Element::Node(child) => format!("{:?}", front.parse.tree().kind(child)),
         })
         .collect()
@@ -172,14 +172,15 @@ fn every_raw_token_attaches_to_exactly_one_node() {
     let front = front(source);
     let tree = front.parse.tree();
     let mut owner = vec![None; front.lexed.len()];
-    for node in 0..tree.len() {
+    for node in tree.nodes() {
         for element in elements(tree, node) {
             if let Element::Token(token) = element {
                 assert_eq!(
-                    owner[token as usize], None,
-                    "token {token} attached to two nodes"
+                    owner[token.to_usize()],
+                    None,
+                    "token {token:?} attached to two nodes"
                 );
-                owner[token as usize] = Some(node);
+                owner[token.to_usize()] = Some(node);
             }
         }
     }

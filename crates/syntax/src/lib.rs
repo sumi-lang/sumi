@@ -8,6 +8,7 @@
 //! `sumi.grammar` at the workspace root.
 
 mod generated;
+mod index;
 mod input;
 mod parser;
 mod tree;
@@ -17,9 +18,11 @@ pub use generated::{
     continues_statement, introduces_statement, is_bracket, is_closer, is_opener,
     is_prefix_operator, opener, starts_expression, starts_item, starts_statement,
 };
+pub use index::{NodeIdx, SigIdx};
 pub use input::ParserInput;
 pub use parser::{
     MAX_DEPTH, ParseAnchor, ParseEvidence, ParseExpected, ParseRecovery, ParseRecoveryKind,
     ParseViolation, ParseViolationKind, RawGap, RawTokenRange, parse,
 };
+pub use sumi_lexer::RawIdx;
 pub use tree::{CompletedMarker, Marker, Parse, SyntaxTree, raw_boundary};

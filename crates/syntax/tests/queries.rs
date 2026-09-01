@@ -2,14 +2,14 @@
 
 use sumi_lexer::lex;
 use sumi_syntax::NodeKind::{self, *};
-use sumi_syntax::{Marker, Parse, ParserInput, SyntaxTree, parse};
+use sumi_syntax::{Marker, NodeIdx, Parse, ParserInput, RawIdx, SyntaxTree, parse};
 
 /// Every node whose token range contains `token`, by scanning the whole
 /// tree: the exhaustive reference `covering_chain` must match. Covering
 /// nodes nest and children complete before parents, so ascending order is
 /// already innermost first.
-fn covering_reference(tree: &SyntaxTree, token: u32) -> Vec<usize> {
-    (0..tree.len())
+fn covering_reference(tree: &SyntaxTree, token: RawIdx) -> Vec<NodeIdx> {
+    tree.nodes()
         .filter(|&node| tree.first_token(node) <= token && token < tree.end_token(node))
         .collect()
 }
@@ -26,31 +26,31 @@ fn check_queries(source: &str) {
     let parents = tree.parents();
     assert_eq!(parents.len(), tree.len());
     assert_eq!(
-        parents[tree.root()] as usize,
+        parents[tree.root().to_usize()],
         tree.root(),
         "the root names itself"
     );
-    for node in 0..tree.len() {
+    for node in tree.nodes() {
         for child in tree.children(node) {
-            assert_eq!(parents[child] as usize, node, "parent of {child}");
+            assert_eq!(parents[child.to_usize()], node, "parent of {child:?}");
         }
     }
 
-    for token in 0..lexed.len() as u32 {
-        let chain: Vec<usize> = tree.covering_chain(token).collect();
+    for token in lexed.indices() {
+        let chain: Vec<NodeIdx> = tree.covering_chain(token).collect();
         assert_eq!(
             chain,
             covering_reference(tree, token),
-            "covering chain for token {token} in {source:?}"
+            "covering chain for token {token:?} in {source:?}"
         );
         assert_eq!(
             tree.covering(token),
             chain[0],
-            "covering node for token {token} in {source:?}"
+            "covering node for token {token:?} in {source:?}"
         );
         // The chain is the parent walk out of its own head.
         for pair in chain.windows(2) {
-            assert_eq!(parents[pair[0]] as usize, pair[1]);
+            assert_eq!(parents[pair[0].to_usize()], pair[1]);
         }
     }
 }
@@ -98,14 +98,18 @@ fn trivia_between_children_belongs_to_the_spanning_node() {
     let tree = built.tree();
     // Nodes complete in postorder: NameExpr 0, LiteralExpr 1, LetStmt 2,
     // the root 3. Tokens: `let` ` ` `x` ` ` `=` ` ` `1` ` ` `// c`.
-    let chain = |token| built.tree().covering_chain(token).collect::<Vec<_>>();
+    let chain = |token| {
+        tree.covering_chain(RawIdx::new(token))
+            .map(NodeIdx::to_usize)
+            .collect::<Vec<_>>()
+    };
     assert_eq!(chain(0), [2, 3]); // `let` — the statement
     assert_eq!(chain(1), [2, 3]); // the space inside it too
     assert_eq!(chain(2), [0, 2, 3]); // `x` — out from the name
     assert_eq!(chain(6), [1, 2, 3]); // `1` — out from the literal
     assert_eq!(chain(7), [3]); // trailing trivia — the root only
     assert_eq!(chain(8), [3]);
-    assert_eq!(tree.covering(6), 1);
+    assert_eq!(tree.covering(RawIdx::new(6)).to_usize(), 1);
 }
 
 #[test]
@@ -117,5 +121,5 @@ fn covering_a_token_past_the_file_panics() {
     let built = Parse::build(&input, |root| {
         node(root, NameExpr, |name| name.token());
     });
-    built.tree().covering(1);
+    built.tree().covering(RawIdx::new(1));
 }
