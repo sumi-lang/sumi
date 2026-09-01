@@ -79,17 +79,17 @@ fn precede_wraps_the_left_operand() {
     check(
         "a + b",
         |b| {
-            let lhs = leaf(b, NameExpr);
+            let lhs = leaf(b, NameRef);
             let mut m = b.precede(lhs);
             m.token(); // +
-            leaf(&mut m, NameExpr);
+            leaf(&mut m, NameRef);
             m.complete(BinaryExpr);
         },
         &[
             "SourceFile 0..5",
             "  BinaryExpr 0..5",
-            r#"    NameExpr 0..1 "a""#,
-            r#"    NameExpr 4..5 "b""#,
+            r#"    NameRef 0..1 "a""#,
+            r#"    NameRef 4..5 "b""#,
         ],
     );
 }
@@ -101,17 +101,17 @@ fn precede_wraps_everything_attached_since_completion() {
     check(
         "a + b",
         |b| {
-            let lhs = leaf(b, NameExpr);
+            let lhs = leaf(b, NameRef);
             b.token(); // +
             let mut m = b.precede(lhs);
-            leaf(&mut m, NameExpr);
+            leaf(&mut m, NameRef);
             m.complete(BinaryExpr);
         },
         &[
             "SourceFile 0..5",
             "  BinaryExpr 0..5",
-            r#"    NameExpr 0..1 "a""#,
-            r#"    NameExpr 4..5 "b""#,
+            r#"    NameRef 0..1 "a""#,
+            r#"    NameRef 4..5 "b""#,
         ],
     );
 }
@@ -121,14 +121,14 @@ fn precede_encloses_siblings_completed_since() {
     check(
         "a + b",
         |b| {
-            let lhs = leaf(b, NameExpr);
+            let lhs = leaf(b, NameRef);
             node(b, Error, |b| tokens(b, 2)); // + b
             b.precede(lhs).complete(BinaryExpr);
         },
         &[
             "SourceFile 0..5",
             "  BinaryExpr 0..5",
-            r#"    NameExpr 0..1 "a""#,
+            r#"    NameRef 0..1 "a""#,
             r#"    Error 2..5 "+ b""#,
         ],
     );
@@ -139,11 +139,11 @@ fn precede_chains_for_left_associativity() {
     check(
         "a + b + c",
         |b| {
-            let mut lhs = leaf(b, NameExpr);
+            let mut lhs = leaf(b, NameRef);
             for _ in 0..2 {
                 let mut m = b.precede(lhs);
                 m.token(); // +
-                leaf(&mut m, NameExpr);
+                leaf(&mut m, NameRef);
                 lhs = m.complete(BinaryExpr);
             }
         },
@@ -151,9 +151,9 @@ fn precede_chains_for_left_associativity() {
             "SourceFile 0..9",
             "  BinaryExpr 0..9",
             "    BinaryExpr 0..5",
-            r#"      NameExpr 0..1 "a""#,
-            r#"      NameExpr 4..5 "b""#,
-            r#"    NameExpr 8..9 "c""#,
+            r#"      NameRef 0..1 "a""#,
+            r#"      NameRef 4..5 "b""#,
+            r#"    NameRef 8..9 "c""#,
         ],
     );
 }
@@ -177,7 +177,7 @@ fn function_items_nest() {
                 leaf(b, TypeRef); // int
                 node(b, Block, |b| {
                     b.token(); // {
-                    leaf(b, NameExpr);
+                    leaf(b, NameRef);
                     b.token(); // }
                 });
             });
@@ -190,7 +190,7 @@ fn function_items_nest() {
             r#"        TypeRef 8..11 "int""#,
             r#"    TypeRef 16..19 "int""#,
             "    Block 20..25",
-            r#"      NameExpr 22..23 "a""#,
+            r#"      NameRef 22..23 "a""#,
         ],
     );
 }
@@ -208,19 +208,19 @@ fn statement_kinds_cover_their_tokens() {
                 });
             });
             node(b, AssignStmt, |b| {
-                leaf(b, NameExpr);
+                leaf(b, NameRef);
                 b.token(); // =
                 leaf(b, LiteralExpr);
             });
             node(b, DiscardStmt, |b| {
                 tokens(b, 2); // _ =
-                let callee = leaf(b, NameExpr);
+                let callee = leaf(b, NameRef);
                 let mut m = b.precede(callee);
                 node(&mut m, ArgList, |b| {
                     b.token(); // (
                     node(b, ParenExpr, |b| {
                         b.token(); // (
-                        leaf(b, NameExpr);
+                        leaf(b, NameRef);
                         b.token(); // )
                     });
                     b.token(); // )
@@ -229,11 +229,11 @@ fn statement_kinds_cover_their_tokens() {
             });
             // An expression in statement position is a bare child: with no
             // `;`, statement or tail is a matter of position.
-            let callee = leaf(b, NameExpr);
+            let callee = leaf(b, NameRef);
             let mut m = b.precede(callee);
             node(&mut m, ArgList, |b| {
                 b.token(); // (
-                leaf(b, NameExpr);
+                leaf(b, NameRef);
                 b.token(); // )
             });
             m.complete(CallExpr);
@@ -245,18 +245,18 @@ fn statement_kinds_cover_their_tokens() {
             "    PrefixExpr 8..10",
             r#"      LiteralExpr 9..10 "1""#,
             "  AssignStmt 11..16",
-            r#"    NameExpr 11..12 "x""#,
+            r#"    NameRef 11..12 "x""#,
             r#"    LiteralExpr 15..16 "2""#,
             "  DiscardStmt 17..27",
             "    CallExpr 21..27",
-            r#"      NameExpr 21..22 "f""#,
+            r#"      NameRef 21..22 "f""#,
             "      ArgList 22..27",
             "        ParenExpr 23..26",
-            r#"          NameExpr 24..25 "x""#,
+            r#"          NameRef 24..25 "x""#,
             "  CallExpr 28..32",
-            r#"    NameExpr 28..29 "g""#,
+            r#"    NameRef 28..29 "g""#,
             "    ArgList 29..32",
-            r#"      NameExpr 30..31 "x""#,
+            r#"      NameRef 30..31 "x""#,
             r#"  ReturnStmt 33..39 "return""#,
         ],
     );
@@ -269,16 +269,16 @@ fn if_expressions_and_error_nodes() {
         |b| {
             node(b, IfExpr, |b| {
                 b.token(); // if
-                leaf(b, NameExpr);
+                leaf(b, NameRef);
                 node(b, Block, |b| {
                     b.token(); // {
-                    leaf(b, NameExpr);
+                    leaf(b, NameRef);
                     b.token(); // }
                 });
                 b.token(); // else
                 node(b, Block, |b| {
                     b.token(); // {
-                    leaf(b, NameExpr);
+                    leaf(b, NameRef);
                     b.token(); // }
                 });
             });
@@ -287,11 +287,11 @@ fn if_expressions_and_error_nodes() {
         &[
             "SourceFile 0..25",
             "  IfExpr 0..21",
-            r#"    NameExpr 3..4 "c""#,
+            r#"    NameRef 3..4 "c""#,
             "    Block 5..10",
-            r#"      NameExpr 7..8 "a""#,
+            r#"      NameRef 7..8 "a""#,
             "    Block 16..21",
-            r#"      NameExpr 18..19 "b""#,
+            r#"      NameRef 18..19 "b""#,
             r#"  Error 22..25 "€""#,
         ],
     );
@@ -307,7 +307,7 @@ fn covering_finds_the_innermost_node() {
             tokens(b, 3); // let x =
             leaf(b, LiteralExpr);
         });
-        leaf(b, NameExpr);
+        leaf(b, NameRef);
     });
     let tree = parse.tree();
     assert_eq!(tree.kind(tree.root()), SourceFile);
@@ -317,7 +317,7 @@ fn covering_finds_the_innermost_node() {
     assert_eq!(kind_at(1), LetStmt); // trivia inside the statement
     assert_eq!(kind_at(6), LiteralExpr); // `1`, under the statement
     assert_eq!(kind_at(7), SourceFile); // the newline between children
-    assert_eq!(kind_at(8), NameExpr); // `y`
+    assert_eq!(kind_at(8), NameRef); // `y`
 }
 
 // What the types cannot rule out is checked at run time. (What they can —
@@ -328,7 +328,7 @@ fn covering_finds_the_innermost_node() {
 #[should_panic(expected = "at least one token")]
 fn an_empty_node_panics_at_completion() {
     dump("x", |b| {
-        leaf(b, NameExpr);
+        leaf(b, NameRef);
         node(b, Error, |_| {});
     });
 }
@@ -338,7 +338,7 @@ fn an_empty_node_panics_at_completion() {
 fn preceding_after_the_containing_node_closed_panics() {
     dump("x y", |b| {
         let mut stmt = b.start();
-        let name = leaf(&mut stmt, NameExpr);
+        let name = leaf(&mut stmt, NameRef);
         stmt.complete(LetStmt);
         let _wrapper = b.precede(name);
     });
@@ -348,7 +348,7 @@ fn preceding_after_the_containing_node_closed_panics() {
 #[should_panic(expected = "preceded only from the node that contained it")]
 fn preceding_from_a_sibling_panics() {
     dump("a + b", |b| {
-        let lhs = leaf(b, NameExpr);
+        let lhs = leaf(b, NameRef);
         let mut rest = b.start();
         tokens(&mut rest, 2); // + b
         let _wrapper = rest.precede(lhs);

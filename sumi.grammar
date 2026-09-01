@@ -142,9 +142,13 @@ binary Rem "%" 5
 
 SourceFile = FnItem*
 
-FnItem = 'fn' Ident ParamList ('->' TypeRef)? Block
+FnItem = 'fn' Name ParamList ('->' TypeRef)? Block
 ParamList = '(' (Param (',' Param)* ','?)? ')'
-Param = Ident ':' TypeRef
+Param = Name ':' TypeRef
+
+/// A declaring occurrence of a name: what an item, a parameter, or a
+/// binding introduces. A use is a NameRef.
+Name = Ident
 
 /// A type reference: a name, until types grow more shapes.
 TypeRef = Ident
@@ -158,13 +162,13 @@ Stmt =
 | ReturnStmt
 | Expr
 
-LetStmt = 'let' 'mut'? Ident (':' TypeRef)? '=' Expr
+LetStmt = 'let' 'mut'? Name (':' TypeRef)? '=' Expr
 AssignStmt = Expr '=' Expr
 DiscardStmt = '_' '=' Expr
 ReturnStmt = 'return' Expr?
 
 Expr =
-  NameExpr
+  NameRef
 | LiteralExpr
 | PrefixExpr
 | BinaryExpr
@@ -173,7 +177,8 @@ Expr =
 | IfExpr
 | Block
 
-NameExpr = Ident
+/// A use of a name: a reference to what a Name declared.
+NameRef = Ident
 LiteralExpr =
   IntLiteral
 | FloatLiteral

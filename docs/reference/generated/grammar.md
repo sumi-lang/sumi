@@ -156,19 +156,23 @@ node covering tokens the parser could not parse may appear anywhere.
 
 ```
 SourceFile = FnItem*
-FnItem = 'fn' Ident ParamList ('->' TypeRef)? Block
+FnItem = 'fn' Name ParamList ('->' TypeRef)? Block
 ParamList = '(' (Param (',' Param)* ','?)? ')'
-Param = Ident ':' TypeRef
+Param = Name ':' TypeRef
+// A declaring occurrence of a name: what an item, a parameter, or a
+// binding introduces. A use is a NameRef.
+Name = Ident
 // A type reference: a name, until types grow more shapes.
 TypeRef = Ident
 Block = '{' Stmt* '}'
 Stmt = LetStmt | AssignStmt | DiscardStmt | ReturnStmt | Expr
-LetStmt = 'let' 'mut'? Ident (':' TypeRef)? '=' Expr
+LetStmt = 'let' 'mut'? Name (':' TypeRef)? '=' Expr
 AssignStmt = Expr '=' Expr
 DiscardStmt = '_' '=' Expr
 ReturnStmt = 'return' Expr?
-Expr = NameExpr | LiteralExpr | PrefixExpr | BinaryExpr | ParenExpr | CallExpr | IfExpr | Block
-NameExpr = Ident
+Expr = NameRef | LiteralExpr | PrefixExpr | BinaryExpr | ParenExpr | CallExpr | IfExpr | Block
+// A use of a name: a reference to what a Name declared.
+NameRef = Ident
 LiteralExpr = IntLiteral | FloatLiteral | StringLiteral | RawStringLiteral | CharLiteral | 'true' | 'false'
 PrefixExpr = PrefixOperator Expr
 BinaryExpr = Expr BinaryOperator Expr

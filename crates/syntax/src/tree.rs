@@ -385,7 +385,7 @@ pub(crate) struct RecoveryHandle(usize);
 ///     let mut inner = outer.start();
 ///     inner.token();
 ///     outer.complete(NodeKind::LetStmt); // `outer` is borrowed by `inner`
-///     inner.complete(NodeKind::NameExpr);
+///     inner.complete(NodeKind::NameRef);
 /// });
 /// ```
 ///

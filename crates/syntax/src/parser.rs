@@ -337,14 +337,16 @@ fn signature_garbage(
     });
 }
 
-/// A declared name. `_` is taken with recovery evidence: it reads as a name
-/// but binds nothing.
+/// A declared name, as a `Name` node. `_` is taken with recovery evidence
+/// inside the node: it reads as a name but binds nothing.
 fn name(p: &mut Marker<'_, '_>) {
     if p.at(T::Ident) {
-        p.token();
+        leaf(p, N::Name);
     } else if p.at(T::Underscore) {
-        p.recover_tokens(ParseRecoveryKind::Expected(ParseExpected::Name), 1);
-        p.token();
+        let mut m = p.start();
+        m.recover_tokens(ParseRecoveryKind::Expected(ParseExpected::Name), 1);
+        m.token();
+        m.complete(N::Name);
     } else {
         p.missing(ParseExpected::Name);
     }
@@ -807,7 +809,7 @@ fn prefix_or_atom(p: &mut Marker<'_, '_>, follow: ExprFollow) -> Option<Complete
             operand_before(&mut m, PREFIX_BP, follow);
             m.complete(N::PrefixExpr)
         }
-        T::Ident => leaf(p, N::NameExpr),
+        T::Ident => leaf(p, N::NameRef),
         T::IntLiteral
         | T::FloatLiteral
         | T::StringLiteral

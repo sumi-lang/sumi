@@ -144,7 +144,7 @@ fn elements_interleave_attached_tokens_and_children() {
     let item = tree.children(tree.root()).next().expect("one item");
     assert_eq!(
         render_elements(&front, source, item),
-        ["\"fn\"", "\" \"", "\"f\"", "ParamList", "\" \"", "Block"]
+        ["\"fn\"", "\" \"", "Name", "ParamList", "\" \"", "Block"]
     );
 }
 

@@ -90,13 +90,13 @@ fn trivia_between_children_belongs_to_the_spanning_node() {
     let built = Parse::build(&input, |root| {
         node(root, LetStmt, |stmt| {
             stmt.token(); // let
-            node(stmt, NameExpr, |name| name.token());
+            node(stmt, NameRef, |name| name.token());
             stmt.token(); // =
             node(stmt, LiteralExpr, |literal| literal.token());
         });
     });
     let tree = built.tree();
-    // Nodes complete in postorder: NameExpr 0, LiteralExpr 1, LetStmt 2,
+    // Nodes complete in postorder: NameRef 0, LiteralExpr 1, LetStmt 2,
     // the root 3. Tokens: `let` ` ` `x` ` ` `=` ` ` `1` ` ` `// c`.
     let chain = |token| {
         tree.covering_chain(RawIdx::new(token))
@@ -119,7 +119,7 @@ fn covering_a_token_past_the_file_panics() {
     let lexed = lex(source).expect("test sources fit in u32");
     let input = ParserInput::new(&lexed);
     let built = Parse::build(&input, |root| {
-        node(root, NameExpr, |name| name.token());
+        node(root, NameRef, |name| name.token());
     });
     built.tree().covering(RawIdx::new(1));
 }
