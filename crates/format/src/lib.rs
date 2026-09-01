@@ -10,9 +10,10 @@
 
 use sumi_lexer::{LexedFile, lex};
 use sumi_syntax::{
-    Parse, ParseEvidence, ParseViolationKind, ParserInput, SyntaxKind, SyntaxTree, parse,
-    raw_boundary, starts_expression,
+    Parse, ParseEvidence, ParseViolation, ParseViolationKind, ParserInput, SyntaxKind, SyntaxTree,
+    parse, raw_boundary, starts_expression,
 };
+use sumi_text::{TextEdit, TextRange, TextSize};
 
 /// One element of a node: a raw token attached directly to it, or a child
 /// subtree. Trivia between two children belongs to the parent and edge
@@ -108,60 +109,8 @@ pub fn normalize(source: &str, lexed: &LexedFile, parsed: &Parse) -> String {
         let ParseEvidence::Violation(violation) = evidence else {
             continue;
         };
-        let (start, end) = (violation.range.start(), violation.range.end());
-        match violation.kind {
-            // Move the `{` to its owner's line; the gap's trivia — comments
-            // included — follows it instead.
-            ParseViolationKind::BlockOnNewLine => {
-                let owner =
-                    prev_significant(lexed, start).expect("a misplaced block follows its owner");
-                edits.push(Edit::insert(token_end(lexed, owner), " {"));
-                edits.push(Edit::delete(
-                    token_start(lexed, start),
-                    token_end(lexed, start),
-                ));
-            }
-            // Space the operator on each side another token is glued to.
-            ParseViolationKind::UnspacedBinaryOperator => {
-                if start > 0 && significant(lexed, start - 1) {
-                    edits.push(Edit::insert(token_start(lexed, start), " "));
-                }
-                if (end as usize) < lexed.len() && significant(lexed, end) {
-                    edits.push(Edit::insert(token_start(lexed, end), " "));
-                }
-            }
-            // Lead the continuation line with the operator instead. The
-            // parser records the violation before parsing the operand, so
-            // the continuation may turn out not to hold one; only an
-            // operator moved in front of its own operand leaves the parse
-            // unchanged, and anything else stays as written.
-            ParseViolationKind::TrailingOperator => {
-                let operand = next_significant(lexed, end)
-                    .filter(|&raw| starts_expression(lexed.kind(raw as usize)));
-                if let Some(operand) = operand {
-                    let (op_start, op_end) = (token_start(lexed, start), token_end(lexed, end - 1));
-                    edits.push(Edit::delete(op_start, op_end));
-                    edits.push(Edit::insert(
-                        token_start(lexed, operand),
-                        format!("{} ", &source[op_start..op_end]),
-                    ));
-                }
-            }
-            // Glue the operator to its operand — unless a comment sits in
-            // the gap, which no layout edit may delete.
-            ParseViolationKind::SpacedPrefixOperator => {
-                let operand = next_significant(lexed, start + 1)
-                    .expect("a spaced prefix operator has an operand");
-                if (start + 1..operand)
-                    .all(|raw| lexed.kind(raw as usize) != SyntaxKind::LineComment)
-                {
-                    edits.push(Edit::delete(
-                        token_end(lexed, start),
-                        token_start(lexed, operand),
-                    ));
-                }
-            }
-            ParseViolationKind::ChainedComparison => {}
+        if let Some(violation_edits) = layout_violation_edits(source, lexed, *violation) {
+            edits.extend(violation_edits);
         }
     }
     if edits.is_empty() {
@@ -173,6 +122,68 @@ pub fn normalize(source: &str, lexed: &LexedFile, parsed: &Parse) -> String {
     } else {
         source.to_owned()
     }
+}
+
+/// Build the mechanically valid candidate edits for one parser layout
+/// violation. The edits are nonempty, nonoverlapping, and source ordered.
+/// Movement edits still require a caller to establish safety around parser
+/// recovery; [`normalize`] does so with its whole-result reparse gate.
+pub fn layout_violation_edits(
+    source: &str,
+    lexed: &LexedFile,
+    violation: ParseViolation,
+) -> Option<Box<[TextEdit]>> {
+    let (start, end) = (violation.range.start(), violation.range.end());
+    let mut edits = Vec::new();
+    match violation.kind {
+        // Move the `{` to its owner's line; the gap's trivia — comments
+        // included — follows it instead.
+        ParseViolationKind::BlockOnNewLine => {
+            let owner =
+                prev_significant(lexed, start).expect("a misplaced block follows its owner");
+            edits.push(insert(token_end(lexed, owner), " {"));
+            edits.push(delete(token_start(lexed, start), token_end(lexed, start)));
+        }
+        // Space the operator on each side another token is glued to.
+        ParseViolationKind::UnspacedBinaryOperator => {
+            if start > 0 && significant(lexed, start - 1) {
+                edits.push(insert(token_start(lexed, start), " "));
+            }
+            if (end as usize) < lexed.len() && significant(lexed, end) {
+                edits.push(insert(token_start(lexed, end), " "));
+            }
+        }
+        // Lead the continuation line with the operator instead. An operator
+        // without a following operand has no mechanically valid move.
+        ParseViolationKind::TrailingOperator => {
+            let operand = next_significant(lexed, end)
+                .filter(|&raw| starts_expression(lexed.kind(raw as usize)))?;
+            let (op_start, op_end) = (token_start(lexed, start), token_end(lexed, end - 1));
+            edits.push(delete(op_start, op_end));
+            edits.push(insert(
+                token_start(lexed, operand),
+                format!("{} ", &source[op_start..op_end]),
+            ));
+        }
+        // Glue the operator to its operand only when the gap is clean trivia:
+        // comments and lexer errors are evidence no fix may erase.
+        ParseViolationKind::SpacedPrefixOperator => {
+            let operand = next_significant(lexed, start + 1)
+                .expect("a spaced prefix operator has an operand");
+            if !(start + 1..operand).all(|raw| {
+                matches!(
+                    lexed.kind(raw as usize),
+                    SyntaxKind::Whitespace | SyntaxKind::Newline
+                )
+            }) || lex_error_in(lexed, start + 1, operand)
+            {
+                return None;
+            }
+            edits.push(delete(token_end(lexed, start), token_start(lexed, operand)));
+        }
+        ParseViolationKind::ChainedComparison => return None,
+    }
+    (!edits.is_empty()).then(|| edits.into_boxed_slice())
 }
 
 /// Whether `candidate` parses to the same tree shape as `tree`: node for
@@ -189,42 +200,35 @@ fn reparses_alike(candidate: &str, tree: &SyntaxTree) -> bool {
         && after.parents() == tree.parents()
 }
 
-/// One replacement of a byte range with new text.
-struct Edit {
-    start: usize,
-    end: usize,
-    text: String,
+fn insert(at: usize, text: impl Into<Box<str>>) -> TextEdit {
+    let at = TextSize::new(u32::try_from(at).expect("source offset fits in u32"));
+    TextEdit::new(TextRange::new(at, at), text)
 }
 
-impl Edit {
-    fn insert(at: usize, text: impl Into<String>) -> Self {
-        Self {
-            start: at,
-            end: at,
-            text: text.into(),
-        }
-    }
-
-    fn delete(start: usize, end: usize) -> Self {
-        Self {
-            start,
-            end,
-            text: String::new(),
-        }
-    }
+fn delete(start: usize, end: usize) -> TextEdit {
+    TextEdit::new(
+        TextRange::new(
+            TextSize::new(u32::try_from(start).expect("source offset fits in u32")),
+            TextSize::new(u32::try_from(end).expect("source offset fits in u32")),
+        ),
+        "",
+    )
 }
 
 /// Apply `edits` to `source`. Violations never share tokens, so the edits
 /// are disjoint; inserts at one boundary keep their recording order.
-fn apply(source: &str, mut edits: Vec<Edit>) -> String {
-    edits.sort_by_key(|edit| (edit.start, edit.end));
+fn apply(source: &str, mut edits: Vec<TextEdit>) -> String {
+    edits.sort_by_key(|edit| (edit.range().start(), edit.range().end()));
     let mut out = String::with_capacity(source.len());
     let mut cursor = 0;
     for edit in edits {
-        assert!(cursor <= edit.start, "layout edits must not overlap");
-        out.push_str(&source[cursor..edit.start]);
-        out.push_str(&edit.text);
-        cursor = edit.end;
+        let range = edit.range();
+        let start = range.start().to_usize();
+        let end = range.end().to_usize();
+        assert!(cursor <= start, "layout edits must not overlap");
+        out.push_str(&source[cursor..start]);
+        out.push_str(edit.replacement());
+        cursor = end;
     }
     out.push_str(&source[cursor..]);
     out
@@ -235,6 +239,12 @@ fn significant(lexed: &LexedFile, raw: u32) -> bool {
         lexed.kind(raw as usize),
         SyntaxKind::Whitespace | SyntaxKind::Newline | SyntaxKind::LineComment
     )
+}
+
+fn lex_error_in(lexed: &LexedFile, start: u32, end: u32) -> bool {
+    let errors = lexed.errors();
+    let first = errors.partition_point(|error| error.token < start);
+    errors.get(first).is_some_and(|error| error.token < end)
 }
 
 /// The nearest significant token before `raw`.

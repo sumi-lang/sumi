@@ -1,4 +1,4 @@
-use sumi_format::{Element, elements, normalize, reprint};
+use sumi_format::{Element, elements, layout_violation_edits, normalize, reprint};
 use sumi_lexer::{LexedFile, lex};
 use sumi_syntax::{
     NodeKind, Parse, ParseEvidence, ParseViolationKind, ParserInput, SyntaxTree, parse,
@@ -38,6 +38,46 @@ fn violations(front: &Front) -> Vec<ParseViolationKind> {
             ParseEvidence::Recovery(_) => None,
         })
         .collect()
+}
+
+fn apply_edits(source: &str, edits: &[sumi_text::TextEdit]) -> String {
+    let mut result = source.to_owned();
+    for edit in edits.iter().rev() {
+        let range = edit.range();
+        result.replace_range(
+            range.start().to_usize()..range.end().to_usize(),
+            edit.replacement(),
+        );
+    }
+    result
+}
+
+#[track_caller]
+fn check_layout_edits(source: &str, kind: ParseViolationKind, expected: Option<&str>) {
+    let front = front(source);
+    let violation = front
+        .parse
+        .evidence()
+        .iter()
+        .find_map(|evidence| match evidence {
+            ParseEvidence::Violation(violation) if violation.kind == kind => Some(*violation),
+            _ => None,
+        })
+        .expect("source has the requested violation");
+    let edits = layout_violation_edits(source, &front.lexed, violation);
+    assert_eq!(
+        edits.as_deref().map(|edits| apply_edits(source, edits)),
+        expected.map(str::to_owned),
+        "layout edits for {source:?}"
+    );
+    if let Some(edits) = edits {
+        assert!(!edits.is_empty());
+        assert!(
+            edits
+                .windows(2)
+                .all(|pair| { pair[0].range().end() <= pair[1].range().start() })
+        );
+    }
 }
 
 /// Normalize `source`; assert the expected text, that no layout violation
@@ -178,6 +218,54 @@ fn reprint_survives_the_nesting_recovery_limit() {
 #[test]
 fn normalize_without_violations_is_the_identity() {
     check_normalize("fn f() { f(1) }\n", "fn f() { f(1) }\n");
+}
+
+#[test]
+fn layout_violation_edits_are_atomic_and_source_ordered() {
+    check_layout_edits(
+        "fn f()\n{ 1 }",
+        ParseViolationKind::BlockOnNewLine,
+        Some("fn f() {\n 1 }"),
+    );
+    check_layout_edits(
+        "fn f() { a==b }",
+        ParseViolationKind::UnspacedBinaryOperator,
+        Some("fn f() { a == b }"),
+    );
+    check_layout_edits(
+        "fn f() { a +\n b }",
+        ParseViolationKind::TrailingOperator,
+        Some("fn f() { a \n + b }"),
+    );
+    check_layout_edits(
+        "fn f() { - \t1 }",
+        ParseViolationKind::SpacedPrefixOperator,
+        Some("fn f() { -1 }"),
+    );
+}
+
+#[test]
+fn layout_violation_edits_reject_nonmechanical_candidates() {
+    check_layout_edits(
+        "fn f() { a +\n}",
+        ParseViolationKind::TrailingOperator,
+        None,
+    );
+    check_layout_edits(
+        "fn f() { - // why\n 1 }",
+        ParseViolationKind::SpacedPrefixOperator,
+        None,
+    );
+    check_layout_edits(
+        "fn f() { - \r1 }",
+        ParseViolationKind::SpacedPrefixOperator,
+        None,
+    );
+    check_layout_edits(
+        "fn f() { a < b < c }",
+        ParseViolationKind::ChainedComparison,
+        None,
+    );
 }
 
 #[test]

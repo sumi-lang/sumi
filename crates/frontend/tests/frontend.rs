@@ -35,6 +35,14 @@ fn apply_fix(source: &str, diagnostic: &sumi_frontend::Diagnostic) -> String {
     result
 }
 
+fn same_tree_shape(left: &ParsedSource, right: &ParsedSource) -> bool {
+    let left = left.parse().tree();
+    let right = right.parse().tree();
+    left.len() == right.len()
+        && (0..left.len()).all(|node| left.kind(node) == right.kind(node))
+        && left.parents() == right.parents()
+}
+
 fn raw_boundary(front: &ParsedSource, raw: u32) -> TextSize {
     sumi_syntax::raw_boundary(front.lexed(), raw)
 }
@@ -275,6 +283,11 @@ fn numeric_canonicalization_facts_form_one_diagnostic() {
     assert_eq!(diagnostic.secondary.len(), 2);
     assert_eq!(location_text(&front, diagnostic.secondary[0].location), "+");
     assert_eq!(location_text(&front, diagnostic.secondary[1].location), "0");
+    assert_eq!(
+        diagnostic.fix.as_ref().unwrap().message.as_ref(),
+        "canonicalize numeric literal"
+    );
+    assert_eq!(apply_fix("fn f() { 1E+05 }", diagnostic), "fn f() { 1e5 }");
 
     let front = parsed("fn f() { 01_ }");
     let [diagnostic] = front.diagnostics() else {
@@ -288,12 +301,101 @@ fn numeric_canonicalization_facts_form_one_diagnostic() {
         diagnostic_codes(&front),
         [codes::NONCANONICAL_NUMBER, codes::UNKNOWN_SUFFIX]
     );
+    let fixed = apply_fix("fn f() { 01u32 }", &front.diagnostics()[0]);
+    assert_eq!(fixed, "fn f() { 1u32 }");
+    assert_eq!(diagnostic_codes(&parsed(&fixed)), [codes::UNKNOWN_SUFFIX]);
+
+    let front = parsed("fn f() { 01E }");
+    assert_eq!(
+        diagnostic_codes(&front),
+        [codes::NONCANONICAL_NUMBER, codes::MISSING_EXPONENT]
+    );
+    let fixed = apply_fix("fn f() { 01E }", &front.diagnostics()[0]);
+    assert_eq!(fixed, "fn f() { 1E }");
+    assert_eq!(diagnostic_codes(&parsed(&fixed)), [codes::MISSING_EXPONENT]);
 
     let front = parsed("fn f() { 1_e }");
     assert_eq!(
         diagnostic_codes(&front),
         [codes::NONCANONICAL_NUMBER, codes::MISSING_EXPONENT]
     );
+}
+
+#[test]
+fn parser_layout_violations_offer_safe_fixes() {
+    for (source, code, expected) in [
+        ("fn f()\n{ 1 }", codes::BLOCK_ON_NEW_LINE, "fn f() {\n 1 }"),
+        (
+            "fn f() { a==b }",
+            codes::UNSPACED_BINARY_OPERATOR,
+            "fn f() { a == b }",
+        ),
+        (
+            "fn f() { a +\n b }",
+            codes::TRAILING_OPERATOR,
+            "fn f() { a \n + b }",
+        ),
+        (
+            "fn f() { - \t1 }",
+            codes::SPACED_PREFIX_OPERATOR,
+            "fn f() { -1 }",
+        ),
+    ] {
+        let front = parsed(source);
+        let diagnostic = front
+            .diagnostics()
+            .iter()
+            .find(|diagnostic| diagnostic.code == code)
+            .expect("layout diagnostic exists");
+        let fixed = apply_fix(source, diagnostic);
+        assert_eq!(fixed, expected);
+        assert!(same_tree_shape(&front, &parsed(&fixed)));
+    }
+}
+
+#[test]
+fn layout_movement_fixes_yield_to_recovery() {
+    for (source, code) in [
+        ("fn f()\n{ : }", codes::BLOCK_ON_NEW_LINE),
+        ("fn f() { a +\n b : }", codes::TRAILING_OPERATOR),
+        ("fn f()\n{ € }", codes::BLOCK_ON_NEW_LINE),
+    ] {
+        let front = parsed(source);
+        let diagnostic = front
+            .diagnostics()
+            .iter()
+            .find(|diagnostic| diagnostic.code == code)
+            .expect("layout diagnostic exists");
+        assert!(diagnostic.fix.is_none(), "movement fix for {source:?}");
+    }
+
+    let front = parsed("fn f() { a+b : }");
+    let spacing = front
+        .diagnostics()
+        .iter()
+        .find(|diagnostic| diagnostic.code == codes::UNSPACED_BINARY_OPERATOR)
+        .expect("spacing diagnostic exists");
+    assert!(
+        spacing.fix.is_some(),
+        "spacing remains safe around recovery"
+    );
+}
+
+#[test]
+fn nonmechanical_layout_violations_have_no_fix() {
+    for (source, code) in [
+        ("fn f() { - // why\n 1 }", codes::SPACED_PREFIX_OPERATOR),
+        ("fn f() { - \r1 }", codes::SPACED_PREFIX_OPERATOR),
+        ("fn f() { a < b < c }", codes::CHAINED_COMPARISON),
+    ] {
+        let front = parsed(source);
+        let diagnostic = front
+            .diagnostics()
+            .iter()
+            .find(|diagnostic| diagnostic.code == code)
+            .expect("layout diagnostic exists");
+        assert!(diagnostic.fix.is_none(), "no fix for {source:?}");
+    }
 }
 
 #[test]

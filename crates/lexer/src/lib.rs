@@ -18,4 +18,5 @@ mod token;
 
 pub use file::{LexError, LexErrorKind, LexedFile, SourceTooLarge, lex};
 pub use kind::SyntaxKind;
+pub use literal::canonicalize_number_literal;
 pub use token::{RawKind, TokenFlags};

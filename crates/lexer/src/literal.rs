@@ -18,6 +18,19 @@ use std::ops::Range;
 use crate::file::LexErrorKind;
 use crate::kind::SyntaxKind;
 
+struct NumberShape {
+    integer: Range<usize>,
+    fraction: Option<Range<usize>>,
+    exponent: Option<ExponentShape>,
+    suffix_start: usize,
+    kind: SyntaxKind,
+}
+
+struct ExponentShape {
+    sign: Option<usize>,
+    digits: Range<usize>,
+}
+
 /// Report the errors of a number token the lexer flagged as malformed, and
 /// return the kind its shape implies so callers can check it against the
 /// lexer's classification.
@@ -27,13 +40,47 @@ use crate::kind::SyntaxKind;
 /// every error range stays inside the token.
 pub(crate) fn number_errors(
     text: &str,
-    mut error: impl FnMut(Range<usize>, LexErrorKind),
+    error: impl FnMut(Range<usize>, LexErrorKind),
 ) -> SyntaxKind {
+    scan_number(text, error).kind
+}
+
+/// Repair the mechanically canonicalizable parts of a numeric token. Any
+/// suffix or incomplete exponent remains byte-for-byte as written.
+pub fn canonicalize_number_literal(text: &str) -> Option<Box<str>> {
+    if !text.as_bytes().first().is_some_and(u8::is_ascii_digit) {
+        return None;
+    }
+    let shape = scan_number(text, |_, _| {});
+    let mut canonical = String::with_capacity(text.len());
+    canonical.push_str(&canonical_digit_run(&text[shape.integer.clone()], true));
+    if let Some(fraction) = shape.fraction {
+        canonical.push('.');
+        canonical.push_str(&canonical_digit_run(&text[fraction], false));
+    }
+    if let Some(exponent) = shape.exponent {
+        canonical.push('e');
+        if exponent
+            .sign
+            .is_some_and(|sign| text.as_bytes()[sign] == b'-')
+        {
+            canonical.push('-');
+        }
+        canonical.push_str(&canonical_digit_run(&text[exponent.digits], true));
+    }
+    canonical.push_str(&text[shape.suffix_start..]);
+
+    (canonical != text).then(|| canonical.into_boxed_str())
+}
+
+fn scan_number(text: &str, mut error: impl FnMut(Range<usize>, LexErrorKind)) -> NumberShape {
     let bytes = text.as_bytes();
     let mut misplaced_underscore = None;
 
     let mut position = eat_digits(bytes, 0, &mut misplaced_underscore);
+    let integer = 0..position;
     let mut is_float = false;
+    let mut fraction = None;
 
     // A leading zero is rejected rather than accepted as decimal, because
     // `0123` means octal in several other languages.
@@ -47,10 +94,13 @@ pub(crate) fn number_errors(
             .is_some_and(|byte| byte.is_ascii_digit())
     {
         is_float = true;
-        position = eat_digits(bytes, position + 1, &mut misplaced_underscore);
+        let fraction_start = position + 1;
+        position = eat_digits(bytes, fraction_start, &mut misplaced_underscore);
+        fraction = Some(fraction_start..position);
     }
 
     let mut consumed_exponent = false;
+    let mut exponent = None;
     if matches!(bytes.get(position), Some(b'e' | b'E')) {
         let has_exponent = match (bytes.get(position + 1), bytes.get(position + 2)) {
             (Some(byte), _) if byte.is_ascii_digit() => true,
@@ -66,7 +116,9 @@ pub(crate) fn number_errors(
                 error(position..position + 1, LexErrorKind::UppercaseExponent);
             }
             position += 1;
+            let mut sign = None;
             if matches!(bytes.get(position), Some(b'+' | b'-')) {
+                sign = Some(position);
                 if bytes[position] == b'+' {
                     error(position..position + 1, LexErrorKind::ExponentPlusSign);
                 }
@@ -74,6 +126,10 @@ pub(crate) fn number_errors(
             }
             let exponent_start = position;
             position = eat_digits(bytes, position, &mut misplaced_underscore);
+            exponent = Some(ExponentShape {
+                sign,
+                digits: exponent_start..position,
+            });
             if bytes[exponent_start] == b'0'
                 && bytes[exponent_start + 1..position]
                     .iter()
@@ -103,10 +159,41 @@ pub(crate) fn number_errors(
         error(position..position + 1, LexErrorKind::MisplacedUnderscore);
     }
 
-    if is_float {
+    let kind = if is_float {
         SyntaxKind::FloatLiteral
     } else {
         SyntaxKind::IntLiteral
+    };
+    NumberShape {
+        integer,
+        fraction,
+        exponent,
+        suffix_start: position,
+        kind,
+    }
+}
+
+fn canonical_digit_run(run: &str, trim_zeros: bool) -> String {
+    let bytes = run.as_bytes();
+    let mut clean = String::with_capacity(run.len());
+    for (position, &byte) in bytes.iter().enumerate() {
+        if byte != b'_'
+            || (position > 0
+                && bytes[position - 1].is_ascii_digit()
+                && bytes
+                    .get(position + 1)
+                    .is_some_and(|next| next.is_ascii_digit()))
+        {
+            clean.push(byte as char);
+        }
+    }
+    if !trim_zeros || !clean.as_bytes().starts_with(b"0") {
+        return clean;
+    }
+    if let Some(nonzero) = clean.bytes().position(|byte| matches!(byte, b'1'..=b'9')) {
+        clean[nonzero..].to_owned()
+    } else {
+        "0".to_owned()
     }
 }
 

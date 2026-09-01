@@ -25,7 +25,7 @@ pub fn parse_source(source: Box<str>) -> Result<ParsedSource, SourceTooLarge> {
     let lexed = lex(&source)?;
     let input = ParserInput::new(&lexed);
     let parse = parse(&input);
-    let diagnostics = lower::diagnostics(&lexed, &parse);
+    let diagnostics = lower::diagnostics(&source, &lexed, &parse);
 
     Ok(ParsedSource {
         source,

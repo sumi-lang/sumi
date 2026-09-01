@@ -1,6 +1,6 @@
 //! Token-local validity: the errors collected before `lex` returns.
 
-use sumi_lexer::{LexErrorKind, lex};
+use sumi_lexer::{LexErrorKind, canonicalize_number_literal, lex};
 
 #[track_caller]
 fn check_errors(source: &str, expected: &[(u32, LexErrorKind)]) {
@@ -71,6 +71,56 @@ fn multiple_number_errors_report_in_source_order() {
             (0, LexErrorKind::ExponentLeadingZero),
         ],
     );
+}
+
+#[test]
+fn number_canonicalization_repairs_spelling_and_preserves_suffixes() {
+    for (source, expected) in [
+        ("", None),
+        ("name", None),
+        ("0123", Some("123")),
+        ("000", Some("0")),
+        ("0_0", Some("0")),
+        ("01_000", Some("1_000")),
+        ("00_0.50", Some("0.50")),
+        ("1__0", Some("10")),
+        ("1_.5", Some("1.5")),
+        ("1E+05", Some("1e5")),
+        ("1e-00_5", Some("1e-5")),
+        ("01u32", Some("1u32")),
+        ("01Δ", Some("1Δ")),
+        ("01E", Some("1E")),
+        ("1E", None),
+        ("1u32", None),
+        ("1_000.50e-5", None),
+    ] {
+        assert_eq!(
+            canonicalize_number_literal(source).as_deref(),
+            expected,
+            "canonicalization of {source:?}"
+        );
+    }
+}
+
+#[test]
+fn canonicalized_numbers_have_no_remaining_canonicalization_errors() {
+    for source in [
+        "0123", "000", "0_0", "01_000", "00_0.50", "1__0", "1_.5", "1E+05", "1e-00_5", "01u32",
+        "01E",
+    ] {
+        let replacement = canonicalize_number_literal(source).expect("source is noncanonical");
+        let lexed = lex(&replacement).expect("replacement fits in u32");
+        assert!(lexed.errors().iter().all(|error| {
+            !matches!(
+                error.kind,
+                LexErrorKind::LeadingZero
+                    | LexErrorKind::MisplacedUnderscore
+                    | LexErrorKind::UppercaseExponent
+                    | LexErrorKind::ExponentPlusSign
+                    | LexErrorKind::ExponentLeadingZero
+            )
+        }));
+    }
 }
 
 #[test]

@@ -621,6 +621,7 @@ dependencies = [
  "proptest",
  "sumi-lexer",
  "sumi-syntax",
+ "sumi-text",
 ]
 
 [[package]]
