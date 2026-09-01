@@ -340,10 +340,12 @@ fn name(p: &mut Marker<'_, '_>) {
     }
 }
 
-/// A type: a builtin name, until types grow a shape of their own.
+/// A type reference: a name, until types grow more shapes.
 fn type_ref(p: &mut Marker<'_, '_>) {
     if p.at(T::Ident) {
-        p.token();
+        let mut m = p.start();
+        m.token();
+        m.complete(N::TypeRef);
     } else {
         p.missing(ParseExpected::Type);
     }

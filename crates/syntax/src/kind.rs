@@ -51,6 +51,7 @@ pub enum NodeKind {
     FnItem,
     ParamList,
     Param,
+    TypeRef,
     Block,
     LetStmt,
     AssignStmt,
