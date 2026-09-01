@@ -137,12 +137,16 @@ impl Gen {
         }
         let roll = self.rng.below(100);
         self.indent(level);
-        if roll < 42 {
+        if roll < 37 {
             self.let_stmt(level, scope);
-        } else if roll < 52 {
+        } else if roll < 47 {
             let e = self.expr(scope, 0);
             self.out.push_str(&format!("_ = {e}\n"));
-        } else if roll < 67 && depth < 2 {
+        } else if roll < 57 {
+            let target = self.expr(scope, 0);
+            let value = self.expr(scope, 0);
+            self.out.push_str(&format!("{target} = {value}\n"));
+        } else if roll < 69 && depth < 2 {
             self.if_stmt(level, depth, scope);
         } else if roll < 82 {
             let callee = self.rng.pick(VERBS);
@@ -410,13 +414,13 @@ mod tests {
         let medium = generate(64 * 1024, 0xBEEF);
         assert_eq!(
             (medium.len(), fingerprint(&medium)),
-            (65826, 9466254703433476004),
+            (65602, 9611445025222738231),
             "medium"
         );
         let damaged = corrupt(&medium, 7, 600);
         assert_eq!(
             (damaged.len(), fingerprint(&damaged)),
-            (65815, 17876929023411404082),
+            (65589, 4097797247159246007),
             "damaged"
         );
     }

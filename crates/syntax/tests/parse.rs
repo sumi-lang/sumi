@@ -1178,14 +1178,14 @@ fn recovery_matches_brackets_inside_the_skipped_run() {
     // The run takes the block whole, as the stream pairs it: the boundary
     // inside it is never consulted.
     check(
-        "fn f() { x = { a\nb } }",
+        "fn f() { x : { a\nb } }",
         &[
             "SourceFile 0..22",
             "  FnItem 0..22",
             r#"    ParamList 4..6 "()""#,
             "    Block 7..22",
             r#"      NameExpr 9..10 "x""#,
-            r#"      Error 11..20 "= { a\nb }""#,
+            r#"      Error 11..20 ": { a\nb }""#,
         ],
         &["ExpectedStatement at 11"],
     );
@@ -1510,6 +1510,169 @@ fn declarations_end_at_line_breaks() {
 }
 
 #[test]
+fn assignments_are_statements_with_expression_children() {
+    check(
+        "fn f() { x = 1 }",
+        &[
+            "SourceFile 0..16",
+            "  FnItem 0..16",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..16",
+            "      AssignStmt 9..14",
+            r#"        NameExpr 9..10 "x""#,
+            r#"        LiteralExpr 13..14 "1""#,
+        ],
+        &[],
+    );
+    // The parser records any expression-shaped target. Whether it denotes
+    // a writable place belongs to semantic compilation.
+    check(
+        "fn f() { a + b = c * d + e }",
+        &[
+            "SourceFile 0..28",
+            "  FnItem 0..28",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..28",
+            "      AssignStmt 9..26",
+            "        BinaryExpr 9..14",
+            r#"          NameExpr 9..10 "a""#,
+            r#"          NameExpr 13..14 "b""#,
+            "        BinaryExpr 17..26",
+            "          BinaryExpr 17..22",
+            r#"            NameExpr 17..18 "c""#,
+            r#"            NameExpr 21..22 "d""#,
+            r#"          NameExpr 25..26 "e""#,
+        ],
+        &[],
+    );
+    check(
+        "fn f() { (a) = b }",
+        &[
+            "SourceFile 0..18",
+            "  FnItem 0..18",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..18",
+            "      AssignStmt 9..16",
+            "        ParenExpr 9..12",
+            r#"          NameExpr 10..11 "a""#,
+            r#"        NameExpr 15..16 "b""#,
+        ],
+        &[],
+    );
+}
+
+#[test]
+fn assignment_recovery_preserves_statement_boundaries() {
+    // Recovery for an unclosed target owns the `=` still inside its
+    // parentheses; statement parsing must not hoist it into an assignment.
+    check(
+        "fn f() { (a = b) }",
+        &[
+            "SourceFile 0..18",
+            "  FnItem 0..18",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..18",
+            "      ParenExpr 9..11",
+            r#"        NameExpr 10..11 "a""#,
+            r#"      Error 12..16 "= b)""#,
+        ],
+        &["Expected(RParen) at 12"],
+    );
+    check(
+        "fn f() { x = }",
+        &[
+            "SourceFile 0..14",
+            "  FnItem 0..14",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..14",
+            "      AssignStmt 9..12",
+            r#"        NameExpr 9..10 "x""#,
+        ],
+        &["ExpectedExpression at 13"],
+    );
+    check(
+        "fn f() { = x }",
+        &[
+            "SourceFile 0..14",
+            "  FnItem 0..14",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..14",
+            r#"      Error 9..12 "= x""#,
+        ],
+        &["ExpectedStatement at 9"],
+    );
+    // A same-line expression start is a new statement with a missing
+    // boundary; each side still forms its own assignment.
+    check(
+        "fn f() { x = 1 y = 2 }",
+        &[
+            "SourceFile 0..22",
+            "  FnItem 0..22",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..22",
+            "      AssignStmt 9..14",
+            r#"        NameExpr 9..10 "x""#,
+            r#"        LiteralExpr 13..14 "1""#,
+            "      AssignStmt 15..20",
+            r#"        NameExpr 15..16 "y""#,
+            r#"        LiteralExpr 19..20 "2""#,
+        ],
+        &["ExpectedBoundary at 15"],
+    );
+    // The right-hand expression stops before another `=`; assignment is
+    // not recursively available as an expression operator.
+    check(
+        "fn f() { x = y = z }",
+        &[
+            "SourceFile 0..20",
+            "  FnItem 0..20",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..20",
+            "      AssignStmt 9..14",
+            r#"        NameExpr 9..10 "x""#,
+            r#"        NameExpr 13..14 "y""#,
+            r#"      Error 15..18 "= z""#,
+        ],
+        &["ExpectedStatement at 15"],
+    );
+    // Like declaration punctuation, `=` cannot continue a statement from
+    // the following line.
+    check(
+        "fn f() {\n  x\n  = y\n}",
+        &[
+            "SourceFile 0..20",
+            "  FnItem 0..20",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..20",
+            r#"      NameExpr 11..12 "x""#,
+            r#"      Error 15..18 "= y""#,
+        ],
+        &["ExpectedStatement at 15"],
+    );
+}
+
+#[test]
+fn assignments_coexist_with_bindings_and_discards() {
+    check(
+        "fn f() {\n  let mut x = 0\n  x = 1\n  _ = x\n}",
+        &[
+            "SourceFile 0..42",
+            "  FnItem 0..42",
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..42",
+            "      LetStmt 11..24",
+            r#"        LiteralExpr 23..24 "0""#,
+            "      AssignStmt 27..32",
+            r#"        NameExpr 27..28 "x""#,
+            r#"        LiteralExpr 31..32 "1""#,
+            "      DiscardStmt 35..40",
+            r#"        NameExpr 39..40 "x""#,
+        ],
+        &[],
+    );
+}
+
+#[test]
 fn arguments_stay_on_the_callee_line_even_inside_parens() {
     // Boundaries are suspended inside `(`, so the line break alone must
     // keep `()` from attaching to `g`.
@@ -1694,17 +1857,17 @@ fn a_malformed_suffix_belongs_to_the_latest_statement_recovery() {
 
 #[test]
 fn a_malformed_suffix_after_a_statement_is_reported_as_one() {
-    // Neither `=` nor `else` can start a statement, so a boundary before
+    // Neither `:` nor `else` can start a statement, so a boundary before
     // them would not help; each malformed suffix is one error run.
     check(
-        "fn f() { x = 1 }",
+        "fn f() { x : 1 }",
         &[
             "SourceFile 0..16",
             "  FnItem 0..16",
             r#"    ParamList 4..6 "()""#,
             "    Block 7..16",
             r#"      NameExpr 9..10 "x""#,
-            r#"      Error 11..14 "= 1""#,
+            r#"      Error 11..14 ": 1""#,
         ],
         &["ExpectedStatement at 11"],
     );
