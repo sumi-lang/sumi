@@ -167,10 +167,14 @@ fn function_items_nest() {
                 tokens(b, 2); // fn f
                 node(b, ParamList, |b| {
                     b.token(); // (
-                    node(b, Param, |b| tokens(b, 3)); // a: int
+                    node(b, Param, |b| {
+                        tokens(b, 2); // a:
+                        leaf(b, TypeRef); // int
+                    });
                     b.token(); // )
                 });
-                tokens(b, 3); // -> int
+                tokens(b, 2); // ->
+                leaf(b, TypeRef); // int
                 node(b, Block, |b| {
                     b.token(); // {
                     leaf(b, NameExpr);
@@ -182,7 +186,9 @@ fn function_items_nest() {
             "SourceFile 0..25",
             "  FnItem 0..25",
             "    ParamList 4..12",
-            r#"      Param 5..11 "a: int""#,
+            "      Param 5..11",
+            r#"        TypeRef 8..11 "int""#,
+            r#"    TypeRef 16..19 "int""#,
             "    Block 20..25",
             r#"      NameExpr 22..23 "a""#,
         ],
