@@ -16,7 +16,9 @@
 //! child's range lies inside its parent's and siblings never overlap. Trivia
 //! between two children belongs to the parent, and trivia at the edges of
 //! the file belongs to the root, which always covers every token: comment
-//! attachment is a consumer's policy, not a tree property.
+//! attachment is a consumer's policy, not a tree property. Each node also
+//! records whether the parser recovered inside it, so a consumer can skip
+//! a construct it cannot trust without walking it.
 //!
 //! # Building
 //!
@@ -64,15 +66,19 @@ pub fn raw_boundary(lexed: &LexedFile, raw: RawIdx) -> TextSize {
     }
 }
 
-/// One node: its kind, its subtree extent (self included), and the
-/// half-open range of raw token indices it covers.
+/// One node: its kind, whether the parser recovered inside it, its subtree
+/// extent (self included), and the half-open range of raw token indices it
+/// covers.
 #[derive(Clone, Copy, Debug)]
 struct Node {
     kind: NodeKind,
+    has_error: bool,
     extent: u32,
     first_token: RawIdx,
     end_token: RawIdx,
 }
+
+const _: () = assert!(size_of::<Node>() == 16, "nodes stay sixteen bytes");
 
 /// A parsed file: its nodes in postorder.
 #[derive(Clone, Debug)]
@@ -99,6 +105,16 @@ impl SyntaxTree {
 
     pub fn kind(&self, index: NodeIdx) -> NodeKind {
         self.nodes[index.to_usize()].kind
+    }
+
+    /// Whether node `index` contains a syntax error: it is an `Error` node,
+    /// or the parser recovered — skipped tokens, or found syntax missing —
+    /// while it was open, anywhere in its subtree. Layout violations are
+    /// not errors here: the syntax under them is complete. A consumer that
+    /// needs a whole construct, a semantic phase lowering a body or a fix
+    /// rewriting one, checks this bit and skips what it cannot trust.
+    pub fn has_error(&self, index: NodeIdx) -> bool {
+        self.nodes[index.to_usize()].has_error
     }
 
     /// The raw index of the first token node `index` covers.
@@ -230,6 +246,7 @@ impl Parse {
             builder: &mut builder,
             first: NodeIdx::new(0),
             start: SigIdx::new(0),
+            recoveries: 0,
             id: 0,
             parent: 0,
             depth: 0,
@@ -249,6 +266,7 @@ impl Parse {
         // an empty file.
         builder.nodes.push(Node {
             kind: NodeKind::SourceFile,
+            has_error: builder.recoveries > 0,
             extent: to_u32(builder.nodes.len() + 1),
             first_token: RawIdx::new(0),
             end_token: input.raw_len(),
@@ -292,7 +310,7 @@ struct Builder<'a> {
     /// Nodes opened so far, numbering the next one; the root is 0.
     opened: u32,
     /// Structural recovery facts recorded while building the tree.
-    recoveries: usize,
+    recoveries: u32,
     /// The evidence index of the cursor-nearest structural recovery.
     last_recovery_evidence: Option<usize>,
     evidence: Vec<EvidenceBuilder>,
@@ -354,7 +372,7 @@ impl EvidenceBuilder {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct RecoveryCheckpoint(usize);
+pub(crate) struct RecoveryCheckpoint(u32);
 
 #[derive(Clone, Copy)]
 pub(crate) struct RecoveryHandle(usize);
@@ -409,6 +427,9 @@ pub struct Marker<'p, 'a> {
     first: NodeIdx,
     /// The significant position the node opens at.
     start: SigIdx,
+    /// The structural recoveries recorded before the node opened: any more
+    /// by the time it completes happened inside it.
+    recoveries: u32,
     /// Identity, so a completed node can name the node that contained it.
     id: u32,
     parent: u32,
@@ -478,14 +499,17 @@ impl<'a> Marker<'_, 'a> {
 
     /// Open a child at the next token; its kind is chosen when it
     /// completes.
+    #[inline]
     pub fn start(&mut self) -> Marker<'_, 'a> {
         let first = NodeIdx::new(to_u32(self.builder.nodes.len()));
         let start = self.builder.position;
+        let recoveries = self.builder.recoveries;
         let id = self.builder.open();
         Marker {
             builder: self.builder,
             first,
             start,
+            recoveries,
             id,
             parent: self.id,
             depth: self.depth + 1,
@@ -499,6 +523,7 @@ impl<'a> Marker<'_, 'a> {
     /// Open a child wrapping `completed` — which must have completed
     /// directly inside this node — and everything attached since; its kind
     /// is chosen when it completes.
+    #[inline]
     pub fn precede(&mut self, completed: CompletedMarker) -> Marker<'_, 'a> {
         assert_eq!(
             completed.parent, self.id,
@@ -509,6 +534,7 @@ impl<'a> Marker<'_, 'a> {
             builder: self.builder,
             first: completed.first,
             start: completed.start,
+            recoveries: completed.recoveries,
             id,
             parent: self.id,
             depth: self.depth + 1,
@@ -520,14 +546,20 @@ impl<'a> Marker<'_, 'a> {
     }
 
     /// Close the node as `kind`; it must cover at least one token.
+    #[inline]
     pub fn complete(mut self, kind: NodeKind) -> CompletedMarker {
         let builder = &mut *self.builder;
         assert!(
             builder.position > self.start,
             "a node must cover at least one token"
         );
+        // An `Error` node is the effect of a recovery recorded before it
+        // opened; any other node has an error exactly when recovery
+        // happened while it was open, its descendants included.
+        let has_error = kind == NodeKind::Error || builder.recoveries > self.recoveries;
         builder.nodes.push(Node {
             kind,
+            has_error,
             extent: to_u32(builder.nodes.len() - self.first.to_usize() + 1),
             first_token: builder.input.token(self.start),
             end_token: builder.input.token(builder.position - 1) + 1,
@@ -536,6 +568,7 @@ impl<'a> Marker<'_, 'a> {
         CompletedMarker {
             first: self.first,
             start: self.start,
+            recoveries: self.recoveries,
             parent: self.parent,
         }
     }
@@ -896,6 +929,8 @@ pub struct CompletedMarker {
     first: NodeIdx,
     /// The significant position the node opened at.
     start: SigIdx,
+    /// The structural recoveries recorded before it opened.
+    recoveries: u32,
     /// Identity of the node it completed inside.
     parent: u32,
 }
