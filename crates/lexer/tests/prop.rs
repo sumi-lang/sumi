@@ -2,6 +2,7 @@
 //! instead of the hand-written corpus in `lex.rs`.
 
 use proptest::prelude::*;
+use proptest::test_runner::FileFailurePersistence;
 use sumi_lexer::{RawIdx, RawKind, SyntaxKind, TokenFlags, lex};
 
 /// Fragments beyond every keyword and punctuation text of the language that
@@ -110,7 +111,23 @@ fn number_soup() -> impl Strategy<Value = String> {
         .prop_map(|fragments| fragments.concat())
 }
 
+/// Records every failing seed in the crate's tracked `proptest-regressions/`
+/// file, which each later run replays before generating anything new, so a
+/// failure found once stays found. Proptest's default location is found by
+/// walking up from the test file to a `lib.rs`, which a test under `tests/`
+/// never reaches; this path is fixed at compile time instead.
+fn config() -> ProptestConfig {
+    ProptestConfig {
+        failure_persistence: Some(Box::new(FileFailurePersistence::Direct(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/proptest-regressions/prop.txt"
+        )))),
+        ..ProptestConfig::default()
+    }
+}
+
 proptest! {
+    #![proptest_config(config())]
     #[test]
     fn lex_is_total_and_partitions(source in soup()) {
         let file = lex(&source).expect("generated sources fit in u32");
