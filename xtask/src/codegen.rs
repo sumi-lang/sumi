@@ -637,6 +637,15 @@ Every binary operator associates left and must be spaced on both sides.
 Higher levels bind tighter. Comparisons do not chain: `a < b < c` is
 rejected rather than parsed.
 
+The spacing is grammar, not style: an unspaced binary operator is an
+error, never a warning, because every glued form is reserved. Glued to
+what follows, an operator is a prefix operator, as `-` and `!` are.
+Glued to the identifier before it, `<` opens type arguments. A glued
+form that means nothing yet, `a*b` or a line beginning `*b`, stays an
+error so that it can be given a meaning later, as `*` for dereference
+or `&` for a reference, without changing any valid program: no valid
+program contains it.
+
 {binary}
 ## Lines
 

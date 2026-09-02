@@ -78,9 +78,14 @@ pub enum SyntaxKind {
     Bang,
     Plus,
     Minus,
+    /// Multiplication, spaced on both sides. Glued to what follows, `*` is
+    /// reserved for a prefix operator, so `a*b` and a line beginning `*b`
+    /// stay errors until one exists.
     Star,
     Slash,
     Percent,
+    /// No role alone: `&&` is `and`. Glued to what follows, `&` is reserved
+    /// for a prefix operator.
     Amp,
     Pipe,
     /// A token with no meaning in the language: unrecognized characters,
