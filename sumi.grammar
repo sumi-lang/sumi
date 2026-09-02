@@ -133,9 +133,14 @@ token Gt punct ">"
 token Bang punct "!" expr
 token Plus punct "+"
 token Minus punct "-" expr
+/// Multiplication, spaced on both sides. Glued to what follows, `*` is
+/// reserved for a prefix operator, so `a*b` and a line beginning `*b`
+/// stay errors until one exists.
 token Star punct "*"
 token Slash punct "/"
 token Percent punct "%"
+/// No role alone: `&&` is `and`. Glued to what follows, `&` is reserved
+/// for a prefix operator.
 token Amp punct "&"
 token Pipe punct "|"
 

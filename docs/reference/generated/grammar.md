@@ -75,10 +75,10 @@ continues the previous line. Operators take their classes from the
 | `!` | `Bang` | `expr` |  |
 | `+` | `Plus` |  |  |
 | `-` | `Minus` | `expr` |  |
-| `*` | `Star` |  |  |
+| `*` | `Star` |  | Multiplication, spaced on both sides. Glued to what follows, `*` is reserved for a prefix operator, so `a*b` and a line beginning `*b` stay errors until one exists. |
 | `/` | `Slash` |  |  |
 | `%` | `Percent` |  |  |
-| `&` | `Amp` |  |  |
+| `&` | `Amp` |  | No role alone: `&&` is `and`. Glued to what follows, `&` is reserved for a prefix operator. |
 | `\|` | `Pipe` |  |  |
 
 ### Errors
@@ -126,6 +126,15 @@ binary operator: only a call binds closer.
 Every binary operator associates left and must be spaced on both sides.
 Higher levels bind tighter. Comparisons do not chain: `a < b < c` is
 rejected rather than parsed.
+
+The spacing is grammar, not style: an unspaced binary operator is an
+error, never a warning, because every glued form is reserved. Glued to
+what follows, an operator is a prefix operator, as `-` and `!` are.
+Glued to the identifier before it, `<` opens type arguments. A glued
+form that means nothing yet, `a*b` or a line beginning `*b`, stays an
+error so that it can be given a meaning later, as `*` for dereference
+or `&` for a reference, without changing any valid program: no valid
+program contains it.
 
 | Level | Operators | Notes |
 | --- | --- | --- |
