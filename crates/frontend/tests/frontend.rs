@@ -1,6 +1,7 @@
 use proptest::prelude::*;
 use sumi_frontend::{
-    DiagnosticCode, FileId, Location, ParsedSource, Place, Severity, codes, parse_source,
+    Applicability, DiagnosticCode, FileId, Location, ParsedSource, Place, Severity, codes,
+    parse_source,
 };
 use sumi_syntax::{ParseAnchor, ParseEvidence, RawIdx, SyntaxKind};
 use sumi_text::TextSize;
@@ -29,8 +30,11 @@ fn location_text(front: &ParsedSource, location: Location) -> &str {
     }
 }
 
+/// Apply the diagnostic's fix as a tool would, unread: the frontend's fixes
+/// are all mechanical, so it must call every one of them safe.
 fn apply_fix(source: &str, diagnostic: &sumi_frontend::Diagnostic) -> String {
     let fix = diagnostic.fix.as_ref().expect("diagnostic has a fix");
+    assert_eq!(fix.applicability, Applicability::Safe);
     let mut result = source.to_owned();
     for edit in fix.edits.iter().rev() {
         let range = edit.range();
@@ -465,6 +469,7 @@ proptest! {
                 }
             }
             if let Some(fix) = &diagnostic.fix {
+                prop_assert_eq!(fix.applicability, Applicability::Safe);
                 prop_assert!(!fix.edits.is_empty());
                 let mut previous_end = None;
                 for edit in &fix.edits {
