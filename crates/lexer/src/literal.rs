@@ -8,10 +8,14 @@
 //! the single definition of the escape grammar; value decoding will reuse it
 //! when lowering needs it.
 //!
+//! Multi-line literals add layout: the content begins on the line after the
+//! opening `"""`, the closing `"""` begins its own line, and every content
+//! line that is not blank starts with the closing line's indentation.
+//!
 //! The collector filters: numbers are re-scanned only when the scanner flagged
-//! them malformed, strings only when escaped and terminated, and characters
-//! only when terminated, so a token with a scanner error gets no further
-//! errors here.
+//! them malformed, strings only when escaped and terminated, characters and
+//! multi-line literals only when terminated, so a token with a scanner error
+//! gets no further errors here.
 
 use std::ops::Range;
 
@@ -224,7 +228,7 @@ fn eat_digits(bytes: &[u8], start: usize, misplaced_underscore: &mut Option<usiz
 /// Validate the escapes of a terminated string literal.
 pub(crate) fn validate_string(text: &str, mut error: impl FnMut(Range<usize>, LexErrorKind)) {
     let body = &text[1..text.len() - 1];
-    walk_escapes(body, |start, end, result| {
+    walk_escapes(body, false, |start, end, result| {
         if let Err(kind) = result {
             error(start + 1..end + 1, kind);
         }
@@ -236,7 +240,7 @@ pub(crate) fn validate_char(text: &str, mut error: impl FnMut(Range<usize>, LexE
     let body = &text[1..text.len() - 1];
     let mut pieces = 0usize;
     let mut extra_start = None;
-    walk_escapes(body, |start, end, result| {
+    walk_escapes(body, false, |start, end, result| {
         if pieces == 1 {
             extra_start = Some(start);
         }
@@ -256,10 +260,98 @@ pub(crate) fn validate_char(text: &str, mut error: impl FnMut(Range<usize>, LexE
     }
 }
 
+/// Validate a terminated multi-line literal, `"""` or `r"""` to `"""`: its
+/// layout, and its escapes unless it is `raw`. Line breaks split the text
+/// into the opener's line, the content lines, and the closer's line, and a
+/// lone `\r` is one too, reported as it goes.
+pub(crate) fn validate_block_string(
+    text: &str,
+    raw: bool,
+    mut error: impl FnMut(Range<usize>, LexErrorKind),
+) {
+    let open = if raw { 4 } else { 3 };
+    let close = text.len() - 3;
+    let bytes = text.as_bytes();
+
+    let mut lines: Vec<Range<usize>> = Vec::new();
+    let mut line_start = open;
+    let mut position = open;
+    while position < close {
+        match bytes[position] {
+            b'\n' => {
+                lines.push(line_start..position);
+                position += 1;
+                line_start = position;
+            }
+            b'\r' => {
+                lines.push(line_start..position);
+                if bytes.get(position + 1) == Some(&b'\n') {
+                    position += 2;
+                } else {
+                    error(position..position + 1, LexErrorKind::LoneCarriageReturn);
+                    position += 1;
+                }
+                line_start = position;
+            }
+            _ => position += 1,
+        }
+    }
+    lines.push(line_start..close);
+    let blank = |line: &Range<usize>| {
+        text[line.clone()]
+            .bytes()
+            .all(|byte| byte == b' ' || byte == b'\t')
+    };
+    let indentation = |line: &Range<usize>| {
+        line.start + text[line.clone()].len()
+            - text[line.clone()].trim_start_matches([' ', '\t']).len()
+    };
+
+    let opener_line = lines[0].clone();
+    if !blank(&opener_line) {
+        error(
+            indentation(&opener_line)..opener_line.end,
+            LexErrorKind::BlockStringOpenerContent,
+        );
+    }
+    let closer_line = lines[lines.len() - 1].clone();
+    let closer_own_line = lines.len() > 1 && blank(&closer_line);
+    if !closer_own_line {
+        error(close..text.len(), LexErrorKind::BlockStringCloserContent);
+    }
+
+    if closer_own_line {
+        let prefix = &text[closer_line.clone()];
+        for line in &lines[1..lines.len() - 1] {
+            if !blank(line) && !text[line.clone()].starts_with(prefix) {
+                error(
+                    line.start..indentation(line),
+                    LexErrorKind::BlockStringIndentation,
+                );
+            }
+        }
+    }
+
+    if !raw && lines.len() > 1 {
+        // The content, from after the opener's line to the closer's line.
+        let content = lines[1].start..closer_line.start;
+        walk_escapes(&text[content.clone()], true, |start, end, result| {
+            if let Err(kind) = result {
+                error(content.start + start..content.start + end, kind);
+            }
+        });
+    }
+}
+
 /// Walk the body of a string or character literal, invoking `piece` once per
 /// literal character or escape sequence with its body-relative byte range and
-/// validity.
-fn walk_escapes(body: &str, mut piece: impl FnMut(usize, usize, Result<(), LexErrorKind>)) {
+/// validity. In a `multiline` literal a `\` before a line break joins the
+/// lines and is an escape like any other.
+fn walk_escapes(
+    body: &str,
+    multiline: bool,
+    mut piece: impl FnMut(usize, usize, Result<(), LexErrorKind>),
+) {
     let mut chars = body.chars();
     while !chars.as_str().is_empty() {
         let start = body.len() - chars.as_str().len();
@@ -273,6 +365,13 @@ fn walk_escapes(body: &str, mut piece: impl FnMut(usize, usize, Result<(), LexEr
         let result = match chars.next() {
             Some('n' | 'r' | 't' | '\\' | '"' | '\'' | '0') => Ok(()),
             Some('u') => scan_unicode_escape(&mut chars),
+            Some('\n') if multiline => Ok(()),
+            Some('\r') if multiline => {
+                if chars.as_str().starts_with('\n') {
+                    chars.next();
+                }
+                Ok(())
+            }
             // Includes a backslash at the very end of the body.
             _ => Err(LexErrorKind::UnknownEscape),
         };

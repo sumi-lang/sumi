@@ -7,6 +7,10 @@ pub const SYNTAX: DiagnosticGroup = DiagnosticGroup::new("syntax");
 pub const UNTERMINATED_STRING: DiagnosticCode = DiagnosticCode::new(SYNTAX, "unterminated-string");
 pub const UNTERMINATED_RAW_STRING: DiagnosticCode =
     DiagnosticCode::new(SYNTAX, "unterminated-raw-string");
+pub const UNTERMINATED_BLOCK_STRING: DiagnosticCode =
+    DiagnosticCode::new(SYNTAX, "unterminated-block-string");
+pub const UNTERMINATED_RAW_BLOCK_STRING: DiagnosticCode =
+    DiagnosticCode::new(SYNTAX, "unterminated-raw-block-string");
 pub const UNTERMINATED_CHAR: DiagnosticCode = DiagnosticCode::new(SYNTAX, "unterminated-char");
 pub const LONE_CARRIAGE_RETURN: DiagnosticCode =
     DiagnosticCode::new(SYNTAX, "lone-carriage-return");
@@ -24,6 +28,12 @@ pub const INVALID_UNICODE_SCALAR: DiagnosticCode =
 pub const EMPTY_CHAR_LITERAL: DiagnosticCode = DiagnosticCode::new(SYNTAX, "empty-char-literal");
 pub const MORE_THAN_ONE_CHAR: DiagnosticCode = DiagnosticCode::new(SYNTAX, "more-than-one-char");
 pub const UNKNOWN_PUNCTUATION: DiagnosticCode = DiagnosticCode::new(SYNTAX, "unknown-punctuation");
+pub const BLOCK_STRING_OPENER_CONTENT: DiagnosticCode =
+    DiagnosticCode::new(SYNTAX, "block-string-opener-content");
+pub const BLOCK_STRING_CLOSER_CONTENT: DiagnosticCode =
+    DiagnosticCode::new(SYNTAX, "block-string-closer-content");
+pub const BLOCK_STRING_INDENTATION: DiagnosticCode =
+    DiagnosticCode::new(SYNTAX, "block-string-indentation");
 
 pub const EXPECTED_ITEM: DiagnosticCode = DiagnosticCode::new(SYNTAX, "expected-item");
 pub const EXPECTED_STATEMENT: DiagnosticCode = DiagnosticCode::new(SYNTAX, "expected-statement");

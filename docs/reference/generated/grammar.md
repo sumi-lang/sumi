@@ -52,8 +52,10 @@ continues the previous line. Operators take their classes from the
 | --- | --- | --- | --- |
 | `IntLiteral` | an integer literal | `expr` `end` | A decimal integer literal. |
 | `FloatLiteral` | a floating-point literal | `expr` `end` | A float literal: a fraction (`1.5`), an exponent (`1e3`), or both. |
-| `StringLiteral` | a string literal | `expr` `end` |  |
-| `RawStringLiteral` | a raw string literal | `expr` `end` |  |
+| `StringLiteral` | a string literal | `expr` `end` | A string literal on one line: `"…"`, with escapes. A line break ends an unterminated one, so a stray quote costs its line and nothing after it. |
+| `RawStringLiteral` | a raw string literal | `expr` `end` | A raw string literal on one line: `r"…"`, or `r#"…"#` to include quotes. Nothing in it is an escape. |
+| `BlockStringLiteral` | a multi-line string literal | `expr` `end` | A multi-line string literal: `"""`, the content lines, and `"""` on its own line, whose indentation every content line shares and sheds. |
+| `RawBlockStringLiteral` | a raw multi-line string literal | `expr` `end` | A multi-line string literal with nothing escaped: `r"""` to `"""`. |
 | `CharLiteral` | a character literal | `expr` `end` |  |
 
 ### Punctuation
@@ -139,11 +141,32 @@ end one, the token after it does not continue one, and no parenthesis the
 stream closes is open around it. These classes decide the first two;
 the parser's spacing rules keep the third unambiguous.
 
-- **Can begin an expression:** `Ident`, `false`, `if`, `true`, `IntLiteral`, `FloatLiteral`, `StringLiteral`, `RawStringLiteral`, `CharLiteral`, `(`, `{`, `!`, `-`.
+- **Can begin an expression:** `Ident`, `false`, `if`, `true`, `IntLiteral`, `FloatLiteral`, `StringLiteral`, `RawStringLiteral`, `BlockStringLiteral`, `RawBlockStringLiteral`, `CharLiteral`, `(`, `{`, `!`, `-`.
 - **Begin a statement without being an expression:** `_`, `let`, `return`, `Error`.
-- **A statement can end after:** `Ident`, `_`, `false`, `return`, `true`, `IntLiteral`, `FloatLiteral`, `StringLiteral`, `RawStringLiteral`, `CharLiteral`, `)`, `}`, `Error`.
+- **A statement can end after:** `Ident`, `_`, `false`, `return`, `true`, `IntLiteral`, `FloatLiteral`, `StringLiteral`, `RawStringLiteral`, `BlockStringLiteral`, `RawBlockStringLiteral`, `CharLiteral`, `)`, `}`, `Error`.
 - **Begin a top-level item:** `fn`.
 - **Continue the previous line:** `else`, and any binary operator leading the line — a compound one when glued into shape, and `-` only when spaced from what follows, since glued it opens an operand.
+
+## Strings
+
+A string literal takes one of four forms. `"…"` and `r"…"` sit on one
+line: a line break ends an unterminated one, so a stray quote costs its
+line and nothing after it. The escapes are `\n`, `\r`, `\t`, `\\`, `\"`,
+`\'`, `\0`, and `\u{…}` with one to six hex digits; a raw literal has
+none, and `r#"…"#` lets one contain quotes.
+
+Text that spans lines is a multi-line literal, `"""` to `"""`, or
+`r"""` to `"""` with nothing escaped:
+
+- The content begins on the line after the opening `"""`, and the
+  closing `"""` begins its own line.
+- Every content line begins with the closing line's indentation, which is
+  not part of the value; a line of only whitespace counts as empty.
+- The value keeps each line break except the one before the closing line,
+  as `\n` whatever the source uses. A `\` ending a line joins it to the
+  next.
+- A `"""` inside the content escapes one of its quotes; a raw multi-line
+  literal cannot contain one.
 
 ## Syntax nodes
 
@@ -175,7 +198,7 @@ ReturnStmt = 'return' value:Expr?
 Expr = NameRef | LiteralExpr | PrefixExpr | BinaryExpr | ParenExpr | CallExpr | IfExpr | Block
 // A use of a name: a reference to what a Name declared.
 NameRef = Ident
-LiteralExpr = IntLiteral | FloatLiteral | StringLiteral | RawStringLiteral | CharLiteral | 'true' | 'false'
+LiteralExpr = IntLiteral | FloatLiteral | StringLiteral | RawStringLiteral | BlockStringLiteral | RawBlockStringLiteral | CharLiteral | 'true' | 'false'
 PrefixExpr = PrefixOperator operand:Expr
 BinaryExpr = lhs:Expr BinaryOperator rhs:Expr
 ParenExpr = '(' inner:Expr ')'

@@ -59,14 +59,33 @@ struct Gen {
     rng: Rng,
     out: String,
     fresh: u32,
+    /// Whether a string atom may be a multi-line literal.
+    block_strings: bool,
+    /// The indentation level of the statement being generated, which the
+    /// content of a multi-line literal hangs one level under.
+    level: usize,
 }
 
 /// Generate at least `target_bytes` of valid Sumi source.
 pub fn generate(target_bytes: usize, seed: u64) -> String {
+    generate_with(target_bytes, seed, false)
+}
+
+/// Generate at least `target_bytes` of valid Sumi source in which some
+/// strings are multi-line literals. The pinned corpora cannot change, so
+/// this is a second generator rather than a change to [`generate`]; its
+/// consumers pin their own seeds.
+pub fn generate_with_block_strings(target_bytes: usize, seed: u64) -> String {
+    generate_with(target_bytes, seed, true)
+}
+
+fn generate_with(target_bytes: usize, seed: u64, block_strings: bool) -> String {
     let mut g = Gen {
         rng: Rng::new(seed),
         out: String::with_capacity(target_bytes + 1024),
         fresh: 0,
+        block_strings,
+        level: 0,
     };
     g.out.push_str("//! Generated Sumi benchmark corpus.\n\n");
     while g.out.len() < target_bytes {
@@ -123,6 +142,7 @@ impl Gen {
         }
         if returns {
             self.indent(1);
+            self.level = 1;
             let e = self.expr(&scope, 0);
             self.out.push_str(&format!("return {e}\n"));
         }
@@ -130,6 +150,7 @@ impl Gen {
     }
 
     fn statement(&mut self, level: usize, depth: u32, scope: &mut Vec<String>) {
+        self.level = level;
         if self.rng.chance(8) {
             self.indent(level);
             let n = self.rng.pick(NOUNS);
@@ -206,6 +227,7 @@ impl Gen {
         self.indent(level);
         self.out.push('}');
         if self.rng.chance(50) {
+            self.level = level;
             if self.rng.chance(30) {
                 let c2 = self.condition(scope);
                 self.out.push_str(&format!(" else if {c2} {{\n"));
@@ -332,7 +354,9 @@ impl Gen {
             0..=39 => self.rng.pick(INTS).to_string(),
             40..=54 => self.rng.pick(FLOATS).to_string(),
             55..=69 => {
-                if self.rng.chance(20) {
+                if self.block_strings && self.rng.chance(30) {
+                    self.block_string()
+                } else if self.rng.chance(20) {
                     "\"a\\tb\\nc \\\"q\\\" \\\\ \\u{1F600}\"".to_string()
                 } else if self.rng.chance(10) {
                     "r\"raw \\no escape\"".to_string()
@@ -352,6 +376,38 @@ impl Gen {
                 }
             }
         }
+    }
+}
+
+impl Gen {
+    /// A multi-line literal whose content hangs one level under the
+    /// statement, with the closer at the content's indentation.
+    fn block_string(&mut self) -> String {
+        self.fresh += 1;
+        let indent = "    ".repeat(self.level + 1);
+        let raw = self.rng.chance(25);
+        let mut s = format!("{}\"\"\"\n", if raw { "r" } else { "" });
+        let lines = 1 + self.rng.below(3);
+        for line in 0..lines {
+            if line > 0 && self.rng.chance(20) {
+                s.push('\n');
+            }
+            let noun = self.rng.pick(NOUNS);
+            if !raw && self.rng.chance(30) {
+                s.push_str(&format!(
+                    "{indent}line {} quotes the \\\"{noun}\\\"\n",
+                    line + 1
+                ));
+            } else {
+                s.push_str(&format!(
+                    "{indent}line {} names the {noun} of item {}\n",
+                    line + 1,
+                    self.fresh
+                ));
+            }
+        }
+        s.push_str(&format!("{indent}\"\"\""));
+        s
     }
 }
 

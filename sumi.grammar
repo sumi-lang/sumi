@@ -85,8 +85,17 @@ token TrueKw keyword "true" expr end
 token IntLiteral literal "an integer literal" expr end
 /// A float literal: a fraction (`1.5`), an exponent (`1e3`), or both.
 token FloatLiteral literal "a floating-point literal" expr end
+/// A string literal on one line: `"…"`, with escapes. A line break ends an
+/// unterminated one, so a stray quote costs its line and nothing after it.
 token StringLiteral literal "a string literal" expr end
+/// A raw string literal on one line: `r"…"`, or `r#"…"#` to include quotes.
+/// Nothing in it is an escape.
 token RawStringLiteral literal "a raw string literal" expr end
+/// A multi-line string literal: `"""`, the content lines, and `"""` on its
+/// own line, whose indentation every content line shares and sheds.
+token BlockStringLiteral literal "a multi-line string literal" expr end
+/// A multi-line string literal with nothing escaped: `r"""` to `"""`.
+token RawBlockStringLiteral literal "a raw multi-line string literal" expr end
 token CharLiteral literal "a character literal" expr end
 
 // Punctuation, one kind per character. Punctuation without a role in the
@@ -192,6 +201,8 @@ LiteralExpr =
 | FloatLiteral
 | StringLiteral
 | RawStringLiteral
+| BlockStringLiteral
+| RawBlockStringLiteral
 | CharLiteral
 | 'true'
 | 'false'

@@ -483,7 +483,7 @@ impl NameRef {
     pub const KIND: NodeKind = NodeKind::NameRef;
 }
 
-/// The `LiteralExpr = IntLiteral | FloatLiteral | StringLiteral | RawStringLiteral | CharLiteral | 'true' | 'false'` rule.
+/// The `LiteralExpr = IntLiteral | FloatLiteral | StringLiteral | RawStringLiteral | BlockStringLiteral | RawBlockStringLiteral | CharLiteral | 'true' | 'false'` rule.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct LiteralExpr(NodeIdx);
 

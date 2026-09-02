@@ -814,6 +814,8 @@ fn prefix_or_atom(p: &mut Marker<'_, '_>, follow: ExprFollow) -> Option<Complete
         | T::FloatLiteral
         | T::StringLiteral
         | T::RawStringLiteral
+        | T::BlockStringLiteral
+        | T::RawBlockStringLiteral
         | T::CharLiteral
         | T::TrueKw
         | T::FalseKw => leaf(p, N::LiteralExpr),

@@ -325,7 +325,133 @@ fn number_suffixes_attach() {
 #[test]
 fn string_shapes() {
     check(r#""abc""#, &[r#"String 0..5 "\"abc\"""#]);
-    check("\"a\nb\"", &[r#"String 0..5 "\"a\nb\"""#]);
+}
+
+#[test]
+fn line_literals_end_at_the_line() {
+    // A literal never crosses a line break: what follows lexes as usual,
+    // and a backslash before the break does not carry it over.
+    check(
+        "\"a\nb\"",
+        &[
+            r#"String 0..2 "\"a" TokenFlags(UNTERMINATED)"#,
+            r#"Newline 2..3 "\n""#,
+            r#"Ident 3..4 "b""#,
+            r#"String 4..5 "\"" TokenFlags(UNTERMINATED)"#,
+        ],
+    );
+    assert_eq!(
+        lex("\"a\nb\"").unwrap().errors(),
+        &[
+            error(0, 0, 2, LexErrorKind::UnterminatedString),
+            error(3, 4, 5, LexErrorKind::UnterminatedString),
+        ],
+    );
+    check(
+        "\"a\\\nb",
+        &[
+            r#"String 0..3 "\"a\\" TokenFlags(UNTERMINATED | HAS_ESCAPE)"#,
+            r#"Newline 3..4 "\n""#,
+            r#"Ident 4..5 "b""#,
+        ],
+    );
+    check(
+        "r\"a\r\nb",
+        &[
+            r#"RawString 0..3 "r\"a" TokenFlags(UNTERMINATED)"#,
+            r#"Newline 3..5 "\r\n""#,
+            r#"Ident 5..6 "b""#,
+        ],
+    );
+}
+
+/// The dump line of a source that is one multi-line literal.
+fn block(source: &str, raw: &str, flags: &str) -> String {
+    format!("{raw} 0..{} {source:?}{flags}", source.len())
+}
+
+#[test]
+fn block_string_shapes() {
+    let source = "\"\"\"\n  a \"b\"\n  \"\"\"";
+    check(source, &[&block(source, "BlockString", "")]);
+    assert_eq!(lex(source).unwrap().errors(), &[]);
+
+    // An escaped quote keeps the literal open.
+    let source = "\"\"\"\n  \\\"\"\"\n  \"\"\"";
+    check(
+        source,
+        &[&block(source, "BlockString", " TokenFlags(HAS_ESCAPE)")],
+    );
+
+    let source = "\"\"\"\n\"\"\"";
+    check(source, &[&block(source, "BlockString", "")]);
+
+    // The first `"""` closes, wherever it sits; layout is judged after.
+    check(
+        "\"\"\"a\"\"\"b",
+        &[r#"BlockString 0..7 "\"\"\"a\"\"\"""#, r#"Ident 7..8 "b""#],
+    );
+}
+
+#[test]
+fn unterminated_block_string_runs_to_the_end() {
+    let source = "\"\"\"\nabc\n";
+    check(
+        source,
+        &[&block(source, "BlockString", " TokenFlags(UNTERMINATED)")],
+    );
+    assert_eq!(
+        lex(source).unwrap().errors(),
+        &[error(0, 0, 3, LexErrorKind::UnterminatedBlockString)],
+    );
+}
+
+#[test]
+fn raw_block_string_shapes() {
+    let source = "r\"\"\"\n  \\d \"q\"\n  \"\"\"";
+    check(source, &[&block(source, "RawBlockString", "")]);
+    assert_eq!(lex(source).unwrap().errors(), &[]);
+
+    // A backslash escapes nothing, so the quotes after it close.
+    let source = "r\"\"\"\n  \\\"\"\"";
+    check(source, &[&block(source, "RawBlockString", "")]);
+
+    let source = "r\"\"\"\nabc";
+    check(
+        source,
+        &[&block(
+            source,
+            "RawBlockString",
+            " TokenFlags(UNTERMINATED)",
+        )],
+    );
+    assert_eq!(
+        lex(source).unwrap().errors(),
+        &[error(0, 0, 4, LexErrorKind::UnterminatedRawBlockString)],
+    );
+
+    // A fenced raw string that begins with quotes is not a multi-line one.
+    check(r##"r#"""x""#"##, &[r##"RawString 0..9 "r#\"\"\"x\"\"#""##]);
+}
+
+#[test]
+fn block_strings_keep_line_breaks_and_flag_lone_carriage_returns() {
+    let source = "\"\"\"\r\n  a\r\n  \"\"\"";
+    check(source, &[&block(source, "BlockString", "")]);
+    assert_eq!(lex(source).unwrap().errors(), &[]);
+
+    let source = "\"\"\"\r  a\r  \"\"\"";
+    check(
+        source,
+        &[&block(source, "BlockString", " TokenFlags(LONE_CR)")],
+    );
+    assert_eq!(
+        lex(source).unwrap().errors(),
+        &[
+            error(0, 3, 4, LexErrorKind::LoneCarriageReturn),
+            error(0, 7, 8, LexErrorKind::LoneCarriageReturn),
+        ],
+    );
 }
 
 #[test]

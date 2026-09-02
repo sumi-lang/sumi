@@ -310,8 +310,10 @@ fn bare_return_can_end_a_statement() {
 
 #[test]
 fn embedded_newlines_are_not_boundaries() {
-    // The break sits inside the string token, not in trivia.
-    assert!(!has_boundary("let s = \"a\nb\""));
+    // The break sits inside the multi-line literal, not in trivia.
+    assert!(!has_boundary("let s = \"\"\"\nb\n\"\"\""));
+    // A one-line literal ends at the break, so the next line is a statement.
+    assert!(has_boundary("let s = \"a\nb\""));
 }
 
 #[test]

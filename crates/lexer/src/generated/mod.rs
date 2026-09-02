@@ -37,8 +37,17 @@ pub enum SyntaxKind {
     IntLiteral,
     /// A float literal: a fraction (`1.5`), an exponent (`1e3`), or both.
     FloatLiteral,
+    /// A string literal on one line: `"…"`, with escapes. A line break ends an
+    /// unterminated one, so a stray quote costs its line and nothing after it.
     StringLiteral,
+    /// A raw string literal on one line: `r"…"`, or `r#"…"#` to include quotes.
+    /// Nothing in it is an escape.
     RawStringLiteral,
+    /// A multi-line string literal: `"""`, the content lines, and `"""` on its
+    /// own line, whose indentation every content line shares and sheds.
+    BlockStringLiteral,
+    /// A multi-line string literal with nothing escaped: `r"""` to `"""`.
+    RawBlockStringLiteral,
     CharLiteral,
     LParen,
     RParen,
@@ -65,7 +74,7 @@ pub enum SyntaxKind {
 
 impl SyntaxKind {
     /// Every kind, in declaration order.
-    pub const ALL: [Self; 37] = [
+    pub const ALL: [Self; 39] = [
         Self::Whitespace,
         Self::Newline,
         Self::LineComment,
@@ -83,6 +92,8 @@ impl SyntaxKind {
         Self::FloatLiteral,
         Self::StringLiteral,
         Self::RawStringLiteral,
+        Self::BlockStringLiteral,
+        Self::RawBlockStringLiteral,
         Self::CharLiteral,
         Self::LParen,
         Self::RParen,
@@ -209,6 +220,8 @@ impl SyntaxKind {
             Self::FloatLiteral => "a floating-point literal",
             Self::StringLiteral => "a string literal",
             Self::RawStringLiteral => "a raw string literal",
+            Self::BlockStringLiteral => "a multi-line string literal",
+            Self::RawBlockStringLiteral => "a raw multi-line string literal",
             Self::CharLiteral => "a character literal",
             Self::LParen => "`(`",
             Self::RParen => "`)`",

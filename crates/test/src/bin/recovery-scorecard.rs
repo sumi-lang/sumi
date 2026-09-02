@@ -18,9 +18,17 @@
 //! changed against the pre-edit stream (edit site excluded), and untouched
 //! top-level items disturbed. This quantifies the "unclosed brace re-pairs
 //! the whole file" risk.
+//!
+//! Part C deletes one delimiter inside a literal — a quote of a one-line
+//! string, character, or raw string, or a `"""` of a multi-line one — in a
+//! clean corpus that contains multi-line strings, and measures how far the
+//! literal then reaches: the edits Parts A and B cannot make, since theirs
+//! are whole significant tokens. This quantifies the "stray quote re-pairs
+//! the whole file" risk, per literal form.
 
 use std::collections::HashSet;
 
+use sumi_lexer::RawKind;
 use sumi_syntax::{
     NodeIdx, NodeKind, ParseEvidence, ParserInput, RawIdx, SigIdx, SyntaxKind, is_bracket,
 };
@@ -465,6 +473,186 @@ fn churn_base(name: &str, source: &str, edits_per_kind: usize, rng: &mut Lcg) {
     }
 }
 
+// --- Part C: one delimiter deleted inside a literal. ---
+
+/// Which delimiter of a literal token a class deletes.
+#[derive(Clone, Copy)]
+enum LiteralEdit {
+    Opener,
+    Closer,
+}
+
+struct LiteralClass {
+    label: &'static str,
+    kinds: &'static [RawKind],
+    edit: LiteralEdit,
+    /// The delimiter's bytes; a raw literal's leading `r` stays.
+    width: usize,
+}
+
+const LITERAL_CLASSES: [LiteralClass; 6] = [
+    LiteralClass {
+        label: "delete \" closer",
+        kinds: &[RawKind::String],
+        edit: LiteralEdit::Closer,
+        width: 1,
+    },
+    LiteralClass {
+        label: "delete \" opener",
+        kinds: &[RawKind::String],
+        edit: LiteralEdit::Opener,
+        width: 1,
+    },
+    LiteralClass {
+        label: "delete ' closer",
+        kinds: &[RawKind::Char],
+        edit: LiteralEdit::Closer,
+        width: 1,
+    },
+    LiteralClass {
+        label: "delete r\" closer",
+        kinds: &[RawKind::RawString],
+        edit: LiteralEdit::Closer,
+        width: 1,
+    },
+    LiteralClass {
+        label: "delete \"\"\" closer",
+        kinds: &[RawKind::BlockString, RawKind::RawBlockString],
+        edit: LiteralEdit::Closer,
+        width: 3,
+    },
+    LiteralClass {
+        label: "delete \"\"\" opener",
+        kinds: &[RawKind::BlockString, RawKind::RawBlockString],
+        edit: LiteralEdit::Opener,
+        width: 3,
+    },
+];
+
+const LITERAL_KINDS: [RawKind; 5] = [
+    RawKind::String,
+    RawKind::RawString,
+    RawKind::Char,
+    RawKind::BlockString,
+    RawKind::RawBlockString,
+];
+
+struct LiteralSample {
+    /// Bytes of the longest literal token left where the edited one stood:
+    /// how far the stray delimiter reaches.
+    spread: u64,
+    diags: u64,
+    untouched_disturbed: u64,
+}
+
+fn literal_edit(
+    source: &str,
+    before: &Front,
+    token: RawIdx,
+    class: &LiteralClass,
+) -> LiteralSample {
+    let range = before.lexed.range(token);
+    let (start, end) = (range.start().to_usize(), range.end().to_usize());
+    let raw = matches!(
+        before.lexed.raw_kind(token),
+        RawKind::RawString | RawKind::RawBlockString
+    );
+    let cut = match class.edit {
+        LiteralEdit::Opener => {
+            let opener = start + usize::from(raw);
+            opener..opener + class.width
+        }
+        LiteralEdit::Closer => end - class.width..end,
+    };
+    let edited = format!("{}{}", &source[..cut.start], &source[cut.end..]);
+    let impact = EditSpan::new(cut.start, cut.end, cut.start);
+    let index = significant_at(&before.input, token);
+    let touched: Vec<RawIdx> = (index.saturating_sub(2)..=(index + 2).min(before.input.len() - 1))
+        .map(|index| before.input.token(sig(index)))
+        .collect();
+    let after = front(&edited);
+
+    let (untouched, preserved) = preservation(source, before, &touched, impact, &edited, &after);
+    // Where the token stood, in the edited source.
+    let stood = start..end - class.width;
+    let spread = after
+        .lexed
+        .indices()
+        .filter(|&index| LITERAL_KINDS.contains(&after.lexed.raw_kind(index)))
+        .map(|index| after.lexed.range(index))
+        .filter(|range| {
+            range.start().to_usize() < stood.end && range.end().to_usize() > stood.start
+        })
+        .map(|range| (range.end().to_usize() - range.start().to_usize()) as u64)
+        .max()
+        .unwrap_or(0);
+    let parsed = sumi_frontend::parse_source(sumi_frontend::FileId::new(0), edited.as_str().into())
+        .expect("edited sources fit in u32");
+    LiteralSample {
+        spread,
+        diags: parsed.diagnostics().len() as u64,
+        untouched_disturbed: (untouched - preserved) as u64,
+    }
+}
+
+fn literal_edits(name: &str, source: &str, edits_per_class: usize, rng: &mut Lcg) {
+    let clean = sumi_frontend::parse_source(sumi_frontend::FileId::new(0), source.into())
+        .expect("corpora fit in u32");
+    assert!(
+        clean.diagnostics().is_empty(),
+        "the literal corpus must be valid"
+    );
+    let before = front(source);
+    let literals = before
+        .lexed
+        .indices()
+        .filter(|&index| LITERAL_KINDS.contains(&before.lexed.raw_kind(index)))
+        .count();
+    println!(
+        "{name}: {} bytes, {literals} literals, {} top-level items",
+        source.len(),
+        items(&before).len()
+    );
+    for class in &LITERAL_CLASSES {
+        let candidates: Vec<RawIdx> = before
+            .lexed
+            .indices()
+            .filter(|&index| class.kinds.contains(&before.lexed.raw_kind(index)))
+            .collect();
+        let samples: Vec<LiteralSample> = (0..edits_per_class)
+            .map(|_| {
+                let token = candidates[rng.below(candidates.len())];
+                literal_edit(source, &before, token, class)
+            })
+            .collect();
+        let stat = |select: fn(&LiteralSample) -> u64| -> (u64, u64, u64) {
+            let values: Vec<u64> = samples.iter().map(select).collect();
+            (
+                percentile_u64(&values, 0.50),
+                percentile_u64(&values, 0.95),
+                *values.iter().max().expect("every class takes samples"),
+            )
+        };
+        let spread = stat(|s| s.spread);
+        let diags = stat(|s| s.diags);
+        let items = stat(|s| s.untouched_disturbed);
+        println!(
+            "  {:<18} n={:<4} spread p50/p95/max {}/{}/{}  diags {}/{}/{}  items_disturbed {}/{}/{}",
+            class.label,
+            samples.len(),
+            spread.0,
+            spread.1,
+            spread.2,
+            diags.0,
+            diags.1,
+            diags.2,
+            items.0,
+            items.1,
+            items.2,
+        );
+    }
+}
+
 fn main() {
     println!("recovery-scorecard");
     println!();
@@ -482,6 +670,15 @@ fn main() {
     churn_base("clean_8k", &clean_8k, 200, &mut rng);
     churn_base("clean_64k", &clean_64k, 200, &mut rng);
     churn_base("clean_1m", &clean_1m, 50, &mut rng);
+    println!();
+    println!("== Part C: one delimiter deleted inside a literal ==");
+    println!("spread = bytes of the longest literal token left where the edited one stood: how");
+    println!("far the stray delimiter reaches. A one-line literal reaches the end of its line at");
+    println!("most; a `\"\"\"` reaches the next `\"\"\"` or the end of the file.");
+    println!();
+    let mut rng = Lcg::new(0x11E4_A15E);
+    let literals_64k = corpus::generate_with_block_strings(64 * 1024, 0xB10C);
+    literal_edits("literals_64k", &literals_64k, 200, &mut rng);
 }
 
 #[cfg(test)]

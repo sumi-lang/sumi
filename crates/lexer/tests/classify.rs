@@ -248,3 +248,15 @@ fn misplaced_bom_classifies_to_error() {
         &[r#"Ident 0..1 "x""#, r#"Error 1..4 "\u{feff}""#],
     );
 }
+
+#[test]
+fn block_strings_classify_by_their_opener() {
+    check(
+        "\"\"\"\n\"\"\" r\"\"\"\n\"\"\"",
+        &[
+            r#"BlockStringLiteral 0..7 "\"\"\"\n\"\"\"""#,
+            r#"Whitespace 7..8 " ""#,
+            r#"RawBlockStringLiteral 8..16 "r\"\"\"\n\"\"\"""#,
+        ],
+    );
+}

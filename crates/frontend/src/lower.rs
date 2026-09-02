@@ -112,6 +112,22 @@ fn lower_token_errors(
                     snapshot.range(error.range),
                 ),
             )),
+            LexErrorKind::UnterminatedBlockString => emitted.push((
+                order,
+                primary(
+                    codes::UNTERMINATED_BLOCK_STRING,
+                    "unterminated multi-line string literal",
+                    snapshot.range(error.range),
+                ),
+            )),
+            LexErrorKind::UnterminatedRawBlockString => emitted.push((
+                order,
+                primary(
+                    codes::UNTERMINATED_RAW_BLOCK_STRING,
+                    "unterminated raw multi-line string literal",
+                    snapshot.range(error.range),
+                ),
+            )),
             LexErrorKind::UnterminatedChar => emitted.push((
                 order,
                 primary(
@@ -233,6 +249,30 @@ fn lower_token_errors(
                     snapshot.range(error.range),
                 ),
             )),
+            LexErrorKind::BlockStringOpenerContent => emitted.push((
+                order,
+                primary(
+                    codes::BLOCK_STRING_OPENER_CONTENT,
+                    "multi-line string content must begin on the line after `\"\"\"`",
+                    snapshot.range(error.range),
+                ),
+            )),
+            LexErrorKind::BlockStringCloserContent => emitted.push((
+                order,
+                primary(
+                    codes::BLOCK_STRING_CLOSER_CONTENT,
+                    "closing `\"\"\"` must begin its own line",
+                    snapshot.range(error.range),
+                ),
+            )),
+            LexErrorKind::BlockStringIndentation => emitted.push((
+                order,
+                primary(
+                    codes::BLOCK_STRING_INDENTATION,
+                    "line is indented less than the closing `\"\"\"`",
+                    snapshot.range(error.range),
+                ),
+            )),
         }
     }
 
@@ -299,6 +339,8 @@ fn lower_parse(snapshot: &Snapshot<'_>, parse: &Parse, diagnostics: &mut Vec<Dia
                 error.kind,
                 LexErrorKind::UnterminatedString
                     | LexErrorKind::UnterminatedRawString
+                    | LexErrorKind::UnterminatedBlockString
+                    | LexErrorKind::UnterminatedRawBlockString
                     | LexErrorKind::UnterminatedChar
             )
         })

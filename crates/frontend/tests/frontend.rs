@@ -3,7 +3,7 @@ use sumi_frontend::{
     Applicability, DiagnosticCode, FileId, Location, ParsedSource, Place, Severity, codes,
     parse_source,
 };
-use sumi_syntax::{ParseAnchor, ParseEvidence, RawIdx, SyntaxKind};
+use sumi_syntax::{NodeKind, ParseAnchor, ParseEvidence, RawIdx, SyntaxKind};
 use sumi_text::TextSize;
 
 /// The file every test source stands for; the frontend copies it into every
@@ -194,7 +194,7 @@ fn an_error_in_a_skipped_effect_does_not_suppress_a_valid_cause() {
 
 #[test]
 fn closers_after_unterminated_literals_have_no_fix() {
-    for literal in ["\"tail", "r\"tail", "'tail"] {
+    for literal in ["\"tail", "r\"tail", "'tail", "\"\"\"tail", "r\"\"\"tail"] {
         let source = format!("fn f() {{ ({literal}");
         let front = parsed(&source);
         let closers: Vec<_> = front
@@ -486,5 +486,73 @@ proptest! {
                 }
             }
         }
+    }
+}
+
+#[test]
+fn line_literals_end_at_their_line() {
+    // A stray quote costs its line and nothing after it: the next line
+    // still parses as the call it is.
+    let source = "fn f() {\n    let s = \"a\n    g(s)\n}\n";
+    let front = parsed(source);
+    assert_eq!(diagnostic_codes(&front), vec![codes::UNTERMINATED_STRING]);
+    assert_eq!(
+        location_text(&front, front.diagnostics()[0].primary.location),
+        "\"a"
+    );
+    let tree = front.parse().tree();
+    let item = tree.children(tree.root()).next().expect("one item");
+    let block = tree
+        .children(item)
+        .find(|&node| tree.kind(node) == NodeKind::Block)
+        .expect("the item has a body");
+    let statements: Vec<NodeKind> = tree.children(block).map(|node| tree.kind(node)).collect();
+    assert_eq!(statements, vec![NodeKind::CallExpr, NodeKind::LetStmt]);
+}
+
+#[test]
+fn block_strings_are_one_token_and_report_their_layout() {
+    let clean = "fn f() {\n    let s = \"\"\"\n        a\n        \"\"\"\n    g(s)\n}\n";
+    assert!(parsed(clean).diagnostics().is_empty());
+
+    let source = "fn f() {\n    let s = \"\"\"tail\n        a\n  b\n    \"\"\"\n}\n";
+    let front = parsed(source);
+    assert_eq!(
+        diagnostic_codes(&front),
+        vec![
+            codes::BLOCK_STRING_OPENER_CONTENT,
+            codes::BLOCK_STRING_INDENTATION
+        ]
+    );
+    let texts: Vec<&str> = front
+        .diagnostics()
+        .iter()
+        .map(|diagnostic| location_text(&front, diagnostic.primary.location))
+        .collect();
+    assert_eq!(texts, vec!["tail", "  "]);
+
+    let source = "fn f() {\n    let s = \"\"\"\n        a\"\"\"\n}\n";
+    let front = parsed(source);
+    assert_eq!(
+        diagnostic_codes(&front),
+        vec![codes::BLOCK_STRING_CLOSER_CONTENT]
+    );
+    assert_eq!(
+        location_text(&front, front.diagnostics()[0].primary.location),
+        "\"\"\""
+    );
+}
+
+#[test]
+fn unterminated_block_strings_are_reported_at_their_opener() {
+    for (opener, code) in [
+        ("\"\"\"", codes::UNTERMINATED_BLOCK_STRING),
+        ("r\"\"\"", codes::UNTERMINATED_RAW_BLOCK_STRING),
+    ] {
+        let source = format!("fn f() {{\n    let s = {opener}\n        a\n}}\n");
+        let front = parsed(&source);
+        let first = &front.diagnostics()[0];
+        assert_eq!(first.code, code, "for {source:?}");
+        assert_eq!(location_text(&front, first.primary.location), opener);
     }
 }

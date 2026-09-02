@@ -39,6 +39,9 @@ pub fn lex(source: &str) -> Result<LexedFile, SourceTooLarge> {
                     || token.flags.contains(TokenFlags::HAS_ESCAPE)
             }
             RawKind::RawString => token.flags.contains(TokenFlags::UNTERMINATED),
+            // Layout is judged on every multi-line literal, since the
+            // scanner only finds its ends.
+            RawKind::BlockString | RawKind::RawBlockString => true,
             RawKind::Char | RawKind::Unknown => true,
             RawKind::Newline => token.flags.contains(TokenFlags::LONE_CR),
             RawKind::Punct => token.kind == SyntaxKind::Error,
@@ -80,6 +83,23 @@ fn collect_errors(
     errors: &mut Vec<LexError>,
 ) {
     let unterminated = token.flags.contains(TokenFlags::UNTERMINATED);
+    // An unterminated multi-line literal runs to the end of the file, so
+    // it is reported at its opener rather than over everything after it.
+    let block_opener = match token.raw {
+        RawKind::BlockString if unterminated => Some((3, LexErrorKind::UnterminatedBlockString)),
+        RawKind::RawBlockString if unterminated => {
+            Some((4, LexErrorKind::UnterminatedRawBlockString))
+        }
+        _ => None,
+    };
+    if let Some((opener, kind)) = block_opener {
+        errors.push(LexError {
+            token: index,
+            range: absolute_range(start, text.len(), 0..opener),
+            kind,
+        });
+        return;
+    }
     let primary = match token.raw {
         RawKind::String if unterminated => Some(LexErrorKind::UnterminatedString),
         RawKind::RawString if unterminated => Some(LexErrorKind::UnterminatedRawString),
@@ -121,6 +141,10 @@ fn collect_errors(
         }
         SyntaxKind::StringLiteral if token.flags.contains(TokenFlags::HAS_ESCAPE) => {
             literal::validate_string(text, &mut error);
+        }
+        SyntaxKind::BlockStringLiteral => literal::validate_block_string(text, false, &mut error),
+        SyntaxKind::RawBlockStringLiteral => {
+            literal::validate_block_string(text, true, &mut error);
         }
         SyntaxKind::CharLiteral => literal::validate_char(text, &mut error),
         SyntaxKind::Error if token.raw == RawKind::Punct => {
@@ -272,6 +296,10 @@ pub struct LexError {
 pub enum LexErrorKind {
     UnterminatedString,
     UnterminatedRawString,
+    /// A `"""` never closed. Reported at the opener: the rest of the file
+    /// is inside it.
+    UnterminatedBlockString,
+    UnterminatedRawBlockString,
     UnterminatedChar,
     /// A `\r` line ending not followed by `\n`.
     LoneCarriageReturn,
@@ -306,6 +334,14 @@ pub enum LexErrorKind {
     MoreThanOneChar,
     /// Punctuation with no role in the language, such as `;` or `[`.
     UnknownPunctuation,
+    /// Text after the opening `"""` on its line; the content begins on the
+    /// next.
+    BlockStringOpenerContent,
+    /// Text before the closing `"""` on its line; the closer begins its own.
+    BlockStringCloserContent,
+    /// A content line of a multi-line string indented less than its closing
+    /// `"""`.
+    BlockStringIndentation,
 }
 
 /// `source.len()` exceeds the `u32` coordinate space of [`TextSize`].
