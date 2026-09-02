@@ -30,8 +30,10 @@ Reading the numbers:
   2.2 KiB here. The one-line maxima come from the same cascade: an
   unterminated one-line literal that reaches a `"""` opener on its line
   eats the opener's first quote, and every later `"""` in the file swaps
-  role. A layout bound on multi-line literals would close that case. A
-  hole's braces are bounded by the hole's line: a deleted `{` leaves the
+  role. A layout bound on multi-line literals would close that case; it
+  was decided against, so that content may sit at any indentation, and
+  the lexer carries a TODO where the literal is scanned. A hole's braces
+  are bounded by the hole's line: a deleted `{` leaves the
   hole's code as the literal's text, and a deleted `}` leaves the hole open
   to the end of its line, where the literal's closing quote, or the first
   quote of a `"""` after it, closes the literal — no reach at all, and

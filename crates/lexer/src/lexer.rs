@@ -523,6 +523,26 @@ impl<'src> Lexer<'src> {
     /// Scan a `"…"` or `"""` literal from its opener: whole, when it has no
     /// hole, and otherwise up to its first `{`, as its start, with its text
     /// to resume after the hole.
+    ///
+    /// A `"""` literal runs to the next `"""`, wherever that is. It is the
+    /// one delimiter whose damage is not bounded by its line: a `"""` left
+    /// unclosed swallows the source through the next `"""`, which then
+    /// opens a literal of its own, and every `"""` after it swaps role
+    /// through the end of the file. A one-line literal that reaches a
+    /// `"""` opener on its line eats the opener's first quote and starts
+    /// the same inversion. Part C of the recovery scorecard measures both:
+    /// a deleted `"""` reaches a median of a hundred bytes and a maximum
+    /// of a few KiB, and disturbs most of the items after it. A layout
+    /// bound — content indented deeper than the line that opens the
+    /// literal, so that the literal ends at the first line that is not —
+    /// would confine both to the next statement; it was decided against,
+    /// so that content may sit at any indentation, as Swift allows.
+    // TODO: an unclosed `"""` causes significant parsing problems for the
+    // rest of the file, as described above. If they prove to matter in
+    // practice — in an editor, where the rest of the file loses its
+    // analysis while a literal is open — revisit the layout bound, or a
+    // recovery that prefers the layout reading when the textual pairing
+    // leaves a literal with layout errors.
     fn scan_string(&mut self, block: bool) -> (SyntaxKind, RawKind, TokenFlags) {
         let (raw, whole) = if block {
             (RawKind::BlockString, SyntaxKind::BlockStringLiteral)
