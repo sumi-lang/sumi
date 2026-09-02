@@ -48,7 +48,7 @@
 use std::num::NonZeroU32;
 use std::ops::Range;
 
-use crate::kind::{
+use crate::generated::{
     BRACKET_PAIRS, SyntaxKind, can_end_statement, continues_statement, is_closer, is_opener,
     opener, starts_item,
 };

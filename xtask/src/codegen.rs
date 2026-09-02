@@ -43,7 +43,7 @@ pub fn rustfmt(source: &str) -> Result<String, String> {
     String::from_utf8(output.stdout).map_err(|error| error.to_string())
 }
 
-/// `crates/lexer/src/kind.rs`.
+/// `crates/lexer/src/generated/mod.rs`.
 pub fn lexer_kind(grammar: &Grammar) -> String {
     let tokens = &grammar.tokens;
     let shaped = |shape| tokens.iter().filter(move |token| token.shape == shape);
@@ -157,7 +157,7 @@ impl SyntaxKind {{
     )
 }
 
-/// `crates/syntax/src/kind.rs`.
+/// `crates/syntax/src/generated/mod.rs`.
 pub fn syntax_kind(grammar: &Grammar) -> String {
     let class = |member: fn(&Token) -> bool| {
         matches_any(
@@ -459,7 +459,7 @@ fn binary_operator_arms(grammar: &Grammar) -> (&'static str, String) {
     (glued, arms(compounds.chain(singles)))
 }
 
-/// `docs/reference/grammar.md`.
+/// `docs/reference/generated/grammar.md`.
 pub fn reference(grammar: &Grammar) -> String {
     let shapes = [
         (Shape::Trivia, "Trivia"),
@@ -562,7 +562,7 @@ pub fn reference(grammar: &Grammar) -> String {
 
 <!-- {GENERATED} -->
 
-Generated from [`sumi.grammar`](../../sumi.grammar), the one declaration of
+Generated from [`sumi.grammar`](../../../sumi.grammar), the one declaration of
 Sumi's tokens, syntax nodes, and the token classes the lexer, the newline
 rule, and the parser derive from them. Edit that file and run
 `cargo xtask codegen`: this chapter, the kind enums, and every derived

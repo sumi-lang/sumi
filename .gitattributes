@@ -1,0 +1,3 @@
+crates/lexer/src/generated/** linguist-generated=true
+crates/syntax/src/generated/** linguist-generated=true
+docs/reference/generated/** linguist-generated=true

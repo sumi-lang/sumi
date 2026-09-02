@@ -44,14 +44,17 @@ fn workspace_root() -> PathBuf {
 fn generated(grammar: &grammar::Grammar) -> Result<[(&'static str, String); 3], String> {
     Ok([
         (
-            "crates/lexer/src/kind.rs",
+            "crates/lexer/src/generated/mod.rs",
             codegen::rustfmt(&codegen::lexer_kind(grammar))?,
         ),
         (
-            "crates/syntax/src/kind.rs",
+            "crates/syntax/src/generated/mod.rs",
             codegen::rustfmt(&codegen::syntax_kind(grammar))?,
         ),
-        ("docs/reference/grammar.md", codegen::reference(grammar)),
+        (
+            "docs/reference/generated/grammar.md",
+            codegen::reference(grammar),
+        ),
     ])
 }
 

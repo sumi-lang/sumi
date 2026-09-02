@@ -44,8 +44,8 @@
 use sumi_lexer::LexedFile;
 use sumi_text::{TextRange, TextSize};
 
+use crate::generated::{NodeKind, SyntaxKind};
 use crate::input::{ParserInput, Slot};
-use crate::kind::{NodeKind, SyntaxKind};
 use crate::parser::{
     ParseAnchor, ParseEvidence, ParseExpected, ParseRecovery, ParseRecoveryKind, ParseViolation,
     ParseViolationKind, RawGap, RawTokenRange,
@@ -609,7 +609,8 @@ impl<'a> Marker<'_, 'a> {
     /// Whether the next token begins an expression. Whatever parses an
     /// expression where this holds takes at least that token.
     pub(crate) fn starts_expression(&self) -> bool {
-        self.current().is_some_and(crate::kind::starts_expression)
+        self.current()
+            .is_some_and(crate::generated::starts_expression)
     }
 
     /// Whether the next token is a bracket the stream pairs with another,
@@ -778,7 +779,7 @@ impl<'a> Marker<'_, 'a> {
             .builder
             .input
             .get(self.start)
-            .and_then(crate::kind::closer)
+            .and_then(crate::generated::closer)
             .unwrap_or_else(|| unreachable!("a missing closer belongs to a bracket node"));
         let opener = self.builder.raw_range(self.start, self.start + 1);
         self.missing(ParseExpected::Closer { kind, opener })

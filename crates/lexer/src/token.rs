@@ -3,7 +3,7 @@ use std::ops::BitOrAssign;
 
 use sumi_text::TextSize;
 
-use crate::kind::SyntaxKind;
+use crate::generated::SyntaxKind;
 
 /// A transient scanner result: one lexical atom, classified both ways.
 ///

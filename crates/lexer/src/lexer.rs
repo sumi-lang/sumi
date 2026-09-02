@@ -1,6 +1,6 @@
 use sumi_text::TextSize;
 
-use crate::kind::SyntaxKind;
+use crate::generated::SyntaxKind;
 use crate::token::{RawKind, RawToken, TokenFlags};
 
 const fn is_ascii_ident_start(byte: u8) -> bool {
