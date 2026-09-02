@@ -15,6 +15,9 @@
 //                                       or rule-typed child, and an enum
 //                                       per category
 //   docs/reference/generated/grammar.md the grammar reference chapter
+//   fuzz/sumi.dict                      the libFuzzer dictionary: every
+//                                       fixed token text and compound
+//                                       operator
 //
 // CI runs `cargo xtask codegen --check` and fails when any of them drifts.
 //
