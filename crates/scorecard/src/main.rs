@@ -2,9 +2,10 @@
 //!
 //! Everything here is seeded, so the numbers are exactly reproducible and
 //! the committed `recovery-scorecard.txt` beside this crate is a reference,
-//! not a sample. Run as `cargo run --release -p xtask -- scorecard`; it
-//! lives here rather than in `sumi-test` so that crate stays below the
-//! frontend.
+//! not a sample. Run as `cargo run --release -p sumi-scorecard`. It is a
+//! leaf package of its own so that `sumi-test` stays below the parser and
+//! `xtask`, which generates code these crates compile against, depends on
+//! none of them.
 //!
 //! Part A scores recovery quality over seeded (program, edit) pairs drawn
 //! from the same generator the recovery property tests use, per edit class:
@@ -655,7 +656,7 @@ fn literal_edits(name: &str, source: &str, edits_per_class: usize, rng: &mut Lcg
     }
 }
 
-pub fn run() {
+fn main() {
     println!("recovery-scorecard");
     println!();
     scorecard();

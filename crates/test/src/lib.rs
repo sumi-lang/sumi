@@ -5,7 +5,7 @@
 //! an edit must leave alone into the edited source. The recovery property
 //! tests in `sumi-syntax` assert quality over these pairs, and any harness
 //! measuring it must draw from the same distributions; the recovery
-//! scorecard in `xtask` is one. Nothing here ships in the compiler:
+//! scorecard in `sumi-scorecard` is one. Nothing here ships in the compiler:
 //! production crates must not depend on this one, and it depends on
 //! nothing above the parser.
 
