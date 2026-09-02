@@ -4,7 +4,7 @@ use std::ops::Range;
 
 use sumi_text::{TextRange, TextSize};
 
-use crate::kind::SyntaxKind;
+use crate::generated::SyntaxKind;
 use crate::lexer::Lexer;
 use crate::literal;
 use crate::token::{RawKind, RawToken, TokenFlags};

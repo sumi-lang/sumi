@@ -16,7 +16,7 @@
 use std::ops::Range;
 
 use crate::file::LexErrorKind;
-use crate::kind::SyntaxKind;
+use crate::generated::SyntaxKind;
 
 struct NumberShape {
     integer: Range<usize>,

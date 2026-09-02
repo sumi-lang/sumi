@@ -5,11 +5,12 @@
 // parser, and diagnostics derive from them. `cargo xtask codegen`
 // regenerates from it:
 //
-//   crates/lexer/src/kind.rs     SyntaxKind, the keyword and punctuation
-//                                tables, token texts and descriptions
-//   crates/syntax/src/kind.rs    NodeKind, the token classes, bracket
-//                                pairs, and the operator tables
-//   docs/reference/grammar.md    the grammar chapter of the reference
+//   crates/lexer/src/generated/mod.rs   SyntaxKind, the keyword and
+//                                       punctuation tables, token texts,
+//                                       and descriptions
+//   crates/syntax/src/generated/mod.rs  NodeKind, the token classes,
+//                                       bracket pairs, and operator tables
+//   docs/reference/generated/grammar.md the grammar reference chapter
 //
 // CI runs `cargo xtask codegen --check` and fails when any of them drifts.
 //

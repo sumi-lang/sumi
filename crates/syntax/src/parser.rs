@@ -23,11 +23,11 @@
 //! a prefix operator must be glued to its operand, and comparisons do not
 //! chain. Each violation is retained while the evident structure is accepted.
 
-use crate::input::ParserInput;
-use crate::kind::{
+use crate::generated::{
     BinaryOp, NodeKind as N, PREFIX_BP, SyntaxKind as T, binary_operator, introduces_statement,
     is_closer, is_opener, is_prefix_operator, starts_expression, starts_item, starts_statement,
 };
+use crate::input::ParserInput;
 use crate::tree::{CompletedMarker, Marker, Parse, RecoveryHandle};
 
 /// Parse one file.
