@@ -1,0 +1,31 @@
+== tree ==
+SourceFile 0..17
+  FnItem 0..17
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block 7..17
+      BinaryExpr 9..15
+        NameRef 9..10 "a"
+        BinaryExpr 12..15
+          NameRef 12..13 "b"
+          NameRef 14..15 "c"
+
+== evidence ==
+UnspacedBinaryOperator at 10
+UnspacedBinaryOperator at 13
+
+== diagnostics ==
+error[syntax/unspaced-binary-operator] 1:11..1:13 "<=": binary operator must have spaces on both sides
+  fix (safe): space binary operator
+    1:11 -> " "
+    1:13 -> " "
+error[syntax/unspaced-binary-operator] 1:14..1:15 "*": binary operator must have spaces on both sides
+  fix (safe): space binary operator
+    1:14 -> " "
+    1:15 -> " "
+
+== fixed ==
+fn f() { a <= b * c }
+
+== normalized ==
+fn f() { a <= b * c }

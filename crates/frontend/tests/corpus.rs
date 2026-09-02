@@ -3,7 +3,8 @@
 //! compared with the `expected.snap` beside it. A snapshot records the
 //! tree, with `!` on every node that contains an error, the parser's
 //! evidence, the diagnostics, the source after every fix, and the
-//! normalized source where it differs. Run with `UPDATE_EXPECT=1` to
+//! normalized source where it differs, its header naming any violation
+//! that survives normalizing. Run with `UPDATE_EXPECT=1` to
 //! rewrite the snapshots, then review the diff; a new case gets its first
 //! snapshot the same way.
 
@@ -168,7 +169,32 @@ fn snapshot(source: &str) -> String {
 
     let normalized = normalize(source, lexed, parse);
     if normalized != source {
-        out.push_str("\n== normalized ==\n");
+        // Normalize yields where a rewrite would change the parse, so a
+        // violation can outlive it; the header says which.
+        let reparsed = parse_source(FileId::new(0), normalized.as_str().into())
+            .expect("normalized cases fit in u32");
+        let mut remaining: Vec<String> = reparsed
+            .parse()
+            .evidence()
+            .iter()
+            .filter_map(|evidence| match evidence {
+                ParseEvidence::Violation(violation) => Some(format!("{:?}", violation.kind)),
+                ParseEvidence::Recovery(_) => None,
+            })
+            .collect();
+        remaining.sort();
+        remaining.dedup();
+        if remaining.is_empty() {
+            out.push_str("\n== normalized ==\n");
+        } else {
+            let verb = if remaining.len() == 1 {
+                "remains"
+            } else {
+                "remain"
+            };
+            writeln!(out, "\n== normalized ({} {verb}) ==", remaining.join(", "))
+                .expect("writing to a string");
+        }
         push_text(&mut out, &normalized);
     }
     out

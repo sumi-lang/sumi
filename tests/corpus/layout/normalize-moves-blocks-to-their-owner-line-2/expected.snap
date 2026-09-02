@@ -1,0 +1,25 @@
+== tree ==
+SourceFile 0..23
+  FnItem 0..23
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    TypeRef 10..13 "Int"
+    Block 18..23
+      LiteralExpr 20..21 "1"
+
+== evidence ==
+BlockOnNewLine at 18
+
+== diagnostics ==
+error[syntax/block-on-new-line] 2:5..2:6 "{": block must open on the line of its owner
+  fix (safe): move block to its owner's line
+    1:14 -> " {"
+    2:5..2:6 "{" -> ""
+
+== fixed ==
+fn f() -> Int {
+     1 }
+
+== normalized ==
+fn f() -> Int {
+     1 }

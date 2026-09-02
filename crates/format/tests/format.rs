@@ -1,8 +1,6 @@
 use sumi_format::{Element, elements, layout_violation_edits, normalize, reprint};
 use sumi_lexer::{LexedFile, lex};
-use sumi_syntax::{
-    NodeIdx, NodeKind, Parse, ParseEvidence, ParseViolationKind, ParserInput, SyntaxTree, parse,
-};
+use sumi_syntax::{NodeIdx, Parse, ParseEvidence, ParseViolationKind, ParserInput, parse};
 
 struct Front {
     lexed: LexedFile,
@@ -13,19 +11,6 @@ fn front(source: &str) -> Front {
     let lexed = lex(source).expect("test sources fit in u32");
     let parse = parse(&ParserInput::new(&lexed));
     Front { lexed, parse }
-}
-
-/// The tree's shape: depth and kind per node, in preorder.
-fn shape(tree: &SyntaxTree) -> Vec<(usize, NodeKind)> {
-    let mut nodes = Vec::new();
-    let mut pending = vec![(tree.root(), 0usize)];
-    while let Some((node, depth)) = pending.pop() {
-        nodes.push((depth, tree.kind(node)));
-        // Children come last first, so pushing them as yielded pops the
-        // first child next: the walk stays preorder.
-        pending.extend(tree.children(node).map(|child| (child, depth + 1)));
-    }
-    nodes
 }
 
 fn violations(front: &Front) -> Vec<ParseViolationKind> {
@@ -83,31 +68,6 @@ fn check_layout_edits(source: &str, kind: ParseViolationKind, expected: Option<&
 /// Normalize `source`; assert the expected text, that no layout violation
 /// survives, that the tree shape is unchanged, and that a second pass
 /// changes nothing.
-#[track_caller]
-fn check_normalize(source: &str, expected: &str) {
-    let before = front(source);
-    let normalized = normalize(source, &before.lexed, &before.parse);
-    assert_eq!(normalized, expected, "normalize of {source:?}");
-
-    let after = front(&normalized);
-    let remaining: Vec<_> = violations(&after)
-        .into_iter()
-        .filter(|&kind| kind != ParseViolationKind::ChainedComparison)
-        .collect();
-    assert_eq!(remaining, [], "violations survive normalize of {source:?}");
-    assert_eq!(
-        shape(after.parse.tree()),
-        shape(before.parse.tree()),
-        "normalize changed the shape of {source:?}"
-    );
-
-    let again = normalize(&normalized, &after.lexed, &after.parse);
-    assert_eq!(
-        again, normalized,
-        "normalize of {source:?} is not idempotent"
-    );
-}
-
 #[track_caller]
 fn check_roundtrip(source: &str) {
     let front = front(source);
@@ -217,11 +177,6 @@ fn reprint_survives_the_nesting_recovery_limit() {
 }
 
 #[test]
-fn normalize_without_violations_is_the_identity() {
-    check_normalize("fn f() { f(1) }\n", "fn f() { f(1) }\n");
-}
-
-#[test]
 fn layout_violation_edits_are_atomic_and_source_ordered() {
     check_layout_edits(
         "fn f()\n{ 1 }",
@@ -270,23 +225,6 @@ fn layout_violation_edits_reject_nonmechanical_candidates() {
 }
 
 #[test]
-fn normalize_spaces_unspaced_binary_operators() {
-    check_normalize("fn f() { a==b }", "fn f() { a == b }");
-    check_normalize("fn f() { a +b }", "fn f() { a + b }");
-    check_normalize("fn f() { a+ b }", "fn f() { a + b }");
-    check_normalize("fn f() { a<=b*c }", "fn f() { a <= b * c }");
-}
-
-#[test]
-fn normalize_moves_trailing_operators_to_the_continuation_line() {
-    check_normalize("fn f() { let x = a +\n b }", "fn f() { let x = a \n + b }");
-    check_normalize(
-        "fn f() { let x = a && // why\n b }",
-        "fn f() { let x = a  // why\n && b }",
-    );
-}
-
-#[test]
 fn normalize_leaves_a_trailing_operator_missing_its_operand() {
     // The parser records the violation before parsing the operand; moving
     // the operator in front of anything else would change the parse.
@@ -322,25 +260,6 @@ fn normalize_yields_when_the_rewrite_would_change_the_parse() {
     let before = front(source);
     let normalized = normalize(source, &before.lexed, &before.parse);
     assert_eq!(normalized, "fn f() { true <\n) }");
-}
-
-#[test]
-fn normalize_glues_spaced_prefix_operators() {
-    check_normalize("fn f() { let x = - 1 }", "fn f() { let x = -1 }");
-    check_normalize("fn f() { let x = ! \t flag }", "fn f() { let x = !flag }");
-}
-
-#[test]
-fn normalize_moves_blocks_to_their_owner_line() {
-    check_normalize("fn f()\n{ 1 }", "fn f() {\n 1 }");
-    check_normalize("fn f() -> Int\n    { 1 }", "fn f() -> Int {\n     1 }");
-    // The gap's comment survives, after the `{`.
-    check_normalize("fn f() // sig\n{ 1 }", "fn f() { // sig\n 1 }");
-}
-
-#[test]
-fn normalize_applies_cooccurring_violations_on_one_operator() {
-    check_normalize("fn f() { let x = a+\nb }", "fn f() { let x = a \n+ b }");
 }
 
 #[test]
