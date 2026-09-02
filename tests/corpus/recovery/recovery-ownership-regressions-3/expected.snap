@@ -1,0 +1,33 @@
+== tree ==
+SourceFile! 0..23
+  FnItem! 0..23
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block! 7..23
+      ParenExpr! 9..21
+        Block! 10..19
+          CallExpr! 12..19
+            NameRef 12..13 "g"
+            ArgList! 13..19
+              NameRef 14..15 "a"
+              Error! 16..17 "}"
+              NameRef 18..19 "x"
+
+== evidence ==
+ExpectedExpression at 16
+Expected(RParen) at 20
+Expected(RBrace) at 20
+
+== diagnostics ==
+error[syntax/expected-expression] 1:17..1:18 "}": expected an expression
+error[syntax/expected-token] 1:21: expected `)`
+  at 1:14..1:15 "(": opening delimiter is here
+  fix (safe): insert `)`
+    1:20 -> ")"
+error[syntax/expected-token] 1:21: expected `}`
+  at 1:11..1:12 "{": opening delimiter is here
+  fix (safe): insert `}`
+    1:20 -> "}"
+
+== fixed ==
+fn f() { ({ g(a } x)} ) }

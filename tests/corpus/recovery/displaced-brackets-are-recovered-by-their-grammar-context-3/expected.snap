@@ -1,0 +1,30 @@
+== tree ==
+SourceFile! 0..23
+  FnItem! 0..23
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block! 7..23
+      CallExpr! 9..21
+        NameRef 9..10 "g"
+        ArgList! 10..21
+          NameRef 11..12 "a"
+          Block! 15..20
+            Error! 17..20 "% b"
+
+== evidence ==
+Expected(Comma) at 15
+ExpectedStatement at 17
+Expected(RBrace) at 20
+
+== diagnostics ==
+error[syntax/expected-token] 2:3: expected `,`
+error[syntax/expected-statement] 2:5..2:6 "%": expected a statement
+  at 2:5..2:8 "% b": skipped while recovering
+error[syntax/expected-token] 2:8: expected `}`
+  at 2:3..2:4 "{": opening delimiter is here
+  fix (safe): insert `}`
+    2:8 -> "}"
+
+== fixed ==
+fn f() { g(a
+  { % b}) }

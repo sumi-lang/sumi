@@ -1,0 +1,21 @@
+== tree ==
+SourceFile! 0..26
+  FnItem! 0..26
+    Name 3..4 "f"
+    ParamList! 4..8
+      Param! 5..7
+        Name 5..6 "a"
+    Block! 12..26
+      LetStmt! 14..24
+        Name 18..19 "x"
+        LiteralExpr 23..24 "1"
+
+== evidence ==
+ExpectedType at 7
+ExpectedType at 12
+ExpectedType at 21
+
+== diagnostics ==
+error[syntax/expected-type] 1:8: expected a type
+error[syntax/expected-type] 1:13: expected a type
+error[syntax/expected-type] 1:22: expected a type

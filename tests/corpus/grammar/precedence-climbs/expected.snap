@@ -1,0 +1,21 @@
+== tree ==
+SourceFile 0..39
+  FnItem 0..39
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block 7..39
+      BinaryExpr 9..37
+        NameRef 9..10 "a"
+        BinaryExpr 14..37
+          NameRef 14..15 "b"
+          BinaryExpr 19..37
+            NameRef 19..20 "c"
+            BinaryExpr 24..37
+              NameRef 24..25 "d"
+              BinaryExpr 28..37
+                NameRef 28..29 "e"
+                PrefixExpr 32..37
+                  CallExpr 33..37
+                    NameRef 33..34 "f"
+                    ArgList 34..37
+                      NameRef 35..36 "g"

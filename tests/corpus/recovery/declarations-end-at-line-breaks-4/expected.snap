@@ -1,0 +1,15 @@
+== tree ==
+SourceFile! 0..16
+  FnItem! 0..6
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+  Error! 7..16 "-> int {}"
+
+== evidence ==
+Expected(LBrace) at 7
+ExpectedItem at 7
+
+== diagnostics ==
+error[syntax/expected-token] 2:1: expected `{`
+error[syntax/expected-item] 2:1..2:2 "-": expected a function item
+  at 2:1..2:10 "-> int {}": skipped while recovering

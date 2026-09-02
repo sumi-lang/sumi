@@ -1,0 +1,18 @@
+== tree ==
+SourceFile! 0..30
+  FnItem! 0..30
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block! 7..30
+      LetStmt! 11..16
+        Name 15..16 "x"
+      Error! 19..28 ": int = 1"
+
+== evidence ==
+Expected(Eq) at 19
+ExpectedStatement at 19
+
+== diagnostics ==
+error[syntax/expected-token] 3:3: expected `=`
+error[syntax/expected-statement] 3:3..3:4 ":": expected a statement
+  at 3:3..3:12 ": int = 1": skipped while recovering

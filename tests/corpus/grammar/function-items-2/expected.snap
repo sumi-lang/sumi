@@ -1,0 +1,16 @@
+== tree ==
+SourceFile 0..39
+  FnItem 0..39
+    Name 3..6 "add"
+    ParamList 6..22
+      Param 7..13
+        Name 7..8 "a"
+        TypeRef 10..13 "int"
+      Param 15..21
+        Name 15..16 "b"
+        TypeRef 18..21 "int"
+    TypeRef 26..29 "int"
+    Block 30..39
+      BinaryExpr 32..37
+        NameRef 32..33 "a"
+        NameRef 36..37 "b"

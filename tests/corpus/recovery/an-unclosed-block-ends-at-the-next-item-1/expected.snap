@@ -1,0 +1,27 @@
+== tree ==
+SourceFile! 0..34
+  FnItem! 0..23
+    Name 3..6 "foo"
+    ParamList 6..8 "()"
+    TypeRef 12..15 "int"
+    Block! 16..23
+      Block 18..23
+        NameRef 20..21 "b"
+  FnItem 25..34
+    Name 28..29 "a"
+    ParamList 29..31 "()"
+    Block 32..34 "{}"
+
+== evidence ==
+Expected(RBrace) at 25
+
+== diagnostics ==
+error[syntax/expected-token] 3:1: expected `}`
+  at 1:17..1:18 "{": opening delimiter is here
+  fix (safe): insert `}`
+    1:24 -> "}"
+
+== fixed ==
+fn foo() -> int { { b }}
+
+fn a() {}

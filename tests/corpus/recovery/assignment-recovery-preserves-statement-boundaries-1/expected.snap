@@ -1,0 +1,22 @@
+== tree ==
+SourceFile! 0..18
+  FnItem! 0..18
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block! 7..18
+      ParenExpr! 9..11
+        NameRef 10..11 "a"
+      Error! 12..16 "= b)"
+
+== evidence ==
+Expected(RParen) at 12
+
+== diagnostics ==
+error[syntax/expected-token] 1:13: expected `)`
+  at 1:10..1:11 "(": opening delimiter is here
+  at 1:13..1:17 "= b)": skipped while recovering
+  fix (safe): insert `)`
+    1:12 -> ")"
+
+== fixed ==
+fn f() { (a) = b) }

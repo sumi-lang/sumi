@@ -1,0 +1,1 @@
+fn f() { if a { 1 } else if b { 2 } else { 3 } }

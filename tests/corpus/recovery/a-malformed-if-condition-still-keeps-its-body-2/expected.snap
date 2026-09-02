@@ -1,0 +1,16 @@
+== tree ==
+SourceFile! 0..20
+  FnItem! 0..20
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block! 7..20
+      IfExpr! 9..18
+        LiteralExpr 12..13 "1"
+        Error! 14..15 "1"
+        Block 16..18 "{}"
+
+== evidence ==
+Expected(LBrace) at 14
+
+== diagnostics ==
+error[syntax/expected-token] 1:15..1:16 "1": expected `{`

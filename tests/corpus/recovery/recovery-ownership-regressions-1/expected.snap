@@ -1,0 +1,22 @@
+== tree ==
+SourceFile! 0..24
+  FnItem! 0..24
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block! 7..24
+      Error! 9..24 ": { fn g() {} }"
+
+== evidence ==
+ExpectedStatement at 9
+Expected(RBrace) at 24
+
+== diagnostics ==
+error[syntax/expected-statement] 1:10..1:11 ":": expected a statement
+  at 1:10..1:25 ": { fn g() {} }": skipped while recovering
+error[syntax/expected-token] 1:25: expected `}`
+  at 1:8..1:9 "{": opening delimiter is here
+  fix (safe): insert `}`
+    1:25 -> "}"
+
+== fixed ==
+fn f() { : { fn g() {} }}

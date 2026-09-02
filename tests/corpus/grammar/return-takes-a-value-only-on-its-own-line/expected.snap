@@ -1,0 +1,10 @@
+== tree ==
+SourceFile 0..34
+  FnItem 0..34
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block 7..34
+      ReturnStmt 11..19
+        NameRef 18..19 "x"
+      ReturnStmt 22..28 "return"
+      NameRef 31..32 "x"

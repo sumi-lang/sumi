@@ -1,0 +1,33 @@
+== tree ==
+SourceFile! 0..26
+  FnItem! 0..23
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block! 7..23
+      ParenExpr! 9..21
+        Block! 10..21
+          ParenExpr! 12..14
+            NameRef 13..14 "a"
+          Error! 15..19 "{ b)"
+  Error! 23..26 ") }"
+
+== evidence ==
+Expected(RParen) at 15
+Expected(RParen) at 22
+ExpectedItem at 23
+
+== diagnostics ==
+error[syntax/expected-token] 1:16: expected `)`
+  at 1:13..1:14 "(": opening delimiter is here
+  at 1:16..1:20 "{ b)": skipped while recovering
+  fix (safe): insert `)`
+    1:15 -> ")"
+error[syntax/expected-token] 1:23: expected `)`
+  at 1:10..1:11 "(": opening delimiter is here
+  fix (safe): insert `)`
+    1:22 -> ")"
+error[syntax/expected-item] 1:24..1:25 ")": expected a function item
+  at 1:24..1:27 ") }": skipped while recovering
+
+== fixed ==
+fn f() { ({ (a) { b) }) }) }
