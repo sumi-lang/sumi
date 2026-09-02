@@ -376,11 +376,10 @@ trait ListRule {
     const NODE: N;
     /// What is missing where an element should stand.
     const ELEMENT: ParseExpected;
-    /// Whether garbage where an element should stand ends where the list's
-    /// follower begins, besides at a `,`, the closer, or the line's end.
-    const GARBAGE_ENDS_AT_FOLLOWER: bool;
     /// Whether garbage where an element should stand ends where an element
-    /// begins, so that element is still parsed.
+    /// begins, so that element is still parsed. A parameter list's does
+    /// not: a name inside its garbage is likelier a body's, after a `{`
+    /// that stands where the `)` should, than a parameter's.
     const RESUMES_AT_ELEMENT: bool;
     /// Whether the next token can begin an element.
     fn starts_element(m: &Marker<'_, '_>) -> bool;
@@ -398,7 +397,6 @@ struct Params;
 impl ListRule for Params {
     const NODE: N = N::ParamList;
     const ELEMENT: ParseExpected = ParseExpected::Name;
-    const GARBAGE_ENDS_AT_FOLLOWER: bool = true;
     const RESUMES_AT_ELEMENT: bool = false;
 
     fn starts_element(m: &Marker<'_, '_>) -> bool {
@@ -425,7 +423,6 @@ struct Args;
 impl ListRule for Args {
     const NODE: N = N::ArgList;
     const ELEMENT: ParseExpected = ParseExpected::Expression;
-    const GARBAGE_ENDS_AT_FOLLOWER: bool = false;
     const RESUMES_AT_ELEMENT: bool = true;
 
     fn starts_element(m: &Marker<'_, '_>) -> bool {
@@ -490,8 +487,7 @@ fn delimited_list<R: ListRule>(p: &mut Marker<'_, '_>) {
                 skip(&mut m, recovery, |m| {
                     m.at(T::Comma)
                         || m.at(close)
-                        || (!m.closed()
-                            && (m.boundary() || (R::GARBAGE_ENDS_AT_FOLLOWER && R::follows(m))))
+                        || (!m.closed() && (m.boundary() || R::follows(m)))
                         || (R::RESUMES_AT_ELEMENT && begins_element::<R>(m))
                 });
                 // The garbage displaced an element, not the `,` after one.
