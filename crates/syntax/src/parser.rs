@@ -312,7 +312,7 @@ fn closure_expr(p: &mut Marker<'_, '_>, follow: ExprFollow) -> CompletedMarker {
                 T::LParen | T::Ident | T::Underscore | T::Eq | T::LBrace
             )
         })
-        || (next == Some(T::Minus) && p.nth_joint(1) && p.nth(2) == Some(T::Gt));
+        || nth_arrow(p, 1);
     if !signature_follows {
         let recovery = p.recover_tokens(ParseRecoveryKind::Expected(ParseExpected::Expression), 1);
         return skip_token(p, recovery);
@@ -336,36 +336,47 @@ enum Signature {
 
 /// The parameter list, return type, and body of an item or a closure,
 /// after its `fn` and name. The body is a block, or `=` and an expression
-/// parsed before `follow`.
+/// parsed before `follow`. A `=` introduces a body only right after a
+/// part that is present, the parameter list or the return type, and only
+/// when an expression can begin after it: anywhere else it is garbage
+/// like anything else, so a stray `=` in a signature never turns the
+/// list, the return type, or the block after it into a body.
 fn signature_tail(m: &mut Marker<'_, '_>, follow: ExprFollow, signature: Signature) {
     // The parameter list stays on the signature's line: `(` never
     // continues one.
     if !m.at(T::LParen) || m.newline() {
         let recovery = m.missing(ParseExpected::Token(T::LParen));
-        signature_garbage(m, signature, recovery, |m| {
-            m.at(T::LParen) || at_arrow(m) || at_equals(m)
-        });
+        signature_garbage(m, signature, recovery, |m| m.at(T::LParen) || at_arrow(m));
     }
+    let mut complete = false;
     if m.at(T::LParen) && !m.newline() {
         match signature {
             Signature::Item => delimited_list::<Params>(m),
             Signature::Closure => delimited_list::<ClosureParams>(m),
         }
+        complete = true;
     }
-    if !at_body(m) && !at_arrow(m) {
+    // A body begins: a block, wherever its line, or an expression body's
+    // `=` after a complete part.
+    let body_begins =
+        |m: &Marker<'_, '_>, complete: bool| m.at(T::LBrace) || at_expression_body(m, complete);
+    if !body_begins(m, complete) && !at_arrow(m) {
         let recovery = m.missing(ParseExpected::Body);
-        signature_garbage(m, signature, recovery, |m| at_arrow(m) || at_equals(m));
+        signature_garbage(m, signature, recovery, |m| {
+            at_arrow(m) || at_expression_body(m, complete)
+        });
     }
     if at_arrow(m) {
         m.token();
         m.token();
+        complete = m.at(T::Ident);
         type_ref(m);
-        if !at_body(m) {
+        if !body_begins(m, complete) {
             let recovery = m.missing(ParseExpected::Body);
-            signature_garbage(m, signature, recovery, at_equals);
+            signature_garbage(m, signature, recovery, |m| at_expression_body(m, complete));
         }
     }
-    if at_equals(m) {
+    if at_expression_body(m, complete) {
         m.token(); // =
         operand_before(m, 0, follow);
     } else if m.at(T::LBrace) {
@@ -373,21 +384,29 @@ fn signature_tail(m: &mut Marker<'_, '_>, follow: ExprFollow, signature: Signatu
     }
 }
 
+/// The `=` of an expression body: on the signature's line, after a part
+/// that is present, and before something an expression can begin with,
+/// whatever its line, since `=` cannot end a statement.
+fn at_expression_body(m: &Marker<'_, '_>, complete: bool) -> bool {
+    complete && at_equals(m) && m.nth(1).is_some_and(starts_expression) && !nth_arrow(m, 1)
+}
+
 /// A return type on the line of the signature: a leading `->` never
 /// continues a line.
 fn at_arrow(m: &Marker<'_, '_>) -> bool {
-    m.at_glued(T::Minus, T::Gt) && !m.newline()
+    nth_arrow(m, 0) && !m.newline()
+}
+
+/// Whether `->` stands `n` significant tokens past the next one: a `-`
+/// glued to a `>`, which begins no expression although a `-` alone does.
+fn nth_arrow(m: &Marker<'_, '_>, n: usize) -> bool {
+    m.nth(n) == Some(T::Minus) && m.nth_joint(n) && m.nth(n + 1) == Some(T::Gt)
 }
 
 /// The `=` of an expression body, on the line of the signature: a leading
 /// `=` never continues a line.
 fn at_equals(m: &Marker<'_, '_>) -> bool {
     m.at(T::Eq) && !m.newline()
-}
-
-/// A body begins: a block, wherever its line, or an expression body's `=`.
-fn at_body(m: &Marker<'_, '_>) -> bool {
-    m.at(T::LBrace) || at_equals(m)
 }
 
 /// Skip garbage in a signature — tokens that belong to none of its parts —

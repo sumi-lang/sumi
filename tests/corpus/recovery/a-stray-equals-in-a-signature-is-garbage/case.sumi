@@ -1,0 +1,4 @@
+fn f= (a: int) { a }
+fn g() -> = int { a }
+fn h x = 1
+fn i() = -> int { a }
