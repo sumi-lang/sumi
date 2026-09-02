@@ -64,10 +64,10 @@ jobs:
       # committed reference byte for byte; the reference's verbatim section
       # starts at the `recovery-scorecard` marker line.
       - run: |
-          cargo run --release --locked -p sumi-test --bin recovery-scorecard > scorecard.txt
-          if ! sed -n '/^recovery-scorecard$/,$p' crates/test/recovery-scorecard.txt | diff - scorecard.txt; then
-            echo "::error::recovery scorecard drifted from crates/test/recovery-scorecard.txt;" \
+          cargo run --release --locked -p xtask -- scorecard > scorecard.txt
+          if ! sed -n '/^recovery-scorecard$/,$p' xtask/recovery-scorecard.txt | diff - scorecard.txt; then
+            echo "::error::recovery scorecard drifted from xtask/recovery-scorecard.txt;" \
               "if the change is intended, regenerate the reference with" \
-              "'cargo run --release -p sumi-test --bin recovery-scorecard'"
+              "'cargo run --release -p xtask -- scorecard'"
             exit 1
           fi

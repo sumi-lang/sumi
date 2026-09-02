@@ -2,19 +2,22 @@
 //!
 //! `codegen` regenerates the files derived from `sumi.grammar`; with
 //! `--check` it fails instead when any of them would change, which is how CI
-//! keeps the checked-in copies honest.
+//! keeps the checked-in copies honest. `scorecard` prints the recovery
+//! scorecard, which CI diffs against the committed reference.
 
 mod codegen;
 mod grammar;
+mod scorecard;
 
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: cargo xtask codegen [--check]
+const USAGE: &str = "usage: cargo xtask <codegen [--check] | scorecard>
 
   codegen           regenerate the files derived from sumi.grammar
-  codegen --check   fail if any of them would change";
+  codegen --check   fail if any of them would change
+  scorecard         print the recovery scorecard (build with --release)";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -22,6 +25,10 @@ fn main() -> ExitCode {
     let result = match args.as_slice() {
         ["codegen"] => codegen(false),
         ["codegen", "--check"] => codegen(true),
+        ["scorecard"] => {
+            scorecard::run();
+            Ok(())
+        }
         _ => Err(USAGE.to_owned()),
     };
     match result {
