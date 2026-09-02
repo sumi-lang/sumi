@@ -1,0 +1,12 @@
+== tree ==
+SourceFile! 0..13
+  FnItem! 7..13
+    Name 7..8 "f"
+    ParamList 8..10 "()"
+    Block 11..13 "{}"
+
+== evidence ==
+Expected(FnKw) at 7
+
+== diagnostics ==
+error[syntax/expected-token] 2:1: expected `fn`

@@ -1,0 +1,19 @@
+== tree ==
+SourceFile! 0..12
+  FnItem! 0..12
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block! 7..12
+      Error! 9..10 ":"
+
+== evidence ==
+BlockOnNewLine at 7
+ExpectedStatement at 9
+
+== diagnostics ==
+error[syntax/block-on-new-line] 2:1..2:2 "{": block must open on the line of its owner
+error[syntax/expected-statement] 2:3..2:4 ":": expected a statement
+
+== normalized ==
+fn f() {
+ : }

@@ -1,0 +1,22 @@
+== tree ==
+SourceFile! 0..19
+  FnItem! 0..19
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block! 7..19
+      BinaryExpr! 9..17
+        NameRef 9..10 "a"
+        NameRef 14..15 "b"
+        Error! 16..17 ":"
+
+== evidence ==
+TrailingOperator at 11
+Unexpected at 16
+
+== diagnostics ==
+error[syntax/trailing-operator] 1:12..1:13 "+": binary operator must begin the continuation line
+error[syntax/unexpected-syntax] 2:4..2:5 ":": unexpected syntax in expression
+
+== normalized ==
+fn f() { a 
+ + b : }

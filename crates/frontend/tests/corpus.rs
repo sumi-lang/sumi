@@ -2,9 +2,10 @@
 //! workspace root that holds a `case.sumi`, run through the frontend and
 //! compared with the `expected.snap` beside it. A snapshot records the
 //! tree, with `!` on every node that contains an error, the parser's
-//! evidence, the diagnostics, the source after every fix, and the
-//! normalized source where it differs, its header naming any violation
-//! that survives normalizing. Run with `UPDATE_EXPECT=1` to
+//! evidence, the diagnostics, the source after every fix, its header
+//! naming any diagnostic that survives them, and the normalized source
+//! where it differs, its header naming any violation that survives
+//! normalizing. Run with `UPDATE_EXPECT=1` to
 //! rewrite the snapshots, then review the diff; a new case gets its first
 //! snapshot the same way.
 
@@ -158,11 +159,39 @@ fn snapshot(source: &str) -> String {
                 edit.replacement(),
             );
         }
-        if skipped == 0 {
+        // A fix that leaves a diagnostic standing, or that only makes the
+        // next fix possible, says so in the header.
+        let reparsed =
+            parse_source(FileId::new(0), fixed.as_str().into()).expect("fixed cases fit in u32");
+        let mut remaining: Vec<String> = reparsed
+            .diagnostics()
+            .iter()
+            .map(|diagnostic| {
+                format!(
+                    "{}/{}",
+                    diagnostic.code.group().as_str(),
+                    diagnostic.code.name()
+                )
+            })
+            .collect();
+        remaining.sort();
+        remaining.dedup();
+        let mut notes = Vec::new();
+        if skipped > 0 {
+            notes.push(format!("{skipped} overlapping edits skipped"));
+        }
+        if !remaining.is_empty() {
+            let verb = if remaining.len() == 1 {
+                "remains"
+            } else {
+                "remain"
+            };
+            notes.push(format!("{} {verb}", remaining.join(", ")));
+        }
+        if notes.is_empty() {
             out.push_str("\n== fixed ==\n");
         } else {
-            writeln!(out, "\n== fixed ({skipped} overlapping edits skipped) ==")
-                .expect("writing to a string");
+            writeln!(out, "\n== fixed ({}) ==", notes.join("; ")).expect("writing to a string");
         }
         push_text(&mut out, &fixed);
     }

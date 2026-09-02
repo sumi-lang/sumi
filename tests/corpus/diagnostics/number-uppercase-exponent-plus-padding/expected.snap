@@ -1,0 +1,18 @@
+== tree ==
+SourceFile 0..16
+  FnItem 0..16
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block 7..16
+      LiteralExpr 9..14 "1E+05"
+
+== diagnostics ==
+error[syntax/noncanonical-number] 1:11..1:12 "E": numeric literal is not in canonical form
+  primary: exponent marker must be lowercase `e`
+  at 1:12..1:13 "+": `+` is not allowed in an exponent
+  at 1:13..1:14 "0": exponent has leading zeros
+  fix (safe): canonicalize numeric literal
+    1:10..1:15 "1E+05" -> "1e5"
+
+== fixed ==
+fn f() { 1e5 }

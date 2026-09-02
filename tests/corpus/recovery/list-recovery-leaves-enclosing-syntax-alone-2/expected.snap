@@ -19,6 +19,6 @@ error[syntax/expected-token] 2:1: expected `)`
     1:6 -> ")"
 error[syntax/expected-token] 2:1: expected `{`
 
-== fixed ==
+== fixed (syntax/expected-token remains) ==
 fn f()
 fn g() {}

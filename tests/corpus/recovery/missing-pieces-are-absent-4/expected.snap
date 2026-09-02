@@ -18,5 +18,5 @@ error[syntax/expected-token] 1:12: expected `)`
     1:12 -> ")"
 error[syntax/expected-token] 1:12: expected `{`
 
-== fixed ==
+== fixed (syntax/expected-token remains) ==
 fn f(a: int)

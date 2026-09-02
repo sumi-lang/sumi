@@ -1,0 +1,17 @@
+== tree ==
+SourceFile 0..14
+  FnItem 0..14
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block 7..14
+      LiteralExpr 9..12 "01E"
+
+== diagnostics ==
+error[syntax/noncanonical-number] 1:10..1:11 "0": numeric literal is not in canonical form
+  primary: integer part has leading zeros
+  fix (safe): canonicalize numeric literal
+    1:10..1:13 "01E" -> "1E"
+error[syntax/missing-exponent] 1:12..1:13 "E": exponent has no digits
+
+== fixed (syntax/missing-exponent remains) ==
+fn f() { 1E }
