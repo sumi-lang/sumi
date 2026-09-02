@@ -45,6 +45,45 @@ impl TextRange {
     }
 }
 
+/// A file in a compilation, allocated by whatever owns the set of files —
+/// a driver or a language server — and carried by every span and every
+/// diagnostic label, so a diagnostic can point into a file other than the
+/// one it was produced from. A single-file producer is handed one.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct FileId(u32);
+
+impl FileId {
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    pub const fn to_u32(self) -> u32 {
+        self.0
+    }
+}
+
+/// A byte range in one file.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Span {
+    file: FileId,
+    range: TextRange,
+}
+
+impl Span {
+    pub const fn new(file: FileId, range: TextRange) -> Self {
+        Self { file, range }
+    }
+
+    pub const fn file(self) -> FileId {
+        self.file
+    }
+
+    pub const fn range(self) -> TextRange {
+        self.range
+    }
+}
+
 /// One replacement of a byte range in a source snapshot.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct TextEdit {

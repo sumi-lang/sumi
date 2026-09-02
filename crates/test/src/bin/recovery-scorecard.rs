@@ -182,7 +182,8 @@ impl ClassStats {
         }
 
         let parsed =
-            sumi_frontend::parse_source(edited.as_str().into()).expect("edited sources fit in u32");
+            sumi_frontend::parse_source(sumi_frontend::FileId::new(0), edited.as_str().into())
+                .expect("edited sources fit in u32");
         self.diags.push(parsed.diagnostics().len() as u64);
 
         let mut skipped = 0;

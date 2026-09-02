@@ -1,20 +1,59 @@
 use std::collections::HashSet;
 
-use sumi_diagnostics::{Diagnostic, DiagnosticCode, Fix, Label, Location, Severity};
+use sumi_diagnostics::{Applicability, Diagnostic, DiagnosticCode, Fix, Label, Location, Severity};
 use sumi_format::layout_violation_edits;
 use sumi_lexer::{LexError, LexErrorKind, LexedFile, canonicalize_number_literal};
 use sumi_syntax::{
     Parse, ParseAnchor, ParseEvidence, ParseExpected, ParseRecovery, ParseRecoveryKind,
     ParseViolation, ParseViolationKind, RawGap, RawIdx, RawTokenRange, SyntaxKind, raw_boundary,
 };
-use sumi_text::{TextEdit, TextRange};
+use sumi_text::{FileId, Span, TextEdit, TextRange, TextSize};
 
 use crate::codes;
 
-pub(crate) fn diagnostics(source: &str, lexed: &LexedFile, parse: &Parse) -> Box<[Diagnostic]> {
+/// The source snapshot being lowered: the file its diagnostics name, its
+/// text, and its tokens.
+struct Snapshot<'a> {
+    file: FileId,
+    source: &'a str,
+    lexed: &'a LexedFile,
+}
+
+impl Snapshot<'_> {
+    fn range(&self, range: TextRange) -> Location {
+        Location::range(Span::new(self.file, range))
+    }
+
+    fn point(&self, offset: TextSize) -> Location {
+        Location::point(self.file, offset)
+    }
+
+    fn raw_range(&self, range: RawTokenRange) -> Location {
+        self.range(lower_raw_range(range, self.lexed))
+    }
+
+    fn anchor(&self, anchor: ParseAnchor) -> Location {
+        match anchor {
+            ParseAnchor::Gap(gap) => self.point(raw_boundary(self.lexed, gap.trivia_end())),
+            ParseAnchor::Tokens(range) => self.raw_range(range),
+        }
+    }
+}
+
+pub(crate) fn diagnostics(
+    file: FileId,
+    source: &str,
+    lexed: &LexedFile,
+    parse: &Parse,
+) -> Box<[Diagnostic]> {
+    let snapshot = Snapshot {
+        file,
+        source,
+        lexed,
+    };
     let mut diagnostics = Vec::new();
-    lower_lex(source, lexed, &mut diagnostics);
-    lower_parse(source, lexed, parse, &mut diagnostics);
+    lower_lex(&snapshot, &mut diagnostics);
+    lower_parse(&snapshot, parse, &mut diagnostics);
 
     // This sort is stable: phase precedence and producer observation order
     // break ties at the same source location.
@@ -27,8 +66,8 @@ pub(crate) fn diagnostics(source: &str, lexed: &LexedFile, parse: &Parse) -> Box
     diagnostics.into_boxed_slice()
 }
 
-fn lower_lex(source: &str, lexed: &LexedFile, diagnostics: &mut Vec<Diagnostic>) {
-    let errors = lexed.errors();
+fn lower_lex(snapshot: &Snapshot<'_>, diagnostics: &mut Vec<Diagnostic>) {
+    let errors = snapshot.lexed.errors();
     let mut start = 0;
     while start < errors.len() {
         let token = errors[start].token;
@@ -36,7 +75,7 @@ fn lower_lex(source: &str, lexed: &LexedFile, diagnostics: &mut Vec<Diagnostic>)
         while end < errors.len() && errors[end].token == token {
             end += 1;
         }
-        lower_token_errors(source, lexed, &errors[start..end], diagnostics);
+        lower_token_errors(snapshot, &errors[start..end], diagnostics);
         start = end;
     }
 }
@@ -48,8 +87,7 @@ struct NumberFact {
 }
 
 fn lower_token_errors(
-    source: &str,
-    lexed: &LexedFile,
+    snapshot: &Snapshot<'_>,
     errors: &[LexError],
     diagnostics: &mut Vec<Diagnostic>,
 ) {
@@ -63,7 +101,7 @@ fn lower_token_errors(
                 primary(
                     codes::UNTERMINATED_STRING,
                     "unterminated string literal",
-                    Location::Range(error.range),
+                    snapshot.range(error.range),
                 ),
             )),
             LexErrorKind::UnterminatedRawString => emitted.push((
@@ -71,7 +109,7 @@ fn lower_token_errors(
                 primary(
                     codes::UNTERMINATED_RAW_STRING,
                     "unterminated raw string literal",
-                    Location::Range(error.range),
+                    snapshot.range(error.range),
                 ),
             )),
             LexErrorKind::UnterminatedChar => emitted.push((
@@ -79,7 +117,7 @@ fn lower_token_errors(
                 primary(
                     codes::UNTERMINATED_CHAR,
                     "unterminated character literal",
-                    Location::Range(error.range),
+                    snapshot.range(error.range),
                 ),
             )),
             LexErrorKind::LoneCarriageReturn => emitted.push((
@@ -87,7 +125,7 @@ fn lower_token_errors(
                 primary(
                     codes::LONE_CARRIAGE_RETURN,
                     "carriage return must be followed by a line feed",
-                    Location::Range(error.range),
+                    snapshot.range(error.range),
                 ),
             )),
             LexErrorKind::MisplacedBom => emitted.push((
@@ -95,7 +133,7 @@ fn lower_token_errors(
                 primary(
                     codes::MISPLACED_BOM,
                     "byte-order mark is only allowed at the start of a file",
-                    Location::Range(error.range),
+                    snapshot.range(error.range),
                 ),
             )),
             LexErrorKind::UnknownCharacter => emitted.push((
@@ -103,7 +141,7 @@ fn lower_token_errors(
                 primary(
                     codes::UNKNOWN_CHARACTER,
                     "character has no meaning in Sumi source",
-                    Location::Range(error.range),
+                    snapshot.range(error.range),
                 ),
             )),
             LexErrorKind::LeadingZero => number_facts.push(NumberFact {
@@ -136,7 +174,7 @@ fn lower_token_errors(
                 primary(
                     codes::UNKNOWN_SUFFIX,
                     "literal suffixes are not supported",
-                    Location::Range(error.range),
+                    snapshot.range(error.range),
                 ),
             )),
             LexErrorKind::MissingExponent => emitted.push((
@@ -144,7 +182,7 @@ fn lower_token_errors(
                 primary(
                     codes::MISSING_EXPONENT,
                     "exponent has no digits",
-                    Location::Range(error.range),
+                    snapshot.range(error.range),
                 ),
             )),
             LexErrorKind::UnknownEscape => emitted.push((
@@ -152,7 +190,7 @@ fn lower_token_errors(
                 primary(
                     codes::UNKNOWN_ESCAPE,
                     "unknown escape sequence",
-                    Location::Range(error.range),
+                    snapshot.range(error.range),
                 ),
             )),
             LexErrorKind::MalformedUnicodeEscape => emitted.push((
@@ -160,7 +198,7 @@ fn lower_token_errors(
                 primary(
                     codes::MALFORMED_UNICODE_ESCAPE,
                     "malformed Unicode escape",
-                    Location::Range(error.range),
+                    snapshot.range(error.range),
                 ),
             )),
             LexErrorKind::InvalidUnicodeScalar => emitted.push((
@@ -168,7 +206,7 @@ fn lower_token_errors(
                 primary(
                     codes::INVALID_UNICODE_SCALAR,
                     "Unicode escape is not a valid scalar value",
-                    Location::Range(error.range),
+                    snapshot.range(error.range),
                 ),
             )),
             LexErrorKind::EmptyCharLiteral => emitted.push((
@@ -176,7 +214,7 @@ fn lower_token_errors(
                 primary(
                     codes::EMPTY_CHAR_LITERAL,
                     "character literal is empty",
-                    Location::Range(error.range),
+                    snapshot.range(error.range),
                 ),
             )),
             LexErrorKind::MoreThanOneChar => emitted.push((
@@ -184,7 +222,7 @@ fn lower_token_errors(
                 primary(
                     codes::MORE_THAN_ONE_CHAR,
                     "character literal contains more than one character",
-                    Location::Range(error.range),
+                    snapshot.range(error.range),
                 ),
             )),
             LexErrorKind::UnknownPunctuation => emitted.push((
@@ -192,7 +230,7 @@ fn lower_token_errors(
                 primary(
                     codes::UNKNOWN_PUNCTUATION,
                     "punctuation has no meaning in Sumi source",
-                    Location::Range(error.range),
+                    snapshot.range(error.range),
                 ),
             )),
         }
@@ -214,9 +252,11 @@ fn lower_token_errors(
         let mut facts = number_facts.into_iter();
         let first = facts.next().expect("a numeric fact exists");
         let token = errors[0].token;
-        let token_range = lexed.range(token);
-        let fix = canonicalize_number_literal(lexed.text(source, token)).map(|replacement| Fix {
+        let token_range = snapshot.lexed.range(token);
+        let text = snapshot.lexed.text(snapshot.source, token);
+        let fix = canonicalize_number_literal(text).map(|replacement| Fix {
             message: "canonicalize numeric literal".into(),
+            applicability: Applicability::Safe,
             edits: vec![TextEdit::new(token_range, replacement)].into_boxed_slice(),
         });
         emitted.push((
@@ -226,15 +266,16 @@ fn lower_token_errors(
                 severity: Severity::Error,
                 message: "numeric literal is not in canonical form".into(),
                 primary: Label {
-                    location: Location::Range(first.range),
+                    location: snapshot.range(first.range),
                     message: Some(first.message.into()),
                 },
                 secondary: facts
                     .map(|fact| Label {
-                        location: Location::Range(fact.range),
+                        location: snapshot.range(fact.range),
                         message: Some(fact.message.into()),
                     })
                     .collect(),
+                notes: Box::new([]),
                 fix,
             },
         ));
@@ -244,12 +285,13 @@ fn lower_token_errors(
     diagnostics.extend(emitted.into_iter().map(|(_, diagnostic)| diagnostic));
 }
 
-fn lower_parse(source: &str, lexed: &LexedFile, parse: &Parse, diagnostics: &mut Vec<Diagnostic>) {
+fn lower_parse(snapshot: &Snapshot<'_>, parse: &Parse, diagnostics: &mut Vec<Diagnostic>) {
     let has_recovery = parse
         .evidence()
         .iter()
         .any(|evidence| matches!(evidence, ParseEvidence::Recovery(_)));
-    let unterminated_literals: HashSet<RawIdx> = lexed
+    let unterminated_literals: HashSet<RawIdx> = snapshot
+        .lexed
         .errors()
         .iter()
         .filter(|error| {
@@ -267,20 +309,20 @@ fn lower_parse(source: &str, lexed: &LexedFile, parse: &Parse, diagnostics: &mut
         match evidence {
             ParseEvidence::Recovery(recovery) => {
                 if recovery.kind == ParseRecoveryKind::PriorPhaseError
-                    || anchor_has_error(recovery.anchor, lexed)
+                    || anchor_has_error(recovery.anchor, snapshot.lexed)
                 {
                     continue;
                 }
                 diagnostics.push(lower_recovery(
+                    snapshot,
                     recovery,
-                    lexed,
                     &unterminated_literals,
                     &mut closer_fix_sites,
                 ));
             }
             ParseEvidence::Violation(violation) => {
-                if !tokens_have_error(violation.range, lexed) {
-                    diagnostics.push(lower_violation(*violation, source, lexed, has_recovery));
+                if !tokens_have_error(violation.range, snapshot.lexed) {
+                    diagnostics.push(lower_violation(snapshot, *violation, has_recovery));
                 }
             }
         }
@@ -288,12 +330,12 @@ fn lower_parse(source: &str, lexed: &LexedFile, parse: &Parse, diagnostics: &mut
 }
 
 fn lower_recovery(
+    snapshot: &Snapshot<'_>,
     recovery: &ParseRecovery,
-    lexed: &LexedFile,
     unterminated_literals: &HashSet<RawIdx>,
     closer_fix_sites: &mut HashSet<(SyntaxKind, u32)>,
 ) -> Diagnostic {
-    let location = lower_anchor(recovery.anchor, lexed);
+    let location = snapshot.anchor(recovery.anchor);
     let (code, message) = match recovery.kind {
         ParseRecoveryKind::Expected(expected) => expected_diagnostic(expected),
         ParseRecoveryKind::Unexpected => (
@@ -310,7 +352,7 @@ fn lower_recovery(
     };
     let opener = match recovery.kind {
         ParseRecoveryKind::Expected(ParseExpected::Closer { opener, .. }) => Some(Label {
-            location: Location::Range(lower_raw_range(opener, lexed)),
+            location: snapshot.raw_range(opener),
             message: Some("opening delimiter is here".into()),
         }),
         _ => None,
@@ -321,7 +363,7 @@ fn lower_recovery(
             recovery
                 .skipped
                 .iter()
-                .map(|&range| Location::Range(lower_raw_range(range, lexed)))
+                .map(|&range| snapshot.raw_range(range))
                 .filter(|&skipped| skipped != location)
                 .map(|location| Label {
                     location,
@@ -329,7 +371,12 @@ fn lower_recovery(
                 }),
         )
         .collect();
-    let fix = closer_fix(recovery, lexed, unterminated_literals, closer_fix_sites);
+    let fix = closer_fix(
+        recovery,
+        snapshot.lexed,
+        unterminated_literals,
+        closer_fix_sites,
+    );
 
     Diagnostic {
         code,
@@ -340,6 +387,7 @@ fn lower_recovery(
             message: None,
         },
         secondary,
+        notes: Box::new([]),
         fix,
     }
 }
@@ -374,6 +422,7 @@ fn closer_fix(
     }
     Some(Fix {
         message: format!("insert {}", kind.describe()).into(),
+        applicability: Applicability::Safe,
         edits: vec![TextEdit::new(TextRange::new(at, at), replacement)].into_boxed_slice(),
     })
 }
@@ -397,9 +446,8 @@ fn expected_diagnostic(expected: ParseExpected) -> (DiagnosticCode, Box<str>) {
 }
 
 fn lower_violation(
+    snapshot: &Snapshot<'_>,
     violation: ParseViolation,
-    source: &str,
-    lexed: &LexedFile,
     has_recovery: bool,
 ) -> Diagnostic {
     let (code, message) = match violation.kind {
@@ -429,7 +477,7 @@ fn lower_violation(
         ParseViolationKind::BlockOnNewLine | ParseViolationKind::TrailingOperator
     );
     let fix = (!movement || !has_recovery)
-        .then(|| layout_violation_edits(source, lexed, violation))
+        .then(|| layout_violation_edits(snapshot.source, snapshot.lexed, violation))
         .flatten()
         .map(|edits| Fix {
             message: match violation.kind {
@@ -442,13 +490,10 @@ fn lower_violation(
                 }
             }
             .into(),
+            applicability: Applicability::Safe,
             edits,
         });
-    let mut diagnostic = primary(
-        code,
-        message,
-        Location::Range(lower_raw_range(violation.range, lexed)),
-    );
+    let mut diagnostic = primary(code, message, snapshot.raw_range(violation.range));
     diagnostic.fix = fix;
     diagnostic
 }
@@ -463,14 +508,8 @@ fn primary(code: DiagnosticCode, message: impl Into<Box<str>>, location: Locatio
             message: None,
         },
         secondary: Box::new([]),
+        notes: Box::new([]),
         fix: None,
-    }
-}
-
-fn lower_anchor(anchor: ParseAnchor, lexed: &LexedFile) -> Location {
-    match anchor {
-        ParseAnchor::Gap(gap) => Location::Point(raw_boundary(lexed, gap.trivia_end())),
-        ParseAnchor::Tokens(range) => Location::Range(lower_raw_range(range, lexed)),
     }
 }
 
