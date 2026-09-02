@@ -70,8 +70,8 @@ continues the previous line. Operators take their classes from the
 | `:` | `Colon` |  |  |
 | `.` | `Dot` |  |  |
 | `=` | `Eq` |  |  |
-| `<` | `Lt` |  |  |
-| `>` | `Gt` |  |  |
+| `<` | `Lt` |  | The comparison, spaced on both sides like every binary operator. Glued to the identifier before it, `<` opens a list of type arguments, in types, declarations, and expressions alike, so there is no turbofish: `Vec<int>` and `parse<int>("3")` instantiate, `a < b` compares, and `a<b` is an error, an unspaced comparison until generics exist and an unclosed list after. That pair encloses no statements and suspends the newline rule for nothing, so it is confined to its statement. Nothing generic is built yet; the reading is decided so that the glued form never becomes valid as a comparison. |
+| `>` | `Gt` |  | The comparison, or the closer of a list of type arguments, which takes one `>` at a time, so `>>` closes two. It continues a line as every binary operator does, which lets a list close on its own line. |
 | `!` | `Bang` | `expr` |  |
 | `+` | `Plus` |  |  |
 | `-` | `Minus` | `expr` |  |

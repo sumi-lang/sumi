@@ -1,0 +1,78 @@
+== tree ==
+SourceFile 0..229
+  FnItem 148..228
+    Name 151..152 "f"
+    ParamList 152..154 "()"
+    Block 155..228
+      IfExpr 161..180
+        BinaryExpr 164..167
+          NameRef 164..165 "a"
+          NameRef 166..167 "b"
+        Block 168..180
+          ReturnStmt 170..178
+            LiteralExpr 177..178 "1"
+      IfExpr 185..208
+        Error! 188..195
+          BinaryExpr 188..191
+            NameRef 188..189 "a"
+            NameRef 190..191 "b"
+          ParenExpr 192..195
+            NameRef 193..194 "c"
+        Block 196..208
+          ReturnStmt 198..206
+            LiteralExpr 205..206 "2"
+      BinaryExpr 213..217
+        NameRef 213..214 "a"
+        NameRef 216..217 "b"
+      BinaryExpr 222..226
+        NameRef 222..223 "a"
+        NameRef 225..226 "b"
+
+== evidence ==
+UnspacedBinaryOperator at 165
+UnspacedBinaryOperator at 189
+UnspacedBinaryOperator at 191
+ChainedComparison at 191
+UnspacedBinaryOperator at 214
+UnspacedBinaryOperator at 224
+
+== diagnostics ==
+error[syntax/unspaced-binary-operator] 4:9..4:10 "<": binary operator must have spaces on both sides
+  fix (safe): space binary operator
+    4:9 -> " "
+    4:10 -> " "
+error[syntax/unspaced-binary-operator] 5:9..5:10 "<": binary operator must have spaces on both sides
+  fix (safe): space binary operator
+    5:9 -> " "
+    5:10 -> " "
+error[syntax/unspaced-binary-operator] 5:11..5:12 ">": binary operator must have spaces on both sides
+  fix (safe): space binary operator
+    5:11 -> " "
+    5:12 -> " "
+error[syntax/chained-comparison] 5:11..5:12 ">": comparison operators cannot be chained
+error[syntax/unspaced-binary-operator] 6:6..6:7 "<": binary operator must have spaces on both sides
+  fix (safe): space binary operator
+    6:6 -> " "
+error[syntax/unspaced-binary-operator] 7:7..7:8 "<": binary operator must have spaces on both sides
+  fix (safe): space binary operator
+    7:8 -> " "
+
+== fixed (syntax/chained-comparison remains) ==
+// A `<` glued to the name before it is reserved for type arguments, so
+// every glued comparison stays an error until it becomes an unclosed list.
+fn f() {
+    if a < b { return 1 }
+    if a < b > (c) { return 2 }
+    a < b
+    a < b
+}
+
+== normalized (ChainedComparison remains) ==
+// A `<` glued to the name before it is reserved for type arguments, so
+// every glued comparison stays an error until it becomes an unclosed list.
+fn f() {
+    if a < b { return 1 }
+    if a < b > (c) { return 2 }
+    a < b
+    a < b
+}
