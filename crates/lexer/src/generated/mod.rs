@@ -179,7 +179,7 @@ impl SyntaxKind {
     /// The kind for a punctuation character, if it has a role in the
     /// language. Punctuation without one has no kind and lexes as an error
     /// token.
-    #[inline]
+    #[inline(always)]
     pub fn from_punct(byte: u8) -> Option<Self> {
         Some(match byte {
             b'(' => Self::LParen,
