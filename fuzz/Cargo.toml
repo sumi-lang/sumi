@@ -1,0 +1,37 @@
+[package]
+name = "sumi-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+sumi-format = { path = "../crates/format" }
+sumi-frontend = { path = "../crates/frontend" }
+sumi-lexer = { path = "../crates/lexer" }
+sumi-syntax = { path = "../crates/syntax" }
+sumi-test = { path = "../crates/test" }
+
+[[bin]]
+name = "lex"
+path = "fuzz_targets/lex.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "parse"
+path = "fuzz_targets/parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "edit"
+path = "fuzz_targets/edit.rs"
+test = false
+doc = false
+bench = false
