@@ -6,10 +6,10 @@ SourceFile! 0..16
   Error! 7..16 "-> int {}"
 
 == evidence ==
-Expected(LBrace) at 7
+ExpectedBody at 7
 ExpectedItem at 7
 
 == diagnostics ==
-error[syntax/expected-token] 2:1: expected `{`
+error[syntax/expected-body] 2:1: expected a body, `{` or `=`
 error[syntax/expected-item] 2:1..2:2 "-": expected a function item
   at 2:1..2:10 "-> int {}": skipped while recovering

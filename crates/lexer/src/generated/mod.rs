@@ -27,6 +27,10 @@ pub enum SyntaxKind {
     Underscore,
     ElseKw,
     FalseKw,
+    /// A function item, or a closure where an expression is expected: the
+    /// same signature and body forms, without a name. Outside every matched
+    /// bracket pair a `fn` begins a top-level item, since no expression stands
+    /// there.
     FnKw,
     IfKw,
     LetKw,

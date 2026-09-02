@@ -8,8 +8,8 @@ SourceFile! 0..14
       NameRef 11..12 "x"
 
 == evidence ==
-Expected(LBrace) at 7
+ExpectedBody at 7
 
 == diagnostics ==
-error[syntax/expected-token] 1:8: expected `{`
+error[syntax/expected-body] 1:8: expected a body, `{` or `=`
   at 1:8..1:9 "(": skipped while recovering

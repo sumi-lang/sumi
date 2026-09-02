@@ -10,15 +10,15 @@ SourceFile! 0..15
 
 == evidence ==
 Expected(RParen) at 6
-Expected(LBrace) at 6
+ExpectedBody at 6
 
 == diagnostics ==
 error[syntax/expected-token] 2:1: expected `)`
   at 1:5..1:6 "(": opening delimiter is here
   fix (safe): insert `)`
     1:6 -> ")"
-error[syntax/expected-token] 2:1: expected `{`
+error[syntax/expected-body] 2:1: expected a body, `{` or `=`
 
-== fixed (syntax/expected-token remains) ==
+== fixed (syntax/expected-body remains) ==
 fn f()
 fn g() {}

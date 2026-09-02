@@ -1,0 +1,31 @@
+== tree ==
+SourceFile! 0..40
+  FnItem! 0..39
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block! 7..39
+      CallExpr! 13..23
+        NameRef 13..14 "g"
+        ArgList! 14..23
+          ClosureExpr! 15..19
+            Error! 18..19 "x"
+          NameRef 21..22 "b"
+      CallExpr! 28..37
+        NameRef 28..29 "h"
+        ArgList! 29..37
+          ClosureExpr! 30..36
+            Error! 33..36 "x y"
+
+== evidence ==
+Expected(LParen) at 18
+ExpectedBody at 19
+Expected(LParen) at 33
+ExpectedBody at 36
+
+== diagnostics ==
+error[syntax/expected-token] 2:10: expected `(`
+  at 2:10..2:11 "x": skipped while recovering
+error[syntax/expected-body] 2:11: expected a body, `{` or `=`
+error[syntax/expected-token] 3:10: expected `(`
+  at 3:10..3:13 "x y": skipped while recovering
+error[syntax/expected-body] 3:13: expected a body, `{` or `=`

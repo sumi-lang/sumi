@@ -1,0 +1,2 @@
+double(x: int) -> int = x * 2
+id(x: int) = x

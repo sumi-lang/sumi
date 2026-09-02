@@ -9,7 +9,7 @@ SourceFile! 0..19
           Error! 12..14 "fn"
 
 == evidence ==
-ExpectedStatement at 12
+ExpectedExpression at 12
 
 == diagnostics ==
-error[syntax/expected-statement] 1:13..1:15 "fn": expected a statement
+error[syntax/expected-expression] 1:13..1:15 "fn": expected an expression

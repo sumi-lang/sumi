@@ -14,7 +14,7 @@ SourceFile! 0..25
 
 == evidence ==
 Expected(RParen) at 14
-Expected(LBrace) at 14
+ExpectedBody at 14
 ExpectedItem at 14
 
 == diagnostics ==
@@ -22,10 +22,10 @@ error[syntax/expected-token] 2:3: expected `)`
   at 1:5..1:6 "(": opening delimiter is here
   fix (safe): insert `)`
     1:12 -> ")"
-error[syntax/expected-token] 2:3: expected `{`
+error[syntax/expected-body] 2:3: expected a body, `{` or `=`
 error[syntax/expected-item] 2:3..2:4 "x": expected a function item
 
-== fixed (syntax/expected-item, syntax/expected-token remain) ==
+== fixed (syntax/expected-body, syntax/expected-item remain) ==
 fn f(a: int)
   x
 fn g() {}

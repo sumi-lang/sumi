@@ -1,0 +1,6 @@
+fn f() {
+    let g = fn = 1
+    let h = fn x = 2
+    let i = fn
+    let j = 3
+}

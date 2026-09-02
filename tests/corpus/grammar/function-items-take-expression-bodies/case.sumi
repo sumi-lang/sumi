@@ -1,0 +1,4 @@
+fn double(x: int) -> int = x * 2
+fn id(x: int) = x
+fn answer() =
+    42

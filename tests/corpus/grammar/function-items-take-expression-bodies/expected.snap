@@ -1,0 +1,23 @@
+== tree ==
+SourceFile 0..72
+  FnItem 0..32
+    Name 3..9 "double"
+    ParamList 9..17
+      Param 10..16
+        Name 10..11 "x"
+        TypeRef 13..16 "int"
+    TypeRef 21..24 "int"
+    BinaryExpr 27..32
+      NameRef 27..28 "x"
+      LiteralExpr 31..32 "2"
+  FnItem 33..50
+    Name 36..38 "id"
+    ParamList 38..46
+      Param 39..45
+        Name 39..40 "x"
+        TypeRef 42..45 "int"
+    NameRef 49..50 "x"
+  FnItem 51..71
+    Name 54..60 "answer"
+    ParamList 60..62 "()"
+    LiteralExpr 69..71 "42"

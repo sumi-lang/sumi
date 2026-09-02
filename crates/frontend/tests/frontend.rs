@@ -92,7 +92,10 @@ fn diagnostics_are_globally_sorted_with_stable_ties() {
     let front = parsed("fn f(a: int");
     assert_eq!(front.diagnostics().len(), 2);
     assert_eq!(front.diagnostics()[0].message.as_ref(), "expected `)`");
-    assert_eq!(front.diagnostics()[1].message.as_ref(), "expected `{`");
+    assert_eq!(
+        front.diagnostics()[1].message.as_ref(),
+        "expected a body, `{` or `=`"
+    );
     assert_eq!(
         front.diagnostics()[0].primary.location,
         front.diagnostics()[1].primary.location

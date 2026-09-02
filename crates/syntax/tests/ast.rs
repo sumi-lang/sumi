@@ -2,7 +2,7 @@
 //! tree, on clean and on erroneous syntax.
 
 use sumi_lexer::{LexedFile, lex};
-use sumi_syntax::ast::{AstNode, ElseBranch, Expr, SourceFile, Stmt};
+use sumi_syntax::ast::{AstNode, Block, ElseBranch, Expr, SourceFile, Stmt};
 use sumi_syntax::{Parse, ParserInput, SyntaxTree, parse};
 
 struct Parsed {
@@ -44,6 +44,46 @@ impl Parsed {
     }
 }
 
+/// The block a body is, on an item whose body is not an expression.
+fn block(body: Option<Expr>) -> Block {
+    match body {
+        Some(Expr::Block(block)) => block,
+        other => panic!("a block body, not {other:?}"),
+    }
+}
+
+#[test]
+fn expression_bodies_and_closures_have_views() {
+    let parsed = Parsed::new("fn twice(x: Int) -> Int = apply(fn(y: Int) -> Int = y * 2, x)\n");
+    let tree = parsed.tree();
+    let item = parsed.item();
+    assert!(!tree.has_error(item.node()));
+    assert_eq!(parsed.text(item.ret(tree).expect("a return type")), "Int");
+    let Some(Expr::CallExpr(call)) = item.body(tree) else {
+        panic!("the body is a call")
+    };
+    let mut args = call.arg_list(tree).expect("arguments").args(tree);
+    let Some(Expr::ClosureExpr(closure)) = args.next() else {
+        panic!("the first argument is a closure")
+    };
+    let params: Vec<_> = closure
+        .param_list(tree)
+        .expect("parameters")
+        .params(tree)
+        .map(|param| parsed.text(param.name(tree).expect("a name")))
+        .collect();
+    assert_eq!(params, ["y"]);
+    assert_eq!(
+        parsed.text(closure.ret(tree).expect("a return type")),
+        "Int"
+    );
+    let Some(Expr::BinaryExpr(body)) = closure.body(tree) else {
+        panic!("the closure body is a product")
+    };
+    assert_eq!(parsed.text(body), "y * 2");
+    assert!(matches!(args.next(), Some(Expr::NameRef(_))));
+}
+
 #[test]
 fn views_walk_a_function_from_signature_to_leaves() {
     let parsed = Parsed::new(
@@ -68,7 +108,7 @@ fn views_walk_a_function_from_signature_to_leaves() {
     assert_eq!(params, [("a", "Int"), ("b", "Int")]);
     assert_eq!(parsed.text(item.ret(tree).expect("a return type")), "Int");
 
-    let body = item.body(tree).expect("a body");
+    let body = block(item.body(tree));
     let stmts: Vec<Stmt> = body.stmts(tree).collect();
     assert_eq!(stmts.len(), 2);
 
@@ -108,7 +148,7 @@ fn views_walk_a_function_from_signature_to_leaves() {
 fn a_block_condition_and_a_body_are_told_apart_by_order() {
     let parsed = Parsed::new("fn f() { if { a } { b } }");
     let tree = parsed.tree();
-    let body = parsed.item().body(tree).expect("a body");
+    let body = block(parsed.item().body(tree));
     let Some(Stmt::Expr(Expr::IfExpr(branch))) = body.stmts(tree).next() else {
         panic!("the body is one if expression")
     };
@@ -127,7 +167,7 @@ fn a_block_condition_and_a_body_are_told_apart_by_order() {
 fn an_else_if_is_an_if_expression_branch() {
     let parsed = Parsed::new("fn f() { if a { 1 } else if b { 2 } else { 3 } }");
     let tree = parsed.tree();
-    let body = parsed.item().body(tree).expect("a body");
+    let body = block(parsed.item().body(tree));
     let Some(Stmt::Expr(Expr::IfExpr(first))) = body.stmts(tree).next() else {
         panic!("one if expression")
     };
@@ -148,7 +188,7 @@ fn an_else_if_is_an_if_expression_branch() {
 fn calls_and_arguments() {
     let parsed = Parsed::new("fn f() { g(1, h(2), 3) }");
     let tree = parsed.tree();
-    let body = parsed.item().body(tree).expect("a body");
+    let body = block(parsed.item().body(tree));
     let Some(Stmt::Expr(Expr::CallExpr(call))) = body.stmts(tree).next() else {
         panic!("one call")
     };
@@ -166,7 +206,7 @@ fn calls_and_arguments() {
 fn missing_children_are_absent_and_the_node_is_flagged() {
     let parsed = Parsed::new("fn f() { let x = }");
     let tree = parsed.tree();
-    let body = parsed.item().body(tree).expect("a body");
+    let body = block(parsed.item().body(tree));
     let Some(Stmt::LetStmt(binding)) = body.stmts(tree).next() else {
         panic!("one binding")
     };
@@ -201,7 +241,7 @@ fn a_child_that_could_fill_two_fields_fills_neither() {
     // by type the block could be either, so neither accessor claims it.
     let parsed = Parsed::new("fn f() { if {} }");
     let tree = parsed.tree();
-    let body = parsed.item().body(tree).expect("a body");
+    let body = block(parsed.item().body(tree));
     let Some(Stmt::Expr(Expr::IfExpr(branch))) = body.stmts(tree).next() else {
         panic!("one if expression")
     };
@@ -213,7 +253,7 @@ fn a_child_that_could_fill_two_fields_fills_neither() {
     // Likewise `x =`: the one operand could be the target or the value.
     let parsed = Parsed::new("fn f() { x = }");
     let tree = parsed.tree();
-    let body = parsed.item().body(tree).expect("a body");
+    let body = block(parsed.item().body(tree));
     let Some(Stmt::AssignStmt(assignment)) = body.stmts(tree).next() else {
         panic!("one assignment")
     };
@@ -231,7 +271,7 @@ fn a_child_of_one_possible_field_is_answered_despite_an_error() {
     let item = parsed.item();
     assert!(tree.has_error(item.node()));
     assert_eq!(parsed.text(item.ret(tree).expect("a return type")), "Int");
-    let body = item.body(tree).expect("a body");
+    let body = block(item.body(tree));
     let Some(Stmt::LetStmt(binding)) = body.stmts(tree).next() else {
         panic!("one binding")
     };

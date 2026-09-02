@@ -339,9 +339,9 @@ impl Build {
 }
 
 /// Whether a top-level item starts at significant token `index`: `fn`, or
-/// a signature missing it — a name, a parenthesized list, and a body or
-/// return type after the list on its line, which nothing else at the top
-/// level looks like. A misplaced call has neither after its list, and
+/// a signature missing it — a name, a parenthesized list, and a body,
+/// a return type, or an expression body's `=` after the list on its line,
+/// which nothing else at the top level looks like. A misplaced call has neither after its list, and
 /// stays garbage. The caller has established that no matched bracket pair
 /// encloses `index`.
 fn item_starts_at(slots: &[Slot], index: usize) -> bool {
@@ -358,6 +358,7 @@ fn item_starts_at(slots: &[Slot], index: usize) -> bool {
             slots.get(after).is_some_and(|next| {
                 next.flags & NEWLINE_BEFORE == 0
                     && (next.kind == SyntaxKind::LBrace
+                        || next.kind == SyntaxKind::Eq
                         || (next.kind == SyntaxKind::Minus
                             && next.flags & JOINT != 0
                             && slots.get(after + 1).map(|slot| slot.kind) == Some(SyntaxKind::Gt)))

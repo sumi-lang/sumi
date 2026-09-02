@@ -6,11 +6,11 @@ SourceFile! 0..10
 
 == evidence ==
 Expected(LParen) at 5
-Expected(LBrace) at 5
+ExpectedBody at 5
 ExpectedItem at 5
 
 == diagnostics ==
 error[syntax/expected-token] 2:1: expected `(`
-error[syntax/expected-token] 2:1: expected `{`
+error[syntax/expected-body] 2:1: expected a body, `{` or `=`
 error[syntax/expected-item] 2:1..2:2 "(": expected a function item
   at 2:1..2:6 "() {}": skipped while recovering

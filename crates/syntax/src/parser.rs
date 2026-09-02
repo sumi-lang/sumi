@@ -74,6 +74,9 @@ pub enum ParseExpected {
     Expression,
     Name,
     Type,
+    /// A function body: `{`, or `=` and an expression, on the signature's
+    /// line.
+    Body,
     /// A specific token, such as `)` or `=`.
     Token(T),
     /// A closing delimiter, tied to the opener which requires it. The
@@ -283,59 +286,137 @@ fn fn_item(p: &mut Marker<'_, '_>) {
     }
     if !m.at(T::Ident) && !m.at(T::Underscore) {
         let recovery = m.missing(ParseExpected::Name);
-        signature_garbage(&mut m, recovery, |m| {
+        signature_garbage(&mut m, Signature::Item, recovery, |m| {
             m.at(T::Ident) || m.at(T::Underscore) || m.at(T::LParen)
         });
     }
     if m.at(T::Ident) || m.at(T::Underscore) {
         name(&mut m);
     }
-    // The parameter list stays on the name's line: `(` never continues one.
-    if !m.at(T::LParen) || m.newline() {
-        let recovery = m.missing(ParseExpected::Token(T::LParen));
-        signature_garbage(&mut m, recovery, |m| {
-            m.at(T::LParen) || m.at_glued(T::Minus, T::Gt)
-        });
-    }
-    if m.at(T::LParen) && !m.newline() {
-        delimited_list::<Params>(&mut m);
-    }
-    // A return type on the line of the signature: a leading `->` never
-    // continues a line.
-    let at_arrow = |m: &Marker<'_, '_>| m.at_glued(T::Minus, T::Gt) && !m.newline();
-    if !m.at(T::LBrace) && !at_arrow(&m) {
-        let recovery = m.missing(ParseExpected::Token(T::LBrace));
-        signature_garbage(&mut m, recovery, at_arrow);
-    }
-    if at_arrow(&m) {
-        m.token();
-        m.token();
-        type_ref(&mut m);
-        if !m.at(T::LBrace) {
-            let recovery = m.missing(ParseExpected::Token(T::LBrace));
-            signature_garbage(&mut m, recovery, |_| false);
-        }
-    }
-    if m.at(T::LBrace) {
-        block_here(&mut m);
-    }
+    signature_tail(&mut m, ExprFollow::Anything, Signature::Item);
     m.complete(N::FnItem);
 }
 
+/// A closure: `fn` without a name, then a signature and body as an item
+/// has. What follows the `fn` on its line settles that a closure was meant:
+/// a parameter list, a part that comes after one, or a name in the list's
+/// place, which is garbage there since an item is not an expression.
+/// Before anything else, the `fn` itself is garbage where an expression
+/// was required, and opens nothing.
+fn closure_expr(p: &mut Marker<'_, '_>, follow: ExprFollow) -> CompletedMarker {
+    let next = p.nth(1);
+    let signature_follows = p.nth_newline(1)
+        || next.is_none_or(|next| {
+            matches!(
+                next,
+                T::LParen | T::Ident | T::Underscore | T::Eq | T::LBrace
+            )
+        })
+        || (next == Some(T::Minus) && p.nth_joint(1) && p.nth(2) == Some(T::Gt));
+    if !signature_follows {
+        let recovery = p.recover_tokens(ParseRecoveryKind::Expected(ParseExpected::Expression), 1);
+        return skip_token(p, recovery);
+    }
+    let mut m = p.start();
+    m.token(); // fn
+    signature_tail(&mut m, follow, Signature::Closure);
+    m.complete(N::ClosureExpr)
+}
+
+/// Whose signature is being parsed, which decides what garbage in it may
+/// take. An item stands alone, so a closer in its signature is garbage
+/// like anything else, and a run continues past it up to the next item's
+/// horizon. A closure lives inside an expression, so a closer or a `,` of
+/// what encloses it ends the run and is left to its owner.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Signature {
+    Item,
+    Closure,
+}
+
+/// The parameter list, return type, and body of an item or a closure,
+/// after its `fn` and name. The body is a block, or `=` and an expression
+/// parsed before `follow`.
+fn signature_tail(m: &mut Marker<'_, '_>, follow: ExprFollow, signature: Signature) {
+    // The parameter list stays on the signature's line: `(` never
+    // continues one.
+    if !m.at(T::LParen) || m.newline() {
+        let recovery = m.missing(ParseExpected::Token(T::LParen));
+        signature_garbage(m, signature, recovery, |m| {
+            m.at(T::LParen) || at_arrow(m) || at_equals(m)
+        });
+    }
+    if m.at(T::LParen) && !m.newline() {
+        match signature {
+            Signature::Item => delimited_list::<Params>(m),
+            Signature::Closure => delimited_list::<ClosureParams>(m),
+        }
+    }
+    if !at_body(m) && !at_arrow(m) {
+        let recovery = m.missing(ParseExpected::Body);
+        signature_garbage(m, signature, recovery, |m| at_arrow(m) || at_equals(m));
+    }
+    if at_arrow(m) {
+        m.token();
+        m.token();
+        type_ref(m);
+        if !at_body(m) {
+            let recovery = m.missing(ParseExpected::Body);
+            signature_garbage(m, signature, recovery, at_equals);
+        }
+    }
+    if at_equals(m) {
+        m.token(); // =
+        operand_before(m, 0, follow);
+    } else if m.at(T::LBrace) {
+        block_here(m);
+    }
+}
+
+/// A return type on the line of the signature: a leading `->` never
+/// continues a line.
+fn at_arrow(m: &Marker<'_, '_>) -> bool {
+    m.at_glued(T::Minus, T::Gt) && !m.newline()
+}
+
+/// The `=` of an expression body, on the line of the signature: a leading
+/// `=` never continues a line.
+fn at_equals(m: &Marker<'_, '_>) -> bool {
+    m.at(T::Eq) && !m.newline()
+}
+
+/// A body begins: a block, wherever its line, or an expression body's `=`.
+fn at_body(m: &Marker<'_, '_>) -> bool {
+    m.at(T::LBrace) || at_equals(m)
+}
+
 /// Skip garbage in a signature — tokens that belong to none of its parts —
-/// into `Error` nodes, up to `resume`, a body, the next item's horizon, or
-/// the end of the line. Nothing is skipped when already at one of those. A
-/// `{` counts as a body only when the stream pairs it with a `}`: an
-/// unclosed one where a part of the signature was expected is garbage, not
-/// the body that follows it.
+/// into `Error` nodes, up to `resume`, a body, or the end of the line, and
+/// for an item the next item's horizon. Nothing is skipped when already at
+/// one of those. A `{` counts as a body only when the stream pairs it with
+/// a `}`: an unclosed one where a part of the signature was expected is
+/// garbage, not the body that follows it.
 fn signature_garbage(
     m: &mut Marker<'_, '_>,
+    signature: Signature,
     recovery: RecoveryHandle,
     resume: impl Fn(&Marker<'_, '_>) -> bool,
 ) {
-    skip_all(m, recovery, |m| {
-        resume(m) || m.newline() || (m.at(T::LBrace) && m.partnered())
-    });
+    let stop = |m: &Marker<'_, '_>| resume(m) || m.newline() || (m.at(T::LBrace) && m.partnered());
+    match signature {
+        Signature::Item => skip_all(m, recovery, stop),
+        Signature::Closure => {
+            let stop = |m: &Marker<'_, '_>| {
+                stop(m)
+                    || m.at(T::Comma)
+                    || m.closes_open_bracket()
+                    || (m.current().is_some_and(is_closer) && m.partnered())
+            };
+            if m.current().is_some() && !stop(m) {
+                skip(m, recovery, stop);
+            }
+        }
+    }
 }
 
 /// A declared name, as a `Name` node. `_` is taken with recovery evidence
@@ -392,6 +473,7 @@ trait ListRule {
     fn tolerated(kind: T) -> bool;
 }
 
+/// An item's parameters, each typed.
 struct Params;
 
 impl ListRule for Params {
@@ -404,7 +486,7 @@ impl ListRule for Params {
     }
 
     fn parse_element(m: &mut Marker<'_, '_>) {
-        param(m);
+        param(m, true);
     }
 
     /// The body, or an enclosing block's end, when the stream pairs the
@@ -415,6 +497,33 @@ impl ListRule for Params {
 
     fn tolerated(kind: T) -> bool {
         kind == T::LBrace
+    }
+}
+
+/// A closure's parameters, whose types may be left to inference, and
+/// whose list an expression body's `=` may follow when its closer is
+/// missing.
+struct ClosureParams;
+
+impl ListRule for ClosureParams {
+    const NODE: N = Params::NODE;
+    const ELEMENT: ParseExpected = Params::ELEMENT;
+    const RESUMES_AT_ELEMENT: bool = Params::RESUMES_AT_ELEMENT;
+
+    fn starts_element(m: &Marker<'_, '_>) -> bool {
+        Params::starts_element(m)
+    }
+
+    fn parse_element(m: &mut Marker<'_, '_>) {
+        param(m, false);
+    }
+
+    fn follows(m: &Marker<'_, '_>) -> bool {
+        Params::follows(m) || m.at(T::Eq)
+    }
+
+    fn tolerated(kind: T) -> bool {
+        Params::tolerated(kind)
     }
 }
 
@@ -524,13 +633,20 @@ fn begins_element<R: ListRule>(m: &Marker<'_, '_>) -> bool {
             .is_some_and(|kind| !is_opener(kind) || m.partnered())
 }
 
-fn param(p: &mut Marker<'_, '_>) {
+/// A parameter: a name, and its type after `:` when `typed` requires one.
+/// A type right after the name is taken as the type of a `:` that was
+/// forgotten, whether or not one is required.
+fn param(p: &mut Marker<'_, '_>, typed: bool) {
     let mut m = p.start();
     name(&mut m);
-    // A type right after the name is taken as the type of a `:` that was
-    // forgotten.
-    if m.expect(T::Colon) || m.at(T::Ident) {
+    if m.at(T::Colon) && !m.boundary() {
+        m.token();
         type_ref(&mut m);
+    } else if typed || m.at(T::Ident) {
+        m.missing(ParseExpected::Token(T::Colon));
+        if m.at(T::Ident) {
+            type_ref(&mut m);
+        }
     }
     m.complete(N::Param);
 }
@@ -614,6 +730,16 @@ fn statement(p: &mut Marker<'_, '_>) {
         Some(T::LetKw) => let_stmt(p),
         Some(T::Underscore) => discard_stmt(p),
         Some(T::ReturnKw) => return_stmt(p),
+        // A named function is an item where a statement belongs, not a
+        // closure missing its parameter list: skipped whole, as any
+        // malformed statement is.
+        Some(T::FnKw)
+            if !p.nth_newline(1) && matches!(p.nth(1), Some(T::Ident | T::Underscore)) =>
+        {
+            let recovery =
+                p.recover_tokens(ParseRecoveryKind::Expected(ParseExpected::Statement), 1);
+            skip_statement_garbage(p, recovery);
+        }
         // Diagnosed by an earlier phase; retain the run as parser evidence.
         Some(T::Error) => {
             let mut m = p.start();
@@ -943,6 +1069,7 @@ fn prefix_or_atom(p: &mut Marker<'_, '_>, follow: ExprFollow) -> Option<Complete
         }
         T::LBrace => block(p),
         T::IfKw => if_expr(p),
+        T::FnKw => closure_expr(p, follow),
         _ => return None,
     })
 }

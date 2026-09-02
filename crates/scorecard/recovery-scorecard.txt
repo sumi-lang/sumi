@@ -44,14 +44,14 @@ insert/delimiter        10000     4884    1.00000   1.00000   1.00000
 insert/non-delim        10000     4886    1.00000   1.00000   1.00000
 
 class                  diags_mean diags_p95  skipped_mean skipped_p95  evidence_mean evidence_p95
-delete/delimiter            1.683         3        51.488         278          1.683            3
+delete/delimiter            1.685         3        51.464         279          1.685            3
 delete/non-delim            0.964         2        17.062         106          0.964            2
-duplicate/delimiter         1.507         3        45.274         267          1.507            3
+duplicate/delimiter         1.508         3        45.312         267          1.508            3
 duplicate/non-delim         1.300         3        15.948         100          1.300            3
-swap/delimiter              1.561         3        33.397         187          1.560            3
+swap/delimiter              1.573         3        33.348         187          1.572            3
 swap/non-delim              1.480         3        25.791         150          1.478            3
-insert/delimiter            1.640         4        42.828         244          1.640            4
-insert/non-delim            1.219         3        21.625         132          1.215            3
+insert/delimiter            1.640         4        42.834         244          1.640            4
+insert/non-delim            1.264         3        21.746         133          1.260            3
 
 == Part B: delimiter-breaking churn over clean corpora ==
 churn = original significant tokens (edit site excluded) whose partner()
@@ -82,7 +82,7 @@ most; a `"""` reaches the next `"""` or the end of the file.
 literals_64k: 65603 bytes, 360 literals, 87 top-level items
   delete " closer    n=200  spread p50/p95/max 27/176/253  diags 2/7/1168  items_disturbed 0/0/85
   delete " opener    n=200  spread p50/p95/max 18/53/189  diags 3/9/689  items_disturbed 0/0/54
-  delete ' closer    n=200  spread p50/p95/max 26/125/166  diags 2/121/1096  items_disturbed 0/10/84
+  delete ' closer    n=200  spread p50/p95/max 26/125/166  diags 2/96/1096  items_disturbed 0/10/84
   delete r" closer   n=200  spread p50/p95/max 47/130/130  diags 3/643/656  items_disturbed 0/48/50
   delete """ closer  n=200  spread p50/p95/max 580/1887/2710  diags 495/1094/1158  items_disturbed 41/84/85
   delete """ opener  n=200  spread p50/p95/max 607/1760/2571  diags 598/1095/1169  items_disturbed 44/84/85

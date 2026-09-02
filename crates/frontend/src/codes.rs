@@ -41,6 +41,7 @@ pub const EXPECTED_EXPRESSION: DiagnosticCode = DiagnosticCode::new(SYNTAX, "exp
 pub const EXPECTED_NAME: DiagnosticCode = DiagnosticCode::new(SYNTAX, "expected-name");
 pub const EXPECTED_TYPE: DiagnosticCode = DiagnosticCode::new(SYNTAX, "expected-type");
 pub const EXPECTED_TOKEN: DiagnosticCode = DiagnosticCode::new(SYNTAX, "expected-token");
+pub const EXPECTED_BODY: DiagnosticCode = DiagnosticCode::new(SYNTAX, "expected-body");
 pub const EXPECTED_BOUNDARY: DiagnosticCode = DiagnosticCode::new(SYNTAX, "expected-boundary");
 pub const UNEXPECTED_SYNTAX: DiagnosticCode = DiagnosticCode::new(SYNTAX, "unexpected-syntax");
 pub const NESTING_TOO_DEEP: DiagnosticCode = DiagnosticCode::new(SYNTAX, "nesting-too-deep");

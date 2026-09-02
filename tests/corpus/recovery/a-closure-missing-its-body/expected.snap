@@ -1,0 +1,21 @@
+== tree ==
+SourceFile! 0..43
+  FnItem! 0..42
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block! 7..42
+      LetStmt! 13..26
+        Name 17..18 "g"
+        ClosureExpr! 21..26
+          ParamList 23..26
+            Param 24..25
+              Name 24..25 "x"
+      LetStmt 31..40
+        Name 35..36 "y"
+        LiteralExpr 39..40 "1"
+
+== evidence ==
+ExpectedBody at 31
+
+== diagnostics ==
+error[syntax/expected-body] 3:5: expected a body, `{` or `=`

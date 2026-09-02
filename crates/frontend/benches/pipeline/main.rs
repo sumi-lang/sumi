@@ -353,7 +353,7 @@ fn walk_views(tree: &SyntaxTree) -> usize {
         }
         black_box(item.ret(tree));
         if let Some(body) = item.body(tree) {
-            names += walk_block(tree, body);
+            names += walk_expr(tree, body);
         }
     }
     names
@@ -399,6 +399,14 @@ fn walk_expr(tree: &SyntaxTree, expr: Expr) -> usize {
                     Some(ElseBranch::Block(block)) => walk_block(tree, block),
                     None => 0,
                 }
+        }
+        Expr::ClosureExpr(closure) => {
+            closure.param_list(tree).map_or(0, |params| {
+                params
+                    .params(tree)
+                    .map(|param| usize::from(param.name(tree).is_some()))
+                    .sum()
+            }) + inner(closure.body(tree))
         }
         Expr::Block(block) => walk_block(tree, block),
     }

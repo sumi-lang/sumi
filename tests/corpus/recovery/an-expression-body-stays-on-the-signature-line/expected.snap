@@ -1,0 +1,19 @@
+== tree ==
+SourceFile! 0..21
+  FnItem! 0..6
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+  Error! 7..10 "= 1"
+  FnItem 11..20
+    Name 14..15 "g"
+    ParamList 15..17 "()"
+    Block 18..20 "{}"
+
+== evidence ==
+ExpectedBody at 7
+ExpectedItem at 7
+
+== diagnostics ==
+error[syntax/expected-body] 2:1: expected a body, `{` or `=`
+error[syntax/expected-item] 2:1..2:2 "=": expected a function item
+  at 2:1..2:4 "= 1": skipped while recovering
