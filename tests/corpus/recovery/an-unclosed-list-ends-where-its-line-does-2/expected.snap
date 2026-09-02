@@ -22,7 +22,7 @@ error[syntax/expected-token] 2:3: expected `)`
   fix (safe): insert `)`
     1:15 -> ")"
 
-== fixed ==
+== fixed (syntax/expected-expression remains) ==
 fn f() { g(* a)
   b
 }

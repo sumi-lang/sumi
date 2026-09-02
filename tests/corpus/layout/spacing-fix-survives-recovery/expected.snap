@@ -1,0 +1,27 @@
+== tree ==
+SourceFile! 0..16
+  FnItem! 0..16
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block! 7..16
+      BinaryExpr! 9..14
+        NameRef 9..10 "a"
+        NameRef 11..12 "b"
+        Error! 13..14 ":"
+
+== evidence ==
+UnspacedBinaryOperator at 10
+Unexpected at 13
+
+== diagnostics ==
+error[syntax/unspaced-binary-operator] 1:11..1:12 "+": binary operator must have spaces on both sides
+  fix (safe): space binary operator
+    1:11 -> " "
+    1:12 -> " "
+error[syntax/unexpected-syntax] 1:14..1:15 ":": unexpected syntax in expression
+
+== fixed (syntax/unexpected-syntax remains) ==
+fn f() { a + b : }
+
+== normalized ==
+fn f() { a + b : }

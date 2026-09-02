@@ -1,0 +1,19 @@
+== tree ==
+SourceFile! 0..18
+  FnItem! 0..18
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block! 7..18
+      ParenExpr! 9..18
+        LiteralExpr 10..18 "r\"\"\"tail"
+
+== evidence ==
+Expected(RParen) at 18
+Expected(RBrace) at 18
+
+== diagnostics ==
+error[syntax/unterminated-raw-block-string] 1:11..1:15 "r\"\"\"": unterminated raw multi-line string literal
+error[syntax/expected-token] 1:19: expected `)`
+  at 1:10..1:11 "(": opening delimiter is here
+error[syntax/expected-token] 1:19: expected `}`
+  at 1:8..1:9 "{": opening delimiter is here

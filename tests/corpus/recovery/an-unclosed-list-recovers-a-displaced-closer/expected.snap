@@ -24,7 +24,7 @@ error[syntax/expected-token] 2:1: expected `)`
   fix (safe): insert `)`
     1:19 -> ")"
 
-== fixed ==
+== fixed (syntax/expected-expression remains) ==
 fn f() { g(a } = b)
 c
 }

@@ -26,5 +26,5 @@ error[syntax/expected-token] 1:18: expected `}`
   fix (safe): insert `}`
     1:17 -> "}"
 
-== fixed ==
+== fixed (syntax/expected-expression, syntax/expected-item, syntax/expected-token remain) ==
 fn f() { ({ (} x)} ) }

@@ -25,7 +25,7 @@ error[syntax/expected-token] 3:1: expected `}`
 error[syntax/expected-token] 3:1: expected `}`
   at 1:8..1:9 "{": opening delimiter is here
 
-== fixed ==
+== fixed (syntax/expected-token remains) ==
 fn f() { if c {
  x}
 fn g() {}

@@ -1,0 +1,11 @@
+== tree ==
+SourceFile! 0..5
+  Error! 0..5 ": €"
+
+== evidence ==
+ExpectedItem at 0
+
+== diagnostics ==
+error[syntax/expected-item] 1:1..1:2 ":": expected a function item
+  at 1:1..1:6 ": €": skipped while recovering
+error[syntax/unknown-character] 1:3..1:6 "€": character has no meaning in Sumi source

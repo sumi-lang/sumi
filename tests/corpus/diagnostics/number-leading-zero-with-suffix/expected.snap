@@ -1,0 +1,17 @@
+== tree ==
+SourceFile 0..16
+  FnItem 0..16
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block 7..16
+      LiteralExpr 9..14 "01u32"
+
+== diagnostics ==
+error[syntax/noncanonical-number] 1:10..1:11 "0": numeric literal is not in canonical form
+  primary: integer part has leading zeros
+  fix (safe): canonicalize numeric literal
+    1:10..1:15 "01u32" -> "1u32"
+error[syntax/unknown-suffix] 1:12..1:15 "u32": literal suffixes are not supported
+
+== fixed (syntax/unknown-suffix remains) ==
+fn f() { 1u32 }

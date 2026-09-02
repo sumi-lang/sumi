@@ -1,0 +1,14 @@
+== tree ==
+SourceFile 0..22
+  FnItem 0..22
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block 7..22
+      PrefixExpr 9..20
+        LiteralExpr 19..20 "1"
+
+== evidence ==
+SpacedPrefixOperator at 9
+
+== diagnostics ==
+error[syntax/spaced-prefix-operator] 1:10..1:11 "-": prefix operator must be adjacent to its operand

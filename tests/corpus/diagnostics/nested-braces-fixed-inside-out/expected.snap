@@ -1,0 +1,24 @@
+== tree ==
+SourceFile! 0..18
+  FnItem! 0..18
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block! 7..18
+      IfExpr! 9..18
+        LiteralExpr 12..16 "true"
+        Block! 17..18 "{"
+
+== evidence ==
+Expected(RBrace) at 18
+Expected(RBrace) at 18
+
+== diagnostics ==
+error[syntax/expected-token] 1:19: expected `}`
+  at 1:18..1:19 "{": opening delimiter is here
+  fix (safe): insert `}`
+    1:19 -> "}"
+error[syntax/expected-token] 1:19: expected `}`
+  at 1:8..1:9 "{": opening delimiter is here
+
+== fixed (syntax/expected-token remains) ==
+fn f() { if true {}

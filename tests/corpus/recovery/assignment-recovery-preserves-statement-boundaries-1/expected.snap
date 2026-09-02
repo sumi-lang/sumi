@@ -18,5 +18,5 @@ error[syntax/expected-token] 1:13: expected `)`
   fix (safe): insert `)`
     1:12 -> ")"
 
-== fixed ==
+== fixed (syntax/unexpected-syntax remains) ==
 fn f() { (a) = b) }

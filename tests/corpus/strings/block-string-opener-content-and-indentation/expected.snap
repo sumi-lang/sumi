@@ -1,0 +1,13 @@
+== tree ==
+SourceFile 0..53
+  FnItem 0..52
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block 7..52
+      LetStmt 13..50
+        Name 17..18 "s"
+        LiteralExpr 21..50 "\"\"\"tail\n        a\n  b\n    \"\"\""
+
+== diagnostics ==
+error[syntax/block-string-opener-content] 2:16..2:20 "tail": multi-line string content must begin on the line after `"""`
+error[syntax/block-string-indentation] 4:1..4:3 "  ": line is indented less than the closing `"""`

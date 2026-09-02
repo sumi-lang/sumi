@@ -25,7 +25,7 @@ error[syntax/expected-token] 2:3: expected `)`
 error[syntax/expected-token] 2:3: expected `{`
 error[syntax/expected-item] 2:3..2:4 "x": expected a function item
 
-== fixed ==
+== fixed (syntax/expected-item, syntax/expected-token remain) ==
 fn f(a: int)
   x
 fn g() {}

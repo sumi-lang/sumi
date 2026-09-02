@@ -1,0 +1,22 @@
+== tree ==
+SourceFile 0..15
+  FnItem 0..15
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block 7..15
+      PrefixExpr 9..13
+        LiteralExpr 12..13 "1"
+
+== evidence ==
+SpacedPrefixOperator at 9
+
+== diagnostics ==
+error[syntax/spaced-prefix-operator] 1:10..1:11 "-": prefix operator must be adjacent to its operand
+  fix (safe): remove space after prefix operator
+    1:11..1:13 " \t" -> ""
+
+== fixed ==
+fn f() { -1 }
+
+== normalized ==
+fn f() { -1 }
