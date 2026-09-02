@@ -1,0 +1,47 @@
+== tree ==
+SourceFile! 0..76
+  FnItem! 0..20
+    Name 3..4 "f"
+    Error! 4..5 "="
+    ParamList 6..14
+      Param 7..13
+        Name 7..8 "a"
+        TypeRef 10..13 "int"
+    Block 15..20
+      NameRef 17..18 "a"
+  FnItem! 21..42
+    Name 24..25 "g"
+    ParamList 25..27 "()"
+    Error! 31..36 "= int"
+    Block 37..42
+      NameRef 39..40 "a"
+  FnItem! 43..53
+    Name 46..47 "h"
+    Error! 48..53 "x = 1"
+  FnItem! 54..75
+    Name 57..58 "i"
+    ParamList 58..60 "()"
+    Error! 61..62 "="
+    TypeRef 66..69 "int"
+    Block 70..75
+      NameRef 72..73 "a"
+
+== evidence ==
+Expected(LParen) at 4
+ExpectedType at 31
+ExpectedBody at 31
+Expected(LParen) at 48
+ExpectedBody at 54
+ExpectedBody at 61
+
+== diagnostics ==
+error[syntax/expected-token] 1:5: expected `(`
+  at 1:5..1:6 "=": skipped while recovering
+error[syntax/expected-type] 2:11: expected a type
+error[syntax/expected-body] 2:11: expected a body, `{` or `=`
+  at 2:11..2:16 "= int": skipped while recovering
+error[syntax/expected-token] 3:6: expected `(`
+  at 3:6..3:11 "x = 1": skipped while recovering
+error[syntax/expected-body] 4:1: expected a body, `{` or `=`
+error[syntax/expected-body] 4:8: expected a body, `{` or `=`
+  at 4:8..4:9 "=": skipped while recovering

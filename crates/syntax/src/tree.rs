@@ -693,12 +693,6 @@ impl<'a> Marker<'_, 'a> {
         self.current() == Some(kind)
     }
 
-    /// Whether the next two tokens are `first` glued to `second`: a
-    /// compound such as `->`.
-    pub(crate) fn at_glued(&self, first: SyntaxKind, second: SyntaxKind) -> bool {
-        self.at(first) && self.joint() && self.nth(1) == Some(second)
-    }
-
     /// Whether the next token is glued to the one after it.
     pub(crate) fn joint(&self) -> bool {
         self.nth_joint(0)
