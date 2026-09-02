@@ -23,6 +23,9 @@ pub enum NodeKind {
     FnItem,
     ParamList,
     Param,
+    /// A declaring occurrence of a name: what an item, a parameter, or a
+    /// binding introduces. A use is a NameRef.
+    Name,
     /// A type reference: a name, until types grow more shapes.
     TypeRef,
     Block,
@@ -30,7 +33,8 @@ pub enum NodeKind {
     AssignStmt,
     DiscardStmt,
     ReturnStmt,
-    NameExpr,
+    /// A use of a name: a reference to what a Name declared.
+    NameRef,
     LiteralExpr,
     PrefixExpr,
     BinaryExpr,
