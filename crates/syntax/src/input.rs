@@ -31,10 +31,10 @@
 //! Sumi has no `;`; statements end at line breaks. A newline is a statement
 //! boundary iff all of:
 //!
-//! 1. it is not inside parentheses the stream closes — `(...)` suspends
-//!    termination, and a `{...}` within restores it; a `(` never closed
-//!    suspends nothing, so the line ends the statement it would otherwise
-//!    swallow;
+//! 1. it is not inside a bracket pair the stream closes whose kind does not
+//!    enclose statements — `(...)` suspends termination, and a `{...}`
+//!    within restores it; a `(` never closed suspends nothing, so the line
+//!    ends the statement it would otherwise swallow;
 //! 2. the token before it can end a statement: an identifier or `_`, a
 //!    literal, `true`/`false`, `return`, `)`, or `}`;
 //! 3. the token after it cannot continue one: `else` and binary operators
@@ -49,8 +49,8 @@ use std::num::NonZeroU32;
 use std::ops::Range;
 
 use crate::generated::{
-    BRACKET_PAIRS, SyntaxKind, can_end_statement, continues_statement, is_closer, is_opener,
-    opener, starts_item,
+    BRACKET_PAIRS, SyntaxKind, can_end_statement, continues_statement, encloses_statements,
+    is_closer, is_opener, opener, starts_item,
 };
 use crate::index::SigIdx;
 use sumi_lexer::{LexedFile, RawIdx};
@@ -118,9 +118,10 @@ impl ParserInput {
         // The brackets open before each token, replayed from the pairs: an
         // opener is open until its partner closes it, which discards
         // whatever opened inside and never closed; an orphan closer opens
-        // and closes nothing. Only a `(` the stream closes suspends
-        // termination — one it never closes would suspend it to the end of
-        // the file, so the line ends the statement instead.
+        // and closes nothing. Only an opener the stream closes suspends
+        // termination, and only one whose pair does not enclose statements
+        // — one never closed would suspend it to the end of the file, so
+        // the line ends the statement instead.
         //
         // The same replay finds the item starts: a matched opener encloses
         // everything up to its closer, so item starts exist only while
@@ -143,7 +144,7 @@ impl ParserInput {
                 && slot.flags & NEWLINE_BEFORE != 0
                 && !open.last().is_some_and(|&opener| {
                     let opener = slots[opener as usize];
-                    opener.kind == SyntaxKind::LParen && opener.partner.is_some()
+                    !encloses_statements(opener.kind) && opener.partner.is_some()
                 })
                 && can_end_statement(slots[index - 1].kind)
                 && !continues_line(&slots, index)

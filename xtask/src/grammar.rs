@@ -60,6 +60,9 @@ pub struct Flags {
 pub struct Pair {
     pub opener: String,
     pub closer: String,
+    /// Whether line breaks inside the pair end statements, as a block's
+    /// do; every other pair suspends the newline rule.
+    pub statements: bool,
 }
 
 #[derive(Debug)]
@@ -882,8 +885,20 @@ impl<'a> Parser<'a> {
                     self.pos += 1;
                     let opener = self.word("an opener kind")?;
                     let closer = self.word("a closer kind")?;
+                    let mut statements = false;
+                    if let Some(Tok::Word(flag)) = self.peek() {
+                        if flag != "statements" {
+                            return Err(self.error(&format!("`{flag}` is not a pair flag")));
+                        }
+                        self.pos += 1;
+                        statements = true;
+                    }
                     self.end_of_line()?;
-                    grammar.pairs.push(Pair { opener, closer });
+                    grammar.pairs.push(Pair {
+                        opener,
+                        closer,
+                        statements,
+                    });
                 }
                 Tok::Word(word) if word == "compound" => {
                     self.pos += 1;
@@ -1176,6 +1191,13 @@ PrefixExpr = PrefixOperator Expr
 ";
 
     #[test]
+    fn a_pair_may_enclose_statements() {
+        let source = GRAMMAR.replace("pair LParen RParen", "pair LParen RParen statements");
+        let grammar = Grammar::parse(&source).unwrap();
+        assert!(grammar.pairs[0].statements);
+    }
+
+    #[test]
     fn parses_every_declaration() {
         let grammar = Grammar::parse(GRAMMAR).unwrap();
         assert_eq!(grammar.tokens.len(), 6);
@@ -1183,6 +1205,7 @@ PrefixExpr = PrefixOperator Expr
         assert_eq!(grammar.token("LParen").unwrap().description, "`(`");
         assert!(grammar.token("FnKw").unwrap().flags.item);
         assert_eq!(grammar.pairs.len(), 1);
+        assert!(!grammar.pairs[0].statements);
         assert_eq!(grammar.operator_tokens("->").unwrap().len(), 2);
         let nodes: Vec<&str> = grammar.nodes().map(|rule| rule.name.as_str()).collect();
         assert_eq!(nodes, ["Item", "NameExpr", "PrefixExpr"]);
@@ -1215,6 +1238,7 @@ PrefixExpr = PrefixOperator Expr
             ("token Bang punct \"!\" expr expr", "repeated"),
             ("token Odd ident \"x\" fancy", "not a token flag"),
             ("pair Ident RParen", "not a punctuation"),
+            ("pair LParen RParen loud", "not a pair flag"),
             ("compound \"-\"", "at least two"),
             ("prefix \"->\"", "one token"),
             ("binary Arrow \"->\" 1\nprefix \"-\"", "declared twice"),
