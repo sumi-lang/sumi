@@ -1,9 +1,9 @@
 == tree ==
-SourceFile 0..229
-  FnItem 148..228
+SourceFile 0..245
+  FnItem 148..244
     Name 151..152 "f"
     ParamList 152..154 "()"
-    Block 155..228
+    Block 155..244
       IfExpr 161..180
         BinaryExpr 164..167
           NameRef 164..165 "a"
@@ -21,20 +21,24 @@ SourceFile 0..229
         Block 196..208
           ReturnStmt 198..206
             LiteralExpr 205..206 "2"
-      BinaryExpr 213..217
-        NameRef 213..214 "a"
-        NameRef 216..217 "b"
-      BinaryExpr 222..226
-        NameRef 222..223 "a"
-        NameRef 225..226 "b"
+      LetStmt 213..225
+        Name 217..218 "x"
+        BinaryExpr 221..225
+          NameRef 221..222 "a"
+          NameRef 224..225 "b"
+      LetStmt 230..242
+        Name 234..235 "y"
+        BinaryExpr 238..242
+          NameRef 238..239 "a"
+          NameRef 241..242 "b"
 
 == evidence ==
 UnspacedBinaryOperator at 165
 UnspacedBinaryOperator at 189
 UnspacedBinaryOperator at 191
 ChainedComparison at 191
-UnspacedBinaryOperator at 214
-UnspacedBinaryOperator at 224
+UnspacedBinaryOperator at 222
+UnspacedBinaryOperator at 240
 
 == diagnostics ==
 error[syntax/unspaced-binary-operator] 4:9..4:10 "<": binary operator must have spaces on both sides
@@ -50,12 +54,12 @@ error[syntax/unspaced-binary-operator] 5:11..5:12 ">": binary operator must have
     5:11 -> " "
     5:12 -> " "
 error[syntax/chained-comparison] 5:11..5:12 ">": comparison operators cannot be chained
-error[syntax/unspaced-binary-operator] 6:6..6:7 "<": binary operator must have spaces on both sides
+error[syntax/unspaced-binary-operator] 6:14..6:15 "<": binary operator must have spaces on both sides
   fix (safe): space binary operator
-    6:6 -> " "
-error[syntax/unspaced-binary-operator] 7:7..7:8 "<": binary operator must have spaces on both sides
+    6:14 -> " "
+error[syntax/unspaced-binary-operator] 7:15..7:16 "<": binary operator must have spaces on both sides
   fix (safe): space binary operator
-    7:8 -> " "
+    7:16 -> " "
 
 == fixed (syntax/chained-comparison remains) ==
 // A `<` glued to the name before it is reserved for type arguments, so
@@ -63,8 +67,8 @@ error[syntax/unspaced-binary-operator] 7:7..7:8 "<": binary operator must have s
 fn f() {
     if a < b { return 1 }
     if a < b > (c) { return 2 }
-    a < b
-    a < b
+    let x = a < b
+    let y = a < b
 }
 
 == normalized (ChainedComparison remains) ==
@@ -73,6 +77,6 @@ fn f() {
 fn f() {
     if a < b { return 1 }
     if a < b > (c) { return 2 }
-    a < b
-    a < b
+    let x = a < b
+    let y = a < b
 }

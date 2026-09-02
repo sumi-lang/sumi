@@ -1,0 +1,21 @@
+== tree ==
+SourceFile! 0..41
+  FnItem! 0..40
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block! 7..40
+      NameRef 13..14 "a"
+      Error! 19..22 ") b"
+      NameRef 27..28 "c"
+      Error! 29..32 "€"
+      NameRef 37..38 "d"
+
+== evidence ==
+ExpectedStatement at 19
+ExpectedBoundary at 29
+PriorPhaseError at 29
+
+== diagnostics ==
+error[syntax/expected-statement] 3:5..3:6 ")": expected a statement
+  at 3:5..3:8 ") b": skipped while recovering
+error[syntax/unknown-character] 4:7..4:10 "€": character has no meaning in Sumi source

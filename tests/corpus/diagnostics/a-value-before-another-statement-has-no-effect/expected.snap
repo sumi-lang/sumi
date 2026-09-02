@@ -1,16 +1,15 @@
 == tree ==
-SourceFile 0..25
-  FnItem 0..25
+SourceFile 0..31
+  FnItem 0..30
     Name 3..4 "f"
     ParamList 4..6 "()"
-    Block 7..25
-      NameRef 11..12 "a"
-      BinaryExpr 15..23
-        PrefixExpr 15..17
-          NameRef 16..17 "b"
-        NameRef 22..23 "c"
+    TypeRef 10..13 "int"
+    Block 14..30
+      NameRef 20..21 "x"
+      PrefixExpr 26..28
+        LiteralExpr 27..28 "1"
 
 == diagnostics ==
-error[syntax/statement-without-effect] 2:3..2:4 "a": expression has no effect as a statement
+error[syntax/statement-without-effect] 2:5..2:6 "x": expression has no effect as a statement
   note: only a call, an `if`, or a block may stand before another statement; any other expression may only end its block, as the block's value
   note: the `-` on the next line is glued to its operand, so it begins a statement; spaced from it, it would continue this one

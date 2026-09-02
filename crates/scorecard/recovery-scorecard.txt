@@ -11,7 +11,9 @@ Reading the numbers:
 - Part A preservation of 1.0 across all eight classes at 10^4 pairs each
   extends the recovery property tests' guarantee (256 cases per CI run) by
   two orders of magnitude: no single-token edit has ever disturbed an
-  untouched top-level item.
+  untouched top-level item. Its diagnostic counts are the frontend's, so an
+  edit that strips a statement down to a bare expression before another
+  statement adds the no-effect error to the parse evidence it causes.
 - Part B partner churn tops out at the bracket nesting depth around the
   edit (max 8 tokens of ~223k), boundary churn at 1, items disturbed at 0:
   one unmatched opener or deleted closer does not re-pair the rest of the
@@ -35,42 +37,42 @@ over untouched top-level items (edits guarding none are counted apart).
 
 class                   edits  guarded  pres_mean  pres_p95  pres_min
 delete/delimiter        10000     4811    1.00000   1.00000   1.00000
-delete/non-delim        10000     4869    1.00000   1.00000   1.00000
+delete/non-delim        10000     4866    1.00000   1.00000   1.00000
 duplicate/delimiter     10000     4793    1.00000   1.00000   1.00000
-duplicate/non-delim     10000     4879    1.00000   1.00000   1.00000
-swap/delimiter          10000     4710    1.00000   1.00000   1.00000
-swap/non-delim          10000     4914    1.00000   1.00000   1.00000
-insert/delimiter        10000     4884    1.00000   1.00000   1.00000
+duplicate/non-delim     10000     4882    1.00000   1.00000   1.00000
+swap/delimiter          10000     4711    1.00000   1.00000   1.00000
+swap/non-delim          10000     4913    1.00000   1.00000   1.00000
+insert/delimiter        10000     4874    1.00000   1.00000   1.00000
 insert/non-delim        10000     4886    1.00000   1.00000   1.00000
 
 class                  diags_mean diags_p95  skipped_mean skipped_p95  evidence_mean evidence_p95
-delete/delimiter            1.685         3        51.464         279          1.685            3
-delete/non-delim            0.964         2        17.062         106          0.964            2
-duplicate/delimiter         1.508         3        45.312         267          1.508            3
-duplicate/non-delim         1.300         3        15.948         100          1.300            3
-swap/delimiter              1.573         3        33.348         187          1.572            3
-swap/non-delim              1.480         3        25.791         150          1.478            3
-insert/delimiter            1.640         4        42.834         244          1.640            4
-insert/non-delim            1.254         3        21.470         132          1.250            3
+delete/delimiter            1.735         4        52.451         284          1.693            3
+delete/non-delim            1.094         2        17.229         104          0.976            2
+duplicate/delimiter         1.561         3        46.198         271          1.509            3
+duplicate/non-delim         1.460         3        14.688          92          1.297            3
+swap/delimiter              1.700         3        33.532         189          1.589            3
+swap/non-delim              1.612         3        26.626         157          1.488            3
+insert/delimiter            1.692         4        42.294         248          1.627            3
+insert/non-delim            1.343         3        21.175         125          1.244            3
 
 == Part B: delimiter-breaking churn over clean corpora ==
 churn = original significant tokens (edit site excluded) whose partner()
 or boundary_before() changed; items_disturbed = untouched top-level items
 that no longer survive with identical span and shape.
 
-clean_8k: 1931 significant tokens, 11 top-level items
-  insert {  n=200  unaligned=0   partner p50/p95/max 0/4/6  boundary 0/1/1  any 0/4/7  items_disturbed 0/0/0
-  insert (  n=200  unaligned=0   partner p50/p95/max 0/4/8  boundary 0/1/1  any 1/4/8  items_disturbed 0/0/0
+clean_8k: 1947 significant tokens, 11 top-level items
+  insert {  n=200  unaligned=0   partner p50/p95/max 2/4/6  boundary 0/1/1  any 2/4/6  items_disturbed 0/0/0
+  insert (  n=200  unaligned=0   partner p50/p95/max 0/4/8  boundary 0/1/1  any 0/4/8  items_disturbed 0/0/0
   delete }  n=200  unaligned=0   partner p50/p95/max 3/7/7  boundary 0/0/0  any 3/7/7  items_disturbed 0/0/0
   delete )  n=200  unaligned=0   partner p50/p95/max 1/5/7  boundary 0/1/1  any 1/5/7  items_disturbed 0/0/0
-clean_64k: 14694 significant tokens, 95 top-level items
-  insert {  n=200  unaligned=0   partner p50/p95/max 0/6/6  boundary 0/1/1  any 0/6/7  items_disturbed 0/0/0
+clean_64k: 14824 significant tokens, 95 top-level items
+  insert {  n=200  unaligned=0   partner p50/p95/max 2/4/6  boundary 0/0/1  any 2/4/6  items_disturbed 0/0/0
   insert (  n=200  unaligned=0   partner p50/p95/max 0/6/8  boundary 0/1/1  any 1/6/8  items_disturbed 0/0/0
   delete }  n=200  unaligned=0   partner p50/p95/max 3/5/5  boundary 0/0/0  any 3/5/5  items_disturbed 0/0/0
   delete )  n=200  unaligned=0   partner p50/p95/max 1/5/7  boundary 0/0/1  any 1/5/7  items_disturbed 0/0/0
-clean_1m: 222983 significant tokens, 1395 top-level items
-  insert {  n=50   unaligned=0   partner p50/p95/max 0/4/6  boundary 0/0/1  any 0/4/6  items_disturbed 0/0/0
-  insert (  n=50   unaligned=0   partner p50/p95/max 0/6/6  boundary 0/1/1  any 1/6/6  items_disturbed 0/0/0
+clean_1m: 224033 significant tokens, 1391 top-level items
+  insert {  n=50   unaligned=0   partner p50/p95/max 0/6/6  boundary 0/0/1  any 0/6/6  items_disturbed 0/0/0
+  insert (  n=50   unaligned=0   partner p50/p95/max 0/4/6  boundary 0/1/1  any 1/4/6  items_disturbed 0/0/0
   delete }  n=50   unaligned=0   partner p50/p95/max 3/5/5  boundary 0/0/0  any 3/5/5  items_disturbed 0/0/0
   delete )  n=50   unaligned=0   partner p50/p95/max 1/7/7  boundary 0/1/1  any 2/7/7  items_disturbed 0/0/0
 
@@ -79,10 +81,10 @@ spread = bytes of the longest literal token left where the edited one stood: how
 far the stray delimiter reaches. A one-line literal reaches the end of its line at
 most; a `"""` reaches the next `"""` or the end of the file.
 
-literals_64k: 65603 bytes, 360 literals, 87 top-level items
-  delete " closer    n=200  spread p50/p95/max 27/176/253  diags 2/7/1168  items_disturbed 0/0/85
-  delete " opener    n=200  spread p50/p95/max 18/53/189  diags 3/9/689  items_disturbed 0/0/54
-  delete ' closer    n=200  spread p50/p95/max 26/125/166  diags 2/96/1096  items_disturbed 0/10/84
-  delete r" closer   n=200  spread p50/p95/max 47/130/130  diags 3/643/656  items_disturbed 0/48/50
-  delete """ closer  n=200  spread p50/p95/max 580/1887/2710  diags 495/1094/1158  items_disturbed 41/84/85
-  delete """ opener  n=200  spread p50/p95/max 607/1760/2571  diags 598/1095/1169  items_disturbed 44/84/85
+literals_64k: 65619 bytes, 358 literals, 86 top-level items
+  delete " closer    n=200  spread p50/p95/max 27/176/253  diags 2/7/2260  items_disturbed 0/0/84
+  delete " opener    n=200  spread p50/p95/max 18/53/189  diags 4/9/1334  items_disturbed 0/0/53
+  delete ' closer    n=200  spread p50/p95/max 24/112/166  diags 2/7/2130  items_disturbed 0/0/83
+  delete r" closer   n=200  spread p50/p95/max 47/130/130  diags 3/1243/1273  items_disturbed 0/47/49
+  delete """ closer  n=200  spread p50/p95/max 580/1907/2714  diags 953/2128/2243  items_disturbed 40/83/84
+  delete """ opener  n=200  spread p50/p95/max 607/1764/2575  diags 1164/2129/2258  items_disturbed 43/83/84

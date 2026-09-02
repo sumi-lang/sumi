@@ -88,34 +88,43 @@ fn expr() -> BoxedStrategy<String> {
     .boxed()
 }
 
-fn statement(expr: BoxedStrategy<String>) -> BoxedStrategy<String> {
+/// A statement, and whether it is a bare expression, which may only end
+/// its block: before another statement its value would go nowhere, which
+/// is an error.
+fn statement(expr: BoxedStrategy<String>) -> BoxedStrategy<(String, bool)> {
     prop_oneof![
-        3 => expr.clone(),
+        3 => expr.clone().prop_map(|e| (e, true)),
         2 => (any::<bool>(), name(), any::<bool>(), expr.clone()).prop_map(|(mutable, name, typed, init)| {
             let mutable = if mutable { "mut " } else { "" };
             let ty = if typed { ": int" } else { "" };
-            format!("let {mutable}{name}{ty} = {init}")
+            (format!("let {mutable}{name}{ty} = {init}"), false)
         }),
-        2 => (expr.clone(), expr.clone()).prop_map(|(target, value)| format!("{target} = {value}")),
-        1 => expr.clone().prop_map(|e| format!("_ = {e}")),
+        2 => (expr.clone(), expr.clone()).prop_map(|(target, value)| (format!("{target} = {value}"), false)),
+        1 => expr.clone().prop_map(|e| (format!("_ = {e}"), false)),
         1 => prop::option::of(expr).prop_map(|value| match value {
-            Some(value) => format!("return {value}"),
-            None => "return".to_owned(),
+            Some(value) => (format!("return {value}"), false),
+            None => ("return".to_owned(), false),
         }),
     ]
     .boxed()
 }
 
 /// A block: one statement per line, or a single expression on the braces'
-/// line, or nothing.
+/// line, or nothing. A bare expression before another statement is
+/// discarded explicitly, so the block stays well-formed.
 fn block(expr: BoxedStrategy<String>) -> BoxedStrategy<String> {
     prop_oneof![
         1 => Just("{}".to_owned()),
         2 => expr.clone().prop_map(|e| format!("{{ {e} }}")),
         3 => prop::collection::vec((statement(expr), any::<bool>()), 1..4).prop_map(|statements| {
+            let last = statements.len() - 1;
             let lines: Vec<String> = statements
                 .into_iter()
-                .map(|(statement, comment)| if comment { format!("{statement} // c") } else { statement })
+                .enumerate()
+                .map(|(index, ((statement, bare), comment))| {
+                    let statement = if bare && index < last { format!("_ = {statement}") } else { statement };
+                    if comment { format!("{statement} // c") } else { statement }
+                })
                 .collect();
             format!("{{\n{}\n}}", lines.join("\n"))
         }),

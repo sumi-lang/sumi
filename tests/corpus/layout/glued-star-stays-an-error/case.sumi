@@ -1,8 +1,8 @@
 // A glued `*` is reserved for a prefix operator, so every glued product
 // stays an error, on one line and leading the next.
 fn f() {
-    a*b
-    a *b
-    let y = x
+    let x = a*b
+    let y = a *b
+    let z = x
     *b
 }

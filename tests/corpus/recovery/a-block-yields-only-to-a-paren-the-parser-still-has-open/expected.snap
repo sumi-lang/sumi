@@ -29,5 +29,5 @@ error[syntax/expected-token] 1:23: expected `)`
 error[syntax/expected-item] 1:24..1:25 ")": expected a function item
   at 1:24..1:27 ") }": skipped while recovering
 
-== fixed (syntax/expected-boundary, syntax/expected-item, syntax/expected-token remain) ==
+== fixed (syntax/expected-boundary, syntax/expected-item, syntax/expected-token, syntax/statement-without-effect remain) ==
 fn f() { ({ (a) { b) }) }) }

@@ -44,6 +44,8 @@ pub const EXPECTED_TOKEN: DiagnosticCode = DiagnosticCode::new(SYNTAX, "expected
 pub const EXPECTED_BODY: DiagnosticCode = DiagnosticCode::new(SYNTAX, "expected-body");
 pub const EXPECTED_BOUNDARY: DiagnosticCode = DiagnosticCode::new(SYNTAX, "expected-boundary");
 pub const UNEXPECTED_SYNTAX: DiagnosticCode = DiagnosticCode::new(SYNTAX, "unexpected-syntax");
+pub const STATEMENT_WITHOUT_EFFECT: DiagnosticCode =
+    DiagnosticCode::new(SYNTAX, "statement-without-effect");
 pub const NESTING_TOO_DEEP: DiagnosticCode = DiagnosticCode::new(SYNTAX, "nesting-too-deep");
 pub const BLOCK_ON_NEW_LINE: DiagnosticCode = DiagnosticCode::new(SYNTAX, "block-on-new-line");
 pub const UNSPACED_BINARY_OPERATOR: DiagnosticCode =

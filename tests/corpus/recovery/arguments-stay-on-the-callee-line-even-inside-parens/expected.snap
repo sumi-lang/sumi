@@ -18,6 +18,6 @@ error[syntax/expected-token] 2:1: expected `)`
   fix (safe): insert `)`
     1:12 -> ")"
 
-== fixed (syntax/expected-expression, syntax/unexpected-syntax remain) ==
+== fixed (syntax/expected-expression, syntax/statement-without-effect, syntax/unexpected-syntax remain) ==
 fn f() { (g)
 ()) }

@@ -1,34 +1,38 @@
 == tree ==
-SourceFile 0..175
-  FnItem 126..174
+SourceFile 0..191
+  FnItem 126..190
     Name 129..130 "f"
     ParamList 130..132 "()"
-    Block 133..174
-      BinaryExpr 139..142
-        NameRef 139..140 "a"
-        NameRef 141..142 "b"
-      BinaryExpr 147..151
-        NameRef 147..148 "a"
-        NameRef 150..151 "b"
-      LetStmt 156..172
-        Name 160..161 "y"
-        BinaryExpr 164..172
-          NameRef 164..165 "x"
-          NameRef 171..172 "b"
+    Block 133..190
+      LetStmt 139..150
+        Name 143..144 "x"
+        BinaryExpr 147..150
+          NameRef 147..148 "a"
+          NameRef 149..150 "b"
+      LetStmt 155..167
+        Name 159..160 "y"
+        BinaryExpr 163..167
+          NameRef 163..164 "a"
+          NameRef 166..167 "b"
+      LetStmt 172..188
+        Name 176..177 "z"
+        BinaryExpr 180..188
+          NameRef 180..181 "x"
+          NameRef 187..188 "b"
 
 == evidence ==
-UnspacedBinaryOperator at 140
-UnspacedBinaryOperator at 149
-UnspacedBinaryOperator at 170
+UnspacedBinaryOperator at 148
+UnspacedBinaryOperator at 165
+UnspacedBinaryOperator at 186
 
 == diagnostics ==
-error[syntax/unspaced-binary-operator] 4:6..4:7 "*": binary operator must have spaces on both sides
+error[syntax/unspaced-binary-operator] 4:14..4:15 "*": binary operator must have spaces on both sides
   fix (safe): space binary operator
-    4:6 -> " "
-    4:7 -> " "
-error[syntax/unspaced-binary-operator] 5:7..5:8 "*": binary operator must have spaces on both sides
+    4:14 -> " "
+    4:15 -> " "
+error[syntax/unspaced-binary-operator] 5:15..5:16 "*": binary operator must have spaces on both sides
   fix (safe): space binary operator
-    5:8 -> " "
+    5:16 -> " "
 error[syntax/unspaced-binary-operator] 7:5..7:6 "*": binary operator must have spaces on both sides
   fix (safe): space binary operator
     7:6 -> " "
@@ -37,9 +41,9 @@ error[syntax/unspaced-binary-operator] 7:5..7:6 "*": binary operator must have s
 // A glued `*` is reserved for a prefix operator, so every glued product
 // stays an error, on one line and leading the next.
 fn f() {
-    a * b
-    a * b
-    let y = x
+    let x = a * b
+    let y = a * b
+    let z = x
     * b
 }
 
@@ -47,8 +51,8 @@ fn f() {
 // A glued `*` is reserved for a prefix operator, so every glued product
 // stays an error, on one line and leading the next.
 fn f() {
-    a * b
-    a * b
-    let y = x
+    let x = a * b
+    let y = a * b
+    let z = x
     * b
 }

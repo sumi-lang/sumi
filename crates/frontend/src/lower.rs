@@ -3,8 +3,9 @@ use std::collections::HashSet;
 use sumi_diagnostics::{Applicability, Diagnostic, DiagnosticCode, Fix, Label, Location, Severity};
 use sumi_format::layout_violation_edits;
 use sumi_lexer::{LexError, LexErrorKind, LexedFile, canonicalize_number_literal};
+use sumi_syntax::ast::{AstNode, Expr, Stmt};
 use sumi_syntax::{
-    Parse, ParseAnchor, ParseEvidence, ParseExpected, ParseRecovery, ParseRecoveryKind,
+    NodeKind, Parse, ParseAnchor, ParseEvidence, ParseExpected, ParseRecovery, ParseRecoveryKind,
     ParseViolation, ParseViolationKind, RawGap, RawIdx, RawTokenRange, SyntaxKind, raw_boundary,
 };
 use sumi_text::{FileId, Span, TextEdit, TextRange, TextSize};
@@ -54,6 +55,7 @@ pub(crate) fn diagnostics(
     let mut diagnostics = Vec::new();
     lower_lex(&snapshot, &mut diagnostics);
     lower_parse(&snapshot, parse, &mut diagnostics);
+    lower_statements(&snapshot, parse, &mut diagnostics);
 
     // This sort is stable: phase precedence and producer observation order
     // break ties at the same source location.
@@ -539,6 +541,84 @@ fn lower_violation(
     let mut diagnostic = primary(code, message, snapshot.raw_range(violation.range));
     diagnostic.fix = fix;
     diagnostic
+}
+
+/// An expression that another statement follows must be a call, an `if`,
+/// or a block: any other computes a value that goes nowhere, and under the
+/// newline rule that is the shape a mis-split expression takes, `x` above
+/// a glued `-1`, or a `(` opening a line that was meant as arguments. The
+/// last statement is exempt, since it is the block's value. Judging by
+/// what follows rather than by what is last keeps the rule stable under
+/// recovery: a statement followed by garbage, or holding an error of its
+/// own, is left to the diagnostics it already has.
+fn lower_statements(snapshot: &Snapshot<'_>, parse: &Parse, diagnostics: &mut Vec<Diagnostic>) {
+    let tree = parse.tree();
+    let lexed = snapshot.lexed;
+    for block in tree
+        .nodes()
+        .filter(|&node| tree.kind(node) == NodeKind::Block)
+    {
+        let children: Vec<_> = tree.children_in_order(block).collect();
+        for (index, &node) in children.iter().enumerate() {
+            let Some(&next) = children.get(index + 1) else {
+                break;
+            };
+            let effect_free = Expr::cast(tree, node).is_some_and(|expr| {
+                !matches!(expr, Expr::CallExpr(_) | Expr::IfExpr(_) | Expr::Block(_))
+            });
+            if !effect_free || tree.has_error(node) || Stmt::cast(tree, next).is_none() {
+                continue;
+            }
+            let mut notes = vec![
+                "only a call, an `if`, or a block may stand before another statement; any \
+                 other expression may only end its block, as the block's value"
+                    .into(),
+            ];
+            let first = tree.first_token(node);
+            if lexed.kind(first) == SyntaxKind::LParen && line_break_before(lexed, first) {
+                notes.push(
+                    "a `(` on a new line begins a statement, never a call's arguments, which \
+                     stay on their callee's line"
+                        .into(),
+                );
+            }
+            let following = tree.first_token(next);
+            if lexed.kind(following) == SyntaxKind::Minus
+                && line_break_before(lexed, following)
+                && following + 1 < lexed.end()
+                && !lexed.kind(following + 1).is_trivia()
+            {
+                notes.push(
+                    "the `-` on the next line is glued to its operand, so it begins a \
+                     statement; spaced from it, it would continue this one"
+                        .into(),
+                );
+            }
+            let mut diagnostic = primary(
+                codes::STATEMENT_WITHOUT_EFFECT,
+                "expression has no effect as a statement",
+                snapshot.range(tree.byte_range(node, lexed)),
+            );
+            diagnostic.notes = notes.into_boxed_slice();
+            diagnostics.push(diagnostic);
+        }
+    }
+}
+
+/// Whether a line break lies in the trivia before `token`.
+fn line_break_before(lexed: &LexedFile, token: RawIdx) -> bool {
+    let mut index = token;
+    while let Some(previous) = index.checked_sub(1) {
+        let kind = lexed.kind(previous);
+        if !kind.is_trivia() {
+            return false;
+        }
+        if kind == SyntaxKind::Newline {
+            return true;
+        }
+        index = previous;
+    }
+    false
 }
 
 fn primary(code: DiagnosticCode, message: impl Into<Box<str>>, location: Location) -> Diagnostic {

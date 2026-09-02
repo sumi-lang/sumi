@@ -137,8 +137,9 @@ impl Gen {
         sig.push_str(" {\n");
         self.out.push_str(&sig);
         let stmts = 3 + self.rng.below(7);
-        for _ in 0..stmts {
-            self.statement(1, 0, &mut scope);
+        for index in 0..stmts {
+            let last = index + 1 == stmts && !returns;
+            self.statement(1, 0, &mut scope, last);
         }
         if returns {
             self.indent(1);
@@ -149,7 +150,9 @@ impl Gen {
         self.out.push_str("}\n\n");
     }
 
-    fn statement(&mut self, level: usize, depth: u32, scope: &mut Vec<String>) {
+    /// One statement, at `level` and `depth`; `last` when it ends its
+    /// block, the one place a bare expression may stand as a statement.
+    fn statement(&mut self, level: usize, depth: u32, scope: &mut Vec<String>, last: bool) {
         self.level = level;
         if self.rng.chance(8) {
             self.indent(level);
@@ -176,10 +179,15 @@ impl Gen {
         } else if roll < 92 {
             let e = self.expr(scope, 0);
             self.out.push_str(&format!("return {e}\n"));
-        } else {
+        } else if last {
             let e = self.expr(scope, 0);
             self.out.push_str(&e);
             self.out.push('\n');
+        } else {
+            // A value before another statement has no effect and is an
+            // error, so it is discarded explicitly.
+            let e = self.expr(scope, 0);
+            self.out.push_str(&format!("_ = {e}\n"));
         }
     }
 
@@ -220,8 +228,8 @@ impl Gen {
         self.out.push_str(&format!("if {c} {{\n"));
         let stmts = 1 + self.rng.below(4);
         let mark = scope.len();
-        for _ in 0..stmts {
-            self.statement(level + 1, depth + 1, scope);
+        for index in 0..stmts {
+            self.statement(level + 1, depth + 1, scope, index + 1 == stmts);
         }
         scope.truncate(mark);
         self.indent(level);
@@ -236,8 +244,8 @@ impl Gen {
             }
             let stmts = 1 + self.rng.below(3);
             let mark = scope.len();
-            for _ in 0..stmts {
-                self.statement(level + 1, depth + 1, scope);
+            for index in 0..stmts {
+                self.statement(level + 1, depth + 1, scope, index + 1 == stmts);
             }
             scope.truncate(mark);
             self.indent(level);
@@ -470,13 +478,13 @@ mod tests {
         let medium = generate(64 * 1024, 0xBEEF);
         assert_eq!(
             (medium.len(), fingerprint(&medium)),
-            (65602, 9611445025222738231),
+            (65862, 8235454753037510165),
             "medium"
         );
         let damaged = corrupt(&medium, 7, 600);
         assert_eq!(
             (damaged.len(), fingerprint(&damaged)),
-            (65589, 4097797247159246007),
+            (65851, 13795624062105571189),
             "damaged"
         );
     }

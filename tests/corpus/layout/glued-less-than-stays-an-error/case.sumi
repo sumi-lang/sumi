@@ -3,6 +3,6 @@
 fn f() {
     if a<b { return 1 }
     if a<b>(c) { return 2 }
-    a< b
-    a <b
+    let x = a< b
+    let y = a <b
 }
