@@ -1,6 +1,7 @@
 //! Normalization properties over generated token soup.
 
 use proptest::prelude::*;
+use proptest::test_runner::FileFailurePersistence;
 use sumi_format::normalize;
 use sumi_lexer::{LexedFile, lex};
 use sumi_syntax::{NodeKind, Parse, ParserInput, SyntaxKind, SyntaxTree, parse};
@@ -74,7 +75,23 @@ fn comments<'src>(front: &Front, source: &'src str) -> Vec<&'src str> {
         .collect()
 }
 
+/// Records every failing seed in the crate's tracked `proptest-regressions/`
+/// file, which each later run replays before generating anything new, so a
+/// failure found once stays found. Proptest's default location is found by
+/// walking up from the test file to a `lib.rs`, which a test under `tests/`
+/// never reaches; this path is fixed at compile time instead.
+fn config() -> ProptestConfig {
+    ProptestConfig {
+        failure_persistence: Some(Box::new(FileFailurePersistence::Direct(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/proptest-regressions/prop.txt"
+        )))),
+        ..ProptestConfig::default()
+    }
+}
+
 proptest! {
+    #![proptest_config(config())]
     #[test]
     fn normalize_preserves_the_parse_and_settles(source in soup()) {
         let before = front(&source);

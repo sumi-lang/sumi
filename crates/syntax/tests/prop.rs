@@ -7,6 +7,7 @@
 use std::collections::HashSet;
 
 use proptest::prelude::*;
+use proptest::test_runner::FileFailurePersistence;
 use sumi_lexer::{LexedFile, RawKind, lex};
 use sumi_syntax::{
     NodeIdx, NodeKind, ParseAnchor, ParseEvidence, ParserInput, RawIdx, SigIdx, SyntaxKind,
@@ -96,7 +97,23 @@ fn is_trivia(kind: SyntaxKind) -> bool {
     )
 }
 
+/// Records every failing seed in the crate's tracked `proptest-regressions/`
+/// file, which each later run replays before generating anything new, so a
+/// failure found once stays found. Proptest's default location is found by
+/// walking up from the test file to a `lib.rs`, which a test under `tests/`
+/// never reaches; this path is fixed at compile time instead.
+fn config() -> ProptestConfig {
+    ProptestConfig {
+        failure_persistence: Some(Box::new(FileFailurePersistence::Direct(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/proptest-regressions/prop.txt"
+        )))),
+        ..ProptestConfig::default()
+    }
+}
+
 proptest! {
+    #![proptest_config(config())]
     #[test]
     fn parser_input_invariants(source in soup()) {
         let lexed = lex(&source).expect("generated sources fit in u32");
@@ -279,6 +296,7 @@ fn check_tree(tree: &SyntaxTree, lexed: &LexedFile) -> Result<(), TestCaseError>
 }
 
 proptest! {
+    #![proptest_config(config())]
     #[test]
     fn parse_is_total_and_trees_are_well_formed(source in soup()) {
         let lexed = lex(&source).expect("generated sources fit in u32");
@@ -367,6 +385,7 @@ proptest! {
 // delimiters, which can legitimately reparent nearby syntax.
 
 proptest! {
+    #![proptest_config(config())]
     #[test]
     fn a_single_non_delimiter_edit_disturbs_only_where_it_lands(
         (source, index, edit) in non_delimiter_edited_program()

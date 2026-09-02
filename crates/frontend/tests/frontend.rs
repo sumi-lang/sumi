@@ -1,4 +1,5 @@
 use proptest::prelude::*;
+use proptest::test_runner::FileFailurePersistence;
 use sumi_frontend::{
     Applicability, DiagnosticCode, FileId, ParsedSource, Place, Severity, codes, parse_source,
 };
@@ -136,7 +137,23 @@ fn source() -> impl Strategy<Value = String> {
         .prop_map(|pieces| pieces.concat())
 }
 
+/// Records every failing seed in the crate's tracked `proptest-regressions/`
+/// file, which each later run replays before generating anything new, so a
+/// failure found once stays found. Proptest's default location is found by
+/// walking up from the test file to a `lib.rs`, which a test under `tests/`
+/// never reaches; this path is fixed at compile time instead.
+fn config() -> ProptestConfig {
+    ProptestConfig {
+        failure_persistence: Some(Box::new(FileFailurePersistence::Direct(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/proptest-regressions/frontend.txt"
+        )))),
+        ..ProptestConfig::default()
+    }
+}
+
 proptest! {
+    #![proptest_config(config())]
     #[test]
     fn every_canonical_location_is_valid(source in source()) {
         let front = parse_source(FILE, source.into_boxed_str()).expect("generated sources fit in u32");
