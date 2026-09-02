@@ -1,5 +1,5 @@
 use std::fmt;
-use std::ops::BitOrAssign;
+use std::ops::{BitOr, BitOrAssign};
 
 use sumi_text::TextSize;
 
@@ -100,6 +100,14 @@ impl TokenFlags {
 
     pub const fn contains(self, other: Self) -> bool {
         self.0 & other.0 == other.0
+    }
+}
+
+impl BitOr for TokenFlags {
+    type Output = Self;
+
+    fn bitor(self, rhs: Self) -> Self {
+        Self(self.0 | rhs.0)
     }
 }
 

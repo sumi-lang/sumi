@@ -124,7 +124,23 @@ fn independent_same_token_facts_remain_independent() {
 /// Source fragments beyond every keyword and punctuation text of the
 /// language: names, malformed literals, roleless punctuation, and trivia.
 const EXTRA_FRAGMENTS: &[&str] = &[
-    "x", "Δ", "0", "01_", "1E+05", "1e", r#""\q""#, "'ab'", ";", " ", "\n", "// c", "€",
+    "x",
+    "Δ",
+    "0",
+    "01_",
+    "1E+05",
+    "1e",
+    r#""\q""#,
+    "'ab'",
+    ";",
+    " ",
+    "\n",
+    "// c",
+    "€",
+    "\"{",
+    "}\"",
+    "\"{x}\"",
+    "\"\"\"\n{",
 ];
 
 fn source() -> impl Strategy<Value = String> {

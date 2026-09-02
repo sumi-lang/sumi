@@ -1,0 +1,40 @@
+== tree ==
+SourceFile! 0..431
+  FnItem 361..392
+    Name 364..365 "f"
+    ParamList 365..373
+      Param 366..372
+        Name 366..367 "a"
+        TypeRef 369..372 "int"
+    TypeRef 377..380 "str"
+    InterpolatedString 383..392
+      Hole 384..392
+        InterpolatedString 386..390
+          Hole 387..389
+            NameRef 388..389 "a"
+  FnItem! 393..430
+    Name 396..397 "g"
+    ParamList 397..405
+      Param 398..404
+        Name 398..399 "a"
+        TypeRef 401..404 "int"
+    TypeRef 409..412 "str"
+    InterpolatedString! 415..430
+      Hole! 416..430
+        InterpolatedString! 418..430
+          Hole! 419..430
+            NameRef 420..421 "a"
+            Error! 421..430 "\" } tail\""
+
+== evidence ==
+Unexpected at 421
+
+== diagnostics ==
+error[syntax/unterminated-string] 6:23..6:24 "\"": unterminated string literal
+error[syntax/unclosed-hole] 6:27..6:28 "{": hole in string literal is not closed on its line
+  note: a `{` in a string literal opens a hole for an expression, which ends with its line; a `{` meant as text is written `\{`
+error[syntax/unclosed-hole] 7:24..7:25 "{": hole in string literal is not closed on its line
+  note: a `{` in a string literal opens a hole for an expression, which ends with its line; a `{` meant as text is written `\{`
+error[syntax/unclosed-hole] 7:27..7:28 "{": hole in string literal is not closed on its line
+  note: a `{` in a string literal opens a hole for an expression, which ends with its line; a `{` meant as text is written `\{`
+error[syntax/unexpected-syntax] 7:29..7:38 "\" } tail\"": unexpected syntax in expression

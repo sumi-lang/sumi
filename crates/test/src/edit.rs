@@ -59,8 +59,43 @@ pub fn changes_delimiter(input: &ParserInput, index: usize, edit: Edit) -> bool 
     }
 }
 
+/// Whether a token of this kind is part of a string literal: the text of
+/// one with holes, or a hole's brace. Deleting, duplicating, or moving one
+/// changes the literal's extent, which is damage to a literal's delimiters
+/// rather than to the code around it: the scorecard's Part C measures it
+/// per literal form, and the single-edit properties leave it alone.
+pub fn is_literal_part(kind: SyntaxKind) -> bool {
+    matches!(
+        kind,
+        SyntaxKind::StringStart
+            | SyntaxKind::StringMiddle
+            | SyntaxKind::StringEnd
+            | SyntaxKind::HoleOpen
+            | SyntaxKind::HoleClose
+    )
+}
+
+/// Whether `edit` deletes, duplicates, or moves a part of a string literal.
+/// An insertion lands in code, before the token, and touches none.
+pub fn touches_literal(input: &ParserInput, index: usize, edit: Edit) -> bool {
+    let part_at = |index: usize| input.get(sig(index)).is_some_and(is_literal_part);
+    match edit {
+        Edit::Delete | Edit::Duplicate => part_at(index),
+        Edit::Insert(_) => false,
+        Edit::Swap => {
+            let left = if index + 1 < input.len() {
+                index
+            } else {
+                index - 1
+            };
+            part_at(left) || part_at(left + 1)
+        }
+    }
+}
+
 /// A well-formed program with at least two significant tokens, the index of
-/// one of them, and an edit to make there.
+/// one of them, and an edit to make there, which leaves the parts of string
+/// literals alone.
 pub fn edited_program() -> impl Strategy<Value = (String, usize, Edit)> {
     program()
         .prop_filter("an edit needs two tokens", |source| {
@@ -70,6 +105,10 @@ pub fn edited_program() -> impl Strategy<Value = (String, usize, Edit)> {
             let count = front(&source).input.len();
             (Just(source), 0..count, edit())
         })
+        .prop_filter(
+            "the edit touches no string literal's part",
+            |(source, index, edit)| !touches_literal(&front(source).input, *index, *edit),
+        )
 }
 
 pub fn non_delimiter_edited_program() -> impl Strategy<Value = (String, usize, Edit)> {

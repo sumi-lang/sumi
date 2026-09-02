@@ -34,6 +34,7 @@ pub const BLOCK_STRING_CLOSER_CONTENT: DiagnosticCode =
     DiagnosticCode::new(SYNTAX, "block-string-closer-content");
 pub const BLOCK_STRING_INDENTATION: DiagnosticCode =
     DiagnosticCode::new(SYNTAX, "block-string-indentation");
+pub const UNCLOSED_HOLE: DiagnosticCode = DiagnosticCode::new(SYNTAX, "unclosed-hole");
 
 pub const EXPECTED_ITEM: DiagnosticCode = DiagnosticCode::new(SYNTAX, "expected-item");
 pub const EXPECTED_STATEMENT: DiagnosticCode = DiagnosticCode::new(SYNTAX, "expected-statement");

@@ -1,0 +1,4 @@
+// No hole holds a `"""` literal, so a `"""` inside a hole of one closes
+// the literal, leaving the hole open.
+fn f(x: int) -> str = """
+    value: {x"""

@@ -226,11 +226,21 @@ fn eat_digits(bytes: &[u8], start: usize, misplaced_underscore: &mut Option<usiz
 }
 
 /// Validate the escapes of a terminated string literal.
-pub(crate) fn validate_string(text: &str, mut error: impl FnMut(Range<usize>, LexErrorKind)) {
-    let body = &text[1..text.len() - 1];
-    walk_escapes(body, false, |start, end, result| {
+pub(crate) fn validate_string(text: &str, error: impl FnMut(Range<usize>, LexErrorKind)) {
+    validate_string_body(text, 1..text.len() - 1, error);
+}
+
+/// Validate the escapes of `text[body]`, the text of a `"…"` literal or
+/// of one part of one with holes.
+pub(crate) fn validate_string_body(
+    text: &str,
+    body: Range<usize>,
+    mut error: impl FnMut(Range<usize>, LexErrorKind),
+) {
+    let offset = body.start;
+    walk_escapes(&text[body], false, |start, end, result| {
         if let Err(kind) = result {
-            error(start + 1..end + 1, kind);
+            error(offset + start..offset + end, kind);
         }
     });
 }
@@ -263,10 +273,13 @@ pub(crate) fn validate_char(text: &str, mut error: impl FnMut(Range<usize>, LexE
 /// Validate a terminated multi-line literal, `"""` or `r"""` to `"""`: its
 /// layout, and its escapes unless it is `raw`. Line breaks split the text
 /// into the opener's line, the content lines, and the closer's line, and a
-/// lone `\r` is one too, reported as it goes.
+/// lone `\r` is one too, reported as it goes. The `holes` are the ranges
+/// of the literal's holes, which hold code rather than text: no line break
+/// lies in one, and no escape is looked for there.
 pub(crate) fn validate_block_string(
     text: &str,
     raw: bool,
+    holes: &[Range<usize>],
     mut error: impl FnMut(Range<usize>, LexErrorKind),
 ) {
     let open = if raw { 4 } else { 3 };
@@ -333,13 +346,26 @@ pub(crate) fn validate_block_string(
     }
 
     if !raw && lines.len() > 1 {
-        // The content, from after the opener's line to the closer's line.
+        // The content, from after the opener's line to the closer's line,
+        // in the stretches of text between its holes.
         let content = lines[1].start..closer_line.start;
-        walk_escapes(&text[content.clone()], true, |start, end, result| {
-            if let Err(kind) = result {
-                error(content.start + start..content.start + end, kind);
+        let mut stretches = Vec::with_capacity(holes.len() + 1);
+        let mut stretch_start = content.start;
+        for hole in holes {
+            let hole = hole.start.max(content.start)..hole.end.min(content.end);
+            if hole.start < hole.end {
+                stretches.push(stretch_start..hole.start);
+                stretch_start = hole.end;
             }
-        });
+        }
+        stretches.push(stretch_start..content.end);
+        for stretch in stretches {
+            walk_escapes(&text[stretch.clone()], true, |start, end, result| {
+                if let Err(kind) = result {
+                    error(stretch.start + start..stretch.start + end, kind);
+                }
+            });
+        }
     }
 }
 
@@ -363,7 +389,7 @@ fn walk_escapes(
         }
 
         let result = match chars.next() {
-            Some('n' | 'r' | 't' | '\\' | '"' | '\'' | '0') => Ok(()),
+            Some('n' | 'r' | 't' | '\\' | '"' | '\'' | '0' | '{' | '}') => Ok(()),
             Some('u') => scan_unicode_escape(&mut chars),
             Some('\n') if multiline => Ok(()),
             Some('\r') if multiline => {

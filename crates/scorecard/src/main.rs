@@ -23,19 +23,22 @@
 //! the whole file" risk.
 //!
 //! Part C deletes one delimiter inside a literal — a quote of a one-line
-//! string, character, or raw string, or a `"""` of a multi-line one — in a
-//! clean corpus that contains multi-line strings, and measures how far the
-//! literal then reaches: the edits Parts A and B cannot make, since theirs
-//! are whole significant tokens. This quantifies the "stray quote re-pairs
-//! the whole file" risk, per literal form.
+//! string, character, or raw string, a `"""` of a multi-line one, or a
+//! brace of a hole — in a clean corpus that contains multi-line strings
+//! and strings with holes, and measures how far the literal then reaches:
+//! the edits Parts A and B cannot make, since theirs are whole significant
+//! tokens. This quantifies the "stray quote re-pairs the whole file" risk,
+//! per literal form.
 
 use std::collections::HashSet;
 
-use sumi_lexer::RawKind;
+use sumi_lexer::{LexedFile, RawKind};
 use sumi_syntax::{
     NodeIdx, NodeKind, ParseEvidence, ParserInput, RawIdx, SigIdx, SyntaxKind, is_bracket,
 };
-use sumi_test::{Edit, EditSpan, Front, Programs, apply, changes_delimiter, corpus, front};
+use sumi_test::{
+    Edit, EditSpan, Front, Programs, apply, changes_delimiter, corpus, front, touches_literal,
+};
 
 /// Measured (program, edit) pairs per Part A class.
 const CLASS_TARGET: usize = 10_000;
@@ -237,16 +240,20 @@ fn scorecard() {
         }
         let spans = original.spans();
 
-        let delimiter: Vec<usize> = (0..len)
+        // The parts of a string literal are literal delimiters, Part C's:
+        // an edit here is to the code around literals.
+        let input = &original.input;
+        let code = |edit: Edit| (0..len).filter(move |&index| !touches_literal(input, index, edit));
+        let delimiter: Vec<usize> = code(Edit::Delete)
             .filter(|&index| original.input.get(sig(index)).is_some_and(is_bracket))
             .collect();
-        let non_delimiter: Vec<usize> = (0..len)
+        let non_delimiter: Vec<usize> = code(Edit::Delete)
             .filter(|&index| !original.input.get(sig(index)).is_some_and(is_bracket))
             .collect();
-        let swap_delimiter: Vec<usize> = (0..len)
+        let swap_delimiter: Vec<usize> = code(Edit::Swap)
             .filter(|&index| changes_delimiter(&original.input, index, Edit::Swap))
             .collect();
-        let swap_non_delimiter: Vec<usize> = (0..len)
+        let swap_non_delimiter: Vec<usize> = code(Edit::Swap)
             .filter(|&index| !changes_delimiter(&original.input, index, Edit::Swap))
             .collect();
         let all: Vec<usize> = (0..len).collect();
@@ -487,48 +494,80 @@ enum LiteralEdit {
 
 struct LiteralClass {
     label: &'static str,
+    /// The tokens the class edits: those of these raw kinds, or of this
+    /// syntax kind when one is named, as a hole's braces are.
     kinds: &'static [RawKind],
+    token: Option<SyntaxKind>,
     edit: LiteralEdit,
     /// The delimiter's bytes; a raw literal's leading `r` stays.
     width: usize,
 }
 
-const LITERAL_CLASSES: [LiteralClass; 6] = [
+impl LiteralClass {
+    fn selects(&self, lexed: &LexedFile, index: RawIdx) -> bool {
+        match self.token {
+            Some(kind) => lexed.kind(index) == kind,
+            None => self.kinds.contains(&lexed.raw_kind(index)),
+        }
+    }
+}
+
+const LITERAL_CLASSES: [LiteralClass; 8] = [
     LiteralClass {
         label: "delete \" closer",
         kinds: &[RawKind::String],
+        token: None,
         edit: LiteralEdit::Closer,
         width: 1,
     },
     LiteralClass {
         label: "delete \" opener",
         kinds: &[RawKind::String],
+        token: None,
         edit: LiteralEdit::Opener,
         width: 1,
     },
     LiteralClass {
         label: "delete ' closer",
         kinds: &[RawKind::Char],
+        token: None,
         edit: LiteralEdit::Closer,
         width: 1,
     },
     LiteralClass {
         label: "delete r\" closer",
         kinds: &[RawKind::RawString],
+        token: None,
         edit: LiteralEdit::Closer,
         width: 1,
     },
     LiteralClass {
         label: "delete \"\"\" closer",
         kinds: &[RawKind::BlockString, RawKind::RawBlockString],
+        token: None,
         edit: LiteralEdit::Closer,
         width: 3,
     },
     LiteralClass {
         label: "delete \"\"\" opener",
         kinds: &[RawKind::BlockString, RawKind::RawBlockString],
+        token: None,
         edit: LiteralEdit::Opener,
         width: 3,
+    },
+    LiteralClass {
+        label: "delete { of hole",
+        kinds: &[],
+        token: Some(SyntaxKind::HoleOpen),
+        edit: LiteralEdit::Opener,
+        width: 1,
+    },
+    LiteralClass {
+        label: "delete } of hole",
+        kinds: &[],
+        token: Some(SyntaxKind::HoleClose),
+        edit: LiteralEdit::Closer,
+        width: 1,
     },
 ];
 
@@ -620,7 +659,7 @@ fn literal_edits(name: &str, source: &str, edits_per_class: usize, rng: &mut Lcg
         let candidates: Vec<RawIdx> = before
             .lexed
             .indices()
-            .filter(|&index| class.kinds.contains(&before.lexed.raw_kind(index)))
+            .filter(|&index| class.selects(&before.lexed, index))
             .collect();
         let samples: Vec<LiteralSample> = (0..edits_per_class)
             .map(|_| {
@@ -680,7 +719,7 @@ fn main() {
     println!("most; a `\"\"\"` reaches the next `\"\"\"` or the end of the file.");
     println!();
     let mut rng = Lcg::new(0x11E4_A15E);
-    let literals_64k = corpus::generate_with_block_strings(64 * 1024, 0xB10C);
+    let literals_64k = corpus::generate_with_literals(64 * 1024, 0xB10C);
     literal_edits("literals_64k", &literals_64k, 200, &mut rng);
 }
 

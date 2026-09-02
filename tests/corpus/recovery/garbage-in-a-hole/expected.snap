@@ -1,0 +1,59 @@
+== tree ==
+SourceFile! 0..340
+  FnItem! 256..339
+    Name 259..260 "f"
+    ParamList 260..276
+      Param 261..267
+        Name 261..262 "a"
+        TypeRef 264..267 "int"
+      Param 269..275
+        Name 269..270 "b"
+        TypeRef 272..275 "int"
+    Block! 277..339
+      CallExpr! 283..297
+        NameRef 283..288 "print"
+        ArgList! 288..297
+          InterpolatedString! 289..296
+            Hole! 290..295
+              NameRef 291..292 "a"
+              Error! 293..294 "b"
+      CallExpr! 302..316
+        NameRef 302..307 "print"
+        ArgList! 307..316
+          InterpolatedString! 308..315
+            Hole! 309..314
+              CallExpr! 310..313
+                NameRef 310..311 "f"
+                ArgList! 311..313
+                  NameRef 312..313 "a"
+      CallExpr! 321..337
+        NameRef 321..326 "print"
+        ArgList! 326..337
+          InterpolatedString! 327..336
+            Hole! 328..335
+              Error! 330..331 ")"
+              NameRef 332..333 "a"
+
+== evidence ==
+Unexpected at 293
+Expected(RParen) at 313
+ExpectedExpression at 330
+
+== diagnostics ==
+error[syntax/unexpected-syntax] 6:15..6:16 "b": unexpected syntax in expression
+error[syntax/expected-token] 7:16: expected `)`
+  at 7:14..7:15 "(": opening delimiter is here
+  fix (safe): insert `)`
+    7:16 -> ")"
+error[syntax/expected-expression] 8:14..8:15 ")": expected an expression
+
+== fixed (syntax/expected-expression, syntax/unexpected-syntax remain) ==
+// What stands between a hole's expression and its `}` is garbage, skipped
+// up to the `}`. A list left open inside a hole ends at the hole's end,
+// and a closer with no opener in the hole is garbage in it: neither
+// reaches the string around the hole.
+fn f(a: int, b: int) {
+    print("{a b}")
+    print("{f(a)}")
+    print("{ ) a }")
+}

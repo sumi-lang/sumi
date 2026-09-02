@@ -1,0 +1,8 @@
+// A `{` in a string literal opens a hole: an expression whose value the
+// string takes in its place. Any expression stands in one, a string with
+// holes of its own included, and a block is an expression like any other.
+fn summary(count: int, names: List) -> str {
+    let plural = if count == 1 { "item" } else { "items" }
+    let listed = "{count} {plural}: {join(names, ", ")}"
+    "{listed}, {"{count}"} nested, and {{ count }} in a block"
+}

@@ -1,0 +1,21 @@
+== tree ==
+SourceFile 0..192
+  FnItem 124..191
+    Name 127..128 "f"
+    ParamList 128..144
+      Param 129..135
+        Name 129..130 "x"
+        TypeRef 132..135 "int"
+      Param 137..143
+        Name 137..138 "y"
+        TypeRef 140..143 "int"
+    TypeRef 148..151 "str"
+    InterpolatedString 154..191
+      Hole 168..170
+        NameRef 169..170 "x"
+      Hole 180..183
+        NameRef 181..182 "y"
+
+== diagnostics ==
+error[syntax/unclosed-hole] 4:11..4:12 "{": hole in string literal is not closed on its line
+  note: a `{` in a string literal opens a hole for an expression, which ends with its line; a `{` meant as text is written `\{`

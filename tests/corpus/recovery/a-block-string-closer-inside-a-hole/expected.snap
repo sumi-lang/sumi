@@ -1,0 +1,17 @@
+== tree ==
+SourceFile 0..155
+  FnItem 112..154
+    Name 115..116 "f"
+    ParamList 116..124
+      Param 117..123
+        Name 117..118 "x"
+        TypeRef 120..123 "int"
+    TypeRef 128..131 "str"
+    InterpolatedString 134..154
+      Hole 149..151
+        NameRef 150..151 "x"
+
+== diagnostics ==
+error[syntax/unclosed-hole] 4:12..4:13 "{": hole in string literal is not closed on its line
+  note: a `{` in a string literal opens a hole for an expression, which ends with its line; a `{` meant as text is written `\{`
+error[syntax/block-string-closer-content] 4:14..4:17 "\"\"\"": closing `"""` must begin its own line

@@ -1,0 +1,12 @@
+// A `\{` or `\}` is a brace, a `}` outside a hole is one too, the braces
+// of a `\u{…}` escape are its own, and a raw literal has no holes.
+fn braces() -> str {
+    let json = "\{\"id\": {id}, \"tags\": []\}"
+    let closer = "a } b"
+    let unicode = "\u{41}{x}"
+    let raw = r"{x}"
+    let block = r"""
+        {x}
+        """
+    "{json}{closer}{unicode}{raw}{block}"
+}

@@ -249,7 +249,8 @@ fn skip_statement_garbage(p: &mut Marker<'_, '_>, recovery: RecoveryHandle) -> C
         || m.boundary()
         || m.current().is_some_and(introduces_statement)
         || (m.at(T::RBrace) && !m.closer_ahead())
-        || m.closes_open_bracket())
+        || m.closes_open_bracket()
+        || m.current().is_some_and(is_string_part))
     {
         m.group_inside();
     }
@@ -421,7 +422,9 @@ fn signature_garbage(
     recovery: RecoveryHandle,
     resume: impl Fn(&Marker<'_, '_>) -> bool,
 ) {
-    let stop = |m: &Marker<'_, '_>| resume(m) || m.newline() || (m.at(T::LBrace) && m.partnered());
+    let stop = |m: &Marker<'_, '_>| {
+        resume(m) || m.newline() || (m.at(T::LBrace) && m.partnered()) || ends_hole(m)
+    };
     match signature {
         Signature::Item => skip_all(m, recovery, stop),
         Signature::Closure => {
@@ -509,9 +512,10 @@ impl ListRule for Params {
     }
 
     /// The body, or an enclosing block's end, when the stream pairs the
-    /// brace: one it never pairs is garbage in the list.
+    /// brace: one it never pairs is garbage in the list. The end of a
+    /// hole around the list ends it too.
     fn follows(m: &Marker<'_, '_>) -> bool {
-        (m.at(T::LBrace) || m.at(T::RBrace)) && m.partnered()
+        ((m.at(T::LBrace) || m.at(T::RBrace)) && m.partnered()) || ends_hole(m)
     }
 
     fn tolerated(kind: T) -> bool {
@@ -562,7 +566,7 @@ impl ListRule for Args {
     }
 
     fn follows(m: &Marker<'_, '_>) -> bool {
-        m.at(T::RBrace)
+        m.at(T::RBrace) || ends_hole(m)
     }
 
     fn tolerated(_: T) -> bool {
@@ -633,10 +637,9 @@ fn delimited_list<R: ListRule>(p: &mut Marker<'_, '_>) {
         }
         if m.at(T::Comma) {
             m.token();
-        } else if !m
-            .current()
-            .is_none_or(|kind| is_closer(kind) || starts_item(kind) || R::tolerated(kind))
-        {
+        } else if !m.current().is_none_or(|kind| {
+            is_closer(kind) || is_string_part(kind) || starts_item(kind) || R::tolerated(kind)
+        }) {
             m.missing(ParseExpected::Token(T::Comma));
         }
     }
@@ -853,7 +856,7 @@ fn operand_before(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) {
         return;
     }
     skip(p, recovery, |p| {
-        p.newline() || p.at(T::Comma) || begins_statement(p)
+        p.newline() || p.at(T::Comma) || begins_statement(p) || ends_hole(p)
     });
     if !p.newline() && begins_expression(p) {
         expr_bp(p, min_bp, follow);
@@ -892,9 +895,11 @@ fn displaces_expression(p: &Marker<'_, '_>) -> bool {
             || (p.current().is_some_and(closes_expression_bracket) && !p.partnered());
     }
     // Garbage displaces; so does anything that neither begins an expression
-    // or a statement nor separates arguments.
-    p.current()
-        .is_some_and(|kind| kind == T::Error || !(starts_statement(kind) || kind == T::Comma))
+    // or a statement, nor separates arguments, nor ends the hole around
+    // the expression.
+    p.current().is_some_and(|kind| {
+        kind == T::Error || !(starts_statement(kind) || kind == T::Comma || is_string_part(kind))
+    })
 }
 
 /// Whether a closer stands where grammar context says an operand continues:
@@ -929,6 +934,7 @@ fn garbage_in_expression(p: &Marker<'_, '_>, follow: ExprFollow) -> bool {
             !starts_statement(kind)
                 && !matches!(kind, T::Eq | T::Comma | T::ElseKw)
                 && !is_closer(kind)
+                && !is_string_part(kind)
                 && !starts_item(kind)
                 && binary_op(p, 0).is_none()
         })
@@ -1035,7 +1041,9 @@ fn block_starts_condition(p: &Marker<'_, '_>) -> bool {
 fn too_deep(p: &mut Marker<'_, '_>, ahead: u32) -> Option<CompletedMarker> {
     (p.depth() + ahead >= MAX_DEPTH).then(|| {
         let recovery = p.recover_tokens(ParseRecoveryKind::NestingTooDeep, 1);
-        skip(p, recovery, |p| p.boundary() || p.at(T::Comma))
+        skip(p, recovery, |p| {
+            p.boundary() || p.at(T::Comma) || ends_hole(p)
+        })
     })
 }
 
@@ -1089,8 +1097,64 @@ fn prefix_or_atom(p: &mut Marker<'_, '_>, follow: ExprFollow) -> Option<Complete
         T::LBrace => block(p),
         T::IfKw => if_expr(p),
         T::FnKw => closure_expr(p, follow),
+        T::StringStart => interpolated_string(p),
         _ => return None,
     })
+}
+
+/// A string literal with holes. The lexer settled its shape: a hole's `}`
+/// is emitted only for the hole it closes, a hole ends with its line, and
+/// the text resumes after it, so the parts arrive in order, and a part
+/// missing from its place was reported where the lexer lost it. The
+/// literal ends where its end arrives or where its parts stop.
+fn interpolated_string(p: &mut Marker<'_, '_>) -> CompletedMarker {
+    let mut m = p.start();
+    m.token(); // the opening quote and the text before the first hole
+    loop {
+        match m.current() {
+            Some(T::HoleOpen) => hole(&mut m),
+            Some(T::StringMiddle) => m.token(),
+            Some(T::StringEnd) => {
+                m.token();
+                break;
+            }
+            _ => break,
+        }
+    }
+    m.complete(N::InterpolatedString)
+}
+
+/// One hole of a string literal: an expression between the braces the
+/// lexer paired. What stands between the expression and the hole's end is
+/// garbage, skipped up to the `}`, or up to the literal's next part or
+/// the line break where the lexer left the hole open and reported it.
+fn hole(p: &mut Marker<'_, '_>) {
+    let mut m = p.start();
+    m.token(); // {
+    m.enter();
+    m.seal();
+    operand(&mut m, 0);
+    if !m.owns_closer() && m.current().is_some() && !m.newline() && !ends_hole(&m) {
+        let recovery = m.recover_tokens(ParseRecoveryKind::Unexpected, 1);
+        skip(&mut m, recovery, |m| m.newline() || ends_hole(m));
+    }
+    if m.owns_closer() {
+        m.token();
+    }
+    m.complete(N::Hole);
+}
+
+/// Whether a token of this kind is a part of a string literal after a
+/// hole, which ends whatever the hole holds as a closer does.
+fn is_string_part(kind: T) -> bool {
+    matches!(kind, T::StringMiddle | T::StringEnd)
+}
+
+/// Whether the next token ends the hole of a string literal around the
+/// construct being parsed: its `}`, or the literal's next part where the
+/// lexer left the hole open.
+fn ends_hole(m: &Marker<'_, '_>) -> bool {
+    m.at(T::HoleClose) || m.current().is_some_and(is_string_part)
 }
 
 /// A node over exactly the next token.
@@ -1140,7 +1204,11 @@ fn if_block(p: &mut Marker<'_, '_>) {
         return;
     }
     skip(p, recovery, |p| {
-        p.at(T::LBrace) || p.current().is_some_and(is_closer) || p.at(T::ElseKw) || p.newline()
+        p.at(T::LBrace)
+            || p.current().is_some_and(is_closer)
+            || p.at(T::ElseKw)
+            || p.newline()
+            || ends_hole(p)
     });
     if p.at(T::LBrace) {
         block_here(p);

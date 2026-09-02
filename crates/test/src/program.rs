@@ -45,12 +45,39 @@ fn chain(
         .boxed()
 }
 
+/// An expression that fits in a hole of a string literal: on one line, so
+/// it never reaches the hole's end.
+fn hole_expr() -> BoxedStrategy<String> {
+    prop_oneof![
+        3 => name(),
+        2 => literal(),
+        1 => (name(), name()).prop_map(|(callee, arg)| format!("{callee}({arg})")),
+        1 => (name(), literal()).prop_map(|(a, b)| format!("{a} + {b}")),
+        1 => name().prop_map(|n| format!("\"{{{n}}}\"")),
+    ]
+    .boxed()
+}
+
+/// A string literal with holes, `"…"` or `"""`, around expressions that
+/// stay on their line.
+fn string_with_holes() -> BoxedStrategy<String> {
+    prop_oneof![
+        3 => (hole_expr(), prop::option::of(hole_expr())).prop_map(|(first, second)| match second {
+            Some(second) => format!("\"{{{first}}} and {{{second}}}\""),
+            None => format!("\"a {{{first}}} b\""),
+        }),
+        1 => hole_expr().prop_map(|e| format!("\"\"\"\n  line {{{e}}}\n  \"\"\"")),
+    ]
+    .boxed()
+}
+
 fn expr() -> BoxedStrategy<String> {
     let leaf = prop_oneof![name(), literal()];
     leaf.prop_recursive(3, 24, 3, |expr| {
         let atom = prop_oneof![
             4 => name(),
             4 => literal(),
+            1 => string_with_holes(),
             1 => expr.clone().prop_map(|e| format!("({e})")),
             1 => (name(), prop::collection::vec(expr.clone(), 0..3), any::<bool>(), any::<bool>())
                 .prop_map(|(callee, args, trailing, multiline)| {

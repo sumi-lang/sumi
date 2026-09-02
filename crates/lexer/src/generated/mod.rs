@@ -53,6 +53,24 @@ pub enum SyntaxKind {
     /// A multi-line string literal with nothing escaped: `r"""` to `"""`.
     RawBlockStringLiteral,
     CharLiteral,
+    /// The text of a string literal with holes, from its opening quote to its
+    /// first hole: `"…` or `"""…`. A `{` in a `"…"` or `"""` literal opens a
+    /// hole, an expression on that line whose value the string takes in its
+    /// place; `\{` is a brace, and a raw literal has no holes.
+    StringStart,
+    /// The text of a string literal between two of its holes.
+    StringMiddle,
+    /// The text of a string literal after its last hole, closing quote
+    /// included: `…"` or `…"""`.
+    StringEnd,
+    /// The `{` opening a hole in a string literal. A hole ends with its line:
+    /// one still open at the line break is an error, and the literal's text
+    /// goes on from there in a `"""` literal or ends with the line in a `"…"`
+    /// one.
+    HoleOpen,
+    /// The `}` closing a hole: the first at brace depth zero inside it. A `}`
+    /// in a literal's text is a brace.
+    HoleClose,
     LParen,
     RParen,
     LBrace,
@@ -95,7 +113,7 @@ pub enum SyntaxKind {
 
 impl SyntaxKind {
     /// Every kind, in declaration order.
-    pub const ALL: [Self; 39] = [
+    pub const ALL: [Self; 44] = [
         Self::Whitespace,
         Self::Newline,
         Self::LineComment,
@@ -116,6 +134,11 @@ impl SyntaxKind {
         Self::BlockStringLiteral,
         Self::RawBlockStringLiteral,
         Self::CharLiteral,
+        Self::StringStart,
+        Self::StringMiddle,
+        Self::StringEnd,
+        Self::HoleOpen,
+        Self::HoleClose,
         Self::LParen,
         Self::RParen,
         Self::LBrace,
@@ -156,6 +179,7 @@ impl SyntaxKind {
     /// The kind for a punctuation character, if it has a role in the
     /// language. Punctuation without one has no kind and lexes as an error
     /// token.
+    #[inline(always)]
     pub fn from_punct(byte: u8) -> Option<Self> {
         Some(match byte {
             b'(' => Self::LParen,
@@ -244,6 +268,11 @@ impl SyntaxKind {
             Self::BlockStringLiteral => "a multi-line string literal",
             Self::RawBlockStringLiteral => "a raw multi-line string literal",
             Self::CharLiteral => "a character literal",
+            Self::StringStart => "a string literal",
+            Self::StringMiddle => "the text of a string literal",
+            Self::StringEnd => "the end of a string literal",
+            Self::HoleOpen => "`{`",
+            Self::HoleClose => "`}`",
             Self::LParen => "`(`",
             Self::RParen => "`)`",
             Self::LBrace => "`{`",

@@ -105,6 +105,24 @@ token BlockStringLiteral literal "a multi-line string literal" expr end
 /// A multi-line string literal with nothing escaped: `r"""` to `"""`.
 token RawBlockStringLiteral literal "a raw multi-line string literal" expr end
 token CharLiteral literal "a character literal" expr end
+/// The text of a string literal with holes, from its opening quote to its
+/// first hole: `"…` or `"""…`. A `{` in a `"…"` or `"""` literal opens a
+/// hole, an expression on that line whose value the string takes in its
+/// place; `\{` is a brace, and a raw literal has no holes.
+token StringStart literal "a string literal" expr
+/// The text of a string literal between two of its holes.
+token StringMiddle literal "the text of a string literal"
+/// The text of a string literal after its last hole, closing quote
+/// included: `…"` or `…"""`.
+token StringEnd literal "the end of a string literal" end
+/// The `{` opening a hole in a string literal. A hole ends with its line:
+/// one still open at the line break is an error, and the literal's text
+/// goes on from there in a `"""` literal or ends with the line in a `"…"`
+/// one.
+token HoleOpen literal "`{`"
+/// The `}` closing a hole: the first at brace depth zero inside it. A `}`
+/// in a literal's text is a brace.
+token HoleClose literal "`}`"
 
 // Punctuation, one kind per character. Punctuation without a role in the
 // language (`;`, `[`, `@`, …) has no kind and lexes to `Error`.
@@ -152,6 +170,9 @@ token Error error "valid syntax" stmt end
 
 pair LParen RParen
 pair LBrace RBrace statements
+// The braces of a hole in a string literal, which the lexer pairs: a
+// `HoleClose` is emitted only for the hole it closes.
+pair HoleOpen HoleClose
 
 // ------------------------------------------------------------- operators
 
@@ -228,6 +249,7 @@ Expr =
 | CallExpr
 | IfExpr
 | ClosureExpr
+| InterpolatedString
 | Block
 
 /// A use of a name: a reference to what a Name declared.
@@ -252,3 +274,8 @@ IfExpr = 'if' condition:Expr then_branch:Block ('else' else_branch:(IfExpr | Blo
 /// `fn(x: int) -> int { … }`, with an item's parameter list, return type,
 /// and body forms.
 ClosureExpr = 'fn' ParamList ('->' ret:TypeRef)? '='? body:Expr
+/// A string literal with holes: text around `{expr}` holes, each an
+/// expression on its line whose value the string takes in its place.
+InterpolatedString = StringStart (Hole StringMiddle?)* StringEnd
+/// One hole of a string literal: `{`, an expression, and `}`, on one line.
+Hole = HoleOpen value:Expr HoleClose

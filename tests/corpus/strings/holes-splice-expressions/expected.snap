@@ -1,0 +1,46 @@
+== tree ==
+SourceFile 0..448
+  FnItem 222..447
+    Name 225..232 "summary"
+    ParamList 232..257
+      Param 233..243
+        Name 233..238 "count"
+        TypeRef 240..243 "int"
+      Param 245..256
+        Name 245..250 "names"
+        TypeRef 252..256 "List"
+    TypeRef 261..264 "str"
+    Block 265..447
+      LetStmt 271..325
+        Name 275..281 "plural"
+        IfExpr 284..325
+          BinaryExpr 287..297
+            NameRef 287..292 "count"
+            LiteralExpr 296..297 "1"
+          Block 298..308
+            LiteralExpr 300..306 "\"item\""
+          Block 314..325
+            LiteralExpr 316..323 "\"items\""
+      LetStmt 330..382
+        Name 334..340 "listed"
+        InterpolatedString 343..382
+          Hole 344..351
+            NameRef 345..350 "count"
+          Hole 352..360
+            NameRef 353..359 "plural"
+          Hole 362..381
+            CallExpr 363..380
+              NameRef 363..367 "join"
+              ArgList 367..380
+                NameRef 368..373 "names"
+                LiteralExpr 375..379 "\", \""
+      InterpolatedString 387..445
+        Hole 388..396
+          NameRef 389..395 "listed"
+        Hole 398..409
+          InterpolatedString 399..408
+            Hole 400..407
+              NameRef 401..406 "count"
+        Hole 422..433
+          Block 423..432
+            NameRef 425..430 "count"
