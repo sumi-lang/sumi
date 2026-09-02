@@ -180,6 +180,9 @@ mod tests {
         assert!(codegen::syntax_kind(&grammar).contains("pub enum NodeKind"));
         assert!(codegen::ast(&grammar).contains("pub trait AstNode"));
         assert!(codegen::reference(&grammar).contains("## Syntax nodes"));
-        assert!(codegen::dictionary(&grammar).contains("FnKw=\"fn\""));
+        let dictionary = codegen::dictionary(&grammar);
+        assert!(dictionary.contains("FnKw=\"fn\""));
+        assert!(dictionary.contains("\n\"\\\"\\\"\\\"\"\n"), "{dictionary}");
+        assert!(dictionary.contains("\n\"\\\\u{\"\n"), "{dictionary}");
     }
 }
