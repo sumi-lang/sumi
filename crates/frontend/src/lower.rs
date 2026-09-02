@@ -5,7 +5,7 @@ use sumi_format::layout_violation_edits;
 use sumi_lexer::{LexError, LexErrorKind, LexedFile, canonicalize_number_literal};
 use sumi_syntax::{
     Parse, ParseAnchor, ParseEvidence, ParseExpected, ParseRecovery, ParseRecoveryKind,
-    ParseViolation, ParseViolationKind, RawGap, RawTokenRange, SyntaxKind, raw_boundary,
+    ParseViolation, ParseViolationKind, RawGap, RawIdx, RawTokenRange, SyntaxKind, raw_boundary,
 };
 use sumi_text::{TextEdit, TextRange};
 
@@ -213,7 +213,7 @@ fn lower_token_errors(
         });
         let mut facts = number_facts.into_iter();
         let first = facts.next().expect("a numeric fact exists");
-        let token = errors[0].token as usize;
+        let token = errors[0].token;
         let token_range = lexed.range(token);
         let fix = canonicalize_number_literal(lexed.text(source, token)).map(|replacement| Fix {
             message: "canonicalize numeric literal".into(),
@@ -249,7 +249,7 @@ fn lower_parse(source: &str, lexed: &LexedFile, parse: &Parse, diagnostics: &mut
         .evidence()
         .iter()
         .any(|evidence| matches!(evidence, ParseEvidence::Recovery(_)));
-    let unterminated_literals: HashSet<u32> = lexed
+    let unterminated_literals: HashSet<RawIdx> = lexed
         .errors()
         .iter()
         .filter(|error| {
@@ -290,7 +290,7 @@ fn lower_parse(source: &str, lexed: &LexedFile, parse: &Parse, diagnostics: &mut
 fn lower_recovery(
     recovery: &ParseRecovery,
     lexed: &LexedFile,
-    unterminated_literals: &HashSet<u32>,
+    unterminated_literals: &HashSet<RawIdx>,
     closer_fix_sites: &mut HashSet<(SyntaxKind, u32)>,
 ) -> Diagnostic {
     let location = lower_anchor(recovery.anchor, lexed);
@@ -347,7 +347,7 @@ fn lower_recovery(
 fn closer_fix(
     recovery: &ParseRecovery,
     lexed: &LexedFile,
-    unterminated_literals: &HashSet<u32>,
+    unterminated_literals: &HashSet<RawIdx>,
     sites: &mut HashSet<(SyntaxKind, u32)>,
 ) -> Option<Fix> {
     let (ParseRecoveryKind::Expected(ParseExpected::Closer { kind, .. }), ParseAnchor::Gap(gap)) =
@@ -489,10 +489,9 @@ fn anchor_has_error(anchor: ParseAnchor, lexed: &LexedFile) -> bool {
 }
 
 fn gap_before_error(gap: RawGap, lexed: &LexedFile) -> bool {
-    (gap.trivia_end() as usize) < lexed.len()
-        && lexed.kind(gap.trivia_end() as usize) == SyntaxKind::Error
+    gap.trivia_end() < lexed.end() && lexed.kind(gap.trivia_end()) == SyntaxKind::Error
 }
 
 fn tokens_have_error(range: RawTokenRange, lexed: &LexedFile) -> bool {
-    (range.start()..range.end()).any(|raw| lexed.kind(raw as usize) == SyntaxKind::Error)
+    range.iter().any(|raw| lexed.kind(raw) == SyntaxKind::Error)
 }

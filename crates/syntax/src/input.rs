@@ -52,7 +52,8 @@ use crate::generated::{
     BRACKET_PAIRS, SyntaxKind, can_end_statement, continues_statement, is_closer, is_opener,
     opener, starts_item,
 };
-use sumi_lexer::LexedFile;
+use crate::index::SigIdx;
+use sumi_lexer::{LexedFile, RawIdx};
 
 const JOINT: u8 = 1 << 0;
 const NEWLINE_BEFORE: u8 = 1 << 1;
@@ -67,7 +68,7 @@ pub(crate) struct Slot {
     pub(crate) kind: SyntaxKind,
     flags: u8,
     /// The token's index in the underlying token buffer.
-    token: u32,
+    token: RawIdx,
     /// The index of the bracket matching this one plus one, so the field
     /// has a niche; `None` for anything that is not a matched bracket.
     partner: Option<NonZeroU32>,
@@ -83,9 +84,9 @@ pub struct ParserInput {
     /// lookups however long the range.
     boundaries: Box<[u32]>,
     /// The significant indices where top-level items start, in order.
-    items: Box<[u32]>,
-    /// The length of the underlying token buffer.
-    raw_len: u32,
+    items: Box<[SigIdx]>,
+    /// The index one past the last token of the underlying buffer.
+    raw_len: RawIdx,
 }
 
 impl ParserInput {
@@ -105,12 +106,12 @@ impl ParserInput {
         // but need pairs whose closers lie ahead — whether an open `(` is
         // ever closed — so they wait for the second pass below.
         let mut newline = false;
-        for (raw, kind) in lexed.kinds().enumerate() {
+        for (raw, kind) in lexed.indices().zip(lexed.kinds()) {
             if kind.is_trivia() {
                 newline |= kind == SyntaxKind::Newline;
                 continue;
             }
-            build.push(kind, raw as u32, newline);
+            build.push(kind, raw, newline);
             newline = false;
         }
 
@@ -133,7 +134,7 @@ impl ParserInput {
         open.clear();
         let mut boundaries: Vec<u32> = Vec::with_capacity(slots.len() + 1);
         let mut boundary_count: u32 = 0;
-        let mut items: Vec<u32> = Vec::new();
+        let mut items: Vec<SigIdx> = Vec::new();
         let mut matched = 0usize;
         for index in 0..slots.len() {
             boundaries.push(boundary_count);
@@ -151,7 +152,7 @@ impl ParserInput {
                 boundary_count += 1;
             }
             if matched == 0 && item_starts_at(&slots, index) {
-                items.push(index as u32);
+                items.push(SigIdx::new(index as u32));
             }
             if is_opener(slot.kind) {
                 open.push(index as u32);
@@ -172,7 +173,7 @@ impl ParserInput {
             slots: slots.into_boxed_slice(),
             boundaries: boundaries.into_boxed_slice(),
             items: items.into_boxed_slice(),
-            raw_len: lexed.len() as u32,
+            raw_len: lexed.end(),
         }
     }
 
@@ -185,63 +186,75 @@ impl ParserInput {
         self.slots.is_empty()
     }
 
+    /// The index one past the last significant token: where a range running
+    /// to the end of the input stops.
+    pub fn end(&self) -> SigIdx {
+        SigIdx::new(self.slots.len() as u32)
+    }
+
+    /// Every significant token's index, in order.
+    pub fn indices(&self) -> impl DoubleEndedIterator<Item = SigIdx> + ExactSizeIterator {
+        SigIdx::new(0).until(self.end())
+    }
+
     /// The kind of significant token `index`, or `None` past the end. End of
     /// input is the end of the buffer, never a sentinel kind.
-    pub fn get(&self, index: usize) -> Option<SyntaxKind> {
-        self.slots.get(index).map(|slot| slot.kind)
+    pub fn get(&self, index: SigIdx) -> Option<SyntaxKind> {
+        self.slots.get(index.to_usize()).map(|slot| slot.kind)
     }
 
     /// The index of significant token `index` in the raw lexed token
     /// buffer, for ranges, text, and flags.
-    pub fn token(&self, index: usize) -> u32 {
-        self.slots[index].token
+    pub fn token(&self, index: SigIdx) -> RawIdx {
+        self.slots[index.to_usize()].token
     }
 
-    /// The number of tokens in the underlying buffer: one past the last raw
-    /// index, where ranges that run to end of input stop.
-    pub(crate) fn raw_len(&self) -> u32 {
+    /// The index one past the last token of the underlying buffer, where
+    /// ranges that run to end of input stop.
+    pub(crate) fn raw_len(&self) -> RawIdx {
         self.raw_len
     }
 
     /// Whether token `index` is glued to token `index + 1`: no trivia
     /// between them.
-    pub fn is_joint(&self, index: usize) -> bool {
-        self.slots[index].flags & JOINT != 0
+    pub fn is_joint(&self, index: SigIdx) -> bool {
+        self.slots[index.to_usize()].flags & JOINT != 0
     }
 
     /// Whether at least one line break sits between token `index` and the
     /// previous significant token.
-    pub fn newline_before(&self, index: usize) -> bool {
-        self.slots[index].flags & NEWLINE_BEFORE != 0
+    pub fn newline_before(&self, index: SigIdx) -> bool {
+        self.slots[index.to_usize()].flags & NEWLINE_BEFORE != 0
     }
 
     /// Whether a statement boundary immediately precedes token `index` under
     /// the newline rule. Never true for the first token.
-    pub fn boundary_before(&self, index: usize) -> bool {
-        self.slots[index].flags & BOUNDARY_BEFORE != 0
+    pub fn boundary_before(&self, index: SigIdx) -> bool {
+        self.slots[index.to_usize()].flags & BOUNDARY_BEFORE != 0
     }
 
     /// Whether a statement boundary precedes any token in `range`. Answered
     /// from the boundary prefix sums, so the cost does not grow with the
     /// range; recovery leans on this to reject a bracket group spanning a
-    /// boundary without rescanning its interior. `range.end` may be `len()`.
-    pub fn boundary_in(&self, range: Range<usize>) -> bool {
-        self.boundaries[range.end] > self.boundaries[range.start]
+    /// boundary without rescanning its interior. `range.end` may be
+    /// [`end`](Self::end).
+    pub fn boundary_in(&self, range: Range<SigIdx>) -> bool {
+        self.boundaries[range.end.to_usize()] > self.boundaries[range.start.to_usize()]
     }
 
     /// The index of the bracket matching significant token `index`: an
     /// opener's closer or a closer's opener. `None` for an unmatched
     /// bracket, and for anything that is not one.
-    pub fn partner(&self, index: usize) -> Option<usize> {
-        self.slots[index]
+    pub fn partner(&self, index: SigIdx) -> Option<SigIdx> {
+        self.slots[index.to_usize()]
             .partner
-            .map(|partner| partner.get() as usize - 1)
+            .map(|partner| SigIdx::new(partner.get() - 1))
     }
 
     /// The significant indices where top-level items start, in order: a
     /// `fn`, or the headless signature shape, outside every matched
     /// bracket pair.
-    pub fn item_starts(&self) -> &[u32] {
+    pub fn item_starts(&self) -> &[SigIdx] {
         &self.items
     }
 
@@ -269,7 +282,7 @@ struct Build {
 impl Build {
     /// Append one significant token: glue it to a raw-adjacent predecessor,
     /// and pair it if it is a bracket.
-    fn push(&mut self, kind: SyntaxKind, raw: u32, newline: bool) {
+    fn push(&mut self, kind: SyntaxKind, raw: RawIdx, newline: bool) {
         if let Some(last) = self.slots.last_mut()
             && last.token + 1 == raw
         {

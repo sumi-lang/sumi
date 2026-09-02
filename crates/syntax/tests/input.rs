@@ -1,5 +1,5 @@
 use sumi_lexer::lex;
-use sumi_syntax::{ParserInput, SyntaxKind};
+use sumi_syntax::{ParserInput, SigIdx, SyntaxKind};
 
 /// Lex and stream `source`, assert the stream invariants, and render
 /// one line per significant token: `Kind "text"` plus `newline`, `boundary`,
@@ -11,17 +11,18 @@ fn dump(source: &str) -> Vec<String> {
     let input = ParserInput::new(&lexed);
 
     let mut previous = None;
-    (0..input.len())
+    input
+        .indices()
         .map(|index| {
             let kind = input.get(index).expect("indices below len are present");
-            let token = input.token(index) as usize;
+            let token = input.token(index);
 
             assert!(
                 !matches!(
                     kind,
                     SyntaxKind::Whitespace | SyntaxKind::Newline | SyntaxKind::LineComment
                 ),
-                "token {index} is trivia"
+                "token {index:?} is trivia"
             );
             assert_eq!(kind, lexed.kind(token), "kinds must come from the scan");
             if let Some(previous) = previous {
@@ -29,7 +30,7 @@ fn dump(source: &str) -> Vec<String> {
             }
             previous = Some(token);
             if input.boundary_before(index) {
-                assert!(index > 0, "no boundary before the first token");
+                assert!(index > SigIdx::new(0), "no boundary before the first token");
                 assert!(input.newline_before(index), "boundaries need a newline");
             }
             assert_eq!(
@@ -67,7 +68,7 @@ fn dump(source: &str) -> Vec<String> {
                     ),
                     "partners must be a matching pair"
                 );
-                line.push_str(&format!(" partner {partner}"));
+                line.push_str(&format!(" partner {}", partner.to_u32()));
             }
             line
         })
@@ -85,7 +86,7 @@ fn has_boundary(source: &str) -> bool {
     dump(source); // invariants
     let lexed = lex(source).expect("test sources fit in u32");
     let input = ParserInput::new(&lexed);
-    (0..input.len()).any(|index| input.boundary_before(index))
+    input.indices().any(|index| input.boundary_before(index))
 }
 
 #[test]
@@ -95,7 +96,7 @@ fn empty_and_trivia_only_sources_have_no_tokens() {
 
     let input = ParserInput::new(&lex("").unwrap());
     assert!(input.is_empty());
-    assert_eq!(input.get(0), None);
+    assert_eq!(input.get(SigIdx::new(0)), None);
 }
 
 #[test]
@@ -114,9 +115,9 @@ fn trivia_is_stripped() {
 #[test]
 fn lookahead_past_the_end_is_none() {
     let input = ParserInput::new(&lex("x").unwrap());
-    assert_eq!(input.get(0), Some(SyntaxKind::Ident));
-    assert_eq!(input.get(1), None);
-    assert!(!input.is_joint(0));
+    assert_eq!(input.get(SigIdx::new(0)), Some(SyntaxKind::Ident));
+    assert_eq!(input.get(SigIdx::new(1)), None);
+    assert!(!input.is_joint(SigIdx::new(0)));
 }
 
 #[test]
@@ -326,12 +327,14 @@ fn boundary_in_agrees_with_the_boundary_bits() {
     dump(source); // invariants
     let lexed = lex(source).expect("test sources fit in u32");
     let input = ParserInput::new(&lexed);
-    assert!((0..input.len()).any(|index| input.boundary_before(index)));
-    for start in 0..=input.len() {
-        for end in start..=input.len() {
+    assert!(input.indices().any(|index| input.boundary_before(index)));
+    for start in 0..=input.len() as u32 {
+        for end in start..=input.len() as u32 {
             assert_eq!(
-                input.boundary_in(start..end),
-                (start..end).any(|index| input.boundary_before(index)),
+                input.boundary_in(SigIdx::new(start)..SigIdx::new(end)),
+                SigIdx::new(start)
+                    .until(SigIdx::new(end))
+                    .any(|index| input.boundary_before(index)),
                 "boundary_in({start}..{end}) for {source:?}"
             );
         }

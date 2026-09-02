@@ -12,11 +12,13 @@
 
 mod file;
 mod generated;
+mod index;
 mod lexer;
 mod literal;
 mod token;
 
 pub use file::{LexError, LexErrorKind, LexedFile, SourceTooLarge, lex};
 pub use generated::SyntaxKind;
+pub use index::RawIdx;
 pub use literal::canonicalize_number_literal;
 pub use token::{RawKind, TokenFlags};

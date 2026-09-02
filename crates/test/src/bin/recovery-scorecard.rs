@@ -21,7 +21,9 @@
 
 use std::collections::HashSet;
 
-use sumi_syntax::{NodeKind, ParseEvidence, ParserInput, SyntaxKind, is_bracket};
+use sumi_syntax::{
+    NodeIdx, NodeKind, ParseEvidence, ParserInput, RawIdx, SigIdx, SyntaxKind, is_bracket,
+};
 use sumi_test::{Edit, EditSpan, Front, Programs, apply, changes_delimiter, corpus, front};
 
 /// Measured (program, edit) pairs per Part A class.
@@ -72,12 +74,16 @@ fn percentile_f64(values: &[f64], q: f64) -> f64 {
     sorted[((q * sorted.len() as f64).ceil() as usize).clamp(1, sorted.len()) - 1]
 }
 
+fn sig(index: usize) -> SigIdx {
+    SigIdx::new(u32::try_from(index).expect("significant positions fit in u32"))
+}
+
 /// The first significant index whose raw token index is `>= raw`.
-fn significant_at(input: &ParserInput, raw: u32) -> usize {
+fn significant_at(input: &ParserInput, raw: RawIdx) -> usize {
     let (mut low, mut high) = (0, input.len());
     while low < high {
         let mid = (low + high) / 2;
-        if input.token(mid) < raw {
+        if input.token(sig(mid)) < raw {
             low = mid + 1;
         } else {
             high = mid;
@@ -87,12 +93,12 @@ fn significant_at(input: &ParserInput, raw: u32) -> usize {
 }
 
 /// The number of significant tokens whose raw index lies in `[start, end)`.
-fn significant_in(input: &ParserInput, start: u32, end: u32) -> u64 {
+fn significant_in(input: &ParserInput, start: RawIdx, end: RawIdx) -> u64 {
     (significant_at(input, end) - significant_at(input, start)) as u64
 }
 
 /// The top-level `FnItem` nodes of a parse.
-fn items(front: &Front) -> Vec<usize> {
+fn items(front: &Front) -> Vec<NodeIdx> {
     let tree = front.parse.tree();
     tree.children(tree.root())
         .filter(|&node| tree.kind(node) == NodeKind::FnItem)
@@ -105,7 +111,7 @@ fn items(front: &Front) -> Vec<usize> {
 fn preservation(
     source: &str,
     original: &Front,
-    touched: &[u32],
+    touched: &[RawIdx],
     impact: EditSpan,
     edited: &str,
     after: &Front,
@@ -161,9 +167,9 @@ impl ClassStats {
         edit: Edit,
     ) {
         let (edited, touched, _moved, impact) = apply(source, spans, index, edit);
-        let touched: Vec<u32> = touched
+        let touched: Vec<RawIdx> = touched
             .iter()
-            .map(|&index| original.input.token(index))
+            .map(|&index| original.input.token(sig(index)))
             .collect();
         let after = front(&edited);
 
@@ -220,10 +226,10 @@ fn scorecard() {
         let spans = original.spans();
 
         let delimiter: Vec<usize> = (0..len)
-            .filter(|&index| original.input.get(index).is_some_and(is_bracket))
+            .filter(|&index| original.input.get(sig(index)).is_some_and(is_bracket))
             .collect();
         let non_delimiter: Vec<usize> = (0..len)
-            .filter(|&index| !original.input.get(index).is_some_and(is_bracket))
+            .filter(|&index| !original.input.get(sig(index)).is_some_and(is_bracket))
             .collect();
         let swap_delimiter: Vec<usize> = (0..len)
             .filter(|&index| changes_delimiter(&original.input, index, Edit::Swap))
@@ -338,9 +344,9 @@ fn churn(
     edit: Edit,
 ) -> Option<ChurnSample> {
     let (edited, touched, _moved, impact) = apply(source, spans, index, edit);
-    let touched: Vec<u32> = touched
+    let touched: Vec<RawIdx> = touched
         .iter()
-        .map(|&index| before.input.token(index))
+        .map(|&index| before.input.token(sig(index)))
         .collect();
     let after = front(&edited);
 
@@ -367,13 +373,13 @@ fn churn(
     let (mut partner_changed, mut boundary_changed, mut any_changed) = (0, 0, 0);
     for i in (0..len).filter(|&i| map(i).is_some()) {
         let j = map(i).expect("filtered to mapped tokens");
-        let boundary = before.input.boundary_before(i) != after.input.boundary_before(j);
+        let boundary = before.input.boundary_before(sig(i)) != after.input.boundary_before(sig(j));
         // A partner that was deleted counts as changed outright.
-        let partner = match before.input.partner(i) {
-            None => after.input.partner(j).is_some(),
-            Some(p) => match map(p) {
+        let partner = match before.input.partner(sig(i)) {
+            None => after.input.partner(sig(j)).is_some(),
+            Some(p) => match map(p.to_usize()) {
                 None => true,
-                Some(q) => after.input.partner(j) != Some(q),
+                Some(q) => after.input.partner(sig(j)) != Some(sig(q)),
             },
         };
         partner_changed += u64::from(partner);
@@ -396,7 +402,7 @@ fn churn_base(name: &str, source: &str, edits_per_kind: usize, rng: &mut Lcg) {
     let len = before.input.len();
     let closers = |kind: SyntaxKind| -> Vec<usize> {
         (0..len)
-            .filter(|&index| before.input.get(index) == Some(kind))
+            .filter(|&index| before.input.get(sig(index)) == Some(kind))
             .collect()
     };
     let rbraces = closers(SyntaxKind::RBrace);
@@ -497,7 +503,7 @@ mod tests {
     fn churn_counts_an_inserted_opener_by_hand() {
         let before = front(BASE);
         assert_eq!(before.input.len(), 29);
-        assert_eq!(before.input.get(13), Some(SyntaxKind::Ident));
+        assert_eq!(before.input.get(sig(13)), Some(SyntaxKind::Ident));
         let sample = churn(BASE, &before, &before.spans(), 13, Edit::Insert("{"))
             .expect("a punctuation insert never merges tokens");
         assert_eq!(sample.partner_changed, 2);
@@ -512,7 +518,7 @@ mod tests {
     #[test]
     fn churn_counts_a_deleted_closer_by_hand() {
         let before = front(BASE);
-        assert_eq!(before.input.get(17), Some(SyntaxKind::RBrace));
+        assert_eq!(before.input.get(sig(17)), Some(SyntaxKind::RBrace));
         let sample = churn(BASE, &before, &before.spans(), 17, Edit::Delete)
             .expect("deleting this spaced closer merges no tokens");
         assert_eq!(sample.partner_changed, 1);

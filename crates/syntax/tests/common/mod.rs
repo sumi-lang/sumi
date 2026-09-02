@@ -2,7 +2,7 @@
 #![allow(dead_code)]
 
 use sumi_lexer::LexedFile;
-use sumi_syntax::SyntaxTree;
+use sumi_syntax::{NodeIdx, RawIdx, SyntaxTree};
 
 /// Assert the tree invariants and render one line per node: `Kind
 /// start..end` byte ranges, indented by depth, with the text of childless
@@ -27,7 +27,7 @@ fn render(
     tree: &SyntaxTree,
     lexed: &LexedFile,
     source: &str,
-    node: usize,
+    node: NodeIdx,
     depth: usize,
     lines: &mut Vec<String>,
     visited: &mut usize,
@@ -35,7 +35,7 @@ fn render(
     *visited += 1;
     let first = tree.first_token(node);
     let end = tree.end_token(node);
-    assert!(first <= end, "node {node} has a backwards token range");
+    assert!(first <= end, "node {node:?} has a backwards token range");
 
     let range = tree.byte_range(node, lexed);
     let (from, to) = (range.start().to_u32(), range.end().to_u32());
@@ -51,7 +51,7 @@ fn render(
     lines.push(line);
 
     // The tree yields children last first; the dump reads in source order.
-    let mut children: Vec<usize> = tree.children(node).collect();
+    let mut children: Vec<NodeIdx> = tree.children(node).collect();
     children.reverse();
     let mut previous_end = first;
     for child in children {
@@ -70,6 +70,6 @@ fn render(
 
 /// The start byte of raw token `token`, or the end of the source one past
 /// the last token.
-pub fn start_byte(lexed: &LexedFile, token: u32) -> u32 {
+pub fn start_byte(lexed: &LexedFile, token: RawIdx) -> u32 {
     sumi_syntax::raw_boundary(lexed, token).to_u32()
 }

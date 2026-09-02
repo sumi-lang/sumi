@@ -1,6 +1,6 @@
 use proptest::prelude::*;
 use sumi_frontend::{DiagnosticCode, Location, ParsedSource, Severity, codes, parse_source};
-use sumi_syntax::{ParseAnchor, ParseEvidence, SyntaxKind};
+use sumi_syntax::{ParseAnchor, ParseEvidence, RawIdx, SyntaxKind};
 use sumi_text::TextSize;
 
 fn parsed(source: &str) -> ParsedSource {
@@ -39,11 +39,11 @@ fn same_tree_shape(left: &ParsedSource, right: &ParsedSource) -> bool {
     let left = left.parse().tree();
     let right = right.parse().tree();
     left.len() == right.len()
-        && (0..left.len()).all(|node| left.kind(node) == right.kind(node))
+        && left.nodes().all(|node| left.kind(node) == right.kind(node))
         && left.parents() == right.parents()
 }
 
-fn raw_boundary(front: &ParsedSource, raw: u32) -> TextSize {
+fn raw_boundary(front: &ParsedSource, raw: RawIdx) -> TextSize {
     sumi_syntax::raw_boundary(front.lexed(), raw)
 }
 
@@ -55,8 +55,8 @@ fn parsed_source_owns_every_syntactic_product() {
     assert_eq!(front.source(), "fn f() {}\n");
     assert_eq!(front.lexed().source_len().to_usize(), front.source().len());
     let tree = front.parse().tree();
-    assert_eq!(tree.first_token(tree.root()), 0);
-    assert_eq!(tree.end_token(tree.root()) as usize, front.lexed().len());
+    assert_eq!(tree.first_token(tree.root()), RawIdx::new(0));
+    assert_eq!(tree.end_token(tree.root()), front.lexed().end());
     assert!(front.diagnostics().is_empty());
 
     assert!(parsed("").diagnostics().is_empty());

@@ -23,6 +23,8 @@
 //! a prefix operator must be glued to its operand, and comparisons do not
 //! chain. Each violation is retained while the evident structure is accepted.
 
+use sumi_lexer::RawIdx;
+
 use crate::generated::{
     BinaryOp, NodeKind as N, PREFIX_BP, SyntaxKind as T, binary_operator, introduces_statement,
     is_closer, is_opener, is_prefix_operator, starts_expression, starts_item, starts_statement,
@@ -119,22 +121,27 @@ pub enum ParseAnchor {
 /// A nonempty half-open range in the raw lexer token buffer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct RawTokenRange {
-    start: u32,
-    end: u32,
+    start: RawIdx,
+    end: RawIdx,
 }
 
 impl RawTokenRange {
-    pub(crate) fn new(start: u32, end: u32) -> Self {
+    pub(crate) fn new(start: RawIdx, end: RawIdx) -> Self {
         assert!(start < end, "a raw token range must be nonempty");
         Self { start, end }
     }
 
-    pub fn start(self) -> u32 {
+    pub fn start(self) -> RawIdx {
         self.start
     }
 
-    pub fn end(self) -> u32 {
+    pub fn end(self) -> RawIdx {
         self.end
+    }
+
+    /// The raw indices in the range, in order.
+    pub fn iter(self) -> impl DoubleEndedIterator<Item = RawIdx> + ExactSizeIterator {
+        self.start.until(self.end)
     }
 }
 
@@ -142,12 +149,12 @@ impl RawTokenRange {
 /// tokens. At either edge of the file it includes leading or trailing trivia.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct RawGap {
-    trivia_start: u32,
-    trivia_end: u32,
+    trivia_start: RawIdx,
+    trivia_end: RawIdx,
 }
 
 impl RawGap {
-    pub(crate) fn new(trivia_start: u32, trivia_end: u32) -> Self {
+    pub(crate) fn new(trivia_start: RawIdx, trivia_end: RawIdx) -> Self {
         assert!(trivia_start <= trivia_end, "a raw gap cannot run backwards");
         Self {
             trivia_start,
@@ -155,11 +162,11 @@ impl RawGap {
         }
     }
 
-    pub fn trivia_start(self) -> u32 {
+    pub fn trivia_start(self) -> RawIdx {
         self.trivia_start
     }
 
-    pub fn trivia_end(self) -> u32 {
+    pub fn trivia_end(self) -> RawIdx {
         self.trivia_end
     }
 }

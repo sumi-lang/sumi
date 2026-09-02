@@ -8,7 +8,8 @@ use sumi_lexer::lex;
 fn dump(source: &str) -> Vec<String> {
     let lexed = lex(source).expect("test sources fit in u32");
 
-    (0..lexed.len())
+    lexed
+        .indices()
         .map(|index| {
             let range = lexed.range(index);
             let flags = lexed.flags(index);
@@ -49,7 +50,8 @@ fn every_v0_keyword_classifies() {
     let source = "else false fn if let mut return true";
     let lexed = lex(source).unwrap();
 
-    let keyword_kinds: Vec<String> = (0..lexed.len())
+    let keyword_kinds: Vec<String> = lexed
+        .indices()
         .map(|index| format!("{:?}", lexed.kind(index)))
         .filter(|kind| kind.ends_with("Kw"))
         .collect();
@@ -111,7 +113,8 @@ fn punctuation_classifies_per_character() {
     let source = "( ) { } , : . = < > ! + - * / % & |";
     let lexed = lex(source).unwrap();
 
-    let kinds: Vec<String> = (0..lexed.len())
+    let kinds: Vec<String> = lexed
+        .indices()
         .map(|index| format!("{:?}", lexed.kind(index)))
         .filter(|kind| kind != "Whitespace")
         .collect();
@@ -182,7 +185,8 @@ fn int_and_float_split() {
     let source = "0 123 1_000 1.5 1e5 2.5e-3";
     let lexed = lex(source).unwrap();
 
-    let number_kinds: Vec<String> = (0..lexed.len())
+    let number_kinds: Vec<String> = lexed
+        .indices()
         .map(|index| format!("{:?}", lexed.kind(index)))
         .filter(|kind| kind.ends_with("Literal"))
         .collect();

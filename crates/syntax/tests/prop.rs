@@ -9,7 +9,8 @@ use std::collections::HashSet;
 use proptest::prelude::*;
 use sumi_lexer::{LexedFile, RawKind, lex};
 use sumi_syntax::{
-    NodeKind, ParseAnchor, ParseEvidence, ParserInput, SyntaxKind, SyntaxTree, parse,
+    NodeIdx, NodeKind, ParseAnchor, ParseEvidence, ParserInput, RawIdx, SigIdx, SyntaxKind,
+    SyntaxTree, parse,
 };
 use sumi_test::{apply, delimiter_edited_program, front, non_delimiter_edited_program, program};
 
@@ -83,6 +84,11 @@ fn soup() -> impl Strategy<Value = String> {
     proptest::collection::vec(fragment(), 0..64).prop_map(|fragments| fragments.concat())
 }
 
+/// The significant index of position `index` in a program's spans.
+fn sig(index: usize) -> SigIdx {
+    SigIdx::new(u32::try_from(index).expect("significant positions fit in u32"))
+}
+
 fn is_trivia(kind: SyntaxKind) -> bool {
     matches!(
         kind,
@@ -97,32 +103,32 @@ proptest! {
         let input = ParserInput::new(&lexed);
 
         prop_assert!(input.len() <= lexed.len());
-        prop_assert_eq!(input.get(input.len()), None);
+        prop_assert_eq!(input.get(input.end()), None);
 
-        let mut previous: Option<usize> = None;
-        let mut open: Vec<usize> = Vec::new();
-        for index in 0..input.len() {
-            let token = input.token(index) as usize;
+        let mut previous: Option<RawIdx> = None;
+        let mut open: Vec<SigIdx> = Vec::new();
+        for index in input.indices() {
+            let token = input.token(index);
             let kind = input.get(index).expect("indices below len are present");
             if let Some(previous) = previous {
                 prop_assert!(previous < token, "token mappings must strictly increase");
             }
             prop_assert_eq!(kind, lexed.kind(token), "kinds must come from the scan");
-            prop_assert!(!is_trivia(kind), "token {} is trivia", index);
+            prop_assert!(!is_trivia(kind), "token {:?} is trivia", index);
 
             // Everything skipped between kept tokens must be trivia, and the
             // newline fact must match what was skipped.
-            let skipped = previous.map_or(0, |previous| previous + 1)..token;
+            let skipped = previous.map_or(RawIdx::new(0), |previous| previous + 1).until(token);
             let newline = skipped.clone().any(|j| lexed.kind(j) == SyntaxKind::Newline);
             for j in skipped {
-                prop_assert!(is_trivia(lexed.kind(j)), "token {} was dropped", j);
+                prop_assert!(is_trivia(lexed.kind(j)), "token {:?} was dropped", j);
             }
             prop_assert_eq!(input.newline_before(index), newline);
 
             // Jointness is adjacency, checked through ranges rather than
             // token indices.
-            if index + 1 < input.len() {
-                let next = input.token(index + 1) as usize;
+            if index + 1 < input.end() {
+                let next = input.token(index + 1);
                 let adjacent = lexed.range(token).end() == lexed.range(next).start();
                 prop_assert_eq!(input.is_joint(index), adjacent);
             } else {
@@ -130,7 +136,7 @@ proptest! {
             }
 
             if input.boundary_before(index) {
-                prop_assert!(index > 0, "no boundary before the first token");
+                prop_assert!(index > SigIdx::new(0), "no boundary before the first token");
                 prop_assert!(input.newline_before(index), "boundaries need a newline");
             }
 
@@ -138,7 +144,7 @@ proptest! {
             // whose partner lies ahead is pushed, and a closer must close
             // the innermost open pair.
             if let Some(partner) = input.partner(index) {
-                prop_assert!(partner < input.len());
+                prop_assert!(partner < input.end());
                 prop_assert_eq!(input.partner(partner), Some(index), "partners must be mutual");
                 let (opener, closer) = if index < partner { (index, partner) } else { (partner, index) };
                 prop_assert!(
@@ -147,7 +153,7 @@ proptest! {
                         (Some(SyntaxKind::LParen), Some(SyntaxKind::RParen))
                             | (Some(SyntaxKind::LBrace), Some(SyntaxKind::RBrace))
                     ),
-                    "tokens {} and {} are partners but not a matching pair", opener, closer
+                    "tokens {:?} and {:?} are partners but not a matching pair", opener, closer
                 );
                 if partner > index {
                     open.push(index);
@@ -160,8 +166,8 @@ proptest! {
         prop_assert!(open.is_empty(), "every pushed opener must have been closed");
 
         // Nothing significant may be dropped after the last kept token.
-        for j in previous.map_or(0, |previous| previous + 1)..lexed.len() {
-            prop_assert!(is_trivia(lexed.kind(j)), "token {} was dropped", j);
+        for j in previous.map_or(RawIdx::new(0), |previous| previous + 1).until(lexed.end()) {
+            prop_assert!(is_trivia(lexed.kind(j)), "token {:?} was dropped", j);
         }
     }
 
@@ -169,7 +175,7 @@ proptest! {
     fn widening_space_runs_changes_nothing(source in soup()) {
         let lexed = lex(&source).expect("generated sources fit in u32");
         let mut widened = String::new();
-        for index in 0..lexed.len() {
+        for index in lexed.indices() {
             widened.push_str(lexed.text(&source, index));
             if lexed.raw_kind(index) == RawKind::HorizontalSpace {
                 widened.push(' ');
@@ -182,14 +188,14 @@ proptest! {
         let widened_lexed = lex(&widened).expect("widened sources fit in u32");
         prop_assert_eq!(widened_lexed.len(), lexed.len());
 
-        for index in 0..lexed.len() {
+        for index in lexed.indices() {
             prop_assert_eq!(lexed.kind(index), widened_lexed.kind(index));
         }
 
         let input = ParserInput::new(&lexed);
         let widened_input = ParserInput::new(&widened_lexed);
         prop_assert_eq!(input.len(), widened_input.len());
-        for index in 0..input.len() {
+        for index in input.indices() {
             prop_assert_eq!(input.token(index), widened_input.token(index));
             prop_assert_eq!(input.is_joint(index), widened_input.is_joint(index));
             prop_assert_eq!(input.newline_before(index), widened_input.newline_before(index));
@@ -209,11 +215,11 @@ proptest! {
         let input = ParserInput::new(&lexed);
         // Pieces can form a `//` that hides the wrapping paren's closer;
         // only a `(` the stream closes suspends termination.
-        prop_assume!(input.partner(1) == Some(input.len() - 1));
-        for index in 0..input.len() {
+        prop_assume!(input.partner(SigIdx::new(1)) == Some(input.end() - 1));
+        for index in input.indices() {
             prop_assert!(
                 !input.boundary_before(index),
-                "boundary before token {} in {:?}", index, source
+                "boundary before token {:?} in {:?}", index, source
             );
         }
     }
@@ -224,10 +230,13 @@ proptest! {
 /// node but the root covers at least one token and starts and ends on a
 /// significant one; the root covers the whole buffer.
 fn check_tree(tree: &SyntaxTree, lexed: &LexedFile) -> Result<(), TestCaseError> {
-    let raw_len = lexed.len() as u32;
+    let raw_len = lexed.end();
     let root = tree.root();
     prop_assert_eq!(tree.kind(root), NodeKind::SourceFile);
-    prop_assert_eq!((tree.first_token(root), tree.end_token(root)), (0, raw_len));
+    prop_assert_eq!(
+        (tree.first_token(root), tree.end_token(root)),
+        (RawIdx::new(0), raw_len)
+    );
 
     let mut visited = 0usize;
     let mut pending = vec![root];
@@ -235,15 +244,15 @@ fn check_tree(tree: &SyntaxTree, lexed: &LexedFile) -> Result<(), TestCaseError>
         visited += 1;
         let (first, end) = (tree.first_token(node), tree.end_token(node));
         if node != root {
-            prop_assert!(first < end, "node {} is empty", node);
+            prop_assert!(first < end, "node {:?} is empty", node);
             prop_assert!(
-                !is_trivia(lexed.kind(first as usize)),
-                "node {} starts on trivia",
+                !is_trivia(lexed.kind(first)),
+                "node {:?} starts on trivia",
                 node
             );
             prop_assert!(
-                !is_trivia(lexed.kind(end as usize - 1)),
-                "node {} ends on trivia",
+                !is_trivia(lexed.kind(end - 1)),
+                "node {:?} ends on trivia",
                 node
             );
         }
@@ -252,12 +261,12 @@ fn check_tree(tree: &SyntaxTree, lexed: &LexedFile) -> Result<(), TestCaseError>
         for child in tree.children(node) {
             prop_assert!(
                 tree.end_token(child) <= next_start,
-                "children of {} overlap",
+                "children of {:?} overlap",
                 node
             );
             prop_assert!(
                 tree.first_token(child) >= first,
-                "child {} escapes {}",
+                "child {:?} escapes {:?}",
                 child,
                 node
             );
@@ -283,24 +292,24 @@ proptest! {
 
         // The parser attaches no token to the root itself: every significant
         // token lies in some item or top-level error node.
-        let mut items: Vec<usize> = tree.children(tree.root()).collect();
+        let mut items: Vec<NodeIdx> = tree.children(tree.root()).collect();
         items.reverse();
         let mut children = items.into_iter().peekable();
-        for index in 0..input.len() {
+        for index in input.indices() {
             let token = input.token(index);
             while children.peek().is_some_and(|&child| tree.end_token(child) <= token) {
                 children.next();
             }
             prop_assert!(
                 children.peek().is_some_and(|&child| tree.first_token(child) <= token),
-                "token {} is attached to the root", token
+                "token {:?} is attached to the root", token
             );
         }
 
         // Present syntax gets nonempty in-bounds raw ranges. Missing syntax
         // gets the exact, possibly empty trivia interval between significant
         // tokens. Recovery effects are nonempty in-bounds ranges too.
-        let raw_len = lexed.len() as u32;
+        let raw_len = lexed.end();
         for evidence in parse.evidence() {
             let anchor = match evidence {
                 ParseEvidence::Recovery(recovery) => {
@@ -325,14 +334,14 @@ proptest! {
                 ParseAnchor::Gap(gap) => {
                     prop_assert!(gap.trivia_start() <= gap.trivia_end());
                     prop_assert!(gap.trivia_end() <= raw_len);
-                    if gap.trivia_start() > 0 {
-                        prop_assert!(!is_trivia(lexed.kind(gap.trivia_start() as usize - 1)));
+                    if let Some(before) = gap.trivia_start().checked_sub(1) {
+                        prop_assert!(!is_trivia(lexed.kind(before)));
                     }
-                    for token in gap.trivia_start()..gap.trivia_end() {
-                        prop_assert!(is_trivia(lexed.kind(token as usize)));
+                    for token in gap.trivia_start().until(gap.trivia_end()) {
+                        prop_assert!(is_trivia(lexed.kind(token)));
                     }
                     if gap.trivia_end() < raw_len {
-                        prop_assert!(!is_trivia(lexed.kind(gap.trivia_end() as usize)));
+                        prop_assert!(!is_trivia(lexed.kind(gap.trivia_end())));
                     }
                 }
             }
@@ -364,10 +373,10 @@ proptest! {
     ) {
         let original = front(&source);
         let (edited, touched, moved, impact) = apply(&source, &original.spans(), index, edit);
-        let touched: Vec<u32> = touched.iter().map(|&index| original.input.token(index)).collect();
-        let moved: Vec<u32> = moved.iter().map(|&index| original.input.token(index)).collect();
+        let touched: Vec<RawIdx> = touched.iter().map(|&index| original.input.token(sig(index))).collect();
+        let moved: Vec<RawIdx> = moved.iter().map(|&index| original.input.token(sig(index))).collect();
         let after = front(&edited);
-        let survivors: HashSet<_> = (0..after.parse.tree().len())
+        let survivors: HashSet<_> = after.parse.tree().nodes()
             .map(|node| (after.node_span(node), after.shape(&edited, node)))
             .collect();
         for node in original.guarded(&touched, &moved) {
@@ -376,7 +385,7 @@ proptest! {
             prop_assert!(
                 survivors.contains(&(span, shape.clone())),
                 "{:?} at token {} ({:?}) disturbs the {:?} {:?}\n--- original ---\n{}\n--- edited ---\n{}\nevidence: {:?}",
-                edit, index, original.input.get(index), original.parse.tree().kind(node), shape.0,
+                edit, index, original.input.get(sig(index)), original.parse.tree().kind(node), shape.0,
                 source, edited, after.parse.evidence()
             );
         }
@@ -388,7 +397,7 @@ proptest! {
     ) {
         let original = front(&source);
         let (edited, touched, _, impact) = apply(&source, &original.spans(), index, edit);
-        let touched: Vec<u32> = touched.iter().map(|&index| original.input.token(index)).collect();
+        let touched: Vec<RawIdx> = touched.iter().map(|&index| original.input.token(sig(index))).collect();
         let after = front(&edited);
         let tree = after.parse.tree();
         let survivors: HashSet<_> = tree
@@ -409,7 +418,7 @@ proptest! {
             prop_assert!(
                 survivors.contains(&(span, shape.clone())),
                 "{:?} at token {} ({:?}) disturbs the item {:?}\n--- original ---\n{}\n--- edited ---\n{}\nevidence: {:?}",
-                edit, index, original.input.get(index), shape.0, source, edited,
+                edit, index, original.input.get(sig(index)), shape.0, source, edited,
                 after.parse.evidence()
             );
         }

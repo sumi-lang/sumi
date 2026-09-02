@@ -2,7 +2,7 @@ mod common;
 
 use sumi_lexer::lex;
 use sumi_syntax::NodeKind::{self, *};
-use sumi_syntax::{CompletedMarker, Marker, Parse, ParserInput};
+use sumi_syntax::{CompletedMarker, Marker, Parse, ParserInput, RawIdx};
 
 /// Open a child of `parent`, run `body` inside it, and complete it as
 /// `kind`.
@@ -312,7 +312,7 @@ fn covering_finds_the_innermost_node() {
     let tree = parse.tree();
     assert_eq!(tree.kind(tree.root()), SourceFile);
 
-    let kind_at = |token| tree.kind(tree.covering(token));
+    let kind_at = |token| tree.kind(tree.covering(RawIdx::new(token)));
     assert_eq!(kind_at(0), LetStmt); // `let`, attached to the statement
     assert_eq!(kind_at(1), LetStmt); // trivia inside the statement
     assert_eq!(kind_at(6), LiteralExpr); // `1`, under the statement

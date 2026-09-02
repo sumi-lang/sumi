@@ -10,8 +10,8 @@
 
 use sumi_lexer::{LexedFile, lex};
 use sumi_syntax::{
-    Parse, ParseEvidence, ParseViolation, ParseViolationKind, ParserInput, SyntaxKind, SyntaxTree,
-    parse, raw_boundary, starts_expression,
+    NodeIdx, Parse, ParseEvidence, ParseViolation, ParseViolationKind, ParserInput, RawIdx,
+    SyntaxKind, SyntaxTree, parse, raw_boundary, starts_expression,
 };
 use sumi_text::{TextEdit, TextRange, TextSize};
 
@@ -22,18 +22,18 @@ use sumi_text::{TextEdit, TextRange, TextSize};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Element {
     /// A raw index into the tree's token buffers.
-    Token(u32),
+    Token(RawIdx),
     /// A node index into the tree.
-    Node(usize),
+    Node(NodeIdx),
 }
 
 /// Iterate the elements of node `index`: its directly attached raw tokens
 /// interleaved with its children.
-pub fn elements(tree: &SyntaxTree, index: usize) -> impl Iterator<Item = Element> + '_ {
+pub fn elements(tree: &SyntaxTree, index: NodeIdx) -> impl Iterator<Item = Element> + '_ {
     // The tree yields children last first; elements read in source order.
     // The public lazy iterator owns this reversal; reprinting instead walks
     // with one shared stack so it does not allocate once per node.
-    let mut children: Vec<usize> = tree.children(index).collect();
+    let mut children: Vec<NodeIdx> = tree.children(index).collect();
     children.reverse();
     let mut children = children.into_iter().peekable();
     let mut cursor = tree.first_token(index);
@@ -69,8 +69,8 @@ fn reprint_node(
     tree: &SyntaxTree,
     lexed: &LexedFile,
     source: &str,
-    node: usize,
-    pending: &mut Vec<usize>,
+    node: NodeIdx,
+    pending: &mut Vec<NodeIdx>,
     out: &mut String,
 ) {
     let base = pending.len();
@@ -79,14 +79,14 @@ fn reprint_node(
 
     while pending.len() > base {
         let child = pending.pop().expect("a pending child exists above base");
-        for token in cursor..tree.first_token(child) {
-            out.push_str(lexed.text(source, token as usize));
+        for token in cursor.until(tree.first_token(child)) {
+            out.push_str(lexed.text(source, token));
         }
         reprint_node(tree, lexed, source, child, pending, out);
         cursor = tree.end_token(child);
     }
-    for token in cursor..tree.end_token(node) {
-        out.push_str(lexed.text(source, token as usize));
+    for token in cursor.until(tree.end_token(node)) {
+        out.push_str(lexed.text(source, token));
     }
 }
 
@@ -146,18 +146,21 @@ pub fn layout_violation_edits(
         }
         // Space the operator on each side another token is glued to.
         ParseViolationKind::UnspacedBinaryOperator => {
-            if start > 0 && significant(lexed, start - 1) {
+            if start
+                .checked_sub(1)
+                .is_some_and(|before| significant(lexed, before))
+            {
                 edits.push(insert(token_start(lexed, start), " "));
             }
-            if (end as usize) < lexed.len() && significant(lexed, end) {
+            if end < lexed.end() && significant(lexed, end) {
                 edits.push(insert(token_start(lexed, end), " "));
             }
         }
         // Lead the continuation line with the operator instead. An operator
         // without a following operand has no mechanically valid move.
         ParseViolationKind::TrailingOperator => {
-            let operand = next_significant(lexed, end)
-                .filter(|&raw| starts_expression(lexed.kind(raw as usize)))?;
+            let operand =
+                next_significant(lexed, end).filter(|&raw| starts_expression(lexed.kind(raw)))?;
             let (op_start, op_end) = (token_start(lexed, start), token_end(lexed, end - 1));
             edits.push(delete(op_start, op_end));
             edits.push(insert(
@@ -170,9 +173,9 @@ pub fn layout_violation_edits(
         ParseViolationKind::SpacedPrefixOperator => {
             let operand = next_significant(lexed, start + 1)
                 .expect("a spaced prefix operator has an operand");
-            if !(start + 1..operand).all(|raw| {
+            if !(start + 1).until(operand).all(|raw| {
                 matches!(
-                    lexed.kind(raw as usize),
+                    lexed.kind(raw),
                     SyntaxKind::Whitespace | SyntaxKind::Newline
                 )
             }) || lex_error_in(lexed, start + 1, operand)
@@ -196,7 +199,7 @@ fn reparses_alike(candidate: &str, tree: &SyntaxTree) -> bool {
     let reparse = parse(&ParserInput::new(&lexed));
     let after = reparse.tree();
     after.len() == tree.len()
-        && (0..tree.len()).all(|node| after.kind(node) == tree.kind(node))
+        && tree.nodes().all(|node| after.kind(node) == tree.kind(node))
         && after.parents() == tree.parents()
 }
 
@@ -234,30 +237,33 @@ fn apply(source: &str, mut edits: Vec<TextEdit>) -> String {
     out
 }
 
-fn significant(lexed: &LexedFile, raw: u32) -> bool {
-    !lexed.kind(raw as usize).is_trivia()
+fn significant(lexed: &LexedFile, raw: RawIdx) -> bool {
+    !lexed.kind(raw).is_trivia()
 }
 
-fn lex_error_in(lexed: &LexedFile, start: u32, end: u32) -> bool {
+fn lex_error_in(lexed: &LexedFile, start: RawIdx, end: RawIdx) -> bool {
     let errors = lexed.errors();
     let first = errors.partition_point(|error| error.token < start);
     errors.get(first).is_some_and(|error| error.token < end)
 }
 
 /// The nearest significant token before `raw`.
-fn prev_significant(lexed: &LexedFile, raw: u32) -> Option<u32> {
-    (0..raw).rev().find(|&raw| significant(lexed, raw))
+fn prev_significant(lexed: &LexedFile, raw: RawIdx) -> Option<RawIdx> {
+    RawIdx::new(0)
+        .until(raw)
+        .rev()
+        .find(|&raw| significant(lexed, raw))
 }
 
 /// The nearest significant token at or after `raw`.
-fn next_significant(lexed: &LexedFile, raw: u32) -> Option<u32> {
-    (raw..lexed.len() as u32).find(|&raw| significant(lexed, raw))
+fn next_significant(lexed: &LexedFile, raw: RawIdx) -> Option<RawIdx> {
+    raw.until(lexed.end()).find(|&raw| significant(lexed, raw))
 }
 
-fn token_start(lexed: &LexedFile, raw: u32) -> usize {
+fn token_start(lexed: &LexedFile, raw: RawIdx) -> usize {
     raw_boundary(lexed, raw).to_usize()
 }
 
-fn token_end(lexed: &LexedFile, raw: u32) -> usize {
-    lexed.range(raw as usize).end().to_usize()
+fn token_end(lexed: &LexedFile, raw: RawIdx) -> usize {
+    lexed.range(raw).end().to_usize()
 }

@@ -1,9 +1,9 @@
-use sumi_lexer::{LexError, LexErrorKind, lex};
+use sumi_lexer::{LexError, LexErrorKind, RawIdx, lex};
 use sumi_text::{TextRange, TextSize};
 
 fn error(token: u32, start: u32, end: u32, kind: LexErrorKind) -> LexError {
     LexError {
-        token,
+        token: RawIdx::new(token),
         range: TextRange::new(TextSize::new(start), TextSize::new(end)),
         kind,
     }
@@ -15,19 +15,19 @@ fn dump(source: &str) -> Vec<String> {
     let file = lex(source).expect("test sources fit in u32");
 
     let mut concatenated = String::new();
-    for index in 0..file.len() {
+    for index in file.indices() {
         let range = file.range(index);
-        assert!(range.start() < range.end(), "token {index} is empty");
+        assert!(range.start() < range.end(), "token {index:?} is empty");
         assert!(source.is_char_boundary(range.start().to_usize()));
         assert!(source.is_char_boundary(range.end().to_usize()));
 
-        if index == 0 {
+        if index == RawIdx::new(0) {
             assert_eq!(range.start().to_u32(), 0, "first token must start at 0");
         } else {
             assert_eq!(
                 range.start(),
                 file.range(index - 1).end(),
-                "token {index} is not contiguous"
+                "token {index:?} is not contiguous"
             );
         }
 
@@ -35,14 +35,14 @@ fn dump(source: &str) -> Vec<String> {
     }
     assert_eq!(concatenated, source, "tokens must reproduce the source");
 
-    if let Some(last) = file.len().checked_sub(1) {
+    if let Some(last) = file.end().checked_sub(1) {
         assert_eq!(file.range(last).end(), file.source_len());
     }
     for error in file.errors() {
-        assert!((error.token as usize) < file.len());
+        assert!(error.token < file.end());
     }
 
-    (0..file.len())
+    file.indices()
         .map(|index| {
             let range = file.range(index);
             let flags = file.flags(index);

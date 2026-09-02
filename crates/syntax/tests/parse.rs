@@ -3,7 +3,7 @@ mod common;
 use sumi_lexer::{LexedFile, lex};
 use sumi_syntax::{
     ParseAnchor, ParseEvidence, ParseExpected, ParseRecoveryKind, ParseViolationKind, ParserInput,
-    parse,
+    RawIdx, parse,
 };
 
 /// Parse `source`; assert the tree dump and the evidence, each rendered as
@@ -55,7 +55,7 @@ fn evidence_name(evidence: &ParseEvidence) -> String {
     }
 }
 
-fn evidence_token(evidence: &ParseEvidence) -> u32 {
+fn evidence_token(evidence: &ParseEvidence) -> RawIdx {
     match evidence {
         ParseEvidence::Recovery(recovery) => match recovery.anchor {
             ParseAnchor::Gap(gap) => gap.trivia_end(),
@@ -65,7 +65,7 @@ fn evidence_token(evidence: &ParseEvidence) -> u32 {
     }
 }
 
-fn raw_text<'a>(source: &'a str, lexed: &LexedFile, start: u32, end: u32) -> &'a str {
+fn raw_text<'a>(source: &'a str, lexed: &LexedFile, start: RawIdx, end: RawIdx) -> &'a str {
     let start = common::start_byte(lexed, start) as usize;
     let end = common::start_byte(lexed, end) as usize;
     &source[start..end]
@@ -1351,7 +1351,7 @@ fn items(source: &str) -> usize {
     let lexed = lex(source).expect("test sources fit in u32");
     let parse = parse(&ParserInput::new(&lexed));
     let tree = parse.tree();
-    (0..tree.len())
+    tree.nodes()
         .filter(|&node| tree.kind(node) == sumi_syntax::NodeKind::FnItem)
         .count()
 }

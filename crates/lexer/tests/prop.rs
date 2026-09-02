@@ -2,7 +2,7 @@
 //! instead of the hand-written corpus in `lex.rs`.
 
 use proptest::prelude::*;
-use sumi_lexer::{RawKind, SyntaxKind, TokenFlags, lex};
+use sumi_lexer::{RawIdx, RawKind, SyntaxKind, TokenFlags, lex};
 
 /// Fragments beyond every keyword and punctuation text of the language that
 /// each lex to exactly one token on their own, stay terminated, and do not
@@ -112,41 +112,41 @@ proptest! {
         prop_assert_eq!(file.source_len().to_usize(), source.len());
 
         let mut concatenated = String::new();
-        for index in 0..file.len() {
+        for index in file.indices() {
             let range = file.range(index);
-            prop_assert!(range.start() < range.end(), "token {} is empty", index);
+            prop_assert!(range.start() < range.end(), "token {:?} is empty", index);
             prop_assert!(source.is_char_boundary(range.start().to_usize()));
             prop_assert!(source.is_char_boundary(range.end().to_usize()));
-            if index == 0 {
+            if index == RawIdx::new(0) {
                 prop_assert_eq!(range.start().to_u32(), 0, "first token must start at 0");
             } else {
                 prop_assert_eq!(
                     range.start(),
                     file.range(index - 1).end(),
-                    "token {} is not contiguous", index
+                    "token {:?} is not contiguous", index
                 );
             }
             concatenated.push_str(file.text(&source, index));
         }
         prop_assert_eq!(&concatenated, &source, "tokens must reproduce the source");
 
-        if let Some(last) = file.len().checked_sub(1) {
+        if let Some(last) = file.end().checked_sub(1) {
             prop_assert_eq!(file.range(last).end(), file.source_len());
         }
         for error in file.errors() {
-            prop_assert!((error.token as usize) < file.len());
-            let token = file.range(error.token as usize);
+            prop_assert!(error.token < file.end());
+            let token = file.range(error.token);
             prop_assert!(token.start() <= error.range.start());
             prop_assert!(error.range.end() <= token.end());
             prop_assert!(source.is_char_boundary(error.range.start().to_usize()));
             prop_assert!(source.is_char_boundary(error.range.end().to_usize()));
         }
 
-        for index in 0..file.len() {
+        for index in file.indices() {
             if file.kind(index) == SyntaxKind::Error {
                 prop_assert!(
-                    file.errors().iter().any(|error| error.token == index as u32),
-                    "error token {} has no lexical error", index
+                    file.errors().iter().any(|error| error.token == index),
+                    "error token {:?} has no lexical error", index
                 );
             }
         }
@@ -155,12 +155,12 @@ proptest! {
     #[test]
     fn the_number_scan_and_validation_agree(source in number_soup()) {
         let file = lex(&source).expect("generated sources fit in u32");
-        for index in 0..file.len() {
+        for index in file.indices() {
             if file.raw_kind(index) != RawKind::Number {
                 continue;
             }
             let flagged = file.flags(index).contains(TokenFlags::MALFORMED_NUMBER);
-            let has_error = file.errors().iter().any(|error| error.token == index as u32);
+            let has_error = file.errors().iter().any(|error| error.token == index);
             prop_assert_eq!(
                 flagged, has_error,
                 "number {:?} flagged={} but has-error={}",
@@ -179,7 +179,7 @@ proptest! {
         let source = fragments.join(" ");
         let file = lex(&source).expect("generated sources fit in u32");
 
-        let tokens: Vec<&str> = (0..file.len())
+        let tokens: Vec<&str> = file.indices()
             .filter(|&index| file.raw_kind(index) != RawKind::HorizontalSpace)
             .map(|index| file.text(&source, index))
             .collect();

@@ -4,7 +4,7 @@ use criterion::{
 use sumi_format::{normalize, reprint};
 use sumi_frontend::parse_source;
 use sumi_lexer::lex;
-use sumi_syntax::{MAX_DEPTH, ParseEvidence, ParserInput, parse};
+use sumi_syntax::{MAX_DEPTH, ParseEvidence, ParserInput, RawIdx, parse};
 use sumi_test::corpus;
 use sumi_text::{LineIndex, TextSize};
 
@@ -215,8 +215,8 @@ fn bench_queries(c: &mut Criterion) {
     let offsets: Vec<TextSize> = (0..QUERY_BATCH)
         .map(|_| TextSize::new(rng.below(source.len() as u32)))
         .collect();
-    let tokens: Vec<u32> = (0..QUERY_BATCH)
-        .map(|_| rng.below(lexed.len() as u32))
+    let tokens: Vec<RawIdx> = (0..QUERY_BATCH)
+        .map(|_| RawIdx::new(rng.below(lexed.len() as u32)))
         .collect();
 
     let mut group = c.benchmark_group("queries/medium-valid");
@@ -245,6 +245,7 @@ fn bench_queries(c: &mut Criterion) {
                     lexed
                         .token_at(offset)
                         .expect("query offsets lie below the source length")
+                        .to_usize()
                 })
                 .sum::<usize>()
         });
@@ -253,7 +254,7 @@ fn bench_queries(c: &mut Criterion) {
         b.iter(|| {
             black_box(&tokens)
                 .iter()
-                .map(|&token| tree.covering(token))
+                .map(|&token| tree.covering(token).to_usize())
                 .sum::<usize>()
         });
     });

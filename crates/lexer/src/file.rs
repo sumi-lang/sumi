@@ -5,6 +5,7 @@ use std::ops::Range;
 use sumi_text::{TextRange, TextSize};
 
 use crate::generated::SyntaxKind;
+use crate::index::RawIdx;
 use crate::lexer::Lexer;
 use crate::literal;
 use crate::token::{RawKind, RawToken, TokenFlags};
@@ -48,7 +49,7 @@ pub fn lex(source: &str) -> Result<LexedFile, SourceTooLarge> {
             collect_errors(
                 &token,
                 text,
-                tokens.len() as u32,
+                RawIdx::new(tokens.len() as u32),
                 TextSize::new(start),
                 &mut errors,
             );
@@ -74,7 +75,7 @@ pub fn lex(source: &str) -> Result<LexedFile, SourceTooLarge> {
 fn collect_errors(
     token: &RawToken,
     text: &str,
-    index: u32,
+    index: RawIdx,
     start: TextSize,
     errors: &mut Vec<LexError>,
 ) {
@@ -167,9 +168,20 @@ impl LexedFile {
         self.source_len
     }
 
+    /// The index one past the last token: where a range running to the end
+    /// of the file stops.
+    pub fn end(&self) -> RawIdx {
+        RawIdx::new(self.tokens.len() as u32)
+    }
+
+    /// Every token's index, in order.
+    pub fn indices(&self) -> impl DoubleEndedIterator<Item = RawIdx> + ExactSizeIterator {
+        RawIdx::new(0).until(self.end())
+    }
+
     /// The language-level kind of the token, assigned during the scan.
-    pub fn kind(&self, index: usize) -> SyntaxKind {
-        self.tokens[index].kind
+    pub fn kind(&self, index: RawIdx) -> SyntaxKind {
+        self.tokens[index.to_usize()].kind
     }
 
     /// Every token's language-level kind, in order: the stream a
@@ -180,19 +192,19 @@ impl LexedFile {
 
     /// The shape-only kind of the token, for phases that reason about
     /// lexical shape rather than language meaning.
-    pub fn raw_kind(&self, index: usize) -> RawKind {
-        self.tokens[index].raw
+    pub fn raw_kind(&self, index: RawIdx) -> RawKind {
+        self.tokens[index.to_usize()].raw
     }
 
-    pub fn flags(&self, index: usize) -> TokenFlags {
-        self.tokens[index].flags
+    pub fn flags(&self, index: RawIdx) -> TokenFlags {
+        self.tokens[index.to_usize()].flags
     }
 
-    pub fn range(&self, index: usize) -> TextRange {
-        let start = self.tokens[index].start;
+    pub fn range(&self, index: RawIdx) -> TextRange {
+        let start = self.tokens[index.to_usize()].start;
         let end = self
             .tokens
-            .get(index + 1)
+            .get(index.to_usize() + 1)
             .map_or(self.source_len, |next| next.start);
 
         TextRange::new(start, end)
@@ -200,7 +212,7 @@ impl LexedFile {
 
     /// Slice `source` to this token's text. `source` must be the string this
     /// file was lexed from.
-    pub fn text<'src>(&self, source: &'src str, index: usize) -> &'src str {
+    pub fn text<'src>(&self, source: &'src str, index: RawIdx) -> &'src str {
         self.range(index).text(source)
     }
 
@@ -213,19 +225,20 @@ impl LexedFile {
     /// no byte. A cursor sitting on a token boundary gets the token to its
     /// right; [`token_before`](Self::token_before) is the left-biased
     /// counterpart.
-    pub fn token_at(&self, offset: TextSize) -> Option<usize> {
+    pub fn token_at(&self, offset: TextSize) -> Option<RawIdx> {
         if offset >= self.source_len {
             return None;
         }
         // Tokens partition the source, so the last token starting at or
         // before `offset` contains it; the first token starts at zero, so
         // one always exists.
-        Some(self.tokens.partition_point(|token| token.start <= offset) - 1)
+        let index = self.tokens.partition_point(|token| token.start <= offset) - 1;
+        Some(RawIdx::new(index as u32))
     }
 
     /// The token containing the byte before `offset`: the one a cursor at
     /// `offset` touches on its left. `None` at the start of the source.
-    pub fn token_before(&self, offset: TextSize) -> Option<usize> {
+    pub fn token_before(&self, offset: TextSize) -> Option<RawIdx> {
         let previous = offset.to_u32().checked_sub(1)?;
         self.token_at(TextSize::new(previous))
     }
@@ -247,8 +260,8 @@ const _: () = assert!(size_of::<StoredToken>() == 8, "tokens stay eight bytes");
 /// A context-free token error, attached to the token that produced it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct LexError {
-    /// Index of the offending token in the [`LexedFile`].
-    pub token: u32,
+    /// The offending token in the [`LexedFile`].
+    pub token: RawIdx,
     /// The relevant file-local UTF-8 byte range, contained within `token` and
     /// ending on character boundaries. May be empty when content is missing.
     pub range: TextRange,
