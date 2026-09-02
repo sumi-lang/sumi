@@ -39,7 +39,7 @@ continues the previous line. Operators take their classes from the
 | `_` | `Underscore` | `stmt` `end` | The identifier `_` on its own, reserved for discards. |
 | `else` | `ElseKw` | `continue` |  |
 | `false` | `FalseKw` | `expr` `end` |  |
-| `fn` | `FnKw` | `item` |  |
+| `fn` | `FnKw` | `expr` `item` | A function item, or a closure where an expression is expected: the same signature and body forms, without a name. Outside every matched bracket pair a `fn` begins a top-level item, since no expression stands there. |
 | `if` | `IfKw` | `expr` |  |
 | `let` | `LetKw` | `stmt` |  |
 | `mut` | `MutKw` |  |  |
@@ -142,7 +142,7 @@ end one, the token after it does not continue one, and no parenthesis the
 stream closes is open around it. These classes decide the first two;
 the parser's spacing rules keep the third unambiguous.
 
-- **Can begin an expression:** `Ident`, `false`, `if`, `true`, `IntLiteral`, `FloatLiteral`, `StringLiteral`, `RawStringLiteral`, `BlockStringLiteral`, `RawBlockStringLiteral`, `CharLiteral`, `(`, `{`, `!`, `-`.
+- **Can begin an expression:** `Ident`, `false`, `fn`, `if`, `true`, `IntLiteral`, `FloatLiteral`, `StringLiteral`, `RawStringLiteral`, `BlockStringLiteral`, `RawBlockStringLiteral`, `CharLiteral`, `(`, `{`, `!`, `-`.
 - **Begin a statement without being an expression:** `_`, `let`, `return`, `Error`.
 - **A statement can end after:** `Ident`, `_`, `false`, `return`, `true`, `IntLiteral`, `FloatLiteral`, `StringLiteral`, `RawStringLiteral`, `BlockStringLiteral`, `RawBlockStringLiteral`, `CharLiteral`, `)`, `}`, `Error`.
 - **Begin a top-level item:** `fn`.
@@ -182,9 +182,15 @@ node covering tokens the parser could not parse may appear anywhere.
 
 ```
 SourceFile = items:FnItem*
-FnItem = 'fn' Name ParamList ('->' ret:TypeRef)? body:Block
+// A function item. The body is a block on the signature's line, or `=`
+// and an expression: `fn double(x: int) -> int = x * 2`. The `=` stays
+// on the signature's line; the expression may continue onto the next,
+// since `=` cannot end a statement.
+FnItem = 'fn' Name ParamList ('->' ret:TypeRef)? '='? body:Expr
 ParamList = '(' params:(Param (',' Param)* ','?)? ')'
-Param = Name ':' TypeRef
+// A parameter. An item's has a type; a closure's may leave it to be
+// inferred.
+Param = Name (':' TypeRef)?
 // A declaring occurrence of a name: what an item, a parameter, or a
 // binding introduces. A use is a NameRef.
 Name = Ident
@@ -196,7 +202,7 @@ LetStmt = 'let' 'mut'? Name (':' TypeRef)? '=' initializer:Expr
 AssignStmt = target:Expr '=' value:Expr
 DiscardStmt = '_' '=' value:Expr
 ReturnStmt = 'return' value:Expr?
-Expr = NameRef | LiteralExpr | PrefixExpr | BinaryExpr | ParenExpr | CallExpr | IfExpr | Block
+Expr = NameRef | LiteralExpr | PrefixExpr | BinaryExpr | ParenExpr | CallExpr | IfExpr | ClosureExpr | Block
 // A use of a name: a reference to what a Name declared.
 NameRef = Ident
 LiteralExpr = IntLiteral | FloatLiteral | StringLiteral | RawStringLiteral | BlockStringLiteral | RawBlockStringLiteral | CharLiteral | 'true' | 'false'
@@ -206,6 +212,10 @@ ParenExpr = '(' inner:Expr ')'
 CallExpr = callee:Expr ArgList
 ArgList = '(' args:(Expr (',' Expr)* ','?)? ')'
 IfExpr = 'if' condition:Expr then_branch:Block ('else' else_branch:(IfExpr | Block))?
+// A function without a name, as an expression: `fn(x) = x * 2`, or
+// `fn(x: int) -> int { … }`, with an item's parameter list, return type,
+// and body forms.
+ClosureExpr = 'fn' ParamList ('->' ret:TypeRef)? '='? body:Expr
 
 // Defined by the operator tables.
 PrefixOperator = '-' | '!'

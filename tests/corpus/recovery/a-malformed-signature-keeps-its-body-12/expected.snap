@@ -10,8 +10,8 @@ SourceFile! 0..18
     Block 16..18 "{}"
 
 == evidence ==
-Expected(LBrace) at 7
+ExpectedBody at 7
 
 == diagnostics ==
-error[syntax/expected-token] 1:8: expected `{`
+error[syntax/expected-body] 1:8: expected a body, `{` or `=`
   at 1:8..1:9 "x": skipped while recovering

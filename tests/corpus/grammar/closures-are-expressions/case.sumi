@@ -1,0 +1,11 @@
+fn main() {
+    let double = fn(x) = x * 2
+    let typed = fn(x: int) -> int = x * 2
+    let thunk = fn() = work()
+    let adder = fn(x) = fn(y) = x + y
+    apply(fn(x) = x + 1, 2)
+    if any(xs, fn(x) = x > 0) { return }
+    each(names, fn(n) {
+        print(n)
+    })
+}

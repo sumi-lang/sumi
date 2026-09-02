@@ -23,8 +23,14 @@ pub mod ast;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum NodeKind {
     SourceFile,
+    /// A function item. The body is a block on the signature's line, or `=`
+    /// and an expression: `fn double(x: int) -> int = x * 2`. The `=` stays
+    /// on the signature's line; the expression may continue onto the next,
+    /// since `=` cannot end a statement.
     FnItem,
     ParamList,
+    /// A parameter. An item's has a type; a closure's may leave it to be
+    /// inferred.
     Param,
     /// A declaring occurrence of a name: what an item, a parameter, or a
     /// binding introduces. A use is a NameRef.
@@ -45,6 +51,10 @@ pub enum NodeKind {
     CallExpr,
     ArgList,
     IfExpr,
+    /// A function without a name, as an expression: `fn(x) = x * 2`, or
+    /// `fn(x: int) -> int { … }`, with an item's parameter list, return type,
+    /// and body forms.
+    ClosureExpr,
     /// Covers tokens the parser could not parse.
     Error,
 }
@@ -55,6 +65,7 @@ pub fn starts_expression(kind: SyntaxKind) -> bool {
         kind,
         SyntaxKind::Ident
             | SyntaxKind::FalseKw
+            | SyntaxKind::FnKw
             | SyntaxKind::IfKw
             | SyntaxKind::TrueKw
             | SyntaxKind::IntLiteral

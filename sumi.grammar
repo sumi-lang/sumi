@@ -78,7 +78,11 @@ token Underscore keyword "_" stmt end
 // boolean literals only.
 token ElseKw keyword "else" continue
 token FalseKw keyword "false" expr end
-token FnKw keyword "fn" item
+/// A function item, or a closure where an expression is expected: the
+/// same signature and body forms, without a name. Outside every matched
+/// bracket pair a `fn` begins a top-level item, since no expression stands
+/// there.
+token FnKw keyword "fn" expr item
 token IfKw keyword "if" expr
 token LetKw keyword "let" stmt
 token MutKw keyword "mut"
@@ -175,9 +179,15 @@ binary Rem "%" 5
 
 SourceFile = items:FnItem*
 
-FnItem = 'fn' Name ParamList ('->' ret:TypeRef)? body:Block
+/// A function item. The body is a block on the signature's line, or `=`
+/// and an expression: `fn double(x: int) -> int = x * 2`. The `=` stays
+/// on the signature's line; the expression may continue onto the next,
+/// since `=` cannot end a statement.
+FnItem = 'fn' Name ParamList ('->' ret:TypeRef)? '='? body:Expr
 ParamList = '(' params:(Param (',' Param)* ','?)? ')'
-Param = Name ':' TypeRef
+/// A parameter. An item's has a type; a closure's may leave it to be
+/// inferred.
+Param = Name (':' TypeRef)?
 
 /// A declaring occurrence of a name: what an item, a parameter, or a
 /// binding introduces. A use is a NameRef.
@@ -208,6 +218,7 @@ Expr =
 | ParenExpr
 | CallExpr
 | IfExpr
+| ClosureExpr
 | Block
 
 /// A use of a name: a reference to what a Name declared.
@@ -228,3 +239,7 @@ ParenExpr = '(' inner:Expr ')'
 CallExpr = callee:Expr ArgList
 ArgList = '(' args:(Expr (',' Expr)* ','?)? ')'
 IfExpr = 'if' condition:Expr then_branch:Block ('else' else_branch:(IfExpr | Block))?
+/// A function without a name, as an expression: `fn(x) = x * 2`, or
+/// `fn(x: int) -> int { … }`, with an item's parameter list, return type,
+/// and body forms.
+ClosureExpr = 'fn' ParamList ('->' ret:TypeRef)? '='? body:Expr

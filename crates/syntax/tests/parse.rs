@@ -26,6 +26,7 @@ fn evidence_name(evidence: &ParseEvidence) -> String {
                 ParseExpected::Expression => "ExpectedExpression".into(),
                 ParseExpected::Name => "ExpectedName".into(),
                 ParseExpected::Type => "ExpectedType".into(),
+                ParseExpected::Body => "ExpectedBody".into(),
                 ParseExpected::Token(kind) => format!("Expected({kind:?})"),
                 ParseExpected::Closer { kind, .. } => format!("Expected({kind:?})"),
                 ParseExpected::Boundary => "ExpectedBoundary".into(),

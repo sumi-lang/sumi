@@ -56,7 +56,11 @@ impl SourceFile {
     }
 }
 
-/// The `FnItem = 'fn' Name ParamList ('->' ret:TypeRef)? body:Block` rule.
+/// A function item. The body is a block on the signature's line, or `=`
+/// and an expression: `fn double(x: int) -> int = x * 2`. The `=` stays
+/// on the signature's line; the expression may continue onto the next,
+/// since `=` cannot end a statement.
+/// The `FnItem = 'fn' Name ParamList ('->' ret:TypeRef)? '='? body:Expr` rule.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct FnItem(NodeIdx);
 
@@ -88,7 +92,7 @@ impl FnItem {
             required: false,
         },
         fields::FieldSpec {
-            fits: |tree, node| Block::cast(tree, node).is_some(),
+            fits: |tree, node| Expr::cast(tree, node).is_some(),
             required: true,
         },
     ];
@@ -108,9 +112,9 @@ impl FnItem {
         fields::assign(tree, self.0, &Self::FIELDS)[2].and_then(|node| TypeRef::cast(tree, node))
     }
 
-    /// The `body` child, a `Block`, present on a node without an error.
-    pub fn body(self, tree: &SyntaxTree) -> Option<Block> {
-        fields::assign(tree, self.0, &Self::FIELDS)[3].and_then(|node| Block::cast(tree, node))
+    /// The `body` child, a `Expr`, present on a node without an error.
+    pub fn body(self, tree: &SyntaxTree) -> Option<Expr> {
+        fields::assign(tree, self.0, &Self::FIELDS)[3].and_then(|node| Expr::cast(tree, node))
     }
 }
 
@@ -139,7 +143,9 @@ impl ParamList {
     }
 }
 
-/// The `Param = Name ':' TypeRef` rule.
+/// A parameter. An item's has a type; a closure's may leave it to be
+/// inferred.
+/// The `Param = Name (':' TypeRef)?` rule.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Param(NodeIdx);
 
@@ -164,7 +170,7 @@ impl Param {
         },
         fields::FieldSpec {
             fits: |tree, node| TypeRef::cast(tree, node).is_some(),
-            required: true,
+            required: false,
         },
     ];
 
@@ -173,7 +179,7 @@ impl Param {
         fields::assign(tree, self.0, &Self::FIELDS)[0].and_then(|node| Name::cast(tree, node))
     }
 
-    /// The `type_ref` child, a `TypeRef`, present on a node without an error.
+    /// The `type_ref` child, a `TypeRef`, optional.
     pub fn type_ref(self, tree: &SyntaxTree) -> Option<TypeRef> {
         fields::assign(tree, self.0, &Self::FIELDS)[1].and_then(|node| TypeRef::cast(tree, node))
     }
@@ -432,6 +438,7 @@ pub enum Expr {
     ParenExpr(ParenExpr),
     CallExpr(CallExpr),
     IfExpr(IfExpr),
+    ClosureExpr(ClosureExpr),
     Block(Block),
 }
 
@@ -445,6 +452,7 @@ impl AstNode for Expr {
             NodeKind::ParenExpr => Some(Self::ParenExpr(ParenExpr(node))),
             NodeKind::CallExpr => Some(Self::CallExpr(CallExpr(node))),
             NodeKind::IfExpr => Some(Self::IfExpr(IfExpr(node))),
+            NodeKind::ClosureExpr => Some(Self::ClosureExpr(ClosureExpr(node))),
             NodeKind::Block => Some(Self::Block(Block(node))),
             _ => None,
         }
@@ -459,6 +467,7 @@ impl AstNode for Expr {
             Self::ParenExpr(inner) => inner.node(),
             Self::CallExpr(inner) => inner.node(),
             Self::IfExpr(inner) => inner.node(),
+            Self::ClosureExpr(inner) => inner.node(),
             Self::Block(inner) => inner.node(),
         }
     }
@@ -734,5 +743,57 @@ impl AstNode for ElseBranch {
             Self::IfExpr(inner) => inner.node(),
             Self::Block(inner) => inner.node(),
         }
+    }
+}
+
+/// A function without a name, as an expression: `fn(x) = x * 2`, or
+/// `fn(x: int) -> int { … }`, with an item's parameter list, return type,
+/// and body forms.
+/// The `ClosureExpr = 'fn' ParamList ('->' ret:TypeRef)? '='? body:Expr` rule.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct ClosureExpr(NodeIdx);
+
+impl AstNode for ClosureExpr {
+    fn cast(tree: &SyntaxTree, node: NodeIdx) -> Option<Self> {
+        (tree.kind(node) == NodeKind::ClosureExpr).then_some(Self(node))
+    }
+
+    fn node(self) -> NodeIdx {
+        self.0
+    }
+}
+
+impl ClosureExpr {
+    pub const KIND: NodeKind = NodeKind::ClosureExpr;
+
+    /// The rule's single-valued children in order, for [`fields::assign`].
+    const FIELDS: [fields::FieldSpec; 3] = [
+        fields::FieldSpec {
+            fits: |tree, node| ParamList::cast(tree, node).is_some(),
+            required: true,
+        },
+        fields::FieldSpec {
+            fits: |tree, node| TypeRef::cast(tree, node).is_some(),
+            required: false,
+        },
+        fields::FieldSpec {
+            fits: |tree, node| Expr::cast(tree, node).is_some(),
+            required: true,
+        },
+    ];
+
+    /// The `param_list` child, a `ParamList`, present on a node without an error.
+    pub fn param_list(self, tree: &SyntaxTree) -> Option<ParamList> {
+        fields::assign(tree, self.0, &Self::FIELDS)[0].and_then(|node| ParamList::cast(tree, node))
+    }
+
+    /// The `ret` child, a `TypeRef`, optional.
+    pub fn ret(self, tree: &SyntaxTree) -> Option<TypeRef> {
+        fields::assign(tree, self.0, &Self::FIELDS)[1].and_then(|node| TypeRef::cast(tree, node))
+    }
+
+    /// The `body` child, a `Expr`, present on a node without an error.
+    pub fn body(self, tree: &SyntaxTree) -> Option<Expr> {
+        fields::assign(tree, self.0, &Self::FIELDS)[2].and_then(|node| Expr::cast(tree, node))
     }
 }

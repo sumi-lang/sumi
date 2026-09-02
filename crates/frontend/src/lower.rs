@@ -476,6 +476,7 @@ fn expected_diagnostic(expected: ParseExpected) -> (DiagnosticCode, Box<str>) {
         ParseExpected::Expression => (codes::EXPECTED_EXPRESSION, "expected an expression".into()),
         ParseExpected::Name => (codes::EXPECTED_NAME, "expected a name".into()),
         ParseExpected::Type => (codes::EXPECTED_TYPE, "expected a type".into()),
+        ParseExpected::Body => (codes::EXPECTED_BODY, "expected a body, `{` or `=`".into()),
         ParseExpected::Token(kind) | ParseExpected::Closer { kind, .. } => (
             codes::EXPECTED_TOKEN,
             format!("expected {}", kind.describe()).into(),

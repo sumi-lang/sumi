@@ -1,0 +1,34 @@
+== tree ==
+SourceFile! 0..80
+  FnItem! 0..79
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block! 7..79
+      LetStmt! 13..27
+        Name 17..18 "g"
+        ClosureExpr! 21..27
+          LiteralExpr 26..27 "1"
+      LetStmt! 32..48
+        Name 36..37 "h"
+        ClosureExpr! 40..48
+          Error! 43..44 "x"
+          LiteralExpr 47..48 "2"
+      LetStmt! 53..63
+        Name 57..58 "i"
+        ClosureExpr! 61..63 "fn"
+      LetStmt 68..77
+        Name 72..73 "j"
+        LiteralExpr 76..77 "3"
+
+== evidence ==
+Expected(LParen) at 24
+Expected(LParen) at 43
+Expected(LParen) at 68
+ExpectedBody at 68
+
+== diagnostics ==
+error[syntax/expected-token] 2:16: expected `(`
+error[syntax/expected-token] 3:16: expected `(`
+  at 3:16..3:17 "x": skipped while recovering
+error[syntax/expected-token] 5:5: expected `(`
+error[syntax/expected-body] 5:5: expected a body, `{` or `=`

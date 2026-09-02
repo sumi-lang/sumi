@@ -1,0 +1,84 @@
+== tree ==
+SourceFile 0..272
+  FnItem 0..271
+    Name 3..7 "main"
+    ParamList 7..9 "()"
+    Block 10..271
+      LetStmt 16..42
+        Name 20..26 "double"
+        ClosureExpr 29..42
+          ParamList 31..34
+            Param 32..33
+              Name 32..33 "x"
+          BinaryExpr 37..42
+            NameRef 37..38 "x"
+            LiteralExpr 41..42 "2"
+      LetStmt 47..84
+        Name 51..56 "typed"
+        ClosureExpr 59..84
+          ParamList 61..69
+            Param 62..68
+              Name 62..63 "x"
+              TypeRef 65..68 "int"
+          TypeRef 73..76 "int"
+          BinaryExpr 79..84
+            NameRef 79..80 "x"
+            LiteralExpr 83..84 "2"
+      LetStmt 89..114
+        Name 93..98 "thunk"
+        ClosureExpr 101..114
+          ParamList 103..105 "()"
+          CallExpr 108..114
+            NameRef 108..112 "work"
+            ArgList 112..114 "()"
+      LetStmt 119..152
+        Name 123..128 "adder"
+        ClosureExpr 131..152
+          ParamList 133..136
+            Param 134..135
+              Name 134..135 "x"
+          ClosureExpr 139..152
+            ParamList 141..144
+              Param 142..143
+                Name 142..143 "y"
+            BinaryExpr 147..152
+              NameRef 147..148 "x"
+              NameRef 151..152 "y"
+      CallExpr 157..180
+        NameRef 157..162 "apply"
+        ArgList 162..180
+          ClosureExpr 163..176
+            ParamList 165..168
+              Param 166..167
+                Name 166..167 "x"
+            BinaryExpr 171..176
+              NameRef 171..172 "x"
+              LiteralExpr 175..176 "1"
+          LiteralExpr 178..179 "2"
+      IfExpr 185..221
+        CallExpr 188..210
+          NameRef 188..191 "any"
+          ArgList 191..210
+            NameRef 192..194 "xs"
+            ClosureExpr 196..209
+              ParamList 198..201
+                Param 199..200
+                  Name 199..200 "x"
+              BinaryExpr 204..209
+                NameRef 204..205 "x"
+                LiteralExpr 208..209 "0"
+        Block 211..221
+          ReturnStmt 213..219 "return"
+      CallExpr 226..269
+        NameRef 226..230 "each"
+        ArgList 230..269
+          NameRef 231..236 "names"
+          ClosureExpr 238..268
+            ParamList 240..243
+              Param 241..242
+                Name 241..242 "n"
+            Block 244..268
+              CallExpr 254..262
+                NameRef 254..259 "print"
+                ArgList 259..262
+                  NameRef 260..261 "n"

@@ -9,8 +9,8 @@ SourceFile! 0..21
       NameRef 18..19 "y"
 
 == evidence ==
-Expected(LBrace) at 14
+ExpectedBody at 14
 
 == diagnostics ==
-error[syntax/expected-token] 1:15: expected `{`
+error[syntax/expected-body] 1:15: expected a body, `{` or `=`
   at 1:15..1:16 "x": skipped while recovering
