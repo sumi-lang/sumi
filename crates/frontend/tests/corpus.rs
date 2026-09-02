@@ -1,10 +1,11 @@
-//! The file-based corpus: every `tests/corpus/**/*.sumi` under the
-//! workspace root, run through the frontend and compared with the `.snap`
-//! beside it. A snapshot records the tree, with `!` on every node that
-//! contains an error, the parser's evidence, the diagnostics, the source
-//! after every fix, and the normalized source where it differs. Run with
-//! `UPDATE_EXPECT=1` to rewrite the snapshots, then review the diff; a new
-//! `.sumi` gets its first snapshot the same way.
+//! The file-based corpus: every directory under `tests/corpus` at the
+//! workspace root that holds a `case.sumi`, run through the frontend and
+//! compared with the `expected.snap` beside it. A snapshot records the
+//! tree, with `!` on every node that contains an error, the parser's
+//! evidence, the diagnostics, the source after every fix, and the
+//! normalized source where it differs. Run with `UPDATE_EXPECT=1` to
+//! rewrite the snapshots, then review the diff; a new case gets its first
+//! snapshot the same way.
 
 use std::fmt::Write as _;
 use std::fs;
@@ -22,23 +23,27 @@ use sumi_syntax::{
 use sumi_text::{LineIndex, TextSize};
 
 const UPDATE: &str = "UPDATE_EXPECT";
+const CASE: &str = "case.sumi";
+const EXPECTED: &str = "expected.snap";
 
 fn corpus_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/corpus")
 }
 
-/// Every file under `dir` with `extension`, recursively, in path order.
-fn files(dir: &Path, extension: &str, out: &mut Vec<PathBuf>) {
+/// Every directory under `dir` that holds `file`, recursively, in path
+/// order. A directory that holds one is a case and is not descended into.
+fn directories_holding(dir: &Path, file: &str, out: &mut Vec<PathBuf>) {
     let mut entries: Vec<PathBuf> = fs::read_dir(dir)
         .unwrap_or_else(|error| panic!("cannot read {}: {error}", dir.display()))
         .map(|entry| entry.expect("directory entry").path())
+        .filter(|path| path.is_dir())
         .collect();
     entries.sort();
     for path in entries {
-        if path.is_dir() {
-            files(&path, extension, out);
-        } else if path.extension().is_some_and(|found| found == extension) {
+        if path.join(file).is_file() {
             out.push(path);
+        } else {
+            directories_holding(&path, file, out);
         }
     }
 }
@@ -47,7 +52,7 @@ fn files(dir: &Path, extension: &str, out: &mut Vec<PathBuf>) {
 fn every_case_matches_its_snapshot() {
     let root = corpus_dir();
     let mut cases = Vec::new();
-    files(&root, "sumi", &mut cases);
+    directories_holding(&root, CASE, &mut cases);
     assert!(!cases.is_empty(), "no cases under {}", root.display());
     let update = std::env::var_os(UPDATE).is_some();
     let relative = |path: &Path| {
@@ -59,9 +64,9 @@ fn every_case_matches_its_snapshot() {
 
     let mut failures = Vec::new();
     for case in &cases {
-        let source = fs::read_to_string(case).expect("a case is UTF-8");
+        let source = fs::read_to_string(case.join(CASE)).expect("a case is UTF-8");
         let actual = snapshot(&source);
-        let snap = case.with_extension("snap");
+        let snap = case.join(EXPECTED);
         let expected = fs::read_to_string(&snap).ok();
         if expected.as_deref() == Some(actual.as_str()) {
             continue;
@@ -77,13 +82,13 @@ fn every_case_matches_its_snapshot() {
         ));
     }
 
-    let mut snaps = Vec::new();
-    files(&root, "snap", &mut snaps);
-    for snap in snaps {
-        if !snap.with_extension("sumi").exists() {
+    let mut orphans = Vec::new();
+    directories_holding(&root, EXPECTED, &mut orphans);
+    for orphan in orphans {
+        if !orphan.join(CASE).is_file() {
             failures.push(format!(
                 "{}: a snapshot with no case beside it",
-                relative(&snap)
+                relative(&orphan)
             ));
         }
     }

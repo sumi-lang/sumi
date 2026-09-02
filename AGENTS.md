@@ -13,7 +13,7 @@ You're in the core repository for Sumi, a novel statically typed general-purpose
 
 ## Tests
 
-- `tests/corpus/` at the workspace root is the file-based corpus: each `.sumi` case has a `.snap` beside it recording the tree, the parser's evidence, the diagnostics, the fixed source, and the normalized source. The runner is `crates/frontend/tests/corpus.rs`. To add a case, write the `.sumi` and run `UPDATE_EXPECT=1 cargo test -p sumi-frontend --test corpus`; review every snapshot change as part of the diff.
+- `tests/corpus/` at the workspace root is the file-based corpus: each case is a directory holding `case.sumi` and, beside it, `expected.snap` recording the tree, the parser's evidence, the diagnostics, the fixed source, and the normalized source. The runner is `crates/frontend/tests/corpus.rs`. To add a case, write its `case.sumi` and run `UPDATE_EXPECT=1 cargo test -p sumi-frontend --test corpus`; review every snapshot change as part of the diff.
 - Behavior that a snapshot cannot express — invariants, API contracts, properties — stays in the crates' own tests.
 
 ## Code Style
