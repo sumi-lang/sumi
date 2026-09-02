@@ -41,7 +41,7 @@ fn workspace_root() -> PathBuf {
 }
 
 /// The files derived from the grammar, as `(path, content)`.
-fn generated(grammar: &grammar::Grammar) -> Result<[(&'static str, String); 3], String> {
+fn generated(grammar: &grammar::Grammar) -> Result<[(&'static str, String); 4], String> {
     Ok([
         (
             "crates/lexer/src/generated/mod.rs",
@@ -50,6 +50,10 @@ fn generated(grammar: &grammar::Grammar) -> Result<[(&'static str, String); 3], 
         (
             "crates/syntax/src/generated/mod.rs",
             codegen::rustfmt(&codegen::syntax_kind(grammar))?,
+        ),
+        (
+            "crates/syntax/src/generated/ast.rs",
+            codegen::rustfmt(&codegen::ast(grammar))?,
         ),
         (
             "docs/reference/generated/grammar.md",
@@ -104,6 +108,7 @@ mod tests {
         let grammar = grammar::Grammar::parse(&source).unwrap();
         assert!(codegen::lexer_kind(&grammar).contains("pub enum SyntaxKind"));
         assert!(codegen::syntax_kind(&grammar).contains("pub enum NodeKind"));
+        assert!(codegen::ast(&grammar).contains("pub trait AstNode"));
         assert!(codegen::reference(&grammar).contains("## Syntax nodes"));
     }
 }

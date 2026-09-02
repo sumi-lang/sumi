@@ -150,36 +150,38 @@ the parser's spacing rules keep the third unambiguous.
 The shape of valid syntax, in ungrammar notation: `'text'` is a token by
 its text, a capitalized name is a node kind, a token kind, or a category,
 `?` is optional, `*` repeats, and `|` separates alternatives. A rule that
-only lists other rules is a category, not a node kind. The tree is
+only lists other rules is a category, not a node kind. A `label:` before a
+child names the accessor the typed views give it; an unlabeled child is
+named after its kind. The tree is
 error-tolerant: any part of a node may be missing, and an `Error`
 node covering tokens the parser could not parse may appear anywhere.
 
 ```
-SourceFile = FnItem*
-FnItem = 'fn' Name ParamList ('->' TypeRef)? Block
-ParamList = '(' (Param (',' Param)* ','?)? ')'
+SourceFile = items:FnItem*
+FnItem = 'fn' Name ParamList ('->' ret:TypeRef)? body:Block
+ParamList = '(' params:(Param (',' Param)* ','?)? ')'
 Param = Name ':' TypeRef
 // A declaring occurrence of a name: what an item, a parameter, or a
 // binding introduces. A use is a NameRef.
 Name = Ident
 // A type reference: a name, until types grow more shapes.
 TypeRef = Ident
-Block = '{' Stmt* '}'
+Block = '{' stmts:Stmt* '}'
 Stmt = LetStmt | AssignStmt | DiscardStmt | ReturnStmt | Expr
-LetStmt = 'let' 'mut'? Name (':' TypeRef)? '=' Expr
-AssignStmt = Expr '=' Expr
-DiscardStmt = '_' '=' Expr
-ReturnStmt = 'return' Expr?
+LetStmt = 'let' 'mut'? Name (':' TypeRef)? '=' initializer:Expr
+AssignStmt = target:Expr '=' value:Expr
+DiscardStmt = '_' '=' value:Expr
+ReturnStmt = 'return' value:Expr?
 Expr = NameRef | LiteralExpr | PrefixExpr | BinaryExpr | ParenExpr | CallExpr | IfExpr | Block
 // A use of a name: a reference to what a Name declared.
 NameRef = Ident
 LiteralExpr = IntLiteral | FloatLiteral | StringLiteral | RawStringLiteral | CharLiteral | 'true' | 'false'
-PrefixExpr = PrefixOperator Expr
-BinaryExpr = Expr BinaryOperator Expr
-ParenExpr = '(' Expr ')'
-CallExpr = Expr ArgList
-ArgList = '(' (Expr (',' Expr)* ','?)? ')'
-IfExpr = 'if' Expr Block ('else' (IfExpr | Block))?
+PrefixExpr = PrefixOperator operand:Expr
+BinaryExpr = lhs:Expr BinaryOperator rhs:Expr
+ParenExpr = '(' inner:Expr ')'
+CallExpr = callee:Expr ArgList
+ArgList = '(' args:(Expr (',' Expr)* ','?)? ')'
+IfExpr = 'if' condition:Expr then_branch:Block ('else' else_branch:(IfExpr | Block))?
 
 // Defined by the operator tables.
 PrefixOperator = '-' | '!'

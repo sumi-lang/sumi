@@ -162,6 +162,19 @@ impl SyntaxTree {
         })
     }
 
+    /// The direct children of node `index` in source order. The tree keeps
+    /// children last first, so this collects them: the typed views read
+    /// through it, while a walk over whole subtrees should take
+    /// [`children`](Self::children) and its stack order instead.
+    pub fn children_in_order(
+        &self,
+        index: NodeIdx,
+    ) -> impl DoubleEndedIterator<Item = NodeIdx> + ExactSizeIterator + use<> {
+        let mut children: Vec<NodeIdx> = self.children(index).collect();
+        children.reverse();
+        children.into_iter()
+    }
+
     /// The innermost node covering raw token `token`, which must lie in the
     /// file. A token attached to no node — trivia between two children —
     /// resolves to the nearest node whose range spans it, at worst the root.

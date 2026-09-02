@@ -4,7 +4,8 @@ use criterion::{
 use sumi_format::{normalize, reprint};
 use sumi_frontend::parse_source;
 use sumi_lexer::lex;
-use sumi_syntax::{MAX_DEPTH, ParseEvidence, ParserInput, RawIdx, parse};
+use sumi_syntax::ast::{AstNode, Block, ElseBranch, Expr, SourceFile, Stmt};
+use sumi_syntax::{MAX_DEPTH, NodeKind, ParseEvidence, ParserInput, RawIdx, SyntaxTree, parse};
 use sumi_test::corpus;
 use sumi_text::{LineIndex, TextSize};
 
@@ -316,6 +317,104 @@ criterion_group!(
     bench_frontend,
     bench_adversarial,
     bench_queries,
-    bench_format
+    bench_format,
+    bench_ast,
 );
 criterion_main!(benches);
+
+fn bench_ast(c: &mut Criterion) {
+    let source = corpus::generate(64 * KIB, MEDIUM_SEED);
+    let lexed = lex(&source).expect("benchmark corpus fits in Sumi's source coordinate space");
+    let input = ParserInput::new(&lexed);
+    let parsed = parse(&input);
+    let tree = parsed.tree();
+    // Both walks count the names; the views must reach every one.
+    assert_eq!(walk_views(tree), walk_nodes(tree));
+
+    let mut group = c.benchmark_group("ast/medium-valid");
+    group.throughput(Throughput::Elements(tree.len() as u64));
+    group.bench_function("walk-views", |b| b.iter(|| walk_views(black_box(tree))));
+    group.bench_function("walk-nodes", |b| b.iter(|| walk_nodes(black_box(tree))));
+    group.finish();
+}
+
+/// Every name and name reference reached through the typed views: items,
+/// signatures, bodies, statements, and expressions, each by its accessors.
+fn walk_views(tree: &SyntaxTree) -> usize {
+    let file = SourceFile::cast(tree, tree.root()).expect("the root is a source file");
+    let mut names = 0;
+    for item in file.items(tree) {
+        names += usize::from(item.name(tree).is_some());
+        if let Some(params) = item.param_list(tree) {
+            for param in params.params(tree) {
+                names += usize::from(param.name(tree).is_some());
+                black_box(param.type_ref(tree));
+            }
+        }
+        black_box(item.ret(tree));
+        if let Some(body) = item.body(tree) {
+            names += walk_block(tree, body);
+        }
+    }
+    names
+}
+
+fn walk_block(tree: &SyntaxTree, block: Block) -> usize {
+    let expr = |expr: Option<Expr>| expr.map_or(0, |expr| walk_expr(tree, expr));
+    block
+        .stmts(tree)
+        .map(|stmt| match stmt {
+            Stmt::LetStmt(stmt) => {
+                usize::from(stmt.name(tree).is_some()) + expr(stmt.initializer(tree))
+            }
+            Stmt::AssignStmt(stmt) => expr(stmt.target(tree)) + expr(stmt.value(tree)),
+            Stmt::DiscardStmt(stmt) => expr(stmt.value(tree)),
+            Stmt::ReturnStmt(stmt) => expr(stmt.value(tree)),
+            Stmt::Expr(stmt) => walk_expr(tree, stmt),
+        })
+        .sum()
+}
+
+fn walk_expr(tree: &SyntaxTree, expr: Expr) -> usize {
+    let inner = |expr: Option<Expr>| expr.map_or(0, |expr| walk_expr(tree, expr));
+    match expr {
+        Expr::NameRef(_) => 1,
+        Expr::LiteralExpr(_) => 0,
+        Expr::PrefixExpr(prefix) => inner(prefix.operand(tree)),
+        Expr::BinaryExpr(binary) => inner(binary.lhs(tree)) + inner(binary.rhs(tree)),
+        Expr::ParenExpr(paren) => inner(paren.inner(tree)),
+        Expr::CallExpr(call) => {
+            inner(call.callee(tree))
+                + call.arg_list(tree).map_or(0, |args| {
+                    args.args(tree).map(|arg| walk_expr(tree, arg)).sum()
+                })
+        }
+        Expr::IfExpr(branch) => {
+            inner(branch.condition(tree))
+                + branch
+                    .then_branch(tree)
+                    .map_or(0, |then| walk_block(tree, then))
+                + match branch.else_branch(tree) {
+                    Some(ElseBranch::IfExpr(nested)) => walk_expr(tree, Expr::IfExpr(nested)),
+                    Some(ElseBranch::Block(block)) => walk_block(tree, block),
+                    None => 0,
+                }
+        }
+        Expr::Block(block) => walk_block(tree, block),
+    }
+}
+
+/// The same count from a raw walk of the tree: every node by kind, with
+/// the children found by extent, on one shared stack.
+fn walk_nodes(tree: &SyntaxTree) -> usize {
+    let mut names = 0;
+    let mut pending = vec![tree.root()];
+    while let Some(node) = pending.pop() {
+        names += usize::from(matches!(
+            tree.kind(node),
+            NodeKind::Name | NodeKind::NameRef
+        ));
+        pending.extend(tree.children(node));
+    }
+    names
+}
