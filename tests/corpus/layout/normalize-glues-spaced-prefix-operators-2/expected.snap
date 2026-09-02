@@ -1,0 +1,24 @@
+== tree ==
+SourceFile 0..27
+  FnItem 0..27
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block 7..27
+      LetStmt 9..25
+        Name 13..14 "x"
+        PrefixExpr 17..25
+          NameRef 21..25 "flag"
+
+== evidence ==
+SpacedPrefixOperator at 17
+
+== diagnostics ==
+error[syntax/spaced-prefix-operator] 1:18..1:19 "!": prefix operator must be adjacent to its operand
+  fix (safe): remove space after prefix operator
+    1:19..1:22 " \t " -> ""
+
+== fixed ==
+fn f() { let x = !flag }
+
+== normalized ==
+fn f() { let x = !flag }

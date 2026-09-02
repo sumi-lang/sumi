@@ -1,0 +1,32 @@
+== tree ==
+SourceFile 0..23
+  FnItem 0..23
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block 7..23
+      LetStmt 9..21
+        Name 13..14 "x"
+        BinaryExpr 17..21
+          NameRef 17..18 "a"
+          NameRef 20..21 "b"
+
+== evidence ==
+UnspacedBinaryOperator at 18
+TrailingOperator at 18
+
+== diagnostics ==
+error[syntax/unspaced-binary-operator] 1:19..1:20 "+": binary operator must have spaces on both sides
+  fix (safe): space binary operator
+    1:19 -> " "
+error[syntax/trailing-operator] 1:19..1:20 "+": binary operator must begin the continuation line
+  fix (safe): move operator to the continuation line
+    1:19..1:20 "+" -> ""
+    2:1 -> "+ "
+
+== fixed ==
+fn f() { let x = a 
++ b }
+
+== normalized ==
+fn f() { let x = a 
++ b }

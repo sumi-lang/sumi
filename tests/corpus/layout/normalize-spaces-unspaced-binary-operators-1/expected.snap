@@ -1,0 +1,24 @@
+== tree ==
+SourceFile 0..15
+  FnItem 0..15
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block 7..15
+      BinaryExpr 9..13
+        NameRef 9..10 "a"
+        NameRef 12..13 "b"
+
+== evidence ==
+UnspacedBinaryOperator at 10
+
+== diagnostics ==
+error[syntax/unspaced-binary-operator] 1:11..1:13 "==": binary operator must have spaces on both sides
+  fix (safe): space binary operator
+    1:11 -> " "
+    1:13 -> " "
+
+== fixed ==
+fn f() { a == b }
+
+== normalized ==
+fn f() { a == b }
