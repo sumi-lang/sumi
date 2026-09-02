@@ -1,8 +1,7 @@
 //! Positional tree queries: covering chains and the on-demand parent table.
 
 use sumi_lexer::lex;
-use sumi_syntax::NodeKind::{self, *};
-use sumi_syntax::{Marker, NodeIdx, Parse, ParserInput, RawIdx, SyntaxTree, parse};
+use sumi_syntax::{NodeIdx, ParserInput, RawIdx, SyntaxTree, parse};
 
 /// Every node whose token range contains `token`, by scanning the whole
 /// tree: the exhaustive reference `covering_chain` must match. Covering
@@ -72,54 +71,4 @@ fn covering_matches_the_reference_under_recovery() {
 #[test]
 fn trivia_only_files_answer_the_root() {
     check_queries("  // just a comment\n\n");
-}
-
-fn node(parent: &mut Marker<'_, '_>, kind: NodeKind, body: impl FnOnce(&mut Marker<'_, '_>)) {
-    let mut child = parent.start();
-    body(&mut child);
-    child.complete(kind);
-}
-
-/// Build `let x = 1` by hand and probe the boundaries the parsed goldens
-/// cannot pin: interior trivia answers the innermost node spanning it.
-#[test]
-fn trivia_between_children_belongs_to_the_spanning_node() {
-    let source = "let x = 1 // c";
-    let lexed = lex(source).expect("test sources fit in u32");
-    let input = ParserInput::new(&lexed);
-    let built = Parse::build(&input, |root| {
-        node(root, LetStmt, |stmt| {
-            stmt.token(); // let
-            node(stmt, NameRef, |name| name.token());
-            stmt.token(); // =
-            node(stmt, LiteralExpr, |literal| literal.token());
-        });
-    });
-    let tree = built.tree();
-    // Nodes complete in postorder: NameRef 0, LiteralExpr 1, LetStmt 2,
-    // the root 3. Tokens: `let` ` ` `x` ` ` `=` ` ` `1` ` ` `// c`.
-    let chain = |token| {
-        tree.covering_chain(RawIdx::new(token))
-            .map(NodeIdx::to_usize)
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(chain(0), [2, 3]); // `let` — the statement
-    assert_eq!(chain(1), [2, 3]); // the space inside it too
-    assert_eq!(chain(2), [0, 2, 3]); // `x` — out from the name
-    assert_eq!(chain(6), [1, 2, 3]); // `1` — out from the literal
-    assert_eq!(chain(7), [3]); // trailing trivia — the root only
-    assert_eq!(chain(8), [3]);
-    assert_eq!(tree.covering(RawIdx::new(6)).to_usize(), 1);
-}
-
-#[test]
-#[should_panic(expected = "token must be within the file")]
-fn covering_a_token_past_the_file_panics() {
-    let source = "x";
-    let lexed = lex(source).expect("test sources fit in u32");
-    let input = ParserInput::new(&lexed);
-    let built = Parse::build(&input, |root| {
-        node(root, NameRef, |name| name.token());
-    });
-    built.tree().covering(RawIdx::new(1));
 }

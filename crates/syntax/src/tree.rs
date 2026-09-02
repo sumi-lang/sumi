@@ -304,7 +304,10 @@ impl Parse {
     /// Build a tree over the significant tokens of `input`, in source
     /// order: open the root, run `body` inside it, and close it. `body`
     /// must attach every significant token.
-    pub fn build<'a>(input: &'a ParserInput, body: impl FnOnce(&mut Marker<'_, 'a>)) -> Self {
+    pub(crate) fn build<'a>(
+        input: &'a ParserInput,
+        body: impl FnOnce(&mut Marker<'_, 'a>),
+    ) -> Self {
         let mut builder = Builder {
             input,
             nodes: Vec::new(),
@@ -493,7 +496,7 @@ pub(crate) struct RecoveryHandle(usize);
 /// });
 /// ```
 #[must_use = "a started node must be completed"]
-pub struct Marker<'p, 'a> {
+pub(crate) struct Marker<'p, 'a> {
     builder: &'p mut Builder<'a>,
     /// Where the node's subtree begins among the completed nodes: every
     /// node completed since is inside it.
@@ -527,7 +530,7 @@ pub struct Marker<'p, 'a> {
 
 impl<'a> Marker<'_, 'a> {
     /// Attach the next significant token to this node.
-    pub fn token(&mut self) {
+    pub(crate) fn token(&mut self) {
         assert!(
             self.builder.position.to_usize() < self.builder.slots.len(),
             "token past the input horizon"
@@ -574,7 +577,7 @@ impl<'a> Marker<'_, 'a> {
     /// Open a child at the next token; its kind is chosen when it
     /// completes.
     #[inline]
-    pub fn start(&mut self) -> Marker<'_, 'a> {
+    pub(crate) fn start(&mut self) -> Marker<'_, 'a> {
         let first = NodeIdx::new(to_u32(self.builder.nodes.len()));
         let start = self.builder.position;
         let recoveries = self.builder.recoveries;
@@ -598,7 +601,7 @@ impl<'a> Marker<'_, 'a> {
     /// directly inside this node — and everything attached since; its kind
     /// is chosen when it completes.
     #[inline]
-    pub fn precede(&mut self, completed: CompletedMarker) -> Marker<'_, 'a> {
+    pub(crate) fn precede(&mut self, completed: CompletedMarker) -> Marker<'_, 'a> {
         assert_eq!(
             completed.parent, self.id,
             "a node is preceded only from the node that contained it"
@@ -621,7 +624,7 @@ impl<'a> Marker<'_, 'a> {
 
     /// Close the node as `kind`; it must cover at least one token.
     #[inline]
-    pub fn complete(mut self, kind: NodeKind) -> CompletedMarker {
+    pub(crate) fn complete(mut self, kind: NodeKind) -> CompletedMarker {
         let builder = &mut *self.builder;
         assert!(
             builder.position > self.start,
@@ -1041,7 +1044,7 @@ impl Drop for Marker<'_, '_> {
 
 /// A completed node, held so a wrapper can be opened around it from the
 /// node that contained it. Plain data: holding one borrows nothing.
-pub struct CompletedMarker {
+pub(crate) struct CompletedMarker {
     /// Where the node's subtree begins among the completed nodes.
     first: NodeIdx,
     /// The significant position the node opened at.
@@ -1092,6 +1095,9 @@ fn to_u32(count: usize) -> u32 {
 fn node_idx(index: usize) -> NodeIdx {
     NodeIdx::new(index as u32)
 }
+
+#[cfg(test)]
+mod builder_tests;
 
 #[cfg(test)]
 mod tests {
