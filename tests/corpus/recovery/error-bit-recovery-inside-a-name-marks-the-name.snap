@@ -1,0 +1,12 @@
+== tree ==
+SourceFile! 0..9
+  FnItem! 0..9
+    Name! 3..4 "_"
+    ParamList 4..6 "()"
+    Block 7..9 "{}"
+
+== evidence ==
+ExpectedName at 3
+
+== diagnostics ==
+error[syntax/expected-name] 1:4..1:5 "_": expected a name

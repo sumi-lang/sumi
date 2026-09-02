@@ -1,0 +1,30 @@
+== tree ==
+SourceFile 0..20
+  FnItem 0..20
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block 7..20
+      BinaryExpr 11..18
+        NameRef 11..12 "a"
+        NameRef 17..18 "b"
+
+== evidence ==
+TrailingOperator at 13
+
+== diagnostics ==
+error[syntax/trailing-operator] 2:5..2:6 "+": binary operator must begin the continuation line
+  fix (safe): move operator to the continuation line
+    2:5..2:6 "+" -> ""
+    3:3 -> "+ "
+
+== fixed ==
+fn f() {
+  a 
+  + b
+}
+
+== normalized ==
+fn f() {
+  a 
+  + b
+}

@@ -1,0 +1,10 @@
+== tree ==
+SourceFile! 0..13
+  Error! 0..13 "a()\n-> int {}"
+
+== evidence ==
+ExpectedItem at 0
+
+== diagnostics ==
+error[syntax/expected-item] 1:1..1:2 "a": expected a function item
+  at 1:1..2:10 "a()\n-> int {}": skipped while recovering

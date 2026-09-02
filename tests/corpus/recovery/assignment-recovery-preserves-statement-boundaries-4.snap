@@ -1,0 +1,18 @@
+== tree ==
+SourceFile! 0..22
+  FnItem! 0..22
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block! 7..22
+      AssignStmt 9..14
+        NameRef 9..10 "x"
+        LiteralExpr 13..14 "1"
+      AssignStmt 15..20
+        NameRef 15..16 "y"
+        LiteralExpr 19..20 "2"
+
+== evidence ==
+ExpectedBoundary at 15
+
+== diagnostics ==
+error[syntax/expected-boundary] 1:16: expected a line break between statements

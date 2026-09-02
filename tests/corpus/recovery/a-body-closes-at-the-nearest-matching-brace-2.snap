@@ -1,0 +1,14 @@
+== tree ==
+SourceFile! 0..14
+  FnItem 0..12
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block 7..12
+      NameRef 9..10 "a"
+  Error! 13..14 "}"
+
+== evidence ==
+ExpectedItem at 13
+
+== diagnostics ==
+error[syntax/expected-item] 1:14..1:15 "}": expected a function item

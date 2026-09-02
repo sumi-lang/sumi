@@ -1,0 +1,18 @@
+== tree ==
+SourceFile! 0..26
+  FnItem! 0..26
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block! 7..26
+      LetStmt! 9..12 "let"
+      Error! 13..20 "{ a = 1"
+      NameRef 23..24 "b"
+
+== evidence ==
+ExpectedName at 13
+Expected(Eq) at 13
+
+== diagnostics ==
+error[syntax/expected-name] 1:14: expected a name
+error[syntax/expected-token] 1:14: expected `=`
+  at 1:14..1:21 "{ a = 1": skipped while recovering

@@ -1,0 +1,14 @@
+== tree ==
+SourceFile! 0..15
+  Error! 0..5 "x = 1"
+  FnItem 6..15
+    Name 9..10 "f"
+    ParamList 10..12 "()"
+    Block 13..15 "{}"
+
+== evidence ==
+ExpectedItem at 0
+
+== diagnostics ==
+error[syntax/expected-item] 1:1..1:2 "x": expected a function item
+  at 1:1..1:6 "x = 1": skipped while recovering

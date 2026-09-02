@@ -1,0 +1,19 @@
+== tree ==
+SourceFile! 0..20
+  FnItem! 0..20
+    Name 3..4 "f"
+    ParamList! 4..14
+      Param! 5..7
+        Name 5..6 "a"
+      Error! 8..13 "{ int"
+    Block 15..20
+      NameRef 17..18 "x"
+
+== evidence ==
+ExpectedType at 8
+ExpectedName at 8
+
+== diagnostics ==
+error[syntax/expected-type] 1:9: expected a type
+error[syntax/expected-name] 1:9..1:10 "{": expected a name
+  at 1:9..1:14 "{ int": skipped while recovering

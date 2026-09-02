@@ -1,0 +1,4 @@
+fn f() {
+  let x = 1
+  let mut y: int = x
+}

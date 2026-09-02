@@ -1,0 +1,15 @@
+== tree ==
+SourceFile! 0..19
+  FnItem! 0..19
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block! 7..19
+      ParenExpr! 9..17
+        Block! 10..16
+          Error! 12..14 "fn"
+
+== evidence ==
+ExpectedStatement at 12
+
+== diagnostics ==
+error[syntax/expected-statement] 1:13..1:15 "fn": expected a statement

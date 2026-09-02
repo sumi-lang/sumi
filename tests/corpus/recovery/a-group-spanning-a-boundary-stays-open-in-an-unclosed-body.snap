@@ -1,0 +1,18 @@
+== tree ==
+SourceFile! 0..23
+  FnItem! 0..20
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block! 7..20
+      Error! 9..16 ": { { x"
+      NameRef 17..18 "y"
+  Error! 21..22 "}"
+
+== evidence ==
+ExpectedStatement at 9
+ExpectedItem at 21
+
+== diagnostics ==
+error[syntax/expected-statement] 2:1..2:2 ":": expected a statement
+  at 2:1..2:8 ": { { x": skipped while recovering
+error[syntax/expected-item] 3:5..3:6 "}": expected a function item

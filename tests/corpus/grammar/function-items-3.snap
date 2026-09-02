@@ -1,0 +1,9 @@
+== tree ==
+SourceFile 0..16
+  FnItem 0..16
+    Name 3..4 "f"
+    ParamList 4..13
+      Param 5..11
+        Name 5..6 "a"
+        TypeRef 8..11 "int"
+    Block 14..16 "{}"

@@ -1,0 +1,16 @@
+== tree ==
+SourceFile! 0..23
+  FnItem! 0..23
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block! 7..23
+      NameRef 9..10 "a"
+      Error! 11..17 "&{ & b"
+      NameRef 20..21 "c"
+
+== evidence ==
+ExpectedStatement at 11
+
+== diagnostics ==
+error[syntax/expected-statement] 1:12..1:13 "&": expected a statement
+  at 1:12..1:18 "&{ & b": skipped while recovering

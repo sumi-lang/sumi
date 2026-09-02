@@ -1,0 +1,16 @@
+== tree ==
+SourceFile! 0..25
+  FnItem! 0..25
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block! 7..25
+      DiscardStmt! 9..19
+        Error! 13..14 "}"
+        LiteralExpr 15..19 "r\"a\""
+      NameRef 22..23 "x"
+
+== evidence ==
+ExpectedExpression at 13
+
+== diagnostics ==
+error[syntax/expected-expression] 1:14..1:15 "}": expected an expression

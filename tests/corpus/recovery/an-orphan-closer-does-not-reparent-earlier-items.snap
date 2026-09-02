@@ -1,0 +1,20 @@
+== tree ==
+SourceFile! 0..21
+  FnItem 0..12
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block 7..12
+      NameRef 9..10 "a"
+  FnItem! 13..19
+    Name 13..14 "g"
+    ParamList 14..16 "()"
+    Block 17..19 "{}"
+  Error! 20..21 "}"
+
+== evidence ==
+Expected(FnKw) at 13
+ExpectedItem at 20
+
+== diagnostics ==
+error[syntax/expected-token] 2:1: expected `fn`
+error[syntax/expected-item] 3:1..3:2 "}": expected a function item

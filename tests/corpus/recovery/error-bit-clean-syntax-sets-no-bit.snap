@@ -1,0 +1,16 @@
+== tree ==
+SourceFile 0..48
+  FnItem 0..47
+    Name 3..4 "f"
+    ParamList 4..12
+      Param 5..11
+        Name 5..6 "a"
+        TypeRef 8..11 "Int"
+    TypeRef 16..19 "Int"
+    Block 20..47
+      LetStmt 26..39
+        Name 30..31 "x"
+        BinaryExpr 34..39
+          NameRef 34..35 "a"
+          LiteralExpr 38..39 "1"
+      NameRef 44..45 "x"

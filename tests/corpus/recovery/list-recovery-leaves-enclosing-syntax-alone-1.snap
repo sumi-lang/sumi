@@ -1,0 +1,21 @@
+== tree ==
+SourceFile! 0..13
+  FnItem! 0..13
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block! 7..13
+      CallExpr! 9..11
+        NameRef 9..10 "g"
+        ArgList! 10..11 "("
+
+== evidence ==
+Expected(RParen) at 12
+
+== diagnostics ==
+error[syntax/expected-token] 1:13: expected `)`
+  at 1:11..1:12 "(": opening delimiter is here
+  fix (safe): insert `)`
+    1:12 -> ")"
+
+== fixed ==
+fn f() { g() }

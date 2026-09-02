@@ -1,0 +1,14 @@
+== tree ==
+SourceFile! 0..11
+  FnItem! 0..11
+    Name 3..4 "a"
+    Error! 4..5 "{"
+    ParamList 6..8 "()"
+    Block 9..11 "{}"
+
+== evidence ==
+Expected(LParen) at 4
+
+== diagnostics ==
+error[syntax/expected-token] 1:5: expected `(`
+  at 1:5..1:6 "{": skipped while recovering

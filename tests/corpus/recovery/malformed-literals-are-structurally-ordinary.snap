@@ -1,0 +1,10 @@
+== tree ==
+SourceFile! 0..2
+  Error! 0..2 "1e"
+
+== evidence ==
+ExpectedItem at 0
+
+== diagnostics ==
+error[syntax/expected-item] 1:1..1:3 "1e": expected a function item
+error[syntax/missing-exponent] 1:2..1:3 "e": exponent has no digits

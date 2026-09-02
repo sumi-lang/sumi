@@ -1,0 +1,25 @@
+== tree ==
+SourceFile 0..10
+  FnItem 0..10
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block 7..10 "{\n}"
+
+== evidence ==
+BlockOnNewLine at 7
+
+== diagnostics ==
+error[syntax/block-on-new-line] 2:1..2:2 "{": block must open on the line of its owner
+  fix (safe): move block to its owner's line
+    1:7 -> " {"
+    2:1..2:2 "{" -> ""
+
+== fixed ==
+fn f() {
+
+}
+
+== normalized ==
+fn f() {
+
+}

@@ -1,0 +1,14 @@
+== tree ==
+SourceFile! 0..10
+  FnItem! 0..10
+    Name 3..4 "f"
+    ParamList! 4..7
+      Param! 5..6
+        Name 5..6 "a"
+    Block 8..10 "{}"
+
+== evidence ==
+Expected(Colon) at 6
+
+== diagnostics ==
+error[syntax/expected-token] 1:7: expected `:`

@@ -1,0 +1,17 @@
+== tree ==
+SourceFile! 0..18
+  FnItem! 0..8
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Error! 7..8 "x"
+  FnItem 9..18
+    Name 12..13 "g"
+    ParamList 13..15 "()"
+    Block 16..18 "{}"
+
+== evidence ==
+Expected(LBrace) at 7
+
+== diagnostics ==
+error[syntax/expected-token] 1:8: expected `{`
+  at 1:8..1:9 "x": skipped while recovering

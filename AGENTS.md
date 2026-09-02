@@ -11,6 +11,11 @@ You're in the core repository for Sumi, a novel statically typed general-purpose
 
 - `sumi.grammar` at the workspace root is the one declaration of the token and node vocabularies, the token classes, bracket pairs, and operators. To add or change syntax, edit it — never the generated files it lists — and run `cargo xtask codegen`; CI runs `cargo xtask codegen --check`.
 
+## Tests
+
+- `tests/corpus/` at the workspace root is the file-based corpus: each `.sumi` case has a `.snap` beside it recording the tree, the parser's evidence, the diagnostics, the fixed source, and the normalized source. The runner is `crates/frontend/tests/corpus.rs`. To add a case, write the `.sumi` and run `UPDATE_EXPECT=1 cargo test -p sumi-frontend --test corpus`; review every snapshot change as part of the diff.
+- Behavior that a snapshot cannot express — invariants, API contracts, properties — stays in the crates' own tests.
+
 ## Code Style
 
 - Follow YAGNI: don't implement functions which aren't necessary (also helps keep diffs reviewable)

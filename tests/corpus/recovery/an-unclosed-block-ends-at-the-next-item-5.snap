@@ -1,0 +1,14 @@
+== tree ==
+SourceFile! 0..22
+  FnItem! 0..22
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block! 7..22
+      Error! 9..20 ": fn g() {}"
+
+== evidence ==
+ExpectedStatement at 9
+
+== diagnostics ==
+error[syntax/expected-statement] 1:10..1:11 ":": expected a statement
+  at 1:10..1:21 ": fn g() {}": skipped while recovering

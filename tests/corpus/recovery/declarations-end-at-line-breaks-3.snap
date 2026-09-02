@@ -1,0 +1,17 @@
+== tree ==
+SourceFile! 0..20
+  FnItem! 0..20
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block! 7..20
+      DiscardStmt! 11..12 "_"
+      Error! 15..18 "= v"
+
+== evidence ==
+Expected(Eq) at 15
+ExpectedStatement at 15
+
+== diagnostics ==
+error[syntax/expected-token] 3:3: expected `=`
+error[syntax/expected-statement] 3:3..3:4 "=": expected a statement
+  at 3:3..3:6 "= v": skipped while recovering

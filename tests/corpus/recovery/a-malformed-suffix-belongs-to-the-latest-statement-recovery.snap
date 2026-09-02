@@ -1,0 +1,18 @@
+== tree ==
+SourceFile! 0..18
+  FnItem! 0..18
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block! 7..18
+      LetStmt! 9..14
+        Name! 13..14 "_"
+      Error! 15..16 "x"
+
+== evidence ==
+ExpectedName at 13
+Expected(Eq) at 15
+
+== diagnostics ==
+error[syntax/expected-name] 1:14..1:15 "_": expected a name
+error[syntax/expected-token] 1:16: expected `=`
+  at 1:16..1:17 "x": skipped while recovering

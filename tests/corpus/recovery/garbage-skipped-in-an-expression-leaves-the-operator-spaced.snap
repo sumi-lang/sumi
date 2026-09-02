@@ -1,0 +1,16 @@
+== tree ==
+SourceFile! 0..17
+  FnItem! 0..17
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block! 7..17
+      BinaryExpr! 9..15
+        NameRef 9..10 "a"
+        Error! 11..12 ":"
+        NameRef 14..15 "b"
+
+== evidence ==
+Unexpected at 11
+
+== diagnostics ==
+error[syntax/unexpected-syntax] 1:12..1:13 ":": unexpected syntax in expression
