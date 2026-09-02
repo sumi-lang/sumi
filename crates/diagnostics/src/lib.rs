@@ -1,10 +1,12 @@
 //! Renderer-independent diagnostics for Sumi.
 //!
-//! Diagnostics are source-local: a frontend or later compiler phase owns the
-//! source snapshot and assigns stable codes, wording, and labels. Renderers
-//! only project this canonical representation for their audience.
+//! A frontend or later compiler phase owns the source snapshots and assigns
+//! stable codes, wording, labels, notes, and fixes. Every label names its
+//! file, so a diagnostic produced from one file can point into another —
+//! "defined here" — and renderers only project this canonical
+//! representation for their audience.
 
-use sumi_text::{TextEdit, TextRange, TextSize};
+use sumi_text::{FileId, Span, TextEdit, TextRange, TextSize};
 
 /// A namespace for related diagnostic codes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -60,15 +62,33 @@ const fn valid_component(value: &str) -> bool {
     true
 }
 
+/// How much a diagnostic matters: whether it rejects the program, and how
+/// a renderer or an editor presents it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Severity {
+    /// The program is rejected.
     Error,
+    /// The program is accepted, but something in it is probably wrong.
     Warning,
+    /// Something worth knowing that is neither: an allowed but notable
+    /// construct, or the outcome of an analysis.
+    Info,
+    /// A suggestion an editor shows unobtrusively, such as an unused name
+    /// it greys out.
+    Hint,
 }
 
-/// Where a diagnostic label sits in its source snapshot.
+/// Where a diagnostic label sits: a file, and within it either source text
+/// or a byte boundary where syntax is absent.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Location {
+pub struct Location {
+    pub file: FileId,
+    pub place: Place,
+}
+
+/// The part of a file a label points at.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Place {
     /// Source text relevant to the diagnostic. The range may be empty when
     /// the producer reported an empty source range, such as an empty
     /// character literal's contents.
@@ -78,17 +98,38 @@ pub enum Location {
 }
 
 impl Location {
+    /// A label over the text of `span`.
+    pub const fn range(span: Span) -> Self {
+        Self {
+            file: span.file(),
+            place: Place::Range(span.range()),
+        }
+    }
+
+    /// A label at a byte boundary of `file` where syntax is absent.
+    pub const fn point(file: FileId, offset: TextSize) -> Self {
+        Self {
+            file,
+            place: Place::Point(offset),
+        }
+    }
+
+    /// The bytes the label covers; a point covers none.
+    pub const fn span(self) -> Span {
+        Span::new(self.file, TextRange::new(self.start(), self.end()))
+    }
+
     pub const fn start(self) -> TextSize {
-        match self {
-            Self::Range(range) => range.start(),
-            Self::Point(point) => point,
+        match self.place {
+            Place::Range(range) => range.start(),
+            Place::Point(point) => point,
         }
     }
 
     pub const fn end(self) -> TextSize {
-        match self {
-            Self::Range(range) => range.end(),
-            Self::Point(point) => point,
+        match self.place {
+            Place::Range(range) => range.end(),
+            Place::Point(point) => point,
         }
     }
 }
@@ -101,12 +142,25 @@ pub struct Label {
     pub message: Option<Box<str>>,
 }
 
+/// Whether a fix may be applied without anyone reading it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Applicability {
+    /// The edit is mechanically right: it keeps the program's meaning, or
+    /// restores the one the diagnostic says was intended. A tool may apply
+    /// it on its own.
+    Safe,
+    /// The edit is a plausible guess — a name that was probably meant, an
+    /// operand that would type-check — and needs a person to confirm it.
+    MaybeIncorrect,
+}
+
 /// One source action offered for a diagnostic. Every edit is relative to
 /// the same source snapshot and applies atomically. Edits must not overlap;
 /// their order is retained for insertions at the same byte boundary.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Fix {
     pub message: Box<str>,
+    pub applicability: Applicability,
     pub edits: Box<[TextEdit]>,
 }
 
@@ -119,7 +173,10 @@ pub struct Diagnostic {
     pub message: Box<str>,
     pub primary: Label,
     pub secondary: Box<[Label]>,
-    /// A source action safe to apply to the diagnostic's source snapshot.
+    /// Explanations that belong to no source location — what the rule is
+    /// and why, or what to do instead — rendered after the labels.
+    pub notes: Box<[Box<str>]>,
+    /// A source action for the diagnostic's source snapshot.
     pub fix: Option<Fix>,
 }
 
@@ -151,12 +208,15 @@ mod tests {
 
     #[test]
     fn empty_ranges_remain_distinct_from_missing_syntax() {
+        let file = FileId::new(7);
         let position = TextSize::new(3);
-        let range = Location::Range(TextRange::new(position, position));
-        let point = Location::Point(position);
+        let range = Location::range(Span::new(file, TextRange::new(position, position)));
+        let point = Location::point(file, position);
 
         assert_ne!(range, point);
         assert_eq!((range.start(), range.end()), (position, position));
         assert_eq!((point.start(), point.end()), (position, position));
+        assert_eq!(range.span(), point.span());
+        assert_eq!(point.span().file(), file);
     }
 }

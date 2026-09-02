@@ -1,10 +1,16 @@
 use proptest::prelude::*;
-use sumi_frontend::{DiagnosticCode, Location, ParsedSource, Severity, codes, parse_source};
+use sumi_frontend::{
+    DiagnosticCode, FileId, Location, ParsedSource, Place, Severity, codes, parse_source,
+};
 use sumi_syntax::{ParseAnchor, ParseEvidence, RawIdx, SyntaxKind};
 use sumi_text::TextSize;
 
+/// The file every test source stands for; the frontend copies it into every
+/// label rather than deriving it from anything.
+const FILE: FileId = FileId::new(3);
+
 fn parsed(source: &str) -> ParsedSource {
-    parse_source(source.into()).expect("test sources fit in u32")
+    parse_source(FILE, source.into()).expect("test sources fit in u32")
 }
 
 fn diagnostic_codes(front: &ParsedSource) -> Vec<DiagnosticCode> {
@@ -16,9 +22,10 @@ fn diagnostic_codes(front: &ParsedSource) -> Vec<DiagnosticCode> {
 }
 
 fn location_text(front: &ParsedSource, location: Location) -> &str {
-    match location {
-        Location::Range(range) => range.text(front.source()),
-        Location::Point(point) => &front.source()[point.to_usize()..point.to_usize()],
+    assert_eq!(location.file, front.file());
+    match location.place {
+        Place::Range(range) => range.text(front.source()),
+        Place::Point(point) => &front.source()[point.to_usize()..point.to_usize()],
     }
 }
 
@@ -50,8 +57,9 @@ fn raw_boundary(front: &ParsedSource, raw: RawIdx) -> TextSize {
 #[test]
 fn parsed_source_owns_every_syntactic_product() {
     let source = String::from("fn f() {}\n").into_boxed_str();
-    let front = parse_source(source).expect("test source fits in u32");
+    let front = parse_source(FILE, source).expect("test source fits in u32");
 
+    assert_eq!(front.file(), FILE);
     assert_eq!(front.source(), "fn f() {}\n");
     assert_eq!(front.lexed().source_len().to_usize(), front.source().len());
     let tree = front.parse().tree();
@@ -80,7 +88,7 @@ fn empty_producer_ranges_do_not_become_missing_syntax() {
         panic!("an empty character literal has one diagnostic")
     };
     assert_eq!(diagnostic.code, codes::EMPTY_CHAR_LITERAL);
-    let Location::Range(range) = diagnostic.primary.location else {
+    let Place::Range(range) = diagnostic.primary.location.place else {
         panic!("empty literal content is still a producer range")
     };
     assert_eq!(range.start(), range.end());
@@ -98,7 +106,7 @@ fn missing_syntax_points_at_the_parser_cursor() {
     assert_eq!(diagnostic.message.as_ref(), "expected `fn`");
     assert_eq!(
         diagnostic.primary.location,
-        Location::Point(TextSize::new(source.find('f').unwrap() as u32))
+        Location::point(FILE, TextSize::new(source.find('f').unwrap() as u32))
     );
     assert!(diagnostic.fix.is_none());
 
@@ -111,7 +119,7 @@ fn missing_syntax_points_at_the_parser_cursor() {
     assert_eq!(diagnostic.message.as_ref(), "expected `}`");
     assert_eq!(
         diagnostic.primary.location,
-        Location::Point(TextSize::new(source.len() as u32))
+        Location::point(FILE, TextSize::new(source.len() as u32))
     );
     let [opener] = &*diagnostic.secondary else {
         panic!("the missing closer must retain its opener")
@@ -430,7 +438,7 @@ fn source() -> impl Strategy<Value = String> {
 proptest! {
     #[test]
     fn every_canonical_location_is_valid(source in source()) {
-        let front = parse_source(source.into_boxed_str()).expect("generated sources fit in u32");
+        let front = parse_source(FILE, source.into_boxed_str()).expect("generated sources fit in u32");
         let source = front.source();
         let mut previous = None;
         for diagnostic in front.diagnostics() {
@@ -445,12 +453,13 @@ proptest! {
             previous = Some(key);
 
             for label in std::iter::once(&diagnostic.primary).chain(&*diagnostic.secondary) {
+                prop_assert_eq!(label.location.file, FILE);
                 let start = label.location.start().to_usize();
                 let end = label.location.end().to_usize();
                 prop_assert!(start <= end && end <= source.len());
                 prop_assert!(source.is_char_boundary(start));
                 prop_assert!(source.is_char_boundary(end));
-                if let Location::Point(point) = label.location {
+                if let Place::Point(point) = label.location.place {
                     prop_assert_eq!(point.to_usize(), start);
                     prop_assert_eq!(start, end);
                 }
