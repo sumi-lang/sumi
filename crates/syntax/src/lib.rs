@@ -25,4 +25,4 @@ pub use parser::{
     ParseViolation, ParseViolationKind, RawGap, RawTokenRange, parse,
 };
 pub use sumi_lexer::RawIdx;
-pub use tree::{CompletedMarker, Marker, Parse, SyntaxTree, raw_boundary};
+pub use tree::{CompletedMarker, Marker, NodePtr, Parse, SyntaxTree, raw_boundary};
