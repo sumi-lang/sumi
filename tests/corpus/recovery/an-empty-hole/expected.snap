@@ -1,0 +1,14 @@
+== tree ==
+SourceFile! 0..93
+  FnItem! 59..92
+    Name 62..63 "f"
+    ParamList 63..65 "()"
+    TypeRef 69..72 "str"
+    InterpolatedString! 75..92
+      Hole! 83..85 "{}"
+
+== evidence ==
+ExpectedExpression at 84
+
+== diagnostics ==
+error[syntax/expected-expression] 2:26: expected an expression

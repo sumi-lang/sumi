@@ -57,6 +57,11 @@ continues the previous line. Operators take their classes from the
 | `BlockStringLiteral` | a multi-line string literal | `expr` `end` | A multi-line string literal: `"""`, the content lines, and `"""` on its own line, whose indentation every content line shares and sheds. |
 | `RawBlockStringLiteral` | a raw multi-line string literal | `expr` `end` | A multi-line string literal with nothing escaped: `r"""` to `"""`. |
 | `CharLiteral` | a character literal | `expr` `end` |  |
+| `StringStart` | a string literal | `expr` | The text of a string literal with holes, from its opening quote to its first hole: `"…` or `"""…`. A `{` in a `"…"` or `"""` literal opens a hole, an expression on that line whose value the string takes in its place; `\{` is a brace, and a raw literal has no holes. |
+| `StringMiddle` | the text of a string literal |  | The text of a string literal between two of its holes. |
+| `StringEnd` | the end of a string literal | `end` | The text of a string literal after its last hole, closing quote included: `…"` or `…"""`. |
+| `HoleOpen` | `{` |  | The `{` opening a hole in a string literal. A hole ends with its line: one still open at the line break is an error, and the literal's text goes on from there in a `"""` literal or ends with the line in a `"…"` one. |
+| `HoleClose` | `}` |  | The `}` closing a hole: the first at brace depth zero inside it. A `}` in a literal's text is a brace. |
 
 ### Punctuation
 
@@ -110,6 +115,7 @@ it; every other pair suspends it between its brackets.
 
 - `(` … `)`
 - `{` … `}` — encloses statements
+- `HoleOpen` … `HoleClose`
 
 ## Operators
 
@@ -151,9 +157,9 @@ end one, the token after it does not continue one, and no parenthesis the
 stream closes is open around it. These classes decide the first two;
 the parser's spacing rules keep the third unambiguous.
 
-- **Can begin an expression:** `Ident`, `false`, `fn`, `if`, `true`, `IntLiteral`, `FloatLiteral`, `StringLiteral`, `RawStringLiteral`, `BlockStringLiteral`, `RawBlockStringLiteral`, `CharLiteral`, `(`, `{`, `!`, `-`.
+- **Can begin an expression:** `Ident`, `false`, `fn`, `if`, `true`, `IntLiteral`, `FloatLiteral`, `StringLiteral`, `RawStringLiteral`, `BlockStringLiteral`, `RawBlockStringLiteral`, `CharLiteral`, `StringStart`, `(`, `{`, `!`, `-`.
 - **Begin a statement without being an expression:** `_`, `let`, `return`, `Error`.
-- **A statement can end after:** `Ident`, `_`, `false`, `return`, `true`, `IntLiteral`, `FloatLiteral`, `StringLiteral`, `RawStringLiteral`, `BlockStringLiteral`, `RawBlockStringLiteral`, `CharLiteral`, `)`, `}`, `Error`.
+- **A statement can end after:** `Ident`, `_`, `false`, `return`, `true`, `IntLiteral`, `FloatLiteral`, `StringLiteral`, `RawStringLiteral`, `BlockStringLiteral`, `RawBlockStringLiteral`, `CharLiteral`, `StringEnd`, `)`, `}`, `Error`.
 - **Begin a top-level item:** `fn`.
 - **Continue the previous line:** `else`, and any binary operator leading the line — a compound one when glued into shape, and `-` only when spaced from what follows, since glued it opens an operand.
 
@@ -177,6 +183,14 @@ Text that spans lines is a multi-line literal, `"""` to `"""`, or
   next.
 - A `"""` inside the content escapes one of its quotes; a raw multi-line
   literal cannot contain one.
+
+A `{` in a `"…"` or `"""` literal opens a hole: an expression whose
+value the string takes in its place, as in `"{count} items"`. Any
+expression may stand in a hole, a string with holes of its own included,
+but a hole ends with its line: one still open at the line break is an
+error, and the text goes on from there in a multi-line literal and ends
+with the line in a one-line one. `\{` and `\}` are braces, a `}`
+outside a hole is one too, and a raw literal has no holes.
 
 ## Syntax nodes
 
@@ -215,7 +229,7 @@ LetStmt = 'let' 'mut'? Name (':' TypeRef)? '=' initializer:Expr
 AssignStmt = target:Expr '=' value:Expr
 DiscardStmt = '_' '=' value:Expr
 ReturnStmt = 'return' value:Expr?
-Expr = NameRef | LiteralExpr | PrefixExpr | BinaryExpr | ParenExpr | CallExpr | IfExpr | ClosureExpr | Block
+Expr = NameRef | LiteralExpr | PrefixExpr | BinaryExpr | ParenExpr | CallExpr | IfExpr | ClosureExpr | InterpolatedString | Block
 // A use of a name: a reference to what a Name declared.
 NameRef = Ident
 LiteralExpr = IntLiteral | FloatLiteral | StringLiteral | RawStringLiteral | BlockStringLiteral | RawBlockStringLiteral | CharLiteral | 'true' | 'false'
@@ -229,6 +243,11 @@ IfExpr = 'if' condition:Expr then_branch:Block ('else' else_branch:(IfExpr | Blo
 // `fn(x: int) -> int { … }`, with an item's parameter list, return type,
 // and body forms.
 ClosureExpr = 'fn' ParamList ('->' ret:TypeRef)? '='? body:Expr
+// A string literal with holes: text around `{expr}` holes, each an
+// expression on its line whose value the string takes in its place.
+InterpolatedString = StringStart (Hole StringMiddle?)* StringEnd
+// One hole of a string literal: `{`, an expression, and `}`, on one line.
+Hole = HoleOpen value:Expr HoleClose
 
 // Defined by the operator tables.
 PrefixOperator = '-' | '!'

@@ -1,0 +1,8 @@
+// A `"""` literal takes holes like a `"…"` one; its layout is judged over
+// its text, with the holes' code left out.
+fn card(width: int, color: str) -> str = """
+    .card \{
+        width: {width}px;
+        color: {color};
+    }
+    """

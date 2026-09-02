@@ -4,3 +4,4 @@
 #
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
+cc 4cdc9c08952a900cecf8f9fe2c5c4f499787ef34e960b79fb5fd1242d95e9d4e # shrinks to source = "\"\"\"\n{\"\"\"\n"

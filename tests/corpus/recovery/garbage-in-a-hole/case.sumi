@@ -1,0 +1,9 @@
+// What stands between a hole's expression and its `}` is garbage, skipped
+// up to the `}`. A list left open inside a hole ends at the hole's end,
+// and a closer with no opener in the hole is garbage in it: neither
+// reaches the string around the hole.
+fn f(a: int, b: int) {
+    print("{a b}")
+    print("{f(a}")
+    print("{ ) a }")
+}

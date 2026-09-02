@@ -1,0 +1,6 @@
+// In a `"""` literal, the text goes on from the line break that leaves a
+// hole open, and the holes after it are its own.
+fn f(x: int, y: int) -> str = """
+    first {x
+    then {y}
+    """

@@ -1,0 +1,9 @@
+// A hole ends with its line. A quote inside it that its line never closes
+// is the literal's closer, so a `}` left out costs the hole and nothing
+// after the string; a hole the line ends leaves the next line alone.
+fn f(total: float) {
+    let s = "total: {fixed(total, 2)" + suffix
+    let t = "a {b
+    let u = 1
+    print(s, t, u)
+}

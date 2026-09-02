@@ -537,3 +537,251 @@ fn partition_smoke() {
         "\u{feff}fn main() {\r\n\tlet s = r#\"raw\"#; // trailing\n\t'c' \"str\" 2.5e-3 0xFF\n}\n";
     dump(source);
 }
+
+#[test]
+fn holes_split_a_string_into_parts() {
+    check(
+        r#""a {x} b""#,
+        &[
+            r#"String 0..3 "\"a ""#,
+            r#"Punct 3..4 "{""#,
+            r#"Ident 4..5 "x""#,
+            r#"Punct 5..6 "}""#,
+            r#"String 6..9 " b\"""#,
+        ],
+    );
+    // Adjacent holes have no text between them, and an empty hole none
+    // inside.
+    check(
+        r#""{a}{b}""#,
+        &[
+            r#"String 0..1 "\"""#,
+            r#"Punct 1..2 "{""#,
+            r#"Ident 2..3 "a""#,
+            r#"Punct 3..4 "}""#,
+            r#"Punct 4..5 "{""#,
+            r#"Ident 5..6 "b""#,
+            r#"Punct 6..7 "}""#,
+            r#"String 7..8 "\"""#,
+        ],
+    );
+    check(
+        r#""{}""#,
+        &[
+            r#"String 0..1 "\"""#,
+            r#"Punct 1..2 "{""#,
+            r#"Punct 2..3 "}""#,
+            r#"String 3..4 "\"""#,
+        ],
+    );
+    // Braces in a hole's code are the code's, and a string inside it is a
+    // string.
+    check(
+        r#""{a {b} c}""#,
+        &[
+            r#"String 0..1 "\"""#,
+            r#"Punct 1..2 "{""#,
+            r#"Ident 2..3 "a""#,
+            r#"HorizontalSpace 3..4 " ""#,
+            r#"Punct 4..5 "{""#,
+            r#"Ident 5..6 "b""#,
+            r#"Punct 6..7 "}""#,
+            r#"HorizontalSpace 7..8 " ""#,
+            r#"Ident 8..9 "c""#,
+            r#"Punct 9..10 "}""#,
+            r#"String 10..11 "\"""#,
+        ],
+    );
+    check(
+        r#""{ "x" }""#,
+        &[
+            r#"String 0..1 "\"""#,
+            r#"Punct 1..2 "{""#,
+            r#"HorizontalSpace 2..3 " ""#,
+            r#"String 3..6 "\"x\"""#,
+            r#"HorizontalSpace 6..7 " ""#,
+            r#"Punct 7..8 "}""#,
+            r#"String 8..9 "\"""#,
+        ],
+    );
+    // An escaped brace and the braces of a `\u{…}` escape open nothing,
+    // and a raw literal has no holes.
+    check(
+        r#""\{x\}""#,
+        &[r#"String 0..7 "\"\\{x\\}\"" TokenFlags(HAS_ESCAPE)"#],
+    );
+    check(
+        r#""\u{41}""#,
+        &[r#"String 0..8 "\"\\u{41}\"" TokenFlags(HAS_ESCAPE)"#],
+    );
+    check(r#"r"{x}""#, &[r#"RawString 0..6 "r\"{x}\"""#]);
+}
+
+#[test]
+fn a_hole_ends_with_its_line() {
+    check(
+        "\"a {b\nc",
+        &[
+            r#"String 0..3 "\"a ""#,
+            r#"Punct 3..4 "{""#,
+            r#"Ident 4..5 "b""#,
+            r#"Newline 5..6 "\n""#,
+            r#"Ident 6..7 "c""#,
+        ],
+    );
+    assert_eq!(
+        lex("\"a {b\nc").unwrap().errors(),
+        &[error(1, 3, 4, LexErrorKind::UnclosedHole)],
+    );
+    // A quote inside the hole that its line never closes is the literal's
+    // closer, and the rest of the line lexes outside it.
+    check(
+        "\"a {b\" + c",
+        &[
+            r#"String 0..3 "\"a ""#,
+            r#"Punct 3..4 "{""#,
+            r#"Ident 4..5 "b""#,
+            r#"String 5..6 "\"""#,
+            r#"HorizontalSpace 6..7 " ""#,
+            r#"Punct 7..8 "+""#,
+            r#"HorizontalSpace 8..9 " ""#,
+            r#"Ident 9..10 "c""#,
+        ],
+    );
+    assert_eq!(
+        lex("\"a {b\" + c").unwrap().errors(),
+        &[error(1, 3, 4, LexErrorKind::UnclosedHole)],
+    );
+    // A comment in a hole runs to the end of the line, the hole's end
+    // included.
+    check(
+        "\"{a // c}\"\nb",
+        &[
+            r#"String 0..1 "\"""#,
+            r#"Punct 1..2 "{""#,
+            r#"Ident 2..3 "a""#,
+            r#"HorizontalSpace 3..4 " ""#,
+            r#"LineComment 4..10 "// c}\"""#,
+            r#"Newline 10..11 "\n""#,
+            r#"Ident 11..12 "b""#,
+        ],
+    );
+    assert_eq!(
+        lex("\"{a // c}\"\nb").unwrap().errors(),
+        &[error(1, 1, 2, LexErrorKind::UnclosedHole)],
+    );
+    // The text after a hole may run out with the line, which leaves the
+    // literal unterminated, reported at its start.
+    check(
+        "\"{a}\n",
+        &[
+            r#"String 0..1 "\"""#,
+            r#"Punct 1..2 "{""#,
+            r#"Ident 2..3 "a""#,
+            r#"Punct 3..4 "}""#,
+            r#"Newline 4..5 "\n""#,
+        ],
+    );
+    assert_eq!(
+        lex("\"{a}\n").unwrap().errors(),
+        &[error(0, 0, 1, LexErrorKind::UnterminatedString)],
+    );
+}
+
+#[test]
+fn block_strings_take_holes() {
+    check(
+        "\"\"\"\n  {x}\n  \"\"\"",
+        &[
+            r#"BlockString 0..6 "\"\"\"\n  ""#,
+            r#"Punct 6..7 "{""#,
+            r#"Ident 7..8 "x""#,
+            r#"Punct 8..9 "}""#,
+            r#"BlockString 9..15 "\n  \"\"\"""#,
+        ],
+    );
+    // The text goes on from the line break that leaves a hole open.
+    check(
+        "\"\"\"\n  {x\n  y\n  \"\"\"",
+        &[
+            r#"BlockString 0..6 "\"\"\"\n  ""#,
+            r#"Punct 6..7 "{""#,
+            r#"Ident 7..8 "x""#,
+            r#"BlockString 8..18 "\n  y\n  \"\"\"""#,
+        ],
+    );
+    assert_eq!(
+        lex("\"\"\"\n  {x\n  y\n  \"\"\"").unwrap().errors(),
+        &[error(1, 6, 7, LexErrorKind::UnclosedHole)],
+    );
+    // No hole holds a `"""` literal: one inside a hole closes the literal.
+    check(
+        "\"\"\"\n {x\"\"\"",
+        &[
+            r#"BlockString 0..5 "\"\"\"\n ""#,
+            r#"Punct 5..6 "{""#,
+            r#"Ident 6..7 "x""#,
+            r#"BlockString 7..10 "\"\"\"""#,
+        ],
+    );
+    assert_eq!(
+        lex("\"\"\"\n {x\"\"\"").unwrap().errors(),
+        &[
+            error(1, 5, 6, LexErrorKind::UnclosedHole),
+            error(3, 7, 10, LexErrorKind::BlockStringCloserContent),
+        ],
+    );
+}
+
+#[test]
+fn a_string_in_a_hole_may_have_holes() {
+    // The inner literal's quote, which its line never closes, closes the
+    // inner literal and leaves its hole open; the outer hole then closes,
+    // and the outer literal runs out with the line.
+    check(
+        "\"{ \"{a\" }\n",
+        &[
+            r#"String 0..1 "\"""#,
+            r#"Punct 1..2 "{""#,
+            r#"HorizontalSpace 2..3 " ""#,
+            r#"String 3..4 "\"""#,
+            r#"Punct 4..5 "{""#,
+            r#"Ident 5..6 "a""#,
+            r#"String 6..7 "\"""#,
+            r#"HorizontalSpace 7..8 " ""#,
+            r#"Punct 8..9 "}""#,
+            r#"Newline 9..10 "\n""#,
+        ],
+    );
+    assert_eq!(
+        lex("\"{ \"{a\" }\n").unwrap().errors(),
+        &[
+            error(0, 0, 1, LexErrorKind::UnterminatedString),
+            error(4, 4, 5, LexErrorKind::UnclosedHole),
+        ],
+    );
+}
+
+#[test]
+fn a_string_in_a_hole_never_closes_on_the_first_quote_of_a_block_delimiter() {
+    // No hole holds a `"""` literal, so the quote that would close a
+    // literal inside the hole on the first quote of one is the outer
+    // literal's closer instead, and the `"""` opens a literal outside it.
+    check(
+        "\"a {b\" + \"\"\"\n  c\n  \"\"\"",
+        &[
+            r#"String 0..3 "\"a ""#,
+            r#"Punct 3..4 "{""#,
+            r#"Ident 4..5 "b""#,
+            r#"String 5..6 "\"""#,
+            r#"HorizontalSpace 6..7 " ""#,
+            r#"Punct 7..8 "+""#,
+            r#"HorizontalSpace 8..9 " ""#,
+            r#"BlockString 9..22 "\"\"\"\n  c\n  \"\"\"""#,
+        ],
+    );
+    assert_eq!(
+        lex("\"a {b\" + \"\"\"\n  c\n  \"\"\"").unwrap().errors(),
+        &[error(1, 3, 4, LexErrorKind::UnclosedHole)],
+    );
+}

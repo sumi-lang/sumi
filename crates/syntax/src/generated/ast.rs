@@ -443,6 +443,7 @@ pub enum Expr {
     CallExpr(CallExpr),
     IfExpr(IfExpr),
     ClosureExpr(ClosureExpr),
+    InterpolatedString(InterpolatedString),
     Block(Block),
 }
 
@@ -457,6 +458,9 @@ impl AstNode for Expr {
             NodeKind::CallExpr => Some(Self::CallExpr(CallExpr(node))),
             NodeKind::IfExpr => Some(Self::IfExpr(IfExpr(node))),
             NodeKind::ClosureExpr => Some(Self::ClosureExpr(ClosureExpr(node))),
+            NodeKind::InterpolatedString => {
+                Some(Self::InterpolatedString(InterpolatedString(node)))
+            }
             NodeKind::Block => Some(Self::Block(Block(node))),
             _ => None,
         }
@@ -472,6 +476,7 @@ impl AstNode for Expr {
             Self::CallExpr(inner) => inner.node(),
             Self::IfExpr(inner) => inner.node(),
             Self::ClosureExpr(inner) => inner.node(),
+            Self::InterpolatedString(inner) => inner.node(),
             Self::Block(inner) => inner.node(),
         }
     }
@@ -799,5 +804,62 @@ impl ClosureExpr {
     /// The `body` child, a `Expr`, present on a node without an error.
     pub fn body(self, tree: &SyntaxTree) -> Option<Expr> {
         fields::assign(tree, self.0, &Self::FIELDS)[2].and_then(|node| Expr::cast(tree, node))
+    }
+}
+
+/// A string literal with holes: text around `{expr}` holes, each an
+/// expression on its line whose value the string takes in its place.
+/// The `InterpolatedString = StringStart (Hole StringMiddle?)* StringEnd` rule.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct InterpolatedString(NodeIdx);
+
+impl AstNode for InterpolatedString {
+    fn cast(tree: &SyntaxTree, node: NodeIdx) -> Option<Self> {
+        (tree.kind(node) == NodeKind::InterpolatedString).then_some(Self(node))
+    }
+
+    fn node(self) -> NodeIdx {
+        self.0
+    }
+}
+
+impl InterpolatedString {
+    pub const KIND: NodeKind = NodeKind::InterpolatedString;
+
+    /// The `holes` children, each a `Hole`, in source order: collected once
+    /// per call, since the tree stores children last first.
+    pub fn holes<'t>(self, tree: &'t SyntaxTree) -> impl Iterator<Item = Hole> + 't {
+        tree.children_in_order(self.0)
+            .filter_map(move |child| Hole::cast(tree, child))
+    }
+}
+
+/// One hole of a string literal: `{`, an expression, and `}`, on one line.
+/// The `Hole = HoleOpen value:Expr HoleClose` rule.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Hole(NodeIdx);
+
+impl AstNode for Hole {
+    fn cast(tree: &SyntaxTree, node: NodeIdx) -> Option<Self> {
+        (tree.kind(node) == NodeKind::Hole).then_some(Self(node))
+    }
+
+    fn node(self) -> NodeIdx {
+        self.0
+    }
+}
+
+impl Hole {
+    pub const KIND: NodeKind = NodeKind::Hole;
+
+    /// The rule's single-valued children in order, for [`fields::assign`].
+    const FIELDS: [fields::FieldSpec; 1] = [fields::FieldSpec {
+        fits: |tree, node| Expr::cast(tree, node).is_some(),
+        required: true,
+    }];
+
+    /// The `value` child, a `Expr`, present on a node without an error.
+    pub fn value(self, tree: &SyntaxTree) -> Option<Expr> {
+        fields::assign(tree, self.0, &Self::FIELDS)[0].and_then(|node| Expr::cast(tree, node))
     }
 }

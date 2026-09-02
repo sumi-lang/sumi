@@ -86,6 +86,14 @@ const LOOSE_FRAGMENTS: &[&str] = &[
     "r\"\"\"",
     "\u{feff}",
     "\u{1}",
+    // The parts of a string literal with holes, and the braces that open
+    // none.
+    "\"{",
+    "}\"",
+    "\"{x}\"",
+    "\"\"\"\n  {",
+    "\\{",
+    "\\u{41}",
 ];
 
 fn fragment() -> impl Strategy<Value = String> {

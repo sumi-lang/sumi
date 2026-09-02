@@ -47,7 +47,9 @@
 use sumi_lexer::{LexedFile, RawIdx};
 use sumi_text::{TextRange, TextSize};
 
-use crate::generated::{BRACKET_PAIRS, NodeKind, SyntaxKind, encloses_statements, opener};
+use crate::generated::{
+    BRACKET_PAIRS, NodeKind, SyntaxKind, encloses_statements, opener, pair_index,
+};
 use crate::index::{NodeIdx, SigIdx};
 use crate::input::{ParserInput, Slot};
 use crate::parser::{
@@ -843,6 +845,20 @@ impl<'a> Marker<'_, 'a> {
         self.open[pair] = Some(self.start);
     }
 
+    /// Hide the bracket constructs open around this node from what is
+    /// parsed inside it, its own excepted. A hole's code is confined to the
+    /// hole: no closer inside it belongs to a construct outside, so none is
+    /// left for one, and no recovery inside reaches past the hole's end.
+    pub(crate) fn seal(&mut self) {
+        let own = self.builder.input.get(self.start).and_then(pair_index);
+        for (pair, open) in self.open.iter_mut().enumerate() {
+            if Some(pair) != own {
+                *open = None;
+            }
+        }
+        self.enclosing_closer = None;
+    }
+
     /// Whether the stream closes the innermost bracket construct entered
     /// around this node.
     pub(crate) fn closed(&self) -> bool {
@@ -1075,13 +1091,6 @@ fn to_u32(count: usize) -> u32 {
 #[inline]
 fn node_idx(index: usize) -> NodeIdx {
     NodeIdx::new(index as u32)
-}
-
-/// The index in [`BRACKET_PAIRS`] of the pair `kind` opens or closes.
-fn pair_index(kind: SyntaxKind) -> Option<usize> {
-    BRACKET_PAIRS
-        .iter()
-        .position(|&(opener, closer)| kind == opener || kind == closer)
 }
 
 #[cfg(test)]

@@ -1,0 +1,7 @@
+// A string inside a hole may have holes of its own. A quote inside a hole
+// that its line never closes is read as the closer of the string around
+// the hole, so a `}` left out of the inner string's hole ends the inner
+// string at the quote meant for it, on a line that ends there; on a line
+// with a later quote, the inner string runs to that one instead.
+fn f(a: int) -> str = "{ "{a" }
+fn g(a: int) -> str = "{ "{a" } tail"

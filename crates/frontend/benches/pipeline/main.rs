@@ -72,6 +72,14 @@ fn bench_pipeline_phases(c: &mut Criterion) {
         ),
         false,
     );
+    // The literal forms the pinned corpus lacks, multi-line literals and
+    // holes, where the lexer keeps state between tokens.
+    bench_phases(
+        c,
+        "medium-literals",
+        &corpus::generate_with_literals(64 * KIB, MEDIUM_SEED),
+        true,
+    );
 }
 
 fn bench_phases(c: &mut Criterion, corpus_name: &str, source: &str, valid: bool) {
@@ -407,6 +415,9 @@ fn walk_expr(tree: &SyntaxTree, expr: Expr) -> usize {
                     .map(|param| usize::from(param.name(tree).is_some()))
                     .sum()
             }) + inner(closure.body(tree))
+        }
+        Expr::InterpolatedString(string) => {
+            string.holes(tree).map(|hole| inner(hole.value(tree))).sum()
         }
         Expr::Block(block) => walk_block(tree, block),
     }

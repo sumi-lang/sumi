@@ -22,11 +22,11 @@ pub fn lex(source: &str) -> Result<LexedFile, SourceTooLarge> {
         });
     };
 
-    let mut tokens = Vec::new();
+    let mut tokens: Vec<StoredToken> = Vec::new();
     let mut errors = Vec::new();
     let mut position = 0;
-
-    for token in Lexer::new(source) {
+    let mut lexer = Lexer::new(source);
+    while let Some(token) = lexer.next_token() {
         let start = position;
         position += token.len.to_u32();
 
@@ -34,14 +34,19 @@ pub fn lex(source: &str) -> Result<LexedFile, SourceTooLarge> {
             RawKind::Number => {
                 token.flags.contains(TokenFlags::MALFORMED_NUMBER) || cfg!(debug_assertions)
             }
+            // A literal with holes that its text never closes is reported
+            // late, at its start, as a whole `"""` literal is.
             RawKind::String => {
-                token.flags.contains(TokenFlags::UNTERMINATED)
+                (token.kind == SyntaxKind::StringLiteral
+                    && token.flags.contains(TokenFlags::UNTERMINATED))
                     || token.flags.contains(TokenFlags::HAS_ESCAPE)
             }
             RawKind::RawString => token.flags.contains(TokenFlags::UNTERMINATED),
             // Layout is judged on every multi-line literal, since the
-            // scanner only finds its ends.
-            RawKind::BlockString | RawKind::RawBlockString => true,
+            // scanner only finds its ends: on the token of a whole one, and
+            // over the parts of one with holes once every token is in.
+            RawKind::BlockString => token.kind == SyntaxKind::BlockStringLiteral,
+            RawKind::RawBlockString => true,
             RawKind::Char | RawKind::Unknown => true,
             RawKind::Newline => token.flags.contains(TokenFlags::LONE_CR),
             RawKind::Punct => token.kind == SyntaxKind::Error,
@@ -68,8 +73,33 @@ pub fn lex(source: &str) -> Result<LexedFile, SourceTooLarge> {
 
     debug_assert_eq!(position, source_len);
 
+    if lexer.block_holes() {
+        validate_block_literals(source, &tokens, &mut errors);
+    }
+
+    let holes = lexer.holes();
+    for late in lexer.into_late_errors() {
+        let index = late.token as usize;
+        let start = tokens[index].start;
+        let end = tokens
+            .get(index + 1)
+            .map_or(source_len, |next| next.start.to_u32());
+        let end = late
+            .prefix
+            .map_or(end, |prefix| start.to_u32() + prefix as u32);
+        errors.push(LexError {
+            token: RawIdx::new(late.token),
+            range: TextRange::new(start, TextSize::new(end)),
+            kind: late.kind,
+        });
+    }
+    // Late errors arrive after every token's own; the order within a token
+    // is kept.
+    errors.sort_by_key(|error| error.token);
+
     Ok(LexedFile {
         source_len: TextSize::new(source_len),
+        holes,
         tokens: tokens.into_boxed_slice(),
         errors: errors.into_boxed_slice(),
     })
@@ -101,7 +131,9 @@ fn collect_errors(
         return;
     }
     let primary = match token.raw {
-        RawKind::String if unterminated => Some(LexErrorKind::UnterminatedString),
+        RawKind::String if unterminated && token.kind == SyntaxKind::StringLiteral => {
+            Some(LexErrorKind::UnterminatedString)
+        }
         RawKind::RawString if unterminated => Some(LexErrorKind::UnterminatedRawString),
         RawKind::Char if unterminated => Some(LexErrorKind::UnterminatedChar),
         RawKind::Newline if token.flags.contains(TokenFlags::LONE_CR) => {
@@ -142,9 +174,23 @@ fn collect_errors(
         SyntaxKind::StringLiteral if token.flags.contains(TokenFlags::HAS_ESCAPE) => {
             literal::validate_string(text, &mut error);
         }
-        SyntaxKind::BlockStringLiteral => literal::validate_block_string(text, false, &mut error),
+        // The text of a `"…"` literal with holes, in parts: the quote of the
+        // first and the last, when the last has one, is not text.
+        SyntaxKind::StringStart if token.flags.contains(TokenFlags::HAS_ESCAPE) => {
+            literal::validate_string_body(text, 1..text.len(), &mut error);
+        }
+        SyntaxKind::StringMiddle if token.flags.contains(TokenFlags::HAS_ESCAPE) => {
+            literal::validate_string_body(text, 0..text.len(), &mut error);
+        }
+        SyntaxKind::StringEnd if token.flags.contains(TokenFlags::HAS_ESCAPE) => {
+            let body_end = text.len() - usize::from(!unterminated);
+            literal::validate_string_body(text, 0..body_end, &mut error);
+        }
+        SyntaxKind::BlockStringLiteral => {
+            literal::validate_block_string(text, false, &[], &mut error);
+        }
         SyntaxKind::RawBlockStringLiteral => {
-            literal::validate_block_string(text, true, &mut error);
+            literal::validate_block_string(text, true, &[], &mut error);
         }
         SyntaxKind::CharLiteral => literal::validate_char(text, &mut error),
         SyntaxKind::Error if token.raw == RawKind::Punct => {
@@ -152,6 +198,83 @@ fn collect_errors(
         }
         _ => {}
     }
+}
+
+/// Judge every `"""` literal with holes once all the tokens are in: a
+/// pass over them, kept out of the token loop, which has registers enough
+/// for its own state and not for a literal's. No such literal nests in
+/// another, so the start ahead of an end is its own.
+fn validate_block_literals(source: &str, tokens: &[StoredToken], errors: &mut Vec<LexError>) {
+    let mut first = None;
+    for (index, token) in tokens.iter().enumerate() {
+        if token.raw != RawKind::BlockString {
+            continue;
+        }
+        match token.kind {
+            SyntaxKind::StringStart => first = Some(index),
+            SyntaxKind::StringEnd if !token.flags.contains(TokenFlags::UNTERMINATED) => {
+                if let Some(first) = first.take() {
+                    let end = tokens
+                        .get(index + 1)
+                        .map_or(source.len(), |next| next.start.to_usize());
+                    validate_block_parts(source, tokens, first, end, errors);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Judge the layout and escapes of a `"""` literal with holes, from the
+/// `StringStart` at `first` through the `StringEnd` that ends at `end`,
+/// over the whole of its source: the holes are its code, not its text. An
+/// error lands on the part its range begins in, cut to that part.
+fn validate_block_parts(
+    source: &str,
+    tokens: &[StoredToken],
+    first: usize,
+    end: usize,
+    errors: &mut Vec<LexError>,
+) {
+    let base = tokens[first].start.to_usize();
+    let text = &source[base..end];
+    // The holes: what lies between one part of the literal and the next.
+    let mut holes = Vec::new();
+    let mut previous_end = None;
+    for (index, token) in tokens.iter().enumerate().skip(first) {
+        let start = token.start.to_usize();
+        if token.raw != RawKind::BlockString {
+            continue;
+        }
+        if let Some(previous_end) = previous_end
+            && previous_end < start
+        {
+            holes.push(previous_end - base..start - base);
+        }
+        previous_end = Some(
+            tokens
+                .get(index + 1)
+                .map_or(source.len(), |next| next.start.to_usize()),
+        );
+    }
+    if let Some(previous_end) = previous_end
+        && previous_end < end
+    {
+        holes.push(previous_end - base..end - base);
+    }
+    literal::validate_block_string(text, false, &holes, |relative, kind| {
+        let start = base + relative.start;
+        let index = tokens.partition_point(|token| token.start.to_usize() <= start) - 1;
+        let token_end = tokens
+            .get(index + 1)
+            .map_or(source.len(), |next| next.start.to_usize());
+        let end = (base + relative.end).min(token_end);
+        errors.push(LexError {
+            token: RawIdx::new(index as u32),
+            range: TextRange::new(TextSize::new(start as u32), TextSize::new(end as u32)),
+            kind,
+        });
+    });
 }
 
 fn absolute_range(start: TextSize, token_len: usize, relative: Range<usize>) -> TextRange {
@@ -173,11 +296,19 @@ fn absolute_range(start: TextSize, token_len: usize, relative: Range<usize>) -> 
 #[derive(Clone, Debug)]
 pub struct LexedFile {
     source_len: TextSize,
+    /// Whether any token is a hole's `{`.
+    holes: bool,
     tokens: Box<[StoredToken]>,
     errors: Box<[LexError]>,
 }
 
 impl LexedFile {
+    /// Whether any string literal has a hole: whether a pass over the
+    /// tokens has any `HoleOpen` to find.
+    pub fn has_holes(&self) -> bool {
+        self.holes
+    }
+
     /// The number of tokens.
     pub fn len(&self) -> usize {
         self.tokens.len()
@@ -342,6 +473,10 @@ pub enum LexErrorKind {
     /// A content line of a multi-line string indented less than its closing
     /// `"""`.
     BlockStringIndentation,
+    /// A hole in a string literal still open at the end of its line,
+    /// reported at its `{`. The literal's text goes on from the line break
+    /// in a `"""` literal and ends with the line in a `"…"` one.
+    UnclosedHole,
 }
 
 /// `source.len()` exceeds the `u32` coordinate space of [`TextSize`].

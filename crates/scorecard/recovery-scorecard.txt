@@ -10,10 +10,13 @@ treat any other drift as a regression.
 Reading the numbers:
 - Part A preservation of 1.0 across all eight classes at 10^4 pairs each
   extends the recovery property tests' guarantee (256 cases per CI run) by
-  two orders of magnitude: no single-token edit has ever disturbed an
-  untouched top-level item. Its diagnostic counts are the frontend's, so an
-  edit that strips a statement down to a bare expression before another
-  statement adds the no-effect error to the parse evidence it causes.
+  two orders of magnitude: no single-token edit to the code around
+  literals has ever disturbed an untouched top-level item. The parts of a
+  string literal with holes, and a hole's braces, are literal delimiters:
+  an edit to one is Part C's, not Part A's. Its diagnostic counts are the
+  frontend's, so an edit that strips a statement down to a bare expression
+  before another statement adds the no-effect error to the parse evidence
+  it causes.
 - Part B partner churn tops out at the bracket nesting depth around the
   edit (max 8 tokens of ~223k), boundary churn at 1, items disturbed at 0:
   one unmatched opener or deleted closer does not re-pair the rest of the
@@ -23,37 +26,42 @@ Reading the numbers:
   creates.
 - Part C spread stays inside the line for the one-line forms (a median of
   a few dozen bytes, a maximum of one long line) and does not for `"""`: a
-  deleted `"""` reaches the next one, a median of 580 bytes and up to
-  2.7 KiB here. The one-line maxima come from the same cascade: an
+  deleted `"""` reaches the next one, a median of 114 bytes and up to
+  2.2 KiB here. The one-line maxima come from the same cascade: an
   unterminated one-line literal that reaches a `"""` opener on its line
   eats the opener's first quote, and every later `"""` in the file swaps
-  role. A layout bound on multi-line literals would close that case.
+  role. A layout bound on multi-line literals would close that case. A
+  hole's braces are bounded by the hole's line: a deleted `{` leaves the
+  hole's code as the literal's text, and a deleted `}` leaves the hole open
+  to the end of its line, where the literal's closing quote, or the first
+  quote of a `"""` after it, closes the literal — no reach at all, and
+  no item disturbed.
 
 recovery-scorecard
 
 == Part A: recovery scorecard ==
-7614 programs generated; 10000 measured pairs per class; preservation is
+7559 programs generated; 10000 measured pairs per class; preservation is
 over untouched top-level items (edits guarding none are counted apart).
 
 class                   edits  guarded  pres_mean  pres_p95  pres_min
-delete/delimiter        10000     4811    1.00000   1.00000   1.00000
-delete/non-delim        10000     4866    1.00000   1.00000   1.00000
-duplicate/delimiter     10000     4793    1.00000   1.00000   1.00000
-duplicate/non-delim     10000     4882    1.00000   1.00000   1.00000
-swap/delimiter          10000     4711    1.00000   1.00000   1.00000
-swap/non-delim          10000     4913    1.00000   1.00000   1.00000
-insert/delimiter        10000     4874    1.00000   1.00000   1.00000
-insert/non-delim        10000     4886    1.00000   1.00000   1.00000
+delete/delimiter        10000     4820    1.00000   1.00000   1.00000
+delete/non-delim        10000     4926    1.00000   1.00000   1.00000
+duplicate/delimiter     10000     4817    1.00000   1.00000   1.00000
+duplicate/non-delim     10000     4914    1.00000   1.00000   1.00000
+swap/delimiter          10000     4776    1.00000   1.00000   1.00000
+swap/non-delim          10000     4944    1.00000   1.00000   1.00000
+insert/delimiter        10000     4896    1.00000   1.00000   1.00000
+insert/non-delim        10000     4916    1.00000   1.00000   1.00000
 
 class                  diags_mean diags_p95  skipped_mean skipped_p95  evidence_mean evidence_p95
-delete/delimiter            1.735         4        52.451         284          1.693            3
-delete/non-delim            1.094         2        17.229         104          0.976            2
-duplicate/delimiter         1.561         3        46.198         271          1.509            3
-duplicate/non-delim         1.460         3        14.688          92          1.297            3
-swap/delimiter              1.700         3        33.532         189          1.589            3
-swap/non-delim              1.612         3        26.626         157          1.488            3
-insert/delimiter            1.692         4        42.294         248          1.627            3
-insert/non-delim            1.343         3        21.175         125          1.244            3
+delete/delimiter            1.785         4        51.281         292          1.746            4
+delete/non-delim            1.164         3        18.383         117          1.049            2
+duplicate/delimiter         1.593         3        45.899         271          1.541            3
+duplicate/non-delim         1.528         3        15.386          87          1.379            3
+swap/delimiter              1.871         4        34.597         194          1.766            4
+swap/non-delim              1.771         4        28.594         165          1.657            3
+insert/delimiter            1.716         4        39.278         234          1.626            4
+insert/non-delim            1.398         3        20.819         120          1.312            3
 
 == Part B: delimiter-breaking churn over clean corpora ==
 churn = original significant tokens (edit site excluded) whose partner()
@@ -81,10 +89,12 @@ spread = bytes of the longest literal token left where the edited one stood: how
 far the stray delimiter reaches. A one-line literal reaches the end of its line at
 most; a `"""` reaches the next `"""` or the end of the file.
 
-literals_64k: 65619 bytes, 358 literals, 86 top-level items
-  delete " closer    n=200  spread p50/p95/max 27/176/253  diags 2/7/2260  items_disturbed 0/0/84
-  delete " opener    n=200  spread p50/p95/max 18/53/189  diags 4/9/1334  items_disturbed 0/0/53
-  delete ' closer    n=200  spread p50/p95/max 24/112/166  diags 2/7/2130  items_disturbed 0/0/83
-  delete r" closer   n=200  spread p50/p95/max 47/130/130  diags 3/1243/1273  items_disturbed 0/47/49
-  delete """ closer  n=200  spread p50/p95/max 580/1907/2714  diags 953/2128/2243  items_disturbed 40/83/84
-  delete """ opener  n=200  spread p50/p95/max 607/1764/2575  diags 1164/2129/2258  items_disturbed 43/83/84
+literals_64k: 65549 bytes, 573 literals, 77 top-level items
+  delete " closer    n=200  spread p50/p95/max 11/87/146  diags 2/34/2834  items_disturbed 0/0/70
+  delete " opener    n=200  spread p50/p95/max 6/45/109  diags 3/13/2547  items_disturbed 0/0/66
+  delete ' closer    n=200  spread p50/p95/max 21/127/212  diags 2/2203/2800  items_disturbed 0/56/70
+  delete r" closer   n=200  spread p50/p95/max 21/106/106  diags 2/247/247  items_disturbed 0/43/43
+  delete """ closer  n=200  spread p50/p95/max 114/533/2256  diags 525/2661/2884  items_disturbed 27/69/70
+  delete """ opener  n=200  spread p50/p95/max 22/170/343  diags 329/2643/2978  items_disturbed 16/69/76
+  delete { of hole   n=200  spread p50/p95/max 34/125/154  diags 0/5/5  items_disturbed 0/0/0
+  delete } of hole   n=200  spread p50/p95/max 0/0/0  diags 2/9/35  items_disturbed 0/0/0

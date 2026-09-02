@@ -38,6 +38,10 @@ impl Rng {
     fn pick<'a>(&mut self, items: &'a [&'a str]) -> &'a str {
         items[self.below(items.len() as u32) as usize]
     }
+
+    fn pick_from(&mut self, items: &[String]) -> String {
+        items[self.below(items.len() as u32) as usize].clone()
+    }
 }
 
 const NOUNS: &[&str] = &[
@@ -59,8 +63,9 @@ struct Gen {
     rng: Rng,
     out: String,
     fresh: u32,
-    /// Whether a string atom may be a multi-line literal.
-    block_strings: bool,
+    /// Whether a string atom may take the literal forms the pinned corpora
+    /// lack: a multi-line literal, and holes.
+    literals: bool,
     /// The indentation level of the statement being generated, which the
     /// content of a multi-line literal hangs one level under.
     level: usize,
@@ -72,19 +77,19 @@ pub fn generate(target_bytes: usize, seed: u64) -> String {
 }
 
 /// Generate at least `target_bytes` of valid Sumi source in which some
-/// strings are multi-line literals. The pinned corpora cannot change, so
-/// this is a second generator rather than a change to [`generate`]; its
-/// consumers pin their own seeds.
-pub fn generate_with_block_strings(target_bytes: usize, seed: u64) -> String {
+/// strings are multi-line literals and some have holes. The pinned corpora
+/// cannot change, so this is a second generator rather than a change to
+/// [`generate`]; its consumers pin their own seeds.
+pub fn generate_with_literals(target_bytes: usize, seed: u64) -> String {
     generate_with(target_bytes, seed, true)
 }
 
-fn generate_with(target_bytes: usize, seed: u64, block_strings: bool) -> String {
+fn generate_with(target_bytes: usize, seed: u64, literals: bool) -> String {
     let mut g = Gen {
         rng: Rng::new(seed),
         out: String::with_capacity(target_bytes + 1024),
         fresh: 0,
-        block_strings,
+        literals,
         level: 0,
     };
     g.out.push_str("//! Generated Sumi benchmark corpus.\n\n");
@@ -362,8 +367,10 @@ impl Gen {
             0..=39 => self.rng.pick(INTS).to_string(),
             40..=54 => self.rng.pick(FLOATS).to_string(),
             55..=69 => {
-                if self.block_strings && self.rng.chance(30) {
-                    self.block_string()
+                if self.literals && self.rng.chance(30) {
+                    self.block_string(scope)
+                } else if self.literals && self.rng.chance(40) && !scope.is_empty() {
+                    self.string_with_holes(scope)
                 } else if self.rng.chance(20) {
                     "\"a\\tb\\nc \\\"q\\\" \\\\ \\u{1F600}\"".to_string()
                 } else if self.rng.chance(10) {
@@ -388,9 +395,25 @@ impl Gen {
 }
 
 impl Gen {
+    /// A one-line literal with holes: a name in scope, a call, and a
+    /// nested literal with a hole of its own, among escaped braces.
+    fn string_with_holes(&mut self, scope: &[String]) -> String {
+        self.fresh += 1;
+        let name = self.rng.pick_from(scope);
+        let noun = self.rng.pick(NOUNS);
+        match self.rng.below(3) {
+            0 => format!("\"item {} of {{{name}}}\"", self.fresh),
+            1 => format!(
+                "\"{{{name}}} \\{{{noun}\\}} {{count({name})}} item {}\"",
+                self.fresh
+            ),
+            _ => format!("\"{{\"{noun} {{{name}}}\"}} in item {}\"", self.fresh),
+        }
+    }
+
     /// A multi-line literal whose content hangs one level under the
     /// statement, with the closer at the content's indentation.
-    fn block_string(&mut self) -> String {
+    fn block_string(&mut self, scope: &[String]) -> String {
         self.fresh += 1;
         let indent = "    ".repeat(self.level + 1);
         let raw = self.rng.chance(25);
@@ -401,7 +424,13 @@ impl Gen {
                 s.push('\n');
             }
             let noun = self.rng.pick(NOUNS);
-            if !raw && self.rng.chance(30) {
+            if !raw && !scope.is_empty() && self.rng.chance(40) {
+                let name = self.rng.pick_from(scope);
+                s.push_str(&format!(
+                    "{indent}line {} names {{{name}}} of the {noun}\n",
+                    line + 1
+                ));
+            } else if !raw && self.rng.chance(30) {
                 s.push_str(&format!(
                     "{indent}line {} quotes the \\\"{noun}\\\"\n",
                     line + 1

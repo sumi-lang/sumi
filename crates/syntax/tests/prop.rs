@@ -10,8 +10,8 @@ use proptest::prelude::*;
 use proptest::test_runner::FileFailurePersistence;
 use sumi_lexer::{LexedFile, RawKind, lex};
 use sumi_syntax::{
-    NodeIdx, NodeKind, ParseAnchor, ParseEvidence, ParserInput, RawIdx, SigIdx, SyntaxKind,
-    SyntaxTree, parse,
+    BRACKET_PAIRS, NodeIdx, NodeKind, ParseAnchor, ParseEvidence, ParserInput, RawIdx, SigIdx,
+    SyntaxKind, SyntaxTree, parse,
 };
 use sumi_test::{apply, delimiter_edited_program, front, non_delimiter_edited_program, program};
 
@@ -19,6 +19,13 @@ use sumi_test::{apply, delimiter_edited_program, front, non_delimiter_edited_pro
 /// language, valid and pathological; concatenation composes the adjacencies
 /// goldens cannot enumerate.
 const EXTRA_FRAGMENTS: &[&str] = &[
+    // The parts of a string literal with holes, and the braces that open
+    // none.
+    "\"{",
+    "}\"",
+    "\"{x}\"",
+    "\"\"\"\n  {",
+    "\\{",
     "x",
     "foo",
     "Δx",
@@ -68,9 +75,43 @@ fn fragments() -> Vec<&'static str> {
 /// nothing) — nested parens come closed — for
 /// [`newlines_inside_parens_never_terminate`].
 const PAREN_SAFE: &[&str] = &[
-    "fn", "let", "if", "else", "return", "true", "x", "foo", "0", "1.5", "2.5e-3", "1e", "\"s\"",
-    "'a'", "r\"a\"", "(x)", "(\nx\n)", ",", ":", ".", "=", "<", ">", "!", "+", "-", "*", "/", "%",
-    "&", "|", " ", "\t", "\n", "\r\n", "// c\n",
+    "fn",
+    "let",
+    "if",
+    "else",
+    "return",
+    "true",
+    "x",
+    "foo",
+    "0",
+    "1.5",
+    "2.5e-3",
+    "1e",
+    "\"s\"",
+    "'a'",
+    "r\"a\"",
+    "(x)",
+    "(\nx\n)",
+    ",",
+    ":",
+    ".",
+    "=",
+    "<",
+    ">",
+    "!",
+    "+",
+    "-",
+    "*",
+    "/",
+    "%",
+    "&",
+    "|",
+    " ",
+    "\t",
+    "\n",
+    "\r\n",
+    "// c\n",
+    "\"a {x} b\"",
 ];
 
 fn fragment() -> impl Strategy<Value = String> {
@@ -165,11 +206,7 @@ proptest! {
                 prop_assert_eq!(input.partner(partner), Some(index), "partners must be mutual");
                 let (opener, closer) = if index < partner { (index, partner) } else { (partner, index) };
                 prop_assert!(
-                    matches!(
-                        (input.get(opener), input.get(closer)),
-                        (Some(SyntaxKind::LParen), Some(SyntaxKind::RParen))
-                            | (Some(SyntaxKind::LBrace), Some(SyntaxKind::RBrace))
-                    ),
+                    input.get(opener).zip(input.get(closer)).is_some_and(|pair| BRACKET_PAIRS.contains(&pair)),
                     "tokens {:?} and {:?} are partners but not a matching pair", opener, closer
                 );
                 if partner > index {

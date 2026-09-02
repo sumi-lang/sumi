@@ -106,6 +106,19 @@ fn lower_token_errors(
                     snapshot.range(error.range),
                 ),
             )),
+            LexErrorKind::UnclosedHole => {
+                let mut diagnostic = primary(
+                    codes::UNCLOSED_HOLE,
+                    "hole in string literal is not closed on its line",
+                    snapshot.range(error.range),
+                );
+                diagnostic.notes = Box::new([
+                    "a `{` in a string literal opens a hole for an expression, which ends \
+                     with its line; a `{` meant as text is written `\\{`"
+                        .into(),
+                ]);
+                emitted.push((order, diagnostic));
+            }
             LexErrorKind::UnterminatedRawString => emitted.push((
                 order,
                 primary(

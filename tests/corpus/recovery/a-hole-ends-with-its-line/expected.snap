@@ -1,0 +1,40 @@
+== tree ==
+SourceFile 0..339
+  FnItem 218..338
+    Name 221..222 "f"
+    ParamList 222..236
+      Param 223..235
+        Name 223..228 "total"
+        TypeRef 230..235 "float"
+    Block 237..338
+      LetStmt 243..285
+        Name 247..248 "s"
+        BinaryExpr 251..285
+          InterpolatedString 251..276
+            Hole 259..275
+              CallExpr 260..275
+                NameRef 260..265 "fixed"
+                ArgList 265..275
+                  NameRef 266..271 "total"
+                  LiteralExpr 273..274 "2"
+          NameRef 279..285 "suffix"
+      LetStmt 290..303
+        Name 294..295 "t"
+        InterpolatedString 298..303
+          Hole 301..303
+            NameRef 302..303 "b"
+      LetStmt 308..317
+        Name 312..313 "u"
+        LiteralExpr 316..317 "1"
+      CallExpr 322..336
+        NameRef 322..327 "print"
+        ArgList 327..336
+          NameRef 328..329 "s"
+          NameRef 331..332 "t"
+          NameRef 334..335 "u"
+
+== diagnostics ==
+error[syntax/unclosed-hole] 5:21..5:22 "{": hole in string literal is not closed on its line
+  note: a `{` in a string literal opens a hole for an expression, which ends with its line; a `{` meant as text is written `\{`
+error[syntax/unclosed-hole] 6:16..6:17 "{": hole in string literal is not closed on its line
+  note: a `{` in a string literal opens a hole for an expression, which ends with its line; a `{` meant as text is written `\{`

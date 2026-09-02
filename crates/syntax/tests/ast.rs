@@ -279,3 +279,22 @@ fn a_child_of_one_possible_field_is_answered_despite_an_error() {
     assert_eq!(parsed.text(binding.type_ref(tree).expect("a type")), "Int");
     assert!(binding.initializer(tree).is_none());
 }
+
+#[test]
+fn strings_with_holes_have_views() {
+    let parsed = Parsed::new("fn f(n: Int) -> Str = \"{n} items, {\"{n}\"} nested\"\n");
+    let tree = parsed.tree();
+    let item = parsed.item();
+    assert!(!tree.has_error(item.node()));
+    let Some(Expr::InterpolatedString(string)) = item.body(tree) else {
+        panic!("the body is a string with holes")
+    };
+    let holes: Vec<_> = string.holes(tree).collect();
+    assert_eq!(holes.len(), 2);
+    assert!(matches!(holes[0].value(tree), Some(Expr::NameRef(_))));
+    let Some(Expr::InterpolatedString(nested)) = holes[1].value(tree) else {
+        panic!("the second hole holds a string")
+    };
+    assert_eq!(parsed.text(nested), "\"{n}\"");
+    assert_eq!(nested.holes(tree).count(), 1);
+}

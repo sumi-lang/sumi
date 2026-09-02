@@ -126,6 +126,7 @@ impl SyntaxKind {{
     /// The kind for a punctuation character, if it has a role in the
     /// language. Punctuation without one has no kind and lexes as an error
     /// token.
+    #[inline]
     pub fn from_punct(byte: u8) -> Option<Self> {{
         Some(match byte {{
 {puncts}            _ => return None,
@@ -203,6 +204,12 @@ pub fn syntax_kind(grammar: &Grammar) -> String {
         (
             format!("SyntaxKind::{}", pair.closer),
             format!("SyntaxKind::{}", pair.opener),
+        )
+    }));
+    let pair_indices = arms(grammar.pairs.iter().enumerate().map(|(index, pair)| {
+        (
+            format!("SyntaxKind::{} | SyntaxKind::{}", pair.opener, pair.closer),
+            index.to_string(),
         )
     }));
     let statement_openers = grammar
@@ -322,6 +329,14 @@ pub fn continues_statement(kind: SyntaxKind, {continuation_glued}: Option<Syntax
 /// The bracket pairs the token stream matches, opener then closer.
 pub const BRACKET_PAIRS: [(SyntaxKind, SyntaxKind); {pair_count}] = [{pairs}];
 
+/// The index in [`BRACKET_PAIRS`] of the pair a token of this kind opens
+/// or closes: a match, so no table is read.
+pub fn pair_index(kind: SyntaxKind) -> Option<usize> {{
+    Some(match kind {{
+{pair_indices}        _ => return None,
+    }})
+}}
+
 /// The closer pairing with an opener of this kind.
 pub fn closer(opener: SyntaxKind) -> Option<SyntaxKind> {{
     Some(match opener {{
@@ -392,6 +407,7 @@ pub fn binary_operator(first: SyntaxKind, {operator_glued}: Option<SyntaxKind>) 
 }}
 "#,
         pair_count = grammar.pairs.len(),
+        pair_indices = pair_indices,
     )
 }
 
@@ -517,7 +533,12 @@ pub fn reference(grammar: &Grammar) -> String {
     }
     let compounds = bullets(grammar.compounds.iter().map(|text| code(text)));
     let pairs = bullets(grammar.pairs.iter().map(|pair| {
-        let bracket = |name: &str| code(text(grammar.token(name).expect("validated")));
+        // A pair the lexer emits, such as a hole's braces, has kinds where
+        // punctuation has text.
+        let bracket = |name: &str| {
+            let token = grammar.token(name).expect("validated");
+            code(token.text.as_deref().unwrap_or(name))
+        };
         let role = if pair.statements {
             " — encloses statements"
         } else {
@@ -680,6 +701,14 @@ Text that spans lines is a multi-line literal, `\"\"\"` to `\"\"\"`, or
   next.
 - A `\"\"\"` inside the content escapes one of its quotes; a raw multi-line
   literal cannot contain one.
+
+A `{{` in a `\"…\"` or `\"\"\"` literal opens a hole: an expression whose
+value the string takes in its place, as in `\"{{count}} items\"`. Any
+expression may stand in a hole, a string with holes of its own included,
+but a hole ends with its line: one still open at the line break is an
+error, and the text goes on from there in a multi-line literal and ends
+with the line in a one-line one. `\\{{` and `\\}}` are braces, a `}}`
+outside a hole is one too, and a raw literal has no holes.
 
 ## Syntax nodes
 

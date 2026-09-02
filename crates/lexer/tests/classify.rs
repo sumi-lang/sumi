@@ -260,3 +260,30 @@ fn block_strings_classify_by_their_opener() {
         ],
     );
 }
+
+#[test]
+fn string_parts_and_hole_braces_have_their_own_kinds() {
+    assert_eq!(
+        dump("\"a {x} b\""),
+        [
+            r#"StringStart 0..3 "\"a ""#,
+            r#"HoleOpen 3..4 "{""#,
+            r#"Ident 4..5 "x""#,
+            r#"HoleClose 5..6 "}""#,
+            r#"StringEnd 6..9 " b\"""#,
+        ]
+    );
+    assert_eq!(
+        dump("\"{a}{b}\""),
+        [
+            r#"StringStart 0..1 "\"""#,
+            r#"HoleOpen 1..2 "{""#,
+            r#"Ident 2..3 "a""#,
+            r#"HoleClose 3..4 "}""#,
+            r#"HoleOpen 4..5 "{""#,
+            r#"Ident 5..6 "b""#,
+            r#"HoleClose 6..7 "}""#,
+            r#"StringEnd 7..8 "\"""#,
+        ]
+    );
+}

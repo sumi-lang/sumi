@@ -291,9 +291,11 @@ impl Grammar {
             for name in [&pair.opener, &pair.closer] {
                 if self
                     .token(name)
-                    .is_none_or(|token| token.shape != Shape::Punct)
+                    .is_none_or(|token| !matches!(token.shape, Shape::Punct | Shape::Literal))
                 {
-                    return Err(format!("bracket {name} is not a punctuation token kind"));
+                    return Err(format!(
+                        "bracket {name} is not a punctuation or literal token kind"
+                    ));
                 }
                 if bracketed.contains(&name.as_str()) {
                     return Err(format!("bracket {name} is in two pairs"));

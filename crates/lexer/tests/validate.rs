@@ -330,3 +330,45 @@ fn line_literals_get_only_their_unterminated_error() {
     );
     check_errors("r\"a\nb", &[(0, LexErrorKind::UnterminatedRawString)]);
 }
+
+#[test]
+fn holes_left_open_are_reported_at_their_brace() {
+    check_error_ranges("\"a {b\nc", &[(1, 3, 4, LexErrorKind::UnclosedHole)]);
+    check_error_ranges("\"{a}\n", &[(0, 0, 1, LexErrorKind::UnterminatedString)]);
+    // The end of input leaves a hole open and a `"""` literal unterminated,
+    // the latter reported at its opener as a whole one is.
+    check_error_ranges(
+        "\"\"\"\n  {x",
+        &[
+            (0, 0, 3, LexErrorKind::UnterminatedBlockString),
+            (1, 6, 7, LexErrorKind::UnclosedHole),
+        ],
+    );
+    check_error_ranges(
+        "\"\"\"\n  {x}",
+        &[(0, 0, 3, LexErrorKind::UnterminatedBlockString)],
+    );
+}
+
+#[test]
+fn escapes_and_layout_are_judged_over_the_parts_of_a_literal() {
+    // Each part of a `"…"` literal is judged on its own text.
+    check_error_ranges(
+        "\"\\q{x}\\p\"",
+        &[
+            (0, 1, 3, LexErrorKind::UnknownEscape),
+            (4, 6, 8, LexErrorKind::UnknownEscape),
+        ],
+    );
+    // A `"""` literal is judged whole once its end arrives, with the
+    // holes' code left out; an error lands on the part it begins in.
+    check_error_ranges(
+        "\"\"\"\n  \\q{x}\n  \"\"\"",
+        &[(0, 6, 8, LexErrorKind::UnknownEscape)],
+    );
+    check_error_ranges(
+        "\"\"\"\n{x}\n \"\"\"",
+        &[(1, 4, 4, LexErrorKind::BlockStringIndentation)],
+    );
+    check_errors("\"\"\"\n  {x}\n  \"\"\"", &[]);
+}
