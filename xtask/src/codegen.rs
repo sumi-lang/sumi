@@ -205,6 +205,17 @@ pub fn syntax_kind(grammar: &Grammar) -> String {
             format!("SyntaxKind::{}", pair.opener),
         )
     }));
+    let statement_openers = grammar
+        .pairs
+        .iter()
+        .filter(|pair| pair.statements)
+        .map(|pair| format!("SyntaxKind::{}", pair.opener))
+        .collect::<Vec<_>>();
+    let encloses_statements = if statement_openers.is_empty() {
+        "false".to_owned()
+    } else {
+        format!("matches!(opener, {})", statement_openers.join(" | "))
+    };
     let prefix_bp = grammar.prefix_binding_power();
     let operators = variants(
         grammar
@@ -338,6 +349,13 @@ pub fn is_closer(kind: SyntaxKind) -> bool {{
 /// Whether a token of this kind opens or closes a bracket pair.
 pub fn is_bracket(kind: SyntaxKind) -> bool {{
     is_opener(kind) || is_closer(kind)
+}}
+
+/// Whether the pair opened by this kind encloses statements, so that line
+/// breaks inside it end statements as a block's do. Every other pair
+/// suspends the newline rule between its brackets.
+pub fn encloses_statements(opener: SyntaxKind) -> bool {{
+    {encloses_statements}
 }}
 
 /// The binding power of a prefix operator's operand: tighter than every
@@ -500,7 +518,16 @@ pub fn reference(grammar: &Grammar) -> String {
     let compounds = bullets(grammar.compounds.iter().map(|text| code(text)));
     let pairs = bullets(grammar.pairs.iter().map(|pair| {
         let bracket = |name: &str| code(text(grammar.token(name).expect("validated")));
-        format!("{} … {}", bracket(&pair.opener), bracket(&pair.closer))
+        let role = if pair.statements {
+            " — encloses statements"
+        } else {
+            ""
+        };
+        format!(
+            "{} … {}{role}",
+            bracket(&pair.opener),
+            bracket(&pair.closer)
+        )
     }));
     let prefix = bullets(grammar.prefix.iter().map(|text| code(text)));
     let mut levels: Vec<u8> = grammar.binary.iter().map(|op| op.level).collect();
@@ -592,7 +619,8 @@ adjacent characters; a space between them keeps them apart.
 The token stream pairs each closer with the nearest open bracket of its
 kind, discarding unmatched openers above that match; an orphan closer
 pairs with nothing. Grammar decides whether a pair is meaningful where it
-appears.
+appears. A pair that encloses statements keeps the newline rule inside
+it; every other pair suspends it between its brackets.
 
 {pairs}
 ## Operators

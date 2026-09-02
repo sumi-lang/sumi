@@ -105,10 +105,11 @@ adjacent characters; a space between them keeps them apart.
 The token stream pairs each closer with the nearest open bracket of its
 kind, discarding unmatched openers above that match; an orphan closer
 pairs with nothing. Grammar decides whether a pair is meaningful where it
-appears.
+appears. A pair that encloses statements keeps the newline rule inside
+it; every other pair suspends it between its brackets.
 
 - `(` … `)`
-- `{` … `}`
+- `{` … `}` — encloses statements
 
 ## Operators
 

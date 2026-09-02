@@ -26,8 +26,9 @@
 use sumi_lexer::RawIdx;
 
 use crate::generated::{
-    BinaryOp, NodeKind as N, PREFIX_BP, SyntaxKind as T, binary_operator, introduces_statement,
-    is_closer, is_opener, is_prefix_operator, starts_expression, starts_item, starts_statement,
+    BinaryOp, NodeKind as N, PREFIX_BP, SyntaxKind as T, binary_operator, encloses_statements,
+    introduces_statement, is_closer, is_opener, is_prefix_operator, opener, starts_expression,
+    starts_item, starts_statement,
 };
 use crate::input::ParserInput;
 use crate::tree::{CompletedMarker, Marker, Parse, RecoveryHandle};
@@ -245,7 +246,7 @@ fn skip_statement_garbage(p: &mut Marker<'_, '_>, recovery: RecoveryHandle) -> C
         || m.boundary()
         || m.current().is_some_and(introduces_statement)
         || (m.at(T::RBrace) && !m.closer_ahead())
-        || m.closes_open_paren())
+        || m.closes_open_bracket())
     {
         m.group_inside();
     }
@@ -297,7 +298,7 @@ fn fn_item(p: &mut Marker<'_, '_>) {
         });
     }
     if m.at(T::LParen) && !m.newline() {
-        param_list(&mut m);
+        delimited_list::<Params>(&mut m);
     }
     // A return type on the line of the signature: a leading `->` never
     // continues a line.
@@ -363,53 +364,145 @@ fn type_ref(p: &mut Marker<'_, '_>) {
     }
 }
 
-fn param_list(p: &mut Marker<'_, '_>) {
+/// A comma-separated list between a bracket pair: what its elements are,
+/// and what ends it when the stream never closes it. A list the stream
+/// closes owns everything up to its closer, whatever is in the way being
+/// garbage in the list. One it does not close ends at enclosing syntax:
+/// what follows the list, its line's end, a closer an enclosing construct
+/// owns, or the next item's horizon, where the input reads as exhausted.
+/// A rule is a type so that each list compiles to its own loop, with
+/// nothing called through a pointer.
+trait ListRule {
+    const NODE: N;
+    /// What is missing where an element should stand.
+    const ELEMENT: ParseExpected;
+    /// Whether garbage where an element should stand ends where the list's
+    /// follower begins, besides at a `,`, the closer, or the line's end.
+    const GARBAGE_ENDS_AT_FOLLOWER: bool;
+    /// Whether garbage where an element should stand ends where an element
+    /// begins, so that element is still parsed.
+    const RESUMES_AT_ELEMENT: bool;
+    /// Whether the next token can begin an element.
+    fn starts_element(m: &Marker<'_, '_>) -> bool;
+    fn parse_element(m: &mut Marker<'_, '_>);
+    /// Whether the next token begins what follows the list in its grammar,
+    /// which ends a list the stream never closes.
+    fn follows(m: &Marker<'_, '_>) -> bool;
+    /// Whether a token of this kind may follow an element without a `,`
+    /// before it: what follows the list, met before the list ended.
+    fn tolerated(kind: T) -> bool;
+}
+
+struct Params;
+
+impl ListRule for Params {
+    const NODE: N = N::ParamList;
+    const ELEMENT: ParseExpected = ParseExpected::Name;
+    const GARBAGE_ENDS_AT_FOLLOWER: bool = true;
+    const RESUMES_AT_ELEMENT: bool = false;
+
+    fn starts_element(m: &Marker<'_, '_>) -> bool {
+        m.at(T::Ident) || m.at(T::Underscore)
+    }
+
+    fn parse_element(m: &mut Marker<'_, '_>) {
+        param(m);
+    }
+
+    /// The body, or an enclosing block's end, when the stream pairs the
+    /// brace: one it never pairs is garbage in the list.
+    fn follows(m: &Marker<'_, '_>) -> bool {
+        (m.at(T::LBrace) || m.at(T::RBrace)) && m.partnered()
+    }
+
+    fn tolerated(kind: T) -> bool {
+        kind == T::LBrace
+    }
+}
+
+struct Args;
+
+impl ListRule for Args {
+    const NODE: N = N::ArgList;
+    const ELEMENT: ParseExpected = ParseExpected::Expression;
+    const GARBAGE_ENDS_AT_FOLLOWER: bool = false;
+    const RESUMES_AT_ELEMENT: bool = true;
+
+    fn starts_element(m: &Marker<'_, '_>) -> bool {
+        m.starts_expression()
+    }
+
+    fn parse_element(m: &mut Marker<'_, '_>) {
+        operand(m, 0);
+    }
+
+    fn follows(m: &Marker<'_, '_>) -> bool {
+        m.at(T::RBrace)
+    }
+
+    fn tolerated(_: T) -> bool {
+        false
+    }
+}
+
+fn delimited_list<R: ListRule>(p: &mut Marker<'_, '_>) {
+    let close = p
+        .current()
+        .and_then(crate::generated::closer)
+        .expect("a list opens at its opener");
     let mut m = p.start();
-    m.token(); // (
-    // A list the stream closes owns everything up to its `)`: whatever is
-    // in the way is garbage in the list. One it does not close ends at
-    // enclosing syntax — the body, an enclosing block's end, or the next
-    // item's horizon, where the input reads as exhausted — a brace being
-    // that only when the stream pairs it.
-    m.enter_parens();
+    m.token(); // the opener
+    m.enter();
     loop {
         match m.current() {
             None => {
                 m.missing_closer();
                 break;
             }
-            Some(T::RParen) if m.owns_rparen() => {
+            Some(kind) if kind == close && m.owns_closer() => {
                 m.token();
                 break;
             }
-            Some(T::RParen) if m.closes_open_paren() => {
+            // A closer paired with an enclosing construct of the same kind
+            // ends this one, whose own closer is missing.
+            Some(kind) if kind == close && m.closes_open(close) => {
                 m.missing_closer();
                 break;
             }
-            Some(T::LBrace | T::RBrace)
-                if !m.closed() && m.partnered() && !displaced_closer(&m) =>
-            {
+            Some(_) if !m.closed() && R::follows(&m) && !displaced_closer(&m) => {
                 m.missing_closer();
                 break;
             }
-            Some(T::Ident | T::Underscore) => param(&mut m),
             Some(T::Comma) => {
-                m.missing(ParseExpected::Name);
+                m.missing(R::ELEMENT);
                 m.token();
             }
+            // An opener of another kind the stream never pairs, right
+            // before the closer, is garbage: parsed as an element it would
+            // take the closer with it.
+            Some(kind) if is_opener(kind) && !m.partnered() && m.nth(1) == Some(close) => {
+                let recovery = m.recover_tokens(ParseRecoveryKind::Expected(R::ELEMENT), 1);
+                skip_token(&mut m, recovery);
+            }
+            Some(_) if R::starts_element(&m) => R::parse_element(&mut m),
             Some(_) => {
-                let recovery =
-                    m.recover_tokens(ParseRecoveryKind::Expected(ParseExpected::Name), 1);
+                let recovery = m.recover_tokens(ParseRecoveryKind::Expected(R::ELEMENT), 1);
                 skip(&mut m, recovery, |m| {
                     m.at(T::Comma)
-                        || m.at(T::RParen)
-                        || (!m.closed() && (m.boundary() || (m.at(T::LBrace) && m.partnered())))
+                        || m.at(close)
+                        || (!m.closed()
+                            && (m.boundary() || (R::GARBAGE_ENDS_AT_FOLLOWER && R::follows(m))))
+                        || (R::RESUMES_AT_ELEMENT && begins_element::<R>(m))
                 });
+                // The garbage displaced an element, not the `,` after one.
+                if R::RESUMES_AT_ELEMENT && begins_element::<R>(&m) {
+                    continue;
+                }
             }
         }
         // A boundary ends a list the stream never closes: its line has. One
-        // the stream closes owns everything through its `)`, a boundary an
-        // unclosed `{` inside it restores included.
+        // the stream closes owns everything through its closer, a boundary
+        // an unclosed `{` inside it restores included.
         if !m.closed() && m.boundary() {
             m.missing_closer();
             break;
@@ -418,12 +511,21 @@ fn param_list(p: &mut Marker<'_, '_>) {
             m.token();
         } else if !m
             .current()
-            .is_none_or(|kind| is_closer(kind) || kind == T::LBrace || starts_item(kind))
+            .is_none_or(|kind| is_closer(kind) || starts_item(kind) || R::tolerated(kind))
         {
             m.missing(ParseExpected::Token(T::Comma));
         }
     }
-    m.complete(N::ParamList);
+    m.complete(R::NODE);
+}
+
+/// Whether the next token begins an element a garbage run should end at:
+/// one that starts an element, an opener the stream never closes excepted
+/// — it began nothing, and is garbage like the rest.
+fn begins_element<R: ListRule>(m: &Marker<'_, '_>) -> bool {
+    R::starts_element(m)
+        && m.current()
+            .is_some_and(|kind| !is_opener(kind) || m.partnered())
 }
 
 fn param(p: &mut Marker<'_, '_>) {
@@ -469,9 +571,10 @@ fn block(p: &mut Marker<'_, '_>) -> CompletedMarker {
                 m.token();
                 break;
             }
-            // A `)` closing a paren still open around this block belongs to
-            // it: the block is unclosed, and the `)` is left to its owner.
-            Some(T::RParen) if m.closes_open_paren() => {
+            // A closer of a construct still open around this block belongs
+            // to it: the block is unclosed, and the closer is left to its
+            // owner.
+            Some(_) if m.closes_open_bracket() => {
                 m.missing_closer();
                 break;
             }
@@ -486,7 +589,7 @@ fn block(p: &mut Marker<'_, '_>) -> CompletedMarker {
                 let ends = m.current().is_none()
                     || m.boundary()
                     || (m.at(T::RBrace) && !m.closer_ahead() && !(failed && displaced_closer(&m)))
-                    || m.closes_open_paren();
+                    || m.closes_open_bracket();
                 if !ends {
                     // Only a statement introducer survives a failed
                     // statement on the same line: an expression start is
@@ -616,6 +719,13 @@ fn operand_before(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) {
     }
 }
 
+/// Whether a token of this kind closes a pair that suspends the newline
+/// rule: `)`, and every kind like it. Where an expression stands, such a
+/// closer ends it; a `}` ends the block around it instead.
+fn closes_expression_bracket(kind: T) -> bool {
+    opener(kind).is_some_and(|opener| !encloses_statements(opener))
+}
+
 /// Whether the next token begins an expression a garbage run should end
 /// at: one that starts an expression, an opener the stream never closes
 /// excepted — it began nothing, and is garbage like the rest.
@@ -634,10 +744,11 @@ fn begins_statement(p: &Marker<'_, '_>) -> bool {
 /// the start of the statement after it.
 fn displaces_expression(p: &Marker<'_, '_>) -> bool {
     if p.current().is_some_and(is_closer) {
-        if p.at(T::RParen) && p.closes_open_paren() {
+        if p.closes_open_bracket() {
             return false;
         }
-        return displaced_closer(p) || (p.at(T::RParen) && !p.partnered());
+        return displaced_closer(p)
+            || (p.current().is_some_and(closes_expression_bracket) && !p.partnered());
     }
     // Garbage displaces; so does anything that neither begins an expression
     // or a statement nor separates arguments.
@@ -671,7 +782,7 @@ fn displaced_closer(p: &Marker<'_, '_>) -> bool {
 /// the start of a statement — nor an expression's own start.
 fn garbage_in_expression(p: &Marker<'_, '_>, follow: ExprFollow) -> bool {
     p.at(T::Error)
-        || (p.at(T::RParen) && !p.closes_open_paren())
+        || (p.current().is_some_and(closes_expression_bracket) && !p.closes_open_bracket())
         || (follow == ExprFollow::Anything && p.at(T::LBrace))
         || p.current().is_some_and(|kind| {
             !starts_statement(kind)
@@ -713,7 +824,7 @@ fn expr_bp(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) -> Option<Com
         // boundaries are suspended: a `(` on a new line is never a call.
         if p.at(T::LParen) && !p.newline() {
             let mut m = p.precede(lhs);
-            arg_list(&mut m);
+            delimited_list::<Args>(&mut m);
             lhs = m.complete(N::CallExpr);
             comparison = false;
             continue;
@@ -822,12 +933,12 @@ fn prefix_or_atom(p: &mut Marker<'_, '_>, follow: ExprFollow) -> Option<Complete
         T::LParen => {
             let mut m = p.start();
             m.token(); // (
-            m.enter_parens();
+            m.enter();
             operand(&mut m, 0);
             // Take only this paren's mechanical closer or an orphan recovery
             // closer. One paired with an earlier opener belongs to that
             // enclosing construct.
-            if m.owns_rparen() {
+            if m.owns_closer() {
                 m.token();
             } else {
                 m.missing_closer();
@@ -892,75 +1003,6 @@ fn if_block(p: &mut Marker<'_, '_>) {
     if p.at(T::LBrace) {
         block_here(p);
     }
-}
-
-fn arg_list(p: &mut Marker<'_, '_>) {
-    let mut m = p.start();
-    m.token(); // (
-    // A list the stream closes owns everything up to its `)`; one it does
-    // not close ends at enclosing syntax: an enclosing block's end, or the
-    // next item's horizon, where the input reads as exhausted.
-    m.enter_parens();
-    loop {
-        match m.current() {
-            None => {
-                m.missing_closer();
-                break;
-            }
-            Some(T::RParen) if m.owns_rparen() => {
-                m.token();
-                break;
-            }
-            Some(T::RParen) if m.closes_open_paren() => {
-                m.missing_closer();
-                break;
-            }
-            Some(T::RBrace) if !m.closed() && !displaced_closer(&m) => {
-                m.missing_closer();
-                break;
-            }
-            Some(T::Comma) => {
-                m.missing(ParseExpected::Expression);
-                m.token();
-            }
-            Some(T::LBrace) if !m.partnered() && m.nth(1) == Some(T::RParen) => {
-                let recovery =
-                    m.recover_tokens(ParseRecoveryKind::Expected(ParseExpected::Expression), 1);
-                skip_token(&mut m, recovery);
-            }
-            Some(_) if m.starts_expression() => operand(&mut m, 0),
-            Some(_) => {
-                let recovery =
-                    m.recover_tokens(ParseRecoveryKind::Expected(ParseExpected::Expression), 1);
-                skip(&mut m, recovery, |m| {
-                    m.at(T::Comma)
-                        || m.at(T::RParen)
-                        || (!m.closed() && m.boundary())
-                        || begins_expression(m)
-                });
-                // The garbage displaced an argument, not the `,` after one.
-                if begins_expression(&m) {
-                    continue;
-                }
-            }
-        }
-        // A boundary ends a list the stream never closes: its line has. One
-        // the stream closes owns everything through its `)`, a boundary an
-        // unclosed `{` inside it restores included.
-        if !m.closed() && m.boundary() {
-            m.missing_closer();
-            break;
-        }
-        if m.at(T::Comma) {
-            m.token();
-        } else if !m
-            .current()
-            .is_none_or(|kind| is_closer(kind) || starts_item(kind))
-        {
-            m.missing(ParseExpected::Token(T::Comma));
-        }
-    }
-    m.complete(N::ArgList);
 }
 
 /// The binary operator `n` significant tokens past the next one, if one

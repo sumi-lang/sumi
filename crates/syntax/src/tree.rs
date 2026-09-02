@@ -47,7 +47,7 @@
 use sumi_lexer::{LexedFile, RawIdx};
 use sumi_text::{TextRange, TextSize};
 
-use crate::generated::{NodeKind, SyntaxKind};
+use crate::generated::{BRACKET_PAIRS, NodeKind, SyntaxKind, encloses_statements, opener};
 use crate::index::{NodeIdx, SigIdx};
 use crate::input::{ParserInput, Slot};
 use crate::parser::{
@@ -321,7 +321,7 @@ impl Parse {
             id: 0,
             parent: 0,
             depth: 0,
-            paren: None,
+            open: [None; BRACKET_PAIRS.len()],
             closer: None,
             enclosing_closer: None,
             // Closed here once `body` returns, never by `complete`.
@@ -506,9 +506,10 @@ pub struct Marker<'p, 'a> {
     parent: u32,
     /// How many open nodes enclose this one; the root is at 0.
     depth: u32,
-    /// The innermost parenthesized construct still open around this node,
-    /// by the significant position of its `(`.
-    paren: Option<SigIdx>,
+    /// The innermost open bracket construct of each pair, by the
+    /// significant position of its opener and in [`BRACKET_PAIRS`] order:
+    /// what a closer of that kind may belong to.
+    open: [Option<SigIdx>; BRACKET_PAIRS.len()],
     /// The closer the stream pairs with the innermost bracket construct
     /// entered around this node — this node itself, once it has entered
     /// one — by significant position; `None` when the stream closes none.
@@ -584,7 +585,7 @@ impl<'a> Marker<'_, 'a> {
             id,
             parent: self.id,
             depth: self.depth + 1,
-            paren: self.paren,
+            open: self.open,
             closer: self.closer,
             enclosing_closer: self.enclosing_closer,
             completed: false,
@@ -609,7 +610,7 @@ impl<'a> Marker<'_, 'a> {
             id,
             parent: self.id,
             depth: self.depth + 1,
-            paren: self.paren,
+            open: self.open,
             closer: self.closer,
             enclosing_closer: self.enclosing_closer,
             completed: false,
@@ -785,53 +786,67 @@ impl<'a> Marker<'_, 'a> {
             .map(|offset| offset as usize)
     }
 
-    /// Whether the next token is a `)` a parenthesized construct still open
-    /// around this node can own. A mechanically paired `)` belongs here only
-    /// when its opener is that construct or one outside it; an orphan `)`
-    /// also belongs here, since recovery may have skipped the closer that
-    /// pairing originally chose. One paired with a paren the parser already
-    /// closed is garbage instead.
-    pub(crate) fn closes_open_paren(&self) -> bool {
-        let Some(paren) = self.paren else {
-            return false;
-        };
-        self.at(SyntaxKind::RParen)
+    /// Whether the next token is the closer this bracket construct owns:
+    /// the one the stream pairs with its opener, or an orphan available as
+    /// a recovery closer, since recovery may have skipped the closer that
+    /// pairing originally chose. One paired with any other opener belongs
+    /// to another construct.
+    pub(crate) fn owns_closer(&self) -> bool {
+        let closer = self
+            .builder
+            .input
+            .get(self.start)
+            .and_then(crate::generated::closer)
+            .unwrap_or_else(|| unreachable!("only a bracket construct owns a closer"));
+        self.at(closer)
             && self
                 .builder
                 .input
                 .partner(self.builder.position)
-                .is_none_or(|partner| partner <= paren)
+                .is_none_or(|partner| partner == self.start)
     }
 
-    /// Whether the next token is the `)` owned by the innermost
-    /// parenthesized construct the parser still has open: its mechanically
-    /// paired closer, or an orphan available as a recovery closer. A `)`
-    /// paired with an earlier opener belongs to an enclosing construct.
-    pub(crate) fn owns_rparen(&self) -> bool {
-        let Some(paren) = self.paren else {
+    /// Whether the next token is a closer of kind `closer` that a construct
+    /// of its kind still open around this node can own: one paired with
+    /// that construct's opener or with an opener outside it, or an orphan.
+    /// One paired with an opener the parser has already left behind is
+    /// garbage instead.
+    pub(crate) fn closes_open(&self, closer: SyntaxKind) -> bool {
+        let Some(open) = pair_index(closer).and_then(|pair| self.open[pair]) else {
             return false;
         };
-        self.at(SyntaxKind::RParen)
+        self.at(closer)
             && self
                 .builder
                 .input
                 .partner(self.builder.position)
-                .is_none_or(|partner| partner == paren)
+                .is_none_or(|partner| partner <= open)
+    }
+
+    /// Whether the next token is a closer of a pair that suspends the
+    /// newline rule — `)`, and every kind like it — which a construct still
+    /// open around this node can own. Where a block or an expression
+    /// stands, such a closer ends it and is left to its owner.
+    pub(crate) fn closes_open_bracket(&self) -> bool {
+        self.current().is_some_and(|kind| {
+            opener(kind).is_some_and(|opener| !encloses_statements(opener))
+                && self.closes_open(kind)
+        })
     }
 
     /// Mark this node as a bracket construct whose opener is its first
     /// token: it and the children opened from now on know whether the
-    /// stream closes it.
+    /// stream closes it, and that a construct of its kind is open.
     pub(crate) fn enter(&mut self) {
         self.enclosing_closer = self.closer.or(self.enclosing_closer);
         self.closer = self.builder.input.partner(self.start);
-    }
-
-    /// [Enter](Self::enter) a parenthesized construct whose `(` is its
-    /// first token: children opened from now on also know it is open.
-    pub(crate) fn enter_parens(&mut self) {
-        self.enter();
-        self.paren = Some(self.start);
+        let pair = self
+            .builder
+            .input
+            .get(self.start)
+            .and_then(pair_index)
+            .unwrap_or_else(|| unreachable!("an entered construct opens with a bracket"));
+        self.open[pair] = Some(self.start);
     }
 
     /// Whether the stream closes the innermost bracket construct entered
@@ -1066,6 +1081,13 @@ fn to_u32(count: usize) -> u32 {
 #[inline]
 fn node_idx(index: usize) -> NodeIdx {
     NodeIdx::new(index as u32)
+}
+
+/// The index in [`BRACKET_PAIRS`] of the pair `kind` opens or closes.
+fn pair_index(kind: SyntaxKind) -> Option<usize> {
+    BRACKET_PAIRS
+        .iter()
+        .position(|&(opener, closer)| kind == opener || kind == closer)
 }
 
 #[cfg(test)]

@@ -35,7 +35,11 @@
 //                    continue  continues the previous line's statement
 //                              (operators need no flag: the tables below
 //                              decide for them)
-//   pair Opener Closer          a bracket pair the token stream matches
+//   pair Opener Closer [statements]
+//                               a bracket pair the token stream matches;
+//                               `statements` when line breaks inside it end
+//                               statements, as a block's do — every other
+//                               pair suspends the newline rule
 //   compound "text"             adjacent punctuation the parser glues into
 //                               one operator; the lexer never produces it
 //   prefix "text"               a prefix operator
@@ -126,7 +130,7 @@ token Error error "valid syntax" stmt end
 // -------------------------------------------------------------- brackets
 
 pair LParen RParen
-pair LBrace RBrace
+pair LBrace RBrace statements
 
 // ------------------------------------------------------------- operators
 

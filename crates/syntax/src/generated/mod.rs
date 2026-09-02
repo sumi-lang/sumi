@@ -182,6 +182,13 @@ pub fn is_bracket(kind: SyntaxKind) -> bool {
     is_opener(kind) || is_closer(kind)
 }
 
+/// Whether the pair opened by this kind encloses statements, so that line
+/// breaks inside it end statements as a block's do. Every other pair
+/// suspends the newline rule between its brackets.
+pub fn encloses_statements(opener: SyntaxKind) -> bool {
+    matches!(opener, SyntaxKind::LBrace)
+}
+
 /// The binding power of a prefix operator's operand: tighter than every
 /// binary operator, so only a call binds closer.
 pub const PREFIX_BP: u8 = 11;
