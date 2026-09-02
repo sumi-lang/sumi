@@ -72,12 +72,8 @@ pub(crate) struct Lexer<'src> {
     frames: Vec<Frame>,
     /// The literal whose text the next token continues, if any.
     text: Option<Text>,
-    /// Whether either is set: the one load the scan of every token makes.
-    in_literal: bool,
-    /// Whether a hole was opened, so a later pass knows whether any is
-    /// there to find; and whether one was in a `"""` literal, so the
-    /// collector knows whether any is left to judge.
-    holes: bool,
+    /// Whether a `"""` literal with holes was seen, so the collector knows
+    /// whether any is left to judge.
     block_holes: bool,
     /// The tokens emitted so far: the index the next one takes.
     emitted: u32,
@@ -91,48 +87,15 @@ impl<'src> Lexer<'src> {
             position: 0,
             frames: Vec::new(),
             text: None,
-            in_literal: false,
-            holes: false,
             block_holes: false,
             emitted: 0,
             late: Vec::new(),
         }
     }
 
-    /// Whether a hole's `{` was emitted.
-    pub(crate) fn holes(&self) -> bool {
-        self.holes
-    }
-
     /// Whether a `"""` literal with holes was emitted.
     pub(crate) fn block_holes(&self) -> bool {
         self.block_holes
-    }
-
-    fn sync(&mut self) {
-        self.in_literal = self.text.is_some() || !self.frames.is_empty();
-    }
-
-    fn set_text(&mut self, text: Option<Text>) {
-        self.text = text;
-        self.sync();
-    }
-
-    fn take_text(&mut self) -> Option<Text> {
-        let text = self.text.take();
-        self.sync();
-        text
-    }
-
-    fn push_frame(&mut self, frame: Frame) {
-        self.frames.push(frame);
-        self.sync();
-    }
-
-    fn pop_frame(&mut self) -> Option<Frame> {
-        let frame = self.frames.pop();
-        self.sync();
-        frame
     }
 
     /// The errors known only after their tokens were emitted, once the
@@ -173,7 +136,7 @@ impl<'src> Lexer<'src> {
         // Inside a literal with holes — its text to resume, or a hole's code
         // — the literal owes tokens before any other; the check is two
         // loads, and the rest stays off the path every other token takes.
-        let literal = if self.in_literal {
+        let literal = if self.text.is_some() || !self.frames.is_empty() {
             self.scan_literal_token()
         } else {
             None
@@ -410,7 +373,7 @@ impl<'src> Lexer<'src> {
     /// literal around the hole; between a hole and the next, its text.
     #[inline(never)]
     fn scan_literal_token(&mut self) -> Option<(SyntaxKind, RawKind, TokenFlags)> {
-        if let Some(text) = self.take_text()
+        if let Some(text) = self.text.take()
             && let Some(token) = self.scan_text_token(text)
         {
             return Some(token);
@@ -428,11 +391,11 @@ impl<'src> Lexer<'src> {
                 Some((SyntaxKind::RBrace, RawKind::Punct, TokenFlags::EMPTY))
             }
             b'}' => {
-                let frame = self.pop_frame().expect("a frame is open");
-                self.set_text(Some(Text {
+                let frame = self.frames.pop().expect("a frame is open");
+                self.text = Some(Text {
                     start: frame.start,
                     block: frame.block,
-                }));
+                });
                 self.position += 1;
                 Some((SyntaxKind::HoleClose, RawKind::Punct, TokenFlags::EMPTY))
             }
@@ -440,7 +403,7 @@ impl<'src> Lexer<'src> {
             // there too; the innermost `"""` one takes the break as text.
             b'\n' | b'\r' => {
                 self.leave_holes();
-                let text = self.take_text()?;
+                let text = self.text.take()?;
                 self.scan_text_token(text)
             }
             b'"' => Some(self.scan_quote_in_hole()),
@@ -463,17 +426,17 @@ impl<'src> Lexer<'src> {
     /// `"…"` literals around them end with the line; the innermost `"""`
     /// literal, if any, has its text resume.
     fn leave_holes(&mut self) {
-        while let Some(frame) = self.pop_frame() {
+        while let Some(frame) = self.frames.pop() {
             self.late.push(LateError {
                 token: frame.hole,
                 prefix: Some(1),
                 kind: LexErrorKind::UnclosedHole,
             });
             if frame.block {
-                self.set_text(Some(Text {
+                self.text = Some(Text {
                     start: frame.start,
                     block: true,
-                }));
+                });
                 return;
             }
         }
@@ -483,7 +446,7 @@ impl<'src> Lexer<'src> {
     /// of input: every hole is left open, and a `"""` literal or a `"…"`
     /// one between holes is unterminated.
     fn finish(&mut self) {
-        while let Some(frame) = self.pop_frame() {
+        while let Some(frame) = self.frames.pop() {
             self.late.push(LateError {
                 token: frame.hole,
                 prefix: Some(1),
@@ -497,7 +460,7 @@ impl<'src> Lexer<'src> {
                 });
             }
         }
-        if let Some(text) = self.take_text() {
+        if let Some(text) = self.text.take() {
             self.late.push(unterminated(text));
         }
     }
@@ -527,10 +490,10 @@ impl<'src> Lexer<'src> {
                 (SyntaxKind::StringLiteral, RawKind::String, flags)
             }
             Stop::Hole => {
-                self.set_text(Some(Text {
+                self.text = Some(Text {
                     start: self.emitted,
                     block: false,
-                }));
+                });
                 (SyntaxKind::StringStart, RawKind::String, flags)
             }
             Stop::End if block => (
@@ -549,7 +512,7 @@ impl<'src> Lexer<'src> {
     /// Leave the innermost hole at its literal's closer, which leaves the
     /// hole open.
     fn leave_hole_at_closer(&mut self) {
-        let frame = self.pop_frame().expect("a frame is open");
+        let frame = self.frames.pop().expect("a frame is open");
         self.late.push(LateError {
             token: frame.hole,
             prefix: Some(1),
@@ -559,9 +522,7 @@ impl<'src> Lexer<'src> {
 
     /// Scan a `"…"` or `"""` literal from its opener: whole, when it has no
     /// hole, and otherwise up to its first `{`, as its start, with its text
-    /// to resume after the hole. Out of line, so that the token loop stays
-    /// small enough for the scans of every other token to inline into it.
-    #[inline(never)]
+    /// to resume after the hole.
     fn scan_string(&mut self, block: bool) -> (SyntaxKind, RawKind, TokenFlags) {
         let (raw, whole) = if block {
             (RawKind::BlockString, SyntaxKind::BlockStringLiteral)
@@ -580,10 +541,10 @@ impl<'src> Lexer<'src> {
             Stop::End => (whole, raw, flags | TokenFlags::UNTERMINATED),
             Stop::Hole => {
                 self.block_holes |= block;
-                self.set_text(Some(Text {
+                self.text = Some(Text {
                     start: self.emitted,
                     block,
-                }));
+                });
                 (SyntaxKind::StringStart, raw, flags)
             }
         }
@@ -602,8 +563,7 @@ impl<'src> Lexer<'src> {
         };
         if self.peek_byte() == Some(b'{') {
             self.position += 1;
-            self.holes = true;
-            self.push_frame(Frame {
+            self.frames.push(Frame {
                 start: text.start,
                 hole: self.emitted,
                 depth: 0,
@@ -619,7 +579,7 @@ impl<'src> Lexer<'src> {
         };
         match stop {
             Stop::Hole => {
-                self.set_text(Some(text));
+                self.text = Some(text);
                 Some((SyntaxKind::StringMiddle, raw, flags))
             }
             Stop::Closer => Some((SyntaxKind::StringEnd, raw, flags)),
@@ -869,12 +829,12 @@ fn unterminated(text: Text) -> LateError {
     }
 }
 
-impl Lexer<'_> {
-    /// The next token. `Some` always consumes at least one byte; `None`
-    /// means the cursor reached `source.len()`. Malformed input never ends
-    /// the scan early. An inherent method rather than an `Iterator`: the
-    /// collector calls it directly, with no adapter between.
-    pub(crate) fn next_token(&mut self) -> Option<RawToken> {
+impl Iterator for Lexer<'_> {
+    type Item = RawToken;
+
+    /// `Some` always consumes at least one byte; `None` means the cursor
+    /// reached `source.len()`. Malformed input never ends iteration early.
+    fn next(&mut self) -> Option<Self::Item> {
         if self.position == self.source.len() {
             self.finish();
             return None;

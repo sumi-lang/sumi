@@ -26,7 +26,7 @@ pub fn lex(source: &str) -> Result<LexedFile, SourceTooLarge> {
     let mut errors = Vec::new();
     let mut position = 0;
     let mut lexer = Lexer::new(source);
-    while let Some(token) = lexer.next_token() {
+    for token in lexer.by_ref() {
         let start = position;
         position += token.len.to_u32();
 
@@ -77,7 +77,6 @@ pub fn lex(source: &str) -> Result<LexedFile, SourceTooLarge> {
         validate_block_literals(source, &tokens, &mut errors);
     }
 
-    let holes = lexer.holes();
     for late in lexer.into_late_errors() {
         let index = late.token as usize;
         let start = tokens[index].start;
@@ -99,7 +98,6 @@ pub fn lex(source: &str) -> Result<LexedFile, SourceTooLarge> {
 
     Ok(LexedFile {
         source_len: TextSize::new(source_len),
-        holes,
         tokens: tokens.into_boxed_slice(),
         errors: errors.into_boxed_slice(),
     })
@@ -296,19 +294,11 @@ fn absolute_range(start: TextSize, token_len: usize, relative: Range<usize>) -> 
 #[derive(Clone, Debug)]
 pub struct LexedFile {
     source_len: TextSize,
-    /// Whether any token is a hole's `{`.
-    holes: bool,
     tokens: Box<[StoredToken]>,
     errors: Box<[LexError]>,
 }
 
 impl LexedFile {
-    /// Whether any string literal has a hole: whether a pass over the
-    /// tokens has any `HoleOpen` to find.
-    pub fn has_holes(&self) -> bool {
-        self.holes
-    }
-
     /// The number of tokens.
     pub fn len(&self) -> usize {
         self.tokens.len()

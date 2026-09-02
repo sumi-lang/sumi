@@ -90,18 +90,7 @@ pub struct ParserInput {
 }
 
 impl ParserInput {
-    /// Build the stream. A file without holes takes the loop that has no
-    /// hole bookkeeping in it at all, since even the untaken branches of
-    /// that bookkeeping cost the loop its registers.
     pub fn new(lexed: &LexedFile) -> Self {
-        if lexed.has_holes() {
-            Self::build::<true>(lexed)
-        } else {
-            Self::build::<false>(lexed)
-        }
-    }
-
-    fn build<const HOLES: bool>(lexed: &LexedFile) -> Self {
         // Sized exactly and filled once: counting the significant tokens
         // first is one cheap scan, and spares both the doubling
         // reallocations of a growing vector and a final shrink.
@@ -125,7 +114,7 @@ impl ParserInput {
                 newline |= kind == SyntaxKind::Newline;
                 continue;
             }
-            build.push::<HOLES>(kind, raw, newline);
+            build.push(kind, raw, newline);
             newline = false;
         }
 
@@ -313,8 +302,8 @@ struct Build<'a> {
 impl Build<'_> {
     /// Append one significant token: glue it to a raw-adjacent predecessor,
     /// and pair it if it is a bracket. The bookkeeping of string literals
-    /// with holes is compiled in only for a file that has one.
-    fn push<const HOLES: bool>(&mut self, kind: SyntaxKind, raw: RawIdx, newline: bool) {
+    /// with holes stays off the path every other token takes.
+    fn push(&mut self, kind: SyntaxKind, raw: RawIdx, newline: bool) {
         if let Some(last) = self.slots.last_mut()
             && last.token + 1 == raw
         {
@@ -322,10 +311,10 @@ impl Build<'_> {
         }
         // A line break ends every open hole; the check is the newline
         // tokens' alone.
-        if HOLES && newline && !self.holes.is_empty() {
+        if newline && !self.holes.is_empty() {
             self.line_break();
         }
-        if HOLES && is_literal_token(kind) {
+        if is_literal_token(kind) {
             self.literal_token(kind, raw);
         }
         let index = self.slots.len() as u32;
@@ -335,8 +324,7 @@ impl Build<'_> {
         } else {
             opener(kind).and_then(|expected| self.close(index, expected))
         };
-        if HOLES
-            && kind == SyntaxKind::HoleClose
+        if kind == SyntaxKind::HoleClose
             && let Some(partner) = partner
         {
             self.hole_closed(partner.get() - 1);
