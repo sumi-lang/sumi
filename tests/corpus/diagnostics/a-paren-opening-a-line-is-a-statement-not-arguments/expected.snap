@@ -1,0 +1,24 @@
+== tree ==
+SourceFile 0..56
+  FnItem 0..55
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block 7..55
+      LetStmt 13..24
+        Name 17..18 "x"
+        NameRef 21..24 "foo"
+      BinaryExpr 29..40
+        ParenExpr 29..36
+          BinaryExpr 30..35
+            LiteralExpr 30..31 "1"
+            LiteralExpr 34..35 "2"
+        LiteralExpr 39..40 "3"
+      CallExpr 45..53
+        NameRef 45..50 "print"
+        ArgList 50..53
+          NameRef 51..52 "x"
+
+== diagnostics ==
+error[syntax/statement-without-effect] 3:5..3:16 "(1 + 2) * 3": expression has no effect as a statement
+  note: only a call, an `if`, or a block may stand before another statement; any other expression may only end its block, as the block's value
+  note: a `(` on a new line begins a statement, never a call's arguments, which stay on their callee's line

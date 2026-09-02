@@ -249,6 +249,10 @@ impl Block {
     }
 }
 
+/// One statement of a block; a line break ends it. An expression that
+/// another statement follows must be a call, an `if`, or a block: any
+/// other expression computes a value that goes nowhere, so it may only
+/// end its block, as the block's value.
 /// The `Stmt` category.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Stmt {

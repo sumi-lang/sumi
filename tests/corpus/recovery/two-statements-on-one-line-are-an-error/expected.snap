@@ -11,4 +11,6 @@ SourceFile! 0..14
 ExpectedBoundary at 11
 
 == diagnostics ==
+error[syntax/statement-without-effect] 1:10..1:11 "a": expression has no effect as a statement
+  note: only a call, an `if`, or a block may stand before another statement; any other expression may only end its block, as the block's value
 error[syntax/expected-boundary] 1:12: expected a line break between statements
