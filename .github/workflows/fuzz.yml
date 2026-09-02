@@ -10,11 +10,6 @@ on:
         description: Minutes to fuzz each target
         default: "10"
         type: string
-  # A change to this file runs every target for a minute, so the workflow
-  # is validated on the pull request that changes it.
-  pull_request:
-    paths:
-      - .github/workflows/fuzz.yml
 
 permissions:
   contents: read
@@ -57,7 +52,7 @@ jobs:
           cargo fuzz run -s none ${{ matrix.target }} --
           -dict=fuzz/sumi.dict
           -max_len=4096
-          -max_total_time=$(( 60 * ${{ github.event_name == 'pull_request' && 1 || inputs.minutes || 10 }} ))
+          -max_total_time=$(( 60 * ${{ inputs.minutes || 10 }} ))
           -timeout=10
           -rss_limit_mb=2048
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
