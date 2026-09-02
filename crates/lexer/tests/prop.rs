@@ -35,13 +35,16 @@ const EXTRA_SINGLE_TOKENS: &[&str] = &[
     // Terminated string, char, and raw-string literals.
     "\"abc\"",
     "\"a\\\"b\"",
-    "\"a\nb\"",
     "'a'",
     "'\\''",
     "'ab'",
     "''",
     "r\"a\"",
     "r#\"q\"#",
+    // Terminated multi-line literals.
+    "\"\"\"\n\"\"\"",
+    "\"\"\"\n  a \\\"\n  \"\"\"",
+    "r\"\"\"\n  \\d\n  \"\"\"",
     // Punctuation outside the language.
     ";",
     "[",
@@ -78,6 +81,8 @@ const LOOSE_FRAGMENTS: &[&str] = &[
     "\"open",
     "'x",
     "r##\"a\"#",
+    "\"\"\"\n",
+    "r\"\"\"",
     "\u{feff}",
     "\u{1}",
 ];
@@ -147,6 +152,16 @@ proptest! {
                 prop_assert!(
                     file.errors().iter().any(|error| error.token == index),
                     "error token {:?} has no lexical error", index
+                );
+            }
+            // Only a line break and a multi-line literal span lines.
+            if file.text(&source, index).contains(['\n', '\r']) {
+                prop_assert!(
+                    matches!(
+                        file.raw_kind(index),
+                        RawKind::Newline | RawKind::BlockString | RawKind::RawBlockString
+                    ),
+                    "token {:?} crosses a line break", index
                 );
             }
         }

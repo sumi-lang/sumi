@@ -61,6 +61,8 @@ pub fn starts_expression(kind: SyntaxKind) -> bool {
             | SyntaxKind::FloatLiteral
             | SyntaxKind::StringLiteral
             | SyntaxKind::RawStringLiteral
+            | SyntaxKind::BlockStringLiteral
+            | SyntaxKind::RawBlockStringLiteral
             | SyntaxKind::CharLiteral
             | SyntaxKind::LParen
             | SyntaxKind::LBrace
@@ -97,6 +99,8 @@ pub fn can_end_statement(kind: SyntaxKind) -> bool {
             | SyntaxKind::FloatLiteral
             | SyntaxKind::StringLiteral
             | SyntaxKind::RawStringLiteral
+            | SyntaxKind::BlockStringLiteral
+            | SyntaxKind::RawBlockStringLiteral
             | SyntaxKind::CharLiteral
             | SyntaxKind::RParen
             | SyntaxKind::RBrace

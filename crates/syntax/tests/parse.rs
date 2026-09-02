@@ -2680,3 +2680,27 @@ fn a_matched_block_is_never_blamed_for_another_surplus() {
         &["ExpectedStatement at 12"],
     );
 }
+
+#[test]
+fn block_strings_are_one_token_across_lines() {
+    // The line breaks inside the literal never reach the newline rule: the
+    // statement ends after the closer, and the call is the next one.
+    check(
+        "fn f() {\n    let s = \"\"\"\n        a\n        \"\"\"\n    g(s)\n}",
+        &[
+            "SourceFile 0..57",
+            "  FnItem 0..57",
+            r#"    Name 3..4 "f""#,
+            r#"    ParamList 4..6 "()""#,
+            "    Block 7..57",
+            "      LetStmt 13..46",
+            r#"        Name 17..18 "s""#,
+            r#"        LiteralExpr 21..46 "\"\"\"\n        a\n        \"\"\"""#,
+            "      CallExpr 51..55",
+            r#"        NameRef 51..52 "g""#,
+            "        ArgList 52..55",
+            r#"          NameRef 53..54 "s""#,
+        ],
+        &[],
+    );
+}

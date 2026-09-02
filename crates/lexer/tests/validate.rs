@@ -254,3 +254,79 @@ fn char_content_validation() {
     // A bad escape is one piece: no cascading length error.
     check_errors(r"'\q'", &[(0, LexErrorKind::UnknownEscape)]);
 }
+
+#[test]
+fn block_string_layout_is_checked() {
+    check_errors("\"\"\"\n  a\n  \"\"\"", &[]);
+    check_errors("\"\"\"\n\"\"\"", &[]);
+    // Blank lines of any whitespace count as empty.
+    check_errors("\"\"\"\n  a\n\n\t\n  b\n  \"\"\"", &[]);
+    check_error_ranges(
+        "\"\"\"a\n  \"\"\"",
+        &[(0, 3, 4, LexErrorKind::BlockStringOpenerContent)],
+    );
+    check_error_ranges(
+        "\"\"\" \n  a\"\"\"",
+        &[(0, 8, 11, LexErrorKind::BlockStringCloserContent)],
+    );
+    check_errors(
+        "\"\"\"a\"\"\"",
+        &[
+            (0, LexErrorKind::BlockStringOpenerContent),
+            (0, LexErrorKind::BlockStringCloserContent),
+        ],
+    );
+    check_errors(
+        "\"\"\"\"\"\"",
+        &[(0, LexErrorKind::BlockStringCloserContent)],
+    );
+    check_error_ranges(
+        "\"\"\"\n  a\n b\n  \"\"\"",
+        &[(0, 8, 9, LexErrorKind::BlockStringIndentation)],
+    );
+    // Indentation is compared byte for byte: a tab is not two spaces.
+    check_errors(
+        "\"\"\"\n  a\n\t\"\"\"",
+        &[(0, LexErrorKind::BlockStringIndentation)],
+    );
+    // A line with no indentation at all is reported at its start.
+    check_error_ranges(
+        "\"\"\"\n  a\nb\n  \"\"\"",
+        &[(0, 8, 8, LexErrorKind::BlockStringIndentation)],
+    );
+    // Raw multi-line literals share the layout rules.
+    check_errors("r\"\"\"\n  \\d\n  \"\"\"", &[]);
+    check_errors(
+        "r\"\"\"x\n  \"\"\"",
+        &[(0, LexErrorKind::BlockStringOpenerContent)],
+    );
+}
+
+#[test]
+fn block_string_escapes_join_lines() {
+    check_errors("\"\"\"\n  a\\\n  b\n  \"\"\"", &[]);
+    check_errors("\"\"\"\n  a\\\r\n  b\n  \"\"\"", &[]);
+    check_errors("\"\"\"\n  \\\"\"\"\n  \"\"\"", &[]);
+    check_errors("\"\"\"\n  \\u{41}\n  \"\"\"", &[]);
+    check_error_ranges(
+        "\"\"\"\n  \\q\n  \"\"\"",
+        &[(0, 6, 8, LexErrorKind::UnknownEscape)],
+    );
+    // An unterminated one gets only its own error.
+    check_errors(
+        "\"\"\"x\n \\q",
+        &[(0, LexErrorKind::UnterminatedBlockString)],
+    );
+}
+
+#[test]
+fn line_literals_get_only_their_unterminated_error() {
+    check_errors(
+        "\"a\\\nb\"",
+        &[
+            (0, LexErrorKind::UnterminatedString),
+            (3, LexErrorKind::UnterminatedString),
+        ],
+    );
+    check_errors("r\"a\nb", &[(0, LexErrorKind::UnterminatedRawString)]);
+}

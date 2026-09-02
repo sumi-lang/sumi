@@ -7,8 +7,12 @@
 //! punctuation roles, int/float — and stores the shape-only [`RawKind`]
 //! beside it. Token-local validity is established before [`lex`] returns by
 //! selectively re-examining malformed numbers, escaped literals, character
-//! literals, and roleless punctuation. Punctuation gluing happens later in
-//! the parser.
+//! literals, the layout of multi-line literals, and roleless punctuation.
+//! Punctuation gluing happens later in the parser.
+//!
+//! Every literal but the multi-line forms is bounded by its line: an
+//! unterminated `"…"`, `r"…"`, or `'…'` ends at the line break, so a stray
+//! delimiter costs its line and never the file.
 
 mod file;
 mod generated;

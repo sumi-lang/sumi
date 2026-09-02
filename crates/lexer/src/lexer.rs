@@ -3,6 +3,9 @@ use sumi_text::TextSize;
 use crate::generated::SyntaxKind;
 use crate::token::{RawKind, RawToken, TokenFlags};
 
+/// The delimiter of a multi-line string literal, both ends.
+const BLOCK_DELIMITER: &str = "\"\"\"";
+
 const fn is_ascii_ident_start(byte: u8) -> bool {
     byte == b'_' || byte.is_ascii_alphabetic()
 }
@@ -79,12 +82,26 @@ impl<'src> Lexer<'src> {
                     let (kind, flags) = self.scan_number();
                     (kind, RawKind::Number, flags)
                 }
+                b'"' if self.remaining().starts_with(BLOCK_DELIMITER) => (
+                    SyntaxKind::BlockStringLiteral,
+                    RawKind::BlockString,
+                    self.scan_block_string(BLOCK_DELIMITER.len(), true),
+                ),
                 b'"' => (
                     SyntaxKind::StringLiteral,
                     RawKind::String,
-                    self.scan_string(),
+                    self.scan_line_literal(b'"'),
                 ),
-                b'\'' => (SyntaxKind::CharLiteral, RawKind::Char, self.scan_char()),
+                b'\'' => (
+                    SyntaxKind::CharLiteral,
+                    RawKind::Char,
+                    self.scan_line_literal(b'\''),
+                ),
+                b'r' if self.remaining()[1..].starts_with(BLOCK_DELIMITER) => (
+                    SyntaxKind::RawBlockStringLiteral,
+                    RawKind::RawBlockString,
+                    self.scan_block_string(1 + BLOCK_DELIMITER.len(), false),
+                ),
                 b'r' if self.looks_like_raw_string() => (
                     SyntaxKind::RawStringLiteral,
                     RawKind::RawString,
@@ -274,24 +291,27 @@ impl<'src> Lexer<'src> {
     }
 
     /// Strings may span lines; an unterminated one runs to the end of input.
-    fn scan_string(&mut self) -> TokenFlags {
+    /// Scan a `"…"` or `'…'` literal. Both are line-bounded: an unterminated
+    /// one ends at the line break, so the rest of the line lexes normally
+    /// and a stray delimiter never reaches the next line.
+    fn scan_line_literal(&mut self, close: u8) -> TokenFlags {
         self.bump_ascii();
 
         let mut flags = TokenFlags::EMPTY;
         loop {
             match self.peek_byte() {
-                None => {
+                None | Some(b'\n' | b'\r') => {
                     flags |= TokenFlags::UNTERMINATED;
                     break;
                 }
-                Some(b'"') => {
+                Some(byte) if byte == close => {
                     self.bump_ascii();
                     break;
                 }
                 Some(b'\\') => {
                     flags |= TokenFlags::HAS_ESCAPE;
                     self.bump_ascii();
-                    if self.peek_byte().is_some() {
+                    if !matches!(self.peek_byte(), None | Some(b'\n' | b'\r')) {
                         self.bump_char();
                     }
                 }
@@ -303,27 +323,40 @@ impl<'src> Lexer<'src> {
         flags
     }
 
-    /// Character literals are line-bounded: an unterminated one ends at the
-    /// newline so the rest of the line lexes normally.
-    fn scan_char(&mut self) -> TokenFlags {
-        self.bump_ascii();
+    /// Scan a multi-line literal from its opener, `"""` or `r"""`, to the
+    /// next `"""`. Line breaks are content, and with `escapes` a `\` protects
+    /// the byte after it, so an escaped quote never closes. Layout — what
+    /// shares the opener's line and the closer's, and how the content is
+    /// indented — is the collector's to judge.
+    fn scan_block_string(&mut self, opener: usize, escapes: bool) -> TokenFlags {
+        self.position += opener;
 
         let mut flags = TokenFlags::EMPTY;
         loop {
             match self.peek_byte() {
-                None | Some(b'\n' | b'\r') => {
+                None => {
                     flags |= TokenFlags::UNTERMINATED;
                     break;
                 }
-                Some(b'\'') => {
-                    self.bump_ascii();
+                Some(b'"') if self.remaining().starts_with(BLOCK_DELIMITER) => {
+                    self.position += BLOCK_DELIMITER.len();
                     break;
                 }
-                Some(b'\\') => {
+                Some(b'\\') if escapes => {
                     flags |= TokenFlags::HAS_ESCAPE;
                     self.bump_ascii();
+                    // An escaped line break joins two lines; the break stays
+                    // for the arm below, so a lone `\r` is still flagged.
                     if !matches!(self.peek_byte(), None | Some(b'\n' | b'\r')) {
                         self.bump_char();
+                    }
+                }
+                Some(b'\r') => {
+                    self.bump_ascii();
+                    if self.peek_byte() == Some(b'\n') {
+                        self.bump_ascii();
+                    } else {
+                        flags |= TokenFlags::LONE_CR;
                     }
                 }
                 Some(_) => self.position += 1,
@@ -343,6 +376,8 @@ impl<'src> Lexer<'src> {
         bytes.get(index) == Some(&b'"')
     }
 
+    /// Scan an `r"…"` literal, closed by a quote and as many `#` as opened
+    /// it. Line-bounded like `"…"`.
     fn scan_raw_string(&mut self) -> TokenFlags {
         self.bump_ascii();
 
@@ -356,20 +391,21 @@ impl<'src> Lexer<'src> {
         self.bump_ascii();
 
         let bytes = self.source.as_bytes();
-        let mut index = self.position;
-        while index < bytes.len() {
-            if bytes[index] == b'"' {
-                let closing = &bytes[index + 1..];
-                if closing.len() >= hashes && closing[..hashes].iter().all(|&byte| byte == b'#') {
-                    self.position = index + 1 + hashes;
-                    return TokenFlags::EMPTY;
+        loop {
+            match bytes.get(self.position) {
+                None | Some(b'\n' | b'\r') => return TokenFlags::UNTERMINATED,
+                Some(b'"') => {
+                    let closing = &bytes[self.position + 1..];
+                    if closing.len() >= hashes && closing[..hashes].iter().all(|&byte| byte == b'#')
+                    {
+                        self.position += 1 + hashes;
+                        return TokenFlags::EMPTY;
+                    }
+                    self.position += 1;
                 }
+                Some(_) => self.position += 1,
             }
-            index += 1;
         }
-
-        self.position = bytes.len();
-        TokenFlags::UNTERMINATED
     }
 
     fn scan_ident(&mut self) {

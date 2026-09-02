@@ -19,6 +19,13 @@ Reading the numbers:
   cascading, and a closer can only pair across an item boundary when two
   complementary errors sit in different items — which no single edit
   creates.
+- Part C spread stays inside the line for the one-line forms (a median of
+  a few dozen bytes, a maximum of one long line) and does not for `"""`: a
+  deleted `"""` reaches the next one, a median of 580 bytes and up to
+  2.7 KiB here. The one-line maxima come from the same cascade: an
+  unterminated one-line literal that reaches a `"""` opener on its line
+  eats the opener's first quote, and every later `"""` in the file swaps
+  role. A layout bound on multi-line literals would close that case.
 
 recovery-scorecard
 
@@ -66,3 +73,16 @@ clean_1m: 222983 significant tokens, 1395 top-level items
   insert (  n=50   unaligned=0   partner p50/p95/max 0/6/6  boundary 0/1/1  any 1/6/6  items_disturbed 0/0/0
   delete }  n=50   unaligned=0   partner p50/p95/max 3/5/5  boundary 0/0/0  any 3/5/5  items_disturbed 0/0/0
   delete )  n=50   unaligned=0   partner p50/p95/max 1/7/7  boundary 0/1/1  any 2/7/7  items_disturbed 0/0/0
+
+== Part C: one delimiter deleted inside a literal ==
+spread = bytes of the longest literal token left where the edited one stood: how
+far the stray delimiter reaches. A one-line literal reaches the end of its line at
+most; a `"""` reaches the next `"""` or the end of the file.
+
+literals_64k: 65603 bytes, 360 literals, 87 top-level items
+  delete " closer    n=200  spread p50/p95/max 27/176/253  diags 2/7/1168  items_disturbed 0/0/85
+  delete " opener    n=200  spread p50/p95/max 18/53/189  diags 3/9/689  items_disturbed 0/0/54
+  delete ' closer    n=200  spread p50/p95/max 26/125/166  diags 2/121/1096  items_disturbed 0/10/84
+  delete r" closer   n=200  spread p50/p95/max 47/130/130  diags 3/643/656  items_disturbed 0/48/50
+  delete """ closer  n=200  spread p50/p95/max 580/1887/2710  diags 495/1094/1158  items_disturbed 41/84/85
+  delete """ opener  n=200  spread p50/p95/max 607/1760/2571  diags 598/1095/1169  items_disturbed 44/84/85

@@ -44,10 +44,14 @@ pub enum RawKind {
 
     /// A decimal integer or float literal, including any suffix.
     Number,
-    /// A `"..."` literal, possibly multi-line.
+    /// A `"..."` literal, ended by the line if unterminated.
     String,
-    /// An `r"..."` or `r#"..."#` literal.
+    /// An `r"..."` or `r#"..."#` literal, ended by the line if unterminated.
     RawString,
+    /// A `"""` literal, running to the next `"""` over any number of lines.
+    BlockString,
+    /// An `r"""` literal, running to the next `"""` with nothing escaped.
+    RawBlockString,
     /// A `'...'` literal, ended by the line if unterminated.
     Char,
 
@@ -72,7 +76,8 @@ impl TokenFlags {
     pub const DOC_OUTER: Self = Self(1 << 2);
     /// An inner doc comment: `//!`.
     pub const DOC_INNER: Self = Self(1 << 3);
-    /// A lone `\r` not followed by `\n`.
+    /// A lone `\r` not followed by `\n`, in a line break or inside a
+    /// multi-line string literal.
     pub const LONE_CR: Self = Self(1 << 4);
     /// A number literal that breaks at least one literal rule — a suffix, a
     /// leading zero, a misplaced underscore, or a malformed exponent — so

@@ -93,6 +93,16 @@ pub struct EditSpan {
 }
 
 impl EditSpan {
+    /// The interval `start..old_end` of the original, replaced by text that
+    /// ends at `new_end` in the edited source.
+    pub fn new(start: usize, old_end: usize, new_end: usize) -> Self {
+        Self {
+            start,
+            old_end,
+            new_end,
+        }
+    }
+
     /// Map a span disjoint from the edit into the edited source.
     pub fn map(self, (start, end): (usize, usize)) -> (usize, usize) {
         if end <= self.start {

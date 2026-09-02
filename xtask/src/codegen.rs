@@ -623,6 +623,27 @@ the parser's spacing rules keep the third unambiguous.
 - **Begin a top-level item:** {item}.
 - **Continue the previous line:** {continues}, and any binary operator leading the line — a compound one when glued into shape, and {spaced} only when spaced from what follows, since glued it opens an operand.
 
+## Strings
+
+A string literal takes one of four forms. `\"…\"` and `r\"…\"` sit on one
+line: a line break ends an unterminated one, so a stray quote costs its
+line and nothing after it. The escapes are `\\n`, `\\r`, `\\t`, `\\\\`, `\\\"`,
+`\\'`, `\\0`, and `\\u{{…}}` with one to six hex digits; a raw literal has
+none, and `r#\"…\"#` lets one contain quotes.
+
+Text that spans lines is a multi-line literal, `\"\"\"` to `\"\"\"`, or
+`r\"\"\"` to `\"\"\"` with nothing escaped:
+
+- The content begins on the line after the opening `\"\"\"`, and the
+  closing `\"\"\"` begins its own line.
+- Every content line begins with the closing line's indentation, which is
+  not part of the value; a line of only whitespace counts as empty.
+- The value keeps each line break except the one before the closing line,
+  as `\\n` whatever the source uses. A `\\` ending a line joins it to the
+  next.
+- A `\"\"\"` inside the content escapes one of its quotes; a raw multi-line
+  literal cannot contain one.
+
 ## Syntax nodes
 
 The shape of valid syntax, in ungrammar notation: `'text'` is a token by
