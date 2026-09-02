@@ -4,8 +4,10 @@
 //! evidence; the edit machinery damages one significant token and maps what
 //! an edit must leave alone into the edited source. The recovery property
 //! tests in `sumi-syntax` assert quality over these pairs, and any harness
-//! measuring it must draw from the same distributions. Nothing here ships
-//! in the compiler: production crates must not depend on this one.
+//! measuring it must draw from the same distributions; the recovery
+//! scorecard in `xtask` is one. Nothing here ships in the compiler:
+//! production crates must not depend on this one, and it depends on
+//! nothing above the parser.
 
 pub mod corpus;
 mod edit;

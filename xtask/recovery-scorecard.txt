@@ -1,8 +1,8 @@
 Reference recovery scorecard
 ============================
 
-Verbatim output of `cargo run --release -p sumi-test --bin
-recovery-scorecard`. Everything the harness measures is seeded and
+Verbatim output of `cargo run --release -p xtask -- scorecard`.
+Everything the harness measures is seeded and
 count-based — no timing — so this file must reproduce byte for byte on any
 machine; regenerate it whenever recovery behavior legitimately changes, and
 treat any other drift as a regression.
