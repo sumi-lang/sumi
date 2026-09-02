@@ -1,0 +1,15 @@
+[package]
+name = "sumi-scorecard"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "recovery-scorecard"
+path = "src/main.rs"
+
+[dependencies]
+sumi-frontend = { path = "../frontend" }
+sumi-lexer = { path = "../lexer" }
+sumi-syntax = { path = "../syntax" }
+sumi-test = { path = "../test" }

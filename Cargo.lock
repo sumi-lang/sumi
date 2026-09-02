@@ -648,6 +648,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "sumi-scorecard"
+version = "0.0.0"
+dependencies = [
+ "sumi-frontend",
+ "sumi-lexer",
+ "sumi-syntax",
+ "sumi-test",
+]
+
+[[package]]
 name = "sumi-syntax"
 version = "0.1.0"
 dependencies = [
@@ -789,12 +799,6 @@ checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 [[package]]
 name = "xtask"
 version = "0.0.0"
-dependencies = [
- "sumi-frontend",
- "sumi-lexer",
- "sumi-syntax",
- "sumi-test",
-]
 
 [[package]]
 name = "zerocopy"

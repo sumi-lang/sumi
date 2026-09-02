@@ -9,7 +9,7 @@ You're in the core repository for Sumi, a novel statically typed general-purpose
 
 ## Crates
 
-- Dependencies point one way: `sumi-text`, then `sumi-lexer`, `sumi-syntax`, and above them `sumi-format`, `sumi-diagnostics`, and `sumi-frontend`. `sumi-test` (generators and edits, nothing above the parser) and `xtask` (codegen and the recovery scorecard) are leaves that nothing ships.
+- Dependencies point one way: `sumi-text`, then `sumi-lexer`, `sumi-syntax`, and above them `sumi-format`, `sumi-diagnostics`, and `sumi-frontend`. `sumi-test` (generators and edits, nothing above the parser), `sumi-scorecard` (the recovery scorecard, above everything), and `xtask` (codegen, which depends on no workspace crate so it runs while they do not compile) are leaves that nothing ships.
 - A crate's integration tests may use crates above it, which Cargo allows. A library's unit tests never import a crate above it: rust-analyzer's crate graph has no room for that cycle and drops the edge without a word, leaving those tests unresolved in the editor.
 
 ## Grammar

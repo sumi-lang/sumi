@@ -5,7 +5,3 @@ edition = "2024"
 publish = false
 
 [dependencies]
-sumi-frontend = { path = "../crates/frontend" }
-sumi-lexer = { path = "../crates/lexer" }
-sumi-syntax = { path = "../crates/syntax" }
-sumi-test = { path = "../crates/test" }
