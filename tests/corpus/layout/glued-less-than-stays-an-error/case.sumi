@@ -1,0 +1,8 @@
+// A `<` glued to the name before it is reserved for type arguments, so
+// every glued comparison stays an error until it becomes an unclosed list.
+fn f() {
+    if a<b { return 1 }
+    if a<b>(c) { return 2 }
+    a< b
+    a <b
+}
