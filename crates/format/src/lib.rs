@@ -220,10 +220,7 @@ fn changes_only_layout(
     let Ok(after) = lex(candidate) else {
         return false;
     };
-    let same = |keep: fn(SyntaxKind) -> bool| {
-        tokens(&after, candidate, keep).eq(tokens(lexed, source, keep))
-    };
-    if !same(|kind| !kind.is_trivia()) || !same(|kind| kind == SyntaxKind::LineComment) {
+    if !same_tokens(lexed, source, &after, candidate) {
         return false;
     }
     let reparse = parse(&ParserInput::new(&after));
@@ -233,17 +230,41 @@ fn changes_only_layout(
         && after.parents() == tree.parents()
 }
 
-/// The tokens of `lexed` whose kind `keep` accepts, in order, as kind and
-/// text.
-fn tokens<'a>(
-    lexed: &'a LexedFile,
-    source: &'a str,
-    keep: fn(SyntaxKind) -> bool,
-) -> impl Iterator<Item = (SyntaxKind, &'a str)> + 'a {
-    lexed
+/// Whether `after` holds the significant tokens of `before`, kind for kind
+/// and text for text, and its comments in the same order. The two are
+/// separate sequences, since an operator may hop a comment. A keyword or
+/// punctuation kind fixes its text, so only the kinds whose text varies
+/// are compared byte for byte.
+fn same_tokens(
+    before: &LexedFile,
+    before_source: &str,
+    after: &LexedFile,
+    after_source: &str,
+) -> bool {
+    let mut code = after.indices().filter(|&raw| !after.kind(raw).is_trivia());
+    let mut comments = after
         .indices()
-        .filter(move |&raw| keep(lexed.kind(raw)))
-        .map(move |raw| (lexed.kind(raw), lexed.text(source, raw)))
+        .filter(|&raw| after.kind(raw) == SyntaxKind::LineComment);
+    for raw in before.indices() {
+        let kind = before.kind(raw);
+        let counterpart = if kind == SyntaxKind::LineComment {
+            comments.next()
+        } else if !kind.is_trivia() {
+            code.next()
+        } else {
+            continue;
+        };
+        let Some(other) = counterpart else {
+            return false;
+        };
+        if after.kind(other) != kind
+            || (kind.text().is_none()
+                && after.text(after_source, other) != before.text(before_source, raw))
+        {
+            return false;
+        }
+    }
+    code.next().is_none() && comments.next().is_none()
 }
 
 fn insert(at: usize, text: impl Into<Box<str>>) -> TextEdit {
