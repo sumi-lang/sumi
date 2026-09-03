@@ -1,0 +1,40 @@
+== tree ==
+SourceFile! 0..16
+  FnItem! 0..16
+    Name 0..1 "f"
+    ParamList 1..3 "()"
+    Block! 3..16
+      InterpolatedString! 5..16
+        Hole! 7..16
+          Block! 8..16
+            PrefixExpr! 10..14
+              ParenExpr! 12..14
+                LiteralExpr 13..14 "1"
+            Error! 14..16 "\"f"
+
+== evidence ==
+Expected(FnKw) at 0
+SpacedPrefixOperator at 10
+Expected(RParen) at 14
+Expected(RBrace) at 16
+Expected(RBrace) at 16
+
+== diagnostics ==
+error[syntax/expected-token] 1:1: expected `fn`
+error[syntax/unclosed-hole] 1:8..1:9 "{": hole in string literal is not closed on its line
+  note: a `{` in a string literal opens a hole for an expression, which ends with its line; a `{` meant as text is written `\{`
+error[syntax/spaced-prefix-operator] 1:11..1:12 "-": prefix operator must be adjacent to its operand
+error[syntax/expected-token] 2:3: expected `)`
+  at 2:1..2:2 "(": opening delimiter is here
+  at 2:3..2:5 "\"f": skipped while recovering
+  fix (safe): insert `)`
+    2:3 -> ")"
+error[syntax/unterminated-string] 2:3..2:5 "\"f": unterminated string literal
+error[syntax/expected-token] 2:5: expected `}`
+  at 1:9..1:10 "{": opening delimiter is here
+error[syntax/expected-token] 2:5: expected `}`
+  at 1:4..1:5 "{": opening delimiter is here
+
+== fixed (syntax/expected-boundary, syntax/expected-token, syntax/spaced-prefix-operator, syntax/statement-without-effect, syntax/unclosed-hole, syntax/unterminated-string remain) ==
+f(){ "f{{ -
+(1)"f

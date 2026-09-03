@@ -1,0 +1,24 @@
+== tree ==
+SourceFile! 0..27
+  FnItem! 0..27
+    Name 3..4 "f"
+    ParamList! 4..17
+      Error! 5..17 "5{ && cf(\" )"
+    Block! 18..27
+      Error! 20..24 "&& c"
+
+== evidence ==
+ExpectedName at 5
+Expected(RParen) at 18
+BlockOnNewLine at 18
+ExpectedStatement at 20
+
+== diagnostics ==
+error[syntax/expected-name] 1:6..1:7 "5": expected a name
+  at 1:6..1:18 "5{ && cf(\" )": skipped while recovering
+error[syntax/unterminated-string] 1:15..1:18 "\" )": unterminated string literal
+error[syntax/expected-token] 2:1: expected `)`
+  at 1:5..1:6 "(": opening delimiter is here
+error[syntax/block-on-new-line] 2:1..2:2 "{": block must open on the line of its owner
+error[syntax/expected-statement] 2:3..2:4 "&": expected a statement
+  at 2:3..2:7 "&& c": skipped while recovering

@@ -8,7 +8,7 @@
 //! block placement — into canonical form, leaving every other byte,
 //! comments included, in place.
 
-use sumi_lexer::{LexedFile, lex};
+use sumi_lexer::{LexErrorKind, LexedFile, lex};
 use sumi_syntax::{
     NodeIdx, Parse, ParseEvidence, ParseViolation, ParseViolationKind, ParserInput, RawIdx,
     SyntaxKind, SyntaxTree, parse, raw_boundary, starts_expression,
@@ -98,11 +98,15 @@ fn reprint_node(
 /// and stay as written too, as does a trailing operator whose continuation
 /// line does not begin its operand.
 ///
-/// The rewrite proves it changed only layout: the result reparses to the
-/// same tree shape, or the source comes back as written. Around recovered
-/// damage, what the parser makes of a line can turn on where the line
-/// breaks — a moved operator or brace may hand recovery a different
-/// reading — and no local check on the tokens settles it.
+/// The rewrite proves it changed only layout: the result keeps every
+/// significant token and every comment and reparses to the same tree
+/// shape, or the source comes back as written. Around recovered damage,
+/// what the parser makes of a line can turn on where the line breaks — a
+/// moved operator or brace may hand recovery a different reading — and so
+/// can what the lexer makes of it: a literal that its line bounds takes
+/// in a brace moved to the end of that line, and a hole left open gives
+/// its line back when the break after it goes. No local check on the
+/// tokens settles either.
 pub fn normalize(source: &str, lexed: &LexedFile, parsed: &Parse) -> String {
     let mut edits = Vec::new();
     for evidence in parsed.evidence() {
@@ -117,7 +121,7 @@ pub fn normalize(source: &str, lexed: &LexedFile, parsed: &Parse) -> String {
         return source.to_owned();
     }
     let candidate = apply(source, edits);
-    if reparses_alike(&candidate, parsed.tree()) {
+    if changes_only_layout(source, lexed, parsed.tree(), &candidate) {
         candidate
     } else {
         source.to_owned()
@@ -125,9 +129,11 @@ pub fn normalize(source: &str, lexed: &LexedFile, parsed: &Parse) -> String {
 }
 
 /// Build the mechanically valid candidate edits for one parser layout
-/// violation. The edits are nonempty, nonoverlapping, and source ordered.
-/// Movement edits still require a caller to establish safety around parser
-/// recovery; [`normalize`] does so with its whole-result reparse gate.
+/// violation. The edits are nonempty, nonoverlapping, and source ordered,
+/// and none joins a hole's line to the next, which would change what the
+/// lexer makes of both. Movement edits still require a caller to establish
+/// safety around parser recovery; [`normalize`] does so with its
+/// whole-result gate, which also proves every token survived.
 pub fn layout_violation_edits(
     source: &str,
     lexed: &LexedFile,
@@ -169,16 +175,26 @@ pub fn layout_violation_edits(
             ));
         }
         // Glue the operator to its operand only when the gap is clean trivia:
-        // comments and lexer errors are evidence no fix may erase.
+        // comments and lexer errors are evidence no fix may erase. A line
+        // break in the gap closes a hole its line left open, and the
+        // operand is the next line's code, not the hole's: that break stays.
         ParseViolationKind::SpacedPrefixOperator => {
             let operand = next_significant(lexed, start + 1)
                 .expect("a spaced prefix operator has an operand");
-            if !(start + 1).until(operand).all(|raw| {
+            let gap = (start + 1).until(operand);
+            if !gap.clone().all(|raw| {
                 matches!(
                     lexed.kind(raw),
                     SyntaxKind::Whitespace | SyntaxKind::Newline
                 )
             }) || lex_error_in(lexed, start + 1, operand)
+            {
+                return None;
+            }
+            if gap
+                .clone()
+                .any(|raw| lexed.kind(raw) == SyntaxKind::Newline)
+                && hole_open_before(lexed, start)
             {
                 return None;
             }
@@ -189,18 +205,66 @@ pub fn layout_violation_edits(
     (!edits.is_empty()).then(|| edits.into_boxed_slice())
 }
 
-/// Whether `candidate` parses to the same tree shape as `tree`: node for
-/// node the same kinds and the same parents, with only byte positions free
-/// to have moved.
-fn reparses_alike(candidate: &str, tree: &SyntaxTree) -> bool {
-    let Ok(lexed) = lex(candidate) else {
+/// Whether `candidate` is `source` with nothing but its layout changed:
+/// the same significant tokens, kind for kind and text for text, the same
+/// comments in the same order, and the same tree shape — node for node
+/// the same kinds and the same parents, with only byte positions free to
+/// have moved. The tokens are compared before the candidate is parsed, so
+/// a rewrite the lexer reads differently costs one scan.
+fn changes_only_layout(
+    source: &str,
+    lexed: &LexedFile,
+    tree: &SyntaxTree,
+    candidate: &str,
+) -> bool {
+    let Ok(after) = lex(candidate) else {
         return false;
     };
-    let reparse = parse(&ParserInput::new(&lexed));
+    if !same_tokens(lexed, source, &after, candidate) {
+        return false;
+    }
+    let reparse = parse(&ParserInput::new(&after));
     let after = reparse.tree();
     after.len() == tree.len()
         && tree.nodes().all(|node| after.kind(node) == tree.kind(node))
         && after.parents() == tree.parents()
+}
+
+/// Whether `after` holds the significant tokens of `before`, kind for kind
+/// and text for text, and its comments in the same order. The two are
+/// separate sequences, since an operator may hop a comment. A keyword or
+/// punctuation kind fixes its text, so only the kinds whose text varies
+/// are compared byte for byte.
+fn same_tokens(
+    before: &LexedFile,
+    before_source: &str,
+    after: &LexedFile,
+    after_source: &str,
+) -> bool {
+    let mut code = after.indices().filter(|&raw| !after.kind(raw).is_trivia());
+    let mut comments = after
+        .indices()
+        .filter(|&raw| after.kind(raw) == SyntaxKind::LineComment);
+    for raw in before.indices() {
+        let kind = before.kind(raw);
+        let counterpart = if kind == SyntaxKind::LineComment {
+            comments.next()
+        } else if !kind.is_trivia() {
+            code.next()
+        } else {
+            continue;
+        };
+        let Some(other) = counterpart else {
+            return false;
+        };
+        if after.kind(other) != kind
+            || (kind.text().is_none()
+                && after.text(after_source, other) != before.text(before_source, raw))
+        {
+            return false;
+        }
+    }
+    code.next().is_none() && comments.next().is_none()
 }
 
 fn insert(at: usize, text: impl Into<Box<str>>) -> TextEdit {
@@ -245,6 +309,23 @@ fn lex_error_in(lexed: &LexedFile, start: RawIdx, end: RawIdx) -> bool {
     let errors = lexed.errors();
     let first = errors.partition_point(|error| error.token < start);
     errors.get(first).is_some_and(|error| error.token < end)
+}
+
+/// Whether a hole in a string literal is still open where the line of
+/// raw token `raw` ends: an unclosed hole reported on that line before
+/// `raw`. A hole ends with its line, so its `{` is on the line too.
+fn hole_open_before(lexed: &LexedFile, raw: RawIdx) -> bool {
+    let line_start = RawIdx::new(0)
+        .until(raw)
+        .rev()
+        .find(|&raw| lexed.kind(raw) == SyntaxKind::Newline)
+        .map_or(RawIdx::new(0), |newline| newline + 1);
+    let errors = lexed.errors();
+    let first = errors.partition_point(|error| error.token < line_start);
+    errors[first..]
+        .iter()
+        .take_while(|error| error.token < raw)
+        .any(|error| error.kind == LexErrorKind::UnclosedHole)
 }
 
 /// The nearest significant token before `raw`.
