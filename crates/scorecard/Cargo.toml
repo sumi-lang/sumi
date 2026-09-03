@@ -2,6 +2,7 @@
 name = "sumi-scorecard"
 version = "0.0.0"
 edition = "2024"
+license.workspace = true
 publish = false
 
 [[bin]]
