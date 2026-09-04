@@ -372,3 +372,9 @@ fn escapes_and_layout_are_judged_over_the_parts_of_a_literal() {
     );
     check_errors("\"\"\"\n  {x}\n  \"\"\"", &[]);
 }
+
+#[test]
+fn validation_over_many_interpolated_block_strings_is_linear() {
+    let source = "\"\"\"\n  {x}\n  \"\"\"\n".repeat(50_000);
+    check_errors(&source, &[]);
+}
