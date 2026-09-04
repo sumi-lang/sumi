@@ -246,15 +246,22 @@ impl SyntaxTree {
     }
 
     /// The node `ptr` names in this tree: the one of its kind over exactly
-    /// its byte range, if there is one. `lexed` must be the file this tree
-    /// was parsed from. A pointer taken from another parse resolves here
-    /// when the node it named still stands at the same bytes — a reparse
-    /// of the same text, or of text edited only after the node — and
-    /// answers `None` once the node has moved, changed kind, or gone. A
-    /// pointer names at most one node: the parser never wraps a node in
-    /// one of its own kind over exactly the same tokens, and debug builds
-    /// reject a hand-built tree that does.
-    pub fn resolve(&self, ptr: NodePtr, lexed: &LexedFile) -> Option<NodeIdx> {
+    /// its byte range and text, if there is one. `ptr_source` must be the
+    /// source the pointer came from; `lexed` and `source` must be the file
+    /// this tree was parsed from. A pointer taken from another parse
+    /// resolves here when the node it named still stands at the same bytes
+    /// with the same text — a reparse of the same text, or of text edited
+    /// only after the node — and answers `None` once the node has moved,
+    /// changed, or gone. A pointer names at most one node: the parser never
+    /// wraps a node in one of its own kind over exactly the same tokens, and
+    /// debug builds reject a hand-built tree that does.
+    pub fn resolve(
+        &self,
+        ptr: NodePtr,
+        ptr_source: &str,
+        lexed: &LexedFile,
+        source: &str,
+    ) -> Option<NodeIdx> {
         let root = self.root();
         if ptr.range.start() == ptr.range.end() {
             // Only the root of an empty file is empty.
@@ -274,19 +281,21 @@ impl SyntaxTree {
         // at `end` are contiguous; among them the kind and the first token
         // pick the node.
         let from = self.nodes.partition_point(|node| node.end_token < end);
-        self.nodes[from..]
+        let node = self.nodes[from..]
             .iter()
             .take_while(|node| node.end_token == end)
             .position(|node| node.first_token == first && node.kind == ptr.kind)
-            .map(|offset| node_idx(from + offset))
+            .map(|offset| node_idx(from + offset));
+        node.filter(|_| ptr.range.text(ptr_source) == ptr.range.text(source))
     }
 }
 
 /// A node's identity independent of the tree that holds it: its kind and
-/// byte range, which name at most one node in any parsed tree. Semantic phases keep pointers, not indices, so their
-/// results can point back into a tree that has since been reparsed;
-/// [`SyntaxTree::resolve`] finds the node again while it stands at the
-/// same bytes.
+/// byte range, which name at most one node in any parsed tree when paired
+/// with the source snapshot it came from. Semantic phases keep pointers,
+/// not indices, so their results can point back into a tree that has since
+/// been reparsed; [`SyntaxTree::resolve`] finds the node again while it
+/// stands at the same bytes with the same text.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct NodePtr {
     pub kind: NodeKind,
