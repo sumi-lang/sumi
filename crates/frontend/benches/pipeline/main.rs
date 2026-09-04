@@ -36,6 +36,10 @@ const DAMAGE_STRIDE: usize = 600;
 // unconsumed closers.
 const NESTED_RUNGS: [(usize, bool); 4] = [(4, true), (32, true), (224, true), (4096, false)];
 
+// Counts for the interpolated block-string ladder. Each literal has one
+// hole, so every rung exercises the whole-literal validation pass.
+const INTERPOLATED_BLOCK_STRING_RUNGS: [usize; 3] = [256, 2048, 16_384];
+
 // The positional query batches: unrelated draws, unlike a stride, so
 // lookups cannot ride the branch predictor.
 const QUERY_SEED: u64 = 0xC0FFEE;
@@ -208,6 +212,28 @@ fn bench_adversarial(c: &mut Criterion) {
                 BatchSize::LargeInput,
             );
         });
+    }
+    group.finish();
+
+    let mut group = c.benchmark_group("adversarial/interpolated-block-strings");
+    for literals in INTERPOLATED_BLOCK_STRING_RUNGS {
+        let source = "\"\"\"\n  {x}\n  \"\"\"\n".repeat(literals);
+        let lexed = lex(&source).expect("benchmark corpus fits in Sumi's source coordinate space");
+        assert!(
+            lexed.errors().is_empty(),
+            "interpolated block-string corpus must lex cleanly"
+        );
+        group.throughput(Throughput::Bytes(source.len() as u64));
+        group.bench_with_input(
+            BenchmarkId::from_parameter(literals),
+            &source,
+            |b, source| {
+                b.iter_with_large_drop(|| {
+                    lex(black_box(source))
+                        .expect("benchmark corpus fits in Sumi's source coordinate space")
+                });
+            },
+        );
     }
     group.finish();
 }

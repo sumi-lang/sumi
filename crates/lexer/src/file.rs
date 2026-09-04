@@ -212,10 +212,7 @@ fn validate_block_literals(source: &str, tokens: &[StoredToken], errors: &mut Ve
             SyntaxKind::StringStart => first = Some(index),
             SyntaxKind::StringEnd if !token.flags.contains(TokenFlags::UNTERMINATED) => {
                 if let Some(first) = first.take() {
-                    let end = tokens
-                        .get(index + 1)
-                        .map_or(source.len(), |next| next.start.to_usize());
-                    validate_block_parts(source, tokens, first, end, errors);
+                    validate_block_parts(source, tokens, first, index, errors);
                 }
             }
             _ => {}
@@ -224,22 +221,25 @@ fn validate_block_literals(source: &str, tokens: &[StoredToken], errors: &mut Ve
 }
 
 /// Judge the layout and escapes of a `"""` literal with holes, from the
-/// `StringStart` at `first` through the `StringEnd` that ends at `end`,
+/// `StringStart` at `first` through the `StringEnd` at `last`,
 /// over the whole of its source: the holes are its code, not its text. An
 /// error lands on the part its range begins in, cut to that part.
 fn validate_block_parts(
     source: &str,
     tokens: &[StoredToken],
     first: usize,
-    end: usize,
+    last: usize,
     errors: &mut Vec<LexError>,
 ) {
     let base = tokens[first].start.to_usize();
+    let end = tokens
+        .get(last + 1)
+        .map_or(source.len(), |next| next.start.to_usize());
     let text = &source[base..end];
     // The holes: what lies between one part of the literal and the next.
     let mut holes = Vec::new();
     let mut previous_end = None;
-    for (index, token) in tokens.iter().enumerate().skip(first) {
+    for (offset, token) in tokens[first..=last].iter().enumerate() {
         let start = token.start.to_usize();
         if token.raw != RawKind::BlockString {
             continue;
@@ -249,6 +249,7 @@ fn validate_block_parts(
         {
             holes.push(previous_end - base..start - base);
         }
+        let index = first + offset;
         previous_end = Some(
             tokens
                 .get(index + 1)
