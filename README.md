@@ -1,8 +1,11 @@
 <h1 align="center"><a href="https://sumi-lang.org">Sumi</a></h1>
 
-**More work for the compiler. Simpler, more explicit code for everyone else.**
+<p align="center">
+  <strong>More work for the compiler.</strong><br>
+  Simpler, more explicit code for everyone else.
+</p>
 
-> [!WARNING]
+> [!CAUTION]
 > **Here be dragons.** Sumi is in early, experimental development. There is no
 > usable compiler or stable language yet, and everything described here is
 > subject to change. Do not use Sumi for production work.
