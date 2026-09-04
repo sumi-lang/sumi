@@ -31,8 +31,8 @@ pub enum Element {
 /// interleaved with its children.
 pub fn elements(tree: &SyntaxTree, index: NodeIdx) -> impl Iterator<Item = Element> + '_ {
     // The tree yields children last first; elements read in source order.
-    // The public lazy iterator owns this reversal; reprinting instead walks
-    // with one shared stack so it does not allocate once per node.
+    // The public lazy iterator owns this reversal; reprinting instead uses
+    // shared traversal stacks so it does not allocate once per node.
     let mut children: Vec<NodeIdx> = tree.children(index).collect();
     children.reverse();
     let mut children = children.into_iter().peekable();
@@ -61,33 +61,29 @@ pub fn elements(tree: &SyntaxTree, index: NodeIdx) -> impl Iterator<Item = Eleme
 pub fn reprint(tree: &SyntaxTree, lexed: &LexedFile, source: &str) -> String {
     let mut out = String::with_capacity(source.len());
     let mut pending = Vec::new();
-    reprint_node(tree, lexed, source, tree.root(), &mut pending, &mut out);
-    out
-}
+    let root = tree.root();
+    pending.extend(tree.children(root));
+    let mut frames = vec![(root, 0, tree.first_token(root))];
 
-fn reprint_node(
-    tree: &SyntaxTree,
-    lexed: &LexedFile,
-    source: &str,
-    node: NodeIdx,
-    pending: &mut Vec<NodeIdx>,
-    out: &mut String,
-) {
-    let base = pending.len();
-    pending.extend(tree.children(node));
-    let mut cursor = tree.first_token(node);
+    while let Some((node, base, mut cursor)) = frames.pop() {
+        if pending.len() > base {
+            let child = pending.pop().expect("a pending child exists above base");
+            for token in cursor.until(tree.first_token(child)) {
+                out.push_str(lexed.text(source, token));
+            }
+            cursor = tree.end_token(child);
+            frames.push((node, base, cursor));
 
-    while pending.len() > base {
-        let child = pending.pop().expect("a pending child exists above base");
-        for token in cursor.until(tree.first_token(child)) {
-            out.push_str(lexed.text(source, token));
+            let child_base = pending.len();
+            pending.extend(tree.children(child));
+            frames.push((child, child_base, tree.first_token(child)));
+        } else {
+            for token in cursor.until(tree.end_token(node)) {
+                out.push_str(lexed.text(source, token));
+            }
         }
-        reprint_node(tree, lexed, source, child, pending, out);
-        cursor = tree.end_token(child);
     }
-    for token in cursor.until(tree.end_token(node)) {
-        out.push_str(lexed.text(source, token));
-    }
+    out
 }
 
 /// Rewrite the layout violations of `parsed` into canonical form: space

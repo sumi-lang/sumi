@@ -177,6 +177,15 @@ fn reprint_survives_the_nesting_recovery_limit() {
 }
 
 #[test]
+fn reprint_survives_long_expression_chains() {
+    let binary = format!("fn f() {{ x{} }}", " + x".repeat(20_000));
+    check_roundtrip(&binary);
+
+    let calls = format!("fn f() {{ f{} }}", "()".repeat(20_000));
+    check_roundtrip(&calls);
+}
+
+#[test]
 fn layout_violation_edits_are_atomic_and_source_ordered() {
     check_layout_edits(
         "fn f()\n{ 1 }",
