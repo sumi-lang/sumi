@@ -636,6 +636,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "sumi-cli"
+version = "0.1.0"
+dependencies = [
+ "sumi-frontend",
+ "sumi-text",
+ "tempfile",
+]
+
+[[package]]
 name = "sumi-diagnostics"
 version = "0.1.0"
 dependencies = [
