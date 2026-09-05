@@ -44,8 +44,18 @@ pub fn assign<const N: usize>(
     //
     // The fitting children, last first as the tree yields them.
     let mut children = [None; N];
+    let mut hints = [None; N];
     let mut count = 0;
     for child in tree.children(node) {
+        if let Some(field) = tree.field(child) {
+            assert!(field < N, "a parser field hint belongs to this node rule");
+            assert!(
+                (specs[field].fits)(tree, child),
+                "a parser field hint matches the child's type"
+            );
+            assert!(hints[field].is_none(), "one child fills each typed field");
+            hints[field] = Some(child);
+        }
         if specs.iter().any(|spec| (spec.fits)(tree, child)) {
             if count == N {
                 return [None; N];
@@ -71,15 +81,10 @@ pub fn assign<const N: usize>(
         }
     }
     // A parser-known role is stronger than the type-only readings above.
-    // Hints exist precisely where recovery can make those readings lose a
-    // role that was unambiguous while parsing.
-    for child in tree.children(node) {
-        if let Some(field) = tree.field(child) {
-            assert!(field < N, "a parser field hint belongs to this node rule");
-            assert!(
-                (specs[field].fits)(tree, child),
-                "a parser field hint matches the child's type"
-            );
+    // Hints were collected with the children so honoring them costs no
+    // second scan.
+    for (field, hint) in hints.into_iter().enumerate() {
+        if let Some(child) = hint {
             assert!(
                 fields[field].is_none_or(|inferred| inferred == child),
                 "a parser field hint agrees with an inferred child"
