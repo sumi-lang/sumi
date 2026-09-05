@@ -91,6 +91,8 @@ const _: () = assert!(size_of::<Node>() == 16, "nodes stay sixteen bytes");
 #[derive(Clone, Debug)]
 pub struct SyntaxTree {
     nodes: Box<[Node]>,
+    /// Whether any accessor may need a parser-retained field role.
+    may_need_field_hints: bool,
 }
 
 impl SyntaxTree {
@@ -132,6 +134,12 @@ impl SyntaxTree {
             .field
             .checked_sub(1)
             .map(usize::from)
+    }
+
+    /// Whether structural recovery or an `Error` node occurred anywhere in
+    /// the file, so typed accessors must consider parser-retained roles.
+    pub(crate) fn may_need_field_hints(&self) -> bool {
+        self.may_need_field_hints
     }
 
     /// The raw index of the first token node `index` covers.
@@ -329,6 +337,7 @@ impl Parse {
             slots: input.slots(),
             opened: 1,
             recoveries: 0,
+            saw_error_node: false,
             last_recovery_evidence: None,
             evidence: Vec::new(),
         };
@@ -362,9 +371,11 @@ impl Parse {
             first_token: RawIdx::new(0),
             end_token: input.raw_len(),
         });
+        let may_need_field_hints = builder.recoveries > 0 || builder.saw_error_node;
         Self {
             tree: SyntaxTree {
                 nodes: builder.nodes.into_boxed_slice(),
+                may_need_field_hints,
             },
             evidence: builder
                 .evidence
@@ -402,6 +413,9 @@ struct Builder<'a> {
     opened: u32,
     /// Structural recovery facts recorded while building the tree.
     recoveries: u32,
+    /// Whether any completed node is an `Error`; unlike structural recovery,
+    /// a violation can produce one without incrementing `recoveries`.
+    saw_error_node: bool,
     /// The evidence index of the cursor-nearest structural recovery.
     last_recovery_evidence: Option<usize>,
     evidence: Vec<EvidenceBuilder>,
@@ -646,7 +660,33 @@ impl<'a> Marker<'_, 'a> {
             completed.parent, self.id,
             "a field is assigned only from the node that contains it"
         );
-        let child = &mut self.builder.nodes[completed.node.to_usize()];
+        self.set_field(completed.node, field);
+    }
+
+    /// The index of a completed direct child, retained across [`precede`]
+    /// when its field cannot be known until the wrapper's other child parses.
+    pub(crate) fn completed_node(&self, completed: &CompletedMarker) -> NodeIdx {
+        assert_eq!(
+            completed.parent, self.id,
+            "a completed node belongs to its containing node"
+        );
+        completed.node
+    }
+
+    /// Retain the field of the child this marker wrapped with [`precede`].
+    pub(crate) fn wrapped_field(&mut self, node: NodeIdx, field: u8) {
+        let child = &self.builder.nodes[node.to_usize()];
+        let first = node.to_usize() + 1 - child.extent as usize;
+        assert_eq!(
+            NodeIdx::new(to_u32(first)),
+            self.first,
+            "a wrapped field belongs to the subtree this node wraps"
+        );
+        self.set_field(node, field);
+    }
+
+    fn set_field(&mut self, node: NodeIdx, field: u8) {
+        let child = &mut self.builder.nodes[node.to_usize()];
         // Error nodes stand where typed syntax was required but implement no
         // typed field. Retaining their position must not make them a field.
         if child.kind == NodeKind::Error {
@@ -656,6 +696,16 @@ impl<'a> Marker<'_, 'a> {
         child.field = field
             .checked_add(1)
             .expect("a typed field index fits below 255");
+    }
+
+    /// Whether structural recovery occurred since this node opened.
+    pub(crate) fn recovered_inside(&self) -> bool {
+        self.builder.recoveries > self.recoveries
+    }
+
+    /// Whether `completed` is an untyped error node.
+    pub(crate) fn is_error(&self, completed: &CompletedMarker) -> bool {
+        self.builder.nodes[completed.node.to_usize()].kind == NodeKind::Error
     }
 
     /// Close the node as `kind`; it must cover at least one token.
@@ -669,7 +719,9 @@ impl<'a> Marker<'_, 'a> {
         // An `Error` node is the effect of a recovery recorded before it
         // opened; any other node has an error exactly when recovery
         // happened while it was open, its descendants included.
-        let has_error = kind == NodeKind::Error || builder.recoveries > self.recoveries;
+        let is_error = kind == NodeKind::Error;
+        let has_error = is_error || builder.recoveries > self.recoveries;
+        builder.saw_error_node |= is_error;
         let first_token = builder.input.token(self.start);
         let end_token = builder.input.token(builder.position - 1) + 1;
         // A node wrapping one of its own kind over exactly its tokens would

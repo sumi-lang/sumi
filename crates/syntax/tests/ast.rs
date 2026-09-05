@@ -335,6 +335,7 @@ fn parser_known_roles_survive_recovery() {
     let Some(Stmt::AssignStmt(assignment)) = body.stmts(tree).next() else {
         panic!("one recovered assignment")
     };
+    assert!(!tree.has_error(assignment.node()));
     assert!(assignment.target(tree).is_none());
     assert_eq!(parsed.text(assignment.value(tree).expect("the value")), "d");
 }

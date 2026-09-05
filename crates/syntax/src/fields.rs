@@ -34,6 +34,9 @@ pub fn assign<const N: usize>(
     node: NodeIdx,
     specs: &[FieldSpec; N],
 ) -> [Option<NodeIdx>; N] {
+    if tree.may_need_field_hints() {
+        return assign_with_hints(tree, node, specs);
+    }
     // TODO: every single-valued accessor runs this over all of its node's
     // children, so a consumer reading several fields of one node repeats
     // the scan and the enumeration for each. A generated combined accessor
@@ -43,6 +46,46 @@ pub fn assign<const N: usize>(
     // measure it against.
     //
     // The fitting children, last first as the tree yields them.
+    let mut children = [None; N];
+    let mut count = 0;
+    for child in tree.children(node) {
+        if specs.iter().any(|spec| (spec.fits)(tree, child)) {
+            if count == N {
+                return [None; N];
+            }
+            children[count] = Some(child);
+            count += 1;
+        }
+    }
+    let mut search = Search {
+        tree,
+        specs,
+        strict: true,
+        current: [None; N],
+        agreed: [None; N],
+        disputed: [false; N],
+        readings: 0,
+    };
+    search.place(&children[..count], 0, N);
+    let mut fields = [None; N];
+    for (field, slot) in fields.iter_mut().enumerate() {
+        if search.readings > 0 && !search.disputed[field] {
+            *slot = search.agreed[field];
+        }
+    }
+    fields
+}
+
+/// Assign fields in a file where recovery or an `Error` node means the
+/// parser's retained roles may be necessary. Kept off the valid-file path,
+/// whose accessors are the common case and a measured hot loop.
+#[cold]
+#[inline(never)]
+fn assign_with_hints<const N: usize>(
+    tree: &SyntaxTree,
+    node: NodeIdx,
+    specs: &[FieldSpec; N],
+) -> [Option<NodeIdx>; N] {
     let mut children = [None; N];
     let mut hints = [None; N];
     let mut count = 0;

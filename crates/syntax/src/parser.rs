@@ -777,11 +777,19 @@ fn statement(p: &mut Marker<'_, '_>) {
             let recovery = p.recovery_checkpoint();
             if let Some(lhs) = expr(p) {
                 if !p.recovered_since(recovery) && p.at(T::Eq) && !p.boundary() {
-                    p.field(&lhs, 0);
+                    let lhs_node = p.completed_node(&lhs);
+                    let lhs_is_error = p.is_error(&lhs);
                     let mut m = p.precede(lhs);
                     m.token(); // =
-                    if let Some(value) = operand(&mut m, 0) {
-                        m.field(&value, 1);
+                    let value = operand(&mut m, 0);
+                    let needs_hints = m.recovered_inside()
+                        || lhs_is_error
+                        || value.as_ref().is_some_and(|value| m.is_error(value));
+                    if needs_hints {
+                        m.wrapped_field(lhs_node, 0);
+                        if let Some(value) = &value {
+                            m.field(value, 1);
+                        }
                     }
                     m.complete(N::AssignStmt);
                 }
@@ -1019,13 +1027,20 @@ fn expr_bp(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) -> Option<Com
         if chained {
             p.violation(ParseViolationKind::ChainedComparison, width);
         }
-        p.field(&lhs, 0);
+        let lhs_node = p.completed_node(&lhs);
+        let lhs_is_error = p.is_error(&lhs);
         let mut m = p.precede(lhs);
         for _ in 0..width {
             m.token();
         }
-        if let Some(rhs) = operand_before(&mut m, right_bp, follow) {
-            m.field(&rhs, 1);
+        let rhs = operand_before(&mut m, right_bp, follow);
+        let needs_hints =
+            m.recovered_inside() || lhs_is_error || rhs.as_ref().is_some_and(|rhs| m.is_error(rhs));
+        if needs_hints {
+            m.wrapped_field(lhs_node, 0);
+            if let Some(rhs) = &rhs {
+                m.field(rhs, 1);
+            }
         }
         lhs = m.complete(if chained { N::Error } else { N::BinaryExpr });
         comparison = op.is_comparison() && !chained;
@@ -1179,15 +1194,11 @@ fn leaf(p: &mut Marker<'_, '_>, kind: N) -> CompletedMarker {
 fn if_expr(p: &mut Marker<'_, '_>) -> CompletedMarker {
     let mut m = p.start();
     m.token(); // if
-    if let Some(condition) = operand_before(&mut m, 0, ExprFollow::Block) {
-        m.field(&condition, 0);
-    }
-    if let Some(then_branch) = if_block(&mut m) {
-        m.field(&then_branch, 1);
-    }
-    if m.at(T::ElseKw) {
+    let condition = operand_before(&mut m, 0, ExprFollow::Block);
+    let then_branch = if_block(&mut m);
+    let else_branch = if m.at(T::ElseKw) {
         m.token();
-        let else_branch = if !m.at(T::IfKw) {
+        if !m.at(T::IfKw) {
             if_block(&mut m)
         } else if too_deep(&mut m, 1).is_none() {
             // The nested `if` opens one node, and its condition another:
@@ -1196,9 +1207,20 @@ fn if_expr(p: &mut Marker<'_, '_>) -> CompletedMarker {
             Some(if_expr(&mut m))
         } else {
             None
-        };
-        if let Some(else_branch) = else_branch {
-            m.field(&else_branch, 2);
+        }
+    } else {
+        None
+    };
+    let needs_hints = m.recovered_inside()
+        || [&condition, &then_branch, &else_branch]
+            .into_iter()
+            .flatten()
+            .any(|child| m.is_error(child));
+    if needs_hints {
+        for (field, child) in [condition, then_branch, else_branch].iter().enumerate() {
+            if let Some(child) = child {
+                m.field(child, field as u8);
+            }
         }
     }
     m.complete(N::IfExpr)
