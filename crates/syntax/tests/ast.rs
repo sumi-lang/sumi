@@ -327,17 +327,34 @@ fn parser_known_roles_survive_recovery() {
         Some(ElseBranch::Block(_))
     ));
 
-    // A chained comparison is retained as `Error`, but it still establishes
-    // that the following expression is the assignment's value.
+    // A chained comparison is retained as `Error`, propagates that error to
+    // its ancestors, and still establishes the following assignment value.
     let parsed = Parsed::new("fn f() { a < b < c = d }");
     let tree = parsed.tree();
     let body = block(parsed.item().body(tree));
     let Some(Stmt::AssignStmt(assignment)) = body.stmts(tree).next() else {
         panic!("one recovered assignment")
     };
-    assert!(!tree.has_error(assignment.node()));
+    assert!(tree.has_error(assignment.node()));
     assert!(assignment.target(tree).is_none());
     assert_eq!(parsed.text(assignment.value(tree).expect("the value")), "d");
+
+    // Without that propagation, strict field assignment rejects every
+    // reading when the required initializer is the untyped `Error`, hiding
+    // the name and type that are still present.
+    let parsed = Parsed::new("fn f() { let x: Int = a < b < c }");
+    let tree = parsed.tree();
+    let body = block(parsed.item().body(tree));
+    let Some(Stmt::LetStmt(binding)) = body.stmts(tree).next() else {
+        panic!("one recovered binding")
+    };
+    assert!(tree.has_error(binding.node()));
+    assert_eq!(parsed.text(binding.name(tree).expect("the name")), "x");
+    assert_eq!(
+        parsed.text(binding.type_ref(tree).expect("the type")),
+        "Int"
+    );
+    assert!(binding.initializer(tree).is_none());
 }
 
 #[test]

@@ -1,0 +1,39 @@
+== tree ==
+SourceFile! 0..93
+  FnItem! 0..92
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block! 7..92
+      LetStmt 11..25
+        Name 15..21 "before"
+        LiteralExpr 24..25 "0"
+      Error! 28..37
+        BinaryExpr 28..33
+          NameRef 28..29 "a"
+          NameRef 32..33 "b"
+        NameRef 36..37 "c"
+      LetStmt 40..54
+        Name 44..50 "middle"
+        LiteralExpr 53..54 "1"
+      Error! 57..74
+        BinaryExpr! 57..70
+          Error! 57..66
+            BinaryExpr 57..62
+              NameRef 57..58 "e"
+              NameRef 61..62 "f"
+            NameRef 65..66 "g"
+          NameRef 69..70 "h"
+        NameRef 73..74 "i"
+      LetStmt 77..90
+        Name 81..86 "after"
+        LiteralExpr 89..90 "2"
+
+== evidence ==
+ChainedComparison at 34
+ChainedComparison at 63
+ChainedComparison at 71
+
+== diagnostics ==
+error[syntax/chained-comparison] 3:9..3:10 "<": comparison operators cannot be chained
+error[syntax/chained-comparison] 5:9..5:10 "<": comparison operators cannot be chained
+error[syntax/chained-comparison] 5:17..5:18 "<": comparison operators cannot be chained
