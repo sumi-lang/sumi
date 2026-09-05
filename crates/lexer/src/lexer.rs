@@ -141,7 +141,7 @@ impl<'src> Lexer<'src> {
         } else {
             None
         };
-        let (kind, raw, flags) = if let Some(token) = literal {
+        let (kind, raw, mut flags) = if let Some(token) = literal {
             token
         } else if self.position == 0 && self.remaining().starts_with('\u{feff}') {
             self.bump_char();
@@ -209,6 +209,9 @@ impl<'src> Lexer<'src> {
         let len = self.position - start;
         debug_assert!(len > 0, "scan_token must always make progress");
 
+        if !self.frames.is_empty() {
+            flags |= TokenFlags::HOLE_AFTER;
+        }
         RawToken {
             kind,
             raw,

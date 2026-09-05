@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use sumi_diagnostics::{Applicability, Diagnostic, DiagnosticCode, Fix, Label, Location, Severity};
 use sumi_format::layout_violation_edits;
-use sumi_lexer::{LexError, LexErrorKind, LexedFile, canonicalize_number_literal};
+use sumi_lexer::{LexError, LexErrorKind, LexedFile, TokenFlags, canonicalize_number_literal};
 use sumi_syntax::ast::{AstNode, Expr, Stmt};
 use sumi_syntax::{
     NodeKind, Parse, ParseAnchor, ParseEvidence, ParseExpected, ParseRecovery, ParseRecoveryKind,
@@ -345,22 +345,6 @@ fn lower_parse(snapshot: &Snapshot<'_>, parse: &Parse, diagnostics: &mut Vec<Dia
         .evidence()
         .iter()
         .any(|evidence| matches!(evidence, ParseEvidence::Recovery(_)));
-    let unterminated_literals: HashSet<RawIdx> = snapshot
-        .lexed
-        .errors()
-        .iter()
-        .filter(|error| {
-            matches!(
-                error.kind,
-                LexErrorKind::UnterminatedString
-                    | LexErrorKind::UnterminatedRawString
-                    | LexErrorKind::UnterminatedBlockString
-                    | LexErrorKind::UnterminatedRawBlockString
-                    | LexErrorKind::UnterminatedChar
-            )
-        })
-        .map(|error| error.token)
-        .collect();
     let mut closer_fix_sites = HashSet::new();
     for evidence in parse.evidence() {
         match evidence {
@@ -370,12 +354,7 @@ fn lower_parse(snapshot: &Snapshot<'_>, parse: &Parse, diagnostics: &mut Vec<Dia
                 {
                     continue;
                 }
-                diagnostics.push(lower_recovery(
-                    snapshot,
-                    recovery,
-                    &unterminated_literals,
-                    &mut closer_fix_sites,
-                ));
+                diagnostics.push(lower_recovery(snapshot, recovery, &mut closer_fix_sites));
             }
             ParseEvidence::Violation(violation) => {
                 if !tokens_have_error(violation.range, snapshot.lexed) {
@@ -389,7 +368,6 @@ fn lower_parse(snapshot: &Snapshot<'_>, parse: &Parse, diagnostics: &mut Vec<Dia
 fn lower_recovery(
     snapshot: &Snapshot<'_>,
     recovery: &ParseRecovery,
-    unterminated_literals: &HashSet<RawIdx>,
     closer_fix_sites: &mut HashSet<(SyntaxKind, u32)>,
 ) -> Diagnostic {
     let location = snapshot.anchor(recovery.anchor);
@@ -428,12 +406,7 @@ fn lower_recovery(
                 }),
         )
         .collect();
-    let fix = closer_fix(
-        recovery,
-        snapshot.lexed,
-        unterminated_literals,
-        closer_fix_sites,
-    );
+    let fix = closer_fix(recovery, snapshot.lexed, closer_fix_sites);
 
     Diagnostic {
         code,
@@ -452,7 +425,6 @@ fn lower_recovery(
 fn closer_fix(
     recovery: &ParseRecovery,
     lexed: &LexedFile,
-    unterminated_literals: &HashSet<RawIdx>,
     sites: &mut HashSet<(SyntaxKind, u32)>,
 ) -> Option<Fix> {
     let (ParseRecoveryKind::Expected(ParseExpected::Closer { kind, .. }), ParseAnchor::Gap(gap)) =
@@ -463,10 +435,22 @@ fn closer_fix(
     let replacement = kind
         .text()
         .unwrap_or_else(|| unreachable!("closer evidence names a closing delimiter"));
-    // A delimiter immediately after an unterminated literal becomes part of
-    // that token and repairs nothing. Keep the diagnostic, but offer no edit.
+    // A raw token boundary is not necessarily code: after a string's start,
+    // middle, or hole closer the lexer resumes literal text. An insertion
+    // there changes the literal instead of adding the promised delimiter.
+    // Unterminated tails likewise absorb it, including a StringEnd whose
+    // late error names StringStart rather than the tail itself.
     let previous = gap.trivia_start().checked_sub(1);
-    if previous.is_some_and(|token| unterminated_literals.contains(&token)) {
+    if previous.is_some_and(|token| {
+        lexed.flags(token).contains(TokenFlags::UNTERMINATED)
+            // Braces also control the lexer's hole depth. Conservatively
+            // withhold them in holes rather than change a later brace's role.
+            || (kind == SyntaxKind::RBrace && lexed.flags(token).contains(TokenFlags::HOLE_AFTER))
+            || matches!(
+                lexed.kind(token),
+                SyntaxKind::StringStart | SyntaxKind::StringMiddle | SyntaxKind::HoleClose
+            )
+    }) {
         return None;
     }
     let at = raw_boundary(lexed, gap.trivia_start());

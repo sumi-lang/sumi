@@ -12,7 +12,7 @@
 use std::collections::HashSet;
 
 use sumi_format::{normalize, reprint};
-use sumi_frontend::{Applicability, FileId, ParsedSource, Place, Severity, parse_source};
+use sumi_frontend::{Applicability, FileId, ParsedSource, Place, Severity, codes, parse_source};
 use sumi_lexer::{LexedFile, RawIdx, RawKind, SyntaxKind, TokenFlags, lex};
 use sumi_syntax::{
     BRACKET_PAIRS, NodeIdx, NodeKind, Parse, ParseAnchor, ParseEvidence, ParserInput, SigIdx,
@@ -346,6 +346,38 @@ pub fn check_diagnostics(parsed: &ParsedSource) {
         if let Some(fix) = &diagnostic.fix {
             assert_eq!(fix.applicability, Applicability::Safe);
             assert!(!fix.edits.is_empty());
+            // Match the frontend property: each closer adds exactly its
+            // code token and preserves all existing tokens and comments.
+            // Nested same-kind repairs can legitimately be reoffered and
+            // expose later errors, so do not compare global error counts.
+            if diagnostic.code == codes::EXPECTED_TOKEN {
+                assert_eq!(fix.edits.len(), 1);
+                let edit = &fix.edits[0];
+                assert_eq!(edit.range().start(), edit.range().end());
+                let kind = match edit.replacement() {
+                    ")" => SyntaxKind::RParen,
+                    "}" => SyntaxKind::RBrace,
+                    other => panic!("unexpected closer {other:?}"),
+                };
+                let mut fixed = source.to_owned();
+                fixed.insert_str(edit.range().start().to_usize(), edit.replacement());
+                let after = lex(&fixed).expect("fixed inputs fit in u32");
+                let raw = after
+                    .token_at(edit.range().start())
+                    .expect("inserted token");
+                assert_eq!(after.range(raw).start(), edit.range().start());
+                assert_eq!(after.kind(raw), kind);
+                assert_eq!(after.text(&fixed, raw), edit.replacement());
+                let rank = after
+                    .indices()
+                    .take_while(|&token| token < raw)
+                    .filter(|&token| !after.kind(token).is_trivia())
+                    .count();
+                let mut tokens = significant(&after, &fixed);
+                tokens.remove(rank);
+                assert_eq!(tokens, significant(parsed.lexed(), source));
+                assert_eq!(comments(&after, &fixed), comments(parsed.lexed(), source));
+            }
             let mut previous_end = None;
             for edit in &fix.edits {
                 let range = edit.range();
