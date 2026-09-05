@@ -1,0 +1,7 @@
+fn f() {
+  let before = 0
+  a < b < c
+  let middle = 1
+  e < f < g < h < i
+  let after = 2
+}

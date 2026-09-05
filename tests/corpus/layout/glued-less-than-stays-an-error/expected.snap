@@ -1,9 +1,9 @@
 == tree ==
-SourceFile 0..245
-  FnItem 148..244
+SourceFile! 0..245
+  FnItem! 148..244
     Name 151..152 "f"
     ParamList 152..154 "()"
-    Block 155..244
+    Block! 155..244
       IfExpr 161..180
         BinaryExpr 164..167
           NameRef 164..165 "a"
@@ -11,7 +11,7 @@ SourceFile 0..245
         Block 168..180
           ReturnStmt 170..178
             LiteralExpr 177..178 "1"
-      IfExpr 185..208
+      IfExpr! 185..208
         Error! 188..195
           BinaryExpr 188..191
             NameRef 188..189 "a"
