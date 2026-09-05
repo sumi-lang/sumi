@@ -5,12 +5,10 @@
 //! A parsed tree is error-tolerant, so a node may lack any of them, and a
 //! child's type alone does not always say which field it fills: the body
 //! block of an `if` whose condition is missing looks exactly like a block
-//! condition. [`assign`] therefore enumerates every reading of the children
-//! that respects the rule's order and types, and answers a field only when
-//! every reading agrees on it. On a node without an error the grammar
-//! guarantees the shape, so the reading is unique; on a node with one, a
-//! child that could fill two fields fills neither, and an accessor never
-//! names a child that might belong to another.
+//! condition. The parser retains a field hint where it already settled such
+//! a role. [`assign`] otherwise enumerates every reading of the children that
+//! respects the rule's order and types, and answers a field only when every
+//! reading agrees on it.
 
 use crate::index::NodeIdx;
 use crate::tree::SyntaxTree;
@@ -36,6 +34,9 @@ pub fn assign<const N: usize>(
     node: NodeIdx,
     specs: &[FieldSpec; N],
 ) -> [Option<NodeIdx>; N] {
+    if tree.may_need_field_hints() {
+        return assign_with_hints(tree, node, specs);
+    }
     // TODO: every single-valued accessor runs this over all of its node's
     // children, so a consumer reading several fields of one node repeats
     // the scan and the enumeration for each. A generated combined accessor
@@ -59,6 +60,56 @@ pub fn assign<const N: usize>(
     let mut search = Search {
         tree,
         specs,
+        strict: true,
+        current: [None; N],
+        agreed: [None; N],
+        disputed: [false; N],
+        readings: 0,
+    };
+    search.place(&children[..count], 0, N);
+    let mut fields = [None; N];
+    for (field, slot) in fields.iter_mut().enumerate() {
+        if search.readings > 0 && !search.disputed[field] {
+            *slot = search.agreed[field];
+        }
+    }
+    fields
+}
+
+/// Assign fields in a file where recovery or an `Error` node means the
+/// parser's retained roles may be necessary. Kept off the valid-file path,
+/// whose accessors are the common case and a measured hot loop.
+#[cold]
+#[inline(never)]
+fn assign_with_hints<const N: usize>(
+    tree: &SyntaxTree,
+    node: NodeIdx,
+    specs: &[FieldSpec; N],
+) -> [Option<NodeIdx>; N] {
+    let mut children = [None; N];
+    let mut hints = [None; N];
+    let mut count = 0;
+    for child in tree.children(node) {
+        if let Some(field) = tree.field(child) {
+            assert!(field < N, "a parser field hint belongs to this node rule");
+            assert!(
+                (specs[field].fits)(tree, child),
+                "a parser field hint matches the child's type"
+            );
+            assert!(hints[field].is_none(), "one child fills each typed field");
+            hints[field] = Some(child);
+        }
+        if specs.iter().any(|spec| (spec.fits)(tree, child)) {
+            if count == N {
+                return [None; N];
+            }
+            children[count] = Some(child);
+            count += 1;
+        }
+    }
+    let mut search = Search {
+        tree,
+        specs,
         strict: !tree.has_error(node),
         current: [None; N],
         agreed: [None; N],
@@ -70,6 +121,24 @@ pub fn assign<const N: usize>(
     for (field, slot) in fields.iter_mut().enumerate() {
         if search.readings > 0 && !search.disputed[field] {
             *slot = search.agreed[field];
+        }
+    }
+    // A parser-known role is stronger than the type-only readings above.
+    // Hints were collected with the children so honoring them costs no
+    // second scan.
+    for (field, hint) in hints.into_iter().enumerate() {
+        if let Some(child) = hint {
+            assert!(
+                fields[field].is_none_or(|inferred| inferred == child),
+                "a parser field hint agrees with an inferred child"
+            );
+            assert!(
+                fields.iter().enumerate().all(|(other, assigned)| {
+                    other == field || assigned.is_none_or(|assigned| assigned != child)
+                }),
+                "one child fills only one typed field"
+            );
+            fields[field] = Some(child);
         }
     }
     fields

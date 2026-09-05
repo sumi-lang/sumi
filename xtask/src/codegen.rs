@@ -900,12 +900,11 @@ pub fn ast(grammar: &Grammar) -> String {
 //! Accessors answer `Option` or an iterator whatever the grammar requires,
 //! because a parsed tree is error-tolerant: a node whose
 //! [`SyntaxTree::has_error`](crate::SyntaxTree::has_error) bit is set may lack any child. A single-valued
-//! accessor answers only what its node's children settle: every reading of
-//! them that respects the rule's order and types must agree on the child,
-//! or the accessor answers `None`. On a node without an error the grammar
-//! fixes the reading, so every accessor is exact; on a node with one, a
-//! child that could fill two fields — the lone block of `if {{}}`, which
-//! could be condition or body — fills neither. The scan allocates nothing.
+//! accessor first honors a grammatical role the parser retained, then
+//! answers what the node's children settle: every reading of them that
+//! respects the rule's order and types must agree on the child, or the
+//! accessor answers `None`. On a node without an error the grammar fixes the
+//! reading, so every accessor is exact. The scan allocates nothing.
 //! A many-valued accessor yields the children in source order, which the
 //! tree stores in reverse, so it collects them once per call.
 //!
