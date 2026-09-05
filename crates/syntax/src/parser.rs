@@ -674,15 +674,15 @@ fn param(p: &mut Marker<'_, '_>, typed: bool) {
 }
 
 /// A block where one is required, on the line of what it belongs to.
-fn block_here(p: &mut Marker<'_, '_>) {
+fn block_here(p: &mut Marker<'_, '_>) -> Option<CompletedMarker> {
     if !p.at(T::LBrace) {
         p.missing(ParseExpected::Token(T::LBrace));
-        return;
+        return None;
     }
     if p.newline() {
         p.violation(ParseViolationKind::BlockOnNewLine, 1);
     }
-    block(p);
+    Some(block(p))
 }
 
 fn block(p: &mut Marker<'_, '_>) -> CompletedMarker {
@@ -777,9 +777,12 @@ fn statement(p: &mut Marker<'_, '_>) {
             let recovery = p.recovery_checkpoint();
             if let Some(lhs) = expr(p) {
                 if !p.recovered_since(recovery) && p.at(T::Eq) && !p.boundary() {
+                    p.field(&lhs, 0);
                     let mut m = p.precede(lhs);
                     m.token(); // =
-                    operand(&mut m, 0);
+                    if let Some(value) = operand(&mut m, 0) {
+                        m.field(&value, 1);
+                    }
                     m.complete(N::AssignStmt);
                 }
             } else {
@@ -837,14 +840,18 @@ fn return_stmt(p: &mut Marker<'_, '_>) {
 /// A token the construct around this one is waiting for, or that begins
 /// the next statement, is not garbage but the sign the expression is
 /// missing; so is anything on the next line.
-fn operand(p: &mut Marker<'_, '_>, min_bp: u8) {
-    operand_before(p, min_bp, ExprFollow::Anything);
+fn operand(p: &mut Marker<'_, '_>, min_bp: u8) -> Option<CompletedMarker> {
+    operand_before(p, min_bp, ExprFollow::Anything)
 }
 
 /// Parse an expression required before `follow`.
-fn operand_before(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) {
-    if expr_bp(p, min_bp, follow).is_some() {
-        return;
+fn operand_before(
+    p: &mut Marker<'_, '_>,
+    min_bp: u8,
+    follow: ExprFollow,
+) -> Option<CompletedMarker> {
+    if let Some(expression) = expr_bp(p, min_bp, follow) {
+        return Some(expression);
     }
     let displaced = !p.newline() && displaces_expression(p);
     let recovery = if displaced {
@@ -853,13 +860,15 @@ fn operand_before(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) {
         p.missing(ParseExpected::Expression)
     };
     if !displaced {
-        return;
+        return None;
     }
     skip(p, recovery, |p| {
         p.newline() || p.at(T::Comma) || begins_statement(p) || ends_hole(p)
     });
     if !p.newline() && begins_expression(p) {
-        expr_bp(p, min_bp, follow);
+        expr_bp(p, min_bp, follow)
+    } else {
+        None
     }
 }
 
@@ -1010,11 +1019,14 @@ fn expr_bp(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) -> Option<Com
         if chained {
             p.violation(ParseViolationKind::ChainedComparison, width);
         }
+        p.field(&lhs, 0);
         let mut m = p.precede(lhs);
         for _ in 0..width {
             m.token();
         }
-        operand_before(&mut m, right_bp, follow);
+        if let Some(rhs) = operand_before(&mut m, right_bp, follow) {
+            m.field(&rhs, 1);
+        }
         lhs = m.complete(if chained { N::Error } else { N::BinaryExpr });
         comparison = op.is_comparison() && !chained;
     }
@@ -1167,17 +1179,26 @@ fn leaf(p: &mut Marker<'_, '_>, kind: N) -> CompletedMarker {
 fn if_expr(p: &mut Marker<'_, '_>) -> CompletedMarker {
     let mut m = p.start();
     m.token(); // if
-    operand_before(&mut m, 0, ExprFollow::Block);
-    if_block(&mut m);
+    if let Some(condition) = operand_before(&mut m, 0, ExprFollow::Block) {
+        m.field(&condition, 0);
+    }
+    if let Some(then_branch) = if_block(&mut m) {
+        m.field(&then_branch, 1);
+    }
     if m.at(T::ElseKw) {
         m.token();
-        if !m.at(T::IfKw) {
-            if_block(&mut m);
+        let else_branch = if !m.at(T::IfKw) {
+            if_block(&mut m)
         } else if too_deep(&mut m, 1).is_none() {
             // The nested `if` opens one node, and its condition another:
             // cut the chain before a condition trips and leaves a headless
             // `if`.
-            if_expr(&mut m);
+            Some(if_expr(&mut m))
+        } else {
+            None
+        };
+        if let Some(else_branch) = else_branch {
+            m.field(&else_branch, 2);
         }
     }
     m.complete(N::IfExpr)
@@ -1186,10 +1207,9 @@ fn if_expr(p: &mut Marker<'_, '_>) -> CompletedMarker {
 /// Parse a required `if` or `else` block. If another token displaced the
 /// block on the same line, keep that garbage inside the `if` and resume at
 /// the `{`; a line or enclosing delimiter belongs to the caller instead.
-fn if_block(p: &mut Marker<'_, '_>) {
+fn if_block(p: &mut Marker<'_, '_>) -> Option<CompletedMarker> {
     if p.at(T::LBrace) && !p.newline() {
-        block_here(p);
-        return;
+        return block_here(p);
     }
     let displaced = !(p.current().is_none_or(is_closer) || p.at(T::ElseKw) || p.newline());
     let recovery = if displaced {
@@ -1201,7 +1221,7 @@ fn if_block(p: &mut Marker<'_, '_>) {
         p.missing(ParseExpected::Token(T::LBrace))
     };
     if !displaced {
-        return;
+        return None;
     }
     skip(p, recovery, |p| {
         p.at(T::LBrace)
@@ -1210,9 +1230,7 @@ fn if_block(p: &mut Marker<'_, '_>) {
             || p.newline()
             || ends_hole(p)
     });
-    if p.at(T::LBrace) {
-        block_here(p);
-    }
+    if p.at(T::LBrace) { block_here(p) } else { None }
 }
 
 /// The binary operator `n` significant tokens past the next one, if one

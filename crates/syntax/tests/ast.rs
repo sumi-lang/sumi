@@ -236,9 +236,9 @@ fn casts_refuse_other_kinds() {
 }
 
 #[test]
-fn a_child_that_could_fill_two_fields_fills_neither() {
-    // `if {}` parses with the block as the body and the condition missing;
-    // by type the block could be either, so neither accessor claims it.
+fn parser_known_roles_survive_recovery() {
+    // `if {}` parses with the block as the body and the condition missing.
+    // Although the block's type fits either field, the parser knows its role.
     let parsed = Parsed::new("fn f() { if {} }");
     let tree = parsed.tree();
     let body = block(parsed.item().body(tree));
@@ -247,10 +247,14 @@ fn a_child_that_could_fill_two_fields_fills_neither() {
     };
     assert!(tree.has_error(branch.node()));
     assert!(branch.condition(tree).is_none());
-    assert!(branch.then_branch(tree).is_none());
+    assert_eq!(
+        parsed.text(branch.then_branch(tree).expect("the parsed body")),
+        "{}"
+    );
     assert!(branch.else_branch(tree).is_none());
 
-    // Likewise `x =`: the one operand could be the target or the value.
+    // Likewise, punctuation has already settled which side a lone operand
+    // belongs to in assignments and binary expressions.
     let parsed = Parsed::new("fn f() { x = }");
     let tree = parsed.tree();
     let body = block(parsed.item().body(tree));
@@ -258,8 +262,81 @@ fn a_child_that_could_fill_two_fields_fills_neither() {
         panic!("one assignment")
     };
     assert!(tree.has_error(assignment.node()));
-    assert!(assignment.target(tree).is_none());
+    assert_eq!(
+        parsed.text(assignment.target(tree).expect("the parsed target")),
+        "x"
+    );
     assert!(assignment.value(tree).is_none());
+
+    let parsed = Parsed::new("fn f() { x + }");
+    let tree = parsed.tree();
+    let body = block(parsed.item().body(tree));
+    let Some(Stmt::Expr(Expr::BinaryExpr(binary))) = body.stmts(tree).next() else {
+        panic!("one binary expression")
+    };
+    assert!(tree.has_error(binary.node()));
+    assert_eq!(parsed.text(binary.lhs(tree).expect("the parsed lhs")), "x");
+    assert!(binary.rhs(tree).is_none());
+
+    // A known right-hand role survives even when the left child is an
+    // `Error`, which no typed expression field accepts.
+    let parsed = Parsed::new("fn f() { fn + x }");
+    let tree = parsed.tree();
+    let body = block(parsed.item().body(tree));
+    let Some(Stmt::Expr(Expr::BinaryExpr(binary))) = body.stmts(tree).next() else {
+        panic!("one recovered binary expression")
+    };
+    assert!(binary.lhs(tree).is_none());
+    assert_eq!(parsed.text(binary.rhs(tree).expect("the parsed rhs")), "x");
+
+    // Wrapping an existing binary expression gives that whole expression
+    // the new wrapper's `lhs` role, not one inherited from its own children.
+    let parsed = Parsed::new("fn f() { x + y + }");
+    let tree = parsed.tree();
+    let body = block(parsed.item().body(tree));
+    let Some(Stmt::Expr(Expr::BinaryExpr(outer))) = body.stmts(tree).next() else {
+        panic!("one outer binary expression")
+    };
+    assert_eq!(
+        parsed.text(outer.lhs(tree).expect("the parsed lhs")),
+        "x + y"
+    );
+    assert!(outer.rhs(tree).is_none());
+
+    // Missing neighboring fields do not hide an outer condition or else
+    // branch whose role the parser settled.
+    let parsed = Parsed::new("fn f() { if if a {} }");
+    let tree = parsed.tree();
+    let body = block(parsed.item().body(tree));
+    let Some(Stmt::Expr(Expr::IfExpr(outer))) = body.stmts(tree).next() else {
+        panic!("one outer if expression")
+    };
+    assert!(matches!(outer.condition(tree), Some(Expr::IfExpr(_))));
+    assert!(outer.then_branch(tree).is_none());
+
+    let parsed = Parsed::new("fn f() { if x else {} }");
+    let tree = parsed.tree();
+    let body = block(parsed.item().body(tree));
+    let Some(Stmt::Expr(Expr::IfExpr(branch))) = body.stmts(tree).next() else {
+        panic!("one if expression")
+    };
+    assert_eq!(parsed.text(branch.condition(tree).expect("condition")), "x");
+    assert!(branch.then_branch(tree).is_none());
+    assert!(matches!(
+        branch.else_branch(tree),
+        Some(ElseBranch::Block(_))
+    ));
+
+    // A chained comparison is retained as `Error`, but it still establishes
+    // that the following expression is the assignment's value.
+    let parsed = Parsed::new("fn f() { a < b < c = d }");
+    let tree = parsed.tree();
+    let body = block(parsed.item().body(tree));
+    let Some(Stmt::AssignStmt(assignment)) = body.stmts(tree).next() else {
+        panic!("one recovered assignment")
+    };
+    assert!(assignment.target(tree).is_none());
+    assert_eq!(parsed.text(assignment.value(tree).expect("the value")), "d");
 }
 
 #[test]

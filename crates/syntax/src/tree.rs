@@ -1,6 +1,7 @@
 //! The syntax tree: flat, postorder, token-anchored.
 //!
-//! A [`SyntaxTree`] stores structure only. Each node is a kind, a subtree
+//! A [`SyntaxTree`] stores structure only. Each node is a kind, its grammatical
+//! field when recovery would otherwise leave that ambiguous, a subtree
 //! extent, and a half-open range of raw token indices; text, spans, and
 //! trivia stay in the token buffers, so the tree holds no second copy of the
 //! source. Nodes lie in postorder — the order they complete in, children
@@ -76,6 +77,9 @@ pub fn raw_boundary(lexed: &LexedFile, raw: RawIdx) -> TextSize {
 struct Node {
     kind: NodeKind,
     has_error: bool,
+    /// The typed field this node fills in its immediate parent, plus one;
+    /// zero means that kind and order settle the field without a hint.
+    field: u8,
     extent: u32,
     first_token: RawIdx,
     end_token: RawIdx,
@@ -118,6 +122,16 @@ impl SyntaxTree {
     /// rewriting one, checks this bit and skips what it cannot trust.
     pub fn has_error(&self, index: NodeIdx) -> bool {
         self.nodes[index.to_usize()].has_error
+    }
+
+    /// The typed field `index` fills in its parent, when the parser retained
+    /// the role because recovery would not leave it evident from kind and
+    /// order alone.
+    pub(crate) fn field(&self, index: NodeIdx) -> Option<usize> {
+        self.nodes[index.to_usize()]
+            .field
+            .checked_sub(1)
+            .map(usize::from)
     }
 
     /// The raw index of the first token node `index` covers.
@@ -343,6 +357,7 @@ impl Parse {
         builder.nodes.push(Node {
             kind: NodeKind::SourceFile,
             has_error: builder.recoveries > 0,
+            field: 0,
             extent: to_u32(builder.nodes.len() + 1),
             first_token: RawIdx::new(0),
             end_token: input.raw_len(),
@@ -622,6 +637,27 @@ impl<'a> Marker<'_, 'a> {
         }
     }
 
+    /// Retain which typed field a completed direct child fills. Most fields
+    /// need no hint: their kind and order are enough. Recovery can remove a
+    /// same-typed sibling or leave a subtype in either of two positions;
+    /// those are marked where the parser has already settled their role.
+    pub(crate) fn field(&mut self, completed: &CompletedMarker, field: u8) {
+        assert_eq!(
+            completed.parent, self.id,
+            "a field is assigned only from the node that contains it"
+        );
+        let child = &mut self.builder.nodes[completed.node.to_usize()];
+        // Error nodes stand where typed syntax was required but implement no
+        // typed field. Retaining their position must not make them a field.
+        if child.kind == NodeKind::Error {
+            return;
+        }
+        assert_eq!(child.field, 0, "a node receives its field only once");
+        child.field = field
+            .checked_add(1)
+            .expect("a typed field index fits below 255");
+    }
+
     /// Close the node as `kind`; it must cover at least one token.
     #[inline]
     pub(crate) fn complete(mut self, kind: NodeKind) -> CompletedMarker {
@@ -655,15 +691,18 @@ impl<'a> Marker<'_, 'a> {
         {
             reject_same_kind_chain(&builder.nodes[self.first.to_usize()..], kind);
         }
+        let node = NodeIdx::new(to_u32(builder.nodes.len()));
         builder.nodes.push(Node {
             kind,
             has_error,
+            field: 0,
             extent: to_u32(builder.nodes.len() - self.first.to_usize() + 1),
             first_token,
             end_token,
         });
         self.completed = true;
         CompletedMarker {
+            node,
             first: self.first,
             start: self.start,
             recoveries: self.recoveries,
@@ -1045,6 +1084,8 @@ impl Drop for Marker<'_, '_> {
 /// A completed node, held so a wrapper can be opened around it from the
 /// node that contained it. Plain data: holding one borrows nothing.
 pub(crate) struct CompletedMarker {
+    /// This completed node's own index.
+    node: NodeIdx,
     /// Where the node's subtree begins among the completed nodes.
     first: NodeIdx,
     /// The significant position the node opened at.
@@ -1456,6 +1497,16 @@ mod tests {
         dump("x", |b| {
             leaf(b, NameRef);
             node(b, Error, |_| {});
+        });
+    }
+
+    #[test]
+    #[should_panic(expected = "receives its field only once")]
+    fn assigning_a_child_field_twice_panics() {
+        dump("x", |root| {
+            let child = leaf(root, NameRef);
+            root.field(&child, 0);
+            root.field(&child, 0);
         });
     }
 

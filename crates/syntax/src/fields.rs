@@ -5,12 +5,10 @@
 //! A parsed tree is error-tolerant, so a node may lack any of them, and a
 //! child's type alone does not always say which field it fills: the body
 //! block of an `if` whose condition is missing looks exactly like a block
-//! condition. [`assign`] therefore enumerates every reading of the children
-//! that respects the rule's order and types, and answers a field only when
-//! every reading agrees on it. On a node without an error the grammar
-//! guarantees the shape, so the reading is unique; on a node with one, a
-//! child that could fill two fields fills neither, and an accessor never
-//! names a child that might belong to another.
+//! condition. The parser retains a field hint where it already settled such
+//! a role. [`assign`] otherwise enumerates every reading of the children that
+//! respects the rule's order and types, and answers a field only when every
+//! reading agrees on it.
 
 use crate::index::NodeIdx;
 use crate::tree::SyntaxTree;
@@ -70,6 +68,29 @@ pub fn assign<const N: usize>(
     for (field, slot) in fields.iter_mut().enumerate() {
         if search.readings > 0 && !search.disputed[field] {
             *slot = search.agreed[field];
+        }
+    }
+    // A parser-known role is stronger than the type-only readings above.
+    // Hints exist precisely where recovery can make those readings lose a
+    // role that was unambiguous while parsing.
+    for child in tree.children(node) {
+        if let Some(field) = tree.field(child) {
+            assert!(field < N, "a parser field hint belongs to this node rule");
+            assert!(
+                (specs[field].fits)(tree, child),
+                "a parser field hint matches the child's type"
+            );
+            assert!(
+                fields[field].is_none_or(|inferred| inferred == child),
+                "a parser field hint agrees with an inferred child"
+            );
+            assert!(
+                fields.iter().enumerate().all(|(other, assigned)| {
+                    other == field || assigned.is_none_or(|assigned| assigned != child)
+                }),
+                "one child fills only one typed field"
+            );
+            fields[field] = Some(child);
         }
     }
     fields
