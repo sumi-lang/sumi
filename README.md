@@ -23,6 +23,23 @@ the programmer's code. Sumi is being designed from the ground up around:
 - static verification; and
 - precise knowledge of resource behavior.
 
+## CLI
+
+Run syntax diagnostics on one UTF-8 source file:
+
+```sh
+cargo run -p sumi-cli -- diagnose path/to/file.sumi
+```
+
+The `sumi` binary prints plain diagnostics to stderr as
+`path:line:column: severity[group/code]: message`, with one-based lines and
+UTF-8 byte columns. File-level errors omit the line and column. Invalid
+invocations print plain usage text instead of a coded diagnostic.
+Clean input produces no output. Exit status is 0 for no
+errors, 1 for source errors, and 2 for usage or input errors. The command
+does not modify files or perform name resolution or type checking.
+Use `--help` for usage.
+
 ## License
 
 Sumi is available under the [Universal Permissive License, Version 1.0](LICENSE).
