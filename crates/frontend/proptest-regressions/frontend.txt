@@ -4,3 +4,4 @@
 #
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
+cc 0f756621a64e1357e9022951b54f92bb5595c259bda23415f25280dada8c430b # shrinks to source = "fn\"\"\"\n{{,}if"

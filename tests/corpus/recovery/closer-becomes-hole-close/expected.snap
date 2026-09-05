@@ -1,0 +1,28 @@
+== tree ==
+SourceFile! 0..13
+  FnItem! 0..13
+    Error! 2..7 "\"\"\"\n{"
+    Block! 7..13
+      Error! 8..9 ","
+      Error! 9..12 "}if"
+      Error! 12..13 "\n"
+
+== evidence ==
+ExpectedName at 2
+Expected(LParen) at 7
+ExpectedStatement at 8
+ExpectedStatement at 12
+Expected(RBrace) at 13
+
+== diagnostics ==
+error[syntax/expected-name] 1:3: expected a name
+  at 1:3..2:2 "\"\"\"\n{": skipped while recovering
+error[syntax/unterminated-block-string] 1:3..1:6 "\"\"\"": unterminated multi-line string literal
+error[syntax/unclosed-hole] 2:1..2:2 "{": hole in string literal is not closed on its line
+  note: a `{` in a string literal opens a hole for an expression, which ends with its line; a `{` meant as text is written `\{`
+error[syntax/expected-token] 2:2: expected `(`
+error[syntax/expected-statement] 2:3..2:4 ",": expected a statement
+  at 2:4..2:7 "}if": skipped while recovering
+error[syntax/expected-statement] 2:7..3:1 "\n": expected a statement
+error[syntax/expected-token] 3:1: expected `}`
+  at 2:2..2:3 "{": opening delimiter is here

@@ -1,0 +1,21 @@
+== tree ==
+SourceFile! 0..33
+  FnItem! 0..26
+    Name 3..4 "f"
+    ParamList! 4..26
+      Error! 6..26 "-> str = \"\"\"\n{width}"
+  Error! 26..32 "px\n\"\"\""
+
+== evidence ==
+ExpectedName at 6
+Expected(RParen) at 26
+ExpectedBody at 26
+ExpectedItem at 26
+
+== diagnostics ==
+error[syntax/expected-name] 1:7..1:8 "-": expected a name
+  at 1:7..2:8 "-> str = \"\"\"\n{width}": skipped while recovering
+error[syntax/expected-token] 2:8: expected `)`
+  at 1:5..1:6 "(": opening delimiter is here
+error[syntax/expected-body] 2:8: expected a body, `{` or `=`
+error[syntax/expected-item] 2:8..3:4 "px\n\"\"\"": expected a function item
