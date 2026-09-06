@@ -1,8 +1,11 @@
-<h1 align="center"><a href="https://sumi-lang.org">Sumi</a></h1>
-
 <p align="center">
-  <strong>More work for the compiler.</strong><br>
-  Simpler, more explicit code for everyone else.
+  <a href="https://sumi-lang.org">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset=".github/assets/github-header-dark.svg">
+      <source media="(prefers-color-scheme: light)" srcset=".github/assets/github-header-light.svg">
+      <img alt="Sumi" src=".github/assets/github-header-light.svg">
+    </picture>
+  </a>
 </p>
 
 > [!CAUTION]
