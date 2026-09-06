@@ -3,7 +3,7 @@
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset=".github/assets/github-header-dark.svg">
       <source media="(prefers-color-scheme: light)" srcset=".github/assets/github-header-light.svg">
-      <img alt="Sumi" src=".github/assets/github-header-light.svg">
+      <img alt="Sumi" src=".github/assets/github-header-light.svg" width="600">
     </picture>
   </a>
 </p>
