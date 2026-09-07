@@ -9,12 +9,11 @@ use std::process::ExitCode;
 use sumi_frontend::{FileId, Severity, parse_source};
 use sumi_text::LineIndex;
 
-const USAGE: &str = "usage: sumi diagnose <file>
+const USAGE: &str = "usage: sumi check <file>
 
-  diagnose <file>   report syntax diagnostics for one UTF-8 source file
+  check <file>      report syntax and scalar semantic diagnostics
   -h, --help        show this help
 
-This command does not perform name resolution or type checking.
 Diagnostics go to stderr; clean input produces no output.
 Locations use one-based lines and UTF-8 byte columns.
 Exit status: 0 = no errors, 1 = source errors, 2 = usage or input errors.";
@@ -26,11 +25,11 @@ fn main() -> ExitCode {
             println!("{USAGE}");
             return ExitCode::SUCCESS;
         }
-        [command, help] if command == "diagnose" && (help == "--help" || help == "-h") => {
+        [command, help] if command == "check" && (help == "--help" || help == "-h") => {
             println!("{USAGE}");
             return ExitCode::SUCCESS;
         }
-        [command, file] if command == "diagnose" => diagnose(Path::new(file)),
+        [command, file] if command == "check" => check(Path::new(file)),
         _ => Err(USAGE.to_owned()),
     };
     match result {
@@ -42,7 +41,7 @@ fn main() -> ExitCode {
     }
 }
 
-fn diagnose(path: &Path) -> Result<ExitCode, String> {
+fn check(path: &Path) -> Result<ExitCode, String> {
     let input_error = |error| format!("{}: error[cli/input]: {error}", path.display());
     let mut file = fs::File::open(path).map_err(input_error)?;
     let source_len = file.metadata().map_err(input_error)?.len();
@@ -58,8 +57,12 @@ fn diagnose(path: &Path) -> Result<ExitCode, String> {
     let parsed = parse_source(FileId::new(0), source.into_boxed_str())
         .map_err(|error| format!("{}: error[cli/source-too-large]: {error}", path.display()))?;
     let lines = LineIndex::new(parsed.source());
+    let mut diagnostics = parsed.diagnostics().to_vec();
+    diagnostics.extend_from_slice(sumi_hir::analyze(parsed).diagnostics());
+    // Stable ordering: syntax first at an equal position, then emission order.
+    diagnostics.sort_by_key(|d| d.primary.location.start());
     let mut has_errors = false;
-    for diagnostic in parsed.diagnostics() {
+    for diagnostic in &diagnostics {
         let position = lines.line_col(diagnostic.primary.location.start());
         let severity = match diagnostic.severity {
             Severity::Error => {

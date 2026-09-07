@@ -10,6 +10,7 @@ path = "src/main.rs"
 
 [dependencies]
 sumi-frontend = { path = "../frontend" }
+sumi-hir = { path = "../hir" }
 sumi-text = { path = "../text" }
 
 [dev-dependencies]
