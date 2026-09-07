@@ -1,0 +1,12 @@
+fn probe() {
+    let x = 1
+    let x = missing(
+        {
+            let x = x + 1
+            x + true
+        },
+        x + false
+    )
+    _ = x
+}
+fn intact() -> int = 3

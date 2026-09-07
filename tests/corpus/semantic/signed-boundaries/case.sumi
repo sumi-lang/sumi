@@ -1,0 +1,5 @@
+fn minimum() -> int = -((9223372036854775808))
+fn maximum() -> int = 9223372036854775807
+fn runtime_overflow() -> int = --9223372036854775808
+fn too_large() -> int = 9223372036854775808
+fn outside_envelope() -> int = -(9223372036854775808 + 0)

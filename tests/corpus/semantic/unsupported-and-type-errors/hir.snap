@@ -1,0 +1,59 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 12
+
+fn unsupported@0..59 () -> unit
+  body: unavailable
+
+fn closure@60..93 () -> unit
+  body: unavailable
+
+fn literal@94..121 () -> unit
+  body: unavailable
+
+fn mismatch@122..147 () -> bool
+  body: unavailable
+
+fn branches@148..199 () -> int
+  body: unavailable
+
+fn missing_else@200..233 () -> unit
+  body: unavailable
+
+fn annotation@234..269 () -> unit
+  body: unavailable
+
+fn unit_equality@270..307 () -> bool
+  body: unavailable
+
+fn computed_call@308..384 () -> unit
+  body: unavailable
+
+== semantic diagnostics ==
+error[semantic/unsupported]: construct is not supported by scalar checking
+  primary @23..36
+error[semantic/unsupported]: construct is not supported by scalar checking
+  primary @51..57
+error[semantic/unsupported]: construct is not supported by scalar checking
+  primary @83..91
+error[semantic/unsupported]: construct is not supported by scalar checking
+  primary @109..121
+error[semantic/type-mismatch]: expected Bool, found Int
+  primary @146..147
+  secondary @122..147: declared here
+error[semantic/type-mismatch]: expected Bool, found Int
+  primary @179..184
+  secondary @190..199: other branch determines expected type
+error[semantic/type-mismatch]: expected Unit, found Int
+  primary @228..233
+error[semantic/type-mismatch]: expected Bool, found Int
+  primary @266..267
+  secondary @259..263: declared here
+error[semantic/type-mismatch]: unit values cannot be compared
+  primary @299..307
+error[semantic/unsupported]: construct is not supported by scalar checking
+  primary @338..362
+error[semantic/unknown-name]: unknown name `missing`
+  primary @364..371
+error[semantic/type-mismatch]: expected Int, found Bool
+  primary @377..381

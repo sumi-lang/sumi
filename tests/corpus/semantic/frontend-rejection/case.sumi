@@ -1,0 +1,6 @@
+fn malformed() -> int = 01
+fn layout() -> int {
+    1
+    2
+}
+fn intact() -> bool = true

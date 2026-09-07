@@ -1,0 +1,53 @@
+file: accepted
+frontend errors: 0 (see frontend.snap)
+semantic errors: 0
+
+fn even@0..64 (int) -> bool
+  param n@8..9: int
+  body: if : bool @26..64
+    condition: eager == : bool @29..35
+      lhs: read n@8..9 : int @29..30
+      rhs: int 0 : int @34..35
+    then: block : bool @36..44
+      tail: bool true : bool @38..42
+    else: block : bool @50..64
+      tail: call odd@65..130 (callee @52..55) : bool @52..62
+        arg[0]: eager - : int @56..61
+          lhs: read n@8..9 : int @56..57
+          rhs: int 1 : int @60..61
+
+fn odd@65..130 (int) -> bool
+  param n@72..73: int
+  body: if : bool @90..130
+    condition: eager == : bool @93..99
+      lhs: read n@72..73 : int @93..94
+      rhs: int 0 : int @98..99
+    then: block : bool @100..109
+      tail: bool false : bool @102..107
+    else: block : bool @115..130
+      tail: call even@0..64 (callee @117..121) : bool @117..128
+        arg[0]: eager - : int @122..127
+          lhs: read n@72..73 : int @122..123
+          rhs: int 1 : int @126..127
+
+fn safe@131..183 () -> bool
+  body: lazy or : bool @151..183
+    lhs: lazy and : bool @151..172
+      lhs: bool false : bool @151..156
+      rhs: eager == : bool @161..171
+        lhs: eager / : int @161..166
+          lhs: int 1 : int @161..162
+          rhs: int 0 : int @165..166
+        rhs: int 0 : int @170..171
+    rhs: call even@0..64 (callee @176..180) : bool @176..183
+      arg[0]: int 4 : int @181..182
+
+fn maybe@184..223 (bool) -> unit
+  param b@193..194: bool
+  body: if : unit @204..223
+    condition: read b@193..194 : bool @207..208
+    then: block : unit @209..223
+      discard @211..221
+        value: call safe@131..183 (callee @215..219) : bool @215..221
+      tail: unit (implicit)
+    else: unit (implicit)

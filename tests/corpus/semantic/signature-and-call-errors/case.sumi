@@ -1,0 +1,12 @@
+fn duplicate() {}
+fn duplicate() {}
+fn ambiguous() = duplicate()
+fn unknown(x: mystery) {}
+fn suppressed() = unknown(absent)
+fn typed(x: int, b: bool) -> int = x
+fn wrong() -> int = typed(true, 1, missing)
+fn hidden() -> int {
+    let typed = 1
+    typed()
+}
+fn broken_result(x: mystery) -> int = true

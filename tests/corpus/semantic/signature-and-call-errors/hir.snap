@@ -1,0 +1,62 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 10
+
+fn duplicate@0..17 () -> unit
+  body: block : unit @15..17
+    tail: unit (implicit)
+
+fn duplicate@18..35 () -> unit
+  body: block : unit @33..35
+    tail: unit (implicit)
+
+fn ambiguous@36..64 () -> unit
+  body: unavailable
+
+fn unknown@65..90 signature: unavailable
+  body: unavailable
+
+fn suppressed@91..124 () -> unit
+  body: unavailable
+
+fn typed@125..161 (int, bool) -> int
+  param x@134..135: int
+  param b@142..143: bool
+  body: read x@134..135 : int @160..161
+
+fn wrong@162..205 () -> int
+  body: unavailable
+
+fn hidden@206..258 () -> int
+  body: unavailable
+
+fn broken_result@259..301 signature: unavailable
+  body: unavailable
+
+== semantic diagnostics ==
+error[semantic/duplicate-name]: duplicate function `duplicate`
+  primary @21..30
+  secondary @3..12: declared here
+error[semantic/unknown-type]: unknown type `mystery`
+  primary @79..86
+error[semantic/unknown-name]: unknown name `absent`
+  primary @117..123
+error[semantic/arity]: expected 2 arguments, found 3
+  primary @182..205
+  secondary @125..161: declared here
+error[semantic/type-mismatch]: expected Int, found Bool
+  primary @188..192
+  secondary @125..161: declared here
+error[semantic/type-mismatch]: expected Bool, found Int
+  primary @194..195
+  secondary @125..161: declared here
+error[semantic/unknown-name]: unknown name `missing`
+  primary @197..204
+error[semantic/not-callable]: local `typed` is not callable
+  primary @249..254
+  secondary @235..240: declared here
+error[semantic/unknown-type]: unknown type `mystery`
+  primary @279..286
+error[semantic/type-mismatch]: expected Int, found Bool
+  primary @297..301
+  secondary @259..301: declared here

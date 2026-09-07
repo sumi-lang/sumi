@@ -1,0 +1,25 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 2
+
+fn minimum@0..46 () -> int
+  body: int -9223372036854775808 : int @22..46
+
+fn maximum@47..88 () -> int
+  body: int 9223372036854775807 : int @69..88
+
+fn runtime_overflow@89..141 () -> int
+  body: negate : int @120..141
+    operand: int -9223372036854775808 : int @121..141
+
+fn too_large@142..185 () -> int
+  body: unavailable
+
+fn outside_envelope@186..243 () -> int
+  body: unavailable
+
+== semantic diagnostics ==
+error[semantic/integer-range]: integer literal is outside signed 64-bit range
+  primary @166..185
+error[semantic/integer-range]: integer literal is outside signed 64-bit range
+  primary @219..238

@@ -1,0 +1,72 @@
+== tree ==
+SourceFile 0..224
+  FnItem 0..64
+    Name 3..7 "even"
+    ParamList 7..15
+      Param 8..14
+        Name 8..9 "n"
+        TypeRef 11..14 "int"
+    TypeRef 19..23 "bool"
+    IfExpr 26..64
+      BinaryExpr 29..35
+        NameRef 29..30 "n"
+        LiteralExpr 34..35 "0"
+      Block 36..44
+        LiteralExpr 38..42 "true"
+      Block 50..64
+        CallExpr 52..62
+          NameRef 52..55 "odd"
+          ArgList 55..62
+            BinaryExpr 56..61
+              NameRef 56..57 "n"
+              LiteralExpr 60..61 "1"
+  FnItem 65..130
+    Name 68..71 "odd"
+    ParamList 71..79
+      Param 72..78
+        Name 72..73 "n"
+        TypeRef 75..78 "int"
+    TypeRef 83..87 "bool"
+    IfExpr 90..130
+      BinaryExpr 93..99
+        NameRef 93..94 "n"
+        LiteralExpr 98..99 "0"
+      Block 100..109
+        LiteralExpr 102..107 "false"
+      Block 115..130
+        CallExpr 117..128
+          NameRef 117..121 "even"
+          ArgList 121..128
+            BinaryExpr 122..127
+              NameRef 122..123 "n"
+              LiteralExpr 126..127 "1"
+  FnItem 131..183
+    Name 134..138 "safe"
+    ParamList 138..140 "()"
+    TypeRef 144..148 "bool"
+    BinaryExpr 151..183
+      BinaryExpr 151..172
+        LiteralExpr 151..156 "false"
+        ParenExpr 160..172
+          BinaryExpr 161..171
+            BinaryExpr 161..166
+              LiteralExpr 161..162 "1"
+              LiteralExpr 165..166 "0"
+            LiteralExpr 170..171 "0"
+      CallExpr 176..183
+        NameRef 176..180 "even"
+        ArgList 180..183
+          LiteralExpr 181..182 "4"
+  FnItem 184..223
+    Name 187..192 "maybe"
+    ParamList 192..201
+      Param 193..200
+        Name 193..194 "b"
+        TypeRef 196..200 "bool"
+    IfExpr 204..223
+      NameRef 207..208 "b"
+      Block 209..223
+        DiscardStmt 211..221
+          CallExpr 215..221
+            NameRef 215..219 "safe"
+            ArgList 219..221 "()"

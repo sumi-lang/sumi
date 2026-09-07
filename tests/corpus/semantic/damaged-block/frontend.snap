@@ -1,0 +1,24 @@
+== tree ==
+SourceFile! 0..45
+  FnItem! 0..44
+    Name 3..11 "unclosed"
+    ParamList 11..13 "()"
+    TypeRef 17..20 "int"
+    Block! 21..44
+      DiscardStmt 27..38
+        NameRef 31..38 "missing"
+      LiteralExpr 43..44 "1"
+
+== evidence ==
+Expected(RBrace) at 45
+
+== diagnostics ==
+error[syntax/expected-token] 4:1: expected `}`
+  at 1:22..1:23 "{": opening delimiter is here
+  fix (safe): insert `}`
+    3:6 -> "}"
+
+== fixed ==
+fn unclosed() -> int {
+    _ = missing
+    1}

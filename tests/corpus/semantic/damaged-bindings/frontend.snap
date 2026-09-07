@@ -1,0 +1,35 @@
+== tree ==
+SourceFile! 0..124
+  FnItem! 0..100
+    Name 3..10 "damaged"
+    ParamList 10..12 "()"
+    Block! 13..100
+      LetStmt 19..31
+        Name 23..24 "x"
+        LiteralExpr 27..31 "true"
+      LetStmt! 36..43
+        Name 40..41 "x"
+      DiscardStmt 48..57
+        BinaryExpr 52..57
+          NameRef 52..53 "x"
+          LiteralExpr 56..57 "1"
+      LetStmt! 62..72
+        Name 66..67 "y"
+        LiteralExpr 71..72 "1"
+      DiscardStmt 77..82
+        NameRef 81..82 "y"
+      DiscardStmt 87..98
+        NameRef 91..98 "missing"
+  FnItem 101..123
+    Name 104..110 "intact"
+    ParamList 110..112 "()"
+    TypeRef 116..119 "int"
+    LiteralExpr 122..123 "3"
+
+== evidence ==
+ExpectedExpression at 48
+ExpectedType at 69
+
+== diagnostics ==
+error[syntax/expected-expression] 4:5: expected an expression
+error[syntax/expected-type] 5:12: expected a type

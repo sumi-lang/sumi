@@ -1,0 +1,15 @@
+[package]
+name = "sumi-hir"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+
+[dependencies]
+sumi-frontend = { path = "../frontend" }
+sumi-lexer = { path = "../lexer" }
+sumi-syntax = { path = "../syntax" }
+sumi-text = { path = "../text" }
+
+[dev-dependencies]
+proptest = "=1.11.0"
+tempfile = "=3.27.0"

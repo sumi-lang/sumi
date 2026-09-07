@@ -1,0 +1,41 @@
+== tree ==
+SourceFile 0..220
+  FnItem 0..41
+    Name 3..10 "or_name"
+    ParamList 10..12 "()"
+    TypeRef 16..20 "bool"
+    BinaryExpr 23..41
+      LiteralExpr 23..27 "true"
+      NameRef 31..41 "missing_or"
+  FnItem 42..76
+    Name 45..53 "and_type"
+    ParamList 53..55 "()"
+    TypeRef 59..63 "bool"
+    BinaryExpr 66..76
+      LiteralExpr 66..71 "false"
+      LiteralExpr 75..76 "1"
+  FnItem 77..137
+    Name 80..89 "then_name"
+    ParamList 89..91 "()"
+    TypeRef 95..98 "int"
+    IfExpr 101..137
+      LiteralExpr 104..109 "false"
+      Block 110..126
+        NameRef 112..124 "missing_then"
+      Block 132..137
+        LiteralExpr 134..135 "1"
+  FnItem 138..190
+    Name 141..150 "else_type"
+    ParamList 150..152 "()"
+    TypeRef 156..159 "int"
+    IfExpr 162..190
+      LiteralExpr 165..169 "true"
+      Block 170..175
+        LiteralExpr 172..173 "1"
+      Block 181..190
+        LiteralExpr 183..188 "false"
+  FnItem 191..219
+    Name 194..205 "independent"
+    ParamList 205..207 "()"
+    TypeRef 211..214 "int"
+    LiteralExpr 217..219 "42"

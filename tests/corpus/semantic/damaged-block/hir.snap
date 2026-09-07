@@ -1,0 +1,10 @@
+file: rejected
+frontend errors: 1 (see frontend.snap)
+semantic errors: 1
+
+fn unclosed@0..44 () -> int
+  body: unavailable
+
+== semantic diagnostics ==
+error[semantic/unknown-name]: unknown name `missing`
+  primary @31..38
