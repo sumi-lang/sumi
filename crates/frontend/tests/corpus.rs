@@ -1,11 +1,11 @@
 //! The file-based corpus: every directory under `tests/corpus` at the
 //! workspace root that holds a `case.sumi`, run through the frontend and
-//! compared with the `expected.snap` beside it. A snapshot records the
+//! compared with the `frontend.snap` beside it. A snapshot records the
 //! tree, with `!` on every node that contains an error, the parser's
 //! evidence, the diagnostics, the source after every fix, its header
 //! naming any diagnostic that survives them, and the normalized source
 //! where it differs, its header naming any violation that survives
-//! normalizing. Run with `UPDATE_EXPECT=1` to
+//! normalizing. Run with `UPDATE_FRONTEND=1` to
 //! rewrite the snapshots, then review the diff; a new case gets its first
 //! snapshot the same way.
 
@@ -24,9 +24,9 @@ use sumi_syntax::{
 };
 use sumi_text::{LineIndex, TextSize};
 
-const UPDATE: &str = "UPDATE_EXPECT";
+const UPDATE: &str = "UPDATE_FRONTEND";
 const CASE: &str = "case.sumi";
-const EXPECTED: &str = "expected.snap";
+const EXPECTED: &str = "frontend.snap";
 
 fn corpus_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/corpus")
