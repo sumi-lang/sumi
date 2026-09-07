@@ -47,24 +47,14 @@ pub fn check_semantics(parsed: ParsedSource) {
         let Some(body) = function.body() else {
             continue;
         };
-        // Owner-relative IDs have no public numeric constructors. Compare their
-        // read-only referents to the arena instead; no pointer is dereferenced.
-        let indices: std::collections::HashMap<_, _> = body
-            .expressions()
-            .iter()
-            .enumerate()
-            .map(|(index, expr)| (std::ptr::from_ref(expr), index))
-            .collect();
-        let local_indices: std::collections::HashMap<_, _> = body
-            .locals()
-            .iter()
-            .enumerate()
-            .map(|(index, local)| (std::ptr::from_ref(local), index))
-            .collect();
         let mut parents = vec![0; body.expressions().len()];
         let mut declarations = vec![0; body.locals().len()];
         for &param in body.params() {
-            declarations[local_indices[&std::ptr::from_ref(body.local(param))]] += 1;
+            assert!(std::ptr::eq(
+                body.local(param),
+                &body.locals()[param.index()]
+            ));
+            declarations[param.index()] += 1;
         }
         for (index, expr) in body.expressions().iter().enumerate() {
             let mut edges = Vec::new();
@@ -103,8 +93,11 @@ pub fn check_semantics(parsed: ParsedSource) {
                     for statement in statements {
                         edges.push(match statement.kind {
                             StatementKind::Let { local, initializer } => {
-                                declarations
-                                    [local_indices[&std::ptr::from_ref(body.local(local))]] += 1;
+                                assert!(std::ptr::eq(
+                                    body.local(local),
+                                    &body.locals()[local.index()]
+                                ));
+                                declarations[local.index()] += 1;
                                 assert_eq!(body.local(local).ty, body.expression(initializer).ty);
                                 initializer
                             }
@@ -116,12 +109,20 @@ pub fn check_semantics(parsed: ParsedSource) {
                 }
             }
             for edge in edges {
-                let child = indices[&std::ptr::from_ref(body.expression(edge))];
+                assert!(std::ptr::eq(
+                    body.expression(edge),
+                    &body.expressions()[edge.index()]
+                ));
+                let child = edge.index();
                 assert!(child < index);
                 parents[child] += 1;
             }
         }
-        let root = indices[&std::ptr::from_ref(body.expression(body.root()))];
+        let root = body.root().index();
+        assert!(std::ptr::eq(
+            body.expression(body.root()),
+            &body.expressions()[root]
+        ));
         for (index, count) in parents.into_iter().enumerate() {
             assert_eq!(count, usize::from(index != root));
         }

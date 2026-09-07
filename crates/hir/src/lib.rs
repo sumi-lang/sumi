@@ -29,6 +29,20 @@ pub struct ExprId(usize);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LocalId(usize);
 
+impl ExprId {
+    /// Index into the owning body's `expressions()` slice, not another body's.
+    pub fn index(self) -> usize {
+        self.0
+    }
+}
+
+impl LocalId {
+    /// Index into the owning body's `locals()` slice, not another body's.
+    pub fn index(self) -> usize {
+        self.0
+    }
+}
+
 #[derive(Debug)]
 pub struct Analysis {
     parsed: ParsedSource,

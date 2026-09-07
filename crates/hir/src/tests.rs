@@ -31,7 +31,11 @@ fn invariant(analysis: &Analysis, body: &Body) {
     let mut parents = vec![0; body.exprs.len()];
     let mut declarations = vec![0; body.locals.len()];
     for &param in &body.params {
-        declarations[param.0] += 1;
+        assert!(std::ptr::eq(
+            body.local(param),
+            &body.locals()[param.index()]
+        ));
+        declarations[param.index()] += 1;
     }
     for (index, expr) in body.exprs.iter().enumerate() {
         let mut edges = Vec::new();
@@ -70,7 +74,11 @@ fn invariant(analysis: &Analysis, body: &Body) {
                 for statement in statements {
                     edges.push(match statement.kind {
                         StatementKind::Let { local, initializer } => {
-                            declarations[local.0] += 1;
+                            assert!(std::ptr::eq(
+                                body.local(local),
+                                &body.locals()[local.index()]
+                            ));
+                            declarations[local.index()] += 1;
                             assert_eq!(body.local(local).ty, body.expression(initializer).ty);
                             initializer
                         }
@@ -82,12 +90,20 @@ fn invariant(analysis: &Analysis, body: &Body) {
             }
         }
         for edge in edges {
-            assert!(edge.0 < index);
-            parents[edge.0] += 1;
+            assert!(std::ptr::eq(
+                body.expression(edge),
+                &body.expressions()[edge.index()]
+            ));
+            assert!(edge.index() < index);
+            parents[edge.index()] += 1;
         }
     }
+    assert!(std::ptr::eq(
+        body.expression(body.root()),
+        &body.expressions()[body.root().index()]
+    ));
     for (index, count) in parents.into_iter().enumerate() {
-        assert_eq!(count, usize::from(index != body.root.0));
+        assert_eq!(count, usize::from(index != body.root().index()));
     }
     assert!(declarations.into_iter().all(|count| count == 1));
 }
