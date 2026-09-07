@@ -391,8 +391,20 @@ fn long_chains_are_stack_safe_even_when_rejected() {
 #[test]
 fn scalar_operator_type_matrix() {
     let values = [("1", "int"), ("true", "bool"), ("{}", "unit")];
-    for op in [
-        "+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "&&", "||",
+    for (op, eager) in [
+        ("+", Some(BinaryOp::Add)),
+        ("-", Some(BinaryOp::Sub)),
+        ("*", Some(BinaryOp::Mul)),
+        ("/", Some(BinaryOp::Div)),
+        ("%", Some(BinaryOp::Rem)),
+        ("<", Some(BinaryOp::Lt)),
+        ("<=", Some(BinaryOp::Le)),
+        (">", Some(BinaryOp::Gt)),
+        (">=", Some(BinaryOp::Ge)),
+        ("==", Some(BinaryOp::Eq)),
+        ("!=", Some(BinaryOp::Ne)),
+        ("&&", None),
+        ("||", None),
     ] {
         for (lhs, left_ty) in values {
             for (rhs, right_ty) in values {
@@ -407,7 +419,14 @@ fn scalar_operator_type_matrix() {
                 assert!(a.parsed.diagnostics().is_empty(), "{source}");
                 assert_eq!(a.is_valid(), accepted, "{source}");
                 if accepted {
-                    invariant(&a, a.functions[0].body().unwrap());
+                    let body = a.functions[0].body().unwrap();
+                    invariant(&a, body);
+                    match body.expression(body.root()).kind {
+                        ExprKind::Binary { op, .. } => assert_eq!(Some(op), eager),
+                        ExprKind::And { .. } => assert_eq!(op, "&&"),
+                        ExprKind::Or { .. } => assert_eq!(op, "||"),
+                        _ => panic!("expected a binary operation: {source}"),
+                    }
                 } else {
                     assert!(codes(&a).contains(&"type-mismatch"), "{source}");
                 }
@@ -421,6 +440,22 @@ fn scalar_operator_type_matrix() {
         assert_eq!(codes(&check(source)), ["type-mismatch"]);
     }
     clean("fn f(x: int) -> bool = x // comparison\n <= 1\n");
+}
+
+#[test]
+fn binary_requirements_survive_a_failed_operand() {
+    for expression in [
+        "missing + true",
+        "missing < false",
+        "1 && missing",
+        "missing == {}",
+    ] {
+        let a = check(&format!("fn f() {{ _ = {expression} }}"));
+        let mut actual = codes(&a);
+        actual.sort_unstable();
+        assert_eq!(actual, ["type-mismatch", "unknown-name"], "{expression}");
+        assert!(a.functions[0].body().is_none());
+    }
 }
 
 #[test]

@@ -271,7 +271,6 @@ fn operator(op: BinaryOp) -> &'static str {
         BinaryOp::Le => "<=",
         BinaryOp::Gt => ">",
         BinaryOp::Ge => ">=",
-        BinaryOp::And | BinaryOp::Or => panic!("lazy operators must not appear as eager HIR"),
     }
 }
 

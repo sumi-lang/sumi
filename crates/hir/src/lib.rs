@@ -13,7 +13,22 @@ use sumi_frontend::{Diagnostic, ParsedSource, Severity};
 use sumi_text::Span;
 
 pub use check::analyze;
-pub use sumi_syntax::BinaryOp;
+
+/// Eager scalar operators. Short-circuiting operators have separate expression kinds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BinaryOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Rem,
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Ty {
@@ -161,7 +176,7 @@ pub enum ExprKind {
     Local(LocalId),
     Neg(ExprId),
     Not(ExprId),
-    /// Eager scalar operator; never `And` or `Or`.
+    /// Eager scalar operation.
     Binary {
         op: BinaryOp,
         lhs: ExprId,
@@ -189,6 +204,29 @@ pub enum ExprKind {
         statements: Vec<Statement>,
         tail: Option<ExprId>,
     },
+}
+
+impl ExprKind {
+    pub(crate) fn binary(op: sumi_syntax::BinaryOp, lhs: ExprId, rhs: ExprId) -> Self {
+        use sumi_syntax::BinaryOp::*;
+
+        let op = match op {
+            Add => BinaryOp::Add,
+            Sub => BinaryOp::Sub,
+            Mul => BinaryOp::Mul,
+            Div => BinaryOp::Div,
+            Rem => BinaryOp::Rem,
+            Eq => BinaryOp::Eq,
+            Ne => BinaryOp::Ne,
+            Lt => BinaryOp::Lt,
+            Le => BinaryOp::Le,
+            Gt => BinaryOp::Gt,
+            Ge => BinaryOp::Ge,
+            And => return Self::And { lhs, rhs },
+            Or => return Self::Or { lhs, rhs },
+        };
+        Self::Binary { op, lhs, rhs }
+    }
 }
 
 #[derive(Debug)]

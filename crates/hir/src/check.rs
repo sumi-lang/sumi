@@ -699,6 +699,8 @@ impl<'a, 's> Builder<'a, 's> {
                 );
             }
             NodeKind::BinaryExpr => {
+                use sumi_syntax::BinaryOp::*;
+
                 let binary = ast::BinaryExpr::cast(tree, node).unwrap();
                 let lhs_node = binary.lhs(tree).unwrap().node();
                 let rhs_node = binary.rhs(tree).unwrap().node();
@@ -716,10 +718,11 @@ impl<'a, 's> Builder<'a, 's> {
                     .expect("clean binary operator");
                 let lhs = self.value(lhs_node);
                 let rhs = self.value(rhs_node);
-                let expected = match op {
-                    BinaryOp::And | BinaryOp::Or => Some(Ty::Bool),
-                    BinaryOp::Eq | BinaryOp::Ne => lhs.or(rhs).map(|id| self.exprs[id.0].ty),
-                    _ => Some(Ty::Int),
+                let (expected, ty) = match op {
+                    Add | Sub | Mul | Div | Rem => (Some(Ty::Int), Ty::Int),
+                    Lt | Le | Gt | Ge => (Some(Ty::Int), Ty::Bool),
+                    Eq | Ne => (lhs.or(rhs).map(|id| self.exprs[id.0].ty), Ty::Bool),
+                    And | Or => (Some(Ty::Bool), Ty::Bool),
                 };
                 let mut valid = true;
                 if let Some(expected) = expected {
@@ -742,20 +745,7 @@ impl<'a, 's> Builder<'a, 's> {
                     return None;
                 }
                 let (lhs, rhs) = (lhs?, rhs?);
-                let ty = match op {
-                    BinaryOp::Add
-                    | BinaryOp::Sub
-                    | BinaryOp::Mul
-                    | BinaryOp::Div
-                    | BinaryOp::Rem => Ty::Int,
-                    _ => Ty::Bool,
-                };
-                let kind = match op {
-                    BinaryOp::And => ExprKind::And { lhs, rhs },
-                    BinaryOp::Or => ExprKind::Or { lhs, rhs },
-                    _ => ExprKind::Binary { op, lhs, rhs },
-                };
-                self.emit(node, kind, ty);
+                self.emit(node, ExprKind::binary(op, lhs, rhs), ty);
             }
             NodeKind::IfExpr => {
                 let branch = ast::IfExpr::cast(tree, node).unwrap();
