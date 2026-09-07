@@ -1,5 +1,5 @@
 == tree ==
-SourceFile 0..308
+SourceFile 0..385
   FnItem 0..59
     Name 3..14 "unsupported"
     ParamList 14..16 "()"
@@ -60,3 +60,21 @@ SourceFile 0..308
     BinaryExpr 299..307
       Block 299..301 "{}"
       Block 305..307 "{}"
+  FnItem 308..384
+    Name 311..324 "computed_call"
+    ParamList 324..326 "()"
+    Block 327..384
+      DiscardStmt 333..382
+        CallExpr 337..382
+          ParenExpr 337..363
+            IfExpr 338..362
+              LiteralExpr 341..345 "true"
+              Block 346..351
+                LiteralExpr 348..349 "1"
+              Block 357..362
+                LiteralExpr 359..360 "2"
+          ArgList 363..382
+            NameRef 364..371 "missing"
+            BinaryExpr 373..381
+              LiteralExpr 373..374 "1"
+              LiteralExpr 377..381 "true"

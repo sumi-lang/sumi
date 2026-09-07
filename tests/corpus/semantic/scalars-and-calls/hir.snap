@@ -26,3 +26,21 @@ fn ignore@123..176 (unit) -> unit
     discard @156..168
       value: call answer@0..32 (callee @160..166) : int @160..168
     tail: read x@133..134 : unit @173..174
+
+fn sub@177..214 (int, int) -> int
+  param a@184..185: int
+  param b@192..193: int
+  body: eager - : int @209..214
+    lhs: read a@184..185 : int @209..210
+    rhs: read b@192..193 : int @213..214
+
+fn ordered@215..258 () -> int
+  body: eager - : int @237..258
+    lhs: eager - : int @237..254
+      lhs: call sub@177..214 (callee @237..240) : int @237..246
+        arg[0]: int 8 : int @241..242
+        arg[1]: int 3 : int @244..245
+      rhs: eager * : int @249..254
+        lhs: int 2 : int @249..250
+        rhs: int 1 : int @253..254
+    rhs: int 4 : int @257..258

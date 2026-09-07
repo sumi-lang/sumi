@@ -14,7 +14,7 @@ fn clean(source: &str) -> Analysis {
         analysis.diagnostics
     );
     for function in &analysis.functions {
-        invariant(&analysis, function.body().unwrap());
+        invariant(&analysis, function);
     }
     analysis
 }
@@ -27,10 +27,15 @@ fn codes(analysis: &Analysis) -> Vec<&'static str> {
         .collect()
 }
 
-fn invariant(analysis: &Analysis, body: &Body) {
+fn invariant(analysis: &Analysis, function: &Function) {
+    let body = function.body().unwrap();
+    let signature = function.signature().unwrap();
+    assert_eq!(body.params().len(), signature.params.len());
+    assert_eq!(body.expression(body.root()).ty, signature.result);
     let mut parents = vec![0; body.exprs.len()];
     let mut declarations = vec![0; body.locals.len()];
-    for &param in &body.params {
+    for (&param, &ty) in body.params().iter().zip(&signature.params) {
+        assert_eq!(body.local(param).ty, ty);
         assert!(std::ptr::eq(
             body.local(param),
             &body.locals()[param.index()]
@@ -43,10 +48,38 @@ fn invariant(analysis: &Analysis, body: &Body) {
             ExprKind::Int(_) => assert_eq!(expr.ty, Ty::Int),
             ExprKind::Bool(_) => assert_eq!(expr.ty, Ty::Bool),
             ExprKind::Local(local) => assert_eq!(expr.ty, body.locals[local.0].ty),
-            ExprKind::Neg(child) | ExprKind::Not(child) => edges.push(*child),
-            ExprKind::Binary { lhs, rhs, .. }
-            | ExprKind::And { lhs, rhs }
-            | ExprKind::Or { lhs, rhs } => edges.extend([*lhs, *rhs]),
+            ExprKind::Neg(child) => {
+                assert_eq!(body.expression(*child).ty, Ty::Int);
+                assert_eq!(expr.ty, Ty::Int);
+                edges.push(*child);
+            }
+            ExprKind::Not(child) => {
+                assert_eq!(body.expression(*child).ty, Ty::Bool);
+                assert_eq!(expr.ty, Ty::Bool);
+                edges.push(*child);
+            }
+            ExprKind::Binary { op, lhs, rhs } => {
+                use BinaryOp::*;
+                let (operand, result) = match op {
+                    Add | Sub | Mul | Div | Rem => (Ty::Int, Ty::Int),
+                    Lt | Le | Gt | Ge => (Ty::Int, Ty::Bool),
+                    Eq | Ne => {
+                        let ty = body.expression(*lhs).ty;
+                        assert!(matches!(ty, Ty::Int | Ty::Bool));
+                        (ty, Ty::Bool)
+                    }
+                };
+                assert_eq!(body.expression(*lhs).ty, operand);
+                assert_eq!(body.expression(*rhs).ty, operand);
+                assert_eq!(expr.ty, result);
+                edges.extend([*lhs, *rhs]);
+            }
+            ExprKind::And { lhs, rhs } | ExprKind::Or { lhs, rhs } => {
+                assert_eq!(body.expression(*lhs).ty, Ty::Bool);
+                assert_eq!(body.expression(*rhs).ty, Ty::Bool);
+                assert_eq!(expr.ty, Ty::Bool);
+                edges.extend([*lhs, *rhs]);
+            }
             ExprKind::Call { function, args, .. } => {
                 let signature = analysis.function(*function).signature().unwrap();
                 assert_eq!(expr.ty, signature.result);
@@ -267,7 +300,7 @@ fn signatures_do_not_invent_missing_types_or_resolve_ambiguity() {
     let a = check("fn f() {}\nfn f() {}\nfn g() = f()\n");
     assert_eq!(codes(&a), ["duplicate-name"]);
     assert!(a.functions[2].body().is_none());
-    let a = check("fn f(x: int, x: bool) { _ = x + 1 }\nfn g() = f(1, true)\n");
+    let a = check("fn f(x: int, x: bool) {\n _ = !x\n _ = -x\n}\nfn g() = f(1, true)\n");
     assert_eq!(codes(&a), ["duplicate-name"]);
     assert!(a.functions[0].signature().is_some());
     assert!(a.functions[0].body().is_none());
@@ -288,7 +321,7 @@ fn invalid_parameters_do_not_hide_independent_result_errors() {
         assert_eq!(codes(&a), expected);
         assert!(a.functions[0].signature().is_none());
         assert!(a.functions[0].body().is_none());
-        invariant(&a, a.functions[1].body().unwrap());
+        invariant(&a, &a.functions[1]);
     }
 }
 
@@ -420,7 +453,7 @@ fn scalar_operator_type_matrix() {
                 assert_eq!(a.is_valid(), accepted, "{source}");
                 if accepted {
                     let body = a.functions[0].body().unwrap();
-                    invariant(&a, body);
+                    invariant(&a, &a.functions[0]);
                     match body.expression(body.root()).kind {
                         ExprKind::Binary { op, .. } => assert_eq!(Some(op), eager),
                         ExprKind::And { .. } => assert_eq!(op, "&&"),
@@ -487,8 +520,8 @@ fn existing_corpus_never_panics_or_silently_rejects() {
             } else if path.file_name().unwrap() == "case.sumi" {
                 let a = check(&std::fs::read_to_string(&path).unwrap());
                 for function in &a.functions {
-                    if let Some(body) = function.body() {
-                        invariant(&a, body);
+                    if function.body().is_some() {
+                        invariant(&a, function);
                     }
                 }
                 count += 1;
@@ -505,7 +538,7 @@ proptest::proptest! {
         let source = format!("fn f(x: int) -> int {{ {} }}\nfn g() -> int = 1", tokens.join(" "));
         let a = check(&source);
         assert_eq!(a.is_valid(), !a.parsed.diagnostics().iter().chain(&a.diagnostics).any(|d| d.severity == Severity::Error));
-        for function in &a.functions { if let Some(body) = function.body() { invariant(&a, body); } }
+        for function in &a.functions { if function.body().is_some() { invariant(&a, function); } }
     }
 
     #[test]
@@ -520,6 +553,6 @@ proptest::proptest! {
                 proptest::prop_assert!(source.is_char_boundary(label.location.end().to_usize()));
             }
         }
-        for function in &a.functions { if let Some(body) = function.body() { invariant(&a, body); } }
+        for function in &a.functions { if function.body().is_some() { invariant(&a, function); } }
     }
 }

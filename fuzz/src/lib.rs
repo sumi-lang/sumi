@@ -47,9 +47,13 @@ pub fn check_semantics(parsed: ParsedSource) {
         let Some(body) = function.body() else {
             continue;
         };
+        let signature = function.signature().unwrap();
+        assert_eq!(body.params().len(), signature.params.len());
+        assert_eq!(body.expression(body.root()).ty, signature.result);
         let mut parents = vec![0; body.expressions().len()];
         let mut declarations = vec![0; body.locals().len()];
-        for &param in body.params() {
+        for (&param, &ty) in body.params().iter().zip(&signature.params) {
+            assert_eq!(body.local(param).ty, ty);
             assert!(std::ptr::eq(
                 body.local(param),
                 &body.locals()[param.index()]
@@ -62,10 +66,38 @@ pub fn check_semantics(parsed: ParsedSource) {
                 ExprKind::Int(_) => assert_eq!(expr.ty, Ty::Int),
                 ExprKind::Bool(_) => assert_eq!(expr.ty, Ty::Bool),
                 ExprKind::Local(local) => assert_eq!(expr.ty, body.local(*local).ty),
-                ExprKind::Neg(child) | ExprKind::Not(child) => edges.push(*child),
-                ExprKind::Binary { lhs, rhs, .. }
-                | ExprKind::And { lhs, rhs }
-                | ExprKind::Or { lhs, rhs } => edges.extend([*lhs, *rhs]),
+                ExprKind::Neg(child) => {
+                    assert_eq!(body.expression(*child).ty, Ty::Int);
+                    assert_eq!(expr.ty, Ty::Int);
+                    edges.push(*child);
+                }
+                ExprKind::Not(child) => {
+                    assert_eq!(body.expression(*child).ty, Ty::Bool);
+                    assert_eq!(expr.ty, Ty::Bool);
+                    edges.push(*child);
+                }
+                ExprKind::Binary { op, lhs, rhs } => {
+                    use sumi_hir::BinaryOp::*;
+                    let (operand, result) = match op {
+                        Add | Sub | Mul | Div | Rem => (Ty::Int, Ty::Int),
+                        Lt | Le | Gt | Ge => (Ty::Int, Ty::Bool),
+                        Eq | Ne => {
+                            let ty = body.expression(*lhs).ty;
+                            assert!(matches!(ty, Ty::Int | Ty::Bool));
+                            (ty, Ty::Bool)
+                        }
+                    };
+                    assert_eq!(body.expression(*lhs).ty, operand);
+                    assert_eq!(body.expression(*rhs).ty, operand);
+                    assert_eq!(expr.ty, result);
+                    edges.extend([*lhs, *rhs]);
+                }
+                ExprKind::And { lhs, rhs } | ExprKind::Or { lhs, rhs } => {
+                    assert_eq!(body.expression(*lhs).ty, Ty::Bool);
+                    assert_eq!(body.expression(*rhs).ty, Ty::Bool);
+                    assert_eq!(expr.ty, Ty::Bool);
+                    edges.extend([*lhs, *rhs]);
+                }
                 ExprKind::Call { function, args, .. } => {
                     let signature = analysis.function(*function).signature().unwrap();
                     assert_eq!(expr.ty, signature.result);

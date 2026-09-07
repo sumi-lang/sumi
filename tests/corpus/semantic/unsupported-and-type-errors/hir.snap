@@ -1,6 +1,6 @@
 file: rejected
 frontend errors: 0 (see frontend.snap)
-semantic errors: 9
+semantic errors: 12
 
 fn unsupported@0..59 () -> unit
   body: unavailable
@@ -26,6 +26,9 @@ fn annotation@234..269 () -> unit
 fn unit_equality@270..307 () -> bool
   body: unavailable
 
+fn computed_call@308..384 () -> unit
+  body: unavailable
+
 == semantic diagnostics ==
 error[semantic/unsupported]: construct is not supported by scalar checking
   primary @23..36
@@ -48,3 +51,9 @@ error[semantic/type-mismatch]: expected Bool, found Int
   secondary @259..263: declared here
 error[semantic/type-mismatch]: unit values cannot be compared
   primary @299..307
+error[semantic/unsupported]: construct is not supported by scalar checking
+  primary @338..362
+error[semantic/unknown-name]: unknown name `missing`
+  primary @364..371
+error[semantic/type-mismatch]: expected Int, found Bool
+  primary @377..381
