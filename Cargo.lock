@@ -682,9 +682,21 @@ dependencies = [
  "libfuzzer-sys",
  "sumi-format",
  "sumi-frontend",
+ "sumi-hir",
  "sumi-lexer",
  "sumi-syntax",
  "sumi-test",
+]
+
+[[package]]
+name = "sumi-hir"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "sumi-frontend",
+ "sumi-lexer",
+ "sumi-syntax",
+ "sumi-text",
 ]
 
 [[package]]

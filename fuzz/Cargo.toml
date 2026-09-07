@@ -12,6 +12,7 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 sumi-format = { path = "../crates/format" }
 sumi-frontend = { path = "../crates/frontend" }
+sumi-hir = { path = "../crates/hir" }
 sumi-lexer = { path = "../crates/lexer" }
 sumi-syntax = { path = "../crates/syntax" }
 sumi-test = { path = "../crates/test" }
@@ -33,6 +34,13 @@ bench = false
 [[bin]]
 name = "edit"
 path = "fuzz_targets/edit.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "check"
+path = "fuzz_targets/check.rs"
 test = false
 doc = false
 bench = false

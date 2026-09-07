@@ -102,7 +102,7 @@ fn codegen(check: bool) -> Result<(), String> {
 }
 
 /// Seed every fuzz target's corpus under `fuzz/corpus/` from the file-based
-/// cases. `lex` and `parse` read a case as it is. `edit` reads three header
+/// cases. `lex`, `parse`, and `check` read a case as it is. `edit` reads three header
 /// bytes before the source — the edit kind, then the significant token it
 /// lands on — so each case is written once per edit kind. The corpus
 /// directories are untracked; a seed that adds no coverage over what is
@@ -116,7 +116,7 @@ fn fuzz_seed() -> Result<(), String> {
         return Err(format!("no cases under {}", corpus.display()));
     }
     let out = root.join("fuzz/corpus");
-    for target in ["lex", "parse", "edit"] {
+    for target in ["lex", "parse", "edit", "check"] {
         fs::create_dir_all(out.join(target))
             .map_err(|error| format!("creating fuzz/corpus/{target}: {error}"))?;
     }
@@ -135,6 +135,7 @@ fn fuzz_seed() -> Result<(), String> {
         };
         write(out.join("lex").join(&name), &source)?;
         write(out.join("parse").join(&name), &source)?;
+        write(out.join("check").join(&name), &source)?;
         for kind in 0u8..4 {
             let mut seed = vec![kind, 1, 0];
             seed.extend_from_slice(&source);
