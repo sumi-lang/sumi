@@ -185,7 +185,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         } else {
             None
         };
-        parameters.push(params);
+        parameters.push((params, result));
         functions.push(Function {
             name: name.map(|n| n.0),
             origin: source.span(item.node()),
@@ -193,11 +193,12 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
             body: None,
         });
     }
-    for (index, (item, params)) in items.iter().zip(parameters).enumerate() {
+    for (index, (item, (params, result))) in items.iter().zip(parameters).enumerate() {
         let body = Builder::new(&mut source, &functions, &names).build(
             *item,
             params,
             functions[index].signature.as_ref(),
+            result,
         );
         functions[index].body = body;
     }
@@ -267,6 +268,7 @@ impl<'a, 's> Builder<'a, 's> {
         item: ast::FnItem,
         parameters: Vec<Parameter>,
         signature: Option<&Signature>,
+        result: Option<Ty>,
     ) -> Option<Body> {
         let mut params = Vec::new();
         let mut first = HashMap::new();
@@ -310,11 +312,12 @@ impl<'a, 's> Builder<'a, 's> {
             }
         }
         let root = self.values.get(&root_node).copied();
-        if let (Some(root), Some(signature)) = (root, signature)
+        // A failed parameter does not erase an independently known result type.
+        if let (Some(root), Some(result)) = (root, result)
             && !self.require(
                 root_node,
                 root,
-                signature.result,
+                result,
                 Some((self.source.span(item.node()), "declared here")),
             )
         {

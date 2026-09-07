@@ -9,3 +9,4 @@ fn hidden() -> int {
     let typed = 1
     typed()
 }
+fn broken_result(x: mystery) -> int = true

@@ -1,5 +1,5 @@
 == tree ==
-SourceFile 0..259
+SourceFile 0..302
   FnItem 0..17
     Name 3..12 "duplicate"
     ParamList 12..14 "()"
@@ -60,3 +60,11 @@ SourceFile 0..259
       CallExpr 249..256
         NameRef 249..254 "typed"
         ArgList 254..256 "()"
+  FnItem 259..301
+    Name 262..275 "broken_result"
+    ParamList 275..287
+      Param 276..286
+        Name 276..277 "x"
+        TypeRef 279..286 "mystery"
+    TypeRef 291..294 "int"
+    LiteralExpr 297..301 "true"

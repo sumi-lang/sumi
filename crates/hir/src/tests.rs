@@ -259,6 +259,24 @@ fn signatures_do_not_invent_missing_types_or_resolve_ambiguity() {
 }
 
 #[test]
+fn invalid_parameters_do_not_hide_independent_result_errors() {
+    for (parameter, expected) in [
+        ("x: mystery", &["unknown-type", "type-mismatch"][..]),
+        // Missing annotations are already diagnosed by the parser.
+        ("x", &["type-mismatch"][..]),
+    ] {
+        let a = check(&format!(
+            "fn broken({parameter}) -> int = true\nfn independent() -> int = 42\n"
+        ));
+        assert!(!a.is_valid());
+        assert_eq!(codes(&a), expected);
+        assert!(a.functions[0].signature().is_none());
+        assert!(a.functions[0].body().is_none());
+        invariant(&a, a.functions[1].body().unwrap());
+    }
+}
+
+#[test]
 fn damaged_and_unsupported_declarations_hide_old_bindings() {
     for binding in [
         "let x =",
