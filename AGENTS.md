@@ -18,9 +18,8 @@ You're in the core repository for Sumi, a novel statically typed general-purpose
 
 ## Tests
 
-- `tests/corpus/` at the workspace root is the shared file-based corpus. Every case directory holds `case.sumi` and `frontend.snap`, keeping the tree, parser evidence, frontend diagnostics, fixed source, and normalized source together. `crates/frontend/tests/corpus.rs` runs every case; update with `UPDATE_FRONTEND=1 cargo test -p sumi-frontend --test corpus`.
-- A case's optional `stages` file containing exactly `hir` selects an additional `hir.snap`, owned by `crates/hir/tests/corpus.rs`. Select semantic-focused cases and useful recovery witnesses, not every syntax fixture. Update with `UPDATE_HIR=1 cargo test -p sumi-hir --test corpus`. Selection never depends on a snapshot's existence: missing selected snapshots, snapshots for unselected stages, malformed metadata, and orphan products fail. Review every generated diff. The runners share only discovery/update/diff mechanics in `tests/support/corpus.rs`; their renderers remain stage-owned, with no new library dependency between stages.
-- HIR snapshots record whole-file acceptance, signatures, complete typed bodies, declaration-linked references, and semantic diagnostic labels. Rejected bodies remain unavailable; frontend diagnostics belong to `frontend.snap`. All-corpus HIR invariants still run regardless of snapshot selection. Keep huge stress inputs out of golden snapshots.
+- `tests/corpus/` at the workspace root is the shared file-based corpus. Every case directory holds `case.sumi` and `frontend.snap`, keeping the tree, parser evidence, frontend diagnostics, fixed source, and normalized source together. `crates/frontend/tests/corpus.rs` runs every case; generate or update snapshots with `UPDATE_FRONTEND=1 cargo test -p sumi-frontend --test corpus`.
+- For semantic-focused cases and useful recovery witnesses, not every syntax fixture, add a `stages` file containing exactly `hir` to select an additional `hir.snap`. Snapshot presence does not select a stage. Generate or update HIR snapshots with `UPDATE_HIR=1 cargo test -p sumi-hir --test corpus`. Keep huge stress inputs out of golden snapshots. Review every generated diff.
 - Behavior that a snapshot cannot express — invariants, API contracts, properties — stays in the crates' own tests.
 
 ## Fuzzing
