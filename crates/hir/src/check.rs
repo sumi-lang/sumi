@@ -37,7 +37,7 @@ impl Source<'_> {
         node: NodeIdx,
         code: &'static str,
         message: impl Into<Box<str>>,
-        related: Option<Span>,
+        related: Option<(Span, &'static str)>,
     ) {
         self.diagnostics.push(Diagnostic {
             code: DiagnosticCode::new(DiagnosticGroup::new("semantic"), code),
@@ -49,9 +49,9 @@ impl Source<'_> {
             },
             secondary: related
                 .into_iter()
-                .map(|span| Label {
+                .map(|(span, message)| Label {
                     location: Location::range(span),
-                    message: Some("declared here".into()),
+                    message: Some(message.into()),
                 })
                 .collect(),
             notes: Box::new([]),
@@ -126,7 +126,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
                     *node,
                     "duplicate-name",
                     format!("duplicate function `{name}`"),
-                    Some(first),
+                    Some((first, "declared here")),
                 );
                 names.insert(name.clone(), None);
             } else {
@@ -277,7 +277,7 @@ impl<'a, 's> Builder<'a, 's> {
                         node,
                         "duplicate-name",
                         format!("duplicate parameter `{name}`"),
-                        Some(span),
+                        Some((span, "declared here")),
                     );
                     self.scopes[0].insert(name, None);
                     self.failed = true;
@@ -315,7 +315,7 @@ impl<'a, 's> Builder<'a, 's> {
                 root_node,
                 root,
                 signature.result,
-                Some(self.source.span(item.node())),
+                Some((self.source.span(item.node()), "declared here")),
             )
         {
             self.failed = true;
@@ -468,7 +468,7 @@ impl<'a, 's> Builder<'a, 's> {
                     node,
                     "not-callable",
                     format!("local `{name}` is not callable"),
-                    Some(self.locals[local.0].origin),
+                    Some((self.locals[local.0].origin, "declared here")),
                 );
             }
             return None;
@@ -530,7 +530,7 @@ impl<'a, 's> Builder<'a, 's> {
         node: NodeIdx,
         expr: ExprId,
         expected: Ty,
-        related: Option<Span>,
+        related: Option<(Span, &'static str)>,
     ) -> bool {
         let actual = self.exprs[expr.0].ty;
         if actual == expected {
@@ -590,7 +590,7 @@ impl<'a, 's> Builder<'a, 's> {
                             initializer_node,
                             value,
                             ty,
-                            Some(self.source.span(annotation.node())),
+                            Some((self.source.span(annotation.node()), "declared here")),
                         ) {
                             initializer = None;
                         }
@@ -776,7 +776,9 @@ impl<'a, 's> Builder<'a, 's> {
                         then_node,
                         then_branch,
                         ty,
-                        else_node.map(|n| self.source.span(n)),
+                        else_node.map(|n| {
+                            (self.source.span(n), "other branch determines expected type")
+                        }),
                     );
                 }
                 if !valid || (else_node.is_some() && else_branch.is_none()) {
@@ -817,12 +819,17 @@ impl<'a, 's> Builder<'a, 's> {
                     signature.params.len(),
                     args.len()
                 ),
-                Some(function.origin),
+                Some((function.origin, "declared here")),
             );
         }
         for (&arg, &expected) in args.iter().zip(&signature.params) {
             if let Some(value) = self.value(arg) {
-                valid &= self.require(arg, value, expected, Some(function.origin));
+                valid &= self.require(
+                    arg,
+                    value,
+                    expected,
+                    Some((function.origin, "declared here")),
+                );
             }
         }
         let args: Option<Vec<_>> = args.into_iter().map(|n| self.value(n)).collect();

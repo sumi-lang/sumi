@@ -162,6 +162,24 @@ fn lazy_structure_and_unit_policy() {
 }
 
 #[test]
+fn mismatch_labels_distinguish_branches_from_declarations() {
+    for (source, expected) in [
+        (
+            "fn f() -> int = if true { 1 } else { false }",
+            "other branch determines expected type",
+        ),
+        ("fn f() -> bool = 1", "declared here"),
+        ("fn f() { let x: bool = 1 }", "declared here"),
+    ] {
+        let a = check(source);
+        assert_eq!(codes(&a), ["type-mismatch"]);
+        let labels = &a.diagnostics[0].secondary;
+        assert_eq!(labels.len(), 1);
+        assert_eq!(labels[0].message.as_deref(), Some(expected));
+    }
+}
+
+#[test]
 fn signed_literal_envelopes() {
     for (expr, value) in [
         ("9223372036854775807", i64::MAX),

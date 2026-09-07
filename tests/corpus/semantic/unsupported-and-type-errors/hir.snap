@@ -40,7 +40,7 @@ error[semantic/type-mismatch]: expected Bool, found Int
   secondary @122..147: declared here
 error[semantic/type-mismatch]: expected Bool, found Int
   primary @179..184
-  secondary @190..199: declared here
+  secondary @190..199: other branch determines expected type
 error[semantic/type-mismatch]: expected Unit, found Int
   primary @228..233
 error[semantic/type-mismatch]: expected Bool, found Int

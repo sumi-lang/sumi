@@ -1,0 +1,29 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 4
+
+fn or_name@0..41 () -> bool
+  body: unavailable
+
+fn and_type@42..76 () -> bool
+  body: unavailable
+
+fn then_name@77..137 () -> int
+  body: unavailable
+
+fn else_type@138..190 () -> int
+  body: unavailable
+
+fn independent@191..219 () -> int
+  body: int 42 : int @217..219
+
+== semantic diagnostics ==
+error[semantic/unknown-name]: unknown name `missing_or`
+  primary @31..41
+error[semantic/type-mismatch]: expected Bool, found Int
+  primary @75..76
+error[semantic/unknown-name]: unknown name `missing_then`
+  primary @112..124
+error[semantic/type-mismatch]: expected Bool, found Int
+  primary @170..175
+  secondary @181..190: other branch determines expected type
