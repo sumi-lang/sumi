@@ -1,0 +1,28 @@
+file: accepted
+frontend errors: 0 (see frontend.snap)
+semantic errors: 0
+
+fn answer@0..32 () -> int
+  body: call twice@33..89 (callee @22..27) : int @21..32
+    arg[0]: int 21 : int @29..31
+
+fn twice@33..89 (int) -> int
+  param x@42..43: int
+  body: block : int @57..89
+    let y@67..68: int @63..81
+      initializer: eager * : int @76..81
+        lhs: read x@42..43 : int @76..77
+        rhs: int 2 : int @80..81
+    tail: read y@67..68 : int @86..87
+
+fn café@90..122 (bool) -> bool
+  param é@99..101: bool
+  body: not : bool @119..122
+    operand: read é@99..101 : bool @120..122
+
+fn ignore@123..176 (unit) -> unit
+  param x@133..134: unit
+  body: block : unit @150..176
+    discard @156..168
+      value: call answer@0..32 (callee @160..166) : int @160..168
+    tail: read x@133..134 : unit @173..174

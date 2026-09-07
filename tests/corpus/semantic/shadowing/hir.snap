@@ -1,0 +1,21 @@
+file: accepted
+frontend errors: 0 (see frontend.snap)
+semantic errors: 0
+
+fn shadow@0..100 (int) -> int
+  param x@10..11: int
+  body: block : int @25..100
+    let x@35..36: int @31..44
+      initializer: eager + : int @39..44
+        lhs: read x@10..11 : int @39..40
+        rhs: int 1 : int @43..44
+    discard @49..92
+      value: block : unit @49..92
+        let x@63..64: int @59..72
+          initializer: eager * : int @67..72
+            lhs: read x@35..36 : int @67..68
+            rhs: int 2 : int @71..72
+        discard @81..86
+          value: read x@63..64 : int @85..86
+        tail: unit (implicit)
+    tail: read x@35..36 : int @97..98

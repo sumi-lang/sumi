@@ -10,8 +10,9 @@
 //! snapshot the same way.
 
 use std::fmt::Write as _;
-use std::fs;
-use std::path::{Path, PathBuf};
+
+#[path = "../../../tests/support/corpus.rs"]
+mod corpus;
 
 use sumi_format::normalize;
 use sumi_frontend::{
@@ -24,85 +25,9 @@ use sumi_syntax::{
 };
 use sumi_text::{LineIndex, TextSize};
 
-const UPDATE: &str = "UPDATE_FRONTEND";
-const CASE: &str = "case.sumi";
-const EXPECTED: &str = "frontend.snap";
-
-fn corpus_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/corpus")
-}
-
-/// Every directory under `dir` that holds `file`, recursively, in path
-/// order. A directory that holds one is a case and is not descended into.
-fn directories_holding(dir: &Path, file: &str, out: &mut Vec<PathBuf>) {
-    let mut entries: Vec<PathBuf> = fs::read_dir(dir)
-        .unwrap_or_else(|error| panic!("cannot read {}: {error}", dir.display()))
-        .map(|entry| entry.expect("directory entry").path())
-        .filter(|path| path.is_dir())
-        .collect();
-    entries.sort();
-    for path in entries {
-        if path.join(file).is_file() {
-            out.push(path);
-        } else {
-            directories_holding(&path, file, out);
-        }
-    }
-}
-
 #[test]
 fn every_case_matches_its_snapshot() {
-    let root = corpus_dir();
-    let mut cases = Vec::new();
-    directories_holding(&root, CASE, &mut cases);
-    assert!(!cases.is_empty(), "no cases under {}", root.display());
-    let update = std::env::var_os(UPDATE).is_some();
-    let relative = |path: &Path| {
-        path.strip_prefix(&root)
-            .expect("under the corpus")
-            .display()
-            .to_string()
-    };
-
-    let mut failures = Vec::new();
-    for case in &cases {
-        let source = fs::read_to_string(case.join(CASE)).expect("a case is UTF-8");
-        let actual = snapshot(&source);
-        let snap = case.join(EXPECTED);
-        let expected = fs::read_to_string(&snap).ok();
-        if expected.as_deref() == Some(actual.as_str()) {
-            continue;
-        }
-        if update {
-            fs::write(&snap, &actual).expect("snapshots are writable");
-            continue;
-        }
-        failures.push(format!(
-            "{}:\n{}",
-            relative(case),
-            diff(expected.as_deref().unwrap_or(""), &actual)
-        ));
-    }
-
-    let mut orphans = Vec::new();
-    directories_holding(&root, EXPECTED, &mut orphans);
-    for orphan in orphans {
-        if !orphan.join(CASE).is_file() {
-            failures.push(format!(
-                "{}: a snapshot with no case beside it",
-                relative(&orphan)
-            ));
-        }
-    }
-
-    assert!(
-        failures.is_empty(),
-        "{} of {} corpus cases differ from their snapshots; run with {UPDATE}=1 to rewrite them, \
-         then review the diff\n\n{}",
-        failures.len(),
-        cases.len(),
-        failures.join("\n")
-    );
+    corpus::check(corpus::Stage::Frontend, snapshot);
 }
 
 /// The snapshot of one case.
@@ -395,57 +320,4 @@ fn place(index: &LineIndex, source: &str, location: Location) -> String {
             range.text(source)
         ),
     }
-}
-
-/// A line diff of `expected` against `actual`, with two lines of context.
-fn diff(expected: &str, actual: &str) -> String {
-    let old: Vec<&str> = expected.lines().collect();
-    let new: Vec<&str> = actual.lines().collect();
-    // Longest common subsequence by dynamic programming: snapshots are
-    // short enough that the table is cheap.
-    let mut table = vec![vec![0usize; new.len() + 1]; old.len() + 1];
-    for i in (0..old.len()).rev() {
-        for j in (0..new.len()).rev() {
-            table[i][j] = if old[i] == new[j] {
-                table[i + 1][j + 1] + 1
-            } else {
-                table[i + 1][j].max(table[i][j + 1])
-            };
-        }
-    }
-    let mut lines: Vec<(char, &str)> = Vec::new();
-    let (mut i, mut j) = (0, 0);
-    while i < old.len() || j < new.len() {
-        if i < old.len() && j < new.len() && old[i] == new[j] {
-            lines.push((' ', old[i]));
-            i += 1;
-            j += 1;
-        } else if j < new.len() && (i == old.len() || table[i][j + 1] >= table[i + 1][j]) {
-            lines.push(('+', new[j]));
-            j += 1;
-        } else {
-            lines.push(('-', old[i]));
-            i += 1;
-        }
-    }
-    let changed: Vec<usize> = lines
-        .iter()
-        .enumerate()
-        .filter(|(_, (tag, _))| *tag != ' ')
-        .map(|(index, _)| index)
-        .collect();
-    let mut out = String::new();
-    let mut last_shown = None;
-    for (index, (tag, line)) in lines.iter().enumerate() {
-        let near = changed.iter().any(|&change| change.abs_diff(index) <= 2);
-        if !near {
-            continue;
-        }
-        if last_shown.is_some_and(|last: usize| last + 1 != index) {
-            out.push_str("  ...\n");
-        }
-        writeln!(out, "  {tag} {line}").expect("writing to a string");
-        last_shown = Some(index);
-    }
-    out
 }

@@ -1,0 +1,3 @@
+fn unclosed() -> int {
+    _ = missing
+    1

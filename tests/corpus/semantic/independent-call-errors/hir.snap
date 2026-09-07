@@ -1,0 +1,17 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 3
+
+fn probe@0..151 () -> unit
+  body: unavailable
+
+fn intact@152..174 () -> int
+  body: int 3 : int @173..174
+
+== semantic diagnostics ==
+error[semantic/unknown-name]: unknown function `missing`
+  primary @39..46
+error[semantic/type-mismatch]: expected Int, found Bool
+  primary @100..104
+error[semantic/type-mismatch]: expected Int, found Bool
+  primary @128..133

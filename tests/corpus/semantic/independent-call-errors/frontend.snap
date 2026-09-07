@@ -1,0 +1,33 @@
+== tree ==
+SourceFile 0..175
+  FnItem 0..151
+    Name 3..8 "probe"
+    ParamList 8..10 "()"
+    Block 11..151
+      LetStmt 17..26
+        Name 21..22 "x"
+        LiteralExpr 25..26 "1"
+      LetStmt 31..139
+        Name 35..36 "x"
+        CallExpr 39..139
+          NameRef 39..46 "missing"
+          ArgList 46..139
+            Block 56..114
+              LetStmt 70..83
+                Name 74..75 "x"
+                BinaryExpr 78..83
+                  NameRef 78..79 "x"
+                  LiteralExpr 82..83 "1"
+              BinaryExpr 96..104
+                NameRef 96..97 "x"
+                LiteralExpr 100..104 "true"
+            BinaryExpr 124..133
+              NameRef 124..125 "x"
+              LiteralExpr 128..133 "false"
+      DiscardStmt 144..149
+        NameRef 148..149 "x"
+  FnItem 152..174
+    Name 155..161 "intact"
+    ParamList 161..163 "()"
+    TypeRef 167..170 "int"
+    LiteralExpr 173..174 "3"

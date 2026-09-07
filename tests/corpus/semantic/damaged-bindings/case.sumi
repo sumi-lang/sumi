@@ -1,0 +1,9 @@
+fn damaged() {
+    let x = true
+    let x =
+    _ = x + 1
+    let y: = 1
+    _ = y
+    _ = missing
+}
+fn intact() -> int = 3

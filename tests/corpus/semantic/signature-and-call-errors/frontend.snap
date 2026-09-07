@@ -1,0 +1,62 @@
+== tree ==
+SourceFile 0..259
+  FnItem 0..17
+    Name 3..12 "duplicate"
+    ParamList 12..14 "()"
+    Block 15..17 "{}"
+  FnItem 18..35
+    Name 21..30 "duplicate"
+    ParamList 30..32 "()"
+    Block 33..35 "{}"
+  FnItem 36..64
+    Name 39..48 "ambiguous"
+    ParamList 48..50 "()"
+    CallExpr 53..64
+      NameRef 53..62 "duplicate"
+      ArgList 62..64 "()"
+  FnItem 65..90
+    Name 68..75 "unknown"
+    ParamList 75..87
+      Param 76..86
+        Name 76..77 "x"
+        TypeRef 79..86 "mystery"
+    Block 88..90 "{}"
+  FnItem 91..124
+    Name 94..104 "suppressed"
+    ParamList 104..106 "()"
+    CallExpr 109..124
+      NameRef 109..116 "unknown"
+      ArgList 116..124
+        NameRef 117..123 "absent"
+  FnItem 125..161
+    Name 128..133 "typed"
+    ParamList 133..150
+      Param 134..140
+        Name 134..135 "x"
+        TypeRef 137..140 "int"
+      Param 142..149
+        Name 142..143 "b"
+        TypeRef 145..149 "bool"
+    TypeRef 154..157 "int"
+    NameRef 160..161 "x"
+  FnItem 162..205
+    Name 165..170 "wrong"
+    ParamList 170..172 "()"
+    TypeRef 176..179 "int"
+    CallExpr 182..205
+      NameRef 182..187 "typed"
+      ArgList 187..205
+        LiteralExpr 188..192 "true"
+        LiteralExpr 194..195 "1"
+        NameRef 197..204 "missing"
+  FnItem 206..258
+    Name 209..215 "hidden"
+    ParamList 215..217 "()"
+    TypeRef 221..224 "int"
+    Block 225..258
+      LetStmt 231..244
+        Name 235..240 "typed"
+        LiteralExpr 243..244 "1"
+      CallExpr 249..256
+        NameRef 249..254 "typed"
+        ArgList 254..256 "()"

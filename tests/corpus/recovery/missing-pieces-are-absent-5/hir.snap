@@ -1,0 +1,6 @@
+file: rejected
+frontend errors: 3 (see frontend.snap)
+semantic errors: 0
+
+fn f@0..26 signature: unavailable
+  body: unavailable

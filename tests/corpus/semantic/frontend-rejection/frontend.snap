@@ -1,0 +1,35 @@
+== tree ==
+SourceFile 0..89
+  FnItem 0..26
+    Name 3..12 "malformed"
+    ParamList 12..14 "()"
+    TypeRef 18..21 "int"
+    LiteralExpr 24..26 "01"
+  FnItem 27..61
+    Name 30..36 "layout"
+    ParamList 36..38 "()"
+    TypeRef 42..45 "int"
+    Block 46..61
+      LiteralExpr 52..53 "1"
+      LiteralExpr 58..59 "2"
+  FnItem 62..88
+    Name 65..71 "intact"
+    ParamList 71..73 "()"
+    TypeRef 77..81 "bool"
+    LiteralExpr 84..88 "true"
+
+== diagnostics ==
+error[syntax/noncanonical-number] 1:25..1:26 "0": numeric literal is not in canonical form
+  primary: integer part has leading zeros
+  fix (safe): canonicalize numeric literal
+    1:25..1:27 "01" -> "1"
+error[syntax/statement-without-effect] 3:5..3:6 "1": expression has no effect as a statement
+  note: only a call, an `if`, or a block may stand before another statement; any other expression may only end its block, as the block's value
+
+== fixed (syntax/statement-without-effect remains) ==
+fn malformed() -> int = 1
+fn layout() -> int {
+    1
+    2
+}
+fn intact() -> bool = true

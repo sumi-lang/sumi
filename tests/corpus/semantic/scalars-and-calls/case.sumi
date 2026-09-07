@@ -1,0 +1,10 @@
+fn answer() -> int = (twice)(21)
+fn twice(x: int) -> int {
+    let y: int = x * 2
+    y
+}
+fn café(é: bool) -> bool = !é
+fn ignore(x: unit) -> unit {
+    _ = answer()
+    x
+}

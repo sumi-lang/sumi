@@ -1,0 +1,62 @@
+== tree ==
+SourceFile 0..308
+  FnItem 0..59
+    Name 3..14 "unsupported"
+    ParamList 14..16 "()"
+    Block 17..59
+      LetStmt 23..36
+        Name 31..32 "x"
+        LiteralExpr 35..36 "1"
+      DiscardStmt 41..46
+        NameRef 45..46 "x"
+      ReturnStmt 51..57 "return"
+  FnItem 60..93
+    Name 63..70 "closure"
+    ParamList 70..72 "()"
+    Block 73..93
+      LetStmt 75..91
+        Name 79..80 "f"
+        ClosureExpr 83..91
+          ParamList 85..87 "()"
+          LiteralExpr 90..91 "1"
+  FnItem 94..121
+    Name 97..104 "literal"
+    ParamList 104..106 "()"
+    LiteralExpr 109..121 "\"not scalar\""
+  FnItem 122..147
+    Name 125..133 "mismatch"
+    ParamList 133..135 "()"
+    TypeRef 139..143 "bool"
+    LiteralExpr 146..147 "1"
+  FnItem 148..199
+    Name 151..159 "branches"
+    ParamList 159..161 "()"
+    TypeRef 165..168 "int"
+    IfExpr 171..199
+      LiteralExpr 174..178 "true"
+      Block 179..184
+        LiteralExpr 181..182 "1"
+      Block 190..199
+        LiteralExpr 192..197 "false"
+  FnItem 200..233
+    Name 203..215 "missing_else"
+    ParamList 215..217 "()"
+    IfExpr 220..233
+      LiteralExpr 223..227 "true"
+      Block 228..233
+        LiteralExpr 230..231 "1"
+  FnItem 234..269
+    Name 237..247 "annotation"
+    ParamList 247..249 "()"
+    Block 250..269
+      LetStmt 252..267
+        Name 256..257 "x"
+        TypeRef 259..263 "bool"
+        LiteralExpr 266..267 "1"
+  FnItem 270..307
+    Name 273..286 "unit_equality"
+    ParamList 286..288 "()"
+    TypeRef 292..296 "bool"
+    BinaryExpr 299..307
+      Block 299..301 "{}"
+      Block 305..307 "{}"

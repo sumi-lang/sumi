@@ -1,0 +1,48 @@
+== tree ==
+SourceFile 0..177
+  FnItem 0..32
+    Name 3..9 "answer"
+    ParamList 9..11 "()"
+    TypeRef 15..18 "int"
+    CallExpr 21..32
+      ParenExpr 21..28
+        NameRef 22..27 "twice"
+      ArgList 28..32
+        LiteralExpr 29..31 "21"
+  FnItem 33..89
+    Name 36..41 "twice"
+    ParamList 41..49
+      Param 42..48
+        Name 42..43 "x"
+        TypeRef 45..48 "int"
+    TypeRef 53..56 "int"
+    Block 57..89
+      LetStmt 63..81
+        Name 67..68 "y"
+        TypeRef 70..73 "int"
+        BinaryExpr 76..81
+          NameRef 76..77 "x"
+          LiteralExpr 80..81 "2"
+      NameRef 86..87 "y"
+  FnItem 90..122
+    Name 93..98 "café"
+    ParamList 98..108
+      Param 99..107
+        Name 99..101 "é"
+        TypeRef 103..107 "bool"
+    TypeRef 112..116 "bool"
+    PrefixExpr 119..122
+      NameRef 120..122 "é"
+  FnItem 123..176
+    Name 126..132 "ignore"
+    ParamList 132..141
+      Param 133..140
+        Name 133..134 "x"
+        TypeRef 136..140 "unit"
+    TypeRef 145..149 "unit"
+    Block 150..176
+      DiscardStmt 156..168
+        CallExpr 160..168
+          NameRef 160..166 "answer"
+          ArgList 166..168 "()"
+      NameRef 173..174 "x"

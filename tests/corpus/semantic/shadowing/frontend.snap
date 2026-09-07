@@ -1,0 +1,24 @@
+== tree ==
+SourceFile 0..101
+  FnItem 0..100
+    Name 3..9 "shadow"
+    ParamList 9..17
+      Param 10..16
+        Name 10..11 "x"
+        TypeRef 13..16 "int"
+    TypeRef 21..24 "int"
+    Block 25..100
+      LetStmt 31..44
+        Name 35..36 "x"
+        BinaryExpr 39..44
+          NameRef 39..40 "x"
+          LiteralExpr 43..44 "1"
+      Block 49..92
+        LetStmt 59..72
+          Name 63..64 "x"
+          BinaryExpr 67..72
+            NameRef 67..68 "x"
+            LiteralExpr 71..72 "2"
+        DiscardStmt 81..86
+          NameRef 85..86 "x"
+      NameRef 97..98 "x"
