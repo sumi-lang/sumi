@@ -108,9 +108,9 @@ impl ParserInput {
         };
 
         // One pass strips trivia and pairs brackets as their closers
-        // arrive. Boundaries and item starts replay the same opener stack
-        // but need pairs whose closers lie ahead — whether an open `(` is
-        // ever closed — so they wait for the second pass below.
+        // arrive. Boundaries and item starts need pairs whose closers lie
+        // ahead — whether an open `(` is ever closed — so they wait for
+        // the second pass below.
         let mut newline = false;
         for (raw, kind) in lexed.indices().zip(lexed.kinds()) {
             if kind.is_trivia() {
@@ -133,29 +133,19 @@ impl ParserInput {
         // everything up to its closer, so item starts exist only while
         // `matched` is zero. An unmatched opener encloses nothing for good
         // and hides no item.
-        let Build {
-            mut slots,
-            openers: mut open,
-            ..
-        } = build;
-        open.clear();
+        let Build { mut slots, .. } = build;
         let mut boundaries: Vec<u32> = Vec::with_capacity(slots.len() + 1);
         let mut boundary_count: u32 = 0;
         let mut items: Vec<SigIdx> = Vec::new();
         let mut matched = 0usize;
+        let mut context = 0u8;
         for index in 0..slots.len() {
             boundaries.push(boundary_count);
             let slot = slots[index];
-            let in_expression_delimiters = open.last().is_some_and(|&opener| {
-                let opener = slots[opener as usize];
-                !encloses_statements(opener.kind) && opener.partner.is_some()
-            });
-            if in_expression_delimiters {
-                slots[index].flags |= IN_EXPRESSION_DELIMITERS;
-            }
+            slots[index].flags |= context;
             if index > 0
                 && slot.flags & NEWLINE_BEFORE != 0
-                && !in_expression_delimiters
+                && context == 0
                 && can_end_statement(slots[index - 1].kind)
                 && !continues_line(&slots, index)
             {
@@ -166,15 +156,18 @@ impl ParserInput {
                 items.push(SigIdx::new(index as u32));
             }
             if is_opener(slot.kind) {
-                open.push(index as u32);
+                context = u8::from(!encloses_statements(slot.kind) && slot.partner.is_some())
+                    * IN_EXPRESSION_DELIMITERS;
                 if slot.partner.is_some() {
                     matched += 1;
                 }
             } else if is_closer(slot.kind)
                 && let Some(partner) = slot.partner
             {
-                let opener = partner.get() - 1;
-                while open.pop().is_some_and(|popped| popped != opener) {}
+                // The opener's bit records its parent context, before entering
+                // it. Restoring that also discards unmatched inner openers.
+                let opener = (partner.get() - 1) as usize;
+                context = slots[opener].flags & IN_EXPRESSION_DELIMITERS;
                 matched -= 1;
             }
         }

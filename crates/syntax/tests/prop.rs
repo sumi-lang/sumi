@@ -165,9 +165,20 @@ proptest! {
 
         let mut previous: Option<RawIdx> = None;
         let mut open: Vec<SigIdx> = Vec::new();
+        let mut layout_open: Vec<SigIdx> = Vec::new();
         for index in input.indices() {
             let token = input.token(index);
             let kind = input.get(index).expect("indices below len are present");
+            let context = layout_open.last().is_some_and(|&opener| {
+                input.get(opener) != Some(SyntaxKind::LBrace) && input.partner(opener).is_some()
+            });
+            prop_assert_eq!(input.in_expression_delimiters(index), context);
+            if sumi_syntax::is_opener(kind) {
+                layout_open.push(index);
+            } else if let Some(partner) = input.partner(index).filter(|&p| p < index) {
+                let position = layout_open.iter().rposition(|&p| p == partner).unwrap();
+                layout_open.truncate(position);
+            }
             if let Some(previous) = previous {
                 prop_assert!(previous < token, "token mappings must strictly increase");
             }
