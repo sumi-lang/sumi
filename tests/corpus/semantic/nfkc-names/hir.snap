@@ -1,5 +1,5 @@
-file: accepted
-frontend errors: 0 (see frontend.snap)
+file: rejected
+frontend errors: 2 (see frontend.snap)
 semantic errors: 0
 
 fn ff@0..108 (int) -> int

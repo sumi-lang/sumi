@@ -3,6 +3,7 @@ use std::fmt;
 use std::ops::Range;
 
 use sumi_text::{TextRange, TextSize};
+use unicode_normalization::UnicodeNormalization;
 
 use crate::generated::SyntaxKind;
 use crate::index::RawIdx;
@@ -31,6 +32,7 @@ pub fn lex(source: &str) -> Result<LexedFile, SourceTooLarge> {
         position += token.len.to_u32();
 
         let needs_errors = match token.raw {
+            RawKind::Ident => !source[start as usize..position as usize].is_ascii(),
             RawKind::Number => {
                 token.flags.contains(TokenFlags::MALFORMED_NUMBER) || cfg!(debug_assertions)
             }
@@ -158,6 +160,12 @@ fn collect_errors(
         });
     };
     match token.kind {
+        SyntaxKind::Ident => {
+            let normalized: String = text.nfkc().collect();
+            if let Some(keyword) = SyntaxKind::from_keyword(&normalized) {
+                error(0..text.len(), LexErrorKind::ReservedIdentifier(keyword));
+            }
+        }
         SyntaxKind::IntLiteral | SyntaxKind::FloatLiteral => {
             if token.flags.contains(TokenFlags::MALFORMED_NUMBER) {
                 let derived = literal::number_errors(text, &mut error);
@@ -416,6 +424,8 @@ pub struct LexError {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum LexErrorKind {
+    /// An identifier's NFKC form is a reserved spelling; the token remains Ident.
+    ReservedIdentifier(SyntaxKind),
     UnterminatedString,
     UnterminatedRawString,
     /// A `"""` never closed. Reported at the opener: the rest of the file

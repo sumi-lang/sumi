@@ -96,6 +96,17 @@ fn lower_token_errors(
 
     for (order, error) in errors.iter().enumerate() {
         match error.kind {
+            LexErrorKind::ReservedIdentifier(keyword) => emitted.push((
+                order,
+                primary(
+                    codes::RESERVED_IDENTIFIER,
+                    format!(
+                        "identifier normalizes to reserved spelling `{}`",
+                        keyword.text().expect("reserved spelling")
+                    ),
+                    snapshot.range(error.range),
+                ),
+            )),
             LexErrorKind::UnterminatedString => emitted.push((
                 order,
                 primary(

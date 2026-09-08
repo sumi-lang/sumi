@@ -62,3 +62,7 @@ SourceFile 0..302
         TypeRef 276..288 "ｕｎｉｔ"
     TypeRef 293..297 "unit"
     NameRef 300..301 "x"
+
+== diagnostics ==
+error[syntax/reserved-identifier] 11:21..11:33 "ｔｒｕｅ": identifier normalizes to reserved spelling `true`
+error[syntax/reserved-identifier] 11:59..11:71 "ｔｒｕｅ": identifier normalizes to reserved spelling `true`
