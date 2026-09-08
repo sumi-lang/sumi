@@ -694,6 +694,7 @@ dependencies = [
 name = "sumi-hir"
 version = "0.1.0"
 dependencies = [
+ "codspeed-criterion-compat",
  "proptest",
  "sumi-frontend",
  "sumi-lexer",

@@ -25,12 +25,16 @@ concurrency:
 
 jobs:
   benchmarks:
-    name: Frontend benchmarks (${{ matrix.mode }})
+    name: ${{ matrix.target.name }} benchmarks (${{ matrix.mode }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         mode: [simulation, memory]
+        target:
+          - { name: Frontend, package: sumi-frontend, bench: pipeline }
+          - { name: Solver, package: sumi-hir, bench: solver }
+          - { name: HIR, package: sumi-hir, bench: analysis }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: moonrepo/setup-rust@abb2d32350334249b178c401e5ec5836e0cd88d3 # v1.3.0
@@ -43,12 +47,12 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Build benchmarks
         run: >
-          cargo codspeed build --package sumi-frontend --bench pipeline
+          cargo codspeed build --package ${{ matrix.target.package }} --bench ${{ matrix.target.bench }}
           --measurement-mode ${{ matrix.mode }} --locked
       - name: Run benchmarks
         uses: CodSpeedHQ/action@373d6868929f444bc08d901fd0eb0ad52a8875ea # v5.2.1
         with:
           mode: ${{ matrix.mode }}
           run: >
-            cargo codspeed run --package sumi-frontend --bench pipeline
+            cargo codspeed run --package ${{ matrix.target.package }} --bench ${{ matrix.target.bench }}
             --measurement-mode ${{ matrix.mode }}

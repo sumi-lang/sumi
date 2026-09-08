@@ -5,6 +5,7 @@
 //! identities. All source locations refer to the owned snapshot.
 
 mod check;
+mod infer;
 
 #[cfg(test)]
 mod tests;
@@ -110,6 +111,9 @@ impl Function {
     pub fn origin(&self) -> Span {
         self.origin
     }
+    /// A concrete declaration contract, not a guarantee that its body is valid.
+    /// Expression bodies (`=`, including `= { ... }`) infer an omitted result;
+    /// bare block bodies default to unit. Callers never determine this result.
     pub fn signature(&self) -> Option<&Signature> {
         self.signature.as_ref()
     }

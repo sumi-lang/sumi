@@ -1,0 +1,47 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 6
+
+fn a@0..35 signature: unavailable
+  body: unavailable
+
+fn b@36..74 signature: unavailable
+  body: unavailable
+
+fn consumer@75..101 () -> int
+  body: unavailable
+
+fn mismatch@102..135 () -> bool
+  body: unavailable
+
+fn branch@136..186 signature: unavailable
+  body: unavailable
+
+fn unused@187..222 () -> unit
+  body: unavailable
+
+fn comparison@223..259 () -> bool
+  body: unavailable
+
+fn integer@260..276 () -> int
+  body: int 1 : int @275..276
+
+fn empty@277..292 () -> unit
+  body: block : unit @290..292
+    tail: unit (implicit)
+
+== semantic diagnostics ==
+error[semantic/cannot-infer]: conflicting function result constraints; add a return type annotation
+  primary @0..35
+error[semantic/cannot-infer]: conflicting function result constraints; add a return type annotation
+  primary @36..74
+error[semantic/type-mismatch]: expected Bool, found Int
+  primary @126..135
+  secondary @102..135: declared here
+error[semantic/type-mismatch]: expected Bool, found Int
+  primary @158..171
+  secondary @177..186: other branch determines expected type
+error[semantic/unused-value]: unused value of type Int; use `_ =` to discard it
+  primary @203..212
+error[semantic/type-mismatch]: unit values cannot be compared
+  primary @241..259

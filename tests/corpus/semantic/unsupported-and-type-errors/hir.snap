@@ -8,7 +8,7 @@ fn unsupported@0..59 () -> unit
 fn closure@60..93 () -> unit
   body: unavailable
 
-fn literal@94..121 () -> unit
+fn literal@94..121 signature: unavailable
   body: unavailable
 
 fn mismatch@122..147 () -> bool
@@ -17,7 +17,7 @@ fn mismatch@122..147 () -> bool
 fn branches@148..199 () -> int
   body: unavailable
 
-fn missing_else@200..233 () -> unit
+fn missing_else@200..233 signature: unavailable
   body: unavailable
 
 fn annotation@234..269 () -> unit
