@@ -109,6 +109,8 @@ pub enum ParseViolationKind {
     TrailingOperator,
     /// A prefix operator separated from its operand, as in `- x`.
     SpacedPrefixOperator,
+    /// A parameter or argument list separated from its name or callee.
+    SpacedListOpener,
     /// A comparison applied to a comparison, as in `a < b < c`.
     ChainedComparison,
 }
@@ -293,6 +295,9 @@ fn fn_item(p: &mut Marker<'_, '_>) {
     }
     if m.at(T::Ident) || m.at(T::Underscore) {
         name(&mut m);
+        if m.at(T::LParen) && !m.newline() && !m.joint_before() {
+            m.violation(ParseViolationKind::SpacedListOpener, 1);
+        }
     }
     signature_tail(&mut m, ExprFollow::Anything, Signature::Item);
     m.complete(N::FnItem);
@@ -987,6 +992,9 @@ fn expr_bp(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) -> Option<Com
         // Arguments stay on the callee's line even inside parentheses, where
         // boundaries are suspended: a `(` on a new line is never a call.
         if p.at(T::LParen) && !p.newline() {
+            if !p.joint_before() {
+                p.violation(ParseViolationKind::SpacedListOpener, 1);
+            }
             let mut m = p.precede(lhs);
             delimited_list::<Args>(&mut m);
             lhs = m.complete(N::CallExpr);

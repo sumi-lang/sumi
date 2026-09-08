@@ -196,6 +196,17 @@ pub fn layout_violation_edits(
             }
             edits.push(delete(token_end(lexed, start), token_start(lexed, operand)));
         }
+        ParseViolationKind::SpacedListOpener => {
+            let owner = prev_significant(lexed, start)?;
+            if !(owner + 1)
+                .until(start)
+                .all(|raw| lexed.kind(raw) == SyntaxKind::Whitespace)
+                || lex_error_in(lexed, owner + 1, start)
+            {
+                return None;
+            }
+            edits.push(delete(token_end(lexed, owner), token_start(lexed, start)));
+        }
         ParseViolationKind::ChainedComparison => return None,
     }
     (!edits.is_empty()).then(|| edits.into_boxed_slice())

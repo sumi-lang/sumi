@@ -509,6 +509,10 @@ fn lower_violation(
             codes::SPACED_PREFIX_OPERATOR,
             "prefix operator must be adjacent to its operand",
         ),
+        ParseViolationKind::SpacedListOpener => (
+            codes::SPACED_LIST_OPENER,
+            "opening `(` must be adjacent to the function name or callee",
+        ),
         ParseViolationKind::ChainedComparison => (
             codes::CHAINED_COMPARISON,
             "comparison operators cannot be chained",
@@ -527,6 +531,7 @@ fn lower_violation(
                 ParseViolationKind::UnspacedBinaryOperator => "space binary operator",
                 ParseViolationKind::TrailingOperator => "move operator to the continuation line",
                 ParseViolationKind::SpacedPrefixOperator => "remove space after prefix operator",
+                ParseViolationKind::SpacedListOpener => "remove space before `(`",
                 ParseViolationKind::ChainedComparison => {
                     unreachable!("chained comparisons have no mechanical layout fix")
                 }

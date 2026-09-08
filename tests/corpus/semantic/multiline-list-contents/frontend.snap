@@ -1,0 +1,14 @@
+== tree ==
+SourceFile 0..53
+  FnItem 0..22
+    Name 3..8 "value"
+    ParamList 8..11 "(\n)"
+    TypeRef 15..18 "int"
+    LiteralExpr 21..22 "1"
+  FnItem 23..52
+    Name 26..32 "caller"
+    ParamList 32..34 "()"
+    TypeRef 38..41 "int"
+    CallExpr 44..52
+      NameRef 44..49 "value"
+      ArgList 49..52 "(\n)"

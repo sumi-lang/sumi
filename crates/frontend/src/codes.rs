@@ -54,4 +54,5 @@ pub const UNSPACED_BINARY_OPERATOR: DiagnosticCode =
 pub const TRAILING_OPERATOR: DiagnosticCode = DiagnosticCode::new(SYNTAX, "trailing-operator");
 pub const SPACED_PREFIX_OPERATOR: DiagnosticCode =
     DiagnosticCode::new(SYNTAX, "spaced-prefix-operator");
+pub const SPACED_LIST_OPENER: DiagnosticCode = DiagnosticCode::new(SYNTAX, "spaced-list-opener");
 pub const CHAINED_COMPARISON: DiagnosticCode = DiagnosticCode::new(SYNTAX, "chained-comparison");
