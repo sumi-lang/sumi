@@ -1,0 +1,36 @@
+file: accepted
+frontend errors: 0 (see frontend.snap)
+semantic errors: 0
+
+fn add@0..37 (int, int) -> int
+  param a@7..8: int
+  param b@15..16: int
+  body: eager + : int @32..37
+    lhs: read a@7..8 : int @32..33
+    rhs: read b@15..16 : int @36..37
+
+fn wrapped@38..79 () -> int
+  body: eager + : int @61..78
+    lhs: int 1 : int @61..62
+    rhs: eager * : int @69..78
+      lhs: int 2 : int @69..70
+      rhs: int 3 : int @77..78
+
+fn arguments@80..146 () -> int
+  body: call add@0..37 (callee @104..107) : int @104..146
+    arg[0]: eager + : int @108..117
+      lhs: int 1 : int @108..109
+      rhs: int 2 : int @116..117
+    arg[1]: eager + : int @119..145
+      lhs: int 3 : int @119..120
+      rhs: int 4 : int @144..145
+
+fn nested@147..215 () -> int
+  body: eager + : int @169..214
+    lhs: block : int @169..206
+      let x@179..180: int @175..198
+        initializer: eager + : int @184..197
+          lhs: int 1 : int @184..185
+          rhs: int 2 : int @196..197
+      tail: read x@179..180 : int @203..204
+    rhs: int 3 : int @213..214

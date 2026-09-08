@@ -1,0 +1,81 @@
+== tree ==
+SourceFile! 0..169
+  FnItem 0..31
+    Name 3..10 "outside"
+    ParamList 10..12 "()"
+    TypeRef 16..19 "int"
+    BinaryExpr 22..31
+      LiteralExpr 22..23 "1"
+      LiteralExpr 30..31 "2"
+  FnItem 32..75
+    Name 35..40 "block"
+    ParamList 40..42 "()"
+    TypeRef 46..49 "int"
+    ParenExpr 52..75
+      Block 53..74
+        BinaryExpr 59..72
+          LiteralExpr 59..60 "1"
+          LiteralExpr 71..72 "2"
+  FnItem! 76..108
+    Name 79..90 "missing_rhs"
+    ParamList 90..92 "()"
+    TypeRef 96..99 "int"
+    ParenExpr! 102..108
+      BinaryExpr! 103..106
+        LiteralExpr 103..104 "1"
+  FnItem! 109..143
+    Name 112..121 "unmatched"
+    ParamList 121..123 "()"
+    TypeRef 127..130 "int"
+    ParenExpr! 133..143
+      BinaryExpr 134..143
+        LiteralExpr 134..135 "1"
+        LiteralExpr 142..143 "2"
+  FnItem 144..168
+    Name 147..155 "survivor"
+    ParamList 155..157 "()"
+    TypeRef 161..164 "int"
+    LiteralExpr 167..168 "3"
+
+== evidence ==
+TrailingOperator at 24
+TrailingOperator at 61
+ExpectedExpression at 107
+TrailingOperator at 136
+Expected(RParen) at 144
+
+== diagnostics ==
+error[syntax/trailing-operator] 1:25..1:26 "+": binary operator must begin the continuation line
+error[syntax/trailing-operator] 4:7..4:8 "+": binary operator must begin the continuation line
+error[syntax/expected-expression] 8:1: expected an expression
+error[syntax/trailing-operator] 9:28..9:29 "+": binary operator must begin the continuation line
+error[syntax/expected-token] 11:1: expected `)`
+  at 9:25..9:26 "(": opening delimiter is here
+  fix (safe): insert `)`
+    10:6 -> ")"
+
+== fixed (syntax/expected-expression, syntax/trailing-operator remain) ==
+fn outside() -> int = 1 +
+    2
+fn block() -> int = ({
+    1 +
+        2
+})
+fn missing_rhs() -> int = (1 +
+)
+fn unmatched() -> int = (1 +
+    2)
+fn survivor() -> int = 3
+
+== normalized ==
+fn outside() -> int = 1 
+    + 2
+fn block() -> int = ({
+    1 
+        + 2
+})
+fn missing_rhs() -> int = (1 +
+)
+fn unmatched() -> int = (1 
+    + 2
+fn survivor() -> int = 3

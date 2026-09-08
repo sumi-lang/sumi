@@ -1,6 +1,59 @@
 use sumi_lexer::lex;
 use sumi_syntax::{ParserInput, SigIdx, SyntaxKind};
 
+#[test]
+fn expression_layout_restores_parent_context_after_malformed_brackets() {
+    for (source, expected) in [
+        (
+            "({(a\n}\nb)\nfn",
+            vec![false, true, false, false, false, true, true, false],
+        ),
+        ("(a }\nb)", vec![false, true, true, true, true]),
+        ("((a)\nb", vec![false, false, true, true, false]),
+    ] {
+        let lexed = lex(source).unwrap();
+        let input = ParserInput::new(&lexed);
+        let actual: Vec<_> = input
+            .indices()
+            .map(|index| input.in_expression_delimiters(index))
+            .collect();
+        assert_eq!(actual, expected, "{source}");
+    }
+
+    let lexed = lex("({(a\n}\nb)\nfn").unwrap();
+    let input = ParserInput::new(&lexed);
+    let newlines: Vec<_> = input
+        .indices()
+        .filter(|&i| input.newline_before(i))
+        .collect();
+    let boundaries: Vec<_> = input
+        .indices()
+        .filter(|&i| input.boundary_before(i))
+        .collect();
+    assert_eq!(newlines, [SigIdx::new(4), SigIdx::new(5), SigIdx::new(7)]);
+    assert_eq!(boundaries, [SigIdx::new(4), SigIdx::new(7)]);
+    assert_eq!(input.item_starts(), [SigIdx::new(7)]);
+}
+
+#[test]
+fn expression_layout_uses_the_nearest_opener() {
+    for (source, expected) in [
+        ("(a { b (c) d } e)", vec![true, false, true, false, true]),
+        ("(a", vec![false]),
+        ("((a)", vec![true]),
+        ("((a", vec![false]),
+    ] {
+        let lexed = lex(source).unwrap();
+        let input = ParserInput::new(&lexed);
+        let actual: Vec<_> = input
+            .indices()
+            .filter(|&index| input.get(index) == Some(SyntaxKind::Ident))
+            .map(|index| input.in_expression_delimiters(index))
+            .collect();
+        assert_eq!(actual, expected, "{source}");
+    }
+}
+
 /// Lex and stream `source`, assert the stream invariants, and render
 /// one line per significant token: `Kind "text"` plus `newline`, `boundary`,
 /// `joint`, and `partner N` markers. `newline`/`boundary` describe the gap

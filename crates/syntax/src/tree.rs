@@ -838,6 +838,13 @@ impl<'a> Marker<'_, 'a> {
         self.nth_newline(0)
     }
 
+    /// Whether the next token is inside matched expression delimiters.
+    pub(crate) fn in_expression_delimiters(&self) -> bool {
+        let index = self.builder.position;
+        index.to_usize() < self.builder.input.len()
+            && self.builder.input.in_expression_delimiters(index)
+    }
+
     /// Whether a line break precedes the significant token `n` past the
     /// next one.
     pub(crate) fn nth_newline(&self, n: usize) -> bool {
