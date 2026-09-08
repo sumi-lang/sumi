@@ -711,6 +711,7 @@ dependencies = [
  "proptest",
  "sumi-text",
  "unicode-ident",
+ "unicode-normalization",
 ]
 
 [[package]]

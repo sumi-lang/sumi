@@ -1,6 +1,43 @@
 //! Token-local validity: the errors collected before `lex` returns.
 
-use sumi_lexer::{LexErrorKind, canonicalize_number_literal, lex};
+use sumi_lexer::{LexErrorKind, SyntaxKind, canonicalize_number_literal, lex};
+
+#[test]
+fn normalized_keywords_are_invalid_identifiers_not_keywords() {
+    for (source, keyword) in [
+        ("ｅｌｓｅ", SyntaxKind::ElseKw),
+        ("falſe", SyntaxKind::FalseKw),
+        ("ｆｎ", SyntaxKind::FnKw),
+        ("ｉｆ", SyntaxKind::IfKw),
+        ("ｌｅｔ", SyntaxKind::LetKw),
+        ("ｍｕｔ", SyntaxKind::MutKw),
+        ("ｒｅｔｕｒｎ", SyntaxKind::ReturnKw),
+        ("ｔｒｕｅ", SyntaxKind::TrueKw),
+    ] {
+        let lexed = lex(source).unwrap();
+        let error = &lexed.errors()[0];
+        assert_eq!(lexed.errors().len(), 1);
+        assert_eq!(error.kind, LexErrorKind::ReservedIdentifier(keyword));
+        assert_eq!(lexed.kind(error.token), SyntaxKind::Ident);
+        assert_eq!(lexed.text(source, error.token), source);
+        assert_eq!(error.range, lexed.range(error.token));
+    }
+    for source in [
+        "true",
+        "false",
+        "fn",
+        "_",
+        "ｉｎｔ",
+        "ﬀ",
+        "é",
+        "e\u{301}",
+        "ｔｒｕｅ_value",
+        "True",
+    ] {
+        check_errors(source, &[]);
+    }
+    check_errors("// ｔｒｕｅ\n\"ｆｎ\" r\"ｉｆ\"", &[]);
+}
 
 #[track_caller]
 fn check_errors(source: &str, expected: &[(u32, LexErrorKind)]) {

@@ -8,9 +8,9 @@
 //! are cache-hot — keywords, punctuation roles, int/float — and stores the
 //! shape-only [`RawKind`] beside it. Token-local validity is established
 //! before [`lex`] returns by selectively re-examining malformed numbers,
-//! escaped literals, character literals, the layout of multi-line
-//! literals, and roleless punctuation. Punctuation gluing happens later in
-//! the parser.
+//! non-ASCII identifiers, escaped literals, character literals, multi-line
+//! literal layout, and roleless punctuation. Punctuation gluing happens later
+//! in the parser.
 //!
 //! Every literal but the multi-line forms is bounded by its line: an
 //! unterminated `"…"`, `r"…"`, or `'…'` ends at the line break, so a stray
