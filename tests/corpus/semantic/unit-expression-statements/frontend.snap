@@ -1,0 +1,109 @@
+== tree ==
+SourceFile 0..520
+  FnItem 0..21
+    Name 3..8 "value"
+    ParamList 8..10 "()"
+    TypeRef 14..17 "int"
+    LiteralExpr 20..21 "1"
+  FnItem 22..36
+    Name 25..31 "action"
+    ParamList 31..33 "()"
+    Block 34..36 "{}"
+  FnItem 37..197
+    Name 40..48 "accepted"
+    ParamList 48..50 "()"
+    TypeRef 54..57 "int"
+    Block 58..197
+      LetStmt 64..80
+        Name 68..69 "u"
+        CallExpr 72..80
+          NameRef 72..78 "action"
+          ArgList 78..80 "()"
+      NameRef 85..86 "u"
+      ParenExpr 91..94
+        NameRef 92..93 "u"
+      CallExpr 99..107
+        NameRef 99..105 "action"
+        ArgList 105..107 "()"
+      ParenExpr 112..122
+        CallExpr 113..121
+          NameRef 113..119 "action"
+          ArgList 119..121 "()"
+      Block 127..129 "{}"
+      IfExpr 134..144
+        LiteralExpr 137..141 "true"
+        Block 142..144 "{}"
+      DiscardStmt 149..160
+        CallExpr 153..160
+          NameRef 153..158 "value"
+          ArgList 158..160 "()"
+      DiscardStmt 165..173
+        LiteralExpr 169..173 "true"
+      DiscardStmt 178..183
+        NameRef 182..183 "u"
+      CallExpr 188..195
+        NameRef 188..193 "value"
+        ArgList 193..195 "()"
+  FnItem 198..340
+    Name 201..209 "rejected"
+    ParamList 209..211 "()"
+    TypeRef 215..218 "int"
+    Block 219..340
+      LetStmt 225..234
+        Name 229..230 "x"
+        LiteralExpr 233..234 "1"
+      NameRef 239..240 "x"
+      ParenExpr 245..248
+        NameRef 246..247 "x"
+      BinaryExpr 253..258
+        LiteralExpr 253..254 "1"
+        LiteralExpr 257..258 "2"
+      LiteralExpr 263..267 "true"
+      CallExpr 272..279
+        NameRef 272..277 "value"
+        ArgList 277..279 "()"
+      ParenExpr 284..293
+        CallExpr 285..292
+          NameRef 285..290 "value"
+          ArgList 290..292 "()"
+      Block 298..303
+        LiteralExpr 300..301 "1"
+      IfExpr 308..332
+        LiteralExpr 311..315 "true"
+        Block 316..321
+          LiteralExpr 318..319 "1"
+        Block 327..332
+          LiteralExpr 329..330 "2"
+      LiteralExpr 337..338 "0"
+  FnItem 341..421
+    Name 344..362 "failed_expressions"
+    ParamList 362..364 "()"
+    Block 365..421
+      NameRef 371..378 "missing"
+      BinaryExpr 383..391
+        LiteralExpr 383..384 "1"
+        LiteralExpr 387..391 "true"
+      IfExpr 396..409
+        LiteralExpr 399..403 "true"
+        Block 404..409
+          LiteralExpr 406..407 "1"
+      DiscardStmt 414..419
+        LiteralExpr 418..419 "0"
+  FnItem 422..479
+    Name 425..439 "nested_failure"
+    ParamList 439..441 "()"
+    Block 442..479
+      Block 448..467
+        CallExpr 450..457
+          NameRef 450..455 "value"
+          ArgList 455..457 "()"
+        LiteralExpr 464..465 "2"
+      DiscardStmt 472..477
+        LiteralExpr 476..477 "0"
+  FnItem 480..519
+    Name 483..501 "tail_requires_unit"
+    ParamList 501..503 "()"
+    Block 504..519
+      CallExpr 510..517
+        NameRef 510..515 "value"
+        ArgList 515..517 "()"

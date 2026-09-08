@@ -27,9 +27,3 @@ SourceFile 0..86
         NameRef 71..72 "a"
         NameRef 75..76 "b"
       LiteralExpr 81..83 "42"
-
-== diagnostics ==
-error[syntax/invalid-expression-statement] 5:5..5:14 "fn(x) = x": expression is not allowed before another statement
-  note: only a call, an `if`, or a block may stand alone before another statement; use `_ =` to discard this expression's value, or place it last in the block to use it as the block's value
-error[syntax/invalid-expression-statement] 6:5..6:10 "a + b": expression is not allowed before another statement
-  note: only a call, an `if`, or a block may stand alone before another statement; use `_ =` to discard this expression's value, or place it last in the block to use it as the block's value

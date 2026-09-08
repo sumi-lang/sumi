@@ -40,7 +40,7 @@ error[syntax/expected-token] 11:5: expected `)`
   fix (safe): insert `)`
     10:7 -> ")"
 
-== fixed (syntax/expected-expression, syntax/invalid-expression-statement remain) ==
+== fixed (syntax/expected-expression remains) ==
 fn empty() {
     ()
     return

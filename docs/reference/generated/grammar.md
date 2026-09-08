@@ -220,10 +220,8 @@ Name = Ident
 // A type reference: a name, until types grow more shapes.
 TypeRef = Ident
 Block = '{' stmts:Stmt* '}'
-// One statement of a block; a line break ends it. An expression that
-// another statement follows must be a call, an `if`, or a block,
-// ignoring grouping parentheses. Other expression forms require an
-// explicit discard or may only end their block, as the block's value.
+// One statement of a block; a line break ends it. Expression-statement
+// type requirements are enforced by semantic checking, not this grammar.
 Stmt = LetStmt | AssignStmt | DiscardStmt | ReturnStmt | Expr
 LetStmt = 'let' 'mut'? Name (':' TypeRef)? '=' initializer:Expr
 AssignStmt = target:Expr '=' value:Expr

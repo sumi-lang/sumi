@@ -17,8 +17,3 @@ SourceFile 0..56
         NameRef 45..50 "print"
         ArgList 50..53
           NameRef 51..52 "x"
-
-== diagnostics ==
-error[syntax/invalid-expression-statement] 3:5..3:16 "(1 + 2) * 3": expression is not allowed before another statement
-  note: only a call, an `if`, or a block may stand alone before another statement; use `_ =` to discard this expression's value, or place it last in the block to use it as the block's value
-  note: a `(` on a new line begins a statement, never a call's arguments, which stay on their callee's line

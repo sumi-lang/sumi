@@ -1,0 +1,34 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 5
+
+fn value@0..21 () -> int
+  body: int 1 : int @20..21
+
+fn rejected@22..103 () -> int
+  body: unavailable
+
+fn separate@104..155 () -> unit
+  body: unavailable
+
+fn accepted@156..216 () -> int
+  body: block : int @177..216
+    discard @183..198
+      value: eager + : int @187..198
+        lhs: call value@0..21 (callee @187..192) : int @187..194
+        rhs: int 1 : int @197..198
+    tail: eager + : int @203..214
+      lhs: call value@0..21 (callee @203..208) : int @203..210
+      rhs: int 1 : int @213..214
+
+== semantic diagnostics ==
+error[semantic/unused-value]: unused value of type Int; use `_ =` to discard it
+  primary @63..66
+error[semantic/unused-value]: unused value of type Int; use `_ =` to discard it
+  primary @71..84
+error[semantic/unused-value]: unused value of type Int; use `_ =` to discard it
+  primary @89..94
+error[semantic/unsupported]: construct is not supported by scalar checking
+  primary @124..129
+error[semantic/unused-value]: unused value of type Int; use `_ =` to discard it
+  primary @134..143

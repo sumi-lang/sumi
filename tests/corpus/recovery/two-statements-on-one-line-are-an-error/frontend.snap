@@ -11,6 +11,4 @@ SourceFile! 0..14
 ExpectedBoundary at 11
 
 == diagnostics ==
-error[syntax/invalid-expression-statement] 1:10..1:11 "a": expression is not allowed before another statement
-  note: only a call, an `if`, or a block may stand alone before another statement; use `_ =` to discard this expression's value, or place it last in the block to use it as the block's value
 error[syntax/expected-boundary] 1:12: expected a line break between statements

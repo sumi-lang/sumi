@@ -1,15 +1,16 @@
 file: rejected
-frontend errors: 2 (see frontend.snap)
-semantic errors: 0
+frontend errors: 1 (see frontend.snap)
+semantic errors: 1
 
 fn malformed@0..26 () -> int
   body: unavailable
 
 fn layout@27..61 () -> int
-  body: block : int @46..61
-    discard @52..53
-      value: int 1 : int @52..53
-    tail: int 2 : int @58..59
+  body: unavailable
 
 fn intact@62..88 () -> bool
   body: bool true : bool @84..88
+
+== semantic diagnostics ==
+error[semantic/unused-value]: unused value of type Int; use `_ =` to discard it
+  primary @52..53

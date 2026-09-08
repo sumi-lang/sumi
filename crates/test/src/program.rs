@@ -115,9 +115,8 @@ fn expr() -> BoxedStrategy<String> {
     .boxed()
 }
 
-/// A statement, and whether it is a bare expression, which may only end
-/// its block: before another statement its value would go nowhere, which
-/// is an error.
+/// A statement, and whether it is a bare expression. The generator uses
+/// explicit discards outside tail position without relying on its type.
 fn statement(expr: BoxedStrategy<String>) -> BoxedStrategy<(String, bool)> {
     prop_oneof![
         3 => expr.clone().prop_map(|e| (e, true)),
