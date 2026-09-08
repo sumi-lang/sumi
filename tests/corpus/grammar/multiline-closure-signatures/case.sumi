@@ -1,0 +1,11 @@
+fn outer()
+= fn(x: int)
+    -> int
+    = x
+fn nested() = fn()
+    = fn(x)
+        = x
+fn argument() = consume(fn(x: int)
+    ->
+    int
+    = x)

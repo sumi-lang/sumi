@@ -1,0 +1,118 @@
+== tree ==
+SourceFile! 0..189
+  FnItem! 0..34
+    Name 3..10 "binding"
+    ParamList 10..12 "()"
+    Block! 13..34
+      LetStmt! 19..24
+        Name 23..24 "x"
+      Error! 29..32 "= 1"
+  FnItem! 35..68
+    Name 38..48 "assignment"
+    ParamList 48..50 "()"
+    Block! 51..68
+      NameRef 57..58 "x"
+      Error! 63..66 "= 1"
+  FnItem 69..84
+    Name 72..78 "spaced"
+    ParamList 79..81 "()"
+    Block 82..84 "{}"
+  FnItem! 85..93
+    Name 88..93 "split"
+  Error! 94..99 "() {}"
+  FnItem! 100..146
+    Name 103..108 "calls"
+    ParamList 108..110 "()"
+    Block! 111..146
+      CallExpr 117..126
+        NameRef 117..123 "spaced"
+        ArgList 124..126 "()"
+      NameRef 131..137 "spaced"
+      ParenExpr! 142..144 "()"
+  FnItem! 147..164
+    Name 150..157 "closure"
+    ParamList 157..159 "()"
+    ClosureExpr! 162..164 "fn"
+  Error! 165..171 "() = 1"
+  FnItem 172..188
+    Name 175..183 "survivor"
+    ParamList 183..185 "()"
+    Block 186..188 "{}"
+
+== evidence ==
+Expected(Eq) at 29
+ExpectedStatement at 29
+ExpectedStatement at 63
+SpacedListOpener at 79
+Expected(LParen) at 94
+ExpectedBody at 94
+ExpectedItem at 94
+SpacedListOpener at 124
+ExpectedExpression at 143
+Expected(LParen) at 165
+ExpectedBody at 165
+ExpectedItem at 165
+
+== diagnostics ==
+error[syntax/expected-token] 3:5: expected `=`
+error[syntax/expected-statement] 3:5..3:6 "=": expected a statement
+  at 3:5..3:8 "= 1": skipped while recovering
+error[syntax/expected-statement] 7:5..7:6 "=": expected a statement
+  at 7:5..7:8 "= 1": skipped while recovering
+error[syntax/spaced-list-opener] 9:11..9:12 "(": opening `(` must be adjacent to the function name or callee
+  fix (safe): remove space before `(`
+    9:10..9:11 " " -> ""
+error[syntax/expected-token] 11:1: expected `(`
+error[syntax/expected-body] 11:1: expected a body, `{` or `=`
+error[syntax/expected-item] 11:1..11:2 "(": expected a function item
+  at 11:1..11:6 "() {}": skipped while recovering
+error[syntax/spaced-list-opener] 13:12..13:13 "(": opening `(` must be adjacent to the function name or callee
+  fix (safe): remove space before `(`
+    13:11..13:12 " " -> ""
+error[syntax/expected-expression] 15:6: expected an expression
+error[syntax/expected-token] 18:1: expected `(`
+error[syntax/expected-body] 18:1: expected a body, `{` or `=`
+error[syntax/expected-item] 18:1..18:2 "(": expected a function item
+  at 18:1..18:7 "() = 1": skipped while recovering
+
+== fixed (syntax/expected-body, syntax/expected-expression, syntax/expected-item, syntax/expected-statement, syntax/expected-token remain) ==
+fn binding() {
+    let x
+    = 1
+}
+fn assignment() {
+    x
+    = 1
+}
+fn spaced() {}
+fn split
+() {}
+fn calls() {
+    spaced()
+    spaced
+    ()
+}
+fn closure() = fn
+() = 1
+fn survivor() {}
+
+== normalized ==
+fn binding() {
+    let x
+    = 1
+}
+fn assignment() {
+    x
+    = 1
+}
+fn spaced() {}
+fn split
+() {}
+fn calls() {
+    spaced()
+    spaced
+    ()
+}
+fn closure() = fn
+() = 1
+fn survivor() {}

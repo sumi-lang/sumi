@@ -1,0 +1,34 @@
+== tree ==
+SourceFile 0..178
+  FnItem 0..37
+    Name 3..8 "value"
+    ParamList 8..10 "()"
+    TypeRef 22..25 "int"
+    LiteralExpr 36..37 "1"
+  FnItem 38..93
+    Name 41..49 "identity"
+    ParamList 49..64
+      Param 55..61
+        Name 55..56 "x"
+        TypeRef 58..61 "int"
+    TypeRef 78..81 "int"
+    NameRef 92..93 "x"
+  FnItem 94..109
+    Name 97..102 "empty"
+    ParamList 102..104 "()"
+    Block 107..109 "{}"
+  FnItem 110..131
+    Name 113..118 "block"
+    ParamList 118..120 "()"
+    TypeRef 124..128 "unit"
+    Block 129..131 "{}"
+  FnItem 132..177
+    Name 135..141 "caller"
+    ParamList 141..143 "()"
+    TypeRef 147..150 "int"
+    CallExpr 153..177
+      NameRef 153..161 "identity"
+      ArgList 161..177
+        CallExpr 167..174
+          NameRef 167..172 "value"
+          ArgList 172..174 "()"

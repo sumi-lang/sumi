@@ -1,0 +1,22 @@
+file: accepted
+frontend errors: 0 (see frontend.snap)
+semantic errors: 0
+
+fn value@0..37 () -> int
+  body: int 1 : int @36..37
+
+fn identity@38..93 (int) -> int
+  param x@55..56: int
+  body: read x@55..56 : int @92..93
+
+fn empty@94..109 () -> unit
+  body: block : unit @107..109
+    tail: unit (implicit)
+
+fn block@110..131 () -> unit
+  body: block : unit @129..131
+    tail: unit (implicit)
+
+fn caller@132..177 () -> int
+  body: call identity@38..93 (callee @153..161) : int @153..177
+    arg[0]: call value@0..37 (callee @167..172) : int @167..174

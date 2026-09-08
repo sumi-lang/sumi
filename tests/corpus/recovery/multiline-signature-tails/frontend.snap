@@ -1,0 +1,91 @@
+== tree ==
+SourceFile! 0..233
+  FnItem! 0..21
+    Name 0..8 "headless"
+    ParamList 8..10 "()"
+    TypeRef 14..17 "int"
+    LiteralExpr 20..21 "1"
+  FnItem! 22..33
+    Name 22..27 "other"
+    ParamList 27..29 "()"
+    LiteralExpr 32..33 "2"
+  FnItem! 34..48
+    Name 37..43 "broken"
+    ParamList 43..45 "()"
+  FnItem 49..73
+    Name 52..60 "survivor"
+    ParamList 60..62 "()"
+    TypeRef 66..69 "int"
+    LiteralExpr 72..73 "3"
+  FnItem! 74..91
+    Name 77..89 "missing_body"
+    ParamList 89..91 "()"
+  Error! 92..93 "="
+  FnItem 94..114
+    Name 97..101 "next"
+    ParamList 101..103 "()"
+    TypeRef 107..110 "int"
+    LiteralExpr 113..114 "4"
+  FnItem 115..169
+    Name 118..139 "call_is_not_an_anchor"
+    ParamList 139..141 "()"
+    TypeRef 145..148 "int"
+    BinaryExpr 151..169
+      LiteralExpr 151..152 "1"
+      CallExpr 159..169
+        NameRef 159..167 "survivor"
+        ArgList 167..169 "()"
+  FnItem! 170..211
+    Name 173..183 "incomplete"
+    ParamList 183..185 "()"
+    ClosureExpr! 188..211
+      ParamList! 190..192
+        Param 191..192
+          Name 191..192 "x"
+      TypeRef 200..203 "int"
+      NameRef 210..211 "x"
+  FnItem 212..232
+    Name 215..219 "last"
+    ParamList 219..221 "()"
+    TypeRef 225..228 "int"
+    LiteralExpr 231..232 "5"
+
+== evidence ==
+Expected(FnKw) at 0
+Expected(FnKw) at 22
+ExpectedType at 49
+ExpectedBody at 49
+ExpectedBody at 92
+ExpectedItem at 92
+Expected(RParen) at 197
+
+== diagnostics ==
+error[syntax/expected-token] 1:1: expected `fn`
+error[syntax/expected-token] 4:1: expected `fn`
+error[syntax/expected-type] 8:1: expected a type
+error[syntax/expected-body] 8:1: expected a body, `{` or `=`
+error[syntax/expected-body] 10:1: expected a body, `{` or `=`
+error[syntax/expected-item] 10:1..10:2 "=": expected a function item
+error[syntax/expected-token] 15:5: expected `)`
+  at 14:21..14:22 "(": opening delimiter is here
+  fix (safe): insert `)`
+    14:23 -> ")"
+
+== fixed (syntax/expected-body, syntax/expected-item, syntax/expected-token, syntax/expected-type remain) ==
+headless()
+-> int
+= 1
+other()
+= 2
+fn broken()
+->
+fn survivor() -> int = 3
+fn missing_body()
+=
+fn next() -> int = 4
+fn call_is_not_an_anchor() -> int = 1 +
+    survivor()
+fn incomplete() = fn(x)
+    -> int
+    = x
+fn last() -> int = 5

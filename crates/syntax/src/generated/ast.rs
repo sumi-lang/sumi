@@ -55,10 +55,9 @@ impl SourceFile {
     }
 }
 
-/// A function item. The body is a block, or `=`
-/// and an expression: `fn double(x: int) -> int = x * 2`. The `=` stays
-/// on the signature's line; the expression may continue onto the next,
-/// since `=` cannot end a statement.
+/// A function item. The body is a block or `=` and an expression:
+/// `fn double(x: int) -> int = x * 2`. Signature components after the
+/// parameter list may begin on subsequent lines.
 /// The `FnItem = 'fn' Name ParamList ('->' ret:TypeRef)? '='? body:Expr` rule.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct FnItem(NodeIdx);
