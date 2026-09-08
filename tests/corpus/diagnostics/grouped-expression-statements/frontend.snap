@@ -1,0 +1,53 @@
+== tree ==
+SourceFile 0..156
+  FnItem 0..21
+    Name 3..8 "value"
+    ParamList 8..10 "()"
+    TypeRef 14..17 "int"
+    LiteralExpr 20..21 "1"
+  FnItem 22..103
+    Name 25..33 "rejected"
+    ParamList 33..35 "()"
+    TypeRef 39..42 "int"
+    Block 43..103
+      LetStmt 49..58
+        Name 53..54 "x"
+        LiteralExpr 57..58 "1"
+      ParenExpr 63..66
+        NameRef 64..65 "x"
+      ParenExpr 71..84
+        BinaryExpr 72..83
+          CallExpr 72..79
+            NameRef 72..77 "value"
+            ArgList 77..79 "()"
+          LiteralExpr 82..83 "1"
+      ParenExpr 89..94
+        ParenExpr 90..93
+          LiteralExpr 91..92 "1"
+      PrefixExpr 99..101
+        LiteralExpr 100..101 "1"
+  FnItem 104..155
+    Name 107..115 "separate"
+    ParamList 115..117 "()"
+    Block 118..155
+      NameRef 124..129 "value"
+      ParenExpr 134..143
+        CallExpr 135..142
+          NameRef 135..140 "value"
+          ArgList 140..142 "()"
+      DiscardStmt 148..153
+        LiteralExpr 152..153 "1"
+
+== diagnostics ==
+error[syntax/statement-without-effect] 4:5..4:8 "(x)": expression has no effect as a statement
+  note: only a call, an `if`, or a block may stand before another statement; any other expression may only end its block, as the block's value
+  note: a `(` on a new line begins a statement, never a call's arguments, which stay on their callee's line
+error[syntax/statement-without-effect] 5:5..5:18 "(value() + 1)": expression has no effect as a statement
+  note: only a call, an `if`, or a block may stand before another statement; any other expression may only end its block, as the block's value
+  note: a `(` on a new line begins a statement, never a call's arguments, which stay on their callee's line
+error[syntax/statement-without-effect] 6:5..6:10 "((1))": expression has no effect as a statement
+  note: only a call, an `if`, or a block may stand before another statement; any other expression may only end its block, as the block's value
+  note: a `(` on a new line begins a statement, never a call's arguments, which stay on their callee's line
+  note: the `-` on the next line is glued to its operand, so it begins a statement; spaced from it, it would continue this one
+error[syntax/statement-without-effect] 10:5..10:10 "value": expression has no effect as a statement
+  note: only a call, an `if`, or a block may stand before another statement; any other expression may only end its block, as the block's value

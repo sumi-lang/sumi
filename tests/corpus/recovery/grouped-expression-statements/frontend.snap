@@ -1,0 +1,69 @@
+== tree ==
+SourceFile! 0..121
+  FnItem! 0..32
+    Name 3..8 "empty"
+    ParamList 8..10 "()"
+    Block! 11..32
+      ParenExpr! 17..19 "()"
+      ReturnStmt 24..30 "return"
+  FnItem! 33..78
+    Name 36..49 "damaged_inner"
+    ParamList 49..51 "()"
+    Block! 52..78
+      ParenExpr! 58..65
+        ParenExpr! 59..64
+          BinaryExpr! 60..63
+            LiteralExpr 60..61 "1"
+      ReturnStmt 70..76 "return"
+  FnItem! 79..120
+    Name 82..96 "missing_closer"
+    ParamList 96..98 "()"
+    Block! 99..120
+      ParenExpr! 105..107
+        LiteralExpr 106..107 "1"
+      ReturnStmt 112..118 "return"
+
+== evidence ==
+ExpectedExpression at 18
+UnspacedBinaryOperator at 62
+ExpectedExpression at 63
+Expected(RParen) at 112
+
+== diagnostics ==
+error[syntax/expected-expression] 2:6: expected an expression
+error[syntax/unspaced-binary-operator] 6:9..6:10 "+": binary operator must have spaces on both sides
+  fix (safe): space binary operator
+    6:10 -> " "
+error[syntax/expected-expression] 6:10: expected an expression
+error[syntax/expected-token] 11:5: expected `)`
+  at 10:5..10:6 "(": opening delimiter is here
+  fix (safe): insert `)`
+    10:7 -> ")"
+
+== fixed (syntax/expected-expression, syntax/statement-without-effect remain) ==
+fn empty() {
+    ()
+    return
+}
+fn damaged_inner() {
+    ((1 + ))
+    return
+}
+fn missing_closer() {
+    (1)
+    return
+}
+
+== normalized ==
+fn empty() {
+    ()
+    return
+}
+fn damaged_inner() {
+    ((1 + ))
+    return
+}
+fn missing_closer() {
+    (1
+    return
+}

@@ -1,0 +1,30 @@
+file: accepted
+frontend errors: 0 (see frontend.snap)
+semantic errors: 0
+
+fn value@0..21 () -> int
+  body: int 1 : int @20..21
+
+fn sequence@22..179 () -> int
+  body: block : int @43..179
+    discard @49..56
+      value: call value@0..21 (callee @49..54) : int @49..56
+    discard @61..70
+      value: call value@0..21 (callee @62..67) : int @62..69
+    discard @75..86
+      value: call value@0..21 (callee @77..82) : int @77..84
+    discard @91..117
+      value: if : int @92..116
+        condition: bool true : bool @95..99
+        then: block : int @100..105
+          tail: int 1 : int @102..103
+        else: block : int @111..116
+          tail: int 2 : int @113..114
+    discard @122..131
+      value: block : int @124..129
+        tail: int 3 : int @126..127
+    let action@140..146: int @136..150
+      initializer: int 4 : int @149..150
+    discard @155..164
+      value: call value@0..21 (callee @156..161) : int @156..163
+    tail: read action@140..146 : int @170..176

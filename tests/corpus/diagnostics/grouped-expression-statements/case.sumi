@@ -1,0 +1,13 @@
+fn value() -> int = 1
+fn rejected() -> int {
+    let x = 1
+    (x)
+    (value() + 1)
+    ((1))
+    -1
+}
+fn separate() {
+    value
+    (value())
+    _ = 1
+}

@@ -1,0 +1,11 @@
+fn value() -> int = 1
+fn sequence() -> int {
+    value()
+    (value())
+    ((value()))
+    (if true { 1 } else { 2 })
+    (({ 3 }))
+    let action = 4
+    (value())
+    (action)
+}
