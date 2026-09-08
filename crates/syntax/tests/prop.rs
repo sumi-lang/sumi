@@ -483,6 +483,8 @@ proptest! {
             prop::sample::select(vec![
                 "fn first() = 0\nfn outer() = fn() = fn(x) = x\nfn next() = 2\n",
                 "fn first() = 0\nfn outer() =\n fn(x: int) { x }\nfn next() = 2\n",
+                "fn first()\n= 0\nfn outer()\n= fn(x: int)\n-> int\n= x +\n1\nfn next()\n-> int\n= 2\n",
+                "fn first()\n{}\nfn outer()\n{ if { true }\n{}\nelse\n{} }\nfn next()\n{}\n",
             ]).prop_flat_map(|source| {
                 (Just(source.to_owned()), 0..front(source).input.len(), sumi_test::edit())
             }).boxed(),

@@ -1,0 +1,35 @@
+== tree ==
+SourceFile 0..145
+  FnItem 0..42
+    Name 3..8 "outer"
+    ParamList 8..10 "()"
+    ClosureExpr 13..42
+      ParamList 15..23
+        Param 16..22
+          Name 16..17 "x"
+          TypeRef 19..22 "int"
+      TypeRef 31..34 "int"
+      NameRef 41..42 "x"
+  FnItem 43..85
+    Name 46..52 "nested"
+    ParamList 52..54 "()"
+    ClosureExpr 57..85
+      ParamList 59..61 "()"
+      ClosureExpr 68..85
+        ParamList 70..73
+          Param 71..72
+            Name 71..72 "x"
+        NameRef 84..85 "x"
+  FnItem 86..144
+    Name 89..97 "argument"
+    ParamList 97..99 "()"
+    CallExpr 102..144
+      NameRef 102..109 "consume"
+      ArgList 109..144
+        ClosureExpr 110..143
+          ParamList 112..120
+            Param 113..119
+              Name 113..114 "x"
+              TypeRef 116..119 "int"
+          TypeRef 132..135 "int"
+          NameRef 142..143 "x"

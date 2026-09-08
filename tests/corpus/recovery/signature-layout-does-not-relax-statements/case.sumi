@@ -1,0 +1,19 @@
+fn binding() {
+    let x
+    = 1
+}
+fn assignment() {
+    x
+    = 1
+}
+fn spaced () {}
+fn split
+() {}
+fn calls() {
+    spaced ()
+    spaced
+    ()
+}
+fn closure() = fn
+() = 1
+fn survivor() {}

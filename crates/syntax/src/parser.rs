@@ -277,8 +277,8 @@ fn skip_all(
 /// A function item. Each part of the signature is taken where it belongs
 /// or reported where it is missing, and garbage in its place is skipped up
 /// to the next part, so a malformed signature is recovered as the evident
-/// intent and the body is kept. Nothing is searched for past the end of
-/// the line: a declaration ends where its line does.
+/// intent and the body is kept. Expected components may cross lines;
+/// searching through garbage stops at the next physical line.
 fn fn_item(p: &mut Marker<'_, '_>) {
     let mut m = p.start();
     if m.at(T::FnKw) {
@@ -351,7 +351,9 @@ fn signature_tail(m: &mut Marker<'_, '_>, follow: ExprFollow, signature: Signatu
     // continues one.
     if !m.at(T::LParen) || m.newline() {
         let recovery = m.missing(ParseExpected::Token(T::LParen));
-        signature_garbage(m, signature, recovery, |m| m.at(T::LParen) || at_arrow(m));
+        signature_garbage(m, signature, recovery, |m| {
+            m.at(T::LParen) || nth_arrow(m, 0)
+        });
     }
     let mut complete = false;
     if m.at(T::LParen) && !m.newline() {
@@ -365,13 +367,13 @@ fn signature_tail(m: &mut Marker<'_, '_>, follow: ExprFollow, signature: Signatu
     // `=` after a complete part.
     let body_begins =
         |m: &Marker<'_, '_>, complete: bool| m.at(T::LBrace) || at_expression_body(m, complete);
-    if !body_begins(m, complete) && !at_arrow(m) {
+    if !body_begins(m, complete) && !nth_arrow(m, 0) {
         let recovery = m.missing(ParseExpected::Body);
         signature_garbage(m, signature, recovery, |m| {
-            at_arrow(m) || at_expression_body(m, complete)
+            nth_arrow(m, 0) || at_expression_body(m, complete)
         });
     }
-    if at_arrow(m) {
+    if nth_arrow(m, 0) {
         m.token();
         m.token();
         complete = m.at(T::Ident);
@@ -389,29 +391,16 @@ fn signature_tail(m: &mut Marker<'_, '_>, follow: ExprFollow, signature: Signatu
     }
 }
 
-/// The `=` of an expression body: on the signature's line, after a part
-/// that is present, and before something an expression can begin with,
-/// whatever its line, since `=` cannot end a statement.
+/// The `=` of an expression body: after a complete signature component
+/// and before something an expression can begin with, independently of lines.
 fn at_expression_body(m: &Marker<'_, '_>, complete: bool) -> bool {
-    complete && at_equals(m) && m.nth(1).is_some_and(starts_expression) && !nth_arrow(m, 1)
-}
-
-/// A return type on the line of the signature: a leading `->` never
-/// continues a line.
-fn at_arrow(m: &Marker<'_, '_>) -> bool {
-    nth_arrow(m, 0) && !m.newline()
+    complete && m.at(T::Eq) && m.nth(1).is_some_and(starts_expression) && !nth_arrow(m, 1)
 }
 
 /// Whether `->` stands `n` significant tokens past the next one: a `-`
 /// glued to a `>`, which begins no expression although a `-` alone does.
 fn nth_arrow(m: &Marker<'_, '_>, n: usize) -> bool {
     m.nth(n) == Some(T::Minus) && m.nth_joint(n) && m.nth(n + 1) == Some(T::Gt)
-}
-
-/// The `=` of an expression body, on the line of the signature: a leading
-/// `=` never continues a line.
-fn at_equals(m: &Marker<'_, '_>) -> bool {
-    m.at(T::Eq) && !m.newline()
 }
 
 /// Skip garbage in a signature — tokens that belong to none of its parts —

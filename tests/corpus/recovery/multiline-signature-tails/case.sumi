@@ -1,0 +1,17 @@
+headless()
+-> int
+= 1
+other()
+= 2
+fn broken()
+->
+fn survivor() -> int = 3
+fn missing_body()
+=
+fn next() -> int = 4
+fn call_is_not_an_anchor() -> int = 1 +
+    survivor()
+fn incomplete() = fn(x
+    -> int
+    = x
+fn last() -> int = 5

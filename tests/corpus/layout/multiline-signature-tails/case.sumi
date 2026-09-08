@@ -1,0 +1,20 @@
+fn value()
+    ->
+    int
+    =
+    1
+fn identity(
+    x: int,
+)
+// result
+-> int
+// body
+= x
+fn empty()
+= {}
+fn block()
+-> unit
+{}
+fn caller() -> int = identity(
+    value(),
+)
