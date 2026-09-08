@@ -1,8 +1,8 @@
 use crate::infer::{Inference, Term};
 use sumi_hir::Ty;
 
-pub const SIZES: [usize; 3] = [128, 1024, 8192];
-pub const SHAPES: [&str; 8] = [
+pub const SIZES: [usize; 4] = [8, 128, 1024, 8192];
+pub const SHAPES: [&str; 11] = [
     "chain-forward",
     "chain-reverse",
     "grounded-cycle",
@@ -11,6 +11,9 @@ pub const SHAPES: [&str; 8] = [
     "fan-out",
     "fan-in",
     "equalities",
+    "constant-imports",
+    "mixed-imports",
+    "scattered-fanout",
 ];
 
 pub struct Graph {
@@ -25,6 +28,29 @@ pub fn build(shape: &str, size: usize) -> Graph {
         terms.reverse();
     }
     match shape {
+        "scattered-fanout" => {
+            let providers = size.div_ceil(32);
+            for &term in &terms[..providers] {
+                context.equal(term, Ty::Int.into());
+            }
+            for i in 0..size {
+                // Interleave providers' edges and scatter destinations. The
+                // odd multiplier permutes our power-of-two benchmark sizes.
+                let call = context.import(terms[i % providers]);
+                context.equal(terms[(i * 4051) % size], call);
+            }
+        }
+        "constant-imports" | "mixed-imports" => {
+            for (i, &term) in terms.iter().enumerate() {
+                let provider = if shape == "mixed-imports" && i % 2 == 1 {
+                    terms[i - 1]
+                } else {
+                    Ty::Int.into()
+                };
+                let call = context.import(provider);
+                context.equal(term, call);
+            }
+        }
         "fan-out" => {
             context.equal(terms[0], Ty::Int.into());
             for &term in &terms[1..] {

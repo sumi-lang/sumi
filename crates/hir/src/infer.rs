@@ -134,10 +134,13 @@ impl Inference {
     /// Diagnose the recorded local constraints once, with final imports, not
     /// provisional worklist values. Poisoned/unresolved imports add no evidence.
     pub fn replay(&self) -> Self {
-        let mut replay = Self::default();
-        for _ in &self.parent {
-            replay.fresh();
-        }
+        let n = self.parent.len();
+        let mut replay = Self {
+            parent: (0..n).collect(),
+            size: vec![1; n],
+            evidence: vec![Evidence::default(); n],
+            imports: Vec::new(),
+        };
         for &(provider, consumer) in &self.imports {
             if let Some(ty) = self.resolve(provider) {
                 replay.equal(consumer, ty.into());
@@ -212,6 +215,84 @@ mod tests {
             assert!(ctx.conflicted(result));
             assert!(ctx.conflicted(downstream));
             assert_eq!(ctx.resolve(result), None);
+        }
+    }
+
+    #[test]
+    fn replay_resets_equalities_and_only_imports_singletons() {
+        let mut ctx = Inference::default();
+        let result = ctx.fresh();
+        let call = ctx.import(Ty::Int.into());
+        ctx.equal(result, call);
+        let unknown = ctx.fresh();
+        let unknown_call = ctx.import(unknown);
+        let conflict = ctx.fresh();
+        ctx.equal(conflict, Ty::Bool.into());
+        ctx.equal(conflict, Ty::Unit.into());
+        let conflict_call = ctx.import(conflict);
+        ctx.solve();
+        let mut replay = ctx.replay();
+        assert_eq!(replay.parent, (0..ctx.parent.len()).collect::<Vec<_>>());
+        assert_eq!(replay.resolve(result), None);
+        assert_eq!(replay.resolve(call), Some(Ty::Int));
+        assert_eq!(replay.resolve(unknown_call), None);
+        assert_eq!(replay.resolve(conflict_call), None);
+        assert!(!replay.conflicted(conflict_call));
+        replay.equal(result, call);
+        assert_eq!(replay.resolve(result), Some(Ty::Int));
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn worklist_matches_full_scan(
+            operations in proptest::collection::vec((0u8..4, 0usize..64, 0usize..64), 0..128),
+            reverse in proptest::bool::ANY,
+        ) {
+            let mut ctx = Inference::default();
+            for _ in 0..8 {
+                ctx.fresh();
+            }
+            for (kind, a, b) in operations {
+                let a = Term::Var(a % ctx.parent.len());
+                let b = Term::Var(b % ctx.parent.len());
+                match kind {
+                    0 => ctx.equal(a, b),
+                    1 => { ctx.import(a); }
+                    _ => {
+                        let Term::Var(id) = b else { unreachable!() };
+                        let ty = [Ty::Int, Ty::Bool, Ty::Unit][id % 3];
+                        if kind == 2 {
+                            ctx.equal(a, ty.into());
+                        } else {
+                            let call = ctx.import(ty.into());
+                            ctx.equal(a, call);
+                        }
+                    }
+                }
+            }
+            // Deliberately no adjacency structure or worklist in the reference.
+            // Compare every evidence bit: resolve() conflates unknown/conflict.
+            let mut expected = ctx.evidence.clone();
+            loop {
+                let mut changed = false;
+                for &(provider, consumer) in &ctx.imports {
+                    let evidence = match provider {
+                        Term::Known(ty) => Evidence::known(ty),
+                        Term::Var(id) => expected[ctx.root(id)],
+                    };
+                    let Term::Var(id) = consumer else { unreachable!() };
+                    let root = ctx.root(id);
+                    let before = expected[root];
+                    expected[root].0 |= evidence.0;
+                    changed |= before != expected[root];
+                }
+                if !changed { break; }
+            }
+            if reverse { ctx.imports.reverse(); }
+            ctx.solve();
+            for id in 0..ctx.parent.len() {
+                proptest::prop_assert_eq!(ctx.evidence(Term::Var(id)), expected[ctx.root(id)]);
+            }
         }
     }
 }
