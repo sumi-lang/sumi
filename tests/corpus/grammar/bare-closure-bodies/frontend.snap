@@ -1,0 +1,63 @@
+== tree ==
+SourceFile 0..232
+  FnItem 0..21
+    Name 3..8 "outer"
+    ParamList 8..10 "()"
+    ClosureExpr 13..21
+      ParamList 15..17 "()"
+      LiteralExpr 20..21 "1"
+  FnItem 22..64
+    Name 25..31 "nested"
+    ParamList 31..33 "()"
+    ClosureExpr 40..64
+      ParamList 42..44 "()"
+      ClosureExpr 55..64
+        ParamList 57..60
+          Param 58..59
+            Name 58..59 "x"
+        NameRef 63..64 "x"
+  FnItem 65..101
+    Name 68..73 "typed"
+    ParamList 73..75 "()"
+    ClosureExpr 78..101
+      ParamList 80..88
+        Param 81..87
+          Name 81..82 "x"
+          TypeRef 84..87 "int"
+      TypeRef 92..95 "int"
+      Block 96..101
+        NameRef 98..99 "x"
+  FnItem 102..125
+    Name 105..111 "spaced"
+    ParamList 111..113 "()"
+    ClosureExpr 116..125
+      ParamList 119..121 "()"
+      LiteralExpr 124..125 "1"
+  FnItem 126..153
+    Name 129..136 "operand"
+    ParamList 136..138 "()"
+    BinaryExpr 141..153
+      LiteralExpr 141..142 "0"
+      ClosureExpr 145..153
+        ParamList 147..149 "()"
+        LiteralExpr 152..153 "1"
+  FnItem 154..174
+    Name 157..161 "next"
+    ParamList 161..163 "()"
+    TypeRef 167..170 "int"
+    LiteralExpr 173..174 "2"
+  FnItem 175..192
+    Name 178..179 "a"
+    ParamList 179..181 "()"
+    TypeRef 185..188 "int"
+    LiteralExpr 191..192 "1"
+  FnItem 193..210
+    Name 196..197 "b"
+    ParamList 197..199 "()"
+    TypeRef 203..206 "int"
+    LiteralExpr 209..210 "2"
+  FnItem 211..231
+    Name 214..218 "name"
+    ParamList 218..220 "()"
+    TypeRef 224..227 "int"
+    LiteralExpr 230..231 "3"

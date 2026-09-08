@@ -1,0 +1,42 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 5
+
+fn outer@0..21 () -> unit
+  body: unavailable
+
+fn nested@22..64 () -> unit
+  body: unavailable
+
+fn typed@65..101 () -> unit
+  body: unavailable
+
+fn spaced@102..125 () -> unit
+  body: unavailable
+
+fn operand@126..153 () -> unit
+  body: unavailable
+
+fn next@154..174 () -> int
+  body: int 2 : int @173..174
+
+fn a@175..192 () -> int
+  body: int 1 : int @191..192
+
+fn b@193..210 () -> int
+  body: int 2 : int @209..210
+
+fn name@211..231 () -> int
+  body: int 3 : int @230..231
+
+== semantic diagnostics ==
+error[semantic/unsupported]: construct is not supported by scalar checking
+  primary @13..21
+error[semantic/unsupported]: construct is not supported by scalar checking
+  primary @40..64
+error[semantic/unsupported]: construct is not supported by scalar checking
+  primary @78..101
+error[semantic/unsupported]: construct is not supported by scalar checking
+  primary @116..125
+error[semantic/unsupported]: construct is not supported by scalar checking
+  primary @145..153

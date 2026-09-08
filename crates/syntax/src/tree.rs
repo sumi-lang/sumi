@@ -845,6 +845,13 @@ impl<'a> Marker<'_, 'a> {
             && self.builder.input.in_expression_delimiters(index)
     }
 
+    /// Whether any mechanical matched pair encloses the next token.
+    pub(crate) fn in_matched_delimiters(&self) -> bool {
+        let index = self.builder.position;
+        index.to_usize() < self.builder.input.len()
+            && self.builder.input.in_matched_delimiters(index)
+    }
+
     /// Whether a line break precedes the significant token `n` past the
     /// next one.
     pub(crate) fn nth_newline(&self, n: usize) -> bool {
@@ -1004,23 +1011,22 @@ impl<'a> Marker<'_, 'a> {
             .min()
     }
 
-    /// The number of top-level items the input stream found.
-    pub(crate) fn item_count(&self) -> usize {
-        self.builder.input.item_starts().len()
+    /// The number of hard declaration anchors the input stream found.
+    pub(crate) fn item_anchor_count(&self) -> usize {
+        self.builder.input.item_anchors().len()
     }
 
-    /// Where item `index` starts, or the end of the input for the position
-    /// one past the last item: the horizon for the segment before it.
-    pub(crate) fn item_limit(&self, index: usize) -> SigIdx {
+    /// Anchor `index`, or the end of input one past the last anchor.
+    pub(crate) fn item_anchor(&self, index: usize) -> SigIdx {
         self.builder
             .input
-            .item_starts()
+            .item_anchors()
             .get(index)
             .map_or(self.builder.input.end(), |&start| start)
     }
 
-    /// Move the input horizon. Only `source_file` does, once per item
-    /// segment; the horizon never moves back past the cursor or beyond the
+    /// Move the input horizon. Only `source_file` does, once per anchor
+    /// interval; the horizon never moves back past the cursor or beyond the
     /// input.
     pub(crate) fn set_limit(&mut self, limit: SigIdx) {
         debug_assert!(self.builder.position <= limit);

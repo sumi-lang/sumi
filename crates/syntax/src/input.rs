@@ -2,7 +2,7 @@
 //! grammar needs once trivia is gone.
 //!
 //! Construction strips whitespace, newlines, and comments, and precomputes
-//! five per-token facts:
+//! six per-token facts:
 //!
 //! - **jointness**: no trivia separates the token from its successor. The
 //!   parser glues compound operators (`==`, `->`) from joint pairs, and the
@@ -14,6 +14,8 @@
 //!   rule below.
 //! - **expression delimiters**: the nearest enclosing opener is matched and
 //!   does not enclose statements; line wrapping is allowed in this context.
+//! - **matched delimiters**: any matched pair encloses the token, even when
+//!   an unmatched inner opener changes its expression-layout context.
 //! - **partner**: for a bracket, the index of the bracket matching it, if
 //!   one does. Pairing is mechanical: a closer pairs with the nearest open
 //!   bracket of its kind, discarding unmatched openers above that match; an
@@ -21,12 +23,11 @@
 //!   meaningful where it appears. The parser's recovery takes a matched
 //!   pair whole only where the surrounding construct owns it.
 //!
-//! Construction also emits the **item segments**: the indices where
-//! top-level items start — a `fn`, or the headless signature shape
-//! [`item_starts_at`] recognizes, outside every matched bracket pair. A `fn`
-//! inside a matched pair belongs to whatever construct owns the pair; one
-//! outside begins the next item wherever the grammar stands, so the parser
-//! turns each start into a hard end limit for the item before it.
+//! Construction also emits **item anchors**: named declaration heads and the
+//! headless signature shape [`item_anchor_at`] recognizes, outside every
+//! matched bracket pair. The parser cannot consume an anchor while parsing
+//! the preceding item. Other `fn` tokens are interpreted in parser context:
+//! closures in expressions, or missing-name declarations at file level.
 //!
 //! # The newline rule
 //!
@@ -61,6 +62,7 @@ const JOINT: u8 = 1 << 0;
 const NEWLINE_BEFORE: u8 = 1 << 1;
 const BOUNDARY_BEFORE: u8 = 1 << 2;
 const IN_EXPRESSION_DELIMITERS: u8 = 1 << 3;
+const IN_MATCHED_DELIMITERS: u8 = 1 << 4;
 
 /// One significant token's stream facts, packed so the kind, flags, raw
 /// index, and partner the parser reads at one cursor position share a cache
@@ -86,8 +88,8 @@ pub struct ParserInput {
     /// boundaries before tokens `0..index`, so any-boundary-in-range is two
     /// lookups however long the range.
     boundaries: Box<[u32]>,
-    /// The significant indices where top-level items start, in order.
-    items: Box<[SigIdx]>,
+    /// Hard declaration recovery anchors, in source order.
+    item_anchors: Box<[SigIdx]>,
     /// The index one past the last token of the underlying buffer.
     raw_len: RawIdx,
 }
@@ -129,20 +131,20 @@ impl ParserInput {
         // — one never closed would suspend it to the end of the file, so
         // the line ends the statement instead.
         //
-        // The same replay finds the item starts: a matched opener encloses
-        // everything up to its closer, so item starts exist only while
+        // The same replay finds item anchors: a matched opener encloses
+        // everything up to its closer, so anchors exist only while
         // `matched` is zero. An unmatched opener encloses nothing for good
         // and hides no item.
         let Build { mut slots, .. } = build;
         let mut boundaries: Vec<u32> = Vec::with_capacity(slots.len() + 1);
         let mut boundary_count: u32 = 0;
-        let mut items: Vec<SigIdx> = Vec::new();
+        let mut item_anchors: Vec<SigIdx> = Vec::new();
         let mut matched = 0usize;
         let mut context = 0u8;
         for index in 0..slots.len() {
             boundaries.push(boundary_count);
             let slot = slots[index];
-            slots[index].flags |= context;
+            slots[index].flags |= context | (u8::from(matched != 0) * IN_MATCHED_DELIMITERS);
             if index > 0
                 && slot.flags & NEWLINE_BEFORE != 0
                 && context == 0
@@ -152,8 +154,8 @@ impl ParserInput {
                 slots[index].flags |= BOUNDARY_BEFORE;
                 boundary_count += 1;
             }
-            if matched == 0 && item_starts_at(&slots, index) {
-                items.push(SigIdx::new(index as u32));
+            if matched == 0 && item_anchor_at(&slots, index) {
+                item_anchors.push(SigIdx::new(index as u32));
             }
             if is_opener(slot.kind) {
                 context = u8::from(!encloses_statements(slot.kind) && slot.partner.is_some())
@@ -176,7 +178,7 @@ impl ParserInput {
         Self {
             slots: slots.into_boxed_slice(),
             boundaries: boundaries.into_boxed_slice(),
-            items: items.into_boxed_slice(),
+            item_anchors: item_anchors.into_boxed_slice(),
             raw_len: lexed.end(),
         }
     }
@@ -237,6 +239,12 @@ impl ParserInput {
         self.slots[index.to_usize()].flags & IN_EXPRESSION_DELIMITERS != 0
     }
 
+    /// Whether any matched pair encloses this token. Measured before processing
+    /// this token's bracket, independently of expression-layout context.
+    pub fn in_matched_delimiters(&self, index: SigIdx) -> bool {
+        self.slots[index.to_usize()].flags & IN_MATCHED_DELIMITERS != 0
+    }
+
     /// Whether a statement boundary immediately precedes token `index` under
     /// the newline rule. Never true for the first token.
     pub fn boundary_before(&self, index: SigIdx) -> bool {
@@ -261,11 +269,10 @@ impl ParserInput {
             .map(|partner| SigIdx::new(partner.get() - 1))
     }
 
-    /// The significant indices where top-level items start, in order: a
-    /// `fn`, or the headless signature shape, outside every matched
-    /// bracket pair.
-    pub fn item_starts(&self) -> &[SigIdx] {
-        &self.items
+    /// Named declaration heads and recoverable headless signatures outside
+    /// matched pairs, in source order. Not every recovered item has an anchor.
+    pub fn item_anchors(&self) -> &[SigIdx] {
+        &self.item_anchors
     }
 
     /// The significant token slots as a slice, so the parser can hold a
@@ -452,15 +459,18 @@ impl Build<'_> {
     }
 }
 
-/// Whether a top-level item starts at significant token `index`: `fn`, or
+/// Whether a declaration recovery anchor starts at `index`: `fn` plus a name, or
 /// a signature missing it — a name, a parenthesized list, and a body,
 /// a return type, or an expression body's `=` after the list on its line,
 /// which nothing else at the top level looks like. A misplaced call has neither after its list, and
 /// stays garbage. The caller has established that no matched bracket pair
 /// encloses `index`.
-fn item_starts_at(slots: &[Slot], index: usize) -> bool {
+fn item_anchor_at(slots: &[Slot], index: usize) -> bool {
     if starts_item(slots[index].kind) {
-        return true;
+        // `_` is an invalid name, but still identifies a declaration head.
+        return slots
+            .get(index + 1)
+            .is_some_and(|next| matches!(next.kind, SyntaxKind::Ident | SyntaxKind::Underscore));
     }
     (index == 0 || slots[index].flags & BOUNDARY_BEFORE != 0)
         && slots[index].kind == SyntaxKind::Ident
