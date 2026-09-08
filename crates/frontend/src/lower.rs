@@ -339,10 +339,6 @@ fn lower_token_errors(
 }
 
 fn lower_parse(snapshot: &Snapshot<'_>, parse: &Parse, diagnostics: &mut Vec<Diagnostic>) {
-    let has_recovery = parse
-        .evidence()
-        .iter()
-        .any(|evidence| matches!(evidence, ParseEvidence::Recovery(_)));
     let mut closer_fix_sites = HashSet::new();
     for evidence in parse.evidence() {
         match evidence {
@@ -356,7 +352,7 @@ fn lower_parse(snapshot: &Snapshot<'_>, parse: &Parse, diagnostics: &mut Vec<Dia
             }
             ParseEvidence::Violation(violation) => {
                 if !tokens_have_error(violation.range, snapshot.lexed) {
-                    diagnostics.push(lower_violation(snapshot, *violation, has_recovery));
+                    diagnostics.push(lower_violation(snapshot, *violation));
                 }
             }
         }
@@ -485,16 +481,8 @@ fn expected_diagnostic(expected: ParseExpected) -> (DiagnosticCode, Box<str>) {
     }
 }
 
-fn lower_violation(
-    snapshot: &Snapshot<'_>,
-    violation: ParseViolation,
-    has_recovery: bool,
-) -> Diagnostic {
+fn lower_violation(snapshot: &Snapshot<'_>, violation: ParseViolation) -> Diagnostic {
     let (code, message) = match violation.kind {
-        ParseViolationKind::BlockOnNewLine => (
-            codes::BLOCK_ON_NEW_LINE,
-            "block must open on the line of its owner",
-        ),
         ParseViolationKind::UnspacedBinaryOperator => (
             codes::UNSPACED_BINARY_OPERATOR,
             "binary operator must have spaces on both sides",
@@ -512,24 +500,19 @@ fn lower_violation(
             "comparison operators cannot be chained",
         ),
     };
-    let movement = violation.kind == ParseViolationKind::BlockOnNewLine;
-    let fix = (!movement || !has_recovery)
-        .then(|| layout_violation_edits(snapshot.lexed, violation))
-        .flatten()
-        .map(|edits| Fix {
-            message: match violation.kind {
-                ParseViolationKind::BlockOnNewLine => "move block to its owner's line",
-                ParseViolationKind::UnspacedBinaryOperator => "space binary operator",
-                ParseViolationKind::SpacedPrefixOperator => "remove space after prefix operator",
-                ParseViolationKind::SpacedListOpener => "remove space before `(`",
-                ParseViolationKind::ChainedComparison => {
-                    unreachable!("chained comparisons have no mechanical layout fix")
-                }
+    let fix = layout_violation_edits(snapshot.lexed, violation).map(|edits| Fix {
+        message: match violation.kind {
+            ParseViolationKind::UnspacedBinaryOperator => "space binary operator",
+            ParseViolationKind::SpacedPrefixOperator => "remove space after prefix operator",
+            ParseViolationKind::SpacedListOpener => "remove space before `(`",
+            ParseViolationKind::ChainedComparison => {
+                unreachable!("chained comparisons have no mechanical layout fix")
             }
-            .into(),
-            applicability: Applicability::Safe,
-            edits,
-        });
+        }
+        .into(),
+        applicability: Applicability::Safe,
+        edits,
+    });
     let mut diagnostic = primary(code, message, snapshot.raw_range(violation.range));
     diagnostic.fix = fix;
     diagnostic

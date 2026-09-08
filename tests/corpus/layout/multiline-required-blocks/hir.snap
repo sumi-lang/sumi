@@ -1,0 +1,57 @@
+file: accepted
+frontend errors: 0 (see frontend.snap)
+semantic errors: 0
+
+fn choose@0..97 (bool) -> int
+  param flag@10..14: bool
+  body: block : int @29..97
+    tail: if : int @35..95
+      condition: read flag@10..14 : bool @38..42
+      then: block : int @47..64
+        tail: int 1 : int @57..58
+      else: block : int @78..95
+        tail: int 2 : int @88..89
+
+fn block_condition@98..156 () -> int
+  body: if : int @128..156
+    condition: block : bool @131..139
+      tail: bool true : bool @133..137
+    then: block : int @140..145
+      tail: int 1 : int @142..143
+    else: block : int @151..156
+      tail: int 2 : int @153..154
+
+fn nested_condition@157..259 () -> int
+  body: if : int @188..259
+    condition: if : bool @191..222
+      condition: bool true : bool @194..198
+      then: block : bool @199..207
+        tail: bool true : bool @201..205
+      else: block : bool @213..222
+        tail: bool false : bool @215..220
+    then: block : int @223..228
+      tail: int 1 : int @225..226
+    else: if : int @234..259
+      condition: bool false : bool @237..242
+      then: block : int @243..248
+        tail: int 2 : int @245..246
+      else: block : int @254..259
+        tail: int 3 : int @256..257
+
+fn continued_condition@260..313 () -> unit
+  body: if : unit @287..313
+    condition: lazy and : bool @290..310
+      lhs: block : bool @290..298
+        tail: bool true : bool @292..296
+      rhs: bool true : bool @306..310
+    then: block : unit @311..313
+      tail: unit (implicit)
+    else: unit (implicit)
+
+fn grouped@314..351 () -> unit
+  body: if : unit @330..350
+    condition: bool true : bool @334..338
+    then: block : unit @340..342
+      tail: unit (implicit)
+    else: block : unit @348..350
+      tail: unit (implicit)

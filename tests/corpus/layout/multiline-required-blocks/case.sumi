@@ -1,0 +1,31 @@
+fn choose(flag: bool) -> int
+{
+    if flag
+    {
+        1
+    }
+    else
+    {
+        2
+    }
+}
+fn block_condition() -> int = if { true }
+{ 1 }
+else
+{ 2 }
+fn nested_condition() -> int = if if true
+{ true }
+else
+{ false }
+{ 1 }
+else if false
+{ 2 }
+else
+{ 3 }
+fn continued_condition() = if { true }
+    && true
+{}
+fn grouped() = (if (true)
+{}
+else
+{})

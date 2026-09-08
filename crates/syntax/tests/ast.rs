@@ -236,6 +236,32 @@ fn casts_refuse_other_kinds() {
 }
 
 #[test]
+fn multiline_if_blocks_keep_their_roles() {
+    for source in [
+        "fn f() = if { true }\n{ 1 }\nelse\n{ 2 }",
+        "fn f() = if { true }\n\n// body\n{ 1 }\nelse\n{ 2 }",
+    ] {
+        let parsed = Parsed::new(source);
+        let tree = parsed.tree();
+        assert!(parsed.parse.evidence().is_empty());
+        let Some(Expr::IfExpr(branch)) = parsed.item().body(tree) else {
+            panic!("if body")
+        };
+        assert_eq!(parsed.text(branch.condition(tree).unwrap()), "{ true }");
+        assert_eq!(parsed.text(branch.then_branch(tree).unwrap()), "{ 1 }");
+        assert!(branch.else_branch(tree).is_some());
+    }
+    let parsed = Parsed::new("fn f() = if\n{}\nelse\n{}");
+    let tree = parsed.tree();
+    let Some(Expr::IfExpr(branch)) = parsed.item().body(tree) else {
+        panic!("if body")
+    };
+    assert!(branch.condition(tree).is_none());
+    assert_eq!(parsed.text(branch.then_branch(tree).unwrap()), "{}");
+    assert!(branch.else_branch(tree).is_some());
+}
+
+#[test]
 fn parser_known_roles_survive_recovery() {
     // `if {}` parses with the block as the body and the condition missing.
     // Although the block's type fits either field, the parser knows its role.

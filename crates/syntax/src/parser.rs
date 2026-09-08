@@ -100,8 +100,6 @@ pub struct ParseViolation {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ParseViolationKind {
-    /// A block opens on the line after what it belongs to.
-    BlockOnNewLine,
     /// A binary operator without spaces on both sides, as in `a-b`.
     UnspacedBinaryOperator,
     /// A prefix operator separated from its operand, as in `- x`.
@@ -387,7 +385,7 @@ fn signature_tail(m: &mut Marker<'_, '_>, follow: ExprFollow, signature: Signatu
         m.token(); // =
         operand_before(m, 0, follow);
     } else if m.at(T::LBrace) {
-        block_here(m);
+        block(m);
     }
 }
 
@@ -677,18 +675,6 @@ fn param(p: &mut Marker<'_, '_>, typed: bool) {
         }
     }
     m.complete(N::Param);
-}
-
-/// A block where one is required, on the line of what it belongs to.
-fn block_here(p: &mut Marker<'_, '_>) -> Option<CompletedMarker> {
-    if !p.at(T::LBrace) {
-        p.missing(ParseExpected::Token(T::LBrace));
-        return None;
-    }
-    if p.newline() {
-        p.violation(ParseViolationKind::BlockOnNewLine, 1);
-    }
-    Some(block(p))
 }
 
 fn block(p: &mut Marker<'_, '_>) -> CompletedMarker {
@@ -1056,14 +1042,14 @@ fn expr_bp(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) -> Option<Com
 
 /// Whether a block at the start of an `if` condition is demonstrably the
 /// condition rather than the required body: its closer is followed by
-/// syntax that continues the expression, with a body or call on the same
-/// line as required by their grammar.
+/// a body on either line, or syntax that continues the expression.
 fn block_starts_condition(p: &Marker<'_, '_>) -> bool {
     p.nth_partner(0).is_some_and(|close| {
         let next = close + 1;
-        !p.nth_boundary(next)
-            && ((!p.nth_newline(next) && p.nth(next).is_some_and(is_opener))
-                || binary_op(p, next).is_some())
+        p.nth(next) == Some(T::LBrace)
+            || (!p.nth_boundary(next)
+                && ((!p.nth_newline(next) && p.nth(next) == Some(T::LParen))
+                    || binary_op(p, next).is_some()))
     })
 }
 
@@ -1236,8 +1222,8 @@ fn if_expr(p: &mut Marker<'_, '_>) -> CompletedMarker {
 /// block on the same line, keep that garbage inside the `if` and resume at
 /// the `{`; a line or enclosing delimiter belongs to the caller instead.
 fn if_block(p: &mut Marker<'_, '_>) -> Option<CompletedMarker> {
-    if p.at(T::LBrace) && !p.newline() {
-        return block_here(p);
+    if p.at(T::LBrace) {
+        return Some(block(p));
     }
     let displaced = !(p.current().is_none_or(is_closer) || p.at(T::ElseKw) || p.newline());
     let recovery = if displaced {
@@ -1258,7 +1244,11 @@ fn if_block(p: &mut Marker<'_, '_>) -> Option<CompletedMarker> {
             || p.newline()
             || ends_hole(p)
     });
-    if p.at(T::LBrace) { block_here(p) } else { None }
+    if p.at(T::LBrace) {
+        Some(block(p))
+    } else {
+        None
+    }
 }
 
 /// The binary operator `n` significant tokens past the next one, if one

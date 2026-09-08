@@ -1,0 +1,6 @@
+fn outer() = fn()
+{
+    1
+}
+fn argument() = consume(fn()
+{ 2 })
