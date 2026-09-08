@@ -1,0 +1,77 @@
+use std::fmt::Write;
+use sumi_frontend::{FileId, ParsedSource, parse_source};
+use sumi_hir::{Analysis, Ty};
+
+pub const SIZES: [usize; 3] = [128, 1024, 8192];
+pub const SHAPES: [&str; 8] = [
+    "annotated-forward",
+    "annotated-reverse",
+    "inferred-forward",
+    "inferred-reverse",
+    "grounded-cycle",
+    "unresolved-cycle",
+    "conflict-cycle",
+    "locals",
+];
+
+pub fn source(shape: &str, size: usize) -> String {
+    assert!(SHAPES.contains(&shape));
+    let mut declarations = Vec::with_capacity(size);
+    for i in 0..size {
+        let annotation = if shape.starts_with("annotated") {
+            " -> int"
+        } else {
+            ""
+        };
+        let mut declaration = format!("fn f{i}(){annotation} = ");
+        if shape == "locals" {
+            declaration.push_str("{ let x0 = 1\n");
+            for j in 1..16 {
+                writeln!(declaration, "let x{j} = x{} + 1", j - 1).unwrap();
+            }
+            declaration.push_str("x15 }");
+        } else if shape == "conflict-cycle" && i == 0 {
+            declaration.push_str("if true { true } else { f1() }");
+        } else if i + 1 < size {
+            write!(declaration, "f{}()", i + 1).unwrap();
+        } else {
+            declaration.push_str(match shape {
+                "grounded-cycle" | "conflict-cycle" => "if true { 1 } else { f0() }",
+                "unresolved-cycle" => "f0()",
+                _ => "1",
+            });
+        }
+        declarations.push(declaration);
+    }
+    if shape.ends_with("reverse") {
+        declarations.reverse();
+    }
+    declarations.join("\n")
+}
+
+pub fn parse(source: &str) -> ParsedSource {
+    let parsed = parse_source(FileId::new(0), source.into()).unwrap();
+    assert!(parsed.diagnostics().is_empty());
+    parsed
+}
+
+pub fn validate(shape: &str, size: usize, analysis: &Analysis) {
+    assert_eq!(analysis.functions().len(), size);
+    if matches!(shape, "unresolved-cycle" | "conflict-cycle") {
+        assert!(!analysis.is_valid());
+        assert_eq!(analysis.diagnostics().len(), size);
+        assert!(
+            analysis
+                .functions()
+                .iter()
+                .all(|f| f.signature().is_none() && f.body().is_none())
+        );
+    } else {
+        assert!(analysis.is_valid());
+        for function in analysis.functions() {
+            assert_eq!(function.signature().unwrap().result, Ty::Int);
+            let body = function.body().unwrap();
+            assert_eq!(body.expression(body.root()).ty, Ty::Int);
+        }
+    }
+}
