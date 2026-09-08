@@ -1,5 +1,5 @@
 == tree ==
-SourceFile 0..156
+SourceFile 0..217
   FnItem 0..21
     Name 3..8 "value"
     ParamList 8..10 "()"
@@ -37,17 +37,33 @@ SourceFile 0..156
           ArgList 140..142 "()"
       DiscardStmt 148..153
         LiteralExpr 152..153 "1"
+  FnItem 156..216
+    Name 159..167 "accepted"
+    ParamList 167..169 "()"
+    TypeRef 173..176 "int"
+    Block 177..216
+      DiscardStmt 183..198
+        BinaryExpr 187..198
+          CallExpr 187..194
+            NameRef 187..192 "value"
+            ArgList 192..194 "()"
+          LiteralExpr 197..198 "1"
+      BinaryExpr 203..214
+        CallExpr 203..210
+          NameRef 203..208 "value"
+          ArgList 208..210 "()"
+        LiteralExpr 213..214 "1"
 
 == diagnostics ==
-error[syntax/statement-without-effect] 4:5..4:8 "(x)": expression has no effect as a statement
-  note: only a call, an `if`, or a block may stand before another statement; any other expression may only end its block, as the block's value
+error[syntax/invalid-expression-statement] 4:5..4:8 "(x)": expression is not allowed before another statement
+  note: only a call, an `if`, or a block may stand alone before another statement; use `_ =` to discard this expression's value, or place it last in the block to use it as the block's value
   note: a `(` on a new line begins a statement, never a call's arguments, which stay on their callee's line
-error[syntax/statement-without-effect] 5:5..5:18 "(value() + 1)": expression has no effect as a statement
-  note: only a call, an `if`, or a block may stand before another statement; any other expression may only end its block, as the block's value
+error[syntax/invalid-expression-statement] 5:5..5:18 "(value() + 1)": expression is not allowed before another statement
+  note: only a call, an `if`, or a block may stand alone before another statement; use `_ =` to discard this expression's value, or place it last in the block to use it as the block's value
   note: a `(` on a new line begins a statement, never a call's arguments, which stay on their callee's line
-error[syntax/statement-without-effect] 6:5..6:10 "((1))": expression has no effect as a statement
-  note: only a call, an `if`, or a block may stand before another statement; any other expression may only end its block, as the block's value
+error[syntax/invalid-expression-statement] 6:5..6:10 "((1))": expression is not allowed before another statement
+  note: only a call, an `if`, or a block may stand alone before another statement; use `_ =` to discard this expression's value, or place it last in the block to use it as the block's value
   note: a `(` on a new line begins a statement, never a call's arguments, which stay on their callee's line
   note: the `-` on the next line is glued to its operand, so it begins a statement; spaced from it, it would continue this one
-error[syntax/statement-without-effect] 10:5..10:10 "value": expression has no effect as a statement
-  note: only a call, an `if`, or a block may stand before another statement; any other expression may only end its block, as the block's value
+error[syntax/invalid-expression-statement] 10:5..10:10 "value": expression is not allowed before another statement
+  note: only a call, an `if`, or a block may stand alone before another statement; use `_ =` to discard this expression's value, or place it last in the block to use it as the block's value

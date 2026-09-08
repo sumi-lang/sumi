@@ -35,6 +35,6 @@ error[syntax/expected-token] 2:5: expected `}`
 error[syntax/expected-token] 2:5: expected `}`
   at 1:4..1:5 "{": opening delimiter is here
 
-== fixed (syntax/expected-boundary, syntax/expected-token, syntax/spaced-prefix-operator, syntax/statement-without-effect, syntax/unclosed-hole, syntax/unterminated-string remain) ==
+== fixed (syntax/expected-boundary, syntax/expected-token, syntax/invalid-expression-statement, syntax/spaced-prefix-operator, syntax/unclosed-hole, syntax/unterminated-string remain) ==
 f(){ "f{{ -
 (1)"f

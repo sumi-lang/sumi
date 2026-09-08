@@ -541,14 +541,12 @@ fn lower_violation(
 }
 
 /// An expression that another statement follows must be a call, an `if`,
-/// or a block: any other computes a value that goes nowhere, and under the
-/// newline rule that is the shape a mis-split expression takes, `x` above
-/// a glued `-1`, or a `(` opening a line that was meant as arguments. The
-/// classification ignores grouping parentheses. The last statement is
-/// exempt, since it is the block's value. Judging by what follows rather
-/// than by what is last keeps the rule stable under
-/// recovery: a statement followed by garbage, or holding an error of its
-/// own, is left to the diagnostics it already has.
+/// or a block, ignoring grouping parentheses. This syntactic guard catches
+/// some mis-split expressions: `x` above a glued `-1`, or a `(` opening a
+/// line that was meant as arguments. The last statement is exempt, since
+/// it is the block's value. Judging by what follows rather than by what is
+/// last keeps the rule stable under recovery: a statement followed by
+/// garbage, or holding an error of its own, is left to its existing diagnostics.
 fn lower_statements(snapshot: &Snapshot<'_>, parse: &Parse, diagnostics: &mut Vec<Diagnostic>) {
     let tree = parse.tree();
     let lexed = snapshot.lexed;
@@ -561,7 +559,7 @@ fn lower_statements(snapshot: &Snapshot<'_>, parse: &Parse, diagnostics: &mut Ve
             let Some(&next) = children.get(index + 1) else {
                 break;
             };
-            let effect_free = Expr::cast(tree, node).is_some_and(|mut expr| {
+            let requires_tail_position = Expr::cast(tree, node).is_some_and(|mut expr| {
                 while let Expr::ParenExpr(paren) = expr {
                     let Some(inner) = paren.inner(tree) else {
                         return false;
@@ -570,12 +568,13 @@ fn lower_statements(snapshot: &Snapshot<'_>, parse: &Parse, diagnostics: &mut Ve
                 }
                 !matches!(expr, Expr::CallExpr(_) | Expr::IfExpr(_) | Expr::Block(_))
             });
-            if !effect_free || tree.has_error(node) || Stmt::cast(tree, next).is_none() {
+            if !requires_tail_position || tree.has_error(node) || Stmt::cast(tree, next).is_none() {
                 continue;
             }
             let mut notes = vec![
-                "only a call, an `if`, or a block may stand before another statement; any \
-                 other expression may only end its block, as the block's value"
+                "only a call, an `if`, or a block may stand alone before another statement; \
+                 use `_ =` to discard this expression's value, or place it last in the block \
+                 to use it as the block's value"
                     .into(),
             ];
             let first = tree.first_token(node);
@@ -599,8 +598,8 @@ fn lower_statements(snapshot: &Snapshot<'_>, parse: &Parse, diagnostics: &mut Ve
                 );
             }
             let mut diagnostic = primary(
-                codes::STATEMENT_WITHOUT_EFFECT,
-                "expression has no effect as a statement",
+                codes::INVALID_EXPRESSION_STATEMENT,
+                "expression is not allowed before another statement",
                 snapshot.range(tree.byte_range(node, lexed)),
             );
             diagnostic.notes = notes.into_boxed_slice();

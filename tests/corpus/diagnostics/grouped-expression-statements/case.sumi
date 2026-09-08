@@ -11,3 +11,7 @@ fn separate() {
     (value())
     _ = 1
 }
+fn accepted() -> int {
+    _ = value() + 1
+    value() + 1
+}
