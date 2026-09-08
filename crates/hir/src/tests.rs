@@ -27,6 +27,41 @@ fn codes(analysis: &Analysis) -> Vec<&'static str> {
         .collect()
 }
 
+fn reversed_declarations_preserve_types(analysis: &Analysis) {
+    use sumi_syntax::ast::{AstNode, SourceFile};
+    if !analysis.parsed().diagnostics().is_empty() {
+        return;
+    }
+    let tree = analysis.parsed().parse().tree();
+    let mut declarations: Vec<_> = SourceFile::cast(tree, tree.root())
+        .unwrap()
+        .items(tree)
+        .map(|item| {
+            let range = tree.byte_range(item.node(), analysis.parsed().lexed());
+            &analysis.parsed().source()[range.start().to_usize()..range.end().to_usize()]
+        })
+        .collect();
+    declarations.reverse();
+    let reversed = check(&declarations.join("\n"));
+    assert!(reversed.parsed().diagnostics().is_empty());
+    assert_eq!(analysis.functions.len(), reversed.functions.len());
+    for (a, b) in analysis
+        .functions
+        .iter()
+        .zip(reversed.functions.iter().rev())
+    {
+        assert_eq!(a.name(), b.name());
+        assert_eq!(
+            a.signature().map(|s| (&s.params, s.result)),
+            b.signature().map(|s| (&s.params, s.result))
+        );
+        assert_eq!(a.body().is_some(), b.body().is_some());
+        if b.body().is_some() {
+            invariant(&reversed, b);
+        }
+    }
+}
+
 fn invariant(analysis: &Analysis, function: &Function) {
     let body = function.body().unwrap();
     let signature = function.signature().unwrap();
@@ -144,7 +179,7 @@ fn invariant(analysis: &Analysis, function: &Function) {
 #[test]
 fn scalar_bodies_and_forward_recursive_calls() {
     let analysis = clean(
-        "fn answer() -> int = (twice)(21)\nfn twice(x: int) -> int {\n let y = x * 2\n y\n}\nfn spin() = spin()\n",
+        "fn answer() -> int = (twice)(21)\nfn twice(x: int) -> int {\n let y = x * 2\n y\n}\nfn spin() -> unit = spin()\n",
     );
     let twice = analysis.functions[1].body().unwrap();
     assert_eq!(twice.exprs.len(), 5);
@@ -196,7 +231,7 @@ fn lazy_structure_and_unit_policy() {
         ExprKind::And { .. }
     ));
     for source in [
-        "fn f() = 1",
+        "fn f() { 1 }",
         "fn f() = if true { 7 }",
         "fn f() -> bool = {} == {}",
         "fn f() -> int = if 1 { 2 } else { false }",
@@ -556,6 +591,7 @@ fn existing_corpus_never_panics_or_silently_rejects() {
                 directories.push(path);
             } else if path.file_name().unwrap() == "case.sumi" {
                 let a = check(&std::fs::read_to_string(&path).unwrap());
+                reversed_declarations_preserve_types(&a);
                 for function in &a.functions {
                     if function.body().is_some() {
                         invariant(&a, function);
@@ -568,7 +604,221 @@ fn existing_corpus_never_panics_or_silently_rejects() {
     assert!(count > 100);
 }
 
+#[test]
+fn inferred_results_and_recursive_constraints() {
+    for (source, expected) in [
+        ("fn value() = 1", vec![Ty::Int]),
+        ("fn value() -> int = 1", vec![Ty::Int]),
+        ("fn value() = { 1 }", vec![Ty::Int]),
+        ("fn value() = {}", vec![Ty::Unit]),
+        ("fn f() = g()\nfn g() = 1", vec![Ty::Int, Ty::Int]),
+        ("fn f() = if true { 1 } else { f() }", vec![Ty::Int]),
+        ("fn f() = if true { f() } else { 1 }", vec![Ty::Int]),
+        ("fn f() -> int = g()\nfn g() = f()", vec![Ty::Int, Ty::Int]),
+        (
+            "fn a() = { _ = b()\n1 }\nfn b() = { _ = a()\ntrue }",
+            vec![Ty::Int, Ty::Bool],
+        ),
+        (
+            "fn f() = { let x = g()\n let x = x + 1\n x }\nfn g() = 1",
+            vec![Ty::Int, Ty::Int],
+        ),
+        ("fn K() = 1\nfn f() = K()", vec![Ty::Int, Ty::Int]),
+    ] {
+        let a = clean(source);
+        let actual: Vec<_> = a
+            .functions
+            .iter()
+            .map(|f| f.signature().unwrap().result)
+            .collect();
+        assert_eq!(actual, expected, "{source}");
+        reversed_declarations_preserve_types(&a);
+    }
+}
+
+#[test]
+fn callers_cannot_solve_providers_or_publish_incomplete_calls() {
+    let a = check(
+        "fn spin() = spin()\nfn consumer() -> int = spin()\nfn grounded() = spin() + 1\nfn recovered() = grounded()\n",
+    );
+    assert_eq!(codes(&a), ["cannot-infer"]);
+    assert!(a.functions[0].signature().is_none());
+    for function in &a.functions[1..] {
+        assert_eq!(function.signature().unwrap().result, Ty::Int);
+    }
+    assert!(a.functions[..3].iter().all(|f| f.body().is_none()));
+    invariant(&a, &a.functions[3]);
+    let a = check("fn spin(x: int) = spin(x)\nfn caller() = spin(true, missing)\nfn intact() = 42");
+    assert_eq!(
+        codes(&a),
+        ["cannot-infer", "arity", "type-mismatch", "unknown-name"]
+    );
+    invariant(&a, &a.functions[2]);
+}
+
+#[test]
+fn inferred_conflicts_and_deferred_scalar_rules() {
+    for definitions in [
+        vec![
+            "fn a() = if true { 1 } else { b() }",
+            "fn b() = if true { true } else { a() }",
+        ],
+        vec![
+            "fn a() = b()",
+            "fn b() = if true { integer() } else { boolean() }",
+            "fn integer() = 1",
+            "fn boolean() = true",
+        ],
+    ] {
+        for reverse in [false, true] {
+            let mut definitions = definitions.clone();
+            if reverse {
+                definitions.reverse();
+            }
+            let a = check(&definitions.join("\n"));
+            assert!(!a.is_valid());
+            for function in &a.functions {
+                if matches!(function.name(), Some("a" | "b")) {
+                    assert!(function.signature().is_none());
+                    assert!(function.body().is_none());
+                } else {
+                    invariant(&a, function);
+                }
+            }
+        }
+    }
+    for (source, expected) in [
+        ("fn f() { g()\n _ = 1 }\nfn g() = 1", "unused-value"),
+        ("fn f() = g() == g()\nfn g() = {}", "type-mismatch"),
+        ("fn f() -> bool = g()\nfn g() = 1", "type-mismatch"),
+        (
+            "fn f() = if true { g() } else { false }\nfn g() = 1",
+            "type-mismatch",
+        ),
+        (
+            "fn f() = { let x: bool = g()\n x }\nfn g() = 1",
+            "type-mismatch",
+        ),
+    ] {
+        let a = check(source);
+        assert_eq!(codes(&a), [expected], "{source}");
+        assert!(a.functions[0].body().is_none());
+        invariant(&a, &a.functions[1]);
+    }
+    clean("fn f() { g()\n _ = 1 }\nfn g() = {}");
+}
+
+#[test]
+fn inference_preserves_resolution_poison_and_annotation_boundaries() {
+    for (source, expected) in [
+        (
+            "fn f() = 1\nfn g() = { let f = true\n f() }",
+            "not-callable",
+        ),
+        (
+            "fn f() = 1\nfn Ｆ() = 2\nfn F() = 3\nfn g() = F()",
+            "duplicate-name",
+        ),
+        (
+            "fn f() = 1\nfn g() = { let f = absent\n f() }",
+            "unknown-name",
+        ),
+        (
+            "fn f() = 1\nfn g() = { let mut f = 1\n f() }",
+            "unsupported",
+        ),
+    ] {
+        let a = check(source);
+        assert_eq!(codes(&a), [expected]);
+        assert!(a.functions.last().unwrap().body().is_none());
+        invariant(&a, &a.functions[0]);
+    }
+    for declaration in [
+        "fn f() -> = 1",
+        "fn f() -> mystery = 1",
+        "fn f(x) = 1",
+        "fn f() -> = { 1 }",
+    ] {
+        let a = check(declaration);
+        assert!(a.functions[0].signature().is_none(), "{declaration}");
+        assert!(a.functions[0].body().is_none());
+        assert!(!codes(&a).contains(&"cannot-infer"));
+    }
+}
+
+#[test]
+fn large_definition_chains_and_cycles_are_stack_safe() {
+    use std::fmt::Write;
+    const COUNT: usize = 10_000;
+    for (cycle, grounded) in [(false, true), (true, true), (true, false)] {
+        for reverse in [false, true] {
+            let mut definitions = Vec::new();
+            for i in 0..COUNT - 1 {
+                definitions.push(format!("fn f{i}() = f{}()", i + 1));
+            }
+            let mut last = format!("fn f{}() = ", COUNT - 1);
+            last.push_str(match (cycle, grounded) {
+                (false, _) => "1",
+                (true, true) => "if true { 1 } else { f0() }",
+                (true, false) => "f0()",
+            });
+            definitions.push(last);
+            if reverse {
+                definitions.reverse();
+            }
+            let mut source = String::new();
+            for declaration in definitions {
+                writeln!(source, "{declaration}").unwrap();
+            }
+            let a = check(&source);
+            assert_eq!(a.is_valid(), grounded);
+            if grounded {
+                for function in &a.functions {
+                    invariant(&a, function);
+                }
+            } else {
+                assert_eq!(a.diagnostics.len(), COUNT);
+                assert!(
+                    a.functions
+                        .iter()
+                        .all(|f| f.signature().is_none() && f.body().is_none())
+                );
+            }
+        }
+    }
+}
+
 proptest::proptest! {
+    #[test]
+    fn declaration_order_does_not_choose_inferred_signatures(
+        choices in proptest::collection::vec((0usize..20, 0u8..6, proptest::num::u32::ANY), 1..20)
+    ) {
+        let definitions: Vec<_> = choices.iter().enumerate().map(|(i, &(target, shape, _))| {
+            let target = target % choices.len();
+            let body = match shape {
+                0 => "1".to_owned(),
+                1 => "true".to_owned(),
+                2 => format!("f{target}()"),
+                3 => format!("if true {{ 1 }} else {{ f{target}() }}"),
+                4 => format!("{{ _ = f{target}()\ntrue }}"),
+                _ => format!("f{target}() + 1"),
+            };
+            format!("fn f{i}() = {body}")
+        }).collect();
+        let a = check(&definitions.join("\n"));
+        let mut order: Vec<_> = (0..choices.len()).collect();
+        order.sort_by_key(|&i| choices[i].2);
+        let b = check(&order.iter().map(|&i| definitions[i].as_str()).collect::<Vec<_>>().join("\n"));
+        for (analysis, other) in [(&a, &b), (&b, &a)] {
+            for function in &analysis.functions {
+                let counterpart = other.functions.iter().find(|f| f.name() == function.name()).unwrap();
+                proptest::prop_assert_eq!(function.signature().map(|s| s.result), counterpart.signature().map(|s| s.result));
+                proptest::prop_assert_eq!(function.body().is_some(), counterpart.body().is_some());
+                if function.body().is_some() { invariant(analysis, function); }
+            }
+        }
+    }
+
     #[test]
     fn damaged_token_sequences_do_not_panic(tokens in proptest::collection::vec(
         proptest::sample::select(vec!["fn", "let", "mut", "x", "int", "bool", "unit", "if", "else", "return", "_", "=", "->", ":", "(", ")", "{", "}", ",", "1", "true", "+", "-", "&&", "\n"]), 0..100)) {
@@ -581,6 +831,7 @@ proptest::proptest! {
     #[test]
     fn arbitrary_source_has_diagnostic_backed_acceptance(source in ".{0,256}") {
         let a = check(&source);
+        reversed_declarations_preserve_types(&a);
         let errors = a.parsed.diagnostics().iter().chain(&a.diagnostics).any(|d| d.severity == Severity::Error);
         proptest::prop_assert_eq!(a.is_valid(), !errors);
         for d in &a.diagnostics {

@@ -1,0 +1,67 @@
+== tree ==
+SourceFile! 0..215
+  FnItem 0..25
+    Name 3..7 "spin"
+    ParamList 7..15
+      Param 8..14
+        Name 8..9 "x"
+        TypeRef 11..14 "int"
+    CallExpr 18..25
+      NameRef 18..22 "spin"
+      ArgList 22..25
+        NameRef 23..24 "x"
+  FnItem 26..56
+    Name 29..37 "consumer"
+    ParamList 37..39 "()"
+    TypeRef 43..46 "int"
+    CallExpr 49..56
+      NameRef 49..53 "spin"
+      ArgList 53..56
+        LiteralExpr 54..55 "1"
+  FnItem 57..84
+    Name 60..68 "grounded"
+    ParamList 68..70 "()"
+    BinaryExpr 73..84
+      CallExpr 73..80
+        NameRef 73..77 "spin"
+        ArgList 77..80
+          LiteralExpr 78..79 "1"
+      LiteralExpr 83..84 "1"
+  FnItem 85..112
+    Name 88..97 "recovered"
+    ParamList 97..99 "()"
+    CallExpr 102..112
+      NameRef 102..110 "grounded"
+      ArgList 110..112 "()"
+  FnItem 113..153
+    Name 116..129 "bad_arguments"
+    ParamList 129..131 "()"
+    CallExpr 134..153
+      NameRef 134..138 "spin"
+      ArgList 138..153
+        LiteralExpr 139..143 "true"
+        NameRef 145..152 "missing"
+  FnItem 154..169
+    Name 157..161 "bare"
+    ParamList 161..163 "()"
+    Block 164..169
+      LiteralExpr 166..167 "1"
+  FnItem! 170..195
+    Name 173..182 "malformed"
+    ParamList 182..184 "()"
+    Error! 188..189 "="
+    Block 190..195
+      LiteralExpr 192..193 "1"
+  FnItem 196..214
+    Name 199..205 "intact"
+    ParamList 205..207 "()"
+    LiteralExpr 210..214 "true"
+
+== evidence ==
+ExpectedType at 188
+ExpectedBody at 188
+
+== diagnostics ==
+error[syntax/expected-type] 7:19: expected a type
+error[syntax/expected-body] 7:19: expected a body, `{` or `=`
+  at 7:19..7:20 "=": skipped while recovering

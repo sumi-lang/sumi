@@ -1,0 +1,66 @@
+== tree ==
+SourceFile 0..285
+  FnItem 0..22
+    Name 3..8 "value"
+    ParamList 8..10 "()"
+    CallExpr 13..22
+      NameRef 13..20 "forward"
+      ArgList 20..22 "()"
+  FnItem 23..43
+    Name 26..33 "forward"
+    ParamList 33..35 "()"
+    Block 38..43
+      LiteralExpr 40..41 "1"
+  FnItem 44..74
+    Name 47..55 "explicit"
+    ParamList 55..57 "()"
+    TypeRef 61..64 "int"
+    CallExpr 67..74
+      NameRef 67..72 "value"
+      ArgList 72..74 "()"
+  FnItem 75..126
+    Name 78..87 "recursive"
+    ParamList 87..89 "()"
+    IfExpr 92..126
+      LiteralExpr 95..99 "true"
+      Block 100..105
+        LiteralExpr 102..103 "1"
+      Block 111..126
+        CallExpr 113..124
+          NameRef 113..122 "recursive"
+          ArgList 122..124 "()"
+  FnItem 127..160
+    Name 130..138 "anchored"
+    ParamList 138..140 "()"
+    TypeRef 144..147 "int"
+    CallExpr 150..160
+      NameRef 150..158 "inferred"
+      ArgList 158..160 "()"
+  FnItem 161..187
+    Name 164..172 "inferred"
+    ParamList 172..174 "()"
+    CallExpr 177..187
+      NameRef 177..185 "anchored"
+      ArgList 185..187 "()"
+  FnItem 188..226
+    Name 191..198 "integer"
+    ParamList 198..200 "()"
+    Block 203..226
+      DiscardStmt 207..220
+        CallExpr 211..220
+          NameRef 211..218 "boolean"
+          ArgList 218..220 "()"
+      LiteralExpr 223..224 "1"
+  FnItem 227..268
+    Name 230..237 "boolean"
+    ParamList 237..239 "()"
+    Block 242..268
+      DiscardStmt 246..259
+        CallExpr 250..259
+          NameRef 250..257 "integer"
+          ArgList 257..259 "()"
+      LiteralExpr 262..266 "true"
+  FnItem 269..284
+    Name 272..277 "empty"
+    ParamList 277..279 "()"
+    Block 282..284 "{}"

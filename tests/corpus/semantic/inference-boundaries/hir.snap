@@ -1,0 +1,42 @@
+file: rejected
+frontend errors: 2 (see frontend.snap)
+semantic errors: 5
+
+fn spin@0..25 signature: unavailable
+  body: unavailable
+
+fn consumer@26..56 () -> int
+  body: unavailable
+
+fn grounded@57..84 () -> int
+  body: unavailable
+
+fn recovered@85..112 () -> int
+  body: call grounded@57..84 (callee @102..110) : int @102..112
+
+fn bad_arguments@113..153 signature: unavailable
+  body: unavailable
+
+fn bare@154..169 () -> unit
+  body: unavailable
+
+fn malformed@170..195 signature: unavailable
+  body: unavailable
+
+fn intact@196..214 () -> bool
+  body: bool true : bool @210..214
+
+== semantic diagnostics ==
+error[semantic/cannot-infer]: cannot infer function result; add a return type annotation
+  primary @0..25
+error[semantic/arity]: expected 1 arguments, found 2
+  primary @134..153
+  secondary @0..25: declared here
+error[semantic/type-mismatch]: expected Int, found Bool
+  primary @139..143
+  secondary @0..25: declared here
+error[semantic/unknown-name]: unknown name `missing`
+  primary @145..152
+error[semantic/type-mismatch]: expected Unit, found Int
+  primary @164..169
+  secondary @154..169: declared here

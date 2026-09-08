@@ -1,0 +1,76 @@
+== tree ==
+SourceFile 0..293
+  FnItem 0..35
+    Name 3..4 "a"
+    ParamList 4..6 "()"
+    IfExpr 9..35
+      LiteralExpr 12..16 "true"
+      Block 17..22
+        LiteralExpr 19..20 "1"
+      Block 28..35
+        CallExpr 30..33
+          NameRef 30..31 "b"
+          ArgList 31..33 "()"
+  FnItem 36..74
+    Name 39..40 "b"
+    ParamList 40..42 "()"
+    IfExpr 45..74
+      LiteralExpr 48..52 "true"
+      Block 53..61
+        LiteralExpr 55..59 "true"
+      Block 67..74
+        CallExpr 69..72
+          NameRef 69..70 "a"
+          ArgList 70..72 "()"
+  FnItem 75..101
+    Name 78..86 "consumer"
+    ParamList 86..88 "()"
+    TypeRef 92..95 "int"
+    CallExpr 98..101
+      NameRef 98..99 "a"
+      ArgList 99..101 "()"
+  FnItem 102..135
+    Name 105..113 "mismatch"
+    ParamList 113..115 "()"
+    TypeRef 119..123 "bool"
+    CallExpr 126..135
+      NameRef 126..133 "integer"
+      ArgList 133..135 "()"
+  FnItem 136..186
+    Name 139..145 "branch"
+    ParamList 145..147 "()"
+    IfExpr 150..186
+      LiteralExpr 153..157 "true"
+      Block 158..171
+        CallExpr 160..169
+          NameRef 160..167 "integer"
+          ArgList 167..169 "()"
+      Block 177..186
+        LiteralExpr 179..184 "false"
+  FnItem 187..222
+    Name 190..196 "unused"
+    ParamList 196..198 "()"
+    Block 199..222
+      CallExpr 203..212
+        NameRef 203..210 "integer"
+        ArgList 210..212 "()"
+      DiscardStmt 215..220
+        LiteralExpr 219..220 "1"
+  FnItem 223..259
+    Name 226..236 "comparison"
+    ParamList 236..238 "()"
+    BinaryExpr 241..259
+      CallExpr 241..248
+        NameRef 241..246 "empty"
+        ArgList 246..248 "()"
+      CallExpr 252..259
+        NameRef 252..257 "empty"
+        ArgList 257..259 "()"
+  FnItem 260..276
+    Name 263..270 "integer"
+    ParamList 270..272 "()"
+    LiteralExpr 275..276 "1"
+  FnItem 277..292
+    Name 280..285 "empty"
+    ParamList 285..287 "()"
+    Block 290..292 "{}"

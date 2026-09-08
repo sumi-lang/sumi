@@ -29,6 +29,37 @@ pub fn check_semantics(parsed: ParsedSource) {
     use sumi_hir::{ExprKind, StatementKind, Ty};
     let analysis = sumi_hir::analyze(parsed);
     let source = analysis.parsed().source();
+    // Mirror the HIR property: declaration order cannot choose a public type
+    // or make an incomplete call publishable. Only reorder clean syntax.
+    if analysis.parsed().diagnostics().is_empty() {
+        use sumi_syntax::ast::{AstNode, SourceFile};
+        let tree = analysis.parsed().parse().tree();
+        let mut declarations: Vec<_> = SourceFile::cast(tree, tree.root())
+            .unwrap()
+            .items(tree)
+            .map(|item| {
+                let range = tree.byte_range(item.node(), analysis.parsed().lexed());
+                &source[range.start().to_usize()..range.end().to_usize()]
+            })
+            .collect();
+        declarations.reverse();
+        let reversed =
+            sumi_hir::analyze(parse_source(FILE, declarations.join("\n").into()).unwrap());
+        assert!(reversed.parsed().diagnostics().is_empty());
+        assert_eq!(analysis.functions().len(), reversed.functions().len());
+        for (a, b) in analysis
+            .functions()
+            .iter()
+            .zip(reversed.functions().iter().rev())
+        {
+            assert_eq!(a.name(), b.name());
+            assert_eq!(
+                a.signature().map(|s| (&s.params, s.result)),
+                b.signature().map(|s| (&s.params, s.result))
+            );
+            assert_eq!(a.body().is_some(), b.body().is_some());
+        }
+    }
     let errors = analysis
         .parsed()
         .diagnostics()

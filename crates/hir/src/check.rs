@@ -8,7 +8,87 @@ use sumi_syntax::{
 };
 use unicode_normalization::UnicodeNormalization;
 
+use crate::infer::{Inference, Term};
 use crate::*;
+
+struct Header {
+    params: Option<Box<[Ty]>>,
+    result: Option<Term>,
+    origin: Span,
+}
+
+struct DraftLocal {
+    name: Box<str>,
+    origin: Span,
+    ty: Term,
+}
+
+struct DraftExpr {
+    kind: ExprKind,
+    origin: Span,
+    ty: Term,
+}
+
+struct DraftBody {
+    params: Vec<LocalId>,
+    locals: Vec<DraftLocal>,
+    exprs: Vec<DraftExpr>,
+    root: ExprId,
+}
+
+impl DraftBody {
+    fn finish(self, inference: &Inference, functions: &[Function]) -> Option<Body> {
+        let locals = self
+            .locals
+            .into_iter()
+            .map(|local| {
+                Some(Local {
+                    name: local.name,
+                    origin: local.origin,
+                    ty: inference.resolve(local.ty)?,
+                })
+            })
+            .collect::<Option<_>>()?;
+        let exprs = self
+            .exprs
+            .into_iter()
+            .map(|expr| {
+                let ty = inference.resolve(expr.ty)?;
+                if let ExprKind::Call { function, .. } = &expr.kind {
+                    // A caller's local requirements can solve its call term without
+                    // solving the provider. That is not a publishable call.
+                    if functions[function.0].signature.as_ref()?.result != ty {
+                        return None;
+                    }
+                }
+                Some(Expr {
+                    kind: expr.kind,
+                    origin: expr.origin,
+                    ty,
+                })
+            })
+            .collect::<Option<_>>()?;
+        Some(Body {
+            params: self.params,
+            locals,
+            exprs,
+            root: self.root,
+        })
+    }
+}
+
+enum ObligationKind {
+    Equal(Term, Option<(Span, &'static str)>),
+    Unused,
+    Comparable,
+}
+
+struct Obligation {
+    owner: usize,
+    node: NodeIdx,
+    actual: Term,
+    kind: ObligationKind,
+}
 
 struct Source<'a> {
     parsed: &'a ParsedSource,
@@ -111,7 +191,7 @@ struct Parameter {
     ty: Option<Ty>,
 }
 
-/// Collect every signature before checking bodies. Analysis never changes syntax diagnostics.
+/// Collect headers and body constraints before publishing concrete HIR.
 pub fn analyze(parsed: ParsedSource) -> Analysis {
     let tree = parsed.parse().tree();
     let mut source = Source {
@@ -127,6 +207,9 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     let mut names = HashMap::<Box<str>, Option<FunctionId>>::new();
     let mut first_names = HashMap::new();
     let mut parameters = Vec::new();
+    let mut headers = Vec::new();
+    let mut inference = Inference::default();
+    let mut obligations = Vec::new();
     for item in &items {
         let name = source.name(item.name(tree));
         let id = FunctionId(functions.len());
@@ -171,7 +254,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
             }
         }
         let result = if let Some(ret) = item.ret(tree) {
-            source.ty(ret)
+            source.ty(ret).map(Term::Known)
         } else {
             // None can mean damaged syntax, not omission. Only an empty gap or
             // the expression-body '=' establishes an omitted result annotation.
@@ -180,37 +263,110 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
                     let end = item
                         .body(tree)
                         .map_or(tree.end_token(item.node()), |e| tree.first_token(e.node()));
-                    matches!(
-                        source.tokens(tree.end_token(list.node()), end).as_str(),
-                        "" | "="
-                    )
-                    .then_some(Ty::Unit)
+                    match source.tokens(tree.end_token(list.node()), end).as_str() {
+                        "" => Some(Term::Known(Ty::Unit)),
+                        "=" => Some(inference.fresh()),
+                        _ => None,
+                    }
                 })
         };
-        let signature = if valid {
-            result.map(|result| Signature {
-                params: params.iter().map(|p| p.ty.unwrap()).collect(),
-                result,
-            })
-        } else {
-            None
-        };
-        parameters.push((params, result));
+        headers.push(Header {
+            params: valid.then(|| params.iter().map(|p| p.ty.unwrap()).collect()),
+            result,
+            origin: source.span(item.node()),
+        });
+        parameters.push(params);
         functions.push(Function {
             name: name.map(|n| n.0),
             origin: source.span(item.node()),
-            signature,
+            signature: None,
             body: None,
         });
     }
-    for (index, (item, (params, result))) in items.iter().zip(parameters).enumerate() {
-        let body = Builder::new(&mut source, &functions, &names).build(
-            *item,
-            params,
-            functions[index].signature.as_ref(),
-            result,
+    let mut bodies = Vec::new();
+    for (index, (item, params)) in items.iter().zip(parameters).enumerate() {
+        bodies.push(
+            Builder::new(
+                &mut source,
+                &headers,
+                &names,
+                &mut inference,
+                &mut obligations,
+                index,
+            )
+            .build(*item, params),
         );
-        functions[index].body = body;
+    }
+    inference.solve();
+    let mut replay = inference.replay();
+    let mut failed = vec![false; functions.len()];
+    for obligation in obligations {
+        let actual = replay.resolve(obligation.actual);
+        let (code, message, related) = match obligation.kind {
+            ObligationKind::Equal(expected, related) => match (actual, replay.resolve(expected)) {
+                (Some(actual), Some(expected)) if actual != expected => (
+                    "type-mismatch",
+                    format!("expected {expected:?}, found {actual:?}"),
+                    related,
+                ),
+                _ => {
+                    replay.equal(obligation.actual, expected);
+                    continue;
+                }
+            },
+            ObligationKind::Unused => {
+                if actual.is_none_or(|ty| ty == Ty::Unit) {
+                    replay.equal(obligation.actual, Ty::Unit.into());
+                    continue;
+                }
+                (
+                    "unused-value",
+                    format!(
+                        "unused value of type {:?}; use `_ =` to discard it",
+                        actual.unwrap()
+                    ),
+                    None,
+                )
+            }
+            ObligationKind::Comparable => {
+                if actual != Some(Ty::Unit) {
+                    continue;
+                }
+                (
+                    "type-mismatch",
+                    "unit values cannot be compared".to_owned(),
+                    None,
+                )
+            }
+        };
+        failed[obligation.owner] = true;
+        source.error(obligation.node, code, message, related);
+    }
+    for (index, header) in headers.iter().enumerate() {
+        let result = header.result.and_then(|term| inference.resolve(term));
+        if let (Some(params), Some(result)) = (&header.params, result) {
+            functions[index].signature = Some(Signature {
+                params: params.clone(),
+                result,
+            });
+        }
+        if matches!(header.result, Some(Term::Var(_)))
+            && result.is_none()
+            && bodies[index].is_some()
+            && !failed[index]
+        {
+            let message = if inference.conflicted(header.result.unwrap()) {
+                "conflicting function result constraints; add a return type annotation"
+            } else {
+                "cannot infer function result; add a return type annotation"
+            };
+            source.error(items[index].node(), "cannot-infer", message, None);
+        }
+    }
+    for (index, body) in bodies.into_iter().enumerate() {
+        if !failed[index] && functions[index].signature.is_some() {
+            functions[index].body = body.and_then(|body| body.finish(&inference, &functions));
+        }
     }
     source
         .diagnostics
@@ -245,11 +401,14 @@ enum Work {
 
 struct Builder<'a, 's> {
     source: &'a mut Source<'s>,
-    functions: &'a [Function],
+    functions: &'a [Header],
     names: &'a HashMap<Box<str>, Option<FunctionId>>,
+    inference: &'a mut Inference,
+    obligations: &'a mut Vec<Obligation>,
+    owner: usize,
     scopes: Vec<Scope>,
-    locals: Vec<Local>,
-    exprs: Vec<Expr>,
+    locals: Vec<DraftLocal>,
+    exprs: Vec<DraftExpr>,
     values: HashMap<NodeIdx, ExprId>,
     statements: HashMap<NodeIdx, Statement>,
     failed: bool,
@@ -258,13 +417,19 @@ struct Builder<'a, 's> {
 impl<'a, 's> Builder<'a, 's> {
     fn new(
         source: &'a mut Source<'s>,
-        functions: &'a [Function],
+        functions: &'a [Header],
         names: &'a HashMap<Box<str>, Option<FunctionId>>,
+        inference: &'a mut Inference,
+        obligations: &'a mut Vec<Obligation>,
+        owner: usize,
     ) -> Self {
         Self {
             source,
             functions,
             names,
+            inference,
+            obligations,
+            owner,
             scopes: vec![Scope::new()],
             locals: Vec::new(),
             exprs: Vec::new(),
@@ -273,13 +438,7 @@ impl<'a, 's> Builder<'a, 's> {
             failed: false,
         }
     }
-    fn build(
-        mut self,
-        item: ast::FnItem,
-        parameters: Vec<Parameter>,
-        signature: Option<&Signature>,
-        result: Option<Ty>,
-    ) -> Option<Body> {
+    fn build(mut self, item: ast::FnItem, parameters: Vec<Parameter>) -> Option<DraftBody> {
         let mut params = Vec::new();
         let mut first = HashMap::new();
         for param in parameters {
@@ -295,7 +454,7 @@ impl<'a, 's> Builder<'a, 's> {
                     self.failed = true;
                 } else {
                     first.insert(name.clone(), self.source.span(node));
-                    if let Some(local) = self.bind(name, node, param.ty) {
+                    if let Some(local) = self.bind(name, node, param.ty.map(Term::Known)) {
                         params.push(local);
                     }
                 }
@@ -303,7 +462,9 @@ impl<'a, 's> Builder<'a, 's> {
                 self.failed = true;
             }
         }
-        self.failed |= signature.is_none();
+        let header = &self.functions[self.owner];
+        let result = header.result;
+        self.failed |= header.params.is_none() || result.is_none();
         let root_node = item.body(self.source.tree)?.node();
         let mut work = vec![Work::Enter(root_node)];
         while let Some(task) = work.pop() {
@@ -336,17 +497,17 @@ impl<'a, 's> Builder<'a, 's> {
         if self.failed {
             return None;
         }
-        Some(Body {
+        Some(DraftBody {
             params,
             locals: self.locals,
             exprs: self.exprs,
             root: root?,
         })
     }
-    fn bind(&mut self, name: Box<str>, node: NodeIdx, ty: Option<Ty>) -> Option<LocalId> {
+    fn bind(&mut self, name: Box<str>, node: NodeIdx, ty: Option<Term>) -> Option<LocalId> {
         let id = ty.map(|ty| {
             let id = LocalId(self.locals.len());
-            self.locals.push(Local {
+            self.locals.push(DraftLocal {
                 name: name.clone(),
                 origin: self.source.span(node),
                 ty,
@@ -363,12 +524,12 @@ impl<'a, 's> Builder<'a, 's> {
             .rev()
             .find_map(|scope| scope.get(name).copied())
     }
-    fn emit(&mut self, node: NodeIdx, kind: ExprKind, ty: Ty) -> ExprId {
+    fn emit(&mut self, node: NodeIdx, kind: ExprKind, ty: impl Into<Term>) -> ExprId {
         let id = ExprId(self.exprs.len());
-        self.exprs.push(Expr {
+        self.exprs.push(DraftExpr {
             kind,
             origin: self.source.span(node),
-            ty,
+            ty: ty.into(),
         });
         self.values.insert(node, id);
         id
@@ -542,20 +703,31 @@ impl<'a, 's> Builder<'a, 's> {
         &mut self,
         node: NodeIdx,
         expr: ExprId,
-        expected: Ty,
+        expected: impl Into<Term>,
         related: Option<(Span, &'static str)>,
     ) -> bool {
+        let expected = expected.into();
         let actual = self.exprs[expr.0].ty;
         if actual == expected {
             return true;
         }
-        self.source.error(
+        if let (Term::Known(actual), Term::Known(expected)) = (actual, expected) {
+            self.source.error(
+                node,
+                "type-mismatch",
+                format!("expected {expected:?}, found {actual:?}"),
+                related,
+            );
+            return false;
+        }
+        self.inference.equal(actual, expected);
+        self.obligations.push(Obligation {
+            owner: self.owner,
             node,
-            "type-mismatch",
-            format!("expected {expected:?}, found {actual:?}"),
-            related,
-        );
-        false
+            actual,
+            kind: ObligationKind::Equal(expected, related),
+        });
+        true
     }
     fn value(&self, node: NodeIdx) -> Option<ExprId> {
         self.values.get(&node).copied()
@@ -577,14 +749,26 @@ impl<'a, 's> Builder<'a, 's> {
                             tail = Some(value);
                         } else {
                             let ty = self.exprs[value.0].ty;
-                            if ty != Ty::Unit {
-                                self.source.error(
-                                    child,
-                                    "unused-value",
-                                    format!("unused value of type {ty:?}; use `_ =` to discard it"),
-                                    None,
-                                );
-                                valid = false;
+                            if let Term::Known(ty) = ty {
+                                if ty != Ty::Unit {
+                                    self.source.error(
+                                        child,
+                                        "unused-value",
+                                        format!(
+                                            "unused value of type {ty:?}; use `_ =` to discard it"
+                                        ),
+                                        None,
+                                    );
+                                    valid = false;
+                                }
+                            } else {
+                                self.inference.equal(ty, Ty::Unit.into());
+                                self.obligations.push(Obligation {
+                                    owner: self.owner,
+                                    node: child,
+                                    actual: ty,
+                                    kind: ObligationKind::Unused,
+                                });
                             }
                             statements.push(Statement {
                                 origin: self.source.span(child),
@@ -598,7 +782,7 @@ impl<'a, 's> Builder<'a, 's> {
                 if !valid {
                     return None;
                 }
-                let ty = tail.map_or(Ty::Unit, |id| self.exprs[id.0].ty);
+                let ty = tail.map_or(Term::Known(Ty::Unit), |id| self.exprs[id.0].ty);
                 self.emit(node, ExprKind::Block { statements, tail }, ty);
             }
             NodeKind::LetStmt => {
@@ -739,10 +923,10 @@ impl<'a, 's> Builder<'a, 's> {
                 let lhs = self.value(lhs_node);
                 let rhs = self.value(rhs_node);
                 let (expected, ty) = match op {
-                    Add | Sub | Mul | Div | Rem => (Some(Ty::Int), Ty::Int),
-                    Lt | Le | Gt | Ge => (Some(Ty::Int), Ty::Bool),
+                    Add | Sub | Mul | Div | Rem => (Some(Term::Known(Ty::Int)), Ty::Int),
+                    Lt | Le | Gt | Ge => (Some(Term::Known(Ty::Int)), Ty::Bool),
                     Eq | Ne => (lhs.or(rhs).map(|id| self.exprs[id.0].ty), Ty::Bool),
-                    And | Or => (Some(Ty::Bool), Ty::Bool),
+                    And | Or => (Some(Term::Known(Ty::Bool)), Ty::Bool),
                 };
                 let mut valid = true;
                 if let Some(expected) = expected {
@@ -751,7 +935,7 @@ impl<'a, 's> Builder<'a, 's> {
                             valid &= self.require(child, value, expected, None);
                         }
                     }
-                    if expected == Ty::Unit {
+                    if expected == Term::Known(Ty::Unit) {
                         self.source.error(
                             node,
                             "type-mismatch",
@@ -759,6 +943,13 @@ impl<'a, 's> Builder<'a, 's> {
                             None,
                         );
                         valid = false;
+                    } else if matches!(op, Eq | Ne) && matches!(expected, Term::Var(_)) {
+                        self.obligations.push(Obligation {
+                            owner: self.owner,
+                            node,
+                            actual: expected,
+                            kind: ObligationKind::Comparable,
+                        });
                     }
                 }
                 if !valid {
@@ -782,7 +973,7 @@ impl<'a, 's> Builder<'a, 's> {
                 let else_ty = if else_node.is_some() {
                     else_branch.map(|id| self.exprs[id.0].ty)
                 } else {
-                    Some(Ty::Unit)
+                    Some(Term::Known(Ty::Unit))
                 };
                 if let (Some(then_branch), Some(ty)) = (then_branch, else_ty) {
                     valid &= self.require(
@@ -798,6 +989,12 @@ impl<'a, 's> Builder<'a, 's> {
                     return None;
                 }
                 let then_branch = then_branch?;
+                // Preserve the equality class if either arm is inferred. A
+                // literal arm must not hide conflicts arriving through imports.
+                let ty = match (self.exprs[then_branch.0].ty, else_ty) {
+                    (_, Some(ty @ Term::Var(_))) => ty,
+                    (ty, _) => ty,
+                };
                 self.emit(
                     node,
                     ExprKind::If {
@@ -805,7 +1002,7 @@ impl<'a, 's> Builder<'a, 's> {
                         then_branch,
                         else_branch,
                     },
-                    self.exprs[then_branch.0].ty,
+                    ty,
                 );
             }
             _ => unreachable!("scheduled supported node"),
@@ -821,21 +1018,17 @@ impl<'a, 's> Builder<'a, 's> {
     ) -> Option<()> {
         let target = target?;
         let function = &self.functions[target.0];
-        let signature = function.signature.as_ref()?;
-        let mut valid = args.len() == signature.params.len();
+        let params = function.params.as_ref()?;
+        let mut valid = args.len() == params.len();
         if !valid {
             self.source.error(
                 node,
                 "arity",
-                format!(
-                    "expected {} arguments, found {}",
-                    signature.params.len(),
-                    args.len()
-                ),
+                format!("expected {} arguments, found {}", params.len(), args.len()),
                 Some((function.origin, "declared here")),
             );
         }
-        for (&arg, &expected) in args.iter().zip(&signature.params) {
+        for (&arg, &expected) in args.iter().zip(params) {
             if let Some(value) = self.value(arg) {
                 valid &= self.require(
                     arg,
@@ -849,6 +1042,10 @@ impl<'a, 's> Builder<'a, 's> {
         if !valid {
             return None;
         }
+        let result = match function.result? {
+            term @ Term::Known(_) => term,
+            term @ Term::Var(_) => self.inference.import(term),
+        };
         self.emit(
             node,
             ExprKind::Call {
@@ -856,7 +1053,7 @@ impl<'a, 's> Builder<'a, 's> {
                 args: args?,
                 callee: self.source.span(callee),
             },
-            signature.result,
+            result,
         );
         Some(())
     }

@@ -2,19 +2,19 @@ file: rejected
 frontend errors: 0 (see frontend.snap)
 semantic errors: 5
 
-fn outer@0..21 () -> unit
+fn outer@0..21 signature: unavailable
   body: unavailable
 
-fn nested@22..64 () -> unit
+fn nested@22..64 signature: unavailable
   body: unavailable
 
-fn typed@65..101 () -> unit
+fn typed@65..101 signature: unavailable
   body: unavailable
 
-fn spaced@102..125 () -> unit
+fn spaced@102..125 signature: unavailable
   body: unavailable
 
-fn operand@126..153 () -> unit
+fn operand@126..153 signature: unavailable
   body: unavailable
 
 fn next@154..174 () -> int

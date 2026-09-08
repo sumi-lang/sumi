@@ -10,13 +10,13 @@ fn duplicate@18..35 () -> unit
   body: block : unit @33..35
     tail: unit (implicit)
 
-fn ambiguous@36..64 () -> unit
+fn ambiguous@36..64 signature: unavailable
   body: unavailable
 
 fn unknown@65..90 signature: unavailable
   body: unavailable
 
-fn suppressed@91..124 () -> unit
+fn suppressed@91..124 signature: unavailable
   body: unavailable
 
 fn typed@125..161 (int, bool) -> int
