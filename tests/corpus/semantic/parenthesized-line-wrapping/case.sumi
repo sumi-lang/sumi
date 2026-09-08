@@ -1,0 +1,14 @@
+fn add(a: int, b: int) -> int = a + b
+fn wrapped() -> int = (1 +
+    2 *
+    3)
+fn arguments() -> int = add(1 +
+    2, 3 + // continuation
+
+    4)
+fn nested() -> int = ({
+    let x = (1 +
+        2)
+    x
+} +
+    3)

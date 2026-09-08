@@ -1,0 +1,53 @@
+== tree ==
+SourceFile 0..216
+  FnItem 0..37
+    Name 3..6 "add"
+    ParamList 6..22
+      Param 7..13
+        Name 7..8 "a"
+        TypeRef 10..13 "int"
+      Param 15..21
+        Name 15..16 "b"
+        TypeRef 18..21 "int"
+    TypeRef 26..29 "int"
+    BinaryExpr 32..37
+      NameRef 32..33 "a"
+      NameRef 36..37 "b"
+  FnItem 38..79
+    Name 41..48 "wrapped"
+    ParamList 48..50 "()"
+    TypeRef 54..57 "int"
+    ParenExpr 60..79
+      BinaryExpr 61..78
+        LiteralExpr 61..62 "1"
+        BinaryExpr 69..78
+          LiteralExpr 69..70 "2"
+          LiteralExpr 77..78 "3"
+  FnItem 80..146
+    Name 83..92 "arguments"
+    ParamList 92..94 "()"
+    TypeRef 98..101 "int"
+    CallExpr 104..146
+      NameRef 104..107 "add"
+      ArgList 107..146
+        BinaryExpr 108..117
+          LiteralExpr 108..109 "1"
+          LiteralExpr 116..117 "2"
+        BinaryExpr 119..145
+          LiteralExpr 119..120 "3"
+          LiteralExpr 144..145 "4"
+  FnItem 147..215
+    Name 150..156 "nested"
+    ParamList 156..158 "()"
+    TypeRef 162..165 "int"
+    ParenExpr 168..215
+      BinaryExpr 169..214
+        Block 169..206
+          LetStmt 175..198
+            Name 179..180 "x"
+            ParenExpr 183..198
+              BinaryExpr 184..197
+                LiteralExpr 184..185 "1"
+                LiteralExpr 196..197 "2"
+          NameRef 203..204 "x"
+        LiteralExpr 213..214 "3"

@@ -2,7 +2,7 @@
 //! grammar needs once trivia is gone.
 //!
 //! Construction strips whitespace, newlines, and comments, and precomputes
-//! four per-token facts:
+//! five per-token facts:
 //!
 //! - **jointness**: no trivia separates the token from its successor. The
 //!   parser glues compound operators (`==`, `->`) from joint pairs, and the
@@ -12,6 +12,8 @@
 //!   the token.
 //! - **boundary before**: that line break ends a statement under the newline
 //!   rule below.
+//! - **expression delimiters**: the nearest enclosing opener is matched and
+//!   does not enclose statements; line wrapping is allowed in this context.
 //! - **partner**: for a bracket, the index of the bracket matching it, if
 //!   one does. Pairing is mechanical: a closer pairs with the nearest open
 //!   bracket of its kind, discarding unmatched openers above that match; an
@@ -58,6 +60,7 @@ use sumi_lexer::{LexedFile, RawIdx, RawKind};
 const JOINT: u8 = 1 << 0;
 const NEWLINE_BEFORE: u8 = 1 << 1;
 const BOUNDARY_BEFORE: u8 = 1 << 2;
+const IN_EXPRESSION_DELIMITERS: u8 = 1 << 3;
 
 /// One significant token's stream facts, packed so the kind, flags, raw
 /// index, and partner the parser reads at one cursor position share a cache
@@ -143,12 +146,16 @@ impl ParserInput {
         for index in 0..slots.len() {
             boundaries.push(boundary_count);
             let slot = slots[index];
+            let in_expression_delimiters = open.last().is_some_and(|&opener| {
+                let opener = slots[opener as usize];
+                !encloses_statements(opener.kind) && opener.partner.is_some()
+            });
+            if in_expression_delimiters {
+                slots[index].flags |= IN_EXPRESSION_DELIMITERS;
+            }
             if index > 0
                 && slot.flags & NEWLINE_BEFORE != 0
-                && !open.last().is_some_and(|&opener| {
-                    let opener = slots[opener as usize];
-                    !encloses_statements(opener.kind) && opener.partner.is_some()
-                })
+                && !in_expression_delimiters
                 && can_end_statement(slots[index - 1].kind)
                 && !continues_line(&slots, index)
             {
@@ -229,6 +236,12 @@ impl ParserInput {
     /// previous significant token.
     pub fn newline_before(&self, index: SigIdx) -> bool {
         self.slots[index.to_usize()].flags & NEWLINE_BEFORE != 0
+    }
+
+    /// Whether the nearest opener enclosing this token is matched and does
+    /// not enclose statements. Measured before processing this token's bracket.
+    pub fn in_expression_delimiters(&self, index: SigIdx) -> bool {
+        self.slots[index.to_usize()].flags & IN_EXPRESSION_DELIMITERS != 0
     }
 
     /// Whether a statement boundary immediately precedes token `index` under

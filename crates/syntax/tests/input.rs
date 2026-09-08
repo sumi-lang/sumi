@@ -1,6 +1,25 @@
 use sumi_lexer::lex;
 use sumi_syntax::{ParserInput, SigIdx, SyntaxKind};
 
+#[test]
+fn expression_layout_uses_the_nearest_opener() {
+    for (source, expected) in [
+        ("(a { b (c) d } e)", vec![true, false, true, false, true]),
+        ("(a", vec![false]),
+        ("((a)", vec![true]),
+        ("((a", vec![false]),
+    ] {
+        let lexed = lex(source).unwrap();
+        let input = ParserInput::new(&lexed);
+        let actual: Vec<_> = input
+            .indices()
+            .filter(|&index| input.get(index) == Some(SyntaxKind::Ident))
+            .map(|index| input.in_expression_delimiters(index))
+            .collect();
+        assert_eq!(actual, expected, "{source}");
+    }
+}
+
 /// Lex and stream `source`, assert the stream invariants, and render
 /// one line per significant token: `Kind "text"` plus `newline`, `boundary`,
 /// `joint`, and `partner N` markers. `newline`/`boundary` describe the gap
