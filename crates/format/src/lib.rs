@@ -11,7 +11,7 @@
 use sumi_lexer::{LexErrorKind, LexedFile, lex};
 use sumi_syntax::{
     NodeIdx, Parse, ParseEvidence, ParseViolation, ParseViolationKind, ParserInput, RawIdx,
-    SyntaxKind, SyntaxTree, parse, raw_boundary, starts_expression,
+    SyntaxKind, SyntaxTree, parse, raw_boundary,
 };
 use sumi_text::{TextEdit, TextRange, TextSize};
 
@@ -87,18 +87,16 @@ pub fn reprint(tree: &SyntaxTree, lexed: &LexedFile, source: &str) -> String {
 }
 
 /// Rewrite the layout violations of `parsed` into canonical form: space
-/// binary operators, glue prefix operators, lead continuation lines with
-/// their operator, and open blocks on the line of their owner. Every other
-/// byte keeps its place; a comment is never deleted, at worst the gap it
-/// blocks stays as written. Chained comparisons are structural, not layout,
-/// and stay as written too, as does a trailing operator whose continuation
-/// line does not begin its operand.
+/// binary operators, glue prefix operators, and open blocks on the line of
+/// their owner. Every other byte keeps its place; a comment is never deleted,
+/// at worst the gap it blocks stays as written. Chained comparisons are
+/// structural, not layout, and stay as written too.
 ///
 /// The rewrite proves it changed only layout: the result keeps every
 /// significant token and every comment and reparses to the same tree
 /// shape, or the source comes back as written. Around recovered damage,
 /// what the parser makes of a line can turn on where the line breaks — a
-/// moved operator or brace may hand recovery a different reading — and so
+/// moved brace may hand recovery a different reading — and so
 /// can what the lexer makes of it: a literal that its line bounds takes
 /// in a brace moved to the end of that line, and a hole left open gives
 /// its line back when the break after it goes. No local check on the
@@ -109,7 +107,7 @@ pub fn normalize(source: &str, lexed: &LexedFile, parsed: &Parse) -> String {
         let ParseEvidence::Violation(violation) = evidence else {
             continue;
         };
-        if let Some(violation_edits) = layout_violation_edits(source, lexed, *violation) {
+        if let Some(violation_edits) = layout_violation_edits(lexed, *violation) {
             edits.extend(violation_edits);
         }
     }
@@ -131,7 +129,6 @@ pub fn normalize(source: &str, lexed: &LexedFile, parsed: &Parse) -> String {
 /// safety around parser recovery; [`normalize`] does so with its
 /// whole-result gate, which also proves every token survived.
 pub fn layout_violation_edits(
-    source: &str,
     lexed: &LexedFile,
     violation: ParseViolation,
 ) -> Option<Box<[TextEdit]>> {
@@ -157,18 +154,6 @@ pub fn layout_violation_edits(
             if end < lexed.end() && significant(lexed, end) {
                 edits.push(insert(token_start(lexed, end), " "));
             }
-        }
-        // Lead the continuation line with the operator instead. An operator
-        // without a following operand has no mechanically valid move.
-        ParseViolationKind::TrailingOperator => {
-            let operand =
-                next_significant(lexed, end).filter(|&raw| starts_expression(lexed.kind(raw)))?;
-            let (op_start, op_end) = (token_start(lexed, start), token_end(lexed, end - 1));
-            edits.push(delete(op_start, op_end));
-            edits.push(insert(
-                token_start(lexed, operand),
-                format!("{} ", &source[op_start..op_end]),
-            ));
         }
         // Glue the operator to its operand only when the gap is clean trivia:
         // comments and lexer errors are evidence no fix may erase. A line

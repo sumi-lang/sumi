@@ -44,8 +44,7 @@
 //!    continue the previous line; everything else starts fresh. Both sets
 //!    are the grammar's, generated from `sumi.grammar`.
 //!
-//! The bits record where statements end; the bans that keep the rule
-//! unambiguous (trailing operators, unglued unary operators) are enforced by
+//! The bits record where statements end; operator spacing is enforced by
 //! the parser, where the grammar position gives diagnostics their context.
 
 use std::num::NonZeroU32;

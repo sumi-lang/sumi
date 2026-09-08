@@ -1,0 +1,44 @@
+file: accepted
+frontend errors: 0 (see frontend.snap)
+semantic errors: 0
+
+fn plain@0..29 () -> int
+  body: eager + : int @20..29
+    lhs: int 1 : int @20..21
+    rhs: int 2 : int @28..29
+
+fn grouped@30..63 () -> int
+  body: eager + : int @53..62
+    lhs: int 1 : int @53..54
+    rhs: int 2 : int @61..62
+
+fn nested@64..100 () -> int
+  body: block : int @86..99
+    tail: eager + : int @88..97
+      lhs: int 1 : int @88..89
+      rhs: int 2 : int @96..97
+
+fn compound@101..177 () -> bool
+  body: lazy and : bool @125..177
+    lhs: eager <= : bool @125..165
+      lhs: int 1 : int @125..126
+      rhs: int 2 : int @164..165
+    rhs: bool true : bool @173..177
+
+fn statements@178..236 () -> int
+  body: block : int @204..235
+    discard @210..227
+      value: eager + : int @214..227
+        lhs: int 1 : int @214..215
+        rhs: int 2 : int @226..227
+    tail: int 3 : int @232..233
+
+fn negated@237..269 () -> int
+  body: eager + : int @259..269
+    lhs: int 1 : int @259..260
+    rhs: int -2 : int @267..269
+
+fn leading@270..301 () -> int
+  body: eager - : int @292..301
+    lhs: int 1 : int @292..293
+    rhs: int 2 : int @300..301
