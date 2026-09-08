@@ -49,7 +49,6 @@ pub const NESTING_TOO_DEEP: DiagnosticCode = DiagnosticCode::new(SYNTAX, "nestin
 pub const BLOCK_ON_NEW_LINE: DiagnosticCode = DiagnosticCode::new(SYNTAX, "block-on-new-line");
 pub const UNSPACED_BINARY_OPERATOR: DiagnosticCode =
     DiagnosticCode::new(SYNTAX, "unspaced-binary-operator");
-pub const TRAILING_OPERATOR: DiagnosticCode = DiagnosticCode::new(SYNTAX, "trailing-operator");
 pub const SPACED_PREFIX_OPERATOR: DiagnosticCode =
     DiagnosticCode::new(SYNTAX, "spaced-prefix-operator");
 pub const SPACED_LIST_OPENER: DiagnosticCode = DiagnosticCode::new(SYNTAX, "spaced-list-opener");

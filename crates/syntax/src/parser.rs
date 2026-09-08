@@ -104,9 +104,6 @@ pub enum ParseViolationKind {
     BlockOnNewLine,
     /// A binary operator without spaces on both sides, as in `a-b`.
     UnspacedBinaryOperator,
-    /// A binary operator at the end of a line outside matched expression
-    /// delimiters; operators lead the continuation line there instead.
-    TrailingOperator,
     /// A prefix operator separated from its operand, as in `- x`.
     SpacedPrefixOperator,
     /// A parameter or argument list separated from its name or callee.
@@ -1031,9 +1028,6 @@ fn expr_bp(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) -> Option<Com
         }
         if joint_left || p.nth_joint(width - 1) {
             p.violation(ParseViolationKind::UnspacedBinaryOperator, width);
-        }
-        if p.nth_newline(width) && !p.in_expression_delimiters() {
-            p.violation(ParseViolationKind::TrailingOperator, width);
         }
         let chained = comparison && op.is_comparison();
         if chained {

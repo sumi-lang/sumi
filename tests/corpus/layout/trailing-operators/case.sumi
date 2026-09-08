@@ -1,0 +1,18 @@
+fn plain() -> int = 1 +
+    2
+fn grouped() -> int = (1 +
+    2)
+fn nested() -> int = ({ 1 +
+    2 })
+fn compound() -> bool = 1 <= // continue after the comment
+    2 &&
+    true
+fn statements() -> int = ({
+    _ = 1 +
+        2
+    3
+})
+fn negated() -> int = 1 +
+    -2
+fn leading() -> int = 1
+    - 2

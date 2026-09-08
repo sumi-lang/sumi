@@ -49,7 +49,7 @@ fn check_layout_edits(source: &str, kind: ParseViolationKind, expected: Option<&
             _ => None,
         })
         .expect("source has the requested violation");
-    let edits = layout_violation_edits(source, &front.lexed, violation);
+    let edits = layout_violation_edits(&front.lexed, violation);
     assert_eq!(
         edits.as_deref().map(|edits| apply_edits(source, edits)),
         expected.map(str::to_owned),
@@ -198,11 +198,6 @@ fn layout_violation_edits_are_atomic_and_source_ordered() {
         Some("fn f() { a == b }"),
     );
     check_layout_edits(
-        "fn f() { a +\n b }",
-        ParseViolationKind::TrailingOperator,
-        Some("fn f() { a \n + b }"),
-    );
-    check_layout_edits(
         "fn f() { - \t1 }",
         ParseViolationKind::SpacedPrefixOperator,
         Some("fn f() { -1 }"),
@@ -211,11 +206,6 @@ fn layout_violation_edits_are_atomic_and_source_ordered() {
 
 #[test]
 fn layout_violation_edits_reject_nonmechanical_candidates() {
-    check_layout_edits(
-        "fn f() { a +\n}",
-        ParseViolationKind::TrailingOperator,
-        None,
-    );
     check_layout_edits(
         "fn f() { - // why\n 1 }",
         ParseViolationKind::SpacedPrefixOperator,
@@ -234,41 +224,31 @@ fn layout_violation_edits_reject_nonmechanical_candidates() {
 }
 
 #[test]
-fn normalize_leaves_a_trailing_operator_missing_its_operand() {
-    // The parser records the violation before parsing the operand; moving
-    // the operator in front of anything else would change the parse.
-    for source in ["fn f() { a +\n: b }", "fn f() { a +\n}"] {
+fn normalize_preserves_trailing_operators() {
+    for source in [
+        "fn f() { a +\n b }",
+        "fn f() { a +\n: b }",
+        "fn f() { a +\n}",
+    ] {
         let before = front(source);
-        assert!(
-            violations(&before).contains(&ParseViolationKind::TrailingOperator),
-            "the trailing operator must be recorded for {source:?}"
-        );
         let normalized = normalize(source, &before.lexed, &before.parse);
-        assert_eq!(
-            normalized, source,
-            "an operandless trailing operator stays as written"
-        );
+        assert_eq!(normalized, source, "trailing operators stay as written");
     }
 }
 
 #[test]
-fn normalize_yields_when_the_rewrite_would_change_the_parse() {
-    // Recovery entangled with the operator: the continuation is a real
-    // operand, but the garbage between the operands means the moved
-    // operator hands recovery a different reading — which no check on the
-    // tokens foresees. The reparse gate catches it and yields the source
-    // as written. Found by the normalize property.
+fn normalize_spaces_trailing_operators_without_moving_recovered_damage() {
     let source = "fn f() { true&<\ntrue }";
     let before = front(source);
     let normalized = normalize(source, &before.lexed, &before.parse);
-    assert_eq!(normalized, source, "an entangled rewrite stays as written");
+    assert_eq!(normalized, "fn f() { true& <\ntrue }");
+    check_roundtrip(source);
 
-    // When only the move is unsafe, the independent spacing edit still
-    // lands and passes the gate.
     let source = "fn f() { true<\n) }";
     let before = front(source);
     let normalized = normalize(source, &before.lexed, &before.parse);
     assert_eq!(normalized, "fn f() { true <\n) }");
+    check_roundtrip(source);
 }
 
 #[test]

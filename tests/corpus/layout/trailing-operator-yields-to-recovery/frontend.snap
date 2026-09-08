@@ -10,13 +10,7 @@ SourceFile! 0..19
         Error! 16..17 ":"
 
 == evidence ==
-TrailingOperator at 11
 Unexpected at 16
 
 == diagnostics ==
-error[syntax/trailing-operator] 1:12..1:13 "+": binary operator must begin the continuation line
 error[syntax/unexpected-syntax] 2:4..2:5 ":": unexpected syntax in expression
-
-== normalized ==
-fn f() { a 
- + b : }

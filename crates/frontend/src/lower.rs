@@ -499,10 +499,6 @@ fn lower_violation(
             codes::UNSPACED_BINARY_OPERATOR,
             "binary operator must have spaces on both sides",
         ),
-        ParseViolationKind::TrailingOperator => (
-            codes::TRAILING_OPERATOR,
-            "binary operator must begin the continuation line",
-        ),
         ParseViolationKind::SpacedPrefixOperator => (
             codes::SPACED_PREFIX_OPERATOR,
             "prefix operator must be adjacent to its operand",
@@ -516,18 +512,14 @@ fn lower_violation(
             "comparison operators cannot be chained",
         ),
     };
-    let movement = matches!(
-        violation.kind,
-        ParseViolationKind::BlockOnNewLine | ParseViolationKind::TrailingOperator
-    );
+    let movement = violation.kind == ParseViolationKind::BlockOnNewLine;
     let fix = (!movement || !has_recovery)
-        .then(|| layout_violation_edits(snapshot.source, snapshot.lexed, violation))
+        .then(|| layout_violation_edits(snapshot.lexed, violation))
         .flatten()
         .map(|edits| Fix {
             message: match violation.kind {
                 ParseViolationKind::BlockOnNewLine => "move block to its owner's line",
                 ParseViolationKind::UnspacedBinaryOperator => "space binary operator",
-                ParseViolationKind::TrailingOperator => "move operator to the continuation line",
                 ParseViolationKind::SpacedPrefixOperator => "remove space after prefix operator",
                 ParseViolationKind::SpacedListOpener => "remove space before `(`",
                 ParseViolationKind::ChainedComparison => {

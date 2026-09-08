@@ -38,23 +38,17 @@ SourceFile! 0..169
     LiteralExpr 167..168 "3"
 
 == evidence ==
-TrailingOperator at 24
-TrailingOperator at 61
 ExpectedExpression at 107
-TrailingOperator at 136
 Expected(RParen) at 144
 
 == diagnostics ==
-error[syntax/trailing-operator] 1:25..1:26 "+": binary operator must begin the continuation line
-error[syntax/trailing-operator] 4:7..4:8 "+": binary operator must begin the continuation line
 error[syntax/expected-expression] 8:1: expected an expression
-error[syntax/trailing-operator] 9:28..9:29 "+": binary operator must begin the continuation line
 error[syntax/expected-token] 11:1: expected `)`
   at 9:25..9:26 "(": opening delimiter is here
   fix (safe): insert `)`
     10:6 -> ")"
 
-== fixed (syntax/expected-expression, syntax/trailing-operator remain) ==
+== fixed (syntax/expected-expression remains) ==
 fn outside() -> int = 1 +
     2
 fn block() -> int = ({
@@ -65,17 +59,4 @@ fn missing_rhs() -> int = (1 +
 )
 fn unmatched() -> int = (1 +
     2)
-fn survivor() -> int = 3
-
-== normalized ==
-fn outside() -> int = 1 
-    + 2
-fn block() -> int = ({
-    1 
-        + 2
-})
-fn missing_rhs() -> int = (1 +
-)
-fn unmatched() -> int = (1 
-    + 2
 fn survivor() -> int = 3

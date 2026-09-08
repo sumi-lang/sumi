@@ -236,8 +236,7 @@ fn newlines_end_statements() {
 #[test]
 fn incomplete_lines_continue() {
     // The left look: a token that cannot end a statement keeps the line
-    // open, whatever follows. (Trailing `&&` still parses; banning the
-    // trailing style is the parser's error.)
+    // open, whatever follows.
     assert!(!has_boundary("let x =\n1"));
     assert!(!has_boundary("a &&\nb"));
     assert!(!has_boundary("let\nmut x = 1"));
