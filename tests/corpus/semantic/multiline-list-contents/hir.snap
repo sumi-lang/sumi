@@ -1,0 +1,9 @@
+file: accepted
+frontend errors: 0 (see frontend.snap)
+semantic errors: 0
+
+fn value@0..22 () -> int
+  body: int 1 : int @21..22
+
+fn caller@23..52 () -> int
+  body: call value@0..22 (callee @44..49) : int @44..52

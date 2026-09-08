@@ -1,0 +1,58 @@
+== tree ==
+SourceFile 0..88
+  FnItem 0..22
+    Name 3..8 "value"
+    ParamList 9..11 "()"
+    TypeRef 15..18 "int"
+    LiteralExpr 21..22 "1"
+  FnItem 23..87
+    Name 26..32 "caller"
+    ParamList 32..34 "()"
+    TypeRef 38..41 "int"
+    Block 42..87
+      CallExpr 48..56
+        NameRef 48..53 "value"
+        ArgList 54..56 "()"
+      CallExpr 61..72
+        ParenExpr 61..68
+          NameRef 62..67 "value"
+        ArgList 69..72 "( )"
+      CallExpr 77..85
+        NameRef 77..82 "value"
+        ArgList 83..85 "()"
+
+== evidence ==
+SpacedListOpener at 9
+SpacedListOpener at 54
+SpacedListOpener at 69
+SpacedListOpener at 83
+
+== diagnostics ==
+error[syntax/spaced-list-opener] 1:10..1:11 "(": opening `(` must be adjacent to the function name or callee
+  fix (safe): remove space before `(`
+    1:9..1:10 " " -> ""
+error[syntax/spaced-list-opener] 3:11..3:12 "(": opening `(` must be adjacent to the function name or callee
+  fix (safe): remove space before `(`
+    3:10..3:11 " " -> ""
+error[syntax/spaced-list-opener] 4:13..4:14 "(": opening `(` must be adjacent to the function name or callee
+  fix (safe): remove space before `(`
+    4:12..4:13 " " -> ""
+error[syntax/spaced-list-opener] 5:11..5:12 "(": opening `(` must be adjacent to the function name or callee
+  fix (safe): remove space before `(`
+    5:10..5:11 "\t" -> ""
+
+== fixed ==
+fn value() -> int = 1
+fn caller() -> int {
+    value()
+    (value)( )
+    value()
+}
+
+== normalized ==
+fn value() -> int = 1
+fn caller() -> int {
+    value()
+    (value)( )
+    value()
+}
