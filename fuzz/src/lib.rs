@@ -231,6 +231,7 @@ pub fn check_input(lexed: &LexedFile, input: &ParserInput) {
     for index in input.indices() {
         let token = input.token(index);
         let kind = input.get(index).expect("indices below len are present");
+        assert_eq!(input.in_matched_delimiters(index), !open.is_empty());
         let context = layout_open.last().is_some_and(|&opener| {
             input.get(opener) != Some(SyntaxKind::LBrace) && input.partner(opener).is_some()
         });
@@ -351,6 +352,21 @@ pub fn check_widening(source: &str, lexed: &LexedFile, input: &ParserInput) {
 /// significant one; the root covers the whole buffer.
 pub fn check_tree(tree: &SyntaxTree, lexed: &LexedFile) {
     let root = tree.root();
+    let item_starts: HashSet<_> = tree
+        .children(root)
+        .filter(|&node| tree.kind(node) == NodeKind::FnItem)
+        .map(|node| tree.first_token(node))
+        .collect();
+    let input = ParserInput::new(lexed);
+    for index in input
+        .indices()
+        .filter(|&i| item_starts.contains(&input.token(i)))
+    {
+        assert!(
+            !input.in_matched_delimiters(index),
+            "root item starts inside a matched pair"
+        );
+    }
     assert_eq!(tree.first_token(root), RawIdx::new(0));
     assert_eq!(tree.end_token(root), lexed.end());
 

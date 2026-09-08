@@ -169,6 +169,7 @@ proptest! {
         for index in input.indices() {
             let token = input.token(index);
             let kind = input.get(index).expect("indices below len are present");
+            prop_assert_eq!(input.in_matched_delimiters(index), !open.is_empty());
             let context = layout_open.last().is_some_and(|&opener| {
                 input.get(opener) != Some(SyntaxKind::LBrace) && input.partner(opener).is_some()
             });
@@ -297,6 +298,21 @@ proptest! {
 fn check_tree(tree: &SyntaxTree, lexed: &LexedFile) -> Result<(), TestCaseError> {
     let raw_len = lexed.end();
     let root = tree.root();
+    let item_starts: HashSet<_> = tree
+        .children(root)
+        .filter(|&node| tree.kind(node) == NodeKind::FnItem)
+        .map(|node| tree.first_token(node))
+        .collect();
+    let input = ParserInput::new(lexed);
+    for index in input
+        .indices()
+        .filter(|&i| item_starts.contains(&input.token(i)))
+    {
+        prop_assert!(
+            !input.in_matched_delimiters(index),
+            "root item starts inside a matched pair"
+        );
+    }
     prop_assert_eq!(tree.kind(root), NodeKind::SourceFile);
     prop_assert_eq!(
         (tree.first_token(root), tree.end_token(root)),
@@ -459,8 +475,18 @@ proptest! {
     }
 
     #[test]
-    fn a_single_delimiter_edit_preserves_unaffected_items(
-        (source, index, edit) in delimiter_edited_program()
+    fn a_single_edit_preserves_unaffected_items(
+        (source, index, edit) in prop_oneof![
+            delimiter_edited_program().boxed(),
+            // All edit kinds around exposed closures, which the general
+            // block-bodied program generator does not produce.
+            prop::sample::select(vec![
+                "fn first() = 0\nfn outer() = fn() = fn(x) = x\nfn next() = 2\n",
+                "fn first() = 0\nfn outer() =\n fn(x: int) { x }\nfn next() = 2\n",
+            ]).prop_flat_map(|source| {
+                (Just(source.to_owned()), 0..front(source).input.len(), sumi_test::edit())
+            }).boxed(),
+        ]
     ) {
         let original = front(&source);
         let (edited, touched, _, impact) = apply(&source, &original.spans(), index, edit);

@@ -1,0 +1,149 @@
+== tree ==
+SourceFile! 0..367
+  FnItem! 0..8
+    ParamList 3..5 "()"
+    Block 6..8 "{}"
+  Error! 9..16 "garbage"
+  FnItem! 17..25
+    ParamList 20..22 "()"
+    Block 23..25 "{}"
+  FnItem! 26..57
+    Name 29..46 "malformed_closure"
+    ParamList 46..48 "()"
+    ClosureExpr! 51..57
+      Error! 54..57 "= 1"
+  FnItem 58..80
+    Name 61..67 "next_a"
+    ParamList 67..69 "()"
+    TypeRef 73..76 "int"
+    LiteralExpr 79..80 "1"
+  FnItem! 81..108
+    Name 84..101 "multiline_closure"
+    ParamList 101..103 "()"
+    ClosureExpr! 106..108 "fn"
+  Error! 109..115 "() = 1"
+  FnItem 116..138
+    Name 119..125 "next_b"
+    ParamList 125..127 "()"
+    TypeRef 131..134 "int"
+    LiteralExpr 137..138 "2"
+  FnItem! 139..174
+    Name 142..155 "damaged_block"
+    ParamList 155..157 "()"
+    Block! 158..174
+      LiteralExpr 164..165 "0"
+      ClosureExpr 166..174
+        ParamList 168..170 "()"
+        LiteralExpr 173..174 "1"
+  FnItem 175..197
+    Name 178..184 "next_c"
+    ParamList 184..186 "()"
+    TypeRef 190..193 "int"
+    LiteralExpr 196..197 "3"
+  FnItem! 198..207
+    Name! 201..202 "_"
+    ParamList 202..204 "()"
+    Block 205..207 "{}"
+  FnItem! 208..226
+    Name 211..219 "trailing"
+    ParamList 219..221 "()"
+    ClosureExpr! 224..226 "fn"
+  FnItem! 227..245
+    Name 230..238 "enclosed"
+    ParamList 238..240 "()"
+    ParenExpr! 243..245
+      LiteralExpr 244..245 "0"
+  Error! 246..260 "fn hidden() {}"
+  Error! 260..261 ")"
+  FnItem 262..284
+    Name 265..271 "next_d"
+    ParamList 271..273 "()"
+    TypeRef 277..280 "int"
+    LiteralExpr 283..284 "4"
+  FnItem! 285..317
+    Name 288..310 "enclosed_after_garbage"
+    ParamList 310..312 "()"
+    ParenExpr! 315..317
+      LiteralExpr 316..317 "0"
+  Error! 318..334 ", fn hidden() {}"
+  Error! 334..335 ")"
+  FnItem! 336..343
+    ParamList 338..340 "()"
+    Block 341..343 "{}"
+  FnItem 344..366
+    Name 347..353 "next_e"
+    ParamList 353..355 "()"
+    TypeRef 359..362 "int"
+    LiteralExpr 365..366 "5"
+
+== evidence ==
+ExpectedName at 3
+ExpectedItem at 9
+ExpectedName at 20
+Expected(LParen) at 54
+ExpectedBody at 58
+Expected(LParen) at 109
+ExpectedBody at 109
+ExpectedItem at 109
+Expected(RBrace) at 175
+ExpectedName at 201
+Expected(LParen) at 227
+ExpectedBody at 227
+Expected(RParen) at 246
+ExpectedItem at 246
+Expected(RParen) at 318
+ExpectedItem at 318
+ExpectedName at 338
+
+== diagnostics ==
+error[syntax/expected-name] 1:4: expected a name
+error[syntax/expected-item] 2:1..2:8 "garbage": expected a function item
+error[syntax/expected-name] 2:12: expected a name
+error[syntax/expected-token] 3:29: expected `(`
+  at 3:29..3:32 "= 1": skipped while recovering
+error[syntax/expected-body] 4:1: expected a body, `{` or `=`
+error[syntax/expected-token] 6:1: expected `(`
+error[syntax/expected-body] 6:1: expected a body, `{` or `=`
+error[syntax/expected-item] 6:1..6:2 "(": expected a function item
+  at 6:1..6:7 "() = 1": skipped while recovering
+error[syntax/expected-token] 11:1: expected `}`
+  at 8:20..8:21 "{": opening delimiter is here
+  fix (safe): insert `}`
+    10:9 -> "}"
+error[syntax/expected-name] 12:4..12:5 "_": expected a name
+error[syntax/expected-token] 14:1: expected `(`
+error[syntax/expected-body] 14:1: expected a body, `{` or `=`
+error[syntax/expected-token] 14:20: expected `)`
+  at 14:17..14:18 "(": opening delimiter is here
+  fix (safe): insert `)`
+    14:19 -> ")"
+error[syntax/expected-item] 14:20..14:22 "fn": expected a function item
+  at 14:20..14:34 "fn hidden() {}": skipped while recovering
+  at 14:34..14:35 ")": skipped while recovering
+error[syntax/expected-token] 16:34: expected `)`
+  at 16:31..16:32 "(": opening delimiter is here
+  fix (safe): insert `)`
+    16:33 -> ")"
+error[syntax/expected-item] 16:34..16:35 ",": expected a function item
+  at 16:34..16:50 ", fn hidden() {}": skipped while recovering
+  at 16:50..16:51 ")": skipped while recovering
+error[syntax/expected-name] 16:54: expected a name
+
+== fixed (syntax/expected-body, syntax/expected-item, syntax/expected-name, syntax/expected-token remain) ==
+fn () {}
+garbage fn () {}
+fn malformed_closure() = fn = 1
+fn next_a() -> int = 1
+fn multiline_closure() = fn
+() = 1
+fn next_b() -> int = 2
+fn damaged_block() {
+    0
+fn() = 1}
+fn next_c() -> int = 3
+fn _() {}
+fn trailing() = fn
+fn enclosed() = (0) fn hidden() {})
+fn next_d() -> int = 4
+fn enclosed_after_garbage() = (0) , fn hidden() {}) fn() {}
+fn next_e() -> int = 5

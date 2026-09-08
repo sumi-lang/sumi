@@ -2,6 +2,29 @@ use sumi_lexer::lex;
 use sumi_syntax::{ParserInput, SigIdx, SyntaxKind};
 
 #[test]
+fn named_declaration_heads_are_anchors_independent_of_expression_context() {
+    for (source, expected) in [
+        ("fn() {} fn named() {}", vec!["named"]),
+        (
+            "fn outer() = fn() = fn nested() {}",
+            vec!["outer", "nested"],
+        ),
+        ("fn _() {}", vec!["_"]),
+        ("fn\nnamed() {}", vec!["named"]),
+        ("fn outer() { fn inner() {} }", vec!["outer"]),
+    ] {
+        let lexed = lex(source).unwrap();
+        let input = ParserInput::new(&lexed);
+        let names: Vec<_> = input
+            .item_anchors()
+            .iter()
+            .map(|&index| lexed.text(source, input.token(index + 1)))
+            .collect();
+        assert_eq!(names, expected, "{source}");
+    }
+}
+
+#[test]
 fn expression_layout_restores_parent_context_after_malformed_brackets() {
     for (source, expected) in [
         (
@@ -32,7 +55,8 @@ fn expression_layout_restores_parent_context_after_malformed_brackets() {
         .collect();
     assert_eq!(newlines, [SigIdx::new(4), SigIdx::new(5), SigIdx::new(7)]);
     assert_eq!(boundaries, [SigIdx::new(4), SigIdx::new(7)]);
-    assert_eq!(input.item_starts(), [SigIdx::new(7)]);
+    // Bare `fn` is recoverable at file level, but is not a hard anchor.
+    assert!(input.item_anchors().is_empty());
 }
 
 #[test]

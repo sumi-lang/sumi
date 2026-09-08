@@ -182,22 +182,26 @@ impl RawGap {
 /// bounds the parser's stack; real code nests a few dozen deep at most.
 pub const MAX_DEPTH: u32 = 256;
 
-/// Walk the item segments the token stream precomputed. Each item parses
-/// under a horizon at the next item's start; tokens between an item's end
-/// and that horizon are garbage in one recovery episode. What counts as an
-/// item start — `fn`, or the headless signature shape, outside every
-/// matched bracket pair — is the stream's
-/// [`item_starts`](crate::ParserInput::item_starts).
+/// Parse between hard declaration anchors. Within each interval, parser
+/// context decides whether `fn` begins a closure or a nameless item. Named
+/// declarations remain protected from recovery in the preceding interval.
 fn source_file(p: &mut Marker<'_, '_>) {
-    for item in 0..=p.item_count() {
-        p.set_limit(p.item_limit(item));
-        if p.current().is_some() {
-            let recovery = p.recover_tokens(ParseRecoveryKind::Expected(ParseExpected::Item), 1);
-            skip_all(p, recovery, |_| false);
-        }
-        if item < p.item_count() {
-            p.set_limit(p.item_limit(item + 1));
+    let item_candidate = |p: &Marker<'_, '_>| p.at(T::FnKw) && !p.in_matched_delimiters();
+    for anchor in 0..=p.item_anchor_count() {
+        p.set_limit(p.item_anchor(anchor));
+        if anchor > 0 {
+            // The previous interval ended at this declaration's head,
+            // including signatures recovered without `fn`.
             fn_item(p);
+        }
+        while p.current().is_some() {
+            if item_candidate(p) {
+                fn_item(p);
+            } else {
+                let recovery =
+                    p.recover_tokens(ParseRecoveryKind::Expected(ParseExpected::Item), 1);
+                skip_all(p, recovery, item_candidate);
+            }
         }
     }
 }

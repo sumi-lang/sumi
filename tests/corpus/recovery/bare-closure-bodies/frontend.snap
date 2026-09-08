@@ -1,0 +1,102 @@
+== tree ==
+SourceFile! 0..239
+  FnItem! 0..40
+    Name 3..27 "missing_parameter_closer"
+    ParamList 27..29 "()"
+    ClosureExpr! 32..40
+      ParamList! 34..36
+        Param 35..36
+          Name 35..36 "x"
+      LiteralExpr 39..40 "1"
+  FnItem 41..63
+    Name 44..50 "next_a"
+    ParamList 50..52 "()"
+    TypeRef 56..59 "int"
+    LiteralExpr 62..63 "2"
+  FnItem! 64..109
+    Name 67..86 "missing_body_closer"
+    ParamList 86..88 "()"
+    ClosureExpr! 91..109
+      ParamList 93..95 "()"
+      Block! 96..109
+        LetStmt! 102..109
+          Name 106..107 "x"
+  FnItem 110..132
+    Name 113..119 "next_b"
+    ParamList 119..121 "()"
+    TypeRef 125..128 "int"
+    LiteralExpr 131..132 "3"
+  FnItem! 133..159
+    Name 136..148 "missing_body"
+    ParamList 148..150 "()"
+    ClosureExpr! 153..159
+      ParamList 155..157 "()"
+      Error! 158..159 "="
+  FnItem 160..182
+    Name 163..169 "next_c"
+    ParamList 169..171 "()"
+    TypeRef 175..178 "int"
+    LiteralExpr 181..182 "4"
+  FnItem 183..196
+    Name 186..191 "first"
+    ParamList 191..193 "()"
+    Block 194..196 "{}"
+  FnItem! 197..205
+    ParamList 200..202 "()"
+    Block 203..205 "{}"
+  FnItem 206..220
+    Name 209..215 "second"
+    ParamList 215..217 "()"
+    Block 218..220 "{}"
+  FnItem! 221..229
+    ParamList 224..226 "()"
+    Block 227..229 "{}"
+  FnItem! 230..232 "fn"
+  Error! 233..238 "() {}"
+
+== evidence ==
+Expected(Comma) at 37
+Expected(RParen) at 37
+ExpectedExpression at 110
+Expected(RBrace) at 110
+ExpectedBody at 158
+ExpectedName at 200
+ExpectedName at 224
+ExpectedName at 233
+Expected(LParen) at 233
+ExpectedBody at 233
+ExpectedItem at 233
+
+== diagnostics ==
+error[syntax/expected-token] 1:38: expected `,`
+error[syntax/expected-token] 1:38: expected `)`
+  at 1:35..1:36 "(": opening delimiter is here
+  fix (safe): insert `)`
+    1:37 -> ")"
+error[syntax/expected-expression] 5:1: expected an expression
+error[syntax/expected-token] 5:1: expected `}`
+  at 3:33..3:34 "{": opening delimiter is here
+  fix (safe): insert `}`
+    4:12 -> "}"
+error[syntax/expected-body] 6:26: expected a body, `{` or `=`
+  at 6:26..6:27 "=": skipped while recovering
+error[syntax/expected-name] 8:4: expected a name
+error[syntax/expected-name] 9:19: expected a name
+error[syntax/expected-name] 11:1: expected a name
+error[syntax/expected-token] 11:1: expected `(`
+error[syntax/expected-body] 11:1: expected a body, `{` or `=`
+error[syntax/expected-item] 11:1..11:2 "(": expected a function item
+  at 11:1..11:6 "() {}": skipped while recovering
+
+== fixed (syntax/expected-body, syntax/expected-expression, syntax/expected-item, syntax/expected-name, syntax/expected-token remain) ==
+fn missing_parameter_closer() = fn(x) = 1
+fn next_a() -> int = 2
+fn missing_body_closer() = fn() {
+    let x =}
+fn next_b() -> int = 3
+fn missing_body() = fn() = fn next_c() -> int = 4
+fn first() {}
+fn () {}
+fn second() {} fn () {}
+fn
+() {}

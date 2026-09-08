@@ -1,0 +1,11 @@
+fn missing_parameter_closer() = fn(x = 1
+fn next_a() -> int = 2
+fn missing_body_closer() = fn() {
+    let x =
+fn next_b() -> int = 3
+fn missing_body() = fn() = fn next_c() -> int = 4
+fn first() {}
+fn () {}
+fn second() {} fn () {}
+fn
+() {}
