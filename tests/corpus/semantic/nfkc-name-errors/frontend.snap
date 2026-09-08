@@ -1,0 +1,68 @@
+== tree ==
+SourceFile 0..321
+  FnItem 0..19
+    Name 3..6 "Ａ"
+    ParamList 6..8 "()"
+    TypeRef 12..15 "int"
+    LiteralExpr 18..19 "1"
+  FnItem 20..37
+    Name 23..24 "A"
+    ParamList 24..26 "()"
+    TypeRef 30..33 "int"
+    LiteralExpr 36..37 "2"
+  FnItem 38..67
+    Name 41..50 "ambiguous"
+    ParamList 50..52 "()"
+    TypeRef 56..59 "int"
+    CallExpr 62..67
+      NameRef 62..65 "Ａ"
+      ArgList 65..67 "()"
+  FnItem 68..129
+    Name 71..80 "duplicate"
+    ParamList 80..100
+      Param 81..89
+        Name 81..84 "ﬀ"
+        TypeRef 86..89 "int"
+      Param 91..99
+        Name 91..93 "ff"
+        TypeRef 95..99 "bool"
+    Block 101..129
+      DiscardStmt 107..115
+        PrefixExpr 111..115
+          NameRef 112..115 "ﬀ"
+      DiscardStmt 120..127
+        PrefixExpr 124..127
+          NameRef 125..127 "ff"
+  FnItem 130..152
+    Name 133..139 "target"
+    ParamList 139..141 "()"
+    TypeRef 145..148 "int"
+    LiteralExpr 151..152 "1"
+  FnItem 153..219
+    Name 156..162 "shadow"
+    ParamList 162..164 "()"
+    TypeRef 168..171 "int"
+    Block 172..219
+      LetStmt 178..204
+        Name 182..200 "ｔａｒｇｅｔ"
+        LiteralExpr 203..204 "1"
+      CallExpr 209..217
+        NameRef 209..215 "target"
+        ArgList 215..217 "()"
+  FnItem 220..279
+    Name 223..231 "poisoned"
+    ParamList 231..240
+      Param 232..239
+        Name 232..233 "A"
+        TypeRef 235..239 "bool"
+    TypeRef 244..247 "int"
+    Block 248..279
+      LetStmt 254..271
+        Name 258..261 "Ａ"
+        NameRef 264..271 "missing"
+      NameRef 276..277 "A"
+  FnItem 280..320
+    Name 283..290 "unknown"
+    ParamList 290..292 "()"
+    TypeRef 296..299 "int"
+    NameRef 302..320 "ａｂｓｅｎｔ"

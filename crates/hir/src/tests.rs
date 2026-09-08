@@ -409,6 +409,33 @@ fn source_origins_are_utf8_byte_ranges() {
 }
 
 #[test]
+fn identifier_identity_is_nfkc_without_rewriting_source() {
+    assert_eq!(unicode_normalization::UNICODE_VERSION, (17, 0, 0));
+    for (left, right, key) in [
+        ("é", "e\u{301}", "é"),
+        ("K", "K", "K"),
+        ("Ａ", "A", "A"),
+        ("ﬀ", "ff", "ff"),
+    ] {
+        for (declared, used) in [(left, right), (right, left)] {
+            let source = format!("fn {declared}({declared}: int) -> int = {used}");
+            let a = clean(&source);
+            assert_eq!(a.parsed().source(), source);
+            let body = a.functions()[0].body().unwrap();
+            assert_eq!(a.functions()[0].name(), Some(key));
+            let range = body.expression(body.root()).origin.range();
+            assert_eq!(
+                &source[range.start().to_usize()..range.end().to_usize()],
+                used
+            );
+            clean(&format!(
+                "fn {declared}() -> int = 1\nfn caller() -> int = {used}()"
+            ));
+        }
+    }
+}
+
+#[test]
 fn long_chains_are_stack_safe_even_when_rejected() {
     let chain = std::iter::repeat_n("1", 20_000)
         .collect::<Vec<_>>()

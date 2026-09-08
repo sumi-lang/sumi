@@ -1,0 +1,42 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 5
+
+fn A@0..19 () -> int
+  body: int 1 : int @18..19
+
+fn A@20..37 () -> int
+  body: int 2 : int @36..37
+
+fn ambiguous@38..67 () -> int
+  body: unavailable
+
+fn duplicate@68..129 (int, bool) -> unit
+  body: unavailable
+
+fn target@130..152 () -> int
+  body: int 1 : int @151..152
+
+fn shadow@153..219 () -> int
+  body: unavailable
+
+fn poisoned@220..279 (bool) -> int
+  body: unavailable
+
+fn unknown@280..320 () -> int
+  body: unavailable
+
+== semantic diagnostics ==
+error[semantic/duplicate-name]: duplicate function `A`
+  primary @23..24
+  secondary @3..6: declared here
+error[semantic/duplicate-name]: duplicate parameter `ff`
+  primary @91..93
+  secondary @81..84: declared here
+error[semantic/not-callable]: local `target` is not callable
+  primary @209..215
+  secondary @182..200: declared here
+error[semantic/unknown-name]: unknown name `missing`
+  primary @264..271
+error[semantic/unknown-name]: unknown name `absent`
+  primary @302..320

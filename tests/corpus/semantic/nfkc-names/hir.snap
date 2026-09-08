@@ -1,0 +1,41 @@
+file: accepted
+frontend errors: 0 (see frontend.snap)
+semantic errors: 0
+
+fn ff@0..108 (int) -> int
+  param A@7..10: int
+  body: block : int @30..108
+    let A@40..41: int @36..51
+      initializer: eager + : int @44..51
+        lhs: read A@7..10 : int @44..47
+        rhs: int 1 : int @50..51
+    discard @56..100
+      value: block : unit @56..100
+        let A@70..73: bool @66..80
+          initializer: bool true : bool @76..80
+        discard @89..94
+          value: read A@70..73 : bool @93..94
+        tail: unit (implicit)
+    tail: read A@40..41 : int @105..106
+
+fn caller@109..135 () -> int
+  body: call ff@0..108 (callee @130..132) : int @130..135
+    arg[0]: int 1 : int @133..134
+
+fn distinct@136..192 (int, int, int) -> int
+  param a@148..149: int
+  param а@156..158: int
+  param A@165..166: int
+  body: eager + : int @182..192
+    lhs: eager + : int @182..188
+      lhs: read a@148..149 : int @182..183
+      rhs: read а@156..158 : int @186..188
+    rhs: read A@165..166 : int @191..192
+
+fn keyword_spelling@193..263 (bool) -> bool
+  param true@213..225: bool
+  body: read true@213..225 : bool @251..263
+
+fn empty@264..301 (unit) -> unit
+  param x@273..274: unit
+  body: read x@273..274 : unit @300..301

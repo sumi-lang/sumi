@@ -103,6 +103,7 @@ pub struct Function {
 }
 
 impl Function {
+    /// The NFKC-normalized name; original spelling remains in the parsed source.
     pub fn name(&self) -> Option<&str> {
         self.name.as_deref()
     }
@@ -157,6 +158,7 @@ impl Body {
 
 #[derive(Debug)]
 pub struct Local {
+    /// The NFKC-normalized name; `origin` retains the source spelling's range.
     pub name: Box<str>,
     pub origin: Span,
     pub ty: Ty,

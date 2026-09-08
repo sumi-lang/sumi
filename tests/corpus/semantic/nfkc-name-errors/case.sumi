@@ -1,0 +1,17 @@
+fn Ａ() -> int = 1
+fn A() -> int = 2
+fn ambiguous() -> int = Ａ()
+fn duplicate(ﬀ: int, ff: bool) {
+    _ = !ﬀ
+    _ = -ff
+}
+fn target() -> int = 1
+fn shadow() -> int {
+    let ｔａｒｇｅｔ = 1
+    target()
+}
+fn poisoned(A: bool) -> int {
+    let Ａ = missing
+    A
+}
+fn unknown() -> int = ａｂｓｅｎｔ

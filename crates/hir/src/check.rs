@@ -6,6 +6,7 @@ use sumi_syntax::{
     NodeIdx, NodeKind, SyntaxTree,
     ast::{self, AstNode},
 };
+use unicode_normalization::UnicodeNormalization;
 
 use crate::*;
 
@@ -26,11 +27,20 @@ impl Source<'_> {
         let range = self.span(node).range();
         &self.parsed.source()[range.start().to_usize()..range.end().to_usize()]
     }
+    fn name_key(&self, node: NodeIdx) -> Box<str> {
+        let text = self.text(node);
+        if text.is_ascii() {
+            return text.into();
+        }
+        // TODO: Implement a faster custom NFKC normalizer; investigate SIMD while
+        // preserving Unicode conformance and benchmarking identifier workloads.
+        text.nfkc().collect::<String>().into_boxed_str()
+    }
     fn name(&self, name: Option<ast::Name>) -> Option<(Box<str>, NodeIdx)> {
         let node = name?.node();
         (!self.tree.has_error(node)
             && self.parsed.lexed().kind(self.tree.first_token(node)) == SyntaxKind::Ident)
-            .then(|| (self.text(node).into(), node))
+            .then(|| (self.name_key(node), node))
     }
     fn error(
         &mut self,
@@ -62,7 +72,7 @@ impl Source<'_> {
         if self.tree.has_error(node.node()) {
             return None;
         }
-        match self.text(node.node()) {
+        match self.name_key(node.node()).as_ref() {
             "int" => Some(Ty::Int),
             "bool" => Some(Ty::Bool),
             "unit" => Some(Ty::Unit),
@@ -464,8 +474,8 @@ impl<'a, 's> Builder<'a, 's> {
         }
     }
     fn target(&mut self, node: NodeIdx) -> Option<FunctionId> {
-        let name = self.source.text(node);
-        if let Some(local) = self.lookup(name) {
+        let name = self.source.name_key(node);
+        if let Some(local) = self.lookup(&name) {
             if let Some(local) = local {
                 self.source.error(
                     node,
@@ -476,7 +486,7 @@ impl<'a, 's> Builder<'a, 's> {
             }
             return None;
         }
-        match self.names.get(name) {
+        match self.names.get(name.as_ref()) {
             Some(target) => *target,
             None => {
                 self.source.error(
@@ -627,14 +637,14 @@ impl<'a, 's> Builder<'a, 's> {
                 );
             }
             NodeKind::NameRef => {
-                let name = self.source.text(node);
-                match self.lookup(name) {
+                let name = self.source.name_key(node);
+                match self.lookup(&name) {
                     Some(Some(local)) => {
                         self.emit(node, ExprKind::Local(local), self.locals[local.0].ty);
                     }
                     Some(None) => return None,
                     None => {
-                        if self.names.contains_key(name) {
+                        if self.names.contains_key(name.as_ref()) {
                             self.unsupported(node);
                         } else {
                             self.source.error(
