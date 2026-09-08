@@ -14,9 +14,8 @@ Reading the numbers:
   literals has ever disturbed an untouched top-level item. The parts of a
   string literal with holes, and a hole's braces, are literal delimiters:
   an edit to one is Part C's, not Part A's. Its diagnostic counts are the
-  frontend's, so an edit that strips a statement down to a bare expression
-  before another statement adds the no-effect error to the parse evidence
-  it causes.
+  frontend's; type-dependent unused-value errors belong to semantic
+  checking and are not included.
 - Part B partner churn tops out at the bracket nesting depth around the
   edit (max 8 tokens of ~223k), boundary churn at 1, items disturbed at 0:
   one unmatched opener or deleted closer does not re-pair the rest of the
@@ -56,14 +55,14 @@ insert/delimiter        10000     4896    1.00000   1.00000   1.00000
 insert/non-delim        10000     4916    1.00000   1.00000   1.00000
 
 class                  diags_mean diags_p95  skipped_mean skipped_p95  evidence_mean evidence_p95
-delete/delimiter            1.784         4        51.281         292          1.747            4
-delete/non-delim            1.158         2        18.383         117          1.044            2
-duplicate/delimiter         1.591         3        45.899         271          1.541            3
-duplicate/non-delim         1.528         3        15.386          87          1.379            3
-swap/delimiter              1.871         4        34.597         194          1.766            4
-swap/non-delim              1.770         4        28.594         165          1.657            3
-insert/delimiter            1.754         4        39.278         234          1.664            4
-insert/non-delim            1.418         3        20.819         120          1.335            3
+delete/delimiter            1.747         4        51.281         292          1.747            4
+delete/non-delim            1.044         2        18.383         117          1.044            2
+duplicate/delimiter         1.541         3        45.899         271          1.541            3
+duplicate/non-delim         1.379         3        15.386          87          1.379            3
+swap/delimiter              1.766         4        34.597         194          1.766            4
+swap/non-delim              1.658         3        28.594         165          1.657            3
+insert/delimiter            1.694         4        39.278         234          1.664            4
+insert/non-delim            1.340         3        20.819         120          1.335            3
 
 == Part B: delimiter-breaking churn over clean corpora ==
 churn = original significant tokens (edit site excluded) whose partner()
@@ -92,11 +91,11 @@ far the stray delimiter reaches. A one-line literal reaches the end of its line 
 most; a `"""` reaches the next `"""` or the end of the file.
 
 literals_64k: 65549 bytes, 573 literals, 77 top-level items
-  delete " closer    n=200  spread p50/p95/max 11/87/146  diags 2/34/2834  items_disturbed 0/0/70
-  delete " opener    n=200  spread p50/p95/max 6/45/109  diags 3/13/2547  items_disturbed 0/0/66
-  delete ' closer    n=200  spread p50/p95/max 21/127/212  diags 2/2203/2800  items_disturbed 0/56/70
+  delete " closer    n=200  spread p50/p95/max 11/87/146  diags 2/18/1652  items_disturbed 0/0/70
+  delete " opener    n=200  spread p50/p95/max 6/45/109  diags 3/13/1485  items_disturbed 0/0/66
+  delete ' closer    n=200  spread p50/p95/max 21/127/212  diags 2/1296/1634  items_disturbed 0/56/70
   delete r" closer   n=200  spread p50/p95/max 21/106/106  diags 2/247/247  items_disturbed 0/43/43
-  delete """ closer  n=200  spread p50/p95/max 114/533/2256  diags 525/2661/2884  items_disturbed 27/69/70
-  delete """ opener  n=200  spread p50/p95/max 22/170/343  diags 329/2643/2978  items_disturbed 16/69/76
-  delete { of hole   n=200  spread p50/p95/max 34/125/154  diags 0/5/5  items_disturbed 0/0/0
-  delete } of hole   n=200  spread p50/p95/max 0/0/0  diags 2/9/35  items_disturbed 0/0/0
+  delete """ closer  n=200  spread p50/p95/max 114/533/2256  diags 314/1552/1677  items_disturbed 27/69/70
+  delete """ opener  n=200  spread p50/p95/max 22/170/343  diags 239/1540/1737  items_disturbed 16/69/76
+  delete { of hole   n=200  spread p50/p95/max 34/125/154  diags 0/3/3  items_disturbed 0/0/0
+  delete } of hole   n=200  spread p50/p95/max 0/0/0  diags 2/9/19  items_disturbed 0/0/0

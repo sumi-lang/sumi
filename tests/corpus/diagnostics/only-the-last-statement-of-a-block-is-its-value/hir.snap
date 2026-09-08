@@ -1,0 +1,22 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 7
+
+fn f@0..85 () -> int
+  body: unavailable
+
+== semantic diagnostics ==
+error[semantic/unknown-name]: unknown function `g`
+  primary @20..21
+error[semantic/unknown-name]: unknown name `c`
+  primary @31..32
+error[semantic/unknown-name]: unknown function `h`
+  primary @35..36
+error[semantic/unknown-name]: unknown function `k`
+  primary @47..48
+error[semantic/unsupported]: construct is not supported by scalar checking
+  primary @57..66
+error[semantic/unknown-name]: unknown name `a`
+  primary @71..72
+error[semantic/unknown-name]: unknown name `b`
+  primary @75..76

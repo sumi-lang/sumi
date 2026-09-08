@@ -1,0 +1,80 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 13
+
+fn value@0..21 () -> int
+  body: int 1 : int @20..21
+
+fn action@22..36 () -> unit
+  body: block : unit @34..36
+    tail: unit (implicit)
+
+fn accepted@37..197 () -> int
+  body: block : int @58..197
+    let u@68..69: unit @64..80
+      initializer: call action@22..36 (callee @72..78) : unit @72..80
+    discard @85..86
+      value: read u@68..69 : unit @85..86
+    discard @91..94
+      value: read u@68..69 : unit @92..93
+    discard @99..107
+      value: call action@22..36 (callee @99..105) : unit @99..107
+    discard @112..122
+      value: call action@22..36 (callee @113..119) : unit @113..121
+    discard @127..129
+      value: block : unit @127..129
+        tail: unit (implicit)
+    discard @134..144
+      value: if : unit @134..144
+        condition: bool true : bool @137..141
+        then: block : unit @142..144
+          tail: unit (implicit)
+        else: unit (implicit)
+    discard @149..160
+      value: call value@0..21 (callee @153..158) : int @153..160
+    discard @165..173
+      value: bool true : bool @169..173
+    discard @178..183
+      value: read u@68..69 : unit @182..183
+    tail: call value@0..21 (callee @188..193) : int @188..195
+
+fn rejected@198..340 () -> int
+  body: unavailable
+
+fn failed_expressions@341..421 () -> unit
+  body: unavailable
+
+fn nested_failure@422..479 () -> unit
+  body: unavailable
+
+fn tail_requires_unit@480..519 () -> unit
+  body: unavailable
+
+== semantic diagnostics ==
+error[semantic/unused-value]: unused value of type Int; use `_ =` to discard it
+  primary @239..240
+error[semantic/unused-value]: unused value of type Int; use `_ =` to discard it
+  primary @245..248
+error[semantic/unused-value]: unused value of type Int; use `_ =` to discard it
+  primary @253..258
+error[semantic/unused-value]: unused value of type Bool; use `_ =` to discard it
+  primary @263..267
+error[semantic/unused-value]: unused value of type Int; use `_ =` to discard it
+  primary @272..279
+error[semantic/unused-value]: unused value of type Int; use `_ =` to discard it
+  primary @284..293
+error[semantic/unused-value]: unused value of type Int; use `_ =` to discard it
+  primary @298..303
+error[semantic/unused-value]: unused value of type Int; use `_ =` to discard it
+  primary @308..332
+error[semantic/unknown-name]: unknown name `missing`
+  primary @371..378
+error[semantic/type-mismatch]: expected Int, found Bool
+  primary @387..391
+error[semantic/type-mismatch]: expected Unit, found Int
+  primary @404..409
+error[semantic/unused-value]: unused value of type Int; use `_ =` to discard it
+  primary @450..457
+error[semantic/type-mismatch]: expected Unit, found Int
+  primary @504..519
+  secondary @480..519: declared here

@@ -379,7 +379,7 @@ fn damaged_and_unsupported_declarations_hide_old_bindings() {
 
 #[test]
 fn syntax_diagnostics_are_preserved_and_always_reject() {
-    for source in ["fn f() -> int = 01", "fn f() { 1\n 2 }", "fn f() {}\r"] {
+    for source in ["fn f() -> int = 01", "fn f() {}\r"] {
         let parsed = parse_source(FileId::new(17), source.into()).unwrap();
         assert!(!parsed.diagnostics().is_empty());
         let tree = parsed.parse().tree();
@@ -389,6 +389,16 @@ fn syntax_diagnostics_are_preserved_and_always_reject() {
         assert!(!a.is_valid());
         assert_eq!(a.parsed.diagnostics(), before);
     }
+}
+
+#[test]
+fn unused_values_are_semantic_errors_without_complete_bodies() {
+    let a = check("fn f() -> int { 1\n 2 }");
+    assert!(a.parsed.diagnostics().is_empty());
+    assert_eq!(codes(&a), ["unused-value"]);
+    assert!(!a.is_valid());
+    assert!(a.functions[0].body().is_none());
+    clean("fn f() -> int { let u = {}\n u\n _ = 1\n 2 }");
 }
 
 #[test]

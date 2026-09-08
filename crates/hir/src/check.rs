@@ -576,6 +576,16 @@ impl<'a, 's> Builder<'a, 's> {
                         if index + 1 == children.len() {
                             tail = Some(value);
                         } else {
+                            let ty = self.exprs[value.0].ty;
+                            if ty != Ty::Unit {
+                                self.source.error(
+                                    child,
+                                    "unused-value",
+                                    format!("unused value of type {ty:?}; use `_ =` to discard it"),
+                                    None,
+                                );
+                                valid = false;
+                            }
                             statements.push(Statement {
                                 origin: self.source.span(child),
                                 kind: StatementKind::Eval(value),

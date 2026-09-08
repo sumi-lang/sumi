@@ -9,8 +9,3 @@ SourceFile 0..25
         PrefixExpr 15..17
           NameRef 16..17 "b"
         NameRef 22..23 "c"
-
-== diagnostics ==
-error[syntax/invalid-expression-statement] 2:3..2:4 "a": expression is not allowed before another statement
-  note: only a call, an `if`, or a block may stand alone before another statement; use `_ =` to discard this expression's value, or place it last in the block to use it as the block's value
-  note: the `-` on the next line is glued to its operand, so it begins a statement; spaced from it, it would continue this one

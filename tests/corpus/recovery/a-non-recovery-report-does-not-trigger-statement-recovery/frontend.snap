@@ -16,11 +16,9 @@ ExpectedBoundary at 13
 error[syntax/spaced-prefix-operator] 1:10..1:11 "-": prefix operator must be adjacent to its operand
   fix (safe): remove space after prefix operator
     1:11..1:12 " " -> ""
-error[syntax/invalid-expression-statement] 1:10..1:13 "- x": expression is not allowed before another statement
-  note: only a call, an `if`, or a block may stand alone before another statement; use `_ =` to discard this expression's value, or place it last in the block to use it as the block's value
 error[syntax/expected-boundary] 1:14: expected a line break between statements
 
-== fixed (syntax/expected-boundary, syntax/invalid-expression-statement remain) ==
+== fixed (syntax/expected-boundary remains) ==
 fn f() { -x y }
 
 == normalized ==

@@ -189,8 +189,7 @@ impl Gen {
             self.out.push_str(&e);
             self.out.push('\n');
         } else {
-            // A value before another statement has no effect and is an
-            // error, so it is discarded explicitly.
+            // Explicitly discard results without relying on their type.
             let e = self.expr(scope, 0);
             self.out.push_str(&format!("_ = {e}\n"));
         }

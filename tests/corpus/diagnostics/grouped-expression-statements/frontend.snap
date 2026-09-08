@@ -53,17 +53,3 @@ SourceFile 0..217
           NameRef 203..208 "value"
           ArgList 208..210 "()"
         LiteralExpr 213..214 "1"
-
-== diagnostics ==
-error[syntax/invalid-expression-statement] 4:5..4:8 "(x)": expression is not allowed before another statement
-  note: only a call, an `if`, or a block may stand alone before another statement; use `_ =` to discard this expression's value, or place it last in the block to use it as the block's value
-  note: a `(` on a new line begins a statement, never a call's arguments, which stay on their callee's line
-error[syntax/invalid-expression-statement] 5:5..5:18 "(value() + 1)": expression is not allowed before another statement
-  note: only a call, an `if`, or a block may stand alone before another statement; use `_ =` to discard this expression's value, or place it last in the block to use it as the block's value
-  note: a `(` on a new line begins a statement, never a call's arguments, which stay on their callee's line
-error[syntax/invalid-expression-statement] 6:5..6:10 "((1))": expression is not allowed before another statement
-  note: only a call, an `if`, or a block may stand alone before another statement; use `_ =` to discard this expression's value, or place it last in the block to use it as the block's value
-  note: a `(` on a new line begins a statement, never a call's arguments, which stay on their callee's line
-  note: the `-` on the next line is glued to its operand, so it begins a statement; spaced from it, it would continue this one
-error[syntax/invalid-expression-statement] 10:5..10:10 "value": expression is not allowed before another statement
-  note: only a call, an `if`, or a block may stand alone before another statement; use `_ =` to discard this expression's value, or place it last in the block to use it as the block's value
