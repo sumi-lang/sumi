@@ -544,8 +544,9 @@ fn lower_violation(
 /// or a block: any other computes a value that goes nowhere, and under the
 /// newline rule that is the shape a mis-split expression takes, `x` above
 /// a glued `-1`, or a `(` opening a line that was meant as arguments. The
-/// last statement is exempt, since it is the block's value. Judging by
-/// what follows rather than by what is last keeps the rule stable under
+/// classification ignores grouping parentheses. The last statement is
+/// exempt, since it is the block's value. Judging by what follows rather
+/// than by what is last keeps the rule stable under
 /// recovery: a statement followed by garbage, or holding an error of its
 /// own, is left to the diagnostics it already has.
 fn lower_statements(snapshot: &Snapshot<'_>, parse: &Parse, diagnostics: &mut Vec<Diagnostic>) {
@@ -560,7 +561,13 @@ fn lower_statements(snapshot: &Snapshot<'_>, parse: &Parse, diagnostics: &mut Ve
             let Some(&next) = children.get(index + 1) else {
                 break;
             };
-            let effect_free = Expr::cast(tree, node).is_some_and(|expr| {
+            let effect_free = Expr::cast(tree, node).is_some_and(|mut expr| {
+                while let Expr::ParenExpr(paren) = expr {
+                    let Some(inner) = paren.inner(tree) else {
+                        return false;
+                    };
+                    expr = inner;
+                }
                 !matches!(expr, Expr::CallExpr(_) | Expr::IfExpr(_) | Expr::Block(_))
             });
             if !effect_free || tree.has_error(node) || Stmt::cast(tree, next).is_none() {

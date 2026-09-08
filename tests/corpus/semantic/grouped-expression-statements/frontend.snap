@@ -1,0 +1,44 @@
+== tree ==
+SourceFile 0..180
+  FnItem 0..21
+    Name 3..8 "value"
+    ParamList 8..10 "()"
+    TypeRef 14..17 "int"
+    LiteralExpr 20..21 "1"
+  FnItem 22..179
+    Name 25..33 "sequence"
+    ParamList 33..35 "()"
+    TypeRef 39..42 "int"
+    Block 43..179
+      CallExpr 49..56
+        NameRef 49..54 "value"
+        ArgList 54..56 "()"
+      ParenExpr 61..70
+        CallExpr 62..69
+          NameRef 62..67 "value"
+          ArgList 67..69 "()"
+      ParenExpr 75..86
+        ParenExpr 76..85
+          CallExpr 77..84
+            NameRef 77..82 "value"
+            ArgList 82..84 "()"
+      ParenExpr 91..117
+        IfExpr 92..116
+          LiteralExpr 95..99 "true"
+          Block 100..105
+            LiteralExpr 102..103 "1"
+          Block 111..116
+            LiteralExpr 113..114 "2"
+      ParenExpr 122..131
+        ParenExpr 123..130
+          Block 124..129
+            LiteralExpr 126..127 "3"
+      LetStmt 136..150
+        Name 140..146 "action"
+        LiteralExpr 149..150 "4"
+      ParenExpr 155..164
+        CallExpr 156..163
+          NameRef 156..161 "value"
+          ArgList 161..163 "()"
+      ParenExpr 169..177
+        NameRef 170..176 "action"
