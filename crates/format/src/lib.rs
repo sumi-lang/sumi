@@ -4,9 +4,8 @@
 //! of the source. [`elements`] interleaves the two — the raw tokens attached
 //! directly to a node with its child subtrees — and [`reprint`] walks them
 //! to reconstruct the source byte for byte. [`normalize`] rewrites the
-//! layout violations the parser accepted as written — operator spacing and
-//! block placement — into canonical form, leaving every other byte,
-//! comments included, in place.
+//! spacing violations the parser accepted as written into canonical form,
+//! leaving every other byte, comments included, in place.
 
 use sumi_lexer::{LexErrorKind, LexedFile, lex};
 use sumi_syntax::{
@@ -86,21 +85,13 @@ pub fn reprint(tree: &SyntaxTree, lexed: &LexedFile, source: &str) -> String {
     out
 }
 
-/// Rewrite the layout violations of `parsed` into canonical form: space
-/// binary operators, glue prefix operators, and open blocks on the line of
-/// their owner. Every other byte keeps its place; a comment is never deleted,
-/// at worst the gap it blocks stays as written. Chained comparisons are
-/// structural, not layout, and stay as written too.
+/// Rewrite spacing violations of `parsed` into canonical form: space binary
+/// operators, glue prefix operators, and glue list openers. Every other byte
+/// keeps its place; comments and chained comparisons stay as written.
 ///
 /// The rewrite proves it changed only layout: the result keeps every
 /// significant token and every comment and reparses to the same tree
-/// shape, or the source comes back as written. Around recovered damage,
-/// what the parser makes of a line can turn on where the line breaks — a
-/// moved brace may hand recovery a different reading — and so
-/// can what the lexer makes of it: a literal that its line bounds takes
-/// in a brace moved to the end of that line, and a hole left open gives
-/// its line back when the break after it goes. No local check on the
-/// tokens settles either.
+/// shape, or the source comes back as written.
 pub fn normalize(source: &str, lexed: &LexedFile, parsed: &Parse) -> String {
     let mut edits = Vec::new();
     for evidence in parsed.evidence() {
@@ -125,9 +116,8 @@ pub fn normalize(source: &str, lexed: &LexedFile, parsed: &Parse) -> String {
 /// Build the mechanically valid candidate edits for one parser layout
 /// violation. The edits are nonempty, nonoverlapping, and source ordered,
 /// and none joins a hole's line to the next, which would change what the
-/// lexer makes of both. Movement edits still require a caller to establish
-/// safety around parser recovery; [`normalize`] does so with its
-/// whole-result gate, which also proves every token survived.
+/// lexer makes of both. [`normalize`] additionally checks the whole result
+/// preserves tokens and tree shape.
 pub fn layout_violation_edits(
     lexed: &LexedFile,
     violation: ParseViolation,
@@ -135,14 +125,6 @@ pub fn layout_violation_edits(
     let (start, end) = (violation.range.start(), violation.range.end());
     let mut edits = Vec::new();
     match violation.kind {
-        // Move the `{` to its owner's line; the gap's trivia — comments
-        // included — follows it instead.
-        ParseViolationKind::BlockOnNewLine => {
-            let owner =
-                prev_significant(lexed, start).expect("a misplaced block follows its owner");
-            edits.push(insert(token_end(lexed, owner), " {"));
-            edits.push(delete(token_start(lexed, start), token_end(lexed, start)));
-        }
         // Space the operator on each side another token is glued to.
         ParseViolationKind::UnspacedBinaryOperator => {
             if start

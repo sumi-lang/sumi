@@ -460,10 +460,10 @@ impl Build<'_> {
 
 /// Whether a declaration recovery anchor starts at `index`: `fn` plus a name, or
 /// a signature missing it — a name, a parenthesized list, and a body,
-/// a return type, or an expression body's `=` after the list on its line,
-/// which nothing else at the top level looks like. A misplaced call has neither after its list, and
-/// stays garbage. The caller has established that no matched bracket pair
-/// encloses `index`.
+/// a return type, or an expression body's `=` after the list. Only block bodies
+/// may start on a new line.
+/// A misplaced call has none of these after its list and stays garbage. The
+/// caller has established that no matched bracket pair encloses `index`.
 fn item_anchor_at(slots: &[Slot], index: usize) -> bool {
     if starts_item(slots[index].kind) {
         // `_` is an invalid name, but still identifies a declaration head.
@@ -479,12 +479,13 @@ fn item_anchor_at(slots: &[Slot], index: usize) -> bool {
             // the token after the list.
             let after = partner.get() as usize;
             slots.get(after).is_some_and(|next| {
-                next.flags & NEWLINE_BEFORE == 0
-                    && (next.kind == SyntaxKind::LBrace
-                        || next.kind == SyntaxKind::Eq
-                        || (next.kind == SyntaxKind::Minus
-                            && next.flags & JOINT != 0
-                            && slots.get(after + 1).map(|slot| slot.kind) == Some(SyntaxKind::Gt)))
+                next.kind == SyntaxKind::LBrace
+                    || (next.flags & NEWLINE_BEFORE == 0
+                        && (next.kind == SyntaxKind::Eq
+                            || (next.kind == SyntaxKind::Minus
+                                && next.flags & JOINT != 0
+                                && slots.get(after + 1).map(|slot| slot.kind)
+                                    == Some(SyntaxKind::Gt))))
             })
         })
 }

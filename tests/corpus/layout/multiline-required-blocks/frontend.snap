@@ -1,0 +1,64 @@
+== tree ==
+SourceFile 0..352
+  FnItem 0..97
+    Name 3..9 "choose"
+    ParamList 9..21
+      Param 10..20
+        Name 10..14 "flag"
+        TypeRef 16..20 "bool"
+    TypeRef 25..28 "int"
+    Block 29..97
+      IfExpr 35..95
+        NameRef 38..42 "flag"
+        Block 47..64
+          LiteralExpr 57..58 "1"
+        Block 78..95
+          LiteralExpr 88..89 "2"
+  FnItem 98..156
+    Name 101..116 "block_condition"
+    ParamList 116..118 "()"
+    TypeRef 122..125 "int"
+    IfExpr 128..156
+      Block 131..139
+        LiteralExpr 133..137 "true"
+      Block 140..145
+        LiteralExpr 142..143 "1"
+      Block 151..156
+        LiteralExpr 153..154 "2"
+  FnItem 157..259
+    Name 160..176 "nested_condition"
+    ParamList 176..178 "()"
+    TypeRef 182..185 "int"
+    IfExpr 188..259
+      IfExpr 191..222
+        LiteralExpr 194..198 "true"
+        Block 199..207
+          LiteralExpr 201..205 "true"
+        Block 213..222
+          LiteralExpr 215..220 "false"
+      Block 223..228
+        LiteralExpr 225..226 "1"
+      IfExpr 234..259
+        LiteralExpr 237..242 "false"
+        Block 243..248
+          LiteralExpr 245..246 "2"
+        Block 254..259
+          LiteralExpr 256..257 "3"
+  FnItem 260..313
+    Name 263..282 "continued_condition"
+    ParamList 282..284 "()"
+    IfExpr 287..313
+      BinaryExpr 290..310
+        Block 290..298
+          LiteralExpr 292..296 "true"
+        LiteralExpr 306..310 "true"
+      Block 311..313 "{}"
+  FnItem 314..351
+    Name 317..324 "grouped"
+    ParamList 324..326 "()"
+    ParenExpr 329..351
+      IfExpr 330..350
+        ParenExpr 333..339
+          LiteralExpr 334..338 "true"
+        Block 340..342 "{}"
+        Block 348..350 "{}"

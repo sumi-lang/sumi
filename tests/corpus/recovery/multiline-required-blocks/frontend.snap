@@ -1,0 +1,72 @@
+== tree ==
+SourceFile! 0..166
+  FnItem! 0..13
+    Name 0..8 "headless"
+    ParamList 8..10 "()"
+    Block 11..13 "{}"
+  FnItem! 14..52
+    Name 17..34 "missing_condition"
+    ParamList 34..36 "()"
+    IfExpr! 39..52
+      Block 42..44 "{}"
+      Block 50..52 "{}"
+  FnItem! 53..80
+    Name 56..68 "missing_body"
+    ParamList 68..70 "()"
+    IfExpr! 73..80
+      LiteralExpr 76..80 "true"
+  FnItem! 81..95
+    Name 81..90 "unrelated"
+    ParamList 90..92 "()"
+    Block 93..95 "{}"
+  FnItem 96..120
+    Name 99..107 "survivor"
+    ParamList 107..109 "()"
+    TypeRef 113..116 "int"
+    LiteralExpr 119..120 "1"
+  FnItem! 121..144
+    Name 124..132 "unclosed"
+    ParamList 132..134 "()"
+    Block! 135..144
+      BinaryExpr! 141..144
+        LiteralExpr 141..142 "1"
+  FnItem 145..165
+    Name 148..152 "next"
+    ParamList 152..154 "()"
+    TypeRef 158..161 "int"
+    LiteralExpr 164..165 "2"
+
+== evidence ==
+Expected(FnKw) at 0
+ExpectedExpression at 42
+Expected(LBrace) at 81
+Expected(FnKw) at 81
+ExpectedExpression at 145
+Expected(RBrace) at 145
+
+== diagnostics ==
+error[syntax/expected-token] 1:1: expected `fn`
+error[syntax/expected-expression] 4:1: expected an expression
+error[syntax/expected-token] 8:1: expected `{`
+error[syntax/expected-token] 8:1: expected `fn`
+error[syntax/expected-expression] 14:1: expected an expression
+error[syntax/expected-token] 14:1: expected `}`
+  at 12:1..12:2 "{": opening delimiter is here
+  fix (safe): insert `}`
+    13:8 -> "}"
+
+== fixed (syntax/expected-expression, syntax/expected-token, syntax/unspaced-binary-operator remain) ==
+headless()
+{}
+fn missing_condition() = if
+{}
+else
+{}
+fn missing_body() = if true
+unrelated()
+{}
+fn survivor() -> int = 1
+fn unclosed()
+{
+    1 +}
+fn next() -> int = 2

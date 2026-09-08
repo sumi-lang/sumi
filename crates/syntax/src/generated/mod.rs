@@ -23,7 +23,7 @@ pub mod ast;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum NodeKind {
     SourceFile,
-    /// A function item. The body is a block on the signature's line, or `=`
+    /// A function item. The body is a block, or `=`
     /// and an expression: `fn double(x: int) -> int = x * 2`. The `=` stays
     /// on the signature's line; the expression may continue onto the next,
     /// since `=` cannot end a statement.

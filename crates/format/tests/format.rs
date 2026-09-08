@@ -188,11 +188,6 @@ fn reprint_survives_long_expression_chains() {
 #[test]
 fn layout_violation_edits_are_atomic_and_source_ordered() {
     check_layout_edits(
-        "fn f()\n{ 1 }",
-        ParseViolationKind::BlockOnNewLine,
-        Some("fn f() {\n 1 }"),
-    );
-    check_layout_edits(
         "fn f() { a==b }",
         ParseViolationKind::UnspacedBinaryOperator,
         Some("fn f() { a == b }"),
@@ -221,6 +216,14 @@ fn layout_violation_edits_reject_nonmechanical_candidates() {
         ParseViolationKind::ChainedComparison,
         None,
     );
+}
+
+#[test]
+fn normalize_preserves_next_line_blocks() {
+    let source = "fn f()\n{ if true\n{} else\n{} }";
+    let before = front(source);
+    assert!(before.parse.evidence().is_empty());
+    assert_eq!(normalize(source, &before.lexed, &before.parse), source);
 }
 
 #[test]
