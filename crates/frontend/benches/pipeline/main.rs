@@ -165,6 +165,31 @@ fn bench_frontend(c: &mut Criterion) {
     group.finish();
 }
 
+// Files imported from another language often repeat the same unsupported
+// escape or number spelling. Keep both independent and grouped lex errors.
+fn bench_lex_diagnostics(c: &mut Criterion) {
+    let mut group = c.benchmark_group("frontend/lex-diagnostics");
+    for (name, literal, per_token) in [
+        ("escapes", r#""\q\x\z""#, 3),
+        ("numbers", "01__2E+03suffix", 2),
+    ] {
+        let source: String = (0..2048)
+            .map(|index| format!("fn f{index}() = {literal}\n"))
+            .collect();
+        let parsed = parse_source(FileId::new(0), source.clone().into_boxed_str()).unwrap();
+        assert_eq!(parsed.diagnostics().len(), 2048 * per_token);
+        group.throughput(Throughput::Bytes(source.len() as u64));
+        group.bench_function(name, |b| {
+            b.iter_batched(
+                || source.clone().into_boxed_str(),
+                |source| parse_source(FileId::new(0), source).unwrap(),
+                BatchSize::LargeInput,
+            );
+        });
+    }
+    group.finish();
+}
+
 /// Functions whose bodies each return one expression nested `depth` groups
 /// deep, repeated until the file reaches `total` bytes. Group pairing, Pratt
 /// recursion, and the depth guard all scale with nesting, which the
@@ -378,6 +403,7 @@ criterion_group!(
     benches,
     bench_pipeline_phases,
     bench_frontend,
+    bench_lex_diagnostics,
     bench_adversarial,
     bench_queries,
     bench_single_subtree_queries,

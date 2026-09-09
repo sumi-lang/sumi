@@ -80,273 +80,156 @@ fn lower_lex(snapshot: &Snapshot<'_>, diagnostics: &mut Vec<Diagnostic>) {
     }
 }
 
-struct NumberFact {
-    order: usize,
-    range: TextRange,
-    message: &'static str,
-}
-
 fn lower_token_errors(
     snapshot: &Snapshot<'_>,
     errors: &[LexError],
     diagnostics: &mut Vec<Diagnostic>,
 ) {
-    let mut emitted = Vec::new();
-    let mut number_facts = Vec::new();
-
-    for (order, error) in errors.iter().enumerate() {
-        match error.kind {
-            LexErrorKind::ReservedIdentifier(keyword) => emitted.push((
-                order,
-                primary(
+    let mut number = None;
+    let mut labels = Vec::new();
+    for error in errors {
+        let (code, message) = match error.kind {
+            LexErrorKind::ReservedIdentifier(keyword) => {
+                diagnostics.push(primary(
                     codes::RESERVED_IDENTIFIER,
                     format!(
                         "identifier normalizes to reserved spelling `{}`",
                         keyword.text().expect("reserved spelling")
                     ),
                     snapshot.range(error.range),
-                ),
-            )),
-            LexErrorKind::UnterminatedString => emitted.push((
-                order,
-                primary(
-                    codes::UNTERMINATED_STRING,
-                    "unterminated string literal",
-                    snapshot.range(error.range),
-                ),
-            )),
-            LexErrorKind::UnclosedHole => {
-                let mut diagnostic = primary(
-                    codes::UNCLOSED_HOLE,
-                    "hole in string literal is not closed on its line",
-                    snapshot.range(error.range),
-                );
-                diagnostic.notes = Box::new([
-                    "a `{` in a string literal opens a hole for an expression, which ends \
-                     with its line; a `{` meant as text is written `\\{`"
-                        .into(),
-                ]);
-                emitted.push((order, diagnostic));
+                ));
+                continue;
             }
-            LexErrorKind::UnterminatedRawString => emitted.push((
-                order,
-                primary(
-                    codes::UNTERMINATED_RAW_STRING,
-                    "unterminated raw string literal",
+            LexErrorKind::LeadingZero => {
+                (codes::NONCANONICAL_NUMBER, "integer part has leading zeros")
+            }
+            LexErrorKind::MisplacedUnderscore => (
+                codes::NONCANONICAL_NUMBER,
+                "underscore must be between two digits",
+            ),
+            LexErrorKind::UppercaseExponent => (
+                codes::NONCANONICAL_NUMBER,
+                "exponent marker must be lowercase `e`",
+            ),
+            LexErrorKind::ExponentPlusSign => (
+                codes::NONCANONICAL_NUMBER,
+                "`+` is not allowed in an exponent",
+            ),
+            LexErrorKind::ExponentLeadingZero => {
+                (codes::NONCANONICAL_NUMBER, "exponent has leading zeros")
+            }
+            LexErrorKind::UnterminatedString => {
+                (codes::UNTERMINATED_STRING, "unterminated string literal")
+            }
+            LexErrorKind::UnclosedHole => (
+                codes::UNCLOSED_HOLE,
+                "hole in string literal is not closed on its line",
+            ),
+            LexErrorKind::UnterminatedRawString => (
+                codes::UNTERMINATED_RAW_STRING,
+                "unterminated raw string literal",
+            ),
+            LexErrorKind::UnterminatedBlockString => (
+                codes::UNTERMINATED_BLOCK_STRING,
+                "unterminated multi-line string literal",
+            ),
+            LexErrorKind::UnterminatedRawBlockString => (
+                codes::UNTERMINATED_RAW_BLOCK_STRING,
+                "unterminated raw multi-line string literal",
+            ),
+            LexErrorKind::UnterminatedChar => {
+                (codes::UNTERMINATED_CHAR, "unterminated character literal")
+            }
+            LexErrorKind::LoneCarriageReturn => (
+                codes::LONE_CARRIAGE_RETURN,
+                "carriage return must be followed by a line feed",
+            ),
+            LexErrorKind::MisplacedBom => (
+                codes::MISPLACED_BOM,
+                "byte-order mark is only allowed at the start of a file",
+            ),
+            LexErrorKind::UnknownCharacter => (
+                codes::UNKNOWN_CHARACTER,
+                "character has no meaning in Sumi source",
+            ),
+            LexErrorKind::UnknownSuffix => {
+                (codes::UNKNOWN_SUFFIX, "literal suffixes are not supported")
+            }
+            LexErrorKind::MissingExponent => (codes::MISSING_EXPONENT, "exponent has no digits"),
+            LexErrorKind::UnknownEscape => (codes::UNKNOWN_ESCAPE, "unknown escape sequence"),
+            LexErrorKind::MalformedUnicodeEscape => {
+                (codes::MALFORMED_UNICODE_ESCAPE, "malformed Unicode escape")
+            }
+            LexErrorKind::InvalidUnicodeScalar => (
+                codes::INVALID_UNICODE_SCALAR,
+                "Unicode escape is not a valid scalar value",
+            ),
+            LexErrorKind::EmptyCharLiteral => {
+                (codes::EMPTY_CHAR_LITERAL, "character literal is empty")
+            }
+            LexErrorKind::MoreThanOneChar => (
+                codes::MORE_THAN_ONE_CHAR,
+                "character literal contains more than one character",
+            ),
+            LexErrorKind::UnknownPunctuation => (
+                codes::UNKNOWN_PUNCTUATION,
+                "punctuation has no meaning in Sumi source",
+            ),
+            LexErrorKind::BlockStringOpenerContent => (
+                codes::BLOCK_STRING_OPENER_CONTENT,
+                "multi-line string content must begin on the line after `\"\"\"`",
+            ),
+            LexErrorKind::BlockStringCloserContent => (
+                codes::BLOCK_STRING_CLOSER_CONTENT,
+                "closing `\"\"\"` must begin its own line",
+            ),
+            LexErrorKind::BlockStringIndentation => (
+                codes::BLOCK_STRING_INDENTATION,
+                "line is indented less than the closing `\"\"\"`",
+            ),
+        };
+        if code == codes::NONCANONICAL_NUMBER {
+            // Reserve its producer-order position at the first numeric fact.
+            // Ordinary errors already go directly to their final destination.
+            number.get_or_insert_with(|| {
+                diagnostics.push(primary(
+                    code,
+                    "numeric literal is not in canonical form",
                     snapshot.range(error.range),
-                ),
-            )),
-            LexErrorKind::UnterminatedBlockString => emitted.push((
-                order,
-                primary(
-                    codes::UNTERMINATED_BLOCK_STRING,
-                    "unterminated multi-line string literal",
-                    snapshot.range(error.range),
-                ),
-            )),
-            LexErrorKind::UnterminatedRawBlockString => emitted.push((
-                order,
-                primary(
-                    codes::UNTERMINATED_RAW_BLOCK_STRING,
-                    "unterminated raw multi-line string literal",
-                    snapshot.range(error.range),
-                ),
-            )),
-            LexErrorKind::UnterminatedChar => emitted.push((
-                order,
-                primary(
-                    codes::UNTERMINATED_CHAR,
-                    "unterminated character literal",
-                    snapshot.range(error.range),
-                ),
-            )),
-            LexErrorKind::LoneCarriageReturn => emitted.push((
-                order,
-                primary(
-                    codes::LONE_CARRIAGE_RETURN,
-                    "carriage return must be followed by a line feed",
-                    snapshot.range(error.range),
-                ),
-            )),
-            LexErrorKind::MisplacedBom => emitted.push((
-                order,
-                primary(
-                    codes::MISPLACED_BOM,
-                    "byte-order mark is only allowed at the start of a file",
-                    snapshot.range(error.range),
-                ),
-            )),
-            LexErrorKind::UnknownCharacter => emitted.push((
-                order,
-                primary(
-                    codes::UNKNOWN_CHARACTER,
-                    "character has no meaning in Sumi source",
-                    snapshot.range(error.range),
-                ),
-            )),
-            LexErrorKind::LeadingZero => number_facts.push(NumberFact {
-                order,
-                range: error.range,
-                message: "integer part has leading zeros",
-            }),
-            LexErrorKind::MisplacedUnderscore => number_facts.push(NumberFact {
-                order,
-                range: error.range,
-                message: "underscore must be between two digits",
-            }),
-            LexErrorKind::UppercaseExponent => number_facts.push(NumberFact {
-                order,
-                range: error.range,
-                message: "exponent marker must be lowercase `e`",
-            }),
-            LexErrorKind::ExponentPlusSign => number_facts.push(NumberFact {
-                order,
-                range: error.range,
-                message: "`+` is not allowed in an exponent",
-            }),
-            LexErrorKind::ExponentLeadingZero => number_facts.push(NumberFact {
-                order,
-                range: error.range,
-                message: "exponent has leading zeros",
-            }),
-            LexErrorKind::UnknownSuffix => emitted.push((
-                order,
-                primary(
-                    codes::UNKNOWN_SUFFIX,
-                    "literal suffixes are not supported",
-                    snapshot.range(error.range),
-                ),
-            )),
-            LexErrorKind::MissingExponent => emitted.push((
-                order,
-                primary(
-                    codes::MISSING_EXPONENT,
-                    "exponent has no digits",
-                    snapshot.range(error.range),
-                ),
-            )),
-            LexErrorKind::UnknownEscape => emitted.push((
-                order,
-                primary(
-                    codes::UNKNOWN_ESCAPE,
-                    "unknown escape sequence",
-                    snapshot.range(error.range),
-                ),
-            )),
-            LexErrorKind::MalformedUnicodeEscape => emitted.push((
-                order,
-                primary(
-                    codes::MALFORMED_UNICODE_ESCAPE,
-                    "malformed Unicode escape",
-                    snapshot.range(error.range),
-                ),
-            )),
-            LexErrorKind::InvalidUnicodeScalar => emitted.push((
-                order,
-                primary(
-                    codes::INVALID_UNICODE_SCALAR,
-                    "Unicode escape is not a valid scalar value",
-                    snapshot.range(error.range),
-                ),
-            )),
-            LexErrorKind::EmptyCharLiteral => emitted.push((
-                order,
-                primary(
-                    codes::EMPTY_CHAR_LITERAL,
-                    "character literal is empty",
-                    snapshot.range(error.range),
-                ),
-            )),
-            LexErrorKind::MoreThanOneChar => emitted.push((
-                order,
-                primary(
-                    codes::MORE_THAN_ONE_CHAR,
-                    "character literal contains more than one character",
-                    snapshot.range(error.range),
-                ),
-            )),
-            LexErrorKind::UnknownPunctuation => emitted.push((
-                order,
-                primary(
-                    codes::UNKNOWN_PUNCTUATION,
-                    "punctuation has no meaning in Sumi source",
-                    snapshot.range(error.range),
-                ),
-            )),
-            LexErrorKind::BlockStringOpenerContent => emitted.push((
-                order,
-                primary(
-                    codes::BLOCK_STRING_OPENER_CONTENT,
-                    "multi-line string content must begin on the line after `\"\"\"`",
-                    snapshot.range(error.range),
-                ),
-            )),
-            LexErrorKind::BlockStringCloserContent => emitted.push((
-                order,
-                primary(
-                    codes::BLOCK_STRING_CLOSER_CONTENT,
-                    "closing `\"\"\"` must begin its own line",
-                    snapshot.range(error.range),
-                ),
-            )),
-            LexErrorKind::BlockStringIndentation => emitted.push((
-                order,
-                primary(
-                    codes::BLOCK_STRING_INDENTATION,
-                    "line is indented less than the closing `\"\"\"`",
-                    snapshot.range(error.range),
-                ),
-            )),
+                ));
+                diagnostics.len() - 1
+            });
+            labels.push(Label {
+                location: snapshot.range(error.range),
+                message: Some(message.into()),
+            });
+            continue;
         }
+        let mut diagnostic = primary(code, message, snapshot.range(error.range));
+        if error.kind == LexErrorKind::UnclosedHole {
+            diagnostic.notes = Box::new([
+                "a `{` in a string literal opens a hole for an expression, which ends \
+                 with its line; a `{` meant as text is written `\\{`"
+                    .into(),
+            ]);
+        }
+        diagnostics.push(diagnostic);
     }
-
-    if !number_facts.is_empty() {
-        let order = number_facts
-            .iter()
-            .map(|fact| fact.order)
-            .min()
-            .expect("a numeric fact exists");
-        number_facts.sort_by_key(|fact| {
-            (
-                fact.range.start().to_u32(),
-                fact.range.end().to_u32(),
-                fact.order,
-            )
-        });
-        let mut facts = number_facts.into_iter();
-        let first = facts.next().expect("a numeric fact exists");
+    if let Some(index) = number {
+        let diagnostic = &mut diagnostics[index];
+        // The scanner can report an earlier underscore last.
+        labels.sort_by_key(|label| (label.location.start(), label.location.end()));
+        diagnostic.primary = labels.remove(0);
+        diagnostic.secondary = labels.into_boxed_slice();
         let token = errors[0].token;
         let token_range = snapshot.lexed.range(token);
         let text = snapshot.lexed.text(snapshot.source, token);
-        let fix = canonicalize_number_literal(text).map(|replacement| Fix {
+        diagnostic.fix = canonicalize_number_literal(text).map(|replacement| Fix {
             message: "canonicalize numeric literal".into(),
             applicability: Applicability::Safe,
             edits: vec![TextEdit::new(token_range, replacement)].into_boxed_slice(),
         });
-        emitted.push((
-            order,
-            Diagnostic {
-                code: codes::NONCANONICAL_NUMBER,
-                severity: Severity::Error,
-                message: "numeric literal is not in canonical form".into(),
-                primary: Label {
-                    location: snapshot.range(first.range),
-                    message: Some(first.message.into()),
-                },
-                secondary: facts
-                    .map(|fact| Label {
-                        location: snapshot.range(fact.range),
-                        message: Some(fact.message.into()),
-                    })
-                    .collect(),
-                notes: Box::new([]),
-                fix,
-            },
-        ));
     }
-
-    emitted.sort_by_key(|(order, _)| *order);
-    diagnostics.extend(emitted.into_iter().map(|(_, diagnostic)| diagnostic));
 }
 
 fn lower_parse(snapshot: &Snapshot<'_>, parse: &Parse, diagnostics: &mut Vec<Diagnostic>) {
