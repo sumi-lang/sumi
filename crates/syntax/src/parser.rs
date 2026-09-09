@@ -292,13 +292,16 @@ fn fn_item(p: &mut Marker<'_, '_>) {
             m.at(T::Ident) || m.at(T::Underscore) || m.at(T::LParen)
         });
     }
-    if m.at(T::Ident) || m.at(T::Underscore) {
+    let missing_name = if m.at(T::Ident) || m.at(T::Underscore) {
         name(&mut m);
         if m.at(T::LParen) && !m.newline() && !m.joint_before() {
             m.violation(ParseViolationKind::SpacedListOpener, 1);
         }
-    }
-    signature_tail(&mut m, ExprFollow::Anything, Signature::Item);
+        false
+    } else {
+        true
+    };
+    signature_tail(&mut m, ExprFollow::Anything, Signature::Item, missing_name);
     m.complete(N::FnItem);
 }
 
@@ -324,7 +327,7 @@ fn closure_expr(p: &mut Marker<'_, '_>, follow: ExprFollow) -> CompletedMarker {
     }
     let mut m = p.start();
     m.token(); // fn
-    signature_tail(&mut m, follow, Signature::Closure);
+    signature_tail(&mut m, follow, Signature::Closure, false);
     m.complete(N::ClosureExpr)
 }
 
@@ -346,17 +349,23 @@ enum Signature {
 /// when an expression can begin after it: anywhere else it is garbage
 /// like anything else, so a stray `=` in a signature never turns the
 /// list, the return type, or the block after it into a body.
-fn signature_tail(m: &mut Marker<'_, '_>, follow: ExprFollow, signature: Signature) {
+fn signature_tail(
+    m: &mut Marker<'_, '_>,
+    follow: ExprFollow,
+    signature: Signature,
+    allow_list_newline: bool,
+) {
     // The parameter list stays on the signature's line: `(` never
-    // continues one.
-    if !m.at(T::LParen) || m.newline() {
+    // continues one. When an item's name is missing, its line is the one
+    // after `fn` where the name and list would have begun.
+    if !m.at(T::LParen) || (m.newline() && !allow_list_newline) {
         let recovery = m.missing(ParseExpected::Token(T::LParen));
         signature_garbage(m, signature, recovery, |m| {
             m.at(T::LParen) || nth_arrow(m, 0)
         });
     }
     let mut complete = false;
-    if m.at(T::LParen) && !m.newline() {
+    if m.at(T::LParen) && (!m.newline() || allow_list_newline) {
         match signature {
             Signature::Item => delimited_list::<Params>(m),
             Signature::Closure => delimited_list::<ClosureParams>(m),

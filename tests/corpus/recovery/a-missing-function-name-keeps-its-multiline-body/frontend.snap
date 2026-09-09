@@ -1,0 +1,14 @@
+== tree ==
+SourceFile! 0..15
+  FnItem! 0..14
+    ParamList 4..6 "()"
+    Block 7..14
+      CallExpr 8..12
+        NameRef 8..9 "g"
+        ArgList 9..12 "(\n)"
+
+== evidence ==
+ExpectedName at 4
+
+== diagnostics ==
+error[syntax/expected-name] 2:2: expected a name
