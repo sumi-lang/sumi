@@ -28,14 +28,20 @@ fn codes(analysis: &Analysis) -> Vec<&'static str> {
 }
 
 #[test]
-fn expression_ids_are_compact_and_zero_based() {
+fn body_ids_are_compact_and_zero_based() {
     assert_eq!(size_of::<ExprId>(), 4);
     assert_eq!(size_of::<Option<ExprId>>(), 4);
+    assert_eq!(size_of::<LocalId>(), 4);
+    assert_eq!(size_of::<Option<LocalId>>(), 4);
     for index in [0, 1, 8192, u32::MAX as usize - 1] {
         let id = ExprId::new(index);
         assert_eq!(id.index(), index);
         assert_eq!(format!("{id:?}"), format!("ExprId({index})"));
         assert_ne!(Some(id), None);
+        let local = LocalId::new(index);
+        assert_eq!(local.index(), index);
+        assert_eq!(format!("{local:?}"), format!("LocalId({index})"));
+        assert_ne!(Some(local), None);
     }
 }
 
@@ -94,7 +100,7 @@ fn invariant(analysis: &Analysis, function: &Function) {
         match &expr.kind {
             ExprKind::Int(_) => assert_eq!(expr.ty, Ty::Int),
             ExprKind::Bool(_) => assert_eq!(expr.ty, Ty::Bool),
-            ExprKind::Local(local) => assert_eq!(expr.ty, body.locals[local.0].ty),
+            ExprKind::Local(local) => assert_eq!(expr.ty, body.locals[local.index()].ty),
             ExprKind::Neg(child) => {
                 assert_eq!(body.expression(*child).ty, Ty::Int);
                 assert_eq!(expr.ty, Ty::Int);
@@ -196,9 +202,9 @@ fn scalar_bodies_and_forward_recursive_calls() {
     let twice = analysis.functions[1].body().unwrap();
     assert_eq!(twice.exprs.len(), 5);
     assert_eq!(twice.locals.len(), 2);
-    assert_eq!(twice.params, [LocalId(0)]);
-    assert!(matches!(twice.exprs[0].kind, ExprKind::Local(LocalId(0))));
-    assert!(matches!(twice.exprs[3].kind, ExprKind::Local(LocalId(1))));
+    assert_eq!(twice.params, [LocalId::new(0)]);
+    assert!(matches!(twice.exprs[0].kind, ExprKind::Local(id) if id.index() == 0));
+    assert!(matches!(twice.exprs[3].kind, ExprKind::Local(id) if id.index() == 1));
     let answer = analysis.functions[0].body().unwrap();
     assert!(matches!(
         answer.expression(answer.root).kind,
@@ -222,7 +228,7 @@ fn lexical_scopes_and_sequential_shadowing() {
         .exprs
         .iter()
         .filter_map(|e| match e.kind {
-            ExprKind::Local(id) => Some(id.0),
+            ExprKind::Local(id) => Some(id.index()),
             _ => None,
         })
         .collect();

@@ -511,7 +511,7 @@ impl<'a, 's> Builder<'a, 's> {
     }
     fn bind(&mut self, name: Box<str>, node: NodeIdx, ty: Option<Term>) -> Option<LocalId> {
         let id = ty.map(|ty| {
-            let id = LocalId(self.locals.len());
+            let id = LocalId::new(self.locals.len());
             self.locals.push(DraftLocal {
                 name: name.clone(),
                 origin: self.source.span(node),
@@ -654,7 +654,7 @@ impl<'a, 's> Builder<'a, 's> {
                     node,
                     "not-callable",
                     format!("local `{name}` is not callable"),
-                    Some((self.locals[local.0].origin, "declared here")),
+                    Some((self.locals[local.index()].origin, "declared here")),
                 );
             }
             return None;
@@ -854,7 +854,7 @@ impl<'a, 's> Builder<'a, 's> {
                 let name = self.source.name_key(node);
                 match self.lookup(&name) {
                     Some(Some(local)) => {
-                        self.emit(node, ExprKind::Local(local), self.locals[local.0].ty);
+                        self.emit(node, ExprKind::Local(local), self.locals[local.index()].ty);
                     }
                     Some(None) => return None,
                     None => {

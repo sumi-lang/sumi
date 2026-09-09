@@ -44,8 +44,9 @@ pub struct FunctionId(usize);
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct ExprId(NonZeroU32);
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct LocalId(usize);
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct LocalId(NonZeroU32);
 
 impl ExprId {
     fn new(index: usize) -> Self {
@@ -67,9 +68,20 @@ impl fmt::Debug for ExprId {
 }
 
 impl LocalId {
+    fn new(index: usize) -> Self {
+        // Parameters and let bindings each own a distinct syntax node.
+        Self(NonZeroU32::new(u32::try_from(index + 1).expect("local count fits u32")).unwrap())
+    }
+
     /// Index into the owning body's `locals()` slice, not another body's.
     pub fn index(self) -> usize {
-        self.0
+        (self.0.get() - 1) as usize
+    }
+}
+
+impl fmt::Debug for LocalId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("LocalId").field(&self.index()).finish()
     }
 }
 
@@ -170,7 +182,7 @@ impl Body {
     }
     /// The ID must belong to this body.
     pub fn local(&self, id: LocalId) -> &Local {
-        &self.locals[id.0]
+        &self.locals[id.index()]
     }
 }
 
