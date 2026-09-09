@@ -526,6 +526,14 @@ fn lower_violation(snapshot: &Snapshot<'_>, violation: ParseViolation) -> Diagno
             codes::FUNCTION_NAME_ON_NEXT_LINE,
             "function name must be on the same line as `fn`",
         ),
+        ParseViolationKind::FunctionItemOnSameLine => (
+            codes::FUNCTION_ITEM_ON_SAME_LINE,
+            "function item must begin on a new line",
+        ),
+        ParseViolationKind::BindingNameOnNextLine => (
+            codes::BINDING_NAME_ON_NEXT_LINE,
+            "binding name must be on the same line as `let`",
+        ),
         ParseViolationKind::ChainedComparison => (
             codes::CHAINED_COMPARISON,
             "comparison operators cannot be chained",
@@ -537,6 +545,8 @@ fn lower_violation(snapshot: &Snapshot<'_>, violation: ParseViolation) -> Diagno
             ParseViolationKind::SpacedPrefixOperator => "remove space after prefix operator",
             ParseViolationKind::SpacedListOpener => "remove space before `(`",
             ParseViolationKind::FunctionNameOnNextLine => "move function name onto `fn` line",
+            ParseViolationKind::FunctionItemOnSameLine => "move function item onto a new line",
+            ParseViolationKind::BindingNameOnNextLine => "move binding name onto `let` line",
             ParseViolationKind::ChainedComparison => {
                 unreachable!("chained comparisons have no mechanical layout fix")
             }

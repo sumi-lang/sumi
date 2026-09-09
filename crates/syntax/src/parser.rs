@@ -108,6 +108,10 @@ pub enum ParseViolationKind {
     SpacedListOpener,
     /// A function name beginning on a line after its `fn` keyword.
     FunctionNameOnNextLine,
+    /// A function item beginning on the line of an earlier item.
+    FunctionItemOnSameLine,
+    /// A binding name beginning on a line after its `let` keyword.
+    BindingNameOnNextLine,
     /// A comparison applied to a comparison, as in `a < b < c`.
     ChainedComparison,
 }
@@ -184,20 +188,28 @@ pub const MAX_DEPTH: u32 = 256;
 /// declarations remain protected from recovery in the preceding interval.
 fn source_file(p: &mut Marker<'_, '_>) {
     let item_candidate = |p: &Marker<'_, '_>| p.at(T::FnKw) && !p.in_matched_delimiters();
+    let mut item_ends_here = false;
     for anchor in 0..=p.item_anchor_count() {
         p.set_limit(p.item_anchor(anchor));
         if anchor > 0 {
             // The previous interval ended at this declaration's head,
             // including signatures recovered without `fn`.
+            let has_fn = p.at(T::FnKw);
+            if item_ends_here && has_fn && !p.newline() {
+                p.violation(ParseViolationKind::FunctionItemOnSameLine, 1);
+            }
             fn_item(p);
+            item_ends_here = has_fn;
         }
         while p.current().is_some() {
             if item_candidate(p) {
                 fn_item(p);
+                item_ends_here = false;
             } else {
                 let recovery =
                     p.recover_tokens(ParseRecoveryKind::Expected(ParseExpected::Item), 1);
                 skip_all(p, recovery, item_candidate);
+                item_ends_here = false;
             }
         }
     }
@@ -802,8 +814,13 @@ fn statement(p: &mut Marker<'_, '_>) {
 fn let_stmt(p: &mut Marker<'_, '_>) {
     let mut m = p.start();
     m.token(); // let
+    let mut split_head = m.newline();
     if m.at(T::MutKw) {
         m.token();
+        split_head |= m.newline();
+    }
+    if split_head && m.at(T::Ident) {
+        m.violation(ParseViolationKind::BindingNameOnNextLine, 1);
     }
     name(&mut m);
     // The annotation and initializer stay on the binding's line: `:` and

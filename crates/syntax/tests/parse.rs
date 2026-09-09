@@ -212,7 +212,7 @@ fn nesting_is_bounded() {
     assert_unclosed(&evidence_kinds(&opens(MAX_DEPTH + 40)), "NestingTooDeep");
     // The skip past the limit stops at the next item like any recovery:
     // the parens are unclosed, so the `fn` is not theirs to take.
-    let next_item = format!("{}x fn g() {{}}", opens(MAX_DEPTH + 40));
+    let next_item = format!("{}x\nfn g() {{}}", opens(MAX_DEPTH + 40));
     assert_unclosed(&evidence_kinds(&next_item), "NestingTooDeep");
     assert_eq!(items(&next_item), 2);
     // Far past the limit: one error, no crash, and the file still closes.

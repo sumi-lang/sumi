@@ -129,7 +129,7 @@ error[syntax/expected-item] 16:34..16:35 ",": expected a function item
   at 16:50..16:51 ")": skipped while recovering
 error[syntax/expected-name] 16:54: expected a name
 
-== fixed (syntax/expected-body, syntax/expected-item, syntax/expected-name, syntax/expected-token remain) ==
+== fixed (syntax/expected-body, syntax/expected-item, syntax/expected-name, syntax/expected-token, syntax/function-item-on-same-line remain) ==
 fn () {}
 garbage fn () {}
 fn malformed_closure() = fn = 1

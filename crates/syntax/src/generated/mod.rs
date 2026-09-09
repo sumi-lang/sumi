@@ -22,6 +22,8 @@ pub mod ast;
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum NodeKind {
+    /// A source file contains function items, each beginning on a new line after
+    /// the first.
     SourceFile,
     /// A function item. Its name begins on the same line as `fn`. The body is a
     /// block or `=` and an expression: `fn double(x: int) -> int = x * 2`.
@@ -38,6 +40,7 @@ pub enum NodeKind {
     /// A type reference: a name, until types grow more shapes.
     TypeRef,
     Block,
+    /// A binding statement. Its `let`, optional `mut`, and name share one line.
     LetStmt,
     AssignStmt,
     DiscardStmt,

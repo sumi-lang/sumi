@@ -13,6 +13,7 @@ SourceFile! 0..20
 == evidence ==
 ExpectedStatement at 9
 Expected(RBrace) at 11
+FunctionItemOnSameLine at 11
 
 == diagnostics ==
 error[syntax/expected-statement] 1:10..1:11 ":": expected a statement
@@ -20,6 +21,14 @@ error[syntax/expected-token] 1:12: expected `}`
   at 1:8..1:9 "{": opening delimiter is here
   fix (safe): insert `}`
     1:11 -> "}"
+error[syntax/function-item-on-same-line] 1:12..1:14 "fn": function item must begin on a new line
+  fix (safe): move function item onto a new line
+    1:11..1:12 " " -> "\n"
 
 == fixed (syntax/expected-statement remains) ==
-fn f() { :} fn g() {}
+fn f() { :}
+fn g() {}
+
+== normalized ==
+fn f() { :
+fn g() {}

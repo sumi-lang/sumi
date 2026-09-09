@@ -202,6 +202,16 @@ fn layout_violation_edits_are_atomic_and_source_ordered() {
         ParseViolationKind::FunctionNameOnNextLine,
         Some("fn f() {}"),
     );
+    check_layout_edits(
+        "fn a() {}fn b() {}",
+        ParseViolationKind::FunctionItemOnSameLine,
+        Some("fn a() {}\nfn b() {}"),
+    );
+    check_layout_edits(
+        "fn f() { let\nmut\nx = 1 }",
+        ParseViolationKind::BindingNameOnNextLine,
+        Some("fn f() { let mut x = 1 }"),
+    );
 }
 
 #[test]
@@ -224,6 +234,11 @@ fn layout_violation_edits_reject_nonmechanical_candidates() {
     check_layout_edits(
         "fn // why\nf() {}",
         ParseViolationKind::FunctionNameOnNextLine,
+        None,
+    );
+    check_layout_edits(
+        "fn f() { let // why\nx = 1 }",
+        ParseViolationKind::BindingNameOnNextLine,
         None,
     );
 }
