@@ -15,6 +15,7 @@
 //! types will need structural unification (and occurs checks), replacing scalar
 //! evidence here, not adding unknown types to public HIR or another syntax walk.
 use std::collections::VecDeque;
+use std::num::NonZeroUsize;
 
 use crate::Ty;
 
@@ -155,22 +156,37 @@ impl Inference {
         for id in 0..self.parent.len() {
             self.compress(id);
         }
-        let mut outgoing = vec![Vec::new(); self.parent.len()];
-        for &(provider, consumer) in &self.imports {
+        let mut outgoing = vec![None; self.parent.len()];
+        let mut edges = Vec::with_capacity(
+            self.imports
+                .iter()
+                .filter(|(provider, _)| matches!(provider, Term::Var(_)))
+                .count(),
+        );
+        // One-based links keep None compact. Prepending in reverse preserves
+        // each provider's original consumer order.
+        for &(provider, consumer) in self.imports.iter().rev() {
             let Term::Var(consumer) = consumer else {
                 unreachable!()
             };
             let consumer = self.root(consumer);
             match provider {
                 Term::Known(ty) => self.evidence[consumer].0 |= Evidence::known(ty).0,
-                Term::Var(provider) => outgoing[self.root(provider)].push(consumer),
+                Term::Var(provider) => {
+                    let provider = self.root(provider);
+                    edges.push((consumer, outgoing[provider]));
+                    outgoing[provider] = NonZeroUsize::new(edges.len());
+                }
             }
         }
         let mut queue: VecDeque<_> = (0..self.parent.len())
             .filter(|&id| self.parent[id] == id && self.evidence[id].0 != 0)
             .collect();
         while let Some(provider) = queue.pop_front() {
-            for &consumer in &outgoing[provider] {
+            let mut edge = outgoing[provider];
+            while let Some(index) = edge {
+                let (consumer, next) = edges[index.get() - 1];
+                edge = next;
                 let before = self.evidence[consumer];
                 self.evidence[consumer].0 |= self.evidence[provider].0;
                 if before != self.evidence[consumer] {
