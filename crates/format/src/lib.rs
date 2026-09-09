@@ -271,10 +271,7 @@ fn changes_only_layout(
         return false;
     }
     let reparse = parse(&ParserInput::new(&after));
-    let after = reparse.tree();
-    after.len() == tree.len()
-        && tree.nodes().all(|node| after.kind(node) == tree.kind(node))
-        && after.parents() == tree.parents()
+    tree.same_shape(reparse.tree())
 }
 
 /// Whether `after` holds the significant tokens of `before`, kind for kind
