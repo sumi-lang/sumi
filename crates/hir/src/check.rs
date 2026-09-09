@@ -169,12 +169,11 @@ impl Source<'_> {
         }
     }
     // Read only a token gap, never scan an expression subtree for its operator.
-    fn tokens(&self, start: RawIdx, end: RawIdx) -> String {
+    fn tokens(&self, start: RawIdx, end: RawIdx) -> impl Iterator<Item = SyntaxKind> + '_ {
         start
             .until(end)
-            .filter(|&raw| !self.parsed.lexed().kind(raw).is_trivia())
-            .map(|raw| self.parsed.lexed().text(self.parsed.source(), raw))
-            .collect()
+            .map(|raw| self.parsed.lexed().kind(raw))
+            .filter(|kind| !kind.is_trivia())
     }
     fn peel(&self, mut expr: ast::Expr) -> ast::Expr {
         while let ast::Expr::ParenExpr(paren) = expr {
@@ -264,9 +263,10 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
                     let end = item
                         .body(tree)
                         .map_or(tree.end_token(item.node()), |e| tree.first_token(e.node()));
-                    match source.tokens(tree.end_token(list.node()), end).as_str() {
-                        "" => Some(Term::Known(Ty::Unit)),
-                        "=" => Some(inference.fresh()),
+                    let mut tokens = source.tokens(tree.end_token(list.node()), end);
+                    match (tokens.next(), tokens.next()) {
+                        (None, None) => Some(Term::Known(Ty::Unit)),
+                        (Some(SyntaxKind::Eq), None) => Some(inference.fresh()),
                         _ => None,
                     }
                 })
@@ -547,12 +547,15 @@ impl<'a, 's> Builder<'a, 's> {
     fn enter(&mut self, node: NodeIdx, work: &mut Vec<Work>) {
         let tree = self.source.tree;
         if let Some(binding) = ast::LetStmt::cast(tree, node) {
-            let mutable = self.source.tokens(
-                tree.first_token(node),
-                binding
-                    .name(tree)
-                    .map_or(tree.end_token(node), |n| tree.first_token(n.node())),
-            ) == "letmut";
+            let mutable = self
+                .source
+                .tokens(
+                    tree.first_token(node),
+                    binding
+                        .name(tree)
+                        .map_or(tree.end_token(node), |n| tree.first_token(n.node())),
+                )
+                .eq([SyntaxKind::LetKw, SyntaxKind::MutKw]);
             if tree.has_error(node) || mutable {
                 if mutable && !tree.has_error(node) {
                     self.unsupported(node);
@@ -573,11 +576,12 @@ impl<'a, 's> Builder<'a, 's> {
         }
         if let Some(ast::Expr::PrefixExpr(prefix)) = ast::Expr::cast(tree, node) {
             let operand = prefix.operand(tree).unwrap();
-            let op = self
+            let neg = self
                 .source
-                .tokens(tree.first_token(node), tree.first_token(operand.node()));
+                .tokens(tree.first_token(node), tree.first_token(operand.node()))
+                .eq([SyntaxKind::Minus]);
             let peeled = self.source.peel(operand);
-            if op == "-"
+            if neg
                 && tree.kind(peeled.node()) == NodeKind::LiteralExpr
                 && self
                     .source
@@ -888,7 +892,7 @@ impl<'a, 's> Builder<'a, 's> {
                 let neg = self
                     .source
                     .tokens(tree.first_token(node), tree.first_token(operand))
-                    == "-";
+                    .eq([SyntaxKind::Minus]);
                 let ty = if neg { Ty::Int } else { Ty::Bool };
                 if !self.require(operand, value, ty, None) {
                     return None;

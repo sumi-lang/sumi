@@ -322,6 +322,8 @@ fn signatures_do_not_invent_missing_types_or_resolve_ambiguity() {
     for source in [
         "fn f(a:) -> { let x: = 1 }",
         "fn f() -> = 1",
+        "fn f() == 1",
+        "fn f() = = 1",
         "fn f(a: int, ) ->",
         "fn f(a) {}",
     ] {
@@ -340,6 +342,35 @@ fn signatures_do_not_invent_missing_types_or_resolve_ambiguity() {
     assert!(a.functions[0].signature().is_some());
     assert!(a.functions[0].body().is_none());
     assert!(a.functions[1].body().is_some());
+}
+
+#[test]
+fn token_gaps_ignore_trivia_without_losing_semantics() {
+    let a = clean(
+        "fn inferred() // header\n = 7\nfn unit() // header\n {}\nfn local() = { let\tvalue = 3\n -value }\nfn boolean() = !false",
+    );
+    let results: Vec<_> = a
+        .functions()
+        .iter()
+        .map(|f| f.signature().unwrap().result)
+        .collect();
+    assert_eq!(results, [Ty::Int, Ty::Unit, Ty::Int, Ty::Bool]);
+    let body = a.functions()[2].body().unwrap();
+    assert!(
+        body.exprs
+            .iter()
+            .any(|e| matches!(e.kind, ExprKind::Neg(_)))
+    );
+    let body = a.functions()[3].body().unwrap();
+    assert!(matches!(
+        body.expression(body.root()).kind,
+        ExprKind::Not(_)
+    ));
+
+    let a = check("fn f() = { let\tmut\tvalue = 3\n value }");
+    assert!(a.parsed().diagnostics().is_empty());
+    assert_eq!(codes(&a), ["unsupported"]);
+    assert!(a.functions()[0].body().is_none());
 }
 
 #[test]
