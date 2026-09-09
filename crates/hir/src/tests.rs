@@ -547,6 +547,49 @@ fn blocks_preserve_statement_order_and_only_the_last_child_is_a_tail() {
 }
 
 #[test]
+fn nested_blocks_consume_only_their_own_statements() {
+    let source = "fn f() = { let a = 11\n let b = { _ = a\n 29 }\n { _ = b }\n _ = 7\n b }";
+    let a = clean(source);
+    let body = a.functions[0].body().unwrap();
+    let blocks: Vec<Vec<&str>> = body
+        .exprs
+        .iter()
+        .filter_map(|expr| {
+            let ExprKind::Block { statements, .. } = &expr.kind else {
+                return None;
+            };
+            Some(
+                statements
+                    .iter()
+                    .map(|statement| {
+                        let range = statement.origin.range();
+                        &source[range.start().to_usize()..range.end().to_usize()]
+                    })
+                    .collect(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        blocks,
+        [
+            vec!["_ = a"],
+            vec!["_ = b"],
+            vec!["let a = 11", "let b = { _ = a\n 29 }", "{ _ = b }", "_ = 7"],
+        ]
+    );
+
+    // A failed inner tail must still drain the inner statement, and must
+    // not disturb checking the rest of the outer block or the next body.
+    let a = check(&format!(
+        "{}\nfn g() = {{ _ = 5\n 3 }}",
+        source.replace("29", "missing")
+    ));
+    assert_eq!(codes(&a), ["unknown-name"]);
+    assert!(a.functions[0].body().is_none());
+    invariant(&a, &a.functions[1]);
+}
+
+#[test]
 fn source_origins_are_utf8_byte_ranges() {
     let a = clean("fn café(é: int) -> int = é + 1");
     let body = a.functions[0].body().unwrap();

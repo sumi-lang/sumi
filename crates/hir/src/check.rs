@@ -414,7 +414,7 @@ struct Builder<'a, 's> {
     locals: Vec<DraftLocal>,
     exprs: Vec<DraftExpr>,
     values: &'a mut [Option<ExprId>],
-    statements: HashMap<NodeIdx, Statement>,
+    statements: Vec<(NodeIdx, Statement)>,
     failed: bool,
 }
 
@@ -439,7 +439,7 @@ impl<'a, 's> Builder<'a, 's> {
             locals: Vec::new(),
             exprs: Vec::new(),
             values,
-            statements: HashMap::new(),
+            statements: Vec::new(),
             failed: false,
         }
     }
@@ -750,8 +750,11 @@ impl<'a, 's> Builder<'a, 's> {
                 let mut tail = None;
                 let mut valid = !tree.has_error(node);
                 // Children arrive last first; only the first can be the tail.
+                // Completed statements are stacked in source order. Nested
+                // blocks consume their own statements before reaching here.
                 for (index, child) in tree.children(node).enumerate() {
-                    if let Some(statement) = self.statements.remove(&child) {
+                    if let Some((_, statement)) = self.statements.pop_if(|(node, _)| *node == child)
+                    {
                         statements.push(statement);
                     } else if let Some(value) = self.value(child) {
                         if index == 0 {
@@ -816,7 +819,7 @@ impl<'a, 's> Builder<'a, 's> {
                     }
                 }
                 let local = self.bind(name, name_node, initializer.map(|id| self.exprs[id.0].ty));
-                self.statements.insert(
+                self.statements.push((
                     node,
                     Statement {
                         origin: self.source.span(node),
@@ -825,20 +828,20 @@ impl<'a, 's> Builder<'a, 's> {
                             initializer: initializer?,
                         },
                     },
-                );
+                ));
             }
             NodeKind::DiscardStmt => {
                 let value = ast::DiscardStmt::cast(tree, node)
                     .unwrap()
                     .value(tree)
                     .unwrap();
-                self.statements.insert(
+                self.statements.push((
                     node,
                     Statement {
                         origin: self.source.span(node),
                         kind: StatementKind::Eval(self.value(value.node())?),
                     },
-                );
+                ));
             }
             NodeKind::NameRef => {
                 let name = self.source.name_key(node);
