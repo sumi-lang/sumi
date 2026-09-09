@@ -70,7 +70,16 @@ fn covering_matches_the_reference_under_recovery() {
 
 #[test]
 fn trivia_only_files_answer_the_root() {
+    check_queries("");
     check_queries("  // just a comment\n\n");
+}
+
+#[test]
+fn descent_stops_in_gaps_and_skips_unrelated_subtrees() {
+    check_queries("// head\nfn first() = { 1 + (2 * 3) }\n// between\nfn last() = ((7))\n// tail");
+    check_queries("fn f() = { { 1 }\n// gap\n { (2 + 3) * (4 + 5) } }");
+    // Long ancestor paths must not truncate or reverse the result.
+    check_queries(&format!("fn f() = {}1{}", "(".repeat(64), ")".repeat(64)));
 }
 
 #[test]

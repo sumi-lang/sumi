@@ -204,9 +204,18 @@ impl SyntaxTree {
     /// The innermost node covering raw token `token`, which must lie in the
     /// file. A token attached to no node — trivia between two children —
     /// resolves to the nearest node whose range spans it, at worst the root.
+    #[inline]
     pub fn covering(&self, token: RawIdx) -> NodeIdx {
-        self.covering_chain(token)
-            .next()
+        assert!(
+            token < self.end_token(self.root()),
+            "token must be within the file"
+        );
+        // Completion ends are monotone. Finding just the innermost node
+        // can stop at the first match without constructing an ancestor path.
+        let from = self.nodes.partition_point(|node| node.end_token <= token);
+        (from..self.nodes.len())
+            .find(|&index| self.nodes[index].first_token <= token)
+            .map(node_idx)
             .expect("the root covers every token in the file")
     }
 
@@ -214,47 +223,42 @@ impl SyntaxTree {
     /// [`covering`](Self::covering) answers, then each enclosing node out
     /// to the root — every node's parent is the entry after it. Never
     /// empty, since the root covers every token; `token` must lie in the
-    /// file. The chain sifts every completion from the covering node to
-    /// the root, so a consumer resolving many positions builds
-    /// [`parents`](Self::parents) once instead.
+    /// file. Root children have disjoint ranges, so only the containing
+    /// subtree can contribute ancestors besides the root. The scan stays
+    /// within that subtree and allocates nothing.
     pub fn covering_chain(&self, token: RawIdx) -> impl Iterator<Item = NodeIdx> + '_ {
         assert!(
             token < self.nodes[self.root().to_usize()].end_token,
             "token must be within the file"
         );
-        // TODO: descending from the root instead — hopping over later
-        // siblings by extent at each level — would visit only the path and
-        // its siblings, several times faster and no longer growing with
-        // file size; take that trade once a consumer feels this scan.
-        //
-        // `end_token` is non-decreasing in completion order, so everything
-        // ending at or before `token` drops out by binary search. Of the
-        // rest, a node either covers `token` or lies wholly past it, and
-        // covering nodes — an ancestor chain — complete innermost first.
-        let from = self.nodes.partition_point(|node| node.end_token <= token);
-        (from..self.nodes.len())
+        let root = self.root();
+        let containing = self
+            .children(root)
+            .find(|&child| self.first_token(child) <= token)
+            .filter(|&child| token < self.end_token(child));
+        let (from, end) = containing.map_or((0, 0), |child| {
+            let end = child.to_usize() + 1;
+            let start = end - self.nodes[child.to_usize()].extent as usize;
+            let from =
+                start + self.nodes[start..end].partition_point(|node| node.end_token <= token);
+            (from, end)
+        });
+        (from..end)
             .filter(move |&index| self.nodes[index].first_token <= token)
             .map(node_idx)
+            .chain(std::iter::once(root))
     }
 
-    /// The parent of every node, one entry per node from one reverse pass;
+    /// The parent of every node, one entry per node from its direct children;
     /// the root names itself. The tree stores no parent links — the
     /// covering chain answers parents for positional queries — so a
     /// consumer needing random-access parents builds this table on demand.
     pub fn parents(&self) -> Vec<NodeIdx> {
-        let mut parents = vec![NodeIdx::new(0); self.nodes.len()];
-        // The open ancestors, innermost last: node index and where its
-        // subtree begins. Reverse postorder reaches a parent before its
-        // children, and leaves a subtree exactly when the index drops
-        // below its start.
-        let mut stack: Vec<(NodeIdx, usize)> = Vec::new();
-        for index in (0..self.nodes.len()).rev() {
-            while stack.last().is_some_and(|&(_, start)| start > index) {
-                stack.pop();
+        let mut parents = vec![self.root(); self.nodes.len()];
+        for node in self.nodes() {
+            for child in self.children(node) {
+                parents[child.to_usize()] = node;
             }
-            let node = node_idx(index);
-            parents[index] = stack.last().map_or(node, |&(parent, _)| parent);
-            stack.push((node, index + 1 - self.nodes[index].extent as usize));
         }
         parents
     }
