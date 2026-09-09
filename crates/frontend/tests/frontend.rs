@@ -126,6 +126,21 @@ fn parentheses_can_still_be_repaired_in_hole_code() {
 }
 
 #[test]
+fn closer_fixes_do_not_change_tokens_in_damaged_interpolation() {
+    let front = parsed("fn#\"n{(r\"\"\"t");
+    check_closer_fixes(&front);
+    let closer = front
+        .diagnostics()
+        .iter()
+        .find(|diagnostic| {
+            diagnostic.code == codes::EXPECTED_TOKEN
+                && diagnostic.primary.location.start().to_u32() == 10
+        })
+        .expect("the missing parenthesis remains diagnosed");
+    assert!(closer.fix.is_none());
+}
+
+#[test]
 fn parsed_source_owns_every_syntactic_product() {
     let source = String::from("fn f() {}\n").into_boxed_str();
     let front = parse_source(FILE, source).expect("test source fits in u32");

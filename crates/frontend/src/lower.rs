@@ -411,7 +411,7 @@ fn lower_recovery(
                 }),
         )
         .collect();
-    let fix = closer_fix(recovery, snapshot.lexed, closer_fix_sites);
+    let fix = closer_fix(recovery, snapshot, closer_fix_sites);
 
     Diagnostic {
         code,
@@ -429,9 +429,10 @@ fn lower_recovery(
 
 fn closer_fix(
     recovery: &ParseRecovery,
-    lexed: &LexedFile,
+    snapshot: &Snapshot<'_>,
     sites: &mut HashSet<(SyntaxKind, u32)>,
 ) -> Option<Fix> {
+    let lexed = snapshot.lexed;
     let (ParseRecoveryKind::Expected(ParseExpected::Closer { kind, .. }), ParseAnchor::Gap(gap)) =
         (recovery.kind, recovery.anchor)
     else {
@@ -455,6 +456,21 @@ fn closer_fix(
                 lexed.kind(token),
                 SyntaxKind::StringStart | SyntaxKind::StringMiddle | SyntaxKind::HoleClose
             )
+    }) {
+        return None;
+    }
+    // In a damaged hole the lexer keeps `r` separate from the first two
+    // quotes of `r\"\"\"`, so the third can close the surrounding literal.
+    // Inserting before that third quote breaks the triple and makes the
+    // existing `r\"\"` one raw-string token instead.
+    if previous.is_some_and(|quote| {
+        lexed.kind(quote) == SyntaxKind::StringLiteral
+            && lexed.text(snapshot.source, quote) == "\"\""
+            && quote.checked_sub(1).is_some_and(|ident| {
+                lexed.kind(ident) == SyntaxKind::Ident
+                    && lexed.text(snapshot.source, ident) == "r"
+                    && lexed.flags(ident).contains(TokenFlags::HOLE_AFTER)
+            })
     }) {
         return None;
     }
