@@ -480,6 +480,41 @@ fn unused_values_are_semantic_errors_without_complete_bodies() {
     assert!(!a.is_valid());
     assert!(a.functions[0].body().is_none());
     clean("fn f() -> int { let u = {}\n u\n _ = 1\n 2 }");
+
+    // The two unused values share an inferred type and produce distinct errors.
+    let a = check("fn f() = { let x = value()\n x\n x\n 0 }\nfn value() = 3");
+    assert_eq!(codes(&a), ["unused-value", "unused-value"]);
+    assert!(a.diagnostics[0].primary.location.start() < a.diagnostics[1].primary.location.start());
+    assert!(a.functions[0].body().is_none());
+}
+
+#[test]
+fn blocks_preserve_statement_order_and_only_the_last_child_is_a_tail() {
+    let a = clean("fn f() = { let x = 11\n _ = 29\n {}\n 7 }\nfn g() = { _ = 5 }\nfn h() = {}");
+    let body = a.functions[0].body().unwrap();
+    let ExprKind::Block { statements, tail } = &body.expression(body.root()).kind else {
+        panic!("expected a block");
+    };
+    let texts: Vec<_> = statements
+        .iter()
+        .map(|statement| {
+            let range = statement.origin.range();
+            &a.parsed.source()[range.start().to_usize()..range.end().to_usize()]
+        })
+        .collect();
+    assert_eq!(texts, ["let x = 11", "_ = 29", "{}"]);
+    assert!(matches!(
+        body.expression(tail.unwrap()).kind,
+        ExprKind::Int(7)
+    ));
+    for (function, count) in [(1, 1), (2, 0)] {
+        let body = a.functions[function].body().unwrap();
+        let ExprKind::Block { statements, tail } = &body.expression(body.root()).kind else {
+            panic!("expected a block");
+        };
+        assert_eq!(statements.len(), count);
+        assert!(tail.is_none());
+    }
 }
 
 #[test]
