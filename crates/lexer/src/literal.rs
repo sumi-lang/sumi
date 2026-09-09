@@ -273,96 +273,77 @@ pub(crate) fn validate_char(text: &str, mut error: impl FnMut(Range<usize>, LexE
 /// Validate a terminated multi-line literal, `"""` or `r"""` to `"""`: its
 /// layout, and its escapes unless it is `raw`. Line breaks split the text
 /// into the opener's line, the content lines, and the closer's line, and a
-/// lone `\r` is one too, reported as it goes. The `holes` are the ranges
-/// of the literal's holes, which hold code rather than text: no line break
-/// lies in one, and no escape is looked for there.
+/// lone `\r` is one too. `parts` yields the literal's text ranges, excluding
+/// interpolation code; escapes cannot cross from one part to the next.
 pub(crate) fn validate_block_string(
     text: &str,
     raw: bool,
-    holes: &[Range<usize>],
+    parts: impl Iterator<Item = Range<usize>>,
     mut error: impl FnMut(Range<usize>, LexErrorKind),
 ) {
     let open = if raw { 4 } else { 3 };
     let close = text.len() - 3;
-    let bytes = text.as_bytes();
-
-    let mut lines: Vec<Range<usize>> = Vec::new();
-    let mut line_start = open;
-    let mut position = open;
-    while position < close {
-        match bytes[position] {
-            b'\n' => {
-                lines.push(line_start..position);
-                position += 1;
-                line_start = position;
-            }
-            b'\r' => {
-                lines.push(line_start..position);
-                if bytes.get(position + 1) == Some(&b'\n') {
-                    position += 2;
-                } else {
-                    error(position..position + 1, LexErrorKind::LoneCarriageReturn);
-                    position += 1;
-                }
-                line_start = position;
-            }
-            _ => position += 1,
+    let body = &text[open..close];
+    // Preserve diagnostic phase order: line endings, delimiters, indentation,
+    // then escapes. Finding the two edge lines needs no line table.
+    for (offset, _) in body.match_indices('\r') {
+        let position = open + offset;
+        if text.as_bytes().get(position + 1) != Some(&b'\n') {
+            error(position..position + 1, LexErrorKind::LoneCarriageReturn);
         }
     }
-    lines.push(line_start..close);
-    let blank = |line: &Range<usize>| {
-        text[line.clone()]
-            .bytes()
-            .all(|byte| byte == b' ' || byte == b'\t')
-    };
-    let indentation = |line: &Range<usize>| {
-        line.start + text[line.clone()].len()
-            - text[line.clone()].trim_start_matches([' ', '\t']).len()
-    };
-
-    let opener_line = lines[0].clone();
-    if !blank(&opener_line) {
+    let opener_end = open + body.find(['\r', '\n']).unwrap_or(body.len());
+    let closer_start = body
+        .rfind(['\r', '\n'])
+        .map_or(open, |offset| open + offset + 1);
+    let opener = &text[open..opener_end];
+    let opener_content = opener.trim_start_matches([' ', '\t']);
+    if !opener_content.is_empty() {
         error(
-            indentation(&opener_line)..opener_line.end,
+            opener_end - opener_content.len()..opener_end,
             LexErrorKind::BlockStringOpenerContent,
         );
     }
-    let closer_line = lines[lines.len() - 1].clone();
-    let closer_own_line = lines.len() > 1 && blank(&closer_line);
+    let multiline = opener_end < close;
+    let prefix = &text[closer_start..close];
+    let closer_own_line = multiline && prefix.trim_start_matches([' ', '\t']).is_empty();
     if !closer_own_line {
         error(close..text.len(), LexErrorKind::BlockStringCloserContent);
     }
-
+    if !multiline {
+        return;
+    }
+    let content_start = opener_end
+        + if text[opener_end..].starts_with("\r\n") {
+            2
+        } else {
+            1
+        };
+    let content = content_start..closer_start;
     if closer_own_line {
-        let prefix = &text[closer_line.clone()];
-        for line in &lines[1..lines.len() - 1] {
-            if !blank(line) && !text[line.clone()].starts_with(prefix) {
+        let mut start = content.start;
+        for line in text[content.clone()].split_inclusive(['\r', '\n']) {
+            let end = start + line.len();
+            let line = line.trim_end_matches(['\r', '\n']);
+            let unindented = line.trim_start_matches([' ', '\t']);
+            if !unindented.is_empty() && !line.starts_with(prefix) {
                 error(
-                    line.start..indentation(line),
+                    start..start + line.len() - unindented.len(),
                     LexErrorKind::BlockStringIndentation,
                 );
             }
+            start = end;
         }
     }
-
-    if !raw && lines.len() > 1 {
-        // The content, from after the opener's line to the closer's line,
-        // in the stretches of text between its holes.
-        let content = lines[1].start..closer_line.start;
-        let mut stretches = Vec::with_capacity(holes.len() + 1);
-        let mut stretch_start = content.start;
-        for hole in holes {
-            let hole = hole.start.max(content.start)..hole.end.min(content.end);
-            if hole.start < hole.end {
-                stretches.push(stretch_start..hole.start);
-                stretch_start = hole.end;
+    if !raw {
+        for part in parts {
+            let part = part.start.max(content.start)..part.end.min(content.end);
+            if part.start >= part.end {
+                continue;
             }
-        }
-        stretches.push(stretch_start..content.end);
-        for stretch in stretches {
-            walk_escapes(&text[stretch.clone()], true, |start, end, result| {
+            walk_escapes(&text[part.clone()], true, |start, end, result| {
                 if let Err(kind) = result {
-                    error(stretch.start + start..stretch.start + end, kind);
+                    error(part.start + start..part.start + end, kind);
                 }
             });
         }

@@ -357,6 +357,53 @@ fn block_string_escapes_join_lines() {
 }
 
 #[test]
+fn block_validation_keeps_error_phase_order_across_mixed_line_endings() {
+    // All errors belong to one token, so stable token sorting must preserve
+    // line-ending errors before layout errors before escape errors.
+    check_error_ranges(
+        "\"\"\"x\r\n a\\q\r b\\p\r\n  \"\"\"",
+        &[
+            (0, 10, 11, LexErrorKind::LoneCarriageReturn),
+            (0, 3, 4, LexErrorKind::BlockStringOpenerContent),
+            (0, 6, 7, LexErrorKind::BlockStringIndentation),
+            (0, 11, 12, LexErrorKind::BlockStringIndentation),
+            (0, 8, 10, LexErrorKind::UnknownEscape),
+            (0, 13, 15, LexErrorKind::UnknownEscape),
+        ],
+    );
+    for newline in ["\n", "\r\n"] {
+        for opener in ["\"\"\"", "r\"\"\""] {
+            check_errors(&format!("{opener}{newline}\t\"\"\""), &[]);
+            check_errors(&format!("{opener}{newline}\tα{newline}\t\"\"\""), &[]);
+        }
+    }
+}
+
+#[test]
+fn block_escapes_exclude_hole_code_and_resume_after_each_hole() {
+    let source = "\"\"\"\n  {r\"\\q\"}\\p{x}\\u{zz}\n  \"\"\"";
+    let lexed = lex(source).unwrap();
+    let errors: Vec<_> = lexed
+        .errors()
+        .iter()
+        .map(|error| {
+            let range = error.range;
+            (
+                error.kind,
+                &source[range.start().to_usize()..range.end().to_usize()],
+            )
+        })
+        .collect();
+    assert_eq!(
+        errors,
+        [
+            (LexErrorKind::UnknownEscape, "\\p"),
+            (LexErrorKind::MalformedUnicodeEscape, "\\u{zz}"),
+        ]
+    );
+}
+
+#[test]
 fn line_literals_get_only_their_unterminated_error() {
     check_errors(
         "\"a\\\nb\"",

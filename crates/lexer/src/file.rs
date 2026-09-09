@@ -193,10 +193,10 @@ fn collect_errors(
             literal::validate_string_body(text, 0..body_end, &mut error);
         }
         SyntaxKind::BlockStringLiteral => {
-            literal::validate_block_string(text, false, &[], &mut error);
+            literal::validate_block_string(text, false, std::iter::once(0..text.len()), &mut error);
         }
         SyntaxKind::RawBlockStringLiteral => {
-            literal::validate_block_string(text, true, &[], &mut error);
+            literal::validate_block_string(text, true, std::iter::once(0..text.len()), &mut error);
         }
         SyntaxKind::CharLiteral => literal::validate_char(text, &mut error),
         SyntaxKind::Error if token.raw == RawKind::Punct => {
@@ -244,32 +244,17 @@ fn validate_block_parts(
         .get(last + 1)
         .map_or(source.len(), |next| next.start.to_usize());
     let text = &source[base..end];
-    // The holes: what lies between one part of the literal and the next.
-    let mut holes = Vec::new();
-    let mut previous_end = None;
-    for (offset, token) in tokens[first..=last].iter().enumerate() {
-        let start = token.start.to_usize();
-        if token.raw != RawKind::BlockString {
-            continue;
-        }
-        if let Some(previous_end) = previous_end
-            && previous_end < start
-        {
-            holes.push(previous_end - base..start - base);
-        }
-        let index = first + offset;
-        previous_end = Some(
-            tokens
-                .get(index + 1)
-                .map_or(source.len(), |next| next.start.to_usize()),
-        );
-    }
-    if let Some(previous_end) = previous_end
-        && previous_end < end
-    {
-        holes.push(previous_end - base..end - base);
-    }
-    literal::validate_block_string(text, false, &holes, |relative, kind| {
+    let parts = tokens[first..=last]
+        .iter()
+        .enumerate()
+        .filter(|&(_offset, token)| token.raw == RawKind::BlockString)
+        .map(|(offset, token)| {
+            let end = tokens
+                .get(first + offset + 1)
+                .map_or(source.len(), |next| next.start.to_usize());
+            token.start.to_usize() - base..end - base
+        });
+    literal::validate_block_string(text, false, parts, |relative, kind| {
         let start = base + relative.start;
         let index = tokens.partition_point(|token| token.start.to_usize() <= start) - 1;
         let token_end = tokens
