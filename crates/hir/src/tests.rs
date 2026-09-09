@@ -318,6 +318,21 @@ fn bad_calls_check_arguments_before_poisoning_binding() {
 }
 
 #[test]
+fn call_arguments_keep_source_order() {
+    let a = clean("fn select(a: int, b: int, c: int) -> int = b\nfn caller() = select(11, 29, 7)");
+    let body = a.functions()[1].body().unwrap();
+    let ExprKind::Call { args, .. } = &body.expression(body.root()).kind else {
+        panic!("expected a call");
+    };
+    for (index, &value) in [11, 29, 7].iter().enumerate() {
+        // Both evaluation order and the published argument positions matter.
+        assert!(matches!(body.exprs[index].kind, ExprKind::Int(n) if n == value));
+        assert!(matches!(body.expression(args[index]).kind, ExprKind::Int(n) if n == value));
+    }
+    assert_eq!(args.len(), 3);
+}
+
+#[test]
 fn signatures_do_not_invent_missing_types_or_resolve_ambiguity() {
     for source in [
         "fn f(a:) -> { let x: = 1 }",
