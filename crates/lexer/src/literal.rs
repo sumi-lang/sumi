@@ -57,10 +57,10 @@ pub fn canonicalize_number_literal(text: &str) -> Option<Box<str>> {
     }
     let shape = scan_number(text, |_, _| {});
     let mut canonical = String::with_capacity(text.len());
-    canonical.push_str(&canonical_digit_run(&text[shape.integer.clone()], true));
+    canonical_digit_run(&text[shape.integer], true, &mut canonical);
     if let Some(fraction) = shape.fraction {
         canonical.push('.');
-        canonical.push_str(&canonical_digit_run(&text[fraction], false));
+        canonical_digit_run(&text[fraction], false, &mut canonical);
     }
     if let Some(exponent) = shape.exponent {
         canonical.push('e');
@@ -70,7 +70,7 @@ pub fn canonicalize_number_literal(text: &str) -> Option<Box<str>> {
         {
             canonical.push('-');
         }
-        canonical.push_str(&canonical_digit_run(&text[exponent.digits], true));
+        canonical_digit_run(&text[exponent.digits], true, &mut canonical);
     }
     canonical.push_str(&text[shape.suffix_start..]);
 
@@ -177,9 +177,15 @@ fn scan_number(text: &str, mut error: impl FnMut(Range<usize>, LexErrorKind)) ->
     }
 }
 
-fn canonical_digit_run(run: &str, trim_zeros: bool) -> String {
+fn canonical_digit_run(mut run: &str, trim_zeros: bool, output: &mut String) {
+    if trim_zeros && run.starts_with('0') {
+        let Some(nonzero) = run.bytes().position(|byte| matches!(byte, b'1'..=b'9')) else {
+            output.push('0');
+            return;
+        };
+        run = &run[nonzero..];
+    }
     let bytes = run.as_bytes();
-    let mut clean = String::with_capacity(run.len());
     for (position, &byte) in bytes.iter().enumerate() {
         if byte != b'_'
             || (position > 0
@@ -188,16 +194,8 @@ fn canonical_digit_run(run: &str, trim_zeros: bool) -> String {
                     .get(position + 1)
                     .is_some_and(|next| next.is_ascii_digit()))
         {
-            clean.push(byte as char);
+            output.push(byte as char);
         }
-    }
-    if !trim_zeros || !clean.as_bytes().starts_with(b"0") {
-        return clean;
-    }
-    if let Some(nonzero) = clean.bytes().position(|byte| matches!(byte, b'1'..=b'9')) {
-        clean[nonzero..].to_owned()
-    } else {
-        "0".to_owned()
     }
 }
 
