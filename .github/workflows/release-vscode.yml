@@ -1,0 +1,159 @@
+name: Release VS Code extension
+
+on:
+  push:
+    tags:
+      - "vscode-v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vscode-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build extension
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: editors/vscode
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - name: Verify release metadata
+        run: |
+          tag_version="${GITHUB_REF_NAME#vscode-v}"
+          manifest_version="$(bun -p "require('./package.json').version")"
+          if [ "$tag_version" != "$manifest_version" ]; then
+            echo "::error::tag version $tag_version does not match manifest version $manifest_version"
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::the tagged commit is not on main"
+            exit 1
+          fi
+      - run: bun run check
+      - name: Prepare release artifact
+        run: |
+          version="${GITHUB_REF_NAME#vscode-v}"
+          vsix="dist/sumi-language-$version.vsix"
+          sha256sum "$vsix" > "$vsix.sha256"
+          awk -v heading="## $version" '
+            $0 == heading { found = 1; next }
+            found && /^## / { exit }
+            found { print }
+            END { if (!found) exit 1 }
+          ' CHANGELOG.md > dist/release-notes.md
+          test -s dist/release-notes.md
+          {
+            echo "### VS Code extension $version"
+            echo
+            echo "\`$(cat "$vsix.sha256")\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sumi-vscode-release
+          path: |
+            editors/vscode/dist/*.vsix
+            editors/vscode/dist/*.sha256
+            editors/vscode/dist/release-notes.md
+          if-no-files-found: error
+
+  publish-marketplace:
+    name: Publish to Visual Studio Marketplace
+    needs: build
+    runs-on: ubuntu-latest
+    environment: vscode-marketplace
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: editors/vscode
+    steps:
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: sumi-vscode-release
+          path: editors/vscode/dist
+      - run: sha256sum --check "dist/sumi-language-${GITHUB_REF_NAME#vscode-v}.vsix.sha256"
+      - name: Publish to Visual Studio Marketplace
+        run: >-
+          bunx @vscode/vsce@3.9.2 publish
+          --packagePath "dist/sumi-language-${GITHUB_REF_NAME#vscode-v}.vsix"
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+
+  publish-openvsx:
+    name: Publish to Open VSX
+    needs: build
+    runs-on: ubuntu-latest
+    environment: vscode-openvsx
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: editors/vscode
+    steps:
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: sumi-vscode-release
+          path: editors/vscode/dist
+      - run: sha256sum --check "dist/sumi-language-${GITHUB_REF_NAME#vscode-v}.vsix.sha256"
+      - name: Publish to Open VSX
+        run: >-
+          bunx ovsx@1.1.1 publish
+          "dist/sumi-language-${GITHUB_REF_NAME#vscode-v}.vsix"
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+
+  github-release:
+    name: Create GitHub release
+    needs: [build, publish-marketplace, publish-openvsx]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: editors/vscode
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: sumi-vscode-release
+          path: editors/vscode/dist
+      - run: sha256sum --check "dist/sumi-language-${GITHUB_REF_NAME#vscode-v}.vsix.sha256"
+      - name: Create GitHub release
+        run: |
+          version="${GITHUB_REF_NAME#vscode-v}"
+          if existing="$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft 2>/dev/null)"; then
+            if [ "$existing" != true ]; then
+              echo "::error::GitHub release $GITHUB_REF_NAME is already published"
+              exit 1
+            fi
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              --draft \
+              --latest=false \
+              --notes-file dist/release-notes.md \
+              --title "VS Code extension $version" \
+              --verify-tag
+          fi
+          gh release upload "$GITHUB_REF_NAME" \
+            "dist/sumi-language-$version.vsix" \
+            "dist/sumi-language-$version.vsix.sha256" \
+            --clobber
+          gh release edit "$GITHUB_REF_NAME" --draft=false --latest=false
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}

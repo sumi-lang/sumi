@@ -1,0 +1,65 @@
+{
+  "name": "sumi-language",
+  "displayName": "Sumi Language",
+  "description": "Language support for the Sumi programming language",
+  "version": "0.0.2",
+  "publisher": "sumi-lang",
+  "packageManager": "bun@1.4.2",
+  "license": "UPL-1.0",
+  "icon": "images/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sumi-lang/sumi.git",
+    "directory": "editors/vscode"
+  },
+  "bugs": {
+    "url": "https://github.com/sumi-lang/sumi/issues"
+  },
+  "homepage": "https://sumi-lang.org",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "sumi",
+    "language",
+    "syntax"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "sumi",
+        "aliases": [
+          "Sumi",
+          "sumi"
+        ],
+        "extensions": [
+          ".sumi"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "sumi",
+        "scopeName": "source.sumi",
+        "path": "./syntaxes/sumi.tmLanguage.json"
+      }
+    ]
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "package": "mkdir -p dist && bunx vsce package --no-dependencies --out dist/sumi-language-$(bun -p 'require(\"./package.json\").version').vsix",
+    "check": "bun run typecheck && bun test && bun run package"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.2",
+    "@vscode/vsce": "3.9.2",
+    "typescript": "7.0.2",
+    "vscode-oniguruma": "2.0.1",
+    "vscode-textmate": "9.3.2"
+  }
+}
