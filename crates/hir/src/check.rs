@@ -204,8 +204,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         .items(tree)
         .collect();
     let mut functions: Vec<Function> = Vec::new();
-    let mut names = HashMap::<Box<str>, Option<FunctionId>>::new();
-    let mut first_names = HashMap::new();
+    let mut names = HashMap::<Box<str>, (Span, Option<FunctionId>)>::new();
     let mut parameters = Vec::new();
     let mut headers = Vec::new();
     let mut inference = Inference::default();
@@ -214,17 +213,16 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         let name = source.name(item.name(tree));
         let id = FunctionId(functions.len());
         if let Some((name, node)) = &name {
-            if let Some(&first) = first_names.get(name) {
+            if let Some((first, target)) = names.get_mut(name) {
                 source.error(
                     *node,
                     "duplicate-name",
                     format!("duplicate function `{name}`"),
-                    Some((first, "declared here")),
+                    Some((*first, "declared here")),
                 );
-                names.insert(name.clone(), None);
+                *target = None;
             } else {
-                first_names.insert(name.clone(), source.span(*node));
-                names.insert(name.clone(), Some(id));
+                names.insert(name.clone(), (source.span(*node), Some(id)));
             }
         }
         let list = item.param_list(tree);
@@ -403,7 +401,7 @@ enum Work {
 struct Builder<'a, 's> {
     source: &'a mut Source<'s>,
     functions: &'a [Header],
-    names: &'a HashMap<Box<str>, Option<FunctionId>>,
+    names: &'a HashMap<Box<str>, (Span, Option<FunctionId>)>,
     inference: &'a mut Inference,
     obligations: &'a mut Vec<Obligation>,
     owner: usize,
@@ -419,7 +417,7 @@ impl<'a, 's> Builder<'a, 's> {
     fn new(
         source: &'a mut Source<'s>,
         functions: &'a [Header],
-        names: &'a HashMap<Box<str>, Option<FunctionId>>,
+        names: &'a HashMap<Box<str>, (Span, Option<FunctionId>)>,
         inference: &'a mut Inference,
         obligations: &'a mut Vec<Obligation>,
         owner: usize,
@@ -653,7 +651,7 @@ impl<'a, 's> Builder<'a, 's> {
             return None;
         }
         match self.names.get(name.as_ref()) {
-            Some(target) => *target,
+            Some((_, target)) => *target,
             None => {
                 self.source.error(
                     node,
