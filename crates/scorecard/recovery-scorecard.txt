@@ -60,9 +60,9 @@ delete/non-delim            0.996         2        18.383         117          0
 duplicate/delimiter         1.541         3        45.928         271          1.541            3
 duplicate/non-delim         1.379         3        15.386          87          1.379            3
 swap/delimiter              1.695         3        34.587         194          1.694            3
-swap/non-delim              1.610         3        28.594         165          1.609            3
+swap/non-delim              1.612         3        28.594         165          1.611            3
 insert/delimiter            1.691         4        39.278         234          1.662            4
-insert/non-delim            1.333         3        20.820         120          1.329            3
+insert/non-delim            1.334         3        20.820         120          1.330            3
 
 == Part B: delimiter-breaking churn over clean corpora ==
 churn = original significant tokens (edit site excluded) whose partner()
