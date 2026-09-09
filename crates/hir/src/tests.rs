@@ -562,6 +562,21 @@ fn identifier_identity_is_nfkc_without_rewriting_source() {
 }
 
 #[test]
+fn duplicate_functions_keep_the_first_origin_and_poison_calls() {
+    let a = check("fn K() = 1\nfn K() = true\nfn Ｋ() = {}\nfn caller() = K()");
+    assert!(a.parsed().diagnostics().is_empty());
+    assert_eq!(codes(&a), ["duplicate-name", "duplicate-name"]);
+    for diagnostic in a.diagnostics() {
+        assert_eq!(diagnostic.secondary.len(), 1);
+        let origin = diagnostic.secondary[0].location.span().range();
+        assert_eq!(origin.start().to_usize(), 3);
+        assert_eq!(origin.end().to_usize(), 6);
+    }
+    assert!(a.functions()[3].signature().is_none());
+    assert!(a.functions()[3].body().is_none());
+}
+
+#[test]
 fn long_chains_are_stack_safe_even_when_rejected() {
     let chain = std::iter::repeat_n("1", 20_000)
         .collect::<Vec<_>>()
