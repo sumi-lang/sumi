@@ -328,6 +328,26 @@ fn check_tree(tree: &SyntaxTree, lexed: &LexedFile) -> Result<(), TestCaseError>
         (RawIdx::new(0), raw_len)
     );
 
+    let parents = tree.parents();
+    prop_assert_eq!(parents[root.to_usize()], root);
+    if !lexed.is_empty() {
+        // Sample the file's edges and middle; the exhaustive reference is
+        // linear per query, not quadratic in arbitrarily large fuzz inputs.
+        for index in [0, lexed.len() / 2, lexed.len() - 1] {
+            let token = RawIdx::new(index as u32);
+            let expected: Vec<_> = tree
+                .nodes()
+                .filter(|&node| tree.first_token(node) <= token && token < tree.end_token(node))
+                .collect();
+            let actual: Vec<_> = tree.covering_chain(token).collect();
+            prop_assert_eq!(&actual, &expected);
+            prop_assert_eq!(tree.covering(token), expected[0]);
+            for pair in expected.windows(2) {
+                prop_assert_eq!(parents[pair[0].to_usize()], pair[1]);
+            }
+        }
+    }
+
     let mut visited = 0usize;
     let mut pending = vec![root];
     while let Some(node) = pending.pop() {
