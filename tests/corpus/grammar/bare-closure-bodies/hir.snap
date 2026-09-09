@@ -26,9 +26,6 @@ fn a@175..192 () -> int
 fn b@193..210 () -> int
   body: int 2 : int @209..210
 
-fn name@211..231 () -> int
-  body: int 3 : int @230..231
-
 == semantic diagnostics ==
 error[semantic/unsupported]: construct is not supported by scalar checking
   primary @13..21

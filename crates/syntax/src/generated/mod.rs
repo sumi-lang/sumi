@@ -23,9 +23,10 @@ pub mod ast;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum NodeKind {
     SourceFile,
-    /// A function item. The body is a block or `=` and an expression:
-    /// `fn double(x: int) -> int = x * 2`. Signature components after the
-    /// parameter list may begin on subsequent lines.
+    /// A function item. Its name begins on the same line as `fn`. The body is a
+    /// block or `=` and an expression: `fn double(x: int) -> int = x * 2`.
+    /// Signature components after the parameter list may begin on subsequent
+    /// lines.
     FnItem,
     ParamList,
     /// A parameter. An item's has a type; a closure's may leave it to be

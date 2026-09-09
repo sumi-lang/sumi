@@ -86,8 +86,9 @@ pub fn reprint(tree: &SyntaxTree, lexed: &LexedFile, source: &str) -> String {
 }
 
 /// Rewrite spacing violations of `parsed` into canonical form: space binary
-/// operators, glue prefix operators, and glue list openers. Every other byte
-/// keeps its place; comments and chained comparisons stay as written.
+/// operators, glue prefix operators and list openers, and keep function names
+/// on their `fn` line. Every other byte keeps its place; comments and chained
+/// comparisons stay as written.
 ///
 /// The rewrite proves it changed only layout: the result keeps every
 /// significant token and every comment and reparses to the same tree
@@ -174,6 +175,24 @@ pub fn layout_violation_edits(
             }
             edits.push(delete(token_end(lexed, owner), token_start(lexed, start)));
         }
+        ParseViolationKind::FunctionNameOnNextLine => {
+            let keyword = prev_significant(lexed, start)?;
+            let gap = (keyword + 1).until(start);
+            if !gap.clone().all(|raw| {
+                matches!(
+                    lexed.kind(raw),
+                    SyntaxKind::Whitespace | SyntaxKind::Newline
+                )
+            }) || lex_error_in(lexed, keyword + 1, start)
+            {
+                return None;
+            }
+            edits.push(replace(
+                token_end(lexed, keyword),
+                token_start(lexed, start),
+                " ",
+            ));
+        }
         ParseViolationKind::ChainedComparison => return None,
     }
     (!edits.is_empty()).then(|| edits.into_boxed_slice())
@@ -242,17 +261,20 @@ fn same_tokens(
 }
 
 fn insert(at: usize, text: impl Into<Box<str>>) -> TextEdit {
-    let at = TextSize::new(u32::try_from(at).expect("source offset fits in u32"));
-    TextEdit::new(TextRange::new(at, at), text)
+    replace(at, at, text)
 }
 
 fn delete(start: usize, end: usize) -> TextEdit {
+    replace(start, end, "")
+}
+
+fn replace(start: usize, end: usize, text: impl Into<Box<str>>) -> TextEdit {
     TextEdit::new(
         TextRange::new(
             TextSize::new(u32::try_from(start).expect("source offset fits in u32")),
             TextSize::new(u32::try_from(end).expect("source offset fits in u32")),
         ),
-        "",
+        text,
     )
 }
 

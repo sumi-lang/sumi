@@ -197,6 +197,11 @@ fn layout_violation_edits_are_atomic_and_source_ordered() {
         ParseViolationKind::SpacedPrefixOperator,
         Some("fn f() { -1 }"),
     );
+    check_layout_edits(
+        "fn\n  f() {}",
+        ParseViolationKind::FunctionNameOnNextLine,
+        Some("fn f() {}"),
+    );
 }
 
 #[test]
@@ -214,6 +219,11 @@ fn layout_violation_edits_reject_nonmechanical_candidates() {
     check_layout_edits(
         "fn f() { a < b < c }",
         ParseViolationKind::ChainedComparison,
+        None,
+    );
+    check_layout_edits(
+        "fn // why\nf() {}",
+        ParseViolationKind::FunctionNameOnNextLine,
         None,
     );
 }

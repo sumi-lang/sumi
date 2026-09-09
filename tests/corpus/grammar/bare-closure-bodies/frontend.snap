@@ -1,5 +1,5 @@
 == tree ==
-SourceFile 0..232
+SourceFile 0..211
   FnItem 0..21
     Name 3..8 "outer"
     ParamList 8..10 "()"
@@ -56,8 +56,3 @@ SourceFile 0..232
     ParamList 197..199 "()"
     TypeRef 203..206 "int"
     LiteralExpr 209..210 "2"
-  FnItem 211..231
-    Name 214..218 "name"
-    ParamList 218..220 "()"
-    TypeRef 224..227 "int"
-    LiteralExpr 230..231 "3"

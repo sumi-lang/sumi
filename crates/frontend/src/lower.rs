@@ -522,6 +522,10 @@ fn lower_violation(snapshot: &Snapshot<'_>, violation: ParseViolation) -> Diagno
             codes::SPACED_LIST_OPENER,
             "opening `(` must be adjacent to the function name or callee",
         ),
+        ParseViolationKind::FunctionNameOnNextLine => (
+            codes::FUNCTION_NAME_ON_NEXT_LINE,
+            "function name must be on the same line as `fn`",
+        ),
         ParseViolationKind::ChainedComparison => (
             codes::CHAINED_COMPARISON,
             "comparison operators cannot be chained",
@@ -532,6 +536,7 @@ fn lower_violation(snapshot: &Snapshot<'_>, violation: ParseViolation) -> Diagno
             ParseViolationKind::UnspacedBinaryOperator => "space binary operator",
             ParseViolationKind::SpacedPrefixOperator => "remove space after prefix operator",
             ParseViolationKind::SpacedListOpener => "remove space before `(`",
+            ParseViolationKind::FunctionNameOnNextLine => "move function name onto `fn` line",
             ParseViolationKind::ChainedComparison => {
                 unreachable!("chained comparisons have no mechanical layout fix")
             }
