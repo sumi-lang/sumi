@@ -140,6 +140,9 @@ pub const MAX_LEVEL: u8 = 127;
 /// How many variants a `#[repr(u8)]` enum holds.
 const MAX_VARIANTS: usize = 256;
 
+/// How many one-based field roles a `u8` holds; zero means no role.
+const MAX_SINGLE_FIELDS: usize = u8::MAX as usize;
+
 /// Left and right binding powers of a level. Every operator associates
 /// left, so the right side binds tighter.
 pub fn binding_power(level: u8) -> (u8, u8) {
@@ -416,6 +419,13 @@ impl Grammar {
             let fields = self
                 .fields(rule)
                 .map_err(|error| format!("in rule {}: {error}", rule.name))?;
+            let singles = fields.iter().filter(|field| !field.many).count();
+            if singles > MAX_SINGLE_FIELDS {
+                return Err(format!(
+                    "in rule {}: {singles} single-valued fields are declared, but one-based `u8` field roles hold {MAX_SINGLE_FIELDS}",
+                    rule.name
+                ));
+            }
             for field in fields {
                 if let FieldType::Alt(_) = field.ty {
                     let name = camel_case(&field.name);
@@ -1350,5 +1360,25 @@ PrefixExpr = PrefixOperator Expr
             .collect();
         let error = Grammar::parse(&format!("{GRAMMAR}{nodes}")).unwrap_err();
         assert!(error.contains("node kinds"), "{error}");
+    }
+
+    #[test]
+    fn singular_fields_fit_one_based_u8_roles() {
+        let rule = |count| {
+            let fields: String = (0..count)
+                .map(|index| format!(" field{index}:Item"))
+                .collect();
+            format!("{GRAMMAR}Wide ={fields}\n")
+        };
+
+        let grammar = Grammar::parse(&rule(MAX_SINGLE_FIELDS)).unwrap();
+        assert_eq!(
+            grammar.fields(grammar.rule("Wide").unwrap()).unwrap().len(),
+            MAX_SINGLE_FIELDS
+        );
+
+        let error = Grammar::parse(&rule(MAX_SINGLE_FIELDS + 1)).unwrap_err();
+        assert!(error.contains("256 single-valued fields"), "{error}");
+        assert!(error.contains("hold 255"), "{error}");
     }
 }
