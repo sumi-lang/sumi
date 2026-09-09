@@ -401,20 +401,26 @@ fn error_tokens_end_statements() {
 
 #[test]
 fn boundary_in_agrees_with_the_boundary_bits() {
-    let source = "a\nb + (c\nd) {\ne }\nf\n";
-    dump(source); // invariants
-    let lexed = lex(source).expect("test sources fit in u32");
-    let input = ParserInput::new(&lexed);
-    assert!(input.indices().any(|index| input.boundary_before(index)));
-    for start in 0..=input.len() as u32 {
-        for end in start..=input.len() as u32 {
-            assert_eq!(
-                input.boundary_in(SigIdx::new(start)..SigIdx::new(end)),
-                SigIdx::new(start)
-                    .until(SigIdx::new(end))
-                    .any(|index| input.boundary_before(index)),
-                "boundary_in({start}..{end}) for {source:?}"
-            );
+    for source in [
+        "",
+        "a + b",
+        "a\nb\nc\nd",
+        "a\nb + (c\nd) {\ne }\nf\n",
+        "(a\nb}\nc\n(",
+    ] {
+        dump(source); // invariants
+        let lexed = lex(source).expect("test sources fit in u32");
+        let input = ParserInput::new(&lexed);
+        for start in 0..=input.len() as u32 {
+            for end in start..=input.len() as u32 {
+                assert_eq!(
+                    input.boundary_in(SigIdx::new(start)..SigIdx::new(end)),
+                    SigIdx::new(start)
+                        .until(SigIdx::new(end))
+                        .any(|index| input.boundary_before(index)),
+                    "boundary_in({start}..{end}) for {source:?}"
+                );
+            }
         }
     }
 }

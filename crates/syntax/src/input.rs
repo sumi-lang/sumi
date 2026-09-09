@@ -83,10 +83,9 @@ pub(crate) struct Slot {
 #[derive(Clone, Debug)]
 pub struct ParserInput {
     slots: Box<[Slot]>,
-    /// Prefix sums of the boundary bits: entry `index` counts the statement
-    /// boundaries before tokens `0..index`, so any-boundary-in-range is two
-    /// lookups however long the range.
-    boundaries: Box<[u32]>,
+    /// Tokens preceded by a statement boundary, in source order. Recovery
+    /// can search these without storing a prefix count for every token.
+    boundaries: Box<[SigIdx]>,
     /// Hard declaration recovery anchors, in source order.
     item_anchors: Box<[SigIdx]>,
     /// The index one past the last token of the underlying buffer.
@@ -135,13 +134,11 @@ impl ParserInput {
         // `matched` is zero. An unmatched opener encloses nothing for good
         // and hides no item.
         let Build { mut slots, .. } = build;
-        let mut boundaries: Vec<u32> = Vec::with_capacity(slots.len() + 1);
-        let mut boundary_count: u32 = 0;
+        let mut boundaries = Vec::new();
         let mut item_anchors: Vec<SigIdx> = Vec::new();
         let mut matched = 0usize;
         let mut context = 0u8;
         for index in 0..slots.len() {
-            boundaries.push(boundary_count);
             let slot = slots[index];
             slots[index].flags |= context | (u8::from(matched != 0) * IN_MATCHED_DELIMITERS);
             if index > 0
@@ -151,7 +148,7 @@ impl ParserInput {
                 && !continues_line(&slots, index)
             {
                 slots[index].flags |= BOUNDARY_BEFORE;
-                boundary_count += 1;
+                boundaries.push(SigIdx::new(index as u32));
             }
             if matched == 0 && item_anchor_at(&slots, index) {
                 item_anchors.push(SigIdx::new(index as u32));
@@ -172,7 +169,6 @@ impl ParserInput {
                 matched -= 1;
             }
         }
-        boundaries.push(boundary_count);
 
         Self {
             slots: slots.into_boxed_slice(),
@@ -250,13 +246,17 @@ impl ParserInput {
         self.slots[index.to_usize()].flags & BOUNDARY_BEFORE != 0
     }
 
-    /// Whether a statement boundary precedes any token in `range`. Answered
-    /// from the boundary prefix sums, so the cost does not grow with the
-    /// range; recovery leans on this to reject a bracket group spanning a
-    /// boundary without rescanning its interior. `range.end` may be
+    /// Whether a statement boundary precedes any token in `range`. Binary
+    /// search over the boundary positions lets recovery reject a bracket
+    /// group spanning a boundary without rescanning its interior. `range.end` may be
     /// [`end`](Self::end).
     pub fn boundary_in(&self, range: Range<SigIdx>) -> bool {
-        self.boundaries[range.end.to_usize()] > self.boundaries[range.start.to_usize()]
+        let first = self
+            .boundaries
+            .partition_point(|&boundary| boundary < range.start);
+        self.boundaries
+            .get(first)
+            .is_some_and(|&boundary| boundary < range.end)
     }
 
     /// The index of the bracket matching significant token `index`: an
