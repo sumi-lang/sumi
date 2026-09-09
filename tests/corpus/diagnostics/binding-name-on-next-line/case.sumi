@@ -1,0 +1,9 @@
+fn bindings() {
+    let
+    plain = 1
+    let
+    mut
+    mutable = 2
+    let // why
+    commented = 3
+}

@@ -30,6 +30,8 @@ pub trait AstNode: Copy {
     fn node(self) -> NodeIdx;
 }
 
+/// A source file contains function items, each beginning on a new line after
+/// the first.
 /// The `SourceFile = items:FnItem*` rule.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct SourceFile(NodeIdx);
@@ -282,6 +284,7 @@ impl AstNode for Stmt {
     }
 }
 
+/// A binding statement. Its `let`, optional `mut`, and name share one line.
 /// The `LetStmt = 'let' 'mut'? Name (':' TypeRef)? '=' initializer:Expr` rule.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct LetStmt(NodeIdx);

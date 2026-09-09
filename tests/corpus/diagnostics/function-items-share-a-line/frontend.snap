@@ -1,0 +1,48 @@
+== tree ==
+SourceFile 0..76
+  FnItem 0..13
+    Name 3..8 "first"
+    ParamList 8..10 "()"
+    Block 11..13 "{}"
+  FnItem 13..27
+    Name 16..22 "second"
+    ParamList 22..24 "()"
+    Block 25..27 "{}"
+  FnItem 28..42
+    Name 31..36 "third"
+    ParamList 36..38 "()"
+    LiteralExpr 41..42 "1"
+  FnItem 43..58
+    Name 46..52 "fourth"
+    ParamList 52..54 "()"
+    LiteralExpr 57..58 "2"
+  FnItem 59..75
+    Name 62..70 "survivor"
+    ParamList 70..72 "()"
+    Block 73..75 "{}"
+
+== evidence ==
+FunctionItemOnSameLine at 13
+FunctionItemOnSameLine at 43
+
+== diagnostics ==
+error[syntax/function-item-on-same-line] 1:14..1:16 "fn": function item must begin on a new line
+  fix (safe): move function item onto a new line
+    1:14 -> "\n"
+error[syntax/function-item-on-same-line] 2:16..2:18 "fn": function item must begin on a new line
+  fix (safe): move function item onto a new line
+    2:15..2:16 " " -> "\n"
+
+== fixed ==
+fn first() {}
+fn second() {}
+fn third() = 1
+fn fourth() = 2
+fn survivor() {}
+
+== normalized ==
+fn first() {}
+fn second() {}
+fn third() = 1
+fn fourth() = 2
+fn survivor() {}

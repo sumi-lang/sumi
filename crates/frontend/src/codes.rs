@@ -54,4 +54,8 @@ pub const SPACED_PREFIX_OPERATOR: DiagnosticCode =
 pub const SPACED_LIST_OPENER: DiagnosticCode = DiagnosticCode::new(SYNTAX, "spaced-list-opener");
 pub const FUNCTION_NAME_ON_NEXT_LINE: DiagnosticCode =
     DiagnosticCode::new(SYNTAX, "function-name-on-next-line");
+pub const FUNCTION_ITEM_ON_SAME_LINE: DiagnosticCode =
+    DiagnosticCode::new(SYNTAX, "function-item-on-same-line");
+pub const BINDING_NAME_ON_NEXT_LINE: DiagnosticCode =
+    DiagnosticCode::new(SYNTAX, "binding-name-on-next-line");
 pub const CHAINED_COMPARISON: DiagnosticCode = DiagnosticCode::new(SYNTAX, "chained-comparison");
