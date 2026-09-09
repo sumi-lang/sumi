@@ -604,14 +604,14 @@ impl<'a, 's> Builder<'a, 's> {
                 self.unsupported(callee);
                 None
             };
-            let args: Vec<_> = call
-                .arg_list(tree)
-                .unwrap()
-                .args(tree)
-                .map(|e| e.node())
-                .collect();
-            work.push(Work::Call(node, target, callee, args.clone()));
-            work.extend(args.into_iter().rev().map(Work::Enter));
+            let list = call.arg_list(tree).unwrap();
+            let args = list.args(tree).map(|arg| arg.node()).collect();
+            work.push(Work::Call(node, target, callee, args));
+            work.extend(
+                tree.children(list.node())
+                    .filter_map(|child| ast::Expr::cast(tree, child))
+                    .map(|arg| Work::Enter(arg.node())),
+            );
             return;
         }
         match tree.kind(node) {
