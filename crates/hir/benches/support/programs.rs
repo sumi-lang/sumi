@@ -3,7 +3,7 @@ use sumi_frontend::{FileId, ParsedSource, parse_source};
 use sumi_hir::{Analysis, Ty};
 
 pub const SIZES: [usize; 3] = [128, 1024, 8192];
-pub const SHAPES: [&str; 10] = [
+pub const SHAPES: [&str; 12] = [
     "annotated-forward",
     "annotated-reverse",
     "inferred-forward",
@@ -14,10 +14,25 @@ pub const SHAPES: [&str; 10] = [
     "locals",
     "arguments",
     "branches",
+    "expression-chain",
+    "call-block",
 ];
 
 pub fn source(shape: &str, size: usize) -> String {
     assert!(SHAPES.contains(&shape));
+    if shape == "expression-chain" {
+        return format!("fn sum() -> int = 1{}", " + 2".repeat(size));
+    }
+    if shape == "call-block" {
+        let mut source = String::from(
+            "fn select(x: int, b: bool) -> int = if b { x } else { 0 }\nfn calls() -> int = {\n",
+        );
+        for i in 0..size {
+            writeln!(source, "_ = select({i}, true)").unwrap();
+        }
+        source.push_str("7 }");
+        return source;
+    }
     let mut declarations = Vec::with_capacity(size);
     for i in 0..size {
         let annotation = if shape.starts_with("annotated") {
@@ -81,7 +96,12 @@ pub fn parse(source: &str) -> ParsedSource {
 }
 
 pub fn validate(shape: &str, size: usize, analysis: &Analysis) {
-    assert_eq!(analysis.functions().len(), size);
+    let functions = match shape {
+        "expression-chain" => 1,
+        "call-block" => 2,
+        _ => size,
+    };
+    assert_eq!(analysis.functions().len(), functions);
     if matches!(shape, "unresolved-cycle" | "conflict-cycle") {
         assert!(!analysis.is_valid());
         assert_eq!(analysis.diagnostics().len(), size);

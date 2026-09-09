@@ -10,6 +10,7 @@ mod infer;
 #[cfg(test)]
 mod tests;
 
+use std::{fmt, num::NonZeroU32};
 use sumi_frontend::{Diagnostic, ParsedSource, Severity};
 use sumi_text::Span;
 
@@ -40,15 +41,28 @@ pub enum Ty {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FunctionId(usize);
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ExprId(usize);
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct ExprId(NonZeroU32);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LocalId(usize);
 
 impl ExprId {
+    fn new(index: usize) -> Self {
+        // Each expression comes from a distinct syntax node; the tree's total
+        // node count fits u32. Store one-based IDs so None needs no extra word.
+        Self(NonZeroU32::new(u32::try_from(index + 1).expect("expression count fits u32")).unwrap())
+    }
+
     /// Index into the owning body's `expressions()` slice, not another body's.
     pub fn index(self) -> usize {
-        self.0
+        (self.0.get() - 1) as usize
+    }
+}
+
+impl fmt::Debug for ExprId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("ExprId").field(&self.index()).finish()
     }
 }
 
@@ -152,7 +166,7 @@ impl Body {
     }
     /// The ID must belong to this body.
     pub fn expression(&self, id: ExprId) -> &Expr {
-        &self.exprs[id.0]
+        &self.exprs[id.index()]
     }
     /// The ID must belong to this body.
     pub fn local(&self, id: LocalId) -> &Local {
