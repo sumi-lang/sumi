@@ -1,0 +1,474 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`TextMate grammar distinguishes interpolated, block, and raw strings 1`] = `
+[
+  {
+    "line": 1,
+    "scopes": [
+      "keyword.declaration.sumi",
+    ],
+    "text": "let",
+  },
+  {
+    "line": 1,
+    "scopes": [
+      "variable.other.definition.sumi",
+    ],
+    "text": "message",
+  },
+  {
+    "line": 1,
+    "scopes": [
+      "keyword.operator.sumi",
+    ],
+    "text": "=",
+  },
+  {
+    "line": 1,
+    "scopes": [
+      "meta.string.quoted.double.sumi",
+      "string.quoted.double.sumi",
+      "punctuation.definition.string.begin.sumi",
+    ],
+    "text": """,
+  },
+  {
+    "line": 1,
+    "scopes": [
+      "meta.string.quoted.double.sumi",
+      "string.quoted.double.sumi",
+    ],
+    "text": "value ",
+  },
+  {
+    "line": 1,
+    "scopes": [
+      "meta.string.quoted.double.sumi",
+      "meta.interpolation.sumi",
+      "punctuation.section.interpolation.begin.sumi",
+    ],
+    "text": "{",
+  },
+  {
+    "line": 1,
+    "scopes": [
+      "meta.string.quoted.double.sumi",
+      "meta.interpolation.sumi",
+      "meta.embedded.expression.sumi",
+      "entity.name.function.call.sumi",
+    ],
+    "text": "twice",
+  },
+  {
+    "line": 1,
+    "scopes": [
+      "meta.string.quoted.double.sumi",
+      "meta.interpolation.sumi",
+      "meta.embedded.expression.sumi",
+      "punctuation.section.group.sumi",
+    ],
+    "text": "(",
+  },
+  {
+    "line": 1,
+    "scopes": [
+      "meta.string.quoted.double.sumi",
+      "meta.interpolation.sumi",
+      "meta.embedded.expression.sumi",
+      "constant.numeric.integer.sumi",
+    ],
+    "text": "2",
+  },
+  {
+    "line": 1,
+    "scopes": [
+      "meta.string.quoted.double.sumi",
+      "meta.interpolation.sumi",
+      "meta.embedded.expression.sumi",
+      "punctuation.section.group.sumi",
+    ],
+    "text": ")",
+  },
+  {
+    "line": 1,
+    "scopes": [
+      "meta.string.quoted.double.sumi",
+      "meta.interpolation.sumi",
+      "punctuation.section.interpolation.end.sumi",
+    ],
+    "text": "}",
+  },
+  {
+    "line": 1,
+    "scopes": [
+      "meta.string.quoted.double.sumi",
+      "string.quoted.double.sumi",
+    ],
+    "text": " and ",
+  },
+  {
+    "line": 1,
+    "scopes": [
+      "meta.string.quoted.double.sumi",
+      "constant.character.escape.sumi",
+    ],
+    "text": "\\n",
+  },
+  {
+    "line": 1,
+    "scopes": [
+      "meta.string.quoted.double.sumi",
+      "string.quoted.double.sumi",
+      "punctuation.definition.string.end.sumi",
+    ],
+    "text": """,
+  },
+  {
+    "line": 2,
+    "scopes": [
+      "keyword.declaration.sumi",
+    ],
+    "text": "let",
+  },
+  {
+    "line": 2,
+    "scopes": [
+      "variable.other.definition.sumi",
+    ],
+    "text": "raw",
+  },
+  {
+    "line": 2,
+    "scopes": [
+      "keyword.operator.sumi",
+    ],
+    "text": "=",
+  },
+  {
+    "line": 2,
+    "scopes": [
+      "string.quoted.other.raw.sumi",
+      "punctuation.definition.string.begin.sumi",
+    ],
+    "text": "r#"",
+  },
+  {
+    "line": 2,
+    "scopes": [
+      "string.quoted.other.raw.sumi",
+    ],
+    "text": "literal {not_a_hole}",
+  },
+  {
+    "line": 2,
+    "scopes": [
+      "string.quoted.other.raw.sumi",
+      "punctuation.definition.string.end.sumi",
+    ],
+    "text": ""#",
+  },
+  {
+    "line": 3,
+    "scopes": [
+      "keyword.declaration.sumi",
+    ],
+    "text": "let",
+  },
+  {
+    "line": 3,
+    "scopes": [
+      "variable.other.definition.sumi",
+    ],
+    "text": "plain",
+  },
+  {
+    "line": 3,
+    "scopes": [
+      "keyword.operator.sumi",
+    ],
+    "text": "=",
+  },
+  {
+    "line": 3,
+    "scopes": [
+      "string.quoted.other.raw.sumi",
+      "punctuation.definition.string.begin.sumi",
+    ],
+    "text": "r"",
+  },
+  {
+    "line": 3,
+    "scopes": [
+      "string.quoted.other.raw.sumi",
+    ],
+    "text": "raw {still_not_a_hole}",
+  },
+  {
+    "line": 3,
+    "scopes": [
+      "string.quoted.other.raw.sumi",
+      "punctuation.definition.string.end.sumi",
+    ],
+    "text": """,
+  },
+  {
+    "line": 3,
+    "scopes": [
+      "keyword.operator.sumi",
+    ],
+    "text": "+",
+  },
+  {
+    "line": 3,
+    "scopes": [
+      "constant.numeric.integer.sumi",
+    ],
+    "text": "1",
+  },
+  {
+    "line": 4,
+    "scopes": [
+      "keyword.declaration.sumi",
+    ],
+    "text": "let",
+  },
+  {
+    "line": 4,
+    "scopes": [
+      "variable.other.definition.sumi",
+    ],
+    "text": "card",
+  },
+  {
+    "line": 4,
+    "scopes": [
+      "keyword.operator.sumi",
+    ],
+    "text": "=",
+  },
+  {
+    "line": 4,
+    "scopes": [
+      "meta.string.quoted.double.block.sumi",
+      "string.quoted.double.block.sumi",
+      "punctuation.definition.string.begin.sumi",
+    ],
+    "text": """"",
+  },
+  {
+    "line": 5,
+    "scopes": [
+      "meta.string.quoted.double.block.sumi",
+      "string.quoted.double.block.sumi",
+    ],
+    "text": "  value ",
+  },
+  {
+    "line": 5,
+    "scopes": [
+      "meta.string.quoted.double.block.sumi",
+      "meta.interpolation.sumi",
+      "punctuation.section.interpolation.begin.sumi",
+    ],
+    "text": "{",
+  },
+  {
+    "line": 5,
+    "scopes": [
+      "meta.string.quoted.double.block.sumi",
+      "meta.interpolation.sumi",
+      "meta.embedded.expression.sumi",
+      "keyword.control.sumi",
+    ],
+    "text": "if",
+  },
+  {
+    "line": 5,
+    "scopes": [
+      "meta.string.quoted.double.block.sumi",
+      "meta.interpolation.sumi",
+      "meta.embedded.expression.sumi",
+    ],
+    "text": " ",
+  },
+  {
+    "line": 5,
+    "scopes": [
+      "meta.string.quoted.double.block.sumi",
+      "meta.interpolation.sumi",
+      "meta.embedded.expression.sumi",
+      "constant.language.boolean.sumi",
+    ],
+    "text": "true",
+  },
+  {
+    "line": 5,
+    "scopes": [
+      "meta.string.quoted.double.block.sumi",
+      "meta.interpolation.sumi",
+      "meta.embedded.expression.sumi",
+    ],
+    "text": " ",
+  },
+  {
+    "line": 5,
+    "scopes": [
+      "meta.string.quoted.double.block.sumi",
+      "meta.interpolation.sumi",
+      "meta.embedded.expression.sumi",
+      "meta.block.sumi",
+      "punctuation.section.block.begin.sumi",
+    ],
+    "text": "{",
+  },
+  {
+    "line": 5,
+    "scopes": [
+      "meta.string.quoted.double.block.sumi",
+      "meta.interpolation.sumi",
+      "meta.embedded.expression.sumi",
+      "meta.block.sumi",
+    ],
+    "text": " ",
+  },
+  {
+    "line": 5,
+    "scopes": [
+      "meta.string.quoted.double.block.sumi",
+      "meta.interpolation.sumi",
+      "meta.embedded.expression.sumi",
+      "meta.block.sumi",
+      "constant.numeric.integer.sumi",
+    ],
+    "text": "1",
+  },
+  {
+    "line": 5,
+    "scopes": [
+      "meta.string.quoted.double.block.sumi",
+      "meta.interpolation.sumi",
+      "meta.embedded.expression.sumi",
+      "meta.block.sumi",
+    ],
+    "text": " ",
+  },
+  {
+    "line": 5,
+    "scopes": [
+      "meta.string.quoted.double.block.sumi",
+      "meta.interpolation.sumi",
+      "meta.embedded.expression.sumi",
+      "meta.block.sumi",
+      "punctuation.section.block.end.sumi",
+    ],
+    "text": "}",
+  },
+  {
+    "line": 5,
+    "scopes": [
+      "meta.string.quoted.double.block.sumi",
+      "meta.interpolation.sumi",
+      "meta.embedded.expression.sumi",
+    ],
+    "text": " ",
+  },
+  {
+    "line": 5,
+    "scopes": [
+      "meta.string.quoted.double.block.sumi",
+      "meta.interpolation.sumi",
+      "meta.embedded.expression.sumi",
+      "keyword.control.sumi",
+    ],
+    "text": "else",
+  },
+  {
+    "line": 5,
+    "scopes": [
+      "meta.string.quoted.double.block.sumi",
+      "meta.interpolation.sumi",
+      "meta.embedded.expression.sumi",
+    ],
+    "text": " ",
+  },
+  {
+    "line": 5,
+    "scopes": [
+      "meta.string.quoted.double.block.sumi",
+      "meta.interpolation.sumi",
+      "meta.embedded.expression.sumi",
+      "meta.block.sumi",
+      "punctuation.section.block.begin.sumi",
+    ],
+    "text": "{",
+  },
+  {
+    "line": 5,
+    "scopes": [
+      "meta.string.quoted.double.block.sumi",
+      "meta.interpolation.sumi",
+      "meta.embedded.expression.sumi",
+      "meta.block.sumi",
+    ],
+    "text": " ",
+  },
+  {
+    "line": 5,
+    "scopes": [
+      "meta.string.quoted.double.block.sumi",
+      "meta.interpolation.sumi",
+      "meta.embedded.expression.sumi",
+      "meta.block.sumi",
+      "constant.numeric.integer.sumi",
+    ],
+    "text": "2",
+  },
+  {
+    "line": 5,
+    "scopes": [
+      "meta.string.quoted.double.block.sumi",
+      "meta.interpolation.sumi",
+      "meta.embedded.expression.sumi",
+      "meta.block.sumi",
+    ],
+    "text": " ",
+  },
+  {
+    "line": 5,
+    "scopes": [
+      "meta.string.quoted.double.block.sumi",
+      "meta.interpolation.sumi",
+      "meta.embedded.expression.sumi",
+      "meta.block.sumi",
+      "punctuation.section.block.end.sumi",
+    ],
+    "text": "}",
+  },
+  {
+    "line": 5,
+    "scopes": [
+      "meta.string.quoted.double.block.sumi",
+      "meta.interpolation.sumi",
+      "punctuation.section.interpolation.end.sumi",
+    ],
+    "text": "}",
+  },
+  {
+    "line": 6,
+    "scopes": [
+      "meta.string.quoted.double.block.sumi",
+      "string.quoted.double.block.sumi",
+    ],
+    "text": "  ",
+  },
+  {
+    "line": 6,
+    "scopes": [
+      "meta.string.quoted.double.block.sumi",
+      "string.quoted.double.block.sumi",
+      "punctuation.definition.string.end.sumi",
+    ],
+    "text": """"",
+  },
+]
+`;
