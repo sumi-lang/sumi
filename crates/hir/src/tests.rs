@@ -318,6 +318,35 @@ fn bad_calls_check_arguments_before_poisoning_binding() {
 }
 
 #[test]
+fn expression_results_stay_body_local_across_failed_bodies() {
+    let a = check(
+        "fn first() = (23 + 7)\nfn failed() = (missing)\nfn flag() = ((true))\nfn last() = -((17))",
+    );
+    assert_eq!(codes(&a), ["unknown-name"]);
+    assert!(a.functions[1].body().is_none());
+    for index in [0, 2, 3] {
+        invariant(&a, &a.functions[index]);
+    }
+    let first = a.functions[0].body().unwrap();
+    assert_eq!(first.exprs.len(), 3);
+    assert!(matches!(first.exprs[0].kind, ExprKind::Int(23)));
+    assert!(matches!(first.exprs[1].kind, ExprKind::Int(7)));
+    let flag = a.functions[2].body().unwrap();
+    assert_eq!(flag.exprs.len(), 1);
+    assert!(matches!(
+        flag.expression(flag.root()).kind,
+        ExprKind::Bool(true)
+    ));
+    let last = a.functions[3].body().unwrap();
+    assert_eq!(last.exprs.len(), 1);
+    assert!(matches!(
+        last.expression(last.root()).kind,
+        ExprKind::Int(-17)
+    ));
+    reversed_declarations_preserve_types(&a);
+}
+
+#[test]
 fn call_arguments_keep_source_order() {
     let a = clean("fn select(a: int, b: int, c: int) -> int = b\nfn caller() = select(11, 29, 7)");
     let body = a.functions()[1].body().unwrap();

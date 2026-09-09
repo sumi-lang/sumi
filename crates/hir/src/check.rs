@@ -283,6 +283,9 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         });
     }
     let mut bodies = Vec::new();
+    // Syntax node IDs are dense and bodies have disjoint nodes. Expression
+    // IDs remain body-local; a builder only reads entries in its own body.
+    let mut values = vec![None; tree.len()];
     for (index, (item, params)) in items.iter().zip(parameters).enumerate() {
         bodies.push(
             Builder::new(
@@ -292,10 +295,12 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
                 &mut inference,
                 &mut obligations,
                 index,
+                &mut values,
             )
             .build(*item, params),
         );
     }
+    drop(values);
     inference.solve();
     let mut replay = inference.replay();
     let mut failed = vec![false; functions.len()];
@@ -408,7 +413,7 @@ struct Builder<'a, 's> {
     scopes: Vec<Scope>,
     locals: Vec<DraftLocal>,
     exprs: Vec<DraftExpr>,
-    values: HashMap<NodeIdx, ExprId>,
+    values: &'a mut [Option<ExprId>],
     statements: HashMap<NodeIdx, Statement>,
     failed: bool,
 }
@@ -421,6 +426,7 @@ impl<'a, 's> Builder<'a, 's> {
         inference: &'a mut Inference,
         obligations: &'a mut Vec<Obligation>,
         owner: usize,
+        values: &'a mut [Option<ExprId>],
     ) -> Self {
         Self {
             source,
@@ -432,7 +438,7 @@ impl<'a, 's> Builder<'a, 's> {
             scopes: vec![Scope::new()],
             locals: Vec::new(),
             exprs: Vec::new(),
-            values: HashMap::new(),
+            values,
             statements: HashMap::new(),
             failed: false,
         }
@@ -481,7 +487,7 @@ impl<'a, 's> Builder<'a, 's> {
                 }
             }
         }
-        let root = self.values.get(&root_node).copied();
+        let root = self.value(root_node);
         // A failed parameter does not erase an independently known result type.
         if let (Some(root), Some(result)) = (root, result)
             && !self.require(
@@ -530,7 +536,7 @@ impl<'a, 's> Builder<'a, 's> {
             origin: self.source.span(node),
             ty: ty.into(),
         });
-        self.values.insert(node, id);
+        self.values[node.to_usize()] = Some(id);
         id
     }
     fn unsupported(&mut self, node: NodeIdx) {
@@ -733,7 +739,7 @@ impl<'a, 's> Builder<'a, 's> {
         true
     }
     fn value(&self, node: NodeIdx) -> Option<ExprId> {
-        self.values.get(&node).copied()
+        self.values[node.to_usize()]
     }
     fn finish(&mut self, node: NodeIdx) -> Option<()> {
         let tree = self.source.tree;
@@ -879,7 +885,7 @@ impl<'a, 's> Builder<'a, 's> {
                     .unwrap()
                     .inner(tree)
                     .unwrap();
-                self.values.insert(node, self.value(inner.node())?);
+                self.values[node.to_usize()] = Some(self.value(inner.node())?);
             }
             NodeKind::PrefixExpr => {
                 let operand = ast::PrefixExpr::cast(tree, node)
