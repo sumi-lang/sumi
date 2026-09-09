@@ -51,8 +51,9 @@ SourceFile! 0..239
   FnItem! 221..229
     ParamList 224..226 "()"
     Block 227..229 "{}"
-  FnItem! 230..232 "fn"
-  Error! 233..238 "() {}"
+  FnItem! 230..238
+    ParamList 233..235 "()"
+    Block 236..238 "{}"
 
 == evidence ==
 Expected(Comma) at 37
@@ -63,9 +64,6 @@ ExpectedBody at 158
 ExpectedName at 200
 ExpectedName at 224
 ExpectedName at 233
-Expected(LParen) at 233
-ExpectedBody at 233
-ExpectedItem at 233
 
 == diagnostics ==
 error[syntax/expected-token] 1:38: expected `,`
@@ -83,12 +81,8 @@ error[syntax/expected-body] 6:26: expected a body, `{` or `=`
 error[syntax/expected-name] 8:4: expected a name
 error[syntax/expected-name] 9:19: expected a name
 error[syntax/expected-name] 11:1: expected a name
-error[syntax/expected-token] 11:1: expected `(`
-error[syntax/expected-body] 11:1: expected a body, `{` or `=`
-error[syntax/expected-item] 11:1..11:2 "(": expected a function item
-  at 11:1..11:6 "() {}": skipped while recovering
 
-== fixed (syntax/expected-body, syntax/expected-expression, syntax/expected-item, syntax/expected-name, syntax/expected-token remain) ==
+== fixed (syntax/expected-body, syntax/expected-expression, syntax/expected-name remain) ==
 fn missing_parameter_closer() = fn(x) = 1
 fn next_a() -> int = 2
 fn missing_body_closer() = fn() {
