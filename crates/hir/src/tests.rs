@@ -27,6 +27,18 @@ fn codes(analysis: &Analysis) -> Vec<&'static str> {
         .collect()
 }
 
+#[test]
+fn expression_ids_are_compact_and_zero_based() {
+    assert_eq!(size_of::<ExprId>(), 4);
+    assert_eq!(size_of::<Option<ExprId>>(), 4);
+    for index in [0, 1, 8192, u32::MAX as usize - 1] {
+        let id = ExprId::new(index);
+        assert_eq!(id.index(), index);
+        assert_eq!(format!("{id:?}"), format!("ExprId({index})"));
+        assert_ne!(Some(id), None);
+    }
+}
+
 fn reversed_declarations_preserve_types(analysis: &Analysis) {
     use sumi_syntax::ast::{AstNode, SourceFile};
     if !analysis.parsed().diagnostics().is_empty() {
@@ -359,6 +371,27 @@ fn call_arguments_keep_source_order() {
         assert!(matches!(body.expression(args[index]).kind, ExprKind::Int(n) if n == value));
     }
     assert_eq!(args.len(), 3);
+}
+
+#[test]
+fn call_requirements_replay_in_argument_order() {
+    let source = "fn unknown() = unknown()\nfn take(a: int, b: bool) {}\nfn caller() = { let x = unknown()\n take(x, (x)) }";
+    let a = check(source);
+    assert!(a.parsed.diagnostics().is_empty());
+    let mismatches: Vec<_> = a
+        .diagnostics()
+        .iter()
+        .filter(|d| d.code.name() == "type-mismatch")
+        .collect();
+    assert_eq!(mismatches.len(), 1);
+    assert_eq!(mismatches[0].message.as_ref(), "expected Bool, found Int");
+    assert_eq!(
+        mismatches[0].primary.location.start().to_usize(),
+        source.rfind("(x)").unwrap()
+    );
+
+    let a = check("fn take(a: int, b: bool) {}\nfn caller() { take(missing, 23) }");
+    assert_eq!(codes(&a), ["unknown-name", "type-mismatch"]);
 }
 
 #[test]

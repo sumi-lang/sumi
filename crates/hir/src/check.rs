@@ -400,7 +400,7 @@ type Scope = HashMap<Box<str>, Option<LocalId>>;
 enum Work {
     Enter(NodeIdx),
     Finish(NodeIdx),
-    Call(NodeIdx, Option<FunctionId>, NodeIdx, Vec<NodeIdx>),
+    Call(NodeIdx, FunctionId, NodeIdx),
 }
 
 struct Builder<'a, 's> {
@@ -480,8 +480,8 @@ impl<'a, 's> Builder<'a, 's> {
                         self.failed = true;
                     }
                 }
-                Work::Call(node, target, callee, args) => {
-                    if self.call(node, target, callee, args).is_none() {
+                Work::Call(node, target, callee) => {
+                    if self.call(node, target, callee).is_none() {
                         self.failed = true;
                     }
                 }
@@ -530,7 +530,7 @@ impl<'a, 's> Builder<'a, 's> {
             .find_map(|scope| scope.get(name).copied())
     }
     fn emit(&mut self, node: NodeIdx, kind: ExprKind, ty: impl Into<Term>) -> ExprId {
-        let id = ExprId(self.exprs.len());
+        let id = ExprId::new(self.exprs.len());
         self.exprs.push(DraftExpr {
             kind,
             origin: self.source.span(node),
@@ -609,8 +609,11 @@ impl<'a, 's> Builder<'a, 's> {
                 None
             };
             let list = call.arg_list(tree).unwrap();
-            let args = list.args(tree).map(|arg| arg.node()).collect();
-            work.push(Work::Call(node, target, callee, args));
+            if let Some(target) = target {
+                work.push(Work::Call(node, target, callee));
+            } else {
+                self.failed = true;
+            }
             work.extend(
                 tree.children(list.node())
                     .filter_map(|child| ast::Expr::cast(tree, child))
@@ -716,7 +719,7 @@ impl<'a, 's> Builder<'a, 's> {
         related: Option<(Span, &'static str)>,
     ) -> bool {
         let expected = expected.into();
-        let actual = self.exprs[expr.0].ty;
+        let actual = self.exprs[expr.index()].ty;
         if actual == expected {
             return true;
         }
@@ -760,7 +763,7 @@ impl<'a, 's> Builder<'a, 's> {
                         if index == 0 {
                             tail = Some(value);
                         } else {
-                            let ty = self.exprs[value.0].ty;
+                            let ty = self.exprs[value.index()].ty;
                             if let Term::Known(ty) = ty {
                                 if ty != Ty::Unit {
                                     self.source.error(
@@ -795,7 +798,7 @@ impl<'a, 's> Builder<'a, 's> {
                     return None;
                 }
                 statements.reverse();
-                let ty = tail.map_or(Term::Known(Ty::Unit), |id| self.exprs[id.0].ty);
+                let ty = tail.map_or(Term::Known(Ty::Unit), |id| self.exprs[id.index()].ty);
                 self.emit(node, ExprKind::Block { statements, tail }, ty);
             }
             NodeKind::LetStmt => {
@@ -818,7 +821,11 @@ impl<'a, 's> Builder<'a, 's> {
                         initializer = None;
                     }
                 }
-                let local = self.bind(name, name_node, initializer.map(|id| self.exprs[id.0].ty));
+                let local = self.bind(
+                    name,
+                    name_node,
+                    initializer.map(|id| self.exprs[id.index()].ty),
+                );
                 self.statements.push((
                     node,
                     Statement {
@@ -938,7 +945,7 @@ impl<'a, 's> Builder<'a, 's> {
                 let (expected, ty) = match op {
                     Add | Sub | Mul | Div | Rem => (Some(Term::Known(Ty::Int)), Ty::Int),
                     Lt | Le | Gt | Ge => (Some(Term::Known(Ty::Int)), Ty::Bool),
-                    Eq | Ne => (lhs.or(rhs).map(|id| self.exprs[id.0].ty), Ty::Bool),
+                    Eq | Ne => (lhs.or(rhs).map(|id| self.exprs[id.index()].ty), Ty::Bool),
                     And | Or => (Some(Term::Known(Ty::Bool)), Ty::Bool),
                 };
                 let mut valid = true;
@@ -984,7 +991,7 @@ impl<'a, 's> Builder<'a, 's> {
                     valid &= self.require(condition_node, condition, Ty::Bool, None);
                 }
                 let else_ty = if else_node.is_some() {
-                    else_branch.map(|id| self.exprs[id.0].ty)
+                    else_branch.map(|id| self.exprs[id.index()].ty)
                 } else {
                     Some(Term::Known(Ty::Unit))
                 };
@@ -1004,7 +1011,7 @@ impl<'a, 's> Builder<'a, 's> {
                 let then_branch = then_branch?;
                 // Preserve the equality class if either arm is inferred. A
                 // literal arm must not hide conflicts arriving through imports.
-                let ty = match (self.exprs[then_branch.0].ty, else_ty) {
+                let ty = match (self.exprs[then_branch.index()].ty, else_ty) {
                     (_, Some(ty @ Term::Var(_))) => ty,
                     (ty, _) => ty,
                 };
@@ -1022,16 +1029,15 @@ impl<'a, 's> Builder<'a, 's> {
         }
         Some(())
     }
-    fn call(
-        &mut self,
-        node: NodeIdx,
-        target: Option<FunctionId>,
-        callee: NodeIdx,
-        args: Vec<NodeIdx>,
-    ) -> Option<()> {
-        let target = target?;
+    fn call(&mut self, node: NodeIdx, target: FunctionId, callee: NodeIdx) -> Option<()> {
         let function = &self.functions[target.0];
         let params = function.params.as_ref()?;
+        let tree = self.source.tree;
+        let list = ast::CallExpr::cast(tree, node)
+            .unwrap()
+            .arg_list(tree)
+            .unwrap();
+        let args: Vec<_> = list.args(tree).map(|arg| arg.node()).collect();
         let mut valid = args.len() == params.len();
         if !valid {
             self.source.error(
