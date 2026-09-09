@@ -1,0 +1,7 @@
+.vscodeignore
+.gitignore
+dist/**
+node_modules/**
+test/**
+bun.lock
+tsconfig.json

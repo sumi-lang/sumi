@@ -1,0 +1,345 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Sumi",
+  "scopeName": "source.sumi",
+  "patterns": [
+    { "include": "#function-declaration" },
+    { "include": "#binding-declaration" },
+    { "include": "#type-reference" },
+    { "include": "#expression" }
+  ],
+  "repository": {
+    "expression": {
+      "patterns": [
+        { "include": "#comments" },
+        { "include": "#strings" },
+        { "include": "#characters" },
+        { "include": "#numbers" },
+        { "include": "#function-declaration" },
+        { "include": "#binding-declaration" },
+        { "include": "#type-reference" },
+        { "include": "#keywords" },
+        { "include": "#constants" },
+        { "include": "#function-call" },
+        { "include": "#identifier" },
+        { "include": "#operators" },
+        { "include": "#nested-braces" },
+        { "include": "#punctuation" }
+      ]
+    },
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.sumi",
+          "begin": "//",
+          "beginCaptures": {
+            "0": { "name": "punctuation.definition.comment.sumi" }
+          },
+          "end": "$"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.other.raw.block.sumi",
+          "begin": "\\br\"\"\"",
+          "beginCaptures": {
+            "0": { "name": "punctuation.definition.string.begin.sumi" }
+          },
+          "end": "\"\"\"",
+          "endCaptures": {
+            "0": { "name": "punctuation.definition.string.end.sumi" }
+          }
+        },
+        {
+          "name": "meta.string.quoted.double.block.sumi",
+          "begin": "\"\"\"",
+          "beginCaptures": {
+            "0": {
+              "name": "string.quoted.double.block.sumi punctuation.definition.string.begin.sumi"
+            }
+          },
+          "end": "\"\"\"",
+          "endCaptures": {
+            "0": {
+              "name": "string.quoted.double.block.sumi punctuation.definition.string.end.sumi"
+            }
+          },
+          "patterns": [
+            { "include": "#block-escapes" },
+            { "include": "#escapes" },
+            { "include": "#interpolation" },
+            { "include": "#invalid-escape" },
+            { "include": "#block-string-text" }
+          ]
+        },
+        {
+          "name": "string.quoted.other.raw.sumi",
+          "begin": "\\br(#+)?\"",
+          "beginCaptures": {
+            "0": { "name": "punctuation.definition.string.begin.sumi" }
+          },
+          "end": "\"\\1|(?=\\r?$)",
+          "endCaptures": {
+            "0": { "name": "punctuation.definition.string.end.sumi" }
+          }
+        },
+        {
+          "name": "meta.string.quoted.double.sumi",
+          "begin": "\"",
+          "beginCaptures": {
+            "0": {
+              "name": "string.quoted.double.sumi punctuation.definition.string.begin.sumi"
+            }
+          },
+          "end": "\"|(?=\\r?$)",
+          "endCaptures": {
+            "0": {
+              "name": "string.quoted.double.sumi punctuation.definition.string.end.sumi"
+            }
+          },
+          "patterns": [
+            { "include": "#escapes" },
+            { "include": "#interpolation" },
+            { "include": "#invalid-escape" },
+            { "include": "#single-string-text" }
+          ]
+        }
+      ]
+    },
+    "block-escapes": {
+      "patterns": [
+        {
+          "name": "constant.character.escape.sumi",
+          "match": "\\\\(?=\\r?$)"
+        }
+      ]
+    },
+    "escapes": {
+      "patterns": [
+        {
+          "name": "constant.character.escape.sumi",
+          "match": "\\\\(?:[nrt\\\\\"'0{}]|u\\{[0-9A-Fa-f_]+\\})"
+        }
+      ]
+    },
+    "invalid-escape": {
+      "patterns": [
+        {
+          "name": "invalid.illegal.escape.sumi",
+          "match": "\\\\(?:.|(?=\\r?$))"
+        }
+      ]
+    },
+    "single-string-text": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.sumi",
+          "match": "[^\\\\{\"]+"
+        }
+      ]
+    },
+    "block-string-text": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.block.sumi",
+          "match": "[^\\\\{\"]+|\"{1,2}(?!\")"
+        }
+      ]
+    },
+    "interpolation": {
+      "name": "meta.interpolation.sumi",
+      "contentName": "meta.embedded.expression.sumi",
+      "begin": "\\{",
+      "beginCaptures": {
+        "0": { "name": "punctuation.section.interpolation.begin.sumi" }
+      },
+      "end": "\\}|(?=\\r?$)",
+      "endCaptures": {
+        "0": { "name": "punctuation.section.interpolation.end.sumi" }
+      },
+      "patterns": [
+        { "include": "#interpolation-expression" }
+      ]
+    },
+    "interpolation-expression": {
+      "patterns": [
+        { "include": "#comments" },
+        { "include": "#strings" },
+        { "include": "#characters" },
+        { "include": "#numbers" },
+        { "include": "#function-declaration" },
+        { "include": "#binding-declaration" },
+        { "include": "#type-reference" },
+        { "include": "#keywords" },
+        { "include": "#constants" },
+        { "include": "#function-call" },
+        { "include": "#identifier" },
+        { "include": "#operators" },
+        { "include": "#interpolation-braces" },
+        { "include": "#punctuation" }
+      ]
+    },
+    "interpolation-braces": {
+      "name": "meta.block.sumi",
+      "begin": "\\{",
+      "beginCaptures": {
+        "0": { "name": "punctuation.section.block.begin.sumi" }
+      },
+      "end": "\\}|(?=\\r?$)",
+      "endCaptures": {
+        "0": { "name": "punctuation.section.block.end.sumi" }
+      },
+      "patterns": [
+        { "include": "#interpolation-expression" }
+      ]
+    },
+    "nested-braces": {
+      "name": "meta.block.sumi",
+      "begin": "\\{",
+      "beginCaptures": {
+        "0": { "name": "punctuation.section.block.begin.sumi" }
+      },
+      "end": "\\}",
+      "endCaptures": {
+        "0": { "name": "punctuation.section.block.end.sumi" }
+      },
+      "patterns": [
+        { "include": "#expression" }
+      ]
+    },
+    "characters": {
+      "patterns": [
+        {
+          "name": "string.quoted.single.sumi",
+          "begin": "'",
+          "beginCaptures": {
+            "0": { "name": "punctuation.definition.string.begin.sumi" }
+          },
+          "end": "'|(?=\\r?$)",
+          "endCaptures": {
+            "0": { "name": "punctuation.definition.string.end.sumi" }
+          },
+          "patterns": [
+            { "include": "#escapes" }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.float.sumi",
+          "match": "(?<![\\p{L}\\p{N}\\p{M}_])[0-9](?:_?[0-9])*(?:\\.[0-9](?:_?[0-9])*(?:[eE][+-]?[0-9](?:_?[0-9])*)?|[eE][+-]?[0-9](?:_?[0-9])*)(?![\\p{L}\\p{N}\\p{M}_])"
+        },
+        {
+          "name": "constant.numeric.integer.sumi",
+          "match": "(?<![\\p{L}\\p{N}\\p{M}_])[0-9](?:_?[0-9])*(?![\\p{L}\\p{N}\\p{M}_])"
+        }
+      ]
+    },
+    "function-declaration": {
+      "patterns": [
+        {
+          "match": "\\b(fn)(\\s+)((?!_(?![\\p{L}\\p{N}\\p{M}_]))[\\p{L}_][\\p{L}\\p{N}\\p{M}_]*)",
+          "captures": {
+            "1": { "name": "storage.type.function.sumi" },
+            "3": { "name": "entity.name.function.sumi" }
+          }
+        }
+      ]
+    },
+    "binding-declaration": {
+      "patterns": [
+        {
+          "match": "\\b(let)(\\s+)(?:(mut)(\\s+))?((?!_(?![\\p{L}\\p{N}\\p{M}_]))[\\p{L}_][\\p{L}\\p{N}\\p{M}_]*)",
+          "captures": {
+            "1": { "name": "keyword.declaration.sumi" },
+            "3": { "name": "storage.modifier.sumi" },
+            "5": { "name": "variable.other.definition.sumi" }
+          }
+        }
+      ]
+    },
+    "type-reference": {
+      "patterns": [
+        {
+          "match": "(:|->)(\\s*)((?!_(?![\\p{L}\\p{N}\\p{M}_]))[\\p{L}_][\\p{L}\\p{N}\\p{M}_]*)",
+          "captures": {
+            "1": { "name": "keyword.operator.type.annotation.sumi" },
+            "3": { "name": "entity.name.type.sumi" }
+          }
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.sumi",
+          "match": "\\b(?:else|if|return)\\b"
+        },
+        {
+          "name": "keyword.declaration.sumi",
+          "match": "\\b(?:fn|let)\\b"
+        },
+        {
+          "name": "storage.modifier.sumi",
+          "match": "\\bmut\\b"
+        },
+        {
+          "name": "keyword.other.discard.sumi",
+          "match": "\\b_\\b"
+        }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        {
+          "name": "constant.language.boolean.sumi",
+          "match": "\\b(?:false|true)\\b"
+        }
+      ]
+    },
+    "function-call": {
+      "patterns": [
+        {
+          "name": "entity.name.function.call.sumi",
+          "match": "(?!_(?![\\p{L}\\p{N}\\p{M}_]))[\\p{L}_][\\p{L}\\p{N}\\p{M}_]*(?=\\s*\\()"
+        }
+      ]
+    },
+    "identifier": {
+      "patterns": [
+        {
+          "name": "variable.other.readwrite.sumi",
+          "match": "(?!_(?![\\p{L}\\p{N}\\p{M}_]))[\\p{L}_][\\p{L}\\p{N}\\p{M}_]*"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.sumi",
+          "match": "->|==|!=|<=|>=|&&|\\|\\||[=<>!+*/%.-]"
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.separator.sumi",
+          "match": "[,:]"
+        },
+        {
+          "name": "punctuation.section.group.sumi",
+          "match": "[()]"
+        },
+        {
+          "name": "punctuation.section.block.sumi",
+          "match": "[{}]"
+        }
+      ]
+    }
+  }
+}
