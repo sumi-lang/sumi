@@ -7,7 +7,6 @@
 //! classes, bracket pairs, and operator tables — is generated from
 //! `sumi.grammar` at the workspace root.
 
-mod fields;
 mod generated;
 mod index;
 mod input;

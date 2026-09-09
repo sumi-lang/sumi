@@ -85,6 +85,41 @@ fn expression_bodies_and_closures_have_views() {
 }
 
 #[test]
+fn missing_signature_fields_do_not_shift_later_roles() {
+    for (source, has_return_type) in [("fn f -> int {}", true), ("fn f() -> {}", false)] {
+        let parsed = Parsed::new(source);
+        let tree = parsed.tree();
+        let item = parsed.item();
+        assert!(tree.has_error(item.node()));
+        assert_eq!(parsed.text(item.name(tree).unwrap()), "f");
+        assert_eq!(item.param_list(tree).is_some(), !has_return_type);
+        assert_eq!(
+            item.ret(tree).map(|ret| parsed.text(ret)),
+            has_return_type.then_some("int")
+        );
+        assert_eq!(parsed.text(item.body(tree).unwrap()), "{}");
+    }
+    // Closures share signature parsing, but their field slots omit the name.
+    for (source, has_return_type) in [
+        ("fn outer() = fn -> int {}", true),
+        ("fn outer() = fn() -> {}", false),
+    ] {
+        let parsed = Parsed::new(source);
+        let tree = parsed.tree();
+        let Some(Expr::ClosureExpr(closure)) = parsed.item().body(tree) else {
+            panic!("a recovered closure");
+        };
+        assert!(tree.has_error(closure.node()));
+        assert_eq!(closure.param_list(tree).is_some(), !has_return_type);
+        assert_eq!(
+            closure.ret(tree).map(|ret| parsed.text(ret)),
+            has_return_type.then_some("int")
+        );
+        assert_eq!(parsed.text(closure.body(tree).unwrap()), "{}");
+    }
+}
+
+#[test]
 fn views_walk_a_function_from_signature_to_leaves() {
     let parsed = Parsed::new(
         "fn add(a: Int, b: Int) -> Int {\n    let mut total = a + b\n    if total < 0 { return 0 } else { total }\n}\n",

@@ -900,17 +900,14 @@ pub fn ast(grammar: &Grammar) -> String {
 //! Accessors answer `Option` or an iterator whatever the grammar requires,
 //! because a parsed tree is error-tolerant: a node whose
 //! [`SyntaxTree::has_error`](crate::SyntaxTree::has_error) bit is set may lack any child. A single-valued
-//! accessor first honors a grammatical role the parser retained, then
-//! answers what the node's children settle: every reading of them that
-//! respects the rule's order and types must agree on the child, or the
-//! accessor answers `None`. On a node without an error the grammar fixes the
-//! reading, so every accessor is exact. The scan allocates nothing.
+//! accessor reads the grammatical role recorded by the parser. Missing
+//! children and untyped error nodes answer `None`; no accessor reconstructs
+//! field assignments from child types. The scan allocates nothing.
 //! A many-valued accessor yields the children in source order, which the
 //! tree stores in reverse, so it collects them once per call.
 //!
 //! {GENERATED}
 
-use crate::fields;
 use crate::generated::NodeKind;
 use crate::index::NodeIdx;
 use crate::tree::SyntaxTree;
@@ -955,43 +952,22 @@ impl {name} {{
     pub const KIND: NodeKind = NodeKind::{name};
 "#
     );
-    let singles: Vec<&Field> = fields.iter().filter(|field| !field.many).collect();
-    if !singles.is_empty() {
-        let count = singles.len();
-        let specs: String = singles
-            .iter()
-            .map(|field| {
-                format!(
-                    "fields::FieldSpec {{ fits: |tree, node| {}::cast(tree, node).is_some(), required: {} }},\n",
-                    type_of(field),
-                    field.required
-                )
-            })
-            .collect();
+    for (slot, field) in fields.iter().filter(|field| !field.many).enumerate() {
+        let ty = type_of(field);
+        let promise = if field.required {
+            "present on a node without an error"
+        } else {
+            "optional"
+        };
         out += &format!(
             r#"
-    /// The rule's single-valued children in order, for [`fields::assign`].
-    const FIELDS: [fields::FieldSpec; {count}] = [
-{specs}    ];
-"#
-        );
-        for (slot, field) in singles.iter().enumerate() {
-            let ty = type_of(field);
-            let promise = if field.required {
-                "present on a node without an error"
-            } else {
-                "optional"
-            };
-            out += &format!(
-                r#"
     /// The `{}` child, a `{ty}`, {promise}.
     pub fn {}(self, tree: &SyntaxTree) -> Option<{ty}> {{
-        fields::assign(tree, self.0, &Self::FIELDS)[{slot}].and_then(|node| {ty}::cast(tree, node))
+        tree.child_in_field(self.0, {slot}).and_then(|node| {ty}::cast(tree, node))
     }}
 "#,
-                field.name, field.name
-            );
-        }
+            field.name, field.name
+        );
     }
     for field in fields.iter().filter(|field| field.many) {
         let ty = type_of(field);

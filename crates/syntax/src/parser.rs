@@ -374,6 +374,7 @@ fn signature_tail(
     signature: Signature,
     allow_list_newline: bool,
 ) {
+    let first_field = u8::from(signature == Signature::Item);
     // The parameter list stays on the signature's line: `(` never
     // continues one. When an item's name is missing, its line is the one
     // after `fn` where the name and list would have begun.
@@ -386,8 +387,8 @@ fn signature_tail(
     let mut complete = false;
     if m.at(T::LParen) && (!m.newline() || allow_list_newline) {
         match signature {
-            Signature::Item => delimited_list::<Params>(m),
-            Signature::Closure => delimited_list::<ClosureParams>(m),
+            Signature::Item => delimited_list::<Params>(m, first_field),
+            Signature::Closure => delimited_list::<ClosureParams>(m, first_field),
         }
         complete = true;
     }
@@ -405,7 +406,7 @@ fn signature_tail(
         m.token();
         m.token();
         complete = m.at(T::Ident);
-        type_ref(m);
+        type_ref(m, first_field + 1);
         if !body_begins(m, complete) {
             let recovery = m.missing(ParseExpected::Body);
             signature_garbage(m, signature, recovery, |m| at_expression_body(m, complete));
@@ -413,9 +414,12 @@ fn signature_tail(
     }
     if at_expression_body(m, complete) {
         m.token(); // =
-        operand_before(m, 0, follow);
+        if let Some(body) = operand_before(m, 0, follow) {
+            m.field(&body, first_field + 2);
+        }
     } else if m.at(T::LBrace) {
-        block(m);
+        let body = block(m);
+        m.field(&body, first_field + 2);
     }
 }
 
@@ -466,23 +470,26 @@ fn signature_garbage(
 /// inside the node: it reads as a name but binds nothing.
 fn name(p: &mut Marker<'_, '_>) {
     if p.at(T::Ident) {
-        leaf(p, N::Name);
+        let name = leaf(p, N::Name);
+        p.field(&name, 0);
     } else if p.at(T::Underscore) {
         let mut m = p.start();
         m.recover_tokens(ParseRecoveryKind::Expected(ParseExpected::Name), 1);
         m.token();
-        m.complete(N::Name);
+        let name = m.complete(N::Name);
+        p.field(&name, 0);
     } else {
         p.missing(ParseExpected::Name);
     }
 }
 
 /// A type reference: a name, until types grow more shapes.
-fn type_ref(p: &mut Marker<'_, '_>) {
+fn type_ref(p: &mut Marker<'_, '_>, field: u8) {
     if p.at(T::Ident) {
         let mut m = p.start();
         m.token();
-        m.complete(N::TypeRef);
+        let ty = m.complete(N::TypeRef);
+        p.field(&ty, field);
     } else {
         p.missing(ParseExpected::Type);
     }
@@ -595,7 +602,7 @@ impl ListRule for Args {
     }
 }
 
-fn delimited_list<R: ListRule>(p: &mut Marker<'_, '_>) {
+fn delimited_list<R: ListRule>(p: &mut Marker<'_, '_>, field: u8) {
     let close = p
         .current()
         .and_then(crate::generated::closer)
@@ -664,7 +671,8 @@ fn delimited_list<R: ListRule>(p: &mut Marker<'_, '_>) {
             m.missing(ParseExpected::Token(T::Comma));
         }
     }
-    m.complete(R::NODE);
+    let list = m.complete(R::NODE);
+    p.field(&list, field);
 }
 
 /// Whether the next token begins an element a garbage run should end at:
@@ -684,11 +692,11 @@ fn param(p: &mut Marker<'_, '_>, typed: bool) {
     name(&mut m);
     if m.at(T::Colon) && !m.boundary() {
         m.token();
-        type_ref(&mut m);
+        type_ref(&mut m, 1);
     } else if typed || m.at(T::Ident) {
         m.missing(ParseExpected::Token(T::Colon));
         if m.at(T::Ident) {
-            type_ref(&mut m);
+            type_ref(&mut m, 1);
         }
     }
     m.complete(N::Param);
@@ -787,18 +795,12 @@ fn statement(p: &mut Marker<'_, '_>) {
             if let Some(lhs) = expr(p) {
                 if !p.recovered_since(recovery) && p.at(T::Eq) && !p.boundary() {
                     let lhs_node = p.completed_node(&lhs);
-                    let lhs_is_error = p.is_error(&lhs);
                     let mut m = p.precede(lhs);
                     m.token(); // =
                     let value = operand(&mut m, 0);
-                    let needs_hints = m.recovered_inside()
-                        || lhs_is_error
-                        || value.as_ref().is_some_and(|value| m.is_error(value));
-                    if needs_hints {
-                        m.wrapped_field(lhs_node, 0);
-                        if let Some(value) = &value {
-                            m.field(value, 1);
-                        }
+                    m.wrapped_field(lhs_node, 0);
+                    if let Some(value) = &value {
+                        m.field(value, 1);
                     }
                     m.complete(N::AssignStmt);
                 }
@@ -827,10 +829,12 @@ fn let_stmt(p: &mut Marker<'_, '_>) {
     // `=` never continue one.
     if m.at(T::Colon) && !m.boundary() {
         m.token();
-        type_ref(&mut m);
+        type_ref(&mut m, 1);
     }
-    if m.expect(T::Eq) {
-        operand(&mut m, 0);
+    if m.expect(T::Eq)
+        && let Some(initializer) = operand(&mut m, 0)
+    {
+        m.field(&initializer, 2);
     }
     m.complete(N::LetStmt);
 }
@@ -838,8 +842,10 @@ fn let_stmt(p: &mut Marker<'_, '_>) {
 fn discard_stmt(p: &mut Marker<'_, '_>) {
     let mut m = p.start();
     m.token(); // _
-    if m.expect(T::Eq) {
-        operand(&mut m, 0);
+    if m.expect(T::Eq)
+        && let Some(value) = operand(&mut m, 0)
+    {
+        m.field(&value, 0);
     }
     m.complete(N::DiscardStmt);
 }
@@ -848,8 +854,11 @@ fn return_stmt(p: &mut Marker<'_, '_>) {
     let mut m = p.start();
     m.token(); // return
     // A value only on the same line: `return` alone ends a statement.
-    if !m.boundary() && m.starts_expression() {
-        operand(&mut m, 0);
+    if !m.boundary()
+        && m.starts_expression()
+        && let Some(value) = operand(&mut m, 0)
+    {
+        m.field(&value, 0);
     }
     m.complete(N::ReturnStmt);
 }
@@ -1004,8 +1013,10 @@ fn expr_bp(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) -> Option<Com
             if !p.joint_before() {
                 p.violation(ParseViolationKind::SpacedListOpener, 1);
             }
+            let callee = p.completed_node(&lhs);
             let mut m = p.precede(lhs);
-            delimited_list::<Args>(&mut m);
+            m.wrapped_field(callee, 0);
+            delimited_list::<Args>(&mut m, 1);
             lhs = m.complete(N::CallExpr);
             comparison = false;
             continue;
@@ -1042,19 +1053,14 @@ fn expr_bp(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) -> Option<Com
             p.violation(ParseViolationKind::ChainedComparison, width);
         }
         let lhs_node = p.completed_node(&lhs);
-        let lhs_is_error = p.is_error(&lhs);
         let mut m = p.precede(lhs);
         for _ in 0..width {
             m.token();
         }
         let rhs = operand_before(&mut m, right_bp, follow);
-        let needs_hints =
-            m.recovered_inside() || lhs_is_error || rhs.as_ref().is_some_and(|rhs| m.is_error(rhs));
-        if needs_hints {
-            m.wrapped_field(lhs_node, 0);
-            if let Some(rhs) = &rhs {
-                m.field(rhs, 1);
-            }
+        m.wrapped_field(lhs_node, 0);
+        if let Some(rhs) = &rhs {
+            m.field(rhs, 1);
         }
         lhs = m.complete(if chained { N::Error } else { N::BinaryExpr });
         comparison = op.is_comparison() && !chained;
@@ -1107,7 +1113,9 @@ fn prefix_or_atom(p: &mut Marker<'_, '_>, follow: ExprFollow) -> Option<Complete
                 m.violation(ParseViolationKind::SpacedPrefixOperator, 1);
             }
             m.token();
-            operand_before(&mut m, PREFIX_BP, follow);
+            if let Some(operand) = operand_before(&mut m, PREFIX_BP, follow) {
+                m.field(&operand, 0);
+            }
             m.complete(N::PrefixExpr)
         }
         T::Ident => leaf(p, N::NameRef),
@@ -1124,7 +1132,9 @@ fn prefix_or_atom(p: &mut Marker<'_, '_>, follow: ExprFollow) -> Option<Complete
             let mut m = p.start();
             m.token(); // (
             m.enter();
-            operand(&mut m, 0);
+            if let Some(inner) = operand(&mut m, 0) {
+                m.field(&inner, 0);
+            }
             // Take only this paren's mechanical closer or an orphan recovery
             // closer. One paired with an earlier opener belongs to that
             // enclosing construct.
@@ -1174,7 +1184,9 @@ fn hole(p: &mut Marker<'_, '_>) {
     m.token(); // {
     m.enter();
     m.seal();
-    operand(&mut m, 0);
+    if let Some(value) = operand(&mut m, 0) {
+        m.field(&value, 0);
+    }
     if !m.owns_closer() && m.current().is_some() && !m.newline() && !ends_hole(&m) {
         let recovery = m.recover_tokens(ParseRecoveryKind::Unexpected, 1);
         skip(&mut m, recovery, |m| m.newline() || ends_hole(m));
@@ -1225,16 +1237,9 @@ fn if_expr(p: &mut Marker<'_, '_>) -> CompletedMarker {
     } else {
         None
     };
-    let needs_hints = m.recovered_inside()
-        || [&condition, &then_branch, &else_branch]
-            .into_iter()
-            .flatten()
-            .any(|child| m.is_error(child));
-    if needs_hints {
-        for (field, child) in [condition, then_branch, else_branch].iter().enumerate() {
-            if let Some(child) = child {
-                m.field(child, field as u8);
-            }
+    for (field, child) in [condition, then_branch, else_branch].iter().enumerate() {
+        if let Some(child) = child {
+            m.field(child, field as u8);
         }
     }
     m.complete(N::IfExpr)

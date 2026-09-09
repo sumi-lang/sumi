@@ -1,7 +1,7 @@
 //! The syntax tree: flat, postorder, token-anchored.
 //!
 //! A [`SyntaxTree`] stores structure only. Each node is a kind, its grammatical
-//! field when recovery would otherwise leave that ambiguous, a subtree
+//! field recorded by the parser, a subtree
 //! extent, and a half-open range of raw token indices; text, spans, and
 //! trivia stay in the token buffers, so the tree holds no second copy of the
 //! source. Nodes lie in postorder — the order they complete in, children
@@ -78,7 +78,7 @@ struct Node {
     kind: NodeKind,
     has_error: bool,
     /// The typed field this node fills in its immediate parent, plus one;
-    /// zero means that kind and order settle the field without a hint.
+    /// zero means this node fills no single-valued field.
     field: u8,
     extent: u32,
     first_token: RawIdx,
@@ -91,8 +91,6 @@ const _: () = assert!(size_of::<Node>() == 16, "nodes stay sixteen bytes");
 #[derive(Clone, Debug)]
 pub struct SyntaxTree {
     nodes: Box<[Node]>,
-    /// Whether any accessor may need a parser-retained field role.
-    may_need_field_hints: bool,
 }
 
 impl SyntaxTree {
@@ -117,7 +115,7 @@ impl SyntaxTree {
     }
 
     /// Whether the trees have the same node kinds and parent-child structure.
-    /// Token positions, token text, recovery flags, and field hints are ignored.
+    /// Token positions, token text, recovery flags, and field roles are ignored.
     pub fn same_shape(&self, other: &Self) -> bool {
         // In postorder, a node's extent fixes its subtree's start. Matching
         // every extent therefore matches the parents without building links.
@@ -139,20 +137,11 @@ impl SyntaxTree {
         self.nodes[index.to_usize()].has_error
     }
 
-    /// The typed field `index` fills in its parent, when the parser retained
-    /// the role because recovery would not leave it evident from kind and
-    /// order alone.
-    pub(crate) fn field(&self, index: NodeIdx) -> Option<usize> {
-        self.nodes[index.to_usize()]
-            .field
-            .checked_sub(1)
-            .map(usize::from)
-    }
-
-    /// Whether structural recovery or an `Error` node occurred anywhere in
-    /// the file, so typed accessors must consider parser-retained roles.
-    pub(crate) fn may_need_field_hints(&self) -> bool {
-        self.may_need_field_hints
+    /// The direct child assigned to this single-valued grammatical field.
+    /// Zero denotes no field; stored slots are one-based.
+    pub(crate) fn child_in_field(&self, node: NodeIdx, field: u8) -> Option<NodeIdx> {
+        self.children(node)
+            .find(|child| self.nodes[child.to_usize()].field == field + 1)
     }
 
     /// The raw index of the first token node `index` covers.
@@ -394,11 +383,9 @@ impl Parse {
             first_token: RawIdx::new(0),
             end_token: input.raw_len(),
         });
-        let may_need_field_hints = builder.recoveries > 0 || builder.error_nodes > 0;
         Self {
             tree: SyntaxTree {
                 nodes: builder.nodes.into_boxed_slice(),
-                may_need_field_hints,
             },
             evidence: builder
                 .evidence
@@ -680,10 +667,7 @@ impl<'a> Marker<'_, 'a> {
         }
     }
 
-    /// Retain which typed field a completed direct child fills. Most fields
-    /// need no hint: their kind and order are enough. Recovery can remove a
-    /// same-typed sibling or leave a subtype in either of two positions;
-    /// those are marked where the parser has already settled their role.
+    /// Record which single-valued typed field a completed direct child fills.
     pub(crate) fn field(&mut self, completed: &CompletedMarker, field: u8) {
         assert_eq!(
             completed.parent, self.id,
@@ -725,16 +709,6 @@ impl<'a> Marker<'_, 'a> {
         child.field = field
             .checked_add(1)
             .expect("a typed field index fits below 255");
-    }
-
-    /// Whether structural recovery occurred since this node opened.
-    pub(crate) fn recovered_inside(&self) -> bool {
-        self.builder.recoveries > self.recoveries
-    }
-
-    /// Whether `completed` is an untyped error node.
-    pub(crate) fn is_error(&self, completed: &CompletedMarker) -> bool {
-        self.builder.nodes[completed.node.to_usize()].kind == NodeKind::Error
     }
 
     /// Close the node as `kind`; it must cover at least one token.
