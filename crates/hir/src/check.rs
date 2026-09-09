@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 use sumi_frontend::{DiagnosticCode, DiagnosticGroup, Label, Location};
@@ -107,20 +108,20 @@ impl Source<'_> {
         let range = self.span(node).range();
         &self.parsed.source()[range.start().to_usize()..range.end().to_usize()]
     }
-    fn name_key(&self, node: NodeIdx) -> Box<str> {
+    fn name_key(&self, node: NodeIdx) -> Cow<'_, str> {
         let text = self.text(node);
         if text.is_ascii() {
-            return text.into();
+            return Cow::Borrowed(text);
         }
         // TODO: Implement a faster custom NFKC normalizer; investigate SIMD while
         // preserving Unicode conformance and benchmarking identifier workloads.
-        text.nfkc().collect::<String>().into_boxed_str()
+        Cow::Owned(text.nfkc().collect())
     }
     fn name(&self, name: Option<ast::Name>) -> Option<(Box<str>, NodeIdx)> {
         let node = name?.node();
         (!self.tree.has_error(node)
             && self.parsed.lexed().kind(self.tree.first_token(node)) == SyntaxKind::Ident)
-            .then(|| (self.name_key(node), node))
+            .then(|| (self.name_key(node).into_owned().into_boxed_str(), node))
     }
     fn error(
         &mut self,
