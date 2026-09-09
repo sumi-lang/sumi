@@ -106,6 +106,8 @@ pub enum ParseViolationKind {
     SpacedPrefixOperator,
     /// A parameter or argument list separated from its name or callee.
     SpacedListOpener,
+    /// A function name beginning on a line after its `fn` keyword.
+    FunctionNameOnNextLine,
     /// A comparison applied to a comparison, as in `a < b < c`.
     ChainedComparison,
 }
@@ -277,11 +279,13 @@ fn skip_all(
 /// A function item. Each part of the signature is taken where it belongs
 /// or reported where it is missing, and garbage in its place is skipped up
 /// to the next part, so a malformed signature is recovered as the evident
-/// intent and the body is kept. Expected components may cross lines;
-/// searching through garbage stops at the next physical line.
+/// intent and the body is kept. A present name must begin on the `fn` line;
+/// later expected components may cross lines. Searching through garbage
+/// stops at the next physical line.
 fn fn_item(p: &mut Marker<'_, '_>) {
     let mut m = p.start();
-    if m.at(T::FnKw) {
+    let has_fn = m.at(T::FnKw);
+    if has_fn {
         m.token();
     } else {
         m.missing(ParseExpected::Token(T::FnKw));
@@ -293,6 +297,9 @@ fn fn_item(p: &mut Marker<'_, '_>) {
         });
     }
     let missing_name = if m.at(T::Ident) || m.at(T::Underscore) {
+        if has_fn && m.at(T::Ident) && m.newline() {
+            m.violation(ParseViolationKind::FunctionNameOnNextLine, 1);
+        }
         name(&mut m);
         if m.at(T::LParen) && !m.newline() && !m.joint_before() {
             m.violation(ParseViolationKind::SpacedListOpener, 1);
