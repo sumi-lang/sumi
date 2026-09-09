@@ -346,13 +346,10 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         failed[obligation.owner] = true;
         source.error(obligation.node, code, message, related);
     }
-    for (index, header) in headers.iter().enumerate() {
+    for (index, header) in headers.into_iter().enumerate() {
         let result = header.result.and_then(|term| inference.resolve(term));
-        if let (Some(params), Some(result)) = (&header.params, result) {
-            functions[index].signature = Some(Signature {
-                params: params.clone(),
-                result,
-            });
+        if let (Some(params), Some(result)) = (header.params, result) {
+            functions[index].signature = Some(Signature { params, result });
         }
         if matches!(header.result, Some(Term::Var(_)))
             && result.is_none()
