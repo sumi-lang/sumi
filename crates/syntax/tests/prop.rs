@@ -163,6 +163,15 @@ proptest! {
         prop_assert!(input.len() <= lexed.len());
         prop_assert_eq!(input.get(input.end()), None);
 
+        let mut remaining_boundaries = input.indices().filter(|&i| input.boundary_before(i)).count();
+        prop_assert!(!input.boundary_in(input.end()..input.end()));
+        for index in input.indices() {
+            prop_assert!(!input.boundary_in(index..index));
+            prop_assert_eq!(input.boundary_in(index..index + 1), input.boundary_before(index));
+            prop_assert_eq!(input.boundary_in(index..input.end()), remaining_boundaries != 0);
+            remaining_boundaries -= usize::from(input.boundary_before(index));
+        }
+
         let mut previous: Option<RawIdx> = None;
         let mut open: Vec<SigIdx> = Vec::new();
         let mut layout_open: Vec<SigIdx> = Vec::new();
