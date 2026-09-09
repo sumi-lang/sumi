@@ -203,10 +203,10 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         .unwrap()
         .items(tree)
         .collect();
-    let mut functions: Vec<Function> = Vec::new();
+    let mut functions: Vec<Function> = Vec::with_capacity(items.len());
     let mut names = HashMap::<Box<str>, (Span, Option<FunctionId>)>::new();
-    let mut parameters = Vec::new();
-    let mut headers = Vec::new();
+    let mut parameters = Vec::with_capacity(items.len());
+    let mut headers = Vec::with_capacity(items.len());
     let mut inference = Inference::default();
     let mut obligations = Vec::new();
     for item in &items {
@@ -282,7 +282,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
             body: None,
         });
     }
-    let mut bodies = Vec::new();
+    let mut bodies = Vec::with_capacity(items.len());
     // Syntax node IDs are dense and bodies have disjoint nodes. Expression
     // IDs remain body-local; a builder only reads entries in its own body.
     let mut values = vec![None; tree.len()];
