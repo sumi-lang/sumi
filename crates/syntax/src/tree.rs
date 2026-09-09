@@ -116,6 +116,19 @@ impl SyntaxTree {
         self.nodes[index.to_usize()].kind
     }
 
+    /// Whether the trees have the same node kinds and parent-child structure.
+    /// Token positions, token text, recovery flags, and field hints are ignored.
+    pub fn same_shape(&self, other: &Self) -> bool {
+        // In postorder, a node's extent fixes its subtree's start. Matching
+        // every extent therefore matches the parents without building links.
+        self.nodes.len() == other.nodes.len()
+            && self
+                .nodes
+                .iter()
+                .zip(&other.nodes)
+                .all(|(a, b)| a.kind == b.kind && a.extent == b.extent)
+    }
+
     /// Whether node `index` contains a syntax error: it is an `Error` node,
     /// or the parser recovered — skipped tokens, or found syntax missing —
     /// while it was open, anywhere in its subtree. Layout violations are

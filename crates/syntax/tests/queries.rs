@@ -72,3 +72,39 @@ fn covering_matches_the_reference_under_recovery() {
 fn trivia_only_files_answer_the_root() {
     check_queries("  // just a comment\n\n");
 }
+
+#[test]
+fn shape_compares_structure_not_spelling_positions_or_recovery_flags() {
+    for (left, right, same) in [
+        ("", " // trivia\n", true),
+        ("fn f() = 1", "\nfn renamed() = 12345 // tail", true),
+        ("fn f() {}", "fn f() {", true),
+        ("fn f() = 1", "fn f() = name", false),
+        ("fn f() = 1", "fn f() = (1)", false),
+        ("", "fn f() {}", false),
+    ] {
+        let left = parse(&ParserInput::new(&lex(left).unwrap()));
+        let right = parse(&ParserInput::new(&lex(right).unwrap()));
+        assert_eq!(left.tree().same_shape(right.tree()), same);
+        assert_eq!(right.tree().same_shape(left.tree()), same);
+    }
+}
+
+#[test]
+fn equal_postorder_kinds_do_not_imply_equal_shape() {
+    let siblings = parse(&ParserInput::new(&lex("fn f() = { {}\n {} }").unwrap()));
+    let nested = parse(&ParserInput::new(&lex("fn f() = { { {} } }").unwrap()));
+    let (siblings, nested) = (siblings.tree(), nested.tree());
+    assert_eq!(
+        siblings
+            .nodes()
+            .map(|node| siblings.kind(node))
+            .collect::<Vec<_>>(),
+        nested
+            .nodes()
+            .map(|node| nested.kind(node))
+            .collect::<Vec<_>>(),
+    );
+    assert!(!siblings.same_shape(nested));
+    assert!(!nested.same_shape(siblings));
+}
