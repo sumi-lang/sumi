@@ -3,7 +3,7 @@ use sumi_frontend::{FileId, ParsedSource, parse_source};
 use sumi_hir::{Analysis, Ty};
 
 pub const SIZES: [usize; 3] = [128, 1024, 8192];
-pub const SHAPES: [&str; 9] = [
+pub const SHAPES: [&str; 10] = [
     "annotated-forward",
     "annotated-reverse",
     "inferred-forward",
@@ -13,6 +13,7 @@ pub const SHAPES: [&str; 9] = [
     "conflict-cycle",
     "locals",
     "arguments",
+    "branches",
 ];
 
 pub fn source(shape: &str, size: usize) -> String {
@@ -36,6 +37,18 @@ pub fn source(shape: &str, size: usize) -> String {
             } else {
                 declaration.push_str("if b { x } else { 0 }");
             }
+        } else if shape == "branches" {
+            declaration.push_str("{ let x0 = 1\n");
+            for j in 1..16 {
+                writeln!(
+                    declaration,
+                    "let x{j} = if x{} > {j} {{ {j} }} else {{ x{} + 1 }}",
+                    j - 1,
+                    j - 1
+                )
+                .unwrap();
+            }
+            declaration.push_str("x15 }");
         } else if shape == "locals" {
             declaration.push_str("{ let x0 = 1\n");
             for j in 1..16 {

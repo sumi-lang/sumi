@@ -742,15 +742,15 @@ impl<'a, 's> Builder<'a, 's> {
         match tree.kind(node) {
             NodeKind::Block => {
                 self.scopes.pop().unwrap();
-                let children: Vec<_> = tree.children_in_order(node).collect();
                 let mut statements = Vec::new();
                 let mut tail = None;
                 let mut valid = !tree.has_error(node);
-                for (index, &child) in children.iter().enumerate() {
+                // Children arrive last first; only the first can be the tail.
+                for (index, child) in tree.children(node).enumerate() {
                     if let Some(statement) = self.statements.remove(&child) {
                         statements.push(statement);
                     } else if let Some(value) = self.value(child) {
-                        if index + 1 == children.len() {
+                        if index == 0 {
                             tail = Some(value);
                         } else {
                             let ty = self.exprs[value.0].ty;
@@ -787,6 +787,7 @@ impl<'a, 's> Builder<'a, 's> {
                 if !valid {
                     return None;
                 }
+                statements.reverse();
                 let ty = tail.map_or(Term::Known(Ty::Unit), |id| self.exprs[id.0].ty);
                 self.emit(node, ExprKind::Block { statements, tail }, ty);
             }
