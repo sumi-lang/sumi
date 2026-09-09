@@ -1,0 +1,46 @@
+== tree ==
+SourceFile 0..105
+  FnItem 0..104
+    Name 3..11 "bindings"
+    ParamList 11..13 "()"
+    Block 14..104
+      LetStmt 20..37
+        Name 28..33 "plain"
+        LiteralExpr 36..37 "1"
+      LetStmt 42..69
+        Name 58..65 "mutable"
+        LiteralExpr 68..69 "2"
+      LetStmt 74..102
+        Name 89..98 "commented"
+        LiteralExpr 101..102 "3"
+
+== evidence ==
+BindingNameOnNextLine at 28
+BindingNameOnNextLine at 58
+BindingNameOnNextLine at 89
+
+== diagnostics ==
+error[syntax/binding-name-on-next-line] 3:5..3:10 "plain": binding name must be on the same line as `let`
+  fix (safe): move binding name onto `let` line
+    2:8..3:5 "\n    " -> " "
+error[syntax/binding-name-on-next-line] 6:5..6:12 "mutable": binding name must be on the same line as `let`
+  fix (safe): move binding name onto `let` line
+    4:8..5:5 "\n    " -> " "
+    5:8..6:5 "\n    " -> " "
+error[syntax/binding-name-on-next-line] 8:5..8:14 "commented": binding name must be on the same line as `let`
+
+== fixed (syntax/binding-name-on-next-line remains) ==
+fn bindings() {
+    let plain = 1
+    let mut mutable = 2
+    let // why
+    commented = 3
+}
+
+== normalized (BindingNameOnNextLine remains) ==
+fn bindings() {
+    let plain = 1
+    let mut mutable = 2
+    let // why
+    commented = 3
+}

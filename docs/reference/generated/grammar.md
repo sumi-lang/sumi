@@ -204,6 +204,8 @@ error-tolerant: any part of a node may be missing, and an `Error`
 node covering tokens the parser could not parse may appear anywhere.
 
 ```
+// A source file contains function items, each beginning on a new line after
+// the first.
 SourceFile = items:FnItem*
 // A function item. Its name begins on the same line as `fn`. The body is a
 // block or `=` and an expression: `fn double(x: int) -> int = x * 2`.
@@ -223,6 +225,7 @@ Block = '{' stmts:Stmt* '}'
 // One statement of a block; a line break ends it. Expression-statement
 // type requirements are enforced by semantic checking, not this grammar.
 Stmt = LetStmt | AssignStmt | DiscardStmt | ReturnStmt | Expr
+// A binding statement. Its `let`, optional `mut`, and name share one line.
 LetStmt = 'let' 'mut'? Name (':' TypeRef)? '=' initializer:Expr
 AssignStmt = target:Expr '=' value:Expr
 DiscardStmt = '_' '=' value:Expr

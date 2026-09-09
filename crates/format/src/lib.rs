@@ -86,9 +86,9 @@ pub fn reprint(tree: &SyntaxTree, lexed: &LexedFile, source: &str) -> String {
 }
 
 /// Rewrite spacing violations of `parsed` into canonical form: space binary
-/// operators, glue prefix operators and list openers, and keep function names
-/// on their `fn` line. Every other byte keeps its place; comments and chained
-/// comparisons stay as written.
+/// operators, glue prefix operators and list openers, keep declaration heads
+/// on one line, and separate function items. Every other byte keeps its place;
+/// comments and chained comparisons stay as written.
 ///
 /// The rewrite proves it changed only layout: the result keeps every
 /// significant token and every comment and reparses to the same tree
@@ -192,6 +192,60 @@ pub fn layout_violation_edits(
                 token_start(lexed, start),
                 " ",
             ));
+        }
+        ParseViolationKind::FunctionItemOnSameLine => {
+            let previous = prev_significant(lexed, start)?;
+            if !(previous + 1)
+                .until(start)
+                .all(|raw| lexed.kind(raw) == SyntaxKind::Whitespace)
+                || lex_error_in(lexed, previous + 1, start)
+            {
+                return None;
+            }
+            edits.push(replace(
+                token_end(lexed, previous),
+                token_start(lexed, start),
+                "\n",
+            ));
+        }
+        ParseViolationKind::BindingNameOnNextLine => {
+            let before_name = prev_significant(lexed, start)?;
+            let has_mut = lexed.kind(before_name) == SyntaxKind::MutKw;
+            let let_keyword = if has_mut {
+                prev_significant(lexed, before_name)?
+            } else {
+                before_name
+            };
+            let head = (let_keyword + 1).until(start);
+            if !head.clone().all(|raw| {
+                matches!(
+                    lexed.kind(raw),
+                    SyntaxKind::Whitespace | SyntaxKind::Newline | SyntaxKind::MutKw
+                )
+            }) || lex_error_in(lexed, let_keyword + 1, start)
+            {
+                return None;
+            }
+            let mut gaps = [(let_keyword, start); 2];
+            let gap_count = if has_mut {
+                gaps = [(let_keyword, before_name), (before_name, start)];
+                2
+            } else {
+                1
+            };
+            for &(left, right) in &gaps[..gap_count] {
+                let gap = (left + 1).until(right);
+                if gap
+                    .clone()
+                    .any(|raw| lexed.kind(raw) == SyntaxKind::Newline)
+                {
+                    edits.push(replace(
+                        token_end(lexed, left),
+                        token_start(lexed, right),
+                        " ",
+                    ));
+                }
+            }
         }
         ParseViolationKind::ChainedComparison => return None,
     }
