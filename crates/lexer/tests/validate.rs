@@ -120,6 +120,12 @@ fn number_canonicalization_repairs_spelling_and_preserves_suffixes() {
         ("0_0", Some("0")),
         ("01_000", Some("1_000")),
         ("00_0.50", Some("0.50")),
+        ("0__0_1_0__0_", Some("1_00")),
+        ("00_0.0__0E+0_0", Some("0.00e0")),
+        (
+            "00__1_2.00__3_0E-00__4_0suffix",
+            Some("1_2.003_0e-4_0suffix"),
+        ),
         ("1__0", Some("10")),
         ("1_.5", Some("1.5")),
         ("1E+05", Some("1e5")),
