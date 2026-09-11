@@ -139,6 +139,36 @@ impl Source<'_> {
             fix: None,
         });
     }
+    fn type_mismatch(
+        &mut self,
+        node: NodeIdx,
+        expected: Ty,
+        actual: Ty,
+        related: Option<(Span, &'static str)>,
+    ) {
+        self.error(
+            node,
+            codes::TYPE_MISMATCH,
+            format!("expected {expected:?}, found {actual:?}"),
+            related,
+        );
+    }
+    fn unused_value(&mut self, node: NodeIdx, ty: Ty) {
+        self.error(
+            node,
+            codes::UNUSED_VALUE,
+            format!("unused value of type {ty:?}; use `_ =` to discard it"),
+            None,
+        );
+    }
+    fn incomparable(&mut self, node: NodeIdx) {
+        self.error(
+            node,
+            codes::TYPE_MISMATCH,
+            "unit values cannot be compared",
+            None,
+        );
+    }
     fn ty(&mut self, node: ast::TypeRef) -> Option<Ty> {
         if self.tree.has_error(node.node()) {
             return None;
@@ -296,45 +326,31 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     let mut failed = vec![false; functions.len()];
     for obligation in obligations {
         let actual = replay.resolve(obligation.actual);
-        let (code, message, related) = match obligation.kind {
+        match obligation.kind {
             ObligationKind::Equal(expected, related) => match (actual, replay.resolve(expected)) {
-                (Some(actual), Some(expected)) if actual != expected => (
-                    codes::TYPE_MISMATCH,
-                    format!("expected {expected:?}, found {actual:?}"),
-                    related,
-                ),
+                (Some(actual), Some(expected)) if actual != expected => {
+                    source.type_mismatch(obligation.node, expected, actual, related);
+                }
                 _ => {
                     replay.equal(obligation.actual, expected);
                     continue;
                 }
             },
-            ObligationKind::Unused => {
-                if actual.is_none_or(|ty| ty == Ty::Unit) {
+            ObligationKind::Unused => match actual {
+                Some(ty) if ty != Ty::Unit => source.unused_value(obligation.node, ty),
+                _ => {
                     replay.equal(obligation.actual, Ty::Unit.into());
                     continue;
                 }
-                (
-                    codes::UNUSED_VALUE,
-                    format!(
-                        "unused value of type {:?}; use `_ =` to discard it",
-                        actual.unwrap()
-                    ),
-                    None,
-                )
-            }
+            },
             ObligationKind::Comparable => {
                 if actual != Some(Ty::Unit) {
                     continue;
                 }
-                (
-                    codes::TYPE_MISMATCH,
-                    "unit values cannot be compared".to_owned(),
-                    None,
-                )
+                source.incomparable(obligation.node);
             }
-        };
+        }
         failed[obligation.owner] = true;
-        source.error(obligation.node, code, message, related);
     }
     for (index, header) in headers.into_iter().enumerate() {
         let result = header.result.and_then(|term| inference.resolve(term));
@@ -710,12 +726,7 @@ impl<'a, 's> Builder<'a, 's> {
             return true;
         }
         if let (Term::Known(actual), Term::Known(expected)) = (actual, expected) {
-            self.source.error(
-                node,
-                codes::TYPE_MISMATCH,
-                format!("expected {expected:?}, found {actual:?}"),
-                related,
-            );
+            self.source.type_mismatch(node, expected, actual, related);
             return false;
         }
         self.inference.equal(actual, expected);
@@ -752,14 +763,7 @@ impl<'a, 's> Builder<'a, 's> {
                             let ty = self.exprs[value.index()].ty;
                             if let Term::Known(ty) = ty {
                                 if ty != Ty::Unit {
-                                    self.source.error(
-                                        child,
-                                        codes::UNUSED_VALUE,
-                                        format!(
-                                            "unused value of type {ty:?}; use `_ =` to discard it"
-                                        ),
-                                        None,
-                                    );
+                                    self.source.unused_value(child, ty);
                                     valid = false;
                                 }
                             } else {
@@ -942,12 +946,7 @@ impl<'a, 's> Builder<'a, 's> {
                         }
                     }
                     if expected == Term::Known(Ty::Unit) {
-                        self.source.error(
-                            node,
-                            codes::TYPE_MISMATCH,
-                            "unit values cannot be compared",
-                            None,
-                        );
+                        self.source.incomparable(node);
                         valid = false;
                     } else if matches!(op, Eq | Ne) && matches!(expected, Term::Var(_)) {
                         self.obligations.push(Obligation {
