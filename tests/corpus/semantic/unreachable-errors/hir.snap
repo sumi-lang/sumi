@@ -20,10 +20,10 @@ fn independent@191..219 () -> int
 == semantic diagnostics ==
 error[semantic/unknown-name]: unknown name `missing_or`
   primary @31..41
-error[semantic/type-mismatch]: expected Bool, found Int
+error[semantic/type-mismatch]: expected bool, found int
   primary @75..76
 error[semantic/unknown-name]: unknown name `missing_then`
   primary @112..124
-error[semantic/type-mismatch]: expected Bool, found Int
+error[semantic/type-mismatch]: expected bool, found int
   primary @170..175
   secondary @181..190: other branch determines expected type

@@ -149,7 +149,7 @@ impl Source<'_> {
         self.error(
             node,
             codes::TYPE_MISMATCH,
-            format!("expected {expected:?}, found {actual:?}"),
+            format!("expected {expected}, found {actual}"),
             related,
         );
     }
@@ -157,7 +157,7 @@ impl Source<'_> {
         self.error(
             node,
             codes::UNUSED_VALUE,
-            format!("unused value of type {ty:?}; use `_ =` to discard it"),
+            format!("unused value of type {ty}; use `_ =` to discard it"),
             None,
         );
     }
@@ -173,20 +173,17 @@ impl Source<'_> {
         if self.tree.has_error(node.node()) {
             return None;
         }
-        match self.text(node.node()) {
-            "int" => Some(Ty::Int),
-            "bool" => Some(Ty::Bool),
-            "unit" => Some(Ty::Unit),
-            name => {
-                self.error(
-                    node.node(),
-                    codes::UNKNOWN_TYPE,
-                    format!("unknown type `{name}`"),
-                    None,
-                );
-                None
-            }
+        let name = self.text(node.node());
+        let ty = Ty::from_name(name);
+        if ty.is_none() {
+            self.error(
+                node.node(),
+                codes::UNKNOWN_TYPE,
+                format!("unknown type `{name}`"),
+                None,
+            );
         }
+        ty
     }
     // Read only a token gap, never scan an expression subtree for its operator.
     fn tokens(&self, start: RawIdx, end: RawIdx) -> impl Iterator<Item = SyntaxKind> + '_ {

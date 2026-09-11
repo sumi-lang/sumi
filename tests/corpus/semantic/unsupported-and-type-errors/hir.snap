@@ -38,15 +38,15 @@ error[semantic/unsupported]: construct is not supported by scalar checking
   primary @83..91
 error[semantic/unsupported]: construct is not supported by scalar checking
   primary @109..121
-error[semantic/type-mismatch]: expected Bool, found Int
+error[semantic/type-mismatch]: expected bool, found int
   primary @146..147
   secondary @122..147: declared here
-error[semantic/type-mismatch]: expected Bool, found Int
+error[semantic/type-mismatch]: expected bool, found int
   primary @179..184
   secondary @190..199: other branch determines expected type
-error[semantic/type-mismatch]: expected Unit, found Int
+error[semantic/type-mismatch]: expected unit, found int
   primary @228..233
-error[semantic/type-mismatch]: expected Bool, found Int
+error[semantic/type-mismatch]: expected bool, found int
   primary @266..267
   secondary @259..263: declared here
 error[semantic/type-mismatch]: unit values cannot be compared
@@ -55,5 +55,5 @@ error[semantic/unsupported]: construct is not supported by scalar checking
   primary @338..362
 error[semantic/unknown-name]: unknown name `missing`
   primary @364..371
-error[semantic/type-mismatch]: expected Int, found Bool
+error[semantic/type-mismatch]: expected int, found bool
   primary @377..381

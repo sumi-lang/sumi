@@ -41,6 +41,30 @@ pub enum Ty {
     Unit,
 }
 
+impl Ty {
+    const ALL: [Self; 3] = [Self::Int, Self::Bool, Self::Unit];
+
+    /// The type's name as written in source, and as diagnostics spell it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Int => "int",
+            Self::Bool => "bool",
+            Self::Unit => "unit",
+        }
+    }
+
+    /// The type a source name denotes.
+    pub(crate) fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|ty| ty.as_str() == name)
+    }
+}
+
+impl fmt::Display for Ty {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FunctionId(usize);
 #[derive(Clone, Copy, PartialEq, Eq)]

@@ -35,13 +35,13 @@ error[semantic/cannot-infer]: conflicting function result constraints; add a ret
   primary @0..35
 error[semantic/cannot-infer]: conflicting function result constraints; add a return type annotation
   primary @36..74
-error[semantic/type-mismatch]: expected Bool, found Int
+error[semantic/type-mismatch]: expected bool, found int
   primary @126..135
   secondary @102..135: declared here
-error[semantic/type-mismatch]: expected Bool, found Int
+error[semantic/type-mismatch]: expected bool, found int
   primary @158..171
   secondary @177..186: other branch determines expected type
-error[semantic/unused-value]: unused value of type Int; use `_ =` to discard it
+error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
   primary @203..212
 error[semantic/type-mismatch]: unit values cannot be compared
   primary @241..259

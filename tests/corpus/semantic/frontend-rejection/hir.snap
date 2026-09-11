@@ -12,5 +12,5 @@ fn intact@62..88 () -> bool
   body: bool true : bool @84..88
 
 == semantic diagnostics ==
-error[semantic/unused-value]: unused value of type Int; use `_ =` to discard it
+error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
   primary @52..53

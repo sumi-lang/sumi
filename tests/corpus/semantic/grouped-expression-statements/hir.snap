@@ -9,15 +9,15 @@ fn sequence@22..179 () -> int
   body: unavailable
 
 == semantic diagnostics ==
-error[semantic/unused-value]: unused value of type Int; use `_ =` to discard it
+error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
   primary @49..56
-error[semantic/unused-value]: unused value of type Int; use `_ =` to discard it
+error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
   primary @61..70
-error[semantic/unused-value]: unused value of type Int; use `_ =` to discard it
+error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
   primary @75..86
-error[semantic/unused-value]: unused value of type Int; use `_ =` to discard it
+error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
   primary @91..117
-error[semantic/unused-value]: unused value of type Int; use `_ =` to discard it
+error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
   primary @122..131
-error[semantic/unused-value]: unused value of type Int; use `_ =` to discard it
+error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
   primary @155..164

@@ -22,13 +22,13 @@ fn accepted@156..216 () -> int
       rhs: int 1 : int @213..214
 
 == semantic diagnostics ==
-error[semantic/unused-value]: unused value of type Int; use `_ =` to discard it
+error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
   primary @63..66
-error[semantic/unused-value]: unused value of type Int; use `_ =` to discard it
+error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
   primary @71..84
-error[semantic/unused-value]: unused value of type Int; use `_ =` to discard it
+error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
   primary @89..94
 error[semantic/unsupported]: construct is not supported by scalar checking
   primary @124..129
-error[semantic/unused-value]: unused value of type Int; use `_ =` to discard it
+error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
   primary @134..143

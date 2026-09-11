@@ -383,7 +383,7 @@ fn call_requirements_replay_in_argument_order() {
         .filter(|d| d.code == TYPE_MISMATCH)
         .collect();
     assert_eq!(mismatches.len(), 1);
-    assert_eq!(mismatches[0].message.as_ref(), "expected Bool, found Int");
+    assert_eq!(mismatches[0].message.as_ref(), "expected bool, found int");
     assert_eq!(
         mismatches[0].primary.location.start().to_usize(),
         source.rfind("(x)").unwrap()

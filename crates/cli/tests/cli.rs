@@ -61,7 +61,7 @@ fn diagnostic_output_is_one_plain_line() {
     assert!(output.stdout.is_empty());
     assert_eq!(
         String::from_utf8(output.stderr).unwrap(),
-        "case.sumi:1:17: error[semantic/type-mismatch]: expected Int, found Bool\n"
+        "case.sumi:1:17: error[semantic/type-mismatch]: expected int, found bool\n"
     );
 }
 
