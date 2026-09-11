@@ -97,10 +97,6 @@ impl<'src> Lexer<'src> {
         self.source.as_bytes().get(self.position).copied()
     }
 
-    fn peek_byte_at(&self, offset: usize) -> Option<u8> {
-        self.source.as_bytes().get(self.position + offset).copied()
-    }
-
     fn bump_ascii(&mut self) -> u8 {
         let byte = self.source.as_bytes()[self.position];
         debug_assert!(byte.is_ascii());
@@ -198,21 +194,10 @@ impl<'src> Lexer<'src> {
     }
 
     fn scan_line_comment(&mut self) -> TokenFlags {
-        self.bump_ascii();
-        self.bump_ascii();
-
-        let flags = match (self.peek_byte(), self.peek_byte_at(1)) {
-            // `///` is an outer doc comment, but `////...` is decoration.
-            (Some(b'/'), next) if next != Some(b'/') => TokenFlags::DOC_OUTER,
-            (Some(b'!'), _) => TokenFlags::DOC_INNER,
-            _ => TokenFlags::EMPTY,
-        };
-
         let rest = self.remaining();
         let line_end = rest.find(['\n', '\r']).unwrap_or(rest.len());
         self.position += line_end;
-
-        flags
+        TokenFlags::EMPTY
     }
 
     /// Scan an integer literal: a run of digits, with any identifier
