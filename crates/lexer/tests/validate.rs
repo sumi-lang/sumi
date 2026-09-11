@@ -36,7 +36,7 @@ fn normalized_keywords_are_invalid_identifiers_not_keywords() {
     ] {
         check_errors(source, &[]);
     }
-    check_errors("// ｔｒｕｅ\n\"ｆｎ\" r\"ｉｆ\"", &[]);
+    check_errors("// ｔｒｕｅ\n\"ｆｎ\"", &[]);
 }
 
 #[track_caller]
@@ -276,12 +276,6 @@ fn block_string_layout_is_checked() {
         "\"\"\"\n  a\nb\n  \"\"\"",
         &[(0, 8, 8, LexErrorKind::BlockStringIndentation)],
     );
-    // Raw multi-line literals share the layout rules.
-    check_errors("r\"\"\"\n  \\d\n  \"\"\"", &[]);
-    check_errors(
-        "r\"\"\"x\n  \"\"\"",
-        &[(0, LexErrorKind::BlockStringOpenerContent)],
-    );
 }
 
 #[test]
@@ -317,16 +311,14 @@ fn block_validation_keeps_error_phase_order_across_mixed_line_endings() {
         ],
     );
     for newline in ["\n", "\r\n"] {
-        for opener in ["\"\"\"", "r\"\"\""] {
-            check_errors(&format!("{opener}{newline}\t\"\"\""), &[]);
-            check_errors(&format!("{opener}{newline}\tα{newline}\t\"\"\""), &[]);
-        }
+        check_errors(&format!("\"\"\"{newline}\t\"\"\""), &[]);
+        check_errors(&format!("\"\"\"{newline}\tα{newline}\t\"\"\""), &[]);
     }
 }
 
 #[test]
 fn block_escapes_exclude_hole_code_and_resume_after_each_hole() {
-    let source = "\"\"\"\n  {r\"\\q\"}\\p{x}\\u{zz}\n  \"\"\"";
+    let source = "\"\"\"\n  {\"\\q\"}\\p{x}\\u{zz}\n  \"\"\"";
     let lexed = lex(source).unwrap();
     let errors: Vec<_> = lexed
         .errors()
@@ -339,9 +331,12 @@ fn block_escapes_exclude_hole_code_and_resume_after_each_hole() {
             )
         })
         .collect();
+    // The hole's literal reports its own `\q` once; the block's text scan
+    // does not see it again.
     assert_eq!(
         errors,
         [
+            (LexErrorKind::UnknownEscape, "\\q"),
             (LexErrorKind::UnknownEscape, "\\p"),
             (LexErrorKind::MalformedUnicodeEscape, "\\u{zz}"),
         ]
@@ -357,7 +352,6 @@ fn line_literals_get_only_their_unterminated_error() {
             (3, LexErrorKind::UnterminatedString),
         ],
     );
-    check_errors("r\"a\nb", &[(0, LexErrorKind::UnterminatedRawString)]);
 }
 
 #[test]

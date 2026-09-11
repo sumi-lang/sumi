@@ -216,7 +216,7 @@ pub fn check_lexed(source: &str, file: &LexedFile) {
             assert!(
                 matches!(
                     file.raw_kind(index),
-                    RawKind::Newline | RawKind::BlockString | RawKind::RawBlockString
+                    RawKind::Newline | RawKind::BlockString
                 ),
                 "token {index:?} crosses a line break"
             );

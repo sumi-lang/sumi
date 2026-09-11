@@ -172,16 +172,6 @@ impl<'src> Lexer<'src> {
                     RawKind::Char,
                     self.scan_line_literal(b'\''),
                 ),
-                b'r' if self.remaining()[1..].starts_with(BLOCK_DELIMITER) => (
-                    SyntaxKind::RawBlockStringLiteral,
-                    RawKind::RawBlockString,
-                    self.scan_block_string(1 + BLOCK_DELIMITER.len()),
-                ),
-                b'r' if self.looks_like_raw_string() => (
-                    SyntaxKind::RawStringLiteral,
-                    RawKind::RawString,
-                    self.scan_raw_string(),
-                ),
                 byte if is_ascii_ident_start(byte) => {
                     self.scan_ident();
                     (
@@ -323,17 +313,6 @@ impl<'src> Lexer<'src> {
                 self.scan_text_token(text)
             }
             b'"' => Some(self.scan_quote_in_hole()),
-            // The `"""` after an `r` closes the literal around the hole,
-            // or the first quote of it does: the `r` is a name.
-            b'r' if self.remaining()[1..].starts_with(BLOCK_DELIMITER) => {
-                let start = self.position;
-                self.scan_ident();
-                Some((
-                    self.classify_ident(start),
-                    RawKind::Ident,
-                    TokenFlags::EMPTY,
-                ))
-            }
             _ => None,
         }
     }
@@ -627,81 +606,6 @@ impl<'src> Lexer<'src> {
             }
         }
         flags
-    }
-
-    /// Scan a raw multi-line literal from its `r"""` to the next `"""`.
-    /// Line breaks are content and nothing is escaped. Layout — what shares
-    /// the opener's line and the closer's, and how the content is indented
-    /// — is the collector's to judge.
-    fn scan_block_string(&mut self, opener: usize) -> TokenFlags {
-        self.position += opener;
-
-        let mut flags = TokenFlags::EMPTY;
-        loop {
-            match self.peek_byte() {
-                None => {
-                    flags |= TokenFlags::UNTERMINATED;
-                    break;
-                }
-                Some(b'"') if self.remaining().starts_with(BLOCK_DELIMITER) => {
-                    self.position += BLOCK_DELIMITER.len();
-                    break;
-                }
-                Some(b'\r') => {
-                    self.bump_ascii();
-                    if self.peek_byte() == Some(b'\n') {
-                        self.bump_ascii();
-                    } else {
-                        flags |= TokenFlags::LONE_CR;
-                    }
-                }
-                Some(_) => self.position += 1,
-            }
-        }
-        flags
-    }
-
-    fn looks_like_raw_string(&self) -> bool {
-        let bytes = &self.source.as_bytes()[self.position..];
-        debug_assert_eq!(bytes.first(), Some(&b'r'));
-
-        let mut index = 1;
-        while bytes.get(index) == Some(&b'#') {
-            index += 1;
-        }
-        bytes.get(index) == Some(&b'"')
-    }
-
-    /// Scan an `r"…"` literal, closed by a quote and as many `#` as opened
-    /// it. Line-bounded like `"…"`.
-    fn scan_raw_string(&mut self) -> TokenFlags {
-        self.bump_ascii();
-
-        let mut hashes = 0usize;
-        while self.peek_byte() == Some(b'#') {
-            self.position += 1;
-            hashes += 1;
-        }
-
-        debug_assert_eq!(self.peek_byte(), Some(b'"'));
-        self.bump_ascii();
-
-        let bytes = self.source.as_bytes();
-        loop {
-            match bytes.get(self.position) {
-                None | Some(b'\n' | b'\r') => return TokenFlags::UNTERMINATED,
-                Some(b'"') => {
-                    let closing = &bytes[self.position + 1..];
-                    if closing.len() >= hashes && closing[..hashes].iter().all(|&byte| byte == b'#')
-                    {
-                        self.position += 1 + hashes;
-                        return TokenFlags::EMPTY;
-                    }
-                    self.position += 1;
-                }
-                Some(_) => self.position += 1,
-            }
-        }
     }
 
     fn scan_ident(&mut self) {

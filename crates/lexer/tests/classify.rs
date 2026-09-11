@@ -159,15 +159,13 @@ fn trivia_classification() {
 #[test]
 fn literal_kinds() {
     check(
-        r#"15 "s" r"r" 'c'"#,
+        r#"15 "s" 'c'"#,
         &[
             r#"IntLiteral 0..2 "15""#,
             r#"Whitespace 2..3 " ""#,
             r#"StringLiteral 3..6 "\"s\"""#,
             r#"Whitespace 6..7 " ""#,
-            r#"RawStringLiteral 7..11 "r\"r\"""#,
-            r#"Whitespace 11..12 " ""#,
-            r#"CharLiteral 12..15 "'c'""#,
+            r#"CharLiteral 7..10 "'c'""#,
         ],
     );
 }
@@ -220,12 +218,8 @@ fn misplaced_bom_classifies_to_error() {
 #[test]
 fn block_strings_classify_by_their_opener() {
     check(
-        "\"\"\"\n\"\"\" r\"\"\"\n\"\"\"",
-        &[
-            r#"BlockStringLiteral 0..7 "\"\"\"\n\"\"\"""#,
-            r#"Whitespace 7..8 " ""#,
-            r#"RawBlockStringLiteral 8..16 "r\"\"\"\n\"\"\"""#,
-        ],
+        "\"\"\"\n\"\"\"",
+        &[r#"BlockStringLiteral 0..7 "\"\"\"\n\"\"\"""#],
     );
 }
 

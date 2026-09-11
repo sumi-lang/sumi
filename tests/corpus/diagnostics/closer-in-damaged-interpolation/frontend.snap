@@ -26,6 +26,11 @@ error[syntax/expected-token] 1:9: expected `,`
 error[syntax/expected-name] 1:9..1:11 "\"\"": expected a name
 error[syntax/expected-token] 1:11: expected `)`
   at 1:7..1:8 "(": opening delimiter is here
+  fix (safe): insert `)`
+    1:11 -> ")"
 error[syntax/expected-body] 1:11: expected a body, `{` or `=`
 error[syntax/expected-item] 1:11..1:12 "\"": expected a function item
   at 1:11..1:13 "\"t": skipped while recovering
+
+== fixed (syntax/expected-body, syntax/expected-item, syntax/expected-name, syntax/expected-token, syntax/unclosed-hole, syntax/unknown-punctuation remain) ==
+fn#"n{(r"")"t

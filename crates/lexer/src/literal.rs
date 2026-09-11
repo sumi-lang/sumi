@@ -103,18 +103,17 @@ pub(crate) fn validate_char(text: &str, mut error: impl FnMut(Range<usize>, LexE
     }
 }
 
-/// Validate a terminated multi-line literal, `"""` or `r"""` to `"""`: its
-/// layout, and its escapes unless it is `raw`. Line breaks split the text
-/// into the opener's line, the content lines, and the closer's line, and a
-/// lone `\r` is one too. `parts` yields the literal's text ranges, excluding
-/// interpolation code; escapes cannot cross from one part to the next.
+/// Validate a terminated multi-line literal, `"""` to `"""`: its layout
+/// and its escapes. Line breaks split the text into the opener's line, the
+/// content lines, and the closer's line, and a lone `\r` is one too.
+/// `parts` yields the literal's text ranges, excluding interpolation code;
+/// escapes cannot cross from one part to the next.
 pub(crate) fn validate_block_string(
     text: &str,
-    raw: bool,
     parts: impl Iterator<Item = Range<usize>>,
     mut error: impl FnMut(Range<usize>, LexErrorKind),
 ) {
-    let open = if raw { 4 } else { 3 };
+    let open = 3;
     let close = text.len() - 3;
     let body = &text[open..close];
     // Preserve diagnostic phase order: line endings, delimiters, indentation,
@@ -168,18 +167,16 @@ pub(crate) fn validate_block_string(
             start = end;
         }
     }
-    if !raw {
-        for part in parts {
-            let part = part.start.max(content.start)..part.end.min(content.end);
-            if part.start >= part.end {
-                continue;
-            }
-            walk_escapes(&text[part.clone()], true, |start, end, result| {
-                if let Err(kind) = result {
-                    error(part.start + start..part.start + end, kind);
-                }
-            });
+    for part in parts {
+        let part = part.start.max(content.start)..part.end.min(content.end);
+        if part.start >= part.end {
+            continue;
         }
+        walk_escapes(&text[part.clone()], true, |start, end, result| {
+            if let Err(kind) = result {
+                error(part.start + start..part.start + end, kind);
+            }
+        });
     }
 }
 

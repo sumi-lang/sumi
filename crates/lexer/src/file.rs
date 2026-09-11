@@ -43,12 +43,10 @@ pub fn lex(source: &str) -> Result<LexedFile, SourceTooLarge> {
                     && token.flags.contains(TokenFlags::UNTERMINATED))
                     || token.flags.contains(TokenFlags::HAS_ESCAPE)
             }
-            RawKind::RawString => token.flags.contains(TokenFlags::UNTERMINATED),
             // Layout is judged on every multi-line literal, since the
             // scanner only finds its ends: on the token of a whole one, and
             // over the parts of one with holes once every token is in.
             RawKind::BlockString => token.kind == SyntaxKind::BlockStringLiteral,
-            RawKind::RawBlockString => true,
             RawKind::Char | RawKind::Unknown => true,
             RawKind::Newline => token.flags.contains(TokenFlags::LONE_CR),
             RawKind::Punct => token.kind == SyntaxKind::Error,
@@ -115,18 +113,11 @@ fn collect_errors(
     let unterminated = token.flags.contains(TokenFlags::UNTERMINATED);
     // An unterminated multi-line literal runs to the end of the file, so
     // it is reported at its opener rather than over everything after it.
-    let block_opener = match token.raw {
-        RawKind::BlockString if unterminated => Some((3, LexErrorKind::UnterminatedBlockString)),
-        RawKind::RawBlockString if unterminated => {
-            Some((4, LexErrorKind::UnterminatedRawBlockString))
-        }
-        _ => None,
-    };
-    if let Some((opener, kind)) = block_opener {
+    if token.raw == RawKind::BlockString && unterminated {
         errors.push(LexError {
             token: index,
-            range: absolute_range(start, text.len(), 0..opener),
-            kind,
+            range: absolute_range(start, text.len(), 0..3),
+            kind: LexErrorKind::UnterminatedBlockString,
         });
         return;
     }
@@ -134,7 +125,6 @@ fn collect_errors(
         RawKind::String if unterminated && token.kind == SyntaxKind::StringLiteral => {
             Some(LexErrorKind::UnterminatedString)
         }
-        RawKind::RawString if unterminated => Some(LexErrorKind::UnterminatedRawString),
         RawKind::Char if unterminated => Some(LexErrorKind::UnterminatedChar),
         RawKind::Newline if token.flags.contains(TokenFlags::LONE_CR) => {
             Some(LexErrorKind::LoneCarriageReturn)
@@ -191,10 +181,7 @@ fn collect_errors(
             literal::validate_string_body(text, 0..body_end, &mut error);
         }
         SyntaxKind::BlockStringLiteral => {
-            literal::validate_block_string(text, false, std::iter::once(0..text.len()), &mut error);
-        }
-        SyntaxKind::RawBlockStringLiteral => {
-            literal::validate_block_string(text, true, std::iter::once(0..text.len()), &mut error);
+            literal::validate_block_string(text, std::iter::once(0..text.len()), &mut error);
         }
         SyntaxKind::CharLiteral => literal::validate_char(text, &mut error),
         SyntaxKind::Error if token.raw == RawKind::Punct => {
@@ -252,7 +239,7 @@ fn validate_block_parts(
                 .map_or(source.len(), |next| next.start.to_usize());
             token.start.to_usize() - base..end - base
         });
-    literal::validate_block_string(text, false, parts, |relative, kind| {
+    literal::validate_block_string(text, parts, |relative, kind| {
         let start = base + relative.start;
         let index = tokens.partition_point(|token| token.start.to_usize() <= start) - 1;
         let token_end = tokens
@@ -410,11 +397,9 @@ pub enum LexErrorKind {
     /// An identifier's NFKC form is a reserved spelling; the token remains Ident.
     ReservedIdentifier(SyntaxKind),
     UnterminatedString,
-    UnterminatedRawString,
     /// A `"""` never closed. Reported at the opener: the rest of the file
     /// is inside it.
     UnterminatedBlockString,
-    UnterminatedRawBlockString,
     UnterminatedChar,
     /// A `\r` line ending not followed by `\n`.
     LoneCarriageReturn,

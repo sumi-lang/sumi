@@ -44,19 +44,14 @@ pub enum SyntaxKind {
     /// A string literal on one line: `"…"`, with escapes. A line break ends an
     /// unterminated one, so a stray quote costs its line and nothing after it.
     StringLiteral,
-    /// A raw string literal on one line: `r"…"`, or `r#"…"#` to include quotes.
-    /// Nothing in it is an escape.
-    RawStringLiteral,
     /// A multi-line string literal: `"""`, the content lines, and `"""` on its
     /// own line, whose indentation every content line shares and sheds.
     BlockStringLiteral,
-    /// A multi-line string literal with nothing escaped: `r"""` to `"""`.
-    RawBlockStringLiteral,
     CharLiteral,
     /// The text of a string literal with holes, from its opening quote to its
     /// first hole: `"…` or `"""…`. A `{` in a `"…"` or `"""` literal opens a
     /// hole, an expression on that line whose value the string takes in its
-    /// place; `\{` is a brace, and a raw literal has no holes.
+    /// place; `\{` is a brace.
     StringStart,
     /// The text of a string literal between two of its holes.
     StringMiddle,
@@ -113,7 +108,7 @@ pub enum SyntaxKind {
 
 impl SyntaxKind {
     /// Every kind, in declaration order.
-    pub const ALL: [Self; 43] = [
+    pub const ALL: [Self; 41] = [
         Self::Whitespace,
         Self::Newline,
         Self::LineComment,
@@ -129,9 +124,7 @@ impl SyntaxKind {
         Self::TrueKw,
         Self::IntLiteral,
         Self::StringLiteral,
-        Self::RawStringLiteral,
         Self::BlockStringLiteral,
-        Self::RawBlockStringLiteral,
         Self::CharLiteral,
         Self::StringStart,
         Self::StringMiddle,
@@ -262,9 +255,7 @@ impl SyntaxKind {
             Self::TrueKw => "`true`",
             Self::IntLiteral => "an integer literal",
             Self::StringLiteral => "a string literal",
-            Self::RawStringLiteral => "a raw string literal",
             Self::BlockStringLiteral => "a multi-line string literal",
-            Self::RawBlockStringLiteral => "a raw multi-line string literal",
             Self::CharLiteral => "a character literal",
             Self::StringStart => "a string literal",
             Self::StringMiddle => "the text of a string literal",
