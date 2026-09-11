@@ -6,6 +6,8 @@
 //! "defined here" — and renderers only project this canonical
 //! representation for their audience.
 
+use std::fmt;
+
 use sumi_text::{FileId, Span, TextEdit, TextRange, TextSize};
 
 /// A namespace for related diagnostic codes.
@@ -45,6 +47,14 @@ impl DiagnosticCode {
     }
 }
 
+/// The code's public spelling: its group and name joined by `/`, which
+/// neither component may contain.
+impl fmt::Display for DiagnosticCode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}/{}", self.group.0, self.name)
+    }
+}
+
 const fn valid_component(value: &str) -> bool {
     let bytes = value.as_bytes();
     if bytes.is_empty() {
@@ -76,6 +86,18 @@ pub enum Severity {
     /// A suggestion an editor shows unobtrusively, such as an unused name
     /// it greys out.
     Hint,
+}
+
+impl Severity {
+    /// The severity's public spelling, as a renderer prefixes a diagnostic.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Error => "error",
+            Self::Warning => "warning",
+            Self::Info => "info",
+            Self::Hint => "hint",
+        }
+    }
 }
 
 /// Where a diagnostic label sits: a file, and within it either source text
@@ -191,6 +213,7 @@ mod tests {
         assert_eq!(UNKNOWN_CHARACTER.group(), LEXER);
         assert_eq!(UNKNOWN_CHARACTER.group().as_str(), "lexer");
         assert_eq!(UNKNOWN_CHARACTER.name(), "unknown-character");
+        assert_eq!(UNKNOWN_CHARACTER.to_string(), "lexer/unknown-character");
     }
 
     #[test]

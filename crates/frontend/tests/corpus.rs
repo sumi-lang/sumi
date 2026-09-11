@@ -15,9 +15,7 @@ use std::fmt::Write as _;
 mod corpus;
 
 use sumi_format::normalize;
-use sumi_frontend::{
-    Applicability, Diagnostic, FileId, Location, Place, Severity, TextEdit, parse_source,
-};
+use sumi_frontend::{Applicability, Diagnostic, FileId, Location, Place, TextEdit, parse_source};
 use sumi_lexer::LexedFile;
 use sumi_syntax::{
     NodeIdx, ParseAnchor, ParseEvidence, ParseExpected, ParseRecoveryKind, RawIdx, SyntaxTree,
@@ -91,13 +89,7 @@ fn snapshot(source: &str) -> String {
         let mut remaining: Vec<String> = reparsed
             .diagnostics()
             .iter()
-            .map(|diagnostic| {
-                format!(
-                    "{}/{}",
-                    diagnostic.code.group().as_str(),
-                    diagnostic.code.name()
-                )
-            })
+            .map(|diagnostic| diagnostic.code.to_string())
             .collect();
         remaining.sort();
         remaining.dedup();
@@ -252,17 +244,11 @@ fn evidence_token(evidence: &ParseEvidence) -> RawIdx {
 /// One diagnostic: its severity, code, place, and message on the first
 /// line, then its labels, notes, and fix indented under it.
 fn render(diagnostic: &Diagnostic, index: &LineIndex, source: &str, out: &mut String) {
-    let severity = match diagnostic.severity {
-        Severity::Error => "error",
-        Severity::Warning => "warning",
-        Severity::Info => "info",
-        Severity::Hint => "hint",
-    };
     writeln!(
         out,
-        "{severity}[{}/{}] {}: {}",
-        diagnostic.code.group().as_str(),
-        diagnostic.code.name(),
+        "{}[{}] {}: {}",
+        diagnostic.severity.as_str(),
+        diagnostic.code,
         place(index, source, diagnostic.primary.location),
         diagnostic.message
     )

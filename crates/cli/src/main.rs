@@ -64,23 +64,14 @@ fn check(path: &Path) -> Result<ExitCode, String> {
     let mut has_errors = false;
     for diagnostic in &diagnostics {
         let position = lines.line_col(diagnostic.primary.location.start());
-        let severity = match diagnostic.severity {
-            Severity::Error => {
-                has_errors = true;
-                "error"
-            }
-            Severity::Warning => "warning",
-            Severity::Info => "info",
-            Severity::Hint => "hint",
-        };
+        has_errors |= diagnostic.severity == Severity::Error;
         eprintln!(
-            "{}:{}:{}: {}[{}/{}]: {}",
+            "{}:{}:{}: {}[{}]: {}",
             path.display(),
             position.line + 1,
             u64::from(position.col) + 1,
-            severity,
-            diagnostic.code.group().as_str(),
-            diagnostic.code.name(),
+            diagnostic.severity.as_str(),
+            diagnostic.code,
             diagnostic.message,
         );
     }

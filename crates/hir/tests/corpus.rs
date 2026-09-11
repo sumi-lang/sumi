@@ -36,15 +36,6 @@ fn local(local: &Local) -> String {
     format!("{}{}", local.name, span(local.origin))
 }
 
-fn severity(severity: Severity) -> &'static str {
-    match severity {
-        Severity::Error => "error",
-        Severity::Warning => "warning",
-        Severity::Info => "info",
-        Severity::Hint => "hint",
-    }
-}
-
 fn snapshot(source: &str) -> String {
     let analysis = analyze(parse_source(FileId::new(0), source.into()).unwrap());
     let syntax_errors = analysis
@@ -101,10 +92,9 @@ fn snapshot(source: &str) -> String {
         for diagnostic in analysis.diagnostics() {
             writeln!(
                 out,
-                "{}[{}/{}]: {}",
-                severity(diagnostic.severity),
-                diagnostic.code.group().as_str(),
-                diagnostic.code.name(),
+                "{}[{}]: {}",
+                diagnostic.severity.as_str(),
+                diagnostic.code,
                 diagnostic.message
             )
             .unwrap();
