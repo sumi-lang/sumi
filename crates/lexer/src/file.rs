@@ -231,12 +231,16 @@ impl LexedFile {
 
     pub fn range(&self, index: RawIdx) -> TextRange {
         let start = self.tokens[index.to_usize()].start;
-        let end = self
-            .tokens
-            .get(index.to_usize() + 1)
-            .map_or(self.source_len, |next| next.start);
+        TextRange::new(start, self.boundary(index + 1))
+    }
 
-        TextRange::new(start, end)
+    /// The byte offset where token `index` begins, or the end of the source
+    /// for the boundary one past the last token: one load, for the ranges
+    /// of the constructs above that are all token-aligned.
+    pub fn boundary(&self, index: RawIdx) -> TextSize {
+        self.tokens
+            .get(index.to_usize())
+            .map_or(self.source_len, |token| token.start)
     }
 
     /// Slice `source` to this token's text. `source` must be the string this

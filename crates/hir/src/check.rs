@@ -313,7 +313,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         .unwrap()
         .items(tree)
         .collect();
-    let mut typing = Typing::new(parsed.file());
+    let mut typing = Typing::default();
 
     // Pass 1: headers.
     let mut functions: Vec<Function> = Vec::with_capacity(items.len());
@@ -372,9 +372,11 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
             }
         }
         let (result, declared) = if let Some(ret) = item.ret(tree) {
-            let span = source.span(ret.node());
             match source.ty(ret) {
-                Some(ty) => (Some(typing.known(ty, span)), Some((ty, span))),
+                Some(ty) => (
+                    Some(typing.known(ty, ret.node())),
+                    Some((ty, source.span(ret.node()))),
+                ),
                 None => (None, None),
             }
         } else {
@@ -392,7 +394,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
                 });
             match gap {
                 Some((None, None)) => (
-                    Some(typing.known(Ty::Unit, origin)),
+                    Some(typing.known(Ty::Unit, item.node())),
                     Some((Ty::Unit, origin)),
                 ),
                 Some((Some(SyntaxKind::Eq), None)) => (Some(typing.fresh()), None),
@@ -513,13 +515,20 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
                 } else {
                     format!("{}, and {last}", rest.join(", "))
                 };
+                let labels: Vec<_> = claims
+                    .into_iter()
+                    .map(|(ty, claim)| {
+                        (
+                            source.span(typing.origin(claim)),
+                            format!("{ty} here").into(),
+                        )
+                    })
+                    .collect();
                 source.report(
                     source.span(node),
                     codes::CANNOT_INFER,
                     format!("function result is both {joined}; add a return type annotation"),
-                    claims
-                        .into_iter()
-                        .map(|(ty, claim)| (typing.span(claim), format!("{ty} here").into())),
+                    labels,
                 );
             } else {
                 source.error(
@@ -763,7 +772,7 @@ impl<'a, 's> Builder<'a, 's> {
     }
     /// A class known to have `ty` because of `node`.
     fn known(&mut self, ty: Ty, node: NodeIdx) -> Var {
-        self.typing.known(ty, self.source.span(node))
+        self.typing.known(ty, node)
     }
     fn class(&self, expr: ExprId) -> Var {
         self.classes[expr.index()]
@@ -805,7 +814,7 @@ impl<'a, 's> Builder<'a, 's> {
         if expected == Expected::Class(actual) {
             return;
         }
-        self.typing.expect(actual, expected, self.source.span(node));
+        self.typing.expect(actual, expected, node);
         self.demand(node, expr, DemandKind::Type { expected, related });
     }
     fn demand(&mut self, node: NodeIdx, expr: ExprId, kind: DemandKind) {
@@ -1296,7 +1305,7 @@ impl<'a, 's> Builder<'a, 's> {
         if !complete {
             return None;
         }
-        let class = self.typing.call(result?, self.source.span(node));
+        let class = self.typing.call(result?, node);
         self.emit(
             node,
             ExprKind::Call {

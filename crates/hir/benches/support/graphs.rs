@@ -1,7 +1,7 @@
 use crate::solver::Var;
 use crate::typing::{Expected, Typing};
 use sumi_hir::Ty;
-use sumi_text::{FileId, Span, TextRange, TextSize};
+use sumi_syntax::NodeIdx;
 
 pub const SIZES: [usize; 4] = [8, 128, 1024, 8192];
 pub const SHAPES: [&str; 11] = [
@@ -18,12 +18,9 @@ pub const SHAPES: [&str; 11] = [
     "scattered-fanout",
 ];
 
-/// Every claim of a benchmark graph is made at the same place: provenance
+/// Every claim of a benchmark graph is made at the same node: provenance
 /// costs the same wherever it points.
-const HERE: Span = Span::new(
-    FileId::new(0),
-    TextRange::new(TextSize::new(0), TextSize::new(1)),
-);
+const HERE: NodeIdx = NodeIdx::new(0);
 
 pub struct Graph {
     pub context: Typing,
@@ -40,7 +37,7 @@ fn equal(context: &mut Typing, term: Var, other: Var) {
 }
 
 pub fn build(shape: &str, size: usize) -> Graph {
-    let mut context = Typing::new(FileId::new(0));
+    let mut context = Typing::default();
     let mut terms: Vec<_> = (0..size).map(|_| context.fresh()).collect();
     if shape == "chain-reverse" {
         terms.reverse();

@@ -11,9 +11,9 @@
 //! class with a claim of its own in the conflict reports it.
 //!
 //! A claim on a class is one word: its rank, which is also its identity. The
-//! source range behind it lives in a table on the [`Typing`], consulted only
-//! when a conflict is reported, so joining and transferring evidence never
-//! touch memory beyond the class.
+//! node it was made at lives in a table on the [`Typing`], consulted only
+//! when a conflict is reported, so making a claim never computes a span and
+//! joining or transferring evidence never touches memory beyond the class.
 //!
 //! Equality is local to a declaration; flows never unify caller and callee,
 //! so a caller's demands never decide a callee's result. Signatures are read
@@ -24,7 +24,7 @@
 
 use std::num::NonZeroU32;
 
-use sumi_text::{FileId, Span, TextRange};
+use sumi_syntax::NodeIdx;
 
 use crate::Ty;
 use crate::solver::{Lattice, Solver, Var};
@@ -155,34 +155,24 @@ fn claim(count: &mut u32) -> Claim {
     Claim(NonZeroU32::new(*count).unwrap())
 }
 
+#[derive(Default)]
 pub(crate) struct Typing {
     solver: Solver<Evidence>,
-    /// The file every claim is made in.
-    file: FileId,
-    /// Where each claim was made, by claim index.
-    ranges: Vec<TextRange>,
+    /// The node each claim was made at, by claim index.
+    origins: Vec<NodeIdx>,
 }
 
 impl Typing {
-    pub fn new(file: FileId) -> Self {
-        Self {
-            solver: Solver::default(),
-            file,
-            ranges: Vec::new(),
-        }
-    }
-
-    fn claim(&mut self, span: Span) -> Claim {
-        debug_assert_eq!(span.file(), self.file);
-        let mut count = u32::try_from(self.ranges.len()).expect("claim count fits u32");
+    fn claim(&mut self, node: NodeIdx) -> Claim {
+        let mut count = u32::try_from(self.origins.len()).expect("claim count fits u32");
         let claim = claim(&mut count);
-        self.ranges.push(span.range());
+        self.origins.push(node);
         claim
     }
 
-    /// Where `claim` was made.
-    pub fn span(&self, claim: Claim) -> Span {
-        Span::new(self.file, self.ranges[claim.index()])
+    /// The node `claim` was made at.
+    pub fn origin(&self, claim: Claim) -> NodeIdx {
+        self.origins[claim.index()]
     }
 
     /// A class nothing is known about yet.
@@ -190,24 +180,25 @@ impl Typing {
         self.solver.fresh()
     }
 
-    /// A class known to have `ty` at `span`: a literal, an annotation, or an
-    /// operator's result.
-    pub fn known(&mut self, ty: Ty, span: Span) -> Var {
-        let claim = self.claim(span);
+    /// A class known to have `ty` because of `node`: a literal, an
+    /// annotation, or an operator's result.
+    pub fn known(&mut self, ty: Ty, node: NodeIdx) -> Var {
+        let claim = self.claim(node);
         self.solver.known(Evidence::single(ty, claim))
     }
 
-    /// The class of a call at `span` whose callee's result class is `result`.
-    pub fn call(&mut self, result: Var, span: Span) -> Var {
-        let claim = self.claim(span);
+    /// The class of the call at `node` whose callee's result class is
+    /// `result`.
+    pub fn call(&mut self, result: Var, node: NodeIdx) -> Var {
+        let claim = self.claim(node);
         self.solver.import(result, claim)
     }
 
-    /// One use at `span` demands that `var` be `expected`.
-    pub fn expect(&mut self, var: Var, expected: Expected, span: Span) {
+    /// The use at `node` demands that `var` be `expected`.
+    pub fn expect(&mut self, var: Var, expected: Expected, node: NodeIdx) {
         match expected {
             Expected::Ty(ty) => {
-                let claim = self.claim(span);
+                let claim = self.claim(node);
                 self.solver.expect(var, &Evidence::single(ty, claim));
             }
             Expected::Class(class) => self.solver.equal(var, class),
@@ -238,7 +229,7 @@ impl Typing {
             solver: self
                 .solver
                 .replay(|evidence, call| evidence.ty().map(|ty| Evidence::single(ty, *call))),
-            claims: u32::try_from(self.ranges.len()).expect("claim count fits u32"),
+            claims: u32::try_from(self.origins.len()).expect("claim count fits u32"),
         }
     }
 }
@@ -271,19 +262,13 @@ impl Replay {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sumi_text::TextSize;
 
-    const FILE: FileId = FileId::new(0);
-
-    fn at(offset: u32) -> Span {
-        Span::new(
-            FILE,
-            TextRange::new(TextSize::new(offset), TextSize::new(offset + 1)),
-        )
+    fn at(node: u32) -> NodeIdx {
+        NodeIdx::new(node)
     }
 
     fn typing() -> Typing {
-        Typing::new(FILE)
+        Typing::default()
     }
 
     #[test]
@@ -323,15 +308,15 @@ mod tests {
             let claims = evidence.claims();
             assert_eq!(claims.len(), 2);
             assert_eq!(claims[0].0, types[0].0);
-            assert_eq!(typing.span(claims[0].1), at(types[0].1));
-            assert_eq!(typing.span(claims[1].1), at(types[1].1));
+            assert_eq!(typing.origin(claims[0].1), at(types[0].1));
+            assert_eq!(typing.origin(claims[1].1), at(types[1].1));
             let downstream = typing.evidence(downstream);
             assert!(downstream.is_conflict() && downstream.inherited());
             assert!(
                 downstream
                     .claims()
                     .iter()
-                    .all(|(_, c)| typing.span(*c) == at(30))
+                    .all(|(_, c)| typing.origin(*c) == at(30))
             );
         }
     }
@@ -348,11 +333,11 @@ mod tests {
         assert!(evidence.is_conflict() && !evidence.inherited());
         let claims = evidence.claims();
         assert_eq!(claims.len(), 3);
-        assert_eq!((claims[0].0, typing.span(claims[0].1)), (Ty::Unit, at(3)));
+        assert_eq!((claims[0].0, typing.origin(claims[0].1)), (Ty::Unit, at(3)));
         assert!(
             claims[1..]
                 .iter()
-                .all(|(_, claim)| typing.span(*claim) == at(2))
+                .all(|(_, claim)| typing.origin(*claim) == at(2))
         );
     }
 
@@ -363,7 +348,7 @@ mod tests {
         let call = typing.call(provider, at(1));
         typing.expect(call, Expected::Ty(Ty::Int), at(2));
         typing.solve();
-        assert_eq!(typing.span(typing.evidence(call).claims()[0].1), at(2));
+        assert_eq!(typing.origin(typing.evidence(call).claims()[0].1), at(2));
     }
 
     #[test]

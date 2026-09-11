@@ -63,11 +63,7 @@ use crate::parser::{
 /// trees and parse evidence project into the file. `lexed` must be the file
 /// the indices came from.
 pub fn raw_boundary(lexed: &LexedFile, raw: RawIdx) -> TextSize {
-    if raw == lexed.end() {
-        lexed.source_len()
-    } else {
-        lexed.range(raw).start()
-    }
+    lexed.boundary(raw)
 }
 
 /// One node: its kind, whether the parser recovered inside it, its subtree
@@ -165,14 +161,13 @@ impl SyntaxTree {
     /// token to the end of its last one. `lexed` must be the file this tree
     /// was parsed from. Only the root can be empty, over an empty file.
     pub fn byte_range(&self, index: NodeIdx, lexed: &LexedFile) -> TextRange {
+        // Tokens partition the source, so a node ends where the token past
+        // its last one begins.
         let node = &self.nodes[index.to_usize()];
-        let start = raw_boundary(lexed, node.first_token);
-        let end = if node.end_token > node.first_token {
-            lexed.range(node.end_token - 1).end()
-        } else {
-            start
-        };
-        TextRange::new(start, end)
+        TextRange::new(
+            raw_boundary(lexed, node.first_token),
+            raw_boundary(lexed, node.end_token),
+        )
     }
 
     /// The direct children of node `index`, last child first — the order a
