@@ -155,6 +155,12 @@ impl SyntaxTree {
         self.nodes[index.to_usize()].end_token
     }
 
+    /// The number of nodes in the subtree of `index`, itself included: what
+    /// a consumer that stores something per node of a construct sizes by.
+    pub fn subtree_len(&self, index: NodeIdx) -> usize {
+        self.nodes[index.to_usize()].extent as usize
+    }
+
     /// The byte range node `index` covers: from the start of its first
     /// token to the end of its last one. `lexed` must be the file this tree
     /// was parsed from. Only the root can be empty, over an empty file.

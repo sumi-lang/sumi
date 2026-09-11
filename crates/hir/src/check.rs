@@ -5,20 +5,26 @@
 //! 1. **Headers.** Every function's name, parameter types, and result class:
 //!    an annotated result is a class known to be its type, an expression body
 //!    without one is a fresh class to infer, and a bare block body is unit.
-//! 2. **Bodies.** A structural walk per function resolves names, builds a
-//!    draft body in which every expression and local owns a class in the
-//!    [`Typing`], and records what the walk learns: facts for literals and
-//!    operator results, a flow for each call, and a demand wherever a context
-//!    requires an expression to have a type. The walk rejects nothing on type
-//!    grounds; it fails only on names, syntax, and unsupported constructs.
+//! 2. **Bodies.** A structural walk per function resolves names, builds the
+//!    body's expressions with every expression and local owning a class in
+//!    the [`Typing`], and records what the walk learns: facts for literals
+//!    and operator results, a flow for each call, and a demand wherever a
+//!    context requires an expression to have a type. The walk rejects nothing
+//!    on type grounds; it fails only on names, syntax, and unsupported
+//!    constructs.
 //! 3. **Verdicts.** The typing solves once. Signatures are read off result
 //!    classes, independent of declaration order. Demands are then checked in
 //!    source order against the final evidence, so a disagreement is blamed on
 //!    the first demand that raised it. A body is published when its walk
 //!    succeeded, none of its demands failed, every class it uses resolved,
 //!    and every function it calls has a signature.
+//!
+//! Names are never copied while checking: every map is keyed by a slice of
+//! the source, and the one builder keeps its scratch across bodies, so a
+//! body costs the vectors it publishes and nothing else.
 
 use std::collections::{HashMap, HashSet};
+use std::hash::{BuildHasherDefault, Hasher};
 
 use sumi_frontend::{DiagnosticCode, Label, Location};
 use sumi_lexer::{RawIdx, SyntaxKind, TokenFlags};
@@ -32,6 +38,44 @@ use crate::solver::Var;
 use crate::typing::{Expected, Typing};
 use crate::*;
 
+/// A hasher for identifiers: a word at a time, with a multiply to spread
+/// the bits, which is all a short ASCII name needs and a fraction of what a
+/// keyed hash costs.
+#[derive(Default)]
+struct NameHasher(u64);
+
+impl NameHasher {
+    fn add(&mut self, word: u64) {
+        self.0 = (self.0.rotate_left(5) ^ word).wrapping_mul(0x517c_c1b7_2722_0a95);
+    }
+}
+
+impl Hasher for NameHasher {
+    fn write(&mut self, bytes: &[u8]) {
+        let mut words = bytes.chunks_exact(8);
+        for word in &mut words {
+            self.add(u64::from_le_bytes(word.try_into().unwrap()));
+        }
+        let rest = words.remainder();
+        if !rest.is_empty() {
+            let mut word = [0; 8];
+            word[..rest.len()].copy_from_slice(rest);
+            self.add(u64::from_le_bytes(word));
+        }
+    }
+
+    fn write_u8(&mut self, byte: u8) {
+        self.add(u64::from(byte));
+    }
+
+    fn finish(&self) -> u64 {
+        self.0
+    }
+}
+
+/// A map from names, as slices of the source, to whatever they name.
+type NameMap<'s, V> = HashMap<&'s str, V, BuildHasherDefault<NameHasher>>;
+
 struct Header {
     params: Option<Box<[Ty]>>,
     /// The result class; `None` when the declaration is too damaged to have
@@ -44,68 +88,60 @@ struct Header {
     origin: Span,
 }
 
-struct DraftLocal {
-    name: Box<str>,
+struct DraftLocal<'s> {
+    name: &'s str,
     origin: Span,
     class: Var,
 }
 
-struct DraftExpr {
-    kind: ExprKind,
-    origin: Span,
-    class: Var,
-    /// The expression whose type this one has: itself, or through any
-    /// number of tails and branches, the innermost expression it takes its
-    /// type from. Two demands with one subject are about one expression.
-    subject: ExprId,
-}
-
-struct DraftBody {
+/// A body whose expressions are built, with a placeholder type on each
+/// until its class resolves.
+struct DraftBody<'s> {
     params: Vec<LocalId>,
-    locals: Vec<DraftLocal>,
-    exprs: Vec<DraftExpr>,
+    locals: Vec<DraftLocal<'s>>,
+    exprs: Vec<Expr>,
+    /// The class of each expression, by index.
+    classes: Vec<Var>,
     root: ExprId,
 }
 
-impl DraftBody {
+impl DraftBody<'_> {
     /// The body with every class resolved to its type, if every class
     /// resolved and every call agrees with its callee's signature.
     fn publish(self, typing: &Typing, functions: &[Function]) -> Option<Body> {
-        let locals = self
-            .locals
+        let Self {
+            params,
+            locals,
+            mut exprs,
+            classes,
+            root,
+        } = self;
+        let locals = locals
             .into_iter()
             .map(|local| {
                 Some(Local {
-                    name: local.name,
+                    name: local.name.into(),
                     origin: local.origin,
                     ty: typing.resolve(local.class)?,
                 })
             })
             .collect::<Option<_>>()?;
-        let exprs = self
-            .exprs
-            .into_iter()
-            .map(|expr| {
-                let ty = typing.resolve(expr.class)?;
-                if let ExprKind::Call { function, .. } = &expr.kind {
-                    // A caller's demands can resolve its call's class without
-                    // resolving the callee. That is not a publishable call.
-                    if functions[function.0].signature.as_ref()?.result != ty {
-                        return None;
-                    }
-                }
-                Some(Expr {
-                    kind: expr.kind,
-                    origin: expr.origin,
-                    ty,
-                })
-            })
-            .collect::<Option<_>>()?;
+        for (expr, &class) in exprs.iter_mut().zip(&classes) {
+            let ty = typing.resolve(class)?;
+            // A caller's demands can resolve its call's class without
+            // resolving the callee. That is not a publishable call.
+            if let ExprKind::Call { function, .. } = &expr.kind
+                && functions[function.0].signature.as_ref()?.result != ty
+            {
+                return None;
+            }
+            expr.ty = ty;
+        }
         Some(Body {
-            params: self.params,
+            params,
             locals,
             exprs,
-            root: self.root,
+            root,
         })
     }
 }
@@ -125,34 +161,39 @@ enum DemandKind {
 
 struct Demand {
     owner: usize,
+    /// The expression whose type the demand is about: the innermost one
+    /// the demanded expression takes its type from, through any number of
+    /// tails and branches. Two demands with one subject are about one
+    /// expression.
     subject: ExprId,
     node: NodeIdx,
     actual: Var,
     kind: DemandKind,
 }
 
-struct Source<'a> {
-    parsed: &'a ParsedSource,
-    tree: &'a SyntaxTree,
+struct Source<'s> {
+    parsed: &'s ParsedSource,
+    tree: &'s SyntaxTree,
     diagnostics: Vec<Diagnostic>,
 }
 
-impl Source<'_> {
+impl<'s> Source<'s> {
     fn span(&self, node: NodeIdx) -> Span {
         Span::new(
             self.parsed.file(),
             self.tree.byte_range(node, self.parsed.lexed()),
         )
     }
-    fn text(&self, node: NodeIdx) -> &str {
-        let range = self.span(node).range();
-        &self.parsed.source()[range.start().to_usize()..range.end().to_usize()]
+    fn text(&self, node: NodeIdx) -> &'s str {
+        let range = self.tree.byte_range(node, self.parsed.lexed());
+        let source: &'s str = self.parsed.source();
+        &source[range.start().to_usize()..range.end().to_usize()]
     }
-    fn name(&self, name: Option<ast::Name>) -> Option<(Box<str>, NodeIdx)> {
+    fn name(&self, name: Option<ast::Name>) -> Option<(&'s str, NodeIdx)> {
         let node = name?.node();
         (!self.tree.has_error(node)
             && self.parsed.lexed().kind(self.tree.first_token(node)) == SyntaxKind::Ident)
-            .then(|| (self.text(node).into(), node))
+            .then(|| (self.text(node), node))
     }
     fn error(
         &mut self,
@@ -238,8 +279,8 @@ impl Source<'_> {
     }
 }
 
-struct Parameter {
-    name: Option<(Box<str>, NodeIdx)>,
+struct Parameter<'s> {
+    name: Option<(&'s str, NodeIdx)>,
     ty: Option<Ty>,
 }
 
@@ -258,24 +299,25 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
 
     // Pass 1: headers.
     let mut functions: Vec<Function> = Vec::with_capacity(items.len());
-    let mut names = HashMap::<Box<str>, (Span, Option<FunctionId>)>::new();
+    let mut names: NameMap<(Span, Option<FunctionId>)> =
+        NameMap::with_capacity_and_hasher(items.len(), Default::default());
     let mut parameters = Vec::with_capacity(items.len());
     let mut headers = Vec::with_capacity(items.len());
     for item in &items {
         let name = source.name(item.name(tree));
         let id = FunctionId(functions.len());
         let origin = source.span(item.node());
-        if let Some((name, node)) = &name {
+        if let Some((name, node)) = name {
             if let Some((first, target)) = names.get_mut(name) {
                 source.error(
-                    *node,
+                    node,
                     codes::DUPLICATE_NAME,
                     format!("duplicate function `{name}`"),
                     Some((*first, "declared here")),
                 );
                 *target = None;
             } else {
-                names.insert(name.clone(), (source.span(*node), Some(id)));
+                names.insert(name, (source.span(node), Some(id)));
             }
         }
         let list = item.param_list(tree);
@@ -340,7 +382,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         });
         parameters.push(params);
         functions.push(Function {
-            name: name.map(|n| n.0),
+            name: name.map(|(name, _)| name.into()),
             origin,
             signature: None,
             body: None,
@@ -353,20 +395,18 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     // Syntax node IDs are dense and bodies have disjoint nodes. Expression
     // IDs remain body-local; a builder only reads entries in its own body.
     let mut values = vec![None; tree.len()];
+    let mut builder = Builder::new(
+        &mut source,
+        &headers,
+        &names,
+        &mut typing,
+        &mut demands,
+        &mut values,
+    );
     for (index, (item, params)) in items.iter().zip(parameters).enumerate() {
-        bodies.push(
-            Builder::new(
-                &mut source,
-                &headers,
-                &names,
-                &mut typing,
-                &mut demands,
-                index,
-                &mut values,
-            )
-            .build(*item, params),
-        );
+        bodies.push(builder.build(index, *item, params));
     }
+    drop(builder);
     drop(values);
 
     // Pass 3: verdicts.
@@ -495,36 +535,49 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
 
 // None is a poisoned binding, distinct from an absent name. Scope transitions
 // and let completion are explicit work items, so initializers see the old scope.
-type Scope = HashMap<Box<str>, Option<LocalId>>;
+type Scope<'s> = NameMap<'s, Option<LocalId>>;
 enum Work {
     Enter(NodeIdx),
     Finish(NodeIdx),
     Call(NodeIdx, FunctionId, NodeIdx),
 }
 
+/// The one walker for every body of the file. What a body publishes is
+/// built in place and moved out; everything else the walk needs is kept
+/// and reused, so no body pays for scratch.
 struct Builder<'a, 's> {
     source: &'a mut Source<'s>,
     headers: &'a [Header],
-    names: &'a HashMap<Box<str>, (Span, Option<FunctionId>)>,
+    names: &'a NameMap<'s, (Span, Option<FunctionId>)>,
     typing: &'a mut Typing,
     demands: &'a mut Vec<Demand>,
-    owner: usize,
-    scopes: Vec<Scope>,
-    locals: Vec<DraftLocal>,
-    exprs: Vec<DraftExpr>,
     values: &'a mut [Option<ExprId>],
-    statements: Vec<(NodeIdx, Statement)>,
+    // The body under construction.
+    owner: usize,
     failed: bool,
+    params: Vec<LocalId>,
+    locals: Vec<DraftLocal<'s>>,
+    exprs: Vec<Expr>,
+    classes: Vec<Var>,
+    // Scratch kept across bodies.
+    /// The subject of each expression, by index.
+    subjects: Vec<ExprId>,
+    /// A pool of scopes; the first `depth` are open, innermost last.
+    scopes: Vec<Scope<'s>>,
+    depth: usize,
+    /// Parameter names seen so far, for duplicates.
+    first: NameMap<'s, Span>,
+    work: Vec<Work>,
+    statements: Vec<(NodeIdx, Statement)>,
 }
 
 impl<'a, 's> Builder<'a, 's> {
     fn new(
         source: &'a mut Source<'s>,
         headers: &'a [Header],
-        names: &'a HashMap<Box<str>, (Span, Option<FunctionId>)>,
+        names: &'a NameMap<'s, (Span, Option<FunctionId>)>,
         typing: &'a mut Typing,
         demands: &'a mut Vec<Demand>,
-        owner: usize,
         values: &'a mut [Option<ExprId>],
     ) -> Self {
         Self {
@@ -533,34 +586,54 @@ impl<'a, 's> Builder<'a, 's> {
             names,
             typing,
             demands,
-            owner,
-            scopes: vec![Scope::new()],
+            values,
+            owner: 0,
+            failed: false,
+            params: Vec::new(),
             locals: Vec::new(),
             exprs: Vec::new(),
-            values,
+            classes: Vec::new(),
+            subjects: Vec::new(),
+            scopes: Vec::new(),
+            depth: 0,
+            first: NameMap::default(),
+            work: Vec::new(),
             statements: Vec::new(),
-            failed: false,
         }
     }
-    fn build(mut self, item: ast::FnItem, parameters: Vec<Parameter>) -> Option<DraftBody> {
-        let mut params = Vec::new();
-        let mut first = HashMap::new();
+    fn build(
+        &mut self,
+        owner: usize,
+        item: ast::FnItem,
+        parameters: Vec<Parameter<'s>>,
+    ) -> Option<DraftBody<'s>> {
+        self.owner = owner;
+        self.failed = false;
+        self.depth = 0;
+        self.open_scope();
+        self.first.clear();
+        self.subjects.clear();
+        // A published body took these; a failed one left them behind.
+        self.params.clear();
+        self.locals.clear();
+        self.exprs.clear();
+        self.classes.clear();
         for param in parameters {
             if let Some((name, node)) = param.name {
-                if let Some(&span) = first.get(&name) {
+                if let Some(&span) = self.first.get(name) {
                     self.source.error(
                         node,
                         codes::DUPLICATE_NAME,
                         format!("duplicate parameter `{name}`"),
                         Some((span, "declared here")),
                     );
-                    self.scopes[0].insert(name, None);
+                    self.scope().insert(name, None);
                     self.failed = true;
                 } else {
-                    first.insert(name.clone(), self.source.span(node));
+                    self.first.insert(name, self.source.span(node));
                     let class = param.ty.map(|ty| self.known(ty, node));
                     if let Some(local) = self.bind(name, node, class) {
-                        params.push(local);
+                        self.params.push(local);
                     }
                 }
             } else {
@@ -571,8 +644,15 @@ impl<'a, 's> Builder<'a, 's> {
         let result = header.result;
         let declared = header.declared;
         self.failed |= header.params.is_none() || result.is_none();
-        let root_node = item.body(self.source.tree)?.node();
-        let mut work = vec![Work::Enter(root_node)];
+        let tree = self.source.tree;
+        let root_node = item.body(tree)?.node();
+        // At most one expression per node of the body.
+        let nodes = tree.subtree_len(root_node);
+        self.exprs.reserve(nodes);
+        self.classes.reserve(nodes);
+        self.subjects.reserve(nodes);
+        let mut work = std::mem::take(&mut self.work);
+        work.push(Work::Enter(root_node));
         while let Some(task) = work.pop() {
             match task {
                 Work::Enter(node) => self.enter(node, &mut work),
@@ -588,6 +668,7 @@ impl<'a, 's> Builder<'a, 's> {
                 }
             }
         }
+        self.work = work;
         let root = self.value(root_node);
         // A failed parameter does not erase an independently known result
         // type. A declared result is a contract on the body; an inferred one
@@ -610,28 +691,44 @@ impl<'a, 's> Builder<'a, 's> {
             return None;
         }
         Some(DraftBody {
-            params,
-            locals: self.locals,
-            exprs: self.exprs,
+            params: std::mem::take(&mut self.params),
+            locals: std::mem::take(&mut self.locals),
+            exprs: std::mem::take(&mut self.exprs),
+            classes: std::mem::take(&mut self.classes),
             root: root?,
         })
     }
-    fn bind(&mut self, name: Box<str>, node: NodeIdx, class: Option<Var>) -> Option<LocalId> {
+    fn open_scope(&mut self) {
+        if self.depth == self.scopes.len() {
+            self.scopes.push(Scope::default());
+        } else {
+            self.scopes[self.depth].clear();
+        }
+        self.depth += 1;
+    }
+    fn close_scope(&mut self) {
+        self.depth -= 1;
+    }
+    /// The innermost open scope.
+    fn scope(&mut self) -> &mut Scope<'s> {
+        &mut self.scopes[self.depth - 1]
+    }
+    fn bind(&mut self, name: &'s str, node: NodeIdx, class: Option<Var>) -> Option<LocalId> {
         let id = class.map(|class| {
             let id = LocalId::new(self.locals.len());
             self.locals.push(DraftLocal {
-                name: name.clone(),
+                name,
                 origin: self.source.span(node),
                 class,
             });
             id
         });
         self.failed |= id.is_none();
-        self.scopes.last_mut().unwrap().insert(name, id);
+        self.scope().insert(name, id);
         id
     }
     fn lookup(&self, name: &str) -> Option<Option<LocalId>> {
-        self.scopes
+        self.scopes[..self.depth]
             .iter()
             .rev()
             .find_map(|scope| scope.get(name).copied())
@@ -641,7 +738,7 @@ impl<'a, 's> Builder<'a, 's> {
         self.typing.known(ty, self.source.span(node))
     }
     fn class(&self, expr: ExprId) -> Var {
-        self.exprs[expr.index()].class
+        self.classes[expr.index()]
     }
     /// An expression of its own type.
     fn emit(&mut self, node: NodeIdx, kind: ExprKind, class: Var) -> ExprId {
@@ -650,17 +747,19 @@ impl<'a, 's> Builder<'a, 's> {
     }
     /// An expression with the type of `inner`, one of its sub-expressions.
     fn emit_from(&mut self, node: NodeIdx, kind: ExprKind, inner: ExprId) -> ExprId {
-        let (class, subject) = (self.class(inner), self.exprs[inner.index()].subject);
+        let (class, subject) = (self.class(inner), self.subjects[inner.index()]);
         self.emit_as(node, kind, class, subject)
     }
     fn emit_as(&mut self, node: NodeIdx, kind: ExprKind, class: Var, subject: ExprId) -> ExprId {
         let id = ExprId::new(self.exprs.len());
-        self.exprs.push(DraftExpr {
+        self.exprs.push(Expr {
             kind,
             origin: self.source.span(node),
-            class,
-            subject,
+            // Resolved when the body is published.
+            ty: Ty::Unit,
         });
+        self.classes.push(class);
+        self.subjects.push(subject);
         self.values[node.to_usize()] = Some(id);
         id
     }
@@ -684,7 +783,7 @@ impl<'a, 's> Builder<'a, 's> {
     fn demand(&mut self, node: NodeIdx, expr: ExprId, kind: DemandKind) {
         self.demands.push(Demand {
             owner: self.owner,
-            subject: self.exprs[expr.index()].subject,
+            subject: self.subjects[expr.index()],
             node,
             actual: self.class(expr),
             kind,
@@ -727,7 +826,7 @@ impl<'a, 's> Builder<'a, 's> {
         }
         if tree.kind(node) == NodeKind::Block {
             self.failed |= tree.has_error(node);
-            self.scopes.push(Scope::new());
+            self.open_scope();
         }
         if let Some(ast::Expr::PrefixExpr(prefix)) = ast::Expr::cast(tree, node) {
             let operand = prefix.operand(tree).unwrap();
@@ -871,7 +970,7 @@ impl<'a, 's> Builder<'a, 's> {
         let tree = self.source.tree;
         match tree.kind(node) {
             NodeKind::Block => {
-                self.scopes.pop().unwrap();
+                self.close_scope();
                 let mut statements = Vec::new();
                 let mut tail = None;
                 let mut valid = !tree.has_error(node);
@@ -1129,28 +1228,38 @@ impl<'a, 's> Builder<'a, 's> {
             .unwrap()
             .arg_list(tree)
             .unwrap();
-        let args: Vec<_> = list.args(tree).map(|arg| arg.node()).collect();
-        let arity = args.len() == params.len();
-        if !arity {
+        // Every argument that exists is held to its parameter, arity aside.
+        let mut args = Vec::with_capacity(params.len());
+        let mut complete = true;
+        let mut count = 0;
+        for (index, arg) in list.args(tree).enumerate() {
+            count += 1;
+            let arg = arg.node();
+            match self.value(arg) {
+                Some(value) => {
+                    if let Some(&expected) = params.get(index) {
+                        self.require(
+                            arg,
+                            value,
+                            Expected::Ty(expected),
+                            Some((origin, "declared here")),
+                        );
+                    }
+                    args.push(value);
+                }
+                None => complete = false,
+            }
+        }
+        if count != params.len() {
             self.source.error(
                 node,
                 codes::ARITY,
-                format!("expected {} arguments, found {}", params.len(), args.len()),
+                format!("expected {} arguments, found {count}", params.len()),
                 Some((origin, "declared here")),
             );
+            return None;
         }
-        for (&arg, &expected) in args.iter().zip(params.iter()) {
-            if let Some(value) = self.value(arg) {
-                self.require(
-                    arg,
-                    value,
-                    Expected::Ty(expected),
-                    Some((origin, "declared here")),
-                );
-            }
-        }
-        let args: Option<Vec<_>> = args.into_iter().map(|n| self.value(n)).collect();
-        if !arity {
+        if !complete {
             return None;
         }
         let class = self.typing.call(result?, self.source.span(node));
@@ -1158,7 +1267,7 @@ impl<'a, 's> Builder<'a, 's> {
             node,
             ExprKind::Call {
                 function: target,
-                args: args?,
+                args,
                 callee: self.source.span(callee),
             },
             class,
