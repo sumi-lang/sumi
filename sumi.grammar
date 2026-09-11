@@ -100,19 +100,14 @@ token IntLiteral literal "an integer literal" expr end
 /// A string literal on one line: `"…"`, with escapes. A line break ends an
 /// unterminated one, so a stray quote costs its line and nothing after it.
 token StringLiteral literal "a string literal" expr end
-/// A raw string literal on one line: `r"…"`, or `r#"…"#` to include quotes.
-/// Nothing in it is an escape.
-token RawStringLiteral literal "a raw string literal" expr end
 /// A multi-line string literal: `"""`, the content lines, and `"""` on its
 /// own line, whose indentation every content line shares and sheds.
 token BlockStringLiteral literal "a multi-line string literal" expr end
-/// A multi-line string literal with nothing escaped: `r"""` to `"""`.
-token RawBlockStringLiteral literal "a raw multi-line string literal" expr end
 token CharLiteral literal "a character literal" expr end
 /// The text of a string literal with holes, from its opening quote to its
 /// first hole: `"…` or `"""…`. A `{` in a `"…"` or `"""` literal opens a
 /// hole, an expression on that line whose value the string takes in its
-/// place; `\{` is a brace, and a raw literal has no holes.
+/// place; `\{` is a brace.
 token StringStart literal "a string literal" expr
 /// The text of a string literal between two of its holes.
 token StringMiddle literal "the text of a string literal"
@@ -262,9 +257,7 @@ NameRef = Ident
 LiteralExpr =
   IntLiteral
 | StringLiteral
-| RawStringLiteral
 | BlockStringLiteral
-| RawBlockStringLiteral
 | CharLiteral
 | 'true'
 | 'false'

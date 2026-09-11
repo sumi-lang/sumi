@@ -46,12 +46,8 @@ pub enum RawKind {
     Number,
     /// A `"..."` literal, ended by the line if unterminated.
     String,
-    /// An `r"..."` or `r#"..."#` literal, ended by the line if unterminated.
-    RawString,
     /// A `"""` literal, running to the next `"""` over any number of lines.
     BlockString,
-    /// An `r"""` literal, running to the next `"""` with nothing escaped.
-    RawBlockString,
     /// A `'...'` literal, ended by the line if unterminated.
     Char,
 

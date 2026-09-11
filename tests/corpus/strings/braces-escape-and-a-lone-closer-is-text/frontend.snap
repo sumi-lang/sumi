@@ -1,37 +1,27 @@
 == tree ==
-SourceFile 0..378
-  FnItem 144..377
-    Name 147..153 "braces"
-    ParamList 153..155 "()"
-    TypeRef 159..162 "str"
-    Block 163..377
-      LetStmt 169..212
-        Name 173..177 "json"
-        InterpolatedString 180..212
-          Hole 191..195
-            NameRef 192..194 "id"
-      LetStmt 217..237
-        Name 221..227 "closer"
-        LiteralExpr 230..237 "\"a } b\""
-      LetStmt 242..267
-        Name 246..253 "unicode"
-        InterpolatedString 256..267
-          Hole 263..266
-            NameRef 264..265 "x"
-      LetStmt 272..288
-        Name 276..279 "raw"
-        LiteralExpr 282..288 "r\"{x}\""
-      LetStmt 293..333
-        Name 297..302 "block"
-        LiteralExpr 305..333 "r\"\"\"\n        {x}\n        \"\"\""
-      InterpolatedString 338..375
-        Hole 339..345
-          NameRef 340..344 "json"
-        Hole 345..353
-          NameRef 346..352 "closer"
-        Hole 353..362
-          NameRef 354..361 "unicode"
-        Hole 362..367
-          NameRef 363..366 "raw"
-        Hole 367..374
-          NameRef 368..373 "block"
+SourceFile 0..272
+  FnItem 116..271
+    Name 119..125 "braces"
+    ParamList 125..127 "()"
+    TypeRef 131..134 "str"
+    Block 135..271
+      LetStmt 141..184
+        Name 145..149 "json"
+        InterpolatedString 152..184
+          Hole 163..167
+            NameRef 164..166 "id"
+      LetStmt 189..209
+        Name 193..199 "closer"
+        LiteralExpr 202..209 "\"a } b\""
+      LetStmt 214..239
+        Name 218..225 "unicode"
+        InterpolatedString 228..239
+          Hole 235..238
+            NameRef 236..237 "x"
+      InterpolatedString 244..269
+        Hole 245..251
+          NameRef 246..250 "json"
+        Hole 251..259
+          NameRef 252..258 "closer"
+        Hole 259..268
+          NameRef 260..267 "unicode"

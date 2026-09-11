@@ -121,17 +121,9 @@ fn lower_token_errors(
                 codes::UNCLOSED_HOLE,
                 "hole in string literal is not closed on its line",
             ),
-            LexErrorKind::UnterminatedRawString => (
-                codes::UNTERMINATED_RAW_STRING,
-                "unterminated raw string literal",
-            ),
             LexErrorKind::UnterminatedBlockString => (
                 codes::UNTERMINATED_BLOCK_STRING,
                 "unterminated multi-line string literal",
-            ),
-            LexErrorKind::UnterminatedRawBlockString => (
-                codes::UNTERMINATED_RAW_BLOCK_STRING,
-                "unterminated raw multi-line string literal",
             ),
             LexErrorKind::UnterminatedChar => {
                 (codes::UNTERMINATED_CHAR, "unterminated character literal")
@@ -302,21 +294,6 @@ fn closer_fix(
                 lexed.kind(token),
                 SyntaxKind::StringStart | SyntaxKind::StringMiddle | SyntaxKind::HoleClose
             )
-    }) {
-        return None;
-    }
-    // In a damaged hole the lexer keeps `r` separate from the first two
-    // quotes of `r\"\"\"`, so the third can close the surrounding literal.
-    // Inserting before that third quote breaks the triple and makes the
-    // existing `r\"\"` one raw-string token instead.
-    if previous.is_some_and(|quote| {
-        lexed.kind(quote) == SyntaxKind::StringLiteral
-            && lexed.text(snapshot.source, quote) == "\"\""
-            && quote.checked_sub(1).is_some_and(|ident| {
-                lexed.kind(ident) == SyntaxKind::Ident
-                    && lexed.text(snapshot.source, ident) == "r"
-                    && lexed.flags(ident).contains(TokenFlags::HOLE_AFTER)
-            })
     }) {
         return None;
     }

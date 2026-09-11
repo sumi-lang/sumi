@@ -370,8 +370,6 @@ impl Gen {
                     self.string_with_holes(scope)
                 } else if self.rng.chance(20) {
                     "\"a\\tb\\nc \\\"q\\\" \\\\ \\u{1F600}\"".to_string()
-                } else if self.rng.chance(10) {
-                    "r\"raw \\no escape\"".to_string()
                 } else {
                     self.fresh += 1;
                     format!("\"item {}\"", self.fresh)
@@ -413,21 +411,20 @@ impl Gen {
     fn block_string(&mut self, scope: &[String]) -> String {
         self.fresh += 1;
         let indent = "    ".repeat(self.level + 1);
-        let raw = self.rng.chance(25);
-        let mut s = format!("{}\"\"\"\n", if raw { "r" } else { "" });
+        let mut s = String::from("\"\"\"\n");
         let lines = 1 + self.rng.below(3);
         for line in 0..lines {
             if line > 0 && self.rng.chance(20) {
                 s.push('\n');
             }
             let noun = self.rng.pick(NOUNS);
-            if !raw && !scope.is_empty() && self.rng.chance(40) {
+            if !scope.is_empty() && self.rng.chance(40) {
                 let name = self.rng.pick_from(scope);
                 s.push_str(&format!(
                     "{indent}line {} names {{{name}}} of the {noun}\n",
                     line + 1
                 ));
-            } else if !raw && self.rng.chance(30) {
+            } else if self.rng.chance(30) {
                 s.push_str(&format!(
                     "{indent}line {} quotes the \\\"{noun}\\\"\n",
                     line + 1
@@ -504,13 +501,13 @@ mod tests {
         let medium = generate(64 * 1024, 0xBEEF);
         assert_eq!(
             (medium.len(), fingerprint(&medium)),
-            (65560, 11654990487381920005),
+            (66075, 13044796359225759485),
             "medium"
         );
         let damaged = corrupt(&medium, 7, 600);
         assert_eq!(
             (damaged.len(), fingerprint(&damaged)),
-            (65547, 2102888060172263703),
+            (66064, 13067422318107344423),
             "damaged"
         );
     }

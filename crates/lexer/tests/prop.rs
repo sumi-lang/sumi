@@ -26,19 +26,16 @@ const EXTRA_SINGLE_TOKENS: &[&str] = &[
     "0123",
     "1u32",
     "0x1F",
-    // Terminated string, char, and raw-string literals.
+    // Terminated string and char literals.
     "\"abc\"",
     "\"a\\\"b\"",
     "'a'",
     "'\\''",
     "'ab'",
     "''",
-    "r\"a\"",
-    "r#\"q\"#",
     // Terminated multi-line literals.
     "\"\"\"\n\"\"\"",
     "\"\"\"\n  a \\\"\n  \"\"\"",
-    "r\"\"\"\n  \\d\n  \"\"\"",
     // Punctuation outside the language.
     ";",
     "[",
@@ -177,7 +174,7 @@ proptest! {
                 prop_assert!(
                     matches!(
                         file.raw_kind(index),
-                        RawKind::Newline | RawKind::BlockString | RawKind::RawBlockString
+                        RawKind::Newline | RawKind::BlockString
                     ),
                     "token {:?} crosses a line break", index
                 );

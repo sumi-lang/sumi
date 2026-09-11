@@ -23,7 +23,7 @@
 //! the whole file" risk.
 //!
 //! Part C deletes one delimiter inside a literal — a quote of a one-line
-//! string, character, or raw string, a `"""` of a multi-line one, or a
+//! string or character, a `"""` of a multi-line one, or a
 //! brace of a hole — in a clean corpus that contains multi-line strings
 //! and strings with holes, and measures how far the literal then reaches:
 //! the edits Parts A and B cannot make, since theirs are whole significant
@@ -499,7 +499,7 @@ struct LiteralClass {
     kinds: &'static [RawKind],
     token: Option<SyntaxKind>,
     edit: LiteralEdit,
-    /// The delimiter's bytes; a raw literal's leading `r` stays.
+    /// The delimiter's bytes.
     width: usize,
 }
 
@@ -512,7 +512,7 @@ impl LiteralClass {
     }
 }
 
-const LITERAL_CLASSES: [LiteralClass; 8] = [
+const LITERAL_CLASSES: [LiteralClass; 7] = [
     LiteralClass {
         label: "delete \" closer",
         kinds: &[RawKind::String],
@@ -535,22 +535,15 @@ const LITERAL_CLASSES: [LiteralClass; 8] = [
         width: 1,
     },
     LiteralClass {
-        label: "delete r\" closer",
-        kinds: &[RawKind::RawString],
-        token: None,
-        edit: LiteralEdit::Closer,
-        width: 1,
-    },
-    LiteralClass {
         label: "delete \"\"\" closer",
-        kinds: &[RawKind::BlockString, RawKind::RawBlockString],
+        kinds: &[RawKind::BlockString],
         token: None,
         edit: LiteralEdit::Closer,
         width: 3,
     },
     LiteralClass {
         label: "delete \"\"\" opener",
-        kinds: &[RawKind::BlockString, RawKind::RawBlockString],
+        kinds: &[RawKind::BlockString],
         token: None,
         edit: LiteralEdit::Opener,
         width: 3,
@@ -571,13 +564,7 @@ const LITERAL_CLASSES: [LiteralClass; 8] = [
     },
 ];
 
-const LITERAL_KINDS: [RawKind; 5] = [
-    RawKind::String,
-    RawKind::RawString,
-    RawKind::Char,
-    RawKind::BlockString,
-    RawKind::RawBlockString,
-];
+const LITERAL_KINDS: [RawKind; 3] = [RawKind::String, RawKind::Char, RawKind::BlockString];
 
 struct LiteralSample {
     /// Bytes of the longest literal token left where the edited one stood:
@@ -595,15 +582,8 @@ fn literal_edit(
 ) -> LiteralSample {
     let range = before.lexed.range(token);
     let (start, end) = (range.start().to_usize(), range.end().to_usize());
-    let raw = matches!(
-        before.lexed.raw_kind(token),
-        RawKind::RawString | RawKind::RawBlockString
-    );
     let cut = match class.edit {
-        LiteralEdit::Opener => {
-            let opener = start + usize::from(raw);
-            opener..opener + class.width
-        }
+        LiteralEdit::Opener => start..start + class.width,
         LiteralEdit::Closer => end - class.width..end,
     };
     let edited = format!("{}{}", &source[..cut.start], &source[cut.end..]);

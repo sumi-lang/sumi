@@ -5,12 +5,8 @@ use sumi_diagnostics::{DiagnosticCode, DiagnosticGroup};
 pub const SYNTAX: DiagnosticGroup = DiagnosticGroup::new("syntax");
 
 pub const UNTERMINATED_STRING: DiagnosticCode = DiagnosticCode::new(SYNTAX, "unterminated-string");
-pub const UNTERMINATED_RAW_STRING: DiagnosticCode =
-    DiagnosticCode::new(SYNTAX, "unterminated-raw-string");
 pub const UNTERMINATED_BLOCK_STRING: DiagnosticCode =
     DiagnosticCode::new(SYNTAX, "unterminated-block-string");
-pub const UNTERMINATED_RAW_BLOCK_STRING: DiagnosticCode =
-    DiagnosticCode::new(SYNTAX, "unterminated-raw-block-string");
 pub const UNTERMINATED_CHAR: DiagnosticCode = DiagnosticCode::new(SYNTAX, "unterminated-char");
 pub const LONE_CARRIAGE_RETURN: DiagnosticCode =
     DiagnosticCode::new(SYNTAX, "lone-carriage-return");

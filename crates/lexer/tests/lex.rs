@@ -353,14 +353,6 @@ fn line_literals_end_at_the_line() {
             r#"Ident 4..5 "b""#,
         ],
     );
-    check(
-        "r\"a\r\nb",
-        &[
-            r#"RawString 0..3 "r\"a" TokenFlags(UNTERMINATED)"#,
-            r#"Newline 3..5 "\r\n""#,
-            r#"Ident 5..6 "b""#,
-        ],
-    );
 }
 
 /// The dump line of a source that is one multi-line literal.
@@ -402,34 +394,6 @@ fn unterminated_block_string_runs_to_the_end() {
         lex(source).unwrap().errors(),
         &[error(0, 0, 3, LexErrorKind::UnterminatedBlockString)],
     );
-}
-
-#[test]
-fn raw_block_string_shapes() {
-    let source = "r\"\"\"\n  \\d \"q\"\n  \"\"\"";
-    check(source, &[&block(source, "RawBlockString", "")]);
-    assert_eq!(lex(source).unwrap().errors(), &[]);
-
-    // A backslash escapes nothing, so the quotes after it close.
-    let source = "r\"\"\"\n  \\\"\"\"";
-    check(source, &[&block(source, "RawBlockString", "")]);
-
-    let source = "r\"\"\"\nabc";
-    check(
-        source,
-        &[&block(
-            source,
-            "RawBlockString",
-            " TokenFlags(UNTERMINATED)",
-        )],
-    );
-    assert_eq!(
-        lex(source).unwrap().errors(),
-        &[error(0, 0, 4, LexErrorKind::UnterminatedRawBlockString)],
-    );
-
-    // A fenced raw string that begins with quotes is not a multi-line one.
-    check(r##"r#"""x""#"##, &[r##"RawString 0..9 "r#\"\"\"x\"\"#""##]);
 }
 
 #[test]
@@ -487,25 +451,6 @@ fn char_literals_end_at_newline() {
     assert_eq!(
         lex("'a\n").unwrap().errors(),
         &[error(0, 0, 2, LexErrorKind::UnterminatedChar)],
-    );
-}
-
-#[test]
-fn raw_string_shapes() {
-    check(r#"r"a""#, &[r#"RawString 0..4 "r\"a\"""#]);
-    check(r##"r#"a"#"##, &[r##"RawString 0..6 "r#\"a\"#""##]);
-}
-
-#[test]
-fn raw_string_needs_matching_hashes() {
-    let source = "r##\"a\"#";
-    check(
-        source,
-        &[r##"RawString 0..7 "r##\"a\"#" TokenFlags(UNTERMINATED)"##],
-    );
-    assert_eq!(
-        lex(source).unwrap().errors(),
-        &[error(0, 0, 7, LexErrorKind::UnterminatedRawString)],
     );
 }
 
@@ -602,8 +547,7 @@ fn holes_split_a_string_into_parts() {
             r#"String 8..9 "\"""#,
         ],
     );
-    // An escaped brace and the braces of a `\u{…}` escape open nothing,
-    // and a raw literal has no holes.
+    // An escaped brace and the braces of a `\u{…}` escape open nothing.
     check(
         r#""\{x\}""#,
         &[r#"String 0..7 "\"\\{x\\}\"" TokenFlags(HAS_ESCAPE)"#],
@@ -612,7 +556,6 @@ fn holes_split_a_string_into_parts() {
         r#""\u{41}""#,
         &[r#"String 0..8 "\"\\u{41}\"" TokenFlags(HAS_ESCAPE)"#],
     );
-    check(r#"r"{x}""#, &[r#"RawString 0..6 "r\"{x}\"""#]);
 }
 
 #[test]
