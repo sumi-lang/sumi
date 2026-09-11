@@ -10,7 +10,7 @@
 use sumi_lexer::{LexErrorKind, LexedFile, lex};
 use sumi_syntax::{
     NodeIdx, Parse, ParseEvidence, ParseViolation, ParseViolationKind, ParserInput, RawIdx,
-    SyntaxKind, SyntaxTree, parse, raw_boundary,
+    SyntaxKind, SyntaxTree, parse,
 };
 use sumi_text::{TextEdit, TextRange, TextSize};
 
@@ -389,7 +389,7 @@ fn next_significant(lexed: &LexedFile, raw: RawIdx) -> Option<RawIdx> {
 }
 
 fn token_start(lexed: &LexedFile, raw: RawIdx) -> usize {
-    raw_boundary(lexed, raw).to_usize()
+    lexed.boundary(raw).to_usize()
 }
 
 fn token_end(lexed: &LexedFile, raw: RawIdx) -> usize {

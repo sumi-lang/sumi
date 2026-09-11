@@ -43,7 +43,8 @@ pub enum Ty {
 }
 
 impl Ty {
-    const ALL: [Self; 3] = [Self::Int, Self::Bool, Self::Unit];
+    /// Every scalar type, in the order evidence and diagnostics list them.
+    pub const ALL: [Self; 3] = [Self::Int, Self::Bool, Self::Unit];
 
     /// The type's name as written in source, and as diagnostics spell it.
     pub fn as_str(self) -> &'static str {

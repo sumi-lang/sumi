@@ -19,7 +19,6 @@ use sumi_frontend::{Applicability, Diagnostic, FileId, Location, Place, TextEdit
 use sumi_lexer::LexedFile;
 use sumi_syntax::{
     NodeIdx, ParseAnchor, ParseEvidence, ParseExpected, ParseRecoveryKind, RawIdx, SyntaxTree,
-    raw_boundary,
 };
 use sumi_text::{LineIndex, TextSize};
 
@@ -40,7 +39,7 @@ fn snapshot(source: &str) -> String {
     if !parse.evidence().is_empty() {
         out.push_str("\n== evidence ==\n");
         for evidence in parse.evidence() {
-            let at = raw_boundary(lexed, evidence_token(evidence)).to_u32();
+            let at = lexed.boundary(evidence_token(evidence)).to_u32();
             writeln!(out, "{} at {at}", evidence_name(evidence)).expect("writing to a string");
         }
     }

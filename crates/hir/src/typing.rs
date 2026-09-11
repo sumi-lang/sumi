@@ -29,8 +29,6 @@ use sumi_syntax::NodeIdx;
 use crate::Ty;
 use crate::solver::{Lattice, Solver, Var};
 
-const TYPES: [Ty; 3] = [Ty::Int, Ty::Bool, Ty::Unit];
-
 /// One claim that a class has some type, as its rank: the one-based sequence
 /// number of the claim in the walk, under a bit set once the claim has
 /// crossed a flow. A claim made on the class itself therefore outranks one
@@ -56,7 +54,7 @@ impl Claim {
 /// a conflict, kept rather than retracted so its report can name every side.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Evidence {
-    claims: [Option<Claim>; TYPES.len()],
+    claims: [Option<Claim>; Ty::ALL.len()],
 }
 
 impl Evidence {
@@ -69,7 +67,7 @@ impl Evidence {
     /// The one type claimed, if exactly one is.
     pub fn ty(&self) -> Option<Ty> {
         let mut found = None;
-        for (ty, claim) in TYPES.iter().zip(&self.claims) {
+        for (ty, claim) in Ty::ALL.iter().zip(&self.claims) {
             if claim.is_some() {
                 if found.is_some() {
                     return None;
@@ -92,7 +90,7 @@ impl Evidence {
 
     /// Every type claimed and the claim behind it, best first.
     pub fn claims(&self) -> Vec<(Ty, Claim)> {
-        let mut claims: Vec<_> = TYPES
+        let mut claims: Vec<_> = Ty::ALL
             .iter()
             .zip(&self.claims)
             .filter_map(|(ty, claim)| claim.map(|claim| (*ty, claim)))
@@ -115,7 +113,7 @@ impl Lattice for Evidence {
 
     fn bottom() -> Self {
         Self {
-            claims: [None; TYPES.len()],
+            claims: [None; Ty::ALL.len()],
         }
     }
 

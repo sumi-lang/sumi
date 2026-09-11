@@ -46,7 +46,7 @@
 //! expression.
 
 use sumi_lexer::{LexedFile, RawIdx};
-use sumi_text::{TextRange, TextSize};
+use sumi_text::TextRange;
 
 use crate::generated::{
     BRACKET_PAIRS, NodeKind, SyntaxKind, encloses_statements, opener, pair_index,
@@ -57,14 +57,6 @@ use crate::parser::{
     ParseAnchor, ParseEvidence, ParseExpected, ParseRecovery, ParseRecoveryKind, ParseViolation,
     ParseViolationKind, RawGap, RawTokenRange,
 };
-
-/// The byte offset where raw token `raw` begins, or the end of the source
-/// for the boundary one past the last token: how the raw token indices in
-/// trees and parse evidence project into the file. `lexed` must be the file
-/// the indices came from.
-pub fn raw_boundary(lexed: &LexedFile, raw: RawIdx) -> TextSize {
-    lexed.boundary(raw)
-}
 
 /// One node: its kind, whether the parser recovered inside it, its subtree
 /// extent (self included), and the half-open range of raw token indices it
@@ -165,8 +157,8 @@ impl SyntaxTree {
         // its last one begins.
         let node = &self.nodes[index.to_usize()];
         TextRange::new(
-            raw_boundary(lexed, node.first_token),
-            raw_boundary(lexed, node.end_token),
+            lexed.boundary(node.first_token),
+            lexed.boundary(node.end_token),
         )
     }
 

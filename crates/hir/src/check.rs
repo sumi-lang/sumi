@@ -668,7 +668,7 @@ impl<'a, 's> Builder<'a, 's> {
                     self.failed = true;
                 } else {
                     self.first.insert(name, self.source.span(node));
-                    let class = param.ty.map(|ty| self.known(ty, node));
+                    let class = param.ty.map(|ty| self.typing.known(ty, node));
                     if let Some(local) = self.bind(name, node, class) {
                         self.params.push(local);
                     }
@@ -769,10 +769,6 @@ impl<'a, 's> Builder<'a, 's> {
             .iter()
             .rev()
             .find_map(|scope| scope.get(name).copied())
-    }
-    /// A class known to have `ty` because of `node`.
-    fn known(&mut self, ty: Ty, node: NodeIdx) -> Var {
-        self.typing.known(ty, node)
     }
     fn class(&self, expr: ExprId) -> Var {
         self.classes[expr.index()]
@@ -987,7 +983,7 @@ impl<'a, 's> Builder<'a, 's> {
             });
         match value {
             Some(value) => {
-                let class = self.known(Ty::Int, origin);
+                let class = self.typing.known(Ty::Int, origin);
                 Some(self.emit(origin, ExprKind::Int(value), class))
             }
             None => {
@@ -1051,7 +1047,7 @@ impl<'a, 's> Builder<'a, 's> {
                         self.emit_from(node, kind, tail);
                     }
                     None => {
-                        let class = self.known(Ty::Unit, node);
+                        let class = self.typing.known(Ty::Unit, node);
                         self.emit(node, ExprKind::Block { statements, tail }, class);
                     }
                 }
@@ -1073,7 +1069,7 @@ impl<'a, 's> Builder<'a, 's> {
                                 Some((self.source.span(annotation.node()), "declared here")),
                             );
                         }
-                        self.known(ty, annotation.node())
+                        self.typing.known(ty, annotation.node())
                     }),
                     None => initializer.map(|value| self.class(value)),
                 };
@@ -1132,7 +1128,7 @@ impl<'a, 's> Builder<'a, 's> {
                     }
                     _ if matches!(self.source.text(node), "true" | "false") => {
                         let value = self.source.text(node) == "true";
-                        let class = self.known(Ty::Bool, node);
+                        let class = self.typing.known(Ty::Bool, node);
                         self.emit(node, ExprKind::Bool(value), class);
                     }
                     _ => {
@@ -1161,7 +1157,7 @@ impl<'a, 's> Builder<'a, 's> {
                     .eq([SyntaxKind::Minus]);
                 let ty = if neg { Ty::Int } else { Ty::Bool };
                 self.require(operand, value, Expected::Ty(ty), None);
-                let class = self.known(ty, node);
+                let class = self.typing.known(ty, node);
                 self.emit(
                     node,
                     if neg {
@@ -1214,7 +1210,7 @@ impl<'a, 's> Builder<'a, 's> {
                     }
                 }
                 let (lhs, rhs) = (lhs?, rhs?);
-                let class = self.known(result, node);
+                let class = self.typing.known(result, node);
                 self.emit(node, ExprKind::binary(op, lhs, rhs), class);
             }
             NodeKind::IfExpr => {
