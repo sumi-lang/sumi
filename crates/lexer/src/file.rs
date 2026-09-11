@@ -166,15 +166,13 @@ fn collect_errors(
                 error(0..text.len(), LexErrorKind::ReservedIdentifier(keyword));
             }
         }
-        SyntaxKind::IntLiteral | SyntaxKind::FloatLiteral => {
+        SyntaxKind::IntLiteral => {
             if token.flags.contains(TokenFlags::MALFORMED_NUMBER) {
-                let derived = literal::number_errors(text, &mut error);
-                debug_assert_eq!(derived, token.kind, "the lexer passes must agree");
+                literal::number_errors(text, &mut error);
             } else if cfg!(debug_assertions) {
                 let mut faults = 0usize;
-                let derived = literal::number_errors(text, &mut |_, _| faults += 1);
+                literal::number_errors(text, &mut |_, _| faults += 1);
                 debug_assert_eq!(faults, 0, "an unflagged number must be canonical");
-                debug_assert_eq!(derived, token.kind, "the lexer passes must agree");
             }
         }
         SyntaxKind::StringLiteral if token.flags.contains(TokenFlags::HAS_ESCAPE) => {
@@ -424,21 +422,12 @@ pub enum LexErrorKind {
     MisplacedBom,
     /// A character with no lexical meaning in the language.
     UnknownCharacter,
-    /// A numeric literal carries trailing characters; Sumi has no literal
-    /// suffixes.
+    /// A numeric literal carries trailing identifier characters, as in
+    /// `1u32`, `1_000`, or `1e5`; Sumi has no literal suffixes, separators,
+    /// or floats.
     UnknownSuffix,
-    /// An `e` with no exponent digits after it, as in `1e` or `2.5e`.
-    MissingExponent,
-    /// An uppercase exponent marker, as in `1E5`; exponents are lowercase.
-    UppercaseExponent,
-    /// A redundant `+` sign in an exponent, as in `1e+5`.
-    ExponentPlusSign,
-    /// A zero-padded exponent, as in `1e05`.
-    ExponentLeadingZero,
     /// A leading zero in an integer literal, as in `0123`.
     LeadingZero,
-    /// A digit-separator underscore without digits on both sides, as in `1_`.
-    MisplacedUnderscore,
     /// A `\` escape outside the supported set.
     UnknownEscape,
     /// A `\u` escape without a well-formed `{1-6 hex digits}` payload.

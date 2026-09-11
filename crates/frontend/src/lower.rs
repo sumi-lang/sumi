@@ -85,8 +85,6 @@ fn lower_token_errors(
     errors: &[LexError],
     diagnostics: &mut Vec<Diagnostic>,
 ) {
-    let mut number = None;
-    let mut labels = Vec::new();
     for error in errors {
         let (code, message) = match error.kind {
             LexErrorKind::ReservedIdentifier(keyword) => {
@@ -101,22 +99,20 @@ fn lower_token_errors(
                 continue;
             }
             LexErrorKind::LeadingZero => {
-                (codes::NONCANONICAL_NUMBER, "integer part has leading zeros")
-            }
-            LexErrorKind::MisplacedUnderscore => (
-                codes::NONCANONICAL_NUMBER,
-                "underscore must be between two digits",
-            ),
-            LexErrorKind::UppercaseExponent => (
-                codes::NONCANONICAL_NUMBER,
-                "exponent marker must be lowercase `e`",
-            ),
-            LexErrorKind::ExponentPlusSign => (
-                codes::NONCANONICAL_NUMBER,
-                "`+` is not allowed in an exponent",
-            ),
-            LexErrorKind::ExponentLeadingZero => {
-                (codes::NONCANONICAL_NUMBER, "exponent has leading zeros")
+                let mut diagnostic = primary(
+                    codes::NONCANONICAL_NUMBER,
+                    "integer literal has leading zeros",
+                    snapshot.range(error.range),
+                );
+                let token_range = snapshot.lexed.range(error.token);
+                let text = snapshot.lexed.text(snapshot.source, error.token);
+                diagnostic.fix = canonicalize_number_literal(text).map(|replacement| Fix {
+                    message: "remove the leading zeros".into(),
+                    applicability: Applicability::Safe,
+                    edits: vec![TextEdit::new(token_range, replacement)].into_boxed_slice(),
+                });
+                diagnostics.push(diagnostic);
+                continue;
             }
             LexErrorKind::UnterminatedString => {
                 (codes::UNTERMINATED_STRING, "unterminated string literal")
@@ -155,7 +151,6 @@ fn lower_token_errors(
             LexErrorKind::UnknownSuffix => {
                 (codes::UNKNOWN_SUFFIX, "literal suffixes are not supported")
             }
-            LexErrorKind::MissingExponent => (codes::MISSING_EXPONENT, "exponent has no digits"),
             LexErrorKind::UnknownEscape => (codes::UNKNOWN_ESCAPE, "unknown escape sequence"),
             LexErrorKind::MalformedUnicodeEscape => {
                 (codes::MALFORMED_UNICODE_ESCAPE, "malformed Unicode escape")
@@ -188,23 +183,6 @@ fn lower_token_errors(
                 "line is indented less than the closing `\"\"\"`",
             ),
         };
-        if code == codes::NONCANONICAL_NUMBER {
-            // Reserve its producer-order position at the first numeric fact.
-            // Ordinary errors already go directly to their final destination.
-            number.get_or_insert_with(|| {
-                diagnostics.push(primary(
-                    code,
-                    "numeric literal is not in canonical form",
-                    snapshot.range(error.range),
-                ));
-                diagnostics.len() - 1
-            });
-            labels.push(Label {
-                location: snapshot.range(error.range),
-                message: Some(message.into()),
-            });
-            continue;
-        }
         let mut diagnostic = primary(code, message, snapshot.range(error.range));
         if error.kind == LexErrorKind::UnclosedHole {
             diagnostic.notes = Box::new([
@@ -214,21 +192,6 @@ fn lower_token_errors(
             ]);
         }
         diagnostics.push(diagnostic);
-    }
-    if let Some(index) = number {
-        let diagnostic = &mut diagnostics[index];
-        // The scanner can report an earlier underscore last.
-        labels.sort_by_key(|label| (label.location.start(), label.location.end()));
-        diagnostic.primary = labels.remove(0);
-        diagnostic.secondary = labels.into_boxed_slice();
-        let token = errors[0].token;
-        let token_range = snapshot.lexed.range(token);
-        let text = snapshot.lexed.text(snapshot.source, token);
-        diagnostic.fix = canonicalize_number_literal(text).map(|replacement| Fix {
-            message: "canonicalize numeric literal".into(),
-            applicability: Applicability::Safe,
-            edits: vec![TextEdit::new(token_range, replacement)].into_boxed_slice(),
-        });
     }
 }
 

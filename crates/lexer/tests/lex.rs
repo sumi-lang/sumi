@@ -259,38 +259,23 @@ fn slash_star_is_just_punctuation() {
 #[test]
 fn integer_shapes() {
     check(
-        "0 123 1_000",
+        "0 123",
         &[
             r#"Number 0..1 "0""#,
             r#"HorizontalSpace 1..2 " ""#,
             r#"Number 2..5 "123""#,
-            r#"HorizontalSpace 5..6 " ""#,
-            r#"Number 6..11 "1_000""#,
         ],
     );
 }
 
 #[test]
-fn float_shapes() {
-    check("1.5", &[r#"Number 0..3 "1.5""#]);
-    check("2.5e-3", &[r#"Number 0..6 "2.5e-3""#]);
-    check("1e5", &[r#"Number 0..3 "1e5""#]);
-    // Boundaries must not depend on marker case; collection rejects `E`.
+fn a_dot_never_continues_a_number() {
     check(
-        "1E-5",
-        &[r#"Number 0..4 "1E-5" TokenFlags(MALFORMED_NUMBER)"#],
-    );
-}
-
-#[test]
-fn dot_continues_a_number_only_before_a_digit() {
-    check(
-        "1..2",
+        "1.5",
         &[
             r#"Number 0..1 "1""#,
             r#"Punct 1..2 ".""#,
-            r#"Punct 2..3 ".""#,
-            r#"Number 3..4 "2""#,
+            r#"Number 2..3 "5""#,
         ],
     );
     check(
@@ -310,7 +295,20 @@ fn number_suffixes_attach() {
         "1u32",
         &[r#"Number 0..4 "1u32" TokenFlags(MALFORMED_NUMBER)"#],
     );
-    check("1e", &[r#"Number 0..2 "1e" TokenFlags(MALFORMED_NUMBER)"#]);
+    // Separators and exponents are suffixes too: `_` and `e` continue an
+    // identifier, and there are no floats.
+    check(
+        "1_000",
+        &[r#"Number 0..5 "1_000" TokenFlags(MALFORMED_NUMBER)"#],
+    );
+    check(
+        "1e-5",
+        &[
+            r#"Number 0..2 "1e" TokenFlags(MALFORMED_NUMBER)"#,
+            r#"Punct 2..3 "-""#,
+            r#"Number 3..4 "5""#,
+        ],
+    );
     // With no base prefixes in the language, `x1F` is just a suffix.
     check(
         "0x1F",

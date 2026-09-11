@@ -77,7 +77,6 @@ pub fn starts_expression(kind: SyntaxKind) -> bool {
             | SyntaxKind::IfKw
             | SyntaxKind::TrueKw
             | SyntaxKind::IntLiteral
-            | SyntaxKind::FloatLiteral
             | SyntaxKind::StringLiteral
             | SyntaxKind::RawStringLiteral
             | SyntaxKind::BlockStringLiteral
@@ -116,7 +115,6 @@ pub fn can_end_statement(kind: SyntaxKind) -> bool {
             | SyntaxKind::ReturnKw
             | SyntaxKind::TrueKw
             | SyntaxKind::IntLiteral
-            | SyntaxKind::FloatLiteral
             | SyntaxKind::StringLiteral
             | SyntaxKind::RawStringLiteral
             | SyntaxKind::BlockStringLiteral

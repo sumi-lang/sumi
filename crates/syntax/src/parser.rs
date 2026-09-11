@@ -1120,7 +1120,6 @@ fn prefix_or_atom(p: &mut Marker<'_, '_>, follow: ExprFollow) -> Option<Complete
         }
         T::Ident => leaf(p, N::NameRef),
         T::IntLiteral
-        | T::FloatLiteral
         | T::StringLiteral
         | T::RawStringLiteral
         | T::BlockStringLiteral

@@ -19,9 +19,8 @@ SourceFile 0..89
     LiteralExpr 84..88 "true"
 
 == diagnostics ==
-error[syntax/noncanonical-number] 1:25..1:26 "0": numeric literal is not in canonical form
-  primary: integer part has leading zeros
-  fix (safe): canonicalize numeric literal
+error[syntax/noncanonical-number] 1:25..1:26 "0": integer literal has leading zeros
+  fix (safe): remove the leading zeros
     1:25..1:27 "01" -> "1"
 
 == fixed ==

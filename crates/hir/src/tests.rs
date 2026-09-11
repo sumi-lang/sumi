@@ -287,7 +287,6 @@ fn signed_literal_envelopes() {
         ("9223372036854775807", i64::MAX),
         ("-9223372036854775808", i64::MIN),
         ("-((9223372036854775808))", i64::MIN),
-        ("-9_223_372_036_854_775_808", i64::MIN),
     ] {
         let a = clean(&format!("fn f() -> int = {expr}"));
         let body = a.functions[0].body().unwrap();
@@ -299,7 +298,6 @@ fn signed_literal_envelopes() {
         "-9223372036854775809",
         "-(9223372036854775808 + 0)",
         "0 - 9223372036854775808",
-        "9_223_372_036_854_775_808",
     ] {
         let a = check(&format!("fn f() -> int = {expr}"));
         assert_eq!(codes(&a), ["integer-range"], "{expr}");
@@ -309,7 +307,7 @@ fn signed_literal_envelopes() {
         a.functions[0].body().unwrap().exprs[1].kind,
         ExprKind::Neg(_)
     ));
-    for expr in ["01", "1__0", "1u32"] {
+    for expr in ["01", "1_000", "1u32"] {
         let a = check(&format!("fn f() -> int = {expr}"));
         assert!(!a.is_valid());
         assert!(a.functions[0].body().is_none());
@@ -514,7 +512,6 @@ fn damaged_and_unsupported_declarations_hide_old_bindings() {
         "fn f() { return }",
         "fn f() { let x = 1\n x = 2 }",
         "fn f() { let g = fn() = 1 }",
-        "fn f() = 1.5",
         "fn f() = \"hello\"",
         "fn f() = 'x'",
         "fn f() = (if true { 1 } else { 2 })()",

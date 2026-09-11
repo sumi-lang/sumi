@@ -12,13 +12,9 @@ fn name() -> BoxedStrategy<String> {
 }
 
 fn literal() -> BoxedStrategy<String> {
-    prop::sample::select(
-        &[
-            "0", "42", "1_000", "1.5", "2.5e-3", "\"s\"", "'c'", "r\"a\"", "true", "false",
-        ][..],
-    )
-    .prop_map(str::to_owned)
-    .boxed()
+    prop::sample::select(&["0", "42", "1000", "\"s\"", "'c'", "r\"a\"", "true", "false"][..])
+        .prop_map(str::to_owned)
+        .boxed()
 }
 
 /// A binary operator applied left to right over `operands`, spaced, with

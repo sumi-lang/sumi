@@ -164,10 +164,7 @@ impl<'src> Lexer<'src> {
                     RawKind::LineComment,
                     self.scan_line_comment(),
                 ),
-                b'0'..=b'9' => {
-                    let (kind, flags) = self.scan_number();
-                    (kind, RawKind::Number, flags)
-                }
+                b'0'..=b'9' => (SyntaxKind::IntLiteral, RawKind::Number, self.scan_number()),
                 b'"' if self.remaining().starts_with(BLOCK_DELIMITER) => self.scan_string(true),
                 b'"' => self.scan_string(false),
                 b'\'' => (
@@ -256,118 +253,34 @@ impl<'src> Lexer<'src> {
         flags
     }
 
-    /// Scan a number and classify it as an int or float literal. The scan
-    /// also decides whether the token breaks a literal rule, so canonical
-    /// numbers — the overwhelming majority — never get re-scanned by the
-    /// collector.
-    fn scan_number(&mut self) -> (SyntaxKind, TokenFlags) {
+    /// Scan an integer literal: a run of digits, with any identifier
+    /// characters after it attached as a suffix. The scan also decides
+    /// whether the token breaks a literal rule, so canonical numbers — the
+    /// overwhelming majority — never get re-scanned by the collector.
+    fn scan_number(&mut self) -> TokenFlags {
         let start = self.position;
         let first = self.bump_ascii();
         debug_assert!(first.is_ascii_digit());
 
-        let mut malformed = false;
-        self.eat_decimal_digits(&mut malformed);
-
-        // A leading zero is a literal error (`0123` means octal in several
-        // other languages); `0_` alone is only a misplaced underscore.
-        if first == b'0'
-            && self.source.as_bytes()[start + 1..self.position]
-                .iter()
-                .any(u8::is_ascii_digit)
-        {
-            malformed = true;
+        while self.peek_byte().is_some_and(|byte| byte.is_ascii_digit()) {
+            self.position += 1;
         }
 
-        let mut is_float = false;
+        // A leading zero is a literal error: `0123` means octal in several
+        // other languages.
+        let mut malformed = first == b'0' && self.position > start + 1;
 
-        // A `.` continues the number only when a digit follows, so `1..2`
-        // and `1.foo` leave the dot to punctuation.
-        if self.peek_byte() == Some(b'.')
-            && self
-                .peek_byte_at(1)
-                .is_some_and(|byte| byte.is_ascii_digit())
-        {
-            is_float = true;
-            self.bump_ascii();
-            self.eat_decimal_digits(&mut malformed);
-        }
-
-        // An exponent needs a digit after the optional sign; otherwise the
-        // `e` is left to the suffix, as in `1em`.
-        let mut has_exponent = false;
-        if matches!(self.peek_byte(), Some(b'e' | b'E')) {
-            has_exponent = match (self.peek_byte_at(1), self.peek_byte_at(2)) {
-                (Some(byte), _) if byte.is_ascii_digit() => true,
-                (Some(b'+' | b'-'), Some(byte)) => byte.is_ascii_digit(),
-                _ => false,
-            };
-            if has_exponent {
-                is_float = true;
-                // The shape munches `1E5` and `1e+5` so the token stays
-                // whole; an uppercase marker or a `+` sign is an error.
-                if self.bump_ascii() == b'E' {
-                    malformed = true;
-                }
-                if matches!(self.peek_byte(), Some(b'+' | b'-')) && self.bump_ascii() == b'+' {
-                    malformed = true;
-                }
-                let exponent_start = self.position;
-                self.eat_decimal_digits(&mut malformed);
-                let digits = &self.source.as_bytes()[exponent_start..self.position];
-                if digits[0] == b'0' && digits[1..].iter().any(u8::is_ascii_digit) {
-                    malformed = true;
-                }
-            }
-        }
-
-        // Trailing identifier characters attach as a literal suffix (`1u32`)
-        // for the collector to reject. An `e`-leading suffix on a number with
-        // no exponent is a broken exponent, and the intended shape was a
-        // float.
+        // Trailing identifier characters attach as a literal suffix (`1u32`,
+        // `1_000`, `1e5`) for the collector to reject: a `.` never joins,
+        // so `1.5` is three tokens.
         let suffix_start = self.position;
         self.eat_ident_continue();
-        if self.position > suffix_start {
-            malformed = true;
-            if !has_exponent && matches!(self.source.as_bytes()[suffix_start], b'e' | b'E') {
-                is_float = true;
-            }
-        }
+        malformed |= self.position > suffix_start;
 
-        (
-            if is_float {
-                SyntaxKind::FloatLiteral
-            } else {
-                SyntaxKind::IntLiteral
-            },
-            if malformed {
-                TokenFlags::MALFORMED_NUMBER
-            } else {
-                TokenFlags::EMPTY
-            },
-        )
-    }
-
-    /// Advance over a digit run, flagging any `_` that is not surrounded by
-    /// digits on both sides: grouping style is free, but `1_`, `1__0`, and
-    /// `1_.5` are typo-shaped.
-    fn eat_decimal_digits(&mut self, malformed: &mut bool) {
-        while let Some(byte) = self.peek_byte() {
-            match byte {
-                b'0'..=b'9' => self.position += 1,
-                b'_' => {
-                    // A number's first byte is a digit, so `position - 1`
-                    // stays inside the token.
-                    let digit_before = self.source.as_bytes()[self.position - 1].is_ascii_digit();
-                    let digit_after = self
-                        .peek_byte_at(1)
-                        .is_some_and(|byte| byte.is_ascii_digit());
-                    if !(digit_before && digit_after) {
-                        *malformed = true;
-                    }
-                    self.position += 1;
-                }
-                _ => break,
-            }
+        if malformed {
+            TokenFlags::MALFORMED_NUMBER
+        } else {
+            TokenFlags::EMPTY
         }
     }
 

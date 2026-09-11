@@ -169,10 +169,7 @@ fn bench_frontend(c: &mut Criterion) {
 // escape or number spelling. Keep both independent and grouped lex errors.
 fn bench_lex_diagnostics(c: &mut Criterion) {
     let mut group = c.benchmark_group("frontend/lex-diagnostics");
-    for (name, literal, per_token) in [
-        ("escapes", r#""\q\x\z""#, 3),
-        ("numbers", "01__2E+03suffix", 2),
-    ] {
+    for (name, literal, per_token) in [("escapes", r#""\q\x\z""#, 3), ("numbers", "01suffix", 2)] {
         let source: String = (0..2048)
             .map(|index| format!("fn f{index}() = {literal}\n"))
             .collect();

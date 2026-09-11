@@ -7,9 +7,8 @@ SourceFile 0..16
       LiteralExpr 9..14 "01u32"
 
 == diagnostics ==
-error[syntax/noncanonical-number] 1:10..1:11 "0": numeric literal is not in canonical form
-  primary: integer part has leading zeros
-  fix (safe): canonicalize numeric literal
+error[syntax/noncanonical-number] 1:10..1:11 "0": integer literal has leading zeros
+  fix (safe): remove the leading zeros
     1:10..1:15 "01u32" -> "1u32"
 error[syntax/unknown-suffix] 1:12..1:15 "u32": literal suffixes are not supported
 

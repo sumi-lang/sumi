@@ -50,8 +50,7 @@ continues the previous line. Operators take their classes from the
 
 | Kind | Reads as | Classes | Notes |
 | --- | --- | --- | --- |
-| `IntLiteral` | an integer literal | `expr` `end` | A decimal integer literal. |
-| `FloatLiteral` | a floating-point literal | `expr` `end` | A float literal: a fraction (`1.5`), an exponent (`1e3`), or both. |
+| `IntLiteral` | an integer literal | `expr` `end` | A decimal integer literal: a run of digits. There are no separators, suffixes, or floats; trailing identifier characters attach as a suffix for the lexer to reject, so `1_000` and `1e5` are each one error. |
 | `StringLiteral` | a string literal | `expr` `end` | A string literal on one line: `"…"`, with escapes. A line break ends an unterminated one, so a stray quote costs its line and nothing after it. |
 | `RawStringLiteral` | a raw string literal | `expr` `end` | A raw string literal on one line: `r"…"`, or `r#"…"#` to include quotes. Nothing in it is an escape. |
 | `BlockStringLiteral` | a multi-line string literal | `expr` `end` | A multi-line string literal: `"""`, the content lines, and `"""` on its own line, whose indentation every content line shares and sheds. |
@@ -157,9 +156,9 @@ end one, the token after it does not continue one, and no parenthesis the
 stream closes is open around it. These classes decide the first two;
 the parser's spacing rules keep the third unambiguous.
 
-- **Can begin an expression:** `Ident`, `false`, `fn`, `if`, `true`, `IntLiteral`, `FloatLiteral`, `StringLiteral`, `RawStringLiteral`, `BlockStringLiteral`, `RawBlockStringLiteral`, `CharLiteral`, `StringStart`, `(`, `{`, `!`, `-`.
+- **Can begin an expression:** `Ident`, `false`, `fn`, `if`, `true`, `IntLiteral`, `StringLiteral`, `RawStringLiteral`, `BlockStringLiteral`, `RawBlockStringLiteral`, `CharLiteral`, `StringStart`, `(`, `{`, `!`, `-`.
 - **Begin a statement without being an expression:** `_`, `let`, `return`, `Error`.
-- **A statement can end after:** `Ident`, `_`, `false`, `return`, `true`, `IntLiteral`, `FloatLiteral`, `StringLiteral`, `RawStringLiteral`, `BlockStringLiteral`, `RawBlockStringLiteral`, `CharLiteral`, `StringEnd`, `)`, `}`, `Error`.
+- **A statement can end after:** `Ident`, `_`, `false`, `return`, `true`, `IntLiteral`, `StringLiteral`, `RawStringLiteral`, `BlockStringLiteral`, `RawBlockStringLiteral`, `CharLiteral`, `StringEnd`, `)`, `}`, `Error`.
 - **Begin a top-level item:** `fn`.
 - **Continue the previous line:** `else`, and any binary operator leading the line — a compound one when glued into shape, and `-` only when spaced from what follows, since glued it opens an operand.
 
@@ -233,7 +232,7 @@ ReturnStmt = 'return' value:Expr?
 Expr = NameRef | LiteralExpr | PrefixExpr | BinaryExpr | ParenExpr | CallExpr | IfExpr | ClosureExpr | InterpolatedString | Block
 // A use of a name: a reference to what a Name declared.
 NameRef = Ident
-LiteralExpr = IntLiteral | FloatLiteral | StringLiteral | RawStringLiteral | BlockStringLiteral | RawBlockStringLiteral | CharLiteral | 'true' | 'false'
+LiteralExpr = IntLiteral | StringLiteral | RawStringLiteral | BlockStringLiteral | RawBlockStringLiteral | CharLiteral | 'true' | 'false'
 PrefixExpr = PrefixOperator operand:Expr
 BinaryExpr = lhs:Expr BinaryOperator rhs:Expr
 ParenExpr = '(' inner:Expr ')'

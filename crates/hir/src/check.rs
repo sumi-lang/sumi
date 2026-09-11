@@ -684,7 +684,6 @@ impl<'a, 's> Builder<'a, 's> {
             .source
             .text(literal)
             .bytes()
-            .filter(|&b| b != b'_')
             .try_fold(0i64, |value, byte| {
                 value.checked_mul(10)?.checked_sub(i64::from(byte - b'0'))
             })
