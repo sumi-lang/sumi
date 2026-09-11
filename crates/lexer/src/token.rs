@@ -61,27 +61,21 @@ impl TokenFlags {
     pub const UNTERMINATED: Self = Self(1 << 0);
     /// A string literal contains at least one `\` escape.
     pub const HAS_ESCAPE: Self = Self(1 << 1);
-    /// An outer doc comment: `///`.
-    pub const DOC_OUTER: Self = Self(1 << 2);
-    /// An inner doc comment: `//!`.
-    pub const DOC_INNER: Self = Self(1 << 3);
     /// A line break that is a lone `\r` not followed by `\n`.
-    pub const LONE_CR: Self = Self(1 << 4);
+    pub const LONE_CR: Self = Self(1 << 2);
     /// A number literal that breaks a literal rule — a suffix or a leading
     /// zero — so the collector owes it errors. Unflagged numbers are canonical and
     /// skip validation entirely.
-    pub const MALFORMED_NUMBER: Self = Self(1 << 5);
+    pub const MALFORMED_NUMBER: Self = Self(1 << 3);
 
     /// Immediately after this token the scanner still has an open string
     /// hole. Inserting a `}` there can close the hole or change which later
     /// brace closes it, even if the parser expects a code brace.
-    pub const HOLE_AFTER: Self = Self(1 << 6);
+    pub const HOLE_AFTER: Self = Self(1 << 4);
 
-    const NAMES: [(Self, &'static str); 7] = [
+    const NAMES: [(Self, &'static str); 5] = [
         (Self::UNTERMINATED, "UNTERMINATED"),
         (Self::HAS_ESCAPE, "HAS_ESCAPE"),
-        (Self::DOC_OUTER, "DOC_OUTER"),
-        (Self::DOC_INNER, "DOC_INNER"),
         (Self::LONE_CR, "LONE_CR"),
         (Self::MALFORMED_NUMBER, "MALFORMED_NUMBER"),
         (Self::HOLE_AFTER, "HOLE_AFTER"),

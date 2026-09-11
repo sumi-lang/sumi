@@ -232,16 +232,10 @@ fn line_comments_end_at_newline() {
 }
 
 #[test]
-fn line_comment_doc_flavors() {
+fn line_comments_have_no_flavors() {
     check("//", &[r#"LineComment 0..2 "//""#]);
-    check(
-        "/// d",
-        &[r#"LineComment 0..5 "/// d" TokenFlags(DOC_OUTER)"#],
-    );
-    check(
-        "//! d",
-        &[r#"LineComment 0..5 "//! d" TokenFlags(DOC_INNER)"#],
-    );
+    check("/// d", &[r#"LineComment 0..5 "/// d""#]);
+    check("//! d", &[r#"LineComment 0..5 "//! d""#]);
     check("//// d", &[r#"LineComment 0..6 "//// d""#]);
 }
 
