@@ -3,12 +3,17 @@
 //! Every expression, local, and function result owns a class. The evidence on
 //! a class is the set of types claimed for it, each with the best claim that
 //! made it, so a conflicted class explains itself: which types, and where
-//! each came from. A call is a flow from the callee's result class into
-//! the call expression's class, and the evidence crossing it is relabeled to
-//! the call site, so no origin ever points outside the declaration that owns
-//! the class. A conflict whose every claim arrived through a flow is
-//! inherited: it was already a conflict where it arose, and is reported
-//! there, once. A class with a claim of its own in the conflict reports it.
+//! each came from. A call is a flow from the callee's result class into the
+//! call expression's class, and the evidence crossing it is relabeled to the
+//! call site, so no origin ever points outside the declaration that owns the
+//! class. A conflict whose every claim arrived through a flow is inherited:
+//! it was already a conflict where it arose, and is reported there, once. A
+//! class with a claim of its own in the conflict reports it.
+//!
+//! A claim on a class is one word: its rank, which is also its identity. The
+//! source range behind it lives in a table on the [`Typing`], consulted only
+//! when a conflict is reported, so joining and transferring evidence never
+//! touch memory beyond the class.
 //!
 //! Equality is local to a declaration; flows never unify caller and callee,
 //! so a caller's demands never decide a callee's result. Signatures are read
@@ -26,29 +31,23 @@ use crate::solver::{Lattice, Solver, Var};
 
 const TYPES: [Ty; 3] = [Ty::Int, Ty::Bool, Ty::Unit];
 
-/// One claim that a class has some type: whether it arrived through a flow,
-/// the point in the walk it was made, and the source it was made at. A claim
-/// made on the class itself outranks one delivered by a flow, and an earlier
-/// claim outranks a later one.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct Claim {
-    /// The rank: the sequence number, one-based so an absent claim needs no
-    /// extra word, under the imported bit, so every imported claim ranks
-    /// below every local one.
-    rank: NonZeroU32,
-    range: TextRange,
-}
+/// One claim that a class has some type, as its rank: the one-based sequence
+/// number of the claim in the walk, under a bit set once the claim has
+/// crossed a flow. A claim made on the class itself therefore outranks one
+/// delivered by a flow, and an earlier claim outranks a later one. One-based
+/// so an absent claim needs no extra word.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct Claim(NonZeroU32);
 
 const IMPORTED: u32 = 1 << 31;
 
 impl Claim {
     fn imported(self) -> bool {
-        self.rank.get() & IMPORTED != 0
+        self.0.get() & IMPORTED != 0
     }
 
-    /// Where the claim was made, in the typing's file.
-    pub fn span(self, file: FileId) -> Span {
-        Span::new(file, self.range)
+    fn index(self) -> usize {
+        ((self.0.get() & !IMPORTED) - 1) as usize
     }
 }
 
@@ -91,14 +90,14 @@ impl Evidence {
         self.is_conflict() && self.claims.iter().flatten().all(|claim| claim.imported())
     }
 
-    /// Every type claimed and the claim behind it, earliest first.
+    /// Every type claimed and the claim behind it, best first.
     pub fn claims(&self) -> Vec<(Ty, Claim)> {
         let mut claims: Vec<_> = TYPES
             .iter()
             .zip(&self.claims)
             .filter_map(|(ty, claim)| claim.map(|claim| (*ty, claim)))
             .collect();
-        claims.sort_by_key(|(_, claim)| claim.rank);
+        claims.sort_by_key(|(_, claim)| *claim);
         claims
     }
 }
@@ -124,7 +123,7 @@ impl Lattice for Evidence {
         let mut grew = false;
         for (mine, theirs) in self.claims.iter_mut().zip(&other.claims) {
             if let Some(claim) = theirs
-                && mine.is_none_or(|existing| claim.rank < existing.rank)
+                && mine.is_none_or(|existing| *claim < existing)
             {
                 *mine = Some(*claim);
                 grew = true;
@@ -135,10 +134,7 @@ impl Lattice for Evidence {
 
     /// Crossing a call: the same types, all claimed at the call site.
     fn transfer(&self, call: &Claim) -> Self {
-        let imported = Claim {
-            rank: call.rank | IMPORTED,
-            range: call.range,
-        };
+        let imported = Claim(call.0 | IMPORTED);
         Self {
             claims: self.claims.map(|claim| claim.map(|_| imported)),
         }
@@ -153,11 +149,18 @@ pub(crate) enum Expected {
     Class(Var),
 }
 
+fn claim(count: &mut u32) -> Claim {
+    *count += 1;
+    assert!(*count < IMPORTED, "claim count fits below the imported bit");
+    Claim(NonZeroU32::new(*count).unwrap())
+}
+
 pub(crate) struct Typing {
     solver: Solver<Evidence>,
     /// The file every claim is made in.
     file: FileId,
-    claims: u32,
+    /// Where each claim was made, by claim index.
+    ranges: Vec<TextRange>,
 }
 
 impl Typing {
@@ -165,26 +168,21 @@ impl Typing {
         Self {
             solver: Solver::default(),
             file,
-            claims: 0,
+            ranges: Vec::new(),
         }
     }
 
     fn claim(&mut self, span: Span) -> Claim {
         debug_assert_eq!(span.file(), self.file);
-        self.claims += 1;
-        assert!(
-            self.claims < IMPORTED,
-            "claim count fits below the imported bit"
-        );
-        Claim {
-            rank: NonZeroU32::new(self.claims).unwrap(),
-            range: span.range(),
-        }
+        let mut count = u32::try_from(self.ranges.len()).expect("claim count fits u32");
+        let claim = claim(&mut count);
+        self.ranges.push(span.range());
+        claim
     }
 
-    /// The file every claim is made in.
-    pub fn file(&self) -> FileId {
-        self.file
+    /// Where `claim` was made.
+    pub fn span(&self, claim: Claim) -> Span {
+        Span::new(self.file, self.ranges[claim.index()])
     }
 
     /// A class nothing is known about yet.
@@ -237,13 +235,37 @@ impl Typing {
     /// on it one at a time, in source order, blames a disagreement on the
     /// first demand that raised it. An unresolved or conflicted callee
     /// delivers nothing: it is reported at its declaration.
-    pub fn replay(&self) -> Self {
-        Self {
+    pub fn replay(&self) -> Replay {
+        Replay {
             solver: self
                 .solver
                 .replay(|evidence, call| evidence.ty().map(|ty| Evidence::single(ty, *call))),
-            file: self.file,
-            claims: self.claims,
+            claims: u32::try_from(self.ranges.len()).expect("claim count fits u32"),
+        }
+    }
+}
+
+/// A [`Typing::replay`]: the classes again, to be handed the demands in
+/// order. Its claims are ranked after every claim of the typing and record
+/// no source, since nothing is reported from where a replay's evidence came.
+pub(crate) struct Replay {
+    solver: Solver<Evidence>,
+    claims: u32,
+}
+
+impl Replay {
+    pub fn resolve(&self, var: Var) -> Option<Ty> {
+        self.solver.evidence(var).ty()
+    }
+
+    /// One demand, replayed.
+    pub fn expect(&mut self, var: Var, expected: Expected) {
+        match expected {
+            Expected::Ty(ty) => {
+                let claim = claim(&mut self.claims);
+                self.solver.expect(var, &Evidence::single(ty, claim));
+            }
+            Expected::Class(class) => self.solver.equal(var, class),
         }
     }
 }
@@ -264,6 +286,12 @@ mod tests {
 
     fn typing() -> Typing {
         Typing::new(FILE)
+    }
+
+    #[test]
+    fn evidence_is_three_words() {
+        assert_eq!(size_of::<Evidence>(), 12);
+        assert_eq!(size_of::<Option<Claim>>(), 4);
     }
 
     #[test]
@@ -297,15 +325,15 @@ mod tests {
             let claims = evidence.claims();
             assert_eq!(claims.len(), 2);
             assert_eq!(claims[0].0, types[0].0);
-            assert_eq!(claims[0].1.span(FILE), at(types[0].1));
-            assert_eq!(claims[1].1.span(FILE), at(types[1].1));
+            assert_eq!(typing.span(claims[0].1), at(types[0].1));
+            assert_eq!(typing.span(claims[1].1), at(types[1].1));
             let downstream = typing.evidence(downstream);
             assert!(downstream.is_conflict() && downstream.inherited());
             assert!(
                 downstream
                     .claims()
                     .iter()
-                    .all(|(_, c)| c.span(FILE) == at(30))
+                    .all(|(_, c)| typing.span(*c) == at(30))
             );
         }
     }
@@ -322,11 +350,11 @@ mod tests {
         assert!(evidence.is_conflict() && !evidence.inherited());
         let claims = evidence.claims();
         assert_eq!(claims.len(), 3);
-        assert_eq!((claims[0].0, claims[0].1.span(FILE)), (Ty::Unit, at(3)));
+        assert_eq!((claims[0].0, typing.span(claims[0].1)), (Ty::Unit, at(3)));
         assert!(
             claims[1..]
                 .iter()
-                .all(|(_, claim)| claim.span(FILE) == at(2))
+                .all(|(_, claim)| typing.span(*claim) == at(2))
         );
     }
 
@@ -337,7 +365,7 @@ mod tests {
         let call = typing.call(provider, at(1));
         typing.expect(call, Expected::Ty(Ty::Int), at(2));
         typing.solve();
-        assert_eq!(typing.evidence(call).claims()[0].1.span(FILE), at(2));
+        assert_eq!(typing.span(typing.evidence(call).claims()[0].1), at(2));
     }
 
     #[test]
@@ -359,13 +387,10 @@ mod tests {
         assert_eq!(replay.resolve(demanded), None);
         assert_eq!(replay.resolve(unknown_call), None);
         assert_eq!(replay.resolve(conflict_call), None);
-        assert!(!replay.evidence(conflict_call).is_conflict());
         assert_eq!(replay.resolve(literal_call), Some(Ty::Int));
-        assert_eq!(
-            replay.evidence(literal_call).claims()[0].1.span(FILE),
-            at(6)
-        );
-        replay.expect(demanded, Expected::Class(literal), at(7));
+        replay.expect(demanded, Expected::Class(literal));
         assert_eq!(replay.resolve(demanded), Some(Ty::Int));
+        replay.expect(unknown_call, Expected::Ty(Ty::Bool));
+        assert_eq!(replay.resolve(unknown_call), Some(Ty::Bool));
     }
 }

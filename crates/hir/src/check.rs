@@ -392,7 +392,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
                         source.type_mismatch(demand.node, expected, actual, related);
                     }
                     _ => {
-                        replay.expect(demand.actual, expected, source.span(demand.node));
+                        replay.expect(demand.actual, expected);
                         continue;
                     }
                 }
@@ -405,11 +405,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
                     None,
                 ),
                 _ => {
-                    replay.expect(
-                        demand.actual,
-                        Expected::Ty(Ty::Unit),
-                        source.span(demand.node),
-                    );
+                    replay.expect(demand.actual, Expected::Ty(Ty::Unit));
                     continue;
                 }
             },
@@ -456,9 +452,9 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
                     source.span(node),
                     codes::CANNOT_INFER,
                     format!("function result is both {joined}; add a return type annotation"),
-                    claims.into_iter().map(|(ty, claim)| {
-                        (claim.span(typing.file()), format!("{ty} here").into())
-                    }),
+                    claims
+                        .into_iter()
+                        .map(|(ty, claim)| (typing.span(claim), format!("{ty} here").into())),
                 );
             } else {
                 source.error(
