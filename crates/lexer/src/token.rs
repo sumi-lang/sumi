@@ -42,7 +42,7 @@ pub enum RawKind {
     /// An identifier or keyword; also plain `_`.
     Ident,
 
-    /// A decimal integer or float literal, including any suffix.
+    /// A decimal integer literal, including any suffix.
     Number,
     /// A `"..."` literal, ended by the line if unterminated.
     String,
@@ -79,9 +79,8 @@ impl TokenFlags {
     /// A lone `\r` not followed by `\n`, in a line break or inside a
     /// multi-line string literal.
     pub const LONE_CR: Self = Self(1 << 4);
-    /// A number literal that breaks at least one literal rule — a suffix, a
-    /// leading zero, a misplaced underscore, or a malformed exponent — so
-    /// the collector owes it errors. Unflagged numbers are canonical and
+    /// A number literal that breaks a literal rule — a suffix or a leading
+    /// zero — so the collector owes it errors. Unflagged numbers are canonical and
     /// skip validation entirely.
     pub const MALFORMED_NUMBER: Self = Self(1 << 5);
 

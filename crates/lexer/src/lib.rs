@@ -5,7 +5,7 @@
 //! retaining whitespace, comments, and malformed input, and no state
 //! crosses a line break but the inside of a `"""` literal. The scan
 //! classifies each token's language-level [`SyntaxKind`] while its bytes
-//! are cache-hot — keywords, punctuation roles, int/float — and stores the
+//! are cache-hot — keywords and punctuation roles — and stores the
 //! shape-only [`RawKind`] beside it. Token-local validity is established
 //! before [`lex`] returns by selectively re-examining malformed numbers,
 //! non-ASCII identifiers, escaped literals, character literals, multi-line

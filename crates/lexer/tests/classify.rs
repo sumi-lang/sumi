@@ -159,15 +159,15 @@ fn trivia_classification() {
 #[test]
 fn literal_kinds() {
     check(
-        r#"1.5 "s" r"r" 'c'"#,
+        r#"15 "s" r"r" 'c'"#,
         &[
-            r#"FloatLiteral 0..3 "1.5""#,
-            r#"Whitespace 3..4 " ""#,
-            r#"StringLiteral 4..7 "\"s\"""#,
-            r#"Whitespace 7..8 " ""#,
-            r#"RawStringLiteral 8..12 "r\"r\"""#,
-            r#"Whitespace 12..13 " ""#,
-            r#"CharLiteral 13..16 "'c'""#,
+            r#"IntLiteral 0..2 "15""#,
+            r#"Whitespace 2..3 " ""#,
+            r#"StringLiteral 3..6 "\"s\"""#,
+            r#"Whitespace 6..7 " ""#,
+            r#"RawStringLiteral 7..11 "r\"r\"""#,
+            r#"Whitespace 11..12 " ""#,
+            r#"CharLiteral 12..15 "'c'""#,
         ],
     );
 }
@@ -181,51 +181,19 @@ fn malformed_literals_keep_their_kind() {
 }
 
 #[test]
-fn int_and_float_split() {
-    let source = "0 123 1_000 1.5 1e5 2.5e-3";
-    let lexed = lex(source).unwrap();
-
-    let number_kinds: Vec<String> = lexed
-        .indices()
-        .map(|index| format!("{:?}", lexed.kind(index)))
-        .filter(|kind| kind.ends_with("Literal"))
-        .collect();
-    assert_eq!(
-        number_kinds,
-        [
-            "IntLiteral",
-            "IntLiteral",
-            "IntLiteral",
-            "FloatLiteral",
-            "FloatLiteral",
-            "FloatLiteral",
-        ],
-    );
-}
-
-#[test]
-fn broken_numbers_classify_as_their_intended_kind() {
-    check(
-        "1e+5",
-        &[r#"FloatLiteral 0..4 "1e+5" TokenFlags(MALFORMED_NUMBER)"#],
-    );
-    check(
-        "1E5",
-        &[r#"FloatLiteral 0..3 "1E5" TokenFlags(MALFORMED_NUMBER)"#],
-    );
-    // The raw shape still munches signed uppercase exponents as one token.
-    check(
-        "1E-5",
-        &[r#"FloatLiteral 0..4 "1E-5" TokenFlags(MALFORMED_NUMBER)"#],
-    );
-    // A broken exponent still classifies as the intended float.
-    check(
-        "1e",
-        &[r#"FloatLiteral 0..2 "1e" TokenFlags(MALFORMED_NUMBER)"#],
-    );
+fn broken_numbers_keep_their_kind() {
     check(
         "1u32",
         &[r#"IntLiteral 0..4 "1u32" TokenFlags(MALFORMED_NUMBER)"#],
+    );
+    // A separator or an exponent is a suffix: there are no floats.
+    check(
+        "1_000",
+        &[r#"IntLiteral 0..5 "1_000" TokenFlags(MALFORMED_NUMBER)"#],
+    );
+    check(
+        "1e5",
+        &[r#"IntLiteral 0..3 "1e5" TokenFlags(MALFORMED_NUMBER)"#],
     );
 }
 

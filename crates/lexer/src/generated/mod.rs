@@ -37,10 +37,10 @@ pub enum SyntaxKind {
     MutKw,
     ReturnKw,
     TrueKw,
-    /// A decimal integer literal.
+    /// A decimal integer literal: a run of digits. There are no separators,
+    /// suffixes, or floats; trailing identifier characters attach as a suffix
+    /// for the lexer to reject, so `1_000` and `1e5` are each one error.
     IntLiteral,
-    /// A float literal: a fraction (`1.5`), an exponent (`1e3`), or both.
-    FloatLiteral,
     /// A string literal on one line: `"…"`, with escapes. A line break ends an
     /// unterminated one, so a stray quote costs its line and nothing after it.
     StringLiteral,
@@ -113,7 +113,7 @@ pub enum SyntaxKind {
 
 impl SyntaxKind {
     /// Every kind, in declaration order.
-    pub const ALL: [Self; 44] = [
+    pub const ALL: [Self; 43] = [
         Self::Whitespace,
         Self::Newline,
         Self::LineComment,
@@ -128,7 +128,6 @@ impl SyntaxKind {
         Self::ReturnKw,
         Self::TrueKw,
         Self::IntLiteral,
-        Self::FloatLiteral,
         Self::StringLiteral,
         Self::RawStringLiteral,
         Self::BlockStringLiteral,
@@ -262,7 +261,6 @@ impl SyntaxKind {
             Self::ReturnKw => "`return`",
             Self::TrueKw => "`true`",
             Self::IntLiteral => "an integer literal",
-            Self::FloatLiteral => "a floating-point literal",
             Self::StringLiteral => "a string literal",
             Self::RawStringLiteral => "a raw string literal",
             Self::BlockStringLiteral => "a multi-line string literal",

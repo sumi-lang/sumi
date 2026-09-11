@@ -225,54 +225,21 @@ fn independent_same_token_facts_remain_independent() {
 }
 
 #[test]
-fn numeric_labels_are_source_ordered_even_when_observed_last() {
-    for (literal, other, labels, replacement) in [
-        (
-            "01__2E+03suffix",
-            codes::UNKNOWN_SUFFIX,
-            vec![
-                (0, "integer part has leading zeros"),
-                (2, "underscore must be between two digits"),
-                (5, "exponent marker must be lowercase `e`"),
-                (6, "`+` is not allowed in an exponent"),
-                (7, "exponent has leading zeros"),
-            ],
-            "12e3suffix",
-        ),
-        (
-            "1__2e",
-            codes::MISSING_EXPONENT,
-            vec![(1, "underscore must be between two digits")],
-            "12e",
-        ),
-    ] {
-        let source = format!("fn f() = {literal}");
-        let front = parsed(&source);
-        assert_eq!(
-            diagnostic_codes(&front),
-            [codes::NONCANONICAL_NUMBER, other]
-        );
-        let diagnostic = &front.diagnostics()[0];
-        let actual: Vec<_> = std::iter::once(&diagnostic.primary)
-            .chain(&*diagnostic.secondary)
-            .map(|label| {
-                assert_eq!(
-                    label.location.end().to_usize(),
-                    label.location.start().to_usize() + 1
-                );
-                (
-                    label.location.start().to_usize() - 9,
-                    label.message.as_deref().unwrap(),
-                )
-            })
-            .collect();
-        assert_eq!(actual, labels);
-        assert_eq!(
-            apply_fix(&source, diagnostic),
-            format!("fn f() = {replacement}")
-        );
-        assert!(front.diagnostics()[1].fix.is_none());
-    }
+fn leading_zeros_are_fixed_around_a_suffix() {
+    let source = "fn f() = 01u32";
+    let front = parsed(source);
+    assert_eq!(
+        diagnostic_codes(&front),
+        [codes::NONCANONICAL_NUMBER, codes::UNKNOWN_SUFFIX]
+    );
+    let diagnostic = &front.diagnostics()[0];
+    assert_eq!(
+        diagnostic.primary.location.start().to_usize()
+            ..diagnostic.primary.location.end().to_usize(),
+        9..10
+    );
+    assert_eq!(apply_fix(source, diagnostic), "fn f() = 1u32");
+    assert!(front.diagnostics()[1].fix.is_none());
 }
 
 /// Source fragments beyond every keyword and punctuation text of the
@@ -281,8 +248,7 @@ const EXTRA_FRAGMENTS: &[&str] = &[
     "x",
     "Δ",
     "0",
-    "01_",
-    "1E+05",
+    "01u32",
     "1e",
     r#""\q""#,
     "'ab'",

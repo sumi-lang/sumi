@@ -93,10 +93,10 @@ token MutKw keyword "mut"
 token ReturnKw keyword "return" stmt end
 token TrueKw keyword "true" expr end
 
-/// A decimal integer literal.
+/// A decimal integer literal: a run of digits. There are no separators,
+/// suffixes, or floats; trailing identifier characters attach as a suffix
+/// for the lexer to reject, so `1_000` and `1e5` are each one error.
 token IntLiteral literal "an integer literal" expr end
-/// A float literal: a fraction (`1.5`), an exponent (`1e3`), or both.
-token FloatLiteral literal "a floating-point literal" expr end
 /// A string literal on one line: `"…"`, with escapes. A line break ends an
 /// unterminated one, so a stray quote costs its line and nothing after it.
 token StringLiteral literal "a string literal" expr end
@@ -261,7 +261,6 @@ Expr =
 NameRef = Ident
 LiteralExpr =
   IntLiteral
-| FloatLiteral
 | StringLiteral
 | RawStringLiteral
 | BlockStringLiteral

@@ -51,9 +51,8 @@ const NOUNS: &[&str] = &[
 const VERBS: &[&str] = &[
     "compute", "blend", "scan", "merge", "fold", "clamp", "shift", "probe", "route", "trace",
 ];
-const TYPES: &[&str] = &["Int", "Float", "Bool", "Str", "Char"];
-const INTS: &[&str] = &["0", "1", "2", "7", "42", "128", "1_000", "9999"];
-const FLOATS: &[&str] = &["0.5", "3.25", "1e9", "2.5e-3", "12.75", "1.0"];
+const TYPES: &[&str] = &["Int", "Bool", "Str", "Char"];
+const INTS: &[&str] = &["0", "1", "2", "7", "42", "128", "1000", "9999"];
 const CHARS: &[&str] = &["'a'", "'z'", "'0'", "'\\n'", "'\\\\'", "'\\u{41}'"];
 const CMP_OPS: &[&str] = &["==", "!=", "<", "<=", ">", ">="];
 const ADD_OPS: &[&str] = &["+", "-"];
@@ -363,8 +362,7 @@ impl Gen {
             return scope[self.rng.below(scope.len() as u32) as usize].clone();
         }
         match self.rng.below(100) {
-            0..=39 => self.rng.pick(INTS).to_string(),
-            40..=54 => self.rng.pick(FLOATS).to_string(),
+            0..=54 => self.rng.pick(INTS).to_string(),
             55..=69 => {
                 if self.literals && self.rng.chance(30) {
                     self.block_string(scope)
@@ -506,13 +504,13 @@ mod tests {
         let medium = generate(64 * 1024, 0xBEEF);
         assert_eq!(
             (medium.len(), fingerprint(&medium)),
-            (65862, 8235454753037510165),
+            (65560, 11654990487381920005),
             "medium"
         );
         let damaged = corrupt(&medium, 7, 600);
         assert_eq!(
             (damaged.len(), fingerprint(&damaged)),
-            (65851, 13795624062105571189),
+            (65547, 2102888060172263703),
             "damaged"
         );
     }

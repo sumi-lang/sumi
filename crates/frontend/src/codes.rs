@@ -19,7 +19,6 @@ pub const UNKNOWN_CHARACTER: DiagnosticCode = DiagnosticCode::new(SYNTAX, "unkno
 pub const RESERVED_IDENTIFIER: DiagnosticCode = DiagnosticCode::new(SYNTAX, "reserved-identifier");
 
 pub const UNKNOWN_SUFFIX: DiagnosticCode = DiagnosticCode::new(SYNTAX, "unknown-suffix");
-pub const MISSING_EXPONENT: DiagnosticCode = DiagnosticCode::new(SYNTAX, "missing-exponent");
 pub const NONCANONICAL_NUMBER: DiagnosticCode = DiagnosticCode::new(SYNTAX, "noncanonical-number");
 pub const UNKNOWN_ESCAPE: DiagnosticCode = DiagnosticCode::new(SYNTAX, "unknown-escape");
 pub const MALFORMED_UNICODE_ESCAPE: DiagnosticCode =

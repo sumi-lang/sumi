@@ -79,7 +79,7 @@ fn check_error_ranges(source: &str, expected: &[(u32, u32, u32, LexErrorKind)]) 
 fn clean_sources_have_no_errors() {
     check_errors("", &[]);
     check_errors("( ) { } , : . = < > ! + - * / % & |", &[]);
-    check_errors("0 123 1_000 1.5 1e5 2.5e-3", &[]);
+    check_errors("0 123 9999", &[]);
 }
 
 #[test]
@@ -90,52 +90,32 @@ fn unused_punctuation_has_an_error() {
 }
 
 #[test]
-fn exponent_plus_and_padding_are_rejected() {
-    check_errors("1e+5", &[(0, LexErrorKind::ExponentPlusSign)]);
-    check_errors("1e-5", &[]);
-    check_errors("1e05", &[(0, LexErrorKind::ExponentLeadingZero)]);
-    check_errors("1e-05", &[(0, LexErrorKind::ExponentLeadingZero)]);
-    check_errors("1e0", &[]);
-}
-
-#[test]
-fn multiple_number_errors_report_in_source_order() {
+fn number_errors_report_in_source_order() {
     check_errors(
-        "1E+05",
+        "01u32",
         &[
-            (0, LexErrorKind::UppercaseExponent),
-            (0, LexErrorKind::ExponentPlusSign),
-            (0, LexErrorKind::ExponentLeadingZero),
+            (0, LexErrorKind::LeadingZero),
+            (0, LexErrorKind::UnknownSuffix),
         ],
     );
 }
 
 #[test]
-fn number_canonicalization_repairs_spelling_and_preserves_suffixes() {
+fn number_canonicalization_strips_leading_zeros_and_preserves_suffixes() {
     for (source, expected) in [
         ("", None),
         ("name", None),
         ("0123", Some("123")),
         ("000", Some("0")),
-        ("0_0", Some("0")),
-        ("01_000", Some("1_000")),
-        ("00_0.50", Some("0.50")),
-        ("0__0_1_0__0_", Some("1_00")),
-        ("00_0.0__0E+0_0", Some("0.00e0")),
-        (
-            "00__1_2.00__3_0E-00__4_0suffix",
-            Some("1_2.003_0e-4_0suffix"),
-        ),
-        ("1__0", Some("10")),
-        ("1_.5", Some("1.5")),
-        ("1E+05", Some("1e5")),
-        ("1e-00_5", Some("1e-5")),
+        ("0010", Some("10")),
         ("01u32", Some("1u32")),
         ("01Δ", Some("1Δ")),
-        ("01E", Some("1E")),
-        ("1E", None),
+        ("01_000", Some("1_000")),
+        ("00e5", Some("0e5")),
+        ("0", None),
+        ("10", None),
         ("1u32", None),
-        ("1_000.50e-5", None),
+        ("1_000", None),
     ] {
         assert_eq!(
             canonicalize_number_literal(source).as_deref(),
@@ -147,22 +127,15 @@ fn number_canonicalization_repairs_spelling_and_preserves_suffixes() {
 
 #[test]
 fn canonicalized_numbers_have_no_remaining_canonicalization_errors() {
-    for source in [
-        "0123", "000", "0_0", "01_000", "00_0.50", "1__0", "1_.5", "1E+05", "1e-00_5", "01u32",
-        "01E",
-    ] {
+    for source in ["0123", "000", "0010", "01u32", "01Δ", "01_000", "00e5"] {
         let replacement = canonicalize_number_literal(source).expect("source is noncanonical");
         let lexed = lex(&replacement).expect("replacement fits in u32");
-        assert!(lexed.errors().iter().all(|error| {
-            !matches!(
-                error.kind,
-                LexErrorKind::LeadingZero
-                    | LexErrorKind::MisplacedUnderscore
-                    | LexErrorKind::UppercaseExponent
-                    | LexErrorKind::ExponentPlusSign
-                    | LexErrorKind::ExponentLeadingZero
-            )
-        }));
+        assert!(
+            lexed
+                .errors()
+                .iter()
+                .all(|error| error.kind != LexErrorKind::LeadingZero)
+        );
     }
 }
 
@@ -171,12 +144,8 @@ fn errors_locate_the_offending_source_text() {
     use LexErrorKind as E;
 
     check_error_ranges(
-        "x 1E+05",
-        &[
-            (2, 3, 4, E::UppercaseExponent),
-            (2, 4, 5, E::ExponentPlusSign),
-            (2, 5, 6, E::ExponentLeadingZero),
-        ],
+        "x 01u32",
+        &[(2, 2, 3, E::LeadingZero), (2, 4, 7, E::UnknownSuffix)],
     );
     check_error_ranges(
         r#"Δ "é\q" ''"#,
@@ -186,9 +155,7 @@ fn errors_locate_the_offending_source_text() {
         ],
     );
     check_error_ranges("0123", &[(0, 0, 1, E::LeadingZero)]);
-    check_error_ranges("1_", &[(0, 1, 2, E::MisplacedUnderscore)]);
     check_error_ranges("1u32", &[(0, 1, 4, E::UnknownSuffix)]);
-    check_error_ranges("1e", &[(0, 1, 2, E::MissingExponent)]);
     check_error_ranges(r#""\uX""#, &[(0, 1, 3, E::MalformedUnicodeEscape)]);
     check_error_ranges(r#""\u{}""#, &[(0, 1, 5, E::MalformedUnicodeEscape)]);
     check_error_ranges(r#""\u{d800}""#, &[(0, 1, 9, E::InvalidUnicodeScalar)]);
@@ -199,52 +166,24 @@ fn errors_locate_the_offending_source_text() {
 #[test]
 fn leading_zeros_are_rejected() {
     check_errors("0123", &[(0, LexErrorKind::LeadingZero)]);
-    // The digit count ignores separators: `0_0` is padded, `0_` is not.
-    check_errors("0_0", &[(0, LexErrorKind::LeadingZero)]);
-    check_errors("0_", &[(0, LexErrorKind::MisplacedUnderscore)]);
+    check_errors("00", &[(0, LexErrorKind::LeadingZero)]);
     check_errors("0", &[]);
-    check_errors("0.5", &[]);
-    check_errors("0e5", &[]);
-    check_errors("1.05", &[]);
-}
-
-#[test]
-fn misplaced_underscores_are_rejected() {
-    check_errors("1_000 1_000_000", &[]);
-    check_errors("1_", &[(0, LexErrorKind::MisplacedUnderscore)]);
-    check_errors("1__0", &[(0, LexErrorKind::MisplacedUnderscore)]);
-    check_errors("1_.5", &[(0, LexErrorKind::MisplacedUnderscore)]);
-    check_errors("1e5_", &[(0, LexErrorKind::MisplacedUnderscore)]);
+    // A suffix does not count as padding: `0x` is only a suffix.
+    check_errors("0x", &[(0, LexErrorKind::UnknownSuffix)]);
 }
 
 #[test]
 fn suffixes_are_rejected() {
     check_errors("1u32", &[(0, LexErrorKind::UnknownSuffix)]);
-    check_errors("x 1_5f", &[(2, LexErrorKind::UnknownSuffix)]);
+    check_errors("x 15f", &[(2, LexErrorKind::UnknownSuffix)]);
     // Base prefixes are not part of the language; `x…` is just a suffix.
     check_errors("0x1F", &[(0, LexErrorKind::UnknownSuffix)]);
     check_errors("0b10", &[(0, LexErrorKind::UnknownSuffix)]);
-    check_errors("0x", &[(0, LexErrorKind::UnknownSuffix)]);
-}
-
-#[test]
-fn exponent_markers_are_lowercase_only() {
-    check_errors("1e5", &[]);
-    check_errors("1E5", &[(0, LexErrorKind::UppercaseExponent)]);
-    check_errors("1E-5", &[(0, LexErrorKind::UppercaseExponent)]);
-    // `1E` has both problems; the missing digits are the primary error.
-    check_errors("1E", &[(0, LexErrorKind::MissingExponent)]);
-}
-
-#[test]
-fn broken_exponents_get_a_targeted_error() {
-    check_errors("1e", &[(0, LexErrorKind::MissingExponent)]);
-    check_errors("2.5e", &[(0, LexErrorKind::MissingExponent)]);
-    // The raw token is just `1e`: the lexer declined `+x` as an exponent.
-    check_errors("1e+x", &[(0, LexErrorKind::MissingExponent)]);
-    // After a real exponent, a trailing `e5` is an ordinary unknown suffix.
-    check_errors("1e5e5", &[(0, LexErrorKind::UnknownSuffix)]);
-    check_errors("1.5e5f", &[(0, LexErrorKind::UnknownSuffix)]);
+    // Neither are digit separators or exponents: `_000` and `e5` are
+    // suffixes too, and `.5` is two tokens after the integer.
+    check_errors("1_000", &[(0, LexErrorKind::UnknownSuffix)]);
+    check_errors("1e5", &[(0, LexErrorKind::UnknownSuffix)]);
+    check_errors("1.5", &[]);
 }
 
 #[test]
