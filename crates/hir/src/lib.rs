@@ -142,6 +142,12 @@ impl Analysis {
     pub fn function(&self, id: FunctionId) -> &Function {
         &self.functions[id.index()]
     }
+    /// The source text `span` covers: how a name in the HIR is read, since
+    /// every name is kept as where it is written.
+    pub fn text(&self, span: Span) -> &str {
+        let range = span.range();
+        &self.parsed.source()[range.start().to_usize()..range.end().to_usize()]
+    }
     pub fn is_valid(&self) -> bool {
         !self
             .parsed
@@ -158,16 +164,16 @@ impl Analysis {
 
 #[derive(Debug)]
 pub struct Function {
-    name: Option<Box<str>>,
+    name: Option<Span>,
     origin: Span,
     signature: Option<Signature>,
     body: Option<Body>,
 }
 
 impl Function {
-    /// The name as written.
-    pub fn name(&self) -> Option<&str> {
-        self.name.as_deref()
+    /// Where the name is written; [`Analysis::text`] reads it.
+    pub fn name(&self) -> Option<Span> {
+        self.name
     }
     pub fn origin(&self) -> Span {
         self.origin
@@ -190,11 +196,16 @@ pub struct Signature {
     pub result: Ty,
 }
 
+/// A body's expressions, locals, and the argument and statement lists its
+/// calls and blocks refer to, each a run of one vector, so a body is a few
+/// allocations however many calls and blocks it holds.
 #[derive(Debug)]
 pub struct Body {
     params: Vec<LocalId>,
     locals: Vec<Local>,
     exprs: Vec<Expr>,
+    args: Vec<ExprId>,
+    statements: Vec<Statement>,
     root: ExprId,
 }
 
@@ -219,12 +230,33 @@ impl Body {
     pub fn local(&self, id: LocalId) -> &Local {
         &self.locals[id.index()]
     }
+    /// The arguments of one of this body's calls.
+    pub fn args(&self, args: Args) -> &[ExprId] {
+        &self.args[args.start as usize..args.end as usize]
+    }
+    /// The statements of one of this body's blocks, in source order.
+    pub fn statements(&self, statements: Statements) -> &[Statement] {
+        &self.statements[statements.start as usize..statements.end as usize]
+    }
+}
+
+/// A call's arguments: a run of its body's argument list.
+#[derive(Clone, Copy, Debug)]
+pub struct Args {
+    pub(crate) start: u32,
+    pub(crate) end: u32,
+}
+
+/// A block's statements: a run of its body's statement list.
+#[derive(Clone, Copy, Debug)]
+pub struct Statements {
+    pub(crate) start: u32,
+    pub(crate) end: u32,
 }
 
 #[derive(Debug)]
 pub struct Local {
-    /// The name as written; `origin` is its range in the source.
-    pub name: Box<str>,
+    /// Where the name is written; [`Analysis::text`] reads it.
     pub origin: Span,
     pub ty: Ty,
 }
@@ -259,7 +291,7 @@ pub enum ExprKind {
     },
     Call {
         function: FunctionId,
-        args: Vec<ExprId>,
+        args: Args,
         callee: Span,
     },
     If {
@@ -268,7 +300,7 @@ pub enum ExprKind {
         else_branch: Option<ExprId>,
     },
     Block {
-        statements: Vec<Statement>,
+        statements: Statements,
         tail: Option<ExprId>,
     },
 }

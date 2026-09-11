@@ -32,8 +32,8 @@ fn location(location: Location) -> String {
     }
 }
 
-fn local(local: &Local) -> String {
-    format!("{}{}", local.name, span(local.origin))
+fn local(analysis: &Analysis, local: &Local) -> String {
+    format!("{}{}", analysis.text(local.origin), span(local.origin))
 }
 
 fn snapshot(source: &str) -> String {
@@ -61,7 +61,9 @@ fn snapshot(source: &str) -> String {
         write!(
             out,
             "\nfn {}{}",
-            function.name().unwrap_or("<missing>"),
+            function
+                .name()
+                .map_or("<missing>", |name| analysis.text(name)),
             span(function.origin())
         )
         .unwrap();
@@ -80,7 +82,7 @@ fn snapshot(source: &str) -> String {
         if let Some(body) = function.body() {
             for &param in body.params() {
                 let param = body.local(param);
-                writeln!(out, "  param {}: {}", local(param), param.ty).unwrap();
+                writeln!(out, "  param {}: {}", local(&analysis, param), param.ty).unwrap();
             }
             dump_body(&analysis, body, &mut out);
         } else {
@@ -151,7 +153,7 @@ fn dump_body(analysis: &Analysis, body: &Body, out: &mut String) {
                         writeln!(
                             out,
                             "{indent}let {}: {} {}",
-                            local(binding),
+                            local(analysis, binding),
                             binding.ty,
                             span(statement.origin)
                         )
@@ -170,7 +172,7 @@ fn dump_body(analysis: &Analysis, body: &Body, out: &mut String) {
         let operation = match &expr.kind {
             ExprKind::Int(value) => format!("int {value}"),
             ExprKind::Bool(value) => format!("bool {value}"),
-            ExprKind::Local(id) => format!("read {}", local(body.local(*id))),
+            ExprKind::Local(id) => format!("read {}", local(analysis, body.local(*id))),
             ExprKind::Neg(_) => "negate".into(),
             ExprKind::Not(_) => "not".into(),
             ExprKind::Binary { op, .. } => format!("eager {}", operator(*op)),
@@ -182,7 +184,7 @@ fn dump_body(analysis: &Analysis, body: &Body, out: &mut String) {
                 let function = analysis.function(*function);
                 format!(
                     "call {}{} (callee {})",
-                    function.name().unwrap(),
+                    analysis.text(function.name().unwrap()),
                     span(function.origin()),
                     span(*callee)
                 )
@@ -211,7 +213,7 @@ fn dump_body(analysis: &Analysis, body: &Body, out: &mut String) {
                 work.push(Work::Expr("lhs".into(), *lhs, child_depth));
             }
             ExprKind::Call { args, .. } => {
-                for (index, &arg) in args.iter().enumerate().rev() {
+                for (index, &arg) in body.args(*args).iter().enumerate().rev() {
                     work.push(Work::Expr(format!("arg[{index}]"), arg, child_depth));
                 }
             }
@@ -232,7 +234,7 @@ fn dump_body(analysis: &Analysis, body: &Body, out: &mut String) {
                     Some(tail) => Work::Expr("tail".into(), *tail, child_depth),
                     None => Work::Unit("tail", child_depth),
                 });
-                for statement in statements.iter().rev() {
+                for statement in body.statements(*statements).iter().rev() {
                     work.push(Work::Statement(statement, child_depth));
                 }
             }

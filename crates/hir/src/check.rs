@@ -106,24 +106,25 @@ struct Header {
     origin: Span,
 }
 
-struct DraftLocal<'s> {
-    name: &'s str,
+struct DraftLocal {
     origin: Span,
     class: Var,
 }
 
 /// A body whose expressions are built, with a placeholder type on each
 /// until its class resolves.
-struct DraftBody<'s> {
+struct DraftBody {
     params: Vec<LocalId>,
-    locals: Vec<DraftLocal<'s>>,
+    locals: Vec<DraftLocal>,
     exprs: Vec<Expr>,
     /// The class of each expression, by index.
     classes: Vec<Var>,
+    args: Vec<ExprId>,
+    statements: Vec<Statement>,
     root: ExprId,
 }
 
-impl DraftBody<'_> {
+impl DraftBody {
     /// The body with every class resolved to its type, if every class
     /// resolved and every call agrees with its callee's signature.
     fn publish(self, typing: &Typing, functions: &[Function]) -> Option<Body> {
@@ -132,13 +133,14 @@ impl DraftBody<'_> {
             locals,
             mut exprs,
             classes,
+            args,
+            statements,
             root,
         } = self;
         let locals = locals
             .into_iter()
             .map(|local| {
                 Some(Local {
-                    name: local.name.into(),
                     origin: local.origin,
                     ty: typing.resolve(local.class)?,
                 })
@@ -159,6 +161,8 @@ impl DraftBody<'_> {
             params,
             locals,
             exprs,
+            args,
+            statements,
             root,
         })
     }
@@ -409,7 +413,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         });
         parameters.push(params);
         functions.push(Function {
-            name: name.map(|(name, _)| name.into()),
+            name: name.map(|(_, node)| source.span(node)),
             origin,
             signature: None,
             body: None,
@@ -567,6 +571,12 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     analysis
 }
 
+/// An index into one of a body's lists, which the syntax tree's node count
+/// bounds.
+fn run(index: usize) -> u32 {
+    u32::try_from(index).expect("list index fits u32")
+}
+
 // None is a poisoned binding, distinct from an absent name. Scope transitions
 // and let completion are explicit work items, so initializers see the old scope.
 type Scope<'s> = NameMap<'s, Option<LocalId>>;
@@ -590,9 +600,11 @@ struct Builder<'a, 's> {
     owner: usize,
     failed: bool,
     params: Vec<LocalId>,
-    locals: Vec<DraftLocal<'s>>,
+    locals: Vec<DraftLocal>,
     exprs: Vec<Expr>,
     classes: Vec<Var>,
+    args: Vec<ExprId>,
+    statements: Vec<Statement>,
     // Scratch kept across bodies.
     /// The subject of each expression, by index.
     subjects: Vec<ExprId>,
@@ -605,7 +617,9 @@ struct Builder<'a, 's> {
     /// Parameter names seen so far, for duplicates.
     first: NameMap<'s, Span>,
     work: Vec<Work>,
-    statements: Vec<(NodeIdx, Statement)>,
+    /// Statements completed but not yet claimed by their block, in source
+    /// order.
+    pending: Vec<(NodeIdx, Statement)>,
 }
 
 impl<'a, 's> Builder<'a, 's> {
@@ -630,12 +644,14 @@ impl<'a, 's> Builder<'a, 's> {
             locals: Vec::new(),
             exprs: Vec::new(),
             classes: Vec::new(),
+            args: Vec::new(),
+            statements: Vec::new(),
             subjects: Vec::new(),
             scopes: Vec::new(),
             depth: 0,
             first: NameMap::default(),
             work: Vec::new(),
-            statements: Vec::new(),
+            pending: Vec::new(),
         }
     }
     fn build(
@@ -643,7 +659,7 @@ impl<'a, 's> Builder<'a, 's> {
         owner: usize,
         item: ast::FnItem,
         parameters: Vec<Parameter<'s>>,
-    ) -> Option<DraftBody<'s>> {
+    ) -> Option<DraftBody> {
         self.owner = owner;
         self.failed = false;
         self.depth = 0;
@@ -655,6 +671,8 @@ impl<'a, 's> Builder<'a, 's> {
         self.locals.clear();
         self.exprs.clear();
         self.classes.clear();
+        self.args.clear();
+        self.statements.clear();
         for param in parameters {
             if let Some((name, node)) = param.name {
                 if let Some(&span) = self.first.get(name) {
@@ -732,6 +750,8 @@ impl<'a, 's> Builder<'a, 's> {
             locals: std::mem::take(&mut self.locals),
             exprs: std::mem::take(&mut self.exprs),
             classes: std::mem::take(&mut self.classes),
+            args: std::mem::take(&mut self.args),
+            statements: std::mem::take(&mut self.statements),
             root: root?,
         })
     }
@@ -754,7 +774,6 @@ impl<'a, 's> Builder<'a, 's> {
         let id = class.map(|class| {
             let id = LocalId::new(self.locals.len());
             self.locals.push(DraftLocal {
-                name,
                 origin: self.source.span(node),
                 class,
             });
@@ -1006,26 +1025,22 @@ impl<'a, 's> Builder<'a, 's> {
             NodeKind::Block => {
                 self.close_scope();
                 // Children arrive last first; only the first can be the tail.
-                // Completed statements are stacked in source order. Nested
-                // blocks consume their own statements before reaching here.
-                let mut children = tree.children(node).peekable();
-                let has_tail = children
-                    .peek()
-                    .is_some_and(|&last| self.statements.last().is_none_or(|(n, _)| *n != last));
-                let count = tree.children(node).count() - usize::from(has_tail);
-                let mut statements = Vec::with_capacity(count);
+                // Completed statements are pending in source order, and
+                // nested blocks claimed theirs before reaching here, so the
+                // block's run of the body's list is filled backwards and
+                // reversed in place.
+                let start = self.statements.len();
                 let mut tail = None;
                 let mut valid = !tree.has_error(node);
-                for (index, child) in children.enumerate() {
-                    if let Some((_, statement)) = self.statements.pop_if(|(node, _)| *node == child)
-                    {
-                        statements.push(statement);
+                for (index, child) in tree.children(node).enumerate() {
+                    if let Some((_, statement)) = self.pending.pop_if(|(node, _)| *node == child) {
+                        self.statements.push(statement);
                     } else if let Some(value) = self.value(child) {
                         if index == 0 {
                             tail = Some(value);
                         } else {
                             self.demand(child, value, DemandKind::Unused);
-                            statements.push(Statement {
+                            self.statements.push(Statement {
                                 origin: self.source.span(child),
                                 kind: StatementKind::Eval(value),
                             });
@@ -1037,7 +1052,11 @@ impl<'a, 's> Builder<'a, 's> {
                 if !valid {
                     return None;
                 }
-                statements.reverse();
+                self.statements[start..].reverse();
+                let statements = Statements {
+                    start: run(start),
+                    end: run(self.statements.len()),
+                };
                 match tail {
                     Some(tail) => {
                         let kind = ExprKind::Block {
@@ -1074,7 +1093,7 @@ impl<'a, 's> Builder<'a, 's> {
                     None => initializer.map(|value| self.class(value)),
                 };
                 let local = self.bind(name, name_node, class);
-                self.statements.push((
+                self.pending.push((
                     node,
                     Statement {
                         origin: self.source.span(node),
@@ -1090,7 +1109,7 @@ impl<'a, 's> Builder<'a, 's> {
                     .unwrap()
                     .value(tree)
                     .unwrap();
-                self.statements.push((
+                self.pending.push((
                     node,
                     Statement {
                         origin: self.source.span(node),
@@ -1268,7 +1287,9 @@ impl<'a, 's> Builder<'a, 's> {
             .arg_list(tree)
             .unwrap();
         // Every argument that exists is held to its parameter, arity aside.
-        let mut args = Vec::with_capacity(params.len());
+        // Arguments finish before their call does, so a call's run of the
+        // body's argument list is contiguous.
+        let start = self.args.len();
         let mut complete = true;
         let mut count = 0;
         for (index, arg) in list.args(tree).enumerate() {
@@ -1284,7 +1305,7 @@ impl<'a, 's> Builder<'a, 's> {
                             Some((origin, "declared here")),
                         );
                     }
-                    args.push(value);
+                    self.args.push(value);
                 }
                 None => complete = false,
             }
@@ -1296,11 +1317,15 @@ impl<'a, 's> Builder<'a, 's> {
                 format!("expected {} arguments, found {count}", params.len()),
                 Some((origin, "declared here")),
             );
+        }
+        if count != params.len() || !complete {
+            self.args.truncate(start);
             return None;
         }
-        if !complete {
-            return None;
-        }
+        let args = Args {
+            start: run(start),
+            end: run(self.args.len()),
+        };
         let class = self.typing.call(result?, node);
         self.emit(
             node,
