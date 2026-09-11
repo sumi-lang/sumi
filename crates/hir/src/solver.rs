@@ -125,10 +125,14 @@ impl<L: Lattice> Solver<L> {
     }
 
     pub fn fresh(&mut self) -> Var {
+        self.open(L::bottom())
+    }
+
+    fn open(&mut self, evidence: L) -> Var {
         let id = u32::try_from(self.parent.len()).expect("class count fits u32");
         self.parent.push(id);
         self.size.push(1);
-        self.evidence.push(L::bottom());
+        self.evidence.push(evidence);
         Var(id)
     }
 
@@ -164,8 +168,7 @@ impl<L: Lattice> Solver<L> {
     /// A fresh class known to carry `evidence` on its own account: an
     /// annotation, or a literal. A fact; it survives a replay.
     pub fn known(&mut self, evidence: L) -> Var {
-        let var = self.fresh();
-        self.evidence[var.index()] = evidence.clone();
+        let var = self.open(evidence.clone());
         self.facts.push((var, evidence));
         var
     }
