@@ -108,7 +108,6 @@ fn collect_errors(
         RawKind::Newline if token.flags.contains(TokenFlags::LONE_CR) => {
             Some(LexErrorKind::LoneCarriageReturn)
         }
-        RawKind::Unknown if text == "\u{feff}" => Some(LexErrorKind::MisplacedBom),
         RawKind::Unknown => Some(LexErrorKind::UnknownCharacter),
         _ => None,
     };
@@ -303,8 +302,6 @@ pub enum LexErrorKind {
     UnterminatedString,
     /// A `\r` line ending not followed by `\n`.
     LoneCarriageReturn,
-    /// A U+FEFF byte-order mark somewhere other than byte zero.
-    MisplacedBom,
     /// A character with no lexical meaning in the language.
     UnknownCharacter,
     /// A numeric literal carries trailing identifier characters, as in

@@ -27,9 +27,6 @@ pub(crate) struct RawToken {
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum RawKind {
-    /// U+FEFF at byte zero. Anywhere else it is [`Unknown`](RawKind::Unknown).
-    Bom,
-
     /// A run of spaces and horizontal tabs.
     HorizontalSpace,
     /// One `\n`, `\r\n`, or lone `\r` (the latter flagged

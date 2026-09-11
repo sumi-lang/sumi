@@ -22,7 +22,7 @@ continues the previous line. Operators take their classes from the
 
 | Kind | Reads as | Classes | Notes |
 | --- | --- | --- | --- |
-| `Whitespace` | whitespace |  | Horizontal whitespace, or the byte-order mark. |
+| `Whitespace` | whitespace |  | Horizontal whitespace. |
 | `Newline` | a line break |  | One line break. |
 | `LineComment` | a line comment |  |  |
 
@@ -85,7 +85,7 @@ continues the previous line. Operators take their classes from the
 
 | Kind | Reads as | Classes | Notes |
 | --- | --- | --- | --- |
-| `Error` | valid syntax | `stmt` `end` | A token with no meaning in the language: unrecognized characters, misplaced byte-order marks, and punctuation without a role. |
+| `Error` | valid syntax | `stmt` `end` | A token with no meaning in the language: unrecognized characters, a byte-order mark included, and punctuation without a role. |
 
 ### Compound operators
 

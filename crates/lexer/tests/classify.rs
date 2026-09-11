@@ -144,14 +144,13 @@ fn a_lone_underscore_is_its_own_kind() {
 #[test]
 fn trivia_classification() {
     check(
-        "\u{feff}a // c\nb",
+        "a // c\nb",
         &[
-            r#"Whitespace 0..3 "\u{feff}""#,
-            r#"Ident 3..4 "a""#,
-            r#"Whitespace 4..5 " ""#,
-            r#"LineComment 5..9 "// c""#,
-            r#"Newline 9..10 "\n""#,
-            r#"Ident 10..11 "b""#,
+            r#"Ident 0..1 "a""#,
+            r#"Whitespace 1..2 " ""#,
+            r#"LineComment 2..6 "// c""#,
+            r#"Newline 6..7 "\n""#,
+            r#"Ident 7..8 "b""#,
         ],
     );
 }
@@ -202,14 +201,6 @@ fn unknown_classifies_to_error() {
             r#"Error 1..4 "€""#,
             r#"Ident 4..5 "b""#,
         ],
-    );
-}
-
-#[test]
-fn misplaced_bom_classifies_to_error() {
-    check(
-        "x\u{feff}",
-        &[r#"Ident 0..1 "x""#, r#"Error 1..4 "\u{feff}""#],
     );
 }
 

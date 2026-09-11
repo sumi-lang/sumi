@@ -16,7 +16,7 @@
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SyntaxKind {
-    /// Horizontal whitespace, or the byte-order mark.
+    /// Horizontal whitespace.
     Whitespace,
     /// One line break.
     Newline,
@@ -97,8 +97,8 @@ pub enum SyntaxKind {
     /// for a prefix operator.
     Amp,
     Pipe,
-    /// A token with no meaning in the language: unrecognized characters,
-    /// misplaced byte-order marks, and punctuation without a role.
+    /// A token with no meaning in the language: unrecognized characters, a
+    /// byte-order mark included, and punctuation without a role.
     Error,
 }
 

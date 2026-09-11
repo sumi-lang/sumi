@@ -49,7 +49,7 @@ fn single_tokens() -> Vec<&'static str> {
 }
 
 /// Fragments that are only safe in free concatenation: trivia, comments,
-/// unterminated literals, and a misplaced byte-order mark.
+/// and unterminated literals.
 const LOOSE_FRAGMENTS: &[&str] = &[
     " ",
     "\t",
@@ -63,7 +63,6 @@ const LOOSE_FRAGMENTS: &[&str] = &[
     "\"open",
     "'x",
     "r##\"a\"#",
-    "\u{feff}",
     "\u{1}",
     // The parts of a string literal with holes, and the braces that open
     // none.

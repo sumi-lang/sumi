@@ -127,11 +127,6 @@ impl<'src> Lexer<'src> {
         };
         let (kind, raw, mut flags) = if let Some(token) = literal {
             token
-        } else if self.position == 0 && self.remaining().starts_with('\u{feff}') {
-            self.bump_char();
-            // The BOM is ignorable trivia to every downstream phase; its
-            // identity stays recoverable through the raw kind.
-            (SyntaxKind::Whitespace, RawKind::Bom, TokenFlags::EMPTY)
         } else {
             match self.peek_byte().expect("scan_token called at EOF") {
                 b' ' | b'\t' => {

@@ -48,7 +48,6 @@ const EXTRA_FRAGMENTS: &[&str] = &[
     "\r",
     "// c",
     "/// d",
-    "\u{feff}",
     "€",
 ];
 

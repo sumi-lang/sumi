@@ -181,21 +181,13 @@ fn control_chars_are_unknown() {
 }
 
 #[test]
-fn bom_at_byte_zero() {
-    check(
-        "\u{feff}x",
-        &[r#"Bom 0..3 "\u{feff}""#, r#"Ident 3..4 "x""#],
-    );
-    assert_eq!(lex("\u{feff}x").unwrap().errors(), &[]);
-}
-
-#[test]
-fn bom_elsewhere_is_unknown_with_error() {
-    let source = "x\u{feff}";
-    check(source, &[r#"Ident 0..1 "x""#, r#"Unknown 1..4 "\u{feff}""#]);
+fn a_byte_order_mark_is_an_unknown_character() {
+    // Even at byte zero: a source is UTF-8 without a signature.
+    let source = "\u{feff}x";
+    check(source, &[r#"Unknown 0..3 "\u{feff}""#, r#"Ident 3..4 "x""#]);
     assert_eq!(
         lex(source).unwrap().errors(),
-        &[error(1, 1, 4, LexErrorKind::MisplacedBom)],
+        &[error(0, 0, 3, LexErrorKind::UnknownCharacter)],
     );
 }
 
@@ -405,7 +397,7 @@ fn clean_source_has_no_errors() {
 
 #[test]
 fn partition_smoke() {
-    let source = "\u{feff}fn main() {\r\n\tlet s = \"raw\"; // trailing\n\t\"str\" 25 0xFF\n}\n";
+    let source = "fn main() {\r\n\tlet s = \"raw\"; // trailing\n\t\"str\" 25 0xFF\n}\n";
     dump(source);
 }
 
