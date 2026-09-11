@@ -67,7 +67,7 @@
 
 // ---------------------------------------------------------------- tokens
 
-/// Horizontal whitespace, or the byte-order mark.
+/// Horizontal whitespace.
 token Whitespace trivia "whitespace"
 /// One line break.
 token Newline trivia "a line break"
@@ -157,8 +157,8 @@ token Percent punct "%"
 token Amp punct "&"
 token Pipe punct "|"
 
-/// A token with no meaning in the language: unrecognized characters,
-/// misplaced byte-order marks, and punctuation without a role.
+/// A token with no meaning in the language: unrecognized characters, a
+/// byte-order mark included, and punctuation without a role.
 token Error error "valid syntax" stmt end
 
 // -------------------------------------------------------------- brackets

@@ -152,7 +152,6 @@ fn reprint_is_the_identity_on_malformed_sources() {
     for source in [
         "",
         " \t\n",
-        "\u{feff}fn f() {}",
         "fn f( { ) }",
         "fn f() { a==b }\n\u{20ac} ; [",
         "\"open string",

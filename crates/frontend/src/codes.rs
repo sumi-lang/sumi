@@ -7,7 +7,6 @@ pub const SYNTAX: DiagnosticGroup = DiagnosticGroup::new("syntax");
 pub const UNTERMINATED_STRING: DiagnosticCode = DiagnosticCode::new(SYNTAX, "unterminated-string");
 pub const LONE_CARRIAGE_RETURN: DiagnosticCode =
     DiagnosticCode::new(SYNTAX, "lone-carriage-return");
-pub const MISPLACED_BOM: DiagnosticCode = DiagnosticCode::new(SYNTAX, "misplaced-bom");
 pub const UNKNOWN_CHARACTER: DiagnosticCode = DiagnosticCode::new(SYNTAX, "unknown-character");
 
 pub const UNKNOWN_SUFFIX: DiagnosticCode = DiagnosticCode::new(SYNTAX, "unknown-suffix");

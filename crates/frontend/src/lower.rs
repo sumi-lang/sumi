@@ -114,10 +114,6 @@ fn lower_token_errors(
                 codes::LONE_CARRIAGE_RETURN,
                 "carriage return must be followed by a line feed",
             ),
-            LexErrorKind::MisplacedBom => (
-                codes::MISPLACED_BOM,
-                "byte-order mark is only allowed at the start of a file",
-            ),
             LexErrorKind::UnknownCharacter => (
                 codes::UNKNOWN_CHARACTER,
                 "character has no meaning in Sumi source",
