@@ -44,23 +44,18 @@ pub enum SyntaxKind {
     /// A string literal on one line: `"…"`, with escapes. A line break ends an
     /// unterminated one, so a stray quote costs its line and nothing after it.
     StringLiteral,
-    /// A multi-line string literal: `"""`, the content lines, and `"""` on its
-    /// own line, whose indentation every content line shares and sheds.
-    BlockStringLiteral,
     /// The text of a string literal with holes, from its opening quote to its
-    /// first hole: `"…` or `"""…`. A `{` in a `"…"` or `"""` literal opens a
-    /// hole, an expression on that line whose value the string takes in its
-    /// place; `\{` is a brace.
+    /// first hole: `"…`. A `{` in a literal opens a hole, an expression on
+    /// that line whose value the string takes in its place; `\{` is a brace.
     StringStart,
     /// The text of a string literal between two of its holes.
     StringMiddle,
     /// The text of a string literal after its last hole, closing quote
-    /// included: `…"` or `…"""`.
+    /// included: `…"`.
     StringEnd,
     /// The `{` opening a hole in a string literal. A hole ends with its line:
-    /// one still open at the line break is an error, and the literal's text
-    /// goes on from there in a `"""` literal or ends with the line in a `"…"`
-    /// one.
+    /// one still open at the line break is an error, and the literal ends
+    /// with the line too.
     HoleOpen,
     /// The `}` closing a hole: the first at brace depth zero inside it. A `}`
     /// in a literal's text is a brace.
@@ -107,7 +102,7 @@ pub enum SyntaxKind {
 
 impl SyntaxKind {
     /// Every kind, in declaration order.
-    pub const ALL: [Self; 40] = [
+    pub const ALL: [Self; 39] = [
         Self::Whitespace,
         Self::Newline,
         Self::LineComment,
@@ -123,7 +118,6 @@ impl SyntaxKind {
         Self::TrueKw,
         Self::IntLiteral,
         Self::StringLiteral,
-        Self::BlockStringLiteral,
         Self::StringStart,
         Self::StringMiddle,
         Self::StringEnd,
@@ -253,7 +247,6 @@ impl SyntaxKind {
             Self::TrueKw => "`true`",
             Self::IntLiteral => "an integer literal",
             Self::StringLiteral => "a string literal",
-            Self::BlockStringLiteral => "a multi-line string literal",
             Self::StringStart => "a string literal",
             Self::StringMiddle => "the text of a string literal",
             Self::StringEnd => "the end of a string literal",

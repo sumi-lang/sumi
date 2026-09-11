@@ -355,67 +355,6 @@ fn line_literals_end_at_the_line() {
     );
 }
 
-/// The dump line of a source that is one multi-line literal.
-fn block(source: &str, raw: &str, flags: &str) -> String {
-    format!("{raw} 0..{} {source:?}{flags}", source.len())
-}
-
-#[test]
-fn block_string_shapes() {
-    let source = "\"\"\"\n  a \"b\"\n  \"\"\"";
-    check(source, &[&block(source, "BlockString", "")]);
-    assert_eq!(lex(source).unwrap().errors(), &[]);
-
-    // An escaped quote keeps the literal open.
-    let source = "\"\"\"\n  \\\"\"\"\n  \"\"\"";
-    check(
-        source,
-        &[&block(source, "BlockString", " TokenFlags(HAS_ESCAPE)")],
-    );
-
-    let source = "\"\"\"\n\"\"\"";
-    check(source, &[&block(source, "BlockString", "")]);
-
-    // The first `"""` closes, wherever it sits; layout is judged after.
-    check(
-        "\"\"\"a\"\"\"b",
-        &[r#"BlockString 0..7 "\"\"\"a\"\"\"""#, r#"Ident 7..8 "b""#],
-    );
-}
-
-#[test]
-fn unterminated_block_string_runs_to_the_end() {
-    let source = "\"\"\"\nabc\n";
-    check(
-        source,
-        &[&block(source, "BlockString", " TokenFlags(UNTERMINATED)")],
-    );
-    assert_eq!(
-        lex(source).unwrap().errors(),
-        &[error(0, 0, 3, LexErrorKind::UnterminatedBlockString)],
-    );
-}
-
-#[test]
-fn block_strings_keep_line_breaks_and_flag_lone_carriage_returns() {
-    let source = "\"\"\"\r\n  a\r\n  \"\"\"";
-    check(source, &[&block(source, "BlockString", "")]);
-    assert_eq!(lex(source).unwrap().errors(), &[]);
-
-    let source = "\"\"\"\r  a\r  \"\"\"";
-    check(
-        source,
-        &[&block(source, "BlockString", " TokenFlags(LONE_CR)")],
-    );
-    assert_eq!(
-        lex(source).unwrap().errors(),
-        &[
-            error(0, 3, 4, LexErrorKind::LoneCarriageReturn),
-            error(0, 7, 8, LexErrorKind::LoneCarriageReturn),
-        ],
-    );
-}
-
 #[test]
 fn string_escapes_are_flagged() {
     check(
@@ -615,51 +554,6 @@ fn a_hole_ends_with_its_line() {
 }
 
 #[test]
-fn block_strings_take_holes() {
-    check(
-        "\"\"\"\n  {x}\n  \"\"\"",
-        &[
-            r#"BlockString 0..6 "\"\"\"\n  ""#,
-            r#"Punct 6..7 "{" TokenFlags(HOLE_AFTER)"#,
-            r#"Ident 7..8 "x" TokenFlags(HOLE_AFTER)"#,
-            r#"Punct 8..9 "}""#,
-            r#"BlockString 9..15 "\n  \"\"\"""#,
-        ],
-    );
-    // The text goes on from the line break that leaves a hole open.
-    check(
-        "\"\"\"\n  {x\n  y\n  \"\"\"",
-        &[
-            r#"BlockString 0..6 "\"\"\"\n  ""#,
-            r#"Punct 6..7 "{" TokenFlags(HOLE_AFTER)"#,
-            r#"Ident 7..8 "x" TokenFlags(HOLE_AFTER)"#,
-            r#"BlockString 8..18 "\n  y\n  \"\"\"""#,
-        ],
-    );
-    assert_eq!(
-        lex("\"\"\"\n  {x\n  y\n  \"\"\"").unwrap().errors(),
-        &[error(1, 6, 7, LexErrorKind::UnclosedHole)],
-    );
-    // No hole holds a `"""` literal: one inside a hole closes the literal.
-    check(
-        "\"\"\"\n {x\"\"\"",
-        &[
-            r#"BlockString 0..5 "\"\"\"\n ""#,
-            r#"Punct 5..6 "{" TokenFlags(HOLE_AFTER)"#,
-            r#"Ident 6..7 "x" TokenFlags(HOLE_AFTER)"#,
-            r#"BlockString 7..10 "\"\"\"""#,
-        ],
-    );
-    assert_eq!(
-        lex("\"\"\"\n {x\"\"\"").unwrap().errors(),
-        &[
-            error(1, 5, 6, LexErrorKind::UnclosedHole),
-            error(3, 7, 10, LexErrorKind::BlockStringCloserContent),
-        ],
-    );
-}
-
-#[test]
 fn a_string_in_a_hole_may_have_holes() {
     // The inner literal's quote, which its line never closes, closes the
     // inner literal and leaves its hole open; the outer hole then closes,
@@ -685,29 +579,5 @@ fn a_string_in_a_hole_may_have_holes() {
             error(0, 0, 1, LexErrorKind::UnterminatedString),
             error(4, 4, 5, LexErrorKind::UnclosedHole),
         ],
-    );
-}
-
-#[test]
-fn a_string_in_a_hole_never_closes_on_the_first_quote_of_a_block_delimiter() {
-    // No hole holds a `"""` literal, so the quote that would close a
-    // literal inside the hole on the first quote of one is the outer
-    // literal's closer instead, and the `"""` opens a literal outside it.
-    check(
-        "\"a {b\" + \"\"\"\n  c\n  \"\"\"",
-        &[
-            r#"String 0..3 "\"a ""#,
-            r#"Punct 3..4 "{" TokenFlags(HOLE_AFTER)"#,
-            r#"Ident 4..5 "b" TokenFlags(HOLE_AFTER)"#,
-            r#"String 5..6 "\"""#,
-            r#"HorizontalSpace 6..7 " ""#,
-            r#"Punct 7..8 "+""#,
-            r#"HorizontalSpace 8..9 " ""#,
-            r#"BlockString 9..22 "\"\"\"\n  c\n  \"\"\"""#,
-        ],
-    );
-    assert_eq!(
-        lex("\"a {b\" + \"\"\"\n  c\n  \"\"\"").unwrap().errors(),
-        &[error(1, 3, 4, LexErrorKind::UnclosedHole)],
     );
 }

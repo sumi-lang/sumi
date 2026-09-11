@@ -61,12 +61,9 @@ struct Gen {
     rng: Rng,
     out: String,
     fresh: u32,
-    /// Whether a string atom may take the literal forms the pinned corpora
-    /// lack: a multi-line literal, and holes.
+    /// Whether a string atom may take the literal form the pinned corpora
+    /// lack: holes.
     literals: bool,
-    /// The indentation level of the statement being generated, which the
-    /// content of a multi-line literal hangs one level under.
-    level: usize,
 }
 
 /// Generate at least `target_bytes` of valid Sumi source.
@@ -75,7 +72,7 @@ pub fn generate(target_bytes: usize, seed: u64) -> String {
 }
 
 /// Generate at least `target_bytes` of valid Sumi source in which some
-/// strings are multi-line literals and some have holes. The pinned corpora
+/// strings have holes. The pinned corpora
 /// cannot change, so this is a second generator rather than a change to
 /// [`generate`]; its consumers pin their own seeds.
 pub fn generate_with_literals(target_bytes: usize, seed: u64) -> String {
@@ -88,7 +85,6 @@ fn generate_with(target_bytes: usize, seed: u64, literals: bool) -> String {
         out: String::with_capacity(target_bytes + 1024),
         fresh: 0,
         literals,
-        level: 0,
     };
     g.out.push_str("//! Generated Sumi benchmark corpus.\n\n");
     while g.out.len() < target_bytes {
@@ -146,7 +142,6 @@ impl Gen {
         }
         if returns {
             self.indent(1);
-            self.level = 1;
             let e = self.expr(&scope, 0);
             self.out.push_str(&format!("return {e}\n"));
         }
@@ -156,7 +151,6 @@ impl Gen {
     /// One statement, at `level` and `depth`; `last` when it ends its
     /// block, the one place a bare expression may stand as a statement.
     fn statement(&mut self, level: usize, depth: u32, scope: &mut Vec<String>, last: bool) {
-        self.level = level;
         if self.rng.chance(8) {
             self.indent(level);
             let n = self.rng.pick(NOUNS);
@@ -237,7 +231,6 @@ impl Gen {
         self.indent(level);
         self.out.push('}');
         if self.rng.chance(50) {
-            self.level = level;
             if self.rng.chance(30) {
                 let c2 = self.condition(scope);
                 self.out.push_str(&format!(" else if {c2} {{\n"));
@@ -363,9 +356,7 @@ impl Gen {
         match self.rng.below(100) {
             0..=54 => self.rng.pick(INTS).to_string(),
             55..=69 => {
-                if self.literals && self.rng.chance(30) {
-                    self.block_string(scope)
-                } else if self.literals && self.rng.chance(40) && !scope.is_empty() {
+                if self.literals && self.rng.chance(40) && !scope.is_empty() {
                     self.string_with_holes(scope)
                 } else if self.rng.chance(20) {
                     "\"a\\tb\\nc \\\"q\\\" \\\\ \\0\"".to_string()
@@ -402,41 +393,6 @@ impl Gen {
             ),
             _ => format!("\"{{\"{noun} {{{name}}}\"}} in item {}\"", self.fresh),
         }
-    }
-
-    /// A multi-line literal whose content hangs one level under the
-    /// statement, with the closer at the content's indentation.
-    fn block_string(&mut self, scope: &[String]) -> String {
-        self.fresh += 1;
-        let indent = "    ".repeat(self.level + 1);
-        let mut s = String::from("\"\"\"\n");
-        let lines = 1 + self.rng.below(3);
-        for line in 0..lines {
-            if line > 0 && self.rng.chance(20) {
-                s.push('\n');
-            }
-            let noun = self.rng.pick(NOUNS);
-            if !scope.is_empty() && self.rng.chance(40) {
-                let name = self.rng.pick_from(scope);
-                s.push_str(&format!(
-                    "{indent}line {} names {{{name}}} of the {noun}\n",
-                    line + 1
-                ));
-            } else if self.rng.chance(30) {
-                s.push_str(&format!(
-                    "{indent}line {} quotes the \\\"{noun}\\\"\n",
-                    line + 1
-                ));
-            } else {
-                s.push_str(&format!(
-                    "{indent}line {} names the {noun} of item {}\n",
-                    line + 1,
-                    self.fresh
-                ));
-            }
-        }
-        s.push_str(&format!("{indent}\"\"\""));
-        s
     }
 }
 

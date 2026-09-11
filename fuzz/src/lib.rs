@@ -196,8 +196,8 @@ pub fn check_semantics(parsed: ParsedSource) {
 /// `lex` partitions the source: tokens are nonempty, contiguous, on
 /// character boundaries, and reproduce it byte for byte; every lexical
 /// error sits inside its token; every `Error` token has one; only a line
-/// break or a multi-line literal spans lines; and a number is flagged
-/// malformed exactly when it has an error.
+/// break spans lines; and a number is flagged malformed exactly when it
+/// has an error.
 pub fn check_lexed(source: &str, file: &LexedFile) {
     assert_eq!(file.source_len().to_usize(), source.len());
 
@@ -214,10 +214,7 @@ pub fn check_lexed(source: &str, file: &LexedFile) {
         let text = file.text(source, index);
         if text.contains(['\n', '\r']) {
             assert!(
-                matches!(
-                    file.raw_kind(index),
-                    RawKind::Newline | RawKind::BlockString
-                ),
+                matches!(file.raw_kind(index), RawKind::Newline),
                 "token {index:?} crosses a line break"
             );
         }

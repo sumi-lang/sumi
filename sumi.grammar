@@ -100,23 +100,18 @@ token IntLiteral literal "an integer literal" expr end
 /// A string literal on one line: `"…"`, with escapes. A line break ends an
 /// unterminated one, so a stray quote costs its line and nothing after it.
 token StringLiteral literal "a string literal" expr end
-/// A multi-line string literal: `"""`, the content lines, and `"""` on its
-/// own line, whose indentation every content line shares and sheds.
-token BlockStringLiteral literal "a multi-line string literal" expr end
 /// The text of a string literal with holes, from its opening quote to its
-/// first hole: `"…` or `"""…`. A `{` in a `"…"` or `"""` literal opens a
-/// hole, an expression on that line whose value the string takes in its
-/// place; `\{` is a brace.
+/// first hole: `"…`. A `{` in a literal opens a hole, an expression on
+/// that line whose value the string takes in its place; `\{` is a brace.
 token StringStart literal "a string literal" expr
 /// The text of a string literal between two of its holes.
 token StringMiddle literal "the text of a string literal"
 /// The text of a string literal after its last hole, closing quote
-/// included: `…"` or `…"""`.
+/// included: `…"`.
 token StringEnd literal "the end of a string literal" end
 /// The `{` opening a hole in a string literal. A hole ends with its line:
-/// one still open at the line break is an error, and the literal's text
-/// goes on from there in a `"""` literal or ends with the line in a `"…"`
-/// one.
+/// one still open at the line break is an error, and the literal ends
+/// with the line too.
 token HoleOpen literal "`{`"
 /// The `}` closing a hole: the first at brace depth zero inside it. A `}`
 /// in a literal's text is a brace.
@@ -256,7 +251,6 @@ NameRef = Ident
 LiteralExpr =
   IntLiteral
 | StringLiteral
-| BlockStringLiteral
 | 'true'
 | 'false'
 PrefixExpr = PrefixOperator operand:Expr

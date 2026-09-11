@@ -203,111 +203,6 @@ fn unknown_escapes_are_reported() {
 }
 
 #[test]
-fn block_string_layout_is_checked() {
-    check_errors("\"\"\"\n  a\n  \"\"\"", &[]);
-    check_errors("\"\"\"\n\"\"\"", &[]);
-    // Blank lines of any whitespace count as empty.
-    check_errors("\"\"\"\n  a\n\n\t\n  b\n  \"\"\"", &[]);
-    check_error_ranges(
-        "\"\"\"a\n  \"\"\"",
-        &[(0, 3, 4, LexErrorKind::BlockStringOpenerContent)],
-    );
-    check_error_ranges(
-        "\"\"\" \n  a\"\"\"",
-        &[(0, 8, 11, LexErrorKind::BlockStringCloserContent)],
-    );
-    check_errors(
-        "\"\"\"a\"\"\"",
-        &[
-            (0, LexErrorKind::BlockStringOpenerContent),
-            (0, LexErrorKind::BlockStringCloserContent),
-        ],
-    );
-    check_errors(
-        "\"\"\"\"\"\"",
-        &[(0, LexErrorKind::BlockStringCloserContent)],
-    );
-    check_error_ranges(
-        "\"\"\"\n  a\n b\n  \"\"\"",
-        &[(0, 8, 9, LexErrorKind::BlockStringIndentation)],
-    );
-    // Indentation is compared byte for byte: a tab is not two spaces.
-    check_errors(
-        "\"\"\"\n  a\n\t\"\"\"",
-        &[(0, LexErrorKind::BlockStringIndentation)],
-    );
-    // A line with no indentation at all is reported at its start.
-    check_error_ranges(
-        "\"\"\"\n  a\nb\n  \"\"\"",
-        &[(0, 8, 8, LexErrorKind::BlockStringIndentation)],
-    );
-}
-
-#[test]
-fn block_string_escapes_join_lines() {
-    check_errors("\"\"\"\n  a\\\n  b\n  \"\"\"", &[]);
-    check_errors("\"\"\"\n  a\\\r\n  b\n  \"\"\"", &[]);
-    check_errors("\"\"\"\n  \\\"\"\"\n  \"\"\"", &[]);
-    check_error_ranges(
-        "\"\"\"\n  \\q\n  \"\"\"",
-        &[(0, 6, 8, LexErrorKind::UnknownEscape)],
-    );
-    // An unterminated one gets only its own error.
-    check_errors(
-        "\"\"\"x\n \\q",
-        &[(0, LexErrorKind::UnterminatedBlockString)],
-    );
-}
-
-#[test]
-fn block_validation_keeps_error_phase_order_across_mixed_line_endings() {
-    // All errors belong to one token, so stable token sorting must preserve
-    // line-ending errors before layout errors before escape errors.
-    check_error_ranges(
-        "\"\"\"x\r\n a\\q\r b\\p\r\n  \"\"\"",
-        &[
-            (0, 10, 11, LexErrorKind::LoneCarriageReturn),
-            (0, 3, 4, LexErrorKind::BlockStringOpenerContent),
-            (0, 6, 7, LexErrorKind::BlockStringIndentation),
-            (0, 11, 12, LexErrorKind::BlockStringIndentation),
-            (0, 8, 10, LexErrorKind::UnknownEscape),
-            (0, 13, 15, LexErrorKind::UnknownEscape),
-        ],
-    );
-    for newline in ["\n", "\r\n"] {
-        check_errors(&format!("\"\"\"{newline}\t\"\"\""), &[]);
-        check_errors(&format!("\"\"\"{newline}\tα{newline}\t\"\"\""), &[]);
-    }
-}
-
-#[test]
-fn block_escapes_exclude_hole_code_and_resume_after_each_hole() {
-    let source = "\"\"\"\n  {\"\\q\"}\\p{x}\\z\n  \"\"\"";
-    let lexed = lex(source).unwrap();
-    let errors: Vec<_> = lexed
-        .errors()
-        .iter()
-        .map(|error| {
-            let range = error.range;
-            (
-                error.kind,
-                &source[range.start().to_usize()..range.end().to_usize()],
-            )
-        })
-        .collect();
-    // The hole's literal reports its own `\q` once; the block's text scan
-    // does not see it again.
-    assert_eq!(
-        errors,
-        [
-            (LexErrorKind::UnknownEscape, "\\q"),
-            (LexErrorKind::UnknownEscape, "\\p"),
-            (LexErrorKind::UnknownEscape, "\\z"),
-        ]
-    );
-}
-
-#[test]
 fn line_literals_get_only_their_unterminated_error() {
     check_errors(
         "\"a\\\nb\"",
@@ -322,24 +217,15 @@ fn line_literals_get_only_their_unterminated_error() {
 fn holes_left_open_are_reported_at_their_brace() {
     check_error_ranges("\"a {b\nc", &[(1, 3, 4, LexErrorKind::UnclosedHole)]);
     check_error_ranges("\"{a}\n", &[(0, 0, 1, LexErrorKind::UnterminatedString)]);
-    // The end of input leaves a hole open and a `"""` literal unterminated,
-    // the latter reported at its opener as a whole one is.
-    check_error_ranges(
-        "\"\"\"\n  {x",
-        &[
-            (0, 0, 3, LexErrorKind::UnterminatedBlockString),
-            (1, 6, 7, LexErrorKind::UnclosedHole),
-        ],
-    );
-    check_error_ranges(
-        "\"\"\"\n  {x}",
-        &[(0, 0, 3, LexErrorKind::UnterminatedBlockString)],
-    );
+    // The end of input leaves a hole open, and the literal's text after
+    // a closed one unterminated, reported at its opener as a whole one is.
+    check_error_ranges("\"a {x", &[(1, 3, 4, LexErrorKind::UnclosedHole)]);
+    check_error_ranges("\"{x}", &[(0, 0, 1, LexErrorKind::UnterminatedString)]);
 }
 
 #[test]
-fn escapes_and_layout_are_judged_over_the_parts_of_a_literal() {
-    // Each part of a `"…"` literal is judged on its own text.
+fn escapes_are_judged_over_the_parts_of_a_literal() {
+    // Each part of a literal is judged on its own text.
     check_error_ranges(
         "\"\\q{x}\\p\"",
         &[
@@ -347,21 +233,4 @@ fn escapes_and_layout_are_judged_over_the_parts_of_a_literal() {
             (4, 6, 8, LexErrorKind::UnknownEscape),
         ],
     );
-    // A `"""` literal is judged whole once its end arrives, with the
-    // holes' code left out; an error lands on the part it begins in.
-    check_error_ranges(
-        "\"\"\"\n  \\q{x}\n  \"\"\"",
-        &[(0, 6, 8, LexErrorKind::UnknownEscape)],
-    );
-    check_error_ranges(
-        "\"\"\"\n{x}\n \"\"\"",
-        &[(1, 4, 4, LexErrorKind::BlockStringIndentation)],
-    );
-    check_errors("\"\"\"\n  {x}\n  \"\"\"", &[]);
-}
-
-#[test]
-fn validation_over_many_interpolated_block_strings_is_linear() {
-    let source = "\"\"\"\n  {x}\n  \"\"\"\n".repeat(50_000);
-    check_errors(&source, &[]);
 }
