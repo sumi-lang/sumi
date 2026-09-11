@@ -141,13 +141,6 @@ fn lower_token_errors(
                 (codes::UNKNOWN_SUFFIX, "literal suffixes are not supported")
             }
             LexErrorKind::UnknownEscape => (codes::UNKNOWN_ESCAPE, "unknown escape sequence"),
-            LexErrorKind::MalformedUnicodeEscape => {
-                (codes::MALFORMED_UNICODE_ESCAPE, "malformed Unicode escape")
-            }
-            LexErrorKind::InvalidUnicodeScalar => (
-                codes::INVALID_UNICODE_SCALAR,
-                "Unicode escape is not a valid scalar value",
-            ),
             LexErrorKind::UnknownPunctuation => (
                 codes::UNKNOWN_PUNCTUATION,
                 "punctuation has no meaning in Sumi source",

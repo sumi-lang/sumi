@@ -152,9 +152,6 @@ fn errors_locate_the_offending_source_text() {
     check_error_ranges(r#"Δ "é\q""#, &[(2, 6, 8, E::UnknownEscape)]);
     check_error_ranges("0123", &[(0, 0, 1, E::LeadingZero)]);
     check_error_ranges("1u32", &[(0, 1, 4, E::UnknownSuffix)]);
-    check_error_ranges(r#""\uX""#, &[(0, 1, 3, E::MalformedUnicodeEscape)]);
-    check_error_ranges(r#""\u{}""#, &[(0, 1, 5, E::MalformedUnicodeEscape)]);
-    check_error_ranges(r#""\u{d800}""#, &[(0, 1, 9, E::InvalidUnicodeScalar)]);
     check_error_ranges(";", &[(0, 0, 1, E::UnknownPunctuation)]);
 }
 
@@ -188,7 +185,7 @@ fn unterminated_literals_get_only_the_scanner_error() {
 
 #[test]
 fn valid_escapes_pass() {
-    check_errors(r#""a\n\r\t\\\"\0b\u{1F600}""#, &[]);
+    check_errors(r#""a\n\r\t\\\"\0b""#, &[]);
     // A quote needs no escape in a `"…"` literal: there is no `\'`.
     check_errors(r#""\'""#, &[(0, LexErrorKind::UnknownEscape)]);
 }
@@ -202,23 +199,6 @@ fn unknown_escapes_are_reported() {
             (0, LexErrorKind::UnknownEscape),
             (0, LexErrorKind::UnknownEscape),
         ],
-    );
-}
-
-#[test]
-fn unicode_escape_validation() {
-    check_errors(r#""\u{41}""#, &[]);
-    check_errors(r#""\uX""#, &[(0, LexErrorKind::MalformedUnicodeEscape)]);
-    check_errors(r#""\u{}""#, &[(0, LexErrorKind::MalformedUnicodeEscape)]);
-    check_errors(
-        r#""\u{1234567}""#,
-        &[(0, LexErrorKind::MalformedUnicodeEscape)],
-    );
-    check_errors(r#""\u{zz}""#, &[(0, LexErrorKind::MalformedUnicodeEscape)]);
-    check_errors(r#""\u{d800}""#, &[(0, LexErrorKind::InvalidUnicodeScalar)]);
-    check_errors(
-        r#""\u{110000}""#,
-        &[(0, LexErrorKind::InvalidUnicodeScalar)],
     );
 }
 
@@ -268,7 +248,6 @@ fn block_string_escapes_join_lines() {
     check_errors("\"\"\"\n  a\\\n  b\n  \"\"\"", &[]);
     check_errors("\"\"\"\n  a\\\r\n  b\n  \"\"\"", &[]);
     check_errors("\"\"\"\n  \\\"\"\"\n  \"\"\"", &[]);
-    check_errors("\"\"\"\n  \\u{41}\n  \"\"\"", &[]);
     check_error_ranges(
         "\"\"\"\n  \\q\n  \"\"\"",
         &[(0, 6, 8, LexErrorKind::UnknownEscape)],
@@ -303,7 +282,7 @@ fn block_validation_keeps_error_phase_order_across_mixed_line_endings() {
 
 #[test]
 fn block_escapes_exclude_hole_code_and_resume_after_each_hole() {
-    let source = "\"\"\"\n  {\"\\q\"}\\p{x}\\u{zz}\n  \"\"\"";
+    let source = "\"\"\"\n  {\"\\q\"}\\p{x}\\z\n  \"\"\"";
     let lexed = lex(source).unwrap();
     let errors: Vec<_> = lexed
         .errors()
@@ -323,7 +302,7 @@ fn block_escapes_exclude_hole_code_and_resume_after_each_hole() {
         [
             (LexErrorKind::UnknownEscape, "\\q"),
             (LexErrorKind::UnknownEscape, "\\p"),
-            (LexErrorKind::MalformedUnicodeEscape, "\\u{zz}"),
+            (LexErrorKind::UnknownEscape, "\\z"),
         ]
     );
 }

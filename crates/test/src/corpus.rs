@@ -368,7 +368,7 @@ impl Gen {
                 } else if self.literals && self.rng.chance(40) && !scope.is_empty() {
                     self.string_with_holes(scope)
                 } else if self.rng.chance(20) {
-                    "\"a\\tb\\nc \\\"q\\\" \\\\ \\u{1F600}\"".to_string()
+                    "\"a\\tb\\nc \\\"q\\\" \\\\ \\0\"".to_string()
                 } else {
                     self.fresh += 1;
                     format!("\"item {}\"", self.fresh)
@@ -499,13 +499,13 @@ mod tests {
         let medium = generate(64 * 1024, 0xBEEF);
         assert_eq!(
             (medium.len(), fingerprint(&medium)),
-            (66077, 13819229929035408664),
+            (65587, 16112194372698709234),
             "medium"
         );
         let damaged = corrupt(&medium, 7, 600);
         assert_eq!(
             (damaged.len(), fingerprint(&damaged)),
-            (66066, 212554590890804724),
+            (65574, 17221195943040988982),
             "damaged"
         );
     }

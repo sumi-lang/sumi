@@ -412,10 +412,6 @@ pub enum LexErrorKind {
     LeadingZero,
     /// A `\` escape outside the supported set.
     UnknownEscape,
-    /// A `\u` escape without a well-formed `{1-6 hex digits}` payload.
-    MalformedUnicodeEscape,
-    /// A `\u` escape naming a surrogate or a value beyond U+10FFFF.
-    InvalidUnicodeScalar,
     /// Punctuation with no role in the language, such as `;` or `[`.
     UnknownPunctuation,
     /// Text after the opening `"""` on its line; the content begins on the

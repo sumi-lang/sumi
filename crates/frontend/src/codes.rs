@@ -16,10 +16,6 @@ pub const RESERVED_IDENTIFIER: DiagnosticCode = DiagnosticCode::new(SYNTAX, "res
 pub const UNKNOWN_SUFFIX: DiagnosticCode = DiagnosticCode::new(SYNTAX, "unknown-suffix");
 pub const NONCANONICAL_NUMBER: DiagnosticCode = DiagnosticCode::new(SYNTAX, "noncanonical-number");
 pub const UNKNOWN_ESCAPE: DiagnosticCode = DiagnosticCode::new(SYNTAX, "unknown-escape");
-pub const MALFORMED_UNICODE_ESCAPE: DiagnosticCode =
-    DiagnosticCode::new(SYNTAX, "malformed-unicode-escape");
-pub const INVALID_UNICODE_SCALAR: DiagnosticCode =
-    DiagnosticCode::new(SYNTAX, "invalid-unicode-scalar");
 pub const UNKNOWN_PUNCTUATION: DiagnosticCode = DiagnosticCode::new(SYNTAX, "unknown-punctuation");
 pub const BLOCK_STRING_OPENER_CONTENT: DiagnosticCode =
     DiagnosticCode::new(SYNTAX, "block-string-opener-content");

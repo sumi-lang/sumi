@@ -536,21 +536,6 @@ impl<'src> Lexer<'src> {
                         // literal; the break stays for the arm below, so a
                         // lone `\r` is still flagged.
                         None | Some(b'\n' | b'\r') => {}
-                        // The braces of a `\u{…}` escape are its own: its
-                        // payload is taken through the `}`, as far as it is
-                        // hex digits, and opens no hole.
-                        Some(b'u') if self.peek_byte_at(1) == Some(b'{') => {
-                            self.position += 2;
-                            while self
-                                .peek_byte()
-                                .is_some_and(|byte| byte.is_ascii_hexdigit())
-                            {
-                                self.position += 1;
-                            }
-                            if self.peek_byte() == Some(b'}') {
-                                self.position += 1;
-                            }
-                        }
                         Some(_) => {
                             self.bump_char();
                         }

@@ -525,14 +525,21 @@ fn holes_split_a_string_into_parts() {
             r#"String 8..9 "\"""#,
         ],
     );
-    // An escaped brace and the braces of a `\u{…}` escape open nothing.
+    // An escaped brace opens nothing; the brace after any other escape
+    // does, since no escape takes a payload.
     check(
         r#""\{x\}""#,
         &[r#"String 0..7 "\"\\{x\\}\"" TokenFlags(HAS_ESCAPE)"#],
     );
     check(
         r#""\u{41}""#,
-        &[r#"String 0..8 "\"\\u{41}\"" TokenFlags(HAS_ESCAPE)"#],
+        &[
+            r#"String 0..3 "\"\\u" TokenFlags(HAS_ESCAPE)"#,
+            r#"Punct 3..4 "{" TokenFlags(HOLE_AFTER)"#,
+            r#"Number 4..6 "41" TokenFlags(HOLE_AFTER)"#,
+            r#"Punct 6..7 "}""#,
+            r#"String 7..8 "\"""#,
+        ],
     );
 }
 
