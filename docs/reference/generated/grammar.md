@@ -163,8 +163,8 @@ the parser's spacing rules keep the third unambiguous.
 
 A string literal takes one of two forms. `"…"` sits on one line: a line
 break ends an unterminated one, so a stray quote costs its line and
-nothing after it. The escapes are `\n`, `\r`, `\t`, `\\`, `\"`, `\0`,
-and `\u{…}` with one to six hex digits.
+nothing after it. The escapes are `\n`, `\r`, `\t`, `\\`, `\"`, and
+`\0`.
 
 Text that spans lines is a multi-line literal, `"""` to `"""`:
 

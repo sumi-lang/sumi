@@ -1,8 +1,6 @@
-// A `\{` or `\}` is a brace, a `}` outside a hole is one too, and the
-// braces of a `\u{…}` escape are its own.
+// A `\{` or `\}` is a brace, and a `}` outside a hole is one too.
 fn braces() -> str {
     let json = "\{\"id\": {id}, \"tags\": []\}"
     let closer = "a } b"
-    let unicode = "\u{41}{x}"
-    "{json}{closer}{unicode}"
+    "{json}{closer}"
 }

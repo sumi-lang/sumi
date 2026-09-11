@@ -184,6 +184,6 @@ mod tests {
         let dictionary = codegen::dictionary(&grammar);
         assert!(dictionary.contains("FnKw=\"fn\""));
         assert!(dictionary.contains("\n\"\\\"\\\"\\\"\"\n"), "{dictionary}");
-        assert!(dictionary.contains("\n\"\\\\u{\"\n"), "{dictionary}");
+        assert!(dictionary.contains("\n\"\\\\{\"\n"), "{dictionary}");
     }
 }

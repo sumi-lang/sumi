@@ -3,9 +3,8 @@
 //! The raw lexer establishes literal *shape* and classification; these
 //! checks establish *validity* under Sumi's rules: canonical integers (no
 //! leading zeros, no suffixes) and the v0 escape set (`\n`, `\r`, `\t`,
-//! `\\`, `\"`, `\0`, `\u{…}`). The escape walker is the single
-//! definition of the escape grammar; value decoding will reuse it when
-//! lowering needs it.
+//! `\\`, `\"`, `\0`). The escape walker is the single definition of the
+//! escape grammar; value decoding will reuse it when lowering needs it.
 //!
 //! Multi-line literals add layout: the content begins on the line after the
 //! opening `"""`, the closing `"""` begins its own line, and every content
@@ -176,7 +175,6 @@ fn walk_escapes(
 
         let result = match chars.next() {
             Some('n' | 'r' | 't' | '\\' | '"' | '0' | '{' | '}') => Ok(()),
-            Some('u') => scan_unicode_escape(&mut chars),
             Some('\n') if multiline => Ok(()),
             Some('\r') if multiline => {
                 if chars.as_str().starts_with('\n') {
@@ -189,40 +187,5 @@ fn walk_escapes(
         };
         let end = body.len() - chars.as_str().len();
         piece(start, end, result);
-    }
-}
-
-/// Scan the `{1-6 hex digits}` payload of a `\u` escape. A malformed payload
-/// is consumed through its closing `}` when one exists, so it still counts as
-/// a single piece.
-fn scan_unicode_escape(chars: &mut std::str::Chars<'_>) -> Result<(), LexErrorKind> {
-    if !chars.as_str().starts_with('{') {
-        return Err(LexErrorKind::MalformedUnicodeEscape);
-    }
-    chars.next();
-
-    let mut digits = 0usize;
-    let mut value = 0u32;
-    let mut malformed = false;
-    loop {
-        match chars.next() {
-            None => return Err(LexErrorKind::MalformedUnicodeEscape),
-            Some('}') => break,
-            Some(ch) => match ch.to_digit(16) {
-                Some(digit) if digits < 6 => {
-                    digits += 1;
-                    value = value * 16 + digit;
-                }
-                _ => malformed = true,
-            },
-        }
-    }
-
-    if malformed || digits == 0 {
-        Err(LexErrorKind::MalformedUnicodeEscape)
-    } else if char::from_u32(value).is_none() {
-        Err(LexErrorKind::InvalidUnicodeScalar)
-    } else {
-        Ok(())
     }
 }

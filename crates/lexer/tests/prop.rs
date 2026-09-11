@@ -79,7 +79,6 @@ const LOOSE_FRAGMENTS: &[&str] = &[
     "\"{x}\"",
     "\"\"\"\n  {",
     "\\{",
-    "\\u{41}",
 ];
 
 fn fragment() -> impl Strategy<Value = String> {
