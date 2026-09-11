@@ -1,5 +1,5 @@
 == tree ==
-SourceFile 0..259
+SourceFile 0..256
   FnItem 0..32
     Name 3..9 "answer"
     ParamList 9..11 "()"
@@ -24,53 +24,53 @@ SourceFile 0..259
           NameRef 76..77 "x"
           LiteralExpr 80..81 "2"
       NameRef 86..87 "y"
-  FnItem 90..122
-    Name 93..98 "café"
-    ParamList 98..108
-      Param 99..107
-        Name 99..101 "é"
-        TypeRef 103..107 "bool"
-    TypeRef 112..116 "bool"
-    PrefixExpr 119..122
-      NameRef 120..122 "é"
-  FnItem 123..176
-    Name 126..132 "ignore"
-    ParamList 132..141
-      Param 133..140
-        Name 133..134 "x"
-        TypeRef 136..140 "unit"
-    TypeRef 145..149 "unit"
-    Block 150..176
-      DiscardStmt 156..168
-        CallExpr 160..168
-          NameRef 160..166 "answer"
-          ArgList 166..168 "()"
-      NameRef 173..174 "x"
-  FnItem 177..214
-    Name 180..183 "sub"
-    ParamList 183..199
-      Param 184..190
-        Name 184..185 "a"
-        TypeRef 187..190 "int"
-      Param 192..198
-        Name 192..193 "b"
-        TypeRef 195..198 "int"
-    TypeRef 203..206 "int"
-    BinaryExpr 209..214
-      NameRef 209..210 "a"
-      NameRef 213..214 "b"
-  FnItem 215..258
-    Name 218..225 "ordered"
-    ParamList 225..227 "()"
-    TypeRef 231..234 "int"
-    BinaryExpr 237..258
-      BinaryExpr 237..254
-        CallExpr 237..246
-          NameRef 237..240 "sub"
-          ArgList 240..246
-            LiteralExpr 241..242 "8"
-            LiteralExpr 244..245 "3"
-        BinaryExpr 249..254
-          LiteralExpr 249..250 "2"
-          LiteralExpr 253..254 "1"
-      LiteralExpr 257..258 "4"
+  FnItem 90..119
+    Name 93..97 "cafe"
+    ParamList 97..106
+      Param 98..105
+        Name 98..99 "e"
+        TypeRef 101..105 "bool"
+    TypeRef 110..114 "bool"
+    PrefixExpr 117..119
+      NameRef 118..119 "e"
+  FnItem 120..173
+    Name 123..129 "ignore"
+    ParamList 129..138
+      Param 130..137
+        Name 130..131 "x"
+        TypeRef 133..137 "unit"
+    TypeRef 142..146 "unit"
+    Block 147..173
+      DiscardStmt 153..165
+        CallExpr 157..165
+          NameRef 157..163 "answer"
+          ArgList 163..165 "()"
+      NameRef 170..171 "x"
+  FnItem 174..211
+    Name 177..180 "sub"
+    ParamList 180..196
+      Param 181..187
+        Name 181..182 "a"
+        TypeRef 184..187 "int"
+      Param 189..195
+        Name 189..190 "b"
+        TypeRef 192..195 "int"
+    TypeRef 200..203 "int"
+    BinaryExpr 206..211
+      NameRef 206..207 "a"
+      NameRef 210..211 "b"
+  FnItem 212..255
+    Name 215..222 "ordered"
+    ParamList 222..224 "()"
+    TypeRef 228..231 "int"
+    BinaryExpr 234..255
+      BinaryExpr 234..251
+        CallExpr 234..243
+          NameRef 234..237 "sub"
+          ArgList 237..243
+            LiteralExpr 238..239 "8"
+            LiteralExpr 241..242 "3"
+        BinaryExpr 246..251
+          LiteralExpr 246..247 "2"
+          LiteralExpr 250..251 "1"
+      LiteralExpr 254..255 "4"

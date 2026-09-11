@@ -626,61 +626,34 @@ fn nested_blocks_consume_only_their_own_statements() {
 
 #[test]
 fn source_origins_are_utf8_byte_ranges() {
-    let a = clean("fn café(é: int) -> int = é + 1");
+    let a = clean("// café\nfn f(e: int) -> int = e + 1");
     let body = a.functions[0].body().unwrap();
     let origin = body.exprs[0].origin;
     assert_eq!(origin.file(), FileId::new(17));
     assert_eq!(
         &a.parsed.source()[origin.range().start().to_usize()..origin.range().end().to_usize()],
-        "é"
+        "e"
     );
-    let a = check("fn café() -> int = absent");
+    let a = check("// café\nfn f() -> int = absent");
     assert_eq!(
         a.diagnostics[0].primary.location.start().to_usize(),
-        "fn café() -> int = ".len()
+        "// café\nfn f() -> int = ".len()
     );
-}
-
-#[test]
-fn identifier_identity_is_nfkc_without_rewriting_source() {
-    assert_eq!(unicode_normalization::UNICODE_VERSION, (17, 0, 0));
-    for (left, right, key) in [
-        ("é", "e\u{301}", "é"),
-        ("K", "K", "K"),
-        ("Ａ", "A", "A"),
-        ("ﬀ", "ff", "ff"),
-    ] {
-        for (declared, used) in [(left, right), (right, left)] {
-            let source = format!("fn {declared}({declared}: int) -> int = {used}");
-            let a = clean(&source);
-            assert_eq!(a.parsed().source(), source);
-            let body = a.functions()[0].body().unwrap();
-            assert_eq!(a.functions()[0].name(), Some(key));
-            let range = body.expression(body.root()).origin.range();
-            assert_eq!(
-                &source[range.start().to_usize()..range.end().to_usize()],
-                used
-            );
-            clean(&format!(
-                "fn {declared}() -> int = 1\nfn caller() -> int = {used}()"
-            ));
-        }
-    }
 }
 
 #[test]
 fn duplicate_functions_keep_the_first_origin_and_poison_calls() {
-    let a = check("fn K() = 1\nfn K() = true\nfn Ｋ() = {}\nfn caller() = K()");
+    let a = check("fn K() = 1\nfn K() = true\nfn caller() = K()");
     assert!(a.parsed().diagnostics().is_empty());
-    assert_eq!(codes(&a), ["duplicate-name", "duplicate-name"]);
+    assert_eq!(codes(&a), ["duplicate-name"]);
     for diagnostic in a.diagnostics() {
         assert_eq!(diagnostic.secondary.len(), 1);
         let origin = diagnostic.secondary[0].location.span().range();
         assert_eq!(origin.start().to_usize(), 3);
-        assert_eq!(origin.end().to_usize(), 6);
+        assert_eq!(origin.end().to_usize(), 4);
     }
-    assert!(a.functions()[3].signature().is_none());
-    assert!(a.functions()[3].body().is_none());
+    assert!(a.functions()[2].signature().is_none());
+    assert!(a.functions()[2].body().is_none());
 }
 
 #[test]
@@ -826,7 +799,7 @@ fn inferred_results_and_recursive_constraints() {
             "fn f() = { let x = g()\n let x = x + 1\n x }\nfn g() = 1",
             vec![Ty::Int, Ty::Int],
         ),
-        ("fn K() = 1\nfn f() = K()", vec![Ty::Int, Ty::Int]),
+        ("fn K() = 1\nfn f() = K()", vec![Ty::Int, Ty::Int]),
     ] {
         let a = clean(source);
         let actual: Vec<_> = a
@@ -919,7 +892,7 @@ fn inference_preserves_resolution_poison_and_annotation_boundaries() {
             "not-callable",
         ),
         (
-            "fn f() = 1\nfn Ｆ() = 2\nfn F() = 3\nfn g() = F()",
+            "fn f() = 1\nfn F() = 2\nfn F() = 3\nfn g() = F()",
             "duplicate-name",
         ),
         (

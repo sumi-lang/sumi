@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::collections::HashMap;
 
 use sumi_frontend::{DiagnosticCode, DiagnosticGroup, Label, Location};
@@ -7,7 +6,6 @@ use sumi_syntax::{
     NodeIdx, NodeKind, SyntaxTree,
     ast::{self, AstNode},
 };
-use unicode_normalization::UnicodeNormalization;
 
 use crate::infer::{Inference, Term};
 use crate::*;
@@ -108,20 +106,11 @@ impl Source<'_> {
         let range = self.span(node).range();
         &self.parsed.source()[range.start().to_usize()..range.end().to_usize()]
     }
-    fn name_key(&self, node: NodeIdx) -> Cow<'_, str> {
-        let text = self.text(node);
-        if text.is_ascii() {
-            return Cow::Borrowed(text);
-        }
-        // TODO: Implement a faster custom NFKC normalizer; investigate SIMD while
-        // preserving Unicode conformance and benchmarking identifier workloads.
-        Cow::Owned(text.nfkc().collect())
-    }
     fn name(&self, name: Option<ast::Name>) -> Option<(Box<str>, NodeIdx)> {
         let node = name?.node();
         (!self.tree.has_error(node)
             && self.parsed.lexed().kind(self.tree.first_token(node)) == SyntaxKind::Ident)
-            .then(|| (self.name_key(node).into_owned().into_boxed_str(), node))
+            .then(|| (self.text(node).into(), node))
     }
     fn error(
         &mut self,
@@ -153,7 +142,7 @@ impl Source<'_> {
         if self.tree.has_error(node.node()) {
             return None;
         }
-        match self.name_key(node.node()).as_ref() {
+        match self.text(node.node()) {
             "int" => Some(Ty::Int),
             "bool" => Some(Ty::Bool),
             "unit" => Some(Ty::Unit),
@@ -644,8 +633,8 @@ impl<'a, 's> Builder<'a, 's> {
         }
     }
     fn target(&mut self, node: NodeIdx) -> Option<FunctionId> {
-        let name = self.source.name_key(node);
-        if let Some(local) = self.lookup(&name) {
+        let name = self.source.text(node);
+        if let Some(local) = self.lookup(name) {
             if let Some(local) = local {
                 self.source.error(
                     node,
@@ -656,7 +645,7 @@ impl<'a, 's> Builder<'a, 's> {
             }
             return None;
         }
-        match self.names.get(name.as_ref()) {
+        match self.names.get(name) {
             Some((_, target)) => *target,
             None => {
                 self.source.error(
@@ -847,14 +836,14 @@ impl<'a, 's> Builder<'a, 's> {
                 ));
             }
             NodeKind::NameRef => {
-                let name = self.source.name_key(node);
-                match self.lookup(&name) {
+                let name = self.source.text(node);
+                match self.lookup(name) {
                     Some(Some(local)) => {
                         self.emit(node, ExprKind::Local(local), self.locals[local.index()].ty);
                     }
                     Some(None) => return None,
                     None => {
-                        if self.names.contains_key(name.as_ref()) {
+                        if self.names.contains_key(name) {
                             self.unsupported(node);
                         } else {
                             self.source.error(

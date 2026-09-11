@@ -9,7 +9,6 @@ sumi-frontend = { path = "../frontend" }
 sumi-lexer = { path = "../lexer" }
 sumi-syntax = { path = "../syntax" }
 sumi-text = { path = "../text" }
-unicode-normalization = "=0.1.25"
 
 [dev-dependencies]
 criterion = { package = "codspeed-criterion-compat", version = "=5.0.1", default-features = false, features = ["cargo_bench_support"] }

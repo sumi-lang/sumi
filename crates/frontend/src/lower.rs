@@ -87,17 +87,6 @@ fn lower_token_errors(
 ) {
     for error in errors {
         let (code, message) = match error.kind {
-            LexErrorKind::ReservedIdentifier(keyword) => {
-                diagnostics.push(primary(
-                    codes::RESERVED_IDENTIFIER,
-                    format!(
-                        "identifier normalizes to reserved spelling `{}`",
-                        keyword.text().expect("reserved spelling")
-                    ),
-                    snapshot.range(error.range),
-                ));
-                continue;
-            }
             LexErrorKind::LeadingZero => {
                 let mut diagnostic = primary(
                     codes::NONCANONICAL_NUMBER,

@@ -14,8 +14,6 @@ const EXTRA_SINGLE_TOKENS: &[&str] = &[
     "x",
     "foo",
     "_a",
-    "Δx",
-    "μ2",
     "r",
     "raw",
     // Numbers, valid and pathological: suffixes and padding.

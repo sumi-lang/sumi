@@ -7,8 +7,8 @@
 //! [`SyntaxKind`] while its bytes are cache-hot — keywords and punctuation
 //! roles — and stores the shape-only [`RawKind`] beside it. Token-local
 //! validity is established before [`lex`] returns by selectively
-//! re-examining malformed numbers, non-ASCII identifiers, escaped
-//! literals, and roleless punctuation. Punctuation gluing happens later in
+//! re-examining malformed numbers, escaped literals, and roleless
+//! punctuation. Punctuation gluing happens later in
 //! the parser.
 //!
 //! Every literal is bounded by its line: an unterminated `"…"` ends at the

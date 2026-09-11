@@ -1,43 +1,6 @@
 //! Token-local validity: the errors collected before `lex` returns.
 
-use sumi_lexer::{LexErrorKind, SyntaxKind, canonicalize_number_literal, lex};
-
-#[test]
-fn normalized_keywords_are_invalid_identifiers_not_keywords() {
-    for (source, keyword) in [
-        ("ｅｌｓｅ", SyntaxKind::ElseKw),
-        ("falſe", SyntaxKind::FalseKw),
-        ("ｆｎ", SyntaxKind::FnKw),
-        ("ｉｆ", SyntaxKind::IfKw),
-        ("ｌｅｔ", SyntaxKind::LetKw),
-        ("ｍｕｔ", SyntaxKind::MutKw),
-        ("ｒｅｔｕｒｎ", SyntaxKind::ReturnKw),
-        ("ｔｒｕｅ", SyntaxKind::TrueKw),
-    ] {
-        let lexed = lex(source).unwrap();
-        let error = &lexed.errors()[0];
-        assert_eq!(lexed.errors().len(), 1);
-        assert_eq!(error.kind, LexErrorKind::ReservedIdentifier(keyword));
-        assert_eq!(lexed.kind(error.token), SyntaxKind::Ident);
-        assert_eq!(lexed.text(source, error.token), source);
-        assert_eq!(error.range, lexed.range(error.token));
-    }
-    for source in [
-        "true",
-        "false",
-        "fn",
-        "_",
-        "ｉｎｔ",
-        "ﬀ",
-        "é",
-        "e\u{301}",
-        "ｔｒｕｅ_value",
-        "True",
-    ] {
-        check_errors(source, &[]);
-    }
-    check_errors("// ｔｒｕｅ\n\"ｆｎ\"", &[]);
-}
+use sumi_lexer::{LexErrorKind, canonicalize_number_literal, lex};
 
 #[track_caller]
 fn check_errors(source: &str, expected: &[(u32, LexErrorKind)]) {
@@ -111,7 +74,6 @@ fn number_canonicalization_strips_leading_zeros_and_preserves_suffixes() {
         ("000", Some("0")),
         ("0010", Some("10")),
         ("01u32", Some("1u32")),
-        ("01Δ", Some("1Δ")),
         ("01_000", Some("1_000")),
         ("00e5", Some("0e5")),
         ("0", None),
@@ -129,7 +91,7 @@ fn number_canonicalization_strips_leading_zeros_and_preserves_suffixes() {
 
 #[test]
 fn canonicalized_numbers_have_no_remaining_canonicalization_errors() {
-    for source in ["0123", "000", "0010", "01u32", "01Δ", "01_000", "00e5"] {
+    for source in ["0123", "000", "0010", "01u32", "01_000", "00e5"] {
         let replacement = canonicalize_number_literal(source).expect("source is noncanonical");
         let lexed = lex(&replacement).expect("replacement fits in u32");
         assert!(
@@ -149,7 +111,10 @@ fn errors_locate_the_offending_source_text() {
         "x 01u32",
         &[(2, 2, 3, E::LeadingZero), (2, 4, 7, E::UnknownSuffix)],
     );
-    check_error_ranges(r#"Δ "é\q""#, &[(2, 6, 8, E::UnknownEscape)]);
+    check_error_ranges(
+        r#"Δ "é\q""#,
+        &[(0, 0, 2, E::UnknownCharacter), (2, 6, 8, E::UnknownEscape)],
+    );
     check_error_ranges("0123", &[(0, 0, 1, E::LeadingZero)]);
     check_error_ranges("1u32", &[(0, 1, 4, E::UnknownSuffix)]);
     check_error_ranges(";", &[(0, 0, 1, E::UnknownPunctuation)]);

@@ -48,14 +48,14 @@ pub(crate) struct LateError {
     pub(crate) kind: LexErrorKind,
 }
 
-const fn is_ascii_ident_start(byte: u8) -> bool {
+/// Identifiers are ASCII: a letter or `_`, then letters, digits, and `_`.
+/// Any other character has no meaning in the language.
+const fn is_ident_start(byte: u8) -> bool {
     byte == b'_' || byte.is_ascii_alphabetic()
 }
 
-fn is_ident_continue(ch: char) -> bool {
-    ch == '_'
-        || ch.is_ascii_alphanumeric()
-        || (!ch.is_ascii() && unicode_ident::is_xid_continue(ch))
+const fn is_ident_continue(byte: u8) -> bool {
+    byte == b'_' || byte.is_ascii_alphanumeric()
 }
 
 pub(crate) struct Lexer<'src> {
@@ -150,7 +150,7 @@ impl<'src> Lexer<'src> {
                 ),
                 b'0'..=b'9' => (SyntaxKind::IntLiteral, RawKind::Number, self.scan_number()),
                 b'"' => self.scan_string(),
-                byte if is_ascii_ident_start(byte) => {
+                byte if is_ident_start(byte) => {
                     self.scan_ident();
                     (
                         self.classify_ident(start),
@@ -163,9 +163,8 @@ impl<'src> Lexer<'src> {
                     let kind = SyntaxKind::from_punct(byte).unwrap_or(SyntaxKind::Error);
                     (kind, RawKind::Punct, TokenFlags::EMPTY)
                 }
-                byte if !byte.is_ascii() => self.scan_unicode(start),
                 _ => {
-                    self.bump_ascii();
+                    self.bump_char();
                     (SyntaxKind::Error, RawKind::Unknown, TokenFlags::EMPTY)
                 }
             }
@@ -436,7 +435,7 @@ impl<'src> Lexer<'src> {
     }
 
     fn scan_ident(&mut self) {
-        self.bump_char();
+        self.bump_ascii();
         self.eat_ident_continue();
     }
 
@@ -448,32 +447,8 @@ impl<'src> Lexer<'src> {
     }
 
     fn eat_ident_continue(&mut self) {
-        while let Some(ch) = self.remaining().chars().next() {
-            if !is_ident_continue(ch) {
-                break;
-            }
-            self.position += ch.len_utf8();
-        }
-    }
-
-    fn scan_unicode(&mut self, start: usize) -> (SyntaxKind, RawKind, TokenFlags) {
-        let ch = self
-            .remaining()
-            .chars()
-            .next()
-            .expect("scan_unicode called at EOF");
-        debug_assert!(!ch.is_ascii());
-
-        if unicode_ident::is_xid_start(ch) {
-            self.scan_ident();
-            (
-                self.classify_ident(start),
-                RawKind::Ident,
-                TokenFlags::EMPTY,
-            )
-        } else {
-            self.bump_char();
-            (SyntaxKind::Error, RawKind::Unknown, TokenFlags::EMPTY)
+        while self.peek_byte().is_some_and(is_ident_continue) {
+            self.position += 1;
         }
     }
 }

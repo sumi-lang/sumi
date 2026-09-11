@@ -3,7 +3,7 @@ fn twice(x: int) -> int {
     let y: int = x * 2
     y
 }
-fn café(é: bool) -> bool = !é
+fn cafe(e: bool) -> bool = !e
 fn ignore(x: unit) -> unit {
     _ = answer()
     x

@@ -6,7 +6,7 @@ use proptest::strategy::ValueTree;
 use proptest::test_runner::{Config, RngAlgorithm, TestRng, TestRunner};
 
 fn name() -> BoxedStrategy<String> {
-    prop::sample::select(&["a", "b", "foo", "x1", "Δ"][..])
+    prop::sample::select(&["a", "b", "foo", "x1"][..])
         .prop_map(str::to_owned)
         .boxed()
 }
