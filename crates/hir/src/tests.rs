@@ -1,5 +1,7 @@
 use super::*;
-use sumi_frontend::{FileId, parse_source};
+use sumi_frontend::{DiagnosticCode, FileId, parse_source};
+
+use crate::codes::*;
 
 fn check(source: &str) -> Analysis {
     analyze(parse_source(FileId::new(17), source.into()).unwrap())
@@ -19,12 +21,8 @@ fn clean(source: &str) -> Analysis {
     analysis
 }
 
-fn codes(analysis: &Analysis) -> Vec<&'static str> {
-    analysis
-        .diagnostics()
-        .iter()
-        .map(|d| d.code.name())
-        .collect()
+fn codes(analysis: &Analysis) -> Vec<DiagnosticCode> {
+    analysis.diagnostics().iter().map(|d| d.code).collect()
 }
 
 #[test]
@@ -234,7 +232,7 @@ fn lexical_scopes_and_sequential_shadowing() {
         .collect();
     assert_eq!(reads, [0, 1, 2, 1]);
     let a = check("fn f() -> int = 1\nfn g() -> int {\n let f = 2\n f()\n}\n");
-    assert_eq!(codes(&a), ["not-callable"]);
+    assert_eq!(codes(&a), [NOT_CALLABLE]);
     assert_eq!(a.diagnostics[0].secondary.len(), 1);
 }
 
@@ -256,11 +254,11 @@ fn lazy_structure_and_unit_policy() {
     ] {
         let a = check(source);
         assert!(!a.is_valid(), "{source}");
-        assert!(codes(&a).contains(&"type-mismatch"), "{source}");
+        assert!(codes(&a).contains(&TYPE_MISMATCH), "{source}");
     }
     let a =
         check("fn f() -> bool = true || missing\nfn g() -> int = if true { 1 } else { absent }\n");
-    assert_eq!(codes(&a), ["unknown-name", "unknown-name"]);
+    assert_eq!(codes(&a), [UNKNOWN_NAME, UNKNOWN_NAME]);
 }
 
 #[test]
@@ -274,7 +272,7 @@ fn mismatch_labels_distinguish_branches_from_declarations() {
         ("fn f() { let x: bool = 1 }", "declared here"),
     ] {
         let a = check(source);
-        assert_eq!(codes(&a), ["type-mismatch"]);
+        assert_eq!(codes(&a), [TYPE_MISMATCH]);
         let labels = &a.diagnostics[0].secondary;
         assert_eq!(labels.len(), 1);
         assert_eq!(labels[0].message.as_deref(), Some(expected));
@@ -300,7 +298,7 @@ fn signed_literal_envelopes() {
         "0 - 9223372036854775808",
     ] {
         let a = check(&format!("fn f() -> int = {expr}"));
-        assert_eq!(codes(&a), ["integer-range"], "{expr}");
+        assert_eq!(codes(&a), [INTEGER_RANGE], "{expr}");
     }
     let a = clean("fn f() -> int = --9223372036854775808");
     assert!(matches!(
@@ -321,15 +319,12 @@ fn bad_calls_check_arguments_before_poisoning_binding() {
         "fn probe() {\n let x = 1\n let x = missing(\n {\n let x = x + 1\n x + true\n },\n x + false\n )\n _ = x\n}\n",
     );
     assert!(a.parsed.diagnostics().is_empty());
-    assert_eq!(
-        codes(&a),
-        ["unknown-name", "type-mismatch", "type-mismatch"]
-    );
+    assert_eq!(codes(&a), [UNKNOWN_NAME, TYPE_MISMATCH, TYPE_MISMATCH]);
     assert!(a.functions[0].body().is_none());
     let a = check("fn f(x: int, y: bool) {}\nfn g() { _ = f(true, 1, absent) }\n");
     assert_eq!(
         codes(&a),
-        ["arity", "type-mismatch", "type-mismatch", "unknown-name"]
+        [ARITY, TYPE_MISMATCH, TYPE_MISMATCH, UNKNOWN_NAME]
     );
 }
 
@@ -338,7 +333,7 @@ fn expression_results_stay_body_local_across_failed_bodies() {
     let a = check(
         "fn first() = (23 + 7)\nfn failed() = (missing)\nfn flag() = ((true))\nfn last() = -((17))",
     );
-    assert_eq!(codes(&a), ["unknown-name"]);
+    assert_eq!(codes(&a), [UNKNOWN_NAME]);
     assert!(a.functions[1].body().is_none());
     for index in [0, 2, 3] {
         invariant(&a, &a.functions[index]);
@@ -385,17 +380,17 @@ fn call_requirements_replay_in_argument_order() {
     let mismatches: Vec<_> = a
         .diagnostics()
         .iter()
-        .filter(|d| d.code.name() == "type-mismatch")
+        .filter(|d| d.code == TYPE_MISMATCH)
         .collect();
     assert_eq!(mismatches.len(), 1);
-    assert_eq!(mismatches[0].message.as_ref(), "expected Bool, found Int");
+    assert_eq!(mismatches[0].message.as_ref(), "expected bool, found int");
     assert_eq!(
         mismatches[0].primary.location.start().to_usize(),
         source.rfind("(x)").unwrap()
     );
 
     let a = check("fn take(a: int, b: bool) {}\nfn caller() { take(missing, 23) }");
-    assert_eq!(codes(&a), ["unknown-name", "type-mismatch"]);
+    assert_eq!(codes(&a), [UNKNOWN_NAME, TYPE_MISMATCH]);
 }
 
 #[test]
@@ -413,13 +408,13 @@ fn signatures_do_not_invent_missing_types_or_resolve_ambiguity() {
         assert!(a.functions[0].signature().is_none(), "{source}");
     }
     let a = check("fn f(x: mystery) {}\nfn g() { _ = f(unknown, 1) }\n");
-    assert_eq!(codes(&a), ["unknown-type", "unknown-name"]);
+    assert_eq!(codes(&a), [UNKNOWN_TYPE, UNKNOWN_NAME]);
     assert!(a.functions.iter().all(|f| f.body().is_none()));
     let a = check("fn f() {}\nfn f() {}\nfn g() = f()\n");
-    assert_eq!(codes(&a), ["duplicate-name"]);
+    assert_eq!(codes(&a), [DUPLICATE_NAME]);
     assert!(a.functions[2].body().is_none());
     let a = check("fn f(x: int, x: bool) {\n _ = !x\n _ = -x\n}\nfn g() = f(1, true)\n");
-    assert_eq!(codes(&a), ["duplicate-name"]);
+    assert_eq!(codes(&a), [DUPLICATE_NAME]);
     assert!(a.functions[0].signature().is_some());
     assert!(a.functions[0].body().is_none());
     assert!(a.functions[1].body().is_some());
@@ -450,16 +445,16 @@ fn token_gaps_ignore_trivia_without_losing_semantics() {
 
     let a = check("fn f() = { let\tmut\tvalue = 3\n value }");
     assert!(a.parsed().diagnostics().is_empty());
-    assert_eq!(codes(&a), ["unsupported"]);
+    assert_eq!(codes(&a), [UNSUPPORTED]);
     assert!(a.functions()[0].body().is_none());
 }
 
 #[test]
 fn invalid_parameters_do_not_hide_independent_result_errors() {
     for (parameter, expected) in [
-        ("x: mystery", &["unknown-type", "type-mismatch"][..]),
+        ("x: mystery", &[UNKNOWN_TYPE, TYPE_MISMATCH][..]),
         // Missing annotations are already diagnosed by the parser.
-        ("x", &["type-mismatch"][..]),
+        ("x", &[TYPE_MISMATCH][..]),
     ] {
         let a = check(&format!(
             "fn broken({parameter}) -> int = true\nfn independent() -> int = 42\n"
@@ -486,7 +481,7 @@ fn damaged_and_unsupported_declarations_hide_old_bindings() {
         ));
         assert!(!a.is_valid(), "{binding}");
         assert!(
-            !codes(&a).contains(&"type-mismatch"),
+            !codes(&a).contains(&TYPE_MISMATCH),
             "{binding}: {:?}",
             a.diagnostics
         );
@@ -507,7 +502,7 @@ fn damaged_and_unsupported_declarations_hide_old_bindings() {
         assert!(a.functions[0].body().is_none(), "{source}");
     }
     let a = check("fn f() {\n _ = missing\n");
-    assert_eq!(codes(&a), ["unknown-name"]);
+    assert_eq!(codes(&a), [UNKNOWN_NAME]);
     for source in [
         "fn f() { return }",
         "fn f() { let x = 1\n x = 2 }",
@@ -518,7 +513,7 @@ fn damaged_and_unsupported_declarations_hide_old_bindings() {
         let a = check(source);
         assert!(a.parsed.diagnostics().is_empty(), "{source}");
         assert!(!a.is_valid());
-        assert!(codes(&a).contains(&"unsupported"), "{source}");
+        assert!(codes(&a).contains(&UNSUPPORTED), "{source}");
     }
 }
 
@@ -540,14 +535,14 @@ fn syntax_diagnostics_are_preserved_and_always_reject() {
 fn unused_values_are_semantic_errors_without_complete_bodies() {
     let a = check("fn f() -> int { 1\n 2 }");
     assert!(a.parsed.diagnostics().is_empty());
-    assert_eq!(codes(&a), ["unused-value"]);
+    assert_eq!(codes(&a), [UNUSED_VALUE]);
     assert!(!a.is_valid());
     assert!(a.functions[0].body().is_none());
     clean("fn f() -> int { let u = {}\n u\n _ = 1\n 2 }");
 
     // The two unused values share an inferred type and produce distinct errors.
     let a = check("fn f() = { let x = value()\n x\n x\n 0 }\nfn value() = 3");
-    assert_eq!(codes(&a), ["unused-value", "unused-value"]);
+    assert_eq!(codes(&a), [UNUSED_VALUE, UNUSED_VALUE]);
     assert!(a.diagnostics[0].primary.location.start() < a.diagnostics[1].primary.location.start());
     assert!(a.functions[0].body().is_none());
 }
@@ -619,7 +614,7 @@ fn nested_blocks_consume_only_their_own_statements() {
         "{}\nfn g() = {{ _ = 5\n 3 }}",
         source.replace("29", "missing")
     ));
-    assert_eq!(codes(&a), ["unknown-name"]);
+    assert_eq!(codes(&a), [UNKNOWN_NAME]);
     assert!(a.functions[0].body().is_none());
     invariant(&a, &a.functions[1]);
 }
@@ -645,7 +640,7 @@ fn source_origins_are_utf8_byte_ranges() {
 fn duplicate_functions_keep_the_first_origin_and_poison_calls() {
     let a = check("fn K() = 1\nfn K() = true\nfn caller() = K()");
     assert!(a.parsed().diagnostics().is_empty());
-    assert_eq!(codes(&a), ["duplicate-name"]);
+    assert_eq!(codes(&a), [DUPLICATE_NAME]);
     for diagnostic in a.diagnostics() {
         assert_eq!(diagnostic.secondary.len(), 1);
         let origin = diagnostic.secondary[0].location.span().range();
@@ -666,7 +661,7 @@ fn long_chains_are_stack_safe_even_when_rejected() {
     let a = check(&format!(
         "fn f() -> int = {chain} + true + missing\nfn g() -> int = absent\n"
     ));
-    assert_eq!(codes(&a), ["type-mismatch", "unknown-name", "unknown-name"]);
+    assert_eq!(codes(&a), [TYPE_MISMATCH, UNKNOWN_NAME, UNKNOWN_NAME]);
 }
 
 #[test]
@@ -709,7 +704,7 @@ fn scalar_operator_type_matrix() {
                         _ => panic!("expected a binary operation: {source}"),
                     }
                 } else {
-                    assert!(codes(&a).contains(&"type-mismatch"), "{source}");
+                    assert!(codes(&a).contains(&TYPE_MISMATCH), "{source}");
                 }
             }
         }
@@ -718,7 +713,7 @@ fn scalar_operator_type_matrix() {
         "fn f(x: int) -> int = -x\nfn g(x: bool) -> bool = !x\nfn h() -> bool = true != false\nfn u(x: unit) -> unit { let y: unit = x\n y }\n",
     );
     for source in ["fn f() -> int = -true", "fn f() -> bool = !1"] {
-        assert_eq!(codes(&check(source)), ["type-mismatch"]);
+        assert_eq!(codes(&check(source)), [TYPE_MISMATCH]);
     }
     clean("fn f(x: int) -> bool = x // comparison\n <= 1\n");
 }
@@ -733,8 +728,8 @@ fn binary_requirements_survive_a_failed_operand() {
     ] {
         let a = check(&format!("fn f() {{ _ = {expression} }}"));
         let mut actual = codes(&a);
-        actual.sort_unstable();
-        assert_eq!(actual, ["type-mismatch", "unknown-name"], "{expression}");
+        actual.sort_unstable_by_key(|code| code.name());
+        assert_eq!(actual, [TYPE_MISMATCH, UNKNOWN_NAME], "{expression}");
         assert!(a.functions[0].body().is_none());
     }
 }
@@ -742,12 +737,12 @@ fn binary_requirements_survive_a_failed_operand() {
 #[test]
 fn recovery_does_not_expose_functions_or_leak_argument_scopes() {
     let a = check("fn f() -> int = 1\nfn g() {\n let f =\n _ = f()\n _ = absent\n}\n");
-    assert_eq!(codes(&a), ["unknown-name"]);
+    assert_eq!(codes(&a), [UNKNOWN_NAME]);
     assert!(a.diagnostics[0].message.contains("absent"));
     let a = check("fn f() {\n _ = missing({ let x = 1\n x }, x)\n}\n");
-    assert_eq!(codes(&a), ["unknown-name", "unknown-name"]);
+    assert_eq!(codes(&a), [UNKNOWN_NAME, UNKNOWN_NAME]);
     let a = check("fn f() {\n let x = absent\n let x = true\n _ = x + 1\n}\n");
-    assert_eq!(codes(&a), ["unknown-name", "type-mismatch"]);
+    assert_eq!(codes(&a), [UNKNOWN_NAME, TYPE_MISMATCH]);
     let a = check("fn f() -> int {\n _ = absent\n 1\n}\n");
     assert!(a.functions[0].body().is_none());
     clean("fn f() -> int {\n let x =\n 1\n x\n}\n");
@@ -817,7 +812,7 @@ fn callers_cannot_solve_providers_or_publish_incomplete_calls() {
     let a = check(
         "fn spin() = spin()\nfn consumer() -> int = spin()\nfn grounded() = spin() + 1\nfn recovered() = grounded()\n",
     );
-    assert_eq!(codes(&a), ["cannot-infer"]);
+    assert_eq!(codes(&a), [CANNOT_INFER]);
     assert!(a.functions[0].signature().is_none());
     for function in &a.functions[1..] {
         assert_eq!(function.signature().unwrap().result, Ty::Int);
@@ -827,7 +822,7 @@ fn callers_cannot_solve_providers_or_publish_incomplete_calls() {
     let a = check("fn spin(x: int) = spin(x)\nfn caller() = spin(true, missing)\nfn intact() = 42");
     assert_eq!(
         codes(&a),
-        ["cannot-infer", "arity", "type-mismatch", "unknown-name"]
+        [CANNOT_INFER, ARITY, TYPE_MISMATCH, UNKNOWN_NAME]
     );
     invariant(&a, &a.functions[2]);
 }
@@ -864,16 +859,16 @@ fn inferred_conflicts_and_deferred_scalar_rules() {
         }
     }
     for (source, expected) in [
-        ("fn f() { g()\n _ = 1 }\nfn g() = 1", "unused-value"),
-        ("fn f() = g() == g()\nfn g() = {}", "type-mismatch"),
-        ("fn f() -> bool = g()\nfn g() = 1", "type-mismatch"),
+        ("fn f() { g()\n _ = 1 }\nfn g() = 1", UNUSED_VALUE),
+        ("fn f() = g() == g()\nfn g() = {}", TYPE_MISMATCH),
+        ("fn f() -> bool = g()\nfn g() = 1", TYPE_MISMATCH),
         (
             "fn f() = if true { g() } else { false }\nfn g() = 1",
-            "type-mismatch",
+            TYPE_MISMATCH,
         ),
         (
             "fn f() = { let x: bool = g()\n x }\nfn g() = 1",
-            "type-mismatch",
+            TYPE_MISMATCH,
         ),
     ] {
         let a = check(source);
@@ -887,22 +882,16 @@ fn inferred_conflicts_and_deferred_scalar_rules() {
 #[test]
 fn inference_preserves_resolution_poison_and_annotation_boundaries() {
     for (source, expected) in [
-        (
-            "fn f() = 1\nfn g() = { let f = true\n f() }",
-            "not-callable",
-        ),
+        ("fn f() = 1\nfn g() = { let f = true\n f() }", NOT_CALLABLE),
         (
             "fn f() = 1\nfn F() = 2\nfn F() = 3\nfn g() = F()",
-            "duplicate-name",
+            DUPLICATE_NAME,
         ),
         (
             "fn f() = 1\nfn g() = { let f = absent\n f() }",
-            "unknown-name",
+            UNKNOWN_NAME,
         ),
-        (
-            "fn f() = 1\nfn g() = { let mut f = 1\n f() }",
-            "unsupported",
-        ),
+        ("fn f() = 1\nfn g() = { let mut f = 1\n f() }", UNSUPPORTED),
     ] {
         let a = check(source);
         assert_eq!(codes(&a), [expected]);
@@ -918,7 +907,7 @@ fn inference_preserves_resolution_poison_and_annotation_boundaries() {
         let a = check(declaration);
         assert!(a.functions[0].signature().is_none(), "{declaration}");
         assert!(a.functions[0].body().is_none());
-        assert!(!codes(&a).contains(&"cannot-infer"));
+        assert!(!codes(&a).contains(&CANNOT_INFER));
     }
 }
 

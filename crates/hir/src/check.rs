@@ -1,12 +1,13 @@
 use std::collections::HashMap;
 
-use sumi_frontend::{DiagnosticCode, DiagnosticGroup, Label, Location};
+use sumi_frontend::{DiagnosticCode, Label, Location};
 use sumi_lexer::{RawIdx, SyntaxKind, TokenFlags};
 use sumi_syntax::{
     NodeIdx, NodeKind, SyntaxTree,
     ast::{self, AstNode},
 };
 
+use crate::codes;
 use crate::infer::{Inference, Term};
 use crate::*;
 
@@ -115,12 +116,12 @@ impl Source<'_> {
     fn error(
         &mut self,
         node: NodeIdx,
-        code: &'static str,
+        code: DiagnosticCode,
         message: impl Into<Box<str>>,
         related: Option<(Span, &'static str)>,
     ) {
         self.diagnostics.push(Diagnostic {
-            code: DiagnosticCode::new(DiagnosticGroup::new("semantic"), code),
+            code,
             severity: Severity::Error,
             message: message.into(),
             primary: Label {
@@ -138,24 +139,51 @@ impl Source<'_> {
             fix: None,
         });
     }
+    fn type_mismatch(
+        &mut self,
+        node: NodeIdx,
+        expected: Ty,
+        actual: Ty,
+        related: Option<(Span, &'static str)>,
+    ) {
+        self.error(
+            node,
+            codes::TYPE_MISMATCH,
+            format!("expected {expected}, found {actual}"),
+            related,
+        );
+    }
+    fn unused_value(&mut self, node: NodeIdx, ty: Ty) {
+        self.error(
+            node,
+            codes::UNUSED_VALUE,
+            format!("unused value of type {ty}; use `_ =` to discard it"),
+            None,
+        );
+    }
+    fn incomparable(&mut self, node: NodeIdx) {
+        self.error(
+            node,
+            codes::TYPE_MISMATCH,
+            "unit values cannot be compared",
+            None,
+        );
+    }
     fn ty(&mut self, node: ast::TypeRef) -> Option<Ty> {
         if self.tree.has_error(node.node()) {
             return None;
         }
-        match self.text(node.node()) {
-            "int" => Some(Ty::Int),
-            "bool" => Some(Ty::Bool),
-            "unit" => Some(Ty::Unit),
-            name => {
-                self.error(
-                    node.node(),
-                    "unknown-type",
-                    format!("unknown type `{name}`"),
-                    None,
-                );
-                None
-            }
+        let name = self.text(node.node());
+        let ty = Ty::from_name(name);
+        if ty.is_none() {
+            self.error(
+                node.node(),
+                codes::UNKNOWN_TYPE,
+                format!("unknown type `{name}`"),
+                None,
+            );
         }
+        ty
     }
     // Read only a token gap, never scan an expression subtree for its operator.
     fn tokens(&self, start: RawIdx, end: RawIdx) -> impl Iterator<Item = SyntaxKind> + '_ {
@@ -205,7 +233,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
             if let Some((first, target)) = names.get_mut(name) {
                 source.error(
                     *node,
-                    "duplicate-name",
+                    codes::DUPLICATE_NAME,
                     format!("duplicate function `{name}`"),
                     Some((*first, "declared here")),
                 );
@@ -225,7 +253,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
                         if !tree.has_error(param.node()) {
                             source.error(
                                 param.node(),
-                                "missing-type",
+                                codes::MISSING_TYPE,
                                 "function parameters require a type",
                                 None,
                             );
@@ -295,45 +323,31 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     let mut failed = vec![false; functions.len()];
     for obligation in obligations {
         let actual = replay.resolve(obligation.actual);
-        let (code, message, related) = match obligation.kind {
+        match obligation.kind {
             ObligationKind::Equal(expected, related) => match (actual, replay.resolve(expected)) {
-                (Some(actual), Some(expected)) if actual != expected => (
-                    "type-mismatch",
-                    format!("expected {expected:?}, found {actual:?}"),
-                    related,
-                ),
+                (Some(actual), Some(expected)) if actual != expected => {
+                    source.type_mismatch(obligation.node, expected, actual, related);
+                }
                 _ => {
                     replay.equal(obligation.actual, expected);
                     continue;
                 }
             },
-            ObligationKind::Unused => {
-                if actual.is_none_or(|ty| ty == Ty::Unit) {
+            ObligationKind::Unused => match actual {
+                Some(ty) if ty != Ty::Unit => source.unused_value(obligation.node, ty),
+                _ => {
                     replay.equal(obligation.actual, Ty::Unit.into());
                     continue;
                 }
-                (
-                    "unused-value",
-                    format!(
-                        "unused value of type {:?}; use `_ =` to discard it",
-                        actual.unwrap()
-                    ),
-                    None,
-                )
-            }
+            },
             ObligationKind::Comparable => {
                 if actual != Some(Ty::Unit) {
                     continue;
                 }
-                (
-                    "type-mismatch",
-                    "unit values cannot be compared".to_owned(),
-                    None,
-                )
+                source.incomparable(obligation.node);
             }
-        };
+        }
         failed[obligation.owner] = true;
-        source.error(obligation.node, code, message, related);
     }
     for (index, header) in headers.into_iter().enumerate() {
         let result = header.result.and_then(|term| inference.resolve(term));
@@ -350,7 +364,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
             } else {
                 "cannot infer function result; add a return type annotation"
             };
-            source.error(items[index].node(), "cannot-infer", message, None);
+            source.error(items[index].node(), codes::CANNOT_INFER, message, None);
         }
     }
     for (index, body) in bodies.into_iter().enumerate() {
@@ -437,7 +451,7 @@ impl<'a, 's> Builder<'a, 's> {
                 if let Some(&span) = first.get(&name) {
                     self.source.error(
                         node,
-                        "duplicate-name",
+                        codes::DUPLICATE_NAME,
                         format!("duplicate parameter `{name}`"),
                         Some((span, "declared here")),
                     );
@@ -528,7 +542,7 @@ impl<'a, 's> Builder<'a, 's> {
     fn unsupported(&mut self, node: NodeIdx) {
         self.source.error(
             node,
-            "unsupported",
+            codes::UNSUPPORTED,
             "construct is not supported by scalar checking",
             None,
         );
@@ -638,7 +652,7 @@ impl<'a, 's> Builder<'a, 's> {
             if let Some(local) = local {
                 self.source.error(
                     node,
-                    "not-callable",
+                    codes::NOT_CALLABLE,
                     format!("local `{name}` is not callable"),
                     Some((self.locals[local.index()].origin, "declared here")),
                 );
@@ -650,7 +664,7 @@ impl<'a, 's> Builder<'a, 's> {
             None => {
                 self.source.error(
                     node,
-                    "unknown-name",
+                    codes::UNKNOWN_NAME,
                     format!("unknown function `{name}`"),
                     None,
                 );
@@ -688,7 +702,7 @@ impl<'a, 's> Builder<'a, 's> {
             None => {
                 self.source.error(
                     literal,
-                    "integer-range",
+                    codes::INTEGER_RANGE,
                     "integer literal is outside signed 64-bit range",
                     None,
                 );
@@ -709,12 +723,7 @@ impl<'a, 's> Builder<'a, 's> {
             return true;
         }
         if let (Term::Known(actual), Term::Known(expected)) = (actual, expected) {
-            self.source.error(
-                node,
-                "type-mismatch",
-                format!("expected {expected:?}, found {actual:?}"),
-                related,
-            );
+            self.source.type_mismatch(node, expected, actual, related);
             return false;
         }
         self.inference.equal(actual, expected);
@@ -751,14 +760,7 @@ impl<'a, 's> Builder<'a, 's> {
                             let ty = self.exprs[value.index()].ty;
                             if let Term::Known(ty) = ty {
                                 if ty != Ty::Unit {
-                                    self.source.error(
-                                        child,
-                                        "unused-value",
-                                        format!(
-                                            "unused value of type {ty:?}; use `_ =` to discard it"
-                                        ),
-                                        None,
-                                    );
+                                    self.source.unused_value(child, ty);
                                     valid = false;
                                 }
                             } else {
@@ -848,7 +850,7 @@ impl<'a, 's> Builder<'a, 's> {
                         } else {
                             self.source.error(
                                 node,
-                                "unknown-name",
+                                codes::UNKNOWN_NAME,
                                 format!("unknown name `{name}`"),
                                 None,
                             );
@@ -941,12 +943,7 @@ impl<'a, 's> Builder<'a, 's> {
                         }
                     }
                     if expected == Term::Known(Ty::Unit) {
-                        self.source.error(
-                            node,
-                            "type-mismatch",
-                            "unit values cannot be compared",
-                            None,
-                        );
+                        self.source.incomparable(node);
                         valid = false;
                     } else if matches!(op, Eq | Ne) && matches!(expected, Term::Var(_)) {
                         self.obligations.push(Obligation {
@@ -1027,7 +1024,7 @@ impl<'a, 's> Builder<'a, 's> {
         if !valid {
             self.source.error(
                 node,
-                "arity",
+                codes::ARITY,
                 format!("expected {} arguments, found {}", params.len(), args.len()),
                 Some((function.origin, "declared here")),
             );

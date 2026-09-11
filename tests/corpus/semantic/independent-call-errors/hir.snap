@@ -11,7 +11,7 @@ fn intact@152..174 () -> int
 == semantic diagnostics ==
 error[semantic/unknown-name]: unknown function `missing`
   primary @39..46
-error[semantic/type-mismatch]: expected Int, found Bool
+error[semantic/type-mismatch]: expected int, found bool
   primary @100..104
-error[semantic/type-mismatch]: expected Int, found Bool
+error[semantic/type-mismatch]: expected int, found bool
   primary @128..133

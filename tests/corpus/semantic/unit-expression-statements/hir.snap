@@ -51,30 +51,30 @@ fn tail_requires_unit@480..519 () -> unit
   body: unavailable
 
 == semantic diagnostics ==
-error[semantic/unused-value]: unused value of type Int; use `_ =` to discard it
+error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
   primary @239..240
-error[semantic/unused-value]: unused value of type Int; use `_ =` to discard it
+error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
   primary @245..248
-error[semantic/unused-value]: unused value of type Int; use `_ =` to discard it
+error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
   primary @253..258
-error[semantic/unused-value]: unused value of type Bool; use `_ =` to discard it
+error[semantic/unused-value]: unused value of type bool; use `_ =` to discard it
   primary @263..267
-error[semantic/unused-value]: unused value of type Int; use `_ =` to discard it
+error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
   primary @272..279
-error[semantic/unused-value]: unused value of type Int; use `_ =` to discard it
+error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
   primary @284..293
-error[semantic/unused-value]: unused value of type Int; use `_ =` to discard it
+error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
   primary @298..303
-error[semantic/unused-value]: unused value of type Int; use `_ =` to discard it
+error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
   primary @308..332
 error[semantic/unknown-name]: unknown name `missing`
   primary @371..378
-error[semantic/type-mismatch]: expected Int, found Bool
+error[semantic/type-mismatch]: expected int, found bool
   primary @387..391
-error[semantic/type-mismatch]: expected Unit, found Int
+error[semantic/type-mismatch]: expected unit, found int
   primary @404..409
-error[semantic/unused-value]: unused value of type Int; use `_ =` to discard it
+error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
   primary @450..457
-error[semantic/type-mismatch]: expected Unit, found Int
+error[semantic/type-mismatch]: expected unit, found int
   primary @504..519
   secondary @480..519: declared here

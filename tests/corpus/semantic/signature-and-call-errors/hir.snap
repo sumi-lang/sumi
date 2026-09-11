@@ -44,10 +44,10 @@ error[semantic/unknown-name]: unknown name `absent`
 error[semantic/arity]: expected 2 arguments, found 3
   primary @182..205
   secondary @125..161: declared here
-error[semantic/type-mismatch]: expected Int, found Bool
+error[semantic/type-mismatch]: expected int, found bool
   primary @188..192
   secondary @125..161: declared here
-error[semantic/type-mismatch]: expected Bool, found Int
+error[semantic/type-mismatch]: expected bool, found int
   primary @194..195
   secondary @125..161: declared here
 error[semantic/unknown-name]: unknown name `missing`
@@ -57,6 +57,6 @@ error[semantic/not-callable]: local `typed` is not callable
   secondary @235..240: declared here
 error[semantic/unknown-type]: unknown type `mystery`
   primary @279..286
-error[semantic/type-mismatch]: expected Int, found Bool
+error[semantic/type-mismatch]: expected int, found bool
   primary @297..301
   secondary @259..301: declared here

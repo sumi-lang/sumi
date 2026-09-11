@@ -32,11 +32,11 @@ error[semantic/cannot-infer]: cannot infer function result; add a return type an
 error[semantic/arity]: expected 1 arguments, found 2
   primary @134..153
   secondary @0..25: declared here
-error[semantic/type-mismatch]: expected Int, found Bool
+error[semantic/type-mismatch]: expected int, found bool
   primary @139..143
   secondary @0..25: declared here
 error[semantic/unknown-name]: unknown name `missing`
   primary @145..152
-error[semantic/type-mismatch]: expected Unit, found Int
+error[semantic/type-mismatch]: expected unit, found int
   primary @164..169
   secondary @154..169: declared here

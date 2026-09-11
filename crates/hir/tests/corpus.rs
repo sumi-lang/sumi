@@ -5,7 +5,7 @@ use std::fmt::Write as _;
 
 use sumi_frontend::{FileId, Location, Place, Severity, parse_source};
 use sumi_hir::{
-    Analysis, BinaryOp, Body, ExprId, ExprKind, Local, Statement, StatementKind, Ty, analyze,
+    Analysis, BinaryOp, Body, ExprId, ExprKind, Local, Statement, StatementKind, analyze,
 };
 use sumi_text::Span;
 
@@ -15,14 +15,6 @@ mod corpus;
 #[test]
 fn selected_cases_match_their_snapshots() {
     corpus::check(corpus::Stage::Hir, snapshot);
-}
-
-fn ty(ty: Ty) -> &'static str {
-    match ty {
-        Ty::Int => "int",
-        Ty::Bool => "bool",
-        Ty::Unit => "unit",
-    }
 }
 
 fn span(span: Span) -> String {
@@ -42,15 +34,6 @@ fn location(location: Location) -> String {
 
 fn local(local: &Local) -> String {
     format!("{}{}", local.name, span(local.origin))
-}
-
-fn severity(severity: Severity) -> &'static str {
-    match severity {
-        Severity::Error => "error",
-        Severity::Warning => "warning",
-        Severity::Info => "info",
-        Severity::Hint => "hint",
-    }
 }
 
 fn snapshot(source: &str) -> String {
@@ -87,17 +70,17 @@ fn snapshot(source: &str) -> String {
                 let params = signature
                     .params
                     .iter()
-                    .map(|&param| ty(param))
+                    .map(|param| param.to_string())
                     .collect::<Vec<_>>()
                     .join(", ");
-                writeln!(out, " ({params}) -> {}", ty(signature.result)).unwrap();
+                writeln!(out, " ({params}) -> {}", signature.result).unwrap();
             }
             None => out.push_str(" signature: unavailable\n"),
         }
         if let Some(body) = function.body() {
             for &param in body.params() {
                 let param = body.local(param);
-                writeln!(out, "  param {}: {}", local(param), ty(param.ty)).unwrap();
+                writeln!(out, "  param {}: {}", local(param), param.ty).unwrap();
             }
             dump_body(&analysis, body, &mut out);
         } else {
@@ -109,10 +92,9 @@ fn snapshot(source: &str) -> String {
         for diagnostic in analysis.diagnostics() {
             writeln!(
                 out,
-                "{}[{}/{}]: {}",
-                severity(diagnostic.severity),
-                diagnostic.code.group().as_str(),
-                diagnostic.code.name(),
+                "{}[{}]: {}",
+                diagnostic.severity.as_str(),
+                diagnostic.code,
                 diagnostic.message
             )
             .unwrap();
@@ -170,7 +152,7 @@ fn dump_body(analysis: &Analysis, body: &Body, out: &mut String) {
                             out,
                             "{indent}let {}: {} {}",
                             local(binding),
-                            ty(binding.ty),
+                            binding.ty,
                             span(statement.origin)
                         )
                         .unwrap();
@@ -212,7 +194,7 @@ fn dump_body(analysis: &Analysis, body: &Body, out: &mut String) {
             out,
             "{}{role}: {operation} : {} {}",
             "  ".repeat(depth),
-            ty(expr.ty),
+            expr.ty,
             span(expr.origin)
         )
         .unwrap();

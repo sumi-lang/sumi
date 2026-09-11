@@ -187,7 +187,8 @@ fn lower_recovery(
         }),
         _ => None,
     };
-    let secondary = opener
+    let mut diagnostic = primary(code, message, location);
+    diagnostic.secondary = opener
         .into_iter()
         .chain(
             recovery
@@ -201,20 +202,8 @@ fn lower_recovery(
                 }),
         )
         .collect();
-    let fix = closer_fix(recovery, snapshot, closer_fix_sites);
-
-    Diagnostic {
-        code,
-        severity: Severity::Error,
-        message,
-        primary: Label {
-            location,
-            message: None,
-        },
-        secondary,
-        notes: Box::new([]),
-        fix,
-    }
+    diagnostic.fix = closer_fix(recovery, snapshot, closer_fix_sites);
+    diagnostic
 }
 
 fn closer_fix(
@@ -284,54 +273,53 @@ fn expected_diagnostic(expected: ParseExpected) -> (DiagnosticCode, Box<str>) {
 }
 
 fn lower_violation(snapshot: &Snapshot<'_>, violation: ParseViolation) -> Diagnostic {
-    let (code, message) = match violation.kind {
+    // Each rule: its code, its message, and the name of its layout fix when
+    // one is mechanical.
+    let (code, message, fix_message) = match violation.kind {
         ParseViolationKind::UnspacedBinaryOperator => (
             codes::UNSPACED_BINARY_OPERATOR,
             "binary operator must have spaces on both sides",
+            Some("space binary operator"),
         ),
         ParseViolationKind::SpacedPrefixOperator => (
             codes::SPACED_PREFIX_OPERATOR,
             "prefix operator must be adjacent to its operand",
+            Some("remove space after prefix operator"),
         ),
         ParseViolationKind::SpacedListOpener => (
             codes::SPACED_LIST_OPENER,
             "opening `(` must be adjacent to the function name or callee",
+            Some("remove space before `(`"),
         ),
         ParseViolationKind::FunctionNameOnNextLine => (
             codes::FUNCTION_NAME_ON_NEXT_LINE,
             "function name must be on the same line as `fn`",
+            Some("move function name onto `fn` line"),
         ),
         ParseViolationKind::FunctionItemOnSameLine => (
             codes::FUNCTION_ITEM_ON_SAME_LINE,
             "function item must begin on a new line",
+            Some("move function item onto a new line"),
         ),
         ParseViolationKind::BindingNameOnNextLine => (
             codes::BINDING_NAME_ON_NEXT_LINE,
             "binding name must be on the same line as `let`",
+            Some("move binding name onto `let` line"),
         ),
         ParseViolationKind::ChainedComparison => (
             codes::CHAINED_COMPARISON,
             "comparison operators cannot be chained",
+            None,
         ),
     };
-    let fix = layout_violation_edits(snapshot.lexed, violation).map(|edits| Fix {
-        message: match violation.kind {
-            ParseViolationKind::UnspacedBinaryOperator => "space binary operator",
-            ParseViolationKind::SpacedPrefixOperator => "remove space after prefix operator",
-            ParseViolationKind::SpacedListOpener => "remove space before `(`",
-            ParseViolationKind::FunctionNameOnNextLine => "move function name onto `fn` line",
-            ParseViolationKind::FunctionItemOnSameLine => "move function item onto a new line",
-            ParseViolationKind::BindingNameOnNextLine => "move binding name onto `let` line",
-            ParseViolationKind::ChainedComparison => {
-                unreachable!("chained comparisons have no mechanical layout fix")
-            }
-        }
-        .into(),
+    let mut diagnostic = primary(code, message, snapshot.raw_range(violation.range));
+    diagnostic.fix = layout_violation_edits(snapshot.lexed, violation).map(|edits| Fix {
+        message: fix_message
+            .unwrap_or_else(|| unreachable!("a rule with layout edits names its fix"))
+            .into(),
         applicability: Applicability::Safe,
         edits,
     });
-    let mut diagnostic = primary(code, message, snapshot.raw_range(violation.range));
-    diagnostic.fix = fix;
     diagnostic
 }
 
