@@ -30,7 +30,7 @@ continues the previous line. Operators take their classes from the
 
 | Kind | Reads as | Classes | Notes |
 | --- | --- | --- | --- |
-| `Ident` | a name | `expr` `end` | An identifier that is not a keyword. |
+| `Ident` | a name | `expr` `end` | An identifier that is not a keyword: an ASCII letter or `_`, then ASCII letters, digits, and `_`. Any other character has no meaning in the language. |
 
 ### Keywords
 

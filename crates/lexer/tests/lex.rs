@@ -133,13 +133,24 @@ fn underscore_starts_idents() {
 }
 
 #[test]
-fn unicode_idents_use_xid() {
+fn identifiers_are_ascii() {
+    // A non-ASCII letter is no part of a name: it lexes alone, as any
+    // character without a role does.
     check(
-        "Δx μ2",
+        "Δx aé",
         &[
-            r#"Ident 0..3 "Δx""#,
+            r#"Unknown 0..2 "Δ""#,
+            r#"Ident 2..3 "x""#,
             r#"HorizontalSpace 3..4 " ""#,
-            r#"Ident 4..7 "μ2""#,
+            r#"Ident 4..5 "a""#,
+            r#"Unknown 5..7 "é""#,
+        ],
+    );
+    assert_eq!(
+        lex("Δx aé").unwrap().errors(),
+        &[
+            error(0, 0, 2, LexErrorKind::UnknownCharacter),
+            error(4, 5, 7, LexErrorKind::UnknownCharacter),
         ],
     );
 }

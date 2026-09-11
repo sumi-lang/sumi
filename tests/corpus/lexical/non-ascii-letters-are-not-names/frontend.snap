@@ -1,0 +1,20 @@
+== tree ==
+SourceFile! 0..31
+  FnItem! 0..14
+    Name 3..6 "caf"
+    Error! 6..8 "é"
+    ParamList 8..10 "()"
+    LiteralExpr 13..14 "1"
+  FnItem! 15..30
+    Error! 18..24 "ｆｎ"
+    ParamList 24..26 "()"
+    LiteralExpr 29..30 "2"
+
+== evidence ==
+Expected(LParen) at 6
+ExpectedName at 18
+
+== diagnostics ==
+error[syntax/unknown-character] 1:7..1:9 "é": character has no meaning in Sumi source
+error[syntax/unknown-character] 2:4..2:7 "ｆ": character has no meaning in Sumi source
+error[syntax/unknown-character] 2:7..2:10 "ｎ": character has no meaning in Sumi source

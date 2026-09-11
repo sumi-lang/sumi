@@ -27,7 +27,6 @@ const EXTRA_FRAGMENTS: &[&str] = &[
     "\\{",
     "x",
     "foo",
-    "Δx",
     "0",
     "123",
     "1_000",

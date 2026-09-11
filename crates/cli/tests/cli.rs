@@ -139,7 +139,7 @@ fn input_errors_are_distinct_from_source_errors() {
 fn check_reports_semantics_and_syntax_in_source_order() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("case.sumi");
-    let source = "fn café() -> int = absent\nfn bad() -> int = 01\nfn later() -> int = true\n";
+    let source = "fn cafe() -> int = absent\nfn bad() -> int = 01\nfn later() -> int = true\n";
     fs::write(&path, source).unwrap();
     let run = || {
         sumi()
@@ -157,7 +157,7 @@ fn check_reports_semantics_and_syntax_in_source_order() {
     assert_eq!(lines.len(), 3, "{stderr}");
     assert_eq!(
         lines[0],
-        "case.sumi:1:21: error[semantic/unknown-name]: unknown name `absent`"
+        "case.sumi:1:20: error[semantic/unknown-name]: unknown name `absent`"
     );
     assert!(lines[1].contains("error[syntax/"), "{stderr}");
     assert!(

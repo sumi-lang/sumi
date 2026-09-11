@@ -21,7 +21,9 @@ pub enum SyntaxKind {
     /// One line break.
     Newline,
     LineComment,
-    /// An identifier that is not a keyword.
+    /// An identifier that is not a keyword: an ASCII letter or `_`, then
+    /// ASCII letters, digits, and `_`. Any other character has no meaning in
+    /// the language.
     Ident,
     /// The identifier `_` on its own, reserved for discards.
     Underscore,

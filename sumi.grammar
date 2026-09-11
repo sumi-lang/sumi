@@ -73,7 +73,9 @@ token Whitespace trivia "whitespace"
 token Newline trivia "a line break"
 token LineComment trivia "a line comment"
 
-/// An identifier that is not a keyword.
+/// An identifier that is not a keyword: an ASCII letter or `_`, then
+/// ASCII letters, digits, and `_`. Any other character has no meaning in
+/// the language.
 token Ident ident "a name" expr end
 /// The identifier `_` on its own, reserved for discards.
 token Underscore keyword "_" stmt end
