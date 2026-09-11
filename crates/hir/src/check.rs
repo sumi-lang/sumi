@@ -23,6 +23,7 @@
 //! the source, and the one builder keeps its scratch across bodies, so a
 //! body costs the vectors it publishes and nothing else.
 
+use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::hash::{BuildHasherDefault, Hasher};
 
@@ -75,6 +76,23 @@ impl Hasher for NameHasher {
 
 /// A map from names, as slices of the source, to whatever they name.
 type NameMap<'s, V> = HashMap<&'s str, V, BuildHasherDefault<NameHasher>>;
+
+/// What a function name resolves to. One word, so the table of every
+/// function in the file stays small enough to probe from cache.
+#[derive(Clone, Copy)]
+enum Named {
+    Function(FunctionId),
+    /// Declared more than once; the first declaration, for the report.
+    Ambiguous(FunctionId),
+}
+
+impl Named {
+    fn first(self) -> FunctionId {
+        match self {
+            Self::Function(id) | Self::Ambiguous(id) => id,
+        }
+    }
+}
 
 struct Header {
     params: Option<Box<[Ty]>>,
@@ -131,7 +149,7 @@ impl DraftBody<'_> {
             // A caller's demands can resolve its call's class without
             // resolving the callee. That is not a publishable call.
             if let ExprKind::Call { function, .. } = &expr.kind
-                && functions[function.0].signature.as_ref()?.result != ty
+                && functions[function.index()].signature.as_ref()?.result != ty
             {
                 return None;
             }
@@ -299,25 +317,32 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
 
     // Pass 1: headers.
     let mut functions: Vec<Function> = Vec::with_capacity(items.len());
-    let mut names: NameMap<(Span, Option<FunctionId>)> =
+    let mut names: NameMap<Named> =
         NameMap::with_capacity_and_hasher(items.len(), Default::default());
     let mut parameters = Vec::with_capacity(items.len());
     let mut headers = Vec::with_capacity(items.len());
     for item in &items {
         let name = source.name(item.name(tree));
-        let id = FunctionId(functions.len());
+        let id = FunctionId(u32::try_from(functions.len()).expect("function count fits u32"));
         let origin = source.span(item.node());
         if let Some((name, node)) = name {
-            if let Some((first, target)) = names.get_mut(name) {
-                source.error(
-                    node,
-                    codes::DUPLICATE_NAME,
-                    format!("duplicate function `{name}`"),
-                    Some((*first, "declared here")),
-                );
-                *target = None;
-            } else {
-                names.insert(name, (source.span(node), Some(id)));
+            match names.entry(name) {
+                Entry::Occupied(mut entry) => {
+                    let first = items[entry.get().first().index()]
+                        .name(tree)
+                        .expect("a named function has a name")
+                        .node();
+                    source.error(
+                        node,
+                        codes::DUPLICATE_NAME,
+                        format!("duplicate function `{name}`"),
+                        Some((source.span(first), "declared here")),
+                    );
+                    *entry.get_mut() = Named::Ambiguous(entry.get().first());
+                }
+                Entry::Vacant(entry) => {
+                    entry.insert(Named::Function(id));
+                }
             }
         }
         let list = item.param_list(tree);
@@ -548,7 +573,7 @@ enum Work {
 struct Builder<'a, 's> {
     source: &'a mut Source<'s>,
     headers: &'a [Header],
-    names: &'a NameMap<'s, (Span, Option<FunctionId>)>,
+    names: &'a NameMap<'s, Named>,
     typing: &'a mut Typing,
     demands: &'a mut Vec<Demand>,
     values: &'a mut [Option<ExprId>],
@@ -575,7 +600,7 @@ impl<'a, 's> Builder<'a, 's> {
     fn new(
         source: &'a mut Source<'s>,
         headers: &'a [Header],
-        names: &'a NameMap<'s, (Span, Option<FunctionId>)>,
+        names: &'a NameMap<'s, Named>,
         typing: &'a mut Typing,
         demands: &'a mut Vec<Demand>,
         values: &'a mut [Option<ExprId>],
@@ -910,7 +935,8 @@ impl<'a, 's> Builder<'a, 's> {
             return None;
         }
         match self.names.get(name) {
-            Some((_, target)) => *target,
+            Some(Named::Function(target)) => Some(*target),
+            Some(Named::Ambiguous(_)) => None,
             None => {
                 self.source.error(
                     node,
@@ -1219,7 +1245,7 @@ impl<'a, 's> Builder<'a, 's> {
         Some(())
     }
     fn call(&mut self, node: NodeIdx, target: FunctionId, callee: NodeIdx) -> Option<()> {
-        let function = &self.headers[target.0];
+        let function = &self.headers[target.index()];
         let params = function.params.as_ref()?;
         let origin = function.origin;
         let result = function.result;

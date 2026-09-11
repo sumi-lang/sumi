@@ -67,7 +67,14 @@ impl fmt::Display for Ty {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct FunctionId(usize);
+pub struct FunctionId(u32);
+
+impl FunctionId {
+    /// Index into the owning analysis's `functions()` slice.
+    pub fn index(self) -> usize {
+        self.0 as usize
+    }
+}
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct ExprId(NonZeroU32);
@@ -132,7 +139,7 @@ impl Analysis {
     }
     /// An ID must come from this analysis, not another source revision.
     pub fn function(&self, id: FunctionId) -> &Function {
-        &self.functions[id.0]
+        &self.functions[id.index()]
     }
     pub fn is_valid(&self) -> bool {
         !self
