@@ -102,8 +102,8 @@ struct Header {
     /// The declared result type and where: the annotation, or the whole item
     /// for a bare block body. A declaration is a contract the body is held
     /// to, never changed by it. `None` for a result to infer from the body.
-    declared: Option<(Ty, Span)>,
-    origin: Span,
+    declared: Option<(Ty, NodeIdx)>,
+    item: NodeIdx,
 }
 
 struct DraftLocal {
@@ -168,12 +168,33 @@ impl DraftBody {
     }
 }
 
+/// What a mismatch report points at besides the expression: where the
+/// expectation came from.
+#[derive(Clone, Copy)]
+enum Related {
+    /// A declaration: a called function, a result annotation, or a
+    /// binding's annotation.
+    Declared(NodeIdx),
+    /// The other branch of an `if`, whose type the reported branch must
+    /// match.
+    OtherBranch(NodeIdx),
+}
+
+impl Related {
+    fn label(self) -> (NodeIdx, &'static str) {
+        match self {
+            Self::Declared(node) => (node, "declared here"),
+            Self::OtherBranch(node) => (node, "other branch determines expected type"),
+        }
+    }
+}
+
 /// What a context requires of an expression, checked after solving.
 enum DemandKind {
     /// The expression must have the expected type.
     Type {
         expected: Expected,
-        related: Option<(Span, &'static str)>,
+        related: Option<Related>,
     },
     /// An expression statement's value must be unit.
     Unused,
@@ -181,8 +202,10 @@ enum DemandKind {
     Comparable,
 }
 
+/// One demand, kept small: the verdict pass reads every one, and a body
+/// makes one per operand, argument, branch, and statement.
 struct Demand {
-    owner: usize,
+    owner: u32,
     /// The expression whose type the demand is about: the innermost one
     /// the demanded expression takes its type from, through any number of
     /// tails and branches. Two demands with one subject are about one
@@ -317,7 +340,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         .unwrap()
         .items(tree)
         .collect();
-    let mut typing = Typing::default();
+    let mut typing = Typing::for_nodes(tree.len());
 
     // Pass 1: headers.
     let mut functions: Vec<Function> = Vec::with_capacity(items.len());
@@ -377,10 +400,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         }
         let (result, declared) = if let Some(ret) = item.ret(tree) {
             match source.ty(ret) {
-                Some(ty) => (
-                    Some(typing.known(ty, ret.node())),
-                    Some((ty, source.span(ret.node()))),
-                ),
+                Some(ty) => (Some(typing.known(ty, ret.node())), Some((ty, ret.node()))),
                 None => (None, None),
             }
         } else {
@@ -399,7 +419,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
             match gap {
                 Some((None, None)) => (
                     Some(typing.known(Ty::Unit, item.node())),
-                    Some((Ty::Unit, origin)),
+                    Some((Ty::Unit, item.node())),
                 ),
                 Some((Some(SyntaxKind::Eq), None)) => (Some(typing.fresh()), None),
                 _ => (None, None),
@@ -409,7 +429,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
             params: valid.then(|| params.iter().map(|p| p.ty.unwrap()).collect()),
             result,
             declared,
-            origin,
+            item: item.node(),
         });
         parameters.push(params);
         functions.push(Function {
@@ -421,7 +441,8 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     }
 
     // Pass 2: bodies.
-    let mut demands = Vec::new();
+    // About a demand per two nodes; only a guide.
+    let mut demands = Vec::with_capacity(tree.len() / 2);
     let mut bodies = Vec::with_capacity(items.len());
     // Syntax node IDs are dense and bodies have disjoint nodes. Expression
     // IDs remain body-local; a builder only reads entries in its own body.
@@ -460,6 +481,10 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
                 };
                 match (actual, expected_ty) {
                     (Some(actual), Some(expected)) if actual != expected => {
+                        let related = related.map(|related| {
+                            let (node, label) = related.label();
+                            (source.span(node), label)
+                        });
                         source.type_mismatch(demand.node, expected, actual, related);
                     }
                     _ => {
@@ -492,7 +517,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
                 );
             }
         }
-        failed[demand.owner] = true;
+        failed[demand.owner as usize] = true;
         disputed.insert((demand.owner, demand.subject));
     }
     for (index, header) in headers.into_iter().enumerate() {
@@ -597,7 +622,7 @@ struct Builder<'a, 's> {
     demands: &'a mut Vec<Demand>,
     values: &'a mut [Option<ExprId>],
     // The body under construction.
-    owner: usize,
+    owner: u32,
     failed: bool,
     params: Vec<LocalId>,
     locals: Vec<DraftLocal>,
@@ -660,7 +685,7 @@ impl<'a, 's> Builder<'a, 's> {
         item: ast::FnItem,
         parameters: Vec<Parameter<'s>>,
     ) -> Option<DraftBody> {
-        self.owner = owner;
+        self.owner = u32::try_from(owner).expect("function count fits u32");
         self.failed = false;
         self.depth = 0;
         self.open_scope();
@@ -695,7 +720,7 @@ impl<'a, 's> Builder<'a, 's> {
                 self.failed = true;
             }
         }
-        let header = &self.headers[self.owner];
+        let header = &self.headers[self.owner as usize];
         let result = header.result;
         let declared = header.declared;
         self.failed |= header.params.is_none() || result.is_none();
@@ -729,12 +754,12 @@ impl<'a, 's> Builder<'a, 's> {
         // type. A declared result is a contract on the body; an inferred one
         // is the body's own type.
         match (root, declared, result) {
-            (Some(root), Some((ty, span)), _) => {
+            (Some(root), Some((ty, node)), _) => {
                 self.require(
                     root_node,
                     root,
                     Expected::Ty(ty),
-                    Some((span, "declared here")),
+                    Some(Related::Declared(node)),
                 );
             }
             (Some(root), None, Some(result)) => {
@@ -784,9 +809,12 @@ impl<'a, 's> Builder<'a, 's> {
         id
     }
     fn lookup(&self, name: &str) -> Option<Option<LocalId>> {
+        // An empty scope, the common case for a function's own, would cost
+        // a hash to find nothing in.
         self.scopes[..self.depth]
             .iter()
             .rev()
+            .filter(|scope| !scope.is_empty())
             .find_map(|scope| scope.get(name).copied())
     }
     fn class(&self, expr: ExprId) -> Var {
@@ -823,7 +851,7 @@ impl<'a, 's> Builder<'a, 's> {
         node: NodeIdx,
         expr: ExprId,
         expected: Expected,
-        related: Option<(Span, &'static str)>,
+        related: Option<Related>,
     ) {
         let actual = self.class(expr);
         if expected == Expected::Class(actual) {
@@ -852,78 +880,89 @@ impl<'a, 's> Builder<'a, 's> {
     }
     fn enter(&mut self, node: NodeIdx, work: &mut Vec<Work>) {
         let tree = self.source.tree;
-        if let Some(binding) = ast::LetStmt::cast(tree, node) {
-            let mutable = self
-                .source
-                .tokens(
-                    tree.first_token(node),
-                    binding
-                        .name(tree)
-                        .map_or(tree.end_token(node), |n| tree.first_token(n.node())),
-                )
-                .eq([SyntaxKind::LetKw, SyntaxKind::MutKw]);
-            if tree.has_error(node) || mutable {
-                if mutable && !tree.has_error(node) {
-                    self.unsupported(node);
+        let kind = tree.kind(node);
+        let error = tree.has_error(node);
+        match kind {
+            NodeKind::LetStmt => {
+                let binding = ast::LetStmt::cast(tree, node).unwrap();
+                let mutable = self
+                    .source
+                    .tokens(
+                        tree.first_token(node),
+                        binding
+                            .name(tree)
+                            .map_or(tree.end_token(node), |n| tree.first_token(n.node())),
+                    )
+                    .eq([SyntaxKind::LetKw, SyntaxKind::MutKw]);
+                if error || mutable {
+                    if mutable && !error {
+                        self.unsupported(node);
+                    }
+                    if let Some((name, name_node)) = self.source.name(binding.name(tree)) {
+                        self.bind(name, name_node, None);
+                    }
+                    self.failed = true;
+                    return;
                 }
-                if let Some((name, name_node)) = self.source.name(binding.name(tree)) {
-                    self.bind(name, name_node, None);
-                }
+            }
+            NodeKind::Block => {
+                self.failed |= error;
+                self.open_scope();
+            }
+            _ if error => {
                 self.failed = true;
                 return;
             }
-        } else if tree.has_error(node) && tree.kind(node) != NodeKind::Block {
-            self.failed = true;
-            return;
-        }
-        if tree.kind(node) == NodeKind::Block {
-            self.failed |= tree.has_error(node);
-            self.open_scope();
-        }
-        if let Some(ast::Expr::PrefixExpr(prefix)) = ast::Expr::cast(tree, node) {
-            let operand = prefix.operand(tree).unwrap();
-            let neg = self
-                .source
-                .tokens(tree.first_token(node), tree.first_token(operand.node()))
-                .eq([SyntaxKind::Minus]);
-            let peeled = self.source.peel(operand);
-            if neg
-                && tree.kind(peeled.node()) == NodeKind::LiteralExpr
-                && self
+            NodeKind::PrefixExpr => {
+                let operand = ast::PrefixExpr::cast(tree, node)
+                    .unwrap()
+                    .operand(tree)
+                    .unwrap();
+                let neg = self
                     .source
-                    .parsed
-                    .lexed()
-                    .kind(tree.first_token(peeled.node()))
-                    == SyntaxKind::IntLiteral
-            {
-                if self.integer(node, peeled.node(), true).is_none() {
+                    .tokens(tree.first_token(node), tree.first_token(operand.node()))
+                    .eq([SyntaxKind::Minus]);
+                let peeled = self.source.peel(operand);
+                if neg
+                    && tree.kind(peeled.node()) == NodeKind::LiteralExpr
+                    && self
+                        .source
+                        .parsed
+                        .lexed()
+                        .kind(tree.first_token(peeled.node()))
+                        == SyntaxKind::IntLiteral
+                {
+                    if self.integer(node, peeled.node(), true).is_none() {
+                        self.failed = true;
+                    }
+                    return;
+                }
+            }
+            NodeKind::CallExpr => {
+                let call = ast::CallExpr::cast(tree, node).unwrap();
+                let callee = self.source.peel(call.callee(tree).unwrap()).node();
+                let target = if tree.kind(callee) == NodeKind::NameRef {
+                    self.target(callee)
+                } else {
+                    self.unsupported(callee);
+                    None
+                };
+                let list = call.arg_list(tree).unwrap();
+                if let Some(target) = target {
+                    work.push(Work::Call(node, target, callee));
+                } else {
                     self.failed = true;
                 }
+                work.extend(
+                    tree.children(list.node())
+                        .filter_map(|child| ast::Expr::cast(tree, child))
+                        .map(|arg| Work::Enter(arg.node())),
+                );
                 return;
             }
+            _ => {}
         }
-        if let Some(call) = ast::CallExpr::cast(tree, node) {
-            let callee = self.source.peel(call.callee(tree).unwrap()).node();
-            let target = if tree.kind(callee) == NodeKind::NameRef {
-                self.target(callee)
-            } else {
-                self.unsupported(callee);
-                None
-            };
-            let list = call.arg_list(tree).unwrap();
-            if let Some(target) = target {
-                work.push(Work::Call(node, target, callee));
-            } else {
-                self.failed = true;
-            }
-            work.extend(
-                tree.children(list.node())
-                    .filter_map(|child| ast::Expr::cast(tree, child))
-                    .map(|arg| Work::Enter(arg.node())),
-            );
-            return;
-        }
-        match tree.kind(node) {
+        match kind {
             NodeKind::Block
             | NodeKind::LetStmt
             | NodeKind::DiscardStmt
@@ -1085,7 +1124,7 @@ impl<'a, 's> Builder<'a, 's> {
                                 initializer_node,
                                 value,
                                 Expected::Ty(ty),
-                                Some((self.source.span(annotation.node()), "declared here")),
+                                Some(Related::Declared(annotation.node())),
                             );
                         }
                         self.typing.known(ty, annotation.node())
@@ -1253,9 +1292,7 @@ impl<'a, 's> Builder<'a, 's> {
                         then_node,
                         then_branch,
                         expected,
-                        else_node.map(|n| {
-                            (self.source.span(n), "other branch determines expected type")
-                        }),
+                        else_node.map(Related::OtherBranch),
                     );
                 }
                 if else_node.is_some() && else_branch.is_none() {
@@ -1279,7 +1316,7 @@ impl<'a, 's> Builder<'a, 's> {
     fn call(&mut self, node: NodeIdx, target: FunctionId, callee: NodeIdx) -> Option<()> {
         let function = &self.headers[target.index()];
         let params = function.params.as_ref()?;
-        let origin = function.origin;
+        let item = function.item;
         let result = function.result;
         let tree = self.source.tree;
         let list = ast::CallExpr::cast(tree, node)
@@ -1302,7 +1339,7 @@ impl<'a, 's> Builder<'a, 's> {
                             arg,
                             value,
                             Expected::Ty(expected),
-                            Some((origin, "declared here")),
+                            Some(Related::Declared(item)),
                         );
                     }
                     self.args.push(value);
@@ -1315,7 +1352,7 @@ impl<'a, 's> Builder<'a, 's> {
                 node,
                 codes::ARITY,
                 format!("expected {} arguments, found {count}", params.len()),
-                Some((origin, "declared here")),
+                Some((self.source.span(item), "declared here")),
             );
         }
         if count != params.len() || !complete {

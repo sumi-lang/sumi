@@ -161,6 +161,16 @@ pub(crate) struct Typing {
 }
 
 impl Typing {
+    /// A typing sized for a tree of `nodes` nodes: about a class per two
+    /// nodes, a claim per node, and a call per eight, so the common file
+    /// fills its vectors without growing them. Only a guide.
+    pub fn for_nodes(nodes: usize) -> Self {
+        Self {
+            solver: Solver::with_capacity(nodes / 2, nodes / 8),
+            origins: Vec::with_capacity(nodes),
+        }
+    }
+
     fn claim(&mut self, node: NodeIdx) -> Claim {
         let mut count = u32::try_from(self.origins.len()).expect("claim count fits u32");
         let claim = claim(&mut count);

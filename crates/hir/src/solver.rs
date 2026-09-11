@@ -97,11 +97,23 @@ pub struct Solver<L: Lattice> {
 
 impl<L: Lattice> Default for Solver<L> {
     fn default() -> Self {
-        Self::with_classes(0)
+        Self::with_capacity(0, 0)
     }
 }
 
 impl<L: Lattice> Solver<L> {
+    /// A solver with room for `classes` classes and as many facts, and for
+    /// `flows` flows, before any vector grows. Only a guide.
+    pub fn with_capacity(classes: usize, flows: usize) -> Self {
+        Self {
+            parent: Vec::with_capacity(classes),
+            size: Vec::with_capacity(classes),
+            evidence: Vec::with_capacity(classes),
+            facts: Vec::with_capacity(classes),
+            flows: Vec::with_capacity(flows),
+        }
+    }
+
     fn with_classes(n: usize) -> Self {
         Self {
             parent: (0..n as u32).collect(),
