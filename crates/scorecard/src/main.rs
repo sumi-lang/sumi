@@ -23,7 +23,7 @@
 //! the whole file" risk.
 //!
 //! Part C deletes one delimiter inside a literal — a quote of a one-line
-//! string or character, a `"""` of a multi-line one, or a
+//! string, a `"""` of a multi-line one, or a
 //! brace of a hole — in a clean corpus that contains multi-line strings
 //! and strings with holes, and measures how far the literal then reaches:
 //! the edits Parts A and B cannot make, since theirs are whole significant
@@ -512,7 +512,7 @@ impl LiteralClass {
     }
 }
 
-const LITERAL_CLASSES: [LiteralClass; 7] = [
+const LITERAL_CLASSES: [LiteralClass; 6] = [
     LiteralClass {
         label: "delete \" closer",
         kinds: &[RawKind::String],
@@ -525,13 +525,6 @@ const LITERAL_CLASSES: [LiteralClass; 7] = [
         kinds: &[RawKind::String],
         token: None,
         edit: LiteralEdit::Opener,
-        width: 1,
-    },
-    LiteralClass {
-        label: "delete ' closer",
-        kinds: &[RawKind::Char],
-        token: None,
-        edit: LiteralEdit::Closer,
         width: 1,
     },
     LiteralClass {
@@ -564,7 +557,7 @@ const LITERAL_CLASSES: [LiteralClass; 7] = [
     },
 ];
 
-const LITERAL_KINDS: [RawKind; 3] = [RawKind::String, RawKind::Char, RawKind::BlockString];
+const LITERAL_KINDS: [RawKind; 2] = [RawKind::String, RawKind::BlockString];
 
 struct LiteralSample {
     /// Bytes of the longest literal token left where the edited one stood:

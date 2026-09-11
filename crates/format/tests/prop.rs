@@ -10,8 +10,8 @@ use sumi_syntax::{NodeKind, Parse, ParserInput, SyntaxKind, SyntaxTree, parse};
 /// language, valid and pathological, echoing the parser soup property;
 /// concatenation composes the adjacencies goldens cannot enumerate.
 const EXTRA_FRAGMENTS: &[&str] = &[
-    "x", "foo", "Δx", "x = y", "0", "123", "1.5", "1e", "0123", "1u32", "\"abc\"", "\"open", "'a'",
-    ";", "[", " ", "\t", "\n", "\r\n", "\r", "// c", "€", "\"{", "}\"", "\"{x}\"",
+    "x", "foo", "Δx", "x = y", "0", "123", "1.5", "1e", "0123", "1u32", "\"abc\"", "\"open", ";",
+    "[", " ", "\t", "\n", "\r\n", "\r", "// c", "€", "\"{", "}\"", "\"{x}\"",
 ];
 
 /// Token soup, half the time wrapped in a function body: violations are

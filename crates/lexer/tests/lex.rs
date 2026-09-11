@@ -434,27 +434,6 @@ fn unterminated_string() {
 }
 
 #[test]
-fn char_shapes() {
-    check("'a'", &[r#"Char 0..3 "'a'""#]);
-    check(r"'\''", &[r#"Char 0..4 "'\\''" TokenFlags(HAS_ESCAPE)"#]);
-}
-
-#[test]
-fn char_literals_end_at_newline() {
-    check(
-        "'a\n",
-        &[
-            r#"Char 0..2 "'a" TokenFlags(UNTERMINATED)"#,
-            r#"Newline 2..3 "\n""#,
-        ],
-    );
-    assert_eq!(
-        lex("'a\n").unwrap().errors(),
-        &[error(0, 0, 2, LexErrorKind::UnterminatedChar)],
-    );
-}
-
-#[test]
 fn r_without_quote_is_an_ident() {
     check("r", &[r#"Ident 0..1 "r""#]);
     check("raw", &[r#"Ident 0..3 "raw""#]);
@@ -476,8 +455,7 @@ fn clean_source_has_no_errors() {
 
 #[test]
 fn partition_smoke() {
-    let source =
-        "\u{feff}fn main() {\r\n\tlet s = r#\"raw\"#; // trailing\n\t'c' \"str\" 2.5e-3 0xFF\n}\n";
+    let source = "\u{feff}fn main() {\r\n\tlet s = \"raw\"; // trailing\n\t\"str\" 25 0xFF\n}\n";
     dump(source);
 }
 

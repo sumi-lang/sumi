@@ -53,7 +53,6 @@ continues the previous line. Operators take their classes from the
 | `IntLiteral` | an integer literal | `expr` `end` | A decimal integer literal: a run of digits. There are no separators, suffixes, or floats; trailing identifier characters attach as a suffix for the lexer to reject, so `1_000` and `1e5` are each one error. |
 | `StringLiteral` | a string literal | `expr` `end` | A string literal on one line: `"…"`, with escapes. A line break ends an unterminated one, so a stray quote costs its line and nothing after it. |
 | `BlockStringLiteral` | a multi-line string literal | `expr` `end` | A multi-line string literal: `"""`, the content lines, and `"""` on its own line, whose indentation every content line shares and sheds. |
-| `CharLiteral` | a character literal | `expr` `end` |  |
 | `StringStart` | a string literal | `expr` | The text of a string literal with holes, from its opening quote to its first hole: `"…` or `"""…`. A `{` in a `"…"` or `"""` literal opens a hole, an expression on that line whose value the string takes in its place; `\{` is a brace. |
 | `StringMiddle` | the text of a string literal |  | The text of a string literal between two of its holes. |
 | `StringEnd` | the end of a string literal | `end` | The text of a string literal after its last hole, closing quote included: `…"` or `…"""`. |
@@ -154,9 +153,9 @@ end one, the token after it does not continue one, and no parenthesis the
 stream closes is open around it. These classes decide the first two;
 the parser's spacing rules keep the third unambiguous.
 
-- **Can begin an expression:** `Ident`, `false`, `fn`, `if`, `true`, `IntLiteral`, `StringLiteral`, `BlockStringLiteral`, `CharLiteral`, `StringStart`, `(`, `{`, `!`, `-`.
+- **Can begin an expression:** `Ident`, `false`, `fn`, `if`, `true`, `IntLiteral`, `StringLiteral`, `BlockStringLiteral`, `StringStart`, `(`, `{`, `!`, `-`.
 - **Begin a statement without being an expression:** `_`, `let`, `return`, `Error`.
-- **A statement can end after:** `Ident`, `_`, `false`, `return`, `true`, `IntLiteral`, `StringLiteral`, `BlockStringLiteral`, `CharLiteral`, `StringEnd`, `)`, `}`, `Error`.
+- **A statement can end after:** `Ident`, `_`, `false`, `return`, `true`, `IntLiteral`, `StringLiteral`, `BlockStringLiteral`, `StringEnd`, `)`, `}`, `Error`.
 - **Begin a top-level item:** `fn`.
 - **Continue the previous line:** `else`, and any binary operator leading the line — a compound one when glued into shape, and `-` only when spaced from what follows, since glued it opens an operand.
 
@@ -164,8 +163,8 @@ the parser's spacing rules keep the third unambiguous.
 
 A string literal takes one of two forms. `"…"` sits on one line: a line
 break ends an unterminated one, so a stray quote costs its line and
-nothing after it. The escapes are `\n`, `\r`, `\t`, `\\`, `\"`, `\'`,
-`\0`, and `\u{…}` with one to six hex digits.
+nothing after it. The escapes are `\n`, `\r`, `\t`, `\\`, `\"`, `\0`,
+and `\u{…}` with one to six hex digits.
 
 Text that spans lines is a multi-line literal, `"""` to `"""`:
 
@@ -227,7 +226,7 @@ ReturnStmt = 'return' value:Expr?
 Expr = NameRef | LiteralExpr | PrefixExpr | BinaryExpr | ParenExpr | CallExpr | IfExpr | ClosureExpr | InterpolatedString | Block
 // A use of a name: a reference to what a Name declared.
 NameRef = Ident
-LiteralExpr = IntLiteral | StringLiteral | BlockStringLiteral | CharLiteral | 'true' | 'false'
+LiteralExpr = IntLiteral | StringLiteral | BlockStringLiteral | 'true' | 'false'
 PrefixExpr = PrefixOperator operand:Expr
 BinaryExpr = lhs:Expr BinaryOperator rhs:Expr
 ParenExpr = '(' inner:Expr ')'

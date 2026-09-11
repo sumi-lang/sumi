@@ -159,16 +159,16 @@ fn frontend_diagnostic_identity_is_syntactic_not_phase_specific() {
 
 #[test]
 fn empty_producer_ranges_do_not_become_missing_syntax() {
-    let front = parsed("fn f() { '' }");
+    let front = parsed("fn f() = \"\"\"\n  a\nb\n  \"\"\"");
     let [diagnostic] = front.diagnostics() else {
-        panic!("an empty character literal has one diagnostic")
+        panic!("a line with no indentation has one diagnostic")
     };
-    assert_eq!(diagnostic.code, codes::EMPTY_CHAR_LITERAL);
+    assert_eq!(diagnostic.code, codes::BLOCK_STRING_INDENTATION);
     let Place::Range(range) = diagnostic.primary.location.place else {
-        panic!("empty literal content is still a producer range")
+        panic!("missing indentation is still a producer range")
     };
     assert_eq!(range.start(), range.end());
-    assert_eq!(range.start().to_usize(), 10);
+    assert_eq!(range.start().to_usize(), 17);
 }
 
 #[test]
@@ -241,7 +241,6 @@ const EXTRA_FRAGMENTS: &[&str] = &[
     "01u32",
     "1e",
     r#""\q""#,
-    "'ab'",
     ";",
     " ",
     "\n",

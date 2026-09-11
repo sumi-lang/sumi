@@ -513,7 +513,6 @@ fn damaged_and_unsupported_declarations_hide_old_bindings() {
         "fn f() { let x = 1\n x = 2 }",
         "fn f() { let g = fn() = 1 }",
         "fn f() = \"hello\"",
-        "fn f() = 'x'",
         "fn f() = (if true { 1 } else { 2 })()",
     ] {
         let a = check(source);

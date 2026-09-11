@@ -48,8 +48,6 @@ pub enum RawKind {
     String,
     /// A `"""` literal, running to the next `"""` over any number of lines.
     BlockString,
-    /// A `'...'` literal, ended by the line if unterminated.
-    Char,
 
     /// A single ASCII punctuation character.
     Punct,
@@ -66,7 +64,7 @@ impl TokenFlags {
     pub const EMPTY: Self = Self(0);
     /// The closing delimiter was never found.
     pub const UNTERMINATED: Self = Self(1 << 0);
-    /// A string or character literal contains at least one `\` escape.
+    /// A string literal contains at least one `\` escape.
     pub const HAS_ESCAPE: Self = Self(1 << 1);
     /// An outer doc comment: `///`.
     pub const DOC_OUTER: Self = Self(1 << 2);

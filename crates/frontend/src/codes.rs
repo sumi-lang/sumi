@@ -7,7 +7,6 @@ pub const SYNTAX: DiagnosticGroup = DiagnosticGroup::new("syntax");
 pub const UNTERMINATED_STRING: DiagnosticCode = DiagnosticCode::new(SYNTAX, "unterminated-string");
 pub const UNTERMINATED_BLOCK_STRING: DiagnosticCode =
     DiagnosticCode::new(SYNTAX, "unterminated-block-string");
-pub const UNTERMINATED_CHAR: DiagnosticCode = DiagnosticCode::new(SYNTAX, "unterminated-char");
 pub const LONE_CARRIAGE_RETURN: DiagnosticCode =
     DiagnosticCode::new(SYNTAX, "lone-carriage-return");
 pub const MISPLACED_BOM: DiagnosticCode = DiagnosticCode::new(SYNTAX, "misplaced-bom");
@@ -21,8 +20,6 @@ pub const MALFORMED_UNICODE_ESCAPE: DiagnosticCode =
     DiagnosticCode::new(SYNTAX, "malformed-unicode-escape");
 pub const INVALID_UNICODE_SCALAR: DiagnosticCode =
     DiagnosticCode::new(SYNTAX, "invalid-unicode-scalar");
-pub const EMPTY_CHAR_LITERAL: DiagnosticCode = DiagnosticCode::new(SYNTAX, "empty-char-literal");
-pub const MORE_THAN_ONE_CHAR: DiagnosticCode = DiagnosticCode::new(SYNTAX, "more-than-one-char");
 pub const UNKNOWN_PUNCTUATION: DiagnosticCode = DiagnosticCode::new(SYNTAX, "unknown-punctuation");
 pub const BLOCK_STRING_OPENER_CONTENT: DiagnosticCode =
     DiagnosticCode::new(SYNTAX, "block-string-opener-content");

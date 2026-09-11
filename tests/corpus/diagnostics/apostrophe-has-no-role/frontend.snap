@@ -1,0 +1,17 @@
+== tree ==
+SourceFile! 0..14
+  FnItem! 0..14
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block! 7..14
+      Error! 9..10 "'"
+      Error! 10..11 "a"
+      Error! 11..12 "'"
+
+== evidence ==
+PriorPhaseError at 9
+PriorPhaseError at 11
+
+== diagnostics ==
+error[syntax/unknown-punctuation] 1:10..1:11 "'": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 1:12..1:13 "'": punctuation has no meaning in Sumi source

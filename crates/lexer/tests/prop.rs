@@ -26,13 +26,9 @@ const EXTRA_SINGLE_TOKENS: &[&str] = &[
     "0123",
     "1u32",
     "0x1F",
-    // Terminated string and char literals.
+    // Terminated string literals.
     "\"abc\"",
     "\"a\\\"b\"",
-    "'a'",
-    "'\\''",
-    "'ab'",
-    "''",
     // Terminated multi-line literals.
     "\"\"\"\n\"\"\"",
     "\"\"\"\n  a \\\"\n  \"\"\"",

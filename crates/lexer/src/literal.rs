@@ -3,7 +3,7 @@
 //! The raw lexer establishes literal *shape* and classification; these
 //! checks establish *validity* under Sumi's rules: canonical integers (no
 //! leading zeros, no suffixes) and the v0 escape set (`\n`, `\r`, `\t`,
-//! `\\`, `\"`, `\'`, `\0`, `\u{…}`). The escape walker is the single
+//! `\\`, `\"`, `\0`, `\u{…}`). The escape walker is the single
 //! definition of the escape grammar; value decoding will reuse it when
 //! lowering needs it.
 //!
@@ -12,9 +12,9 @@
 //! line that is not blank starts with the closing line's indentation.
 //!
 //! The collector filters: numbers are re-scanned only when the scanner flagged
-//! them malformed, strings only when escaped and terminated, characters and
-//! multi-line literals only when terminated, so a token with a scanner error
-//! gets no further errors here.
+//! them malformed, strings only when escaped and terminated, multi-line
+//! literals only when terminated, so a token with a scanner error gets no
+//! further errors here.
 
 use std::ops::Range;
 
@@ -76,31 +76,6 @@ pub(crate) fn validate_string_body(
             error(offset + start..offset + end, kind);
         }
     });
-}
-
-/// Validate the escapes and content length of a terminated character literal.
-pub(crate) fn validate_char(text: &str, mut error: impl FnMut(Range<usize>, LexErrorKind)) {
-    let body = &text[1..text.len() - 1];
-    let mut pieces = 0usize;
-    let mut extra_start = None;
-    walk_escapes(body, false, |start, end, result| {
-        if pieces == 1 {
-            extra_start = Some(start);
-        }
-        pieces += 1;
-        if let Err(kind) = result {
-            error(start + 1..end + 1, kind);
-        }
-    });
-
-    match pieces {
-        0 => error(1..1, LexErrorKind::EmptyCharLiteral),
-        1 => {}
-        _ => error(
-            extra_start.expect("a second piece was seen") + 1..text.len() - 1,
-            LexErrorKind::MoreThanOneChar,
-        ),
-    }
 }
 
 /// Validate a terminated multi-line literal, `"""` to `"""`: its layout
@@ -180,7 +155,7 @@ pub(crate) fn validate_block_string(
     }
 }
 
-/// Walk the body of a string or character literal, invoking `piece` once per
+/// Walk the body of a string literal, invoking `piece` once per
 /// literal character or escape sequence with its body-relative byte range and
 /// validity. In a `multiline` literal a `\` before a line break joins the
 /// lines and is an escape like any other.
@@ -200,7 +175,7 @@ fn walk_escapes(
         }
 
         let result = match chars.next() {
-            Some('n' | 'r' | 't' | '\\' | '"' | '\'' | '0' | '{' | '}') => Ok(()),
+            Some('n' | 'r' | 't' | '\\' | '"' | '0' | '{' | '}') => Ok(()),
             Some('u') => scan_unicode_escape(&mut chars),
             Some('\n') if multiline => Ok(()),
             Some('\r') if multiline => {

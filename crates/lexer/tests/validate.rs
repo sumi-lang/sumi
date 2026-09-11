@@ -87,6 +87,8 @@ fn unused_punctuation_has_an_error() {
     // Reported here, where every later phase can treat an `Error` token as
     // already diagnosed.
     check_errors(";", &[(0, LexErrorKind::UnknownPunctuation)]);
+    // A quote mark opens nothing: there are no character literals.
+    check_errors("'", &[(0, LexErrorKind::UnknownPunctuation)]);
 }
 
 #[test]
@@ -147,19 +149,12 @@ fn errors_locate_the_offending_source_text() {
         "x 01u32",
         &[(2, 2, 3, E::LeadingZero), (2, 4, 7, E::UnknownSuffix)],
     );
-    check_error_ranges(
-        r#"Δ "é\q" ''"#,
-        &[
-            (2, 6, 8, E::UnknownEscape),
-            (4, 11, 11, E::EmptyCharLiteral),
-        ],
-    );
+    check_error_ranges(r#"Δ "é\q""#, &[(2, 6, 8, E::UnknownEscape)]);
     check_error_ranges("0123", &[(0, 0, 1, E::LeadingZero)]);
     check_error_ranges("1u32", &[(0, 1, 4, E::UnknownSuffix)]);
     check_error_ranges(r#""\uX""#, &[(0, 1, 3, E::MalformedUnicodeEscape)]);
     check_error_ranges(r#""\u{}""#, &[(0, 1, 5, E::MalformedUnicodeEscape)]);
     check_error_ranges(r#""\u{d800}""#, &[(0, 1, 9, E::InvalidUnicodeScalar)]);
-    check_error_ranges("'éx'", &[(0, 3, 4, E::MoreThanOneChar)]);
     check_error_ranges(";", &[(0, 0, 1, E::UnknownPunctuation)]);
 }
 
@@ -189,12 +184,13 @@ fn suffixes_are_rejected() {
 #[test]
 fn unterminated_literals_get_only_the_scanner_error() {
     check_errors("\"a\\q", &[(0, LexErrorKind::UnterminatedString)]);
-    check_errors("'ab", &[(0, LexErrorKind::UnterminatedChar)]);
 }
 
 #[test]
 fn valid_escapes_pass() {
-    check_errors(r#""a\n\r\t\\\"\'\0b" '\n' '\u{1F600}'"#, &[]);
+    check_errors(r#""a\n\r\t\\\"\0b\u{1F600}""#, &[]);
+    // A quote needs no escape in a `"…"` literal: there is no `\'`.
+    check_errors(r#""\'""#, &[(0, LexErrorKind::UnknownEscape)]);
 }
 
 #[test]
@@ -224,17 +220,6 @@ fn unicode_escape_validation() {
         r#""\u{110000}""#,
         &[(0, LexErrorKind::InvalidUnicodeScalar)],
     );
-}
-
-#[test]
-fn char_content_validation() {
-    check_errors("'a'", &[]);
-    check_errors(r"'\''", &[]);
-    check_errors("''", &[(0, LexErrorKind::EmptyCharLiteral)]);
-    check_errors("'ab'", &[(0, LexErrorKind::MoreThanOneChar)]);
-    check_errors(r"'\u{41}b'", &[(0, LexErrorKind::MoreThanOneChar)]);
-    // A bad escape is one piece: no cascading length error.
-    check_errors(r"'\q'", &[(0, LexErrorKind::UnknownEscape)]);
 }
 
 #[test]

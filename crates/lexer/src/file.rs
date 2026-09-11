@@ -47,7 +47,7 @@ pub fn lex(source: &str) -> Result<LexedFile, SourceTooLarge> {
             // scanner only finds its ends: on the token of a whole one, and
             // over the parts of one with holes once every token is in.
             RawKind::BlockString => token.kind == SyntaxKind::BlockStringLiteral,
-            RawKind::Char | RawKind::Unknown => true,
+            RawKind::Unknown => true,
             RawKind::Newline => token.flags.contains(TokenFlags::LONE_CR),
             RawKind::Punct => token.kind == SyntaxKind::Error,
             _ => false,
@@ -125,7 +125,6 @@ fn collect_errors(
         RawKind::String if unterminated && token.kind == SyntaxKind::StringLiteral => {
             Some(LexErrorKind::UnterminatedString)
         }
-        RawKind::Char if unterminated => Some(LexErrorKind::UnterminatedChar),
         RawKind::Newline if token.flags.contains(TokenFlags::LONE_CR) => {
             Some(LexErrorKind::LoneCarriageReturn)
         }
@@ -183,7 +182,6 @@ fn collect_errors(
         SyntaxKind::BlockStringLiteral => {
             literal::validate_block_string(text, std::iter::once(0..text.len()), &mut error);
         }
-        SyntaxKind::CharLiteral => literal::validate_char(text, &mut error),
         SyntaxKind::Error if token.raw == RawKind::Punct => {
             error(0..1, LexErrorKind::UnknownPunctuation);
         }
@@ -400,7 +398,6 @@ pub enum LexErrorKind {
     /// A `"""` never closed. Reported at the opener: the rest of the file
     /// is inside it.
     UnterminatedBlockString,
-    UnterminatedChar,
     /// A `\r` line ending not followed by `\n`.
     LoneCarriageReturn,
     /// A U+FEFF byte-order mark somewhere other than byte zero.
@@ -419,10 +416,6 @@ pub enum LexErrorKind {
     MalformedUnicodeEscape,
     /// A `\u` escape naming a surrogate or a value beyond U+10FFFF.
     InvalidUnicodeScalar,
-    /// A character literal with nothing in it: `''`.
-    EmptyCharLiteral,
-    /// A character literal containing more than one character.
-    MoreThanOneChar,
     /// Punctuation with no role in the language, such as `;` or `[`.
     UnknownPunctuation,
     /// Text after the opening `"""` on its line; the content begins on the
