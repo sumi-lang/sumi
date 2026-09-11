@@ -915,17 +915,29 @@ fn inference_preserves_resolution_poison_and_annotation_boundaries() {
 fn large_definition_chains_and_cycles_are_stack_safe() {
     use std::fmt::Write;
     const COUNT: usize = 10_000;
-    for (cycle, grounded) in [(false, true), (true, true), (true, false)] {
+    // A chain of calls that is grounded, grounded through a cycle, an
+    // unresolved cycle, or a cycle that claims two types at its ends.
+    for (cycle, grounded, conflict) in [
+        (false, true, false),
+        (true, true, false),
+        (true, false, false),
+        (true, false, true),
+    ] {
         for reverse in [false, true] {
             let mut definitions = Vec::new();
             for i in 0..COUNT - 1 {
-                definitions.push(format!("fn f{i}() = f{}()", i + 1));
+                let body = if conflict && i == 0 {
+                    "if true { true } else { f1() }".to_owned()
+                } else {
+                    format!("f{}()", i + 1)
+                };
+                definitions.push(format!("fn f{i}() = {body}"));
             }
             let mut last = format!("fn f{}() = ", COUNT - 1);
-            last.push_str(match (cycle, grounded) {
-                (false, _) => "1",
-                (true, true) => "if true { 1 } else { f0() }",
-                (true, false) => "f0()",
+            last.push_str(match (cycle, grounded, conflict) {
+                (false, _, _) => "1",
+                (true, true, _) | (true, false, true) => "if true { 1 } else { f0() }",
+                (true, false, false) => "f0()",
             });
             definitions.push(last);
             if reverse {
@@ -942,7 +954,10 @@ fn large_definition_chains_and_cycles_are_stack_safe() {
                     invariant(&a, function);
                 }
             } else {
-                assert_eq!(a.diagnostics.len(), COUNT);
+                // A conflict is reported once at each end that claims a
+                // type; every function between inherits it silently.
+                assert_eq!(a.diagnostics.len(), if conflict { 2 } else { COUNT });
+                assert!(a.diagnostics.iter().all(|d| d.code == CANNOT_INFER));
                 assert!(
                     a.functions
                         .iter()
