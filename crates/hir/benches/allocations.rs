@@ -7,12 +7,14 @@ use sumi_hir::{Ty, analyze};
 
 #[path = "support/graphs.rs"]
 mod graphs;
-// The harness-less bench omits #[test] functions, leaving their imports unused.
-#[allow(unused_imports)]
-#[path = "../src/infer.rs"]
-mod infer;
 #[path = "support/programs.rs"]
 mod programs;
+#[allow(dead_code)]
+#[path = "../src/solver.rs"]
+mod solver;
+#[allow(dead_code)]
+#[path = "../src/typing.rs"]
+mod typing;
 
 struct Counting;
 static CALLS: AtomicUsize = AtomicUsize::new(0);

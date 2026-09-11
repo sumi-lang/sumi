@@ -31,13 +31,17 @@ fn empty@277..292 () -> unit
     tail: unit (implicit)
 
 == semantic diagnostics ==
-error[semantic/cannot-infer]: conflicting function result constraints; add a return type annotation
+error[semantic/cannot-infer]: function result is both int and bool; add a return type annotation
   primary @0..35
-error[semantic/cannot-infer]: conflicting function result constraints; add a return type annotation
+  secondary @19..20: int here
+  secondary @30..33: bool here
+error[semantic/cannot-infer]: function result is both bool and int; add a return type annotation
   primary @36..74
+  secondary @55..59: bool here
+  secondary @69..72: int here
 error[semantic/type-mismatch]: expected bool, found int
   primary @126..135
-  secondary @102..135: declared here
+  secondary @119..123: declared here
 error[semantic/type-mismatch]: expected bool, found int
   primary @158..171
   secondary @177..186: other branch determines expected type

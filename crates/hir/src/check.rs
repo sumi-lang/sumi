@@ -1,4 +1,24 @@
-use std::collections::HashMap;
+//! Semantic checking of one file: names, structure, and scalar types.
+//!
+//! Checking makes three passes over the items.
+//!
+//! 1. **Headers.** Every function's name, parameter types, and result class:
+//!    an annotated result is a class known to be its type, an expression body
+//!    without one is a fresh class to infer, and a bare block body is unit.
+//! 2. **Bodies.** A structural walk per function resolves names, builds a
+//!    draft body in which every expression and local owns a class in the
+//!    [`Typing`], and records what the walk learns: facts for literals and
+//!    operator results, a flow for each call, and a demand wherever a context
+//!    requires an expression to have a type. The walk rejects nothing on type
+//!    grounds; it fails only on names, syntax, and unsupported constructs.
+//! 3. **Verdicts.** The typing solves once. Signatures are read off result
+//!    classes, independent of declaration order. Demands are then checked in
+//!    source order against the final evidence, so a disagreement is blamed on
+//!    the first demand that raised it. A body is published when its walk
+//!    succeeded, none of its demands failed, every class it uses resolved,
+//!    and every function it calls has a signature.
+
+use std::collections::{HashMap, HashSet};
 
 use sumi_frontend::{DiagnosticCode, Label, Location};
 use sumi_lexer::{RawIdx, SyntaxKind, TokenFlags};
@@ -8,25 +28,36 @@ use sumi_syntax::{
 };
 
 use crate::codes;
-use crate::infer::{Inference, Term};
+use crate::solver::Var;
+use crate::typing::{Expected, Typing};
 use crate::*;
 
 struct Header {
     params: Option<Box<[Ty]>>,
-    result: Option<Term>,
+    /// The result class; `None` when the declaration is too damaged to have
+    /// one.
+    result: Option<Var>,
+    /// The declared result type and where: the annotation, or the whole item
+    /// for a bare block body. A declaration is a contract the body is held
+    /// to, never changed by it. `None` for a result to infer from the body.
+    declared: Option<(Ty, Span)>,
     origin: Span,
 }
 
 struct DraftLocal {
     name: Box<str>,
     origin: Span,
-    ty: Term,
+    class: Var,
 }
 
 struct DraftExpr {
     kind: ExprKind,
     origin: Span,
-    ty: Term,
+    class: Var,
+    /// The expression whose type this one has: itself, or through any
+    /// number of tails and branches, the innermost expression it takes its
+    /// type from. Two demands with one subject are about one expression.
+    subject: ExprId,
 }
 
 struct DraftBody {
@@ -37,7 +68,9 @@ struct DraftBody {
 }
 
 impl DraftBody {
-    fn finish(self, inference: &Inference, functions: &[Function]) -> Option<Body> {
+    /// The body with every class resolved to its type, if every class
+    /// resolved and every call agrees with its callee's signature.
+    fn publish(self, typing: &Typing, functions: &[Function]) -> Option<Body> {
         let locals = self
             .locals
             .into_iter()
@@ -45,7 +78,7 @@ impl DraftBody {
                 Some(Local {
                     name: local.name,
                     origin: local.origin,
-                    ty: inference.resolve(local.ty)?,
+                    ty: typing.resolve(local.class)?,
                 })
             })
             .collect::<Option<_>>()?;
@@ -53,10 +86,10 @@ impl DraftBody {
             .exprs
             .into_iter()
             .map(|expr| {
-                let ty = inference.resolve(expr.ty)?;
+                let ty = typing.resolve(expr.class)?;
                 if let ExprKind::Call { function, .. } = &expr.kind {
-                    // A caller's local requirements can solve its call term without
-                    // solving the provider. That is not a publishable call.
+                    // A caller's demands can resolve its call's class without
+                    // resolving the callee. That is not a publishable call.
                     if functions[function.0].signature.as_ref()?.result != ty {
                         return None;
                     }
@@ -77,17 +110,25 @@ impl DraftBody {
     }
 }
 
-enum ObligationKind {
-    Equal(Term, Option<(Span, &'static str)>),
+/// What a context requires of an expression, checked after solving.
+enum DemandKind {
+    /// The expression must have the expected type.
+    Type {
+        expected: Expected,
+        related: Option<(Span, &'static str)>,
+    },
+    /// An expression statement's value must be unit.
     Unused,
+    /// The operands of `==` and `!=` must not be unit.
     Comparable,
 }
 
-struct Obligation {
+struct Demand {
     owner: usize,
+    subject: ExprId,
     node: NodeIdx,
-    actual: Term,
-    kind: ObligationKind,
+    actual: Var,
+    kind: DemandKind,
 }
 
 struct Source<'a> {
@@ -120,19 +161,29 @@ impl Source<'_> {
         message: impl Into<Box<str>>,
         related: Option<(Span, &'static str)>,
     ) {
+        let related = related.map(|(span, message)| (span, Box::from(message)));
+        self.report(self.span(node), code, message, related);
+    }
+    fn report(
+        &mut self,
+        primary: Span,
+        code: DiagnosticCode,
+        message: impl Into<Box<str>>,
+        related: impl IntoIterator<Item = (Span, Box<str>)>,
+    ) {
         self.diagnostics.push(Diagnostic {
             code,
             severity: Severity::Error,
             message: message.into(),
             primary: Label {
-                location: Location::range(self.span(node)),
+                location: Location::range(primary),
                 message: None,
             },
             secondary: related
                 .into_iter()
                 .map(|(span, message)| Label {
                     location: Location::range(span),
-                    message: Some(message.into()),
+                    message: Some(message),
                 })
                 .collect(),
             notes: Box::new([]),
@@ -151,22 +202,6 @@ impl Source<'_> {
             codes::TYPE_MISMATCH,
             format!("expected {expected}, found {actual}"),
             related,
-        );
-    }
-    fn unused_value(&mut self, node: NodeIdx, ty: Ty) {
-        self.error(
-            node,
-            codes::UNUSED_VALUE,
-            format!("unused value of type {ty}; use `_ =` to discard it"),
-            None,
-        );
-    }
-    fn incomparable(&mut self, node: NodeIdx) {
-        self.error(
-            node,
-            codes::TYPE_MISMATCH,
-            "unit values cannot be compared",
-            None,
         );
     }
     fn ty(&mut self, node: ast::TypeRef) -> Option<Ty> {
@@ -208,7 +243,6 @@ struct Parameter {
     ty: Option<Ty>,
 }
 
-/// Collect headers and body constraints before publishing concrete HIR.
 pub fn analyze(parsed: ParsedSource) -> Analysis {
     let tree = parsed.parse().tree();
     let mut source = Source {
@@ -220,15 +254,17 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         .unwrap()
         .items(tree)
         .collect();
+    let mut typing = Typing::new(parsed.file());
+
+    // Pass 1: headers.
     let mut functions: Vec<Function> = Vec::with_capacity(items.len());
     let mut names = HashMap::<Box<str>, (Span, Option<FunctionId>)>::new();
     let mut parameters = Vec::with_capacity(items.len());
     let mut headers = Vec::with_capacity(items.len());
-    let mut inference = Inference::default();
-    let mut obligations = Vec::new();
     for item in &items {
         let name = source.name(item.name(tree));
         let id = FunctionId(functions.len());
+        let origin = source.span(item.node());
         if let Some((name, node)) = &name {
             if let Some((first, target)) = names.get_mut(name) {
                 source.error(
@@ -268,37 +304,51 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
                 });
             }
         }
-        let result = if let Some(ret) = item.ret(tree) {
-            source.ty(ret).map(Term::Known)
+        let (result, declared) = if let Some(ret) = item.ret(tree) {
+            let span = source.span(ret.node());
+            match source.ty(ret) {
+                Some(ty) => (Some(typing.known(ty, span)), Some((ty, span))),
+                None => (None, None),
+            }
         } else {
-            // None can mean damaged syntax, not omission. Only an empty gap or
-            // the expression-body '=' establishes an omitted result annotation.
-            list.filter(|list| !tree.has_error(list.node()))
-                .and_then(|list| {
+            // A missing annotation can mean damaged syntax, not omission.
+            // Only an empty gap or the expression-body `=` says it was left
+            // out: a bare block is unit, an expression body is inferred.
+            let gap = list
+                .filter(|list| !tree.has_error(list.node()))
+                .map(|list| {
                     let end = item
                         .body(tree)
                         .map_or(tree.end_token(item.node()), |e| tree.first_token(e.node()));
                     let mut tokens = source.tokens(tree.end_token(list.node()), end);
-                    match (tokens.next(), tokens.next()) {
-                        (None, None) => Some(Term::Known(Ty::Unit)),
-                        (Some(SyntaxKind::Eq), None) => Some(inference.fresh()),
-                        _ => None,
-                    }
-                })
+                    (tokens.next(), tokens.next())
+                });
+            match gap {
+                Some((None, None)) => (
+                    Some(typing.known(Ty::Unit, origin)),
+                    Some((Ty::Unit, origin)),
+                ),
+                Some((Some(SyntaxKind::Eq), None)) => (Some(typing.fresh()), None),
+                _ => (None, None),
+            }
         };
         headers.push(Header {
             params: valid.then(|| params.iter().map(|p| p.ty.unwrap()).collect()),
             result,
-            origin: source.span(item.node()),
+            declared,
+            origin,
         });
         parameters.push(params);
         functions.push(Function {
             name: name.map(|n| n.0),
-            origin: source.span(item.node()),
+            origin,
             signature: None,
             body: None,
         });
     }
+
+    // Pass 2: bodies.
+    let mut demands = Vec::new();
     let mut bodies = Vec::with_capacity(items.len());
     // Syntax node IDs are dense and bodies have disjoint nodes. Expression
     // IDs remain body-local; a builder only reads entries in its own body.
@@ -309,8 +359,8 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
                 &mut source,
                 &headers,
                 &names,
-                &mut inference,
-                &mut obligations,
+                &mut typing,
+                &mut demands,
                 index,
                 &mut values,
             )
@@ -318,58 +368,111 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         );
     }
     drop(values);
-    inference.solve();
-    let mut replay = inference.replay();
+
+    // Pass 3: verdicts.
+    typing.solve();
+    let mut replay = typing.replay();
     let mut failed = vec![false; functions.len()];
-    for obligation in obligations {
-        let actual = replay.resolve(obligation.actual);
-        match obligation.kind {
-            ObligationKind::Equal(expected, related) => match (actual, replay.resolve(expected)) {
-                (Some(actual), Some(expected)) if actual != expected => {
-                    source.type_mismatch(obligation.node, expected, actual, related);
+    // An expression whose type is already in dispute is held to no further
+    // demand: one report per expression, at the first demand it fails.
+    let mut disputed = HashSet::new();
+    for demand in demands {
+        if disputed.contains(&(demand.owner, demand.subject)) {
+            continue;
+        }
+        let actual = replay.resolve(demand.actual);
+        match demand.kind {
+            DemandKind::Type { expected, related } => {
+                let expected_ty = match expected {
+                    Expected::Ty(ty) => Some(ty),
+                    Expected::Class(class) => replay.resolve(class),
+                };
+                match (actual, expected_ty) {
+                    (Some(actual), Some(expected)) if actual != expected => {
+                        source.type_mismatch(demand.node, expected, actual, related);
+                    }
+                    _ => {
+                        replay.expect(demand.actual, expected, source.span(demand.node));
+                        continue;
+                    }
                 }
+            }
+            DemandKind::Unused => match actual {
+                Some(ty) if ty != Ty::Unit => source.error(
+                    demand.node,
+                    codes::UNUSED_VALUE,
+                    format!("unused value of type {ty}; use `_ =` to discard it"),
+                    None,
+                ),
                 _ => {
-                    replay.equal(obligation.actual, expected);
+                    replay.expect(
+                        demand.actual,
+                        Expected::Ty(Ty::Unit),
+                        source.span(demand.node),
+                    );
                     continue;
                 }
             },
-            ObligationKind::Unused => match actual {
-                Some(ty) if ty != Ty::Unit => source.unused_value(obligation.node, ty),
-                _ => {
-                    replay.equal(obligation.actual, Ty::Unit.into());
-                    continue;
-                }
-            },
-            ObligationKind::Comparable => {
+            DemandKind::Comparable => {
                 if actual != Some(Ty::Unit) {
                     continue;
                 }
-                source.incomparable(obligation.node);
+                source.error(
+                    demand.node,
+                    codes::TYPE_MISMATCH,
+                    "unit values cannot be compared",
+                    None,
+                );
             }
         }
-        failed[obligation.owner] = true;
+        failed[demand.owner] = true;
+        disputed.insert((demand.owner, demand.subject));
     }
     for (index, header) in headers.into_iter().enumerate() {
-        let result = header.result.and_then(|term| inference.resolve(term));
+        let evidence = header.result.map(|result| *typing.evidence(result));
+        let result = evidence.and_then(|evidence| evidence.ty());
         if let (Some(params), Some(result)) = (header.params, result) {
             functions[index].signature = Some(Signature { params, result });
         }
-        if matches!(header.result, Some(Term::Var(_)))
-            && result.is_none()
+        // A result to infer that did not resolve is reported here, unless a
+        // demand in the body already explained it, or the trouble arrived
+        // whole from a callee, which reports it at its own declaration.
+        if let (None, Some(evidence), None) = (header.declared, evidence, result)
             && bodies[index].is_some()
             && !failed[index]
+            && !evidence.inherited()
         {
-            let message = if inference.conflicted(header.result.unwrap()) {
-                "conflicting function result constraints; add a return type annotation"
+            let node = items[index].node();
+            if evidence.is_conflict() {
+                let claims = evidence.claims();
+                let types: Vec<_> = claims.iter().map(|(ty, _)| ty.to_string()).collect();
+                let (last, rest) = types.split_last().unwrap();
+                let joined = if rest.len() == 1 {
+                    format!("{} and {last}", rest[0])
+                } else {
+                    format!("{}, and {last}", rest.join(", "))
+                };
+                source.report(
+                    source.span(node),
+                    codes::CANNOT_INFER,
+                    format!("function result is both {joined}; add a return type annotation"),
+                    claims.into_iter().map(|(ty, claim)| {
+                        (claim.span(typing.file()), format!("{ty} here").into())
+                    }),
+                );
             } else {
-                "cannot infer function result; add a return type annotation"
-            };
-            source.error(items[index].node(), codes::CANNOT_INFER, message, None);
+                source.error(
+                    node,
+                    codes::CANNOT_INFER,
+                    "cannot infer function result; add a return type annotation",
+                    None,
+                );
+            }
         }
     }
     for (index, body) in bodies.into_iter().enumerate() {
         if !failed[index] && functions[index].signature.is_some() {
-            functions[index].body = body.and_then(|body| body.finish(&inference, &functions));
+            functions[index].body = body.and_then(|body| body.publish(&typing, &functions));
         }
     }
     source
@@ -405,10 +508,10 @@ enum Work {
 
 struct Builder<'a, 's> {
     source: &'a mut Source<'s>,
-    functions: &'a [Header],
+    headers: &'a [Header],
     names: &'a HashMap<Box<str>, (Span, Option<FunctionId>)>,
-    inference: &'a mut Inference,
-    obligations: &'a mut Vec<Obligation>,
+    typing: &'a mut Typing,
+    demands: &'a mut Vec<Demand>,
     owner: usize,
     scopes: Vec<Scope>,
     locals: Vec<DraftLocal>,
@@ -421,19 +524,19 @@ struct Builder<'a, 's> {
 impl<'a, 's> Builder<'a, 's> {
     fn new(
         source: &'a mut Source<'s>,
-        functions: &'a [Header],
+        headers: &'a [Header],
         names: &'a HashMap<Box<str>, (Span, Option<FunctionId>)>,
-        inference: &'a mut Inference,
-        obligations: &'a mut Vec<Obligation>,
+        typing: &'a mut Typing,
+        demands: &'a mut Vec<Demand>,
         owner: usize,
         values: &'a mut [Option<ExprId>],
     ) -> Self {
         Self {
             source,
-            functions,
+            headers,
             names,
-            inference,
-            obligations,
+            typing,
+            demands,
             owner,
             scopes: vec![Scope::new()],
             locals: Vec::new(),
@@ -459,7 +562,8 @@ impl<'a, 's> Builder<'a, 's> {
                     self.failed = true;
                 } else {
                     first.insert(name.clone(), self.source.span(node));
-                    if let Some(local) = self.bind(name, node, param.ty.map(Term::Known)) {
+                    let class = param.ty.map(|ty| self.known(ty, node));
+                    if let Some(local) = self.bind(name, node, class) {
                         params.push(local);
                     }
                 }
@@ -467,8 +571,9 @@ impl<'a, 's> Builder<'a, 's> {
                 self.failed = true;
             }
         }
-        let header = &self.functions[self.owner];
+        let header = &self.headers[self.owner];
         let result = header.result;
+        let declared = header.declared;
         self.failed |= header.params.is_none() || result.is_none();
         let root_node = item.body(self.source.tree)?.node();
         let mut work = vec![Work::Enter(root_node)];
@@ -488,16 +593,22 @@ impl<'a, 's> Builder<'a, 's> {
             }
         }
         let root = self.value(root_node);
-        // A failed parameter does not erase an independently known result type.
-        if let (Some(root), Some(result)) = (root, result)
-            && !self.require(
-                root_node,
-                root,
-                result,
-                Some((self.source.span(item.node()), "declared here")),
-            )
-        {
-            self.failed = true;
+        // A failed parameter does not erase an independently known result
+        // type. A declared result is a contract on the body; an inferred one
+        // is the body's own type.
+        match (root, declared, result) {
+            (Some(root), Some((ty, span)), _) => {
+                self.require(
+                    root_node,
+                    root,
+                    Expected::Ty(ty),
+                    Some((span, "declared here")),
+                );
+            }
+            (Some(root), None, Some(result)) => {
+                self.require(root_node, root, Expected::Class(result), None);
+            }
+            _ => {}
         }
         if self.failed {
             return None;
@@ -509,13 +620,13 @@ impl<'a, 's> Builder<'a, 's> {
             root: root?,
         })
     }
-    fn bind(&mut self, name: Box<str>, node: NodeIdx, ty: Option<Term>) -> Option<LocalId> {
-        let id = ty.map(|ty| {
+    fn bind(&mut self, name: Box<str>, node: NodeIdx, class: Option<Var>) -> Option<LocalId> {
+        let id = class.map(|class| {
             let id = LocalId::new(self.locals.len());
             self.locals.push(DraftLocal {
                 name: name.clone(),
                 origin: self.source.span(node),
-                ty,
+                class,
             });
             id
         });
@@ -529,15 +640,59 @@ impl<'a, 's> Builder<'a, 's> {
             .rev()
             .find_map(|scope| scope.get(name).copied())
     }
-    fn emit(&mut self, node: NodeIdx, kind: ExprKind, ty: impl Into<Term>) -> ExprId {
+    /// A class known to have `ty` because of `node`.
+    fn known(&mut self, ty: Ty, node: NodeIdx) -> Var {
+        self.typing.known(ty, self.source.span(node))
+    }
+    fn class(&self, expr: ExprId) -> Var {
+        self.exprs[expr.index()].class
+    }
+    /// An expression of its own type.
+    fn emit(&mut self, node: NodeIdx, kind: ExprKind, class: Var) -> ExprId {
+        let id = ExprId::new(self.exprs.len());
+        self.emit_as(node, kind, class, id)
+    }
+    /// An expression with the type of `inner`, one of its sub-expressions.
+    fn emit_from(&mut self, node: NodeIdx, kind: ExprKind, inner: ExprId) -> ExprId {
+        let (class, subject) = (self.class(inner), self.exprs[inner.index()].subject);
+        self.emit_as(node, kind, class, subject)
+    }
+    fn emit_as(&mut self, node: NodeIdx, kind: ExprKind, class: Var, subject: ExprId) -> ExprId {
         let id = ExprId::new(self.exprs.len());
         self.exprs.push(DraftExpr {
             kind,
             origin: self.source.span(node),
-            ty: ty.into(),
+            class,
+            subject,
         });
         self.values[node.to_usize()] = Some(id);
         id
+    }
+    /// The context at `node` requires `expr` to be `expected`. Recorded for
+    /// the verdict pass, and joined into the evidence now so inference sees
+    /// it.
+    fn require(
+        &mut self,
+        node: NodeIdx,
+        expr: ExprId,
+        expected: Expected,
+        related: Option<(Span, &'static str)>,
+    ) {
+        let actual = self.class(expr);
+        if expected == Expected::Class(actual) {
+            return;
+        }
+        self.typing.expect(actual, expected, self.source.span(node));
+        self.demand(node, expr, DemandKind::Type { expected, related });
+    }
+    fn demand(&mut self, node: NodeIdx, expr: ExprId, kind: DemandKind) {
+        self.demands.push(Demand {
+            owner: self.owner,
+            subject: self.exprs[expr.index()].subject,
+            node,
+            actual: self.class(expr),
+            kind,
+        });
     }
     fn unsupported(&mut self, node: NodeIdx) {
         self.source.error(
@@ -698,7 +853,10 @@ impl<'a, 's> Builder<'a, 's> {
                 }
             });
         match value {
-            Some(value) => Some(self.emit(origin, ExprKind::Int(value), Ty::Int)),
+            Some(value) => {
+                let class = self.known(Ty::Int, origin);
+                Some(self.emit(origin, ExprKind::Int(value), class))
+            }
             None => {
                 self.source.error(
                     literal,
@@ -709,31 +867,6 @@ impl<'a, 's> Builder<'a, 's> {
                 None
             }
         }
-    }
-    fn require(
-        &mut self,
-        node: NodeIdx,
-        expr: ExprId,
-        expected: impl Into<Term>,
-        related: Option<(Span, &'static str)>,
-    ) -> bool {
-        let expected = expected.into();
-        let actual = self.exprs[expr.index()].ty;
-        if actual == expected {
-            return true;
-        }
-        if let (Term::Known(actual), Term::Known(expected)) = (actual, expected) {
-            self.source.type_mismatch(node, expected, actual, related);
-            return false;
-        }
-        self.inference.equal(actual, expected);
-        self.obligations.push(Obligation {
-            owner: self.owner,
-            node,
-            actual,
-            kind: ObligationKind::Equal(expected, related),
-        });
-        true
     }
     fn value(&self, node: NodeIdx) -> Option<ExprId> {
         self.values[node.to_usize()]
@@ -757,21 +890,7 @@ impl<'a, 's> Builder<'a, 's> {
                         if index == 0 {
                             tail = Some(value);
                         } else {
-                            let ty = self.exprs[value.index()].ty;
-                            if let Term::Known(ty) = ty {
-                                if ty != Ty::Unit {
-                                    self.source.unused_value(child, ty);
-                                    valid = false;
-                                }
-                            } else {
-                                self.inference.equal(ty, Ty::Unit.into());
-                                self.obligations.push(Obligation {
-                                    owner: self.owner,
-                                    node: child,
-                                    actual: ty,
-                                    kind: ObligationKind::Unused,
-                                });
-                            }
+                            self.demand(child, value, DemandKind::Unused);
                             statements.push(Statement {
                                 origin: self.source.span(child),
                                 kind: StatementKind::Eval(value),
@@ -785,34 +904,42 @@ impl<'a, 's> Builder<'a, 's> {
                     return None;
                 }
                 statements.reverse();
-                let ty = tail.map_or(Term::Known(Ty::Unit), |id| self.exprs[id.index()].ty);
-                self.emit(node, ExprKind::Block { statements, tail }, ty);
+                match tail {
+                    Some(tail) => {
+                        let kind = ExprKind::Block {
+                            statements,
+                            tail: Some(tail),
+                        };
+                        self.emit_from(node, kind, tail);
+                    }
+                    None => {
+                        let class = self.known(Ty::Unit, node);
+                        self.emit(node, ExprKind::Block { statements, tail }, class);
+                    }
+                }
             }
             NodeKind::LetStmt => {
                 let binding = ast::LetStmt::cast(tree, node).unwrap();
                 let (name, name_node) = self.source.name(binding.name(tree))?;
                 let initializer_node = binding.initializer(tree).unwrap().node();
-                let mut initializer = self.value(initializer_node);
-                if let Some(annotation) = binding.type_ref(tree) {
-                    let ty = self.source.ty(annotation);
-                    if let (Some(value), Some(ty)) = (initializer, ty) {
-                        if !self.require(
-                            initializer_node,
-                            value,
-                            ty,
-                            Some((self.source.span(annotation.node()), "declared here")),
-                        ) {
-                            initializer = None;
+                let initializer = self.value(initializer_node);
+                // An annotated binding has its declared type whatever its
+                // initializer turns out to be; the initializer is held to it.
+                let class = match binding.type_ref(tree) {
+                    Some(annotation) => self.source.ty(annotation).map(|ty| {
+                        if let Some(value) = initializer {
+                            self.require(
+                                initializer_node,
+                                value,
+                                Expected::Ty(ty),
+                                Some((self.source.span(annotation.node()), "declared here")),
+                            );
                         }
-                    } else {
-                        initializer = None;
-                    }
-                }
-                let local = self.bind(
-                    name,
-                    name_node,
-                    initializer.map(|id| self.exprs[id.index()].ty),
-                );
+                        self.known(ty, annotation.node())
+                    }),
+                    None => initializer.map(|value| self.class(value)),
+                };
+                let local = self.bind(name, name_node, class);
                 self.statements.push((
                     node,
                     Statement {
@@ -841,7 +968,8 @@ impl<'a, 's> Builder<'a, 's> {
                 let name = self.source.text(node);
                 match self.lookup(name) {
                     Some(Some(local)) => {
-                        self.emit(node, ExprKind::Local(local), self.locals[local.index()].ty);
+                        let class = self.locals[local.index()].class;
+                        self.emit(node, ExprKind::Local(local), class);
                     }
                     Some(None) => return None,
                     None => {
@@ -865,11 +993,9 @@ impl<'a, 's> Builder<'a, 's> {
                         self.integer(node, node, false)?;
                     }
                     _ if matches!(self.source.text(node), "true" | "false") => {
-                        self.emit(
-                            node,
-                            ExprKind::Bool(self.source.text(node) == "true"),
-                            Ty::Bool,
-                        );
+                        let value = self.source.text(node) == "true";
+                        let class = self.known(Ty::Bool, node);
+                        self.emit(node, ExprKind::Bool(value), class);
                     }
                     _ => {
                         self.unsupported(node);
@@ -896,9 +1022,8 @@ impl<'a, 's> Builder<'a, 's> {
                     .tokens(tree.first_token(node), tree.first_token(operand))
                     .eq([SyntaxKind::Minus]);
                 let ty = if neg { Ty::Int } else { Ty::Bool };
-                if !self.require(operand, value, ty, None) {
-                    return None;
-                }
+                self.require(operand, value, Expected::Ty(ty), None);
+                let class = self.known(ty, node);
                 self.emit(
                     node,
                     if neg {
@@ -906,7 +1031,7 @@ impl<'a, 's> Builder<'a, 's> {
                     } else {
                         ExprKind::Not(value)
                     },
-                    ty,
+                    class,
                 );
             }
             NodeKind::BinaryExpr => {
@@ -929,36 +1054,30 @@ impl<'a, 's> Builder<'a, 's> {
                     .expect("clean binary operator");
                 let lhs = self.value(lhs_node);
                 let rhs = self.value(rhs_node);
-                let (expected, ty) = match op {
-                    Add | Sub | Mul | Div | Rem => (Some(Term::Known(Ty::Int)), Ty::Int),
-                    Lt | Le | Gt | Ge => (Some(Term::Known(Ty::Int)), Ty::Bool),
-                    Eq | Ne => (lhs.or(rhs).map(|id| self.exprs[id.index()].ty), Ty::Bool),
-                    And | Or => (Some(Term::Known(Ty::Bool)), Ty::Bool),
+                // `==` and `!=` compare like with like: whichever operand
+                // exists sets the other's expectation.
+                let (operand, result) = match op {
+                    Add | Sub | Mul | Div | Rem => (Some(Expected::Ty(Ty::Int)), Ty::Int),
+                    Lt | Le | Gt | Ge => (Some(Expected::Ty(Ty::Int)), Ty::Bool),
+                    Eq | Ne => (
+                        lhs.or(rhs).map(|id| Expected::Class(self.class(id))),
+                        Ty::Bool,
+                    ),
+                    And | Or => (Some(Expected::Ty(Ty::Bool)), Ty::Bool),
                 };
-                let mut valid = true;
-                if let Some(expected) = expected {
+                if let Some(operand) = operand {
                     for (child, value) in [(lhs_node, lhs), (rhs_node, rhs)] {
                         if let Some(value) = value {
-                            valid &= self.require(child, value, expected, None);
+                            self.require(child, value, operand, None);
                         }
                     }
-                    if expected == Term::Known(Ty::Unit) {
-                        self.source.incomparable(node);
-                        valid = false;
-                    } else if matches!(op, Eq | Ne) && matches!(expected, Term::Var(_)) {
-                        self.obligations.push(Obligation {
-                            owner: self.owner,
-                            node,
-                            actual: expected,
-                            kind: ObligationKind::Comparable,
-                        });
+                    if let Some(operand) = lhs.or(rhs) {
+                        self.demand(node, operand, DemandKind::Comparable);
                     }
                 }
-                if !valid {
-                    return None;
-                }
                 let (lhs, rhs) = (lhs?, rhs?);
-                self.emit(node, ExprKind::binary(op, lhs, rhs), ty);
+                let class = self.known(result, node);
+                self.emit(node, ExprKind::binary(op, lhs, rhs), class);
             }
             NodeKind::IfExpr => {
                 let branch = ast::IfExpr::cast(tree, node).unwrap();
@@ -968,43 +1087,36 @@ impl<'a, 's> Builder<'a, 's> {
                 let then_branch = self.value(then_node);
                 let else_node = branch.else_branch(tree).map(|e| e.node());
                 let else_branch = else_node.and_then(|n| self.value(n));
-                let mut valid = true;
                 if let Some(condition) = condition {
-                    valid &= self.require(condition_node, condition, Ty::Bool, None);
+                    self.require(condition_node, condition, Expected::Ty(Ty::Bool), None);
                 }
-                let else_ty = if else_node.is_some() {
-                    else_branch.map(|id| self.exprs[id.index()].ty)
-                } else {
-                    Some(Term::Known(Ty::Unit))
+                // The branches agree; without an else, the then branch is unit.
+                let expected = match else_node {
+                    Some(_) => else_branch.map(|id| Expected::Class(self.class(id))),
+                    None => Some(Expected::Ty(Ty::Unit)),
                 };
-                if let (Some(then_branch), Some(ty)) = (then_branch, else_ty) {
-                    valid &= self.require(
+                if let (Some(then_branch), Some(expected)) = (then_branch, expected) {
+                    self.require(
                         then_node,
                         then_branch,
-                        ty,
+                        expected,
                         else_node.map(|n| {
                             (self.source.span(n), "other branch determines expected type")
                         }),
                     );
                 }
-                if !valid || (else_node.is_some() && else_branch.is_none()) {
+                if else_node.is_some() && else_branch.is_none() {
                     return None;
                 }
                 let then_branch = then_branch?;
-                // Preserve the equality class if either arm is inferred. A
-                // literal arm must not hide conflicts arriving through imports.
-                let ty = match (self.exprs[then_branch.index()].ty, else_ty) {
-                    (_, Some(ty @ Term::Var(_))) => ty,
-                    (ty, _) => ty,
-                };
-                self.emit(
+                self.emit_from(
                     node,
                     ExprKind::If {
                         condition: condition?,
                         then_branch,
                         else_branch,
                     },
-                    ty,
+                    then_branch,
                 );
             }
             _ => unreachable!("scheduled supported node"),
@@ -1012,41 +1124,40 @@ impl<'a, 's> Builder<'a, 's> {
         Some(())
     }
     fn call(&mut self, node: NodeIdx, target: FunctionId, callee: NodeIdx) -> Option<()> {
-        let function = &self.functions[target.0];
+        let function = &self.headers[target.0];
         let params = function.params.as_ref()?;
+        let origin = function.origin;
+        let result = function.result;
         let tree = self.source.tree;
         let list = ast::CallExpr::cast(tree, node)
             .unwrap()
             .arg_list(tree)
             .unwrap();
         let args: Vec<_> = list.args(tree).map(|arg| arg.node()).collect();
-        let mut valid = args.len() == params.len();
-        if !valid {
+        let arity = args.len() == params.len();
+        if !arity {
             self.source.error(
                 node,
                 codes::ARITY,
                 format!("expected {} arguments, found {}", params.len(), args.len()),
-                Some((function.origin, "declared here")),
+                Some((origin, "declared here")),
             );
         }
-        for (&arg, &expected) in args.iter().zip(params) {
+        for (&arg, &expected) in args.iter().zip(params.iter()) {
             if let Some(value) = self.value(arg) {
-                valid &= self.require(
+                self.require(
                     arg,
                     value,
-                    expected,
-                    Some((function.origin, "declared here")),
+                    Expected::Ty(expected),
+                    Some((origin, "declared here")),
                 );
             }
         }
         let args: Option<Vec<_>> = args.into_iter().map(|n| self.value(n)).collect();
-        if !valid {
+        if !arity {
             return None;
         }
-        let result = match function.result? {
-            term @ Term::Known(_) => term,
-            term @ Term::Var(_) => self.inference.import(term),
-        };
+        let class = self.typing.call(result?, self.source.span(node));
         self.emit(
             node,
             ExprKind::Call {
@@ -1054,7 +1165,7 @@ impl<'a, 's> Builder<'a, 's> {
                 args: args?,
                 callee: self.source.span(callee),
             },
-            result,
+            class,
         );
         Some(())
     }

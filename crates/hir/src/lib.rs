@@ -5,7 +5,8 @@
 //! identities. All source locations refer to the owned snapshot.
 
 mod check;
-mod infer;
+mod solver;
+mod typing;
 
 pub mod codes;
 
@@ -67,7 +68,7 @@ impl fmt::Display for Ty {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FunctionId(usize);
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct ExprId(NonZeroU32);
 #[derive(Clone, Copy, PartialEq, Eq)]
