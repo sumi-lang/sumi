@@ -7,6 +7,8 @@
 mod check;
 mod infer;
 
+pub mod codes;
+
 #[cfg(test)]
 mod tests;
 

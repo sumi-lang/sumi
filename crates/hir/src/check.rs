@@ -1,12 +1,13 @@
 use std::collections::HashMap;
 
-use sumi_frontend::{DiagnosticCode, DiagnosticGroup, Label, Location};
+use sumi_frontend::{DiagnosticCode, Label, Location};
 use sumi_lexer::{RawIdx, SyntaxKind, TokenFlags};
 use sumi_syntax::{
     NodeIdx, NodeKind, SyntaxTree,
     ast::{self, AstNode},
 };
 
+use crate::codes;
 use crate::infer::{Inference, Term};
 use crate::*;
 
@@ -115,12 +116,12 @@ impl Source<'_> {
     fn error(
         &mut self,
         node: NodeIdx,
-        code: &'static str,
+        code: DiagnosticCode,
         message: impl Into<Box<str>>,
         related: Option<(Span, &'static str)>,
     ) {
         self.diagnostics.push(Diagnostic {
-            code: DiagnosticCode::new(DiagnosticGroup::new("semantic"), code),
+            code,
             severity: Severity::Error,
             message: message.into(),
             primary: Label {
@@ -149,7 +150,7 @@ impl Source<'_> {
             name => {
                 self.error(
                     node.node(),
-                    "unknown-type",
+                    codes::UNKNOWN_TYPE,
                     format!("unknown type `{name}`"),
                     None,
                 );
@@ -205,7 +206,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
             if let Some((first, target)) = names.get_mut(name) {
                 source.error(
                     *node,
-                    "duplicate-name",
+                    codes::DUPLICATE_NAME,
                     format!("duplicate function `{name}`"),
                     Some((*first, "declared here")),
                 );
@@ -225,7 +226,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
                         if !tree.has_error(param.node()) {
                             source.error(
                                 param.node(),
-                                "missing-type",
+                                codes::MISSING_TYPE,
                                 "function parameters require a type",
                                 None,
                             );
@@ -298,7 +299,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         let (code, message, related) = match obligation.kind {
             ObligationKind::Equal(expected, related) => match (actual, replay.resolve(expected)) {
                 (Some(actual), Some(expected)) if actual != expected => (
-                    "type-mismatch",
+                    codes::TYPE_MISMATCH,
                     format!("expected {expected:?}, found {actual:?}"),
                     related,
                 ),
@@ -313,7 +314,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
                     continue;
                 }
                 (
-                    "unused-value",
+                    codes::UNUSED_VALUE,
                     format!(
                         "unused value of type {:?}; use `_ =` to discard it",
                         actual.unwrap()
@@ -326,7 +327,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
                     continue;
                 }
                 (
-                    "type-mismatch",
+                    codes::TYPE_MISMATCH,
                     "unit values cannot be compared".to_owned(),
                     None,
                 )
@@ -350,7 +351,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
             } else {
                 "cannot infer function result; add a return type annotation"
             };
-            source.error(items[index].node(), "cannot-infer", message, None);
+            source.error(items[index].node(), codes::CANNOT_INFER, message, None);
         }
     }
     for (index, body) in bodies.into_iter().enumerate() {
@@ -437,7 +438,7 @@ impl<'a, 's> Builder<'a, 's> {
                 if let Some(&span) = first.get(&name) {
                     self.source.error(
                         node,
-                        "duplicate-name",
+                        codes::DUPLICATE_NAME,
                         format!("duplicate parameter `{name}`"),
                         Some((span, "declared here")),
                     );
@@ -528,7 +529,7 @@ impl<'a, 's> Builder<'a, 's> {
     fn unsupported(&mut self, node: NodeIdx) {
         self.source.error(
             node,
-            "unsupported",
+            codes::UNSUPPORTED,
             "construct is not supported by scalar checking",
             None,
         );
@@ -638,7 +639,7 @@ impl<'a, 's> Builder<'a, 's> {
             if let Some(local) = local {
                 self.source.error(
                     node,
-                    "not-callable",
+                    codes::NOT_CALLABLE,
                     format!("local `{name}` is not callable"),
                     Some((self.locals[local.index()].origin, "declared here")),
                 );
@@ -650,7 +651,7 @@ impl<'a, 's> Builder<'a, 's> {
             None => {
                 self.source.error(
                     node,
-                    "unknown-name",
+                    codes::UNKNOWN_NAME,
                     format!("unknown function `{name}`"),
                     None,
                 );
@@ -688,7 +689,7 @@ impl<'a, 's> Builder<'a, 's> {
             None => {
                 self.source.error(
                     literal,
-                    "integer-range",
+                    codes::INTEGER_RANGE,
                     "integer literal is outside signed 64-bit range",
                     None,
                 );
@@ -711,7 +712,7 @@ impl<'a, 's> Builder<'a, 's> {
         if let (Term::Known(actual), Term::Known(expected)) = (actual, expected) {
             self.source.error(
                 node,
-                "type-mismatch",
+                codes::TYPE_MISMATCH,
                 format!("expected {expected:?}, found {actual:?}"),
                 related,
             );
@@ -753,7 +754,7 @@ impl<'a, 's> Builder<'a, 's> {
                                 if ty != Ty::Unit {
                                     self.source.error(
                                         child,
-                                        "unused-value",
+                                        codes::UNUSED_VALUE,
                                         format!(
                                             "unused value of type {ty:?}; use `_ =` to discard it"
                                         ),
@@ -848,7 +849,7 @@ impl<'a, 's> Builder<'a, 's> {
                         } else {
                             self.source.error(
                                 node,
-                                "unknown-name",
+                                codes::UNKNOWN_NAME,
                                 format!("unknown name `{name}`"),
                                 None,
                             );
@@ -943,7 +944,7 @@ impl<'a, 's> Builder<'a, 's> {
                     if expected == Term::Known(Ty::Unit) {
                         self.source.error(
                             node,
-                            "type-mismatch",
+                            codes::TYPE_MISMATCH,
                             "unit values cannot be compared",
                             None,
                         );
@@ -1027,7 +1028,7 @@ impl<'a, 's> Builder<'a, 's> {
         if !valid {
             self.source.error(
                 node,
-                "arity",
+                codes::ARITY,
                 format!("expected {} arguments, found {}", params.len(), args.len()),
                 Some((function.origin, "declared here")),
             );
