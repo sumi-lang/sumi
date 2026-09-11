@@ -52,11 +52,10 @@ continues the previous line. Operators take their classes from the
 | --- | --- | --- | --- |
 | `IntLiteral` | an integer literal | `expr` `end` | A decimal integer literal: a run of digits. There are no separators, suffixes, or floats; trailing identifier characters attach as a suffix for the lexer to reject, so `1_000` and `1e5` are each one error. |
 | `StringLiteral` | a string literal | `expr` `end` | A string literal on one line: `"…"`, with escapes. A line break ends an unterminated one, so a stray quote costs its line and nothing after it. |
-| `BlockStringLiteral` | a multi-line string literal | `expr` `end` | A multi-line string literal: `"""`, the content lines, and `"""` on its own line, whose indentation every content line shares and sheds. |
-| `StringStart` | a string literal | `expr` | The text of a string literal with holes, from its opening quote to its first hole: `"…` or `"""…`. A `{` in a `"…"` or `"""` literal opens a hole, an expression on that line whose value the string takes in its place; `\{` is a brace. |
+| `StringStart` | a string literal | `expr` | The text of a string literal with holes, from its opening quote to its first hole: `"…`. A `{` in a literal opens a hole, an expression on that line whose value the string takes in its place; `\{` is a brace. |
 | `StringMiddle` | the text of a string literal |  | The text of a string literal between two of its holes. |
-| `StringEnd` | the end of a string literal | `end` | The text of a string literal after its last hole, closing quote included: `…"` or `…"""`. |
-| `HoleOpen` | `{` |  | The `{` opening a hole in a string literal. A hole ends with its line: one still open at the line break is an error, and the literal's text goes on from there in a `"""` literal or ends with the line in a `"…"` one. |
+| `StringEnd` | the end of a string literal | `end` | The text of a string literal after its last hole, closing quote included: `…"`. |
+| `HoleOpen` | `{` |  | The `{` opening a hole in a string literal. A hole ends with its line: one still open at the line break is an error, and the literal ends with the line too. |
 | `HoleClose` | `}` |  | The `}` closing a hole: the first at brace depth zero inside it. A `}` in a literal's text is a brace. |
 
 ### Punctuation
@@ -153,37 +152,24 @@ end one, the token after it does not continue one, and no parenthesis the
 stream closes is open around it. These classes decide the first two;
 the parser's spacing rules keep the third unambiguous.
 
-- **Can begin an expression:** `Ident`, `false`, `fn`, `if`, `true`, `IntLiteral`, `StringLiteral`, `BlockStringLiteral`, `StringStart`, `(`, `{`, `!`, `-`.
+- **Can begin an expression:** `Ident`, `false`, `fn`, `if`, `true`, `IntLiteral`, `StringLiteral`, `StringStart`, `(`, `{`, `!`, `-`.
 - **Begin a statement without being an expression:** `_`, `let`, `return`, `Error`.
-- **A statement can end after:** `Ident`, `_`, `false`, `return`, `true`, `IntLiteral`, `StringLiteral`, `BlockStringLiteral`, `StringEnd`, `)`, `}`, `Error`.
+- **A statement can end after:** `Ident`, `_`, `false`, `return`, `true`, `IntLiteral`, `StringLiteral`, `StringEnd`, `)`, `}`, `Error`.
 - **Begin a top-level item:** `fn`.
 - **Continue the previous line:** `else`, and any binary operator leading the line — a compound one when glued into shape, and `-` only when spaced from what follows, since glued it opens an operand.
 
 ## Strings
 
-A string literal takes one of two forms. `"…"` sits on one line: a line
-break ends an unterminated one, so a stray quote costs its line and
-nothing after it. The escapes are `\n`, `\r`, `\t`, `\\`, `\"`, and
-`\0`.
+A string literal, `"…"`, sits on one line: a line break ends an
+unterminated one, so a stray quote costs its line and nothing after it.
+The escapes are `\n`, `\r`, `\t`, `\\`, `\"`, and `\0`.
 
-Text that spans lines is a multi-line literal, `"""` to `"""`:
-
-- The content begins on the line after the opening `"""`, and the
-  closing `"""` begins its own line.
-- Every content line begins with the closing line's indentation, which is
-  not part of the value; a line of only whitespace counts as empty.
-- The value keeps each line break except the one before the closing line,
-  as `\n` whatever the source uses. A `\` ending a line joins it to the
-  next.
-- A `"""` inside the content escapes one of its quotes.
-
-A `{` in a `"…"` or `"""` literal opens a hole: an expression whose
-value the string takes in its place, as in `"{count} items"`. Any
-expression may stand in a hole, a string with holes of its own included,
-but a hole ends with its line: one still open at the line break is an
-error, and the text goes on from there in a multi-line literal and ends
-with the line in a one-line one. `\{` and `\}` are braces, a `}`
-outside a hole is one too.
+A `{` in a literal opens a hole: an expression whose value the string
+takes in its place, as in `"{count} items"`. Any expression may stand
+in a hole, a string with holes of its own included, but a hole ends with
+its line: one still open at the line break is an error, and the literal
+ends with the line too. `\{` and `\}` are braces, and a `}` outside a
+hole is one too.
 
 ## Syntax nodes
 
@@ -226,7 +212,7 @@ ReturnStmt = 'return' value:Expr?
 Expr = NameRef | LiteralExpr | PrefixExpr | BinaryExpr | ParenExpr | CallExpr | IfExpr | ClosureExpr | InterpolatedString | Block
 // A use of a name: a reference to what a Name declared.
 NameRef = Ident
-LiteralExpr = IntLiteral | StringLiteral | BlockStringLiteral | 'true' | 'false'
+LiteralExpr = IntLiteral | StringLiteral | 'true' | 'false'
 PrefixExpr = PrefixOperator operand:Expr
 BinaryExpr = lhs:Expr BinaryOperator rhs:Expr
 ParenExpr = '(' inner:Expr ')'

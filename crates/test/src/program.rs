@@ -54,17 +54,14 @@ fn hole_expr() -> BoxedStrategy<String> {
     .boxed()
 }
 
-/// A string literal with holes, `"…"` or `"""`, around expressions that
-/// stay on their line.
+/// A string literal with holes around expressions that stay on their line.
 fn string_with_holes() -> BoxedStrategy<String> {
-    prop_oneof![
-        3 => (hole_expr(), prop::option::of(hole_expr())).prop_map(|(first, second)| match second {
+    (hole_expr(), prop::option::of(hole_expr()))
+        .prop_map(|(first, second)| match second {
             Some(second) => format!("\"{{{first}}} and {{{second}}}\""),
             None => format!("\"a {{{first}}} b\""),
-        }),
-        1 => hole_expr().prop_map(|e| format!("\"\"\"\n  line {{{e}}}\n  \"\"\"")),
-    ]
-    .boxed()
+        })
+        .boxed()
 }
 
 fn expr() -> BoxedStrategy<String> {

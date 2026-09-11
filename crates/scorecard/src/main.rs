@@ -22,13 +22,11 @@
 //! top-level items disturbed. This quantifies the "unclosed brace re-pairs
 //! the whole file" risk.
 //!
-//! Part C deletes one delimiter inside a literal — a quote of a one-line
-//! string, a `"""` of a multi-line one, or a
-//! brace of a hole — in a clean corpus that contains multi-line strings
-//! and strings with holes, and measures how far the literal then reaches:
-//! the edits Parts A and B cannot make, since theirs are whole significant
-//! tokens. This quantifies the "stray quote re-pairs the whole file" risk,
-//! per literal form.
+//! Part C deletes one delimiter inside a literal — a quote of a string or
+//! a brace of a hole — in a clean corpus that contains strings with holes,
+//! and measures how far the literal then reaches: the edits Parts A and B
+//! cannot make, since theirs are whole significant tokens. This quantifies
+//! the "stray quote re-pairs the whole file" risk, per literal form.
 
 use std::collections::HashSet;
 
@@ -512,7 +510,7 @@ impl LiteralClass {
     }
 }
 
-const LITERAL_CLASSES: [LiteralClass; 6] = [
+const LITERAL_CLASSES: [LiteralClass; 4] = [
     LiteralClass {
         label: "delete \" closer",
         kinds: &[RawKind::String],
@@ -526,20 +524,6 @@ const LITERAL_CLASSES: [LiteralClass; 6] = [
         token: None,
         edit: LiteralEdit::Opener,
         width: 1,
-    },
-    LiteralClass {
-        label: "delete \"\"\" closer",
-        kinds: &[RawKind::BlockString],
-        token: None,
-        edit: LiteralEdit::Closer,
-        width: 3,
-    },
-    LiteralClass {
-        label: "delete \"\"\" opener",
-        kinds: &[RawKind::BlockString],
-        token: None,
-        edit: LiteralEdit::Opener,
-        width: 3,
     },
     LiteralClass {
         label: "delete { of hole",
@@ -557,7 +541,7 @@ const LITERAL_CLASSES: [LiteralClass; 6] = [
     },
 ];
 
-const LITERAL_KINDS: [RawKind; 2] = [RawKind::String, RawKind::BlockString];
+const LITERAL_KINDS: [RawKind; 1] = [RawKind::String];
 
 struct LiteralSample {
     /// Bytes of the longest literal token left where the edited one stood:
@@ -688,8 +672,7 @@ fn main() {
     println!();
     println!("== Part C: one delimiter deleted inside a literal ==");
     println!("spread = bytes of the longest literal token left where the edited one stood: how");
-    println!("far the stray delimiter reaches. A one-line literal reaches the end of its line at");
-    println!("most; a `\"\"\"` reaches the next `\"\"\"` or the end of the file.");
+    println!("far the stray delimiter reaches: a literal reaches the end of its line at most.");
     println!();
     let mut rng = Lcg::new(0x11E4_A15E);
     let literals_64k = corpus::generate_with_literals(64 * 1024, 0xB10C);

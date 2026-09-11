@@ -5,8 +5,6 @@ use sumi_diagnostics::{DiagnosticCode, DiagnosticGroup};
 pub const SYNTAX: DiagnosticGroup = DiagnosticGroup::new("syntax");
 
 pub const UNTERMINATED_STRING: DiagnosticCode = DiagnosticCode::new(SYNTAX, "unterminated-string");
-pub const UNTERMINATED_BLOCK_STRING: DiagnosticCode =
-    DiagnosticCode::new(SYNTAX, "unterminated-block-string");
 pub const LONE_CARRIAGE_RETURN: DiagnosticCode =
     DiagnosticCode::new(SYNTAX, "lone-carriage-return");
 pub const MISPLACED_BOM: DiagnosticCode = DiagnosticCode::new(SYNTAX, "misplaced-bom");
@@ -17,12 +15,6 @@ pub const UNKNOWN_SUFFIX: DiagnosticCode = DiagnosticCode::new(SYNTAX, "unknown-
 pub const NONCANONICAL_NUMBER: DiagnosticCode = DiagnosticCode::new(SYNTAX, "noncanonical-number");
 pub const UNKNOWN_ESCAPE: DiagnosticCode = DiagnosticCode::new(SYNTAX, "unknown-escape");
 pub const UNKNOWN_PUNCTUATION: DiagnosticCode = DiagnosticCode::new(SYNTAX, "unknown-punctuation");
-pub const BLOCK_STRING_OPENER_CONTENT: DiagnosticCode =
-    DiagnosticCode::new(SYNTAX, "block-string-opener-content");
-pub const BLOCK_STRING_CLOSER_CONTENT: DiagnosticCode =
-    DiagnosticCode::new(SYNTAX, "block-string-closer-content");
-pub const BLOCK_STRING_INDENTATION: DiagnosticCode =
-    DiagnosticCode::new(SYNTAX, "block-string-indentation");
 pub const UNCLOSED_HOLE: DiagnosticCode = DiagnosticCode::new(SYNTAX, "unclosed-hole");
 
 pub const EXPECTED_ITEM: DiagnosticCode = DiagnosticCode::new(SYNTAX, "expected-item");

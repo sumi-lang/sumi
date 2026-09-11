@@ -6,14 +6,9 @@
 //! `\\`, `\"`, `\0`). The escape walker is the single definition of the
 //! escape grammar; value decoding will reuse it when lowering needs it.
 //!
-//! Multi-line literals add layout: the content begins on the line after the
-//! opening `"""`, the closing `"""` begins its own line, and every content
-//! line that is not blank starts with the closing line's indentation.
-//!
 //! The collector filters: numbers are re-scanned only when the scanner flagged
-//! them malformed, strings only when escaped and terminated, multi-line
-//! literals only when terminated, so a token with a scanner error gets no
-//! further errors here.
+//! them malformed and strings only when escaped and terminated, so a token
+//! with a scanner error gets no further errors here.
 
 use std::ops::Range;
 
@@ -70,99 +65,17 @@ pub(crate) fn validate_string_body(
     mut error: impl FnMut(Range<usize>, LexErrorKind),
 ) {
     let offset = body.start;
-    walk_escapes(&text[body], false, |start, end, result| {
+    walk_escapes(&text[body], |start, end, result| {
         if let Err(kind) = result {
             error(offset + start..offset + end, kind);
         }
     });
 }
 
-/// Validate a terminated multi-line literal, `"""` to `"""`: its layout
-/// and its escapes. Line breaks split the text into the opener's line, the
-/// content lines, and the closer's line, and a lone `\r` is one too.
-/// `parts` yields the literal's text ranges, excluding interpolation code;
-/// escapes cannot cross from one part to the next.
-pub(crate) fn validate_block_string(
-    text: &str,
-    parts: impl Iterator<Item = Range<usize>>,
-    mut error: impl FnMut(Range<usize>, LexErrorKind),
-) {
-    let open = 3;
-    let close = text.len() - 3;
-    let body = &text[open..close];
-    // Preserve diagnostic phase order: line endings, delimiters, indentation,
-    // then escapes. Finding the two edge lines needs no line table.
-    for (offset, _) in body.match_indices('\r') {
-        let position = open + offset;
-        if text.as_bytes().get(position + 1) != Some(&b'\n') {
-            error(position..position + 1, LexErrorKind::LoneCarriageReturn);
-        }
-    }
-    let opener_end = open + body.find(['\r', '\n']).unwrap_or(body.len());
-    let closer_start = body
-        .rfind(['\r', '\n'])
-        .map_or(open, |offset| open + offset + 1);
-    let opener = &text[open..opener_end];
-    let opener_content = opener.trim_start_matches([' ', '\t']);
-    if !opener_content.is_empty() {
-        error(
-            opener_end - opener_content.len()..opener_end,
-            LexErrorKind::BlockStringOpenerContent,
-        );
-    }
-    let multiline = opener_end < close;
-    let prefix = &text[closer_start..close];
-    let closer_own_line = multiline && prefix.trim_start_matches([' ', '\t']).is_empty();
-    if !closer_own_line {
-        error(close..text.len(), LexErrorKind::BlockStringCloserContent);
-    }
-    if !multiline {
-        return;
-    }
-    let content_start = opener_end
-        + if text[opener_end..].starts_with("\r\n") {
-            2
-        } else {
-            1
-        };
-    let content = content_start..closer_start;
-    if closer_own_line {
-        let mut start = content.start;
-        for line in text[content.clone()].split_inclusive(['\r', '\n']) {
-            let end = start + line.len();
-            let line = line.trim_end_matches(['\r', '\n']);
-            let unindented = line.trim_start_matches([' ', '\t']);
-            if !unindented.is_empty() && !line.starts_with(prefix) {
-                error(
-                    start..start + line.len() - unindented.len(),
-                    LexErrorKind::BlockStringIndentation,
-                );
-            }
-            start = end;
-        }
-    }
-    for part in parts {
-        let part = part.start.max(content.start)..part.end.min(content.end);
-        if part.start >= part.end {
-            continue;
-        }
-        walk_escapes(&text[part.clone()], true, |start, end, result| {
-            if let Err(kind) = result {
-                error(part.start + start..part.start + end, kind);
-            }
-        });
-    }
-}
-
-/// Walk the body of a string literal, invoking `piece` once per
-/// literal character or escape sequence with its body-relative byte range and
-/// validity. In a `multiline` literal a `\` before a line break joins the
-/// lines and is an escape like any other.
-fn walk_escapes(
-    body: &str,
-    multiline: bool,
-    mut piece: impl FnMut(usize, usize, Result<(), LexErrorKind>),
-) {
+/// Walk the body of a string literal, invoking `piece` once per literal
+/// character or escape sequence with its body-relative byte range and
+/// validity.
+fn walk_escapes(body: &str, mut piece: impl FnMut(usize, usize, Result<(), LexErrorKind>)) {
     let mut chars = body.chars();
     while !chars.as_str().is_empty() {
         let start = body.len() - chars.as_str().len();
@@ -175,13 +88,6 @@ fn walk_escapes(
 
         let result = match chars.next() {
             Some('n' | 'r' | 't' | '\\' | '"' | '0' | '{' | '}') => Ok(()),
-            Some('\n') if multiline => Ok(()),
-            Some('\r') if multiline => {
-                if chars.as_str().starts_with('\n') {
-                    chars.next();
-                }
-                Ok(())
-            }
             // Includes a backslash at the very end of the body.
             _ => Err(LexErrorKind::UnknownEscape),
         };

@@ -1119,9 +1119,7 @@ fn prefix_or_atom(p: &mut Marker<'_, '_>, follow: ExprFollow) -> Option<Complete
             m.complete(N::PrefixExpr)
         }
         T::Ident => leaf(p, N::NameRef),
-        T::IntLiteral | T::StringLiteral | T::BlockStringLiteral | T::TrueKw | T::FalseKw => {
-            leaf(p, N::LiteralExpr)
-        }
+        T::IntLiteral | T::StringLiteral | T::TrueKw | T::FalseKw => leaf(p, N::LiteralExpr),
         T::LParen => {
             let mut m = p.start();
             m.token(); // (

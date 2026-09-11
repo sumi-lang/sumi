@@ -55,7 +55,7 @@ use crate::generated::{
     is_closer, is_opener, opener, pair_index, starts_item,
 };
 use crate::index::SigIdx;
-use sumi_lexer::{LexedFile, RawIdx, RawKind};
+use sumi_lexer::{LexedFile, RawIdx};
 
 const JOINT: u8 = 1 << 0;
 const NEWLINE_BEFORE: u8 = 1 << 1;
@@ -99,7 +99,6 @@ impl ParserInput {
         // reallocations of a growing vector and a final shrink.
         let significant = lexed.kinds().filter(|kind| !kind.is_trivia()).count();
         let mut build = Build {
-            lexed,
             slots: Vec::with_capacity(significant),
             openers: Vec::new(),
             open_counts: [0; BRACKET_PAIRS.len()],
@@ -292,8 +291,7 @@ impl ParserInput {
 /// line, so a bracket left open in a hole the lexer left open is discarded
 /// where the hole ended — at the literal's next part, or at the line break
 /// — and never pairs with a closer outside the literal.
-struct Build<'a> {
-    lexed: &'a LexedFile,
+struct Build {
     slots: Vec<Slot>,
     /// The brackets still open, innermost last, by slot index.
     openers: Vec<u32>,
@@ -306,12 +304,11 @@ struct Build<'a> {
     /// outside it, and an opener in a hole no closer outside it.
     holes: Vec<(u32, [usize; BRACKET_PAIRS.len()])>,
     /// The string literals with holes whose end is still ahead, innermost
-    /// last: how many holes were open when each began, and whether it is
-    /// a `"""` literal, whose text goes on past a line break.
-    literals: Vec<(usize, bool)>,
+    /// last: how many holes were open when each began.
+    literals: Vec<usize>,
 }
 
-impl Build<'_> {
+impl Build {
     /// Append one significant token: glue it to a raw-adjacent predecessor,
     /// and pair it if it is a bracket. The bookkeeping of string literals
     /// with holes stays off the path every other token takes.
@@ -327,7 +324,7 @@ impl Build<'_> {
             self.line_break();
         }
         if is_literal_token(kind) {
-            self.literal_token(kind, raw);
+            self.literal_token(kind);
         }
         let index = self.slots.len() as u32;
         let partner = if is_opener(kind) {
@@ -353,13 +350,12 @@ impl Build<'_> {
     /// pairs: a literal's parts begin and end it and end the holes it left
     /// open, and a hole's `{` sets the brackets around it aside.
     #[inline(never)]
-    fn literal_token(&mut self, kind: SyntaxKind, raw: RawIdx) {
+    fn literal_token(&mut self, kind: SyntaxKind) {
         let index = self.slots.len() as u32;
-        let block = self.lexed.raw_kind(raw) == RawKind::BlockString;
         match kind {
-            SyntaxKind::StringStart => self.literals.push((self.holes.len(), block)),
-            SyntaxKind::StringMiddle => self.literal_part(block, false),
-            SyntaxKind::StringEnd => self.literal_part(block, true),
+            SyntaxKind::StringStart => self.literals.push(self.holes.len()),
+            SyntaxKind::StringMiddle => self.literal_part(false),
+            SyntaxKind::StringEnd => self.literal_part(true),
             SyntaxKind::HoleOpen => self
                 .holes
                 .push((index, std::mem::take(&mut self.open_counts))),
@@ -379,31 +375,21 @@ impl Build<'_> {
         }
     }
 
-    /// A line break ends every open hole, and the `"…"` literals around
-    /// them: whatever a hole left open is discarded.
+    /// A line break ends every open hole, and the literals around them:
+    /// whatever a hole left open is discarded.
     #[inline(never)]
     fn line_break(&mut self) {
         while let Some((hole, counts)) = self.holes.pop() {
             self.discard_from(hole);
             self.open_counts = counts;
         }
-        while self.literals.last().is_some_and(|&(_, block)| !block) {
-            self.literals.pop();
-        }
+        self.literals.clear();
     }
 
     /// A part of a string literal after a hole ends every hole opened since
-    /// the literal began and not closed. A `"…"` literal nested in a `"""`
-    /// literal's hole ended with the hole, before the `"""` literal's part.
-    fn literal_part(&mut self, block: bool, end: bool) {
-        while self
-            .literals
-            .last()
-            .is_some_and(|&(_, is_block)| is_block != block)
-        {
-            self.literals.pop();
-        }
-        let Some(&(base, _)) = self.literals.last() else {
+    /// the literal began and not closed.
+    fn literal_part(&mut self, end: bool) {
+        let Some(&base) = self.literals.last() else {
             return;
         };
         while self.holes.len() > base {

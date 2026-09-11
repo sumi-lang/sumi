@@ -127,7 +127,7 @@ fn parentheses_can_still_be_repaired_in_hole_code() {
 
 #[test]
 fn closer_fixes_do_not_change_tokens_in_damaged_interpolation() {
-    check_closer_fixes(&parsed("fn#\"n{(r\"\"\"t"));
+    check_closer_fixes(&parsed("fn#\"n{(\"\"t"));
 }
 
 #[test]
@@ -155,20 +155,6 @@ fn frontend_diagnostic_identity_is_syntactic_not_phase_specific() {
     ] {
         assert_eq!(code.group(), codes::SYNTAX);
     }
-}
-
-#[test]
-fn empty_producer_ranges_do_not_become_missing_syntax() {
-    let front = parsed("fn f() = \"\"\"\n  a\nb\n  \"\"\"");
-    let [diagnostic] = front.diagnostics() else {
-        panic!("a line with no indentation has one diagnostic")
-    };
-    assert_eq!(diagnostic.code, codes::BLOCK_STRING_INDENTATION);
-    let Place::Range(range) = diagnostic.primary.location.place else {
-        panic!("missing indentation is still a producer range")
-    };
-    assert_eq!(range.start(), range.end());
-    assert_eq!(range.start().to_usize(), 17);
 }
 
 #[test]
@@ -235,21 +221,7 @@ fn leading_zeros_are_fixed_around_a_suffix() {
 /// Source fragments beyond every keyword and punctuation text of the
 /// language: names, malformed literals, roleless punctuation, and trivia.
 const EXTRA_FRAGMENTS: &[&str] = &[
-    "x",
-    "Δ",
-    "0",
-    "01u32",
-    "1e",
-    r#""\q""#,
-    ";",
-    " ",
-    "\n",
-    "// c",
-    "€",
-    "\"{",
-    "}\"",
-    "\"{x}\"",
-    "\"\"\"\n{",
+    "x", "Δ", "0", "01u32", "1e", r#""\q""#, ";", " ", "\n", "// c", "€", "\"{", "}\"", "\"{x}\"",
 ];
 
 fn source() -> impl Strategy<Value = String> {
@@ -288,13 +260,11 @@ proptest! {
     fn closer_fixes_at_interpolation_boundaries(
         text in "[a-z ]{0,16}",
         hole in prop::sample::select(vec!["", "x", "(x", "((x", "{ x", "g(x"]),
-        block in any::<bool>(),
         terminated in any::<bool>(),
         signature in prop::sample::select(vec!["fn f(", "fn f()"]),
     ) {
-        let quote = if block { "\"\"\"\n" } else { "\"" };
-        let end = if !terminated { "" } else if block { "\n\"\"\"" } else { "\"" };
-        let source = format!("{signature} -> str = {quote}before {{{hole}}}{text}{end}");
+        let end = if terminated { "\"" } else { "" };
+        let source = format!("{signature} -> str = \"before {{{hole}}}{text}{end}");
         check_closer_fixes(&parsed(&source));
     }
 

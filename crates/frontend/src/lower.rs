@@ -121,10 +121,6 @@ fn lower_token_errors(
                 codes::UNCLOSED_HOLE,
                 "hole in string literal is not closed on its line",
             ),
-            LexErrorKind::UnterminatedBlockString => (
-                codes::UNTERMINATED_BLOCK_STRING,
-                "unterminated multi-line string literal",
-            ),
             LexErrorKind::LoneCarriageReturn => (
                 codes::LONE_CARRIAGE_RETURN,
                 "carriage return must be followed by a line feed",
@@ -144,18 +140,6 @@ fn lower_token_errors(
             LexErrorKind::UnknownPunctuation => (
                 codes::UNKNOWN_PUNCTUATION,
                 "punctuation has no meaning in Sumi source",
-            ),
-            LexErrorKind::BlockStringOpenerContent => (
-                codes::BLOCK_STRING_OPENER_CONTENT,
-                "multi-line string content must begin on the line after `\"\"\"`",
-            ),
-            LexErrorKind::BlockStringCloserContent => (
-                codes::BLOCK_STRING_CLOSER_CONTENT,
-                "closing `\"\"\"` must begin its own line",
-            ),
-            LexErrorKind::BlockStringIndentation => (
-                codes::BLOCK_STRING_INDENTATION,
-                "line is indented less than the closing `\"\"\"`",
             ),
         };
         let mut diagnostic = primary(code, message, snapshot.range(error.range));

@@ -37,16 +37,12 @@ pub fn lex(source: &str) -> Result<LexedFile, SourceTooLarge> {
                 token.flags.contains(TokenFlags::MALFORMED_NUMBER) || cfg!(debug_assertions)
             }
             // A literal with holes that its text never closes is reported
-            // late, at its start, as a whole `"""` literal is.
+            // late, at its start.
             RawKind::String => {
                 (token.kind == SyntaxKind::StringLiteral
                     && token.flags.contains(TokenFlags::UNTERMINATED))
                     || token.flags.contains(TokenFlags::HAS_ESCAPE)
             }
-            // Layout is judged on every multi-line literal, since the
-            // scanner only finds its ends: on the token of a whole one, and
-            // over the parts of one with holes once every token is in.
-            RawKind::BlockString => token.kind == SyntaxKind::BlockStringLiteral,
             RawKind::Unknown => true,
             RawKind::Newline => token.flags.contains(TokenFlags::LONE_CR),
             RawKind::Punct => token.kind == SyntaxKind::Error,
@@ -72,10 +68,6 @@ pub fn lex(source: &str) -> Result<LexedFile, SourceTooLarge> {
     }
 
     debug_assert_eq!(position, source_len);
-
-    if lexer.block_holes() {
-        validate_block_literals(source, &tokens, &mut errors);
-    }
 
     for late in lexer.into_late_errors() {
         let index = late.token as usize;
@@ -111,16 +103,6 @@ fn collect_errors(
     errors: &mut Vec<LexError>,
 ) {
     let unterminated = token.flags.contains(TokenFlags::UNTERMINATED);
-    // An unterminated multi-line literal runs to the end of the file, so
-    // it is reported at its opener rather than over everything after it.
-    if token.raw == RawKind::BlockString && unterminated {
-        errors.push(LexError {
-            token: index,
-            range: absolute_range(start, text.len(), 0..3),
-            kind: LexErrorKind::UnterminatedBlockString,
-        });
-        return;
-    }
     let primary = match token.raw {
         RawKind::String if unterminated && token.kind == SyntaxKind::StringLiteral => {
             Some(LexErrorKind::UnterminatedString)
@@ -179,77 +161,11 @@ fn collect_errors(
             let body_end = text.len() - usize::from(!unterminated);
             literal::validate_string_body(text, 0..body_end, &mut error);
         }
-        SyntaxKind::BlockStringLiteral => {
-            literal::validate_block_string(text, std::iter::once(0..text.len()), &mut error);
-        }
         SyntaxKind::Error if token.raw == RawKind::Punct => {
             error(0..1, LexErrorKind::UnknownPunctuation);
         }
         _ => {}
     }
-}
-
-/// Judge every `"""` literal with holes once all the tokens are in: a
-/// pass over them, kept out of the token loop, which has registers enough
-/// for its own state and not for a literal's. No such literal nests in
-/// another, so the start ahead of an end is its own.
-fn validate_block_literals(source: &str, tokens: &[StoredToken], errors: &mut Vec<LexError>) {
-    let mut first = None;
-    for (index, token) in tokens.iter().enumerate() {
-        if token.raw != RawKind::BlockString {
-            continue;
-        }
-        match token.kind {
-            SyntaxKind::StringStart => first = Some(index),
-            SyntaxKind::StringEnd if !token.flags.contains(TokenFlags::UNTERMINATED) => {
-                if let Some(first) = first.take() {
-                    validate_block_parts(source, tokens, first, index, errors);
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
-/// Judge the layout and escapes of a `"""` literal with holes, from the
-/// `StringStart` at `first` through the `StringEnd` at `last`,
-/// over the whole of its source: the holes are its code, not its text. An
-/// error lands on the part its range begins in, cut to that part.
-fn validate_block_parts(
-    source: &str,
-    tokens: &[StoredToken],
-    first: usize,
-    last: usize,
-    errors: &mut Vec<LexError>,
-) {
-    let base = tokens[first].start.to_usize();
-    let end = tokens
-        .get(last + 1)
-        .map_or(source.len(), |next| next.start.to_usize());
-    let text = &source[base..end];
-    let parts = tokens[first..=last]
-        .iter()
-        .enumerate()
-        .filter(|&(_offset, token)| token.raw == RawKind::BlockString)
-        .map(|(offset, token)| {
-            let end = tokens
-                .get(first + offset + 1)
-                .map_or(source.len(), |next| next.start.to_usize());
-            token.start.to_usize() - base..end - base
-        });
-    literal::validate_block_string(text, parts, |relative, kind| {
-        let start = base + relative.start;
-        let index = tokens.partition_point(|token| token.start.to_usize() <= start) - 1;
-        let token_end = tokens
-            .get(index + 1)
-            .map_or(source.len(), |next| next.start.to_usize());
-        let end = (base + relative.end).min(token_end);
-        errors.push(LexError {
-            token: RawIdx::new(index as u32),
-            range: TextRange::new(TextSize::new(start as u32), TextSize::new(end as u32)),
-            kind,
-        });
-    });
 }
 
 fn absolute_range(start: TextSize, token_len: usize, relative: Range<usize>) -> TextRange {
@@ -395,9 +311,6 @@ pub enum LexErrorKind {
     /// An identifier's NFKC form is a reserved spelling; the token remains Ident.
     ReservedIdentifier(SyntaxKind),
     UnterminatedString,
-    /// A `"""` never closed. Reported at the opener: the rest of the file
-    /// is inside it.
-    UnterminatedBlockString,
     /// A `\r` line ending not followed by `\n`.
     LoneCarriageReturn,
     /// A U+FEFF byte-order mark somewhere other than byte zero.
@@ -414,17 +327,8 @@ pub enum LexErrorKind {
     UnknownEscape,
     /// Punctuation with no role in the language, such as `;` or `[`.
     UnknownPunctuation,
-    /// Text after the opening `"""` on its line; the content begins on the
-    /// next.
-    BlockStringOpenerContent,
-    /// Text before the closing `"""` on its line; the closer begins its own.
-    BlockStringCloserContent,
-    /// A content line of a multi-line string indented less than its closing
-    /// `"""`.
-    BlockStringIndentation,
     /// A hole in a string literal still open at the end of its line,
-    /// reported at its `{`. The literal's text goes on from the line break
-    /// in a `"""` literal and ends with the line in a `"…"` one.
+    /// reported at its `{`. The literal ends with the line too.
     UnclosedHole,
 }
 

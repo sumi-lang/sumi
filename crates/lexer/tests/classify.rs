@@ -214,14 +214,6 @@ fn misplaced_bom_classifies_to_error() {
 }
 
 #[test]
-fn block_strings_classify_by_their_opener() {
-    check(
-        "\"\"\"\n\"\"\"",
-        &[r#"BlockStringLiteral 0..7 "\"\"\"\n\"\"\"""#],
-    );
-}
-
-#[test]
 fn string_parts_and_hole_braces_have_their_own_kinds() {
     assert_eq!(
         dump("\"a {x} b\""),

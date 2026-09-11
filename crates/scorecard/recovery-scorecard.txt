@@ -23,47 +23,39 @@ Reading the numbers:
   cascading, and a closer can only pair across an item boundary when two
   complementary errors sit in different items — which no single edit
   creates.
-- Part C spread stays inside the line for the one-line forms (a median of
-  a few dozen bytes, a maximum of one long line) and does not for `"""`: a
-  deleted `"""` reaches the next one, a median of 110 bytes and up to
-  547 bytes here. The one-line maxima come from the same cascade: an
-  unterminated one-line literal that reaches a `"""` opener on its line
-  eats the opener's first quote, and every later `"""` in the file swaps
-  role. A layout bound on multi-line literals would close that case; it
-  was decided against, so that content may sit at any indentation, and
-  the lexer carries a TODO where the literal is scanned. A hole's braces
-  are bounded by the hole's line: a deleted `{` leaves the
-  hole's code as the literal's text, and a deleted `}` leaves the hole open
-  to the end of its line, where the literal's closing quote, or the first
-  quote of a `"""` after it, closes the literal — no reach at all. The
-  one sample that disturbs items is that second case: the literal takes
-  the opener's first quote, and the `"""` cascade above follows.
+- Part C spread stays inside the line for every form: a deleted quote
+  reaches a median of a few dozen bytes and a maximum of one long line,
+  and disturbs no item. A hole's braces are bounded by the hole's line: a
+  deleted `{` leaves the hole's code as the literal's text, and a deleted
+  `}` leaves the hole open to the end of its line, where the literal's
+  closing quote closes it — no reach at all. With no multi-line literal
+  form, no delimiter can re-pair anything past its line.
 
 recovery-scorecard
 
 == Part A: recovery scorecard ==
-7559 programs generated; 10000 measured pairs per class; preservation is
+7541 programs generated; 10000 measured pairs per class; preservation is
 over untouched top-level items (edits guarding none are counted apart).
 
 class                   edits  guarded  pres_mean  pres_p95  pres_min
-delete/delimiter        10000     4820    1.00000   1.00000   1.00000
-delete/non-delim        10000     4926    1.00000   1.00000   1.00000
-duplicate/delimiter     10000     4817    1.00000   1.00000   1.00000
-duplicate/non-delim     10000     4914    1.00000   1.00000   1.00000
-swap/delimiter          10000     4776    1.00000   1.00000   1.00000
-swap/non-delim          10000     4944    1.00000   1.00000   1.00000
-insert/delimiter        10000     4896    1.00000   1.00000   1.00000
-insert/non-delim        10000     4916    1.00000   1.00000   1.00000
+delete/delimiter        10000     4923    1.00000   1.00000   1.00000
+delete/non-delim        10000     5001    1.00000   1.00000   1.00000
+duplicate/delimiter     10000     4894    1.00000   1.00000   1.00000
+duplicate/non-delim     10000     4991    1.00000   1.00000   1.00000
+swap/delimiter          10000     4805    1.00000   1.00000   1.00000
+swap/non-delim          10000     5021    1.00000   1.00000   1.00000
+insert/delimiter        10000     4975    1.00000   1.00000   1.00000
+insert/non-delim        10000     4992    1.00000   1.00000   1.00000
 
 class                  diags_mean diags_p95  skipped_mean skipped_p95  evidence_mean evidence_p95
-delete/delimiter            1.717         3        51.237         291          1.717            3
-delete/non-delim            0.996         2        18.383         117          0.996            2
-duplicate/delimiter         1.541         3        45.928         271          1.541            3
-duplicate/non-delim         1.379         3        15.386          87          1.379            3
-swap/delimiter              1.691         3        34.449         194          1.690            3
-swap/non-delim              1.610         3        28.588         165          1.609            3
-insert/delimiter            1.692         4        39.276         234          1.662            4
-insert/non-delim            1.331         3        20.707         119          1.326            3
+delete/delimiter            1.744         4        51.390         292          1.744            4
+delete/non-delim            1.021         2        19.266         121          1.021            2
+duplicate/delimiter         1.543         3        45.716         261          1.543            3
+duplicate/non-delim         1.382         3        15.154          91          1.382            3
+swap/delimiter              1.694         4        33.161         185          1.694            4
+swap/non-delim              1.621         3        29.030         166          1.620            3
+insert/delimiter            1.694         4        38.876         229          1.662            4
+insert/non-delim            1.339         3        20.640         126          1.335            3
 
 == Part B: delimiter-breaking churn over clean corpora ==
 churn = original significant tokens (edit site excluded) whose partner()
@@ -88,13 +80,10 @@ clean_1m: 227111 significant tokens, 1404 top-level items
 
 == Part C: one delimiter deleted inside a literal ==
 spread = bytes of the longest literal token left where the edited one stood: how
-far the stray delimiter reaches. A one-line literal reaches the end of its line at
-most; a `"""` reaches the next `"""` or the end of the file.
+far the stray delimiter reaches: a literal reaches the end of its line at most.
 
-literals_64k: 65822 bytes, 491 literals, 77 top-level items
-  delete " closer    n=200  spread p50/p95/max 10/81/151  diags 2/10/1462  items_disturbed 0/0/74
-  delete " opener    n=200  spread p50/p95/max 5/53/135  diags 3/10/1131  items_disturbed 0/0/54
-  delete """ closer  n=200  spread p50/p95/max 110/441/547  diags 271/1408/1477  items_disturbed 18/72/76
-  delete """ opener  n=200  spread p50/p95/max 24/177/316  diags 223/1406/1488  items_disturbed 12/72/76
-  delete { of hole   n=200  spread p50/p95/max 21/114/163  diags 0/3/3  items_disturbed 0/0/0
-  delete } of hole   n=200  spread p50/p95/max 0/0/0  diags 2/9/185  items_disturbed 0/0/9
+literals_64k: 65744 bytes, 554 literals, 92 top-level items
+  delete " closer    n=200  spread p50/p95/max 11/111/164  diags 2/9/13  items_disturbed 0/0/0
+  delete " opener    n=200  spread p50/p95/max 8/53/176  diags 3/10/17  items_disturbed 0/0/0
+  delete { of hole   n=200  spread p50/p95/max 20/38/39  diags 0/3/5  items_disturbed 0/0/0
+  delete } of hole   n=200  spread p50/p95/max 0/0/0  diags 3/7/11  items_disturbed 0/0/0
