@@ -125,9 +125,6 @@ fn lower_token_errors(
                 codes::UNTERMINATED_BLOCK_STRING,
                 "unterminated multi-line string literal",
             ),
-            LexErrorKind::UnterminatedChar => {
-                (codes::UNTERMINATED_CHAR, "unterminated character literal")
-            }
             LexErrorKind::LoneCarriageReturn => (
                 codes::LONE_CARRIAGE_RETURN,
                 "carriage return must be followed by a line feed",
@@ -150,13 +147,6 @@ fn lower_token_errors(
             LexErrorKind::InvalidUnicodeScalar => (
                 codes::INVALID_UNICODE_SCALAR,
                 "Unicode escape is not a valid scalar value",
-            ),
-            LexErrorKind::EmptyCharLiteral => {
-                (codes::EMPTY_CHAR_LITERAL, "character literal is empty")
-            }
-            LexErrorKind::MoreThanOneChar => (
-                codes::MORE_THAN_ONE_CHAR,
-                "character literal contains more than one character",
             ),
             LexErrorKind::UnknownPunctuation => (
                 codes::UNKNOWN_PUNCTUATION,

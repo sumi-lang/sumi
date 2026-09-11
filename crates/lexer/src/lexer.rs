@@ -167,11 +167,6 @@ impl<'src> Lexer<'src> {
                 b'0'..=b'9' => (SyntaxKind::IntLiteral, RawKind::Number, self.scan_number()),
                 b'"' if self.remaining().starts_with(BLOCK_DELIMITER) => self.scan_string(true),
                 b'"' => self.scan_string(false),
-                b'\'' => (
-                    SyntaxKind::CharLiteral,
-                    RawKind::Char,
-                    self.scan_line_literal(b'\''),
-                ),
                 byte if is_ascii_ident_start(byte) => {
                     self.scan_ident();
                     (
@@ -574,38 +569,6 @@ impl<'src> Lexer<'src> {
                 Some(_) => self.position += 1,
             }
         }
-    }
-
-    /// Scan a `'…'` literal. It is line-bounded: an unterminated one ends
-    /// at the line break, so the rest of the line lexes normally and a
-    /// stray delimiter never reaches the next line.
-    fn scan_line_literal(&mut self, close: u8) -> TokenFlags {
-        self.bump_ascii();
-
-        let mut flags = TokenFlags::EMPTY;
-        loop {
-            match self.peek_byte() {
-                None | Some(b'\n' | b'\r') => {
-                    flags |= TokenFlags::UNTERMINATED;
-                    break;
-                }
-                Some(byte) if byte == close => {
-                    self.bump_ascii();
-                    break;
-                }
-                Some(b'\\') => {
-                    flags |= TokenFlags::HAS_ESCAPE;
-                    self.bump_ascii();
-                    if !matches!(self.peek_byte(), None | Some(b'\n' | b'\r')) {
-                        self.bump_char();
-                    }
-                }
-                // Only ASCII delimiters are inspected, so a byte-wise skip
-                // cannot leave the final position mid-character.
-                Some(_) => self.position += 1,
-            }
-        }
-        flags
     }
 
     fn scan_ident(&mut self) {

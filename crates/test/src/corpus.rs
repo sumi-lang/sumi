@@ -51,9 +51,8 @@ const NOUNS: &[&str] = &[
 const VERBS: &[&str] = &[
     "compute", "blend", "scan", "merge", "fold", "clamp", "shift", "probe", "route", "trace",
 ];
-const TYPES: &[&str] = &["Int", "Bool", "Str", "Char"];
+const TYPES: &[&str] = &["Int", "Bool", "Str"];
 const INTS: &[&str] = &["0", "1", "2", "7", "42", "128", "1000", "9999"];
-const CHARS: &[&str] = &["'a'", "'z'", "'0'", "'\\n'", "'\\\\'", "'\\u{41}'"];
 const CMP_OPS: &[&str] = &["==", "!=", "<", "<=", ">", ">="];
 const ADD_OPS: &[&str] = &["+", "-"];
 const MUL_OPS: &[&str] = &["*", "/", "%"];
@@ -375,8 +374,7 @@ impl Gen {
                     format!("\"item {}\"", self.fresh)
                 }
             }
-            70..=77 => self.rng.pick(CHARS).to_string(),
-            78..=87 => if self.rng.chance(50) { "true" } else { "false" }.to_string(),
+            70..=87 => if self.rng.chance(50) { "true" } else { "false" }.to_string(),
             _ => {
                 if depth < 3 {
                     let inner = self.expr(scope, depth + 1);
@@ -501,13 +499,13 @@ mod tests {
         let medium = generate(64 * 1024, 0xBEEF);
         assert_eq!(
             (medium.len(), fingerprint(&medium)),
-            (66075, 13044796359225759485),
+            (66077, 13819229929035408664),
             "medium"
         );
         let damaged = corrupt(&medium, 7, 600);
         assert_eq!(
             (damaged.len(), fingerprint(&damaged)),
-            (66064, 13067422318107344423),
+            (66066, 212554590890804724),
             "damaged"
         );
     }

@@ -25,7 +25,7 @@ Reading the numbers:
   creates.
 - Part C spread stays inside the line for the one-line forms (a median of
   a few dozen bytes, a maximum of one long line) and does not for `"""`: a
-  deleted `"""` reaches the next one, a median of 86 bytes and up to
+  deleted `"""` reaches the next one, a median of 110 bytes and up to
   547 bytes here. The one-line maxima come from the same cascade: an
   unterminated one-line literal that reaches a `"""` opener on its line
   eats the opener's first quote, and every later `"""` in the file swaps
@@ -35,8 +35,9 @@ Reading the numbers:
   are bounded by the hole's line: a deleted `{` leaves the
   hole's code as the literal's text, and a deleted `}` leaves the hole open
   to the end of its line, where the literal's closing quote, or the first
-  quote of a `"""` after it, closes the literal — no reach at all, and
-  no item disturbed.
+  quote of a `"""` after it, closes the literal — no reach at all. The
+  one sample that disturbs items is that second case: the literal takes
+  the opener's first quote, and the `"""` cascade above follows.
 
 recovery-scorecard
 
@@ -55,14 +56,14 @@ insert/delimiter        10000     4896    1.00000   1.00000   1.00000
 insert/non-delim        10000     4916    1.00000   1.00000   1.00000
 
 class                  diags_mean diags_p95  skipped_mean skipped_p95  evidence_mean evidence_p95
-delete/delimiter            1.718         3        51.239         291          1.718            3
+delete/delimiter            1.717         3        51.237         291          1.717            3
 delete/non-delim            0.996         2        18.383         117          0.996            2
 duplicate/delimiter         1.541         3        45.928         271          1.541            3
 duplicate/non-delim         1.379         3        15.386          87          1.379            3
-swap/delimiter              1.692         3        34.522         195          1.692            3
-swap/non-delim              1.611         3        28.590         165          1.610            3
-insert/delimiter            1.692         4        39.288         234          1.662            4
-insert/non-delim            1.333         3        20.812         120          1.329            3
+swap/delimiter              1.691         3        34.449         194          1.690            3
+swap/non-delim              1.610         3        28.588         165          1.609            3
+insert/delimiter            1.692         4        39.276         234          1.662            4
+insert/non-delim            1.331         3        20.707         119          1.326            3
 
 == Part B: delimiter-breaking churn over clean corpora ==
 churn = original significant tokens (edit site excluded) whose partner()
@@ -90,11 +91,10 @@ spread = bytes of the longest literal token left where the edited one stood: how
 far the stray delimiter reaches. A one-line literal reaches the end of its line at
 most; a `"""` reaches the next `"""` or the end of the file.
 
-literals_64k: 65962 bytes, 629 literals, 77 top-level items
-  delete " closer    n=200  spread p50/p95/max 10/80/151  diags 2/10/1462  items_disturbed 0/0/74
+literals_64k: 65969 bytes, 491 literals, 77 top-level items
+  delete " closer    n=200  spread p50/p95/max 10/81/151  diags 2/10/1462  items_disturbed 0/0/74
   delete " opener    n=200  spread p50/p95/max 5/53/135  diags 3/10/1131  items_disturbed 0/0/54
-  delete ' closer    n=200  spread p50/p95/max 23/158/260  diags 3/797/1464  items_disturbed 0/43/74
-  delete """ closer  n=200  spread p50/p95/max 86/318/547  diags 271/1398/1477  items_disturbed 14/72/76
-  delete """ opener  n=200  spread p50/p95/max 26/185/316  diags 328/1406/1488  items_disturbed 15/72/76
-  delete { of hole   n=200  spread p50/p95/max 22/114/163  diags 0/3/3  items_disturbed 0/0/0
-  delete } of hole   n=200  spread p50/p95/max 0/0/0  diags 2/6/13  items_disturbed 0/0/0
+  delete """ closer  n=200  spread p50/p95/max 110/441/547  diags 271/1408/1477  items_disturbed 18/72/76
+  delete """ opener  n=200  spread p50/p95/max 24/177/316  diags 223/1406/1488  items_disturbed 12/72/76
+  delete { of hole   n=200  spread p50/p95/max 21/114/163  diags 0/3/3  items_disturbed 0/0/0
+  delete } of hole   n=200  spread p50/p95/max 0/0/0  diags 2/9/185  items_disturbed 0/0/9

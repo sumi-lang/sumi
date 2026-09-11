@@ -159,13 +159,11 @@ fn trivia_classification() {
 #[test]
 fn literal_kinds() {
     check(
-        r#"15 "s" 'c'"#,
+        r#"15 "s""#,
         &[
             r#"IntLiteral 0..2 "15""#,
             r#"Whitespace 2..3 " ""#,
             r#"StringLiteral 3..6 "\"s\"""#,
-            r#"Whitespace 6..7 " ""#,
-            r#"CharLiteral 7..10 "'c'""#,
         ],
     );
 }

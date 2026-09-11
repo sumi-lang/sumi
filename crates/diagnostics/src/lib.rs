@@ -90,8 +90,8 @@ pub struct Location {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Place {
     /// Source text relevant to the diagnostic. The range may be empty when
-    /// the producer reported an empty source range, such as an empty
-    /// character literal's contents.
+    /// the producer reported an empty source range, such as the missing
+    /// indentation of a multi-line string's line.
     Range(TextRange),
     /// A byte boundary where syntax is absent.
     Point(TextSize),

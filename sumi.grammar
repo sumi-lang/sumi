@@ -103,7 +103,6 @@ token StringLiteral literal "a string literal" expr end
 /// A multi-line string literal: `"""`, the content lines, and `"""` on its
 /// own line, whose indentation every content line shares and sheds.
 token BlockStringLiteral literal "a multi-line string literal" expr end
-token CharLiteral literal "a character literal" expr end
 /// The text of a string literal with holes, from its opening quote to its
 /// first hole: `"…` or `"""…`. A `{` in a `"…"` or `"""` literal opens a
 /// hole, an expression on that line whose value the string takes in its
@@ -258,7 +257,6 @@ LiteralExpr =
   IntLiteral
 | StringLiteral
 | BlockStringLiteral
-| CharLiteral
 | 'true'
 | 'false'
 PrefixExpr = PrefixOperator operand:Expr
