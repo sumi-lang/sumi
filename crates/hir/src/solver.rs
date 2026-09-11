@@ -14,10 +14,10 @@
 //! Three constraint forms feed it. [`equal`](Solver::equal) merges two
 //! classes and joins their evidence, and because join is commutative,
 //! associative, and idempotent the order of arrival is invisible in the
-//! result. [`fact`](Solver::fact) and [`expect`](Solver::expect) both join
-//! evidence into one class; a fact is what a class is known to be on its own
-//! account, an expectation is what one use of it demands, and only facts
-//! survive a [`replay`](Solver::replay). [`flow`](Solver::flow) lets evidence
+//! result. [`known`](Solver::known) opens a class with a fact, what it is
+//! known to be on its own account; [`expect`](Solver::expect) joins into a
+//! class what one use of it demands, and only facts survive a
+//! [`replay`](Solver::replay). [`flow`](Solver::flow) lets evidence
 //! pass from one class to another and never back: the consumer learns
 //! everything the provider knows, transformed by the edge, and the provider
 //! is unaffected by what its consumers demand, which keeps blame on the
@@ -149,11 +149,13 @@ impl<L: Lattice> Solver<L> {
         self.evidence[root].join(evidence);
     }
 
-    /// Join evidence `var`'s class is known to carry on its own account: an
-    /// annotation, or a literal. Facts survive a replay.
-    pub fn fact(&mut self, var: Var, evidence: L) {
-        self.expect(var, &evidence);
+    /// A fresh class known to carry `evidence` on its own account: an
+    /// annotation, or a literal. A fact; it survives a replay.
+    pub fn known(&mut self, evidence: L) -> Var {
+        let var = self.fresh();
+        self.evidence[var.index()] = evidence.clone();
         self.facts.push((var, evidence));
+        var
     }
 
     /// Merge the classes of `a` and `b`, joining their evidence.
@@ -337,9 +339,8 @@ mod tests {
     #[test]
     fn intervals_narrow_transfer_and_empty_out() {
         let mut solver = Solver::<Interval>::default();
-        let x = solver.fresh();
+        let x = solver.known(Interval::new(0, 10));
         let y = solver.import(x, 100);
-        solver.fact(x, Interval::new(0, 10));
         solver.expect(x, &Interval::new(5, 20));
         solver.expect(y, &Interval::new(130, 140));
         solver.solve();
@@ -368,8 +369,7 @@ mod tests {
     #[test]
     fn replay_keeps_facts_and_exported_flows_only() {
         let mut solver = Solver::<Set>::default();
-        let known = solver.fresh();
-        solver.fact(known, Set(1));
+        let known = solver.known(Set(1));
         let demanded = solver.fresh();
         solver.expect(demanded, &Set(2));
         let conflicted = solver.fresh();
@@ -387,7 +387,7 @@ mod tests {
     }
 
     /// One constraint over eight pre-made classes: an equality, an
-    /// expectation, a fact, or a flow.
+    /// expectation, an equality with a known class, or a flow.
     fn constraint() -> impl proptest::strategy::Strategy<Value = (u8, usize, usize)> {
         (0u8..4, 0usize..8, 0usize..8)
     }
@@ -396,7 +396,10 @@ mod tests {
         match kind {
             0 => solver.equal(vars[a], vars[b]),
             1 => solver.expect(vars[a], &Set(1 << (b % 3))),
-            2 => solver.fact(vars[a], Set(1 << (b % 3))),
+            2 => {
+                let known = solver.known(Set(1 << (b % 3)));
+                solver.equal(vars[a], known);
+            }
             _ => solver.flow(vars[a], vars[b], ()),
         }
     }

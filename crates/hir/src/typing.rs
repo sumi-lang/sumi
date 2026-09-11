@@ -193,10 +193,8 @@ impl Typing {
     /// A class known to have `ty` at `span`: a literal, an annotation, or an
     /// operator's result.
     pub fn known(&mut self, ty: Ty, span: Span) -> Var {
-        let var = self.solver.fresh();
         let claim = self.claim(span);
-        self.solver.fact(var, Evidence::single(ty, claim));
-        var
+        self.solver.known(Evidence::single(ty, claim))
     }
 
     /// The class of a call at `span` whose callee's result class is `result`.

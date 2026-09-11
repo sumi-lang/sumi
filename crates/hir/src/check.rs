@@ -587,7 +587,10 @@ struct Builder<'a, 's> {
     // Scratch kept across bodies.
     /// The subject of each expression, by index.
     subjects: Vec<ExprId>,
-    /// A pool of scopes; the first `depth` are open, innermost last.
+    /// A pool of scopes; the first `depth` are open, innermost last. A map
+    /// per scope costs a probe per enclosing scope on lookup, and nothing on
+    /// close; an undo log measured slower on binding-heavy code, since every
+    /// binding then pays a removal.
     scopes: Vec<Scope<'s>>,
     depth: usize,
     /// Parameter names seen so far, for duplicates.
@@ -652,7 +655,7 @@ impl<'a, 's> Builder<'a, 's> {
                         format!("duplicate parameter `{name}`"),
                         Some((span, "declared here")),
                     );
-                    self.scope().insert(name, None);
+                    self.shadow(name, None);
                     self.failed = true;
                 } else {
                     self.first.insert(name, self.source.span(node));
@@ -734,9 +737,9 @@ impl<'a, 's> Builder<'a, 's> {
     fn close_scope(&mut self) {
         self.depth -= 1;
     }
-    /// The innermost open scope.
-    fn scope(&mut self) -> &mut Scope<'s> {
-        &mut self.scopes[self.depth - 1]
+    /// Give `name` the meaning `id` until the innermost scope closes.
+    fn shadow(&mut self, name: &'s str, id: Option<LocalId>) {
+        self.scopes[self.depth - 1].insert(name, id);
     }
     fn bind(&mut self, name: &'s str, node: NodeIdx, class: Option<Var>) -> Option<LocalId> {
         let id = class.map(|class| {
@@ -749,7 +752,7 @@ impl<'a, 's> Builder<'a, 's> {
             id
         });
         self.failed |= id.is_none();
-        self.scope().insert(name, id);
+        self.shadow(name, id);
         id
     }
     fn lookup(&self, name: &str) -> Option<Option<LocalId>> {
@@ -997,13 +1000,18 @@ impl<'a, 's> Builder<'a, 's> {
         match tree.kind(node) {
             NodeKind::Block => {
                 self.close_scope();
-                let mut statements = Vec::new();
-                let mut tail = None;
-                let mut valid = !tree.has_error(node);
                 // Children arrive last first; only the first can be the tail.
                 // Completed statements are stacked in source order. Nested
                 // blocks consume their own statements before reaching here.
-                for (index, child) in tree.children(node).enumerate() {
+                let mut children = tree.children(node).peekable();
+                let has_tail = children
+                    .peek()
+                    .is_some_and(|&last| self.statements.last().is_none_or(|(n, _)| *n != last));
+                let count = tree.children(node).count() - usize::from(has_tail);
+                let mut statements = Vec::with_capacity(count);
+                let mut tail = None;
+                let mut valid = !tree.has_error(node);
+                for (index, child) in children.enumerate() {
                     if let Some((_, statement)) = self.statements.pop_if(|(node, _)| *node == child)
                     {
                         statements.push(statement);
