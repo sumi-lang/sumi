@@ -1,0 +1,38 @@
+== tree ==
+SourceFile 0..113
+  FnItem 0..112
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block 7..112
+      BinaryExpr 13..19
+        NameRef 13..14 "a"
+        NameRef 18..19 "b"
+      BinaryExpr 24..30
+        NameRef 24..25 "a"
+        NameRef 29..30 "b"
+      BinaryExpr 35..40
+        NameRef 35..36 "a"
+        NameRef 39..40 "b"
+      BinaryExpr 45..61
+        NameRef 45..46 "a"
+        BinaryExpr 50..61
+          NameRef 50..51 "b"
+          BinaryExpr 55..61
+            NameRef 55..56 "c"
+            NameRef 60..61 "d"
+      BinaryExpr 66..72
+        NameRef 66..67 "a"
+        NameRef 71..72 "b"
+      BinaryExpr 77..82
+        NameRef 77..78 "a"
+        NameRef 81..82 "b"
+      BinaryExpr 87..92
+        NameRef 87..88 "a"
+        NameRef 91..92 "b"
+      BinaryExpr 97..110
+        NameRef 97..98 "a"
+        BinaryExpr 101..110
+          BinaryExpr 101..106
+            NameRef 101..102 "b"
+            NameRef 105..106 "c"
+          NameRef 109..110 "d"

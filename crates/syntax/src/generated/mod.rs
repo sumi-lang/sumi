@@ -62,6 +62,33 @@ pub enum NodeKind {
     Error,
 }
 
+impl NodeKind {
+    /// Every kind, in declaration order, `Error` last.
+    pub const ALL: [Self; 21] = [
+        Self::SourceFile,
+        Self::FnItem,
+        Self::ParamList,
+        Self::Param,
+        Self::Name,
+        Self::TypeRef,
+        Self::Block,
+        Self::LetStmt,
+        Self::AssignStmt,
+        Self::DiscardStmt,
+        Self::ReturnStmt,
+        Self::NameRef,
+        Self::LiteralExpr,
+        Self::PrefixExpr,
+        Self::BinaryExpr,
+        Self::ParenExpr,
+        Self::CallExpr,
+        Self::ArgList,
+        Self::IfExpr,
+        Self::ClosureExpr,
+        Self::Error,
+    ];
+}
+
 /// Whether a token of this kind can begin an expression.
 pub fn starts_expression(kind: SyntaxKind) -> bool {
     matches!(

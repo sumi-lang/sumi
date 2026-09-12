@@ -41,9 +41,75 @@ fn chain(
         .boxed()
 }
 
+/// A parameter list on one line: names, each typed unless `inferred` lets
+/// it go bare, with or without a trailing comma.
+fn param_list(inferred: bool) -> BoxedStrategy<String> {
+    (
+        prop::collection::vec((name(), any::<bool>()), 0..3),
+        any::<bool>(),
+    )
+        .prop_map(move |(params, trailing)| {
+            let params: Vec<String> = params
+                .into_iter()
+                .map(|(param, typed)| {
+                    if typed || !inferred {
+                        format!("{param}: int")
+                    } else {
+                        param
+                    }
+                })
+                .collect();
+            let comma = if trailing && !params.is_empty() {
+                ","
+            } else {
+                ""
+            };
+            format!("({}{comma})", params.join(", "))
+        })
+        .boxed()
+}
+
+/// What follows a parameter list, for items and closures alike: an
+/// optional return type, then a block or `=` and an expression, and
+/// whether it was the expression.
+fn signature_tail(
+    block: BoxedStrategy<String>,
+    body: BoxedStrategy<String>,
+) -> BoxedStrategy<(String, bool)> {
+    let body = prop_oneof![
+        2 => block.prop_map(|body| (format!(" {body}"), false)),
+        1 => body.prop_map(|body| (format!(" = {body}"), true)),
+    ];
+    (any::<bool>(), body)
+        .prop_map(|(returns, (body, bare))| {
+            let returns = if returns { " -> int" } else { "" };
+            (format!("{returns}{body}"), bare)
+        })
+        .boxed()
+}
+
+/// An expression that nothing follows: an initializer, a returned value,
+/// or a body. Only there may a closure take an expression body bare, since
+/// that body absorbs every operator and argument list after it.
+fn tail_expr(expr: BoxedStrategy<String>) -> BoxedStrategy<String> {
+    let closure =
+        (param_list(true), any::<bool>(), expr.clone()).prop_map(|(params, returns, body)| {
+            let returns = if returns { " -> int" } else { "" };
+            format!("fn{params}{returns} = {body}")
+        });
+    prop_oneof![5 => expr, 1 => closure].boxed()
+}
+
 fn expr() -> BoxedStrategy<String> {
     let leaf = prop_oneof![name(), literal()];
     leaf.prop_recursive(3, 24, 3, |expr| {
+        // An `else` takes a block or one more `if`, which takes no `else`
+        // of its own: one link witnesses the chain.
+        let otherwise = prop_oneof![
+            2 => block(expr.clone()),
+            1 => (expr.clone(), block(expr.clone()))
+                .prop_map(|(condition, then)| format!("if {condition} {then}")),
+        ];
         let atom = prop_oneof![
             4 => name(),
             4 => literal(),
@@ -57,12 +123,18 @@ fn expr() -> BoxedStrategy<String> {
                         format!("{callee}({}{comma})", args.join(", "))
                     }
                 }),
-            1 => (expr.clone(), block(expr.clone()), prop::option::of(block(expr.clone())))
+            1 => (expr.clone(), block(expr.clone()), prop::option::of(otherwise))
                 .prop_map(|(condition, then, otherwise)| match otherwise {
                     Some(otherwise) => format!("if {condition} {then} else {otherwise}"),
                     None => format!("if {condition} {then}"),
                 }),
             1 => block(expr.clone()),
+            // Where an operator may follow, an expression body is
+            // parenthesized with its closure.
+            1 => (param_list(true), signature_tail(block(expr.clone()), expr.clone()))
+                .prop_map(|(params, (tail, bare))| {
+                    if bare { format!("(fn{params}{tail})") } else { format!("fn{params}{tail}") }
+                }),
         ]
         .boxed();
         // Prefix operators are glued to their operand.
@@ -89,14 +161,14 @@ fn expr() -> BoxedStrategy<String> {
 fn statement(expr: BoxedStrategy<String>) -> BoxedStrategy<(String, bool)> {
     prop_oneof![
         3 => expr.clone().prop_map(|e| (e, true)),
-        2 => (any::<bool>(), name(), any::<bool>(), expr.clone()).prop_map(|(mutable, name, typed, init)| {
+        2 => (any::<bool>(), name(), any::<bool>(), tail_expr(expr.clone())).prop_map(|(mutable, name, typed, init)| {
             let mutable = if mutable { "mut " } else { "" };
             let ty = if typed { ": int" } else { "" };
             (format!("let {mutable}{name}{ty} = {init}"), false)
         }),
         2 => (expr.clone(), expr.clone()).prop_map(|(target, value)| (format!("{target} = {value}"), false)),
-        1 => expr.clone().prop_map(|e| (format!("_ = {e}"), false)),
-        1 => prop::option::of(expr).prop_map(|value| match value {
+        1 => tail_expr(expr.clone()).prop_map(|e| (format!("_ = {e}"), false)),
+        1 => prop::option::of(tail_expr(expr)).prop_map(|value| match value {
             Some(value) => (format!("return {value}"), false),
             None => ("return".to_owned(), false),
         }),
@@ -127,25 +199,15 @@ fn block(expr: BoxedStrategy<String>) -> BoxedStrategy<String> {
     .boxed()
 }
 
-/// A well-formed program: zero to three function items.
+/// A well-formed program: zero to three function items, each with typed
+/// parameters.
 pub fn program() -> BoxedStrategy<String> {
     let item = (
         name(),
-        prop::collection::vec(name(), 0..3),
-        any::<bool>(),
-        any::<bool>(),
-        block(expr()),
+        param_list(false),
+        signature_tail(block(expr()), tail_expr(expr())),
     )
-        .prop_map(|(name, params, trailing, returns, body)| {
-            let params: Vec<String> = params.into_iter().map(|p| format!("{p}: int")).collect();
-            let comma = if trailing && !params.is_empty() {
-                ","
-            } else {
-                ""
-            };
-            let returns = if returns { " -> int" } else { "" };
-            format!("fn {name}({}{comma}){returns} {body}", params.join(", "))
-        });
+        .prop_map(|(name, params, (tail, _))| format!("fn {name}{params}{tail}"));
     (any::<bool>(), prop::collection::vec(item, 0..3))
         .prop_map(|(comment, items)| {
             let mut text = if comment {
