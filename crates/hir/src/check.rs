@@ -8,23 +8,26 @@
 //! 2. **Bodies.** A structural walk per function resolves names, builds the
 //!    body's expressions with every expression and local owning a class in
 //!    the [`Typing`], and records what the walk learns: facts for literals
-//!    and operator results, a flow for each call, and a demand wherever a
-//!    context requires an expression to have a type. The walk rejects nothing
-//!    on type grounds; it fails only on names, syntax, and unsupported
-//!    constructs.
+//!    and operator results, a flow for each call and for each branch into
+//!    its `if`, and a demand wherever a context requires an expression to
+//!    have a type. The walk rejects nothing on type grounds; it fails only
+//!    on names, syntax, and unsupported constructs.
 //! 3. **Verdicts.** The typing solves once. Signatures are read off result
 //!    classes, independent of declaration order. Demands are then checked in
 //!    source order against the final evidence, so a disagreement is blamed on
-//!    the first demand that raised it. A body is published when its walk
-//!    succeeded, none of its demands failed, every class it uses resolved,
-//!    and every function it calls has a signature.
+//!    the first demand that raised it. Every expression has one context, so
+//!    it is held to one demand; an expression whose type is undetermined,
+//!    because its branches or its callee disagree, satisfies any demand
+//!    silently, and the disagreement is reported where it arose. A body is
+//!    published when its walk succeeded, none of its demands failed, every
+//!    class it uses resolved, and every function it calls has a signature.
 //!
 //! Names are never copied while checking: every map is keyed by a slice of
 //! the source, and the one builder keeps its scratch across bodies, so a
 //! body costs the vectors it publishes and nothing else.
 
+use std::collections::HashMap;
 use std::collections::hash_map::Entry;
-use std::collections::{HashMap, HashSet};
 use std::hash::{BuildHasherDefault, Hasher};
 
 use sumi_frontend::{DiagnosticCode, Label, Location};
@@ -36,7 +39,7 @@ use sumi_syntax::{
 
 use crate::codes;
 use crate::solver::Var;
-use crate::typing::{Expected, Typing};
+use crate::typing::{Claim, Expected, Typing};
 use crate::*;
 
 /// A hasher for identifiers: a word at a time, with a multiply to spread
@@ -167,49 +170,28 @@ impl DraftBody {
     }
 }
 
-/// What a mismatch report points at besides the expression: where the
-/// expectation came from.
-#[derive(Clone, Copy)]
-enum Related {
-    /// A declaration: a called function, a result annotation, or a
-    /// binding's annotation.
-    Declared(NodeIdx),
-    /// The other branch of an `if`, whose type the reported branch must
-    /// match.
-    OtherBranch(NodeIdx),
-}
-
-impl Related {
-    fn label(self) -> (NodeIdx, &'static str) {
-        match self {
-            Self::Declared(node) => (node, "declared here"),
-            Self::OtherBranch(node) => (node, "other branch determines expected type"),
-        }
-    }
-}
-
 /// What a context requires of an expression, checked after solving.
 enum DemandKind {
-    /// The expression must have the expected type.
+    /// The expression must have the expected type, which a declaration may
+    /// have set: a called function, a result annotation, or a binding's
+    /// annotation.
     Type {
         expected: Expected,
-        related: Option<Related>,
+        declared: Option<NodeIdx>,
     },
     /// An expression statement's value must be unit.
     Unused,
     /// The operands of `==` and `!=` must not be unit.
     Comparable,
+    /// The branches of an `if` must agree on one type: the expression is
+    /// the `if`, and each branch delivers its type to it first.
+    Agree { branches: [Var; 2] },
 }
 
 /// One demand, kept small: the verdict pass reads every one, and a body
 /// makes one per operand, argument, branch, and statement.
 struct Demand {
     owner: u32,
-    /// The expression whose type the demand is about: the innermost one
-    /// the demanded expression takes its type from, through any number of
-    /// tails and branches. Two demands with one subject are about one
-    /// expression.
-    subject: ExprId,
     node: NodeIdx,
     actual: Var,
     kind: DemandKind,
@@ -288,6 +270,34 @@ impl<'s> Source<'s> {
             format!("expected {expected}, found {actual}"),
             related,
         );
+    }
+    /// Report that `node` is claimed to be every type in `claims`, in
+    /// source order, and where each claim was made. `message` wraps the
+    /// list of types.
+    fn conflict(
+        &mut self,
+        node: NodeIdx,
+        code: DiagnosticCode,
+        typing: &Typing,
+        claims: &[(Ty, Claim)],
+        message: impl FnOnce(String) -> String,
+    ) {
+        let mut claims: Vec<_> = claims
+            .iter()
+            .map(|(ty, claim)| (*ty, typing.origin(*claim).map(|node| self.span(node))))
+            .collect();
+        claims.sort_by_key(|(_, origin)| origin.map(|span| span.range().start()));
+        let types: Vec<_> = claims.iter().map(|(ty, _)| ty.to_string()).collect();
+        let (last, rest) = types.split_last().expect("a conflict names two types");
+        let joined = if rest.len() == 1 {
+            format!("{} and {last}", rest[0])
+        } else {
+            format!("{}, and {last}", rest.join(", "))
+        };
+        let labels = claims
+            .into_iter()
+            .filter_map(|(ty, origin)| Some((origin?, format!("{ty} here").into())));
+        self.report(self.span(node), code, message(joined), labels);
     }
     fn ty(&mut self, node: ast::TypeRef) -> Option<Ty> {
         if self.tree.has_error(node.node()) {
@@ -464,26 +474,17 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     typing.solve();
     let mut replay = typing.replay();
     let mut failed = vec![false; functions.len()];
-    // An expression whose type is already in dispute is held to no further
-    // demand: one report per expression, at the first demand it fails.
-    let mut disputed = HashSet::new();
     for demand in demands {
-        if disputed.contains(&(demand.owner, demand.subject)) {
-            continue;
-        }
         let actual = replay.resolve(demand.actual);
         match demand.kind {
-            DemandKind::Type { expected, related } => {
+            DemandKind::Type { expected, declared } => {
                 let expected_ty = match expected {
                     Expected::Ty(ty) => Some(ty),
                     Expected::Class(class) => replay.resolve(class),
                 };
                 match (actual, expected_ty) {
                     (Some(actual), Some(expected)) if actual != expected => {
-                        let related = related.map(|related| {
-                            let (node, label) = related.label();
-                            (source.span(node), label)
-                        });
+                        let related = declared.map(|node| (source.span(node), "declared here"));
                         source.type_mismatch(demand.node, expected, actual, related);
                     }
                     _ => {
@@ -515,9 +516,28 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
                     None,
                 );
             }
+            // Each branch delivers what it is so far, and only that: a
+            // conflict on the `if` is the branches disagreeing, and nothing
+            // else. The `if` then resolves to nothing, so whatever takes its
+            // type is held to no type it never had.
+            DemandKind::Agree { branches } => {
+                for branch in branches {
+                    replay.branch(branch, demand.actual);
+                }
+                let evidence = *replay.evidence(demand.actual);
+                if !evidence.is_conflict() {
+                    continue;
+                }
+                source.conflict(
+                    demand.node,
+                    codes::TYPE_MISMATCH,
+                    &typing,
+                    &evidence.claims(),
+                    |types| format!("if branches are {types}"),
+                );
+            }
         }
         failed[demand.owner as usize] = true;
-        disputed.insert((demand.owner, demand.subject));
     }
     for (index, header) in headers.into_iter().enumerate() {
         let evidence = header.result.map(|result| *typing.evidence(result));
@@ -535,28 +555,14 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         {
             let node = items[index].node();
             if evidence.is_conflict() {
-                let claims = evidence.claims();
-                let types: Vec<_> = claims.iter().map(|(ty, _)| ty.to_string()).collect();
-                let (last, rest) = types.split_last().unwrap();
-                let joined = if rest.len() == 1 {
-                    format!("{} and {last}", rest[0])
-                } else {
-                    format!("{}, and {last}", rest.join(", "))
-                };
-                let labels: Vec<_> = claims
-                    .into_iter()
-                    .map(|(ty, claim)| {
-                        (
-                            source.span(typing.origin(claim)),
-                            format!("{ty} here").into(),
-                        )
-                    })
-                    .collect();
-                source.report(
-                    source.span(node),
+                source.conflict(
+                    node,
                     codes::CANNOT_INFER,
-                    format!("function result is both {joined}; add a return type annotation"),
-                    labels,
+                    &typing,
+                    &evidence.claims(),
+                    |types| {
+                        format!("function result is both {types}; add a return type annotation")
+                    },
                 );
             } else {
                 source.error(
@@ -630,8 +636,6 @@ struct Builder<'a, 's> {
     args: Vec<ExprId>,
     statements: Vec<Statement>,
     // Scratch kept across bodies.
-    /// The subject of each expression, by index.
-    subjects: Vec<ExprId>,
     /// A pool of scopes; the first `depth` are open, innermost last. A map
     /// per scope costs a probe per enclosing scope on lookup, and nothing on
     /// close; an undo log measured slower on binding-heavy code, since every
@@ -670,7 +674,6 @@ impl<'a, 's> Builder<'a, 's> {
             classes: Vec::new(),
             args: Vec::new(),
             statements: Vec::new(),
-            subjects: Vec::new(),
             scopes: Vec::new(),
             depth: 0,
             first: NameMap::default(),
@@ -689,7 +692,6 @@ impl<'a, 's> Builder<'a, 's> {
         self.depth = 0;
         self.open_scope();
         self.first.clear();
-        self.subjects.clear();
         // A published body took these; a failed one left them behind.
         self.params.clear();
         self.locals.clear();
@@ -729,7 +731,6 @@ impl<'a, 's> Builder<'a, 's> {
         let nodes = tree.subtree_len(root_node);
         self.exprs.reserve(nodes);
         self.classes.reserve(nodes);
-        self.subjects.reserve(nodes);
         let mut work = std::mem::take(&mut self.work);
         work.push(Work::Enter(root_node));
         while let Some(task) = work.pop() {
@@ -754,12 +755,7 @@ impl<'a, 's> Builder<'a, 's> {
         // is the body's own type.
         match (root, declared, result) {
             (Some(root), Some((ty, node)), _) => {
-                self.require(
-                    root_node,
-                    root,
-                    Expected::Ty(ty),
-                    Some(Related::Declared(node)),
-                );
+                self.require(root_node, root, Expected::Ty(ty), Some(node));
             }
             (Some(root), None, Some(result)) => {
                 self.require(root_node, root, Expected::Class(result), None);
@@ -819,17 +815,8 @@ impl<'a, 's> Builder<'a, 's> {
     fn class(&self, expr: ExprId) -> Var {
         self.classes[expr.index()]
     }
-    /// An expression of its own type.
+    /// An expression of the type `class` resolves to.
     fn emit(&mut self, node: NodeIdx, kind: ExprKind, class: Var) -> ExprId {
-        let id = ExprId::new(self.exprs.len());
-        self.emit_as(node, kind, class, id)
-    }
-    /// An expression with the type of `inner`, one of its sub-expressions.
-    fn emit_from(&mut self, node: NodeIdx, kind: ExprKind, inner: ExprId) -> ExprId {
-        let (class, subject) = (self.class(inner), self.subjects[inner.index()]);
-        self.emit_as(node, kind, class, subject)
-    }
-    fn emit_as(&mut self, node: NodeIdx, kind: ExprKind, class: Var, subject: ExprId) -> ExprId {
         let id = ExprId::new(self.exprs.len());
         self.exprs.push(Expr {
             kind,
@@ -838,31 +825,29 @@ impl<'a, 's> Builder<'a, 's> {
             ty: Ty::Unit,
         });
         self.classes.push(class);
-        self.subjects.push(subject);
         self.values[node.to_usize()] = Some(id);
         id
     }
-    /// The context at `node` requires `expr` to be `expected`. Recorded for
-    /// the verdict pass, and joined into the evidence now so inference sees
-    /// it.
+    /// The context at `node` requires `expr` to be `expected`, which
+    /// `declared` may have set. Recorded for the verdict pass, and joined
+    /// into the evidence now so inference sees it.
     fn require(
         &mut self,
         node: NodeIdx,
         expr: ExprId,
         expected: Expected,
-        related: Option<Related>,
+        declared: Option<NodeIdx>,
     ) {
         let actual = self.class(expr);
         if expected == Expected::Class(actual) {
             return;
         }
         self.typing.expect(actual, expected, node);
-        self.demand(node, expr, DemandKind::Type { expected, related });
+        self.demand(node, expr, DemandKind::Type { expected, declared });
     }
     fn demand(&mut self, node: NodeIdx, expr: ExprId, kind: DemandKind) {
         self.demands.push(Demand {
             owner: self.owner,
-            subject: self.subjects[expr.index()],
             node,
             actual: self.class(expr),
             kind,
@@ -1095,19 +1080,12 @@ impl<'a, 's> Builder<'a, 's> {
                     start: run(start),
                     end: run(self.statements.len()),
                 };
-                match tail {
-                    Some(tail) => {
-                        let kind = ExprKind::Block {
-                            statements,
-                            tail: Some(tail),
-                        };
-                        self.emit_from(node, kind, tail);
-                    }
-                    None => {
-                        let class = self.typing.known(Ty::Unit, node);
-                        self.emit(node, ExprKind::Block { statements, tail }, class);
-                    }
-                }
+                // A block has its tail's type, or is unit without one.
+                let class = match tail {
+                    Some(tail) => self.class(tail),
+                    None => self.typing.known(Ty::Unit, node),
+                };
+                self.emit(node, ExprKind::Block { statements, tail }, class);
             }
             NodeKind::LetStmt => {
                 let binding = ast::LetStmt::cast(tree, node).unwrap();
@@ -1123,7 +1101,7 @@ impl<'a, 's> Builder<'a, 's> {
                                 initializer_node,
                                 value,
                                 Expected::Ty(ty),
-                                Some(Related::Declared(annotation.node())),
+                                Some(annotation.node()),
                             );
                         }
                         self.typing.known(ty, annotation.node())
@@ -1281,31 +1259,45 @@ impl<'a, 's> Builder<'a, 's> {
                 if let Some(condition) = condition {
                     self.require(condition_node, condition, Expected::Ty(Ty::Bool), None);
                 }
-                // The branches agree; without an else, the then branch is unit.
-                let expected = match else_node {
-                    Some(_) => else_branch.map(|id| Expected::Class(self.class(id))),
-                    None => Some(Expected::Ty(Ty::Unit)),
-                };
-                if let (Some(then_branch), Some(expected)) = (then_branch, expected) {
-                    self.require(
-                        then_node,
-                        then_branch,
-                        expected,
-                        else_node.map(Related::OtherBranch),
-                    );
-                }
-                if else_node.is_some() && else_branch.is_none() {
-                    return None;
-                }
                 let then_branch = then_branch?;
-                self.emit_from(
+                let class = match else_node {
+                    // Without an else, the then branch is unit, and so is
+                    // the `if`.
+                    None => {
+                        self.require(then_node, then_branch, Expected::Ty(Ty::Unit), None);
+                        self.typing.known(Ty::Unit, node)
+                    }
+                    // Each branch decides the `if` and learns nothing from
+                    // the other, so branches that disagree leave the `if`
+                    // undetermined, conflicted on its own class, and keep
+                    // their own types. The verdict pass reports it there.
+                    Some(_) => {
+                        let branches = [then_branch, else_branch?].map(|branch| self.class(branch));
+                        let join = self.typing.fresh();
+                        for branch in branches {
+                            self.typing.branch(branch, join);
+                        }
+                        let id = self.emit(
+                            node,
+                            ExprKind::If {
+                                condition: condition?,
+                                then_branch,
+                                else_branch,
+                            },
+                            join,
+                        );
+                        self.demand(node, id, DemandKind::Agree { branches });
+                        return Some(());
+                    }
+                };
+                self.emit(
                     node,
                     ExprKind::If {
                         condition: condition?,
                         then_branch,
                         else_branch,
                     },
-                    then_branch,
+                    class,
                 );
             }
             _ => unreachable!("scheduled supported node"),
@@ -1334,12 +1326,7 @@ impl<'a, 's> Builder<'a, 's> {
             match self.value(arg) {
                 Some(value) => {
                     if let Some(&expected) = params.get(index) {
-                        self.require(
-                            arg,
-                            value,
-                            Expected::Ty(expected),
-                            Some(Related::Declared(item)),
-                        );
+                        self.require(arg, value, Expected::Ty(expected), Some(item));
                     }
                     self.args.push(value);
                 }
