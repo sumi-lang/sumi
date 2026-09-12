@@ -1,11 +1,10 @@
-//! Normalization and formatting properties over generated token soup and
-//! well-formed programs.
+//! Formatting properties over generated token soup and well-formed programs.
 
 use proptest::prelude::*;
 use proptest::test_runner::FileFailurePersistence;
-use sumi_format::{format, normalize, rep};
+use sumi_format::{format, rep};
 use sumi_lexer::{LexedFile, lex};
-use sumi_syntax::{NodeKind, Parse, ParserInput, SyntaxKind, SyntaxTree, parse};
+use sumi_syntax::{Parse, ParserInput, SyntaxKind, parse};
 
 /// Source fragments beyond every keyword and punctuation text of the
 /// language, valid and pathological, echoing the parser soup property;
@@ -40,40 +39,6 @@ fn front(source: &str) -> Front {
     let lexed = lex(source).expect("generated sources fit in u32");
     let parse = parse(&ParserInput::new(&lexed));
     Front { lexed, parse }
-}
-
-/// The tree's shape: depth and kind per node, in preorder — everything
-/// about the parse that layout edits must not move.
-fn shape(tree: &SyntaxTree) -> Vec<(usize, NodeKind)> {
-    let mut nodes = Vec::new();
-    let mut pending = vec![(tree.root(), 0usize)];
-    while let Some((node, depth)) = pending.pop() {
-        nodes.push((depth, tree.kind(node)));
-        pending.extend(tree.children(node).map(|child| (child, depth + 1)));
-    }
-    nodes
-}
-
-/// The significant tokens, kinds and texts in order: the stream normalize
-/// may respace but never rewrite.
-fn significant<'src>(front: &Front, source: &'src str) -> Vec<(SyntaxKind, &'src str)> {
-    front
-        .lexed
-        .indices()
-        .filter(|&index| !front.lexed.kind(index).is_trivia())
-        .map(|index| (front.lexed.kind(index), front.lexed.text(source, index)))
-        .collect()
-}
-
-/// The comments in order: an operator may hop one, but none is ever
-/// deleted or reordered against another.
-fn comments<'src>(front: &Front, source: &'src str) -> Vec<&'src str> {
-    front
-        .lexed
-        .indices()
-        .filter(|&index| front.lexed.kind(index) == SyntaxKind::LineComment)
-        .map(|index| front.lexed.text(source, index))
-        .collect()
 }
 
 /// Records every failing seed in the crate's tracked `proptest-regressions/`
@@ -143,35 +108,5 @@ proptest! {
             formatted.text,
             after.parse.evidence()
         );
-    }
-
-    #[test]
-    fn normalize_preserves_the_parse_and_settles(source in soup()) {
-        let before = front(&source);
-        let normalized = normalize(&source, &before.lexed, &before.parse);
-        let after = front(&normalized);
-
-        // Layout edits keep every significant token and every comment.
-        prop_assert_eq!(
-            significant(&after, &normalized),
-            significant(&before, &source),
-            "normalize rewrote tokens of {:?} -> {:?}", source, normalized
-        );
-        prop_assert_eq!(
-            comments(&after, &normalized),
-            comments(&before, &source),
-            "normalize lost a comment of {:?} -> {:?}", source, normalized
-        );
-
-        // And reparse to the same tree.
-        prop_assert_eq!(
-            shape(after.parse.tree()),
-            shape(before.parse.tree()),
-            "normalize changed the shape of {:?} -> {:?}", source, normalized
-        );
-
-        // A second pass finds nothing left to do.
-        let again = normalize(&normalized, &after.lexed, &after.parse);
-        prop_assert_eq!(&again, &normalized, "normalize of {:?} is not idempotent", source);
     }
 }

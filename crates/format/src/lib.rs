@@ -1,4 +1,4 @@
-//! Formatting, lossless reprinting, and layout normalization for Sumi.
+//! Formatting and lossless reprinting for Sumi.
 //!
 //! The syntax tree stores structure only; the token buffers keep every byte
 //! of the source. [`elements`] interleaves the two — the raw tokens attached
@@ -8,8 +8,8 @@
 //! a width, with comments and retained blank lines kept in place and every
 //! gap the parser recovered around left as written. [`rep`] is its
 //! contract: the layout-free content of a source, which formatting keeps.
-//! [`normalize`] rewrites only the spacing violations the parser accepted
-//! as written, leaving every other byte in place.
+//! [`layout_violation_edits`] gives each spacing violation the parser
+//! accepted as written its mechanical fix, for diagnostics to offer.
 
 mod plan;
 mod print;
@@ -20,8 +20,8 @@ use std::fmt;
 
 use sumi_lexer::{LexErrorKind, LexedFile, lex};
 use sumi_syntax::{
-    NodeIdx, Parse, ParseEvidence, ParseViolation, ParseViolationKind, ParserInput, RawIdx,
-    SyntaxKind, SyntaxTree, parse,
+    NodeIdx, Parse, ParseViolation, ParseViolationKind, ParserInput, RawIdx, SyntaxKind,
+    SyntaxTree, parse,
 };
 use sumi_text::{TextEdit, TextRange, TextSize};
 
@@ -204,40 +204,11 @@ pub fn reprint(tree: &SyntaxTree, lexed: &LexedFile, source: &str) -> String {
     out
 }
 
-/// Rewrite spacing violations of `parsed` into canonical form: space binary
-/// operators, glue prefix operators and list openers, keep declaration heads
-/// on one line, and separate function items. Every other byte keeps its place;
-/// comments and chained comparisons stay as written.
-///
-/// The rewrite proves it changed only layout: the result keeps every
-/// significant token and every comment and reparses to the same tree
-/// shape, or the source comes back as written.
-pub fn normalize(source: &str, lexed: &LexedFile, parsed: &Parse) -> String {
-    let mut edits = Vec::new();
-    for evidence in parsed.evidence() {
-        let ParseEvidence::Violation(violation) = evidence else {
-            continue;
-        };
-        if let Some(violation_edits) = layout_violation_edits(lexed, *violation) {
-            edits.extend(violation_edits);
-        }
-    }
-    if edits.is_empty() {
-        return source.to_owned();
-    }
-    let candidate = apply(source, edits);
-    if changes_only_layout(source, lexed, parsed.tree(), &candidate) {
-        candidate
-    } else {
-        source.to_owned()
-    }
-}
-
 /// Build the mechanically valid candidate edits for one parser layout
 /// violation. The edits are nonempty, nonoverlapping, and source ordered,
 /// and none joins a hole's line to the next, which would change what the
-/// lexer makes of both. [`normalize`] additionally checks the whole result
-/// preserves tokens and tree shape.
+/// lexer makes of both. Nothing here checks the result reparses: a fix is
+/// one diagnostic's offer, and [`format`] is what rewrites a whole file.
 pub fn layout_violation_edits(
     lexed: &LexedFile,
     violation: ParseViolation,
@@ -371,65 +342,6 @@ pub fn layout_violation_edits(
     (!edits.is_empty()).then(|| edits.into_boxed_slice())
 }
 
-/// Whether `candidate` is `source` with nothing but its layout changed:
-/// the same significant tokens, kind for kind and text for text, the same
-/// comments in the same order, and the same tree shape — node for node
-/// the same kinds and the same parents, with only byte positions free to
-/// have moved. The tokens are compared before the candidate is parsed, so
-/// a rewrite the lexer reads differently costs one scan.
-fn changes_only_layout(
-    source: &str,
-    lexed: &LexedFile,
-    tree: &SyntaxTree,
-    candidate: &str,
-) -> bool {
-    let Ok(after) = lex(candidate) else {
-        return false;
-    };
-    if !same_tokens(lexed, source, &after, candidate) {
-        return false;
-    }
-    let reparse = parse(&ParserInput::new(&after));
-    tree.same_shape(reparse.tree())
-}
-
-/// Whether `after` holds the significant tokens of `before`, kind for kind
-/// and text for text, and its comments in the same order. The two are
-/// separate sequences, since an operator may hop a comment. A keyword or
-/// punctuation kind fixes its text, so only the kinds whose text varies
-/// are compared byte for byte.
-fn same_tokens(
-    before: &LexedFile,
-    before_source: &str,
-    after: &LexedFile,
-    after_source: &str,
-) -> bool {
-    let mut code = after.indices().filter(|&raw| !after.kind(raw).is_trivia());
-    let mut comments = after
-        .indices()
-        .filter(|&raw| after.kind(raw) == SyntaxKind::LineComment);
-    for raw in before.indices() {
-        let kind = before.kind(raw);
-        let counterpart = if kind == SyntaxKind::LineComment {
-            comments.next()
-        } else if !kind.is_trivia() {
-            code.next()
-        } else {
-            continue;
-        };
-        let Some(other) = counterpart else {
-            return false;
-        };
-        if after.kind(other) != kind
-            || (kind.text().is_none()
-                && after.text(after_source, other) != before.text(before_source, raw))
-        {
-            return false;
-        }
-    }
-    code.next().is_none() && comments.next().is_none()
-}
-
 fn insert(at: usize, text: impl Into<Box<str>>) -> TextEdit {
     replace(at, at, text)
 }
@@ -446,13 +358,6 @@ fn replace(start: usize, end: usize, text: impl Into<Box<str>>) -> TextEdit {
         ),
         text,
     )
-}
-
-/// Apply `edits` to `source`. Violations never share tokens, so the edits
-/// are disjoint; inserts at one boundary keep their recording order.
-fn apply(source: &str, mut edits: Vec<TextEdit>) -> String {
-    edits.sort_by_key(|edit| (edit.range().start(), edit.range().end()));
-    sumi_text::apply(source, &edits)
 }
 
 fn significant(lexed: &LexedFile, raw: RawIdx) -> bool {
