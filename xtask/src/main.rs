@@ -183,6 +183,6 @@ mod tests {
         assert!(codegen::reference(&grammar).contains("## Syntax nodes"));
         let dictionary = codegen::dictionary(&grammar);
         assert!(dictionary.contains("FnKw=\"fn\""));
-        assert!(dictionary.contains("\n\"\\\\{\"\n"), "{dictionary}");
+        assert!(dictionary.contains("\n\"//\"\n"), "{dictionary}");
     }
 }

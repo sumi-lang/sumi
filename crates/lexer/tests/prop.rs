@@ -64,8 +64,6 @@ const LOOSE_FRAGMENTS: &[&str] = &[
     "'x",
     "r##\"a\"#",
     "\u{1}",
-    // The parts of a string literal with holes, and the braces that open
-    // none.
     "\"{",
     "}\"",
     "\"{x}\"",

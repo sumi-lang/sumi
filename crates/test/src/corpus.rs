@@ -38,10 +38,6 @@ impl Rng {
     fn pick<'a>(&mut self, items: &'a [&'a str]) -> &'a str {
         items[self.below(items.len() as u32) as usize]
     }
-
-    fn pick_from(&mut self, items: &[String]) -> String {
-        items[self.below(items.len() as u32) as usize].clone()
-    }
 }
 
 const NOUNS: &[&str] = &[
@@ -61,30 +57,14 @@ struct Gen {
     rng: Rng,
     out: String,
     fresh: u32,
-    /// Whether a string atom may take the literal form the pinned corpora
-    /// lack: holes.
-    literals: bool,
 }
 
 /// Generate at least `target_bytes` of valid Sumi source.
 pub fn generate(target_bytes: usize, seed: u64) -> String {
-    generate_with(target_bytes, seed, false)
-}
-
-/// Generate at least `target_bytes` of valid Sumi source in which some
-/// strings have holes. The pinned corpora
-/// cannot change, so this is a second generator rather than a change to
-/// [`generate`]; its consumers pin their own seeds.
-pub fn generate_with_literals(target_bytes: usize, seed: u64) -> String {
-    generate_with(target_bytes, seed, true)
-}
-
-fn generate_with(target_bytes: usize, seed: u64, literals: bool) -> String {
     let mut g = Gen {
         rng: Rng::new(seed),
         out: String::with_capacity(target_bytes + 1024),
         fresh: 0,
-        literals,
     };
     g.out.push_str("//! Generated Sumi benchmark corpus.\n\n");
     while g.out.len() < target_bytes {
@@ -356,9 +336,7 @@ impl Gen {
         match self.rng.below(100) {
             0..=54 => self.rng.pick(INTS).to_string(),
             55..=69 => {
-                if self.literals && self.rng.chance(40) && !scope.is_empty() {
-                    self.string_with_holes(scope)
-                } else if self.rng.chance(20) {
+                if self.rng.chance(20) {
                     "\"a\\tb\\nc \\\"q\\\" \\\\ \\0\"".to_string()
                 } else {
                     self.fresh += 1;
@@ -374,24 +352,6 @@ impl Gen {
                     self.rng.pick(INTS).to_string()
                 }
             }
-        }
-    }
-}
-
-impl Gen {
-    /// A one-line literal with holes: a name in scope, a call, and a
-    /// nested literal with a hole of its own, among escaped braces.
-    fn string_with_holes(&mut self, scope: &[String]) -> String {
-        self.fresh += 1;
-        let name = self.rng.pick_from(scope);
-        let noun = self.rng.pick(NOUNS);
-        match self.rng.below(3) {
-            0 => format!("\"item {} of {{{name}}}\"", self.fresh),
-            1 => format!(
-                "\"{{{name}}} \\{{{noun}\\}} {{count({name})}} item {}\"",
-                self.fresh
-            ),
-            _ => format!("\"{{\"{noun} {{{name}}}\"}} in item {}\"", self.fresh),
         }
     }
 }

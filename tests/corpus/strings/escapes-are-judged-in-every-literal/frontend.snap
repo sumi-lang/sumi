@@ -1,0 +1,36 @@
+== tree ==
+SourceFile 0..237
+  FnItem 91..131
+    Name 94..99 "valid"
+    ParamList 99..107
+      Param 100..106
+        Name 100..101 "x"
+        TypeRef 103..106 "int"
+    TypeRef 111..114 "str"
+    LiteralExpr 117..131 "\"\\n{x}\\t{x}\\\\\""
+  FnItem 132..174
+    Name 135..142 "invalid"
+    ParamList 142..150
+      Param 143..149
+        Name 143..144 "x"
+        TypeRef 146..149 "int"
+    TypeRef 154..157 "str"
+    LiteralExpr 160..174 "\"\\q{x}\\q{x}\\q\""
+  FnItem 175..221
+    Name 178..190 "unterminated"
+    ParamList 190..198
+      Param 191..197
+        Name 191..192 "x"
+        TypeRef 194..197 "int"
+    TypeRef 202..205 "str"
+    LiteralExpr 208..221 "\"\\q{x}\\q{x}\\q"
+  FnItem 222..236
+    Name 225..230 "after"
+    ParamList 230..232 "()"
+    LiteralExpr 235..236 "1"
+
+== diagnostics ==
+error[syntax/unknown-escape] 4:30..4:32 "\\q": unknown escape sequence
+error[syntax/unknown-escape] 4:35..4:37 "\\q": unknown escape sequence
+error[syntax/unknown-escape] 4:40..4:42 "\\q": unknown escape sequence
+error[syntax/unterminated-string] 5:34..5:47 "\"\\q{x}\\q{x}\\q": unterminated string literal

@@ -52,11 +52,6 @@ continues the previous line. Operators take their classes from the
 | --- | --- | --- | --- |
 | `IntLiteral` | an integer literal | `expr` `end` | A decimal integer literal: a run of digits. There are no separators, suffixes, or floats; trailing identifier characters attach as a suffix for the lexer to reject, so `1_000` and `1e5` are each one error. |
 | `StringLiteral` | a string literal | `expr` `end` | A string literal on one line: `"…"`, with escapes. A line break ends an unterminated one, so a stray quote costs its line and nothing after it. |
-| `StringStart` | a string literal | `expr` | The text of a string literal with holes, from its opening quote to its first hole: `"…`. A `{` in a literal opens a hole, an expression on that line whose value the string takes in its place; `\{` is a brace. |
-| `StringMiddle` | the text of a string literal |  | The text of a string literal between two of its holes. |
-| `StringEnd` | the end of a string literal | `end` | The text of a string literal after its last hole, closing quote included: `…"`. |
-| `HoleOpen` | `{` |  | The `{` opening a hole in a string literal. A hole ends with its line: one still open at the line break is an error, and the literal ends with the line too. |
-| `HoleClose` | `}` |  | The `}` closing a hole: the first at brace depth zero inside it. A `}` in a literal's text is a brace. |
 
 ### Punctuation
 
@@ -110,7 +105,6 @@ it; every other pair suspends it between its brackets.
 
 - `(` … `)`
 - `{` … `}` — encloses statements
-- `HoleOpen` … `HoleClose`
 
 ## Operators
 
@@ -152,9 +146,9 @@ end one, the token after it does not continue one, and no parenthesis the
 stream closes is open around it. These classes decide the first two;
 the parser's spacing rules keep the third unambiguous.
 
-- **Can begin an expression:** `Ident`, `false`, `fn`, `if`, `true`, `IntLiteral`, `StringLiteral`, `StringStart`, `(`, `{`, `!`, `-`.
+- **Can begin an expression:** `Ident`, `false`, `fn`, `if`, `true`, `IntLiteral`, `StringLiteral`, `(`, `{`, `!`, `-`.
 - **Begin a statement without being an expression:** `_`, `let`, `return`, `Error`.
-- **A statement can end after:** `Ident`, `_`, `false`, `return`, `true`, `IntLiteral`, `StringLiteral`, `StringEnd`, `)`, `}`, `Error`.
+- **A statement can end after:** `Ident`, `_`, `false`, `return`, `true`, `IntLiteral`, `StringLiteral`, `)`, `}`, `Error`.
 - **Begin a top-level item:** `fn`.
 - **Continue the previous line:** `else`, and any binary operator leading the line — a compound one when glued into shape, and `-` only when spaced from what follows, since glued it opens an operand.
 
@@ -163,13 +157,6 @@ the parser's spacing rules keep the third unambiguous.
 A string literal, `"…"`, sits on one line: a line break ends an
 unterminated one, so a stray quote costs its line and nothing after it.
 The escapes are `\n`, `\r`, `\t`, `\\`, `\"`, and `\0`.
-
-A `{` in a literal opens a hole: an expression whose value the string
-takes in its place, as in `"{count} items"`. Any expression may stand
-in a hole, a string with holes of its own included, but a hole ends with
-its line: one still open at the line break is an error, and the literal
-ends with the line too. `\{` and `\}` are braces, and a `}` outside a
-hole is one too.
 
 ## Syntax nodes
 
@@ -209,7 +196,7 @@ LetStmt = 'let' 'mut'? Name (':' TypeRef)? '=' initializer:Expr
 AssignStmt = target:Expr '=' value:Expr
 DiscardStmt = '_' '=' value:Expr
 ReturnStmt = 'return' value:Expr?
-Expr = NameRef | LiteralExpr | PrefixExpr | BinaryExpr | ParenExpr | CallExpr | IfExpr | ClosureExpr | InterpolatedString | Block
+Expr = NameRef | LiteralExpr | PrefixExpr | BinaryExpr | ParenExpr | CallExpr | IfExpr | ClosureExpr | Block
 // A use of a name: a reference to what a Name declared.
 NameRef = Ident
 LiteralExpr = IntLiteral | StringLiteral | 'true' | 'false'
@@ -223,11 +210,6 @@ IfExpr = 'if' condition:Expr then_branch:Block ('else' else_branch:(IfExpr | Blo
 // `fn(x: int) -> int { … }`, with an item's parameter list, return type,
 // and body forms.
 ClosureExpr = 'fn' ParamList ('->' ret:TypeRef)? '='? body:Expr
-// A string literal with holes: text around `{expr}` holes, each an
-// expression on its line whose value the string takes in its place.
-InterpolatedString = StringStart (Hole StringMiddle?)* StringEnd
-// One hole of a string literal: `{`, an expression, and `}`, on one line.
-Hole = HoleOpen value:Expr HoleClose
 
 // Defined by the operator tables.
 PrefixOperator = '-' | '!'

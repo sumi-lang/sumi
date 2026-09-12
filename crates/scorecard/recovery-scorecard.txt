@@ -10,12 +10,10 @@ treat any other drift as a regression.
 Reading the numbers:
 - Part A preservation of 1.0 across all eight classes at 10^4 pairs each
   extends the recovery property tests' guarantee (256 cases per CI run) by
-  two orders of magnitude: no single-token edit to the code around
-  literals has ever disturbed an untouched top-level item. The parts of a
-  string literal with holes, and a hole's braces, are literal delimiters:
-  an edit to one is Part C's, not Part A's. Its diagnostic counts are the
-  frontend's; type-dependent unused-value errors belong to semantic
-  checking and are not included.
+  two orders of magnitude: no single-token edit has ever disturbed an
+  untouched top-level item. Its diagnostic counts are the frontend's;
+  type-dependent unused-value errors belong to semantic checking and are
+  not included.
 - Part B partner churn tops out at the bracket nesting depth around the
   edit (max 8 tokens of ~227k), boundary churn at 1, items disturbed at 0:
   one unmatched opener or deleted closer does not re-pair the rest of the
@@ -23,39 +21,36 @@ Reading the numbers:
   cascading, and a closer can only pair across an item boundary when two
   complementary errors sit in different items — which no single edit
   creates.
-- Part C spread stays inside the line for every form: a deleted quote
+- Part C spread stays inside the line for both edits: a deleted quote
   reaches a median of a few dozen bytes and a maximum of one long line,
-  and disturbs no item. A hole's braces are bounded by the hole's line: a
-  deleted `{` leaves the hole's code as the literal's text, and a deleted
-  `}` leaves the hole open to the end of its line, where the literal's
-  closing quote closes it — no reach at all. With no multi-line literal
-  form, no delimiter can re-pair anything past its line.
+  and disturbs no item. With no multi-line literal form, no delimiter can
+  re-pair anything past its line.
 
 recovery-scorecard
 
 == Part A: recovery scorecard ==
-7541 programs generated; 10000 measured pairs per class; preservation is
+7614 programs generated; 10000 measured pairs per class; preservation is
 over untouched top-level items (edits guarding none are counted apart).
 
 class                   edits  guarded  pres_mean  pres_p95  pres_min
-delete/delimiter        10000     4923    1.00000   1.00000   1.00000
-delete/non-delim        10000     5001    1.00000   1.00000   1.00000
-duplicate/delimiter     10000     4894    1.00000   1.00000   1.00000
-duplicate/non-delim     10000     4991    1.00000   1.00000   1.00000
-swap/delimiter          10000     4805    1.00000   1.00000   1.00000
-swap/non-delim          10000     5021    1.00000   1.00000   1.00000
-insert/delimiter        10000     4975    1.00000   1.00000   1.00000
-insert/non-delim        10000     4992    1.00000   1.00000   1.00000
+delete/delimiter        10000     4811    1.00000   1.00000   1.00000
+delete/non-delim        10000     4866    1.00000   1.00000   1.00000
+duplicate/delimiter     10000     4793    1.00000   1.00000   1.00000
+duplicate/non-delim     10000     4882    1.00000   1.00000   1.00000
+swap/delimiter          10000     4711    1.00000   1.00000   1.00000
+swap/non-delim          10000     4913    1.00000   1.00000   1.00000
+insert/delimiter        10000     4874    1.00000   1.00000   1.00000
+insert/non-delim        10000     4886    1.00000   1.00000   1.00000
 
 class                  diags_mean diags_p95  skipped_mean skipped_p95  evidence_mean evidence_p95
-delete/delimiter            1.744         4        51.390         292          1.744            4
-delete/non-delim            1.021         2        19.266         121          1.021            2
-duplicate/delimiter         1.543         3        45.716         261          1.543            3
-duplicate/non-delim         1.382         3        15.154          91          1.382            3
-swap/delimiter              1.694         4        33.161         185          1.694            4
-swap/non-delim              1.621         3        29.030         166          1.620            3
-insert/delimiter            1.694         4        38.876         229          1.662            4
-insert/non-delim            1.339         3        20.640         126          1.335            3
+delete/delimiter            1.666         3        52.421         284          1.666            3
+delete/non-delim            0.916         2        17.229         104          0.916            2
+duplicate/delimiter         1.509         3        46.199         271          1.509            3
+duplicate/non-delim         1.296         3        14.701          93          1.296            3
+swap/delimiter              1.518         3        33.365         188          1.518            3
+swap/non-delim              1.437         3        26.621         157          1.435            3
+insert/delimiter            1.668         4        42.340         248          1.668            4
+insert/non-delim            1.264         3        21.166         125          1.260            3
 
 == Part B: delimiter-breaking churn over clean corpora ==
 churn = original significant tokens (edit site excluded) whose partner()
@@ -82,8 +77,6 @@ clean_1m: 227111 significant tokens, 1404 top-level items
 spread = bytes of the longest literal token left where the edited one stood: how
 far the stray delimiter reaches: a literal reaches the end of its line at most.
 
-literals_64k: 65744 bytes, 554 literals, 92 top-level items
-  delete " closer    n=200  spread p50/p95/max 11/111/164  diags 2/9/13  items_disturbed 0/0/0
-  delete " opener    n=200  spread p50/p95/max 8/53/176  diags 3/10/17  items_disturbed 0/0/0
-  delete { of hole   n=200  spread p50/p95/max 20/38/39  diags 0/3/5  items_disturbed 0/0/0
-  delete } of hole   n=200  spread p50/p95/max 0/0/0  diags 3/7/11  items_disturbed 0/0/0
+clean_64k: 65587 bytes, 311 literals, 93 top-level items
+  delete " closer    n=200  spread p50/p95/max 31/139/242  diags 2/7/11  items_disturbed 0/0/0
+  delete " opener    n=200  spread p50/p95/max 11/76/145  diags 3/8/13  items_disturbed 0/0/0

@@ -1,4 +1,0 @@
-// The hole opened by `"{` never closes on its line, so a break added
-// anywhere after it would end the hole and re-pair the brackets after it,
-// making `fn hidden` an item. The line stays long instead.
-fn () $$$$$"{$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$) =(0 fn hidden() {})

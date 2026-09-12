@@ -18,7 +18,7 @@ pub mod trivia;
 
 use std::fmt;
 
-use sumi_lexer::{LexErrorKind, LexedFile, lex};
+use sumi_lexer::{LexedFile, lex};
 use sumi_syntax::{
     NodeIdx, Parse, ParseViolation, ParseViolationKind, ParserInput, RawIdx, SyntaxKind,
     SyntaxTree, parse,
@@ -206,8 +206,8 @@ pub fn reprint(tree: &SyntaxTree, lexed: &LexedFile, source: &str) -> String {
 
 /// Build the mechanically valid candidate edits for one parser layout
 /// violation. The edits are nonempty, nonoverlapping, and source ordered,
-/// and none joins a hole's line to the next, which would change what the
-/// lexer makes of both. Nothing here checks the result reparses: a fix is
+/// and none touches a comment or a lexer error. Nothing here checks the
+/// result reparses: a fix is
 /// one diagnostic's offer, and [`format`] is what rewrites a whole file.
 pub fn layout_violation_edits(
     lexed: &LexedFile,
@@ -229,9 +229,7 @@ pub fn layout_violation_edits(
             }
         }
         // Glue the operator to its operand only when the gap is clean trivia:
-        // comments and lexer errors are evidence no fix may erase. A line
-        // break in the gap closes a hole its line left open, and the
-        // operand is the next line's code, not the hole's: that break stays.
+        // comments and lexer errors are evidence no fix may erase.
         ParseViolationKind::SpacedPrefixOperator => {
             let operand = next_significant(lexed, start + 1)
                 .expect("a spaced prefix operator has an operand");
@@ -242,13 +240,6 @@ pub fn layout_violation_edits(
                     SyntaxKind::Whitespace | SyntaxKind::Newline
                 )
             }) || lex_error_in(lexed, start + 1, operand)
-            {
-                return None;
-            }
-            if gap
-                .clone()
-                .any(|raw| lexed.kind(raw) == SyntaxKind::Newline)
-                && hole_open_before(lexed, start)
             {
                 return None;
             }
@@ -368,23 +359,6 @@ fn lex_error_in(lexed: &LexedFile, start: RawIdx, end: RawIdx) -> bool {
     let errors = lexed.errors();
     let first = errors.partition_point(|error| error.token < start);
     errors.get(first).is_some_and(|error| error.token < end)
-}
-
-/// Whether a hole in a string literal is still open where the line of
-/// raw token `raw` ends: an unclosed hole reported on that line before
-/// `raw`. A hole ends with its line, so its `{` is on the line too.
-fn hole_open_before(lexed: &LexedFile, raw: RawIdx) -> bool {
-    let line_start = RawIdx::new(0)
-        .until(raw)
-        .rev()
-        .find(|&raw| lexed.kind(raw) == SyntaxKind::Newline)
-        .map_or(RawIdx::new(0), |newline| newline + 1);
-    let errors = lexed.errors();
-    let first = errors.partition_point(|error| error.token < line_start);
-    errors[first..]
-        .iter()
-        .take_while(|error| error.token < raw)
-        .any(|error| error.kind == LexErrorKind::UnclosedHole)
 }
 
 /// The nearest significant token before `raw`.

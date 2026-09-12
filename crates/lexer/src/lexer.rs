@@ -1,52 +1,7 @@
 use sumi_text::TextSize;
 
-use crate::file::LexErrorKind;
 use crate::generated::SyntaxKind;
 use crate::token::{RawKind, RawToken, TokenFlags};
-
-/// A string literal whose text the scan has left for the code of a hole.
-/// The scan resumes its text at the `}` that closes the hole, or at the
-/// line break that leaves it open.
-struct Frame {
-    /// The literal's `StringStart`, as its index among the tokens emitted.
-    start: u32,
-    /// The hole's `{`, likewise: where a hole left open is reported.
-    hole: u32,
-    /// Braces opened in the hole's code and not yet closed; the `}` at
-    /// depth zero closes the hole.
-    depth: u32,
-}
-
-/// A string literal whose text the scan is in between tokens: after a
-/// hole's `}`, the next token is more of its text, its next hole's `{`, or
-/// its end.
-#[derive(Clone, Copy)]
-struct Text {
-    start: u32,
-}
-
-/// Where the text of a string literal stopped.
-enum Stop {
-    /// At a `{`, not consumed: a hole opens.
-    Hole,
-    /// At the closing quotes, consumed.
-    Closer,
-    /// At the line break or the end of input, not consumed: the literal is
-    /// unterminated.
-    End,
-}
-
-/// An error known only after its token was emitted: a hole left open at its
-/// line break, or a literal with holes never closed, reported at its
-/// opener as a whole literal is.
-pub(crate) struct LateError {
-    /// The token's index among those emitted.
-    pub(crate) token: u32,
-    /// How many of the token's leading bytes the error covers, or the
-    /// whole token.
-    pub(crate) prefix: Option<usize>,
-    pub(crate) kind: LexErrorKind,
-}
 
 /// Identifiers are ASCII: a letter or `_`, then letters, digits, and `_`.
 /// Any other character has no meaning in the language.
@@ -61,13 +16,6 @@ const fn is_ident_continue(byte: u8) -> bool {
 pub(crate) struct Lexer<'src> {
     source: &'src str,
     position: usize,
-    /// The literals whose holes the scan is inside, innermost last.
-    frames: Vec<Frame>,
-    /// The literal whose text the next token continues, if any.
-    text: Option<Text>,
-    /// The tokens emitted so far: the index the next one takes.
-    emitted: u32,
-    late: Vec<LateError>,
 }
 impl<'src> Lexer<'src> {
     /// The caller must have validated that `source.len()` fits in `u32`.
@@ -75,18 +23,7 @@ impl<'src> Lexer<'src> {
         Self {
             source,
             position: 0,
-            frames: Vec::new(),
-            text: None,
-            emitted: 0,
-            late: Vec::new(),
         }
-    }
-
-    /// The errors known only after their tokens were emitted, once the
-    /// scan has reached the end of input.
-    pub(crate) fn into_late_errors(self) -> Vec<LateError> {
-        debug_assert_eq!(self.position, self.source.len());
-        self.late
     }
 
     fn remaining(&self) -> &'src str {
@@ -113,17 +50,7 @@ impl<'src> Lexer<'src> {
     fn scan_token(&mut self) -> RawToken {
         let start = self.position;
 
-        // Inside a literal with holes — its text to resume, or a hole's code
-        // — the literal owes tokens before any other; the check is two
-        // loads, and the rest stays off the path every other token takes.
-        let literal = if self.text.is_some() || !self.frames.is_empty() {
-            self.scan_literal_token()
-        } else {
-            None
-        };
-        let (kind, raw, mut flags) = if let Some(token) = literal {
-            token
-        } else {
+        let (kind, raw, flags) = {
             match self.peek_byte().expect("scan_token called at EOF") {
                 b' ' | b'\t' => {
                     self.scan_horizontal_space();
@@ -164,9 +91,6 @@ impl<'src> Lexer<'src> {
         let len = self.position - start;
         debug_assert!(len > 0, "scan_token must always make progress");
 
-        if !self.frames.is_empty() {
-            flags |= TokenFlags::HOLE_AFTER;
-        }
         RawToken {
             kind,
             raw,
@@ -231,178 +155,31 @@ impl<'src> Lexer<'src> {
         }
     }
 
-    /// The token a string literal with holes owes before any other: inside
-    /// a hole, the braces, the line break, and the quotes belong to the
-    /// literal around the hole; between a hole and the next, its text.
-    #[inline(never)]
-    fn scan_literal_token(&mut self) -> Option<(SyntaxKind, RawKind, TokenFlags)> {
-        if let Some(text) = self.text.take()
-            && let Some(token) = self.scan_text_token(text)
-        {
-            return Some(token);
-        }
-        let frame = self.frames.last_mut()?;
-        match self.source.as_bytes().get(self.position)? {
-            b'{' => {
-                frame.depth += 1;
-                self.position += 1;
-                Some((SyntaxKind::LBrace, RawKind::Punct, TokenFlags::EMPTY))
-            }
-            b'}' if frame.depth > 0 => {
-                frame.depth -= 1;
-                self.position += 1;
-                Some((SyntaxKind::RBrace, RawKind::Punct, TokenFlags::EMPTY))
-            }
-            b'}' => {
-                let frame = self.frames.pop().expect("a frame is open");
-                self.text = Some(Text { start: frame.start });
-                self.position += 1;
-                Some((SyntaxKind::HoleClose, RawKind::Punct, TokenFlags::EMPTY))
-            }
-            // A hole ends with its line, and so do the literals around it;
-            // the break lexes as usual.
-            b'\n' | b'\r' => {
-                self.leave_holes();
-                None
-            }
-            b'"' => Some(self.scan_quote_in_hole()),
-            _ => None,
-        }
-    }
-
-    /// Leave every hole the scan is inside, each reported at its `{`. The
-    /// literals around them end with the line.
-    fn leave_holes(&mut self) {
-        while let Some(frame) = self.frames.pop() {
-            self.late.push(LateError {
-                token: frame.hole,
-                prefix: Some(1),
-                kind: LexErrorKind::UnclosedHole,
-            });
-        }
-    }
-
-    /// Leave the holes and the literal text the scan is inside at the end
-    /// of input: every hole is left open, and a literal between holes is
-    /// unterminated.
-    fn finish(&mut self) {
-        self.leave_holes();
-        if let Some(text) = self.text.take() {
-            self.late.push(unterminated(text));
-        }
-    }
-
-    /// A quote inside a hole: a literal of the hole's code, or the end of
-    /// the literal around the hole. A literal inside the hole that its line
-    /// never closes is the outer literal's closer instead, which leaves the
-    /// hole open.
-    fn scan_quote_in_hole(&mut self) -> (SyntaxKind, RawKind, TokenFlags) {
-        let quote = self.position;
-        self.position += 1;
-        let (stop, flags) = self.scan_string_text();
-        match stop {
-            Stop::Closer => (SyntaxKind::StringLiteral, RawKind::String, flags),
-            Stop::Hole => {
-                self.text = Some(Text {
-                    start: self.emitted,
-                });
-                (SyntaxKind::StringStart, RawKind::String, flags)
-            }
-            Stop::End => {
-                self.position = quote + 1;
-                self.leave_hole_at_closer();
-                (SyntaxKind::StringEnd, RawKind::String, TokenFlags::EMPTY)
-            }
-        }
-    }
-
-    /// Leave the innermost hole at its literal's closer, which leaves the
-    /// hole open.
-    fn leave_hole_at_closer(&mut self) {
-        let frame = self.frames.pop().expect("a frame is open");
-        self.late.push(LateError {
-            token: frame.hole,
-            prefix: Some(1),
-            kind: LexErrorKind::UnclosedHole,
-        });
-    }
-
-    /// Scan a `"…"` literal from its opener: whole, when it has no hole,
-    /// and otherwise up to its first `{`, as its start, with its text to
-    /// resume after the hole. Every literal is bounded by its line, so a
-    /// stray quote costs its line and never the file.
+    /// Scan a `"…"` literal from its opener to its closer, or to its end:
+    /// the line break or the end of input, which leaves it unterminated.
+    /// Every literal is bounded by its line, so a stray quote costs its
+    /// line and never the file. A `\` protects the byte after it, so an
+    /// escaped quote never closes; one before the line break protects
+    /// nothing.
     fn scan_string(&mut self) -> (SyntaxKind, RawKind, TokenFlags) {
         self.position += 1;
-        let (stop, flags) = self.scan_string_text();
-        match stop {
-            Stop::Closer => (SyntaxKind::StringLiteral, RawKind::String, flags),
-            Stop::End => (
-                SyntaxKind::StringLiteral,
-                RawKind::String,
-                flags | TokenFlags::UNTERMINATED,
-            ),
-            Stop::Hole => {
-                self.text = Some(Text {
-                    start: self.emitted,
-                });
-                (SyntaxKind::StringStart, RawKind::String, flags)
-            }
-        }
-    }
-
-    /// The next token of a literal's text after a hole: the next hole's
-    /// `{`, more text up to one, or the text through the closer. `None` at
-    /// the line break, or the end of input, that leaves the literal
-    /// unterminated with no text to take: the literal is reported and the
-    /// break lexes as usual.
-    fn scan_text_token(&mut self, text: Text) -> Option<(SyntaxKind, RawKind, TokenFlags)> {
-        if self.peek_byte() == Some(b'{') {
-            self.position += 1;
-            self.frames.push(Frame {
-                start: text.start,
-                hole: self.emitted,
-                depth: 0,
-            });
-            return Some((SyntaxKind::HoleOpen, RawKind::Punct, TokenFlags::EMPTY));
-        }
-        let start = self.position;
-        let (stop, flags) = self.scan_string_text();
-        match stop {
-            Stop::Hole => {
-                self.text = Some(text);
-                Some((SyntaxKind::StringMiddle, RawKind::String, flags))
-            }
-            Stop::Closer => Some((SyntaxKind::StringEnd, RawKind::String, flags)),
-            Stop::End => {
-                self.late.push(unterminated(text));
-                (self.position > start).then_some((
-                    SyntaxKind::StringEnd,
-                    RawKind::String,
-                    flags | TokenFlags::UNTERMINATED,
-                ))
-            }
-        }
-    }
-
-    /// Scan the text of a literal from the current position to its first
-    /// unescaped `{`, its closer, or its end: the line break or the end of
-    /// input. A `\` protects the byte after it, so an escaped quote never
-    /// closes and an escaped brace opens nothing.
-    fn scan_string_text(&mut self) -> (Stop, TokenFlags) {
         let mut flags = TokenFlags::EMPTY;
         loop {
             match self.peek_byte() {
-                None | Some(b'\n' | b'\r') => return (Stop::End, flags),
+                None | Some(b'\n' | b'\r') => {
+                    return (
+                        SyntaxKind::StringLiteral,
+                        RawKind::String,
+                        flags | TokenFlags::UNTERMINATED,
+                    );
+                }
                 Some(b'"') => {
                     self.position += 1;
-                    return (Stop::Closer, flags);
+                    return (SyntaxKind::StringLiteral, RawKind::String, flags);
                 }
-                Some(b'{') => return (Stop::Hole, flags),
                 Some(b'\\') => {
                     flags |= TokenFlags::HAS_ESCAPE;
                     self.bump_ascii();
-                    // A backslash before the line break protects nothing:
-                    // the break ends the literal.
                     if !matches!(self.peek_byte(), None | Some(b'\n' | b'\r')) {
                         self.bump_char();
                     }
@@ -433,16 +210,6 @@ impl<'src> Lexer<'src> {
     }
 }
 
-/// The error for a literal with holes that its text never closes,
-/// reported at its opener as a whole literal is.
-fn unterminated(text: Text) -> LateError {
-    LateError {
-        token: text.start,
-        prefix: None,
-        kind: LexErrorKind::UnterminatedString,
-    }
-}
-
 impl Iterator for Lexer<'_> {
     type Item = RawToken;
 
@@ -450,13 +217,11 @@ impl Iterator for Lexer<'_> {
     /// reached `source.len()`. Malformed input never ends iteration early.
     fn next(&mut self) -> Option<Self::Item> {
         if self.position == self.source.len() {
-            self.finish();
             return None;
         }
 
         let start = self.position;
         let token = self.scan_token();
-        self.emitted += 1;
 
         debug_assert!(self.position > start);
         debug_assert!(self.position <= self.source.len());

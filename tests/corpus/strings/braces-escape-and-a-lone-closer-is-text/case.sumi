@@ -1,6 +1,0 @@
-// A `\{` or `\}` is a brace, and a `}` outside a hole is one too.
-fn braces() -> str {
-    let json = "\{\"id\": {id}, \"tags\": []\}"
-    let closer = "a } b"
-    "{json}{closer}"
-}

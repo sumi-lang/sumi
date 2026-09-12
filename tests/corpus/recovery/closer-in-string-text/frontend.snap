@@ -1,21 +1,23 @@
 == tree ==
 SourceFile! 0..33
-  FnItem! 0..25
+  FnItem! 0..32
     Name 3..4 "f"
-    ParamList! 4..25
-      Error! 6..25 "-> str = \"before {}"
-  Error! 25..32 " after\""
+    ParamList! 4..32
+      Error! 6..32 "-> str = \"before {} after\""
 
 == evidence ==
 ExpectedName at 6
-Expected(RParen) at 25
-ExpectedBody at 25
-ExpectedItem at 25
+Expected(RParen) at 33
+ExpectedBody at 33
 
 == diagnostics ==
 error[syntax/expected-name] 1:7..1:8 "-": expected a name
-  at 1:7..1:26 "-> str = \"before {}": skipped while recovering
-error[syntax/expected-token] 1:26: expected `)`
+  at 1:7..1:33 "-> str = \"before {} after\"": skipped while recovering
+error[syntax/expected-token] 2:1: expected `)`
   at 1:5..1:6 "(": opening delimiter is here
-error[syntax/expected-body] 1:26: expected a body, `{` or `=`
-error[syntax/expected-item] 1:26..1:33 " after\"": expected a function item
+  fix (safe): insert `)`
+    1:33 -> ")"
+error[syntax/expected-body] 2:1: expected a body, `{` or `=`
+
+== fixed (syntax/expected-body, syntax/expected-name remain) ==
+fn f( -> str = "before {} after")

@@ -203,30 +203,3 @@ fn unknown_classifies_to_error() {
         ],
     );
 }
-
-#[test]
-fn string_parts_and_hole_braces_have_their_own_kinds() {
-    assert_eq!(
-        dump("\"a {x} b\""),
-        [
-            r#"StringStart 0..3 "\"a ""#,
-            r#"HoleOpen 3..4 "{" TokenFlags(HOLE_AFTER)"#,
-            r#"Ident 4..5 "x" TokenFlags(HOLE_AFTER)"#,
-            r#"HoleClose 5..6 "}""#,
-            r#"StringEnd 6..9 " b\"""#,
-        ]
-    );
-    assert_eq!(
-        dump("\"{a}{b}\""),
-        [
-            r#"StringStart 0..1 "\"""#,
-            r#"HoleOpen 1..2 "{" TokenFlags(HOLE_AFTER)"#,
-            r#"Ident 2..3 "a" TokenFlags(HOLE_AFTER)"#,
-            r#"HoleClose 3..4 "}""#,
-            r#"HoleOpen 4..5 "{" TokenFlags(HOLE_AFTER)"#,
-            r#"Ident 5..6 "b" TokenFlags(HOLE_AFTER)"#,
-            r#"HoleClose 6..7 "}""#,
-            r#"StringEnd 7..8 "\"""#,
-        ]
-    );
-}

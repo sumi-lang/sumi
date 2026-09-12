@@ -19,8 +19,6 @@ use sumi_test::{apply, delimiter_edited_program, front, non_delimiter_edited_pro
 /// language, valid and pathological; concatenation composes the adjacencies
 /// goldens cannot enumerate.
 const EXTRA_FRAGMENTS: &[&str] = &[
-    // The parts of a string literal with holes, and the braces that open
-    // none.
     "\"{",
     "}\"",
     "\"{x}\"",

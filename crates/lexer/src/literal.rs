@@ -52,18 +52,9 @@ fn digit_run(text: &str) -> usize {
         .unwrap_or(text.len())
 }
 
-/// Validate the escapes of a terminated string literal.
-pub(crate) fn validate_string(text: &str, error: impl FnMut(Range<usize>, LexErrorKind)) {
-    validate_string_body(text, 1..text.len() - 1, error);
-}
-
-/// Validate the escapes of `text[body]`, the text of a `"…"` literal or
-/// of one part of one with holes.
-pub(crate) fn validate_string_body(
-    text: &str,
-    body: Range<usize>,
-    mut error: impl FnMut(Range<usize>, LexErrorKind),
-) {
+/// Validate the escapes of a terminated string literal, `text`.
+pub(crate) fn validate_string(text: &str, mut error: impl FnMut(Range<usize>, LexErrorKind)) {
+    let body = 1..text.len() - 1;
     let offset = body.start;
     walk_escapes(&text[body], |start, end, result| {
         if let Err(kind) = result {
@@ -87,7 +78,7 @@ fn walk_escapes(body: &str, mut piece: impl FnMut(usize, usize, Result<(), LexEr
         }
 
         let result = match chars.next() {
-            Some('n' | 'r' | 't' | '\\' | '"' | '0' | '{' | '}') => Ok(()),
+            Some('n' | 'r' | 't' | '\\' | '"' | '0') => Ok(()),
             // Includes a backslash at the very end of the body.
             _ => Err(LexErrorKind::UnknownEscape),
         };

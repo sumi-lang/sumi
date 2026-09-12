@@ -106,10 +106,6 @@ fn lower_token_errors(
             LexErrorKind::UnterminatedString => {
                 (codes::UNTERMINATED_STRING, "unterminated string literal")
             }
-            LexErrorKind::UnclosedHole => (
-                codes::UNCLOSED_HOLE,
-                "hole in string literal is not closed on its line",
-            ),
             LexErrorKind::LoneCarriageReturn => (
                 codes::LONE_CARRIAGE_RETURN,
                 "carriage return must be followed by a line feed",
@@ -127,15 +123,7 @@ fn lower_token_errors(
                 "punctuation has no meaning in Sumi source",
             ),
         };
-        let mut diagnostic = primary(code, message, snapshot.range(error.range));
-        if error.kind == LexErrorKind::UnclosedHole {
-            diagnostic.notes = Box::new([
-                "a `{` in a string literal opens a hole for an expression, which ends \
-                 with its line; a `{` meant as text is written `\\{`"
-                    .into(),
-            ]);
-        }
-        diagnostics.push(diagnostic);
+        diagnostics.push(primary(code, message, snapshot.range(error.range)));
     }
 }
 
@@ -220,28 +208,10 @@ fn closer_fix(
     let replacement = kind
         .text()
         .unwrap_or_else(|| unreachable!("closer evidence names a closing delimiter"));
-    // A raw token boundary is not necessarily code: after a string's start,
-    // middle, or hole closer the lexer resumes literal text. An insertion
-    // there changes the literal instead of adding the promised delimiter.
-    // Unterminated tails likewise absorb it, including a StringEnd whose
-    // late error names StringStart rather than the tail itself.
+    // An unterminated string's tail absorbs an insertion at its boundary,
+    // as its text rather than the promised delimiter.
     let previous = gap.trivia_start().checked_sub(1);
-    if previous.is_some_and(|token| {
-        lexed.flags(token).contains(TokenFlags::UNTERMINATED)
-            // Braces also control the lexer's hole depth. Conservatively
-            // withhold them in holes rather than change a later brace's role.
-            || (kind == SyntaxKind::RBrace && lexed.flags(token).contains(TokenFlags::HOLE_AFTER))
-            // A quote in a hole closes the literal unless the rest of its
-            // line closes a string begun there, escapes included. After a
-            // stray backslash the inserted closer would be such an escape,
-            // and a quote before the insertion would change its role.
-            || (lexed.flags(token).contains(TokenFlags::HOLE_AFTER)
-                && lexed.text(snapshot.source, token) == "\\")
-            || matches!(
-                lexed.kind(token),
-                SyntaxKind::StringStart | SyntaxKind::StringMiddle | SyntaxKind::HoleClose
-            )
-    }) {
+    if previous.is_some_and(|token| lexed.flags(token).contains(TokenFlags::UNTERMINATED)) {
         return None;
     }
     let at = lexed.boundary(gap.trivia_start());

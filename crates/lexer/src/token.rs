@@ -68,17 +68,11 @@ impl TokenFlags {
     /// skip validation entirely.
     pub const MALFORMED_NUMBER: Self = Self(1 << 3);
 
-    /// Immediately after this token the scanner still has an open string
-    /// hole. Inserting a `}` there can close the hole or change which later
-    /// brace closes it, even if the parser expects a code brace.
-    pub const HOLE_AFTER: Self = Self(1 << 4);
-
-    const NAMES: [(Self, &'static str); 5] = [
+    const NAMES: [(Self, &'static str); 4] = [
         (Self::UNTERMINATED, "UNTERMINATED"),
         (Self::HAS_ESCAPE, "HAS_ESCAPE"),
         (Self::LONE_CR, "LONE_CR"),
         (Self::MALFORMED_NUMBER, "MALFORMED_NUMBER"),
-        (Self::HOLE_AFTER, "HOLE_AFTER"),
     ];
 
     pub const fn is_empty(self) -> bool {
