@@ -266,3 +266,76 @@ fn fmt_reports_missing_files_as_input_errors() {
             .contains("missing.sumi: error[cli/input]")
     );
 }
+
+fn run(source: &str) -> Output {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("case.sumi"), source).unwrap();
+    sumi()
+        .current_dir(dir.path())
+        .args(["run", "case.sumi"])
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn run_prints_mains_value_and_nothing_for_unit() {
+    for (source, stdout) in [
+        (
+            "fn main() -> int = twice(21)\nfn twice(x: int) -> int = x * 2\n",
+            "42\n",
+        ),
+        ("fn main() -> bool = 1 < 2\n", "true\n"),
+        ("fn main() { _ = 1 }\n", ""),
+    ] {
+        let output = run(source);
+        assert_eq!(output.status.code(), Some(0), "{source}");
+        assert_eq!(String::from_utf8(output.stdout).unwrap(), stdout);
+        assert!(output.stderr.is_empty());
+    }
+}
+
+#[test]
+fn run_reports_traps_and_source_errors_at_their_location() {
+    for (source, expected) in [
+        (
+            "fn main() -> int {\n    let zero = 0\n    7 / zero\n}\n",
+            "case.sumi:3:5: error[eval/division-by-zero]: division by zero\n",
+        ),
+        (
+            "fn main() -> int = -9223372036854775808 - 1\n",
+            "case.sumi:1:20: error[eval/overflow]: integer overflow\n",
+        ),
+        (
+            "fn main() -> int = main()\n",
+            "case.sumi:1:20: error[eval/call-depth]: call nesting exceeds the depth limit\n",
+        ),
+        (
+            "fn main() -> int = true\n",
+            "case.sumi:1:20: error[semantic/type-mismatch]: expected int, found bool\n",
+        ),
+    ] {
+        let output = run(source);
+        assert_eq!(output.status.code(), Some(1), "{source}");
+        assert!(output.stdout.is_empty());
+        assert_eq!(String::from_utf8(output.stderr).unwrap(), expected);
+    }
+}
+
+#[test]
+fn run_needs_a_parameterless_main() {
+    for (source, expected) in [
+        (
+            "fn helper() -> int = 1\n",
+            "case.sumi: error[cli/no-main]: nothing to run; the file declares no `fn main()`\n",
+        ),
+        (
+            "fn main(x: int) -> int = x\n",
+            "case.sumi:1:1: error[cli/main-parameters]: `main` takes arguments; `sumi run` passes none\n",
+        ),
+    ] {
+        let output = run(source);
+        assert_eq!(output.status.code(), Some(2), "{source}");
+        assert!(output.stdout.is_empty());
+        assert_eq!(String::from_utf8(output.stderr).unwrap(), expected);
+    }
+}

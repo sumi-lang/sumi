@@ -1,0 +1,9 @@
+file: accepted
+fn pair: takes arguments, not run
+fn left_to_right = 154 (steps 41, depth 2)
+fn left_argument_traps_first traps [eval/division-by-zero] at `1 / 0` @146..151 (steps 6, depth 1)
+fn left_operand_traps_first traps [eval/division-by-zero] at `1 % 0` @218..223 (steps 5, depth 1)
+fn right_trap_reached traps [eval/overflow] at `9223372036854775807 + 1` @294..317 (steps 8, depth 1)
+fn statements traps [eval/division-by-zero] at `a / 0` @403..408 (steps 23, depth 1)
+fn operands = 87 (steps 17, depth 1)
+fn truthy = true (steps 8, depth 1)

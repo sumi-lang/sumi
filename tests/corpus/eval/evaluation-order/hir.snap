@@ -1,0 +1,99 @@
+file: accepted
+frontend errors: 0 (see frontend.snap)
+semantic errors: 0
+
+fn pair@0..43 (int, int) -> int
+  param a@8..9: int
+  param b@16..17: int
+  body: eager + : int @33..43
+    lhs: eager * : int @33..39
+      lhs: read a@8..9 : int @33..34
+      rhs: int 10 : int @37..39
+    rhs: read b@16..17 : int @42..43
+
+fn left_to_right@44..100 () -> int
+  body: call pair@0..43 (callee @72..76) : int @72..100
+    arg[0]: call pair@0..43 (callee @77..81) : int @77..87
+      arg[0]: int 1 : int @82..83
+      arg[1]: int 2 : int @85..86
+    arg[1]: call pair@0..43 (callee @89..93) : int @89..99
+      arg[0]: int 3 : int @94..95
+      arg[1]: int 4 : int @97..98
+
+fn left_argument_traps_first@101..177 () -> int
+  body: call pair@0..43 (callee @141..145) : int @141..177
+    arg[0]: eager / : int @146..151
+      lhs: int 1 : int @146..147
+      rhs: int 0 : int @150..151
+    arg[1]: eager + : int @153..176
+      lhs: int 9223372036854775807 : int @153..172
+      rhs: int 1 : int @175..176
+
+fn left_operand_traps_first@178..252 () -> int
+  body: eager - : int @217..252
+    lhs: eager % : int @218..223
+      lhs: int 1 : int @218..219
+      rhs: int 0 : int @222..223
+    rhs: eager * : int @228..251
+      lhs: int 9223372036854775807 : int @228..247
+      rhs: int 2 : int @250..251
+
+fn right_trap_reached@253..318 () -> int
+  body: call pair@0..43 (callee @286..290) : int @286..318
+    arg[0]: int 1 : int @291..292
+    arg[1]: eager + : int @294..317
+      lhs: int 9223372036854775807 : int @294..313
+      rhs: int 1 : int @316..317
+
+fn statements@319..461 () -> int
+  body: block : int @342..461
+    let a@352..353: int @348..357
+      initializer: int 1 : int @356..357
+    let b@366..367: int @362..375
+      initializer: eager + : int @370..375
+        lhs: read a@352..353 : int @370..371
+        rhs: int 1 : int @374..375
+    let a@384..385: int @380..394
+      initializer: eager * : int @388..394
+        lhs: read b@366..367 : int @388..389
+        rhs: int 10 : int @392..394
+    discard @399..421
+      value: lazy or : bool @403..421
+        lhs: eager == : bool @403..413
+          lhs: eager / : int @403..408
+            lhs: read a@384..385 : int @403..404
+            rhs: int 0 : int @407..408
+          rhs: int 0 : int @412..413
+        rhs: bool true : bool @417..421
+    tail: if : int @426..459
+      condition: eager > : bool @429..434
+        lhs: read a@384..385 : int @429..430
+        rhs: read b@366..367 : int @433..434
+      then: block : int @435..444
+        tail: eager - : int @437..442
+          lhs: read a@384..385 : int @437..438
+          rhs: read b@366..367 : int @441..442
+      else: block : int @450..459
+        tail: eager - : int @452..457
+          lhs: read b@366..367 : int @452..453
+          rhs: read a@384..385 : int @456..457
+
+fn operands@462..509 () -> int
+  body: eager - : int @485..509
+    lhs: eager - : int @485..497
+      lhs: eager - : int @485..493
+        lhs: int 100 : int @485..488
+        rhs: int 10 : int @491..493
+      rhs: int 1 : int @496..497
+    rhs: eager % : int @500..509
+      lhs: eager * : int @500..505
+        lhs: int 2 : int @500..501
+        rhs: int 3 : int @504..505
+      rhs: int 4 : int @508..509
+
+fn truthy@510..547 () -> bool
+  body: eager == : bool @532..547
+    lhs: eager < : bool @533..538
+      lhs: int 1 : int @533..534
+      rhs: int 2 : int @537..538
+    rhs: bool true : bool @543..547

@@ -1,0 +1,104 @@
+== tree ==
+SourceFile 0..278
+  FnItem 0..71
+    Name 3..6 "fib"
+    ParamList 6..14
+      Param 7..13
+        Name 7..8 "n"
+        TypeRef 10..13 "int"
+    TypeRef 18..21 "int"
+    IfExpr 24..71
+      BinaryExpr 27..32
+        NameRef 27..28 "n"
+        LiteralExpr 31..32 "2"
+      Block 33..38
+        NameRef 35..36 "n"
+      Block 44..71
+        BinaryExpr 46..69
+          CallExpr 46..56
+            NameRef 46..49 "fib"
+            ArgList 49..56
+              BinaryExpr 50..55
+                NameRef 50..51 "n"
+                LiteralExpr 54..55 "1"
+          CallExpr 59..69
+            NameRef 59..62 "fib"
+            ArgList 62..69
+              BinaryExpr 63..68
+                NameRef 63..64 "n"
+                LiteralExpr 67..68 "2"
+  FnItem 72..100
+    Name 75..81 "fib_15"
+    ParamList 81..83 "()"
+    TypeRef 87..90 "int"
+    CallExpr 93..100
+      NameRef 93..96 "fib"
+      ArgList 96..100
+        LiteralExpr 97..99 "15"
+  FnItem 101..168
+    Name 104..109 "count"
+    ParamList 109..117
+      Param 110..116
+        Name 110..111 "n"
+        TypeRef 113..116 "int"
+    TypeRef 121..124 "int"
+    IfExpr 127..168
+      BinaryExpr 130..136
+        NameRef 130..131 "n"
+        LiteralExpr 135..136 "0"
+      Block 137..142
+        LiteralExpr 139..140 "0"
+      Block 148..168
+        BinaryExpr 150..166
+          LiteralExpr 150..151 "1"
+          CallExpr 154..166
+            NameRef 154..159 "count"
+            ArgList 159..166
+              BinaryExpr 160..165
+                NameRef 160..161 "n"
+                LiteralExpr 164..165 "1"
+  FnItem 169..200
+    Name 172..176 "deep"
+    ParamList 176..178 "()"
+    TypeRef 182..185 "int"
+    CallExpr 188..200
+      NameRef 188..193 "count"
+      ArgList 193..200
+        LiteralExpr 194..199 "10000"
+  FnItem 201..243
+    Name 204..211 "forever"
+    ParamList 211..219
+      Param 212..218
+        Name 212..213 "n"
+        TypeRef 215..218 "int"
+    TypeRef 223..226 "int"
+    CallExpr 229..243
+      NameRef 229..236 "forever"
+      ArgList 236..243
+        BinaryExpr 237..242
+          NameRef 237..238 "n"
+          LiteralExpr 241..242 "1"
+  FnItem 244..277
+    Name 247..255 "too_deep"
+    ParamList 255..257 "()"
+    TypeRef 261..264 "int"
+    CallExpr 267..277
+      NameRef 267..274 "forever"
+      ArgList 274..277
+        LiteralExpr 275..276 "0"
+
+== formatted ==
+fn fib(n: int) -> int = if n < 2 {
+    n
+} else {
+    fib(n - 1) + fib(n - 2)
+}
+fn fib_15() -> int = fib(15)
+fn count(n: int) -> int = if n == 0 {
+    0
+} else {
+    1 + count(n - 1)
+}
+fn deep() -> int = count(10000)
+fn forever(n: int) -> int = forever(n + 1)
+fn too_deep() -> int = forever(0)

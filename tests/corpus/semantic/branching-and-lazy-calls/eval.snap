@@ -1,0 +1,5 @@
+file: accepted
+fn even: takes arguments, not run
+fn odd: takes arguments, not run
+fn safe = true (steps 84, depth 6)
+fn maybe: takes arguments, not run

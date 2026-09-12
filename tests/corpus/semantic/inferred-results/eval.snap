@@ -1,0 +1,10 @@
+file: accepted
+fn value = 1 (steps 7, depth 2)
+fn forward = 1 (steps 4, depth 1)
+fn explicit = 1 (steps 10, depth 3)
+fn recursive = 1 (steps 7, depth 1)
+fn anchored traps [eval/call-depth] at `anchored()` @177..187 (steps 131072, depth 65536)
+fn inferred traps [eval/call-depth] at `inferred()` @150..160 (steps 131072, depth 65536)
+fn integer traps [eval/call-depth] at `integer()` @250..259 (steps 262144, depth 65536)
+fn boolean traps [eval/call-depth] at `boolean()` @211..220 (steps 262144, depth 65536)
+fn empty = unit (steps 3, depth 1)

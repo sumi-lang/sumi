@@ -1,0 +1,7 @@
+file: accepted
+fn answer = 42 (steps 15, depth 2)
+fn twice: takes arguments, not run
+fn cafe: takes arguments, not run
+fn ignore: takes arguments, not run
+fn sub: takes arguments, not run
+fn ordered = -1 (steps 21, depth 2)

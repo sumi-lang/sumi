@@ -1,0 +1,9 @@
+file: accepted
+fn divide_by_zero traps [eval/division-by-zero] at `1 / (2 - 2)` @29..40 (steps 7, depth 1)
+fn remainder_by_zero traps [eval/division-by-zero] at `7 % 0` @73..78 (steps 4, depth 1)
+fn add_overflow traps [eval/overflow] at `9223372036854775807 + 1` @106..129 (steps 4, depth 1)
+fn negate_minimum traps [eval/overflow] at `--9223372036854775808` @159..180 (steps 3, depth 1)
+fn divide_minimum traps [eval/overflow] at `-9223372036854775808 / -1` @210..235 (steps 4, depth 1)
+fn guarded = false (steps 4, depth 1)
+fn after_a_trap: takes arguments, not run
+fn trap_in_a_callee traps [eval/division-by-zero] at `n / 0` @312..317 (steps 10, depth 2)

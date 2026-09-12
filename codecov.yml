@@ -30,5 +30,7 @@ component_management:
       paths: [crates/diagnostics/**]
     - component_id: hir
       paths: [crates/hir/**]
+    - component_id: eval
+      paths: [crates/eval/**]
     - component_id: cli
       paths: [crates/cli/**]
