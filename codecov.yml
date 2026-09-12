@@ -1,0 +1,34 @@
+# The gate is on the patch: new and changed lines must be covered. The
+# project total is reported but never blocks, since a refactor that moves
+# uncovered code should not fail for it.
+coverage:
+  status:
+    project:
+      default:
+        informational: true
+    patch:
+      default:
+        target: 80%
+
+comment:
+  layout: condensed_header, diff, components
+  require_changes: true
+
+component_management:
+  individual_components:
+    - component_id: text
+      paths: [crates/text/**]
+    - component_id: lexer
+      paths: [crates/lexer/**]
+    - component_id: syntax
+      paths: [crates/syntax/**]
+    - component_id: frontend
+      paths: [crates/frontend/**]
+    - component_id: format
+      paths: [crates/format/**]
+    - component_id: diagnostics
+      paths: [crates/diagnostics/**]
+    - component_id: hir
+      paths: [crates/hir/**]
+    - component_id: cli
+      paths: [crates/cli/**]
