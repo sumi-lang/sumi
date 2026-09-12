@@ -1,0 +1,28 @@
+== tree ==
+SourceFile! 0..46
+  FnItem! 0..12
+    Name 3..5 "id"
+    ParamList! 5..8
+      Param! 6..7
+        Name 6..7 "x"
+    NameRef 11..12 "x"
+  FnItem! 13..45
+    Name 16..19 "add"
+    ParamList! 19..30
+      Param 20..26
+        Name 20..21 "a"
+        TypeRef 23..26 "int"
+      Param! 28..29
+        Name 28..29 "b"
+    TypeRef 34..37 "int"
+    BinaryExpr 40..45
+      NameRef 40..41 "a"
+      NameRef 44..45 "b"
+
+== evidence ==
+Expected(Colon) at 7
+Expected(Colon) at 29
+
+== diagnostics ==
+error[syntax/expected-token] 1:8: expected `:`
+error[syntax/expected-token] 2:17: expected `:`

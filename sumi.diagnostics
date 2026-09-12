@@ -1,0 +1,142 @@
+// The Sumi diagnostics registry.
+//
+// This file is the one declaration of every diagnostic code the compiler
+// reports. `cargo xtask codegen` regenerates from it:
+//
+//   crates/frontend/src/generated/codes.rs  the `syntax` group's constants
+//   crates/hir/src/generated/codes.rs       the `semantic` group's constants
+//   docs/reference/generated/diagnostics.md the diagnostics chapter: every
+//                                           code, its explanation, and the
+//                                           corpus case that shows it
+//
+// CI runs `cargo xtask codegen --check` and fails when any of them drifts.
+// Every code must be shown by a case under `tests/corpus/`, which
+// `crates/hir/tests/codes.rs` checks; the chapter takes its example from
+// the case that shows the code with the fewest other diagnostics.
+//
+// One declaration per line. `//` starts a comment; `///` lines document
+// the declaration below them, here, in the generated Rust, and in the
+// chapter. A code's spelling is `group/name`, both kebab-case, and it is
+// stable: a code is never renamed or reused for something else.
+//
+//   group name    a namespace of related codes; the codes after it belong
+//                 to it until the next group
+//   code name     one class of diagnostic
+
+/// Reported by the frontend: what the lexer rejects, where the parser
+/// recovers, and the layout rules the parser checks. Every one is an
+/// error. The tree is still built around it, and a fix is attached where
+/// the repair is mechanical.
+group syntax
+
+/// A string literal reaches the end of its line without a closing `"`. The
+/// literal ends at the line break, so nothing after that line is affected.
+code unterminated-string
+/// A carriage return not followed by a line feed. A line ends with `\n` or
+/// `\r\n`.
+code lone-carriage-return
+/// A character with no meaning in Sumi source outside a string or comment.
+/// Names are ASCII letters, digits, and `_`.
+code unknown-character
+/// Identifier characters attached to an integer literal, as in `1u32`,
+/// `1e5`, or `1_000`. Literals take no suffix, exponent, or separator.
+code unknown-suffix
+/// An integer literal with leading zeros, as in `007`. The fix removes
+/// them.
+code noncanonical-number
+/// A backslash in a string literal beginning none of the escapes `\n`,
+/// `\r`, `\t`, `\\`, `\"`, and `\0`.
+code unknown-escape
+/// Punctuation with no role in the language, such as `;`, `[`, or `@`.
+code unknown-punctuation
+
+/// Something other than a function item at the top level of the file.
+code expected-item
+/// A token that cannot begin a statement where a block's next statement
+/// should start.
+code expected-statement
+/// An expression is required, after an operator, `=`, or `(` for instance,
+/// and the next token cannot begin one.
+code expected-expression
+/// The name a `fn`, `let`, or parameter declares is missing.
+code expected-name
+/// A type is required after `:` or `->` and none follows.
+code expected-type
+/// One particular token is required and the message names it: a closing
+/// bracket, a `,` between list elements, or the `(` of a parameter list.
+/// For a missing closer, a label points at the opener and the fix inserts
+/// the closer.
+code expected-token
+/// A function signature is followed by neither a block nor `=` and an
+/// expression.
+code expected-body
+/// Two statements share a line. A line break ends a statement; there is no
+/// `;`.
+code expected-boundary
+/// A token inside an expression that neither continues nor ends it. The
+/// parser skips to where it can resume and labels what it skipped.
+code unexpected-syntax
+/// Expressions nest deeper than the parser's limit of 256 levels, which
+/// keeps parsing on a bounded stack.
+code nesting-too-deep
+/// A binary operator glued to an operand, as in `a+b` or `a<b`. Binary
+/// operators are spaced on both sides; glued, `<` opens type arguments and
+/// `*` and `&` are reserved for prefix operators. The fix inserts the
+/// spaces.
+code unspaced-binary-operator
+/// A prefix operator separated from its operand, as in `- x`. Prefix
+/// operators are glued; the fix removes the space.
+code spaced-prefix-operator
+/// A space between a function name or callee and its `(`. The fix removes
+/// it.
+code spaced-list-opener
+/// A function item's name on the line after its `fn`. The fix moves the
+/// name onto the `fn` line.
+code function-name-on-next-line
+/// A function item beginning on the line where the previous one ended. The
+/// fix moves it onto a line of its own.
+code function-item-on-same-line
+/// A binding's name on the line after its `let`. The fix moves the name
+/// onto the `let` line.
+code binding-name-on-next-line
+/// Comparisons chained, as in `a < b < c`. A comparison yields a boolean
+/// that no comparison accepts; write two comparisons joined by `&&`.
+code chained-comparison
+
+/// Reported by semantic checking over every function whose syntax is
+/// complete: names, the scalar types `int`, `bool`, and `unit`, and calls.
+/// A function with a syntax error in its body is not checked, and every
+/// code here is an error.
+group semantic
+
+/// A type reference naming none of `int`, `bool`, and `unit`.
+code unknown-type
+/// A name with no declaration in scope: no parameter or binding for a
+/// value, no function item for a call.
+code unknown-name
+/// Two function items of one file, or two parameters of one function, with
+/// the same name. A label points at the first.
+code duplicate-name
+/// A call whose callee is a parameter or binding. Only function items are
+/// callable, since every local holds a scalar.
+code not-callable
+/// A call passing a different number of arguments than the function
+/// declares parameters. A label points at the declaration.
+code arity
+/// An expression of one type where another is required: an operand, a
+/// condition, an initializer against its annotation, an argument, a
+/// result against its return type, or `if` branches that disagree.
+code type-mismatch
+/// A statement's expression, other than a block's last, has a value that
+/// is not unit. Discard it with `_ =` to keep it.
+code unused-value
+/// A function without a return type whose result cannot be determined: its
+/// result is used as two types, or nothing fixes it. Add a return type
+/// annotation.
+code cannot-infer
+/// An integer literal outside the signed 64-bit range.
+code integer-range
+/// A construct scalar checking does not handle yet, such as a closure, a
+/// string literal, or a call through anything but a function name. The
+/// function is left unchecked.
+code unsupported

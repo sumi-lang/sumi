@@ -386,20 +386,9 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         let mut params = Vec::new();
         if let Some(list) = list {
             for param in list.params(tree) {
-                let ty = match param.type_ref(tree) {
-                    Some(ty) => source.ty(ty),
-                    None => {
-                        if !tree.has_error(param.node()) {
-                            source.error(
-                                param.node(),
-                                codes::MISSING_TYPE,
-                                "function parameters require a type",
-                                None,
-                            );
-                        }
-                        None
-                    }
-                };
+                // An item's parameter has a type or a syntax error: the
+                // parser requires the annotation.
+                let ty = param.type_ref(tree).and_then(|ty| source.ty(ty));
                 valid &= ty.is_some();
                 params.push(Parameter {
                     name: source.name(param.name(tree)),

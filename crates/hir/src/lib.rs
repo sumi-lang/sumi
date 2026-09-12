@@ -8,7 +8,8 @@ mod check;
 mod solver;
 mod typing;
 
-pub mod codes;
+mod generated;
+pub use generated::codes;
 
 #[cfg(test)]
 mod tests;

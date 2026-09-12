@@ -1,21 +1,25 @@
 //! Repository maintenance tasks, run as `cargo xtask <task>`.
 //!
-//! `codegen` regenerates the files derived from `sumi.grammar`; with
-//! `--check` it fails instead when any of them would change, which is how CI
-//! keeps the checked-in copies honest. The task depends on none of the
+//! `codegen` regenerates the files derived from `sumi.grammar` and
+//! `sumi.diagnostics`; with `--check` it fails instead when any of them
+//! would change, which is how CI keeps the checked-in copies honest. The task depends on none of the
 //! workspace crates, so it runs while they do not compile — which a
 //! grammar change in progress makes likely.
 
 mod codegen;
+mod corpus;
+mod diagnostics;
 mod grammar;
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 const USAGE: &str = "usage: cargo xtask <codegen [--check] | fuzz-seed>
 
-  codegen           regenerate the files derived from sumi.grammar
+  codegen           regenerate the files derived from sumi.grammar and
+                    sumi.diagnostics
   codegen --check   fail if any of them would change
   fuzz-seed         seed every fuzz target's corpus from tests/corpus";
 
@@ -44,9 +48,19 @@ fn workspace_root() -> PathBuf {
         .to_path_buf()
 }
 
-/// The files derived from the grammar, as `(path, content)`.
-fn generated(grammar: &grammar::Grammar) -> Result<[(&'static str, String); 6], String> {
-    Ok([
+/// Where each diagnostic group's constants are generated.
+const GROUP_HOMES: [(&str, &str); 2] = [
+    ("syntax", "crates/frontend/src/generated/codes.rs"),
+    ("semantic", "crates/hir/src/generated/codes.rs"),
+];
+
+/// The generated files, as `(path, content)`.
+fn generated(
+    grammar: &grammar::Grammar,
+    registry: &diagnostics::Registry,
+    examples: &BTreeMap<String, corpus::Example>,
+) -> Result<Vec<(&'static str, String)>, String> {
+    let mut files = vec![
         (
             "crates/lexer/src/generated/mod.rs",
             codegen::rustfmt(&codegen::lexer_kind(grammar))?,
@@ -68,7 +82,24 @@ fn generated(grammar: &grammar::Grammar) -> Result<[(&'static str, String); 6], 
             "crates/test/src/generated/mod.rs",
             codegen::rustfmt(&codegen::coverage(grammar))?,
         ),
-    ])
+    ];
+    for group in &registry.groups {
+        let (_, path) = GROUP_HOMES
+            .iter()
+            .find(|(name, _)| *name == group.name)
+            .ok_or_else(|| format!("group {} has no home in GROUP_HOMES", group.name))?;
+        files.push((path, codegen::rustfmt(&codegen::codes(group))?));
+    }
+    for (name, _) in GROUP_HOMES {
+        if registry.group(name).is_none() {
+            return Err(format!("sumi.diagnostics declares no group {name}"));
+        }
+    }
+    files.push((
+        "docs/reference/generated/diagnostics.md",
+        codegen::catalogue(registry, examples),
+    ));
+    Ok(files)
 }
 
 fn codegen(check: bool) -> Result<(), String> {
@@ -76,8 +107,12 @@ fn codegen(check: bool) -> Result<(), String> {
     let source = fs::read_to_string(root.join("sumi.grammar"))
         .map_err(|error| format!("reading sumi.grammar: {error}"))?;
     let grammar = grammar::Grammar::parse(&source)?;
+    let source = fs::read_to_string(root.join("sumi.diagnostics"))
+        .map_err(|error| format!("reading sumi.diagnostics: {error}"))?;
+    let registry = diagnostics::Registry::parse(&source)?;
+    let examples = corpus::examples(&root)?;
     let mut drifted = Vec::new();
-    for (path, content) in generated(&grammar)? {
+    for (path, content) in generated(&grammar, &registry, &examples)? {
         let target = root.join(path);
         if fs::read_to_string(&target).is_ok_and(|existing| existing == content) {
             continue;
@@ -115,7 +150,7 @@ fn fuzz_seed() -> Result<(), String> {
     let root = workspace_root();
     let corpus = root.join("tests/corpus");
     let mut cases = Vec::new();
-    collect_cases(&corpus, &mut cases)?;
+    corpus::cases(&corpus, &mut cases)?;
     if cases.is_empty() {
         return Err(format!("no cases under {}", corpus.display()));
     }
@@ -150,27 +185,6 @@ fn fuzz_seed() -> Result<(), String> {
     Ok(())
 }
 
-/// Every directory under `dir` that holds a `case.sumi`, recursively, in
-/// path order; a directory that holds one is a case and is not descended
-/// into.
-fn collect_cases(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
-    let mut entries: Vec<PathBuf> = fs::read_dir(dir)
-        .map_err(|error| format!("reading {}: {error}", dir.display()))?
-        .map(|entry| entry.map(|entry| entry.path()))
-        .collect::<Result<_, _>>()
-        .map_err(|error| format!("reading {}: {error}", dir.display()))?;
-    entries.retain(|path| path.is_dir());
-    entries.sort();
-    for path in entries {
-        if path.join("case.sumi").is_file() {
-            out.push(path);
-        } else {
-            collect_cases(&path, out)?;
-        }
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -189,5 +203,22 @@ mod tests {
         let dictionary = codegen::dictionary(&grammar);
         assert!(dictionary.contains("FnKw=\"fn\""));
         assert!(dictionary.contains("\n\"//\"\n"), "{dictionary}");
+    }
+
+    /// The repository registry parses, every group has a home, and the
+    /// chapter renders with an example per code the corpus shows.
+    #[test]
+    fn repository_registry_renders() {
+        let root = workspace_root();
+        let source = fs::read_to_string(root.join("sumi.diagnostics")).unwrap();
+        let registry = diagnostics::Registry::parse(&source).unwrap();
+        for (name, _) in GROUP_HOMES {
+            let group = registry.group(name).unwrap();
+            assert!(codegen::codes(group).contains("pub const ALL"));
+        }
+        let examples = corpus::examples(&root).unwrap();
+        let chapter = codegen::catalogue(&registry, &examples);
+        assert!(chapter.contains("### `syntax/expected-token`"));
+        assert!(chapter.contains("```sumi\n"));
     }
 }

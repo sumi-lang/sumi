@@ -7,7 +7,8 @@
 
 mod lower;
 
-pub mod codes;
+mod generated;
+pub use generated::codes;
 
 pub use sumi_diagnostics::{
     Applicability, Diagnostic, DiagnosticCode, DiagnosticGroup, Fix, Label, Location, Place,

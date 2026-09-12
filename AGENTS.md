@@ -16,9 +16,10 @@ You're in the core repository for Sumi, a novel statically typed general-purpose
 
 - `sumi fmt` is `sumi-format`'s `format`: one separator per gap between significant tokens, groups fitted to a width, and the parser's own newline rule deciding where a break is legal. Its contract is `rep`: the formatted text has the layout-free content of the source — the same tokens, tree, comments, and retained blank lines — or the disagreeing item is left as written, or the whole is a `Defect`. Gaps the parser recovered around are frozen. Add a layout rule per node kind in `plan.rs`; the corpus's `== formatted ==` sections and the `fmt` properties are the witnesses.
 
-## Grammar
+## Grammar and diagnostics
 
 - `sumi.grammar` at the workspace root is the one declaration of the token and node vocabularies, the token classes, bracket pairs, and operators. To add or change syntax, edit it — never the generated files it lists — and run `cargo xtask codegen`; CI runs `cargo xtask codegen --check`.
+- `sumi.diagnostics` beside it is the one declaration of every diagnostic code, with the explanation the reference chapter prints. To add a code, declare it there, run `cargo xtask codegen` for the constant, emit it, and add a corpus case that shows it: `crates/hir/tests/codes.rs` fails on a code no snapshot reports, and the chapter takes each code's example from the corpus, so codegen runs again after the snapshot lands.
 
 ## Tests
 
