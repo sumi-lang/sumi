@@ -26,4 +26,4 @@ pub use parser::{
     ParseViolation, ParseViolationKind, RawGap, RawTokenRange, parse,
 };
 pub use sumi_lexer::RawIdx;
-pub use tree::{NodePtr, Parse, SyntaxTree, raw_boundary};
+pub use tree::{NodePtr, Parse, SyntaxTree};

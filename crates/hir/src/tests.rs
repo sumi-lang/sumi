@@ -66,7 +66,10 @@ fn reversed_declarations_preserve_types(analysis: &Analysis) {
         .iter()
         .zip(reversed.functions.iter().rev())
     {
-        assert_eq!(a.name(), b.name());
+        assert_eq!(
+            a.name().map(|name| analysis.text(name)),
+            b.name().map(|name| reversed.text(name))
+        );
         assert_eq!(
             a.signature().map(|s| (&s.params, s.result)),
             b.signature().map(|s| (&s.params, s.result))
@@ -132,13 +135,14 @@ fn invariant(analysis: &Analysis, function: &Function) {
                 edges.extend([*lhs, *rhs]);
             }
             ExprKind::Call { function, args, .. } => {
+                let args = body.args(*args);
                 let signature = analysis.function(*function).signature().unwrap();
                 assert_eq!(expr.ty, signature.result);
                 assert_eq!(args.len(), signature.params.len());
                 for (&arg, &ty) in args.iter().zip(&signature.params) {
                     assert_eq!(body.expression(arg).ty, ty);
                 }
-                edges.extend(args);
+                edges.extend_from_slice(args);
             }
             ExprKind::If {
                 condition,
@@ -155,7 +159,7 @@ fn invariant(analysis: &Analysis, function: &Function) {
                 edges.extend(else_branch);
             }
             ExprKind::Block { statements, tail } => {
-                for statement in statements {
+                for statement in body.statements(*statements) {
                     edges.push(match statement.kind {
                         StatementKind::Let { local, initializer } => {
                             assert!(std::ptr::eq(
@@ -364,6 +368,7 @@ fn call_arguments_keep_source_order() {
     let ExprKind::Call { args, .. } = &body.expression(body.root()).kind else {
         panic!("expected a call");
     };
+    let args = body.args(*args);
     for (index, &value) in [11, 29, 7].iter().enumerate() {
         // Both evaluation order and the published argument positions matter.
         assert!(matches!(body.exprs[index].kind, ExprKind::Int(n) if n == value));
@@ -554,7 +559,8 @@ fn blocks_preserve_statement_order_and_only_the_last_child_is_a_tail() {
     let ExprKind::Block { statements, tail } = &body.expression(body.root()).kind else {
         panic!("expected a block");
     };
-    let texts: Vec<_> = statements
+    let texts: Vec<_> = body
+        .statements(*statements)
         .iter()
         .map(|statement| {
             let range = statement.origin.range();
@@ -571,7 +577,7 @@ fn blocks_preserve_statement_order_and_only_the_last_child_is_a_tail() {
         let ExprKind::Block { statements, tail } = &body.expression(body.root()).kind else {
             panic!("expected a block");
         };
-        assert_eq!(statements.len(), count);
+        assert_eq!(body.statements(*statements).len(), count);
         assert!(tail.is_none());
     }
 }
@@ -589,7 +595,7 @@ fn nested_blocks_consume_only_their_own_statements() {
                 return None;
             };
             Some(
-                statements
+                body.statements(*statements)
                     .iter()
                     .map(|statement| {
                         let range = statement.origin.range();
@@ -849,7 +855,7 @@ fn inferred_conflicts_and_deferred_scalar_rules() {
             let a = check(&definitions.join("\n"));
             assert!(!a.is_valid());
             for function in &a.functions {
-                if matches!(function.name(), Some("a" | "b")) {
+                if matches!(function.name().map(|name| a.text(name)), Some("a" | "b")) {
                     assert!(function.signature().is_none());
                     assert!(function.body().is_none());
                 } else {
@@ -915,17 +921,29 @@ fn inference_preserves_resolution_poison_and_annotation_boundaries() {
 fn large_definition_chains_and_cycles_are_stack_safe() {
     use std::fmt::Write;
     const COUNT: usize = 10_000;
-    for (cycle, grounded) in [(false, true), (true, true), (true, false)] {
+    // A chain of calls that is grounded, grounded through a cycle, an
+    // unresolved cycle, or a cycle that claims two types at its ends.
+    for (cycle, grounded, conflict) in [
+        (false, true, false),
+        (true, true, false),
+        (true, false, false),
+        (true, false, true),
+    ] {
         for reverse in [false, true] {
             let mut definitions = Vec::new();
             for i in 0..COUNT - 1 {
-                definitions.push(format!("fn f{i}() = f{}()", i + 1));
+                let body = if conflict && i == 0 {
+                    "if true { true } else { f1() }".to_owned()
+                } else {
+                    format!("f{}()", i + 1)
+                };
+                definitions.push(format!("fn f{i}() = {body}"));
             }
             let mut last = format!("fn f{}() = ", COUNT - 1);
-            last.push_str(match (cycle, grounded) {
-                (false, _) => "1",
-                (true, true) => "if true { 1 } else { f0() }",
-                (true, false) => "f0()",
+            last.push_str(match (cycle, grounded, conflict) {
+                (false, _, _) => "1",
+                (true, true, _) | (true, false, true) => "if true { 1 } else { f0() }",
+                (true, false, false) => "f0()",
             });
             definitions.push(last);
             if reverse {
@@ -942,7 +960,10 @@ fn large_definition_chains_and_cycles_are_stack_safe() {
                     invariant(&a, function);
                 }
             } else {
-                assert_eq!(a.diagnostics.len(), COUNT);
+                // A conflict is reported once at each end that claims a
+                // type; every function between inherits it silently.
+                assert_eq!(a.diagnostics.len(), if conflict { 2 } else { COUNT });
+                assert!(a.diagnostics.iter().all(|d| d.code == CANNOT_INFER));
                 assert!(
                     a.functions
                         .iter()
@@ -976,7 +997,8 @@ proptest::proptest! {
         let b = check(&order.iter().map(|&i| definitions[i].as_str()).collect::<Vec<_>>().join("\n"));
         for (analysis, other) in [(&a, &b), (&b, &a)] {
             for function in &analysis.functions {
-                let counterpart = other.functions.iter().find(|f| f.name() == function.name()).unwrap();
+                let name = function.name().map(|name| analysis.text(name));
+                let counterpart = other.functions.iter().find(|f| f.name().map(|n| other.text(n)) == name).unwrap();
                 proptest::prop_assert_eq!(function.signature().map(|s| s.result), counterpart.signature().map(|s| s.result));
                 proptest::prop_assert_eq!(function.body().is_some(), counterpart.body().is_some());
                 if function.body().is_some() { invariant(analysis, function); }

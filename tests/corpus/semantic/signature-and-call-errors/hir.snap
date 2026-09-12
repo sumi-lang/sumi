@@ -59,4 +59,4 @@ error[semantic/unknown-type]: unknown type `mystery`
   primary @279..286
 error[semantic/type-mismatch]: expected int, found bool
   primary @297..301
-  secondary @259..301: declared here
+  secondary @291..294: declared here

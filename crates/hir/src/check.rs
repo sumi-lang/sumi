@@ -1,4 +1,31 @@
-use std::collections::HashMap;
+//! Semantic checking of one file: names, structure, and scalar types.
+//!
+//! Checking makes three passes over the items.
+//!
+//! 1. **Headers.** Every function's name, parameter types, and result class:
+//!    an annotated result is a class known to be its type, an expression body
+//!    without one is a fresh class to infer, and a bare block body is unit.
+//! 2. **Bodies.** A structural walk per function resolves names, builds the
+//!    body's expressions with every expression and local owning a class in
+//!    the [`Typing`], and records what the walk learns: facts for literals
+//!    and operator results, a flow for each call, and a demand wherever a
+//!    context requires an expression to have a type. The walk rejects nothing
+//!    on type grounds; it fails only on names, syntax, and unsupported
+//!    constructs.
+//! 3. **Verdicts.** The typing solves once. Signatures are read off result
+//!    classes, independent of declaration order. Demands are then checked in
+//!    source order against the final evidence, so a disagreement is blamed on
+//!    the first demand that raised it. A body is published when its walk
+//!    succeeded, none of its demands failed, every class it uses resolved,
+//!    and every function it calls has a signature.
+//!
+//! Names are never copied while checking: every map is keyed by a slice of
+//! the source, and the one builder keeps its scratch across bodies, so a
+//! body costs the vectors it publishes and nothing else.
+
+use std::collections::hash_map::Entry;
+use std::collections::{HashMap, HashSet};
+use std::hash::{BuildHasherDefault, Hasher};
 
 use sumi_frontend::{DiagnosticCode, Label, Location};
 use sumi_lexer::{RawIdx, SyntaxKind, TokenFlags};
@@ -8,110 +35,209 @@ use sumi_syntax::{
 };
 
 use crate::codes;
-use crate::infer::{Inference, Term};
+use crate::solver::Var;
+use crate::typing::{Expected, Typing};
 use crate::*;
+
+/// A hasher for identifiers: a word at a time, with a multiply to spread
+/// the bits, which is all a short ASCII name needs and a fraction of what a
+/// keyed hash costs.
+#[derive(Default)]
+struct NameHasher(u64);
+
+impl NameHasher {
+    fn add(&mut self, word: u64) {
+        self.0 = (self.0.rotate_left(5) ^ word).wrapping_mul(0x517c_c1b7_2722_0a95);
+    }
+}
+
+impl Hasher for NameHasher {
+    fn write(&mut self, bytes: &[u8]) {
+        let (words, rest) = bytes.as_chunks::<8>();
+        for word in words {
+            self.add(u64::from_le_bytes(*word));
+        }
+        if !rest.is_empty() {
+            let mut word = [0; 8];
+            word[..rest.len()].copy_from_slice(rest);
+            self.add(u64::from_le_bytes(word));
+        }
+    }
+
+    fn write_u8(&mut self, byte: u8) {
+        self.add(u64::from(byte));
+    }
+
+    fn finish(&self) -> u64 {
+        self.0
+    }
+}
+
+/// A map from names, as slices of the source, to whatever they name.
+type NameMap<'s, V> = HashMap<&'s str, V, BuildHasherDefault<NameHasher>>;
+
+/// What a function name resolves to. One word, so the table of every
+/// function in the file stays small enough to probe from cache.
+#[derive(Clone, Copy)]
+enum Named {
+    Function(FunctionId),
+    /// Declared more than once; the first declaration, for the report.
+    Ambiguous(FunctionId),
+}
+
+impl Named {
+    fn first(self) -> FunctionId {
+        match self {
+            Self::Function(id) | Self::Ambiguous(id) => id,
+        }
+    }
+}
 
 struct Header {
     params: Option<Box<[Ty]>>,
-    result: Option<Term>,
-    origin: Span,
+    /// The result class; `None` when the declaration is too damaged to have
+    /// one.
+    result: Option<Var>,
+    /// The declared result type and where: the annotation, or the whole item
+    /// for a bare block body. A declaration is a contract the body is held
+    /// to, never changed by it. `None` for a result to infer from the body.
+    declared: Option<(Ty, NodeIdx)>,
+    item: NodeIdx,
 }
 
 struct DraftLocal {
-    name: Box<str>,
     origin: Span,
-    ty: Term,
+    class: Var,
 }
 
-struct DraftExpr {
-    kind: ExprKind,
-    origin: Span,
-    ty: Term,
-}
-
+/// A body whose expressions are built, with a placeholder type on each
+/// until its class resolves.
 struct DraftBody {
     params: Vec<LocalId>,
     locals: Vec<DraftLocal>,
-    exprs: Vec<DraftExpr>,
+    exprs: Vec<Expr>,
+    /// The class of each expression, by index.
+    classes: Vec<Var>,
+    args: Vec<ExprId>,
+    statements: Vec<Statement>,
     root: ExprId,
 }
 
 impl DraftBody {
-    fn finish(self, inference: &Inference, functions: &[Function]) -> Option<Body> {
-        let locals = self
-            .locals
+    /// The body with every class resolved to its type, if every class
+    /// resolved and every call agrees with its callee's signature.
+    fn publish(self, typing: &Typing, functions: &[Function]) -> Option<Body> {
+        let Self {
+            params,
+            locals,
+            mut exprs,
+            classes,
+            args,
+            statements,
+            root,
+        } = self;
+        let locals = locals
             .into_iter()
             .map(|local| {
                 Some(Local {
-                    name: local.name,
                     origin: local.origin,
-                    ty: inference.resolve(local.ty)?,
+                    ty: typing.resolve(local.class)?,
                 })
             })
             .collect::<Option<_>>()?;
-        let exprs = self
-            .exprs
-            .into_iter()
-            .map(|expr| {
-                let ty = inference.resolve(expr.ty)?;
-                if let ExprKind::Call { function, .. } = &expr.kind {
-                    // A caller's local requirements can solve its call term without
-                    // solving the provider. That is not a publishable call.
-                    if functions[function.0].signature.as_ref()?.result != ty {
-                        return None;
-                    }
-                }
-                Some(Expr {
-                    kind: expr.kind,
-                    origin: expr.origin,
-                    ty,
-                })
-            })
-            .collect::<Option<_>>()?;
+        for (expr, &class) in exprs.iter_mut().zip(&classes) {
+            let ty = typing.resolve(class)?;
+            // A caller's demands can resolve its call's class without
+            // resolving the callee. That is not a publishable call.
+            if let ExprKind::Call { function, .. } = &expr.kind
+                && functions[function.index()].signature.as_ref()?.result != ty
+            {
+                return None;
+            }
+            expr.ty = ty;
+        }
         Some(Body {
-            params: self.params,
+            params,
             locals,
             exprs,
-            root: self.root,
+            args,
+            statements,
+            root,
         })
     }
 }
 
-enum ObligationKind {
-    Equal(Term, Option<(Span, &'static str)>),
+/// What a mismatch report points at besides the expression: where the
+/// expectation came from.
+#[derive(Clone, Copy)]
+enum Related {
+    /// A declaration: a called function, a result annotation, or a
+    /// binding's annotation.
+    Declared(NodeIdx),
+    /// The other branch of an `if`, whose type the reported branch must
+    /// match.
+    OtherBranch(NodeIdx),
+}
+
+impl Related {
+    fn label(self) -> (NodeIdx, &'static str) {
+        match self {
+            Self::Declared(node) => (node, "declared here"),
+            Self::OtherBranch(node) => (node, "other branch determines expected type"),
+        }
+    }
+}
+
+/// What a context requires of an expression, checked after solving.
+enum DemandKind {
+    /// The expression must have the expected type.
+    Type {
+        expected: Expected,
+        related: Option<Related>,
+    },
+    /// An expression statement's value must be unit.
     Unused,
+    /// The operands of `==` and `!=` must not be unit.
     Comparable,
 }
 
-struct Obligation {
-    owner: usize,
+/// One demand, kept small: the verdict pass reads every one, and a body
+/// makes one per operand, argument, branch, and statement.
+struct Demand {
+    owner: u32,
+    /// The expression whose type the demand is about: the innermost one
+    /// the demanded expression takes its type from, through any number of
+    /// tails and branches. Two demands with one subject are about one
+    /// expression.
+    subject: ExprId,
     node: NodeIdx,
-    actual: Term,
-    kind: ObligationKind,
+    actual: Var,
+    kind: DemandKind,
 }
 
-struct Source<'a> {
-    parsed: &'a ParsedSource,
-    tree: &'a SyntaxTree,
+struct Source<'s> {
+    parsed: &'s ParsedSource,
+    tree: &'s SyntaxTree,
     diagnostics: Vec<Diagnostic>,
 }
 
-impl Source<'_> {
+impl<'s> Source<'s> {
     fn span(&self, node: NodeIdx) -> Span {
         Span::new(
             self.parsed.file(),
             self.tree.byte_range(node, self.parsed.lexed()),
         )
     }
-    fn text(&self, node: NodeIdx) -> &str {
-        let range = self.span(node).range();
-        &self.parsed.source()[range.start().to_usize()..range.end().to_usize()]
+    fn text(&self, node: NodeIdx) -> &'s str {
+        let range = self.tree.byte_range(node, self.parsed.lexed());
+        let source: &'s str = self.parsed.source();
+        &source[range.start().to_usize()..range.end().to_usize()]
     }
-    fn name(&self, name: Option<ast::Name>) -> Option<(Box<str>, NodeIdx)> {
+    fn name(&self, name: Option<ast::Name>) -> Option<(&'s str, NodeIdx)> {
         let node = name?.node();
         (!self.tree.has_error(node)
             && self.parsed.lexed().kind(self.tree.first_token(node)) == SyntaxKind::Ident)
-            .then(|| (self.text(node).into(), node))
+            .then(|| (self.text(node), node))
     }
     fn error(
         &mut self,
@@ -120,19 +246,29 @@ impl Source<'_> {
         message: impl Into<Box<str>>,
         related: Option<(Span, &'static str)>,
     ) {
+        let related = related.map(|(span, message)| (span, Box::from(message)));
+        self.report(self.span(node), code, message, related);
+    }
+    fn report(
+        &mut self,
+        primary: Span,
+        code: DiagnosticCode,
+        message: impl Into<Box<str>>,
+        related: impl IntoIterator<Item = (Span, Box<str>)>,
+    ) {
         self.diagnostics.push(Diagnostic {
             code,
             severity: Severity::Error,
             message: message.into(),
             primary: Label {
-                location: Location::range(self.span(node)),
+                location: Location::range(primary),
                 message: None,
             },
             secondary: related
                 .into_iter()
                 .map(|(span, message)| Label {
                     location: Location::range(span),
-                    message: Some(message.into()),
+                    message: Some(message),
                 })
                 .collect(),
             notes: Box::new([]),
@@ -151,22 +287,6 @@ impl Source<'_> {
             codes::TYPE_MISMATCH,
             format!("expected {expected}, found {actual}"),
             related,
-        );
-    }
-    fn unused_value(&mut self, node: NodeIdx, ty: Ty) {
-        self.error(
-            node,
-            codes::UNUSED_VALUE,
-            format!("unused value of type {ty}; use `_ =` to discard it"),
-            None,
-        );
-    }
-    fn incomparable(&mut self, node: NodeIdx) {
-        self.error(
-            node,
-            codes::TYPE_MISMATCH,
-            "unit values cannot be compared",
-            None,
         );
     }
     fn ty(&mut self, node: ast::TypeRef) -> Option<Ty> {
@@ -203,12 +323,11 @@ impl Source<'_> {
     }
 }
 
-struct Parameter {
-    name: Option<(Box<str>, NodeIdx)>,
+struct Parameter<'s> {
+    name: Option<(&'s str, NodeIdx)>,
     ty: Option<Ty>,
 }
 
-/// Collect headers and body constraints before publishing concrete HIR.
 pub fn analyze(parsed: ParsedSource) -> Analysis {
     let tree = parsed.parse().tree();
     let mut source = Source {
@@ -220,26 +339,36 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         .unwrap()
         .items(tree)
         .collect();
+    let mut typing = Typing::for_nodes(tree.len());
+
+    // Pass 1: headers.
     let mut functions: Vec<Function> = Vec::with_capacity(items.len());
-    let mut names = HashMap::<Box<str>, (Span, Option<FunctionId>)>::new();
+    let mut names: NameMap<Named> =
+        NameMap::with_capacity_and_hasher(items.len(), Default::default());
     let mut parameters = Vec::with_capacity(items.len());
     let mut headers = Vec::with_capacity(items.len());
-    let mut inference = Inference::default();
-    let mut obligations = Vec::new();
     for item in &items {
         let name = source.name(item.name(tree));
-        let id = FunctionId(functions.len());
-        if let Some((name, node)) = &name {
-            if let Some((first, target)) = names.get_mut(name) {
-                source.error(
-                    *node,
-                    codes::DUPLICATE_NAME,
-                    format!("duplicate function `{name}`"),
-                    Some((*first, "declared here")),
-                );
-                *target = None;
-            } else {
-                names.insert(name.clone(), (source.span(*node), Some(id)));
+        let id = FunctionId(u32::try_from(functions.len()).expect("function count fits u32"));
+        let origin = source.span(item.node());
+        if let Some((name, node)) = name {
+            match names.entry(name) {
+                Entry::Occupied(mut entry) => {
+                    let first = items[entry.get().first().index()]
+                        .name(tree)
+                        .expect("a named function has a name")
+                        .node();
+                    source.error(
+                        node,
+                        codes::DUPLICATE_NAME,
+                        format!("duplicate function `{name}`"),
+                        Some((source.span(first), "declared here")),
+                    );
+                    *entry.get_mut() = Named::Ambiguous(entry.get().first());
+                }
+                Entry::Vacant(entry) => {
+                    entry.insert(Named::Function(id));
+                }
             }
         }
         let list = item.param_list(tree);
@@ -268,108 +397,180 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
                 });
             }
         }
-        let result = if let Some(ret) = item.ret(tree) {
-            source.ty(ret).map(Term::Known)
+        let (result, declared) = if let Some(ret) = item.ret(tree) {
+            match source.ty(ret) {
+                Some(ty) => (Some(typing.known(ty, ret.node())), Some((ty, ret.node()))),
+                None => (None, None),
+            }
         } else {
-            // None can mean damaged syntax, not omission. Only an empty gap or
-            // the expression-body '=' establishes an omitted result annotation.
-            list.filter(|list| !tree.has_error(list.node()))
-                .and_then(|list| {
+            // A missing annotation can mean damaged syntax, not omission.
+            // Only an empty gap or the expression-body `=` says it was left
+            // out: a bare block is unit, an expression body is inferred.
+            let gap = list
+                .filter(|list| !tree.has_error(list.node()))
+                .map(|list| {
                     let end = item
                         .body(tree)
                         .map_or(tree.end_token(item.node()), |e| tree.first_token(e.node()));
                     let mut tokens = source.tokens(tree.end_token(list.node()), end);
-                    match (tokens.next(), tokens.next()) {
-                        (None, None) => Some(Term::Known(Ty::Unit)),
-                        (Some(SyntaxKind::Eq), None) => Some(inference.fresh()),
-                        _ => None,
-                    }
-                })
+                    (tokens.next(), tokens.next())
+                });
+            match gap {
+                Some((None, None)) => (
+                    Some(typing.known(Ty::Unit, item.node())),
+                    Some((Ty::Unit, item.node())),
+                ),
+                Some((Some(SyntaxKind::Eq), None)) => (Some(typing.fresh()), None),
+                _ => (None, None),
+            }
         };
         headers.push(Header {
             params: valid.then(|| params.iter().map(|p| p.ty.unwrap()).collect()),
             result,
-            origin: source.span(item.node()),
+            declared,
+            item: item.node(),
         });
         parameters.push(params);
         functions.push(Function {
-            name: name.map(|n| n.0),
-            origin: source.span(item.node()),
+            name: name.map(|(_, node)| source.span(node)),
+            origin,
             signature: None,
             body: None,
         });
     }
+
+    // Pass 2: bodies.
+    // About a demand per two nodes; only a guide.
+    let mut demands = Vec::with_capacity(tree.len() / 2);
     let mut bodies = Vec::with_capacity(items.len());
     // Syntax node IDs are dense and bodies have disjoint nodes. Expression
     // IDs remain body-local; a builder only reads entries in its own body.
     let mut values = vec![None; tree.len()];
+    let mut builder = Builder::new(
+        &mut source,
+        &headers,
+        &names,
+        &mut typing,
+        &mut demands,
+        &mut values,
+    );
     for (index, (item, params)) in items.iter().zip(parameters).enumerate() {
-        bodies.push(
-            Builder::new(
-                &mut source,
-                &headers,
-                &names,
-                &mut inference,
-                &mut obligations,
-                index,
-                &mut values,
-            )
-            .build(*item, params),
-        );
+        bodies.push(builder.build(index, *item, params));
     }
+    drop(builder);
     drop(values);
-    inference.solve();
-    let mut replay = inference.replay();
+
+    // Pass 3: verdicts.
+    typing.solve();
+    let mut replay = typing.replay();
     let mut failed = vec![false; functions.len()];
-    for obligation in obligations {
-        let actual = replay.resolve(obligation.actual);
-        match obligation.kind {
-            ObligationKind::Equal(expected, related) => match (actual, replay.resolve(expected)) {
-                (Some(actual), Some(expected)) if actual != expected => {
-                    source.type_mismatch(obligation.node, expected, actual, related);
+    // An expression whose type is already in dispute is held to no further
+    // demand: one report per expression, at the first demand it fails.
+    let mut disputed = HashSet::new();
+    for demand in demands {
+        if disputed.contains(&(demand.owner, demand.subject)) {
+            continue;
+        }
+        let actual = replay.resolve(demand.actual);
+        match demand.kind {
+            DemandKind::Type { expected, related } => {
+                let expected_ty = match expected {
+                    Expected::Ty(ty) => Some(ty),
+                    Expected::Class(class) => replay.resolve(class),
+                };
+                match (actual, expected_ty) {
+                    (Some(actual), Some(expected)) if actual != expected => {
+                        let related = related.map(|related| {
+                            let (node, label) = related.label();
+                            (source.span(node), label)
+                        });
+                        source.type_mismatch(demand.node, expected, actual, related);
+                    }
+                    _ => {
+                        replay.expect(demand.actual, expected);
+                        continue;
+                    }
                 }
+            }
+            DemandKind::Unused => match actual {
+                Some(ty) if ty != Ty::Unit => source.error(
+                    demand.node,
+                    codes::UNUSED_VALUE,
+                    format!("unused value of type {ty}; use `_ =` to discard it"),
+                    None,
+                ),
                 _ => {
-                    replay.equal(obligation.actual, expected);
+                    replay.expect(demand.actual, Expected::Ty(Ty::Unit));
                     continue;
                 }
             },
-            ObligationKind::Unused => match actual {
-                Some(ty) if ty != Ty::Unit => source.unused_value(obligation.node, ty),
-                _ => {
-                    replay.equal(obligation.actual, Ty::Unit.into());
-                    continue;
-                }
-            },
-            ObligationKind::Comparable => {
+            DemandKind::Comparable => {
                 if actual != Some(Ty::Unit) {
                     continue;
                 }
-                source.incomparable(obligation.node);
+                source.error(
+                    demand.node,
+                    codes::TYPE_MISMATCH,
+                    "unit values cannot be compared",
+                    None,
+                );
             }
         }
-        failed[obligation.owner] = true;
+        failed[demand.owner as usize] = true;
+        disputed.insert((demand.owner, demand.subject));
     }
     for (index, header) in headers.into_iter().enumerate() {
-        let result = header.result.and_then(|term| inference.resolve(term));
+        let evidence = header.result.map(|result| *typing.evidence(result));
+        let result = evidence.and_then(|evidence| evidence.ty());
         if let (Some(params), Some(result)) = (header.params, result) {
             functions[index].signature = Some(Signature { params, result });
         }
-        if matches!(header.result, Some(Term::Var(_)))
-            && result.is_none()
+        // A result to infer that did not resolve is reported here, unless a
+        // demand in the body already explained it, or the trouble arrived
+        // whole from a callee, which reports it at its own declaration.
+        if let (None, Some(evidence), None) = (header.declared, evidence, result)
             && bodies[index].is_some()
             && !failed[index]
+            && !evidence.inherited()
         {
-            let message = if inference.conflicted(header.result.unwrap()) {
-                "conflicting function result constraints; add a return type annotation"
+            let node = items[index].node();
+            if evidence.is_conflict() {
+                let claims = evidence.claims();
+                let types: Vec<_> = claims.iter().map(|(ty, _)| ty.to_string()).collect();
+                let (last, rest) = types.split_last().unwrap();
+                let joined = if rest.len() == 1 {
+                    format!("{} and {last}", rest[0])
+                } else {
+                    format!("{}, and {last}", rest.join(", "))
+                };
+                let labels: Vec<_> = claims
+                    .into_iter()
+                    .map(|(ty, claim)| {
+                        (
+                            source.span(typing.origin(claim)),
+                            format!("{ty} here").into(),
+                        )
+                    })
+                    .collect();
+                source.report(
+                    source.span(node),
+                    codes::CANNOT_INFER,
+                    format!("function result is both {joined}; add a return type annotation"),
+                    labels,
+                );
             } else {
-                "cannot infer function result; add a return type annotation"
-            };
-            source.error(items[index].node(), codes::CANNOT_INFER, message, None);
+                source.error(
+                    node,
+                    codes::CANNOT_INFER,
+                    "cannot infer function result; add a return type annotation",
+                    None,
+                );
+            }
         }
     }
     for (index, body) in bodies.into_iter().enumerate() {
         if !failed[index] && functions[index].signature.is_some() {
-            functions[index].body = body.and_then(|body| body.finish(&inference, &functions));
+            functions[index].body = body.and_then(|body| body.publish(&typing, &functions));
         }
     }
     source
@@ -394,84 +595,143 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     analysis
 }
 
+/// An index into one of a body's lists, which the syntax tree's node count
+/// bounds.
+fn run(index: usize) -> u32 {
+    u32::try_from(index).expect("list index fits u32")
+}
+
 // None is a poisoned binding, distinct from an absent name. Scope transitions
 // and let completion are explicit work items, so initializers see the old scope.
-type Scope = HashMap<Box<str>, Option<LocalId>>;
+type Scope<'s> = NameMap<'s, Option<LocalId>>;
 enum Work {
     Enter(NodeIdx),
     Finish(NodeIdx),
     Call(NodeIdx, FunctionId, NodeIdx),
 }
 
+/// The one walker for every body of the file. What a body publishes is
+/// built in place and moved out; everything else the walk needs is kept
+/// and reused, so no body pays for scratch.
 struct Builder<'a, 's> {
     source: &'a mut Source<'s>,
-    functions: &'a [Header],
-    names: &'a HashMap<Box<str>, (Span, Option<FunctionId>)>,
-    inference: &'a mut Inference,
-    obligations: &'a mut Vec<Obligation>,
-    owner: usize,
-    scopes: Vec<Scope>,
-    locals: Vec<DraftLocal>,
-    exprs: Vec<DraftExpr>,
+    headers: &'a [Header],
+    names: &'a NameMap<'s, Named>,
+    typing: &'a mut Typing,
+    demands: &'a mut Vec<Demand>,
     values: &'a mut [Option<ExprId>],
-    statements: Vec<(NodeIdx, Statement)>,
+    // The body under construction.
+    owner: u32,
     failed: bool,
+    params: Vec<LocalId>,
+    locals: Vec<DraftLocal>,
+    exprs: Vec<Expr>,
+    classes: Vec<Var>,
+    args: Vec<ExprId>,
+    statements: Vec<Statement>,
+    // Scratch kept across bodies.
+    /// The subject of each expression, by index.
+    subjects: Vec<ExprId>,
+    /// A pool of scopes; the first `depth` are open, innermost last. A map
+    /// per scope costs a probe per enclosing scope on lookup, and nothing on
+    /// close; an undo log measured slower on binding-heavy code, since every
+    /// binding then pays a removal.
+    scopes: Vec<Scope<'s>>,
+    depth: usize,
+    /// Parameter names seen so far, for duplicates.
+    first: NameMap<'s, Span>,
+    work: Vec<Work>,
+    /// Statements completed but not yet claimed by their block, in source
+    /// order.
+    pending: Vec<(NodeIdx, Statement)>,
 }
 
 impl<'a, 's> Builder<'a, 's> {
     fn new(
         source: &'a mut Source<'s>,
-        functions: &'a [Header],
-        names: &'a HashMap<Box<str>, (Span, Option<FunctionId>)>,
-        inference: &'a mut Inference,
-        obligations: &'a mut Vec<Obligation>,
-        owner: usize,
+        headers: &'a [Header],
+        names: &'a NameMap<'s, Named>,
+        typing: &'a mut Typing,
+        demands: &'a mut Vec<Demand>,
         values: &'a mut [Option<ExprId>],
     ) -> Self {
         Self {
             source,
-            functions,
+            headers,
             names,
-            inference,
-            obligations,
-            owner,
-            scopes: vec![Scope::new()],
+            typing,
+            demands,
+            values,
+            owner: 0,
+            failed: false,
+            params: Vec::new(),
             locals: Vec::new(),
             exprs: Vec::new(),
-            values,
+            classes: Vec::new(),
+            args: Vec::new(),
             statements: Vec::new(),
-            failed: false,
+            subjects: Vec::new(),
+            scopes: Vec::new(),
+            depth: 0,
+            first: NameMap::default(),
+            work: Vec::new(),
+            pending: Vec::new(),
         }
     }
-    fn build(mut self, item: ast::FnItem, parameters: Vec<Parameter>) -> Option<DraftBody> {
-        let mut params = Vec::new();
-        let mut first = HashMap::new();
+    fn build(
+        &mut self,
+        owner: usize,
+        item: ast::FnItem,
+        parameters: Vec<Parameter<'s>>,
+    ) -> Option<DraftBody> {
+        self.owner = u32::try_from(owner).expect("function count fits u32");
+        self.failed = false;
+        self.depth = 0;
+        self.open_scope();
+        self.first.clear();
+        self.subjects.clear();
+        // A published body took these; a failed one left them behind.
+        self.params.clear();
+        self.locals.clear();
+        self.exprs.clear();
+        self.classes.clear();
+        self.args.clear();
+        self.statements.clear();
         for param in parameters {
             if let Some((name, node)) = param.name {
-                if let Some(&span) = first.get(&name) {
+                if let Some(&span) = self.first.get(name) {
                     self.source.error(
                         node,
                         codes::DUPLICATE_NAME,
                         format!("duplicate parameter `{name}`"),
                         Some((span, "declared here")),
                     );
-                    self.scopes[0].insert(name, None);
+                    self.shadow(name, None);
                     self.failed = true;
                 } else {
-                    first.insert(name.clone(), self.source.span(node));
-                    if let Some(local) = self.bind(name, node, param.ty.map(Term::Known)) {
-                        params.push(local);
+                    self.first.insert(name, self.source.span(node));
+                    let class = param.ty.map(|ty| self.typing.known(ty, node));
+                    if let Some(local) = self.bind(name, node, class) {
+                        self.params.push(local);
                     }
                 }
             } else {
                 self.failed = true;
             }
         }
-        let header = &self.functions[self.owner];
+        let header = &self.headers[self.owner as usize];
         let result = header.result;
+        let declared = header.declared;
         self.failed |= header.params.is_none() || result.is_none();
-        let root_node = item.body(self.source.tree)?.node();
-        let mut work = vec![Work::Enter(root_node)];
+        let tree = self.source.tree;
+        let root_node = item.body(tree)?.node();
+        // At most one expression per node of the body.
+        let nodes = tree.subtree_len(root_node);
+        self.exprs.reserve(nodes);
+        self.classes.reserve(nodes);
+        self.subjects.reserve(nodes);
+        let mut work = std::mem::take(&mut self.work);
+        work.push(Work::Enter(root_node));
         while let Some(task) = work.pop() {
             match task {
                 Work::Enter(node) => self.enter(node, &mut work),
@@ -487,57 +747,126 @@ impl<'a, 's> Builder<'a, 's> {
                 }
             }
         }
+        self.work = work;
         let root = self.value(root_node);
-        // A failed parameter does not erase an independently known result type.
-        if let (Some(root), Some(result)) = (root, result)
-            && !self.require(
-                root_node,
-                root,
-                result,
-                Some((self.source.span(item.node()), "declared here")),
-            )
-        {
-            self.failed = true;
+        // A failed parameter does not erase an independently known result
+        // type. A declared result is a contract on the body; an inferred one
+        // is the body's own type.
+        match (root, declared, result) {
+            (Some(root), Some((ty, node)), _) => {
+                self.require(
+                    root_node,
+                    root,
+                    Expected::Ty(ty),
+                    Some(Related::Declared(node)),
+                );
+            }
+            (Some(root), None, Some(result)) => {
+                self.require(root_node, root, Expected::Class(result), None);
+            }
+            _ => {}
         }
         if self.failed {
             return None;
         }
         Some(DraftBody {
-            params,
-            locals: self.locals,
-            exprs: self.exprs,
+            params: std::mem::take(&mut self.params),
+            locals: std::mem::take(&mut self.locals),
+            exprs: std::mem::take(&mut self.exprs),
+            classes: std::mem::take(&mut self.classes),
+            args: std::mem::take(&mut self.args),
+            statements: std::mem::take(&mut self.statements),
             root: root?,
         })
     }
-    fn bind(&mut self, name: Box<str>, node: NodeIdx, ty: Option<Term>) -> Option<LocalId> {
-        let id = ty.map(|ty| {
+    fn open_scope(&mut self) {
+        if self.depth == self.scopes.len() {
+            self.scopes.push(Scope::default());
+        } else {
+            self.scopes[self.depth].clear();
+        }
+        self.depth += 1;
+    }
+    fn close_scope(&mut self) {
+        self.depth -= 1;
+    }
+    /// Give `name` the meaning `id` until the innermost scope closes.
+    fn shadow(&mut self, name: &'s str, id: Option<LocalId>) {
+        self.scopes[self.depth - 1].insert(name, id);
+    }
+    fn bind(&mut self, name: &'s str, node: NodeIdx, class: Option<Var>) -> Option<LocalId> {
+        let id = class.map(|class| {
             let id = LocalId::new(self.locals.len());
             self.locals.push(DraftLocal {
-                name: name.clone(),
                 origin: self.source.span(node),
-                ty,
+                class,
             });
             id
         });
         self.failed |= id.is_none();
-        self.scopes.last_mut().unwrap().insert(name, id);
+        self.shadow(name, id);
         id
     }
     fn lookup(&self, name: &str) -> Option<Option<LocalId>> {
-        self.scopes
+        // An empty scope, the common case for a function's own, would cost
+        // a hash to find nothing in.
+        self.scopes[..self.depth]
             .iter()
             .rev()
+            .filter(|scope| !scope.is_empty())
             .find_map(|scope| scope.get(name).copied())
     }
-    fn emit(&mut self, node: NodeIdx, kind: ExprKind, ty: impl Into<Term>) -> ExprId {
+    fn class(&self, expr: ExprId) -> Var {
+        self.classes[expr.index()]
+    }
+    /// An expression of its own type.
+    fn emit(&mut self, node: NodeIdx, kind: ExprKind, class: Var) -> ExprId {
         let id = ExprId::new(self.exprs.len());
-        self.exprs.push(DraftExpr {
+        self.emit_as(node, kind, class, id)
+    }
+    /// An expression with the type of `inner`, one of its sub-expressions.
+    fn emit_from(&mut self, node: NodeIdx, kind: ExprKind, inner: ExprId) -> ExprId {
+        let (class, subject) = (self.class(inner), self.subjects[inner.index()]);
+        self.emit_as(node, kind, class, subject)
+    }
+    fn emit_as(&mut self, node: NodeIdx, kind: ExprKind, class: Var, subject: ExprId) -> ExprId {
+        let id = ExprId::new(self.exprs.len());
+        self.exprs.push(Expr {
             kind,
             origin: self.source.span(node),
-            ty: ty.into(),
+            // Resolved when the body is published.
+            ty: Ty::Unit,
         });
+        self.classes.push(class);
+        self.subjects.push(subject);
         self.values[node.to_usize()] = Some(id);
         id
+    }
+    /// The context at `node` requires `expr` to be `expected`. Recorded for
+    /// the verdict pass, and joined into the evidence now so inference sees
+    /// it.
+    fn require(
+        &mut self,
+        node: NodeIdx,
+        expr: ExprId,
+        expected: Expected,
+        related: Option<Related>,
+    ) {
+        let actual = self.class(expr);
+        if expected == Expected::Class(actual) {
+            return;
+        }
+        self.typing.expect(actual, expected, node);
+        self.demand(node, expr, DemandKind::Type { expected, related });
+    }
+    fn demand(&mut self, node: NodeIdx, expr: ExprId, kind: DemandKind) {
+        self.demands.push(Demand {
+            owner: self.owner,
+            subject: self.subjects[expr.index()],
+            node,
+            actual: self.class(expr),
+            kind,
+        });
     }
     fn unsupported(&mut self, node: NodeIdx) {
         self.source.error(
@@ -550,78 +879,89 @@ impl<'a, 's> Builder<'a, 's> {
     }
     fn enter(&mut self, node: NodeIdx, work: &mut Vec<Work>) {
         let tree = self.source.tree;
-        if let Some(binding) = ast::LetStmt::cast(tree, node) {
-            let mutable = self
-                .source
-                .tokens(
-                    tree.first_token(node),
-                    binding
-                        .name(tree)
-                        .map_or(tree.end_token(node), |n| tree.first_token(n.node())),
-                )
-                .eq([SyntaxKind::LetKw, SyntaxKind::MutKw]);
-            if tree.has_error(node) || mutable {
-                if mutable && !tree.has_error(node) {
-                    self.unsupported(node);
+        let kind = tree.kind(node);
+        let error = tree.has_error(node);
+        match kind {
+            NodeKind::LetStmt => {
+                let binding = ast::LetStmt::cast(tree, node).unwrap();
+                let mutable = self
+                    .source
+                    .tokens(
+                        tree.first_token(node),
+                        binding
+                            .name(tree)
+                            .map_or(tree.end_token(node), |n| tree.first_token(n.node())),
+                    )
+                    .eq([SyntaxKind::LetKw, SyntaxKind::MutKw]);
+                if error || mutable {
+                    if mutable && !error {
+                        self.unsupported(node);
+                    }
+                    if let Some((name, name_node)) = self.source.name(binding.name(tree)) {
+                        self.bind(name, name_node, None);
+                    }
+                    self.failed = true;
+                    return;
                 }
-                if let Some((name, name_node)) = self.source.name(binding.name(tree)) {
-                    self.bind(name, name_node, None);
-                }
+            }
+            NodeKind::Block => {
+                self.failed |= error;
+                self.open_scope();
+            }
+            _ if error => {
                 self.failed = true;
                 return;
             }
-        } else if tree.has_error(node) && tree.kind(node) != NodeKind::Block {
-            self.failed = true;
-            return;
-        }
-        if tree.kind(node) == NodeKind::Block {
-            self.failed |= tree.has_error(node);
-            self.scopes.push(Scope::new());
-        }
-        if let Some(ast::Expr::PrefixExpr(prefix)) = ast::Expr::cast(tree, node) {
-            let operand = prefix.operand(tree).unwrap();
-            let neg = self
-                .source
-                .tokens(tree.first_token(node), tree.first_token(operand.node()))
-                .eq([SyntaxKind::Minus]);
-            let peeled = self.source.peel(operand);
-            if neg
-                && tree.kind(peeled.node()) == NodeKind::LiteralExpr
-                && self
+            NodeKind::PrefixExpr => {
+                let operand = ast::PrefixExpr::cast(tree, node)
+                    .unwrap()
+                    .operand(tree)
+                    .unwrap();
+                let neg = self
                     .source
-                    .parsed
-                    .lexed()
-                    .kind(tree.first_token(peeled.node()))
-                    == SyntaxKind::IntLiteral
-            {
-                if self.integer(node, peeled.node(), true).is_none() {
+                    .tokens(tree.first_token(node), tree.first_token(operand.node()))
+                    .eq([SyntaxKind::Minus]);
+                let peeled = self.source.peel(operand);
+                if neg
+                    && tree.kind(peeled.node()) == NodeKind::LiteralExpr
+                    && self
+                        .source
+                        .parsed
+                        .lexed()
+                        .kind(tree.first_token(peeled.node()))
+                        == SyntaxKind::IntLiteral
+                {
+                    if self.integer(node, peeled.node(), true).is_none() {
+                        self.failed = true;
+                    }
+                    return;
+                }
+            }
+            NodeKind::CallExpr => {
+                let call = ast::CallExpr::cast(tree, node).unwrap();
+                let callee = self.source.peel(call.callee(tree).unwrap()).node();
+                let target = if tree.kind(callee) == NodeKind::NameRef {
+                    self.target(callee)
+                } else {
+                    self.unsupported(callee);
+                    None
+                };
+                let list = call.arg_list(tree).unwrap();
+                if let Some(target) = target {
+                    work.push(Work::Call(node, target, callee));
+                } else {
                     self.failed = true;
                 }
+                work.extend(
+                    tree.children(list.node())
+                        .filter_map(|child| ast::Expr::cast(tree, child))
+                        .map(|arg| Work::Enter(arg.node())),
+                );
                 return;
             }
+            _ => {}
         }
-        if let Some(call) = ast::CallExpr::cast(tree, node) {
-            let callee = self.source.peel(call.callee(tree).unwrap()).node();
-            let target = if tree.kind(callee) == NodeKind::NameRef {
-                self.target(callee)
-            } else {
-                self.unsupported(callee);
-                None
-            };
-            let list = call.arg_list(tree).unwrap();
-            if let Some(target) = target {
-                work.push(Work::Call(node, target, callee));
-            } else {
-                self.failed = true;
-            }
-            work.extend(
-                tree.children(list.node())
-                    .filter_map(|child| ast::Expr::cast(tree, child))
-                    .map(|arg| Work::Enter(arg.node())),
-            );
-            return;
-        }
-        match tree.kind(node) {
+        match kind {
             NodeKind::Block
             | NodeKind::LetStmt
             | NodeKind::DiscardStmt
@@ -660,7 +1000,8 @@ impl<'a, 's> Builder<'a, 's> {
             return None;
         }
         match self.names.get(name) {
-            Some((_, target)) => *target,
+            Some(Named::Function(target)) => Some(*target),
+            Some(Named::Ambiguous(_)) => None,
             None => {
                 self.source.error(
                     node,
@@ -698,7 +1039,10 @@ impl<'a, 's> Builder<'a, 's> {
                 }
             });
         match value {
-            Some(value) => Some(self.emit(origin, ExprKind::Int(value), Ty::Int)),
+            Some(value) => {
+                let class = self.typing.known(Ty::Int, origin);
+                Some(self.emit(origin, ExprKind::Int(value), class))
+            }
             None => {
                 self.source.error(
                     literal,
@@ -710,31 +1054,6 @@ impl<'a, 's> Builder<'a, 's> {
             }
         }
     }
-    fn require(
-        &mut self,
-        node: NodeIdx,
-        expr: ExprId,
-        expected: impl Into<Term>,
-        related: Option<(Span, &'static str)>,
-    ) -> bool {
-        let expected = expected.into();
-        let actual = self.exprs[expr.index()].ty;
-        if actual == expected {
-            return true;
-        }
-        if let (Term::Known(actual), Term::Known(expected)) = (actual, expected) {
-            self.source.type_mismatch(node, expected, actual, related);
-            return false;
-        }
-        self.inference.equal(actual, expected);
-        self.obligations.push(Obligation {
-            owner: self.owner,
-            node,
-            actual,
-            kind: ObligationKind::Equal(expected, related),
-        });
-        true
-    }
     fn value(&self, node: NodeIdx) -> Option<ExprId> {
         self.values[node.to_usize()]
     }
@@ -742,37 +1061,24 @@ impl<'a, 's> Builder<'a, 's> {
         let tree = self.source.tree;
         match tree.kind(node) {
             NodeKind::Block => {
-                self.scopes.pop().unwrap();
-                let mut statements = Vec::new();
+                self.close_scope();
+                // Children arrive last first; only the first can be the tail.
+                // Completed statements are pending in source order, and
+                // nested blocks claimed theirs before reaching here, so the
+                // block's run of the body's list is filled backwards and
+                // reversed in place.
+                let start = self.statements.len();
                 let mut tail = None;
                 let mut valid = !tree.has_error(node);
-                // Children arrive last first; only the first can be the tail.
-                // Completed statements are stacked in source order. Nested
-                // blocks consume their own statements before reaching here.
                 for (index, child) in tree.children(node).enumerate() {
-                    if let Some((_, statement)) = self.statements.pop_if(|(node, _)| *node == child)
-                    {
-                        statements.push(statement);
+                    if let Some((_, statement)) = self.pending.pop_if(|(node, _)| *node == child) {
+                        self.statements.push(statement);
                     } else if let Some(value) = self.value(child) {
                         if index == 0 {
                             tail = Some(value);
                         } else {
-                            let ty = self.exprs[value.index()].ty;
-                            if let Term::Known(ty) = ty {
-                                if ty != Ty::Unit {
-                                    self.source.unused_value(child, ty);
-                                    valid = false;
-                                }
-                            } else {
-                                self.inference.equal(ty, Ty::Unit.into());
-                                self.obligations.push(Obligation {
-                                    owner: self.owner,
-                                    node: child,
-                                    actual: ty,
-                                    kind: ObligationKind::Unused,
-                                });
-                            }
-                            statements.push(Statement {
+                            self.demand(child, value, DemandKind::Unused);
+                            self.statements.push(Statement {
                                 origin: self.source.span(child),
                                 kind: StatementKind::Eval(value),
                             });
@@ -784,36 +1090,48 @@ impl<'a, 's> Builder<'a, 's> {
                 if !valid {
                     return None;
                 }
-                statements.reverse();
-                let ty = tail.map_or(Term::Known(Ty::Unit), |id| self.exprs[id.index()].ty);
-                self.emit(node, ExprKind::Block { statements, tail }, ty);
+                self.statements[start..].reverse();
+                let statements = Statements {
+                    start: run(start),
+                    end: run(self.statements.len()),
+                };
+                match tail {
+                    Some(tail) => {
+                        let kind = ExprKind::Block {
+                            statements,
+                            tail: Some(tail),
+                        };
+                        self.emit_from(node, kind, tail);
+                    }
+                    None => {
+                        let class = self.typing.known(Ty::Unit, node);
+                        self.emit(node, ExprKind::Block { statements, tail }, class);
+                    }
+                }
             }
             NodeKind::LetStmt => {
                 let binding = ast::LetStmt::cast(tree, node).unwrap();
                 let (name, name_node) = self.source.name(binding.name(tree))?;
                 let initializer_node = binding.initializer(tree).unwrap().node();
-                let mut initializer = self.value(initializer_node);
-                if let Some(annotation) = binding.type_ref(tree) {
-                    let ty = self.source.ty(annotation);
-                    if let (Some(value), Some(ty)) = (initializer, ty) {
-                        if !self.require(
-                            initializer_node,
-                            value,
-                            ty,
-                            Some((self.source.span(annotation.node()), "declared here")),
-                        ) {
-                            initializer = None;
+                let initializer = self.value(initializer_node);
+                // An annotated binding has its declared type whatever its
+                // initializer turns out to be; the initializer is held to it.
+                let class = match binding.type_ref(tree) {
+                    Some(annotation) => self.source.ty(annotation).map(|ty| {
+                        if let Some(value) = initializer {
+                            self.require(
+                                initializer_node,
+                                value,
+                                Expected::Ty(ty),
+                                Some(Related::Declared(annotation.node())),
+                            );
                         }
-                    } else {
-                        initializer = None;
-                    }
-                }
-                let local = self.bind(
-                    name,
-                    name_node,
-                    initializer.map(|id| self.exprs[id.index()].ty),
-                );
-                self.statements.push((
+                        self.typing.known(ty, annotation.node())
+                    }),
+                    None => initializer.map(|value| self.class(value)),
+                };
+                let local = self.bind(name, name_node, class);
+                self.pending.push((
                     node,
                     Statement {
                         origin: self.source.span(node),
@@ -829,7 +1147,7 @@ impl<'a, 's> Builder<'a, 's> {
                     .unwrap()
                     .value(tree)
                     .unwrap();
-                self.statements.push((
+                self.pending.push((
                     node,
                     Statement {
                         origin: self.source.span(node),
@@ -841,7 +1159,8 @@ impl<'a, 's> Builder<'a, 's> {
                 let name = self.source.text(node);
                 match self.lookup(name) {
                     Some(Some(local)) => {
-                        self.emit(node, ExprKind::Local(local), self.locals[local.index()].ty);
+                        let class = self.locals[local.index()].class;
+                        self.emit(node, ExprKind::Local(local), class);
                     }
                     Some(None) => return None,
                     None => {
@@ -865,11 +1184,9 @@ impl<'a, 's> Builder<'a, 's> {
                         self.integer(node, node, false)?;
                     }
                     _ if matches!(self.source.text(node), "true" | "false") => {
-                        self.emit(
-                            node,
-                            ExprKind::Bool(self.source.text(node) == "true"),
-                            Ty::Bool,
-                        );
+                        let value = self.source.text(node) == "true";
+                        let class = self.typing.known(Ty::Bool, node);
+                        self.emit(node, ExprKind::Bool(value), class);
                     }
                     _ => {
                         self.unsupported(node);
@@ -896,9 +1213,8 @@ impl<'a, 's> Builder<'a, 's> {
                     .tokens(tree.first_token(node), tree.first_token(operand))
                     .eq([SyntaxKind::Minus]);
                 let ty = if neg { Ty::Int } else { Ty::Bool };
-                if !self.require(operand, value, ty, None) {
-                    return None;
-                }
+                self.require(operand, value, Expected::Ty(ty), None);
+                let class = self.typing.known(ty, node);
                 self.emit(
                     node,
                     if neg {
@@ -906,7 +1222,7 @@ impl<'a, 's> Builder<'a, 's> {
                     } else {
                         ExprKind::Not(value)
                     },
-                    ty,
+                    class,
                 );
             }
             NodeKind::BinaryExpr => {
@@ -929,36 +1245,30 @@ impl<'a, 's> Builder<'a, 's> {
                     .expect("clean binary operator");
                 let lhs = self.value(lhs_node);
                 let rhs = self.value(rhs_node);
-                let (expected, ty) = match op {
-                    Add | Sub | Mul | Div | Rem => (Some(Term::Known(Ty::Int)), Ty::Int),
-                    Lt | Le | Gt | Ge => (Some(Term::Known(Ty::Int)), Ty::Bool),
-                    Eq | Ne => (lhs.or(rhs).map(|id| self.exprs[id.index()].ty), Ty::Bool),
-                    And | Or => (Some(Term::Known(Ty::Bool)), Ty::Bool),
+                // `==` and `!=` compare like with like: whichever operand
+                // exists sets the other's expectation.
+                let (operand, result) = match op {
+                    Add | Sub | Mul | Div | Rem => (Some(Expected::Ty(Ty::Int)), Ty::Int),
+                    Lt | Le | Gt | Ge => (Some(Expected::Ty(Ty::Int)), Ty::Bool),
+                    Eq | Ne => (
+                        lhs.or(rhs).map(|id| Expected::Class(self.class(id))),
+                        Ty::Bool,
+                    ),
+                    And | Or => (Some(Expected::Ty(Ty::Bool)), Ty::Bool),
                 };
-                let mut valid = true;
-                if let Some(expected) = expected {
+                if let Some(operand) = operand {
                     for (child, value) in [(lhs_node, lhs), (rhs_node, rhs)] {
                         if let Some(value) = value {
-                            valid &= self.require(child, value, expected, None);
+                            self.require(child, value, operand, None);
                         }
                     }
-                    if expected == Term::Known(Ty::Unit) {
-                        self.source.incomparable(node);
-                        valid = false;
-                    } else if matches!(op, Eq | Ne) && matches!(expected, Term::Var(_)) {
-                        self.obligations.push(Obligation {
-                            owner: self.owner,
-                            node,
-                            actual: expected,
-                            kind: ObligationKind::Comparable,
-                        });
+                    if let Some(operand) = lhs.or(rhs) {
+                        self.demand(node, operand, DemandKind::Comparable);
                     }
                 }
-                if !valid {
-                    return None;
-                }
                 let (lhs, rhs) = (lhs?, rhs?);
-                self.emit(node, ExprKind::binary(op, lhs, rhs), ty);
+                let class = self.typing.known(result, node);
+                self.emit(node, ExprKind::binary(op, lhs, rhs), class);
             }
             NodeKind::IfExpr => {
                 let branch = ast::IfExpr::cast(tree, node).unwrap();
@@ -968,43 +1278,34 @@ impl<'a, 's> Builder<'a, 's> {
                 let then_branch = self.value(then_node);
                 let else_node = branch.else_branch(tree).map(|e| e.node());
                 let else_branch = else_node.and_then(|n| self.value(n));
-                let mut valid = true;
                 if let Some(condition) = condition {
-                    valid &= self.require(condition_node, condition, Ty::Bool, None);
+                    self.require(condition_node, condition, Expected::Ty(Ty::Bool), None);
                 }
-                let else_ty = if else_node.is_some() {
-                    else_branch.map(|id| self.exprs[id.index()].ty)
-                } else {
-                    Some(Term::Known(Ty::Unit))
+                // The branches agree; without an else, the then branch is unit.
+                let expected = match else_node {
+                    Some(_) => else_branch.map(|id| Expected::Class(self.class(id))),
+                    None => Some(Expected::Ty(Ty::Unit)),
                 };
-                if let (Some(then_branch), Some(ty)) = (then_branch, else_ty) {
-                    valid &= self.require(
+                if let (Some(then_branch), Some(expected)) = (then_branch, expected) {
+                    self.require(
                         then_node,
                         then_branch,
-                        ty,
-                        else_node.map(|n| {
-                            (self.source.span(n), "other branch determines expected type")
-                        }),
+                        expected,
+                        else_node.map(Related::OtherBranch),
                     );
                 }
-                if !valid || (else_node.is_some() && else_branch.is_none()) {
+                if else_node.is_some() && else_branch.is_none() {
                     return None;
                 }
                 let then_branch = then_branch?;
-                // Preserve the equality class if either arm is inferred. A
-                // literal arm must not hide conflicts arriving through imports.
-                let ty = match (self.exprs[then_branch.index()].ty, else_ty) {
-                    (_, Some(ty @ Term::Var(_))) => ty,
-                    (ty, _) => ty,
-                };
-                self.emit(
+                self.emit_from(
                     node,
                     ExprKind::If {
                         condition: condition?,
                         then_branch,
                         else_branch,
                     },
-                    ty,
+                    then_branch,
                 );
             }
             _ => unreachable!("scheduled supported node"),
@@ -1012,49 +1313,64 @@ impl<'a, 's> Builder<'a, 's> {
         Some(())
     }
     fn call(&mut self, node: NodeIdx, target: FunctionId, callee: NodeIdx) -> Option<()> {
-        let function = &self.functions[target.0];
+        let function = &self.headers[target.index()];
         let params = function.params.as_ref()?;
+        let item = function.item;
+        let result = function.result;
         let tree = self.source.tree;
         let list = ast::CallExpr::cast(tree, node)
             .unwrap()
             .arg_list(tree)
             .unwrap();
-        let args: Vec<_> = list.args(tree).map(|arg| arg.node()).collect();
-        let mut valid = args.len() == params.len();
-        if !valid {
+        // Every argument that exists is held to its parameter, arity aside.
+        // Arguments finish before their call does, so a call's run of the
+        // body's argument list is contiguous.
+        let start = self.args.len();
+        let mut complete = true;
+        let mut count = 0;
+        for (index, arg) in list.args(tree).enumerate() {
+            count += 1;
+            let arg = arg.node();
+            match self.value(arg) {
+                Some(value) => {
+                    if let Some(&expected) = params.get(index) {
+                        self.require(
+                            arg,
+                            value,
+                            Expected::Ty(expected),
+                            Some(Related::Declared(item)),
+                        );
+                    }
+                    self.args.push(value);
+                }
+                None => complete = false,
+            }
+        }
+        if count != params.len() {
             self.source.error(
                 node,
                 codes::ARITY,
-                format!("expected {} arguments, found {}", params.len(), args.len()),
-                Some((function.origin, "declared here")),
+                format!("expected {} arguments, found {count}", params.len()),
+                Some((self.source.span(item), "declared here")),
             );
         }
-        for (&arg, &expected) in args.iter().zip(params) {
-            if let Some(value) = self.value(arg) {
-                valid &= self.require(
-                    arg,
-                    value,
-                    expected,
-                    Some((function.origin, "declared here")),
-                );
-            }
-        }
-        let args: Option<Vec<_>> = args.into_iter().map(|n| self.value(n)).collect();
-        if !valid {
+        if count != params.len() || !complete {
+            self.args.truncate(start);
             return None;
         }
-        let result = match function.result? {
-            term @ Term::Known(_) => term,
-            term @ Term::Var(_) => self.inference.import(term),
+        let args = Args {
+            start: run(start),
+            end: run(self.args.len()),
         };
+        let class = self.typing.call(result?, node);
         self.emit(
             node,
             ExprKind::Call {
                 function: target,
-                args: args?,
+                args,
                 callee: self.source.span(callee),
             },
-            result,
+            class,
         );
         Some(())
     }

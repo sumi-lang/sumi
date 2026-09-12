@@ -4,10 +4,12 @@ use sumi_hir::Ty;
 // Compile the actual private solver, without exporting a benchmark-only API.
 #[path = "support/graphs.rs"]
 mod graphs;
-// The harness-less bench omits #[test] functions, leaving their imports unused.
-#[allow(unused_imports)]
-#[path = "../src/infer.rs"]
-mod infer;
+#[allow(dead_code)]
+#[path = "../src/solver.rs"]
+mod solver;
+#[allow(dead_code)]
+#[path = "../src/typing.rs"]
+mod typing;
 
 fn solver(c: &mut Criterion) {
     for phase in ["solve", "replay-context", "build-solve-replay"] {

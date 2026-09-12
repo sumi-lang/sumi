@@ -104,7 +104,11 @@ pub fn validate(shape: &str, size: usize, analysis: &Analysis) {
     assert_eq!(analysis.functions().len(), functions);
     if matches!(shape, "unresolved-cycle" | "conflict-cycle") {
         assert!(!analysis.is_valid());
-        assert_eq!(analysis.diagnostics().len(), size);
+        // An unresolved result is reported at every function; a conflict is
+        // reported once at each end of the cycle that claims a type, and
+        // the functions between them inherit it silently.
+        let reports = if shape == "conflict-cycle" { 2 } else { size };
+        assert_eq!(analysis.diagnostics().len(), reports);
         assert!(
             analysis
                 .functions()

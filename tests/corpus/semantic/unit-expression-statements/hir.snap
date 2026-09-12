@@ -1,6 +1,6 @@
 file: rejected
 frontend errors: 0 (see frontend.snap)
-semantic errors: 13
+semantic errors: 15
 
 fn value@0..21 () -> int
   body: int 1 : int @20..21
@@ -69,10 +69,14 @@ error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
   primary @308..332
 error[semantic/unknown-name]: unknown name `missing`
   primary @371..378
+error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
+  primary @383..391
 error[semantic/type-mismatch]: expected int, found bool
   primary @387..391
 error[semantic/type-mismatch]: expected unit, found int
   primary @404..409
+error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
+  primary @448..467
 error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
   primary @450..457
 error[semantic/type-mismatch]: expected unit, found int

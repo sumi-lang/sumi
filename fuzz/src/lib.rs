@@ -52,7 +52,10 @@ pub fn check_semantics(parsed: ParsedSource) {
             .iter()
             .zip(reversed.functions().iter().rev())
         {
-            assert_eq!(a.name(), b.name());
+            assert_eq!(
+                a.name().map(|name| analysis.text(name)),
+                b.name().map(|name| reversed.text(name))
+            );
             assert_eq!(
                 a.signature().map(|s| (&s.params, s.result)),
                 b.signature().map(|s| (&s.params, s.result))
@@ -130,13 +133,14 @@ pub fn check_semantics(parsed: ParsedSource) {
                     edges.extend([*lhs, *rhs]);
                 }
                 ExprKind::Call { function, args, .. } => {
+                    let args = body.args(*args);
                     let signature = analysis.function(*function).signature().unwrap();
                     assert_eq!(expr.ty, signature.result);
                     assert_eq!(args.len(), signature.params.len());
                     for (&arg, &ty) in args.iter().zip(&signature.params) {
                         assert_eq!(body.expression(arg).ty, ty);
                     }
-                    edges.extend(args);
+                    edges.extend_from_slice(args);
                 }
                 ExprKind::If {
                     condition,
@@ -153,7 +157,7 @@ pub fn check_semantics(parsed: ParsedSource) {
                     edges.extend(else_branch);
                 }
                 ExprKind::Block { statements, tail } => {
-                    for statement in statements {
+                    for statement in body.statements(*statements) {
                         edges.push(match statement.kind {
                             StatementKind::Let { local, initializer } => {
                                 assert!(std::ptr::eq(

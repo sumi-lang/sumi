@@ -46,7 +46,7 @@
 //! expression.
 
 use sumi_lexer::{LexedFile, RawIdx};
-use sumi_text::{TextRange, TextSize};
+use sumi_text::TextRange;
 
 use crate::generated::{
     BRACKET_PAIRS, NodeKind, SyntaxKind, encloses_statements, opener, pair_index,
@@ -57,18 +57,6 @@ use crate::parser::{
     ParseAnchor, ParseEvidence, ParseExpected, ParseRecovery, ParseRecoveryKind, ParseViolation,
     ParseViolationKind, RawGap, RawTokenRange,
 };
-
-/// The byte offset where raw token `raw` begins, or the end of the source
-/// for the boundary one past the last token: how the raw token indices in
-/// trees and parse evidence project into the file. `lexed` must be the file
-/// the indices came from.
-pub fn raw_boundary(lexed: &LexedFile, raw: RawIdx) -> TextSize {
-    if raw == lexed.end() {
-        lexed.source_len()
-    } else {
-        lexed.range(raw).start()
-    }
-}
 
 /// One node: its kind, whether the parser recovered inside it, its subtree
 /// extent (self included), and the half-open range of raw token indices it
@@ -155,18 +143,23 @@ impl SyntaxTree {
         self.nodes[index.to_usize()].end_token
     }
 
+    /// The number of nodes in the subtree of `index`, itself included: what
+    /// a consumer that stores something per node of a construct sizes by.
+    pub fn subtree_len(&self, index: NodeIdx) -> usize {
+        self.nodes[index.to_usize()].extent as usize
+    }
+
     /// The byte range node `index` covers: from the start of its first
     /// token to the end of its last one. `lexed` must be the file this tree
     /// was parsed from. Only the root can be empty, over an empty file.
     pub fn byte_range(&self, index: NodeIdx, lexed: &LexedFile) -> TextRange {
+        // Tokens partition the source, so a node ends where the token past
+        // its last one begins.
         let node = &self.nodes[index.to_usize()];
-        let start = raw_boundary(lexed, node.first_token);
-        let end = if node.end_token > node.first_token {
-            lexed.range(node.end_token - 1).end()
-        } else {
-            start
-        };
-        TextRange::new(start, end)
+        TextRange::new(
+            lexed.boundary(node.first_token),
+            lexed.boundary(node.end_token),
+        )
     }
 
     /// The direct children of node `index`, last child first — the order a

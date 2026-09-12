@@ -1,5 +1,7 @@
-use crate::infer::{Inference, Term};
+use crate::solver::Var;
+use crate::typing::{Expected, Typing};
 use sumi_hir::Ty;
+use sumi_syntax::NodeIdx;
 
 pub const SIZES: [usize; 4] = [8, 128, 1024, 8192];
 pub const SHAPES: [&str; 11] = [
@@ -16,13 +18,26 @@ pub const SHAPES: [&str; 11] = [
     "scattered-fanout",
 ];
 
+/// Every claim of a benchmark graph is made at the same node: provenance
+/// costs the same wherever it points.
+const HERE: NodeIdx = NodeIdx::new(0);
+
 pub struct Graph {
-    pub context: Inference,
-    terms: Vec<Term>,
+    pub context: Typing,
+    terms: Vec<Var>,
+}
+
+/// Every term is `int`, unless the shape leaves it unresolved or conflicted.
+fn int(context: &mut Typing, term: Var) {
+    context.expect(term, Expected::Ty(Ty::Int), HERE);
+}
+
+fn equal(context: &mut Typing, term: Var, other: Var) {
+    context.expect(term, Expected::Class(other), HERE);
 }
 
 pub fn build(shape: &str, size: usize) -> Graph {
-    let mut context = Inference::default();
+    let mut context = Typing::default();
     let mut terms: Vec<_> = (0..size).map(|_| context.fresh()).collect();
     if shape == "chain-reverse" {
         terms.reverse();
@@ -31,38 +46,37 @@ pub fn build(shape: &str, size: usize) -> Graph {
         "scattered-fanout" => {
             let providers = size.div_ceil(32);
             for &term in &terms[..providers] {
-                context.equal(term, Ty::Int.into());
+                int(&mut context, term);
             }
             for i in 0..size {
                 // Interleave providers' edges and scatter destinations. The
                 // odd multiplier permutes our power-of-two benchmark sizes.
-                let call = context.import(terms[i % providers]);
-                context.equal(terms[(i * 4051) % size], call);
+                let call = context.call(terms[i % providers], HERE);
+                equal(&mut context, terms[(i * 4051) % size], call);
             }
         }
         "constant-imports" | "mixed-imports" => {
             for (i, &term) in terms.iter().enumerate() {
-                let provider = if shape == "mixed-imports" && i % 2 == 1 {
-                    terms[i - 1]
+                let call = if shape == "mixed-imports" && i % 2 == 1 {
+                    context.call(terms[i - 1], HERE)
                 } else {
-                    Ty::Int.into()
+                    context.known(Ty::Int, HERE)
                 };
-                let call = context.import(provider);
-                context.equal(term, call);
+                equal(&mut context, term, call);
             }
         }
         "fan-out" => {
-            context.equal(terms[0], Ty::Int.into());
+            int(&mut context, terms[0]);
             for &term in &terms[1..] {
-                let call = context.import(terms[0]);
-                context.equal(term, call);
+                let call = context.call(terms[0], HERE);
+                equal(&mut context, term, call);
             }
         }
         "fan-in" => {
             for &term in &terms[1..] {
-                context.equal(term, Ty::Int.into());
-                let call = context.import(term);
-                context.equal(terms[0], call);
+                int(&mut context, term);
+                let call = context.call(term, HERE);
+                equal(&mut context, terms[0], call);
             }
         }
         "equalities" => {
@@ -71,28 +85,28 @@ pub fn build(shape: &str, size: usize) -> Graph {
             while stride < size {
                 for i in (0..size).step_by(stride * 2) {
                     if i + stride < size {
-                        context.equal(terms[i], terms[i + stride]);
+                        equal(&mut context, terms[i], terms[i + stride]);
                     }
                 }
                 stride *= 2;
             }
-            context.equal(terms[0], Ty::Int.into());
+            int(&mut context, terms[0]);
         }
         _ => {
             assert!(SHAPES.contains(&shape));
             for i in 0..size - 1 {
-                let call = context.import(terms[i + 1]);
-                context.equal(terms[i], call);
+                let call = context.call(terms[i + 1], HERE);
+                equal(&mut context, terms[i], call);
             }
             if shape.ends_with("cycle") {
-                let call = context.import(terms[0]);
-                context.equal(terms[size - 1], call);
+                let call = context.call(terms[0], HERE);
+                equal(&mut context, terms[size - 1], call);
             }
             if shape != "unresolved-cycle" {
-                context.equal(terms[size - 1], Ty::Int.into());
+                int(&mut context, terms[size - 1]);
             }
             if shape == "conflict-cycle" {
-                context.equal(terms[0], Ty::Bool.into());
+                context.expect(terms[0], Expected::Ty(Ty::Bool), HERE);
             }
         }
     }
@@ -104,9 +118,9 @@ pub fn validate(shape: &str, graph: &Graph) {
         match shape {
             "unresolved-cycle" => {
                 assert_eq!(graph.context.resolve(term), None);
-                assert!(!graph.context.conflicted(term));
+                assert!(!graph.context.evidence(term).is_conflict());
             }
-            "conflict-cycle" => assert!(graph.context.conflicted(term)),
+            "conflict-cycle" => assert!(graph.context.evidence(term).is_conflict()),
             _ => assert_eq!(graph.context.resolve(term), Some(Ty::Int)),
         }
     }

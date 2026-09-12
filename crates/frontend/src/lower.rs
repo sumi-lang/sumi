@@ -5,7 +5,7 @@ use sumi_format::layout_violation_edits;
 use sumi_lexer::{LexError, LexErrorKind, LexedFile, TokenFlags, canonicalize_number_literal};
 use sumi_syntax::{
     Parse, ParseAnchor, ParseEvidence, ParseExpected, ParseRecovery, ParseRecoveryKind,
-    ParseViolation, ParseViolationKind, RawGap, RawTokenRange, SyntaxKind, raw_boundary,
+    ParseViolation, ParseViolationKind, RawGap, RawTokenRange, SyntaxKind,
 };
 use sumi_text::{FileId, Span, TextEdit, TextRange, TextSize};
 
@@ -34,7 +34,7 @@ impl Snapshot<'_> {
 
     fn anchor(&self, anchor: ParseAnchor) -> Location {
         match anchor {
-            ParseAnchor::Gap(gap) => self.point(raw_boundary(self.lexed, gap.trivia_end())),
+            ParseAnchor::Gap(gap) => self.point(self.lexed.boundary(gap.trivia_end())),
             ParseAnchor::Tokens(range) => self.raw_range(range),
         }
     }
@@ -238,7 +238,7 @@ fn closer_fix(
     }) {
         return None;
     }
-    let at = raw_boundary(lexed, gap.trivia_start());
+    let at = lexed.boundary(gap.trivia_start());
     let site = (kind, at.to_u32());
     // At one site a closer binds the innermost same-kind opener, regardless
     // of which diagnostic offered it. Fix that one now; a reparse can then
@@ -339,10 +339,7 @@ fn primary(code: DiagnosticCode, message: impl Into<Box<str>>, location: Locatio
 }
 
 fn lower_raw_range(range: RawTokenRange, lexed: &LexedFile) -> TextRange {
-    TextRange::new(
-        raw_boundary(lexed, range.start()),
-        raw_boundary(lexed, range.end()),
-    )
+    TextRange::new(lexed.boundary(range.start()), lexed.boundary(range.end()))
 }
 
 fn anchor_has_error(anchor: ParseAnchor, lexed: &LexedFile) -> bool {
