@@ -75,6 +75,8 @@ pub struct Machine<'a> {
     locals: Vec<Option<Value>>,
     steps: u64,
     max_depth: usize,
+    /// Set once the run ends; every later step returns it unchanged.
+    outcome: Option<Result<Value, Trap>>,
 }
 
 impl<'a> Machine<'a> {
@@ -98,6 +100,7 @@ impl<'a> Machine<'a> {
             locals: Vec::new(),
             steps: 0,
             max_depth: 0,
+            outcome: None,
         };
         machine.enter(function);
         machine
@@ -128,24 +131,22 @@ impl<'a> Machine<'a> {
     /// Do one unit of work: `None` while the run continues, otherwise its
     /// result. A finished machine keeps returning the result.
     pub fn step(&mut self) -> Option<Result<Value, Trap>> {
+        if self.outcome.is_some() {
+            return self.outcome;
+        }
         let Some(control) = self.control.pop() else {
-            return Some(Ok(*self
-                .values
-                .last()
-                .expect("a finished run has its value")));
+            let value = *self.values.last().expect("a finished run has its value");
+            self.outcome = Some(Ok(value));
+            return self.outcome;
         };
         self.steps += 1;
-        match self.apply(control) {
-            Ok(()) => None,
-            Err(trap) => {
-                // Leave the machine finished on the trap, so stepping past
-                // the end is harmless.
-                self.control.clear();
-                self.values.clear();
-                self.values.push(Value::Unit);
-                Some(Err(trap))
-            }
+        if let Err(trap) = self.apply(control) {
+            // The trap is the run's result from here on; the machine keeps
+            // its state at the trap for inspection.
+            self.control.clear();
+            self.outcome = Some(Err(trap));
         }
+        self.outcome
     }
 
     fn body(&self) -> &'a Body {

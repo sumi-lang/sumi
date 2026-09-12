@@ -1,5 +1,5 @@
 == tree ==
-SourceFile 0..330
+SourceFile 0..548
   FnItem 0..43
     Name 3..7 "pair"
     ParamList 7..23
@@ -32,73 +32,113 @@ SourceFile 0..330
           ArgList 93..99
             LiteralExpr 94..95 "3"
             LiteralExpr 97..98 "4"
-  FnItem 101..243
-    Name 104..114 "statements"
-    ParamList 114..116 "()"
-    TypeRef 120..123 "int"
-    Block 124..243
-      LetStmt 130..139
-        Name 134..135 "a"
-        LiteralExpr 138..139 "1"
-      LetStmt 144..157
-        Name 148..149 "b"
-        BinaryExpr 152..157
-          NameRef 152..153 "a"
-          LiteralExpr 156..157 "1"
-      LetStmt 162..176
-        Name 166..167 "a"
-        BinaryExpr 170..176
-          NameRef 170..171 "b"
-          LiteralExpr 174..176 "10"
-      DiscardStmt 181..203
-        BinaryExpr 185..203
-          BinaryExpr 185..195
-            BinaryExpr 185..190
-              NameRef 185..186 "a"
-              LiteralExpr 189..190 "0"
-            LiteralExpr 194..195 "0"
-          LiteralExpr 199..203 "true"
-      IfExpr 208..241
-        BinaryExpr 211..216
-          NameRef 211..212 "a"
-          NameRef 215..216 "b"
-        Block 217..226
-          BinaryExpr 219..224
-            NameRef 219..220 "a"
-            NameRef 223..224 "b"
-        Block 232..241
-          BinaryExpr 234..239
-            NameRef 234..235 "b"
-            NameRef 238..239 "a"
-  FnItem 244..291
-    Name 247..255 "operands"
-    ParamList 255..257 "()"
-    TypeRef 261..264 "int"
-    BinaryExpr 267..291
-      BinaryExpr 267..279
-        BinaryExpr 267..275
-          LiteralExpr 267..270 "100"
-          LiteralExpr 273..275 "10"
-        LiteralExpr 278..279 "1"
-      BinaryExpr 282..291
-        BinaryExpr 282..287
-          LiteralExpr 282..283 "2"
-          LiteralExpr 286..287 "3"
-        LiteralExpr 290..291 "4"
-  FnItem 292..329
-    Name 295..301 "truthy"
-    ParamList 301..303 "()"
-    TypeRef 307..311 "bool"
-    BinaryExpr 314..329
-      ParenExpr 314..321
-        BinaryExpr 315..320
-          LiteralExpr 315..316 "1"
-          LiteralExpr 319..320 "2"
-      LiteralExpr 325..329 "true"
+  FnItem 101..177
+    Name 104..129 "left_argument_traps_first"
+    ParamList 129..131 "()"
+    TypeRef 135..138 "int"
+    CallExpr 141..177
+      NameRef 141..145 "pair"
+      ArgList 145..177
+        BinaryExpr 146..151
+          LiteralExpr 146..147 "1"
+          LiteralExpr 150..151 "0"
+        BinaryExpr 153..176
+          LiteralExpr 153..172 "9223372036854775807"
+          LiteralExpr 175..176 "1"
+  FnItem 178..252
+    Name 181..205 "left_operand_traps_first"
+    ParamList 205..207 "()"
+    TypeRef 211..214 "int"
+    BinaryExpr 217..252
+      ParenExpr 217..224
+        BinaryExpr 218..223
+          LiteralExpr 218..219 "1"
+          LiteralExpr 222..223 "0"
+      ParenExpr 227..252
+        BinaryExpr 228..251
+          LiteralExpr 228..247 "9223372036854775807"
+          LiteralExpr 250..251 "2"
+  FnItem 253..318
+    Name 256..274 "right_trap_reached"
+    ParamList 274..276 "()"
+    TypeRef 280..283 "int"
+    CallExpr 286..318
+      NameRef 286..290 "pair"
+      ArgList 290..318
+        LiteralExpr 291..292 "1"
+        BinaryExpr 294..317
+          LiteralExpr 294..313 "9223372036854775807"
+          LiteralExpr 316..317 "1"
+  FnItem 319..461
+    Name 322..332 "statements"
+    ParamList 332..334 "()"
+    TypeRef 338..341 "int"
+    Block 342..461
+      LetStmt 348..357
+        Name 352..353 "a"
+        LiteralExpr 356..357 "1"
+      LetStmt 362..375
+        Name 366..367 "b"
+        BinaryExpr 370..375
+          NameRef 370..371 "a"
+          LiteralExpr 374..375 "1"
+      LetStmt 380..394
+        Name 384..385 "a"
+        BinaryExpr 388..394
+          NameRef 388..389 "b"
+          LiteralExpr 392..394 "10"
+      DiscardStmt 399..421
+        BinaryExpr 403..421
+          BinaryExpr 403..413
+            BinaryExpr 403..408
+              NameRef 403..404 "a"
+              LiteralExpr 407..408 "0"
+            LiteralExpr 412..413 "0"
+          LiteralExpr 417..421 "true"
+      IfExpr 426..459
+        BinaryExpr 429..434
+          NameRef 429..430 "a"
+          NameRef 433..434 "b"
+        Block 435..444
+          BinaryExpr 437..442
+            NameRef 437..438 "a"
+            NameRef 441..442 "b"
+        Block 450..459
+          BinaryExpr 452..457
+            NameRef 452..453 "b"
+            NameRef 456..457 "a"
+  FnItem 462..509
+    Name 465..473 "operands"
+    ParamList 473..475 "()"
+    TypeRef 479..482 "int"
+    BinaryExpr 485..509
+      BinaryExpr 485..497
+        BinaryExpr 485..493
+          LiteralExpr 485..488 "100"
+          LiteralExpr 491..493 "10"
+        LiteralExpr 496..497 "1"
+      BinaryExpr 500..509
+        BinaryExpr 500..505
+          LiteralExpr 500..501 "2"
+          LiteralExpr 504..505 "3"
+        LiteralExpr 508..509 "4"
+  FnItem 510..547
+    Name 513..519 "truthy"
+    ParamList 519..521 "()"
+    TypeRef 525..529 "bool"
+    BinaryExpr 532..547
+      ParenExpr 532..539
+        BinaryExpr 533..538
+          LiteralExpr 533..534 "1"
+          LiteralExpr 537..538 "2"
+      LiteralExpr 543..547 "true"
 
 == formatted ==
 fn pair(a: int, b: int) -> int = a * 10 + b
 fn left_to_right() -> int = pair(pair(1, 2), pair(3, 4))
+fn left_argument_traps_first() -> int = pair(1 / 0, 9223372036854775807 + 1)
+fn left_operand_traps_first() -> int = (1 % 0) - (9223372036854775807 * 2)
+fn right_trap_reached() -> int = pair(1, 9223372036854775807 + 1)
 fn statements() -> int {
     let a = 1
     let b = a + 1

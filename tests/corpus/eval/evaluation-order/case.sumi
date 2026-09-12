@@ -1,5 +1,8 @@
 fn pair(a: int, b: int) -> int = a * 10 + b
 fn left_to_right() -> int = pair(pair(1, 2), pair(3, 4))
+fn left_argument_traps_first() -> int = pair(1 / 0, 9223372036854775807 + 1)
+fn left_operand_traps_first() -> int = (1 % 0) - (9223372036854775807 * 2)
+fn right_trap_reached() -> int = pair(1, 9223372036854775807 + 1)
 fn statements() -> int {
     let a = 1
     let b = a + 1

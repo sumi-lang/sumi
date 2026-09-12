@@ -77,11 +77,28 @@ fn calls_recursion_and_evaluation_order() {
 fn twenty() -> int = fib(20)
 fn sub(a: int, b: int) -> int = a - b
 fn ordered() -> int = sub(sub(10, 3), sub(2, 1))
+fn args_left_first() -> int = sub(1 / 0, 9223372036854775807 + 1)
+fn operands_left_first() -> int = (1 % 0) + (9223372036854775807 * 2)
+fn args_before_the_call() -> int = sub(9223372036854775807 + 1, forever(0))
+fn forever(n: int) -> int = forever(n + 1)
 fn even(n: int) -> bool = if n == 0 { true } else { odd(n - 1) }
 fn odd(n: int) -> bool = if n == 0 { false } else { even(n - 1) }
 fn parity() -> bool = even(1000) && !even(999)";
     assert_eq!(run(source, "twenty"), Ok(Value::Int(6765)));
     assert_eq!(run(source, "ordered"), Ok(Value::Int(6)));
+    // Competing traps: the left one happens, so the right one never does.
+    assert_eq!(
+        trap_of(source, run(source, "args_left_first")),
+        (TrapKind::DivisionByZero, "1 / 0")
+    );
+    assert_eq!(
+        trap_of(source, run(source, "operands_left_first")),
+        (TrapKind::DivisionByZero, "1 % 0")
+    );
+    assert_eq!(
+        trap_of(source, run(source, "args_before_the_call")),
+        (TrapKind::Overflow, "9223372036854775807 + 1")
+    );
     assert_eq!(run(source, "parity"), Ok(Value::Bool(true)));
 }
 
@@ -187,15 +204,23 @@ fn stepping_is_observable_and_idempotent_at_the_end() {
 }
 
 #[test]
-fn a_trapped_machine_stays_trapped() {
-    let source = "fn boom() -> int = 1 / 0";
+fn a_trapped_machine_keeps_reporting_its_trap() {
+    let source = "fn boom() -> int = inner(1) + 2\nfn inner(x: int) -> int = x / 0";
     let analysis = analysis(source);
     let program = Program::new(&analysis).unwrap();
     let mut machine = Machine::new(program, program.function_named("boom").unwrap(), &[]);
-    let trap = machine.run_to_end();
-    assert_eq!(trap.map(|_| ()).unwrap_err().kind, TrapKind::DivisionByZero);
-    assert_eq!(machine.step(), Some(Ok(Value::Unit)));
-    assert_eq!(machine.depth(), 1);
+    let outcome = machine.run_to_end();
+    assert_eq!(
+        trap_of(source, outcome),
+        (TrapKind::DivisionByZero, "x / 0")
+    );
+    let steps = machine.steps();
+    for _ in 0..3 {
+        assert_eq!(machine.step(), Some(outcome));
+    }
+    assert_eq!(machine.steps(), steps);
+    // The frames stay where the trap happened.
+    assert_eq!(machine.depth(), 2);
 }
 
 #[test]
