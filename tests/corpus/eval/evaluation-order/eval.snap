@@ -1,0 +1,6 @@
+file: accepted
+fn pair: takes arguments, not run
+fn left_to_right = 154 (steps 41, depth 2)
+fn statements traps [eval/division-by-zero] at `a / 0` @185..190 (steps 23, depth 1)
+fn operands = 87 (steps 17, depth 1)
+fn truthy = true (steps 8, depth 1)

@@ -139,6 +139,10 @@ impl Analysis {
     pub fn functions(&self) -> &[Function] {
         &self.functions
     }
+    /// Every function's ID, in declaration order: the index into `functions()`.
+    pub fn function_ids(&self) -> impl ExactSizeIterator<Item = FunctionId> + use<> {
+        (0..u32::try_from(self.functions.len()).expect("function count fits u32")).map(FunctionId)
+    }
     /// An ID must come from this analysis, not another source revision.
     pub fn function(&self, id: FunctionId) -> &Function {
         &self.functions[id.index()]

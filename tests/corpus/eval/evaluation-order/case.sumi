@@ -1,0 +1,11 @@
+fn pair(a: int, b: int) -> int = a * 10 + b
+fn left_to_right() -> int = pair(pair(1, 2), pair(3, 4))
+fn statements() -> int {
+    let a = 1
+    let b = a + 1
+    let a = b * 10
+    _ = a / 0 == 0 || true
+    if a > b { a - b } else { b - a }
+}
+fn operands() -> int = 100 - 10 - 1 - 2 * 3 % 4
+fn truthy() -> bool = (1 < 2) == true

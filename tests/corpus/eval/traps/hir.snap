@@ -1,0 +1,50 @@
+file: accepted
+frontend errors: 0 (see frontend.snap)
+semantic errors: 0
+
+fn divide_by_zero@0..40 () -> int
+  body: eager / : int @29..40
+    lhs: int 1 : int @29..30
+    rhs: eager - : int @34..39
+      lhs: int 2 : int @34..35
+      rhs: int 2 : int @38..39
+
+fn remainder_by_zero@41..78 () -> int
+  body: eager % : int @73..78
+    lhs: int 7 : int @73..74
+    rhs: int 0 : int @77..78
+
+fn add_overflow@79..129 () -> int
+  body: eager + : int @106..129
+    lhs: int 9223372036854775807 : int @106..125
+    rhs: int 1 : int @128..129
+
+fn negate_minimum@130..180 () -> int
+  body: negate : int @159..180
+    operand: int -9223372036854775808 : int @160..180
+
+fn divide_minimum@181..235 () -> int
+  body: eager / : int @210..235
+    lhs: int -9223372036854775808 : int @210..230
+    rhs: int -1 : int @233..235
+
+fn guarded@236..278 () -> bool
+  body: lazy and : bool @259..278
+    lhs: bool false : bool @259..264
+    rhs: eager == : bool @268..278
+      lhs: eager / : int @268..273
+        lhs: int 1 : int @268..269
+        rhs: int 0 : int @272..273
+      rhs: int 0 : int @277..278
+
+fn after_a_trap@279..317 (int) -> int
+  param n@295..296: int
+  body: eager / : int @312..317
+    lhs: read n@295..296 : int @312..313
+    rhs: int 0 : int @316..317
+
+fn trap_in_a_callee@318..368 () -> int
+  body: eager + : int @349..368
+    lhs: int 1 : int @349..350
+    rhs: call after_a_trap@279..317 (callee @353..365) : int @353..368
+      arg[0]: int 3 : int @366..367

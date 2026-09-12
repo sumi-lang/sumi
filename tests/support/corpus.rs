@@ -4,10 +4,11 @@ use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Stage {
     Frontend,
     Hir,
+    Eval,
 }
 
 impl Stage {
@@ -15,18 +16,22 @@ impl Stage {
         match self {
             Self::Frontend => "frontend.snap",
             Self::Hir => "hir.snap",
+            Self::Eval => "eval.snap",
         }
     }
     fn update(self) -> &'static str {
         match self {
             Self::Frontend => "UPDATE_FRONTEND",
             Self::Hir => "UPDATE_HIR",
+            Self::Eval => "UPDATE_EVAL",
         }
     }
-    fn selected(self, hir: bool) -> bool {
+    /// The name a `stages` line spells; the frontend needs no selection.
+    fn name(self) -> Option<&'static str> {
         match self {
-            Self::Frontend => true,
-            Self::Hir => hir,
+            Self::Frontend => None,
+            Self::Hir => Some("hir"),
+            Self::Eval => Some("eval"),
         }
     }
 }
@@ -48,15 +53,29 @@ fn directories_holding(dir: &Path, file: &str, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// `stages` is deliberately just `hir`, not a general configuration language.
-/// Frontend coverage is unconditional. Expected files never select a stage.
-fn hir_selected(case: &Path) -> Result<bool, String> {
+/// `stages` is deliberately a list of stage names, one per line, not a
+/// general configuration language. Frontend coverage is unconditional.
+/// Expected files never select a stage.
+fn stage_selected(case: &Path, stage: Stage) -> Result<bool, String> {
+    let Some(name) = stage.name() else {
+        return Ok(true);
+    };
     match fs::read_to_string(case.join("stages")) {
-        Ok(text) if text.trim() == "hir" => Ok(true),
-        Ok(_) => Err(format!(
-            "{}: stages must contain exactly `hir`",
-            case.display()
-        )),
+        Ok(text) => {
+            let mut selected = false;
+            for line in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
+                match line {
+                    "hir" | "eval" => selected |= line == name,
+                    other => {
+                        return Err(format!(
+                            "{}: stages lists `hir` and `eval`, one per line, not `{other}`",
+                            case.display()
+                        ));
+                    }
+                }
+            }
+            Ok(selected)
+        }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
         Err(error) => Err(format!("{}: {error}", case.join("stages").display())),
     }
@@ -88,9 +107,8 @@ pub fn verify(
     let mut failures = Vec::new();
     let mut selected = 0;
     for case in &cases {
-        let hir = hir_selected(case)?;
         let path = case.join(stage.filename());
-        if !stage.selected(hir) {
+        if !stage_selected(case, stage)? {
             if path.exists() {
                 failures.push(format!(
                     "{}: snapshot for an unselected stage",
@@ -221,12 +239,28 @@ fn selection_is_independent_of_snapshots_and_updates_are_stage_local() {
                 .contains("missing snapshot")
         );
     }
+    assert!(
+        verify(root.path(), Stage::Eval, false, render)
+            .unwrap_err()
+            .contains("no cases selected")
+    );
     verify(root.path(), Stage::Frontend, true, render).unwrap();
     assert!(!case.join("hir.snap").exists());
     verify(root.path(), Stage::Hir, true, render).unwrap();
     for stage in [Stage::Frontend, Stage::Hir] {
         verify(root.path(), stage, false, render).unwrap();
     }
+    fs::write(case.join("stages"), "hir\neval\n").unwrap();
+    verify(root.path(), Stage::Hir, false, render).unwrap();
+    assert!(
+        verify(root.path(), Stage::Eval, false, render)
+            .unwrap_err()
+            .contains("missing snapshot")
+    );
+    verify(root.path(), Stage::Eval, true, render).unwrap();
+    verify(root.path(), Stage::Eval, false, render).unwrap();
+    fs::remove_file(case.join("eval.snap")).unwrap();
+    fs::write(case.join("stages"), "hir\n").unwrap();
     fs::remove_file(case.join("hir.snap")).unwrap();
     assert!(
         verify(root.path(), Stage::Hir, false, render)
@@ -254,7 +288,7 @@ fn malformed_metadata_or_orphan_products_fail_even_in_update_mode() {
     assert!(
         verify(root.path(), Stage::Hir, true, render)
             .unwrap_err()
-            .contains("exactly `hir`")
+            .contains("not `hri`")
     );
     fs::write(case.join("stages"), "hir\n").unwrap();
     let orphan = root.path().join("orphan");

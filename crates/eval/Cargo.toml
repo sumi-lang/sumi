@@ -1,16 +1,10 @@
 [package]
-name = "sumi-cli"
+name = "sumi-eval"
 version = "0.1.0"
 edition = "2024"
 license.workspace = true
 
-[[bin]]
-name = "sumi"
-path = "src/main.rs"
-
 [dependencies]
-sumi-eval = { path = "../eval" }
-sumi-format = { path = "../format" }
 sumi-frontend = { path = "../frontend" }
 sumi-hir = { path = "../hir" }
 sumi-text = { path = "../text" }

@@ -1,0 +1,74 @@
+file: accepted
+frontend errors: 0 (see frontend.snap)
+semantic errors: 0
+
+fn pair@0..43 (int, int) -> int
+  param a@8..9: int
+  param b@16..17: int
+  body: eager + : int @33..43
+    lhs: eager * : int @33..39
+      lhs: read a@8..9 : int @33..34
+      rhs: int 10 : int @37..39
+    rhs: read b@16..17 : int @42..43
+
+fn left_to_right@44..100 () -> int
+  body: call pair@0..43 (callee @72..76) : int @72..100
+    arg[0]: call pair@0..43 (callee @77..81) : int @77..87
+      arg[0]: int 1 : int @82..83
+      arg[1]: int 2 : int @85..86
+    arg[1]: call pair@0..43 (callee @89..93) : int @89..99
+      arg[0]: int 3 : int @94..95
+      arg[1]: int 4 : int @97..98
+
+fn statements@101..243 () -> int
+  body: block : int @124..243
+    let a@134..135: int @130..139
+      initializer: int 1 : int @138..139
+    let b@148..149: int @144..157
+      initializer: eager + : int @152..157
+        lhs: read a@134..135 : int @152..153
+        rhs: int 1 : int @156..157
+    let a@166..167: int @162..176
+      initializer: eager * : int @170..176
+        lhs: read b@148..149 : int @170..171
+        rhs: int 10 : int @174..176
+    discard @181..203
+      value: lazy or : bool @185..203
+        lhs: eager == : bool @185..195
+          lhs: eager / : int @185..190
+            lhs: read a@166..167 : int @185..186
+            rhs: int 0 : int @189..190
+          rhs: int 0 : int @194..195
+        rhs: bool true : bool @199..203
+    tail: if : int @208..241
+      condition: eager > : bool @211..216
+        lhs: read a@166..167 : int @211..212
+        rhs: read b@148..149 : int @215..216
+      then: block : int @217..226
+        tail: eager - : int @219..224
+          lhs: read a@166..167 : int @219..220
+          rhs: read b@148..149 : int @223..224
+      else: block : int @232..241
+        tail: eager - : int @234..239
+          lhs: read b@148..149 : int @234..235
+          rhs: read a@166..167 : int @238..239
+
+fn operands@244..291 () -> int
+  body: eager - : int @267..291
+    lhs: eager - : int @267..279
+      lhs: eager - : int @267..275
+        lhs: int 100 : int @267..270
+        rhs: int 10 : int @273..275
+      rhs: int 1 : int @278..279
+    rhs: eager % : int @282..291
+      lhs: eager * : int @282..287
+        lhs: int 2 : int @282..283
+        rhs: int 3 : int @286..287
+      rhs: int 4 : int @290..291
+
+fn truthy@292..329 () -> bool
+  body: eager == : bool @314..329
+    lhs: eager < : bool @315..320
+      lhs: int 1 : int @315..316
+      rhs: int 2 : int @319..320
+    rhs: bool true : bool @325..329

@@ -1,0 +1,73 @@
+== tree ==
+SourceFile 0..369
+  FnItem 0..40
+    Name 3..17 "divide_by_zero"
+    ParamList 17..19 "()"
+    TypeRef 23..26 "int"
+    BinaryExpr 29..40
+      LiteralExpr 29..30 "1"
+      ParenExpr 33..40
+        BinaryExpr 34..39
+          LiteralExpr 34..35 "2"
+          LiteralExpr 38..39 "2"
+  FnItem 41..78
+    Name 44..61 "remainder_by_zero"
+    ParamList 61..63 "()"
+    TypeRef 67..70 "int"
+    BinaryExpr 73..78
+      LiteralExpr 73..74 "7"
+      LiteralExpr 77..78 "0"
+  FnItem 79..129
+    Name 82..94 "add_overflow"
+    ParamList 94..96 "()"
+    TypeRef 100..103 "int"
+    BinaryExpr 106..129
+      LiteralExpr 106..125 "9223372036854775807"
+      LiteralExpr 128..129 "1"
+  FnItem 130..180
+    Name 133..147 "negate_minimum"
+    ParamList 147..149 "()"
+    TypeRef 153..156 "int"
+    PrefixExpr 159..180
+      PrefixExpr 160..180
+        LiteralExpr 161..180 "9223372036854775808"
+  FnItem 181..235
+    Name 184..198 "divide_minimum"
+    ParamList 198..200 "()"
+    TypeRef 204..207 "int"
+    BinaryExpr 210..235
+      PrefixExpr 210..230
+        LiteralExpr 211..230 "9223372036854775808"
+      PrefixExpr 233..235
+        LiteralExpr 234..235 "1"
+  FnItem 236..278
+    Name 239..246 "guarded"
+    ParamList 246..248 "()"
+    TypeRef 252..256 "bool"
+    BinaryExpr 259..278
+      LiteralExpr 259..264 "false"
+      BinaryExpr 268..278
+        BinaryExpr 268..273
+          LiteralExpr 268..269 "1"
+          LiteralExpr 272..273 "0"
+        LiteralExpr 277..278 "0"
+  FnItem 279..317
+    Name 282..294 "after_a_trap"
+    ParamList 294..302
+      Param 295..301
+        Name 295..296 "n"
+        TypeRef 298..301 "int"
+    TypeRef 306..309 "int"
+    BinaryExpr 312..317
+      NameRef 312..313 "n"
+      LiteralExpr 316..317 "0"
+  FnItem 318..368
+    Name 321..337 "trap_in_a_callee"
+    ParamList 337..339 "()"
+    TypeRef 343..346 "int"
+    BinaryExpr 349..368
+      LiteralExpr 349..350 "1"
+      CallExpr 353..368
+        NameRef 353..365 "after_a_trap"
+        ArgList 365..368
+          LiteralExpr 366..367 "3"

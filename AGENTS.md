@@ -9,7 +9,7 @@ You're in the core repository for Sumi, a novel statically typed general-purpose
 
 ## Crates
 
-- Dependencies point one way: `sumi-text`, then `sumi-lexer`, `sumi-syntax`, and above them `sumi-format`, `sumi-diagnostics`, and `sumi-frontend`. `sumi-hir` sits above the immutable frontend and owns semantic checking. `sumi-test` (generators and edits, nothing above the parser), `sumi-scorecard` (the recovery scorecard, above everything), and `xtask` (codegen, which depends on no workspace crate so it runs while they do not compile) are leaves that nothing ships.
+- Dependencies point one way: `sumi-text`, then `sumi-lexer`, `sumi-syntax`, and above them `sumi-format`, `sumi-diagnostics`, and `sumi-frontend`. `sumi-hir` sits above the immutable frontend and owns semantic checking, and `sumi-eval` above it is the definitional interpreter: an explicit-stack machine over the HIR of a valid file, which `sumi run` drives. `sumi-test` (generators and edits, nothing above the parser), `sumi-scorecard` (the recovery scorecard, above everything), and `xtask` (codegen, which depends on no workspace crate so it runs while they do not compile) are leaves that nothing ships.
 - A crate's integration tests may use crates above it, which Cargo allows. A library's unit tests never import a crate above it: rust-analyzer's crate graph has no room for that cycle and drops the edge without a word, leaving those tests unresolved in the editor.
 
 ## Formatting
@@ -24,7 +24,7 @@ You're in the core repository for Sumi, a novel statically typed general-purpose
 ## Tests
 
 - `tests/corpus/` at the workspace root is the shared file-based corpus. Every case directory holds `case.sumi` and `frontend.snap`, keeping the tree, parser evidence, frontend diagnostics, fixed source, and formatted source together. `crates/frontend/tests/corpus.rs` runs every case; generate or update snapshots with `UPDATE_FRONTEND=1 cargo test -p sumi-frontend --test corpus`.
-- For semantic-focused cases and useful recovery witnesses, not every syntax fixture, add a `stages` file containing exactly `hir` to select an additional `hir.snap`. Snapshot presence does not select a stage. Generate or update HIR snapshots with `UPDATE_HIR=1 cargo test -p sumi-hir --test corpus`. Keep huge stress inputs out of golden snapshots. Review every generated diff.
+- For semantic-focused cases and useful recovery witnesses, not every syntax fixture, add a `stages` file listing `hir` to select an additional `hir.snap`, and `eval` (one name per line) to select an `eval.snap` that runs every parameterless function of an accepted case to its value or trap, with the machine's step count and deepest call nesting. Snapshot presence does not select a stage. Generate or update them with `UPDATE_HIR=1 cargo test -p sumi-hir --test corpus` and `UPDATE_EVAL=1 cargo test -p sumi-eval --test corpus`. Keep huge stress inputs out of golden snapshots. Review every generated diff.
 - Behavior that a snapshot cannot express — invariants, API contracts, properties — stays in the crates' own tests.
 - `crates/syntax/tests/coverage.rs` checks that the corpus and `sumi-test`'s program generator each reach every node kind and every child `sumi.grammar` allows, through the witnesses codegen writes to `crates/test/src/generated/mod.rs`. A grammar change therefore needs a corpus case and generator support before CI passes; the failure names what is missing.
 

@@ -1,0 +1,6 @@
+fn fib(n: int) -> int = if n < 2 { n } else { fib(n - 1) + fib(n - 2) }
+fn fib_15() -> int = fib(15)
+fn count(n: int) -> int = if n == 0 { 0 } else { 1 + count(n - 1) }
+fn deep() -> int = count(10000)
+fn forever(n: int) -> int = forever(n + 1)
+fn too_deep() -> int = forever(0)

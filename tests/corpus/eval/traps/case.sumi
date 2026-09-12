@@ -1,0 +1,8 @@
+fn divide_by_zero() -> int = 1 / (2 - 2)
+fn remainder_by_zero() -> int = 7 % 0
+fn add_overflow() -> int = 9223372036854775807 + 1
+fn negate_minimum() -> int = --9223372036854775808
+fn divide_minimum() -> int = -9223372036854775808 / -1
+fn guarded() -> bool = false && 1 / 0 == 0
+fn after_a_trap(n: int) -> int = n / 0
+fn trap_in_a_callee() -> int = 1 + after_a_trap(3)
