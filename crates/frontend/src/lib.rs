@@ -7,8 +7,10 @@
 
 mod lower;
 
-#[path = "generated/codes.rs"]
-pub mod codes;
+mod generated {
+    pub mod codes;
+}
+pub use generated::codes;
 
 pub use sumi_diagnostics::{
     Applicability, Diagnostic, DiagnosticCode, DiagnosticGroup, Fix, Label, Location, Place,

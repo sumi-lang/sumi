@@ -8,8 +8,10 @@ mod check;
 mod solver;
 mod typing;
 
-#[path = "generated/codes.rs"]
-pub mod codes;
+mod generated {
+    pub mod codes;
+}
+pub use generated::codes;
 
 #[cfg(test)]
 mod tests;
