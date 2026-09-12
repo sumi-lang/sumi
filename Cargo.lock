@@ -699,6 +699,7 @@ version = "0.1.0"
 dependencies = [
  "codspeed-criterion-compat",
  "proptest",
+ "sumi-diagnostics",
  "sumi-frontend",
  "sumi-lexer",
  "sumi-syntax",

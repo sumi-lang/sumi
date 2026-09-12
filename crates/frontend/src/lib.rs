@@ -7,6 +7,7 @@
 
 mod lower;
 
+#[path = "generated/codes.rs"]
 pub mod codes;
 
 pub use sumi_diagnostics::{

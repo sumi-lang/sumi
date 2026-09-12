@@ -8,6 +8,7 @@ mod check;
 mod solver;
 mod typing;
 
+#[path = "generated/codes.rs"]
 pub mod codes;
 
 #[cfg(test)]

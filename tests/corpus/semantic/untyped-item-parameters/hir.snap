@@ -1,0 +1,9 @@
+file: rejected
+frontend errors: 2 (see frontend.snap)
+semantic errors: 0
+
+fn id@0..12 signature: unavailable
+  body: unavailable
+
+fn add@13..45 signature: unavailable
+  body: unavailable
