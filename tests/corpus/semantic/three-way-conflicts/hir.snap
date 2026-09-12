@@ -1,0 +1,29 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 3
+
+fn a@123..158 signature: unavailable
+  body: unavailable
+
+fn b@159..197 signature: unavailable
+  body: unavailable
+
+fn c@198..234 signature: unavailable
+  body: unavailable
+
+== semantic diagnostics ==
+error[semantic/cannot-infer]: function result is both int, bool, and unit; add a return type annotation
+  primary @123..158
+  secondary @142..143: int here
+  secondary @153..156: bool here
+  secondary @153..156: unit here
+error[semantic/cannot-infer]: function result is both bool, int, and unit; add a return type annotation
+  primary @159..197
+  secondary @178..182: bool here
+  secondary @192..195: int here
+  secondary @192..195: unit here
+error[semantic/cannot-infer]: function result is both unit, int, and bool; add a return type annotation
+  primary @198..234
+  secondary @217..219: unit here
+  secondary @229..232: int here
+  secondary @229..232: bool here

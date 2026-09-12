@@ -1,0 +1,51 @@
+== tree ==
+SourceFile 0..289
+  FnItem 143..183
+    Name 146..151 "valid"
+    ParamList 151..159
+      Param 152..158
+        Name 152..153 "x"
+        TypeRef 155..158 "int"
+    TypeRef 163..166 "str"
+    InterpolatedString 169..183
+      Hole 172..175
+        NameRef 173..174 "x"
+      Hole 177..180
+        NameRef 178..179 "x"
+  FnItem 184..226
+    Name 187..194 "invalid"
+    ParamList 194..202
+      Param 195..201
+        Name 195..196 "x"
+        TypeRef 198..201 "int"
+    TypeRef 206..209 "str"
+    InterpolatedString 212..226
+      Hole 215..218
+        NameRef 216..217 "x"
+      Hole 220..223
+        NameRef 221..222 "x"
+  FnItem 227..273
+    Name 230..242 "unterminated"
+    ParamList 242..250
+      Param 243..249
+        Name 243..244 "x"
+        TypeRef 246..249 "int"
+    TypeRef 254..257 "str"
+    InterpolatedString 260..273
+      Hole 263..266
+        NameRef 264..265 "x"
+      Hole 268..271
+        NameRef 269..270 "x"
+  FnItem 274..288
+    Name 277..282 "after"
+    ParamList 282..284 "()"
+    LiteralExpr 287..288 "1"
+
+== diagnostics ==
+error[syntax/unknown-escape] 4:30..4:32 "\\q": unknown escape sequence
+error[syntax/unknown-escape] 4:35..4:37 "\\q": unknown escape sequence
+error[syntax/unknown-escape] 4:40..4:42 "\\q": unknown escape sequence
+error[syntax/unterminated-string] 5:34..5:37 "\"\\q": unterminated string literal
+error[syntax/unknown-escape] 5:35..5:37 "\\q": unknown escape sequence
+error[syntax/unknown-escape] 5:40..5:42 "\\q": unknown escape sequence
+error[syntax/unknown-escape] 5:45..5:47 "\\q": unknown escape sequence
