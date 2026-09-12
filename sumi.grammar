@@ -18,6 +18,10 @@
 //   fuzz/sumi.dict                      the libFuzzer dictionary: every
 //                                       fixed token text and compound
 //                                       operator, and the lexer's texts
+//   crates/test/src/generated/mod.rs    the coverage witnesses: one per
+//                                       child a node rule allows, which
+//                                       the corpus and the program
+//                                       generator must each reach
 //
 // CI runs `cargo xtask codegen --check` and fails when any of them drifts.
 //

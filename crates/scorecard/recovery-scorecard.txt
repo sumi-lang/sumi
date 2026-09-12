@@ -29,28 +29,28 @@ Reading the numbers:
 recovery-scorecard
 
 == Part A: recovery scorecard ==
-7614 programs generated; 10000 measured pairs per class; preservation is
+7404 programs generated; 10000 measured pairs per class; preservation is
 over untouched top-level items (edits guarding none are counted apart).
 
 class                   edits  guarded  pres_mean  pres_p95  pres_min
-delete/delimiter        10000     4811    1.00000   1.00000   1.00000
-delete/non-delim        10000     4866    1.00000   1.00000   1.00000
-duplicate/delimiter     10000     4793    1.00000   1.00000   1.00000
-duplicate/non-delim     10000     4882    1.00000   1.00000   1.00000
-swap/delimiter          10000     4711    1.00000   1.00000   1.00000
-swap/non-delim          10000     4913    1.00000   1.00000   1.00000
-insert/delimiter        10000     4874    1.00000   1.00000   1.00000
-insert/non-delim        10000     4886    1.00000   1.00000   1.00000
+delete/delimiter        10000     4833    1.00000   1.00000   1.00000
+delete/non-delim        10000     4838    1.00000   1.00000   1.00000
+duplicate/delimiter     10000     4805    1.00000   1.00000   1.00000
+duplicate/non-delim     10000     4845    1.00000   1.00000   1.00000
+swap/delimiter          10000     4774    1.00000   1.00000   1.00000
+swap/non-delim          10000     4846    1.00000   1.00000   1.00000
+insert/delimiter        10000     4858    1.00000   1.00000   1.00000
+insert/non-delim        10000     4843    1.00000   1.00000   1.00000
 
 class                  diags_mean diags_p95  skipped_mean skipped_p95  evidence_mean evidence_p95
-delete/delimiter            1.666         3        52.421         284          1.666            3
-delete/non-delim            0.916         2        17.229         104          0.916            2
-duplicate/delimiter         1.509         3        46.199         271          1.509            3
-duplicate/non-delim         1.296         3        14.701          93          1.296            3
-swap/delimiter              1.518         3        33.365         188          1.518            3
-swap/non-delim              1.437         3        26.621         157          1.435            3
-insert/delimiter            1.668         4        42.340         248          1.668            4
-insert/non-delim            1.264         3        21.166         125          1.260            3
+delete/delimiter            2.151         5        55.978         300          2.151            5
+delete/non-delim            1.000         2        22.475         134          1.000            2
+duplicate/delimiter         1.914         5        48.108         285          1.914            5
+duplicate/non-delim         1.354         3        20.509         123          1.354            3
+swap/delimiter              1.789         4        41.709         228          1.789            4
+swap/non-delim              1.509         3        30.710         180          1.509            3
+insert/delimiter            1.990         5        47.402         266          1.990            5
+insert/non-delim            1.360         3        25.798         150          1.357            3
 
 == Part B: delimiter-breaking churn over clean corpora ==
 churn = original significant tokens (edit site excluded) whose partner()

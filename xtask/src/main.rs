@@ -45,7 +45,7 @@ fn workspace_root() -> PathBuf {
 }
 
 /// The files derived from the grammar, as `(path, content)`.
-fn generated(grammar: &grammar::Grammar) -> Result<[(&'static str, String); 5], String> {
+fn generated(grammar: &grammar::Grammar) -> Result<[(&'static str, String); 6], String> {
     Ok([
         (
             "crates/lexer/src/generated/mod.rs",
@@ -64,6 +64,10 @@ fn generated(grammar: &grammar::Grammar) -> Result<[(&'static str, String); 5], 
             codegen::reference(grammar),
         ),
         ("fuzz/sumi.dict", codegen::dictionary(grammar)),
+        (
+            "crates/test/src/generated/mod.rs",
+            codegen::rustfmt(&codegen::coverage(grammar))?,
+        ),
     ])
 }
 
@@ -181,6 +185,7 @@ mod tests {
         assert!(codegen::syntax_kind(&grammar).contains("pub enum NodeKind"));
         assert!(codegen::ast(&grammar).contains("pub trait AstNode"));
         assert!(codegen::reference(&grammar).contains("## Syntax nodes"));
+        assert!(codegen::coverage(&grammar).contains("pub const WITNESSES"));
         let dictionary = codegen::dictionary(&grammar);
         assert!(dictionary.contains("FnKw=\"fn\""));
         assert!(dictionary.contains("\n\"//\"\n"), "{dictionary}");

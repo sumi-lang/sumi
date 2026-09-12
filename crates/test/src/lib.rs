@@ -7,13 +7,17 @@
 //! measuring it must draw from the same distributions; the recovery
 //! scorecard in `sumi-scorecard` is one. The layout perturbation rewrites a
 //! program's trivia in every way a formatter must ignore, for its
-//! canonical-form property. Nothing here ships in the compiler:
+//! canonical-form property. The coverage account says whether a body of
+//! trees, the corpus or the generator's, reaches everything the grammar
+//! allows. Nothing here ships in the compiler:
 //! production crates must not depend on this one, and it depends on
 //! nothing above the parser.
 
 pub mod corpus;
+pub mod coverage;
 mod edit;
 mod front;
+mod generated;
 mod perturb;
 mod program;
 

@@ -25,6 +25,7 @@ You're in the core repository for Sumi, a novel statically typed general-purpose
 - `tests/corpus/` at the workspace root is the shared file-based corpus. Every case directory holds `case.sumi` and `frontend.snap`, keeping the tree, parser evidence, frontend diagnostics, fixed source, and formatted source together. `crates/frontend/tests/corpus.rs` runs every case; generate or update snapshots with `UPDATE_FRONTEND=1 cargo test -p sumi-frontend --test corpus`.
 - For semantic-focused cases and useful recovery witnesses, not every syntax fixture, add a `stages` file containing exactly `hir` to select an additional `hir.snap`. Snapshot presence does not select a stage. Generate or update HIR snapshots with `UPDATE_HIR=1 cargo test -p sumi-hir --test corpus`. Keep huge stress inputs out of golden snapshots. Review every generated diff.
 - Behavior that a snapshot cannot express — invariants, API contracts, properties — stays in the crates' own tests.
+- `crates/syntax/tests/coverage.rs` checks that the corpus and `sumi-test`'s program generator each reach every node kind and every child `sumi.grammar` allows, through the witnesses codegen writes to `crates/test/src/generated/mod.rs`. A grammar change therefore needs a corpus case and generator support before CI passes; the failure names what is missing.
 
 ## Fuzzing
 
