@@ -231,6 +231,12 @@ fn closer_fix(
             // Braces also control the lexer's hole depth. Conservatively
             // withhold them in holes rather than change a later brace's role.
             || (kind == SyntaxKind::RBrace && lexed.flags(token).contains(TokenFlags::HOLE_AFTER))
+            // A quote in a hole closes the literal unless the rest of its
+            // line closes a string begun there, escapes included. After a
+            // stray backslash the inserted closer would be such an escape,
+            // and a quote before the insertion would change its role.
+            || (lexed.flags(token).contains(TokenFlags::HOLE_AFTER)
+                && lexed.text(snapshot.source, token) == "\\")
             || matches!(
                 lexed.kind(token),
                 SyntaxKind::StringStart | SyntaxKind::StringMiddle | SyntaxKind::HoleClose
