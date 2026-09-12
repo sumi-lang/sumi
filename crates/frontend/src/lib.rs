@@ -7,9 +7,7 @@
 
 mod lower;
 
-mod generated {
-    pub mod codes;
-}
+mod generated;
 pub use generated::codes;
 
 pub use sumi_diagnostics::{
