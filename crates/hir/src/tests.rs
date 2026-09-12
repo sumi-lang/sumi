@@ -270,17 +270,45 @@ fn mismatch_labels_distinguish_branches_from_declarations() {
     for (source, expected) in [
         (
             "fn f() -> int = if true { 1 } else { false }",
-            "other branch determines expected type",
+            &["int here", "bool here"][..],
         ),
-        ("fn f() -> bool = 1", "declared here"),
-        ("fn f() { let x: bool = 1 }", "declared here"),
+        ("fn f() -> bool = 1", &["declared here"]),
+        ("fn f() { let x: bool = 1 }", &["declared here"]),
     ] {
         let a = check(source);
         assert_eq!(codes(&a), [TYPE_MISMATCH]);
-        let labels = &a.diagnostics[0].secondary;
-        assert_eq!(labels.len(), 1);
-        assert_eq!(labels[0].message.as_deref(), Some(expected));
+        let labels: Vec<_> = a.diagnostics[0]
+            .secondary
+            .iter()
+            .map(|label| label.message.as_deref().unwrap())
+            .collect();
+        assert_eq!(labels, expected, "{source}");
     }
+}
+
+/// A disagreement between branches is reported once, at the `if`, and
+/// leaves the `if` undetermined: nothing that takes its type is held to a
+/// type it never had, while the branches keep their own.
+#[test]
+fn disagreeing_branches_are_undetermined_not_the_first_branch() {
+    for result in ["bool", "int"] {
+        let a = check(&format!(
+            "fn f(c: bool) -> {result} = {{ let x = if c {{ 1 }} else {{ true }}\n x }}"
+        ));
+        assert_eq!(codes(&a), [TYPE_MISMATCH], "{result}");
+        assert_eq!(
+            a.diagnostics[0].message.as_ref(),
+            "if branches are int and bool"
+        );
+    }
+    let a = check(
+        "fn f() -> bool = { let a = 1\n let b = true\n _ = if a == 1 { a } else { b }\n !a }",
+    );
+    assert_eq!(codes(&a), [TYPE_MISMATCH, TYPE_MISMATCH]);
+    assert_eq!(
+        a.diagnostics[1].message.as_ref(),
+        "expected bool, found int"
+    );
 }
 
 #[test]

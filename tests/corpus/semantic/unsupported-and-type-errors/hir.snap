@@ -17,7 +17,7 @@ fn mismatch@122..147 () -> bool
 fn branches@148..199 () -> int
   body: unavailable
 
-fn missing_else@200..233 signature: unavailable
+fn missing_else@200..233 () -> unit
   body: unavailable
 
 fn annotation@234..269 () -> unit
@@ -41,9 +41,10 @@ error[semantic/unsupported]: construct is not supported by scalar checking
 error[semantic/type-mismatch]: expected bool, found int
   primary @146..147
   secondary @139..143: declared here
-error[semantic/type-mismatch]: expected bool, found int
-  primary @179..184
-  secondary @190..199: other branch determines expected type
+error[semantic/type-mismatch]: if branches are int and bool
+  primary @171..199
+  secondary @181..182: int here
+  secondary @192..197: bool here
 error[semantic/type-mismatch]: expected unit, found int
   primary @228..233
 error[semantic/type-mismatch]: expected bool, found int

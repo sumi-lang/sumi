@@ -42,9 +42,10 @@ error[semantic/cannot-infer]: function result is both bool and int; add a return
 error[semantic/type-mismatch]: expected bool, found int
   primary @126..135
   secondary @119..123: declared here
-error[semantic/type-mismatch]: expected bool, found int
-  primary @158..171
-  secondary @177..186: other branch determines expected type
+error[semantic/type-mismatch]: if branches are int and bool
+  primary @150..186
+  secondary @160..169: int here
+  secondary @179..184: bool here
 error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
   primary @203..212
 error[semantic/type-mismatch]: unit values cannot be compared

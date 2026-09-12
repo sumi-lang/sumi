@@ -24,6 +24,7 @@ error[semantic/type-mismatch]: expected bool, found int
   primary @75..76
 error[semantic/unknown-name]: unknown name `missing_then`
   primary @112..124
-error[semantic/type-mismatch]: expected bool, found int
-  primary @170..175
-  secondary @181..190: other branch determines expected type
+error[semantic/type-mismatch]: if branches are int and bool
+  primary @162..190
+  secondary @172..173: int here
+  secondary @183..188: bool here

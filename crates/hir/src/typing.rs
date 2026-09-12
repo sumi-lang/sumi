@@ -6,9 +6,15 @@
 //! each came from. A call is a flow from the callee's result class into the
 //! call expression's class, and the evidence crossing it is relabeled to the
 //! call site, so no origin ever points outside the declaration that owns the
-//! class. A conflict whose every claim arrived through a flow is inherited:
+//! class. A conflict whose every claim arrived through a call is inherited:
 //! it was already a conflict where it arose, and is reported there, once. A
 //! class with a claim of its own in the conflict reports it.
+//!
+//! An `if` with an else owns a class its branches flow into, unchanged, and
+//! never unify with. Branches that disagree make a conflict on the `if`
+//! alone, reported there with each branch's origin; the branches keep their
+//! own types, and whatever takes the `if`'s type resolves to nothing rather
+//! than to whichever branch came first.
 //!
 //! A claim on a class is one word: its rank, which is also its identity. The
 //! node it was made at lives in a table on the [`Typing`], consulted only
@@ -40,6 +46,17 @@ pub(crate) struct Claim(NonZeroU32);
 const IMPORTED: u32 = 1 << 31;
 
 impl Claim {
+    /// The claim made `index` claims into the walk.
+    fn local(index: usize) -> Self {
+        let rank = u32::try_from(index + 1).expect("claim count fits u32");
+        assert!(rank < IMPORTED, "claim count fits below the imported bit");
+        Self(NonZeroU32::new(rank).unwrap())
+    }
+
+    /// The one claim a replay makes: it records no origin, since nothing is
+    /// reported from where a replay's evidence came.
+    const REPLAYED: Self = Self(NonZeroU32::MAX);
+
     fn imported(self) -> bool {
         self.0.get() & IMPORTED != 0
     }
@@ -60,7 +77,7 @@ pub(crate) struct Evidence {
 impl Evidence {
     fn single(ty: Ty, claim: Claim) -> Self {
         let mut evidence = Self::bottom();
-        evidence.claims[slot(ty)] = Some(claim);
+        evidence.claims[ty as usize] = Some(claim);
         evidence
     }
 
@@ -100,16 +117,17 @@ impl Evidence {
     }
 }
 
-fn slot(ty: Ty) -> usize {
-    match ty {
-        Ty::Int => 0,
-        Ty::Bool => 1,
-        Ty::Unit => 2,
+/// Evidence slots are indexed by discriminant, in the order `Ty::ALL` lists.
+const _: () = {
+    let mut index = 0;
+    while index < Ty::ALL.len() {
+        assert!(Ty::ALL[index] as usize == index);
+        index += 1;
     }
-}
+};
 
 impl Lattice for Evidence {
-    type Edge = Claim;
+    type Edge = Edge;
 
     fn bottom() -> Self {
         Self {
@@ -130,13 +148,28 @@ impl Lattice for Evidence {
         grew
     }
 
-    /// Crossing a call: the same types, all claimed at the call site.
-    fn transfer(&self, call: &Claim) -> Self {
-        let imported = Claim(call.0 | IMPORTED);
-        Self {
-            claims: self.claims.map(|claim| claim.map(|_| imported)),
+    fn transfer(&self, edge: &Edge) -> Self {
+        match *edge {
+            Edge::Branch => *self,
+            Edge::Call(call) => {
+                let imported = Claim(call.0 | IMPORTED);
+                Self {
+                    claims: self.claims.map(|claim| claim.map(|_| imported)),
+                }
+            }
         }
     }
+}
+
+/// What evidence crosses when it flows into a class.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Edge {
+    /// A call, from the callee's result: the same types, all claimed at the
+    /// call site.
+    Call(Claim),
+    /// A branch joining its `if`, within one declaration: the claims as they
+    /// are.
+    Branch,
 }
 
 /// What a demand asks of an expression: a fixed type, or the type of another
@@ -145,12 +178,6 @@ impl Lattice for Evidence {
 pub(crate) enum Expected {
     Ty(Ty),
     Class(Var),
-}
-
-fn claim(count: &mut u32) -> Claim {
-    *count += 1;
-    assert!(*count < IMPORTED, "claim count fits below the imported bit");
-    Claim(NonZeroU32::new(*count).unwrap())
 }
 
 #[derive(Default)]
@@ -172,15 +199,14 @@ impl Typing {
     }
 
     fn claim(&mut self, node: NodeIdx) -> Claim {
-        let mut count = u32::try_from(self.origins.len()).expect("claim count fits u32");
-        let claim = claim(&mut count);
+        let claim = Claim::local(self.origins.len());
         self.origins.push(node);
         claim
     }
 
-    /// The node `claim` was made at.
-    pub fn origin(&self, claim: Claim) -> NodeIdx {
-        self.origins[claim.index()]
+    /// The node `claim` was made at; none for a replay's own claims.
+    pub fn origin(&self, claim: Claim) -> Option<NodeIdx> {
+        self.origins.get(claim.index()).copied()
     }
 
     /// A class nothing is known about yet.
@@ -199,7 +225,13 @@ impl Typing {
     /// `result`.
     pub fn call(&mut self, result: Var, node: NodeIdx) -> Var {
         let claim = self.claim(node);
-        self.solver.import(result, claim)
+        self.solver.import(result, Edge::Call(claim))
+    }
+
+    /// Let `branch` decide `join`, the class of the `if` it is one arm of,
+    /// without learning anything from the other arm.
+    pub fn branch(&mut self, branch: Var, join: Var) {
+        self.solver.flow(branch, join, Edge::Branch);
     }
 
     /// The use at `node` demands that `var` be `expected`.
@@ -231,38 +263,44 @@ impl Typing {
     /// facts, and the calls whose callee result is solved. Replaying demands
     /// on it one at a time, in source order, blames a disagreement on the
     /// first demand that raised it. An unresolved or conflicted callee
-    /// delivers nothing: it is reported at its declaration.
+    /// delivers nothing: it is reported at its declaration. A branch is
+    /// settled by [`Replay::branch`] when its `if` comes up in that order,
+    /// since what it delivers is shaped by the demands before it.
     pub fn replay(&self) -> Replay {
-        Replay {
-            solver: self
-                .solver
-                .replay(|evidence, call| evidence.ty().map(|ty| Evidence::single(ty, *call))),
-            claims: u32::try_from(self.origins.len()).expect("claim count fits u32"),
-        }
+        Replay(self.solver.replay(|evidence, edge| match edge {
+            Edge::Call(_) => evidence.ty().is_some().then(|| evidence.transfer(edge)),
+            Edge::Branch => None,
+        }))
     }
 }
 
 /// A [`Typing::replay`]: the classes again, to be handed the demands in
-/// order. Its claims are ranked after every claim of the typing and record
-/// no source, since nothing is reported from where a replay's evidence came.
-pub(crate) struct Replay {
-    solver: Solver<Evidence>,
-    claims: u32,
-}
+/// order. Its own claims record no origin; the claims flows delivered do.
+pub(crate) struct Replay(Solver<Evidence>);
 
 impl Replay {
+    pub fn evidence(&self, var: Var) -> &Evidence {
+        self.0.evidence(var)
+    }
+
     pub fn resolve(&self, var: Var) -> Option<Ty> {
-        self.solver.evidence(var).ty()
+        self.evidence(var).ty()
+    }
+
+    /// Settle a branch flow: what `branch` is so far, delivered to `join`,
+    /// the class of its `if`, as a solved call is delivered.
+    pub fn branch(&mut self, branch: Var, join: Var) {
+        let evidence = *self.evidence(branch);
+        if evidence.ty().is_some() {
+            self.0.expect(join, &evidence.transfer(&Edge::Branch));
+        }
     }
 
     /// One demand, replayed.
     pub fn expect(&mut self, var: Var, expected: Expected) {
         match expected {
-            Expected::Ty(ty) => {
-                let claim = claim(&mut self.claims);
-                self.solver.expect(var, &Evidence::single(ty, claim));
-            }
-            Expected::Class(class) => self.solver.equal(var, class),
+            Expected::Ty(ty) => self.0.expect(var, &Evidence::single(ty, Claim::REPLAYED)),
+            Expected::Class(class) => self.0.equal(var, class),
         }
     }
 }
@@ -316,15 +354,15 @@ mod tests {
             let claims = evidence.claims();
             assert_eq!(claims.len(), 2);
             assert_eq!(claims[0].0, types[0].0);
-            assert_eq!(typing.origin(claims[0].1), at(types[0].1));
-            assert_eq!(typing.origin(claims[1].1), at(types[1].1));
+            assert_eq!(typing.origin(claims[0].1), Some(at(types[0].1)));
+            assert_eq!(typing.origin(claims[1].1), Some(at(types[1].1)));
             let downstream = typing.evidence(downstream);
             assert!(downstream.is_conflict() && downstream.inherited());
             assert!(
                 downstream
                     .claims()
                     .iter()
-                    .all(|(_, c)| typing.origin(*c) == at(30))
+                    .all(|(_, c)| typing.origin(*c) == Some(at(30)))
             );
         }
     }
@@ -341,11 +379,14 @@ mod tests {
         assert!(evidence.is_conflict() && !evidence.inherited());
         let claims = evidence.claims();
         assert_eq!(claims.len(), 3);
-        assert_eq!((claims[0].0, typing.origin(claims[0].1)), (Ty::Unit, at(3)));
+        assert_eq!(
+            (claims[0].0, typing.origin(claims[0].1)),
+            (Ty::Unit, Some(at(3)))
+        );
         assert!(
             claims[1..]
                 .iter()
-                .all(|(_, claim)| typing.origin(*claim) == at(2))
+                .all(|(_, claim)| typing.origin(*claim) == Some(at(2)))
         );
     }
 
@@ -356,7 +397,47 @@ mod tests {
         let call = typing.call(provider, at(1));
         typing.expect(call, Expected::Ty(Ty::Int), at(2));
         typing.solve();
-        assert_eq!(typing.origin(typing.evidence(call).claims()[0].1), at(2));
+        assert_eq!(
+            typing.origin(typing.evidence(call).claims()[0].1),
+            Some(at(2))
+        );
+    }
+
+    #[test]
+    fn branches_decide_their_if_and_keep_their_origins() {
+        let mut typing = typing();
+        let then_branch = typing.known(Ty::Int, at(0));
+        let else_branch = typing.known(Ty::Bool, at(1));
+        let join = typing.fresh();
+        typing.branch(then_branch, join);
+        typing.branch(else_branch, join);
+        let call = typing.call(join, at(2));
+        typing.solve();
+        assert_eq!(typing.resolve(then_branch), Some(Ty::Int));
+        assert_eq!(typing.resolve(else_branch), Some(Ty::Bool));
+        let evidence = typing.evidence(join);
+        assert!(evidence.is_conflict() && !evidence.inherited());
+        let origins: Vec<_> = evidence
+            .claims()
+            .into_iter()
+            .map(|(ty, claim)| (ty, typing.origin(claim).unwrap()))
+            .collect();
+        assert_eq!(origins, [(Ty::Int, at(0)), (Ty::Bool, at(1))]);
+        assert!(typing.evidence(call).inherited());
+        // A replay settles the branches when asked, from what the branches
+        // are in the replay; a demand refused before then does not reach
+        // the `if`.
+        let mut replay = typing.replay();
+        assert_eq!(replay.resolve(join), None);
+        assert_eq!(replay.resolve(call), None);
+        replay.branch(then_branch, join);
+        assert_eq!(replay.resolve(join), Some(Ty::Int));
+        replay.branch(else_branch, join);
+        assert!(replay.evidence(join).is_conflict());
+        assert_eq!(
+            replay.evidence(join).claims(),
+            typing.evidence(join).claims()
+        );
     }
 
     #[test]

@@ -203,8 +203,10 @@ impl<L: Lattice> Solver<L> {
 
     /// Settle every flow: propagate evidence along the flow graph until no
     /// class changes. Call once every equality is in; a flow between classes
-    /// unioned afterwards is not revisited. Each class grows a bounded number
-    /// of times, so the work is linear in the flows for a bounded lattice.
+    /// unioned afterwards is not revisited. A class is visited once for each
+    /// time it grows while not already waiting, and a visit scans its
+    /// outgoing flows, so the work is bounded by the flows times the height
+    /// of the lattice.
     pub fn solve(&mut self) {
         let n = self.parent.len();
         for id in 0..n {
@@ -220,18 +222,29 @@ impl<L: Lattice> Solver<L> {
             edges.push((consumer, index, outgoing[provider]));
             outgoing[provider] = NonZeroUsize::new(edges.len());
         }
+        // A class waits in the queue at most once however often it grows
+        // before its turn: a join can improve evidence in ways no transfer
+        // passes on, and every visit rescans every outgoing flow. Only a
+        // provider with something to deliver is worth a visit.
         let bottom = L::bottom();
-        let mut queue: VecDeque<usize> = (0..n)
-            .filter(|&id| self.parent[id] as usize == id && self.evidence[id] != bottom)
-            .collect();
+        let mut queued = vec![false; n];
+        let mut queue = VecDeque::new();
+        for id in 0..n {
+            if outgoing[id].is_some() && self.evidence[id] != bottom {
+                queued[id] = true;
+                queue.push_back(id);
+            }
+        }
         while let Some(provider) = queue.pop_front() {
+            queued[provider] = false;
             let evidence = self.evidence[provider].clone();
             let mut edge = outgoing[provider];
             while let Some(index) = edge {
                 let (consumer, flow, next) = edges[index.get() - 1];
                 edge = next;
                 let delivered = evidence.transfer(&self.flows[flow].2);
-                if self.evidence[consumer].join(&delivered) {
+                if self.evidence[consumer].join(&delivered) && !queued[consumer] {
+                    queued[consumer] = true;
                     queue.push_back(consumer);
                 }
             }
