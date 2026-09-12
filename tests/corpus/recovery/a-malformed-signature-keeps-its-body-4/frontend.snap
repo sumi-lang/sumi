@@ -12,3 +12,8 @@ Expected(LParen) at 4
 == diagnostics ==
 error[syntax/expected-token] 1:5: expected `(`
   at 1:5..1:6 ")": skipped while recovering
+
+== formatted ==
+fn a) {
+    a
+}

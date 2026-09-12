@@ -6,3 +6,8 @@ SourceFile 0..23
     TypeRef 10..13 "Int"
     Block 18..23
       LiteralExpr 20..21 "1"
+
+== formatted ==
+fn f() -> Int {
+    1
+}

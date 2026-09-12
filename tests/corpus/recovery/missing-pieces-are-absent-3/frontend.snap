@@ -12,3 +12,6 @@ Expected(Colon) at 6
 
 == diagnostics ==
 error[syntax/expected-token] 1:7: expected `:`
+
+== formatted ==
+fn f(a) {}

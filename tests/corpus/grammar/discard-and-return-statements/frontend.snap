@@ -10,3 +10,9 @@ SourceFile 0..30
           ArgList 16..19
             LiteralExpr 17..18 "1"
       ReturnStmt 22..28 "return"
+
+== formatted ==
+fn f() {
+    _ = g(1)
+    return
+}

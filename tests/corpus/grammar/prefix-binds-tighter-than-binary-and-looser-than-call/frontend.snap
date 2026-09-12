@@ -8,3 +8,8 @@ SourceFile 0..17
         PrefixExpr 9..11
           NameRef 10..11 "a"
         NameRef 14..15 "b"
+
+== formatted ==
+fn f() {
+    -a * b
+}

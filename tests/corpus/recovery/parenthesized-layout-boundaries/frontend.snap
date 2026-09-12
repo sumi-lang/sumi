@@ -60,3 +60,16 @@ fn missing_rhs() -> int = (1 +
 fn unmatched() -> int = (1 +
     2)
 fn survivor() -> int = 3
+
+== formatted ==
+fn outside() -> int = 1 + 2
+fn block() -> int = (
+    {
+        1 + 2
+    }
+)
+fn missing_rhs() -> int = (
+    1 +
+)
+fn unmatched() -> int = (1 + 2
+fn survivor() -> int = 3

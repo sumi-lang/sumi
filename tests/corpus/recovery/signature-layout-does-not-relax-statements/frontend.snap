@@ -96,7 +96,7 @@ fn closure() = fn
 () = 1
 fn survivor() {}
 
-== normalized ==
+== formatted ==
 fn binding() {
     let x
     = 1

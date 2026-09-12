@@ -8,3 +8,8 @@ SourceFile 0..16
         NameRef 9..10 "f"
         ArgList 10..13
           LiteralExpr 11..12 "1"
+
+== formatted ==
+fn f() {
+    f(1)
+}

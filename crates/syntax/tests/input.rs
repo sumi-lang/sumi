@@ -538,3 +538,25 @@ fn unmatched_brackets_remain_unpaired_regardless_of_grammar() {
         ],
     );
 }
+
+#[test]
+fn would_end_statement_restates_the_boundary_rule() {
+    for source in [
+        "fn f() {\n  a\n  b\n  (c)\n  + d\n  return\n  x\n}\nfn g() = a\nfn h() {}",
+        "fn f() { let x = (a\n b) }\nfn g() { a\n -b\n - c\n }",
+        "fn f() { \"{a\n b}\" } fn g(",
+        "fn f() { a } else { }\n// c\nx y",
+    ] {
+        let lexed = lex(source).unwrap();
+        let input = ParserInput::new(&lexed);
+        for index in input.indices() {
+            assert_eq!(
+                input.boundary_before(index),
+                input.newline_before(index) && input.would_end_statement(index),
+                "{source:?} at {index:?}"
+            );
+        }
+        assert!(!input.would_end_statement(SigIdx::new(0)));
+        assert!(!input.would_end_statement(input.end()));
+    }
+}

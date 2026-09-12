@@ -17,3 +17,7 @@ error[syntax/expected-token] 1:16: expected `)`
   at 1:10..1:11 "(": opening delimiter is here
 error[syntax/expected-token] 1:16: expected `}`
   at 1:8..1:9 "{": opening delimiter is here
+
+== formatted ==
+fn f() {
+    ("tail

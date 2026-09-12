@@ -10,3 +10,7 @@ Expected(FnKw) at 7
 
 == diagnostics ==
 error[syntax/expected-token] 2:1: expected `fn`
+
+== formatted ==
+// doc
+f() {}

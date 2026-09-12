@@ -74,3 +74,29 @@ SourceFile 0..293
     Name 280..285 "empty"
     ParamList 285..287 "()"
     Block 290..292 "{}"
+
+== formatted ==
+fn a() = if true {
+    1
+} else {
+    b()
+}
+fn b() = if true {
+    true
+} else {
+    a()
+}
+fn consumer() -> int = a()
+fn mismatch() -> bool = integer()
+fn branch() = if true {
+    integer()
+} else {
+    false
+}
+fn unused() {
+    integer()
+    _ = 1
+}
+fn comparison() = empty() == empty()
+fn integer() = 1
+fn empty() = {}

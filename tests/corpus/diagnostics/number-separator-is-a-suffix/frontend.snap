@@ -8,3 +8,8 @@ SourceFile 0..16
 
 == diagnostics ==
 error[syntax/unknown-suffix] 1:11..1:15 "_000": literal suffixes are not supported
+
+== formatted ==
+fn f() {
+    1_000
+}

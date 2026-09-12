@@ -16,3 +16,9 @@ ExpectedItem at 21
 error[syntax/expected-statement] 2:1..2:2 ":": expected a statement
   at 2:1..2:8 ": { { x": skipped while recovering
 error[syntax/expected-item] 3:5..3:6 "}": expected a function item
+
+== formatted ==
+fn f() {
+    : { { x
+    y
+} }

@@ -17,3 +17,7 @@ ExpectedExpression at 14
 == diagnostics ==
 error[syntax/expected-expression] 1:15..1:16 "{": expected an expression
   at 1:19..1:20 "x": skipped while recovering
+
+== formatted ==
+fn f() {
+    g(a, { ) x }

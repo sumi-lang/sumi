@@ -33,3 +33,22 @@ SourceFile 0..235
         CallExpr 229..232
           NameRef 229..230 "a"
           ArgList 230..232 "()"
+
+== formatted ==
+// A conflict lists every type claimed, in source order: two with "and",
+// more with commas and an "and" before the last.
+fn a() = if true {
+    1
+} else {
+    b()
+}
+fn b() = if true {
+    true
+} else {
+    c()
+}
+fn c() = if true {
+    {}
+} else {
+    a()
+}

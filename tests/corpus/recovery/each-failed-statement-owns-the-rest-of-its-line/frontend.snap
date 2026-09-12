@@ -19,3 +19,7 @@ ExpectedStatement at 23
 error[syntax/expected-expression] 1:14: expected an expression
 error[syntax/expected-statement] 1:24..1:25 "=": expected a statement
   at 1:24..1:27 "= 2": skipped while recovering
+
+== formatted ==
+fn f() {
+    a + let b = 1 = 2 }

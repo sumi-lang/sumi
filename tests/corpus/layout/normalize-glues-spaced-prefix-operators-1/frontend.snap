@@ -20,5 +20,7 @@ error[syntax/spaced-prefix-operator] 1:18..1:19 "-": prefix operator must be adj
 == fixed ==
 fn f() { let x = -1 }
 
-== normalized ==
-fn f() { let x = -1 }
+== formatted ==
+fn f() {
+    let x = -1
+}

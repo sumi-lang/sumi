@@ -31,3 +31,11 @@ error[syntax/expected-token] 1:21: expected `}`
 
 == fixed (syntax/expected-expression, syntax/expected-item, syntax/expected-token remain) ==
 fn f() { ({ g(a } x)} ) }
+
+== formatted ==
+fn f() {
+    (
+        {
+            g(
+                a } x )
+}

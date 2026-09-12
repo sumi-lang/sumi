@@ -65,3 +65,17 @@ ExpectedBody at 188
 error[syntax/expected-type] 7:19: expected a type
 error[syntax/expected-body] 7:19: expected a body, `{` or `=`
   at 7:19..7:20 "=": skipped while recovering
+
+== formatted ==
+fn spin(x: int) = spin(x)
+fn consumer() -> int = spin(1)
+fn grounded() = spin(1) + 1
+fn recovered() = grounded()
+fn bad_arguments() = spin(true, missing)
+fn bare() {
+    1
+}
+fn malformed() -> = {
+    1
+}
+fn intact() = true

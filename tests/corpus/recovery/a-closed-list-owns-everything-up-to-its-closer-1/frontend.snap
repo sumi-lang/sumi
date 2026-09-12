@@ -17,3 +17,8 @@ ExpectedName at 8
 error[syntax/expected-type] 1:9: expected a type
 error[syntax/expected-name] 1:9..1:10 "{": expected a name
   at 1:9..1:14 "{ int": skipped while recovering
+
+== formatted ==
+fn f(a: { int) {
+    x
+}

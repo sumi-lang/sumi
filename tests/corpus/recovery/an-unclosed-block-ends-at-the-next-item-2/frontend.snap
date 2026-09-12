@@ -29,3 +29,9 @@ error[syntax/expected-token] 3:1: expected `}`
 fn f() { if c {
  x}
 fn g() {}
+
+== formatted ==
+fn f() {
+    if c {
+        x
+fn g() {}

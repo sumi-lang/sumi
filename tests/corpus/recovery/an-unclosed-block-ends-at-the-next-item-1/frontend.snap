@@ -25,3 +25,11 @@ error[syntax/expected-token] 3:1: expected `}`
 fn foo() -> int { { b }}
 
 fn a() {}
+
+== formatted ==
+fn foo() -> int {
+    {
+        b
+    }
+
+fn a() {}

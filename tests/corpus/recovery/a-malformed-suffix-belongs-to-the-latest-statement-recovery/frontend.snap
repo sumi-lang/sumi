@@ -16,3 +16,7 @@ Expected(Eq) at 15
 error[syntax/expected-name] 1:14..1:15 "_": expected a name
 error[syntax/expected-token] 1:16: expected `=`
   at 1:16..1:17 "x": skipped while recovering
+
+== formatted ==
+fn f() {
+    let _ x }

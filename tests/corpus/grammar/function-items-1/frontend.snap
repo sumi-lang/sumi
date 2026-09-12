@@ -4,3 +4,6 @@ SourceFile 0..12
     Name 3..7 "main"
     ParamList 7..9 "()"
     Block 10..12 "{}"
+
+== formatted ==
+fn main() {}

@@ -11,3 +11,6 @@ Expected(FnKw) at 0
 
 == diagnostics ==
 error[syntax/expected-token] 1:1: expected `fn`
+
+== formatted ==
+a() -> int {}

@@ -12,3 +12,6 @@ PriorPhaseError at 9
 == diagnostics ==
 error[syntax/unknown-punctuation] 1:10..1:11 ";": punctuation has no meaning in Sumi source
 error[syntax/unknown-character] 1:12..1:15 "€": character has no meaning in Sumi source
+
+== formatted ==
+fn f() { ; € }

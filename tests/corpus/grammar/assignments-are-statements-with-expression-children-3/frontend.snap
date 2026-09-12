@@ -8,3 +8,8 @@ SourceFile 0..18
         ParenExpr 9..12
           NameRef 10..11 "a"
         NameRef 15..16 "b"
+
+== formatted ==
+fn f() {
+    (a) = b
+}

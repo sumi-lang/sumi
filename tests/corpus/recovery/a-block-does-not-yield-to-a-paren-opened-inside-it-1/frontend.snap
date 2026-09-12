@@ -20,3 +20,7 @@ error[syntax/expected-token] 1:13: expected `)`
 
 == fixed (syntax/expected-boundary, syntax/unexpected-syntax remain) ==
 fn f() { (a) b) }
+
+== formatted ==
+fn f() {
+    (a b) }

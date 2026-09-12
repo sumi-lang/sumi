@@ -12,3 +12,8 @@ ExpectedStatement at 11
 == diagnostics ==
 error[syntax/expected-statement] 2:3..2:5 "fn": expected a statement
   at 2:3..2:12 "fn g() {}": skipped while recovering
+
+== formatted ==
+fn f() {
+    fn g() {}
+}

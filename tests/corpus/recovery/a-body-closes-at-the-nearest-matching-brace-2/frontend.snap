@@ -12,3 +12,8 @@ ExpectedItem at 13
 
 == diagnostics ==
 error[syntax/expected-item] 1:14..1:15 "}": expected a function item
+
+== formatted ==
+fn f() {
+    a
+} }

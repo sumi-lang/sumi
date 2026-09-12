@@ -639,6 +639,7 @@ dependencies = [
 name = "sumi-cli"
 version = "0.1.0"
 dependencies = [
+ "sumi-format",
  "sumi-frontend",
  "sumi-hir",
  "sumi-text",
@@ -659,6 +660,7 @@ dependencies = [
  "proptest",
  "sumi-lexer",
  "sumi-syntax",
+ "sumi-test",
  "sumi-text",
 ]
 
@@ -688,6 +690,7 @@ dependencies = [
  "sumi-lexer",
  "sumi-syntax",
  "sumi-test",
+ "sumi-text",
 ]
 
 [[package]]

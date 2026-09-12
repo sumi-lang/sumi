@@ -11,3 +11,6 @@ PriorPhaseError at 9
 
 == diagnostics ==
 error[syntax/unknown-character] 2:3..2:6 "€": character has no meaning in Sumi source
+
+== formatted ==
+fn f() { € }

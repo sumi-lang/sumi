@@ -15,3 +15,6 @@ ChainedComparison at 15
 
 == diagnostics ==
 error[syntax/chained-comparison] 1:16..1:17 "<": comparison operators cannot be chained
+
+== formatted (ChainedComparison remains) ==
+fn f() { a < b < c }

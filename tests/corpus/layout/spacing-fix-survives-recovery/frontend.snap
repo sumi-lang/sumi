@@ -23,5 +23,6 @@ error[syntax/unexpected-syntax] 1:14..1:15 ":": unexpected syntax in expression
 == fixed (syntax/unexpected-syntax remains) ==
 fn f() { a + b : }
 
-== normalized ==
-fn f() { a + b : }
+== formatted ==
+fn f() {
+    a + b : }

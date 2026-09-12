@@ -18,5 +18,7 @@ error[syntax/spaced-prefix-operator] 1:10..1:11 "-": prefix operator must be adj
 == fixed ==
 fn f() { -1 }
 
-== normalized ==
-fn f() { -1 }
+== formatted ==
+fn f() {
+    -1
+}

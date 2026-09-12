@@ -11,3 +11,6 @@ ExpectedStatement at 9
 
 == diagnostics ==
 error[syntax/expected-statement] 2:3..2:4 ":": expected a statement
+
+== formatted ==
+fn f() { : }

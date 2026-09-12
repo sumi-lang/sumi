@@ -22,3 +22,7 @@ error[syntax/expected-body] 2:1: expected a body, `{` or `=`
 == fixed (syntax/expected-body remains) ==
 fn f()
 fn g() {}
+
+== formatted ==
+fn f(
+fn g() {}

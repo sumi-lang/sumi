@@ -19,3 +19,9 @@ Expected(Comma) at 16
 error[syntax/expected-expression] 1:12..1:13 ":": expected an expression
   at 1:12..1:14 ":{": skipped while recovering
 error[syntax/expected-token] 2:1: expected `,`
+
+== formatted ==
+fn f() {
+    g(:{ a
+b)
+}

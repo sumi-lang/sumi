@@ -12,3 +12,8 @@ ExpectedName at 5
 
 == diagnostics ==
 error[syntax/expected-name] 1:6..1:7 "{": expected a name
+
+== formatted ==
+fn a({ ) {
+    x
+}

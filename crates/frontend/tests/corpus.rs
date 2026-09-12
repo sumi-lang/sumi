@@ -3,9 +3,9 @@
 //! compared with the `frontend.snap` beside it. A snapshot records the
 //! tree, with `!` on every node that contains an error, the parser's
 //! evidence, the diagnostics, the source after every fix, its header
-//! naming any diagnostic that survives them, and the normalized source
-//! where it differs, its header naming any violation that survives
-//! normalizing. Run with `UPDATE_FRONTEND=1` to
+//! naming any diagnostic that survives them, and the formatted source
+//! where it differs, its header counting the items left as written and
+//! naming any violation that survives formatting. Run with `UPDATE_FRONTEND=1` to
 //! rewrite the snapshots, then review the diff; a new case gets its first
 //! snapshot the same way.
 
@@ -14,7 +14,7 @@ use std::fmt::Write as _;
 #[path = "../../../tests/support/corpus.rs"]
 mod corpus;
 
-use sumi_format::normalize;
+use sumi_format::format;
 use sumi_frontend::{Applicability, Diagnostic, FileId, Location, Place, TextEdit, parse_source};
 use sumi_lexer::LexedFile;
 use sumi_syntax::{
@@ -112,35 +112,53 @@ fn snapshot(source: &str) -> String {
         push_text(&mut out, &fixed);
     }
 
-    let normalized = normalize(source, lexed, parse);
-    if normalized != source {
-        // Normalize yields where a rewrite would change the parse, so a
-        // violation can outlive it; the header says which.
-        let reparsed = parse_source(FileId::new(0), normalized.as_str().into())
-            .expect("normalized cases fit in u32");
-        let mut remaining: Vec<String> = reparsed
-            .parse()
-            .evidence()
-            .iter()
-            .filter_map(|evidence| match evidence {
-                ParseEvidence::Violation(violation) => Some(format!("{:?}", violation.kind)),
-                ParseEvidence::Recovery(_) => None,
-            })
-            .collect();
-        remaining.sort();
-        remaining.dedup();
-        if remaining.is_empty() {
-            out.push_str("\n== normalized ==\n");
-        } else {
-            let verb = if remaining.len() == 1 {
-                "remains"
+    match format(source, lexed, parse) {
+        Ok(formatted) if formatted.text != source => {
+            // Formatting leaves an item as written when its rep would
+            // change, and cannot fix a chained comparison; the header says.
+            let reparsed = parse_source(FileId::new(0), formatted.text.as_str().into())
+                .expect("formatted cases fit in u32");
+            let mut remaining: Vec<String> = reparsed
+                .parse()
+                .evidence()
+                .iter()
+                .filter_map(|evidence| match evidence {
+                    ParseEvidence::Violation(violation) => Some(format!("{:?}", violation.kind)),
+                    ParseEvidence::Recovery(_) => None,
+                })
+                .collect();
+            remaining.sort();
+            remaining.dedup();
+            let mut notes = Vec::new();
+            if formatted.reverted > 0 {
+                let noun = if formatted.reverted == 1 {
+                    "item"
+                } else {
+                    "items"
+                };
+                notes.push(format!("{} {noun} left as written", formatted.reverted));
+            }
+            if !remaining.is_empty() {
+                let verb = if remaining.len() == 1 {
+                    "remains"
+                } else {
+                    "remain"
+                };
+                notes.push(format!("{} {verb}", remaining.join(", ")));
+            }
+            if notes.is_empty() {
+                out.push_str("\n== formatted ==\n");
             } else {
-                "remain"
-            };
-            writeln!(out, "\n== normalized ({} {verb}) ==", remaining.join(", "))
-                .expect("writing to a string");
+                writeln!(out, "\n== formatted ({}) ==", notes.join("; "))
+                    .expect("writing to a string");
+            }
+            push_text(&mut out, &formatted.text);
         }
-        push_text(&mut out, &normalized);
+        Ok(_) => {}
+        Err(defect) => {
+            out.push_str("\n== formatted (defect) ==\n");
+            push_text(&mut out, &defect.rejected);
+        }
     }
     out
 }

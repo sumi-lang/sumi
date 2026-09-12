@@ -20,5 +20,7 @@ error[syntax/unspaced-binary-operator] 1:11..1:13 "==": binary operator must hav
 == fixed ==
 fn f() { a == b }
 
-== normalized ==
-fn f() { a == b }
+== formatted ==
+fn f() {
+    a == b
+}

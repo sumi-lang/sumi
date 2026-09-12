@@ -1,11 +1,22 @@
-//! Lossless reprinting and layout normalization for Sumi.
+//! Formatting, lossless reprinting, and layout normalization for Sumi.
 //!
 //! The syntax tree stores structure only; the token buffers keep every byte
 //! of the source. [`elements`] interleaves the two — the raw tokens attached
 //! directly to a node with its child subtrees — and [`reprint`] walks them
-//! to reconstruct the source byte for byte. [`normalize`] rewrites the
-//! spacing violations the parser accepted as written into canonical form,
-//! leaving every other byte, comments included, in place.
+//! to reconstruct the source byte for byte. [`format`] lays the tokens out
+//! afresh: a separator per gap, chosen by rules over the tree and fitted to
+//! a width, with comments and retained blank lines kept in place and every
+//! gap the parser recovered around left as written. [`rep`] is its
+//! contract: the layout-free content of a source, which formatting keeps.
+//! [`normalize`] rewrites only the spacing violations the parser accepted
+//! as written, leaving every other byte in place.
+
+mod plan;
+mod print;
+pub mod rep;
+pub mod trivia;
+
+use std::fmt;
 
 use sumi_lexer::{LexErrorKind, LexedFile, lex};
 use sumi_syntax::{
@@ -13,6 +24,114 @@ use sumi_syntax::{
     SyntaxKind, SyntaxTree, parse,
 };
 use sumi_text::{TextEdit, TextRange, TextSize};
+
+pub use plan::{INDENT, WIDTH};
+pub use rep::{ItemRep, Rep, rep};
+
+/// The formatted form of one source.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Formatted {
+    /// The formatted text: the source with the edits applied.
+    pub text: String,
+    /// The edits, sorted and disjoint, that turn the source into the text.
+    pub edits: Box<[TextEdit]>,
+    /// Top-level items left as written because formatting them would have
+    /// changed their parse: recovery is layout-sensitive where the parser
+    /// recovered.
+    pub reverted: usize,
+}
+
+/// The formatter would have changed the parse of the whole file, even
+/// with every disagreeing item left as written: a formatter bug, and the
+/// source is untouched.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Defect {
+    /// The text the formatter produced and rejected.
+    pub rejected: String,
+}
+
+impl fmt::Display for Defect {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("formatting would change the parse; the source is left as written")
+    }
+}
+
+impl std::error::Error for Defect {}
+
+/// Format `source`, which `lexed` and `parsed` must be the products of:
+/// canonical spacing and indentation, lines fitted to [`WIDTH`], comments
+/// and retained blank lines kept in place, and everything the parser
+/// recovered around left as written. The result has the [`rep`] of the
+/// source, or an item that would not is left as written, or the whole is
+/// a [`Defect`].
+pub fn format(source: &str, lexed: &LexedFile, parsed: &Parse) -> Result<Formatted, Defect> {
+    let input = ParserInput::new(lexed);
+    let plan = plan::plan(lexed, &input, parsed);
+    let mut edits = print::print(source, lexed, &input, &plan);
+    let before = rep(source, lexed, &input, parsed.tree());
+
+    let candidate = apply_gap_edits(source, &edits);
+    let mut reverted = 0;
+    if let Some(disagreeing) = mismatch(&before, &candidate) {
+        // Drop the edits inside every item whose rep changed; the gaps
+        // between items stay formatted.
+        let tree = parsed.tree();
+        let sig_of_raw = rep::sig_of_raw(&input, lexed);
+        let items: Vec<NodeIdx> = tree.children_in_order(tree.root()).collect();
+        for (index, &item) in items.iter().enumerate() {
+            if !disagreeing.contains(&index) {
+                continue;
+            }
+            reverted += 1;
+            let first = sig_of_raw[tree.first_token(item).to_usize()] as usize;
+            let end = sig_of_raw[tree.end_token(item).to_usize() - 1] as usize + 1;
+            edits.retain(|edit| edit.gap <= first || edit.gap >= end);
+        }
+        let candidate = apply_gap_edits(source, &edits);
+        if mismatch(&before, &candidate).is_some() {
+            return Err(Defect {
+                rejected: candidate,
+            });
+        }
+        return Ok(Formatted {
+            text: candidate,
+            edits: edits.into_iter().map(|edit| edit.edit).collect(),
+            reverted,
+        });
+    }
+    Ok(Formatted {
+        text: candidate,
+        edits: edits.into_iter().map(|edit| edit.edit).collect(),
+        reverted,
+    })
+}
+
+fn apply_gap_edits(source: &str, edits: &[print::GapEdit]) -> String {
+    let edits: Vec<TextEdit> = edits.iter().map(|edit| edit.edit.clone()).collect();
+    sumi_text::apply(source, &edits)
+}
+
+/// The items of `before` whose rep differs in `candidate`, or every item
+/// when the file's shape differs; `None` when the reps agree.
+fn mismatch(before: &Rep<'_>, candidate: &str) -> Option<Vec<usize>> {
+    let Ok(lexed) = lex(candidate) else {
+        return Some((0..before.items.len()).collect());
+    };
+    let input = ParserInput::new(&lexed);
+    let parsed = parse(&input);
+    let after = rep(candidate, &lexed, &input, parsed.tree());
+    if after == *before {
+        return None;
+    }
+    if after.items.len() != before.items.len() || after.edges != before.edges {
+        return Some((0..before.items.len()).collect());
+    }
+    Some(
+        (0..before.items.len())
+            .filter(|&index| after.items[index] != before.items[index])
+            .collect(),
+    )
+}
 
 /// One element of a node: a raw token attached directly to it, or a child
 /// subtree. Trivia between two children belongs to the parent and edge
@@ -333,19 +452,7 @@ fn replace(start: usize, end: usize, text: impl Into<Box<str>>) -> TextEdit {
 /// are disjoint; inserts at one boundary keep their recording order.
 fn apply(source: &str, mut edits: Vec<TextEdit>) -> String {
     edits.sort_by_key(|edit| (edit.range().start(), edit.range().end()));
-    let mut out = String::with_capacity(source.len());
-    let mut cursor = 0;
-    for edit in edits {
-        let range = edit.range();
-        let start = range.start().to_usize();
-        let end = range.end().to_usize();
-        assert!(cursor <= start, "layout edits must not overlap");
-        out.push_str(&source[cursor..start]);
-        out.push_str(edit.replacement());
-        cursor = end;
-    }
-    out.push_str(&source[cursor..]);
-    out
+    sumi_text::apply(source, &edits)
 }
 
 fn significant(lexed: &LexedFile, raw: RawIdx) -> bool {

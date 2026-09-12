@@ -29,7 +29,7 @@ fn // why
 commented() {}
 fn survivor() {}
 
-== normalized (FunctionNameOnNextLine remains) ==
+== formatted (FunctionNameOnNextLine remains) ==
 fn plain() {}
 fn // why
 commented() {}

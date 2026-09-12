@@ -166,3 +166,103 @@ fn check_reports_semantics_and_syntax_in_source_order() {
     );
     assert_eq!(fs::read_to_string(path).unwrap(), source);
 }
+
+fn fmt(args: &[&str], files: &[(&str, &str)]) -> (tempfile::TempDir, Output) {
+    let dir = tempfile::tempdir().unwrap();
+    for (name, source) in files {
+        fs::write(dir.path().join(name), source).unwrap();
+    }
+    let output = sumi()
+        .current_dir(dir.path())
+        .arg("fmt")
+        .args(args)
+        .output()
+        .unwrap();
+    (dir, output)
+}
+
+#[test]
+fn fmt_rewrites_files_in_place_and_is_silent() {
+    let (dir, output) = fmt(
+        &["a.sumi", "b.sumi"],
+        &[
+            ("a.sumi", "fn f(x:int)->int{x*2}"),
+            ("b.sumi", "fn g() {}\n"),
+        ],
+    );
+    assert_eq!(output.status.code(), Some(0));
+    assert!(output.stdout.is_empty());
+    assert!(output.stderr.is_empty());
+    assert_eq!(
+        fs::read_to_string(dir.path().join("a.sumi")).unwrap(),
+        "fn f(x: int) -> int {\n    x * 2\n}\n"
+    );
+    assert_eq!(
+        fs::read_to_string(dir.path().join("b.sumi")).unwrap(),
+        "fn g() {}\n"
+    );
+}
+
+#[test]
+fn fmt_check_lists_files_that_would_change_and_writes_nothing() {
+    let (dir, output) = fmt(
+        &["--check", "a.sumi", "b.sumi"],
+        &[
+            ("a.sumi", "fn f(x:int)->int{x*2}"),
+            ("b.sumi", "fn g() {}\n"),
+        ],
+    );
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(String::from_utf8(output.stdout).unwrap(), "a.sumi\n");
+    assert_eq!(
+        fs::read_to_string(dir.path().join("a.sumi")).unwrap(),
+        "fn f(x:int)->int{x*2}"
+    );
+
+    let (_dir, output) = fmt(&["--check", "b.sumi"], &[("b.sumi", "fn g() {}\n")]);
+    assert_eq!(output.status.code(), Some(0));
+    assert!(output.stdout.is_empty());
+}
+
+#[test]
+fn fmt_formats_what_it_can_around_syntax_errors() {
+    let (dir, output) = fmt(
+        &["a.sumi"],
+        &[("a.sumi", "fn f() { let y = (\n}\nfn g() { ok(1) }")],
+    );
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(
+        fs::read_to_string(dir.path().join("a.sumi")).unwrap(),
+        "fn f() {\n    let y = (\n}\nfn g() {\n    ok(1)\n}\n"
+    );
+}
+
+#[test]
+fn fmt_filters_stdin_to_stdout() {
+    use std::io::Write as _;
+    use std::process::Stdio;
+    let mut child = sumi()
+        .args(["fmt", "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.take().unwrap().write_all(b"fn f(){1}").unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap(),
+        "fn f() {\n    1\n}\n"
+    );
+}
+
+#[test]
+fn fmt_reports_missing_files_as_input_errors() {
+    let (_dir, output) = fmt(&["missing.sumi"], &[]);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        String::from_utf8(output.stderr)
+            .unwrap()
+            .contains("missing.sumi: error[cli/input]")
+    );
+}

@@ -7,3 +7,8 @@ SourceFile 0..16
       AssignStmt 9..14
         NameRef 9..10 "x"
         LiteralExpr 13..14 "1"
+
+== formatted ==
+fn f() {
+    x = 1
+}

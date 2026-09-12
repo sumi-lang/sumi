@@ -7,3 +7,8 @@ SourceFile 0..19
       IfExpr 9..17
         NameRef 12..13 "a"
         Block 14..17 "{ }"
+
+== formatted ==
+fn f() {
+    if a {}
+}

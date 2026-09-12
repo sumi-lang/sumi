@@ -4,3 +4,4 @@
 #
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
+cc d52bab3e022bb2e3c4625e5f0ee8cd0b4f27b162dd69afccd01b9aa0167df1c1 # shrinks to source = "fn f() { x = y<letfoo-\"{x}\"0123+foolet=_x_return_____return_,__fooelse___else_0123123_foofoo_foo_ }"

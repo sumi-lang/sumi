@@ -17,3 +17,6 @@ ExpectedName at 22
 
 == diagnostics ==
 error[syntax/expected-name] 1:23..1:24 "{": expected a name
+
+== formatted ==
+fn x1(b: int, foo: int{ ) {}

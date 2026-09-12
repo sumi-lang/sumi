@@ -1,6 +1,6 @@
 //! The whole frontend over arbitrary text: every syntactic product is
 //! built and every structural invariant of the token stream, the tree, the
-//! evidence, the diagnostics, and normalization is checked.
+//! evidence, the diagnostics, normalization, and formatting is checked.
 
 #![no_main]
 
@@ -23,5 +23,6 @@ fuzz_target!(|data: &[u8]| {
     sumi_fuzz::check_parse(source, lexed, &input, parse);
     sumi_fuzz::check_diagnostics(&parsed);
     sumi_fuzz::check_normalize(source, lexed, parse);
+    sumi_fuzz::check_format(source, lexed, parse);
     sumi_fuzz::check_widening(source, lexed, &input);
 });

@@ -17,3 +17,8 @@ ExpectedExpression at 11
 
 == diagnostics ==
 error[syntax/expected-expression] 1:12..1:13 ":": expected an expression
+
+== formatted ==
+fn f() {
+    g(:(x), y)
+}

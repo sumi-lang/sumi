@@ -14,3 +14,8 @@ ExpectedBody at 14
 == diagnostics ==
 error[syntax/expected-body] 1:15: expected a body, `{` or `=`
   at 1:15..1:16 "x": skipped while recovering
+
+== formatted ==
+fn f() -> int x {
+    y
+}

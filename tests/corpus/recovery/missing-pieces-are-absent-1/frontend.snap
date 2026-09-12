@@ -12,3 +12,8 @@ ExpectedExpression at 19
 
 == diagnostics ==
 error[syntax/expected-expression] 3:1: expected an expression
+
+== formatted ==
+fn f() {
+    let x =
+}

@@ -70,3 +70,19 @@ SourceFile 0..224
           CallExpr 215..221
             NameRef 215..219 "safe"
             ArgList 219..221 "()"
+
+== formatted ==
+fn even(n: int) -> bool = if n == 0 {
+    true
+} else {
+    odd(n - 1)
+}
+fn odd(n: int) -> bool = if n == 0 {
+    false
+} else {
+    even(n - 1)
+}
+fn safe() -> bool = false && (1 / 0 == 0) || even(4)
+fn maybe(b: bool) = if b {
+    _ = safe()
+}

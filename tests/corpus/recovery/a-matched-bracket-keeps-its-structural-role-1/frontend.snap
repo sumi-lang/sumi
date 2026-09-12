@@ -13,3 +13,8 @@ ExpectedItem at 13
 == diagnostics ==
 error[syntax/expected-item] 1:14..1:15 "=": expected a function item
   at 1:14..1:17 "= b": skipped while recovering
+
+== formatted ==
+fn f() {
+    a
+} = b

@@ -23,3 +23,9 @@ error[syntax/expected-token] 2:3: expected `)`
 fn f() { g(a)
   b
 }
+
+== formatted ==
+fn f() {
+    g(a
+  b
+}

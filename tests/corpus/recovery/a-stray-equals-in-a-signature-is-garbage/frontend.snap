@@ -45,3 +45,15 @@ error[syntax/expected-token] 3:6: expected `(`
 error[syntax/expected-body] 4:1: expected a body, `{` or `=`
 error[syntax/expected-body] 4:8: expected a body, `{` or `=`
   at 4:8..4:9 "=": skipped while recovering
+
+== formatted ==
+fn f= (a: int) {
+    a
+}
+fn g() -> = int {
+    a
+}
+fn h x = 1
+fn i() = -> int {
+    a
+}

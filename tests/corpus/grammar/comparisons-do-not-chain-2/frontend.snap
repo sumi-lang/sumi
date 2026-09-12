@@ -10,3 +10,8 @@ SourceFile 0..22
             NameRef 10..11 "a"
             NameRef 14..15 "b"
         NameRef 19..20 "c"
+
+== formatted ==
+fn f() {
+    (a < b) < c
+}

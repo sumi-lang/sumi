@@ -9,3 +9,8 @@ SourceFile 0..27
           NameRef 11..12 "a"
           NameRef 17..18 "b"
         NameRef 24..25 "c"
+
+== formatted ==
+fn f() {
+    a + b && c
+}

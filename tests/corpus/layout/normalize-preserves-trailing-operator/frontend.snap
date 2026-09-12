@@ -9,3 +9,8 @@ SourceFile 0..25
         BinaryExpr 17..23
           NameRef 17..18 "a"
           NameRef 22..23 "b"
+
+== formatted ==
+fn f() {
+    let x = a + b
+}

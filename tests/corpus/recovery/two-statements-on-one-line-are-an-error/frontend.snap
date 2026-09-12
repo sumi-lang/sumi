@@ -12,3 +12,8 @@ ExpectedBoundary at 11
 
 == diagnostics ==
 error[syntax/expected-boundary] 1:12: expected a line break between statements
+
+== formatted ==
+fn f() {
+    a b
+}

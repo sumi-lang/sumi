@@ -16,3 +16,8 @@ ExpectedItem at 10
 == diagnostics ==
 error[syntax/expected-item] 2:1..2:2 ")": expected a function item
   at 2:1..2:4 ") }": skipped while recovering
+
+== formatted ==
+fn f() {}
+) }
+fn g() {}

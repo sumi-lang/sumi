@@ -8,3 +8,10 @@ SourceFile 0..34
         NameRef 18..19 "x"
       ReturnStmt 22..28 "return"
       NameRef 31..32 "x"
+
+== formatted ==
+fn f() {
+    return x
+    return
+    x
+}

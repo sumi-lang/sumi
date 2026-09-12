@@ -15,3 +15,6 @@ PriorPhaseError at 11
 == diagnostics ==
 error[syntax/unknown-punctuation] 1:10..1:11 "'": punctuation has no meaning in Sumi source
 error[syntax/unknown-punctuation] 1:12..1:13 "'": punctuation has no meaning in Sumi source
+
+== formatted ==
+fn f() { 'a' }

@@ -12,3 +12,9 @@ ExpectedName at 4
 
 == diagnostics ==
 error[syntax/expected-name] 2:2: expected a name
+
+== formatted ==
+fn
+ () {
+    g()
+}

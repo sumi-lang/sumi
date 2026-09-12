@@ -33,3 +33,8 @@ SourceFile 0..145
               TypeRef 116..119 "int"
           TypeRef 132..135 "int"
           NameRef 142..143 "x"
+
+== formatted ==
+fn outer() = fn(x: int) -> int = x
+fn nested() = fn() = fn(x) = x
+fn argument() = consume(fn(x: int) -> int = x)

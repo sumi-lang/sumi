@@ -42,3 +42,28 @@ SourceFile 0..180
           ArgList 161..163 "()"
       ParenExpr 169..177
         NameRef 170..176 "action"
+
+== formatted ==
+fn value() -> int = 1
+fn sequence() -> int {
+    value()
+    (value())
+    ((value()))
+    (
+        if true {
+            1
+        } else {
+            2
+        }
+    )
+    (
+        (
+            {
+                3
+            }
+        )
+    )
+    let action = 4
+    (value())
+    (action)
+}

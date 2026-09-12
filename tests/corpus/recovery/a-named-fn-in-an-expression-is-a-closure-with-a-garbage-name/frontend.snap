@@ -20,3 +20,10 @@ Expected(LParen) at 24
 == diagnostics ==
 error[syntax/expected-token] 2:16: expected `(`
   at 2:16..2:17 "h": skipped while recovering
+
+== formatted ==
+fn f() {
+    let g = fn h(x) {
+        x
+    }
+}

@@ -9,3 +9,10 @@ SourceFile 0..26
         Block 17..24
           ParenExpr 19..22
             LiteralExpr 20..21 "1"
+
+== formatted ==
+fn f() {
+    let x = {
+        (1)
+    }
+}

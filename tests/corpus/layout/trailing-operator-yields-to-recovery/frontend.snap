@@ -14,3 +14,7 @@ Unexpected at 16
 
 == diagnostics ==
 error[syntax/unexpected-syntax] 2:4..2:5 ":": unexpected syntax in expression
+
+== formatted ==
+fn f() {
+    a + b : }

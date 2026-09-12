@@ -17,3 +17,12 @@ ExpectedItem at 17
 == diagnostics ==
 error[syntax/expected-item] 3:5..3:6 "+": expected a function item
   at 3:5..5:2 "+ b\n  c\n}": skipped while recovering
+
+== formatted ==
+fn f() {
+    a
+} + b
+  c
+}
+
+fn g() {}

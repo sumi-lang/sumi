@@ -1,8 +1,9 @@
-//! Normalization properties over generated token soup.
+//! Normalization and formatting properties over generated token soup and
+//! well-formed programs.
 
 use proptest::prelude::*;
 use proptest::test_runner::FileFailurePersistence;
-use sumi_format::normalize;
+use sumi_format::{format, normalize, rep};
 use sumi_lexer::{LexedFile, lex};
 use sumi_syntax::{NodeKind, Parse, ParserInput, SyntaxKind, SyntaxTree, parse};
 
@@ -90,8 +91,60 @@ fn config() -> ProptestConfig {
     }
 }
 
+/// The layout-free content of `source`: what formatting must keep.
+fn layout_free<'s>(source: &'s str, front: &Front) -> sumi_format::Rep<'s> {
+    let input = ParserInput::new(&front.lexed);
+    rep(source, &front.lexed, &input, front.parse.tree())
+}
+
+/// Format `source` and assert the contract: the rep is kept, the edits are
+/// the text, and formatting the result changes nothing.
+fn check_format(source: &str) -> sumi_format::Formatted {
+    let before = front(source);
+    let formatted = format(source, &before.lexed, &before.parse)
+        .unwrap_or_else(|defect| panic!("defect on {source:?}: {}", defect.rejected));
+    let after = front(&formatted.text);
+    assert_eq!(
+        layout_free(&formatted.text, &after),
+        layout_free(source, &before),
+        "format changed the rep of {source:?} -> {:?}",
+        formatted.text
+    );
+    assert_eq!(
+        sumi_text::apply(source, &formatted.edits),
+        formatted.text,
+        "the edits of {source:?} are not its text"
+    );
+    let again = format(&formatted.text, &after.lexed, &after.parse)
+        .unwrap_or_else(|defect| panic!("defect on {:?}: {}", formatted.text, defect.rejected));
+    assert_eq!(
+        again.text, formatted.text,
+        "format of {source:?} is not idempotent"
+    );
+    formatted
+}
+
 proptest! {
     #![proptest_config(config())]
+    #[test]
+    fn format_keeps_the_rep_and_settles(source in soup()) {
+        check_format(&source);
+    }
+
+    #[test]
+    fn well_formed_programs_format_without_reverting(source in sumi_test::program()) {
+        let formatted = check_format(&source);
+        prop_assert_eq!(formatted.reverted, 0, "reverted items in {:?}", source);
+        let after = front(&formatted.text);
+        prop_assert!(
+            after.parse.evidence().is_empty(),
+            "formatted {:?} -> {:?} has evidence {:?}",
+            source,
+            formatted.text,
+            after.parse.evidence()
+        );
+    }
+
     #[test]
     fn normalize_preserves_the_parse_and_settles(source in soup()) {
         let before = front(&source);

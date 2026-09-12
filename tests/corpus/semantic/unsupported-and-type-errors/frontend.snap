@@ -78,3 +78,36 @@ SourceFile 0..385
             BinaryExpr 373..381
               LiteralExpr 373..374 "1"
               LiteralExpr 377..381 "true"
+
+== formatted ==
+fn unsupported() {
+    let mut x = 1
+    _ = x
+    return
+}
+fn closure() {
+    let f = fn() = 1
+}
+fn literal() = "not scalar"
+fn mismatch() -> bool = 1
+fn branches() -> int = if true {
+    1
+} else {
+    false
+}
+fn missing_else() = if true {
+    1
+}
+fn annotation() {
+    let x: bool = 1
+}
+fn unit_equality() -> bool = {} == {}
+fn computed_call() {
+    _ = (
+        if true {
+            1
+        } else {
+            2
+        }
+    )(missing, 1 + true)
+}

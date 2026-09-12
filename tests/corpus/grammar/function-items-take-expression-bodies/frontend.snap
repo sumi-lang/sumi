@@ -21,3 +21,8 @@ SourceFile 0..72
     Name 54..60 "answer"
     ParamList 60..62 "()"
     LiteralExpr 69..71 "42"
+
+== formatted ==
+fn double(x: int) -> int = x * 2
+fn id(x: int) = x
+fn answer() = 42

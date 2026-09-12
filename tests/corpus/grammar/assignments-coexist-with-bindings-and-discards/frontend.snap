@@ -12,3 +12,10 @@ SourceFile 0..42
         LiteralExpr 31..32 "1"
       DiscardStmt 35..40
         NameRef 39..40 "x"
+
+== formatted ==
+fn f() {
+    let mut x = 0
+    x = 1
+    _ = x
+}

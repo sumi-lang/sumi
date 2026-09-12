@@ -31,3 +31,10 @@ error[syntax/unknown-punctuation] 4:18..4:19 "\\": punctuation has no meaning in
 error[syntax/expected-token] 4:19: expected `)`
   at 4:11..4:12 "(": opening delimiter is here
   at 4:19..4:20 "\"": skipped while recovering
+
+== formatted ==
+// The `(` inside the hole is never closed. Its `)` would land after the
+// stray backslash, where `\)` reads as an escape and the quote before it
+// stops being the literal's closer, so the fix is withheld.
+fn f() {
+    g("{1"{"\" }
