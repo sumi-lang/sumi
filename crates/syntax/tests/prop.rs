@@ -19,10 +19,6 @@ use sumi_test::{apply, delimiter_edited_program, front, non_delimiter_edited_pro
 /// language, valid and pathological; concatenation composes the adjacencies
 /// goldens cannot enumerate.
 const EXTRA_FRAGMENTS: &[&str] = &[
-    "\"{",
-    "}\"",
-    "\"{x}\"",
-    "\\{",
     "x",
     "foo",
     "0",

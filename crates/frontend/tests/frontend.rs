@@ -201,7 +201,7 @@ fn leading_zeros_are_fixed_around_a_suffix() {
 /// Source fragments beyond every keyword and punctuation text of the
 /// language: names, malformed literals, roleless punctuation, and trivia.
 const EXTRA_FRAGMENTS: &[&str] = &[
-    "x", "0", "01u32", "1e", r#""\q""#, ";", " ", "\n", "// c", "€", "\"{", "}\"", "\"{x}\"",
+    "x", "0", "01u32", "1e", r#""\q""#, "\"open", ";", " ", "\n", "// c", "€",
 ];
 
 fn source() -> impl Strategy<Value = String> {

@@ -258,8 +258,8 @@ const _: () = assert!(size_of::<StoredToken>() == 8, "tokens stay eight bytes");
 pub struct LexError {
     /// The offending token in the [`LexedFile`].
     pub token: RawIdx,
-    /// The relevant file-local UTF-8 byte range, contained within `token` and
-    /// ending on character boundaries. May be empty when content is missing.
+    /// The relevant file-local UTF-8 byte range, nonempty, contained within
+    /// `token`, and ending on character boundaries.
     pub range: TextRange,
     pub kind: LexErrorKind,
 }

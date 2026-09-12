@@ -484,10 +484,10 @@ enum LiteralEdit {
     Closer,
 }
 
+/// One class edits every string literal, the one literal form with
+/// delimiters.
 struct LiteralClass {
     label: &'static str,
-    /// The tokens the class edits: those of these raw kinds.
-    kinds: &'static [RawKind],
     edit: LiteralEdit,
     /// The delimiter's bytes.
     width: usize,
@@ -495,26 +495,26 @@ struct LiteralClass {
 
 impl LiteralClass {
     fn selects(&self, lexed: &LexedFile, index: RawIdx) -> bool {
-        self.kinds.contains(&lexed.raw_kind(index))
+        is_literal(lexed, index)
     }
+}
+
+fn is_literal(lexed: &LexedFile, index: RawIdx) -> bool {
+    lexed.raw_kind(index) == RawKind::String
 }
 
 const LITERAL_CLASSES: [LiteralClass; 2] = [
     LiteralClass {
         label: "delete \" closer",
-        kinds: &[RawKind::String],
         edit: LiteralEdit::Closer,
         width: 1,
     },
     LiteralClass {
         label: "delete \" opener",
-        kinds: &[RawKind::String],
         edit: LiteralEdit::Opener,
         width: 1,
     },
 ];
-
-const LITERAL_KINDS: [RawKind; 1] = [RawKind::String];
 
 struct LiteralSample {
     /// Bytes of the longest literal token left where the edited one stood:
@@ -550,7 +550,7 @@ fn literal_edit(
     let spread = after
         .lexed
         .indices()
-        .filter(|&index| LITERAL_KINDS.contains(&after.lexed.raw_kind(index)))
+        .filter(|&index| is_literal(&after.lexed, index))
         .map(|index| after.lexed.range(index))
         .filter(|range| {
             range.start().to_usize() < stood.end && range.end().to_usize() > stood.start
@@ -578,7 +578,7 @@ fn literal_edits(name: &str, source: &str, edits_per_class: usize, rng: &mut Lcg
     let literals = before
         .lexed
         .indices()
-        .filter(|&index| LITERAL_KINDS.contains(&before.lexed.raw_kind(index)))
+        .filter(|&index| is_literal(&before.lexed, index))
         .count();
     println!(
         "{name}: {} bytes, {literals} literals, {} top-level items",

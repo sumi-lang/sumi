@@ -578,7 +578,12 @@ pub fn reference(grammar: &Grammar) -> String {
     let pairs = bullets(grammar.pairs.iter().map(|pair| {
         let bracket = |name: &str| {
             let token = grammar.token(name).expect("validated");
-            code(token.text.as_deref().unwrap_or(name))
+            code(
+                token
+                    .text
+                    .as_deref()
+                    .expect("a pair's tokens are punctuation"),
+            )
         };
         let role = if pair.statements {
             " — encloses statements"
