@@ -1,5 +1,5 @@
 == tree ==
-SourceFile 0..244
+SourceFile 0..398
   FnItem 0..46
     Name 3..10 "minimum"
     ParamList 10..12 "()"
@@ -34,3 +34,19 @@ SourceFile 0..244
         BinaryExpr 219..242
           LiteralExpr 219..238 "9223372036854775808"
           LiteralExpr 241..242 "0"
+  FnItem 244..291
+    Name 247..260 "far_too_large"
+    ParamList 260..262 "()"
+    TypeRef 266..269 "int"
+    LiteralExpr 272..291 "9999999999999999999"
+  FnItem 292..348
+    Name 295..316 "negated_far_too_large"
+    ParamList 316..318 "()"
+    TypeRef 322..325 "int"
+    PrefixExpr 328..348
+      LiteralExpr 329..348 "9999999999999999999"
+  FnItem 349..397
+    Name 352..365 "twenty_digits"
+    ParamList 365..367 "()"
+    TypeRef 371..374 "int"
+    LiteralExpr 377..397 "99999999999999999999"

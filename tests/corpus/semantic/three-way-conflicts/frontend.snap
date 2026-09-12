@@ -1,0 +1,35 @@
+== tree ==
+SourceFile 0..235
+  FnItem 123..158
+    Name 126..127 "a"
+    ParamList 127..129 "()"
+    IfExpr 132..158
+      LiteralExpr 135..139 "true"
+      Block 140..145
+        LiteralExpr 142..143 "1"
+      Block 151..158
+        CallExpr 153..156
+          NameRef 153..154 "b"
+          ArgList 154..156 "()"
+  FnItem 159..197
+    Name 162..163 "b"
+    ParamList 163..165 "()"
+    IfExpr 168..197
+      LiteralExpr 171..175 "true"
+      Block 176..184
+        LiteralExpr 178..182 "true"
+      Block 190..197
+        CallExpr 192..195
+          NameRef 192..193 "c"
+          ArgList 193..195 "()"
+  FnItem 198..234
+    Name 201..202 "c"
+    ParamList 202..204 "()"
+    IfExpr 207..234
+      LiteralExpr 210..214 "true"
+      Block 215..221
+        Block 217..219 "{}"
+      Block 227..234
+        CallExpr 229..232
+          NameRef 229..230 "a"
+          ArgList 230..232 "()"

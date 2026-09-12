@@ -1,0 +1,6 @@
+// Escapes are checked in every part of a string with holes: before the
+// first hole, between holes, and after the last, unterminated or not.
+fn valid(x: int) -> str = "\n{x}\t{x}\{"
+fn invalid(x: int) -> str = "\q{x}\q{x}\q"
+fn unterminated(x: int) -> str = "\q{x}\q{x}\q
+fn after() = 1
