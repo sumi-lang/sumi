@@ -1,7 +1,7 @@
 use criterion::{
     BatchSize, BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main,
 };
-use sumi_format::{normalize, reprint};
+use sumi_format::{format, reprint};
 use sumi_frontend::{FileId, parse_source};
 use sumi_lexer::lex;
 use sumi_syntax::ast::{AstNode, Block, ElseBranch, Expr, SourceFile, Stmt};
@@ -360,12 +360,15 @@ fn bench_format(c: &mut Criterion) {
     group.bench_function("reprint", |b| {
         b.iter_with_large_drop(|| reprint(black_box(parsed.tree()), &lexed, &source));
     });
+    group.bench_function("format", |b| {
+        b.iter_with_large_drop(|| format(black_box(&source), &lexed, &parsed));
+    });
     group.finish();
 
     let mut group = c.benchmark_group("format/medium-glued");
     group.throughput(Throughput::Bytes(glued.len() as u64));
-    group.bench_function("normalize", |b| {
-        b.iter_with_large_drop(|| normalize(black_box(&glued), &glued_lexed, &glued_parse));
+    group.bench_function("format", |b| {
+        b.iter_with_large_drop(|| format(black_box(&glued), &glued_lexed, &glued_parse));
     });
     group.finish();
 }

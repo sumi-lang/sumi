@@ -59,3 +59,25 @@ SourceFile 0..302
     BinaryExpr 292..301
       LiteralExpr 292..293 "1"
       LiteralExpr 300..301 "2"
+
+== formatted ==
+fn plain() -> int = 1 + 2
+fn grouped() -> int = (1 + 2)
+fn nested() -> int = (
+    {
+        1 + 2
+    }
+)
+fn compound() -> bool =
+    1
+        <= // continue after the comment
+2
+        && true
+fn statements() -> int = (
+    {
+        _ = 1 + 2
+        3
+    }
+)
+fn negated() -> int = 1 + -2
+fn leading() -> int = 1 - 2

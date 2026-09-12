@@ -245,6 +245,33 @@ impl ParserInput {
         self.slots[index.to_usize()].flags & BOUNDARY_BEFORE != 0
     }
 
+    /// Whether a line break before token `index` would be a statement
+    /// boundary under the newline rule: every condition of the rule but
+    /// the line break itself, so a layout tool can ask before it breaks a
+    /// line. Never true for the first token. Agrees with
+    /// [`boundary_before`](Self::boundary_before) wherever a line break
+    /// stands, since bracket pairing and the token classes read no trivia.
+    pub fn would_end_statement(&self, index: SigIdx) -> bool {
+        let glued = self
+            .slots
+            .get(index.to_usize())
+            .filter(|slot| slot.flags & JOINT != 0)
+            .and_then(|_| self.get(index + 1));
+        self.would_end_statement_if(index, glued)
+    }
+
+    /// [`would_end_statement`](Self::would_end_statement) with the token
+    /// after `index` glued to it, or not, as `glued` says instead of the
+    /// source: what a layout tool that respaces the tokens asks.
+    pub fn would_end_statement_if(&self, index: SigIdx, glued: Option<SyntaxKind>) -> bool {
+        let index = index.to_usize();
+        index > 0
+            && index < self.slots.len()
+            && self.slots[index].flags & IN_EXPRESSION_DELIMITERS == 0
+            && can_end_statement(self.slots[index - 1].kind)
+            && !continues_statement(self.slots[index].kind, glued)
+    }
+
     /// Whether a statement boundary precedes any token in `range`. Binary
     /// search over the boundary positions lets recovery reject a bracket
     /// group spanning a boundary without rescanning its interior. `range.end` may be

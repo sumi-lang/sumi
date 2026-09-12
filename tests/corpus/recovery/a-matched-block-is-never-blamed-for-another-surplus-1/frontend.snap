@@ -19,3 +19,8 @@ ExpectedItem at 26
 error[syntax/expected-statement] 1:18..1:19 "+": expected a statement
   at 1:18..1:21 "+ b": skipped while recovering
 error[syntax/expected-item] 1:27..1:28 "{": expected a function item
+
+== formatted ==
+fn f() {
+    (if a { + b })
+} {

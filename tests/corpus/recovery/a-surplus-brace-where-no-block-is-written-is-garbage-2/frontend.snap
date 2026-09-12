@@ -13,3 +13,8 @@ Unexpected at 13
 
 == diagnostics ==
 error[syntax/unexpected-syntax] 1:14..1:15 "{": unexpected syntax in expression
+
+== formatted ==
+fn f() {
+    (foo{ )
+}

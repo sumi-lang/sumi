@@ -12,3 +12,7 @@ ExpectedStatement at 11
 
 == diagnostics ==
 error[syntax/expected-statement] 1:12..1:16 "else": expected a statement
+
+== formatted ==
+fn f() {
+    x else }

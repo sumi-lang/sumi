@@ -4,3 +4,5 @@
 #
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
+cc d52bab3e022bb2e3c4625e5f0ee8cd0b4f27b162dd69afccd01b9aa0167df1c1 # shrinks to source = "fn f() { x = y<letfoo-\"{x}\"0123+foolet=_x_return_____return_,__fooelse___else_0123123_foofoo_foo_ }"
+cc 2b7c1ed22c0bae6e10bdda80eb1ac6c2fce96275af047b6153886264595b6edf # shrinks to source = "fn a() {\nreturn a && a == a + -a(a + a == -a * \"a {1000} b\" + 1000 && \"a {a} b\" * -\"a {a} b\" == 1000) // c\n}\n"

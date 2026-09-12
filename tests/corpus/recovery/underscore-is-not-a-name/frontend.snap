@@ -13,3 +13,8 @@ ExpectedName at 13
 
 == diagnostics ==
 error[syntax/expected-name] 1:14..1:15 "_": expected a name
+
+== formatted ==
+fn f() {
+    let _ = 1
+}

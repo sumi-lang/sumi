@@ -11,3 +11,9 @@ SourceFile 0..43
         Name 31..32 "y"
         TypeRef 34..37 "int"
         NameRef 40..41 "x"
+
+== formatted ==
+fn f() {
+    let x = 1
+    let mut y: int = x
+}

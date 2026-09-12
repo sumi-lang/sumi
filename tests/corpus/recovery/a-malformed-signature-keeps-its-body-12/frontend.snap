@@ -15,3 +15,7 @@ ExpectedBody at 7
 == diagnostics ==
 error[syntax/expected-body] 1:8: expected a body, `{` or `=`
   at 1:8..1:9 "x": skipped while recovering
+
+== formatted ==
+fn f() x
+fn g() {}

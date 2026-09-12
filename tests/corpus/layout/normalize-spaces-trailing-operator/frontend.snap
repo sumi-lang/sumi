@@ -22,6 +22,7 @@ error[syntax/unspaced-binary-operator] 1:19..1:20 "+": binary operator must have
 fn f() { let x = a +
 b }
 
-== normalized ==
-fn f() { let x = a +
-b }
+== formatted ==
+fn f() {
+    let x = a + b
+}

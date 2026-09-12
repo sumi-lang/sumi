@@ -25,3 +25,7 @@ error[syntax/expected-token] 1:13: expected `}`
 
 == fixed ==
 fn f() { g(a)}
+
+== formatted ==
+fn f() {
+    g(a

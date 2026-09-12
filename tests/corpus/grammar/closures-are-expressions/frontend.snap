@@ -82,3 +82,18 @@ SourceFile 0..272
                 NameRef 254..259 "print"
                 ArgList 259..262
                   NameRef 260..261 "n"
+
+== formatted ==
+fn main() {
+    let double = fn(x) = x * 2
+    let typed = fn(x: int) -> int = x * 2
+    let thunk = fn() = work()
+    let adder = fn(x) = fn(y) = x + y
+    apply(fn(x) = x + 1, 2)
+    if any(xs, fn(x) = x > 0) {
+        return
+    }
+    each(names, fn(n) {
+        print(n)
+    })
+}

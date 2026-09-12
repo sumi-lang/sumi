@@ -9,3 +9,11 @@ SourceFile 0..33
         BinaryExpr 17..31
           NameRef 17..18 "a"
           NameRef 30..31 "b"
+
+== formatted ==
+fn f() {
+    let x =
+        a
+            && // why
+b
+}

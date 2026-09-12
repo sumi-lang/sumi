@@ -31,3 +31,17 @@ SourceFile 0..175
     ParamList 161..163 "()"
     TypeRef 167..170 "int"
     LiteralExpr 173..174 "3"
+
+== formatted ==
+fn probe() {
+    let x = 1
+    let x = missing(
+        {
+            let x = x + 1
+            x + true
+        },
+        x + false,
+    )
+    _ = x
+}
+fn intact() -> int = 3

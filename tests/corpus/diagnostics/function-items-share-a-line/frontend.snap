@@ -40,7 +40,7 @@ fn third() = 1
 fn fourth() = 2
 fn survivor() {}
 
-== normalized ==
+== formatted ==
 fn first() {}
 fn second() {}
 fn third() = 1

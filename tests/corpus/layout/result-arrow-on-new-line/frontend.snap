@@ -5,3 +5,6 @@ SourceFile 0..16
     ParamList 4..6 "()"
     TypeRef 10..13 "int"
     Block 14..16 "{}"
+
+== formatted ==
+fn f() -> int {}

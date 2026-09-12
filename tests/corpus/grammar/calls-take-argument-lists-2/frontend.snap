@@ -9,3 +9,8 @@ SourceFile 0..32
         ArgList 12..30
           NameRef 18..19 "a"
           NameRef 25..26 "b"
+
+== formatted ==
+fn f() {
+    g(a, b)
+}

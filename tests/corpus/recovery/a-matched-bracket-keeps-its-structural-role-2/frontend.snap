@@ -16,3 +16,8 @@ ExpectedStatement at 17
 == diagnostics ==
 error[syntax/expected-statement] 1:18..1:19 "+": expected a statement
   at 1:18..1:21 "+ b": skipped while recovering
+
+== formatted ==
+fn f() {
+    (if a { + b })
+}

@@ -38,3 +38,8 @@ error[syntax/expected-token] 2:5: expected `}`
 == fixed (syntax/expected-boundary, syntax/expected-token, syntax/spaced-prefix-operator, syntax/unclosed-hole, syntax/unterminated-string remain) ==
 f(){ "f{{ -
 (1)"f
+
+== formatted (SpacedPrefixOperator remains) ==
+f() {
+    "f{{ -
+(1"f

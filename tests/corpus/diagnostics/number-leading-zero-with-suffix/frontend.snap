@@ -14,3 +14,8 @@ error[syntax/unknown-suffix] 1:12..1:15 "u32": literal suffixes are not supporte
 
 == fixed (syntax/unknown-suffix remains) ==
 fn f() { 1u32 }
+
+== formatted ==
+fn f() {
+    01u32
+}

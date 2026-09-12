@@ -7,3 +7,8 @@ SourceFile 0..20
       BinaryExpr 11..18
         NameRef 11..12 "a"
         NameRef 17..18 "b"
+
+== formatted ==
+fn f() {
+    a + b
+}

@@ -29,6 +29,5 @@ error[syntax/function-item-on-same-line] 1:12..1:14 "fn": function item must beg
 fn f() { :}
 fn g() {}
 
-== normalized ==
-fn f() { :
-fn g() {}
+== formatted (FunctionItemOnSameLine remains) ==
+fn f() { : fn g() {}

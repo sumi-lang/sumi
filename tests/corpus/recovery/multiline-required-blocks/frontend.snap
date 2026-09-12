@@ -70,3 +70,14 @@ fn unclosed()
 {
     1 +}
 fn next() -> int = 2
+
+== formatted ==
+headless() {}
+fn missing_condition() = if
+{} else {}
+fn missing_body() = if true
+unrelated() {}
+fn survivor() -> int = 1
+fn unclosed() {
+    1 +
+fn next() -> int = 2

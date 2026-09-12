@@ -17,3 +17,7 @@ error[syntax/expected-token] 1:19: expected `}`
 
 == fixed ==
 fn f() { x} // tail
+
+== formatted ==
+fn f() {
+    x // tail

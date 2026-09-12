@@ -29,3 +29,8 @@ error[syntax/expected-item] 2:3..2:4 "x": expected a function item
 fn f(a: int)
   x
 fn g() {}
+
+== formatted ==
+fn f(a: int
+  x
+fn g() {}

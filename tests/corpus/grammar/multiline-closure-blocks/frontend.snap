@@ -17,3 +17,11 @@ SourceFile 0..64
           ParamList 54..56 "()"
           Block 57..62
             LiteralExpr 59..60 "2"
+
+== formatted ==
+fn outer() = fn() {
+    1
+}
+fn argument() = consume(fn() {
+    2
+})

@@ -14,3 +14,8 @@ SourceFile 0..39
       BinaryExpr 32..37
         NameRef 32..33 "a"
         NameRef 36..37 "b"
+
+== formatted ==
+fn add(a: int, b: int) -> int {
+    a + b
+}

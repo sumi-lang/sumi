@@ -27,3 +27,17 @@ SourceFile 0..86
         NameRef 71..72 "a"
         NameRef 75..76 "b"
       LiteralExpr 81..83 "42"
+
+== formatted ==
+fn f() -> int {
+    g()
+    if c {
+        h()
+    }
+    {
+        k()
+    }
+    fn(x) = x
+    a + b
+    42
+}

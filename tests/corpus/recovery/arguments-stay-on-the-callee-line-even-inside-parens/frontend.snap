@@ -21,3 +21,8 @@ error[syntax/expected-token] 2:1: expected `)`
 == fixed (syntax/expected-expression, syntax/unexpected-syntax remain) ==
 fn f() { (g)
 ()) }
+
+== formatted ==
+fn f() {
+    (g
+()) }

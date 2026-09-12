@@ -108,6 +108,25 @@ impl TextEdit {
     }
 }
 
+/// Apply `edits` to `source`. The edits must be sorted by start and must
+/// not overlap; two may touch, and insertions at one offset keep their
+/// order.
+pub fn apply(source: &str, edits: &[TextEdit]) -> String {
+    let grown: usize = edits.iter().map(|edit| edit.replacement().len()).sum();
+    let mut out = String::with_capacity(source.len() + grown);
+    let mut cursor = 0;
+    for edit in edits {
+        let start = edit.range().start().to_usize();
+        let end = edit.range().end().to_usize();
+        assert!(cursor <= start, "text edits must be sorted and disjoint");
+        out.push_str(&source[cursor..start]);
+        out.push_str(edit.replacement());
+        cursor = end;
+    }
+    out.push_str(&source[cursor..]);
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -116,6 +135,19 @@ mod tests {
     fn range_slices_source() {
         let range = TextRange::new(TextSize::new(3), TextSize::new(6));
         assert_eq!(range.text("fn map"), "map");
+    }
+
+    #[test]
+    fn apply_replaces_sorted_disjoint_ranges() {
+        let edit = |start, end, text: &str| {
+            TextEdit::new(
+                TextRange::new(TextSize::new(start), TextSize::new(end)),
+                text,
+            )
+        };
+        assert_eq!(apply("a==b", &[edit(1, 1, " "), edit(3, 3, " ")]), "a == b");
+        assert_eq!(apply("x  y", &[edit(1, 3, " ")]), "x y");
+        assert_eq!(apply("", &[edit(0, 0, "z"), edit(0, 0, "w")]), "zw");
     }
 
     #[test]

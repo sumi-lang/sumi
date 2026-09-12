@@ -15,3 +15,7 @@ ExpectedStatement at 15
 == diagnostics ==
 error[syntax/expected-statement] 1:16..1:17 "=": expected a statement
   at 1:16..1:19 "= z": skipped while recovering
+
+== formatted ==
+fn f() {
+    x = y = z }

@@ -14,3 +14,14 @@ SourceFile 0..48
             LiteralExpr 32..33 "2"
           Block 41..46
             LiteralExpr 43..44 "3"
+
+== formatted ==
+fn f() {
+    if a {
+        1
+    } else if b {
+        2
+    } else {
+        3
+    }
+}

@@ -16,3 +16,9 @@ Expected(Eq) at 13
 error[syntax/expected-name] 1:14: expected a name
 error[syntax/expected-token] 1:14: expected `=`
   at 1:14..1:21 "{ a = 1": skipped while recovering
+
+== formatted ==
+fn f() {
+    let { a = 1
+    b
+}

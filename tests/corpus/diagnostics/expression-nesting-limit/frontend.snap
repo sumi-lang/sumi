@@ -270,3 +270,10 @@ NestingTooDeep at 396
 == diagnostics ==
 error[syntax/nesting-too-deep] 3:268..3:269 "!": expression nesting limit exceeded
   at 3:268..3:314 "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!x": skipped while recovering
+
+== formatted ==
+// Past the nesting limit the rest of the expression is skipped as one run
+// and reported once, and the next item still parses.
+fn deep() =
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!x
+fn after() = 1

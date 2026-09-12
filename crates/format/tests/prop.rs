@@ -1,10 +1,10 @@
-//! Normalization properties over generated token soup.
+//! Formatting properties over generated token soup and well-formed programs.
 
 use proptest::prelude::*;
 use proptest::test_runner::FileFailurePersistence;
-use sumi_format::normalize;
+use sumi_format::{format, rep};
 use sumi_lexer::{LexedFile, lex};
-use sumi_syntax::{NodeKind, Parse, ParserInput, SyntaxKind, SyntaxTree, parse};
+use sumi_syntax::{Parse, ParserInput, SyntaxKind, parse};
 
 /// Source fragments beyond every keyword and punctuation text of the
 /// language, valid and pathological, echoing the parser soup property;
@@ -41,40 +41,6 @@ fn front(source: &str) -> Front {
     Front { lexed, parse }
 }
 
-/// The tree's shape: depth and kind per node, in preorder — everything
-/// about the parse that layout edits must not move.
-fn shape(tree: &SyntaxTree) -> Vec<(usize, NodeKind)> {
-    let mut nodes = Vec::new();
-    let mut pending = vec![(tree.root(), 0usize)];
-    while let Some((node, depth)) = pending.pop() {
-        nodes.push((depth, tree.kind(node)));
-        pending.extend(tree.children(node).map(|child| (child, depth + 1)));
-    }
-    nodes
-}
-
-/// The significant tokens, kinds and texts in order: the stream normalize
-/// may respace but never rewrite.
-fn significant<'src>(front: &Front, source: &'src str) -> Vec<(SyntaxKind, &'src str)> {
-    front
-        .lexed
-        .indices()
-        .filter(|&index| !front.lexed.kind(index).is_trivia())
-        .map(|index| (front.lexed.kind(index), front.lexed.text(source, index)))
-        .collect()
-}
-
-/// The comments in order: an operator may hop one, but none is ever
-/// deleted or reordered against another.
-fn comments<'src>(front: &Front, source: &'src str) -> Vec<&'src str> {
-    front
-        .lexed
-        .indices()
-        .filter(|&index| front.lexed.kind(index) == SyntaxKind::LineComment)
-        .map(|index| front.lexed.text(source, index))
-        .collect()
-}
-
 /// Records every failing seed in the crate's tracked `proptest-regressions/`
 /// file, which each later run replays before generating anything new, so a
 /// failure found once stays found. Proptest's default location is found by
@@ -90,35 +56,100 @@ fn config() -> ProptestConfig {
     }
 }
 
+/// The layout-free content of `source`: what formatting must keep.
+fn layout_free<'s>(source: &'s str, front: &Front) -> sumi_format::Rep<'s> {
+    let input = ParserInput::new(&front.lexed);
+    rep(source, &front.lexed, &input, front.parse.tree())
+}
+
+/// Format `source` and assert the contract: the rep is kept, the edits are
+/// the text, and formatting the result changes nothing.
+fn check_format(source: &str) -> sumi_format::Formatted {
+    let before = front(source);
+    let formatted = format(source, &before.lexed, &before.parse)
+        .unwrap_or_else(|defect| panic!("defect on {source:?}: {}", defect.rejected));
+    let after = front(&formatted.text);
+    assert_eq!(
+        layout_free(&formatted.text, &after),
+        layout_free(source, &before),
+        "format changed the rep of {source:?} -> {:?}",
+        formatted.text
+    );
+    assert_eq!(
+        sumi_text::apply(source, &formatted.edits),
+        formatted.text,
+        "the edits of {source:?} are not its text"
+    );
+    let again = format(&formatted.text, &after.lexed, &after.parse)
+        .unwrap_or_else(|defect| panic!("defect on {:?}: {}", formatted.text, defect.rejected));
+    assert_eq!(
+        again.text, formatted.text,
+        "format of {source:?} is not idempotent"
+    );
+    formatted
+}
+
 proptest! {
     #![proptest_config(config())]
     #[test]
-    fn normalize_preserves_the_parse_and_settles(source in soup()) {
-        let before = front(&source);
-        let normalized = normalize(&source, &before.lexed, &before.parse);
-        let after = front(&normalized);
+    fn format_keeps_the_rep_and_settles(source in soup()) {
+        check_format(&source);
+    }
 
-        // Layout edits keep every significant token and every comment.
-        prop_assert_eq!(
-            significant(&after, &normalized),
-            significant(&before, &source),
-            "normalize rewrote tokens of {:?} -> {:?}", source, normalized
-        );
-        prop_assert_eq!(
-            comments(&after, &normalized),
-            comments(&before, &source),
-            "normalize lost a comment of {:?} -> {:?}", source, normalized
-        );
+    #[test]
+    fn formatted_lines_fit_the_width(source in sumi_test::program()) {
+        let formatted = check_format(&source);
+        for line in formatted.text.lines() {
+            // A trailing comment may run past the width; code may not.
+            let code = line.find(" //").map_or(line, |at| &line[..at]);
+            prop_assert!(
+                code.chars().count() <= sumi_format::WIDTH,
+                "a line of {:?} -> {:?} is wider than {}: {:?}",
+                source,
+                formatted.text,
+                sumi_format::WIDTH,
+                line
+            );
+        }
+    }
 
-        // And reparse to the same tree.
+    #[test]
+    fn a_layout_perturbation_formats_to_the_same_text(
+        (source, perturbed) in sumi_test::perturbed_program()
+    ) {
+        // The perturbation is layout-neutral: it keeps the rep.
+        let original = front(&source);
+        let changed = front(&perturbed);
         prop_assert_eq!(
-            shape(after.parse.tree()),
-            shape(before.parse.tree()),
-            "normalize changed the shape of {:?} -> {:?}", source, normalized
+            layout_free(&perturbed, &changed),
+            layout_free(&source, &original),
+            "the perturbation of {:?} -> {:?} changed the rep",
+            source,
+            perturbed
         );
+        // So the formatter, a function of the rep, prints it the same.
+        let formatted = check_format(&source);
+        let perturbed_formatted = check_format(&perturbed);
+        prop_assert_eq!(
+            perturbed_formatted.text,
+            formatted.text,
+            "formatting {:?} differs from formatting {:?}",
+            perturbed,
+            source
+        );
+    }
 
-        // A second pass finds nothing left to do.
-        let again = normalize(&normalized, &after.lexed, &after.parse);
-        prop_assert_eq!(&again, &normalized, "normalize of {:?} is not idempotent", source);
+    #[test]
+    fn well_formed_programs_format_without_reverting(source in sumi_test::program()) {
+        let formatted = check_format(&source);
+        prop_assert_eq!(formatted.reverted, 0, "reverted items in {:?}", source);
+        let after = front(&formatted.text);
+        prop_assert!(
+            after.parse.evidence().is_empty(),
+            "formatted {:?} -> {:?} has evidence {:?}",
+            source,
+            formatted.text,
+            after.parse.evidence()
+        );
     }
 }

@@ -31,3 +31,9 @@ error[syntax/expected-item] 1:24..1:25 ")": expected a function item
 
 == fixed (syntax/expected-boundary, syntax/expected-item, syntax/expected-token remain) ==
 fn f() { ({ (a) { b) }) }) }
+
+== formatted ==
+fn f() {
+    (
+        {
+            (a { b) } }) }

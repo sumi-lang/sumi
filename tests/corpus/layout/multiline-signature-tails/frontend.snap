@@ -32,3 +32,14 @@ SourceFile 0..178
         CallExpr 167..174
           NameRef 167..172 "value"
           ArgList 172..174 "()"
+
+== formatted ==
+fn value() -> int = 1
+fn identity(x: int)
+// result
+-> int
+// body
+= x
+fn empty() = {}
+fn block() -> unit {}
+fn caller() -> int = identity(value())

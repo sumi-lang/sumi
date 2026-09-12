@@ -1,4 +1,4 @@
-use sumi_format::{Element, elements, layout_violation_edits, normalize, reprint};
+use sumi_format::{Element, elements, layout_violation_edits, reprint};
 use sumi_lexer::{LexedFile, lex};
 use sumi_syntax::{NodeIdx, Parse, ParseEvidence, ParseViolationKind, ParserInput, parse};
 
@@ -11,18 +11,6 @@ fn front(source: &str) -> Front {
     let lexed = lex(source).expect("test sources fit in u32");
     let parse = parse(&ParserInput::new(&lexed));
     Front { lexed, parse }
-}
-
-fn violations(front: &Front) -> Vec<ParseViolationKind> {
-    front
-        .parse
-        .evidence()
-        .iter()
-        .filter_map(|evidence| match evidence {
-            ParseEvidence::Violation(violation) => Some(violation.kind),
-            ParseEvidence::Recovery(_) => None,
-        })
-        .collect()
 }
 
 fn apply_edits(source: &str, edits: &[sumi_text::TextEdit]) -> String {
@@ -65,9 +53,7 @@ fn check_layout_edits(source: &str, kind: ParseViolationKind, expected: Option<&
     }
 }
 
-/// Normalize `source`; assert the expected text, that no layout violation
-/// survives, that the tree shape is unchanged, and that a second pass
-/// changes nothing.
+/// Assert that reprinting `source` gives it back byte for byte.
 #[track_caller]
 fn check_roundtrip(source: &str) {
     let front = front(source);
@@ -240,65 +226,4 @@ fn layout_violation_edits_reject_nonmechanical_candidates() {
         ParseViolationKind::BindingNameOnNextLine,
         None,
     );
-}
-
-#[test]
-fn normalize_preserves_next_line_blocks() {
-    let source = "fn f()\n{ if true\n{} else\n{} }";
-    let before = front(source);
-    assert!(before.parse.evidence().is_empty());
-    assert_eq!(normalize(source, &before.lexed, &before.parse), source);
-}
-
-#[test]
-fn normalize_preserves_trailing_operators() {
-    for source in [
-        "fn f() { a +\n b }",
-        "fn f() { a +\n: b }",
-        "fn f() { a +\n}",
-    ] {
-        let before = front(source);
-        let normalized = normalize(source, &before.lexed, &before.parse);
-        assert_eq!(normalized, source, "trailing operators stay as written");
-    }
-}
-
-#[test]
-fn normalize_spaces_trailing_operators_without_moving_recovered_damage() {
-    let source = "fn f() { true&<\ntrue }";
-    let before = front(source);
-    let normalized = normalize(source, &before.lexed, &before.parse);
-    assert_eq!(normalized, "fn f() { true& <\ntrue }");
-    check_roundtrip(source);
-
-    let source = "fn f() { true<\n) }";
-    let before = front(source);
-    let normalized = normalize(source, &before.lexed, &before.parse);
-    assert_eq!(normalized, "fn f() { true <\n) }");
-    check_roundtrip(source);
-}
-
-#[test]
-fn normalize_leaves_chained_comparisons_as_written() {
-    let source = "fn f() { let x = a < b < c }";
-    let before = front(source);
-    assert_eq!(
-        violations(&before),
-        [ParseViolationKind::ChainedComparison],
-        "the chain is the only violation"
-    );
-    let normalized = normalize(source, &before.lexed, &before.parse);
-    assert_eq!(normalized, source);
-}
-
-#[test]
-fn normalize_never_deletes_a_comment_from_a_prefix_gap() {
-    let source = "fn f() { let x = - // why\n 1 }";
-    let before = front(source);
-    assert_eq!(
-        violations(&before),
-        [ParseViolationKind::SpacedPrefixOperator]
-    );
-    let normalized = normalize(source, &before.lexed, &before.parse);
-    assert_eq!(normalized, source, "a comment-blocked gap stays as written");
 }

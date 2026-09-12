@@ -1,0 +1,30 @@
+== tree ==
+SourceFile! 0..16
+  FnItem! 0..16
+    ParamList! 3..4 "("
+    Block 5..16
+      CallExpr 7..15
+        CallExpr 7..10
+          NameRef 7..8 "g"
+          ArgList 8..10 "()"
+        ArgList 10..15
+          NameRef 11..12 "b"
+
+== evidence ==
+ExpectedName at 3
+Expected(RParen) at 5
+
+== diagnostics ==
+error[syntax/expected-name] 1:4: expected a name
+error[syntax/expected-token] 1:6: expected `)`
+  at 1:4..1:5 "(": opening delimiter is here
+  fix (safe): insert `)`
+    1:5 -> ")"
+
+== fixed (syntax/expected-name remains) ==
+fn () { g()(b ,)}
+
+== formatted ==
+fn ( {
+    g()(b)
+}

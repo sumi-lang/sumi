@@ -14,3 +14,8 @@ Expected(LBrace) at 14
 
 == diagnostics ==
 error[syntax/expected-token] 1:15..1:16 "1": expected `{`
+
+== formatted ==
+fn f() {
+    if 1 1 {}
+}

@@ -18,3 +18,7 @@ error[syntax/expected-token] 1:13: expected `)`
 
 == fixed ==
 fn f() { (x) }
+
+== formatted ==
+fn f() {
+    (x }

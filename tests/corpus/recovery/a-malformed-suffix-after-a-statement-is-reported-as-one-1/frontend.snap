@@ -13,3 +13,7 @@ ExpectedStatement at 11
 == diagnostics ==
 error[syntax/expected-statement] 1:12..1:13 ":": expected a statement
   at 1:12..1:15 ": 1": skipped while recovering
+
+== formatted ==
+fn f() {
+    x : 1 }

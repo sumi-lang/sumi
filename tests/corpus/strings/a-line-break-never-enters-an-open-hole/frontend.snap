@@ -1,0 +1,149 @@
+== tree ==
+SourceFile! 0..345
+  FnItem! 205..328
+    ParamList 208..210 "()"
+    Error! 211..324 "$$$$$\"{$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$)"
+    ParenExpr! 326..328
+      LiteralExpr 327..328 "0"
+  Error! 329..343 "fn hidden() {}"
+  Error! 343..344 ")"
+
+== evidence ==
+ExpectedName at 208
+ExpectedBody at 211
+Expected(RParen) at 329
+ExpectedItem at 329
+
+== diagnostics ==
+error[syntax/expected-name] 4:4: expected a name
+error[syntax/unknown-punctuation] 4:7..4:8 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:8..4:9 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:9..4:10 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:10..4:11 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:11..4:12 "$": punctuation has no meaning in Sumi source
+error[syntax/unclosed-hole] 4:13..4:14 "{": hole in string literal is not closed on its line
+  note: a `{` in a string literal opens a hole for an expression, which ends with its line; a `{` meant as text is written `\{`
+error[syntax/unknown-punctuation] 4:14..4:15 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:15..4:16 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:16..4:17 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:17..4:18 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:18..4:19 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:19..4:20 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:20..4:21 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:21..4:22 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:22..4:23 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:23..4:24 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:24..4:25 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:25..4:26 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:26..4:27 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:27..4:28 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:28..4:29 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:29..4:30 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:30..4:31 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:31..4:32 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:32..4:33 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:33..4:34 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:34..4:35 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:35..4:36 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:36..4:37 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:37..4:38 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:38..4:39 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:39..4:40 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:40..4:41 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:41..4:42 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:42..4:43 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:43..4:44 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:44..4:45 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:45..4:46 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:46..4:47 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:47..4:48 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:48..4:49 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:49..4:50 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:50..4:51 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:51..4:52 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:52..4:53 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:53..4:54 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:54..4:55 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:55..4:56 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:56..4:57 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:57..4:58 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:58..4:59 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:59..4:60 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:60..4:61 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:61..4:62 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:62..4:63 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:63..4:64 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:64..4:65 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:65..4:66 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:66..4:67 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:67..4:68 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:68..4:69 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:69..4:70 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:70..4:71 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:71..4:72 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:72..4:73 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:73..4:74 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:74..4:75 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:75..4:76 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:76..4:77 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:77..4:78 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:78..4:79 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:79..4:80 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:80..4:81 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:81..4:82 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:82..4:83 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:83..4:84 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:84..4:85 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:85..4:86 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:86..4:87 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:87..4:88 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:88..4:89 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:89..4:90 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:90..4:91 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:91..4:92 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:92..4:93 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:93..4:94 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:94..4:95 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:95..4:96 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:96..4:97 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:97..4:98 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:98..4:99 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:99..4:100 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:100..4:101 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:101..4:102 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:102..4:103 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:103..4:104 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:104..4:105 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:105..4:106 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:106..4:107 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:107..4:108 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:108..4:109 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:109..4:110 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:110..4:111 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:111..4:112 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:112..4:113 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:113..4:114 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:114..4:115 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:115..4:116 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:116..4:117 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:117..4:118 "$": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 4:118..4:119 "$": punctuation has no meaning in Sumi source
+error[syntax/expected-token] 4:125: expected `)`
+  at 4:122..4:123 "(": opening delimiter is here
+  fix (safe): insert `)`
+    4:124 -> ")"
+error[syntax/expected-item] 4:125..4:127 "fn": expected a function item
+  at 4:125..4:139 "fn hidden() {}": skipped while recovering
+  at 4:139..4:140 ")": skipped while recovering
+
+== fixed (syntax/expected-item, syntax/expected-name, syntax/unclosed-hole, syntax/unknown-punctuation remain) ==
+// The hole opened by `"{` never closes on its line, so a break added
+// anywhere after it would end the hole and re-pair the brackets after it,
+// making `fn hidden` an item. The line stays long instead.
+fn () $$$$$"{$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$) =(0) fn hidden() {})
+
+== formatted ==
+// The hole opened by `"{` never closes on its line, so a break added
+// anywhere after it would end the hole and re-pair the brackets after it,
+// making `fn hidden` an item. The line stays long instead.
+fn () $$$$$"{$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$) = (0 fn hidden() {})

@@ -147,3 +147,22 @@ fn enclosed() = (0) fn hidden() {})
 fn next_d() -> int = 4
 fn enclosed_after_garbage() = (0) , fn hidden() {}) fn() {}
 fn next_e() -> int = 5
+
+== formatted ==
+fn () {}
+garbage fn () {}
+fn malformed_closure() = fn = 1
+fn next_a() -> int = 1
+fn multiline_closure() = fn
+() = 1
+fn next_b() -> int = 2
+fn damaged_block() {
+    0
+    fn() = 1
+fn next_c() -> int = 3
+fn _() {}
+fn trailing() = fn
+fn enclosed() = (0 fn hidden() {})
+fn next_d() -> int = 4
+fn enclosed_after_garbage() = (0 , fn hidden() {}) fn() {}
+fn next_e() -> int = 5

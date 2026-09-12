@@ -28,3 +28,9 @@ error[syntax/expected-token] 2:8: expected `}`
 == fixed (syntax/expected-statement, syntax/expected-token remain) ==
 fn f() { g(a
   { % b}) }
+
+== formatted ==
+fn f() {
+    g(a
+  { % b)
+}

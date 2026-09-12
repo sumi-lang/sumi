@@ -12,3 +12,9 @@ SpacedPrefixOperator at 9
 
 == diagnostics ==
 error[syntax/spaced-prefix-operator] 1:10..1:11 "-": prefix operator must be adjacent to its operand
+
+== formatted (SpacedPrefixOperator remains) ==
+fn f() {
+    - // why
+1
+}

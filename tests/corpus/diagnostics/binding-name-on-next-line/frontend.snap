@@ -37,10 +37,10 @@ fn bindings() {
     commented = 3
 }
 
-== normalized (BindingNameOnNextLine remains) ==
+== formatted (BindingNameOnNextLine remains) ==
 fn bindings() {
     let plain = 1
     let mut mutable = 2
     let // why
-    commented = 3
+commented = 3
 }

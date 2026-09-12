@@ -16,6 +16,7 @@ sumi-hir = { path = "../crates/hir" }
 sumi-lexer = { path = "../crates/lexer" }
 sumi-syntax = { path = "../crates/syntax" }
 sumi-test = { path = "../crates/test" }
+sumi-text = { path = "../crates/text" }
 
 [[bin]]
 name = "lex"

@@ -14,3 +14,9 @@ ExpectedStatement at 11
 == diagnostics ==
 error[syntax/expected-statement] 1:12..1:13 "&": expected a statement
   at 1:12..1:18 "&{ & b": skipped while recovering
+
+== formatted ==
+fn f() {
+    a &{ & b
+    c
+}

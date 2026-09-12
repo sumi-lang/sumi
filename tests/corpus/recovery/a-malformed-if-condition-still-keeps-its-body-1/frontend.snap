@@ -12,3 +12,8 @@ ExpectedExpression at 12
 
 == diagnostics ==
 error[syntax/expected-expression] 1:13: expected an expression
+
+== formatted ==
+fn f() {
+    if {}
+}

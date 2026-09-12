@@ -12,3 +12,7 @@ SourceFile 0..53
     CallExpr 44..52
       NameRef 44..49 "value"
       ArgList 49..52 "(\n)"
+
+== formatted ==
+fn value() -> int = 1
+fn caller() -> int = value()

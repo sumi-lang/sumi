@@ -12,3 +12,10 @@ SourceFile 0..39
               Name 24..25 "x"
           Block 31..36
             NameRef 33..34 "x"
+
+== formatted ==
+fn f() {
+    let g = fn(x) {
+        x
+    }
+}

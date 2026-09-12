@@ -14,3 +14,9 @@ PriorPhaseError at 13
 
 == diagnostics ==
 error[syntax/unknown-punctuation] 2:5..2:6 ";": punctuation has no meaning in Sumi source
+
+== formatted ==
+fn f() {
+    a ;
+    b
+}

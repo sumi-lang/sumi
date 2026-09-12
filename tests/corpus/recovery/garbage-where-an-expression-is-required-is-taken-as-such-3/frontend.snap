@@ -15,3 +15,10 @@ ExpectedExpression at 12
 
 == diagnostics ==
 error[syntax/expected-expression] 1:13..1:17 "else": expected an expression
+
+== formatted ==
+fn f() {
+    if else c {
+        a
+    }
+}

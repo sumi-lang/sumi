@@ -107,3 +107,56 @@ SourceFile 0..520
       CallExpr 510..517
         NameRef 510..515 "value"
         ArgList 515..517 "()"
+
+== formatted ==
+fn value() -> int = 1
+fn action() {}
+fn accepted() -> int {
+    let u = action()
+    u
+    (u)
+    action()
+    (action())
+    {}
+    if true {}
+    _ = value()
+    _ = true
+    _ = u
+    value()
+}
+fn rejected() -> int {
+    let x = 1
+    x
+    (x)
+    1 + 2
+    true
+    value()
+    (value())
+    {
+        1
+    }
+    if true {
+        1
+    } else {
+        2
+    }
+    0
+}
+fn failed_expressions() {
+    missing
+    1 + true
+    if true {
+        1
+    }
+    _ = 0
+}
+fn nested_failure() {
+    {
+        value()
+        2
+    }
+    _ = 0
+}
+fn tail_requires_unit() {
+    value()
+}

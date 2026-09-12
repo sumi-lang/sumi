@@ -53,17 +53,3 @@ fn missing_closer() {
     (1)
     return
 }
-
-== normalized ==
-fn empty() {
-    ()
-    return
-}
-fn damaged_inner() {
-    ((1 + ))
-    return
-}
-fn missing_closer() {
-    (1
-    return
-}

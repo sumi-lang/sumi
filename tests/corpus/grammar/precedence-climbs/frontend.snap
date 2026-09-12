@@ -19,3 +19,8 @@ SourceFile 0..39
                     NameRef 33..34 "f"
                     ArgList 34..37
                       NameRef 35..36 "g"
+
+== formatted ==
+fn f() {
+    a || b && c == d + e * -f(g)
+}

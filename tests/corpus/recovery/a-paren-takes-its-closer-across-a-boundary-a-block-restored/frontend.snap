@@ -20,3 +20,11 @@ error[syntax/expected-token] 2:1: expected `}`
 == fixed ==
 fn f() { ({ a}
 ) }
+
+== formatted ==
+fn f() {
+    (
+        {
+            a
+)
+}

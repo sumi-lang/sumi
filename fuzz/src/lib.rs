@@ -11,7 +11,7 @@
 
 use std::collections::HashSet;
 
-use sumi_format::{normalize, reprint};
+use sumi_format::{format, rep, reprint};
 use sumi_frontend::{Applicability, FileId, ParsedSource, Place, Severity, codes, parse_source};
 use sumi_lexer::{LexedFile, RawIdx, RawKind, SyntaxKind, TokenFlags, lex};
 use sumi_syntax::{
@@ -653,45 +653,35 @@ pub fn check_diagnostics(parsed: &ParsedSource) {
     check_tree(reparsed.parse().tree(), reparsed.lexed());
 }
 
-/// Normalizing keeps every significant token and every comment, reparses
-/// to the same shape, and settles in one pass.
-pub fn check_normalize(source: &str, lexed: &LexedFile, parsed: &Parse) {
-    let normalized = normalize(source, lexed, parsed);
-    let after_lexed = lex(&normalized).expect("normalized inputs fit in u32");
-    let after = parse(&ParserInput::new(&after_lexed));
-
+/// The formatter's contract: the rep is kept, the edits are the text, a
+/// second pass changes nothing, and no defect. Restates the
+/// `sumi-format` formatting properties.
+pub fn check_format(source: &str, lexed: &LexedFile, parsed: &Parse) {
+    let input = ParserInput::new(lexed);
+    let before = rep(source, lexed, &input, parsed.tree());
+    let formatted = format(source, lexed, parsed)
+        .unwrap_or_else(|defect| panic!("format defect on {source:?}: {}", defect.rejected));
     assert_eq!(
-        significant(&after_lexed, &normalized),
-        significant(lexed, source),
-        "normalize rewrote tokens: {source:?} -> {normalized:?}"
+        sumi_text::apply(source, &formatted.edits),
+        formatted.text,
+        "the edits are not the text: {source:?}"
     );
+    let after_lexed = lex(&formatted.text).expect("formatted inputs fit in u32");
+    let after_input = ParserInput::new(&after_lexed);
+    let after = parse(&after_input);
     assert_eq!(
-        comments(&after_lexed, &normalized),
-        comments(lexed, source),
-        "normalize lost a comment: {source:?} -> {normalized:?}"
+        rep(&formatted.text, &after_lexed, &after_input, after.tree()),
+        before,
+        "format changed the rep: {source:?} -> {:?}",
+        formatted.text
     );
+    let again = format(&formatted.text, &after_lexed, &after).unwrap_or_else(|defect| {
+        panic!("format defect on {:?}: {}", formatted.text, defect.rejected)
+    });
     assert_eq!(
-        shape(after.tree()),
-        shape(parsed.tree()),
-        "normalize changed the shape: {source:?} -> {normalized:?}"
+        again.text, formatted.text,
+        "format is not idempotent on {source:?}"
     );
-
-    let again = normalize(&normalized, &after_lexed, &after);
-    assert_eq!(
-        again, normalized,
-        "normalize is not idempotent on {source:?}"
-    );
-}
-
-/// The tree's shape: depth and kind per node, in preorder.
-fn shape(tree: &SyntaxTree) -> Vec<(usize, NodeKind)> {
-    let mut nodes = Vec::new();
-    let mut pending = vec![(tree.root(), 0usize)];
-    while let Some((node, depth)) = pending.pop() {
-        nodes.push((depth, tree.kind(node)));
-        pending.extend(tree.children(node).map(|child| (child, depth + 1)));
-    }
-    nodes
 }
 
 /// The significant tokens, kinds and texts in order.

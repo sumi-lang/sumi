@@ -5,3 +5,8 @@ SourceFile 0..12
     ParamList 4..6 "()"
     Block 7..12
       LiteralExpr 9..10 "1"
+
+== formatted ==
+fn f() {
+    1
+}

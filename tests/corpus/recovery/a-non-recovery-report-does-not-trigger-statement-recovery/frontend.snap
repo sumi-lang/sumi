@@ -21,5 +21,7 @@ error[syntax/expected-boundary] 1:14: expected a line break between statements
 == fixed (syntax/expected-boundary remains) ==
 fn f() { -x y }
 
-== normalized ==
-fn f() { -x y }
+== formatted ==
+fn f() {
+    -x y
+}

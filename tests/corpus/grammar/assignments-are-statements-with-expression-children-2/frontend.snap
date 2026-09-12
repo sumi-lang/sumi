@@ -13,3 +13,8 @@ SourceFile 0..28
             NameRef 17..18 "c"
             NameRef 21..22 "d"
           NameRef 25..26 "e"
+
+== formatted ==
+fn f() {
+    a + b = c * d + e
+}
