@@ -58,11 +58,6 @@ pub enum NodeKind {
     /// `fn(x: int) -> int { … }`, with an item's parameter list, return type,
     /// and body forms.
     ClosureExpr,
-    /// A string literal with holes: text around `{expr}` holes, each an
-    /// expression on its line whose value the string takes in its place.
-    InterpolatedString,
-    /// One hole of a string literal: `{`, an expression, and `}`, on one line.
-    Hole,
     /// Covers tokens the parser could not parse.
     Error,
 }
@@ -78,7 +73,6 @@ pub fn starts_expression(kind: SyntaxKind) -> bool {
             | SyntaxKind::TrueKw
             | SyntaxKind::IntLiteral
             | SyntaxKind::StringLiteral
-            | SyntaxKind::StringStart
             | SyntaxKind::LParen
             | SyntaxKind::LBrace
             | SyntaxKind::Bang
@@ -112,7 +106,6 @@ pub fn can_end_statement(kind: SyntaxKind) -> bool {
             | SyntaxKind::TrueKw
             | SyntaxKind::IntLiteral
             | SyntaxKind::StringLiteral
-            | SyntaxKind::StringEnd
             | SyntaxKind::RParen
             | SyntaxKind::RBrace
             | SyntaxKind::Error
@@ -155,10 +148,9 @@ pub fn continues_statement(kind: SyntaxKind, glued: Option<SyntaxKind>) -> bool 
 }
 
 /// The bracket pairs the token stream matches, opener then closer.
-pub const BRACKET_PAIRS: [(SyntaxKind, SyntaxKind); 3] = [
+pub const BRACKET_PAIRS: [(SyntaxKind, SyntaxKind); 2] = [
     (SyntaxKind::LParen, SyntaxKind::RParen),
     (SyntaxKind::LBrace, SyntaxKind::RBrace),
-    (SyntaxKind::HoleOpen, SyntaxKind::HoleClose),
 ];
 
 /// The index in [`BRACKET_PAIRS`] of the pair a token of this kind opens
@@ -167,7 +159,6 @@ pub fn pair_index(kind: SyntaxKind) -> Option<usize> {
     Some(match kind {
         SyntaxKind::LParen | SyntaxKind::RParen => 0,
         SyntaxKind::LBrace | SyntaxKind::RBrace => 1,
-        SyntaxKind::HoleOpen | SyntaxKind::HoleClose => 2,
         _ => return None,
     })
 }
@@ -177,7 +168,6 @@ pub fn closer(opener: SyntaxKind) -> Option<SyntaxKind> {
     Some(match opener {
         SyntaxKind::LParen => SyntaxKind::RParen,
         SyntaxKind::LBrace => SyntaxKind::RBrace,
-        SyntaxKind::HoleOpen => SyntaxKind::HoleClose,
         _ => return None,
     })
 }
@@ -187,7 +177,6 @@ pub fn opener(closer: SyntaxKind) -> Option<SyntaxKind> {
     Some(match closer {
         SyntaxKind::RParen => SyntaxKind::LParen,
         SyntaxKind::RBrace => SyntaxKind::LBrace,
-        SyntaxKind::HoleClose => SyntaxKind::HoleOpen,
         _ => return None,
     })
 }

@@ -13,7 +13,7 @@
 //! inside one, so a mistaken rule widens a line instead of changing the
 //! program.
 
-use sumi_lexer::{LexedFile, RawIdx, SyntaxKind, TokenFlags};
+use sumi_lexer::{LexedFile, RawIdx, SyntaxKind};
 use sumi_syntax::{
     NodeIdx, NodeKind, Parse, ParseAnchor, ParseEvidence, ParserInput, SigIdx, SyntaxTree,
     binary_operator,
@@ -157,9 +157,6 @@ pub(crate) fn plan(lexed: &LexedFile, input: &ParserInput, parse: &Parse) -> Pla
             g.hard = true;
             g.level = 0;
         }
-        // A line break ends every hole open on its line and discards the
-        // brackets opened inside. So a break is never added while a hole
-        // is open, and one that closed a hole is kept.
         let start = if gap == 0 {
             RawIdx::new(0)
         } else {
@@ -170,18 +167,6 @@ pub(crate) fn plan(lexed: &LexedFile, input: &ParserInput, parse: &Parse) -> Pla
         } else {
             input.token(SigIdx::new(gap as u32))
         };
-        let hole_open_after = |raw: RawIdx| lexed.flags(raw).contains(TokenFlags::HOLE_AFTER);
-        if gap < n && end.checked_sub(1).is_some_and(hole_open_after) {
-            g.breakable = false;
-            g.hard = false;
-        } else if gap > 0
-            && hole_open_after(start - 1)
-            && start
-                .until(end)
-                .any(|raw| lexed.kind(raw) == SyntaxKind::Newline)
-        {
-            g.hard = true;
-        }
         // A comment ends its line.
         if start
             .until(end)
@@ -287,7 +272,7 @@ impl Planner<'_> {
         )
     }
 
-    fn set(&mut self, gap: u32, sep: Sep, flat: bool) {
+    fn set(&mut self, gap: u32, sep: Sep) {
         let g = &mut self.gaps[gap as usize];
         g.flat = Flat::Space;
         g.breakable = false;
@@ -302,31 +287,25 @@ impl Planner<'_> {
                 } else {
                     Flat::Glue
                 };
-                if !flat {
-                    g.breakable = true;
-                    g.level = level;
-                    g.comment_level = level;
-                }
+                g.breakable = true;
+                g.level = level;
+                g.comment_level = level;
             }
             Sep::Hard(level) | Sep::HardClose(level) => {
-                if !flat {
-                    g.hard = true;
-                    g.level = level;
-                    g.comment_level = if matches!(sep, Sep::HardClose(_)) {
-                        level + 1
-                    } else {
-                        level
-                    };
-                }
+                g.hard = true;
+                g.level = level;
+                g.comment_level = if matches!(sep, Sep::HardClose(_)) {
+                    level + 1
+                } else {
+                    level
+                };
             }
             Sep::Closer(level) => {
                 g.flat = Flat::Glue;
                 g.level = level;
                 g.comment_level = level + 1;
-                if !flat {
-                    g.breakable = true;
-                    g.closer = true;
-                }
+                g.breakable = true;
+                g.closer = true;
             }
         }
     }
@@ -357,21 +336,19 @@ impl Planner<'_> {
     /// the tail of the group from the gap after `=` to the end of `node`,
     /// unless it is an operator chain, which reads better moved whole to
     /// the next line before it breaks at its operators.
-    fn value(&mut self, node: NodeIdx, eq: u32, value: NodeIdx, level: u32, flat: bool) {
+    fn value(&mut self, node: NodeIdx, eq: u32, value: NodeIdx, level: u32) {
         let chain = self.tree.kind(value) == NodeKind::BinaryExpr;
-        if !flat {
-            if chain {
-                self.group(eq + 1, self.end_sig(node));
-            } else {
-                self.group_with_tail(eq + 1, self.end_sig(node), value);
-            }
+        if chain {
+            self.group(eq + 1, self.end_sig(node));
+        } else {
+            self.group_with_tail(eq + 1, self.end_sig(node), value);
         }
-        self.node(value, if chain { level + 1 } else { level }, flat);
+        self.node(value, if chain { level + 1 } else { level });
     }
 
     /// Lay out `node` at indentation `level`, the level of the line it
-    /// begins on; `flat` inside a hole, where nothing may break.
-    fn node(&mut self, node: NodeIdx, level: u32, flat: bool) {
+    /// begins on.
+    fn node(&mut self, node: NodeIdx, level: u32) {
         let kind = self.tree.kind(node);
         if kind == NodeKind::Error {
             return;
@@ -379,66 +356,60 @@ impl Planner<'_> {
         let els = self.elements(node);
         match kind {
             NodeKind::SourceFile => unreachable!("the root is laid out by source_file"),
-            NodeKind::FnItem | NodeKind::ClosureExpr => self.function(node, &els, level, flat),
-            NodeKind::ParamList | NodeKind::ArgList => self.list(node, &els, level, flat),
-            NodeKind::Block => self.block(&els, level, flat),
+            NodeKind::FnItem | NodeKind::ClosureExpr => self.function(node, &els, level),
+            NodeKind::ParamList | NodeKind::ArgList => self.list(node, &els, level),
+            NodeKind::Block => self.block(&els, level),
             NodeKind::LetStmt | NodeKind::AssignStmt | NodeKind::DiscardStmt => {
-                self.binding(node, &els, level, flat);
+                self.binding(node, &els, level);
             }
-            NodeKind::BinaryExpr => self.binary(node, &els, level, flat, None),
+            NodeKind::BinaryExpr => self.binary(node, &els, level, None),
             NodeKind::ParenExpr => {
-                self.pairs(&els, flat, |a, b| match (a, b) {
+                self.pairs(&els, |a, b| match (a, b) {
                     (El::Tok(_, SyntaxKind::LParen), El::Tok(_, SyntaxKind::RParen)) => Sep::Glue,
                     (El::Tok(_, SyntaxKind::LParen), _) => Sep::SoftGlue(level + 1),
                     (_, El::Tok(_, SyntaxKind::RParen)) => Sep::SoftGlue(level),
                     _ => Sep::Space,
                 });
-                if !flat {
-                    self.group(self.first_sig(node) + 1, self.end_sig(node));
-                }
-                self.children(&els, level + 1, flat);
+                self.group(self.first_sig(node) + 1, self.end_sig(node));
+                self.children(&els, level + 1);
             }
             NodeKind::Param => {
-                self.pairs(&els, flat, |_, b| match b {
+                self.pairs(&els, |_, b| match b {
                     El::Tok(_, SyntaxKind::Colon) => Sep::Glue,
                     _ => Sep::Space,
                 });
-                self.children(&els, level, flat);
+                self.children(&els, level);
             }
-            NodeKind::PrefixExpr | NodeKind::CallExpr | NodeKind::InterpolatedString => {
-                self.pairs(&els, flat, |_, _| Sep::Glue);
-                self.children(&els, level, flat);
-            }
-            NodeKind::Hole => {
-                self.pairs(&els, true, |_, _| Sep::Glue);
-                self.children(&els, level, true);
+            NodeKind::PrefixExpr | NodeKind::CallExpr => {
+                self.pairs(&els, |_, _| Sep::Glue);
+                self.children(&els, level);
             }
             NodeKind::ReturnStmt | NodeKind::IfExpr => {
-                self.pairs(&els, flat, |_, _| Sep::Space);
-                self.children(&els, level, flat);
+                self.pairs(&els, |_, _| Sep::Space);
+                self.children(&els, level);
             }
             NodeKind::Name
             | NodeKind::TypeRef
             | NodeKind::NameRef
             | NodeKind::LiteralExpr
             | NodeKind::Error => {
-                self.pairs(&els, flat, |_, _| Sep::Space);
-                self.children(&els, level, flat);
+                self.pairs(&els, |_, _| Sep::Space);
+                self.children(&els, level);
             }
         }
     }
 
-    fn pairs(&mut self, els: &[El], flat: bool, rule: impl Fn(El, El) -> Sep) {
+    fn pairs(&mut self, els: &[El], rule: impl Fn(El, El) -> Sep) {
         for pair in els.windows(2) {
             let gap = self.start(pair[1]);
-            self.set(gap, rule(pair[0], pair[1]), flat);
+            self.set(gap, rule(pair[0], pair[1]));
         }
     }
 
-    fn children(&mut self, els: &[El], level: u32, flat: bool) {
+    fn children(&mut self, els: &[El], level: u32) {
         for &el in els {
             if let El::Node(child, _) = el {
-                self.node(child, level, flat);
+                self.node(child, level);
             }
         }
     }
@@ -449,37 +420,37 @@ impl Planner<'_> {
         let items: Vec<NodeIdx> = self.tree.children_in_order(root).collect();
         for pair in items.windows(2) {
             let gap = self.first_sig(pair[1]);
-            self.set(gap, Sep::Hard(0), false);
+            self.set(gap, Sep::Hard(0));
         }
         for item in items {
-            self.node(item, 0, false);
+            self.node(item, 0);
         }
     }
 
     /// A function item or closure: the head on one line, and the body a
     /// block after a space or an expression after `=`, laid out as a
     /// binding's value.
-    fn function(&mut self, node: NodeIdx, els: &[El], level: u32, flat: bool) {
-        self.pairs(els, flat, |a, b| match (a, b) {
+    fn function(&mut self, node: NodeIdx, els: &[El], level: u32) {
+        self.pairs(els, |a, b| match (a, b) {
             (El::Tok(_, SyntaxKind::FnKw), El::Node(_, NodeKind::ParamList)) => Sep::Glue,
             (El::Node(_, NodeKind::Name), El::Node(_, NodeKind::ParamList)) => Sep::Glue,
             (El::Tok(_, SyntaxKind::Minus), El::Tok(_, SyntaxKind::Gt)) => Sep::Glue,
             (El::Tok(_, SyntaxKind::Eq), El::Node(..)) => Sep::Soft(level + 1),
             _ => Sep::Space,
         });
-        self.head_and_value(node, els, level, flat);
+        self.head_and_value(node, els, level);
     }
 
     /// Lay out the children of a construct whose `=`, if any, is followed
     /// by its value.
-    fn head_and_value(&mut self, node: NodeIdx, els: &[El], level: u32, flat: bool) {
+    fn head_and_value(&mut self, node: NodeIdx, els: &[El], level: u32) {
         let mut eq = None;
         for &el in els {
             match el {
                 El::Tok(sig, SyntaxKind::Eq) => eq = Some(sig),
                 El::Node(child, _) => match eq {
-                    Some(eq) => self.value(node, eq, child, level, flat),
-                    None => self.node(child, level, flat),
+                    Some(eq) => self.value(node, eq, child, level),
+                    None => self.node(child, level),
                 },
                 El::Tok(..) => {}
             }
@@ -489,8 +460,8 @@ impl Planner<'_> {
     /// A parameter or argument list: glued to its owner, elements spaced
     /// after commas, and one element per line with a trailing comma when
     /// the list breaks.
-    fn list(&mut self, node: NodeIdx, els: &[El], level: u32, flat: bool) {
-        self.pairs(els, flat, |a, b| match (a, b) {
+    fn list(&mut self, node: NodeIdx, els: &[El], level: u32) {
+        self.pairs(els, |a, b| match (a, b) {
             (El::Tok(_, SyntaxKind::LParen), El::Tok(_, SyntaxKind::RParen)) => Sep::Glue,
             (El::Tok(_, SyntaxKind::LParen), _) => Sep::SoftGlue(level + 1),
             (_, El::Tok(_, SyntaxKind::Comma)) => Sep::Glue,
@@ -500,7 +471,7 @@ impl Planner<'_> {
         });
         if !self.tree.has_error(node) {
             // The comma before the closer is a layout token: dropped when
-            // the list is flat, which in a hole it always is.
+            // the list is flat.
             for pair in els.windows(2) {
                 if let (El::Tok(sig, SyntaxKind::Comma), El::Tok(_, SyntaxKind::RParen)) =
                     (pair[0], pair[1])
@@ -509,7 +480,7 @@ impl Planner<'_> {
                 }
             }
         }
-        if !flat && !self.tree.has_error(node) && els.len() > 2 {
+        if !self.tree.has_error(node) && els.len() > 2 {
             let tail = els
                 .iter()
                 .rev()
@@ -534,7 +505,7 @@ impl Planner<'_> {
                 El::Node(child, _) => Some(child),
                 El::Tok(..) => None,
             })
-            .filter(|&last| !flat && !self.tree.has_error(node) && self.opens_block(last));
+            .filter(|&last| !self.tree.has_error(node) && self.opens_block(last));
         for &el in els {
             if let El::Node(child, _) = el {
                 let child_level = if Some(child) == last {
@@ -542,7 +513,7 @@ impl Planner<'_> {
                 } else {
                     level + 1
                 };
-                self.node(child, child_level, flat);
+                self.node(child, child_level);
             }
         }
     }
@@ -562,8 +533,8 @@ impl Planner<'_> {
     }
 
     /// A block: statements one per line, one level in.
-    fn block(&mut self, els: &[El], level: u32, flat: bool) {
-        self.pairs(els, flat, |a, b| match (a, b) {
+    fn block(&mut self, els: &[El], level: u32) {
+        self.pairs(els, |a, b| match (a, b) {
             (El::Tok(_, SyntaxKind::LBrace), El::Tok(_, SyntaxKind::RBrace)) => Sep::Glue,
             (_, El::Tok(_, SyntaxKind::RBrace)) => Sep::HardClose(level),
             _ => Sep::Hard(level + 1),
@@ -575,31 +546,31 @@ impl Planner<'_> {
         {
             self.gaps[*close as usize].comment_level = level + 1;
         }
-        self.children(els, level + 1, flat);
+        self.children(els, level + 1);
     }
 
     /// A binding or assignment: the head on one line, and the value after
     /// `=` as the tail of the binding's group.
-    fn binding(&mut self, node: NodeIdx, els: &[El], level: u32, flat: bool) {
-        self.pairs(els, flat, |a, b| match (a, b) {
+    fn binding(&mut self, node: NodeIdx, els: &[El], level: u32) {
+        self.pairs(els, |a, b| match (a, b) {
             (_, El::Tok(_, SyntaxKind::Colon)) => Sep::Glue,
             (El::Tok(_, SyntaxKind::Eq), El::Node(..)) => Sep::Soft(level + 1),
             _ => Sep::Space,
         });
-        self.head_and_value(node, els, level, flat);
+        self.head_and_value(node, els, level);
     }
 
     /// A binary expression: operators spaced, and a chain of one
     /// precedence breaking before each operator, one level in. `chain` is
     /// the continuation level of the chain this node extends, if any.
-    fn binary(&mut self, node: NodeIdx, els: &[El], level: u32, flat: bool, chain: Option<u32>) {
+    fn binary(&mut self, node: NodeIdx, els: &[El], level: u32, chain: Option<u32>) {
         let cont = chain.unwrap_or(level + 1);
-        self.pairs(els, flat, |a, b| match (a, b) {
+        self.pairs(els, |a, b| match (a, b) {
             (El::Node(..), El::Tok(..)) => Sep::Soft(cont),
             (El::Tok(..), El::Tok(..)) => Sep::Glue,
             _ => Sep::Space,
         });
-        if chain.is_none() && !flat {
+        if chain.is_none() {
             self.group(self.first_sig(node) + 1, self.end_sig(node));
         }
         let power = self.power(els);
@@ -610,12 +581,12 @@ impl Planner<'_> {
                     first = false;
                     if child_kind == NodeKind::BinaryExpr && self.power_of(child) == power {
                         let child_els = self.elements(child);
-                        self.binary(child, &child_els, level, flat, Some(cont));
+                        self.binary(child, &child_els, level, Some(cont));
                         continue;
                     }
-                    self.node(child, level, flat);
+                    self.node(child, level);
                 } else {
-                    self.node(child, cont, flat);
+                    self.node(child, cont);
                 }
             }
         }

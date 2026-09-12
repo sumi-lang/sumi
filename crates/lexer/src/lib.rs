@@ -12,12 +12,8 @@
 //! the parser.
 //!
 //! Every literal is bounded by its line: an unterminated `"…"` ends at the
-//! line break, so a stray delimiter costs its line and never the file. A
-//! hole in a string literal, `{expr}`, is the one place the scan keeps
-//! state between tokens — the literal to resume, and the braces open in
-//! the hole's code — and a hole ends with its line too: one left open
-//! there is an error, and the literal around it ends with the line as an
-//! unterminated one does.
+//! line break, so a stray delimiter costs its line and never the file, and
+//! the scan keeps no state between tokens.
 
 mod file;
 mod generated;

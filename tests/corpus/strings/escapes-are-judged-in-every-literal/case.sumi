@@ -1,0 +1,6 @@
+// Escapes are checked in every string literal, terminated or not, and a
+// brace is text.
+fn valid(x: int) -> str = "\n{x}\t{x}\\"
+fn invalid(x: int) -> str = "\q{x}\q{x}\q"
+fn unterminated(x: int) -> str = "\q{x}\q{x}\q
+fn after() = 1

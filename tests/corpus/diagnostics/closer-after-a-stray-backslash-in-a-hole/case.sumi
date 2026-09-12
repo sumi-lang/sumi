@@ -1,4 +1,0 @@
-// The `(` inside the hole is never closed. Its `)` would land after the
-// stray backslash, where `\)` reads as an escape and the quote before it
-// stops being the literal's closer, so the fix is withheld.
-fn f() { g("{1"{"\" }

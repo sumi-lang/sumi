@@ -113,14 +113,6 @@ fn comments_stay_in_their_gaps_and_force_breaks() {
 }
 
 #[test]
-fn holes_never_break() {
-    check(
-        "fn g() { let s = \"x{ a + b }y{f( c )}\" }",
-        "fn g() {\n    let s = \"x{a + b}y{f(c)}\"\n}\n",
-    );
-}
-
-#[test]
 fn closures_and_expression_bodies_keep_their_forms() {
     check(
         "fn f() = fn(x) = x * 2\nfn g() = fn(x: int) -> int {\n x\n}\nfn h() = {\n 1\n}",

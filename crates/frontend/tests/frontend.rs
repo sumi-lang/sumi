@@ -111,26 +111,6 @@ fn nested_closer_repairs_remain_available_inside_out() {
 }
 
 #[test]
-fn parentheses_can_still_be_repaired_in_hole_code() {
-    let source = "fn f() = \"{g(x}\"";
-    let front = parsed(source);
-    check_closer_fixes(&front);
-    let diagnostic = front
-        .diagnostics()
-        .iter()
-        .find(|d| d.fix.is_some())
-        .unwrap();
-    let fixed = apply_fix(source, diagnostic);
-    assert_eq!(fixed, "fn f() = \"{g(x)}\"");
-    assert!(parsed(&fixed).diagnostics().is_empty());
-}
-
-#[test]
-fn closer_fixes_do_not_change_tokens_in_damaged_interpolation() {
-    check_closer_fixes(&parsed("fn#\"n{(\"\"t"));
-}
-
-#[test]
 fn parsed_source_owns_every_syntactic_product() {
     let source = String::from("fn f() {}\n").into_boxed_str();
     let front = parse_source(FILE, source).expect("test source fits in u32");
@@ -221,7 +201,7 @@ fn leading_zeros_are_fixed_around_a_suffix() {
 /// Source fragments beyond every keyword and punctuation text of the
 /// language: names, malformed literals, roleless punctuation, and trivia.
 const EXTRA_FRAGMENTS: &[&str] = &[
-    "x", "0", "01u32", "1e", r#""\q""#, ";", " ", "\n", "// c", "€", "\"{", "}\"", "\"{x}\"",
+    "x", "0", "01u32", "1e", r#""\q""#, "\"open", ";", " ", "\n", "// c", "€",
 ];
 
 fn source() -> impl Strategy<Value = String> {
@@ -253,18 +233,6 @@ proptest! {
     #![proptest_config(config())]
     #[test]
     fn closer_fixes_preserve_existing_tokens(source in source()) {
-        check_closer_fixes(&parsed(&source));
-    }
-
-    #[test]
-    fn closer_fixes_at_interpolation_boundaries(
-        text in "[a-z ]{0,16}",
-        hole in prop::sample::select(vec!["", "x", "(x", "((x", "{ x", "g(x"]),
-        terminated in any::<bool>(),
-        signature in prop::sample::select(vec!["fn f(", "fn f()"]),
-    ) {
-        let end = if terminated { "\"" } else { "" };
-        let source = format!("{signature} -> str = \"before {{{hole}}}{text}{end}");
         check_closer_fixes(&parsed(&source));
     }
 

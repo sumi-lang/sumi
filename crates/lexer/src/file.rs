@@ -25,8 +25,7 @@ pub fn lex(source: &str) -> Result<LexedFile, SourceTooLarge> {
     let mut tokens: Vec<StoredToken> = Vec::new();
     let mut errors = Vec::new();
     let mut position = 0;
-    let mut lexer = Lexer::new(source);
-    for token in lexer.by_ref() {
+    for token in Lexer::new(source) {
         let start = position;
         position += token.len.to_u32();
 
@@ -34,11 +33,8 @@ pub fn lex(source: &str) -> Result<LexedFile, SourceTooLarge> {
             RawKind::Number => {
                 token.flags.contains(TokenFlags::MALFORMED_NUMBER) || cfg!(debug_assertions)
             }
-            // A literal with holes that its text never closes is reported
-            // late, at its start.
             RawKind::String => {
-                (token.kind == SyntaxKind::StringLiteral
-                    && token.flags.contains(TokenFlags::UNTERMINATED))
+                token.flags.contains(TokenFlags::UNTERMINATED)
                     || token.flags.contains(TokenFlags::HAS_ESCAPE)
             }
             RawKind::Unknown => true,
@@ -67,25 +63,6 @@ pub fn lex(source: &str) -> Result<LexedFile, SourceTooLarge> {
 
     debug_assert_eq!(position, source_len);
 
-    for late in lexer.into_late_errors() {
-        let index = late.token as usize;
-        let start = tokens[index].start;
-        let end = tokens
-            .get(index + 1)
-            .map_or(source_len, |next| next.start.to_u32());
-        let end = late
-            .prefix
-            .map_or(end, |prefix| start.to_u32() + prefix as u32);
-        errors.push(LexError {
-            token: RawIdx::new(late.token),
-            range: TextRange::new(start, TextSize::new(end)),
-            kind: late.kind,
-        });
-    }
-    // Late errors arrive after every token's own; the order within a token
-    // is kept.
-    errors.sort_by_key(|error| error.token);
-
     Ok(LexedFile {
         source_len: TextSize::new(source_len),
         tokens: tokens.into_boxed_slice(),
@@ -102,9 +79,7 @@ fn collect_errors(
 ) {
     let unterminated = token.flags.contains(TokenFlags::UNTERMINATED);
     let primary = match token.raw {
-        RawKind::String if unterminated && token.kind == SyntaxKind::StringLiteral => {
-            Some(LexErrorKind::UnterminatedString)
-        }
+        RawKind::String if unterminated => Some(LexErrorKind::UnterminatedString),
         RawKind::Newline if token.flags.contains(TokenFlags::LONE_CR) => {
             Some(LexErrorKind::LoneCarriageReturn)
         }
@@ -139,18 +114,6 @@ fn collect_errors(
         }
         SyntaxKind::StringLiteral if token.flags.contains(TokenFlags::HAS_ESCAPE) => {
             literal::validate_string(text, &mut error);
-        }
-        // The text of a `"…"` literal with holes, in parts: the quote of the
-        // first and the last, when the last has one, is not text.
-        SyntaxKind::StringStart if token.flags.contains(TokenFlags::HAS_ESCAPE) => {
-            literal::validate_string_body(text, 1..text.len(), &mut error);
-        }
-        SyntaxKind::StringMiddle if token.flags.contains(TokenFlags::HAS_ESCAPE) => {
-            literal::validate_string_body(text, 0..text.len(), &mut error);
-        }
-        SyntaxKind::StringEnd if token.flags.contains(TokenFlags::HAS_ESCAPE) => {
-            let body_end = text.len() - usize::from(!unterminated);
-            literal::validate_string_body(text, 0..body_end, &mut error);
         }
         SyntaxKind::Error if token.raw == RawKind::Punct => {
             error(0..1, LexErrorKind::UnknownPunctuation);
@@ -295,8 +258,8 @@ const _: () = assert!(size_of::<StoredToken>() == 8, "tokens stay eight bytes");
 pub struct LexError {
     /// The offending token in the [`LexedFile`].
     pub token: RawIdx,
-    /// The relevant file-local UTF-8 byte range, contained within `token` and
-    /// ending on character boundaries. May be empty when content is missing.
+    /// The relevant file-local UTF-8 byte range, nonempty, contained within
+    /// `token`, and ending on character boundaries.
     pub range: TextRange,
     pub kind: LexErrorKind,
 }
@@ -318,9 +281,6 @@ pub enum LexErrorKind {
     UnknownEscape,
     /// Punctuation with no role in the language, such as `;` or `[`.
     UnknownPunctuation,
-    /// A hole in a string literal still open at the end of its line,
-    /// reported at its `{`. The literal ends with the line too.
-    UnclosedHole,
 }
 
 /// `source.len()` exceeds the `u32` coordinate space of [`TextSize`].

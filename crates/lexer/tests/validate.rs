@@ -179,23 +179,12 @@ fn line_literals_get_only_their_unterminated_error() {
 }
 
 #[test]
-fn holes_left_open_are_reported_at_their_brace() {
-    check_error_ranges("\"a {b\nc", &[(1, 3, 4, LexErrorKind::UnclosedHole)]);
-    check_error_ranges("\"{a}\n", &[(0, 0, 1, LexErrorKind::UnterminatedString)]);
-    // The end of input leaves a hole open, and the literal's text after
-    // a closed one unterminated, reported at its opener as a whole one is.
-    check_error_ranges("\"a {x", &[(1, 3, 4, LexErrorKind::UnclosedHole)]);
-    check_error_ranges("\"{x}", &[(0, 0, 1, LexErrorKind::UnterminatedString)]);
-}
-
-#[test]
-fn escapes_are_judged_over_the_parts_of_a_literal() {
-    // Each part of a literal is judged on its own text.
+fn every_unknown_escape_of_a_literal_is_reported() {
     check_error_ranges(
         "\"\\q{x}\\p\"",
         &[
             (0, 1, 3, LexErrorKind::UnknownEscape),
-            (4, 6, 8, LexErrorKind::UnknownEscape),
+            (0, 6, 8, LexErrorKind::UnknownEscape),
         ],
     );
 }

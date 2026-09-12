@@ -49,7 +49,8 @@ fn single_tokens() -> Vec<&'static str> {
 }
 
 /// Fragments that are only safe in free concatenation: trivia, comments,
-/// and unterminated literals.
+/// strings terminated and not, escapes known and unknown, and characters
+/// with no meaning.
 const LOOSE_FRAGMENTS: &[&str] = &[
     " ",
     "\t",
@@ -57,19 +58,14 @@ const LOOSE_FRAGMENTS: &[&str] = &[
     "\r\n",
     "\r",
     "// c",
-    "/// d",
-    "//! e",
     "//",
+    "\"a b\"",
     "\"open",
-    "'x",
-    "r##\"a\"#",
+    "\"a\\nb\"",
+    "\"\\q\"",
+    "\\",
+    "'",
     "\u{1}",
-    // The parts of a string literal with holes, and the braces that open
-    // none.
-    "\"{",
-    "}\"",
-    "\"{x}\"",
-    "\\{",
 ];
 
 fn fragment() -> impl Strategy<Value = String> {

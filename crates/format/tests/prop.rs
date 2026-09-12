@@ -11,7 +11,7 @@ use sumi_syntax::{Parse, ParserInput, SyntaxKind, parse};
 /// concatenation composes the adjacencies goldens cannot enumerate.
 const EXTRA_FRAGMENTS: &[&str] = &[
     "x", "foo", "x = y", "0", "123", "1.5", "1e", "0123", "1u32", "\"abc\"", "\"open", ";", "[",
-    " ", "\t", "\n", "\r\n", "\r", "// c", "€", "\"{", "}\"", "\"{x}\"",
+    " ", "\t", "\n", "\r\n", "\r", "// c", "€",
 ];
 
 /// Token soup, half the time wrapped in a function body: violations are

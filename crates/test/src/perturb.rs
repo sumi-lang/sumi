@@ -14,7 +14,6 @@
 //! before a list closer is a layout token and comes or goes.
 
 use proptest::prelude::*;
-use sumi_lexer::TokenFlags;
 use sumi_syntax::{NodeKind, SigIdx, SyntaxKind};
 
 use crate::front::front;
@@ -91,9 +90,6 @@ pub fn perturb(source: &str, choices: &[u32]) -> String {
         let has_comment = trivia
             .iter()
             .any(|&raw| lexed.kind(raw) == SyntaxKind::LineComment);
-        let has_newline = trivia
-            .iter()
-            .any(|&raw| lexed.kind(raw) == SyntaxKind::Newline);
         let prev = (gap > 0).then(|| input.get(SigIdx::new(gap as u32 - 1)).expect("in range"));
         let next = (gap < n).then(|| input.get(SigIdx::new(gap as u32)).expect("in range"));
 
@@ -103,17 +99,13 @@ pub fn perturb(source: &str, choices: &[u32]) -> String {
             out.push(',');
         }
 
-        let hole_open = gap > 0
-            && lexed
-                .flags(raw_of(gap - 1))
-                .contains(TokenFlags::HOLE_AFTER);
         let boundary = gap < n && gap > 0 && input.boundary_before(SigIdx::new(gap as u32));
-        let keep = gap == 0 || gap == n || trivia.is_empty() || (hole_open && !has_newline);
+        let keep = gap == 0 || gap == n || trivia.is_empty();
         if keep {
             for &raw in &trivia {
                 out.push_str(lexed.text(source, raw));
             }
-        } else if has_comment || boundary || (hole_open && has_newline) {
+        } else if has_comment || boundary {
             // Line breaks stay; the whitespace around them varies.
             let mut after_newline = false;
             for &raw in &trivia {
