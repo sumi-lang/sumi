@@ -498,7 +498,9 @@ impl Planner<'_> {
             (El::Tok(_, SyntaxKind::Comma), _) => Sep::Soft(level + 1),
             _ => Sep::Space,
         });
-        if !flat && !self.tree.has_error(node) {
+        if !self.tree.has_error(node) {
+            // The comma before the closer is a layout token: dropped when
+            // the list is flat, which in a hole it always is.
             for pair in els.windows(2) {
                 if let (El::Tok(sig, SyntaxKind::Comma), El::Tok(_, SyntaxKind::RParen)) =
                     (pair[0], pair[1])
@@ -506,21 +508,21 @@ impl Planner<'_> {
                     self.layout_comma[sig as usize] = true;
                 }
             }
-            if els.len() > 2 {
-                let tail = els
-                    .iter()
-                    .rev()
-                    .find_map(|&el| match el {
-                        El::Node(child, _) => Some(child),
-                        El::Tok(..) => None,
-                    })
-                    .filter(|&last| self.opens_block(last));
-                match tail {
-                    Some(tail) => {
-                        self.group_with_tail(self.first_sig(node) + 1, self.end_sig(node), tail);
-                    }
-                    None => self.group(self.first_sig(node) + 1, self.end_sig(node)),
+        }
+        if !flat && !self.tree.has_error(node) && els.len() > 2 {
+            let tail = els
+                .iter()
+                .rev()
+                .find_map(|&el| match el {
+                    El::Node(child, _) => Some(child),
+                    El::Tok(..) => None,
+                })
+                .filter(|&last| self.opens_block(last));
+            match tail {
+                Some(tail) => {
+                    self.group_with_tail(self.first_sig(node) + 1, self.end_sig(node), tail);
                 }
+                None => self.group(self.first_sig(node) + 1, self.end_sig(node)),
             }
         }
         // The last element of a broken list is one level in like the rest,

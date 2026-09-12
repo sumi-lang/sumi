@@ -97,6 +97,49 @@ proptest! {
     }
 
     #[test]
+    fn formatted_lines_fit_the_width(source in sumi_test::program()) {
+        let formatted = check_format(&source);
+        for line in formatted.text.lines() {
+            // A trailing comment may run past the width; code may not.
+            let code = line.find(" //").map_or(line, |at| &line[..at]);
+            prop_assert!(
+                code.chars().count() <= sumi_format::WIDTH,
+                "a line of {:?} -> {:?} is wider than {}: {:?}",
+                source,
+                formatted.text,
+                sumi_format::WIDTH,
+                line
+            );
+        }
+    }
+
+    #[test]
+    fn a_layout_perturbation_formats_to_the_same_text(
+        (source, perturbed) in sumi_test::perturbed_program()
+    ) {
+        // The perturbation is layout-neutral: it keeps the rep.
+        let original = front(&source);
+        let changed = front(&perturbed);
+        prop_assert_eq!(
+            layout_free(&perturbed, &changed),
+            layout_free(&source, &original),
+            "the perturbation of {:?} -> {:?} changed the rep",
+            source,
+            perturbed
+        );
+        // So the formatter, a function of the rep, prints it the same.
+        let formatted = check_format(&source);
+        let perturbed_formatted = check_format(&perturbed);
+        prop_assert_eq!(
+            perturbed_formatted.text,
+            formatted.text,
+            "formatting {:?} differs from formatting {:?}",
+            perturbed,
+            source
+        );
+    }
+
+    #[test]
     fn well_formed_programs_format_without_reverting(source in sumi_test::program()) {
         let formatted = check_format(&source);
         prop_assert_eq!(formatted.reverted, 0, "reverted items in {:?}", source);

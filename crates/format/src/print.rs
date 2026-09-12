@@ -96,7 +96,10 @@ pub(crate) fn print(
                 let mut k = gap;
                 loop {
                     let plan_gap = plan.gaps[k];
+                    // A closer gap that breaks emits its comma first.
+                    let comma = usize::from(plan_gap.closer);
                     if plan_gap.hard {
+                        w += comma;
                         break;
                     }
                     if plan_gap.breakable && group.in_tail(k as u32) {
@@ -107,9 +110,11 @@ pub(crate) fn print(
                             .iter()
                             .rev()
                             .find(|&&open| plan.groups[open].end > k as u32);
-                        if enclosing.is_some_and(|&open| {
-                            broken[open] || plan.groups[open].in_tail(k as u32)
-                        }) {
+                        if enclosing.is_some_and(|&open| broken[open]) {
+                            w += comma;
+                            break;
+                        }
+                        if enclosing.is_some_and(|&open| plan.groups[open].in_tail(k as u32)) {
                             break;
                         }
                     }
