@@ -93,10 +93,7 @@ fn main() {
     if any(xs, fn(x) = x > 0) {
         return
     }
-    each(
-        names,
-        fn(n) {
-            print(n)
-        },
-    )
+    each(names, fn(n) {
+        print(n)
+    })
 }

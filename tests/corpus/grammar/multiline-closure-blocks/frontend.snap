@@ -22,8 +22,6 @@ SourceFile 0..64
 fn outer() = fn() {
     1
 }
-fn argument() = consume(
-    fn() {
-        2
-    },
-)
+fn argument() = consume(fn() {
+    2
+})

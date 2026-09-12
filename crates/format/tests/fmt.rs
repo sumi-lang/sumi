@@ -185,3 +185,49 @@ fn formatting_keeps_the_rep_and_only_changes_trivia() {
         );
     }
 }
+
+#[test]
+fn a_value_hugs_its_binding_line_when_its_head_fits() {
+    // The call's head `let total = compute(` fits, so the arguments break
+    // inside it; the whole moves to the next line only when even the head
+    // does not fit, and then its inside is one level deeper.
+    check(
+        "fn f() {\n    let total = compute(aaaaaaaaaaaaaaaaaaaaaaaaa, bbbbbbbbbbbbbbbbbbbbbbbbbbbb, cccccccccccccccccccccccccccc, dddddddddddd)\n}",
+        "fn f() {\n    let total = compute(\n        aaaaaaaaaaaaaaaaaaaaaaaaa,\n        bbbbbbbbbbbbbbbbbbbbbbbbbbbb,\n        cccccccccccccccccccccccccccc,\n        dddddddddddd,\n    )\n}\n",
+    );
+    check(
+        "fn f() {\n    let a_rather_long_binding_name_for_the_result = a_callee_whose_name_is_longer_than_the_line_allows(aaaaaaaaaaaaaaaaaaaaa, bbbbbbbbbbbbbbb)\n}",
+        "fn f() {\n    let a_rather_long_binding_name_for_the_result =\n        a_callee_whose_name_is_longer_than_the_line_allows(aaaaaaaaaaaaaaaaaaaaa, bbbbbbbbbbbbbbb)\n}\n",
+    );
+    check(
+        "fn f() {\n    let a_rather_long_binding_name_for_the_result = a_callee_whose_name_is_longer_than_the_line_allows(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, bbbbbbbbbbbbbbbbbbbbbbbbb)\n}",
+        "fn f() {\n    let a_rather_long_binding_name_for_the_result =\n        a_callee_whose_name_is_longer_than_the_line_allows(\n            aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,\n            bbbbbbbbbbbbbbbbbbbbbbbbb,\n        )\n}\n",
+    );
+    check(
+        "fn f() {\n    let x = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n}",
+        "fn f() {\n    let x =\n        aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n}\n",
+    );
+    check(
+        "fn compute() -> int = combine(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, ccccccccccccc)",
+        "fn compute() -> int = combine(\n    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,\n    bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb,\n    ccccccccccccc,\n)\n",
+    );
+}
+
+#[test]
+fn a_block_bodied_closure_hugs_the_list_it_ends() {
+    check(
+        "fn f() {\n    each(items, fn(item) {\n        visit(item)\n    })\n}",
+        "fn f() {\n    each(items, fn(item) {\n        visit(item)\n    })\n}\n",
+    );
+    // When the head does not fit, the list breaks and the closure moves
+    // one level in with the other elements.
+    check(
+        "fn f() {\n    each(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, fn(item) {\n        visit(item)\n    })\n}",
+        "fn f() {\n    each(\n        aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,\n        bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb,\n        fn(item) {\n            visit(item)\n        },\n    )\n}\n",
+    );
+    // A comment before the closure forces the list; one inside it does not.
+    check(
+        "fn f() {\n    each(items, // all\n fn(item) {\n        visit(item) // one\n    })\n}",
+        "fn f() {\n    each(\n        items, // all\n        fn(item) {\n            visit(item) // one\n        },\n    )\n}\n",
+    );
+}

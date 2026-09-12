@@ -52,11 +52,26 @@ pub(crate) struct Gap {
     pub(crate) closer: bool,
 }
 
-/// A range of gaps, `first..end`, that break together.
+/// A range of gaps, `first..end`, that break together. A group may name
+/// a tail, the gaps inside its last element, which decide for themselves.
+/// The group is forced only by hard gaps outside its tail, it fits when
+/// the text up to the tail's first break opportunity does, and when it
+/// breaks it indents its tail one level: so `let x = foo(` keeps the call
+/// on the binding's line with the arguments breaking inside, and moves
+/// the value to the next line only when even its head does not fit.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Group {
     pub(crate) first: u32,
     pub(crate) end: u32,
+    /// The tail's gaps, `from..to`, inside `first..end`.
+    pub(crate) tail: Option<(u32, u32)>,
+}
+
+impl Group {
+    /// Whether `gap` lies in the tail.
+    pub(crate) fn in_tail(&self, gap: u32) -> bool {
+        self.tail.is_some_and(|(from, to)| from <= gap && gap < to)
+    }
 }
 
 pub(crate) struct Plan {
@@ -318,8 +333,40 @@ impl Planner<'_> {
 
     fn group(&mut self, first: u32, end: u32) {
         if first < end {
-            self.groups.push(Group { first, end });
+            self.groups.push(Group {
+                first,
+                end,
+                tail: None,
+            });
         }
+    }
+
+    /// A group whose last element, `tail`, decides for itself.
+    fn group_with_tail(&mut self, first: u32, end: u32, tail: NodeIdx) {
+        let (from, to) = (self.first_sig(tail) + 1, self.end_sig(tail));
+        if first < end {
+            self.groups.push(Group {
+                first,
+                end,
+                tail: (from < to).then_some((from, to)),
+            });
+        }
+    }
+
+    /// Lay out the value after `=` of a binding or an expression body:
+    /// the tail of the group from the gap after `=` to the end of `node`,
+    /// unless it is an operator chain, which reads better moved whole to
+    /// the next line before it breaks at its operators.
+    fn value(&mut self, node: NodeIdx, eq: u32, value: NodeIdx, level: u32, flat: bool) {
+        let chain = self.tree.kind(value) == NodeKind::BinaryExpr;
+        if !flat {
+            if chain {
+                self.group(eq + 1, self.end_sig(node));
+            } else {
+                self.group_with_tail(eq + 1, self.end_sig(node), value);
+            }
+        }
+        self.node(value, if chain { level + 1 } else { level }, flat);
     }
 
     /// Lay out `node` at indentation `level`, the level of the line it
@@ -410,34 +457,30 @@ impl Planner<'_> {
     }
 
     /// A function item or closure: the head on one line, and the body a
-    /// block after a space or an expression after `=`, which may move to
-    /// the next line, one level in, when the whole does not fit.
+    /// block after a space or an expression after `=`, laid out as a
+    /// binding's value.
     fn function(&mut self, node: NodeIdx, els: &[El], level: u32, flat: bool) {
-        let body_hugs = els.last().is_some_and(|&el| hugs(self.tree, el));
         self.pairs(els, flat, |a, b| match (a, b) {
             (El::Tok(_, SyntaxKind::FnKw), El::Node(_, NodeKind::ParamList)) => Sep::Glue,
             (El::Node(_, NodeKind::Name), El::Node(_, NodeKind::ParamList)) => Sep::Glue,
             (El::Tok(_, SyntaxKind::Minus), El::Tok(_, SyntaxKind::Gt)) => Sep::Glue,
-            (El::Tok(_, SyntaxKind::Eq), El::Node(..)) if !body_hugs => Sep::Soft(level + 1),
+            (El::Tok(_, SyntaxKind::Eq), El::Node(..)) => Sep::Soft(level + 1),
             _ => Sep::Space,
         });
-        let mut after_eq = false;
+        self.head_and_value(node, els, level, flat);
+    }
+
+    /// Lay out the children of a construct whose `=`, if any, is followed
+    /// by its value.
+    fn head_and_value(&mut self, node: NodeIdx, els: &[El], level: u32, flat: bool) {
+        let mut eq = None;
         for &el in els {
             match el {
-                El::Tok(sig, SyntaxKind::Eq) => {
-                    after_eq = true;
-                    if !flat && !body_hugs {
-                        self.group(sig + 1, self.end_sig(node));
-                    }
-                }
-                El::Node(child, _) => {
-                    let child_level = if after_eq && !body_hugs {
-                        level + 1
-                    } else {
-                        level
-                    };
-                    self.node(child, child_level, flat);
-                }
+                El::Tok(sig, SyntaxKind::Eq) => eq = Some(sig),
+                El::Node(child, _) => match eq {
+                    Some(eq) => self.value(node, eq, child, level, flat),
+                    None => self.node(child, level, flat),
+                },
                 El::Tok(..) => {}
             }
         }
@@ -464,10 +507,56 @@ impl Planner<'_> {
                 }
             }
             if els.len() > 2 {
-                self.group(self.first_sig(node) + 1, self.end_sig(node));
+                let tail = els
+                    .iter()
+                    .rev()
+                    .find_map(|&el| match el {
+                        El::Node(child, _) => Some(child),
+                        El::Tok(..) => None,
+                    })
+                    .filter(|&last| self.opens_block(last));
+                match tail {
+                    Some(tail) => {
+                        self.group_with_tail(self.first_sig(node) + 1, self.end_sig(node), tail);
+                    }
+                    None => self.group(self.first_sig(node) + 1, self.end_sig(node)),
+                }
             }
         }
-        self.children(els, level + 1, flat);
+        // The last element of a broken list is one level in like the rest,
+        // through its group's tail; flat, it hugs the closer at this level.
+        let last = els
+            .iter()
+            .rev()
+            .find_map(|&el| match el {
+                El::Node(child, _) => Some(child),
+                El::Tok(..) => None,
+            })
+            .filter(|&last| !flat && !self.tree.has_error(node) && self.opens_block(last));
+        for &el in els {
+            if let El::Node(child, _) = el {
+                let child_level = if Some(child) == last {
+                    level
+                } else {
+                    level + 1
+                };
+                self.node(child, child_level, flat);
+            }
+        }
+    }
+
+    /// Whether `node` begins a block on its line: a block, an `if`, or a
+    /// closure with a block body. Such a last element hugs a list.
+    fn opens_block(&self, node: NodeIdx) -> bool {
+        match self.tree.kind(node) {
+            NodeKind::Block | NodeKind::IfExpr => true,
+            NodeKind::ClosureExpr => self
+                .tree
+                .children(node)
+                .next()
+                .is_some_and(|last| self.tree.kind(last) == NodeKind::Block),
+            _ => false,
+        }
     }
 
     /// A block: statements one per line, one level in.
@@ -488,35 +577,14 @@ impl Planner<'_> {
     }
 
     /// A binding or assignment: the head on one line, and the value after
-    /// `=`, which may move to the next line, one level in, unless it
-    /// begins a block on the same line.
+    /// `=` as the tail of the binding's group.
     fn binding(&mut self, node: NodeIdx, els: &[El], level: u32, flat: bool) {
-        let value_hugs = els.last().is_some_and(|&el| hugs(self.tree, el));
         self.pairs(els, flat, |a, b| match (a, b) {
             (_, El::Tok(_, SyntaxKind::Colon)) => Sep::Glue,
-            (El::Tok(_, SyntaxKind::Eq), El::Node(..)) if !value_hugs => Sep::Soft(level + 1),
+            (El::Tok(_, SyntaxKind::Eq), El::Node(..)) => Sep::Soft(level + 1),
             _ => Sep::Space,
         });
-        let mut after_eq = false;
-        for &el in els {
-            match el {
-                El::Tok(sig, SyntaxKind::Eq) => {
-                    after_eq = true;
-                    if !flat && !value_hugs {
-                        self.group(sig + 1, self.end_sig(node));
-                    }
-                }
-                El::Node(child, _) => {
-                    let child_level = if after_eq && !value_hugs {
-                        level + 1
-                    } else {
-                        level
-                    };
-                    self.node(child, child_level, flat);
-                }
-                El::Tok(..) => {}
-            }
-        }
+        self.head_and_value(node, els, level, flat);
     }
 
     /// A binary expression: operators spaced, and a chain of one
@@ -637,23 +705,5 @@ impl Planner<'_> {
                 }
             }
         }
-    }
-}
-
-/// Whether an element stays on the line of the `=` before it and breaks
-/// inside itself instead: a block, an `if`, a closure with a block body,
-/// a call, or a parenthesized expression. This stands in for a tail rule
-/// that would measure whether the value's head fits.
-fn hugs(tree: &SyntaxTree, el: El) -> bool {
-    match el {
-        El::Node(
-            _,
-            NodeKind::Block | NodeKind::IfExpr | NodeKind::CallExpr | NodeKind::ParenExpr,
-        ) => true,
-        El::Node(node, NodeKind::ClosureExpr) => tree
-            .children(node)
-            .next()
-            .is_some_and(|last| tree.kind(last) == NodeKind::Block),
-        _ => false,
     }
 }

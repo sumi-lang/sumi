@@ -6,7 +6,7 @@ use sumi_lexer::{LexedFile, RawIdx};
 use sumi_syntax::{ParserInput, SigIdx};
 use sumi_text::{TextEdit, TextRange};
 
-use crate::plan::{Flat, INDENT, Plan, WIDTH};
+use crate::plan::{Flat, Group, INDENT, Plan, WIDTH};
 use crate::trivia::signal;
 
 /// One gap's edit: the gap it came from, so a caller can tell which item
@@ -32,7 +32,12 @@ pub(crate) fn print(
     for gap in 0..=n {
         hard_before[gap + 1] = hard_before[gap] + u32::from(plan.gaps[gap].hard);
     }
-    let forced = |first: u32, end: u32| hard_before[end as usize] > hard_before[first as usize];
+    // A group is forced by a hard gap outside its tail.
+    let hard_in = |from: u32, to: u32| hard_before[to as usize] > hard_before[from as usize];
+    let forced = |group: &Group| match group.tail {
+        Some((from, to)) => hard_in(group.first, from) || hard_in(to, group.end),
+        None => hard_in(group.first, group.end),
+    };
 
     // The trivia of gap `gap`, merged with the gap before a layout comma.
     let trivia_range = |gap: usize| -> (RawIdx, RawIdx) {
@@ -81,9 +86,11 @@ pub(crate) fn print(
             let g = next_group;
             next_group += 1;
             let group = plan.groups[g];
-            broken[g] = forced(group.first, group.end) || {
+            broken[g] = forced(&group) || {
                 // Measure from here, every undecided gap flat, to the first
-                // gap that will break after the group.
+                // gap that may break: in the group's tail, after the group
+                // in a broken enclosing group, or in the tail of a flat
+                // one.
                 let mut w = 0usize;
                 let mut fits = true;
                 let mut k = gap;
@@ -92,12 +99,17 @@ pub(crate) fn print(
                     if plan_gap.hard {
                         break;
                     }
+                    if plan_gap.breakable && group.in_tail(k as u32) {
+                        break;
+                    }
                     if k as u32 >= group.end && plan_gap.breakable {
                         let enclosing = stack
                             .iter()
                             .rev()
                             .find(|&&open| plan.groups[open].end > k as u32);
-                        if enclosing.is_some_and(|&open| broken[open]) {
+                        if enclosing.is_some_and(|&open| {
+                            broken[open] || plan.groups[open].in_tail(k as u32)
+                        }) {
                             break;
                         }
                     }
@@ -141,8 +153,13 @@ pub(crate) fn print(
             if plan_gap.closer && breaks {
                 out.push(',');
             }
+            // Every broken group whose tail holds this gap indents it.
+            let extra = stack
+                .iter()
+                .filter(|&&open| broken[open] && plan.groups[open].in_tail(gap as u32))
+                .count() as u32;
             let indent = |out: &mut String, level: u32| {
-                for _ in 0..level {
+                for _ in 0..level + extra {
                     out.push_str(INDENT);
                 }
             };
