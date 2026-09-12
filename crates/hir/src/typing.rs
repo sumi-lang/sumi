@@ -40,6 +40,17 @@ pub(crate) struct Claim(NonZeroU32);
 const IMPORTED: u32 = 1 << 31;
 
 impl Claim {
+    /// The claim made `index` claims into the walk.
+    fn local(index: usize) -> Self {
+        let rank = u32::try_from(index + 1).expect("claim count fits u32");
+        assert!(rank < IMPORTED, "claim count fits below the imported bit");
+        Self(NonZeroU32::new(rank).unwrap())
+    }
+
+    /// The one claim a replay makes: it records no origin, since nothing is
+    /// reported from where a replay's evidence came.
+    const REPLAYED: Self = Self(NonZeroU32::MAX);
+
     fn imported(self) -> bool {
         self.0.get() & IMPORTED != 0
     }
@@ -60,7 +71,7 @@ pub(crate) struct Evidence {
 impl Evidence {
     fn single(ty: Ty, claim: Claim) -> Self {
         let mut evidence = Self::bottom();
-        evidence.claims[slot(ty)] = Some(claim);
+        evidence.claims[ty as usize] = Some(claim);
         evidence
     }
 
@@ -100,13 +111,14 @@ impl Evidence {
     }
 }
 
-fn slot(ty: Ty) -> usize {
-    match ty {
-        Ty::Int => 0,
-        Ty::Bool => 1,
-        Ty::Unit => 2,
+/// Evidence slots are indexed by discriminant, in the order `Ty::ALL` lists.
+const _: () = {
+    let mut index = 0;
+    while index < Ty::ALL.len() {
+        assert!(Ty::ALL[index] as usize == index);
+        index += 1;
     }
-}
+};
 
 impl Lattice for Evidence {
     type Edge = Claim;
@@ -147,12 +159,6 @@ pub(crate) enum Expected {
     Class(Var),
 }
 
-fn claim(count: &mut u32) -> Claim {
-    *count += 1;
-    assert!(*count < IMPORTED, "claim count fits below the imported bit");
-    Claim(NonZeroU32::new(*count).unwrap())
-}
-
 #[derive(Default)]
 pub(crate) struct Typing {
     solver: Solver<Evidence>,
@@ -172,8 +178,7 @@ impl Typing {
     }
 
     fn claim(&mut self, node: NodeIdx) -> Claim {
-        let mut count = u32::try_from(self.origins.len()).expect("claim count fits u32");
-        let claim = claim(&mut count);
+        let claim = Claim::local(self.origins.len());
         self.origins.push(node);
         claim
     }
@@ -233,36 +238,27 @@ impl Typing {
     /// first demand that raised it. An unresolved or conflicted callee
     /// delivers nothing: it is reported at its declaration.
     pub fn replay(&self) -> Replay {
-        Replay {
-            solver: self
-                .solver
-                .replay(|evidence, call| evidence.ty().map(|ty| Evidence::single(ty, *call))),
-            claims: u32::try_from(self.origins.len()).expect("claim count fits u32"),
-        }
+        Replay(
+            self.solver
+                .replay(|evidence, call| evidence.ty().is_some().then(|| evidence.transfer(call))),
+        )
     }
 }
 
 /// A [`Typing::replay`]: the classes again, to be handed the demands in
-/// order. Its claims are ranked after every claim of the typing and record
-/// no source, since nothing is reported from where a replay's evidence came.
-pub(crate) struct Replay {
-    solver: Solver<Evidence>,
-    claims: u32,
-}
+/// order. Only what each class resolves to is read off it, never a claim.
+pub(crate) struct Replay(Solver<Evidence>);
 
 impl Replay {
     pub fn resolve(&self, var: Var) -> Option<Ty> {
-        self.solver.evidence(var).ty()
+        self.0.evidence(var).ty()
     }
 
     /// One demand, replayed.
     pub fn expect(&mut self, var: Var, expected: Expected) {
         match expected {
-            Expected::Ty(ty) => {
-                let claim = claim(&mut self.claims);
-                self.solver.expect(var, &Evidence::single(ty, claim));
-            }
-            Expected::Class(class) => self.solver.equal(var, class),
+            Expected::Ty(ty) => self.0.expect(var, &Evidence::single(ty, Claim::REPLAYED)),
+            Expected::Class(class) => self.0.equal(var, class),
         }
     }
 }
