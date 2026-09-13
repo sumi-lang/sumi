@@ -1,0 +1,17 @@
+file: accepted
+fn maximum = 9223372036854775807 (steps 2, depth 1)
+fn minimum = -9223372036854775808 (steps 2, depth 1)
+fn past_maximum = 9223372036854775808 (steps 5, depth 1)
+fn past_minimum = -9223372036854775809 (steps 5, depth 1)
+fn negated_minimum = 9223372036854775808 (steps 4, depth 1)
+fn minimum_over_minus_one = 9223372036854775808 (steps 5, depth 1)
+fn twenty_digits = 99999999999999999999 (steps 2, depth 1)
+fn forty_digits = 1234567890123456789012345678901234567890 (steps 2, depth 1)
+fn negated_forty_digits = -1234567890123456789012345678901234567890 (steps 2, depth 1)
+fn square = 85070591730234615847396907784232501249 (steps 5, depth 1)
+fn back_to_a_word = 1234567890123456789 (steps 5, depth 1)
+fn remainder_keeps_the_sign = -12345678901234567890 (steps 5, depth 1)
+fn ordered = true (steps 11, depth 1)
+fn equal = true (steps 17, depth 1)
+fn through_a_call: takes arguments, not run
+fn wide_argument = 85070591730234615865843651857942052864 (steps 10, depth 2)

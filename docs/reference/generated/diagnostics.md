@@ -691,36 +691,6 @@ error[semantic/cannot-infer]: function result is both unit, int, and bool; add a
   secondary @229..232: bool here
 ```
 
-### `semantic/integer-range`
-
-An integer literal outside the signed 64-bit range.
-
-Shown by [`tests/corpus/semantic/signed-boundaries`](../../../tests/corpus/semantic/signed-boundaries/case.sumi):
-
-```sumi
-fn minimum() -> int = -((9223372036854775808))
-fn maximum() -> int = 9223372036854775807
-fn runtime_overflow() -> int = --9223372036854775808
-fn too_large() -> int = 9223372036854775808
-fn outside_envelope() -> int = -(9223372036854775808 + 0)
-fn far_too_large() -> int = 9999999999999999999
-fn negated_far_too_large() -> int = -9999999999999999999
-fn twenty_digits() -> int = 99999999999999999999
-```
-
-```text
-error[semantic/integer-range]: integer literal is outside signed 64-bit range
-  primary @166..185
-error[semantic/integer-range]: integer literal is outside signed 64-bit range
-  primary @219..238
-error[semantic/integer-range]: integer literal is outside signed 64-bit range
-  primary @272..291
-error[semantic/integer-range]: integer literal is outside signed 64-bit range
-  primary @329..348
-error[semantic/integer-range]: integer literal is outside signed 64-bit range
-  primary @377..397
-```
-
 ### `semantic/unsupported`
 
 A construct scalar checking does not handle yet, such as a closure, a

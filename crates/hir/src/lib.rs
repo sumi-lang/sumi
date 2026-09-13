@@ -5,6 +5,7 @@
 //! identities. All source locations refer to the owned snapshot.
 
 mod check;
+mod int;
 mod solver;
 mod typing;
 
@@ -19,6 +20,7 @@ use sumi_frontend::{Diagnostic, ParsedSource, Severity};
 use sumi_text::Span;
 
 pub use check::analyze;
+pub use int::{Int, ParseIntError};
 
 /// Eager scalar operators. Short-circuiting operators have separate expression kinds.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -275,7 +277,7 @@ pub struct Expr {
 
 #[derive(Debug)]
 pub enum ExprKind {
-    Int(i64),
+    Int(Int),
     Bool(bool),
     Local(LocalId),
     Neg(ExprId),

@@ -2,7 +2,7 @@
 //! expression arena, a value stack, and call frames.
 
 use sumi_hir::{
-    Args, BinaryOp, Body, ExprId, ExprKind, FunctionId, LocalId, StatementKind, Statements,
+    Args, BinaryOp, Body, ExprId, ExprKind, FunctionId, Int, LocalId, StatementKind, Statements,
 };
 use sumi_text::Span;
 
@@ -17,8 +17,7 @@ pub const MAX_CALL_DEPTH: usize = 1 << 16;
 #[derive(Clone, Copy, Debug)]
 enum Control {
     Eval(ExprId),
-    /// Negate the top value; `origin` is the negation.
-    Neg(ExprId),
+    Neg,
     Not,
     /// Combine the top two values; `origin` is the operation.
     Binary {
@@ -132,12 +131,16 @@ impl<'a> Machine<'a> {
     /// result. A finished machine keeps returning the result.
     pub fn step(&mut self) -> Option<Result<Value, Trap>> {
         if self.outcome.is_some() {
-            return self.outcome;
+            return self.outcome.clone();
         }
         let Some(control) = self.control.pop() else {
-            let value = *self.values.last().expect("a finished run has its value");
+            let value = self
+                .values
+                .last()
+                .cloned()
+                .expect("a finished run has its value");
             self.outcome = Some(Ok(value));
-            return self.outcome;
+            return self.outcome.clone();
         };
         self.steps += 1;
         if let Err(trap) = self.apply(control) {
@@ -146,7 +149,7 @@ impl<'a> Machine<'a> {
             self.control.clear();
             self.outcome = Some(Err(trap));
         }
-        self.outcome
+        self.outcome.clone()
     }
 
     fn body(&self) -> &'a Body {
@@ -162,7 +165,7 @@ impl<'a> Machine<'a> {
             .pop()
             .expect("the checker balanced the value stack")
     }
-    fn pop_int(&mut self) -> i64 {
+    fn pop_int(&mut self) -> Int {
         match self.pop() {
             Value::Int(value) => value,
             other => unreachable!("the checker typed an int operand; got {other:?}"),
@@ -211,12 +214,9 @@ impl<'a> Machine<'a> {
         let body = self.body();
         match control {
             Control::Eval(id) => self.eval(body, id),
-            Control::Neg(origin) => {
+            Control::Neg => {
                 let operand = self.pop_int();
-                let value = operand
-                    .checked_neg()
-                    .ok_or_else(|| self.trap(TrapKind::Overflow, origin))?;
-                self.values.push(Value::Int(value));
+                self.values.push(Value::Int(-&operand));
             }
             Control::Not => {
                 let operand = self.pop_bool();
@@ -315,9 +315,9 @@ impl<'a> Machine<'a> {
     }
 
     fn eval(&mut self, body: &Body, id: ExprId) {
-        match body.expression(id).kind {
-            ExprKind::Int(value) => self.values.push(Value::Int(value)),
-            ExprKind::Bool(value) => self.values.push(Value::Bool(value)),
+        match &body.expression(id).kind {
+            ExprKind::Int(value) => self.values.push(Value::Int(value.clone())),
+            ExprKind::Bool(value) => self.values.push(Value::Bool(*value)),
             ExprKind::Local(local) => {
                 let base = self
                     .frames
@@ -325,33 +325,37 @@ impl<'a> Machine<'a> {
                     .expect("a running machine has a frame")
                     .base;
                 let value = self.locals[base + local.index()]
+                    .clone()
                     .expect("the checker orders a let before its uses");
                 self.values.push(value);
             }
             ExprKind::Neg(operand) => {
-                self.control.push(Control::Neg(id));
-                self.control.push(Control::Eval(operand));
+                self.control.push(Control::Neg);
+                self.control.push(Control::Eval(*operand));
             }
             ExprKind::Not(operand) => {
                 self.control.push(Control::Not);
-                self.control.push(Control::Eval(operand));
+                self.control.push(Control::Eval(*operand));
             }
             ExprKind::Binary { op, lhs, rhs } => {
-                self.control.push(Control::Binary { op, origin: id });
-                self.control.push(Control::Eval(rhs));
-                self.control.push(Control::Eval(lhs));
+                self.control.push(Control::Binary {
+                    op: *op,
+                    origin: id,
+                });
+                self.control.push(Control::Eval(*rhs));
+                self.control.push(Control::Eval(*lhs));
             }
             ExprKind::And { lhs, rhs } => {
-                self.control.push(Control::AndRhs(rhs));
-                self.control.push(Control::Eval(lhs));
+                self.control.push(Control::AndRhs(*rhs));
+                self.control.push(Control::Eval(*lhs));
             }
             ExprKind::Or { lhs, rhs } => {
-                self.control.push(Control::OrRhs(rhs));
-                self.control.push(Control::Eval(lhs));
+                self.control.push(Control::OrRhs(*rhs));
+                self.control.push(Control::Eval(*lhs));
             }
             ExprKind::Call { function, args, .. } => self.control.push(Control::Call {
-                function,
-                args,
+                function: *function,
+                args: *args,
                 next: 0,
                 origin: id,
             }),
@@ -361,15 +365,15 @@ impl<'a> Machine<'a> {
                 else_branch,
             } => {
                 self.control.push(Control::Branch {
-                    then_branch,
-                    else_branch,
+                    then_branch: *then_branch,
+                    else_branch: *else_branch,
                 });
-                self.control.push(Control::Eval(condition));
+                self.control.push(Control::Eval(*condition));
             }
             ExprKind::Block { statements, tail } => self.control.push(Control::Block {
-                statements,
+                statements: *statements,
                 next: 0,
-                tail,
+                tail: *tail,
             }),
         }
     }
@@ -382,24 +386,22 @@ impl<'a> Machine<'a> {
     }
 
     fn binary(&self, op: BinaryOp, lhs: Value, rhs: Value, origin: ExprId) -> Result<Value, Trap> {
-        let overflow = || self.trap(TrapKind::Overflow, origin);
         Ok(match (op, lhs, rhs) {
             (BinaryOp::Eq, lhs, rhs) => Value::Bool(lhs == rhs),
             (BinaryOp::Ne, lhs, rhs) => Value::Bool(lhs != rhs),
             (op, Value::Int(lhs), Value::Int(rhs)) => match op {
-                BinaryOp::Add => Value::Int(lhs.checked_add(rhs).ok_or_else(overflow)?),
-                BinaryOp::Sub => Value::Int(lhs.checked_sub(rhs).ok_or_else(overflow)?),
-                BinaryOp::Mul => Value::Int(lhs.checked_mul(rhs).ok_or_else(overflow)?),
+                BinaryOp::Add => Value::Int(&lhs + &rhs),
+                BinaryOp::Sub => Value::Int(&lhs - &rhs),
+                BinaryOp::Mul => Value::Int(&lhs * &rhs),
                 BinaryOp::Div | BinaryOp::Rem => {
-                    if rhs == 0 {
-                        return Err(self.trap(TrapKind::DivisionByZero, origin));
-                    }
+                    // Truncating: the quotient rounds toward zero and the
+                    // remainder takes the dividend's sign.
                     let value = if op == BinaryOp::Div {
-                        lhs.checked_div(rhs)
+                        lhs.checked_div(&rhs)
                     } else {
-                        lhs.checked_rem(rhs)
+                        lhs.checked_rem(&rhs)
                     };
-                    Value::Int(value.ok_or_else(overflow)?)
+                    Value::Int(value.ok_or_else(|| self.trap(TrapKind::DivisionByZero, origin))?)
                 }
                 BinaryOp::Lt => Value::Bool(lhs < rhs),
                 BinaryOp::Le => Value::Bool(lhs <= rhs),

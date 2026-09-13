@@ -43,16 +43,13 @@ pub const UNUSED_VALUE: DiagnosticCode = DiagnosticCode::new(SEMANTIC, "unused-v
 /// annotation.
 pub const CANNOT_INFER: DiagnosticCode = DiagnosticCode::new(SEMANTIC, "cannot-infer");
 
-/// An integer literal outside the signed 64-bit range.
-pub const INTEGER_RANGE: DiagnosticCode = DiagnosticCode::new(SEMANTIC, "integer-range");
-
 /// A construct scalar checking does not handle yet, such as a closure, a
 /// string literal, or a call through anything but a function name. The
 /// function is left unchecked.
 pub const UNSUPPORTED: DiagnosticCode = DiagnosticCode::new(SEMANTIC, "unsupported");
 
 /// Every code of the group, in declaration order.
-pub const ALL: [DiagnosticCode; 10] = [
+pub const ALL: [DiagnosticCode; 9] = [
     UNKNOWN_TYPE,
     UNKNOWN_NAME,
     DUPLICATE_NAME,
@@ -61,6 +58,5 @@ pub const ALL: [DiagnosticCode; 10] = [
     TYPE_MISMATCH,
     UNUSED_VALUE,
     CANNOT_INFER,
-    INTEGER_RANGE,
     UNSUPPORTED,
 ];

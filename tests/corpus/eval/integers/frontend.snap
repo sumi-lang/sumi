@@ -1,0 +1,151 @@
+== tree ==
+SourceFile 0..1100
+  FnItem 0..41
+    Name 3..10 "maximum"
+    ParamList 10..12 "()"
+    TypeRef 16..19 "int"
+    LiteralExpr 22..41 "9223372036854775807"
+  FnItem 42..88
+    Name 45..52 "minimum"
+    ParamList 52..54 "()"
+    TypeRef 58..61 "int"
+    PrefixExpr 64..88
+      ParenExpr 65..88
+        ParenExpr 66..87
+          LiteralExpr 67..86 "9223372036854775808"
+  FnItem 89..139
+    Name 92..104 "past_maximum"
+    ParamList 104..106 "()"
+    TypeRef 110..113 "int"
+    BinaryExpr 116..139
+      LiteralExpr 116..135 "9223372036854775807"
+      LiteralExpr 138..139 "1"
+  FnItem 140..191
+    Name 143..155 "past_minimum"
+    ParamList 155..157 "()"
+    TypeRef 161..164 "int"
+    BinaryExpr 167..191
+      PrefixExpr 167..187
+        LiteralExpr 168..187 "9223372036854775808"
+      LiteralExpr 190..191 "1"
+  FnItem 192..243
+    Name 195..210 "negated_minimum"
+    ParamList 210..212 "()"
+    TypeRef 216..219 "int"
+    PrefixExpr 222..243
+      PrefixExpr 223..243
+        LiteralExpr 224..243 "9223372036854775808"
+  FnItem 244..306
+    Name 247..269 "minimum_over_minus_one"
+    ParamList 269..271 "()"
+    TypeRef 275..278 "int"
+    BinaryExpr 281..306
+      PrefixExpr 281..301
+        LiteralExpr 282..301 "9223372036854775808"
+      PrefixExpr 304..306
+        LiteralExpr 305..306 "1"
+  FnItem 307..355
+    Name 310..323 "twenty_digits"
+    ParamList 323..325 "()"
+    TypeRef 329..332 "int"
+    LiteralExpr 335..355 "99999999999999999999"
+  FnItem 356..423
+    Name 359..371 "forty_digits"
+    ParamList 371..373 "()"
+    TypeRef 377..380 "int"
+    LiteralExpr 383..423 "1234567890123456789012345678901234567890"
+  FnItem 424..500
+    Name 427..447 "negated_forty_digits"
+    ParamList 447..449 "()"
+    TypeRef 453..456 "int"
+    PrefixExpr 459..500
+      LiteralExpr 460..500 "1234567890123456789012345678901234567890"
+  FnItem 501..563
+    Name 504..510 "square"
+    ParamList 510..512 "()"
+    TypeRef 516..519 "int"
+    BinaryExpr 522..563
+      LiteralExpr 522..541 "9223372036854775807"
+      LiteralExpr 544..563 "9223372036854775807"
+  FnItem 564..658
+    Name 567..581 "back_to_a_word"
+    ParamList 581..583 "()"
+    TypeRef 587..590 "int"
+    BinaryExpr 593..658
+      LiteralExpr 593..633 "1234567890123456789012345678901234567890"
+      LiteralExpr 636..658 "1000000000000000000000"
+  FnItem 659..764
+    Name 662..686 "remainder_keeps_the_sign"
+    ParamList 686..688 "()"
+    TypeRef 692..695 "int"
+    BinaryExpr 698..764
+      PrefixExpr 698..739
+        LiteralExpr 699..739 "1234567890123456789012345678901234567890"
+      LiteralExpr 742..764 "1000000000000000000000"
+  FnItem 765..876
+    Name 768..775 "ordered"
+    ParamList 775..777 "()"
+    TypeRef 781..785 "bool"
+    BinaryExpr 788..876
+      BinaryExpr 788..829
+        LiteralExpr 788..807 "9223372036854775807"
+        LiteralExpr 810..829 "9223372036854775808"
+      BinaryExpr 833..876
+        PrefixExpr 833..853
+          LiteralExpr 834..853 "9223372036854775809"
+        PrefixExpr 856..876
+          LiteralExpr 857..876 "9223372036854775808"
+  FnItem 877..994
+    Name 880..885 "equal"
+    ParamList 885..887 "()"
+    TypeRef 891..895 "bool"
+    BinaryExpr 898..994
+      BinaryExpr 898..944
+        BinaryExpr 898..921
+          LiteralExpr 898..917 "9223372036854775807"
+          LiteralExpr 920..921 "1"
+        LiteralExpr 925..944 "9223372036854775808"
+      BinaryExpr 948..994
+        BinaryExpr 948..971
+          LiteralExpr 948..967 "9223372036854775808"
+          LiteralExpr 970..971 "1"
+        LiteralExpr 975..994 "9223372036854775808"
+  FnItem 995..1035
+    Name 998..1012 "through_a_call"
+    ParamList 1012..1020
+      Param 1013..1019
+        Name 1013..1014 "n"
+        TypeRef 1016..1019 "int"
+    TypeRef 1024..1027 "int"
+    BinaryExpr 1030..1035
+      NameRef 1030..1031 "n"
+      NameRef 1034..1035 "n"
+  FnItem 1036..1099
+    Name 1039..1052 "wide_argument"
+    ParamList 1052..1054 "()"
+    TypeRef 1058..1061 "int"
+    CallExpr 1064..1099
+      NameRef 1064..1078 "through_a_call"
+      ArgList 1078..1099
+        LiteralExpr 1079..1098 "9223372036854775808"
+
+== formatted ==
+fn maximum() -> int = 9223372036854775807
+fn minimum() -> int = -((9223372036854775808))
+fn past_maximum() -> int = 9223372036854775807 + 1
+fn past_minimum() -> int = -9223372036854775808 - 1
+fn negated_minimum() -> int = --9223372036854775808
+fn minimum_over_minus_one() -> int = -9223372036854775808 / -1
+fn twenty_digits() -> int = 99999999999999999999
+fn forty_digits() -> int = 1234567890123456789012345678901234567890
+fn negated_forty_digits() -> int = -1234567890123456789012345678901234567890
+fn square() -> int = 9223372036854775807 * 9223372036854775807
+fn back_to_a_word() -> int = 1234567890123456789012345678901234567890 / 1000000000000000000000
+fn remainder_keeps_the_sign() -> int =
+    -1234567890123456789012345678901234567890 % 1000000000000000000000
+fn ordered() -> bool =
+    9223372036854775807 < 9223372036854775808 && -9223372036854775809 < -9223372036854775808
+fn equal() -> bool =
+    9223372036854775807 + 1 == 9223372036854775808 && 9223372036854775808 - 1 != 9223372036854775808
+fn through_a_call(n: int) -> int = n * n
+fn wide_argument() -> int = through_a_call(9223372036854775808)

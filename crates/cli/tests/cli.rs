@@ -285,6 +285,10 @@ fn run_prints_mains_value_and_nothing_for_unit() {
             "42\n",
         ),
         ("fn main() -> bool = 1 < 2\n", "true\n"),
+        (
+            "fn main() -> int = 9223372036854775807 * 9223372036854775807\n",
+            "85070591730234615847396907784232501249\n",
+        ),
         ("fn main() { _ = 1 }\n", ""),
     ] {
         let output = run(source);
@@ -300,10 +304,6 @@ fn run_reports_traps_and_source_errors_at_their_location() {
         (
             "fn main() -> int {\n    let zero = 0\n    7 / zero\n}\n",
             "case.sumi:3:5: error[eval/division-by-zero]: division by zero\n",
-        ),
-        (
-            "fn main() -> int = -9223372036854775808 - 1\n",
-            "case.sumi:1:20: error[eval/overflow]: integer overflow\n",
         ),
         (
             "fn main() -> int = main()\n",
