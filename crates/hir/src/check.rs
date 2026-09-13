@@ -38,8 +38,10 @@ use sumi_syntax::{
 };
 
 use crate::codes;
+use crate::ranges::{May, RangeEdge, Thresholds, UnaryOp};
+use crate::recursion;
 use crate::solver::Var;
-use crate::typing::{Claim, Expected, Typing};
+use crate::typing::{Claim, Expected, ProductContext, Typing};
 use crate::*;
 
 /// A hasher for identifiers: a word at a time, with a multiply to spread
@@ -98,6 +100,12 @@ impl Named {
 
 struct Header {
     params: Option<Box<[Ty]>>,
+    /// The function's run of the shared parameter classes, opened with the
+    /// headers so a call walked before the callee's body has somewhere to
+    /// send its arguments. Empty for an invalid parameter list.
+    param_classes: std::ops::Range<usize>,
+    /// The function's entry context: live when it can run.
+    entry: Var,
     /// The result class; `None` when the declaration is too damaged to have
     /// one.
     result: Option<Var>,
@@ -108,22 +116,22 @@ struct Header {
     item: NodeIdx,
 }
 
-struct DraftLocal {
-    origin: Span,
-    class: Var,
+pub(crate) struct DraftLocal {
+    pub origin: Span,
+    pub class: Var,
 }
 
 /// A body whose expressions are built, with a placeholder type on each
 /// until its class resolves.
-struct DraftBody {
-    params: Vec<LocalId>,
-    locals: Vec<DraftLocal>,
-    exprs: Vec<Expr>,
+pub(crate) struct DraftBody {
+    pub params: Vec<LocalId>,
+    pub locals: Vec<DraftLocal>,
+    pub exprs: Vec<Expr>,
     /// The class of each expression, by index.
-    classes: Vec<Var>,
-    args: Vec<ExprId>,
-    statements: Vec<Statement>,
-    root: ExprId,
+    pub classes: Vec<Var>,
+    pub args: Vec<ExprId>,
+    pub statements: Vec<Statement>,
+    pub root: ExprId,
 }
 
 impl DraftBody {
@@ -188,6 +196,14 @@ enum DemandKind {
     Agree { branches: [Var; 2] },
 }
 
+/// A division whose divisor must exclude zero wherever it can run.
+struct Obligation {
+    owner: u32,
+    node: NodeIdx,
+    divisor: Var,
+    context: Var,
+}
+
 /// One demand, kept small: the verdict pass reads every one, and a body
 /// makes one per operand, argument, branch, and statement.
 struct Demand {
@@ -195,6 +211,17 @@ struct Demand {
     node: NodeIdx,
     actual: Var,
     kind: DemandKind,
+}
+
+/// What the walk of every body leaves for the verdict pass.
+#[derive(Default)]
+struct Recorded {
+    demands: Vec<Demand>,
+    obligations: Vec<Obligation>,
+    /// Every integer the file spells or folds, for the thresholds.
+    constants: Vec<Int>,
+    /// Every call as `(caller, callee, context)`, for the call graph.
+    calls: Vec<(FunctionId, FunctionId, Var)>,
 }
 
 struct Source<'s> {
@@ -336,6 +363,7 @@ impl<'s> Source<'s> {
 struct Parameter<'s> {
     name: Option<(&'s str, NodeIdx)>,
     ty: Option<Ty>,
+    class: Option<Var>,
 }
 
 pub fn analyze(parsed: ParsedSource) -> Analysis {
@@ -357,6 +385,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         NameMap::with_capacity_and_hasher(items.len(), Default::default());
     let mut parameters = Vec::with_capacity(items.len());
     let mut headers = Vec::with_capacity(items.len());
+    let mut param_classes = Vec::with_capacity(items.len());
     for item in &items {
         let name = source.name(item.name(tree));
         let id = FunctionId(u32::try_from(functions.len()).expect("function count fits u32"));
@@ -390,12 +419,17 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
                 // parser requires the annotation.
                 let ty = param.type_ref(tree).and_then(|ty| source.ty(ty));
                 valid &= ty.is_some();
-                params.push(Parameter {
-                    name: source.name(param.name(tree)),
-                    ty,
-                });
+                let name = source.name(param.name(tree));
+                let class =
+                    ty.map(|ty| typing.known(ty, name.map_or(param.node(), |(_, node)| node)));
+                params.push(Parameter { name, ty, class });
             }
         }
+        let classes_start = param_classes.len();
+        if valid {
+            param_classes.extend(params.iter().map(|p| p.class.unwrap()));
+        }
+        let entry = typing.entry(valid && params.is_empty());
         let (result, declared) = if let Some(ret) = item.ret(tree) {
             match source.ty(ret) {
                 Some(ty) => (Some(typing.known(ty, ret.node())), Some((ty, ret.node()))),
@@ -425,6 +459,8 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         };
         headers.push(Header {
             params: valid.then(|| params.iter().map(|p| p.ty.unwrap()).collect()),
+            param_classes: classes_start..param_classes.len(),
+            entry,
             result,
             declared,
             item: item.node(),
@@ -434,13 +470,17 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
             name: name.map(|(_, node)| source.span(node)),
             origin,
             signature: None,
+            ranges: None,
             body: None,
         });
     }
 
     // Pass 2: bodies.
-    // About a demand per two nodes; only a guide.
-    let mut demands = Vec::with_capacity(tree.len() / 2);
+    let mut recorded = Recorded {
+        // About a demand per two nodes; only a guide.
+        demands: Vec::with_capacity(tree.len() / 2),
+        ..Recorded::default()
+    };
     let mut bodies = Vec::with_capacity(items.len());
     // Syntax node IDs are dense and bodies have disjoint nodes. Expression
     // IDs remain body-local; a builder only reads entries in its own body.
@@ -448,9 +488,10 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     let mut builder = Builder::new(
         &mut source,
         &headers,
+        &param_classes,
         &names,
         &mut typing,
-        &mut demands,
+        &mut recorded,
         &mut values,
     );
     for (index, (item, params)) in items.iter().zip(parameters).enumerate() {
@@ -460,8 +501,15 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     drop(values);
 
     // Pass 3: verdicts.
-    typing.solve();
-    let mut replay = typing.replay();
+    let Recorded {
+        demands,
+        obligations,
+        constants,
+        calls,
+    } = recorded;
+    let cx: ProductContext = ((), Thresholds::new(constants));
+    typing.solve(&cx);
+    let mut replay = typing.replay(&cx);
     let mut failed = vec![false; functions.len()];
     for demand in demands {
         let actual = replay.resolve(demand.actual);
@@ -528,11 +576,18 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         }
         failed[demand.owner as usize] = true;
     }
-    for (index, header) in headers.into_iter().enumerate() {
+    for (index, header) in headers.iter_mut().enumerate() {
         let evidence = header.result.map(|result| *typing.evidence(result));
         let result = evidence.and_then(|evidence| evidence.ty());
-        if let (Some(params), Some(result)) = (header.params, result) {
+        if let (Some(params), Some(result)) = (header.params.take(), result) {
             functions[index].signature = Some(Signature { params, result });
+            functions[index].ranges = Some(Ranges {
+                params: param_classes[header.param_classes.clone()]
+                    .iter()
+                    .map(|&class| typing.may(class).clone())
+                    .collect(),
+                result: typing.may(header.result.unwrap()).clone(),
+            });
         }
         // A result to infer that did not resolve is reported here, unless a
         // demand in the body already explained it, or the trouble arrived
@@ -563,6 +618,85 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
             }
         }
     }
+    // Every reachable division excludes zero.
+    for obligation in &obligations {
+        if failed[obligation.owner as usize] {
+            continue;
+        }
+        let divisor = typing.may(obligation.divisor);
+        if !typing.may(obligation.context).live() || !divisor.ints.contains_zero() {
+            continue;
+        }
+        let message = if divisor.ints.is_zero() {
+            "division by zero"
+        } else {
+            "divisor may be zero"
+        };
+        let labels = explain_zero(&typing, &source, &cx, obligation.divisor);
+        source.report(
+            source.span(obligation.node),
+            codes::DIVISION_BY_ZERO,
+            message,
+            labels,
+        );
+    }
+    // Every recursion has a measure, which also bounds the call depth.
+    let param_classes: Vec<&[Var]> = headers
+        .iter()
+        .map(|header| &param_classes[header.param_classes.clone()])
+        .collect();
+    let recursion = recursion::check(&bodies, &param_classes, &typing, &calls);
+    for failure in recursion.failures {
+        let names: Vec<_> = failure
+            .members
+            .iter()
+            .take(4)
+            .map(|&id| {
+                let item = items[id.index()];
+                format!(
+                    "`{}`",
+                    source.text(item.name(tree).map_or(item.node(), |n| n.node()))
+                )
+            })
+            .collect();
+        let others = failure.members.len() - names.len();
+        let cycle = match names.as_slice() {
+            [name] => format!("recursion in {name}"),
+            [first, second] => format!("recursion between {first} and {second}"),
+            [rest @ .., last] if others == 0 => {
+                format!("recursion between {}, and {last}", rest.join(", "))
+            }
+            _ => format!("recursion between {}, and {others} more", names.join(", ")),
+        };
+        let message = format!("{cycle} has no argument that decreases on every call");
+        let first = failure.members[0];
+        let primary = items[first.index()]
+            .name(tree)
+            .map_or(items[first.index()].node(), |n| n.node());
+        // A cycle of thousands of calls is one error; the first few calls
+        // locate it.
+        let labels = failure.labels.into_iter().take(8).map(|(call, text)| {
+            let text = text.map(|(param, direction)| {
+                let range = param.range();
+                let param = &parsed.source()[range.start().to_usize()..range.end().to_usize()];
+                let side = if direction == "decreases" {
+                    "below"
+                } else {
+                    "above"
+                };
+                format!("argument {direction} `{param}`, which is unbounded {side}")
+            });
+            let text =
+                text.unwrap_or_else(|| "no argument moves a parameter toward a bound".to_owned());
+            (call, text.into())
+        });
+        source.report(
+            source.span(primary),
+            codes::UNBOUNDED_RECURSION,
+            message,
+            labels,
+        );
+    }
     for (index, body) in bodies.into_iter().enumerate() {
         if !failed[index] && functions[index].signature.is_some() {
             functions[index].body = body.and_then(|body| body.publish(&typing, &functions));
@@ -576,6 +710,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         parsed,
         functions,
         diagnostics,
+        depth: recursion.depth,
     };
     assert!(
         analysis.is_valid()
@@ -596,6 +731,85 @@ fn run(index: usize) -> u32 {
     u32::try_from(index).expect("list index fits u32")
 }
 
+/// Labels for the values that put zero into `class`: the flows into it
+/// whose delivery contains zero, followed through the edges that pass a
+/// value along until a fact, an operator, or an argument names it.
+fn explain_zero(
+    typing: &Typing,
+    source: &Source<'_>,
+    cx: &ProductContext,
+    class: Var,
+) -> Vec<(Span, Box<str>)> {
+    use std::collections::{HashSet, VecDeque};
+
+    use crate::ranges::Ints;
+    use crate::solver::Lattice;
+
+    const LABELS: usize = 4;
+    const HOPS: usize = 6;
+    let describe = |ints: &Ints| {
+        if ints.is_zero() {
+            "is 0".to_owned()
+        } else {
+            format!("may be 0: {ints}")
+        }
+    };
+    let mut labels: Vec<(Span, Box<str>)> = Vec::new();
+    let mut seen = HashSet::new();
+    let mut queue = VecDeque::from([(class, 0)]);
+    while let Some((var, hops)) = queue.pop_front() {
+        if labels.len() >= LABELS || !seen.insert(var) {
+            continue;
+        }
+        if let Some(fact) = typing.fact(var)
+            && fact.ints.contains_zero()
+        {
+            if let Some(node) = typing
+                .evidence(var)
+                .claims()
+                .first()
+                .and_then(|(_, claim)| typing.origin(*claim))
+            {
+                labels.push((source.span(node), describe(&fact.ints).into()));
+            }
+            continue;
+        }
+        for (first, second, edge) in typing.incoming(var) {
+            let delivered = typing.may(first).transfer(
+                &edge.1,
+                second.map(|second| typing.may(second)),
+                false,
+                &cx.1,
+            );
+            if !delivered.ints.contains_zero() {
+                continue;
+            }
+            match edge.1 {
+                RangeEdge::Copy
+                | RangeEdge::Refine { .. }
+                | RangeEdge::Branch
+                | RangeEdge::Call => {
+                    if hops < HOPS {
+                        queue.push_back((first, hops + 1));
+                    }
+                }
+                RangeEdge::Argument(origin) => {
+                    labels.push((
+                        source.span(origin),
+                        format!("argument {}", describe(&delivered.ints)).into(),
+                    ));
+                }
+                RangeEdge::Unary { origin, .. } | RangeEdge::Binary { origin, .. } => {
+                    labels.push((source.span(origin), describe(&delivered.ints).into()));
+                }
+                _ => {}
+            }
+        }
+    }
+    labels.sort_by_key(|(span, _)| span.range().start());
+    labels
+}
+
 // None is a poisoned binding, distinct from an absent name. Scope transitions
 // and let completion are explicit work items, so initializers see the old scope.
 type Scope<'s> = NameMap<'s, Option<LocalId>>;
@@ -603,6 +817,17 @@ enum Work {
     Enter(NodeIdx),
     Finish(NodeIdx),
     Call(NodeIdx, FunctionId, NodeIdx),
+    /// An `if` whose condition is walked: open its branches' contexts.
+    Branches(NodeIdx),
+    /// A lazy operator whose left operand is walked: open the right one's.
+    Rhs(NodeIdx),
+    /// Enter a context, reading the `refinements` staged locals inside it.
+    Push {
+        context: Var,
+        refinements: usize,
+    },
+    /// Leave the context `refinements` locals were refined in.
+    Pop(usize),
 }
 
 /// The one walker for every body of the file. What a body publishes is
@@ -611,9 +836,10 @@ enum Work {
 struct Builder<'a, 's> {
     source: &'a mut Source<'s>,
     headers: &'a [Header],
+    param_classes: &'a [Var],
     names: &'a NameMap<'s, Named>,
     typing: &'a mut Typing,
-    demands: &'a mut Vec<Demand>,
+    recorded: &'a mut Recorded,
     values: &'a mut [Option<ExprId>],
     // The body under construction.
     owner: u32,
@@ -622,8 +848,20 @@ struct Builder<'a, 's> {
     locals: Vec<DraftLocal>,
     exprs: Vec<Expr>,
     classes: Vec<Var>,
+    /// The value of each expression the walk can fold, by index.
+    consts: Vec<Option<Int>>,
     args: Vec<ExprId>,
     statements: Vec<Statement>,
+    /// The context each point runs in, innermost last.
+    contexts: Vec<Var>,
+    /// The classes locals read as inside the open contexts, innermost last.
+    refinements: Vec<(LocalId, Var)>,
+    /// Refinements computed for branches not yet entered, the next branch's
+    /// on top, so entering one never allocates.
+    staged: Vec<(LocalId, Var)>,
+    /// The contexts of the branches of each `if` whose branches are walked
+    /// and whose `if` is not yet finished, innermost last.
+    branch_contexts: Vec<(Var, Var)>,
     // Scratch kept across bodies.
     /// A pool of scopes; the first `depth` are open, innermost last. A map
     /// per scope costs a probe per enclosing scope on lookup, and nothing on
@@ -643,17 +881,19 @@ impl<'a, 's> Builder<'a, 's> {
     fn new(
         source: &'a mut Source<'s>,
         headers: &'a [Header],
+        param_classes: &'a [Var],
         names: &'a NameMap<'s, Named>,
         typing: &'a mut Typing,
-        demands: &'a mut Vec<Demand>,
+        recorded: &'a mut Recorded,
         values: &'a mut [Option<ExprId>],
     ) -> Self {
         Self {
             source,
             headers,
+            param_classes,
             names,
             typing,
-            demands,
+            recorded,
             values,
             owner: 0,
             failed: false,
@@ -661,8 +901,13 @@ impl<'a, 's> Builder<'a, 's> {
             locals: Vec::new(),
             exprs: Vec::new(),
             classes: Vec::new(),
+            consts: Vec::new(),
             args: Vec::new(),
             statements: Vec::new(),
+            contexts: Vec::new(),
+            refinements: Vec::new(),
+            staged: Vec::new(),
+            branch_contexts: Vec::new(),
             scopes: Vec::new(),
             depth: 0,
             first: NameMap::default(),
@@ -686,8 +931,14 @@ impl<'a, 's> Builder<'a, 's> {
         self.locals.clear();
         self.exprs.clear();
         self.classes.clear();
+        self.consts.clear();
         self.args.clear();
         self.statements.clear();
+        self.contexts.clear();
+        self.contexts.push(self.headers[owner].entry);
+        self.refinements.clear();
+        self.staged.clear();
+        self.branch_contexts.clear();
         for param in parameters {
             if let Some((name, node)) = param.name {
                 if let Some(&span) = self.first.get(name) {
@@ -701,8 +952,7 @@ impl<'a, 's> Builder<'a, 's> {
                     self.failed = true;
                 } else {
                     self.first.insert(name, self.source.span(node));
-                    let class = param.ty.map(|ty| self.typing.known(ty, node));
-                    if let Some(local) = self.bind(name, node, class) {
+                    if let Some(local) = self.bind(name, node, param.class) {
                         self.params.push(local);
                     }
                 }
@@ -735,6 +985,21 @@ impl<'a, 's> Builder<'a, 's> {
                         self.failed = true;
                     }
                 }
+                Work::Branches(node) => self.branches(node, &mut work),
+                Work::Rhs(node) => self.rhs(node, &mut work),
+                Work::Push {
+                    context,
+                    refinements,
+                } => {
+                    self.contexts.push(context);
+                    let from = self.staged.len() - refinements;
+                    self.refinements.extend(self.staged.drain(from..));
+                }
+                Work::Pop(refinements) => {
+                    self.contexts.pop();
+                    let keep = self.refinements.len() - refinements;
+                    self.refinements.truncate(keep);
+                }
             }
         }
         self.work = work;
@@ -743,11 +1008,13 @@ impl<'a, 's> Builder<'a, 's> {
         // type. A declared result is a contract on the body; an inferred one
         // is the body's own type.
         match (root, declared, result) {
-            (Some(root), Some((ty, node)), _) => {
+            (Some(root), Some((ty, node)), Some(result)) => {
                 self.require(root_node, root, Expected::Ty(ty), Some(node));
+                self.typing.flow(self.class(root), result, RangeEdge::Copy);
             }
             (Some(root), None, Some(result)) => {
                 self.require(root_node, root, Expected::Class(result), None);
+                self.typing.flow(self.class(root), result, RangeEdge::Copy);
             }
             _ => {}
         }
@@ -804,6 +1071,200 @@ impl<'a, 's> Builder<'a, 's> {
     fn class(&self, expr: ExprId) -> Var {
         self.classes[expr.index()]
     }
+    /// The class a read of `local` has here: the innermost refinement that
+    /// covers it, or the local's own.
+    fn current_class(&self, local: LocalId) -> Var {
+        self.refinements
+            .iter()
+            .rev()
+            .find(|(refined, _)| *refined == local)
+            .map_or(self.locals[local.index()].class, |(_, class)| *class)
+    }
+    fn context(&self) -> Var {
+        *self
+            .contexts
+            .last()
+            .expect("a body runs in its entry context")
+    }
+    /// The operator of a clean binary expression, read from the token gap
+    /// between its operands.
+    fn binary_op(&self, node: NodeIdx) -> sumi_syntax::BinaryOp {
+        let tree = self.source.tree;
+        let binary = ast::BinaryExpr::cast(tree, node).unwrap();
+        let lhs_node = binary.lhs(tree).unwrap().node();
+        let rhs_node = binary.rhs(tree).unwrap().node();
+        let lexed = self.source.parsed.lexed();
+        let end = tree.first_token(rhs_node);
+        let first = tree
+            .end_token(lhs_node)
+            .until(end)
+            .find(|&raw| !lexed.kind(raw).is_trivia())
+            .expect("clean binary operator");
+        // Raw tokens partition source: the immediately adjacent token is
+        // glued, whereas any intervening trivia breaks a compound.
+        let glued = (first + 1 < end).then(|| lexed.kind(first + 1));
+        sumi_syntax::binary_operator(lexed.kind(first), glued)
+            .expect("clean binary operator")
+            .0
+    }
+    /// The local a finished expression reads, if it is a read.
+    fn read(&self, node: NodeIdx) -> Option<LocalId> {
+        match self.exprs[self.value(node)?.index()].kind {
+            ExprKind::Local(local) => Some(local),
+            _ => None,
+        }
+    }
+    /// What the condition at `cond` holding in `sense` says about the
+    /// locals it compares: a refined class per local, read inside the
+    /// branch it guards. The condition's shape is syntactic: a comparison,
+    /// a negation, a conjunction under the true sense, a disjunction under
+    /// the false sense, or a bare boolean local.
+    fn refinements(&mut self, cond: NodeIdx, sense: bool) -> usize {
+        let before = self.staged.len();
+        self.refine(cond, sense);
+        self.staged.len() - before
+    }
+    fn refine(&mut self, cond: NodeIdx, sense: bool) {
+        use sumi_syntax::BinaryOp::*;
+
+        let tree = self.source.tree;
+        let Some(expr) = ast::Expr::cast(tree, cond) else {
+            return;
+        };
+        let node = self.source.peel(expr).node();
+        if tree.has_error(node) {
+            return;
+        }
+        match tree.kind(node) {
+            NodeKind::PrefixExpr => {
+                let operand = ast::PrefixExpr::cast(tree, node)
+                    .unwrap()
+                    .operand(tree)
+                    .unwrap()
+                    .node();
+                let not = self
+                    .source
+                    .tokens(tree.first_token(node), tree.first_token(operand))
+                    .eq([SyntaxKind::Bang]);
+                if not {
+                    self.refine(operand, !sense);
+                }
+            }
+            NodeKind::BinaryExpr => {
+                let binary = ast::BinaryExpr::cast(tree, node).unwrap();
+                let lhs = binary.lhs(tree).unwrap().node();
+                let rhs = binary.rhs(tree).unwrap().node();
+                let op = self.binary_op(node);
+                match op {
+                    And if sense => {
+                        self.refine(lhs, sense);
+                        self.refine(rhs, sense);
+                    }
+                    Or if !sense => {
+                        self.refine(lhs, sense);
+                        self.refine(rhs, sense);
+                    }
+                    Lt | Le | Gt | Ge | Eq | Ne => {
+                        let ExprKind::Binary { op, .. } =
+                            ExprKind::binary(op, ExprId::new(0), ExprId::new(0))
+                        else {
+                            unreachable!("a comparison is eager")
+                        };
+                        for (side, other, local_is_lhs) in [(lhs, rhs, true), (rhs, lhs, false)] {
+                            if let (Some(local), Some(other)) = (self.read(side), self.value(other))
+                            {
+                                let class = self.current_class(local);
+                                let other = self.class(other);
+                                let edge = RangeEdge::Refine {
+                                    op,
+                                    local_is_lhs,
+                                    sense,
+                                };
+                                let refined = self.typing.refine(class, other, edge);
+                                self.staged.push((local, refined));
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            NodeKind::NameRef => {
+                if let Some(local) = self.read(node) {
+                    let class = self.current_class(local);
+                    let refined = self.typing.refine_bool(class, sense);
+                    self.staged.push((local, refined));
+                }
+            }
+            _ => {}
+        }
+    }
+    /// The condition of the `if` at `node` is walked: open a context per
+    /// branch and schedule the branches inside them.
+    fn branches(&mut self, node: NodeIdx, work: &mut Vec<Work>) {
+        let tree = self.source.tree;
+        let branch = ast::IfExpr::cast(tree, node).unwrap();
+        let cond = branch.condition(tree).unwrap().node();
+        let then_node = branch.then_branch(tree).unwrap().node();
+        let else_node = branch.else_branch(tree).map(|e| e.node());
+        let parent = self.context();
+        let (then_context, else_context) = match self.value(cond) {
+            Some(value) => {
+                let cond = self.class(value);
+                (
+                    self.typing.derived(cond, parent, RangeEdge::Then),
+                    self.typing.derived(cond, parent, RangeEdge::Else),
+                )
+            }
+            None => (parent, parent),
+        };
+        self.branch_contexts.push((then_context, else_context));
+        // The else branch is entered last, so its refinements are staged
+        // first and the then branch's sit on top of them.
+        let else_refinements = self.refinements(cond, false);
+        let then_refinements = self.refinements(cond, true);
+        if let Some(else_node) = else_node {
+            work.push(Work::Pop(else_refinements));
+            work.push(Work::Enter(else_node));
+            work.push(Work::Push {
+                context: else_context,
+                refinements: else_refinements,
+            });
+        }
+        work.push(Work::Pop(then_refinements));
+        work.push(Work::Enter(then_node));
+        work.push(Work::Push {
+            context: then_context,
+            refinements: then_refinements,
+        });
+    }
+    /// The left operand of the lazy operator at `node` is walked: open the
+    /// context the right one runs in and schedule it inside.
+    fn rhs(&mut self, node: NodeIdx, work: &mut Vec<Work>) {
+        let tree = self.source.tree;
+        let binary = ast::BinaryExpr::cast(tree, node).unwrap();
+        let lhs = binary.lhs(tree).unwrap().node();
+        let rhs = binary.rhs(tree).unwrap().node();
+        let and = self.binary_op(node) == sumi_syntax::BinaryOp::And;
+        let parent = self.context();
+        let context = match self.value(lhs) {
+            Some(value) => {
+                let edge = if and {
+                    RangeEdge::Then
+                } else {
+                    RangeEdge::Else
+                };
+                self.typing.derived(self.class(value), parent, edge)
+            }
+            None => parent,
+        };
+        let refinements = self.refinements(lhs, and);
+        work.push(Work::Pop(refinements));
+        work.push(Work::Enter(rhs));
+        work.push(Work::Push {
+            context,
+            refinements,
+        });
+    }
     /// An expression of the type `class` resolves to.
     fn emit(&mut self, node: NodeIdx, kind: ExprKind, class: Var) -> ExprId {
         let id = ExprId::new(self.exprs.len());
@@ -814,8 +1275,14 @@ impl<'a, 's> Builder<'a, 's> {
             ty: Ty::Unit,
         });
         self.classes.push(class);
+        self.consts.push(None);
         self.values[node.to_usize()] = Some(id);
         id
+    }
+    /// Record that `expr` folds to `value`, a constant the thresholds keep.
+    fn fold(&mut self, expr: ExprId, value: Int) {
+        self.recorded.constants.push(value.clone());
+        self.consts[expr.index()] = Some(value);
     }
     /// The context at `node` requires `expr` to be `expected`, which
     /// `declared` may have set. Recorded for the verdict pass, and joined
@@ -835,7 +1302,7 @@ impl<'a, 's> Builder<'a, 's> {
         self.demand(node, expr, DemandKind::Type { expected, declared });
     }
     fn demand(&mut self, node: NodeIdx, expr: ExprId, kind: DemandKind) {
-        self.demands.push(Demand {
+        self.recorded.demands.push(Demand {
             owner: self.owner,
             node,
             actual: self.class(expr),
@@ -884,6 +1351,27 @@ impl<'a, 's> Builder<'a, 's> {
             }
             _ if error => {
                 self.failed = true;
+                return;
+            }
+            NodeKind::IfExpr => {
+                let branch = ast::IfExpr::cast(tree, node).unwrap();
+                let cond = branch.condition(tree).unwrap().node();
+                work.push(Work::Finish(node));
+                work.push(Work::Branches(node));
+                work.push(Work::Enter(cond));
+                return;
+            }
+            NodeKind::BinaryExpr
+                if matches!(
+                    self.binary_op(node),
+                    sumi_syntax::BinaryOp::And | sumi_syntax::BinaryOp::Or
+                ) =>
+            {
+                let binary = ast::BinaryExpr::cast(tree, node).unwrap();
+                let lhs = binary.lhs(tree).unwrap().node();
+                work.push(Work::Finish(node));
+                work.push(Work::Rhs(node));
+                work.push(Work::Enter(lhs));
                 return;
             }
             NodeKind::PrefixExpr => {
@@ -1006,8 +1494,12 @@ impl<'a, 's> Builder<'a, 's> {
             .parse()
             .expect("a well-formed literal is a run of digits");
         let value = if negative { -&magnitude } else { magnitude };
-        let class = self.typing.known(Ty::Int, origin);
-        Some(self.emit(origin, ExprKind::Int(value), class))
+        let class = self
+            .typing
+            .literal(Ty::Int, May::int(value.clone()), origin);
+        let id = self.emit(origin, ExprKind::Int(value.clone()), class);
+        self.fold(id, value);
+        Some(id)
     }
     fn value(&self, node: NodeIdx) -> Option<ExprId> {
         self.values[node.to_usize()]
@@ -1066,6 +1558,7 @@ impl<'a, 's> Builder<'a, 's> {
                 // initializer turns out to be; the initializer is held to it.
                 let class = match binding.type_ref(tree) {
                     Some(annotation) => self.source.ty(annotation).map(|ty| {
+                        let class = self.typing.known(ty, annotation.node());
                         if let Some(value) = initializer {
                             self.require(
                                 initializer_node,
@@ -1073,8 +1566,9 @@ impl<'a, 's> Builder<'a, 's> {
                                 Expected::Ty(ty),
                                 Some(annotation.node()),
                             );
+                            self.typing.flow(self.class(value), class, RangeEdge::Copy);
                         }
-                        self.typing.known(ty, annotation.node())
+                        class
                     }),
                     None => initializer.map(|value| self.class(value)),
                 };
@@ -1107,7 +1601,7 @@ impl<'a, 's> Builder<'a, 's> {
                 let name = self.source.text(node);
                 match self.lookup(name) {
                     Some(Some(local)) => {
-                        let class = self.locals[local.index()].class;
+                        let class = self.current_class(local);
                         self.emit(node, ExprKind::Local(local), class);
                     }
                     Some(None) => return None,
@@ -1133,7 +1627,7 @@ impl<'a, 's> Builder<'a, 's> {
                     }
                     _ if matches!(self.source.text(node), "true" | "false") => {
                         let value = self.source.text(node) == "true";
-                        let class = self.typing.known(Ty::Bool, node);
+                        let class = self.typing.literal(Ty::Bool, May::bool(value), node);
                         self.emit(node, ExprKind::Bool(value), class);
                     }
                     _ => {
@@ -1163,7 +1657,13 @@ impl<'a, 's> Builder<'a, 's> {
                 let ty = if neg { Ty::Int } else { Ty::Bool };
                 self.require(operand, value, Expected::Ty(ty), None);
                 let class = self.typing.known(ty, node);
-                self.emit(
+                let op = if neg { UnaryOp::Neg } else { UnaryOp::Not };
+                self.typing.flow(
+                    self.class(value),
+                    class,
+                    RangeEdge::Unary { op, origin: node },
+                );
+                let id = self.emit(
                     node,
                     if neg {
                         ExprKind::Neg(value)
@@ -1172,6 +1672,9 @@ impl<'a, 's> Builder<'a, 's> {
                     },
                     class,
                 );
+                if neg && let Some(folded) = self.consts[value.index()].clone() {
+                    self.fold(id, -&folded);
+                }
             }
             NodeKind::BinaryExpr => {
                 use sumi_syntax::BinaryOp::*;
@@ -1179,18 +1682,7 @@ impl<'a, 's> Builder<'a, 's> {
                 let binary = ast::BinaryExpr::cast(tree, node).unwrap();
                 let lhs_node = binary.lhs(tree).unwrap().node();
                 let rhs_node = binary.rhs(tree).unwrap().node();
-                let lexed = self.source.parsed.lexed();
-                let end = tree.first_token(rhs_node);
-                let first = tree
-                    .end_token(lhs_node)
-                    .until(end)
-                    .find(|&raw| !lexed.kind(raw).is_trivia())
-                    .expect("clean binary operator");
-                // Raw tokens partition source: the immediately adjacent token
-                // is glued, whereas any intervening trivia breaks a compound.
-                let glued = (first + 1 < end).then(|| lexed.kind(first + 1));
-                let (op, _) = sumi_syntax::binary_operator(lexed.kind(first), glued)
-                    .expect("clean binary operator");
+                let op = self.binary_op(node);
                 let lhs = self.value(lhs_node);
                 let rhs = self.value(rhs_node);
                 // `==` and `!=` compare like with like: whichever operand
@@ -1216,9 +1708,51 @@ impl<'a, 's> Builder<'a, 's> {
                 }
                 let (lhs, rhs) = (lhs?, rhs?);
                 let class = self.typing.known(result, node);
-                self.emit(node, ExprKind::binary(op, lhs, rhs), class);
+                let kind = ExprKind::binary(op, lhs, rhs);
+                let edge = match &kind {
+                    ExprKind::Binary { op, .. } => RangeEdge::Binary {
+                        op: *op,
+                        origin: node,
+                    },
+                    ExprKind::And { .. } => RangeEdge::Lazy { and: true },
+                    ExprKind::Or { .. } => RangeEdge::Lazy { and: false },
+                    _ => unreachable!("a binary expression"),
+                };
+                self.typing
+                    .derive(self.class(lhs), self.class(rhs), class, edge);
+                if let ExprKind::Binary {
+                    op: BinaryOp::Div | BinaryOp::Rem,
+                    ..
+                } = kind
+                {
+                    self.recorded.obligations.push(Obligation {
+                        owner: self.owner,
+                        node,
+                        divisor: self.class(rhs),
+                        context: self.context(),
+                    });
+                }
+                let folded = match (&kind, &self.consts[lhs.index()], &self.consts[rhs.index()]) {
+                    (ExprKind::Binary { op, .. }, Some(a), Some(b)) => match op {
+                        BinaryOp::Add => Some(a + b),
+                        BinaryOp::Sub => Some(a - b),
+                        BinaryOp::Mul => Some(a * b),
+                        BinaryOp::Div => a.checked_div(b),
+                        BinaryOp::Rem => a.checked_rem(b),
+                        _ => None,
+                    },
+                    _ => None,
+                };
+                let id = self.emit(node, kind, class);
+                if let Some(folded) = folded {
+                    self.fold(id, folded);
+                }
             }
             NodeKind::IfExpr => {
+                let (then_context, else_context) = self
+                    .branch_contexts
+                    .pop()
+                    .expect("an if's branches open before it finishes");
                 let branch = ast::IfExpr::cast(tree, node).unwrap();
                 let condition_node = branch.condition(tree).unwrap().node();
                 let condition = self.value(condition_node);
@@ -1244,8 +1778,10 @@ impl<'a, 's> Builder<'a, 's> {
                     Some(_) => {
                         let branches = [then_branch, else_branch?].map(|branch| self.class(branch));
                         let join = self.typing.fresh();
-                        for branch in branches {
-                            self.typing.branch(branch, join);
+                        for (branch, context) in
+                            branches.into_iter().zip([then_context, else_context])
+                        {
+                            self.typing.branch(branch, context, join);
                         }
                         let id = self.emit(
                             node,
@@ -1275,10 +1811,16 @@ impl<'a, 's> Builder<'a, 's> {
         Some(())
     }
     fn call(&mut self, node: NodeIdx, target: FunctionId, callee: NodeIdx) -> Option<()> {
+        let caller = FunctionId(self.owner);
+        let context = self.context();
+        self.recorded.calls.push((caller, target, context));
         let function = &self.headers[target.index()];
         let params = function.params.as_ref()?;
+        let param_classes = &self.param_classes[function.param_classes.clone()];
+        let entry = function.entry;
         let item = function.item;
         let result = function.result;
+        self.typing.flow(context, entry, RangeEdge::Enter);
         let tree = self.source.tree;
         let list = ast::CallExpr::cast(tree, node)
             .unwrap()
@@ -1297,6 +1839,12 @@ impl<'a, 's> Builder<'a, 's> {
                 Some(value) => {
                     if let Some(&expected) = params.get(index) {
                         self.require(arg, value, Expected::Ty(expected), Some(item));
+                        self.typing.derive(
+                            self.class(value),
+                            context,
+                            param_classes[index],
+                            RangeEdge::Argument(arg),
+                        );
                     }
                     self.args.push(value);
                 }

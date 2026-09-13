@@ -2,11 +2,11 @@ file: accepted
 frontend errors: 0 (see frontend.snap)
 semantic errors: 0
 
-fn answer@0..32 () -> int
+fn answer@0..32 () -> int ∈ [42, 42]
   body: call twice@33..89 (callee @22..27) : int @21..32
     arg[0]: int 21 : int @29..31
 
-fn twice@33..89 (int) -> int
+fn twice@33..89 (int ∈ [21, 21]) -> int ∈ [42, 42]
   param x@42..43: int
   body: block : int @57..89
     let y@67..68: int @63..81
@@ -15,26 +15,26 @@ fn twice@33..89 (int) -> int
         rhs: int 2 : int @80..81
     tail: read y@67..68 : int @86..87
 
-fn cafe@90..119 (bool) -> bool
+fn cafe@90..119 (bool ∈ ∅) -> bool ∈ ∅
   param e@98..99: bool
   body: not : bool @117..119
     operand: read e@98..99 : bool @118..119
 
-fn ignore@120..173 (unit) -> unit
+fn ignore@120..173 (unit ∈ unit) -> unit ∈ unit
   param x@130..131: unit
   body: block : unit @147..173
     discard @153..165
       value: call answer@0..32 (callee @157..163) : int @157..165
     tail: read x@130..131 : unit @170..171
 
-fn sub@174..211 (int, int) -> int
+fn sub@174..211 (int ∈ [8, 8], int ∈ [3, 3]) -> int ∈ [5, 5]
   param a@181..182: int
   param b@189..190: int
   body: eager - : int @206..211
     lhs: read a@181..182 : int @206..207
     rhs: read b@189..190 : int @210..211
 
-fn ordered@212..255 () -> int
+fn ordered@212..255 () -> int ∈ [-1, -1]
   body: eager - : int @234..255
     lhs: eager - : int @234..251
       lhs: call sub@174..211 (callee @234..237) : int @234..243

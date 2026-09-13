@@ -4,13 +4,8 @@
 use sumi_hir::{
     Args, BinaryOp, Body, ExprId, ExprKind, FunctionId, Int, LocalId, StatementKind, Statements,
 };
-use sumi_text::Span;
 
-use crate::{Program, Trap, TrapKind, Value};
-
-/// The most call frames a run may hold at once, the entry included. The
-/// limit is the machine's, not the host's: no Sumi call consumes host stack.
-pub const MAX_CALL_DEPTH: usize = 1 << 16;
+use crate::{Program, Value};
 
 /// One unit of pending work. `Eval` pushes an expression's value; the rest
 /// consume values the stack already holds, or continue a block or call.
@@ -19,11 +14,8 @@ enum Control {
     Eval(ExprId),
     Neg,
     Not,
-    /// Combine the top two values; `origin` is the operation.
-    Binary {
-        op: BinaryOp,
-        origin: ExprId,
-    },
+    /// Combine the top two values.
+    Binary(BinaryOp),
     /// Evaluate `rhs` if the top value is true, else keep the false.
     AndRhs(ExprId),
     /// Evaluate `rhs` if the top value is false, else keep the true.
@@ -49,7 +41,6 @@ enum Control {
         function: FunctionId,
         args: Args,
         next: u32,
-        origin: ExprId,
     },
     /// Leave the current frame; its result is the top value.
     Return,
@@ -74,8 +65,10 @@ pub struct Machine<'a> {
     locals: Vec<Option<Value>>,
     steps: u64,
     max_depth: usize,
+    /// The most frames the analysis proved this run can hold, when finite.
+    bound: Option<u64>,
     /// Set once the run ends; every later step returns it unchanged.
-    outcome: Option<Result<Value, Trap>>,
+    outcome: Option<Value>,
 }
 
 impl<'a> Machine<'a> {
@@ -99,6 +92,7 @@ impl<'a> Machine<'a> {
             locals: Vec::new(),
             steps: 0,
             max_depth: 0,
+            bound: program.analysis().depth_bound(function),
             outcome: None,
         };
         machine.enter(function);
@@ -117,19 +111,25 @@ impl<'a> Machine<'a> {
     pub fn max_depth(&self) -> usize {
         self.max_depth
     }
+    /// The most frames the analysis proved this run can hold at once, the
+    /// entry included; `None` when a recursion it reaches has no finite
+    /// hull, which still ends, since every recursion has a measure.
+    pub fn depth_bound(&self) -> Option<u64> {
+        self.bound
+    }
 
     /// Step until the run ends.
-    pub fn run(mut self) -> Result<Value, Trap> {
+    pub fn run(mut self) -> Value {
         loop {
-            if let Some(outcome) = self.step() {
-                return outcome;
+            if let Some(value) = self.step() {
+                return value;
             }
         }
     }
 
     /// Do one unit of work: `None` while the run continues, otherwise its
-    /// result. A finished machine keeps returning the result.
-    pub fn step(&mut self) -> Option<Result<Value, Trap>> {
+    /// value. A finished machine keeps returning the value.
+    pub fn step(&mut self) -> Option<Value> {
         if self.outcome.is_some() {
             return self.outcome.clone();
         }
@@ -139,17 +139,12 @@ impl<'a> Machine<'a> {
                 .last()
                 .cloned()
                 .expect("a finished run has its value");
-            self.outcome = Some(Ok(value));
+            self.outcome = Some(value);
             return self.outcome.clone();
         };
         self.steps += 1;
-        if let Err(trap) = self.apply(control) {
-            // The trap is the run's result from here on; the machine keeps
-            // its state at the trap for inspection.
-            self.control.clear();
-            self.outcome = Some(Err(trap));
-        }
-        self.outcome.clone()
+        self.apply(control);
+        None
     }
 
     fn body(&self) -> &'a Body {
@@ -179,19 +174,15 @@ impl<'a> Machine<'a> {
     }
 
     /// Push a frame for `function`, taking its arguments from the top of
-    /// the value stack, and schedule its body. `origin` locates a depth trap.
-    fn call(&mut self, function: FunctionId, origin: Span) -> Result<(), Trap> {
-        if self.frames.len() >= MAX_CALL_DEPTH {
-            return Err(Trap {
-                kind: TrapKind::CallDepth,
-                origin,
-            });
-        }
-        self.enter(function);
-        Ok(())
-    }
-
+    /// the value stack, and schedule its body.
     fn enter(&mut self, function: FunctionId) {
+        assert!(
+            self.bound
+                .is_none_or(|bound| u64::try_from(self.frames.len()).unwrap() < bound),
+            "the checker bounded this run's call depth to {:?} frames, and it is entering frame {}",
+            self.bound,
+            self.frames.len() + 1
+        );
         let body = self
             .program
             .function(function)
@@ -210,7 +201,7 @@ impl<'a> Machine<'a> {
         self.control.push(Control::Eval(body.root()));
     }
 
-    fn apply(&mut self, control: Control) -> Result<(), Trap> {
+    fn apply(&mut self, control: Control) {
         let body = self.body();
         match control {
             Control::Eval(id) => self.eval(body, id),
@@ -222,11 +213,10 @@ impl<'a> Machine<'a> {
                 let operand = self.pop_bool();
                 self.values.push(Value::Bool(!operand));
             }
-            Control::Binary { op, origin } => {
+            Control::Binary(op) => {
                 let rhs = self.pop();
                 let lhs = self.pop();
-                let value = self.binary(op, lhs, rhs, origin)?;
-                self.values.push(value);
+                self.values.push(binary(op, lhs, rhs));
             }
             Control::AndRhs(rhs) => {
                 if self.pop_bool() {
@@ -293,25 +283,22 @@ impl<'a> Machine<'a> {
                 function,
                 args,
                 next,
-                origin,
             } => match body.args(args).get(next as usize) {
                 Some(&arg) => {
                     self.control.push(Control::Call {
                         function,
                         args,
                         next: next + 1,
-                        origin,
                     });
                     self.control.push(Control::Eval(arg));
                 }
-                None => self.call(function, body.expression(origin).origin)?,
+                None => self.enter(function),
             },
             Control::Return => {
                 let frame = self.frames.pop().expect("a return has a frame to leave");
                 self.locals.truncate(frame.base);
             }
         }
-        Ok(())
     }
 
     fn eval(&mut self, body: &Body, id: ExprId) {
@@ -338,10 +325,7 @@ impl<'a> Machine<'a> {
                 self.control.push(Control::Eval(*operand));
             }
             ExprKind::Binary { op, lhs, rhs } => {
-                self.control.push(Control::Binary {
-                    op: *op,
-                    origin: id,
-                });
+                self.control.push(Control::Binary(*op));
                 self.control.push(Control::Eval(*rhs));
                 self.control.push(Control::Eval(*lhs));
             }
@@ -357,7 +341,6 @@ impl<'a> Machine<'a> {
                 function: *function,
                 args: *args,
                 next: 0,
-                origin: id,
             }),
             ExprKind::If {
                 condition,
@@ -377,41 +360,29 @@ impl<'a> Machine<'a> {
             }),
         }
     }
+}
 
-    fn trap(&self, kind: TrapKind, origin: ExprId) -> Trap {
-        Trap {
-            kind,
-            origin: self.body().expression(origin).origin,
+fn binary(op: BinaryOp, lhs: Value, rhs: Value) -> Value {
+    match (op, lhs, rhs) {
+        (BinaryOp::Eq, lhs, rhs) => Value::Bool(lhs == rhs),
+        (BinaryOp::Ne, lhs, rhs) => Value::Bool(lhs != rhs),
+        (op, Value::Int(lhs), Value::Int(rhs)) => match op {
+            BinaryOp::Add => Value::Int(&lhs + &rhs),
+            BinaryOp::Sub => Value::Int(&lhs - &rhs),
+            BinaryOp::Mul => Value::Int(&lhs * &rhs),
+            // Truncating: the quotient rounds toward zero and the remainder
+            // takes the dividend's sign. The checker proved the divisor is
+            // not zero wherever this can run.
+            BinaryOp::Div => Value::Int(lhs.checked_div(&rhs).expect("a non-zero divisor")),
+            BinaryOp::Rem => Value::Int(lhs.checked_rem(&rhs).expect("a non-zero divisor")),
+            BinaryOp::Lt => Value::Bool(lhs < rhs),
+            BinaryOp::Le => Value::Bool(lhs <= rhs),
+            BinaryOp::Gt => Value::Bool(lhs > rhs),
+            BinaryOp::Ge => Value::Bool(lhs >= rhs),
+            BinaryOp::Eq | BinaryOp::Ne => unreachable!("handled for every type"),
+        },
+        (op, lhs, rhs) => {
+            unreachable!("the checker typed {op:?} over ints; got {lhs:?} and {rhs:?}")
         }
-    }
-
-    fn binary(&self, op: BinaryOp, lhs: Value, rhs: Value, origin: ExprId) -> Result<Value, Trap> {
-        Ok(match (op, lhs, rhs) {
-            (BinaryOp::Eq, lhs, rhs) => Value::Bool(lhs == rhs),
-            (BinaryOp::Ne, lhs, rhs) => Value::Bool(lhs != rhs),
-            (op, Value::Int(lhs), Value::Int(rhs)) => match op {
-                BinaryOp::Add => Value::Int(&lhs + &rhs),
-                BinaryOp::Sub => Value::Int(&lhs - &rhs),
-                BinaryOp::Mul => Value::Int(&lhs * &rhs),
-                BinaryOp::Div | BinaryOp::Rem => {
-                    // Truncating: the quotient rounds toward zero and the
-                    // remainder takes the dividend's sign.
-                    let value = if op == BinaryOp::Div {
-                        lhs.checked_div(&rhs)
-                    } else {
-                        lhs.checked_rem(&rhs)
-                    };
-                    Value::Int(value.ok_or_else(|| self.trap(TrapKind::DivisionByZero, origin))?)
-                }
-                BinaryOp::Lt => Value::Bool(lhs < rhs),
-                BinaryOp::Le => Value::Bool(lhs <= rhs),
-                BinaryOp::Gt => Value::Bool(lhs > rhs),
-                BinaryOp::Ge => Value::Bool(lhs >= rhs),
-                BinaryOp::Eq | BinaryOp::Ne => unreachable!("handled for every type"),
-            },
-            (op, lhs, rhs) => {
-                unreachable!("the checker typed {op:?} over ints; got {lhs:?} and {rhs:?}")
-            }
-        })
     }
 }

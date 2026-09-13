@@ -1,0 +1,46 @@
+file: accepted
+frontend errors: 0 (see frontend.snap)
+semantic errors: 0
+
+fn fib@0..71 (int ∈ [0, 15]) -> int ∈ [0, +∞)
+  param n@7..8: int
+  body: if : int @24..71
+    condition: eager < : bool @27..32
+      lhs: read n@7..8 : int @27..28
+      rhs: int 2 : int @31..32
+    then: block : int @33..38
+      tail: read n@7..8 : int @35..36
+    else: block : int @44..71
+      tail: eager + : int @46..69
+        lhs: call fib@0..71 (callee @46..49) : int @46..56
+          arg[0]: eager - : int @50..55
+            lhs: read n@7..8 : int @50..51
+            rhs: int 1 : int @54..55
+        rhs: call fib@0..71 (callee @59..62) : int @59..69
+          arg[0]: eager - : int @63..68
+            lhs: read n@7..8 : int @63..64
+            rhs: int 2 : int @67..68
+
+fn fib_15@72..100 () -> int ∈ [0, +∞)
+  body: call fib@0..71 (callee @93..96) : int @93..100
+    arg[0]: int 15 : int @97..99
+
+fn count@101..168 (int ∈ [0, 10000]) -> int ∈ [0, +∞)
+  param n@110..111: int
+  body: if : int @127..168
+    condition: eager == : bool @130..136
+      lhs: read n@110..111 : int @130..131
+      rhs: int 0 : int @135..136
+    then: block : int @137..142
+      tail: int 0 : int @139..140
+    else: block : int @148..168
+      tail: eager + : int @150..166
+        lhs: int 1 : int @150..151
+        rhs: call count@101..168 (callee @154..159) : int @154..166
+          arg[0]: eager - : int @160..165
+            lhs: read n@110..111 : int @160..161
+            rhs: int 1 : int @164..165
+
+fn deep@169..200 () -> int ∈ [0, +∞)
+  body: call count@101..168 (callee @188..193) : int @188..200
+    arg[0]: int 10000 : int @194..199

@@ -2,17 +2,17 @@ file: accepted
 frontend errors: 0 (see frontend.snap)
 semantic errors: 0
 
-fn value@0..22 () -> int
+fn value@0..22 () -> int ∈ [1, 1]
   body: call forward@23..43 (callee @13..20) : int @13..22
 
-fn forward@23..43 () -> int
+fn forward@23..43 () -> int ∈ [1, 1]
   body: block : int @38..43
     tail: int 1 : int @40..41
 
-fn explicit@44..74 () -> int
+fn explicit@44..74 () -> int ∈ [1, 1]
   body: call value@0..22 (callee @67..72) : int @67..74
 
-fn recursive@75..126 () -> int
+fn recursive@75..126 () -> int ∈ [1, 1]
   body: if : int @92..126
     condition: bool true : bool @95..99
     then: block : int @100..105
@@ -20,24 +20,35 @@ fn recursive@75..126 () -> int
     else: block : int @111..126
       tail: call recursive@75..126 (callee @113..122) : int @113..124
 
-fn anchored@127..160 () -> int
-  body: call inferred@161..187 (callee @150..158) : int @150..160
+fn anchored@127..184 () -> int ∈ [1, 1]
+  body: if : int @150..184
+    condition: bool false : bool @153..158
+    then: block : int @159..173
+      tail: call inferred@185..211 (callee @161..169) : int @161..171
+    else: block : int @179..184
+      tail: int 1 : int @181..182
 
-fn inferred@161..187 () -> int
-  body: call anchored@127..160 (callee @177..185) : int @177..187
+fn inferred@185..211 () -> int ∈ [1, 1]
+  body: call anchored@127..184 (callee @201..209) : int @201..211
 
-fn integer@188..226 () -> int
-  body: block : int @203..226
-    discard @207..220
-      value: call boolean@227..268 (callee @211..218) : bool @211..220
-    tail: int 1 : int @223..224
+fn integer@212..263 () -> int ∈ [1, 1]
+  body: block : int @227..263
+    discard @231..257
+      value: if : unit @231..257
+        condition: bool false : bool @234..239
+        then: block : unit @240..257
+          discard @242..255
+            value: call boolean@264..305 (callee @246..253) : bool @246..255
+          tail: unit (implicit)
+        else: unit (implicit)
+    tail: int 1 : int @260..261
 
-fn boolean@227..268 () -> bool
-  body: block : bool @242..268
-    discard @246..259
-      value: call integer@188..226 (callee @250..257) : int @250..259
-    tail: bool true : bool @262..266
+fn boolean@264..305 () -> bool ∈ {true}
+  body: block : bool @279..305
+    discard @283..296
+      value: call integer@212..263 (callee @287..294) : int @287..296
+    tail: bool true : bool @299..303
 
-fn empty@269..284 () -> unit
-  body: block : unit @282..284
+fn empty@306..321 () -> unit ∈ unit
+  body: block : unit @319..321
     tail: unit (implicit)

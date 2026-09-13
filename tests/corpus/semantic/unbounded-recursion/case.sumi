@@ -1,0 +1,7 @@
+fn forever(n: int) -> int = forever(n + 1)
+fn too_deep() -> int = forever(0)
+fn fall(n: int) -> int = if n > 100 { 0 } else { fall(n - 1) }
+fn falls() -> int = fall(5)
+fn swap(a: int, b: int) -> int = swap(b, a)
+fn swapped() -> int = swap(1, 2)
+fn spin() -> int = spin()

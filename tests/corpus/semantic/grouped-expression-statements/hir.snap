@@ -2,10 +2,10 @@ file: rejected
 frontend errors: 0 (see frontend.snap)
 semantic errors: 6
 
-fn value@0..21 () -> int
+fn value@0..21 () -> int ∈ [1, 1]
   body: int 1 : int @20..21
 
-fn sequence@22..179 () -> int
+fn sequence@22..179 () -> int ∈ [4, 4]
   body: unavailable
 
 == semantic diagnostics ==

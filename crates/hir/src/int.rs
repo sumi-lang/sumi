@@ -13,7 +13,8 @@ use std::fmt;
 use std::ops::{Add, Mul, Neg, Sub};
 use std::str::FromStr;
 
-/// An integer of any size.
+/// An integer of any size: two words, one of them a pointer only past the
+/// word-sized range.
 #[derive(Clone, PartialEq, Eq)]
 pub struct Int(Repr);
 
@@ -22,12 +23,16 @@ pub struct Int(Repr);
 #[derive(Clone, PartialEq, Eq)]
 enum Repr {
     Small(i64),
-    /// A value outside `i64`: its sign and its magnitude's limbs, least
-    /// significant first, the last one non-zero.
-    Big {
-        negative: bool,
-        limbs: Box<[u64]>,
-    },
+    /// A value outside `i64`.
+    Big(Box<Big>),
+}
+
+/// A sign and a magnitude's limbs, least significant first, the last one
+/// non-zero.
+#[derive(Clone, PartialEq, Eq)]
+struct Big {
+    negative: bool,
+    limbs: Box<[u64]>,
 }
 
 /// A sign and a magnitude, the form the slow paths compute in. Zero is
@@ -48,9 +53,9 @@ impl Int {
                 negative: *value < 0,
                 limbs: Cow::Owned(vec![value.unsigned_abs()]),
             },
-            Repr::Big { negative, limbs } => Parts {
-                negative: *negative,
-                limbs: Cow::Borrowed(limbs),
+            Repr::Big(big) => Parts {
+                negative: big.negative,
+                limbs: Cow::Borrowed(&big.limbs),
             },
         }
     }
@@ -67,10 +72,10 @@ impl Int {
                 Self(Repr::Small((limb as i64).wrapping_neg()))
             }
             &[limb] if !negative && limb <= i64::MAX as u64 => Self(Repr::Small(limb as i64)),
-            _ => Self(Repr::Big {
+            _ => Self(Repr::Big(Box::new(Big {
                 negative,
                 limbs: limbs.into_boxed_slice(),
-            }),
+            }))),
         }
     }
 
@@ -115,6 +120,14 @@ impl Int {
     /// `None` for a zero divisor.
     pub fn checked_rem(&self, rhs: &Self) -> Option<Self> {
         self.div_rem(rhs).map(|(_, remainder)| remainder)
+    }
+
+    /// The value as a machine word, if it fits.
+    pub fn to_i64(&self) -> Option<i64> {
+        match self.0 {
+            Repr::Small(value) => Some(value),
+            Repr::Big(_) => None,
+        }
     }
 }
 
@@ -200,7 +213,7 @@ impl fmt::Display for Int {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let (negative, limbs) = match &self.0 {
             Repr::Small(value) => return fmt::Display::fmt(value, f),
-            Repr::Big { negative, limbs } => (*negative, limbs),
+            Repr::Big(big) => (big.negative, &big.limbs),
         };
         // Peel groups of nineteen digits, the most a limb's division can
         // deliver at once, least significant first.
@@ -407,6 +420,13 @@ mod tests {
 
     fn is_small(value: &Int) -> bool {
         matches!(value.0, Repr::Small(_))
+    }
+
+    #[test]
+    fn an_int_is_two_words() {
+        assert_eq!(size_of::<Int>(), 16);
+        assert_eq!(Int::from(7).to_i64(), Some(7));
+        assert_eq!(int("9223372036854775808").to_i64(), None);
     }
 
     #[test]

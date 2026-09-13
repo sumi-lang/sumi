@@ -67,17 +67,24 @@ fn snapshot(source: &str) -> String {
             span(function.origin())
         )
         .unwrap();
-        match function.signature() {
-            Some(signature) => {
+        match (function.signature(), function.ranges()) {
+            (Some(signature), Some(ranges)) => {
                 let params = signature
                     .params
                     .iter()
-                    .map(|param| param.to_string())
+                    .zip(&ranges.params)
+                    .map(|(ty, may)| format!("{ty} ∈ {}", may.shown(*ty)))
                     .collect::<Vec<_>>()
                     .join(", ");
-                writeln!(out, " ({params}) -> {}", signature.result).unwrap();
+                writeln!(
+                    out,
+                    " ({params}) -> {} ∈ {}",
+                    signature.result,
+                    ranges.result.shown(signature.result)
+                )
+                .unwrap();
             }
-            None => out.push_str(" signature: unavailable\n"),
+            _ => out.push_str(" signature: unavailable\n"),
         }
         if let Some(body) = function.body() {
             for &param in body.params() {

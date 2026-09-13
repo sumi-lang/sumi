@@ -24,13 +24,12 @@ const USAGE: &str = "usage: sumi check <file>
   -h, --help        show this help
 
 Diagnostics go to stderr; clean input produces no output. Running prints
-main's value to stdout, or nothing for unit; a trap, such as a division by
-zero, is reported like a diagnostic. Formatting keeps every token and
-comment, leaves what the parser could not parse as written, and never
-changes the parse.
+main's value to stdout, or nothing for unit; a file the checker accepts
+cannot fail at run time. Formatting keeps every token and comment, leaves
+what the parser could not parse as written, and never changes the parse.
 Locations use one-based lines and UTF-8 byte columns.
-Exit status: 0 = no errors, 1 = source errors, a trap, or files that would
-change, 2 = usage or input errors.";
+Exit status: 0 = no errors, 1 = source errors or files that would change,
+2 = usage or input errors.";
 
 fn main() -> ExitCode {
     let args: Vec<OsString> = std::env::args_os().skip(1).collect();
@@ -122,9 +121,9 @@ fn check(path: &Path) -> Result<ExitCode, String> {
     })
 }
 
-/// Check, then run `fn main()`: its value goes to stdout unless unit, and a
-/// trap is reported at the operation that trapped. A file without a
-/// parameterless `main` cannot be run and is an input error.
+/// Check, then run `fn main()`: its value goes to stdout unless unit. A
+/// file without a parameterless `main` cannot be run and is an input
+/// error.
 fn run(path: &Path) -> Result<ExitCode, String> {
     let (analysis, has_errors) = analyze(path)?;
     if has_errors {
@@ -149,21 +148,10 @@ fn run(path: &Path) -> Result<ExitCode, String> {
         ));
     }
     match program.evaluate(main, &[]) {
-        Ok(Value::Unit) => Ok(ExitCode::SUCCESS),
-        Ok(value) => {
-            println!("{value}");
-            Ok(ExitCode::SUCCESS)
-        }
-        Err(trap) => {
-            eprintln!(
-                "{}error[{}]: {}",
-                locate(path, &lines, trap.origin.range().start()),
-                trap.kind.code(),
-                trap
-            );
-            Ok(ExitCode::FAILURE)
-        }
+        Value::Unit => {}
+        value => println!("{value}"),
     }
+    Ok(ExitCode::SUCCESS)
 }
 
 /// Format each file in place, or list the files `--check` would change, or

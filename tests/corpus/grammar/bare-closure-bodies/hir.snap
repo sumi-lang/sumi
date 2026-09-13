@@ -17,13 +17,13 @@ fn spaced@102..125 signature: unavailable
 fn operand@126..153 signature: unavailable
   body: unavailable
 
-fn next@154..174 () -> int
+fn next@154..174 () -> int ∈ [2, 2]
   body: int 2 : int @173..174
 
-fn a@175..192 () -> int
+fn a@175..192 () -> int ∈ [1, 1]
   body: int 1 : int @191..192
 
-fn b@193..210 () -> int
+fn b@193..210 () -> int ∈ [2, 2]
   body: int 2 : int @209..210
 
 == semantic diagnostics ==

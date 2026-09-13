@@ -2,13 +2,13 @@ file: rejected
 frontend errors: 1 (see frontend.snap)
 semantic errors: 1
 
-fn malformed@0..26 () -> int
+fn malformed@0..26 () -> int ∈ ∅
   body: unavailable
 
-fn layout@27..61 () -> int
+fn layout@27..61 () -> int ∈ [2, 2]
   body: unavailable
 
-fn intact@62..88 () -> bool
+fn intact@62..88 () -> bool ∈ {true}
   body: bool true : bool @84..88
 
 == semantic diagnostics ==

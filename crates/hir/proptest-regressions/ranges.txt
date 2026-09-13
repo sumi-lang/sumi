@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 2d8064a5d784346060dc4b69c4c9c9b1ec94d79c59546ff261b8afae7c0c06a7 # shrinks to a = Band { lo: Finite(0), hi: Finite(2), hole: false }, b = Band { lo: Finite(0), hi: Finite(0), hole: false }, constants = []
+cc de20b3ceb8829b17d788f427595fc6c1ab785ea816fd0b8b430c02a39ba19cf1 # shrinks to a = Band { lo: Finite(-5), hi: Finite(5), hole: false }, b = Band { lo: Finite(1), hi: Finite(1), hole: false }

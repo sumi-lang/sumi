@@ -8,25 +8,25 @@ fn a@0..35 signature: unavailable
 fn b@36..74 signature: unavailable
   body: unavailable
 
-fn consumer@75..101 () -> int
+fn consumer@75..101 () -> int ∈ [1, 1]
   body: unavailable
 
-fn mismatch@102..135 () -> bool
+fn mismatch@102..135 () -> bool ∈ ∅
   body: unavailable
 
 fn branch@136..186 signature: unavailable
   body: unavailable
 
-fn unused@187..222 () -> unit
+fn unused@187..222 () -> unit ∈ unit
   body: unavailable
 
-fn comparison@223..259 () -> bool
+fn comparison@223..259 () -> bool ∈ ∅
   body: unavailable
 
-fn integer@260..276 () -> int
+fn integer@260..276 () -> int ∈ [1, 1]
   body: int 1 : int @275..276
 
-fn empty@277..292 () -> unit
+fn empty@277..292 () -> unit ∈ unit
   body: block : unit @290..292
     tail: unit (implicit)
 

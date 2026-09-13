@@ -2,7 +2,7 @@ file: rejected
 frontend errors: 1 (see frontend.snap)
 semantic errors: 1
 
-fn unclosed@0..44 () -> int
+fn unclosed@0..44 () -> int ∈ ∅
   body: unavailable
 
 == semantic diagnostics ==
