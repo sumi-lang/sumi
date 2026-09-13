@@ -312,31 +312,39 @@ fn disagreeing_branches_are_undetermined_not_the_first_branch() {
 }
 
 #[test]
-fn signed_literal_envelopes() {
+fn literals_of_any_size_fold_a_leading_minus() {
     for (expr, value) in [
-        ("9223372036854775807", i64::MAX),
-        ("-9223372036854775808", i64::MIN),
-        ("-((9223372036854775808))", i64::MIN),
+        ("9223372036854775807", "9223372036854775807"),
+        ("-9223372036854775808", "-9223372036854775808"),
+        ("-((9223372036854775808))", "-9223372036854775808"),
+        ("9223372036854775808", "9223372036854775808"),
+        ("-9223372036854775809", "-9223372036854775809"),
+        (
+            "1234567890123456789012345678901234567890",
+            "1234567890123456789012345678901234567890",
+        ),
+        (
+            "-1234567890123456789012345678901234567890",
+            "-1234567890123456789012345678901234567890",
+        ),
     ] {
         let a = clean(&format!("fn f() -> int = {expr}"));
         let body = a.functions[0].body().unwrap();
-        assert_eq!(body.exprs.len(), 1);
-        assert!(matches!(body.exprs[0].kind, ExprKind::Int(n) if n == value));
+        assert_eq!(body.exprs.len(), 1, "{expr}");
+        let ExprKind::Int(literal) = &body.exprs[0].kind else {
+            panic!("{expr} is one literal");
+        };
+        assert_eq!(literal, &value.parse::<Int>().unwrap(), "{expr}");
     }
-    for expr in [
-        "9223372036854775808",
-        "-9223372036854775809",
-        "-(9223372036854775808 + 0)",
-        "0 - 9223372036854775808",
-    ] {
-        let a = check(&format!("fn f() -> int = {expr}"));
-        assert_eq!(codes(&a), [INTEGER_RANGE], "{expr}");
+    // Only a `-` directly on the literal folds; the rest is a negation.
+    for expr in ["--9223372036854775808", "-(9223372036854775808 + 0)"] {
+        let a = clean(&format!("fn f() -> int = {expr}"));
+        let body = a.functions[0].body().unwrap();
+        assert!(
+            matches!(body.expression(body.root()).kind, ExprKind::Neg(_)),
+            "{expr}"
+        );
     }
-    let a = clean("fn f() -> int = --9223372036854775808");
-    assert!(matches!(
-        a.functions[0].body().unwrap().exprs[1].kind,
-        ExprKind::Neg(_)
-    ));
     for expr in ["01", "1_000", "1u32"] {
         let a = check(&format!("fn f() -> int = {expr}"));
         assert!(!a.is_valid());
@@ -372,8 +380,8 @@ fn expression_results_stay_body_local_across_failed_bodies() {
     }
     let first = a.functions[0].body().unwrap();
     assert_eq!(first.exprs.len(), 3);
-    assert!(matches!(first.exprs[0].kind, ExprKind::Int(23)));
-    assert!(matches!(first.exprs[1].kind, ExprKind::Int(7)));
+    assert!(matches!(&first.exprs[0].kind, ExprKind::Int(n) if *n == Int::from(23)));
+    assert!(matches!(&first.exprs[1].kind, ExprKind::Int(n) if *n == Int::from(7)));
     let flag = a.functions[2].body().unwrap();
     assert_eq!(flag.exprs.len(), 1);
     assert!(matches!(
@@ -383,8 +391,8 @@ fn expression_results_stay_body_local_across_failed_bodies() {
     let last = a.functions[3].body().unwrap();
     assert_eq!(last.exprs.len(), 1);
     assert!(matches!(
-        last.expression(last.root()).kind,
-        ExprKind::Int(-17)
+        &last.expression(last.root()).kind,
+        ExprKind::Int(n) if *n == Int::from(-17)
     ));
     reversed_declarations_preserve_types(&a);
 }
@@ -399,8 +407,9 @@ fn call_arguments_keep_source_order() {
     let args = body.args(*args);
     for (index, &value) in [11, 29, 7].iter().enumerate() {
         // Both evaluation order and the published argument positions matter.
-        assert!(matches!(body.exprs[index].kind, ExprKind::Int(n) if n == value));
-        assert!(matches!(body.expression(args[index]).kind, ExprKind::Int(n) if n == value));
+        let value = Int::from(value);
+        assert!(matches!(&body.exprs[index].kind, ExprKind::Int(n) if *n == value));
+        assert!(matches!(&body.expression(args[index]).kind, ExprKind::Int(n) if *n == value));
     }
     assert_eq!(args.len(), 3);
 }
@@ -597,8 +606,8 @@ fn blocks_preserve_statement_order_and_only_the_last_child_is_a_tail() {
         .collect();
     assert_eq!(texts, ["let x = 11", "_ = 29", "{}"]);
     assert!(matches!(
-        body.expression(tail.unwrap()).kind,
-        ExprKind::Int(7)
+        &body.expression(tail.unwrap()).kind,
+        ExprKind::Int(n) if *n == Int::from(7)
     ));
     for (function, count) in [(1, 1), (2, 0)] {
         let body = a.functions[function].body().unwrap();

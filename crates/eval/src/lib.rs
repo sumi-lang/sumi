@@ -7,9 +7,9 @@
 //! recursion depth is bounded by [`MAX_CALL_DEPTH`] alone, and every
 //! [`Machine::step`] is one unit of work an instrument can observe.
 //!
-//! Integer arithmetic is signed 64-bit and never wraps: an overflow, like a
-//! division by zero or a call past the depth limit, is a [`Trap`] that ends
-//! the run where it happened.
+//! Integers are mathematical: `+`, `-`, `*`, and negation are total, and a
+//! value takes whatever size it needs. A division by zero or a call past
+//! the depth limit is a [`Trap`] that ends the run where it happened.
 
 mod machine;
 
@@ -18,21 +18,21 @@ mod tests;
 
 use std::fmt;
 
-use sumi_hir::{Analysis, Function, FunctionId, Signature, Ty};
+use sumi_hir::{Analysis, Function, FunctionId, Int, Signature, Ty};
 use sumi_text::Span;
 
 pub use machine::{MAX_CALL_DEPTH, Machine};
 
 /// A scalar value, one per [`Ty`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Value {
-    Int(i64),
+    Int(Int),
     Bool(bool),
     Unit,
 }
 
 impl Value {
-    pub fn ty(self) -> Ty {
+    pub fn ty(&self) -> Ty {
         match self {
             Self::Int(_) => Ty::Int,
             Self::Bool(_) => Ty::Bool,
@@ -56,9 +56,6 @@ impl fmt::Display for Value {
 pub enum TrapKind {
     /// `/` or `%` with a zero divisor.
     DivisionByZero,
-    /// An arithmetic result outside the signed 64-bit range: `+`, `-`, `*`,
-    /// negation, and the minimum divided by `-1`.
-    Overflow,
     /// A call that would nest deeper than [`MAX_CALL_DEPTH`] frames.
     CallDepth,
 }
@@ -68,14 +65,12 @@ impl TrapKind {
     pub fn code(self) -> &'static str {
         match self {
             Self::DivisionByZero => "eval/division-by-zero",
-            Self::Overflow => "eval/overflow",
             Self::CallDepth => "eval/call-depth",
         }
     }
     pub fn message(self) -> &'static str {
         match self {
             Self::DivisionByZero => "division by zero",
-            Self::Overflow => "integer overflow",
             Self::CallDepth => "call nesting exceeds the depth limit",
         }
     }

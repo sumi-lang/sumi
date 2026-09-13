@@ -6,6 +6,10 @@ fn analysis(source: &str) -> Analysis {
     analyze(parse_source(FileId::new(0), source.into()).unwrap())
 }
 
+fn int(value: i64) -> Value {
+    Value::Int(value.into())
+}
+
 /// Run the nullary function `name` of `source`.
 fn run(source: &str, name: &str) -> Result<Value, Trap> {
     let analysis = analysis(source);
@@ -39,14 +43,14 @@ fn bools() -> bool = true == true && !(false != false)
 fn nothing() = {}
 fn remainder() -> int = -7 % 3
 fn quotient() -> int = -7 / 2";
-    assert_eq!(run(source, "arithmetic"), Ok(Value::Int(8)));
-    assert_eq!(run(source, "negated"), Ok(Value::Int(3)));
+    assert_eq!(run(source, "arithmetic"), Ok(int(8)));
+    assert_eq!(run(source, "negated"), Ok(int(3)));
     assert_eq!(run(source, "logic"), Ok(Value::Bool(true)));
     assert_eq!(run(source, "bools"), Ok(Value::Bool(true)));
     assert_eq!(run(source, "nothing"), Ok(Value::Unit));
     // Truncating division; the remainder takes the dividend's sign.
-    assert_eq!(run(source, "remainder"), Ok(Value::Int(-1)));
-    assert_eq!(run(source, "quotient"), Ok(Value::Int(-3)));
+    assert_eq!(run(source, "remainder"), Ok(int(-1)));
+    assert_eq!(run(source, "quotient"), Ok(int(-3)));
 }
 
 #[test]
@@ -65,8 +69,8 @@ fn all() -> int = branches(-5) * 100 + branches(0) * 10 + branches(7)
 fn no_else(b: bool) = if b { _ = 1 }
 fn unit_if() = no_else(true)
 fn empty() = {}";
-    assert_eq!(run(source, "entry"), Ok(Value::Int(2)));
-    assert_eq!(run(source, "all"), Ok(Value::Int(-99)));
+    assert_eq!(run(source, "entry"), Ok(int(2)));
+    assert_eq!(run(source, "all"), Ok(int(-99)));
     assert_eq!(run(source, "unit_if"), Ok(Value::Unit));
     assert_eq!(run(source, "empty"), Ok(Value::Unit));
 }
@@ -77,15 +81,15 @@ fn calls_recursion_and_evaluation_order() {
 fn twenty() -> int = fib(20)
 fn sub(a: int, b: int) -> int = a - b
 fn ordered() -> int = sub(sub(10, 3), sub(2, 1))
-fn args_left_first() -> int = sub(1 / 0, 9223372036854775807 + 1)
-fn operands_left_first() -> int = (1 % 0) + (9223372036854775807 * 2)
-fn args_before_the_call() -> int = sub(9223372036854775807 + 1, forever(0))
+fn args_left_first() -> int = sub(1 / 0, 1 % 0)
+fn operands_left_first() -> int = (1 % 0) + (1 / 0)
+fn args_before_the_call() -> int = sub(1 / 0, forever(0))
 fn forever(n: int) -> int = forever(n + 1)
 fn even(n: int) -> bool = if n == 0 { true } else { odd(n - 1) }
 fn odd(n: int) -> bool = if n == 0 { false } else { even(n - 1) }
 fn parity() -> bool = even(1000) && !even(999)";
-    assert_eq!(run(source, "twenty"), Ok(Value::Int(6765)));
-    assert_eq!(run(source, "ordered"), Ok(Value::Int(6)));
+    assert_eq!(run(source, "twenty"), Ok(int(6765)));
+    assert_eq!(run(source, "ordered"), Ok(int(6)));
     // Competing traps: the left one happens, so the right one never does.
     assert_eq!(
         trap_of(source, run(source, "args_left_first")),
@@ -97,7 +101,7 @@ fn parity() -> bool = even(1000) && !even(999)";
     );
     assert_eq!(
         trap_of(source, run(source, "args_before_the_call")),
-        (TrapKind::Overflow, "9223372036854775807 + 1")
+        (TrapKind::DivisionByZero, "1 / 0")
     );
     assert_eq!(run(source, "parity"), Ok(Value::Bool(true)));
 }
@@ -119,40 +123,65 @@ fn unsafe_or() -> bool = false || 1 % 0 == 0";
 }
 
 #[test]
-fn arithmetic_traps_locate_the_operation() {
+fn integers_have_no_width() {
     let max = i64::MAX;
     let min = i64::MIN;
     let source = format!(
         "fn add() -> int = {max} + 1
 fn sub() -> int = -{max} - 2
 fn mul() -> int = {max} * 2
-fn neg() -> int = --{min}
+fn neg() -> int = -{min}
 fn div() -> int = {min} / -1
 fn rem() -> int = {min} % -1
-fn div_zero() -> int = 1 / (1 - 1)
-fn rem_zero() -> int = 1 % 0
+fn back() -> int = ({max} + 1) - 1
+fn wide() -> int = 1234567890123456789012345678901234567890 * -1000000000000000000000
+fn narrow() -> int = 1234567890123456789012345678901234567890 / 1000000000000000000000
 fn fine() -> int = {max} + -1 + 1"
     );
     let source = source.as_str();
-    assert_eq!(run(source, "fine"), Ok(Value::Int(max)));
-    for (name, kind, origin) in [
-        ("add", TrapKind::Overflow, format!("{max} + 1")),
-        ("sub", TrapKind::Overflow, format!("-{max} - 2")),
-        ("mul", TrapKind::Overflow, format!("{max} * 2")),
-        // The literal already is the minimum; the inner negation overflows.
-        ("neg", TrapKind::Overflow, format!("-{min}")),
-        ("div", TrapKind::Overflow, format!("{min} / -1")),
-        ("rem", TrapKind::Overflow, format!("{min} % -1")),
+    for (name, value) in [
+        ("add", "9223372036854775808"),
+        ("sub", "-9223372036854775809"),
+        ("mul", "18446744073709551614"),
+        ("neg", "9223372036854775808"),
+        ("div", "9223372036854775808"),
+        ("rem", "0"),
+        ("back", "9223372036854775807"),
         (
-            "div_zero",
-            TrapKind::DivisionByZero,
-            "1 / (1 - 1)".to_owned(),
+            "wide",
+            "-1234567890123456789012345678901234567890000000000000000000000",
         ),
-        ("rem_zero", TrapKind::DivisionByZero, "1 % 0".to_owned()),
+        ("narrow", "1234567890123456789"),
+        ("fine", "9223372036854775807"),
+    ] {
+        assert_eq!(
+            run(source, name),
+            Ok(Value::Int(value.parse().unwrap())),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn division_by_zero_traps_at_the_operation() {
+    let source = "fn div_zero() -> int = 1 / (1 - 1)
+fn rem_zero() -> int = 1 % 0
+fn wide_zero() -> int = 1234567890123456789012345678901234567890 / (9223372036854775808 - 9223372036854775808)";
+    for (name, origin) in [
+        ("div_zero", "1 / (1 - 1)"),
+        ("rem_zero", "1 % 0"),
+        (
+            "wide_zero",
+            "1234567890123456789012345678901234567890 / (9223372036854775808 - 9223372036854775808)",
+        ),
     ] {
         let result = run(source, name);
-        assert_eq!(trap_of(source, result), (kind, origin.as_str()), "{name}");
-        assert_eq!(result.unwrap_err().to_string(), kind.message());
+        assert_eq!(
+            trap_of(source, result.clone()),
+            (TrapKind::DivisionByZero, origin),
+            "{name}"
+        );
+        assert_eq!(result.unwrap_err().to_string(), "division by zero");
     }
 }
 
@@ -171,7 +200,7 @@ fn deep() -> int = count(60000)";
         "forever(n + 1)"
     );
     // Recursion short of the limit completes, however deep.
-    assert_eq!(run(source, "deep"), Ok(Value::Int(60000)));
+    assert_eq!(run(source, "deep"), Ok(int(60000)));
 }
 
 #[test]
@@ -191,16 +220,16 @@ fn stepping_is_observable_and_idempotent_at_the_end() {
         }
         seen_depth_two |= machine.depth() == 2;
     };
-    assert_eq!(outcome, Ok(Value::Int(4)));
+    assert_eq!(outcome, Ok(int(4)));
     assert!(seen_depth_two);
     assert_eq!((machine.depth(), machine.max_depth()), (0, 2));
     let steps = machine.steps();
     assert!(steps > 0);
-    assert_eq!(machine.step(), Some(Ok(Value::Int(4))));
+    assert_eq!(machine.step(), Some(Ok(int(4))));
     assert_eq!(machine.steps(), steps);
     // Arguments reach parameters in order.
     let sub = program.function_named("twice").unwrap();
-    assert_eq!(program.evaluate(sub, &[Value::Int(21)]), Ok(Value::Int(42)));
+    assert_eq!(program.evaluate(sub, &[int(21)]), Ok(int(42)));
 }
 
 #[test]
@@ -211,12 +240,12 @@ fn a_trapped_machine_keeps_reporting_its_trap() {
     let mut machine = Machine::new(program, program.function_named("boom").unwrap(), &[]);
     let outcome = machine.run_to_end();
     assert_eq!(
-        trap_of(source, outcome),
+        trap_of(source, outcome.clone()),
         (TrapKind::DivisionByZero, "x / 0")
     );
     let steps = machine.steps();
     for _ in 0..3 {
-        assert_eq!(machine.step(), Some(outcome));
+        assert_eq!(machine.step(), Some(outcome.clone()));
     }
     assert_eq!(machine.steps(), steps);
     // The frames stay where the trap happened.
@@ -237,7 +266,11 @@ fn arguments_must_match_the_signature() {
 
 #[test]
 fn values_display_as_source_spells_them() {
-    assert_eq!(Value::Int(-7).to_string(), "-7");
+    assert_eq!(int(-7).to_string(), "-7");
+    assert_eq!(
+        Value::Int("-9223372036854775809".parse().unwrap()).to_string(),
+        "-9223372036854775809"
+    );
     assert_eq!(Value::Bool(true).to_string(), "true");
     assert_eq!(Value::Unit.to_string(), "unit");
     assert_eq!(Value::Unit.ty(), Ty::Unit);

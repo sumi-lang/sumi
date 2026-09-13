@@ -134,8 +134,6 @@ code unused-value
 /// result is used as two types, or nothing fixes it. Add a return type
 /// annotation.
 code cannot-infer
-/// An integer literal outside the signed 64-bit range.
-code integer-range
 /// A construct scalar checking does not handle yet, such as a closure, a
 /// string literal, or a call through anything but a function name. The
 /// function is left unchecked.

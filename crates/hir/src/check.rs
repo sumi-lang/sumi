@@ -987,6 +987,8 @@ impl<'a, 's> Builder<'a, 's> {
             }
         }
     }
+    /// The literal's value, negated when a `-` prefix is folded into it.
+    /// `None` for a malformed literal, which the lexer already reported.
     fn integer(&mut self, origin: NodeIdx, literal: NodeIdx, negative: bool) -> Option<ExprId> {
         let raw = self.source.tree.first_token(literal);
         if self
@@ -998,35 +1000,14 @@ impl<'a, 's> Builder<'a, 's> {
         {
             return None;
         }
-        let value = self
+        let magnitude: Int = self
             .source
             .text(literal)
-            .bytes()
-            .try_fold(0i64, |value, byte| {
-                value.checked_mul(10)?.checked_sub(i64::from(byte - b'0'))
-            })
-            .and_then(|value| {
-                if negative {
-                    Some(value)
-                } else {
-                    value.checked_neg()
-                }
-            });
-        match value {
-            Some(value) => {
-                let class = self.typing.known(Ty::Int, origin);
-                Some(self.emit(origin, ExprKind::Int(value), class))
-            }
-            None => {
-                self.source.error(
-                    literal,
-                    codes::INTEGER_RANGE,
-                    "integer literal is outside signed 64-bit range",
-                    None,
-                );
-                None
-            }
-        }
+            .parse()
+            .expect("a well-formed literal is a run of digits");
+        let value = if negative { -&magnitude } else { magnitude };
+        let class = self.typing.known(Ty::Int, origin);
+        Some(self.emit(origin, ExprKind::Int(value), class))
     }
     fn value(&self, node: NodeIdx) -> Option<ExprId> {
         self.values[node.to_usize()]
