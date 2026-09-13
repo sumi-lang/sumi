@@ -1,34 +1,37 @@
 file: rejected
 frontend errors: 2 (see frontend.snap)
-semantic errors: 5
+semantic errors: 6
 
 fn spin@0..25 signature: unavailable
   body: unavailable
 
-fn consumer@26..56 () -> int
+fn consumer@26..56 () -> int ∈ ∅
   body: unavailable
 
-fn grounded@57..84 () -> int
+fn grounded@57..84 () -> int ∈ ∅
   body: unavailable
 
-fn recovered@85..112 () -> int
+fn recovered@85..112 () -> int ∈ ∅
   body: call grounded@57..84 (callee @102..110) : int @102..112
 
 fn bad_arguments@113..153 signature: unavailable
   body: unavailable
 
-fn bare@154..169 () -> unit
+fn bare@154..169 () -> unit ∈ unit
   body: unavailable
 
 fn malformed@170..195 signature: unavailable
   body: unavailable
 
-fn intact@196..214 () -> bool
+fn intact@196..214 () -> bool ∈ {true}
   body: bool true : bool @210..214
 
 == semantic diagnostics ==
 error[semantic/cannot-infer]: cannot infer function result; add a return type annotation
   primary @0..25
+error[semantic/unbounded-recursion]: recursion in `spin` has no argument that decreases on every call
+  primary @3..7
+  secondary @18..25: no argument moves a parameter toward a bound
 error[semantic/arity]: expected 1 arguments, found 2
   primary @134..153
   secondary @0..25: declared here

@@ -299,15 +299,15 @@ fn run_prints_mains_value_and_nothing_for_unit() {
 }
 
 #[test]
-fn run_reports_traps_and_source_errors_at_their_location() {
+fn run_reports_source_errors_at_their_location() {
     for (source, expected) in [
         (
             "fn main() -> int {\n    let zero = 0\n    7 / zero\n}\n",
-            "case.sumi:3:5: error[eval/division-by-zero]: division by zero\n",
+            "case.sumi:3:5: error[semantic/division-by-zero]: division by zero\n",
         ),
         (
             "fn main() -> int = main()\n",
-            "case.sumi:1:20: error[eval/call-depth]: call nesting exceeds the depth limit\n",
+            "case.sumi:1:4: error[semantic/unbounded-recursion]: recursion in `main` has no argument that decreases on every call\n",
         ),
         (
             "fn main() -> int = true\n",
@@ -317,7 +317,11 @@ fn run_reports_traps_and_source_errors_at_their_location() {
         let output = run(source);
         assert_eq!(output.status.code(), Some(1), "{source}");
         assert!(output.stdout.is_empty());
-        assert_eq!(String::from_utf8(output.stderr).unwrap(), expected);
+        assert_eq!(
+            String::from_utf8(output.stderr).unwrap(),
+            expected,
+            "{source}"
+        );
     }
 }
 

@@ -2,10 +2,10 @@ file: rejected
 frontend errors: 2 (see frontend.snap)
 semantic errors: 1
 
-fn damaged@0..100 () -> unit
+fn damaged@0..100 () -> unit ∈ unit
   body: unavailable
 
-fn intact@101..123 () -> int
+fn intact@101..123 () -> int ∈ [3, 3]
   body: int 3 : int @122..123
 
 == semantic diagnostics ==

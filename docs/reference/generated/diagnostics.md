@@ -691,6 +691,87 @@ error[semantic/cannot-infer]: function result is both unit, int, and bool; add a
   secondary @229..232: bool here
 ```
 
+### `semantic/division-by-zero`
+
+A `/` or `%` whose divisor may be zero where the division can run: the
+values that reach the divisor, the hull of every argument and operand
+that flows into it, include zero. Labels name the values that put it
+there. A guard such as `if d != 0` narrows the divisor inside its
+branch, and a division no path reaches is not checked.
+
+Shown by [`tests/corpus/semantic/division-by-zero`](../../../tests/corpus/semantic/division-by-zero/case.sumi):
+
+```sumi
+fn divide_by_zero() -> int = 1 / (2 - 2)
+fn remainder_by_zero() -> int = 7 % 0
+fn by_parameter(n: int) -> int = 100 / n
+fn through_a_call() -> int = 1 + by_parameter(0)
+fn half(d: int) -> int = 100 / d
+fn spread(k: int) -> int = half(k - 3)
+fn spreads() -> int = spread(0) + spread(6)
+fn statements() -> int {
+    let a = 1
+    let b = a + 1
+    let a = b * 10
+    _ = a / 0 == 0 || true
+    if a > b { a - b } else { b - a }
+}
+```
+
+```text
+error[semantic/division-by-zero]: division by zero
+  primary @29..40
+  secondary @34..39: is 0
+error[semantic/division-by-zero]: division by zero
+  primary @73..78
+  secondary @77..78: is 0
+error[semantic/division-by-zero]: division by zero
+  primary @112..119
+  secondary @166..167: argument is 0
+error[semantic/division-by-zero]: divisor may be zero
+  primary @194..201
+  secondary @234..239: argument may be 0: [-3, 3]
+error[semantic/division-by-zero]: division by zero
+  primary @369..374
+  secondary @373..374: is 0
+```
+
+### `semantic/unbounded-recursion`
+
+A cycle of calls with no argument that moves toward a bound: on every
+call around the cycle some one parameter of each function must be
+passed a value that never moves the wrong way and, often enough that
+no cycle of calls only passes it along, strictly decreases (or strictly
+increases), with the values it can take bounded on that side. Labels
+name the recursive calls and the argument that comes closest.
+
+Shown by [`tests/corpus/semantic/unbounded-recursion`](../../../tests/corpus/semantic/unbounded-recursion/case.sumi):
+
+```sumi
+fn forever(n: int) -> int = forever(n + 1)
+fn too_deep() -> int = forever(0)
+fn fall(n: int) -> int = if n > 100 { 0 } else { fall(n - 1) }
+fn falls() -> int = fall(5)
+fn swap(a: int, b: int) -> int = swap(b, a)
+fn swapped() -> int = swap(1, 2)
+fn spin() -> int = spin()
+```
+
+```text
+error[semantic/unbounded-recursion]: recursion in `forever` has no argument that decreases on every call
+  primary @3..10
+  secondary @28..42: argument increases `n`, which is unbounded above
+error[semantic/unbounded-recursion]: recursion in `fall` has no argument that decreases on every call
+  primary @80..84
+  secondary @126..137: argument decreases `n`, which is unbounded below
+error[semantic/unbounded-recursion]: recursion in `swap` has no argument that decreases on every call
+  primary @171..175
+  secondary @201..211: no argument moves a parameter toward a bound
+error[semantic/unbounded-recursion]: recursion in `spin` has no argument that decreases on every call
+  primary @248..252
+  secondary @264..270: no argument moves a parameter toward a bound
+```
+
 ### `semantic/unsupported`
 
 A construct scalar checking does not handle yet, such as a closure, a

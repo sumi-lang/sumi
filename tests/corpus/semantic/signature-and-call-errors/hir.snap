@@ -2,11 +2,11 @@ file: rejected
 frontend errors: 0 (see frontend.snap)
 semantic errors: 10
 
-fn duplicate@0..17 () -> unit
+fn duplicate@0..17 () -> unit ∈ unit
   body: block : unit @15..17
     tail: unit (implicit)
 
-fn duplicate@18..35 () -> unit
+fn duplicate@18..35 () -> unit ∈ unit
   body: block : unit @33..35
     tail: unit (implicit)
 
@@ -19,15 +19,15 @@ fn unknown@65..90 signature: unavailable
 fn suppressed@91..124 signature: unavailable
   body: unavailable
 
-fn typed@125..161 (int, bool) -> int
+fn typed@125..161 (int ∈ ∅, bool ∈ ∅) -> int ∈ ∅
   param x@134..135: int
   param b@142..143: bool
   body: read x@134..135 : int @160..161
 
-fn wrong@162..205 () -> int
+fn wrong@162..205 () -> int ∈ ∅
   body: unavailable
 
-fn hidden@206..258 () -> int
+fn hidden@206..258 () -> int ∈ ∅
   body: unavailable
 
 fn broken_result@259..301 signature: unavailable

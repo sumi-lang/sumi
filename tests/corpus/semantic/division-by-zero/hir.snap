@@ -1,0 +1,97 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 5
+
+fn divide_by_zero@0..40 () -> int ∈ ∅
+  body: eager / : int @29..40
+    lhs: int 1 : int @29..30
+    rhs: eager - : int @34..39
+      lhs: int 2 : int @34..35
+      rhs: int 2 : int @38..39
+
+fn remainder_by_zero@41..78 () -> int ∈ ∅
+  body: eager % : int @73..78
+    lhs: int 7 : int @73..74
+    rhs: int 0 : int @77..78
+
+fn by_parameter@79..119 (int ∈ [0, 0]) -> int ∈ ∅
+  param n@95..96: int
+  body: eager / : int @112..119
+    lhs: int 100 : int @112..115
+    rhs: read n@95..96 : int @118..119
+
+fn through_a_call@120..168 () -> int ∈ ∅
+  body: eager + : int @149..168
+    lhs: int 1 : int @149..150
+    rhs: call by_parameter@79..119 (callee @153..165) : int @153..168
+      arg[0]: int 0 : int @166..167
+
+fn half@169..201 (int ∈ [-3, 3]) -> int ∈ [-100, 100] \ 0
+  param d@177..178: int
+  body: eager / : int @194..201
+    lhs: int 100 : int @194..197
+    rhs: read d@177..178 : int @200..201
+
+fn spread@202..240 (int ∈ [0, 6]) -> int ∈ [-100, 100] \ 0
+  param k@212..213: int
+  body: call half@169..201 (callee @229..233) : int @229..240
+    arg[0]: eager - : int @234..239
+      lhs: read k@212..213 : int @234..235
+      rhs: int 3 : int @238..239
+
+fn spreads@241..284 () -> int ∈ [-200, 200]
+  body: eager + : int @263..284
+    lhs: call spread@202..240 (callee @263..269) : int @263..272
+      arg[0]: int 0 : int @270..271
+    rhs: call spread@202..240 (callee @275..281) : int @275..284
+      arg[0]: int 6 : int @282..283
+
+fn statements@285..427 () -> int ∈ [18, 18]
+  body: block : int @308..427
+    let a@318..319: int @314..323
+      initializer: int 1 : int @322..323
+    let b@332..333: int @328..341
+      initializer: eager + : int @336..341
+        lhs: read a@318..319 : int @336..337
+        rhs: int 1 : int @340..341
+    let a@350..351: int @346..360
+      initializer: eager * : int @354..360
+        lhs: read b@332..333 : int @354..355
+        rhs: int 10 : int @358..360
+    discard @365..387
+      value: lazy or : bool @369..387
+        lhs: eager == : bool @369..379
+          lhs: eager / : int @369..374
+            lhs: read a@350..351 : int @369..370
+            rhs: int 0 : int @373..374
+          rhs: int 0 : int @378..379
+        rhs: bool true : bool @383..387
+    tail: if : int @392..425
+      condition: eager > : bool @395..400
+        lhs: read a@350..351 : int @395..396
+        rhs: read b@332..333 : int @399..400
+      then: block : int @401..410
+        tail: eager - : int @403..408
+          lhs: read a@350..351 : int @403..404
+          rhs: read b@332..333 : int @407..408
+      else: block : int @416..425
+        tail: eager - : int @418..423
+          lhs: read b@332..333 : int @418..419
+          rhs: read a@350..351 : int @422..423
+
+== semantic diagnostics ==
+error[semantic/division-by-zero]: division by zero
+  primary @29..40
+  secondary @34..39: is 0
+error[semantic/division-by-zero]: division by zero
+  primary @73..78
+  secondary @77..78: is 0
+error[semantic/division-by-zero]: division by zero
+  primary @112..119
+  secondary @166..167: argument is 0
+error[semantic/division-by-zero]: divisor may be zero
+  primary @194..201
+  secondary @234..239: argument may be 0: [-3, 3]
+error[semantic/division-by-zero]: division by zero
+  primary @369..374
+  secondary @373..374: is 0

@@ -3,13 +3,13 @@
 //!
 //! The machine is explicit about its state: a control stack of pending
 //! work, a value stack, and a call stack of frames whose locals live in one
-//! shared slab. Nothing recurses on the host stack, so a Sumi program's
-//! recursion depth is bounded by [`MAX_CALL_DEPTH`] alone, and every
+//! shared slab. Nothing recurses on the host stack, and every
 //! [`Machine::step`] is one unit of work an instrument can observe.
 //!
-//! Integers are mathematical: `+`, `-`, `*`, and negation are total, and a
-//! value takes whatever size it needs. A division by zero or a call past
-//! the depth limit is a [`Trap`] that ends the run where it happened.
+//! Nothing here can fail. Integers are mathematical, so arithmetic is
+//! total; the checker proved every reachable divisor non-zero and every
+//! recursion finite, so a zero divisor or a call past the analysis's depth
+//! bound is a checker bug the machine refuses, never a program error.
 
 mod machine;
 
@@ -19,9 +19,8 @@ mod tests;
 use std::fmt;
 
 use sumi_hir::{Analysis, Function, FunctionId, Int, Signature, Ty};
-use sumi_text::Span;
 
-pub use machine::{MAX_CALL_DEPTH, Machine};
+pub use machine::Machine;
 
 /// A scalar value, one per [`Ty`].
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -51,48 +50,10 @@ impl fmt::Display for Value {
     }
 }
 
-/// Why a run stopped short of a value.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TrapKind {
-    /// `/` or `%` with a zero divisor.
-    DivisionByZero,
-    /// A call that would nest deeper than [`MAX_CALL_DEPTH`] frames.
-    CallDepth,
-}
-
-impl TrapKind {
-    /// The code a driver reports, in the form diagnostics use.
-    pub fn code(self) -> &'static str {
-        match self {
-            Self::DivisionByZero => "eval/division-by-zero",
-            Self::CallDepth => "eval/call-depth",
-        }
-    }
-    pub fn message(self) -> &'static str {
-        match self {
-            Self::DivisionByZero => "division by zero",
-            Self::CallDepth => "call nesting exceeds the depth limit",
-        }
-    }
-}
-
-/// A run that stopped at `origin`: the operation that trapped, or the call
-/// that would have nested too deep.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Trap {
-    pub kind: TrapKind,
-    pub origin: Span,
-}
-
-impl fmt::Display for Trap {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.kind.message())
-    }
-}
-
 /// A valid analysis: every function has a signature and a complete typed
 /// body, and no diagnostic is an error. Only such a file runs, so the
-/// machine has no path for an ill-typed operation.
+/// machine has no path for an ill-typed operation, a zero divisor, or a
+/// recursion without end.
 #[derive(Clone, Copy, Debug)]
 pub struct Program<'a> {
     analysis: &'a Analysis,
@@ -133,7 +94,7 @@ impl<'a> Program<'a> {
     }
     /// Run `function` on `args` to completion. The arguments must match the
     /// signature in count and type.
-    pub fn evaluate(self, function: FunctionId, args: &[Value]) -> Result<Value, Trap> {
+    pub fn evaluate(self, function: FunctionId, args: &[Value]) -> Value {
         Machine::new(self, function, args).run()
     }
 }

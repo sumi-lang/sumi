@@ -3,12 +3,15 @@
 //! and their full requested sizes; bytes are allocation traffic, not peak RSS.
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
-use sumi_hir::{Ty, analyze};
+use sumi_hir::{BinaryOp, Int, Ty, analyze};
 
 #[path = "support/graphs.rs"]
 mod graphs;
 #[path = "support/programs.rs"]
 mod programs;
+#[allow(dead_code)]
+#[path = "../src/ranges.rs"]
+mod ranges;
 #[allow(dead_code)]
 #[path = "../src/solver.rs"]
 mod solver;
@@ -70,14 +73,18 @@ fn main() {
     for shape in graphs::SHAPES {
         for size in graphs::SIZES {
             let mut graph = graphs::build(shape, size);
-            measure("solve", shape, size, || graph.context.solve());
+            measure("solve", shape, size, || graph.context.solve(&graph.cx));
             graphs::validate(shape, &graph);
-            measure("replay-context", shape, size, || graph.context.replay());
-            let (graph, _) = measure("build-solve-replay", shape, size, || {
+            measure("replay-context", shape, size, || {
+                graph.context.replay(&graph.cx)
+            });
+            let graph = measure("build-solve-replay", shape, size, || {
                 let mut graph = graphs::build(shape, size);
-                graph.context.solve();
-                let replay = graph.context.replay();
-                (graph, replay)
+                graph.context.solve(&graph.cx);
+                let replay = graph.context.replay(&graph.cx);
+                std::hint::black_box(&replay);
+                drop(replay);
+                graph
             });
             graphs::validate(shape, &graph);
         }

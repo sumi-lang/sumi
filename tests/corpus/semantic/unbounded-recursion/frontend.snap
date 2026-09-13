@@ -1,0 +1,95 @@
+== tree ==
+SourceFile 0..271
+  FnItem 0..42
+    Name 3..10 "forever"
+    ParamList 10..18
+      Param 11..17
+        Name 11..12 "n"
+        TypeRef 14..17 "int"
+    TypeRef 22..25 "int"
+    CallExpr 28..42
+      NameRef 28..35 "forever"
+      ArgList 35..42
+        BinaryExpr 36..41
+          NameRef 36..37 "n"
+          LiteralExpr 40..41 "1"
+  FnItem 43..76
+    Name 46..54 "too_deep"
+    ParamList 54..56 "()"
+    TypeRef 60..63 "int"
+    CallExpr 66..76
+      NameRef 66..73 "forever"
+      ArgList 73..76
+        LiteralExpr 74..75 "0"
+  FnItem 77..139
+    Name 80..84 "fall"
+    ParamList 84..92
+      Param 85..91
+        Name 85..86 "n"
+        TypeRef 88..91 "int"
+    TypeRef 96..99 "int"
+    IfExpr 102..139
+      BinaryExpr 105..112
+        NameRef 105..106 "n"
+        LiteralExpr 109..112 "100"
+      Block 113..118
+        LiteralExpr 115..116 "0"
+      Block 124..139
+        CallExpr 126..137
+          NameRef 126..130 "fall"
+          ArgList 130..137
+            BinaryExpr 131..136
+              NameRef 131..132 "n"
+              LiteralExpr 135..136 "1"
+  FnItem 140..167
+    Name 143..148 "falls"
+    ParamList 148..150 "()"
+    TypeRef 154..157 "int"
+    CallExpr 160..167
+      NameRef 160..164 "fall"
+      ArgList 164..167
+        LiteralExpr 165..166 "5"
+  FnItem 168..211
+    Name 171..175 "swap"
+    ParamList 175..191
+      Param 176..182
+        Name 176..177 "a"
+        TypeRef 179..182 "int"
+      Param 184..190
+        Name 184..185 "b"
+        TypeRef 187..190 "int"
+    TypeRef 195..198 "int"
+    CallExpr 201..211
+      NameRef 201..205 "swap"
+      ArgList 205..211
+        NameRef 206..207 "b"
+        NameRef 209..210 "a"
+  FnItem 212..244
+    Name 215..222 "swapped"
+    ParamList 222..224 "()"
+    TypeRef 228..231 "int"
+    CallExpr 234..244
+      NameRef 234..238 "swap"
+      ArgList 238..244
+        LiteralExpr 239..240 "1"
+        LiteralExpr 242..243 "2"
+  FnItem 245..270
+    Name 248..252 "spin"
+    ParamList 252..254 "()"
+    TypeRef 258..261 "int"
+    CallExpr 264..270
+      NameRef 264..268 "spin"
+      ArgList 268..270 "()"
+
+== formatted ==
+fn forever(n: int) -> int = forever(n + 1)
+fn too_deep() -> int = forever(0)
+fn fall(n: int) -> int = if n > 100 {
+    0
+} else {
+    fall(n - 1)
+}
+fn falls() -> int = fall(5)
+fn swap(a: int, b: int) -> int = swap(b, a)
+fn swapped() -> int = swap(1, 2)
+fn spin() -> int = spin()

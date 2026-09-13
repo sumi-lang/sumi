@@ -1,7 +1,5 @@
 file: accepted
 fn fib: takes arguments, not run
-fn fib_15 = 610 (steps 34525, depth 16)
+fn fib_15 = 610 (steps 34525, depth 16 of at most 17)
 fn count: takes arguments, not run
-fn deep = 10000 (steps 190015, depth 10002)
-fn forever: takes arguments, not run
-fn too_deep traps [eval/call-depth] at `forever(n + 1)` @229..243 (steps 458749, depth 65536)
+fn deep = 10000 (steps 190015, depth 10002 of at most 10002)

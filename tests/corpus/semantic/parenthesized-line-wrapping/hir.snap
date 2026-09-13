@@ -2,21 +2,21 @@ file: accepted
 frontend errors: 0 (see frontend.snap)
 semantic errors: 0
 
-fn add@0..37 (int, int) -> int
+fn add@0..37 (int ∈ [3, 3], int ∈ [7, 7]) -> int ∈ [10, 10]
   param a@7..8: int
   param b@15..16: int
   body: eager + : int @32..37
     lhs: read a@7..8 : int @32..33
     rhs: read b@15..16 : int @36..37
 
-fn wrapped@38..79 () -> int
+fn wrapped@38..79 () -> int ∈ [7, 7]
   body: eager + : int @61..78
     lhs: int 1 : int @61..62
     rhs: eager * : int @69..78
       lhs: int 2 : int @69..70
       rhs: int 3 : int @77..78
 
-fn arguments@80..146 () -> int
+fn arguments@80..146 () -> int ∈ [10, 10]
   body: call add@0..37 (callee @104..107) : int @104..146
     arg[0]: eager + : int @108..117
       lhs: int 1 : int @108..109
@@ -25,7 +25,7 @@ fn arguments@80..146 () -> int
       lhs: int 3 : int @119..120
       rhs: int 4 : int @144..145
 
-fn nested@147..215 () -> int
+fn nested@147..215 () -> int ∈ [6, 6]
   body: eager + : int @169..214
     lhs: block : int @169..206
       let x@179..180: int @175..198

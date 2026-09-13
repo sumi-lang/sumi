@@ -2,7 +2,7 @@ file: accepted
 frontend errors: 0 (see frontend.snap)
 semantic errors: 0
 
-fn choose@0..97 (bool) -> int
+fn choose@0..97 (bool ∈ ∅) -> int ∈ ∅
   param flag@10..14: bool
   body: block : int @29..97
     tail: if : int @35..95
@@ -12,7 +12,7 @@ fn choose@0..97 (bool) -> int
       else: block : int @78..95
         tail: int 2 : int @88..89
 
-fn block_condition@98..156 () -> int
+fn block_condition@98..156 () -> int ∈ [1, 1]
   body: if : int @128..156
     condition: block : bool @131..139
       tail: bool true : bool @133..137
@@ -21,7 +21,7 @@ fn block_condition@98..156 () -> int
     else: block : int @151..156
       tail: int 2 : int @153..154
 
-fn nested_condition@157..259 () -> int
+fn nested_condition@157..259 () -> int ∈ [1, 1]
   body: if : int @188..259
     condition: if : bool @191..222
       condition: bool true : bool @194..198
@@ -38,7 +38,7 @@ fn nested_condition@157..259 () -> int
       else: block : int @254..259
         tail: int 3 : int @256..257
 
-fn continued_condition@260..313 () -> unit
+fn continued_condition@260..313 () -> unit ∈ unit
   body: if : unit @287..313
     condition: lazy and : bool @290..310
       lhs: block : bool @290..298
@@ -48,7 +48,7 @@ fn continued_condition@260..313 () -> unit
       tail: unit (implicit)
     else: unit (implicit)
 
-fn grouped@314..351 () -> unit
+fn grouped@314..351 () -> unit ∈ unit
   body: if : unit @330..350
     condition: bool true : bool @334..338
     then: block : unit @340..342

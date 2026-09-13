@@ -6,6 +6,8 @@
 
 mod check;
 mod int;
+mod ranges;
+mod recursion;
 mod solver;
 mod typing;
 
@@ -21,6 +23,7 @@ use sumi_text::Span;
 
 pub use check::analyze;
 pub use int::{Int, ParseIntError};
+pub use ranges::{Bools, Bound, Ints, May};
 
 /// Eager scalar operators. Short-circuiting operators have separate expression kinds.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -82,7 +85,7 @@ impl FunctionId {
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct ExprId(NonZeroU32);
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct LocalId(NonZeroU32);
 
@@ -128,6 +131,8 @@ pub struct Analysis {
     parsed: ParsedSource,
     functions: Vec<Function>,
     diagnostics: Vec<Diagnostic>,
+    /// The call depth bound of each function as an entry, by index.
+    depth: Vec<Option<u64>>,
 }
 
 impl Analysis {
@@ -148,6 +153,13 @@ impl Analysis {
     /// An ID must come from this analysis, not another source revision.
     pub fn function(&self, id: FunctionId) -> &Function {
         &self.functions[id.index()]
+    }
+    /// The most call frames a run entered at `id` can hold at once, the
+    /// entry included, when every recursion it can reach has a measure
+    /// with a finite hull. A valid file's every recursion has a measure,
+    /// so a run of it is finite either way.
+    pub fn depth_bound(&self, id: FunctionId) -> Option<u64> {
+        self.depth[id.index()]
     }
     /// The source text `span` covers: how a name in the HIR is read, since
     /// every name is kept as where it is written.
@@ -174,6 +186,7 @@ pub struct Function {
     name: Option<Span>,
     origin: Span,
     signature: Option<Signature>,
+    ranges: Option<Ranges>,
     body: Option<Body>,
 }
 
@@ -195,6 +208,20 @@ impl Function {
     pub fn body(&self) -> Option<&Body> {
         self.body.as_ref()
     }
+    /// The values that may reach the parameters and the result, whenever
+    /// the function has a signature.
+    pub fn ranges(&self) -> Option<&Ranges> {
+        self.ranges.as_ref()
+    }
+}
+
+/// What may reach a function's parameters, the hull of its live call
+/// sites' arguments, and what its result may be. Empty parameters mean no
+/// live call site: the function is dead, and nothing in it is checked.
+#[derive(Debug)]
+pub struct Ranges {
+    pub params: Box<[May]>,
+    pub result: May,
 }
 
 #[derive(Debug)]

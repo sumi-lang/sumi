@@ -1,7 +1,8 @@
 //! Evaluation goldens selected by an `eval` line in `stages`: every
-//! parameterless function of an accepted case, run to its value or trap,
-//! with the machine's step count and deepest call nesting as the witnesses
-//! of what running it costs. Update with
+//! parameterless function of an accepted case, run to its value, with the
+//! machine's step count and deepest call nesting as the witnesses of what
+//! running it costs, and the depth the analysis claimed beside the depth
+//! the run observed. Update with
 //! `UPDATE_EVAL=1 cargo test -p sumi-eval --test corpus`.
 
 use std::fmt::Write as _;
@@ -31,33 +32,22 @@ fn snapshot(source: &str) -> String {
             continue;
         }
         let mut machine = Machine::new(program, id, &[]);
-        let outcome = loop {
-            if let Some(outcome) = machine.step() {
-                break outcome;
+        let value = loop {
+            if let Some(value) = machine.step() {
+                break value;
             }
         };
-        match outcome {
-            Ok(value) => write!(out, "fn {name} = {value}").unwrap(),
-            Err(trap) => {
-                let range = trap.origin.range();
-                write!(
-                    out,
-                    "fn {name} traps [{}] at `{}` @{}..{}",
-                    trap.kind.code(),
-                    &source[range.start().to_usize()..range.end().to_usize()],
-                    range.start().to_u32(),
-                    range.end().to_u32(),
-                )
-                .unwrap();
-            }
-        }
-        writeln!(
+        write!(
             out,
-            " (steps {}, depth {})",
+            "fn {name} = {value} (steps {}, depth {}",
             machine.steps(),
             machine.max_depth()
         )
         .unwrap();
+        match machine.depth_bound() {
+            Some(bound) => writeln!(out, " of at most {bound})").unwrap(),
+            None => out.push_str(", unbounded)\n"),
+        }
     }
     out
 }
