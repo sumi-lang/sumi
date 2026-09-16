@@ -10,6 +10,7 @@
 
 use std::cmp::Ordering;
 use std::fmt;
+use std::ops::{Add, Div, Mul, Neg, Sub};
 
 use crate::{BinaryOp, Int};
 
@@ -38,75 +39,17 @@ impl Bound {
         }
     }
 
-    fn neg(&self) -> Self {
-        match self {
-            Self::NegInf => Self::PosInf,
-            Self::Finite(value) => Self::Finite(-value),
-            Self::PosInf => Self::NegInf,
-        }
-    }
-
-    /// Never asked to add opposite infinities: every use adds two lower or
-    /// two upper endpoints.
-    fn add(&self, other: &Self) -> Self {
-        match (self, other) {
-            (Self::Finite(a), Self::Finite(b)) => Self::Finite(a + b),
-            (Self::NegInf, Self::PosInf) | (Self::PosInf, Self::NegInf) => {
-                unreachable!("endpoints of one side never mix infinities")
-            }
-            (Self::NegInf, _) | (_, Self::NegInf) => Self::NegInf,
-            (Self::PosInf, _) | (_, Self::PosInf) => Self::PosInf,
-        }
-    }
-
-    fn sub(&self, other: &Self) -> Self {
-        self.add(&other.neg())
-    }
-
     fn succ(&self) -> Self {
-        self.add(&Self::finite(1))
+        self + &Self::finite(1)
     }
 
     fn pred(&self) -> Self {
-        self.sub(&Self::finite(1))
-    }
-
-    /// With `0 · ±∞ = 0`, which is what a hull of products needs.
-    fn mul(&self, other: &Self) -> Self {
-        let sign = self.sign().then(Ordering::Equal);
-        match (self, other) {
-            (Self::Finite(a), Self::Finite(b)) => Self::Finite(a * b),
-            _ if self.sign() == Ordering::Equal || other.sign() == Ordering::Equal => Self::zero(),
-            _ => {
-                let positive =
-                    (self.sign() == Ordering::Greater) == (other.sign() == Ordering::Greater);
-                let _ = sign;
-                if positive { Self::PosInf } else { Self::NegInf }
-            }
-        }
-    }
-
-    /// Truncating division by a non-zero `other`. An infinite dividend
-    /// stays infinite with the combined sign; a finite one over an infinite
-    /// divisor is zero.
-    fn div(&self, other: &Self) -> Self {
-        debug_assert_ne!(other.sign(), Ordering::Equal);
-        match (self, other) {
-            (Self::Finite(a), Self::Finite(b)) => {
-                Self::Finite(a.checked_div(b).expect("a non-zero divisor"))
-            }
-            (Self::Finite(_), _) => Self::zero(),
-            _ => {
-                let positive =
-                    (self.sign() == Ordering::Greater) == (other.sign() == Ordering::Greater);
-                if positive { Self::PosInf } else { Self::NegInf }
-            }
-        }
+        self - &Self::finite(1)
     }
 
     fn abs(&self) -> Self {
         if self.sign() == Ordering::Less {
-            self.neg()
+            -self
         } else {
             self.clone()
         }
@@ -114,6 +57,85 @@ impl Bound {
 
     fn is_finite(&self) -> bool {
         matches!(self, Self::Finite(_))
+    }
+}
+
+impl Neg for &Bound {
+    type Output = Bound;
+    fn neg(self) -> Bound {
+        match self {
+            Bound::NegInf => Bound::PosInf,
+            Bound::Finite(value) => Bound::Finite(-value),
+            Bound::PosInf => Bound::NegInf,
+        }
+    }
+}
+
+/// Never asked to add opposite infinities: every use adds two lower or two
+/// upper endpoints.
+impl Add<&Bound> for &Bound {
+    type Output = Bound;
+    fn add(self, other: &Bound) -> Bound {
+        match (self, other) {
+            (Bound::Finite(a), Bound::Finite(b)) => Bound::Finite(a + b),
+            (Bound::NegInf, Bound::PosInf) | (Bound::PosInf, Bound::NegInf) => {
+                unreachable!("endpoints of one side never mix infinities")
+            }
+            (Bound::NegInf, _) | (_, Bound::NegInf) => Bound::NegInf,
+            (Bound::PosInf, _) | (_, Bound::PosInf) => Bound::PosInf,
+        }
+    }
+}
+
+impl Sub<&Bound> for &Bound {
+    type Output = Bound;
+    fn sub(self, other: &Bound) -> Bound {
+        self + &-other
+    }
+}
+
+/// With `0 · ±∞ = 0`, which is what a hull of products needs.
+impl Mul<&Bound> for &Bound {
+    type Output = Bound;
+    fn mul(self, other: &Bound) -> Bound {
+        match (self, other) {
+            (Bound::Finite(a), Bound::Finite(b)) => Bound::Finite(a * b),
+            _ if self.sign() == Ordering::Equal || other.sign() == Ordering::Equal => Bound::zero(),
+            _ => {
+                let positive =
+                    (self.sign() == Ordering::Greater) == (other.sign() == Ordering::Greater);
+                if positive {
+                    Bound::PosInf
+                } else {
+                    Bound::NegInf
+                }
+            }
+        }
+    }
+}
+
+/// Truncating division by a non-zero divisor. An infinite dividend stays
+/// infinite with the combined sign; a finite one over an infinite divisor
+/// is zero.
+impl Div<&Bound> for &Bound {
+    type Output = Bound;
+    fn div(self, other: &Bound) -> Bound {
+        debug_assert_ne!(other.sign(), Ordering::Equal);
+        match (self, other) {
+            (Bound::Finite(a), Bound::Finite(b)) => {
+                Bound::Finite(a.checked_div(b).expect("a non-zero divisor"))
+            }
+            (Bound::Finite(_), _) => Bound::zero(),
+            _ => {
+                let positive =
+                    (self.sign() == Ordering::Greater) == (other.sign() == Ordering::Greater);
+                if positive {
+                    Bound::PosInf
+                } else {
+                    Bound::NegInf
+                }
+            }
+        }
     }
 }
 
@@ -243,24 +265,20 @@ impl Ints {
     pub fn neg(&self) -> Self {
         match self.parts() {
             None => Self::Empty,
-            Some((lo, hi, hole)) => Self::band(hi.neg(), lo.neg(), hole),
+            Some((lo, hi, hole)) => Self::band(-hi, -lo, hole),
         }
     }
 
     pub fn add(&self, other: &Self) -> Self {
         match (self.parts(), other.parts()) {
-            (Some((lo1, hi1, _)), Some((lo2, hi2, _))) => {
-                Self::band(lo1.add(lo2), hi1.add(hi2), false)
-            }
+            (Some((lo1, hi1, _)), Some((lo2, hi2, _))) => Self::band(lo1 + lo2, hi1 + hi2, false),
             _ => Self::Empty,
         }
     }
 
     pub fn sub(&self, other: &Self) -> Self {
         match (self.parts(), other.parts()) {
-            (Some((lo1, hi1, _)), Some((lo2, hi2, _))) => {
-                Self::band(lo1.sub(hi2), hi1.sub(lo2), false)
-            }
+            (Some((lo1, hi1, _)), Some((lo2, hi2, _))) => Self::band(lo1 - hi2, hi1 - lo2, false),
             _ => Self::Empty,
         }
     }
@@ -268,7 +286,7 @@ impl Ints {
     pub fn mul(&self, other: &Self) -> Self {
         match (self.parts(), other.parts()) {
             (Some((lo1, hi1, _)), Some((lo2, hi2, _))) => {
-                let corners = [lo1.mul(lo2), lo1.mul(hi2), hi1.mul(lo2), hi1.mul(hi2)];
+                let corners = [lo1 * lo2, lo1 * hi2, hi1 * lo2, hi1 * hi2];
                 let lo = corners.iter().min().unwrap().clone();
                 let hi = corners.iter().max().unwrap().clone();
                 // A product of non-zeros is non-zero over ℤ.
@@ -301,7 +319,7 @@ impl Ints {
         };
         let mut result = Self::Empty;
         for (lo2, hi2) in other.halves() {
-            let corners = [lo1.div(&lo2), lo1.div(&hi2), hi1.div(&lo2), hi1.div(&hi2)];
+            let corners = [lo1 / &lo2, lo1 / &hi2, hi1 / &lo2, hi1 / &hi2];
             let lo = corners.iter().min().unwrap().clone();
             let hi = corners.iter().max().unwrap().clone();
             result.join(&Self::band(lo, hi, false));
@@ -323,7 +341,7 @@ impl Ints {
         let lo = if lo1.sign() != Ordering::Less {
             Bound::zero()
         } else {
-            lo1.clone().max(limit.neg())
+            lo1.clone().max(-&limit)
         };
         let hi = if hi1.sign() != Ordering::Greater {
             Bound::zero()
