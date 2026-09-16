@@ -4,7 +4,10 @@
 //! A [`May`] is a product of one set per scalar type: a band of integers
 //! over ℤ ∪ {±∞} with an optional hole at zero, a set of booleans, and a
 //! unit bit. A well-typed class populates one of them, and a class with none
-//! populated has no values: nothing flows into it.
+//! populated has no values: it is unreachable, or nothing flows into it.
+//! Reachability is therefore not a separate bit: a context class, opened
+//! for a branch or the right operand of a lazy operator, is a unit-valued
+//! class that is live exactly when that point can run.
 //!
 //! Values arrive by flows only. A literal and a known-unit class are facts;
 //! everything else is derived along a [`RangeEdge`] from one or two
@@ -591,6 +594,11 @@ impl May {
         }
     }
 
+    /// Whether any value at all may reach the class.
+    pub fn live(&self) -> bool {
+        !self.ints.is_empty() || !self.bools.is_empty() || self.unit
+    }
+
     /// The set as a type reads it, for snapshots and reports.
     pub fn shown(&self, ty: Ty) -> Shown<'_> {
         Shown(self, ty)
@@ -681,13 +689,19 @@ pub enum RangeEdge {
     Lazy {
         and: bool,
     },
-    /// A branch's value into its `if`.
+    /// A context: live when the condition may be true, or false, and the
+    /// enclosing context is live.
+    Then,
+    Else,
+    /// A branch's value into its `if`, while the branch's context is live.
     Branch,
-    /// An argument into a parameter. Rounded to the thresholds when the
-    /// flow closes a cycle.
+    /// An argument into a parameter, while the call's context is live.
+    /// Rounded to the thresholds when the flow closes a cycle.
     Argument,
     /// A callee's result into a call. Rounded likewise.
     Call,
+    /// A call's context into the callee's entry.
+    Enter,
 }
 
 impl Lattice for May {
@@ -763,8 +777,24 @@ impl Lattice for May {
                     self.bools.or(rhs.bools)
                 })
             }
-            RangeEdge::Branch => self.clone(),
-            RangeEdge::Argument | RangeEdge::Call => rounded(self),
+            RangeEdge::Then => Self::of_unit(self.bools.may_true() && second().live()),
+            RangeEdge::Else => Self::of_unit(self.bools.may_false() && second().live()),
+            RangeEdge::Branch => {
+                if second().live() {
+                    self.clone()
+                } else {
+                    Self::bottom()
+                }
+            }
+            RangeEdge::Argument => {
+                if second().live() {
+                    rounded(self)
+                } else {
+                    Self::bottom()
+                }
+            }
+            RangeEdge::Call => rounded(self),
+            RangeEdge::Enter => Self::of_unit(self.live()),
         }
     }
 }
@@ -942,8 +972,10 @@ mod tests {
             a.transfer(&RangeEdge::Call, None, true, &cx).ints,
             ints("[3, 14]")
         );
+        let live = May::unit();
         assert_eq!(
-            a.transfer(&RangeEdge::Argument, None, true, &cx).ints,
+            a.transfer(&RangeEdge::Argument, Some(&live), true, &cx)
+                .ints,
             ints("[3, 14]")
         );
         assert_eq!(a.transfer(&RangeEdge::Copy, None, true, &cx), a);
@@ -951,6 +983,40 @@ mod tests {
             a.transfer(&RangeEdge::None, None, false, &cx),
             May::bottom()
         );
+    }
+
+    #[test]
+    fn contexts_gate_branches_arguments_and_entries() {
+        let cx = Thresholds::default();
+        let live = May::unit();
+        let dead = May::bottom();
+        let cond = May::bool(false);
+        assert_eq!(
+            cond.transfer(&RangeEdge::Then, Some(&live), false, &cx),
+            dead
+        );
+        assert_eq!(
+            cond.transfer(&RangeEdge::Else, Some(&live), false, &cx),
+            live
+        );
+        assert_eq!(
+            cond.transfer(&RangeEdge::Else, Some(&dead), false, &cx),
+            dead
+        );
+        let value = May::int(3.into());
+        assert_eq!(
+            value.transfer(&RangeEdge::Branch, Some(&live), false, &cx),
+            value
+        );
+        assert_eq!(
+            value.transfer(&RangeEdge::Branch, Some(&dead), false, &cx),
+            dead
+        );
+        let edge = RangeEdge::Argument;
+        assert_eq!(value.transfer(&edge, Some(&dead), false, &cx), dead);
+        assert_eq!(value.transfer(&edge, Some(&live), false, &cx), value);
+        assert_eq!(live.transfer(&RangeEdge::Enter, None, false, &cx), live);
+        assert_eq!(dead.transfer(&RangeEdge::Enter, None, false, &cx), dead);
     }
 
     fn band() -> impl Strategy<Value = Ints> {

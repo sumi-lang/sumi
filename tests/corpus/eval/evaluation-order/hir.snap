@@ -45,7 +45,7 @@ fn right_trap_reached@217..264 () -> int ∈ [12, +∞)
       lhs: int 1 : int @258..259
       rhs: int 0 : int @262..263
 
-fn statements@265..407 () -> int ∈ [-18, 18] \ 0
+fn statements@265..407 () -> int ∈ [18, 18]
   body: block : int @288..407
     let a@298..299: int @294..303
       initializer: int 1 : int @302..303

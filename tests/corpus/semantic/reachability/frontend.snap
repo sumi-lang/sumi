@@ -1,0 +1,92 @@
+== tree ==
+SourceFile 0..290
+  FnItem 0..51
+    Name 3..14 "dead_branch"
+    ParamList 14..16 "()"
+    TypeRef 20..23 "int"
+    IfExpr 26..51
+      LiteralExpr 29..34 "false"
+      Block 35..40
+        LiteralExpr 37..38 "1"
+      Block 46..51
+        LiteralExpr 48..49 "2"
+  FnItem 52..94
+    Name 55..63 "dead_rhs"
+    ParamList 63..65 "()"
+    TypeRef 69..73 "bool"
+    BinaryExpr 76..94
+      LiteralExpr 76..81 "false"
+      CallExpr 85..94
+        NameRef 85..91 "absent"
+        ArgList 91..94
+          LiteralExpr 92..93 "1"
+  FnItem 95..128
+    Name 98..104 "absent"
+    ParamList 104..112
+      Param 105..111
+        Name 105..106 "n"
+        TypeRef 108..111 "int"
+    TypeRef 116..120 "bool"
+    BinaryExpr 123..128
+      NameRef 123..124 "n"
+      LiteralExpr 127..128 "0"
+  FnItem 129..198
+    Name 132..138 "nested"
+    ParamList 138..140 "()"
+    TypeRef 144..147 "int"
+    IfExpr 150..198
+      LiteralExpr 153..157 "true"
+      Block 158..187
+        IfExpr 160..185
+          LiteralExpr 163..168 "false"
+          Block 169..174
+            LiteralExpr 171..172 "1"
+          Block 180..185
+            LiteralExpr 182..183 "2"
+      Block 193..198
+        LiteralExpr 195..196 "3"
+  FnItem 199..229
+    Name 202..210 "uncalled"
+    ParamList 210..218
+      Param 211..217
+        Name 211..212 "n"
+        TypeRef 214..217 "int"
+    TypeRef 222..225 "int"
+    NameRef 228..229 "n"
+  FnItem 230..258
+    Name 233..239 "called"
+    ParamList 239..247
+      Param 240..246
+        Name 240..241 "n"
+        TypeRef 243..246 "int"
+    TypeRef 251..254 "int"
+    NameRef 257..258 "n"
+  FnItem 259..289
+    Name 262..268 "caller"
+    ParamList 268..270 "()"
+    TypeRef 274..277 "int"
+    CallExpr 280..289
+      NameRef 280..286 "called"
+      ArgList 286..289
+        LiteralExpr 287..288 "5"
+
+== formatted ==
+fn dead_branch() -> int = if false {
+    1
+} else {
+    2
+}
+fn dead_rhs() -> bool = false && absent(1)
+fn absent(n: int) -> bool = n > 0
+fn nested() -> int = if true {
+    if false {
+        1
+    } else {
+        2
+    }
+} else {
+    3
+}
+fn uncalled(n: int) -> int = n
+fn called(n: int) -> int = n
+fn caller() -> int = called(5)

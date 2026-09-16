@@ -252,6 +252,16 @@ impl Typing {
         self.solver.known((Evidence::single(ty, claim), value))
     }
 
+    /// A function's entry context: live on its own account when the function
+    /// can be run without arguments, otherwise live when a call site is.
+    pub fn entry(&mut self, runnable: bool) -> Var {
+        if runnable {
+            self.solver.known((Evidence::bottom(), May::unit()))
+        } else {
+            self.solver.fresh()
+        }
+    }
+
     /// The class of the call at `node` whose callee's result class is
     /// `result`.
     pub fn call(&mut self, result: Var, node: NodeIdx) -> Var {
@@ -261,10 +271,11 @@ impl Typing {
     }
 
     /// Let `branch` decide `join`, the class of the `if` it is one arm of,
-    /// without learning anything from the other arm.
-    pub fn branch(&mut self, branch: Var, join: Var) {
+    /// without learning anything from the other arm, and only while
+    /// `context`, the branch's own, is live.
+    pub fn branch(&mut self, branch: Var, context: Var, join: Var) {
         self.solver
-            .flow(branch, join, (Edge::Branch, RangeEdge::Branch));
+            .derive(branch, context, join, (Edge::Branch, RangeEdge::Branch));
     }
 
     /// A range-only flow from one provider.
@@ -276,6 +287,13 @@ impl Typing {
     pub fn derive(&mut self, first: Var, second: Var, consumer: Var, edge: RangeEdge) {
         self.solver
             .derive(first, second, consumer, (Edge::None, edge));
+    }
+
+    /// A fresh class deriving its values from `first` and `second`.
+    pub fn derived(&mut self, first: Var, second: Var, edge: RangeEdge) -> Var {
+        let consumer = self.solver.fresh();
+        self.derive(first, second, consumer, edge);
+        consumer
     }
 
     /// The use at `node` demands that `var` be `expected`.
@@ -499,11 +517,12 @@ mod tests {
     #[test]
     fn branches_decide_their_if_and_keep_their_origins() {
         let mut typing = typing();
+        let live = typing.entry(true);
         let then_branch = typing.known(Ty::Int, at(0));
         let else_branch = typing.known(Ty::Bool, at(1));
         let join = typing.fresh();
-        typing.branch(then_branch, join);
-        typing.branch(else_branch, join);
+        typing.branch(then_branch, live, join);
+        typing.branch(else_branch, live, join);
         let call = call(&mut typing, join, at(2));
         let cx = cx();
         typing.solve(&cx);
@@ -532,6 +551,22 @@ mod tests {
             replay.evidence(join).claims(),
             typing.evidence(join).claims()
         );
+    }
+
+    #[test]
+    fn a_dead_branch_delivers_no_values() {
+        let mut typing = typing();
+        let dead = typing.entry(false);
+        let live = typing.entry(true);
+        let then_branch = typing.literal(Ty::Int, May::int(1.into()), at(0));
+        let else_branch = typing.literal(Ty::Int, May::int(2.into()), at(1));
+        let join = typing.fresh();
+        typing.branch(then_branch, dead, join);
+        typing.branch(else_branch, live, join);
+        typing.solve(&cx());
+        // The type still arrives from both arms; the value from the live one.
+        assert_eq!(typing.resolve(join), Some(Ty::Int));
+        assert_eq!(typing.may(join), &May::int(2.into()));
     }
 
     #[test]
