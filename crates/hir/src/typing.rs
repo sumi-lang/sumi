@@ -394,7 +394,7 @@ impl Typing {
         self.solver.solve(cx);
     }
 
-    /// The same classes carrying only what is known on their own account:
+    /// The same classes carrying only the types known on their own account:
     /// facts, and the calls whose callee result is solved. A refined read is
     /// one class with its local here, so it is whatever the local is when a
     /// demand asks, and a demand that conflicted the local elsewhere is
@@ -403,33 +403,35 @@ impl Typing {
     /// unresolved or conflicted callee delivers nothing: it is reported at
     /// its declaration. A branch is settled by [`Replay::branch`] when its
     /// `if` comes up in that order, since what it delivers is shaped by the
-    /// demands before it.
-    pub fn replay<'a>(&self, cx: &'a ProductContext) -> Replay<'a> {
-        let mut solver = self.solver.replay(|solved, other, edge| match edge.0 {
-            Edge::Call(_) => solved
-                .0
-                .ty()
-                .is_some()
-                .then(|| solved.transfer(edge, other, false, cx)),
-            Edge::Branch | Edge::Peer | Edge::Refine | Edge::None => None,
-        });
+    /// demands before it. The replay resolves types and nothing else, so it
+    /// carries the type evidence alone: a quarter of a class, and no values
+    /// to copy or join.
+    pub fn replay(&self) -> Replay {
+        let mut solver = self.solver.replay(
+            |(evidence, _)| *evidence,
+            |solved, other, edge| match edge.0 {
+                Edge::Call(_) => solved.0.ty().is_some().then(|| {
+                    solved
+                        .0
+                        .transfer(&edge.0, other.map(|other| &other.0), false, &())
+                }),
+                Edge::Branch | Edge::Peer | Edge::Refine | Edge::None => None,
+            },
+        );
         for &(read, local) in &self.refined {
             solver.equal(read, local);
         }
-        Replay { solver, cx }
+        Replay(solver)
     }
 }
 
 /// A [`Typing::replay`]: the classes again, to be handed the demands in
 /// order. Its own claims record no origin; the claims flows delivered do.
-pub(crate) struct Replay<'a> {
-    solver: Solver<Product>,
-    cx: &'a ProductContext,
-}
+pub(crate) struct Replay(Solver<Evidence>);
 
-impl Replay<'_> {
+impl Replay {
     pub fn evidence(&self, var: Var) -> &Evidence {
-        &self.solver.evidence(var).0
+        self.0.evidence(var)
     }
 
     pub fn resolve(&self, var: Var) -> Option<Ty> {
@@ -439,21 +441,18 @@ impl Replay<'_> {
     /// Settle a branch flow: what `branch` is so far, delivered to `join`,
     /// the class of its `if`, as a solved call is delivered.
     pub fn branch(&mut self, branch: Var, join: Var) {
-        let evidence = self.solver.evidence(branch).clone();
-        if evidence.0.ty().is_some() {
-            let delivered =
-                evidence.transfer(&(Edge::Branch, RangeEdge::None), None, false, self.cx);
-            self.solver.expect(join, &delivered);
+        let evidence = *self.evidence(branch);
+        if evidence.ty().is_some() {
+            self.0
+                .expect(join, &evidence.transfer(&Edge::Branch, None, false, &()));
         }
     }
 
     /// One demand, replayed.
     pub fn expect(&mut self, var: Var, expected: Expected) {
         match expected {
-            Expected::Ty(ty) => self
-                .solver
-                .expect(var, &(Evidence::single(ty, Claim::REPLAYED), May::bottom())),
-            Expected::Class(class) | Expected::Peer(class) => self.solver.equal(var, class),
+            Expected::Ty(ty) => self.0.expect(var, &Evidence::single(ty, Claim::REPLAYED)),
+            Expected::Class(class) | Expected::Peer(class) => self.0.equal(var, class),
         }
     }
 }
@@ -609,7 +608,7 @@ mod tests {
         // A replay settles the branches when asked, from what the branches
         // are in the replay; a demand refused before then does not reach
         // the `if`.
-        let mut replay = typing.replay(&cx);
+        let mut replay = typing.replay();
         assert_eq!(replay.resolve(join), None);
         assert_eq!(replay.resolve(call), None);
         replay.branch(then_branch, join);
@@ -654,7 +653,7 @@ mod tests {
         let refined = typing.refine_bool(literal, true);
         let cx = cx();
         typing.solve(&cx);
-        let mut replay = typing.replay(&cx);
+        let mut replay = typing.replay();
         assert_eq!(replay.resolve(literal), Some(Ty::Int));
         assert_eq!(replay.resolve(demanded), None);
         assert_eq!(replay.resolve(unknown_call), None);
@@ -681,9 +680,8 @@ mod tests {
         typing.branch(then_branch, live, local);
         typing.branch(else_branch, live, local);
         let refined = typing.refine_bool(local, true);
-        let cx = cx();
-        typing.solve(&cx);
-        let mut replay = typing.replay(&cx);
+        typing.solve(&cx());
+        let mut replay = typing.replay();
         assert_eq!(replay.resolve(refined), None);
         replay.branch(then_branch, local);
         replay.branch(else_branch, local);
