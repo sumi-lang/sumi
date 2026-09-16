@@ -1,0 +1,7 @@
+file: accepted
+fn climb: takes arguments, not run
+fn climbed = 105 (steps 255, depth 17 of at most 109)
+fn descend: takes arguments, not run
+fn descended = 0 (steps 175, depth 12 of at most 54)
+fn lapped: takes arguments, not run
+fn laps = 500 (steps 10517, depth 502 of at most 1002)

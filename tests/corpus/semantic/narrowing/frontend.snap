@@ -1,0 +1,113 @@
+== tree ==
+SourceFile 0..314
+  FnItem 0..64
+    Name 3..8 "climb"
+    ParamList 8..16
+      Param 9..15
+        Name 9..10 "n"
+        TypeRef 12..15 "int"
+    TypeRef 20..23 "int"
+    IfExpr 26..64
+      BinaryExpr 29..36
+        NameRef 29..30 "n"
+        LiteralExpr 33..36 "100"
+      Block 37..42
+        NameRef 39..40 "n"
+      Block 48..64
+        CallExpr 50..62
+          NameRef 50..55 "climb"
+          ArgList 55..62
+            BinaryExpr 56..61
+              NameRef 56..57 "n"
+              LiteralExpr 60..61 "7"
+  FnItem 65..95
+    Name 68..75 "climbed"
+    ParamList 75..77 "()"
+    TypeRef 81..84 "int"
+    CallExpr 87..95
+      NameRef 87..92 "climb"
+      ArgList 92..95
+        LiteralExpr 93..94 "0"
+  FnItem 96..162
+    Name 99..106 "descend"
+    ParamList 106..114
+      Param 107..113
+        Name 107..108 "n"
+        TypeRef 110..113 "int"
+    TypeRef 118..121 "int"
+    IfExpr 124..162
+      BinaryExpr 127..132
+        NameRef 127..128 "n"
+        LiteralExpr 131..132 "3"
+      Block 133..138
+        NameRef 135..136 "n"
+      Block 144..162
+        CallExpr 146..160
+          NameRef 146..153 "descend"
+          ArgList 153..160
+            BinaryExpr 154..159
+              NameRef 154..155 "n"
+              LiteralExpr 158..159 "5"
+  FnItem 163..198
+    Name 166..175 "descended"
+    ParamList 175..177 "()"
+    TypeRef 181..184 "int"
+    CallExpr 187..198
+      NameRef 187..194 "descend"
+      ArgList 194..198
+        LiteralExpr 195..197 "50"
+  FnItem 199..278
+    Name 202..208 "lapped"
+    ParamList 208..224
+      Param 209..215
+        Name 209..210 "n"
+        TypeRef 212..215 "int"
+      Param 217..223
+        Name 217..218 "m"
+        TypeRef 220..223 "int"
+    TypeRef 228..231 "int"
+    IfExpr 234..278
+      BinaryExpr 237..242
+        NameRef 237..238 "n"
+        NameRef 241..242 "m"
+      Block 243..267
+        CallExpr 245..265
+          NameRef 245..251 "lapped"
+          ArgList 251..265
+            BinaryExpr 252..257
+              NameRef 252..253 "n"
+              LiteralExpr 256..257 "1"
+            BinaryExpr 259..264
+              NameRef 259..260 "m"
+              LiteralExpr 263..264 "1"
+      Block 273..278
+        NameRef 275..276 "n"
+  FnItem 279..313
+    Name 282..286 "laps"
+    ParamList 286..288 "()"
+    TypeRef 292..295 "int"
+    CallExpr 298..313
+      NameRef 298..304 "lapped"
+      ArgList 304..313
+        LiteralExpr 305..306 "0"
+        LiteralExpr 308..312 "1000"
+
+== formatted ==
+fn climb(n: int) -> int = if n > 100 {
+    n
+} else {
+    climb(n + 7)
+}
+fn climbed() -> int = climb(0)
+fn descend(n: int) -> int = if n < 3 {
+    n
+} else {
+    descend(n - 5)
+}
+fn descended() -> int = descend(50)
+fn lapped(n: int, m: int) -> int = if n < m {
+    lapped(n + 1, m - 1)
+} else {
+    n
+}
+fn laps() -> int = lapped(0, 1000)

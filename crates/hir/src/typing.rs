@@ -153,6 +153,11 @@ impl Lattice for Evidence {
         grew
     }
 
+    /// Three claims a class, so no chain of them is long enough to widen.
+    fn grows(_: &Edge) -> bool {
+        false
+    }
+
     fn transfer(&self, edge: &Edge, _: Option<&Self>, _: bool, (): &()) -> Self {
         match *edge {
             Edge::Branch | Edge::Peer | Edge::Refine => *self,
@@ -164,6 +169,12 @@ impl Lattice for Evidence {
             }
             Edge::None => Self::bottom(),
         }
+    }
+
+    /// Type claims never widen, so there is nothing to take back; and the
+    /// exact recomputation lacks the claims expectations made.
+    fn narrow(&mut self, _: &Self) -> bool {
+        false
     }
 }
 

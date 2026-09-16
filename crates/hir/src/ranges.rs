@@ -1008,6 +1008,13 @@ impl Lattice for May {
         ints | bools | unit
     }
 
+    /// An operator's result can outgrow its operands; everything else
+    /// copies, narrows, or gates a value, or is a boolean or unit, which
+    /// cannot climb.
+    fn grows(edge: &RangeEdge) -> bool {
+        matches!(edge, RangeEdge::Unary { .. } | RangeEdge::Binary { .. })
+    }
+
     fn transfer(
         &self,
         edge: &RangeEdge,
@@ -1095,6 +1102,17 @@ impl Lattice for May {
             RangeEdge::Call => rounded(self),
             RangeEdge::Enter => Self::of_unit(self.live()),
         }
+    }
+
+    /// Values arrive by facts and flows alone, an expectation carrying
+    /// none, so the exact recomputation is complete: what rounding widened
+    /// comes back to what the flows deliver without it.
+    fn narrow(&mut self, exact: &Self) -> bool {
+        if *self == *exact {
+            return false;
+        }
+        *self = exact.clone();
+        true
     }
 }
 

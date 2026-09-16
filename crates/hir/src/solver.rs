@@ -29,16 +29,28 @@
 //! A transfer may consult a context the instance supplies to `solve`: what
 //! is true of the whole program and fixed before any flow settles, such as
 //! the constants an interval analysis rounds to. It is also told whether
-//! its flow closes a cycle of the flow graph, which is where a lattice
-//! without finite ascending chains of its own must widen: the solver finds
-//! the cycles, and the lattice decides what to do on them.
+//! its flow closes a cycle of the flow graph that can grow, which is where
+//! a lattice without finite ascending chains of its own must widen: the
+//! solver finds the cycles, the lattice says which edges can grow a value,
+//! and a cycle of edges that only pass values along, refine them, or gate
+//! them settles on its own.
+//!
+//! Widening overshoots by construction: at the moment it fires it cannot
+//! tell a chain that a guard will stop from one that never stops. So
+//! `solve` works one strongly connected component at a time, providers
+//! first, and narrows each before anything downstream reads it: it
+//! recomputes each class of the component exactly from its facts and its
+//! flows, with no flow told it is cyclic, and lets the lattice take back
+//! what the overshoot cost, since at a post-fixpoint the exact
+//! recomputation can only be smaller. The passes stop when nothing moves or
+//! at a fixed bound, every prefix of a descent being sound.
 //!
 //! A conflict is a lattice element like any other. The solver never retracts
 //! evidence or stops at the first disagreement, so when an instance reads a
 //! class it sees every claim made about it, and the classes around a
 //! conflicted one are untouched.
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::num::{NonZeroU32, NonZeroUsize};
 
 /// The evidence a solver carries on each class: a join-semilattice with a
@@ -61,9 +73,16 @@ pub trait Lattice: Clone + Eq {
     /// Join `other` into `self`, reporting whether `self` grew.
     fn join(&mut self, other: &Self) -> bool;
 
+    /// Whether `edge` can deliver more than it receives: an operator over
+    /// its operands, where an edge that copies, narrows, or gates a value
+    /// cannot. A cycle with no such edge settles in one lap and is never
+    /// widened.
+    fn grows(edge: &Self::Edge) -> bool;
+
     /// The evidence a consumer receives when `self`, and for a two-provider
     /// edge `other`, cross `edge`. `cyclic` says the flow lies on a cycle of
-    /// the flow graph, so the evidence delivered here may come back.
+    /// the flow graph that can grow, so the evidence delivered here may come
+    /// back larger.
     ///
     /// Nothing comes of nothing: when every provider holds `bottom`, so
     /// does the result. The solver counts on it and never visits a class
@@ -75,6 +94,14 @@ pub trait Lattice: Clone + Eq {
         cyclic: bool,
         cx: &Self::Context,
     ) -> Self;
+
+    /// Take back what widening overshot: `exact` is what the class's facts
+    /// and flows deliver with no flow treated as cyclic, recomputed once the
+    /// worklist has settled, so it is at most `self` wherever it is
+    /// complete. Expectations are not part of it, so a lattice whose
+    /// expectations carry evidence keeps what `exact` lacks; one that never
+    /// widens has nothing to take back. Reports whether `self` changed.
+    fn narrow(&mut self, exact: &Self) -> bool;
 }
 
 /// Two lattices side by side: evidence of both kinds on one class, joined
@@ -94,6 +121,10 @@ impl<A: Lattice, B: Lattice> Lattice for (A, B) {
         a | b
     }
 
+    fn grows(edge: &Self::Edge) -> bool {
+        A::grows(&edge.0) || B::grows(&edge.1)
+    }
+
     fn transfer(
         &self,
         edge: &Self::Edge,
@@ -108,7 +139,21 @@ impl<A: Lattice, B: Lattice> Lattice for (A, B) {
                 .transfer(&edge.1, other.map(|other| &other.1), cyclic, &cx.1),
         )
     }
+
+    fn narrow(&mut self, exact: &Self) -> bool {
+        let a = self.0.narrow(&exact.0);
+        let b = self.1.narrow(&exact.1);
+        a | b
+    }
 }
+
+/// The most exact passes a narrowing makes. One pass carries a tightening
+/// through every acyclic path, providers first; a cycle descends one pass
+/// at a time, and a pair of counters that bound each other can descend for
+/// as many passes as they have steps, which this cuts short: every prefix
+/// of a descent is sound, so stopping early costs precision, never
+/// soundness.
+const NARROWING_PASSES: usize = 8;
 
 /// A member of some class: what the solver hands out and takes back. One
 /// past its index, so an `Option<Var>` is one word.
@@ -334,12 +379,14 @@ impl<L: Lattice> Solver<L> {
         consumer
     }
 
-    /// Settle every flow: propagate evidence along the flow graph until no
-    /// class changes. Call once every equality is in; a flow between classes
-    /// unioned afterwards is not revisited. A class is visited once for each
-    /// time it grows while not already waiting, and a visit scans its
-    /// outgoing flows, so the work is bounded by the flows times the height
-    /// of the lattice.
+    /// Settle every flow. Call once every equality is in; a flow between
+    /// classes unioned afterwards is not revisited. The flow graph is taken
+    /// one strongly connected component at a time, providers first, and
+    /// each is settled by a worklist, then narrowed, before its consumers
+    /// read it. A class is visited once for each time it grows while not
+    /// already waiting, and a visit scans its outgoing flows, so the work
+    /// is bounded by the flows times the height of the lattice, plus a
+    /// bounded number of exact passes per component.
     pub fn solve(&mut self, cx: &L::Context) {
         let n = self.parent.len();
         for id in 0..n {
@@ -348,64 +395,197 @@ impl<L: Lattice> Solver<L> {
         if self.flows.is_empty() {
             return;
         }
+        let roots: Vec<(usize, Option<usize>, usize)> = self
+            .flows
+            .iter()
+            .map(|flow| {
+                (
+                    self.root(flow.first.index()),
+                    flow.second.map(|second| self.root(second.index())),
+                    self.root(flow.consumer.index()),
+                )
+            })
+            .collect();
         // Adjacency by provider root as one-based links, so `None` is compact.
         // Prepending in reverse keeps each provider's consumers in order. A
         // two-provider flow is listed under both, since either can grow.
         let mut outgoing = vec![None; n];
         let mut edges = Vec::with_capacity(self.flows.len());
         let mut arcs = Vec::with_capacity(edges.capacity());
-        for (index, flow) in self.flows.iter().enumerate().rev() {
-            for provider in std::iter::once(flow.first).chain(flow.second) {
-                let provider = self.root(provider.index());
+        for (index, &(first, second, consumer)) in roots.iter().enumerate().rev() {
+            for provider in std::iter::once(first).chain(second) {
                 edges.push((index, outgoing[provider]));
                 outgoing[provider] = NonZeroUsize::new(edges.len());
-                arcs.push((provider, self.root(flow.consumer.index())));
+                arcs.push((provider, consumer));
             }
         }
+        // Flows by consumer root, in compressed sparse rows.
+        let mut start = vec![0; n + 2];
+        for &(_, _, consumer) in &roots {
+            start[consumer + 2] += 1;
+        }
+        for i in 0..=n {
+            start[i + 1] += start[i];
+        }
+        let mut incoming = vec![0; self.flows.len()];
+        for (index, &(_, _, consumer)) in roots.iter().enumerate() {
+            incoming[start[consumer + 1]] = index;
+            start[consumer + 1] += 1;
+        }
         // A flow closes a cycle when a provider and the consumer share a
-        // strongly connected component of the flow graph.
+        // strongly connected component; the cycle needs widening only when
+        // some flow inside the component can grow a value.
         let component = components(n, &arcs);
-        let cyclic: Vec<bool> = self
-            .flows
+        let count = component.iter().map(|&c| c as usize + 1).max().unwrap_or(0);
+        // Which components a flow stays inside, and which of those a flow
+        // can grow.
+        let mut inside = vec![false; count];
+        let mut growing = vec![false; count];
+        let cyclic: Vec<bool> = roots
             .iter()
-            .map(|flow| {
-                let consumer = component[self.root(flow.consumer.index())];
-                std::iter::once(flow.first)
-                    .chain(flow.second)
-                    .any(|provider| component[self.root(provider.index())] == consumer)
+            .enumerate()
+            .map(|(index, &(first, second, consumer))| {
+                let closes = std::iter::once(first)
+                    .chain(second)
+                    .any(|provider| component[provider] == component[consumer]);
+                if closes {
+                    inside[component[consumer] as usize] = true;
+                    if L::grows(&self.flows[index].edge) {
+                        growing[component[consumer] as usize] = true;
+                    }
+                }
+                closes
             })
             .collect();
-        // A class waits in the queue at most once however often it grows
-        // before its turn: a join can improve evidence in ways no transfer
-        // passes on, and every visit rescans every outgoing flow. Only a
-        // provider with something to deliver is worth a visit.
+        let cyclic: Vec<bool> = cyclic
+            .into_iter()
+            .zip(&roots)
+            .map(|(closes, &(_, _, consumer))| closes && growing[component[consumer] as usize])
+            .collect();
+        // What a class to be narrowed is on its own account: the facts of
+        // its class. Only a growing component narrows, and few of its
+        // classes have both a fact and a flow in, so a map, not a table.
+        let mut base: HashMap<usize, L> = HashMap::new();
+        for (var, evidence) in &self.facts {
+            let root = self.root(var.index());
+            if growing[component[root] as usize] && start[root] < start[root + 1] {
+                base.entry(root)
+                    .and_modify(|base| {
+                        base.join(evidence);
+                    })
+                    .or_insert_with(|| evidence.clone());
+            }
+        }
+        // Consumers grouped by component, in class order within one, and
+        // the components taken providers first: they are numbered as they
+        // complete, so a provider's number is above its consumers'.
+        let mut group_start = vec![0; count + 1];
+        for id in 0..n {
+            if start[id] < start[id + 1] {
+                group_start[component[id] as usize + 1] += 1;
+            }
+        }
+        for c in 0..count {
+            group_start[c + 1] += group_start[c];
+        }
+        let mut consumers = vec![0; group_start[count]];
+        let mut next = group_start.clone();
+        for id in 0..n {
+            if start[id] < start[id + 1] {
+                let c = component[id] as usize;
+                consumers[next[c]] = id;
+                next[c] += 1;
+            }
+        }
         let bottom = L::bottom();
         let mut queued = vec![false; n];
         let mut queue = VecDeque::new();
-        for id in 0..n {
-            if outgoing[id].is_some() && self.evidence[id] != bottom {
-                queued[id] = true;
-                queue.push_back(id);
+        for current in (0..count).rev() {
+            let members = &consumers[group_start[current]..group_start[current + 1]];
+            if members.is_empty() {
+                continue;
             }
-        }
-        while let Some(provider) = queue.pop_front() {
-            queued[provider] = false;
-            let mut edge = outgoing[provider];
-            while let Some(index) = edge {
-                let (index, next) = edges[index.get() - 1];
-                edge = next;
-                let flow = &self.flows[index];
-                let consumer = self.root(flow.consumer.index());
-                let delivered = {
-                    let first = &self.evidence[self.root(flow.first.index())];
-                    let second = flow
-                        .second
-                        .map(|second| &self.evidence[self.root(second.index())]);
-                    first.transfer(&flow.edge, second, cyclic[index], cx)
-                };
-                if self.evidence[consumer].join(&delivered) && !queued[consumer] {
-                    queued[consumer] = true;
-                    queue.push_back(consumer);
+            let current = current as u32;
+            // Ascend: every flow into the component delivers once, from
+            // providers outside it, which are settled, and from members,
+            // which may still grow; then a worklist over the members carries
+            // growth along the flows that stay inside.
+            for &consumer in members {
+                for &index in &incoming[start[consumer]..start[consumer + 1]] {
+                    let (first, second, _) = roots[index];
+                    // A provider with nothing yet has nothing to deliver.
+                    if self.evidence[first] == bottom
+                        && second.is_none_or(|second| self.evidence[second] == bottom)
+                    {
+                        continue;
+                    }
+                    let delivered = {
+                        let second = second.map(|second| &self.evidence[second]);
+                        self.evidence[first].transfer(
+                            &self.flows[index].edge,
+                            second,
+                            cyclic[index],
+                            cx,
+                        )
+                    };
+                    if self.evidence[consumer].join(&delivered)
+                        && inside[current as usize]
+                        && !queued[consumer]
+                    {
+                        queued[consumer] = true;
+                        queue.push_back(consumer);
+                    }
+                }
+            }
+            // A component no flow stays inside is settled by those
+            // deliveries alone.
+            while let Some(provider) = queue.pop_front() {
+                queued[provider] = false;
+                let mut edge = outgoing[provider];
+                while let Some(index) = edge {
+                    let (index, next) = edges[index.get() - 1];
+                    edge = next;
+                    let (first, second, consumer) = roots[index];
+                    if component[consumer] != current {
+                        continue;
+                    }
+                    let delivered = {
+                        let second = second.map(|second| &self.evidence[second]);
+                        self.evidence[first].transfer(
+                            &self.flows[index].edge,
+                            second,
+                            cyclic[index],
+                            cx,
+                        )
+                    };
+                    if self.evidence[consumer].join(&delivered) && !queued[consumer] {
+                        queued[consumer] = true;
+                        queue.push_back(consumer);
+                    }
+                }
+            }
+            // Narrow: recompute each member exactly, in class order, until
+            // nothing moves.
+            if growing[current as usize] {
+                for _ in 0..NARROWING_PASSES {
+                    let mut moved = false;
+                    for &consumer in members {
+                        let mut exact = base.get(&consumer).cloned().unwrap_or_else(L::bottom);
+                        for &index in &incoming[start[consumer]..start[consumer + 1]] {
+                            let (first, second, _) = roots[index];
+                            let second = second.map(|second| &self.evidence[second]);
+                            exact.join(&self.evidence[first].transfer(
+                                &self.flows[index].edge,
+                                second,
+                                false,
+                                cx,
+                            ));
+                        }
+                        moved |= self.evidence[consumer].narrow(&exact);
+                    }
+                    if !moved {
+                        break;
+                    }
                 }
             }
         }
@@ -549,8 +729,16 @@ mod tests {
         }
 
         /// A flow delivers the set; a derive delivers the union of both.
+        fn grows((): &()) -> bool {
+            false
+        }
+
         fn transfer(&self, (): &(), other: Option<&Self>, _: bool, (): &()) -> Self {
             Self(self.0 | other.map_or(0, |other| other.0))
+        }
+
+        fn narrow(&mut self, _: &Self) -> bool {
+            false
         }
     }
 
@@ -588,11 +776,19 @@ mod tests {
             before != *self
         }
 
+        fn grows(offset: &i64) -> bool {
+            *offset != 0
+        }
+
         fn transfer(&self, offset: &i64, _: Option<&Self>, _: bool, (): &()) -> Self {
             Self::new(
                 self.lo.saturating_add(*offset),
                 self.hi.saturating_add(*offset),
             )
+        }
+
+        fn narrow(&mut self, _: &Self) -> bool {
+            false
         }
     }
 
@@ -642,6 +838,10 @@ mod tests {
             before != *self
         }
 
+        fn grows((): &()) -> bool {
+            true
+        }
+
         /// Nothing comes of nothing: an empty set is not marked.
         fn transfer(&self, (): &(), _: Option<&Self>, cyclic: bool, (): &()) -> Self {
             Self {
@@ -649,6 +849,126 @@ mod tests {
                 cyclic: self.cyclic | (cyclic && self.set != 0),
             }
         }
+
+        fn narrow(&mut self, _: &Self) -> bool {
+            false
+        }
+    }
+
+    /// A hull of integers that widens to `i64::MAX` on a cyclic flow and
+    /// narrows back to whatever the exact recomputation says: the shape of
+    /// an interval analysis, with an edge that adds and one that caps.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    struct Hull {
+        lo: i64,
+        hi: i64,
+    }
+
+    #[derive(Clone, Copy)]
+    enum HullEdge {
+        Add(i64),
+        Cap(i64),
+    }
+
+    impl Lattice for Hull {
+        type Edge = HullEdge;
+        type Context = ();
+
+        fn bottom() -> Self {
+            Self {
+                lo: i64::MAX,
+                hi: i64::MIN,
+            }
+        }
+
+        fn join(&mut self, other: &Self) -> bool {
+            let before = *self;
+            self.lo = self.lo.min(other.lo);
+            self.hi = self.hi.max(other.hi);
+            before != *self
+        }
+
+        fn grows(edge: &HullEdge) -> bool {
+            matches!(edge, HullEdge::Add(k) if *k != 0)
+        }
+
+        fn transfer(&self, edge: &HullEdge, _: Option<&Self>, cyclic: bool, (): &()) -> Self {
+            if self.lo > self.hi {
+                return *self;
+            }
+            let mut out = match *edge {
+                HullEdge::Add(k) => Self {
+                    lo: self.lo.saturating_add(k),
+                    hi: self.hi.saturating_add(k),
+                },
+                HullEdge::Cap(c) => Self {
+                    lo: self.lo,
+                    hi: self.hi.min(c),
+                },
+            };
+            if cyclic {
+                out.hi = i64::MAX;
+            }
+            out
+        }
+
+        fn narrow(&mut self, exact: &Self) -> bool {
+            if self == exact {
+                return false;
+            }
+            *self = *exact;
+            true
+        }
+    }
+
+    /// `x = {0} ∪ ((x ∩ (-∞, 100]) + 7)`: widening sends `x` to the top,
+    /// and narrowing brings it back to the exact fixpoint `[0, 107]`, along
+    /// with everything downstream of it, however the flows arrived.
+    #[test]
+    fn narrowing_takes_back_what_widening_overshot() {
+        for reversed in [false, true] {
+            let mut solver = Solver::<Hull>::default();
+            let x = solver.known(Hull { lo: 0, hi: 0 });
+            let capped = solver.fresh();
+            let stepped = solver.fresh();
+            let downstream = solver.fresh();
+            let mut flows = vec![
+                (x, capped, HullEdge::Cap(100)),
+                (capped, stepped, HullEdge::Add(7)),
+                (stepped, x, HullEdge::Add(0)),
+                (x, downstream, HullEdge::Add(1)),
+            ];
+            if reversed {
+                flows.reverse();
+            }
+            for (provider, consumer, edge) in flows {
+                solver.flow(provider, consumer, edge);
+            }
+            solver.solve(&());
+            assert_eq!(*solver.evidence(x), Hull { lo: 0, hi: 107 });
+            assert_eq!(*solver.evidence(capped), Hull { lo: 0, hi: 100 });
+            assert_eq!(*solver.evidence(stepped), Hull { lo: 7, hi: 107 });
+            assert_eq!(*solver.evidence(downstream), Hull { lo: 1, hi: 108 });
+        }
+    }
+
+    /// A chain with no cap keeps the overshoot: narrowing recomputes what
+    /// the flows deliver, and with nothing bounding the climb that is the
+    /// widened value itself.
+    #[test]
+    fn narrowing_keeps_an_unbounded_chain_unbounded() {
+        let mut solver = Solver::<Hull>::default();
+        let x = solver.known(Hull { lo: 0, hi: 0 });
+        let stepped = solver.import(x, HullEdge::Add(1));
+        solver.flow(stepped, x, HullEdge::Add(0));
+        solver.solve(&());
+        assert_eq!(
+            *solver.evidence(x),
+            Hull {
+                lo: 0,
+                hi: i64::MAX
+            }
+        );
     }
 
     #[test]

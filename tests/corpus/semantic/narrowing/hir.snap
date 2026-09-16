@@ -1,0 +1,62 @@
+file: accepted
+frontend errors: 0 (see frontend.snap)
+semantic errors: 0
+
+fn climb@0..64 (int ∈ [0, 107]) -> int ∈ [101, 107]
+  param n@9..10: int
+  body: if : int @26..64
+    condition: eager > : bool @29..36
+      lhs: read n@9..10 : int @29..30
+      rhs: int 100 : int @33..36
+    then: block : int @37..42
+      tail: read n@9..10 : int @39..40
+    else: block : int @48..64
+      tail: call climb@0..64 (callee @50..55) : int @50..62
+        arg[0]: eager + : int @56..61
+          lhs: read n@9..10 : int @56..57
+          rhs: int 7 : int @60..61
+
+fn climbed@65..95 () -> int ∈ [101, 107]
+  body: call climb@0..64 (callee @87..92) : int @87..95
+    arg[0]: int 0 : int @93..94
+
+fn descend@96..162 (int ∈ [-2, 50]) -> int ∈ [-2, 2]
+  param n@107..108: int
+  body: if : int @124..162
+    condition: eager < : bool @127..132
+      lhs: read n@107..108 : int @127..128
+      rhs: int 3 : int @131..132
+    then: block : int @133..138
+      tail: read n@107..108 : int @135..136
+    else: block : int @144..162
+      tail: call descend@96..162 (callee @146..153) : int @146..160
+        arg[0]: eager - : int @154..159
+          lhs: read n@107..108 : int @154..155
+          rhs: int 5 : int @158..159
+
+fn descended@163..198 () -> int ∈ [-2, 2]
+  body: call descend@96..162 (callee @187..194) : int @187..198
+    arg[0]: int 50 : int @195..197
+
+fn lapped@199..278 (int ∈ [0, 1000], int ∈ [0, 1000]) -> int ∈ [0, 1000]
+  param n@209..210: int
+  param m@217..218: int
+  body: if : int @234..278
+    condition: eager < : bool @237..242
+      lhs: read n@209..210 : int @237..238
+      rhs: read m@217..218 : int @241..242
+    then: block : int @243..267
+      tail: call lapped@199..278 (callee @245..251) : int @245..265
+        arg[0]: eager + : int @252..257
+          lhs: read n@209..210 : int @252..253
+          rhs: int 1 : int @256..257
+        arg[1]: eager - : int @259..264
+          lhs: read m@217..218 : int @259..260
+          rhs: int 1 : int @263..264
+    else: block : int @273..278
+      tail: read n@209..210 : int @275..276
+
+fn laps@279..313 () -> int ∈ [0, 1000]
+  body: call lapped@199..278 (callee @298..304) : int @298..313
+    arg[0]: int 0 : int @305..306
+    arg[1]: int 1000 : int @308..312
