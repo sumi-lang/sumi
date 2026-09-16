@@ -177,19 +177,23 @@ pub(crate) enum Edge {
     /// are.
     Branch,
     /// One operand of `==` or `!=` telling the other its type: the claims as
-    /// they are, each way, and never unified, since comparing two values
-    /// says nothing about their ranges.
+    /// they are, each way, while the classes stay apart, since comparing
+    /// two values says nothing about their ranges.
     Peer,
     /// Nothing: the typing side of a range-only flow.
     None,
 }
 
-/// What a demand asks of an expression: a fixed type, or the type of another
-/// class.
+/// What a demand asks of an expression: a fixed type, the type of another
+/// class it is one value with, or the type of a peer it is compared to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Expected {
     Ty(Ty),
+    /// The same value as `Class`: the classes merge, values included.
     Class(Var),
+    /// Compared with `Peer`: each learns the other's types and nothing of
+    /// its values.
+    Peer(Var),
 }
 
 pub(crate) type Product = (Evidence, May);
@@ -282,9 +286,10 @@ impl Typing {
                 self.solver
                     .expect(var, &(Evidence::single(ty, claim), May::bottom()));
             }
-            Expected::Class(class) => {
-                self.solver.flow(var, class, (Edge::Peer, RangeEdge::None));
-                self.solver.flow(class, var, (Edge::Peer, RangeEdge::None));
+            Expected::Class(class) => self.solver.equal(var, class),
+            Expected::Peer(peer) => {
+                self.solver.flow(var, peer, (Edge::Peer, RangeEdge::None));
+                self.solver.flow(peer, var, (Edge::Peer, RangeEdge::None));
             }
         }
     }
@@ -362,7 +367,7 @@ impl Replay<'_> {
             Expected::Ty(ty) => self
                 .solver
                 .expect(var, &(Evidence::single(ty, Claim::REPLAYED), May::bottom())),
-            Expected::Class(class) => self.solver.equal(var, class),
+            Expected::Class(class) | Expected::Peer(class) => self.solver.equal(var, class),
         }
     }
 }
@@ -478,14 +483,14 @@ mod tests {
         let mut typing = typing();
         let x = typing.literal(Ty::Int, May::int(5.into()), at(0));
         let y = typing.literal(Ty::Int, May::int(9.into()), at(1));
-        typing.expect(x, Expected::Class(y), at(2));
+        typing.expect(x, Expected::Peer(y), at(2));
         typing.solve(&cx());
         assert_eq!(typing.resolve(x), Some(Ty::Int));
         assert_eq!(typing.may(x), &May::int(5.into()));
         assert_eq!(typing.may(y), &May::int(9.into()));
         let unknown = typing.fresh();
         let known = typing.known(Ty::Bool, at(3));
-        typing.expect(unknown, Expected::Class(known), at(4));
+        typing.expect(unknown, Expected::Peer(known), at(4));
         typing.solve(&cx());
         assert_eq!(typing.resolve(unknown), Some(Ty::Bool));
         assert!(!typing.evidence(unknown).is_conflict());

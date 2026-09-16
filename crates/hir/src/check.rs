@@ -499,7 +499,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
             DemandKind::Type { expected, declared } => {
                 let expected_ty = match expected {
                     Expected::Ty(ty) => Some(ty),
-                    Expected::Class(class) => replay.resolve(class),
+                    Expected::Class(class) | Expected::Peer(class) => replay.resolve(class),
                 };
                 match (actual, expected_ty) {
                     (Some(actual), Some(expected)) if actual != expected => {
@@ -792,7 +792,6 @@ impl<'a, 's> Builder<'a, 's> {
             }
             (Some(root), None, Some(result)) => {
                 self.require(root_node, root, Expected::Class(result), None);
-                self.typing.flow(self.class(root), result, RangeEdge::Copy);
             }
             _ => {}
         }
@@ -1272,7 +1271,7 @@ impl<'a, 's> Builder<'a, 's> {
                     Add | Sub | Mul | Div | Rem => (Some(Expected::Ty(Ty::Int)), Ty::Int),
                     Lt | Le | Gt | Ge => (Some(Expected::Ty(Ty::Int)), Ty::Bool),
                     Eq | Ne => (
-                        lhs.or(rhs).map(|id| Expected::Class(self.class(id))),
+                        lhs.or(rhs).map(|id| Expected::Peer(self.class(id))),
                         Ty::Bool,
                     ),
                     And | Or => (Some(Expected::Ty(Ty::Bool)), Ty::Bool),
