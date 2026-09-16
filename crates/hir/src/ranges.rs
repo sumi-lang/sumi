@@ -10,7 +10,7 @@
 
 use std::cmp::Ordering;
 use std::fmt;
-use std::ops::{Add, Div, Mul, Neg, Rem, Sub};
+use std::ops::{Add, BitAnd, Div, Mul, Neg, Rem, Sub};
 
 use crate::{BinaryOp, Int};
 
@@ -158,8 +158,9 @@ pub enum Ints {
     Band { lo: Bound, hi: Bound, hole: bool },
 }
 
-impl Ints {
-    pub fn point(value: Int) -> Self {
+/// The set of one value.
+impl From<Int> for Ints {
+    fn from(value: Int) -> Self {
         let bound = Bound::Finite(value);
         Self::Band {
             lo: bound.clone(),
@@ -167,7 +168,9 @@ impl Ints {
             hole: false,
         }
     }
+}
 
+impl Ints {
     /// Every integer.
     pub fn all() -> Self {
         Self::Band {
@@ -253,15 +256,6 @@ impl Ints {
         grew
     }
 
-    fn intersect(&self, other: &Self) -> Self {
-        match (self.parts(), other.parts()) {
-            (Some((lo1, hi1, hole1)), Some((lo2, hi2, hole2))) => {
-                Self::band(lo1.max(lo2).clone(), hi1.min(hi2).clone(), hole1 || hole2)
-            }
-            _ => Self::Empty,
-        }
-    }
-
     /// The divisor's non-zero halves, each a band with one sign.
     fn halves(&self) -> Vec<(Bound, Bound)> {
         let Some((lo, hi, _)) = self.parts() else {
@@ -288,7 +282,7 @@ impl Ints {
             BinaryOp::Gt => (hi1 > lo2, lo1 <= hi2),
             BinaryOp::Ge => (hi1 >= lo2, lo1 < hi2),
             BinaryOp::Eq | BinaryOp::Ne => {
-                let equal = !self.intersect(other).is_empty();
+                let equal = !(self & other).is_empty();
                 let unequal = !(self.is_point() && self == other);
                 if op == BinaryOp::Eq {
                     (equal, unequal)
@@ -299,6 +293,19 @@ impl Ints {
             _ => unreachable!("a comparison"),
         };
         Bools::of(may_true, may_false)
+    }
+}
+
+/// Intersection.
+impl BitAnd<&Ints> for &Ints {
+    type Output = Ints;
+    fn bitand(self, other: &Ints) -> Ints {
+        match (self.parts(), other.parts()) {
+            (Some((lo1, hi1, hole1)), Some((lo2, hi2, hole2))) => {
+                Ints::band(lo1.max(lo2).clone(), hi1.min(hi2).clone(), hole1 || hole2)
+            }
+            _ => Ints::Empty,
+        }
     }
 }
 
@@ -422,10 +429,6 @@ impl Bools {
     const TRUE: Self = Self(2);
     pub const BOTH: Self = Self(3);
 
-    pub fn single(value: bool) -> Self {
-        if value { Self::TRUE } else { Self::FALSE }
-    }
-
     fn of(may_true: bool, may_false: bool) -> Self {
         Self(u8::from(may_false) | (u8::from(may_true) << 1))
     }
@@ -473,6 +476,13 @@ impl Bools {
         let before = self.0;
         self.0 |= other.0;
         before != self.0
+    }
+}
+
+/// The set of one value.
+impl From<bool> for Bools {
+    fn from(value: bool) -> Self {
+        if value { Self::TRUE } else { Self::FALSE }
     }
 }
 
@@ -576,40 +586,34 @@ mod tests {
         assert_eq!(n.compare(BinaryOp::Lt, &ints("[2, 2]")), Bools::BOTH);
         assert_eq!(
             ints("[0, 1]").compare(BinaryOp::Lt, &ints("[2, 2]")),
-            Bools::single(true)
+            Bools::from(true)
         );
         assert_eq!(
             ints("[2, 9]").compare(BinaryOp::Lt, &ints("[2, 2]")),
-            Bools::single(false)
+            Bools::from(false)
         );
         assert_eq!(
             ints("[-5, 5] \\ 0").compare(BinaryOp::Eq, &ints("[0, 0]")),
-            Bools::single(false)
+            Bools::from(false)
         );
         assert_eq!(
             ints("[3, 3]").compare(BinaryOp::Ne, &ints("[3, 3]")),
-            Bools::single(false)
+            Bools::from(false)
         );
     }
 
     #[test]
     fn booleans_and_display() {
-        assert_eq!(Bools::single(false).and(Bools::BOTH), Bools::single(false));
-        assert_eq!(Bools::BOTH.and(Bools::single(false)), Bools::single(false));
-        assert_eq!(Bools::single(true).and(Bools::BOTH), Bools::BOTH);
-        assert_eq!(Bools::single(true).or(Bools::EMPTY), Bools::single(true));
-        assert_eq!(Bools::single(false).and(Bools::EMPTY), Bools::single(false));
-        assert_eq!(Bools::single(true).and(Bools::EMPTY), Bools::EMPTY);
+        assert_eq!(Bools::from(false).and(Bools::BOTH), Bools::from(false));
+        assert_eq!(Bools::BOTH.and(Bools::from(false)), Bools::from(false));
+        assert_eq!(Bools::from(true).and(Bools::BOTH), Bools::BOTH);
+        assert_eq!(Bools::from(true).or(Bools::EMPTY), Bools::from(true));
+        assert_eq!(Bools::from(false).and(Bools::EMPTY), Bools::from(false));
+        assert_eq!(Bools::from(true).and(Bools::EMPTY), Bools::EMPTY);
         assert_eq!(Bools::EMPTY.and(Bools::BOTH), Bools::EMPTY);
-        assert_eq!(
-            Bools::single(false).or(Bools::single(true)),
-            Bools::single(true)
-        );
-        assert_eq!(Bools::BOTH.eq(Bools::single(true)), Bools::BOTH);
-        assert_eq!(
-            Bools::single(true).eq(Bools::single(true)),
-            Bools::single(true)
-        );
+        assert_eq!(Bools::from(false).or(Bools::from(true)), Bools::from(true));
+        assert_eq!(Bools::BOTH.eq(Bools::from(true)), Bools::BOTH);
+        assert_eq!(Bools::from(true).eq(Bools::from(true)), Bools::from(true));
         assert_eq!(Bools::BOTH.to_string(), "{true, false}");
     }
 
