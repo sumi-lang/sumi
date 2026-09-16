@@ -268,6 +268,9 @@ impl<L: Lattice> Solver<L> {
         for id in 0..n {
             self.compress(id);
         }
+        if self.flows.is_empty() {
+            return;
+        }
         // Adjacency by provider root as one-based links, so `None` is compact.
         // Prepending in reverse keeps each provider's consumers in order. A
         // two-provider flow is listed under both, since either can grow.
@@ -352,80 +355,90 @@ impl<L: Lattice> Solver<L> {
     }
 }
 
-/// The strongly connected component of each of `n` nodes under `arcs`, by
-/// Tarjan's algorithm on an explicit stack. Components are numbered in
-/// reverse topological order: a component completes before any that
-/// reaches it.
+/// The strongly connected component of each of `n` nodes under `arcs`.
+/// Components are numbered in reverse topological order: a component
+/// completes before any that reaches it. Pearce's one-array variant of
+/// Tarjan's algorithm, on an explicit stack: a node's slot holds its visit
+/// index while it is open, then the number of its component.
 pub(crate) fn components(n: usize, arcs: &[(usize, usize)]) -> Vec<u32> {
     // Adjacency in compressed sparse rows: a few allocations however many
-    // nodes, since a solve calls this once over every class.
-    let mut start = vec![0; n + 1];
+    // nodes, since a solve calls this once over every class. The rows are
+    // counted one slot to the right and filled with the cursor one slot to
+    // the right, so no second copy of the row starts is needed.
+    let mut start = vec![0; n + 2];
     for &(from, _) in arcs {
-        start[from + 1] += 1;
+        start[from + 2] += 1;
     }
-    for i in 0..n {
+    for i in 0..=n {
         start[i + 1] += start[i];
     }
-    let mut next = start.clone();
     let mut targets = vec![0; arcs.len()];
     for &(from, to) in arcs {
-        targets[next[from]] = to;
-        next[from] += 1;
+        targets[start[from + 1]] = to;
+        start[from + 1] += 1;
     }
     let adjacent = |node: usize| &targets[start[node]..start[node + 1]];
-    let unvisited = u32::MAX;
-    let mut index = vec![unvisited; n];
-    let mut low = vec![0; n];
-    let mut on_stack = vec![false; n];
-    let mut stack = Vec::new();
-    let mut component = vec![unvisited; n];
-    let mut next_index = 0;
-    let mut next_component = 0;
-    let mut work = Vec::new();
+    // Visit indices count up from one; component numbers count down from
+    // `n - 1`, and since every completed node gives an index back, a
+    // component number is always above every open index.
+    let mut slot = vec![0u32; n];
+    let mut index = 1u32;
+    let mut component = u32::try_from(n)
+        .expect("class count fits u32")
+        .wrapping_sub(1);
+    let mut open = Vec::new();
+    let mut work: Vec<(usize, usize, bool)> = Vec::new();
     for root in 0..n {
-        if index[root] != unvisited {
+        if slot[root] != 0 {
             continue;
         }
-        work.clear();
-        work.push((root, 0));
-        index[root] = next_index;
-        low[root] = next_index;
-        next_index += 1;
-        stack.push(root);
-        on_stack[root] = true;
-        while let Some(&mut (node, ref mut position)) = work.last_mut() {
+        slot[root] = index;
+        index += 1;
+        work.push((root, 0, true));
+        while let Some(&mut (node, ref mut position, ref mut is_root)) = work.last_mut() {
             if let Some(&next) = adjacent(node).get(*position) {
                 *position += 1;
-                if index[next] == unvisited {
-                    index[next] = next_index;
-                    low[next] = next_index;
-                    next_index += 1;
-                    stack.push(next);
-                    on_stack[next] = true;
-                    work.push((next, 0));
-                } else if on_stack[next] {
-                    low[node] = low[node].min(index[next]);
+                if slot[next] == 0 {
+                    slot[next] = index;
+                    index += 1;
+                    work.push((next, 0, true));
+                } else if slot[next] < slot[node] {
+                    slot[node] = slot[next];
+                    *is_root = false;
                 }
                 continue;
             }
-            work.pop();
-            if let Some(&(parent, _)) = work.last() {
-                low[parent] = low[parent].min(low[node]);
-            }
-            if low[node] == index[node] {
-                loop {
-                    let member = stack.pop().expect("the root is on the stack");
-                    on_stack[member] = false;
-                    component[member] = next_component;
-                    if member == node {
-                        break;
-                    }
+            let (node, _, is_root) = work.pop().expect("the frame just read");
+            if is_root {
+                index -= 1;
+                while let Some(&member) = open.last()
+                    && slot[node] <= slot[member]
+                {
+                    open.pop();
+                    slot[member] = component;
+                    index -= 1;
                 }
-                next_component += 1;
+                slot[node] = component;
+                component = component.wrapping_sub(1);
+            } else {
+                open.push(node);
+            }
+            if let Some(&mut (parent, _, ref mut parent_is_root)) = work.last_mut()
+                && slot[node] < slot[parent]
+            {
+                slot[parent] = slot[node];
+                *parent_is_root = false;
             }
         }
     }
-    component
+    // Numbered from zero in completion order.
+    let last = u32::try_from(n)
+        .expect("class count fits u32")
+        .wrapping_sub(1);
+    for slot in &mut slot {
+        *slot = last - *slot;
+    }
+    slot
 }
 
 #[cfg(test)]
