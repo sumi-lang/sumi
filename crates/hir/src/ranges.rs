@@ -10,7 +10,7 @@
 
 use std::cmp::Ordering;
 use std::fmt;
-use std::ops::{Add, Div, Mul, Neg, Sub};
+use std::ops::{Add, Div, Mul, Neg, Rem, Sub};
 
 use crate::{BinaryOp, Int};
 
@@ -262,40 +262,6 @@ impl Ints {
         }
     }
 
-    pub fn neg(&self) -> Self {
-        match self.parts() {
-            None => Self::Empty,
-            Some((lo, hi, hole)) => Self::band(-hi, -lo, hole),
-        }
-    }
-
-    pub fn add(&self, other: &Self) -> Self {
-        match (self.parts(), other.parts()) {
-            (Some((lo1, hi1, _)), Some((lo2, hi2, _))) => Self::band(lo1 + lo2, hi1 + hi2, false),
-            _ => Self::Empty,
-        }
-    }
-
-    pub fn sub(&self, other: &Self) -> Self {
-        match (self.parts(), other.parts()) {
-            (Some((lo1, hi1, _)), Some((lo2, hi2, _))) => Self::band(lo1 - hi2, hi1 - lo2, false),
-            _ => Self::Empty,
-        }
-    }
-
-    pub fn mul(&self, other: &Self) -> Self {
-        match (self.parts(), other.parts()) {
-            (Some((lo1, hi1, _)), Some((lo2, hi2, _))) => {
-                let corners = [lo1 * lo2, lo1 * hi2, hi1 * lo2, hi1 * hi2];
-                let lo = corners.iter().min().unwrap().clone();
-                let hi = corners.iter().max().unwrap().clone();
-                // A product of non-zeros is non-zero over ℤ.
-                Self::band(lo, hi, !self.contains_zero() && !other.contains_zero())
-            }
-            _ => Self::Empty,
-        }
-    }
-
     /// The divisor's non-zero halves, each a band with one sign.
     fn halves(&self) -> Vec<(Bound, Bound)> {
         let Some((lo, hi, _)) = self.parts() else {
@@ -309,46 +275,6 @@ impl Ints {
             halves.push((lo.clone().max(Bound::finite(1)), hi.clone()));
         }
         halves
-    }
-
-    /// Truncating quotient: exact on the corners of each non-zero half of
-    /// the divisor, so an error at one division does not cascade.
-    pub fn div(&self, other: &Self) -> Self {
-        let Some((lo1, hi1, _)) = self.parts() else {
-            return Self::Empty;
-        };
-        let mut result = Self::Empty;
-        for (lo2, hi2) in other.halves() {
-            let corners = [lo1 / &lo2, lo1 / &hi2, hi1 / &lo2, hi1 / &hi2];
-            let lo = corners.iter().min().unwrap().clone();
-            let hi = corners.iter().max().unwrap().clone();
-            result.join(&Self::band(lo, hi, false));
-        }
-        result
-    }
-
-    /// Truncating remainder: the dividend's sign, bounded by the largest
-    /// divisor magnitude minus one.
-    pub fn rem(&self, other: &Self) -> Self {
-        let (Some((lo1, hi1, _)), Some((lo2, hi2, _))) = (self.parts(), other.parts()) else {
-            return Self::Empty;
-        };
-        let magnitude = lo2.abs().max(hi2.abs());
-        if magnitude.sign() == Ordering::Equal {
-            return Self::Empty;
-        }
-        let limit = magnitude.pred();
-        let lo = if lo1.sign() != Ordering::Less {
-            Bound::zero()
-        } else {
-            lo1.clone().max(-&limit)
-        };
-        let hi = if hi1.sign() != Ordering::Greater {
-            Bound::zero()
-        } else {
-            hi1.clone().min(limit)
-        };
-        Self::band(lo, hi, false)
     }
 
     /// The booleans `self op other` may be.
@@ -373,6 +299,99 @@ impl Ints {
             _ => unreachable!("a comparison"),
         };
         Bools::of(may_true, may_false)
+    }
+}
+
+impl Neg for &Ints {
+    type Output = Ints;
+    fn neg(self) -> Ints {
+        match self.parts() {
+            None => Ints::Empty,
+            Some((lo, hi, hole)) => Ints::band(-hi, -lo, hole),
+        }
+    }
+}
+
+impl Add<&Ints> for &Ints {
+    type Output = Ints;
+    fn add(self, other: &Ints) -> Ints {
+        match (self.parts(), other.parts()) {
+            (Some((lo1, hi1, _)), Some((lo2, hi2, _))) => Ints::band(lo1 + lo2, hi1 + hi2, false),
+            _ => Ints::Empty,
+        }
+    }
+}
+
+impl Sub<&Ints> for &Ints {
+    type Output = Ints;
+    fn sub(self, other: &Ints) -> Ints {
+        match (self.parts(), other.parts()) {
+            (Some((lo1, hi1, _)), Some((lo2, hi2, _))) => Ints::band(lo1 - hi2, hi1 - lo2, false),
+            _ => Ints::Empty,
+        }
+    }
+}
+
+impl Mul<&Ints> for &Ints {
+    type Output = Ints;
+    fn mul(self, other: &Ints) -> Ints {
+        match (self.parts(), other.parts()) {
+            (Some((lo1, hi1, _)), Some((lo2, hi2, _))) => {
+                let corners = [lo1 * lo2, lo1 * hi2, hi1 * lo2, hi1 * hi2];
+                let lo = corners.iter().min().unwrap().clone();
+                let hi = corners.iter().max().unwrap().clone();
+                // A product of non-zeros is non-zero over ℤ.
+                Ints::band(lo, hi, !self.contains_zero() && !other.contains_zero())
+            }
+            _ => Ints::Empty,
+        }
+    }
+}
+
+/// Truncating quotient: exact on the corners of each non-zero half of the
+/// divisor, so an error at one division does not cascade, and empty over a
+/// divisor that is only zero.
+impl Div<&Ints> for &Ints {
+    type Output = Ints;
+    fn div(self, other: &Ints) -> Ints {
+        let Some((lo1, hi1, _)) = self.parts() else {
+            return Ints::Empty;
+        };
+        let mut result = Ints::Empty;
+        for (lo2, hi2) in other.halves() {
+            let corners = [lo1 / &lo2, lo1 / &hi2, hi1 / &lo2, hi1 / &hi2];
+            let lo = corners.iter().min().unwrap().clone();
+            let hi = corners.iter().max().unwrap().clone();
+            result.join(&Ints::band(lo, hi, false));
+        }
+        result
+    }
+}
+
+/// Truncating remainder: the dividend's sign, bounded by the largest
+/// divisor magnitude minus one, and empty over a divisor that is only zero.
+impl Rem<&Ints> for &Ints {
+    type Output = Ints;
+    fn rem(self, other: &Ints) -> Ints {
+        let (Some((lo1, hi1, _)), Some((lo2, hi2, _))) = (self.parts(), other.parts()) else {
+            return Ints::Empty;
+        };
+        let magnitude = lo2.abs().max(hi2.abs());
+        if magnitude.sign() == Ordering::Equal {
+            return Ints::Empty;
+        }
+        let limit = magnitude.pred();
+        let lo = if lo1.sign() != Ordering::Less {
+            Bound::zero()
+        } else {
+            lo1.clone().max(-&limit)
+        };
+        let hi = if hi1.sign() != Ordering::Greater {
+            Bound::zero()
+        } else {
+            hi1.clone().min(limit)
+        };
+        Ints::band(lo, hi, false)
     }
 }
 
@@ -531,27 +550,24 @@ mod tests {
 
     #[test]
     fn arithmetic_over_the_extended_integers() {
-        assert_eq!(ints("[1, 2]").add(&ints("[10, inf]")), ints("[11, inf]"));
-        assert_eq!(ints("[1, 2]").sub(&ints("[-inf, 5]")), ints("[-4, inf]"));
-        assert_eq!(ints("[-2, 3]").mul(&ints("[-4, 5]")), ints("[-12, 15]"));
-        assert_eq!(ints("[1, 3]").mul(&ints("[-inf, -1]")), ints("[-inf, -1]"));
+        assert_eq!(&ints("[1, 2]") + &ints("[10, inf]"), ints("[11, inf]"));
+        assert_eq!(&ints("[1, 2]") - &ints("[-inf, 5]"), ints("[-4, inf]"));
+        assert_eq!(&ints("[-2, 3]") * &ints("[-4, 5]"), ints("[-12, 15]"));
+        assert_eq!(&ints("[1, 3]") * &ints("[-inf, -1]"), ints("[-inf, -1]"));
+        assert_eq!(&ints("[0, 3]") * &ints("[-inf, inf]"), ints("[-inf, inf]"));
         assert_eq!(
-            ints("[0, 3]").mul(&ints("[-inf, inf]")),
-            ints("[-inf, inf]")
-        );
-        assert_eq!(
-            ints("[-5, 5] \\ 0").mul(&ints("[2, 2]")),
+            &ints("[-5, 5] \\ 0") * &ints("[2, 2]"),
             ints("[-10, 10] \\ 0")
         );
-        assert_eq!(ints("[2, 3]").neg(), ints("[-3, -2]"));
-        assert_eq!(ints("[7, 7]").div(&ints("[2, 2]")), ints("[3, 3]"));
-        assert_eq!(ints("[-7, 7]").div(&ints("[-2, 2]")), ints("[-7, 7]"));
-        assert_eq!(ints("[10, 20]").div(&ints("[0, 0]")), Ints::Empty);
-        assert_eq!(ints("[10, 20]").div(&ints("[1, inf]")), ints("[0, 20]"));
-        assert_eq!(ints("[-7, 7]").rem(&ints("[3, 3]")), ints("[-2, 2]"));
-        assert_eq!(ints("[0, 100]").rem(&ints("[-4, 5]")), ints("[0, 4]"));
-        assert_eq!(ints("[-3, 100]").rem(&ints("[1, inf]")), ints("[-3, 100]"));
-        assert_eq!(ints("[5, 9]").rem(&ints("[0, 0]")), Ints::Empty);
+        assert_eq!(-&ints("[2, 3]"), ints("[-3, -2]"));
+        assert_eq!(&ints("[7, 7]") / &ints("[2, 2]"), ints("[3, 3]"));
+        assert_eq!(&ints("[-7, 7]") / &ints("[-2, 2]"), ints("[-7, 7]"));
+        assert_eq!(&ints("[10, 20]") / &ints("[0, 0]"), Ints::Empty);
+        assert_eq!(&ints("[10, 20]") / &ints("[1, inf]"), ints("[0, 20]"));
+        assert_eq!(&ints("[-7, 7]") % &ints("[3, 3]"), ints("[-2, 2]"));
+        assert_eq!(&ints("[0, 100]") % &ints("[-4, 5]"), ints("[0, 4]"));
+        assert_eq!(&ints("[-3, 100]") % &ints("[1, inf]"), ints("[-3, 100]"));
+        assert_eq!(&ints("[5, 9]") % &ints("[0, 0]"), Ints::Empty);
     }
 
     #[test]
@@ -631,12 +647,12 @@ mod tests {
         fn operations_are_sound(a in band(), b in band()) {
             let xs = members(&a);
             let ys = members(&b);
-            let sum = a.add(&b);
-            let difference = a.sub(&b);
-            let product = a.mul(&b);
-            let quotient = a.div(&b);
-            let remainder = a.rem(&b);
-            let negated = a.neg();
+            let sum = &a + &b;
+            let difference = &a - &b;
+            let product = &a * &b;
+            let quotient = &a / &b;
+            let remainder = &a % &b;
+            let negated = -&a;
             for &x in &xs {
                 prop_assert!(contains(&negated, -x));
                 for &y in &ys {
