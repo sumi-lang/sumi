@@ -42,6 +42,7 @@ use sumi_syntax::{
 
 use crate::codes;
 use crate::ranges::{May, RangeEdge, UnaryOp};
+use crate::recursion;
 use crate::solver::{Backwards, Lattice, Var};
 use crate::typing::{Claim, Expected, ProductContext, Typing};
 use crate::*;
@@ -118,22 +119,22 @@ struct Header {
     item: NodeIdx,
 }
 
-struct DraftLocal {
-    origin: Span,
-    class: Var,
+pub(crate) struct DraftLocal {
+    pub origin: Span,
+    pub class: Var,
 }
 
 /// A body whose expressions are built, with a placeholder type on each
 /// until its class resolves.
-struct DraftBody {
-    params: Vec<LocalId>,
-    locals: Vec<DraftLocal>,
-    exprs: Vec<Expr>,
+pub(crate) struct DraftBody {
+    pub params: Vec<LocalId>,
+    pub locals: Vec<DraftLocal>,
+    pub exprs: Vec<Expr>,
     /// The class of each expression, by index.
-    classes: Vec<Var>,
-    args: Vec<ExprId>,
-    statements: Vec<Statement>,
-    root: ExprId,
+    pub classes: Vec<Var>,
+    pub args: Vec<ExprId>,
+    pub statements: Vec<Statement>,
+    pub root: ExprId,
 }
 
 impl DraftBody {
@@ -222,6 +223,8 @@ struct Recorded {
     obligations: Vec<Obligation>,
     /// Every integer the file spells or folds, for the thresholds.
     constants: Vec<Int>,
+    /// Every call as `(caller, callee, context)`, for the call graph.
+    calls: Vec<(FunctionId, FunctionId, Var)>,
 }
 
 struct Source<'s> {
@@ -505,6 +508,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         demands,
         obligations,
         constants,
+        calls,
     } = recorded;
     let cx: ProductContext = ((), constants.into_iter().collect());
     typing.solve(&cx);
@@ -575,10 +579,10 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         }
         failed[demand.owner as usize] = true;
     }
-    for (index, header) in headers.into_iter().enumerate() {
+    for (index, header) in headers.iter_mut().enumerate() {
         let evidence = header.result.map(|result| *typing.evidence(result));
         let result = evidence.and_then(|evidence| evidence.ty());
-        if let (Some(params), Some(result)) = (header.params, result) {
+        if let (Some(params), Some(result)) = (header.params.take(), result) {
             functions[index].signature = Some(Signature { params, result });
             // A function nothing live reaches never returns either.
             let result = header.result.unwrap();
@@ -648,6 +652,63 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
             labels,
         );
     }
+    // Every recursion has a measure, which also bounds the call depth.
+    let param_classes: Vec<&[Var]> = headers
+        .iter()
+        .map(|header| &param_classes[header.param_classes.clone()])
+        .collect();
+    let recursion = recursion::check(&bodies, &param_classes, &typing, &calls);
+    for failure in recursion.failures {
+        let names: Vec<_> = failure
+            .members
+            .iter()
+            .take(4)
+            .map(|&id| {
+                let item = items[id.index()];
+                format!(
+                    "`{}`",
+                    source.text(item.name(tree).map_or(item.node(), |n| n.node()))
+                )
+            })
+            .collect();
+        let others = failure.members.len() - names.len();
+        let cycle = match names.as_slice() {
+            [name] => format!("recursion in {name}"),
+            [first, second] => format!("recursion between {first} and {second}"),
+            [rest @ .., last] if others == 0 => {
+                format!("recursion between {}, and {last}", rest.join(", "))
+            }
+            _ => format!("recursion between {}, and {others} more", names.join(", ")),
+        };
+        let message = format!("{cycle} has no argument that decreases on every call");
+        let first = failure.members[0];
+        let primary = items[first.index()]
+            .name(tree)
+            .map_or(items[first.index()].node(), |n| n.node());
+        // A cycle of thousands of calls is one error; the first few calls
+        // locate it.
+        let labels = failure.labels.into_iter().take(8).map(|(call, text)| {
+            let text = text.map(|(param, direction)| {
+                let range = param.range();
+                let param = &parsed.source()[range.start().to_usize()..range.end().to_usize()];
+                let side = if direction == "decreases" {
+                    "below"
+                } else {
+                    "above"
+                };
+                format!("argument {direction} `{param}`, which is unbounded {side}")
+            });
+            let text =
+                text.unwrap_or_else(|| "no argument moves a parameter toward a bound".to_owned());
+            (call, text.into())
+        });
+        source.report(
+            source.span(primary),
+            codes::UNBOUNDED_RECURSION,
+            message,
+            labels,
+        );
+    }
     for (index, body) in bodies.into_iter().enumerate() {
         if !failed[index] && functions[index].signature.is_some() {
             functions[index].body = body.and_then(|body| body.publish(&typing, &functions));
@@ -661,6 +722,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         parsed,
         functions,
         diagnostics,
+        depth: recursion.depth,
     };
     assert!(
         analysis.is_valid()
@@ -1787,7 +1849,9 @@ impl<'a, 's> Builder<'a, 's> {
         Some(())
     }
     fn call(&mut self, node: NodeIdx, target: FunctionId, callee: NodeIdx) -> Option<()> {
+        let caller = FunctionId(self.owner);
         let context = self.context();
+        self.recorded.calls.push((caller, target, context));
         let function = &self.headers[target.index()];
         let params = function.params.as_ref()?;
         let param_classes = &self.param_classes[function.param_classes.clone()];

@@ -1,5 +1,5 @@
 == tree ==
-SourceFile 0..278
+SourceFile 0..201
   FnItem 0..71
     Name 3..6 "fib"
     ParamList 6..14
@@ -65,27 +65,6 @@ SourceFile 0..278
       NameRef 188..193 "count"
       ArgList 193..200
         LiteralExpr 194..199 "10000"
-  FnItem 201..243
-    Name 204..211 "forever"
-    ParamList 211..219
-      Param 212..218
-        Name 212..213 "n"
-        TypeRef 215..218 "int"
-    TypeRef 223..226 "int"
-    CallExpr 229..243
-      NameRef 229..236 "forever"
-      ArgList 236..243
-        BinaryExpr 237..242
-          NameRef 237..238 "n"
-          LiteralExpr 241..242 "1"
-  FnItem 244..277
-    Name 247..255 "too_deep"
-    ParamList 255..257 "()"
-    TypeRef 261..264 "int"
-    CallExpr 267..277
-      NameRef 267..274 "forever"
-      ArgList 274..277
-        LiteralExpr 275..276 "0"
 
 == formatted ==
 fn fib(n: int) -> int = if n < 2 {
@@ -100,5 +79,3 @@ fn count(n: int) -> int = if n == 0 {
     1 + count(n - 1)
 }
 fn deep() -> int = count(10000)
-fn forever(n: int) -> int = forever(n + 1)
-fn too_deep() -> int = forever(0)

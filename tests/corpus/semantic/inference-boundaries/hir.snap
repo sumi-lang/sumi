@@ -1,6 +1,6 @@
 file: rejected
 frontend errors: 2 (see frontend.snap)
-semantic errors: 5
+semantic errors: 6
 
 fn spin@0..25 signature: unavailable
   body: unavailable
@@ -29,6 +29,9 @@ fn intact@196..214 () -> bool ∈ {true}
 == semantic diagnostics ==
 error[semantic/cannot-infer]: cannot infer function result; add a return type annotation
   primary @0..25
+error[semantic/unbounded-recursion]: recursion in `spin` has no argument that decreases on every call
+  primary @3..7
+  secondary @18..25: no argument moves a parameter toward a bound
 error[semantic/arity]: expected 1 arguments, found 2
   primary @134..153
   secondary @0..25: declared here

@@ -774,6 +774,42 @@ error[semantic/division-by-zero]: division by zero
   secondary @930..931: argument is 0
 ```
 
+### `semantic/unbounded-recursion`
+
+A cycle of calls with no argument that moves toward a bound: on every
+call around the cycle some one parameter of each function must be
+passed a value that never moves the wrong way and, often enough that
+no cycle of calls only passes it along, strictly decreases (or strictly
+increases), with the values it can take bounded on that side. Labels
+name the recursive calls and the argument that comes closest.
+
+Shown by [`tests/corpus/semantic/unbounded-recursion`](../../../tests/corpus/semantic/unbounded-recursion/case.sumi):
+
+```sumi
+fn forever(n: int) -> int = forever(n + 1)
+fn too_deep() -> int = forever(0)
+fn fall(n: int) -> int = if n > 100 { 0 } else { fall(n - 1) }
+fn falls() -> int = fall(5)
+fn swap(a: int, b: int) -> int = swap(b, a)
+fn swapped() -> int = swap(1, 2)
+fn spin() -> int = spin()
+```
+
+```text
+error[semantic/unbounded-recursion]: recursion in `forever` has no argument that decreases on every call
+  primary @3..10
+  secondary @28..42: argument increases `n`, which is unbounded above
+error[semantic/unbounded-recursion]: recursion in `fall` has no argument that decreases on every call
+  primary @80..84
+  secondary @126..137: argument decreases `n`, which is unbounded below
+error[semantic/unbounded-recursion]: recursion in `swap` has no argument that decreases on every call
+  primary @171..175
+  secondary @201..211: no argument moves a parameter toward a bound
+error[semantic/unbounded-recursion]: recursion in `spin` has no argument that decreases on every call
+  primary @248..252
+  secondary @264..270: no argument moves a parameter toward a bound
+```
+
 ### `semantic/unsupported`
 
 A construct scalar checking does not handle yet, such as a closure, a

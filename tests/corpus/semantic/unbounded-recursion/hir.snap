@@ -1,0 +1,61 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 4
+
+fn forever@0..42 (int ∈ [0, +∞)) -> int ∈ ∅
+  param n@11..12: int
+  body: call forever@0..42 (callee @28..35) : int @28..42
+    arg[0]: eager + : int @36..41
+      lhs: read n@11..12 : int @36..37
+      rhs: int 1 : int @40..41
+
+fn too_deep@43..76 () -> int ∈ ∅
+  body: call forever@0..42 (callee @66..73) : int @66..76
+    arg[0]: int 0 : int @74..75
+
+fn fall@77..139 (int ∈ (-∞, 5]) -> int ∈ ∅
+  param n@85..86: int
+  body: if : int @102..139
+    condition: eager > : bool @105..112
+      lhs: read n@85..86 : int @105..106
+      rhs: int 100 : int @109..112
+    then: block : int @113..118
+      tail: int 0 : int @115..116
+    else: block : int @124..139
+      tail: call fall@77..139 (callee @126..130) : int @126..137
+        arg[0]: eager - : int @131..136
+          lhs: read n@85..86 : int @131..132
+          rhs: int 1 : int @135..136
+
+fn falls@140..167 () -> int ∈ ∅
+  body: call fall@77..139 (callee @160..164) : int @160..167
+    arg[0]: int 5 : int @165..166
+
+fn swap@168..211 (int ∈ [1, 2], int ∈ [1, 2]) -> int ∈ ∅
+  param a@176..177: int
+  param b@184..185: int
+  body: call swap@168..211 (callee @201..205) : int @201..211
+    arg[0]: read b@184..185 : int @206..207
+    arg[1]: read a@176..177 : int @209..210
+
+fn swapped@212..244 () -> int ∈ ∅
+  body: call swap@168..211 (callee @234..238) : int @234..244
+    arg[0]: int 1 : int @239..240
+    arg[1]: int 2 : int @242..243
+
+fn spin@245..270 () -> int ∈ ∅
+  body: call spin@245..270 (callee @264..268) : int @264..270
+
+== semantic diagnostics ==
+error[semantic/unbounded-recursion]: recursion in `forever` has no argument that decreases on every call
+  primary @3..10
+  secondary @28..42: argument increases `n`, which is unbounded above
+error[semantic/unbounded-recursion]: recursion in `fall` has no argument that decreases on every call
+  primary @80..84
+  secondary @126..137: argument decreases `n`, which is unbounded below
+error[semantic/unbounded-recursion]: recursion in `swap` has no argument that decreases on every call
+  primary @171..175
+  secondary @201..211: no argument moves a parameter toward a bound
+error[semantic/unbounded-recursion]: recursion in `spin` has no argument that decreases on every call
+  primary @248..252
+  secondary @264..270: no argument moves a parameter toward a bound

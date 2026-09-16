@@ -44,14 +44,3 @@ fn count@101..168 (int ∈ [0, 10000]) -> int ∈ [0, +∞)
 fn deep@169..200 () -> int ∈ [0, +∞)
   body: call count@101..168 (callee @188..193) : int @188..200
     arg[0]: int 10000 : int @194..199
-
-fn forever@201..243 (int ∈ [0, +∞)) -> int ∈ ∅
-  param n@212..213: int
-  body: call forever@201..243 (callee @229..236) : int @229..243
-    arg[0]: eager + : int @237..242
-      lhs: read n@212..213 : int @237..238
-      rhs: int 1 : int @241..242
-
-fn too_deep@244..277 () -> int ∈ ∅
-  body: call forever@201..243 (callee @267..274) : int @267..277
-    arg[0]: int 0 : int @275..276

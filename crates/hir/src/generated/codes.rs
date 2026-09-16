@@ -50,13 +50,22 @@ pub const CANNOT_INFER: DiagnosticCode = DiagnosticCode::new(SEMANTIC, "cannot-i
 /// branch, and a division no path reaches is not checked.
 pub const DIVISION_BY_ZERO: DiagnosticCode = DiagnosticCode::new(SEMANTIC, "division-by-zero");
 
+/// A cycle of calls with no argument that moves toward a bound: on every
+/// call around the cycle some one parameter of each function must be
+/// passed a value that never moves the wrong way and, often enough that
+/// no cycle of calls only passes it along, strictly decreases (or strictly
+/// increases), with the values it can take bounded on that side. Labels
+/// name the recursive calls and the argument that comes closest.
+pub const UNBOUNDED_RECURSION: DiagnosticCode =
+    DiagnosticCode::new(SEMANTIC, "unbounded-recursion");
+
 /// A construct scalar checking does not handle yet, such as a closure, a
 /// string literal, or a call through anything but a function name. The
 /// function is left unchecked.
 pub const UNSUPPORTED: DiagnosticCode = DiagnosticCode::new(SEMANTIC, "unsupported");
 
 /// Every code of the group, in declaration order.
-pub const ALL: [DiagnosticCode; 10] = [
+pub const ALL: [DiagnosticCode; 11] = [
     UNKNOWN_TYPE,
     UNKNOWN_NAME,
     DUPLICATE_NAME,
@@ -66,5 +75,6 @@ pub const ALL: [DiagnosticCode; 10] = [
     UNUSED_VALUE,
     CANNOT_INFER,
     DIVISION_BY_ZERO,
+    UNBOUNDED_RECURSION,
     UNSUPPORTED,
 ];

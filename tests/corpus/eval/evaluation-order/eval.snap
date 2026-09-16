@@ -1,5 +1,5 @@
 file: accepted
 fn pair: takes arguments, not run
-fn left_to_right = 154 (steps 41, depth 2)
-fn operands = 87 (steps 17, depth 1)
-fn truthy = true (steps 8, depth 1)
+fn left_to_right = 154 (steps 41, depth 2 of at most 2)
+fn operands = 87 (steps 17, depth 1 of at most 1)
+fn truthy = true (steps 8, depth 1 of at most 1)
