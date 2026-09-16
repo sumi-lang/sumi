@@ -15,12 +15,13 @@ use std::str::FromStr;
 
 /// An integer of any size: two words, one of them a pointer only past the
 /// word-sized range.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Int(Repr);
 
 /// `Big` holds only what `Small` cannot, so equal values have equal
-/// representations and the derived equality is the mathematical one.
-#[derive(Clone, PartialEq, Eq)]
+/// representations and the derived equality and hash are the mathematical
+/// ones.
+#[derive(Clone, PartialEq, Eq, Hash)]
 enum Repr {
     Small(i64),
     /// A value outside `i64`.
@@ -29,7 +30,7 @@ enum Repr {
 
 /// A sign and a magnitude's limbs, least significant first, the last one
 /// non-zero.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 struct Big {
     negative: bool,
     limbs: Box<[u64]>,
