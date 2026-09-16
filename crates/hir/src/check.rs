@@ -207,10 +207,19 @@ struct Demand {
     kind: DemandKind,
 }
 
+/// A division whose divisor must exclude zero wherever it can run.
+struct Obligation {
+    owner: u32,
+    node: NodeIdx,
+    divisor: Var,
+    context: Var,
+}
+
 /// What the walk of every body leaves for the verdict pass.
 #[derive(Default)]
 struct Recorded {
     demands: Vec<Demand>,
+    obligations: Vec<Obligation>,
     /// Every integer the file spells or folds, for the thresholds.
     constants: Vec<Int>,
 }
@@ -492,7 +501,11 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     drop(values);
 
     // Pass 3: verdicts.
-    let Recorded { demands, constants } = recorded;
+    let Recorded {
+        demands,
+        obligations,
+        constants,
+    } = recorded;
     let cx: ProductContext = ((), constants.into_iter().collect());
     typing.solve(&cx);
     let mut replay = typing.replay(&cx);
@@ -610,6 +623,28 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
             }
         }
     }
+    // Every reachable division excludes zero.
+    for obligation in &obligations {
+        if failed[obligation.owner as usize] {
+            continue;
+        }
+        let divisor = typing.may(obligation.divisor);
+        if !typing.may(obligation.context).live() || !divisor.ints.contains_zero() {
+            continue;
+        }
+        let message = if divisor.ints.is_zero() {
+            "division by zero"
+        } else {
+            "divisor may be zero"
+        };
+        let labels = explain_zero(&typing, &source, &cx, obligation.divisor);
+        source.report(
+            source.span(obligation.node),
+            codes::DIVISION_BY_ZERO,
+            message,
+            labels,
+        );
+    }
     for (index, body) in bodies.into_iter().enumerate() {
         if !failed[index] && functions[index].signature.is_some() {
             functions[index].body = body.and_then(|body| body.publish(&typing, &functions));
@@ -641,6 +676,85 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
 /// bounds.
 fn run(index: usize) -> u32 {
     u32::try_from(index).expect("list index fits u32")
+}
+
+/// Labels for the values that put zero into `class`: the flows into it
+/// whose delivery contains zero, followed through the edges that pass a
+/// value along until a fact, an operator, or an argument names it.
+fn explain_zero(
+    typing: &Typing,
+    source: &Source<'_>,
+    cx: &ProductContext,
+    class: Var,
+) -> Vec<(Span, Box<str>)> {
+    use std::collections::{HashSet, VecDeque};
+
+    use crate::ranges::Ints;
+    use crate::solver::Lattice;
+
+    const LABELS: usize = 4;
+    const HOPS: usize = 6;
+    let describe = |ints: &Ints| {
+        if ints.is_zero() {
+            "is 0".to_owned()
+        } else {
+            format!("may be 0: {ints}")
+        }
+    };
+    let mut labels: Vec<(Span, Box<str>)> = Vec::new();
+    let mut seen = HashSet::new();
+    let mut queue = VecDeque::from([(class, 0)]);
+    while let Some((var, hops)) = queue.pop_front() {
+        if labels.len() >= LABELS || !seen.insert(var) {
+            continue;
+        }
+        if let Some(fact) = typing.fact(var)
+            && fact.ints.contains_zero()
+        {
+            if let Some(node) = typing
+                .evidence(var)
+                .claims()
+                .first()
+                .and_then(|(_, claim)| typing.origin(*claim))
+            {
+                labels.push((source.span(node), describe(&fact.ints).into()));
+            }
+            continue;
+        }
+        for (first, second, edge) in typing.incoming(var) {
+            let delivered = typing.may(first).transfer(
+                &edge.1,
+                second.map(|second| typing.may(second)),
+                false,
+                &cx.1,
+            );
+            if !delivered.ints.contains_zero() {
+                continue;
+            }
+            match edge.1 {
+                RangeEdge::Copy
+                | RangeEdge::Refine { .. }
+                | RangeEdge::Branch
+                | RangeEdge::Call => {
+                    if hops < HOPS {
+                        queue.push_back((first, hops + 1));
+                    }
+                }
+                RangeEdge::Argument(origin) => {
+                    labels.push((
+                        source.span(origin),
+                        format!("argument {}", describe(&delivered.ints)).into(),
+                    ));
+                }
+                RangeEdge::Unary { origin, .. } | RangeEdge::Binary { origin, .. } => {
+                    labels.push((source.span(origin), describe(&delivered.ints).into()));
+                }
+                _ => {}
+            }
+        }
+    }
+    labels.sort_by_key(|(span, _)| span.range().start());
+    labels
 }
 
 // None is a poisoned binding, distinct from an absent name. Scope transitions
@@ -1507,8 +1621,11 @@ impl<'a, 's> Builder<'a, 's> {
                 self.require(operand, value, Expected::Ty(ty), None);
                 let class = self.typing.known(ty, node);
                 let op = if neg { UnaryOp::Neg } else { UnaryOp::Not };
-                self.typing
-                    .flow(self.class(value), class, RangeEdge::Unary(op));
+                self.typing.flow(
+                    self.class(value),
+                    class,
+                    RangeEdge::Unary { op, origin: node },
+                );
                 let id = self.emit(
                     node,
                     if neg {
@@ -1556,13 +1673,28 @@ impl<'a, 's> Builder<'a, 's> {
                 let class = self.typing.known(result, node);
                 let kind = ExprKind::binary(op, lhs, rhs);
                 let edge = match &kind {
-                    ExprKind::Binary { op, .. } => RangeEdge::Binary(*op),
+                    ExprKind::Binary { op, .. } => RangeEdge::Binary {
+                        op: *op,
+                        origin: node,
+                    },
                     ExprKind::And { .. } => RangeEdge::Lazy { and: true },
                     ExprKind::Or { .. } => RangeEdge::Lazy { and: false },
                     _ => unreachable!("a binary expression"),
                 };
                 self.typing
                     .derive(self.class(lhs), self.class(rhs), class, edge);
+                if let ExprKind::Binary {
+                    op: BinaryOp::Div | BinaryOp::Rem,
+                    ..
+                } = kind
+                {
+                    self.recorded.obligations.push(Obligation {
+                        owner: self.owner,
+                        node,
+                        divisor: self.class(rhs),
+                        context: self.context(),
+                    });
+                }
                 let folded = match (&kind, &self.consts[lhs.index()], &self.consts[rhs.index()]) {
                     (ExprKind::Binary { op, .. }, Some(a), Some(b)) => match op {
                         BinaryOp::Add => Some(a + b),
@@ -1688,9 +1820,9 @@ impl<'a, 's> Builder<'a, 's> {
         }
         // A call that is not whole never happens, so only now do the
         // arguments reach the parameters.
-        for (&value, &param) in self.args[start..].iter().zip(param_classes) {
-            self.typing
-                .derive(self.class(value), context, param, RangeEdge::Argument);
+        for ((arg, &value), &param) in list.args(tree).zip(&self.args[start..]).zip(param_classes) {
+            let edge = RangeEdge::Argument(arg.node());
+            self.typing.derive(self.class(value), context, param, edge);
         }
         let args = Args {
             start: run(start),

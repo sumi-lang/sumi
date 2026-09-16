@@ -200,6 +200,7 @@ pub(crate) enum Expected {
 }
 
 pub(crate) type Product = (Evidence, May);
+pub(crate) type ProductEdge = (Edge, RangeEdge);
 pub(crate) type ProductContext = ((), Thresholds);
 
 #[derive(Default)]
@@ -349,6 +350,16 @@ impl Typing {
 
     pub fn may(&self, var: Var) -> &May {
         &self.solver.evidence(var).1
+    }
+
+    /// The values a fact opened `var`'s class with, if one did.
+    pub fn fact(&self, var: Var) -> Option<&May> {
+        self.solver.fact(var).map(|evidence| &evidence.1)
+    }
+
+    /// Every flow into `var`'s class.
+    pub fn incoming(&self, var: Var) -> impl Iterator<Item = (Var, Option<Var>, &ProductEdge)> {
+        self.solver.incoming(var)
     }
 
     pub fn resolve(&self, var: Var) -> Option<Ty> {

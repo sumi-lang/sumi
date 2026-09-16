@@ -27,6 +27,8 @@ use std::cmp::Ordering;
 use std::fmt;
 use std::ops::{Add, BitAnd, Div, Mul, Neg, Rem, Sub};
 
+use sumi_syntax::NodeIdx;
+
 use crate::solver::Lattice;
 use crate::{BinaryOp, Int, Ty};
 
@@ -775,9 +777,15 @@ pub enum RangeEdge {
     /// The value unchanged: an annotated binding's initializer, a declared
     /// result's body.
     Copy,
-    Unary(UnaryOp),
+    Unary {
+        op: UnaryOp,
+        origin: NodeIdx,
+    },
     /// An eager operator over its operands.
-    Binary(BinaryOp),
+    Binary {
+        op: BinaryOp,
+        origin: NodeIdx,
+    },
     /// `&&` or `||` over its operands' values.
     Lazy {
         and: bool,
@@ -799,7 +807,7 @@ pub enum RangeEdge {
     Branch,
     /// An argument into a parameter, while the call's context is live.
     /// Rounded to the thresholds when the flow closes a cycle.
-    Argument,
+    Argument(NodeIdx),
     /// A callee's result into a call. Rounded likewise.
     Call,
     /// A context into a class that is unit while the context is live: a
@@ -847,9 +855,13 @@ impl Lattice for May {
         match *edge {
             RangeEdge::None => Self::bottom(),
             RangeEdge::Copy => self.clone(),
-            RangeEdge::Unary(UnaryOp::Neg) => Self::ints(-&self.ints),
-            RangeEdge::Unary(UnaryOp::Not) => Self::bools(!self.bools),
-            RangeEdge::Binary(op) => {
+            RangeEdge::Unary {
+                op: UnaryOp::Neg, ..
+            } => Self::ints(-&self.ints),
+            RangeEdge::Unary {
+                op: UnaryOp::Not, ..
+            } => Self::bools(!self.bools),
+            RangeEdge::Binary { op, .. } => {
                 let rhs = second();
                 match op {
                     BinaryOp::Add => Self::ints(&self.ints + &rhs.ints),
@@ -895,7 +907,7 @@ impl Lattice for May {
                     Self::bottom()
                 }
             }
-            RangeEdge::Argument => {
+            RangeEdge::Argument(_) => {
                 if second().live() {
                     rounded(self)
                 } else {
@@ -1095,12 +1107,18 @@ mod tests {
         let cx = [15, 2].map(Int::from).into_iter().collect::<Thresholds>();
         let a = May::ints(ints("[4, 13]"));
         let b = May::int(2.into());
-        let edge = RangeEdge::Binary(BinaryOp::Mul);
+        let edge = RangeEdge::Binary {
+            op: BinaryOp::Mul,
+            origin: NodeIdx::new(0),
+        };
         assert_eq!(
             a.transfer(&edge, Some(&b), false, &cx).ints,
             ints("[8, 26]")
         );
-        let edge = RangeEdge::Binary(BinaryOp::Lt);
+        let edge = RangeEdge::Binary {
+            op: BinaryOp::Lt,
+            origin: NodeIdx::new(0),
+        };
         assert_eq!(
             a.transfer(&edge, Some(&b), false, &cx).bools,
             Bools::from(false)
@@ -1114,7 +1132,15 @@ mod tests {
         );
         assert_eq!(
             May::bool(true)
-                .transfer(&RangeEdge::Unary(UnaryOp::Not), None, false, &cx)
+                .transfer(
+                    &RangeEdge::Unary {
+                        op: UnaryOp::Not,
+                        origin: NodeIdx::new(0),
+                    },
+                    None,
+                    false,
+                    &cx,
+                )
                 .bools,
             Bools::from(false)
         );
@@ -1125,8 +1151,13 @@ mod tests {
         );
         let live = May::unit();
         assert_eq!(
-            a.transfer(&RangeEdge::Argument, Some(&live), true, &cx)
-                .ints,
+            a.transfer(
+                &RangeEdge::Argument(NodeIdx::new(0)),
+                Some(&live),
+                true,
+                &cx
+            )
+            .ints,
             ints("[3, 14]")
         );
         assert_eq!(a.transfer(&RangeEdge::Copy, None, true, &cx), a);
@@ -1163,7 +1194,7 @@ mod tests {
             value.transfer(&RangeEdge::Branch, Some(&dead), false, &cx),
             dead
         );
-        let edge = RangeEdge::Argument;
+        let edge = RangeEdge::Argument(NodeIdx::new(0));
         assert_eq!(value.transfer(&edge, Some(&dead), false, &cx), dead);
         assert_eq!(value.transfer(&edge, Some(&live), false, &cx), value);
         assert_eq!(live.transfer(&RangeEdge::Enter, None, false, &cx), live);

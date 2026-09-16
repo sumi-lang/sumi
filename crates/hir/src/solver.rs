@@ -254,6 +254,24 @@ impl<L: Lattice> Solver<L> {
         });
     }
 
+    /// The evidence a fact opened `var`'s class with, if one did.
+    pub fn fact(&self, var: Var) -> Option<&L> {
+        let root = self.root(var.index());
+        self.facts
+            .iter()
+            .find(|(fact, _)| self.root(fact.index()) == root)
+            .map(|(_, evidence)| evidence)
+    }
+
+    /// Every flow into `var`'s class: its providers and its edge.
+    pub fn incoming(&self, var: Var) -> impl Iterator<Item = (Var, Option<Var>, &L::Edge)> {
+        let root = self.root(var.index());
+        self.flows
+            .iter()
+            .filter(move |flow| self.root(flow.consumer.index()) == root)
+            .map(|flow| (flow.first, flow.second, &flow.edge))
+    }
+
     /// A fresh class that `provider` flows into through `edge`.
     pub fn import(&mut self, provider: Var, edge: L::Edge) -> Var {
         let consumer = self.fresh();

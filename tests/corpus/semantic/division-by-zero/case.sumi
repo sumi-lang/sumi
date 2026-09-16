@@ -1,0 +1,14 @@
+fn divide_by_zero() -> int = 1 / (2 - 2)
+fn remainder_by_zero() -> int = 7 % 0
+fn by_parameter(n: int) -> int = 100 / n
+fn through_a_call() -> int = 1 + by_parameter(0)
+fn half(d: int) -> int = 100 / d
+fn spread(k: int) -> int = half(k - 3)
+fn spreads() -> int = spread(0) + spread(6)
+fn statements() -> int {
+    let a = 1
+    let b = a + 1
+    let a = b * 10
+    _ = a / 0 == 0 || true
+    if a > b { a - b } else { b - a }
+}

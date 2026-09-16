@@ -19,11 +19,8 @@ enum Control {
     Eval(ExprId),
     Neg,
     Not,
-    /// Combine the top two values; `origin` is the operation.
-    Binary {
-        op: BinaryOp,
-        origin: ExprId,
-    },
+    /// Combine the top two values.
+    Binary(BinaryOp),
     /// Evaluate `rhs` if the top value is true, else keep the false.
     AndRhs(ExprId),
     /// Evaluate `rhs` if the top value is false, else keep the true.
@@ -222,11 +219,10 @@ impl<'a> Machine<'a> {
                 let operand = self.pop_bool();
                 self.values.push(Value::Bool(!operand));
             }
-            Control::Binary { op, origin } => {
+            Control::Binary(op) => {
                 let rhs = self.pop();
                 let lhs = self.pop();
-                let value = self.binary(op, lhs, rhs, origin)?;
-                self.values.push(value);
+                self.values.push(binary(op, lhs, rhs));
             }
             Control::AndRhs(rhs) => {
                 if self.pop_bool() {
@@ -338,10 +334,7 @@ impl<'a> Machine<'a> {
                 self.control.push(Control::Eval(*operand));
             }
             ExprKind::Binary { op, lhs, rhs } => {
-                self.control.push(Control::Binary {
-                    op: *op,
-                    origin: id,
-                });
+                self.control.push(Control::Binary(*op));
                 self.control.push(Control::Eval(*rhs));
                 self.control.push(Control::Eval(*lhs));
             }
@@ -377,41 +370,29 @@ impl<'a> Machine<'a> {
             }),
         }
     }
+}
 
-    fn trap(&self, kind: TrapKind, origin: ExprId) -> Trap {
-        Trap {
-            kind,
-            origin: self.body().expression(origin).origin,
+fn binary(op: BinaryOp, lhs: Value, rhs: Value) -> Value {
+    match (op, lhs, rhs) {
+        (BinaryOp::Eq, lhs, rhs) => Value::Bool(lhs == rhs),
+        (BinaryOp::Ne, lhs, rhs) => Value::Bool(lhs != rhs),
+        (op, Value::Int(lhs), Value::Int(rhs)) => match op {
+            BinaryOp::Add => Value::Int(&lhs + &rhs),
+            BinaryOp::Sub => Value::Int(&lhs - &rhs),
+            BinaryOp::Mul => Value::Int(&lhs * &rhs),
+            // Truncating: the quotient rounds toward zero and the remainder
+            // takes the dividend's sign. The checker proved the divisor is
+            // not zero wherever this can run.
+            BinaryOp::Div => Value::Int(lhs.checked_div(&rhs).expect("a non-zero divisor")),
+            BinaryOp::Rem => Value::Int(lhs.checked_rem(&rhs).expect("a non-zero divisor")),
+            BinaryOp::Lt => Value::Bool(lhs < rhs),
+            BinaryOp::Le => Value::Bool(lhs <= rhs),
+            BinaryOp::Gt => Value::Bool(lhs > rhs),
+            BinaryOp::Ge => Value::Bool(lhs >= rhs),
+            BinaryOp::Eq | BinaryOp::Ne => unreachable!("handled for every type"),
+        },
+        (op, lhs, rhs) => {
+            unreachable!("the checker typed {op:?} over ints; got {lhs:?} and {rhs:?}")
         }
-    }
-
-    fn binary(&self, op: BinaryOp, lhs: Value, rhs: Value, origin: ExprId) -> Result<Value, Trap> {
-        Ok(match (op, lhs, rhs) {
-            (BinaryOp::Eq, lhs, rhs) => Value::Bool(lhs == rhs),
-            (BinaryOp::Ne, lhs, rhs) => Value::Bool(lhs != rhs),
-            (op, Value::Int(lhs), Value::Int(rhs)) => match op {
-                BinaryOp::Add => Value::Int(&lhs + &rhs),
-                BinaryOp::Sub => Value::Int(&lhs - &rhs),
-                BinaryOp::Mul => Value::Int(&lhs * &rhs),
-                BinaryOp::Div | BinaryOp::Rem => {
-                    // Truncating: the quotient rounds toward zero and the
-                    // remainder takes the dividend's sign.
-                    let value = if op == BinaryOp::Div {
-                        lhs.checked_div(&rhs)
-                    } else {
-                        lhs.checked_rem(&rhs)
-                    };
-                    Value::Int(value.ok_or_else(|| self.trap(TrapKind::DivisionByZero, origin))?)
-                }
-                BinaryOp::Lt => Value::Bool(lhs < rhs),
-                BinaryOp::Le => Value::Bool(lhs <= rhs),
-                BinaryOp::Gt => Value::Bool(lhs > rhs),
-                BinaryOp::Ge => Value::Bool(lhs >= rhs),
-                BinaryOp::Eq | BinaryOp::Ne => unreachable!("handled for every type"),
-            },
-            (op, lhs, rhs) => {
-                unreachable!("the checker typed {op:?} over ints; got {lhs:?} and {rhs:?}")
-            }
-        })
     }
 }

@@ -20,80 +20,22 @@ fn left_to_right@44..100 () -> int ∈ [12, +∞)
       arg[0]: int 3 : int @94..95
       arg[1]: int 4 : int @97..98
 
-fn left_argument_traps_first@101..159 () -> int ∈ [12, +∞)
-  body: call pair@0..43 (callee @141..145) : int @141..159
-    arg[0]: eager / : int @146..151
-      lhs: int 1 : int @146..147
-      rhs: int 0 : int @150..151
-    arg[1]: eager % : int @153..158
-      lhs: int 1 : int @153..154
-      rhs: int 0 : int @157..158
+fn operands@101..148 () -> int ∈ [87, 87]
+  body: eager - : int @124..148
+    lhs: eager - : int @124..136
+      lhs: eager - : int @124..132
+        lhs: int 100 : int @124..127
+        rhs: int 10 : int @130..132
+      rhs: int 1 : int @135..136
+    rhs: eager % : int @139..148
+      lhs: eager * : int @139..144
+        lhs: int 2 : int @139..140
+        rhs: int 3 : int @143..144
+      rhs: int 4 : int @147..148
 
-fn left_operand_traps_first@160..216 () -> int ∈ ∅
-  body: eager - : int @199..216
-    lhs: eager % : int @200..205
-      lhs: int 1 : int @200..201
-      rhs: int 0 : int @204..205
-    rhs: eager / : int @210..215
-      lhs: int 1 : int @210..211
-      rhs: int 0 : int @214..215
-
-fn right_trap_reached@217..264 () -> int ∈ [12, +∞)
-  body: call pair@0..43 (callee @250..254) : int @250..264
-    arg[0]: int 1 : int @255..256
-    arg[1]: eager / : int @258..263
-      lhs: int 1 : int @258..259
-      rhs: int 0 : int @262..263
-
-fn statements@265..407 () -> int ∈ [18, 18]
-  body: block : int @288..407
-    let a@298..299: int @294..303
-      initializer: int 1 : int @302..303
-    let b@312..313: int @308..321
-      initializer: eager + : int @316..321
-        lhs: read a@298..299 : int @316..317
-        rhs: int 1 : int @320..321
-    let a@330..331: int @326..340
-      initializer: eager * : int @334..340
-        lhs: read b@312..313 : int @334..335
-        rhs: int 10 : int @338..340
-    discard @345..367
-      value: lazy or : bool @349..367
-        lhs: eager == : bool @349..359
-          lhs: eager / : int @349..354
-            lhs: read a@330..331 : int @349..350
-            rhs: int 0 : int @353..354
-          rhs: int 0 : int @358..359
-        rhs: bool true : bool @363..367
-    tail: if : int @372..405
-      condition: eager > : bool @375..380
-        lhs: read a@330..331 : int @375..376
-        rhs: read b@312..313 : int @379..380
-      then: block : int @381..390
-        tail: eager - : int @383..388
-          lhs: read a@330..331 : int @383..384
-          rhs: read b@312..313 : int @387..388
-      else: block : int @396..405
-        tail: eager - : int @398..403
-          lhs: read b@312..313 : int @398..399
-          rhs: read a@330..331 : int @402..403
-
-fn operands@408..455 () -> int ∈ [87, 87]
-  body: eager - : int @431..455
-    lhs: eager - : int @431..443
-      lhs: eager - : int @431..439
-        lhs: int 100 : int @431..434
-        rhs: int 10 : int @437..439
-      rhs: int 1 : int @442..443
-    rhs: eager % : int @446..455
-      lhs: eager * : int @446..451
-        lhs: int 2 : int @446..447
-        rhs: int 3 : int @450..451
-      rhs: int 4 : int @454..455
-
-fn truthy@456..493 () -> bool ∈ {true}
-  body: eager == : bool @478..493
-    lhs: eager < : bool @479..484
-      lhs: int 1 : int @479..480
-      rhs: int 2 : int @483..484
-    rhs: bool true : bool @489..493
+fn truthy@149..186 () -> bool ∈ {true}
+  body: eager == : bool @171..186
+    lhs: eager < : bool @172..177
+      lhs: int 1 : int @172..173
+      rhs: int 2 : int @176..177
+    rhs: bool true : bool @182..186

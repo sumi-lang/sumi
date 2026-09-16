@@ -29,7 +29,17 @@ fn trap_of(source: &str, result: Result<Value, Trap>) -> (TrapKind, &str) {
 
 #[test]
 fn invalid_files_never_run() {
-    for source in ["fn f() -> int = true", "fn f(", "fn f() = g()"] {
+    for source in [
+        "fn f() -> int = true",
+        "fn f(",
+        "fn f() = g()",
+        // A division that may fail is a static error, so it never reaches
+        // here.
+        "fn f() -> int = 1 / 0",
+        "fn f() -> int = 7 % (2 - 2)",
+        "fn f() -> bool = true && 1 / 0 == 0",
+        "fn f() -> bool = false || 1 % 0 == 0",
+    ] {
         assert!(Program::new(&analysis(source)).is_none(), "{source}");
     }
 }
@@ -76,50 +86,28 @@ fn empty() = {}";
 }
 
 #[test]
-fn calls_recursion_and_evaluation_order() {
+fn calls_and_recursion() {
     let source = "fn fib(n: int) -> int = if n < 2 { n } else { fib(n - 1) + fib(n - 2) }
 fn twenty() -> int = fib(20)
 fn sub(a: int, b: int) -> int = a - b
 fn ordered() -> int = sub(sub(10, 3), sub(2, 1))
-fn args_left_first() -> int = sub(1 / 0, 1 % 0)
-fn operands_left_first() -> int = (1 % 0) + (1 / 0)
-fn args_before_the_call() -> int = sub(1 / 0, forever(0))
-fn forever(n: int) -> int = forever(n + 1)
 fn even(n: int) -> bool = if n == 0 { true } else { odd(n - 1) }
 fn odd(n: int) -> bool = if n == 0 { false } else { even(n - 1) }
 fn parity() -> bool = even(1000) && !even(999)";
     assert_eq!(run(source, "twenty"), Ok(int(6765)));
     assert_eq!(run(source, "ordered"), Ok(int(6)));
-    // Competing traps: the left one happens, so the right one never does.
-    assert_eq!(
-        trap_of(source, run(source, "args_left_first")),
-        (TrapKind::DivisionByZero, "1 / 0")
-    );
-    assert_eq!(
-        trap_of(source, run(source, "operands_left_first")),
-        (TrapKind::DivisionByZero, "1 % 0")
-    );
-    assert_eq!(
-        trap_of(source, run(source, "args_before_the_call")),
-        (TrapKind::DivisionByZero, "1 / 0")
-    );
     assert_eq!(run(source, "parity"), Ok(Value::Bool(true)));
 }
 
 #[test]
-fn short_circuits_skip_traps() {
-    let source = "fn safe() -> bool = false && (1 / 0 == 0) || true || (1 % 0 == 0)
-fn unsafe_and() -> bool = true && 1 / 0 == 0
-fn unsafe_or() -> bool = false || 1 % 0 == 0";
-    assert_eq!(run(source, "safe"), Ok(Value::Bool(true)));
-    assert_eq!(
-        trap_of(source, run(source, "unsafe_and")),
-        (TrapKind::DivisionByZero, "1 / 0")
-    );
-    assert_eq!(
-        trap_of(source, run(source, "unsafe_or")),
-        (TrapKind::DivisionByZero, "1 % 0")
-    );
+fn guarded_divisions_run() {
+    let source = "fn safe(n: int, d: int) -> int = if d != 0 { n / d } else { 0 }
+fn signed() -> int = safe(10, 3) + safe(10, -3) + safe(10, 0)
+fn dead() -> int = if false { 1 / 0 } else { 1 }
+fn lazy() -> bool = false && 1 / 0 == 0 || true || 1 % 0 == 0";
+    assert_eq!(run(source, "signed"), Ok(int(0)));
+    assert_eq!(run(source, "dead"), Ok(int(1)));
+    assert_eq!(run(source, "lazy"), Ok(Value::Bool(true)));
 }
 
 #[test]
@@ -159,29 +147,6 @@ fn fine() -> int = {max} + -1 + 1"
             Ok(Value::Int(value.parse().unwrap())),
             "{name}"
         );
-    }
-}
-
-#[test]
-fn division_by_zero_traps_at_the_operation() {
-    let source = "fn div_zero() -> int = 1 / (1 - 1)
-fn rem_zero() -> int = 1 % 0
-fn wide_zero() -> int = 1234567890123456789012345678901234567890 / (9223372036854775808 - 9223372036854775808)";
-    for (name, origin) in [
-        ("div_zero", "1 / (1 - 1)"),
-        ("rem_zero", "1 % 0"),
-        (
-            "wide_zero",
-            "1234567890123456789012345678901234567890 / (9223372036854775808 - 9223372036854775808)",
-        ),
-    ] {
-        let result = run(source, name);
-        assert_eq!(
-            trap_of(source, result.clone()),
-            (TrapKind::DivisionByZero, origin),
-            "{name}"
-        );
-        assert_eq!(result.unwrap_err().to_string(), "division by zero");
     }
 }
 
@@ -234,14 +199,14 @@ fn stepping_is_observable_and_idempotent_at_the_end() {
 
 #[test]
 fn a_trapped_machine_keeps_reporting_its_trap() {
-    let source = "fn boom() -> int = inner(1) + 2\nfn inner(x: int) -> int = x / 0";
+    let source = "fn boom() -> int = inner(1) + 2\nfn inner(x: int) -> int = inner(x + 1)";
     let analysis = analysis(source);
     let program = Program::new(&analysis).unwrap();
     let mut machine = Machine::new(program, program.function_named("boom").unwrap(), &[]);
     let outcome = machine.run_to_end();
     assert_eq!(
         trap_of(source, outcome.clone()),
-        (TrapKind::DivisionByZero, "x / 0")
+        (TrapKind::CallDepth, "inner(x + 1)")
     );
     let steps = machine.steps();
     for _ in 0..3 {
@@ -249,7 +214,7 @@ fn a_trapped_machine_keeps_reporting_its_trap() {
     }
     assert_eq!(machine.steps(), steps);
     // The frames stay where the trap happened.
-    assert_eq!(machine.depth(), 2);
+    assert_eq!(machine.depth(), MAX_CALL_DEPTH);
 }
 
 #[test]
