@@ -7,13 +7,16 @@
 //!    without one is a fresh class to infer, and a bare block body is unit.
 //! 2. **Bodies.** A structural walk per function resolves names, builds the
 //!    body's expressions with every expression and local owning a class in
-//!    the [`Typing`], and records what the walk learns: facts for literals
-//!    and operator results, a flow for each call and for each branch into
-//!    its `if`, and a demand wherever a context requires an expression to
-//!    have a type. The walk rejects nothing on type grounds; it fails only
-//!    on names, syntax, and unsupported constructs.
+//!    the [`Typing`], and records what the walk learns: facts for literals,
+//!    with their values, and for operator results; a flow for each call,
+//!    each argument into its parameter, and each branch into its `if`; each
+//!    operator's values derived from its operands'; the constants the file
+//!    spells or folds; and a demand wherever a context requires an
+//!    expression to have a type. The walk rejects nothing on type grounds;
+//!    it fails only on names, syntax, and unsupported constructs.
 //! 3. **Verdicts.** The typing solves once. Signatures are read off result
-//!    classes, independent of declaration order. Demands are then checked in
+//!    classes, independent of declaration order, and the values that may
+//!    reach each parameter and result beside them. Demands are then checked in
 //!    source order against the final evidence, so a disagreement is blamed on
 //!    the first demand that raised it. Every expression has one context, so
 //!    it is held to one demand; an expression whose type is undetermined,
@@ -38,8 +41,9 @@ use sumi_syntax::{
 };
 
 use crate::codes;
+use crate::ranges::{May, RangeEdge, UnaryOp};
 use crate::solver::Var;
-use crate::typing::{Claim, Expected, Typing};
+use crate::typing::{Claim, Expected, ProductContext, Typing};
 use crate::*;
 
 /// A hasher for identifiers: a word at a time, with a multiply to spread
@@ -98,6 +102,10 @@ impl Named {
 
 struct Header {
     params: Option<Box<[Ty]>>,
+    /// The function's run of the shared parameter classes, opened with the
+    /// headers so a call walked before the callee's body has somewhere to
+    /// send its arguments. Empty for an invalid parameter list.
+    param_classes: std::ops::Range<usize>,
     /// The result class; `None` when the declaration is too damaged to have
     /// one.
     result: Option<Var>,
@@ -195,6 +203,14 @@ struct Demand {
     node: NodeIdx,
     actual: Var,
     kind: DemandKind,
+}
+
+/// What the walk of every body leaves for the verdict pass.
+#[derive(Default)]
+struct Recorded {
+    demands: Vec<Demand>,
+    /// Every integer the file spells or folds, for the thresholds.
+    constants: Vec<Int>,
 }
 
 struct Source<'s> {
@@ -336,6 +352,7 @@ impl<'s> Source<'s> {
 struct Parameter<'s> {
     name: Option<(&'s str, NodeIdx)>,
     ty: Option<Ty>,
+    class: Option<Var>,
 }
 
 pub fn analyze(parsed: ParsedSource) -> Analysis {
@@ -357,6 +374,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         NameMap::with_capacity_and_hasher(items.len(), Default::default());
     let mut parameters = Vec::with_capacity(items.len());
     let mut headers = Vec::with_capacity(items.len());
+    let mut param_classes = Vec::with_capacity(items.len());
     for item in &items {
         let name = source.name(item.name(tree));
         let id = FunctionId(u32::try_from(functions.len()).expect("function count fits u32"));
@@ -390,11 +408,15 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
                 // parser requires the annotation.
                 let ty = param.type_ref(tree).and_then(|ty| source.ty(ty));
                 valid &= ty.is_some();
-                params.push(Parameter {
-                    name: source.name(param.name(tree)),
-                    ty,
-                });
+                let name = source.name(param.name(tree));
+                let class =
+                    ty.map(|ty| typing.known(ty, name.map_or(param.node(), |(_, node)| node)));
+                params.push(Parameter { name, ty, class });
             }
+        }
+        let classes_start = param_classes.len();
+        if valid {
+            param_classes.extend(params.iter().map(|p| p.class.unwrap()));
         }
         let (result, declared) = if let Some(ret) = item.ret(tree) {
             match source.ty(ret) {
@@ -425,6 +447,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         };
         headers.push(Header {
             params: valid.then(|| params.iter().map(|p| p.ty.unwrap()).collect()),
+            param_classes: classes_start..param_classes.len(),
             result,
             declared,
             item: item.node(),
@@ -434,13 +457,17 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
             name: name.map(|(_, node)| source.span(node)),
             origin,
             signature: None,
+            ranges: None,
             body: None,
         });
     }
 
     // Pass 2: bodies.
-    // About a demand per two nodes; only a guide.
-    let mut demands = Vec::with_capacity(tree.len() / 2);
+    let mut recorded = Recorded {
+        // About a demand per two nodes; only a guide.
+        demands: Vec::with_capacity(tree.len() / 2),
+        ..Recorded::default()
+    };
     let mut bodies = Vec::with_capacity(items.len());
     // Syntax node IDs are dense and bodies have disjoint nodes. Expression
     // IDs remain body-local; a builder only reads entries in its own body.
@@ -448,9 +475,10 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     let mut builder = Builder::new(
         &mut source,
         &headers,
+        &param_classes,
         &names,
         &mut typing,
-        &mut demands,
+        &mut recorded,
         &mut values,
     );
     for (index, (item, params)) in items.iter().zip(parameters).enumerate() {
@@ -460,8 +488,10 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     drop(values);
 
     // Pass 3: verdicts.
-    typing.solve();
-    let mut replay = typing.replay();
+    let Recorded { demands, constants } = recorded;
+    let cx: ProductContext = ((), constants.into_iter().collect());
+    typing.solve(&cx);
+    let mut replay = typing.replay(&cx);
     let mut failed = vec![false; functions.len()];
     for demand in demands {
         let actual = replay.resolve(demand.actual);
@@ -533,6 +563,13 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         let result = evidence.and_then(|evidence| evidence.ty());
         if let (Some(params), Some(result)) = (header.params, result) {
             functions[index].signature = Some(Signature { params, result });
+            functions[index].ranges = Some(Ranges {
+                params: param_classes[header.param_classes.clone()]
+                    .iter()
+                    .map(|&class| typing.may(class).clone())
+                    .collect(),
+                result: typing.may(header.result.unwrap()).clone(),
+            });
         }
         // A result to infer that did not resolve is reported here, unless a
         // demand in the body already explained it, or the trouble arrived
@@ -611,9 +648,10 @@ enum Work {
 struct Builder<'a, 's> {
     source: &'a mut Source<'s>,
     headers: &'a [Header],
+    param_classes: &'a [Var],
     names: &'a NameMap<'s, Named>,
     typing: &'a mut Typing,
-    demands: &'a mut Vec<Demand>,
+    recorded: &'a mut Recorded,
     values: &'a mut [Option<ExprId>],
     // The body under construction.
     owner: u32,
@@ -622,6 +660,8 @@ struct Builder<'a, 's> {
     locals: Vec<DraftLocal>,
     exprs: Vec<Expr>,
     classes: Vec<Var>,
+    /// The value of each expression the walk can fold, by index.
+    consts: Vec<Option<Int>>,
     args: Vec<ExprId>,
     statements: Vec<Statement>,
     // Scratch kept across bodies.
@@ -643,17 +683,19 @@ impl<'a, 's> Builder<'a, 's> {
     fn new(
         source: &'a mut Source<'s>,
         headers: &'a [Header],
+        param_classes: &'a [Var],
         names: &'a NameMap<'s, Named>,
         typing: &'a mut Typing,
-        demands: &'a mut Vec<Demand>,
+        recorded: &'a mut Recorded,
         values: &'a mut [Option<ExprId>],
     ) -> Self {
         Self {
             source,
             headers,
+            param_classes,
             names,
             typing,
-            demands,
+            recorded,
             values,
             owner: 0,
             failed: false,
@@ -661,6 +703,7 @@ impl<'a, 's> Builder<'a, 's> {
             locals: Vec::new(),
             exprs: Vec::new(),
             classes: Vec::new(),
+            consts: Vec::new(),
             args: Vec::new(),
             statements: Vec::new(),
             scopes: Vec::new(),
@@ -686,6 +729,7 @@ impl<'a, 's> Builder<'a, 's> {
         self.locals.clear();
         self.exprs.clear();
         self.classes.clear();
+        self.consts.clear();
         self.args.clear();
         self.statements.clear();
         for param in parameters {
@@ -701,8 +745,7 @@ impl<'a, 's> Builder<'a, 's> {
                     self.failed = true;
                 } else {
                     self.first.insert(name, self.source.span(node));
-                    let class = param.ty.map(|ty| self.typing.known(ty, node));
-                    if let Some(local) = self.bind(name, node, class) {
+                    if let Some(local) = self.bind(name, node, param.class) {
                         self.params.push(local);
                     }
                 }
@@ -743,11 +786,13 @@ impl<'a, 's> Builder<'a, 's> {
         // type. A declared result is a contract on the body; an inferred one
         // is the body's own type.
         match (root, declared, result) {
-            (Some(root), Some((ty, node)), _) => {
+            (Some(root), Some((ty, node)), Some(result)) => {
                 self.require(root_node, root, Expected::Ty(ty), Some(node));
+                self.typing.flow(self.class(root), result, RangeEdge::Copy);
             }
             (Some(root), None, Some(result)) => {
                 self.require(root_node, root, Expected::Class(result), None);
+                self.typing.flow(self.class(root), result, RangeEdge::Copy);
             }
             _ => {}
         }
@@ -804,6 +849,27 @@ impl<'a, 's> Builder<'a, 's> {
     fn class(&self, expr: ExprId) -> Var {
         self.classes[expr.index()]
     }
+    /// The operator of a clean binary expression, read from the token gap
+    /// between its operands.
+    fn binary_op(&self, node: NodeIdx) -> sumi_syntax::BinaryOp {
+        let tree = self.source.tree;
+        let binary = ast::BinaryExpr::cast(tree, node).unwrap();
+        let lhs_node = binary.lhs(tree).unwrap().node();
+        let rhs_node = binary.rhs(tree).unwrap().node();
+        let lexed = self.source.parsed.lexed();
+        let end = tree.first_token(rhs_node);
+        let first = tree
+            .end_token(lhs_node)
+            .until(end)
+            .find(|&raw| !lexed.kind(raw).is_trivia())
+            .expect("clean binary operator");
+        // Raw tokens partition source: the immediately adjacent token is
+        // glued, whereas any intervening trivia breaks a compound.
+        let glued = (first + 1 < end).then(|| lexed.kind(first + 1));
+        sumi_syntax::binary_operator(lexed.kind(first), glued)
+            .expect("clean binary operator")
+            .0
+    }
     /// An expression of the type `class` resolves to.
     fn emit(&mut self, node: NodeIdx, kind: ExprKind, class: Var) -> ExprId {
         let id = ExprId::new(self.exprs.len());
@@ -814,8 +880,14 @@ impl<'a, 's> Builder<'a, 's> {
             ty: Ty::Unit,
         });
         self.classes.push(class);
+        self.consts.push(None);
         self.values[node.to_usize()] = Some(id);
         id
+    }
+    /// Record that `expr` folds to `value`, a constant the thresholds keep.
+    fn fold(&mut self, expr: ExprId, value: Int) {
+        self.recorded.constants.push(value.clone());
+        self.consts[expr.index()] = Some(value);
     }
     /// The context at `node` requires `expr` to be `expected`, which
     /// `declared` may have set. Recorded for the verdict pass, and joined
@@ -835,7 +907,7 @@ impl<'a, 's> Builder<'a, 's> {
         self.demand(node, expr, DemandKind::Type { expected, declared });
     }
     fn demand(&mut self, node: NodeIdx, expr: ExprId, kind: DemandKind) {
-        self.demands.push(Demand {
+        self.recorded.demands.push(Demand {
             owner: self.owner,
             node,
             actual: self.class(expr),
@@ -1006,8 +1078,12 @@ impl<'a, 's> Builder<'a, 's> {
             .parse()
             .expect("a well-formed literal is a run of digits");
         let value = if negative { -&magnitude } else { magnitude };
-        let class = self.typing.known(Ty::Int, origin);
-        Some(self.emit(origin, ExprKind::Int(value), class))
+        let class = self
+            .typing
+            .literal(Ty::Int, May::int(value.clone()), origin);
+        let id = self.emit(origin, ExprKind::Int(value.clone()), class);
+        self.fold(id, value);
+        Some(id)
     }
     fn value(&self, node: NodeIdx) -> Option<ExprId> {
         self.values[node.to_usize()]
@@ -1066,6 +1142,7 @@ impl<'a, 's> Builder<'a, 's> {
                 // initializer turns out to be; the initializer is held to it.
                 let class = match binding.type_ref(tree) {
                     Some(annotation) => self.source.ty(annotation).map(|ty| {
+                        let class = self.typing.known(ty, annotation.node());
                         if let Some(value) = initializer {
                             self.require(
                                 initializer_node,
@@ -1073,8 +1150,9 @@ impl<'a, 's> Builder<'a, 's> {
                                 Expected::Ty(ty),
                                 Some(annotation.node()),
                             );
+                            self.typing.flow(self.class(value), class, RangeEdge::Copy);
                         }
-                        self.typing.known(ty, annotation.node())
+                        class
                     }),
                     None => initializer.map(|value| self.class(value)),
                 };
@@ -1133,7 +1211,7 @@ impl<'a, 's> Builder<'a, 's> {
                     }
                     _ if matches!(self.source.text(node), "true" | "false") => {
                         let value = self.source.text(node) == "true";
-                        let class = self.typing.known(Ty::Bool, node);
+                        let class = self.typing.literal(Ty::Bool, May::bool(value), node);
                         self.emit(node, ExprKind::Bool(value), class);
                     }
                     _ => {
@@ -1163,7 +1241,10 @@ impl<'a, 's> Builder<'a, 's> {
                 let ty = if neg { Ty::Int } else { Ty::Bool };
                 self.require(operand, value, Expected::Ty(ty), None);
                 let class = self.typing.known(ty, node);
-                self.emit(
+                let op = if neg { UnaryOp::Neg } else { UnaryOp::Not };
+                self.typing
+                    .flow(self.class(value), class, RangeEdge::Unary(op));
+                let id = self.emit(
                     node,
                     if neg {
                         ExprKind::Neg(value)
@@ -1172,6 +1253,9 @@ impl<'a, 's> Builder<'a, 's> {
                     },
                     class,
                 );
+                if neg && let Some(folded) = self.consts[value.index()].clone() {
+                    self.fold(id, -&folded);
+                }
             }
             NodeKind::BinaryExpr => {
                 use sumi_syntax::BinaryOp::*;
@@ -1179,18 +1263,7 @@ impl<'a, 's> Builder<'a, 's> {
                 let binary = ast::BinaryExpr::cast(tree, node).unwrap();
                 let lhs_node = binary.lhs(tree).unwrap().node();
                 let rhs_node = binary.rhs(tree).unwrap().node();
-                let lexed = self.source.parsed.lexed();
-                let end = tree.first_token(rhs_node);
-                let first = tree
-                    .end_token(lhs_node)
-                    .until(end)
-                    .find(|&raw| !lexed.kind(raw).is_trivia())
-                    .expect("clean binary operator");
-                // Raw tokens partition source: the immediately adjacent token
-                // is glued, whereas any intervening trivia breaks a compound.
-                let glued = (first + 1 < end).then(|| lexed.kind(first + 1));
-                let (op, _) = sumi_syntax::binary_operator(lexed.kind(first), glued)
-                    .expect("clean binary operator");
+                let op = self.binary_op(node);
                 let lhs = self.value(lhs_node);
                 let rhs = self.value(rhs_node);
                 // `==` and `!=` compare like with like: whichever operand
@@ -1216,7 +1289,30 @@ impl<'a, 's> Builder<'a, 's> {
                 }
                 let (lhs, rhs) = (lhs?, rhs?);
                 let class = self.typing.known(result, node);
-                self.emit(node, ExprKind::binary(op, lhs, rhs), class);
+                let kind = ExprKind::binary(op, lhs, rhs);
+                let edge = match &kind {
+                    ExprKind::Binary { op, .. } => RangeEdge::Binary(*op),
+                    ExprKind::And { .. } => RangeEdge::Lazy { and: true },
+                    ExprKind::Or { .. } => RangeEdge::Lazy { and: false },
+                    _ => unreachable!("a binary expression"),
+                };
+                self.typing
+                    .derive(self.class(lhs), self.class(rhs), class, edge);
+                let folded = match (&kind, &self.consts[lhs.index()], &self.consts[rhs.index()]) {
+                    (ExprKind::Binary { op, .. }, Some(a), Some(b)) => match op {
+                        BinaryOp::Add => Some(a + b),
+                        BinaryOp::Sub => Some(a - b),
+                        BinaryOp::Mul => Some(a * b),
+                        BinaryOp::Div => a.checked_div(b),
+                        BinaryOp::Rem => a.checked_rem(b),
+                        _ => None,
+                    },
+                    _ => None,
+                };
+                let id = self.emit(node, kind, class);
+                if let Some(folded) = folded {
+                    self.fold(id, folded);
+                }
             }
             NodeKind::IfExpr => {
                 let branch = ast::IfExpr::cast(tree, node).unwrap();
@@ -1277,6 +1373,7 @@ impl<'a, 's> Builder<'a, 's> {
     fn call(&mut self, node: NodeIdx, target: FunctionId, callee: NodeIdx) -> Option<()> {
         let function = &self.headers[target.index()];
         let params = function.params.as_ref()?;
+        let param_classes = &self.param_classes[function.param_classes.clone()];
         let item = function.item;
         let result = function.result;
         let tree = self.source.tree;
@@ -1297,6 +1394,11 @@ impl<'a, 's> Builder<'a, 's> {
                 Some(value) => {
                     if let Some(&expected) = params.get(index) {
                         self.require(arg, value, Expected::Ty(expected), Some(item));
+                        self.typing.flow(
+                            self.class(value),
+                            param_classes[index],
+                            RangeEdge::Argument,
+                        );
                     }
                     self.args.push(value);
                 }

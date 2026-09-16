@@ -22,7 +22,7 @@ use sumi_text::Span;
 
 pub use check::analyze;
 pub use int::{Int, ParseIntError};
-pub use ranges::{Bools, Bound, Ints};
+pub use ranges::{Bools, Bound, Ints, May};
 
 /// Eager scalar operators. Short-circuiting operators have separate expression kinds.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -176,6 +176,7 @@ pub struct Function {
     name: Option<Span>,
     origin: Span,
     signature: Option<Signature>,
+    ranges: Option<Ranges>,
     body: Option<Body>,
 }
 
@@ -197,6 +198,20 @@ impl Function {
     pub fn body(&self) -> Option<&Body> {
         self.body.as_ref()
     }
+    /// The values that may reach the parameters and the result, whenever
+    /// the function has a signature.
+    pub fn ranges(&self) -> Option<&Ranges> {
+        self.ranges.as_ref()
+    }
+}
+
+/// What may reach a function's parameters, the hull of its call sites'
+/// arguments, and what its result may be. Empty parameters mean no call
+/// site at all.
+#[derive(Debug)]
+pub struct Ranges {
+    pub params: Box<[May]>,
+    pub result: May,
 }
 
 #[derive(Debug)]

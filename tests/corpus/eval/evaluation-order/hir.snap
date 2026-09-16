@@ -2,7 +2,7 @@ file: accepted
 frontend errors: 0 (see frontend.snap)
 semantic errors: 0
 
-fn pair@0..43 (int, int) -> int
+fn pair@0..43 (int ∈ [1, +∞), int ∈ [2, +∞)) -> int ∈ [12, +∞)
   param a@8..9: int
   param b@16..17: int
   body: eager + : int @33..43
@@ -11,7 +11,7 @@ fn pair@0..43 (int, int) -> int
       rhs: int 10 : int @37..39
     rhs: read b@16..17 : int @42..43
 
-fn left_to_right@44..100 () -> int
+fn left_to_right@44..100 () -> int ∈ [12, +∞)
   body: call pair@0..43 (callee @72..76) : int @72..100
     arg[0]: call pair@0..43 (callee @77..81) : int @77..87
       arg[0]: int 1 : int @82..83
@@ -20,7 +20,7 @@ fn left_to_right@44..100 () -> int
       arg[0]: int 3 : int @94..95
       arg[1]: int 4 : int @97..98
 
-fn left_argument_traps_first@101..159 () -> int
+fn left_argument_traps_first@101..159 () -> int ∈ [12, +∞)
   body: call pair@0..43 (callee @141..145) : int @141..159
     arg[0]: eager / : int @146..151
       lhs: int 1 : int @146..147
@@ -29,7 +29,7 @@ fn left_argument_traps_first@101..159 () -> int
       lhs: int 1 : int @153..154
       rhs: int 0 : int @157..158
 
-fn left_operand_traps_first@160..216 () -> int
+fn left_operand_traps_first@160..216 () -> int ∈ ∅
   body: eager - : int @199..216
     lhs: eager % : int @200..205
       lhs: int 1 : int @200..201
@@ -38,14 +38,14 @@ fn left_operand_traps_first@160..216 () -> int
       lhs: int 1 : int @210..211
       rhs: int 0 : int @214..215
 
-fn right_trap_reached@217..264 () -> int
+fn right_trap_reached@217..264 () -> int ∈ [12, +∞)
   body: call pair@0..43 (callee @250..254) : int @250..264
     arg[0]: int 1 : int @255..256
     arg[1]: eager / : int @258..263
       lhs: int 1 : int @258..259
       rhs: int 0 : int @262..263
 
-fn statements@265..407 () -> int
+fn statements@265..407 () -> int ∈ [-18, 18] \ 0
   body: block : int @288..407
     let a@298..299: int @294..303
       initializer: int 1 : int @302..303
@@ -78,7 +78,7 @@ fn statements@265..407 () -> int
           lhs: read b@312..313 : int @398..399
           rhs: read a@330..331 : int @402..403
 
-fn operands@408..455 () -> int
+fn operands@408..455 () -> int ∈ [87, 87]
   body: eager - : int @431..455
     lhs: eager - : int @431..443
       lhs: eager - : int @431..439
@@ -91,7 +91,7 @@ fn operands@408..455 () -> int
         rhs: int 3 : int @450..451
       rhs: int 4 : int @454..455
 
-fn truthy@456..493 () -> bool
+fn truthy@456..493 () -> bool ∈ {true}
   body: eager == : bool @478..493
     lhs: eager < : bool @479..484
       lhs: int 1 : int @479..480

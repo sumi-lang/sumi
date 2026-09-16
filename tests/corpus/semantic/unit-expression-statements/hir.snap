@@ -2,14 +2,14 @@ file: rejected
 frontend errors: 0 (see frontend.snap)
 semantic errors: 15
 
-fn value@0..21 () -> int
+fn value@0..21 () -> int ∈ [1, 1]
   body: int 1 : int @20..21
 
-fn action@22..36 () -> unit
+fn action@22..36 () -> unit ∈ unit
   body: block : unit @34..36
     tail: unit (implicit)
 
-fn accepted@37..197 () -> int
+fn accepted@37..197 () -> int ∈ [1, 1]
   body: block : int @58..197
     let u@68..69: unit @64..80
       initializer: call action@22..36 (callee @72..78) : unit @72..80
@@ -38,16 +38,16 @@ fn accepted@37..197 () -> int
       value: read u@68..69 : unit @182..183
     tail: call value@0..21 (callee @188..193) : int @188..195
 
-fn rejected@198..340 () -> int
+fn rejected@198..340 () -> int ∈ [0, 0]
   body: unavailable
 
-fn failed_expressions@341..421 () -> unit
+fn failed_expressions@341..421 () -> unit ∈ unit
   body: unavailable
 
-fn nested_failure@422..479 () -> unit
+fn nested_failure@422..479 () -> unit ∈ unit
   body: unavailable
 
-fn tail_requires_unit@480..519 () -> unit
+fn tail_requires_unit@480..519 () -> unit ∈ unit
   body: unavailable
 
 == semantic diagnostics ==

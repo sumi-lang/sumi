@@ -2,7 +2,7 @@ file: accepted
 frontend errors: 0 (see frontend.snap)
 semantic errors: 0
 
-fn even@0..64 (int) -> bool
+fn even@0..64 (int ∈ (-∞, 4]) -> bool ∈ {true, false}
   param n@8..9: int
   body: if : bool @26..64
     condition: eager == : bool @29..35
@@ -16,7 +16,7 @@ fn even@0..64 (int) -> bool
           lhs: read n@8..9 : int @56..57
           rhs: int 1 : int @60..61
 
-fn odd@65..130 (int) -> bool
+fn odd@65..130 (int ∈ (-∞, 3]) -> bool ∈ {true, false}
   param n@72..73: int
   body: if : bool @90..130
     condition: eager == : bool @93..99
@@ -30,7 +30,7 @@ fn odd@65..130 (int) -> bool
           lhs: read n@72..73 : int @122..123
           rhs: int 1 : int @126..127
 
-fn safe@131..183 () -> bool
+fn safe@131..183 () -> bool ∈ {true, false}
   body: lazy or : bool @151..183
     lhs: lazy and : bool @151..172
       lhs: bool false : bool @151..156
@@ -42,7 +42,7 @@ fn safe@131..183 () -> bool
     rhs: call even@0..64 (callee @176..180) : bool @176..183
       arg[0]: int 4 : int @181..182
 
-fn maybe@184..223 (bool) -> unit
+fn maybe@184..223 (bool ∈ ∅) -> unit ∈ unit
   param b@193..194: bool
   body: if : unit @204..223
     condition: read b@193..194 : bool @207..208

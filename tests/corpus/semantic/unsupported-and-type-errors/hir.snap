@@ -2,31 +2,31 @@ file: rejected
 frontend errors: 0 (see frontend.snap)
 semantic errors: 12
 
-fn unsupported@0..59 () -> unit
+fn unsupported@0..59 () -> unit ∈ unit
   body: unavailable
 
-fn closure@60..93 () -> unit
+fn closure@60..93 () -> unit ∈ unit
   body: unavailable
 
 fn literal@94..121 signature: unavailable
   body: unavailable
 
-fn mismatch@122..147 () -> bool
+fn mismatch@122..147 () -> bool ∈ ∅
   body: unavailable
 
-fn branches@148..199 () -> int
+fn branches@148..199 () -> int ∈ [1, 1]
   body: unavailable
 
-fn missing_else@200..233 () -> unit
+fn missing_else@200..233 () -> unit ∈ unit
   body: unavailable
 
-fn annotation@234..269 () -> unit
+fn annotation@234..269 () -> unit ∈ unit
   body: unavailable
 
-fn unit_equality@270..307 () -> bool
+fn unit_equality@270..307 () -> bool ∈ ∅
   body: unavailable
 
-fn computed_call@308..384 () -> unit
+fn computed_call@308..384 () -> unit ∈ unit
   body: unavailable
 
 == semantic diagnostics ==

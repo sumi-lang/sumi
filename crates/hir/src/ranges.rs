@@ -1,18 +1,31 @@
-//! Sets of scalar values, described finitely: a band of integers over
-//! ℤ ∪ {±∞} with an optional hole at zero, and a set of booleans.
+//! May-values: the set of values that may reach a class, as the second
+//! component of the evidence beside the type claims.
+//!
+//! A [`May`] is a product of one set per scalar type: a band of integers
+//! over ℤ ∪ {±∞} with an optional hole at zero, a set of booleans, and a
+//! unit bit. A well-typed class populates one of them, and a class with none
+//! populated has no values: nothing flows into it.
+//!
+//! Values arrive by flows only. A literal and a known-unit class are facts;
+//! everything else is derived along a [`RangeEdge`] from one or two
+//! providers. Hull is the join, and a recursion would climb forever, so an
+//! edge that closes a cycle of the flow graph rounds its endpoints to the
+//! program's [`Thresholds`], which keeps every ascending chain finite
+//! without a widening operator in the solver.
 //!
 //! The band with a hole is the shape a guard leaves: `d != 0` on a signed
 //! `d` excludes one point from the middle, and a product of two such bands
-//! keeps the hole, so a division by either side stays provably safe. Every
-//! operation is total and sound: the result of an operation on two bands
-//! contains the result of the operation on any two of their members, which
-//! a property test checks against the concrete integers.
+//! keeps the hole. Every operation is total and sound: the result of an
+//! operation on two bands contains the result of the operation on any two
+//! of their members, which a property test checks against the concrete
+//! integers.
 
 use std::cmp::Ordering;
 use std::fmt;
 use std::ops::{Add, BitAnd, Div, Mul, Neg, Rem, Sub};
 
-use crate::{BinaryOp, Int};
+use crate::solver::Lattice;
+use crate::{BinaryOp, Int, Ty};
 
 /// An endpoint over ℤ ∪ {±∞}. Ordered as the extended integers are.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -296,6 +309,25 @@ impl Ints {
         };
         Bools::of(may_true, may_false)
     }
+
+    /// Endpoints moved outward to the thresholds; a point is left exact.
+    fn round(&self, thresholds: &Thresholds) -> Self {
+        let Some((lo, hi, hole)) = self.parts() else {
+            return Self::Empty;
+        };
+        if lo == hi {
+            return self.clone();
+        }
+        let lo = match lo {
+            Bound::Finite(value) => thresholds.below(value),
+            _ => lo.clone(),
+        };
+        let hi = match hi {
+            Bound::Finite(value) => thresholds.above(value),
+            _ => hi.clone(),
+        };
+        Self::band(lo, hi, hole)
+    }
 }
 
 /// Intersection.
@@ -513,6 +545,223 @@ impl fmt::Display for Bools {
     }
 }
 
+/// The values that may reach a class, one set per scalar type. Empty in
+/// every component means no value ever does.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct May {
+    pub ints: Ints,
+    pub bools: Bools,
+    pub unit: bool,
+}
+
+impl May {
+    pub fn int(value: Int) -> Self {
+        Self::ints(Ints::from(value))
+    }
+
+    pub fn bool(value: bool) -> Self {
+        Self::bools(Bools::from(value))
+    }
+
+    pub fn unit() -> Self {
+        Self::of_unit(true)
+    }
+
+    fn ints(ints: Ints) -> Self {
+        Self {
+            ints,
+            bools: Bools::EMPTY,
+            unit: false,
+        }
+    }
+
+    fn bools(bools: Bools) -> Self {
+        Self {
+            ints: Ints::Empty,
+            bools,
+            unit: false,
+        }
+    }
+
+    fn of_unit(unit: bool) -> Self {
+        Self {
+            ints: Ints::Empty,
+            bools: Bools::EMPTY,
+            unit,
+        }
+    }
+
+    /// The set as a type reads it, for snapshots and reports.
+    pub fn shown(&self, ty: Ty) -> Shown<'_> {
+        Shown(self, ty)
+    }
+}
+
+/// A [`May`] displayed as one type's set.
+pub struct Shown<'a>(&'a May, Ty);
+
+impl fmt::Display for Shown<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.1 {
+            Ty::Int => write!(f, "{}", self.0.ints),
+            Ty::Bool => write!(f, "{}", self.0.bools),
+            Ty::Unit => f.write_str(if self.0.unit { "unit" } else { "∅" }),
+        }
+    }
+}
+
+/// The finite set an endpoint may round to: the file's constants and their
+/// neighbors, always including `-1`, `0`, and `1`, so a band keeps its sign
+/// however far it travels around a recursion.
+#[derive(Clone, Debug, Default)]
+pub struct Thresholds(Vec<Int>);
+
+/// The thresholds of a file's constants.
+impl FromIterator<Int> for Thresholds {
+    fn from_iter<I: IntoIterator<Item = Int>>(constants: I) -> Self {
+        let one = Int::from(1);
+        let mut values: Vec<Int> = [-1, 0, 1].map(Int::from).into_iter().collect();
+        for constant in constants {
+            values.push(&constant - &one);
+            values.push(&constant + &one);
+            values.push(constant);
+        }
+        values.sort();
+        values.dedup();
+        Self(values)
+    }
+}
+
+impl Thresholds {
+    /// The greatest threshold not above `value`, or `-∞`.
+    fn below(&self, value: &Int) -> Bound {
+        let index = self.0.partition_point(|threshold| threshold <= value);
+        match index.checked_sub(1) {
+            Some(index) => Bound::Finite(self.0[index].clone()),
+            None => Bound::NegInf,
+        }
+    }
+
+    /// The least threshold not below `value`, or `+∞`.
+    fn above(&self, value: &Int) -> Bound {
+        let index = self.0.partition_point(|threshold| threshold < value);
+        match self.0.get(index) {
+            Some(threshold) => Bound::Finite(threshold.clone()),
+            None => Bound::PosInf,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UnaryOp {
+    Neg,
+    Not,
+}
+
+/// How a may-set changes crossing a flow: what the consumer's values are in
+/// terms of the first provider's, and the second's for a two-provider edge.
+#[derive(Clone, Copy, Debug)]
+pub enum RangeEdge {
+    /// Nothing: the range side of a typing-only flow.
+    None,
+    /// The value unchanged: an annotated binding's initializer, a declared
+    /// result's body.
+    Copy,
+    Unary(UnaryOp),
+    /// An eager operator over its operands.
+    Binary(BinaryOp),
+    /// `&&` or `||` over its operands' values.
+    Lazy {
+        and: bool,
+    },
+    /// A branch's value into its `if`.
+    Branch,
+    /// An argument into a parameter. Rounded to the thresholds when the
+    /// flow closes a cycle.
+    Argument,
+    /// A callee's result into a call. Rounded likewise.
+    Call,
+}
+
+impl Lattice for May {
+    type Edge = RangeEdge;
+    type Context = Thresholds;
+
+    fn bottom() -> Self {
+        Self::of_unit(false)
+    }
+
+    fn join(&mut self, other: &Self) -> bool {
+        let ints = self.ints.join(&other.ints);
+        let bools = self.bools.join(other.bools);
+        let unit = !self.unit && other.unit;
+        self.unit |= other.unit;
+        ints | bools | unit
+    }
+
+    fn transfer(
+        &self,
+        edge: &RangeEdge,
+        other: Option<&Self>,
+        cyclic: bool,
+        cx: &Thresholds,
+    ) -> Self {
+        let second = || other.expect("a two-provider edge has its second provider");
+        // Within one body the flow graph is acyclic, so every cycle crosses
+        // a call and back: rounding the two interprocedural edges on a cycle
+        // is what keeps every ascending chain finite.
+        let rounded = |value: &Self| {
+            if cyclic {
+                Self {
+                    ints: value.ints.round(cx),
+                    ..value.clone()
+                }
+            } else {
+                value.clone()
+            }
+        };
+        match *edge {
+            RangeEdge::None => Self::bottom(),
+            RangeEdge::Copy => self.clone(),
+            RangeEdge::Unary(UnaryOp::Neg) => Self::ints(-&self.ints),
+            RangeEdge::Unary(UnaryOp::Not) => Self::bools(!self.bools),
+            RangeEdge::Binary(op) => {
+                let rhs = second();
+                match op {
+                    BinaryOp::Add => Self::ints(&self.ints + &rhs.ints),
+                    BinaryOp::Sub => Self::ints(&self.ints - &rhs.ints),
+                    BinaryOp::Mul => Self::ints(&self.ints * &rhs.ints),
+                    BinaryOp::Div => Self::ints(&self.ints / &rhs.ints),
+                    BinaryOp::Rem => Self::ints(&self.ints % &rhs.ints),
+                    BinaryOp::Eq | BinaryOp::Ne => {
+                        let mut bools = self.ints.compare(op, &rhs.ints);
+                        let of_bools = self.bools.eq(rhs.bools);
+                        bools.join(if op == BinaryOp::Eq {
+                            of_bools
+                        } else {
+                            !of_bools
+                        });
+                        Self::bools(bools)
+                    }
+                    BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge => {
+                        Self::bools(self.ints.compare(op, &rhs.ints))
+                    }
+                }
+            }
+            RangeEdge::Lazy { and } => {
+                let rhs = second();
+                Self::bools(if and {
+                    self.bools.and(rhs.bools)
+                } else {
+                    self.bools.or(rhs.bools)
+                })
+            }
+            RangeEdge::Branch => self.clone(),
+            RangeEdge::Argument | RangeEdge::Call => rounded(self),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -630,6 +879,67 @@ mod tests {
         assert_eq!(Bools::BOTH.eq(Bools::from(true)), Bools::BOTH);
         assert_eq!(Bools::from(true).eq(Bools::from(true)), Bools::from(true));
         assert_eq!(Bools::BOTH.to_string(), "{true, false}");
+        assert_eq!(May::unit().shown(Ty::Unit).to_string(), "unit");
+        assert_eq!(May::bottom().shown(Ty::Unit).to_string(), "∅");
+        assert_eq!(May::bool(true).shown(Ty::Bool).to_string(), "{true}");
+        assert_eq!(May::int(5.into()).shown(Ty::Int).to_string(), "[5, 5]");
+    }
+
+    #[test]
+    fn rounding_keeps_points_signs_and_holes() {
+        let t = [15, 2].map(Int::from).into_iter().collect::<Thresholds>();
+        assert_eq!(ints("[7, 7]").round(&t), ints("[7, 7]"));
+        assert_eq!(ints("[4, 13]").round(&t), ints("[3, 14]"));
+        assert_eq!(ints("[4, 20]").round(&t), ints("[3, inf]"));
+        assert_eq!(ints("[-20, 1]").round(&t), ints("[-inf, 1]"));
+        assert_eq!(ints("[5, 100]").round(&t), ints("[3, inf]"));
+        assert_eq!(ints("[-7, 7] \\ 0").round(&t), ints("[-inf, 14] \\ 0"));
+        assert_eq!(ints("[-3, -2]").round(&t), ints("[-inf, -1]"));
+        assert_eq!(Ints::Empty.round(&t), Ints::Empty);
+    }
+
+    #[test]
+    fn transfers_derive_and_only_cyclic_interprocedural_flows_round() {
+        let cx = [15, 2].map(Int::from).into_iter().collect::<Thresholds>();
+        let a = May::ints(ints("[4, 13]"));
+        let b = May::int(2.into());
+        let edge = RangeEdge::Binary(BinaryOp::Mul);
+        assert_eq!(
+            a.transfer(&edge, Some(&b), false, &cx).ints,
+            ints("[8, 26]")
+        );
+        let edge = RangeEdge::Binary(BinaryOp::Lt);
+        assert_eq!(
+            a.transfer(&edge, Some(&b), false, &cx).bools,
+            Bools::from(false)
+        );
+        let edge = RangeEdge::Lazy { and: true };
+        assert_eq!(
+            May::bool(false)
+                .transfer(&edge, Some(&May::bottom()), false, &cx)
+                .bools,
+            Bools::from(false)
+        );
+        assert_eq!(
+            May::bool(true)
+                .transfer(&RangeEdge::Unary(UnaryOp::Not), None, false, &cx)
+                .bools,
+            Bools::from(false)
+        );
+        assert_eq!(a.transfer(&RangeEdge::Call, None, false, &cx), a);
+        assert_eq!(
+            a.transfer(&RangeEdge::Call, None, true, &cx).ints,
+            ints("[3, 14]")
+        );
+        assert_eq!(
+            a.transfer(&RangeEdge::Argument, None, true, &cx).ints,
+            ints("[3, 14]")
+        );
+        assert_eq!(a.transfer(&RangeEdge::Copy, None, true, &cx), a);
+        assert_eq!(
+            a.transfer(&RangeEdge::None, None, false, &cx),
+            May::bottom()
+        );
     }
 
     fn band() -> impl Strategy<Value = Ints> {
@@ -699,14 +1009,20 @@ mod tests {
             }
         }
 
-        /// Join is an upper bound of both.
+        /// Join is an upper bound of both, and rounding only widens.
         #[test]
-        fn join_is_a_hull(a in band(), b in band()) {
+        fn join_and_rounding_widen(a in band(), b in band(), constants in prop::collection::vec(-20i64..20, 0..4)) {
             let mut joined = a.clone();
             joined.join(&b);
             for x in members(&a).into_iter().chain(members(&b)) {
                 prop_assert!(contains(&joined, x));
             }
+            let thresholds = constants.into_iter().map(Int::from).collect::<Thresholds>();
+            let rounded = a.round(&thresholds);
+            for x in members(&a) {
+                prop_assert!(contains(&rounded, x));
+            }
+            prop_assert_eq!(a.contains_zero(), rounded.contains_zero());
         }
     }
 }
