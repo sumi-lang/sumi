@@ -654,10 +654,13 @@ enum Work {
     Branches(NodeIdx),
     /// A lazy operator whose left operand is walked: open the right one's.
     Rhs(NodeIdx),
-    /// Enter a context.
-    Push(Var),
-    /// Leave the innermost context.
-    Pop,
+    /// Enter a context, reading the `refinements` staged locals inside it.
+    Push {
+        context: Var,
+        refinements: usize,
+    },
+    /// Leave the context `refinements` locals were refined in.
+    Pop(usize),
 }
 
 /// The one walker for every body of the file. What a body publishes is
@@ -684,6 +687,11 @@ struct Builder<'a, 's> {
     statements: Vec<Statement>,
     /// The context each point runs in, innermost last.
     contexts: Vec<Var>,
+    /// The classes locals read as inside the open contexts, innermost last.
+    refinements: Vec<(LocalId, Var)>,
+    /// Refinements computed for branches not yet entered, the next branch's
+    /// on top, so entering one never allocates.
+    staged: Vec<(LocalId, Var)>,
     /// The contexts of the branches of each `if` whose branches are walked
     /// and whose `if` is not yet finished, innermost last.
     branch_contexts: Vec<(Var, Var)>,
@@ -730,6 +738,8 @@ impl<'a, 's> Builder<'a, 's> {
             args: Vec::new(),
             statements: Vec::new(),
             contexts: Vec::new(),
+            refinements: Vec::new(),
+            staged: Vec::new(),
             branch_contexts: Vec::new(),
             scopes: Vec::new(),
             depth: 0,
@@ -759,6 +769,8 @@ impl<'a, 's> Builder<'a, 's> {
         self.statements.clear();
         self.contexts.clear();
         self.contexts.push(self.headers[owner].entry);
+        self.refinements.clear();
+        self.staged.clear();
         self.branch_contexts.clear();
         for param in parameters {
             if let Some((name, node)) = param.name {
@@ -808,9 +820,18 @@ impl<'a, 's> Builder<'a, 's> {
                 }
                 Work::Branches(node) => self.branches(node, &mut work),
                 Work::Rhs(node) => self.rhs(node, &mut work),
-                Work::Push(context) => self.contexts.push(context),
-                Work::Pop => {
+                Work::Push {
+                    context,
+                    refinements,
+                } => {
+                    self.contexts.push(context);
+                    let from = self.staged.len() - refinements;
+                    self.refinements.extend(self.staged.drain(from..));
+                }
+                Work::Pop(refinements) => {
                     self.contexts.pop();
+                    let keep = self.refinements.len() - refinements;
+                    self.refinements.truncate(keep);
                 }
             }
         }
@@ -882,6 +903,15 @@ impl<'a, 's> Builder<'a, 's> {
     fn class(&self, expr: ExprId) -> Var {
         self.classes[expr.index()]
     }
+    /// The class a read of `local` has here: the innermost refinement that
+    /// covers it, or the local's own.
+    fn current_class(&self, local: LocalId) -> Var {
+        self.refinements
+            .iter()
+            .rev()
+            .find(|(refined, _)| *refined == local)
+            .map_or(self.locals[local.index()].class, |(_, class)| *class)
+    }
     fn context(&self) -> Var {
         *self
             .contexts
@@ -909,6 +939,97 @@ impl<'a, 's> Builder<'a, 's> {
             .expect("clean binary operator")
             .0
     }
+    /// The local a finished expression reads, if it is a read.
+    fn read(&self, node: NodeIdx) -> Option<LocalId> {
+        match self.exprs[self.value(node)?.index()].kind {
+            ExprKind::Local(local) => Some(local),
+            _ => None,
+        }
+    }
+    /// What the condition at `cond` holding in `sense` says about the
+    /// locals it compares: a refined class per local, read inside the
+    /// branch it guards. The condition's shape is syntactic: a comparison,
+    /// a negation, a conjunction under the true sense, a disjunction under
+    /// the false sense, or a bare boolean local.
+    fn refinements(&mut self, cond: NodeIdx, sense: bool) -> usize {
+        let before = self.staged.len();
+        self.refine(cond, sense);
+        self.staged.len() - before
+    }
+    fn refine(&mut self, cond: NodeIdx, sense: bool) {
+        use sumi_syntax::BinaryOp::*;
+
+        let tree = self.source.tree;
+        let Some(expr) = ast::Expr::cast(tree, cond) else {
+            return;
+        };
+        let node = self.source.peel(expr).node();
+        if tree.has_error(node) {
+            return;
+        }
+        match tree.kind(node) {
+            NodeKind::PrefixExpr => {
+                let operand = ast::PrefixExpr::cast(tree, node)
+                    .unwrap()
+                    .operand(tree)
+                    .unwrap()
+                    .node();
+                let not = self
+                    .source
+                    .tokens(tree.first_token(node), tree.first_token(operand))
+                    .eq([SyntaxKind::Bang]);
+                if not {
+                    self.refine(operand, !sense);
+                }
+            }
+            NodeKind::BinaryExpr => {
+                let binary = ast::BinaryExpr::cast(tree, node).unwrap();
+                let lhs = binary.lhs(tree).unwrap().node();
+                let rhs = binary.rhs(tree).unwrap().node();
+                let op = self.binary_op(node);
+                match op {
+                    And if sense => {
+                        self.refine(lhs, sense);
+                        self.refine(rhs, sense);
+                    }
+                    Or if !sense => {
+                        self.refine(lhs, sense);
+                        self.refine(rhs, sense);
+                    }
+                    Lt | Le | Gt | Ge | Eq | Ne => {
+                        let ExprKind::Binary { op, .. } =
+                            ExprKind::binary(op, ExprId::new(0), ExprId::new(0))
+                        else {
+                            unreachable!("a comparison is eager")
+                        };
+                        for (side, other, local_is_lhs) in [(lhs, rhs, true), (rhs, lhs, false)] {
+                            if let (Some(local), Some(other)) = (self.read(side), self.value(other))
+                            {
+                                let class = self.current_class(local);
+                                let other = self.class(other);
+                                let edge = RangeEdge::Refine {
+                                    op,
+                                    local_is_lhs,
+                                    sense,
+                                };
+                                let refined = self.typing.refine(class, other, edge);
+                                self.staged.push((local, refined));
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            NodeKind::NameRef => {
+                if let Some(local) = self.read(node) {
+                    let class = self.current_class(local);
+                    let refined = self.typing.refine_bool(class, sense);
+                    self.staged.push((local, refined));
+                }
+            }
+            _ => {}
+        }
+    }
     /// The condition of the `if` at `node` is walked: open a context per
     /// branch and schedule the branches inside them.
     fn branches(&mut self, node: NodeIdx, work: &mut Vec<Work>) {
@@ -929,14 +1050,24 @@ impl<'a, 's> Builder<'a, 's> {
             None => (parent, parent),
         };
         self.branch_contexts.push((then_context, else_context));
+        // The else branch is entered last, so its refinements are staged
+        // first and the then branch's sit on top of them.
+        let else_refinements = self.refinements(cond, false);
+        let then_refinements = self.refinements(cond, true);
         if let Some(else_node) = else_node {
-            work.push(Work::Pop);
+            work.push(Work::Pop(else_refinements));
             work.push(Work::Enter(else_node));
-            work.push(Work::Push(else_context));
+            work.push(Work::Push {
+                context: else_context,
+                refinements: else_refinements,
+            });
         }
-        work.push(Work::Pop);
+        work.push(Work::Pop(then_refinements));
         work.push(Work::Enter(then_node));
-        work.push(Work::Push(then_context));
+        work.push(Work::Push {
+            context: then_context,
+            refinements: then_refinements,
+        });
     }
     /// The left operand of the lazy operator at `node` is walked: open the
     /// context the right one runs in and schedule it inside.
@@ -958,9 +1089,13 @@ impl<'a, 's> Builder<'a, 's> {
             }
             None => parent,
         };
-        work.push(Work::Pop);
+        let refinements = self.refinements(lhs, and);
+        work.push(Work::Pop(refinements));
         work.push(Work::Enter(rhs));
-        work.push(Work::Push(context));
+        work.push(Work::Push {
+            context,
+            refinements,
+        });
     }
     /// An expression of the type `class` resolves to.
     fn emit(&mut self, node: NodeIdx, kind: ExprKind, class: Var) -> ExprId {
@@ -1298,7 +1433,7 @@ impl<'a, 's> Builder<'a, 's> {
                 let name = self.source.text(node);
                 match self.lookup(name) {
                     Some(Some(local)) => {
-                        let class = self.locals[local.index()].class;
+                        let class = self.current_class(local);
                         self.emit(node, ExprKind::Local(local), class);
                     }
                     Some(None) => return None,

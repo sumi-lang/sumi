@@ -155,7 +155,7 @@ impl Lattice for Evidence {
 
     fn transfer(&self, edge: &Edge, _: Option<&Self>, _: bool, (): &()) -> Self {
         match *edge {
-            Edge::Branch | Edge::Peer => *self,
+            Edge::Branch | Edge::Peer | Edge::Refine => *self,
             Edge::Call(call) => {
                 let imported = Claim(call.0 | IMPORTED);
                 Self {
@@ -180,6 +180,9 @@ pub(crate) enum Edge {
     /// they are, each way, while the classes stay apart, since comparing
     /// two values says nothing about their ranges.
     Peer,
+    /// A read of a local under a refinement: the local's claims as they
+    /// are, exported by a replay once solved, so the read still types.
+    Refine,
     /// Nothing: the typing side of a range-only flow.
     None,
 }
@@ -283,6 +286,19 @@ impl Typing {
             .derive(branch, context, join, (Edge::Branch, RangeEdge::Branch));
     }
 
+    /// A read of `local` narrowed by a comparison with `other`.
+    pub fn refine(&mut self, local: Var, other: Var, edge: RangeEdge) -> Var {
+        let read = self.solver.fresh();
+        self.solver.derive(local, other, read, (Edge::Refine, edge));
+        read
+    }
+
+    /// A read of a boolean `local` narrowed to one value.
+    pub fn refine_bool(&mut self, local: Var, value: bool) -> Var {
+        self.solver
+            .import(local, (Edge::Refine, RangeEdge::Exactly(value)))
+    }
+
     /// A range-only flow from one provider.
     pub fn flow(&mut self, provider: Var, consumer: Var, edge: RangeEdge) {
         self.solver.flow(provider, consumer, (Edge::None, edge));
@@ -336,22 +352,32 @@ impl Typing {
     }
 
     /// The same classes carrying only what is known on their own account:
-    /// facts, and the calls whose callee result is solved. Replaying demands
-    /// on it one at a time, in source order, blames a disagreement on the
-    /// first demand that raised it. An unresolved or conflicted callee
-    /// delivers nothing: it is reported at its declaration. A branch is
-    /// settled by [`Replay::branch`] when its `if` comes up in that order,
-    /// since what it delivers is shaped by the demands before it.
+    /// facts, the calls whose callee result is solved, and the refined reads
+    /// of a local, which carry what the replay knows of the local rather
+    /// than its solved type, since a demand elsewhere may have conflicted it
+    /// and is blamed there. Replaying demands on it one at a time, in source
+    /// order, blames a disagreement on the first demand that raised it. An
+    /// unresolved or conflicted callee delivers nothing: it is reported at
+    /// its declaration. A branch is settled by [`Replay::branch`] when its
+    /// `if` comes up in that order, since what it delivers is shaped by the
+    /// demands before it.
     pub fn replay<'a>(&self, cx: &'a ProductContext) -> Replay<'a> {
         Replay {
-            solver: self.solver.replay(|solved, other, edge| match edge.0 {
-                Edge::Call(_) => solved
-                    .0
-                    .ty()
-                    .is_some()
-                    .then(|| solved.transfer(edge, other, false, cx)),
-                Edge::Branch | Edge::Peer | Edge::None => None,
-            }),
+            solver: self
+                .solver
+                .replay(|solved, replayed, other, edge| match edge.0 {
+                    Edge::Call(_) => solved
+                        .0
+                        .ty()
+                        .is_some()
+                        .then(|| solved.transfer(edge, other, false, cx)),
+                    Edge::Refine => replayed
+                        .0
+                        .ty()
+                        .is_some()
+                        .then(|| replayed.transfer(edge, other, false, cx)),
+                    Edge::Branch | Edge::Peer | Edge::None => None,
+                }),
             cx,
         }
     }
@@ -575,7 +601,7 @@ mod tests {
     }
 
     #[test]
-    fn replay_keeps_facts_and_solved_calls_only() {
+    fn replay_keeps_facts_solved_calls_and_refined_reads_only() {
         let mut typing = typing();
         let literal = typing.known(Ty::Int, at(0));
         let demanded = typing.fresh();
@@ -587,6 +613,7 @@ mod tests {
         typing.expect(conflict, Expected::Ty(Ty::Unit), at(4));
         let conflict_call = call(&mut typing, conflict, at(5));
         let literal_call = call(&mut typing, literal, at(6));
+        let refined = typing.refine_bool(literal, true);
         let cx = cx();
         typing.solve(&cx);
         let mut replay = typing.replay(&cx);
@@ -595,6 +622,7 @@ mod tests {
         assert_eq!(replay.resolve(unknown_call), None);
         assert_eq!(replay.resolve(conflict_call), None);
         assert_eq!(replay.resolve(literal_call), Some(Ty::Int));
+        assert_eq!(replay.resolve(refined), Some(Ty::Int));
         replay.expect(demanded, Expected::Class(literal));
         assert_eq!(replay.resolve(demanded), Some(Ty::Int));
         replay.expect(unknown_call, Expected::Ty(Ty::Bool));

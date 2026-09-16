@@ -2,7 +2,7 @@ file: accepted
 frontend errors: 0 (see frontend.snap)
 semantic errors: 0
 
-fn fib@0..71 (int ∈ (-∞, 15]) -> int ∈ (-∞, +∞)
+fn fib@0..71 (int ∈ [0, 15]) -> int ∈ [0, +∞)
   param n@7..8: int
   body: if : int @24..71
     condition: eager < : bool @27..32
@@ -21,11 +21,11 @@ fn fib@0..71 (int ∈ (-∞, 15]) -> int ∈ (-∞, +∞)
             lhs: read n@7..8 : int @63..64
             rhs: int 2 : int @67..68
 
-fn fib_15@72..100 () -> int ∈ (-∞, +∞)
+fn fib_15@72..100 () -> int ∈ [0, +∞)
   body: call fib@0..71 (callee @93..96) : int @93..100
     arg[0]: int 15 : int @97..99
 
-fn count@101..168 (int ∈ (-∞, 10000]) -> int ∈ [0, +∞)
+fn count@101..168 (int ∈ [0, 10000]) -> int ∈ [0, +∞)
   param n@110..111: int
   body: if : int @127..168
     condition: eager == : bool @130..136

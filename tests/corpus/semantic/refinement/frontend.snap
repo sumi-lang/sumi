@@ -1,0 +1,210 @@
+== tree ==
+SourceFile 0..565
+  FnItem 0..75
+    Name 3..8 "clamp"
+    ParamList 8..16
+      Param 9..15
+        Name 9..10 "n"
+        TypeRef 12..15 "int"
+    TypeRef 20..23 "int"
+    IfExpr 26..75
+      BinaryExpr 29..34
+        NameRef 29..30 "n"
+        LiteralExpr 33..34 "0"
+      Block 35..40
+        LiteralExpr 37..38 "0"
+      Block 46..75
+        IfExpr 48..73
+          BinaryExpr 51..56
+            NameRef 51..52 "n"
+            LiteralExpr 55..56 "9"
+          Block 57..62
+            LiteralExpr 59..60 "9"
+          Block 68..73
+            NameRef 70..71 "n"
+  FnItem 76..130
+    Name 79..86 "clamped"
+    ParamList 86..88 "()"
+    TypeRef 92..95 "int"
+    BinaryExpr 98..130
+      BinaryExpr 98..118
+        CallExpr 98..107
+          NameRef 98..103 "clamp"
+          ArgList 103..107
+            PrefixExpr 104..106
+              LiteralExpr 105..106 "5"
+        CallExpr 110..118
+          NameRef 110..115 "clamp"
+          ArgList 115..118
+            LiteralExpr 116..117 "3"
+      CallExpr 121..130
+        NameRef 121..126 "clamp"
+        ArgList 126..130
+          LiteralExpr 127..129 "20"
+  FnItem 131..185
+    Name 134..141 "nonzero"
+    ParamList 141..149
+      Param 142..148
+        Name 142..143 "d"
+        TypeRef 145..148 "int"
+    TypeRef 153..156 "int"
+    IfExpr 159..185
+      BinaryExpr 162..168
+        NameRef 162..163 "d"
+        LiteralExpr 167..168 "0"
+      Block 169..174
+        NameRef 171..172 "d"
+      Block 180..185
+        LiteralExpr 182..183 "1"
+  FnItem 186..246
+    Name 189..197 "nonzeros"
+    ParamList 197..199 "()"
+    TypeRef 203..206 "int"
+    BinaryExpr 209..246
+      BinaryExpr 209..233
+        CallExpr 209..220
+          NameRef 209..216 "nonzero"
+          ArgList 216..220
+            PrefixExpr 217..219
+              LiteralExpr 218..219 "2"
+        CallExpr 223..233
+          NameRef 223..230 "nonzero"
+          ArgList 230..233
+            LiteralExpr 231..232 "0"
+      CallExpr 236..246
+        NameRef 236..243 "nonzero"
+        ArgList 243..246
+          LiteralExpr 244..245 "2"
+  FnItem 247..318
+    Name 250..254 "both"
+    ParamList 254..270
+      Param 255..261
+        Name 255..256 "a"
+        TypeRef 258..261 "int"
+      Param 263..269
+        Name 263..264 "b"
+        TypeRef 266..269 "int"
+    TypeRef 274..277 "int"
+    IfExpr 280..318
+      BinaryExpr 283..297
+        BinaryExpr 283..288
+          NameRef 283..284 "a"
+          LiteralExpr 287..288 "0"
+        BinaryExpr 292..297
+          NameRef 292..293 "b"
+          LiteralExpr 296..297 "0"
+      Block 298..307
+        BinaryExpr 300..305
+          NameRef 300..301 "a"
+          NameRef 304..305 "b"
+      Block 313..318
+        LiteralExpr 315..316 "0"
+  FnItem 319..363
+    Name 322..327 "boths"
+    ParamList 327..329 "()"
+    TypeRef 333..336 "int"
+    BinaryExpr 339..363
+      CallExpr 339..350
+        NameRef 339..343 "both"
+        ArgList 343..350
+          PrefixExpr 344..346
+            LiteralExpr 345..346 "1"
+          LiteralExpr 348..349 "5"
+      CallExpr 353..363
+        NameRef 353..357 "both"
+        ArgList 357..363
+          LiteralExpr 358..359 "3"
+          LiteralExpr 361..362 "4"
+  FnItem 364..413
+    Name 367..371 "flag"
+    ParamList 371..380
+      Param 372..379
+        Name 372..373 "f"
+        TypeRef 375..379 "bool"
+    TypeRef 384..388 "bool"
+    IfExpr 391..413
+      NameRef 394..395 "f"
+      Block 396..401
+        NameRef 398..399 "f"
+      Block 407..413
+        PrefixExpr 409..411
+          NameRef 410..411 "f"
+  FnItem 414..460
+    Name 417..422 "flags"
+    ParamList 422..424 "()"
+    TypeRef 428..432 "bool"
+    BinaryExpr 435..460
+      CallExpr 435..445
+        NameRef 435..439 "flag"
+        ArgList 439..445
+          LiteralExpr 440..444 "true"
+      CallExpr 449..460
+        NameRef 449..453 "flag"
+        ArgList 453..460
+          LiteralExpr 454..459 "false"
+  FnItem 461..517
+    Name 464..471 "negated"
+    ParamList 471..479
+      Param 472..478
+        Name 472..473 "n"
+        TypeRef 475..478 "int"
+    TypeRef 483..486 "int"
+    IfExpr 489..517
+      PrefixExpr 492..500
+        ParenExpr 493..500
+          BinaryExpr 494..499
+            NameRef 494..495 "n"
+            LiteralExpr 498..499 "3"
+      Block 501..506
+        NameRef 503..504 "n"
+      Block 512..517
+        LiteralExpr 514..515 "3"
+  FnItem 518..564
+    Name 521..529 "negateds"
+    ParamList 529..531 "()"
+    TypeRef 535..538 "int"
+    BinaryExpr 541..564
+      CallExpr 541..551
+        NameRef 541..548 "negated"
+        ArgList 548..551
+          LiteralExpr 549..550 "1"
+      CallExpr 554..564
+        NameRef 554..561 "negated"
+        ArgList 561..564
+          LiteralExpr 562..563 "7"
+
+== formatted ==
+fn clamp(n: int) -> int = if n < 0 {
+    0
+} else {
+    if n > 9 {
+        9
+    } else {
+        n
+    }
+}
+fn clamped() -> int = clamp(-5) + clamp(3) + clamp(20)
+fn nonzero(d: int) -> int = if d != 0 {
+    d
+} else {
+    1
+}
+fn nonzeros() -> int = nonzero(-2) + nonzero(0) + nonzero(2)
+fn both(a: int, b: int) -> int = if a > 0 && b > 0 {
+    a + b
+} else {
+    0
+}
+fn boths() -> int = both(-1, 5) + both(3, 4)
+fn flag(f: bool) -> bool = if f {
+    f
+} else {
+    !f
+}
+fn flags() -> bool = flag(true) && flag(false)
+fn negated(n: int) -> int = if !(n < 3) {
+    n
+} else {
+    3
+}
+fn negateds() -> int = negated(1) + negated(7)

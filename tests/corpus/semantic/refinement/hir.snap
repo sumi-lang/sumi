@@ -1,0 +1,115 @@
+file: accepted
+frontend errors: 0 (see frontend.snap)
+semantic errors: 0
+
+fn clamp@0..75 (int ∈ [-5, 20] \ 0) -> int ∈ [0, 9]
+  param n@9..10: int
+  body: if : int @26..75
+    condition: eager < : bool @29..34
+      lhs: read n@9..10 : int @29..30
+      rhs: int 0 : int @33..34
+    then: block : int @35..40
+      tail: int 0 : int @37..38
+    else: block : int @46..75
+      tail: if : int @48..73
+        condition: eager > : bool @51..56
+          lhs: read n@9..10 : int @51..52
+          rhs: int 9 : int @55..56
+        then: block : int @57..62
+          tail: int 9 : int @59..60
+        else: block : int @68..73
+          tail: read n@9..10 : int @70..71
+
+fn clamped@76..130 () -> int ∈ [0, 27]
+  body: eager + : int @98..130
+    lhs: eager + : int @98..118
+      lhs: call clamp@0..75 (callee @98..103) : int @98..107
+        arg[0]: int -5 : int @104..106
+      rhs: call clamp@0..75 (callee @110..115) : int @110..118
+        arg[0]: int 3 : int @116..117
+    rhs: call clamp@0..75 (callee @121..126) : int @121..130
+      arg[0]: int 20 : int @127..129
+
+fn nonzero@131..185 (int ∈ [-2, 2]) -> int ∈ [-2, 2] \ 0
+  param d@142..143: int
+  body: if : int @159..185
+    condition: eager != : bool @162..168
+      lhs: read d@142..143 : int @162..163
+      rhs: int 0 : int @167..168
+    then: block : int @169..174
+      tail: read d@142..143 : int @171..172
+    else: block : int @180..185
+      tail: int 1 : int @182..183
+
+fn nonzeros@186..246 () -> int ∈ [-6, 6]
+  body: eager + : int @209..246
+    lhs: eager + : int @209..233
+      lhs: call nonzero@131..185 (callee @209..216) : int @209..220
+        arg[0]: int -2 : int @217..219
+      rhs: call nonzero@131..185 (callee @223..230) : int @223..233
+        arg[0]: int 0 : int @231..232
+    rhs: call nonzero@131..185 (callee @236..243) : int @236..246
+      arg[0]: int 2 : int @244..245
+
+fn both@247..318 (int ∈ [-1, 3] \ 0, int ∈ [4, 5]) -> int ∈ [0, 8]
+  param a@255..256: int
+  param b@263..264: int
+  body: if : int @280..318
+    condition: lazy and : bool @283..297
+      lhs: eager > : bool @283..288
+        lhs: read a@255..256 : int @283..284
+        rhs: int 0 : int @287..288
+      rhs: eager > : bool @292..297
+        lhs: read b@263..264 : int @292..293
+        rhs: int 0 : int @296..297
+    then: block : int @298..307
+      tail: eager + : int @300..305
+        lhs: read a@255..256 : int @300..301
+        rhs: read b@263..264 : int @304..305
+    else: block : int @313..318
+      tail: int 0 : int @315..316
+
+fn boths@319..363 () -> int ∈ [0, 16]
+  body: eager + : int @339..363
+    lhs: call both@247..318 (callee @339..343) : int @339..350
+      arg[0]: int -1 : int @344..346
+      arg[1]: int 5 : int @348..349
+    rhs: call both@247..318 (callee @353..357) : int @353..363
+      arg[0]: int 3 : int @358..359
+      arg[1]: int 4 : int @361..362
+
+fn flag@364..413 (bool ∈ {true, false}) -> bool ∈ {true}
+  param f@372..373: bool
+  body: if : bool @391..413
+    condition: read f@372..373 : bool @394..395
+    then: block : bool @396..401
+      tail: read f@372..373 : bool @398..399
+    else: block : bool @407..413
+      tail: not : bool @409..411
+        operand: read f@372..373 : bool @410..411
+
+fn flags@414..460 () -> bool ∈ {true}
+  body: lazy and : bool @435..460
+    lhs: call flag@364..413 (callee @435..439) : bool @435..445
+      arg[0]: bool true : bool @440..444
+    rhs: call flag@364..413 (callee @449..453) : bool @449..460
+      arg[0]: bool false : bool @454..459
+
+fn negated@461..517 (int ∈ [1, 7]) -> int ∈ [3, 7]
+  param n@472..473: int
+  body: if : int @489..517
+    condition: not : bool @492..500
+      operand: eager < : bool @494..499
+        lhs: read n@472..473 : int @494..495
+        rhs: int 3 : int @498..499
+    then: block : int @501..506
+      tail: read n@472..473 : int @503..504
+    else: block : int @512..517
+      tail: int 3 : int @514..515
+
+fn negateds@518..564 () -> int ∈ [6, 14]
+  body: eager + : int @541..564
+    lhs: call negated@461..517 (callee @541..548) : int @541..551
+      arg[0]: int 1 : int @549..550
+    rhs: call negated@461..517 (callee @554..561) : int @554..564
+      arg[0]: int 7 : int @562..563

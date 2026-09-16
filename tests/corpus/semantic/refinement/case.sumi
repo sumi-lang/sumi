@@ -1,0 +1,10 @@
+fn clamp(n: int) -> int = if n < 0 { 0 } else { if n > 9 { 9 } else { n } }
+fn clamped() -> int = clamp(-5) + clamp(3) + clamp(20)
+fn nonzero(d: int) -> int = if d != 0 { d } else { 1 }
+fn nonzeros() -> int = nonzero(-2) + nonzero(0) + nonzero(2)
+fn both(a: int, b: int) -> int = if a > 0 && b > 0 { a + b } else { 0 }
+fn boths() -> int = both(-1, 5) + both(3, 4)
+fn flag(f: bool) -> bool = if f { f } else { !f }
+fn flags() -> bool = flag(true) && flag(false)
+fn negated(n: int) -> int = if !(n < 3) { n } else { 3 }
+fn negateds() -> int = negated(1) + negated(7)
