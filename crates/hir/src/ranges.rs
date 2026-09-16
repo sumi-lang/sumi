@@ -375,11 +375,18 @@ impl Div<&Ints> for &Ints {
     }
 }
 
-/// Truncating remainder: the dividend's sign, bounded by the largest
-/// divisor magnitude minus one, and empty over a divisor that is only zero.
+/// Truncating remainder: exact over two points, otherwise the dividend's
+/// sign, bounded by the largest divisor magnitude minus one, and empty
+/// over a divisor that is only zero.
 impl Rem<&Ints> for &Ints {
     type Output = Ints;
     fn rem(self, other: &Ints) -> Ints {
+        if self.is_point()
+            && other.is_point()
+            && let (Some(a), Some(b)) = (self.lo(), other.lo())
+        {
+            return a.checked_rem(b).map_or(Ints::Empty, Ints::from);
+        }
         let (Some((lo1, hi1, _)), Some((lo2, hi2, _))) = (self.parts(), other.parts()) else {
             return Ints::Empty;
         };
@@ -578,6 +585,10 @@ mod tests {
         assert_eq!(&ints("[0, 100]") % &ints("[-4, 5]"), ints("[0, 4]"));
         assert_eq!(&ints("[-3, 100]") % &ints("[1, inf]"), ints("[-3, 100]"));
         assert_eq!(&ints("[5, 9]") % &ints("[0, 0]"), Ints::Empty);
+        assert_eq!(&ints("[7, 7]") % &ints("[3, 3]"), ints("[1, 1]"));
+        assert_eq!(&ints("[-7, -7]") % &ints("[3, 3]"), ints("[-1, -1]"));
+        assert_eq!(&ints("[6, 6]") % &ints("[4, 4]"), ints("[2, 2]"));
+        assert_eq!(&ints("[6, 6]") % &ints("[0, 0]"), Ints::Empty);
     }
 
     #[test]
