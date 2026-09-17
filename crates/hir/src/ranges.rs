@@ -274,6 +274,21 @@ impl Ints {
         grew
     }
 
+    fn without(&self, point: &Bound) -> Self {
+        let Some((lo, hi, hole)) = self.parts() else {
+            return Self::Empty;
+        };
+        if lo == point {
+            Self::band(lo.succ(), hi.clone(), hole)
+        } else if hi == point {
+            Self::band(lo.clone(), hi.pred(), hole)
+        } else if point.sign() == Ordering::Equal {
+            Self::band(lo.clone(), hi.clone(), true)
+        } else {
+            self.clone()
+        }
+    }
+
     /// The divisor's non-zero halves, each a band with one sign.
     fn halves(&self) -> Vec<(Bound, Bound)> {
         let Some((lo, hi, _)) = self.parts() else {
@@ -311,6 +326,31 @@ impl Ints {
             _ => unreachable!("a comparison"),
         };
         Bools::of(may_true, may_false)
+    }
+
+    /// `self` narrowed by `self op other` holding, with `self` on the left.
+    fn refine(&self, op: BinaryOp, other: &Self) -> Self {
+        let Some((lo, hi, hole)) = self.parts() else {
+            return Self::Empty;
+        };
+        let Some((lo2, hi2, _)) = other.parts() else {
+            return Self::Empty;
+        };
+        match op {
+            BinaryOp::Lt => Self::band(lo.clone(), hi.clone().min(hi2.pred()), hole),
+            BinaryOp::Le => Self::band(lo.clone(), hi.clone().min(hi2.clone()), hole),
+            BinaryOp::Gt => Self::band(lo.clone().max(lo2.succ()), hi.clone(), hole),
+            BinaryOp::Ge => Self::band(lo.clone().max(lo2.clone()), hi.clone(), hole),
+            BinaryOp::Eq => self & other,
+            BinaryOp::Ne => {
+                if other.is_point() {
+                    self.without(lo2)
+                } else {
+                    self.clone()
+                }
+            }
+            _ => unreachable!("a comparison"),
+        }
     }
 
     /// Endpoints moved outward to the thresholds; a point is left exact.
@@ -523,6 +563,14 @@ impl Bools {
     }
 }
 
+/// Intersection.
+impl BitAnd for Bools {
+    type Output = Self;
+    fn bitand(self, other: Self) -> Self {
+        Self(self.0 & other.0)
+    }
+}
+
 /// The set of one value.
 impl From<bool> for Bools {
     fn from(value: bool) -> Self {
@@ -599,9 +647,54 @@ impl May {
         !self.ints.is_empty() || !self.bools.is_empty() || self.unit
     }
 
+    /// `self` narrowed by a comparison with `other` holding, from the
+    /// local's side of it.
+    fn refine(&self, op: BinaryOp, local_is_lhs: bool, sense: bool, other: &Self) -> Self {
+        let op = if local_is_lhs { op } else { flip(op) };
+        let op = if sense { op } else { negate(op) };
+        let bools = match op {
+            BinaryOp::Eq => self.bools & other.bools,
+            BinaryOp::Ne
+                if other.bools == Bools::from(true) || other.bools == Bools::from(false) =>
+            {
+                self.bools & !other.bools
+            }
+            _ => self.bools,
+        };
+        Self {
+            ints: self.ints.refine(op, &other.ints),
+            bools,
+            unit: false,
+        }
+    }
+
     /// The set as a type reads it, for snapshots and reports.
     pub fn shown(&self, ty: Ty) -> Shown<'_> {
         Shown(self, ty)
+    }
+}
+
+/// `a op b` read as `b op' a`.
+fn flip(op: BinaryOp) -> BinaryOp {
+    match op {
+        BinaryOp::Lt => BinaryOp::Gt,
+        BinaryOp::Le => BinaryOp::Ge,
+        BinaryOp::Gt => BinaryOp::Lt,
+        BinaryOp::Ge => BinaryOp::Le,
+        other => other,
+    }
+}
+
+/// The comparison that holds when `op` does not.
+fn negate(op: BinaryOp) -> BinaryOp {
+    match op {
+        BinaryOp::Lt => BinaryOp::Ge,
+        BinaryOp::Le => BinaryOp::Gt,
+        BinaryOp::Gt => BinaryOp::Le,
+        BinaryOp::Ge => BinaryOp::Lt,
+        BinaryOp::Eq => BinaryOp::Ne,
+        BinaryOp::Ne => BinaryOp::Eq,
+        other => other,
     }
 }
 
@@ -689,6 +782,15 @@ pub enum RangeEdge {
     Lazy {
         and: bool,
     },
+    /// A local narrowed by a comparison with the second provider holding in
+    /// the given sense.
+    Refine {
+        op: BinaryOp,
+        local_is_lhs: bool,
+        sense: bool,
+    },
+    /// A boolean local narrowed to one value.
+    Exactly(bool),
     /// A context: live when the condition may be true, or false, and the
     /// enclosing context is live.
     Then,
@@ -778,6 +880,12 @@ impl Lattice for May {
                     self.bools.or(rhs.bools)
                 })
             }
+            RangeEdge::Refine {
+                op,
+                local_is_lhs,
+                sense,
+            } => self.refine(op, local_is_lhs, sense, second()),
+            RangeEdge::Exactly(value) => Self::bools(self.bools & Bools::from(value)),
             RangeEdge::Then => Self::of_unit(self.bools.may_true() && second().live()),
             RangeEdge::Else => Self::of_unit(self.bools.may_false() && second().live()),
             RangeEdge::Branch => {
@@ -883,7 +991,7 @@ mod tests {
     }
 
     #[test]
-    fn comparisons_over_bands() {
+    fn comparisons_and_refinements_agree() {
         let n = ints("[0, 15]");
         assert_eq!(n.compare(BinaryOp::Lt, &ints("[2, 2]")), Bools::BOTH);
         assert_eq!(
@@ -900,6 +1008,48 @@ mod tests {
         );
         assert_eq!(
             ints("[3, 3]").compare(BinaryOp::Ne, &ints("[3, 3]")),
+            Bools::from(false)
+        );
+        assert_eq!(n.refine(BinaryOp::Lt, &ints("[2, 2]")), ints("[0, 1]"));
+        assert_eq!(n.refine(BinaryOp::Ge, &ints("[2, 2]")), ints("[2, 15]"));
+        assert_eq!(n.refine(BinaryOp::Ne, &ints("[0, 0]")), ints("[1, 15]"));
+        assert_eq!(
+            ints("[-5, 5]").refine(BinaryOp::Ne, &ints("[0, 0]")),
+            ints("[-5, 5] \\ 0")
+        );
+        assert_eq!(n.refine(BinaryOp::Eq, &ints("[10, 20]")), ints("[10, 15]"));
+        assert_eq!(n.refine(BinaryOp::Gt, &ints("[20, 20]")), Ints::Empty);
+        assert_eq!(n.refine(BinaryOp::Ne, &ints("[1, 2]")), n);
+        let may = May::ints(n.clone());
+        let two = May::int(2.into());
+        // `2 > n` reads as `n < 2`; its false sense is `n >= 2`.
+        assert_eq!(
+            may.refine(BinaryOp::Gt, false, true, &two).ints,
+            ints("[0, 1]")
+        );
+        assert_eq!(
+            may.refine(BinaryOp::Gt, false, false, &two).ints,
+            ints("[2, 15]")
+        );
+        let flag = May::bools(Bools::BOTH);
+        assert_eq!(
+            flag.refine(BinaryOp::Eq, true, true, &May::bool(true))
+                .bools,
+            Bools::from(true)
+        );
+        assert_eq!(
+            flag.refine(BinaryOp::Ne, true, true, &May::bool(true))
+                .bools,
+            Bools::from(false)
+        );
+        assert_eq!(
+            flag.transfer(
+                &RangeEdge::Exactly(false),
+                None,
+                false,
+                &Thresholds::default()
+            )
+            .bools,
             Bools::from(false)
         );
     }
@@ -1082,6 +1232,9 @@ mod tests {
                         let bools = a.compare(op, &b);
                         let seen = if holds { bools.may_true() } else { bools.may_false() };
                         prop_assert!(seen, "{a} {op:?} {b} misses {x} {op:?} {y}");
+                        if holds {
+                            prop_assert!(contains(&a.refine(op, &b), x), "{a} refined by {op:?} {b} ∌ {x}");
+                        }
                     }
                 }
             }

@@ -2,7 +2,7 @@ file: accepted
 frontend errors: 0 (see frontend.snap)
 semantic errors: 0
 
-fn even@0..64 (int ∈ (-∞, 4]) -> bool ∈ {true, false}
+fn even@0..64 (int ∈ [0, 4]) -> bool ∈ {true, false}
   param n@8..9: int
   body: if : bool @26..64
     condition: eager == : bool @29..35
@@ -16,7 +16,7 @@ fn even@0..64 (int ∈ (-∞, 4]) -> bool ∈ {true, false}
           lhs: read n@8..9 : int @56..57
           rhs: int 1 : int @60..61
 
-fn odd@65..130 (int ∈ (-∞, 3]) -> bool ∈ {true, false}
+fn odd@65..130 (int ∈ [0, 3]) -> bool ∈ {true, false}
   param n@72..73: int
   body: if : bool @90..130
     condition: eager == : bool @93..99
