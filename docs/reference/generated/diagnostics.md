@@ -493,6 +493,8 @@ fn hidden() -> int {
     typed()
 }
 fn broken_result(x: mystery) -> int = true
+fn scaled(n: int) -> int = n * 2
+fn extra() -> int = scaled(3, 4)
 ```
 
 ```text
@@ -546,6 +548,8 @@ fn hidden() -> int {
     typed()
 }
 fn broken_result(x: mystery) -> int = true
+fn scaled(n: int) -> int = n * 2
+fn extra() -> int = scaled(3, 4)
 ```
 
 ```text
@@ -574,6 +578,8 @@ fn hidden() -> int {
     typed()
 }
 fn broken_result(x: mystery) -> int = true
+fn scaled(n: int) -> int = n * 2
+fn extra() -> int = scaled(3, 4)
 ```
 
 ```text

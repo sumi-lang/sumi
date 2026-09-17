@@ -1,9 +1,12 @@
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use sumi_hir::Ty;
+use sumi_hir::{BinaryOp, Int, Ty};
 
 // Compile the actual private solver, without exporting a benchmark-only API.
 #[path = "support/graphs.rs"]
 mod graphs;
+#[allow(dead_code)]
+#[path = "../src/ranges.rs"]
+mod ranges;
 #[allow(dead_code)]
 #[path = "../src/solver.rs"]
 mod solver;
@@ -17,28 +20,32 @@ fn solver(c: &mut Criterion) {
         for shape in graphs::SHAPES {
             for size in graphs::SIZES {
                 let mut witness = graphs::build(shape, size);
-                witness.context.solve();
+                witness.context.solve(&witness.cx);
                 graphs::validate(shape, &witness);
                 group.throughput(Throughput::Elements(size as u64));
                 group.bench_function(BenchmarkId::new(shape, size), |b| match phase {
                     "solve" => b.iter_batched(
                         || graphs::build(shape, size),
                         |mut graph| {
-                            graph.context.solve();
+                            graph.context.solve(&graph.cx);
                             graph
                         },
                         BatchSize::LargeInput,
                     ),
-                    "replay-context" => {
-                        b.iter_batched(|| (), |()| witness.context.replay(), BatchSize::LargeInput)
-                    }
+                    "replay-context" => b.iter_batched(
+                        || (),
+                        |()| witness.context.replay(&witness.cx),
+                        BatchSize::LargeInput,
+                    ),
                     _ => b.iter_batched(
                         || (),
                         |()| {
                             let mut graph = graphs::build(shape, size);
-                            graph.context.solve();
-                            let replay = graph.context.replay();
-                            (graph, replay)
+                            graph.context.solve(&graph.cx);
+                            let replay = graph.context.replay(&graph.cx);
+                            std::hint::black_box(&replay);
+                            drop(replay);
+                            graph
                         },
                         BatchSize::LargeInput,
                     ),

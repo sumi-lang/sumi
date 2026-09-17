@@ -1,5 +1,6 @@
+use crate::ranges::Thresholds;
 use crate::solver::Var;
-use crate::typing::{Expected, Typing};
+use crate::typing::{Expected, ProductContext, Typing};
 use sumi_hir::Ty;
 use sumi_syntax::NodeIdx;
 
@@ -24,6 +25,9 @@ const HERE: NodeIdx = NodeIdx::new(0);
 
 pub struct Graph {
     pub context: Typing,
+    /// What the solve consults: no constants, since the graphs carry no
+    /// values.
+    pub cx: ProductContext,
     terms: Vec<Var>,
 }
 
@@ -110,7 +114,11 @@ pub fn build(shape: &str, size: usize) -> Graph {
             }
         }
     }
-    Graph { context, terms }
+    Graph {
+        context,
+        cx: ((), Thresholds::default()),
+        terms,
+    }
 }
 
 pub fn validate(shape: &str, graph: &Graph) {

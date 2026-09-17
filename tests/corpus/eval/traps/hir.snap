@@ -2,19 +2,19 @@ file: accepted
 frontend errors: 0 (see frontend.snap)
 semantic errors: 0
 
-fn divide_by_zero@0..40 () -> int
+fn divide_by_zero@0..40 () -> int ∈ ∅
   body: eager / : int @29..40
     lhs: int 1 : int @29..30
     rhs: eager - : int @34..39
       lhs: int 2 : int @34..35
       rhs: int 2 : int @38..39
 
-fn remainder_by_zero@41..78 () -> int
+fn remainder_by_zero@41..78 () -> int ∈ ∅
   body: eager % : int @73..78
     lhs: int 7 : int @73..74
     rhs: int 0 : int @77..78
 
-fn guarded@79..121 () -> bool
+fn guarded@79..121 () -> bool ∈ {false}
   body: lazy and : bool @102..121
     lhs: bool false : bool @102..107
     rhs: eager == : bool @111..121
@@ -23,13 +23,13 @@ fn guarded@79..121 () -> bool
         rhs: int 0 : int @115..116
       rhs: int 0 : int @120..121
 
-fn after_a_trap@122..160 (int) -> int
+fn after_a_trap@122..160 (int ∈ [3, 3]) -> int ∈ ∅
   param n@138..139: int
   body: eager / : int @155..160
     lhs: read n@138..139 : int @155..156
     rhs: int 0 : int @159..160
 
-fn trap_in_a_callee@161..211 () -> int
+fn trap_in_a_callee@161..211 () -> int ∈ ∅
   body: eager + : int @192..211
     lhs: int 1 : int @192..193
     rhs: call after_a_trap@122..160 (callee @196..208) : int @196..211

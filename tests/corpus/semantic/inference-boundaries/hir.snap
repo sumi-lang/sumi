@@ -5,25 +5,25 @@ semantic errors: 5
 fn spin@0..25 signature: unavailable
   body: unavailable
 
-fn consumer@26..56 () -> int
+fn consumer@26..56 () -> int ∈ ∅
   body: unavailable
 
-fn grounded@57..84 () -> int
+fn grounded@57..84 () -> int ∈ ∅
   body: unavailable
 
-fn recovered@85..112 () -> int
+fn recovered@85..112 () -> int ∈ ∅
   body: call grounded@57..84 (callee @102..110) : int @102..112
 
 fn bad_arguments@113..153 signature: unavailable
   body: unavailable
 
-fn bare@154..169 () -> unit
+fn bare@154..169 () -> unit ∈ unit
   body: unavailable
 
 fn malformed@170..195 signature: unavailable
   body: unavailable
 
-fn intact@196..214 () -> bool
+fn intact@196..214 () -> bool ∈ {true}
   body: bool true : bool @210..214
 
 == semantic diagnostics ==

@@ -2,16 +2,16 @@ file: rejected
 frontend errors: 0 (see frontend.snap)
 semantic errors: 5
 
-fn value@0..21 () -> int
+fn value@0..21 () -> int ∈ [1, 1]
   body: int 1 : int @20..21
 
-fn rejected@22..103 () -> int
+fn rejected@22..103 () -> int ∈ [-1, -1]
   body: unavailable
 
-fn separate@104..155 () -> unit
+fn separate@104..155 () -> unit ∈ unit
   body: unavailable
 
-fn accepted@156..216 () -> int
+fn accepted@156..216 () -> int ∈ [2, 2]
   body: block : int @177..216
     discard @183..198
       value: eager + : int @187..198

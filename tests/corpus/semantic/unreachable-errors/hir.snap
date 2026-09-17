@@ -2,19 +2,19 @@ file: rejected
 frontend errors: 0 (see frontend.snap)
 semantic errors: 4
 
-fn or_name@0..41 () -> bool
+fn or_name@0..41 () -> bool ∈ ∅
   body: unavailable
 
-fn and_type@42..76 () -> bool
+fn and_type@42..76 () -> bool ∈ {false}
   body: unavailable
 
-fn then_name@77..137 () -> int
+fn then_name@77..137 () -> int ∈ ∅
   body: unavailable
 
-fn else_type@138..190 () -> int
+fn else_type@138..190 () -> int ∈ [1, 1]
   body: unavailable
 
-fn independent@191..219 () -> int
+fn independent@191..219 () -> int ∈ [42, 42]
   body: int 42 : int @217..219
 
 == semantic diagnostics ==

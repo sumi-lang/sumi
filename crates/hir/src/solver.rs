@@ -21,8 +21,17 @@
 //! pass from one class to another and never back: the consumer learns
 //! everything the provider knows, transformed by the edge, and the provider
 //! is unaffected by what its consumers demand, which keeps blame on the
-//! consumer's side. Equalities and evidence are applied as they arrive; flows
+//! consumer's side. [`derive`](Solver::derive) is a flow with two providers,
+//! for evidence that is a function of two classes, an operator's result of
+//! its operands. Equalities and evidence are applied as they arrive; flows
 //! are settled by [`solve`](Solver::solve), a worklist over the flow graph.
+//!
+//! A transfer may consult a context the instance supplies to `solve`: what
+//! is true of the whole program and fixed before any flow settles, such as
+//! the constants an interval analysis rounds to. It is also told whether
+//! its flow closes a cycle of the flow graph, which is where a lattice
+//! without finite ascending chains of its own must widen: the solver finds
+//! the cycles, and the lattice decides what to do on them.
 //!
 //! A conflict is a lattice element like any other. The solver never retracts
 //! evidence or stops at the first disagreement, so when an instance reads a
@@ -43,6 +52,8 @@ use std::num::NonZeroUsize;
 pub trait Lattice: Clone + Eq {
     /// What a flow edge carries: how evidence changes crossing it.
     type Edge;
+    /// What every transfer may consult, fixed for the whole solve.
+    type Context;
 
     /// No evidence: the identity of `join`.
     fn bottom() -> Self;
@@ -50,8 +61,20 @@ pub trait Lattice: Clone + Eq {
     /// Join `other` into `self`, reporting whether `self` grew.
     fn join(&mut self, other: &Self) -> bool;
 
-    /// The evidence a consumer receives when `self` crosses `edge`.
-    fn transfer(&self, edge: &Self::Edge) -> Self;
+    /// The evidence a consumer receives when `self`, and for a two-provider
+    /// edge `other`, cross `edge`. `cyclic` says the flow lies on a cycle of
+    /// the flow graph, so the evidence delivered here may come back.
+    ///
+    /// Nothing comes of nothing: when every provider holds `bottom`, so
+    /// does the result. The solver counts on it and never visits a class
+    /// with no evidence.
+    fn transfer(
+        &self,
+        edge: &Self::Edge,
+        other: Option<&Self>,
+        cyclic: bool,
+        cx: &Self::Context,
+    ) -> Self;
 }
 
 /// Two lattices side by side: evidence of both kinds on one class, joined
@@ -59,6 +82,7 @@ pub trait Lattice: Clone + Eq {
 /// number of analyses share one solver.
 impl<A: Lattice, B: Lattice> Lattice for (A, B) {
     type Edge = (A::Edge, B::Edge);
+    type Context = (A::Context, B::Context);
 
     fn bottom() -> Self {
         (A::bottom(), B::bottom())
@@ -70,8 +94,19 @@ impl<A: Lattice, B: Lattice> Lattice for (A, B) {
         a | b
     }
 
-    fn transfer(&self, edge: &Self::Edge) -> Self {
-        (self.0.transfer(&edge.0), self.1.transfer(&edge.1))
+    fn transfer(
+        &self,
+        edge: &Self::Edge,
+        other: Option<&Self>,
+        cyclic: bool,
+        cx: &Self::Context,
+    ) -> Self {
+        (
+            self.0
+                .transfer(&edge.0, other.map(|other| &other.0), cyclic, &cx.0),
+            self.1
+                .transfer(&edge.1, other.map(|other| &other.1), cyclic, &cx.1),
+        )
     }
 }
 
@@ -85,14 +120,23 @@ impl Var {
     }
 }
 
+/// One flow: what `consumer` learns from `first`, and from `second` when
+/// the edge has two providers, through `edge`.
+struct Flow<E> {
+    first: Var,
+    second: Option<Var>,
+    consumer: Var,
+    edge: E,
+}
+
 pub struct Solver<L: Lattice> {
     parent: Vec<u32>,
     size: Vec<u32>,
     /// Meaningful at roots only.
     evidence: Vec<L>,
     facts: Vec<(Var, L)>,
-    /// `(provider, consumer)` edges and what they carry, settled by `solve`.
-    flows: Vec<(Var, Var, L::Edge)>,
+    /// Settled by `solve`.
+    flows: Vec<Flow<L::Edge>>,
 }
 
 impl<L: Lattice> Default for Solver<L> {
@@ -191,7 +235,23 @@ impl<L: Lattice> Solver<L> {
     /// Let everything `provider`'s class learns reach `consumer`'s class
     /// through `edge`, and nothing travel back. Settled by `solve`.
     pub fn flow(&mut self, provider: Var, consumer: Var, edge: L::Edge) {
-        self.flows.push((provider, consumer, edge));
+        self.flows.push(Flow {
+            first: provider,
+            second: None,
+            consumer,
+            edge,
+        });
+    }
+
+    /// Let `consumer`'s class learn the transfer of `first`'s and
+    /// `second`'s evidence through `edge`, recomputed whenever either grows.
+    pub fn derive(&mut self, first: Var, second: Var, consumer: Var, edge: L::Edge) {
+        self.flows.push(Flow {
+            first,
+            second: Some(second),
+            consumer,
+            edge,
+        });
     }
 
     /// A fresh class that `provider` flows into through `edge`.
@@ -207,21 +267,41 @@ impl<L: Lattice> Solver<L> {
     /// time it grows while not already waiting, and a visit scans its
     /// outgoing flows, so the work is bounded by the flows times the height
     /// of the lattice.
-    pub fn solve(&mut self) {
+    pub fn solve(&mut self, cx: &L::Context) {
         let n = self.parent.len();
         for id in 0..n {
             self.compress(id);
         }
+        if self.flows.is_empty() {
+            return;
+        }
         // Adjacency by provider root as one-based links, so `None` is compact.
-        // Prepending in reverse keeps each provider's consumers in order.
+        // Prepending in reverse keeps each provider's consumers in order. A
+        // two-provider flow is listed under both, since either can grow.
         let mut outgoing = vec![None; n];
         let mut edges = Vec::with_capacity(self.flows.len());
-        for (index, (provider, consumer, _)) in self.flows.iter().enumerate().rev() {
-            let provider = self.root(provider.index());
-            let consumer = self.root(consumer.index());
-            edges.push((consumer, index, outgoing[provider]));
-            outgoing[provider] = NonZeroUsize::new(edges.len());
+        let mut arcs = Vec::with_capacity(edges.capacity());
+        for (index, flow) in self.flows.iter().enumerate().rev() {
+            for provider in std::iter::once(flow.first).chain(flow.second) {
+                let provider = self.root(provider.index());
+                edges.push((index, outgoing[provider]));
+                outgoing[provider] = NonZeroUsize::new(edges.len());
+                arcs.push((provider, self.root(flow.consumer.index())));
+            }
         }
+        // A flow closes a cycle when a provider and the consumer share a
+        // strongly connected component of the flow graph.
+        let component = components(n, &arcs);
+        let cyclic: Vec<bool> = self
+            .flows
+            .iter()
+            .map(|flow| {
+                let consumer = component[self.root(flow.consumer.index())];
+                std::iter::once(flow.first)
+                    .chain(flow.second)
+                    .any(|provider| component[self.root(provider.index())] == consumer)
+            })
+            .collect();
         // A class waits in the queue at most once however often it grows
         // before its turn: a join can improve evidence in ways no transfer
         // passes on, and every visit rescans every outgoing flow. Only a
@@ -237,12 +317,19 @@ impl<L: Lattice> Solver<L> {
         }
         while let Some(provider) = queue.pop_front() {
             queued[provider] = false;
-            let evidence = self.evidence[provider].clone();
             let mut edge = outgoing[provider];
             while let Some(index) = edge {
-                let (consumer, flow, next) = edges[index.get() - 1];
+                let (index, next) = edges[index.get() - 1];
                 edge = next;
-                let delivered = evidence.transfer(&self.flows[flow].2);
+                let flow = &self.flows[index];
+                let consumer = self.root(flow.consumer.index());
+                let delivered = {
+                    let first = &self.evidence[self.root(flow.first.index())];
+                    let second = flow
+                        .second
+                        .map(|second| &self.evidence[self.root(second.index())]);
+                    first.transfer(&flow.edge, second, cyclic[index], cx)
+                };
                 if self.evidence[consumer].join(&delivered) && !queued[consumer] {
                     queued[consumer] = true;
                     queue.push_back(consumer);
@@ -255,19 +342,107 @@ impl<L: Lattice> Solver<L> {
     /// facts and what `export` lets each settled flow deliver to its consumer.
     /// Replaying expectations one at a time on it attributes a disagreement
     /// to the expectation that first raised it, with the flows final rather
-    /// than provisional.
-    pub fn replay(&self, export: impl Fn(&L, &L::Edge) -> Option<L>) -> Self {
+    /// than provisional. `export` sees the provider's settled evidence, the
+    /// second provider's for a two-provider flow, and the edge.
+    pub fn replay(&self, export: impl Fn(&L, Option<&L>, &L::Edge) -> Option<L>) -> Self {
         let mut replay = Self::with_classes(self.parent.len());
         for (var, evidence) in &self.facts {
             replay.expect(*var, evidence);
         }
-        for (provider, consumer, edge) in &self.flows {
-            if let Some(evidence) = export(self.evidence(*provider), edge) {
-                replay.expect(*consumer, &evidence);
+        for flow in &self.flows {
+            let second = flow.second.map(|second| self.evidence(second));
+            if let Some(evidence) = export(self.evidence(flow.first), second, &flow.edge) {
+                replay.expect(flow.consumer, &evidence);
             }
         }
         replay
     }
+}
+
+/// The strongly connected component of each of `n` nodes under `arcs`.
+/// Components are numbered in reverse topological order: a component
+/// completes before any that reaches it. Pearce's one-array variant of
+/// Tarjan's algorithm, on an explicit stack: a node's slot holds its visit
+/// index while it is open, then the number of its component.
+pub(crate) fn components(n: usize, arcs: &[(usize, usize)]) -> Vec<u32> {
+    // Adjacency in compressed sparse rows: a few allocations however many
+    // nodes, since a solve calls this once over every class. The rows are
+    // counted one slot to the right and filled with the cursor one slot to
+    // the right, so no second copy of the row starts is needed.
+    let mut start = vec![0; n + 2];
+    for &(from, _) in arcs {
+        start[from + 2] += 1;
+    }
+    for i in 0..=n {
+        start[i + 1] += start[i];
+    }
+    let mut targets = vec![0; arcs.len()];
+    for &(from, to) in arcs {
+        targets[start[from + 1]] = to;
+        start[from + 1] += 1;
+    }
+    let adjacent = |node: usize| &targets[start[node]..start[node + 1]];
+    // Visit indices count up from one; component numbers count down from
+    // `n - 1`, and since every completed node gives an index back, a
+    // component number is always above every open index.
+    let mut slot = vec![0u32; n];
+    let mut index = 1u32;
+    let mut component = u32::try_from(n)
+        .expect("class count fits u32")
+        .wrapping_sub(1);
+    let mut open = Vec::new();
+    let mut work: Vec<(usize, usize, bool)> = Vec::new();
+    for root in 0..n {
+        if slot[root] != 0 {
+            continue;
+        }
+        slot[root] = index;
+        index += 1;
+        work.push((root, 0, true));
+        while let Some(&mut (node, ref mut position, ref mut is_root)) = work.last_mut() {
+            if let Some(&next) = adjacent(node).get(*position) {
+                *position += 1;
+                if slot[next] == 0 {
+                    slot[next] = index;
+                    index += 1;
+                    work.push((next, 0, true));
+                } else if slot[next] < slot[node] {
+                    slot[node] = slot[next];
+                    *is_root = false;
+                }
+                continue;
+            }
+            let (node, _, is_root) = work.pop().expect("the frame just read");
+            if is_root {
+                index -= 1;
+                while let Some(&member) = open.last()
+                    && slot[node] <= slot[member]
+                {
+                    open.pop();
+                    slot[member] = component;
+                    index -= 1;
+                }
+                slot[node] = component;
+                component = component.wrapping_sub(1);
+            } else {
+                open.push(node);
+            }
+            if let Some(&mut (parent, _, ref mut parent_is_root)) = work.last_mut()
+                && slot[node] < slot[parent]
+            {
+                slot[parent] = slot[node];
+                *parent_is_root = false;
+            }
+        }
+    }
+    // Numbered from zero in completion order.
+    let last = u32::try_from(n)
+        .expect("class count fits u32")
+        .wrapping_sub(1);
+    for slot in &mut slot {
+        *slot = last - *slot;
+    }
+    slot
 }
 
 #[cfg(test)]
@@ -281,6 +456,7 @@ mod tests {
 
     impl Lattice for Set {
         type Edge = ();
+        type Context = ();
 
         fn bottom() -> Self {
             Self(0)
@@ -292,8 +468,9 @@ mod tests {
             before != self.0
         }
 
-        fn transfer(&self, (): &()) -> Self {
-            *self
+        /// A flow delivers the set; a derive delivers the union of both.
+        fn transfer(&self, (): &(), other: Option<&Self>, _: bool, (): &()) -> Self {
+            Self(self.0 | other.map_or(0, |other| other.0))
         }
     }
 
@@ -318,6 +495,7 @@ mod tests {
 
     impl Lattice for Interval {
         type Edge = i64;
+        type Context = ();
 
         fn bottom() -> Self {
             Self::new(i64::MIN, i64::MAX)
@@ -330,12 +508,77 @@ mod tests {
             before != *self
         }
 
-        fn transfer(&self, offset: &i64) -> Self {
+        fn transfer(&self, offset: &i64, _: Option<&Self>, _: bool, (): &()) -> Self {
             Self::new(
                 self.lo.saturating_add(*offset),
                 self.hi.saturating_add(*offset),
             )
         }
+    }
+
+    #[test]
+    fn components_follow_the_arcs() {
+        // 0 -> 1 -> 2 -> 0 is a cycle; 3 hangs off it; 4 is alone.
+        let component = components(5, &[(0, 1), (1, 2), (2, 0), (1, 3), (4, 4)]);
+        assert_eq!(component[0], component[1]);
+        assert_eq!(component[1], component[2]);
+        assert_ne!(component[0], component[3]);
+        assert_ne!(component[0], component[4]);
+        // The callee completes first.
+        assert!(component[3] < component[0]);
+    }
+
+    /// A lattice that reports which flows the solver called cyclic.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    struct Seen {
+        set: u8,
+        cyclic: bool,
+    }
+
+    impl Lattice for Seen {
+        type Edge = ();
+        type Context = ();
+
+        fn bottom() -> Self {
+            Self {
+                set: 0,
+                cyclic: false,
+            }
+        }
+
+        fn join(&mut self, other: &Self) -> bool {
+            let before = *self;
+            self.set |= other.set;
+            self.cyclic |= other.cyclic;
+            before != *self
+        }
+
+        /// Nothing comes of nothing: an empty set is not marked.
+        fn transfer(&self, (): &(), _: Option<&Self>, cyclic: bool, (): &()) -> Self {
+            Self {
+                set: self.set,
+                cyclic: self.cyclic | (cyclic && self.set != 0),
+            }
+        }
+    }
+
+    #[test]
+    fn flows_on_a_cycle_are_told_so() {
+        let mut solver = Solver::<Seen>::default();
+        let a = solver.known(Seen {
+            set: 1,
+            cyclic: false,
+        });
+        let b = solver.import(a, ());
+        let c = solver.import(b, ());
+        solver.flow(c, b, ());
+        let d = solver.import(c, ());
+        solver.solve(&());
+        assert!(!solver.evidence(a).cyclic);
+        assert!(solver.evidence(b).cyclic && solver.evidence(c).cyclic);
+        // `d` is downstream of the cycle: its own flow is not on it, but the
+        // evidence it receives was marked on the way.
+        assert_eq!(solver.evidence(d).set, 1);
     }
 
     #[test]
@@ -347,7 +590,7 @@ mod tests {
         solver.expect(a, &Set(1));
         solver.equal(a, b);
         solver.expect(b, &Set(2));
-        solver.solve();
+        solver.solve(&());
         assert_eq!(*solver.evidence(a), Set(3));
         assert_eq!(*solver.evidence(b), Set(3));
         assert_eq!(*solver.evidence(c), Set(3));
@@ -359,7 +602,7 @@ mod tests {
         let provider = solver.fresh();
         let consumer = solver.import(provider, ());
         solver.expect(consumer, &Set(1));
-        solver.solve();
+        solver.solve(&());
         assert_eq!(*solver.evidence(provider), Set::bottom());
         assert_eq!(*solver.evidence(consumer), Set(1));
     }
@@ -371,11 +614,12 @@ mod tests {
         let y = solver.import(x, 100);
         solver.expect(x, &Interval::new(5, 20));
         solver.expect(y, &Interval::new(130, 140));
-        solver.solve();
+        solver.solve(&());
         assert_eq!(*solver.evidence(x), Interval::new(5, 10));
         assert!(solver.evidence(y).is_empty());
-        let replay =
-            solver.replay(|band, offset| (!band.is_empty()).then(|| band.transfer(offset)));
+        let replay = solver.replay(|band, _, offset| {
+            (!band.is_empty()).then(|| band.transfer(offset, None, false, &()))
+        });
         assert_eq!(*replay.evidence(x), Interval::new(0, 10));
         assert_eq!(*replay.evidence(y), Interval::new(105, 110));
     }
@@ -389,7 +633,7 @@ mod tests {
         solver.expect(a, &(Set(1), Interval::new(0, 100)));
         solver.expect(b, &(Set(4), Interval::new(50, 200)));
         solver.equal(a, b);
-        solver.solve();
+        solver.solve(&((), ()));
         assert_eq!(*solver.evidence(a), (Set(5), Interval::new(50, 100)));
         assert_eq!(*solver.evidence(c), (Set(5), Interval::new(51, 101)));
     }
@@ -405,8 +649,8 @@ mod tests {
         solver.expect(conflicted, &Set(2));
         let from_conflict = solver.import(conflicted, ());
         let from_known = solver.import(known, ());
-        solver.solve();
-        let replay = solver.replay(|set, ()| (set.0.count_ones() == 1).then_some(*set));
+        solver.solve(&());
+        let replay = solver.replay(|set, _, ()| (set.0.count_ones() == 1).then_some(*set));
         assert_eq!(*replay.evidence(known), Set(1));
         assert_eq!(*replay.evidence(demanded), Set::bottom());
         assert_eq!(*replay.evidence(conflicted), Set::bottom());
@@ -415,9 +659,10 @@ mod tests {
     }
 
     /// One constraint over eight pre-made classes: an equality, an
-    /// expectation, an equality with a known class, or a flow.
+    /// expectation, an equality with a known class, a flow, or a derive
+    /// into the class after the second.
     fn constraint() -> impl proptest::strategy::Strategy<Value = (u8, usize, usize)> {
-        (0u8..4, 0usize..8, 0usize..8)
+        (0u8..5, 0usize..8, 0usize..8)
     }
 
     fn apply(solver: &mut Solver<Set>, vars: &[Var], (kind, a, b): (u8, usize, usize)) {
@@ -428,7 +673,8 @@ mod tests {
                 let known = solver.known(Set(1 << (b % 3)));
                 solver.equal(vars[a], known);
             }
-            _ => solver.flow(vars[a], vars[b], ()),
+            3 => solver.flow(vars[a], vars[b], ()),
+            _ => solver.derive(vars[a], vars[b], vars[(b + 1) % 8], ()),
         }
     }
 
@@ -446,7 +692,7 @@ mod tests {
             for &c in &constraints {
                 apply(&mut ordered, &vars, c);
             }
-            ordered.solve();
+            ordered.solve(&());
             let mut permuted = constraints.clone();
             let mut state = seed;
             for i in (1..permuted.len()).rev() {
@@ -458,7 +704,7 @@ mod tests {
             for &c in &permuted {
                 apply(&mut shuffled, &shuffled_vars, c);
             }
-            shuffled.solve();
+            shuffled.solve(&());
             for (&a, &b) in vars.iter().zip(&shuffled_vars) {
                 proptest::prop_assert_eq!(ordered.evidence(a), shuffled.evidence(b));
             }
@@ -478,15 +724,17 @@ mod tests {
             let mut expected = solver.evidence.clone();
             loop {
                 let mut changed = false;
-                for &(provider, consumer, ()) in &solver.flows {
-                    let evidence = expected[solver.root(provider.index())];
-                    changed |= expected[solver.root(consumer.index())].join(&evidence);
+                for flow in &solver.flows {
+                    let first = expected[solver.root(flow.first.index())];
+                    let second = flow.second.map(|second| expected[solver.root(second.index())]);
+                    let evidence = first.transfer(&(), second.as_ref(), false, &());
+                    changed |= expected[solver.root(flow.consumer.index())].join(&evidence);
                 }
                 if !changed {
                     break;
                 }
             }
-            solver.solve();
+            solver.solve(&());
             for &var in &vars {
                 proptest::prop_assert_eq!(*solver.evidence(var), expected[solver.root(var.index())]);
             }
