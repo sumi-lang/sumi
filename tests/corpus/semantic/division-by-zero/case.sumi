@@ -12,3 +12,8 @@ fn statements() -> int {
     _ = a / 0 == 0 || true
     if a > b { a - b } else { b - a }
 }
+fn inner_guard(n: int, m: int) -> int {
+    if n > 0 { if m != 0 { _ = 1 }
+ 0 } else { 100 / m }
+}
+fn inner_guards() -> int = inner_guard(0, 0) + inner_guard(1, 5)

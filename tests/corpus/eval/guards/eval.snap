@@ -14,3 +14,5 @@ fn even: takes arguments, not run
 fn odd: takes arguments, not run
 fn pass: takes arguments, not run
 fn parity = true (steps 345, depth 17)
+fn bounded: takes arguments, not run
+fn boundeds = -13 (steps 67, depth 2)

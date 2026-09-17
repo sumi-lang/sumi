@@ -156,3 +156,30 @@ fn parity@775..817 () -> bool ∈ {true, false}
     rhs: not : bool @809..817
       operand: call even@610..674 (callee @810..814) : bool @810..817
         arg[0]: int 7 : int @815..816
+
+fn bounded@818..889 (int ∈ [-3, 5]) -> int ∈ [-100, 100]
+  param d@829..830: int
+  body: if : int @846..889
+    condition: lazy and : bool @849..866
+      lhs: eager != : bool @849..855
+        lhs: read d@829..830 : int @849..850
+        rhs: int 0 : int @854..855
+      rhs: eager < : bool @859..866
+        lhs: read d@829..830 : int @859..860
+        rhs: int 100 : int @863..866
+    then: block : int @867..878
+      tail: eager / : int @869..876
+        lhs: int 100 : int @869..872
+        rhs: read d@829..830 : int @875..876
+    else: block : int @884..889
+      tail: int 0 : int @886..887
+
+fn boundeds@890..950 () -> int ∈ [-300, 300]
+  body: eager + : int @913..950
+    lhs: eager + : int @913..937
+      lhs: call bounded@818..889 (callee @913..920) : int @913..924
+        arg[0]: int -3 : int @921..923
+      rhs: call bounded@818..889 (callee @927..934) : int @927..937
+        arg[0]: int 0 : int @935..936
+    rhs: call bounded@818..889 (callee @940..947) : int @940..950
+      arg[0]: int 5 : int @948..949

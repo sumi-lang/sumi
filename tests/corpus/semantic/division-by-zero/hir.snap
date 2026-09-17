@@ -1,6 +1,6 @@
 file: rejected
 frontend errors: 0 (see frontend.snap)
-semantic errors: 5
+semantic errors: 6
 
 fn divide_by_zero@0..40 () -> int ∈ ∅
   body: eager / : int @29..40
@@ -79,6 +79,40 @@ fn statements@285..427 () -> int ∈ [18, 18]
           lhs: read b@332..333 : int @418..419
           rhs: read a@350..351 : int @422..423
 
+fn inner_guard@428..526 (int ∈ [0, 1], int ∈ [0, 5]) -> int ∈ [0, 100]
+  param n@443..444: int
+  param m@451..452: int
+  body: block : int @466..526
+    tail: if : int @472..524
+      condition: eager > : bool @475..480
+        lhs: read n@443..444 : int @475..476
+        rhs: int 0 : int @479..480
+      then: block : int @481..507
+        discard @483..502
+          value: if : unit @483..502
+            condition: eager != : bool @486..492
+              lhs: read m@451..452 : int @486..487
+              rhs: int 0 : int @491..492
+            then: block : unit @493..502
+              discard @495..500
+                value: int 1 : int @499..500
+              tail: unit (implicit)
+            else: unit (implicit)
+        tail: int 0 : int @504..505
+      else: block : int @513..524
+        tail: eager / : int @515..522
+          lhs: int 100 : int @515..518
+          rhs: read m@451..452 : int @521..522
+
+fn inner_guards@527..591 () -> int ∈ [0, 200]
+  body: eager + : int @554..591
+    lhs: call inner_guard@428..526 (callee @554..565) : int @554..571
+      arg[0]: int 0 : int @566..567
+      arg[1]: int 0 : int @569..570
+    rhs: call inner_guard@428..526 (callee @574..585) : int @574..591
+      arg[0]: int 1 : int @586..587
+      arg[1]: int 5 : int @589..590
+
 == semantic diagnostics ==
 error[semantic/division-by-zero]: division by zero
   primary @29..40
@@ -95,3 +129,6 @@ error[semantic/division-by-zero]: divisor may be zero
 error[semantic/division-by-zero]: division by zero
   primary @369..374
   secondary @373..374: is 0
+error[semantic/division-by-zero]: divisor may be zero
+  primary @515..522
+  secondary @569..570: argument is 0

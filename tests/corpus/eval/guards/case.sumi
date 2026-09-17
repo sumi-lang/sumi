@@ -13,3 +13,5 @@ fn even(n: int) -> bool = if n == 0 { true } else { odd(n - 1) }
 fn odd(n: int) -> bool = if n == 0 { false } else { pass(n - 1) }
 fn pass(n: int) -> bool = even(n)
 fn parity() -> bool = even(10) && !even(7)
+fn bounded(d: int) -> int = if d != 0 && d < 100 { 100 / d } else { 0 }
+fn boundeds() -> int = bounded(-3) + bounded(0) + bounded(5)

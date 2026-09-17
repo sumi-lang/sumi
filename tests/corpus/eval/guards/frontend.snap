@@ -1,5 +1,5 @@
 == tree ==
-SourceFile 0..818
+SourceFile 0..951
   FnItem 0..42
     Name 3..10 "guarded"
     ParamList 10..12 "()"
@@ -234,6 +234,46 @@ SourceFile 0..818
           NameRef 810..814 "even"
           ArgList 814..817
             LiteralExpr 815..816 "7"
+  FnItem 818..889
+    Name 821..828 "bounded"
+    ParamList 828..836
+      Param 829..835
+        Name 829..830 "d"
+        TypeRef 832..835 "int"
+    TypeRef 840..843 "int"
+    IfExpr 846..889
+      BinaryExpr 849..866
+        BinaryExpr 849..855
+          NameRef 849..850 "d"
+          LiteralExpr 854..855 "0"
+        BinaryExpr 859..866
+          NameRef 859..860 "d"
+          LiteralExpr 863..866 "100"
+      Block 867..878
+        BinaryExpr 869..876
+          LiteralExpr 869..872 "100"
+          NameRef 875..876 "d"
+      Block 884..889
+        LiteralExpr 886..887 "0"
+  FnItem 890..950
+    Name 893..901 "boundeds"
+    ParamList 901..903 "()"
+    TypeRef 907..910 "int"
+    BinaryExpr 913..950
+      BinaryExpr 913..937
+        CallExpr 913..924
+          NameRef 913..920 "bounded"
+          ArgList 920..924
+            PrefixExpr 921..923
+              LiteralExpr 922..923 "3"
+        CallExpr 927..937
+          NameRef 927..934 "bounded"
+          ArgList 934..937
+            LiteralExpr 935..936 "0"
+      CallExpr 940..950
+        NameRef 940..947 "bounded"
+        ArgList 947..950
+          LiteralExpr 948..949 "5"
 
 == formatted ==
 fn guarded() -> bool = false && 1 / 0 == 0
@@ -283,3 +323,9 @@ fn odd(n: int) -> bool = if n == 0 {
 }
 fn pass(n: int) -> bool = even(n)
 fn parity() -> bool = even(10) && !even(7)
+fn bounded(d: int) -> int = if d != 0 && d < 100 {
+    100 / d
+} else {
+    0
+}
+fn boundeds() -> int = bounded(-3) + bounded(0) + bounded(5)

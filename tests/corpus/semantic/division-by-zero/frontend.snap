@@ -1,5 +1,5 @@
 == tree ==
-SourceFile 0..428
+SourceFile 0..592
   FnItem 0..40
     Name 3..17 "divide_by_zero"
     ParamList 17..19 "()"
@@ -111,6 +111,49 @@ SourceFile 0..428
           BinaryExpr 418..423
             NameRef 418..419 "b"
             NameRef 422..423 "a"
+  FnItem 428..526
+    Name 431..442 "inner_guard"
+    ParamList 442..458
+      Param 443..449
+        Name 443..444 "n"
+        TypeRef 446..449 "int"
+      Param 451..457
+        Name 451..452 "m"
+        TypeRef 454..457 "int"
+    TypeRef 462..465 "int"
+    Block 466..526
+      IfExpr 472..524
+        BinaryExpr 475..480
+          NameRef 475..476 "n"
+          LiteralExpr 479..480 "0"
+        Block 481..507
+          IfExpr 483..502
+            BinaryExpr 486..492
+              NameRef 486..487 "m"
+              LiteralExpr 491..492 "0"
+            Block 493..502
+              DiscardStmt 495..500
+                LiteralExpr 499..500 "1"
+          LiteralExpr 504..505 "0"
+        Block 513..524
+          BinaryExpr 515..522
+            LiteralExpr 515..518 "100"
+            NameRef 521..522 "m"
+  FnItem 527..591
+    Name 530..542 "inner_guards"
+    ParamList 542..544 "()"
+    TypeRef 548..551 "int"
+    BinaryExpr 554..591
+      CallExpr 554..571
+        NameRef 554..565 "inner_guard"
+        ArgList 565..571
+          LiteralExpr 566..567 "0"
+          LiteralExpr 569..570 "0"
+      CallExpr 574..591
+        NameRef 574..585 "inner_guard"
+        ArgList 585..591
+          LiteralExpr 586..587 "1"
+          LiteralExpr 589..590 "5"
 
 == formatted ==
 fn divide_by_zero() -> int = 1 / (2 - 2)
@@ -131,3 +174,14 @@ fn statements() -> int {
         b - a
     }
 }
+fn inner_guard(n: int, m: int) -> int {
+    if n > 0 {
+        if m != 0 {
+            _ = 1
+        }
+        0
+    } else {
+        100 / m
+    }
+}
+fn inner_guards() -> int = inner_guard(0, 0) + inner_guard(1, 5)
