@@ -74,6 +74,7 @@ fn reversed_declarations_preserve_types(analysis: &Analysis) {
             a.signature().map(|s| (&s.params, s.result)),
             b.signature().map(|s| (&s.params, s.result))
         );
+        assert_eq!(a.ranges(), b.ranges());
         assert_eq!(a.body().is_some(), b.body().is_some());
         if b.body().is_some() {
             invariant(&reversed, b);

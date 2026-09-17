@@ -218,7 +218,7 @@ impl Function {
 /// What may reach a function's parameters, the hull of its live call sites'
 /// arguments, and what its result may be. A function no live call site
 /// reaches holds nothing in either, and nothing in it is checked.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Ranges {
     pub params: Box<[May]>,
     pub result: May,

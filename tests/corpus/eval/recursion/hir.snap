@@ -91,7 +91,7 @@ fn r0@350..432 (int ∈ [1, 1], int ∈ [2, 2], int ∈ [0, 20]) -> int ∈ [3, 
         lhs: read a@356..357 : int @425..426
         rhs: read b@364..365 : int @429..430
 
-fn r1@433..515 (int ∈ [1, 1], int ∈ [2, 2], int ∈ [0, 19]) -> int ∈ [3, 3]
+fn r1@433..515 (int ∈ [1, 1], int ∈ [2, 2], int ∈ [0, 18]) -> int ∈ [3, 3]
   param a@439..440: int
   param b@447..448: int
   param c@455..456: int
@@ -111,7 +111,7 @@ fn r1@433..515 (int ∈ [1, 1], int ∈ [2, 2], int ∈ [0, 19]) -> int ∈ [3, 
         lhs: read a@439..440 : int @508..509
         rhs: read b@447..448 : int @512..513
 
-fn r2@516..598 (int ∈ [1, 1], int ∈ [2, 2], int ∈ [0, 19]) -> int ∈ [3, 3]
+fn r2@516..598 (int ∈ [1, 1], int ∈ [2, 2], int ∈ [0, 16]) -> int ∈ [3, 3]
   param a@522..523: int
   param b@530..531: int
   param c@538..539: int
@@ -151,7 +151,7 @@ fn r3@599..681 (int ∈ [2, 2], int ∈ [1, 1], int ∈ [0, 19]) -> int ∈ [3, 
         lhs: read a@605..606 : int @674..675
         rhs: read b@613..614 : int @678..679
 
-fn r4@682..764 (int ∈ [2, 2], int ∈ [1, 1], int ∈ [0, 19]) -> int ∈ [3, 3]
+fn r4@682..764 (int ∈ [2, 2], int ∈ [1, 1], int ∈ [0, 17]) -> int ∈ [3, 3]
   param a@688..689: int
   param b@696..697: int
   param c@704..705: int
@@ -171,7 +171,7 @@ fn r4@682..764 (int ∈ [2, 2], int ∈ [1, 1], int ∈ [0, 19]) -> int ∈ [3, 
         lhs: read a@688..689 : int @757..758
         rhs: read b@696..697 : int @761..762
 
-fn r5@765..847 (int ∈ [2, 2], int ∈ [1, 1], int ∈ [0, 19]) -> int ∈ [3, 3]
+fn r5@765..847 (int ∈ [2, 2], int ∈ [1, 1], int ∈ [0, 15]) -> int ∈ [3, 3]
   param a@771..772: int
   param b@779..780: int
   param c@787..788: int
