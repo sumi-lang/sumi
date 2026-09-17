@@ -218,7 +218,7 @@ pub(crate) fn check(
                     .iter()
                     .enumerate()
                 {
-                    if let Some((param, band)) = delta(body, typing, &lets, &branches, arg, 0)
+                    if let Some((param, band)) = delta(body, typing, &lets, &branches, arg)
                         && let Some(&i) = params.get(&param)
                     {
                         offsets.insert((i, j), band);
@@ -460,68 +460,133 @@ fn lax_edges_are_acyclic(members: usize, calls: &[Call], strict: &[bool]) -> boo
 
 /// `Some((p, c))` when on every run the expression's value is in `p + c`
 /// for the parameter `p`. `branches` says which arms of each `if` can run.
+/// The walk keeps its own stack, so a chain of `let`s or a nest of
+/// operators of any depth is read.
 fn delta(
     body: &DraftBody,
     typing: &Typing,
     lets: &HashMap<LocalId, ExprId>,
     branches: &HashMap<ExprId, (bool, bool)>,
     expr: ExprId,
-    depth: usize,
 ) -> Option<(LocalId, Ints)> {
-    if depth > 256 {
-        return None;
-    }
     let may = |expr: ExprId| &typing.may(body.classes[expr.index()]).ints;
-    match &body.exprs[expr.index()].kind {
-        ExprKind::Local(local) => {
-            if body.params.contains(local) {
-                Some((*local, Ints::from(Int::from(0))))
-            } else {
-                delta(body, typing, lets, branches, *lets.get(local)?, depth + 1)
-            }
-        }
-        ExprKind::Binary {
-            op: BinaryOp::Add,
-            lhs,
-            rhs,
-        } => delta(body, typing, lets, branches, *lhs, depth + 1)
-            .map(|(p, c)| (p, &c + may(*rhs)))
-            .or_else(|| {
-                delta(body, typing, lets, branches, *rhs, depth + 1)
-                    .map(|(p, c)| (p, may(*lhs) + &c))
-            }),
-        ExprKind::Binary {
-            op: BinaryOp::Sub,
-            lhs,
-            rhs,
-        } => delta(body, typing, lets, branches, *lhs, depth + 1).map(|(p, c)| (p, &c - may(*rhs))),
-        ExprKind::If {
-            then_branch,
-            else_branch: Some(else_branch),
-            ..
-        } => {
-            // A branch that cannot run contributes no value.
-            let (then_live, else_live) = branches.get(&expr).copied().unwrap_or((true, true));
-            let then =
-                then_live.then(|| delta(body, typing, lets, branches, *then_branch, depth + 1));
-            let otherwise =
-                else_live.then(|| delta(body, typing, lets, branches, *else_branch, depth + 1));
-            match (then, otherwise) {
-                (Some(then), Some(otherwise)) => {
-                    let (p, mut c) = then?;
-                    let (q, d) = otherwise?;
-                    (p == q).then(|| {
-                        c.join(&d);
-                        (p, c)
-                    })
+    /// What to do with the offset of the expression being read.
+    enum Frame {
+        /// The left operand of `+`: `rhs` adds to its offset, or is read in
+        /// turn when it has none.
+        AddLhs { lhs: ExprId, rhs: ExprId },
+        /// The right operand of `+`, the left having no offset: `lhs` adds.
+        AddRhs { lhs: ExprId },
+        /// The left operand of `-`: `rhs` subtracts.
+        Sub { rhs: ExprId },
+        /// The then arm of an `if` whose else arm `else_branch` runs too.
+        Then { else_branch: ExprId },
+        /// The else arm, `then` being the then arm's offset.
+        Else { then: (LocalId, Ints) },
+    }
+    let mut frames: Vec<Frame> = Vec::new();
+    let mut next = Some(expr);
+    let mut result: Option<(LocalId, Ints)> = None;
+    loop {
+        if let Some(expr) = next.take() {
+            result = match &body.exprs[expr.index()].kind {
+                ExprKind::Local(local) if body.params.contains(local) => {
+                    Some((*local, Ints::from(Int::from(0))))
                 }
-                (Some(only), None) | (None, Some(only)) => only,
-                (None, None) => None,
+                ExprKind::Local(local) => match lets.get(local) {
+                    Some(&initializer) => {
+                        next = Some(initializer);
+                        continue;
+                    }
+                    None => None,
+                },
+                ExprKind::Binary {
+                    op: BinaryOp::Add,
+                    lhs,
+                    rhs,
+                } => {
+                    frames.push(Frame::AddLhs {
+                        lhs: *lhs,
+                        rhs: *rhs,
+                    });
+                    next = Some(*lhs);
+                    continue;
+                }
+                ExprKind::Binary {
+                    op: BinaryOp::Sub,
+                    lhs,
+                    rhs,
+                } => {
+                    frames.push(Frame::Sub { rhs: *rhs });
+                    next = Some(*lhs);
+                    continue;
+                }
+                ExprKind::If {
+                    then_branch,
+                    else_branch: Some(else_branch),
+                    ..
+                } => {
+                    // A branch that cannot run contributes no value.
+                    let (then_live, else_live) =
+                        branches.get(&expr).copied().unwrap_or((true, true));
+                    match (then_live, else_live) {
+                        (true, true) => {
+                            frames.push(Frame::Then {
+                                else_branch: *else_branch,
+                            });
+                            next = Some(*then_branch);
+                            continue;
+                        }
+                        (true, false) => {
+                            next = Some(*then_branch);
+                            continue;
+                        }
+                        (false, true) => {
+                            next = Some(*else_branch);
+                            continue;
+                        }
+                        (false, false) => None,
+                    }
+                }
+                ExprKind::Block {
+                    tail: Some(tail), ..
+                } => {
+                    next = Some(*tail);
+                    continue;
+                }
+                _ => None,
+            };
+        }
+        // An offset, or none, is in hand: the innermost frame takes it.
+        let Some(frame) = frames.pop() else {
+            return result;
+        };
+        match frame {
+            Frame::AddLhs { lhs, rhs } => match result.take() {
+                Some((p, c)) => result = Some((p, &c + may(rhs))),
+                None => {
+                    frames.push(Frame::AddRhs { lhs });
+                    next = Some(rhs);
+                }
+            },
+            Frame::AddRhs { lhs } => result = result.take().map(|(p, c)| (p, may(lhs) + &c)),
+            Frame::Sub { rhs } => result = result.take().map(|(p, c)| (p, &c - may(rhs))),
+            Frame::Then { else_branch } => match result.take() {
+                Some(then) => {
+                    frames.push(Frame::Else { then });
+                    next = Some(else_branch);
+                }
+                None => result = None,
+            },
+            Frame::Else { then: (p, mut c) } => {
+                result = match result.take() {
+                    Some((q, d)) if p == q => {
+                        c.join(&d);
+                        Some((p, c))
+                    }
+                    _ => None,
+                };
             }
         }
-        ExprKind::Block {
-            tail: Some(tail), ..
-        } => delta(body, typing, lets, branches, *tail, depth + 1),
-        _ => None,
     }
 }

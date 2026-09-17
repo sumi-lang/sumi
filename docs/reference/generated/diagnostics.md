@@ -780,8 +780,13 @@ A cycle of calls with no argument that moves toward a bound: on every
 call around the cycle some one parameter of each function must be
 passed a value that never moves the wrong way and, often enough that
 no cycle of calls only passes it along, strictly decreases (or strictly
-increases), with the values it can take bounded on that side. Labels
-name the recursive calls and the argument that comes closest.
+increases), with the values it can take bounded on that side. An
+argument counts when it is a parameter of the caller plus or minus a
+value, read through `let`s, blocks, and the arms of an `if` that can
+run; a constant argument moves nothing, so a cycle that resets a
+parameter is reported even where its guard would end it. Labels name
+the recursive calls and what each does to the parameter that came
+closest.
 
 Shown by [`tests/corpus/semantic/inference-boundaries`](../../../tests/corpus/semantic/inference-boundaries/case.sumi):
 

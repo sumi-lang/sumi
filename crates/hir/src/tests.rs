@@ -397,6 +397,25 @@ fn expression_results_stay_body_local_across_failed_bodies() {
     reversed_declarations_preserve_types(&a);
 }
 
+/// The offset an argument carries is read through a chain of `let`s of
+/// any length, since the walk keeps its own stack.
+#[test]
+fn a_measure_is_read_through_any_depth_of_lets() {
+    use std::fmt::Write as _;
+    let mut source = String::from("fn f(n: int) -> int {\n    let a0 = n - 1\n");
+    for i in 1..400 {
+        writeln!(source, "    let a{i} = a{} - 0", i - 1).unwrap();
+    }
+    source.push_str("    if a399 < 0 { 0 } else { f(a399) }\n}\nfn main() -> int = f(5)\n");
+    let analysis = check(&source);
+    assert!(
+        analysis.diagnostics().is_empty(),
+        "{:?}",
+        analysis.diagnostics()
+    );
+    assert_eq!(analysis.depth_bound(FunctionId(1)), Some(7));
+}
+
 #[test]
 fn call_arguments_keep_source_order() {
     let a = clean("fn select(a: int, b: int, c: int) -> int = b\nfn caller() = select(11, 29, 7)");
