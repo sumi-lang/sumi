@@ -127,15 +127,16 @@ pub(crate) fn check(
     let arcs: Vec<_> = calls
         .iter()
         .filter(|&&(_, _, context)| typing.may(context).live())
-        .map(|&(caller, callee, _)| (caller.index(), callee.index()))
+        .map(|&(caller, callee, _)| (caller.0, callee.0))
         .collect();
-    let component = components(bodies.len(), &arcs);
-    let count = component.iter().map(|&c| c as usize + 1).max().unwrap_or(0);
+    let components = components(bodies.len(), &arcs);
+    let component = &components.of;
+    let count = components.count();
     // Functions grouped by component, in declaration order within one.
     let mut grouped: Vec<usize> = (0..bodies.len()).collect();
     grouped.sort_by_key(|&function| component[function]);
     let mut group_start = vec![0; count + 1];
-    for &c in &component {
+    for &c in component {
         group_start[c as usize + 1] += 1;
     }
     for c in 0..count {
@@ -145,7 +146,10 @@ pub(crate) fn check(
     // Calls between components, as `(from, to)`, sorted.
     let mut between = Vec::new();
     for &(caller, callee) in &arcs {
-        let (from, to) = (component[caller] as usize, component[callee] as usize);
+        let (from, to) = (
+            component[caller as usize] as usize,
+            component[callee as usize] as usize,
+        );
         if from == to {
             cyclic[from] = true;
         } else {
