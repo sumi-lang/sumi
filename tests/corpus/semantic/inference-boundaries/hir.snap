@@ -17,7 +17,7 @@ fn recovered@85..112 () -> int ∈ ∅
 fn bad_arguments@113..153 signature: unavailable
   body: unavailable
 
-fn bare@154..169 () -> unit ∈ unit
+fn bare@154..169 () -> unit ∈ ∅
   body: unavailable
 
 fn malformed@170..195 signature: unavailable

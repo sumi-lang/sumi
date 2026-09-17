@@ -2,10 +2,10 @@ file: rejected
 frontend errors: 0 (see frontend.snap)
 semantic errors: 12
 
-fn unsupported@0..59 () -> unit ∈ unit
+fn unsupported@0..59 () -> unit ∈ ∅
   body: unavailable
 
-fn closure@60..93 () -> unit ∈ unit
+fn closure@60..93 () -> unit ∈ ∅
   body: unavailable
 
 fn literal@94..121 signature: unavailable
@@ -26,7 +26,7 @@ fn annotation@234..269 () -> unit ∈ unit
 fn unit_equality@270..307 () -> bool ∈ ∅
   body: unavailable
 
-fn computed_call@308..384 () -> unit ∈ unit
+fn computed_call@308..384 () -> unit ∈ ∅
   body: unavailable
 
 == semantic diagnostics ==

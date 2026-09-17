@@ -42,7 +42,7 @@ use sumi_syntax::{
 
 use crate::codes;
 use crate::ranges::{May, RangeEdge, UnaryOp};
-use crate::solver::Var;
+use crate::solver::{Lattice, Var};
 use crate::typing::{Claim, Expected, ProductContext, Typing};
 use crate::*;
 
@@ -106,6 +106,8 @@ struct Header {
     /// headers so a call walked before the callee's body has somewhere to
     /// send its arguments. Empty for an invalid parameter list.
     param_classes: std::ops::Range<usize>,
+    /// The function's entry context: live when it can run.
+    entry: Var,
     /// The result class; `None` when the declaration is too damaged to have
     /// one.
     result: Option<Var>,
@@ -418,6 +420,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         if valid {
             param_classes.extend(params.iter().map(|p| p.class.unwrap()));
         }
+        let entry = typing.entry(valid && params.is_empty());
         let (result, declared) = if let Some(ret) = item.ret(tree) {
             match source.ty(ret) {
                 Some(ty) => (Some(typing.known(ty, ret.node())), Some((ty, ret.node()))),
@@ -448,6 +451,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         headers.push(Header {
             params: valid.then(|| params.iter().map(|p| p.ty.unwrap()).collect()),
             param_classes: classes_start..param_classes.len(),
+            entry,
             result,
             declared,
             item: item.node(),
@@ -563,12 +567,18 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         let result = evidence.and_then(|evidence| evidence.ty());
         if let (Some(params), Some(result)) = (header.params, result) {
             functions[index].signature = Some(Signature { params, result });
+            // A function nothing live reaches never returns either.
+            let result = header.result.unwrap();
             functions[index].ranges = Some(Ranges {
                 params: param_classes[header.param_classes.clone()]
                     .iter()
                     .map(|&class| typing.may(class).clone())
                     .collect(),
-                result: typing.may(header.result.unwrap()).clone(),
+                result: if typing.may(header.entry).live() {
+                    typing.may(result).clone()
+                } else {
+                    May::bottom()
+                },
             });
         }
         // A result to infer that did not resolve is reported here, unless a
@@ -640,6 +650,14 @@ enum Work {
     Enter(NodeIdx),
     Finish(NodeIdx),
     Call(NodeIdx, FunctionId, NodeIdx),
+    /// An `if` whose condition is walked: open its branches' contexts.
+    Branches(NodeIdx),
+    /// A lazy operator whose left operand is walked: open the right one's.
+    Rhs(NodeIdx),
+    /// Enter a context.
+    Push(Var),
+    /// Leave the innermost context.
+    Pop,
 }
 
 /// The one walker for every body of the file. What a body publishes is
@@ -664,6 +682,11 @@ struct Builder<'a, 's> {
     consts: Vec<Option<Int>>,
     args: Vec<ExprId>,
     statements: Vec<Statement>,
+    /// The context each point runs in, innermost last.
+    contexts: Vec<Var>,
+    /// The contexts of the branches of each `if` whose branches are walked
+    /// and whose `if` is not yet finished, innermost last.
+    branch_contexts: Vec<(Var, Var)>,
     // Scratch kept across bodies.
     /// A pool of scopes; the first `depth` are open, innermost last. A map
     /// per scope costs a probe per enclosing scope on lookup, and nothing on
@@ -706,6 +729,8 @@ impl<'a, 's> Builder<'a, 's> {
             consts: Vec::new(),
             args: Vec::new(),
             statements: Vec::new(),
+            contexts: Vec::new(),
+            branch_contexts: Vec::new(),
             scopes: Vec::new(),
             depth: 0,
             first: NameMap::default(),
@@ -732,6 +757,9 @@ impl<'a, 's> Builder<'a, 's> {
         self.consts.clear();
         self.args.clear();
         self.statements.clear();
+        self.contexts.clear();
+        self.contexts.push(self.headers[owner].entry);
+        self.branch_contexts.clear();
         for param in parameters {
             if let Some((name, node)) = param.name {
                 if let Some(&span) = self.first.get(name) {
@@ -777,6 +805,12 @@ impl<'a, 's> Builder<'a, 's> {
                     if self.call(node, target, callee).is_none() {
                         self.failed = true;
                     }
+                }
+                Work::Branches(node) => self.branches(node, &mut work),
+                Work::Rhs(node) => self.rhs(node, &mut work),
+                Work::Push(context) => self.contexts.push(context),
+                Work::Pop => {
+                    self.contexts.pop();
                 }
             }
         }
@@ -848,6 +882,12 @@ impl<'a, 's> Builder<'a, 's> {
     fn class(&self, expr: ExprId) -> Var {
         self.classes[expr.index()]
     }
+    fn context(&self) -> Var {
+        *self
+            .contexts
+            .last()
+            .expect("a body runs in its entry context")
+    }
     /// The operator of a clean binary expression, read from the token gap
     /// between its operands.
     fn binary_op(&self, node: NodeIdx) -> sumi_syntax::BinaryOp {
@@ -868,6 +908,59 @@ impl<'a, 's> Builder<'a, 's> {
         sumi_syntax::binary_operator(lexed.kind(first), glued)
             .expect("clean binary operator")
             .0
+    }
+    /// The condition of the `if` at `node` is walked: open a context per
+    /// branch and schedule the branches inside them.
+    fn branches(&mut self, node: NodeIdx, work: &mut Vec<Work>) {
+        let tree = self.source.tree;
+        let branch = ast::IfExpr::cast(tree, node).unwrap();
+        let cond = branch.condition(tree).unwrap().node();
+        let then_node = branch.then_branch(tree).unwrap().node();
+        let else_node = branch.else_branch(tree).map(|e| e.node());
+        let parent = self.context();
+        let (then_context, else_context) = match self.value(cond) {
+            Some(value) => {
+                let cond = self.class(value);
+                (
+                    self.typing.derived(cond, parent, RangeEdge::Then),
+                    self.typing.derived(cond, parent, RangeEdge::Else),
+                )
+            }
+            None => (parent, parent),
+        };
+        self.branch_contexts.push((then_context, else_context));
+        if let Some(else_node) = else_node {
+            work.push(Work::Pop);
+            work.push(Work::Enter(else_node));
+            work.push(Work::Push(else_context));
+        }
+        work.push(Work::Pop);
+        work.push(Work::Enter(then_node));
+        work.push(Work::Push(then_context));
+    }
+    /// The left operand of the lazy operator at `node` is walked: open the
+    /// context the right one runs in and schedule it inside.
+    fn rhs(&mut self, node: NodeIdx, work: &mut Vec<Work>) {
+        let tree = self.source.tree;
+        let binary = ast::BinaryExpr::cast(tree, node).unwrap();
+        let lhs = binary.lhs(tree).unwrap().node();
+        let rhs = binary.rhs(tree).unwrap().node();
+        let and = self.binary_op(node) == sumi_syntax::BinaryOp::And;
+        let parent = self.context();
+        let context = match self.value(lhs) {
+            Some(value) => {
+                let edge = if and {
+                    RangeEdge::Then
+                } else {
+                    RangeEdge::Else
+                };
+                self.typing.derived(self.class(value), parent, edge)
+            }
+            None => parent,
+        };
+        work.push(Work::Pop);
+        work.push(Work::Enter(rhs));
+        work.push(Work::Push(context));
     }
     /// An expression of the type `class` resolves to.
     fn emit(&mut self, node: NodeIdx, kind: ExprKind, class: Var) -> ExprId {
@@ -955,6 +1048,27 @@ impl<'a, 's> Builder<'a, 's> {
             }
             _ if error => {
                 self.failed = true;
+                return;
+            }
+            NodeKind::IfExpr => {
+                let branch = ast::IfExpr::cast(tree, node).unwrap();
+                let cond = branch.condition(tree).unwrap().node();
+                work.push(Work::Finish(node));
+                work.push(Work::Branches(node));
+                work.push(Work::Enter(cond));
+                return;
+            }
+            NodeKind::BinaryExpr
+                if matches!(
+                    self.binary_op(node),
+                    sumi_syntax::BinaryOp::And | sumi_syntax::BinaryOp::Or
+                ) =>
+            {
+                let binary = ast::BinaryExpr::cast(tree, node).unwrap();
+                let lhs = binary.lhs(tree).unwrap().node();
+                work.push(Work::Finish(node));
+                work.push(Work::Rhs(node));
+                work.push(Work::Enter(lhs));
                 return;
             }
             NodeKind::PrefixExpr => {
@@ -1128,7 +1242,7 @@ impl<'a, 's> Builder<'a, 's> {
                 // A block has its tail's type, or is unit without one.
                 let class = match tail {
                     Some(tail) => self.class(tail),
-                    None => self.typing.known(Ty::Unit, node),
+                    None => self.typing.unit(self.context(), node),
                 };
                 self.emit(node, ExprKind::Block { statements, tail }, class);
             }
@@ -1314,6 +1428,10 @@ impl<'a, 's> Builder<'a, 's> {
                 }
             }
             NodeKind::IfExpr => {
+                let (then_context, else_context) = self
+                    .branch_contexts
+                    .pop()
+                    .expect("an if's branches open before it finishes");
                 let branch = ast::IfExpr::cast(tree, node).unwrap();
                 let condition_node = branch.condition(tree).unwrap().node();
                 let condition = self.value(condition_node);
@@ -1330,7 +1448,7 @@ impl<'a, 's> Builder<'a, 's> {
                     // the `if`.
                     None => {
                         self.require(then_node, then_branch, Expected::Ty(Ty::Unit), None);
-                        self.typing.known(Ty::Unit, node)
+                        self.typing.unit(self.context(), node)
                     }
                     // Each branch decides the `if` and learns nothing from
                     // the other, so branches that disagree leave the `if`
@@ -1339,8 +1457,10 @@ impl<'a, 's> Builder<'a, 's> {
                     Some(_) => {
                         let branches = [then_branch, else_branch?].map(|branch| self.class(branch));
                         let join = self.typing.fresh();
-                        for branch in branches {
-                            self.typing.branch(branch, join);
+                        for (branch, context) in
+                            branches.into_iter().zip([then_context, else_context])
+                        {
+                            self.typing.branch(branch, context, join);
                         }
                         let id = self.emit(
                             node,
@@ -1370,11 +1490,14 @@ impl<'a, 's> Builder<'a, 's> {
         Some(())
     }
     fn call(&mut self, node: NodeIdx, target: FunctionId, callee: NodeIdx) -> Option<()> {
+        let context = self.context();
         let function = &self.headers[target.index()];
         let params = function.params.as_ref()?;
         let param_classes = &self.param_classes[function.param_classes.clone()];
+        let entry = function.entry;
         let item = function.item;
         let result = function.result;
+        self.typing.flow(context, entry, RangeEdge::Enter);
         let tree = self.source.tree;
         let list = ast::CallExpr::cast(tree, node)
             .unwrap()
@@ -1415,7 +1538,7 @@ impl<'a, 's> Builder<'a, 's> {
         // arguments reach the parameters.
         for (&value, &param) in self.args[start..].iter().zip(param_classes) {
             self.typing
-                .flow(self.class(value), param, RangeEdge::Argument);
+                .derive(self.class(value), context, param, RangeEdge::Argument);
         }
         let args = Args {
             start: run(start),

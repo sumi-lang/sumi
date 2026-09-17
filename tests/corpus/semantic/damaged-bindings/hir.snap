@@ -2,7 +2,7 @@ file: rejected
 frontend errors: 2 (see frontend.snap)
 semantic errors: 1
 
-fn damaged@0..100 () -> unit ∈ unit
+fn damaged@0..100 () -> unit ∈ ∅
   body: unavailable
 
 fn intact@101..123 () -> int ∈ [3, 3]

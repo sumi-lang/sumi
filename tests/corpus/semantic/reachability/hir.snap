@@ -1,0 +1,63 @@
+file: accepted
+frontend errors: 0 (see frontend.snap)
+semantic errors: 0
+
+fn dead_branch@0..51 () -> int ∈ [2, 2]
+  body: if : int @26..51
+    condition: bool false : bool @29..34
+    then: block : int @35..40
+      tail: int 1 : int @37..38
+    else: block : int @46..51
+      tail: int 2 : int @48..49
+
+fn dead_rhs@52..94 () -> bool ∈ {false}
+  body: lazy and : bool @76..94
+    lhs: bool false : bool @76..81
+    rhs: call absent@95..128 (callee @85..91) : bool @85..94
+      arg[0]: int 1 : int @92..93
+
+fn absent@95..128 (int ∈ ∅) -> bool ∈ ∅
+  param n@105..106: int
+  body: eager > : bool @123..128
+    lhs: read n@105..106 : int @123..124
+    rhs: int 0 : int @127..128
+
+fn nested@129..198 () -> int ∈ [2, 2]
+  body: if : int @150..198
+    condition: bool true : bool @153..157
+    then: block : int @158..187
+      tail: if : int @160..185
+        condition: bool false : bool @163..168
+        then: block : int @169..174
+          tail: int 1 : int @171..172
+        else: block : int @180..185
+          tail: int 2 : int @182..183
+    else: block : int @193..198
+      tail: int 3 : int @195..196
+
+fn uncalled@199..229 (int ∈ ∅) -> int ∈ ∅
+  param n@211..212: int
+  body: read n@211..212 : int @228..229
+
+fn called@230..258 (int ∈ [5, 5]) -> int ∈ [5, 5]
+  param n@240..241: int
+  body: read n@240..241 : int @257..258
+
+fn caller@259..289 () -> int ∈ [5, 5]
+  body: call called@230..258 (callee @280..286) : int @280..289
+    arg[0]: int 5 : int @287..288
+
+fn uncalled_unit@290..334 (unit ∈ ∅, int ∈ ∅) -> int ∈ ∅
+  param u@307..308: unit
+  param n@316..317: int
+  body: read n@316..317 : int @333..334
+
+fn constant_uncalled@335..374 (int ∈ ∅) -> int ∈ ∅
+  param n@356..357: int
+  body: int 7 : int @373..374
+
+fn plain@375..397 () -> unit ∈ unit
+  body: block : unit @388..397
+    discard @390..395
+      value: int 1 : int @394..395
+    tail: unit (implicit)

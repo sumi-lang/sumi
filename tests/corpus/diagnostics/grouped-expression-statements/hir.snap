@@ -8,7 +8,7 @@ fn value@0..21 () -> int ∈ [1, 1]
 fn rejected@22..103 () -> int ∈ [-1, -1]
   body: unavailable
 
-fn separate@104..155 () -> unit ∈ unit
+fn separate@104..155 () -> unit ∈ ∅
   body: unavailable
 
 fn accepted@156..216 () -> int ∈ [2, 2]
