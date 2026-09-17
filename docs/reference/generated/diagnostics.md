@@ -793,6 +793,8 @@ fn falls() -> int = fall(5)
 fn swap(a: int, b: int) -> int = swap(b, a)
 fn swapped() -> int = swap(1, 2)
 fn spin() -> int = spin()
+fn both(a: int, b: int) -> int = both(a + 1, b + 1)
+fn boths() -> int = both(0, 0)
 ```
 
 ```text
@@ -808,6 +810,9 @@ error[semantic/unbounded-recursion]: recursion in `swap` has no argument that de
 error[semantic/unbounded-recursion]: recursion in `spin` has no argument that decreases on every call
   primary @248..252
   secondary @264..270: no argument moves a parameter toward a bound
+error[semantic/unbounded-recursion]: recursion in `both` has no argument that decreases on every call
+  primary @274..278
+  secondary @304..322: argument increases `a`, which is unbounded above
 ```
 
 ### `semantic/unsupported`

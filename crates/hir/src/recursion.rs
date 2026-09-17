@@ -88,12 +88,16 @@ fn bounded(band: &Ints, direction: Direction) -> bool {
 }
 
 /// `calls` are every call as `(caller, callee, context)`; a call whose
-/// context is dead never happens, so it is no edge of the call graph.
+/// context is dead never happens, so it is no edge of the call graph. A
+/// cycle through a function that `failed` its verdicts, or whose body did
+/// not build, is out of scope: its arguments may have no offsets and its
+/// calls may be missing, and what it has is reported already.
 pub(crate) fn check(
     bodies: &[Option<DraftBody>],
     param_classes: &[&[Var]],
     typing: &Typing,
     calls: &[(FunctionId, FunctionId, Var)],
+    failed: &[bool],
 ) -> Outcome {
     let arcs: Vec<_> = calls
         .iter()
@@ -132,13 +136,20 @@ pub(crate) fn check(
             continue;
         }
         let members = &grouped[group_start[c]..group_start[c + 1]];
+        if members
+            .iter()
+            .any(|&function| failed[function] || bodies[function].is_none())
+        {
+            chain[c] = None;
+            continue;
+        }
         let position: HashMap<usize, usize> =
             members.iter().enumerate().map(|(i, &f)| (f, i)).collect();
         let mut inside = Vec::new();
         for &function in members {
-            let Some(body) = &bodies[function] else {
-                continue;
-            };
+            let body = bodies[function]
+                .as_ref()
+                .expect("a member of a checked cycle has a body");
             let lets: HashMap<LocalId, ExprId> = body
                 .statements
                 .iter()
@@ -153,14 +164,18 @@ pub(crate) fn check(
                 .enumerate()
                 .map(|(i, &p)| (p, i))
                 .collect();
-            for expr in &body.exprs {
+            for &(expr, context) in &body.calls {
+                if !typing.may(context).live() {
+                    continue;
+                }
+                let expr = &body.exprs[expr.index()];
                 let ExprKind::Call {
                     function: callee,
                     args,
                     ..
                 } = &expr.kind
                 else {
-                    continue;
+                    unreachable!("a recorded call is a call");
                 };
                 let Some(&to) = position.get(&callee.index()) else {
                     continue;
@@ -188,55 +203,53 @@ pub(crate) fn check(
         let band =
             |member: usize, param: usize| &typing.may(param_classes[members[member]][param]).ints;
         let mut found = None;
+        // `delta` gives each callee parameter at most one source, so once a
+        // member's parameter is chosen every call into it forces its caller's:
+        // the component is strongly connected, so a choice for the first
+        // member propagates backwards along the calls to every member, and
+        // there are as many candidates as that member has parameters.
         'directions: for direction in [Direction::Decreasing, Direction::Increasing] {
-            let mut choice: Vec<usize> = Vec::with_capacity(members.len());
-            // Depth-first over the choices, checking every call whose ends
-            // are both chosen as soon as they are.
-            let mut position = vec![0; members.len()];
-            loop {
-                let k = choice.len();
-                if k == members.len() {
-                    let strict: Vec<bool> = inside
-                        .iter()
-                        .map(|call| {
-                            moves(
-                                &call.offsets[&(choice[call.from], choice[call.to])],
-                                direction,
-                            )
-                            .expect("checked while choosing")
-                        })
-                        .collect();
-                    let bounded = members
-                        .iter()
-                        .enumerate()
-                        .all(|(m, _)| bounded(band(m, choice[m]), direction));
-                    if bounded && lax_edges_are_acyclic(members.len(), &inside, &strict) {
-                        found = Some((choice.clone(), strict.iter().any(|s| !s)));
-                        break 'directions;
+            'candidates: for first in 0..arity(0) {
+                let mut choice: Vec<Option<usize>> = vec![None; members.len()];
+                choice[0] = Some(first);
+                let mut work = vec![0];
+                while let Some(to) = work.pop() {
+                    let j = choice[to].expect("queued once chosen");
+                    for call in inside.iter().filter(|call| call.to == to) {
+                        let forced = call.offsets.iter().find_map(|(&(i, k), offset)| {
+                            (k == j && moves(offset, direction).is_some()).then_some(i)
+                        });
+                        match (forced, choice[call.from]) {
+                            (Some(i), None) => {
+                                choice[call.from] = Some(i);
+                                work.push(call.from);
+                            }
+                            (Some(i), Some(chosen)) if i == chosen => {}
+                            _ => continue 'candidates,
+                        }
                     }
-                    choice.pop();
-                    continue;
                 }
-                let next = position[k];
-                if next >= arity(k) {
-                    position[k] = 0;
-                    if choice.pop().is_none() {
-                        break;
-                    }
-                    continue;
-                }
-                position[k] += 1;
-                choice.push(next);
-                let consistent = inside.iter().all(|call| {
-                    let (Some(&i), Some(&j)) = (choice.get(call.from), choice.get(call.to)) else {
-                        return true;
-                    };
-                    call.offsets
-                        .get(&(i, j))
-                        .is_some_and(|offset| moves(offset, direction).is_some())
-                });
-                if !consistent {
-                    choice.pop();
+                let choice: Vec<usize> = choice
+                    .into_iter()
+                    .collect::<Option<_>>()
+                    .expect("every member of a component reaches its first");
+                let strict: Vec<bool> = inside
+                    .iter()
+                    .map(|call| {
+                        moves(
+                            &call.offsets[&(choice[call.from], choice[call.to])],
+                            direction,
+                        )
+                    })
+                    .collect::<Option<_>>()
+                    .expect("every call was checked while propagating");
+                let bounded = members
+                    .iter()
+                    .enumerate()
+                    .all(|(m, _)| bounded(band(m, choice[m]), direction));
+                if bounded && lax_edges_are_acyclic(members.len(), &inside, &strict) {
+                    found = Some((choice, strict.iter().any(|s| !s)));
+                    break 'directions;
                 }
             }
         }
@@ -276,7 +289,11 @@ pub(crate) fn check(
                     .iter()
                     .map(|call| {
                         let callee = members[call.to];
-                        let explanation = call.offsets.iter().find_map(|(&(_, j), offset)| {
+                        // By callee parameter, so the label does not follow
+                        // the map's iteration order.
+                        let mut offsets: Vec<_> = call.offsets.iter().collect();
+                        offsets.sort_by_key(|((_, j), _)| *j);
+                        let explanation = offsets.into_iter().find_map(|(&(_, j), offset)| {
                             let param = band(call.to, j);
                             let origin = bodies[callee].as_ref()?.locals
                                 [bodies[callee].as_ref()?.params[j].index()]

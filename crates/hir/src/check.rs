@@ -134,6 +134,9 @@ pub(crate) struct DraftBody {
     pub classes: Vec<Var>,
     pub args: Vec<ExprId>,
     pub statements: Vec<Statement>,
+    /// Every call expression beside the context it runs in, for the call
+    /// graph: a call in a dead context never happens.
+    pub calls: Vec<(ExprId, Var)>,
     pub root: ExprId,
 }
 
@@ -148,6 +151,7 @@ impl DraftBody {
             classes,
             args,
             statements,
+            calls: _,
             root,
         } = self;
         let locals = locals
@@ -657,7 +661,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         .iter()
         .map(|header| &param_classes[header.param_classes.clone()])
         .collect();
-    let recursion = recursion::check(&bodies, &param_classes, &typing, &calls);
+    let recursion = recursion::check(&bodies, &param_classes, &typing, &calls, &failed);
     for failure in recursion.failures {
         let names: Vec<_> = failure
             .members
@@ -873,6 +877,7 @@ struct Builder<'a, 's> {
     consts: Vec<Option<Int>>,
     args: Vec<ExprId>,
     statements: Vec<Statement>,
+    calls: Vec<(ExprId, Var)>,
     /// The context each point runs in, innermost last.
     contexts: Vec<Var>,
     /// The classes locals read as inside the open contexts, innermost last.
@@ -925,6 +930,7 @@ impl<'a, 's> Builder<'a, 's> {
             consts: Vec::new(),
             args: Vec::new(),
             statements: Vec::new(),
+            calls: Vec::new(),
             contexts: Vec::new(),
             refinements: Vec::new(),
             staged: Vec::new(),
@@ -955,6 +961,7 @@ impl<'a, 's> Builder<'a, 's> {
         self.consts.clear();
         self.args.clear();
         self.statements.clear();
+        self.calls.clear();
         self.contexts.clear();
         self.contexts.push(self.headers[owner].entry);
         self.refinements.clear();
@@ -1048,6 +1055,7 @@ impl<'a, 's> Builder<'a, 's> {
             classes: std::mem::take(&mut self.classes),
             args: std::mem::take(&mut self.args),
             statements: std::mem::take(&mut self.statements),
+            calls: std::mem::take(&mut self.calls),
             root: root?,
         })
     }
@@ -1906,7 +1914,7 @@ impl<'a, 's> Builder<'a, 's> {
             end: run(self.args.len()),
         };
         let class = self.typing.call(result?, node);
-        self.emit(
+        let id = self.emit(
             node,
             ExprKind::Call {
                 function: target,
@@ -1915,6 +1923,7 @@ impl<'a, 's> Builder<'a, 's> {
             },
             class,
         );
+        self.calls.push((id, context));
         Some(())
     }
 }

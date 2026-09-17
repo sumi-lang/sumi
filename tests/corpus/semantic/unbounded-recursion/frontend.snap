@@ -1,5 +1,5 @@
 == tree ==
-SourceFile 0..271
+SourceFile 0..354
   FnItem 0..42
     Name 3..10 "forever"
     ParamList 10..18
@@ -80,6 +80,34 @@ SourceFile 0..271
     CallExpr 264..270
       NameRef 264..268 "spin"
       ArgList 268..270 "()"
+  FnItem 271..322
+    Name 274..278 "both"
+    ParamList 278..294
+      Param 279..285
+        Name 279..280 "a"
+        TypeRef 282..285 "int"
+      Param 287..293
+        Name 287..288 "b"
+        TypeRef 290..293 "int"
+    TypeRef 298..301 "int"
+    CallExpr 304..322
+      NameRef 304..308 "both"
+      ArgList 308..322
+        BinaryExpr 309..314
+          NameRef 309..310 "a"
+          LiteralExpr 313..314 "1"
+        BinaryExpr 316..321
+          NameRef 316..317 "b"
+          LiteralExpr 320..321 "1"
+  FnItem 323..353
+    Name 326..331 "boths"
+    ParamList 331..333 "()"
+    TypeRef 337..340 "int"
+    CallExpr 343..353
+      NameRef 343..347 "both"
+      ArgList 347..353
+        LiteralExpr 348..349 "0"
+        LiteralExpr 351..352 "0"
 
 == formatted ==
 fn forever(n: int) -> int = forever(n + 1)
@@ -93,3 +121,5 @@ fn falls() -> int = fall(5)
 fn swap(a: int, b: int) -> int = swap(b, a)
 fn swapped() -> int = swap(1, 2)
 fn spin() -> int = spin()
+fn both(a: int, b: int) -> int = both(a + 1, b + 1)
+fn boths() -> int = both(0, 0)

@@ -1,6 +1,6 @@
 file: rejected
 frontend errors: 0 (see frontend.snap)
-semantic errors: 4
+semantic errors: 5
 
 fn forever@0..42 (int ∈ [0, +∞)) -> int ∈ ∅
   param n@11..12: int
@@ -46,6 +46,22 @@ fn swapped@212..244 () -> int ∈ ∅
 fn spin@245..270 () -> int ∈ ∅
   body: call spin@245..270 (callee @264..268) : int @264..270
 
+fn both@271..322 (int ∈ [0, +∞), int ∈ [0, +∞)) -> int ∈ ∅
+  param a@279..280: int
+  param b@287..288: int
+  body: call both@271..322 (callee @304..308) : int @304..322
+    arg[0]: eager + : int @309..314
+      lhs: read a@279..280 : int @309..310
+      rhs: int 1 : int @313..314
+    arg[1]: eager + : int @316..321
+      lhs: read b@287..288 : int @316..317
+      rhs: int 1 : int @320..321
+
+fn boths@323..353 () -> int ∈ ∅
+  body: call both@271..322 (callee @343..347) : int @343..353
+    arg[0]: int 0 : int @348..349
+    arg[1]: int 0 : int @351..352
+
 == semantic diagnostics ==
 error[semantic/unbounded-recursion]: recursion in `forever` has no argument that decreases on every call
   primary @3..10
@@ -59,3 +75,6 @@ error[semantic/unbounded-recursion]: recursion in `swap` has no argument that de
 error[semantic/unbounded-recursion]: recursion in `spin` has no argument that decreases on every call
   primary @248..252
   secondary @264..270: no argument moves a parameter toward a bound
+error[semantic/unbounded-recursion]: recursion in `both` has no argument that decreases on every call
+  primary @274..278
+  secondary @304..322: argument increases `a`, which is unbounded above

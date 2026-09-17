@@ -44,3 +44,155 @@ fn count@101..168 (int ∈ [0, 10000]) -> int ∈ [0, +∞)
 fn deep@169..200 () -> int ∈ [0, +∞)
   body: call count@101..168 (callee @188..193) : int @188..200
     arg[0]: int 10000 : int @194..199
+
+fn dead_step@201..310 (int ∈ [0, 10]) -> int ∈ [0, 0]
+  param n@214..215: int
+  body: if : int @231..310
+    condition: eager > : bool @234..239
+      lhs: read n@214..215 : int @234..235
+      rhs: int 0 : int @238..239
+    then: block : int @240..260
+      tail: call dead_step@201..310 (callee @242..251) : int @242..258
+        arg[0]: eager - : int @252..257
+          lhs: read n@214..215 : int @252..253
+          rhs: int 1 : int @256..257
+    else: block : int @266..310
+      tail: if : int @268..308
+        condition: bool false : bool @271..276
+        then: block : int @277..297
+          tail: call dead_step@201..310 (callee @279..288) : int @279..295
+            arg[0]: eager + : int @289..294
+              lhs: read n@214..215 : int @289..290
+              rhs: int 1 : int @293..294
+        else: block : int @303..308
+          tail: int 0 : int @305..306
+
+fn dead_steps@311..349 () -> int ∈ [0, 0]
+  body: call dead_step@201..310 (callee @336..345) : int @336..349
+    arg[0]: int 10 : int @346..348
+
+fn r0@350..432 (int ∈ [1, 1], int ∈ [2, 2], int ∈ [0, 20]) -> int ∈ [3, 3]
+  param a@356..357: int
+  param b@364..365: int
+  param c@372..373: int
+  body: if : int @389..432
+    condition: eager > : bool @392..397
+      lhs: read c@372..373 : int @392..393
+      rhs: int 0 : int @396..397
+    then: block : int @398..417
+      tail: call r3@599..681 (callee @400..402) : int @400..415
+        arg[0]: read b@364..365 : int @403..404
+        arg[1]: read a@356..357 : int @406..407
+        arg[2]: eager - : int @409..414
+          lhs: read c@372..373 : int @409..410
+          rhs: int 1 : int @413..414
+    else: block : int @423..432
+      tail: eager + : int @425..430
+        lhs: read a@356..357 : int @425..426
+        rhs: read b@364..365 : int @429..430
+
+fn r1@433..515 (int ∈ [1, 1], int ∈ [2, 2], int ∈ [0, 19]) -> int ∈ [3, 3]
+  param a@439..440: int
+  param b@447..448: int
+  param c@455..456: int
+  body: if : int @472..515
+    condition: eager > : bool @475..480
+      lhs: read c@455..456 : int @475..476
+      rhs: int 0 : int @479..480
+    then: block : int @481..500
+      tail: call r4@682..764 (callee @483..485) : int @483..498
+        arg[0]: read b@447..448 : int @486..487
+        arg[1]: read a@439..440 : int @489..490
+        arg[2]: eager - : int @492..497
+          lhs: read c@455..456 : int @492..493
+          rhs: int 1 : int @496..497
+    else: block : int @506..515
+      tail: eager + : int @508..513
+        lhs: read a@439..440 : int @508..509
+        rhs: read b@447..448 : int @512..513
+
+fn r2@516..598 (int ∈ [1, 1], int ∈ [2, 2], int ∈ [0, 19]) -> int ∈ [3, 3]
+  param a@522..523: int
+  param b@530..531: int
+  param c@538..539: int
+  body: if : int @555..598
+    condition: eager > : bool @558..563
+      lhs: read c@538..539 : int @558..559
+      rhs: int 0 : int @562..563
+    then: block : int @564..583
+      tail: call r5@765..847 (callee @566..568) : int @566..581
+        arg[0]: read b@530..531 : int @569..570
+        arg[1]: read a@522..523 : int @572..573
+        arg[2]: eager - : int @575..580
+          lhs: read c@538..539 : int @575..576
+          rhs: int 1 : int @579..580
+    else: block : int @589..598
+      tail: eager + : int @591..596
+        lhs: read a@522..523 : int @591..592
+        rhs: read b@530..531 : int @595..596
+
+fn r3@599..681 (int ∈ [2, 2], int ∈ [1, 1], int ∈ [0, 19]) -> int ∈ [3, 3]
+  param a@605..606: int
+  param b@613..614: int
+  param c@621..622: int
+  body: if : int @638..681
+    condition: eager > : bool @641..646
+      lhs: read c@621..622 : int @641..642
+      rhs: int 0 : int @645..646
+    then: block : int @647..666
+      tail: call r1@433..515 (callee @649..651) : int @649..664
+        arg[0]: read b@613..614 : int @652..653
+        arg[1]: read a@605..606 : int @655..656
+        arg[2]: eager - : int @658..663
+          lhs: read c@621..622 : int @658..659
+          rhs: int 1 : int @662..663
+    else: block : int @672..681
+      tail: eager + : int @674..679
+        lhs: read a@605..606 : int @674..675
+        rhs: read b@613..614 : int @678..679
+
+fn r4@682..764 (int ∈ [2, 2], int ∈ [1, 1], int ∈ [0, 19]) -> int ∈ [3, 3]
+  param a@688..689: int
+  param b@696..697: int
+  param c@704..705: int
+  body: if : int @721..764
+    condition: eager > : bool @724..729
+      lhs: read c@704..705 : int @724..725
+      rhs: int 0 : int @728..729
+    then: block : int @730..749
+      tail: call r2@516..598 (callee @732..734) : int @732..747
+        arg[0]: read b@696..697 : int @735..736
+        arg[1]: read a@688..689 : int @738..739
+        arg[2]: eager - : int @741..746
+          lhs: read c@704..705 : int @741..742
+          rhs: int 1 : int @745..746
+    else: block : int @755..764
+      tail: eager + : int @757..762
+        lhs: read a@688..689 : int @757..758
+        rhs: read b@696..697 : int @761..762
+
+fn r5@765..847 (int ∈ [2, 2], int ∈ [1, 1], int ∈ [0, 19]) -> int ∈ [3, 3]
+  param a@771..772: int
+  param b@779..780: int
+  param c@787..788: int
+  body: if : int @804..847
+    condition: eager > : bool @807..812
+      lhs: read c@787..788 : int @807..808
+      rhs: int 0 : int @811..812
+    then: block : int @813..832
+      tail: call r0@350..432 (callee @815..817) : int @815..830
+        arg[0]: read b@779..780 : int @818..819
+        arg[1]: read a@771..772 : int @821..822
+        arg[2]: eager - : int @824..829
+          lhs: read c@787..788 : int @824..825
+          rhs: int 1 : int @828..829
+    else: block : int @838..847
+      tail: eager + : int @840..845
+        lhs: read a@771..772 : int @840..841
+        rhs: read b@779..780 : int @844..845
+
+fn ring@848..879 () -> int ∈ [3, 3]
+  body: call r0@350..432 (callee @867..869) : int @867..879
+    arg[0]: int 1 : int @870..871
+    arg[1]: int 2 : int @873..874
+    arg[2]: int 20 : int @876..878
