@@ -32,17 +32,15 @@ fn solver(c: &mut Criterion) {
                         },
                         BatchSize::LargeInput,
                     ),
-                    "replay-context" => b.iter_batched(
-                        || (),
-                        |()| witness.context.replay(&witness.cx),
-                        BatchSize::LargeInput,
-                    ),
+                    "replay-context" => {
+                        b.iter_batched(|| (), |()| witness.context.replay(), BatchSize::LargeInput)
+                    }
                     _ => b.iter_batched(
                         || (),
                         |()| {
                             let mut graph = graphs::build(shape, size);
                             graph.context.solve(&graph.cx);
-                            let replay = graph.context.replay(&graph.cx);
+                            let replay = graph.context.replay();
                             std::hint::black_box(&replay);
                             drop(replay);
                             graph

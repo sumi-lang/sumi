@@ -520,7 +520,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     } = recorded;
     let cx: ProductContext = ((), constants.into_iter().collect());
     typing.solve(&cx);
-    let mut replay = typing.replay(&cx);
+    let mut replay = typing.replay();
     let mut failed = vec![false; functions.len()];
     for demand in demands {
         let actual = replay.resolve(demand.actual);
