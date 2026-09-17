@@ -190,7 +190,9 @@ impl Ints {
                 hi = hi.pred();
             }
         }
-        if lo > hi {
+        // No integer sits at or past an infinity, so a band that starts at
+        // `+∞` or ends at `-∞` holds none.
+        if lo > hi || lo == Bound::PosInf || hi == Bound::NegInf {
             return Self::Empty;
         }
         let hole = hole && lo.sign() == Ordering::Less && hi.sign() == Ordering::Greater;
@@ -543,6 +545,8 @@ mod tests {
         assert_eq!(ints("[-5, 0] \\ 0"), ints("[-5, -1]"));
         assert_eq!(ints("[-5, 5] \\ 0").to_string(), "[-5, 5] \\ 0");
         assert_eq!(ints("[3, 2]"), Ints::Empty);
+        assert_eq!(ints("[inf, inf]"), Ints::Empty);
+        assert_eq!(ints("[-inf, -inf]"), Ints::Empty);
         assert_eq!(ints("[-inf, inf]").to_string(), "(-∞, +∞)");
         assert_eq!(ints("[0, inf]").to_string(), "[0, +∞)");
         assert!(ints("[-5, 5]").contains_zero());
