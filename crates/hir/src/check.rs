@@ -1413,10 +1413,9 @@ impl<'a, 's> Builder<'a, 's> {
         }
         // A call that is not whole never happens, so only now do the
         // arguments reach the parameters.
-        for index in 0..params.len() {
-            let value = self.args[start + index];
+        for (&value, &param) in self.args[start..].iter().zip(param_classes) {
             self.typing
-                .flow(self.class(value), param_classes[index], RangeEdge::Argument);
+                .flow(self.class(value), param, RangeEdge::Argument);
         }
         let args = Args {
             start: run(start),
