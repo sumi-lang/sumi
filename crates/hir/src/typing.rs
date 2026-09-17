@@ -353,8 +353,21 @@ impl Typing {
     }
 
     /// The values a fact opened `var`'s class with, if one did.
-    pub fn fact(&self, var: Var) -> Option<&May> {
-        self.solver.fact(var).map(|evidence| &evidence.1)
+    /// The values a fact opened `var`'s class with, if one did, and the
+    /// node the fact was made at: the fact's own claim, not the best claim
+    /// the class holds once solved, which a peer may have imported.
+    pub fn fact(&self, var: Var) -> Option<(Option<NodeIdx>, &May)> {
+        let (evidence, may) = self.solver.fact(var)?;
+        let origin = evidence
+            .claims()
+            .first()
+            .and_then(|(_, claim)| self.origin(*claim));
+        Some((origin, may))
+    }
+
+    /// The class `var` is a member of, as its representative.
+    pub fn find(&self, var: Var) -> Var {
+        self.solver.find(var)
     }
 
     /// Every flow into `var`'s class.

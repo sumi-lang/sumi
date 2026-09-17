@@ -796,6 +796,8 @@ pub enum RangeEdge {
         op: BinaryOp,
         local_is_lhs: bool,
         sense: bool,
+        /// The comparison, for a report.
+        origin: NodeIdx,
     },
     /// A boolean local narrowed to one value.
     Exactly(bool),
@@ -896,6 +898,7 @@ impl Lattice for May {
                 op,
                 local_is_lhs,
                 sense,
+                ..
             } => self.refine(op, local_is_lhs, sense, second()),
             RangeEdge::Exactly(value) => Self::bools(self.bools & Bools::from(value)),
             RangeEdge::Then => Self::of_unit(self.bools.may_true() && second().live()),

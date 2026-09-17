@@ -694,34 +694,32 @@ fn explain_zero(
 
     const LABELS: usize = 4;
     const HOPS: usize = 6;
-    let describe = |ints: &Ints| {
+    let describe = |ints: &Ints, where_: &str| {
         if ints.is_zero() {
-            "is 0".to_owned()
+            format!("is 0{where_}")
         } else {
-            format!("may be 0: {ints}")
+            format!("may be 0{where_}: {ints}")
         }
     };
     let mut labels: Vec<(Span, Box<str>)> = Vec::new();
     let mut seen = HashSet::new();
     let mut queue = VecDeque::from([(class, 0)]);
     while let Some((var, hops)) = queue.pop_front() {
-        if labels.len() >= LABELS || !seen.insert(var) {
+        if labels.len() >= LABELS || !seen.insert(typing.find(var)) {
             continue;
         }
-        if let Some(fact) = typing.fact(var)
+        if let Some((origin, fact)) = typing.fact(var)
             && fact.ints.contains_zero()
         {
-            if let Some(node) = typing
-                .evidence(var)
-                .claims()
-                .first()
-                .and_then(|(_, claim)| typing.origin(*claim))
-            {
-                labels.push((source.span(node), describe(&fact.ints).into()));
+            if let Some(node) = origin {
+                labels.push((source.span(node), describe(&fact.ints, "").into()));
             }
             continue;
         }
         for (first, second, edge) in typing.incoming(var) {
+            if labels.len() >= LABELS {
+                break;
+            }
             let delivered = typing.may(first).transfer(
                 &edge.1,
                 second.map(|second| typing.may(second)),
@@ -732,10 +730,20 @@ fn explain_zero(
                 continue;
             }
             match edge.1 {
-                RangeEdge::Copy
-                | RangeEdge::Refine { .. }
-                | RangeEdge::Branch
-                | RangeEdge::Call => {
+                RangeEdge::Copy | RangeEdge::Branch | RangeEdge::Call => {
+                    if hops < HOPS {
+                        queue.push_back((first, hops + 1));
+                    }
+                }
+                // A guard that narrowed the local is where the zero was
+                // singled out, and the local is where it came from.
+                RangeEdge::Refine { origin, .. } => {
+                    if delivered.ints != typing.may(first).ints {
+                        labels.push((
+                            source.span(origin),
+                            describe(&delivered.ints, " under this guard").into(),
+                        ));
+                    }
                     if hops < HOPS {
                         queue.push_back((first, hops + 1));
                     }
@@ -743,11 +751,11 @@ fn explain_zero(
                 RangeEdge::Argument(origin) => {
                     labels.push((
                         source.span(origin),
-                        format!("argument {}", describe(&delivered.ints)).into(),
+                        format!("argument {}", describe(&delivered.ints, "")).into(),
                     ));
                 }
                 RangeEdge::Unary { origin, .. } | RangeEdge::Binary { origin, .. } => {
-                    labels.push((source.span(origin), describe(&delivered.ints).into()));
+                    labels.push((source.span(origin), describe(&delivered.ints, "").into()));
                 }
                 _ => {}
             }
@@ -1136,6 +1144,7 @@ impl<'a, 's> Builder<'a, 's> {
                                     op,
                                     local_is_lhs,
                                     sense,
+                                    origin: node,
                                 };
                                 let refined = self.typing.refine(class, other, edge);
                                 self.staged.push((local, refined));

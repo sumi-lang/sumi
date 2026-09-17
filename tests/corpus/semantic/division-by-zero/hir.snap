@@ -1,6 +1,6 @@
 file: rejected
 frontend errors: 0 (see frontend.snap)
-semantic errors: 6
+semantic errors: 10
 
 fn divide_by_zero@0..40 () -> int ∈ ∅
   body: eager / : int @29..40
@@ -113,6 +113,80 @@ fn inner_guards@527..591 () -> int ∈ [0, 200]
       arg[0]: int 1 : int @586..587
       arg[1]: int 5 : int @589..590
 
+fn inverse@592..627 (int ∈ [0, 0]) -> int ∈ ∅
+  param d@603..604: int
+  body: eager / : int @620..627
+    lhs: int 100 : int @620..623
+    rhs: read d@603..604 : int @626..627
+
+fn inverses@628..713 () -> int ∈ ∅
+  body: eager + : int @651..713
+    lhs: eager + : int @651..700
+      lhs: eager + : int @651..687
+        lhs: eager + : int @651..674
+          lhs: call inverse@592..627 (callee @651..658) : int @651..661
+            arg[0]: int 0 : int @659..660
+          rhs: call inverse@592..627 (callee @664..671) : int @664..674
+            arg[0]: int 0 : int @672..673
+        rhs: call inverse@592..627 (callee @677..684) : int @677..687
+          arg[0]: int 0 : int @685..686
+      rhs: call inverse@592..627 (callee @690..697) : int @690..700
+        arg[0]: int 0 : int @698..699
+    rhs: call inverse@592..627 (callee @703..710) : int @703..713
+      arg[0]: int 0 : int @711..712
+
+fn compared@714..795 (int ∈ [1, 1]) -> int ∈ ∅
+  param d@726..727: int
+  body: block : int @741..795
+    let z@751..752: int @747..756
+      initializer: int 0 : int @755..756
+    tail: if : int @761..793
+      condition: eager == : bool @764..770
+        lhs: read d@726..727 : int @764..765
+        rhs: read z@751..752 : int @769..770
+      then: block : int @771..776
+        tail: int 1 : int @773..774
+      else: block : int @782..793
+        tail: eager / : int @784..791
+          lhs: int 100 : int @784..787
+          rhs: read z@751..752 : int @790..791
+
+fn compareds@796..831 () -> int ∈ ∅
+  body: call compared@714..795 (callee @820..828) : int @820..831
+    arg[0]: int 1 : int @829..830
+
+fn fixed@832..890 (int ∈ [-5, 5]) -> int ∈ [1, 1]
+  param d@841..842: int
+  body: if : int @858..890
+    condition: eager == : bool @861..867
+      lhs: read d@841..842 : int @861..862
+      rhs: int 0 : int @866..867
+    then: block : int @868..879
+      tail: eager / : int @870..877
+        lhs: int 100 : int @870..873
+        rhs: read d@841..842 : int @876..877
+    else: block : int @885..890
+      tail: int 1 : int @887..888
+
+fn fixeds@891..943 () -> int ∈ [3, 3]
+  body: eager + : int @912..943
+    lhs: eager + : int @912..932
+      lhs: call fixed@832..890 (callee @912..917) : int @912..921
+        arg[0]: int -5 : int @918..920
+      rhs: call fixed@832..890 (callee @924..929) : int @924..932
+        arg[0]: int 0 : int @930..931
+    rhs: call fixed@832..890 (callee @935..940) : int @935..943
+      arg[0]: int 5 : int @941..942
+
+fn arity@944..977 (int ∈ ∅) -> int ∈ ∅
+  param d@953..954: int
+  body: eager / : int @970..977
+    lhs: int 100 : int @970..973
+    rhs: read d@953..954 : int @976..977
+
+fn wrong_arity@978..1015 () -> int ∈ ∅
+  body: unavailable
+
 == semantic diagnostics ==
 error[semantic/division-by-zero]: division by zero
   primary @29..40
@@ -132,3 +206,19 @@ error[semantic/division-by-zero]: division by zero
 error[semantic/division-by-zero]: divisor may be zero
   primary @515..522
   secondary @569..570: argument is 0
+error[semantic/division-by-zero]: division by zero
+  primary @620..627
+  secondary @659..660: argument is 0
+  secondary @672..673: argument is 0
+  secondary @685..686: argument is 0
+  secondary @698..699: argument is 0
+error[semantic/division-by-zero]: division by zero
+  primary @784..791
+  secondary @755..756: is 0
+error[semantic/division-by-zero]: division by zero
+  primary @870..877
+  secondary @861..867: is 0 under this guard
+  secondary @930..931: argument is 0
+error[semantic/arity]: expected 1 arguments, found 2
+  primary @1004..1015
+  secondary @944..977: declared here

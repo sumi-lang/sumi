@@ -254,7 +254,13 @@ impl<L: Lattice> Solver<L> {
         });
     }
 
-    /// The evidence a fact opened `var`'s class with, if one did.
+    /// The class `var` is a member of, as its representative.
+    pub fn find(&self, var: Var) -> Var {
+        Var(self.root(var.index()) as u32)
+    }
+
+    /// The evidence a fact opened `var`'s class with, if one did: the first
+    /// fact of the class, when equalities merged several.
     pub fn fact(&self, var: Var) -> Option<&L> {
         let root = self.root(var.index());
         self.facts

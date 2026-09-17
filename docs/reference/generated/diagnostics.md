@@ -727,6 +727,17 @@ fn inner_guard(n: int, m: int) -> int {
  0 } else { 100 / m }
 }
 fn inner_guards() -> int = inner_guard(0, 0) + inner_guard(1, 5)
+fn inverse(d: int) -> int = 100 / d
+fn inverses() -> int = inverse(0) + inverse(0) + inverse(0) + inverse(0) + inverse(0)
+fn compared(d: int) -> int {
+    let z = 0
+    if d == z { 1 } else { 100 / z }
+}
+fn compareds() -> int = compared(1)
+fn fixed(d: int) -> int = if d == 0 { 100 / d } else { 1 }
+fn fixeds() -> int = fixed(-5) + fixed(0) + fixed(5)
+fn arity(d: int) -> int = 100 / d
+fn wrong_arity() -> int = arity(0, 1)
 ```
 
 ```text
@@ -748,6 +759,19 @@ error[semantic/division-by-zero]: division by zero
 error[semantic/division-by-zero]: divisor may be zero
   primary @515..522
   secondary @569..570: argument is 0
+error[semantic/division-by-zero]: division by zero
+  primary @620..627
+  secondary @659..660: argument is 0
+  secondary @672..673: argument is 0
+  secondary @685..686: argument is 0
+  secondary @698..699: argument is 0
+error[semantic/division-by-zero]: division by zero
+  primary @784..791
+  secondary @755..756: is 0
+error[semantic/division-by-zero]: division by zero
+  primary @870..877
+  secondary @861..867: is 0 under this guard
+  secondary @930..931: argument is 0
 ```
 
 ### `semantic/unsupported`
