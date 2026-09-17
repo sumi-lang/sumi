@@ -6,6 +6,7 @@
 
 mod check;
 mod int;
+mod ranges;
 mod solver;
 mod typing;
 
@@ -21,6 +22,7 @@ use sumi_text::Span;
 
 pub use check::analyze;
 pub use int::{Int, ParseIntError};
+pub use ranges::{Bools, Bound, Ints};
 
 /// Eager scalar operators. Short-circuiting operators have separate expression kinds.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
