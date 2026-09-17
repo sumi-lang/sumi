@@ -953,10 +953,21 @@ impl<'a, 's> Builder<'a, 's> {
     /// the false sense, or a bare boolean local.
     fn refinements(&mut self, cond: NodeIdx, sense: bool) -> usize {
         let before = self.staged.len();
-        self.refine(cond, sense);
+        self.refine(cond, sense, before);
         self.staged.len() - before
     }
-    fn refine(&mut self, cond: NodeIdx, sense: bool) {
+    /// The class a read of `local` has inside the branch being staged: the
+    /// innermost refinement this condition staged from `before` on, so a
+    /// later conjunct narrows what an earlier one left, else the class the
+    /// read has here.
+    fn staged_class(&self, local: LocalId, before: usize) -> Var {
+        self.staged[before..]
+            .iter()
+            .rev()
+            .find(|(refined, _)| *refined == local)
+            .map_or_else(|| self.current_class(local), |(_, class)| *class)
+    }
+    fn refine(&mut self, cond: NodeIdx, sense: bool, before: usize) {
         use sumi_syntax::BinaryOp::*;
 
         let tree = self.source.tree;
@@ -979,7 +990,7 @@ impl<'a, 's> Builder<'a, 's> {
                     .tokens(tree.first_token(node), tree.first_token(operand))
                     .eq([SyntaxKind::Bang]);
                 if not {
-                    self.refine(operand, !sense);
+                    self.refine(operand, !sense, before);
                 }
             }
             NodeKind::BinaryExpr => {
@@ -989,12 +1000,12 @@ impl<'a, 's> Builder<'a, 's> {
                 let op = self.binary_op(node);
                 match op {
                     And if sense => {
-                        self.refine(lhs, sense);
-                        self.refine(rhs, sense);
+                        self.refine(lhs, sense, before);
+                        self.refine(rhs, sense, before);
                     }
                     Or if !sense => {
-                        self.refine(lhs, sense);
-                        self.refine(rhs, sense);
+                        self.refine(lhs, sense, before);
+                        self.refine(rhs, sense, before);
                     }
                     Lt | Le | Gt | Ge | Eq | Ne => {
                         let ExprKind::Binary { op, .. } =
@@ -1005,7 +1016,7 @@ impl<'a, 's> Builder<'a, 's> {
                         for (side, other, local_is_lhs) in [(lhs, rhs, true), (rhs, lhs, false)] {
                             if let (Some(local), Some(other)) = (self.read(side), self.value(other))
                             {
-                                let class = self.current_class(local);
+                                let class = self.staged_class(local, before);
                                 let other = self.class(other);
                                 let edge = RangeEdge::Refine {
                                     op,
@@ -1022,7 +1033,7 @@ impl<'a, 's> Builder<'a, 's> {
             }
             NodeKind::NameRef => {
                 if let Some(local) = self.read(node) {
-                    let class = self.current_class(local);
+                    let class = self.staged_class(local, before);
                     let refined = self.typing.refine_bool(class, sense);
                     self.staged.push((local, refined));
                 }
@@ -1051,8 +1062,14 @@ impl<'a, 's> Builder<'a, 's> {
         };
         self.branch_contexts.push((then_context, else_context));
         // The else branch is entered last, so its refinements are staged
-        // first and the then branch's sit on top of them.
-        let else_refinements = self.refinements(cond, false);
+        // first and the then branch's sit on top of them. Without an else
+        // nothing enters the false sense, so nothing is staged for it: a
+        // stage nobody drains would be read by the next branch entered.
+        let else_refinements = if else_node.is_some() {
+            self.refinements(cond, false)
+        } else {
+            0
+        };
         let then_refinements = self.refinements(cond, true);
         if let Some(else_node) = else_node {
             work.push(Work::Pop(else_refinements));

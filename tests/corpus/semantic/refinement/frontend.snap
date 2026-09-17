@@ -1,5 +1,5 @@
 == tree ==
-SourceFile 0..565
+SourceFile 0..965
   FnItem 0..75
     Name 3..8 "clamp"
     ParamList 8..16
@@ -172,6 +172,130 @@ SourceFile 0..565
         NameRef 554..561 "negated"
         ArgList 561..564
           LiteralExpr 562..563 "7"
+  FnItem 565..628
+    Name 568..575 "between"
+    ParamList 575..583
+      Param 576..582
+        Name 576..577 "n"
+        TypeRef 579..582 "int"
+    TypeRef 587..590 "int"
+    IfExpr 593..628
+      BinaryExpr 596..611
+        BinaryExpr 596..601
+          NameRef 596..597 "n"
+          LiteralExpr 600..601 "0"
+        BinaryExpr 605..611
+          NameRef 605..606 "n"
+          LiteralExpr 609..611 "10"
+      Block 612..617
+        NameRef 614..615 "n"
+      Block 623..628
+        LiteralExpr 625..626 "0"
+  FnItem 629..690
+    Name 632..640 "betweens"
+    ParamList 640..642 "()"
+    TypeRef 646..649 "int"
+    BinaryExpr 652..690
+      BinaryExpr 652..676
+        CallExpr 652..663
+          NameRef 652..659 "between"
+          ArgList 659..663
+            PrefixExpr 660..662
+              LiteralExpr 661..662 "3"
+        CallExpr 666..676
+          NameRef 666..673 "between"
+          ArgList 673..676
+            LiteralExpr 674..675 "5"
+      CallExpr 679..690
+        NameRef 679..686 "between"
+        ArgList 686..690
+          LiteralExpr 687..689 "50"
+  FnItem 691..753
+    Name 694..701 "outside"
+    ParamList 701..709
+      Param 702..708
+        Name 702..703 "n"
+        TypeRef 705..708 "int"
+    TypeRef 713..716 "int"
+    IfExpr 719..753
+      BinaryExpr 722..736
+        BinaryExpr 722..727
+          NameRef 722..723 "n"
+          LiteralExpr 726..727 "1"
+        BinaryExpr 731..736
+          NameRef 731..732 "n"
+          LiteralExpr 735..736 "9"
+      Block 737..742
+        LiteralExpr 739..740 "0"
+      Block 748..753
+        NameRef 750..751 "n"
+  FnItem 754..815
+    Name 757..765 "outsides"
+    ParamList 765..767 "()"
+    TypeRef 771..774 "int"
+    BinaryExpr 777..815
+      BinaryExpr 777..801
+        CallExpr 777..788
+          NameRef 777..784 "outside"
+          ArgList 784..788
+            PrefixExpr 785..787
+              LiteralExpr 786..787 "3"
+        CallExpr 791..801
+          NameRef 791..798 "outside"
+          ArgList 798..801
+            LiteralExpr 799..800 "5"
+      CallExpr 804..815
+        NameRef 804..811 "outside"
+        ArgList 811..815
+          LiteralExpr 812..814 "50"
+  FnItem 816..902
+    Name 819..824 "inner"
+    ParamList 824..840
+      Param 825..831
+        Name 825..826 "n"
+        TypeRef 828..831 "int"
+      Param 833..839
+        Name 833..834 "m"
+        TypeRef 836..839 "int"
+    TypeRef 844..847 "int"
+    Block 848..902
+      IfExpr 854..900
+        BinaryExpr 857..862
+          NameRef 857..858 "n"
+          LiteralExpr 861..862 "0"
+        Block 863..889
+          IfExpr 865..884
+            BinaryExpr 868..874
+              NameRef 868..869 "m"
+              LiteralExpr 873..874 "0"
+            Block 875..884
+              DiscardStmt 877..882
+                LiteralExpr 881..882 "1"
+          LiteralExpr 886..887 "0"
+        Block 895..900
+          NameRef 897..898 "m"
+  FnItem 903..964
+    Name 906..912 "inners"
+    ParamList 912..914 "()"
+    TypeRef 918..921 "int"
+    BinaryExpr 924..964
+      BinaryExpr 924..949
+        CallExpr 924..935
+          NameRef 924..929 "inner"
+          ArgList 929..935
+            LiteralExpr 930..931 "0"
+            LiteralExpr 933..934 "0"
+        CallExpr 938..949
+          NameRef 938..943 "inner"
+          ArgList 943..949
+            LiteralExpr 944..945 "0"
+            LiteralExpr 947..948 "5"
+      CallExpr 952..964
+        NameRef 952..957 "inner"
+        ArgList 957..964
+          LiteralExpr 958..959 "1"
+          PrefixExpr 961..963
+            LiteralExpr 962..963 "5"
 
 == formatted ==
 fn clamp(n: int) -> int = if n < 0 {
@@ -208,3 +332,26 @@ fn negated(n: int) -> int = if !(n < 3) {
     3
 }
 fn negateds() -> int = negated(1) + negated(7)
+fn between(n: int) -> int = if n > 0 && n < 10 {
+    n
+} else {
+    0
+}
+fn betweens() -> int = between(-3) + between(5) + between(50)
+fn outside(n: int) -> int = if n < 1 || n > 9 {
+    0
+} else {
+    n
+}
+fn outsides() -> int = outside(-3) + outside(5) + outside(50)
+fn inner(n: int, m: int) -> int {
+    if n > 0 {
+        if m != 0 {
+            _ = 1
+        }
+        0
+    } else {
+        m
+    }
+}
+fn inners() -> int = inner(0, 0) + inner(0, 5) + inner(1, -5)

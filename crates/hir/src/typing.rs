@@ -207,6 +207,11 @@ pub(crate) struct Typing {
     solver: Solver<Product>,
     /// The node each claim was made at, by claim index.
     origins: Vec<NodeIdx>,
+    /// Every refined read beside the local it reads. A read is one class
+    /// with its local in the replay, which resolves types alone, so a
+    /// demand on the read is a demand on the local wherever the local's
+    /// type comes from, a branch settled later included.
+    refined: Vec<(Var, Var)>,
 }
 
 impl Typing {
@@ -217,6 +222,7 @@ impl Typing {
         Self {
             solver: Solver::with_capacity(nodes / 2, nodes),
             origins: Vec::with_capacity(nodes),
+            refined: Vec::new(),
         }
     }
 
@@ -290,13 +296,17 @@ impl Typing {
     pub fn refine(&mut self, local: Var, other: Var, edge: RangeEdge) -> Var {
         let read = self.solver.fresh();
         self.solver.derive(local, other, read, (Edge::Refine, edge));
+        self.refined.push((read, local));
         read
     }
 
     /// A read of a boolean `local` narrowed to one value.
     pub fn refine_bool(&mut self, local: Var, value: bool) -> Var {
-        self.solver
-            .import(local, (Edge::Refine, RangeEdge::Exactly(value)))
+        let read = self
+            .solver
+            .import(local, (Edge::Refine, RangeEdge::Exactly(value)));
+        self.refined.push((read, local));
+        read
     }
 
     /// A range-only flow from one provider.
@@ -352,34 +362,28 @@ impl Typing {
     }
 
     /// The same classes carrying only what is known on their own account:
-    /// facts, the calls whose callee result is solved, and the refined reads
-    /// of a local, which carry what the replay knows of the local rather
-    /// than its solved type, since a demand elsewhere may have conflicted it
-    /// and is blamed there. Replaying demands on it one at a time, in source
+    /// facts, and the calls whose callee result is solved. A refined read is
+    /// one class with its local here, so it is whatever the local is when a
+    /// demand asks, and a demand that conflicted the local elsewhere is
+    /// still blamed there. Replaying demands on it one at a time, in source
     /// order, blames a disagreement on the first demand that raised it. An
     /// unresolved or conflicted callee delivers nothing: it is reported at
     /// its declaration. A branch is settled by [`Replay::branch`] when its
     /// `if` comes up in that order, since what it delivers is shaped by the
     /// demands before it.
     pub fn replay<'a>(&self, cx: &'a ProductContext) -> Replay<'a> {
-        Replay {
-            solver: self
-                .solver
-                .replay(|solved, replayed, other, edge| match edge.0 {
-                    Edge::Call(_) => solved
-                        .0
-                        .ty()
-                        .is_some()
-                        .then(|| solved.transfer(edge, other, false, cx)),
-                    Edge::Refine => replayed
-                        .0
-                        .ty()
-                        .is_some()
-                        .then(|| replayed.transfer(edge, other, false, cx)),
-                    Edge::Branch | Edge::Peer | Edge::None => None,
-                }),
-            cx,
+        let mut solver = self.solver.replay(|solved, other, edge| match edge.0 {
+            Edge::Call(_) => solved
+                .0
+                .ty()
+                .is_some()
+                .then(|| solved.transfer(edge, other, false, cx)),
+            Edge::Branch | Edge::Peer | Edge::Refine | Edge::None => None,
+        });
+        for &(read, local) in &self.refined {
+            solver.equal(read, local);
         }
+        Replay { solver, cx }
     }
 }
 
@@ -627,5 +631,31 @@ mod tests {
         assert_eq!(replay.resolve(demanded), Some(Ty::Int));
         replay.expect(unknown_call, Expected::Ty(Ty::Bool));
         assert_eq!(replay.resolve(unknown_call), Some(Ty::Bool));
+    }
+
+    /// A refined read of a local whose type arrives only when its `if` is
+    /// settled in the replay is one class with the local there, so it
+    /// resolves once the branches deliver and a demand on it is a demand
+    /// on the local.
+    #[test]
+    fn a_refined_read_of_a_branch_bound_local_resolves_with_its_if() {
+        let mut typing = typing();
+        let live = typing.entry(true);
+        let then_branch = typing.known(Ty::Int, at(0));
+        let else_branch = typing.known(Ty::Int, at(1));
+        let local = typing.fresh();
+        typing.branch(then_branch, live, local);
+        typing.branch(else_branch, live, local);
+        let refined = typing.refine_bool(local, true);
+        let cx = cx();
+        typing.solve(&cx);
+        let mut replay = typing.replay(&cx);
+        assert_eq!(replay.resolve(refined), None);
+        replay.branch(then_branch, local);
+        replay.branch(else_branch, local);
+        assert_eq!(replay.resolve(refined), Some(Ty::Int));
+        replay.expect(refined, Expected::Ty(Ty::Bool));
+        assert!(replay.evidence(refined).is_conflict());
+        assert!(replay.evidence(local).is_conflict());
     }
 }

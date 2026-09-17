@@ -113,3 +113,89 @@ fn negateds@518..564 () -> int ∈ [6, 14]
       arg[0]: int 1 : int @549..550
     rhs: call negated@461..517 (callee @554..561) : int @554..564
       arg[0]: int 7 : int @562..563
+
+fn between@565..628 (int ∈ [-3, 50] \ 0) -> int ∈ [0, 9]
+  param n@576..577: int
+  body: if : int @593..628
+    condition: lazy and : bool @596..611
+      lhs: eager > : bool @596..601
+        lhs: read n@576..577 : int @596..597
+        rhs: int 0 : int @600..601
+      rhs: eager < : bool @605..611
+        lhs: read n@576..577 : int @605..606
+        rhs: int 10 : int @609..611
+    then: block : int @612..617
+      tail: read n@576..577 : int @614..615
+    else: block : int @623..628
+      tail: int 0 : int @625..626
+
+fn betweens@629..690 () -> int ∈ [0, 27]
+  body: eager + : int @652..690
+    lhs: eager + : int @652..676
+      lhs: call between@565..628 (callee @652..659) : int @652..663
+        arg[0]: int -3 : int @660..662
+      rhs: call between@565..628 (callee @666..673) : int @666..676
+        arg[0]: int 5 : int @674..675
+    rhs: call between@565..628 (callee @679..686) : int @679..690
+      arg[0]: int 50 : int @687..689
+
+fn outside@691..753 (int ∈ [-3, 50] \ 0) -> int ∈ [0, 9]
+  param n@702..703: int
+  body: if : int @719..753
+    condition: lazy or : bool @722..736
+      lhs: eager < : bool @722..727
+        lhs: read n@702..703 : int @722..723
+        rhs: int 1 : int @726..727
+      rhs: eager > : bool @731..736
+        lhs: read n@702..703 : int @731..732
+        rhs: int 9 : int @735..736
+    then: block : int @737..742
+      tail: int 0 : int @739..740
+    else: block : int @748..753
+      tail: read n@702..703 : int @750..751
+
+fn outsides@754..815 () -> int ∈ [0, 27]
+  body: eager + : int @777..815
+    lhs: eager + : int @777..801
+      lhs: call outside@691..753 (callee @777..784) : int @777..788
+        arg[0]: int -3 : int @785..787
+      rhs: call outside@691..753 (callee @791..798) : int @791..801
+        arg[0]: int 5 : int @799..800
+    rhs: call outside@691..753 (callee @804..811) : int @804..815
+      arg[0]: int 50 : int @812..814
+
+fn inner@816..902 (int ∈ [0, 1], int ∈ [-5, 5]) -> int ∈ [-5, 5]
+  param n@825..826: int
+  param m@833..834: int
+  body: block : int @848..902
+    tail: if : int @854..900
+      condition: eager > : bool @857..862
+        lhs: read n@825..826 : int @857..858
+        rhs: int 0 : int @861..862
+      then: block : int @863..889
+        discard @865..884
+          value: if : unit @865..884
+            condition: eager != : bool @868..874
+              lhs: read m@833..834 : int @868..869
+              rhs: int 0 : int @873..874
+            then: block : unit @875..884
+              discard @877..882
+                value: int 1 : int @881..882
+              tail: unit (implicit)
+            else: unit (implicit)
+        tail: int 0 : int @886..887
+      else: block : int @895..900
+        tail: read m@833..834 : int @897..898
+
+fn inners@903..964 () -> int ∈ [-15, 15]
+  body: eager + : int @924..964
+    lhs: eager + : int @924..949
+      lhs: call inner@816..902 (callee @924..929) : int @924..935
+        arg[0]: int 0 : int @930..931
+        arg[1]: int 0 : int @933..934
+      rhs: call inner@816..902 (callee @938..943) : int @938..949
+        arg[0]: int 0 : int @944..945
+        arg[1]: int 5 : int @947..948
+    rhs: call inner@816..902 (callee @952..957) : int @952..964
+      arg[0]: int 1 : int @958..959
+      arg[1]: int -5 : int @961..963

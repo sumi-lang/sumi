@@ -342,21 +342,16 @@ impl<L: Lattice> Solver<L> {
     /// facts and what `export` lets each settled flow deliver to its consumer.
     /// Replaying expectations one at a time on it attributes a disagreement
     /// to the expectation that first raised it, with the flows final rather
-    /// than provisional. `export` sees the provider's settled evidence and
-    /// what the replay holds for it so far, in flow order, so a flow can
-    /// pass on either the final answer or only what is known on the
-    /// provider's own account, then the second provider's settled evidence
-    /// for a two-provider flow, and the edge.
-    pub fn replay(&self, export: impl Fn(&L, &L, Option<&L>, &L::Edge) -> Option<L>) -> Self {
+    /// than provisional. `export` sees the provider's settled evidence, the
+    /// second provider's for a two-provider flow, and the edge.
+    pub fn replay(&self, export: impl Fn(&L, Option<&L>, &L::Edge) -> Option<L>) -> Self {
         let mut replay = Self::with_classes(self.parent.len());
         for (var, evidence) in &self.facts {
             replay.expect(*var, evidence);
         }
         for flow in &self.flows {
             let second = flow.second.map(|second| self.evidence(second));
-            let replayed = replay.evidence(flow.first);
-            if let Some(evidence) = export(self.evidence(flow.first), replayed, second, &flow.edge)
-            {
+            if let Some(evidence) = export(self.evidence(flow.first), second, &flow.edge) {
                 replay.expect(flow.consumer, &evidence);
             }
         }
@@ -622,7 +617,7 @@ mod tests {
         solver.solve(&());
         assert_eq!(*solver.evidence(x), Interval::new(5, 10));
         assert!(solver.evidence(y).is_empty());
-        let replay = solver.replay(|band, _, _, offset| {
+        let replay = solver.replay(|band, _, offset| {
             (!band.is_empty()).then(|| band.transfer(offset, None, false, &()))
         });
         assert_eq!(*replay.evidence(x), Interval::new(0, 10));
@@ -655,7 +650,7 @@ mod tests {
         let from_conflict = solver.import(conflicted, ());
         let from_known = solver.import(known, ());
         solver.solve(&());
-        let replay = solver.replay(|set, _, _, ()| (set.0.count_ones() == 1).then_some(*set));
+        let replay = solver.replay(|set, _, ()| (set.0.count_ones() == 1).then_some(*set));
         assert_eq!(*replay.evidence(known), Set(1));
         assert_eq!(*replay.evidence(demanded), Set::bottom());
         assert_eq!(*replay.evidence(conflicted), Set::bottom());
