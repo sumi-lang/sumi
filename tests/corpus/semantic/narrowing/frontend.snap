@@ -1,5 +1,5 @@
 == tree ==
-SourceFile 0..640
+SourceFile 0..1054
   FnItem 0..64
     Name 3..8 "climb"
     ParamList 8..16
@@ -190,6 +190,104 @@ SourceFile 0..640
         NameRef 628..636 "compared"
         ArgList 636..639
           LiteralExpr 637..638 "2"
+  FnItem 640..712
+    Name 643..657 "climb_compared"
+    ParamList 657..665
+      Param 658..664
+        Name 658..659 "a"
+        TypeRef 661..664 "int"
+    TypeRef 669..672 "int"
+    IfExpr 675..712
+      BinaryExpr 678..695
+        CallExpr 678..690
+          NameRef 678..683 "climb"
+          ArgList 683..690
+            BinaryExpr 684..689
+              NameRef 684..685 "a"
+              LiteralExpr 688..689 "3"
+        NameRef 694..695 "a"
+      Block 696..701
+        LiteralExpr 698..699 "1"
+      Block 707..712
+        LiteralExpr 709..710 "0"
+  FnItem 713..780
+    Name 716..731 "climbs_compared"
+    ParamList 731..733 "()"
+    TypeRef 737..740 "int"
+    BinaryExpr 743..780
+      CallExpr 743..760
+        NameRef 743..757 "climb_compared"
+        ArgList 757..760
+          LiteralExpr 758..759 "1"
+      CallExpr 763..780
+        NameRef 763..777 "climb_compared"
+        ArgList 777..780
+          LiteralExpr 778..779 "2"
+  FnItem 781..1022
+    Name 784..789 "relay"
+    ParamList 789..797
+      Param 790..796
+        Name 790..791 "n"
+        TypeRef 793..796 "int"
+    TypeRef 801..804 "int"
+    Block 805..1022
+      LetStmt 811..825
+        Name 815..816 "a"
+        TypeRef 818..821 "int"
+        NameRef 824..825 "n"
+      LetStmt 830..844
+        Name 834..835 "b"
+        TypeRef 837..840 "int"
+        NameRef 843..844 "a"
+      LetStmt 849..863
+        Name 853..854 "c"
+        TypeRef 856..859 "int"
+        NameRef 862..863 "b"
+      LetStmt 868..882
+        Name 872..873 "d"
+        TypeRef 875..878 "int"
+        NameRef 881..882 "c"
+      LetStmt 887..901
+        Name 891..892 "e"
+        TypeRef 894..897 "int"
+        NameRef 900..901 "d"
+      LetStmt 906..920
+        Name 910..911 "f"
+        TypeRef 913..916 "int"
+        NameRef 919..920 "e"
+      LetStmt 925..939
+        Name 929..930 "g"
+        TypeRef 932..935 "int"
+        NameRef 938..939 "f"
+      LetStmt 944..958
+        Name 948..949 "h"
+        TypeRef 951..954 "int"
+        NameRef 957..958 "g"
+      LetStmt 963..977
+        Name 967..968 "i"
+        TypeRef 970..973 "int"
+        NameRef 976..977 "h"
+      IfExpr 982..1020
+        BinaryExpr 985..992
+          NameRef 985..986 "i"
+          LiteralExpr 989..992 "100"
+        Block 993..998
+          NameRef 995..996 "i"
+        Block 1004..1020
+          CallExpr 1006..1018
+            NameRef 1006..1011 "relay"
+            ArgList 1011..1018
+              BinaryExpr 1012..1017
+                NameRef 1012..1013 "i"
+                LiteralExpr 1016..1017 "7"
+  FnItem 1023..1053
+    Name 1026..1033 "relayed"
+    ParamList 1033..1035 "()"
+    TypeRef 1039..1042 "int"
+    CallExpr 1045..1053
+      NameRef 1045..1050 "relay"
+      ArgList 1050..1053
+        LiteralExpr 1051..1052 "0"
 
 == formatted ==
 fn climb(n: int) -> int = if n > 100 {
@@ -228,3 +326,26 @@ fn compared(a: int) -> int = if same(a * 3) == a {
     0
 }
 fn compareds() -> int = compared(1) + compared(2)
+fn climb_compared(a: int) -> int = if climb(a * 3) == a {
+    1
+} else {
+    0
+}
+fn climbs_compared() -> int = climb_compared(1) + climb_compared(2)
+fn relay(n: int) -> int {
+    let a: int = n
+    let b: int = a
+    let c: int = b
+    let d: int = c
+    let e: int = d
+    let f: int = e
+    let g: int = f
+    let h: int = g
+    let i: int = h
+    if i > 100 {
+        i
+    } else {
+        relay(i + 7)
+    }
+}
+fn relayed() -> int = relay(0)

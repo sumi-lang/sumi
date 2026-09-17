@@ -10,3 +10,18 @@ fn passed_through() -> int = upto(0, rise(0) + 3)
 fn same(n: int) -> int = n
 fn compared(a: int) -> int = if same(a * 3) == a { 1 } else { 0 }
 fn compareds() -> int = compared(1) + compared(2)
+fn climb_compared(a: int) -> int = if climb(a * 3) == a { 1 } else { 0 }
+fn climbs_compared() -> int = climb_compared(1) + climb_compared(2)
+fn relay(n: int) -> int {
+    let a: int = n
+    let b: int = a
+    let c: int = b
+    let d: int = c
+    let e: int = d
+    let f: int = e
+    let g: int = f
+    let h: int = g
+    let i: int = h
+    if i > 100 { i } else { relay(i + 7) }
+}
+fn relayed() -> int = relay(0)

@@ -171,7 +171,7 @@ fn r4@682..764 (int ∈ [2, 2], int ∈ [1, 1], int ∈ [0, 17]) -> int ∈ [3, 
         lhs: read a@688..689 : int @757..758
         rhs: read b@696..697 : int @761..762
 
-fn r5@765..847 (int ∈ [2, 2], int ∈ [1, 1], int ∈ [0, 16]) -> int ∈ [3, 3]
+fn r5@765..847 (int ∈ [2, 2], int ∈ [1, 1], int ∈ [0, 15]) -> int ∈ [3, 3]
   param a@771..772: int
   param b@779..780: int
   param c@787..788: int

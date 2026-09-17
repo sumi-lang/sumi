@@ -123,3 +123,61 @@ fn compareds@590..639 () -> int ∈ [0, 0]
       arg[0]: int 1 : int @623..624
     rhs: call compared@524..589 (callee @628..636) : int @628..639
       arg[0]: int 2 : int @637..638
+
+fn climb_compared@640..712 (int ∈ [1, 2]) -> int ∈ [0, 0]
+  param a@658..659: int
+  body: if : int @675..712
+    condition: eager == : bool @678..695
+      lhs: call climb@0..64 (callee @678..683) : int @678..690
+        arg[0]: eager * : int @684..689
+          lhs: read a@658..659 : int @684..685
+          rhs: int 3 : int @688..689
+      rhs: read a@658..659 : int @694..695
+    then: block : int @696..701
+      tail: int 1 : int @698..699
+    else: block : int @707..712
+      tail: int 0 : int @709..710
+
+fn climbs_compared@713..780 () -> int ∈ [0, 0]
+  body: eager + : int @743..780
+    lhs: call climb_compared@640..712 (callee @743..757) : int @743..760
+      arg[0]: int 1 : int @758..759
+    rhs: call climb_compared@640..712 (callee @763..777) : int @763..780
+      arg[0]: int 2 : int @778..779
+
+fn relay@781..1022 (int ∈ [0, 107]) -> int ∈ [101, 107]
+  param n@790..791: int
+  body: block : int @805..1022
+    let a@815..816: int @811..825
+      initializer: read n@790..791 : int @824..825
+    let b@834..835: int @830..844
+      initializer: read a@815..816 : int @843..844
+    let c@853..854: int @849..863
+      initializer: read b@834..835 : int @862..863
+    let d@872..873: int @868..882
+      initializer: read c@853..854 : int @881..882
+    let e@891..892: int @887..901
+      initializer: read d@872..873 : int @900..901
+    let f@910..911: int @906..920
+      initializer: read e@891..892 : int @919..920
+    let g@929..930: int @925..939
+      initializer: read f@910..911 : int @938..939
+    let h@948..949: int @944..958
+      initializer: read g@929..930 : int @957..958
+    let i@967..968: int @963..977
+      initializer: read h@948..949 : int @976..977
+    tail: if : int @982..1020
+      condition: eager > : bool @985..992
+        lhs: read i@967..968 : int @985..986
+        rhs: int 100 : int @989..992
+      then: block : int @993..998
+        tail: read i@967..968 : int @995..996
+      else: block : int @1004..1020
+        tail: call relay@781..1022 (callee @1006..1011) : int @1006..1018
+          arg[0]: eager + : int @1012..1017
+            lhs: read i@967..968 : int @1012..1013
+            rhs: int 7 : int @1016..1017
+
+fn relayed@1023..1053 () -> int ∈ [101, 107]
+  body: call relay@781..1022 (callee @1045..1050) : int @1045..1053
+    arg[0]: int 0 : int @1051..1052

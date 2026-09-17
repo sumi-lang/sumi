@@ -158,6 +158,12 @@ impl Lattice for Evidence {
         false
     }
 
+    /// Nothing of a type claim climbs: the cycles that matter are the
+    /// values', and a peer's or a branch's claims close none.
+    fn carries(_: &Edge, _: bool) -> bool {
+        false
+    }
+
     fn transfer(&self, edge: &Edge, _: Option<&Self>, _: bool, (): &()) -> Self {
         match *edge {
             Edge::Branch | Edge::Peer | Edge::Refine => *self,

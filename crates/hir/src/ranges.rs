@@ -1008,11 +1008,43 @@ impl Lattice for May {
         ints | bools | unit
     }
 
-    /// An operator's result can outgrow its operands; everything else
+    /// An arithmetic result can outgrow its operands; everything else
     /// copies, narrows, or gates a value, or is a boolean or unit, which
     /// cannot climb.
     fn grows(edge: &RangeEdge) -> bool {
-        matches!(edge, RangeEdge::Unary { .. } | RangeEdge::Binary { .. })
+        matches!(
+            edge,
+            RangeEdge::Unary {
+                op: UnaryOp::Neg,
+                ..
+            } | RangeEdge::Binary {
+                op: BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Rem,
+                ..
+            }
+        )
+    }
+
+    /// Integers climb through copies, arithmetic, refinement, branches,
+    /// arguments, and calls. A comparison, a lazy operator, and a context
+    /// deliver a boolean or liveness, which are finite; the context that
+    /// gates a branch or an argument carries nothing of its own; and a
+    /// typing-only flow carries nothing at all.
+    fn carries(edge: &RangeEdge, second: bool) -> bool {
+        match edge {
+            RangeEdge::None
+            | RangeEdge::Lazy { .. }
+            | RangeEdge::Then
+            | RangeEdge::Else
+            | RangeEdge::Enter
+            | RangeEdge::Exactly(_) => false,
+            RangeEdge::Unary { op, .. } => *op == UnaryOp::Neg,
+            RangeEdge::Binary { op, .. } => matches!(
+                op,
+                BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Rem
+            ),
+            RangeEdge::Copy | RangeEdge::Call | RangeEdge::Refine { .. } => true,
+            RangeEdge::Branch | RangeEdge::Argument(_) => !second,
+        }
     }
 
     fn transfer(

@@ -1367,7 +1367,7 @@ impl<'a, 's> Builder<'a, 's> {
         declared: Option<NodeIdx>,
     ) {
         let actual = self.class(expr);
-        if expected == Expected::Class(actual) {
+        if expected == Expected::Class(actual) || expected == Expected::Peer(actual) {
             return;
         }
         self.typing.expect(actual, expected, node);

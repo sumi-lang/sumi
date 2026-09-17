@@ -11,3 +11,7 @@ fn passed_through = 10 (steps 261, depth 12 of at most 13)
 fn same: takes arguments, not run
 fn compared: takes arguments, not run
 fn compareds = 0 (steps 47, depth 3 of at most 3)
+fn climb_compared: takes arguments, not run
+fn climbs_compared = 0 (steps 511, depth 17 of at most 110)
+fn relay: takes arguments, not run
+fn relayed = 105 (steps 719, depth 17 of at most 109)
