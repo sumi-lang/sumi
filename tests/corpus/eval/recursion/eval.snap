@@ -12,3 +12,5 @@ fn r3: takes arguments, not run
 fn r4: takes arguments, not run
 fn r5: takes arguments, not run
 fn ring = 3 (steps 422, depth 22 of at most 22)
+fn dead_arm: takes arguments, not run
+fn dead_arms = 0 (steps 141, depth 8 of at most 8)

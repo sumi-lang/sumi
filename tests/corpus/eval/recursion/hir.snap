@@ -196,3 +196,28 @@ fn ring@848..879 () -> int ∈ [3, 3]
     arg[0]: int 1 : int @870..871
     arg[1]: int 2 : int @873..874
     arg[2]: int 20 : int @876..878
+
+fn dead_arm@880..976 (int ∈ [0, 6]) -> int ∈ [0, 0]
+  param n@892..893: int
+  body: if : int @909..976
+    condition: eager == : bool @912..918
+      lhs: read n@892..893 : int @912..913
+      rhs: int 0 : int @917..918
+    then: block : int @919..924
+      tail: int 0 : int @921..922
+    else: block : int @930..976
+      tail: call dead_arm@880..976 (callee @932..940) : int @932..974
+        arg[0]: if : int @941..973
+          condition: bool true : bool @944..948
+          then: block : int @949..958
+            tail: eager - : int @951..956
+              lhs: read n@892..893 : int @951..952
+              rhs: int 1 : int @955..956
+          else: block : int @964..973
+            tail: eager + : int @966..971
+              lhs: read n@892..893 : int @966..967
+              rhs: int 1 : int @970..971
+
+fn dead_arms@977..1012 () -> int ∈ [0, 0]
+  body: call dead_arm@880..976 (callee @1001..1009) : int @1001..1012
+    arg[0]: int 6 : int @1010..1011

@@ -164,6 +164,14 @@ pub(crate) fn check(
                 .enumerate()
                 .map(|(i, &p)| (p, i))
                 .collect();
+            let branches: HashMap<ExprId, (bool, bool)> = body
+                .branches
+                .iter()
+                .map(|&(expr, then_context, else_context)| {
+                    let live = |context| typing.may(context).live();
+                    (expr, (live(then_context), live(else_context)))
+                })
+                .collect();
             for &(expr, context) in &body.calls {
                 if !typing.may(context).live() {
                     continue;
@@ -185,7 +193,7 @@ pub(crate) fn check(
                     .iter()
                     .enumerate()
                 {
-                    if let Some((param, band)) = delta(body, typing, &lets, arg, 0)
+                    if let Some((param, band)) = delta(body, typing, &lets, &branches, arg, 0)
                         && let Some(&i) = params.get(&param)
                     {
                         offsets.insert((i, j), band);
@@ -383,11 +391,12 @@ fn lax_edges_are_acyclic(members: usize, calls: &[Call], strict: &[bool]) -> boo
 }
 
 /// `Some((p, c))` when on every run the expression's value is in `p + c`
-/// for the parameter `p`.
+/// for the parameter `p`. `branches` says which arms of each `if` can run.
 fn delta(
     body: &DraftBody,
     typing: &Typing,
     lets: &HashMap<LocalId, ExprId>,
+    branches: &HashMap<ExprId, (bool, bool)>,
     expr: ExprId,
     depth: usize,
 ) -> Option<(LocalId, Ints)> {
@@ -400,38 +409,51 @@ fn delta(
             if body.params.contains(local) {
                 Some((*local, Ints::from(Int::from(0))))
             } else {
-                delta(body, typing, lets, *lets.get(local)?, depth + 1)
+                delta(body, typing, lets, branches, *lets.get(local)?, depth + 1)
             }
         }
         ExprKind::Binary {
             op: BinaryOp::Add,
             lhs,
             rhs,
-        } => delta(body, typing, lets, *lhs, depth + 1)
+        } => delta(body, typing, lets, branches, *lhs, depth + 1)
             .map(|(p, c)| (p, &c + may(*rhs)))
             .or_else(|| {
-                delta(body, typing, lets, *rhs, depth + 1).map(|(p, c)| (p, may(*lhs) + &c))
+                delta(body, typing, lets, branches, *rhs, depth + 1)
+                    .map(|(p, c)| (p, may(*lhs) + &c))
             }),
         ExprKind::Binary {
             op: BinaryOp::Sub,
             lhs,
             rhs,
-        } => delta(body, typing, lets, *lhs, depth + 1).map(|(p, c)| (p, &c - may(*rhs))),
+        } => delta(body, typing, lets, branches, *lhs, depth + 1).map(|(p, c)| (p, &c - may(*rhs))),
         ExprKind::If {
             then_branch,
             else_branch: Some(else_branch),
             ..
         } => {
-            let (p, mut c) = delta(body, typing, lets, *then_branch, depth + 1)?;
-            let (q, d) = delta(body, typing, lets, *else_branch, depth + 1)?;
-            (p == q).then(|| {
-                c.join(&d);
-                (p, c)
-            })
+            // A branch that cannot run contributes no value.
+            let (then_live, else_live) = branches.get(&expr).copied().unwrap_or((true, true));
+            let then =
+                then_live.then(|| delta(body, typing, lets, branches, *then_branch, depth + 1));
+            let otherwise =
+                else_live.then(|| delta(body, typing, lets, branches, *else_branch, depth + 1));
+            match (then, otherwise) {
+                (Some(then), Some(otherwise)) => {
+                    let (p, mut c) = then?;
+                    let (q, d) = otherwise?;
+                    (p == q).then(|| {
+                        c.join(&d);
+                        (p, c)
+                    })
+                }
+                (Some(only), None) | (None, Some(only)) => only,
+                (None, None) => None,
+            }
         }
         ExprKind::Block {
             tail: Some(tail), ..
-        } => delta(body, typing, lets, *tail, depth + 1),
+        } => delta(body, typing, lets, branches, *tail, depth + 1),
         _ => None,
     }
 }

@@ -1,5 +1,5 @@
 == tree ==
-SourceFile 0..880
+SourceFile 0..1013
   FnItem 0..71
     Name 3..6 "fib"
     ParamList 6..14
@@ -293,6 +293,41 @@ SourceFile 0..880
         LiteralExpr 870..871 "1"
         LiteralExpr 873..874 "2"
         LiteralExpr 876..878 "20"
+  FnItem 880..976
+    Name 883..891 "dead_arm"
+    ParamList 891..899
+      Param 892..898
+        Name 892..893 "n"
+        TypeRef 895..898 "int"
+    TypeRef 903..906 "int"
+    IfExpr 909..976
+      BinaryExpr 912..918
+        NameRef 912..913 "n"
+        LiteralExpr 917..918 "0"
+      Block 919..924
+        LiteralExpr 921..922 "0"
+      Block 930..976
+        CallExpr 932..974
+          NameRef 932..940 "dead_arm"
+          ArgList 940..974
+            IfExpr 941..973
+              LiteralExpr 944..948 "true"
+              Block 949..958
+                BinaryExpr 951..956
+                  NameRef 951..952 "n"
+                  LiteralExpr 955..956 "1"
+              Block 964..973
+                BinaryExpr 966..971
+                  NameRef 966..967 "n"
+                  LiteralExpr 970..971 "1"
+  FnItem 977..1012
+    Name 980..989 "dead_arms"
+    ParamList 989..991 "()"
+    TypeRef 995..998 "int"
+    CallExpr 1001..1012
+      NameRef 1001..1009 "dead_arm"
+      ArgList 1009..1012
+        LiteralExpr 1010..1011 "6"
 
 == formatted ==
 fn fib(n: int) -> int = if n < 2 {
@@ -348,3 +383,13 @@ fn r5(a: int, b: int, c: int) -> int = if c > 0 {
     a + b
 }
 fn ring() -> int = r0(1, 2, 20)
+fn dead_arm(n: int) -> int = if n == 0 {
+    0
+} else {
+    dead_arm(if true {
+        n - 1
+    } else {
+        n + 1
+    })
+}
+fn dead_arms() -> int = dead_arm(6)

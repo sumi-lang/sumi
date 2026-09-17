@@ -137,6 +137,9 @@ pub(crate) struct DraftBody {
     /// Every call expression beside the context it runs in, for the call
     /// graph: a call in a dead context never happens.
     pub calls: Vec<(ExprId, Var)>,
+    /// Every `if` with an else beside its branches' contexts, for the
+    /// offsets an argument reads: a dead branch never contributes a value.
+    pub branches: Vec<(ExprId, Var, Var)>,
     pub root: ExprId,
 }
 
@@ -152,6 +155,7 @@ impl DraftBody {
             args,
             statements,
             calls: _,
+            branches: _,
             root,
         } = self;
         let locals = locals
@@ -878,6 +882,7 @@ struct Builder<'a, 's> {
     args: Vec<ExprId>,
     statements: Vec<Statement>,
     calls: Vec<(ExprId, Var)>,
+    branches: Vec<(ExprId, Var, Var)>,
     /// The context each point runs in, innermost last.
     contexts: Vec<Var>,
     /// The classes locals read as inside the open contexts, innermost last.
@@ -931,6 +936,7 @@ impl<'a, 's> Builder<'a, 's> {
             args: Vec::new(),
             statements: Vec::new(),
             calls: Vec::new(),
+            branches: Vec::new(),
             contexts: Vec::new(),
             refinements: Vec::new(),
             staged: Vec::new(),
@@ -962,6 +968,7 @@ impl<'a, 's> Builder<'a, 's> {
         self.args.clear();
         self.statements.clear();
         self.calls.clear();
+        self.branches.clear();
         self.contexts.clear();
         self.contexts.push(self.headers[owner].entry);
         self.refinements.clear();
@@ -1056,6 +1063,7 @@ impl<'a, 's> Builder<'a, 's> {
             args: std::mem::take(&mut self.args),
             statements: std::mem::take(&mut self.statements),
             calls: std::mem::take(&mut self.calls),
+            branches: std::mem::take(&mut self.branches),
             root: root?,
         })
     }
@@ -1838,6 +1846,7 @@ impl<'a, 's> Builder<'a, 's> {
                             },
                             join,
                         );
+                        self.branches.push((id, then_context, else_context));
                         self.demand(node, id, DemandKind::Agree { branches });
                         return Some(());
                     }

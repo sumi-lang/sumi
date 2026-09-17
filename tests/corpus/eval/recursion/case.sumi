@@ -11,3 +11,5 @@ fn r3(a: int, b: int, c: int) -> int = if c > 0 { r1(b, a, c - 1) } else { a + b
 fn r4(a: int, b: int, c: int) -> int = if c > 0 { r2(b, a, c - 1) } else { a + b }
 fn r5(a: int, b: int, c: int) -> int = if c > 0 { r0(b, a, c - 1) } else { a + b }
 fn ring() -> int = r0(1, 2, 20)
+fn dead_arm(n: int) -> int = if n == 0 { 0 } else { dead_arm(if true { n - 1 } else { n + 1 }) }
+fn dead_arms() -> int = dead_arm(6)
