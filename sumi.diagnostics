@@ -134,6 +134,12 @@ code unused-value
 /// result is used as two types, or nothing fixes it. Add a return type
 /// annotation.
 code cannot-infer
+/// A `/` or `%` whose divisor may be zero where the division can run: the
+/// values that reach the divisor, the hull of every argument and operand
+/// that flows into it, include zero. Labels name the values that put it
+/// there. A guard such as `if d != 0` narrows the divisor inside its
+/// branch, and a division no path reaches is not checked.
+code division-by-zero
 /// A construct scalar checking does not handle yet, such as a closure, a
 /// string literal, or a call through anything but a function name. The
 /// function is left unchecked.

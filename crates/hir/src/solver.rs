@@ -39,7 +39,7 @@
 //! conflicted one are untouched.
 
 use std::collections::VecDeque;
-use std::num::NonZeroUsize;
+use std::num::{NonZeroU32, NonZeroUsize};
 
 /// The evidence a solver carries on each class: a join-semilattice with a
 /// transfer function for flows.
@@ -110,14 +110,29 @@ impl<A: Lattice, B: Lattice> Lattice for (A, B) {
     }
 }
 
-/// A member of some class: what the solver hands out and takes back.
+/// A member of some class: what the solver hands out and takes back. One
+/// past its index, so an `Option<Var>` is one word.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct Var(u32);
+pub struct Var(NonZeroU32);
 
 impl Var {
-    fn index(self) -> usize {
-        self.0 as usize
+    fn new(index: usize) -> Self {
+        let past = u32::try_from(index + 1).expect("class count fits u32");
+        Self(NonZeroU32::new(past).expect("one past an index"))
     }
+
+    fn index(self) -> usize {
+        self.0.get() as usize - 1
+    }
+}
+
+/// The flows into each class, in compressed sparse rows by class, and the
+/// fact that opened each class, one past its index or zero: what a walk
+/// back from a class to what fed it reads, built by [`Solver::backwards`].
+pub struct Backwards {
+    start: Vec<u32>,
+    flows: Vec<u32>,
+    facts: Vec<u32>,
 }
 
 /// One flow: what `consumer` learns from `first`, and from `second` when
@@ -173,11 +188,12 @@ impl<L: Lattice> Solver<L> {
     }
 
     fn open(&mut self, evidence: L) -> Var {
+        let var = Var::new(self.parent.len());
         let id = u32::try_from(self.parent.len()).expect("class count fits u32");
         self.parent.push(id);
         self.size.push(1);
         self.evidence.push(evidence);
-        Var(id)
+        var
     }
 
     fn root(&self, mut id: usize) -> usize {
@@ -252,6 +268,63 @@ impl<L: Lattice> Solver<L> {
             consumer,
             edge,
         });
+    }
+
+    /// The class `var` is a member of, as its representative.
+    pub fn find(&self, var: Var) -> Var {
+        Var::new(self.root(var.index()))
+    }
+
+    /// The flow graph read backwards, once every equality and flow is in.
+    pub fn backwards(&self) -> Backwards {
+        let n = self.parent.len();
+        // The rows are counted one slot to the right and filled with the
+        // cursor one slot to the right, so no second copy of the row
+        // starts is needed.
+        let mut start = vec![0u32; n + 2];
+        for flow in &self.flows {
+            start[self.root(flow.consumer.index()) + 2] += 1;
+        }
+        for i in 0..=n {
+            start[i + 1] += start[i];
+        }
+        let mut flows = vec![0u32; self.flows.len()];
+        for (index, flow) in self.flows.iter().enumerate() {
+            let slot = &mut start[self.root(flow.consumer.index()) + 1];
+            flows[*slot as usize] = index as u32;
+            *slot += 1;
+        }
+        let mut facts = vec![0u32; n];
+        for (index, (fact, _)) in self.facts.iter().enumerate().rev() {
+            facts[self.root(fact.index())] = index as u32 + 1;
+        }
+        Backwards {
+            start,
+            flows,
+            facts,
+        }
+    }
+
+    /// The evidence a fact opened `var`'s class with, if one did: the first
+    /// fact of the class, when equalities merged several.
+    pub fn fact(&self, backwards: &Backwards, var: Var) -> Option<&L> {
+        let index = backwards.facts[self.root(var.index())].checked_sub(1)?;
+        Some(&self.facts[index as usize].1)
+    }
+
+    /// Every flow into `var`'s class: its providers and its edge.
+    pub fn incoming<'a>(
+        &'a self,
+        backwards: &'a Backwards,
+        var: Var,
+    ) -> impl Iterator<Item = (Var, Option<Var>, &'a L::Edge)> + 'a {
+        let root = self.root(var.index());
+        backwards.flows[backwards.start[root] as usize..backwards.start[root + 1] as usize]
+            .iter()
+            .map(|&index| {
+                let flow = &self.flows[index as usize];
+                (flow.first, flow.second, &flow.edge)
+            })
     }
 
     /// A fresh class that `provider` flows into through `edge`.
@@ -514,6 +587,15 @@ mod tests {
                 self.hi.saturating_add(*offset),
             )
         }
+    }
+
+    #[test]
+    fn a_flow_is_seven_words() {
+        assert_eq!(size_of::<Option<Var>>(), 4);
+        assert_eq!(
+            size_of::<Flow<(crate::typing::Edge, crate::ranges::RangeEdge)>>(),
+            28
+        );
     }
 
     #[test]

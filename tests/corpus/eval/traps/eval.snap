@@ -1,6 +1,0 @@
-file: accepted
-fn divide_by_zero traps [eval/division-by-zero] at `1 / (2 - 2)` @29..40 (steps 7, depth 1)
-fn remainder_by_zero traps [eval/division-by-zero] at `7 % 0` @73..78 (steps 4, depth 1)
-fn guarded = false (steps 4, depth 1)
-fn after_a_trap: takes arguments, not run
-fn trap_in_a_callee traps [eval/division-by-zero] at `n / 0` @155..160 (steps 10, depth 2)

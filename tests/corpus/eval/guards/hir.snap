@@ -1,0 +1,185 @@
+file: accepted
+frontend errors: 0 (see frontend.snap)
+semantic errors: 0
+
+fn guarded@0..42 () -> bool ∈ {false}
+  body: lazy and : bool @23..42
+    lhs: bool false : bool @23..28
+    rhs: eager == : bool @32..42
+      lhs: eager / : int @32..37
+        lhs: int 1 : int @32..33
+        rhs: int 0 : int @36..37
+      rhs: int 0 : int @41..42
+
+fn dead_branch@43..98 () -> int ∈ [1, 1]
+  body: if : int @69..98
+    condition: bool false : bool @72..77
+    then: block : int @78..87
+      tail: eager / : int @80..85
+        lhs: int 1 : int @80..81
+        rhs: int 0 : int @84..85
+    else: block : int @93..98
+      tail: int 1 : int @95..96
+
+fn nested_dead@99..177 () -> int ∈ [3, 3]
+  body: if : int @125..177
+    condition: bool false : bool @128..133
+    then: block : int @134..166
+      tail: if : int @136..164
+        condition: bool true : bool @139..143
+        then: block : int @144..153
+          tail: eager / : int @146..151
+            lhs: int 1 : int @146..147
+            rhs: int 0 : int @150..151
+        else: block : int @159..164
+          tail: int 2 : int @161..162
+    else: block : int @172..177
+      tail: int 3 : int @174..175
+
+fn safe@178..241 (int ∈ [10, 10], int ∈ [-3, 3]) -> int ∈ [-10, 10]
+  param n@186..187: int
+  param d@194..195: int
+  body: if : int @211..241
+    condition: eager != : bool @214..220
+      lhs: read d@194..195 : int @214..215
+      rhs: int 0 : int @219..220
+    then: block : int @221..230
+      tail: eager / : int @223..228
+        lhs: read n@186..187 : int @223..224
+        rhs: read d@194..195 : int @227..228
+    else: block : int @236..241
+      tail: int 0 : int @238..239
+
+fn signed@242..303 () -> int ∈ [-30, 30]
+  body: eager + : int @263..303
+    lhs: eager + : int @263..289
+      lhs: call safe@178..241 (callee @263..267) : int @263..274
+        arg[0]: int 10 : int @268..270
+        arg[1]: int 3 : int @272..273
+      rhs: call safe@178..241 (callee @277..281) : int @277..289
+        arg[0]: int 10 : int @282..284
+        arg[1]: int -3 : int @286..288
+    rhs: call safe@178..241 (callee @292..296) : int @292..303
+      arg[0]: int 10 : int @297..299
+      arg[1]: int 0 : int @301..302
+
+fn positive@304..365 (int ∈ [-7, 7] \ 0) -> int ∈ [-1, 100] \ 0
+  param d@316..317: int
+  body: if : int @333..365
+    condition: eager > : bool @336..341
+      lhs: read d@316..317 : int @336..337
+      rhs: int 0 : int @340..341
+    then: block : int @342..353
+      tail: eager / : int @344..351
+        lhs: int 100 : int @344..347
+        rhs: read d@316..317 : int @350..351
+    else: block : int @359..365
+      tail: int -1 : int @361..363
+
+fn positives@366..416 () -> int ∈ [-2, 200]
+  body: eager + : int @390..416
+    lhs: call positive@304..365 (callee @390..398) : int @390..401
+      arg[0]: int 7 : int @399..400
+    rhs: call positive@304..365 (callee @404..412) : int @404..416
+      arg[0]: int -7 : int @413..415
+
+fn nonzero@417..477 (int ∈ [-9, 0]) -> int ∈ [0, 8]
+  param d@428..429: int
+  body: if : int @445..477
+    condition: eager == : bool @448..454
+      lhs: read d@428..429 : int @448..449
+      rhs: int 0 : int @453..454
+    then: block : int @455..460
+      tail: int 0 : int @457..458
+    else: block : int @466..477
+      tail: eager % : int @468..475
+        lhs: int 100 : int @468..471
+        rhs: read d@428..429 : int @474..475
+
+fn nonzeros@478..525 () -> int ∈ [0, 16]
+  body: eager + : int @501..525
+    lhs: call nonzero@417..477 (callee @501..508) : int @501..511
+      arg[0]: int 0 : int @509..510
+    rhs: call nonzero@417..477 (callee @514..521) : int @514..525
+      arg[0]: int -9 : int @522..524
+
+fn either@526..560 (int ∈ [-3, 3] \ 0) -> int ∈ [-100, 100] \ 0
+  param d@536..537: int
+  body: eager / : int @553..560
+    lhs: int 100 : int @553..556
+    rhs: read d@536..537 : int @559..560
+
+fn either_sign@561..609 () -> int ∈ [-200, 200]
+  body: eager + : int @587..609
+    lhs: call either@526..560 (callee @587..593) : int @587..596
+      arg[0]: int 3 : int @594..595
+    rhs: call either@526..560 (callee @599..605) : int @599..609
+      arg[0]: int -3 : int @606..608
+
+fn even@610..674 (int ∈ [0, 10]) -> bool ∈ {true, false}
+  param n@618..619: int
+  body: if : bool @636..674
+    condition: eager == : bool @639..645
+      lhs: read n@618..619 : int @639..640
+      rhs: int 0 : int @644..645
+    then: block : bool @646..654
+      tail: bool true : bool @648..652
+    else: block : bool @660..674
+      tail: call odd@675..740 (callee @662..665) : bool @662..672
+        arg[0]: eager - : int @666..671
+          lhs: read n@618..619 : int @666..667
+          rhs: int 1 : int @670..671
+
+fn odd@675..740 (int ∈ [0, 9]) -> bool ∈ {true, false}
+  param n@682..683: int
+  body: if : bool @700..740
+    condition: eager == : bool @703..709
+      lhs: read n@682..683 : int @703..704
+      rhs: int 0 : int @708..709
+    then: block : bool @710..719
+      tail: bool false : bool @712..717
+    else: block : bool @725..740
+      tail: call pass@741..774 (callee @727..731) : bool @727..738
+        arg[0]: eager - : int @732..737
+          lhs: read n@682..683 : int @732..733
+          rhs: int 1 : int @736..737
+
+fn pass@741..774 (int ∈ [0, 8]) -> bool ∈ {true, false}
+  param n@749..750: int
+  body: call even@610..674 (callee @767..771) : bool @767..774
+    arg[0]: read n@749..750 : int @772..773
+
+fn parity@775..817 () -> bool ∈ {true, false}
+  body: lazy and : bool @797..817
+    lhs: call even@610..674 (callee @797..801) : bool @797..805
+      arg[0]: int 10 : int @802..804
+    rhs: not : bool @809..817
+      operand: call even@610..674 (callee @810..814) : bool @810..817
+        arg[0]: int 7 : int @815..816
+
+fn bounded@818..889 (int ∈ [-3, 5]) -> int ∈ [-100, 100]
+  param d@829..830: int
+  body: if : int @846..889
+    condition: lazy and : bool @849..866
+      lhs: eager != : bool @849..855
+        lhs: read d@829..830 : int @849..850
+        rhs: int 0 : int @854..855
+      rhs: eager < : bool @859..866
+        lhs: read d@829..830 : int @859..860
+        rhs: int 100 : int @863..866
+    then: block : int @867..878
+      tail: eager / : int @869..876
+        lhs: int 100 : int @869..872
+        rhs: read d@829..830 : int @875..876
+    else: block : int @884..889
+      tail: int 0 : int @886..887
+
+fn boundeds@890..950 () -> int ∈ [-300, 300]
+  body: eager + : int @913..950
+    lhs: eager + : int @913..937
+      lhs: call bounded@818..889 (callee @913..920) : int @913..924
+        arg[0]: int -3 : int @921..923
+      rhs: call bounded@818..889 (callee @927..934) : int @927..937
+        arg[0]: int 0 : int @935..936
+    rhs: call bounded@818..889 (callee @940..947) : int @940..950
+      arg[0]: int 5 : int @948..949

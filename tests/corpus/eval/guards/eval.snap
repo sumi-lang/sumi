@@ -1,0 +1,18 @@
+file: accepted
+fn guarded = false (steps 4, depth 1)
+fn dead_branch = 1 (steps 7, depth 1)
+fn nested_dead = 3 (steps 7, depth 1)
+fn safe: takes arguments, not run
+fn signed = 0 (steps 59, depth 2)
+fn positive: takes arguments, not run
+fn positives = 13 (steps 34, depth 2)
+fn nonzero: takes arguments, not run
+fn nonzeros = 1 (steps 34, depth 2)
+fn either: takes arguments, not run
+fn either_sign = 0 (steps 21, depth 2)
+fn even: takes arguments, not run
+fn odd: takes arguments, not run
+fn pass: takes arguments, not run
+fn parity = true (steps 345, depth 17)
+fn bounded: takes arguments, not run
+fn boundeds = -13 (steps 67, depth 2)

@@ -1,0 +1,17 @@
+fn guarded() -> bool = false && 1 / 0 == 0
+fn dead_branch() -> int = if false { 1 / 0 } else { 1 }
+fn nested_dead() -> int = if false { if true { 1 / 0 } else { 2 } } else { 3 }
+fn safe(n: int, d: int) -> int = if d != 0 { n / d } else { 0 }
+fn signed() -> int = safe(10, 3) + safe(10, -3) + safe(10, 0)
+fn positive(d: int) -> int = if d > 0 { 100 / d } else { -1 }
+fn positives() -> int = positive(7) + positive(-7)
+fn nonzero(d: int) -> int = if d == 0 { 0 } else { 100 % d }
+fn nonzeros() -> int = nonzero(0) + nonzero(-9)
+fn either(d: int) -> int = 100 / d
+fn either_sign() -> int = either(3) + either(-3)
+fn even(n: int) -> bool = if n == 0 { true } else { odd(n - 1) }
+fn odd(n: int) -> bool = if n == 0 { false } else { pass(n - 1) }
+fn pass(n: int) -> bool = even(n)
+fn parity() -> bool = even(10) && !even(7)
+fn bounded(d: int) -> int = if d != 0 && d < 100 { 100 / d } else { 0 }
+fn boundeds() -> int = bounded(-3) + bounded(0) + bounded(5)

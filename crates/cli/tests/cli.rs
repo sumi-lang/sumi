@@ -303,7 +303,7 @@ fn run_reports_traps_and_source_errors_at_their_location() {
     for (source, expected) in [
         (
             "fn main() -> int {\n    let zero = 0\n    7 / zero\n}\n",
-            "case.sumi:3:5: error[eval/division-by-zero]: division by zero\n",
+            "case.sumi:3:5: error[semantic/division-by-zero]: division by zero\n",
         ),
         (
             "fn main() -> int = main()\n",

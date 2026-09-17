@@ -8,8 +8,10 @@
 //! [`Machine::step`] is one unit of work an instrument can observe.
 //!
 //! Integers are mathematical: `+`, `-`, `*`, and negation are total, and a
-//! value takes whatever size it needs. A division by zero or a call past
-//! the depth limit is a [`Trap`] that ends the run where it happened.
+//! value takes whatever size it needs. The checker proved every reachable
+//! divisor non-zero, so a zero divisor is a checker bug the machine
+//! refuses, never a program error. A call past the depth limit is a
+//! [`Trap`] that ends the run where it happened.
 
 mod machine;
 
@@ -54,8 +56,6 @@ impl fmt::Display for Value {
 /// Why a run stopped short of a value.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TrapKind {
-    /// `/` or `%` with a zero divisor.
-    DivisionByZero,
     /// A call that would nest deeper than [`MAX_CALL_DEPTH`] frames.
     CallDepth,
 }
@@ -64,20 +64,18 @@ impl TrapKind {
     /// The code a driver reports, in the form diagnostics use.
     pub fn code(self) -> &'static str {
         match self {
-            Self::DivisionByZero => "eval/division-by-zero",
             Self::CallDepth => "eval/call-depth",
         }
     }
     pub fn message(self) -> &'static str {
         match self {
-            Self::DivisionByZero => "division by zero",
             Self::CallDepth => "call nesting exceeds the depth limit",
         }
     }
 }
 
-/// A run that stopped at `origin`: the operation that trapped, or the call
-/// that would have nested too deep.
+/// A run that stopped at `origin`: the call that would have nested too
+/// deep.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Trap {
     pub kind: TrapKind,
@@ -92,7 +90,7 @@ impl fmt::Display for Trap {
 
 /// A valid analysis: every function has a signature and a complete typed
 /// body, and no diagnostic is an error. Only such a file runs, so the
-/// machine has no path for an ill-typed operation.
+/// machine has no path for an ill-typed operation or a zero divisor.
 #[derive(Clone, Copy, Debug)]
 pub struct Program<'a> {
     analysis: &'a Analysis,

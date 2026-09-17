@@ -697,6 +697,83 @@ error[semantic/cannot-infer]: function result is both unit, int, and bool; add a
   secondary @229..232: bool here
 ```
 
+### `semantic/division-by-zero`
+
+A `/` or `%` whose divisor may be zero where the division can run: the
+values that reach the divisor, the hull of every argument and operand
+that flows into it, include zero. Labels name the values that put it
+there. A guard such as `if d != 0` narrows the divisor inside its
+branch, and a division no path reaches is not checked.
+
+Shown by [`tests/corpus/semantic/division-by-zero`](../../../tests/corpus/semantic/division-by-zero/case.sumi):
+
+```sumi
+fn divide_by_zero() -> int = 1 / (2 - 2)
+fn remainder_by_zero() -> int = 7 % 0
+fn by_parameter(n: int) -> int = 100 / n
+fn through_a_call() -> int = 1 + by_parameter(0)
+fn half(d: int) -> int = 100 / d
+fn spread(k: int) -> int = half(k - 3)
+fn spreads() -> int = spread(0) + spread(6)
+fn statements() -> int {
+    let a = 1
+    let b = a + 1
+    let a = b * 10
+    _ = a / 0 == 0 || true
+    if a > b { a - b } else { b - a }
+}
+fn inner_guard(n: int, m: int) -> int {
+    if n > 0 { if m != 0 { _ = 1 }
+ 0 } else { 100 / m }
+}
+fn inner_guards() -> int = inner_guard(0, 0) + inner_guard(1, 5)
+fn inverse(d: int) -> int = 100 / d
+fn inverses() -> int = inverse(0) + inverse(0) + inverse(0) + inverse(0) + inverse(0)
+fn compared(d: int) -> int {
+    let z = 0
+    if d == z { 1 } else { 100 / z }
+}
+fn compareds() -> int = compared(1)
+fn fixed(d: int) -> int = if d == 0 { 100 / d } else { 1 }
+fn fixeds() -> int = fixed(-5) + fixed(0) + fixed(5)
+fn arity(d: int) -> int = 100 / d
+fn wrong_arity() -> int = arity(0, 1)
+```
+
+```text
+error[semantic/division-by-zero]: division by zero
+  primary @29..40
+  secondary @34..39: is 0
+error[semantic/division-by-zero]: division by zero
+  primary @73..78
+  secondary @77..78: is 0
+error[semantic/division-by-zero]: division by zero
+  primary @112..119
+  secondary @166..167: argument is 0
+error[semantic/division-by-zero]: divisor may be zero
+  primary @194..201
+  secondary @234..239: argument may be 0: [-3, 3]
+error[semantic/division-by-zero]: division by zero
+  primary @369..374
+  secondary @373..374: is 0
+error[semantic/division-by-zero]: divisor may be zero
+  primary @515..522
+  secondary @569..570: argument is 0
+error[semantic/division-by-zero]: division by zero
+  primary @620..627
+  secondary @659..660: argument is 0
+  secondary @672..673: argument is 0
+  secondary @685..686: argument is 0
+  secondary @698..699: argument is 0
+error[semantic/division-by-zero]: division by zero
+  primary @784..791
+  secondary @755..756: is 0
+error[semantic/division-by-zero]: division by zero
+  primary @870..877
+  secondary @861..867: is 0 under this guard
+  secondary @930..931: argument is 0
+```
+
 ### `semantic/unsupported`
 
 A construct scalar checking does not handle yet, such as a closure, a

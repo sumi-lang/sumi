@@ -24,8 +24,8 @@ const USAGE: &str = "usage: sumi check <file>
   -h, --help        show this help
 
 Diagnostics go to stderr; clean input produces no output. Running prints
-main's value to stdout, or nothing for unit; a trap, such as a division by
-zero, is reported like a diagnostic. Formatting keeps every token and
+main's value to stdout, or nothing for unit; a trap, a call nesting too
+deep, is reported like a diagnostic. Formatting keeps every token and
 comment, leaves what the parser could not parse as written, and never
 changes the parse.
 Locations use one-based lines and UTF-8 byte columns.
