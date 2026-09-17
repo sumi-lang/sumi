@@ -42,7 +42,7 @@ use sumi_syntax::{
 
 use crate::codes;
 use crate::ranges::{May, RangeEdge, UnaryOp};
-use crate::solver::{Lattice, Var};
+use crate::solver::{Backwards, Lattice, Var};
 use crate::typing::{Claim, Expected, ProductContext, Typing};
 use crate::*;
 
@@ -623,7 +623,9 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
             }
         }
     }
-    // Every reachable division excludes zero.
+    // Every reachable division excludes zero. The graph is read backwards
+    // only once a division fails.
+    let mut backwards = None;
     for obligation in &obligations {
         if failed[obligation.owner as usize] {
             continue;
@@ -637,7 +639,8 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         } else {
             "divisor may be zero"
         };
-        let labels = explain_zero(&typing, &source, &cx, obligation.divisor);
+        let backwards = backwards.get_or_insert_with(|| typing.backwards());
+        let labels = explain_zero(&typing, backwards, &source, &cx, obligation.divisor);
         source.report(
             source.span(obligation.node),
             codes::DIVISION_BY_ZERO,
@@ -683,6 +686,7 @@ fn run(index: usize) -> u32 {
 /// value along until a fact, an operator, or an argument names it.
 fn explain_zero(
     typing: &Typing,
+    backwards: &Backwards,
     source: &Source<'_>,
     cx: &ProductContext,
     class: Var,
@@ -708,7 +712,7 @@ fn explain_zero(
         if labels.len() >= LABELS || !seen.insert(typing.find(var)) {
             continue;
         }
-        if let Some((origin, fact)) = typing.fact(var)
+        if let Some((origin, fact)) = typing.fact(backwards, var)
             && fact.ints.contains_zero()
         {
             if let Some(node) = origin {
@@ -716,7 +720,7 @@ fn explain_zero(
             }
             continue;
         }
-        for (first, second, edge) in typing.incoming(var) {
+        for (first, second, edge) in typing.incoming(backwards, var) {
             if labels.len() >= LABELS {
                 break;
             }
