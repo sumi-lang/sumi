@@ -722,6 +722,11 @@ fn statements() -> int {
     _ = a / 0 == 0 || true
     if a > b { a - b } else { b - a }
 }
+fn inner_guard(n: int, m: int) -> int {
+    if n > 0 { if m != 0 { _ = 1 }
+ 0 } else { 100 / m }
+}
+fn inner_guards() -> int = inner_guard(0, 0) + inner_guard(1, 5)
 ```
 
 ```text
@@ -740,6 +745,9 @@ error[semantic/division-by-zero]: divisor may be zero
 error[semantic/division-by-zero]: division by zero
   primary @369..374
   secondary @373..374: is 0
+error[semantic/division-by-zero]: divisor may be zero
+  primary @515..522
+  secondary @569..570: argument is 0
 ```
 
 ### `semantic/unsupported`
