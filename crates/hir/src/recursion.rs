@@ -29,12 +29,26 @@ use crate::solver::{Var, components};
 use crate::typing::Typing;
 use crate::{BinaryOp, ExprId, ExprKind, FunctionId, Int, LocalId};
 
-/// A cycle with no measure: its members, and for each call inside it the
-/// best explanation of why it fails, as the parameter a candidate argument
-/// moves and the direction, or nothing when no argument moves one.
+/// A cycle with no measure: its members, and what each call inside it does
+/// to the parameter that came closest to being the measure.
 pub(crate) struct Failure {
     pub members: Vec<FunctionId>,
-    pub labels: Vec<(Span, Option<(Span, &'static str)>)>,
+    pub labels: Vec<(Span, Reason)>,
+}
+
+/// What a call inside a cycle without a measure does to a parameter of its
+/// callee, named by the parameter's declaration.
+pub(crate) enum Reason {
+    /// The argument moves the parameter in `direction`, and the parameter's
+    /// set is unbounded on that side: the chosen measure fails here.
+    Unbounded { param: Span, direction: Direction },
+    /// The argument moves the parameter in `direction`; the cycle fails
+    /// elsewhere, on another call's direction or on a bound.
+    Moves { param: Span, direction: Direction },
+    /// The argument passes the parameter along without moving it.
+    Passes { param: Span },
+    /// No argument is a parameter of the caller plus a constant.
+    Nothing,
 }
 
 pub(crate) struct Outcome {
@@ -55,9 +69,20 @@ struct Call {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Direction {
+pub(crate) enum Direction {
     Decreasing,
     Increasing,
+}
+
+impl Direction {
+    /// How an argument moves a measure this way, and the side it moves
+    /// toward.
+    pub fn words(self) -> (&'static str, &'static str) {
+        match self {
+            Self::Decreasing => ("decreases", "below"),
+            Self::Increasing => ("increases", "above"),
+        }
+    }
 }
 
 /// Whether an offset moves the measure the right way, and strictly.
@@ -211,6 +236,9 @@ pub(crate) fn check(
         let band =
             |member: usize, param: usize| &typing.may(param_classes[members[member]][param]).ints;
         let mut found = None;
+        // The first choice every call agrees with, when the cycle fails on
+        // a bound or on the calls that only pass the measure along.
+        let mut agreed: Option<(Direction, Vec<usize>, Vec<bool>)> = None;
         // `delta` gives each callee parameter at most one source, so once a
         // member's parameter is chosen every call into it forces its caller's:
         // the component is strongly connected, so a choice for the first
@@ -259,6 +287,9 @@ pub(crate) fn check(
                     found = Some((choice, strict.iter().any(|s| !s)));
                     break 'directions;
                 }
+                if agreed.is_none() {
+                    agreed = Some((direction, choice, strict));
+                }
             }
         }
         match found {
@@ -293,34 +324,71 @@ pub(crate) fn check(
             }
             None => {
                 chain[c] = None;
-                let labels = inside
-                    .iter()
-                    .map(|call| {
-                        let callee = members[call.to];
-                        // By callee parameter, so the label does not follow
-                        // the map's iteration order.
-                        let mut offsets: Vec<_> = call.offsets.iter().collect();
-                        offsets.sort_by_key(|((_, j), _)| *j);
-                        let explanation = offsets.into_iter().find_map(|(&(_, j), offset)| {
-                            let param = band(call.to, j);
-                            let origin = bodies[callee].as_ref()?.locals
-                                [bodies[callee].as_ref()?.params[j].index()]
-                            .origin;
-                            if offset.hi().is_some_and(|hi| *hi <= (-1).into())
-                                && param.lo().is_none()
-                            {
-                                Some((origin, "decreases"))
-                            } else if offset.lo().is_some_and(|lo| *lo >= 1.into())
-                                && param.hi().is_none()
-                            {
-                                Some((origin, "increases"))
+                let param = |member: usize, j: usize| {
+                    let body = bodies[members[member]]
+                        .as_ref()
+                        .expect("a member of a checked cycle has a body");
+                    body.locals[body.params[j].index()].origin
+                };
+                let labels = match &agreed {
+                    // Every call agreed with this choice, so the cycle
+                    // failed on a bound, or on the calls that only pass
+                    // the measure along forming a cycle of their own.
+                    Some((direction, choice, strict)) => inside
+                        .iter()
+                        .zip(strict)
+                        .map(|(call, &strict)| {
+                            let j = choice[call.to];
+                            let param = param(call.to, j);
+                            let reason = if !strict {
+                                Reason::Passes { param }
+                            } else if bounded(band(call.to, j), *direction) {
+                                Reason::Moves {
+                                    param,
+                                    direction: *direction,
+                                }
                             } else {
-                                None
-                            }
-                        });
-                        (call.origin, explanation)
-                    })
-                    .collect();
+                                Reason::Unbounded {
+                                    param,
+                                    direction: *direction,
+                                }
+                            };
+                            (call.origin, reason)
+                        })
+                        .collect(),
+                    // No choice satisfies every call: say what each call
+                    // does, by callee parameter, so the labels do not
+                    // follow the map's iteration order.
+                    None => inside
+                        .iter()
+                        .map(|call| {
+                            let mut offsets: Vec<_> = call.offsets.iter().collect();
+                            offsets.sort_by_key(|((_, j), _)| *j);
+                            let strict = offsets.iter().find_map(|&(&(_, j), offset)| {
+                                let direction =
+                                    if moves(offset, Direction::Decreasing) == Some(true) {
+                                        Direction::Decreasing
+                                    } else if moves(offset, Direction::Increasing) == Some(true) {
+                                        Direction::Increasing
+                                    } else {
+                                        return None;
+                                    };
+                                Some(Reason::Moves {
+                                    param: param(call.to, j),
+                                    direction,
+                                })
+                            });
+                            let reason = strict.unwrap_or_else(|| {
+                                offsets.first().map_or(Reason::Nothing, |&(&(_, j), _)| {
+                                    Reason::Passes {
+                                        param: param(call.to, j),
+                                    }
+                                })
+                            });
+                            (call.origin, reason)
+                        })
+                        .collect(),
+                };
                 failures.push(Failure {
                     members: members.iter().map(|&f| FunctionId(f as u32)).collect(),
                     labels,

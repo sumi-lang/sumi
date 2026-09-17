@@ -1,6 +1,6 @@
 file: rejected
 frontend errors: 0 (see frontend.snap)
-semantic errors: 5
+semantic errors: 7
 
 fn forever@0..42 (int ∈ [0, +∞)) -> int ∈ ∅
   param n@11..12: int
@@ -62,19 +62,71 @@ fn boths@323..353 () -> int ∈ ∅
     arg[0]: int 0 : int @348..349
     arg[1]: int 0 : int @351..352
 
+fn either@354..459 (int ∈ [-1, 11]) -> int ∈ [0, 0]
+  param n@364..365: int
+  body: if : int @381..459
+    condition: eager > : bool @384..390
+      lhs: read n@364..365 : int @384..385
+      rhs: int 10 : int @388..390
+    then: block : int @391..396
+      tail: int 0 : int @393..394
+    else: block : int @402..459
+      tail: if : int @404..457
+        condition: eager < : bool @407..412
+          lhs: read n@364..365 : int @407..408
+          rhs: int 0 : int @411..412
+        then: block : int @413..418
+          tail: int 0 : int @415..416
+        else: block : int @424..457
+          tail: eager + : int @426..455
+            lhs: call either@354..459 (callee @426..432) : int @426..439
+              arg[0]: eager - : int @433..438
+                lhs: read n@364..365 : int @433..434
+                rhs: int 1 : int @437..438
+            rhs: call either@354..459 (callee @442..448) : int @442..455
+              arg[0]: eager + : int @449..454
+                lhs: read n@364..365 : int @449..450
+                rhs: int 1 : int @453..454
+
+fn eithers@460..491 () -> int ∈ [0, 0]
+  body: call either@354..459 (callee @482..488) : int @482..491
+    arg[0]: int 5 : int @489..490
+
+fn ping@492..524 (int ∈ [3, 3]) -> int ∈ ∅
+  param n@500..501: int
+  body: call pong@525..557 (callee @517..521) : int @517..524
+    arg[0]: read n@500..501 : int @522..523
+
+fn pong@525..557 (int ∈ [3, 3]) -> int ∈ ∅
+  param n@533..534: int
+  body: call ping@492..524 (callee @550..554) : int @550..557
+    arg[0]: read n@533..534 : int @555..556
+
+fn pings@558..585 () -> int ∈ ∅
+  body: call ping@492..524 (callee @578..582) : int @578..585
+    arg[0]: int 3 : int @583..584
+
 == semantic diagnostics ==
-error[semantic/unbounded-recursion]: recursion in `forever` has no argument that decreases on every call
+error[semantic/unbounded-recursion]: recursion in `forever` has no argument that moves toward a bound on every call
   primary @3..10
   secondary @28..42: argument increases `n`, which is unbounded above
-error[semantic/unbounded-recursion]: recursion in `fall` has no argument that decreases on every call
+error[semantic/unbounded-recursion]: recursion in `fall` has no argument that moves toward a bound on every call
   primary @80..84
   secondary @126..137: argument decreases `n`, which is unbounded below
-error[semantic/unbounded-recursion]: recursion in `swap` has no argument that decreases on every call
+error[semantic/unbounded-recursion]: recursion in `swap` has no argument that moves toward a bound on every call
   primary @171..175
-  secondary @201..211: no argument moves a parameter toward a bound
-error[semantic/unbounded-recursion]: recursion in `spin` has no argument that decreases on every call
+  secondary @201..211: argument passes `a` along
+error[semantic/unbounded-recursion]: recursion in `spin` has no argument that moves toward a bound on every call
   primary @248..252
-  secondary @264..270: no argument moves a parameter toward a bound
-error[semantic/unbounded-recursion]: recursion in `both` has no argument that decreases on every call
+  secondary @264..270: no argument is a parameter moved by a constant
+error[semantic/unbounded-recursion]: recursion in `both` has no argument that moves toward a bound on every call
   primary @274..278
   secondary @304..322: argument increases `a`, which is unbounded above
+error[semantic/unbounded-recursion]: recursion in `either` has no argument that moves toward a bound on every call
+  primary @357..363
+  secondary @426..439: argument decreases `n`
+  secondary @442..455: argument increases `n`
+error[semantic/unbounded-recursion]: recursion between `ping` and `pong` has no argument that moves toward a bound on every call
+  primary @495..499
+  secondary @517..524: argument passes `n` along
+  secondary @550..557: argument passes `n` along

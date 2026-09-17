@@ -29,9 +29,9 @@ fn intact@196..214 () -> bool ∈ {true}
 == semantic diagnostics ==
 error[semantic/cannot-infer]: cannot infer function result; add a return type annotation
   primary @0..25
-error[semantic/unbounded-recursion]: recursion in `spin` has no argument that decreases on every call
+error[semantic/unbounded-recursion]: recursion in `spin` has no argument that moves toward a bound on every call
   primary @3..7
-  secondary @18..25: no argument moves a parameter toward a bound
+  secondary @18..25: argument passes `x` along
 error[semantic/arity]: expected 1 arguments, found 2
   primary @134..153
   secondary @0..25: declared here

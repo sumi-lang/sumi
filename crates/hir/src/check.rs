@@ -688,26 +688,36 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
             }
             _ => format!("recursion between {}, and {others} more", names.join(", ")),
         };
-        let message = format!("{cycle} has no argument that decreases on every call");
+        let message = format!("{cycle} has no argument that moves toward a bound on every call");
         let first = failure.members[0];
         let primary = items[first.index()]
             .name(tree)
             .map_or(items[first.index()].node(), |n| n.node());
         // A cycle of thousands of calls is one error; the first few calls
         // locate it.
-        let labels = failure.labels.into_iter().take(8).map(|(call, text)| {
-            let text = text.map(|(param, direction)| {
-                let range = param.range();
-                let param = &parsed.source()[range.start().to_usize()..range.end().to_usize()];
-                let side = if direction == "decreases" {
-                    "below"
-                } else {
-                    "above"
-                };
-                format!("argument {direction} `{param}`, which is unbounded {side}")
-            });
-            let text =
-                text.unwrap_or_else(|| "no argument moves a parameter toward a bound".to_owned());
+        let name = |param: Span| {
+            let range = param.range();
+            &parsed.source()[range.start().to_usize()..range.end().to_usize()]
+        };
+        let labels = failure.labels.into_iter().take(8).map(|(call, reason)| {
+            let text = match reason {
+                recursion::Reason::Unbounded { param, direction } => {
+                    let (moves, side) = direction.words();
+                    format!(
+                        "argument {moves} `{}`, which is unbounded {side}",
+                        name(param)
+                    )
+                }
+                recursion::Reason::Moves { param, direction } => {
+                    format!("argument {} `{}`", direction.words().0, name(param))
+                }
+                recursion::Reason::Passes { param } => {
+                    format!("argument passes `{}` along", name(param))
+                }
+                recursion::Reason::Nothing => {
+                    "no argument is a parameter moved by a constant".to_owned()
+                }
+            };
             (call, text.into())
         });
         source.report(
