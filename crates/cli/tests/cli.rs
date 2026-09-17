@@ -307,7 +307,7 @@ fn run_reports_source_errors_at_their_location() {
         ),
         (
             "fn main() -> int = main()\n",
-            "case.sumi:1:4: error[semantic/unbounded-recursion]: recursion in `main` has no argument that decreases on every call\n",
+            "case.sumi:1:4: error[semantic/unbounded-recursion]: recursion in `main` has no argument that moves toward a bound on every call\n",
         ),
         (
             "fn main() -> int = true\n",
