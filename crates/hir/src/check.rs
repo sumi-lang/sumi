@@ -29,8 +29,8 @@
 //! the source, and the one builder keeps its scratch across bodies, so a
 //! body costs the vectors it publishes and nothing else.
 
-use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+use std::collections::{HashMap, HashSet};
 use std::hash::{BuildHasherDefault, Hasher};
 
 use sumi_frontend::{DiagnosticCode, Label, Location};
@@ -47,9 +47,9 @@ use crate::solver::{Backwards, Lattice, Var};
 use crate::typing::{Claim, Expected, ProductContext, Typing};
 use crate::*;
 
-/// A hasher for identifiers: a word at a time, with a multiply to spread
-/// the bits, which is all a short ASCII name needs and a fraction of what a
-/// keyed hash costs.
+/// A hasher for identifiers and integer constants: a word at a time, with
+/// a multiply to spread the bits, which is all a short ASCII name or a
+/// word-sized integer needs and a fraction of what a keyed hash costs.
 #[derive(Default)]
 struct NameHasher(u64);
 
@@ -229,8 +229,13 @@ struct Obligation {
 struct Recorded {
     demands: Vec<Demand>,
     obligations: Vec<Obligation>,
-    /// Every integer the file spells or folds, for the thresholds.
+    /// Every distinct integer the file spells or folds, in the order first
+    /// seen, for the thresholds. A file repeats its few constants in every
+    /// function, so the list stays short where one entry per literal would
+    /// not, and it keeps source order, which is nearly sorted, where a set
+    /// alone would not.
     constants: Vec<Int>,
+    seen: HashSet<Int, BuildHasherDefault<NameHasher>>,
     /// Every call as `(caller, callee, context)`, for the call graph.
     calls: Vec<(FunctionId, FunctionId, Var)>,
 }
@@ -517,6 +522,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         obligations,
         constants,
         calls,
+        ..
     } = recorded;
     let cx: ProductContext = ((), constants.into_iter().collect());
     typing.solve(&cx);
@@ -1345,7 +1351,9 @@ impl<'a, 's> Builder<'a, 's> {
     }
     /// Record that `expr` folds to `value`, a constant the thresholds keep.
     fn fold(&mut self, expr: ExprId, value: Int) {
-        self.recorded.constants.push(value.clone());
+        if self.recorded.seen.insert(value.clone()) {
+            self.recorded.constants.push(value.clone());
+        }
         self.consts[expr.index()] = Some(value);
     }
     /// The context at `node` requires `expr` to be `expected`, which

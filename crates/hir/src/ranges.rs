@@ -901,12 +901,16 @@ impl Default for Thresholds {
 impl FromIterator<Int> for Thresholds {
     fn from_iter<I: IntoIterator<Item = Int>>(constants: I) -> Self {
         let one = Int::from(1);
-        let mut values: Vec<Int> = [-1, 0, 1].map(Int::from).into_iter().collect();
-        for constant in constants {
-            values.push(&constant - &one);
-            values.push(&constant + &one);
-            values.push(constant);
-        }
+        let constants: Vec<Int> = constants.into_iter().collect();
+        // The constants arrive in the order the file spells them, which is
+        // nearly sorted more often than not, and the sort merges runs it
+        // finds: each shift of the constants is one run, not a descent
+        // every third value.
+        let mut values: Vec<Int> = Vec::with_capacity(3 * constants.len() + 3);
+        values.extend([-1, 0, 1].map(Int::from));
+        values.extend(constants.iter().map(|constant| constant - &one));
+        values.extend(constants.iter().map(|constant| constant + &one));
+        values.extend(constants);
         values.sort();
         values.dedup();
         Self(values)
