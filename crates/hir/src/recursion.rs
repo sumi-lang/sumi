@@ -94,11 +94,11 @@ fn moves(offset: &Ints, direction: Direction) -> Option<bool> {
     match direction {
         Direction::Decreasing => {
             let hi = offset.hi()?;
-            (*hi <= 0.into()).then(|| *hi <= (-1).into())
+            (hi <= 0.into()).then(|| hi <= (-1).into())
         }
         Direction::Increasing => {
             let lo = offset.lo()?;
-            (*lo >= 0.into()).then(|| *lo >= 1.into())
+            (lo >= 0.into()).then(|| lo >= 1.into())
         }
     }
 }
@@ -304,8 +304,8 @@ pub(crate) fn check(
                     }
                     match (band.lo(), band.hi()) {
                         (Some(l), Some(h)) => {
-                            lo = Some(lo.map_or(l.clone(), |lo| lo.min(l.clone())));
-                            hi = Some(hi.map_or(h.clone(), |hi| hi.max(h.clone())));
+                            lo = Some(lo.map_or(l.clone(), |lo| lo.min(l)));
+                            hi = Some(hi.map_or(h.clone(), |hi| hi.max(h)));
                         }
                         _ => finite = false,
                     }
