@@ -1,5 +1,5 @@
 == tree ==
-SourceFile 0..290
+SourceFile 0..398
   FnItem 0..51
     Name 3..14 "dead_branch"
     ParamList 14..16 "()"
@@ -69,6 +69,31 @@ SourceFile 0..290
       NameRef 280..286 "called"
       ArgList 286..289
         LiteralExpr 287..288 "5"
+  FnItem 290..334
+    Name 293..306 "uncalled_unit"
+    ParamList 306..323
+      Param 307..314
+        Name 307..308 "u"
+        TypeRef 310..314 "unit"
+      Param 316..322
+        Name 316..317 "n"
+        TypeRef 319..322 "int"
+    TypeRef 327..330 "int"
+    NameRef 333..334 "n"
+  FnItem 335..374
+    Name 338..355 "constant_uncalled"
+    ParamList 355..363
+      Param 356..362
+        Name 356..357 "n"
+        TypeRef 359..362 "int"
+    TypeRef 367..370 "int"
+    LiteralExpr 373..374 "7"
+  FnItem 375..397
+    Name 378..383 "plain"
+    ParamList 383..385 "()"
+    Block 388..397
+      DiscardStmt 390..395
+        LiteralExpr 394..395 "1"
 
 == formatted ==
 fn dead_branch() -> int = if false {
@@ -90,3 +115,8 @@ fn nested() -> int = if true {
 fn uncalled(n: int) -> int = n
 fn called(n: int) -> int = n
 fn caller() -> int = called(5)
+fn uncalled_unit(u: unit, n: int) -> int = n
+fn constant_uncalled(n: int) -> int = 7
+fn plain() = {
+    _ = 1
+}

@@ -42,7 +42,7 @@ use sumi_syntax::{
 
 use crate::codes;
 use crate::ranges::{May, RangeEdge, UnaryOp};
-use crate::solver::Var;
+use crate::solver::{Lattice, Var};
 use crate::typing::{Claim, Expected, ProductContext, Typing};
 use crate::*;
 
@@ -567,12 +567,18 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         let result = evidence.and_then(|evidence| evidence.ty());
         if let (Some(params), Some(result)) = (header.params, result) {
             functions[index].signature = Some(Signature { params, result });
+            // A function nothing live reaches never returns either.
+            let result = header.result.unwrap();
             functions[index].ranges = Some(Ranges {
                 params: param_classes[header.param_classes.clone()]
                     .iter()
                     .map(|&class| typing.may(class).clone())
                     .collect(),
-                result: typing.may(header.result.unwrap()).clone(),
+                result: if typing.may(header.entry).live() {
+                    typing.may(result).clone()
+                } else {
+                    May::bottom()
+                },
             });
         }
         // A result to infer that did not resolve is reported here, unless a
@@ -1236,7 +1242,7 @@ impl<'a, 's> Builder<'a, 's> {
                 // A block has its tail's type, or is unit without one.
                 let class = match tail {
                     Some(tail) => self.class(tail),
-                    None => self.typing.known(Ty::Unit, node),
+                    None => self.typing.unit(self.context(), node),
                 };
                 self.emit(node, ExprKind::Block { statements, tail }, class);
             }
@@ -1442,7 +1448,7 @@ impl<'a, 's> Builder<'a, 's> {
                     // the `if`.
                     None => {
                         self.require(then_node, then_branch, Expected::Ty(Ty::Unit), None);
-                        self.typing.known(Ty::Unit, node)
+                        self.typing.unit(self.context(), node)
                     }
                     // Each branch decides the `if` and learns nothing from
                     // the other, so branches that disagree leave the `if`

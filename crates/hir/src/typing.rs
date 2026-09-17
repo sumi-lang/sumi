@@ -234,16 +234,21 @@ impl Typing {
     }
 
     /// A class known to have `ty` because of `node`: an annotation, or an
-    /// operator's result, whose values arrive by flows. A unit class is the
-    /// exception: unit is its only value, so it is a fact too.
+    /// operator's result, whose values arrive by flows.
     pub fn known(&mut self, ty: Ty, node: NodeIdx) -> Var {
         let claim = self.claim(node);
-        let may = if ty == Ty::Unit {
-            May::unit()
-        } else {
-            May::bottom()
-        };
-        self.solver.known((Evidence::single(ty, claim), may))
+        self.solver
+            .known((Evidence::single(ty, claim), May::bottom()))
+    }
+
+    /// A class known to be unit because of `node`, a block without a tail
+    /// or an `if` without an else, whose one value it holds while
+    /// `context` is live.
+    pub fn unit(&mut self, context: Var, node: NodeIdx) -> Var {
+        let class = self.known(Ty::Unit, node);
+        self.solver
+            .flow(context, class, (Edge::None, RangeEdge::Enter));
+        class
     }
 
     /// A literal: known to have `ty` and to be exactly `value`.

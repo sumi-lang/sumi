@@ -700,7 +700,8 @@ pub enum RangeEdge {
     Argument,
     /// A callee's result into a call. Rounded likewise.
     Call,
-    /// A call's context into the callee's entry.
+    /// A context into a class that is unit while the context is live: a
+    /// call's into the callee's entry, a block's into its tail-less self.
     Enter,
 }
 

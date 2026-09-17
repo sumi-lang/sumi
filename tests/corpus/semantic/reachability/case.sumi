@@ -5,3 +5,6 @@ fn nested() -> int = if true { if false { 1 } else { 2 } } else { 3 }
 fn uncalled(n: int) -> int = n
 fn called(n: int) -> int = n
 fn caller() -> int = called(5)
+fn uncalled_unit(u: unit, n: int) -> int = n
+fn constant_uncalled(n: int) -> int = 7
+fn plain() = { _ = 1 }

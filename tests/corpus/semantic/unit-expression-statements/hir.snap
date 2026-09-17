@@ -41,13 +41,13 @@ fn accepted@37..197 () -> int ∈ [1, 1]
 fn rejected@198..340 () -> int ∈ [0, 0]
   body: unavailable
 
-fn failed_expressions@341..421 () -> unit ∈ unit
+fn failed_expressions@341..421 () -> unit ∈ ∅
   body: unavailable
 
 fn nested_failure@422..479 () -> unit ∈ unit
   body: unavailable
 
-fn tail_requires_unit@480..519 () -> unit ∈ unit
+fn tail_requires_unit@480..519 () -> unit ∈ ∅
   body: unavailable
 
 == semantic diagnostics ==

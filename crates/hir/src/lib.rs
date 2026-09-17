@@ -205,9 +205,9 @@ impl Function {
     }
 }
 
-/// What may reach a function's parameters, the hull of its call sites'
-/// arguments, and what its result may be. Empty parameters mean no call
-/// site at all.
+/// What may reach a function's parameters, the hull of its live call sites'
+/// arguments, and what its result may be. A function no live call site
+/// reaches holds nothing in either.
 #[derive(Debug)]
 pub struct Ranges {
     pub params: Box<[May]>,

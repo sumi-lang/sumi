@@ -46,3 +46,18 @@ fn called@230..258 (int ∈ [5, 5]) -> int ∈ [5, 5]
 fn caller@259..289 () -> int ∈ [5, 5]
   body: call called@230..258 (callee @280..286) : int @280..289
     arg[0]: int 5 : int @287..288
+
+fn uncalled_unit@290..334 (unit ∈ ∅, int ∈ ∅) -> int ∈ ∅
+  param u@307..308: unit
+  param n@316..317: int
+  body: read n@316..317 : int @333..334
+
+fn constant_uncalled@335..374 (int ∈ ∅) -> int ∈ ∅
+  param n@356..357: int
+  body: int 7 : int @373..374
+
+fn plain@375..397 () -> unit ∈ unit
+  body: block : unit @388..397
+    discard @390..395
+      value: int 1 : int @394..395
+    tail: unit (implicit)

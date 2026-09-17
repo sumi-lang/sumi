@@ -42,7 +42,7 @@ fn safe@131..183 () -> bool ∈ {true, false}
     rhs: call even@0..64 (callee @176..180) : bool @176..183
       arg[0]: int 4 : int @181..182
 
-fn maybe@184..223 (bool ∈ ∅) -> unit ∈ unit
+fn maybe@184..223 (bool ∈ ∅) -> unit ∈ ∅
   param b@193..194: bool
   body: if : unit @204..223
     condition: read b@193..194 : bool @207..208

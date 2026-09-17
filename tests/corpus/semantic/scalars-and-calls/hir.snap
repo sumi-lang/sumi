@@ -20,7 +20,7 @@ fn cafe@90..119 (bool ∈ ∅) -> bool ∈ ∅
   body: not : bool @117..119
     operand: read e@98..99 : bool @118..119
 
-fn ignore@120..173 (unit ∈ unit) -> unit ∈ unit
+fn ignore@120..173 (unit ∈ ∅) -> unit ∈ ∅
   param x@130..131: unit
   body: block : unit @147..173
     discard @153..165
