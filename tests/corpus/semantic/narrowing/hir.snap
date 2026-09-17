@@ -60,3 +60,66 @@ fn laps@279..313 () -> int ∈ [0, 1000]
   body: call lapped@199..278 (callee @298..304) : int @298..313
     arg[0]: int 0 : int @305..306
     arg[1]: int 1000 : int @308..312
+
+fn rise@314..374 (int ∈ [0, 7]) -> int ∈ [6, 7]
+  param n@322..323: int
+  body: if : int @339..374
+    condition: eager > : bool @342..347
+      lhs: read n@322..323 : int @342..343
+      rhs: int 5 : int @346..347
+    then: block : int @348..353
+      tail: read n@322..323 : int @350..351
+    else: block : int @359..374
+      tail: call rise@314..374 (callee @361..365) : int @361..372
+        arg[0]: eager + : int @366..371
+          lhs: read n@322..323 : int @366..367
+          rhs: int 2 : int @370..371
+
+fn upto@375..446 (int ∈ [0, 11], int ∈ [9, 10]) -> int ∈ [10, 11]
+  param n@383..384: int
+  param k@391..392: int
+  body: if : int @408..446
+    condition: eager > : bool @411..416
+      lhs: read n@383..384 : int @411..412
+      rhs: read k@391..392 : int @415..416
+    then: block : int @417..422
+      tail: read n@383..384 : int @419..420
+    else: block : int @428..446
+      tail: call upto@375..446 (callee @430..434) : int @430..444
+        arg[0]: eager + : int @435..440
+          lhs: read n@383..384 : int @435..436
+          rhs: int 1 : int @439..440
+        arg[1]: read k@391..392 : int @442..443
+
+fn passed_through@447..496 () -> int ∈ [10, 11]
+  body: call upto@375..446 (callee @476..480) : int @476..496
+    arg[0]: int 0 : int @481..482
+    arg[1]: eager + : int @484..495
+      lhs: call rise@314..374 (callee @484..488) : int @484..491
+        arg[0]: int 0 : int @489..490
+      rhs: int 3 : int @494..495
+
+fn same@497..523 (int ∈ [3, 6]) -> int ∈ [3, 6]
+  param n@505..506: int
+  body: read n@505..506 : int @522..523
+
+fn compared@524..589 (int ∈ [1, 2]) -> int ∈ [0, 0]
+  param a@536..537: int
+  body: if : int @553..589
+    condition: eager == : bool @556..572
+      lhs: call same@497..523 (callee @556..560) : int @556..567
+        arg[0]: eager * : int @561..566
+          lhs: read a@536..537 : int @561..562
+          rhs: int 3 : int @565..566
+      rhs: read a@536..537 : int @571..572
+    then: block : int @573..578
+      tail: int 1 : int @575..576
+    else: block : int @584..589
+      tail: int 0 : int @586..587
+
+fn compareds@590..639 () -> int ∈ [0, 0]
+  body: eager + : int @614..639
+    lhs: call compared@524..589 (callee @614..622) : int @614..625
+      arg[0]: int 1 : int @623..624
+    rhs: call compared@524..589 (callee @628..636) : int @628..639
+      arg[0]: int 2 : int @637..638

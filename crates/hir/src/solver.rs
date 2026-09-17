@@ -393,20 +393,23 @@ impl<L: Lattice> Solver<L> {
         self.evidence[self.class(flow.first)].transfer(&flow.edge, second, cyclic, cx)
     }
 
-    /// Deliver flow `index`: whether its consumer grew.
+    /// Deliver flow `index`: whether its consumer grew. Widening is for
+    /// growth alone: a cyclic delivery the consumer already holds is not
+    /// rounded, so a value that only passes through a growing component
+    /// stays exact, while a consumer on a cycle still lands on the
+    /// thresholds every time it grows.
     fn deliver(&mut self, index: usize, cyclic: bool, cx: &L::Context) -> bool {
-        let delivered = self.delivery(index, cyclic, cx);
         let consumer = self.class(self.flows[index].consumer);
-        self.evidence[consumer].join(&delivered)
-    }
-
-    /// Whether flow `index` closes a cycle: some provider of it shares
-    /// `component`, its consumer's.
-    fn closes(&self, index: usize, component: u32, of: &[u32]) -> bool {
-        let flow = &self.flows[index];
-        std::iter::once(flow.first)
-            .chain(flow.second)
-            .any(|provider| of[self.class(provider)] == component)
+        let exact = self.delivery(index, false, cx);
+        if !cyclic {
+            return self.evidence[consumer].join(&exact);
+        }
+        let mut probe = self.evidence[consumer].clone();
+        if !probe.join(&exact) {
+            return false;
+        }
+        let rounded = self.delivery(index, true, cx);
+        self.evidence[consumer].join(&rounded)
     }
 
     /// Carry growth from the `members` of one component that have something
@@ -510,14 +513,12 @@ impl<L: Lattice> Solver<L> {
         let mut position = vec![0u32; if any_grows { n } else { 0 }];
         let mut external: Vec<L> = Vec::new();
         let mut exact: Vec<L> = Vec::new();
-        // Whether flow `index`, into `component`, closes a cycle that can grow.
-        let cyclic = |solver: &Self, index: usize, component: u32| {
-            any_grows
-                && growing[component as usize]
-                && solver.closes(index, component, &components.of)
-        };
         // Every class, providers first: a class outside any cycle has all it
-        // will get by the time it is reached, so it delivers once.
+        // will get by the time it is reached, so it delivers once. A delivery
+        // made from outside a component happens once, so it is never
+        // widened: only the worklist inside a growing component rounds, and
+        // what a member holds before its component is taken stays exact for
+        // the narrowing to recompute from.
         let mut at = components.order.len();
         while at > 0 {
             at -= 1;
@@ -528,9 +529,7 @@ impl<L: Lattice> Solver<L> {
                     continue;
                 }
                 for index in outgoing.of(class) {
-                    let component = components.of[self.class(self.flows[index].consumer)];
-                    let cyclic = cyclic(self, index, component);
-                    self.deliver(index, cyclic, cx);
+                    self.deliver(index, false, cx);
                 }
                 continue;
             }
@@ -605,8 +604,7 @@ impl<L: Lattice> Solver<L> {
                     if component == current {
                         continue;
                     }
-                    let cyclic = cyclic(self, index, component);
-                    self.deliver(index, cyclic, cx);
+                    self.deliver(index, false, cx);
                 }
             }
         }

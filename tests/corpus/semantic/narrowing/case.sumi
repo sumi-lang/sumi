@@ -4,3 +4,9 @@ fn descend(n: int) -> int = if n < 3 { n } else { descend(n - 5) }
 fn descended() -> int = descend(50)
 fn lapped(n: int, m: int) -> int = if n < m { lapped(n + 1, m - 1) } else { n }
 fn laps() -> int = lapped(0, 1000)
+fn rise(n: int) -> int = if n > 5 { n } else { rise(n + 2) }
+fn upto(n: int, k: int) -> int = if n > k { n } else { upto(n + 1, k) }
+fn passed_through() -> int = upto(0, rise(0) + 3)
+fn same(n: int) -> int = n
+fn compared(a: int) -> int = if same(a * 3) == a { 1 } else { 0 }
+fn compareds() -> int = compared(1) + compared(2)

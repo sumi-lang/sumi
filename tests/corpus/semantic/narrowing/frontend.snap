@@ -1,5 +1,5 @@
 == tree ==
-SourceFile 0..314
+SourceFile 0..640
   FnItem 0..64
     Name 3..8 "climb"
     ParamList 8..16
@@ -91,6 +91,105 @@ SourceFile 0..314
       ArgList 304..313
         LiteralExpr 305..306 "0"
         LiteralExpr 308..312 "1000"
+  FnItem 314..374
+    Name 317..321 "rise"
+    ParamList 321..329
+      Param 322..328
+        Name 322..323 "n"
+        TypeRef 325..328 "int"
+    TypeRef 333..336 "int"
+    IfExpr 339..374
+      BinaryExpr 342..347
+        NameRef 342..343 "n"
+        LiteralExpr 346..347 "5"
+      Block 348..353
+        NameRef 350..351 "n"
+      Block 359..374
+        CallExpr 361..372
+          NameRef 361..365 "rise"
+          ArgList 365..372
+            BinaryExpr 366..371
+              NameRef 366..367 "n"
+              LiteralExpr 370..371 "2"
+  FnItem 375..446
+    Name 378..382 "upto"
+    ParamList 382..398
+      Param 383..389
+        Name 383..384 "n"
+        TypeRef 386..389 "int"
+      Param 391..397
+        Name 391..392 "k"
+        TypeRef 394..397 "int"
+    TypeRef 402..405 "int"
+    IfExpr 408..446
+      BinaryExpr 411..416
+        NameRef 411..412 "n"
+        NameRef 415..416 "k"
+      Block 417..422
+        NameRef 419..420 "n"
+      Block 428..446
+        CallExpr 430..444
+          NameRef 430..434 "upto"
+          ArgList 434..444
+            BinaryExpr 435..440
+              NameRef 435..436 "n"
+              LiteralExpr 439..440 "1"
+            NameRef 442..443 "k"
+  FnItem 447..496
+    Name 450..464 "passed_through"
+    ParamList 464..466 "()"
+    TypeRef 470..473 "int"
+    CallExpr 476..496
+      NameRef 476..480 "upto"
+      ArgList 480..496
+        LiteralExpr 481..482 "0"
+        BinaryExpr 484..495
+          CallExpr 484..491
+            NameRef 484..488 "rise"
+            ArgList 488..491
+              LiteralExpr 489..490 "0"
+          LiteralExpr 494..495 "3"
+  FnItem 497..523
+    Name 500..504 "same"
+    ParamList 504..512
+      Param 505..511
+        Name 505..506 "n"
+        TypeRef 508..511 "int"
+    TypeRef 516..519 "int"
+    NameRef 522..523 "n"
+  FnItem 524..589
+    Name 527..535 "compared"
+    ParamList 535..543
+      Param 536..542
+        Name 536..537 "a"
+        TypeRef 539..542 "int"
+    TypeRef 547..550 "int"
+    IfExpr 553..589
+      BinaryExpr 556..572
+        CallExpr 556..567
+          NameRef 556..560 "same"
+          ArgList 560..567
+            BinaryExpr 561..566
+              NameRef 561..562 "a"
+              LiteralExpr 565..566 "3"
+        NameRef 571..572 "a"
+      Block 573..578
+        LiteralExpr 575..576 "1"
+      Block 584..589
+        LiteralExpr 586..587 "0"
+  FnItem 590..639
+    Name 593..602 "compareds"
+    ParamList 602..604 "()"
+    TypeRef 608..611 "int"
+    BinaryExpr 614..639
+      CallExpr 614..625
+        NameRef 614..622 "compared"
+        ArgList 622..625
+          LiteralExpr 623..624 "1"
+      CallExpr 628..639
+        NameRef 628..636 "compared"
+        ArgList 636..639
+          LiteralExpr 637..638 "2"
 
 == formatted ==
 fn climb(n: int) -> int = if n > 100 {
@@ -111,3 +210,21 @@ fn lapped(n: int, m: int) -> int = if n < m {
     n
 }
 fn laps() -> int = lapped(0, 1000)
+fn rise(n: int) -> int = if n > 5 {
+    n
+} else {
+    rise(n + 2)
+}
+fn upto(n: int, k: int) -> int = if n > k {
+    n
+} else {
+    upto(n + 1, k)
+}
+fn passed_through() -> int = upto(0, rise(0) + 3)
+fn same(n: int) -> int = n
+fn compared(a: int) -> int = if same(a * 3) == a {
+    1
+} else {
+    0
+}
+fn compareds() -> int = compared(1) + compared(2)
