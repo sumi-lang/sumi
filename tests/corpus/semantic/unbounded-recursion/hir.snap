@@ -1,0 +1,132 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 7
+
+fn forever@0..42 (int ∈ [0, +∞)) -> int ∈ ∅
+  param n@11..12: int
+  body: call forever@0..42 (callee @28..35) : int @28..42
+    arg[0]: eager + : int @36..41
+      lhs: read n@11..12 : int @36..37
+      rhs: int 1 : int @40..41
+
+fn too_deep@43..76 () -> int ∈ ∅
+  body: call forever@0..42 (callee @66..73) : int @66..76
+    arg[0]: int 0 : int @74..75
+
+fn fall@77..139 (int ∈ (-∞, 5]) -> int ∈ ∅
+  param n@85..86: int
+  body: if : int @102..139
+    condition: eager > : bool @105..112
+      lhs: read n@85..86 : int @105..106
+      rhs: int 100 : int @109..112
+    then: block : int @113..118
+      tail: int 0 : int @115..116
+    else: block : int @124..139
+      tail: call fall@77..139 (callee @126..130) : int @126..137
+        arg[0]: eager - : int @131..136
+          lhs: read n@85..86 : int @131..132
+          rhs: int 1 : int @135..136
+
+fn falls@140..167 () -> int ∈ ∅
+  body: call fall@77..139 (callee @160..164) : int @160..167
+    arg[0]: int 5 : int @165..166
+
+fn swap@168..211 (int ∈ [1, 2], int ∈ [1, 2]) -> int ∈ ∅
+  param a@176..177: int
+  param b@184..185: int
+  body: call swap@168..211 (callee @201..205) : int @201..211
+    arg[0]: read b@184..185 : int @206..207
+    arg[1]: read a@176..177 : int @209..210
+
+fn swapped@212..244 () -> int ∈ ∅
+  body: call swap@168..211 (callee @234..238) : int @234..244
+    arg[0]: int 1 : int @239..240
+    arg[1]: int 2 : int @242..243
+
+fn spin@245..270 () -> int ∈ ∅
+  body: call spin@245..270 (callee @264..268) : int @264..270
+
+fn both@271..322 (int ∈ [0, +∞), int ∈ [0, +∞)) -> int ∈ ∅
+  param a@279..280: int
+  param b@287..288: int
+  body: call both@271..322 (callee @304..308) : int @304..322
+    arg[0]: eager + : int @309..314
+      lhs: read a@279..280 : int @309..310
+      rhs: int 1 : int @313..314
+    arg[1]: eager + : int @316..321
+      lhs: read b@287..288 : int @316..317
+      rhs: int 1 : int @320..321
+
+fn boths@323..353 () -> int ∈ ∅
+  body: call both@271..322 (callee @343..347) : int @343..353
+    arg[0]: int 0 : int @348..349
+    arg[1]: int 0 : int @351..352
+
+fn either@354..459 (int ∈ [-1, 11]) -> int ∈ [0, 0]
+  param n@364..365: int
+  body: if : int @381..459
+    condition: eager > : bool @384..390
+      lhs: read n@364..365 : int @384..385
+      rhs: int 10 : int @388..390
+    then: block : int @391..396
+      tail: int 0 : int @393..394
+    else: block : int @402..459
+      tail: if : int @404..457
+        condition: eager < : bool @407..412
+          lhs: read n@364..365 : int @407..408
+          rhs: int 0 : int @411..412
+        then: block : int @413..418
+          tail: int 0 : int @415..416
+        else: block : int @424..457
+          tail: eager + : int @426..455
+            lhs: call either@354..459 (callee @426..432) : int @426..439
+              arg[0]: eager - : int @433..438
+                lhs: read n@364..365 : int @433..434
+                rhs: int 1 : int @437..438
+            rhs: call either@354..459 (callee @442..448) : int @442..455
+              arg[0]: eager + : int @449..454
+                lhs: read n@364..365 : int @449..450
+                rhs: int 1 : int @453..454
+
+fn eithers@460..491 () -> int ∈ [0, 0]
+  body: call either@354..459 (callee @482..488) : int @482..491
+    arg[0]: int 5 : int @489..490
+
+fn ping@492..524 (int ∈ [3, 3]) -> int ∈ ∅
+  param n@500..501: int
+  body: call pong@525..557 (callee @517..521) : int @517..524
+    arg[0]: read n@500..501 : int @522..523
+
+fn pong@525..557 (int ∈ [3, 3]) -> int ∈ ∅
+  param n@533..534: int
+  body: call ping@492..524 (callee @550..554) : int @550..557
+    arg[0]: read n@533..534 : int @555..556
+
+fn pings@558..585 () -> int ∈ ∅
+  body: call ping@492..524 (callee @578..582) : int @578..585
+    arg[0]: int 3 : int @583..584
+
+== semantic diagnostics ==
+error[semantic/unbounded-recursion]: recursion in `forever` has no argument that moves toward a bound on every call
+  primary @3..10
+  secondary @28..42: argument increases `n`, which is unbounded above
+error[semantic/unbounded-recursion]: recursion in `fall` has no argument that moves toward a bound on every call
+  primary @80..84
+  secondary @126..137: argument decreases `n`, which is unbounded below
+error[semantic/unbounded-recursion]: recursion in `swap` has no argument that moves toward a bound on every call
+  primary @171..175
+  secondary @201..211: argument passes `a` along
+error[semantic/unbounded-recursion]: recursion in `spin` has no argument that moves toward a bound on every call
+  primary @248..252
+  secondary @264..270: no argument is a parameter moved by a constant
+error[semantic/unbounded-recursion]: recursion in `both` has no argument that moves toward a bound on every call
+  primary @274..278
+  secondary @304..322: argument increases `a`, which is unbounded above
+error[semantic/unbounded-recursion]: recursion in `either` has no argument that moves toward a bound on every call
+  primary @357..363
+  secondary @426..439: argument decreases `n`
+  secondary @442..455: argument increases `n`
+error[semantic/unbounded-recursion]: recursion between `ping` and `pong` has no argument that moves toward a bound on every call
+  primary @495..499
+  secondary @517..524: argument passes `n` along
+  secondary @550..557: argument passes `n` along

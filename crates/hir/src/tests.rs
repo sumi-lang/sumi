@@ -199,7 +199,7 @@ fn invariant(analysis: &Analysis, function: &Function) {
 #[test]
 fn scalar_bodies_and_forward_recursive_calls() {
     let analysis = clean(
-        "fn answer() -> int = (twice)(21)\nfn twice(x: int) -> int {\n let y = x * 2\n y\n}\nfn spin() -> unit = spin()\n",
+        "fn answer() -> int = (twice)(21)\nfn twice(x: int) -> int {\n let y = x * 2\n y\n}\nfn spin(n: int) -> unit = if n > 0 { spin(n - 1) }\n",
     );
     let twice = analysis.functions[1].body().unwrap();
     assert_eq!(twice.exprs.len(), 5);
@@ -395,6 +395,25 @@ fn expression_results_stay_body_local_across_failed_bodies() {
         ExprKind::Int(n) if *n == Int::from(-17)
     ));
     reversed_declarations_preserve_types(&a);
+}
+
+/// The offset an argument carries is read through a chain of `let`s of
+/// any length, since the walk keeps its own stack.
+#[test]
+fn a_measure_is_read_through_any_depth_of_lets() {
+    use std::fmt::Write as _;
+    let mut source = String::from("fn f(n: int) -> int {\n    let a0 = n - 1\n");
+    for i in 1..400 {
+        writeln!(source, "    let a{i} = a{} - 0", i - 1).unwrap();
+    }
+    source.push_str("    if a399 < 0 { 0 } else { f(a399) }\n}\nfn main() -> int = f(5)\n");
+    let analysis = check(&source);
+    assert!(
+        analysis.diagnostics().is_empty(),
+        "{:?}",
+        analysis.diagnostics()
+    );
+    assert_eq!(analysis.depth_bound(FunctionId(1)), Some(7));
 }
 
 #[test]
@@ -827,10 +846,15 @@ fn inferred_results_and_recursive_constraints() {
         ("fn value() = {}", vec![Ty::Unit]),
         ("fn f() = g()\nfn g() = 1", vec![Ty::Int, Ty::Int]),
         ("fn f() = if true { 1 } else { f() }", vec![Ty::Int]),
-        ("fn f() = if true { f() } else { 1 }", vec![Ty::Int]),
-        ("fn f() -> int = g()\nfn g() = f()", vec![Ty::Int, Ty::Int]),
+        ("fn f() = if false { f() } else { 1 }", vec![Ty::Int]),
+        // A type flows through a cycle of calls even when the call that
+        // closes the cycle can never run.
         (
-            "fn a() = { _ = b()\n1 }\nfn b() = { _ = a()\ntrue }",
+            "fn f() -> int = if true { 1 } else { g() }\nfn g() = f()",
+            vec![Ty::Int, Ty::Int],
+        ),
+        (
+            "fn a() = { if false { _ = b() }\n1 }\nfn b() = { _ = a()\ntrue }",
             vec![Ty::Int, Ty::Bool],
         ),
         (
@@ -855,7 +879,8 @@ fn callers_cannot_solve_providers_or_publish_incomplete_calls() {
     let a = check(
         "fn spin() = spin()\nfn consumer() -> int = spin()\nfn grounded() = spin() + 1\nfn recovered() = grounded()\n",
     );
-    assert_eq!(codes(&a), [CANNOT_INFER]);
+    // `spin` is both unresolvable and unbounded, each reported once.
+    assert_eq!(codes(&a), [CANNOT_INFER, UNBOUNDED_RECURSION]);
     assert!(a.functions[0].signature().is_none());
     for function in &a.functions[1..] {
         assert_eq!(function.signature().unwrap().result, Ty::Int);
@@ -865,7 +890,13 @@ fn callers_cannot_solve_providers_or_publish_incomplete_calls() {
     let a = check("fn spin(x: int) = spin(x)\nfn caller() = spin(true, missing)\nfn intact() = 42");
     assert_eq!(
         codes(&a),
-        [CANNOT_INFER, ARITY, TYPE_MISMATCH, UNKNOWN_NAME]
+        [
+            CANNOT_INFER,
+            UNBOUNDED_RECURSION,
+            ARITY,
+            TYPE_MISMATCH,
+            UNKNOWN_NAME
+        ]
     );
     invariant(&a, &a.functions[2]);
 }
@@ -998,9 +1029,26 @@ fn large_definition_chains_and_cycles_are_stack_safe() {
                 }
             } else {
                 // A conflict is reported once at each end that claims a
-                // type; every function between inherits it silently.
-                assert_eq!(a.diagnostics.len(), if conflict { 2 } else { COUNT });
-                assert!(a.diagnostics.iter().all(|d| d.code == CANNOT_INFER));
+                // type; every function between inherits it silently. A live
+                // cycle with no ground is also a recursion with no measure,
+                // reported once.
+                let recursion = usize::from(!conflict);
+                assert_eq!(
+                    a.diagnostics.len(),
+                    if conflict { 2 } else { COUNT + recursion }
+                );
+                assert_eq!(
+                    a.diagnostics
+                        .iter()
+                        .filter(|d| d.code == UNBOUNDED_RECURSION)
+                        .count(),
+                    recursion
+                );
+                assert!(
+                    a.diagnostics
+                        .iter()
+                        .all(|d| d.code == CANNOT_INFER || d.code == UNBOUNDED_RECURSION)
+                );
                 assert!(
                     a.functions
                         .iter()

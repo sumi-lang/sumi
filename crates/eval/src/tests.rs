@@ -11,20 +11,10 @@ fn int(value: i64) -> Value {
 }
 
 /// Run the nullary function `name` of `source`.
-fn run(source: &str, name: &str) -> Result<Value, Trap> {
+fn run(source: &str, name: &str) -> Value {
     let analysis = analysis(source);
     let program = Program::new(&analysis).expect("a valid file");
     program.evaluate(program.function_named(name).expect("a function"), &[])
-}
-
-/// A trap's kind and the source text at its origin.
-fn trap_of(source: &str, result: Result<Value, Trap>) -> (TrapKind, &str) {
-    let trap = result.expect_err("a trap");
-    let range = trap.origin.range();
-    (
-        trap.kind,
-        &source[range.start().to_usize()..range.end().to_usize()],
-    )
 }
 
 #[test]
@@ -33,10 +23,11 @@ fn invalid_files_never_run() {
         "fn f() -> int = true",
         "fn f(",
         "fn f() = g()",
-        // A division that may fail is a static error, so it never reaches
-        // here.
+        // What used to trap is a static error, so it never reaches here.
         "fn f() -> int = 1 / 0",
         "fn f() -> int = 7 % (2 - 2)",
+        "fn f() -> int = f()",
+        "fn f(n: int) -> int = f(n + 1)\nfn g() -> int = f(0)",
         "fn f() -> bool = true && 1 / 0 == 0",
         "fn f() -> bool = false || 1 % 0 == 0",
     ] {
@@ -53,14 +44,14 @@ fn bools() -> bool = true == true && !(false != false)
 fn nothing() = {}
 fn remainder() -> int = -7 % 3
 fn quotient() -> int = -7 / 2";
-    assert_eq!(run(source, "arithmetic"), Ok(int(8)));
-    assert_eq!(run(source, "negated"), Ok(int(3)));
-    assert_eq!(run(source, "logic"), Ok(Value::Bool(true)));
-    assert_eq!(run(source, "bools"), Ok(Value::Bool(true)));
-    assert_eq!(run(source, "nothing"), Ok(Value::Unit));
+    assert_eq!(run(source, "arithmetic"), int(8));
+    assert_eq!(run(source, "negated"), int(3));
+    assert_eq!(run(source, "logic"), Value::Bool(true));
+    assert_eq!(run(source, "bools"), Value::Bool(true));
+    assert_eq!(run(source, "nothing"), Value::Unit);
     // Truncating division; the remainder takes the dividend's sign.
-    assert_eq!(run(source, "remainder"), Ok(int(-1)));
-    assert_eq!(run(source, "quotient"), Ok(int(-3)));
+    assert_eq!(run(source, "remainder"), int(-1));
+    assert_eq!(run(source, "quotient"), int(-3));
 }
 
 #[test]
@@ -79,10 +70,10 @@ fn all() -> int = branches(-5) * 100 + branches(0) * 10 + branches(7)
 fn no_else(b: bool) = if b { _ = 1 }
 fn unit_if() = no_else(true)
 fn empty() = {}";
-    assert_eq!(run(source, "entry"), Ok(int(2)));
-    assert_eq!(run(source, "all"), Ok(int(-99)));
-    assert_eq!(run(source, "unit_if"), Ok(Value::Unit));
-    assert_eq!(run(source, "empty"), Ok(Value::Unit));
+    assert_eq!(run(source, "entry"), int(2));
+    assert_eq!(run(source, "all"), int(-99));
+    assert_eq!(run(source, "unit_if"), Value::Unit);
+    assert_eq!(run(source, "empty"), Value::Unit);
 }
 
 #[test]
@@ -94,9 +85,9 @@ fn ordered() -> int = sub(sub(10, 3), sub(2, 1))
 fn even(n: int) -> bool = if n == 0 { true } else { odd(n - 1) }
 fn odd(n: int) -> bool = if n == 0 { false } else { even(n - 1) }
 fn parity() -> bool = even(1000) && !even(999)";
-    assert_eq!(run(source, "twenty"), Ok(int(6765)));
-    assert_eq!(run(source, "ordered"), Ok(int(6)));
-    assert_eq!(run(source, "parity"), Ok(Value::Bool(true)));
+    assert_eq!(run(source, "twenty"), int(6765));
+    assert_eq!(run(source, "ordered"), int(6));
+    assert_eq!(run(source, "parity"), Value::Bool(true));
 }
 
 #[test]
@@ -105,9 +96,9 @@ fn guarded_divisions_run() {
 fn signed() -> int = safe(10, 3) + safe(10, -3) + safe(10, 0)
 fn dead() -> int = if false { 1 / 0 } else { 1 }
 fn lazy() -> bool = false && 1 / 0 == 0 || true || 1 % 0 == 0";
-    assert_eq!(run(source, "signed"), Ok(int(0)));
-    assert_eq!(run(source, "dead"), Ok(int(1)));
-    assert_eq!(run(source, "lazy"), Ok(Value::Bool(true)));
+    assert_eq!(run(source, "signed"), int(0));
+    assert_eq!(run(source, "dead"), int(1));
+    assert_eq!(run(source, "lazy"), Value::Bool(true));
 }
 
 #[test]
@@ -144,28 +135,31 @@ fn fine() -> int = {max} + -1 + 1"
     ] {
         assert_eq!(
             run(source, name),
-            Ok(Value::Int(value.parse().unwrap())),
+            Value::Int(value.parse().unwrap()),
             "{name}"
         );
     }
 }
 
 #[test]
-fn call_depth_is_bounded_by_the_machine_not_the_host() {
-    let source = "fn forever(n: int) -> int = forever(n + 1)
-fn entry() -> int = forever(0)
-fn count(n: int) -> int = if n == 0 { 0 } else { 1 + count(n - 1) }
-fn deep() -> int = count(60000)";
-    let trap = run(source, "entry").expect_err("a depth trap");
-    assert_eq!(trap.kind, TrapKind::CallDepth);
-    // The call that would nest too deep, inside `forever`.
-    let range = trap.origin.range();
-    assert_eq!(
-        &source[range.start().to_usize()..range.end().to_usize()],
-        "forever(n + 1)"
-    );
-    // Recursion short of the limit completes, however deep.
-    assert_eq!(run(source, "deep"), Ok(int(60000)));
+fn call_depth_is_the_machines_and_the_analysis_bounds_it() {
+    let source = "fn count(n: int) -> int = if n == 0 { 0 } else { 1 + count(n - 1) }
+fn deep() -> int = count(60000)
+fn twice(x: int) -> int = x * 2
+fn shallow() -> int = twice(twice(1))";
+    let analysis = analysis(source);
+    let program = Program::new(&analysis).unwrap();
+    // Recursion consumes the machine's stack, never the host's, however
+    // deep, and the analysis claimed exactly the depth the run reaches.
+    let mut machine = Machine::new(program, program.function_named("deep").unwrap(), &[]);
+    assert_eq!(machine.depth_bound(), Some(60002));
+    let value = machine.run_to_end();
+    assert_eq!(value, int(60000));
+    assert_eq!(machine.max_depth(), 60002);
+    let mut machine = Machine::new(program, program.function_named("shallow").unwrap(), &[]);
+    assert_eq!(machine.depth_bound(), Some(2));
+    assert_eq!(machine.run_to_end(), int(4));
+    assert_eq!(machine.max_depth(), 2);
 }
 
 #[test]
@@ -179,42 +173,22 @@ fn stepping_is_observable_and_idempotent_at_the_end() {
         (0, 1, 1)
     );
     let mut seen_depth_two = false;
-    let outcome = loop {
-        if let Some(outcome) = machine.step() {
-            break outcome;
+    let value = loop {
+        if let Some(value) = machine.step() {
+            break value;
         }
         seen_depth_two |= machine.depth() == 2;
     };
-    assert_eq!(outcome, Ok(int(4)));
+    assert_eq!(value, int(4));
     assert!(seen_depth_two);
     assert_eq!((machine.depth(), machine.max_depth()), (0, 2));
     let steps = machine.steps();
     assert!(steps > 0);
-    assert_eq!(machine.step(), Some(Ok(int(4))));
+    assert_eq!(machine.step(), Some(int(4)));
     assert_eq!(machine.steps(), steps);
     // Arguments reach parameters in order.
     let sub = program.function_named("twice").unwrap();
-    assert_eq!(program.evaluate(sub, &[int(21)]), Ok(int(42)));
-}
-
-#[test]
-fn a_trapped_machine_keeps_reporting_its_trap() {
-    let source = "fn boom() -> int = inner(1) + 2\nfn inner(x: int) -> int = inner(x + 1)";
-    let analysis = analysis(source);
-    let program = Program::new(&analysis).unwrap();
-    let mut machine = Machine::new(program, program.function_named("boom").unwrap(), &[]);
-    let outcome = machine.run_to_end();
-    assert_eq!(
-        trap_of(source, outcome.clone()),
-        (TrapKind::CallDepth, "inner(x + 1)")
-    );
-    let steps = machine.steps();
-    for _ in 0..3 {
-        assert_eq!(machine.step(), Some(outcome.clone()));
-    }
-    assert_eq!(machine.steps(), steps);
-    // The frames stay where the trap happened.
-    assert_eq!(machine.depth(), MAX_CALL_DEPTH);
+    assert_eq!(program.evaluate(sub, &[int(21)]), int(42));
 }
 
 #[test]
@@ -239,15 +213,14 @@ fn values_display_as_source_spells_them() {
     assert_eq!(Value::Bool(true).to_string(), "true");
     assert_eq!(Value::Unit.to_string(), "unit");
     assert_eq!(Value::Unit.ty(), Ty::Unit);
-    assert_eq!(TrapKind::CallDepth.code(), "eval/call-depth");
 }
 
 impl Machine<'_> {
     /// Step in place until the run ends, keeping the machine.
-    fn run_to_end(&mut self) -> Result<Value, Trap> {
+    fn run_to_end(&mut self) -> Value {
         loop {
-            if let Some(outcome) = self.step() {
-                return outcome;
+            if let Some(value) = self.step() {
+                return value;
             }
         }
     }

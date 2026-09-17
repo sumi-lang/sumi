@@ -123,6 +123,29 @@ impl Int {
     }
 }
 
+/// The value as a machine word, when it fits one.
+impl TryFrom<&Int> for i64 {
+    type Error = OutOfRange;
+    fn try_from(value: &Int) -> Result<Self, OutOfRange> {
+        match value.0 {
+            Repr::Small(value) => Ok(value),
+            Repr::Big(_) => Err(OutOfRange),
+        }
+    }
+}
+
+/// An [`Int`] past the range of the type it was converted to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OutOfRange;
+
+impl fmt::Display for OutOfRange {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("integer out of range")
+    }
+}
+
+impl std::error::Error for OutOfRange {}
+
 impl From<i64> for Int {
     fn from(value: i64) -> Self {
         Self(Repr::Small(value))
@@ -417,6 +440,8 @@ mod tests {
     #[test]
     fn an_int_is_two_words() {
         assert_eq!(size_of::<Int>(), 16);
+        assert_eq!(i64::try_from(&Int::from(7)), Ok(7));
+        assert_eq!(i64::try_from(&int("9223372036854775808")), Err(OutOfRange));
     }
 
     #[test]

@@ -774,6 +774,39 @@ error[semantic/division-by-zero]: division by zero
   secondary @930..931: argument is 0
 ```
 
+### `semantic/unbounded-recursion`
+
+A cycle of calls with no argument that moves toward a bound: on every
+call around the cycle some one parameter of each function must be
+passed a value that never moves the wrong way and, often enough that
+no cycle of calls only passes it along, strictly decreases (or strictly
+increases), with the values it can take bounded on that side. An
+argument counts when it is a parameter of the caller plus or minus a
+value, read through `let`s, blocks, and the arms of an `if` that can
+run; a constant argument moves nothing, so a cycle that resets a
+parameter is reported even where its guard would end it. Labels name
+the recursive calls and what each does to the parameter that came
+closest.
+
+Shown by [`tests/corpus/semantic/inference-boundaries`](../../../tests/corpus/semantic/inference-boundaries/case.sumi):
+
+```sumi
+fn spin(x: int) = spin(x)
+fn consumer() -> int = spin(1)
+fn grounded() = spin(1) + 1
+fn recovered() = grounded()
+fn bad_arguments() = spin(true, missing)
+fn bare() { 1 }
+fn malformed() -> = { 1 }
+fn intact() = true
+```
+
+```text
+error[semantic/unbounded-recursion]: recursion in `spin` has no argument that moves toward a bound on every call
+  primary @3..7
+  secondary @18..25: argument passes `x` along
+```
+
 ### `semantic/unsupported`
 
 A construct scalar checking does not handle yet, such as a closure, a

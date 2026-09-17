@@ -140,6 +140,18 @@ code cannot-infer
 /// there. A guard such as `if d != 0` narrows the divisor inside its
 /// branch, and a division no path reaches is not checked.
 code division-by-zero
+/// A cycle of calls with no argument that moves toward a bound: on every
+/// call around the cycle some one parameter of each function must be
+/// passed a value that never moves the wrong way and, often enough that
+/// no cycle of calls only passes it along, strictly decreases (or strictly
+/// increases), with the values it can take bounded on that side. An
+/// argument counts when it is a parameter of the caller plus or minus a
+/// value, read through `let`s, blocks, and the arms of an `if` that can
+/// run; a constant argument moves nothing, so a cycle that resets a
+/// parameter is reported even where its guard would end it. Labels name
+/// the recursive calls and what each does to the parameter that came
+/// closest.
+code unbounded-recursion
 /// A construct scalar checking does not handle yet, such as a closure, a
 /// string literal, or a call through anything but a function name. The
 /// function is left unchecked.
