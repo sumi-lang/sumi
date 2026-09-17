@@ -1,6 +1,6 @@
 file: rejected
 frontend errors: 0 (see frontend.snap)
-semantic errors: 10
+semantic errors: 11
 
 fn duplicate@0..17 () -> unit ∈ unit
   body: block : unit @15..17
@@ -33,6 +33,15 @@ fn hidden@206..258 () -> int ∈ ∅
 fn broken_result@259..301 signature: unavailable
   body: unavailable
 
+fn scaled@302..334 (int ∈ ∅) -> int ∈ ∅
+  param n@312..313: int
+  body: eager * : int @329..334
+    lhs: read n@312..313 : int @329..330
+    rhs: int 2 : int @333..334
+
+fn extra@335..367 () -> int ∈ ∅
+  body: unavailable
+
 == semantic diagnostics ==
 error[semantic/duplicate-name]: duplicate function `duplicate`
   primary @21..30
@@ -60,3 +69,6 @@ error[semantic/unknown-type]: unknown type `mystery`
 error[semantic/type-mismatch]: expected int, found bool
   primary @297..301
   secondary @291..294: declared here
+error[semantic/arity]: expected 1 arguments, found 2
+  primary @355..367
+  secondary @302..334: declared here

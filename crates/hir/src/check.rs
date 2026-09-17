@@ -1393,11 +1393,6 @@ impl<'a, 's> Builder<'a, 's> {
                 Some(value) => {
                     if let Some(&expected) = params.get(index) {
                         self.require(arg, value, Expected::Ty(expected), Some(item));
-                        self.typing.flow(
-                            self.class(value),
-                            param_classes[index],
-                            RangeEdge::Argument,
-                        );
                     }
                     self.args.push(value);
                 }
@@ -1415,6 +1410,13 @@ impl<'a, 's> Builder<'a, 's> {
         if count != params.len() || !complete {
             self.args.truncate(start);
             return None;
+        }
+        // A call that is not whole never happens, so only now do the
+        // arguments reach the parameters.
+        for index in 0..params.len() {
+            let value = self.args[start + index];
+            self.typing
+                .flow(self.class(value), param_classes[index], RangeEdge::Argument);
         }
         let args = Args {
             start: run(start),
