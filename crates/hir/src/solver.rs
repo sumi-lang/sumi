@@ -64,6 +64,10 @@ pub trait Lattice: Clone + Eq {
     /// The evidence a consumer receives when `self`, and for a two-provider
     /// edge `other`, cross `edge`. `cyclic` says the flow lies on a cycle of
     /// the flow graph, so the evidence delivered here may come back.
+    ///
+    /// Nothing comes of nothing: when every provider holds `bottom`, so
+    /// does the result. The solver counts on it and never visits a class
+    /// with no evidence.
     fn transfer(
         &self,
         edge: &Self::Edge,
@@ -549,10 +553,11 @@ mod tests {
             before != *self
         }
 
+        /// Nothing comes of nothing: an empty set is not marked.
         fn transfer(&self, (): &(), _: Option<&Self>, cyclic: bool, (): &()) -> Self {
             Self {
                 set: self.set,
-                cyclic: self.cyclic | cyclic,
+                cyclic: self.cyclic | (cyclic && self.set != 0),
             }
         }
     }

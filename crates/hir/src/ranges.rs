@@ -613,8 +613,15 @@ impl fmt::Display for Shown<'_> {
 /// The finite set an endpoint may round to: the file's constants and their
 /// neighbors, always including `-1`, `0`, and `1`, so a band keeps its sign
 /// however far it travels around a recursion.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Thresholds(Vec<Int>);
+
+/// The thresholds of no constants: `-1`, `0`, and `1` alone.
+impl Default for Thresholds {
+    fn default() -> Self {
+        std::iter::empty().collect()
+    }
+}
 
 /// The thresholds of a file's constants.
 impl FromIterator<Int> for Thresholds {
@@ -896,6 +903,10 @@ mod tests {
         assert_eq!(ints("[-7, 7] \\ 0").round(&t), ints("[-inf, 14] \\ 0"));
         assert_eq!(ints("[-3, -2]").round(&t), ints("[-inf, -1]"));
         assert_eq!(Ints::Empty.round(&t), Ints::Empty);
+        // The thresholds of no constants still keep a sign.
+        let none = Thresholds::default();
+        assert_eq!(ints("[2, 5]").round(&none), ints("[1, inf]"));
+        assert_eq!(ints("[-5, -2]").round(&none), ints("[-inf, -1]"));
     }
 
     #[test]
