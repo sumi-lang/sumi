@@ -24,20 +24,8 @@
 //! # Building
 //!
 //! Trees come only from [`Parse::build`], which lends the root as a
-//! [`Marker`]: an open node, and the parser's cursor into the input.
-//! Starting a child reborrows the parent marker for as long as the child is
-//! open, so the borrow checker holds the stack of open nodes. A parent
-//! cannot take a token, start a sibling, or complete while a child is open;
-//! the root, only ever lent, cannot complete at all; and completing a
-//! marker is the one way to close its node. A [`CompletedMarker`] is plain
-//! data — holding one borrows nothing — and is wrapped after the fact from
-//! the marker that contained it. What types cannot express stays a run-time
-//! check, raised where the parser went wrong: a node is preceded only from
-//! the node that contained it, every node covers at least one token, a
-//! marker dropped uncompleted panics where it drops, and `build` rejects a
-//! token past the input horizon or tokens left over.
-//!
-//! The build records nodes as they complete, and completion order is the
+//! [`Marker`], the parser's one handle on an open node and its cursor. The
+//! build records nodes as they complete, and completion order is the
 //! stored order. That is what lets a parser choose a node's kind after its
 //! children exist, and wrap a node it has already completed: a wrapper's
 //! subtree is simply everything completed since the wrapped node began —
@@ -286,11 +274,8 @@ struct Builder<'a> {
     nodes: Vec<Node>,
     /// The next significant token to attach.
     position: SigIdx,
-    /// The slots up to the input horizon: lookahead reads this prefix of
-    /// the input's slots, so nothing can be seen or consumed at or past
-    /// its end. `source_file` moves the horizon from one item start to the
-    /// next, which makes recovery inside an item unable to take another
-    /// item's tokens — there is no rule to get wrong.
+    /// The slots up to the input horizon: lookahead reads only this prefix
+    /// of the input's slots, and [`Marker::set_limit`] moves it.
     slots: &'a [Slot],
     /// Nodes opened so far, numbering the next one; the root is 0.
     opened: u32,
@@ -369,9 +354,13 @@ pub(crate) struct RecoveryHandle(usize);
 /// [`start`](Self::start) or [`precede`](Self::precede). Tokens attach to
 /// the innermost open node. A child reborrows its parent for as long as it
 /// is open, so the parent is untouchable until the child completes: the
-/// stack of open nodes is a chain of borrows on the parser's own stack.
-/// Completing a marker is the only way to close its node; dropping it
-/// instead is a parser bug and panics on the spot.
+/// stack of open nodes is a chain of borrows on the parser's own stack, and
+/// the root, only ever lent, cannot complete at all. Completing a marker is
+/// the only way to close its node; dropping it instead is a parser bug and
+/// panics on the spot. What types cannot express is checked where the
+/// parser went wrong: a node is preceded only from the node that contained
+/// it, every node covers at least one token, and `build` rejects a token
+/// past the input horizon or tokens left over.
 ///
 /// Within the crate, the marker is also the parser's view of the input:
 /// lookahead, the stream facts (jointness, newlines, boundaries, bracket
