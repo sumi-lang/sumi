@@ -1,23 +1,69 @@
-fn clamp(n: int) -> int = if n < 0 { 0 } else { if n > 9 { 9 } else { n } }
+fn clamp(n: int) -> int = if n < 0 {
+    0
+} else {
+    if n > 9 {
+        9
+    } else {
+        n
+    }
+}
 fn clamped() -> int = clamp(-5) + clamp(3) + clamp(20)
-fn nonzero(d: int) -> int = if d != 0 { d } else { 1 }
+fn nonzero(d: int) -> int = if d != 0 {
+    d
+} else {
+    1
+}
 fn nonzeros() -> int = nonzero(-2) + nonzero(0) + nonzero(2)
-fn both(a: int, b: int) -> int = if a > 0 && b > 0 { a + b } else { 0 }
+fn both(a: int, b: int) -> int = if a > 0 && b > 0 {
+    a + b
+} else {
+    0
+}
 fn boths() -> int = both(-1, 5) + both(3, 4)
-fn flag(f: bool) -> bool = if f { f } else { !f }
+fn flag(f: bool) -> bool = if f {
+    f
+} else {
+    !f
+}
 fn flags() -> bool = flag(true) && flag(false)
-fn negated(n: int) -> int = if !(n < 3) { n } else { 3 }
+fn negated(n: int) -> int = if !(n < 3) {
+    n
+} else {
+    3
+}
 fn negateds() -> int = negated(1) + negated(7)
-fn between(n: int) -> int = if n > 0 && n < 10 { n } else { 0 }
+fn between(n: int) -> int = if n > 0 && n < 10 {
+    n
+} else {
+    0
+}
 fn betweens() -> int = between(-3) + between(5) + between(50)
-fn outside(n: int) -> int = if n < 1 || n > 9 { 0 } else { n }
+fn outside(n: int) -> int = if n < 1 || n > 9 {
+    0
+} else {
+    n
+}
 fn outsides() -> int = outside(-3) + outside(5) + outside(50)
 fn inner(n: int, m: int) -> int {
-    if n > 0 { if m != 0 { _ = 1 }
- 0 } else { m }
+    if n > 0 {
+        if m != 0 {
+            _ = 1
+        }
+        0
+    } else {
+        m
+    }
 }
 fn inners() -> int = inner(0, 0) + inner(0, 5) + inner(1, -5)
-fn wrapped(x: int) -> int = if (x) > 0 { 10 / x } else { 1 }
+fn wrapped(x: int) -> int = if (x) > 0 {
+    10 / x
+} else {
+    1
+}
 fn wrappeds() -> int = wrapped(0) + wrapped(5)
-fn negated_wrapped(x: int) -> int = if !((x) == 0) { 10 / x } else { 1 }
+fn negated_wrapped(x: int) -> int = if !((x) == 0) {
+    10 / x
+} else {
+    1
+}
 fn negated_wrappeds() -> int = negated_wrapped(0) + negated_wrapped(5)

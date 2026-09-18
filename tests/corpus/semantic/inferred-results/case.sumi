@@ -1,15 +1,27 @@
 fn value() = forward()
-fn forward() = { 1 }
+fn forward() = {
+    1
+}
 fn explicit() -> int = value()
-fn recursive() = if true { 1 } else { recursive() }
-fn anchored() -> int = if false { inferred() } else { 1 }
+fn recursive() = if true {
+    1
+} else {
+    recursive()
+}
+fn anchored() -> int = if false {
+    inferred()
+} else {
+    1
+}
 fn inferred() = anchored()
 fn integer() = {
-  if false { _ = boolean() }
-  1
+    if false {
+        _ = boolean()
+    }
+    1
 }
 fn boolean() = {
-  _ = integer()
-  true
+    _ = integer()
+    true
 }
 fn empty() = {}

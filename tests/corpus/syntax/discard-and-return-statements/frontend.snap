@@ -1,18 +1,12 @@
 == tree ==
-SourceFile 0..30
-  FnItem 0..30
+SourceFile 0..35
+  FnItem 0..34
     Name 3..4 "f"
     ParamList 4..6 "()"
-    Block 7..30
-      DiscardStmt 11..19
-        CallExpr 15..19
-          NameRef 15..16 "g"
-          ArgList 16..19
-            LiteralExpr 17..18 "1"
-      ReturnStmt 22..28 "return"
-
-== formatted ==
-fn f() {
-    _ = g(1)
-    return
-}
+    Block 7..34
+      DiscardStmt 13..21
+        CallExpr 17..21
+          NameRef 17..18 "g"
+          ArgList 18..21
+            LiteralExpr 19..20 "1"
+      ReturnStmt 26..32 "return"

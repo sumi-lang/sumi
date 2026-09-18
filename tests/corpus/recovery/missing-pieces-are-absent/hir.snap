@@ -2,27 +2,27 @@ file: rejected
 frontend errors: 8 (see frontend.snap)
 semantic errors: 0
 
-fn initializer@0..30 () -> unit ∈ ∅
-  result: copy : unit @0..30
+fn initializer@0..32 () -> unit ∈ ∅
+  result: copy : unit @0..32
     value:
-      let x@25..26: hole : ? @21..28
-      tail: unit : ? @17..30
+      let x@27..28: hole : ? @23..30
+      tail: unit : ? @17..32
 
-fn <missing>@31..45 (int ∈ ∅) -> unit ∈ ∅
-  param a@35..36: int
-  result: copy : unit @31..45
-    value: unit : unit @43..45
+fn <missing>@33..47 (int ∈ ∅) -> unit ∈ ∅
+  param a@37..38: int
+  result: copy : unit @33..47
+    value: unit : unit @45..47
 
-fn parameter_type@46..69 signature: unavailable
-  param a@64..65: ?
-  body: unit : unit @67..69
+fn parameter_type@48..71 signature: unavailable
+  param a@66..67: ?
+  body: unit : unit @69..71
 
-fn parameter_closer@70..96 signature: unavailable
-  param a@90..91: int
-  body: hole : ? @70..96
+fn parameter_closer@72..98 signature: unavailable
+  param a@92..93: int
+  body: hole : ? @72..98
 
-fn everything@97..132 signature: unavailable
-  param a@111..112: ?
+fn everything@99..138 signature: unavailable
+  param a@113..114: ?
   body:
-    let x@124..125: hole : ? @120..130
-    tail: unit : ? @118..132
+    let x@130..131: hole : ? @126..136
+    tail: unit : ? @120..138

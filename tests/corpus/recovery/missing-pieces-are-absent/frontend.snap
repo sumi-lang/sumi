@@ -1,48 +1,48 @@
 == tree ==
-SourceFile! 0..133
-  FnItem! 0..30
+SourceFile! 0..139
+  FnItem! 0..32
     Name 3..14 "initializer"
     ParamList 14..16 "()"
-    Block! 17..30
-      LetStmt! 21..28
-        Name 25..26 "x"
-  FnItem! 31..45
-    ParamList 34..42
-      Param 35..41
-        Name 35..36 "a"
-        TypeRef 38..41 "int"
-    Block 43..45 "{}"
-  FnItem! 46..69
-    Name 49..63 "parameter_type"
-    ParamList! 63..66
-      Param! 64..65
-        Name 64..65 "a"
-    Block 67..69 "{}"
-  FnItem! 70..96
-    Name 73..89 "parameter_closer"
-    ParamList! 89..96
-      Param 90..96
-        Name 90..91 "a"
-        TypeRef 93..96 "int"
-  FnItem! 97..132
-    Name 100..110 "everything"
-    ParamList! 110..114
-      Param! 111..113
-        Name 111..112 "a"
-    Block! 118..132
-      LetStmt! 120..130
-        Name 124..125 "x"
-        LiteralExpr 129..130 "1"
+    Block! 17..32
+      LetStmt! 23..30
+        Name 27..28 "x"
+  FnItem! 33..47
+    ParamList 36..44
+      Param 37..43
+        Name 37..38 "a"
+        TypeRef 40..43 "int"
+    Block 45..47 "{}"
+  FnItem! 48..71
+    Name 51..65 "parameter_type"
+    ParamList! 65..68
+      Param! 66..67
+        Name 66..67 "a"
+    Block 69..71 "{}"
+  FnItem! 72..98
+    Name 75..91 "parameter_closer"
+    ParamList! 91..98
+      Param 92..98
+        Name 92..93 "a"
+        TypeRef 95..98 "int"
+  FnItem! 99..138
+    Name 102..112 "everything"
+    ParamList! 112..116
+      Param! 113..115
+        Name 113..114 "a"
+    Block! 120..138
+      LetStmt! 126..136
+        Name 130..131 "x"
+        LiteralExpr 135..136 "1"
 
 == evidence ==
-ExpectedExpression at 29
-ExpectedName at 34
-Expected(Colon) at 65
-Expected(RParen) at 97
-ExpectedBody at 97
-ExpectedType at 113
-ExpectedType at 118
-ExpectedType at 127
+ExpectedExpression at 31
+ExpectedName at 36
+Expected(Colon) at 67
+Expected(RParen) at 99
+ExpectedBody at 99
+ExpectedType at 115
+ExpectedType at 120
+ExpectedType at 133
 
 == diagnostics ==
 error[syntax/expected-expression] 3:1: expected an expression
@@ -55,24 +55,15 @@ error[syntax/expected-token] 7:1: expected `)`
 error[syntax/expected-body] 7:1: expected a body, `{` or `=`
 error[syntax/expected-type] 7:17: expected a type
 error[syntax/expected-type] 7:22: expected a type
-error[syntax/expected-type] 7:31: expected a type
+error[syntax/expected-type] 8:12: expected a type
 
 == fixed (syntax/expected-body, syntax/expected-expression, syntax/expected-name, syntax/expected-token, syntax/expected-type remain) ==
-fn initializer() {
-  let x =
-}
-fn (a: int) {}
-fn parameter_type(a) {}
-fn parameter_closer(a: int)
-fn everything(a:) -> { let x: = 1 }
-
-== formatted ==
 fn initializer() {
     let x =
 }
 fn (a: int) {}
 fn parameter_type(a) {}
-fn parameter_closer(a: int
+fn parameter_closer(a: int)
 fn everything(a:) -> {
     let x: = 1
 }

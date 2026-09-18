@@ -1,30 +1,26 @@
 == tree ==
-SourceFile! 0..17
-  FnItem! 0..17
+SourceFile! 0..43
+  FnItem! 0..42
     Name 3..4 "f"
     ParamList 4..6 "()"
-    Block! 7..17
-      ParenExpr! 9..15
-        Block! 10..13
-          NameRef 12..13 "a"
+    Block! 7..42
+      ParenExpr! 13..40
+        Block! 23..38
+          NameRef 37..38 "a"
 
 == evidence ==
-Expected(RBrace) at 14
+Expected(RBrace) at 39
 
 == diagnostics ==
-error[syntax/expected-token] 2:1: expected `}`
-  at 1:11..1:12 "{": opening delimiter is here
+error[syntax/expected-token] 5:1: expected `}`
+  at 3:9..3:10 "{": opening delimiter is here
   fix (safe): insert `}`
-    1:14 -> "}"
+    4:14 -> "}"
 
 == fixed ==
-fn f() { ({ a}
-) }
-
-== formatted ==
 fn f() {
     (
         {
-            a
+            a}
 )
 }

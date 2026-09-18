@@ -1,3 +1,7 @@
-fn brace_in_type(a: { int) { x }
+fn brace_in_type(a: { int) {
+    x
+}
 fn brace_after_type(b: int, foo: int{ ) {}
-fn keyword_argument() { g(fn, b) }
+fn keyword_argument() {
+    g(fn, b)
+}

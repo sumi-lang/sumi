@@ -1,20 +1,15 @@
 == tree ==
-SourceFile! 0..20
-  FnItem! 0..20
+SourceFile! 0..25
+  FnItem! 0..24
     Name 3..4 "f"
     ParamList 4..6 "()"
-    Block! 7..20
-      LetStmt! 9..18
-        Name! 13..14 "_"
-        LiteralExpr 17..18 "1"
+    Block! 7..24
+      LetStmt! 13..22
+        Name! 17..18 "_"
+        LiteralExpr 21..22 "1"
 
 == evidence ==
-ExpectedName at 13
+ExpectedName at 17
 
 == diagnostics ==
-error[syntax/expected-name] 1:14..1:15 "_": expected a name
-
-== formatted ==
-fn f() {
-    let _ = 1
-}
+error[syntax/expected-name] 2:9..2:10 "_": expected a name

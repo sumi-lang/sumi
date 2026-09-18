@@ -1,10 +1,10 @@
 == tree ==
 SourceFile! 0..27
-  FnItem! 0..27
+  FnItem! 0..26
     Name 3..4 "f"
     ParamList! 4..17
       Error! 5..17 "5{ && cf(\" )"
-    Block! 18..27
+    Block! 18..26
       Error! 20..24 "&& c"
 
 == evidence ==
@@ -20,8 +20,3 @@ error[syntax/expected-token] 2:1: expected `)`
   at 1:5..1:6 "(": opening delimiter is here
 error[syntax/expected-statement] 2:3..2:4 "&": expected a statement
   at 2:3..2:7 "&& c": skipped while recovering
-
-== formatted ==
-fn f(5{ && cf(" )
-{ && c
-}

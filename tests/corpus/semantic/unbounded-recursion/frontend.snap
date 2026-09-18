@@ -1,5 +1,5 @@
 == tree ==
-SourceFile 0..586
+SourceFile 0..626
   FnItem 0..42
     Name 3..10 "forever"
     ParamList 10..18
@@ -21,190 +21,162 @@ SourceFile 0..586
       NameRef 66..73 "forever"
       ArgList 73..76
         LiteralExpr 74..75 "0"
-  FnItem 77..139
+  FnItem 77..147
     Name 80..84 "fall"
     ParamList 84..92
       Param 85..91
         Name 85..86 "n"
         TypeRef 88..91 "int"
     TypeRef 96..99 "int"
-    IfExpr 102..139
+    IfExpr 102..147
       BinaryExpr 105..112
         NameRef 105..106 "n"
         LiteralExpr 109..112 "100"
-      Block 113..118
-        LiteralExpr 115..116 "0"
-      Block 124..139
-        CallExpr 126..137
-          NameRef 126..130 "fall"
-          ArgList 130..137
-            BinaryExpr 131..136
-              NameRef 131..132 "n"
-              LiteralExpr 135..136 "1"
-  FnItem 140..167
-    Name 143..148 "falls"
-    ParamList 148..150 "()"
-    TypeRef 154..157 "int"
-    CallExpr 160..167
-      NameRef 160..164 "fall"
-      ArgList 164..167
-        LiteralExpr 165..166 "5"
-  FnItem 168..211
-    Name 171..175 "swap"
-    ParamList 175..191
-      Param 176..182
-        Name 176..177 "a"
-        TypeRef 179..182 "int"
+      Block 113..122
+        LiteralExpr 119..120 "0"
+      Block 128..147
+        CallExpr 134..145
+          NameRef 134..138 "fall"
+          ArgList 138..145
+            BinaryExpr 139..144
+              NameRef 139..140 "n"
+              LiteralExpr 143..144 "1"
+  FnItem 148..175
+    Name 151..156 "falls"
+    ParamList 156..158 "()"
+    TypeRef 162..165 "int"
+    CallExpr 168..175
+      NameRef 168..172 "fall"
+      ArgList 172..175
+        LiteralExpr 173..174 "5"
+  FnItem 176..219
+    Name 179..183 "swap"
+    ParamList 183..199
       Param 184..190
-        Name 184..185 "b"
+        Name 184..185 "a"
         TypeRef 187..190 "int"
-    TypeRef 195..198 "int"
-    CallExpr 201..211
-      NameRef 201..205 "swap"
-      ArgList 205..211
-        NameRef 206..207 "b"
-        NameRef 209..210 "a"
-  FnItem 212..244
-    Name 215..222 "swapped"
-    ParamList 222..224 "()"
-    TypeRef 228..231 "int"
-    CallExpr 234..244
-      NameRef 234..238 "swap"
-      ArgList 238..244
-        LiteralExpr 239..240 "1"
-        LiteralExpr 242..243 "2"
-  FnItem 245..270
-    Name 248..252 "spin"
-    ParamList 252..254 "()"
-    TypeRef 258..261 "int"
-    CallExpr 264..270
-      NameRef 264..268 "spin"
-      ArgList 268..270 "()"
-  FnItem 271..322
-    Name 274..278 "both"
-    ParamList 278..294
-      Param 279..285
-        Name 279..280 "a"
-        TypeRef 282..285 "int"
+      Param 192..198
+        Name 192..193 "b"
+        TypeRef 195..198 "int"
+    TypeRef 203..206 "int"
+    CallExpr 209..219
+      NameRef 209..213 "swap"
+      ArgList 213..219
+        NameRef 214..215 "b"
+        NameRef 217..218 "a"
+  FnItem 220..252
+    Name 223..230 "swapped"
+    ParamList 230..232 "()"
+    TypeRef 236..239 "int"
+    CallExpr 242..252
+      NameRef 242..246 "swap"
+      ArgList 246..252
+        LiteralExpr 247..248 "1"
+        LiteralExpr 250..251 "2"
+  FnItem 253..278
+    Name 256..260 "spin"
+    ParamList 260..262 "()"
+    TypeRef 266..269 "int"
+    CallExpr 272..278
+      NameRef 272..276 "spin"
+      ArgList 276..278 "()"
+  FnItem 279..330
+    Name 282..286 "both"
+    ParamList 286..302
       Param 287..293
-        Name 287..288 "b"
+        Name 287..288 "a"
         TypeRef 290..293 "int"
-    TypeRef 298..301 "int"
-    CallExpr 304..322
-      NameRef 304..308 "both"
-      ArgList 308..322
-        BinaryExpr 309..314
-          NameRef 309..310 "a"
-          LiteralExpr 313..314 "1"
-        BinaryExpr 316..321
-          NameRef 316..317 "b"
-          LiteralExpr 320..321 "1"
-  FnItem 323..353
-    Name 326..331 "boths"
-    ParamList 331..333 "()"
-    TypeRef 337..340 "int"
-    CallExpr 343..353
-      NameRef 343..347 "both"
-      ArgList 347..353
-        LiteralExpr 348..349 "0"
-        LiteralExpr 351..352 "0"
-  FnItem 354..459
-    Name 357..363 "either"
-    ParamList 363..371
-      Param 364..370
-        Name 364..365 "n"
-        TypeRef 367..370 "int"
-    TypeRef 375..378 "int"
-    IfExpr 381..459
-      BinaryExpr 384..390
-        NameRef 384..385 "n"
-        LiteralExpr 388..390 "10"
-      Block 391..396
-        LiteralExpr 393..394 "0"
-      Block 402..459
-        IfExpr 404..457
-          BinaryExpr 407..412
-            NameRef 407..408 "n"
-            LiteralExpr 411..412 "0"
-          Block 413..418
-            LiteralExpr 415..416 "0"
-          Block 424..457
-            BinaryExpr 426..455
-              CallExpr 426..439
-                NameRef 426..432 "either"
-                ArgList 432..439
-                  BinaryExpr 433..438
-                    NameRef 433..434 "n"
-                    LiteralExpr 437..438 "1"
-              CallExpr 442..455
-                NameRef 442..448 "either"
-                ArgList 448..455
-                  BinaryExpr 449..454
-                    NameRef 449..450 "n"
-                    LiteralExpr 453..454 "1"
-  FnItem 460..491
-    Name 463..470 "eithers"
-    ParamList 470..472 "()"
-    TypeRef 476..479 "int"
-    CallExpr 482..491
-      NameRef 482..488 "either"
-      ArgList 488..491
-        LiteralExpr 489..490 "5"
-  FnItem 492..524
-    Name 495..499 "ping"
-    ParamList 499..507
-      Param 500..506
-        Name 500..501 "n"
-        TypeRef 503..506 "int"
-    TypeRef 511..514 "int"
-    CallExpr 517..524
-      NameRef 517..521 "pong"
-      ArgList 521..524
-        NameRef 522..523 "n"
-  FnItem 525..557
-    Name 528..532 "pong"
-    ParamList 532..540
-      Param 533..539
-        Name 533..534 "n"
-        TypeRef 536..539 "int"
-    TypeRef 544..547 "int"
-    CallExpr 550..557
-      NameRef 550..554 "ping"
-      ArgList 554..557
-        NameRef 555..556 "n"
-  FnItem 558..585
-    Name 561..566 "pings"
-    ParamList 566..568 "()"
-    TypeRef 572..575 "int"
-    CallExpr 578..585
-      NameRef 578..582 "ping"
-      ArgList 582..585
-        LiteralExpr 583..584 "3"
-
-== formatted ==
-fn forever(n: int) -> int = forever(n + 1)
-fn too_deep() -> int = forever(0)
-fn fall(n: int) -> int = if n > 100 {
-    0
-} else {
-    fall(n - 1)
-}
-fn falls() -> int = fall(5)
-fn swap(a: int, b: int) -> int = swap(b, a)
-fn swapped() -> int = swap(1, 2)
-fn spin() -> int = spin()
-fn both(a: int, b: int) -> int = both(a + 1, b + 1)
-fn boths() -> int = both(0, 0)
-fn either(n: int) -> int = if n > 10 {
-    0
-} else {
-    if n < 0 {
-        0
-    } else {
-        either(n - 1) + either(n + 1)
-    }
-}
-fn eithers() -> int = either(5)
-fn ping(n: int) -> int = pong(n)
-fn pong(n: int) -> int = ping(n)
-fn pings() -> int = ping(3)
+      Param 295..301
+        Name 295..296 "b"
+        TypeRef 298..301 "int"
+    TypeRef 306..309 "int"
+    CallExpr 312..330
+      NameRef 312..316 "both"
+      ArgList 316..330
+        BinaryExpr 317..322
+          NameRef 317..318 "a"
+          LiteralExpr 321..322 "1"
+        BinaryExpr 324..329
+          NameRef 324..325 "b"
+          LiteralExpr 328..329 "1"
+  FnItem 331..361
+    Name 334..339 "boths"
+    ParamList 339..341 "()"
+    TypeRef 345..348 "int"
+    CallExpr 351..361
+      NameRef 351..355 "both"
+      ArgList 355..361
+        LiteralExpr 356..357 "0"
+        LiteralExpr 359..360 "0"
+  FnItem 362..499
+    Name 365..371 "either"
+    ParamList 371..379
+      Param 372..378
+        Name 372..373 "n"
+        TypeRef 375..378 "int"
+    TypeRef 383..386 "int"
+    IfExpr 389..499
+      BinaryExpr 392..398
+        NameRef 392..393 "n"
+        LiteralExpr 396..398 "10"
+      Block 399..408
+        LiteralExpr 405..406 "0"
+      Block 414..499
+        IfExpr 420..497
+          BinaryExpr 423..428
+            NameRef 423..424 "n"
+            LiteralExpr 427..428 "0"
+          Block 429..446
+            LiteralExpr 439..440 "0"
+          Block 452..497
+            BinaryExpr 462..491
+              CallExpr 462..475
+                NameRef 462..468 "either"
+                ArgList 468..475
+                  BinaryExpr 469..474
+                    NameRef 469..470 "n"
+                    LiteralExpr 473..474 "1"
+              CallExpr 478..491
+                NameRef 478..484 "either"
+                ArgList 484..491
+                  BinaryExpr 485..490
+                    NameRef 485..486 "n"
+                    LiteralExpr 489..490 "1"
+  FnItem 500..531
+    Name 503..510 "eithers"
+    ParamList 510..512 "()"
+    TypeRef 516..519 "int"
+    CallExpr 522..531
+      NameRef 522..528 "either"
+      ArgList 528..531
+        LiteralExpr 529..530 "5"
+  FnItem 532..564
+    Name 535..539 "ping"
+    ParamList 539..547
+      Param 540..546
+        Name 540..541 "n"
+        TypeRef 543..546 "int"
+    TypeRef 551..554 "int"
+    CallExpr 557..564
+      NameRef 557..561 "pong"
+      ArgList 561..564
+        NameRef 562..563 "n"
+  FnItem 565..597
+    Name 568..572 "pong"
+    ParamList 572..580
+      Param 573..579
+        Name 573..574 "n"
+        TypeRef 576..579 "int"
+    TypeRef 584..587 "int"
+    CallExpr 590..597
+      NameRef 590..594 "ping"
+      ArgList 594..597
+        NameRef 595..596 "n"
+  FnItem 598..625
+    Name 601..606 "pings"
+    ParamList 606..608 "()"
+    TypeRef 612..615 "int"
+    CallExpr 618..625
+      NameRef 618..622 "ping"
+      ArgList 622..625
+        LiteralExpr 623..624 "3"

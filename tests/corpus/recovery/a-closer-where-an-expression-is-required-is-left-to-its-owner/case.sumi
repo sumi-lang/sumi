@@ -1,2 +1,6 @@
-fn prefix_operand() { !() }
-fn argument() { g(- ) == x }
+fn prefix_operand() {
+    !()
+}
+fn argument() {
+    g(- ) == x
+}

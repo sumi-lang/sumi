@@ -1,25 +1,21 @@
 == tree ==
-SourceFile! 0..28
-  FnItem! 0..28
+SourceFile! 0..33
+  FnItem! 0..32
     Name 3..4 "f"
     ParamList 4..6 "()"
-    Block! 7..28
-      BinaryExpr! 9..12
-        NameRef 9..10 "a"
-      LetStmt 13..22
-        Name 17..18 "b"
-        LiteralExpr 21..22 "1"
-      Error! 23..26 "= 2"
+    Block! 7..32
+      BinaryExpr! 13..16
+        NameRef 13..14 "a"
+      LetStmt 17..26
+        Name 21..22 "b"
+        LiteralExpr 25..26 "1"
+      Error! 27..30 "= 2"
 
 == evidence ==
-ExpectedExpression at 13
-ExpectedStatement at 23
+ExpectedExpression at 17
+ExpectedStatement at 27
 
 == diagnostics ==
-error[syntax/expected-expression] 1:14: expected an expression
-error[syntax/expected-statement] 1:24..1:25 "=": expected a statement
-  at 1:24..1:27 "= 2": skipped while recovering
-
-== formatted ==
-fn f() {
-    a + let b = 1 = 2 }
+error[syntax/expected-expression] 2:9: expected an expression
+error[syntax/expected-statement] 2:19..2:20 "=": expected a statement
+  at 2:19..2:22 "= 2": skipped while recovering

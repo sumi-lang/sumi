@@ -1,5 +1,5 @@
 == tree ==
-SourceFile 0..1489
+SourceFile 0..1628
   FnItem 0..40
     Name 3..17 "divide_by_zero"
     ParamList 17..19 "()"
@@ -73,11 +73,11 @@ SourceFile 0..1489
         NameRef 275..281 "spread"
         ArgList 281..284
           LiteralExpr 282..283 "6"
-  FnItem 285..427
+  FnItem 285..451
     Name 288..298 "statements"
     ParamList 298..300 "()"
     TypeRef 304..307 "int"
-    Block 308..427
+    Block 308..451
       LetStmt 314..323
         Name 318..319 "a"
         LiteralExpr 322..323 "1"
@@ -99,378 +99,296 @@ SourceFile 0..1489
               LiteralExpr 373..374 "0"
             LiteralExpr 378..379 "0"
           LiteralExpr 383..387 "true"
-      IfExpr 392..425
+      IfExpr 392..449
         BinaryExpr 395..400
           NameRef 395..396 "a"
           NameRef 399..400 "b"
-        Block 401..410
-          BinaryExpr 403..408
-            NameRef 403..404 "a"
-            NameRef 407..408 "b"
-        Block 416..425
-          BinaryExpr 418..423
-            NameRef 418..419 "b"
-            NameRef 422..423 "a"
-  FnItem 428..526
-    Name 431..442 "inner_guard"
-    ParamList 442..458
-      Param 443..449
-        Name 443..444 "n"
-        TypeRef 446..449 "int"
-      Param 451..457
-        Name 451..452 "m"
-        TypeRef 454..457 "int"
-    TypeRef 462..465 "int"
-    Block 466..526
-      IfExpr 472..524
-        BinaryExpr 475..480
-          NameRef 475..476 "n"
-          LiteralExpr 479..480 "0"
-        Block 481..507
-          IfExpr 483..502
-            BinaryExpr 486..492
-              NameRef 486..487 "m"
-              LiteralExpr 491..492 "0"
-            Block 493..502
-              DiscardStmt 495..500
-                LiteralExpr 499..500 "1"
-          LiteralExpr 504..505 "0"
-        Block 513..524
-          BinaryExpr 515..522
-            LiteralExpr 515..518 "100"
-            NameRef 521..522 "m"
-  FnItem 527..591
-    Name 530..542 "inner_guards"
-    ParamList 542..544 "()"
-    TypeRef 548..551 "int"
-    BinaryExpr 554..591
-      CallExpr 554..571
-        NameRef 554..565 "inner_guard"
-        ArgList 565..571
-          LiteralExpr 566..567 "0"
-          LiteralExpr 569..570 "0"
-      CallExpr 574..591
-        NameRef 574..585 "inner_guard"
-        ArgList 585..591
-          LiteralExpr 586..587 "1"
-          LiteralExpr 589..590 "5"
-  FnItem 592..627
-    Name 595..602 "inverse"
-    ParamList 602..610
-      Param 603..609
-        Name 603..604 "d"
-        TypeRef 606..609 "int"
-    TypeRef 614..617 "int"
-    BinaryExpr 620..627
-      LiteralExpr 620..623 "100"
-      NameRef 626..627 "d"
-  FnItem 628..713
-    Name 631..639 "inverses"
-    ParamList 639..641 "()"
-    TypeRef 645..648 "int"
-    BinaryExpr 651..713
-      BinaryExpr 651..700
-        BinaryExpr 651..687
-          BinaryExpr 651..674
-            CallExpr 651..661
-              NameRef 651..658 "inverse"
-              ArgList 658..661
-                LiteralExpr 659..660 "0"
-            CallExpr 664..674
-              NameRef 664..671 "inverse"
-              ArgList 671..674
-                LiteralExpr 672..673 "0"
-          CallExpr 677..687
-            NameRef 677..684 "inverse"
-            ArgList 684..687
-              LiteralExpr 685..686 "0"
-        CallExpr 690..700
-          NameRef 690..697 "inverse"
-          ArgList 697..700
-            LiteralExpr 698..699 "0"
-      CallExpr 703..713
-        NameRef 703..710 "inverse"
-        ArgList 710..713
-          LiteralExpr 711..712 "0"
-  FnItem 714..795
-    Name 717..725 "compared"
-    ParamList 725..733
-      Param 726..732
-        Name 726..727 "d"
-        TypeRef 729..732 "int"
-    TypeRef 737..740 "int"
-    Block 741..795
-      LetStmt 747..756
-        Name 751..752 "z"
-        LiteralExpr 755..756 "0"
-      IfExpr 761..793
-        BinaryExpr 764..770
-          NameRef 764..765 "d"
-          NameRef 769..770 "z"
-        Block 771..776
-          LiteralExpr 773..774 "1"
-        Block 782..793
-          BinaryExpr 784..791
-            LiteralExpr 784..787 "100"
-            NameRef 790..791 "z"
-  FnItem 796..831
-    Name 799..808 "compareds"
-    ParamList 808..810 "()"
-    TypeRef 814..817 "int"
-    CallExpr 820..831
-      NameRef 820..828 "compared"
-      ArgList 828..831
-        LiteralExpr 829..830 "1"
-  FnItem 832..890
-    Name 835..840 "fixed"
-    ParamList 840..848
-      Param 841..847
-        Name 841..842 "d"
-        TypeRef 844..847 "int"
-    TypeRef 852..855 "int"
-    IfExpr 858..890
-      BinaryExpr 861..867
-        NameRef 861..862 "d"
-        LiteralExpr 866..867 "0"
-      Block 868..879
-        BinaryExpr 870..877
-          LiteralExpr 870..873 "100"
-          NameRef 876..877 "d"
-      Block 885..890
-        LiteralExpr 887..888 "1"
-  FnItem 891..943
-    Name 894..900 "fixeds"
-    ParamList 900..902 "()"
-    TypeRef 906..909 "int"
-    BinaryExpr 912..943
-      BinaryExpr 912..932
-        CallExpr 912..921
-          NameRef 912..917 "fixed"
-          ArgList 917..921
-            PrefixExpr 918..920
-              LiteralExpr 919..920 "5"
-        CallExpr 924..932
-          NameRef 924..929 "fixed"
-          ArgList 929..932
-            LiteralExpr 930..931 "0"
-      CallExpr 935..943
-        NameRef 935..940 "fixed"
-        ArgList 940..943
-          LiteralExpr 941..942 "5"
-  FnItem 944..977
-    Name 947..952 "arity"
-    ParamList 952..960
-      Param 953..959
-        Name 953..954 "d"
-        TypeRef 956..959 "int"
-    TypeRef 964..967 "int"
-    BinaryExpr 970..977
-      LiteralExpr 970..973 "100"
-      NameRef 976..977 "d"
-  FnItem 978..1015
-    Name 981..992 "wrong_arity"
-    ParamList 992..994 "()"
-    TypeRef 998..1001 "int"
-    CallExpr 1004..1015
-      NameRef 1004..1009 "arity"
-      ArgList 1009..1015
-        LiteralExpr 1010..1011 "0"
-        LiteralExpr 1013..1014 "1"
-  FnItem 1016..1049
-    Name 1019..1024 "plain"
-    ParamList 1024..1032
-      Param 1025..1031
-        Name 1025..1026 "k"
-        TypeRef 1028..1031 "int"
-    TypeRef 1036..1039 "int"
-    CallExpr 1042..1049
-      NameRef 1042..1046 "half"
-      ArgList 1046..1049
-        NameRef 1047..1048 "k"
-  FnItem 1050..1079
-    Name 1053..1059 "plains"
-    ParamList 1059..1061 "()"
-    TypeRef 1065..1068 "int"
-    CallExpr 1071..1079
-      NameRef 1071..1076 "plain"
-      ArgList 1076..1079
-        LiteralExpr 1077..1078 "0"
-  FnItem 1080..1127
-    Name 1083..1088 "bound"
-    ParamList 1088..1090 "()"
-    TypeRef 1094..1097 "int"
-    Block 1098..1127
-      LetStmt 1104..1113
-        Name 1108..1109 "z"
-        LiteralExpr 1112..1113 "0"
-      CallExpr 1118..1125
-        NameRef 1118..1122 "half"
-        ArgList 1122..1125
-          NameRef 1123..1124 "z"
-  FnItem 1128..1188
-    Name 1131..1138 "guarded"
-    ParamList 1138..1146
-      Param 1139..1145
-        Name 1139..1140 "k"
-        TypeRef 1142..1145 "int"
-    TypeRef 1150..1153 "int"
-    IfExpr 1156..1188
-      BinaryExpr 1159..1165
-        NameRef 1159..1160 "k"
-        LiteralExpr 1164..1165 "0"
-      Block 1166..1177
-        CallExpr 1168..1175
-          NameRef 1168..1172 "half"
-          ArgList 1172..1175
-            NameRef 1173..1174 "k"
-      Block 1183..1188
-        LiteralExpr 1185..1186 "1"
-  FnItem 1189..1222
-    Name 1192..1200 "guardeds"
-    ParamList 1200..1202 "()"
-    TypeRef 1206..1209 "int"
-    CallExpr 1212..1222
-      NameRef 1212..1219 "guarded"
-      ArgList 1219..1222
-        LiteralExpr 1220..1221 "0"
-  FnItem 1223..1370
-    Name 1226..1233 "chained"
-    ParamList 1233..1235 "()"
-    TypeRef 1239..1242 "int"
-    Block 1243..1370
-      LetStmt 1249..1258
-        Name 1253..1254 "a"
-        LiteralExpr 1257..1258 "0"
-      LetStmt 1263..1272
-        Name 1267..1268 "b"
-        NameRef 1271..1272 "a"
-      LetStmt 1277..1286
-        Name 1281..1282 "c"
-        NameRef 1285..1286 "b"
-      LetStmt 1291..1300
-        Name 1295..1296 "d"
-        NameRef 1299..1300 "c"
-      LetStmt 1305..1314
-        Name 1309..1310 "e"
-        NameRef 1313..1314 "d"
-      LetStmt 1319..1328
-        Name 1323..1324 "f"
-        NameRef 1327..1328 "e"
-      LetStmt 1333..1342
-        Name 1337..1338 "g"
-        NameRef 1341..1342 "f"
-      LetStmt 1347..1356
-        Name 1351..1352 "h"
-        NameRef 1355..1356 "g"
-      BinaryExpr 1361..1368
-        LiteralExpr 1361..1364 "100"
-        NameRef 1367..1368 "h"
-  FnItem 1371..1405
-    Name 1374..1381 "divides"
-    ParamList 1381..1389
-      Param 1382..1388
-        Name 1382..1383 "n"
-        TypeRef 1385..1388 "int"
-    TypeRef 1393..1396 "int"
-    BinaryExpr 1399..1405
-      LiteralExpr 1399..1401 "10"
-      NameRef 1404..1405 "n"
-  FnItem 1406..1488
-    Name 1409..1421 "under_a_hole"
-    ParamList 1421..1423 "()"
-    TypeRef 1427..1430 "int"
-    Block 1431..1488
-      LetStmt 1437..1446
-        Name 1441..1442 "x"
-        LiteralExpr 1445..1446 "0"
-      IfExpr 1451..1486
-        NameRef 1454..1460 "absent"
-        Block 1461..1475
-          CallExpr 1463..1473
-            NameRef 1463..1470 "divides"
-            ArgList 1470..1473
-              NameRef 1471..1472 "x"
-        Block 1481..1486
-          LiteralExpr 1483..1484 "1"
-
-== formatted ==
-fn divide_by_zero() -> int = 1 / (2 - 2)
-fn remainder_by_zero() -> int = 7 % 0
-fn by_parameter(n: int) -> int = 100 / n
-fn through_a_call() -> int = 1 + by_parameter(0)
-fn half(d: int) -> int = 100 / d
-fn spread(k: int) -> int = half(k - 3)
-fn spreads() -> int = spread(0) + spread(6)
-fn statements() -> int {
-    let a = 1
-    let b = a + 1
-    let a = b * 10
-    _ = a / 0 == 0 || true
-    if a > b {
-        a - b
-    } else {
-        b - a
-    }
-}
-fn inner_guard(n: int, m: int) -> int {
-    if n > 0 {
-        if m != 0 {
-            _ = 1
-        }
-        0
-    } else {
-        100 / m
-    }
-}
-fn inner_guards() -> int = inner_guard(0, 0) + inner_guard(1, 5)
-fn inverse(d: int) -> int = 100 / d
-fn inverses() -> int = inverse(0) + inverse(0) + inverse(0) + inverse(0) + inverse(0)
-fn compared(d: int) -> int {
-    let z = 0
-    if d == z {
-        1
-    } else {
-        100 / z
-    }
-}
-fn compareds() -> int = compared(1)
-fn fixed(d: int) -> int = if d == 0 {
-    100 / d
-} else {
-    1
-}
-fn fixeds() -> int = fixed(-5) + fixed(0) + fixed(5)
-fn arity(d: int) -> int = 100 / d
-fn wrong_arity() -> int = arity(0, 1)
-fn plain(k: int) -> int = half(k)
-fn plains() -> int = plain(0)
-fn bound() -> int {
-    let z = 0
-    half(z)
-}
-fn guarded(k: int) -> int = if k == 0 {
-    half(k)
-} else {
-    1
-}
-fn guardeds() -> int = guarded(0)
-fn chained() -> int {
-    let a = 0
-    let b = a
-    let c = b
-    let d = c
-    let e = d
-    let f = e
-    let g = f
-    let h = g
-    100 / h
-}
-fn divides(n: int) -> int = 10 / n
-fn under_a_hole() -> int {
-    let x = 0
-    if absent {
-        divides(x)
-    } else {
-        1
-    }
-}
+        Block 401..422
+          BinaryExpr 411..416
+            NameRef 411..412 "a"
+            NameRef 415..416 "b"
+        Block 428..449
+          BinaryExpr 438..443
+            NameRef 438..439 "b"
+            NameRef 442..443 "a"
+  FnItem 452..601
+    Name 455..466 "inner_guard"
+    ParamList 466..482
+      Param 467..473
+        Name 467..468 "n"
+        TypeRef 470..473 "int"
+      Param 475..481
+        Name 475..476 "m"
+        TypeRef 478..481 "int"
+    TypeRef 486..489 "int"
+    Block 490..601
+      IfExpr 496..599
+        BinaryExpr 499..504
+          NameRef 499..500 "n"
+          LiteralExpr 503..504 "0"
+        Block 505..570
+          IfExpr 515..554
+            BinaryExpr 518..524
+              NameRef 518..519 "m"
+              LiteralExpr 523..524 "0"
+            Block 525..554
+              DiscardStmt 539..544
+                LiteralExpr 543..544 "1"
+          LiteralExpr 563..564 "0"
+        Block 576..599
+          BinaryExpr 586..593
+            LiteralExpr 586..589 "100"
+            NameRef 592..593 "m"
+  FnItem 602..666
+    Name 605..617 "inner_guards"
+    ParamList 617..619 "()"
+    TypeRef 623..626 "int"
+    BinaryExpr 629..666
+      CallExpr 629..646
+        NameRef 629..640 "inner_guard"
+        ArgList 640..646
+          LiteralExpr 641..642 "0"
+          LiteralExpr 644..645 "0"
+      CallExpr 649..666
+        NameRef 649..660 "inner_guard"
+        ArgList 660..666
+          LiteralExpr 661..662 "1"
+          LiteralExpr 664..665 "5"
+  FnItem 667..702
+    Name 670..677 "inverse"
+    ParamList 677..685
+      Param 678..684
+        Name 678..679 "d"
+        TypeRef 681..684 "int"
+    TypeRef 689..692 "int"
+    BinaryExpr 695..702
+      LiteralExpr 695..698 "100"
+      NameRef 701..702 "d"
+  FnItem 703..788
+    Name 706..714 "inverses"
+    ParamList 714..716 "()"
+    TypeRef 720..723 "int"
+    BinaryExpr 726..788
+      BinaryExpr 726..775
+        BinaryExpr 726..762
+          BinaryExpr 726..749
+            CallExpr 726..736
+              NameRef 726..733 "inverse"
+              ArgList 733..736
+                LiteralExpr 734..735 "0"
+            CallExpr 739..749
+              NameRef 739..746 "inverse"
+              ArgList 746..749
+                LiteralExpr 747..748 "0"
+          CallExpr 752..762
+            NameRef 752..759 "inverse"
+            ArgList 759..762
+              LiteralExpr 760..761 "0"
+        CallExpr 765..775
+          NameRef 765..772 "inverse"
+          ArgList 772..775
+            LiteralExpr 773..774 "0"
+      CallExpr 778..788
+        NameRef 778..785 "inverse"
+        ArgList 785..788
+          LiteralExpr 786..787 "0"
+  FnItem 789..894
+    Name 792..800 "compared"
+    ParamList 800..808
+      Param 801..807
+        Name 801..802 "d"
+        TypeRef 804..807 "int"
+    TypeRef 812..815 "int"
+    Block 816..894
+      LetStmt 822..831
+        Name 826..827 "z"
+        LiteralExpr 830..831 "0"
+      IfExpr 836..892
+        BinaryExpr 839..845
+          NameRef 839..840 "d"
+          NameRef 844..845 "z"
+        Block 846..863
+          LiteralExpr 856..857 "1"
+        Block 869..892
+          BinaryExpr 879..886
+            LiteralExpr 879..882 "100"
+            NameRef 885..886 "z"
+  FnItem 895..930
+    Name 898..907 "compareds"
+    ParamList 907..909 "()"
+    TypeRef 913..916 "int"
+    CallExpr 919..930
+      NameRef 919..927 "compared"
+      ArgList 927..930
+        LiteralExpr 928..929 "1"
+  FnItem 931..997
+    Name 934..939 "fixed"
+    ParamList 939..947
+      Param 940..946
+        Name 940..941 "d"
+        TypeRef 943..946 "int"
+    TypeRef 951..954 "int"
+    IfExpr 957..997
+      BinaryExpr 960..966
+        NameRef 960..961 "d"
+        LiteralExpr 965..966 "0"
+      Block 967..982
+        BinaryExpr 973..980
+          LiteralExpr 973..976 "100"
+          NameRef 979..980 "d"
+      Block 988..997
+        LiteralExpr 994..995 "1"
+  FnItem 998..1050
+    Name 1001..1007 "fixeds"
+    ParamList 1007..1009 "()"
+    TypeRef 1013..1016 "int"
+    BinaryExpr 1019..1050
+      BinaryExpr 1019..1039
+        CallExpr 1019..1028
+          NameRef 1019..1024 "fixed"
+          ArgList 1024..1028
+            PrefixExpr 1025..1027
+              LiteralExpr 1026..1027 "5"
+        CallExpr 1031..1039
+          NameRef 1031..1036 "fixed"
+          ArgList 1036..1039
+            LiteralExpr 1037..1038 "0"
+      CallExpr 1042..1050
+        NameRef 1042..1047 "fixed"
+        ArgList 1047..1050
+          LiteralExpr 1048..1049 "5"
+  FnItem 1051..1084
+    Name 1054..1059 "arity"
+    ParamList 1059..1067
+      Param 1060..1066
+        Name 1060..1061 "d"
+        TypeRef 1063..1066 "int"
+    TypeRef 1071..1074 "int"
+    BinaryExpr 1077..1084
+      LiteralExpr 1077..1080 "100"
+      NameRef 1083..1084 "d"
+  FnItem 1085..1122
+    Name 1088..1099 "wrong_arity"
+    ParamList 1099..1101 "()"
+    TypeRef 1105..1108 "int"
+    CallExpr 1111..1122
+      NameRef 1111..1116 "arity"
+      ArgList 1116..1122
+        LiteralExpr 1117..1118 "0"
+        LiteralExpr 1120..1121 "1"
+  FnItem 1123..1156
+    Name 1126..1131 "plain"
+    ParamList 1131..1139
+      Param 1132..1138
+        Name 1132..1133 "k"
+        TypeRef 1135..1138 "int"
+    TypeRef 1143..1146 "int"
+    CallExpr 1149..1156
+      NameRef 1149..1153 "half"
+      ArgList 1153..1156
+        NameRef 1154..1155 "k"
+  FnItem 1157..1186
+    Name 1160..1166 "plains"
+    ParamList 1166..1168 "()"
+    TypeRef 1172..1175 "int"
+    CallExpr 1178..1186
+      NameRef 1178..1183 "plain"
+      ArgList 1183..1186
+        LiteralExpr 1184..1185 "0"
+  FnItem 1187..1234
+    Name 1190..1195 "bound"
+    ParamList 1195..1197 "()"
+    TypeRef 1201..1204 "int"
+    Block 1205..1234
+      LetStmt 1211..1220
+        Name 1215..1216 "z"
+        LiteralExpr 1219..1220 "0"
+      CallExpr 1225..1232
+        NameRef 1225..1229 "half"
+        ArgList 1229..1232
+          NameRef 1230..1231 "z"
+  FnItem 1235..1303
+    Name 1238..1245 "guarded"
+    ParamList 1245..1253
+      Param 1246..1252
+        Name 1246..1247 "k"
+        TypeRef 1249..1252 "int"
+    TypeRef 1257..1260 "int"
+    IfExpr 1263..1303
+      BinaryExpr 1266..1272
+        NameRef 1266..1267 "k"
+        LiteralExpr 1271..1272 "0"
+      Block 1273..1288
+        CallExpr 1279..1286
+          NameRef 1279..1283 "half"
+          ArgList 1283..1286
+            NameRef 1284..1285 "k"
+      Block 1294..1303
+        LiteralExpr 1300..1301 "1"
+  FnItem 1304..1337
+    Name 1307..1315 "guardeds"
+    ParamList 1315..1317 "()"
+    TypeRef 1321..1324 "int"
+    CallExpr 1327..1337
+      NameRef 1327..1334 "guarded"
+      ArgList 1334..1337
+        LiteralExpr 1335..1336 "0"
+  FnItem 1338..1485
+    Name 1341..1348 "chained"
+    ParamList 1348..1350 "()"
+    TypeRef 1354..1357 "int"
+    Block 1358..1485
+      LetStmt 1364..1373
+        Name 1368..1369 "a"
+        LiteralExpr 1372..1373 "0"
+      LetStmt 1378..1387
+        Name 1382..1383 "b"
+        NameRef 1386..1387 "a"
+      LetStmt 1392..1401
+        Name 1396..1397 "c"
+        NameRef 1400..1401 "b"
+      LetStmt 1406..1415
+        Name 1410..1411 "d"
+        NameRef 1414..1415 "c"
+      LetStmt 1420..1429
+        Name 1424..1425 "e"
+        NameRef 1428..1429 "d"
+      LetStmt 1434..1443
+        Name 1438..1439 "f"
+        NameRef 1442..1443 "e"
+      LetStmt 1448..1457
+        Name 1452..1453 "g"
+        NameRef 1456..1457 "f"
+      LetStmt 1462..1471
+        Name 1466..1467 "h"
+        NameRef 1470..1471 "g"
+      BinaryExpr 1476..1483
+        LiteralExpr 1476..1479 "100"
+        NameRef 1482..1483 "h"
+  FnItem 1486..1520
+    Name 1489..1496 "divides"
+    ParamList 1496..1504
+      Param 1497..1503
+        Name 1497..1498 "n"
+        TypeRef 1500..1503 "int"
+    TypeRef 1508..1511 "int"
+    BinaryExpr 1514..1520
+      LiteralExpr 1514..1516 "10"
+      NameRef 1519..1520 "n"
+  FnItem 1521..1627
+    Name 1524..1536 "under_a_hole"
+    ParamList 1536..1538 "()"
+    TypeRef 1542..1545 "int"
+    Block 1546..1627
+      LetStmt 1552..1561
+        Name 1556..1557 "x"
+        LiteralExpr 1560..1561 "0"
+      IfExpr 1566..1625
+        NameRef 1569..1575 "absent"
+        Block 1576..1602
+          CallExpr 1586..1596
+            NameRef 1586..1593 "divides"
+            ArgList 1593..1596
+              NameRef 1594..1595 "x"
+        Block 1608..1625
+          LiteralExpr 1618..1619 "1"

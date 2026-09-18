@@ -1,32 +1,24 @@
 == tree ==
-SourceFile! 0..56
-  FnItem! 0..22
+SourceFile! 0..64
+  FnItem! 0..26
     Name 3..10 "missing"
     ParamList 10..12 "()"
-    Block! 13..22
-      IfExpr! 15..20
-        Block 18..20 "{}"
-  FnItem! 23..55
-    Name 26..39 "two_on_a_line"
-    ParamList 39..41 "()"
-    Block! 42..55
-      IfExpr! 44..53
-        LiteralExpr 47..48 "1"
-        Error! 49..50 "1"
-        Block 51..53 "{}"
+    Block! 13..26
+      IfExpr! 19..24
+        Block 22..24 "{}"
+  FnItem! 27..63
+    Name 30..43 "two_on_a_line"
+    ParamList 43..45 "()"
+    Block! 46..63
+      IfExpr! 52..61
+        LiteralExpr 55..56 "1"
+        Error! 57..58 "1"
+        Block 59..61 "{}"
 
 == evidence ==
-ExpectedExpression at 18
-Expected(LBrace) at 49
+ExpectedExpression at 22
+Expected(LBrace) at 57
 
 == diagnostics ==
-error[syntax/expected-expression] 1:19: expected an expression
-error[syntax/expected-token] 2:27..2:28 "1": expected `{`
-
-== formatted ==
-fn missing() {
-    if {}
-}
-fn two_on_a_line() {
-    if 1 1 {}
-}
+error[syntax/expected-expression] 2:8: expected an expression
+error[syntax/expected-token] 5:10..5:11 "1": expected `{`

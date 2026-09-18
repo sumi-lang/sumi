@@ -1,85 +1,74 @@
 == tree ==
-SourceFile! 0..175
-  FnItem! 0..26
+SourceFile! 0..195
+  FnItem! 0..30
     Name 3..12 "in_parens"
     ParamList 12..14 "()"
-    Block! 15..26
-      ParenExpr! 17..19
-        NameRef 18..19 "a"
-      Error! 20..24 "= b)"
-  FnItem! 27..51
-    Name 30..41 "missing_rhs"
-    ParamList 41..43 "()"
-    Block! 44..51
-      AssignStmt! 46..49
-        NameRef 46..47 "x"
-  FnItem! 52..76
-    Name 55..66 "missing_lhs"
-    ParamList 66..68 "()"
-    Block! 69..76
-      Error! 71..74 "= x"
-  FnItem! 77..111
-    Name 80..93 "two_on_a_line"
-    ParamList 93..95 "()"
-    Block! 96..111
-      AssignStmt 98..103
-        NameRef 98..99 "x"
-        LiteralExpr 102..103 "1"
-      AssignStmt 104..109
-        NameRef 104..105 "y"
-        LiteralExpr 108..109 "2"
-  FnItem! 112..138
-    Name 115..122 "chained"
-    ParamList 122..124 "()"
-    Block! 125..138
-      AssignStmt 127..132
-        NameRef 127..128 "x"
-        NameRef 131..132 "y"
-      Error! 133..136 "= z"
-  FnItem! 139..174
-    Name 142..158 "rhs_on_next_line"
-    ParamList 158..160 "()"
-    Block! 161..174
-      NameRef 165..166 "x"
-      Error! 169..172 "= y"
+    Block! 15..30
+      ParenExpr! 21..23
+        NameRef 22..23 "a"
+      Error! 24..28 "= b)"
+  FnItem! 31..59
+    Name 34..45 "missing_rhs"
+    ParamList 45..47 "()"
+    Block! 48..59
+      AssignStmt! 54..57
+        NameRef 54..55 "x"
+  FnItem! 60..84
+    Name 63..74 "missing_lhs"
+    ParamList 74..76 "()"
+    Block! 77..84
+      Error! 79..82 "= x"
+  FnItem! 85..123
+    Name 88..101 "two_on_a_line"
+    ParamList 101..103 "()"
+    Block! 104..123
+      AssignStmt 110..115
+        NameRef 110..111 "x"
+        LiteralExpr 114..115 "1"
+      AssignStmt 116..121
+        NameRef 116..117 "y"
+        LiteralExpr 120..121 "2"
+  FnItem! 124..154
+    Name 127..134 "chained"
+    ParamList 134..136 "()"
+    Block! 137..154
+      AssignStmt 143..148
+        NameRef 143..144 "x"
+        NameRef 147..148 "y"
+      Error! 149..152 "= z"
+  FnItem! 155..194
+    Name 158..174 "rhs_on_next_line"
+    ParamList 174..176 "()"
+    Block! 177..194
+      NameRef 183..184 "x"
+      Error! 189..192 "= y"
 
 == evidence ==
-Expected(RParen) at 20
-ExpectedExpression at 50
-ExpectedStatement at 71
-ExpectedBoundary at 104
-ExpectedStatement at 133
-ExpectedStatement at 169
+Expected(RParen) at 24
+ExpectedExpression at 58
+ExpectedStatement at 79
+ExpectedBoundary at 116
+ExpectedStatement at 149
+ExpectedStatement at 189
 
 == diagnostics ==
-error[syntax/expected-token] 1:21: expected `)`
-  at 1:18..1:19 "(": opening delimiter is here
-  at 1:21..1:25 "= b)": skipped while recovering
+error[syntax/expected-token] 2:8: expected `)`
+  at 2:5..2:6 "(": opening delimiter is here
+  at 2:8..2:12 "= b)": skipped while recovering
   fix (safe): insert `)`
-    1:20 -> ")"
-error[syntax/expected-expression] 2:24: expected an expression
-error[syntax/expected-statement] 3:20..3:21 "=": expected a statement
-  at 3:20..3:23 "= x": skipped while recovering
-error[syntax/expected-boundary] 4:28: expected a line break between statements
-error[syntax/expected-statement] 5:22..5:23 "=": expected a statement
-  at 5:22..5:25 "= z": skipped while recovering
-error[syntax/expected-statement] 8:3..8:4 "=": expected a statement
-  at 8:3..8:6 "= y": skipped while recovering
+    2:7 -> ")"
+error[syntax/expected-expression] 4:9: expected an expression
+error[syntax/expected-statement] 5:20..5:21 "=": expected a statement
+  at 5:20..5:23 "= x": skipped while recovering
+error[syntax/expected-boundary] 7:11: expected a line break between statements
+error[syntax/expected-statement] 10:11..10:12 "=": expected a statement
+  at 10:11..10:14 "= z": skipped while recovering
+error[syntax/expected-statement] 13:5..13:6 "=": expected a statement
+  at 13:5..13:8 "= y": skipped while recovering
 
 == fixed (syntax/expected-boundary, syntax/expected-expression, syntax/expected-statement, syntax/unexpected-syntax remain) ==
-fn in_parens() { (a) = b) }
-fn missing_rhs() { x = }
-fn missing_lhs() { = x }
-fn two_on_a_line() { x = 1 y = 2 }
-fn chained() { x = y = z }
-fn rhs_on_next_line() {
-  x
-  = y
-}
-
-== formatted ==
 fn in_parens() {
-    (a = b) }
+    (a) = b) }
 fn missing_rhs() {
     x = }
 fn missing_lhs() { = x }

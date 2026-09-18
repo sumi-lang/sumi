@@ -1,54 +1,35 @@
 == tree ==
-SourceFile 0..235
-  FnItem 123..158
+SourceFile 0..259
+  FnItem 123..166
     Name 126..127 "a"
     ParamList 127..129 "()"
-    IfExpr 132..158
+    IfExpr 132..166
       LiteralExpr 135..139 "true"
-      Block 140..145
-        LiteralExpr 142..143 "1"
-      Block 151..158
-        CallExpr 153..156
-          NameRef 153..154 "b"
-          ArgList 154..156 "()"
-  FnItem 159..197
-    Name 162..163 "b"
-    ParamList 163..165 "()"
-    IfExpr 168..197
-      LiteralExpr 171..175 "true"
-      Block 176..184
-        LiteralExpr 178..182 "true"
-      Block 190..197
-        CallExpr 192..195
-          NameRef 192..193 "c"
-          ArgList 193..195 "()"
-  FnItem 198..234
-    Name 201..202 "c"
-    ParamList 202..204 "()"
-    IfExpr 207..234
-      LiteralExpr 210..214 "true"
-      Block 215..221
-        Block 217..219 "{}"
-      Block 227..234
-        CallExpr 229..232
-          NameRef 229..230 "a"
-          ArgList 230..232 "()"
-
-== formatted ==
-// A conflict lists every type claimed, in source order: two with "and",
-// more with commas and an "and" before the last.
-fn a() = if true {
-    1
-} else {
-    b()
-}
-fn b() = if true {
-    true
-} else {
-    c()
-}
-fn c() = if true {
-    {}
-} else {
-    a()
-}
+      Block 140..149
+        LiteralExpr 146..147 "1"
+      Block 155..166
+        CallExpr 161..164
+          NameRef 161..162 "b"
+          ArgList 162..164 "()"
+  FnItem 167..213
+    Name 170..171 "b"
+    ParamList 171..173 "()"
+    IfExpr 176..213
+      LiteralExpr 179..183 "true"
+      Block 184..196
+        LiteralExpr 190..194 "true"
+      Block 202..213
+        CallExpr 208..211
+          NameRef 208..209 "c"
+          ArgList 209..211 "()"
+  FnItem 214..258
+    Name 217..218 "c"
+    ParamList 218..220 "()"
+    IfExpr 223..258
+      LiteralExpr 226..230 "true"
+      Block 231..241
+        Block 237..239 "{}"
+      Block 247..258
+        CallExpr 253..256
+          NameRef 253..254 "a"
+          ArgList 254..256 "()"

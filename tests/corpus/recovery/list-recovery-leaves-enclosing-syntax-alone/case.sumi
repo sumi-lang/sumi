@@ -1,4 +1,6 @@
-fn arguments() { g( }
+fn arguments() {
+    g( }
 fn parameters(
 fn next() {}
-fn brace_in_arguments() { g(a, { ) x }
+fn brace_in_arguments() {
+    g(a, { ) x }

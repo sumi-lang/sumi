@@ -1,1 +1,2 @@
-fn f() { x // tail
+fn f() {
+    x // tail

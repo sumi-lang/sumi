@@ -1,121 +1,89 @@
 == tree ==
-SourceFile 0..354
-  FnItem 0..35
+SourceFile 0..393
+  FnItem 0..43
     Name 3..4 "a"
     ParamList 4..6 "()"
-    IfExpr 9..35
+    IfExpr 9..43
       LiteralExpr 12..16 "true"
-      Block 17..22
-        LiteralExpr 19..20 "1"
-      Block 28..35
-        CallExpr 30..33
-          NameRef 30..31 "b"
-          ArgList 31..33 "()"
-  FnItem 36..74
-    Name 39..40 "b"
-    ParamList 40..42 "()"
-    IfExpr 45..74
-      LiteralExpr 48..52 "true"
-      Block 53..61
-        LiteralExpr 55..59 "true"
-      Block 67..74
-        CallExpr 69..72
-          NameRef 69..70 "a"
-          ArgList 70..72 "()"
-  FnItem 75..101
-    Name 78..86 "consumer"
-    ParamList 86..88 "()"
-    TypeRef 92..95 "int"
-    CallExpr 98..101
-      NameRef 98..99 "a"
-      ArgList 99..101 "()"
-  FnItem 102..135
-    Name 105..113 "mismatch"
-    ParamList 113..115 "()"
-    TypeRef 119..123 "bool"
-    CallExpr 126..135
-      NameRef 126..133 "integer"
-      ArgList 133..135 "()"
-  FnItem 136..186
-    Name 139..145 "branch"
-    ParamList 145..147 "()"
-    IfExpr 150..186
-      LiteralExpr 153..157 "true"
-      Block 158..171
-        CallExpr 160..169
-          NameRef 160..167 "integer"
-          ArgList 167..169 "()"
-      Block 177..186
-        LiteralExpr 179..184 "false"
-  FnItem 187..222
-    Name 190..196 "unused"
-    ParamList 196..198 "()"
-    Block 199..222
-      CallExpr 203..212
-        NameRef 203..210 "integer"
-        ArgList 210..212 "()"
-      DiscardStmt 215..220
-        LiteralExpr 219..220 "1"
-  FnItem 223..259
-    Name 226..236 "comparison"
-    ParamList 236..238 "()"
-    BinaryExpr 241..259
-      CallExpr 241..248
-        NameRef 241..246 "empty"
-        ArgList 246..248 "()"
-      CallExpr 252..259
-        NameRef 252..257 "empty"
-        ArgList 257..259 "()"
-  FnItem 260..276
-    Name 263..270 "integer"
-    ParamList 270..272 "()"
-    LiteralExpr 275..276 "1"
-  FnItem 277..292
-    Name 280..285 "empty"
-    ParamList 285..287 "()"
-    Block 290..292 "{}"
-  FnItem 293..353
-    Name 296..305 "annotated"
-    ParamList 305..307 "()"
-    IfExpr 310..353
-      LiteralExpr 313..317 "true"
-      Block 318..339
-        LetStmt 320..334
-          Name 324..325 "x"
-          TypeRef 327..330 "int"
-          LiteralExpr 333..334 "1"
-        NameRef 336..337 "x"
-      Block 345..353
-        LiteralExpr 347..351 "true"
-
-== formatted ==
-fn a() = if true {
-    1
-} else {
-    b()
-}
-fn b() = if true {
-    true
-} else {
-    a()
-}
-fn consumer() -> int = a()
-fn mismatch() -> bool = integer()
-fn branch() = if true {
-    integer()
-} else {
-    false
-}
-fn unused() {
-    integer()
-    _ = 1
-}
-fn comparison() = empty() == empty()
-fn integer() = 1
-fn empty() = {}
-fn annotated() = if true {
-    let x: int = 1
-    x
-} else {
-    true
-}
+      Block 17..26
+        LiteralExpr 23..24 "1"
+      Block 32..43
+        CallExpr 38..41
+          NameRef 38..39 "b"
+          ArgList 39..41 "()"
+  FnItem 44..90
+    Name 47..48 "b"
+    ParamList 48..50 "()"
+    IfExpr 53..90
+      LiteralExpr 56..60 "true"
+      Block 61..73
+        LiteralExpr 67..71 "true"
+      Block 79..90
+        CallExpr 85..88
+          NameRef 85..86 "a"
+          ArgList 86..88 "()"
+  FnItem 91..117
+    Name 94..102 "consumer"
+    ParamList 102..104 "()"
+    TypeRef 108..111 "int"
+    CallExpr 114..117
+      NameRef 114..115 "a"
+      ArgList 115..117 "()"
+  FnItem 118..151
+    Name 121..129 "mismatch"
+    ParamList 129..131 "()"
+    TypeRef 135..139 "bool"
+    CallExpr 142..151
+      NameRef 142..149 "integer"
+      ArgList 149..151 "()"
+  FnItem 152..210
+    Name 155..161 "branch"
+    ParamList 161..163 "()"
+    IfExpr 166..210
+      LiteralExpr 169..173 "true"
+      Block 174..191
+        CallExpr 180..189
+          NameRef 180..187 "integer"
+          ArgList 187..189 "()"
+      Block 197..210
+        LiteralExpr 203..208 "false"
+  FnItem 211..250
+    Name 214..220 "unused"
+    ParamList 220..222 "()"
+    Block 223..250
+      CallExpr 229..238
+        NameRef 229..236 "integer"
+        ArgList 236..238 "()"
+      DiscardStmt 243..248
+        LiteralExpr 247..248 "1"
+  FnItem 251..287
+    Name 254..264 "comparison"
+    ParamList 264..266 "()"
+    BinaryExpr 269..287
+      CallExpr 269..276
+        NameRef 269..274 "empty"
+        ArgList 274..276 "()"
+      CallExpr 280..287
+        NameRef 280..285 "empty"
+        ArgList 285..287 "()"
+  FnItem 288..304
+    Name 291..298 "integer"
+    ParamList 298..300 "()"
+    LiteralExpr 303..304 "1"
+  FnItem 305..320
+    Name 308..313 "empty"
+    ParamList 313..315 "()"
+    Block 318..320 "{}"
+  FnItem 321..392
+    Name 324..333 "annotated"
+    ParamList 333..335 "()"
+    IfExpr 338..392
+      LiteralExpr 341..345 "true"
+      Block 346..374
+        LetStmt 352..366
+          Name 356..357 "x"
+          TypeRef 359..362 "int"
+          LiteralExpr 365..366 "1"
+        NameRef 371..372 "x"
+      Block 380..392
+        LiteralExpr 386..390 "true"

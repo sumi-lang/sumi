@@ -1,22 +1,16 @@
 == tree ==
-SourceFile! 0..20
-  FnItem! 0..20
+SourceFile! 0..25
+  FnItem! 0..24
     Name 3..4 "f"
     ParamList 4..6 "()"
-    Block! 7..20
-      NameRef 11..12 "a"
-      Error! 13..14 ";"
-      NameRef 17..18 "b"
+    Block! 7..24
+      NameRef 13..14 "a"
+      Error! 15..16 ";"
+      NameRef 21..22 "b"
 
 == evidence ==
-ExpectedBoundary at 13
-PriorPhaseError at 13
+ExpectedBoundary at 15
+PriorPhaseError at 15
 
 == diagnostics ==
-error[syntax/unknown-punctuation] 2:5..2:6 ";": punctuation has no meaning in Sumi source
-
-== formatted ==
-fn f() {
-    a ;
-    b
-}
+error[syntax/unknown-punctuation] 2:7..2:8 ";": punctuation has no meaning in Sumi source

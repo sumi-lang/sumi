@@ -1,395 +1,330 @@
 == tree ==
-SourceFile 0..1013
-  FnItem 0..71
+SourceFile 0..1141
+  FnItem 0..79
     Name 3..6 "fib"
     ParamList 6..14
       Param 7..13
         Name 7..8 "n"
         TypeRef 10..13 "int"
     TypeRef 18..21 "int"
-    IfExpr 24..71
+    IfExpr 24..79
       BinaryExpr 27..32
         NameRef 27..28 "n"
         LiteralExpr 31..32 "2"
-      Block 33..38
-        NameRef 35..36 "n"
-      Block 44..71
-        BinaryExpr 46..69
-          CallExpr 46..56
-            NameRef 46..49 "fib"
-            ArgList 49..56
-              BinaryExpr 50..55
-                NameRef 50..51 "n"
-                LiteralExpr 54..55 "1"
-          CallExpr 59..69
-            NameRef 59..62 "fib"
-            ArgList 62..69
-              BinaryExpr 63..68
-                NameRef 63..64 "n"
-                LiteralExpr 67..68 "2"
-  FnItem 72..100
-    Name 75..81 "fib_15"
-    ParamList 81..83 "()"
-    TypeRef 87..90 "int"
-    CallExpr 93..100
-      NameRef 93..96 "fib"
-      ArgList 96..100
-        LiteralExpr 97..99 "15"
-  FnItem 101..168
-    Name 104..109 "count"
-    ParamList 109..117
-      Param 110..116
-        Name 110..111 "n"
-        TypeRef 113..116 "int"
-    TypeRef 121..124 "int"
-    IfExpr 127..168
-      BinaryExpr 130..136
-        NameRef 130..131 "n"
-        LiteralExpr 135..136 "0"
-      Block 137..142
-        LiteralExpr 139..140 "0"
-      Block 148..168
-        BinaryExpr 150..166
-          LiteralExpr 150..151 "1"
-          CallExpr 154..166
-            NameRef 154..159 "count"
-            ArgList 159..166
-              BinaryExpr 160..165
-                NameRef 160..161 "n"
-                LiteralExpr 164..165 "1"
-  FnItem 169..200
-    Name 172..176 "deep"
-    ParamList 176..178 "()"
-    TypeRef 182..185 "int"
-    CallExpr 188..200
-      NameRef 188..193 "count"
-      ArgList 193..200
-        LiteralExpr 194..199 "10000"
-  FnItem 201..310
-    Name 204..213 "dead_step"
-    ParamList 213..221
-      Param 214..220
-        Name 214..215 "n"
-        TypeRef 217..220 "int"
-    TypeRef 225..228 "int"
-    IfExpr 231..310
-      BinaryExpr 234..239
-        NameRef 234..235 "n"
-        LiteralExpr 238..239 "0"
-      Block 240..260
-        CallExpr 242..258
-          NameRef 242..251 "dead_step"
-          ArgList 251..258
-            BinaryExpr 252..257
-              NameRef 252..253 "n"
-              LiteralExpr 256..257 "1"
-      Block 266..310
-        IfExpr 268..308
-          LiteralExpr 271..276 "false"
-          Block 277..297
-            CallExpr 279..295
-              NameRef 279..288 "dead_step"
-              ArgList 288..295
-                BinaryExpr 289..294
-                  NameRef 289..290 "n"
-                  LiteralExpr 293..294 "1"
-          Block 303..308
-            LiteralExpr 305..306 "0"
-  FnItem 311..349
-    Name 314..324 "dead_steps"
-    ParamList 324..326 "()"
-    TypeRef 330..333 "int"
-    CallExpr 336..349
-      NameRef 336..345 "dead_step"
-      ArgList 345..349
-        LiteralExpr 346..348 "10"
-  FnItem 350..432
-    Name 353..355 "r0"
-    ParamList 355..379
-      Param 356..362
-        Name 356..357 "a"
-        TypeRef 359..362 "int"
-      Param 364..370
-        Name 364..365 "b"
-        TypeRef 367..370 "int"
-      Param 372..378
-        Name 372..373 "c"
-        TypeRef 375..378 "int"
-    TypeRef 383..386 "int"
-    IfExpr 389..432
-      BinaryExpr 392..397
-        NameRef 392..393 "c"
-        LiteralExpr 396..397 "0"
-      Block 398..417
-        CallExpr 400..415
-          NameRef 400..402 "r3"
-          ArgList 402..415
-            NameRef 403..404 "b"
-            NameRef 406..407 "a"
-            BinaryExpr 409..414
-              NameRef 409..410 "c"
-              LiteralExpr 413..414 "1"
-      Block 423..432
-        BinaryExpr 425..430
-          NameRef 425..426 "a"
-          NameRef 429..430 "b"
-  FnItem 433..515
-    Name 436..438 "r1"
-    ParamList 438..462
-      Param 439..445
-        Name 439..440 "a"
-        TypeRef 442..445 "int"
-      Param 447..453
-        Name 447..448 "b"
-        TypeRef 450..453 "int"
-      Param 455..461
-        Name 455..456 "c"
-        TypeRef 458..461 "int"
-    TypeRef 466..469 "int"
-    IfExpr 472..515
-      BinaryExpr 475..480
-        NameRef 475..476 "c"
-        LiteralExpr 479..480 "0"
-      Block 481..500
-        CallExpr 483..498
-          NameRef 483..485 "r4"
-          ArgList 485..498
-            NameRef 486..487 "b"
-            NameRef 489..490 "a"
-            BinaryExpr 492..497
-              NameRef 492..493 "c"
-              LiteralExpr 496..497 "1"
-      Block 506..515
-        BinaryExpr 508..513
-          NameRef 508..509 "a"
-          NameRef 512..513 "b"
-  FnItem 516..598
-    Name 519..521 "r2"
-    ParamList 521..545
-      Param 522..528
-        Name 522..523 "a"
-        TypeRef 525..528 "int"
-      Param 530..536
-        Name 530..531 "b"
-        TypeRef 533..536 "int"
-      Param 538..544
-        Name 538..539 "c"
-        TypeRef 541..544 "int"
-    TypeRef 549..552 "int"
-    IfExpr 555..598
-      BinaryExpr 558..563
-        NameRef 558..559 "c"
-        LiteralExpr 562..563 "0"
-      Block 564..583
-        CallExpr 566..581
-          NameRef 566..568 "r5"
-          ArgList 568..581
-            NameRef 569..570 "b"
-            NameRef 572..573 "a"
-            BinaryExpr 575..580
-              NameRef 575..576 "c"
-              LiteralExpr 579..580 "1"
-      Block 589..598
-        BinaryExpr 591..596
-          NameRef 591..592 "a"
-          NameRef 595..596 "b"
-  FnItem 599..681
-    Name 602..604 "r3"
-    ParamList 604..628
-      Param 605..611
-        Name 605..606 "a"
-        TypeRef 608..611 "int"
-      Param 613..619
-        Name 613..614 "b"
-        TypeRef 616..619 "int"
-      Param 621..627
-        Name 621..622 "c"
-        TypeRef 624..627 "int"
-    TypeRef 632..635 "int"
-    IfExpr 638..681
-      BinaryExpr 641..646
-        NameRef 641..642 "c"
-        LiteralExpr 645..646 "0"
-      Block 647..666
-        CallExpr 649..664
-          NameRef 649..651 "r1"
-          ArgList 651..664
-            NameRef 652..653 "b"
-            NameRef 655..656 "a"
-            BinaryExpr 658..663
-              NameRef 658..659 "c"
-              LiteralExpr 662..663 "1"
-      Block 672..681
-        BinaryExpr 674..679
-          NameRef 674..675 "a"
-          NameRef 678..679 "b"
-  FnItem 682..764
-    Name 685..687 "r4"
-    ParamList 687..711
-      Param 688..694
-        Name 688..689 "a"
-        TypeRef 691..694 "int"
-      Param 696..702
-        Name 696..697 "b"
-        TypeRef 699..702 "int"
-      Param 704..710
-        Name 704..705 "c"
-        TypeRef 707..710 "int"
-    TypeRef 715..718 "int"
-    IfExpr 721..764
-      BinaryExpr 724..729
-        NameRef 724..725 "c"
-        LiteralExpr 728..729 "0"
-      Block 730..749
-        CallExpr 732..747
-          NameRef 732..734 "r2"
-          ArgList 734..747
-            NameRef 735..736 "b"
-            NameRef 738..739 "a"
-            BinaryExpr 741..746
-              NameRef 741..742 "c"
-              LiteralExpr 745..746 "1"
-      Block 755..764
-        BinaryExpr 757..762
-          NameRef 757..758 "a"
-          NameRef 761..762 "b"
-  FnItem 765..847
-    Name 768..770 "r5"
-    ParamList 770..794
-      Param 771..777
-        Name 771..772 "a"
-        TypeRef 774..777 "int"
-      Param 779..785
-        Name 779..780 "b"
-        TypeRef 782..785 "int"
-      Param 787..793
-        Name 787..788 "c"
-        TypeRef 790..793 "int"
-    TypeRef 798..801 "int"
-    IfExpr 804..847
-      BinaryExpr 807..812
-        NameRef 807..808 "c"
-        LiteralExpr 811..812 "0"
-      Block 813..832
-        CallExpr 815..830
-          NameRef 815..817 "r0"
-          ArgList 817..830
-            NameRef 818..819 "b"
-            NameRef 821..822 "a"
-            BinaryExpr 824..829
-              NameRef 824..825 "c"
-              LiteralExpr 828..829 "1"
-      Block 838..847
-        BinaryExpr 840..845
-          NameRef 840..841 "a"
-          NameRef 844..845 "b"
-  FnItem 848..879
-    Name 851..855 "ring"
-    ParamList 855..857 "()"
-    TypeRef 861..864 "int"
-    CallExpr 867..879
-      NameRef 867..869 "r0"
-      ArgList 869..879
-        LiteralExpr 870..871 "1"
-        LiteralExpr 873..874 "2"
-        LiteralExpr 876..878 "20"
-  FnItem 880..976
-    Name 883..891 "dead_arm"
-    ParamList 891..899
-      Param 892..898
-        Name 892..893 "n"
-        TypeRef 895..898 "int"
-    TypeRef 903..906 "int"
-    IfExpr 909..976
-      BinaryExpr 912..918
-        NameRef 912..913 "n"
-        LiteralExpr 917..918 "0"
-      Block 919..924
-        LiteralExpr 921..922 "0"
-      Block 930..976
-        CallExpr 932..974
-          NameRef 932..940 "dead_arm"
-          ArgList 940..974
-            IfExpr 941..973
-              LiteralExpr 944..948 "true"
-              Block 949..958
-                BinaryExpr 951..956
-                  NameRef 951..952 "n"
-                  LiteralExpr 955..956 "1"
-              Block 964..973
-                BinaryExpr 966..971
-                  NameRef 966..967 "n"
-                  LiteralExpr 970..971 "1"
-  FnItem 977..1012
-    Name 980..989 "dead_arms"
-    ParamList 989..991 "()"
-    TypeRef 995..998 "int"
-    CallExpr 1001..1012
-      NameRef 1001..1009 "dead_arm"
-      ArgList 1009..1012
-        LiteralExpr 1010..1011 "6"
-
-== formatted ==
-fn fib(n: int) -> int = if n < 2 {
-    n
-} else {
-    fib(n - 1) + fib(n - 2)
-}
-fn fib_15() -> int = fib(15)
-fn count(n: int) -> int = if n == 0 {
-    0
-} else {
-    1 + count(n - 1)
-}
-fn deep() -> int = count(10000)
-fn dead_step(n: int) -> int = if n > 0 {
-    dead_step(n - 1)
-} else {
-    if false {
-        dead_step(n + 1)
-    } else {
-        0
-    }
-}
-fn dead_steps() -> int = dead_step(10)
-fn r0(a: int, b: int, c: int) -> int = if c > 0 {
-    r3(b, a, c - 1)
-} else {
-    a + b
-}
-fn r1(a: int, b: int, c: int) -> int = if c > 0 {
-    r4(b, a, c - 1)
-} else {
-    a + b
-}
-fn r2(a: int, b: int, c: int) -> int = if c > 0 {
-    r5(b, a, c - 1)
-} else {
-    a + b
-}
-fn r3(a: int, b: int, c: int) -> int = if c > 0 {
-    r1(b, a, c - 1)
-} else {
-    a + b
-}
-fn r4(a: int, b: int, c: int) -> int = if c > 0 {
-    r2(b, a, c - 1)
-} else {
-    a + b
-}
-fn r5(a: int, b: int, c: int) -> int = if c > 0 {
-    r0(b, a, c - 1)
-} else {
-    a + b
-}
-fn ring() -> int = r0(1, 2, 20)
-fn dead_arm(n: int) -> int = if n == 0 {
-    0
-} else {
-    dead_arm(if true {
-        n - 1
-    } else {
-        n + 1
-    })
-}
-fn dead_arms() -> int = dead_arm(6)
+      Block 33..42
+        NameRef 39..40 "n"
+      Block 48..79
+        BinaryExpr 54..77
+          CallExpr 54..64
+            NameRef 54..57 "fib"
+            ArgList 57..64
+              BinaryExpr 58..63
+                NameRef 58..59 "n"
+                LiteralExpr 62..63 "1"
+          CallExpr 67..77
+            NameRef 67..70 "fib"
+            ArgList 70..77
+              BinaryExpr 71..76
+                NameRef 71..72 "n"
+                LiteralExpr 75..76 "2"
+  FnItem 80..108
+    Name 83..89 "fib_15"
+    ParamList 89..91 "()"
+    TypeRef 95..98 "int"
+    CallExpr 101..108
+      NameRef 101..104 "fib"
+      ArgList 104..108
+        LiteralExpr 105..107 "15"
+  FnItem 109..184
+    Name 112..117 "count"
+    ParamList 117..125
+      Param 118..124
+        Name 118..119 "n"
+        TypeRef 121..124 "int"
+    TypeRef 129..132 "int"
+    IfExpr 135..184
+      BinaryExpr 138..144
+        NameRef 138..139 "n"
+        LiteralExpr 143..144 "0"
+      Block 145..154
+        LiteralExpr 151..152 "0"
+      Block 160..184
+        BinaryExpr 166..182
+          LiteralExpr 166..167 "1"
+          CallExpr 170..182
+            NameRef 170..175 "count"
+            ArgList 175..182
+              BinaryExpr 176..181
+                NameRef 176..177 "n"
+                LiteralExpr 180..181 "1"
+  FnItem 185..216
+    Name 188..192 "deep"
+    ParamList 192..194 "()"
+    TypeRef 198..201 "int"
+    CallExpr 204..216
+      NameRef 204..209 "count"
+      ArgList 209..216
+        LiteralExpr 210..215 "10000"
+  FnItem 217..358
+    Name 220..229 "dead_step"
+    ParamList 229..237
+      Param 230..236
+        Name 230..231 "n"
+        TypeRef 233..236 "int"
+    TypeRef 241..244 "int"
+    IfExpr 247..358
+      BinaryExpr 250..255
+        NameRef 250..251 "n"
+        LiteralExpr 254..255 "0"
+      Block 256..280
+        CallExpr 262..278
+          NameRef 262..271 "dead_step"
+          ArgList 271..278
+            BinaryExpr 272..277
+              NameRef 272..273 "n"
+              LiteralExpr 276..277 "1"
+      Block 286..358
+        IfExpr 292..356
+          LiteralExpr 295..300 "false"
+          Block 301..333
+            CallExpr 311..327
+              NameRef 311..320 "dead_step"
+              ArgList 320..327
+                BinaryExpr 321..326
+                  NameRef 321..322 "n"
+                  LiteralExpr 325..326 "1"
+          Block 339..356
+            LiteralExpr 349..350 "0"
+  FnItem 359..397
+    Name 362..372 "dead_steps"
+    ParamList 372..374 "()"
+    TypeRef 378..381 "int"
+    CallExpr 384..397
+      NameRef 384..393 "dead_step"
+      ArgList 393..397
+        LiteralExpr 394..396 "10"
+  FnItem 398..488
+    Name 401..403 "r0"
+    ParamList 403..427
+      Param 404..410
+        Name 404..405 "a"
+        TypeRef 407..410 "int"
+      Param 412..418
+        Name 412..413 "b"
+        TypeRef 415..418 "int"
+      Param 420..426
+        Name 420..421 "c"
+        TypeRef 423..426 "int"
+    TypeRef 431..434 "int"
+    IfExpr 437..488
+      BinaryExpr 440..445
+        NameRef 440..441 "c"
+        LiteralExpr 444..445 "0"
+      Block 446..469
+        CallExpr 452..467
+          NameRef 452..454 "r3"
+          ArgList 454..467
+            NameRef 455..456 "b"
+            NameRef 458..459 "a"
+            BinaryExpr 461..466
+              NameRef 461..462 "c"
+              LiteralExpr 465..466 "1"
+      Block 475..488
+        BinaryExpr 481..486
+          NameRef 481..482 "a"
+          NameRef 485..486 "b"
+  FnItem 489..579
+    Name 492..494 "r1"
+    ParamList 494..518
+      Param 495..501
+        Name 495..496 "a"
+        TypeRef 498..501 "int"
+      Param 503..509
+        Name 503..504 "b"
+        TypeRef 506..509 "int"
+      Param 511..517
+        Name 511..512 "c"
+        TypeRef 514..517 "int"
+    TypeRef 522..525 "int"
+    IfExpr 528..579
+      BinaryExpr 531..536
+        NameRef 531..532 "c"
+        LiteralExpr 535..536 "0"
+      Block 537..560
+        CallExpr 543..558
+          NameRef 543..545 "r4"
+          ArgList 545..558
+            NameRef 546..547 "b"
+            NameRef 549..550 "a"
+            BinaryExpr 552..557
+              NameRef 552..553 "c"
+              LiteralExpr 556..557 "1"
+      Block 566..579
+        BinaryExpr 572..577
+          NameRef 572..573 "a"
+          NameRef 576..577 "b"
+  FnItem 580..670
+    Name 583..585 "r2"
+    ParamList 585..609
+      Param 586..592
+        Name 586..587 "a"
+        TypeRef 589..592 "int"
+      Param 594..600
+        Name 594..595 "b"
+        TypeRef 597..600 "int"
+      Param 602..608
+        Name 602..603 "c"
+        TypeRef 605..608 "int"
+    TypeRef 613..616 "int"
+    IfExpr 619..670
+      BinaryExpr 622..627
+        NameRef 622..623 "c"
+        LiteralExpr 626..627 "0"
+      Block 628..651
+        CallExpr 634..649
+          NameRef 634..636 "r5"
+          ArgList 636..649
+            NameRef 637..638 "b"
+            NameRef 640..641 "a"
+            BinaryExpr 643..648
+              NameRef 643..644 "c"
+              LiteralExpr 647..648 "1"
+      Block 657..670
+        BinaryExpr 663..668
+          NameRef 663..664 "a"
+          NameRef 667..668 "b"
+  FnItem 671..761
+    Name 674..676 "r3"
+    ParamList 676..700
+      Param 677..683
+        Name 677..678 "a"
+        TypeRef 680..683 "int"
+      Param 685..691
+        Name 685..686 "b"
+        TypeRef 688..691 "int"
+      Param 693..699
+        Name 693..694 "c"
+        TypeRef 696..699 "int"
+    TypeRef 704..707 "int"
+    IfExpr 710..761
+      BinaryExpr 713..718
+        NameRef 713..714 "c"
+        LiteralExpr 717..718 "0"
+      Block 719..742
+        CallExpr 725..740
+          NameRef 725..727 "r1"
+          ArgList 727..740
+            NameRef 728..729 "b"
+            NameRef 731..732 "a"
+            BinaryExpr 734..739
+              NameRef 734..735 "c"
+              LiteralExpr 738..739 "1"
+      Block 748..761
+        BinaryExpr 754..759
+          NameRef 754..755 "a"
+          NameRef 758..759 "b"
+  FnItem 762..852
+    Name 765..767 "r4"
+    ParamList 767..791
+      Param 768..774
+        Name 768..769 "a"
+        TypeRef 771..774 "int"
+      Param 776..782
+        Name 776..777 "b"
+        TypeRef 779..782 "int"
+      Param 784..790
+        Name 784..785 "c"
+        TypeRef 787..790 "int"
+    TypeRef 795..798 "int"
+    IfExpr 801..852
+      BinaryExpr 804..809
+        NameRef 804..805 "c"
+        LiteralExpr 808..809 "0"
+      Block 810..833
+        CallExpr 816..831
+          NameRef 816..818 "r2"
+          ArgList 818..831
+            NameRef 819..820 "b"
+            NameRef 822..823 "a"
+            BinaryExpr 825..830
+              NameRef 825..826 "c"
+              LiteralExpr 829..830 "1"
+      Block 839..852
+        BinaryExpr 845..850
+          NameRef 845..846 "a"
+          NameRef 849..850 "b"
+  FnItem 853..943
+    Name 856..858 "r5"
+    ParamList 858..882
+      Param 859..865
+        Name 859..860 "a"
+        TypeRef 862..865 "int"
+      Param 867..873
+        Name 867..868 "b"
+        TypeRef 870..873 "int"
+      Param 875..881
+        Name 875..876 "c"
+        TypeRef 878..881 "int"
+    TypeRef 886..889 "int"
+    IfExpr 892..943
+      BinaryExpr 895..900
+        NameRef 895..896 "c"
+        LiteralExpr 899..900 "0"
+      Block 901..924
+        CallExpr 907..922
+          NameRef 907..909 "r0"
+          ArgList 909..922
+            NameRef 910..911 "b"
+            NameRef 913..914 "a"
+            BinaryExpr 916..921
+              NameRef 916..917 "c"
+              LiteralExpr 920..921 "1"
+      Block 930..943
+        BinaryExpr 936..941
+          NameRef 936..937 "a"
+          NameRef 940..941 "b"
+  FnItem 944..975
+    Name 947..951 "ring"
+    ParamList 951..953 "()"
+    TypeRef 957..960 "int"
+    CallExpr 963..975
+      NameRef 963..965 "r0"
+      ArgList 965..975
+        LiteralExpr 966..967 "1"
+        LiteralExpr 969..970 "2"
+        LiteralExpr 972..974 "20"
+  FnItem 976..1104
+    Name 979..987 "dead_arm"
+    ParamList 987..995
+      Param 988..994
+        Name 988..989 "n"
+        TypeRef 991..994 "int"
+    TypeRef 999..1002 "int"
+    IfExpr 1005..1104
+      BinaryExpr 1008..1014
+        NameRef 1008..1009 "n"
+        LiteralExpr 1013..1014 "0"
+      Block 1015..1024
+        LiteralExpr 1021..1022 "0"
+      Block 1030..1104
+        CallExpr 1036..1102
+          NameRef 1036..1044 "dead_arm"
+          ArgList 1044..1102
+            IfExpr 1045..1101
+              LiteralExpr 1048..1052 "true"
+              Block 1053..1074
+                BinaryExpr 1063..1068
+                  NameRef 1063..1064 "n"
+                  LiteralExpr 1067..1068 "1"
+              Block 1080..1101
+                BinaryExpr 1090..1095
+                  NameRef 1090..1091 "n"
+                  LiteralExpr 1094..1095 "1"
+  FnItem 1105..1140
+    Name 1108..1117 "dead_arms"
+    ParamList 1117..1119 "()"
+    TypeRef 1123..1126 "int"
+    CallExpr 1129..1140
+      NameRef 1129..1137 "dead_arm"
+      ArgList 1137..1140
+        LiteralExpr 1138..1139 "6"

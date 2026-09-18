@@ -83,8 +83,8 @@ error[syntax/function-item-on-same-line] 6:28..6:30 "fn": function item must beg
   fix (safe): move function item onto a new line
     6:27..6:28 " " -> "\n"
 error[syntax/expected-name] 8:4: expected a name
-error[syntax/expected-name] 9:19: expected a name
-error[syntax/expected-name] 11:1: expected a name
+error[syntax/expected-name] 10:4: expected a name
+error[syntax/expected-name] 12:1: expected a name
 
 == fixed (syntax/expected-body, syntax/expected-expression, syntax/expected-name remain) ==
 fn missing_parameter_closer() = fn(x) = 1
@@ -94,19 +94,6 @@ fn missing_body_closer() = fn() {
 fn next_b() -> int = 3
 fn missing_body() = fn() =
 fn next_c() -> int = 4
-fn first() {}
-fn () {}
-fn second() {} fn () {}
-fn
-() {}
-
-== formatted (FunctionItemOnSameLine remains) ==
-fn missing_parameter_closer() = fn(x = 1
-fn next_a() -> int = 2
-fn missing_body_closer() = fn() {
-    let x =
-fn next_b() -> int = 3
-fn missing_body() = fn() = fn next_c() -> int = 4
 fn first() {}
 fn () {}
 fn second() {}

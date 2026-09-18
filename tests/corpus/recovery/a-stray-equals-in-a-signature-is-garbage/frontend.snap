@@ -1,59 +1,47 @@
 == tree ==
-SourceFile! 0..76
-  FnItem! 0..20
+SourceFile! 0..88
+  FnItem! 0..24
     Name 3..4 "f"
     Error! 4..5 "="
     ParamList 6..14
       Param 7..13
         Name 7..8 "a"
         TypeRef 10..13 "int"
-    Block 15..20
-      NameRef 17..18 "a"
-  FnItem! 21..42
-    Name 24..25 "g"
-    ParamList 25..27 "()"
-    Error! 31..36 "= int"
-    Block 37..42
-      NameRef 39..40 "a"
-  FnItem! 43..53
-    Name 46..47 "h"
-    Error! 48..53 "x = 1"
-  FnItem! 54..75
-    Name 57..58 "i"
-    ParamList 58..60 "()"
-    Error! 61..62 "="
-    TypeRef 66..69 "int"
-    Block 70..75
-      NameRef 72..73 "a"
+    Block 15..24
+      NameRef 21..22 "a"
+  FnItem! 25..50
+    Name 28..29 "g"
+    ParamList 29..31 "()"
+    Error! 35..40 "= int"
+    Block 41..50
+      NameRef 47..48 "a"
+  FnItem! 51..61
+    Name 54..55 "h"
+    Error! 56..61 "x = 1"
+  FnItem! 62..87
+    Name 65..66 "i"
+    ParamList 66..68 "()"
+    Error! 69..70 "="
+    TypeRef 74..77 "int"
+    Block 78..87
+      NameRef 84..85 "a"
 
 == evidence ==
 Expected(LParen) at 4
-ExpectedType at 31
-ExpectedBody at 31
-Expected(LParen) at 48
-ExpectedBody at 54
-ExpectedBody at 61
+ExpectedType at 35
+ExpectedBody at 35
+Expected(LParen) at 56
+ExpectedBody at 62
+ExpectedBody at 69
 
 == diagnostics ==
 error[syntax/expected-token] 1:5: expected `(`
   at 1:5..1:6 "=": skipped while recovering
-error[syntax/expected-type] 2:11: expected a type
-error[syntax/expected-body] 2:11: expected a body, `{` or `=`
-  at 2:11..2:16 "= int": skipped while recovering
-error[syntax/expected-token] 3:6: expected `(`
-  at 3:6..3:11 "x = 1": skipped while recovering
-error[syntax/expected-body] 4:1: expected a body, `{` or `=`
-error[syntax/expected-body] 4:8: expected a body, `{` or `=`
-  at 4:8..4:9 "=": skipped while recovering
-
-== formatted ==
-fn f= (a: int) {
-    a
-}
-fn g() -> = int {
-    a
-}
-fn h x = 1
-fn i() = -> int {
-    a
-}
+error[syntax/expected-type] 4:11: expected a type
+error[syntax/expected-body] 4:11: expected a body, `{` or `=`
+  at 4:11..4:16 "= int": skipped while recovering
+error[syntax/expected-token] 7:6: expected `(`
+  at 7:6..7:11 "x = 1": skipped while recovering
+error[syntax/expected-body] 8:1: expected a body, `{` or `=`
+error[syntax/expected-body] 8:8: expected a body, `{` or `=`
+  at 8:8..8:9 "=": skipped while recovering

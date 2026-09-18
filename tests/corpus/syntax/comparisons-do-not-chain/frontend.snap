@@ -1,5 +1,5 @@
 == tree ==
-SourceFile! 0..56
+SourceFile! 0..60
   FnItem! 0..26
     Name 3..10 "chained"
     ParamList 10..12 "()"
@@ -9,25 +9,19 @@ SourceFile! 0..56
           NameRef 15..16 "a"
           NameRef 19..20 "b"
         NameRef 23..24 "c"
-  FnItem 27..55
+  FnItem 27..59
     Name 30..37 "grouped"
     ParamList 37..39 "()"
-    Block 40..55
-      BinaryExpr 42..53
-        ParenExpr 42..49
-          BinaryExpr 43..48
-            NameRef 43..44 "a"
-            NameRef 47..48 "b"
-        NameRef 52..53 "c"
+    Block 40..59
+      BinaryExpr 46..57
+        ParenExpr 46..53
+          BinaryExpr 47..52
+            NameRef 47..48 "a"
+            NameRef 51..52 "b"
+        NameRef 56..57 "c"
 
 == evidence ==
 ChainedComparison at 21
 
 == diagnostics ==
 error[syntax/chained-comparison] 1:22..1:23 "<": comparison operators cannot be chained
-
-== formatted (ChainedComparison remains) ==
-fn chained() { a < b < c }
-fn grouped() {
-    (a < b) < c
-}

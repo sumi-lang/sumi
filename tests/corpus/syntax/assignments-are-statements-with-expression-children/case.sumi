@@ -1,3 +1,9 @@
-fn plain() { x = 1 }
-fn expressions() { a + b = c * d + e }
-fn grouped_target() { (a) = b }
+fn plain() {
+    x = 1
+}
+fn expressions() {
+    a + b = c * d + e
+}
+fn grouped_target() {
+    (a) = b
+}

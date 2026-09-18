@@ -1,52 +1,43 @@
 == tree ==
-SourceFile! 0..111
-  FnItem! 0..32
+SourceFile! 0..119
+  FnItem! 0..36
     Name 3..16 "brace_in_type"
     ParamList! 16..26
       Param! 17..19
         Name 17..18 "a"
       Error! 20..25 "{ int"
-    Block 27..32
-      NameRef 29..30 "x"
-  FnItem! 33..75
-    Name 36..52 "brace_after_type"
-    ParamList! 52..72
-      Param 53..59
-        Name 53..54 "b"
-        TypeRef 56..59 "int"
-      Param 61..69
-        Name 61..64 "foo"
-        TypeRef 66..69 "int"
-      Error! 69..70 "{"
-    Block 73..75 "{}"
-  FnItem! 76..110
-    Name 79..95 "keyword_argument"
-    ParamList 95..97 "()"
-    Block! 98..110
-      CallExpr! 100..108
-        NameRef 100..101 "g"
-        ArgList! 101..108
-          Error! 102..104 "fn"
-          NameRef 106..107 "b"
+    Block 27..36
+      NameRef 33..34 "x"
+  FnItem! 37..79
+    Name 40..56 "brace_after_type"
+    ParamList! 56..76
+      Param 57..63
+        Name 57..58 "b"
+        TypeRef 60..63 "int"
+      Param 65..73
+        Name 65..68 "foo"
+        TypeRef 70..73 "int"
+      Error! 73..74 "{"
+    Block 77..79 "{}"
+  FnItem! 80..118
+    Name 83..99 "keyword_argument"
+    ParamList 99..101 "()"
+    Block! 102..118
+      CallExpr! 108..116
+        NameRef 108..109 "g"
+        ArgList! 109..116
+          Error! 110..112 "fn"
+          NameRef 114..115 "b"
 
 == evidence ==
 ExpectedType at 20
 ExpectedName at 20
-ExpectedName at 69
-ExpectedExpression at 102
+ExpectedName at 73
+ExpectedExpression at 110
 
 == diagnostics ==
 error[syntax/expected-type] 1:21: expected a type
 error[syntax/expected-name] 1:21..1:22 "{": expected a name
   at 1:21..1:26 "{ int": skipped while recovering
-error[syntax/expected-name] 2:37..2:38 "{": expected a name
-error[syntax/expected-expression] 3:27..3:29 "fn": expected an expression
-
-== formatted ==
-fn brace_in_type(a: { int) {
-    x
-}
-fn brace_after_type(b: int, foo: int{ ) {}
-fn keyword_argument() {
-    g(fn, b)
-}
+error[syntax/expected-name] 4:37..4:38 "{": expected a name
+error[syntax/expected-expression] 6:7..6:9 "fn": expected an expression

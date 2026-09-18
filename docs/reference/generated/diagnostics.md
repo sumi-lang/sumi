@@ -58,11 +58,12 @@ Names are ASCII letters, digits, and `_`.
 Shown by [`tests/corpus/recovery/lexer-errors-do-not-hide-statement-recovery`](../../../tests/corpus/recovery/lexer-errors-do-not-hide-statement-recovery/case.sumi):
 
 ```sumi
-fn f() { a € + b c }
+fn f() {
+    a € + b c }
 ```
 
 ```text
-error[syntax/unknown-character] 1:12..1:15 "€": character has no meaning in Sumi source
+error[syntax/unknown-character] 2:7..2:10 "€": character has no meaning in Sumi source
 ```
 
 ### `syntax/unknown-suffix`
@@ -132,13 +133,13 @@ Shown by [`tests/corpus/recovery/prior-phase-tokens-are-recorded-as-recovery`](.
 
 ```sumi
 fn f() {
-  a ;
-  b
+    a ;
+    b
 }
 ```
 
 ```text
-error[syntax/unknown-punctuation] 2:5..2:6 ";": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 2:7..2:8 ";": punctuation has no meaning in Sumi source
 ```
 
 ### `syntax/expected-item`
@@ -172,13 +173,13 @@ Shown by [`tests/corpus/recovery/a-nested-fn-is-skipped-whole`](../../../tests/c
 
 ```sumi
 fn f() {
-  fn g() {}
+    fn g() {}
 }
 ```
 
 ```text
-error[syntax/expected-statement] 2:3..2:5 "fn": expected a statement
-  at 2:3..2:12 "fn g() {}": skipped while recovering
+error[syntax/expected-statement] 2:5..2:7 "fn": expected a statement
+  at 2:5..2:14 "fn g() {}": skipped while recovering
 ```
 
 ### `syntax/expected-expression`
@@ -189,11 +190,12 @@ and the next token cannot begin one.
 Shown by [`tests/corpus/recovery/a-prefix-without-an-operand-reports-only-the-missing-operand`](../../../tests/corpus/recovery/a-prefix-without-an-operand-reports-only-the-missing-operand/case.sumi):
 
 ```sumi
-fn f() { - }
+fn f() {
+    - }
 ```
 
 ```text
-error[syntax/expected-expression] 1:12: expected an expression
+error[syntax/expected-expression] 2:7: expected an expression
 ```
 
 ### `syntax/expected-name`
@@ -245,16 +247,17 @@ the closer.
 Shown by [`tests/corpus/recovery/a-body-whose-closer-an-inner-block-took-ends-at-the-next-item`](../../../tests/corpus/recovery/a-body-whose-closer-an-inner-block-took-ends-at-the-next-item/case.sumi):
 
 ```sumi
-fn f() { (a { b) }
+fn f() {
+    (a { b) }
 fn g() {}
 ```
 
 ```text
-error[syntax/expected-token] 1:13: expected `)`
-  at 1:10..1:11 "(": opening delimiter is here
-  at 1:13..1:17 "{ b)": skipped while recovering
+error[syntax/expected-token] 2:8: expected `)`
+  at 2:5..2:6 "(": opening delimiter is here
+  at 2:8..2:12 "{ b)": skipped while recovering
   fix (safe): insert `)`
-    1:12 -> ")"
+    2:7 -> ")"
 ```
 
 ### `syntax/expected-body`
@@ -283,11 +286,13 @@ Two statements share a line. A line break ends a statement; there is no
 Shown by [`tests/corpus/recovery/two-statements-on-one-line-are-an-error`](../../../tests/corpus/recovery/two-statements-on-one-line-are-an-error/case.sumi):
 
 ```sumi
-fn f() { a b }
+fn f() {
+    a b
+}
 ```
 
 ```text
-error[syntax/expected-boundary] 1:12: expected a line break between statements
+error[syntax/expected-boundary] 2:7: expected a line break between statements
 ```
 
 ### `syntax/unexpected-syntax`
@@ -316,13 +321,14 @@ Shown by [`tests/corpus/recovery/expression-nesting-limit`](../../../tests/corpu
 ```sumi
 // Past the nesting limit the rest of the expression is skipped as one run
 // and reported once, and the next item still parses.
-fn deep() = !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!x
+fn deep() =
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!x
 fn after() = 1
 ```
 
 ```text
-error[syntax/nesting-too-deep] 3:268..3:269 "!": expression nesting limit exceeded
-  at 3:268..3:314 "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!x": skipped while recovering
+error[syntax/nesting-too-deep] 4:260..4:261 "!": expression nesting limit exceeded
+  at 4:260..4:306 "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!x": skipped while recovering
 ```
 
 ### `syntax/unspaced-binary-operator`
@@ -475,7 +481,9 @@ Shown by [`tests/corpus/syntax/comparisons-do-not-chain`](../../../tests/corpus/
 
 ```sumi
 fn chained() { a < b < c }
-fn grouped() { (a < b) < c }
+fn grouped() {
+    (a < b) < c
+}
 ```
 
 ```text
@@ -616,8 +624,12 @@ fn consumer() -> int = spin(1)
 fn grounded() = spin(1) + 1
 fn recovered() = grounded()
 fn bad_arguments() = spin(true, missing)
-fn bare() { 1 }
-fn malformed() -> = { 1 }
+fn bare() {
+    1
+}
+fn malformed() -> = {
+    1
+}
 fn intact() = true
 ```
 
@@ -643,7 +655,7 @@ fn probe() {
             let x = x + 1
             x + true
         },
-        x + false
+        x + false,
     )
     _ = x
 }
@@ -690,27 +702,39 @@ Shown by [`tests/corpus/semantic/three-way-conflicts`](../../../tests/corpus/sem
 ```sumi
 // A conflict lists every type claimed, in source order: two with "and",
 // more with commas and an "and" before the last.
-fn a() = if true { 1 } else { b() }
-fn b() = if true { true } else { c() }
-fn c() = if true { {} } else { a() }
+fn a() = if true {
+    1
+} else {
+    b()
+}
+fn b() = if true {
+    true
+} else {
+    c()
+}
+fn c() = if true {
+    {}
+} else {
+    a()
+}
 ```
 
 ```text
 error[semantic/cannot-infer]: function result is both int, bool, and unit; add a return type annotation
-  primary @123..158
-  secondary @142..143: int here
-  secondary @153..156: bool here
-  secondary @153..156: unit here
+  primary @123..166
+  secondary @146..147: int here
+  secondary @161..164: bool here
+  secondary @161..164: unit here
 error[semantic/cannot-infer]: function result is both bool, int, and unit; add a return type annotation
-  primary @159..197
-  secondary @178..182: bool here
-  secondary @192..195: int here
-  secondary @192..195: unit here
+  primary @167..213
+  secondary @190..194: bool here
+  secondary @208..211: int here
+  secondary @208..211: unit here
 error[semantic/cannot-infer]: function result is both unit, int, and bool; add a return type annotation
-  primary @198..234
-  secondary @217..219: unit here
-  secondary @229..232: int here
-  secondary @229..232: bool here
+  primary @214..258
+  secondary @237..239: unit here
+  secondary @253..256: int here
+  secondary @253..256: bool here
 ```
 
 ### `semantic/division-by-zero`
@@ -736,21 +760,39 @@ fn statements() -> int {
     let b = a + 1
     let a = b * 10
     _ = a / 0 == 0 || true
-    if a > b { a - b } else { b - a }
+    if a > b {
+        a - b
+    } else {
+        b - a
+    }
 }
 fn inner_guard(n: int, m: int) -> int {
-    if n > 0 { if m != 0 { _ = 1 }
- 0 } else { 100 / m }
+    if n > 0 {
+        if m != 0 {
+            _ = 1
+        }
+        0
+    } else {
+        100 / m
+    }
 }
 fn inner_guards() -> int = inner_guard(0, 0) + inner_guard(1, 5)
 fn inverse(d: int) -> int = 100 / d
 fn inverses() -> int = inverse(0) + inverse(0) + inverse(0) + inverse(0) + inverse(0)
 fn compared(d: int) -> int {
     let z = 0
-    if d == z { 1 } else { 100 / z }
+    if d == z {
+        1
+    } else {
+        100 / z
+    }
 }
 fn compareds() -> int = compared(1)
-fn fixed(d: int) -> int = if d == 0 { 100 / d } else { 1 }
+fn fixed(d: int) -> int = if d == 0 {
+    100 / d
+} else {
+    1
+}
 fn fixeds() -> int = fixed(-5) + fixed(0) + fixed(5)
 fn arity(d: int) -> int = 100 / d
 fn wrong_arity() -> int = arity(0, 1)
@@ -760,7 +802,11 @@ fn bound() -> int {
     let z = 0
     half(z)
 }
-fn guarded(k: int) -> int = if k == 0 { half(k) } else { 1 }
+fn guarded(k: int) -> int = if k == 0 {
+    half(k)
+} else {
+    1
+}
 fn guardeds() -> int = guarded(0)
 fn chained() -> int {
     let a = 0
@@ -776,7 +822,11 @@ fn chained() -> int {
 fn divides(n: int) -> int = 10 / n
 fn under_a_hole() -> int {
     let x = 0
-    if absent { divides(x) } else { 1 }
+    if absent {
+        divides(x)
+    } else {
+        1
+    }
 }
 ```
 
@@ -793,34 +843,34 @@ error[semantic/division-by-zero]: division by zero
 error[semantic/division-by-zero]: divisor may be zero
   primary @194..201
   secondary @234..239: argument may be 0: [-3, 3]
-  secondary @1047..1048: argument is 0
-  secondary @1123..1124: argument is 0
-  secondary @1173..1174: argument is 0
+  secondary @1154..1155: argument is 0
+  secondary @1230..1231: argument is 0
+  secondary @1284..1285: argument is 0
 error[semantic/division-by-zero]: division by zero
   primary @369..374
   secondary @373..374: is 0
 error[semantic/division-by-zero]: divisor may be zero
-  primary @515..522
-  secondary @569..570: argument is 0
+  primary @586..593
+  secondary @644..645: argument is 0
 error[semantic/division-by-zero]: division by zero
-  primary @620..627
-  secondary @659..660: argument is 0
-  secondary @672..673: argument is 0
-  secondary @685..686: argument is 0
-  secondary @698..699: argument is 0
+  primary @695..702
+  secondary @734..735: argument is 0
+  secondary @747..748: argument is 0
+  secondary @760..761: argument is 0
+  secondary @773..774: argument is 0
 error[semantic/division-by-zero]: division by zero
-  primary @784..791
-  secondary @755..756: is 0
+  primary @879..886
+  secondary @830..831: is 0
 error[semantic/division-by-zero]: division by zero
-  primary @870..877
-  secondary @861..867: is 0 under this guard
-  secondary @930..931: argument is 0
+  primary @973..980
+  secondary @960..966: is 0 under this guard
+  secondary @1037..1038: argument is 0
 error[semantic/division-by-zero]: division by zero
-  primary @1361..1368
-  secondary @1257..1258: is 0
+  primary @1476..1483
+  secondary @1372..1373: is 0
 error[semantic/division-by-zero]: division by zero
-  primary @1399..1405
-  secondary @1471..1472: argument is 0
+  primary @1514..1520
+  secondary @1594..1595: argument is 0
 ```
 
 ### `semantic/unbounded-recursion`
@@ -845,8 +895,12 @@ fn consumer() -> int = spin(1)
 fn grounded() = spin(1) + 1
 fn recovered() = grounded()
 fn bad_arguments() = spin(true, missing)
-fn bare() { 1 }
-fn malformed() -> = { 1 }
+fn bare() {
+    1
+}
+fn malformed() -> = {
+    1
+}
 fn intact() = true
 ```
 

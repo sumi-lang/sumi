@@ -1,19 +1,13 @@
 == tree ==
-SourceFile 0..43
-  FnItem 0..43
+SourceFile 0..48
+  FnItem 0..47
     Name 3..4 "f"
     ParamList 4..6 "()"
-    Block 7..43
-      LetStmt 11..20
-        Name 15..16 "x"
-        LiteralExpr 19..20 "1"
-      LetStmt 23..41
-        Name 31..32 "y"
-        TypeRef 34..37 "int"
-        NameRef 40..41 "x"
-
-== formatted ==
-fn f() {
-    let x = 1
-    let mut y: int = x
-}
+    Block 7..47
+      LetStmt 13..22
+        Name 17..18 "x"
+        LiteralExpr 21..22 "1"
+      LetStmt 27..45
+        Name 35..36 "y"
+        TypeRef 38..41 "int"
+        NameRef 44..45 "x"

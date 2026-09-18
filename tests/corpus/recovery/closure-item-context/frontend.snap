@@ -1,5 +1,5 @@
 == tree ==
-SourceFile! 0..367
+SourceFile! 0..371
   FnItem! 0..8
     ParamList 3..5 "()"
     Block 6..8 "{}"
@@ -27,54 +27,54 @@ SourceFile! 0..367
     ParamList 125..127 "()"
     TypeRef 131..134 "int"
     LiteralExpr 137..138 "2"
-  FnItem! 139..174
+  FnItem! 139..178
     Name 142..155 "damaged_block"
     ParamList 155..157 "()"
-    Block! 158..174
+    Block! 158..178
       LiteralExpr 164..165 "0"
-      ClosureExpr 166..174
-        ParamList 168..170 "()"
-        LiteralExpr 173..174 "1"
-  FnItem 175..197
-    Name 178..184 "next_c"
-    ParamList 184..186 "()"
-    TypeRef 190..193 "int"
-    LiteralExpr 196..197 "3"
-  FnItem! 198..207
-    Name! 201..202 "_"
-    ParamList 202..204 "()"
-    Block 205..207 "{}"
-  FnItem! 208..226
-    Name 211..219 "trailing"
-    ParamList 219..221 "()"
-    ClosureExpr! 224..226 "fn"
-  FnItem! 227..245
-    Name 230..238 "enclosed"
-    ParamList 238..240 "()"
-    ParenExpr! 243..245
-      LiteralExpr 244..245 "0"
-  Error! 246..260 "fn hidden() {}"
-  Error! 260..261 ")"
-  FnItem 262..284
-    Name 265..271 "next_d"
-    ParamList 271..273 "()"
-    TypeRef 277..280 "int"
-    LiteralExpr 283..284 "4"
-  FnItem! 285..317
-    Name 288..310 "enclosed_after_garbage"
-    ParamList 310..312 "()"
-    ParenExpr! 315..317
-      LiteralExpr 316..317 "0"
-  Error! 318..334 ", fn hidden() {}"
-  Error! 334..335 ")"
-  FnItem! 336..343
-    ParamList 338..340 "()"
-    Block 341..343 "{}"
-  FnItem 344..366
-    Name 347..353 "next_e"
-    ParamList 353..355 "()"
-    TypeRef 359..362 "int"
-    LiteralExpr 365..366 "5"
+      ClosureExpr 170..178
+        ParamList 172..174 "()"
+        LiteralExpr 177..178 "1"
+  FnItem 179..201
+    Name 182..188 "next_c"
+    ParamList 188..190 "()"
+    TypeRef 194..197 "int"
+    LiteralExpr 200..201 "3"
+  FnItem! 202..211
+    Name! 205..206 "_"
+    ParamList 206..208 "()"
+    Block 209..211 "{}"
+  FnItem! 212..230
+    Name 215..223 "trailing"
+    ParamList 223..225 "()"
+    ClosureExpr! 228..230 "fn"
+  FnItem! 231..249
+    Name 234..242 "enclosed"
+    ParamList 242..244 "()"
+    ParenExpr! 247..249
+      LiteralExpr 248..249 "0"
+  Error! 250..264 "fn hidden() {}"
+  Error! 264..265 ")"
+  FnItem 266..288
+    Name 269..275 "next_d"
+    ParamList 275..277 "()"
+    TypeRef 281..284 "int"
+    LiteralExpr 287..288 "4"
+  FnItem! 289..321
+    Name 292..314 "enclosed_after_garbage"
+    ParamList 314..316 "()"
+    ParenExpr! 319..321
+      LiteralExpr 320..321 "0"
+  Error! 322..338 ", fn hidden() {}"
+  Error! 338..339 ")"
+  FnItem! 340..347
+    ParamList 342..344 "()"
+    Block 345..347 "{}"
+  FnItem 348..370
+    Name 351..357 "next_e"
+    ParamList 357..359 "()"
+    TypeRef 363..366 "int"
+    LiteralExpr 369..370 "5"
 
 == evidence ==
 ExpectedName at 3
@@ -85,15 +85,15 @@ ExpectedBody at 58
 Expected(LParen) at 109
 ExpectedBody at 109
 ExpectedItem at 109
-Expected(RBrace) at 175
-ExpectedName at 201
-Expected(LParen) at 227
-ExpectedBody at 227
-Expected(RParen) at 246
-ExpectedItem at 246
-Expected(RParen) at 318
-ExpectedItem at 318
-ExpectedName at 338
+Expected(RBrace) at 179
+ExpectedName at 205
+Expected(LParen) at 231
+ExpectedBody at 231
+Expected(RParen) at 250
+ExpectedItem at 250
+Expected(RParen) at 322
+ExpectedItem at 322
+ExpectedName at 342
 
 == diagnostics ==
 error[syntax/expected-name] 1:4: expected a name
@@ -109,7 +109,7 @@ error[syntax/expected-item] 6:1..6:2 "(": expected a function item
 error[syntax/expected-token] 11:1: expected `}`
   at 8:20..8:21 "{": opening delimiter is here
   fix (safe): insert `}`
-    10:9 -> "}"
+    10:13 -> "}"
 error[syntax/expected-name] 12:4..12:5 "_": expected a name
 error[syntax/expected-token] 14:1: expected `(`
 error[syntax/expected-body] 14:1: expected a body, `{` or `=`
@@ -139,30 +139,11 @@ fn multiline_closure() = fn
 fn next_b() -> int = 2
 fn damaged_block() {
     0
-fn() = 1}
+    fn() = 1}
 fn next_c() -> int = 3
 fn _() {}
 fn trailing() = fn
 fn enclosed() = (0) fn hidden() {})
 fn next_d() -> int = 4
 fn enclosed_after_garbage() = (0) , fn hidden() {}) fn() {}
-fn next_e() -> int = 5
-
-== formatted ==
-fn () {}
-garbage fn () {}
-fn malformed_closure() = fn = 1
-fn next_a() -> int = 1
-fn multiline_closure() = fn
-() = 1
-fn next_b() -> int = 2
-fn damaged_block() {
-    0
-    fn() = 1
-fn next_c() -> int = 3
-fn _() {}
-fn trailing() = fn
-fn enclosed() = (0 fn hidden() {})
-fn next_d() -> int = 4
-fn enclosed_after_garbage() = (0 , fn hidden() {}) fn() {}
 fn next_e() -> int = 5

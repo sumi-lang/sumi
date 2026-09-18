@@ -1,5 +1,5 @@
 == tree ==
-SourceFile 0..520
+SourceFile 0..582
   FnItem 0..21
     Name 3..8 "value"
     ParamList 8..10 "()"
@@ -44,11 +44,11 @@ SourceFile 0..520
       CallExpr 188..195
         NameRef 188..193 "value"
         ArgList 193..195 "()"
-  FnItem 198..340
+  FnItem 198..376
     Name 201..209 "rejected"
     ParamList 209..211 "()"
     TypeRef 215..218 "int"
-    Block 219..340
+    Block 219..376
       LetStmt 225..234
         Name 229..230 "x"
         LiteralExpr 233..234 "1"
@@ -66,97 +66,44 @@ SourceFile 0..520
         CallExpr 285..292
           NameRef 285..290 "value"
           ArgList 290..292 "()"
-      Block 298..303
-        LiteralExpr 300..301 "1"
-      IfExpr 308..332
-        LiteralExpr 311..315 "true"
-        Block 316..321
-          LiteralExpr 318..319 "1"
-        Block 327..332
-          LiteralExpr 329..330 "2"
-      LiteralExpr 337..338 "0"
-  FnItem 341..421
-    Name 344..362 "failed_expressions"
-    ParamList 362..364 "()"
-    Block 365..421
-      NameRef 371..378 "missing"
-      BinaryExpr 383..391
-        LiteralExpr 383..384 "1"
-        LiteralExpr 387..391 "true"
-      IfExpr 396..409
-        LiteralExpr 399..403 "true"
-        Block 404..409
-          LiteralExpr 406..407 "1"
-      DiscardStmt 414..419
-        LiteralExpr 418..419 "0"
-  FnItem 422..479
-    Name 425..439 "nested_failure"
-    ParamList 439..441 "()"
-    Block 442..479
-      Block 448..467
-        CallExpr 450..457
-          NameRef 450..455 "value"
-          ArgList 455..457 "()"
-        LiteralExpr 464..465 "2"
-      DiscardStmt 472..477
-        LiteralExpr 476..477 "0"
-  FnItem 480..519
-    Name 483..501 "tail_requires_unit"
-    ParamList 501..503 "()"
-    Block 504..519
-      CallExpr 510..517
-        NameRef 510..515 "value"
-        ArgList 515..517 "()"
-
-== formatted ==
-fn value() -> int = 1
-fn action() {}
-fn accepted() -> int {
-    let u = action()
-    u
-    (u)
-    action()
-    (action())
-    {}
-    if true {}
-    _ = value()
-    _ = true
-    _ = u
-    value()
-}
-fn rejected() -> int {
-    let x = 1
-    x
-    (x)
-    1 + 2
-    true
-    value()
-    (value())
-    {
-        1
-    }
-    if true {
-        1
-    } else {
-        2
-    }
-    0
-}
-fn failed_expressions() {
-    missing
-    1 + true
-    if true {
-        1
-    }
-    _ = 0
-}
-fn nested_failure() {
-    {
-        value()
-        2
-    }
-    _ = 0
-}
-fn tail_requires_unit() {
-    value()
-}
+      Block 298..315
+        LiteralExpr 308..309 "1"
+      IfExpr 320..368
+        LiteralExpr 323..327 "true"
+        Block 328..345
+          LiteralExpr 338..339 "1"
+        Block 351..368
+          LiteralExpr 361..362 "2"
+      LiteralExpr 373..374 "0"
+  FnItem 377..469
+    Name 380..398 "failed_expressions"
+    ParamList 398..400 "()"
+    Block 401..469
+      NameRef 407..414 "missing"
+      BinaryExpr 419..427
+        LiteralExpr 419..420 "1"
+        LiteralExpr 423..427 "true"
+      IfExpr 432..457
+        LiteralExpr 435..439 "true"
+        Block 440..457
+          LiteralExpr 450..451 "1"
+      DiscardStmt 462..467
+        LiteralExpr 466..467 "0"
+  FnItem 470..541
+    Name 473..487 "nested_failure"
+    ParamList 487..489 "()"
+    Block 490..541
+      Block 496..529
+        CallExpr 506..513
+          NameRef 506..511 "value"
+          ArgList 511..513 "()"
+        LiteralExpr 522..523 "2"
+      DiscardStmt 534..539
+        LiteralExpr 538..539 "0"
+  FnItem 542..581
+    Name 545..563 "tail_requires_unit"
+    ParamList 563..565 "()"
+    Block 566..581
+      CallExpr 572..579
+        NameRef 572..577 "value"
+        ArgList 577..579 "()"

@@ -1,1 +1,2 @@
-fn f() { let _ x }
+fn f() {
+    let _ x }

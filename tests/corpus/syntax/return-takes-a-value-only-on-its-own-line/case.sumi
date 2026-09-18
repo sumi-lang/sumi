@@ -1,5 +1,5 @@
 fn f() {
-  return x
-  return
-  x
+    return x
+    return
+    x
 }

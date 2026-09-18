@@ -1,24 +1,19 @@
 == tree ==
-SourceFile! 0..21
-  FnItem! 0..21
+SourceFile! 0..26
+  FnItem! 0..25
     Name 3..4 "f"
     ParamList 4..6 "()"
-    Block! 7..21
-      CallExpr! 9..19
-        NameRef 9..10 "g"
-        ArgList! 10..19
-          Error! 11..12 ":"
-          ParenExpr 12..15
-            NameRef 13..14 "x"
-          NameRef 17..18 "y"
+    Block! 7..25
+      CallExpr! 13..23
+        NameRef 13..14 "g"
+        ArgList! 14..23
+          Error! 15..16 ":"
+          ParenExpr 16..19
+            NameRef 17..18 "x"
+          NameRef 21..22 "y"
 
 == evidence ==
-ExpectedExpression at 11
+ExpectedExpression at 15
 
 == diagnostics ==
-error[syntax/expected-expression] 1:12..1:13 ":": expected an expression
-
-== formatted ==
-fn f() {
-    g(:(x), y)
-}
+error[syntax/expected-expression] 2:7..2:8 ":": expected an expression

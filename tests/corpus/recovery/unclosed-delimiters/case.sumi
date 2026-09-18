@@ -1,2 +1,4 @@
-fn parens() { (a }
-fn arguments() { g(a
+fn parens() {
+    (a }
+fn arguments() {
+    g(a

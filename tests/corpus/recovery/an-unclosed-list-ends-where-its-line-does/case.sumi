@@ -1,7 +1,9 @@
-fn arguments() { g(a
+fn arguments() {
+    g(a
   b
 }
-fn prefix_operand() { g(* a
+fn prefix_operand() {
+    g(* a
   b
 }
 fn parameters(a: int

@@ -1,21 +1,17 @@
 == tree ==
-SourceFile! 0..22
-  FnItem! 0..22
+SourceFile! 0..27
+  FnItem! 0..26
     Name 3..4 "f"
     ParamList 4..6 "()"
-    Block! 7..22
-      BinaryExpr! 9..18
-        NameRef 9..10 "a"
-        Error! 11..14 "€"
-        NameRef 17..18 "b"
-      Error! 19..20 "c"
+    Block! 7..26
+      BinaryExpr! 13..22
+        NameRef 13..14 "a"
+        Error! 15..18 "€"
+        NameRef 21..22 "b"
+      Error! 23..24 "c"
 
 == evidence ==
-Unexpected at 11
+Unexpected at 15
 
 == diagnostics ==
-error[syntax/unknown-character] 1:12..1:15 "€": character has no meaning in Sumi source
-
-== formatted ==
-fn f() {
-    a € + b c }
+error[syntax/unknown-character] 2:7..2:10 "€": character has no meaning in Sumi source

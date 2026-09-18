@@ -1,2 +1,4 @@
-fn braces() { if true {
-fn parens() { ((1 }
+fn braces() {
+    if true {
+fn parens() {
+    ((1 }

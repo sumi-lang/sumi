@@ -1,60 +1,52 @@
 == tree ==
-SourceFile! 0..119
-  FnItem! 0..40
+SourceFile! 0..133
+  FnItem! 0..46
     Name 3..20 "closer_in_discard"
     ParamList 20..22 "()"
-    Block! 23..40
-      DiscardStmt! 25..34
-        Error! 29..30 "}"
-        LiteralExpr 31..34 "\"a\""
-      NameRef 37..38 "x"
-  FnItem! 41..76
-    Name 44..60 "opener_in_parens"
-    ParamList 60..62 "()"
-    Block! 63..76
-      ParenExpr! 65..74
-        BinaryExpr! 66..73
-          NameRef 66..67 "a"
-          Error! 68..69 "{"
-          NameRef 72..73 "b"
-  FnItem! 77..118
-    Name 80..99 "opener_in_arguments"
-    ParamList 99..101 "()"
-    Block! 102..118
-      CallExpr! 104..116
-        NameRef 104..105 "g"
-        ArgList! 105..116
-          NameRef 106..107 "a"
-          Block! 110..115
-            Error! 112..115 "% b"
+    Block! 23..46
+      DiscardStmt! 29..38
+        Error! 33..34 "}"
+        LiteralExpr 35..38 "\"a\""
+      NameRef 43..44 "x"
+  FnItem! 47..86
+    Name 50..66 "opener_in_parens"
+    ParamList 66..68 "()"
+    Block! 69..86
+      ParenExpr! 75..84
+        BinaryExpr! 76..83
+          NameRef 76..77 "a"
+          Error! 78..79 "{"
+          NameRef 82..83 "b"
+  FnItem! 87..132
+    Name 90..109 "opener_in_arguments"
+    ParamList 109..111 "()"
+    Block! 112..132
+      CallExpr! 118..130
+        NameRef 118..119 "g"
+        ArgList! 119..130
+          NameRef 120..121 "a"
+          Block! 124..129
+            Error! 126..129 "% b"
 
 == evidence ==
-ExpectedExpression at 29
-Unexpected at 68
-Expected(Comma) at 110
-ExpectedStatement at 112
-Expected(RBrace) at 115
+ExpectedExpression at 33
+Unexpected at 78
+Expected(Comma) at 124
+ExpectedStatement at 126
+Expected(RBrace) at 129
 
 == diagnostics ==
-error[syntax/expected-expression] 1:30..1:31 "}": expected an expression
-error[syntax/unexpected-syntax] 4:28..4:29 "{": unexpected syntax in expression
-error[syntax/expected-token] 6:3: expected `,`
-error[syntax/expected-statement] 6:5..6:6 "%": expected a statement
-  at 6:5..6:8 "% b": skipped while recovering
-error[syntax/expected-token] 6:8: expected `}`
-  at 6:3..6:4 "{": opening delimiter is here
+error[syntax/expected-expression] 2:9..2:10 "}": expected an expression
+error[syntax/unexpected-syntax] 6:8..6:9 "{": unexpected syntax in expression
+error[syntax/expected-token] 10:3: expected `,`
+error[syntax/expected-statement] 10:5..10:6 "%": expected a statement
+  at 10:5..10:8 "% b": skipped while recovering
+error[syntax/expected-token] 10:8: expected `}`
+  at 10:3..10:4 "{": opening delimiter is here
   fix (safe): insert `}`
-    6:8 -> "}"
+    10:8 -> "}"
 
 == fixed (syntax/expected-expression, syntax/expected-statement, syntax/expected-token, syntax/unexpected-syntax remain) ==
-fn closer_in_discard() { _ = } "a"
-  x
-}
-fn opener_in_parens() { (a { * b) }
-fn opener_in_arguments() { g(a
-  { % b}) }
-
-== formatted ==
 fn closer_in_discard() {
     _ = } "a"
     x
@@ -64,5 +56,5 @@ fn opener_in_parens() {
 }
 fn opener_in_arguments() {
     g(a
-  { % b)
+  { % b})
 }

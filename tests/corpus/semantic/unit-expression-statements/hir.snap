@@ -26,7 +26,7 @@ fn accepted@37..197 () -> int ∈ [1, 1]
       discard: bool true : bool @169..173
       tail: call value@0..21 : int @188..195
 
-fn rejected@198..340 () -> int ∈ [0, 0]
+fn rejected@198..376 () -> int ∈ [0, 0]
   result: copy : int @215..218
     value:
       let x@229..230: int @225..234
@@ -37,38 +37,38 @@ fn rejected@198..340 () -> int ∈ [0, 0]
       discard: bool true : bool @263..267
       discard: call value@0..21 : int @272..279
       discard: call value@0..21 : int @285..292
-      discard: int 1 : int @300..301
-      discard: if : int @308..332
-        condition: bool true : bool @311..315
-        then: int 1 : int @318..319
-        else: int 2 : int @329..330
-      tail: int 0 : int @337..338
+      discard: int 1 : int @308..309
+      discard: if : int @320..368
+        condition: bool true : bool @323..327
+        then: int 1 : int @338..339
+        else: int 2 : int @361..362
+      tail: int 0 : int @373..374
 
-fn failed_expressions@341..421 () -> unit ∈ unit
-  result: copy : unit @341..421
+fn failed_expressions@377..469 () -> unit ∈ unit
+  result: copy : unit @377..469
     value:
-      discard: hole : ? @371..378
-      discard: eager + : int @383..391
-        lhs: int 1 : int @383..384
-        rhs: bool true : ? @387..391
-      discard: if : unit @396..409
-        condition: bool true : bool @399..403
-        then: int 1 : ? @406..407
+      discard: hole : ? @407..414
+      discard: eager + : int @419..427
+        lhs: int 1 : int @419..420
+        rhs: bool true : ? @423..427
+      discard: if : unit @432..457
+        condition: bool true : bool @435..439
+        then: int 1 : ? @450..451
         else: unit (implicit)
-      discard: int 0 : int @418..419
-      tail: unit : unit @365..421
+      discard: int 0 : int @466..467
+      tail: unit : unit @401..469
 
-fn nested_failure@422..479 () -> unit ∈ unit
-  result: copy : unit @422..479
+fn nested_failure@470..541 () -> unit ∈ unit
+  result: copy : unit @470..541
     value:
-      discard: call value@0..21 : int @450..457
-      discard: int 2 : int @464..465
-      discard: int 0 : int @476..477
-      tail: unit : unit @442..479
+      discard: call value@0..21 : int @506..513
+      discard: int 2 : int @522..523
+      discard: int 0 : int @538..539
+      tail: unit : unit @490..541
 
-fn tail_requires_unit@480..519 () -> unit ∈ ∅
-  result: copy : unit @480..519
-    value: call value@0..21 : ? @510..517
+fn tail_requires_unit@542..581 () -> unit ∈ ∅
+  result: copy : unit @542..581
+    value: call value@0..21 : ? @572..579
 
 == semantic diagnostics ==
 error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
@@ -84,21 +84,21 @@ error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
 error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
   primary @284..293
 error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
-  primary @298..303
+  primary @298..315
 error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
-  primary @308..332
+  primary @320..368
 error[semantic/unknown-name]: unknown name `missing`
-  primary @371..378
+  primary @407..414
 error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
-  primary @383..391
+  primary @419..427
 error[semantic/type-mismatch]: expected int, found bool
-  primary @387..391
+  primary @423..427
 error[semantic/type-mismatch]: expected unit, found int
-  primary @404..409
+  primary @440..457
 error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
-  primary @448..467
+  primary @496..529
 error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
-  primary @450..457
+  primary @506..513
 error[semantic/type-mismatch]: expected unit, found int
-  primary @504..519
-  secondary @480..519: declared here
+  primary @566..581
+  secondary @542..581: declared here

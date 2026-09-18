@@ -1,5 +1,5 @@
 == tree ==
-SourceFile 0..415
+SourceFile 0..489
   FnItem 0..59
     Name 3..14 "unsupported"
     ParamList 14..16 "()"
@@ -10,112 +10,78 @@ SourceFile 0..415
       DiscardStmt 41..46
         NameRef 45..46 "x"
       ReturnStmt 51..57 "return"
-  FnItem 60..93
+  FnItem 60..97
     Name 63..70 "closure"
     ParamList 70..72 "()"
-    Block 73..93
-      LetStmt 75..91
-        Name 79..80 "f"
-        ClosureExpr 83..91
-          ParamList 85..87 "()"
-          LiteralExpr 90..91 "1"
-  FnItem 94..121
-    Name 97..104 "literal"
-    ParamList 104..106 "()"
-    LiteralExpr 109..121 "\"not scalar\""
-  FnItem 122..147
-    Name 125..133 "mismatch"
-    ParamList 133..135 "()"
-    TypeRef 139..143 "bool"
-    LiteralExpr 146..147 "1"
-  FnItem 148..199
-    Name 151..159 "branches"
-    ParamList 159..161 "()"
-    TypeRef 165..168 "int"
-    IfExpr 171..199
-      LiteralExpr 174..178 "true"
-      Block 179..184
-        LiteralExpr 181..182 "1"
-      Block 190..199
-        LiteralExpr 192..197 "false"
-  FnItem 200..233
-    Name 203..215 "missing_else"
-    ParamList 215..217 "()"
-    IfExpr 220..233
-      LiteralExpr 223..227 "true"
-      Block 228..233
-        LiteralExpr 230..231 "1"
-  FnItem 234..269
-    Name 237..247 "annotation"
-    ParamList 247..249 "()"
-    Block 250..269
-      LetStmt 252..267
-        Name 256..257 "x"
-        TypeRef 259..263 "bool"
-        LiteralExpr 266..267 "1"
-  FnItem 270..307
-    Name 273..286 "unit_equality"
-    ParamList 286..288 "()"
-    TypeRef 292..296 "bool"
-    BinaryExpr 299..307
-      Block 299..301 "{}"
-      Block 305..307 "{}"
-  FnItem 308..337
-    Name 311..319 "unit_sum"
-    ParamList 319..321 "()"
-    TypeRef 325..328 "int"
-    BinaryExpr 331..337
-      Block 331..333 "{}"
-      LiteralExpr 336..337 "1"
-  FnItem 338..414
-    Name 341..354 "computed_call"
-    ParamList 354..356 "()"
-    Block 357..414
-      DiscardStmt 363..412
-        CallExpr 367..412
-          ParenExpr 367..393
-            IfExpr 368..392
-              LiteralExpr 371..375 "true"
-              Block 376..381
-                LiteralExpr 378..379 "1"
-              Block 387..392
-                LiteralExpr 389..390 "2"
-          ArgList 393..412
-            NameRef 394..401 "missing"
-            BinaryExpr 403..411
-              LiteralExpr 403..404 "1"
-              LiteralExpr 407..411 "true"
-
-== formatted ==
-fn unsupported() {
-    let mut x = 1
-    _ = x
-    return
-}
-fn closure() {
-    let f = fn() = 1
-}
-fn literal() = "not scalar"
-fn mismatch() -> bool = 1
-fn branches() -> int = if true {
-    1
-} else {
-    false
-}
-fn missing_else() = if true {
-    1
-}
-fn annotation() {
-    let x: bool = 1
-}
-fn unit_equality() -> bool = {} == {}
-fn unit_sum() -> int = {} + 1
-fn computed_call() {
-    _ = (
-        if true {
-            1
-        } else {
-            2
-        }
-    )(missing, 1 + true)
-}
+    Block 73..97
+      LetStmt 79..95
+        Name 83..84 "f"
+        ClosureExpr 87..95
+          ParamList 89..91 "()"
+          LiteralExpr 94..95 "1"
+  FnItem 98..125
+    Name 101..108 "literal"
+    ParamList 108..110 "()"
+    LiteralExpr 113..125 "\"not scalar\""
+  FnItem 126..151
+    Name 129..137 "mismatch"
+    ParamList 137..139 "()"
+    TypeRef 143..147 "bool"
+    LiteralExpr 150..151 "1"
+  FnItem 152..211
+    Name 155..163 "branches"
+    ParamList 163..165 "()"
+    TypeRef 169..172 "int"
+    IfExpr 175..211
+      LiteralExpr 178..182 "true"
+      Block 183..192
+        LiteralExpr 189..190 "1"
+      Block 198..211
+        LiteralExpr 204..209 "false"
+  FnItem 212..249
+    Name 215..227 "missing_else"
+    ParamList 227..229 "()"
+    IfExpr 232..249
+      LiteralExpr 235..239 "true"
+      Block 240..249
+        LiteralExpr 246..247 "1"
+  FnItem 250..289
+    Name 253..263 "annotation"
+    ParamList 263..265 "()"
+    Block 266..289
+      LetStmt 272..287
+        Name 276..277 "x"
+        TypeRef 279..283 "bool"
+        LiteralExpr 286..287 "1"
+  FnItem 290..327
+    Name 293..306 "unit_equality"
+    ParamList 306..308 "()"
+    TypeRef 312..316 "bool"
+    BinaryExpr 319..327
+      Block 319..321 "{}"
+      Block 325..327 "{}"
+  FnItem 328..357
+    Name 331..339 "unit_sum"
+    ParamList 339..341 "()"
+    TypeRef 345..348 "int"
+    BinaryExpr 351..357
+      Block 351..353 "{}"
+      LiteralExpr 356..357 "1"
+  FnItem 358..488
+    Name 361..374 "computed_call"
+    ParamList 374..376 "()"
+    Block 377..488
+      DiscardStmt 383..486
+        CallExpr 387..486
+          ParenExpr 387..467
+            IfExpr 397..461
+              LiteralExpr 400..404 "true"
+              Block 405..430
+                LiteralExpr 419..420 "1"
+              Block 436..461
+                LiteralExpr 450..451 "2"
+          ArgList 467..486
+            NameRef 468..475 "missing"
+            BinaryExpr 477..485
+              LiteralExpr 477..478 "1"
+              LiteralExpr 481..485 "true"

@@ -5,7 +5,7 @@ fn probe() {
             let x = x + 1
             x + true
         },
-        x + false
+        x + false,
     )
     _ = x
 }

@@ -1,5 +1,5 @@
 == tree ==
-SourceFile! 0..215
+SourceFile! 0..223
   FnItem 0..25
     Name 3..7 "spin"
     ParamList 7..15
@@ -41,41 +41,27 @@ SourceFile! 0..215
       ArgList 138..153
         LiteralExpr 139..143 "true"
         NameRef 145..152 "missing"
-  FnItem 154..169
+  FnItem 154..173
     Name 157..161 "bare"
     ParamList 161..163 "()"
-    Block 164..169
-      LiteralExpr 166..167 "1"
-  FnItem! 170..195
-    Name 173..182 "malformed"
-    ParamList 182..184 "()"
-    Error! 188..189 "="
-    Block 190..195
-      LiteralExpr 192..193 "1"
-  FnItem 196..214
-    Name 199..205 "intact"
-    ParamList 205..207 "()"
-    LiteralExpr 210..214 "true"
+    Block 164..173
+      LiteralExpr 170..171 "1"
+  FnItem! 174..203
+    Name 177..186 "malformed"
+    ParamList 186..188 "()"
+    Error! 192..193 "="
+    Block 194..203
+      LiteralExpr 200..201 "1"
+  FnItem 204..222
+    Name 207..213 "intact"
+    ParamList 213..215 "()"
+    LiteralExpr 218..222 "true"
 
 == evidence ==
-ExpectedType at 188
-ExpectedBody at 188
+ExpectedType at 192
+ExpectedBody at 192
 
 == diagnostics ==
-error[syntax/expected-type] 7:19: expected a type
-error[syntax/expected-body] 7:19: expected a body, `{` or `=`
-  at 7:19..7:20 "=": skipped while recovering
-
-== formatted ==
-fn spin(x: int) = spin(x)
-fn consumer() -> int = spin(1)
-fn grounded() = spin(1) + 1
-fn recovered() = grounded()
-fn bad_arguments() = spin(true, missing)
-fn bare() {
-    1
-}
-fn malformed() -> = {
-    1
-}
-fn intact() = true
+error[syntax/expected-type] 9:19: expected a type
+error[syntax/expected-body] 9:19: expected a body, `{` or `=`
+  at 9:19..9:20 "=": skipped while recovering

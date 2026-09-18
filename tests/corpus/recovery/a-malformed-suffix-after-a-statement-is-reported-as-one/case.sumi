@@ -1,2 +1,4 @@
-fn colon() { x : 1 }
-fn keyword() { x else }
+fn colon() {
+    x : 1 }
+fn keyword() {
+    x else }

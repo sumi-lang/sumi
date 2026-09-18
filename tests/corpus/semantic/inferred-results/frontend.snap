@@ -1,103 +1,74 @@
 == tree ==
-SourceFile 0..322
+SourceFile 0..362
   FnItem 0..22
     Name 3..8 "value"
     ParamList 8..10 "()"
     CallExpr 13..22
       NameRef 13..20 "forward"
       ArgList 20..22 "()"
-  FnItem 23..43
+  FnItem 23..47
     Name 26..33 "forward"
     ParamList 33..35 "()"
-    Block 38..43
-      LiteralExpr 40..41 "1"
-  FnItem 44..74
-    Name 47..55 "explicit"
-    ParamList 55..57 "()"
-    TypeRef 61..64 "int"
-    CallExpr 67..74
-      NameRef 67..72 "value"
-      ArgList 72..74 "()"
-  FnItem 75..126
-    Name 78..87 "recursive"
-    ParamList 87..89 "()"
-    IfExpr 92..126
-      LiteralExpr 95..99 "true"
-      Block 100..105
-        LiteralExpr 102..103 "1"
-      Block 111..126
-        CallExpr 113..124
-          NameRef 113..122 "recursive"
-          ArgList 122..124 "()"
-  FnItem 127..184
-    Name 130..138 "anchored"
-    ParamList 138..140 "()"
-    TypeRef 144..147 "int"
-    IfExpr 150..184
-      LiteralExpr 153..158 "false"
-      Block 159..173
-        CallExpr 161..171
-          NameRef 161..169 "inferred"
-          ArgList 169..171 "()"
-      Block 179..184
-        LiteralExpr 181..182 "1"
-  FnItem 185..211
-    Name 188..196 "inferred"
-    ParamList 196..198 "()"
-    CallExpr 201..211
-      NameRef 201..209 "anchored"
-      ArgList 209..211 "()"
-  FnItem 212..263
-    Name 215..222 "integer"
-    ParamList 222..224 "()"
-    Block 227..263
-      IfExpr 231..257
-        LiteralExpr 234..239 "false"
-        Block 240..257
-          DiscardStmt 242..255
-            CallExpr 246..255
-              NameRef 246..253 "boolean"
-              ArgList 253..255 "()"
-      LiteralExpr 260..261 "1"
-  FnItem 264..305
-    Name 267..274 "boolean"
-    ParamList 274..276 "()"
-    Block 279..305
-      DiscardStmt 283..296
-        CallExpr 287..296
-          NameRef 287..294 "integer"
-          ArgList 294..296 "()"
-      LiteralExpr 299..303 "true"
-  FnItem 306..321
-    Name 309..314 "empty"
-    ParamList 314..316 "()"
-    Block 319..321 "{}"
-
-== formatted ==
-fn value() = forward()
-fn forward() = {
-    1
-}
-fn explicit() -> int = value()
-fn recursive() = if true {
-    1
-} else {
-    recursive()
-}
-fn anchored() -> int = if false {
-    inferred()
-} else {
-    1
-}
-fn inferred() = anchored()
-fn integer() = {
-    if false {
-        _ = boolean()
-    }
-    1
-}
-fn boolean() = {
-    _ = integer()
-    true
-}
-fn empty() = {}
+    Block 38..47
+      LiteralExpr 44..45 "1"
+  FnItem 48..78
+    Name 51..59 "explicit"
+    ParamList 59..61 "()"
+    TypeRef 65..68 "int"
+    CallExpr 71..78
+      NameRef 71..76 "value"
+      ArgList 76..78 "()"
+  FnItem 79..138
+    Name 82..91 "recursive"
+    ParamList 91..93 "()"
+    IfExpr 96..138
+      LiteralExpr 99..103 "true"
+      Block 104..113
+        LiteralExpr 110..111 "1"
+      Block 119..138
+        CallExpr 125..136
+          NameRef 125..134 "recursive"
+          ArgList 134..136 "()"
+  FnItem 139..204
+    Name 142..150 "anchored"
+    ParamList 150..152 "()"
+    TypeRef 156..159 "int"
+    IfExpr 162..204
+      LiteralExpr 165..170 "false"
+      Block 171..189
+        CallExpr 177..187
+          NameRef 177..185 "inferred"
+          ArgList 185..187 "()"
+      Block 195..204
+        LiteralExpr 201..202 "1"
+  FnItem 205..231
+    Name 208..216 "inferred"
+    ParamList 216..218 "()"
+    CallExpr 221..231
+      NameRef 221..229 "anchored"
+      ArgList 229..231 "()"
+  FnItem 232..299
+    Name 235..242 "integer"
+    ParamList 242..244 "()"
+    Block 247..299
+      IfExpr 253..291
+        LiteralExpr 256..261 "false"
+        Block 262..291
+          DiscardStmt 272..285
+            CallExpr 276..285
+              NameRef 276..283 "boolean"
+              ArgList 283..285 "()"
+      LiteralExpr 296..297 "1"
+  FnItem 300..345
+    Name 303..310 "boolean"
+    ParamList 310..312 "()"
+    Block 315..345
+      DiscardStmt 321..334
+        CallExpr 325..334
+          NameRef 325..332 "integer"
+          ArgList 332..334 "()"
+      LiteralExpr 339..343 "true"
+  FnItem 346..361
+    Name 349..354 "empty"
+    ParamList 354..356 "()"
+    Block 359..361 "{}"

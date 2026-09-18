@@ -26,15 +26,15 @@ fn bad_arguments@113..153 signature: unavailable
     part[0]: bool true : ? @139..143
     part[1]: hole : ? @145..152
 
-fn bare@154..169 () -> unit ∈ ∅
-  result: copy : unit @154..169
-    value: int 1 : ? @166..167
+fn bare@154..173 () -> unit ∈ ∅
+  result: copy : unit @154..173
+    value: int 1 : ? @170..171
 
-fn malformed@170..195 signature: unavailable
-  body: int 1 : int @192..193
+fn malformed@174..203 signature: unavailable
+  body: int 1 : int @200..201
 
-fn intact@196..214 () -> bool ∈ {true}
-  body: bool true : bool @210..214
+fn intact@204..222 () -> bool ∈ {true}
+  body: bool true : bool @218..222
 
 == semantic diagnostics ==
 error[semantic/cannot-infer]: cannot infer function result; add a return type annotation
@@ -51,5 +51,5 @@ error[semantic/type-mismatch]: expected int, found bool
 error[semantic/unknown-name]: unknown name `missing`
   primary @145..152
 error[semantic/type-mismatch]: expected unit, found int
-  primary @164..169
-  secondary @154..169: declared here
+  primary @164..173
+  secondary @154..173: declared here

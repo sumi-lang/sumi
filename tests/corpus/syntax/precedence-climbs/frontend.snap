@@ -1,26 +1,21 @@
 == tree ==
-SourceFile 0..39
-  FnItem 0..39
+SourceFile 0..44
+  FnItem 0..43
     Name 3..4 "f"
     ParamList 4..6 "()"
-    Block 7..39
-      BinaryExpr 9..37
-        NameRef 9..10 "a"
-        BinaryExpr 14..37
-          NameRef 14..15 "b"
-          BinaryExpr 19..37
-            NameRef 19..20 "c"
-            BinaryExpr 24..37
-              NameRef 24..25 "d"
-              BinaryExpr 28..37
-                NameRef 28..29 "e"
-                PrefixExpr 32..37
-                  CallExpr 33..37
-                    NameRef 33..34 "f"
-                    ArgList 34..37
-                      NameRef 35..36 "g"
-
-== formatted ==
-fn f() {
-    a || b && c == d + e * -f(g)
-}
+    Block 7..43
+      BinaryExpr 13..41
+        NameRef 13..14 "a"
+        BinaryExpr 18..41
+          NameRef 18..19 "b"
+          BinaryExpr 23..41
+            NameRef 23..24 "c"
+            BinaryExpr 28..41
+              NameRef 28..29 "d"
+              BinaryExpr 32..41
+                NameRef 32..33 "e"
+                PrefixExpr 36..41
+                  CallExpr 37..41
+                    NameRef 37..38 "f"
+                    ArgList 38..41
+                      NameRef 39..40 "g"

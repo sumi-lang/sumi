@@ -1,1 +1,2 @@
-fn f() { ("tail
+fn f() {
+    ("tail

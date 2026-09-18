@@ -3,6 +3,10 @@ fn consumer() -> int = spin(1)
 fn grounded() = spin(1) + 1
 fn recovered() = grounded()
 fn bad_arguments() = spin(true, missing)
-fn bare() { 1 }
-fn malformed() -> = { 1 }
+fn bare() {
+    1
+}
+fn malformed() -> = {
+    1
+}
 fn intact() = true

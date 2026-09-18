@@ -6,6 +6,7 @@ fn next_b() -> int = 3
 fn missing_body() = fn() = fn next_c() -> int = 4
 fn first() {}
 fn () {}
-fn second() {} fn () {}
+fn second() {}
+fn () {}
 fn
 () {}

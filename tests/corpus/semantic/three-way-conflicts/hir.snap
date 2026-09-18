@@ -2,37 +2,37 @@ file: rejected
 frontend errors: 0 (see frontend.snap)
 semantic errors: 3
 
-fn a@123..158 signature: unavailable
-  body: if : ? @132..158
+fn a@123..166 signature: unavailable
+  body: if : ? @132..166
     condition: bool true : bool @135..139
-    then: int 1 : int @142..143
-    else: call b@159..197 : ? @153..156
+    then: int 1 : int @146..147
+    else: call b@167..213 : ? @161..164
 
-fn b@159..197 signature: unavailable
-  body: if : ? @168..197
-    condition: bool true : bool @171..175
-    then: bool true : bool @178..182
-    else: call c@198..234 : ? @192..195
+fn b@167..213 signature: unavailable
+  body: if : ? @176..213
+    condition: bool true : bool @179..183
+    then: bool true : bool @190..194
+    else: call c@214..258 : ? @208..211
 
-fn c@198..234 signature: unavailable
-  body: if : ? @207..234
-    condition: bool true : bool @210..214
-    then: unit : unit @217..219
-    else: call a@123..158 : ? @229..232
+fn c@214..258 signature: unavailable
+  body: if : ? @223..258
+    condition: bool true : bool @226..230
+    then: unit : unit @237..239
+    else: call a@123..166 : ? @253..256
 
 == semantic diagnostics ==
 error[semantic/cannot-infer]: function result is both int, bool, and unit; add a return type annotation
-  primary @123..158
-  secondary @142..143: int here
-  secondary @153..156: bool here
-  secondary @153..156: unit here
+  primary @123..166
+  secondary @146..147: int here
+  secondary @161..164: bool here
+  secondary @161..164: unit here
 error[semantic/cannot-infer]: function result is both bool, int, and unit; add a return type annotation
-  primary @159..197
-  secondary @178..182: bool here
-  secondary @192..195: int here
-  secondary @192..195: unit here
+  primary @167..213
+  secondary @190..194: bool here
+  secondary @208..211: int here
+  secondary @208..211: unit here
 error[semantic/cannot-infer]: function result is both unit, int, and bool; add a return type annotation
-  primary @198..234
-  secondary @217..219: unit here
-  secondary @229..232: int here
-  secondary @229..232: bool here
+  primary @214..258
+  secondary @237..239: unit here
+  secondary @253..256: int here
+  secondary @253..256: bool here

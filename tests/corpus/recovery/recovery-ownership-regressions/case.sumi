@@ -1,4 +1,15 @@
 fn item_in_garbage() { : { fn g() {} }
-fn item_in_garbage_in_parens() { ({ : { fn g() {} } ) }
-fn closer_in_arguments() { ({ g(a } x ) }
-fn closer_in_parens() { ({ (} x ) }
+fn item_in_garbage_in_parens() {
+    ({ : { fn g() {} } )
+}
+fn closer_in_arguments() {
+    (
+        {
+            g(
+                a } x )
+}
+fn closer_in_parens() {
+    (
+        {
+            (} x )
+}

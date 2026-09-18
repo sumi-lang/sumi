@@ -3,45 +3,45 @@ frontend errors: 0 (see frontend.snap)
 semantic errors: 0
 
 fn value@0..22 () -> int ∈ [1, 1]
-  body: call forward@23..43 : int @13..22
+  body: call forward@23..47 : int @13..22
 
-fn forward@23..43 () -> int ∈ [1, 1]
-  body: int 1 : int @40..41
+fn forward@23..47 () -> int ∈ [1, 1]
+  body: int 1 : int @44..45
 
-fn explicit@44..74 () -> int ∈ [1, 1]
-  result: copy : int @61..64
-    value: call value@0..22 : int @67..74
+fn explicit@48..78 () -> int ∈ [1, 1]
+  result: copy : int @65..68
+    value: call value@0..22 : int @71..78
 
-fn recursive@75..126 () -> int ∈ [1, 1]
-  body: if : int @92..126
-    condition: bool true : bool @95..99
-    then: int 1 : int @102..103
-    else: call recursive@75..126 : int @113..124
+fn recursive@79..138 () -> int ∈ [1, 1]
+  body: if : int @96..138
+    condition: bool true : bool @99..103
+    then: int 1 : int @110..111
+    else: call recursive@79..138 : int @125..136
 
-fn anchored@127..184 () -> int ∈ [1, 1]
-  result: copy : int @144..147
-    value: if : int @150..184
-      condition: bool false : bool @153..158
-      then: call inferred@185..211 : int @161..171
-      else: int 1 : int @181..182
+fn anchored@139..204 () -> int ∈ [1, 1]
+  result: copy : int @156..159
+    value: if : int @162..204
+      condition: bool false : bool @165..170
+      then: call inferred@205..231 : int @177..187
+      else: int 1 : int @201..202
 
-fn inferred@185..211 () -> int ∈ [1, 1]
-  body: call anchored@127..184 : int @201..211
+fn inferred@205..231 () -> int ∈ [1, 1]
+  body: call anchored@139..204 : int @221..231
 
-fn integer@212..263 () -> int ∈ [1, 1]
+fn integer@232..299 () -> int ∈ [1, 1]
   body:
-    discard: if : unit @231..257
-      condition: bool false : bool @234..239
+    discard: if : unit @253..291
+      condition: bool false : bool @256..261
       then:
-        discard: call boolean@264..305 : bool @246..255
-        tail: unit : unit @240..257
+        discard: call boolean@300..345 : bool @276..285
+        tail: unit : unit @262..291
       else: unit (implicit)
-    tail: int 1 : int @260..261
+    tail: int 1 : int @296..297
 
-fn boolean@264..305 () -> bool ∈ {true}
+fn boolean@300..345 () -> bool ∈ {true}
   body:
-    discard: call integer@212..263 : int @287..296
-    tail: bool true : bool @299..303
+    discard: call integer@232..299 : int @325..334
+    tail: bool true : bool @339..343
 
-fn empty@306..321 () -> unit ∈ unit
-  body: unit : unit @319..321
+fn empty@346..361 () -> unit ∈ unit
+  body: unit : unit @359..361

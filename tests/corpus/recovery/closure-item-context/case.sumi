@@ -7,7 +7,7 @@ fn multiline_closure() = fn
 fn next_b() -> int = 2
 fn damaged_block() {
     0
-fn() = 1
+    fn() = 1
 fn next_c() -> int = 3
 fn _() {}
 fn trailing() = fn
