@@ -17,7 +17,7 @@
 //! the program's [`Thresholds`], which keeps every ascending chain finite
 //! without a widening operator.
 
-use std::cmp::Ordering;
+use std::cmp::{Ordering, max, min};
 use std::fmt;
 use std::ops::{Add, BitAnd, Div, Mul, Neg, Rem, Sub};
 
@@ -254,7 +254,7 @@ impl Ints {
             (None, Some(_)) => other.clone(),
             (Some(a), Some(b)) => {
                 let hole = !self.contains_zero() && !other.contains_zero();
-                Self::band((&a.lo).min(&b.lo).clone(), (&a.hi).max(&b.hi).clone(), hole)
+                Self::band(min(&a.lo, &b.lo).clone(), max(&a.hi, &b.hi).clone(), hole)
             }
         };
         let grew = joined != *self;
@@ -284,10 +284,10 @@ impl Ints {
         };
         let mut halves = Vec::with_capacity(2);
         if lo.sign() == Ordering::Less {
-            halves.push((lo.clone(), hi.min(&Bound::finite(-1)).clone()));
+            halves.push((lo.clone(), min(hi, &Bound::finite(-1)).clone()));
         }
         if hi.sign() == Ordering::Greater {
-            halves.push((lo.max(&Bound::finite(1)).clone(), hi.clone()));
+            halves.push((max(lo, &Bound::finite(1)).clone(), hi.clone()));
         }
         halves
     }
@@ -322,10 +322,10 @@ impl Ints {
             return Self::EMPTY;
         };
         match op {
-            BinaryOp::Lt => Self::band(lo.clone(), hi.min(&b.hi.pred()).clone(), *hole),
-            BinaryOp::Le => Self::band(lo.clone(), hi.min(&b.hi).clone(), *hole),
-            BinaryOp::Gt => Self::band(lo.max(&b.lo.succ()).clone(), hi.clone(), *hole),
-            BinaryOp::Ge => Self::band(lo.max(&b.lo).clone(), hi.clone(), *hole),
+            BinaryOp::Lt => Self::band(lo.clone(), min(hi, &b.hi.pred()).clone(), *hole),
+            BinaryOp::Le => Self::band(lo.clone(), min(hi, &b.hi).clone(), *hole),
+            BinaryOp::Gt => Self::band(max(lo, &b.lo.succ()).clone(), hi.clone(), *hole),
+            BinaryOp::Ge => Self::band(max(lo, &b.lo).clone(), hi.clone(), *hole),
             BinaryOp::Eq => self & other,
             BinaryOp::Ne => {
                 if other.is_point() {
@@ -364,8 +364,8 @@ impl BitAnd<&Ints> for &Ints {
     fn bitand(self, other: &Ints) -> Ints {
         match (&self.0, &other.0) {
             (Some(a), Some(b)) => Ints::band(
-                (&a.lo).max(&b.lo).clone(),
-                (&a.hi).min(&b.hi).clone(),
+                max(&a.lo, &b.lo).clone(),
+                min(&a.hi, &b.hi).clone(),
                 a.hole || b.hole,
             ),
             _ => Ints::EMPTY,
@@ -465,12 +465,12 @@ impl Rem<&Ints> for &Ints {
         let lo = if a.lo.sign() != Ordering::Less {
             Bound::zero()
         } else {
-            (&a.lo).max(&-&limit).clone()
+            max(&a.lo, &-&limit).clone()
         };
         let hi = if a.hi.sign() != Ordering::Greater {
             Bound::zero()
         } else {
-            (&a.hi).min(&limit).clone()
+            min(&a.hi, &limit).clone()
         };
         Ints::band(lo, hi, false)
     }
