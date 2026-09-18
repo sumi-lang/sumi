@@ -1,9 +1,8 @@
-use crate::Thresholds;
+use sumi_graph::{Thresholds, Ty};
+use sumi_text::{FileId, Span, TextRange, TextSize};
+
 use crate::solver::Var;
 use crate::typing::{Expected, ProductContext, Typing};
-
-use sumi_hir::Ty;
-use sumi_text::{FileId, Span, TextRange, TextSize};
 
 pub const SIZES: [usize; 4] = [8, 128, 1024, 8192];
 pub const SHAPES: [&str; 11] = [

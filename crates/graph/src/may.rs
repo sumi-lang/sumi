@@ -453,7 +453,7 @@ impl Ints {
     }
 
     /// The booleans `self op other` may be.
-    pub fn compare(&self, op: BinaryOp, other: &Self) -> Bools {
+    fn compare(&self, op: BinaryOp, other: &Self) -> Bools {
         let (Some((lo1, hi1, _)), Some((lo2, hi2, _))) = (self.parts(), other.parts()) else {
             return Bools::EMPTY;
         };
@@ -704,7 +704,7 @@ impl Bools {
 
     /// `self && other`: the right operand runs only when the left is true,
     /// so an empty right side still leaves `false` from the left.
-    pub fn and(self, other: Self) -> Self {
+    fn and(self, other: Self) -> Self {
         Self::of(
             self.may_true() && other.may_true(),
             self.may_false() || (self.may_true() && other.may_false()),
@@ -712,14 +712,14 @@ impl Bools {
     }
 
     /// `self || other`, likewise.
-    pub fn or(self, other: Self) -> Self {
+    fn or(self, other: Self) -> Self {
         Self::of(
             self.may_true() || (self.may_false() && other.may_true()),
             self.may_false() && other.may_false(),
         )
     }
 
-    pub fn eq(self, other: Self) -> Self {
+    fn eq(self, other: Self) -> Self {
         if self.is_empty() || other.is_empty() {
             return Self::EMPTY;
         }
@@ -770,7 +770,7 @@ impl fmt::Display for Bools {
     }
 }
 
-/// The values that may reach a class, one set per scalar type. Empty in
+/// The values that may reach a node, one set per scalar type. Empty in
 /// every component means no value ever does.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct May {
@@ -819,20 +819,10 @@ impl May {
         Self { unit, ..Self::NONE }
     }
 
-    /// Whether any value at all may reach the class.
+    /// Whether any value at all may reach the node.
     #[inline]
     pub fn live(&self) -> bool {
         !self.ints.is_empty() || !self.bools.is_empty() || self.unit
-    }
-
-    /// The hull of both: whether it grew.
-    #[inline]
-    pub fn join(&mut self, other: &Self) -> bool {
-        let ints = self.ints.join(&other.ints);
-        let bools = self.bools.join(other.bools);
-        let unit = !self.unit && other.unit;
-        self.unit |= other.unit;
-        ints | bools | unit
     }
 
     /// The set as a type reads it, for snapshots and reports.
@@ -1336,15 +1326,18 @@ mod tests {
         }
     }
 
-    /// The members of an operand: every integer of a finite band, and
-    /// both booleans, so every operator sees both types.
+    /// An operand and a member of it: every integer of a finite band, and
+    /// each boolean in every set that holds it, so every operator sees
+    /// both types and the narrowings see a point.
     fn operands(band: &Ints) -> Vec<(May, Value)> {
         let mut pairs: Vec<_> = members(band)
             .into_iter()
             .map(|x| (May::ints(band.clone()), Value::Int(x.into())))
             .collect();
         for value in [false, true] {
-            pairs.push((May::bools(Bools::BOTH), Value::Bool(value)));
+            for set in [Bools::from(value), Bools::BOTH] {
+                pairs.push((May::bools(set), Value::Bool(value)));
+            }
         }
         pairs
     }
@@ -1424,23 +1417,29 @@ mod tests {
             prop_assert_eq!(a.contains_zero(), rounded.contains_zero());
         }
 
-        /// Every data operator, read through [`Op::apply`] in both
-        /// domains: the may-value of the operator over the sets contains
-        /// its value over any members, and where the concrete operator
-        /// faults the may-domain still answers.
+        /// Every operator, read in both domains: the may-value of the
+        /// operator over the sets contains its value over any members,
+        /// and where the concrete operator faults the may-domain still
+        /// answers. The data operators are read through [`Op::apply`];
+        /// the lazy ones have no data node, so they are read directly.
         #[test]
         fn every_operator_agrees_between_the_domains(a in band(), b in band()) {
-            for op in data_ops() {
-                for (set_a, x) in operands(&a) {
-                    for (set_b, y) in operands(&b) {
+            let ops = data_ops();
+            for (set_a, x) in operands(&a) {
+                for (set_b, y) in operands(&b) {
+                    for op in &ops {
                         let arity = op.reads(2);
-                        let sets: Vec<&May> = [&set_a, &set_b][..arity].to_vec();
-                        let values: Vec<&Value> = [&x, &y][..arity].to_vec();
-                        let sets = op.apply::<May>(&sets).expect("the may-domain is total");
-                        if let Ok(value) = op.apply::<Value>(&values)
-                            && reached(&op, &x, &y)
+                        let may = op.apply::<May>(&[&set_a, &set_b][..arity]).expect("the may-domain is total");
+                        if let Ok(value) = op.apply::<Value>(&[&x, &y][..arity])
+                            && reached(op, &x, &y)
                         {
-                            prop_assert!(member(&sets, &value), "{op:?} over {set_a:?}, {set_b:?} ∌ {value} from {x}, {y}");
+                            prop_assert!(member(&may, &value), "{op:?} over {set_a:?}, {set_b:?} ∌ {value} from {x}, {y}");
+                        }
+                    }
+                    for and in [false, true] {
+                        let may = May::lazy(and, &set_a, &set_b).expect("the may-domain is total");
+                        if let Ok(value) = Value::lazy(and, &x, &y) {
+                            prop_assert!(member(&may, &value), "lazy {and} over {set_a:?}, {set_b:?} ∌ {value} from {x}, {y}");
                         }
                     }
                 }

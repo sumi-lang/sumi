@@ -53,7 +53,10 @@ pub trait Concrete: Domain {
 impl Op {
     /// How many of the node's inputs, from the first, are values it
     /// computes from. The rest is the context recorded beside them. A
-    /// call reads every argument.
+    /// call reads every argument. A narrowed read reads the guard's other
+    /// operand too, for the domain that narrows by it; the read is placed
+    /// where its guard holds, so that operand has always run by then and
+    /// a concrete reader finds it already valued.
     pub fn reads(&self, inputs: usize) -> usize {
         match self {
             Self::Int(_) | Self::Bool(_) | Self::Param(_) | Self::Unit | Self::Hole => 0,

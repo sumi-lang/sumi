@@ -31,7 +31,8 @@ enum Control {
     Branch(NodeId),
     /// The arguments of a call are in: enter the callee.
     Enter(NodeId),
-    /// A region's result is in: it is the node's value.
+    /// A region's result is in: a branch's value is its arm's, and a
+    /// lazy operator's is the operator over both operands.
     Take(NodeId, NodeId),
     /// The callee's result is in: leave its frame and it is the call's value.
     Return(NodeId),
@@ -302,16 +303,18 @@ impl<'a, D: Concrete> Machine<'a, D> {
                 }
             }
             Control::Take(node, from) => {
-                // A lazy operator whose right operand ran is the operator
-                // over both operands; a branch is its arm's value.
-                let value = match self.graph.node(node).op {
-                    Op::And { .. } | Op::Or { .. } => {
-                        let and = matches!(self.graph.node(node).op, Op::And { .. });
+                let and = match self.graph.node(node).op {
+                    Op::And { .. } => Some(true),
+                    Op::Or { .. } => Some(false),
+                    _ => None,
+                };
+                let value = match and {
+                    Some(and) => {
                         let lhs = self.value(self.graph.inputs(node)[0]);
                         D::lazy(and, lhs, self.value(from))
                             .map_err(|fault| Refusal::of(fault, node))?
                     }
-                    _ => self.value(from).clone(),
+                    None => self.value(from).clone(),
                 };
                 self.fill(node, value);
             }

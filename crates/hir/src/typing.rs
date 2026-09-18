@@ -36,9 +36,10 @@ use std::num::NonZeroU32;
 
 use sumi_text::Span;
 
+use sumi_graph::{May, Thresholds, Ty};
+
 use crate::ranges::RangeEdge;
 use crate::solver::{Lattice, Solver, Var};
-use crate::{May, Thresholds, Ty};
 
 /// One claim that a class has some type, as its rank: the one-based sequence
 /// number of the claim in the walk, under a bit set once the claim has

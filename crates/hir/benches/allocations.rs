@@ -3,7 +3,7 @@
 //! and their full requested sizes; bytes are allocation traffic, not peak RSS.
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
-use sumi_hir::{BinaryOp, Bools, Domain, Fault, Int, May, Thresholds, Ty, analyze};
+use sumi_hir::analyze;
 
 #[path = "support/graphs.rs"]
 mod graphs;

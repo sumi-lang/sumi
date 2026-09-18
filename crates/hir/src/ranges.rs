@@ -11,8 +11,9 @@
 //! [`Thresholds`], which keeps every ascending chain finite without a
 //! widening operator in the solver.
 
+use sumi_graph::{BinaryOp, Domain, May, Thresholds};
+
 use crate::solver::Lattice;
-use crate::{BinaryOp, Domain, Fault, May, Thresholds};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UnaryOp {
@@ -71,7 +72,11 @@ impl Lattice for May {
     }
 
     fn join(&mut self, other: &Self) -> bool {
-        self.join(other)
+        let ints = self.ints.join(&other.ints);
+        let bools = self.bools.join(other.bools);
+        let unit = !self.unit && other.unit;
+        self.unit |= other.unit;
+        ints | bools | unit
     }
 
     /// An arithmetic result can outgrow its operands; everything else
@@ -132,14 +137,14 @@ impl Lattice for May {
             }
         };
         // An operator is read in the may-domain, where it never faults.
-        let total = |value: Result<Self, Fault>| value.expect("the may-domain is total");
+        const TOTAL: &str = "the may-domain is total";
         match *edge {
             RangeEdge::None => Self::bottom(),
             RangeEdge::Copy => self.clone(),
-            RangeEdge::Unary(UnaryOp::Neg) => total(self.neg()),
-            RangeEdge::Unary(UnaryOp::Not) => total(self.not()),
-            RangeEdge::Binary(op) => total(Self::binary(op, self, second())),
-            RangeEdge::Lazy { and } => total(Self::lazy(and, self, second())),
+            RangeEdge::Unary(UnaryOp::Neg) => self.neg().expect(TOTAL),
+            RangeEdge::Unary(UnaryOp::Not) => self.not().expect(TOTAL),
+            RangeEdge::Binary(op) => Self::binary(op, self, second()).expect(TOTAL),
+            RangeEdge::Lazy { and } => Self::lazy(and, self, second()).expect(TOTAL),
             RangeEdge::Refine {
                 op,
                 local_is_lhs,
@@ -181,13 +186,19 @@ impl Lattice for May {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{Bools, Int};
+    use sumi_graph::{Bools, Int};
 
-    /// The may-values of every integer from `lo` to `hi`.
+    use super::*;
+
+    /// The may-values of every integer from `lo` to `hi`, zero included
+    /// when it lies between: the join of two points keeps a hole there.
     fn band(lo: i64, hi: i64) -> May {
         let mut band = May::int(Int::from(lo));
-        band.join(&May::int(Int::from(hi)));
+        for point in [0, hi] {
+            if lo <= point && point <= hi {
+                Lattice::join(&mut band, &May::int(Int::from(point)));
+            }
+        }
         band
     }
 

@@ -25,9 +25,8 @@ use sumi_text::Span;
 
 pub use check::analyze;
 pub use sumi_graph::{
-    BinaryOp, Bools, Bound, Concrete, Domain, Fault, FunctionId, Graph, Int, Ints, Machine, May,
-    Node, NodeId, Op, OutOfRange, Outcome, ParseIntError, Refusal, Region, RegionId, Run,
-    Thresholds, Ty, Value,
+    BinaryOp, Bools, Bound, Concrete, Domain, FunctionId, Graph, Int, Ints, Machine, May, Node,
+    NodeId, Op, OutOfRange, Outcome, ParseIntError, Refusal, Region, RegionId, Run, Ty, Value,
 };
 
 pub struct Analysis {
