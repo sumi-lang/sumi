@@ -1,15 +1,20 @@
 //! What a Sumi program means, apart from whether it is valid: the scalar
-//! types, the mathematical integer, and the graph of every definition a
-//! file's bodies make. The checker above builds the graph and decides
-//! what is wrong with it; nothing here depends on the checker.
+//! types, the mathematical integer, the graph of every definition a
+//! file's bodies make, and the machine that evaluates the graph in a
+//! domain of values. The checker above builds the graph and decides what
+//! is wrong with it; nothing here depends on the checker.
 
 mod graph;
 mod int;
+mod machine;
+mod value;
 
 use std::fmt;
 
-pub use graph::{Graph, Node, NodeId, Op, Region, RegionId};
+pub use graph::{Graph, Node, NodeId, Op, Region, RegionId, Run};
 pub use int::{Int, OutOfRange, ParseIntError};
+pub use machine::{Machine, Outcome, Refusal};
+pub use value::{Domain, Fault, Value};
 
 /// Eager scalar operators. `&&` and `||` are not among them: their right
 /// operand is a region, so they are [`Op::And`] and [`Op::Or`].

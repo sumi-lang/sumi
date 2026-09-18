@@ -639,7 +639,6 @@ dependencies = [
 name = "sumi-cli"
 version = "0.1.0"
 dependencies = [
- "sumi-eval",
  "sumi-format",
  "sumi-frontend",
  "sumi-hir",
@@ -652,16 +651,6 @@ name = "sumi-diagnostics"
 version = "0.1.0"
 dependencies = [
  "sumi-text",
-]
-
-[[package]]
-name = "sumi-eval"
-version = "0.1.0"
-dependencies = [
- "sumi-frontend",
- "sumi-hir",
- "sumi-text",
- "tempfile",
 ]
 
 [[package]]
@@ -695,7 +684,6 @@ name = "sumi-fuzz"
 version = "0.0.0"
 dependencies = [
  "libfuzzer-sys",
- "sumi-eval",
  "sumi-format",
  "sumi-frontend",
  "sumi-hir",
@@ -720,7 +708,6 @@ dependencies = [
  "codspeed-criterion-compat",
  "proptest",
  "sumi-diagnostics",
- "sumi-eval",
  "sumi-frontend",
  "sumi-graph",
  "sumi-lexer",

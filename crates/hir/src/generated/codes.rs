@@ -35,7 +35,8 @@ pub const ARITY: DiagnosticCode = DiagnosticCode::new(SEMANTIC, "arity");
 pub const TYPE_MISMATCH: DiagnosticCode = DiagnosticCode::new(SEMANTIC, "type-mismatch");
 
 /// A statement's expression, other than a block's last, has a value that
-/// is not unit. Discard it with `_ =` to keep it.
+/// is not unit. Write `_ =` before it to say the value is dropped; a run
+/// then never computes it, since nothing reads it.
 pub const UNUSED_VALUE: DiagnosticCode = DiagnosticCode::new(SEMANTIC, "unused-value");
 
 /// A function without a return type whose result cannot be determined: its

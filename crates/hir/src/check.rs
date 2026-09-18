@@ -500,7 +500,6 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         ..Recorded::default()
     };
     let mut bodies = Vec::with_capacity(items.len());
-    let mut shapes = Vec::with_capacity(items.len());
     // Syntax node IDs are dense and bodies have disjoint nodes. Expression
     // IDs remain body-local; a builder only reads entries in its own body.
     let mut values = vec![None; tree.len()];
@@ -521,26 +520,19 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         &mut node_classes,
     );
     for (index, (item, params)) in items.iter().zip(parameters).enumerate() {
-        let (body, shape) = builder.build(index, *item, params);
-        bodies.push(body);
-        shapes.push(shape);
+        bodies.push(builder.build(index, *item, params));
     }
     drop(builder);
     drop(values);
     drop(nodes_of);
     let mut functions: Vec<Function> = named
         .into_iter()
-        .zip(shapes)
-        .map(|((name, origin), shape)| Function {
+        .map(|(name, origin)| Function {
             name,
             origin,
             signature: None,
             ranges: None,
             body: None,
-            nodes: shape.nodes,
-            arity: shape.arity,
-            region: shape.region,
-            result: shape.result,
         })
         .collect();
 
@@ -927,15 +919,6 @@ enum Work {
     },
 }
 
-/// The run of the graph a function's build left: its entry, parameters,
-/// and body region, and the node its value is.
-pub(crate) struct Shape {
-    pub nodes: std::ops::Range<u32>,
-    pub arity: u32,
-    pub region: RegionId,
-    pub result: NodeId,
-}
-
 /// The one walker for every body of the file. What a body publishes is
 /// built in place and moved out; everything else the walk needs is kept
 /// and reused, so no body pays for scratch.
@@ -1049,12 +1032,13 @@ impl<'a, 's> Builder<'a, 's> {
             inputs: Vec::new(),
         }
     }
+    /// Build the body of the function `owner`, closing its run of the graph.
     fn build(
         &mut self,
         owner: usize,
         item: ast::FnItem,
         parameters: Vec<Parameter<'s>>,
-    ) -> (Option<DraftBody>, Shape) {
+    ) -> Option<DraftBody> {
         self.owner = u32::try_from(owner).expect("function count fits u32");
         self.failed = false;
         self.depth = 0;
@@ -1190,16 +1174,12 @@ impl<'a, 's> Builder<'a, 's> {
             }
             _ => {}
         }
-        let shape = Shape {
-            nodes: start.index() as u32..self.graph.next().index() as u32,
-            arity,
-            region,
-            result: value,
-        };
+        self.graph
+            .close_run(FunctionId::new(owner), start, arity, region, value);
         if self.failed || root.is_none() {
-            return (None, shape);
+            return None;
         }
-        let body = DraftBody {
+        Some(DraftBody {
             params: std::mem::take(&mut self.params),
             locals: std::mem::take(&mut self.locals),
             exprs: std::mem::take(&mut self.exprs),
@@ -1209,8 +1189,7 @@ impl<'a, 's> Builder<'a, 's> {
             calls: std::mem::take(&mut self.calls),
             branches: std::mem::take(&mut self.branches),
             root: root.unwrap(),
-        };
-        (Some(body), shape)
+        })
     }
     /// A graph node at `node`, which reads `inputs`.
     fn push(&mut self, node: NodeIdx, op: Op, inputs: &[NodeId], name: Option<Span>) -> NodeId {
@@ -2099,15 +2078,16 @@ impl<'a, 's> Builder<'a, 's> {
                         context: self.context(),
                     });
                 }
+                // An operator over constants is the constant the machine
+                // would compute, an integer for the thresholds.
                 let folded = match (&kind, &self.consts[lhs.index()], &self.consts[rhs.index()]) {
-                    (ExprKind::Binary { op, .. }, Some(a), Some(b)) => match op {
-                        BinaryOp::Add => Some(a + b),
-                        BinaryOp::Sub => Some(a - b),
-                        BinaryOp::Mul => Some(a * b),
-                        BinaryOp::Div => a.checked_div(b),
-                        BinaryOp::Rem => a.checked_rem(b),
-                        _ => None,
-                    },
+                    (ExprKind::Binary { op, .. }, Some(a), Some(b)) => {
+                        let (a, b) = (Value::Int(a.clone()), Value::Int(b.clone()));
+                        match Op::Binary(*op).apply(&[&a, &b]) {
+                            Ok(Value::Int(value)) => Some(value),
+                            _ => None,
+                        }
+                    }
                     _ => None,
                 };
                 let id = self.emit(node, kind, class);

@@ -1,6 +1,8 @@
-use super::*;
+//! A valid file as a program: what runs, what it computes, and what a run
+//! costs, through the checker's proof and the graph's machine.
+
 use sumi_frontend::{FileId, parse_source};
-use sumi_hir::analyze;
+use sumi_hir::{Analysis, Outcome, Ty, Value, analyze};
 
 fn analysis(source: &str) -> Analysis {
     analyze(parse_source(FileId::new(0), source.into()).unwrap())
@@ -13,7 +15,7 @@ fn int(value: i64) -> Value {
 /// Run the nullary function `name` of `source`.
 fn run(source: &str, name: &str) -> Value {
     let analysis = analysis(source);
-    let program = Program::new(&analysis).expect("a valid file");
+    let program = analysis.program().expect("a valid file");
     program.evaluate(program.function_named(name).expect("a function"), &[])
 }
 
@@ -31,7 +33,7 @@ fn invalid_files_never_run() {
         "fn f() -> bool = true && 1 / 0 == 0",
         "fn f() -> bool = false || 1 % 0 == 0",
     ] {
-        assert!(Program::new(&analysis(source)).is_none(), "{source}");
+        assert!(analysis(source).program().is_none(), "{source}");
     }
 }
 
@@ -49,7 +51,7 @@ fn quotient() -> int = -7 / 2";
     assert_eq!(run(source, "logic"), Value::Bool(true));
     assert_eq!(run(source, "bools"), Value::Bool(true));
     assert_eq!(run(source, "nothing"), Value::Unit);
-    // Truncating division; the remainder takes the dividend's sign.
+    // Truncating: the remainder takes the dividend's sign.
     assert_eq!(run(source, "remainder"), int(-1));
     assert_eq!(run(source, "quotient"), int(-3));
 }
@@ -57,12 +59,10 @@ fn quotient() -> int = -7 / 2";
 #[test]
 fn locals_blocks_and_branches() {
     let source = "fn shadow(x: int) -> int {
-    let x = x + 1
-    {
-        let x = x * 2
-        _ = x
-    }
-    x
+    let y = x + 1
+    let x = y * 2
+    let y = { let x = x + 1\n x }
+    x + y
 }
 fn entry() -> int = shadow(1)
 fn branches(n: int) -> int = if n < 0 { -1 } else if n == 0 { 0 } else { 1 }
@@ -70,7 +70,7 @@ fn all() -> int = branches(-5) * 100 + branches(0) * 10 + branches(7)
 fn no_else(b: bool) = if b { _ = 1 }
 fn unit_if() = no_else(true)
 fn empty() = {}";
-    assert_eq!(run(source, "entry"), int(2));
+    assert_eq!(run(source, "entry"), int(9));
     assert_eq!(run(source, "all"), int(-99));
     assert_eq!(run(source, "unit_if"), Value::Unit);
     assert_eq!(run(source, "empty"), Value::Unit);
@@ -148,43 +148,87 @@ fn deep() -> int = count(60000)
 fn twice(x: int) -> int = x * 2
 fn shallow() -> int = twice(twice(1))";
     let analysis = analysis(source);
-    let program = Program::new(&analysis).unwrap();
+    let program = analysis.program().unwrap();
     // Recursion consumes the machine's stack, never the host's, however
     // deep, and the analysis claimed exactly the depth the run reaches.
-    let mut machine = Machine::new(program, program.function_named("deep").unwrap(), &[]);
-    assert_eq!(machine.depth_bound(), Some(60002));
-    let value = machine.run_to_end();
-    assert_eq!(value, int(60000));
+    let deep = program.function_named("deep").unwrap();
+    assert_eq!(analysis.depth_bound(deep), Some(60002));
+    let mut machine = program.machine(deep, &[]);
+    while !machine.step() {}
+    assert_eq!(machine.outcome(), Some(&Outcome::Value(int(60000))));
     assert_eq!(machine.max_depth(), 60002);
-    let mut machine = Machine::new(program, program.function_named("shallow").unwrap(), &[]);
-    assert_eq!(machine.depth_bound(), Some(2));
-    assert_eq!(machine.run_to_end(), int(4));
+    let shallow = program.function_named("shallow").unwrap();
+    assert_eq!(analysis.depth_bound(shallow), Some(2));
+    let mut machine = program.machine(shallow, &[]);
+    while !machine.step() {}
+    assert_eq!(machine.outcome(), Some(&Outcome::Value(int(4))));
     assert_eq!(machine.max_depth(), 2);
+}
+
+/// A run computes what its result depends on: a discarded call is never
+/// entered, and a `let` read twice is computed once.
+#[test]
+fn only_what_the_result_needs_is_computed() {
+    let source = "fn costly(n: int) -> int = if n == 0 { 0 } else { costly(n - 1) }
+fn dropped() -> int {
+    _ = costly(100)
+    1
+}
+fn shared() -> int {
+    let x = costly(3)
+    x + x
+}";
+    let analysis = analysis(source);
+    let program = analysis.program().unwrap();
+    let mut machine = program.machine(program.function_named("dropped").unwrap(), &[]);
+    while !machine.step() {}
+    assert_eq!(machine.outcome(), Some(&Outcome::Value(int(1))));
+    assert_eq!(
+        machine.max_depth(),
+        1,
+        "the discarded call is never entered"
+    );
+    let mut machine = program.machine(program.function_named("shared").unwrap(), &[]);
+    while !machine.step() {}
+    assert_eq!(machine.outcome(), Some(&Outcome::Value(int(0))));
+    // Four frames of `costly` and the sum: the second read of `x` costs
+    // nothing.
+    assert_eq!(machine.max_depth(), 5);
+    let once = machine.steps();
+    let mut machine = program.machine(program.function_named("shared").unwrap(), &[]);
+    while !machine.step() {}
+    assert_eq!(machine.steps(), once);
 }
 
 #[test]
 fn stepping_is_observable_and_idempotent_at_the_end() {
     let source = "fn twice(x: int) -> int = x * 2\nfn entry() -> int = twice(twice(1))";
     let analysis = analysis(source);
-    let program = Program::new(&analysis).unwrap();
-    let mut machine = Machine::new(program, program.function_named("entry").unwrap(), &[]);
+    let program = analysis.program().unwrap();
+    let mut machine = program.machine(program.function_named("entry").unwrap(), &[]);
     assert_eq!(
         (machine.steps(), machine.depth(), machine.max_depth()),
         (0, 1, 1)
     );
+    assert_eq!(machine.outcome(), None);
     let mut seen_depth_two = false;
-    let value = loop {
-        if let Some(value) = machine.step() {
-            break value;
-        }
+    let mut values = Vec::new();
+    while !machine.step() {
         seen_depth_two |= machine.depth() == 2;
-    };
-    assert_eq!(value, int(4));
+        values.extend(machine.latest().cloned());
+    }
+    assert_eq!(machine.outcome(), Some(&Outcome::Value(int(4))));
     assert!(seen_depth_two);
-    assert_eq!((machine.depth(), machine.max_depth()), (0, 2));
+    assert_eq!((machine.depth(), machine.max_depth()), (1, 2));
+    // Every value the run made appeared once as it was made: the literal
+    // 1; in the inner frame the literal 2, the product, and the declared
+    // result's copy; the call's value; then the same three in the outer
+    // frame, the call's value, and the entry's own copy.
+    let trace = [1, 2, 2, 2, 2, 2, 4, 4, 4, 4].map(int);
+    assert_eq!(values, trace);
     let steps = machine.steps();
-    assert!(steps > 0);
-    assert_eq!(machine.step(), Some(int(4)));
+    assert_eq!(steps, values.len() as u64);
+    assert!(machine.step());
     assert_eq!(machine.steps(), steps);
     // Arguments reach parameters in order.
     let sub = program.function_named("twice").unwrap();
@@ -195,12 +239,8 @@ fn stepping_is_observable_and_idempotent_at_the_end() {
 #[should_panic(expected = "arguments must match the signature")]
 fn arguments_must_match_the_signature() {
     let analysis = analysis("fn f(x: int) -> int = x");
-    let program = Program::new(&analysis).unwrap();
-    Machine::new(
-        program,
-        program.function_named("f").unwrap(),
-        &[Value::Bool(true)],
-    );
+    let program = analysis.program().unwrap();
+    program.machine(program.function_named("f").unwrap(), &[Value::Bool(true)]);
 }
 
 #[test]
@@ -215,13 +255,41 @@ fn values_display_as_source_spells_them() {
     assert_eq!(Value::Unit.ty(), Ty::Unit);
 }
 
-impl Machine<'_> {
-    /// Step in place until the run ends, keeping the machine.
-    fn run_to_end(&mut self) -> Value {
-        loop {
-            if let Some(value) = self.step() {
-                return value;
-            }
-        }
+/// The proof is what makes a run whole: a `Program` is only had for a
+/// valid file, and a machine on the bare graph of an invalid one refuses
+/// what the checker would have caught.
+#[test]
+fn the_bare_graph_refuses_what_the_checker_rejects() {
+    use sumi_hir::{FunctionId, Machine, Refusal};
+    let rejected = analysis("fn f() -> int = 1 / 0");
+    assert!(rejected.program().is_none());
+    let machine: Machine<'_, Value> = Machine::new(rejected.graph(), FunctionId::new(0), &[], None);
+    assert!(matches!(
+        machine.run(),
+        Outcome::Refused(Refusal::Division(_))
+    ));
+    let holed = analysis("fn f() -> int = missing");
+    let machine: Machine<'_, Value> = Machine::new(holed.graph(), FunctionId::new(0), &[], None);
+    assert!(matches!(machine.run(), Outcome::Refused(Refusal::Hole(_))));
+    let endless = analysis("fn f(n: int) -> int = f(n)\nfn g() -> int = f(1)");
+    let machine: Machine<'_, Value> =
+        Machine::new(endless.graph(), FunctionId::new(1), &[], Some(4));
+    assert!(matches!(machine.run(), Outcome::Refused(Refusal::Depth(_))));
+    for source in [
+        "fn f() -> int = if 1 { 2 } else { 3 }",
+        "fn f() -> int = -true",
+        "fn f() -> int = 1 + true",
+        "fn f() -> bool = !1",
+        "fn f() -> bool = true && 1",
+        "fn f() -> bool = 1 == true",
+    ] {
+        let typed = analysis(source);
+        assert!(typed.program().is_none(), "{source}");
+        let machine: Machine<'_, Value> =
+            Machine::new(typed.graph(), FunctionId::new(0), &[], None);
+        assert!(
+            matches!(machine.run(), Outcome::Refused(Refusal::Type(_))),
+            "{source}"
+        );
     }
 }

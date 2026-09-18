@@ -18,6 +18,57 @@ use sumi_text::Span;
 
 use crate::{BinaryOp, FunctionId, Int, Ty};
 
+/// A function's run of the graph: its entry context, then a node per
+/// parameter, then its body region's nodes, then, for a declared result,
+/// the copy the body's value is held in.
+#[derive(Debug)]
+pub struct Run {
+    nodes: Range<u32>,
+    arity: u32,
+    region: RegionId,
+    result: NodeId,
+}
+
+impl Run {
+    /// The function's nodes, in definition order.
+    pub fn nodes(&self) -> impl ExactSizeIterator<Item = NodeId> + use<> {
+        (self.nodes.start as usize..self.nodes.end as usize).map(NodeId::new)
+    }
+
+    /// The context the function runs in: live when it can be called.
+    pub fn entry(&self) -> NodeId {
+        NodeId::new(self.nodes.start as usize)
+    }
+
+    /// A node per parameter, in declaration order.
+    pub fn params(&self) -> impl ExactSizeIterator<Item = NodeId> + use<> {
+        let first = self.nodes.start as usize + 1;
+        (first..first + self.arity as usize).map(NodeId::new)
+    }
+
+    /// The body's region, run in the entry context.
+    pub fn region(&self) -> RegionId {
+        self.region
+    }
+
+    /// The function's value: the body region's result, or the declared
+    /// result the body's value is held to.
+    pub fn result(&self) -> NodeId {
+        self.result
+    }
+
+    /// Whether `node` is one of the run's.
+    pub fn holds(&self, node: NodeId) -> bool {
+        (self.nodes.start as usize..self.nodes.end as usize).contains(&node.index())
+    }
+
+    /// The position of `node` in the run, for a slot per node.
+    pub fn slot(&self, node: NodeId) -> usize {
+        debug_assert!(self.holds(node), "a node of the run");
+        node.index() - self.nodes.start as usize
+    }
+}
+
 /// A node of the file's graph. One past its index, so an `Option<NodeId>`
 /// is one word.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -159,6 +210,7 @@ pub struct Graph {
     nodes: Vec<Node>,
     inputs: Vec<NodeId>,
     regions: Vec<Region>,
+    runs: Vec<Run>,
 }
 
 impl Graph {
@@ -169,7 +221,18 @@ impl Graph {
             nodes: Vec::with_capacity(nodes),
             inputs: Vec::with_capacity(nodes),
             regions: Vec::new(),
+            runs: Vec::new(),
         }
+    }
+
+    /// Every function's run, in declaration order: the index is the
+    /// function's ID.
+    pub fn runs(&self) -> &[Run] {
+        &self.runs
+    }
+
+    pub fn run(&self, id: FunctionId) -> &Run {
+        &self.runs[id.index()]
     }
 
     pub fn nodes(&self) -> &[Node] {
@@ -256,6 +319,31 @@ impl Graph {
     pub fn set_type(&mut self, id: NodeId, ty: Option<Ty>) {
         self.nodes[id.index()].ty = ty;
     }
+
+    /// Close the run of `function`, which must be the next in declaration
+    /// order: the nodes from `start`, where its entry was pushed, to here,
+    /// with `arity` parameters after the entry, its body `region`, and its
+    /// `result`.
+    pub fn close_run(
+        &mut self,
+        function: FunctionId,
+        start: NodeId,
+        arity: u32,
+        region: RegionId,
+        result: NodeId,
+    ) {
+        assert_eq!(self.runs.len(), function.index(), "runs close in order");
+        let end = u32::try_from(self.nodes.len()).expect("node count fits u32");
+        let start = u32::try_from(start.index()).expect("node count fits u32");
+        debug_assert!(matches!(self.nodes[start as usize].op, Op::Entry));
+        debug_assert!(start + 1 + arity <= end);
+        self.runs.push(Run {
+            nodes: start..end,
+            arity,
+            region,
+            result,
+        });
+    }
 }
 
 #[cfg(test)]
@@ -298,7 +386,18 @@ mod tests {
         let sum = graph.push(Op::Binary(BinaryOp::Add), &[param, one], at(3), None);
         graph.close(region, sum);
         let copy = graph.push(Op::Copy, &[sum], at(4), None);
+        graph.close_run(FunctionId::new(0), start, 1, region, copy);
         assert_eq!(graph.nodes().len(), 5);
+        let run = graph.run(FunctionId::new(0));
+        assert_eq!(
+            run.nodes().collect::<Vec<_>>(),
+            [entry, param, one, sum, copy]
+        );
+        assert_eq!(run.entry(), entry);
+        assert_eq!(run.params().collect::<Vec<_>>(), [param]);
+        assert_eq!(run.region(), region);
+        assert_eq!(run.result(), copy);
+        assert_eq!(run.slot(sum), 3);
         assert_eq!(
             graph.node_ids().collect::<Vec<_>>(),
             [entry, param, one, sum, copy]
