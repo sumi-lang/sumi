@@ -3,7 +3,7 @@
 
 use proptest::prelude::*;
 use proptest::test_runner::FileFailurePersistence;
-use sumi_lexer::{RawIdx, SyntaxKind, lex};
+use sumi_lexer::{RawIdx, SyntaxKind, TokenFlags, lex};
 
 /// Fragments beyond every keyword and punctuation text of the language that
 /// each lex to exactly one token on their own, stay terminated, and do not
@@ -83,6 +83,18 @@ fn soup() -> impl Strategy<Value = String> {
     proptest::collection::vec(fragment(), 0..64).prop_map(|fragments| fragments.concat())
 }
 
+/// Number-shaped sources: digits, the separator, the point, an exponent,
+/// a sign, a suffix, and a hex digit, concatenated in every order, so the
+/// pathological literals the malformed flag is held to are sampled densely
+/// rather than by chance in [`soup`].
+fn number_soup() -> impl Strategy<Value = String> {
+    const PIECES: &[&str] = &[
+        "0", "1", "9", "123", "_", ".", "e", "-", "5", "u32", "x", " ",
+    ];
+    proptest::collection::vec(prop::sample::select(PIECES).prop_map(str::to_owned), 1..12)
+        .prop_map(|pieces| pieces.concat())
+}
+
 /// Records every failing seed in the crate's tracked `proptest-regressions/`
 /// file, which each later run replays before generating anything new, so a
 /// failure found once stays found. Proptest's default location is found by
@@ -101,7 +113,7 @@ fn config() -> ProptestConfig {
 proptest! {
     #![proptest_config(config())]
     #[test]
-    fn lex_is_total_and_partitions(source in soup()) {
+    fn lex_is_total_and_partitions(source in prop_oneof![soup(), number_soup()]) {
         let file = lex(&source).expect("generated sources fit in u32");
         prop_assert_eq!(file.source_len().to_usize(), source.len());
 
@@ -137,10 +149,16 @@ proptest! {
         }
 
         for index in file.indices() {
+            let has_error = file.errors().iter().any(|error| error.token == index);
             if file.kind(index) == SyntaxKind::Error {
-                prop_assert!(
-                    file.errors().iter().any(|error| error.token == index),
-                    "error token {:?} has no lexical error", index
+                prop_assert!(has_error, "error token {:?} has no lexical error", index);
+            }
+            // The flag hir reads before parsing a literal states exactly what
+            // the errors state.
+            if file.kind(index) == SyntaxKind::IntLiteral {
+                prop_assert_eq!(
+                    file.flags(index).contains(TokenFlags::MALFORMED_NUMBER), has_error,
+                    "literal {:?} disagrees with its errors about being malformed", index
                 );
             }
             // Only a line break spans lines.
