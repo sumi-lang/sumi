@@ -739,6 +739,25 @@ fn fixed(d: int) -> int = if d == 0 { 100 / d } else { 1 }
 fn fixeds() -> int = fixed(-5) + fixed(0) + fixed(5)
 fn arity(d: int) -> int = 100 / d
 fn wrong_arity() -> int = arity(0, 1)
+fn plain(k: int) -> int = half(k)
+fn plains() -> int = plain(0)
+fn bound() -> int {
+    let z = 0
+    half(z)
+}
+fn guarded(k: int) -> int = if k == 0 { half(k) } else { 1 }
+fn guardeds() -> int = guarded(0)
+fn chained() -> int {
+    let a = 0
+    let b = a
+    let c = b
+    let d = c
+    let e = d
+    let f = e
+    let g = f
+    let h = g
+    100 / h
+}
 ```
 
 ```text
@@ -754,6 +773,9 @@ error[semantic/division-by-zero]: division by zero
 error[semantic/division-by-zero]: divisor may be zero
   primary @194..201
   secondary @234..239: argument may be 0: [-3, 3]
+  secondary @1047..1048: argument is 0
+  secondary @1123..1124: argument is 0
+  secondary @1173..1174: argument is 0
 error[semantic/division-by-zero]: division by zero
   primary @369..374
   secondary @373..374: is 0
@@ -773,6 +795,9 @@ error[semantic/division-by-zero]: division by zero
   primary @870..877
   secondary @861..867: is 0 under this guard
   secondary @930..931: argument is 0
+error[semantic/division-by-zero]: division by zero
+  primary @1361..1368
+  secondary @1257..1258: is 0
 ```
 
 ### `semantic/unbounded-recursion`
