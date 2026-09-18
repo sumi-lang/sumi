@@ -1,9 +1,8 @@
 //! Formatting and lossless reprinting for Sumi.
 //!
 //! The syntax tree stores structure only; the token buffers keep every byte
-//! of the source. [`elements`] interleaves the two — the raw tokens attached
-//! directly to a node with its child subtrees — and [`reprint`] walks them
-//! to reconstruct the source byte for byte. [`format`] lays the tokens out
+//! of the source, and [`reprint`] walks the two together to reconstruct it
+//! byte for byte. [`format`] lays the tokens out
 //! afresh: a separator per gap, chosen by rules over the tree and fitted to
 //! a width, with comments and retained blank lines kept in place and every
 //! gap the parser recovered around left as written. [`rep`] is its
@@ -20,8 +19,7 @@ use std::fmt;
 
 use sumi_lexer::{LexedFile, lex};
 use sumi_syntax::{
-    NodeIdx, Parse, ParseViolation, ParseViolationKind, ParserInput, RawIdx, SyntaxKind,
-    SyntaxTree, parse,
+    Parse, ParseViolation, ParseViolationKind, ParserInput, RawIdx, SyntaxKind, SyntaxTree, parse,
 };
 use sumi_text::{TextEdit, TextRange, TextSize};
 
@@ -128,42 +126,6 @@ fn mismatch(before: &Rep<'_>, candidate: &str) -> Option<Vec<usize>> {
             .filter(|&index| after.items[index] != before.items[index])
             .collect(),
     )
-}
-
-/// One element of a node: a raw token attached directly to it, or a child
-/// subtree. Trivia between two children belongs to the parent and edge
-/// trivia to the root, so a node's elements cover its raw token range
-/// exactly, in source order.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Element {
-    /// A raw index into the tree's token buffers.
-    Token(RawIdx),
-    /// A node index into the tree.
-    Node(NodeIdx),
-}
-
-/// Iterate the elements of node `index`: its directly attached raw tokens
-/// interleaved with its children.
-pub fn elements(tree: &SyntaxTree, index: NodeIdx) -> impl Iterator<Item = Element> + '_ {
-    let mut children = tree.children(index).peekable();
-    let mut cursor = tree.first_token(index);
-    let end = tree.end_token(index);
-    std::iter::from_fn(move || {
-        if let Some(&child) = children.peek() {
-            if cursor < tree.first_token(child) {
-                cursor += 1;
-                return Some(Element::Token(cursor - 1));
-            }
-            children.next();
-            cursor = tree.end_token(child);
-            Some(Element::Node(child))
-        } else if cursor < end {
-            cursor += 1;
-            Some(Element::Token(cursor - 1))
-        } else {
-            None
-        }
-    })
 }
 
 /// Reconstruct the source of `tree` byte for byte from its token buffer.

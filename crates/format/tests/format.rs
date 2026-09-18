@@ -1,6 +1,6 @@
-use sumi_format::{Element, elements, layout_violation_edits, reprint};
-use sumi_syntax::{NodeIdx, ParseEvidence, ParseViolationKind};
-use sumi_test::{Front, front};
+use sumi_format::{layout_violation_edits, reprint};
+use sumi_syntax::{ParseEvidence, ParseViolationKind};
+use sumi_test::front;
 
 fn apply_edits(source: &str, edits: &[sumi_text::TextEdit]) -> String {
     let mut result = source.to_owned();
@@ -51,75 +51,6 @@ fn check_roundtrip(source: &str) {
         source,
         "reprint of {source:?}"
     );
-}
-
-/// Render a node's elements: token texts and child node kinds, in order.
-fn render_elements(front: &Front, source: &str, node: NodeIdx) -> Vec<String> {
-    elements(front.parse.tree(), node)
-        .map(|element| match element {
-            Element::Token(token) => format!("{:?}", front.lexed.text(source, token)),
-            Element::Node(child) => format!("{:?}", front.parse.tree().kind(child)),
-        })
-        .collect()
-}
-
-#[test]
-fn elements_interleave_attached_tokens_and_children() {
-    let source = "fn f(a: Int) { 1 } // tail\n";
-    let front = front(source);
-    let tree = front.parse.tree();
-
-    // Edge trivia belongs to the root; the item is one subtree.
-    assert_eq!(
-        render_elements(&front, source, tree.root()),
-        ["FnItem", "\" \"", "\"// tail\"", "\"\\n\""]
-    );
-
-    // Trivia between children belongs to the node between them.
-    let item = tree.children(tree.root()).next().expect("one item");
-    assert_eq!(
-        render_elements(&front, source, item),
-        ["\"fn\"", "\" \"", "Name", "ParamList", "\" \"", "Block"]
-    );
-}
-
-#[test]
-fn elements_of_an_empty_file_are_empty() {
-    let source = "";
-    let front = front(source);
-    let tree = front.parse.tree();
-    assert_eq!(elements(tree, tree.root()).count(), 0);
-}
-
-#[test]
-fn elements_of_a_trivia_only_file_all_attach_to_the_root() {
-    let source = "  // note\n";
-    let front = front(source);
-    assert_eq!(
-        render_elements(&front, source, front.parse.tree().root()),
-        ["\"  \"", "\"// note\"", "\"\\n\""]
-    );
-}
-
-#[test]
-fn every_raw_token_attaches_to_exactly_one_node() {
-    let source = "fn f(a b { // g\nlet x = ((1) }\n\"open";
-    let front = front(source);
-    let tree = front.parse.tree();
-    let mut owner = vec![None; front.lexed.len()];
-    for node in tree.nodes() {
-        for element in elements(tree, node) {
-            if let Element::Token(token) = element {
-                assert_eq!(
-                    owner[token.to_usize()],
-                    None,
-                    "token {token:?} attached to two nodes"
-                );
-                owner[token.to_usize()] = Some(node);
-            }
-        }
-    }
-    assert!(owner.iter().all(Option::is_some), "unattached raw tokens");
 }
 
 #[test]
