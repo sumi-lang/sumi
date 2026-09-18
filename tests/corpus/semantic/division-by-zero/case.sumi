@@ -47,3 +47,8 @@ fn chained() -> int {
     let h = g
     100 / h
 }
+fn divides(n: int) -> int = 10 / n
+fn under_a_hole() -> int {
+    let x = 0
+    if absent { divides(x) } else { 1 }
+}

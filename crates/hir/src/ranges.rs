@@ -947,8 +947,9 @@ pub enum UnaryOp {
 pub enum RangeEdge {
     /// Nothing: the range side of a typing-only flow.
     None,
-    /// The value unchanged: an annotated binding's initializer, a declared
-    /// result's body.
+    /// The value unchanged: a binding's initializer, annotated or not, a
+    /// declared result's body, and the parent context of a branch whose
+    /// condition has no value.
     Copy,
     Unary(UnaryOp),
     /// An eager operator over its operands.

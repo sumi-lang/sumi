@@ -1,16 +1,18 @@
 //! Scalar type evidence with provenance, and the may-values beside it, over
 //! the lattice-join [`Solver`].
 //!
-//! Every expression, local, and function result owns a class. The evidence
-//! on a class is a pair: the set of types claimed for it, each with the best
-//! claim that made it, so a conflicted class explains itself, and the
-//! [`May`] set of values that reach it, which `ranges` defines. A call is a
-//! flow from the callee's result class into the call expression's class,
-//! and the type claims crossing it are relabeled to the call site, so no
-//! origin ever points outside the declaration that owns the class. A
-//! conflict whose every claim arrived through a call is inherited: it was
-//! already a conflict where it arose, and is reported there, once. A class
-//! with a claim of its own in the conflict reports it.
+//! Every node of the graph owns a class, the one at its index, and nothing
+//! the checker draws merges two: what the solve decides of a node is read
+//! back at the node. The evidence on a class is a pair: the set of types
+//! claimed for it, each with the best claim that made it, so a conflicted
+//! class explains itself, and the [`May`] set of values that reach it,
+//! which `ranges` defines. A call is a flow from the callee's result class
+//! into the call expression's class, and the type claims crossing it are
+//! relabeled to the call site, so no origin ever points outside the
+//! declaration that owns the class. A conflict whose every claim arrived
+//! through a call is inherited: it was already a conflict where it arose,
+//! and is reported there, once. A class with a claim of its own in the
+//! conflict reports it.
 //!
 //! An `if` with an else owns a class its branches flow into, unchanged, and
 //! never unify with. Branches that disagree make a conflict on the `if`
@@ -166,7 +168,7 @@ impl Lattice for Evidence {
 
     fn transfer(&self, edge: &Edge, _: Option<&Self>, _: bool, (): &()) -> Self {
         match *edge {
-            Edge::Branch | Edge::Peer | Edge::Refine => *self,
+            Edge::Branch | Edge::Peer | Edge::Refine | Edge::Copy => *self,
             Edge::Call(call) => {
                 let imported = Claim(call.0 | IMPORTED);
                 Self {
@@ -200,17 +202,20 @@ pub(crate) enum Edge {
     /// A read of a local under a refinement: the local's claims as they
     /// are, exported by a replay once solved, so the read still types.
     Refine,
+    /// A `let` without an annotation: its initializer's claims as they
+    /// are, and one class with it in the replay, so a demand on a read of
+    /// the binding is a demand on what it was bound to. Also the typing
+    /// side of a range-only copy.
+    Copy,
     /// Nothing: the typing side of a range-only flow.
     None,
 }
 
-/// What a demand asks of an expression: a fixed type, the type of another
-/// class it is one value with, or the type of a peer it is compared to.
+/// What a demand asks of an expression: a fixed type, or the type of a
+/// peer it is compared to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Expected {
     Ty(Ty),
-    /// The same value as `Class`: the classes merge, values included.
-    Class(Var),
     /// Compared with `Peer`: each learns the other's types and nothing of
     /// its values.
     Peer(Var),
@@ -224,22 +229,24 @@ pub(crate) struct Typing {
     solver: Solver<Product>,
     /// Where each claim was made, by claim index.
     origins: Vec<Span>,
-    /// Every refined read beside the local it reads. A read is one class
-    /// with its local in the replay, which resolves types alone, so a
-    /// demand on the read is a demand on the local wherever the local's
-    /// type comes from, a branch settled later included.
-    refined: Vec<(Var, Var)>,
+    /// Every class that is one with another in the replay, beside that
+    /// other: a refined read beside the local it reads, and an
+    /// unannotated `let` beside its initializer. The replay resolves
+    /// types alone, so a demand on the read or the binding is a demand
+    /// on the local or the initializer wherever its type comes from, a
+    /// branch settled later included.
+    aliased: Vec<(Var, Var)>,
 }
 
 impl Typing {
-    /// A typing sized for a graph of `nodes` nodes: about a class, a
-    /// claim, and a flow per node, so the common file fills its vectors
-    /// without growing them. Only a guide.
+    /// A typing of `nodes` classes, `Var::new(0)` to `Var::new(nodes - 1)`,
+    /// with room for about a claim and a flow per class. Only the room
+    /// is a guide.
     pub fn for_nodes(nodes: usize) -> Self {
         Self {
-            solver: Solver::with_capacity(nodes, nodes),
+            solver: Solver::with_classes(nodes),
             origins: Vec::with_capacity(nodes),
-            refined: Vec::new(),
+            aliased: Vec::with_capacity(nodes / 8),
         }
     }
 
@@ -254,32 +261,34 @@ impl Typing {
         self.origins.get(claim.index()).copied()
     }
 
-    /// A class nothing is known about yet.
+    /// One more class, nothing known about it yet, numbered after every
+    /// class so far: how the tests and benches grow a graph. The checker
+    /// opens every class at once.
+    #[allow(dead_code)]
     pub fn fresh(&mut self) -> Var {
         self.solver.fresh()
     }
 
-    /// A class known to have `ty` because of what is at `origin`: an
+    /// `var` is known to have `ty` because of what is at `origin`: an
     /// annotation, or an operator's result, whose values arrive by flows.
-    pub fn known(&mut self, ty: Ty, origin: Span) -> Var {
+    pub fn known(&mut self, var: Var, ty: Ty, origin: Span) {
         let claim = self.claim(origin);
         self.solver
-            .known((Evidence::single(ty, claim), May::bottom()))
+            .fact(var, (Evidence::single(ty, claim), May::bottom()));
     }
 
-    /// A literal: known to have `ty` and to be exactly `value`.
-    pub fn literal(&mut self, ty: Ty, value: May, origin: Span) -> Var {
+    /// `var` is a literal: known to have `ty` and to be exactly `value`.
+    pub fn literal(&mut self, var: Var, ty: Ty, value: May, origin: Span) {
         let claim = self.claim(origin);
-        self.solver.known((Evidence::single(ty, claim), value))
+        self.solver.fact(var, (Evidence::single(ty, claim), value));
     }
 
-    /// A function's entry context: live on its own account when the function
-    /// can be run without arguments, otherwise live when a call site is.
-    pub fn entry(&mut self, runnable: bool) -> Var {
+    /// `var` is a function's entry context: live on its own account when
+    /// the function can be run without arguments, otherwise live when a
+    /// call site is.
+    pub fn entry(&mut self, var: Var, runnable: bool) {
         if runnable {
-            self.solver.known((Evidence::bottom(), May::unit()))
-        } else {
-            self.solver.fresh()
+            self.solver.fact(var, (Evidence::bottom(), May::unit()));
         }
     }
 
@@ -304,14 +313,34 @@ impl Typing {
     /// replay.
     pub fn refine(&mut self, local: Var, other: Var, read: Var, edge: RangeEdge) {
         self.solver.derive(local, other, read, (Edge::Refine, edge));
-        self.refined.push((read, local));
+        self.aliased.push((read, local));
     }
 
     /// Let `read`, a read of the boolean `local`, learn it is `value`.
     pub fn refine_bool(&mut self, local: Var, read: Var, value: bool) {
         self.solver
             .flow(local, read, (Edge::Refine, RangeEdge::Exactly(value)));
-        self.refined.push((read, local));
+        self.aliased.push((read, local));
+    }
+
+    /// Merge two classes: the union-find the solver keeps for the day
+    /// rewrites prove nodes equal. Nothing the checker draws merges
+    /// classes, by design rather than by chance: a node's evidence is its
+    /// own, so a literal demanded through its binding stays the literal
+    /// it is and the demand is blamed on the read, and what the solve
+    /// decided is read back by node once settled. The replay aliases,
+    /// and the solver's benches merge.
+    #[allow(dead_code)]
+    pub fn equal(&mut self, a: Var, b: Var) {
+        self.solver.equal(a, b);
+    }
+
+    /// Let `copy`, a `let` without an annotation, be its `initializer`:
+    /// the same types and values, and one class with it in the replay.
+    pub fn copy(&mut self, initializer: Var, copy: Var) {
+        self.solver
+            .flow(initializer, copy, (Edge::Copy, RangeEdge::Copy));
+        self.aliased.push((copy, initializer));
     }
 
     /// A range-only flow from one provider.
@@ -333,7 +362,6 @@ impl Typing {
                 self.solver
                     .expect(var, &(Evidence::single(ty, claim), May::bottom()));
             }
-            Expected::Class(class) => self.solver.equal(var, class),
             Expected::Peer(peer) => {
                 self.solver.flow(var, peer, (Edge::Peer, RangeEdge::None));
                 self.solver.flow(peer, var, (Edge::Peer, RangeEdge::None));
@@ -380,13 +408,34 @@ impl Typing {
                         .0
                         .transfer(&edge.0, other.map(|other| &other.0), false, &())
                 }),
-                Edge::Branch | Edge::Peer | Edge::Refine | Edge::None => None,
+                Edge::Branch | Edge::Peer | Edge::Refine | Edge::Copy | Edge::None => None,
             },
         );
-        for &(read, local) in &self.refined {
-            solver.equal(read, local);
+        for &(alias, of) in &self.aliased {
+            solver.equal(alias, of);
         }
         Replay(solver)
+    }
+
+    /// What the solve decided of every class, and nothing else: the flows,
+    /// facts, claim origins, and aliases are done with once the verdicts
+    /// are given.
+    pub fn settle(self) -> Settled {
+        Settled(self.solver.into_evidence().into_boxed_slice())
+    }
+}
+
+/// The evidence of every class once the flows are settled and the
+/// verdicts given, by class index.
+pub(crate) struct Settled(Box<[Product]>);
+
+impl Settled {
+    pub fn resolve(&self, var: Var) -> Option<Ty> {
+        self.0[var.index()].0.ty()
+    }
+
+    pub fn may(&self, var: Var) -> &May {
+        &self.0[var.index()].1
     }
 }
 
@@ -417,7 +466,7 @@ impl Replay {
     pub fn expect(&mut self, var: Var, expected: Expected) {
         match expected {
             Expected::Ty(ty) => self.0.expect(var, &Evidence::single(ty, Claim::REPLAYED)),
-            Expected::Class(class) | Expected::Peer(class) => self.0.equal(var, class),
+            Expected::Peer(peer) => self.0.equal(var, peer),
         }
     }
 }
@@ -440,6 +489,24 @@ mod tests {
 
     fn cx() -> ProductContext {
         ((), Thresholds::default())
+    }
+
+    fn known(typing: &mut Typing, ty: Ty, origin: Span) -> Var {
+        let var = typing.fresh();
+        typing.known(var, ty, origin);
+        var
+    }
+
+    fn literal(typing: &mut Typing, ty: Ty, value: May, origin: Span) -> Var {
+        let var = typing.fresh();
+        typing.literal(var, ty, value, origin);
+        var
+    }
+
+    fn entry(typing: &mut Typing, runnable: bool) -> Var {
+        let var = typing.fresh();
+        typing.entry(var, runnable);
+        var
     }
 
     fn call(typing: &mut Typing, result: Var, origin: Span) -> Var {
@@ -482,8 +549,8 @@ mod tests {
                 types.reverse();
             }
             for (ty, offset) in types {
-                let literal = typing.known(ty, at(offset));
-                typing.expect(result, Expected::Class(literal), at(offset + 1));
+                let literal = known(&mut typing, ty, at(offset));
+                typing.copy(literal, result);
             }
             let downstream = call(&mut typing, result, at(30));
             typing.solve(&cx());
@@ -508,7 +575,7 @@ mod tests {
     #[test]
     fn a_claim_of_the_classs_own_makes_a_conflict_local() {
         let mut typing = typing();
-        let conflicted = typing.known(Ty::Int, at(0));
+        let conflicted = known(&mut typing, Ty::Int, at(0));
         typing.expect(conflicted, Expected::Ty(Ty::Bool), at(1));
         let call = call(&mut typing, conflicted, at(2));
         typing.expect(call, Expected::Ty(Ty::Unit), at(3));
@@ -531,7 +598,7 @@ mod tests {
     #[test]
     fn a_local_claim_outranks_an_earlier_imported_one() {
         let mut typing = typing();
-        let provider = typing.known(Ty::Int, at(0));
+        let provider = known(&mut typing, Ty::Int, at(0));
         let call = call(&mut typing, provider, at(1));
         typing.expect(call, Expected::Ty(Ty::Int), at(2));
         typing.solve(&cx());
@@ -544,15 +611,15 @@ mod tests {
     #[test]
     fn peers_share_types_but_not_values() {
         let mut typing = typing();
-        let x = typing.literal(Ty::Int, May::int(5.into()), at(0));
-        let y = typing.literal(Ty::Int, May::int(9.into()), at(1));
+        let x = literal(&mut typing, Ty::Int, May::int(5.into()), at(0));
+        let y = literal(&mut typing, Ty::Int, May::int(9.into()), at(1));
         typing.expect(x, Expected::Peer(y), at(2));
         typing.solve(&cx());
         assert_eq!(typing.resolve(x), Some(Ty::Int));
         assert_eq!(typing.may(x), &May::int(5.into()));
         assert_eq!(typing.may(y), &May::int(9.into()));
         let unknown = typing.fresh();
-        let known = typing.known(Ty::Bool, at(3));
+        let known = known(&mut typing, Ty::Bool, at(3));
         typing.expect(unknown, Expected::Peer(known), at(4));
         typing.solve(&cx());
         assert_eq!(typing.resolve(unknown), Some(Ty::Bool));
@@ -562,9 +629,9 @@ mod tests {
     #[test]
     fn branches_decide_their_if_and_keep_their_origins() {
         let mut typing = typing();
-        let live = typing.entry(true);
-        let then_branch = typing.known(Ty::Int, at(0));
-        let else_branch = typing.known(Ty::Bool, at(1));
+        let live = entry(&mut typing, true);
+        let then_branch = known(&mut typing, Ty::Int, at(0));
+        let else_branch = known(&mut typing, Ty::Bool, at(1));
         let join = typing.fresh();
         typing.branch(then_branch, live, join);
         typing.branch(else_branch, live, join);
@@ -601,10 +668,10 @@ mod tests {
     #[test]
     fn a_dead_branch_delivers_no_values() {
         let mut typing = typing();
-        let dead = typing.entry(false);
-        let live = typing.entry(true);
-        let then_branch = typing.literal(Ty::Int, May::int(1.into()), at(0));
-        let else_branch = typing.literal(Ty::Int, May::int(2.into()), at(1));
+        let dead = entry(&mut typing, false);
+        let live = entry(&mut typing, true);
+        let then_branch = literal(&mut typing, Ty::Int, May::int(1.into()), at(0));
+        let else_branch = literal(&mut typing, Ty::Int, May::int(2.into()), at(1));
         let join = typing.fresh();
         typing.branch(then_branch, dead, join);
         typing.branch(else_branch, live, join);
@@ -617,7 +684,7 @@ mod tests {
     #[test]
     fn replay_keeps_facts_solved_calls_and_refined_reads_only() {
         let mut typing = typing();
-        let literal = typing.known(Ty::Int, at(0));
+        let literal = known(&mut typing, Ty::Int, at(0));
         let demanded = typing.fresh();
         typing.expect(demanded, Expected::Ty(Ty::Bool), at(1));
         let unknown = typing.fresh();
@@ -637,7 +704,7 @@ mod tests {
         assert_eq!(replay.resolve(conflict_call), None);
         assert_eq!(replay.resolve(literal_call), Some(Ty::Int));
         assert_eq!(replay.resolve(refined), Some(Ty::Int));
-        replay.expect(demanded, Expected::Class(literal));
+        replay.expect(demanded, Expected::Peer(literal));
         assert_eq!(replay.resolve(demanded), Some(Ty::Int));
         replay.expect(unknown_call, Expected::Ty(Ty::Bool));
         assert_eq!(replay.resolve(unknown_call), Some(Ty::Bool));
@@ -650,9 +717,9 @@ mod tests {
     #[test]
     fn a_refined_read_of_a_branch_bound_local_resolves_with_its_if() {
         let mut typing = typing();
-        let live = typing.entry(true);
-        let then_branch = typing.known(Ty::Int, at(0));
-        let else_branch = typing.known(Ty::Int, at(1));
+        let live = entry(&mut typing, true);
+        let then_branch = known(&mut typing, Ty::Int, at(0));
+        let else_branch = known(&mut typing, Ty::Int, at(1));
         let local = typing.fresh();
         typing.branch(then_branch, live, local);
         typing.branch(else_branch, live, local);
@@ -666,5 +733,50 @@ mod tests {
         replay.expect(refined, Expected::Ty(Ty::Bool));
         assert!(replay.evidence(refined).is_conflict());
         assert!(replay.evidence(local).is_conflict());
+    }
+
+    /// An unannotated `let` is its initializer: the same types and
+    /// values in the solve, where the two stay apart, so a demand on the
+    /// binding conflicts the binding and not the initializer; and one
+    /// class in the replay, so the demand is blamed on the initializer's
+    /// type there, a call settled by the replay included.
+    #[test]
+    fn a_let_copies_its_initializer_and_is_one_with_it_in_the_replay() {
+        let mut typing = typing();
+        let literal = literal(&mut typing, Ty::Int, May::int(5.into()), at(0));
+        let binding = typing.fresh();
+        typing.copy(literal, binding);
+        typing.expect(binding, Expected::Ty(Ty::Bool), at(1));
+        let unknown = typing.fresh();
+        let unknown_call = call(&mut typing, unknown, at(2));
+        let bound_call = typing.fresh();
+        typing.copy(unknown_call, bound_call);
+        typing.solve(&cx());
+        assert_eq!(typing.may(binding).ints, typing.may(literal).ints);
+        assert!(typing.evidence(binding).is_conflict());
+        assert_eq!(typing.resolve(literal), Some(Ty::Int));
+        assert_eq!(typing.resolve(bound_call), None);
+        let mut replay = typing.replay();
+        assert_eq!(replay.resolve(binding), Some(Ty::Int));
+        replay.expect(bound_call, Expected::Ty(Ty::Bool));
+        assert_eq!(replay.resolve(unknown_call), Some(Ty::Bool));
+    }
+
+    /// Once settled, every class reads back what the solve decided of
+    /// it, and a class merged into another reads back its root's.
+    #[test]
+    fn settled_evidence_is_read_by_class() {
+        let mut typing = typing();
+        let literal = literal(&mut typing, Ty::Int, May::int(5.into()), at(0));
+        let merged = typing.fresh();
+        typing.equal(literal, merged);
+        let apart = typing.fresh();
+        typing.solve(&cx());
+        let settled = typing.settle();
+        assert_eq!(settled.resolve(literal), Some(Ty::Int));
+        assert_eq!(settled.resolve(merged), Some(Ty::Int));
+        assert_eq!(settled.may(merged).ints, settled.may(literal).ints);
+        assert_eq!(settled.resolve(apart), None);
+        assert!(!settled.may(apart).live());
     }
 }

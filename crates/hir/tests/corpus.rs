@@ -189,10 +189,9 @@ impl Shape {
     }
 }
 
-fn ty(graph: &Graph, node: NodeId) -> String {
-    graph
-        .node(node)
-        .ty
+fn ty(analysis: &Analysis, node: NodeId) -> String {
+    analysis
+        .ty(node)
         .map_or_else(|| "?".to_owned(), |ty| ty.to_string())
 }
 
@@ -212,7 +211,7 @@ fn dump(analysis: &Analysis, shape: &Shape, function: FunctionId, out: &mut Stri
             out,
             "  param {}: {}",
             named(analysis, param),
-            ty(graph, param)
+            ty(analysis, param)
         )
         .unwrap();
     }
@@ -226,7 +225,7 @@ fn dump(analysis: &Analysis, shape: &Shape, function: FunctionId, out: &mut Stri
         writeln!(
             out,
             "  result: copy : {} {}",
-            ty(graph, result),
+            ty(analysis, result),
             span(node.origin)
         )
         .unwrap();
@@ -279,7 +278,7 @@ fn dump_region(
                     out,
                     "{indent}  let {}: {} {}",
                     named(analysis, node),
-                    ty(graph, node),
+                    ty(analysis, node),
                     span(graph.node(node).origin)
                 )
                 .unwrap();
@@ -346,7 +345,7 @@ fn dump_node(
             "{}{role}: read {}{guards} : {}",
             "  ".repeat(depth),
             named(analysis, definition),
-            ty(graph, node)
+            ty(analysis, node)
         )
         .unwrap();
         return;
@@ -397,7 +396,7 @@ fn dump_definition(
     writeln!(
         out,
         "{indent}{role}: {operation} : {} {}",
-        ty(graph, node),
+        ty(analysis, node),
         span(entry.origin)
     )
     .unwrap();

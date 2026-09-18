@@ -97,26 +97,27 @@ pub fn check_typed(analysis: &sumi_hir::Analysis) {
             .signature()
             .expect("a complete function has a signature");
         let run = graph.run(FunctionId::new(index));
-        let ty = |node: NodeId| graph.node(node).ty;
+        let ty = |node: NodeId| analysis.ty(node);
         for node in run.nodes() {
             let entry = graph.node(node);
+            let own = ty(node);
             let inputs = graph.inputs(node);
             match &entry.op {
                 Op::Entry | Op::Then | Op::Else => continue,
                 Op::Hole => panic!("a hole in a complete function"),
-                Op::Int(_) => assert_eq!(entry.ty, Some(Ty::Int)),
-                Op::Bool(_) => assert_eq!(entry.ty, Some(Ty::Bool)),
-                Op::Unit => assert_eq!(entry.ty, Some(Ty::Unit)),
+                Op::Int(_) => assert_eq!(own, Some(Ty::Int)),
+                Op::Bool(_) => assert_eq!(own, Some(Ty::Bool)),
+                Op::Unit => assert_eq!(own, Some(Ty::Unit)),
                 Op::Param(position) => {
-                    assert_eq!(entry.ty, Some(signature.params[*position as usize]));
+                    assert_eq!(own, Some(signature.params[*position as usize]));
                 }
                 Op::Neg => {
                     assert_eq!(ty(inputs[0]), Some(Ty::Int));
-                    assert_eq!(entry.ty, Some(Ty::Int));
+                    assert_eq!(own, Some(Ty::Int));
                 }
                 Op::Not => {
                     assert_eq!(ty(inputs[0]), Some(Ty::Bool));
-                    assert_eq!(entry.ty, Some(Ty::Bool));
+                    assert_eq!(own, Some(Ty::Bool));
                 }
                 Op::Binary(op) => {
                     let (operand, result) = match op {
@@ -130,7 +131,7 @@ pub fn check_typed(analysis: &sumi_hir::Analysis) {
                         }
                         BinaryOp::Eq | BinaryOp::Ne => (None, Ty::Bool),
                     };
-                    assert_eq!(entry.ty, Some(result));
+                    assert_eq!(own, Some(result));
                     match operand {
                         Some(operand) => {
                             assert_eq!(ty(inputs[0]), Some(operand));
@@ -143,23 +144,23 @@ pub fn check_typed(analysis: &sumi_hir::Analysis) {
                     }
                 }
                 Op::And { rhs } | Op::Or { rhs } => {
-                    assert_eq!(entry.ty, Some(Ty::Bool));
+                    assert_eq!(own, Some(Ty::Bool));
                     assert_eq!(ty(inputs[0]), Some(Ty::Bool));
                     assert_eq!(ty(graph.region(*rhs).result()), Some(Ty::Bool));
                 }
                 Op::Copy { declared } => {
-                    assert_eq!(entry.ty, ty(inputs[0]));
+                    assert_eq!(own, ty(inputs[0]));
                     if let Some((declared, _)) = declared {
-                        assert_eq!(entry.ty, Some(*declared));
+                        assert_eq!(own, Some(*declared));
                     }
                 }
-                Op::Refine { .. } | Op::Exactly(_) => assert_eq!(entry.ty, ty(inputs[0])),
+                Op::Refine { .. } | Op::Exactly(_) => assert_eq!(own, ty(inputs[0])),
                 Op::Join { then, else_ } => {
                     assert_eq!(ty(inputs[0]), Some(Ty::Bool));
-                    assert_eq!(ty(graph.region(*then).result()), entry.ty);
+                    assert_eq!(ty(graph.region(*then).result()), own);
                     match else_ {
-                        Some(else_) => assert_eq!(ty(graph.region(*else_).result()), entry.ty),
-                        None => assert_eq!(entry.ty, Some(Ty::Unit)),
+                        Some(else_) => assert_eq!(ty(graph.region(*else_).result()), own),
+                        None => assert_eq!(own, Some(Ty::Unit)),
                     }
                 }
                 Op::Call(callee) => {
@@ -167,14 +168,14 @@ pub fn check_typed(analysis: &sumi_hir::Analysis) {
                         .function(*callee)
                         .signature()
                         .expect("a called function has a signature");
-                    assert_eq!(entry.ty, Some(callee.result));
+                    assert_eq!(own, Some(callee.result));
                     assert_eq!(inputs.len(), callee.params.len());
                     for (&input, &param) in inputs.iter().zip(&callee.params) {
                         assert_eq!(ty(input), Some(param));
                     }
                 }
             }
-            assert!(entry.ty.is_some());
+            assert!(own.is_some());
         }
         assert_eq!(ty(run.result()), Some(signature.result));
     }
@@ -215,7 +216,7 @@ pub fn check_graph(analysis: &sumi_hir::Analysis) {
         if analysis.is_valid() {
             assert!(!matches!(node.op, Op::Hole));
             if !matches!(node.op, Op::Entry | Op::Then | Op::Else) {
-                assert!(node.ty.is_some());
+                assert!(analysis.ty(id).is_some());
             }
         }
     }
