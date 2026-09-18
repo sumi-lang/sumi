@@ -699,6 +699,7 @@ impl FromIterator<Int> for Thresholds {
         values.extend(constants.iter().map(|constant| constant - &one));
         values.extend(constants.iter().map(|constant| constant + &one));
         values.extend(constants);
+        // Stable: each shift of the constants is a nearly sorted run to merge.
         values.sort();
         values.dedup();
         Self(values)
