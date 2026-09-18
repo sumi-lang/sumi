@@ -7,6 +7,7 @@
 
 mod diagnostic;
 mod lower;
+pub use lower::diagnostics;
 
 mod generated;
 pub use generated::codes;
@@ -23,7 +24,7 @@ use sumi_syntax::{Parse, ParserInput, parse};
 pub fn parse_source(source: Box<str>) -> Result<ParsedSource, SourceTooLarge> {
     let lexed = lex(&source)?;
     let parse = parse(ParserInput::new(&lexed));
-    let diagnostics = lower::diagnostics(&source, &lexed, &parse);
+    let diagnostics = diagnostics(&source, &lexed, &parse);
 
     Ok(ParsedSource {
         source,

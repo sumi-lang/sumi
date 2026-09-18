@@ -15,7 +15,10 @@ use sumi_text::{TextEdit, TextRange};
 use crate::codes;
 use crate::diagnostic::{Diagnostic, DiagnosticCode, Fix, Label};
 
-pub(crate) fn diagnostics(source: &str, lexed: &LexedFile, parse: &Parse) -> Box<[Diagnostic]> {
+/// The canonical diagnostics of one source snapshot, from the evidence its
+/// lexed file and parse hold: what [`parse_source`](crate::parse_source)
+/// lowers, for a caller that already ran the phases.
+pub fn diagnostics(source: &str, lexed: &LexedFile, parse: &Parse) -> Box<[Diagnostic]> {
     let snapshot = Snapshot { source, lexed };
     let mut diagnostics: Vec<Diagnostic> = lexed
         .errors()

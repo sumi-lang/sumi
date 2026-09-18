@@ -49,6 +49,11 @@ fn percentile_f64(values: &[f64], q: f64) -> f64 {
     sorted[((q * sorted.len() as f64).ceil() as usize).clamp(1, sorted.len()) - 1]
 }
 
+/// The number of diagnostics the frontend reports for `source`.
+fn diagnostics(source: &str, front: &Front) -> u64 {
+    sumi_frontend::diagnostics(source, &front.lexed, &front.parse).len() as u64
+}
+
 fn sig(index: usize) -> SigIdx {
     SigIdx::new(u32::try_from(index).expect("significant positions fit in u32"))
 }
@@ -156,9 +161,7 @@ impl ClassStats {
             self.unguarded += 1;
         }
 
-        let parsed =
-            sumi_frontend::parse_source(edited.as_str().into()).expect("edited sources fit in u32");
-        self.diags.push(parsed.diagnostics().len() as u64);
+        self.diags.push(diagnostics(&edited, &after));
 
         let mut skipped = 0;
         for evidence in after.parse.evidence() {
@@ -488,22 +491,20 @@ fn literal_edit(source: &str, before: &Front, token: RawIdx, opener: bool) -> Li
         .map(|range| (range.end().to_usize() - range.start().to_usize()) as u64)
         .max()
         .unwrap_or(0);
-    let parsed =
-        sumi_frontend::parse_source(edited.as_str().into()).expect("edited sources fit in u32");
     LiteralSample {
         spread,
-        diags: parsed.diagnostics().len() as u64,
+        diags: diagnostics(&edited, &after),
         untouched_disturbed: (untouched - preserved) as u64,
     }
 }
 
 fn literal_edits(name: &str, source: &str, edits_per_class: usize, rng: &mut Rng) {
-    let clean = sumi_frontend::parse_source(source.into()).expect("corpora fit in u32");
-    assert!(
-        clean.diagnostics().is_empty(),
+    let before = front(source);
+    assert_eq!(
+        diagnostics(source, &before),
+        0,
         "the literal corpus must be valid"
     );
-    let before = front(source);
     let literals: Vec<RawIdx> = before
         .lexed
         .indices()
