@@ -1,0 +1,28 @@
+tree: see hir.snap
+
+== evidence ==
+ExpectedName at 3
+Expected(RParen) at 34
+ExpectedBody at 34
+ExpectedType at 47
+ExpectedType at 52
+ExpectedType at 65
+
+== diagnostics ==
+error[syntax/expected-name] 1:4: expected a name
+error[syntax/expected-token] 3:1: expected `)`
+  at 2:12..2:13 "(": opening delimiter is here
+  fix (safe): insert `)`
+    2:19 -> ")"
+error[syntax/expected-body] 3:1: expected a body, `{` or `=`
+error[syntax/expected-type] 3:14: expected a type
+error[syntax/expected-type] 3:19: expected a type
+error[syntax/expected-type] 4:12: expected a type
+
+== fixed (syntax/expected-body, syntax/expected-name, syntax/expected-type remain) ==
+fn (a: int) {}
+fn unclosed(a: int)
+fn untyped(a:) -> {
+    let x: = 1
+}
+fn intact() -> int = 3

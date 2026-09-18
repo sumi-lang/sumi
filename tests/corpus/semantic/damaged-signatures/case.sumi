@@ -1,0 +1,6 @@
+fn (a: int) {}
+fn unclosed(a: int
+fn untyped(a:) -> {
+    let x: = 1
+}
+fn intact() -> int = 3
