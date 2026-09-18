@@ -10,7 +10,7 @@
 //! without it.
 
 use sumi_lexer::{LexedFile, RawIdx};
-use sumi_syntax::{NodeIdx, NodeKind, ParserInput, SigIdx, SyntaxKind, SyntaxTree};
+use sumi_syntax::{NodeIdx, NodeKind, Parse, ParserInput, SigIdx, SyntaxKind};
 
 use crate::trivia::{GapSignal, signal};
 
@@ -38,14 +38,10 @@ pub struct ItemRep<'s> {
     pub gaps: Vec<GapSignal<'s>>,
 }
 
-/// The layout-free content of `source`, which `lexed`, `input`, and `tree`
-/// must be the products of.
-pub fn rep<'s>(
-    source: &'s str,
-    lexed: &LexedFile,
-    input: &ParserInput,
-    tree: &SyntaxTree,
-) -> Rep<'s> {
+/// The layout-free content of `source`, which `lexed` and `parse` must be
+/// the products of.
+pub fn rep<'s>(source: &'s str, lexed: &LexedFile, parse: &Parse) -> Rep<'s> {
+    let (input, tree) = (parse.input(), parse.tree());
     let n = input.len();
     let sig_of_raw = sig_of_raw(input, lexed);
     let first_sig = |node: NodeIdx| sig_of_raw[tree.first_token(node).to_usize()];

@@ -15,8 +15,7 @@ use sumi_format::{format, rep, reprint};
 use sumi_frontend::{Applicability, FileId, ParsedSource, Place, Severity, codes, parse_source};
 use sumi_lexer::{LexedFile, RawIdx, SyntaxKind, lex};
 use sumi_syntax::{
-    BRACKET_PAIRS, NodeIdx, NodeKind, Parse, ParseAnchor, ParseEvidence, ParserInput, SigIdx,
-    SyntaxTree, parse,
+    BRACKET_PAIRS, NodeIdx, NodeKind, Parse, ParseAnchor, ParseEvidence, ParserInput, SigIdx, parse,
 };
 use sumi_test::{Edit, Front, apply, changes_delimiter, front};
 
@@ -619,14 +618,14 @@ pub fn check_widening(source: &str, lexed: &LexedFile, input: &ParserInput) {
 /// children are ordered, disjoint, and inside their parent; every node
 /// but the root covers at least one token and starts and ends on a
 /// significant one; the root covers the whole buffer.
-pub fn check_tree(tree: &SyntaxTree, lexed: &LexedFile) {
+pub fn check_tree(parse: &Parse, lexed: &LexedFile) {
+    let (input, tree) = (parse.input(), parse.tree());
     let root = tree.root();
     let item_starts: HashSet<_> = tree
         .children(root)
         .filter(|&node| tree.kind(node) == NodeKind::FnItem)
         .map(|node| tree.first_token(node))
         .collect();
-    let input = ParserInput::new(lexed);
     for index in input
         .indices()
         .filter(|&i| item_starts.contains(&input.token(i)))
@@ -692,8 +691,8 @@ pub fn check_tree(tree: &SyntaxTree, lexed: &LexedFile) {
 /// itself, and anchors every piece of evidence in bounds: present syntax
 /// and skipped ranges are nonempty, and missing syntax names the exact
 /// trivia interval between two significant tokens.
-pub fn check_parse(source: &str, lexed: &LexedFile, input: &ParserInput, parse: &Parse) {
-    let tree = parse.tree();
+pub fn check_parse(source: &str, lexed: &LexedFile, parse: &Parse) {
+    let (input, tree) = (parse.input(), parse.tree());
     assert_eq!(
         reprint(tree, lexed, source),
         source,
@@ -862,15 +861,14 @@ pub fn check_diagnostics(parsed: &ParsedSource) {
         );
     }
     let reparsed = parse_source(parsed.file(), fixed.into()).expect("fixed inputs fit in u32");
-    check_tree(reparsed.parse().tree(), reparsed.lexed());
+    check_tree(reparsed.parse(), reparsed.lexed());
 }
 
 /// The formatter's contract: the rep is kept, the edits are the text, a
 /// second pass changes nothing, and no defect. Restates the
 /// `sumi-format` formatting properties.
 pub fn check_format(source: &str, lexed: &LexedFile, parsed: &Parse) {
-    let input = ParserInput::new(lexed);
-    let before = rep(source, lexed, &input, parsed.tree());
+    let before = rep(source, lexed, parsed);
     let formatted = format(source, lexed, parsed)
         .unwrap_or_else(|defect| panic!("format defect on {source:?}: {}", defect.rejected));
     assert_eq!(
@@ -879,10 +877,9 @@ pub fn check_format(source: &str, lexed: &LexedFile, parsed: &Parse) {
         "the edits are not the text: {source:?}"
     );
     let after_lexed = lex(&formatted.text).expect("formatted inputs fit in u32");
-    let after_input = ParserInput::new(&after_lexed);
-    let after = parse(&after_input);
+    let after = parse(ParserInput::new(&after_lexed));
     assert_eq!(
-        rep(&formatted.text, &after_lexed, &after_input, after.tree()),
+        rep(&formatted.text, &after_lexed, &after),
         before,
         "format changed the rep: {source:?} -> {:?}",
         formatted.text
@@ -921,7 +918,7 @@ pub fn check_well_formed(source: &str, original: &Front) {
         "lexer errors in {source:?}: {:?}",
         original.lexed.errors()
     );
-    check_tree(original.parse.tree(), &original.lexed);
+    check_tree(&original.parse, &original.lexed);
     assert!(
         original.parse.evidence().is_empty(),
         "parse evidence {:?} in {source:?}",
@@ -937,12 +934,12 @@ pub fn check_recovery(source: &str, original: &Front, index: usize, edit: Edit) 
     let (edited, touched, moved, impact) = apply(source, &original.spans(), index, edit);
     let touched: Vec<RawIdx> = touched
         .iter()
-        .map(|&index| original.input.token(sig(index)))
+        .map(|&index| original.parse.input().token(sig(index)))
         .collect();
     let after = front(&edited);
-    check_tree(after.parse.tree(), &after.lexed);
+    check_tree(&after.parse, &after.lexed);
 
-    if changes_delimiter(&original.input, index, edit) {
+    if changes_delimiter(original.parse.input(), index, edit) {
         let tree = after.parse.tree();
         let survivors: HashSet<_> = tree
             .children(tree.root())
@@ -961,7 +958,7 @@ pub fn check_recovery(source: &str, original: &Front, index: usize, edit: Edit) 
             assert!(
                 survivors.contains(&(span, shape.clone())),
                 "{edit:?} at token {index} ({:?}) disturbs the item {:?}\n--- original ---\n{source}\n--- edited ---\n{edited}\nevidence: {:?}",
-                original.input.get(sig(index)),
+                original.parse.input().get(sig(index)),
                 shape.0,
                 after.parse.evidence()
             );
@@ -969,7 +966,7 @@ pub fn check_recovery(source: &str, original: &Front, index: usize, edit: Edit) 
     } else {
         let moved: Vec<RawIdx> = moved
             .iter()
-            .map(|&index| original.input.token(sig(index)))
+            .map(|&index| original.parse.input().token(sig(index)))
             .collect();
         let survivors: HashSet<_> = after
             .parse
@@ -983,7 +980,7 @@ pub fn check_recovery(source: &str, original: &Front, index: usize, edit: Edit) 
             assert!(
                 survivors.contains(&(span, shape.clone())),
                 "{edit:?} at token {index} ({:?}) disturbs the {:?} {:?}\n--- original ---\n{source}\n--- edited ---\n{edited}\nevidence: {:?}",
-                original.input.get(sig(index)),
+                original.parse.input().get(sig(index)),
                 original.parse.tree().kind(node),
                 shape.0,
                 after.parse.evidence()

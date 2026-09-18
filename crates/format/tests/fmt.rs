@@ -7,7 +7,7 @@ use sumi_syntax::{ParserInput, parse};
 
 fn fmt(source: &str) -> Formatted {
     let lexed = lex(source).expect("test sources fit in u32");
-    let parsed = parse(&ParserInput::new(&lexed));
+    let parsed = parse(ParserInput::new(&lexed));
     format(source, &lexed, &parsed).expect("no defect")
 }
 
@@ -162,15 +162,13 @@ fn formatting_keeps_the_rep_and_only_changes_trivia() {
         "fn f() { ((((( }",
     ] {
         let lexed = lex(source).unwrap();
-        let input = ParserInput::new(&lexed);
-        let parsed = parse(&input);
-        let before = rep(source, &lexed, &input, parsed.tree());
+        let parsed = parse(ParserInput::new(&lexed));
+        let before = rep(source, &lexed, &parsed);
         let formatted = format(source, &lexed, &parsed).expect("no defect");
         let after_lexed = lex(&formatted.text).unwrap();
-        let after_input = ParserInput::new(&after_lexed);
-        let after = parse(&after_input);
+        let after = parse(ParserInput::new(&after_lexed));
         assert_eq!(
-            rep(&formatted.text, &after_lexed, &after_input, after.tree()),
+            rep(&formatted.text, &after_lexed, &after),
             before,
             "rep of {source:?} -> {:?}",
             formatted.text

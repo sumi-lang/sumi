@@ -14,7 +14,7 @@ struct Parsed {
 impl Parsed {
     fn new(source: &'static str) -> Self {
         let lexed = lex(source).expect("test sources fit in u32");
-        let parse = parse(&ParserInput::new(&lexed));
+        let parse = parse(ParserInput::new(&lexed));
         Self {
             source,
             lexed,

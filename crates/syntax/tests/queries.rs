@@ -9,7 +9,7 @@ use sumi_syntax::{ParserInput, parse};
 #[track_caller]
 fn check_covering(source: &str) {
     let lexed = lex(source).expect("test sources fit in u32");
-    let parse = parse(&ParserInput::new(&lexed));
+    let parse = parse(ParserInput::new(&lexed));
     let tree = parse.tree();
     for token in lexed.indices() {
         let innermost = tree

@@ -187,9 +187,11 @@ impl SyntaxTree {
     }
 }
 
-/// A parsed file: its tree and the evidence observed while building it.
+/// A parsed file: the input it was parsed from, its tree, and the
+/// evidence observed while building it.
 #[derive(Clone, Debug)]
 pub struct Parse {
+    input: ParserInput,
     tree: SyntaxTree,
     evidence: Box<[ParseEvidence]>,
 }
@@ -198,12 +200,12 @@ impl Parse {
     /// Build a tree over the significant tokens of `input`, in source
     /// order: open the root, run `body` inside it, and close it. `body`
     /// must attach every significant token.
-    pub(crate) fn build<'a>(
-        input: &'a ParserInput,
-        body: impl FnOnce(&mut Marker<'_, 'a>),
+    pub(crate) fn build(
+        input: ParserInput,
+        body: impl for<'a> FnOnce(&mut Marker<'_, 'a>),
     ) -> Self {
         let mut builder = Builder {
-            input,
+            input: &input,
             nodes: Vec::new(),
             position: SigIdx::new(0),
             slots: input.slots(),
@@ -244,16 +246,21 @@ impl Parse {
             first_token: RawIdx::new(0),
             end_token: input.raw_len(),
         });
+        let Builder {
+            nodes, evidence, ..
+        } = builder;
         Self {
+            input,
             tree: SyntaxTree {
-                nodes: builder.nodes.into_boxed_slice(),
+                nodes: nodes.into_boxed_slice(),
             },
-            evidence: builder
-                .evidence
-                .into_iter()
-                .map(EvidenceBuilder::finish)
-                .collect(),
+            evidence: evidence.into_iter().map(EvidenceBuilder::finish).collect(),
         }
+    }
+
+    /// The token stream the tree was built over.
+    pub fn input(&self) -> &ParserInput {
+        &self.input
     }
 
     pub fn tree(&self) -> &SyntaxTree {
@@ -1000,8 +1007,7 @@ mod tests {
     #[test]
     fn parser_evidence_retains_same_position_facts() {
         let lexed = lex("x").expect("test source fits in u32");
-        let input = ParserInput::new(&lexed);
-        let parse = Parse::build(&input, |root| {
+        let parse = Parse::build(ParserInput::new(&lexed), |root| {
             let checkpoint = root.recovery_checkpoint();
             root.violation(ParseViolationKind::SpacedPrefixOperator, 1);
             assert!(!root.recovered_since(checkpoint));
@@ -1051,8 +1057,7 @@ mod tests {
     /// root, then dump it.
     fn dump(source: &str, build: impl FnOnce(&mut Marker<'_, '_>)) -> Vec<String> {
         let lexed = lex(source).expect("test sources fit in u32");
-        let input = ParserInput::new(&lexed);
-        let parse = Parse::build(&input, build);
+        let parse = Parse::build(ParserInput::new(&lexed), build);
         assert!(
             parse.evidence().is_empty(),
             "hand-built trees record no parser evidence"
@@ -1320,8 +1325,7 @@ mod tests {
     fn covering_finds_the_innermost_node() {
         let source = "let x = 1\ny";
         let lexed = lex(source).expect("test sources fit in u32");
-        let input = ParserInput::new(&lexed);
-        let parse = Parse::build(&input, |b| {
+        let parse = Parse::build(ParserInput::new(&lexed), |b| {
             node(b, LetStmt, |b| {
                 tokens(b, 3); // let x =
                 leaf(b, LiteralExpr);
@@ -1407,8 +1411,7 @@ mod tests {
     fn edge_and_interior_trivia_answer_the_spanning_node() {
         let source = "let x = 1 // c";
         let lexed = lex(source).expect("test sources fit in u32");
-        let input = ParserInput::new(&lexed);
-        let built = Parse::build(&input, |root| {
+        let built = Parse::build(ParserInput::new(&lexed), |root| {
             node(root, LetStmt, |stmt| {
                 stmt.token(); // let
                 node(stmt, NameRef, |name| name.token());
@@ -1430,8 +1433,7 @@ mod tests {
     fn covering_a_token_past_the_file_panics() {
         let source = "x";
         let lexed = lex(source).expect("test sources fit in u32");
-        let input = ParserInput::new(&lexed);
-        let built = Parse::build(&input, |root| {
+        let built = Parse::build(ParserInput::new(&lexed), |root| {
             node(root, NameRef, |name| name.token());
         });
         built.tree().covering(RawIdx::new(1));

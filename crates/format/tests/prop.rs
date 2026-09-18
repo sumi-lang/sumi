@@ -3,8 +3,8 @@
 use proptest::prelude::*;
 use proptest::test_runner::FileFailurePersistence;
 use sumi_format::{format, rep};
-use sumi_lexer::{LexedFile, lex};
-use sumi_syntax::{Parse, ParserInput, SyntaxKind, parse};
+use sumi_syntax::SyntaxKind;
+use sumi_test::{Front, front};
 
 /// Source fragments beyond every keyword and punctuation text of the
 /// language, valid and pathological, echoing the parser soup property;
@@ -30,17 +30,6 @@ fn soup() -> impl Strategy<Value = String> {
     ]
 }
 
-struct Front {
-    lexed: LexedFile,
-    parse: Parse,
-}
-
-fn front(source: &str) -> Front {
-    let lexed = lex(source).expect("generated sources fit in u32");
-    let parse = parse(&ParserInput::new(&lexed));
-    Front { lexed, parse }
-}
-
 /// Records every failing seed in the crate's tracked `proptest-regressions/`
 /// file, which each later run replays before generating anything new, so a
 /// failure found once stays found. Proptest's default location is found by
@@ -58,8 +47,7 @@ fn config() -> ProptestConfig {
 
 /// The layout-free content of `source`: what formatting must keep.
 fn layout_free<'s>(source: &'s str, front: &Front) -> sumi_format::Rep<'s> {
-    let input = ParserInput::new(&front.lexed);
-    rep(source, &front.lexed, &input, front.parse.tree())
+    rep(source, &front.lexed, &front.parse)
 }
 
 /// Format `source` and assert the contract: the rep is kept, the edits are

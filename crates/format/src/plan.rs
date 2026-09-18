@@ -109,7 +109,8 @@ enum El {
     Node(NodeIdx, NodeKind),
 }
 
-pub(crate) fn plan(lexed: &LexedFile, input: &ParserInput, parse: &Parse) -> Plan {
+pub(crate) fn plan(lexed: &LexedFile, parse: &Parse) -> Plan {
+    let input = parse.input();
     let n = input.len();
     let mut planner = Planner {
         tree: parse.tree(),

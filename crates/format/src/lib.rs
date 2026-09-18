@@ -65,10 +65,10 @@ impl std::error::Error for Defect {}
 /// source, or an item that would not is left as written, or the whole is
 /// a [`Defect`].
 pub fn format(source: &str, lexed: &LexedFile, parsed: &Parse) -> Result<Formatted, Defect> {
-    let input = ParserInput::new(lexed);
-    let plan = plan::plan(lexed, &input, parsed);
-    let mut edits = print::print(source, lexed, &input, &plan);
-    let before = rep(source, lexed, &input, parsed.tree());
+    let input = parsed.input();
+    let plan = plan::plan(lexed, parsed);
+    let mut edits = print::print(source, lexed, input, &plan);
+    let before = rep(source, lexed, parsed);
 
     let candidate = apply_gap_edits(source, &edits);
     let mut reverted = 0;
@@ -76,7 +76,7 @@ pub fn format(source: &str, lexed: &LexedFile, parsed: &Parse) -> Result<Formatt
         // Drop the edits inside every item whose rep changed; the gaps
         // between items stay formatted.
         let tree = parsed.tree();
-        let sig_of_raw = rep::sig_of_raw(&input, lexed);
+        let sig_of_raw = rep::sig_of_raw(input, lexed);
         let items: Vec<NodeIdx> = tree.children_in_order(tree.root()).collect();
         for (index, &item) in items.iter().enumerate() {
             if !disagreeing.contains(&index) {
@@ -117,9 +117,7 @@ fn mismatch(before: &Rep<'_>, candidate: &str) -> Option<Vec<usize>> {
     let Ok(lexed) = lex(candidate) else {
         return Some((0..before.items.len()).collect());
     };
-    let input = ParserInput::new(&lexed);
-    let parsed = parse(&input);
-    let after = rep(candidate, &lexed, &input, parsed.tree());
+    let after = rep(candidate, &lexed, &parse(ParserInput::new(&lexed)));
     if after == *before {
         return None;
     }

@@ -38,7 +38,7 @@ fn evidence_name(evidence: &ParseEvidence) -> String {
 fn a_missing_closer_retains_its_opener_and_insertion_gap() {
     let source = "fn f() { x // tail";
     let lexed = lex(source).expect("test source fits in u32");
-    let parse = parse(&ParserInput::new(&lexed));
+    let parse = parse(ParserInput::new(&lexed));
     let [ParseEvidence::Recovery(recovery)] = parse.evidence() else {
         panic!("the unclosed block has one recovery")
     };
@@ -61,7 +61,7 @@ fn a_missing_closer_retains_its_opener_and_insertion_gap() {
 fn present_syntax_anchors_nonempty_token_ranges() {
     let source = "fn f() { a==b }";
     let lexed = lex(source).expect("test source fits in u32");
-    let parse = parse(&ParserInput::new(&lexed));
+    let parse = parse(ParserInput::new(&lexed));
     let [ParseEvidence::Violation(violation)] = parse.evidence() else {
         panic!("the unspaced operator has one violation")
     };
@@ -81,7 +81,7 @@ fn present_syntax_anchors_nonempty_token_ranges() {
 fn recovery_records_the_ranges_it_skips() {
     let source = ": (x)";
     let lexed = lex(source).expect("test source fits in u32");
-    let parse = parse(&ParserInput::new(&lexed));
+    let parse = parse(ParserInput::new(&lexed));
     let [ParseEvidence::Recovery(recovery)] = parse.evidence() else {
         panic!("top-level garbage has one recovery")
     };
@@ -103,7 +103,7 @@ fn recovery_records_the_ranges_it_skips() {
 fn prior_phase_tokens_are_recorded_as_recovery() {
     let source = "fn f() {\n  a ;\n  b\n}";
     let lexed = lex(source).expect("test source fits in u32");
-    let parsed = parse(&ParserInput::new(&lexed));
+    let parsed = parse(ParserInput::new(&lexed));
     let ParseEvidence::Recovery(recovery) = &parsed.evidence()[1] else {
         panic!("the prior-phase token starts a recovery")
     };
@@ -117,7 +117,7 @@ fn prior_phase_tokens_are_recorded_as_recovery() {
     // Adjacent tokens diagnosed by earlier phases form one recovery run.
     let source = "fn f() { ; € }";
     let lexed = lex(source).expect("test source fits in u32");
-    let parsed = parse(&ParserInput::new(&lexed));
+    let parsed = parse(ParserInput::new(&lexed));
     let [ParseEvidence::Recovery(recovery)] = parsed.evidence() else {
         panic!("adjacent prior-phase tokens form one recovery")
     };
@@ -136,7 +136,7 @@ fn prior_phase_tokens_are_recorded_as_recovery() {
 /// formed.
 fn evidence_kinds(source: &str) -> Vec<String> {
     let lexed = lex(source).expect("test sources fit in u32");
-    let parse = parse(&ParserInput::new(&lexed));
+    let parse = parse(ParserInput::new(&lexed));
     let _ = common::dump(parse.tree(), &lexed, source);
     parse.evidence().iter().map(evidence_name).collect()
 }
@@ -144,7 +144,7 @@ fn evidence_kinds(source: &str) -> Vec<String> {
 /// How many `fn` items `source` parses into.
 fn items(source: &str) -> usize {
     let lexed = lex(source).expect("test sources fit in u32");
-    let parse = parse(&ParserInput::new(&lexed));
+    let parse = parse(ParserInput::new(&lexed));
     let tree = parse.tree();
     tree.nodes()
         .filter(|&node| tree.kind(node) == sumi_syntax::NodeKind::FnItem)
@@ -228,7 +228,7 @@ fn nesting_is_bounded() {
 fn a_malformed_suffix_belongs_to_the_latest_statement_recovery() {
     let source = "fn f() { let _ x }";
     let lexed = lex(source).expect("test source fits in u32");
-    let parse = parse(&ParserInput::new(&lexed));
+    let parse = parse(ParserInput::new(&lexed));
     let [ParseEvidence::Recovery(name), ParseEvidence::Recovery(eq)] = parse.evidence() else {
         panic!("the malformed statement has two recovery causes")
     };
@@ -254,7 +254,7 @@ fn lexer_errors_do_not_hide_statement_recovery() {
     // to the malformed statement rather than becoming a new statement.
     let source = "fn f() { a € + b c }";
     let lexed = lex(source).expect("test source fits in u32");
-    let parse = parse(&ParserInput::new(&lexed));
+    let parse = parse(ParserInput::new(&lexed));
     let [ParseEvidence::Recovery(recovery)] = parse.evidence() else {
         panic!("the malformed statement has one recovery cause")
     };

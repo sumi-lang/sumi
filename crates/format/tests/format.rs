@@ -1,17 +1,6 @@
 use sumi_format::{Element, elements, layout_violation_edits, reprint};
-use sumi_lexer::{LexedFile, lex};
-use sumi_syntax::{NodeIdx, Parse, ParseEvidence, ParseViolationKind, ParserInput, parse};
-
-struct Front {
-    lexed: LexedFile,
-    parse: Parse,
-}
-
-fn front(source: &str) -> Front {
-    let lexed = lex(source).expect("test sources fit in u32");
-    let parse = parse(&ParserInput::new(&lexed));
-    Front { lexed, parse }
-}
+use sumi_syntax::{NodeIdx, ParseEvidence, ParseViolationKind};
+use sumi_test::{Front, front};
 
 fn apply_edits(source: &str, edits: &[sumi_text::TextEdit]) -> String {
     let mut result = source.to_owned();

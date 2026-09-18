@@ -7,28 +7,23 @@ use sumi_syntax::{NodeIdx, NodeKind, Parse, ParserInput, RawIdx, parse};
 /// Every front-end product for one source.
 pub struct Front {
     pub lexed: LexedFile,
-    pub input: ParserInput,
     pub parse: Parse,
 }
 
 pub fn front(source: &str) -> Front {
     let lexed = lex(source).expect("test sources fit in u32");
-    let input = ParserInput::new(&lexed);
-    let parse = parse(&input);
-    Front {
-        lexed,
-        input,
-        parse,
-    }
+    let parse = parse(ParserInput::new(&lexed));
+    Front { lexed, parse }
 }
 
 impl Front {
     /// The byte spans of the significant tokens.
     pub fn spans(&self) -> Vec<(usize, usize)> {
-        self.input
+        let input = self.parse.input();
+        input
             .indices()
             .map(|index| {
-                let range = self.lexed.range(self.input.token(index));
+                let range = self.lexed.range(input.token(index));
                 (range.start().to_usize(), range.end().to_usize())
             })
             .collect()

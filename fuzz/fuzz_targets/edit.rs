@@ -23,7 +23,7 @@ fuzz_target!(|data: &[u8]| {
     if !original.lexed.errors().is_empty() || !original.parse.evidence().is_empty() {
         return;
     }
-    let count = original.input.len();
+    let count = original.parse.input().len();
     if count < 2 {
         return;
     }
