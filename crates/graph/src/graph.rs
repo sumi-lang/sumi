@@ -131,7 +131,7 @@ pub enum Op {
     /// The input, with a name or a declaration: a `let` binding, which
     /// may declare its type, or a declared result the body's value is
     /// held to. A declared copy is known to have its type on its own
-    /// account, whatever flows in, because of the annotation at the span.
+    /// account, whatever flows in, because of the annotation at the range.
     Copy {
         declared: Option<(Ty, TextRange)>,
     },

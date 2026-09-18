@@ -161,7 +161,7 @@ impl<'s> Source<'s> {
             diagnostics: Vec::new(),
         }
     }
-    pub fn span(&self, node: NodeIdx) -> TextRange {
+    pub fn range(&self, node: NodeIdx) -> TextRange {
         self.tree.byte_range(node, self.parsed.lexed())
     }
     pub fn text(&self, node: NodeIdx) -> &'s str {
@@ -182,8 +182,8 @@ impl<'s> Source<'s> {
         message: impl Into<Box<str>>,
         related: Option<(TextRange, &'static str)>,
     ) {
-        let related = related.map(|(span, message)| (span, Box::from(message)));
-        self.report(self.span(node), code, message, related);
+        let related = related.map(|(range, message)| (range, Box::from(message)));
+        self.report(self.range(node), code, message, related);
     }
     pub fn report(
         &mut self,
@@ -235,7 +235,7 @@ impl<'s> Source<'s> {
         let labels = claims
             .into_iter()
             .filter_map(|(ty, origin)| Some((origin?, format!("{ty} here").into())));
-        self.report(self.span(node), code, message(joined), labels);
+        self.report(self.range(node), code, message(joined), labels);
     }
     fn ty(&mut self, node: ast::TypeRef) -> Option<Ty> {
         if self.tree.has_error(node.node()) {
@@ -329,7 +329,7 @@ pub(crate) fn declare<'s>(source: &mut Source<'s>, items: &[ast::FnItem]) -> Dec
                         node,
                         codes::DUPLICATE_NAME,
                         format!("duplicate function `{name}`"),
-                        Some((source.span(first), "declared here")),
+                        Some((source.range(first), "declared here")),
                     );
                     *entry.get_mut() = Named::Ambiguous(entry.get().first());
                 }
@@ -359,7 +359,7 @@ pub(crate) fn declare<'s>(source: &mut Source<'s>, items: &[ast::FnItem]) -> Dec
                         node,
                         codes::DUPLICATE_NAME,
                         format!("duplicate parameter `{name}`"),
-                        Some((source.span(first), "declared here")),
+                        Some((source.range(first), "declared here")),
                     );
                 }
                 params.push(Parameter {
@@ -395,7 +395,7 @@ pub(crate) fn declare<'s>(source: &mut Source<'s>, items: &[ast::FnItem]) -> Dec
             }
         };
         headers.push(Header {
-            name: name.map(|(_, node)| source.span(node)),
+            name: name.map(|(_, node)| source.range(node)),
             params: valid.then(|| params.iter().map(|p| p.ty.unwrap()).collect()),
             param_types: params
                 .iter()
@@ -584,7 +584,7 @@ impl<'a, 's> Builder<'a, 's> {
         let arity = u32::try_from(parameters.len()).expect("parameter count fits u32");
         for (index, param) in parameters.iter().enumerate() {
             let index = u32::try_from(index).expect("parameter count fits u32");
-            let name = param.name.map(|(_, node)| self.source.span(node));
+            let name = param.name.map(|(_, node)| self.source.range(node));
             let node = self.push(param.node, Op::Param(index), &[], name);
             self.failed |= param.ty.is_none() || param.duplicate;
             if let Some((name, _)) = param.name {
@@ -656,7 +656,7 @@ impl<'a, 's> Builder<'a, 's> {
             HeaderResult::Declared(ty, node) => self.push(
                 node,
                 Op::Copy {
-                    declared: Some((ty, self.source.span(node))),
+                    declared: Some((ty, self.source.range(node))),
                 },
                 &[body_value],
                 None,
@@ -678,7 +678,7 @@ impl<'a, 's> Builder<'a, 's> {
         inputs: &[NodeId],
         name: Option<TextRange>,
     ) -> NodeId {
-        let id = self.place(op, inputs, self.source.span(node), name);
+        let id = self.place(op, inputs, self.source.range(node), name);
         self.nodes_of[node.to_usize()] = Some(id);
         id
     }
@@ -726,7 +726,7 @@ impl<'a, 's> Builder<'a, 's> {
     /// from `condition` under `parent`. It is not what `region` built: the
     /// region's own node is its value, which the context gates.
     fn context_at(&mut self, region: NodeIdx, op: Op, condition: NodeId, parent: NodeId) -> NodeId {
-        self.place(op, &[condition, parent], self.source.span(region), None)
+        self.place(op, &[condition, parent], self.source.range(region), None)
     }
     /// The graph node `node` built, or a hole where nothing was: syntax
     /// the walk could not reach.
@@ -878,7 +878,7 @@ impl<'a, 's> Builder<'a, 's> {
                                         sense,
                                     },
                                     &inputs,
-                                    self.source.span(node),
+                                    self.source.range(node),
                                     None,
                                 );
                                 self.refinements.push((local, read));
@@ -892,7 +892,7 @@ impl<'a, 's> Builder<'a, 's> {
                 if let Some(local) = self.read(node) {
                     let inputs = [self.current(local)];
                     let read =
-                        self.place(Op::Exactly(sense), &inputs, self.source.span(node), None);
+                        self.place(Op::Exactly(sense), &inputs, self.source.range(node), None);
                     self.refinements.push((local, read));
                 }
             }
@@ -1020,7 +1020,7 @@ impl<'a, 's> Builder<'a, 's> {
                     }
                     if let Some((name, name_node)) = self.source.name(binding.name(tree)) {
                         let hole =
-                            self.push(node, Op::Hole, &[], Some(self.source.span(name_node)));
+                            self.push(node, Op::Hole, &[], Some(self.source.range(name_node)));
                         self.bind(name, hole);
                     }
                     self.failed = true;
@@ -1137,7 +1137,7 @@ impl<'a, 's> Builder<'a, 's> {
                     self.graph
                         .node(local)
                         .name
-                        .map(|span| (span, "declared here")),
+                        .map(|range| (range, "declared here")),
                 );
             }
             return None;
@@ -1241,7 +1241,7 @@ impl<'a, 's> Builder<'a, 's> {
                 let annotation = binding.type_ref(tree);
                 let declared = annotation.and_then(|annotation| {
                     let ty = self.source.ty(annotation)?;
-                    Some((ty, self.source.span(annotation.node())))
+                    Some((ty, self.source.range(annotation.node())))
                 });
                 let op = match (annotation, declared) {
                     (Some(_), None) => Op::Hole,
@@ -1251,7 +1251,7 @@ impl<'a, 's> Builder<'a, 's> {
                     node,
                     op,
                     &[value],
-                    name.map(|(_, node)| self.source.span(node)),
+                    name.map(|(_, node)| self.source.range(node)),
                 );
                 let (name, _) = name?;
                 if let (Some(annotation), Some((ty, _)), Some(initializer)) =
@@ -1506,7 +1506,7 @@ impl<'a, 's> Builder<'a, 's> {
                 node,
                 codes::ARITY,
                 format!("expected {} arguments, found {count}", params.len()),
-                Some((self.source.span(function.item), "declared here")),
+                Some((self.source.range(function.item), "declared here")),
             );
         }
         let whole = callee.filter(|(_, _, params)| count == params.len() && complete);

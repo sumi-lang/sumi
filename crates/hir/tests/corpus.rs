@@ -60,7 +60,7 @@ fn run(source: &str) -> String {
 }
 
 /// `@start..end`, or `@at` for an empty range.
-fn span(range: TextRange) -> String {
+fn at(range: TextRange) -> String {
     let (start, end) = (range.start().to_u32(), range.end().to_u32());
     if start == end {
         format!("@{start}")
@@ -90,7 +90,7 @@ fn snapshot(source: &str) -> String {
             function
                 .name()
                 .map_or("<missing>", |name| analysis.text(name)),
-            span(function.origin())
+            at(function.origin())
         )
         .unwrap();
         match (
@@ -125,11 +125,11 @@ fn snapshot(source: &str) -> String {
                 "error[{}]: {}\n  primary {}",
                 diagnostic.code,
                 diagnostic.message,
-                span(diagnostic.primary)
+                at(diagnostic.primary)
             )
             .unwrap();
             for label in &diagnostic.labels {
-                writeln!(out, "  secondary {}: {}", span(label.range), label.message).unwrap();
+                writeln!(out, "  secondary {}: {}", at(label.range), label.message).unwrap();
             }
             assert!(
                 diagnostic.fix.is_none(),
@@ -176,8 +176,8 @@ fn ty(analysis: &Analysis, node: NodeId) -> String {
 /// A named definition, as its declaration spelling and origin.
 fn named(analysis: &Analysis, node: NodeId) -> String {
     match analysis.graph().node(node).name {
-        Some(name) => format!("{}{}", analysis.text(name), span(name)),
-        None => format!("<unnamed>{}", span(analysis.graph().node(node).origin)),
+        Some(name) => format!("{}{}", analysis.text(name), at(name)),
+        None => format!("<unnamed>{}", at(analysis.graph().node(node).origin)),
     }
 }
 
@@ -204,7 +204,7 @@ fn dump(analysis: &Analysis, shape: &Shape, function: FunctionId, out: &mut Stri
             out,
             "  result: copy : {} {}",
             ty(analysis, result),
-            span(node.origin)
+            at(node.origin)
         )
         .unwrap();
         dump_region(analysis, shape, "value", region, 2, out);
@@ -257,7 +257,7 @@ fn dump_region(
                     "{indent}  let {}: {} {}",
                     named(analysis, node),
                     ty(analysis, node),
-                    span(graph.node(node).origin)
+                    at(graph.node(node).origin)
                 )
                 .unwrap();
                 let initializer = graph.inputs(node)[0];
@@ -287,7 +287,7 @@ fn guards(analysis: &Analysis, mut node: NodeId) -> (Vec<String>, NodeId) {
                     "{} {}{}",
                     analysis.text(origin),
                     if sense { "holds" } else { "fails" },
-                    span(origin)
+                    at(origin)
                 ));
                 node = graph.inputs(node)[0];
             }
@@ -367,7 +367,7 @@ fn dump_definition(
                 function
                     .name()
                     .map_or("<missing>", |name| analysis.text(name)),
-                span(function.origin())
+                at(function.origin())
             )
         }
     };
@@ -375,7 +375,7 @@ fn dump_definition(
         out,
         "{indent}{role}: {operation} : {} {}",
         ty(analysis, node),
-        span(entry.origin)
+        at(entry.origin)
     )
     .unwrap();
     let child = depth + 1;

@@ -41,7 +41,7 @@ impl Failure {
     /// name, with what the first few calls inside it do. A cycle of
     /// thousands of calls is one error; the first few calls locate it.
     pub fn report(self, functions: &[Function], source: &str) -> Diagnostic {
-        let text = |span: TextRange| span.text(source);
+        let text = |range: TextRange| range.text(source);
         let at = |id: FunctionId| {
             let function = &functions[id.index()];
             function.name.unwrap_or(function.origin)

@@ -29,7 +29,7 @@ pub(crate) fn draw(
     graph: &Graph,
     lowered: &Lowered,
     headers: &[Header],
-    span: impl Fn(NodeIdx) -> TextRange,
+    range: impl Fn(NodeIdx) -> TextRange,
 ) -> (Typing, Thresholds) {
     let mut typing = Typing::for_nodes(graph.nodes().len());
     let typed = |node: NodeId| lowered.typed[node.index()];
@@ -184,7 +184,7 @@ pub(crate) fn draw(
     }
     for demand in &lowered.demands {
         if let DemandKind::Type { expected, .. } = demand.kind {
-            typing.expect(demand.actual, expected, span(demand.node));
+            typing.expect(demand.actual, expected, range(demand.node));
         }
     }
     (typing, constants.into_iter().collect())

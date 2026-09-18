@@ -100,7 +100,7 @@ impl Analysis {
         self.function_ids().find(|&id| {
             self.function(id)
                 .name
-                .is_some_and(|span| self.text(span) == name)
+                .is_some_and(|range| self.text(range) == name)
         })
     }
     /// What may reach a function's parameters and its result, whenever it
@@ -176,7 +176,7 @@ impl<'a> Program<'a> {
             .find(|(_, function)| {
                 function
                     .name()
-                    .is_some_and(|span| self.analysis.text(span) == name)
+                    .is_some_and(|range| self.analysis.text(range) == name)
             })
             .map(|(id, _)| id)
     }
