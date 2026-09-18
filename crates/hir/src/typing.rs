@@ -224,7 +224,6 @@ pub(crate) enum Expected {
 pub(crate) type Product = (Evidence, May);
 pub(crate) type ProductContext = ((), Thresholds);
 
-#[derive(Default)]
 pub(crate) struct Typing {
     solver: Solver<Product>,
     /// Where each claim was made, by claim index.
@@ -265,14 +264,6 @@ impl Typing {
     /// Where `claim` was made; none for a replay's own claims.
     pub fn origin(&self, claim: Claim) -> Option<Span> {
         self.origins.get(claim.index()).copied()
-    }
-
-    /// One more class, nothing known about it yet, numbered after every
-    /// class so far: how the tests and benches grow a graph. The checker
-    /// opens every class at once.
-    #[allow(dead_code)]
-    pub fn fresh(&mut self) -> Var {
-        self.solver.fresh()
     }
 
     /// `var` is known to have `ty` because of what is at `origin`: an
@@ -333,18 +324,6 @@ impl Typing {
         self.solver
             .flow(local, read, (Edge::Refine, RangeEdge::Exactly(value)));
         self.aliased.push((read, local));
-    }
-
-    /// Merge two classes: the union-find the solver keeps for the day
-    /// rewrites prove nodes equal. Nothing the checker draws merges
-    /// classes, by design rather than by chance: a node's evidence is its
-    /// own, so a literal demanded through its binding stays the literal
-    /// it is and the demand is blamed on the read, and what the solve
-    /// decided is read back by node once settled. The replay aliases,
-    /// and the solver's benches merge.
-    #[allow(dead_code)]
-    pub fn equal(&mut self, a: Var, b: Var) {
-        self.solver.equal(a, b);
     }
 
     /// Let `copy`, a `let` without an annotation, be its `initializer`:
@@ -498,42 +477,13 @@ mod tests {
         )
     }
 
-    fn typing() -> Typing {
-        Typing::default()
+    /// A typing of `N` classes nothing is known about yet, by index.
+    fn classes<const N: usize>() -> (Typing, [Var; N]) {
+        (Typing::for_nodes(N), std::array::from_fn(Var::new))
     }
 
     fn cx() -> ProductContext {
         ((), Thresholds::default())
-    }
-
-    fn known(typing: &mut Typing, ty: Ty, origin: Span) -> Var {
-        let var = typing.fresh();
-        typing.known(var, ty, origin);
-        var
-    }
-
-    fn literal(typing: &mut Typing, ty: Ty, value: May, origin: Span) -> Var {
-        let var = typing.fresh();
-        typing.literal(var, ty, value, origin);
-        var
-    }
-
-    fn entry(typing: &mut Typing, runnable: bool) -> Var {
-        let var = typing.fresh();
-        typing.entry(var, runnable);
-        var
-    }
-
-    fn call(typing: &mut Typing, result: Var, origin: Span) -> Var {
-        let call = typing.fresh();
-        typing.call(result, call, origin);
-        call
-    }
-
-    fn refine_bool(typing: &mut Typing, local: Var, value: bool) -> Var {
-        let read = typing.fresh();
-        typing.refine_bool(local, read, value);
-        read
     }
 
     #[test]
@@ -547,9 +497,8 @@ mod tests {
 
     #[test]
     fn calls_never_export_consumer_demands() {
-        let mut typing = typing();
-        let provider = typing.fresh();
-        let call = call(&mut typing, provider, at(0));
+        let (mut typing, [provider, call]) = classes();
+        typing.call(provider, call, at(0));
         typing.expect(call, Expected::Ty(Ty::Int), at(1));
         typing.solve(&cx());
         assert_eq!(typing.resolve(provider), None);
@@ -559,17 +508,16 @@ mod tests {
     #[test]
     fn conflicts_keep_their_earliest_origins() {
         for reverse in [false, true] {
-            let mut typing = typing();
-            let result = typing.fresh();
+            let (mut typing, [result, downstream, first, second]) = classes();
             let mut types = [(Ty::Int, 10), (Ty::Bool, 20)];
             if reverse {
                 types.reverse();
             }
-            for (ty, offset) in types {
-                let literal = known(&mut typing, ty, at(offset));
+            for (literal, (ty, offset)) in [first, second].into_iter().zip(types) {
+                typing.known(literal, ty, at(offset));
                 typing.copy(literal, result);
             }
-            let downstream = call(&mut typing, result, at(30));
+            typing.call(result, downstream, at(30));
             typing.solve(&cx());
             let evidence = typing.evidence(result);
             assert!(evidence.is_conflict() && !evidence.inherited());
@@ -591,10 +539,10 @@ mod tests {
 
     #[test]
     fn a_claim_of_the_classs_own_makes_a_conflict_local() {
-        let mut typing = typing();
-        let conflicted = known(&mut typing, Ty::Int, at(0));
+        let (mut typing, [conflicted, call]) = classes();
+        typing.known(conflicted, Ty::Int, at(0));
         typing.expect(conflicted, Expected::Ty(Ty::Bool), at(1));
-        let call = call(&mut typing, conflicted, at(2));
+        typing.call(conflicted, call, at(2));
         typing.expect(call, Expected::Ty(Ty::Unit), at(3));
         typing.solve(&cx());
         let evidence = typing.evidence(call);
@@ -614,9 +562,9 @@ mod tests {
 
     #[test]
     fn a_local_claim_outranks_an_earlier_imported_one() {
-        let mut typing = typing();
-        let provider = known(&mut typing, Ty::Int, at(0));
-        let call = call(&mut typing, provider, at(1));
+        let (mut typing, [provider, call]) = classes();
+        typing.known(provider, Ty::Int, at(0));
+        typing.call(provider, call, at(1));
         typing.expect(call, Expected::Ty(Ty::Int), at(2));
         typing.solve(&cx());
         assert_eq!(
@@ -627,16 +575,15 @@ mod tests {
 
     #[test]
     fn peers_share_types_but_not_values() {
-        let mut typing = typing();
-        let x = literal(&mut typing, Ty::Int, May::int(&5.into()), at(0));
-        let y = literal(&mut typing, Ty::Int, May::int(&9.into()), at(1));
+        let (mut typing, [x, y, unknown, known]) = classes();
+        typing.literal(x, Ty::Int, May::int(&5.into()), at(0));
+        typing.literal(y, Ty::Int, May::int(&9.into()), at(1));
         typing.expect(x, Expected::Peer(y), at(2));
         typing.solve(&cx());
         assert_eq!(typing.resolve(x), Some(Ty::Int));
         assert_eq!(typing.may(x), &May::int(&5.into()));
         assert_eq!(typing.may(y), &May::int(&9.into()));
-        let unknown = typing.fresh();
-        let known = known(&mut typing, Ty::Bool, at(3));
+        typing.known(known, Ty::Bool, at(3));
         typing.expect(unknown, Expected::Peer(known), at(4));
         typing.solve(&cx());
         assert_eq!(typing.resolve(unknown), Some(Ty::Bool));
@@ -645,14 +592,13 @@ mod tests {
 
     #[test]
     fn branches_decide_their_if_and_keep_their_origins() {
-        let mut typing = typing();
-        let live = entry(&mut typing, true);
-        let then_branch = known(&mut typing, Ty::Int, at(0));
-        let else_branch = known(&mut typing, Ty::Bool, at(1));
-        let join = typing.fresh();
+        let (mut typing, [live, then_branch, else_branch, join, call]) = classes();
+        typing.entry(live, true);
+        typing.known(then_branch, Ty::Int, at(0));
+        typing.known(else_branch, Ty::Bool, at(1));
         typing.branch(then_branch, live, join);
         typing.branch(else_branch, live, join);
-        let call = call(&mut typing, join, at(2));
+        typing.call(join, call, at(2));
         let cx = cx();
         typing.solve(&cx);
         assert_eq!(typing.resolve(then_branch), Some(Ty::Int));
@@ -684,12 +630,11 @@ mod tests {
 
     #[test]
     fn a_dead_branch_delivers_no_values() {
-        let mut typing = typing();
-        let dead = entry(&mut typing, false);
-        let live = entry(&mut typing, true);
-        let then_branch = literal(&mut typing, Ty::Int, May::int(&1.into()), at(0));
-        let else_branch = literal(&mut typing, Ty::Int, May::int(&2.into()), at(1));
-        let join = typing.fresh();
+        let (mut typing, [dead, live, then_branch, else_branch, join]) = classes();
+        typing.entry(dead, false);
+        typing.entry(live, true);
+        typing.literal(then_branch, Ty::Int, May::int(&1.into()), at(0));
+        typing.literal(else_branch, Ty::Int, May::int(&2.into()), at(1));
         typing.branch(then_branch, dead, join);
         typing.branch(else_branch, live, join);
         typing.solve(&cx());
@@ -700,18 +645,27 @@ mod tests {
 
     #[test]
     fn replay_keeps_facts_solved_calls_and_refined_reads_only() {
-        let mut typing = typing();
-        let literal = known(&mut typing, Ty::Int, at(0));
-        let demanded = typing.fresh();
+        let (
+            mut typing,
+            [
+                literal,
+                demanded,
+                unknown,
+                unknown_call,
+                conflict,
+                conflict_call,
+                literal_call,
+                refined,
+            ],
+        ) = classes();
+        typing.known(literal, Ty::Int, at(0));
         typing.expect(demanded, Expected::Ty(Ty::Bool), at(1));
-        let unknown = typing.fresh();
-        let unknown_call = call(&mut typing, unknown, at(2));
-        let conflict = typing.fresh();
+        typing.call(unknown, unknown_call, at(2));
         typing.expect(conflict, Expected::Ty(Ty::Bool), at(3));
         typing.expect(conflict, Expected::Ty(Ty::Unit), at(4));
-        let conflict_call = call(&mut typing, conflict, at(5));
-        let literal_call = call(&mut typing, literal, at(6));
-        let refined = refine_bool(&mut typing, literal, true);
+        typing.call(conflict, conflict_call, at(5));
+        typing.call(literal, literal_call, at(6));
+        typing.refine_bool(literal, refined, true);
         let cx = cx();
         typing.solve(&cx);
         let mut replay = typing.replay();
@@ -733,14 +687,13 @@ mod tests {
     /// on the local.
     #[test]
     fn a_refined_read_of_a_branch_bound_local_resolves_with_its_if() {
-        let mut typing = typing();
-        let live = entry(&mut typing, true);
-        let then_branch = known(&mut typing, Ty::Int, at(0));
-        let else_branch = known(&mut typing, Ty::Int, at(1));
-        let local = typing.fresh();
+        let (mut typing, [live, then_branch, else_branch, local, refined]) = classes();
+        typing.entry(live, true);
+        typing.known(then_branch, Ty::Int, at(0));
+        typing.known(else_branch, Ty::Int, at(1));
         typing.branch(then_branch, live, local);
         typing.branch(else_branch, live, local);
-        let refined = refine_bool(&mut typing, local, true);
+        typing.refine_bool(local, refined, true);
         typing.solve(&cx());
         let mut replay = typing.replay();
         assert_eq!(replay.resolve(refined), None);
@@ -759,14 +712,11 @@ mod tests {
     /// type there, a call settled by the replay included.
     #[test]
     fn a_let_copies_its_initializer_and_is_one_with_it_in_the_replay() {
-        let mut typing = typing();
-        let literal = literal(&mut typing, Ty::Int, May::int(&5.into()), at(0));
-        let binding = typing.fresh();
+        let (mut typing, [literal, binding, unknown, unknown_call, bound_call]) = classes();
+        typing.literal(literal, Ty::Int, May::int(&5.into()), at(0));
         typing.copy(literal, binding);
         typing.expect(binding, Expected::Ty(Ty::Bool), at(1));
-        let unknown = typing.fresh();
-        let unknown_call = call(&mut typing, unknown, at(2));
-        let bound_call = typing.fresh();
+        typing.call(unknown, unknown_call, at(2));
         typing.copy(unknown_call, bound_call);
         typing.solve(&cx());
         assert_eq!(typing.may(binding).ints, typing.may(literal).ints);
@@ -779,20 +729,17 @@ mod tests {
         assert_eq!(replay.resolve(unknown_call), Some(Ty::Bool));
     }
 
-    /// Once settled, every class reads back what the solve decided of
-    /// it, and a class merged into another reads back its root's.
+    /// Once settled, every class reads back what the solve decided of it.
     #[test]
     fn settled_evidence_is_read_by_class() {
-        let mut typing = typing();
-        let literal = literal(&mut typing, Ty::Int, May::int(&5.into()), at(0));
-        let merged = typing.fresh();
-        typing.equal(literal, merged);
-        let apart = typing.fresh();
+        let (mut typing, [literal, copied, apart]) = classes();
+        typing.literal(literal, Ty::Int, May::int(&5.into()), at(0));
+        typing.copy(literal, copied);
         typing.solve(&cx());
         let settled = typing.settle();
         assert_eq!(settled.resolve(literal), Some(Ty::Int));
-        assert_eq!(settled.resolve(merged), Some(Ty::Int));
-        assert_eq!(settled.may(merged).ints, settled.may(literal).ints);
+        assert_eq!(settled.resolve(copied), Some(Ty::Int));
+        assert_eq!(settled.may(copied).ints, settled.may(literal).ints);
         assert_eq!(settled.resolve(apart), None);
         assert!(!settled.may(apart).live());
     }

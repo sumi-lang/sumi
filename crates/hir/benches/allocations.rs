@@ -5,19 +5,8 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 use sumi_hir::analyze;
 
-#[path = "support/graphs.rs"]
-mod graphs;
 #[path = "support/programs.rs"]
 mod programs;
-#[allow(dead_code)]
-#[path = "../src/ranges.rs"]
-mod ranges;
-#[allow(dead_code)]
-#[path = "../src/solver.rs"]
-mod solver;
-#[allow(dead_code)]
-#[path = "../src/typing.rs"]
-mod typing;
 
 struct Counting;
 static CALLS: AtomicUsize = AtomicUsize::new(0);
@@ -70,23 +59,6 @@ fn measure<T>(phase: &str, shape: &str, size: usize, run: impl FnOnce() -> T) ->
 
 fn main() {
     println!("phase,shape,size,allocation_calls,requested_bytes");
-    for shape in graphs::SHAPES {
-        for size in graphs::SIZES {
-            let mut graph = graphs::build(shape, size);
-            measure("solve", shape, size, || graph.context.solve(&graph.cx));
-            graphs::validate(shape, &graph);
-            measure("replay-context", shape, size, || graph.context.replay());
-            let graph = measure("build-solve-replay", shape, size, || {
-                let mut graph = graphs::build(shape, size);
-                graph.context.solve(&graph.cx);
-                let replay = graph.context.replay();
-                std::hint::black_box(&replay);
-                drop(replay);
-                graph
-            });
-            graphs::validate(shape, &graph);
-        }
-    }
     for shape in programs::SHAPES {
         for size in programs::SIZES {
             let parsed = programs::parse(&programs::source(shape, size));

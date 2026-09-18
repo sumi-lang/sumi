@@ -33,7 +33,6 @@ jobs:
         mode: [simulation, memory]
         target:
           - { name: Frontend, package: sumi-frontend, bench: pipeline }
-          - { name: Solver, package: sumi-hir, bench: solver }
           - { name: HIR, package: sumi-hir, bench: analysis }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

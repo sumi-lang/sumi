@@ -206,24 +206,7 @@ pub struct Solver<L: Lattice> {
     flows: Vec<Flow<L::Edge>>,
 }
 
-impl<L: Lattice> Default for Solver<L> {
-    fn default() -> Self {
-        Self::with_capacity(0, 0)
-    }
-}
-
 impl<L: Lattice> Solver<L> {
-    /// A solver with room for `classes` classes and `flows` flows before
-    /// any vector grows. Only a guide.
-    pub fn with_capacity(classes: usize, flows: usize) -> Self {
-        Self {
-            parent: Vec::with_capacity(classes),
-            size: Vec::with_capacity(classes),
-            evidence: Vec::with_capacity(classes),
-            flows: Vec::with_capacity(flows),
-        }
-    }
-
     /// A solver of `n` classes, `Var::new(0)` to `Var::new(n - 1)`, that
     /// nothing is known about yet, with room for about a flow per class.
     /// The caller's numbering is the solver's.
@@ -234,19 +217,6 @@ impl<L: Lattice> Solver<L> {
             evidence: vec![L::bottom(); n],
             flows: Vec::with_capacity(n),
         }
-    }
-
-    /// One more class, nothing known about it yet, numbered after every
-    /// class so far: how the solver's tests and benches grow a graph. The
-    /// checker opens every class at once.
-    #[allow(dead_code)]
-    pub fn fresh(&mut self) -> Var {
-        let var = Var::new(self.parent.len());
-        let id = u32::try_from(self.parent.len()).expect("class count fits u32");
-        self.parent.push(id);
-        self.size.push(1);
-        self.evidence.push(L::bottom());
-        var
     }
 
     fn root(&self, mut id: usize) -> usize {
@@ -266,14 +236,6 @@ impl<L: Lattice> Solver<L> {
         root
     }
 
-    /// A fresh class that `provider` flows into through `edge`.
-    #[cfg(test)]
-    pub fn import(&mut self, provider: Var, edge: L::Edge) -> Var {
-        let consumer = self.fresh();
-        self.flow(provider, consumer, edge);
-        consumer
-    }
-
     /// The evidence on `var`'s class.
     pub fn evidence(&self, var: Var) -> &L {
         &self.evidence[self.root(var.index())]
@@ -285,14 +247,6 @@ impl<L: Lattice> Solver<L> {
     pub fn expect(&mut self, var: Var, evidence: &L) {
         let root = self.compress(var.index());
         self.evidence[root].join(evidence);
-    }
-
-    /// A fresh class carrying `evidence`.
-    #[cfg(test)]
-    pub fn known(&mut self, evidence: L) -> Var {
-        let var = self.fresh();
-        self.expect(var, &evidence);
-        var
     }
 
     /// Merge the classes of `a` and `b`, joining their evidence.
@@ -986,6 +940,11 @@ mod tests {
         }
     }
 
+    /// `N` classes nothing is known about yet, by index.
+    fn classes<L: Lattice, const N: usize>() -> (Solver<L>, [Var; N]) {
+        (Solver::with_classes(N), std::array::from_fn(Var::new))
+    }
+
     /// Three classes, and an edge of two words: no edge carries where it
     /// came from, since the graph knows.
     #[test]
@@ -1141,11 +1100,8 @@ mod tests {
     #[test]
     fn narrowing_takes_back_what_widening_overshot() {
         for reversed in [false, true] {
-            let mut solver = Solver::<Hull>::default();
-            let x = solver.known(Hull { lo: 0, hi: 0 });
-            let capped = solver.fresh();
-            let stepped = solver.fresh();
-            let downstream = solver.fresh();
+            let (mut solver, [x, capped, stepped, downstream]) = classes::<Hull, 4>();
+            solver.expect(x, &Hull { lo: 0, hi: 0 });
             let mut flows = vec![
                 (x, capped, HullEdge::Cap(100)),
                 (capped, stepped, HullEdge::Add(7)),
@@ -1171,9 +1127,9 @@ mod tests {
     /// widened value itself.
     #[test]
     fn narrowing_keeps_an_unbounded_chain_unbounded() {
-        let mut solver = Solver::<Hull>::default();
-        let x = solver.known(Hull { lo: 0, hi: 0 });
-        let stepped = solver.import(x, HullEdge::Add(1));
+        let (mut solver, [x, stepped]) = classes::<Hull, 2>();
+        solver.expect(x, &Hull { lo: 0, hi: 0 });
+        solver.flow(x, stepped, HullEdge::Add(1));
         solver.flow(stepped, x, HullEdge::Add(0));
         solver.solve(&());
         assert_eq!(
@@ -1192,16 +1148,16 @@ mod tests {
     /// has narrowed.
     #[test]
     fn inert_arcs_close_no_cycle_of_values() {
-        let mut solver = Solver::<Hull>::default();
-        let seed = solver.known(Hull { lo: 4, hi: 9 });
-        let passed = solver.import(seed, HullEdge::Add(0));
+        let (mut solver, [seed, passed, x, capped, stepped, first, second]) = classes::<Hull, 7>();
+        solver.expect(seed, &Hull { lo: 4, hi: 9 });
+        solver.flow(seed, passed, HullEdge::Add(0));
         solver.flow(passed, seed, HullEdge::Inert);
-        let x = solver.known(Hull { lo: 0, hi: 0 });
-        let capped = solver.import(x, HullEdge::Cap(100));
-        let stepped = solver.import(capped, HullEdge::Add(7));
+        solver.expect(x, &Hull { lo: 0, hi: 0 });
+        solver.flow(x, capped, HullEdge::Cap(100));
+        solver.flow(capped, stepped, HullEdge::Add(7));
         solver.flow(stepped, x, HullEdge::Add(0));
-        let first = solver.import(x, HullEdge::Add(0));
-        let second = solver.import(first, HullEdge::Add(0));
+        solver.flow(x, first, HullEdge::Add(0));
+        solver.flow(first, second, HullEdge::Add(0));
         solver.flow(second, first, HullEdge::Add(0));
         solver.flow(second, x, HullEdge::Inert);
         solver.solve(&());
@@ -1213,15 +1169,18 @@ mod tests {
 
     #[test]
     fn flows_on_a_cycle_are_told_so() {
-        let mut solver = Solver::<Seen>::default();
-        let a = solver.known(Seen {
-            set: 1,
-            cyclic: false,
-        });
-        let b = solver.import(a, ());
-        let c = solver.import(b, ());
+        let (mut solver, [a, b, c, d]) = classes::<Seen, 4>();
+        solver.expect(
+            a,
+            &Seen {
+                set: 1,
+                cyclic: false,
+            },
+        );
+        solver.flow(a, b, ());
+        solver.flow(b, c, ());
         solver.flow(c, b, ());
-        let d = solver.import(c, ());
+        solver.flow(c, d, ());
         solver.solve(&());
         assert!(!solver.evidence(a).cyclic);
         assert!(solver.evidence(b).cyclic && solver.evidence(c).cyclic);
@@ -1232,10 +1191,8 @@ mod tests {
 
     #[test]
     fn equalities_join_and_flows_deliver() {
-        let mut solver = Solver::<Set>::default();
-        let a = solver.fresh();
-        let b = solver.fresh();
-        let c = solver.import(b, ());
+        let (mut solver, [a, b, c]) = classes::<Set, 3>();
+        solver.flow(b, c, ());
         solver.expect(a, &Set(1));
         solver.equal(a, b);
         solver.expect(b, &Set(2));
@@ -1247,9 +1204,8 @@ mod tests {
 
     #[test]
     fn flows_never_carry_evidence_back() {
-        let mut solver = Solver::<Set>::default();
-        let provider = solver.fresh();
-        let consumer = solver.import(provider, ());
+        let (mut solver, [provider, consumer]) = classes::<Set, 2>();
+        solver.flow(provider, consumer, ());
         solver.expect(consumer, &Set(1));
         solver.solve(&());
         assert_eq!(*solver.evidence(provider), Set::bottom());
@@ -1258,9 +1214,9 @@ mod tests {
 
     #[test]
     fn intervals_narrow_transfer_and_empty_out() {
-        let mut solver = Solver::<Interval>::default();
-        let x = solver.known(Interval::new(0, 10));
-        let y = solver.import(x, 100);
+        let (mut solver, [x, y]) = classes::<Interval, 2>();
+        solver.expect(x, &Interval::new(0, 10));
+        solver.flow(x, y, 100);
         solver.expect(x, &Interval::new(5, 20));
         solver.expect(y, &Interval::new(130, 140));
         solver.solve(&());
@@ -1275,10 +1231,8 @@ mod tests {
 
     #[test]
     fn products_join_and_transfer_componentwise() {
-        let mut solver = Solver::<(Set, Interval)>::default();
-        let a = solver.fresh();
-        let b = solver.fresh();
-        let c = solver.import(a, ((), 1));
+        let (mut solver, [a, b, c]) = classes::<(Set, Interval), 3>();
+        solver.flow(a, c, ((), 1));
         solver.expect(a, &(Set(1), Interval::new(0, 100)));
         solver.expect(b, &(Set(4), Interval::new(50, 200)));
         solver.equal(a, b);
@@ -1293,16 +1247,15 @@ mod tests {
     /// export lands on it whatever the class held.
     #[test]
     fn replay_keeps_restated_facts_and_exported_flows_only() {
-        let mut solver = Solver::<Set>::default();
-        let known = solver.known(Set(1));
+        let (mut solver, [known, demanded, conflicted, from_conflict, provider]) =
+            classes::<Set, 5>();
+        solver.expect(known, &Set(1));
         solver.expect(known, &Set(2));
-        let demanded = solver.fresh();
         solver.expect(demanded, &Set(2));
-        let conflicted = solver.fresh();
         solver.expect(conflicted, &Set(1));
         solver.expect(conflicted, &Set(2));
-        let from_conflict = solver.import(conflicted, ());
-        let provider = solver.known(Set(4));
+        solver.flow(conflicted, from_conflict, ());
+        solver.expect(provider, &Set(4));
         solver.flow(provider, known, ());
         solver.solve(&());
         assert_eq!(*solver.evidence(known), Set(7));
@@ -1316,22 +1269,17 @@ mod tests {
         assert_eq!(*replay.evidence(from_conflict), Set::bottom());
     }
 
-    /// One constraint over eight pre-made classes: an equality, an
-    /// expectation, an equality with a known class, a flow, or a derive
-    /// into the class after the second.
+    /// One constraint over eight classes: an equality, an expectation, a
+    /// flow, or a derive into the class after the second.
     fn constraint() -> impl proptest::strategy::Strategy<Value = (u8, usize, usize)> {
-        (0u8..5, 0usize..8, 0usize..8)
+        (0u8..4, 0usize..8, 0usize..8)
     }
 
     fn apply(solver: &mut Solver<Set>, vars: &[Var], (kind, a, b): (u8, usize, usize)) {
         match kind {
             0 => solver.equal(vars[a], vars[b]),
             1 => solver.expect(vars[a], &Set(1 << (b % 3))),
-            2 => {
-                let known = solver.known(Set(1 << (b % 3)));
-                solver.equal(vars[a], known);
-            }
-            3 => solver.flow(vars[a], vars[b], ()),
+            2 => solver.flow(vars[a], vars[b], ()),
             _ => solver.derive(vars[a], vars[b], vars[(b + 1) % 8], ()),
         }
     }
@@ -1345,8 +1293,7 @@ mod tests {
             constraints in proptest::collection::vec(constraint(), 0..64),
             seed in proptest::num::u64::ANY,
         ) {
-            let mut ordered = Solver::<Set>::default();
-            let vars: Vec<_> = (0..8).map(|_| ordered.fresh()).collect();
+            let (mut ordered, vars) = classes::<Set, 8>();
             for &c in &constraints {
                 apply(&mut ordered, &vars, c);
             }
@@ -1357,8 +1304,7 @@ mod tests {
                 state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
                 permuted.swap(i, ((state >> 33) as usize) % (i + 1));
             }
-            let mut shuffled = Solver::<Set>::default();
-            let shuffled_vars: Vec<_> = (0..8).map(|_| shuffled.fresh()).collect();
+            let (mut shuffled, shuffled_vars) = classes::<Set, 8>();
             for &c in &permuted {
                 apply(&mut shuffled, &shuffled_vars, c);
             }
@@ -1374,8 +1320,7 @@ mod tests {
         fn worklist_matches_full_scan(
             constraints in proptest::collection::vec(constraint(), 0..128),
         ) {
-            let mut solver = Solver::<Set>::default();
-            let vars: Vec<_> = (0..8).map(|_| solver.fresh()).collect();
+            let (mut solver, vars) = classes::<Set, 8>();
             for &c in &constraints {
                 apply(&mut solver, &vars, c);
             }
