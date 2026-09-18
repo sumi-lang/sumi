@@ -6,9 +6,8 @@
 //! marking which carry a value the typing follows, and records what the
 //! walk learns beyond the graph: a demand wherever a context requires a
 //! value to have a type, and every division. The walk rejects nothing on
-//! type grounds; it fails only on
-//! names, syntax, and unsupported constructs, and what it refuses it
-//! leaves as a hole.
+//! type grounds; it fails only on names, syntax, and unsupported
+//! constructs, and what it refuses it leaves as a hole.
 //!
 //! Names are never copied: every map is keyed by a slice of the source,
 //! and the one builder keeps its scratch across bodies, so a body costs
@@ -1460,12 +1459,15 @@ impl<'a, 's> Builder<'a, 's> {
     /// that built, and its arguments.
     fn call(&mut self, node: NodeIdx, target: Option<FunctionId>) -> Option<()> {
         let context = self.context();
-        let function = target.map(|target| &self.headers[target.index()]);
         let tree = self.source.tree;
         let call = ast::CallExpr::cast(tree, node).unwrap();
         let list = call.arg_list(tree).unwrap();
-        let params = function.and_then(|function| function.params.as_deref());
-        if let (Some(target), Some(_)) = (target, params) {
+        // The callee that holds the call: one with a whole parameter list.
+        let callee: Option<(FunctionId, &Header, &[Ty])> = target.and_then(|target| {
+            let function = &self.headers[target.index()];
+            Some((target, function, function.params.as_deref()?))
+        });
+        if let Some((target, ..)) = callee {
             // The callee is reached, whole call or not: what it does is
             // checked on the strength of any call to it.
             self.lowered.entered.push((context, target));
@@ -1486,17 +1488,17 @@ impl<'a, 's> Builder<'a, 's> {
             count += 1;
             inputs.push(self.node_of(syntax));
             self.lowered.arguments.push(syntax);
-            match (self.typed(syntax), function, params) {
-                (Some(value), Some(function), Some(params)) => {
+            match (self.typed(syntax), callee) {
+                (Some(value), Some((_, function, params))) => {
                     if let Some(&expected) = params.get(index) {
                         self.require(syntax, value, Expected::Ty(expected), Some(function.item));
                     }
                 }
-                (None, ..) => complete = false,
+                (None, _) => complete = false,
                 _ => {}
             }
         }
-        if let (Some(function), Some(params)) = (function, params)
+        if let Some((_, function, params)) = callee
             && count != params.len()
         {
             self.source.error(
@@ -1506,16 +1508,11 @@ impl<'a, 's> Builder<'a, 's> {
                 Some((self.source.span(function.item), "declared here")),
             );
         }
-        let whole = match (target, function, params) {
-            (Some(target), Some(function), Some(params)) if count == params.len() && complete => {
-                Some((target, function))
-            }
-            _ => None,
-        };
-        let op = whole.map_or(Op::Hole, |(target, _)| Op::Call(target));
+        let whole = callee.filter(|(_, _, params)| count == params.len() && complete);
+        let op = whole.map_or(Op::Hole, |(target, ..)| Op::Call(target));
         let id = self.push(node, op, &inputs, None);
         self.inputs = inputs;
-        let Some((target, function)) = whole else {
+        let Some((target, function, _)) = whole else {
             self.lowered.arguments.truncate(written as usize);
             return None;
         };

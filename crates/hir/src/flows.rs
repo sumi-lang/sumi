@@ -154,6 +154,7 @@ pub(crate) fn draw(
                         },
                     );
                 }
+                // A call's flows are drawn below, once every run is passed.
                 Op::Call(_) => {}
                 Op::Hole => unreachable!("a hole has no value"),
             }

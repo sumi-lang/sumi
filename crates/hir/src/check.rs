@@ -50,17 +50,17 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         &mut source,
         &graph,
         &typing,
-        headers,
         &lowered,
+        headers,
         &failed,
         &mut functions,
     );
-    divisions(&mut source, &graph, &lowered, &typing, &failed);
+    divisions(&mut source, &graph, &typing, &lowered, &failed);
     bounds(
         &mut source,
         &graph,
-        &lowered,
         &typing,
+        &lowered,
         &failed,
         &mut functions,
     );
@@ -183,8 +183,8 @@ fn signatures(
     source: &mut Source<'_>,
     graph: &Graph,
     typing: &Typing,
-    headers: Vec<lower::Header>,
     lowered: &Lowered,
+    headers: Vec<lower::Header>,
     failed: &[bool],
     functions: &mut [Function],
 ) {
@@ -229,8 +229,8 @@ fn signatures(
 fn divisions(
     source: &mut Source<'_>,
     graph: &Graph,
-    lowered: &Lowered,
     typing: &Typing,
+    lowered: &Lowered,
     failed: &[bool],
 ) {
     for obligation in &lowered.obligations {
@@ -246,7 +246,7 @@ fn divisions(
         } else {
             "divisor may be zero"
         };
-        let labels = explain_zero(graph, lowered, typing, source, obligation.divisor);
+        let labels = explain_zero(source, graph, typing, lowered, obligation.divisor);
         source.report(
             source.span(obligation.node),
             codes::DIVISION_BY_ZERO,
@@ -261,10 +261,10 @@ fn divisions(
 /// arguments that pass a value along until a literal or an operator
 /// produced it.
 fn explain_zero(
-    graph: &Graph,
-    lowered: &Lowered,
-    typing: &Typing,
     source: &Source<'_>,
+    graph: &Graph,
+    typing: &Typing,
+    lowered: &Lowered,
     divisor: NodeId,
 ) -> Vec<(Span, Box<str>)> {
     use std::collections::{HashSet, VecDeque};
@@ -372,8 +372,8 @@ fn explain_zero(
 fn bounds(
     source: &mut Source<'_>,
     graph: &Graph,
-    lowered: &Lowered,
     typing: &Typing,
+    lowered: &Lowered,
     failed: &[bool],
     functions: &mut [Function],
 ) {
