@@ -7,7 +7,7 @@ fn arguments() -> int = add(
     1 + 2,
     3
         + // continuation
-4,
+        4,
 )
 fn nested() -> int = (
     {

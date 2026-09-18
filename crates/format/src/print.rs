@@ -8,7 +8,7 @@ use sumi_lexer::{LexedFile, RawIdx};
 use sumi_syntax::{ParserInput, SigIdx};
 use sumi_text::{TextEdit, TextRange};
 
-use crate::plan::{Flat, Group, INDENT, Plan, WIDTH};
+use crate::plan::{Breaks, Closer, Flat, Group, INDENT, Plan, WIDTH};
 use crate::trivia::signal;
 
 /// One gap's edit: the gap it came from, so a caller can tell which item
@@ -32,7 +32,7 @@ pub(crate) fn print(
     // Hard gaps up to each index, so a group's forcing is one subtraction.
     let mut hard_before = vec![0u32; n + 2];
     for gap in 0..=n {
-        hard_before[gap + 1] = hard_before[gap] + u32::from(plan.gaps[gap].hard);
+        hard_before[gap + 1] = hard_before[gap] + u32::from(plan.gaps[gap].breaks == Breaks::Hard);
     }
     // A group is forced by a hard gap outside its tail.
     let hard_in = |from: u32, to: u32| hard_before[to as usize] > hard_before[from as usize];
@@ -93,16 +93,17 @@ pub(crate) fn print(
                 let mut k = gap;
                 loop {
                     let plan_gap = plan.gaps[k];
-                    // A closer gap that breaks emits its comma first.
-                    let comma = usize::from(plan_gap.closer);
-                    if plan_gap.hard {
+                    // A list closer gap that breaks emits its comma first.
+                    let comma = usize::from(plan_gap.closer == Some(Closer::List));
+                    if plan_gap.breaks == Breaks::Hard {
                         w += comma;
                         break;
                     }
-                    if plan_gap.breakable && group.in_tail(k as u32) {
+                    let soft = plan_gap.breaks == Breaks::Soft;
+                    if soft && group.in_tail(k as u32) {
                         break;
                     }
-                    if k as u32 >= group.end && plan_gap.breakable {
+                    if k as u32 >= group.end && soft {
                         let enclosing = stack
                             .iter()
                             .rev()
@@ -148,11 +149,14 @@ pub(crate) fn print(
         let text: String = if plan_gap.frozen {
             input_text.to_owned()
         } else {
-            let breaks = plan_gap.hard
-                || (plan_gap.breakable && stack.last().is_some_and(|&open| broken[open]));
+            let breaks = match plan_gap.breaks {
+                Breaks::Never => false,
+                Breaks::Soft => stack.last().is_some_and(|&open| broken[open]),
+                Breaks::Hard => true,
+            };
             let sig = signal(source, lexed, input, gap, trivia_tokens(gap));
             let mut out = String::new();
-            if plan_gap.closer && breaks {
+            if plan_gap.closer == Some(Closer::List) && breaks {
                 out.push(',');
             }
             // Every broken group whose tail holds this gap indents it.
@@ -175,7 +179,7 @@ pub(crate) fn print(
                     if comment.blank_before {
                         out.push('\n');
                     }
-                    indent(&mut out, plan_gap.comment_level);
+                    indent(&mut out, plan_gap.comment_level());
                 }
                 out.push_str(comment.text);
             }

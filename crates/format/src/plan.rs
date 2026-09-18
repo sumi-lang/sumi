@@ -31,23 +31,82 @@ pub(crate) enum Flat {
     Space,
 }
 
-/// One gap's plan.
+/// When a gap breaks.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Breaks {
+    Never,
+    /// When its group does.
+    Soft,
+    /// Always: a statement or item boundary, a comment, or frozen trivia
+    /// holding a line break.
+    Hard,
+}
+
+/// The closer a gap precedes, whose comments sit one level in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Closer {
+    Block,
+    /// A comma precedes the gap's break.
+    List,
+}
+
+/// One gap's plan: the rule's choice, then what the post-passes learn.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Gap {
     pub(crate) flat: Flat,
     /// The indentation level of the token after the gap when it breaks.
     pub(crate) level: u32,
-    /// The indentation level of comments on their own line in the gap.
-    pub(crate) comment_level: u32,
-    /// The gap may break when its group does.
-    pub(crate) breakable: bool,
-    /// The gap always breaks: a statement or item boundary, a comment, or
-    /// frozen trivia holding a line break.
-    pub(crate) hard: bool,
+    pub(crate) breaks: Breaks,
+    pub(crate) closer: Option<Closer>,
     /// The gap's trivia is emitted as written.
     pub(crate) frozen: bool,
-    /// The gap before a list closer: a comma precedes its break form.
-    pub(crate) closer: bool,
+}
+
+impl Gap {
+    fn new(flat: Flat, level: u32, breaks: Breaks, closer: Option<Closer>) -> Self {
+        Self {
+            flat,
+            level,
+            breaks,
+            closer,
+            frozen: false,
+        }
+    }
+
+    /// Nothing.
+    fn glue(level: u32) -> Self {
+        Self::new(Flat::Glue, level, Breaks::Never, None)
+    }
+
+    /// A space.
+    fn space(level: u32) -> Self {
+        Self::new(Flat::Space, level, Breaks::Never, None)
+    }
+
+    /// A space, or a break at the level.
+    fn soft(level: u32) -> Self {
+        Self::new(Flat::Space, level, Breaks::Soft, None)
+    }
+
+    /// Nothing, or a break at the level.
+    fn soft_glue(level: u32) -> Self {
+        Self::new(Flat::Glue, level, Breaks::Soft, None)
+    }
+
+    /// A break at the level.
+    fn hard(level: u32) -> Self {
+        Self::new(Flat::Space, level, Breaks::Hard, None)
+    }
+
+    /// Nothing, or `closer`'s break at the level.
+    fn closer(closer: Closer, level: u32, breaks: Breaks) -> Self {
+        Self::new(Flat::Glue, level, breaks, Some(closer))
+    }
+
+    /// The indentation level of comments on their own line in the gap.
+    pub(crate) fn comment_level(&self) -> u32 {
+        self.level + u32::from(self.closer.is_some())
+    }
 }
 
 /// A range of gaps, `first..end`, that break together. A group may name
@@ -83,23 +142,6 @@ pub(crate) struct Plan {
     pub(crate) layout_comma: Vec<bool>,
 }
 
-/// A rule's choice for one gap.
-#[derive(Clone, Copy)]
-enum Sep {
-    Glue,
-    Space,
-    /// A space, or a break at the level.
-    Soft(u32),
-    /// Nothing, or a break at the level.
-    SoftGlue(u32),
-    /// A break at the level.
-    Hard(u32),
-    /// A break before a block's closer: comments inside sit one level in.
-    HardClose(u32),
-    /// Nothing, or a comma and a break at the level, before a list closer.
-    Closer(u32),
-}
-
 /// One element of a node in significant-index space.
 #[derive(Clone, Copy)]
 enum El {
@@ -113,40 +155,31 @@ pub(crate) fn plan(lexed: &LexedFile, parse: &Parse) -> Plan {
     let mut planner = Planner {
         tree: parse.tree(),
         input,
-        gaps: vec![
-            Gap {
-                flat: Flat::Space,
-                level: 0,
-                comment_level: 0,
-                breakable: false,
-                hard: false,
-                frozen: false,
-                closer: false,
-            };
-            n + 1
-        ],
+        gaps: vec![Gap::glue(0); n + 1],
         groups: Vec::new(),
         layout_comma: vec![false; n],
     };
     planner.source_file();
     planner.freeze(lexed, parse);
-    planner.gaps[0].flat = Flat::Glue;
 
     for gap in 0..=n {
         let g = &mut planner.gaps[gap];
         let holds = |kind| holds(lexed, input, gap, kind);
         if g.frozen {
-            g.breakable = false;
-            g.hard = holds(SyntaxKind::Newline);
+            g.breaks = if holds(SyntaxKind::Newline) {
+                Breaks::Hard
+            } else {
+                Breaks::Never
+            };
             continue;
         }
         if gap == n && n > 0 {
-            g.hard = true;
+            g.breaks = Breaks::Hard;
             g.level = 0;
         }
         // A comment ends its line.
         if holds(SyntaxKind::LineComment) {
-            g.hard = true;
+            g.breaks = Breaks::Hard;
         }
     }
     // Inside a statement, a break that would end it is not a layout. The
@@ -154,21 +187,20 @@ pub(crate) fn plan(lexed: &LexedFile, parse: &Parse) -> Plan {
     // successor, which is the plan's to decide, not the source's: a frozen
     // gap keeps the source's spacing, and every other gap the plan's.
     for gap in 1..n {
-        let g = planner.gaps[gap];
-        if g.hard || !g.breakable {
+        if planner.gaps[gap].breaks != Breaks::Soft {
             continue;
         }
         let next = planner.gaps[gap + 1];
         let glued = if next.frozen {
             input.is_joint(SigIdx::new(gap as u32))
         } else {
-            next.flat == Flat::Glue && !next.hard
+            next.flat == Flat::Glue && next.breaks != Breaks::Hard
         };
         let glued_kind = glued
             .then(|| input.get(SigIdx::new(gap as u32 + 1)))
             .flatten();
         if input.would_end_statement_if(SigIdx::new(gap as u32), glued_kind) {
-            planner.gaps[gap].breakable = false;
+            planner.gaps[gap].breaks = Breaks::Never;
         }
     }
     for sig in 0..n {
@@ -249,42 +281,8 @@ impl Planner<'_> {
         )
     }
 
-    fn set(&mut self, gap: u32, sep: Sep) {
-        let g = &mut self.gaps[gap as usize];
-        g.flat = Flat::Space;
-        g.breakable = false;
-        g.hard = false;
-        g.closer = false;
-        match sep {
-            Sep::Glue => g.flat = Flat::Glue,
-            Sep::Space => {}
-            Sep::Soft(level) | Sep::SoftGlue(level) => {
-                g.flat = if matches!(sep, Sep::Soft(_)) {
-                    Flat::Space
-                } else {
-                    Flat::Glue
-                };
-                g.breakable = true;
-                g.level = level;
-                g.comment_level = level;
-            }
-            Sep::Hard(level) | Sep::HardClose(level) => {
-                g.hard = true;
-                g.level = level;
-                g.comment_level = if matches!(sep, Sep::HardClose(_)) {
-                    level + 1
-                } else {
-                    level
-                };
-            }
-            Sep::Closer(level) => {
-                g.flat = Flat::Glue;
-                g.level = level;
-                g.comment_level = level + 1;
-                g.breakable = true;
-                g.closer = true;
-            }
-        }
+    fn set(&mut self, gap: u32, sep: Gap) {
+        self.gaps[gap as usize] = sep;
     }
 
     fn group(&mut self, first: u32, end: u32) {
@@ -342,27 +340,29 @@ impl Planner<'_> {
             NodeKind::BinaryExpr => self.binary(node, &els, level, None),
             NodeKind::ParenExpr => {
                 self.pairs(&els, |a, b| match (a, b) {
-                    (El::Tok(_, SyntaxKind::LParen), El::Tok(_, SyntaxKind::RParen)) => Sep::Glue,
-                    (El::Tok(_, SyntaxKind::LParen), _) => Sep::SoftGlue(level + 1),
-                    (_, El::Tok(_, SyntaxKind::RParen)) => Sep::SoftGlue(level),
-                    _ => Sep::Space,
+                    (El::Tok(_, SyntaxKind::LParen), El::Tok(_, SyntaxKind::RParen)) => {
+                        Gap::glue(level)
+                    }
+                    (El::Tok(_, SyntaxKind::LParen), _) => Gap::soft_glue(level + 1),
+                    (_, El::Tok(_, SyntaxKind::RParen)) => Gap::soft_glue(level),
+                    _ => Gap::space(level + 1),
                 });
                 self.group(self.first_sig(node) + 1, self.end_sig(node));
                 self.children(&els, level + 1);
             }
             NodeKind::Param => {
                 self.pairs(&els, |_, b| match b {
-                    El::Tok(_, SyntaxKind::Colon) => Sep::Glue,
-                    _ => Sep::Space,
+                    El::Tok(_, SyntaxKind::Colon) => Gap::glue(level),
+                    _ => Gap::space(level),
                 });
                 self.children(&els, level);
             }
             NodeKind::PrefixExpr | NodeKind::CallExpr => {
-                self.pairs(&els, |_, _| Sep::Glue);
+                self.pairs(&els, |_, _| Gap::glue(level));
                 self.children(&els, level);
             }
             NodeKind::ReturnStmt | NodeKind::IfExpr => {
-                self.pairs(&els, |_, _| Sep::Space);
+                self.pairs(&els, |_, _| Gap::space(level));
                 self.children(&els, level);
             }
             NodeKind::Name
@@ -370,13 +370,13 @@ impl Planner<'_> {
             | NodeKind::NameRef
             | NodeKind::LiteralExpr
             | NodeKind::Error => {
-                self.pairs(&els, |_, _| Sep::Space);
+                self.pairs(&els, |_, _| Gap::space(level));
                 self.children(&els, level);
             }
         }
     }
 
-    fn pairs(&mut self, els: &[El], rule: impl Fn(El, El) -> Sep) {
+    fn pairs(&mut self, els: &[El], rule: impl Fn(El, El) -> Gap) {
         for pair in els.windows(2) {
             let gap = self.start(pair[1]);
             self.set(gap, rule(pair[0], pair[1]));
@@ -397,7 +397,7 @@ impl Planner<'_> {
         let items: Vec<NodeIdx> = self.tree.children(root).collect();
         for pair in items.windows(2) {
             let gap = self.first_sig(pair[1]);
-            self.set(gap, Sep::Hard(0));
+            self.set(gap, Gap::hard(0));
         }
         for item in items {
             self.node(item, 0);
@@ -409,11 +409,11 @@ impl Planner<'_> {
     /// binding's value.
     fn function(&mut self, node: NodeIdx, els: &[El], level: u32) {
         self.pairs(els, |a, b| match (a, b) {
-            (El::Tok(_, SyntaxKind::FnKw), El::Node(_, NodeKind::ParamList)) => Sep::Glue,
-            (El::Node(_, NodeKind::Name), El::Node(_, NodeKind::ParamList)) => Sep::Glue,
-            (El::Tok(_, SyntaxKind::Minus), El::Tok(_, SyntaxKind::Gt)) => Sep::Glue,
-            (El::Tok(_, SyntaxKind::Eq), El::Node(..)) => Sep::Soft(level + 1),
-            _ => Sep::Space,
+            (El::Tok(_, SyntaxKind::FnKw), El::Node(_, NodeKind::ParamList)) => Gap::glue(level),
+            (El::Node(_, NodeKind::Name), El::Node(_, NodeKind::ParamList)) => Gap::glue(level),
+            (El::Tok(_, SyntaxKind::Minus), El::Tok(_, SyntaxKind::Gt)) => Gap::glue(level),
+            (El::Tok(_, SyntaxKind::Eq), El::Node(..)) => Gap::soft(level + 1),
+            _ => Gap::space(level),
         });
         self.head_and_value(node, els, level);
     }
@@ -439,12 +439,12 @@ impl Planner<'_> {
     /// the list breaks.
     fn list(&mut self, node: NodeIdx, els: &[El], level: u32) {
         self.pairs(els, |a, b| match (a, b) {
-            (El::Tok(_, SyntaxKind::LParen), El::Tok(_, SyntaxKind::RParen)) => Sep::Glue,
-            (El::Tok(_, SyntaxKind::LParen), _) => Sep::SoftGlue(level + 1),
-            (_, El::Tok(_, SyntaxKind::Comma)) => Sep::Glue,
-            (_, El::Tok(_, SyntaxKind::RParen)) => Sep::Closer(level),
-            (El::Tok(_, SyntaxKind::Comma), _) => Sep::Soft(level + 1),
-            _ => Sep::Space,
+            (El::Tok(_, SyntaxKind::LParen), El::Tok(_, SyntaxKind::RParen)) => Gap::glue(level),
+            (El::Tok(_, SyntaxKind::LParen), _) => Gap::soft_glue(level + 1),
+            (_, El::Tok(_, SyntaxKind::Comma)) => Gap::glue(level + 1),
+            (_, El::Tok(_, SyntaxKind::RParen)) => Gap::closer(Closer::List, level, Breaks::Soft),
+            (El::Tok(_, SyntaxKind::Comma), _) => Gap::soft(level + 1),
+            _ => Gap::space(level + 1),
         });
         if !self.tree.has_error(node) {
             // The comma before the closer is a layout token: dropped when
@@ -512,17 +512,12 @@ impl Planner<'_> {
     /// A block: statements one per line, one level in.
     fn block(&mut self, els: &[El], level: u32) {
         self.pairs(els, |a, b| match (a, b) {
-            (El::Tok(_, SyntaxKind::LBrace), El::Tok(_, SyntaxKind::RBrace)) => Sep::Glue,
-            (_, El::Tok(_, SyntaxKind::RBrace)) => Sep::HardClose(level),
-            _ => Sep::Hard(level + 1),
+            (El::Tok(_, SyntaxKind::LBrace), El::Tok(_, SyntaxKind::RBrace)) => {
+                Gap::closer(Closer::Block, level, Breaks::Never)
+            }
+            (_, El::Tok(_, SyntaxKind::RBrace)) => Gap::closer(Closer::Block, level, Breaks::Hard),
+            _ => Gap::hard(level + 1),
         });
-        if let [
-            El::Tok(_, SyntaxKind::LBrace),
-            El::Tok(close, SyntaxKind::RBrace),
-        ] = els
-        {
-            self.gaps[*close as usize].comment_level = level + 1;
-        }
         self.children(els, level + 1);
     }
 
@@ -530,9 +525,9 @@ impl Planner<'_> {
     /// `=` as the tail of the binding's group.
     fn binding(&mut self, node: NodeIdx, els: &[El], level: u32) {
         self.pairs(els, |a, b| match (a, b) {
-            (_, El::Tok(_, SyntaxKind::Colon)) => Sep::Glue,
-            (El::Tok(_, SyntaxKind::Eq), El::Node(..)) => Sep::Soft(level + 1),
-            _ => Sep::Space,
+            (_, El::Tok(_, SyntaxKind::Colon)) => Gap::glue(level),
+            (El::Tok(_, SyntaxKind::Eq), El::Node(..)) => Gap::soft(level + 1),
+            _ => Gap::space(level),
         });
         self.head_and_value(node, els, level);
     }
@@ -543,9 +538,9 @@ impl Planner<'_> {
     fn binary(&mut self, node: NodeIdx, els: &[El], level: u32, chain: Option<u32>) {
         let cont = chain.unwrap_or(level + 1);
         self.pairs(els, |a, b| match (a, b) {
-            (El::Node(..), El::Tok(..)) => Sep::Soft(cont),
-            (El::Tok(..), El::Tok(..)) => Sep::Glue,
-            _ => Sep::Space,
+            (El::Node(..), El::Tok(..)) => Gap::soft(cont),
+            (El::Tok(..), El::Tok(..)) => Gap::glue(cont),
+            _ => Gap::space(cont),
         });
         if chain.is_none() {
             self.group(self.first_sig(node) + 1, self.end_sig(node));
@@ -628,7 +623,9 @@ impl Planner<'_> {
                 self.gaps[gap].frozen = true;
             }
             for edge in [start, end] {
-                if !(self.gaps[edge].hard && holds(lexed, self.input, edge, SyntaxKind::Newline)) {
+                let kept_break = self.gaps[edge].breaks == Breaks::Hard
+                    && holds(lexed, self.input, edge, SyntaxKind::Newline);
+                if !kept_break {
                     self.gaps[edge].frozen = true;
                 }
             }
