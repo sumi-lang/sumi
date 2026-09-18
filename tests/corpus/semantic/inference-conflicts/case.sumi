@@ -28,3 +28,7 @@ fn annotated() = if true {
 } else {
     true
 }
+fn held() = {
+    let x: bool = integer()
+    x
+}

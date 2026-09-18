@@ -1,6 +1,6 @@
 file: rejected
 frontend errors: 0 (see frontend.snap)
-semantic errors: 7
+semantic errors: 8
 
 fn a@0..43 signature: unavailable
   body: if : ? @9..43
@@ -55,6 +55,12 @@ fn annotated@321..392 signature: unavailable
       tail: read x@356..357 : int
     else: bool true : bool @386..390
 
+fn held@393..442 () -> bool ∈ ∅
+  body:
+    let x@415..416: bool @411..434
+      initializer: call integer@288..304 : ? @425..434
+    tail: read x@415..416 : bool
+
 == semantic diagnostics ==
 error[semantic/cannot-infer]: function result is both int and bool; add a return type annotation
   primary @0..43
@@ -79,3 +85,6 @@ error[semantic/type-mismatch]: if branches are int and bool
   primary @338..392
   secondary @359..362: int here
   secondary @386..390: bool here
+error[semantic/type-mismatch]: expected bool, found int
+  primary @425..434
+  secondary @418..422: declared here

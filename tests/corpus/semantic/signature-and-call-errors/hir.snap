@@ -1,6 +1,6 @@
 file: rejected
 frontend errors: 0 (see frontend.snap)
-semantic errors: 14
+semantic errors: 16
 
 fn duplicate@0..17 () -> unit ∈ unit
   result: copy : unit @0..17
@@ -80,6 +80,20 @@ fn twice_named@405..462 (int ∈ ∅, bool ∈ ∅) -> unit ∈ ∅
 fn unknown_result@463..497 signature: unavailable
   body: int 1 : int @496..497
 
+fn poisoned@498..557 () -> int ∈ ∅
+  result: copy : int @515..518
+    value:
+      let typed@529..534: ? @525..543
+        initializer: hole : ? @537..543
+      tail: hole : ? @548..555
+
+fn mutable@558..615 () -> int ∈ ∅
+  result: copy : int @574..577
+    value:
+      discard: hole : ? @584..601
+      let typed@592..597: hole : ? @584..601
+      tail: hole : ? @606..613
+
 == semantic diagnostics ==
 error[semantic/duplicate-name]: duplicate function `duplicate`
   primary @21..30
@@ -118,3 +132,7 @@ error[semantic/duplicate-name]: duplicate parameter `x`
   secondary @420..421: declared here
 error[semantic/unknown-type]: unknown type `mystery`
   primary @486..493
+error[semantic/unknown-name]: unknown name `absent`
+  primary @537..543
+error[semantic/unsupported]: construct is not supported by scalar checking
+  primary @584..601

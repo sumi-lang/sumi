@@ -576,6 +576,14 @@ fn twice_named(x: int, x: bool) {
     _ = -x
 }
 fn unknown_result() -> mystery = 1
+fn poisoned() -> int {
+    let typed = absent
+    typed()
+}
+fn mutable() -> int {
+    let mut typed = 1
+    typed()
+}
 ```
 
 ```text
@@ -618,6 +626,14 @@ fn twice_named(x: int, x: bool) {
     _ = -x
 }
 fn unknown_result() -> mystery = 1
+fn poisoned() -> int {
+    let typed = absent
+    typed()
+}
+fn mutable() -> int {
+    let mut typed = 1
+    typed()
+}
 ```
 
 ```text
