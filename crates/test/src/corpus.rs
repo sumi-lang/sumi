@@ -27,7 +27,8 @@ impl Rng {
         (self.0 >> 33) as u32
     }
 
-    fn below(&mut self, n: u32) -> u32 {
+    /// A draw below `n`.
+    pub fn below(&mut self, n: u32) -> u32 {
         self.next_u32() % n
     }
 
