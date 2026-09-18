@@ -138,8 +138,14 @@ impl TextEdit {
 /// Apply `edits` to `source`. The edits must be sorted by start and must
 /// not overlap; two may touch, and insertions at one offset keep their
 /// order.
-pub fn apply<'a>(source: &str, edits: impl IntoIterator<Item = &'a TextEdit>) -> String {
-    let mut out = String::with_capacity(source.len());
+pub fn apply<'a, I>(source: &str, edits: I) -> String
+where
+    I: IntoIterator<Item = &'a TextEdit>,
+    I::IntoIter: Clone,
+{
+    let edits = edits.into_iter();
+    let grown: usize = edits.clone().map(|edit| edit.replacement().len()).sum();
+    let mut out = String::with_capacity(source.len() + grown);
     let mut cursor = 0;
     for edit in edits {
         let start = edit.range().start().to_usize();
