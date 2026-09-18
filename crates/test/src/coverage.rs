@@ -1,7 +1,8 @@
 //! Grammar coverage: whether a body of trees reaches every node kind and
 //! every child the grammar allows a node. The witnesses are the children
-//! each view declares, read from [`NodeKind::children`], and [`RULES`],
-//! what the rules say beyond the accessors. Only a node without an error
+//! each view declares, read from [`NodeKind::children`], then [`RULES`],
+//! what the rules say beyond the accessors, and one per operator of
+//! [`BinaryOp::ALL`]: 80 in all today. Only a node without an error
 //! counts, since one with an error may lack any child, and its lacking one
 //! then says nothing about what the grammar allows.
 
@@ -11,24 +12,23 @@ use sumi_syntax::{BinaryOp, NodeIdx, NodeKind, SyntaxKind, SyntaxTree, binary_op
 use NodeKind as N;
 use SyntaxKind as T;
 
-/// One child a node rule allows, and how to tell whether a node has it.
+/// One child a node rule allows beyond what its view declares.
 #[derive(Clone, Copy, Debug)]
 pub enum Child {
-    /// A child the view declares, as its accessor answers: absent when
-    /// the slot holds a node of another kind than the view declares.
-    Declared(fn(&SyntaxTree, NodeIdx) -> bool),
-    /// The single child in this field slot, of this kind.
-    FieldOf(u8, NodeKind),
     /// A glued run of tokens of these kinds among the node's own.
     Tokens(&'static [SyntaxKind]),
-    /// A binary operator among the node's own tokens.
-    Operator(BinaryOp),
+    /// The single child of this kind in the named field: one member of the
+    /// alternation the field admits.
+    Member(&'static str, NodeKind),
 }
 
 /// What each rule allows beyond what its view declares: the tokens a node
-/// holds itself, in the rule's order, the operator of a binary
-/// expression, and the kinds an alternation admits in one field. `true`
-/// marks a child the rule lets a node lack.
+/// holds itself, in the rule's order, and each member of an alternation a
+/// field admits. `true` marks a child the rule lets a node lack; a member
+/// is always lackable, since the field holds one member at a time, even
+/// where the field itself is required. The operators of a binary
+/// expression are not listed: [`witnesses`] takes them from
+/// [`BinaryOp::ALL`].
 pub const RULES: &[(NodeKind, bool, Child)] = &[
     (N::FnItem, false, Child::Tokens(&[T::FnKw])),
     (N::FnItem, true, Child::Tokens(&[T::Minus, T::Gt])),
@@ -56,19 +56,6 @@ pub const RULES: &[(NodeKind, bool, Child)] = &[
     (N::LiteralExpr, true, Child::Tokens(&[T::FalseKw])),
     (N::PrefixExpr, true, Child::Tokens(&[T::Minus])),
     (N::PrefixExpr, true, Child::Tokens(&[T::Bang])),
-    (N::BinaryExpr, true, Child::Operator(BinaryOp::Or)),
-    (N::BinaryExpr, true, Child::Operator(BinaryOp::And)),
-    (N::BinaryExpr, true, Child::Operator(BinaryOp::Eq)),
-    (N::BinaryExpr, true, Child::Operator(BinaryOp::Ne)),
-    (N::BinaryExpr, true, Child::Operator(BinaryOp::Lt)),
-    (N::BinaryExpr, true, Child::Operator(BinaryOp::Le)),
-    (N::BinaryExpr, true, Child::Operator(BinaryOp::Gt)),
-    (N::BinaryExpr, true, Child::Operator(BinaryOp::Ge)),
-    (N::BinaryExpr, true, Child::Operator(BinaryOp::Add)),
-    (N::BinaryExpr, true, Child::Operator(BinaryOp::Sub)),
-    (N::BinaryExpr, true, Child::Operator(BinaryOp::Mul)),
-    (N::BinaryExpr, true, Child::Operator(BinaryOp::Div)),
-    (N::BinaryExpr, true, Child::Operator(BinaryOp::Rem)),
     (N::ParenExpr, false, Child::Tokens(&[T::LParen])),
     (N::ParenExpr, false, Child::Tokens(&[T::RParen])),
     (N::ArgList, false, Child::Tokens(&[T::LParen])),
@@ -76,12 +63,26 @@ pub const RULES: &[(NodeKind, bool, Child)] = &[
     (N::ArgList, false, Child::Tokens(&[T::RParen])),
     (N::IfExpr, false, Child::Tokens(&[T::IfKw])),
     (N::IfExpr, true, Child::Tokens(&[T::ElseKw])),
-    (N::IfExpr, true, Child::FieldOf(2, N::IfExpr)),
-    (N::IfExpr, true, Child::FieldOf(2, N::Block)),
+    (N::IfExpr, true, Child::Member("else_branch", N::IfExpr)),
+    (N::IfExpr, true, Child::Member("else_branch", N::Block)),
     (N::ClosureExpr, false, Child::Tokens(&[T::FnKw])),
     (N::ClosureExpr, true, Child::Tokens(&[T::Minus, T::Gt])),
     (N::ClosureExpr, true, Child::Tokens(&[T::Eq])),
 ];
+
+/// How to tell whether a node has a child.
+#[derive(Clone, Copy)]
+enum Check {
+    /// As the view's accessor answers: absent when the slot holds a node
+    /// of another kind than the view declares.
+    Declared(fn(&SyntaxTree, NodeIdx) -> bool),
+    /// The single child in this field slot is of this kind.
+    Member(u8, NodeKind),
+    /// A glued run of tokens of these kinds is among the node's own.
+    Tokens(&'static [SyntaxKind]),
+    /// A binary operator is among the node's own tokens.
+    Operator(BinaryOp),
+}
 
 /// One child a node rule allows, as the account keeps it.
 struct Witness {
@@ -90,41 +91,60 @@ struct Witness {
     name: String,
     /// Whether the rule lets a node lack the child.
     optional: bool,
-    child: Child,
+    check: Check,
 }
 
-/// Every witness: the children each view declares, then [`RULES`].
+/// Every witness, by parent kind in grammar order: the children each
+/// view declares, then [`RULES`], then the operators of a binary
+/// expression.
 fn witnesses() -> Vec<Witness> {
     let declared = NodeKind::ALL.iter().flat_map(|&parent| {
         parent.children().iter().map(move |child| Witness {
             parent,
             name: child.name.to_owned(),
             optional: child.optional,
-            child: Child::Declared(child.present),
+            check: Check::Declared(child.present),
         })
     });
-    let ruled = RULES.iter().map(|&(parent, optional, child)| Witness {
-        parent,
-        name: match child {
-            Child::Tokens(kinds) => match kinds
-                .iter()
-                .map(|kind| kind.text())
-                .collect::<Option<Vec<_>>>()
-            {
-                Some(text) => format!("'{}'", text.concat()),
-                None => format!("{kinds:?}"),
-            },
-            Child::Operator(op) => format!("{op:?}"),
-            Child::FieldOf(slot, kind) => {
-                let field = &parent.children()[slot as usize];
-                format!("{}: {kind:?}", field.name)
+    let ruled = RULES.iter().map(|&(parent, optional, child)| {
+        let (name, check) = match child {
+            Child::Tokens(kinds) => {
+                let name = match kinds
+                    .iter()
+                    .map(|kind| kind.text())
+                    .collect::<Option<Vec<_>>>()
+                {
+                    Some(text) => format!("'{}'", text.concat()),
+                    None => format!("{kinds:?}"),
+                };
+                (name, Check::Tokens(kinds))
             }
-            Child::Declared(_) => unreachable!("the views declare these"),
-        },
-        optional,
-        child,
+            Child::Member(field, kind) => {
+                let slot = parent
+                    .children()
+                    .iter()
+                    .find(|child| child.name == field)
+                    .and_then(|child| child.slot)
+                    .unwrap_or_else(|| panic!("{parent:?} declares no single field {field}"));
+                (format!("{field}: {kind:?}"), Check::Member(slot, kind))
+            }
+        };
+        Witness {
+            parent,
+            name,
+            optional,
+            check,
+        }
     });
-    declared.chain(ruled).collect()
+    let operators = BinaryOp::ALL.iter().map(|&op| Witness {
+        parent: N::BinaryExpr,
+        name: format!("{op:?}"),
+        optional: true,
+        check: Check::Operator(op),
+    });
+    let mut witnesses: Vec<Witness> = declared.chain(ruled).chain(operators).collect();
+    witnesses.sort_by_key(|witness| witness.parent as u8);
+    witnesses
 }
 
 /// The raw tokens `node` covers that none of its children does.
@@ -159,14 +179,14 @@ fn has_operator(lexed: &LexedFile, tree: &SyntaxTree, node: NodeIdx, op: BinaryO
 
 /// Whether this node, of the witness's parent kind and without an error,
 /// has the child.
-fn present(lexed: &LexedFile, tree: &SyntaxTree, node: NodeIdx, child: Child) -> bool {
-    match child {
-        Child::Declared(present) => present(tree, node),
-        Child::FieldOf(slot, kind) => tree
+fn present(lexed: &LexedFile, tree: &SyntaxTree, node: NodeIdx, check: Check) -> bool {
+    match check {
+        Check::Declared(present) => present(tree, node),
+        Check::Member(slot, kind) => tree
             .child_in_field(node, slot)
             .is_some_and(|child| tree.kind(child) == kind),
-        Child::Tokens(kinds) => has_tokens(lexed, tree, node, kinds),
-        Child::Operator(op) => has_operator(lexed, tree, node, op),
+        Check::Tokens(kinds) => has_tokens(lexed, tree, node, kinds),
+        Check::Operator(op) => has_operator(lexed, tree, node, op),
     }
 }
 
@@ -208,7 +228,7 @@ impl Coverage {
                 if witness.parent != kind {
                     continue;
                 }
-                if present(lexed, tree, node, witness.child) {
+                if present(lexed, tree, node, witness.check) {
                     self.present[index] = true;
                 } else {
                     self.absent[index] = true;
@@ -244,6 +264,44 @@ impl Coverage {
 mod tests {
     use super::*;
     use crate::front;
+
+    /// The witnesses are grouped by parent in grammar order, an
+    /// alternation's members resolve to the field's slot, and every
+    /// operator has a row.
+    #[test]
+    fn the_witnesses_follow_the_grammar() {
+        let witnesses = witnesses();
+        assert_eq!(witnesses.len(), 80);
+        assert!(
+            witnesses
+                .windows(2)
+                .all(|pair| pair[0].parent as u8 <= pair[1].parent as u8)
+        );
+        let else_branch = NodeKind::IfExpr
+            .children()
+            .iter()
+            .find(|child| child.name == "else_branch")
+            .and_then(|child| child.slot);
+        let members: Vec<_> = witnesses
+            .iter()
+            .filter_map(|witness| match witness.check {
+                Check::Member(slot, kind) => Some((witness.parent, slot, kind)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            members,
+            [
+                (N::IfExpr, else_branch.unwrap(), N::IfExpr),
+                (N::IfExpr, else_branch.unwrap(), N::Block),
+            ]
+        );
+        let operators = witnesses
+            .iter()
+            .filter(|witness| matches!(witness.check, Check::Operator(_)))
+            .count();
+        assert_eq!(operators, BinaryOp::ALL.len());
+    }
 
     /// One small program shows what it shows and lacks the rest, named as
     /// the rule writes it.

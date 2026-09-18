@@ -30,8 +30,7 @@ You're in the core repository for Sumi, a novel statically typed general-purpose
 
 ## Grammar and diagnostics
 
-- The token vocabulary is one `tokens!` declaration in `crates/lexer/src/kind.rs`, which derives the keyword and punctuation tables, texts, and descriptions. The node vocabulary and the typed views are one `grammar!` declaration in `crates/syntax/src/ast.rs`: a struct per node kind listing the children the parser records, whose slots are their declaration order, and an enum per category. The token classes, bracket pairs, and operator tables are plain functions in `crates/syntax/src/grammar.rs`. A token a rule holds itself is listed in `RULES` in `crates/test/src/coverage.rs`, which is what the coverage check reads beyond the views.
-- Diagnostic codes are one `codes!` declaration per group, in `crates/frontend/src/codes.rs` (`syntax`) and `crates/hir/src/codes.rs` (`semantic`), each code documented where it is declared; the macro derives the constants and the group's `ALL`, so no code goes unlisted. To add a code, declare it there, emit it, and add a corpus case that shows it: `crates/hir/tests/codes.rs` fails on a code no snapshot reports. A code is never renamed or reused for something else.
+- The token vocabulary is one `tokens!` declaration in `crates/lexer/src/kind.rs`, which derives the keyword and punctuation tables, texts, and descriptions. The node vocabulary and the typed views are one `grammar!` declaration in `crates/syntax/src/ast.rs`: a struct per node kind listing the children the parser records, whose slots are their declaration order, and an enum per category. The token classes, bracket pairs, and operator tables are plain functions in `crates/syntax/src/grammar.rs`. A token a rule holds itself, and each member of an alternation a field admits, is listed in `RULES` in `crates/test/src/coverage.rs`: with the children the views declare and `BinaryOp::ALL`, that is what the coverage check reads.
 
 ## Tests
 
