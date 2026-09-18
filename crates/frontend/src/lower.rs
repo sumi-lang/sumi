@@ -10,22 +10,13 @@ use sumi_syntax::{
     Parse, ParseAnchor, ParseEvidence, ParseRecovery, ParseRecoveryKind, ParseViolation,
     ParseViolationKind, RawTokenRange, SyntaxKind,
 };
-use sumi_text::{FileId, Span, TextEdit, TextRange, TextSize};
+use sumi_text::{TextEdit, TextRange, TextSize};
 
 use crate::codes;
 use crate::diagnostic::{Diagnostic, DiagnosticCode, Fix, Label};
 
-pub(crate) fn diagnostics(
-    file: FileId,
-    source: &str,
-    lexed: &LexedFile,
-    parse: &Parse,
-) -> Box<[Diagnostic]> {
-    let snapshot = Snapshot {
-        file,
-        source,
-        lexed,
-    };
+pub(crate) fn diagnostics(source: &str, lexed: &LexedFile, parse: &Parse) -> Box<[Diagnostic]> {
+    let snapshot = Snapshot { source, lexed };
     let mut diagnostics: Vec<Diagnostic> = lexed
         .errors()
         .iter()
@@ -46,38 +37,34 @@ pub(crate) fn diagnostics(
     // This sort is stable: phase precedence and producer observation order
     // break ties at the same source location.
     diagnostics.sort_by_key(|diagnostic| {
-        let range = diagnostic.primary.range();
-        (range.start().to_u32(), range.end().to_u32())
+        (
+            diagnostic.primary.start().to_u32(),
+            diagnostic.primary.end().to_u32(),
+        )
     });
     diagnostics.into_boxed_slice()
 }
 
-/// The source snapshot being lowered: the file its diagnostics name, its
-/// text, and its tokens.
+/// The source snapshot being lowered: its text and its tokens.
 struct Snapshot<'a> {
-    file: FileId,
     source: &'a str,
     lexed: &'a LexedFile,
 }
 
 impl Snapshot<'_> {
-    fn range(&self, range: TextRange) -> Span {
-        Span::new(self.file, range)
+    /// An empty range at a byte boundary where syntax is absent.
+    fn point(&self, offset: TextSize) -> TextRange {
+        TextRange::new(offset, offset)
     }
 
-    /// An empty span at a byte boundary where syntax is absent.
-    fn point(&self, offset: TextSize) -> Span {
-        self.range(TextRange::new(offset, offset))
-    }
-
-    fn raw_range(&self, range: RawTokenRange) -> Span {
-        self.range(TextRange::new(
+    fn raw_range(&self, range: RawTokenRange) -> TextRange {
+        TextRange::new(
             self.lexed.boundary(range.start()),
             self.lexed.boundary(range.end()),
-        ))
+        )
     }
 
-    fn anchor(&self, anchor: ParseAnchor) -> Span {
+    fn anchor(&self, anchor: ParseAnchor) -> TextRange {
         match anchor {
             ParseAnchor::Gap(gap) => self.point(self.lexed.boundary(gap.trivia_end())),
             ParseAnchor::Tokens(range) => self.raw_range(range),
@@ -144,7 +131,7 @@ impl Snapshot<'_> {
         Diagnostic {
             code,
             message: message.into(),
-            primary: self.range(error.range),
+            primary: error.range,
             labels: Box::new([]),
             fix,
         }
@@ -192,7 +179,7 @@ impl Snapshot<'_> {
         let primary = self.anchor(recovery.anchor);
         let opener = match recovery.kind {
             ParseRecoveryKind::Closer { opener, .. } => Some(Label {
-                span: self.raw_range(opener),
+                range: self.raw_range(opener),
                 message: "opening delimiter is here".into(),
             }),
             _ => None,
@@ -202,8 +189,8 @@ impl Snapshot<'_> {
             .iter()
             .map(|&range| self.raw_range(range))
             .filter(|&skipped| skipped != primary)
-            .map(|span| Label {
-                span,
+            .map(|range| Label {
+                range,
                 message: "skipped while recovering".into(),
             });
         Some(Diagnostic {

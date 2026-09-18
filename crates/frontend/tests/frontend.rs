@@ -2,14 +2,9 @@ use proptest::prelude::*;
 use proptest::test_runner::FileFailurePersistence;
 use sumi_frontend::{DiagnosticCode, ParsedSource, codes, parse_source};
 use sumi_syntax::{RawIdx, SyntaxKind};
-use sumi_text::FileId;
-
-/// The file every test source stands for; the frontend copies it into every
-/// label rather than deriving it from anything.
-const FILE: FileId = FileId::new(3);
 
 fn parsed(source: &str) -> ParsedSource {
-    parse_source(FILE, source.into()).expect("test sources fit in u32")
+    parse_source(source.into()).expect("test sources fit in u32")
 }
 
 fn diagnostic_codes(front: &ParsedSource) -> Vec<DiagnosticCode> {
@@ -100,9 +95,8 @@ fn nested_closer_repairs_remain_available_inside_out() {
 #[test]
 fn parsed_source_owns_every_syntactic_product() {
     let source = String::from("fn f() {}\n").into_boxed_str();
-    let front = parse_source(FILE, source).expect("test source fits in u32");
+    let front = parse_source(source).expect("test source fits in u32");
 
-    assert_eq!(front.file(), FILE);
     assert_eq!(front.source(), "fn f() {}\n");
     assert_eq!(front.lexed().source_len().to_usize(), front.source().len());
     let tree = front.parse().tree();
@@ -177,7 +171,7 @@ fn leading_zeros_are_fixed_around_a_suffix() {
     );
     let diagnostic = &front.diagnostics()[0];
     assert_eq!(
-        diagnostic.primary.range().start().to_usize()..diagnostic.primary.range().end().to_usize(),
+        diagnostic.primary.start().to_usize()..diagnostic.primary.end().to_usize(),
         9..10
     );
     assert_eq!(apply_fix(source, diagnostic), "fn f() = 1u32");
@@ -224,24 +218,23 @@ proptest! {
 
     #[test]
     fn every_canonical_location_is_valid(source in source()) {
-        let front = parse_source(FILE, source.into_boxed_str()).expect("generated sources fit in u32");
+        let front = parse_source(source.into_boxed_str()).expect("generated sources fit in u32");
         let source = front.source();
         let mut previous = None;
         for diagnostic in front.diagnostics() {
             let key = (
-                diagnostic.primary.range().start().to_u32(),
-                diagnostic.primary.range().end().to_u32(),
+                diagnostic.primary.start().to_u32(),
+                diagnostic.primary.end().to_u32(),
             );
             if let Some(previous) = previous {
                 prop_assert!(previous <= key, "diagnostics are not source sorted");
             }
             previous = Some(key);
 
-            let labels = diagnostic.labels.iter().map(|label| label.span);
-            for span in std::iter::once(diagnostic.primary).chain(labels) {
-                prop_assert_eq!(span.file(), FILE);
-                let start = span.range().start().to_usize();
-                let end = span.range().end().to_usize();
+            let labels = diagnostic.labels.iter().map(|label| label.range);
+            for range in std::iter::once(diagnostic.primary).chain(labels) {
+                let start = range.start().to_usize();
+                let end = range.end().to_usize();
                 prop_assert!(end <= source.len());
                 prop_assert!(source.is_char_boundary(start));
                 prop_assert!(source.is_char_boundary(end));

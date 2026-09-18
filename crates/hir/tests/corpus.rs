@@ -11,7 +11,7 @@ use std::fmt::Write as _;
 
 use sumi_frontend::parse_source;
 use sumi_hir::{Analysis, BinaryOp, FunctionId, Graph, NodeId, Op, RegionId, analyze};
-use sumi_text::{FileId, Span};
+use sumi_text::TextRange;
 
 #[path = "../../../tests/support/corpus.rs"]
 mod corpus;
@@ -27,7 +27,7 @@ fn selected_cases_run_as_their_snapshots_say() {
 }
 
 fn run(source: &str) -> String {
-    let analysis = analyze(parse_source(FileId::new(0), source.into()).unwrap());
+    let analysis = analyze(parse_source(source.into()).unwrap());
     let Some(program) = analysis.program() else {
         return "file: rejected (see hir.snap); nothing runs\n".to_owned();
     };
@@ -59,9 +59,9 @@ fn run(source: &str) -> String {
     out
 }
 
-/// `@start..end`, or `@at` for an empty span.
-fn span(span: Span) -> String {
-    let (start, end) = (span.range().start().to_u32(), span.range().end().to_u32());
+/// `@start..end`, or `@at` for an empty range.
+fn span(range: TextRange) -> String {
+    let (start, end) = (range.start().to_u32(), range.end().to_u32());
     if start == end {
         format!("@{start}")
     } else {
@@ -70,7 +70,7 @@ fn span(span: Span) -> String {
 }
 
 fn snapshot(source: &str) -> String {
-    let analysis = analyze(parse_source(FileId::new(0), source.into()).unwrap());
+    let analysis = analyze(parse_source(source.into()).unwrap());
     let syntax_errors = analysis.parsed().diagnostics().len();
     let semantic: Vec<_> = analysis.semantic_diagnostics().collect();
     let semantic_errors = semantic.len();
@@ -129,7 +129,7 @@ fn snapshot(source: &str) -> String {
             )
             .unwrap();
             for label in &diagnostic.labels {
-                writeln!(out, "  secondary {}: {}", span(label.span), label.message).unwrap();
+                writeln!(out, "  secondary {}: {}", span(label.range), label.message).unwrap();
             }
             assert!(
                 diagnostic.fix.is_none(),

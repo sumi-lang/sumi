@@ -14,7 +14,7 @@
 use std::num::NonZeroU32;
 use std::ops::Range;
 
-use sumi_text::Span;
+use sumi_text::TextRange;
 
 use crate::{BinaryOp, FunctionId, Int, Ty};
 
@@ -133,7 +133,7 @@ pub enum Op {
     /// held to. A declared copy is known to have its type on its own
     /// account, whatever flows in, because of the annotation at the span.
     Copy {
-        declared: Option<(Ty, Span)>,
+        declared: Option<(Ty, TextRange)>,
     },
     Neg,
     Not,
@@ -177,9 +177,9 @@ pub enum Op {
 pub struct Node {
     pub op: Op,
     inputs: Range<u32>,
-    pub origin: Span,
+    pub origin: TextRange,
     /// The name a parameter or a `let` gives the node, where it is written.
-    pub name: Option<Span>,
+    pub name: Option<TextRange>,
 }
 
 /// A run of nodes that runs only while its context is live, with the node
@@ -270,7 +270,13 @@ impl Graph {
 
     /// A node computing `op` from `inputs`, which must be nodes of this
     /// graph, at `origin`, named `name`.
-    pub fn push(&mut self, op: Op, inputs: &[NodeId], origin: Span, name: Option<Span>) -> NodeId {
+    pub fn push(
+        &mut self,
+        op: Op,
+        inputs: &[NodeId],
+        origin: TextRange,
+        name: Option<TextRange>,
+    ) -> NodeId {
         let start = u32::try_from(self.inputs.len()).expect("input count fits u32");
         self.inputs.extend_from_slice(inputs);
         let end = u32::try_from(self.inputs.len()).expect("input count fits u32");
@@ -339,13 +345,10 @@ impl Graph {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sumi_text::{FileId, TextRange, TextSize};
+    use sumi_text::TextSize;
 
-    fn at(offset: u32) -> Span {
-        Span::new(
-            FileId::new(0),
-            TextRange::new(TextSize::new(offset), TextSize::new(offset + 1)),
-        )
+    fn at(offset: u32) -> TextRange {
+        TextRange::new(TextSize::new(offset), TextSize::new(offset + 1))
     }
 
     #[test]

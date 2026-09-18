@@ -21,7 +21,7 @@ use sumi_format::format;
 use sumi_frontend::{Diagnostic, parse_source};
 use sumi_lexer::LexedFile;
 use sumi_syntax::{NodeIdx, ParseAnchor, ParseEvidence, ParseRecoveryKind, RawIdx, SyntaxTree};
-use sumi_text::{FileId, LineIndex, TextEdit, TextRange, TextSize};
+use sumi_text::{LineIndex, TextEdit, TextRange, TextSize};
 
 #[test]
 fn every_case_matches_its_snapshot() {
@@ -30,7 +30,7 @@ fn every_case_matches_its_snapshot() {
 
 /// The snapshot of one case.
 fn snapshot(source: &str, stages: &[corpus::Stage]) -> String {
-    let parsed = parse_source(FileId::new(0), source.into()).expect("corpus cases fit in u32");
+    let parsed = parse_source(source.into()).expect("corpus cases fit in u32");
     let lexed = parsed.lexed();
     let parse = parsed.parse();
     let index = LineIndex::new(source);
@@ -82,8 +82,7 @@ fn snapshot(source: &str, stages: &[corpus::Stage]) -> String {
         let fixed = sumi_text::apply(source, applied);
         // A fix that leaves a diagnostic standing, or that only makes the
         // next fix possible, says so in the header.
-        let reparsed =
-            parse_source(FileId::new(0), fixed.as_str().into()).expect("fixed cases fit in u32");
+        let reparsed = parse_source(fixed.as_str().into()).expect("fixed cases fit in u32");
         let mut remaining: Vec<String> = reparsed
             .diagnostics()
             .iter()
@@ -111,8 +110,8 @@ fn snapshot(source: &str, stages: &[corpus::Stage]) -> String {
         Ok(formatted) if formatted.text != source => {
             // Formatting leaves an item as written when its rep would
             // change, and cannot fix a chained comparison; the header says.
-            let reparsed = parse_source(FileId::new(0), formatted.text.as_str().into())
-                .expect("formatted cases fit in u32");
+            let reparsed =
+                parse_source(formatted.text.as_str().into()).expect("formatted cases fit in u32");
             let mut remaining: Vec<String> = reparsed
                 .parse()
                 .evidence()
@@ -267,7 +266,7 @@ fn render(diagnostic: &Diagnostic, index: &LineIndex, source: &str, out: &mut St
         out,
         "error[{}] {}: {}",
         diagnostic.code,
-        place(index, source, diagnostic.primary.range()),
+        place(index, source, diagnostic.primary),
         diagnostic.message
     )
     .expect("writing to a string");
@@ -275,7 +274,7 @@ fn render(diagnostic: &Diagnostic, index: &LineIndex, source: &str, out: &mut St
         writeln!(
             out,
             "  at {}: {}",
-            place(index, source, label.span.range()),
+            place(index, source, label.range),
             label.message
         )
         .expect("writing to a string");

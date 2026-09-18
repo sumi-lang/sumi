@@ -18,10 +18,7 @@ use sumi_syntax::{
     BRACKET_PAIRS, NodeKind, Parse, ParseAnchor, ParseEvidence, ParserInput, SigIdx, parse,
 };
 use sumi_test::{Edit, Front, apply, changes_delimiter, front};
-use sumi_text::{FileId, Span};
-
-/// The file every fuzzed source stands for.
-pub const FILE: FileId = FileId::new(0);
+use sumi_text::TextRange;
 
 /// The HIR property's diagnostic-backed acceptance, source provenance, and
 /// completeness, through the read-only public API.
@@ -43,8 +40,7 @@ pub fn check_semantics(parsed: ParsedSource) {
             })
             .collect();
         declarations.reverse();
-        let reversed =
-            sumi_hir::analyze(parse_source(FILE, declarations.join("\n").into()).unwrap());
+        let reversed = sumi_hir::analyze(parse_source(declarations.join("\n").into()).unwrap());
         assert!(reversed.parsed().diagnostics().is_empty());
         assert_eq!(analysis.functions().len(), reversed.functions().len());
         let count = analysis.functions().len();
@@ -84,9 +80,9 @@ pub fn check_semantics(parsed: ParsedSource) {
             .zip(analysis.parsed().diagnostics())
             .all(|(listed, own)| *listed == own)
     );
-    assert!(all.is_sorted_by_key(|d| d.primary.range().start()));
+    assert!(all.is_sorted_by_key(|d| d.primary.start()));
     for pair in all.windows(2) {
-        if pair[0].primary.range().start() == pair[1].primary.range().start() {
+        if pair[0].primary.start() == pair[1].primary.start() {
             assert!(
                 !sumi_hir::Analysis::is_semantic(&pair[0])
                     || sumi_hir::Analysis::is_semantic(&pair[1])
@@ -95,10 +91,9 @@ pub fn check_semantics(parsed: ParsedSource) {
     }
     check_graph(&analysis);
     for diagnostic in analysis.diagnostics() {
-        for span in spans(diagnostic) {
-            assert_eq!(span.file(), analysis.parsed().file());
-            assert!(source.is_char_boundary(span.range().start().to_usize()));
-            assert!(source.is_char_boundary(span.range().end().to_usize()));
+        for range in ranges(diagnostic) {
+            assert!(source.is_char_boundary(range.start().to_usize()));
+            assert!(source.is_char_boundary(range.end().to_usize()));
         }
     }
     check_typed(&analysis);
@@ -740,12 +735,12 @@ pub fn check_parse(source: &str, lexed: &LexedFile, parse: &Parse) {
     }
 }
 
-/// The primary span of `diagnostic` and every label's.
-fn spans(diagnostic: &sumi_frontend::Diagnostic) -> impl Iterator<Item = Span> + '_ {
-    std::iter::once(diagnostic.primary).chain(diagnostic.labels.iter().map(|label| label.span))
+/// The primary range of `diagnostic` and every label's.
+fn ranges(diagnostic: &sumi_frontend::Diagnostic) -> impl Iterator<Item = TextRange> + '_ {
+    std::iter::once(diagnostic.primary).chain(diagnostic.labels.iter().map(|label| label.range))
 }
 
-/// Every canonical diagnostic names the parsed file, in source order, with
+/// Every canonical diagnostic is in source order, with
 /// in-bounds labels on character boundaries, and a fix of nonempty,
 /// ordered, disjoint edits; applying every non-overlapping fix leaves a
 /// source the frontend still parses.
@@ -755,18 +750,17 @@ pub fn check_diagnostics(parsed: &ParsedSource) {
     let mut edits = Vec::new();
     for diagnostic in parsed.diagnostics() {
         let key = (
-            diagnostic.primary.range().start().to_u32(),
-            diagnostic.primary.range().end().to_u32(),
+            diagnostic.primary.start().to_u32(),
+            diagnostic.primary.end().to_u32(),
         );
         if let Some(previous) = previous {
             assert!(previous <= key, "diagnostics are not source sorted");
         }
         previous = Some(key);
 
-        for span in spans(diagnostic) {
-            assert_eq!(span.file(), parsed.file());
-            let start = span.range().start().to_usize();
-            let end = span.range().end().to_usize();
+        for range in ranges(diagnostic) {
+            let start = range.start().to_usize();
+            let end = range.end().to_usize();
             assert!(end <= source.len());
             assert!(source.is_char_boundary(start));
             assert!(source.is_char_boundary(end));
@@ -826,7 +820,7 @@ pub fn check_diagnostics(parsed: &ParsedSource) {
         applied.push(edit);
     }
     let fixed = sumi_text::apply(source, applied);
-    let reparsed = parse_source(parsed.file(), fixed.into()).expect("fixed inputs fit in u32");
+    let reparsed = parse_source(fixed.into()).expect("fixed inputs fit in u32");
     check_tree(reparsed.parse(), reparsed.lexed());
 }
 

@@ -14,7 +14,7 @@ use std::collections::HashSet;
 use rustc_hash::FxBuildHasher;
 use sumi_graph::{Domain, Graph, Int, May, NodeId, Op, Thresholds, Ty, Value};
 use sumi_syntax::NodeIdx;
-use sumi_text::Span;
+use sumi_text::TextRange;
 
 use crate::lattice::Edge;
 use crate::lower::{DemandKind, Header, Lowered};
@@ -29,7 +29,7 @@ pub(crate) fn draw(
     graph: &Graph,
     lowered: &Lowered,
     headers: &[Header],
-    span: impl Fn(NodeIdx) -> Span,
+    span: impl Fn(NodeIdx) -> TextRange,
 ) -> (Typing, Thresholds) {
     let mut typing = Typing::for_nodes(graph.nodes().len());
     let typed = |node: NodeId| lowered.typed[node.index()];

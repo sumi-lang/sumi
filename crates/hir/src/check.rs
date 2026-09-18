@@ -69,7 +69,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     // stand at one position, then the checker's in the order it made them.
     let mut diagnostics = source.diagnostics;
     diagnostics.splice(0..0, parsed.diagnostics().iter().cloned());
-    diagnostics.sort_by_key(|d| d.primary.range().start());
+    diagnostics.sort_by_key(|d| d.primary.start());
     let analysis = Analysis {
         parsed,
         graph,
@@ -262,7 +262,7 @@ fn explain_zero(
     typing: &Typing,
     lowered: &Lowered,
     divisor: NodeId,
-) -> Vec<(Span, Box<str>)> {
+) -> Vec<(TextRange, Box<str>)> {
     use std::collections::{HashSet, VecDeque};
 
     use crate::Ints;
@@ -276,7 +276,7 @@ fn explain_zero(
             format!("may be 0{where_}: {ints}")
         }
     };
-    let mut labels: Vec<(Span, Box<str>)> = Vec::new();
+    let mut labels: Vec<(TextRange, Box<str>)> = Vec::new();
     let mut seen = HashSet::new();
     let mut queue = VecDeque::from([(divisor, 0)]);
     while let Some((node, hops)) = queue.pop_front() {
@@ -358,7 +358,7 @@ fn explain_zero(
             | Op::Else => {}
         }
     }
-    labels.sort_by_key(|(span, _)| span.range().start());
+    labels.sort_by_key(|(range, _)| range.start());
     labels
 }
 

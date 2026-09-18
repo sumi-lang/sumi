@@ -51,7 +51,7 @@ impl Named {
 
 pub(crate) struct Header {
     /// Where the name is written, when the item has one.
-    pub name: Option<Span>,
+    pub name: Option<TextRange>,
     /// The parameter types, when the parameter list is whole.
     pub params: Option<Box<[Ty]>>,
     /// The type each parameter's node carries, whole list or not: none for
@@ -161,11 +161,8 @@ impl<'s> Source<'s> {
             diagnostics: Vec::new(),
         }
     }
-    pub fn span(&self, node: NodeIdx) -> Span {
-        Span::new(
-            self.parsed.file(),
-            self.tree.byte_range(node, self.parsed.lexed()),
-        )
+    pub fn span(&self, node: NodeIdx) -> TextRange {
+        self.tree.byte_range(node, self.parsed.lexed())
     }
     pub fn text(&self, node: NodeIdx) -> &'s str {
         self.tree
@@ -183,17 +180,17 @@ impl<'s> Source<'s> {
         node: NodeIdx,
         code: DiagnosticCode,
         message: impl Into<Box<str>>,
-        related: Option<(Span, &'static str)>,
+        related: Option<(TextRange, &'static str)>,
     ) {
         let related = related.map(|(span, message)| (span, Box::from(message)));
         self.report(self.span(node), code, message, related);
     }
     pub fn report(
         &mut self,
-        primary: Span,
+        primary: TextRange,
         code: DiagnosticCode,
         message: impl Into<Box<str>>,
-        related: impl IntoIterator<Item = (Span, Box<str>)>,
+        related: impl IntoIterator<Item = (TextRange, Box<str>)>,
     ) {
         self.diagnostics
             .push(diagnostic(primary, code, message, related));
@@ -203,7 +200,7 @@ impl<'s> Source<'s> {
         node: NodeIdx,
         expected: Ty,
         actual: Ty,
-        related: Option<(Span, &'static str)>,
+        related: Option<(TextRange, &'static str)>,
     ) {
         self.error(
             node,
@@ -227,7 +224,7 @@ impl<'s> Source<'s> {
             .iter()
             .map(|(ty, claim)| (*ty, typing.origin(*claim)))
             .collect();
-        claims.sort_by_key(|(_, origin)| origin.map(|span| span.range().start()));
+        claims.sort_by_key(|(_, origin)| origin.map(|range| range.start()));
         let types: Vec<_> = claims.iter().map(|(ty, _)| ty.to_string()).collect();
         let (last, rest) = types.split_last().expect("a conflict names two types");
         let joined = if rest.len() == 1 {
@@ -276,10 +273,10 @@ impl<'s> Source<'s> {
 
 /// An error at `primary` with `related` labels.
 pub(crate) fn diagnostic(
-    primary: Span,
+    primary: TextRange,
     code: DiagnosticCode,
     message: impl Into<Box<str>>,
-    related: impl IntoIterator<Item = (Span, Box<str>)>,
+    related: impl IntoIterator<Item = (TextRange, Box<str>)>,
 ) -> Diagnostic {
     Diagnostic {
         code,
@@ -287,7 +284,7 @@ pub(crate) fn diagnostic(
         primary,
         labels: related
             .into_iter()
-            .map(|(span, message)| Label { span, message })
+            .map(|(range, message)| Label { range, message })
             .collect(),
         fix: None,
     }
@@ -674,13 +671,25 @@ impl<'a, 's> Builder<'a, 's> {
         !self.failed && root.is_some()
     }
     /// A graph node at `node`, which reads `inputs`.
-    fn push(&mut self, node: NodeIdx, op: Op, inputs: &[NodeId], name: Option<Span>) -> NodeId {
+    fn push(
+        &mut self,
+        node: NodeIdx,
+        op: Op,
+        inputs: &[NodeId],
+        name: Option<TextRange>,
+    ) -> NodeId {
         let id = self.place(op, inputs, self.source.span(node), name);
         self.nodes_of[node.to_usize()] = Some(id);
         id
     }
     /// A graph node that no syntax node is said to have built.
-    fn place(&mut self, op: Op, inputs: &[NodeId], origin: Span, name: Option<Span>) -> NodeId {
+    fn place(
+        &mut self,
+        op: Op,
+        inputs: &[NodeId],
+        origin: TextRange,
+        name: Option<TextRange>,
+    ) -> NodeId {
         let typed = self.follows(&op, inputs);
         let id = self.graph.push(op, inputs, origin, name);
         self.lowered.typed.push(typed);

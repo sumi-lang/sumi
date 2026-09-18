@@ -1,7 +1,6 @@
 use std::fmt::Write;
 use sumi_frontend::{ParsedSource, parse_source};
 use sumi_hir::{Analysis, Ty};
-use sumi_text::FileId;
 
 pub const SIZES: [usize; 3] = [128, 1024, 8192];
 pub const SHAPES: [&str; 12] = [
@@ -91,7 +90,7 @@ pub fn source(shape: &str, size: usize) -> String {
 }
 
 pub fn parse(source: &str) -> ParsedSource {
-    let parsed = parse_source(FileId::new(0), source.into()).unwrap();
+    let parsed = parse_source(source.into()).unwrap();
     assert!(parsed.diagnostics().is_empty());
     parsed
 }
