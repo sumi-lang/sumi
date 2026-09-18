@@ -3,20 +3,22 @@ frontend errors: 0 (see frontend.snap)
 semantic errors: 0
 
 fn value@0..37 () -> int ∈ [1, 1]
-  body: int 1 : int @36..37
+  result: copy : int @22..25
+    value: int 1 : int @36..37
 
 fn identity@38..93 (int ∈ [1, 1]) -> int ∈ [1, 1]
   param x@55..56: int
-  body: read x@55..56 : int @92..93
+  result: copy : int @78..81
+    value: read x@55..56 : int
 
 fn empty@94..109 () -> unit ∈ unit
-  body: block : unit @107..109
-    tail: unit (implicit)
+  body: unit : unit @107..109
 
 fn block@110..131 () -> unit ∈ unit
-  body: block : unit @129..131
-    tail: unit (implicit)
+  result: copy : unit @124..128
+    value: unit : unit @129..131
 
 fn caller@132..177 () -> int ∈ [1, 1]
-  body: call identity@38..93 (callee @153..161) : int @153..177
-    arg[0]: call value@0..37 (callee @167..172) : int @167..174
+  result: copy : int @147..150
+    value: call identity@38..93 : int @153..177
+      arg[0]: call value@0..37 : int @167..174

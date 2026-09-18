@@ -3,10 +3,27 @@ frontend errors: 0 (see frontend.snap)
 semantic errors: 3
 
 fn probe@0..151 () -> unit ∈ ∅
-  body: unavailable
+  result: copy : unit @0..151
+    value:
+      let x@21..22: int @17..26
+        initializer: int 1 : int @25..26
+      let x@74..75: int @70..83
+        initializer: eager + : int @78..83
+          lhs: read x@21..22 : int
+          rhs: int 1 : int @82..83
+      let x@35..36: ? @31..139
+        initializer: hole : ? @39..139
+          part[0]: eager + : int @96..104
+            lhs: read x@74..75 : int
+            rhs: bool true : ? @100..104
+          part[1]: eager + : int @124..133
+            lhs: read x@21..22 : int
+            rhs: bool false : ? @128..133
+      tail: unit : unit @11..151
 
 fn intact@152..174 () -> int ∈ [3, 3]
-  body: int 3 : int @173..174
+  result: copy : int @167..170
+    value: int 3 : int @173..174
 
 == semantic diagnostics ==
 error[semantic/unknown-name]: unknown function `missing`

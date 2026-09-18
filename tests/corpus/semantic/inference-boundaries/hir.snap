@@ -3,25 +3,35 @@ frontend errors: 2 (see frontend.snap)
 semantic errors: 6
 
 fn spin@0..25 signature: unavailable
-  body: unavailable
+  param x@8..9: int
+  body: call spin@0..25 : ? @18..25
+    arg[0]: read x@8..9 : int
 
 fn consumer@26..56 () -> int ∈ ∅
-  body: unavailable
+  result: copy : int @43..46
+    value: call spin@0..25 : int @49..56
+      arg[0]: int 1 : int @54..55
 
 fn grounded@57..84 () -> int ∈ ∅
-  body: unavailable
+  body: eager + : int @73..84
+    lhs: call spin@0..25 : int @73..80
+      arg[0]: int 1 : int @78..79
+    rhs: int 1 : int @83..84
 
 fn recovered@85..112 () -> int ∈ ∅
-  body: call grounded@57..84 (callee @102..110) : int @102..112
+  body: call grounded@57..84 : int @102..112
 
 fn bad_arguments@113..153 signature: unavailable
-  body: unavailable
+  body: hole : ? @134..153
+    part[0]: bool true : ? @139..143
+    part[1]: hole : ? @145..152
 
 fn bare@154..169 () -> unit ∈ ∅
-  body: unavailable
+  result: copy : unit @154..169
+    value: int 1 : ? @166..167
 
 fn malformed@170..195 signature: unavailable
-  body: unavailable
+  body: int 1 : int @192..193
 
 fn intact@196..214 () -> bool ∈ {true}
   body: bool true : bool @210..214

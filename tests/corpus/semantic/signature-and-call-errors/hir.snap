@@ -3,44 +3,62 @@ frontend errors: 0 (see frontend.snap)
 semantic errors: 11
 
 fn duplicate@0..17 () -> unit ∈ unit
-  body: block : unit @15..17
-    tail: unit (implicit)
+  result: copy : unit @0..17
+    value: unit : unit @15..17
 
 fn duplicate@18..35 () -> unit ∈ unit
-  body: block : unit @33..35
-    tail: unit (implicit)
+  result: copy : unit @18..35
+    value: unit : unit @33..35
 
 fn ambiguous@36..64 signature: unavailable
-  body: unavailable
+  body: hole : ? @53..64
 
 fn unknown@65..90 signature: unavailable
-  body: unavailable
+  param x@76..77: ?
+  result: copy : unit @65..90
+    value: unit : unit @88..90
 
 fn suppressed@91..124 signature: unavailable
-  body: unavailable
+  body: hole : ? @109..124
+    part[0]: hole : ? @117..123
 
 fn typed@125..161 (int ∈ ∅, bool ∈ ∅) -> int ∈ ∅
   param x@134..135: int
   param b@142..143: bool
-  body: read x@134..135 : int @160..161
+  result: copy : int @154..157
+    value: read x@134..135 : int
 
 fn wrong@162..205 () -> int ∈ ∅
-  body: unavailable
+  result: copy : int @176..179
+    value: hole : ? @182..205
+      part[0]: bool true : ? @188..192
+      part[1]: int 1 : ? @194..195
+      part[2]: hole : ? @197..204
 
 fn hidden@206..258 () -> int ∈ ∅
-  body: unavailable
+  result: copy : int @221..224
+    value:
+      let typed@235..240: int @231..244
+        initializer: int 1 : int @243..244
+      tail: hole : ? @249..256
 
 fn broken_result@259..301 signature: unavailable
-  body: unavailable
+  param x@276..277: ?
+  result: copy : int @291..294
+    value: bool true : ? @297..301
 
 fn scaled@302..334 (int ∈ ∅) -> int ∈ ∅
   param n@312..313: int
-  body: eager * : int @329..334
-    lhs: read n@312..313 : int @329..330
-    rhs: int 2 : int @333..334
+  result: copy : int @323..326
+    value: eager * : int @329..334
+      lhs: read n@312..313 : int
+      rhs: int 2 : int @333..334
 
 fn extra@335..367 () -> int ∈ ∅
-  body: unavailable
+  result: copy : int @349..352
+    value: hole : ? @355..367
+      part[0]: int 3 : int @362..363
+      part[1]: int 4 : int @365..366
 
 == semantic diagnostics ==
 error[semantic/duplicate-name]: duplicate function `duplicate`

@@ -3,23 +3,37 @@ frontend errors: 0 (see frontend.snap)
 semantic errors: 5
 
 fn value@0..21 () -> int ∈ [1, 1]
-  body: int 1 : int @20..21
+  result: copy : int @14..17
+    value: int 1 : int @20..21
 
 fn rejected@22..103 () -> int ∈ [-1, -1]
-  body: unavailable
+  result: copy : int @39..42
+    value:
+      let x@53..54: int @49..58
+        initializer: int 1 : int @57..58
+      discard: eager + : int @72..83
+        lhs: call value@0..21 : int @72..79
+        rhs: int 1 : int @82..83
+      discard: int 1 : int @91..92
+      tail: int -1 : int @99..101
 
 fn separate@104..155 () -> unit ∈ ∅
-  body: unavailable
+  result: copy : unit @104..155
+    value:
+      discard: hole : ? @124..129
+      discard: call value@0..21 : int @135..142
+      discard: int 1 : int @152..153
+      tail: unit : unit @118..155
 
 fn accepted@156..216 () -> int ∈ [2, 2]
-  body: block : int @177..216
-    discard @183..198
-      value: eager + : int @187..198
-        lhs: call value@0..21 (callee @187..192) : int @187..194
+  result: copy : int @173..176
+    value:
+      discard: eager + : int @187..198
+        lhs: call value@0..21 : int @187..194
         rhs: int 1 : int @197..198
-    tail: eager + : int @203..214
-      lhs: call value@0..21 (callee @203..208) : int @203..210
-      rhs: int 1 : int @213..214
+      tail: eager + : int @203..214
+        lhs: call value@0..21 : int @203..210
+        rhs: int 1 : int @213..214
 
 == semantic diagnostics ==
 error[semantic/unused-value]: unused value of type int; use `_ =` to discard it

@@ -3,19 +3,34 @@ frontend errors: 0 (see frontend.snap)
 semantic errors: 4
 
 fn or_name@0..41 () -> bool ∈ ∅
-  body: unavailable
+  result: copy : bool @16..20
+    value: lazy or : ? @23..41
+      lhs: bool true : bool @23..27
+      rhs: hole : ? @31..41
 
 fn and_type@42..76 () -> bool ∈ {false}
-  body: unavailable
+  result: copy : bool @59..63
+    value: lazy and : bool @66..76
+      lhs: bool false : bool @66..71
+      rhs: int 1 : ? @75..76
 
 fn then_name@77..137 () -> int ∈ ∅
-  body: unavailable
+  result: copy : int @95..98
+    value: if : ? @101..137
+      condition: bool false : bool @104..109
+      then: hole : ? @112..124
+      else: int 1 : int @134..135
 
 fn else_type@138..190 () -> int ∈ [1, 1]
-  body: unavailable
+  result: copy : int @156..159
+    value: if : ? @162..190
+      condition: bool true : bool @165..169
+      then: int 1 : int @172..173
+      else: bool false : bool @183..188
 
 fn independent@191..219 () -> int ∈ [42, 42]
-  body: int 42 : int @217..219
+  result: copy : int @211..214
+    value: int 42 : int @217..219
 
 == semantic diagnostics ==
 error[semantic/unknown-name]: unknown name `missing_or`

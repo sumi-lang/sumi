@@ -3,10 +3,21 @@ frontend errors: 2 (see frontend.snap)
 semantic errors: 1
 
 fn damaged@0..100 () -> unit ∈ ∅
-  body: unavailable
+  result: copy : unit @0..100
+    value:
+      let x@23..24: bool @19..31
+        initializer: bool true : bool @27..31
+      let x@40..41: hole : ? @36..43
+      discard: eager + : ? @52..57
+        lhs: read x@40..41 : ?
+        rhs: int 1 : int @56..57
+      let y@66..67: hole : ? @62..72
+      discard: hole : ? @91..98
+      tail: unit : unit @13..100
 
 fn intact@101..123 () -> int ∈ [3, 3]
-  body: int 3 : int @122..123
+  result: copy : int @116..119
+    value: int 3 : int @122..123
 
 == semantic diagnostics ==
 error[semantic/unknown-name]: unknown name `missing`

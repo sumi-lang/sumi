@@ -4,9 +4,7 @@
 use std::fmt::Write as _;
 
 use sumi_frontend::{FileId, Location, Place, Severity, parse_source};
-use sumi_hir::{
-    Analysis, BinaryOp, Body, ExprId, ExprKind, Local, Statement, StatementKind, analyze,
-};
+use sumi_hir::{Analysis, BinaryOp, Function, Graph, NodeId, Op, RegionId, analyze};
 use sumi_text::Span;
 
 #[path = "../../../tests/support/corpus.rs"]
@@ -32,10 +30,6 @@ fn location(location: Location) -> String {
     }
 }
 
-fn local(analysis: &Analysis, local: &Local) -> String {
-    format!("{}{}", analysis.text(local.origin), span(local.origin))
-}
-
 fn snapshot(source: &str) -> String {
     let analysis = analyze(parse_source(FileId::new(0), source.into()).unwrap());
     let syntax_errors = analysis
@@ -57,6 +51,7 @@ fn snapshot(source: &str) -> String {
             "rejected"
         }
     );
+    let shape = Shape::of(analysis.graph());
     for function in analysis.functions() {
         write!(
             out,
@@ -86,15 +81,7 @@ fn snapshot(source: &str) -> String {
             }
             _ => out.push_str(" signature: unavailable\n"),
         }
-        if let Some(body) = function.body() {
-            for &param in body.params() {
-                let param = body.local(param);
-                writeln!(out, "  param {}: {}", local(&analysis, param), param.ty).unwrap();
-            }
-            dump_body(&analysis, body, &mut out);
-        } else {
-            out.push_str("  body: unavailable\n");
-        }
+        dump(&analysis, &shape, function, &mut out);
     }
     if !analysis.diagnostics().is_empty() {
         out.push_str("\n== semantic diagnostics ==\n");
@@ -131,119 +118,281 @@ fn snapshot(source: &str) -> String {
     out
 }
 
-// Render the ownership tree, never the arena's allocation order. A local or
-// function reference uses its declaration spelling and source origin instead of
-// a numeric storage ID. Iteration also keeps the renderer host-stack-safe.
-enum Work<'a> {
-    Expr(String, ExprId, usize),
-    Statement(&'a Statement, usize),
-    Unit(&'static str, usize),
+/// What the graph does not store but a rendering needs: how often each
+/// node is read, and the innermost region each node sits in.
+struct Shape {
+    users: Vec<u32>,
+    region_of: Vec<Option<RegionId>>,
 }
 
-fn dump_body(analysis: &Analysis, body: &Body, out: &mut String) {
-    let mut work = vec![Work::Expr("body".into(), body.root(), 1)];
-    while let Some(task) = work.pop() {
-        let (role, id, depth) = match task {
-            Work::Expr(role, id, depth) => (role, id, depth),
-            Work::Unit(role, depth) => {
-                writeln!(out, "{}{}: unit (implicit)", "  ".repeat(depth), role).unwrap();
-                continue;
+impl Shape {
+    fn of(graph: &Graph) -> Self {
+        let mut users = vec![0; graph.nodes().len()];
+        for node in graph.node_ids() {
+            for &input in graph.inputs(node) {
+                users[input.index()] += 1;
             }
-            Work::Statement(statement, depth) => {
-                let indent = "  ".repeat(depth);
-                match statement.kind {
-                    StatementKind::Let {
-                        local: id,
-                        initializer,
-                    } => {
-                        let binding = body.local(id);
-                        writeln!(
-                            out,
-                            "{indent}let {}: {} {}",
-                            local(analysis, binding),
-                            binding.ty,
-                            span(statement.origin)
-                        )
-                        .unwrap();
-                        work.push(Work::Expr("initializer".into(), initializer, depth + 1));
-                    }
-                    StatementKind::Eval(id) => {
-                        writeln!(out, "{indent}discard {}", span(statement.origin)).unwrap();
-                        work.push(Work::Expr("value".into(), id, depth + 1));
-                    }
-                }
-                continue;
+        }
+        // Regions open outermost first, so a later region's run refines
+        // an earlier one's.
+        let mut region_of = vec![None; graph.nodes().len()];
+        for region in graph.region_ids() {
+            for node in graph.region(region).nodes() {
+                region_of[node.index()] = Some(region);
             }
-        };
-        let expr = body.expression(id);
-        let operation = match &expr.kind {
-            ExprKind::Int(value) => format!("int {value}"),
-            ExprKind::Bool(value) => format!("bool {value}"),
-            ExprKind::Local(id) => format!("read {}", local(analysis, body.local(*id))),
-            ExprKind::Neg(_) => "negate".into(),
-            ExprKind::Not(_) => "not".into(),
-            ExprKind::Binary { op, .. } => format!("eager {}", operator(*op)),
-            ExprKind::And { .. } => "lazy and".into(),
-            ExprKind::Or { .. } => "lazy or".into(),
-            ExprKind::Call {
-                function, callee, ..
-            } => {
-                let function = analysis.function(*function);
-                format!(
-                    "call {}{} (callee {})",
-                    analysis.text(function.name().unwrap()),
-                    span(function.origin()),
-                    span(*callee)
+        }
+        Self { users, region_of }
+    }
+}
+
+fn ty(graph: &Graph, node: NodeId) -> String {
+    graph
+        .node(node)
+        .ty
+        .map_or_else(|| "?".to_owned(), |ty| ty.to_string())
+}
+
+/// A named definition, as its declaration spelling and origin.
+fn named(analysis: &Analysis, node: NodeId) -> String {
+    match analysis.graph().node(node).name {
+        Some(name) => format!("{}{}", analysis.text(name), span(name)),
+        None => format!("<unnamed>{}", span(analysis.graph().node(node).origin)),
+    }
+}
+
+fn dump(analysis: &Analysis, shape: &Shape, function: &Function, out: &mut String) {
+    let graph = analysis.graph();
+    for param in function.param_nodes() {
+        writeln!(
+            out,
+            "  param {}: {}",
+            named(analysis, param),
+            ty(graph, param)
+        )
+        .unwrap();
+    }
+    let region = function.region();
+    let result = function.result();
+    if result == graph.region(region).result() {
+        dump_region(analysis, shape, "body", region, 1, out);
+    } else {
+        // The declared result the body's value is held to.
+        let node = graph.node(result);
+        writeln!(
+            out,
+            "  result: copy : {} {}",
+            ty(graph, result),
+            span(node.origin)
+        )
+        .unwrap();
+        dump_region(analysis, shape, "value", region, 2, out);
+    }
+}
+
+// Render each region as its statements and its value: a named copy is a
+// `let`, a node nothing reads is a discard, and every other node prints
+// inline under the node that reads it, so the rendering follows use, never
+// the table's order. A read of a named node uses its declaration spelling
+// and origin; a read under a guard names the guard. A statement that only
+// reads a local, `_ = x` or a bare `x`, is an edge and no node, so it does
+// not print: what it demanded is in the diagnostics.
+fn dump_region(
+    analysis: &Analysis,
+    shape: &Shape,
+    role: &str,
+    region: RegionId,
+    depth: usize,
+    out: &mut String,
+) {
+    let graph = analysis.graph();
+    let region_ref = graph.region(region);
+    let result = region_ref.result();
+    // The result prints as the tail, unless it is a `let`, which prints as
+    // its statement and is read by the tail.
+    let statements: Vec<NodeId> = region_ref
+        .nodes()
+        .filter(|&node| shape.region_of[node.index()] == Some(region))
+        .filter(|&node| {
+            let named = graph.node(node).name.is_some();
+            let contextual = matches!(
+                graph.node(node).op,
+                Op::Then | Op::Else | Op::Entry | Op::Refine { .. } | Op::Exactly(_)
+            );
+            named || (node != result && !contextual && shape.users[node.index()] == 0)
+        })
+        .collect();
+    let indent = "  ".repeat(depth);
+    if statements.is_empty() {
+        dump_node(analysis, shape, role, result, depth, out);
+        return;
+    }
+    writeln!(out, "{indent}{role}:").unwrap();
+    for node in statements {
+        match (graph.node(node).name, &graph.node(node).op) {
+            (Some(_), Op::Copy) => {
+                writeln!(
+                    out,
+                    "{indent}  let {}: {} {}",
+                    named(analysis, node),
+                    ty(graph, node),
+                    span(graph.node(node).origin)
                 )
+                .unwrap();
+                let initializer = graph.inputs(node)[0];
+                dump_node(analysis, shape, "initializer", initializer, depth + 2, out);
             }
-            ExprKind::If { .. } => "if".into(),
-            ExprKind::Block { .. } => "block".into(),
+            // A binding too damaged to have an initializer.
+            (Some(_), _) => {
+                let role = format!("let {}", named(analysis, node));
+                dump_definition(analysis, shape, &role, node, depth + 1, out);
+            }
+            (None, _) => dump_node(analysis, shape, "discard", node, depth + 1, out),
+        }
+    }
+    dump_node(analysis, shape, "tail", result, depth + 1, out);
+}
+
+/// The guards a read at `node` is narrowed by, innermost first, and the
+/// definition it reads.
+fn guards(analysis: &Analysis, mut node: NodeId) -> (Vec<String>, NodeId) {
+    let graph = analysis.graph();
+    let mut guards = Vec::new();
+    loop {
+        match graph.node(node).op {
+            Op::Refine { sense, .. } => {
+                let origin = graph.node(node).origin;
+                guards.push(format!(
+                    "{} {}{}",
+                    analysis.text(origin),
+                    if sense { "holds" } else { "fails" },
+                    span(origin)
+                ));
+                node = graph.inputs(node)[0];
+            }
+            Op::Exactly(value) => {
+                guards.push(format!("is {value}"));
+                node = graph.inputs(node)[0];
+            }
+            _ => return (guards, node),
+        }
+    }
+}
+
+/// A use of `node`: a read, by name, of a named definition, under the
+/// guards that narrow it, or the definition itself inline.
+fn dump_node(
+    analysis: &Analysis,
+    shape: &Shape,
+    role: &str,
+    node: NodeId,
+    depth: usize,
+    out: &mut String,
+) {
+    let graph = analysis.graph();
+    let (guards, definition) = guards(analysis, node);
+    if graph.node(definition).name.is_some() {
+        let guards = if guards.is_empty() {
+            String::new()
+        } else {
+            format!(" [{}]", guards.join(", "))
         };
         writeln!(
             out,
-            "{}{role}: {operation} : {} {}",
+            "{}{role}: read {}{guards} : {}",
             "  ".repeat(depth),
-            expr.ty,
-            span(expr.origin)
+            named(analysis, definition),
+            ty(graph, node)
         )
         .unwrap();
-        let child_depth = depth + 1;
-        match &expr.kind {
-            ExprKind::Int(_) | ExprKind::Bool(_) | ExprKind::Local(_) => {}
-            ExprKind::Neg(operand) | ExprKind::Not(operand) => {
-                work.push(Work::Expr("operand".into(), *operand, child_depth))
+        return;
+    }
+    dump_definition(analysis, shape, role, node, depth, out);
+}
+
+fn dump_definition(
+    analysis: &Analysis,
+    shape: &Shape,
+    role: &str,
+    node: NodeId,
+    depth: usize,
+    out: &mut String,
+) {
+    let graph = analysis.graph();
+    let indent = "  ".repeat(depth);
+    let inputs = graph.inputs(node);
+    let entry = graph.node(node);
+    let operation = match &entry.op {
+        Op::Int(value) => format!("int {value}"),
+        Op::Bool(value) => format!("bool {value}"),
+        Op::Param(index) => format!("param {index}"),
+        Op::Unit => "unit".into(),
+        Op::Hole => "hole".into(),
+        Op::Copy => "copy".into(),
+        Op::Neg => "negate".into(),
+        Op::Not => "not".into(),
+        Op::Binary(op) => format!("eager {}", operator(*op)),
+        Op::And { .. } => "lazy and".into(),
+        Op::Or { .. } => "lazy or".into(),
+        Op::Refine { .. } | Op::Exactly(_) => unreachable!("a narrowed read reads its definition"),
+        Op::Entry => "entry".into(),
+        Op::Then => "then".into(),
+        Op::Else => "else".into(),
+        Op::Join { .. } => "if".into(),
+        Op::Call(function) => {
+            let function = analysis.function(*function);
+            format!(
+                "call {}{}",
+                function
+                    .name()
+                    .map_or("<missing>", |name| analysis.text(name)),
+                span(function.origin())
+            )
+        }
+    };
+    writeln!(
+        out,
+        "{indent}{role}: {operation} : {} {}",
+        ty(graph, node),
+        span(entry.origin)
+    )
+    .unwrap();
+    let child = depth + 1;
+    match &entry.op {
+        Op::Int(_) | Op::Bool(_) | Op::Param(_) | Op::Unit | Op::Entry | Op::Then | Op::Else => {}
+        Op::Hole => {
+            for (index, &input) in inputs.iter().enumerate() {
+                dump_node(
+                    analysis,
+                    shape,
+                    &format!("part[{index}]"),
+                    input,
+                    child,
+                    out,
+                );
             }
-            ExprKind::Binary { lhs, rhs, .. }
-            | ExprKind::And { lhs, rhs }
-            | ExprKind::Or { lhs, rhs } => {
-                work.push(Work::Expr("rhs".into(), *rhs, child_depth));
-                work.push(Work::Expr("lhs".into(), *lhs, child_depth));
+        }
+        Op::Copy => dump_node(analysis, shape, "value", inputs[0], child, out),
+        Op::Neg | Op::Not => dump_node(analysis, shape, "operand", inputs[0], child, out),
+        Op::Binary(_) => {
+            dump_node(analysis, shape, "lhs", inputs[0], child, out);
+            dump_node(analysis, shape, "rhs", inputs[1], child, out);
+        }
+        Op::And { rhs } | Op::Or { rhs } => {
+            dump_node(analysis, shape, "lhs", inputs[0], child, out);
+            dump_region(analysis, shape, "rhs", *rhs, child, out);
+        }
+        Op::Refine { .. } | Op::Exactly(_) => unreachable!("a narrowed read reads its definition"),
+        Op::Join { then, else_ } => {
+            dump_node(analysis, shape, "condition", inputs[0], child, out);
+            dump_region(analysis, shape, "then", *then, child, out);
+            match else_ {
+                Some(else_) => dump_region(analysis, shape, "else", *else_, child, out),
+                None => writeln!(out, "{}else: unit (implicit)", "  ".repeat(child)).unwrap(),
             }
-            ExprKind::Call { args, .. } => {
-                for (index, &arg) in body.args(*args).iter().enumerate().rev() {
-                    work.push(Work::Expr(format!("arg[{index}]"), arg, child_depth));
-                }
-            }
-            ExprKind::If {
-                condition,
-                then_branch,
-                else_branch,
-            } => {
-                work.push(match else_branch {
-                    Some(branch) => Work::Expr("else".into(), *branch, child_depth),
-                    None => Work::Unit("else", child_depth),
-                });
-                work.push(Work::Expr("then".into(), *then_branch, child_depth));
-                work.push(Work::Expr("condition".into(), *condition, child_depth));
-            }
-            ExprKind::Block { statements, tail } => {
-                work.push(match tail {
-                    Some(tail) => Work::Expr("tail".into(), *tail, child_depth),
-                    None => Work::Unit("tail", child_depth),
-                });
-                for statement in body.statements(*statements).iter().rev() {
-                    work.push(Work::Statement(statement, child_depth));
-                }
+        }
+        Op::Call(_) => {
+            for (index, &input) in inputs.iter().enumerate() {
+                dump_node(analysis, shape, &format!("arg[{index}]"), input, child, out);
             }
         }
     }

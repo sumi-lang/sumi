@@ -3,52 +3,72 @@ frontend errors: 0 (see frontend.snap)
 semantic errors: 15
 
 fn value@0..21 () -> int ∈ [1, 1]
-  body: int 1 : int @20..21
+  result: copy : int @14..17
+    value: int 1 : int @20..21
 
 fn action@22..36 () -> unit ∈ unit
-  body: block : unit @34..36
-    tail: unit (implicit)
+  result: copy : unit @22..36
+    value: unit : unit @34..36
 
 fn accepted@37..197 () -> int ∈ [1, 1]
-  body: block : int @58..197
-    let u@68..69: unit @64..80
-      initializer: call action@22..36 (callee @72..78) : unit @72..80
-    discard @85..86
-      value: read u@68..69 : unit @85..86
-    discard @91..94
-      value: read u@68..69 : unit @92..93
-    discard @99..107
-      value: call action@22..36 (callee @99..105) : unit @99..107
-    discard @112..122
-      value: call action@22..36 (callee @113..119) : unit @113..121
-    discard @127..129
-      value: block : unit @127..129
-        tail: unit (implicit)
-    discard @134..144
-      value: if : unit @134..144
+  result: copy : int @54..57
+    value:
+      let u@68..69: unit @64..80
+        initializer: call action@22..36 : unit @72..80
+      discard: call action@22..36 : unit @99..107
+      discard: call action@22..36 : unit @113..121
+      discard: unit : unit @127..129
+      discard: if : unit @134..144
         condition: bool true : bool @137..141
-        then: block : unit @142..144
-          tail: unit (implicit)
+        then: unit : unit @142..144
         else: unit (implicit)
-    discard @149..160
-      value: call value@0..21 (callee @153..158) : int @153..160
-    discard @165..173
-      value: bool true : bool @169..173
-    discard @178..183
-      value: read u@68..69 : unit @182..183
-    tail: call value@0..21 (callee @188..193) : int @188..195
+      discard: call value@0..21 : int @153..160
+      discard: bool true : bool @169..173
+      tail: call value@0..21 : int @188..195
 
 fn rejected@198..340 () -> int ∈ [0, 0]
-  body: unavailable
+  result: copy : int @215..218
+    value:
+      let x@229..230: int @225..234
+        initializer: int 1 : int @233..234
+      discard: eager + : int @253..258
+        lhs: int 1 : int @253..254
+        rhs: int 2 : int @257..258
+      discard: bool true : bool @263..267
+      discard: call value@0..21 : int @272..279
+      discard: call value@0..21 : int @285..292
+      discard: int 1 : int @300..301
+      discard: if : int @308..332
+        condition: bool true : bool @311..315
+        then: int 1 : int @318..319
+        else: int 2 : int @329..330
+      tail: int 0 : int @337..338
 
 fn failed_expressions@341..421 () -> unit ∈ ∅
-  body: unavailable
+  result: copy : unit @341..421
+    value:
+      discard: hole : ? @371..378
+      discard: eager + : int @383..391
+        lhs: int 1 : int @383..384
+        rhs: bool true : ? @387..391
+      discard: if : unit @396..409
+        condition: bool true : bool @399..403
+        then: int 1 : ? @406..407
+        else: unit (implicit)
+      discard: int 0 : int @418..419
+      tail: unit : unit @365..421
 
 fn nested_failure@422..479 () -> unit ∈ unit
-  body: unavailable
+  result: copy : unit @422..479
+    value:
+      discard: call value@0..21 : int @450..457
+      discard: int 2 : int @464..465
+      discard: int 0 : int @476..477
+      tail: unit : unit @442..479
 
 fn tail_requires_unit@480..519 () -> unit ∈ ∅
-  body: unavailable
+  result: copy : unit @480..519
+    value: call value@0..21 : ? @510..517
 
 == semantic diagnostics ==
 error[semantic/unused-value]: unused value of type int; use `_ =` to discard it

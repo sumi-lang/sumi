@@ -5,37 +5,41 @@ semantic errors: 0
 fn pair@0..43 (int ∈ [1, +∞), int ∈ [2, +∞)) -> int ∈ [12, +∞)
   param a@8..9: int
   param b@16..17: int
-  body: eager + : int @33..43
-    lhs: eager * : int @33..39
-      lhs: read a@8..9 : int @33..34
-      rhs: int 10 : int @37..39
-    rhs: read b@16..17 : int @42..43
+  result: copy : int @27..30
+    value: eager + : int @33..43
+      lhs: eager * : int @33..39
+        lhs: read a@8..9 : int
+        rhs: int 10 : int @37..39
+      rhs: read b@16..17 : int
 
 fn left_to_right@44..100 () -> int ∈ [12, +∞)
-  body: call pair@0..43 (callee @72..76) : int @72..100
-    arg[0]: call pair@0..43 (callee @77..81) : int @77..87
-      arg[0]: int 1 : int @82..83
-      arg[1]: int 2 : int @85..86
-    arg[1]: call pair@0..43 (callee @89..93) : int @89..99
-      arg[0]: int 3 : int @94..95
-      arg[1]: int 4 : int @97..98
+  result: copy : int @66..69
+    value: call pair@0..43 : int @72..100
+      arg[0]: call pair@0..43 : int @77..87
+        arg[0]: int 1 : int @82..83
+        arg[1]: int 2 : int @85..86
+      arg[1]: call pair@0..43 : int @89..99
+        arg[0]: int 3 : int @94..95
+        arg[1]: int 4 : int @97..98
 
 fn operands@101..148 () -> int ∈ [87, 87]
-  body: eager - : int @124..148
-    lhs: eager - : int @124..136
-      lhs: eager - : int @124..132
-        lhs: int 100 : int @124..127
-        rhs: int 10 : int @130..132
-      rhs: int 1 : int @135..136
-    rhs: eager % : int @139..148
-      lhs: eager * : int @139..144
-        lhs: int 2 : int @139..140
-        rhs: int 3 : int @143..144
-      rhs: int 4 : int @147..148
+  result: copy : int @118..121
+    value: eager - : int @124..148
+      lhs: eager - : int @124..136
+        lhs: eager - : int @124..132
+          lhs: int 100 : int @124..127
+          rhs: int 10 : int @130..132
+        rhs: int 1 : int @135..136
+      rhs: eager % : int @139..148
+        lhs: eager * : int @139..144
+          lhs: int 2 : int @139..140
+          rhs: int 3 : int @143..144
+        rhs: int 4 : int @147..148
 
 fn truthy@149..186 () -> bool ∈ {true}
-  body: eager == : bool @171..186
-    lhs: eager < : bool @172..177
-      lhs: int 1 : int @172..173
-      rhs: int 2 : int @176..177
-    rhs: bool true : bool @182..186
+  result: copy : bool @164..168
+    value: eager == : bool @171..186
+      lhs: eager < : bool @172..177
+        lhs: int 1 : int @172..173
+        rhs: int 2 : int @176..177
+      rhs: bool true : bool @182..186

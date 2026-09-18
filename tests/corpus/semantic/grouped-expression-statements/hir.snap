@@ -3,10 +3,24 @@ frontend errors: 0 (see frontend.snap)
 semantic errors: 6
 
 fn value@0..21 () -> int ∈ [1, 1]
-  body: int 1 : int @20..21
+  result: copy : int @14..17
+    value: int 1 : int @20..21
 
 fn sequence@22..179 () -> int ∈ [4, 4]
-  body: unavailable
+  result: copy : int @39..42
+    value:
+      discard: call value@0..21 : int @49..56
+      discard: call value@0..21 : int @62..69
+      discard: call value@0..21 : int @77..84
+      discard: if : int @92..116
+        condition: bool true : bool @95..99
+        then: int 1 : int @102..103
+        else: int 2 : int @113..114
+      discard: int 3 : int @126..127
+      let action@140..146: int @136..150
+        initializer: int 4 : int @149..150
+      discard: call value@0..21 : int @156..163
+      tail: read action@140..146 : int
 
 == semantic diagnostics ==
 error[semantic/unused-value]: unused value of type int; use `_ =` to discard it

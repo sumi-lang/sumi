@@ -3,4 +3,7 @@ frontend errors: 3 (see frontend.snap)
 semantic errors: 0
 
 fn f@0..26 signature: unavailable
-  body: unavailable
+  param a@5..6: ?
+  body:
+    let x@18..19: hole : ? @14..24
+    tail: unit : unit @12..26

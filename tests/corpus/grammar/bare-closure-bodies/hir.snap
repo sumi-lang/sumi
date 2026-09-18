@@ -3,28 +3,33 @@ frontend errors: 0 (see frontend.snap)
 semantic errors: 5
 
 fn outer@0..21 signature: unavailable
-  body: unavailable
+  body: hole : ? @13..21
 
 fn nested@22..64 signature: unavailable
-  body: unavailable
+  body: hole : ? @40..64
 
 fn typed@65..101 signature: unavailable
-  body: unavailable
+  body: hole : ? @78..101
 
 fn spaced@102..125 signature: unavailable
-  body: unavailable
+  body: hole : ? @116..125
 
 fn operand@126..153 signature: unavailable
-  body: unavailable
+  body: eager + : ? @141..153
+    lhs: int 0 : int @141..142
+    rhs: hole : ? @145..153
 
 fn next@154..174 () -> int ∈ [2, 2]
-  body: int 2 : int @173..174
+  result: copy : int @167..170
+    value: int 2 : int @173..174
 
 fn a@175..192 () -> int ∈ [1, 1]
-  body: int 1 : int @191..192
+  result: copy : int @185..188
+    value: int 1 : int @191..192
 
 fn b@193..210 () -> int ∈ [2, 2]
-  body: int 2 : int @209..210
+  result: copy : int @203..206
+    value: int 2 : int @209..210
 
 == semantic diagnostics ==
 error[semantic/unsupported]: construct is not supported by scalar checking
