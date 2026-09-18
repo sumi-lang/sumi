@@ -19,8 +19,8 @@ fn unknown@65..90 signature: unavailable
     value: unit : unit @88..90
 
 fn suppressed@91..124 signature: unavailable
-  body: call unknown@65..90 : ? @109..124
-    arg[0]: hole : ? @117..123
+  body: hole : ? @109..124
+    part[0]: hole : ? @117..123
 
 fn typed@125..161 (int ∈ ∅, bool ∈ ∅) -> int ∈ ∅
   param x@134..135: int
@@ -30,10 +30,10 @@ fn typed@125..161 (int ∈ ∅, bool ∈ ∅) -> int ∈ ∅
 
 fn wrong@162..205 () -> int ∈ ∅
   result: copy : int @176..179
-    value: call typed@125..161 : ? @182..205
-      arg[0]: bool true : ? @188..192
-      arg[1]: int 1 : ? @194..195
-      arg[2]: hole : ? @197..204
+    value: hole : ? @182..205
+      part[0]: bool true : ? @188..192
+      part[1]: int 1 : ? @194..195
+      part[2]: hole : ? @197..204
 
 fn hidden@206..258 () -> int ∈ ∅
   result: copy : int @221..224
@@ -56,9 +56,9 @@ fn scaled@302..334 (int ∈ ∅) -> int ∈ ∅
 
 fn extra@335..367 () -> int ∈ ∅
   result: copy : int @349..352
-    value: call scaled@302..334 : ? @355..367
-      arg[0]: int 3 : int @362..363
-      arg[1]: int 4 : int @365..366
+    value: hole : ? @355..367
+      part[0]: int 3 : int @362..363
+      part[1]: int 4 : int @365..366
 
 == semantic diagnostics ==
 error[semantic/duplicate-name]: duplicate function `duplicate`

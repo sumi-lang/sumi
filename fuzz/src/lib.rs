@@ -223,6 +223,11 @@ pub fn check_graph(analysis: &sumi_hir::Analysis) {
         if let Some(arity) = arity {
             assert_eq!(inputs.len(), arity);
         }
+        for &input in inputs {
+            if matches!(graph.node(input).op, Op::Entry | Op::Then | Op::Else) {
+                assert!(matches!(node.op, Op::Then | Op::Else | Op::Unit));
+            }
+        }
         if node.name.is_some() {
             assert!(matches!(node.op, Op::Param(_) | Op::Copy | Op::Hole));
         }
@@ -264,6 +269,10 @@ pub fn check_graph(analysis: &sumi_hir::Analysis) {
     for id in graph.region_ids() {
         let region = graph.region(id);
         let result = region.result().index();
+        assert!(!matches!(
+            graph.node(region.result()).op,
+            Op::Entry | Op::Then | Op::Else
+        ));
         assert_eq!(owner[region.context.index()], owner[result]);
         assert!(owner[result].is_some());
         let Some(first) = region.nodes().next() else {

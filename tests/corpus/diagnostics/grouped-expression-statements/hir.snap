@@ -20,9 +20,9 @@ fn rejected@22..103 () -> int ∈ [-1, -1]
 fn separate@104..155 () -> unit ∈ ∅
   result: copy : unit @104..155
     value:
+      discard: hole : ? @124..129
       discard: call value@0..21 : int @135..142
       discard: int 1 : int @152..153
-      discard: hole : ? @124..129
       tail: unit : unit @118..155
 
 fn accepted@156..216 () -> int ∈ [2, 2]

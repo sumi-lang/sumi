@@ -109,6 +109,16 @@ fn graph_invariant(analysis: &Analysis) {
         if let Some(arity) = arity {
             assert_eq!(inputs.len(), arity, "{id:?} {:?}", node.op);
         }
+        // A context is read only by what it gates: another context, or the
+        // unit a tail-less block holds while it is live.
+        for &input in inputs {
+            if matches!(graph.node(input).op, Op::Entry | Op::Then | Op::Else) {
+                assert!(
+                    matches!(node.op, Op::Then | Op::Else | Op::Unit),
+                    "{id:?} reads a context"
+                );
+            }
+        }
         if node.name.is_some() {
             assert!(matches!(node.op, Op::Param(_) | Op::Copy | Op::Hole));
         }
@@ -155,6 +165,13 @@ fn graph_invariant(analysis: &Analysis) {
     for id in graph.region_ids() {
         let region = graph.region(id);
         let result = region.result().index();
+        assert!(
+            !matches!(
+                graph.node(region.result()).op,
+                Op::Entry | Op::Then | Op::Else
+            ),
+            "{id:?} results in a context"
+        );
         let owner_of = |index: usize| owner[index].expect("every node belongs to a function");
         assert_eq!(owner_of(region.context.index()), owner_of(result));
         // An empty region is a read of something defined outside it.

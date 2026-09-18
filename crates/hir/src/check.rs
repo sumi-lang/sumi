@@ -380,6 +380,7 @@ impl<'s> Source<'s> {
 }
 
 struct Parameter<'s> {
+    node: NodeIdx,
     name: Option<(&'s str, NodeIdx)>,
     ty: Option<Ty>,
     class: Option<Var>,
@@ -441,7 +442,12 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
                 let name = source.name(param.name(tree));
                 let class =
                     ty.map(|ty| typing.known(ty, name.map_or(param.node(), |(_, node)| node)));
-                params.push(Parameter { name, ty, class });
+                params.push(Parameter {
+                    node: param.node(),
+                    name,
+                    ty,
+                    class,
+                });
             }
         }
         let classes_start = param_classes.len();
@@ -791,6 +797,14 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     analysis
 }
 
+/// The eager operator a syntactic one is, if it is not lazy.
+fn eager(op: sumi_syntax::BinaryOp) -> Option<BinaryOp> {
+    match ExprKind::binary(op, ExprId::new(0), ExprId::new(0)) {
+        ExprKind::Binary { op, .. } => Some(op),
+        _ => None,
+    }
+}
+
 /// An index into one of a body's lists, which the syntax tree's node count
 /// bounds.
 fn run(index: usize) -> u32 {
@@ -900,12 +914,12 @@ enum Work {
     Branches(NodeIdx),
     /// A lazy operator whose left operand is walked: open the right one's.
     Rhs(NodeIdx),
-    /// Enter `region` in `context`, narrowing the locals `guard` compares
-    /// for the reads inside it.
+    /// Enter `region` in `context`, narrowing the locals the condition
+    /// `guard` compares, holding in its sense, for the reads inside it.
     Push {
         context: Var,
         region: RegionId,
-        guard: Option<(NodeIdx, bool)>,
+        guard: (NodeIdx, bool),
     },
     /// Leave `region`, whose value is what `root` built.
     Pop {
@@ -982,6 +996,8 @@ struct Builder<'a, 's> {
     /// Statements completed but not yet claimed by their block, in source
     /// order.
     pending: Vec<(NodeIdx, Statement)>,
+    /// The inputs of the node being pushed, when there are more than two.
+    inputs: Vec<NodeId>,
 }
 
 impl<'a, 's> Builder<'a, 's> {
@@ -1031,6 +1047,7 @@ impl<'a, 's> Builder<'a, 's> {
             first: NameMap::default(),
             work: Vec::new(),
             pending: Vec::new(),
+            inputs: Vec::new(),
         }
     }
     fn build(
@@ -1070,13 +1087,8 @@ impl<'a, 's> Builder<'a, 's> {
         for (index, param) in parameters.into_iter().enumerate() {
             let index = u32::try_from(index).expect("parameter count fits u32");
             let name = param.name.map(|(_, node)| self.source.span(node));
-            let node = self.graph.push(
-                Op::Param(index),
-                &[],
-                name.unwrap_or_else(|| self.source.span(item_node)),
-                name,
-            );
-            self.node_classes.push(param.class);
+            let node = self.push(param.node, Op::Param(index), &[], name);
+            self.node_classes[node.index()] = param.class;
             if let Some((name, name_node)) = param.name {
                 if let Some(&span) = self.first.get(name) {
                     self.source.error(
@@ -1137,9 +1149,7 @@ impl<'a, 's> Builder<'a, 's> {
                         self.contexts.push((context, node));
                         self.marks.push(self.refinements.len());
                         self.graph.enter(region);
-                        if let Some((cond, sense)) = guard {
-                            self.refine(cond, sense);
-                        }
+                        self.refine(guard.0, guard.1);
                     }
                     Work::Pop { region, root } => {
                         let result = self.node_of(root);
@@ -1210,26 +1220,44 @@ impl<'a, 's> Builder<'a, 's> {
         self.nodes_of[node.to_usize()] = Some(id);
         id
     }
+    /// A context node for the region whose syntax is `region`, derived
+    /// from `condition` under `parent`. It is not what `region` built: the
+    /// region's own node is its value, which the context gates.
+    fn context_at(&mut self, region: NodeIdx, op: Op, condition: NodeId, parent: NodeId) -> NodeId {
+        let id = self
+            .graph
+            .push(op, &[condition, parent], self.source.span(region), None);
+        self.node_classes.push(None);
+        id
+    }
     /// The graph node `node` built, or a hole where nothing was: syntax
-    /// the walk refused or could not reach.
+    /// the walk could not reach.
     fn node_of(&mut self, node: NodeIdx) -> NodeId {
         match self.nodes_of[node.to_usize()] {
             Some(id) => id,
             None => self.push(node, Op::Hole, &[], None),
         }
     }
-    /// A hole at the call `node` over the arguments it walked.
+    /// A hole at `node`, over nothing: syntax the walk refuses.
+    fn hole(&mut self, node: NodeIdx) -> NodeId {
+        self.push(node, Op::Hole, &[], None)
+    }
+    /// A hole at the call `node` over what it walked: its callee, when
+    /// that built or was holed, and its arguments.
     fn holed(&mut self, node: NodeIdx) {
         let tree = self.source.tree;
-        let list = ast::CallExpr::cast(tree, node)
-            .unwrap()
-            .arg_list(tree)
-            .unwrap();
-        let inputs: Vec<NodeId> = list
-            .args(tree)
-            .filter_map(|arg| self.nodes_of[arg.node().to_usize()])
-            .collect();
+        let call = ast::CallExpr::cast(tree, node).unwrap();
+        let callee = self.source.peel(call.callee(tree).unwrap()).node();
+        let list = call.arg_list(tree).unwrap();
+        let mut inputs = std::mem::take(&mut self.inputs);
+        inputs.clear();
+        inputs.extend(self.nodes_of[callee.to_usize()]);
+        for arg in list.args(tree) {
+            let arg = self.node_of(arg.node());
+            inputs.push(arg);
+        }
         self.push(node, Op::Hole, &inputs, None);
+        self.inputs = inputs;
     }
     fn open_scope(&mut self) {
         if self.depth == self.scopes.len() {
@@ -1280,22 +1308,20 @@ impl<'a, 's> Builder<'a, 's> {
     fn class(&self, expr: ExprId) -> Var {
         self.classes[expr.index()]
     }
-    /// The class a read of `local` has here: the innermost refinement that
-    /// covers it, or the local's own.
-    fn current_class(&self, local: LocalId) -> Var {
+    /// The class and the node a read of `local` has here: the innermost
+    /// refinement that covers it, or the local's own.
+    fn current(&self, local: LocalId) -> (Var, NodeId) {
         self.refinements
             .iter()
             .rev()
             .find(|(refined, _, _)| *refined == local)
-            .map_or(self.locals[local.index()].class, |(_, class, _)| *class)
-    }
-    /// The node a read of `local` reads here, likewise.
-    fn current_node(&self, local: LocalId) -> NodeId {
-        self.refinements
-            .iter()
-            .rev()
-            .find(|(refined, _, _)| *refined == local)
-            .map_or(self.locals[local.index()].node, |(_, _, node)| *node)
+            .map_or_else(
+                || {
+                    let local = &self.locals[local.index()];
+                    (local.class, local.node)
+                },
+                |(_, class, node)| (*class, *node),
+            )
     }
     fn context(&self) -> Var {
         self.contexts
@@ -1384,16 +1410,12 @@ impl<'a, 's> Builder<'a, 's> {
                         self.refine(rhs, sense);
                     }
                     Lt | Le | Gt | Ge | Eq | Ne => {
-                        let ExprKind::Binary { op, .. } =
-                            ExprKind::binary(op, ExprId::new(0), ExprId::new(0))
-                        else {
-                            unreachable!("a comparison is eager")
-                        };
+                        let op = eager(op).expect("a comparison is eager");
                         for (side, other, local_is_lhs) in [(lhs, rhs, true), (rhs, lhs, false)] {
                             if let (Some(local), Some(other_value)) =
                                 (self.read(side), self.value(other))
                             {
-                                let class = self.current_class(local);
+                                let (class, read) = self.current(local);
                                 let other_class = self.class(other_value);
                                 let edge = RangeEdge::Refine {
                                     op,
@@ -1402,7 +1424,7 @@ impl<'a, 's> Builder<'a, 's> {
                                     origin: node,
                                 };
                                 let refined = self.typing.refine(class, other_class, edge);
-                                let inputs = [self.current_node(local), self.node_of(other)];
+                                let inputs = [read, self.node_of(other)];
                                 let read = self.graph.push(
                                     Op::Refine {
                                         op,
@@ -1423,9 +1445,9 @@ impl<'a, 's> Builder<'a, 's> {
             }
             NodeKind::NameRef => {
                 if let Some(local) = self.read(node) {
-                    let class = self.current_class(local);
+                    let (class, read) = self.current(local);
                     let refined = self.typing.refine_bool(class, sense);
-                    let inputs = [self.current_node(local)];
+                    let inputs = [read];
                     let read =
                         self.graph
                             .push(Op::Exactly(sense), &inputs, self.source.span(node), None);
@@ -1458,12 +1480,12 @@ impl<'a, 's> Builder<'a, 's> {
         };
         let cond_node = self.node_of(cond);
         let then_region = {
-            let context = self.push(then_node, Op::Then, &[cond_node, parent_node], None);
+            let context = self.context_at(then_node, Op::Then, cond_node, parent_node);
             self.node_classes[context.index()] = Some(then_context);
             self.graph.open(context)
         };
         let else_region = else_node.map(|else_node| {
-            let context = self.push(else_node, Op::Else, &[cond_node, parent_node], None);
+            let context = self.context_at(else_node, Op::Else, cond_node, parent_node);
             self.node_classes[context.index()] = Some(else_context);
             self.graph.open(context)
         });
@@ -1480,7 +1502,7 @@ impl<'a, 's> Builder<'a, 's> {
             work.push(Work::Push {
                 context: else_context,
                 region: else_region,
-                guard: Some((cond, false)),
+                guard: (cond, false),
             });
         }
         work.push(Work::Pop {
@@ -1491,7 +1513,7 @@ impl<'a, 's> Builder<'a, 's> {
         work.push(Work::Push {
             context: then_context,
             region: then_region,
-            guard: Some((cond, true)),
+            guard: (cond, true),
         });
     }
     /// The left operand of the lazy operator at `node` is walked: open the
@@ -1514,7 +1536,7 @@ impl<'a, 's> Builder<'a, 's> {
             None => parent,
         };
         let lhs_node = self.node_of(lhs);
-        let context_node = self.push(rhs, op, &[lhs_node, parent_node], None);
+        let context_node = self.context_at(rhs, op, lhs_node, parent_node);
         self.node_classes[context_node.index()] = Some(context);
         let region = self.graph.open(context_node);
         self.lazy_regions.push(region);
@@ -1523,7 +1545,7 @@ impl<'a, 's> Builder<'a, 's> {
         work.push(Work::Push {
             context,
             region,
-            guard: Some((lhs, and)),
+            guard: (lhs, and),
         });
     }
     /// An expression of the type `class` resolves to, at a node whose
@@ -1534,8 +1556,7 @@ impl<'a, 's> Builder<'a, 's> {
         let id = ExprId::new(self.exprs.len());
         self.exprs.push(Expr {
             kind,
-            // The graph node at the same syntax already located it.
-            origin: self.graph.node(graph_node).origin,
+            origin: self.source.span(node),
             // Resolved when the body is published.
             ty: Ty::Unit,
         });
@@ -1577,6 +1598,7 @@ impl<'a, 's> Builder<'a, 's> {
             kind,
         });
     }
+    /// Refuse the construct at `node`, which leaves a hole.
     fn unsupported(&mut self, node: NodeIdx) {
         self.source.error(
             node,
@@ -1584,6 +1606,7 @@ impl<'a, 's> Builder<'a, 's> {
             "construct is not supported by scalar checking",
             None,
         );
+        self.hole(node);
         self.failed = true;
     }
     fn enter(&mut self, node: NodeIdx, work: &mut Vec<Work>) {
@@ -1620,6 +1643,7 @@ impl<'a, 's> Builder<'a, 's> {
                 self.open_scope();
             }
             _ if error => {
+                self.hole(node);
                 self.failed = true;
                 return;
             }
@@ -1757,6 +1781,7 @@ impl<'a, 's> Builder<'a, 's> {
             .flags(raw)
             .contains(TokenFlags::MALFORMED_NUMBER)
         {
+            self.hole(origin);
             return None;
         }
         let magnitude: Int = self
@@ -1908,8 +1933,8 @@ impl<'a, 's> Builder<'a, 's> {
                 let name = self.source.text(node);
                 match self.lookup(name) {
                     Some((Some(local), _)) => {
-                        let class = self.current_class(local);
-                        self.nodes_of[node.to_usize()] = Some(self.current_node(local));
+                        let (class, read) = self.current(local);
+                        self.nodes_of[node.to_usize()] = Some(read);
                         self.emit(node, ExprKind::Local(local), class);
                     }
                     // A binding without a type is still what the name reads.
@@ -1927,6 +1952,7 @@ impl<'a, 's> Builder<'a, 's> {
                                 format!("unknown name `{name}`"),
                                 None,
                             );
+                            self.hole(node);
                         }
                         return None;
                     }
@@ -2023,12 +2049,8 @@ impl<'a, 's> Builder<'a, 's> {
                     }
                     _ => {
                         let rhs_graph = self.node_of(rhs_node);
-                        let ExprKind::Binary { op: eager, .. } =
-                            ExprKind::binary(op, ExprId::new(0), ExprId::new(0))
-                        else {
-                            unreachable!("an eager operator")
-                        };
-                        self.push(node, Op::Binary(eager), &[lhs_graph, rhs_graph], None);
+                        let op = eager(op).expect("an eager operator");
+                        self.push(node, Op::Binary(op), &[lhs_graph, rhs_graph], None);
                     }
                 }
                 // `==` and `!=` compare like with like: whichever operand
@@ -2181,50 +2203,64 @@ impl<'a, 's> Builder<'a, 's> {
             .unwrap()
             .arg_list(tree)
             .unwrap();
-        let inputs: Vec<NodeId> = list
-            .args(tree)
-            .map(|arg| self.node_of(arg.node()))
-            .collect();
-        self.push(node, Op::Call(target), &inputs, None);
-        let params = function.params.as_ref()?;
-        let param_classes = &self.param_classes[function.param_classes.clone()];
-        let entry = function.entry;
-        let item = function.item;
-        let result = function.result;
-        self.typing.flow(context, entry, RangeEdge::Enter);
+        let mut inputs = std::mem::take(&mut self.inputs);
+        inputs.clear();
+        for arg in list.args(tree) {
+            let arg = self.node_of(arg.node());
+            inputs.push(arg);
+        }
         // Every argument that exists is held to its parameter, arity aside.
         // Arguments finish before their call does, so a call's run of the
         // body's argument list is contiguous.
         let start = self.args.len();
         let mut complete = true;
         let mut count = 0;
-        for (index, arg) in list.args(tree).enumerate() {
-            count += 1;
-            let arg = arg.node();
-            match self.value(arg) {
-                Some(value) => {
-                    if let Some(&expected) = params.get(index) {
-                        self.require(arg, value, Expected::Ty(expected), Some(item));
+        if let Some(params) = function.params.as_ref() {
+            // The callee is reached, whole call or not: what it does is
+            // checked on the strength of any call to it.
+            self.typing.flow(context, function.entry, RangeEdge::Enter);
+            for (index, arg) in list.args(tree).enumerate() {
+                count += 1;
+                let arg = arg.node();
+                match self.value(arg) {
+                    Some(value) => {
+                        if let Some(&expected) = params.get(index) {
+                            self.require(arg, value, Expected::Ty(expected), Some(function.item));
+                        }
+                        self.args.push(value);
                     }
-                    self.args.push(value);
+                    None => complete = false,
                 }
-                None => complete = false,
+            }
+            if count != params.len() {
+                self.source.error(
+                    node,
+                    codes::ARITY,
+                    format!("expected {} arguments, found {count}", params.len()),
+                    Some((self.source.span(function.item), "declared here")),
+                );
             }
         }
-        if count != params.len() {
-            self.source.error(
-                node,
-                codes::ARITY,
-                format!("expected {} arguments, found {count}", params.len()),
-                Some((self.source.span(item), "declared here")),
-            );
-        }
-        if count != params.len() || !complete {
+        // A call is a call when its callee has parameters to hold it to
+        // and every argument is there; otherwise it never happens, and is
+        // a hole over what its arguments built.
+        let whole = function
+            .params
+            .as_ref()
+            .is_some_and(|params| count == params.len() && complete);
+        self.push(
+            node,
+            if whole { Op::Call(target) } else { Op::Hole },
+            &inputs,
+            None,
+        );
+        self.inputs = inputs;
+        if !whole {
             self.args.truncate(start);
             return None;
         }
-        // A call that is not whole never happens, so only now do the
-        // arguments reach the parameters.
+        let param_classes = &self.param_classes[function.param_classes.clone()];
+        // Only now do the arguments reach the parameters.
         for ((arg, &value), &param) in list.args(tree).zip(&self.args[start..]).zip(param_classes) {
             let edge = RangeEdge::Argument(arg.node());
             self.typing.derive(self.class(value), context, param, edge);
@@ -2233,7 +2269,7 @@ impl<'a, 's> Builder<'a, 's> {
             start: run(start),
             end: run(self.args.len()),
         };
-        let class = self.typing.call(result?, node);
+        let class = self.typing.call(function.result?, node);
         let id = self.emit(
             node,
             ExprKind::Call {

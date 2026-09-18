@@ -10,7 +10,12 @@ fn answer@0..32 () -> int ∈ [42, 42]
 fn twice@33..89 (int ∈ [21, 21]) -> int ∈ [42, 42]
   param x@42..43: int
   result: copy : int @53..56
-    value: read y@67..68 : int
+    value:
+      let y@67..68: int @63..81
+        initializer: eager * : int @76..81
+          lhs: read x@42..43 : int
+          rhs: int 2 : int @80..81
+      tail: read y@67..68 : int
 
 fn cafe@90..119 (bool ∈ ∅) -> bool ∈ ∅
   param e@98..99: bool

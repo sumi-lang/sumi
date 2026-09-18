@@ -11,10 +11,10 @@ fn f@0..85 () -> int ∈ ∅
         then: hole : ? @35..38
         else: unit (implicit)
       discard: hole : ? @47..50
+      discard: hole : ? @57..66
       discard: eager + : ? @71..76
         lhs: hole : ? @71..72
         rhs: hole : ? @75..76
-      discard: hole : ? @57..66
       tail: int 42 : int @81..83
 
 == semantic diagnostics ==

@@ -192,9 +192,9 @@ fn arity@944..977 (int ∈ ∅) -> int ∈ ∅
 
 fn wrong_arity@978..1015 () -> int ∈ ∅
   result: copy : int @998..1001
-    value: call arity@944..977 : ? @1004..1015
-      arg[0]: int 0 : int @1010..1011
-      arg[1]: int 1 : int @1013..1014
+    value: hole : ? @1004..1015
+      part[0]: int 0 : int @1010..1011
+      part[1]: int 1 : int @1013..1014
 
 == semantic diagnostics ==
 error[semantic/division-by-zero]: division by zero

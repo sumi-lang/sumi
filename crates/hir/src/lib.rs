@@ -196,7 +196,8 @@ pub struct Function {
     ranges: Option<Ranges>,
     body: Option<Body>,
     /// The function's run of the graph: its entry context, then a node
-    /// per parameter, then its body region's nodes.
+    /// per parameter, then its body region's nodes, then, for a declared
+    /// result, the copy the body's value is held in.
     nodes: std::ops::Range<u32>,
     arity: u32,
     region: RegionId,

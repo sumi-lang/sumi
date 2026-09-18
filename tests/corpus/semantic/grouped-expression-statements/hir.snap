@@ -17,6 +17,8 @@ fn sequence@22..179 () -> int ∈ [4, 4]
         then: int 1 : int @102..103
         else: int 2 : int @113..114
       discard: int 3 : int @126..127
+      let action@140..146: int @136..150
+        initializer: int 4 : int @149..150
       discard: call value@0..21 : int @156..163
       tail: read action@140..146 : int
 

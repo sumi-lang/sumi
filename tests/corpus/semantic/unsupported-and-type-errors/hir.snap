@@ -5,6 +5,7 @@ semantic errors: 12
 fn unsupported@0..59 () -> unit ∈ ∅
   result: copy : unit @0..59
     value:
+      discard: hole : ? @23..36
       let x@31..32: hole : ? @23..36
       discard: hole : ? @51..57
       tail: unit : unit @17..59
@@ -53,7 +54,9 @@ fn computed_call@308..384 () -> unit ∈ ∅
   result: copy : unit @308..384
     value:
       discard: hole : ? @337..382
-        part[0]: eager + : int @373..381
+        part[0]: hole : ? @338..362
+        part[1]: hole : ? @364..371
+        part[2]: eager + : int @373..381
           lhs: int 1 : int @373..374
           rhs: bool true : ? @377..381
       tail: unit : unit @327..384

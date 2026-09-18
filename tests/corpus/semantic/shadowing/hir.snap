@@ -6,6 +6,10 @@ fn shadow@0..100 (int ∈ ∅) -> int ∈ ∅
   param x@10..11: int
   result: copy : int @21..24
     value:
+      let x@35..36: int @31..44
+        initializer: eager + : int @39..44
+          lhs: read x@10..11 : int
+          rhs: int 1 : int @43..44
       let x@63..64: int @59..72
         initializer: eager * : int @67..72
           lhs: read x@35..36 : int

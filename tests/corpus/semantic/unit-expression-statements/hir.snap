@@ -47,6 +47,7 @@ fn rejected@198..340 () -> int ∈ [0, 0]
 fn failed_expressions@341..421 () -> unit ∈ ∅
   result: copy : unit @341..421
     value:
+      discard: hole : ? @371..378
       discard: eager + : int @383..391
         lhs: int 1 : int @383..384
         rhs: bool true : ? @387..391
@@ -55,7 +56,6 @@ fn failed_expressions@341..421 () -> unit ∈ ∅
         then: int 1 : ? @406..407
         else: unit (implicit)
       discard: int 0 : int @418..419
-      discard: hole : ? @371..378
       tail: unit : unit @365..421
 
 fn nested_failure@422..479 () -> unit ∈ unit

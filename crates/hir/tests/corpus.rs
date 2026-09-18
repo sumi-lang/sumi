@@ -193,7 +193,9 @@ fn dump(analysis: &Analysis, shape: &Shape, function: &Function, out: &mut Strin
 // `let`, a node nothing reads is a discard, and every other node prints
 // inline under the node that reads it, so the rendering follows use, never
 // the table's order. A read of a named node uses its declaration spelling
-// and origin; a read under a guard names the guard.
+// and origin; a read under a guard names the guard. A statement that only
+// reads a local, `_ = x` or a bare `x`, is an edge and no node, so it does
+// not print: what it demanded is in the diagnostics.
 fn dump_region(
     analysis: &Analysis,
     shape: &Shape,
@@ -205,16 +207,18 @@ fn dump_region(
     let graph = analysis.graph();
     let region_ref = graph.region(region);
     let result = region_ref.result();
+    // The result prints as the tail, unless it is a `let`, which prints as
+    // its statement and is read by the tail.
     let statements: Vec<NodeId> = region_ref
         .nodes()
-        .filter(|&node| shape.region_of[node.index()] == Some(region) && node != result)
+        .filter(|&node| shape.region_of[node.index()] == Some(region))
         .filter(|&node| {
             let named = graph.node(node).name.is_some();
             let contextual = matches!(
                 graph.node(node).op,
                 Op::Then | Op::Else | Op::Entry | Op::Refine { .. } | Op::Exactly(_)
             );
-            named || (!contextual && shape.users[node.index()] == 0)
+            named || (node != result && !contextual && shape.users[node.index()] == 0)
         })
         .collect();
     let indent = "  ".repeat(depth);

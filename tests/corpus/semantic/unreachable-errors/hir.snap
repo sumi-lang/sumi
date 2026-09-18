@@ -6,7 +6,7 @@ fn or_name@0..41 () -> bool ∈ ∅
   result: copy : bool @16..20
     value: lazy or : ? @23..41
       lhs: bool true : bool @23..27
-      rhs: else : ? @31..41
+      rhs: hole : ? @31..41
 
 fn and_type@42..76 () -> bool ∈ {false}
   result: copy : bool @59..63

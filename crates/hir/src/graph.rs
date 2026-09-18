@@ -71,7 +71,7 @@ pub enum Op {
     /// The function's parameter at `index`.
     Param(u32),
     /// Unit, held while its input, a context, is live: a block without a
-    /// tail, or an `if` without an else once `Join` has no else region.
+    /// tail. An `if` without an else is unit too, as its own `Join`.
     Unit,
     /// What could not be built, over whatever was built beneath it: a
     /// construct the checker refuses, a name it cannot resolve, syntax the

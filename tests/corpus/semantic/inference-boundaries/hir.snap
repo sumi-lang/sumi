@@ -22,9 +22,9 @@ fn recovered@85..112 () -> int ∈ ∅
   body: call grounded@57..84 : int @102..112
 
 fn bad_arguments@113..153 signature: unavailable
-  body: call spin@0..25 : ? @134..153
-    arg[0]: bool true : ? @139..143
-    arg[1]: hole : ? @145..152
+  body: hole : ? @134..153
+    part[0]: bool true : ? @139..143
+    part[1]: hole : ? @145..152
 
 fn bare@154..169 () -> unit ∈ ∅
   result: copy : unit @154..169
