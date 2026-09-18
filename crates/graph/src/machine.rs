@@ -16,7 +16,7 @@
 //! prove, a parameter's type on a graph it rejected, is not the machine's
 //! to hold a value to.
 
-use crate::{Domain, Fault, FunctionId, Graph, NodeId, Op, RegionId};
+use crate::{Concrete, Fault, FunctionId, Graph, NodeId, Op, RegionId};
 
 /// One unit of pending work.
 #[derive(Clone, Copy, Debug)]
@@ -93,7 +93,7 @@ pub struct Machine<'a, D> {
     outcome: Option<Outcome<D>>,
 }
 
-impl<'a, D: Domain> Machine<'a, D> {
+impl<'a, D: Concrete> Machine<'a, D> {
     /// A run about to call `function` on `args`, one per parameter, that
     /// will hold at most `bound` frames at once.
     pub fn new(graph: &'a Graph, function: FunctionId, args: &[D], bound: Option<u64>) -> Self {
@@ -302,12 +302,17 @@ impl<'a, D: Domain> Machine<'a, D> {
                 }
             }
             Control::Take(node, from) => {
-                let value = self.value(from).clone();
-                // The right operand of `&&` or `||` is the operator's
-                // value, which must be a boolean like the left.
-                if matches!(self.graph.node(node).op, Op::And { .. } | Op::Or { .. }) {
-                    value.truth().map_err(|fault| Refusal::of(fault, node))?;
-                }
+                // A lazy operator whose right operand ran is the operator
+                // over both operands; a branch is its arm's value.
+                let value = match self.graph.node(node).op {
+                    Op::And { .. } | Op::Or { .. } => {
+                        let and = matches!(self.graph.node(node).op, Op::And { .. });
+                        let lhs = self.value(self.graph.inputs(node)[0]);
+                        D::lazy(and, lhs, self.value(from))
+                            .map_err(|fault| Refusal::of(fault, node))?
+                    }
+                    _ => self.value(from).clone(),
+                };
                 self.fill(node, value);
             }
             Control::Enter(node) => {

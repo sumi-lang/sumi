@@ -25,10 +25,9 @@ use sumi_text::Span;
 
 use crate::check::{Placed, PlacedCall};
 use crate::flows;
-use crate::ranges::Ints;
 use crate::solver::components;
 use crate::typing::Typing;
-use crate::{BinaryOp, FunctionId, Graph, Int, NodeId, Op};
+use crate::{BinaryOp, FunctionId, Graph, Int, Ints, NodeId, Op};
 
 /// A cycle with no measure: its members, and what each call inside it does
 /// to the parameter that came closest to being the measure.

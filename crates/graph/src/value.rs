@@ -1,5 +1,6 @@
-//! The values a run computes: the domain an evaluation runs in, and the
-//! concrete one, a scalar per type.
+//! The values a graph is read in: the domain every operator has one
+//! semantics in, and the concrete one, a scalar per type. The may-domain
+//! beside it, a set per type, is [`May`](crate::May).
 
 use std::fmt;
 
@@ -15,10 +16,13 @@ pub enum Fault {
     Type,
 }
 
-/// A domain of values an evaluation of the graph runs in: what each leaf
-/// is, what each operator does, and which way a condition goes. The
-/// concrete domain is [`Value`]. An operation faults rather than
-/// panics, so a graph the checker rejected still runs to a refusal.
+/// A domain of values the graph is read in: what each leaf is and what
+/// each operator does, once, for every reader. The concrete domain is
+/// [`Value`], one value per type, in which an operation faults rather
+/// than panics, so a graph the checker rejected still runs to a refusal.
+/// The may-domain is [`May`](crate::May), a set of values per type, in
+/// which every operator contains the concrete one on every member of its
+/// operands and none faults.
 pub trait Domain: Clone {
     fn int(value: &Int) -> Self;
     fn bool(value: bool) -> Self;
@@ -27,36 +31,57 @@ pub trait Domain: Clone {
     fn not(&self) -> Result<Self, Fault>;
     /// An eager operator over two values.
     fn binary(op: BinaryOp, lhs: &Self, rhs: &Self) -> Result<Self, Fault>;
+    /// `&&` when `and`, else `||`, over both operands' values: what the
+    /// operator is once its right operand has run.
+    fn lazy(and: bool, lhs: &Self, rhs: &Self) -> Result<Self, Fault>;
+    /// A read of `self` where `self op other`, or `other op self` when
+    /// the local is not the left operand, holds in `sense`. One value is
+    /// itself; a set is narrowed to where the comparison holds.
+    fn refine(&self, op: BinaryOp, local_is_lhs: bool, sense: bool, other: &Self) -> Self;
+    /// A read of the boolean `self` where it is `value`.
+    fn exactly(&self, value: bool) -> Self;
+}
+
+/// A domain in which every value is one value, so a condition goes one
+/// way and a run in it takes one path. The may-domain is not one: the
+/// solver takes every path a set allows.
+pub trait Concrete: Domain {
     /// Which way a condition goes.
     fn truth(&self) -> Result<bool, Fault>;
 }
 
 impl Op {
     /// How many of the node's inputs, from the first, are values it
-    /// computes from. The rest are what the graph records beside them: a
-    /// guard's other operand, a context. A call reads every argument.
+    /// computes from. The rest is the context recorded beside them. A
+    /// call reads every argument.
     pub fn reads(&self, inputs: usize) -> usize {
         match self {
             Self::Int(_) | Self::Bool(_) | Self::Param(_) | Self::Unit | Self::Hole => 0,
             Self::Entry | Self::Then | Self::Else => 0,
-            Self::Copy { .. } | Self::Refine { .. } | Self::Exactly(_) | Self::Neg | Self::Not => 1,
+            Self::Copy { .. } | Self::Exactly(_) | Self::Neg | Self::Not => 1,
             Self::And { .. } | Self::Or { .. } | Self::Join { .. } => 1,
-            Self::Binary(_) => 2,
+            Self::Binary(_) | Self::Refine { .. } => 2,
             Self::Call(_) => inputs,
         }
     }
 
     /// The value of a data node from the values of the inputs it reads,
-    /// as [`Op::reads`] counts them. A narrowed read and a copy are what
-    /// they read; unit is unit. A parameter, a hole, a context, and a
-    /// node with a region are the machine's to evaluate, not the
-    /// operator's.
+    /// as [`Op::reads`] counts them. A copy is what it reads, a narrowed
+    /// read is what the domain makes of the guard, and unit is unit. A
+    /// parameter, a hole, a context, and a node with a region are the
+    /// reader's to evaluate, not the operator's.
     pub fn apply<D: Domain>(&self, inputs: &[&D]) -> Result<D, Fault> {
         Ok(match self {
             Self::Int(value) => D::int(value),
             Self::Bool(value) => D::bool(*value),
             Self::Unit => D::unit(),
-            Self::Copy { .. } | Self::Refine { .. } | Self::Exactly(_) => inputs[0].clone(),
+            Self::Copy { .. } => inputs[0].clone(),
+            Self::Refine {
+                op,
+                local_is_lhs,
+                sense,
+            } => inputs[0].refine(*op, *local_is_lhs, *sense, inputs[1]),
+            Self::Exactly(value) => inputs[0].exactly(*value),
             Self::Neg => inputs[0].neg()?,
             Self::Not => inputs[0].not()?,
             Self::Binary(op) => D::binary(*op, inputs[0], inputs[1])?,
@@ -150,6 +175,25 @@ impl Domain for Value {
         })
     }
 
+    fn lazy(and: bool, lhs: &Self, rhs: &Self) -> Result<Self, Fault> {
+        match (lhs, rhs) {
+            (Self::Bool(lhs), Self::Bool(rhs)) => {
+                Ok(Self::Bool(if and { *lhs && *rhs } else { *lhs || *rhs }))
+            }
+            _ => Err(Fault::Type),
+        }
+    }
+
+    fn refine(&self, _: BinaryOp, _: bool, _: bool, _: &Self) -> Self {
+        self.clone()
+    }
+
+    fn exactly(&self, _: bool) -> Self {
+        self.clone()
+    }
+}
+
+impl Concrete for Value {
     fn truth(&self) -> Result<bool, Fault> {
         match self {
             Self::Bool(value) => Ok(*value),

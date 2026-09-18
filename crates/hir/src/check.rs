@@ -796,7 +796,7 @@ fn explain_zero(
 ) -> Vec<(Span, Box<str>)> {
     use std::collections::{HashSet, VecDeque};
 
-    use crate::ranges::Ints;
+    use crate::Ints;
 
     const LABELS: usize = 4;
     const HOPS: usize = 6;

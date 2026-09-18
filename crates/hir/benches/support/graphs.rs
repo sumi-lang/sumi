@@ -1,6 +1,7 @@
-use crate::ranges::Thresholds;
+use crate::Thresholds;
 use crate::solver::Var;
 use crate::typing::{Expected, ProductContext, Typing};
+
 use sumi_hir::Ty;
 use sumi_text::{FileId, Span, TextRange, TextSize};
 
