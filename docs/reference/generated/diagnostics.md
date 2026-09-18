@@ -916,30 +916,22 @@ A construct scalar checking does not handle yet, such as a closure, a
 string literal, or a call through anything but a function name. The
 function is left unchecked.
 
-Shown by [`tests/corpus/syntax/bare-closure-bodies`](../../../tests/corpus/syntax/bare-closure-bodies/case.sumi):
+Shown by [`tests/corpus/semantic/closures-are-holes`](../../../tests/corpus/semantic/closures-are-holes/case.sumi):
 
 ```sumi
-fn outer() = fn() = 1
-fn nested() =
-    fn() =
-        fn(x) = x
-fn typed() = fn(x: int) -> int { x }
-fn spaced() = fn () = 1
+fn body() = fn() = 1
+fn typed() = fn(x: int) -> int {
+    x
+}
 fn operand() = 0 + fn() = 1
 fn next() -> int = 2
-fn a() -> int = 1
-fn b() -> int = 2
 ```
 
 ```text
 error[semantic/unsupported]: construct is not supported by scalar checking
-  primary @13..21
+  primary @12..20
 error[semantic/unsupported]: construct is not supported by scalar checking
-  primary @40..64
+  primary @34..61
 error[semantic/unsupported]: construct is not supported by scalar checking
-  primary @78..101
-error[semantic/unsupported]: construct is not supported by scalar checking
-  primary @116..125
-error[semantic/unsupported]: construct is not supported by scalar checking
-  primary @145..153
+  primary @81..89
 ```
