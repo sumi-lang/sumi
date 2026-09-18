@@ -388,10 +388,7 @@ fn large_definition_chains_and_cycles_are_stack_safe() {
 }
 
 proptest::proptest! {
-    #![proptest_config(sumi_test::regressions(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/proptest-regressions/analysis.txt"
-    )))]
+    #![proptest_config(sumi_test::regressions!("analysis.txt"))]
     #[test]
     fn declaration_order_does_not_choose_inferred_signatures(
         choices in proptest::collection::vec((0usize..20, 0u8..6, proptest::num::u32::ANY), 1..20)

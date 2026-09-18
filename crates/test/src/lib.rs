@@ -35,11 +35,25 @@ pub use perturb::perturbed_program;
 pub use program::{Programs, program};
 
 /// The configuration of a property test under `tests/`: every failing
-/// seed is recorded in `file`, the crate's tracked `proptest-regressions/`
-/// file, which each later run replays before generating anything new, so
-/// a failure found once stays found. Proptest's default location is found
-/// by walking up from the test file to a `lib.rs`, which a test under
-/// `tests/` never reaches.
+/// seed is recorded in `file`, named relative to the calling crate's
+/// tracked `proptest-regressions/` directory, which each later run
+/// replays before generating anything new, so a failure found once stays
+/// found. Proptest's default location is found by walking up from the
+/// test file to a `lib.rs`, which a test under `tests/` never reaches. A
+/// macro, because `CARGO_MANIFEST_DIR` must be read where the test is.
+#[macro_export]
+macro_rules! regressions {
+    ($file:literal) => {
+        $crate::regressions(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/proptest-regressions/",
+            $file
+        ))
+    };
+}
+
+/// What [`regressions!`] expands to, over the file's full path.
+#[doc(hidden)]
 pub fn regressions(file: &'static str) -> Config {
     Config {
         failure_persistence: Some(Box::new(FileFailurePersistence::Direct(file))),

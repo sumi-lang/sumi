@@ -104,10 +104,7 @@ fn soup() -> impl Strategy<Value = String> {
 }
 
 proptest! {
-    #![proptest_config(sumi_test::regressions(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/proptest-regressions/prop.txt"
-    )))]
+    #![proptest_config(sumi_test::regressions!("prop.txt"))]
     #[test]
     fn parser_input_invariants(source in soup()) {
         let lexed = lex(&source).expect("generated sources fit in u32");

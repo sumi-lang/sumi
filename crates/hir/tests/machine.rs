@@ -635,10 +635,7 @@ fn config() -> ProptestConfig {
     ProptestConfig {
         cases: 256,
         max_shrink_iters: 0,
-        ..sumi_test::regressions(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/proptest-regressions/machine.txt"
-        ))
+        ..sumi_test::regressions!("machine.txt")
     }
 }
 
