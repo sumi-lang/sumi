@@ -11,7 +11,8 @@ use std::fmt;
 pub use graph::{Graph, Node, NodeId, Op, Region, RegionId};
 pub use int::{Int, OutOfRange, ParseIntError};
 
-/// Eager scalar operators. Short-circuiting operators have separate expression kinds.
+/// Eager scalar operators. `&&` and `||` are not among them: their right
+/// operand is a region, so they are [`Op::And`] and [`Op::Or`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BinaryOp {
     Add,
@@ -35,7 +36,7 @@ pub enum Ty {
 }
 
 impl Ty {
-    /// Every scalar type, in the order evidence and diagnostics list them.
+    /// Every scalar type, in the order diagnostics list them.
     pub const ALL: [Self; 3] = [Self::Int, Self::Bool, Self::Unit];
 
     /// The type's name as written in source, and as diagnostics spell it.
@@ -60,7 +61,7 @@ impl fmt::Display for Ty {
 }
 
 /// A function of the file, by its position among the file's functions.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FunctionId(u32);
 
 impl FunctionId {
@@ -70,7 +71,8 @@ impl FunctionId {
         Self(u32::try_from(index).expect("function count fits u32"))
     }
 
-    /// Index into the owning analysis's `functions()` slice.
+    /// The function's position among the file's functions, in declaration
+    /// order.
     pub fn index(self) -> usize {
         self.0 as usize
     }

@@ -46,7 +46,6 @@ use crate::recursion;
 use crate::solver::{Backwards, Lattice, Var};
 use crate::typing::{Claim, Expected, ProductContext, Typing};
 use crate::*;
-use sumi_graph::{Graph, NodeId, Op, RegionId};
 
 /// A hasher for identifiers and integer constants: a word at a time, with
 /// a multiply to spread the bits, which is all a short ASCII name or a

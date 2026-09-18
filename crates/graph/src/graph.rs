@@ -48,8 +48,7 @@ impl std::fmt::Debug for NodeId {
 pub struct RegionId(NonZeroU32);
 
 impl RegionId {
-    /// The region at `index` of its graph.
-    pub fn new(index: usize) -> Self {
+    fn new(index: usize) -> Self {
         Self(NonZeroU32::new(u32::try_from(index + 1).expect("region count fits u32")).unwrap())
     }
 
@@ -253,8 +252,90 @@ impl Graph {
         region.result = Some(result);
     }
 
-    /// The type `id`'s class resolved to, or none.
+    /// Record the type `id` resolved to, or that it resolved to none.
     pub fn set_type(&mut self, id: NodeId, ty: Option<Ty>) {
         self.nodes[id.index()].ty = ty;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sumi_text::{FileId, TextRange, TextSize};
+
+    fn at(offset: u32) -> Span {
+        Span::new(
+            FileId::new(0),
+            TextRange::new(TextSize::new(offset), TextSize::new(offset + 1)),
+        )
+    }
+
+    #[test]
+    fn ids_are_one_word_with_room_for_none() {
+        assert_eq!(size_of::<NodeId>(), 4);
+        assert_eq!(size_of::<Option<NodeId>>(), 4);
+        assert_eq!(size_of::<Option<RegionId>>(), 4);
+        for index in [0, 1, 8192] {
+            assert_eq!(NodeId::new(index).index(), index);
+            assert_eq!(format!("{:?}", NodeId::new(index)), format!("n{index}"));
+            assert_eq!(RegionId::new(index).index(), index);
+        }
+    }
+
+    /// A function's run: an entry, a parameter, a region opened in the
+    /// entry whose nodes begin after `enter` and end at `close`, and a
+    /// node after it reading the region's result.
+    #[test]
+    fn runs_and_regions_follow_the_protocol() {
+        let mut graph = Graph::with_capacity(8);
+        let start = graph.next();
+        let entry = graph.push(Op::Entry, &[], at(0), None);
+        assert_eq!(entry, start);
+        let param = graph.push(Op::Param(0), &[], at(1), Some(at(1)));
+        let region = graph.open(entry);
+        graph.enter(region);
+        let one = graph.push(Op::Int(1.into()), &[], at(2), None);
+        let sum = graph.push(Op::Binary(BinaryOp::Add), &[param, one], at(3), None);
+        graph.close(region, sum);
+        let copy = graph.push(Op::Copy, &[sum], at(4), None);
+        assert_eq!(graph.nodes().len(), 5);
+        assert_eq!(
+            graph.node_ids().collect::<Vec<_>>(),
+            [entry, param, one, sum, copy]
+        );
+        assert_eq!(graph.inputs(sum), [param, one]);
+        assert_eq!(graph.inputs(entry), []);
+        assert_eq!(graph.node(param).name, Some(at(1)));
+        let region = graph.region(region);
+        assert_eq!(region.context, entry);
+        assert_eq!(region.nodes().collect::<Vec<_>>(), [one, sum]);
+        assert_eq!(region.result(), sum);
+        assert_eq!(graph.region_ids().count(), 1);
+        graph.set_type(sum, Some(Ty::Int));
+        assert_eq!(graph.node(sum).ty, Some(Ty::Int));
+        assert_eq!(graph.node(one).ty, None);
+    }
+
+    /// A region entered and closed around nothing is empty, and may still
+    /// have a result defined outside it.
+    #[test]
+    fn an_empty_region_reads_an_outer_definition() {
+        let mut graph = Graph::default();
+        let entry = graph.push(Op::Entry, &[], at(0), None);
+        let param = graph.push(Op::Param(0), &[], at(1), Some(at(1)));
+        let region = graph.open(entry);
+        graph.enter(region);
+        graph.close(region, param);
+        assert_eq!(graph.region(region).nodes().len(), 0);
+        assert_eq!(graph.region(region).result(), param);
+    }
+
+    #[test]
+    #[should_panic(expected = "a closed region has a result")]
+    fn an_open_region_has_no_result() {
+        let mut graph = Graph::default();
+        let entry = graph.push(Op::Entry, &[], at(0), None);
+        let region = graph.open(entry);
+        graph.region(region).result();
     }
 }
