@@ -1,6 +1,6 @@
 file: rejected
 frontend errors: 0 (see frontend.snap)
-semantic errors: 6
+semantic errors: 8
 
 fn value@0..21 () -> int ∈ [1, 1]
   result: copy : int @14..17
@@ -22,6 +22,14 @@ fn sequence@22..179 () -> int ∈ [4, 4]
       discard: call value@0..21 : int @156..163
       tail: read action@140..146 : int
 
+fn separate@180..231 () -> unit ∈ unit
+  result: copy : unit @180..231
+    value:
+      discard: hole : ? @200..205
+      discard: call value@0..21 : int @211..218
+      discard: int 1 : int @228..229
+      tail: unit : unit @194..231
+
 == semantic diagnostics ==
 error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
   primary @49..56
@@ -35,3 +43,7 @@ error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
   primary @122..131
 error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
   primary @155..164
+error[semantic/unsupported]: construct is not supported by scalar checking
+  primary @200..205
+error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
+  primary @210..219

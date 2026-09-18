@@ -22,7 +22,7 @@ the repair is mechanical.
 A string literal reaches the end of its line without a closing `"`. The
 literal ends at the line break, so nothing after that line is affected.
 
-Shown by [`tests/corpus/strings/plain-string-ends-at-its-line`](../../../tests/corpus/strings/plain-string-ends-at-its-line/case.sumi):
+Shown by [`tests/corpus/syntax/plain-string-ends-at-its-line`](../../../tests/corpus/syntax/plain-string-ends-at-its-line/case.sumi):
 
 ```sumi
 fn f() {
@@ -55,10 +55,10 @@ error[syntax/lone-carriage-return] 1:12..2:1 "\r": carriage return must be follo
 A character with no meaning in Sumi source outside a string or comment.
 Names are ASCII letters, digits, and `_`.
 
-Shown by [`tests/corpus/diagnostics/unknown-character-in-expression`](../../../tests/corpus/diagnostics/unknown-character-in-expression/case.sumi):
+Shown by [`tests/corpus/recovery/lexer-errors-do-not-hide-statement-recovery`](../../../tests/corpus/recovery/lexer-errors-do-not-hide-statement-recovery/case.sumi):
 
 ```sumi
-fn f() { a € + b }
+fn f() { a € + b c }
 ```
 
 ```text
@@ -70,7 +70,7 @@ error[syntax/unknown-character] 1:12..1:15 "€": character has no meaning in Su
 Identifier characters attached to an integer literal, as in `1u32`,
 `1e5`, or `1_000`. Literals take no suffix, exponent, or separator.
 
-Shown by [`tests/corpus/diagnostics/number-separator-is-a-suffix`](../../../tests/corpus/diagnostics/number-separator-is-a-suffix/case.sumi):
+Shown by [`tests/corpus/syntax/number-separator-is-a-suffix`](../../../tests/corpus/syntax/number-separator-is-a-suffix/case.sumi):
 
 ```sumi
 fn f() { 1_000 }
@@ -107,7 +107,7 @@ error[syntax/noncanonical-number] 1:25..1:26 "0": integer literal has leading ze
 A backslash in a string literal beginning none of the escapes `\n`,
 `\r`, `\t`, `\\`, `\"`, and `\0`.
 
-Shown by [`tests/corpus/strings/escapes-are-judged-in-every-literal`](../../../tests/corpus/strings/escapes-are-judged-in-every-literal/case.sumi):
+Shown by [`tests/corpus/syntax/escapes-are-judged-in-every-literal`](../../../tests/corpus/syntax/escapes-are-judged-in-every-literal/case.sumi):
 
 ```sumi
 // Escapes are checked in every string literal, terminated or not, and a
@@ -167,15 +167,15 @@ error[syntax/expected-item] 3:5..3:6 "+": expected a function item
 A token that cannot begin a statement where a block's next statement
 should start.
 
-Shown by [`tests/corpus/diagnostics/number-fraction-is-not-a-token`](../../../tests/corpus/diagnostics/number-fraction-is-not-a-token/case.sumi):
+Shown by [`tests/corpus/recovery/a-malformed-suffix-after-a-statement-is-reported-as-one-1`](../../../tests/corpus/recovery/a-malformed-suffix-after-a-statement-is-reported-as-one-1/case.sumi):
 
 ```sumi
-fn f() { 1.5 }
+fn f() { x : 1 }
 ```
 
 ```text
-error[syntax/expected-statement] 1:11..1:12 ".": expected a statement
-  at 1:11..1:13 ".5": skipped while recovering
+error[syntax/expected-statement] 1:12..1:13 ":": expected a statement
+  at 1:12..1:15 ": 1": skipped while recovering
 ```
 
 ### `syntax/expected-expression`
@@ -229,17 +229,18 @@ bracket, a `,` between list elements, or the `(` of a parameter list.
 For a missing closer, a label points at the opener and the fix inserts
 the closer.
 
-Shown by [`tests/corpus/diagnostics/missing-closer-before-trailing-comment`](../../../tests/corpus/diagnostics/missing-closer-before-trailing-comment/case.sumi):
+Shown by [`tests/corpus/recovery/a-block-does-not-yield-to-a-paren-opened-inside-it-1`](../../../tests/corpus/recovery/a-block-does-not-yield-to-a-paren-opened-inside-it-1/case.sumi):
 
 ```sumi
-fn f() { x // tail
+fn f() { (a b) }
 ```
 
 ```text
-error[syntax/expected-token] 1:19: expected `}`
-  at 1:8..1:9 "{": opening delimiter is here
-  fix (safe): insert `}`
-    1:11 -> "}"
+error[syntax/expected-token] 1:13: expected `)`
+  at 1:10..1:11 "(": opening delimiter is here
+  at 1:13..1:15 "b)": skipped while recovering
+  fix (safe): insert `)`
+    1:12 -> ")"
 ```
 
 ### `syntax/expected-body`
@@ -296,7 +297,7 @@ error[syntax/unexpected-syntax] 2:4..2:5 ":": unexpected syntax in expression
 Expressions nest deeper than the parser's limit of 256 levels, which
 keeps parsing on a bounded stack.
 
-Shown by [`tests/corpus/diagnostics/expression-nesting-limit`](../../../tests/corpus/diagnostics/expression-nesting-limit/case.sumi):
+Shown by [`tests/corpus/recovery/expression-nesting-limit`](../../../tests/corpus/recovery/expression-nesting-limit/case.sumi):
 
 ```sumi
 // Past the nesting limit the rest of the expression is skipped as one run
@@ -352,7 +353,7 @@ error[syntax/spaced-prefix-operator] 1:18..1:19 "-": prefix operator must be adj
 A space between a function name or callee and its `(`. The fix removes
 it.
 
-Shown by [`tests/corpus/diagnostics/spaced-list-openers`](../../../tests/corpus/diagnostics/spaced-list-openers/case.sumi):
+Shown by [`tests/corpus/layout/spaced-list-openers`](../../../tests/corpus/layout/spaced-list-openers/case.sumi):
 
 ```sumi
 fn value () -> int = 1
@@ -383,7 +384,7 @@ error[syntax/spaced-list-opener] 5:11..5:12 "(": opening `(` must be adjacent to
 A function item's name on the line after its `fn`. The fix moves the
 name onto the `fn` line.
 
-Shown by [`tests/corpus/diagnostics/function-name-on-next-line`](../../../tests/corpus/diagnostics/function-name-on-next-line/case.sumi):
+Shown by [`tests/corpus/layout/function-name-on-next-line`](../../../tests/corpus/layout/function-name-on-next-line/case.sumi):
 
 ```sumi
 fn
@@ -405,7 +406,7 @@ error[syntax/function-name-on-next-line] 4:1..4:10 "commented": function name mu
 A function item beginning on the line where the previous one ended. The
 fix moves it onto a line of its own.
 
-Shown by [`tests/corpus/diagnostics/function-items-share-a-line`](../../../tests/corpus/diagnostics/function-items-share-a-line/case.sumi):
+Shown by [`tests/corpus/layout/function-items-share-a-line`](../../../tests/corpus/layout/function-items-share-a-line/case.sumi):
 
 ```sumi
 fn first() {}fn second() {}
@@ -427,7 +428,7 @@ error[syntax/function-item-on-same-line] 2:16..2:18 "fn": function item must beg
 A binding's name on the line after its `let`. The fix moves the name
 onto the `let` line.
 
-Shown by [`tests/corpus/diagnostics/binding-name-on-next-line`](../../../tests/corpus/diagnostics/binding-name-on-next-line/case.sumi):
+Shown by [`tests/corpus/layout/binding-name-on-next-line`](../../../tests/corpus/layout/binding-name-on-next-line/case.sumi):
 
 ```sumi
 fn bindings() {
@@ -847,29 +848,30 @@ A construct scalar checking does not handle yet, such as a closure, a
 string literal, or a call through anything but a function name. The
 function is left unchecked.
 
-Shown by [`tests/corpus/diagnostics/grouped-expression-statements`](../../../tests/corpus/diagnostics/grouped-expression-statements/case.sumi):
+Shown by [`tests/corpus/syntax/bare-closure-bodies`](../../../tests/corpus/syntax/bare-closure-bodies/case.sumi):
 
 ```sumi
-fn value() -> int = 1
-fn rejected() -> int {
-    let x = 1
-    (x)
-    (value() + 1)
-    ((1))
-    -1
-}
-fn separate() {
-    value
-    (value())
-    _ = 1
-}
-fn accepted() -> int {
-    _ = value() + 1
-    value() + 1
-}
+fn outer() = fn() = 1
+fn nested() =
+    fn() =
+        fn(x) = x
+fn typed() = fn(x: int) -> int { x }
+fn spaced() = fn () = 1
+fn operand() = 0 + fn() = 1
+fn next() -> int = 2
+fn a() -> int = 1
+fn b() -> int = 2
 ```
 
 ```text
 error[semantic/unsupported]: construct is not supported by scalar checking
-  primary @124..129
+  primary @13..21
+error[semantic/unsupported]: construct is not supported by scalar checking
+  primary @40..64
+error[semantic/unsupported]: construct is not supported by scalar checking
+  primary @78..101
+error[semantic/unsupported]: construct is not supported by scalar checking
+  primary @116..125
+error[semantic/unsupported]: construct is not supported by scalar checking
+  primary @145..153
 ```

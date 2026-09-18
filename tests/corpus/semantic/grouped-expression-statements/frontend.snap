@@ -1,5 +1,5 @@
 == tree ==
-SourceFile 0..180
+SourceFile 0..232
   FnItem 0..21
     Name 3..8 "value"
     ParamList 8..10 "()"
@@ -42,6 +42,17 @@ SourceFile 0..180
           ArgList 161..163 "()"
       ParenExpr 169..177
         NameRef 170..176 "action"
+  FnItem 180..231
+    Name 183..191 "separate"
+    ParamList 191..193 "()"
+    Block 194..231
+      NameRef 200..205 "value"
+      ParenExpr 210..219
+        CallExpr 211..218
+          NameRef 211..216 "value"
+          ArgList 216..218 "()"
+      DiscardStmt 224..229
+        LiteralExpr 228..229 "1"
 
 == formatted ==
 fn value() -> int = 1
@@ -66,4 +77,9 @@ fn sequence() -> int {
     let action = 4
     (value())
     (action)
+}
+fn separate() {
+    value
+    (value())
+    _ = 1
 }

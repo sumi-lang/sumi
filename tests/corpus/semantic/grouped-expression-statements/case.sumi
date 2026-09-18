@@ -9,3 +9,8 @@ fn sequence() -> int {
     (value())
     (action)
 }
+fn separate() {
+    value
+    (value())
+    _ = 1
+}
