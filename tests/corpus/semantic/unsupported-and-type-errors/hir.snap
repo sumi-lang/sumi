@@ -3,31 +3,60 @@ frontend errors: 0 (see frontend.snap)
 semantic errors: 12
 
 fn unsupported@0..59 () -> unit ∈ ∅
-  body: unavailable
+  result: copy : unit @0..59
+    value:
+      let x@31..32: hole : ? @23..36
+      discard: hole : ? @51..57
+      tail: unit : unit @17..59
 
 fn closure@60..93 () -> unit ∈ ∅
-  body: unavailable
+  result: copy : unit @60..93
+    value:
+      let f@79..80: ? @75..91
+        initializer: hole : ? @83..91
+      tail: unit : unit @73..93
 
 fn literal@94..121 signature: unavailable
-  body: unavailable
+  body: hole : ? @109..121
 
 fn mismatch@122..147 () -> bool ∈ ∅
-  body: unavailable
+  result: copy : bool @139..143
+    value: int 1 : ? @146..147
 
 fn branches@148..199 () -> int ∈ [1, 1]
-  body: unavailable
+  result: copy : int @165..168
+    value: if : ? @171..199
+      condition: bool true : bool @174..178
+      then: int 1 : int @181..182
+      else: bool false : bool @192..197
 
 fn missing_else@200..233 () -> unit ∈ unit
-  body: unavailable
+  body: if : unit @220..233
+    condition: bool true : bool @223..227
+    then: int 1 : ? @230..231
+    else: unit (implicit)
 
 fn annotation@234..269 () -> unit ∈ unit
-  body: unavailable
+  result: copy : unit @234..269
+    value:
+      let x@256..257: bool @252..267
+        initializer: int 1 : ? @266..267
+      tail: unit : unit @250..269
 
 fn unit_equality@270..307 () -> bool ∈ ∅
-  body: unavailable
+  result: copy : bool @292..296
+    value: eager == : bool @299..307
+      lhs: unit : unit @299..301
+      rhs: unit : unit @305..307
 
 fn computed_call@308..384 () -> unit ∈ ∅
-  body: unavailable
+  result: copy : unit @308..384
+    value:
+      discard: hole : ? @337..382
+        part[0]: eager + : int @373..381
+          lhs: int 1 : int @373..374
+          rhs: bool true : ? @377..381
+      tail: unit : unit @327..384
 
 == semantic diagnostics ==
 error[semantic/unsupported]: construct is not supported by scalar checking

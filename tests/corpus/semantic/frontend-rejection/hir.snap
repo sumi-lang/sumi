@@ -3,13 +3,18 @@ frontend errors: 1 (see frontend.snap)
 semantic errors: 1
 
 fn malformed@0..26 () -> int ∈ ∅
-  body: unavailable
+  result: copy : int @18..21
+    value: hole : ? @24..26
 
 fn layout@27..61 () -> int ∈ [2, 2]
-  body: unavailable
+  result: copy : int @42..45
+    value:
+      discard: int 1 : int @52..53
+      tail: int 2 : int @58..59
 
 fn intact@62..88 () -> bool ∈ {true}
-  body: bool true : bool @84..88
+  result: copy : bool @77..81
+    value: bool true : bool @84..88
 
 == semantic diagnostics ==
 error[semantic/unused-value]: unused value of type int; use `_ =` to discard it

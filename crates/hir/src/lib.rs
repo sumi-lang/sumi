@@ -5,6 +5,7 @@
 //! identities. All source locations refer to the owned snapshot.
 
 mod check;
+mod graph;
 mod int;
 mod ranges;
 mod recursion;
@@ -22,6 +23,7 @@ use sumi_frontend::{Diagnostic, ParsedSource, Severity};
 use sumi_text::Span;
 
 pub use check::analyze;
+pub use graph::{Graph, Node, NodeId, Op, Region, RegionId};
 pub use int::{Int, OutOfRange, ParseIntError};
 pub use ranges::{Bools, Bound, Ints, May};
 
@@ -129,6 +131,7 @@ impl fmt::Debug for LocalId {
 #[derive(Debug)]
 pub struct Analysis {
     parsed: ParsedSource,
+    graph: Graph,
     functions: Vec<Function>,
     diagnostics: Vec<Diagnostic>,
     /// The call depth bound of each function as an entry, by index.
@@ -138,6 +141,10 @@ pub struct Analysis {
 impl Analysis {
     pub fn parsed(&self) -> &ParsedSource {
         &self.parsed
+    }
+    /// Every definition of every function, whole or holed.
+    pub fn graph(&self) -> &Graph {
+        &self.graph
     }
     /// Semantic diagnostics only, in source order. Syntax diagnostics remain in `parsed`.
     pub fn diagnostics(&self) -> &[Diagnostic] {
@@ -188,6 +195,12 @@ pub struct Function {
     signature: Option<Signature>,
     ranges: Option<Ranges>,
     body: Option<Body>,
+    /// The function's run of the graph: its entry context, then a node
+    /// per parameter, then its body region's nodes.
+    nodes: std::ops::Range<u32>,
+    arity: u32,
+    region: RegionId,
+    result: NodeId,
 }
 
 impl Function {
@@ -197,6 +210,28 @@ impl Function {
     }
     pub fn origin(&self) -> Span {
         self.origin
+    }
+    /// The function's nodes, in definition order.
+    pub fn nodes(&self) -> impl ExactSizeIterator<Item = NodeId> + use<> {
+        (self.nodes.start as usize..self.nodes.end as usize).map(NodeId::new)
+    }
+    /// The context the function runs in: live when it can be called.
+    pub fn entry(&self) -> NodeId {
+        NodeId::new(self.nodes.start as usize)
+    }
+    /// A node per parameter, in declaration order.
+    pub fn param_nodes(&self) -> impl ExactSizeIterator<Item = NodeId> + use<> {
+        let first = self.nodes.start as usize + 1;
+        (first..first + self.arity as usize).map(NodeId::new)
+    }
+    /// The body's region, run in the entry context.
+    pub fn region(&self) -> RegionId {
+        self.region
+    }
+    /// The function's value: the body region's result, or the declared
+    /// result the body's value is held to.
+    pub fn result(&self) -> NodeId {
+        self.result
     }
     /// A concrete declaration contract, not a guarantee that its body is valid.
     /// Expression bodies (`=`, including `= { ... }`) infer an omitted result;

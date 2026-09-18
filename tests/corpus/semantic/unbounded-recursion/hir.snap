@@ -4,107 +4,115 @@ semantic errors: 7
 
 fn forever@0..42 (int ∈ [0, +∞)) -> int ∈ ∅
   param n@11..12: int
-  body: call forever@0..42 (callee @28..35) : int @28..42
-    arg[0]: eager + : int @36..41
-      lhs: read n@11..12 : int @36..37
-      rhs: int 1 : int @40..41
+  result: copy : int @22..25
+    value: call forever@0..42 : int @28..42
+      arg[0]: eager + : int @36..41
+        lhs: read n@11..12 : int
+        rhs: int 1 : int @40..41
 
 fn too_deep@43..76 () -> int ∈ ∅
-  body: call forever@0..42 (callee @66..73) : int @66..76
-    arg[0]: int 0 : int @74..75
+  result: copy : int @60..63
+    value: call forever@0..42 : int @66..76
+      arg[0]: int 0 : int @74..75
 
 fn fall@77..139 (int ∈ (-∞, 5]) -> int ∈ ∅
   param n@85..86: int
-  body: if : int @102..139
-    condition: eager > : bool @105..112
-      lhs: read n@85..86 : int @105..106
-      rhs: int 100 : int @109..112
-    then: block : int @113..118
-      tail: int 0 : int @115..116
-    else: block : int @124..139
-      tail: call fall@77..139 (callee @126..130) : int @126..137
+  result: copy : int @96..99
+    value: if : int @102..139
+      condition: eager > : bool @105..112
+        lhs: read n@85..86 : int
+        rhs: int 100 : int @109..112
+      then: int 0 : int @115..116
+      else: call fall@77..139 : int @126..137
         arg[0]: eager - : int @131..136
-          lhs: read n@85..86 : int @131..132
+          lhs: read n@85..86 [n > 100 fails@105..112] : int
           rhs: int 1 : int @135..136
 
 fn falls@140..167 () -> int ∈ ∅
-  body: call fall@77..139 (callee @160..164) : int @160..167
-    arg[0]: int 5 : int @165..166
+  result: copy : int @154..157
+    value: call fall@77..139 : int @160..167
+      arg[0]: int 5 : int @165..166
 
 fn swap@168..211 (int ∈ [1, 2], int ∈ [1, 2]) -> int ∈ ∅
   param a@176..177: int
   param b@184..185: int
-  body: call swap@168..211 (callee @201..205) : int @201..211
-    arg[0]: read b@184..185 : int @206..207
-    arg[1]: read a@176..177 : int @209..210
+  result: copy : int @195..198
+    value: call swap@168..211 : int @201..211
+      arg[0]: read b@184..185 : int
+      arg[1]: read a@176..177 : int
 
 fn swapped@212..244 () -> int ∈ ∅
-  body: call swap@168..211 (callee @234..238) : int @234..244
-    arg[0]: int 1 : int @239..240
-    arg[1]: int 2 : int @242..243
+  result: copy : int @228..231
+    value: call swap@168..211 : int @234..244
+      arg[0]: int 1 : int @239..240
+      arg[1]: int 2 : int @242..243
 
 fn spin@245..270 () -> int ∈ ∅
-  body: call spin@245..270 (callee @264..268) : int @264..270
+  result: copy : int @258..261
+    value: call spin@245..270 : int @264..270
 
 fn both@271..322 (int ∈ [0, +∞), int ∈ [0, +∞)) -> int ∈ ∅
   param a@279..280: int
   param b@287..288: int
-  body: call both@271..322 (callee @304..308) : int @304..322
-    arg[0]: eager + : int @309..314
-      lhs: read a@279..280 : int @309..310
-      rhs: int 1 : int @313..314
-    arg[1]: eager + : int @316..321
-      lhs: read b@287..288 : int @316..317
-      rhs: int 1 : int @320..321
+  result: copy : int @298..301
+    value: call both@271..322 : int @304..322
+      arg[0]: eager + : int @309..314
+        lhs: read a@279..280 : int
+        rhs: int 1 : int @313..314
+      arg[1]: eager + : int @316..321
+        lhs: read b@287..288 : int
+        rhs: int 1 : int @320..321
 
 fn boths@323..353 () -> int ∈ ∅
-  body: call both@271..322 (callee @343..347) : int @343..353
-    arg[0]: int 0 : int @348..349
-    arg[1]: int 0 : int @351..352
+  result: copy : int @337..340
+    value: call both@271..322 : int @343..353
+      arg[0]: int 0 : int @348..349
+      arg[1]: int 0 : int @351..352
 
 fn either@354..459 (int ∈ [-1, 11]) -> int ∈ [0, 0]
   param n@364..365: int
-  body: if : int @381..459
-    condition: eager > : bool @384..390
-      lhs: read n@364..365 : int @384..385
-      rhs: int 10 : int @388..390
-    then: block : int @391..396
-      tail: int 0 : int @393..394
-    else: block : int @402..459
-      tail: if : int @404..457
+  result: copy : int @375..378
+    value: if : int @381..459
+      condition: eager > : bool @384..390
+        lhs: read n@364..365 : int
+        rhs: int 10 : int @388..390
+      then: int 0 : int @393..394
+      else: if : int @404..457
         condition: eager < : bool @407..412
-          lhs: read n@364..365 : int @407..408
+          lhs: read n@364..365 [n > 10 fails@384..390] : int
           rhs: int 0 : int @411..412
-        then: block : int @413..418
-          tail: int 0 : int @415..416
-        else: block : int @424..457
-          tail: eager + : int @426..455
-            lhs: call either@354..459 (callee @426..432) : int @426..439
-              arg[0]: eager - : int @433..438
-                lhs: read n@364..365 : int @433..434
-                rhs: int 1 : int @437..438
-            rhs: call either@354..459 (callee @442..448) : int @442..455
-              arg[0]: eager + : int @449..454
-                lhs: read n@364..365 : int @449..450
-                rhs: int 1 : int @453..454
+        then: int 0 : int @415..416
+        else: eager + : int @426..455
+          lhs: call either@354..459 : int @426..439
+            arg[0]: eager - : int @433..438
+              lhs: read n@364..365 [n < 0 fails@407..412, n > 10 fails@384..390] : int
+              rhs: int 1 : int @437..438
+          rhs: call either@354..459 : int @442..455
+            arg[0]: eager + : int @449..454
+              lhs: read n@364..365 [n < 0 fails@407..412, n > 10 fails@384..390] : int
+              rhs: int 1 : int @453..454
 
 fn eithers@460..491 () -> int ∈ [0, 0]
-  body: call either@354..459 (callee @482..488) : int @482..491
-    arg[0]: int 5 : int @489..490
+  result: copy : int @476..479
+    value: call either@354..459 : int @482..491
+      arg[0]: int 5 : int @489..490
 
 fn ping@492..524 (int ∈ [3, 3]) -> int ∈ ∅
   param n@500..501: int
-  body: call pong@525..557 (callee @517..521) : int @517..524
-    arg[0]: read n@500..501 : int @522..523
+  result: copy : int @511..514
+    value: call pong@525..557 : int @517..524
+      arg[0]: read n@500..501 : int
 
 fn pong@525..557 (int ∈ [3, 3]) -> int ∈ ∅
   param n@533..534: int
-  body: call ping@492..524 (callee @550..554) : int @550..557
-    arg[0]: read n@533..534 : int @555..556
+  result: copy : int @544..547
+    value: call ping@492..524 : int @550..557
+      arg[0]: read n@533..534 : int
 
 fn pings@558..585 () -> int ∈ ∅
-  body: call ping@492..524 (callee @578..582) : int @578..585
-    arg[0]: int 3 : int @583..584
+  result: copy : int @572..575
+    value: call ping@492..524 : int @578..585
+      arg[0]: int 3 : int @583..584
 
 == semantic diagnostics ==
 error[semantic/unbounded-recursion]: recursion in `forever` has no argument that moves toward a bound on every call

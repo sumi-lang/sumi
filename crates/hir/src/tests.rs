@@ -18,6 +18,7 @@ fn clean(source: &str) -> Analysis {
     for function in &analysis.functions {
         invariant(&analysis, function);
     }
+    graph_invariant(&analysis);
     analysis
 }
 
@@ -79,6 +80,96 @@ fn reversed_declarations_preserve_types(analysis: &Analysis) {
         if b.body().is_some() {
             invariant(&reversed, b);
         }
+    }
+}
+
+/// The graph's shape: inputs precede their readers; a function's run is
+/// its entry, a node per parameter, and its body region; regions nest
+/// inside their function's run and each other; every op reads what its
+/// kind takes; and an accepted file has a type on every value and no hole.
+fn graph_invariant(analysis: &Analysis) {
+    let graph = analysis.graph();
+    let nodes = graph.nodes();
+    for id in graph.node_ids() {
+        let node = graph.node(id);
+        let inputs = graph.inputs(id);
+        for input in inputs {
+            assert!(
+                input.index() < id.index(),
+                "{id:?} reads {input:?} before it is defined"
+            );
+        }
+        let arity = match node.op {
+            Op::Int(_) | Op::Bool(_) | Op::Param(_) | Op::Entry => Some(0),
+            Op::Unit | Op::Copy | Op::Neg | Op::Not | Op::Exactly(_) => Some(1),
+            Op::And { .. } | Op::Or { .. } | Op::Join { .. } => Some(1),
+            Op::Binary(_) | Op::Refine { .. } | Op::Then | Op::Else => Some(2),
+            Op::Hole | Op::Call(_) => None,
+        };
+        if let Some(arity) = arity {
+            assert_eq!(inputs.len(), arity, "{id:?} {:?}", node.op);
+        }
+        if node.name.is_some() {
+            assert!(matches!(node.op, Op::Param(_) | Op::Copy | Op::Hole));
+        }
+        if analysis.is_valid() {
+            assert!(
+                !matches!(node.op, Op::Hole),
+                "an accepted file has no holes"
+            );
+            if !matches!(node.op, Op::Entry | Op::Then | Op::Else) {
+                assert!(node.ty.is_some(), "{id:?} {:?} has no type", node.op);
+            }
+        }
+    }
+    let mut owner = vec![None; nodes.len()];
+    for (index, function) in analysis.functions().iter().enumerate() {
+        let mut run = function.nodes();
+        assert_eq!(run.next(), Some(function.entry()));
+        assert!(matches!(graph.node(function.entry()).op, Op::Entry));
+        for (position, param) in function.param_nodes().enumerate() {
+            assert_eq!(run.next(), Some(param));
+            assert!(matches!(graph.node(param).op, Op::Param(i) if i as usize == position));
+        }
+        let region = graph.region(function.region());
+        assert_eq!(region.context, function.entry());
+        for node in region.nodes() {
+            assert_eq!(run.next(), Some(node));
+        }
+        // After the body: nothing, or the copy a declared result holds
+        // the body's value in.
+        match run.next() {
+            None => assert_eq!(function.result(), region.result()),
+            Some(copy) => {
+                assert_eq!(copy, function.result());
+                assert!(matches!(graph.node(copy).op, Op::Copy));
+                assert_eq!(graph.inputs(copy), [region.result()]);
+                assert_eq!(run.next(), None);
+            }
+        }
+        for node in function.nodes() {
+            owner[node.index()] = Some(index);
+        }
+    }
+    let mut spans: Vec<(usize, usize)> = Vec::new();
+    for id in graph.region_ids() {
+        let region = graph.region(id);
+        let result = region.result().index();
+        let owner_of = |index: usize| owner[index].expect("every node belongs to a function");
+        assert_eq!(owner_of(region.context.index()), owner_of(result));
+        // An empty region is a read of something defined outside it.
+        let Some(first) = region.nodes().next() else {
+            continue;
+        };
+        let (start, end) = (first.index(), first.index() + region.nodes().len());
+        assert!(region.context.index() < start);
+        assert!(result < end, "{id:?} results in a later node");
+        for &(s, e) in &spans {
+            let disjoint = end <= s || e <= start;
+            let nested = (s <= start && end <= e) || (start <= s && e <= end);
+            assert!(disjoint || nested, "{id:?} overlaps another region");
+        }
+        spans.push((start, end));
     }
 }
 
@@ -826,6 +917,7 @@ fn existing_corpus_never_panics_or_silently_rejects() {
             } else if path.file_name().unwrap() == "case.sumi" {
                 let a = check(&std::fs::read_to_string(&path).unwrap());
                 reversed_declarations_preserve_types(&a);
+                graph_invariant(&a);
                 for function in &a.functions {
                     if function.body().is_some() {
                         invariant(&a, function);
@@ -1098,6 +1190,7 @@ proptest::proptest! {
         let source = format!("fn f(x: int) -> int {{ {} }}\nfn g() -> int = 1", tokens.join(" "));
         let a = check(&source);
         assert_eq!(a.is_valid(), !a.parsed.diagnostics().iter().chain(&a.diagnostics).any(|d| d.severity == Severity::Error));
+        graph_invariant(&a);
         for function in &a.functions { if function.body().is_some() { invariant(&a, function); } }
     }
 
@@ -1105,6 +1198,7 @@ proptest::proptest! {
     fn arbitrary_source_has_diagnostic_backed_acceptance(source in ".{0,256}") {
         let a = check(&source);
         reversed_declarations_preserve_types(&a);
+        graph_invariant(&a);
         let errors = a.parsed.diagnostics().iter().chain(&a.diagnostics).any(|d| d.severity == Severity::Error);
         proptest::prop_assert_eq!(a.is_valid(), !errors);
         for d in &a.diagnostics {

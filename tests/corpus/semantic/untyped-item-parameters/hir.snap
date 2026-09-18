@@ -3,7 +3,13 @@ frontend errors: 2 (see frontend.snap)
 semantic errors: 0
 
 fn id@0..12 signature: unavailable
-  body: unavailable
+  param x@6..7: ?
+  body: read x@6..7 : ?
 
 fn add@13..45 signature: unavailable
-  body: unavailable
+  param a@20..21: int
+  param b@28..29: ?
+  result: copy : int @34..37
+    value: eager + : ? @40..45
+      lhs: read a@20..21 : int
+      rhs: read b@28..29 : ?

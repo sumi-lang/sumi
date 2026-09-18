@@ -3,7 +3,19 @@ frontend errors: 0 (see frontend.snap)
 semantic errors: 7
 
 fn f@0..85 () -> int ∈ ∅
-  body: unavailable
+  result: copy : int @10..13
+    value:
+      discard: hole : ? @20..23
+      discard: if : ? @28..40
+        condition: hole : ? @31..32
+        then: hole : ? @35..38
+        else: unit (implicit)
+      discard: hole : ? @47..50
+      discard: eager + : ? @71..76
+        lhs: hole : ? @71..72
+        rhs: hole : ? @75..76
+      discard: hole : ? @57..66
+      tail: int 42 : int @81..83
 
 == semantic diagnostics ==
 error[semantic/unknown-name]: unknown function `g`

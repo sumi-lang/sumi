@@ -3,5 +3,5 @@ frontend errors: 1 (see frontend.snap)
 semantic errors: 0
 
 fn <missing>@0..8 () -> unit ∈ unit
-  body: block : unit @6..8
-    tail: unit (implicit)
+  result: copy : unit @0..8
+    value: unit : unit @6..8

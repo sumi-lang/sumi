@@ -3,7 +3,9 @@ frontend errors: 0 (see frontend.snap)
 semantic errors: 0
 
 fn value@0..22 () -> int ∈ [1, 1]
-  body: int 1 : int @21..22
+  result: copy : int @15..18
+    value: int 1 : int @21..22
 
 fn caller@23..52 () -> int ∈ [1, 1]
-  body: call value@0..22 (callee @44..49) : int @44..52
+  result: copy : int @38..41
+    value: call value@0..22 : int @44..52

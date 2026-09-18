@@ -71,6 +71,7 @@ pub fn check_semantics(parsed: ParsedSource) {
         .chain(analysis.diagnostics())
         .any(|d| d.severity == Severity::Error);
     assert_eq!(analysis.is_valid(), !errors);
+    check_graph(&analysis);
     for diagnostic in analysis.diagnostics() {
         for label in std::iter::once(&diagnostic.primary).chain(diagnostic.secondary.iter()) {
             assert_eq!(label.location.file, analysis.parsed().file());
@@ -195,6 +196,88 @@ pub fn check_semantics(parsed: ParsedSource) {
             assert_eq!(count, usize::from(index != root));
         }
         assert!(declarations.into_iter().all(|count| count == 1));
+    }
+}
+
+/// The graph's shape, restating the HIR unit tests' `graph_invariant`:
+/// inputs precede their readers; a function's run is its entry, a node
+/// per parameter, its body region, and a copy for a declared result;
+/// regions nest; every op reads what its kind takes; an accepted file has
+/// a type on every value and no hole.
+pub fn check_graph(analysis: &sumi_hir::Analysis) {
+    use sumi_hir::Op;
+    let graph = analysis.graph();
+    for id in graph.node_ids() {
+        let node = graph.node(id);
+        let inputs = graph.inputs(id);
+        for input in inputs {
+            assert!(input.index() < id.index());
+        }
+        let arity = match node.op {
+            Op::Int(_) | Op::Bool(_) | Op::Param(_) | Op::Entry => Some(0),
+            Op::Unit | Op::Copy | Op::Neg | Op::Not | Op::Exactly(_) => Some(1),
+            Op::And { .. } | Op::Or { .. } | Op::Join { .. } => Some(1),
+            Op::Binary(_) | Op::Refine { .. } | Op::Then | Op::Else => Some(2),
+            Op::Hole | Op::Call(_) => None,
+        };
+        if let Some(arity) = arity {
+            assert_eq!(inputs.len(), arity);
+        }
+        if node.name.is_some() {
+            assert!(matches!(node.op, Op::Param(_) | Op::Copy | Op::Hole));
+        }
+        if analysis.is_valid() {
+            assert!(!matches!(node.op, Op::Hole));
+            if !matches!(node.op, Op::Entry | Op::Then | Op::Else) {
+                assert!(node.ty.is_some());
+            }
+        }
+    }
+    let mut owner = vec![None; graph.nodes().len()];
+    for (index, function) in analysis.functions().iter().enumerate() {
+        let mut run = function.nodes();
+        assert_eq!(run.next(), Some(function.entry()));
+        assert!(matches!(graph.node(function.entry()).op, Op::Entry));
+        for (position, param) in function.param_nodes().enumerate() {
+            assert_eq!(run.next(), Some(param));
+            assert!(matches!(graph.node(param).op, Op::Param(i) if i as usize == position));
+        }
+        let region = graph.region(function.region());
+        assert_eq!(region.context, function.entry());
+        for node in region.nodes() {
+            assert_eq!(run.next(), Some(node));
+        }
+        match run.next() {
+            None => assert_eq!(function.result(), region.result()),
+            Some(copy) => {
+                assert_eq!(copy, function.result());
+                assert!(matches!(graph.node(copy).op, Op::Copy));
+                assert_eq!(graph.inputs(copy), [region.result()]);
+                assert_eq!(run.next(), None);
+            }
+        }
+        for node in function.nodes() {
+            owner[node.index()] = Some(index);
+        }
+    }
+    let mut spans: Vec<(usize, usize)> = Vec::new();
+    for id in graph.region_ids() {
+        let region = graph.region(id);
+        let result = region.result().index();
+        assert_eq!(owner[region.context.index()], owner[result]);
+        assert!(owner[result].is_some());
+        let Some(first) = region.nodes().next() else {
+            continue;
+        };
+        let (start, end) = (first.index(), first.index() + region.nodes().len());
+        assert!(region.context.index() < start);
+        assert!(result < end);
+        for &(s, e) in &spans {
+            let disjoint = end <= s || e <= start;
+            let nested = (s <= start && end <= e) || (start <= s && e <= end);
+            assert!(disjoint || nested);
+        }
+        spans.push((start, end));
     }
 }
 

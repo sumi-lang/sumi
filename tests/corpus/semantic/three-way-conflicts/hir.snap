@@ -3,13 +3,22 @@ frontend errors: 0 (see frontend.snap)
 semantic errors: 3
 
 fn a@123..158 signature: unavailable
-  body: unavailable
+  body: if : ? @132..158
+    condition: bool true : bool @135..139
+    then: int 1 : int @142..143
+    else: call b@159..197 : ? @153..156
 
 fn b@159..197 signature: unavailable
-  body: unavailable
+  body: if : ? @168..197
+    condition: bool true : bool @171..175
+    then: bool true : bool @178..182
+    else: call c@198..234 : ? @192..195
 
 fn c@198..234 signature: unavailable
-  body: unavailable
+  body: if : ? @207..234
+    condition: bool true : bool @210..214
+    then: unit : unit @217..219
+    else: call a@123..158 : ? @229..232
 
 == semantic diagnostics ==
 error[semantic/cannot-infer]: function result is both int, bool, and unit; add a return type annotation
