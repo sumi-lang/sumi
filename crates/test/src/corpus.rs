@@ -180,8 +180,7 @@ fn verify(
     ))
 }
 
-/// A line diff with two context lines, shared rather than duplicating the
-/// frontend runner's longest-common-subsequence implementation.
+/// A line diff with two context lines, by longest common subsequence.
 fn diff(expected: &str, actual: &str) -> String {
     let old: Vec<&str> = expected.lines().collect();
     let new: Vec<&str> = actual.lines().collect();

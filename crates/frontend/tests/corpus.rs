@@ -7,7 +7,7 @@
 //! where it differs, its header counting the items left as written and
 //! naming any violation that survives formatting. A case that selects
 //! `hir` leaves the tree out: `hir.snap` anchors the graph the checker
-//! built by span, not every parse-tree node, so a case whose parse is the
+//! built by range, not every parse-tree node, so a case whose parse is the
 //! point does not select `hir`. Run with `UPDATE_FRONTEND=1` to rewrite
 //! the snapshots, then review the diff; a new case gets its first
 //! snapshot the same way.

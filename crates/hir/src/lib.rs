@@ -1,4 +1,5 @@
-//! Single-file scalar semantic analysis. The immutable syntax frontend is unchanged.
+//! Single-file scalar semantic analysis over the frontend's immutable
+//! snapshot.
 //!
 //! Analysis keeps the graph of every body, whole or holed, with what it
 //! decided about each node, and independent diagnostics. Handles are
