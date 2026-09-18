@@ -1,7 +1,11 @@
-use super::*;
-use sumi_frontend::{Diagnostic, DiagnosticCode, parse_source};
+//! The analysis held to its contracts: what the graph of a body is, which
+//! files are accepted, and what each diagnostic says.
 
-use crate::codes::*;
+use proptest::test_runner::FileFailurePersistence;
+use sumi_frontend::{Diagnostic, DiagnosticCode, parse_source};
+use sumi_hir::codes::*;
+use sumi_hir::{Analysis, BinaryOp, Function, FunctionId, Int, NodeId, Op, Ty, analyze};
+use sumi_text::TextRange;
 
 fn check(source: &str) -> Analysis {
     analyze(parse_source(source.into()).unwrap())
@@ -10,7 +14,7 @@ fn check(source: &str) -> Analysis {
 fn clean(source: &str) -> Analysis {
     let analysis = check(source);
     assert!(analysis.is_valid(), "{:?}", analysis.diagnostics());
-    assert!(analysis.functions.iter().all(Function::complete));
+    assert!(analysis.functions().iter().all(Function::complete));
     graph_invariant(&analysis);
     analysis
 }
@@ -158,12 +162,12 @@ fn reversed_declarations_preserve_types(analysis: &Analysis) {
     declarations.reverse();
     let reversed = check(&declarations.join("\n"));
     assert!(reversed.parsed().diagnostics().is_empty());
-    assert_eq!(analysis.functions.len(), reversed.functions.len());
-    let count = analysis.functions.len();
+    assert_eq!(analysis.functions().len(), reversed.functions().len());
+    let count = analysis.functions().len();
     for (index, (a, b)) in analysis
-        .functions
+        .functions()
         .iter()
-        .zip(reversed.functions.iter().rev())
+        .zip(reversed.functions().iter().rev())
         .enumerate()
     {
         assert_eq!(
@@ -348,7 +352,7 @@ fn literals_of_any_size_fold_a_leading_minus() {
     for expr in ["01", "1_000", "1u32"] {
         let a = check(&format!("fn f() -> int = {expr}"));
         assert!(!a.is_valid());
-        assert!(!a.functions[0].complete());
+        assert!(!a.functions()[0].complete());
         assert!(semantic(&a).is_empty());
     }
 }
@@ -369,14 +373,14 @@ fn a_measure_is_read_through_any_depth_of_lets() {
         "{:?}",
         analysis.diagnostics()
     );
-    assert_eq!(analysis.functions[1].depth_bound(), Some(7));
+    assert_eq!(analysis.functions()[1].depth_bound(), Some(7));
 }
 
 #[test]
 fn call_requirements_replay_in_argument_order() {
     let source = "fn unknown() = unknown()\nfn take(a: int, b: bool) {}\nfn caller() = { let x = unknown()\n take(x, (x)) }";
     let a = check(source);
-    assert!(a.parsed.diagnostics().is_empty());
+    assert!(a.parsed().diagnostics().is_empty());
     let mismatches: Vec<_> = a
         .diagnostics()
         .iter()
@@ -427,7 +431,7 @@ fn syntax_diagnostics_are_preserved_and_always_reject() {
         let before = parsed.diagnostics().to_vec();
         let a = analyze(parsed);
         assert!(!a.is_valid());
-        assert_eq!(a.parsed.diagnostics(), before);
+        assert_eq!(a.parsed().diagnostics(), before);
         diagnostics_are_one_list(&a);
     }
 }
@@ -509,10 +513,10 @@ fn scalar_operator_type_matrix() {
                 };
                 let source = format!("fn f() -> {result} = {lhs} {op} {rhs}");
                 let a = check(&source);
-                assert!(a.parsed.diagnostics().is_empty(), "{source}");
+                assert!(a.parsed().diagnostics().is_empty(), "{source}");
                 assert_eq!(a.is_valid(), accepted, "{source}");
                 if accepted {
-                    assert!(a.functions[0].complete());
+                    assert!(a.functions()[0].complete());
                     match *self::op(&a, value(&a, 0)) {
                         Op::Binary(found) => assert_eq!(Some(found), eager),
                         Op::And { .. } => assert_eq!(op, "&&"),
@@ -546,7 +550,7 @@ fn binary_requirements_survive_a_failed_operand() {
         let mut actual = codes(&a);
         actual.sort_unstable_by_key(|code| code.name);
         assert_eq!(actual, [TYPE_MISMATCH, UNKNOWN_NAME], "{expression}");
-        assert!(!a.functions[0].complete());
+        assert!(!a.functions()[0].complete());
     }
 }
 
@@ -560,7 +564,7 @@ fn recovery_does_not_expose_functions_or_leak_argument_scopes() {
     let a = check("fn f() {\n let x = absent\n let x = true\n _ = x + 1\n}\n");
     assert_eq!(codes(&a), [UNKNOWN_NAME, TYPE_MISMATCH]);
     let a = check("fn f() -> int {\n _ = absent\n 1\n}\n");
-    assert!(!a.functions[0].complete());
+    assert!(!a.functions()[0].complete());
     clean("fn f() -> int {\n let x =\n 1\n x\n}\n");
 }
 
@@ -626,7 +630,7 @@ fn large_definition_chains_and_cycles_are_stack_safe() {
             let a = check(&source);
             assert_eq!(a.is_valid(), grounded);
             if grounded {
-                assert!(a.functions.iter().all(Function::complete));
+                assert!(a.functions().iter().all(Function::complete));
             } else {
                 // A conflict is reported once at each end that claims a
                 // type; every function between inherits it silently. A live
@@ -650,7 +654,7 @@ fn large_definition_chains_and_cycles_are_stack_safe() {
                         .all(|d| d.code == CANNOT_INFER || d.code == UNBOUNDED_RECURSION)
                 );
                 assert!(
-                    a.functions
+                    a.functions()
                         .iter()
                         .all(|f| f.signature().is_none() && !f.complete())
                 );
@@ -659,7 +663,23 @@ fn large_definition_chains_and_cycles_are_stack_safe() {
     }
 }
 
+/// Records every failing seed in the crate's tracked `proptest-regressions/`
+/// file, which each later run replays before generating anything new.
+/// Proptest's default location is found by walking up from the test file
+/// to a `lib.rs`, which a test under `tests/` never reaches; this path is
+/// fixed at compile time instead.
+fn config() -> proptest::test_runner::Config {
+    proptest::test_runner::Config {
+        failure_persistence: Some(Box::new(FileFailurePersistence::Direct(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/proptest-regressions/analysis.txt"
+        )))),
+        ..Default::default()
+    }
+}
+
 proptest::proptest! {
+    #![proptest_config(config())]
     #[test]
     fn declaration_order_does_not_choose_inferred_signatures(
         choices in proptest::collection::vec((0usize..20, 0u8..6, proptest::num::u32::ANY), 1..20)
@@ -681,9 +701,9 @@ proptest::proptest! {
         order.sort_by_key(|&i| choices[i].2);
         let b = check(&order.iter().map(|&i| definitions[i].as_str()).collect::<Vec<_>>().join("\n"));
         for (analysis, other) in [(&a, &b), (&b, &a)] {
-            for function in &analysis.functions {
+            for function in analysis.functions() {
                 let name = function.name().map(|name| analysis.text(name));
-                let counterpart = other.functions.iter().find(|f| f.name().map(|n| other.text(n)) == name).unwrap();
+                let counterpart = other.functions().iter().find(|f| f.name().map(|n| other.text(n)) == name).unwrap();
                 proptest::prop_assert_eq!(function.signature().map(|s| s.result), counterpart.signature().map(|s| s.result));
                 proptest::prop_assert_eq!(function.complete(), counterpart.complete());
             }

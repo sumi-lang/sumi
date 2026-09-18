@@ -16,9 +16,6 @@ mod typing;
 mod generated;
 pub use generated::codes;
 
-#[cfg(test)]
-mod tests;
-
 use std::fmt;
 
 use sumi_frontend::{Diagnostic, ParsedSource};
