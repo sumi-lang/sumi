@@ -1,5 +1,6 @@
 //! Every front-end product for one source, with the span and shape helpers
-//! the recovery measurements compare across an edit.
+//! the recovery measurements compare across an edit, and the one spelling
+//! of a piece of evidence the snapshots and the parser tests share.
 
 use sumi_lexer::{LexedFile, lex};
 use sumi_syntax::{
