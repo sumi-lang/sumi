@@ -16,8 +16,8 @@
 
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
-use std::hash::{BuildHasherDefault, Hasher};
 
+use rustc_hash::FxBuildHasher;
 use sumi_frontend::{DiagnosticCode, Label, Location};
 use sumi_lexer::{RawIdx, SyntaxKind, TokenFlags};
 use sumi_syntax::{
@@ -30,42 +30,8 @@ use crate::lattice::Claim;
 use crate::typing::{Expected, Typing};
 use crate::*;
 
-/// A hasher for identifiers and integer constants: a word at a time, with
-/// a multiply to spread the bits, which is all a short ASCII name or a
-/// word-sized integer needs and a fraction of what a keyed hash costs.
-#[derive(Default)]
-struct NameHasher(u64);
-
-impl NameHasher {
-    fn add(&mut self, word: u64) {
-        self.0 = (self.0.rotate_left(5) ^ word).wrapping_mul(0x517c_c1b7_2722_0a95);
-    }
-}
-
-impl Hasher for NameHasher {
-    fn write(&mut self, bytes: &[u8]) {
-        let (words, rest) = bytes.as_chunks::<8>();
-        for word in words {
-            self.add(u64::from_le_bytes(*word));
-        }
-        if !rest.is_empty() {
-            let mut word = [0; 8];
-            word[..rest.len()].copy_from_slice(rest);
-            self.add(u64::from_le_bytes(word));
-        }
-    }
-
-    fn write_u8(&mut self, byte: u8) {
-        self.add(u64::from(byte));
-    }
-
-    fn finish(&self) -> u64 {
-        self.0
-    }
-}
-
 /// A map from names, as slices of the source, to whatever they name.
-type NameMap<'s, V> = HashMap<&'s str, V, BuildHasherDefault<NameHasher>>;
+type NameMap<'s, V> = HashMap<&'s str, V, FxBuildHasher>;
 
 /// What a function name resolves to. One word, so the table of every
 /// function in the file stays small enough to probe from cache.
@@ -357,8 +323,7 @@ pub(crate) struct Declarations<'s> {
 /// declaration says of its result.
 pub(crate) fn declare<'s>(source: &mut Source<'s>, items: &[ast::FnItem]) -> Declarations<'s> {
     let tree = source.tree;
-    let mut names: NameMap<Named> =
-        NameMap::with_capacity_and_hasher(items.len(), Default::default());
+    let mut names: NameMap<Named> = NameMap::with_capacity_and_hasher(items.len(), FxBuildHasher);
     let mut parameters = Vec::with_capacity(items.len());
     let mut headers = Vec::with_capacity(items.len());
     for item in items {
@@ -559,7 +524,7 @@ struct Builder<'a, 's> {
     /// in its run, a constant the thresholds keep.
     consts: Vec<Option<Int>>,
     /// The constants seen so far, for `Lowered::constants`.
-    seen: HashSet<Int, BuildHasherDefault<NameHasher>>,
+    seen: HashSet<Int, FxBuildHasher>,
     /// The first node of the run under construction.
     base: usize,
     // The body under construction.
