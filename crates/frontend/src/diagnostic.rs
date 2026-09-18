@@ -13,7 +13,7 @@ use sumi_text::{TextEdit, TextRange};
 pub struct DiagnosticGroup(pub &'static str);
 
 /// A stable, public identifier for one class of diagnostic, declared in
-/// `sumi.diagnostics` and spelled `group/name`.
+/// its group's `codes!` declaration and spelled `group/name`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct DiagnosticCode {
     pub group: DiagnosticGroup,
@@ -56,6 +56,29 @@ pub struct Diagnostic {
     pub labels: Box<[Label]>,
     /// A source action for the diagnostic's source snapshot.
     pub fix: Option<Fix>,
+}
+
+/// Declare one group of diagnostic codes: the group constant, a documented
+/// constant per code, and `ALL`, every code of the group in declaration
+/// order, so a code cannot go unlisted.
+#[macro_export]
+macro_rules! codes {
+    (
+        $(#[$group_doc:meta])* $group:ident = $group_name:literal;
+        $($(#[$doc:meta])* $code:ident = $name:literal;)*
+    ) => {
+        $(#[$group_doc])*
+        pub const $group: $crate::DiagnosticGroup = $crate::DiagnosticGroup($group_name);
+        $(
+            $(#[$doc])*
+            pub const $code: $crate::DiagnosticCode = $crate::DiagnosticCode {
+                group: $group,
+                name: $name,
+            };
+        )*
+        /// Every code of the group, in declaration order.
+        pub const ALL: &[$crate::DiagnosticCode] = &[$($code,)*];
+    };
 }
 
 #[cfg(test)]

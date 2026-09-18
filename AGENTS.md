@@ -31,7 +31,7 @@ You're in the core repository for Sumi, a novel statically typed general-purpose
 ## Grammar and diagnostics
 
 - `sumi.grammar` at the workspace root is the one declaration of the token and node vocabularies, the token classes, bracket pairs, and operators. To add or change syntax, edit it — never the generated files it lists — and run `cargo xtask codegen`; CI runs `cargo xtask codegen --check`.
-- Diagnostic codes are the constants in `crates/frontend/src/codes.rs` (the `syntax` group) and `crates/hir/src/codes.rs` (`semantic`), each documented where it is declared and listed in its group's `ALL`. To add a code, declare it there, emit it, and add a corpus case that shows it: `crates/hir/tests/codes.rs` fails on a code no snapshot reports. A code is never renamed or reused for something else.
+- Diagnostic codes are one `codes!` declaration per group, in `crates/frontend/src/codes.rs` (`syntax`) and `crates/hir/src/codes.rs` (`semantic`), each code documented where it is declared; the macro derives the constants and the group's `ALL`, so no code goes unlisted. To add a code, declare it there, emit it, and add a corpus case that shows it: `crates/hir/tests/codes.rs` fails on a code no snapshot reports. A code is never renamed or reused for something else.
 
 ## Tests
 
