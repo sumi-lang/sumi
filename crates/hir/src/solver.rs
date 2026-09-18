@@ -395,12 +395,9 @@ impl<L: Lattice> Solver<L> {
         let mut incoming: Vec<u32> = Vec::new();
         let mut preorder: Vec<u32> = Vec::new();
         let mut reached: Vec<bool> = Vec::new();
-        // Every class, providers first: a class outside any cycle has all it
-        // will get by the time it is reached, so it delivers once. A delivery
-        // made from outside a component happens once, so it is never
-        // widened: only the worklist inside a growing component rounds, and
-        // what a member holds before its component is taken stays exact for
-        // the narrowing to recompute from.
+        // A delivery from outside a component is made once and never
+        // widened; what a member holds before its component is taken is
+        // what the narrowing recomputes from.
         let mut at = components.order.len();
         while at > 0 {
             at -= 1;
