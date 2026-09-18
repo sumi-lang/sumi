@@ -772,14 +772,12 @@ pub fn check_diagnostics(parsed: &ParsedSource) {
             assert!(source.is_char_boundary(end));
         }
         if let Some(fix) = &diagnostic.fix {
-            assert!(!fix.edits.is_empty());
+            let edit = &fix.edit;
             // Match the frontend property: each closer adds exactly its
             // code token and preserves all existing tokens and comments.
             // Nested same-kind repairs can legitimately be reoffered and
             // expose later errors, so do not compare global error counts.
             if diagnostic.code == codes::EXPECTED_TOKEN {
-                assert_eq!(fix.edits.len(), 1);
-                let edit = &fix.edits[0];
                 assert_eq!(edit.range().start(), edit.range().end());
                 let kind = match edit.replacement() {
                     ")" => SyntaxKind::RParen,
@@ -805,20 +803,13 @@ pub fn check_diagnostics(parsed: &ParsedSource) {
                 assert_eq!(tokens, significant(parsed.lexed(), source));
                 assert_eq!(comments(&after, &fixed), comments(parsed.lexed(), source));
             }
-            let mut previous_end = None;
-            for edit in &fix.edits {
-                let range = edit.range();
-                let start = range.start().to_usize();
-                let end = range.end().to_usize();
-                assert!(start <= end && end <= source.len());
-                assert!(source.is_char_boundary(start));
-                assert!(source.is_char_boundary(end));
-                if let Some(previous_end) = previous_end {
-                    assert!(previous_end <= start);
-                }
-                previous_end = Some(end);
-                edits.push(edit);
-            }
+            let range = edit.range();
+            let start = range.start().to_usize();
+            let end = range.end().to_usize();
+            assert!(start <= end && end <= source.len());
+            assert!(source.is_char_boundary(start));
+            assert!(source.is_char_boundary(end));
+            edits.push(edit);
         }
     }
 

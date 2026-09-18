@@ -23,14 +23,12 @@ fn diagnostic_codes(front: &ParsedSource) -> Vec<DiagnosticCode> {
 /// Apply the diagnostic's fix as a tool would, unread.
 fn apply_fix(source: &str, diagnostic: &sumi_frontend::Diagnostic) -> String {
     let fix = diagnostic.fix.as_ref().expect("diagnostic has a fix");
+    let range = fix.edit.range();
     let mut result = source.to_owned();
-    for edit in fix.edits.iter().rev() {
-        let range = edit.range();
-        result.replace_range(
-            range.start().to_usize()..range.end().to_usize(),
-            edit.replacement(),
-        );
-    }
+    result.replace_range(
+        range.start().to_usize()..range.end().to_usize(),
+        fix.edit.replacement(),
+    );
     result
 }
 
@@ -58,9 +56,7 @@ fn check_closer_fixes(front: &ParsedSource) {
         if diagnostic.code != codes::EXPECTED_TOKEN || diagnostic.fix.is_none() {
             continue;
         }
-        let fix = diagnostic.fix.as_ref().unwrap();
-        assert_eq!(fix.edits.len(), 1);
-        let edit = &fix.edits[0];
+        let edit = &diagnostic.fix.as_ref().unwrap().edit;
         assert_eq!(edit.range().start(), edit.range().end());
         let kind = match edit.replacement() {
             ")" => SyntaxKind::RParen,
@@ -257,20 +253,12 @@ proptest! {
                 prop_assert!(source.is_char_boundary(end));
             }
             if let Some(fix) = &diagnostic.fix {
-                prop_assert!(!fix.edits.is_empty());
-                let mut previous_end = None;
-                for edit in &fix.edits {
-                    let range = edit.range();
-                    let start = range.start().to_usize();
-                    let end = range.end().to_usize();
-                    prop_assert!(start <= end && end <= source.len());
-                    prop_assert!(source.is_char_boundary(start));
-                    prop_assert!(source.is_char_boundary(end));
-                    if let Some(previous_end) = previous_end {
-                        prop_assert!(previous_end <= start);
-                    }
-                    previous_end = Some(end);
-                }
+                let range = fix.edit.range();
+                let start = range.start().to_usize();
+                let end = range.end().to_usize();
+                prop_assert!(start <= end && end <= source.len());
+                prop_assert!(source.is_char_boundary(start));
+                prop_assert!(source.is_char_boundary(end));
             }
         }
     }

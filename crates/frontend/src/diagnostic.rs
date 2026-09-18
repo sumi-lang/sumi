@@ -34,16 +34,14 @@ pub struct Label {
     pub message: Box<str>,
 }
 
-/// One source action offered for a diagnostic. The edit is mechanically
-/// right — it keeps the program's meaning, or restores the one the
-/// diagnostic says was intended — so a tool may apply it unread. Every
-/// edit is relative to the same source snapshot and applies atomically.
-/// Edits must not overlap; their order is retained for insertions at the
-/// same byte boundary.
+/// One source action offered for a diagnostic: one edit, relative to the
+/// diagnostic's source snapshot. The edit is mechanically right — it keeps
+/// the program's meaning, or restores the one the diagnostic says was
+/// intended — so a tool may apply it unread.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Fix {
     pub message: Box<str>,
-    pub edits: Box<[TextEdit]>,
+    pub edit: TextEdit,
 }
 
 /// One canonical diagnostic, independent of terminal, protocol, or editor

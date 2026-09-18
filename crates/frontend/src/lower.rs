@@ -1,7 +1,7 @@
 //! Lowering the lexer's errors and the parser's evidence into diagnostics:
-//! the code and wording of each, the fix where the repair is mechanical,
-//! the suppression of parser evidence a lexer error already explains, and
-//! source order.
+//! the code and wording of each, the fix where the repair is a token (a
+//! closer or a canonical literal), the suppression of parser evidence a
+//! lexer error already explains, and source order.
 
 use std::collections::HashSet;
 
@@ -110,10 +110,7 @@ impl Snapshot<'_> {
                 canonicalize_number_literal(self.lexed.text(self.source, error.token)).map(
                     |replacement| Fix {
                         message: "remove the leading zeros".into(),
-                        edits: Box::new([TextEdit::new(
-                            self.lexed.range(error.token),
-                            replacement,
-                        )]),
+                        edit: TextEdit::new(self.lexed.range(error.token), replacement),
                     },
                 ),
             ),
@@ -247,7 +244,7 @@ impl Snapshot<'_> {
         }
         Some(Fix {
             message: format!("insert {}", kind.describe()).into(),
-            edits: Box::new([TextEdit::new(TextRange::new(at, at), replacement)]),
+            edit: TextEdit::new(TextRange::new(at, at), replacement),
         })
     }
 

@@ -61,7 +61,7 @@ fn snapshot(source: &str, stages: &[corpus::Stage]) -> String {
         .diagnostics()
         .iter()
         .filter_map(|diagnostic| diagnostic.fix.as_ref())
-        .flat_map(|fix| fix.edits.iter())
+        .map(|fix| &fix.edit)
         .collect();
     if !edits.is_empty() {
         // Every fix applies to the original source; where two of them
@@ -289,15 +289,13 @@ fn render(diagnostic: &Diagnostic, index: &LineIndex, source: &str, out: &mut St
     }
     if let Some(fix) = &diagnostic.fix {
         writeln!(out, "  fix: {}", fix.message).expect("writing to a string");
-        for edit in &fix.edits {
-            writeln!(
-                out,
-                "    {} -> {:?}",
-                place(index, source, edit.range()),
-                edit.replacement()
-            )
-            .expect("writing to a string");
-        }
+        writeln!(
+            out,
+            "    {} -> {:?}",
+            place(index, source, fix.edit.range()),
+            fix.edit.replacement()
+        )
+        .expect("writing to a string");
     }
 }
 
