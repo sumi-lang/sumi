@@ -5,27 +5,9 @@
 //! every generated program is one the properties and the scorecard measure.
 
 use std::fs;
-use std::path::{Path, PathBuf};
 
 use sumi_test::coverage::Coverage;
-use sumi_test::{Programs, front};
-
-/// Every directory under `dir` holding a `case.sumi`, recursively.
-fn cases(dir: &Path, out: &mut Vec<PathBuf>) {
-    let mut entries: Vec<PathBuf> = fs::read_dir(dir)
-        .unwrap_or_else(|error| panic!("cannot read {}: {error}", dir.display()))
-        .map(|entry| entry.expect("directory entry").path())
-        .filter(|path| path.is_dir())
-        .collect();
-    entries.sort();
-    for path in entries {
-        if path.join("case.sumi").is_file() {
-            out.push(path);
-        } else {
-            cases(&path, out);
-        }
-    }
-}
+use sumi_test::{Programs, corpus, front};
 
 fn record(coverage: &mut Coverage, source: &str) {
     let front = front(source);
@@ -43,12 +25,14 @@ fn assert_covered(coverage: &Coverage, body: &str) {
 
 #[test]
 fn the_corpus_covers_the_grammar() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/corpus");
-    let mut found = Vec::new();
-    cases(&root, &mut found);
-    assert!(!found.is_empty(), "no cases under {}", root.display());
+    let cases = corpus::cases();
+    assert!(
+        !cases.is_empty(),
+        "no cases under {}",
+        corpus::root().display()
+    );
     let mut coverage = Coverage::new();
-    for case in found {
+    for case in cases {
         let source = fs::read_to_string(case.join("case.sumi")).expect("a case is UTF-8");
         record(&mut coverage, &source);
     }

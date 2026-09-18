@@ -14,13 +14,11 @@
 
 use std::fmt::Write as _;
 
-#[path = "../../../tests/support/corpus.rs"]
-mod corpus;
-
 use sumi_format::format;
 use sumi_frontend::{Diagnostic, parse_source};
 use sumi_lexer::LexedFile;
 use sumi_syntax::{NodeIdx, ParseAnchor, ParseEvidence, ParseRecoveryKind, RawIdx, SyntaxTree};
+use sumi_test::corpus;
 use sumi_text::{LineIndex, TextEdit, TextRange, TextSize};
 
 #[test]

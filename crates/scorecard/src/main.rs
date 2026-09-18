@@ -21,7 +21,7 @@ use sumi_lexer::LexedFile;
 use sumi_syntax::{
     NodeIdx, NodeKind, ParseEvidence, ParserInput, RawIdx, SigIdx, SyntaxKind, is_bracket,
 };
-use sumi_test::corpus::{self, Rng};
+use sumi_test::bench::{self, Rng};
 use sumi_test::{Edit, EditSpan, Front, INSERTS, Programs, apply, changes_delimiter, front};
 
 /// Measured (program, edit) pairs per Part A class.
@@ -564,9 +564,9 @@ fn main() {
     println!("that no longer survive with identical span and shape.");
     println!();
     let mut rng = Rng::new(0xB4A5_E0B5);
-    let clean_8k = corpus::generate(8 * 1024, 0xC0FFEE);
-    let clean_64k = corpus::generate(64 * 1024, 0xBEEF);
-    let clean_1m = corpus::generate(1024 * 1024, 0xDECAF);
+    let clean_8k = bench::generate(8 * 1024, 0xC0FFEE);
+    let clean_64k = bench::generate(64 * 1024, 0xBEEF);
+    let clean_1m = bench::generate(1024 * 1024, 0xDECAF);
     churn_base("clean_8k", &clean_8k, 200, &mut rng);
     churn_base("clean_64k", &clean_64k, 200, &mut rng);
     churn_base("clean_1m", &clean_1m, 50, &mut rng);

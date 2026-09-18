@@ -14,7 +14,6 @@ criterion.workspace = true
 proptest.workspace = true
 sumi-format = { path = "../format" }
 sumi-test = { path = "../test" }
-tempfile.workspace = true
 
 [[bench]]
 name = "pipeline"

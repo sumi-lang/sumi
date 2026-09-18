@@ -676,7 +676,6 @@ dependencies = [
  "sumi-syntax",
  "sumi-test",
  "sumi-text",
- "tempfile",
 ]
 
 [[package]]
@@ -712,7 +711,6 @@ dependencies = [
  "sumi-syntax",
  "sumi-test",
  "sumi-text",
- "tempfile",
 ]
 
 [[package]]
@@ -755,6 +753,7 @@ dependencies = [
  "sumi-lexer",
  "sumi-syntax",
  "sumi-text",
+ "tempfile",
 ]
 
 [[package]]

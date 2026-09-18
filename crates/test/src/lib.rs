@@ -10,9 +10,12 @@
 //! canonical-form property. The coverage account says whether a body of
 //! trees, the corpus or the generator's, reaches everything the grammar
 //! allows. The checks state each layer's invariants once, for the property
-//! tests and the fuzz targets alike. Nothing here ships: this crate sits
-//! above every other, and production crates must not depend on it.
+//! tests and the fuzz targets alike. The corpus runner compares a stage's
+//! rendering of every file-based case with the snapshot beside it. Nothing
+//! here ships: this crate sits above every other, and production crates
+//! must not depend on it.
 
+pub mod bench;
 pub mod check;
 pub mod corpus;
 pub mod coverage;

@@ -13,3 +13,6 @@ sumi-hir = { path = "../hir" }
 sumi-lexer = { path = "../lexer" }
 sumi-syntax = { path = "../syntax" }
 sumi-text = { path = "../text" }
+
+[dev-dependencies]
+tempfile.workspace = true

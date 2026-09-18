@@ -4,7 +4,7 @@
 use sumi_frontend::{Diagnostic, DiagnosticCode, parse_source};
 use sumi_hir::codes::*;
 use sumi_hir::{Analysis, BinaryOp, Function, FunctionId, Int, NodeId, Op, Ty, analyze};
-use sumi_test::check;
+use sumi_test::{check, corpus};
 use sumi_text::TextRange;
 
 fn check(source: &str) -> Analysis {
@@ -307,23 +307,12 @@ fn recovery_does_not_expose_functions_or_leak_argument_scopes() {
 
 #[test]
 fn existing_corpus_never_panics_or_silently_rejects() {
-    let mut directories = vec![std::path::PathBuf::from(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../tests/corpus"
-    ))];
-    let mut count = 0;
-    while let Some(directory) = directories.pop() {
-        for entry in std::fs::read_dir(directory).unwrap() {
-            let path = entry.unwrap().path();
-            if path.is_dir() {
-                directories.push(path);
-            } else if path.file_name().unwrap() == "case.sumi" {
-                check::semantics(&check(&std::fs::read_to_string(&path).unwrap()));
-                count += 1;
-            }
-        }
+    let cases = corpus::cases();
+    assert!(cases.len() > 100);
+    for case in cases {
+        let source = std::fs::read_to_string(case.join("case.sumi")).unwrap();
+        check::semantics(&check(&source));
     }
-    assert!(count > 100);
 }
 
 #[test]
