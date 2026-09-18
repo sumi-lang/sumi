@@ -1,12 +1,10 @@
-//! Formatting and lossless reprinting for Sumi.
+//! Formatting for Sumi.
 //!
-//! The syntax tree stores structure only; the token buffers keep every byte
-//! of the source, and [`reprint`] walks the two together to reconstruct it
-//! byte for byte. [`format`] lays the tokens out
-//! afresh: a separator per gap, chosen by rules over the tree and fitted to
-//! a width, with comments and retained blank lines kept in place and every
-//! gap the parser recovered around left as written. [`rep`] is its
-//! contract: the layout-free content of a source, which formatting keeps.
+//! [`format`] lays a file's tokens out afresh: a separator per gap, chosen
+//! by rules over the tree and fitted to a width, with comments and retained
+//! blank lines kept in place and every gap the parser recovered around left
+//! as written. [`rep`] is its contract: the layout-free content of a
+//! source, which formatting keeps.
 //! [`layout_violation_edits`] gives each spacing violation the parser
 //! accepted as written its mechanical fix, for diagnostics to offer.
 
@@ -19,7 +17,7 @@ use std::fmt;
 
 use sumi_lexer::{LexedFile, lex};
 use sumi_syntax::{
-    Parse, ParseViolation, ParseViolationKind, ParserInput, RawIdx, SyntaxKind, SyntaxTree, parse,
+    Parse, ParseViolation, ParseViolationKind, ParserInput, RawIdx, SyntaxKind, parse,
 };
 use sumi_text::{TextEdit, TextRange, TextSize};
 
@@ -126,41 +124,6 @@ fn mismatch(before: &Rep<'_>, candidate: &str) -> Option<Vec<usize>> {
             .filter(|&index| after.items[index] != before.items[index])
             .collect(),
     )
-}
-
-/// Reconstruct the source of `tree` byte for byte from its token buffer.
-/// `lexed` and `source` must be the file and text the tree was parsed from.
-pub fn reprint(tree: &SyntaxTree, lexed: &LexedFile, source: &str) -> String {
-    let mut out = String::with_capacity(source.len());
-    let mut print = |from: RawIdx, to: RawIdx| {
-        for token in from.until(to) {
-            out.push_str(lexed.text(source, token));
-        }
-    };
-    // The open nodes, innermost last: where each one's subtree ends in the
-    // array, its last token, and the next token of its own to print.
-    let mut open: Vec<(usize, RawIdx, RawIdx)> = Vec::new();
-    for node in tree.nodes() {
-        while let Some(&(end, end_token, cursor)) = open.last()
-            && node.to_usize() >= end
-        {
-            print(cursor, end_token);
-            open.pop();
-        }
-        if let Some((_, _, cursor)) = open.last_mut() {
-            print(*cursor, tree.first_token(node));
-            *cursor = tree.end_token(node);
-        }
-        open.push((
-            node.to_usize() + tree.subtree_len(node),
-            tree.end_token(node),
-            tree.first_token(node),
-        ));
-    }
-    while let Some((_, end_token, cursor)) = open.pop() {
-        print(cursor, end_token);
-    }
-    out
 }
 
 /// Build the mechanically valid candidate edits for one parser layout

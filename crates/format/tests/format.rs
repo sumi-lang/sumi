@@ -1,4 +1,4 @@
-use sumi_format::{layout_violation_edits, reprint};
+use sumi_format::layout_violation_edits;
 use sumi_syntax::{ParseEvidence, ParseViolationKind};
 use sumi_test::front;
 
@@ -40,54 +40,6 @@ fn check_layout_edits(source: &str, kind: ParseViolationKind, expected: Option<&
                 .all(|pair| { pair[0].range().end() <= pair[1].range().start() })
         );
     }
-}
-
-/// Assert that reprinting `source` gives it back byte for byte.
-#[track_caller]
-fn check_roundtrip(source: &str) {
-    let front = front(source);
-    assert_eq!(
-        reprint(front.parse.tree(), &front.lexed, source),
-        source,
-        "reprint of {source:?}"
-    );
-}
-
-#[test]
-fn reprint_is_the_identity_on_malformed_sources() {
-    for source in [
-        "",
-        " \t\n",
-        "fn f( { ) }",
-        "fn f() { a==b }\n\u{20ac} ; [",
-        "\"open string",
-        "fn f() { 'ab' '' }",
-        "0123 1e+05 1u32",
-        "r##\"unterminated",
-        "let x = 1\nfn g(,,) -> {",
-        "fn f() {\r\n return 1 \r}",
-        "fn f() { ((((( }",
-        ": (x)",
-        "// only a comment",
-        "fn 0() fn",
-    ] {
-        check_roundtrip(source);
-    }
-}
-
-#[test]
-fn reprint_survives_the_nesting_recovery_limit() {
-    let source = format!("fn f() {{ {}x }}", "(".repeat(400));
-    check_roundtrip(&source);
-}
-
-#[test]
-fn reprint_survives_long_expression_chains() {
-    let binary = format!("fn f() {{ x{} }}", " + x".repeat(20_000));
-    check_roundtrip(&binary);
-
-    let calls = format!("fn f() {{ f{} }}", "()".repeat(20_000));
-    check_roundtrip(&calls);
 }
 
 #[test]

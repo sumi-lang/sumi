@@ -1,7 +1,7 @@
 use criterion::{
     BatchSize, BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main,
 };
-use sumi_format::{format, reprint};
+use sumi_format::format;
 use sumi_frontend::{FileId, parse_source};
 use sumi_lexer::lex;
 use sumi_syntax::ast::{AstNode, Block, ElseBranch, Expr, SourceFile, Stmt};
@@ -285,7 +285,7 @@ fn bench_format(c: &mut Criterion) {
     let lexed = lex(&source).expect("benchmark corpus fits in Sumi's source coordinate space");
     let parsed = parse(ParserInput::new(&lexed));
     assert_eq!(
-        reprint(parsed.tree(), &lexed, &source),
+        parsed.tree().reprint(&lexed, &source),
         source,
         "the tree must reprint its corpus byte for byte"
     );
@@ -309,7 +309,7 @@ fn bench_format(c: &mut Criterion) {
     let mut group = c.benchmark_group("format/medium-valid");
     group.throughput(Throughput::Bytes(source.len() as u64));
     group.bench_function("reprint", |b| {
-        b.iter_with_large_drop(|| reprint(black_box(parsed.tree()), &lexed, &source));
+        b.iter_with_large_drop(|| black_box(parsed.tree()).reprint(&lexed, &source));
     });
     group.bench_function("format", |b| {
         b.iter_with_large_drop(|| format(black_box(&source), &lexed, &parsed));

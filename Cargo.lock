@@ -739,7 +739,6 @@ name = "sumi-syntax"
 version = "0.1.0"
 dependencies = [
  "proptest",
- "sumi-format",
  "sumi-lexer",
  "sumi-test",
  "sumi-text",

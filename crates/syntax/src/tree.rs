@@ -135,6 +135,42 @@ impl SyntaxTree {
         )
     }
 
+    /// Reconstruct the source of the tree byte for byte from its token
+    /// buffer. `lexed` and `source` must be the file and text the tree was
+    /// parsed from.
+    pub fn reprint(&self, lexed: &LexedFile, source: &str) -> String {
+        let mut out = String::with_capacity(source.len());
+        let mut print = |from: RawIdx, to: RawIdx| {
+            for token in from.until(to) {
+                out.push_str(lexed.text(source, token));
+            }
+        };
+        // The open nodes, innermost last: where each one's subtree ends in
+        // the array, its last token, and the next token of its own to print.
+        let mut open: Vec<(usize, RawIdx, RawIdx)> = Vec::new();
+        for node in self.nodes() {
+            while let Some(&(end, end_token, cursor)) = open.last()
+                && node.to_usize() >= end
+            {
+                print(cursor, end_token);
+                open.pop();
+            }
+            if let Some((_, _, cursor)) = open.last_mut() {
+                print(*cursor, self.first_token(node));
+                *cursor = self.end_token(node);
+            }
+            open.push((
+                node.to_usize() + self.subtree_len(node),
+                self.end_token(node),
+                self.first_token(node),
+            ));
+        }
+        while let Some((_, end_token, cursor)) = open.pop() {
+            print(cursor, end_token);
+        }
+        out
+    }
+
     /// The direct children of node `index`, in source order.
     pub fn children(&self, index: NodeIdx) -> impl Iterator<Item = NodeIdx> + '_ {
         let end = index.to_usize() + self.nodes[index.to_usize()].extent as usize;

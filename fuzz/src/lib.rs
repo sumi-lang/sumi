@@ -11,7 +11,7 @@
 
 use std::collections::HashSet;
 
-use sumi_format::{format, rep, reprint};
+use sumi_format::{format, rep};
 use sumi_frontend::{Applicability, FileId, ParsedSource, Place, Severity, codes, parse_source};
 use sumi_lexer::{LexedFile, RawIdx, SyntaxKind, lex};
 use sumi_syntax::{
@@ -693,7 +693,7 @@ pub fn check_tree(parse: &Parse, lexed: &LexedFile) {
 pub fn check_parse(source: &str, lexed: &LexedFile, parse: &Parse) {
     let (input, tree) = (parse.input(), parse.tree());
     assert_eq!(
-        reprint(tree, lexed, source),
+        tree.reprint(lexed, source),
         source,
         "the tree is not lossless"
     );
