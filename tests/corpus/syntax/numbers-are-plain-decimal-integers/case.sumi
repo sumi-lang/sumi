@@ -1,0 +1,3 @@
+fn fraction() { 1.5 }
+fn leading_zero_and_suffix() { 01u32 }
+fn separator() { 1_000 }

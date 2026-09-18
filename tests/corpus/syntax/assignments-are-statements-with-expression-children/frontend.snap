@@ -1,0 +1,41 @@
+== tree ==
+SourceFile 0..92
+  FnItem 0..20
+    Name 3..8 "plain"
+    ParamList 8..10 "()"
+    Block 11..20
+      AssignStmt 13..18
+        NameRef 13..14 "x"
+        LiteralExpr 17..18 "1"
+  FnItem 21..59
+    Name 24..35 "expressions"
+    ParamList 35..37 "()"
+    Block 38..59
+      AssignStmt 40..57
+        BinaryExpr 40..45
+          NameRef 40..41 "a"
+          NameRef 44..45 "b"
+        BinaryExpr 48..57
+          BinaryExpr 48..53
+            NameRef 48..49 "c"
+            NameRef 52..53 "d"
+          NameRef 56..57 "e"
+  FnItem 60..91
+    Name 63..77 "grouped_target"
+    ParamList 77..79 "()"
+    Block 80..91
+      AssignStmt 82..89
+        ParenExpr 82..85
+          NameRef 83..84 "a"
+        NameRef 88..89 "b"
+
+== formatted ==
+fn plain() {
+    x = 1
+}
+fn expressions() {
+    a + b = c * d + e
+}
+fn grouped_target() {
+    (a) = b
+}

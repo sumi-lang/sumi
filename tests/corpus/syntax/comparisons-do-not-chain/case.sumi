@@ -1,0 +1,2 @@
+fn chained() { a < b < c }
+fn grouped() { (a < b) < c }

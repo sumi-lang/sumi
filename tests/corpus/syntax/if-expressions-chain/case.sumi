@@ -1,0 +1,5 @@
+fn one_line() { if a { 1 } else if b { 2 } else { 3 } }
+fn else_on_the_next_line() {
+  if a { 1 }
+  else { 2 }
+}

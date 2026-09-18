@@ -70,14 +70,14 @@ error[syntax/unknown-character] 1:12..1:15 "€": character has no meaning in Su
 Identifier characters attached to an integer literal, as in `1u32`,
 `1e5`, or `1_000`. Literals take no suffix, exponent, or separator.
 
-Shown by [`tests/corpus/syntax/number-separator-is-a-suffix`](../../../tests/corpus/syntax/number-separator-is-a-suffix/case.sumi):
+Shown by [`tests/corpus/recovery/malformed-literals-are-structurally-ordinary`](../../../tests/corpus/recovery/malformed-literals-are-structurally-ordinary/case.sumi):
 
 ```sumi
-fn f() { 1_000 }
+1e
 ```
 
 ```text
-error[syntax/unknown-suffix] 1:11..1:15 "_000": literal suffixes are not supported
+error[syntax/unknown-suffix] 1:2..1:3 "e": literal suffixes are not supported
 ```
 
 ### `syntax/noncanonical-number`
@@ -332,17 +332,17 @@ operators are spaced on both sides; glued, `<` opens type arguments and
 `*` and `&` are reserved for prefix operators. The fix inserts the
 spaces.
 
-Shown by [`tests/corpus/layout/normalize-spaces-trailing-operator`](../../../tests/corpus/layout/normalize-spaces-trailing-operator/case.sumi):
+Shown by [`tests/corpus/layout/spacing-fix-survives-recovery`](../../../tests/corpus/layout/spacing-fix-survives-recovery/case.sumi):
 
 ```sumi
-fn f() { let x = a+
-b }
+fn f() { a+b : }
 ```
 
 ```text
-error[syntax/unspaced-binary-operator] 1:19..1:20 "+": binary operator must have spaces on both sides
+error[syntax/unspaced-binary-operator] 1:11..1:12 "+": binary operator must have spaces on both sides
   fix (safe): space binary operator
-    1:19 -> " "
+    1:11 -> " "
+    1:12 -> " "
 ```
 
 ### `syntax/spaced-prefix-operator`
@@ -350,16 +350,15 @@ error[syntax/unspaced-binary-operator] 1:19..1:20 "+": binary operator must have
 A prefix operator separated from its operand, as in `- x`. Prefix
 operators are glued; the fix removes the space.
 
-Shown by [`tests/corpus/layout/normalize-glues-spaced-prefix-operators-1`](../../../tests/corpus/layout/normalize-glues-spaced-prefix-operators-1/case.sumi):
+Shown by [`tests/corpus/layout/prefix-gap-holds-a-comment`](../../../tests/corpus/layout/prefix-gap-holds-a-comment/case.sumi):
 
 ```sumi
-fn f() { let x = - 1 }
+fn f() { - // why
+ 1 }
 ```
 
 ```text
-error[syntax/spaced-prefix-operator] 1:18..1:19 "-": prefix operator must be adjacent to its operand
-  fix (safe): remove space after prefix operator
-    1:19..1:20 " " -> ""
+error[syntax/spaced-prefix-operator] 1:10..1:11 "-": prefix operator must be adjacent to its operand
 ```
 
 ### `syntax/spaced-list-opener`
@@ -472,14 +471,15 @@ error[syntax/binding-name-on-next-line] 8:5..8:14 "commented": binding name must
 Comparisons chained, as in `a < b < c`. A comparison yields a boolean
 that no comparison accepts; write two comparisons joined by `&&`.
 
-Shown by [`tests/corpus/layout/chained-comparison-has-no-fix`](../../../tests/corpus/layout/chained-comparison-has-no-fix/case.sumi):
+Shown by [`tests/corpus/syntax/comparisons-do-not-chain`](../../../tests/corpus/syntax/comparisons-do-not-chain/case.sumi):
 
 ```sumi
-fn f() { a < b < c }
+fn chained() { a < b < c }
+fn grouped() { (a < b) < c }
 ```
 
 ```text
-error[syntax/chained-comparison] 1:16..1:17 "<": comparison operators cannot be chained
+error[syntax/chained-comparison] 1:22..1:23 "<": comparison operators cannot be chained
 ```
 
 ## semantic

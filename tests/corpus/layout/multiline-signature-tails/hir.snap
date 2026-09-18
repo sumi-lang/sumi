@@ -14,11 +14,11 @@ fn identity@38..93 (int ∈ [1, 1]) -> int ∈ [1, 1]
 fn empty@94..109 () -> unit ∈ unit
   body: unit : unit @107..109
 
-fn block@110..131 () -> unit ∈ unit
+fn block@110..139 () -> unit ∈ unit
   result: copy : unit @124..128
-    value: unit : unit @129..131
+    value: unit : unit @137..139
 
-fn caller@132..177 () -> int ∈ [1, 1]
-  result: copy : int @147..150
-    value: call identity@38..93 : int @153..177
-      arg[0]: call value@0..37 : int @167..174
+fn caller@140..185 () -> int ∈ [1, 1]
+  result: copy : int @155..158
+    value: call identity@38..93 : int @161..185
+      arg[0]: call value@0..37 : int @175..182

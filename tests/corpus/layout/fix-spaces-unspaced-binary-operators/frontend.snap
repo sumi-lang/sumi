@@ -1,0 +1,113 @@
+== tree ==
+SourceFile 0..155
+  FnItem 0..19
+    Name 3..8 "glued"
+    ParamList 8..10 "()"
+    Block 11..19
+      BinaryExpr 13..17
+        NameRef 13..14 "a"
+        NameRef 16..17 "b"
+  FnItem 20..44
+    Name 23..33 "glued_left"
+    ParamList 33..35 "()"
+    Block 36..44
+      BinaryExpr 38..42
+        NameRef 38..39 "a"
+        NameRef 41..42 "b"
+  FnItem 45..70
+    Name 48..59 "glued_right"
+    ParamList 59..61 "()"
+    Block 62..70
+      BinaryExpr 64..68
+        NameRef 64..65 "a"
+        NameRef 67..68 "b"
+  FnItem 71..98
+    Name 74..85 "glued_twice"
+    ParamList 85..87 "()"
+    Block 88..98
+      BinaryExpr 90..96
+        NameRef 90..91 "a"
+        BinaryExpr 93..96
+          NameRef 93..94 "b"
+          NameRef 95..96 "c"
+  FnItem 99..123
+    Name 102..113 "glued_minus"
+    ParamList 113..115 "()"
+    Block 116..123
+      BinaryExpr 118..121
+        NameRef 118..119 "a"
+        NameRef 120..121 "b"
+  FnItem 124..154
+    Name 127..135 "trailing"
+    ParamList 135..137 "()"
+    Block 138..154
+      LetStmt 140..152
+        Name 144..145 "x"
+        BinaryExpr 148..152
+          NameRef 148..149 "a"
+          NameRef 151..152 "b"
+
+== evidence ==
+UnspacedBinaryOperator at 14
+UnspacedBinaryOperator at 40
+UnspacedBinaryOperator at 65
+UnspacedBinaryOperator at 91
+UnspacedBinaryOperator at 94
+UnspacedBinaryOperator at 119
+UnspacedBinaryOperator at 149
+
+== diagnostics ==
+error[syntax/unspaced-binary-operator] 1:15..1:17 "==": binary operator must have spaces on both sides
+  fix (safe): space binary operator
+    1:15 -> " "
+    1:17 -> " "
+error[syntax/unspaced-binary-operator] 2:21..2:22 "+": binary operator must have spaces on both sides
+  fix (safe): space binary operator
+    2:22 -> " "
+error[syntax/unspaced-binary-operator] 3:21..3:22 "+": binary operator must have spaces on both sides
+  fix (safe): space binary operator
+    3:21 -> " "
+error[syntax/unspaced-binary-operator] 4:21..4:23 "<=": binary operator must have spaces on both sides
+  fix (safe): space binary operator
+    4:21 -> " "
+    4:23 -> " "
+error[syntax/unspaced-binary-operator] 4:24..4:25 "*": binary operator must have spaces on both sides
+  fix (safe): space binary operator
+    4:24 -> " "
+    4:25 -> " "
+error[syntax/unspaced-binary-operator] 5:21..5:22 "-": binary operator must have spaces on both sides
+  fix (safe): space binary operator
+    5:21 -> " "
+    5:22 -> " "
+error[syntax/unspaced-binary-operator] 6:26..6:27 "+": binary operator must have spaces on both sides
+  fix (safe): space binary operator
+    6:26 -> " "
+
+== fixed ==
+fn glued() { a == b }
+fn glued_left() { a + b }
+fn glued_right() { a + b }
+fn glued_twice() { a <= b * c }
+fn glued_minus() { a - b }
+fn trailing() { let x = a +
+b }
+
+== formatted ==
+fn glued() {
+    a == b
+}
+fn glued_left() {
+    a + b
+}
+fn glued_right() {
+    a + b
+}
+fn glued_twice() {
+    a <= b * c
+}
+fn glued_minus() {
+    a - b
+}
+fn trailing() {
+    let x = a + b
+}

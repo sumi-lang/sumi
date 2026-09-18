@@ -1,0 +1,34 @@
+== tree ==
+SourceFile 0..83
+  FnItem 0..12
+    Name 3..7 "main"
+    ParamList 7..9 "()"
+    Block 10..12 "{}"
+  FnItem 13..52
+    Name 16..19 "add"
+    ParamList 19..35
+      Param 20..26
+        Name 20..21 "a"
+        TypeRef 23..26 "int"
+      Param 28..34
+        Name 28..29 "b"
+        TypeRef 31..34 "int"
+    TypeRef 39..42 "int"
+    Block 43..52
+      BinaryExpr 45..50
+        NameRef 45..46 "a"
+        NameRef 49..50 "b"
+  FnItem 53..82
+    Name 56..70 "trailing_comma"
+    ParamList 70..79
+      Param 71..77
+        Name 71..72 "a"
+        TypeRef 74..77 "int"
+    Block 80..82 "{}"
+
+== formatted ==
+fn main() {}
+fn add(a: int, b: int) -> int {
+    a + b
+}
+fn trailing_comma(a: int) {}

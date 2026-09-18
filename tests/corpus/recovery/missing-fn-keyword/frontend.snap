@@ -1,16 +1,33 @@
 == tree ==
-SourceFile! 0..13
-  FnItem! 7..13
-    Name 7..8 "f"
-    ParamList 8..10 "()"
-    Block 11..13 "{}"
+SourceFile! 0..63
+  FnItem! 7..17
+    Name 7..12 "block"
+    ParamList 12..14 "()"
+    Block 15..17 "{}"
+  FnItem! 18..47
+    Name 18..24 "double"
+    ParamList 24..32
+      Param 25..31
+        Name 25..26 "x"
+        TypeRef 28..31 "int"
+    TypeRef 36..39 "int"
+    BinaryExpr 42..47
+      NameRef 42..43 "x"
+      LiteralExpr 46..47 "2"
+  FnItem! 48..62
+    Name 48..50 "id"
+    ParamList 50..58
+      Param 51..57
+        Name 51..52 "x"
+        TypeRef 54..57 "int"
+    NameRef 61..62 "x"
 
 == evidence ==
 Expected(FnKw) at 7
+Expected(FnKw) at 18
+Expected(FnKw) at 48
 
 == diagnostics ==
 error[syntax/expected-token] 2:1: expected `fn`
-
-== formatted ==
-// doc
-f() {}
+error[syntax/expected-token] 3:1: expected `fn`
+error[syntax/expected-token] 4:1: expected `fn`

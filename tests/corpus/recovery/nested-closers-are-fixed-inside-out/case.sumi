@@ -1,0 +1,2 @@
+fn braces() { if true {
+fn parens() { ((1 }
