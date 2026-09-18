@@ -38,6 +38,14 @@ enum Control {
     Return(NodeId),
 }
 
+/// Bind the parameters of a frame of `run`, whose slots are `slots`, to
+/// `args`, one per parameter.
+fn bind(slots: &mut [Option<Value>], run: &Run, args: impl IntoIterator<Item = Value>) {
+    for (param, arg) in run.params().zip(args) {
+        slots[run.slot(param)] = Some(arg);
+    }
+}
+
 #[derive(Debug)]
 struct Frame<'a> {
     run: &'a Run,
@@ -103,9 +111,7 @@ impl<'a> Machine<'a> {
             outcome: None,
         };
         let base = machine.open(function);
-        for (param, arg) in run.params().zip(args) {
-            machine.slots[base + run.slot(param)] = Some(arg.clone());
-        }
+        bind(&mut machine.slots[base..], run, args.iter().cloned());
         machine
     }
 
@@ -316,13 +322,16 @@ impl<'a> Machine<'a> {
                 let (caller_base, caller_run) = (caller.base, caller.run);
                 self.control.push(Control::Return(node));
                 let base = self.open(function);
-                let run = self.graph.run(function);
-                // The arguments move from the caller's slots into the
-                // callee's.
-                for (param, &arg) in run.params().zip(self.graph.inputs(node)) {
-                    let value = self.slots[caller_base + caller_run.slot(arg)].clone();
-                    self.slots[base + run.slot(param)] = value;
-                }
+                let graph = self.graph;
+                // The arguments are copied from the caller's slots, which
+                // lie before the callee's, into the callee's.
+                let (callers, callee) = self.slots.split_at_mut(base);
+                let args = graph.inputs(node).iter().map(|&arg| {
+                    callers[caller_base + caller_run.slot(arg)]
+                        .clone()
+                        .expect("an argument is evaluated before the call")
+                });
+                bind(callee, graph.run(function), args);
             }
             Control::Return(node) => {
                 let frame = self.frames.pop().expect("a return has a frame to leave");
