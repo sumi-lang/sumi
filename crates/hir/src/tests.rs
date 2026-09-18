@@ -170,10 +170,7 @@ fn reversed_declarations_preserve_types(analysis: &Analysis) {
             a.name().map(|name| analysis.text(name)),
             b.name().map(|name| reversed.text(name))
         );
-        assert_eq!(
-            a.signature().map(|s| (&s.params, s.result)),
-            b.signature().map(|s| (&s.params, s.result))
-        );
+        assert_eq!(a.signature(), b.signature());
         assert_eq!(
             analysis.ranges(FunctionId::new(index)),
             reversed.ranges(FunctionId::new(count - 1 - index))

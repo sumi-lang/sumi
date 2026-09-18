@@ -26,8 +26,8 @@ use sumi_text::TextRange;
 
 pub use check::analyze;
 pub use sumi_graph::{
-    BinaryOp, Bools, Domain, FunctionId, Graph, Int, Ints, Machine, May, Node, NodeId, Op,
-    OutOfRange, ParseIntError, Refusal, Region, RegionId, Run, Ty, Value,
+    BinaryOp, Bools, FunctionId, Graph, Int, Ints, Machine, May, NodeId, Op, Refusal, RegionId,
+    Run, Ty, Value,
 };
 
 pub struct Analysis {
@@ -67,8 +67,7 @@ impl Analysis {
     pub fn ty(&self, node: NodeId) -> Option<Ty> {
         self.settled.resolve(node)
     }
-    /// The values that may reach `node`.
-    pub fn may(&self, node: NodeId) -> &May {
+    fn may(&self, node: NodeId) -> &May {
         self.settled.may(node)
     }
     /// Every diagnostic, syntactic and semantic, in source order, with a
@@ -88,21 +87,9 @@ impl Analysis {
     pub fn functions(&self) -> &[Function] {
         &self.functions
     }
-    /// Every function's ID, in declaration order: the index into `functions()`.
-    pub fn function_ids(&self) -> impl ExactSizeIterator<Item = FunctionId> + use<> {
-        (0..self.functions.len()).map(FunctionId::new)
-    }
     /// An ID must come from this analysis, not another source revision.
     pub fn function(&self, id: FunctionId) -> &Function {
         &self.functions[id.index()]
-    }
-    /// The function item named `name`, if any.
-    pub fn function_named(&self, name: &str) -> Option<FunctionId> {
-        self.function_ids().find(|&id| {
-            self.function(id)
-                .name
-                .is_some_and(|range| self.text(range) == name)
-        })
     }
     /// What may reach a function's parameters and its result, whenever it
     /// has a signature: the hull of every live call site's arguments, and
@@ -125,29 +112,27 @@ impl Analysis {
     pub fn text(&self, range: TextRange) -> &str {
         range.text(self.parsed.source())
     }
+    /// Whether there is no diagnostic.
     pub fn is_valid(&self) -> bool {
-        self.diagnostics.is_empty() && self.functions.iter().all(|f| f.complete)
+        self.diagnostics.is_empty()
     }
-    /// The file as a program, when it is valid: `None` when there is any
-    /// diagnostic.
+    /// The file as a program, when it is valid.
     pub fn program(&self) -> Option<Program<'_>> {
         self.is_valid().then_some(Program { analysis: self })
     }
 }
 
-/// A valid analysis: every function has a signature and a complete body,
-/// and there is no diagnostic. Only such a file runs, so a run of it
-/// has no path to an ill-typed operation, a zero divisor, a hole, or a
-/// recursion without end, and the machine's refusals are checker bugs.
+/// A valid analysis: there is no diagnostic, and the checker guarantees
+/// every function of such a file has a signature and a complete body.
+/// Only such a file runs, so a run of it has no path to an ill-typed
+/// operation, a zero divisor, a hole, or a recursion without end, and the
+/// machine's refusals are checker bugs.
 #[derive(Clone, Copy, Debug)]
 pub struct Program<'a> {
     analysis: &'a Analysis,
 }
 
 impl<'a> Program<'a> {
-    pub fn analysis(self) -> &'a Analysis {
-        self.analysis
-    }
     pub fn function(self, id: FunctionId) -> &'a Function {
         self.analysis.function(id)
     }
@@ -167,8 +152,10 @@ impl<'a> Program<'a> {
     /// Every function with its ID, in declaration order.
     pub fn functions(self) -> impl Iterator<Item = (FunctionId, &'a Function)> {
         self.analysis
-            .function_ids()
-            .map(|id| (id, self.analysis.function(id)))
+            .functions
+            .iter()
+            .enumerate()
+            .map(|(index, function)| (FunctionId::new(index), function))
     }
     /// The function item named `name`, if any: a valid file names each
     /// function once.
@@ -259,7 +246,7 @@ pub struct Ranges {
     pub result: May,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Signature {
     pub params: Box<[Ty]>,
     pub result: Ty,
