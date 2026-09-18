@@ -10,6 +10,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
+sumi-eval = { path = "../crates/eval" }
 sumi-format = { path = "../crates/format" }
 sumi-frontend = { path = "../crates/frontend" }
 sumi-hir = { path = "../crates/hir" }
@@ -42,6 +43,13 @@ bench = false
 [[bin]]
 name = "check"
 path = "fuzz_targets/check.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "run"
+path = "fuzz_targets/run.rs"
 test = false
 doc = false
 bench = false
