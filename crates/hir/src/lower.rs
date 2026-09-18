@@ -124,8 +124,8 @@ pub(crate) struct Call {
 pub(crate) struct Lowered {
     /// Whether each body built whole.
     pub built: Vec<bool>,
-    /// Whether the walk gave each node a value the typing follows: a hole
-    /// has none, and neither has a node built over one.
+    /// Whether each node carries a value the typing follows, by
+    /// [`Builder::follows`].
     pub typed: Vec<bool>,
     /// Every whole call, in definition order.
     pub calls: Vec<Call>,
@@ -600,15 +600,11 @@ impl<'a, 's> Builder<'a, 's> {
         self.base = start.index();
         self.consts.clear();
         let entry = self.push(item_node, Op::Entry, &[], None);
-        self.mark(entry);
         let arity = u32::try_from(parameters.len()).expect("parameter count fits u32");
         for (index, param) in parameters.iter().enumerate() {
             let index = u32::try_from(index).expect("parameter count fits u32");
             let name = param.name.map(|(_, node)| self.source.span(node));
             let node = self.push(param.node, Op::Param(index), &[], name);
-            if param.ty.is_some() {
-                self.mark(node);
-            }
             self.failed |= param.ty.is_none();
             if let Some((name, _)) = param.name {
                 self.bind(name, node);
@@ -676,18 +672,14 @@ impl<'a, 's> Builder<'a, 's> {
         // type. A declared result is a contract on the body; an inferred one
         // is the body's own value.
         let value = match declared {
-            HeaderResult::Declared(ty, node) => {
-                let copy = self.push(
-                    node,
-                    Op::Copy {
-                        declared: Some((ty, self.source.span(node))),
-                    },
-                    &[body_value],
-                    None,
-                );
-                self.mark(copy);
-                copy
-            }
+            HeaderResult::Declared(ty, node) => self.push(
+                node,
+                Op::Copy {
+                    declared: Some((ty, self.source.span(node))),
+                },
+                &[body_value],
+                None,
+            ),
             HeaderResult::Inferred | HeaderResult::None => body_value,
         };
         if let (Some(root), HeaderResult::Declared(ty, node)) = (root, declared) {
@@ -703,31 +695,46 @@ impl<'a, 's> Builder<'a, 's> {
         self.nodes_of[node.to_usize()] = Some(id);
         id
     }
-    /// A graph node without a class yet, that no syntax node is said to
-    /// have built.
+    /// A graph node that no syntax node is said to have built.
     fn place(&mut self, op: Op, inputs: &[NodeId], origin: Span, name: Option<Span>) -> NodeId {
+        let typed = self.follows(&op, inputs);
         let id = self.graph.push(op, inputs, origin, name);
-        self.lowered.typed.push(false);
+        self.lowered.typed.push(typed);
         self.consts.push(None);
         id
     }
-    /// Give `node` a value the typing follows.
-    fn mark(&mut self, node: NodeId) {
-        self.lowered.typed[node.index()] = true;
-    }
-    /// The node at `node` is a value the typing follows.
-    fn classify(&mut self, node: NodeIdx) -> NodeId {
-        let id = self.nodes_of[node.to_usize()].expect("a graph node before its value");
-        self.mark(id);
-        id
+    /// Whether a node computing `op` from `inputs` carries a value the
+    /// typing follows. A hole carries none, and neither does a node built
+    /// over one: a lazy operator or an `if` over an untyped operand or
+    /// branch, a call short of an argument, which is a hole. A context is
+    /// followed whatever its condition; a parameter needs a type, a call
+    /// a callee with a result, and a declared copy has its declaration
+    /// whatever flows in.
+    fn follows(&self, op: &Op, inputs: &[NodeId]) -> bool {
+        let typed = |node: NodeId| self.lowered.typed[node.index()];
+        let result = |region: RegionId| typed(self.graph.region(region).result());
+        match *op {
+            Op::Hole => false,
+            Op::Entry | Op::Then | Op::Else | Op::Copy { declared: Some(_) } => true,
+            Op::Param(index) => {
+                self.headers[self.owner as usize].param_types[index as usize].is_some()
+            }
+            Op::Call(callee) => {
+                inputs.iter().all(|&input| typed(input))
+                    && !matches!(self.headers[callee.index()].result, HeaderResult::None)
+            }
+            Op::And { rhs } | Op::Or { rhs } => typed(inputs[0]) && result(rhs),
+            Op::Join { then, else_ } => {
+                typed(inputs[0]) && result(then) && else_.is_none_or(result)
+            }
+            _ => inputs.iter().all(|&input| typed(input)),
+        }
     }
     /// A context node for the region whose syntax is `region`, derived
     /// from `condition` under `parent`. It is not what `region` built: the
     /// region's own node is its value, which the context gates.
     fn context_at(&mut self, region: NodeIdx, op: Op, condition: NodeId, parent: NodeId) -> NodeId {
-        let context = self.place(op, &[condition, parent], self.source.span(region), None);
-        self.mark(context);
-        context
+        self.place(op, &[condition, parent], self.source.span(region), None)
     }
     /// The graph node `node` built, or a hole where nothing was: syntax
     /// the walk could not reach.
@@ -882,7 +889,6 @@ impl<'a, 's> Builder<'a, 's> {
                                     self.source.span(node),
                                     None,
                                 );
-                                self.mark(read);
                                 self.refinements.push((local, read));
                             }
                         }
@@ -895,7 +901,6 @@ impl<'a, 's> Builder<'a, 's> {
                     let inputs = [self.current(local)];
                     let read =
                         self.place(Op::Exactly(sense), &inputs, self.source.span(node), None);
-                    self.mark(read);
                     self.refinements.push((local, read));
                 }
             }
@@ -1186,8 +1191,7 @@ impl<'a, 's> Builder<'a, 's> {
             .parse()
             .expect("a well-formed literal is a run of digits");
         let value = if negative { -&magnitude } else { magnitude };
-        self.push(origin, Op::Int(value.clone()), &[], None);
-        let id = self.classify(origin);
+        let id = self.push(origin, Op::Int(value.clone()), &[], None);
         self.fold(id, value);
         Some(id)
     }
@@ -1221,30 +1225,26 @@ impl<'a, 's> Builder<'a, 's> {
                 }
                 // A block is its tail, or unit without one, whether or not
                 // the rest of it built. A block the parser could not repair
-                // may have lost its tail to recovery, so its value is not
-                // held to anything.
+                // may have lost its tail to recovery, so without one it is
+                // a hole.
                 let damaged = tree.has_error(node);
-                let value = match tail {
+                match tail {
                     Some(tail) => {
                         let value = self.node_of(tail);
                         self.nodes_of[node.to_usize()] = Some(value);
-                        self.typed(tail)
+                    }
+                    None if damaged => {
+                        self.hole(node);
                     }
                     None => {
                         let context = self.context();
-                        let unit = self.push(node, Op::Unit, &[context], None);
-                        if damaged {
-                            None
-                        } else {
-                            self.mark(unit);
-                            Some(unit)
-                        }
+                        self.push(node, Op::Unit, &[context], None);
                     }
-                };
+                }
                 if !valid || damaged {
                     return None;
                 }
-                value?;
+                self.typed(node)?;
             }
             NodeKind::LetStmt => {
                 let binding = ast::LetStmt::cast(tree, node).unwrap();
@@ -1254,38 +1254,35 @@ impl<'a, 's> Builder<'a, 's> {
                 let name = self.source.name(binding.name(tree));
                 // An annotated binding has its declared type whatever its
                 // initializer turns out to be; the initializer is held to it.
+                // An annotation naming no type leaves a hole over it.
                 let annotation = binding.type_ref(tree);
                 let declared = annotation.and_then(|annotation| {
                     let ty = self.source.ty(annotation)?;
                     Some((ty, self.source.span(annotation.node())))
                 });
+                let op = match (annotation, declared) {
+                    (Some(_), None) => Op::Hole,
+                    _ => Op::Copy { declared },
+                };
                 let copy = self.push(
                     node,
-                    Op::Copy { declared },
+                    op,
                     &[value],
                     name.map(|(_, node)| self.source.span(node)),
                 );
                 let (name, _) = name?;
-                let typed = match (annotation, declared) {
-                    (Some(annotation), Some((ty, _))) => {
-                        if let Some(initializer) = initializer {
-                            self.require(
-                                initializer_node,
-                                initializer,
-                                Expected::Ty(ty),
-                                Some(annotation.node()),
-                            );
-                        }
-                        true
-                    }
-                    (Some(_), None) => false,
-                    (None, _) => initializer.is_some(),
-                };
-                if typed {
-                    self.mark(copy);
+                if let (Some(annotation), Some((ty, _)), Some(initializer)) =
+                    (annotation, declared, initializer)
+                {
+                    self.require(
+                        initializer_node,
+                        initializer,
+                        Expected::Ty(ty),
+                        Some(annotation.node()),
+                    );
                 }
                 self.bind(name, copy);
-                typed.then_some(())?;
+                self.lowered.typed[copy.index()].then_some(())?;
             }
             NodeKind::DiscardStmt => {
                 let value = ast::DiscardStmt::cast(tree, node)
@@ -1332,7 +1329,6 @@ impl<'a, 's> Builder<'a, 's> {
                     _ if matches!(self.source.text(node), "true" | "false") => {
                         let value = self.source.text(node) == "true";
                         self.push(node, Op::Bool(value), &[], None);
-                        self.classify(node);
                     }
                     _ => {
                         self.unsupported(node);
@@ -1361,7 +1357,7 @@ impl<'a, 's> Builder<'a, 's> {
                     .tokens(tree.first_token(node), tree.first_token(operand))
                     .eq([SyntaxKind::Minus]);
                 let operand_node = self.node_of(operand);
-                self.push(
+                let id = self.push(
                     node,
                     if neg { Op::Neg } else { Op::Not },
                     &[operand_node],
@@ -1370,7 +1366,6 @@ impl<'a, 's> Builder<'a, 's> {
                 let value = self.typed(operand)?;
                 let ty = if neg { Ty::Int } else { Ty::Bool };
                 self.require(operand, value, Expected::Ty(ty), None);
-                let id = self.classify(node);
                 if neg && let Some(folded) = self.consts[operand_node.index() - self.base].clone() {
                     self.fold(id, -&folded);
                 }
@@ -1387,7 +1382,7 @@ impl<'a, 's> Builder<'a, 's> {
                 let lhs_graph = self.node_of(lhs_node);
                 let rhs_graph = self.node_of(rhs_node);
                 let eager = eager(op).expect("a lazy operator finishes as its own item");
-                self.push(node, Op::Binary(eager), &[lhs_graph, rhs_graph], None);
+                let id = self.push(node, Op::Binary(eager), &[lhs_graph, rhs_graph], None);
                 // `==` and `!=` compare like with like: whichever operand
                 // exists sets the other's expectation.
                 let operand = match op {
@@ -1431,7 +1426,6 @@ impl<'a, 's> Builder<'a, 's> {
                     }
                     _ => None,
                 };
-                let id = self.classify(node);
                 if let Some(folded) = folded {
                     self.fold(id, folded);
                 }
@@ -1460,7 +1454,6 @@ impl<'a, 's> Builder<'a, 's> {
         }
         lhs?;
         rhs_value?;
-        self.classify(node);
         Some(())
     }
     /// The `if` at `node`, whose branches are the regions `then` and
@@ -1475,7 +1468,7 @@ impl<'a, 's> Builder<'a, 's> {
         let else_node = branch.else_branch(tree).map(|e| e.node());
         let else_branch = else_node.and_then(|n| self.typed(n));
         let cond_graph = self.node_of(condition_node);
-        self.push(node, Op::Join { then, else_ }, &[cond_graph], None);
+        let join = self.push(node, Op::Join { then, else_ }, &[cond_graph], None);
         if let Some(condition) = condition {
             self.require(condition_node, condition, Expected::Ty(Ty::Bool), None);
         }
@@ -1485,7 +1478,6 @@ impl<'a, 's> Builder<'a, 's> {
             None => {
                 self.require(then_node, then_branch, Expected::Ty(Ty::Unit), None);
                 condition?;
-                self.classify(node);
             }
             // Each branch decides the `if` and learns nothing from the
             // other, so branches that disagree leave the `if` undetermined,
@@ -1494,7 +1486,6 @@ impl<'a, 's> Builder<'a, 's> {
             Some(_) => {
                 let branches = [then_branch, else_branch?];
                 condition?;
-                let join = self.classify(node);
                 self.demand(node, join, DemandKind::Agree { branches });
             }
         }
@@ -1574,10 +1565,6 @@ impl<'a, 's> Builder<'a, 's> {
             arguments: written..run(self.lowered.arguments.len()),
         });
         // The call has a value when its callee has a result.
-        if matches!(function.result, HeaderResult::None) {
-            return None;
-        }
-        self.classify(node);
-        Some(())
+        (!matches!(function.result, HeaderResult::None)).then_some(())
     }
 }

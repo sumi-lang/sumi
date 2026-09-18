@@ -1,6 +1,6 @@
 file: rejected
 frontend errors: 2 (see frontend.snap)
-semantic errors: 1
+semantic errors: 2
 
 fn damaged@0..100 () -> unit ∈ ∅
   result: copy : unit @0..100
@@ -13,12 +13,21 @@ fn damaged@0..100 () -> unit ∈ ∅
         rhs: int 1 : int @56..57
       let y@66..67: hole : ? @62..72
       discard: hole : ? @91..98
-      tail: unit : ? @13..100
+      tail: hole : ? @13..100
 
 fn intact@101..123 () -> int ∈ [3, 3]
   result: copy : int @116..119
     value: int 3 : int @122..123
 
+fn unknown_type@124..178 () -> unit ∈ unit
+  result: copy : unit @124..178
+    value:
+      let z@152..153: hole : ? @148..166
+        part[0]: int 1 : int @165..166
+      tail: unit : unit @142..178
+
 == semantic diagnostics ==
 error[semantic/unknown-name]: unknown name `missing`
   primary @91..98
+error[semantic/unknown-type]: unknown type `mystery`
+  primary @155..162

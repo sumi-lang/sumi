@@ -7,3 +7,7 @@ fn damaged() {
     _ = missing
 }
 fn intact() -> int = 3
+fn unknown_type() {
+    let z: mystery = 1
+    _ = z
+}

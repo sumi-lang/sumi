@@ -15,7 +15,7 @@ fn untyped@34..70 signature: unavailable
   param a@45..46: ?
   body:
     let x@62..63: hole : ? @58..68
-    tail: unit : ? @52..70
+    tail: hole : ? @52..70
 
 fn intact@71..93 () -> int ∈ [3, 3]
   result: copy : int @86..89
