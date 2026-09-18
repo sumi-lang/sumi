@@ -624,7 +624,7 @@ fn program(seed: u64) -> String {
 
 /// Run `source` inside what the analysis proved; `None` for a rejected
 /// program.
-fn check(source: &str) -> Option<Runs> {
+fn runs_of(source: &str) -> Option<Runs> {
     let analysis = analyze(parse_source(source.into()).unwrap());
     analysis.program().map(check::run)
 }
@@ -644,7 +644,7 @@ proptest! {
 
     #[test]
     fn accepted_programs_run_within_their_claims(seed in any::<u64>()) {
-        check(&program(seed));
+        runs_of(&program(seed));
     }
 }
 
@@ -658,7 +658,7 @@ fn most_generated_programs_are_accepted_and_run_to_the_end() {
     let mut accepted = 0u64;
     let mut runs = Runs::default();
     for seed in 0..seeds {
-        if let Some(outcome) = check(&program(seed)) {
+        if let Some(outcome) = runs_of(&program(seed)) {
             accepted += 1;
             runs.finished += outcome.finished;
             runs.abandoned += outcome.abandoned;
