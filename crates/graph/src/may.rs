@@ -1167,48 +1167,6 @@ mod tests {
     }
 
     proptest! {
-        /// Every operation over-approximates the concrete operation on every
-        /// member of its operands, which is soundness.
-        #[test]
-        fn operations_are_sound(a in band(), b in band()) {
-            let xs = members(&a);
-            let ys = members(&b);
-            let sum = &a + &b;
-            let difference = &a - &b;
-            let product = &a * &b;
-            let quotient = &a / &b;
-            let remainder = &a % &b;
-            let negated = -&a;
-            for &x in &xs {
-                prop_assert!(contains(&negated, -x));
-                for &y in &ys {
-                    prop_assert!(contains(&sum, x + y), "{a} + {b} ∌ {x} + {y}");
-                    prop_assert!(contains(&difference, x - y));
-                    prop_assert!(contains(&product, x * y), "{a} * {b} ∌ {x} * {y}");
-                    if y != 0 {
-                        prop_assert!(contains(&quotient, x / y), "{a} / {b} ∌ {x} / {y}");
-                        prop_assert!(contains(&remainder, x % y), "{a} % {b} ∌ {x} % {y}");
-                    }
-                    for op in [BinaryOp::Lt, BinaryOp::Le, BinaryOp::Gt, BinaryOp::Ge, BinaryOp::Eq, BinaryOp::Ne] {
-                        let holds = match op {
-                            BinaryOp::Lt => x < y,
-                            BinaryOp::Le => x <= y,
-                            BinaryOp::Gt => x > y,
-                            BinaryOp::Ge => x >= y,
-                            BinaryOp::Eq => x == y,
-                            _ => x != y,
-                        };
-                        let bools = a.compare(op, &b);
-                        let seen = if holds { bools.may_true() } else { bools.may_false() };
-                        prop_assert!(seen, "{a} {op:?} {b} misses {x} {op:?} {y}");
-                        if holds {
-                            prop_assert!(contains(&a.refine(op, &b), x), "{a} refined by {op:?} {b} ∌ {x}");
-                        }
-                    }
-                }
-            }
-        }
-
         /// A shift past the words and back returns the hull it started
         /// from, and two negations return the band, hole included.
         #[test]
@@ -1240,13 +1198,13 @@ mod tests {
             prop_assert_eq!(a.contains_zero(), rounded.contains_zero());
         }
 
-        /// Every operator, read in both domains: the may-value of the
-        /// operator over the sets contains its value over any members,
-        /// and where the concrete operator faults the may-domain still
-        /// answers. The data operators are read through [`Op::apply`];
-        /// the lazy ones have no data node, so they are read directly.
+        /// Soundness: the may-value of an operator over the sets contains
+        /// its concrete value over any members, and where the concrete
+        /// operator faults the may-domain still answers. The data
+        /// operators are read through [`Op::apply`]; the lazy ones have no
+        /// data node, so they are read directly.
         #[test]
-        fn every_operator_agrees_between_the_domains(a in band(), b in band()) {
+        fn every_operator_over_approximates_the_concrete_one(a in band(), b in band()) {
             let ops = data_ops();
             for (set_a, x) in operands(&a) {
                 for (set_b, y) in operands(&b) {
