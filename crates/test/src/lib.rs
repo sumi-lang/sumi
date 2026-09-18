@@ -15,5 +15,5 @@ pub use edit::{
     edited_program, non_delimiter_edited_program,
 };
 pub use front::{Front, front, start_byte};
-pub use perturb::{perturb, perturbed_program};
+pub use perturb::perturbed_program;
 pub use program::{Programs, program};

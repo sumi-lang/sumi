@@ -35,7 +35,7 @@ pub fn perturbed_program() -> impl Strategy<Value = (String, String)> {
 /// Rewrite the trivia of `source`, a well-formed program, as `choices`
 /// says, one per gap between significant tokens, the file's edges
 /// included.
-pub fn perturb(source: &str, choices: &[u32]) -> String {
+fn perturb(source: &str, choices: &[u32]) -> String {
     let products = front(source);
     let lexed = &products.lexed;
     let input = products.input();
