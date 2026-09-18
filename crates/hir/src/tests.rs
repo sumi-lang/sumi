@@ -140,11 +140,7 @@ fn text(analysis: &Analysis, span: Span) -> &str {
 
 /// The checker's diagnostics, apart from the frontend's.
 fn semantic(analysis: &Analysis) -> Vec<&Diagnostic> {
-    analysis
-        .diagnostics()
-        .iter()
-        .filter(|d| Analysis::is_semantic(d))
-        .collect()
+    analysis.semantic_diagnostics().collect()
 }
 
 fn codes(analysis: &Analysis) -> Vec<DiagnosticCode> {
@@ -697,6 +693,27 @@ fn syntax_diagnostics_are_preserved_and_always_reject() {
         let a = analyze(parsed);
         assert!(!a.is_valid());
         assert_eq!(a.parsed.diagnostics(), before);
+        diagnostics_are_one_list(&a);
+    }
+}
+
+/// The analysis lists the frontend's diagnostics among its own, in source
+/// order, the frontend's first where both stand at one position.
+fn diagnostics_are_one_list(analysis: &Analysis) {
+    let all = analysis.diagnostics();
+    let syntactic: Vec<_> = all.iter().filter(|d| !Analysis::is_semantic(d)).collect();
+    assert_eq!(syntactic.len(), analysis.parsed().diagnostics().len());
+    assert!(
+        syntactic
+            .iter()
+            .zip(analysis.parsed().diagnostics())
+            .all(|(listed, own)| *listed == own)
+    );
+    assert!(all.is_sorted_by_key(|d| d.primary.location.start()));
+    for pair in all.windows(2) {
+        if pair[0].primary.location.start() == pair[1].primary.location.start() {
+            assert!(!(Analysis::is_semantic(&pair[0]) && !Analysis::is_semantic(&pair[1])));
+        }
     }
 }
 
@@ -1203,6 +1220,7 @@ proptest::proptest! {
         let a = check(&source);
         reversed_declarations_preserve_types(&a);
         graph_invariant(&a);
+        diagnostics_are_one_list(&a);
         let errors = a.diagnostics().iter().any(|d| d.severity == Severity::Error);
         proptest::prop_assert_eq!(a.is_valid(), !errors);
         for d in a.diagnostics() {

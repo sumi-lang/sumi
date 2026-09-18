@@ -70,12 +70,33 @@ pub fn check_semantics(parsed: ParsedSource) {
         }
     }
     let errors = analysis
-        .parsed()
         .diagnostics()
         .iter()
-        .chain(analysis.diagnostics())
         .any(|d| d.severity == Severity::Error);
     assert_eq!(analysis.is_valid(), !errors);
+    // The frontend's diagnostics are among the analysis's, in source order,
+    // the frontend's first where both stand at one position.
+    let all = analysis.diagnostics();
+    let syntactic: Vec<_> = all
+        .iter()
+        .filter(|d| !sumi_hir::Analysis::is_semantic(d))
+        .collect();
+    assert_eq!(syntactic.len(), analysis.parsed().diagnostics().len());
+    assert!(
+        syntactic
+            .iter()
+            .zip(analysis.parsed().diagnostics())
+            .all(|(listed, own)| *listed == own)
+    );
+    assert!(all.is_sorted_by_key(|d| d.primary.location.start()));
+    for pair in all.windows(2) {
+        if pair[0].primary.location.start() == pair[1].primary.location.start() {
+            assert!(
+                !(sumi_hir::Analysis::is_semantic(&pair[0])
+                    && !sumi_hir::Analysis::is_semantic(&pair[1]))
+            );
+        }
+    }
     check_graph(&analysis);
     for diagnostic in analysis.diagnostics() {
         for label in std::iter::once(&diagnostic.primary).chain(diagnostic.secondary.iter()) {

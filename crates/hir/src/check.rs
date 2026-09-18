@@ -15,8 +15,8 @@
 //! 3. **Verdicts.** The classes, facts, and flows are drawn from the graph
 //!    by `flows::draw`, the demands joined in, and the typing solves once.
 //!    Signatures are read off result classes, independent of declaration
-//!    order, and the values that may reach each parameter and result beside
-//!    them. Demands are then checked in source order against the final
+//!    order; what may reach each parameter and result is read off the kept
+//!    evidence whenever asked. Demands are then checked in source order against the final
 //!    evidence, so a disagreement is blamed on the first demand that raised
 //!    it. Every expression has one context, so it is held to one demand; an
 //!    expression whose type is undetermined, because its branches or its
@@ -726,14 +726,20 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         });
         functions[index].complete = complete;
     }
+    debug_assert_eq!(recursion.depth.len(), functions.len());
     for (function, depth) in functions.iter_mut().zip(recursion.depth) {
         function.depth = depth;
     }
     // One list, in source order: a syntactic diagnostic first where both
     // stand at one position, then the checker's in the order it made them.
-    let mut diagnostics = parsed.diagnostics().to_vec();
-    diagnostics.extend(source.diagnostics);
-    diagnostics.sort_by_key(|d| d.primary.location.start());
+    // A clean parse, the common case, adds nothing.
+    let mut diagnostics = source.diagnostics;
+    if !parsed.diagnostics().is_empty() {
+        diagnostics.splice(0..0, parsed.diagnostics().iter().cloned());
+        diagnostics.sort_by_key(|d| d.primary.location.start());
+    } else {
+        diagnostics.sort_by_key(|d| d.primary.location.start());
+    }
     let analysis = Analysis {
         parsed,
         graph,

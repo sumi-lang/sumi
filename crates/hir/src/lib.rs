@@ -80,6 +80,10 @@ impl Analysis {
     pub fn is_semantic(diagnostic: &Diagnostic) -> bool {
         diagnostic.code.group() == codes::SEMANTIC
     }
+    /// The checker's diagnostics alone, in source order.
+    pub fn semantic_diagnostics(&self) -> impl Iterator<Item = &Diagnostic> {
+        self.diagnostics.iter().filter(|d| Self::is_semantic(d))
+    }
     pub fn functions(&self) -> &[Function] {
         &self.functions
     }
@@ -157,8 +161,8 @@ impl<'a> Program<'a> {
             .signature()
             .expect("a valid file's functions have signatures")
     }
-    /// What may reach a function's parameters and result; every function
-    /// of a valid file has it.
+    /// What may reach a function's parameters and result, read off the
+    /// evidence when asked; every function of a valid file has it.
     pub fn ranges(self, id: FunctionId) -> Ranges {
         self.analysis
             .ranges(id)
@@ -170,9 +174,16 @@ impl<'a> Program<'a> {
             .function_ids()
             .map(|id| (id, self.analysis.function(id)))
     }
-    /// The function item named `name`, if any.
+    /// The function item named `name`, if any: a valid file names each
+    /// function once.
     pub fn function_named(self, name: &str) -> Option<FunctionId> {
-        self.analysis.function_named(name)
+        self.functions()
+            .find(|(_, function)| {
+                function
+                    .name()
+                    .is_some_and(|span| self.analysis.text(span) == name)
+            })
+            .map(|(id, _)| id)
     }
     /// A machine about to call `function` on `args`, which must match the
     /// signature in count and type and lie within the parameters' ranges,
@@ -247,7 +258,7 @@ impl Function {
 /// What may reach a function's parameters, the hull of its live call sites'
 /// arguments, and what its result may be. A function no live call site
 /// reaches holds nothing in either, and nothing in it is checked.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Ranges {
     pub params: Box<[May]>,
     pub result: May,
