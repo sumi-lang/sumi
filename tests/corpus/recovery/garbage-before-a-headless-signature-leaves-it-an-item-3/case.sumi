@@ -1,3 +1,0 @@
-fn f() = 1
-if cond(x) { y }
-total = compute(x) { y }

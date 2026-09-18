@@ -52,7 +52,7 @@ use std::ops::Range;
 
 use crate::generated::{
     BRACKET_PAIRS, SyntaxKind, can_end_statement, continues_statement, encloses_statements,
-    is_closer, is_opener, opener, pair_index, starts_item,
+    is_closer, is_opener, opener, pair_index, starts_expression, starts_item,
 };
 use crate::index::SigIdx;
 use sumi_lexer::{LexedFile, RawIdx};
@@ -243,6 +243,13 @@ impl ParserInput {
         self.slots[index.to_usize()].flags & BOUNDARY_BEFORE != 0
     }
 
+    /// Whether a signature missing its `fn` begins at token `index`: the
+    /// shape [`headless_signature_at`] reads, which the parser also reads
+    /// where it stands between items without a boundary before it.
+    pub fn headless_signature_at(&self, index: SigIdx) -> bool {
+        headless_signature_at(&self.slots, index.to_usize())
+    }
+
     /// Whether a line break before token `index` would be a statement
     /// boundary under the newline rule: every condition of the rule but
     /// the line break itself, so a layout tool can ask before it breaks a
@@ -374,11 +381,10 @@ impl Build {
     }
 }
 
-/// Whether a declaration recovery anchor starts at `index`: `fn` plus a name, or
-/// a signature missing it — a name, a parenthesized list, and a body,
-/// a return type, or an expression body's `=` after the list, on any line.
-/// A misplaced call has none of these after its list and stays garbage. The
-/// caller has established that no matched bracket pair encloses `index`.
+/// Whether a declaration recovery anchor starts at `index`: `fn` plus a
+/// name, or a signature missing it where a statement boundary precedes
+/// the name, which nothing else at the top level looks like. The caller
+/// has established that no matched bracket pair encloses `index`.
 fn item_anchor_at(slots: &[Slot], index: usize) -> bool {
     if starts_item(slots[index].kind) {
         // `_` is an invalid name, but still identifies a declaration head.
@@ -386,19 +392,39 @@ fn item_anchor_at(slots: &[Slot], index: usize) -> bool {
             .get(index + 1)
             .is_some_and(|next| matches!(next.kind, SyntaxKind::Ident | SyntaxKind::Underscore));
     }
-    (index == 0 || slots[index].flags & BOUNDARY_BEFORE != 0)
-        && slots[index].kind == SyntaxKind::Ident
-        && slots.get(index + 1).map(|slot| slot.kind) == Some(SyntaxKind::LParen)
+    (index == 0 || slots[index].flags & BOUNDARY_BEFORE != 0) && headless_signature_at(slots, index)
+}
+
+/// Whether a signature missing its `fn` begins at `index`: a name, a
+/// parenthesized list on its line that the stream closes, and after the
+/// list what the grammar takes as the rest of a signature — a `{`, closed
+/// or left open as a body being written is, a return type's `->`, or an
+/// expression body's `=` before something an expression can begin with,
+/// on any line. Exactly what the parser will take, so no such shape is
+/// promised an item and then parsed as garbage: a `=` nothing follows is
+/// garbage, and so is half of `==`. A misplaced call has none of these
+/// after its list and stays garbage.
+fn headless_signature_at(slots: &[Slot], index: usize) -> bool {
+    let kind = |index: usize| slots.get(index).map(|slot| slot.kind);
+    let arrow = |index: usize| {
+        kind(index) == Some(SyntaxKind::Minus)
+            && slots[index].flags & JOINT != 0
+            && kind(index + 1) == Some(SyntaxKind::Gt)
+    };
+    kind(index) == Some(SyntaxKind::Ident)
+        && kind(index + 1) == Some(SyntaxKind::LParen)
+        && slots[index + 1].flags & NEWLINE_BEFORE == 0
         && slots[index + 1].partner.is_some_and(|partner| {
             // The partner encoding is the closer's index plus one: exactly
             // the token after the list.
             let after = partner.get() as usize;
-            slots.get(after).is_some_and(|next| {
-                matches!(next.kind, SyntaxKind::LBrace | SyntaxKind::Eq)
-                    || (next.kind == SyntaxKind::Minus
-                        && next.flags & JOINT != 0
-                        && slots.get(after + 1).map(|slot| slot.kind) == Some(SyntaxKind::Gt))
-            })
+            match kind(after) {
+                Some(SyntaxKind::LBrace) => true,
+                Some(SyntaxKind::Eq) => {
+                    kind(after + 1).is_some_and(starts_expression) && !arrow(after + 1)
+                }
+                _ => arrow(after),
+            }
         })
 }
 

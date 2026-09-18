@@ -186,13 +186,13 @@ pub const MAX_DEPTH: u32 = 256;
 /// Parse between hard declaration anchors. Within each interval, parser
 /// context decides whether `fn` begins a closure or a nameless item, and
 /// whether a signature without `fn` is an item's or a call in an
-/// expression: between items it can only be an item's, whether or not a
-/// boundary precedes it, so garbage on its line does not take the body
-/// with it. Named declarations remain protected from recovery in the
-/// preceding interval.
+/// expression: between items it is an item's wherever a statement could
+/// begin, a boundary before it or not, so garbage on its line does not
+/// take the body with it. Named declarations remain protected from
+/// recovery in the preceding interval.
 fn source_file(p: &mut Marker<'_, '_>) {
     let item_candidate = |p: &Marker<'_, '_>| {
-        (p.at(T::FnKw) || at_headless_signature(p)) && !p.in_matched_delimiters()
+        (p.at(T::FnKw) || begins_headless_item(p)) && !p.in_matched_delimiters()
     };
     let mut item_ends_here = false;
     for anchor in 0..=p.item_anchor_count() {
@@ -428,25 +428,16 @@ fn signature_tail(
     }
 }
 
-/// Whether a signature missing its `fn` begins at the next token: a name,
-/// a parenthesized list the stream closes, and a body, a return type, or
-/// an expression body's `=` after the list, the shape the stream anchors
-/// an item at when a boundary precedes it. Here the name need only
-/// begin where a statement could, after a token that can end one: a
-/// call heading an `if` in garbage follows the keyword or an operator
-/// and is garbage with it.
-fn at_headless_signature(m: &Marker<'_, '_>) -> bool {
-    m.at(T::Ident)
-        && m.previous().is_none_or(can_end_statement)
-        && m.nth(1) == Some(T::LParen)
-        && m.nth_partner(1).is_some_and(|closer| {
-            let after = closer + 1;
-            // A `=` glued to another is `==`, a comparison of a call.
-            m.nth(after) == Some(T::LBrace)
-                || nth_arrow(m, after)
-                || (m.nth(after) == Some(T::Eq)
-                    && !(m.nth_joint(after) && m.nth(after + 1) == Some(T::Eq)))
-        })
+/// Whether an item missing its `fn` begins at the next token, between
+/// items: the shape the stream anchors an item at when a boundary
+/// precedes it, here wherever a statement could begin instead — after a
+/// value or a closer, which nothing continues into a name. A call heading
+/// an `if` in garbage follows the keyword or an operator, and `return`
+/// takes the rest of its line, so those are garbage with what follows.
+fn begins_headless_item(m: &Marker<'_, '_>) -> bool {
+    m.previous()
+        .is_none_or(|previous| can_end_statement(previous) && previous != T::ReturnKw)
+        && m.at_headless_signature()
 }
 
 /// The `=` of an expression body: after a complete signature component
