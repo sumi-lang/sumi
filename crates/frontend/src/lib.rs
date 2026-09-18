@@ -2,8 +2,8 @@
 //!
 //! [`parse_source`] runs every syntactic phase and lowers their immutable,
 //! phase-local evidence into canonical diagnostics. Detection remains in
-//! the lexer and parser; cross-phase wording, grouping,
-//! suppression, and ordering live here.
+//! the lexer and parser; cross-phase wording, suppression, and ordering
+//! live here.
 
 mod diagnostic;
 mod lower;
