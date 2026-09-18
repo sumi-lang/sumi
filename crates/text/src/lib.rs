@@ -1,6 +1,6 @@
 mod line_index;
 
-pub use line_index::{LineCol, LineIndex, Utf16LineCol};
+pub use line_index::{LineCol, LineIndex};
 
 /// Define an index newtype over `u32`: a position in one buffer, kept
 /// apart by type from positions in every other, with the arithmetic a
