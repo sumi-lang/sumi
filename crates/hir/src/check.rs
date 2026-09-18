@@ -120,7 +120,7 @@ struct Header {
     item: NodeIdx,
 }
 
-struct DraftLocal {
+struct Local {
     pub origin: Span,
     pub class: Var,
     /// The node a read of the local outside any guard reads.
@@ -182,7 +182,7 @@ struct Recorded {
 /// say.
 pub(crate) struct Placed {
     /// The class of each node, by index; none for a hole, or for a node
-    /// built where the expression tree could not be.
+    /// built over one.
     classes: Vec<Option<Var>>,
     /// Every whole call, in definition order.
     calls: Vec<PlacedCall>,
@@ -932,7 +932,7 @@ type Scope<'s> = NameMap<'s, (Option<LocalId>, NodeId)>;
 enum Work {
     Enter(NodeIdx),
     Finish(NodeIdx),
-    Call(NodeIdx, FunctionId, NodeIdx),
+    Call(NodeIdx, FunctionId),
     /// A call whose callee is no function: once its arguments are walked,
     /// a hole over them.
     Holed(NodeIdx),
@@ -979,13 +979,15 @@ struct Builder<'a, 's> {
     graph: &'a mut Graph,
     /// Where each node stands, filled as the node is pushed.
     placed: &'a mut Placed,
-    /// The value of each node the walk can fold, by node, a constant the
-    /// thresholds keep.
+    /// The value of each node of the body the walk can fold, by position
+    /// in its run, a constant the thresholds keep.
     consts: Vec<Option<Int>>,
+    /// The first node of the run under construction.
+    base: usize,
     // The body under construction.
     owner: u32,
     failed: bool,
-    locals: Vec<DraftLocal>,
+    locals: Vec<Local>,
     /// The open regions, innermost last: where a pushed node stands, and
     /// whose context the point runs in.
     regions: Vec<RegionId>,
@@ -1040,6 +1042,7 @@ impl<'a, 's> Builder<'a, 's> {
             graph,
             placed,
             consts: Vec::new(),
+            base: 0,
             owner: 0,
             failed: false,
             locals: Vec::new(),
@@ -1075,6 +1078,8 @@ impl<'a, 's> Builder<'a, 's> {
         let entry_class = header.entry;
         let item_node = header.item;
         let start = self.graph.next();
+        self.base = start.index();
+        self.consts.clear();
         let entry = self.push(item_node, Op::Entry, &[], None);
         self.placed.classes[entry.index()] = Some(entry_class);
         let arity = u32::try_from(parameters.len()).expect("parameter count fits u32");
@@ -1091,7 +1096,10 @@ impl<'a, 's> Builder<'a, 's> {
                         format!("duplicate parameter `{name}`"),
                         Some((span, "declared here")),
                     );
-                    self.shadow(name, None, node);
+                    // The parameter has a type its reads must not be held
+                    // to: they read a hole.
+                    let hole = self.hole(param.node);
+                    self.shadow(name, None, hole);
                     self.failed = true;
                 } else {
                     self.first.insert(name, self.source.span(name_node));
@@ -1121,8 +1129,8 @@ impl<'a, 's> Builder<'a, 's> {
                             self.failed = true;
                         }
                     }
-                    Work::Call(node, target, callee) => {
-                        if self.call(node, target, callee).is_none() {
+                    Work::Call(node, target) => {
+                        if self.call(node, target).is_none() {
                             self.failed = true;
                         }
                     }
@@ -1261,7 +1269,7 @@ impl<'a, 's> Builder<'a, 's> {
     fn bind(&mut self, name: &'s str, name_node: NodeIdx, class: Option<Var>, node: NodeId) {
         let id = class.map(|class| {
             let id = LocalId(u32::try_from(self.locals.len()).expect("local count fits u32"));
-            self.locals.push(DraftLocal {
+            self.locals.push(Local {
                 origin: self.source.span(name_node),
                 class,
                 node,
@@ -1328,7 +1336,9 @@ impl<'a, 's> Builder<'a, 's> {
     /// class. The scope is as it was when the read was built: a region is
     /// entered right after its condition finishes.
     fn read(&self, node: NodeIdx) -> Option<LocalId> {
-        if self.source.tree.kind(node) != NodeKind::NameRef {
+        let tree = self.source.tree;
+        let node = self.source.peel(ast::Expr::cast(tree, node)?).node();
+        if tree.kind(node) != NodeKind::NameRef {
             return None;
         }
         self.lookup(self.source.text(node))?.0
@@ -1514,7 +1524,7 @@ impl<'a, 's> Builder<'a, 's> {
         if self.recorded.seen.insert(value.clone()) {
             self.recorded.constants.push(value.clone());
         }
-        self.consts[node.index()] = Some(value);
+        self.consts[node.index() - self.base] = Some(value);
     }
     /// The context at `node` requires the value of class `actual` to be
     /// `expected`, which `declared` may have set. Recorded for the verdict
@@ -1646,7 +1656,7 @@ impl<'a, 's> Builder<'a, 's> {
                 };
                 let list = call.arg_list(tree).unwrap();
                 if let Some(target) = target {
-                    work.push(Work::Call(node, target, callee));
+                    work.push(Work::Call(node, target));
                 } else {
                     work.push(Work::Holed(node));
                     self.failed = true;
@@ -1767,7 +1777,10 @@ impl<'a, 's> Builder<'a, 's> {
                     }
                 }
                 // A block is its tail, or unit without one, whether or not
-                // the rest of it built.
+                // the rest of it built. A block the parser could not repair
+                // may have lost its tail to recovery, so its value is not
+                // held to anything.
+                let damaged = tree.has_error(node);
                 let class = match tail {
                     Some(tail) => {
                         let value = self.node_of(tail);
@@ -1777,12 +1790,16 @@ impl<'a, 's> Builder<'a, 's> {
                     None => {
                         let context = self.context_node();
                         let unit = self.push(node, Op::Unit, &[context], None);
-                        let class = self.typing.unit(self.context(), node);
-                        self.placed.classes[unit.index()] = Some(class);
-                        Some(class)
+                        if damaged {
+                            None
+                        } else {
+                            let class = self.typing.unit(self.context(), node);
+                            self.placed.classes[unit.index()] = Some(class);
+                            Some(class)
+                        }
                     }
                 };
-                if !valid {
+                if !valid || damaged {
                     return None;
                 }
                 class?;
@@ -1840,16 +1857,11 @@ impl<'a, 's> Builder<'a, 's> {
                         let (_, read) = self.current(local);
                         self.nodes_of[node.to_usize()] = Some(read);
                     }
-                    // A binding without a type is still what the name
-                    // reads; one the walk refused, a duplicate parameter,
-                    // has a type its reads must not be held to, so the read
-                    // is a hole.
+                    // A binding without a value the typing follows is still
+                    // what the name reads: the untyped parameter, or the
+                    // hole a refused binding was given.
                     Some((None, defined)) => {
-                        if self.placed.classes[defined.index()].is_none() {
-                            self.nodes_of[node.to_usize()] = Some(defined);
-                        } else {
-                            self.hole(node);
-                        }
+                        self.nodes_of[node.to_usize()] = Some(defined);
                         return None;
                     }
                     None => {
@@ -1919,7 +1931,7 @@ impl<'a, 's> Builder<'a, 's> {
                 let op = if neg { UnaryOp::Neg } else { UnaryOp::Not };
                 self.typing.flow(value, class, RangeEdge::Unary(op));
                 let id = self.classify(node, class);
-                if neg && let Some(folded) = self.consts[operand_node.index()].clone() {
+                if neg && let Some(folded) = self.consts[operand_node.index() - self.base].clone() {
                     self.fold(id, -&folded);
                 }
             }
@@ -1994,8 +2006,8 @@ impl<'a, 's> Builder<'a, 's> {
                 let folded = match (eager(op), rhs_graph) {
                     (Some(op), Some(rhs_graph)) => {
                         match (
-                            &self.consts[lhs_graph.index()],
-                            &self.consts[rhs_graph.index()],
+                            &self.consts[lhs_graph.index() - self.base],
+                            &self.consts[rhs_graph.index() - self.base],
                         ) {
                             (Some(a), Some(b)) => {
                                 let (a, b) = (Value::Int(a.clone()), Value::Int(b.clone()));
@@ -2075,8 +2087,7 @@ impl<'a, 's> Builder<'a, 's> {
         }
         Some(())
     }
-    fn call(&mut self, node: NodeIdx, target: FunctionId, callee: NodeIdx) -> Option<()> {
-        let _ = callee;
+    fn call(&mut self, node: NodeIdx, target: FunctionId) -> Option<()> {
         let context = self.context();
         let function = &self.headers[target.index()];
         let tree = self.source.tree;

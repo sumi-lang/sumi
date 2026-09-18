@@ -20,6 +20,97 @@ fn clean(source: &str) -> Analysis {
     analysis
 }
 
+/// The typed shape of every complete function: each value has a type, no
+/// hole stands in it, and each operator's type agrees with its inputs',
+/// a call's with its callee's signature, a join's with its arms', and a
+/// copy's or a narrowed read's with what it reads. Holds for a complete
+/// function of a rejected file too.
+fn typed_invariant(analysis: &Analysis) {
+    let graph = analysis.graph();
+    for (index, function) in analysis.functions().iter().enumerate() {
+        if !function.complete() {
+            continue;
+        }
+        let signature = function
+            .signature()
+            .expect("a complete function has a signature");
+        let run = graph.run(FunctionId::new(index));
+        let ty = |node: NodeId| graph.node(node).ty;
+        for node in run.nodes() {
+            let entry = graph.node(node);
+            let inputs = graph.inputs(node);
+            let unary = |expected: Ty| {
+                assert_eq!(ty(inputs[0]), Some(expected), "{node:?} {:?}", entry.op);
+                assert_eq!(entry.ty, Some(expected), "{node:?} {:?}", entry.op);
+            };
+            match &entry.op {
+                Op::Entry | Op::Then | Op::Else => continue,
+                Op::Hole => panic!("{node:?}: a hole in a complete function"),
+                Op::Int(_) => assert_eq!(entry.ty, Some(Ty::Int)),
+                Op::Bool(_) => assert_eq!(entry.ty, Some(Ty::Bool)),
+                Op::Unit => assert_eq!(entry.ty, Some(Ty::Unit)),
+                Op::Param(position) => {
+                    assert_eq!(entry.ty, Some(signature.params[*position as usize]));
+                }
+                Op::Neg => unary(Ty::Int),
+                Op::Not => unary(Ty::Bool),
+                Op::Binary(op) => {
+                    let (operand, result) = match op {
+                        BinaryOp::Add
+                        | BinaryOp::Sub
+                        | BinaryOp::Mul
+                        | BinaryOp::Div
+                        | BinaryOp::Rem => (Some(Ty::Int), Ty::Int),
+                        BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge => {
+                            (Some(Ty::Int), Ty::Bool)
+                        }
+                        BinaryOp::Eq | BinaryOp::Ne => (None, Ty::Bool),
+                    };
+                    assert_eq!(entry.ty, Some(result));
+                    match operand {
+                        Some(operand) => {
+                            assert_eq!(ty(inputs[0]), Some(operand));
+                            assert_eq!(ty(inputs[1]), Some(operand));
+                        }
+                        None => {
+                            assert!(matches!(ty(inputs[0]), Some(Ty::Int | Ty::Bool)));
+                            assert_eq!(ty(inputs[0]), ty(inputs[1]));
+                        }
+                    }
+                }
+                Op::And { rhs } | Op::Or { rhs } => {
+                    assert_eq!(entry.ty, Some(Ty::Bool));
+                    assert_eq!(ty(inputs[0]), Some(Ty::Bool));
+                    assert_eq!(ty(graph.region(*rhs).result()), Some(Ty::Bool));
+                }
+                Op::Copy => assert_eq!(entry.ty, ty(inputs[0])),
+                Op::Refine { .. } | Op::Exactly(_) => assert_eq!(entry.ty, ty(inputs[0])),
+                Op::Join { then, else_ } => {
+                    assert_eq!(ty(inputs[0]), Some(Ty::Bool));
+                    assert_eq!(ty(graph.region(*then).result()), entry.ty);
+                    match else_ {
+                        Some(else_) => assert_eq!(ty(graph.region(*else_).result()), entry.ty),
+                        None => assert_eq!(entry.ty, Some(Ty::Unit)),
+                    }
+                }
+                Op::Call(callee) => {
+                    let callee = analysis
+                        .function(*callee)
+                        .signature()
+                        .expect("a called function has a signature");
+                    assert_eq!(entry.ty, Some(callee.result));
+                    assert_eq!(inputs.len(), callee.params.len());
+                    for (&input, &param) in inputs.iter().zip(&callee.params) {
+                        assert_eq!(ty(input), Some(param));
+                    }
+                }
+            }
+            assert!(entry.ty.is_some(), "{node:?} {:?}", entry.op);
+        }
+        assert_eq!(ty(run.result()), Some(signature.result));
+    }
+}
+
 /// The value a function's body computes: its region's result, before the
 /// copy a declared result holds it in.
 fn value(analysis: &Analysis, function: usize) -> NodeId {
@@ -136,6 +227,7 @@ fn graph_invariant(analysis: &Analysis) {
             }
         }
     }
+    typed_invariant(analysis);
     let mut owner = vec![None; nodes.len()];
     assert_eq!(graph.runs().len(), analysis.functions().len());
     for (index, function) in graph.runs().iter().enumerate() {
@@ -228,25 +320,32 @@ fn scalar_bodies_and_forward_recursive_calls() {
 #[test]
 fn lexical_scopes_and_sequential_shadowing() {
     let a = clean(
-        "fn shadow(x: int) -> int {\n let x = x + 1\n {\n let x = x * 2\n _ = x\n }\n x\n}\n",
+        "fn shadow(x: int) -> int {\n let x = x + 1\n {\n let x = x * 2\n _ = x - 3\n }\n x\n}\n",
     );
     // Each `x` reads the innermost binding: the parameter in the first
-    // `let`, that `let` in the inner one, and that `let` again as the
-    // value, the inner block's binding having closed.
+    // `let`, that `let` in the inner one, the inner one in the inner
+    // block's discard, and the first `let` again as the value, the inner
+    // block's binding having closed.
     let graph = a.graph();
     let x0 = graph.run(FunctionId::new(0)).params().next().unwrap();
-    let x1 = value(&a, 0);
-    assert!(matches!(op(&a, x1), Op::Copy));
-    let sum = graph.inputs(x1)[0];
+    let nodes = body(&a, 0);
+    let [one, sum, x1, two, product, x2, three, difference, unit, ..] = nodes[..] else {
+        panic!("the body's nodes");
+    };
+    assert!(matches!(op(&a, one), Op::Int(_)));
     assert!(matches!(op(&a, sum), Op::Binary(BinaryOp::Add)));
-    assert_eq!(graph.inputs(sum)[0], x0);
-    let x2 = body(&a, 0)
-        .into_iter()
-        .find(|&node| graph.node(node).name.is_some() && node != x1)
-        .expect("the inner binding");
-    let product = graph.inputs(x2)[0];
+    assert_eq!(graph.inputs(sum), [x0, one]);
+    assert!(matches!(op(&a, x1), Op::Copy));
+    assert!(matches!(op(&a, two), Op::Int(_)));
     assert!(matches!(op(&a, product), Op::Binary(BinaryOp::Mul)));
-    assert_eq!(graph.inputs(product)[0], x1);
+    assert_eq!(graph.inputs(product), [x1, two]);
+    assert!(matches!(op(&a, x2), Op::Copy));
+    assert!(matches!(op(&a, three), Op::Int(_)));
+    assert!(matches!(op(&a, difference), Op::Binary(BinaryOp::Sub)));
+    assert_eq!(graph.inputs(difference), [x2, three]);
+    assert!(matches!(op(&a, unit), Op::Unit));
+    assert_eq!(nodes.len(), 9);
+    assert_eq!(value(&a, 0), x1);
     let a = check("fn f() -> int = 1\nfn g() -> int {\n let f = 2\n f()\n}\n");
     assert_eq!(codes(&a), [NOT_CALLABLE]);
     assert_eq!(a.diagnostics[0].secondary.len(), 1);

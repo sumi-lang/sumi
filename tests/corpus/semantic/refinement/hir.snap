@@ -195,3 +195,44 @@ fn inners@903..964 () -> int ∈ [-15, 15]
       rhs: call inner@816..902 : int @952..964
         arg[0]: int 1 : int @958..959
         arg[1]: int -5 : int @961..963
+
+fn wrapped@965..1025 (int ∈ [0, 5]) -> int ∈ [1, 10]
+  param x@976..977: int
+  result: copy : int @987..990
+    value: if : int @993..1025
+      condition: eager > : bool @996..1003
+        lhs: read x@976..977 : int
+        rhs: int 0 : int @1002..1003
+      then: eager / : int @1006..1012
+        lhs: int 10 : int @1006..1008
+        rhs: read x@976..977 [(x) > 0 holds@996..1003] : int
+      else: int 1 : int @1022..1023
+
+fn wrappeds@1026..1072 () -> int ∈ [2, 20]
+  result: copy : int @1043..1046
+    value: eager + : int @1049..1072
+      lhs: call wrapped@965..1025 : int @1049..1059
+        arg[0]: int 0 : int @1057..1058
+      rhs: call wrapped@965..1025 : int @1062..1072
+        arg[0]: int 5 : int @1070..1071
+
+fn negated_wrapped@1073..1145 (int ∈ [0, 5]) -> int ∈ [1, 10]
+  param x@1092..1093: int
+  result: copy : int @1103..1106
+    value: if : int @1109..1145
+      condition: not : bool @1112..1123
+        operand: eager == : bool @1114..1122
+          lhs: read x@1092..1093 : int
+          rhs: int 0 : int @1121..1122
+      then: eager / : int @1126..1132
+        lhs: int 10 : int @1126..1128
+        rhs: read x@1092..1093 [(x) == 0 fails@1114..1122] : int
+      else: int 1 : int @1142..1143
+
+fn negated_wrappeds@1146..1216 () -> int ∈ [2, 20]
+  result: copy : int @1171..1174
+    value: eager + : int @1177..1216
+      lhs: call negated_wrapped@1073..1145 : int @1177..1195
+        arg[0]: int 0 : int @1193..1194
+      rhs: call negated_wrapped@1073..1145 : int @1198..1216
+        arg[0]: int 5 : int @1214..1215

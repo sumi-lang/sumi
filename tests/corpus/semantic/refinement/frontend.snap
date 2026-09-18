@@ -1,5 +1,5 @@
 == tree ==
-SourceFile 0..965
+SourceFile 0..1217
   FnItem 0..75
     Name 3..8 "clamp"
     ParamList 8..16
@@ -296,6 +296,70 @@ SourceFile 0..965
           LiteralExpr 958..959 "1"
           PrefixExpr 961..963
             LiteralExpr 962..963 "5"
+  FnItem 965..1025
+    Name 968..975 "wrapped"
+    ParamList 975..983
+      Param 976..982
+        Name 976..977 "x"
+        TypeRef 979..982 "int"
+    TypeRef 987..990 "int"
+    IfExpr 993..1025
+      BinaryExpr 996..1003
+        ParenExpr 996..999
+          NameRef 997..998 "x"
+        LiteralExpr 1002..1003 "0"
+      Block 1004..1014
+        BinaryExpr 1006..1012
+          LiteralExpr 1006..1008 "10"
+          NameRef 1011..1012 "x"
+      Block 1020..1025
+        LiteralExpr 1022..1023 "1"
+  FnItem 1026..1072
+    Name 1029..1037 "wrappeds"
+    ParamList 1037..1039 "()"
+    TypeRef 1043..1046 "int"
+    BinaryExpr 1049..1072
+      CallExpr 1049..1059
+        NameRef 1049..1056 "wrapped"
+        ArgList 1056..1059
+          LiteralExpr 1057..1058 "0"
+      CallExpr 1062..1072
+        NameRef 1062..1069 "wrapped"
+        ArgList 1069..1072
+          LiteralExpr 1070..1071 "5"
+  FnItem 1073..1145
+    Name 1076..1091 "negated_wrapped"
+    ParamList 1091..1099
+      Param 1092..1098
+        Name 1092..1093 "x"
+        TypeRef 1095..1098 "int"
+    TypeRef 1103..1106 "int"
+    IfExpr 1109..1145
+      PrefixExpr 1112..1123
+        ParenExpr 1113..1123
+          BinaryExpr 1114..1122
+            ParenExpr 1114..1117
+              NameRef 1115..1116 "x"
+            LiteralExpr 1121..1122 "0"
+      Block 1124..1134
+        BinaryExpr 1126..1132
+          LiteralExpr 1126..1128 "10"
+          NameRef 1131..1132 "x"
+      Block 1140..1145
+        LiteralExpr 1142..1143 "1"
+  FnItem 1146..1216
+    Name 1149..1165 "negated_wrappeds"
+    ParamList 1165..1167 "()"
+    TypeRef 1171..1174 "int"
+    BinaryExpr 1177..1216
+      CallExpr 1177..1195
+        NameRef 1177..1192 "negated_wrapped"
+        ArgList 1192..1195
+          LiteralExpr 1193..1194 "0"
+      CallExpr 1198..1216
+        NameRef 1198..1213 "negated_wrapped"
+        ArgList 1213..1216
+          LiteralExpr 1214..1215 "5"
 
 == formatted ==
 fn clamp(n: int) -> int = if n < 0 {
@@ -355,3 +419,15 @@ fn inner(n: int, m: int) -> int {
     }
 }
 fn inners() -> int = inner(0, 0) + inner(0, 5) + inner(1, -5)
+fn wrapped(x: int) -> int = if (x) > 0 {
+    10 / x
+} else {
+    1
+}
+fn wrappeds() -> int = wrapped(0) + wrapped(5)
+fn negated_wrapped(x: int) -> int = if !((x) == 0) {
+    10 / x
+} else {
+    1
+}
+fn negated_wrappeds() -> int = negated_wrapped(0) + negated_wrapped(5)

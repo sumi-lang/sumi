@@ -80,10 +80,7 @@ impl Analysis {
             .iter()
             .chain(&self.diagnostics)
             .any(|d| d.severity == Severity::Error)
-            && self
-                .functions
-                .iter()
-                .all(|f| f.signature.is_some() && f.complete)
+            && self.functions.iter().all(|f| f.complete)
     }
     /// The file as a program, when it is valid: `None` when any diagnostic
     /// is an error.

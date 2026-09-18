@@ -17,3 +17,7 @@ fn inner(n: int, m: int) -> int {
  0 } else { m }
 }
 fn inners() -> int = inner(0, 0) + inner(0, 5) + inner(1, -5)
+fn wrapped(x: int) -> int = if (x) > 0 { 10 / x } else { 1 }
+fn wrappeds() -> int = wrapped(0) + wrapped(5)
+fn negated_wrapped(x: int) -> int = if !((x) == 0) { 10 / x } else { 1 }
+fn negated_wrappeds() -> int = negated_wrapped(0) + negated_wrapped(5)

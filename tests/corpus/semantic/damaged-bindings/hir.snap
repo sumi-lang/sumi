@@ -2,7 +2,7 @@ file: rejected
 frontend errors: 2 (see frontend.snap)
 semantic errors: 1
 
-fn damaged@0..100 () -> unit ∈ unit
+fn damaged@0..100 () -> unit ∈ ∅
   result: copy : unit @0..100
     value:
       let x@23..24: bool @19..31
@@ -13,7 +13,7 @@ fn damaged@0..100 () -> unit ∈ unit
         rhs: int 1 : int @56..57
       let y@66..67: hole : ? @62..72
       discard: hole : ? @91..98
-      tail: unit : unit @13..100
+      tail: unit : ? @13..100
 
 fn intact@101..123 () -> int ∈ [3, 3]
   result: copy : int @116..119
