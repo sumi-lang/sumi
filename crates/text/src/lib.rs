@@ -2,6 +2,72 @@ mod line_index;
 
 pub use line_index::{LineCol, LineIndex, Utf16LineCol};
 
+/// Define an index newtype over `u32`: a position in one buffer, kept
+/// apart by type from positions in every other, with the arithmetic a
+/// cursor needs.
+#[macro_export]
+macro_rules! index {
+    ($(#[$doc:meta])* $name:ident) => {
+        $(#[$doc])*
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        pub struct $name(u32);
+
+        impl $name {
+            pub const fn new(index: u32) -> Self {
+                Self(index)
+            }
+
+            pub const fn to_u32(self) -> u32 {
+                self.0
+            }
+
+            pub const fn to_usize(self) -> usize {
+                self.0 as usize
+            }
+
+            /// The index `count` further on, if it exists.
+            pub fn checked_add(self, count: u32) -> Option<Self> {
+                self.0.checked_add(count).map(Self)
+            }
+
+            /// The index `count` back, if there is one.
+            pub fn checked_sub(self, count: u32) -> Option<Self> {
+                self.0.checked_sub(count).map(Self)
+            }
+
+            /// The indices from this one up to, not including, `end`.
+            pub fn until(
+                self,
+                end: Self,
+            ) -> impl DoubleEndedIterator<Item = Self> + ExactSizeIterator + Clone {
+                (self.0..end.0).map(Self)
+            }
+        }
+
+        impl ::core::ops::Add<u32> for $name {
+            type Output = Self;
+
+            fn add(self, count: u32) -> Self {
+                Self(self.0 + count)
+            }
+        }
+
+        impl ::core::ops::AddAssign<u32> for $name {
+            fn add_assign(&mut self, count: u32) {
+                self.0 += count;
+            }
+        }
+
+        impl ::core::ops::Sub<u32> for $name {
+            type Output = Self;
+
+            fn sub(self, count: u32) -> Self {
+                Self(self.0 - count)
+            }
+        }
+    };
+}
+
 /// A file-local UTF-8 byte offset or length.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
