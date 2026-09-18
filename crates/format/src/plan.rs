@@ -22,7 +22,7 @@ use sumi_syntax::{
 /// The line width the printer fits groups into.
 pub const WIDTH: usize = 100;
 /// One level of indentation.
-pub const INDENT: &str = "    ";
+pub(crate) const INDENT: &str = "    ";
 
 /// The separator of a gap that does not break.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

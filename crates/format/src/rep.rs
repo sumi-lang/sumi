@@ -19,23 +19,23 @@ use crate::trivia::{GapSignal, signal};
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Rep<'s> {
     /// One entry per child of the root, in source order.
-    pub items: Vec<ItemRep<'s>>,
+    pub(crate) items: Vec<ItemRep<'s>>,
     /// The gap before each item, then the gap after the last one.
-    pub edges: Vec<GapSignal<'s>>,
+    pub(crate) edges: Vec<GapSignal<'s>>,
 }
 
 /// The layout-free content of one top-level item.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ItemRep<'s> {
-    pub kind: NodeKind,
+pub(crate) struct ItemRep<'s> {
+    kind: NodeKind,
     /// The significant tokens, layout commas erased.
-    pub tokens: Vec<(SyntaxKind, &'s str)>,
+    tokens: Vec<(SyntaxKind, &'s str)>,
     /// Every node of the subtree in preorder: its kind, extent, and range
     /// in erased significant indices relative to the item.
-    pub nodes: Vec<(NodeKind, u32, u32, u32)>,
+    nodes: Vec<(NodeKind, u32, u32, u32)>,
     /// The signal of every gap inside the item, in order; the gaps around
     /// an erased comma count as one.
-    pub gaps: Vec<GapSignal<'s>>,
+    gaps: Vec<GapSignal<'s>>,
 }
 
 /// The layout-free content of `source`, which `lexed` and `parse` must be

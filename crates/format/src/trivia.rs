@@ -8,26 +8,26 @@ use sumi_syntax::{ParserInput, SigIdx, SyntaxKind, is_closer};
 
 /// One line comment in a gap.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Comment<'s> {
-    pub text: &'s str,
+pub(crate) struct Comment<'s> {
+    pub(crate) text: &'s str,
     /// The comment followed the previous token on its line.
-    pub trailing: bool,
+    pub(crate) trailing: bool,
     /// A retained blank line precedes the comment.
-    pub blank_before: bool,
+    pub(crate) blank_before: bool,
 }
 
 /// The retained signal of one gap: its comments in order, and whether a
 /// retained blank line precedes the token after it.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct GapSignal<'s> {
-    pub comments: Vec<Comment<'s>>,
-    pub blank_before_token: bool,
+pub(crate) struct GapSignal<'s> {
+    pub(crate) comments: Vec<Comment<'s>>,
+    pub(crate) blank_before_token: bool,
 }
 
 /// Whether gap `gap` retains blank lines: the file's edges, and every gap
 /// where a line break would end a statement unless a closer follows. A
 /// leading blank line of the file and one before nothing are never kept.
-pub fn retains_blank(input: &ParserInput, gap: usize) -> bool {
+fn retains_blank(input: &ParserInput, gap: usize) -> bool {
     let n = input.len();
     gap == 0
         || gap == n
@@ -36,7 +36,7 @@ pub fn retains_blank(input: &ParserInput, gap: usize) -> bool {
 }
 
 /// Read the signal of gap `gap` from `trivia`, its trivia tokens in order.
-pub fn signal<'s>(
+pub(crate) fn signal<'s>(
     source: &'s str,
     lexed: &LexedFile,
     input: &ParserInput,

@@ -10,8 +10,8 @@
 
 mod plan;
 mod print;
-pub mod rep;
-pub mod trivia;
+mod rep;
+mod trivia;
 
 use std::fmt;
 
@@ -22,8 +22,8 @@ use sumi_syntax::{
 };
 use sumi_text::{TextEdit, TextRange, TextSize};
 
-pub use plan::{INDENT, WIDTH};
-pub use rep::{ItemRep, Rep, rep};
+pub use plan::WIDTH;
+pub use rep::{Rep, rep};
 
 /// The formatted form of one source.
 #[derive(Clone, Debug, PartialEq, Eq)]
