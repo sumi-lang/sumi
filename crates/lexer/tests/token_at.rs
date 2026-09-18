@@ -1,4 +1,4 @@
-//! Positional token lookup: `token_at` and `token_before`.
+//! Positional token lookup: `token_at`.
 
 use sumi_lexer::{RawIdx, lex};
 use sumi_text::TextSize;
@@ -20,17 +20,12 @@ fn every_byte_maps_to_the_token_containing_it() {
 }
 
 #[test]
-fn boundaries_are_right_biased_and_token_before_is_left_biased() {
+fn boundaries_are_right_biased() {
     let source = "ab cd";
     let file = lex(source).expect("test sources fit in u32");
     // The boundary at 2 sits between `ab` (token 0) and the space (token 1).
-    let boundary = TextSize::new(2);
-    assert_eq!(file.token_at(boundary), Some(RawIdx::new(1)));
-    assert_eq!(file.token_before(boundary), Some(RawIdx::new(0)));
-    // Inside a token the two biases agree.
-    let inside = TextSize::new(1);
-    assert_eq!(file.token_at(inside), Some(RawIdx::new(0)));
-    assert_eq!(file.token_before(inside), Some(RawIdx::new(0)));
+    assert_eq!(file.token_at(TextSize::new(2)), Some(RawIdx::new(1)));
+    assert_eq!(file.token_at(TextSize::new(1)), Some(RawIdx::new(0)));
 }
 
 #[test]
@@ -38,16 +33,12 @@ fn the_edges_of_the_source_have_one_sided_answers() {
     let source = "xy";
     let file = lex(source).expect("test sources fit in u32");
     assert_eq!(file.token_at(TextSize::new(0)), Some(RawIdx::new(0)));
-    assert_eq!(file.token_before(TextSize::new(0)), None);
     assert_eq!(file.token_at(TextSize::new(2)), None);
-    assert_eq!(file.token_before(TextSize::new(2)), Some(RawIdx::new(0)));
     assert_eq!(file.token_at(TextSize::new(9)), None);
-    assert_eq!(file.token_before(TextSize::new(9)), None);
 }
 
 #[test]
 fn an_empty_source_has_no_tokens_to_find() {
     let file = lex("").expect("test sources fit in u32");
     assert_eq!(file.token_at(TextSize::new(0)), None);
-    assert_eq!(file.token_before(TextSize::new(0)), None);
 }

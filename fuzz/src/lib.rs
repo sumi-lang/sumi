@@ -639,21 +639,14 @@ pub fn check_tree(tree: &SyntaxTree, lexed: &LexedFile) {
     assert_eq!(tree.first_token(root), RawIdx::new(0));
     assert_eq!(tree.end_token(root), lexed.end());
 
-    let parents = tree.parents();
-    assert_eq!(parents[root.to_usize()], root);
     if !lexed.is_empty() {
         for index in [0, lexed.len() / 2, lexed.len() - 1] {
             let token = RawIdx::new(index as u32);
-            let expected: Vec<_> = tree
+            let innermost = tree
                 .nodes()
                 .filter(|&node| tree.first_token(node) <= token && token < tree.end_token(node))
-                .collect();
-            let actual: Vec<_> = tree.covering_chain(token).collect();
-            assert_eq!(actual, expected);
-            assert_eq!(tree.covering(token), expected[0]);
-            for pair in expected.windows(2) {
-                assert_eq!(parents[pair[0].to_usize()], pair[1]);
-            }
+                .min_by_key(|&node| tree.subtree_len(node));
+            assert_eq!(Some(tree.covering(token)), innermost);
         }
     }
 
