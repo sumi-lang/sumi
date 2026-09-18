@@ -27,8 +27,8 @@ mod program;
 use proptest::test_runner::{Config, FileFailurePersistence};
 
 pub use edit::{
-    Edit, EditSpan, INSERTS, apply, changes_delimiter, delimiter_edited_program, edit,
-    edited_program, non_delimiter_edited_program,
+    Edit, EditSpan, INSERTS, apply, changes_delimiter, delimiter_edited_program, edit, edit_input,
+    edit_seeds, edited_program, non_delimiter_edited_program,
 };
 pub use front::{Front, evidence_name, front};
 pub use perturb::perturbed_program;

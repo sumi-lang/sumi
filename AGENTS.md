@@ -18,10 +18,9 @@ You're in the core repository for Sumi, a novel statically typed general-purpose
 - `sumi-graph`: what a program means apart from whether it is valid: the scalar types, `Int`, the `Graph`, the may-domain, and the concrete `Machine`. On `sumi-text` only; nothing here depends on the checker.
 - `sumi-hir`: semantic checking: `analyze` builds the graph and decides what is wrong with it, and `Program`, the proof that a file is valid, runs it. On `sumi-frontend` and `sumi-graph`.
 - `sumi-cli`: the `sumi` driver. On `sumi-frontend` and `sumi-hir` to check and run, and on `sumi-lexer`, `sumi-syntax`, and `sumi-format` to format, which reads no diagnostic.
-- `sumi-test`: the program generator, edits, layout perturbation, the coverage account, the invariant checks the property tests and the fuzz targets share. On every crate but `sumi-graph`, whose vocabulary it takes through `sumi-hir`; nothing ships it.
+- `sumi-test`: the program generator, edits, layout perturbation, the coverage account, the invariant checks the property tests and the fuzz targets share, and the fuzz seeder. On every crate but `sumi-graph`, whose vocabulary it takes through `sumi-hir`; nothing ships it.
 - `sumi-scorecard`: the recovery scorecard, a leaf on `sumi-test`; nothing ships it.
 - `sumi-fuzz` (`fuzz/`): the fuzz targets, a leaf above every crate; nothing ships it.
-- `xtask`: the fuzz seeder. On no workspace crate.
 - A crate's integration tests may use crates above it, which Cargo allows. A library's unit tests never import a crate above it: rust-analyzer's crate graph has no room for that cycle and drops the edge without a word, leaving those tests unresolved in the editor.
 
 ## Formatting
@@ -43,7 +42,7 @@ You're in the core repository for Sumi, a novel statically typed general-purpose
 ## Fuzzing
 
 - `fuzz/` is a libFuzzer package, `sumi-fuzz`, driven by [cargo-fuzz](https://rust-fuzz.github.io/book/cargo-fuzz.html): a leaf above every crate that nothing ships, like `sumi-scorecard`. Each target under `fuzz_targets/` feeds one layer's checks from `sumi-test` arbitrary input, the same checks that layer's property tests sample: `lex` the lexer, `parse` the whole frontend and formatter, `check` semantic acceptance and the graph's shape, `run` every accepted file on the machine inside the parameter sets the analysis proved, and `edit` single-edit recovery, with the fuzzer's bytes choosing the edit and the source in place of the generators of `sumi-test`. Proptest's pass-through RNG cannot stand in for the generators: it halves its bytes at every nested strategy, and the zeros it yields once they run out send rand's range sampling into an endless rejection loop.
-- The crates are safe Rust, so run without a sanitizer, which is what keeps the stable toolchain enough: `cargo xtask fuzz-seed`, then `cargo fuzz run -s none parse -- -dict=fuzz/sumi.dict`. The seeds are the file-based cases; `edit` needs them, since mutation alone never assembles a program the parser accepts without evidence. `fuzz/corpus/` and `fuzz/artifacts/` are untracked, and `fuzz/sumi.dict` lists every fixed token text; keep it with the `tokens!` declaration.
+- The crates are safe Rust, so run without a sanitizer, which is what keeps the stable toolchain enough: `cargo run -p sumi-test --bin fuzz-seed`, then `cargo fuzz run -s none parse -- -dict=fuzz/sumi.dict`. The seeds are the file-based cases; `edit` needs them, since mutation alone never assembles a program the parser accepts without evidence; `edit_seeds` in `sumi-test` writes them and `edit_input` beside it reads them, so the header is stated once. `fuzz/corpus/` and `fuzz/artifacts/` are untracked, and `fuzz/sumi.dict` lists every fixed token text; keep it with the `tokens!` declaration.
 - A finding lands in `fuzz/artifacts/<target>/`. Minimize it with `cargo fuzz tmin -s none <target> <artifact>`, then keep it as a corpus case under `tests/corpus/` with the fix, so the regression stays found without the fuzzer.
 
 ## Code Style

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "fuzz", "xtask"]
+members = ["crates/*", "fuzz"]
 
 [workspace.package]
 license = "UPL-1.0"

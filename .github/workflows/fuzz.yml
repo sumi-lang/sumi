@@ -44,7 +44,7 @@ jobs:
           restore-keys: fuzz-corpus-${{ matrix.target }}-
       # The file-based cases are the seeds; a restored corpus already holds
       # everything they add, and libFuzzer keeps only what is new.
-      - run: cargo run --locked --package xtask -- fuzz-seed
+      - run: cargo run --locked -p sumi-test --bin fuzz-seed
       # The crates are safe Rust, so no sanitizer: that is what keeps the
       # stable toolchain enough.
       - name: Fuzz
