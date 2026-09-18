@@ -67,35 +67,26 @@ pub fn format(source: &str, lexed: &LexedFile, parsed: &Parse) -> Result<Formatt
     let mut edits = print::print(source, lexed, input, &plan);
     let before = rep(source, lexed, parsed);
 
-    let candidate = apply_gap_edits(source, &edits);
+    let mut text = apply_gap_edits(source, &edits);
     let mut reverted = 0;
-    if let Some(disagreeing) = mismatch(&before, &candidate) {
+    if let Some(disagreeing) = mismatch(&before, &text) {
         // Drop the edits inside every item whose rep changed; the gaps
         // between items stay formatted.
         let tree = parsed.tree();
-        for (index, item) in tree.children(tree.root()).enumerate() {
-            if !disagreeing.contains(&index) {
-                continue;
-            }
-            reverted += 1;
-            let first = first_sig(tree, input, item) as usize;
-            let end = end_sig(tree, input, item) as usize;
+        let items: Vec<NodeIdx> = tree.children(tree.root()).collect();
+        for &index in &disagreeing {
+            let first = first_sig(tree, input, items[index]) as usize;
+            let end = end_sig(tree, input, items[index]) as usize;
             edits.retain(|edit| edit.gap <= first || edit.gap >= end);
         }
-        let candidate = apply_gap_edits(source, &edits);
-        if mismatch(&before, &candidate).is_some() {
-            return Err(Defect {
-                rejected: candidate,
-            });
+        reverted = disagreeing.len();
+        text = apply_gap_edits(source, &edits);
+        if mismatch(&before, &text).is_some() {
+            return Err(Defect { rejected: text });
         }
-        return Ok(Formatted {
-            text: candidate,
-            edits: edits.into_iter().map(|edit| edit.edit).collect(),
-            reverted,
-        });
     }
     Ok(Formatted {
-        text: candidate,
+        text,
         edits: edits.into_iter().map(|edit| edit.edit).collect(),
         reverted,
     })
@@ -123,17 +114,13 @@ fn mismatch(before: &Rep<'_>, candidate: &str) -> Option<Vec<usize>> {
         return Some((0..before.items.len()).collect());
     };
     let after = rep(candidate, &lexed, &parse(ParserInput::new(&lexed)));
-    if after == *before {
-        return None;
-    }
     if after.items.len() != before.items.len() || after.edges != before.edges {
         return Some((0..before.items.len()).collect());
     }
-    Some(
-        (0..before.items.len())
-            .filter(|&index| after.items[index] != before.items[index])
-            .collect(),
-    )
+    let disagreeing: Vec<usize> = (0..before.items.len())
+        .filter(|&index| after.items[index] != before.items[index])
+        .collect();
+    (!disagreeing.is_empty()).then_some(disagreeing)
 }
 
 /// Build the mechanically valid candidate edits for one parser layout
