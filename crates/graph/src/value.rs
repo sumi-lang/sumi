@@ -39,7 +39,7 @@ impl Op {
         match self {
             Self::Int(_) | Self::Bool(_) | Self::Param(_) | Self::Unit | Self::Hole => 0,
             Self::Entry | Self::Then | Self::Else => 0,
-            Self::Copy | Self::Refine { .. } | Self::Exactly(_) | Self::Neg | Self::Not => 1,
+            Self::Copy { .. } | Self::Refine { .. } | Self::Exactly(_) | Self::Neg | Self::Not => 1,
             Self::And { .. } | Self::Or { .. } | Self::Join { .. } => 1,
             Self::Binary(_) => 2,
             Self::Call(_) => inputs,
@@ -56,7 +56,7 @@ impl Op {
             Self::Int(value) => D::int(value),
             Self::Bool(value) => D::bool(*value),
             Self::Unit => D::unit(),
-            Self::Copy | Self::Refine { .. } | Self::Exactly(_) => inputs[0].clone(),
+            Self::Copy { .. } | Self::Refine { .. } | Self::Exactly(_) => inputs[0].clone(),
             Self::Neg => inputs[0].neg()?,
             Self::Not => inputs[0].not()?,
             Self::Binary(op) => D::binary(*op, inputs[0], inputs[1])?,

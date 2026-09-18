@@ -457,7 +457,7 @@ fn delta(graph: &Graph, placed: &Placed, typing: &Typing, node: NodeId) -> Optio
             let inputs = graph.inputs(node);
             result = match graph.node(node).op {
                 Op::Param(index) => Some((index, Ints::from(Int::from(0)))),
-                Op::Copy | Op::Refine { .. } | Op::Exactly(_) => {
+                Op::Copy { .. } | Op::Refine { .. } | Op::Exactly(_) => {
                     next = Some(inputs[0]);
                     continue;
                 }

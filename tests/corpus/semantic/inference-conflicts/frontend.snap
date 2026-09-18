@@ -1,5 +1,5 @@
 == tree ==
-SourceFile 0..293
+SourceFile 0..354
   FnItem 0..35
     Name 3..4 "a"
     ParamList 4..6 "()"
@@ -74,6 +74,19 @@ SourceFile 0..293
     Name 280..285 "empty"
     ParamList 285..287 "()"
     Block 290..292 "{}"
+  FnItem 293..353
+    Name 296..305 "annotated"
+    ParamList 305..307 "()"
+    IfExpr 310..353
+      LiteralExpr 313..317 "true"
+      Block 318..339
+        LetStmt 320..334
+          Name 324..325 "x"
+          TypeRef 327..330 "int"
+          LiteralExpr 333..334 "1"
+        NameRef 336..337 "x"
+      Block 345..353
+        LiteralExpr 347..351 "true"
 
 == formatted ==
 fn a() = if true {
@@ -100,3 +113,9 @@ fn unused() {
 fn comparison() = empty() == empty()
 fn integer() = 1
 fn empty() = {}
+fn annotated() = if true {
+    let x: int = 1
+    x
+} else {
+    true
+}

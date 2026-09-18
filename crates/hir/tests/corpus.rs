@@ -274,7 +274,7 @@ fn dump_region(
     writeln!(out, "{indent}{role}:").unwrap();
     for node in statements {
         match (graph.node(node).name, &graph.node(node).op) {
-            (Some(_), Op::Copy) => {
+            (Some(_), Op::Copy { .. }) => {
                 writeln!(
                     out,
                     "{indent}  let {}: {} {}",
@@ -372,7 +372,7 @@ fn dump_definition(
         Op::Param(index) => format!("param {index}"),
         Op::Unit => "unit".into(),
         Op::Hole => "hole".into(),
-        Op::Copy => "copy".into(),
+        Op::Copy { .. } => "copy".into(),
         Op::Neg => "negate".into(),
         Op::Not => "not".into(),
         Op::Binary(op) => format!("eager {}", operator(*op)),
@@ -416,7 +416,7 @@ fn dump_definition(
                 );
             }
         }
-        Op::Copy => dump_node(analysis, shape, "value", inputs[0], child, out),
+        Op::Copy { .. } => dump_node(analysis, shape, "value", inputs[0], child, out),
         Op::Neg | Op::Not => dump_node(analysis, shape, "operand", inputs[0], child, out),
         Op::Binary(_) => {
             dump_node(analysis, shape, "lhs", inputs[0], child, out);

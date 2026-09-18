@@ -2,29 +2,28 @@
 //!
 //! Checking makes three passes over the items.
 //!
-//! 1. **Headers.** Every function's name, parameter types, and result class:
-//!    an annotated result is a class known to be its type, an expression body
-//!    without one is a fresh class to infer, and a bare block body is unit.
-//! 2. **Bodies.** A structural walk per function resolves names, builds the
-//!    body's nodes of the graph with every node and local owning a class in
-//!    the [`Typing`], and records what the walk learns: facts for literals,
-//!    with their values, and for operator results; a flow for each call,
-//!    each argument into its parameter, and each branch into its `if`; each
-//!    operator's values derived from its operands'; the constants the file
-//!    spells or folds; and a demand wherever a context requires an
-//!    expression to have a type. The walk rejects nothing on type grounds;
-//!    it fails only on names, syntax, and unsupported constructs, and what
-//!    it refuses it leaves as a hole.
-//! 3. **Verdicts.** The typing solves once. Signatures are read off result
-//!    classes, independent of declaration order, and the values that may
-//!    reach each parameter and result beside them. Demands are then checked in
-//!    source order against the final evidence, so a disagreement is blamed on
-//!    the first demand that raised it. Every expression has one context, so
-//!    it is held to one demand; an expression whose type is undetermined,
-//!    because its branches or its callee disagree, satisfies any demand
-//!    silently, and the disagreement is reported where it arose. A body is
-//!    complete when its walk succeeded, none of its demands failed, every
-//!    class it uses resolved, and every function it calls has a signature.
+//! 1. **Headers.** Every function's name, parameter types, and what its
+//!    declaration says of its result: a declared type, a result to infer
+//!    from an expression body, or unit for a bare block body.
+//! 2. **Bodies.** A structural walk per function resolves names and builds
+//!    the body's nodes of the graph, marking which carry a value the typing
+//!    follows, and records what the walk learns beyond the graph: the
+//!    constants the file spells or folds, and a demand wherever a context
+//!    requires a value to have a type. The walk rejects nothing on type
+//!    grounds; it fails only on names, syntax, and unsupported constructs,
+//!    and what it refuses it leaves as a hole.
+//! 3. **Verdicts.** The classes, facts, and flows are drawn from the graph
+//!    by `flows::draw`, the demands joined in, and the typing solves once.
+//!    Signatures are read off result classes, independent of declaration
+//!    order, and the values that may reach each parameter and result beside
+//!    them. Demands are then checked in source order against the final
+//!    evidence, so a disagreement is blamed on the first demand that raised
+//!    it. Every expression has one context, so it is held to one demand; an
+//!    expression whose type is undetermined, because its branches or its
+//!    callee disagree, satisfies any demand silently, and the disagreement
+//!    is reported where it arose. A body is complete when its walk
+//!    succeeded, none of its demands failed, every value in it resolved, and
+//!    every call agrees with its callee's signature.
 //!
 //! Names are never copied while checking: every map is keyed by a slice of
 //! the source, and the one builder keeps its scratch across bodies, so a
@@ -42,11 +41,11 @@ use sumi_syntax::{
 };
 
 use crate::codes;
-use crate::ranges::{May, RangeEdge, UnaryOp};
+use crate::ranges::May;
 use crate::recursion;
 use crate::solver::{Lattice, Var};
 use crate::typing::{Claim, Expected, ProductContext, Typing};
-use crate::*;
+use crate::{flows, *};
 
 /// A hasher for identifiers and integer constants: a word at a time, with
 /// a multiply to spread the bits, which is all a short ASCII name or a
@@ -102,38 +101,53 @@ impl Named {
     }
 }
 
-struct Header {
-    params: Option<Box<[Ty]>>,
-    /// The function's run of the shared parameter classes, opened with the
-    /// headers so a call walked before the callee's body has somewhere to
-    /// send its arguments. Empty for an invalid parameter list.
-    param_classes: std::ops::Range<usize>,
-    /// The function's entry context: live when it can run.
-    entry: Var,
-    /// The result class; `None` when the declaration is too damaged to have
-    /// one.
-    result: Option<Var>,
-    /// The declared result type and where: the annotation, or the whole item
-    /// for a bare block body. A declaration is a contract the body is held
-    /// to, never changed by it. `None` for a result to infer from the body.
-    declared: Option<(Ty, NodeIdx)>,
+pub(crate) struct Header {
+    /// The parameter types, when the parameter list is whole.
+    pub params: Option<Box<[Ty]>>,
+    /// The type of each parameter that has one, whole list or not.
+    pub param_types: Box<[Option<Ty>]>,
+    pub result: HeaderResult,
     item: NodeIdx,
+}
+
+/// What a declaration says of its result.
+#[derive(Clone, Copy)]
+pub(crate) enum HeaderResult {
+    /// The declaration is too damaged to have one.
+    None,
+    /// A declared type, at the annotation or, for a bare block body, the
+    /// whole item: a contract the body is held to, never changed by it.
+    Declared(Ty, NodeIdx),
+    /// A result to infer from the body.
+    Inferred,
 }
 
 struct Local {
     pub origin: Span,
-    pub class: Var,
     /// The node a read of the local outside any guard reads.
     pub node: NodeId,
 }
 
+/// What a demand asks of a value: a fixed type, the result of a function
+/// it is the body of, or the type of a peer it is compared to.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Want {
+    Ty(Ty),
+    /// One value with the function's result: the body of a function whose
+    /// result is inferred.
+    Result(FunctionId),
+    /// Compared with `Peer`: each learns the other's types and nothing of
+    /// its values.
+    Peer(NodeId),
+}
+
 /// What a context requires of an expression, checked after solving.
-enum DemandKind {
+pub(crate) enum DemandKind {
     /// The expression must have the expected type, which a declaration may
     /// have set: a called function, a result annotation, or a binding's
     /// annotation.
     Type {
-        expected: Expected,
+        expected: Want,
         declared: Option<NodeIdx>,
     },
     /// An expression statement's value must be unit.
@@ -142,16 +156,16 @@ enum DemandKind {
     Comparable,
     /// The branches of an `if` must agree on one type: the expression is
     /// the `if`, and each branch delivers its type to it first.
-    Agree { branches: [Var; 2] },
+    Agree { branches: [NodeId; 2] },
 }
 
 /// One demand, kept small: the verdict pass reads every one, and a body
 /// makes one per operand, argument, branch, and statement.
-struct Demand {
+pub(crate) struct Demand {
     owner: u32,
-    node: NodeIdx,
-    actual: Var,
-    kind: DemandKind,
+    pub node: NodeIdx,
+    pub actual: NodeId,
+    pub kind: DemandKind,
 }
 
 /// A division whose divisor must exclude zero wherever it can run.
@@ -159,7 +173,7 @@ struct Obligation {
     owner: u32,
     node: NodeIdx,
     divisor: NodeId,
-    context: Var,
+    context: NodeId,
 }
 
 /// What the walk of every body leaves for the verdict pass.
@@ -181,13 +195,20 @@ struct Recorded {
 /// written, which a read passed as an argument has no node of its own to
 /// say.
 pub(crate) struct Placed {
-    /// The class of each node, by index; none for a hole, or for a node
-    /// built over one.
-    classes: Vec<Option<Var>>,
+    /// Whether the walk gave each node a value the typing follows: a hole
+    /// has none, and neither has a node built over one.
+    pub typed: Vec<bool>,
+    /// The class of each node, by index, once the flows are drawn; none
+    /// for a node that is not typed.
+    pub classes: Vec<Option<Var>>,
     /// Every whole call, in definition order.
-    calls: Vec<PlacedCall>,
+    pub calls: Vec<PlacedCall>,
     /// The arguments of every whole call as written, one run per call.
     arguments: Vec<NodeIdx>,
+    /// Every call that reached a callee with parameters, whole or not, as
+    /// the context it runs in and the callee: the callee is checked on the
+    /// strength of any call to it.
+    pub entered: Vec<(NodeId, FunctionId)>,
     bottom: May,
 }
 
@@ -205,9 +226,11 @@ impl Placed {
     /// Room for a file of about `nodes` nodes.
     fn with_capacity(nodes: usize) -> Self {
         Self {
-            classes: Vec::with_capacity(nodes),
+            typed: Vec::with_capacity(nodes),
+            classes: Vec::new(),
             calls: Vec::new(),
             arguments: Vec::new(),
+            entered: Vec::new(),
             bottom: May::bottom(),
         }
     }
@@ -319,7 +342,7 @@ impl<'s> Source<'s> {
     ) {
         let mut claims: Vec<_> = claims
             .iter()
-            .map(|(ty, claim)| (*ty, typing.origin(*claim).map(|node| self.span(node))))
+            .map(|(ty, claim)| (*ty, typing.origin(*claim)))
             .collect();
         claims.sort_by_key(|(_, origin)| origin.map(|span| span.range().start()));
         let types: Vec<_> = claims.iter().map(|(ty, _)| ty.to_string()).collect();
@@ -372,7 +395,6 @@ struct Parameter<'s> {
     node: NodeIdx,
     name: Option<(&'s str, NodeIdx)>,
     ty: Option<Ty>,
-    class: Option<Var>,
 }
 
 pub fn analyze(parsed: ParsedSource) -> Analysis {
@@ -386,15 +408,12 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         .unwrap()
         .items(tree)
         .collect();
-    let mut typing = Typing::for_nodes(tree.len());
-
     // Pass 1: headers.
     let mut named: Vec<(Option<Span>, Span)> = Vec::with_capacity(items.len());
     let mut names: NameMap<Named> =
         NameMap::with_capacity_and_hasher(items.len(), Default::default());
     let mut parameters = Vec::with_capacity(items.len());
     let mut headers = Vec::with_capacity(items.len());
-    let mut param_classes = Vec::with_capacity(items.len());
     for item in &items {
         let name = source.name(item.name(tree));
         let id = FunctionId::new(named.len());
@@ -429,25 +448,17 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
                 let ty = param.type_ref(tree).and_then(|ty| source.ty(ty));
                 valid &= ty.is_some();
                 let name = source.name(param.name(tree));
-                let class =
-                    ty.map(|ty| typing.known(ty, name.map_or(param.node(), |(_, node)| node)));
                 params.push(Parameter {
                     node: param.node(),
                     name,
                     ty,
-                    class,
                 });
             }
         }
-        let classes_start = param_classes.len();
-        if valid {
-            param_classes.extend(params.iter().map(|p| p.class.unwrap()));
-        }
-        let entry = typing.entry(valid && params.is_empty());
-        let (result, declared) = if let Some(ret) = item.ret(tree) {
+        let result = if let Some(ret) = item.ret(tree) {
             match source.ty(ret) {
-                Some(ty) => (Some(typing.known(ty, ret.node())), Some((ty, ret.node()))),
-                None => (None, None),
+                Some(ty) => HeaderResult::Declared(ty, ret.node()),
+                None => HeaderResult::None,
             }
         } else {
             // A missing annotation can mean damaged syntax, not omission.
@@ -463,20 +474,15 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
                     (tokens.next(), tokens.next())
                 });
             match gap {
-                Some((None, None)) => (
-                    Some(typing.known(Ty::Unit, item.node())),
-                    Some((Ty::Unit, item.node())),
-                ),
-                Some((Some(SyntaxKind::Eq), None)) => (Some(typing.fresh()), None),
-                _ => (None, None),
+                Some((None, None)) => HeaderResult::Declared(Ty::Unit, item.node()),
+                Some((Some(SyntaxKind::Eq), None)) => HeaderResult::Inferred,
+                _ => HeaderResult::None,
             }
         };
         headers.push(Header {
             params: valid.then(|| params.iter().map(|p| p.ty.unwrap()).collect()),
-            param_classes: classes_start..param_classes.len(),
-            entry,
+            param_types: params.iter().map(|p| p.ty).collect(),
             result,
-            declared,
             item: item.node(),
         });
         parameters.push(params);
@@ -498,9 +504,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     let mut builder = Builder::new(
         &mut source,
         &headers,
-        &param_classes,
         &names,
-        &mut typing,
         &mut recorded,
         &mut nodes_of,
         &mut graph,
@@ -522,13 +526,17 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         })
         .collect();
 
-    // Pass 3: verdicts.
+    // Pass 3: verdicts. The classes and flows are drawn from the graph,
+    // then the typing solves once.
     let Recorded {
         demands,
         obligations,
         constants,
         ..
     } = recorded;
+    let (mut typing, results) = flows::draw(&graph, &mut placed, &headers, &demands, |node| {
+        source.span(node)
+    });
     let cx: ProductContext = ((), constants.into_iter().collect());
     typing.solve(&cx);
     for (index, class) in placed.classes.iter().enumerate() {
@@ -539,10 +547,13 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     }
     let mut replay = typing.replay();
     let mut failed = vec![false; functions.len()];
+    let class = |node: NodeId| placed.classes[node.index()].expect("a demanded node is typed");
     for demand in demands {
-        let actual = replay.resolve(demand.actual);
+        let actual_class = class(demand.actual);
+        let actual = replay.resolve(actual_class);
         match demand.kind {
             DemandKind::Type { expected, declared } => {
+                let expected = flows::expected(expected, &results, class);
                 let expected_ty = match expected {
                     Expected::Ty(ty) => Some(ty),
                     Expected::Class(class) | Expected::Peer(class) => replay.resolve(class),
@@ -553,7 +564,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
                         source.type_mismatch(demand.node, expected, actual, related);
                     }
                     _ => {
-                        replay.expect(demand.actual, expected);
+                        replay.expect(actual_class, expected);
                         continue;
                     }
                 }
@@ -566,7 +577,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
                     None,
                 ),
                 _ => {
-                    replay.expect(demand.actual, Expected::Ty(Ty::Unit));
+                    replay.expect(actual_class, Expected::Ty(Ty::Unit));
                     continue;
                 }
             },
@@ -587,9 +598,9 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
             // type is held to no type it never had.
             DemandKind::Agree { branches } => {
                 for branch in branches {
-                    replay.branch(branch, demand.actual);
+                    replay.branch(class(branch), actual_class);
                 }
-                let evidence = *replay.evidence(demand.actual);
+                let evidence = *replay.evidence(actual_class);
                 if !evidence.is_conflict() {
                     continue;
                 }
@@ -604,20 +615,22 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         }
         failed[demand.owner as usize] = true;
     }
-    for (index, header) in headers.iter_mut().enumerate() {
-        let evidence = header.result.map(|result| *typing.evidence(result));
+    for (index, header) in headers.into_iter().enumerate() {
+        let run = graph.run(FunctionId::new(index));
+        let result_class = results[index];
+        let evidence = result_class.map(|result| *typing.evidence(result));
         let result = evidence.and_then(|evidence| evidence.ty());
-        if let (Some(params), Some(result)) = (header.params.take(), result) {
+        if let (Some(params), Some(result)) = (header.params, result) {
             functions[index].signature = Some(Signature { params, result });
             // A function nothing live reaches never returns either.
-            let result = header.result.unwrap();
+            let result_class = result_class.unwrap();
             functions[index].ranges = Some(Ranges {
-                params: param_classes[header.param_classes.clone()]
-                    .iter()
-                    .map(|&class| typing.may(class).clone())
+                params: run
+                    .params()
+                    .map(|param| placed.may(&typing, param).clone())
                     .collect(),
-                result: if typing.may(header.entry).live() {
-                    typing.may(result).clone()
+                result: if placed.live(&typing, run.entry()) {
+                    typing.may(result_class).clone()
                 } else {
                     May::bottom()
                 },
@@ -626,7 +639,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         // A result to infer that did not resolve is reported here, unless a
         // demand in the body already explained it, or the trouble arrived
         // whole from a callee, which reports it at its own declaration.
-        if let (None, Some(evidence), None) = (header.declared, evidence, result)
+        if let (HeaderResult::Inferred, Some(evidence), None) = (header.result, evidence, result)
             && built[index]
             && !failed[index]
             && !evidence.inherited()
@@ -658,7 +671,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
             continue;
         }
         let divisor = placed.may(&typing, obligation.divisor);
-        if !typing.may(obligation.context).live() || !divisor.ints.contains_zero() {
+        if !placed.live(&typing, obligation.context) || !divisor.ints.contains_zero() {
             continue;
         }
         let message = if divisor.ints.is_zero() {
@@ -862,7 +875,7 @@ fn explain_zero(
                 labels.push((entry.origin, describe(&may.ints, "").into()));
             }
             // A `let` passes the value on unchanged, at no distance.
-            Op::Copy => follow(&mut queue, inputs[0], 0),
+            Op::Copy { .. } => follow(&mut queue, inputs[0], 0),
             // A guard that narrowed the local is where the zero was
             // singled out, and the local is where it came from.
             Op::Refine { .. } => {
@@ -980,9 +993,7 @@ impl LocalId {
 struct Builder<'a, 's> {
     source: &'a mut Source<'s>,
     headers: &'a [Header],
-    param_classes: &'a [Var],
     names: &'a NameMap<'s, Named>,
-    typing: &'a mut Typing,
     recorded: &'a mut Recorded,
     /// The graph node each syntax node built, by node.
     nodes_of: &'a mut [Option<NodeId>],
@@ -1001,15 +1012,12 @@ struct Builder<'a, 's> {
     /// The open regions, innermost last: where a pushed node stands, and
     /// whose context the point runs in.
     regions: Vec<RegionId>,
-    /// The classes and nodes locals read as inside the open regions,
-    /// innermost last.
-    refinements: Vec<(LocalId, Var, NodeId)>,
+    /// The nodes locals read as inside the open regions, innermost last.
+    refinements: Vec<(LocalId, NodeId)>,
     /// Where each open region's refinements begin in `refinements`.
     marks: Vec<usize>,
-    /// The contexts of the branches of each `if` whose branches are walked
+    /// The regions of the branches of each `if` whose branches are walked
     /// and whose `if` is not yet finished, innermost last.
-    branch_contexts: Vec<(Var, Var)>,
-    /// The regions of the same branches.
     branch_regions: Vec<(RegionId, Option<RegionId>)>,
     /// The regions of the right operands of the lazy operators whose right
     /// operands are walked and whose operators are not yet finished.
@@ -1033,9 +1041,7 @@ impl<'a, 's> Builder<'a, 's> {
     fn new(
         source: &'a mut Source<'s>,
         headers: &'a [Header],
-        param_classes: &'a [Var],
         names: &'a NameMap<'s, Named>,
-        typing: &'a mut Typing,
         recorded: &'a mut Recorded,
         nodes_of: &'a mut [Option<NodeId>],
         graph: &'a mut Graph,
@@ -1044,9 +1050,7 @@ impl<'a, 's> Builder<'a, 's> {
         Self {
             source,
             headers,
-            param_classes,
             names,
-            typing,
             recorded,
             nodes_of,
             graph,
@@ -1059,7 +1063,6 @@ impl<'a, 's> Builder<'a, 's> {
             regions: Vec::new(),
             refinements: Vec::new(),
             marks: Vec::new(),
-            branch_contexts: Vec::new(),
             branch_regions: Vec::new(),
             lazy_regions: Vec::new(),
             scopes: Vec::new(),
@@ -1081,23 +1084,23 @@ impl<'a, 's> Builder<'a, 's> {
         self.regions.clear();
         self.refinements.clear();
         self.marks.clear();
-        self.branch_contexts.clear();
         self.branch_regions.clear();
         self.lazy_regions.clear();
         let header = &self.headers[owner];
-        let entry_class = header.entry;
         let item_node = header.item;
         let start = self.graph.next();
         self.base = start.index();
         self.consts.clear();
         let entry = self.push(item_node, Op::Entry, &[], None);
-        self.placed.classes[entry.index()] = Some(entry_class);
+        self.mark(entry);
         let arity = u32::try_from(parameters.len()).expect("parameter count fits u32");
         for (index, param) in parameters.into_iter().enumerate() {
             let index = u32::try_from(index).expect("parameter count fits u32");
             let name = param.name.map(|(_, node)| self.source.span(node));
             let node = self.push(param.node, Op::Param(index), &[], name);
-            self.placed.classes[node.index()] = param.class;
+            if param.ty.is_some() {
+                self.mark(node);
+            }
             if let Some((name, name_node)) = param.name {
                 if let Some(&span) = self.first.get(name) {
                     self.source.error(
@@ -1110,16 +1113,15 @@ impl<'a, 's> Builder<'a, 's> {
                     self.failed = true;
                 } else {
                     self.first.insert(name, self.source.span(name_node));
-                    self.bind(name, name_node, param.class, node);
+                    self.bind(name, name_node, param.ty.is_some(), node);
                 }
             } else {
                 self.failed = true;
             }
         }
         let header = &self.headers[self.owner as usize];
-        let result = header.result;
-        let declared = header.declared;
-        self.failed |= header.params.is_none() || result.is_none();
+        let declared = header.result;
+        self.failed |= header.params.is_none() || matches!(declared, HeaderResult::None);
         let tree = self.source.tree;
         let region = self.graph.open(entry);
         self.graph.enter(region);
@@ -1172,22 +1174,31 @@ impl<'a, 's> Builder<'a, 's> {
         // type. A declared result is a contract on the body; an inferred one
         // is the body's own type.
         let value = match declared {
-            Some((_, node)) => {
-                let copy = self.push(node, Op::Copy, &[body_value], None);
-                if let Some(result) = result {
-                    self.placed.classes[copy.index()] = Some(result);
-                }
+            HeaderResult::Declared(ty, node) => {
+                let copy = self.push(
+                    node,
+                    Op::Copy {
+                        declared: Some((ty, self.source.span(node))),
+                    },
+                    &[body_value],
+                    None,
+                );
+                self.mark(copy);
                 copy
             }
-            None => body_value,
+            HeaderResult::Inferred | HeaderResult::None => body_value,
         };
-        match (root, declared, result) {
-            (Some(root), Some((ty, node)), Some(result)) => {
-                self.require(root_node.unwrap(), root, Expected::Ty(ty), Some(node));
-                self.typing.flow(root, result, RangeEdge::Copy);
+        match (root, declared) {
+            (Some(root), HeaderResult::Declared(ty, node)) => {
+                self.require(root_node.unwrap(), root, Want::Ty(ty), Some(node));
             }
-            (Some(root), None, Some(result)) => {
-                self.require(root_node.unwrap(), root, Expected::Class(result), None);
+            (Some(root), HeaderResult::Inferred) => {
+                self.require(
+                    root_node.unwrap(),
+                    root,
+                    Want::Result(FunctionId::new(owner)),
+                    None,
+                );
             }
             _ => {}
         }
@@ -1205,21 +1216,27 @@ impl<'a, 's> Builder<'a, 's> {
     /// have built.
     fn place(&mut self, op: Op, inputs: &[NodeId], origin: Span, name: Option<Span>) -> NodeId {
         let id = self.graph.push(op, inputs, origin, name);
-        self.placed.classes.push(None);
+        self.placed.typed.push(false);
         self.consts.push(None);
         id
     }
-    /// A node of the type `class` resolves to, at `node`, which is built.
-    fn classify(&mut self, node: NodeIdx, class: Var) -> NodeId {
-        let id = self.nodes_of[node.to_usize()].expect("a graph node before its class");
-        self.placed.classes[id.index()] = Some(class);
+    /// Give `node` a value the typing follows.
+    fn mark(&mut self, node: NodeId) {
+        self.placed.typed[node.index()] = true;
+    }
+    /// The node at `node` is a value the typing follows.
+    fn classify(&mut self, node: NodeIdx) -> NodeId {
+        let id = self.nodes_of[node.to_usize()].expect("a graph node before its value");
+        self.mark(id);
         id
     }
     /// A context node for the region whose syntax is `region`, derived
     /// from `condition` under `parent`. It is not what `region` built: the
     /// region's own node is its value, which the context gates.
     fn context_at(&mut self, region: NodeIdx, op: Op, condition: NodeId, parent: NodeId) -> NodeId {
-        self.place(op, &[condition, parent], self.source.span(region), None)
+        let context = self.place(op, &[condition, parent], self.source.span(region), None);
+        self.mark(context);
+        context
     }
     /// The graph node `node` built, or a hole where nothing was: syntax
     /// the walk could not reach.
@@ -1229,11 +1246,11 @@ impl<'a, 's> Builder<'a, 's> {
             None => self.push(node, Op::Hole, &[], None),
         }
     }
-    /// The class of the value `node` built, if it built one with a class:
-    /// a hole, and a node built where the typing could not follow, have
-    /// none.
-    fn typed(&self, node: NodeIdx) -> Option<Var> {
-        self.placed.classes[self.nodes_of[node.to_usize()]?.index()]
+    /// The value `node` built, if it built one the typing follows: a hole,
+    /// and a node built over one, are none.
+    fn typed(&self, node: NodeIdx) -> Option<NodeId> {
+        let id = self.nodes_of[node.to_usize()]?;
+        self.placed.typed[id.index()].then_some(id)
     }
     /// A hole at `node`, over nothing: syntax the walk refuses.
     fn hole(&mut self, node: NodeIdx) -> NodeId {
@@ -1271,14 +1288,13 @@ impl<'a, 's> Builder<'a, 's> {
     fn shadow(&mut self, name: &'s str, bound: Bound) {
         self.scopes[self.depth - 1].insert(name, bound);
     }
-    /// Bind `name` to a local defined by `node`, whose class is `class`
-    /// when it has one.
-    fn bind(&mut self, name: &'s str, name_node: NodeIdx, class: Option<Var>, node: NodeId) {
-        let bound = if let Some(class) = class {
+    /// Bind `name` to a local defined by `node`, which has a value the
+    /// typing follows when `typed`.
+    fn bind(&mut self, name: &'s str, name_node: NodeIdx, typed: bool, node: NodeId) {
+        let bound = if typed {
             let id = LocalId(u32::try_from(self.locals.len()).expect("local count fits u32"));
             self.locals.push(Local {
                 origin: self.source.span(name_node),
-                class,
                 node,
             });
             Bound::Local(id)
@@ -1297,28 +1313,19 @@ impl<'a, 's> Builder<'a, 's> {
             .filter(|scope| !scope.is_empty())
             .find_map(|scope| scope.get(name).copied())
     }
-    /// The class and the node a read of `local` has here: the innermost
-    /// refinement that covers it, or the local's own.
-    fn current(&self, local: LocalId) -> (Var, NodeId) {
+    /// The node a read of `local` reads here: the innermost refinement
+    /// that covers it, or the local's own.
+    fn current(&self, local: LocalId) -> NodeId {
         self.refinements
             .iter()
             .rev()
-            .find(|(refined, _, _)| *refined == local)
-            .map_or_else(
-                || {
-                    let local = &self.locals[local.index()];
-                    (local.class, local.node)
-                },
-                |(_, class, node)| (*class, *node),
-            )
+            .find(|(refined, _)| *refined == local)
+            .map_or_else(|| self.locals[local.index()].node, |(_, node)| *node)
     }
     /// The context the open region runs in.
-    fn context_node(&self) -> NodeId {
+    fn context(&self) -> NodeId {
         let region = *self.regions.last().expect("a body runs in its region");
         self.graph.region(region).context
-    }
-    fn context(&self) -> Var {
-        self.placed.classes[self.context_node().index()].expect("a context has a class")
     }
     /// The operator of a clean binary expression, read from the token gap
     /// between its operands.
@@ -1404,17 +1411,9 @@ impl<'a, 's> Builder<'a, 's> {
                     Lt | Le | Gt | Ge | Eq | Ne => {
                         let op = eager(op).expect("a comparison is eager");
                         for (side, other, local_is_lhs) in [(lhs, rhs, true), (rhs, lhs, false)] {
-                            if let (Some(local), Some(other_class)) =
-                                (self.read(side), self.typed(other))
+                            if let (Some(local), Some(other)) = (self.read(side), self.typed(other))
                             {
-                                let (class, read) = self.current(local);
-                                let edge = RangeEdge::Refine {
-                                    op,
-                                    local_is_lhs,
-                                    sense,
-                                };
-                                let refined = self.typing.refine(class, other_class, edge);
-                                let inputs = [read, self.node_of(other)];
+                                let inputs = [self.current(local), other];
                                 let read = self.place(
                                     Op::Refine {
                                         op,
@@ -1425,8 +1424,8 @@ impl<'a, 's> Builder<'a, 's> {
                                     self.source.span(node),
                                     None,
                                 );
-                                self.placed.classes[read.index()] = Some(refined);
-                                self.refinements.push((local, refined, read));
+                                self.mark(read);
+                                self.refinements.push((local, read));
                             }
                         }
                     }
@@ -1435,13 +1434,11 @@ impl<'a, 's> Builder<'a, 's> {
             }
             NodeKind::NameRef => {
                 if let Some(local) = self.read(node) {
-                    let (class, read) = self.current(local);
-                    let refined = self.typing.refine_bool(class, sense);
-                    let inputs = [read];
+                    let inputs = [self.current(local)];
                     let read =
                         self.place(Op::Exactly(sense), &inputs, self.source.span(node), None);
-                    self.placed.classes[read.index()] = Some(refined);
-                    self.refinements.push((local, refined, read));
+                    self.mark(read);
+                    self.refinements.push((local, read));
                 }
             }
             _ => {}
@@ -1456,26 +1453,15 @@ impl<'a, 's> Builder<'a, 's> {
         let then_node = branch.then_branch(tree).unwrap().node();
         let else_node = branch.else_branch(tree).map(|e| e.node());
         let parent = self.context();
-        let parent_node = self.context_node();
-        let (then_context, else_context) = match self.typed(cond) {
-            Some(cond) => (
-                self.typing.derived(cond, parent, RangeEdge::Then),
-                self.typing.derived(cond, parent, RangeEdge::Else),
-            ),
-            None => (parent, parent),
-        };
         let cond_node = self.node_of(cond);
         let then_region = {
-            let context = self.context_at(then_node, Op::Then, cond_node, parent_node);
-            self.placed.classes[context.index()] = Some(then_context);
+            let context = self.context_at(then_node, Op::Then, cond_node, parent);
             self.graph.open(context)
         };
         let else_region = else_node.map(|else_node| {
-            let context = self.context_at(else_node, Op::Else, cond_node, parent_node);
-            self.placed.classes[context.index()] = Some(else_context);
+            let context = self.context_at(else_node, Op::Else, cond_node, parent);
             self.graph.open(context)
         });
-        self.branch_contexts.push((then_context, else_context));
         self.branch_regions.push((then_region, else_region));
         // The else branch is entered last. Without an else nothing enters
         // the false sense, so nothing is narrowed for it.
@@ -1509,20 +1495,10 @@ impl<'a, 's> Builder<'a, 's> {
         let rhs = binary.rhs(tree).unwrap().node();
         let and = self.binary_op(node) == sumi_syntax::BinaryOp::And;
         let parent = self.context();
-        let parent_node = self.context_node();
-        let (edge, op) = if and {
-            (RangeEdge::Then, Op::Then)
-        } else {
-            (RangeEdge::Else, Op::Else)
-        };
-        let context = match self.typed(lhs) {
-            Some(class) => self.typing.derived(class, parent, edge),
-            None => parent,
-        };
+        let op = if and { Op::Then } else { Op::Else };
         let lhs_node = self.node_of(lhs);
-        let context_node = self.context_at(rhs, op, lhs_node, parent_node);
-        self.placed.classes[context_node.index()] = Some(context);
-        let region = self.graph.open(context_node);
+        let context = self.context_at(rhs, op, lhs_node, parent);
+        let region = self.graph.open(context);
         self.lazy_regions.push(region);
         work.push(Work::Pop { region, root: rhs });
         work.push(Work::Enter(rhs));
@@ -1538,23 +1514,22 @@ impl<'a, 's> Builder<'a, 's> {
         }
         self.consts[node.index() - self.base] = Some(value);
     }
-    /// The context at `node` requires the value of class `actual` to be
-    /// `expected`, which `declared` may have set. Recorded for the verdict
-    /// pass, and joined into the evidence now so inference sees it.
+    /// The context at `node` requires the value `actual` to be `expected`,
+    /// which `declared` may have set. Recorded for the flows to join into
+    /// the evidence, and for the verdict pass.
     fn require(
         &mut self,
         node: NodeIdx,
-        actual: Var,
-        expected: Expected,
+        actual: NodeId,
+        expected: Want,
         declared: Option<NodeIdx>,
     ) {
-        if expected == Expected::Class(actual) || expected == Expected::Peer(actual) {
+        if expected == Want::Peer(actual) {
             return;
         }
-        self.typing.expect(actual, expected, node);
         self.demand(node, actual, DemandKind::Type { expected, declared });
     }
-    fn demand(&mut self, node: NodeIdx, actual: Var, kind: DemandKind) {
+    fn demand(&mut self, node: NodeIdx, actual: NodeId, kind: DemandKind) {
         self.recorded.demands.push(Demand {
             owner: self.owner,
             node,
@@ -1596,7 +1571,7 @@ impl<'a, 's> Builder<'a, 's> {
                     if let Some((name, name_node)) = self.source.name(binding.name(tree)) {
                         let hole =
                             self.push(node, Op::Hole, &[], Some(self.source.span(name_node)));
-                        self.bind(name, name_node, None, hole);
+                        self.bind(name, name_node, false, hole);
                     }
                     self.failed = true;
                     return;
@@ -1736,7 +1711,7 @@ impl<'a, 's> Builder<'a, 's> {
     }
     /// The literal's value, negated when a `-` prefix is folded into it.
     /// `None` for a malformed literal, which the lexer already reported.
-    fn integer(&mut self, origin: NodeIdx, literal: NodeIdx, negative: bool) -> Option<Var> {
+    fn integer(&mut self, origin: NodeIdx, literal: NodeIdx, negative: bool) -> Option<NodeId> {
         let raw = self.source.tree.first_token(literal);
         if self
             .source
@@ -1755,12 +1730,9 @@ impl<'a, 's> Builder<'a, 's> {
             .expect("a well-formed literal is a run of digits");
         let value = if negative { -&magnitude } else { magnitude };
         self.push(origin, Op::Int(value.clone()), &[], None);
-        let class = self
-            .typing
-            .literal(Ty::Int, May::int(value.clone()), origin);
-        let id = self.classify(origin, class);
+        let id = self.classify(origin);
         self.fold(id, value);
-        Some(class)
+        Some(id)
     }
     fn finish(&mut self, node: NodeIdx) -> Option<()> {
         let tree = self.source.tree;
@@ -1780,7 +1752,9 @@ impl<'a, 's> Builder<'a, 's> {
                         continue;
                     }
                     match self.typed(child) {
-                        Some(class) if expression => self.demand(child, class, DemandKind::Unused),
+                        Some(value) if expression => {
+                            self.demand(child, value, DemandKind::Unused);
+                        }
                         Some(_) => {}
                         None => {
                             self.node_of(child);
@@ -1793,28 +1767,27 @@ impl<'a, 's> Builder<'a, 's> {
                 // may have lost its tail to recovery, so its value is not
                 // held to anything.
                 let damaged = tree.has_error(node);
-                let class = match tail {
+                let value = match tail {
                     Some(tail) => {
                         let value = self.node_of(tail);
                         self.nodes_of[node.to_usize()] = Some(value);
                         self.typed(tail)
                     }
                     None => {
-                        let context = self.context_node();
+                        let context = self.context();
                         let unit = self.push(node, Op::Unit, &[context], None);
                         if damaged {
                             None
                         } else {
-                            let class = self.typing.unit(self.context(), node);
-                            self.placed.classes[unit.index()] = Some(class);
-                            Some(class)
+                            self.mark(unit);
+                            Some(unit)
                         }
                     }
                 };
                 if !valid || damaged {
                     return None;
                 }
-                class?;
+                value?;
             }
             NodeKind::LetStmt => {
                 let binding = ast::LetStmt::cast(tree, node).unwrap();
@@ -1822,34 +1795,40 @@ impl<'a, 's> Builder<'a, 's> {
                 let initializer = self.typed(initializer_node);
                 let value = self.node_of(initializer_node);
                 let name = self.source.name(binding.name(tree));
+                // An annotated binding has its declared type whatever its
+                // initializer turns out to be; the initializer is held to it.
+                let annotation = binding.type_ref(tree);
+                let declared = annotation.and_then(|annotation| {
+                    let ty = self.source.ty(annotation)?;
+                    Some((ty, self.source.span(annotation.node())))
+                });
                 let copy = self.push(
                     node,
-                    Op::Copy,
+                    Op::Copy { declared },
                     &[value],
                     name.map(|(_, node)| self.source.span(node)),
                 );
                 let (name, name_node) = name?;
-                // An annotated binding has its declared type whatever its
-                // initializer turns out to be; the initializer is held to it.
-                let class = match binding.type_ref(tree) {
-                    Some(annotation) => self.source.ty(annotation).map(|ty| {
-                        let class = self.typing.known(ty, annotation.node());
+                let typed = match (annotation, declared) {
+                    (Some(annotation), Some((ty, _))) => {
                         if let Some(initializer) = initializer {
                             self.require(
                                 initializer_node,
                                 initializer,
-                                Expected::Ty(ty),
+                                Want::Ty(ty),
                                 Some(annotation.node()),
                             );
-                            self.typing.flow(initializer, class, RangeEdge::Copy);
                         }
-                        class
-                    }),
-                    None => initializer,
+                        true
+                    }
+                    (Some(_), None) => false,
+                    (None, _) => initializer.is_some(),
                 };
-                self.placed.classes[copy.index()] = class;
-                self.bind(name, name_node, class, copy);
-                class?;
+                if typed {
+                    self.mark(copy);
+                }
+                self.bind(name, name_node, typed, copy);
+                typed.then_some(())?;
             }
             NodeKind::DiscardStmt => {
                 let value = ast::DiscardStmt::cast(tree, node)
@@ -1866,7 +1845,7 @@ impl<'a, 's> Builder<'a, 's> {
                 let name = self.source.text(node);
                 match self.lookup(name) {
                     Some(Bound::Local(local)) => {
-                        let (_, read) = self.current(local);
+                        let read = self.current(local);
                         self.nodes_of[node.to_usize()] = Some(read);
                     }
                     // A binding without a class the typing follows is still
@@ -1903,8 +1882,7 @@ impl<'a, 's> Builder<'a, 's> {
                     _ if matches!(self.source.text(node), "true" | "false") => {
                         let value = self.source.text(node) == "true";
                         self.push(node, Op::Bool(value), &[], None);
-                        let class = self.typing.literal(Ty::Bool, May::bool(value), node);
-                        self.classify(node, class);
+                        self.classify(node);
                     }
                     _ => {
                         self.unsupported(node);
@@ -1941,11 +1919,8 @@ impl<'a, 's> Builder<'a, 's> {
                 );
                 let value = self.typed(operand)?;
                 let ty = if neg { Ty::Int } else { Ty::Bool };
-                self.require(operand, value, Expected::Ty(ty), None);
-                let class = self.typing.known(ty, node);
-                let op = if neg { UnaryOp::Neg } else { UnaryOp::Not };
-                self.typing.flow(value, class, RangeEdge::Unary(op));
-                let id = self.classify(node, class);
+                self.require(operand, value, Want::Ty(ty), None);
+                let id = self.classify(node);
                 if neg && let Some(folded) = self.consts[operand_node.index() - self.base].clone() {
                     self.fold(id, -&folded);
                 }
@@ -1983,11 +1958,10 @@ impl<'a, 's> Builder<'a, 's> {
                 }
                 // `==` and `!=` compare like with like: whichever operand
                 // exists sets the other's expectation.
-                let (operand, result) = match op {
-                    Add | Sub | Mul | Div | Rem => (Some(Expected::Ty(Ty::Int)), Ty::Int),
-                    Lt | Le | Gt | Ge => (Some(Expected::Ty(Ty::Int)), Ty::Bool),
-                    Eq | Ne => (lhs.or(rhs).map(Expected::Peer), Ty::Bool),
-                    And | Or => (Some(Expected::Ty(Ty::Bool)), Ty::Bool),
+                let operand = match op {
+                    Add | Sub | Mul | Div | Rem | Lt | Le | Gt | Ge => Some(Want::Ty(Ty::Int)),
+                    Eq | Ne => lhs.or(rhs).map(Want::Peer),
+                    And | Or => Some(Want::Ty(Ty::Bool)),
                 };
                 if let Some(operand) = operand {
                     for (child, value) in [(lhs_node, lhs), (rhs_node, rhs)] {
@@ -1999,13 +1973,8 @@ impl<'a, 's> Builder<'a, 's> {
                         self.demand(node, operand, DemandKind::Comparable);
                     }
                 }
-                let (lhs, rhs) = (lhs?, rhs?);
-                let class = self.typing.known(result, node);
-                let edge = match eager(op) {
-                    Some(op) => RangeEdge::Binary(op),
-                    None => RangeEdge::Lazy { and: op == And },
-                };
-                self.typing.derive(lhs, rhs, class, edge);
+                lhs?;
+                rhs?;
                 if let Some(divisor) = rhs_graph
                     && matches!(op, Div | Rem)
                 {
@@ -2036,16 +2005,12 @@ impl<'a, 's> Builder<'a, 's> {
                     }
                     _ => None,
                 };
-                let id = self.classify(node, class);
+                let id = self.classify(node);
                 if let Some(folded) = folded {
                     self.fold(id, folded);
                 }
             }
             NodeKind::IfExpr => {
-                let (then_context, else_context) = self
-                    .branch_contexts
-                    .pop()
-                    .expect("an if's branches open before it finishes");
                 let (then_region, else_region) = self
                     .branch_regions
                     .pop()
@@ -2068,17 +2033,16 @@ impl<'a, 's> Builder<'a, 's> {
                     None,
                 );
                 if let Some(condition) = condition {
-                    self.require(condition_node, condition, Expected::Ty(Ty::Bool), None);
+                    self.require(condition_node, condition, Want::Ty(Ty::Bool), None);
                 }
                 let then_branch = then_branch?;
                 match else_node {
                     // Without an else, the then branch is unit, and so is
                     // the `if`.
                     None => {
-                        self.require(then_node, then_branch, Expected::Ty(Ty::Unit), None);
-                        let class = self.typing.unit(self.context(), node);
+                        self.require(then_node, then_branch, Want::Ty(Ty::Unit), None);
                         condition?;
-                        self.classify(node, class);
+                        self.classify(node);
                     }
                     // Each branch decides the `if` and learns nothing from
                     // the other, so branches that disagree leave the `if`
@@ -2086,14 +2050,8 @@ impl<'a, 's> Builder<'a, 's> {
                     // their own types. The verdict pass reports it there.
                     Some(_) => {
                         let branches = [then_branch, else_branch?];
-                        let join = self.typing.fresh();
-                        for (branch, context) in
-                            branches.into_iter().zip([then_context, else_context])
-                        {
-                            self.typing.branch(branch, context, join);
-                        }
                         condition?;
-                        self.classify(node, join);
+                        let join = self.classify(node);
                         self.demand(node, join, DemandKind::Agree { branches });
                     }
                 }
@@ -2114,7 +2072,7 @@ impl<'a, 's> Builder<'a, 's> {
         if params.is_some() {
             // The callee is reached, whole call or not: what it does is
             // checked on the strength of any call to it.
-            self.typing.flow(context, function.entry, RangeEdge::Enter);
+            self.placed.entered.push((context, target));
         }
         // Every argument that exists is held to its parameter, arity aside;
         // its node and its syntax are kept in case the call is whole.
@@ -2129,7 +2087,7 @@ impl<'a, 's> Builder<'a, 's> {
             match (self.typed(syntax), params) {
                 (Some(value), Some(params)) => {
                     if let Some(&expected) = params.get(index) {
-                        self.require(syntax, value, Expected::Ty(expected), Some(function.item));
+                        self.require(syntax, value, Want::Ty(expected), Some(function.item));
                     }
                 }
                 (None, _) => complete = false,
@@ -2166,20 +2124,15 @@ impl<'a, 's> Builder<'a, 's> {
             node: call,
             caller: FunctionId::new(self.owner as usize),
             callee: target,
-            context: self.context_node(),
+            context,
             arguments: written..run(self.placed.arguments.len()),
         });
-        // Only now do the arguments reach the parameters.
-        let param_classes = &self.param_classes[function.param_classes.clone()];
-        for (&arg, &param) in inputs.iter().zip(param_classes) {
-            let value =
-                self.placed.classes[arg.index()].expect("a whole call's arguments have classes");
-            self.typing
-                .derive(value, context, param, RangeEdge::Argument);
-        }
         self.inputs = inputs;
-        let class = self.typing.call(function.result?, node);
-        self.classify(node, class);
+        // The call has a value when its callee has a result.
+        if matches!(function.result, HeaderResult::None) {
+            return None;
+        }
+        self.classify(node);
         Some(())
     }
 }
