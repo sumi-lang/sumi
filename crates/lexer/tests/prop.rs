@@ -1,9 +1,9 @@
 //! Property tests: the partition invariants of `lex`, over generated sources
-//! instead of the hand-written corpus in `lex.rs`.
+//! instead of the hand-written cases in `lex.rs`.
 
 use proptest::prelude::*;
 use proptest::test_runner::FileFailurePersistence;
-use sumi_lexer::{RawIdx, RawKind, SyntaxKind, lex};
+use sumi_lexer::{RawIdx, SyntaxKind, lex};
 
 /// Fragments beyond every keyword and punctuation text of the language that
 /// each lex to exactly one token on their own, stay terminated, and do not
@@ -145,8 +145,8 @@ proptest! {
             }
             // Only a line break spans lines.
             if file.text(&source, index).contains(['\n', '\r']) {
-                prop_assert!(
-                    file.raw_kind(index) == RawKind::Newline,
+                prop_assert_eq!(
+                    file.kind(index), SyntaxKind::Newline,
                     "token {:?} crosses a line break", index
                 );
             }
@@ -164,7 +164,7 @@ proptest! {
         let file = lex(&source).expect("generated sources fit in u32");
 
         let tokens: Vec<&str> = file.indices()
-            .filter(|&index| file.raw_kind(index) != RawKind::HorizontalSpace)
+            .filter(|&index| file.kind(index) != SyntaxKind::Whitespace)
             .map(|index| file.text(&source, index))
             .collect();
         let expected: Vec<&str> = fragments.iter().map(String::as_str).collect();

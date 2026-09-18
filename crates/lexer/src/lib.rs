@@ -16,4 +16,4 @@ pub use file::{
 };
 pub use generated::SyntaxKind;
 pub use index::RawIdx;
-pub use token::{RawKind, TokenFlags};
+pub use token::TokenFlags;

@@ -1,38 +1,6 @@
 use std::fmt;
 use std::ops::{BitOr, BitOrAssign};
 
-/// The shape of a lexical atom, stored beside its [`SyntaxKind`].
-///
-/// Raw kinds are context-free: keywords are [`Ident`](RawKind::Ident)s,
-/// compound operators are sequences of single-character
-/// [`Punct`](RawKind::Punct)s, and malformed tokens keep their intended
-/// kind, with details in [`TokenFlags`] and the file's error list.
-#[repr(u8)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum RawKind {
-    /// A run of spaces and horizontal tabs.
-    HorizontalSpace,
-    /// One `\n`, `\r\n`, or lone `\r`.
-    Newline,
-
-    /// `// ...` up to, not including, the end of the line.
-    LineComment,
-
-    /// An identifier or keyword; also plain `_`.
-    Ident,
-
-    /// A decimal integer literal, including any suffix.
-    Number,
-    /// A `"..."` literal, ended by the line if unterminated.
-    String,
-
-    /// A single ASCII punctuation character.
-    Punct,
-
-    /// Anything not recognized above.
-    Unknown,
-}
-
 /// Properties discovered while scanning a token.
 #[derive(Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct TokenFlags(u16);

@@ -6,7 +6,7 @@ use sumi_text::{TextRange, TextSize};
 
 use crate::generated::SyntaxKind;
 use crate::index::RawIdx;
-use crate::token::{RawKind, TokenFlags};
+use crate::token::TokenFlags;
 
 /// Lex `source` into a [`LexedFile`], with its faults in
 /// [`errors`](LexedFile::errors).
@@ -91,40 +91,24 @@ impl Lexer<'_> {
     fn scan_token(&mut self) {
         let start = self.position;
 
-        let (kind, raw, flags) = match self.peek_byte().expect("scan_token called at EOF") {
+        let (kind, flags) = match self.peek_byte().expect("scan_token called at EOF") {
             b' ' | b'\t' => {
                 self.scan_horizontal_space();
-                (
-                    SyntaxKind::Whitespace,
-                    RawKind::HorizontalSpace,
-                    TokenFlags::EMPTY,
-                )
+                (SyntaxKind::Whitespace, TokenFlags::EMPTY)
             }
             b'\n' | b'\r' => {
                 self.scan_newline();
-                (SyntaxKind::Newline, RawKind::Newline, TokenFlags::EMPTY)
+                (SyntaxKind::Newline, TokenFlags::EMPTY)
             }
             b'/' if self.remaining().starts_with("//") => {
                 self.scan_line_comment();
-                (
-                    SyntaxKind::LineComment,
-                    RawKind::LineComment,
-                    TokenFlags::EMPTY,
-                )
+                (SyntaxKind::LineComment, TokenFlags::EMPTY)
             }
-            b'0'..=b'9' => (SyntaxKind::IntLiteral, RawKind::Number, self.scan_number()),
-            b'"' => (
-                SyntaxKind::StringLiteral,
-                RawKind::String,
-                self.scan_string(),
-            ),
+            b'0'..=b'9' => (SyntaxKind::IntLiteral, self.scan_number()),
+            b'"' => (SyntaxKind::StringLiteral, self.scan_string()),
             byte if is_ident_start(byte) => {
                 self.scan_ident();
-                (
-                    self.classify_ident(start),
-                    RawKind::Ident,
-                    TokenFlags::EMPTY,
-                )
+                (self.classify_ident(start), TokenFlags::EMPTY)
             }
             byte if byte.is_ascii_punctuation() => {
                 self.bump_ascii();
@@ -135,12 +119,12 @@ impl Lexer<'_> {
                         SyntaxKind::Error
                     }
                 };
-                (kind, RawKind::Punct, TokenFlags::EMPTY)
+                (kind, TokenFlags::EMPTY)
             }
             _ => {
                 self.bump_char();
                 self.error(start..self.position, LexErrorKind::UnknownCharacter);
-                (SyntaxKind::Error, RawKind::Unknown, TokenFlags::EMPTY)
+                (SyntaxKind::Error, TokenFlags::EMPTY)
             }
         };
 
@@ -151,7 +135,6 @@ impl Lexer<'_> {
         self.tokens.push(StoredToken {
             start: TextSize::new(start as u32),
             kind,
-            raw,
             flags,
         });
     }
@@ -321,12 +304,6 @@ impl LexedFile {
         self.tokens.iter().map(|token| token.kind)
     }
 
-    /// The shape-only kind of the token, for phases that reason about
-    /// lexical shape rather than language meaning.
-    pub fn raw_kind(&self, index: RawIdx) -> RawKind {
-        self.tokens[index.to_usize()].raw
-    }
-
     pub fn flags(&self, index: RawIdx) -> TokenFlags {
         self.tokens[index.to_usize()].flags
     }
@@ -386,7 +363,6 @@ impl LexedFile {
 struct StoredToken {
     start: TextSize,
     kind: SyntaxKind,
-    raw: RawKind,
     flags: TokenFlags,
 }
 

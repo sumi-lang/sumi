@@ -13,7 +13,7 @@ use std::collections::HashSet;
 
 use sumi_format::{format, rep, reprint};
 use sumi_frontend::{Applicability, FileId, ParsedSource, Place, Severity, codes, parse_source};
-use sumi_lexer::{LexedFile, RawIdx, RawKind, SyntaxKind, lex};
+use sumi_lexer::{LexedFile, RawIdx, SyntaxKind, lex};
 use sumi_syntax::{
     BRACKET_PAIRS, NodeIdx, NodeKind, Parse, ParseAnchor, ParseEvidence, ParserInput, SigIdx,
     SyntaxTree, parse,
@@ -443,8 +443,9 @@ pub fn check_lexed(source: &str, file: &LexedFile) {
 
         let text = file.text(source, index);
         if text.contains(['\n', '\r']) {
-            assert!(
-                matches!(file.raw_kind(index), RawKind::Newline),
+            assert_eq!(
+                file.kind(index),
+                SyntaxKind::Newline,
                 "token {index:?} crosses a line break"
             );
         }
@@ -583,7 +584,7 @@ pub fn check_widening(source: &str, lexed: &LexedFile, input: &ParserInput) {
     let mut widened = String::with_capacity(source.len() + lexed.len());
     for index in lexed.indices() {
         widened.push_str(lexed.text(source, index));
-        if lexed.raw_kind(index) == RawKind::HorizontalSpace {
+        if lexed.kind(index) == SyntaxKind::Whitespace {
             widened.push(' ');
         }
     }
