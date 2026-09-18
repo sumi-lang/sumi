@@ -36,7 +36,7 @@ use sumi_syntax::NodeIdx;
 
 use crate::Ty;
 use crate::ranges::{May, RangeEdge, Thresholds};
-use crate::solver::{Backwards, Lattice, Solver, Var};
+use crate::solver::{Lattice, Solver, Var};
 
 /// One claim that a class has some type, as its rank: the one-based sequence
 /// number of the claim in the walk, under a bit set once the claim has
@@ -217,7 +217,6 @@ pub(crate) enum Expected {
 }
 
 pub(crate) type Product = (Evidence, May);
-pub(crate) type ProductEdge = (Edge, RangeEdge);
 pub(crate) type ProductContext = ((), Thresholds);
 
 #[derive(Default)]
@@ -367,38 +366,6 @@ impl Typing {
 
     pub fn may(&self, var: Var) -> &May {
         &self.solver.evidence(var).1
-    }
-
-    /// The values a fact opened `var`'s class with, if one did.
-    /// The values a fact opened `var`'s class with, if one did, and the
-    /// node the fact was made at: the fact's own claim, not the best claim
-    /// the class holds once solved, which a peer may have imported.
-    pub fn fact(&self, backwards: &Backwards, var: Var) -> Option<(Option<NodeIdx>, &May)> {
-        let (evidence, may) = self.solver.fact(backwards, var)?;
-        let origin = evidence
-            .claims()
-            .first()
-            .and_then(|(_, claim)| self.origin(*claim));
-        Some((origin, may))
-    }
-
-    /// The class `var` is a member of, as its representative.
-    pub fn find(&self, var: Var) -> Var {
-        self.solver.find(var)
-    }
-
-    /// The flow graph read backwards, for the walks a report makes.
-    pub fn backwards(&self) -> Backwards {
-        self.solver.backwards()
-    }
-
-    /// Every flow into `var`'s class.
-    pub fn incoming<'a>(
-        &'a self,
-        backwards: &'a Backwards,
-        var: Var,
-    ) -> impl Iterator<Item = (Var, Option<Var>, &'a ProductEdge)> + 'a {
-        self.solver.incoming(backwards, var)
     }
 
     pub fn resolve(&self, var: Var) -> Option<Ty> {

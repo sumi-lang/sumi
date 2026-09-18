@@ -43,7 +43,7 @@ use sumi_syntax::{
 use crate::codes;
 use crate::ranges::{May, RangeEdge, UnaryOp};
 use crate::recursion;
-use crate::solver::{Backwards, Lattice, Var};
+use crate::solver::{Lattice, Var};
 use crate::typing::{Claim, Expected, ProductContext, Typing};
 use crate::*;
 
@@ -136,12 +136,6 @@ pub(crate) struct DraftBody {
     pub classes: Vec<Var>,
     pub args: Vec<ExprId>,
     pub statements: Vec<Statement>,
-    /// Every call expression beside the context it runs in, for the call
-    /// graph: a call in a dead context never happens.
-    pub calls: Vec<(ExprId, Var)>,
-    /// Every `if` with an else beside its branches' contexts, for the
-    /// offsets an argument reads: a dead branch never contributes a value.
-    pub branches: Vec<(ExprId, Var, Var)>,
     pub root: ExprId,
 }
 
@@ -156,8 +150,6 @@ impl DraftBody {
             classes,
             args,
             statements,
-            calls: _,
-            branches: _,
             root,
         } = self;
         let locals = locals
@@ -222,7 +214,7 @@ struct Demand {
 struct Obligation {
     owner: u32,
     node: NodeIdx,
-    divisor: Var,
+    divisor: NodeId,
     context: Var,
 }
 
@@ -238,8 +230,44 @@ struct Recorded {
     /// alone would not.
     constants: Vec<Int>,
     seen: HashSet<Int, BuildHasherDefault<NameHasher>>,
-    /// Every call as `(caller, callee, context)`, for the call graph.
-    calls: Vec<(FunctionId, FunctionId, Var)>,
+}
+
+/// Where each node of the graph stands once the file is built: its class,
+/// the innermost region holding it, and the calls of every function.
+pub(crate) struct Placed {
+    /// The class of each node, by index; none for a hole, or for a node
+    /// built where the expression tree could not be.
+    classes: Vec<Option<Var>>,
+    /// The innermost region holding each node, by index; none outside
+    /// every region: an entry, a parameter, a declared result's copy.
+    regions: Vec<Option<RegionId>>,
+    /// Every whole call of each function, by callee.
+    callers: Vec<Vec<NodeId>>,
+    bottom: May,
+}
+
+impl Placed {
+    /// Room for a file of `functions` functions and about `nodes` nodes.
+    fn with_capacity(functions: usize, nodes: usize) -> Self {
+        Self {
+            classes: Vec::with_capacity(nodes),
+            regions: Vec::with_capacity(nodes),
+            callers: vec![Vec::new(); functions],
+            bottom: May::bottom(),
+        }
+    }
+    /// The values that may reach `node`: none for a node without a class.
+    pub fn may<'t>(&'t self, typing: &'t Typing, node: NodeId) -> &'t May {
+        match self.classes[node.index()] {
+            Some(class) => typing.may(class),
+            None => &self.bottom,
+        }
+    }
+    /// Whether the context `node` runs in is live.
+    pub fn context_live(&self, graph: &Graph, typing: &Typing, node: NodeId) -> bool {
+        let region = self.regions[node.index()].expect("a value node is in a region");
+        self.may(typing, graph.region(region).context).live()
+    }
 }
 
 struct Source<'s> {
@@ -506,7 +534,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     let mut nodes_of = vec![None; tree.len()];
     // About a node per syntax node of a body; only a guide.
     let mut graph = Graph::with_capacity(tree.len());
-    let mut node_classes = Vec::with_capacity(tree.len());
+    let mut placed = Placed::with_capacity(items.len(), tree.len());
     let mut builder = Builder::new(
         &mut source,
         &headers,
@@ -517,7 +545,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         &mut values,
         &mut nodes_of,
         &mut graph,
-        &mut node_classes,
+        &mut placed,
     );
     for (index, (item, params)) in items.iter().zip(parameters).enumerate() {
         bodies.push(builder.build(index, *item, params));
@@ -541,12 +569,11 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         demands,
         obligations,
         constants,
-        calls,
         ..
     } = recorded;
     let cx: ProductContext = ((), constants.into_iter().collect());
     typing.solve(&cx);
-    for (index, class) in node_classes.iter().enumerate() {
+    for (index, class) in placed.classes.iter().enumerate() {
         graph.set_type(
             NodeId::new(index),
             class.and_then(|class| typing.resolve(class)),
@@ -667,14 +694,12 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
             }
         }
     }
-    // Every reachable division excludes zero. The graph is read backwards
-    // only once a division fails.
-    let mut backwards = None;
+    // Every reachable division excludes zero.
     for obligation in &obligations {
         if failed[obligation.owner as usize] {
             continue;
         }
-        let divisor = typing.may(obligation.divisor);
+        let divisor = placed.may(&typing, obligation.divisor);
         if !typing.may(obligation.context).live() || !divisor.ints.contains_zero() {
             continue;
         }
@@ -683,8 +708,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         } else {
             "divisor may be zero"
         };
-        let backwards = backwards.get_or_insert_with(|| typing.backwards());
-        let labels = explain_zero(&typing, backwards, &source, &cx, obligation.divisor);
+        let labels = explain_zero(&graph, &placed, &typing, obligation.divisor);
         source.report(
             source.span(obligation.node),
             codes::DIVISION_BY_ZERO,
@@ -692,12 +716,15 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
             labels,
         );
     }
-    // Every recursion has a measure, which also bounds the call depth.
-    let param_classes: Vec<&[Var]> = headers
+    // Every recursion has a measure, which also bounds the call depth. A
+    // function whose body did not build is out of scope like one that
+    // failed a verdict.
+    let out_of_scope: Vec<bool> = failed
         .iter()
-        .map(|header| &param_classes[header.param_classes.clone()])
+        .zip(&bodies)
+        .map(|(&failed, body)| failed || body.is_none())
         .collect();
-    let recursion = recursion::check(&bodies, &param_classes, &typing, &calls, &failed);
+    let recursion = recursion::check(&graph, &placed, &typing, &out_of_scope);
     for failure in recursion.failures {
         let names: Vec<_> = failure
             .members
@@ -802,20 +829,19 @@ fn run(index: usize) -> u32 {
     u32::try_from(index).expect("list index fits u32")
 }
 
-/// Labels for the values that put zero into `class`: the flows into it
-/// whose delivery contains zero, followed through the edges that pass a
-/// value along until a fact, an operator, or an argument names it.
+/// Labels for the values that put zero into `divisor`: what it reads,
+/// followed through the copies, narrowed reads, branches, calls, and
+/// arguments that pass a value along until a literal or an operator
+/// produced it.
 fn explain_zero(
+    graph: &Graph,
+    placed: &Placed,
     typing: &Typing,
-    backwards: &Backwards,
-    source: &Source<'_>,
-    cx: &ProductContext,
-    class: Var,
+    divisor: NodeId,
 ) -> Vec<(Span, Box<str>)> {
     use std::collections::{HashSet, VecDeque};
 
     use crate::ranges::Ints;
-    use crate::solver::Lattice;
 
     const LABELS: usize = 4;
     const HOPS: usize = 6;
@@ -828,62 +854,87 @@ fn explain_zero(
     };
     let mut labels: Vec<(Span, Box<str>)> = Vec::new();
     let mut seen = HashSet::new();
-    let mut queue = VecDeque::from([(class, 0)]);
-    while let Some((var, hops)) = queue.pop_front() {
-        if labels.len() >= LABELS || !seen.insert(typing.find(var)) {
+    let mut queue = VecDeque::from([(divisor, 0)]);
+    while let Some((node, hops)) = queue.pop_front() {
+        if labels.len() >= LABELS || !seen.insert(node) {
             continue;
         }
-        if let Some((origin, fact)) = typing.fact(backwards, var)
-            && fact.ints.contains_zero()
-        {
-            if let Some(node) = origin {
-                labels.push((source.span(node), describe(&fact.ints, "").into()));
-            }
+        let may = placed.may(typing, node);
+        if !may.ints.contains_zero() {
             continue;
         }
-        for (first, second, edge) in typing.incoming(backwards, var) {
-            if labels.len() >= LABELS {
-                break;
+        let entry = graph.node(node);
+        let inputs = graph.inputs(node);
+        let follow = |queue: &mut VecDeque<(NodeId, usize)>, next: NodeId| {
+            if hops < HOPS {
+                queue.push_back((next, hops + 1));
             }
-            let delivered = typing.may(first).transfer(
-                &edge.1,
-                second.map(|second| typing.may(second)),
-                false,
-                &cx.1,
-            );
-            if !delivered.ints.contains_zero() {
-                continue;
+        };
+        match entry.op {
+            Op::Int(_) | Op::Neg | Op::Binary(_) => {
+                labels.push((entry.origin, describe(&may.ints, "").into()));
             }
-            match edge.1 {
-                RangeEdge::Copy | RangeEdge::Branch | RangeEdge::Call => {
-                    if hops < HOPS {
-                        queue.push_back((first, hops + 1));
-                    }
-                }
-                // A guard that narrowed the local is where the zero was
-                // singled out, and the local is where it came from.
-                RangeEdge::Refine { origin, .. } => {
-                    if delivered.ints != typing.may(first).ints {
-                        labels.push((
-                            source.span(origin),
-                            describe(&delivered.ints, " under this guard").into(),
-                        ));
-                    }
-                    if hops < HOPS {
-                        queue.push_back((first, hops + 1));
-                    }
-                }
-                RangeEdge::Argument(origin) => {
+            Op::Copy => follow(&mut queue, inputs[0]),
+            // A guard that narrowed the local is where the zero was
+            // singled out, and the local is where it came from.
+            Op::Refine { .. } => {
+                if may.ints != placed.may(typing, inputs[0]).ints {
                     labels.push((
-                        source.span(origin),
-                        format!("argument {}", describe(&delivered.ints, "")).into(),
+                        entry.origin,
+                        describe(&may.ints, " under this guard").into(),
                     ));
                 }
-                RangeEdge::Unary { origin, .. } | RangeEdge::Binary { origin, .. } => {
-                    labels.push((source.span(origin), describe(&delivered.ints, "").into()));
-                }
-                _ => {}
+                follow(&mut queue, inputs[0]);
             }
+            Op::Join { then, else_ } => {
+                for region in std::iter::once(then).chain(else_) {
+                    let region = graph.region(region);
+                    if placed.may(typing, region.context).live() {
+                        follow(&mut queue, region.result());
+                    }
+                }
+            }
+            Op::Call(callee) => follow(&mut queue, graph.run(callee).result()),
+            Op::Param(index) => {
+                let callee = placed.regions[node.index()].map_or_else(
+                    || {
+                        // A parameter is outside every region: its
+                        // function is the run that holds it.
+                        graph
+                            .runs()
+                            .iter()
+                            .position(|run| run.params().any(|param| param == node))
+                            .expect("a parameter of some function")
+                    },
+                    |_| unreachable!("a parameter is outside every region"),
+                );
+                for &call in &placed.callers[callee] {
+                    if labels.len() >= LABELS {
+                        break;
+                    }
+                    if !placed.context_live(graph, typing, call) {
+                        continue;
+                    }
+                    let arg = graph.inputs(call)[index as usize];
+                    let delivered = placed.may(typing, arg);
+                    if delivered.ints.contains_zero() {
+                        labels.push((
+                            graph.node(arg).origin,
+                            format!("argument {}", describe(&delivered.ints, "")).into(),
+                        ));
+                    }
+                }
+            }
+            Op::Bool(_)
+            | Op::Unit
+            | Op::Hole
+            | Op::Not
+            | Op::And { .. }
+            | Op::Or { .. }
+            | Op::Exactly(_)
+            | Op::Entry
+            | Op::Then
+            | Op::Else => {}
         }
     }
     labels.sort_by_key(|(span, _)| span.range().start());
@@ -933,9 +984,8 @@ struct Builder<'a, 's> {
     /// The graph node each syntax node built, by node.
     nodes_of: &'a mut [Option<NodeId>],
     graph: &'a mut Graph,
-    /// The class of each graph node, by index; none for a hole, or for a
-    /// node built where the expression tree could not be.
-    node_classes: &'a mut Vec<Option<Var>>,
+    /// Where each node stands, filled as the node is pushed.
+    placed: &'a mut Placed,
     // The body under construction.
     owner: u32,
     failed: bool,
@@ -947,11 +997,11 @@ struct Builder<'a, 's> {
     consts: Vec<Option<Int>>,
     args: Vec<ExprId>,
     statements: Vec<Statement>,
-    calls: Vec<(ExprId, Var)>,
-    branches: Vec<(ExprId, Var, Var)>,
     /// The context each point runs in, as its class and its node,
     /// innermost last.
     contexts: Vec<(Var, NodeId)>,
+    /// The open regions, innermost last: where a pushed node stands.
+    regions: Vec<RegionId>,
     /// The classes and nodes locals read as inside the open regions,
     /// innermost last.
     refinements: Vec<(LocalId, Var, NodeId)>,
@@ -994,7 +1044,7 @@ impl<'a, 's> Builder<'a, 's> {
         values: &'a mut [Option<ExprId>],
         nodes_of: &'a mut [Option<NodeId>],
         graph: &'a mut Graph,
-        node_classes: &'a mut Vec<Option<Var>>,
+        placed: &'a mut Placed,
     ) -> Self {
         Self {
             source,
@@ -1006,7 +1056,7 @@ impl<'a, 's> Builder<'a, 's> {
             values,
             nodes_of,
             graph,
-            node_classes,
+            placed,
             owner: 0,
             failed: false,
             params: Vec::new(),
@@ -1016,9 +1066,8 @@ impl<'a, 's> Builder<'a, 's> {
             consts: Vec::new(),
             args: Vec::new(),
             statements: Vec::new(),
-            calls: Vec::new(),
-            branches: Vec::new(),
             contexts: Vec::new(),
+            regions: Vec::new(),
             refinements: Vec::new(),
             marks: Vec::new(),
             branch_contexts: Vec::new(),
@@ -1052,9 +1101,8 @@ impl<'a, 's> Builder<'a, 's> {
         self.consts.clear();
         self.args.clear();
         self.statements.clear();
-        self.calls.clear();
-        self.branches.clear();
         self.contexts.clear();
+        self.regions.clear();
         self.refinements.clear();
         self.marks.clear();
         self.branch_contexts.clear();
@@ -1065,13 +1113,14 @@ impl<'a, 's> Builder<'a, 's> {
         let item_node = header.item;
         let start = self.graph.next();
         let entry = self.push(item_node, Op::Entry, &[], None);
+        self.placed.classes[entry.index()] = Some(entry_class);
         self.contexts.push((entry_class, entry));
         let arity = u32::try_from(parameters.len()).expect("parameter count fits u32");
         for (index, param) in parameters.into_iter().enumerate() {
             let index = u32::try_from(index).expect("parameter count fits u32");
             let name = param.name.map(|(_, node)| self.source.span(node));
             let node = self.push(param.node, Op::Param(index), &[], name);
-            self.node_classes[node.index()] = param.class;
+            self.placed.classes[node.index()] = param.class;
             if let Some((name, name_node)) = param.name {
                 if let Some(&span) = self.first.get(name) {
                     self.source.error(
@@ -1099,6 +1148,7 @@ impl<'a, 's> Builder<'a, 's> {
         let tree = self.source.tree;
         let region = self.graph.open(entry);
         self.graph.enter(region);
+        self.regions.push(region);
         let root_node = item.body(tree).map(|body| body.node());
         if let Some(root_node) = root_node {
             // At most one expression per node of the body.
@@ -1132,11 +1182,13 @@ impl<'a, 's> Builder<'a, 's> {
                         self.contexts.push((context, node));
                         self.marks.push(self.refinements.len());
                         self.graph.enter(region);
+                        self.regions.push(region);
                         self.refine(guard.0, guard.1);
                     }
                     Work::Pop { region, root } => {
                         let result = self.node_of(root);
                         self.graph.close(region, result);
+                        self.regions.pop();
                         let keep = self.marks.pop().expect("a region opened before it closes");
                         self.refinements.truncate(keep);
                         self.contexts.pop();
@@ -1151,6 +1203,7 @@ impl<'a, 's> Builder<'a, 's> {
             None => self.push(item_node, Op::Hole, &[], None),
         };
         self.graph.close(region, body_value);
+        self.regions.pop();
         // A failed parameter does not erase an independently known result
         // type. A declared result is a contract on the body; an inferred one
         // is the body's own type.
@@ -1158,7 +1211,7 @@ impl<'a, 's> Builder<'a, 's> {
             Some((_, node)) => {
                 let copy = self.push(node, Op::Copy, &[body_value], None);
                 if let Some(result) = result {
-                    self.node_classes[copy.index()] = Some(result);
+                    self.placed.classes[copy.index()] = Some(result);
                 }
                 copy
             }
@@ -1186,27 +1239,29 @@ impl<'a, 's> Builder<'a, 's> {
             classes: std::mem::take(&mut self.classes),
             args: std::mem::take(&mut self.args),
             statements: std::mem::take(&mut self.statements),
-            calls: std::mem::take(&mut self.calls),
-            branches: std::mem::take(&mut self.branches),
             root: root.unwrap(),
         })
     }
-    /// A graph node at `node`, which reads `inputs`.
+    /// A graph node at `node`, which reads `inputs`, placed in the open
+    /// region.
     fn push(&mut self, node: NodeIdx, op: Op, inputs: &[NodeId], name: Option<Span>) -> NodeId {
-        let id = self.graph.push(op, inputs, self.source.span(node), name);
-        self.node_classes.push(None);
+        let id = self.place(op, inputs, self.source.span(node), name);
         self.nodes_of[node.to_usize()] = Some(id);
+        id
+    }
+    /// A graph node placed in the open region, without a class yet, that
+    /// no syntax node is said to have built.
+    fn place(&mut self, op: Op, inputs: &[NodeId], origin: Span, name: Option<Span>) -> NodeId {
+        let id = self.graph.push(op, inputs, origin, name);
+        self.placed.classes.push(None);
+        self.placed.regions.push(self.regions.last().copied());
         id
     }
     /// A context node for the region whose syntax is `region`, derived
     /// from `condition` under `parent`. It is not what `region` built: the
     /// region's own node is its value, which the context gates.
     fn context_at(&mut self, region: NodeIdx, op: Op, condition: NodeId, parent: NodeId) -> NodeId {
-        let id = self
-            .graph
-            .push(op, &[condition, parent], self.source.span(region), None);
-        self.node_classes.push(None);
-        id
+        self.place(op, &[condition, parent], self.source.span(region), None)
     }
     /// The graph node `node` built, or a hole where nothing was: syntax
     /// the walk could not reach.
@@ -1399,11 +1454,10 @@ impl<'a, 's> Builder<'a, 's> {
                                     op,
                                     local_is_lhs,
                                     sense,
-                                    origin: node,
                                 };
                                 let refined = self.typing.refine(class, other_class, edge);
                                 let inputs = [read, self.node_of(other)];
-                                let read = self.graph.push(
+                                let read = self.place(
                                     Op::Refine {
                                         op,
                                         local_is_lhs,
@@ -1413,7 +1467,7 @@ impl<'a, 's> Builder<'a, 's> {
                                     self.source.span(node),
                                     None,
                                 );
-                                self.node_classes.push(Some(refined));
+                                self.placed.classes[read.index()] = Some(refined);
                                 self.refinements.push((local, refined, read));
                             }
                         }
@@ -1427,9 +1481,8 @@ impl<'a, 's> Builder<'a, 's> {
                     let refined = self.typing.refine_bool(class, sense);
                     let inputs = [read];
                     let read =
-                        self.graph
-                            .push(Op::Exactly(sense), &inputs, self.source.span(node), None);
-                    self.node_classes.push(Some(refined));
+                        self.place(Op::Exactly(sense), &inputs, self.source.span(node), None);
+                    self.placed.classes[read.index()] = Some(refined);
                     self.refinements.push((local, refined, read));
                 }
             }
@@ -1459,12 +1512,12 @@ impl<'a, 's> Builder<'a, 's> {
         let cond_node = self.node_of(cond);
         let then_region = {
             let context = self.context_at(then_node, Op::Then, cond_node, parent_node);
-            self.node_classes[context.index()] = Some(then_context);
+            self.placed.classes[context.index()] = Some(then_context);
             self.graph.open(context)
         };
         let else_region = else_node.map(|else_node| {
             let context = self.context_at(else_node, Op::Else, cond_node, parent_node);
-            self.node_classes[context.index()] = Some(else_context);
+            self.placed.classes[context.index()] = Some(else_context);
             self.graph.open(context)
         });
         self.branch_contexts.push((then_context, else_context));
@@ -1515,7 +1568,7 @@ impl<'a, 's> Builder<'a, 's> {
         };
         let lhs_node = self.node_of(lhs);
         let context_node = self.context_at(rhs, op, lhs_node, parent_node);
-        self.node_classes[context_node.index()] = Some(context);
+        self.placed.classes[context_node.index()] = Some(context);
         let region = self.graph.open(context_node);
         self.lazy_regions.push(region);
         work.push(Work::Pop { region, root: rhs });
@@ -1541,7 +1594,7 @@ impl<'a, 's> Builder<'a, 's> {
         self.classes.push(class);
         self.consts.push(None);
         self.values[node.to_usize()] = Some(id);
-        self.node_classes[graph_node.index()] = Some(class);
+        self.placed.classes[graph_node.index()] = Some(class);
         id
     }
     /// Record that `expr` folds to `value`, a constant the thresholds keep.
@@ -1832,7 +1885,7 @@ impl<'a, 's> Builder<'a, 's> {
                         let context = self.context_node();
                         let unit = self.push(node, Op::Unit, &[context], None);
                         let class = self.typing.unit(self.context(), node);
-                        self.node_classes[unit.index()] = Some(class);
+                        self.placed.classes[unit.index()] = Some(class);
                         Some(class)
                     }
                 };
@@ -1878,7 +1931,7 @@ impl<'a, 's> Builder<'a, 's> {
                     }),
                     None => initializer.map(|value| self.class(value)),
                 };
-                self.node_classes[copy.index()] = class;
+                self.placed.classes[copy.index()] = class;
                 let local = self.bind(name, name_node, class, copy);
                 self.pending.push((
                     node,
@@ -1984,11 +2037,8 @@ impl<'a, 's> Builder<'a, 's> {
                 self.require(operand, value, Expected::Ty(ty), None);
                 let class = self.typing.known(ty, node);
                 let op = if neg { UnaryOp::Neg } else { UnaryOp::Not };
-                self.typing.flow(
-                    self.class(value),
-                    class,
-                    RangeEdge::Unary { op, origin: node },
-                );
+                self.typing
+                    .flow(self.class(value), class, RangeEdge::Unary(op));
                 let id = self.emit(
                     node,
                     if neg {
@@ -2031,6 +2081,7 @@ impl<'a, 's> Builder<'a, 's> {
                         self.push(node, Op::Binary(op), &[lhs_graph, rhs_graph], None);
                     }
                 }
+                let divisor = self.nodes_of[rhs_node.to_usize()];
                 // `==` and `!=` compare like with like: whichever operand
                 // exists sets the other's expectation.
                 let (operand, result) = match op {
@@ -2056,10 +2107,7 @@ impl<'a, 's> Builder<'a, 's> {
                 let class = self.typing.known(result, node);
                 let kind = ExprKind::binary(op, lhs, rhs);
                 let edge = match &kind {
-                    ExprKind::Binary { op, .. } => RangeEdge::Binary {
-                        op: *op,
-                        origin: node,
-                    },
+                    ExprKind::Binary { op, .. } => RangeEdge::Binary(*op),
                     ExprKind::And { .. } => RangeEdge::Lazy { and: true },
                     ExprKind::Or { .. } => RangeEdge::Lazy { and: false },
                     _ => unreachable!("a binary expression"),
@@ -2074,7 +2122,7 @@ impl<'a, 's> Builder<'a, 's> {
                     self.recorded.obligations.push(Obligation {
                         owner: self.owner,
                         node,
-                        divisor: self.class(rhs),
+                        divisor: divisor.expect("an eager operator's right operand"),
                         context: self.context(),
                     });
                 }
@@ -2153,7 +2201,6 @@ impl<'a, 's> Builder<'a, 's> {
                             },
                             join,
                         );
-                        self.branches.push((id, then_context, else_context));
                         self.demand(node, id, DemandKind::Agree { branches });
                         return Some(());
                     }
@@ -2173,9 +2220,7 @@ impl<'a, 's> Builder<'a, 's> {
         Some(())
     }
     fn call(&mut self, node: NodeIdx, target: FunctionId, callee: NodeIdx) -> Option<()> {
-        let caller = FunctionId::new(self.owner as usize);
         let context = self.context();
-        self.recorded.calls.push((caller, target, context));
         let function = &self.headers[target.index()];
         let tree = self.source.tree;
         let list = ast::CallExpr::cast(tree, node)
@@ -2227,29 +2272,32 @@ impl<'a, 's> Builder<'a, 's> {
             .params
             .as_ref()
             .is_some_and(|params| count == params.len() && complete);
-        self.push(
+        let call = self.push(
             node,
             if whole { Op::Call(target) } else { Op::Hole },
             &inputs,
             None,
         );
         self.inputs = inputs;
+        if whole {
+            self.placed.callers[target.index()].push(call);
+        }
         if !whole {
             self.args.truncate(start);
             return None;
         }
         let param_classes = &self.param_classes[function.param_classes.clone()];
         // Only now do the arguments reach the parameters.
-        for ((arg, &value), &param) in list.args(tree).zip(&self.args[start..]).zip(param_classes) {
-            let edge = RangeEdge::Argument(arg.node());
-            self.typing.derive(self.class(value), context, param, edge);
+        for (&value, &param) in self.args[start..].iter().zip(param_classes) {
+            self.typing
+                .derive(self.class(value), context, param, RangeEdge::Argument);
         }
         let args = Args {
             start: run(start),
             end: run(self.args.len()),
         };
         let class = self.typing.call(function.result?, node);
-        let id = self.emit(
+        self.emit(
             node,
             ExprKind::Call {
                 function: target,
@@ -2258,7 +2306,6 @@ impl<'a, 's> Builder<'a, 's> {
             },
             class,
         );
-        self.calls.push((id, context));
         Some(())
     }
 }
