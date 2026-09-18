@@ -392,8 +392,8 @@ fn signature_tail(
     let mut complete = false;
     if m.at(T::LParen) && (!m.newline() || allow_list_newline) {
         match signature {
-            Signature::Item => delimited_list::<Params>(m, first_field),
-            Signature::Closure => delimited_list::<ClosureParams>(m, first_field),
+            Signature::Item => delimited_list::<Params<true>>(m, first_field),
+            Signature::Closure => delimited_list::<Params<false>>(m, first_field),
         }
         complete = true;
     }
@@ -538,10 +538,12 @@ trait ListRule {
     fn tolerated(kind: T) -> bool;
 }
 
-/// An item's parameters, each typed.
-struct Params;
+/// Parameters: an item's, each typed, or a closure's, whose types may be
+/// left to inference and whose list an expression body's `=` may follow
+/// when its closer is missing.
+struct Params<const TYPED: bool>;
 
-impl ListRule for Params {
+impl<const TYPED: bool> ListRule for Params<TYPED> {
     const NODE: N = N::ParamList;
     const ELEMENT: ParseExpected = ParseExpected::Name;
     const RESUMES_AT_ELEMENT: bool = false;
@@ -551,44 +553,17 @@ impl ListRule for Params {
     }
 
     fn parse_element(m: &mut Marker<'_, '_>) {
-        param(m, true);
+        param(m, TYPED);
     }
 
     /// The body, or an enclosing block's end, when the stream pairs the
     /// brace: one it never pairs is garbage in the list.
     fn follows(m: &Marker<'_, '_>) -> bool {
-        (m.at(T::LBrace) || m.at(T::RBrace)) && m.partnered()
+        ((m.at(T::LBrace) || m.at(T::RBrace)) && m.partnered()) || (!TYPED && m.at(T::Eq))
     }
 
     fn tolerated(kind: T) -> bool {
         kind == T::LBrace
-    }
-}
-
-/// A closure's parameters, whose types may be left to inference, and
-/// whose list an expression body's `=` may follow when its closer is
-/// missing.
-struct ClosureParams;
-
-impl ListRule for ClosureParams {
-    const NODE: N = Params::NODE;
-    const ELEMENT: ParseExpected = Params::ELEMENT;
-    const RESUMES_AT_ELEMENT: bool = Params::RESUMES_AT_ELEMENT;
-
-    fn starts_element(m: &Marker<'_, '_>) -> bool {
-        Params::starts_element(m)
-    }
-
-    fn parse_element(m: &mut Marker<'_, '_>) {
-        param(m, false);
-    }
-
-    fn follows(m: &Marker<'_, '_>) -> bool {
-        Params::follows(m) || m.at(T::Eq)
-    }
-
-    fn tolerated(kind: T) -> bool {
-        Params::tolerated(kind)
     }
 }
 
