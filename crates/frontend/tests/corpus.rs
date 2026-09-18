@@ -6,10 +6,11 @@
 //! naming any diagnostic that survives them, and the formatted source
 //! where it differs, its header counting the items left as written and
 //! naming any violation that survives formatting. A case that selects
-//! `hir` has its tree in `hir.snap`, which anchors every node by span, so
-//! its frontend snapshot leaves the tree out. Run with `UPDATE_FRONTEND=1`
-//! to rewrite the snapshots, then review the diff; a new case gets its
-//! first snapshot the same way.
+//! `hir` leaves the tree out: `hir.snap` anchors the graph the checker
+//! built by span, not every parse-tree node, so a case whose parse is the
+//! point does not select `hir`. Run with `UPDATE_FRONTEND=1` to rewrite
+//! the snapshots, then review the diff; a new case gets its first
+//! snapshot the same way.
 
 use std::fmt::Write as _;
 
