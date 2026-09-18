@@ -56,23 +56,14 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         &mut functions,
     );
     divisions(&mut source, &graph, &lowered, &typing, &failed);
-    // A function whose body did not build is out of scope of the
-    // recursion check like one that failed a verdict.
-    let out_of_scope: Vec<bool> = failed
-        .iter()
-        .zip(&lowered.built)
-        .map(|(&failed, &built)| failed || !built)
-        .collect();
-    let recursion = recursion::check(&graph, &lowered, &typing, &out_of_scope);
-    for failure in recursion.failures {
-        source
-            .diagnostics
-            .push(failure.report(&functions, parsed.source()));
-    }
-    debug_assert_eq!(recursion.depth.len(), functions.len());
-    for (function, depth) in functions.iter_mut().zip(recursion.depth) {
-        function.depth = depth;
-    }
+    bounds(
+        &mut source,
+        &graph,
+        &lowered,
+        &typing,
+        &failed,
+        &mut functions,
+    );
     complete(&graph, &typing, &lowered, &failed, &mut functions);
     // One list, in source order: a syntactic diagnostic first where both
     // stand at one position, then the checker's in the order it made them.
@@ -373,6 +364,33 @@ fn explain_zero(
     }
     labels.sort_by_key(|(span, _)| span.range().start());
     labels
+}
+
+/// Every recursion is bounded, and the call depth each function is
+/// proved to reach. A function whose body did not build is out of scope
+/// like one that failed a verdict.
+fn bounds(
+    source: &mut Source<'_>,
+    graph: &Graph,
+    lowered: &Lowered,
+    typing: &Typing,
+    failed: &[bool],
+    functions: &mut [Function],
+) {
+    let out_of_scope: Vec<bool> = failed
+        .iter()
+        .zip(&lowered.built)
+        .map(|(&failed, &built)| failed || !built)
+        .collect();
+    let recursion = recursion::check(graph, lowered, typing, &out_of_scope);
+    for failure in recursion.failures {
+        let diagnostic = failure.report(functions, source.parsed.source());
+        source.diagnostics.push(diagnostic);
+    }
+    debug_assert_eq!(recursion.depth.len(), functions.len());
+    for (function, depth) in functions.iter_mut().zip(recursion.depth) {
+        function.depth = depth;
+    }
 }
 
 /// A body is complete when it built, none of its demands failed, every
