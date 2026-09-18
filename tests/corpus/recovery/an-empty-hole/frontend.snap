@@ -1,7 +1,0 @@
-== tree ==
-SourceFile 0..93
-  FnItem 59..92
-    Name 62..63 "f"
-    ParamList 63..65 "()"
-    TypeRef 69..72 "str"
-    LiteralExpr 75..92 "\"before {} after\""
