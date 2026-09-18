@@ -1,6 +1,6 @@
 file: rejected
 frontend errors: 0 (see frontend.snap)
-semantic errors: 12
+semantic errors: 13
 
 fn unsupported@0..59 () -> unit ∈ unit
   result: copy : unit @0..59
@@ -50,16 +50,22 @@ fn unit_equality@270..307 () -> bool ∈ ∅
       lhs: unit : unit @299..301
       rhs: unit : unit @305..307
 
-fn computed_call@308..384 () -> unit ∈ unit
-  result: copy : unit @308..384
+fn unit_sum@308..337 () -> int ∈ ∅
+  result: copy : int @325..328
+    value: eager + : int @331..337
+      lhs: unit : ? @331..333
+      rhs: int 1 : int @336..337
+
+fn computed_call@338..414 () -> unit ∈ unit
+  result: copy : unit @338..414
     value:
-      discard: hole : ? @337..382
-        part[0]: hole : ? @338..362
-        part[1]: hole : ? @364..371
-        part[2]: eager + : int @373..381
-          lhs: int 1 : int @373..374
-          rhs: bool true : ? @377..381
-      tail: unit : unit @327..384
+      discard: hole : ? @367..412
+        part[0]: hole : ? @368..392
+        part[1]: hole : ? @394..401
+        part[2]: eager + : int @403..411
+          lhs: int 1 : int @403..404
+          rhs: bool true : ? @407..411
+      tail: unit : unit @357..414
 
 == semantic diagnostics ==
 error[semantic/unsupported]: construct is not supported by scalar checking
@@ -84,9 +90,11 @@ error[semantic/type-mismatch]: expected bool, found int
   secondary @259..263: declared here
 error[semantic/type-mismatch]: unit values cannot be compared
   primary @299..307
+error[semantic/type-mismatch]: expected int, found unit
+  primary @331..333
 error[semantic/unsupported]: construct is not supported by scalar checking
-  primary @338..362
+  primary @368..392
 error[semantic/unknown-name]: unknown name `missing`
-  primary @364..371
+  primary @394..401
 error[semantic/type-mismatch]: expected int, found bool
-  primary @377..381
+  primary @407..411
