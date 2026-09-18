@@ -6,9 +6,8 @@ use std::io::Read;
 use std::path::Path;
 use std::process::ExitCode;
 
-use sumi_eval::{Program, Value};
 use sumi_frontend::{FileId, Severity, parse_source};
-use sumi_hir::Analysis;
+use sumi_hir::{Analysis, Value};
 use sumi_text::{LineIndex, TextSize};
 
 const USAGE: &str = "usage: sumi check <file>
@@ -129,7 +128,7 @@ fn run(path: &Path) -> Result<ExitCode, String> {
     if has_errors {
         return Ok(ExitCode::FAILURE);
     }
-    let program = Program::new(&analysis).expect("a file without errors is valid");
+    let program = analysis.program().expect("a file without errors is valid");
     let Some(main) = program.function_named("main") else {
         return Err(format!(
             "{}: error[cli/no-main]: nothing to run; the file declares no `fn main()`",

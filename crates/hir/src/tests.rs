@@ -133,11 +133,12 @@ fn graph_invariant(analysis: &Analysis) {
         }
     }
     let mut owner = vec![None; nodes.len()];
-    for (index, function) in analysis.functions().iter().enumerate() {
+    assert_eq!(graph.runs().len(), analysis.functions().len());
+    for (index, function) in graph.runs().iter().enumerate() {
         let mut run = function.nodes();
         assert_eq!(run.next(), Some(function.entry()));
         assert!(matches!(graph.node(function.entry()).op, Op::Entry));
-        for (position, param) in function.param_nodes().enumerate() {
+        for (position, param) in function.params().enumerate() {
             assert_eq!(run.next(), Some(param));
             assert!(matches!(graph.node(param).op, Op::Param(i) if i as usize == position));
         }

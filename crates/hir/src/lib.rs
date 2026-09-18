@@ -23,8 +23,8 @@ use sumi_text::Span;
 pub use check::analyze;
 pub use ranges::{Bools, Bound, Ints, May};
 pub use sumi_graph::{
-    BinaryOp, FunctionId, Graph, Int, Node, NodeId, Op, OutOfRange, ParseIntError, Region,
-    RegionId, Ty,
+    BinaryOp, Domain, FunctionId, Graph, Int, Machine, Node, NodeId, Op, OutOfRange, Outcome,
+    ParseIntError, Refusal, Region, RegionId, Run, Ty, Value,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -129,6 +129,88 @@ impl Analysis {
                 .iter()
                 .all(|f| f.signature.is_some() && f.body.is_some())
     }
+    /// The file as a program, when it is valid: `None` when any diagnostic
+    /// is an error.
+    pub fn program(&self) -> Option<Program<'_>> {
+        self.is_valid().then_some(Program { analysis: self })
+    }
+}
+
+/// A valid analysis: every function has a signature and a complete body,
+/// and no diagnostic is an error. Only such a file runs, so a run of it
+/// has no path to an ill-typed operation, a zero divisor, a hole, or a
+/// recursion without end, and the machine's refusals are checker bugs.
+#[derive(Clone, Copy, Debug)]
+pub struct Program<'a> {
+    analysis: &'a Analysis,
+}
+
+impl<'a> Program<'a> {
+    pub fn analysis(self) -> &'a Analysis {
+        self.analysis
+    }
+    pub fn function(self, id: FunctionId) -> &'a Function {
+        self.analysis.function(id)
+    }
+    /// A function's contract; every function of a valid file has one.
+    pub fn signature(self, id: FunctionId) -> &'a Signature {
+        self.function(id)
+            .signature()
+            .expect("a valid file's functions have signatures")
+    }
+    /// What may reach a function's parameters and result; every function
+    /// of a valid file has it.
+    pub fn ranges(self, id: FunctionId) -> &'a Ranges {
+        self.function(id)
+            .ranges()
+            .expect("a valid file's functions have ranges")
+    }
+    /// Every function with its ID, in declaration order.
+    pub fn functions(self) -> impl Iterator<Item = (FunctionId, &'a Function)> {
+        self.analysis
+            .function_ids()
+            .map(|id| (id, self.analysis.function(id)))
+    }
+    /// The function item named `name`, if any.
+    pub fn function_named(self, name: &str) -> Option<FunctionId> {
+        self.functions()
+            .find(|(_, function)| {
+                function
+                    .name()
+                    .is_some_and(|span| self.analysis.text(span) == name)
+            })
+            .map(|(id, _)| id)
+    }
+    /// A machine about to call `function` on `args`, which must match the
+    /// signature in count and type and lie within the parameters' ranges,
+    /// bounded by the depth the analysis proved.
+    pub fn machine(self, function: FunctionId, args: &[Value]) -> Machine<'a, Value> {
+        let signature = self.signature(function);
+        assert!(
+            args.len() == signature.params.len()
+                && args
+                    .iter()
+                    .zip(&signature.params)
+                    .all(|(arg, &param)| arg.ty() == param),
+            "arguments must match the signature"
+        );
+        Machine::new(
+            self.analysis.graph(),
+            function,
+            args,
+            self.analysis.depth_bound(function),
+        )
+    }
+    /// Run `function` on `args` to completion, as [`Program::machine`]
+    /// takes them. The checker proved the run cannot be refused.
+    pub fn evaluate(self, function: FunctionId, args: &[Value]) -> Value {
+        match self.machine(function, args).run() {
+            Outcome::Value(value) => value,
+            Outcome::Refused(refusal) => {
+                unreachable!("the checker proved this run: it was refused with {refusal:?}")
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -138,13 +220,6 @@ pub struct Function {
     signature: Option<Signature>,
     ranges: Option<Ranges>,
     body: Option<Body>,
-    /// The function's run of the graph: its entry context, then a node
-    /// per parameter, then its body region's nodes, then, for a declared
-    /// result, the copy the body's value is held in.
-    nodes: std::ops::Range<u32>,
-    arity: u32,
-    region: RegionId,
-    result: NodeId,
 }
 
 impl Function {
@@ -155,28 +230,7 @@ impl Function {
     pub fn origin(&self) -> Span {
         self.origin
     }
-    /// The function's nodes, in definition order.
-    pub fn nodes(&self) -> impl ExactSizeIterator<Item = NodeId> + use<> {
-        (self.nodes.start as usize..self.nodes.end as usize).map(NodeId::new)
-    }
-    /// The context the function runs in: live when it can be called.
-    pub fn entry(&self) -> NodeId {
-        NodeId::new(self.nodes.start as usize)
-    }
-    /// A node per parameter, in declaration order.
-    pub fn param_nodes(&self) -> impl ExactSizeIterator<Item = NodeId> + use<> {
-        let first = self.nodes.start as usize + 1;
-        (first..first + self.arity as usize).map(NodeId::new)
-    }
-    /// The body's region, run in the entry context.
-    pub fn region(&self) -> RegionId {
-        self.region
-    }
-    /// The function's value: the body region's result, or the declared
-    /// result the body's value is held to.
-    pub fn result(&self) -> NodeId {
-        self.result
-    }
+
     /// A concrete declaration contract, not a guarantee that its body is valid.
     /// Expression bodies (`=`, including `= { ... }`) infer an omitted result;
     /// bare block bodies default to unit. Callers never determine this result.

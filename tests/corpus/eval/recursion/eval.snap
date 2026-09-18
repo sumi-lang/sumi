@@ -1,16 +1,16 @@
 file: accepted
 fn fib: takes arguments, not run
-fn fib_15 = 610 (steps 34525, depth 16 of at most 17)
+fn fib_15 = 610 (steps 16770, depth 16 of at most 17)
 fn count: takes arguments, not run
-fn deep = 10000 (steps 190015, depth 10002 of at most 10002)
+fn deep = 10000 (steps 100008, depth 10002 of at most 10002)
 fn dead_step: takes arguments, not run
-fn dead_steps = 0 (steps 180, depth 12 of at most 12)
+fn dead_steps = 0 (steps 90, depth 12 of at most 12)
 fn r0: takes arguments, not run
 fn r1: takes arguments, not run
 fn r2: takes arguments, not run
 fn r3: takes arguments, not run
 fn r4: takes arguments, not run
 fn r5: takes arguments, not run
-fn ring = 3 (steps 422, depth 22 of at most 22)
+fn ring = 3 (steps 170, depth 22 of at most 22)
 fn dead_arm: takes arguments, not run
-fn dead_arms = 0 (steps 141, depth 8 of at most 8)
+fn dead_arms = 0 (steps 68, depth 8 of at most 8)

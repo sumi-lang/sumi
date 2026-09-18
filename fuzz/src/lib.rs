@@ -239,11 +239,12 @@ pub fn check_graph(analysis: &sumi_hir::Analysis) {
         }
     }
     let mut owner = vec![None; graph.nodes().len()];
-    for (index, function) in analysis.functions().iter().enumerate() {
+    assert_eq!(graph.runs().len(), analysis.functions().len());
+    for (index, function) in graph.runs().iter().enumerate() {
         let mut run = function.nodes();
         assert_eq!(run.next(), Some(function.entry()));
         assert!(matches!(graph.node(function.entry()).op, Op::Entry));
-        for (position, param) in function.param_nodes().enumerate() {
+        for (position, param) in function.params().enumerate() {
             assert_eq!(run.next(), Some(param));
             assert!(matches!(graph.node(param).op, Op::Param(i) if i as usize == position));
         }
@@ -293,13 +294,13 @@ pub fn check_graph(analysis: &sumi_hir::Analysis) {
 /// The machine property: every live function of an accepted file, run at a
 /// few points inside the parameter sets the analysis proved, stays within
 /// its claims. The value lies in the result set and has the signature's
-/// type; a zero divisor or a frame past the depth bound is refused by the
-/// machine itself, which panics. A run past the step budget, or holding an
-/// integer too wide to keep multiplying, is abandoned; everything before
-/// that was checked. Restates `machine.rs` in `sumi-hir`'s tests.
+/// type, and the machine refused nothing, since a zero divisor or a frame
+/// past the depth bound would be a refusal. A run past the step budget, or
+/// holding an integer too wide to keep multiplying, is abandoned;
+/// everything before that was checked. Restates `machine.rs` in
+/// `sumi-hir`'s tests.
 pub fn check_run(parsed: ParsedSource) {
-    use sumi_eval::{Machine, Program, Value};
-    use sumi_hir::{Bools, Int, Ints, Ty};
+    use sumi_hir::{Bools, Int, Ints, Outcome, Ty, Value};
 
     const STEPS: u64 = 1 << 18;
     const DIGITS: usize = 300;
@@ -346,14 +347,14 @@ pub fn check_run(parsed: ParsedSource) {
     }
 
     let analysis = sumi_hir::analyze(parsed);
-    let Some(program) = Program::new(&analysis) else {
+    let Some(program) = analysis.program() else {
         return;
     };
     let wide: Int = format!("1{}", "0".repeat(DIGITS)).parse().unwrap();
     let too_wide = |value: &Value| matches!(value, Value::Int(v) if *v > wide || *v < -&wide);
-    for (id, function) in program.functions() {
+    for (id, _) in program.functions() {
         let signature = program.signature(id);
-        let ranges = function.ranges().expect("a valid file has ranges");
+        let ranges = program.ranges(id);
         if !ranges.params.iter().all(|may| may.live()) {
             continue;
         }
@@ -382,17 +383,21 @@ pub fn check_run(parsed: ParsedSource) {
                 .collect();
         }
         for args in tuples {
-            let mut machine = Machine::new(program, id, &args);
-            let value = loop {
-                if let Some(value) = machine.step() {
-                    break Some(value);
+            let mut machine = program.machine(id, &args);
+            let finished = loop {
+                if machine.step() {
+                    break true;
                 }
-                if machine.steps() >= STEPS || machine.stack().iter().any(too_wide) {
-                    break None;
+                if machine.steps() >= STEPS || machine.latest().is_some_and(too_wide) {
+                    break false;
                 }
             };
-            let Some(value) = value else {
+            if !finished {
                 continue;
+            }
+            let value = match machine.outcome().expect("a finished run has its outcome") {
+                Outcome::Value(value) => value.clone(),
+                Outcome::Refused(refusal) => panic!("f{} was refused: {refusal:?}", id.index()),
             };
             assert_eq!(value.ty(), signature.result);
             let within = match &value {

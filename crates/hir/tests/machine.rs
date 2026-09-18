@@ -10,9 +10,8 @@
 
 use proptest::prelude::*;
 use proptest::test_runner::FileFailurePersistence;
-use sumi_eval::{Machine, Program, Value};
 use sumi_frontend::{FileId, parse_source};
-use sumi_hir::{Analysis, Bools, Int, Ints, Ty, analyze};
+use sumi_hir::{Analysis, Bools, Int, Ints, Outcome, Ty, Value, analyze};
 
 /// xorshift64*: enough to draw a program from, and one word of state so a
 /// failing seed names its program.
@@ -678,9 +677,9 @@ struct Runs {
 
 /// Run every live function of an accepted program at a few points inside
 /// what the analysis proved and check the claims: the value lies in the
-/// result set and has the signature's type. A zero divisor or a frame
-/// past the depth bound is refused by the machine itself, which panics.
-/// `None` for a rejected program.
+/// result set and has the signature's type, and the machine refused
+/// nothing, since a zero divisor or a frame past the depth bound would be
+/// a refusal. `None` for a rejected program.
 fn check(source: &str) -> Option<Runs> {
     /// A run past this many steps is abandoned: a deep recursion on a wide
     /// hull can cost more than the check is worth.
@@ -694,13 +693,13 @@ fn check(source: &str) -> Option<Runs> {
     const TUPLES: usize = 32;
 
     let analysis: Analysis = analyze(parse_source(FileId::new(0), source.into()).unwrap());
-    let program = Program::new(&analysis)?;
+    let program = analysis.program()?;
     let wide: Int = format!("1{}", "0".repeat(DIGITS)).parse().unwrap();
     let too_wide = |value: &Value| matches!(value, Value::Int(v) if *v > wide || *v < -&wide);
     let mut runs = Runs::default();
-    for (id, function) in program.functions() {
+    for (id, _) in program.functions() {
         let signature = program.signature(id);
-        let ranges = function.ranges().expect("a valid file has ranges");
+        let ranges = program.ranges(id);
         if !ranges.params.iter().all(|may| may.live()) {
             // Nothing calls it: nothing in it was checked.
             continue;
@@ -733,20 +732,29 @@ fn check(source: &str) -> Option<Runs> {
                 .collect();
         }
         for args in tuples {
-            let mut machine = Machine::new(program, id, &args);
-            let value = loop {
-                if let Some(value) = machine.step() {
-                    break Some(value);
+            let mut machine = program.machine(id, &args);
+            let finished = loop {
+                if machine.step() {
+                    break true;
                 }
-                if machine.steps() >= STEPS || machine.stack().iter().any(too_wide) {
-                    break None;
+                if machine.steps() >= STEPS || machine.latest().is_some_and(too_wide) {
+                    break false;
                 }
             };
-            let Some(value) = value else {
+            if !finished {
                 runs.abandoned += 1;
                 continue;
-            };
+            }
             runs.finished += 1;
+            let value = match machine.outcome().expect("a finished run has its outcome") {
+                Outcome::Value(value) => value.clone(),
+                Outcome::Refused(refusal) => {
+                    panic!(
+                        "f{}({args:?}) was refused: {refusal:?}\n{source}",
+                        id.index()
+                    )
+                }
+            };
             assert_eq!(value.ty(), signature.result, "in\n{source}");
             let within = match &value {
                 Value::Int(value) => contains(&ranges.result.ints, value),

@@ -1,10 +1,16 @@
-//! Semantic goldens selected by `stages`, not by the existence of `hir.snap`.
-//! Update with `UPDATE_HIR=1 cargo test -p sumi-hir --test corpus`.
+//! Semantic goldens selected by `stages`, not by the existence of `hir.snap`:
+//! the graph with what the checker decided, and, for cases that select
+//! `eval`, every parameterless function of an accepted case run to its
+//! value, with the machine's step count and deepest call nesting as the
+//! witnesses of what running it costs, and the depth the analysis claimed
+//! beside the depth the run observed. Update with
+//! `UPDATE_HIR=1 cargo test -p sumi-hir --test corpus` and
+//! `UPDATE_EVAL=1 cargo test -p sumi-hir --test corpus`.
 
 use std::fmt::Write as _;
 
 use sumi_frontend::{FileId, Location, Place, Severity, parse_source};
-use sumi_hir::{Analysis, BinaryOp, Function, Graph, NodeId, Op, RegionId, analyze};
+use sumi_hir::{Analysis, BinaryOp, FunctionId, Graph, NodeId, Op, Outcome, RegionId, analyze};
 use sumi_text::Span;
 
 #[path = "../../../tests/support/corpus.rs"]
@@ -13,6 +19,44 @@ mod corpus;
 #[test]
 fn selected_cases_match_their_snapshots() {
     corpus::check(corpus::Stage::Hir, snapshot);
+}
+
+#[test]
+fn selected_cases_run_as_their_snapshots_say() {
+    corpus::check(corpus::Stage::Eval, run);
+}
+
+fn run(source: &str) -> String {
+    let analysis = analyze(parse_source(FileId::new(0), source.into()).unwrap());
+    let Some(program) = analysis.program() else {
+        return "file: rejected (see hir.snap); nothing runs\n".to_owned();
+    };
+    let mut out = "file: accepted\n".to_owned();
+    for (id, function) in program.functions() {
+        let name = analysis.text(function.name().expect("a valid file names its functions"));
+        if !program.signature(id).params.is_empty() {
+            writeln!(out, "fn {name}: takes arguments, not run").unwrap();
+            continue;
+        }
+        let mut machine = program.machine(id, &[]);
+        while !machine.step() {}
+        let value = match machine.outcome().expect("a finished run has its outcome") {
+            Outcome::Value(value) => value,
+            Outcome::Refused(refusal) => panic!("fn {name} was refused: {refusal:?}"),
+        };
+        write!(
+            out,
+            "fn {name} = {value} (steps {}, depth {}",
+            machine.steps(),
+            machine.max_depth()
+        )
+        .unwrap();
+        match analysis.depth_bound(id) {
+            Some(bound) => writeln!(out, " of at most {bound})").unwrap(),
+            None => out.push_str(", unbounded)\n"),
+        }
+    }
+    out
 }
 
 fn span(span: Span) -> String {
@@ -52,7 +96,7 @@ fn snapshot(source: &str) -> String {
         }
     );
     let shape = Shape::of(analysis.graph());
-    for function in analysis.functions() {
+    for (index, function) in analysis.functions().iter().enumerate() {
         write!(
             out,
             "\nfn {}{}",
@@ -81,7 +125,7 @@ fn snapshot(source: &str) -> String {
             }
             _ => out.push_str(" signature: unavailable\n"),
         }
-        dump(&analysis, &shape, function, &mut out);
+        dump(&analysis, &shape, FunctionId::new(index), &mut out);
     }
     if !analysis.diagnostics().is_empty() {
         out.push_str("\n== semantic diagnostics ==\n");
@@ -160,9 +204,10 @@ fn named(analysis: &Analysis, node: NodeId) -> String {
     }
 }
 
-fn dump(analysis: &Analysis, shape: &Shape, function: &Function, out: &mut String) {
+fn dump(analysis: &Analysis, shape: &Shape, function: FunctionId, out: &mut String) {
     let graph = analysis.graph();
-    for param in function.param_nodes() {
+    let function = graph.run(function);
+    for param in function.params() {
         writeln!(
             out,
             "  param {}: {}",
