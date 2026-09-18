@@ -1,6 +1,6 @@
 file: rejected
 frontend errors: 0 (see frontend.snap)
-semantic errors: 6
+semantic errors: 7
 
 fn a@0..35 signature: unavailable
   body: if : ? @9..35
@@ -46,6 +46,15 @@ fn integer@260..276 () -> int ∈ [1, 1]
 fn empty@277..292 () -> unit ∈ unit
   body: unit : unit @290..292
 
+fn annotated@293..353 signature: unavailable
+  body: if : ? @310..353
+    condition: bool true : bool @313..317
+    then:
+      let x@324..325: int @320..334
+        initializer: int 1 : int @333..334
+      tail: read x@324..325 : int
+    else: bool true : bool @347..351
+
 == semantic diagnostics ==
 error[semantic/cannot-infer]: function result is both int and bool; add a return type annotation
   primary @0..35
@@ -66,3 +75,7 @@ error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
   primary @203..212
 error[semantic/type-mismatch]: unit values cannot be compared
   primary @241..259
+error[semantic/type-mismatch]: if branches are int and bool
+  primary @310..353
+  secondary @327..330: int here
+  secondary @347..351: bool here

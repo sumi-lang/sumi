@@ -2,29 +2,28 @@
 //!
 //! Checking makes three passes over the items.
 //!
-//! 1. **Headers.** Every function's name, parameter types, and result class:
-//!    an annotated result is a class known to be its type, an expression body
-//!    without one is a fresh class to infer, and a bare block body is unit.
-//! 2. **Bodies.** A structural walk per function resolves names, builds the
-//!    body's nodes of the graph with every node and local owning a class in
-//!    the [`Typing`], and records what the walk learns: facts for literals,
-//!    with their values, and for operator results; a flow for each call,
-//!    each argument into its parameter, and each branch into its `if`; each
-//!    operator's values derived from its operands'; the constants the file
-//!    spells or folds; and a demand wherever a context requires an
-//!    expression to have a type. The walk rejects nothing on type grounds;
-//!    it fails only on names, syntax, and unsupported constructs, and what
-//!    it refuses it leaves as a hole.
-//! 3. **Verdicts.** The typing solves once. Signatures are read off result
-//!    classes, independent of declaration order, and the values that may
-//!    reach each parameter and result beside them. Demands are then checked in
-//!    source order against the final evidence, so a disagreement is blamed on
-//!    the first demand that raised it. Every expression has one context, so
-//!    it is held to one demand; an expression whose type is undetermined,
-//!    because its branches or its callee disagree, satisfies any demand
-//!    silently, and the disagreement is reported where it arose. A body is
-//!    complete when its walk succeeded, none of its demands failed, every
-//!    class it uses resolved, and every function it calls has a signature.
+//! 1. **Headers.** Every function's name, parameter types, and what its
+//!    declaration says of its result: a declared type, a result to infer
+//!    from an expression body, or unit for a bare block body.
+//! 2. **Bodies.** A structural walk per function resolves names and builds
+//!    the body's nodes of the graph, marking which carry a value the typing
+//!    follows, and records what the walk learns beyond the graph: the
+//!    constants the file spells or folds, and a demand wherever a context
+//!    requires a value to have a type. The walk rejects nothing on type
+//!    grounds; it fails only on names, syntax, and unsupported constructs,
+//!    and what it refuses it leaves as a hole.
+//! 3. **Verdicts.** The classes, facts, and flows are drawn from the graph
+//!    by `flows::draw`, the demands joined in, and the typing solves once.
+//!    Signatures are read off result classes, independent of declaration
+//!    order, and the values that may reach each parameter and result beside
+//!    them. Demands are then checked in source order against the final
+//!    evidence, so a disagreement is blamed on the first demand that raised
+//!    it. Every expression has one context, so it is held to one demand; an
+//!    expression whose type is undetermined, because its branches or its
+//!    callee disagree, satisfies any demand silently, and the disagreement
+//!    is reported where it arose. A body is complete when its walk
+//!    succeeded, none of its demands failed, every value in it resolved, and
+//!    every call agrees with its callee's signature.
 //!
 //! Names are never copied while checking: every map is keyed by a slice of
 //! the source, and the one builder keeps its scratch across bodies, so a
@@ -107,14 +106,20 @@ pub(crate) struct Header {
     pub params: Option<Box<[Ty]>>,
     /// The type of each parameter that has one, whole list or not.
     pub param_types: Box<[Option<Ty>]>,
-    /// Whether the declaration has a result at all: a declared one, or one
-    /// to infer. `false` when it is too damaged to have one.
-    pub has_result: bool,
-    /// The declared result type and where: the annotation, or the whole item
-    /// for a bare block body. A declaration is a contract the body is held
-    /// to, never changed by it. `None` for a result to infer from the body.
-    pub declared: Option<(Ty, NodeIdx)>,
+    pub result: HeaderResult,
     item: NodeIdx,
+}
+
+/// What a declaration says of its result.
+#[derive(Clone, Copy)]
+pub(crate) enum HeaderResult {
+    /// The declaration is too damaged to have one.
+    None,
+    /// A declared type, at the annotation or, for a bare block body, the
+    /// whole item: a contract the body is held to, never changed by it.
+    Declared(Ty, NodeIdx),
+    /// A result to infer from the body.
+    Inferred,
 }
 
 struct Local {
@@ -450,10 +455,10 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
                 });
             }
         }
-        let (has_result, declared) = if let Some(ret) = item.ret(tree) {
+        let result = if let Some(ret) = item.ret(tree) {
             match source.ty(ret) {
-                Some(ty) => (true, Some((ty, ret.node()))),
-                None => (false, None),
+                Some(ty) => HeaderResult::Declared(ty, ret.node()),
+                None => HeaderResult::None,
             }
         } else {
             // A missing annotation can mean damaged syntax, not omission.
@@ -469,16 +474,15 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
                     (tokens.next(), tokens.next())
                 });
             match gap {
-                Some((None, None)) => (true, Some((Ty::Unit, item.node()))),
-                Some((Some(SyntaxKind::Eq), None)) => (true, None),
-                _ => (false, None),
+                Some((None, None)) => HeaderResult::Declared(Ty::Unit, item.node()),
+                Some((Some(SyntaxKind::Eq), None)) => HeaderResult::Inferred,
+                _ => HeaderResult::None,
             }
         };
         headers.push(Header {
             params: valid.then(|| params.iter().map(|p| p.ty.unwrap()).collect()),
             param_types: params.iter().map(|p| p.ty).collect(),
-            has_result,
-            declared,
+            result,
             item: item.node(),
         });
         parameters.push(params);
@@ -549,13 +553,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         let actual = replay.resolve(actual_class);
         match demand.kind {
             DemandKind::Type { expected, declared } => {
-                let expected = match expected {
-                    Want::Ty(ty) => Expected::Ty(ty),
-                    Want::Result(function) => {
-                        Expected::Class(results[function.index()].expect("a result to infer"))
-                    }
-                    Want::Peer(peer) => Expected::Peer(class(peer)),
-                };
+                let expected = flows::expected(expected, &results, class);
                 let expected_ty = match expected {
                     Expected::Ty(ty) => Some(ty),
                     Expected::Class(class) | Expected::Peer(class) => replay.resolve(class),
@@ -617,12 +615,12 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         }
         failed[demand.owner as usize] = true;
     }
-    for (index, header) in headers.iter().enumerate() {
+    for (index, header) in headers.into_iter().enumerate() {
         let run = graph.run(FunctionId::new(index));
         let result_class = results[index];
         let evidence = result_class.map(|result| *typing.evidence(result));
         let result = evidence.and_then(|evidence| evidence.ty());
-        if let (Some(params), Some(result)) = (header.params.clone(), result) {
+        if let (Some(params), Some(result)) = (header.params, result) {
             functions[index].signature = Some(Signature { params, result });
             // A function nothing live reaches never returns either.
             let result_class = result_class.unwrap();
@@ -641,7 +639,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         // A result to infer that did not resolve is reported here, unless a
         // demand in the body already explained it, or the trouble arrived
         // whole from a callee, which reports it at its own declaration.
-        if let (None, Some(evidence), None) = (header.declared, evidence, result)
+        if let (HeaderResult::Inferred, Some(evidence), None) = (header.result, evidence, result)
             && built[index]
             && !failed[index]
             && !evidence.inherited()
@@ -1122,9 +1120,8 @@ impl<'a, 's> Builder<'a, 's> {
             }
         }
         let header = &self.headers[self.owner as usize];
-        let has_result = header.has_result;
-        let declared = header.declared;
-        self.failed |= header.params.is_none() || !has_result;
+        let declared = header.result;
+        self.failed |= header.params.is_none() || matches!(declared, HeaderResult::None);
         let tree = self.source.tree;
         let region = self.graph.open(entry);
         self.graph.enter(region);
@@ -1177,20 +1174,25 @@ impl<'a, 's> Builder<'a, 's> {
         // type. A declared result is a contract on the body; an inferred one
         // is the body's own type.
         let value = match declared {
-            Some((ty, node)) => {
-                let copy = self.push(node, Op::Copy { declared: Some(ty) }, &[body_value], None);
-                if has_result {
-                    self.mark(copy);
-                }
+            HeaderResult::Declared(ty, node) => {
+                let copy = self.push(
+                    node,
+                    Op::Copy {
+                        declared: Some((ty, self.source.span(node))),
+                    },
+                    &[body_value],
+                    None,
+                );
+                self.mark(copy);
                 copy
             }
-            None => body_value,
+            HeaderResult::Inferred | HeaderResult::None => body_value,
         };
-        match (root, declared, has_result) {
-            (Some(root), Some((ty, node)), true) => {
+        match (root, declared) {
+            (Some(root), HeaderResult::Declared(ty, node)) => {
                 self.require(root_node.unwrap(), root, Want::Ty(ty), Some(node));
             }
-            (Some(root), None, true) => {
+            (Some(root), HeaderResult::Inferred) => {
                 self.require(
                     root_node.unwrap(),
                     root,
@@ -1796,7 +1798,10 @@ impl<'a, 's> Builder<'a, 's> {
                 // An annotated binding has its declared type whatever its
                 // initializer turns out to be; the initializer is held to it.
                 let annotation = binding.type_ref(tree);
-                let declared = annotation.and_then(|annotation| self.source.ty(annotation));
+                let declared = annotation.and_then(|annotation| {
+                    let ty = self.source.ty(annotation)?;
+                    Some((ty, self.source.span(annotation.node())))
+                });
                 let copy = self.push(
                     node,
                     Op::Copy { declared },
@@ -1805,7 +1810,7 @@ impl<'a, 's> Builder<'a, 's> {
                 );
                 let (name, name_node) = name?;
                 let typed = match (annotation, declared) {
-                    (Some(annotation), Some(ty)) => {
+                    (Some(annotation), Some((ty, _))) => {
                         if let Some(initializer) = initializer {
                             self.require(
                                 initializer_node,
@@ -2124,7 +2129,7 @@ impl<'a, 's> Builder<'a, 's> {
         });
         self.inputs = inputs;
         // The call has a value when its callee has a result.
-        if !function.has_result {
+        if matches!(function.result, HeaderResult::None) {
             return None;
         }
         self.classify(node);

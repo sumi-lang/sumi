@@ -10,11 +10,11 @@
 //! joined into the evidence last, in the order the walk recorded them,
 //! which is the order the verdict pass replays them in.
 
-use sumi_graph::{Graph, NodeId, Op, Ty};
+use sumi_graph::{BinaryOp, Graph, NodeId, Op, Ty};
 use sumi_syntax::NodeIdx;
 use sumi_text::Span;
 
-use crate::check::{Demand, DemandKind, Header, Placed, Want};
+use crate::check::{Demand, DemandKind, Header, HeaderResult, Placed, Want};
 use crate::ranges::{May, RangeEdge, UnaryOp};
 use crate::solver::Var;
 use crate::typing::{Expected, Typing};
@@ -117,8 +117,10 @@ pub(crate) fn draw(
                     unit
                 }
                 // A declared copy holds what flows in, when something does.
-                Op::Copy { declared: Some(ty) } => {
-                    let copy = typing.known(*ty, origin);
+                Op::Copy {
+                    declared: Some((ty, at)),
+                } => {
+                    let copy = typing.known(*ty, *at);
                     if typed(inputs[0]) {
                         typing.flow(class(inputs[0]), copy, RangeEdge::Copy);
                     }
@@ -138,12 +140,17 @@ pub(crate) fn draw(
                 }
                 Op::Binary(op) => {
                     let ty = match op {
-                        sumi_graph::BinaryOp::Add
-                        | sumi_graph::BinaryOp::Sub
-                        | sumi_graph::BinaryOp::Mul
-                        | sumi_graph::BinaryOp::Div
-                        | sumi_graph::BinaryOp::Rem => Ty::Int,
-                        _ => Ty::Bool,
+                        BinaryOp::Add
+                        | BinaryOp::Sub
+                        | BinaryOp::Mul
+                        | BinaryOp::Div
+                        | BinaryOp::Rem => Ty::Int,
+                        BinaryOp::Eq
+                        | BinaryOp::Ne
+                        | BinaryOp::Lt
+                        | BinaryOp::Le
+                        | BinaryOp::Gt
+                        | BinaryOp::Ge => Ty::Bool,
                     };
                     let result = typing.known(ty, origin);
                     typing.derive(
@@ -172,26 +179,16 @@ pub(crate) fn draw(
             };
             classes[node.index()] = Some(class);
         }
-        results[index] = if !header.has_result {
-            None
-        } else if header.declared.is_some() {
-            classes[run.result().index()]
-        } else {
-            Some(typing.fresh())
+        results[index] = match header.result {
+            HeaderResult::None => None,
+            HeaderResult::Declared(..) => classes[run.result().index()],
+            HeaderResult::Inferred => Some(typing.fresh()),
         };
     }
     let class = |node: NodeId| classes[node.index()].expect("a typed node has a class");
-    // A call learns its callee's result, whichever comes first in the file.
-    for call in placed.calls() {
-        if !typed(call.node) {
-            continue;
-        }
-        let result =
-            results[call.callee.index()].expect("a call with a value has a callee with one");
-        typing.call(result, class(call.node), graph.node(call.node).origin);
-    }
     // Every call reaches its callee's entry; a whole one delivers its
-    // arguments to the parameters while its context is live.
+    // arguments to the parameters while its context is live, and learns
+    // its callee's result, whichever comes first in the file.
     for &(context, callee) in &placed.entered {
         let entry = graph.run(callee).entry();
         typing.flow(class(context), class(entry), RangeEdge::Enter);
@@ -206,19 +203,18 @@ pub(crate) fn draw(
                 RangeEdge::Argument,
             );
         }
+        if typed(call.node) {
+            let result =
+                results[call.callee.index()].expect("a call with a value has a callee with one");
+            typing.call(result, class(call.node), graph.node(call.node).origin);
+        }
     }
     // Demands, in the order the walk made them.
     for demand in demands {
         let DemandKind::Type { expected, .. } = demand.kind else {
             continue;
         };
-        let expected = match expected {
-            Want::Ty(ty) => Expected::Ty(ty),
-            Want::Result(function) => {
-                Expected::Class(results[function.index()].expect("a result to infer"))
-            }
-            Want::Peer(peer) => Expected::Peer(class(peer)),
-        };
+        let expected = self::expected(expected, &results, class);
         let actual = class(demand.actual);
         if expected == Expected::Class(actual) || expected == Expected::Peer(actual) {
             continue;
@@ -227,4 +223,20 @@ pub(crate) fn draw(
     }
     placed.classes = classes;
     (typing, results)
+}
+
+/// What a demand asks, as the typing states it: the function's result
+/// class, or the peer's.
+pub(crate) fn expected(
+    want: Want,
+    results: &[Option<Var>],
+    class: impl Fn(NodeId) -> Var,
+) -> Expected {
+    match want {
+        Want::Ty(ty) => Expected::Ty(ty),
+        Want::Result(function) => {
+            Expected::Class(results[function.index()].expect("a result to infer"))
+        }
+        Want::Peer(peer) => Expected::Peer(class(peer)),
+    }
 }

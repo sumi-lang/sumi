@@ -10,3 +10,5 @@ fn unused() {
 fn comparison() = empty() == empty()
 fn integer() = 1
 fn empty() = {}
+fn annotated() = if true { let x: int = 1
+ x } else { true }

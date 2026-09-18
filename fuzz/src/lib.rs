@@ -149,7 +149,7 @@ pub fn check_typed(analysis: &sumi_hir::Analysis) {
                 }
                 Op::Copy { declared } => {
                     assert_eq!(entry.ty, ty(inputs[0]));
-                    if let Some(declared) = declared {
+                    if let Some((declared, _)) = declared {
                         assert_eq!(entry.ty, Some(*declared));
                     }
                 }
