@@ -925,10 +925,20 @@ fn explain_zero(
     labels
 }
 
-// None is a poisoned binding, distinct from an absent name, beside the node
-// that defines it either way. Scope transitions and let completion are
-// explicit work items, so initializers see the old scope.
-type Scope<'s> = NameMap<'s, (Option<LocalId>, NodeId)>;
+/// What a name in scope is bound to. Scope transitions and let completion
+/// are explicit work items, so initializers see the old scope.
+#[derive(Clone, Copy)]
+enum Bound {
+    /// A local with a class the typing follows.
+    Local(LocalId),
+    /// A binding without one, still what the name reads: a parameter
+    /// without a type, or a damaged `let`.
+    Untyped(NodeId),
+    /// A binding the walk refused, a duplicate parameter: it has a type
+    /// its reads must not be held to, so a read of it is a hole.
+    Refused,
+}
+type Scope<'s> = NameMap<'s, Bound>;
 enum Work {
     Enter(NodeIdx),
     Finish(NodeIdx),
@@ -1096,10 +1106,7 @@ impl<'a, 's> Builder<'a, 's> {
                         format!("duplicate parameter `{name}`"),
                         Some((span, "declared here")),
                     );
-                    // The parameter has a type its reads must not be held
-                    // to: they read a hole.
-                    let hole = self.hole(param.node);
-                    self.shadow(name, None, hole);
+                    self.shadow(name, Bound::Refused);
                     self.failed = true;
                 } else {
                     self.first.insert(name, self.source.span(name_node));
@@ -1260,26 +1267,28 @@ impl<'a, 's> Builder<'a, 's> {
     fn close_scope(&mut self) {
         self.depth -= 1;
     }
-    /// Give `name` the meaning `id`, defined by `node`, until the innermost
-    /// scope closes.
-    fn shadow(&mut self, name: &'s str, id: Option<LocalId>, node: NodeId) {
-        self.scopes[self.depth - 1].insert(name, (id, node));
+    /// Give `name` the meaning `bound` until the innermost scope closes.
+    fn shadow(&mut self, name: &'s str, bound: Bound) {
+        self.scopes[self.depth - 1].insert(name, bound);
     }
-    /// Bind `name` to a local defined by `node`, whose class is `class`.
+    /// Bind `name` to a local defined by `node`, whose class is `class`
+    /// when it has one.
     fn bind(&mut self, name: &'s str, name_node: NodeIdx, class: Option<Var>, node: NodeId) {
-        let id = class.map(|class| {
+        let bound = if let Some(class) = class {
             let id = LocalId(u32::try_from(self.locals.len()).expect("local count fits u32"));
             self.locals.push(Local {
                 origin: self.source.span(name_node),
                 class,
                 node,
             });
-            id
-        });
-        self.failed |= id.is_none();
-        self.shadow(name, id, node);
+            Bound::Local(id)
+        } else {
+            self.failed = true;
+            Bound::Untyped(node)
+        };
+        self.shadow(name, bound);
     }
-    fn lookup(&self, name: &str) -> Option<(Option<LocalId>, NodeId)> {
+    fn lookup(&self, name: &str) -> Option<Bound> {
         // An empty scope, the common case for a function's own, would cost
         // a hash to find nothing in.
         self.scopes[..self.depth]
@@ -1341,7 +1350,10 @@ impl<'a, 's> Builder<'a, 's> {
         if tree.kind(node) != NodeKind::NameRef {
             return None;
         }
-        self.lookup(self.source.text(node))?.0
+        match self.lookup(self.source.text(node))? {
+            Bound::Local(local) => Some(local),
+            Bound::Untyped(_) | Bound::Refused => None,
+        }
     }
     /// What the condition at `cond` holding in `sense` says about the
     /// locals it compares: a refined class and node per local, read inside
@@ -1697,8 +1709,8 @@ impl<'a, 's> Builder<'a, 's> {
     }
     fn target(&mut self, node: NodeIdx) -> Option<FunctionId> {
         let name = self.source.text(node);
-        if let Some((local, _)) = self.lookup(name) {
-            if let Some(local) = local {
+        if let Some(bound) = self.lookup(name) {
+            if let Bound::Local(local) = bound {
                 self.source.error(
                     node,
                     codes::NOT_CALLABLE,
@@ -1853,15 +1865,18 @@ impl<'a, 's> Builder<'a, 's> {
             NodeKind::NameRef => {
                 let name = self.source.text(node);
                 match self.lookup(name) {
-                    Some((Some(local), _)) => {
+                    Some(Bound::Local(local)) => {
                         let (_, read) = self.current(local);
                         self.nodes_of[node.to_usize()] = Some(read);
                     }
-                    // A binding without a value the typing follows is still
-                    // what the name reads: the untyped parameter, or the
-                    // hole a refused binding was given.
-                    Some((None, defined)) => {
+                    // A binding without a class the typing follows is still
+                    // what the name reads.
+                    Some(Bound::Untyped(defined)) => {
                         self.nodes_of[node.to_usize()] = Some(defined);
+                        return None;
+                    }
+                    Some(Bound::Refused) => {
+                        self.hole(node);
                         return None;
                     }
                     None => {

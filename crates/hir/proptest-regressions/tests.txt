@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 28ad01650030d4fcf9269312b8ed1f20c49d5330b760eaf20bfb278ce7d3a747 # shrinks to choices = [(0, 2, 0)]
+cc 43220f93e71b6f36192ae8685eafb71eb40ce45f792de7bd51fd9c98f1da0b08 # shrinks to tokens = ["}", "fn", "(", "unit", "fn", ",", "unit"]
