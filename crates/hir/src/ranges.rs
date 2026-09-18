@@ -195,10 +195,10 @@ mod tests {
     /// The may-values of every integer from `lo` to `hi`, zero included
     /// when it lies between: the join of two points keeps a hole there.
     fn band(lo: i64, hi: i64) -> May {
-        let mut band = May::int(Int::from(lo));
+        let mut band = May::int(&Int::from(lo));
         for point in [0, hi] {
             if lo <= point && point <= hi {
-                Lattice::join(&mut band, &May::int(Int::from(point)));
+                Lattice::join(&mut band, &May::int(&Int::from(point)));
             }
         }
         band
@@ -213,7 +213,7 @@ mod tests {
     fn transfers_derive_and_only_cyclic_interprocedural_flows_round() {
         let cx = [15, 2].map(Int::from).into_iter().collect::<Thresholds>();
         let a = band(4, 13);
-        let b = May::int(2.into());
+        let b = May::int(&2.into());
         let edge = RangeEdge::Binary(BinaryOp::Mul);
         assert_eq!(a.transfer(&edge, Some(&b), false, &cx), band(8, 26));
         let edge = RangeEdge::Binary(BinaryOp::Lt);
@@ -266,7 +266,7 @@ mod tests {
             cond.transfer(&RangeEdge::Else, Some(&dead), false, &cx),
             dead
         );
-        let value = May::int(3.into());
+        let value = May::int(&3.into());
         assert_eq!(
             value.transfer(&RangeEdge::Branch, Some(&live), false, &cx),
             value

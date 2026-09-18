@@ -610,18 +610,6 @@ impl May {
         unit: false,
     };
 
-    pub fn int(value: Int) -> Self {
-        Self::ints(Ints::from(value))
-    }
-
-    pub fn bool(value: bool) -> Self {
-        Self::bools(Bools::from(value))
-    }
-
-    pub fn unit() -> Self {
-        Self::of_unit(true)
-    }
-
     pub fn ints(ints: Ints) -> Self {
         Self {
             ints,
@@ -751,17 +739,17 @@ impl Thresholds {
 impl Domain for May {
     #[inline]
     fn int(value: &Int) -> Self {
-        Self::int(value.clone())
+        Self::ints(Ints::from(value.clone()))
     }
 
     #[inline]
     fn bool(value: bool) -> Self {
-        Self::bool(value)
+        Self::bools(Bools::from(value))
     }
 
     #[inline]
     fn unit() -> Self {
-        Self::unit()
+        Self::of_unit(true)
     }
 
     #[inline]
@@ -977,7 +965,7 @@ mod tests {
         assert_eq!(n.refine(BinaryOp::Gt, &ints("[20, 20]")), Ints::EMPTY);
         assert_eq!(n.refine(BinaryOp::Ne, &ints("[1, 2]")), n);
         let may = May::ints(n.clone());
-        let two = May::int(2.into());
+        let two = May::int(&2.into());
         // `2 > n` reads as `n < 2`; its false sense is `n >= 2`.
         assert_eq!(
             may.refine(BinaryOp::Gt, false, true, &two).ints,
@@ -1016,7 +1004,7 @@ mod tests {
         assert_eq!(May::unit().shown(Ty::Unit).to_string(), "unit");
         assert_eq!(May::NONE.shown(Ty::Unit).to_string(), "∅");
         assert_eq!(May::bool(true).shown(Ty::Bool).to_string(), "{true}");
-        assert_eq!(May::int(5.into()).shown(Ty::Int).to_string(), "[5, 5]");
+        assert_eq!(May::int(&5.into()).shown(Ty::Int).to_string(), "[5, 5]");
     }
 
     #[test]

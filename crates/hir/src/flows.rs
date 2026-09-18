@@ -11,7 +11,7 @@
 //! joined into the evidence last, in the order the walk recorded them,
 //! which is the order the verdict pass replays them in.
 
-use sumi_graph::{BinaryOp, Graph, NodeId, Op, Ty};
+use sumi_graph::{BinaryOp, Domain, Graph, NodeId, Op, Ty};
 use sumi_syntax::NodeIdx;
 use sumi_text::Span;
 
@@ -65,7 +65,7 @@ pub(crate) fn draw(
             let inputs = graph.inputs(node);
             let this = class(node);
             match &entry.op {
-                Op::Int(value) => typing.literal(this, Ty::Int, May::int(value.clone()), origin),
+                Op::Int(value) => typing.literal(this, Ty::Int, May::int(value), origin),
                 Op::Bool(value) => typing.literal(this, Ty::Bool, May::bool(*value), origin),
                 Op::Param(position) => {
                     let ty = header.param_types[*position as usize].expect("a typed parameter");

@@ -36,7 +36,7 @@ use std::num::NonZeroU32;
 
 use sumi_text::Span;
 
-use sumi_graph::{May, Thresholds, Ty};
+use sumi_graph::{Domain, May, Thresholds, Ty};
 
 use crate::ranges::RangeEdge;
 use crate::solver::{Lattice, Solver, Var};
@@ -628,13 +628,13 @@ mod tests {
     #[test]
     fn peers_share_types_but_not_values() {
         let mut typing = typing();
-        let x = literal(&mut typing, Ty::Int, May::int(5.into()), at(0));
-        let y = literal(&mut typing, Ty::Int, May::int(9.into()), at(1));
+        let x = literal(&mut typing, Ty::Int, May::int(&5.into()), at(0));
+        let y = literal(&mut typing, Ty::Int, May::int(&9.into()), at(1));
         typing.expect(x, Expected::Peer(y), at(2));
         typing.solve(&cx());
         assert_eq!(typing.resolve(x), Some(Ty::Int));
-        assert_eq!(typing.may(x), &May::int(5.into()));
-        assert_eq!(typing.may(y), &May::int(9.into()));
+        assert_eq!(typing.may(x), &May::int(&5.into()));
+        assert_eq!(typing.may(y), &May::int(&9.into()));
         let unknown = typing.fresh();
         let known = known(&mut typing, Ty::Bool, at(3));
         typing.expect(unknown, Expected::Peer(known), at(4));
@@ -687,15 +687,15 @@ mod tests {
         let mut typing = typing();
         let dead = entry(&mut typing, false);
         let live = entry(&mut typing, true);
-        let then_branch = literal(&mut typing, Ty::Int, May::int(1.into()), at(0));
-        let else_branch = literal(&mut typing, Ty::Int, May::int(2.into()), at(1));
+        let then_branch = literal(&mut typing, Ty::Int, May::int(&1.into()), at(0));
+        let else_branch = literal(&mut typing, Ty::Int, May::int(&2.into()), at(1));
         let join = typing.fresh();
         typing.branch(then_branch, dead, join);
         typing.branch(else_branch, live, join);
         typing.solve(&cx());
         // The type still arrives from both arms; the value from the live one.
         assert_eq!(typing.resolve(join), Some(Ty::Int));
-        assert_eq!(typing.may(join), &May::int(2.into()));
+        assert_eq!(typing.may(join), &May::int(&2.into()));
     }
 
     #[test]
@@ -760,7 +760,7 @@ mod tests {
     #[test]
     fn a_let_copies_its_initializer_and_is_one_with_it_in_the_replay() {
         let mut typing = typing();
-        let literal = literal(&mut typing, Ty::Int, May::int(5.into()), at(0));
+        let literal = literal(&mut typing, Ty::Int, May::int(&5.into()), at(0));
         let binding = typing.fresh();
         typing.copy(literal, binding);
         typing.expect(binding, Expected::Ty(Ty::Bool), at(1));
@@ -784,7 +784,7 @@ mod tests {
     #[test]
     fn settled_evidence_is_read_by_class() {
         let mut typing = typing();
-        let literal = literal(&mut typing, Ty::Int, May::int(5.into()), at(0));
+        let literal = literal(&mut typing, Ty::Int, May::int(&5.into()), at(0));
         let merged = typing.fresh();
         typing.equal(literal, merged);
         let apart = typing.fresh();
