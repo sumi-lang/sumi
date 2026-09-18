@@ -34,7 +34,7 @@ use sumi_syntax::{
     NodeIdx, NodeKind, ParseEvidence, ParserInput, RawIdx, SigIdx, SyntaxKind, is_bracket,
 };
 use sumi_test::corpus::{self, Rng};
-use sumi_test::{Edit, EditSpan, Front, Programs, apply, changes_delimiter, front};
+use sumi_test::{Edit, EditSpan, Front, INSERTS, Programs, apply, changes_delimiter, front};
 
 /// Measured (program, edit) pairs per Part A class.
 const CLASS_TARGET: usize = 10_000;
@@ -187,9 +187,6 @@ impl ClassStats {
     }
 }
 
-const DELIMITER_INSERTS: &[&str] = &["(", ")", "{", "}"];
-const NON_DELIMITER_INSERTS: &[&str] = &[",", "=", "fn", "let", "else", "x", "0", "+", "-"];
-
 const KIND_NAMES: [&str; 4] = ["delete", "duplicate", "swap", "insert"];
 const CLASS_NAMES: [&str; 2] = ["delimiter", "non-delim"];
 
@@ -199,6 +196,13 @@ fn scorecard() {
     // stats[kind][0] is the delimiter class, stats[kind][1] the rest.
     let mut stats: [[ClassStats; 2]; 4] = Default::default();
     let mut generated = 0usize;
+    // The insert pools: brackets, and the rest.
+    let (delimiter_inserts, non_delimiter_inserts): (Vec<&str>, Vec<&str>) =
+        INSERTS.iter().partition(|&&text| {
+            SyntaxKind::ALL
+                .iter()
+                .any(|&kind| is_bracket(kind) && kind.text() == Some(text))
+        });
 
     while stats
         .iter()
@@ -214,17 +218,16 @@ fn scorecard() {
         }
         let spans = original.spans();
 
-        let code = |_: Edit| 0..len;
-        let delimiter: Vec<usize> = code(Edit::Delete)
+        let delimiter: Vec<usize> = (0..len)
             .filter(|&index| original.input().get(sig(index)).is_some_and(is_bracket))
             .collect();
-        let non_delimiter: Vec<usize> = code(Edit::Delete)
+        let non_delimiter: Vec<usize> = (0..len)
             .filter(|&index| !original.input().get(sig(index)).is_some_and(is_bracket))
             .collect();
-        let swap_delimiter: Vec<usize> = code(Edit::Swap)
+        let swap_delimiter: Vec<usize> = (0..len)
             .filter(|&index| changes_delimiter(original.input(), index, Edit::Swap))
             .collect();
-        let swap_non_delimiter: Vec<usize> = code(Edit::Swap)
+        let swap_non_delimiter: Vec<usize> = (0..len)
             .filter(|&index| !changes_delimiter(original.input(), index, Edit::Swap))
             .collect();
         let all: Vec<usize> = (0..len).collect();
@@ -249,9 +252,9 @@ fn scorecard() {
                         1 => Edit::Duplicate,
                         2 => Edit::Swap,
                         _ => Edit::Insert(rng.pick(if class == 0 {
-                            DELIMITER_INSERTS
+                            &delimiter_inserts
                         } else {
-                            NON_DELIMITER_INSERTS
+                            &non_delimiter_inserts
                         })),
                     };
                     class_stats.record(&source, &original, &spans, index, edit);
@@ -455,46 +458,12 @@ fn churn_base(name: &str, source: &str, edits_per_kind: usize, rng: &mut Rng) {
     }
 }
 
-// --- Part C: one delimiter deleted inside a literal. ---
+// --- Part C: one quote deleted from a string literal, the one literal
+// form with delimiters. ---
 
-/// Which delimiter of a literal token a class deletes.
-#[derive(Clone, Copy)]
-enum LiteralEdit {
-    Opener,
-    Closer,
-}
-
-/// One class edits every string literal, the one literal form with
-/// delimiters.
-struct LiteralClass {
-    label: &'static str,
-    edit: LiteralEdit,
-    /// The delimiter's bytes.
-    width: usize,
-}
-
-impl LiteralClass {
-    fn selects(&self, lexed: &LexedFile, index: RawIdx) -> bool {
-        is_literal(lexed, index)
-    }
-}
-
-fn is_literal(lexed: &LexedFile, index: RawIdx) -> bool {
+fn is_string(lexed: &LexedFile, index: RawIdx) -> bool {
     lexed.kind(index) == SyntaxKind::StringLiteral
 }
-
-const LITERAL_CLASSES: [LiteralClass; 2] = [
-    LiteralClass {
-        label: "delete \" closer",
-        edit: LiteralEdit::Closer,
-        width: 1,
-    },
-    LiteralClass {
-        label: "delete \" opener",
-        edit: LiteralEdit::Opener,
-        width: 1,
-    },
-];
 
 struct LiteralSample {
     /// Bytes of the longest literal token left where the edited one stood:
@@ -504,20 +473,14 @@ struct LiteralSample {
     untouched_disturbed: u64,
 }
 
-fn literal_edit(
-    source: &str,
-    before: &Front,
-    token: RawIdx,
-    class: &LiteralClass,
-) -> LiteralSample {
+/// The string literal at `token` with its opening quote deleted, or its
+/// closing one.
+fn literal_edit(source: &str, before: &Front, token: RawIdx, opener: bool) -> LiteralSample {
     let range = before.lexed.range(token);
     let (start, end) = (range.start().to_usize(), range.end().to_usize());
-    let cut = match class.edit {
-        LiteralEdit::Opener => start..start + class.width,
-        LiteralEdit::Closer => end - class.width..end,
-    };
-    let edited = format!("{}{}", &source[..cut.start], &source[cut.end..]);
-    let impact = EditSpan::new(cut.start, cut.end, cut.start);
+    let cut = if opener { start } else { end - 1 };
+    let edited = format!("{}{}", &source[..cut], &source[cut + 1..]);
+    let impact = EditSpan::new(cut, cut + 1, cut);
     let index = significant_at(before.input(), token);
     let touched: Vec<RawIdx> = (index.saturating_sub(2)
         ..=(index + 2).min(before.input().len() - 1))
@@ -527,11 +490,11 @@ fn literal_edit(
 
     let (untouched, preserved) = preservation(source, before, &touched, impact, &edited, &after);
     // Where the token stood, in the edited source.
-    let stood = start..end - class.width;
+    let stood = start..end - 1;
     let spread = after
         .lexed
         .indices()
-        .filter(|&index| is_literal(&after.lexed, index))
+        .filter(|&index| is_string(&after.lexed, index))
         .map(|index| after.lexed.range(index))
         .filter(|range| {
             range.start().to_usize() < stood.end && range.end().to_usize() > stood.start
@@ -555,26 +518,22 @@ fn literal_edits(name: &str, source: &str, edits_per_class: usize, rng: &mut Rng
         "the literal corpus must be valid"
     );
     let before = front(source);
-    let literals = before
+    let literals: Vec<RawIdx> = before
         .lexed
         .indices()
-        .filter(|&index| is_literal(&before.lexed, index))
-        .count();
+        .filter(|&index| is_string(&before.lexed, index))
+        .collect();
     println!(
-        "{name}: {} bytes, {literals} literals, {} top-level items",
+        "{name}: {} bytes, {} literals, {} top-level items",
         source.len(),
+        literals.len(),
         items(&before).len()
     );
-    for class in &LITERAL_CLASSES {
-        let candidates: Vec<RawIdx> = before
-            .lexed
-            .indices()
-            .filter(|&index| class.selects(&before.lexed, index))
-            .collect();
+    for (label, opener) in [("delete \" closer", false), ("delete \" opener", true)] {
         let samples: Vec<LiteralSample> = (0..edits_per_class)
             .map(|_| {
-                let token = candidates[rng.below(candidates.len())];
-                literal_edit(source, &before, token, class)
+                let token = literals[rng.below(literals.len())];
+                literal_edit(source, &before, token, opener)
             })
             .collect();
         let stat = |select: fn(&LiteralSample) -> u64| -> (u64, u64, u64) {
@@ -590,7 +549,7 @@ fn literal_edits(name: &str, source: &str, edits_per_class: usize, rng: &mut Rng
         let items = stat(|s| s.untouched_disturbed);
         println!(
             "  {:<18} n={:<4} spread p50/p95/max {}/{}/{}  diags {}/{}/{}  items_disturbed {}/{}/{}",
-            class.label,
+            label,
             samples.len(),
             spread.0,
             spread.1,

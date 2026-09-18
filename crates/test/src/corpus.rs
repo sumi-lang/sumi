@@ -20,7 +20,7 @@ impl Rng {
         ((self.0 >> 33) as usize) % n
     }
 
-    pub fn pick<'a, T: ?Sized>(&mut self, items: &'a [&'a T]) -> &'a T {
+    pub fn pick<T: Copy>(&mut self, items: &[T]) -> T {
         items[self.below(items.len())]
     }
 }
