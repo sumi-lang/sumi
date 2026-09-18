@@ -61,6 +61,9 @@ fn held@393..442 () -> bool ∈ ∅
       initializer: call integer@288..304 : ? @425..434
     tail: read x@415..416 : bool
 
+fn relay@443..459 signature: unavailable
+  body: call a@0..43 : ? @456..459
+
 == semantic diagnostics ==
 error[semantic/cannot-infer]: function result is both int and bool; add a return type annotation
   primary @0..43

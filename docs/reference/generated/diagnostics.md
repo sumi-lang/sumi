@@ -584,6 +584,8 @@ fn mutable() -> int {
     let mut typed = 1
     typed()
 }
+fn suppressed_arity() = unknown(1, 2)
+fn calls_twice() -> int = twice(1, true)
 ```
 
 ```text
@@ -634,6 +636,8 @@ fn mutable() -> int {
     let mut typed = 1
     typed()
 }
+fn suppressed_arity() = unknown(1, 2)
+fn calls_twice() -> int = twice(1, true)
 ```
 
 ```text

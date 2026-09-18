@@ -16,3 +16,28 @@ fn shadow@0..100 (int ∈ ∅) -> int ∈ ∅
           rhs: int 2 : int @71..72
       discard: unit : unit @49..92
       tail: read x@35..36 : int
+
+fn innermost@101..216 (int ∈ [5, 5]) -> int ∈ [18, 18]
+  param x@114..115: int
+  result: copy : int @125..128
+    value:
+      let x@139..140: int @135..148
+        initializer: eager * : int @143..148
+          lhs: read x@114..115 : int
+          rhs: int 2 : int @147..148
+      let x@175..176: int @171..184
+        initializer: eager - : int @179..184
+          lhs: read x@139..140 : int
+          rhs: int 3 : int @183..184
+      let y@157..158: int @153..204
+        initializer: eager + : int @193..198
+          lhs: read x@175..176 : int
+          rhs: int 1 : int @197..198
+      tail: eager + : int @209..214
+        lhs: read x@139..140 : int
+        rhs: read y@157..158 : int
+
+fn innermosts@217..254 () -> int ∈ [18, 18]
+  result: copy : int @236..239
+    value: call innermost@101..216 : int @242..254
+      arg[0]: int 5 : int @252..253

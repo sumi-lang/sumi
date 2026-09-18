@@ -25,3 +25,12 @@ fn boolean() = {
     true
 }
 fn empty() = {}
+fn chained() = {
+    let x = forward()
+    let x = x + 1
+    x
+}
+fn discards() {
+    empty()
+    _ = 1
+}

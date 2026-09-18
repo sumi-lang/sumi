@@ -32,3 +32,4 @@ fn held() = {
     let x: bool = integer()
     x
 }
+fn relay() = a()

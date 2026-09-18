@@ -17,3 +17,5 @@ fn statements() -> int {
 fn damaged() -> int {
     5 )
 }
+fn grouped() = (missing)
+fn after() = ((true))
