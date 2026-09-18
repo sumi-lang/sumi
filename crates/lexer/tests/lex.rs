@@ -212,7 +212,7 @@ fn consecutive_newlines_stay_separate() {
 
 #[test]
 fn lone_carriage_return_is_an_error() {
-    check("\r", &[r#"Newline 0..1 "\r" TokenFlags(LONE_CR)"#]);
+    check("\r", &[r#"Newline 0..1 "\r""#]);
     assert_eq!(
         lex("\r").unwrap().errors(),
         &[error(0, 0, 1, LexErrorKind::LoneCarriageReturn)],
@@ -345,7 +345,7 @@ fn line_literals_end_at_the_line() {
     check(
         "\"a\\\nb",
         &[
-            r#"String 0..3 "\"a\\" TokenFlags(UNTERMINATED | HAS_ESCAPE)"#,
+            r#"String 0..3 "\"a\\" TokenFlags(UNTERMINATED)"#,
             r#"Newline 3..4 "\n""#,
             r#"Ident 4..5 "b""#,
         ],
@@ -353,11 +353,8 @@ fn line_literals_end_at_the_line() {
 }
 
 #[test]
-fn string_escapes_are_flagged() {
-    check(
-        r#""a\"b""#,
-        &[r#"String 0..6 "\"a\\\"b\"" TokenFlags(HAS_ESCAPE)"#],
-    );
+fn an_escaped_quote_never_closes() {
+    check(r#""a\"b""#, &[r#"String 0..6 "\"a\\\"b\"""#]);
 }
 
 #[test]

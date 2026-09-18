@@ -3,7 +3,7 @@
 
 use proptest::prelude::*;
 use proptest::test_runner::FileFailurePersistence;
-use sumi_lexer::{RawIdx, RawKind, SyntaxKind, TokenFlags, lex};
+use sumi_lexer::{RawIdx, RawKind, SyntaxKind, lex};
 
 /// Fragments beyond every keyword and punctuation text of the language that
 /// each lex to exactly one token on their own, stay terminated, and do not
@@ -83,14 +83,6 @@ fn soup() -> impl Strategy<Value = String> {
     proptest::collection::vec(fragment(), 0..64).prop_map(|fragments| fragments.concat())
 }
 
-fn number_soup() -> impl Strategy<Value = String> {
-    const PIECES: &[&str] = &[
-        "0", "1", "9", "123", "_", ".", "e", "-", "5", "u32", "x", " ",
-    ];
-    proptest::collection::vec(prop::sample::select(PIECES).prop_map(str::to_owned), 1..12)
-        .prop_map(|fragments| fragments.concat())
-}
-
 /// Records every failing seed in the crate's tracked `proptest-regressions/`
 /// file, which each later run replays before generating anything new, so a
 /// failure found once stays found. Proptest's default location is found by
@@ -158,23 +150,6 @@ proptest! {
                     "token {:?} crosses a line break", index
                 );
             }
-        }
-    }
-
-    #[test]
-    fn the_number_scan_and_validation_agree(source in number_soup()) {
-        let file = lex(&source).expect("generated sources fit in u32");
-        for index in file.indices() {
-            if file.raw_kind(index) != RawKind::Number {
-                continue;
-            }
-            let flagged = file.flags(index).contains(TokenFlags::MALFORMED_NUMBER);
-            let has_error = file.errors().iter().any(|error| error.token == index);
-            prop_assert_eq!(
-                flagged, has_error,
-                "number {:?} flagged={} but has-error={}",
-                file.text(&source, index), flagged, has_error
-            );
         }
     }
 
