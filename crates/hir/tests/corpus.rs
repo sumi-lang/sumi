@@ -352,7 +352,7 @@ fn dump_definition(
         Op::Bool(value) => format!("bool {value}"),
         Op::Param(index) => format!("param {index}"),
         Op::Unit => "unit".into(),
-        Op::Unused => "unused".into(),
+        Op::Unused => unreachable!("nothing reads a statement; dump_region discards its input"),
         Op::Hole => "hole".into(),
         Op::Copy { .. } => "copy".into(),
         Op::Neg => "negate".into(),
@@ -398,7 +398,8 @@ fn dump_definition(
                 );
             }
         }
-        Op::Copy { .. } | Op::Unused => dump_node(analysis, shape, "value", inputs[0], child, out),
+        Op::Copy { .. } => dump_node(analysis, shape, "value", inputs[0], child, out),
+        Op::Unused => unreachable!("nothing reads a statement; dump_region discards its input"),
         Op::Neg | Op::Not => dump_node(analysis, shape, "operand", inputs[0], child, out),
         Op::Binary(_) => {
             dump_node(analysis, shape, "lhs", inputs[0], child, out);

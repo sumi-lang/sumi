@@ -222,7 +222,7 @@ impl Settled {
 /// A [`Typing::replay`]: the classes again, carrying type evidence alone
 /// over a union-find, so an aliased class or a peer reads and takes the
 /// evidence of the class it is one with. Handed the demands one at a
-/// time, in source order, it blames a disagreement on the first demand
+/// time, in node order, it blames a disagreement on the first demand
 /// that raised it, with the flows final rather than provisional. Its own
 /// claims record no origin; the claims flows delivered do.
 pub(crate) struct Replay {
