@@ -1,6 +1,6 @@
 file: rejected
 frontend errors: 0 (see frontend.snap)
-semantic errors: 10
+semantic errors: 11
 
 fn divide_by_zero@0..40 () -> int ∈ ∅
   result: copy : int @23..26
@@ -196,6 +196,64 @@ fn wrong_arity@978..1015 () -> int ∈ ∅
       part[0]: int 0 : int @1010..1011
       part[1]: int 1 : int @1013..1014
 
+fn plain@1016..1049 (int ∈ [0, 0]) -> int ∈ [-100, 100] \ 0
+  param k@1025..1026: int
+  result: copy : int @1036..1039
+    value: call half@169..201 : int @1042..1049
+      arg[0]: read k@1025..1026 : int
+
+fn plains@1050..1079 () -> int ∈ [-100, 100] \ 0
+  result: copy : int @1065..1068
+    value: call plain@1016..1049 : int @1071..1079
+      arg[0]: int 0 : int @1077..1078
+
+fn bound@1080..1127 () -> int ∈ [-100, 100] \ 0
+  result: copy : int @1094..1097
+    value:
+      let z@1108..1109: int @1104..1113
+        initializer: int 0 : int @1112..1113
+      tail: call half@169..201 : int @1118..1125
+        arg[0]: read z@1108..1109 : int
+
+fn guarded@1128..1188 (int ∈ [0, 0]) -> int ∈ [-100, 100] \ 0
+  param k@1139..1140: int
+  result: copy : int @1150..1153
+    value: if : int @1156..1188
+      condition: eager == : bool @1159..1165
+        lhs: read k@1139..1140 : int
+        rhs: int 0 : int @1164..1165
+      then: call half@169..201 : int @1168..1175
+        arg[0]: read k@1139..1140 [k == 0 holds@1159..1165] : int
+      else: int 1 : int @1185..1186
+
+fn guardeds@1189..1222 () -> int ∈ [-100, 100] \ 0
+  result: copy : int @1206..1209
+    value: call guarded@1128..1188 : int @1212..1222
+      arg[0]: int 0 : int @1220..1221
+
+fn chained@1223..1370 () -> int ∈ ∅
+  result: copy : int @1239..1242
+    value:
+      let a@1253..1254: int @1249..1258
+        initializer: int 0 : int @1257..1258
+      let b@1267..1268: int @1263..1272
+        initializer: read a@1253..1254 : int
+      let c@1281..1282: int @1277..1286
+        initializer: read b@1267..1268 : int
+      let d@1295..1296: int @1291..1300
+        initializer: read c@1281..1282 : int
+      let e@1309..1310: int @1305..1314
+        initializer: read d@1295..1296 : int
+      let f@1323..1324: int @1319..1328
+        initializer: read e@1309..1310 : int
+      let g@1337..1338: int @1333..1342
+        initializer: read f@1323..1324 : int
+      let h@1351..1352: int @1347..1356
+        initializer: read g@1337..1338 : int
+      tail: eager / : int @1361..1368
+        lhs: int 100 : int @1361..1364
+        rhs: read h@1351..1352 : int
+
 == semantic diagnostics ==
 error[semantic/division-by-zero]: division by zero
   primary @29..40
@@ -209,6 +267,9 @@ error[semantic/division-by-zero]: division by zero
 error[semantic/division-by-zero]: divisor may be zero
   primary @194..201
   secondary @234..239: argument may be 0: [-3, 3]
+  secondary @1047..1048: argument is 0
+  secondary @1123..1124: argument is 0
+  secondary @1173..1174: argument is 0
 error[semantic/division-by-zero]: division by zero
   primary @369..374
   secondary @373..374: is 0
@@ -231,3 +292,6 @@ error[semantic/division-by-zero]: division by zero
 error[semantic/arity]: expected 1 arguments, found 2
   primary @1004..1015
   secondary @944..977: declared here
+error[semantic/division-by-zero]: division by zero
+  primary @1361..1368
+  secondary @1257..1258: is 0

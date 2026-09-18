@@ -23,11 +23,11 @@ use std::collections::HashMap;
 
 use sumi_text::Span;
 
-use crate::check::DraftBody;
+use crate::check::{Placed, PlacedCall};
 use crate::ranges::Ints;
-use crate::solver::{Var, components};
+use crate::solver::components;
 use crate::typing::Typing;
-use crate::{BinaryOp, ExprId, ExprKind, FunctionId, Int, LocalId};
+use crate::{BinaryOp, FunctionId, Graph, Int, NodeId, Op};
 
 /// A cycle with no measure: its members, and what each call inside it does
 /// to the parameter that came closest to being the measure.
@@ -112,28 +112,28 @@ fn bounded(band: &Ints, direction: Direction) -> bool {
         }
 }
 
-/// `calls` are every call as `(caller, callee, context)`; a call whose
-/// context is dead never happens, so it is no edge of the call graph. A
-/// cycle through a function that `failed` its verdicts, or whose body did
-/// not build, is out of scope: its arguments may have no offsets and its
-/// calls may be missing, and what it has is reported already.
-pub(crate) fn check(
-    bodies: &[Option<DraftBody>],
-    param_classes: &[&[Var]],
-    typing: &Typing,
-    calls: &[(FunctionId, FunctionId, Var)],
-    failed: &[bool],
-) -> Outcome {
-    let arcs: Vec<_> = calls
+/// Every whole call of the graph in a live context is an edge of the call
+/// graph; a call whose context is dead never happens, and one that is not
+/// whole is a hole, no call. A cycle through a function that `failed`
+/// its verdicts, or whose body did not build, is out of scope: its
+/// arguments may have no offsets and its calls may be missing, and what
+/// it has is reported already.
+pub(crate) fn check(graph: &Graph, placed: &Placed, typing: &Typing, failed: &[bool]) -> Outcome {
+    let count_functions = graph.runs().len();
+    let live: Vec<&PlacedCall> = placed
+        .calls()
         .iter()
-        .filter(|&&(_, _, context)| typing.may(context).live())
-        .map(|&(caller, callee, _)| (caller.index() as u32, callee.index() as u32))
+        .filter(|call| placed.live(typing, call.context))
         .collect();
-    let components = components(bodies.len(), &arcs);
+    let arcs: Vec<(u32, u32)> = live
+        .iter()
+        .map(|call| (call.caller.index() as u32, call.callee.index() as u32))
+        .collect();
+    let components = components(count_functions, &arcs);
     let component = &components.of;
     let count = components.count();
     // Functions grouped by component, in declaration order within one.
-    let mut grouped: Vec<usize> = (0..bodies.len()).collect();
+    let mut grouped: Vec<usize> = (0..count_functions).collect();
     grouped.sort_by_key(|&function| component[function]);
     let mut group_start = vec![0; count + 1];
     for &c in component {
@@ -165,82 +165,44 @@ pub(crate) fn check(
             continue;
         }
         let members = &grouped[group_start[c]..group_start[c + 1]];
-        if members
-            .iter()
-            .any(|&function| failed[function] || bodies[function].is_none())
-        {
+        if members.iter().any(|&function| failed[function]) {
             chain[c] = None;
             continue;
         }
         let position: HashMap<usize, usize> =
             members.iter().enumerate().map(|(i, &f)| (f, i)).collect();
         let mut inside = Vec::new();
-        for &function in members {
-            let body = bodies[function]
-                .as_ref()
-                .expect("a member of a checked cycle has a body");
-            let lets: HashMap<LocalId, ExprId> = body
-                .statements
-                .iter()
-                .filter_map(|statement| match statement.kind {
-                    crate::StatementKind::Let { local, initializer } => Some((local, initializer)),
-                    _ => None,
-                })
-                .collect();
-            let params: HashMap<LocalId, usize> = body
-                .params
-                .iter()
-                .enumerate()
-                .map(|(i, &p)| (p, i))
-                .collect();
-            let branches: HashMap<ExprId, (bool, bool)> = body
-                .branches
-                .iter()
-                .map(|&(expr, then_context, else_context)| {
-                    let live = |context| typing.may(context).live();
-                    (expr, (live(then_context), live(else_context)))
-                })
-                .collect();
-            for &(expr, context) in &body.calls {
-                if !typing.may(context).live() {
-                    continue;
+        for call in &live {
+            let (Some(&from), Some(&to)) = (
+                position.get(&call.caller.index()),
+                position.get(&call.callee.index()),
+            ) else {
+                continue;
+            };
+            let mut offsets = HashMap::new();
+            for (j, &arg) in graph.inputs(call.node).iter().enumerate() {
+                if let Some((i, band)) = delta(graph, placed, typing, arg) {
+                    offsets.insert((i as usize, j), band);
                 }
-                let expr = &body.exprs[expr.index()];
-                let ExprKind::Call {
-                    function: callee,
-                    args,
-                    ..
-                } = &expr.kind
-                else {
-                    unreachable!("a recorded call is a call");
-                };
-                let Some(&to) = position.get(&callee.index()) else {
-                    continue;
-                };
-                let mut offsets = HashMap::new();
-                for (j, &arg) in body.args[args.start as usize..args.end as usize]
-                    .iter()
-                    .enumerate()
-                {
-                    if let Some((param, band)) = delta(body, typing, &lets, &branches, arg)
-                        && let Some(&i) = params.get(&param)
-                    {
-                        offsets.insert((i, j), band);
-                    }
-                }
-                inside.push(Call {
-                    from: position[&function],
-                    to,
-                    origin: expr.origin,
-                    offsets,
-                });
             }
+            inside.push(Call {
+                from,
+                to,
+                origin: graph.node(call.node).origin,
+                offsets,
+            });
         }
-        let arity = |member: usize| param_classes[members[member]].len();
-        let band =
-            |member: usize, param: usize| &typing.may(param_classes[members[member]][param]).ints;
+        let arity = |member: usize| graph.run(FunctionId::new(members[member])).params().len();
+        let band = |member: usize, param: usize| {
+            let node = graph
+                .run(FunctionId::new(members[member]))
+                .params()
+                .nth(param)
+                .expect("a parameter of the member");
+            &placed.may(typing, node).ints
+        };
         let mut found = None;
-        // The first choice every call agrees with, when the cycle fails on
+        // The first choice every call agreed with, when the cycle fails on
         // a bound or on the calls that only pass the measure along.
         let mut agreed: Option<(Direction, Vec<usize>, Vec<bool>)> = None;
         // `delta` gives each callee parameter at most one source, so once a
@@ -328,11 +290,15 @@ pub(crate) fn check(
             }
             None => {
                 chain[c] = None;
+                // The parameter's name, where it is written.
                 let param = |member: usize, j: usize| {
-                    let body = bodies[members[member]]
-                        .as_ref()
-                        .expect("a member of a checked cycle has a body");
-                    body.locals[body.params[j].index()].origin
+                    let node = graph
+                        .run(FunctionId::new(members[member]))
+                        .params()
+                        .nth(j)
+                        .expect("a parameter of the member");
+                    let node = graph.node(node);
+                    node.name.unwrap_or(node.origin)
                 };
                 let labels = match &agreed {
                     // Every call agreed with this choice, so the cycle
@@ -462,101 +428,77 @@ fn lax_edges_are_acyclic(members: usize, calls: &[Call], strict: &[bool]) -> boo
     true
 }
 
-/// `Some((p, c))` when on every run the expression's value is in `p + c`
-/// for the parameter `p`. `branches` says which arms of each `if` can run.
-/// The walk keeps its own stack, so a chain of `let`s or a nest of
-/// operators of any depth is read.
-fn delta(
-    body: &DraftBody,
-    typing: &Typing,
-    lets: &HashMap<LocalId, ExprId>,
-    branches: &HashMap<ExprId, (bool, bool)>,
-    expr: ExprId,
-) -> Option<(LocalId, Ints)> {
-    let may = |expr: ExprId| &typing.may(body.classes[expr.index()]).ints;
-    /// What to do with the offset of the expression being read.
+/// `Some((p, c))` when on every run the node's value is in `p + c` for
+/// the parameter at `p`: through a `let`, a narrowed read, `+` and `-`
+/// with the other operand's set, and an `if` whose live arms agree on the
+/// parameter. The walk keeps its own stack, so a chain of `let`s or a
+/// nest of operators of any depth is read.
+fn delta(graph: &Graph, placed: &Placed, typing: &Typing, node: NodeId) -> Option<(u32, Ints)> {
+    let may = |node: NodeId| &placed.may(typing, node).ints;
+    /// What to do with the offset of the node being read.
     enum Frame {
         /// The left operand of `+`: `rhs` adds to its offset, or is read in
         /// turn when it has none.
-        AddLhs { lhs: ExprId, rhs: ExprId },
+        AddLhs { lhs: NodeId, rhs: NodeId },
         /// The right operand of `+`, the left having no offset: `lhs` adds.
-        AddRhs { lhs: ExprId },
+        AddRhs { lhs: NodeId },
         /// The left operand of `-`: `rhs` subtracts.
-        Sub { rhs: ExprId },
-        /// The then arm of an `if` whose else arm `else_branch` runs too.
-        Then { else_branch: ExprId },
+        Sub { rhs: NodeId },
+        /// The then arm of an `if` whose else arm `otherwise` runs too.
+        Then { otherwise: NodeId },
         /// The else arm, `then` being the then arm's offset.
-        Else { then: (LocalId, Ints) },
+        Else { then: (u32, Ints) },
     }
     let mut frames: Vec<Frame> = Vec::new();
-    let mut next = Some(expr);
-    let mut result: Option<(LocalId, Ints)> = None;
+    let mut next = Some(node);
+    let mut result: Option<(u32, Ints)> = None;
     loop {
-        if let Some(expr) = next.take() {
-            result = match &body.exprs[expr.index()].kind {
-                ExprKind::Local(local) if body.params.contains(local) => {
-                    Some((*local, Ints::from(Int::from(0))))
+        if let Some(node) = next.take() {
+            let inputs = graph.inputs(node);
+            result = match graph.node(node).op {
+                Op::Param(index) => Some((index, Ints::from(Int::from(0)))),
+                Op::Copy | Op::Refine { .. } | Op::Exactly(_) => {
+                    next = Some(inputs[0]);
+                    continue;
                 }
-                ExprKind::Local(local) => match lets.get(local) {
-                    Some(&initializer) => {
-                        next = Some(initializer);
-                        continue;
-                    }
-                    None => None,
-                },
-                ExprKind::Binary {
-                    op: BinaryOp::Add,
-                    lhs,
-                    rhs,
-                } => {
+                Op::Binary(BinaryOp::Add) => {
                     frames.push(Frame::AddLhs {
-                        lhs: *lhs,
-                        rhs: *rhs,
+                        lhs: inputs[0],
+                        rhs: inputs[1],
                     });
-                    next = Some(*lhs);
+                    next = Some(inputs[0]);
                     continue;
                 }
-                ExprKind::Binary {
-                    op: BinaryOp::Sub,
-                    lhs,
-                    rhs,
-                } => {
-                    frames.push(Frame::Sub { rhs: *rhs });
-                    next = Some(*lhs);
+                Op::Binary(BinaryOp::Sub) => {
+                    frames.push(Frame::Sub { rhs: inputs[1] });
+                    next = Some(inputs[0]);
                     continue;
                 }
-                ExprKind::If {
-                    then_branch,
-                    else_branch: Some(else_branch),
-                    ..
+                Op::Join {
+                    then,
+                    else_: Some(else_),
                 } => {
-                    // A branch that cannot run contributes no value.
-                    let (then_live, else_live) =
-                        branches.get(&expr).copied().unwrap_or((true, true));
-                    match (then_live, else_live) {
+                    // An arm that cannot run contributes no value.
+                    let (then, otherwise) = (graph.region(then), graph.region(else_));
+                    let live = |context| placed.live(typing, context);
+                    match (live(then.context), live(otherwise.context)) {
                         (true, true) => {
                             frames.push(Frame::Then {
-                                else_branch: *else_branch,
+                                otherwise: otherwise.result(),
                             });
-                            next = Some(*then_branch);
+                            next = Some(then.result());
                             continue;
                         }
                         (true, false) => {
-                            next = Some(*then_branch);
+                            next = Some(then.result());
                             continue;
                         }
                         (false, true) => {
-                            next = Some(*else_branch);
+                            next = Some(otherwise.result());
                             continue;
                         }
                         (false, false) => None,
                     }
-                }
-                ExprKind::Block {
-                    tail: Some(tail), ..
-                } => {
-                    next = Some(*tail);
-                    continue;
                 }
                 _ => None,
             };
@@ -575,10 +517,10 @@ fn delta(
             },
             Frame::AddRhs { lhs } => result = result.take().map(|(p, c)| (p, may(lhs) + &c)),
             Frame::Sub { rhs } => result = result.take().map(|(p, c)| (p, &c - may(rhs))),
-            Frame::Then { else_branch } => match result.take() {
+            Frame::Then { otherwise } => match result.take() {
                 Some(then) => {
                     frames.push(Frame::Else { then });
-                    next = Some(else_branch);
+                    next = Some(otherwise);
                 }
                 None => result = None,
             },
