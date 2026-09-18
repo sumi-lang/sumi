@@ -198,6 +198,118 @@ pub fn check_semantics(parsed: ParsedSource) {
     }
 }
 
+/// The machine property: every live function of an accepted file, run at a
+/// few points inside the parameter sets the analysis proved, stays within
+/// its claims. The value lies in the result set, the call depth stays
+/// within the bound, and no divisor is zero, which the machine refuses by
+/// panicking. A run past the step budget is abandoned; everything before
+/// it was checked. Restates `machine.rs` in `sumi-hir`'s tests.
+pub fn check_run(parsed: ParsedSource) {
+    use sumi_eval::{Machine, Program, Value};
+    use sumi_hir::{Bools, Int, Ints, Ty};
+
+    const STEPS: u64 = 1 << 16;
+
+    fn contains(ints: &Ints, value: &Int) -> bool {
+        !ints.is_empty()
+            && ints.lo().is_none_or(|lo| lo <= *value)
+            && ints.hi().is_none_or(|hi| *value <= hi)
+            && (*value != Int::from(0) || ints.contains_zero())
+    }
+    fn admits(bools: Bools, value: bool) -> bool {
+        if value {
+            bools.may_true()
+        } else {
+            bools.may_false()
+        }
+    }
+    fn points(ints: &Ints) -> Vec<Int> {
+        if ints.is_empty() {
+            return Vec::new();
+        }
+        let far = Int::from(8);
+        let (lo, hi) = match (ints.lo(), ints.hi()) {
+            (Some(lo), Some(hi)) => (lo, hi),
+            (Some(lo), None) => (lo.clone(), &lo + &far),
+            (None, Some(hi)) => (&hi - &far, hi),
+            (None, None) => (-&far, far),
+        };
+        let one = Int::from(1);
+        let mut points = vec![
+            lo.clone(),
+            hi.clone(),
+            &lo + &one,
+            &hi - &one,
+            Int::from(-1),
+            Int::from(0),
+            one,
+        ];
+        points.retain(|point| contains(ints, point));
+        points.dedup();
+        points
+    }
+
+    let analysis = sumi_hir::analyze(parsed);
+    let Some(program) = Program::new(&analysis) else {
+        return;
+    };
+    for (id, function) in program.functions() {
+        let signature = program.signature(id);
+        let ranges = function.ranges().expect("a valid file has ranges");
+        if !ranges.params.iter().all(|may| may.live()) {
+            continue;
+        }
+        let mut tuples: Vec<Vec<Value>> = vec![Vec::new()];
+        for (may, &ty) in ranges.params.iter().zip(&signature.params) {
+            let values: Vec<Value> = match ty {
+                Ty::Int => points(&may.ints).into_iter().map(Value::Int).collect(),
+                Ty::Bool => [true, false]
+                    .into_iter()
+                    .filter(|&b| admits(may.bools, b))
+                    .map(Value::Bool)
+                    .collect(),
+                Ty::Unit => vec![Value::Unit],
+            };
+            assert!(!values.is_empty(), "a live parameter has values");
+            tuples = tuples
+                .iter()
+                .flat_map(|tuple| {
+                    values.iter().map(|value| {
+                        let mut tuple = tuple.clone();
+                        tuple.push(value.clone());
+                        tuple
+                    })
+                })
+                .collect();
+        }
+        for args in tuples {
+            let mut machine = Machine::new(program, id, &args);
+            let value = loop {
+                if let Some(value) = machine.step() {
+                    break value;
+                }
+                if machine.steps() >= STEPS {
+                    return;
+                }
+            };
+            assert_eq!(value.ty(), signature.result);
+            let within = match &value {
+                Value::Int(value) => contains(&ranges.result.ints, value),
+                Value::Bool(value) => admits(ranges.result.bools, *value),
+                Value::Unit => ranges.result.unit,
+            };
+            assert!(
+                within,
+                "f{}({args:?}) = {value} outside its result set",
+                id.index()
+            );
+            if let Some(bound) = machine.depth_bound() {
+                assert!(machine.max_depth() as u64 <= bound);
+            }
+        }
+    }
+}
+
 /// `lex` partitions the source: tokens are nonempty, contiguous, on
 /// character boundaries, and reproduce it byte for byte; every lexical
 /// error sits inside its token; every `Error` token has one; only a line
