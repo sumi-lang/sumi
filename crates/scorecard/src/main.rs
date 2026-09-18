@@ -1,31 +1,17 @@
-//! Recovery scorecard and delimiter-churn telemetry.
+//! The recovery scorecard: seeded, count-based measurements of recovery
+//! quality, so `cargo run --release -p sumi-scorecard` reproduces the
+//! committed `recovery-scorecard.txt` byte for byte, which CI checks.
 //!
-//! Everything here is seeded, so the numbers are exactly reproducible and
-//! the committed `recovery-scorecard.txt` beside this crate is a reference,
-//! not a sample. Run as `cargo run --release -p sumi-scorecard`. It is a
-//! leaf package of its own so that `sumi-test` stays below the parser and
-//! `xtask`, which generates code these crates compile against, depends on
-//! none of them.
-//!
-//! Part A scores recovery quality over seeded (program, edit) pairs drawn
-//! from the same generator the recovery property tests use, per edit class:
-//! delete/duplicate/swap/insert crossed with delimiter/non-delimiter. Per
-//! edit it measures the untouched-item preservation rate (top-level items
-//! not covering the edit's ±2 significant tokens that survive with
-//! identical span and shape), diagnostics for the edited file, significant
-//! tokens inside recovery-skipped ranges, and evidence entries.
-//!
-//! Part B breaks one delimiter in a clean corpus — an unmatched opener
-//! inserted, or a closer deleted — and counts how far the stream facts
-//! churn: significant tokens whose `partner()` or `boundary_before()`
-//! changed against the pre-edit stream (edit site excluded), and untouched
-//! top-level items disturbed. This quantifies the "unclosed brace re-pairs
-//! the whole file" risk.
-//!
-//! Part C deletes one quote of a string literal in a clean corpus and
-//! measures how far the literal then reaches: the edit Parts A and B
-//! cannot make, since theirs are whole significant tokens. This quantifies
-//! the "stray quote re-pairs the whole file" risk.
+//! Part A makes one edit per (program, edit) pair drawn from the recovery
+//! properties' generator, per edit kind crossed with whether a delimiter
+//! changes, and holds every untouched top-level item to surviving with
+//! its span and shape: preservation 1.0. Part B inserts an opener or
+//! deletes a closer in a clean corpus and counts the significant tokens
+//! whose partner or boundary changed, which stays within the bracket
+//! nesting around the edit, and the untouched items disturbed, which is
+//! 0. Part C deletes one quote of a string literal, an edit inside a
+//! token, and measures how far the literal then reaches: its line at
+//! most, and no item disturbed.
 
 use std::collections::HashSet;
 
