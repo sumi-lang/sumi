@@ -91,6 +91,8 @@ fn help_and_invalid_invocations() {
         vec!["-h"],
         vec!["check", "--help"],
         vec!["check", "-h"],
+        vec!["fmt", "--help"],
+        vec!["fmt", "--check", "-h"],
     ] {
         let output = sumi().args(args).output().unwrap();
         assert_eq!(output.status.code(), Some(0));
