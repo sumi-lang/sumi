@@ -285,25 +285,14 @@ impl Planner<'_> {
         self.gaps[gap as usize] = sep;
     }
 
-    fn group(&mut self, first: u32, end: u32) {
+    /// The gaps `first..end` break together; a last element `tail`
+    /// decides for itself.
+    fn group(&mut self, first: u32, end: u32, tail: Option<NodeIdx>) {
         if first < end {
-            self.groups.push(Group {
-                first,
-                end,
-                tail: None,
-            });
-        }
-    }
-
-    /// A group whose last element, `tail`, decides for itself.
-    fn group_with_tail(&mut self, first: u32, end: u32, tail: NodeIdx) {
-        let (from, to) = (self.first_sig(tail) + 1, self.end_sig(tail));
-        if first < end {
-            self.groups.push(Group {
-                first,
-                end,
-                tail: (from < to).then_some((from, to)),
-            });
+            let tail = tail
+                .map(|tail| (self.first_sig(tail) + 1, self.end_sig(tail)))
+                .filter(|&(from, to)| from < to);
+            self.groups.push(Group { first, end, tail });
         }
     }
 
@@ -313,11 +302,7 @@ impl Planner<'_> {
     /// the next line before it breaks at its operators.
     fn value(&mut self, node: NodeIdx, eq: u32, value: NodeIdx, level: u32) {
         let chain = self.tree.kind(value) == NodeKind::BinaryExpr;
-        if chain {
-            self.group(eq + 1, self.end_sig(node));
-        } else {
-            self.group_with_tail(eq + 1, self.end_sig(node), value);
-        }
+        self.group(eq + 1, self.end_sig(node), (!chain).then_some(value));
         self.node(value, if chain { level + 1 } else { level });
     }
 
@@ -347,7 +332,7 @@ impl Planner<'_> {
                     (_, El::Tok(_, SyntaxKind::RParen)) => Gap::soft_glue(level),
                     _ => Gap::space(level + 1),
                 });
-                self.group(self.first_sig(node) + 1, self.end_sig(node));
+                self.group(self.first_sig(node) + 1, self.end_sig(node), None);
                 self.children(&els, level + 1);
             }
             NodeKind::Param => {
@@ -446,7 +431,9 @@ impl Planner<'_> {
             (El::Tok(_, SyntaxKind::Comma), _) => Gap::soft(level + 1),
             _ => Gap::space(level + 1),
         });
-        if !self.tree.has_error(node) {
+        // A list the parser recovered in keeps its comma and its shape.
+        let sound = !self.tree.has_error(node);
+        if sound {
             // The comma before the closer is a layout token: dropped when
             // the list is flat.
             for pair in els.windows(2) {
@@ -457,39 +444,20 @@ impl Planner<'_> {
                 }
             }
         }
-        if !self.tree.has_error(node) && els.len() > 2 {
-            let tail = els
-                .iter()
-                .rev()
-                .find_map(|&el| match el {
-                    El::Node(child, _) => Some(child),
-                    El::Tok(..) => None,
-                })
-                .filter(|&last| self.opens_block(last));
-            match tail {
-                Some(tail) => {
-                    self.group_with_tail(self.first_sig(node) + 1, self.end_sig(node), tail);
-                }
-                None => self.group(self.first_sig(node) + 1, self.end_sig(node)),
-            }
+        // The last element hugs the closer when it opens a block: it is the
+        // group's tail and, flat, sits at this level; broken, it is one
+        // level in like the rest, through the tail's indentation.
+        let last = els.iter().rev().find_map(|&el| match el {
+            El::Node(child, _) => Some(child),
+            El::Tok(..) => None,
+        });
+        let hug = last.filter(|&last| sound && self.opens_block(last));
+        if sound && els.len() > 2 {
+            self.group(self.first_sig(node) + 1, self.end_sig(node), hug);
         }
-        // The last element of a broken list is one level in like the rest,
-        // through its group's tail; flat, it hugs the closer at this level.
-        let last = els
-            .iter()
-            .rev()
-            .find_map(|&el| match el {
-                El::Node(child, _) => Some(child),
-                El::Tok(..) => None,
-            })
-            .filter(|&last| !self.tree.has_error(node) && self.opens_block(last));
         for &el in els {
             if let El::Node(child, _) = el {
-                let child_level = if Some(child) == last {
-                    level
-                } else {
-                    level + 1
-                };
+                let child_level = if Some(child) == hug { level } else { level + 1 };
                 self.node(child, child_level);
             }
         }
@@ -543,7 +511,7 @@ impl Planner<'_> {
             _ => Gap::space(cont),
         });
         if chain.is_none() {
-            self.group(self.first_sig(node) + 1, self.end_sig(node));
+            self.group(self.first_sig(node) + 1, self.end_sig(node), None);
         }
         let power = self.power(els);
         let mut first = true;
