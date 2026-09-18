@@ -2,8 +2,8 @@
 //! instead of the hand-written cases in `lex.rs`.
 
 use proptest::prelude::*;
-use proptest::test_runner::FileFailurePersistence;
-use sumi_lexer::{RawIdx, SyntaxKind, TokenFlags, lex};
+use sumi_lexer::{SyntaxKind, lex};
+use sumi_test::check;
 
 /// Fragments beyond every keyword and punctuation text of the language that
 /// each lex to exactly one token on their own, stay terminated, and do not
@@ -95,80 +95,14 @@ fn number_soup() -> impl Strategy<Value = String> {
         .prop_map(|pieces| pieces.concat())
 }
 
-/// Records every failing seed in the crate's tracked `proptest-regressions/`
-/// file, which each later run replays before generating anything new, so a
-/// failure found once stays found. Proptest's default location is found by
-/// walking up from the test file to a `lib.rs`, which a test under `tests/`
-/// never reaches; this path is fixed at compile time instead.
-fn config() -> ProptestConfig {
-    ProptestConfig {
-        failure_persistence: Some(Box::new(FileFailurePersistence::Direct(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/proptest-regressions/prop.txt"
-        )))),
-        ..ProptestConfig::default()
-    }
-}
-
 proptest! {
-    #![proptest_config(config())]
+    #![proptest_config(sumi_test::regressions(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/proptest-regressions/prop.txt"
+    )))]
     #[test]
     fn lex_is_total_and_partitions(source in prop_oneof![soup(), number_soup()]) {
-        let file = lex(&source).expect("generated sources fit in u32");
-        prop_assert_eq!(file.source_len().to_usize(), source.len());
-
-        let mut concatenated = String::new();
-        for index in file.indices() {
-            let range = file.range(index);
-            prop_assert!(range.start() < range.end(), "token {:?} is empty", index);
-            prop_assert!(source.is_char_boundary(range.start().to_usize()));
-            prop_assert!(source.is_char_boundary(range.end().to_usize()));
-            if index == RawIdx::new(0) {
-                prop_assert_eq!(range.start().to_u32(), 0, "first token must start at 0");
-            } else {
-                prop_assert_eq!(
-                    range.start(),
-                    file.range(index - 1).end(),
-                    "token {:?} is not contiguous", index
-                );
-            }
-            concatenated.push_str(file.text(&source, index));
-        }
-        prop_assert_eq!(&concatenated, &source, "tokens must reproduce the source");
-
-        if let Some(last) = file.end().checked_sub(1) {
-            prop_assert_eq!(file.range(last).end(), file.source_len());
-        }
-        for error in file.errors() {
-            prop_assert!(error.token < file.end());
-            let token = file.range(error.token);
-            prop_assert!(token.start() <= error.range.start());
-            prop_assert!(error.range.end() <= token.end());
-            prop_assert!(source.is_char_boundary(error.range.start().to_usize()));
-            prop_assert!(source.is_char_boundary(error.range.end().to_usize()));
-        }
-
-        for index in file.indices() {
-            let has_error = file.errors().iter().any(|error| error.token == index);
-            if file.kind(index) == SyntaxKind::Error {
-                prop_assert!(has_error, "error token {:?} has no lexical error", index);
-            }
-            // The flag hir reads before parsing a literal states exactly what
-            // the errors state.
-            if file.kind(index) == SyntaxKind::IntLiteral {
-                prop_assert_eq!(
-                    file.flags(index).contains(TokenFlags::MALFORMED_NUMBER), has_error,
-                    "literal {:?} disagrees with its errors about being malformed", index
-                );
-            }
-            // Only a line break spans lines.
-            if file.text(&source, index).contains(['\n', '\r']) {
-                prop_assert_eq!(
-                    file.kind(index), SyntaxKind::Newline,
-                    "token {:?} crosses a line break", index
-                );
-            }
-        }
+        check::lexed(&source, &lex(&source).expect("generated sources fit in u32"));
     }
 
     #[test]

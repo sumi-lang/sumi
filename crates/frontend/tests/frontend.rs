@@ -1,7 +1,10 @@
+//! Diagnostics a snapshot cannot express: their order, their fixes, and
+//! their independence, over hand-written and generated sources.
+
 use proptest::prelude::*;
-use proptest::test_runner::FileFailurePersistence;
 use sumi_frontend::{DiagnosticCode, ParsedSource, codes, parse_source};
-use sumi_syntax::{RawIdx, SyntaxKind};
+use sumi_syntax::SyntaxKind;
+use sumi_test::check;
 
 fn parsed(source: &str) -> ParsedSource {
     parse_source(source.into()).expect("test sources fit in u32")
@@ -21,66 +24,12 @@ fn apply_fix(source: &str, diagnostic: &sumi_frontend::Diagnostic) -> String {
     sumi_text::apply(source, [&fix.edit])
 }
 
-// A closer repair must add exactly its named code token, not alter literal
-// text or comments. Same-kind nested repairs may still be offered inside-out;
-// neither a same-site reoffer nor a global error count is a repair oracle.
-fn check_closer_fixes(front: &ParsedSource) {
-    let preserved = |front: &ParsedSource| {
-        front
-            .lexed()
-            .indices()
-            .filter(|&raw| {
-                !front.lexed().kind(raw).is_trivia()
-                    || front.lexed().kind(raw) == SyntaxKind::LineComment
-            })
-            .map(|raw| {
-                (
-                    front.lexed().kind(raw),
-                    front.lexed().text(front.source(), raw).to_owned(),
-                )
-            })
-            .collect::<Vec<_>>()
-    };
-    for diagnostic in front.diagnostics() {
-        if diagnostic.code != codes::EXPECTED_TOKEN || diagnostic.fix.is_none() {
-            continue;
-        }
-        let edit = &diagnostic.fix.as_ref().unwrap().edit;
-        assert_eq!(edit.range().start(), edit.range().end());
-        let kind = match edit.replacement() {
-            ")" => SyntaxKind::RParen,
-            "}" => SyntaxKind::RBrace,
-            other => panic!("unexpected closer {other:?}"),
-        };
-        let after = parsed(&apply_fix(front.source(), diagnostic));
-        let raw = after
-            .lexed()
-            .token_at(edit.range().start())
-            .expect("inserted token");
-        assert_eq!(after.lexed().range(raw).start(), edit.range().start());
-        assert_eq!(after.lexed().kind(raw), kind, "{:?}", front.source());
-        assert_eq!(after.lexed().text(after.source(), raw), edit.replacement());
-        let rank = after
-            .lexed()
-            .indices()
-            .take_while(|&token| token < raw)
-            .filter(|&token| {
-                !after.lexed().kind(token).is_trivia()
-                    || after.lexed().kind(token) == SyntaxKind::LineComment
-            })
-            .count();
-        let mut tokens = preserved(&after);
-        tokens.remove(rank);
-        assert_eq!(tokens, preserved(front), "{:?}", front.source());
-    }
-}
-
 #[test]
 fn nested_closer_repairs_remain_available_inside_out() {
     let mut source = "fn f() = ((x".to_owned();
     for _ in 0..2 {
         let front = parsed(&source);
-        check_closer_fixes(&front);
+        check::diagnostics(&front);
         let fixes: Vec<_> = front
             .diagnostics()
             .iter()
@@ -90,32 +39,6 @@ fn nested_closer_repairs_remain_available_inside_out() {
         source = apply_fix(&source, fixes[0]);
     }
     assert!(parsed(&source).diagnostics().is_empty());
-}
-
-#[test]
-fn parsed_source_owns_every_syntactic_product() {
-    let source = String::from("fn f() {}\n").into_boxed_str();
-    let front = parse_source(source).expect("test source fits in u32");
-
-    assert_eq!(front.source(), "fn f() {}\n");
-    assert_eq!(front.lexed().source_len().to_usize(), front.source().len());
-    let tree = front.parse().tree();
-    assert_eq!(tree.first_token(tree.root()), RawIdx::new(0));
-    assert_eq!(tree.end_token(tree.root()), front.lexed().end());
-    assert!(front.diagnostics().is_empty());
-
-    assert!(parsed("").diagnostics().is_empty());
-}
-
-#[test]
-fn frontend_diagnostic_identity_is_syntactic_not_phase_specific() {
-    for code in [
-        codes::UNKNOWN_CHARACTER,
-        codes::NONCANONICAL_NUMBER,
-        codes::EXPECTED_TOKEN,
-    ] {
-        assert_eq!(code.group, codes::SYNTAX);
-    }
 }
 
 #[test]
@@ -194,59 +117,13 @@ fn source() -> impl Strategy<Value = String> {
         .prop_map(|pieces| pieces.concat())
 }
 
-/// Records every failing seed in the crate's tracked `proptest-regressions/`
-/// file, which each later run replays before generating anything new, so a
-/// failure found once stays found. Proptest's default location is found by
-/// walking up from the test file to a `lib.rs`, which a test under `tests/`
-/// never reaches; this path is fixed at compile time instead.
-fn config() -> ProptestConfig {
-    ProptestConfig {
-        failure_persistence: Some(Box::new(FileFailurePersistence::Direct(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/proptest-regressions/frontend.txt"
-        )))),
-        ..ProptestConfig::default()
-    }
-}
-
 proptest! {
-    #![proptest_config(config())]
+    #![proptest_config(sumi_test::regressions(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/proptest-regressions/frontend.txt"
+    )))]
     #[test]
-    fn closer_fixes_preserve_existing_tokens(source in source()) {
-        check_closer_fixes(&parsed(&source));
-    }
-
-    #[test]
-    fn every_canonical_location_is_valid(source in source()) {
-        let front = parse_source(source.into_boxed_str()).expect("generated sources fit in u32");
-        let source = front.source();
-        let mut previous = None;
-        for diagnostic in front.diagnostics() {
-            let key = (
-                diagnostic.primary.start().to_u32(),
-                diagnostic.primary.end().to_u32(),
-            );
-            if let Some(previous) = previous {
-                prop_assert!(previous <= key, "diagnostics are not source sorted");
-            }
-            previous = Some(key);
-
-            let labels = diagnostic.labels.iter().map(|label| label.range);
-            for range in std::iter::once(diagnostic.primary).chain(labels) {
-                let start = range.start().to_usize();
-                let end = range.end().to_usize();
-                prop_assert!(end <= source.len());
-                prop_assert!(source.is_char_boundary(start));
-                prop_assert!(source.is_char_boundary(end));
-            }
-            if let Some(fix) = &diagnostic.fix {
-                let range = fix.edit.range();
-                let start = range.start().to_usize();
-                let end = range.end().to_usize();
-                prop_assert!(start <= end && end <= source.len());
-                prop_assert!(source.is_char_boundary(start));
-                prop_assert!(source.is_char_boundary(end));
-            }
-        }
+    fn every_diagnostic_is_canonical_and_its_fix_safe(source in source()) {
+        check::diagnostics(&parsed(&source));
     }
 }

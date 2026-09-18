@@ -80,9 +80,3 @@ impl Front {
         nodes
     }
 }
-
-/// The start byte of raw token `token`, or the end of the source one past
-/// the last token.
-pub fn start_byte(lexed: &LexedFile, token: RawIdx) -> u32 {
-    lexed.boundary(token).to_u32()
-}

@@ -7,5 +7,9 @@ publish = false
 
 [dependencies]
 proptest.workspace = true
+sumi-format = { path = "../format" }
+sumi-frontend = { path = "../frontend" }
+sumi-hir = { path = "../hir" }
 sumi-lexer = { path = "../lexer" }
 sumi-syntax = { path = "../syntax" }
+sumi-text = { path = "../text" }

@@ -10,7 +10,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use sumi_test::{Edit, INSERTS, front};
+use sumi_test::{Edit, INSERTS, check, front};
 
 fuzz_target!(|data: &[u8]| {
     let [kind, low, high, source @ ..] = data else {
@@ -35,5 +35,5 @@ fuzz_target!(|data: &[u8]| {
         2 => Edit::Swap,
         _ => Edit::Insert(INSERTS[usize::from(kind / 4) % INSERTS.len()]),
     };
-    sumi_fuzz::check_recovery(source, &original, index, edit);
+    check::recovery(source, &original, index, edit);
 });

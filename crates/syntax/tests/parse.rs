@@ -3,17 +3,15 @@
 //! evidence, and diagnostics of every case live in `tests/corpus` at the
 //! workspace root.
 
-mod common;
-
 use sumi_lexer::{LexedFile, lex};
 use sumi_syntax::{
     ParseAnchor, ParseEvidence, ParseRecoveryKind, ParseViolationKind, ParserInput, RawIdx, parse,
 };
 
+/// The text from the start of raw token `start` to the start of `end`, or
+/// to the end of the source one past the last token.
 fn raw_text<'a>(source: &'a str, lexed: &LexedFile, start: RawIdx, end: RawIdx) -> &'a str {
-    let start = common::start_byte(lexed, start) as usize;
-    let end = common::start_byte(lexed, end) as usize;
-    &source[start..end]
+    &source[lexed.boundary(start).to_usize()..lexed.boundary(end).to_usize()]
 }
 
 fn evidence_name(evidence: &ParseEvidence) -> String {
@@ -137,7 +135,7 @@ fn prior_phase_tokens_are_recorded_as_recovery() {
 fn evidence_kinds(source: &str) -> Vec<String> {
     let lexed = lex(source).expect("test sources fit in u32");
     let parse = parse(ParserInput::new(&lexed));
-    let _ = common::dump(parse.tree(), &lexed, source);
+    sumi_test::check::tree(parse.tree(), &lexed);
     parse.evidence().iter().map(evidence_name).collect()
 }
 

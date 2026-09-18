@@ -1,0 +1,963 @@
+//! The invariants of every layer, each stated once. A property test
+//! samples them over generated sources a few hundred times; a fuzz target
+//! runs them millions of times over arbitrary bytes a coverage-guided
+//! mutator steers toward code the corpus has not reached. Each check
+//! panics on the invariant it finds broken, which proptest shrinks and
+//! libFuzzer records beside the input.
+//! The checks stand in the order of the crates they hold to.
+
+use std::collections::HashSet;
+
+use sumi_format::{Formatted, rep};
+use sumi_frontend::{ParsedSource, codes, parse_source};
+use sumi_hir::{Analysis, Program};
+use sumi_lexer::{LexedFile, RawIdx, SyntaxKind, TokenFlags, lex};
+use sumi_syntax::{
+    BRACKET_PAIRS, NodeKind, Parse, ParseAnchor, ParseEvidence, ParserInput, SigIdx, SyntaxTree,
+};
+use sumi_text::TextRange;
+
+use crate::{Edit, Front, apply, changes_delimiter, front};
+
+/// `lex` partitions the source: tokens are nonempty, contiguous, on
+/// character boundaries, and reproduce it byte for byte; every lexical
+/// error sits inside its token; every `Error` token has one; only a line
+/// break spans lines; and a number is flagged malformed exactly when it
+/// has an error.
+pub fn lexed(source: &str, file: &LexedFile) {
+    assert_eq!(file.source_len().to_usize(), source.len());
+
+    let mut end = 0usize;
+    for index in file.indices() {
+        let range = file.range(index);
+        let (start, stop) = (range.start().to_usize(), range.end().to_usize());
+        assert!(start < stop, "token {index:?} is empty");
+        assert_eq!(start, end, "token {index:?} is not contiguous");
+        assert!(source.is_char_boundary(start));
+        assert!(source.is_char_boundary(stop));
+        end = stop;
+
+        let text = file.text(source, index);
+        if text.contains(['\n', '\r']) {
+            assert_eq!(
+                file.kind(index),
+                SyntaxKind::Newline,
+                "token {index:?} crosses a line break"
+            );
+        }
+        if file.kind(index) == SyntaxKind::Error {
+            assert!(
+                file.errors().iter().any(|error| error.token == index),
+                "error token {index:?} has no lexical error"
+            );
+        }
+        if file.kind(index) == SyntaxKind::IntLiteral {
+            let flagged = file.flags(index).contains(TokenFlags::MALFORMED_NUMBER);
+            let has_error = file.errors().iter().any(|error| error.token == index);
+            assert_eq!(
+                flagged, has_error,
+                "number {text:?} flagged={flagged} but has-error={has_error}"
+            );
+        }
+    }
+    assert_eq!(end, source.len(), "tokens must cover the source");
+
+    for error in file.errors() {
+        assert!(error.token < file.end());
+        let token = file.range(error.token);
+        assert!(token.start() <= error.range.start());
+        assert!(error.range.end() <= token.end());
+        assert!(source.is_char_boundary(error.range.start().to_usize()));
+        assert!(source.is_char_boundary(error.range.end().to_usize()));
+    }
+}
+
+/// The parser-facing stream keeps every significant token in order with
+/// the scan's kinds, drops only trivia, records newlines and jointness
+/// as the raw stream has them, puts boundaries only after a newline, and
+/// pairs brackets mutually, by matching kinds, and nested.
+pub fn input(lexed: &LexedFile, input: &ParserInput) {
+    assert!(input.len() <= lexed.len());
+    assert_eq!(input.get(input.end()), None);
+
+    let mut remaining_boundaries = input
+        .indices()
+        .filter(|&i| input.boundary_before(i))
+        .count();
+    assert!(!input.boundary_in(input.end()..input.end()));
+    for index in input.indices() {
+        assert!(!input.boundary_in(index..index));
+        assert_eq!(
+            input.boundary_in(index..index + 1),
+            input.boundary_before(index)
+        );
+        assert_eq!(
+            input.boundary_in(index..input.end()),
+            remaining_boundaries != 0
+        );
+        remaining_boundaries -= usize::from(input.boundary_before(index));
+    }
+
+    let mut previous: Option<RawIdx> = None;
+    let mut open: Vec<SigIdx> = Vec::new();
+    let mut layout_open: Vec<SigIdx> = Vec::new();
+    for index in input.indices() {
+        let token = input.token(index);
+        let kind = input.get(index).expect("indices below len are present");
+        assert_eq!(input.in_matched_delimiters(index), !open.is_empty());
+        let context = layout_open.last().is_some_and(|&opener| {
+            input.get(opener) != Some(SyntaxKind::LBrace) && input.partner(opener).is_some()
+        });
+        assert_eq!(input.in_expression_delimiters(index), context);
+        if sumi_syntax::is_opener(kind) {
+            layout_open.push(index);
+        } else if let Some(partner) = input.partner(index).filter(|&p| p < index) {
+            let position = layout_open.iter().rposition(|&p| p == partner).unwrap();
+            layout_open.truncate(position);
+        }
+        if let Some(previous) = previous {
+            assert!(previous < token, "token mappings must strictly increase");
+        }
+        assert_eq!(kind, lexed.kind(token), "kinds must come from the scan");
+        assert!(!kind.is_trivia(), "token {index:?} is trivia");
+
+        let skipped = previous
+            .map_or(RawIdx::new(0), |previous| previous + 1)
+            .until(token);
+        let newline = skipped
+            .clone()
+            .any(|j| lexed.kind(j) == SyntaxKind::Newline);
+        for j in skipped {
+            assert!(lexed.kind(j).is_trivia(), "token {j:?} was dropped");
+        }
+        assert_eq!(input.newline_before(index), newline);
+
+        if index + 1 < input.end() {
+            let next = input.token(index + 1);
+            let adjacent = lexed.range(token).end() == lexed.range(next).start();
+            assert_eq!(input.is_joint(index), adjacent);
+        } else {
+            assert!(!input.is_joint(index));
+        }
+
+        if input.boundary_before(index) {
+            assert!(index > SigIdx::new(0), "no boundary before the first token");
+            assert!(input.newline_before(index), "boundaries need a newline");
+        }
+
+        if let Some(partner) = input.partner(index) {
+            assert!(partner < input.end());
+            assert_eq!(
+                input.partner(partner),
+                Some(index),
+                "partners must be mutual"
+            );
+            let (opener, closer) = if index < partner {
+                (index, partner)
+            } else {
+                (partner, index)
+            };
+            assert!(
+                input
+                    .get(opener)
+                    .zip(input.get(closer))
+                    .is_some_and(|pair| BRACKET_PAIRS.contains(&pair)),
+                "tokens {opener:?} and {closer:?} are partners but not a matching pair"
+            );
+            if partner > index {
+                open.push(index);
+            } else {
+                assert_eq!(open.pop(), Some(partner), "pairs must nest");
+            }
+        }
+        previous = Some(token);
+    }
+    assert!(open.is_empty(), "every pushed opener must have been closed");
+
+    for j in previous
+        .map_or(RawIdx::new(0), |previous| previous + 1)
+        .until(lexed.end())
+    {
+        assert!(lexed.kind(j).is_trivia(), "token {j:?} was dropped");
+    }
+}
+
+/// Widening every run of horizontal space by one column changes nothing
+/// but the ranges: kinds, jointness, newline facts, and boundaries stay.
+pub fn widening(source: &str, lexed: &LexedFile, input: &ParserInput) {
+    let mut widened = String::with_capacity(source.len() + lexed.len());
+    for index in lexed.indices() {
+        widened.push_str(lexed.text(source, index));
+        if lexed.kind(index) == SyntaxKind::Whitespace {
+            widened.push(' ');
+        }
+    }
+
+    let widened_lexed = lex(&widened).expect("widened sources fit in u32");
+    assert_eq!(
+        widened_lexed.len(),
+        lexed.len(),
+        "widening changed the token count"
+    );
+    for index in lexed.indices() {
+        assert_eq!(lexed.kind(index), widened_lexed.kind(index));
+    }
+
+    let widened_input = ParserInput::new(&widened_lexed);
+    assert_eq!(input.len(), widened_input.len());
+    for index in input.indices() {
+        assert_eq!(input.token(index), widened_input.token(index));
+        assert_eq!(input.is_joint(index), widened_input.is_joint(index));
+        assert_eq!(
+            input.newline_before(index),
+            widened_input.newline_before(index)
+        );
+        assert_eq!(
+            input.boundary_before(index),
+            widened_input.boundary_before(index)
+        );
+    }
+}
+
+/// Every structural invariant of a tree: extents partition the nodes;
+/// children are ordered, disjoint, and inside their parent; every node
+/// but the root covers at least one token and starts and ends on a
+/// significant one; the root is the source file and covers the whole
+/// buffer; no item starts inside a matched pair; and the covering query
+/// agrees with the extents.
+pub fn tree(tree: &SyntaxTree, lexed: &LexedFile) {
+    let input = ParserInput::new(lexed);
+    let root = tree.root();
+    let item_starts: HashSet<_> = tree
+        .children(root)
+        .filter(|&node| tree.kind(node) == NodeKind::FnItem)
+        .map(|node| tree.first_token(node))
+        .collect();
+    for index in input
+        .indices()
+        .filter(|&i| item_starts.contains(&input.token(i)))
+    {
+        assert!(
+            !input.in_matched_delimiters(index),
+            "root item starts inside a matched pair"
+        );
+    }
+    assert_eq!(tree.kind(root), NodeKind::SourceFile);
+    assert_eq!(tree.first_token(root), RawIdx::new(0));
+    assert_eq!(tree.end_token(root), lexed.end());
+
+    if !lexed.is_empty() {
+        // Sample the file's edges and middle; the exhaustive reference is
+        // linear per query, not quadratic in arbitrarily large inputs.
+        for index in [0, lexed.len() / 2, lexed.len() - 1] {
+            let token = RawIdx::new(index as u32);
+            let innermost = tree
+                .nodes()
+                .filter(|&node| tree.first_token(node) <= token && token < tree.end_token(node))
+                .min_by_key(|&node| tree.subtree_len(node));
+            assert_eq!(Some(tree.covering(token)), innermost);
+        }
+    }
+
+    let mut visited = 0usize;
+    let mut pending = vec![root];
+    while let Some(node) = pending.pop() {
+        visited += 1;
+        let first = tree.first_token(node);
+        let end = tree.end_token(node);
+        assert!(first <= end, "node {node:?} has a backwards token range");
+        assert!(end <= lexed.end(), "node {node:?} ends past the buffer");
+        if node != root {
+            assert!(first < end, "node {node:?} covers no token");
+            assert!(
+                !lexed.kind(first).is_trivia(),
+                "node {node:?} starts on trivia"
+            );
+            assert!(
+                !lexed.kind(end - 1).is_trivia(),
+                "node {node:?} ends on trivia"
+            );
+        }
+
+        let mut previous_end = first;
+        for child in tree.children(node) {
+            assert!(
+                tree.first_token(child) >= previous_end,
+                "children of {node:?} must be ordered and disjoint"
+            );
+            assert!(
+                tree.end_token(child) <= end,
+                "a child of {node:?} must stay inside its parent"
+            );
+            previous_end = tree.end_token(child);
+            pending.push(child);
+        }
+    }
+    assert_eq!(visited, tree.len(), "extents must partition the tree");
+}
+
+/// The parse is total over any source: its tree is well formed and
+/// lossless, attaches no significant token to the root itself, and
+/// anchors every piece of evidence in bounds, present syntax and skipped
+/// ranges nonempty and missing syntax naming the exact trivia interval
+/// between two significant tokens.
+pub fn parse(source: &str, lexed: &LexedFile, parse: &Parse) {
+    let (input, tree) = (parse.input(), parse.tree());
+    self::tree(tree, lexed);
+    assert_eq!(
+        tree.reprint(lexed, source),
+        source,
+        "the tree is not lossless"
+    );
+
+    let mut children = tree.children(tree.root()).peekable();
+    for index in input.indices() {
+        let token = input.token(index);
+        while children
+            .peek()
+            .is_some_and(|&child| tree.end_token(child) <= token)
+        {
+            children.next();
+        }
+        assert!(
+            children
+                .peek()
+                .is_some_and(|&child| tree.first_token(child) <= token),
+            "token {token:?} is attached to the root"
+        );
+    }
+
+    let raw_len = lexed.end();
+    for evidence in parse.evidence() {
+        let anchor = match evidence {
+            ParseEvidence::Recovery(recovery) => {
+                let mut previous_end = None;
+                for skipped in &recovery.skipped {
+                    assert!(skipped.start() < skipped.end());
+                    assert!(skipped.end() <= raw_len);
+                    if let Some(previous_end) = previous_end {
+                        assert!(previous_end <= skipped.start());
+                    }
+                    previous_end = Some(skipped.end());
+                }
+                recovery.anchor
+            }
+            ParseEvidence::Violation(violation) => ParseAnchor::Tokens(violation.range),
+        };
+        match anchor {
+            ParseAnchor::Tokens(range) => {
+                assert!(range.start() < range.end());
+                assert!(range.end() <= raw_len);
+            }
+            ParseAnchor::Gap(gap) => {
+                assert!(gap.trivia_start() <= gap.trivia_end());
+                assert!(gap.trivia_end() <= raw_len);
+                if let Some(before) = gap.trivia_start().checked_sub(1) {
+                    assert!(!lexed.kind(before).is_trivia());
+                }
+                for token in gap.trivia_start().until(gap.trivia_end()) {
+                    assert!(lexed.kind(token).is_trivia());
+                }
+                if gap.trivia_end() < raw_len {
+                    assert!(!lexed.kind(gap.trivia_end()).is_trivia());
+                }
+            }
+        }
+    }
+}
+
+/// Recovery after one edit to a well-formed program stays local: a
+/// non-delimiter edit disturbs only the items and statements it lands in,
+/// and a delimiter edit, which can legitimately reparent nearby syntax,
+/// preserves every item it does not touch.
+pub fn recovery(source: &str, original: &Front, index: usize, edit: Edit) {
+    let sig = |index: usize| SigIdx::new(u32::try_from(index).expect("positions fit in u32"));
+    let (edited, touched, moved, impact) = apply(source, &original.spans(), index, edit);
+    let touched: Vec<RawIdx> = touched
+        .iter()
+        .map(|&index| original.parse.input().token(sig(index)))
+        .collect();
+    let after = front(&edited);
+    tree(after.parse.tree(), &after.lexed);
+
+    if changes_delimiter(original.parse.input(), index, edit) {
+        let tree = after.parse.tree();
+        let survivors: HashSet<_> = tree
+            .children(tree.root())
+            .filter(|&node| tree.kind(node) == NodeKind::FnItem)
+            .map(|node| (after.node_span(node), after.shape(&edited, node)))
+            .collect();
+        let tree = original.parse.tree();
+        for item in tree.children(tree.root()).filter(|&node| {
+            tree.kind(node) == NodeKind::FnItem
+                && !touched
+                    .iter()
+                    .any(|&token| tree.first_token(node) <= token && token < tree.end_token(node))
+        }) {
+            let shape = original.shape(source, item);
+            let span = impact.map(original.node_span(item));
+            assert!(
+                survivors.contains(&(span, shape.clone())),
+                "{edit:?} at token {index} ({:?}) disturbs the item {:?}\n--- original ---\n{source}\n--- edited ---\n{edited}\nevidence: {:?}",
+                original.parse.input().get(sig(index)),
+                shape.0,
+                after.parse.evidence()
+            );
+        }
+    } else {
+        let moved: Vec<RawIdx> = moved
+            .iter()
+            .map(|&index| original.parse.input().token(sig(index)))
+            .collect();
+        let survivors: HashSet<_> = after
+            .parse
+            .tree()
+            .nodes()
+            .map(|node| (after.node_span(node), after.shape(&edited, node)))
+            .collect();
+        for node in original.guarded(&touched, &moved) {
+            let shape = original.shape(source, node);
+            let span = impact.map(original.node_span(node));
+            assert!(
+                survivors.contains(&(span, shape.clone())),
+                "{edit:?} at token {index} ({:?}) disturbs the {:?} {:?}\n--- original ---\n{source}\n--- edited ---\n{edited}\nevidence: {:?}",
+                original.parse.input().get(sig(index)),
+                original.parse.tree().kind(node),
+                shape.0,
+                after.parse.evidence()
+            );
+        }
+    }
+}
+
+/// The formatter's contract: the rep is kept, the edits are the text, a
+/// second pass changes nothing, and no defect.
+pub fn format(source: &str) -> Formatted {
+    let before = front(source);
+    let formatted = sumi_format::format(source, &before.lexed, &before.parse)
+        .unwrap_or_else(|defect| panic!("format defect on {source:?}: {}", defect.rejected));
+    assert_eq!(
+        sumi_text::apply(source, &formatted.edits),
+        formatted.text,
+        "the edits are not the text: {source:?}"
+    );
+    let after = front(&formatted.text);
+    assert_eq!(
+        rep(&formatted.text, &after.lexed, &after.parse),
+        rep(source, &before.lexed, &before.parse),
+        "format changed the rep: {source:?} -> {:?}",
+        formatted.text
+    );
+    let again =
+        sumi_format::format(&formatted.text, &after.lexed, &after.parse).unwrap_or_else(|defect| {
+            panic!("format defect on {:?}: {}", formatted.text, defect.rejected)
+        });
+    assert_eq!(
+        again.text, formatted.text,
+        "format is not idempotent on {source:?}"
+    );
+    formatted
+}
+
+/// The primary range of `diagnostic` and every label's.
+fn ranges(diagnostic: &sumi_frontend::Diagnostic) -> impl Iterator<Item = TextRange> + '_ {
+    std::iter::once(diagnostic.primary).chain(diagnostic.labels.iter().map(|label| label.range))
+}
+
+/// Every canonical diagnostic is in source order, with in-bounds labels on
+/// character boundaries and a fix whose edit is too; a closer repair adds
+/// exactly its named token, keeping every other significant token and
+/// comment in order; and applying every non-overlapping fix leaves a
+/// source the frontend still parses.
+pub fn diagnostics(parsed: &ParsedSource) {
+    let source = parsed.source();
+    let mut previous = None;
+    let mut edits = Vec::new();
+    for diagnostic in parsed.diagnostics() {
+        let key = (
+            diagnostic.primary.start().to_u32(),
+            diagnostic.primary.end().to_u32(),
+        );
+        if let Some(previous) = previous {
+            assert!(previous <= key, "diagnostics are not source sorted");
+        }
+        previous = Some(key);
+
+        for range in ranges(diagnostic) {
+            let start = range.start().to_usize();
+            let end = range.end().to_usize();
+            assert!(end <= source.len());
+            assert!(source.is_char_boundary(start));
+            assert!(source.is_char_boundary(end));
+        }
+        if let Some(fix) = &diagnostic.fix {
+            let edit = &fix.edit;
+            // Nested same-kind repairs are offered inside out and expose
+            // later errors, so neither a same-site reoffer nor a global
+            // error count is a repair oracle; the token lists are.
+            if diagnostic.code == codes::EXPECTED_TOKEN {
+                assert_eq!(edit.range().start(), edit.range().end());
+                let kind = match edit.replacement() {
+                    ")" => SyntaxKind::RParen,
+                    "}" => SyntaxKind::RBrace,
+                    other => panic!("unexpected closer {other:?}"),
+                };
+                let mut fixed = source.to_owned();
+                fixed.insert_str(edit.range().start().to_usize(), edit.replacement());
+                let after = lex(&fixed).expect("fixed sources fit in u32");
+                let raw = after
+                    .token_at(edit.range().start())
+                    .expect("inserted token");
+                assert_eq!(after.range(raw).start(), edit.range().start());
+                assert_eq!(after.kind(raw), kind);
+                assert_eq!(after.text(&fixed, raw), edit.replacement());
+                let rank = after
+                    .indices()
+                    .take_while(|&token| token < raw)
+                    .filter(|&token| kept(after.kind(token)))
+                    .count();
+                let mut tokens = preserved(&after, &fixed);
+                tokens.remove(rank);
+                assert_eq!(tokens, preserved(parsed.lexed(), source), "{source:?}");
+            }
+            let range = edit.range();
+            let start = range.start().to_usize();
+            let end = range.end().to_usize();
+            assert!(start <= end && end <= source.len());
+            assert!(source.is_char_boundary(start));
+            assert!(source.is_char_boundary(end));
+            edits.push(edit);
+        }
+    }
+
+    // Apply every fix as the corpus runner does, dropping the later of two
+    // that overlap, and parse what is left.
+    edits.sort_by_key(|edit| (edit.range().start(), edit.range().end()));
+    let mut applied_end = None;
+    let mut applied = Vec::new();
+    for edit in edits {
+        if applied_end.is_some_and(|end| end > edit.range().start()) {
+            continue;
+        }
+        applied_end = Some(edit.range().end());
+        applied.push(edit);
+    }
+    let fixed = sumi_text::apply(source, applied);
+    let reparsed = parse_source(fixed.into()).expect("fixed sources fit in u32");
+    tree(reparsed.parse().tree(), reparsed.lexed());
+}
+
+/// What a repair must keep: the significant tokens and the comments.
+fn kept(kind: SyntaxKind) -> bool {
+    !kind.is_trivia() || kind == SyntaxKind::LineComment
+}
+
+/// The kept tokens in order, kinds and texts.
+fn preserved(lexed: &LexedFile, source: &str) -> Vec<(SyntaxKind, String)> {
+    lexed
+        .indices()
+        .filter(|&index| kept(lexed.kind(index)))
+        .map(|index| (lexed.kind(index), lexed.text(source, index).to_owned()))
+        .collect()
+}
+
+/// The analysis of any source: it is accepted exactly when it has no
+/// diagnostic; it lists the frontend's diagnostics among its own, in
+/// source order, the frontend's first where both stand at one position;
+/// every range is on character boundaries; the graph holds its shape; and
+/// declaration order chooses no public type and makes no incomplete body
+/// complete.
+pub fn semantics(analysis: &Analysis) {
+    use sumi_hir::FunctionId;
+    let source = analysis.parsed().source();
+    if analysis.parsed().diagnostics().is_empty() {
+        use sumi_syntax::ast::{AstNode, SourceFile};
+        let tree = analysis.parsed().parse().tree();
+        let mut declarations: Vec<_> = SourceFile::cast(tree, tree.root())
+            .unwrap()
+            .items(tree)
+            .map(|item| {
+                tree.byte_range(item.node(), analysis.parsed().lexed())
+                    .text(source)
+            })
+            .collect();
+        declarations.reverse();
+        let reversed = sumi_hir::analyze(parse_source(declarations.join("\n").into()).unwrap());
+        assert!(reversed.parsed().diagnostics().is_empty());
+        assert_eq!(analysis.functions().len(), reversed.functions().len());
+        let count = analysis.functions().len();
+        for (index, (a, b)) in analysis
+            .functions()
+            .iter()
+            .zip(reversed.functions().iter().rev())
+            .enumerate()
+        {
+            assert_eq!(
+                a.name().map(|name| analysis.text(name)),
+                b.name().map(|name| reversed.text(name))
+            );
+            assert_eq!(a.signature(), b.signature());
+            assert_eq!(
+                analysis.ranges(FunctionId::new(index)),
+                reversed.ranges(FunctionId::new(count - 1 - index))
+            );
+            assert_eq!(a.complete(), b.complete());
+        }
+        graph(&reversed);
+    }
+    assert_eq!(analysis.is_valid(), analysis.diagnostics().is_empty());
+    // The frontend's diagnostics are among the analysis's, in source order,
+    // the frontend's first where both stand at one position.
+    let all = analysis.diagnostics();
+    let syntactic: Vec<_> = all
+        .iter()
+        .filter(|d| !sumi_hir::Analysis::is_semantic(d))
+        .collect();
+    assert_eq!(syntactic.len(), analysis.parsed().diagnostics().len());
+    assert!(
+        syntactic
+            .iter()
+            .zip(analysis.parsed().diagnostics())
+            .all(|(listed, own)| *listed == own)
+    );
+    assert!(all.is_sorted_by_key(|d| d.primary.start()));
+    for pair in all.windows(2) {
+        if pair[0].primary.start() == pair[1].primary.start() {
+            assert!(
+                !sumi_hir::Analysis::is_semantic(&pair[0])
+                    || sumi_hir::Analysis::is_semantic(&pair[1])
+            );
+        }
+    }
+    for diagnostic in analysis.diagnostics() {
+        for range in ranges(diagnostic) {
+            assert!(source.is_char_boundary(range.start().to_usize()));
+            assert!(source.is_char_boundary(range.end().to_usize()));
+        }
+    }
+    graph(analysis);
+}
+
+/// The typed shape of every complete function, of a rejected file too:
+/// each value has a type, no hole stands in it, a statement reads unit,
+/// and each operator's type agrees with its inputs', a call's with its
+/// callee's signature, a join's with its arms', and a copy's or a
+/// narrowed read's with what it reads.
+fn typed(analysis: &Analysis) {
+    use sumi_hir::{BinaryOp, FunctionId, NodeId, Op, Ty};
+    let graph = analysis.graph();
+    for (index, function) in analysis.functions().iter().enumerate() {
+        if !function.complete() {
+            continue;
+        }
+        let signature = function
+            .signature()
+            .expect("a complete function has a signature");
+        let run = graph.run(FunctionId::new(index));
+        let ty = |node: NodeId| analysis.ty(node);
+        for node in run.nodes() {
+            let entry = graph.node(node);
+            let own = ty(node);
+            let inputs = graph.inputs(node);
+            match &entry.op {
+                Op::Entry | Op::Then | Op::Else => continue,
+                Op::Hole => panic!("a hole in a complete function"),
+                Op::Int(_) => assert_eq!(own, Some(Ty::Int)),
+                Op::Bool(_) => assert_eq!(own, Some(Ty::Bool)),
+                Op::Unit => assert_eq!(own, Some(Ty::Unit)),
+                Op::Unused => {
+                    assert_eq!(ty(inputs[0]), Some(Ty::Unit));
+                    assert_eq!(own, None);
+                    continue;
+                }
+                Op::Param(position) => {
+                    assert_eq!(own, Some(signature.params[*position as usize]));
+                }
+                Op::Neg => {
+                    assert_eq!(ty(inputs[0]), Some(Ty::Int));
+                    assert_eq!(own, Some(Ty::Int));
+                }
+                Op::Not => {
+                    assert_eq!(ty(inputs[0]), Some(Ty::Bool));
+                    assert_eq!(own, Some(Ty::Bool));
+                }
+                Op::Binary(op) => {
+                    assert_eq!(own, Some(op.result()));
+                    match op {
+                        BinaryOp::Eq | BinaryOp::Ne => {
+                            assert!(matches!(ty(inputs[0]), Some(Ty::Int | Ty::Bool)));
+                            assert_eq!(ty(inputs[0]), ty(inputs[1]));
+                        }
+                        _ => {
+                            assert_eq!(ty(inputs[0]), Some(Ty::Int));
+                            assert_eq!(ty(inputs[1]), Some(Ty::Int));
+                        }
+                    }
+                }
+                Op::And { rhs } | Op::Or { rhs } => {
+                    assert_eq!(own, Some(Ty::Bool));
+                    assert_eq!(ty(inputs[0]), Some(Ty::Bool));
+                    assert_eq!(ty(graph.region(*rhs).result()), Some(Ty::Bool));
+                }
+                Op::Copy { declared } => {
+                    assert_eq!(own, ty(inputs[0]));
+                    if let Some((declared, _)) = declared {
+                        assert_eq!(own, Some(*declared));
+                    }
+                }
+                Op::Refine { .. } | Op::Exactly(_) => assert_eq!(own, ty(inputs[0])),
+                Op::Join { then, else_ } => {
+                    assert_eq!(ty(inputs[0]), Some(Ty::Bool));
+                    assert_eq!(ty(graph.region(*then).result()), own);
+                    match else_ {
+                        Some(else_) => assert_eq!(ty(graph.region(*else_).result()), own),
+                        None => assert_eq!(own, Some(Ty::Unit)),
+                    }
+                }
+                Op::Call(callee) => {
+                    let callee = analysis
+                        .function(*callee)
+                        .signature()
+                        .expect("a called function has a signature");
+                    assert_eq!(own, Some(callee.result));
+                    assert_eq!(inputs.len(), callee.params.len());
+                    for (&input, &param) in inputs.iter().zip(&callee.params) {
+                        assert_eq!(ty(input), Some(param));
+                    }
+                }
+            }
+            assert!(own.is_some());
+        }
+        assert_eq!(ty(run.result()), Some(signature.result));
+    }
+}
+
+/// The graph's shape: inputs precede their readers; a function's run is
+/// its entry, a node per parameter, its body region, and a copy for a
+/// declared result; regions nest inside their function's run and each
+/// other; every op reads what its kind takes; an accepted file has a type
+/// on every value and no hole; and every complete function is typed.
+fn graph(analysis: &Analysis) {
+    use sumi_hir::Op;
+    let graph = analysis.graph();
+    for id in graph.node_ids() {
+        let node = graph.node(id);
+        let inputs = graph.inputs(id);
+        for input in inputs {
+            assert!(input.index() < id.index());
+        }
+        let arity = match node.op {
+            Op::Int(_) | Op::Bool(_) | Op::Param(_) | Op::Entry => Some(0),
+            Op::Unit | Op::Unused | Op::Copy { .. } | Op::Neg | Op::Not | Op::Exactly(_) => Some(1),
+            Op::And { .. } | Op::Or { .. } | Op::Join { .. } => Some(1),
+            Op::Binary(_) | Op::Refine { .. } | Op::Then | Op::Else => Some(2),
+            Op::Hole | Op::Call(_) => None,
+        };
+        if let Some(arity) = arity {
+            assert_eq!(inputs.len(), arity);
+        }
+        for &input in inputs {
+            if matches!(graph.node(input).op, Op::Entry | Op::Then | Op::Else) {
+                assert!(matches!(node.op, Op::Then | Op::Else | Op::Unit));
+            }
+        }
+        if node.name.is_some() {
+            assert!(matches!(node.op, Op::Param(_) | Op::Copy { .. } | Op::Hole));
+        }
+        if analysis.is_valid() {
+            assert!(!matches!(node.op, Op::Hole));
+            if !matches!(node.op, Op::Entry | Op::Then | Op::Else | Op::Unused) {
+                assert!(analysis.ty(id).is_some());
+            }
+        }
+    }
+    typed(analysis);
+    let mut owner = vec![None; graph.nodes().len()];
+    assert_eq!(graph.runs().len(), analysis.functions().len());
+    for (index, function) in graph.runs().iter().enumerate() {
+        let mut run = function.nodes();
+        assert_eq!(run.next(), Some(function.entry()));
+        assert!(matches!(graph.node(function.entry()).op, Op::Entry));
+        for (position, param) in function.params().enumerate() {
+            assert_eq!(run.next(), Some(param));
+            assert!(matches!(graph.node(param).op, Op::Param(i) if i as usize == position));
+        }
+        let region = graph.region(function.region());
+        assert_eq!(region.context, function.entry());
+        for node in region.nodes() {
+            assert_eq!(run.next(), Some(node));
+        }
+        match run.next() {
+            None => assert_eq!(function.result(), region.result()),
+            Some(copy) => {
+                assert_eq!(copy, function.result());
+                assert!(matches!(graph.node(copy).op, Op::Copy { .. }));
+                assert_eq!(graph.inputs(copy), [region.result()]);
+                assert_eq!(run.next(), None);
+            }
+        }
+        for node in function.nodes() {
+            owner[node.index()] = Some(index);
+        }
+    }
+    let mut spans: Vec<(usize, usize)> = Vec::new();
+    for id in graph.region_ids() {
+        let region = graph.region(id);
+        let result = region.result().index();
+        assert!(!matches!(
+            graph.node(region.result()).op,
+            Op::Entry | Op::Then | Op::Else | Op::Unused
+        ));
+        assert_eq!(owner[region.context.index()], owner[result]);
+        assert!(owner[result].is_some());
+        let Some(first) = region.nodes().next() else {
+            continue;
+        };
+        let (start, end) = (first.index(), first.index() + region.nodes().len());
+        assert!(region.context.index() < start);
+        assert!(result < end);
+        for &(s, e) in &spans {
+            let disjoint = end <= s || e <= start;
+            let nested = (s <= start && end <= e) || (start <= s && e <= end);
+            assert!(disjoint || nested);
+        }
+        spans.push((start, end));
+    }
+}
+
+/// What running an accepted program's functions came to.
+#[derive(Default)]
+pub struct Runs {
+    /// Runs that ended and were checked.
+    pub finished: usize,
+    /// Runs given up on: past the step budget, or holding an integer too
+    /// wide to keep multiplying. Every step before that was checked.
+    pub abandoned: usize,
+}
+
+/// The analysis held to the machine: every live function of an accepted
+/// file, run at a few points inside the parameter sets the analysis
+/// proved, stays within its claims. The value lies in the result set and
+/// has the signature's type, and the machine refused nothing, since a
+/// zero divisor or a frame past the depth bound would be a refusal.
+pub fn run(program: Program<'_>) -> Runs {
+    use sumi_hir::{Bools, Int, Ints, Ty, Value};
+
+    /// A run past this many values computed is abandoned: a deep recursion
+    /// on a wide hull can cost more than the check is worth.
+    const STEPS: u64 = 1 << 17;
+    /// A run holding an integer past this many decimal digits is abandoned:
+    /// a value squared along a recursion doubles its width every frame, and
+    /// one multiplication of such values can outlast any step budget.
+    const DIGITS: usize = 300;
+    /// The product of a few points per parameter is enough; past this many
+    /// tuples the rest are left.
+    const TUPLES: usize = 32;
+
+    fn contains(ints: &Ints, value: &Int) -> bool {
+        !ints.is_empty()
+            && ints.lo().is_none_or(|lo| lo <= *value)
+            && ints.hi().is_none_or(|hi| *value <= hi)
+            && (*value != Int::from(0) || ints.contains_zero())
+    }
+    fn admits(bools: Bools, value: bool) -> bool {
+        if value {
+            bools.may_true()
+        } else {
+            bools.may_false()
+        }
+    }
+    fn points(ints: &Ints) -> Vec<Int> {
+        if ints.is_empty() {
+            return Vec::new();
+        }
+        let far = Int::from(8);
+        let (lo, hi) = match (ints.lo(), ints.hi()) {
+            (Some(lo), Some(hi)) => (lo, hi),
+            (Some(lo), None) => (lo.clone(), &lo + &far),
+            (None, Some(hi)) => (&hi - &far, hi),
+            (None, None) => (-&far, far),
+        };
+        let one = Int::from(1);
+        let mut points = vec![
+            lo.clone(),
+            hi.clone(),
+            &lo + &one,
+            &hi - &one,
+            Int::from(-1),
+            Int::from(0),
+            one,
+        ];
+        points.retain(|point| contains(ints, point));
+        points.sort();
+        points.dedup();
+        points
+    }
+
+    let wide: Int = format!("1{}", "0".repeat(DIGITS)).parse().unwrap();
+    let too_wide = |value: &Value| matches!(value, Value::Int(v) if *v > wide || *v < -&wide);
+    let mut runs = Runs::default();
+    for (id, _) in program.functions() {
+        let signature = program.signature(id);
+        let ranges = program.ranges(id);
+        if !ranges.params.iter().all(|may| may.live()) {
+            continue;
+        }
+        let mut tuples: Vec<Vec<Value>> = vec![Vec::new()];
+        for (may, &ty) in ranges.params.iter().zip(&signature.params) {
+            let values: Vec<Value> = match ty {
+                Ty::Int => points(&may.ints).into_iter().map(Value::Int).collect(),
+                Ty::Bool => [true, false]
+                    .into_iter()
+                    .filter(|&b| admits(may.bools, b))
+                    .map(Value::Bool)
+                    .collect(),
+                Ty::Unit => vec![Value::Unit],
+            };
+            assert!(!values.is_empty(), "a live parameter has values");
+            tuples = tuples
+                .iter()
+                .flat_map(|tuple| {
+                    values.iter().map(|value| {
+                        let mut tuple = tuple.clone();
+                        tuple.push(value.clone());
+                        tuple
+                    })
+                })
+                .take(TUPLES)
+                .collect();
+        }
+        for args in tuples {
+            let mut machine = program.machine(id, &args);
+            let finished = loop {
+                if machine.step() {
+                    break true;
+                }
+                if machine.steps() >= STEPS || machine.latest().is_some_and(too_wide) {
+                    break false;
+                }
+            };
+            if !finished {
+                runs.abandoned += 1;
+                continue;
+            }
+            runs.finished += 1;
+            let value = match machine.outcome().expect("a finished run has its outcome") {
+                Ok(value) => value.clone(),
+                Err(refusal) => panic!("f{} was refused: {refusal:?}", id.index()),
+            };
+            assert_eq!(value.ty(), signature.result);
+            let within = match &value {
+                Value::Int(value) => contains(&ranges.result.ints, value),
+                Value::Bool(value) => admits(ranges.result.bools, *value),
+                Value::Unit => ranges.result.unit,
+            };
+            assert!(
+                within,
+                "f{}({args:?}) = {value} outside its result set",
+                id.index()
+            );
+        }
+    }
+    runs
+}

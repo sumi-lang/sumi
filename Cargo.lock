@@ -684,13 +684,11 @@ name = "sumi-fuzz"
 version = "0.0.0"
 dependencies = [
  "libfuzzer-sys",
- "sumi-format",
  "sumi-frontend",
  "sumi-hir",
  "sumi-lexer",
  "sumi-syntax",
  "sumi-test",
- "sumi-text",
 ]
 
 [[package]]
@@ -712,6 +710,7 @@ dependencies = [
  "sumi-graph",
  "sumi-lexer",
  "sumi-syntax",
+ "sumi-test",
  "sumi-text",
  "tempfile",
 ]
@@ -721,6 +720,7 @@ name = "sumi-lexer"
 version = "0.1.0"
 dependencies = [
  "proptest",
+ "sumi-test",
  "sumi-text",
 ]
 
@@ -749,8 +749,12 @@ name = "sumi-test"
 version = "0.0.0"
 dependencies = [
  "proptest",
+ "sumi-format",
+ "sumi-frontend",
+ "sumi-hir",
  "sumi-lexer",
  "sumi-syntax",
+ "sumi-text",
 ]
 
 [[package]]

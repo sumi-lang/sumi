@@ -5,13 +5,14 @@
 //! parameter sets the analysis proved, and the run is checked against the
 //! claims: the value lies in the result set, the call depth stays within
 //! the bound, and no divisor is zero, which the machine refuses. A rejected
-//! program only has to leave the checker standing. The fuzz `run` target
-//! restates the checks over arbitrary text; the two must agree.
+//! program only has to leave the checker standing. The check is
+//! `sumi-test`'s, which the fuzz `run` target samples over arbitrary text.
 
 use proptest::prelude::*;
-use proptest::test_runner::FileFailurePersistence;
 use sumi_frontend::parse_source;
-use sumi_hir::{Analysis, Bools, Int, Ints, Ty, Value, analyze};
+use sumi_hir::analyze;
+use sumi_test::check;
+use sumi_test::check::Runs;
 
 /// xorshift64*: enough to draw a program from, and one word of state so a
 /// failing seed names its program.
@@ -621,172 +622,23 @@ fn program(seed: u64) -> String {
     text
 }
 
-fn contains(ints: &Ints, value: &Int) -> bool {
-    !ints.is_empty()
-        && ints.lo().is_none_or(|lo| lo <= *value)
-        && ints.hi().is_none_or(|hi| *value <= hi)
-        && (*value != Int::from(0) || ints.contains_zero())
-}
-
-fn admits(bools: Bools, value: bool) -> bool {
-    if value {
-        bools.may_true()
-    } else {
-        bools.may_false()
-    }
-}
-
-/// A few points of `ints`, both ends included when finite, and the small
-/// values near zero where a hole would be; `None` when the set is empty.
-fn points(ints: &Ints) -> Option<Vec<Int>> {
-    if ints.is_empty() {
-        return None;
-    }
-    let far = Int::from(8);
-    let (lo, hi) = match (ints.lo(), ints.hi()) {
-        (Some(lo), Some(hi)) => (lo, hi),
-        (Some(lo), None) => (lo.clone(), &lo + &far),
-        (None, Some(hi)) => (&hi - &far, hi),
-        (None, None) => (-&far, far),
-    };
-    let one = Int::from(1);
-    let mut points = vec![
-        lo.clone(),
-        hi.clone(),
-        &lo + &one,
-        &hi - &one,
-        Int::from(-1),
-        Int::from(0),
-        one,
-    ];
-    points.retain(|point| contains(ints, point));
-    points.sort();
-    points.dedup();
-    Some(points)
-}
-
-/// What running an accepted program's functions came to.
-#[derive(Default)]
-struct Runs {
-    /// Runs that ended and were checked.
-    finished: usize,
-    /// Runs given up on: past the step budget, or holding an integer too
-    /// wide to keep multiplying. Every step before that was checked.
-    abandoned: usize,
-}
-
-/// Run every live function of an accepted program at a few points inside
-/// what the analysis proved and check the claims: the value lies in the
-/// result set and has the signature's type, and the machine refused
-/// nothing, since a zero divisor or a frame past the depth bound would be
-/// a refusal. `None` for a rejected program.
+/// Run `source` inside what the analysis proved; `None` for a rejected
+/// program.
 fn check(source: &str) -> Option<Runs> {
-    /// A run past this many values computed is abandoned: a deep recursion
-    /// on a wide hull can cost more than the check is worth.
-    const STEPS: u64 = 1 << 17;
-    /// A run holding an integer past this many decimal digits is abandoned:
-    /// a value squared along a recursion doubles its width every frame, and
-    /// one multiplication of such values can outlast any step budget.
-    const DIGITS: usize = 300;
-    /// The product of a few points per parameter is enough; past this many
-    /// tuples the rest are left.
-    const TUPLES: usize = 32;
-
-    let analysis: Analysis = analyze(parse_source(source.into()).unwrap());
-    let program = analysis.program()?;
-    let wide: Int = format!("1{}", "0".repeat(DIGITS)).parse().unwrap();
-    let too_wide = |value: &Value| matches!(value, Value::Int(v) if *v > wide || *v < -&wide);
-    let mut runs = Runs::default();
-    for (id, _) in program.functions() {
-        let signature = program.signature(id);
-        let ranges = program.ranges(id);
-        if !ranges.params.iter().all(|may| may.live()) {
-            // Nothing calls it: nothing in it was checked.
-            continue;
-        }
-        let mut tuples: Vec<Vec<Value>> = vec![Vec::new()];
-        for (may, &ty) in ranges.params.iter().zip(&signature.params) {
-            let values: Vec<Value> = match ty {
-                Ty::Int => points(&may.ints)
-                    .expect("a live parameter has values")
-                    .into_iter()
-                    .map(Value::Int)
-                    .collect(),
-                Ty::Bool => [true, false]
-                    .into_iter()
-                    .filter(|&b| admits(may.bools, b))
-                    .map(Value::Bool)
-                    .collect(),
-                Ty::Unit => vec![Value::Unit],
-            };
-            tuples = tuples
-                .iter()
-                .flat_map(|tuple| {
-                    values.iter().map(|value| {
-                        let mut tuple = tuple.clone();
-                        tuple.push(value.clone());
-                        tuple
-                    })
-                })
-                .take(TUPLES)
-                .collect();
-        }
-        for args in tuples {
-            let mut machine = program.machine(id, &args);
-            let finished = loop {
-                if machine.step() {
-                    break true;
-                }
-                if machine.steps() >= STEPS || machine.latest().is_some_and(too_wide) {
-                    break false;
-                }
-            };
-            if !finished {
-                runs.abandoned += 1;
-                continue;
-            }
-            runs.finished += 1;
-            let value = match machine.outcome().expect("a finished run has its outcome") {
-                Ok(value) => value.clone(),
-                Err(refusal) => {
-                    panic!(
-                        "f{}({args:?}) was refused: {refusal:?}\n{source}",
-                        id.index()
-                    )
-                }
-            };
-            assert_eq!(value.ty(), signature.result, "in\n{source}");
-            let within = match &value {
-                Value::Int(value) => contains(&ranges.result.ints, value),
-                Value::Bool(value) => admits(ranges.result.bools, *value),
-                Value::Unit => ranges.result.unit,
-            };
-            assert!(
-                within,
-                "f{}({args:?}) = {value} outside {}\n{source}",
-                id.index(),
-                ranges.result.shown(signature.result)
-            );
-        }
-    }
-    Some(runs)
+    let analysis = analyze(parse_source(source.into()).unwrap());
+    analysis.program().map(check::run)
 }
 
-/// Records every failing seed in the crate's tracked `proptest-regressions/`
-/// file, which each later run replays before generating anything new.
-/// Proptest's default location is found by walking up from the test file
-/// to a `lib.rs`, which a test under `tests/` never reaches. Shrinking a
-/// seed draws an unrelated program, so none is attempted: a failing seed
-/// already names its program.
+/// Shrinking a seed draws an unrelated program, so none is attempted: a
+/// failing seed already names its program.
 fn config() -> ProptestConfig {
     ProptestConfig {
         cases: 256,
         max_shrink_iters: 0,
-        failure_persistence: Some(Box::new(FileFailurePersistence::Direct(concat!(
+        ..sumi_test::regressions(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/proptest-regressions/machine.txt"
-        )))),
-        ..ProptestConfig::default()
+        ))
     }
 }
 
