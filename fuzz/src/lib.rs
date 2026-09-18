@@ -38,8 +38,8 @@ pub fn check_semantics(parsed: ParsedSource) {
             .unwrap()
             .items(tree)
             .map(|item| {
-                let range = tree.byte_range(item.node(), analysis.parsed().lexed());
-                &source[range.start().to_usize()..range.end().to_usize()]
+                tree.byte_range(item.node(), analysis.parsed().lexed())
+                    .text(source)
             })
             .collect();
         declarations.reverse();
@@ -816,7 +816,6 @@ pub fn check_diagnostics(parsed: &ParsedSource) {
     // Apply every fix as the corpus runner does, dropping the later of two
     // that overlap, and parse what is left.
     edits.sort_by_key(|edit| (edit.range().start(), edit.range().end()));
-    let mut fixed = source.to_owned();
     let mut applied_end = None;
     let mut applied = Vec::new();
     for edit in edits {
@@ -826,13 +825,7 @@ pub fn check_diagnostics(parsed: &ParsedSource) {
         applied_end = Some(edit.range().end());
         applied.push(edit);
     }
-    for edit in applied.iter().rev() {
-        let range = edit.range();
-        fixed.replace_range(
-            range.start().to_usize()..range.end().to_usize(),
-            edit.replacement(),
-        );
-    }
+    let fixed = sumi_text::apply(source, applied);
     let reparsed = parse_source(parsed.file(), fixed.into()).expect("fixed inputs fit in u32");
     check_tree(reparsed.parse(), reparsed.lexed());
 }

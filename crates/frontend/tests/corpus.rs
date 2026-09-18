@@ -79,14 +79,7 @@ fn snapshot(source: &str, stages: &[corpus::Stage]) -> String {
                 applied.push(edit);
             }
         }
-        let mut fixed = source.to_owned();
-        for edit in applied.iter().rev() {
-            let range = edit.range();
-            fixed.replace_range(
-                range.start().to_usize()..range.end().to_usize(),
-                edit.replacement(),
-            );
-        }
+        let fixed = sumi_text::apply(source, applied);
         // A fix that leaves a diagnostic standing, or that only makes the
         // next fix possible, says so in the header.
         let reparsed =
@@ -220,7 +213,7 @@ fn render_node(
     )
     .expect("writing to a string");
     if tree.children(node).next().is_none() {
-        write!(out, " {:?}", &source[from as usize..to as usize]).expect("writing to a string");
+        write!(out, " {:?}", range.text(source)).expect("writing to a string");
     }
     out.push('\n');
 

@@ -23,13 +23,7 @@ fn diagnostic_codes(front: &ParsedSource) -> Vec<DiagnosticCode> {
 /// Apply the diagnostic's fix as a tool would, unread.
 fn apply_fix(source: &str, diagnostic: &sumi_frontend::Diagnostic) -> String {
     let fix = diagnostic.fix.as_ref().expect("diagnostic has a fix");
-    let range = fix.edit.range();
-    let mut result = source.to_owned();
-    result.replace_range(
-        range.start().to_usize()..range.end().to_usize(),
-        fix.edit.replacement(),
-    );
-    result
+    sumi_text::apply(source, [&fix.edit])
 }
 
 // A closer repair must add exactly its named code token, not alter literal

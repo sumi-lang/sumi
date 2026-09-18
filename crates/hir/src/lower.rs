@@ -168,9 +168,9 @@ impl<'s> Source<'s> {
         )
     }
     pub fn text(&self, node: NodeIdx) -> &'s str {
-        let range = self.tree.byte_range(node, self.parsed.lexed());
-        let source: &'s str = self.parsed.source();
-        &source[range.start().to_usize()..range.end().to_usize()]
+        self.tree
+            .byte_range(node, self.parsed.lexed())
+            .text(self.parsed.source())
     }
     fn name(&self, name: Option<ast::Name>) -> Option<(&'s str, NodeIdx)> {
         let node = name?.node();

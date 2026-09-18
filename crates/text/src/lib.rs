@@ -148,6 +148,11 @@ impl Span {
     pub const fn range(self) -> TextRange {
         self.range
     }
+
+    /// The text of the span in `source`, the text of its file.
+    pub fn text(self, source: &str) -> &str {
+        self.range.text(source)
+    }
 }
 
 /// One replacement of a byte range in a source snapshot.
@@ -177,9 +182,8 @@ impl TextEdit {
 /// Apply `edits` to `source`. The edits must be sorted by start and must
 /// not overlap; two may touch, and insertions at one offset keep their
 /// order.
-pub fn apply(source: &str, edits: &[TextEdit]) -> String {
-    let grown: usize = edits.iter().map(|edit| edit.replacement().len()).sum();
-    let mut out = String::with_capacity(source.len() + grown);
+pub fn apply<'a>(source: &str, edits: impl IntoIterator<Item = &'a TextEdit>) -> String {
+    let mut out = String::with_capacity(source.len());
     let mut cursor = 0;
     for edit in edits {
         let start = edit.range().start().to_usize();

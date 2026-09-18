@@ -122,8 +122,7 @@ impl Analysis {
     /// The source text `span` covers: how a name in the HIR is read, since
     /// every name is kept as where it is written.
     pub fn text(&self, span: Span) -> &str {
-        let range = span.range();
-        &self.parsed.source()[range.start().to_usize()..range.end().to_usize()]
+        span.text(self.parsed.source())
     }
     pub fn is_valid(&self) -> bool {
         self.diagnostics.is_empty() && self.functions.iter().all(|f| f.complete)

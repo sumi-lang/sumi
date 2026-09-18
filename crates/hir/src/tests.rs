@@ -147,8 +147,8 @@ fn reversed_declarations_preserve_types(analysis: &Analysis) {
         .unwrap()
         .items(tree)
         .map(|item| {
-            let range = tree.byte_range(item.node(), analysis.parsed().lexed());
-            &analysis.parsed().source()[range.start().to_usize()..range.end().to_usize()]
+            tree.byte_range(item.node(), analysis.parsed().lexed())
+                .text(analysis.parsed().source())
         })
         .collect();
     declarations.reverse();
