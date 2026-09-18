@@ -305,7 +305,11 @@ pub(crate) fn diagnostic(
 pub(crate) struct Parameter<'s> {
     node: NodeIdx,
     name: Option<(&'s str, NodeIdx)>,
+    /// The declared type, whether or not the name is a duplicate: the
+    /// signature keeps it.
     ty: Option<Ty>,
+    /// Named like an earlier parameter, whose reads are held to nothing.
+    duplicate: bool,
 }
 
 /// The headers of every function, the names that resolve to them, and
@@ -349,14 +353,12 @@ pub(crate) fn declare<'s>(source: &mut Source<'s>, items: &[ast::FnItem]) -> Dec
         let list = item.param_list(tree);
         let mut valid = list.is_some_and(|list| !tree.has_error(list.node()));
         let mut params: Vec<Parameter> = Vec::new();
-        let mut types = Vec::new();
         if let Some(list) = list {
             for param in list.params(tree) {
                 // An item's parameter has a type or a syntax error: the
                 // parser requires the annotation.
                 let ty = param.type_ref(tree).and_then(|ty| source.ty(ty));
                 valid &= ty.is_some();
-                types.push(ty);
                 let name = source.name(param.name(tree));
                 let first = name.and_then(|(name, node)| {
                     let first = params
@@ -375,7 +377,8 @@ pub(crate) fn declare<'s>(source: &mut Source<'s>, items: &[ast::FnItem]) -> Dec
                 params.push(Parameter {
                     node: param.node(),
                     name,
-                    ty: ty.filter(|_| first.is_none()),
+                    ty,
+                    duplicate: first.is_some(),
                 });
             }
         }
@@ -405,8 +408,11 @@ pub(crate) fn declare<'s>(source: &mut Source<'s>, items: &[ast::FnItem]) -> Dec
         };
         headers.push(Header {
             name: name.map(|(_, node)| source.span(node)),
-            params: valid.then(|| types.iter().map(|ty| ty.unwrap()).collect()),
-            param_types: params.iter().map(|p| p.ty).collect(),
+            params: valid.then(|| params.iter().map(|p| p.ty.unwrap()).collect()),
+            param_types: params
+                .iter()
+                .map(|p| p.ty.filter(|_| !p.duplicate))
+                .collect(),
             result,
             item: item.node(),
         });
@@ -589,7 +595,7 @@ impl<'a, 's> Builder<'a, 's> {
             let index = u32::try_from(index).expect("parameter count fits u32");
             let name = param.name.map(|(_, node)| self.source.span(node));
             let node = self.push(param.node, Op::Param(index), &[], name);
-            self.failed |= param.ty.is_none();
+            self.failed |= param.ty.is_none() || param.duplicate;
             if let Some((name, _)) = param.name {
                 self.bind(name, node);
             } else {
