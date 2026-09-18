@@ -15,33 +15,130 @@ fn clean(source: &str) -> Analysis {
         analysis.parsed.diagnostics(),
         analysis.diagnostics
     );
-    for function in &analysis.functions {
-        invariant(&analysis, function);
-    }
+    assert!(analysis.functions.iter().all(Function::complete));
     graph_invariant(&analysis);
     analysis
 }
 
-fn codes(analysis: &Analysis) -> Vec<DiagnosticCode> {
-    analysis.diagnostics().iter().map(|d| d.code).collect()
+/// The typed shape of every complete function: each value has a type, no
+/// hole stands in it, and each operator's type agrees with its inputs',
+/// a call's with its callee's signature, a join's with its arms', and a
+/// copy's or a narrowed read's with what it reads. Holds for a complete
+/// function of a rejected file too.
+fn typed_invariant(analysis: &Analysis) {
+    let graph = analysis.graph();
+    for (index, function) in analysis.functions().iter().enumerate() {
+        if !function.complete() {
+            continue;
+        }
+        let signature = function
+            .signature()
+            .expect("a complete function has a signature");
+        let run = graph.run(FunctionId::new(index));
+        let ty = |node: NodeId| graph.node(node).ty;
+        for node in run.nodes() {
+            let entry = graph.node(node);
+            let inputs = graph.inputs(node);
+            let unary = |expected: Ty| {
+                assert_eq!(ty(inputs[0]), Some(expected), "{node:?} {:?}", entry.op);
+                assert_eq!(entry.ty, Some(expected), "{node:?} {:?}", entry.op);
+            };
+            match &entry.op {
+                Op::Entry | Op::Then | Op::Else => continue,
+                Op::Hole => panic!("{node:?}: a hole in a complete function"),
+                Op::Int(_) => assert_eq!(entry.ty, Some(Ty::Int)),
+                Op::Bool(_) => assert_eq!(entry.ty, Some(Ty::Bool)),
+                Op::Unit => assert_eq!(entry.ty, Some(Ty::Unit)),
+                Op::Param(position) => {
+                    assert_eq!(entry.ty, Some(signature.params[*position as usize]));
+                }
+                Op::Neg => unary(Ty::Int),
+                Op::Not => unary(Ty::Bool),
+                Op::Binary(op) => {
+                    let (operand, result) = match op {
+                        BinaryOp::Add
+                        | BinaryOp::Sub
+                        | BinaryOp::Mul
+                        | BinaryOp::Div
+                        | BinaryOp::Rem => (Some(Ty::Int), Ty::Int),
+                        BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge => {
+                            (Some(Ty::Int), Ty::Bool)
+                        }
+                        BinaryOp::Eq | BinaryOp::Ne => (None, Ty::Bool),
+                    };
+                    assert_eq!(entry.ty, Some(result));
+                    match operand {
+                        Some(operand) => {
+                            assert_eq!(ty(inputs[0]), Some(operand));
+                            assert_eq!(ty(inputs[1]), Some(operand));
+                        }
+                        None => {
+                            assert!(matches!(ty(inputs[0]), Some(Ty::Int | Ty::Bool)));
+                            assert_eq!(ty(inputs[0]), ty(inputs[1]));
+                        }
+                    }
+                }
+                Op::And { rhs } | Op::Or { rhs } => {
+                    assert_eq!(entry.ty, Some(Ty::Bool));
+                    assert_eq!(ty(inputs[0]), Some(Ty::Bool));
+                    assert_eq!(ty(graph.region(*rhs).result()), Some(Ty::Bool));
+                }
+                Op::Copy => assert_eq!(entry.ty, ty(inputs[0])),
+                Op::Refine { .. } | Op::Exactly(_) => assert_eq!(entry.ty, ty(inputs[0])),
+                Op::Join { then, else_ } => {
+                    assert_eq!(ty(inputs[0]), Some(Ty::Bool));
+                    assert_eq!(ty(graph.region(*then).result()), entry.ty);
+                    match else_ {
+                        Some(else_) => assert_eq!(ty(graph.region(*else_).result()), entry.ty),
+                        None => assert_eq!(entry.ty, Some(Ty::Unit)),
+                    }
+                }
+                Op::Call(callee) => {
+                    let callee = analysis
+                        .function(*callee)
+                        .signature()
+                        .expect("a called function has a signature");
+                    assert_eq!(entry.ty, Some(callee.result));
+                    assert_eq!(inputs.len(), callee.params.len());
+                    for (&input, &param) in inputs.iter().zip(&callee.params) {
+                        assert_eq!(ty(input), Some(param));
+                    }
+                }
+            }
+            assert!(entry.ty.is_some(), "{node:?} {:?}", entry.op);
+        }
+        assert_eq!(ty(run.result()), Some(signature.result));
+    }
 }
 
-#[test]
-fn body_ids_are_compact_and_zero_based() {
-    assert_eq!(size_of::<ExprId>(), 4);
-    assert_eq!(size_of::<Option<ExprId>>(), 4);
-    assert_eq!(size_of::<LocalId>(), 4);
-    assert_eq!(size_of::<Option<LocalId>>(), 4);
-    for index in [0, 1, 8192, u32::MAX as usize - 1] {
-        let id = ExprId::new(index);
-        assert_eq!(id.index(), index);
-        assert_eq!(format!("{id:?}"), format!("ExprId({index})"));
-        assert_ne!(Some(id), None);
-        let local = LocalId::new(index);
-        assert_eq!(local.index(), index);
-        assert_eq!(format!("{local:?}"), format!("LocalId({index})"));
-        assert_ne!(Some(local), None);
-    }
+/// The value a function's body computes: its region's result, before the
+/// copy a declared result holds it in.
+fn value(analysis: &Analysis, function: usize) -> NodeId {
+    let graph = analysis.graph();
+    graph
+        .region(graph.run(FunctionId::new(function)).region())
+        .result()
+}
+
+fn op(analysis: &Analysis, node: NodeId) -> &Op {
+    &analysis.graph().node(node).op
+}
+
+/// The nodes a function's body region defines, in definition order.
+fn body(analysis: &Analysis, function: usize) -> Vec<NodeId> {
+    let graph = analysis.graph();
+    graph
+        .region(graph.run(FunctionId::new(function)).region())
+        .nodes()
+        .collect()
+}
+
+fn text(analysis: &Analysis, span: Span) -> &str {
+    analysis.text(span)
+}
+
+fn codes(analysis: &Analysis) -> Vec<DiagnosticCode> {
+    analysis.diagnostics().iter().map(|d| d.code).collect()
 }
 
 fn reversed_declarations_preserve_types(analysis: &Analysis) {
@@ -76,11 +173,9 @@ fn reversed_declarations_preserve_types(analysis: &Analysis) {
             b.signature().map(|s| (&s.params, s.result))
         );
         assert_eq!(a.ranges(), b.ranges());
-        assert_eq!(a.body().is_some(), b.body().is_some());
-        if b.body().is_some() {
-            invariant(&reversed, b);
-        }
+        assert_eq!(a.complete(), b.complete());
     }
+    graph_invariant(&reversed);
 }
 
 /// The graph's shape: inputs precede their readers; a function's run is
@@ -132,6 +227,7 @@ fn graph_invariant(analysis: &Analysis) {
             }
         }
     }
+    typed_invariant(analysis);
     let mut owner = vec![None; nodes.len()];
     assert_eq!(graph.runs().len(), analysis.functions().len());
     for (index, function) in graph.runs().iter().enumerate() {
@@ -191,136 +287,30 @@ fn graph_invariant(analysis: &Analysis) {
     }
 }
 
-fn invariant(analysis: &Analysis, function: &Function) {
-    let body = function.body().unwrap();
-    let signature = function.signature().unwrap();
-    assert_eq!(body.params().len(), signature.params.len());
-    assert_eq!(body.expression(body.root()).ty, signature.result);
-    let mut parents = vec![0; body.exprs.len()];
-    let mut declarations = vec![0; body.locals.len()];
-    for (&param, &ty) in body.params().iter().zip(&signature.params) {
-        assert_eq!(body.local(param).ty, ty);
-        assert!(std::ptr::eq(
-            body.local(param),
-            &body.locals()[param.index()]
-        ));
-        declarations[param.index()] += 1;
-    }
-    for (index, expr) in body.exprs.iter().enumerate() {
-        let mut edges = Vec::new();
-        match &expr.kind {
-            ExprKind::Int(_) => assert_eq!(expr.ty, Ty::Int),
-            ExprKind::Bool(_) => assert_eq!(expr.ty, Ty::Bool),
-            ExprKind::Local(local) => assert_eq!(expr.ty, body.locals[local.index()].ty),
-            ExprKind::Neg(child) => {
-                assert_eq!(body.expression(*child).ty, Ty::Int);
-                assert_eq!(expr.ty, Ty::Int);
-                edges.push(*child);
-            }
-            ExprKind::Not(child) => {
-                assert_eq!(body.expression(*child).ty, Ty::Bool);
-                assert_eq!(expr.ty, Ty::Bool);
-                edges.push(*child);
-            }
-            ExprKind::Binary { op, lhs, rhs } => {
-                use BinaryOp::*;
-                let (operand, result) = match op {
-                    Add | Sub | Mul | Div | Rem => (Ty::Int, Ty::Int),
-                    Lt | Le | Gt | Ge => (Ty::Int, Ty::Bool),
-                    Eq | Ne => {
-                        let ty = body.expression(*lhs).ty;
-                        assert!(matches!(ty, Ty::Int | Ty::Bool));
-                        (ty, Ty::Bool)
-                    }
-                };
-                assert_eq!(body.expression(*lhs).ty, operand);
-                assert_eq!(body.expression(*rhs).ty, operand);
-                assert_eq!(expr.ty, result);
-                edges.extend([*lhs, *rhs]);
-            }
-            ExprKind::And { lhs, rhs } | ExprKind::Or { lhs, rhs } => {
-                assert_eq!(body.expression(*lhs).ty, Ty::Bool);
-                assert_eq!(body.expression(*rhs).ty, Ty::Bool);
-                assert_eq!(expr.ty, Ty::Bool);
-                edges.extend([*lhs, *rhs]);
-            }
-            ExprKind::Call { function, args, .. } => {
-                let args = body.args(*args);
-                let signature = analysis.function(*function).signature().unwrap();
-                assert_eq!(expr.ty, signature.result);
-                assert_eq!(args.len(), signature.params.len());
-                for (&arg, &ty) in args.iter().zip(&signature.params) {
-                    assert_eq!(body.expression(arg).ty, ty);
-                }
-                edges.extend_from_slice(args);
-            }
-            ExprKind::If {
-                condition,
-                then_branch,
-                else_branch,
-            } => {
-                assert_eq!(body.expression(*condition).ty, Ty::Bool);
-                assert_eq!(body.expression(*then_branch).ty, expr.ty);
-                assert_eq!(
-                    else_branch.map_or(Ty::Unit, |id| body.expression(id).ty),
-                    expr.ty
-                );
-                edges.extend([*condition, *then_branch]);
-                edges.extend(else_branch);
-            }
-            ExprKind::Block { statements, tail } => {
-                for statement in body.statements(*statements) {
-                    edges.push(match statement.kind {
-                        StatementKind::Let { local, initializer } => {
-                            assert!(std::ptr::eq(
-                                body.local(local),
-                                &body.locals()[local.index()]
-                            ));
-                            declarations[local.index()] += 1;
-                            assert_eq!(body.local(local).ty, body.expression(initializer).ty);
-                            initializer
-                        }
-                        StatementKind::Eval(id) => id,
-                    });
-                }
-                edges.extend(tail);
-                assert_eq!(tail.map_or(Ty::Unit, |id| body.expression(id).ty), expr.ty);
-            }
-        }
-        for edge in edges {
-            assert!(std::ptr::eq(
-                body.expression(edge),
-                &body.expressions()[edge.index()]
-            ));
-            assert!(edge.index() < index);
-            parents[edge.index()] += 1;
-        }
-    }
-    assert!(std::ptr::eq(
-        body.expression(body.root()),
-        &body.expressions()[body.root().index()]
-    ));
-    for (index, count) in parents.into_iter().enumerate() {
-        assert_eq!(count, usize::from(index != body.root().index()));
-    }
-    assert!(declarations.into_iter().all(|count| count == 1));
-}
-
 #[test]
 fn scalar_bodies_and_forward_recursive_calls() {
     let analysis = clean(
         "fn answer() -> int = (twice)(21)\nfn twice(x: int) -> int {\n let y = x * 2\n y\n}\nfn spin(n: int) -> unit = if n > 0 { spin(n - 1) }\n",
     );
-    let twice = analysis.functions[1].body().unwrap();
-    assert_eq!(twice.exprs.len(), 5);
-    assert_eq!(twice.locals.len(), 2);
-    assert_eq!(twice.params, [LocalId::new(0)]);
-    assert!(matches!(twice.exprs[0].kind, ExprKind::Local(id) if id.index() == 0));
-    assert!(matches!(twice.exprs[3].kind, ExprKind::Local(id) if id.index() == 1));
-    let answer = analysis.functions[0].body().unwrap();
+    let graph = analysis.graph();
+    let twice = graph.run(FunctionId::new(1));
+    let [x] = twice.params().collect::<Vec<_>>()[..] else {
+        panic!("one parameter")
+    };
+    // `let y = x * 2` then `y`: the body's value is the binding, a copy of
+    // the product of the parameter and the literal.
+    let y = value(&analysis, 1);
+    assert!(matches!(op(&analysis, y), Op::Copy));
+    assert_eq!(text(&analysis, graph.node(y).name.unwrap()), "y");
+    let product = graph.inputs(y)[0];
+    assert!(matches!(op(&analysis, product), Op::Binary(BinaryOp::Mul)));
+    assert_eq!(graph.inputs(product)[0], x);
+    let two = graph.inputs(product)[1];
+    assert!(matches!(op(&analysis, two), Op::Int(n) if *n == Int::from(2)));
+    assert_eq!(body(&analysis, 1), [two, product, y]);
     assert!(matches!(
-        answer.expression(answer.root).kind,
-        ExprKind::Call { function, .. } if function == FunctionId::new(1)
+        op(&analysis, value(&analysis, 0)),
+        Op::Call(function) if *function == FunctionId::new(1)
     ));
     clean(
         "fn start(n: int) -> bool = even(n)\nfn even(n: int) -> bool = if n == 0 { true } else { odd(n - 1) }\nfn odd(n: int) -> bool = if n == 0 { false } else { even(n - 1) }\n",
@@ -330,18 +320,32 @@ fn scalar_bodies_and_forward_recursive_calls() {
 #[test]
 fn lexical_scopes_and_sequential_shadowing() {
     let a = clean(
-        "fn shadow(x: int) -> int {\n let x = x + 1\n {\n let x = x * 2\n _ = x\n }\n x\n}\n",
+        "fn shadow(x: int) -> int {\n let x = x + 1\n {\n let x = x * 2\n _ = x - 3\n }\n x\n}\n",
     );
-    let body = a.functions[0].body().unwrap();
-    let reads: Vec<_> = body
-        .exprs
-        .iter()
-        .filter_map(|e| match e.kind {
-            ExprKind::Local(id) => Some(id.index()),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(reads, [0, 1, 2, 1]);
+    // Each `x` reads the innermost binding: the parameter in the first
+    // `let`, that `let` in the inner one, the inner one in the inner
+    // block's discard, and the first `let` again as the value, the inner
+    // block's binding having closed.
+    let graph = a.graph();
+    let x0 = graph.run(FunctionId::new(0)).params().next().unwrap();
+    let nodes = body(&a, 0);
+    let [one, sum, x1, two, product, x2, three, difference, unit, ..] = nodes[..] else {
+        panic!("the body's nodes");
+    };
+    assert!(matches!(op(&a, one), Op::Int(_)));
+    assert!(matches!(op(&a, sum), Op::Binary(BinaryOp::Add)));
+    assert_eq!(graph.inputs(sum), [x0, one]);
+    assert!(matches!(op(&a, x1), Op::Copy));
+    assert!(matches!(op(&a, two), Op::Int(_)));
+    assert!(matches!(op(&a, product), Op::Binary(BinaryOp::Mul)));
+    assert_eq!(graph.inputs(product), [x1, two]);
+    assert!(matches!(op(&a, x2), Op::Copy));
+    assert!(matches!(op(&a, three), Op::Int(_)));
+    assert!(matches!(op(&a, difference), Op::Binary(BinaryOp::Sub)));
+    assert_eq!(graph.inputs(difference), [x2, three]);
+    assert!(matches!(op(&a, unit), Op::Unit));
+    assert_eq!(nodes.len(), 9);
+    assert_eq!(value(&a, 0), x1);
     let a = check("fn f() -> int = 1\nfn g() -> int {\n let f = 2\n f()\n}\n");
     assert_eq!(codes(&a), [NOT_CALLABLE]);
     assert_eq!(a.diagnostics[0].secondary.len(), 1);
@@ -352,11 +356,7 @@ fn lazy_structure_and_unit_policy() {
     let a = clean(
         "fn safe() -> bool = false && (1 / 0 == 0)\nfn choose() -> int = if true { 7 } else { 1 / 0 }\nfn ignore() {\n _ = choose()\n}\nfn maybe(b: bool) = if b { _ = choose() }\nfn either() -> bool = true || false\n",
     );
-    let body = a.functions[0].body().unwrap();
-    assert!(matches!(
-        body.expression(body.root).kind,
-        ExprKind::And { .. }
-    ));
+    assert!(matches!(op(&a, value(&a, 0)), Op::And { .. }));
     for source in [
         "fn f() { 1 }",
         "fn f() = if true { 7 }",
@@ -436,9 +436,9 @@ fn literals_of_any_size_fold_a_leading_minus() {
         ),
     ] {
         let a = clean(&format!("fn f() -> int = {expr}"));
-        let body = a.functions[0].body().unwrap();
-        assert_eq!(body.exprs.len(), 1, "{expr}");
-        let ExprKind::Int(literal) = &body.exprs[0].kind else {
+        let nodes = body(&a, 0);
+        assert_eq!(nodes.len(), 1, "{expr}");
+        let Op::Int(literal) = op(&a, nodes[0]) else {
             panic!("{expr} is one literal");
         };
         assert_eq!(literal, &value.parse::<Int>().unwrap(), "{expr}");
@@ -446,16 +446,12 @@ fn literals_of_any_size_fold_a_leading_minus() {
     // Only a `-` directly on the literal folds; the rest is a negation.
     for expr in ["--9223372036854775808", "-(9223372036854775808 + 0)"] {
         let a = clean(&format!("fn f() -> int = {expr}"));
-        let body = a.functions[0].body().unwrap();
-        assert!(
-            matches!(body.expression(body.root()).kind, ExprKind::Neg(_)),
-            "{expr}"
-        );
+        assert!(matches!(op(&a, value(&a, 0)), Op::Neg), "{expr}");
     }
     for expr in ["01", "1_000", "1u32"] {
         let a = check(&format!("fn f() -> int = {expr}"));
         assert!(!a.is_valid());
-        assert!(a.functions[0].body().is_none());
+        assert!(!a.functions[0].complete());
         assert!(a.diagnostics.is_empty());
     }
 }
@@ -467,7 +463,7 @@ fn bad_calls_check_arguments_before_poisoning_binding() {
     );
     assert!(a.parsed.diagnostics().is_empty());
     assert_eq!(codes(&a), [UNKNOWN_NAME, TYPE_MISMATCH, TYPE_MISMATCH]);
-    assert!(a.functions[0].body().is_none());
+    assert!(!a.functions[0].complete());
     let a = check("fn f(x: int, y: bool) {}\nfn g() { _ = f(true, 1, absent) }\n");
     assert_eq!(
         codes(&a),
@@ -481,26 +477,21 @@ fn expression_results_stay_body_local_across_failed_bodies() {
         "fn first() = (23 + 7)\nfn failed() = (missing)\nfn flag() = ((true))\nfn last() = -((17))",
     );
     assert_eq!(codes(&a), [UNKNOWN_NAME]);
-    assert!(a.functions[1].body().is_none());
+    assert!(!a.functions[1].complete());
     for index in [0, 2, 3] {
-        invariant(&a, &a.functions[index]);
+        assert!(a.functions[index].complete());
     }
-    let first = a.functions[0].body().unwrap();
-    assert_eq!(first.exprs.len(), 3);
-    assert!(matches!(&first.exprs[0].kind, ExprKind::Int(n) if *n == Int::from(23)));
-    assert!(matches!(&first.exprs[1].kind, ExprKind::Int(n) if *n == Int::from(7)));
-    let flag = a.functions[2].body().unwrap();
-    assert_eq!(flag.exprs.len(), 1);
-    assert!(matches!(
-        flag.expression(flag.root()).kind,
-        ExprKind::Bool(true)
-    ));
-    let last = a.functions[3].body().unwrap();
-    assert_eq!(last.exprs.len(), 1);
-    assert!(matches!(
-        &last.expression(last.root()).kind,
-        ExprKind::Int(n) if *n == Int::from(-17)
-    ));
+    let first = body(&a, 0);
+    assert_eq!(first.len(), 3);
+    assert!(matches!(op(&a, first[0]), Op::Int(n) if *n == Int::from(23)));
+    assert!(matches!(op(&a, first[1]), Op::Int(n) if *n == Int::from(7)));
+    assert!(matches!(op(&a, first[2]), Op::Binary(BinaryOp::Add)));
+    let flag = body(&a, 2);
+    assert_eq!(flag.len(), 1);
+    assert!(matches!(op(&a, value(&a, 2)), Op::Bool(true)));
+    let last = body(&a, 3);
+    assert_eq!(last.len(), 1);
+    assert!(matches!(op(&a, value(&a, 3)), Op::Int(n) if *n == Int::from(-17)));
     reversed_declarations_preserve_types(&a);
 }
 
@@ -526,16 +517,15 @@ fn a_measure_is_read_through_any_depth_of_lets() {
 #[test]
 fn call_arguments_keep_source_order() {
     let a = clean("fn select(a: int, b: int, c: int) -> int = b\nfn caller() = select(11, 29, 7)");
-    let body = a.functions()[1].body().unwrap();
-    let ExprKind::Call { args, .. } = &body.expression(body.root()).kind else {
-        panic!("expected a call");
-    };
-    let args = body.args(*args);
-    for (index, &value) in [11, 29, 7].iter().enumerate() {
-        // Both evaluation order and the published argument positions matter.
-        let value = Int::from(value);
-        assert!(matches!(&body.exprs[index].kind, ExprKind::Int(n) if *n == value));
-        assert!(matches!(&body.expression(args[index]).kind, ExprKind::Int(n) if *n == value));
+    let call = value(&a, 1);
+    assert!(matches!(op(&a, call), Op::Call(_)));
+    let args = a.graph().inputs(call);
+    let nodes = body(&a, 1);
+    for (index, &expected) in [11, 29, 7].iter().enumerate() {
+        // Both definition order and the argument positions matter.
+        let expected = Int::from(expected);
+        assert!(matches!(op(&a, nodes[index]), Op::Int(n) if *n == expected));
+        assert!(matches!(op(&a, args[index]), Op::Int(n) if *n == expected));
     }
     assert_eq!(args.len(), 3);
 }
@@ -577,15 +567,15 @@ fn signatures_do_not_invent_missing_types_or_resolve_ambiguity() {
     }
     let a = check("fn f(x: mystery) {}\nfn g() { _ = f(unknown, 1) }\n");
     assert_eq!(codes(&a), [UNKNOWN_TYPE, UNKNOWN_NAME]);
-    assert!(a.functions.iter().all(|f| f.body().is_none()));
+    assert!(!a.functions.iter().any(Function::complete));
     let a = check("fn f() {}\nfn f() {}\nfn g() = f()\n");
     assert_eq!(codes(&a), [DUPLICATE_NAME]);
-    assert!(a.functions[2].body().is_none());
+    assert!(!a.functions[2].complete());
     let a = check("fn f(x: int, x: bool) {\n _ = !x\n _ = -x\n}\nfn g() = f(1, true)\n");
     assert_eq!(codes(&a), [DUPLICATE_NAME]);
     assert!(a.functions[0].signature().is_some());
-    assert!(a.functions[0].body().is_none());
-    assert!(a.functions[1].body().is_some());
+    assert!(!a.functions[0].complete());
+    assert!(a.functions[1].complete());
 }
 
 #[test]
@@ -599,22 +589,17 @@ fn token_gaps_ignore_trivia_without_losing_semantics() {
         .map(|f| f.signature().unwrap().result)
         .collect();
     assert_eq!(results, [Ty::Int, Ty::Unit, Ty::Int, Ty::Bool]);
-    let body = a.functions()[2].body().unwrap();
     assert!(
-        body.exprs
-            .iter()
-            .any(|e| matches!(e.kind, ExprKind::Neg(_)))
+        body(&a, 2)
+            .into_iter()
+            .any(|node| matches!(op(&a, node), Op::Neg))
     );
-    let body = a.functions()[3].body().unwrap();
-    assert!(matches!(
-        body.expression(body.root()).kind,
-        ExprKind::Not(_)
-    ));
+    assert!(matches!(op(&a, value(&a, 3)), Op::Not));
 
     let a = check("fn f() = { let\tmut\tvalue = 3\n value }");
     assert!(a.parsed().diagnostics().is_empty());
     assert_eq!(codes(&a), [UNSUPPORTED]);
-    assert!(a.functions()[0].body().is_none());
+    assert!(!a.functions()[0].complete());
 }
 
 #[test]
@@ -630,8 +615,8 @@ fn invalid_parameters_do_not_hide_independent_result_errors() {
         assert!(!a.is_valid());
         assert_eq!(codes(&a), expected);
         assert!(a.functions[0].signature().is_none());
-        assert!(a.functions[0].body().is_none());
-        invariant(&a, &a.functions[1]);
+        assert!(!a.functions[0].complete());
+        assert!(a.functions[1].complete());
     }
 }
 
@@ -654,8 +639,8 @@ fn damaged_and_unsupported_declarations_hide_old_bindings() {
             a.diagnostics
         );
         assert!(a.diagnostics.last().unwrap().message.contains("missing"));
-        assert!(a.functions[0].body().is_none());
-        assert!(a.functions[1].body().is_some());
+        assert!(!a.functions[0].complete());
+        assert!(a.functions[1].complete());
     }
     for source in [
         "fn f() { let = x }",
@@ -667,7 +652,7 @@ fn damaged_and_unsupported_declarations_hide_old_bindings() {
     ] {
         let a = check(source);
         assert!(!a.is_valid(), "{source}");
-        assert!(a.functions[0].body().is_none(), "{source}");
+        assert!(!a.functions[0].complete(), "{source}");
     }
     let a = check("fn f() {\n _ = missing\n");
     assert_eq!(codes(&a), [UNKNOWN_NAME]);
@@ -705,99 +690,94 @@ fn unused_values_are_semantic_errors_without_complete_bodies() {
     assert!(a.parsed.diagnostics().is_empty());
     assert_eq!(codes(&a), [UNUSED_VALUE]);
     assert!(!a.is_valid());
-    assert!(a.functions[0].body().is_none());
+    assert!(!a.functions[0].complete());
     clean("fn f() -> int { let u = {}\n u\n _ = 1\n 2 }");
 
     // The two unused values share an inferred type and produce distinct errors.
     let a = check("fn f() = { let x = value()\n x\n x\n 0 }\nfn value() = 3");
     assert_eq!(codes(&a), [UNUSED_VALUE, UNUSED_VALUE]);
     assert!(a.diagnostics[0].primary.location.start() < a.diagnostics[1].primary.location.start());
-    assert!(a.functions[0].body().is_none());
+    assert!(!a.functions[0].complete());
 }
 
 #[test]
 fn blocks_preserve_statement_order_and_only_the_last_child_is_a_tail() {
     let a = clean("fn f() = { let x = 11\n _ = 29\n {}\n 7 }\nfn g() = { _ = 5 }\nfn h() = {}");
-    let body = a.functions[0].body().unwrap();
-    let ExprKind::Block { statements, tail } = &body.expression(body.root()).kind else {
-        panic!("expected a block");
-    };
-    let texts: Vec<_> = body
-        .statements(*statements)
-        .iter()
-        .map(|statement| {
-            let range = statement.origin.range();
-            &a.parsed.source()[range.start().to_usize()..range.end().to_usize()]
-        })
-        .collect();
-    assert_eq!(texts, ["let x = 11", "_ = 29", "{}"]);
+    // The literal, its binding, the discarded literal, the empty block's
+    // unit, and the tail, in source order.
+    let nodes = body(&a, 0);
+    let ops: Vec<_> = nodes.iter().map(|&node| op(&a, node)).collect();
     assert!(matches!(
-        &body.expression(tail.unwrap()).kind,
-        ExprKind::Int(n) if *n == Int::from(7)
+        ops[..],
+        [Op::Int(_), Op::Copy, Op::Int(_), Op::Unit, Op::Int(_)]
     ));
-    for (function, count) in [(1, 1), (2, 0)] {
-        let body = a.functions[function].body().unwrap();
-        let ExprKind::Block { statements, tail } = &body.expression(body.root()).kind else {
-            panic!("expected a block");
-        };
-        assert_eq!(body.statements(*statements).len(), count);
-        assert!(tail.is_none());
-    }
+    assert_eq!(text(&a, a.graph().node(nodes[1]).name.unwrap()), "x");
+    assert_eq!(value(&a, 0), nodes[4]);
+    assert!(matches!(op(&a, nodes[4]), Op::Int(n) if *n == Int::from(7)));
+    // A block without a tail is unit, after whatever it discards.
+    let g = body(&a, 1);
+    assert!(matches!(
+        g.iter().map(|&node| op(&a, node)).collect::<Vec<_>>()[..],
+        [Op::Int(_), Op::Unit]
+    ));
+    assert_eq!(value(&a, 1), g[1]);
+    let h = body(&a, 2);
+    assert!(matches!(
+        h.iter().map(|&node| op(&a, node)).collect::<Vec<_>>()[..],
+        [Op::Unit]
+    ));
 }
 
 #[test]
 fn nested_blocks_consume_only_their_own_statements() {
     let source = "fn f() = { let a = 11\n let b = { _ = a\n 29 }\n { _ = b }\n _ = 7\n b }";
     let a = clean(source);
-    let body = a.functions[0].body().unwrap();
-    let blocks: Vec<Vec<&str>> = body
-        .exprs
-        .iter()
-        .filter_map(|expr| {
-            let ExprKind::Block { statements, .. } = &expr.kind else {
-                return None;
-            };
-            Some(
-                body.statements(*statements)
-                    .iter()
-                    .map(|statement| {
-                        let range = statement.origin.range();
-                        &source[range.start().to_usize()..range.end().to_usize()]
-                    })
-                    .collect(),
-            )
-        })
-        .collect();
-    assert_eq!(
-        blocks,
+    // A block is its value: the inner blocks leave their literal, their
+    // unit, and their reads, which are edges, and the outer block's
+    // bindings and discards stand in source order with the value last.
+    let nodes = body(&a, 0);
+    let ops: Vec<_> = nodes.iter().map(|&node| op(&a, node)).collect();
+    assert!(matches!(
+        ops[..],
         [
-            vec!["_ = a"],
-            vec!["_ = b"],
-            vec!["let a = 11", "let b = { _ = a\n 29 }", "{ _ = b }", "_ = 7"],
+            Op::Int(_),
+            Op::Copy,
+            Op::Int(_),
+            Op::Copy,
+            Op::Unit,
+            Op::Int(_)
         ]
-    );
+    ));
+    let names: Vec<_> = nodes
+        .iter()
+        .filter_map(|&node| a.graph().node(node).name)
+        .map(|name| text(&a, name))
+        .collect();
+    assert_eq!(names, ["a", "b"]);
+    assert_eq!(value(&a, 0), nodes[3]);
+    assert!(matches!(op(&a, a.graph().inputs(nodes[3])[0]), Op::Int(n) if *n == Int::from(29)));
 
-    // A failed inner tail must still drain the inner statement, and must
-    // not disturb checking the rest of the outer block or the next body.
+    // A failed inner tail must not disturb checking the rest of the outer
+    // block or the next body.
     let a = check(&format!(
         "{}\nfn g() = {{ _ = 5\n 3 }}",
         source.replace("29", "missing")
     ));
     assert_eq!(codes(&a), [UNKNOWN_NAME]);
-    assert!(a.functions[0].body().is_none());
-    invariant(&a, &a.functions[1]);
+    assert!(!a.functions[0].complete());
+    assert!(a.functions[1].complete());
 }
 
 #[test]
 fn source_origins_are_utf8_byte_ranges() {
     let a = clean("// café\nfn f(e: int) -> int = e + 1");
-    let body = a.functions[0].body().unwrap();
-    let origin = body.exprs[0].origin;
+    let sum = value(&a, 0);
+    let origin = a.graph().node(sum).origin;
     assert_eq!(origin.file(), FileId::new(17));
-    assert_eq!(
-        &a.parsed.source()[origin.range().start().to_usize()..origin.range().end().to_usize()],
-        "e"
-    );
+    assert_eq!(text(&a, origin), "e + 1");
+    let e = a.graph().inputs(sum)[0];
+    assert!(matches!(op(&a, e), Op::Param(0)));
+    assert_eq!(text(&a, a.graph().node(e).name.unwrap()), "e");
     let a = check("// café\nfn f() -> int = absent");
     assert_eq!(
         a.diagnostics[0].primary.location.start().to_usize(),
@@ -817,7 +797,7 @@ fn duplicate_functions_keep_the_first_origin_and_poison_calls() {
         assert_eq!(origin.end().to_usize(), 4);
     }
     assert!(a.functions()[2].signature().is_none());
-    assert!(a.functions()[2].body().is_none());
+    assert!(!a.functions()[2].complete());
 }
 
 #[test]
@@ -826,7 +806,7 @@ fn long_chains_are_stack_safe_even_when_rejected() {
         .collect::<Vec<_>>()
         .join(" + ");
     let a = clean(&format!("fn f() -> int = {chain}"));
-    assert_eq!(a.functions[0].body().unwrap().exprs.len(), 39_999);
+    assert_eq!(body(&a, 0).len(), 39_999);
     let a = check(&format!(
         "fn f() -> int = {chain} + true + missing\nfn g() -> int = absent\n"
     ));
@@ -864,12 +844,11 @@ fn scalar_operator_type_matrix() {
                 assert!(a.parsed.diagnostics().is_empty(), "{source}");
                 assert_eq!(a.is_valid(), accepted, "{source}");
                 if accepted {
-                    let body = a.functions[0].body().unwrap();
-                    invariant(&a, &a.functions[0]);
-                    match body.expression(body.root()).kind {
-                        ExprKind::Binary { op, .. } => assert_eq!(Some(op), eager),
-                        ExprKind::And { .. } => assert_eq!(op, "&&"),
-                        ExprKind::Or { .. } => assert_eq!(op, "||"),
+                    assert!(a.functions[0].complete());
+                    match *self::op(&a, value(&a, 0)) {
+                        Op::Binary(found) => assert_eq!(Some(found), eager),
+                        Op::And { .. } => assert_eq!(op, "&&"),
+                        Op::Or { .. } => assert_eq!(op, "||"),
                         _ => panic!("expected a binary operation: {source}"),
                     }
                 } else {
@@ -899,7 +878,7 @@ fn binary_requirements_survive_a_failed_operand() {
         let mut actual = codes(&a);
         actual.sort_unstable_by_key(|code| code.name());
         assert_eq!(actual, [TYPE_MISMATCH, UNKNOWN_NAME], "{expression}");
-        assert!(a.functions[0].body().is_none());
+        assert!(!a.functions[0].complete());
     }
 }
 
@@ -913,7 +892,7 @@ fn recovery_does_not_expose_functions_or_leak_argument_scopes() {
     let a = check("fn f() {\n let x = absent\n let x = true\n _ = x + 1\n}\n");
     assert_eq!(codes(&a), [UNKNOWN_NAME, TYPE_MISMATCH]);
     let a = check("fn f() -> int {\n _ = absent\n 1\n}\n");
-    assert!(a.functions[0].body().is_none());
+    assert!(!a.functions[0].complete());
     clean("fn f() -> int {\n let x =\n 1\n x\n}\n");
 }
 
@@ -933,11 +912,6 @@ fn existing_corpus_never_panics_or_silently_rejects() {
                 let a = check(&std::fs::read_to_string(&path).unwrap());
                 reversed_declarations_preserve_types(&a);
                 graph_invariant(&a);
-                for function in &a.functions {
-                    if function.body().is_some() {
-                        invariant(&a, function);
-                    }
-                }
                 count += 1;
             }
         }
@@ -993,8 +967,8 @@ fn callers_cannot_solve_providers_or_publish_incomplete_calls() {
     for function in &a.functions[1..] {
         assert_eq!(function.signature().unwrap().result, Ty::Int);
     }
-    assert!(a.functions[..3].iter().all(|f| f.body().is_none()));
-    invariant(&a, &a.functions[3]);
+    assert!(!a.functions[..3].iter().any(Function::complete));
+    assert!(a.functions[3].complete());
     let a = check("fn spin(x: int) = spin(x)\nfn caller() = spin(true, missing)\nfn intact() = 42");
     assert_eq!(
         codes(&a),
@@ -1006,7 +980,7 @@ fn callers_cannot_solve_providers_or_publish_incomplete_calls() {
             UNKNOWN_NAME
         ]
     );
-    invariant(&a, &a.functions[2]);
+    assert!(a.functions[2].complete());
 }
 
 #[test]
@@ -1031,12 +1005,9 @@ fn inferred_conflicts_and_deferred_scalar_rules() {
             let a = check(&definitions.join("\n"));
             assert!(!a.is_valid());
             for function in &a.functions {
-                if matches!(function.name().map(|name| a.text(name)), Some("a" | "b")) {
-                    assert!(function.signature().is_none());
-                    assert!(function.body().is_none());
-                } else {
-                    invariant(&a, function);
-                }
+                let named = matches!(function.name().map(|name| a.text(name)), Some("a" | "b"));
+                assert_eq!(function.signature().is_some(), !named);
+                assert_eq!(function.complete(), !named);
             }
         }
     }
@@ -1055,8 +1026,8 @@ fn inferred_conflicts_and_deferred_scalar_rules() {
     ] {
         let a = check(source);
         assert_eq!(codes(&a), [expected], "{source}");
-        assert!(a.functions[0].body().is_none());
-        invariant(&a, &a.functions[1]);
+        assert!(!a.functions[0].complete());
+        assert!(a.functions[1].complete());
     }
     clean("fn f() { g()\n _ = 1 }\nfn g() = {}");
 }
@@ -1077,8 +1048,8 @@ fn inference_preserves_resolution_poison_and_annotation_boundaries() {
     ] {
         let a = check(source);
         assert_eq!(codes(&a), [expected]);
-        assert!(a.functions.last().unwrap().body().is_none());
-        invariant(&a, &a.functions[0]);
+        assert!(!a.functions.last().unwrap().complete());
+        assert!(a.functions[0].complete());
     }
     for declaration in [
         "fn f() -> = 1",
@@ -1088,7 +1059,7 @@ fn inference_preserves_resolution_poison_and_annotation_boundaries() {
     ] {
         let a = check(declaration);
         assert!(a.functions[0].signature().is_none(), "{declaration}");
-        assert!(a.functions[0].body().is_none());
+        assert!(!a.functions[0].complete());
         assert!(!codes(&a).contains(&CANNOT_INFER));
     }
 }
@@ -1132,9 +1103,7 @@ fn large_definition_chains_and_cycles_are_stack_safe() {
             let a = check(&source);
             assert_eq!(a.is_valid(), grounded);
             if grounded {
-                for function in &a.functions {
-                    invariant(&a, function);
-                }
+                assert!(a.functions.iter().all(Function::complete));
             } else {
                 // A conflict is reported once at each end that claims a
                 // type; every function between inherits it silently. A live
@@ -1160,7 +1129,7 @@ fn large_definition_chains_and_cycles_are_stack_safe() {
                 assert!(
                     a.functions
                         .iter()
-                        .all(|f| f.signature().is_none() && f.body().is_none())
+                        .all(|f| f.signature().is_none() && !f.complete())
                 );
             }
         }
@@ -1193,8 +1162,7 @@ proptest::proptest! {
                 let name = function.name().map(|name| analysis.text(name));
                 let counterpart = other.functions.iter().find(|f| f.name().map(|n| other.text(n)) == name).unwrap();
                 proptest::prop_assert_eq!(function.signature().map(|s| s.result), counterpart.signature().map(|s| s.result));
-                proptest::prop_assert_eq!(function.body().is_some(), counterpart.body().is_some());
-                if function.body().is_some() { invariant(analysis, function); }
+                proptest::prop_assert_eq!(function.complete(), counterpart.complete());
             }
         }
     }
@@ -1206,7 +1174,6 @@ proptest::proptest! {
         let a = check(&source);
         assert_eq!(a.is_valid(), !a.parsed.diagnostics().iter().chain(&a.diagnostics).any(|d| d.severity == Severity::Error));
         graph_invariant(&a);
-        for function in &a.functions { if function.body().is_some() { invariant(&a, function); } }
     }
 
     #[test]
@@ -1223,6 +1190,5 @@ proptest::proptest! {
                 proptest::prop_assert!(source.is_char_boundary(label.location.end().to_usize()));
             }
         }
-        for function in &a.functions { if function.body().is_some() { invariant(&a, function); } }
     }
 }

@@ -44,7 +44,7 @@ fn rejected@198..340 () -> int ∈ [0, 0]
         else: int 2 : int @329..330
       tail: int 0 : int @337..338
 
-fn failed_expressions@341..421 () -> unit ∈ ∅
+fn failed_expressions@341..421 () -> unit ∈ unit
   result: copy : unit @341..421
     value:
       discard: hole : ? @371..378

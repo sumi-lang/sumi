@@ -1,0 +1,50 @@
+file: rejected
+frontend errors: 1 (see frontend.snap)
+semantic errors: 7
+
+fn tail_held@0..48 () -> bool ∈ ∅
+  result: copy : bool @18..22
+    value:
+      discard: hole : ? @33..40
+      tail: int 1 : ? @45..46
+
+fn inferred@49..90 () -> int ∈ [1, 1]
+  body:
+    discard: hole : ? @75..82
+    tail: int 1 : int @87..88
+
+fn caller@91..123 () -> bool ∈ ∅
+  result: copy : bool @106..110
+    value: call inferred@49..90 : ? @113..123
+
+fn statements@124..198 () -> int ∈ [0, 0]
+  result: copy : int @143..146
+    value:
+      discard: hole : ? @167..174
+      discard: int 5 : int @183..184
+      tail: int 0 : int @195..196
+
+fn damaged@199..230 () -> int ∈ ∅
+  result: copy : int @215..218
+    value:
+      discard: int 5 : int @225..226
+      discard: hole : ? @227..228
+      tail: unit : ? @219..230
+
+== semantic diagnostics ==
+error[semantic/type-mismatch]: expected bool, found int
+  primary @23..48
+  secondary @18..22: declared here
+error[semantic/unknown-name]: unknown name `missing`
+  primary @33..40
+error[semantic/unknown-name]: unknown name `missing`
+  primary @75..82
+error[semantic/type-mismatch]: expected bool, found int
+  primary @113..123
+  secondary @106..110: declared here
+error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
+  primary @153..190
+error[semantic/unknown-name]: unknown name `missing`
+  primary @167..174
+error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
+  primary @225..226

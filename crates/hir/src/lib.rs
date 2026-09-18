@@ -1,8 +1,9 @@
 //! Single-file scalar semantic analysis. The immutable syntax frontend is unchanged.
 //!
-//! Analysis retains successful typed bodies and independent diagnostics, not a
-//! rejected-body IR. Handles are relative to their program or body, not persistent
-//! identities. All source locations refer to the owned snapshot.
+//! Analysis keeps the graph of every body, whole or holed, with what it
+//! decided about each node, and independent diagnostics. Handles are
+//! relative to their analysis, not persistent identities. All source
+//! locations refer to the owned snapshot.
 
 mod check;
 mod ranges;
@@ -16,7 +17,6 @@ pub use generated::codes;
 #[cfg(test)]
 mod tests;
 
-use std::{fmt, num::NonZeroU32};
 use sumi_frontend::{Diagnostic, ParsedSource, Severity};
 use sumi_text::Span;
 
@@ -26,50 +26,6 @@ pub use sumi_graph::{
     BinaryOp, Domain, FunctionId, Graph, Int, Machine, Node, NodeId, Op, OutOfRange, Outcome,
     ParseIntError, Refusal, Region, RegionId, Run, Ty, Value,
 };
-
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-#[repr(transparent)]
-pub struct ExprId(NonZeroU32);
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-#[repr(transparent)]
-pub struct LocalId(NonZeroU32);
-
-impl ExprId {
-    fn new(index: usize) -> Self {
-        // Each expression comes from a distinct syntax node; the tree's total
-        // node count fits u32. Store one-based IDs so None needs no extra word.
-        Self(NonZeroU32::new(u32::try_from(index + 1).expect("expression count fits u32")).unwrap())
-    }
-
-    /// Index into the owning body's `expressions()` slice, not another body's.
-    pub fn index(self) -> usize {
-        (self.0.get() - 1) as usize
-    }
-}
-
-impl fmt::Debug for ExprId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("ExprId").field(&self.index()).finish()
-    }
-}
-
-impl LocalId {
-    fn new(index: usize) -> Self {
-        // Parameters and let bindings each own a distinct syntax node.
-        Self(NonZeroU32::new(u32::try_from(index + 1).expect("local count fits u32")).unwrap())
-    }
-
-    /// Index into the owning body's `locals()` slice, not another body's.
-    pub fn index(self) -> usize {
-        (self.0.get() - 1) as usize
-    }
-}
-
-impl fmt::Debug for LocalId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("LocalId").field(&self.index()).finish()
-    }
-}
 
 #[derive(Debug)]
 pub struct Analysis {
@@ -124,10 +80,7 @@ impl Analysis {
             .iter()
             .chain(&self.diagnostics)
             .any(|d| d.severity == Severity::Error)
-            && self
-                .functions
-                .iter()
-                .all(|f| f.signature.is_some() && f.body.is_some())
+            && self.functions.iter().all(|f| f.complete)
     }
     /// The file as a program, when it is valid: `None` when any diagnostic
     /// is an error.
@@ -219,7 +172,7 @@ pub struct Function {
     origin: Span,
     signature: Option<Signature>,
     ranges: Option<Ranges>,
-    body: Option<Body>,
+    complete: bool,
 }
 
 impl Function {
@@ -230,16 +183,17 @@ impl Function {
     pub fn origin(&self) -> Span {
         self.origin
     }
-
     /// A concrete declaration contract, not a guarantee that its body is valid.
     /// Expression bodies (`=`, including `= { ... }`) infer an omitted result;
     /// bare block bodies default to unit. Callers never determine this result.
     pub fn signature(&self) -> Option<&Signature> {
         self.signature.as_ref()
     }
-    /// A complete typed body is not permission to execute an invalid file.
-    pub fn body(&self) -> Option<&Body> {
-        self.body.as_ref()
+    /// Whether the body built whole and every value in it resolved: what a
+    /// run needs of it. A complete body is not permission to execute an
+    /// invalid file.
+    pub fn complete(&self) -> bool {
+        self.complete
     }
     /// The values that may reach the parameters and the result, whenever
     /// the function has a signature.
@@ -261,148 +215,4 @@ pub struct Ranges {
 pub struct Signature {
     pub params: Box<[Ty]>,
     pub result: Ty,
-}
-
-/// A body's expressions, locals, and the argument and statement lists its
-/// calls and blocks refer to, each a run of one vector, so a body is a few
-/// allocations however many calls and blocks it holds.
-#[derive(Debug)]
-pub struct Body {
-    params: Vec<LocalId>,
-    locals: Vec<Local>,
-    exprs: Vec<Expr>,
-    args: Vec<ExprId>,
-    statements: Vec<Statement>,
-    root: ExprId,
-}
-
-impl Body {
-    pub fn params(&self) -> &[LocalId] {
-        &self.params
-    }
-    pub fn locals(&self) -> &[Local] {
-        &self.locals
-    }
-    pub fn expressions(&self) -> &[Expr] {
-        &self.exprs
-    }
-    pub fn root(&self) -> ExprId {
-        self.root
-    }
-    /// The ID must belong to this body.
-    pub fn expression(&self, id: ExprId) -> &Expr {
-        &self.exprs[id.index()]
-    }
-    /// The ID must belong to this body.
-    pub fn local(&self, id: LocalId) -> &Local {
-        &self.locals[id.index()]
-    }
-    /// The arguments of one of this body's calls.
-    pub fn args(&self, args: Args) -> &[ExprId] {
-        &self.args[args.start as usize..args.end as usize]
-    }
-    /// The statements of one of this body's blocks, in source order.
-    pub fn statements(&self, statements: Statements) -> &[Statement] {
-        &self.statements[statements.start as usize..statements.end as usize]
-    }
-}
-
-/// A call's arguments: a run of its body's argument list.
-#[derive(Clone, Copy, Debug)]
-pub struct Args {
-    pub(crate) start: u32,
-    pub(crate) end: u32,
-}
-
-/// A block's statements: a run of its body's statement list.
-#[derive(Clone, Copy, Debug)]
-pub struct Statements {
-    pub(crate) start: u32,
-    pub(crate) end: u32,
-}
-
-#[derive(Debug)]
-pub struct Local {
-    /// Where the name is written; [`Analysis::text`] reads it.
-    pub origin: Span,
-    pub ty: Ty,
-}
-
-#[derive(Debug)]
-pub struct Expr {
-    pub kind: ExprKind,
-    pub origin: Span,
-    pub ty: Ty,
-}
-
-#[derive(Debug)]
-pub enum ExprKind {
-    Int(Int),
-    Bool(bool),
-    Local(LocalId),
-    Neg(ExprId),
-    Not(ExprId),
-    /// Eager scalar operation.
-    Binary {
-        op: BinaryOp,
-        lhs: ExprId,
-        rhs: ExprId,
-    },
-    And {
-        lhs: ExprId,
-        rhs: ExprId,
-    },
-    Or {
-        lhs: ExprId,
-        rhs: ExprId,
-    },
-    Call {
-        function: FunctionId,
-        args: Args,
-        callee: Span,
-    },
-    If {
-        condition: ExprId,
-        then_branch: ExprId,
-        else_branch: Option<ExprId>,
-    },
-    Block {
-        statements: Statements,
-        tail: Option<ExprId>,
-    },
-}
-
-impl ExprKind {
-    pub(crate) fn binary(op: sumi_syntax::BinaryOp, lhs: ExprId, rhs: ExprId) -> Self {
-        use sumi_syntax::BinaryOp::*;
-
-        let op = match op {
-            Add => BinaryOp::Add,
-            Sub => BinaryOp::Sub,
-            Mul => BinaryOp::Mul,
-            Div => BinaryOp::Div,
-            Rem => BinaryOp::Rem,
-            Eq => BinaryOp::Eq,
-            Ne => BinaryOp::Ne,
-            Lt => BinaryOp::Lt,
-            Le => BinaryOp::Le,
-            Gt => BinaryOp::Gt,
-            Ge => BinaryOp::Ge,
-            And => return Self::And { lhs, rhs },
-            Or => return Self::Or { lhs, rhs },
-        };
-        Self::Binary { op, lhs, rhs }
-    }
-}
-
-#[derive(Debug)]
-pub struct Statement {
-    pub origin: Span,
-    pub kind: StatementKind,
-}
-
-#[derive(Debug)]
-pub enum StatementKind {
-    Let { local: LocalId, initializer: ExprId },
-    Eval(ExprId),
 }

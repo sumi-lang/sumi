@@ -2,7 +2,7 @@ file: rejected
 frontend errors: 1 (see frontend.snap)
 semantic errors: 1
 
-fn unclosed@0..44 () -> int ∈ ∅
+fn unclosed@0..44 () -> int ∈ [1, 1]
   result: copy : int @17..20
     value:
       discard: hole : ? @31..38

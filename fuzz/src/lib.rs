@@ -24,13 +24,12 @@ use sumi_test::{Edit, Front, apply, changes_delimiter, front};
 pub const FILE: FileId = FileId::new(0);
 
 /// The HIR property's diagnostic-backed acceptance, source provenance, and
-/// complete-body ownership/type invariants, through the read-only public API.
+/// completeness, through the read-only public API.
 pub fn check_semantics(parsed: ParsedSource) {
-    use sumi_hir::{ExprKind, StatementKind, Ty};
     let analysis = sumi_hir::analyze(parsed);
     let source = analysis.parsed().source();
     // Mirror the HIR property: declaration order cannot choose a public type
-    // or make an incomplete call publishable. Only reorder clean syntax.
+    // or make an incomplete body complete. Only reorder clean syntax.
     if analysis.parsed().diagnostics().is_empty() {
         use sumi_syntax::ast::{AstNode, SourceFile};
         let tree = analysis.parsed().parse().tree();
@@ -61,7 +60,7 @@ pub fn check_semantics(parsed: ParsedSource) {
                 b.signature().map(|s| (&s.params, s.result))
             );
             assert_eq!(a.ranges(), b.ranges());
-            assert_eq!(a.body().is_some(), b.body().is_some());
+            assert_eq!(a.complete(), b.complete());
         }
     }
     let errors = analysis
@@ -79,123 +78,100 @@ pub fn check_semantics(parsed: ParsedSource) {
             assert!(source.is_char_boundary(label.location.end().to_usize()));
         }
     }
-    for function in analysis.functions() {
-        let Some(body) = function.body() else {
+    check_typed(&analysis);
+}
+
+/// The typed shape of every complete function, restating the HIR unit
+/// tests' `typed_invariant`: each value has a type, no hole stands in it,
+/// and each operator's type agrees with its inputs', a call's with its
+/// callee's signature, a join's with its arms', and a copy's or a
+/// narrowed read's with what it reads.
+pub fn check_typed(analysis: &sumi_hir::Analysis) {
+    use sumi_hir::{BinaryOp, FunctionId, NodeId, Op, Ty};
+    let graph = analysis.graph();
+    for (index, function) in analysis.functions().iter().enumerate() {
+        if !function.complete() {
             continue;
-        };
-        let signature = function.signature().unwrap();
-        assert_eq!(body.params().len(), signature.params.len());
-        assert_eq!(body.expression(body.root()).ty, signature.result);
-        let mut parents = vec![0; body.expressions().len()];
-        let mut declarations = vec![0; body.locals().len()];
-        for (&param, &ty) in body.params().iter().zip(&signature.params) {
-            assert_eq!(body.local(param).ty, ty);
-            assert!(std::ptr::eq(
-                body.local(param),
-                &body.locals()[param.index()]
-            ));
-            declarations[param.index()] += 1;
         }
-        for (index, expr) in body.expressions().iter().enumerate() {
-            let mut edges = Vec::new();
-            match &expr.kind {
-                ExprKind::Int(_) => assert_eq!(expr.ty, Ty::Int),
-                ExprKind::Bool(_) => assert_eq!(expr.ty, Ty::Bool),
-                ExprKind::Local(local) => assert_eq!(expr.ty, body.local(*local).ty),
-                ExprKind::Neg(child) => {
-                    assert_eq!(body.expression(*child).ty, Ty::Int);
-                    assert_eq!(expr.ty, Ty::Int);
-                    edges.push(*child);
+        let signature = function
+            .signature()
+            .expect("a complete function has a signature");
+        let run = graph.run(FunctionId::new(index));
+        let ty = |node: NodeId| graph.node(node).ty;
+        for node in run.nodes() {
+            let entry = graph.node(node);
+            let inputs = graph.inputs(node);
+            match &entry.op {
+                Op::Entry | Op::Then | Op::Else => continue,
+                Op::Hole => panic!("a hole in a complete function"),
+                Op::Int(_) => assert_eq!(entry.ty, Some(Ty::Int)),
+                Op::Bool(_) => assert_eq!(entry.ty, Some(Ty::Bool)),
+                Op::Unit => assert_eq!(entry.ty, Some(Ty::Unit)),
+                Op::Param(position) => {
+                    assert_eq!(entry.ty, Some(signature.params[*position as usize]));
                 }
-                ExprKind::Not(child) => {
-                    assert_eq!(body.expression(*child).ty, Ty::Bool);
-                    assert_eq!(expr.ty, Ty::Bool);
-                    edges.push(*child);
+                Op::Neg => {
+                    assert_eq!(ty(inputs[0]), Some(Ty::Int));
+                    assert_eq!(entry.ty, Some(Ty::Int));
                 }
-                ExprKind::Binary { op, lhs, rhs } => {
-                    use sumi_hir::BinaryOp::*;
+                Op::Not => {
+                    assert_eq!(ty(inputs[0]), Some(Ty::Bool));
+                    assert_eq!(entry.ty, Some(Ty::Bool));
+                }
+                Op::Binary(op) => {
                     let (operand, result) = match op {
-                        Add | Sub | Mul | Div | Rem => (Ty::Int, Ty::Int),
-                        Lt | Le | Gt | Ge => (Ty::Int, Ty::Bool),
-                        Eq | Ne => {
-                            let ty = body.expression(*lhs).ty;
-                            assert!(matches!(ty, Ty::Int | Ty::Bool));
-                            (ty, Ty::Bool)
+                        BinaryOp::Add
+                        | BinaryOp::Sub
+                        | BinaryOp::Mul
+                        | BinaryOp::Div
+                        | BinaryOp::Rem => (Some(Ty::Int), Ty::Int),
+                        BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge => {
+                            (Some(Ty::Int), Ty::Bool)
                         }
+                        BinaryOp::Eq | BinaryOp::Ne => (None, Ty::Bool),
                     };
-                    assert_eq!(body.expression(*lhs).ty, operand);
-                    assert_eq!(body.expression(*rhs).ty, operand);
-                    assert_eq!(expr.ty, result);
-                    edges.extend([*lhs, *rhs]);
-                }
-                ExprKind::And { lhs, rhs } | ExprKind::Or { lhs, rhs } => {
-                    assert_eq!(body.expression(*lhs).ty, Ty::Bool);
-                    assert_eq!(body.expression(*rhs).ty, Ty::Bool);
-                    assert_eq!(expr.ty, Ty::Bool);
-                    edges.extend([*lhs, *rhs]);
-                }
-                ExprKind::Call { function, args, .. } => {
-                    let args = body.args(*args);
-                    let signature = analysis.function(*function).signature().unwrap();
-                    assert_eq!(expr.ty, signature.result);
-                    assert_eq!(args.len(), signature.params.len());
-                    for (&arg, &ty) in args.iter().zip(&signature.params) {
-                        assert_eq!(body.expression(arg).ty, ty);
+                    assert_eq!(entry.ty, Some(result));
+                    match operand {
+                        Some(operand) => {
+                            assert_eq!(ty(inputs[0]), Some(operand));
+                            assert_eq!(ty(inputs[1]), Some(operand));
+                        }
+                        None => {
+                            assert!(matches!(ty(inputs[0]), Some(Ty::Int | Ty::Bool)));
+                            assert_eq!(ty(inputs[0]), ty(inputs[1]));
+                        }
                     }
-                    edges.extend_from_slice(args);
                 }
-                ExprKind::If {
-                    condition,
-                    then_branch,
-                    else_branch,
-                } => {
-                    assert_eq!(body.expression(*condition).ty, Ty::Bool);
-                    assert_eq!(body.expression(*then_branch).ty, expr.ty);
-                    assert_eq!(
-                        else_branch.map_or(Ty::Unit, |id| body.expression(id).ty),
-                        expr.ty
-                    );
-                    edges.extend([*condition, *then_branch]);
-                    edges.extend(else_branch);
+                Op::And { rhs } | Op::Or { rhs } => {
+                    assert_eq!(entry.ty, Some(Ty::Bool));
+                    assert_eq!(ty(inputs[0]), Some(Ty::Bool));
+                    assert_eq!(ty(graph.region(*rhs).result()), Some(Ty::Bool));
                 }
-                ExprKind::Block { statements, tail } => {
-                    for statement in body.statements(*statements) {
-                        edges.push(match statement.kind {
-                            StatementKind::Let { local, initializer } => {
-                                assert!(std::ptr::eq(
-                                    body.local(local),
-                                    &body.locals()[local.index()]
-                                ));
-                                declarations[local.index()] += 1;
-                                assert_eq!(body.local(local).ty, body.expression(initializer).ty);
-                                initializer
-                            }
-                            StatementKind::Eval(id) => id,
-                        });
+                Op::Copy => assert_eq!(entry.ty, ty(inputs[0])),
+                Op::Refine { .. } | Op::Exactly(_) => assert_eq!(entry.ty, ty(inputs[0])),
+                Op::Join { then, else_ } => {
+                    assert_eq!(ty(inputs[0]), Some(Ty::Bool));
+                    assert_eq!(ty(graph.region(*then).result()), entry.ty);
+                    match else_ {
+                        Some(else_) => assert_eq!(ty(graph.region(*else_).result()), entry.ty),
+                        None => assert_eq!(entry.ty, Some(Ty::Unit)),
                     }
-                    edges.extend(tail);
-                    assert_eq!(tail.map_or(Ty::Unit, |id| body.expression(id).ty), expr.ty);
+                }
+                Op::Call(callee) => {
+                    let callee = analysis
+                        .function(*callee)
+                        .signature()
+                        .expect("a called function has a signature");
+                    assert_eq!(entry.ty, Some(callee.result));
+                    assert_eq!(inputs.len(), callee.params.len());
+                    for (&input, &param) in inputs.iter().zip(&callee.params) {
+                        assert_eq!(ty(input), Some(param));
+                    }
                 }
             }
-            for edge in edges {
-                assert!(std::ptr::eq(
-                    body.expression(edge),
-                    &body.expressions()[edge.index()]
-                ));
-                let child = edge.index();
-                assert!(child < index);
-                parents[child] += 1;
-            }
+            assert!(entry.ty.is_some());
         }
-        let root = body.root().index();
-        assert!(std::ptr::eq(
-            body.expression(body.root()),
-            &body.expressions()[root]
-        ));
-        for (index, count) in parents.into_iter().enumerate() {
-            assert_eq!(count, usize::from(index != root));
-        }
-        assert!(declarations.into_iter().all(|count| count == 1));
+        assert_eq!(ty(run.result()), Some(signature.result));
     }
 }
 

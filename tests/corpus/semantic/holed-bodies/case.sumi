@@ -1,0 +1,19 @@
+fn tail_held() -> bool {
+    _ = missing
+    1
+}
+fn inferred() = {
+    _ = missing
+    1
+}
+fn caller() -> bool = inferred()
+fn statements() -> int {
+    {
+        _ = missing
+        5
+    }
+    0
+}
+fn damaged() -> int {
+    5 )
+}
