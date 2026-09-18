@@ -63,11 +63,11 @@ impl Analysis {
     /// The type `node` resolved to; none for a hole, a context, a node
     /// built over a hole, or a class that conflicted.
     pub fn ty(&self, node: NodeId) -> Option<Ty> {
-        self.settled.resolve(flows::var(node))
+        self.settled.resolve(node)
     }
     /// The values that may reach `node`.
     pub fn may(&self, node: NodeId) -> &May {
-        self.settled.may(flows::var(node))
+        self.settled.may(node)
     }
     /// Every diagnostic, syntactic and semantic, in source order, with a
     /// syntactic one first where both stand at one position.

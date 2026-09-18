@@ -16,10 +16,10 @@
 
 use sumi_text::Span;
 
-use sumi_graph::{Domain, May, Thresholds, Ty};
+use sumi_graph::{Domain, May, NodeId, Thresholds, Ty};
 
 use crate::lattice::{Claim, Edge, Evidence, Product};
-use crate::solver::{Solver, Var};
+use crate::solver::Solver;
 
 /// What a demand asks of an expression: a fixed type, or the type of a
 /// peer it is compared to.
@@ -28,7 +28,7 @@ pub(crate) enum Expected {
     Ty(Ty),
     /// Compared with `Peer`: each learns the other's types and nothing of
     /// its values.
-    Peer(Var),
+    Peer(NodeId),
 }
 
 pub(crate) struct Typing {
@@ -38,18 +38,18 @@ pub(crate) struct Typing {
     /// Every type claimed on a class's own account, with the claim that
     /// made it: what the replay starts from, restated to it since the
     /// solver keeps no record of which evidence was a fact.
-    facts: Vec<(Var, Ty, Claim)>,
+    facts: Vec<(NodeId, Ty, Claim)>,
     /// Every class that is one with another in the replay, beside that
     /// other: the consumer of each aliasing edge beside its provider. The
     /// replay resolves types alone, so a demand on the read or the
     /// binding is a demand on the local or the initializer wherever its
     /// type comes from, a branch settled later included.
-    aliased: Vec<(Var, Var)>,
+    aliased: Vec<(NodeId, NodeId)>,
 }
 
 impl Typing {
-    /// A typing of `nodes` classes, `Var::new(0)` to `Var::new(nodes - 1)`,
-    /// with room for about a claim, a fact, and a flow per class.
+    /// A typing of `nodes` classes, one per node at the node's index, with
+    /// room for about a claim, a fact, and a flow per class.
     pub fn for_nodes(nodes: usize) -> Self {
         Self {
             solver: Solver::with_classes(nodes),
@@ -72,18 +72,18 @@ impl Typing {
 
     /// `var` is known to have `ty` because of what is at `origin`: an
     /// annotation, or an operator's result, whose values arrive by flows.
-    pub fn known(&mut self, var: Var, ty: Ty, origin: Span) {
+    pub fn known(&mut self, var: NodeId, ty: Ty, origin: Span) {
         self.fact(var, ty, May::NONE, origin);
     }
 
     /// `var` is a literal: known to have `ty` and to be exactly `value`.
-    pub fn literal(&mut self, var: Var, ty: Ty, value: May, origin: Span) {
+    pub fn literal(&mut self, var: NodeId, ty: Ty, value: May, origin: Span) {
         self.fact(var, ty, value, origin);
     }
 
     /// What `var` is on its own account: a claim of `ty` made at `origin`,
     /// which survives a replay, and its own values.
-    fn fact(&mut self, var: Var, ty: Ty, value: May, origin: Span) {
+    fn fact(&mut self, var: NodeId, ty: Ty, value: May, origin: Span) {
         let claim = self.claim(origin);
         self.solver.expect(
             var,
@@ -98,7 +98,7 @@ impl Typing {
     /// `var` is a function's entry context: live on its own account when
     /// the function can be run without arguments, otherwise live when a
     /// call site is. Liveness is not a type claim, so no replay reads it.
-    pub fn entry(&mut self, var: Var, runnable: bool) {
+    pub fn entry(&mut self, var: NodeId, runnable: bool) {
         if runnable {
             self.solver.expect(
                 var,
@@ -112,14 +112,14 @@ impl Typing {
 
     /// Let `call`, the class of a call at `origin`, learn its callee's
     /// `result`: the same types, all claimed at the call site.
-    pub fn call(&mut self, result: Var, call: Var, origin: Span) {
+    pub fn call(&mut self, result: NodeId, call: NodeId, origin: Span) {
         let claim = self.claim(origin);
         self.flow(result, call, Edge::Call(claim));
     }
 
     /// Let everything `provider` learns reach `consumer` through `edge`,
     /// and nothing travel back.
-    pub fn flow(&mut self, provider: Var, consumer: Var, edge: Edge) {
+    pub fn flow(&mut self, provider: NodeId, consumer: NodeId, edge: Edge) {
         self.solver.flow(provider, consumer, edge);
         if edge.aliases() {
             self.aliased.push((consumer, provider));
@@ -128,7 +128,7 @@ impl Typing {
 
     /// Let `consumer` learn the transfer of `first` and `second` through
     /// `edge`, recomputed whenever either grows.
-    pub fn derive(&mut self, first: Var, second: Var, consumer: Var, edge: Edge) {
+    pub fn derive(&mut self, first: NodeId, second: NodeId, consumer: NodeId, edge: Edge) {
         self.solver.derive(first, second, consumer, edge);
         if edge.aliases() {
             self.aliased.push((consumer, first));
@@ -136,7 +136,7 @@ impl Typing {
     }
 
     /// The use at `origin` demands that `var` be `expected`.
-    pub fn expect(&mut self, var: Var, expected: Expected, origin: Span) {
+    pub fn expect(&mut self, var: NodeId, expected: Expected, origin: Span) {
         match expected {
             Expected::Ty(ty) => {
                 let claim = self.claim(origin);
@@ -155,15 +155,15 @@ impl Typing {
         }
     }
 
-    pub fn evidence(&self, var: Var) -> &Evidence {
+    pub fn evidence(&self, var: NodeId) -> &Evidence {
         &self.solver.evidence(var).types
     }
 
-    pub fn may(&self, var: Var) -> &May {
+    pub fn may(&self, var: NodeId) -> &May {
         &self.solver.evidence(var).values
     }
 
-    pub fn resolve(&self, var: Var) -> Option<Ty> {
+    pub fn resolve(&self, var: NodeId) -> Option<Ty> {
         self.evidence(var).ty()
     }
 
@@ -210,11 +210,11 @@ impl Typing {
 pub(crate) struct Settled(Box<[Product]>);
 
 impl Settled {
-    pub fn resolve(&self, var: Var) -> Option<Ty> {
+    pub fn resolve(&self, var: NodeId) -> Option<Ty> {
         self.0[var.index()].types.ty()
     }
 
-    pub fn may(&self, var: Var) -> &May {
+    pub fn may(&self, var: NodeId) -> &May {
         &self.0[var.index()].values
     }
 }
@@ -243,7 +243,7 @@ impl Replay {
         }
     }
 
-    fn root(&self, var: Var) -> usize {
+    fn root(&self, var: NodeId) -> usize {
         let mut id = var.index();
         while self.parent[id] as usize != id {
             id = self.parent[id] as usize;
@@ -251,7 +251,7 @@ impl Replay {
         id
     }
 
-    fn learn(&mut self, var: Var, evidence: &Evidence) {
+    fn learn(&mut self, var: NodeId, evidence: &Evidence) {
         let root = self.root(var);
         self.evidence[root].join(evidence);
     }
@@ -259,7 +259,7 @@ impl Replay {
     /// Make `a` and `b` one class, joining their evidence. The smaller
     /// class goes under the larger root, so no chain outgrows the
     /// logarithm of the class count however many reads alias one local.
-    fn union(&mut self, a: Var, b: Var) {
+    fn union(&mut self, a: NodeId, b: NodeId) {
         let (a, b) = (self.root(a), self.root(b));
         if a == b {
             return;
@@ -275,17 +275,17 @@ impl Replay {
         self.evidence[root].join(&evidence);
     }
 
-    pub fn evidence(&self, var: Var) -> &Evidence {
+    pub fn evidence(&self, var: NodeId) -> &Evidence {
         &self.evidence[self.root(var)]
     }
 
-    pub fn resolve(&self, var: Var) -> Option<Ty> {
+    pub fn resolve(&self, var: NodeId) -> Option<Ty> {
         self.evidence(var).ty()
     }
 
     /// Settle a branch flow: what `branch` is so far, delivered to `join`,
     /// the class of its `if`, as a solved call is delivered.
-    pub fn branch(&mut self, branch: Var, join: Var) {
+    pub fn branch(&mut self, branch: NodeId, join: NodeId) {
         let evidence = *self.evidence(branch);
         if evidence.ty().is_some() {
             self.learn(join, &evidence);
@@ -293,7 +293,7 @@ impl Replay {
     }
 
     /// One demand, replayed.
-    pub fn expect(&mut self, var: Var, expected: Expected) {
+    pub fn expect(&mut self, var: NodeId, expected: Expected) {
         match expected {
             Expected::Ty(ty) => self.learn(var, &Evidence::single(ty, Claim::REPLAYED)),
             Expected::Peer(peer) => self.union(var, peer),
@@ -314,8 +314,8 @@ mod tests {
     }
 
     /// A typing of `N` classes nothing is known about yet, by index.
-    fn classes<const N: usize>() -> (Typing, [Var; N]) {
-        (Typing::for_nodes(N), std::array::from_fn(Var::new))
+    fn classes<const N: usize>() -> (Typing, [NodeId; N]) {
+        (Typing::for_nodes(N), std::array::from_fn(NodeId::new))
     }
 
     fn cx() -> Thresholds {
@@ -325,7 +325,7 @@ mod tests {
     /// A fact restated to the replay is three words.
     #[test]
     fn a_fact_is_three_words() {
-        assert_eq!(size_of::<(Var, Ty, Claim)>(), 12);
+        assert_eq!(size_of::<(NodeId, Ty, Claim)>(), 12);
     }
 
     #[test]
@@ -570,9 +570,9 @@ mod tests {
     fn reads_aliasing_one_local_stay_one_step_from_its_root() {
         const READS: usize = 1000;
         let mut typing = Typing::for_nodes(READS + 1);
-        let local = Var::new(0);
+        let local = NodeId::new(0);
         for read in 1..=READS {
-            typing.flow(local, Var::new(read), Edge::Exactly(true));
+            typing.flow(local, NodeId::new(read), Edge::Exactly(true));
         }
         typing.solve(&cx());
         let mut replay = typing.replay();
@@ -582,7 +582,7 @@ mod tests {
             assert!(parent == root || parent == class && class == root);
         }
         replay.expect(local, Expected::Ty(Ty::Int));
-        assert_eq!(replay.resolve(Var::new(READS)), Some(Ty::Int));
+        assert_eq!(replay.resolve(NodeId::new(READS)), Some(Ty::Int));
     }
 
     /// Once settled, every class reads back what the solve decided of it.
