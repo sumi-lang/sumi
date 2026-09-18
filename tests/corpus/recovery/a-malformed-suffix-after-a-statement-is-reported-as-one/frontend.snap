@@ -1,0 +1,29 @@
+== tree ==
+SourceFile! 0..45
+  FnItem! 0..20
+    Name 3..8 "colon"
+    ParamList 8..10 "()"
+    Block! 11..20
+      NameRef 13..14 "x"
+      Error! 15..18 ": 1"
+  FnItem! 21..44
+    Name 24..31 "keyword"
+    ParamList 31..33 "()"
+    Block! 34..44
+      NameRef 36..37 "x"
+      Error! 38..42 "else"
+
+== evidence ==
+ExpectedStatement at 15
+ExpectedStatement at 38
+
+== diagnostics ==
+error[syntax/expected-statement] 1:16..1:17 ":": expected a statement
+  at 1:16..1:19 ": 1": skipped while recovering
+error[syntax/expected-statement] 2:18..2:22 "else": expected a statement
+
+== formatted ==
+fn colon() {
+    x : 1 }
+fn keyword() {
+    x else }

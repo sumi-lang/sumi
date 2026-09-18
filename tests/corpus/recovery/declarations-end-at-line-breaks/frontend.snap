@@ -1,0 +1,67 @@
+== tree ==
+SourceFile! 0..131
+  FnItem! 0..42
+    Name 3..22 "binding_initializer"
+    ParamList 22..24 "()"
+    Block! 25..42
+      LetStmt! 29..34
+        Name 33..34 "x"
+      Error! 37..40 "= 1"
+  FnItem! 43..84
+    Name 46..58 "binding_type"
+    ParamList 58..60 "()"
+    Block! 61..84
+      LetStmt! 65..70
+        Name 69..70 "x"
+      Error! 73..82 ": int = 1"
+  FnItem! 85..111
+    Name 88..95 "discard"
+    ParamList 95..97 "()"
+    Block! 98..111
+      DiscardStmt! 102..103 "_"
+      Error! 106..109 "= v"
+  FnItem! 112..124
+    Name 115..124 "signature"
+  Error! 125..130 "() {}"
+
+== evidence ==
+Expected(Eq) at 37
+ExpectedStatement at 37
+Expected(Eq) at 73
+ExpectedStatement at 73
+Expected(Eq) at 106
+ExpectedStatement at 106
+Expected(LParen) at 125
+ExpectedBody at 125
+ExpectedItem at 125
+
+== diagnostics ==
+error[syntax/expected-token] 3:3: expected `=`
+error[syntax/expected-statement] 3:3..3:4 "=": expected a statement
+  at 3:3..3:6 "= 1": skipped while recovering
+error[syntax/expected-token] 7:3: expected `=`
+error[syntax/expected-statement] 7:3..7:4 ":": expected a statement
+  at 7:3..7:12 ": int = 1": skipped while recovering
+error[syntax/expected-token] 11:3: expected `=`
+error[syntax/expected-statement] 11:3..11:4 "=": expected a statement
+  at 11:3..11:6 "= v": skipped while recovering
+error[syntax/expected-token] 14:1: expected `(`
+error[syntax/expected-body] 14:1: expected a body, `{` or `=`
+error[syntax/expected-item] 14:1..14:2 "(": expected a function item
+  at 14:1..14:6 "() {}": skipped while recovering
+
+== formatted ==
+fn binding_initializer() {
+    let x
+  = 1
+}
+fn binding_type() {
+    let x
+  : int = 1
+}
+fn discard() {
+    _
+  = v
+}
+fn signature
+() {}

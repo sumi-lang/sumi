@@ -1,0 +1,35 @@
+== tree ==
+SourceFile! 0..81
+  FnItem 0..31
+    Name 3..23 "body_then_assignment"
+    ParamList 23..25 "()"
+    Block 26..31
+      NameRef 28..29 "a"
+  Error! 32..35 "= b"
+  FnItem! 36..80
+    Name 39..59 "damaged_if_in_parens"
+    ParamList 59..61 "()"
+    Block! 62..80
+      ParenExpr! 64..78
+        IfExpr! 65..77
+          NameRef 68..69 "a"
+          Block! 70..77
+            Error! 72..75 "+ b"
+
+== evidence ==
+ExpectedItem at 32
+ExpectedStatement at 72
+
+== diagnostics ==
+error[syntax/expected-item] 1:33..1:34 "=": expected a function item
+  at 1:33..1:36 "= b": skipped while recovering
+error[syntax/expected-statement] 2:37..2:38 "+": expected a statement
+  at 2:37..2:40 "+ b": skipped while recovering
+
+== formatted ==
+fn body_then_assignment() {
+    a
+} = b
+fn damaged_if_in_parens() {
+    (if a { + b })
+}

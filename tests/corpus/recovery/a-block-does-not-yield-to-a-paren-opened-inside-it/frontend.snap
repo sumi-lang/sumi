@@ -1,0 +1,45 @@
+== tree ==
+SourceFile! 0..62
+  FnItem! 0..29
+    Name 3..17 "missing_closer"
+    ParamList 17..19 "()"
+    Block! 20..29
+      ParenExpr! 22..24
+        NameRef 23..24 "a"
+      Error! 25..27 "b)"
+  FnItem! 30..59
+    Name 33..45 "block_inside"
+    ParamList 45..47 "()"
+    Block! 48..59
+      ParenExpr! 50..52
+        NameRef 51..52 "a"
+      Error! 53..57 "{ b)"
+  Error! 60..61 "}"
+
+== evidence ==
+Expected(RParen) at 25
+Expected(RParen) at 53
+ExpectedItem at 60
+
+== diagnostics ==
+error[syntax/expected-token] 1:26: expected `)`
+  at 1:23..1:24 "(": opening delimiter is here
+  at 1:26..1:28 "b)": skipped while recovering
+  fix (safe): insert `)`
+    1:25 -> ")"
+error[syntax/expected-token] 2:24: expected `)`
+  at 2:21..2:22 "(": opening delimiter is here
+  at 2:24..2:28 "{ b)": skipped while recovering
+  fix (safe): insert `)`
+    2:23 -> ")"
+error[syntax/expected-item] 2:31..2:32 "}": expected a function item
+
+== fixed (syntax/expected-boundary, syntax/unexpected-syntax remain) ==
+fn missing_closer() { (a) b) }
+fn block_inside() { (a) { b) } }
+
+== formatted ==
+fn missing_closer() {
+    (a b) }
+fn block_inside() {
+    (a { b) } }

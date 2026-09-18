@@ -1,0 +1,98 @@
+== tree ==
+SourceFile! 0..237
+  FnItem 0..51
+    Name 3..8 "clean"
+    ParamList 8..16
+      Param 9..15
+        Name 9..10 "a"
+        TypeRef 12..15 "Int"
+    TypeRef 20..23 "Int"
+    Block 24..51
+      LetStmt 30..43
+        Name 34..35 "x"
+        BinaryExpr 38..43
+          NameRef 38..39 "a"
+          LiteralExpr 42..43 "1"
+      NameRef 48..49 "x"
+  FnItem! 52..79
+    Name 55..70 "wrapped_operand"
+    ParamList 70..72 "()"
+    Block! 73..79
+      ParenExpr! 75..77
+        NameRef 76..77 "x"
+  FnItem! 80..116
+    Name 83..106 "error_node_not_siblings"
+    ParamList 106..108 "()"
+    Block! 109..116
+      NameRef 111..112 "x"
+      Error! 113..114 ")"
+  FnItem 117..146
+    Name 120..136 "layout_violation"
+    ParamList 136..138 "()"
+    Block 139..146
+      BinaryExpr 141..144
+        NameRef 141..142 "a"
+        NameRef 143..144 "b"
+  FnItem! 147..194
+    Name 150..180 "missing_syntax_marks_ancestors"
+    ParamList 180..182 "()"
+    Block! 183..194
+      LetStmt! 185..192
+        Name 189..190 "x"
+  FnItem! 195..204
+    Name! 198..199 "_"
+    ParamList 199..201 "()"
+    Block 202..204 "{}"
+  FnItem 205..236
+    Name 208..231 "unmarked_after_recovery"
+    ParamList 231..233 "()"
+    Block 234..236 "{}"
+
+== evidence ==
+Expected(RParen) at 78
+Unexpected at 113
+UnspacedBinaryOperator at 142
+ExpectedExpression at 193
+ExpectedName at 198
+
+== diagnostics ==
+error[syntax/expected-token] 5:27: expected `)`
+  at 5:24..5:25 "(": opening delimiter is here
+  fix (safe): insert `)`
+    5:26 -> ")"
+error[syntax/unexpected-syntax] 6:34..6:35 ")": unexpected syntax in expression
+error[syntax/unspaced-binary-operator] 7:26..7:27 "-": binary operator must have spaces on both sides
+  fix (safe): space binary operator
+    7:26 -> " "
+    7:27 -> " "
+error[syntax/expected-expression] 8:47: expected an expression
+error[syntax/expected-name] 9:4..9:5 "_": expected a name
+
+== fixed (syntax/expected-expression, syntax/expected-name, syntax/unexpected-syntax remain) ==
+fn clean(a: Int) -> Int {
+    let x = a + 1
+    x
+}
+fn wrapped_operand() { (x) }
+fn error_node_not_siblings() { x ) }
+fn layout_violation() { a - b }
+fn missing_syntax_marks_ancestors() { let x = }
+fn _() {}
+fn unmarked_after_recovery() {}
+
+== formatted ==
+fn clean(a: Int) -> Int {
+    let x = a + 1
+    x
+}
+fn wrapped_operand() {
+    (x }
+fn error_node_not_siblings() {
+    x ) }
+fn layout_violation() {
+    a - b
+}
+fn missing_syntax_marks_ancestors() {
+    let x = }
+fn _() {}
+fn unmarked_after_recovery() {}

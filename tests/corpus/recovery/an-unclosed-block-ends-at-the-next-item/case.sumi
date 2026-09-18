@@ -1,0 +1,9 @@
+fn inner_block() -> int { { b }
+
+fn next_a() {}
+fn if_body() { if c {
+ x
+fn next_b() {}
+fn after_a_statement() { x fn next_c() {}
+fn after_garbage() { : fn next_d() {}
+fn after_garbage_then_closed() { : fn next_e() {} }

@@ -1,0 +1,17 @@
+fn } closer_before_name() { x }
+fn () {}
+fn doubled doubled() {}
+fn unopened_params) { a }
+fn brace_in_name{ () {}
+fn brace_in_params({ ) { x }
+fn word_before_body() -> int x { y }
+fn broken_arrow() -) > int { b }
+fn paren_before_body() ( { x }
+headless() { x }
+call(2)
+fn after_a_call() {}
+fn no_body() x
+fn operator_after_name +
+() { x }
+headless_result()
+-> int {}

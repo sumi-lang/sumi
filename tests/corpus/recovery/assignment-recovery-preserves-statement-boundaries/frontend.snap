@@ -1,0 +1,94 @@
+== tree ==
+SourceFile! 0..175
+  FnItem! 0..26
+    Name 3..12 "in_parens"
+    ParamList 12..14 "()"
+    Block! 15..26
+      ParenExpr! 17..19
+        NameRef 18..19 "a"
+      Error! 20..24 "= b)"
+  FnItem! 27..51
+    Name 30..41 "missing_rhs"
+    ParamList 41..43 "()"
+    Block! 44..51
+      AssignStmt! 46..49
+        NameRef 46..47 "x"
+  FnItem! 52..76
+    Name 55..66 "missing_lhs"
+    ParamList 66..68 "()"
+    Block! 69..76
+      Error! 71..74 "= x"
+  FnItem! 77..111
+    Name 80..93 "two_on_a_line"
+    ParamList 93..95 "()"
+    Block! 96..111
+      AssignStmt 98..103
+        NameRef 98..99 "x"
+        LiteralExpr 102..103 "1"
+      AssignStmt 104..109
+        NameRef 104..105 "y"
+        LiteralExpr 108..109 "2"
+  FnItem! 112..138
+    Name 115..122 "chained"
+    ParamList 122..124 "()"
+    Block! 125..138
+      AssignStmt 127..132
+        NameRef 127..128 "x"
+        NameRef 131..132 "y"
+      Error! 133..136 "= z"
+  FnItem! 139..174
+    Name 142..158 "rhs_on_next_line"
+    ParamList 158..160 "()"
+    Block! 161..174
+      NameRef 165..166 "x"
+      Error! 169..172 "= y"
+
+== evidence ==
+Expected(RParen) at 20
+ExpectedExpression at 50
+ExpectedStatement at 71
+ExpectedBoundary at 104
+ExpectedStatement at 133
+ExpectedStatement at 169
+
+== diagnostics ==
+error[syntax/expected-token] 1:21: expected `)`
+  at 1:18..1:19 "(": opening delimiter is here
+  at 1:21..1:25 "= b)": skipped while recovering
+  fix (safe): insert `)`
+    1:20 -> ")"
+error[syntax/expected-expression] 2:24: expected an expression
+error[syntax/expected-statement] 3:20..3:21 "=": expected a statement
+  at 3:20..3:23 "= x": skipped while recovering
+error[syntax/expected-boundary] 4:28: expected a line break between statements
+error[syntax/expected-statement] 5:22..5:23 "=": expected a statement
+  at 5:22..5:25 "= z": skipped while recovering
+error[syntax/expected-statement] 8:3..8:4 "=": expected a statement
+  at 8:3..8:6 "= y": skipped while recovering
+
+== fixed (syntax/expected-boundary, syntax/expected-expression, syntax/expected-statement, syntax/unexpected-syntax remain) ==
+fn in_parens() { (a) = b) }
+fn missing_rhs() { x = }
+fn missing_lhs() { = x }
+fn two_on_a_line() { x = 1 y = 2 }
+fn chained() { x = y = z }
+fn rhs_on_next_line() {
+  x
+  = y
+}
+
+== formatted ==
+fn in_parens() {
+    (a = b) }
+fn missing_rhs() {
+    x = }
+fn missing_lhs() { = x }
+fn two_on_a_line() {
+    x = 1 y = 2
+}
+fn chained() {
+    x = y = z }
+fn rhs_on_next_line() {
+    x
+    = y
+}

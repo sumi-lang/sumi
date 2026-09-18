@@ -1,0 +1,68 @@
+== tree ==
+SourceFile! 0..119
+  FnItem! 0..40
+    Name 3..20 "closer_in_discard"
+    ParamList 20..22 "()"
+    Block! 23..40
+      DiscardStmt! 25..34
+        Error! 29..30 "}"
+        LiteralExpr 31..34 "\"a\""
+      NameRef 37..38 "x"
+  FnItem! 41..76
+    Name 44..60 "opener_in_parens"
+    ParamList 60..62 "()"
+    Block! 63..76
+      ParenExpr! 65..74
+        BinaryExpr! 66..73
+          NameRef 66..67 "a"
+          Error! 68..69 "{"
+          NameRef 72..73 "b"
+  FnItem! 77..118
+    Name 80..99 "opener_in_arguments"
+    ParamList 99..101 "()"
+    Block! 102..118
+      CallExpr! 104..116
+        NameRef 104..105 "g"
+        ArgList! 105..116
+          NameRef 106..107 "a"
+          Block! 110..115
+            Error! 112..115 "% b"
+
+== evidence ==
+ExpectedExpression at 29
+Unexpected at 68
+Expected(Comma) at 110
+ExpectedStatement at 112
+Expected(RBrace) at 115
+
+== diagnostics ==
+error[syntax/expected-expression] 1:30..1:31 "}": expected an expression
+error[syntax/unexpected-syntax] 4:28..4:29 "{": unexpected syntax in expression
+error[syntax/expected-token] 6:3: expected `,`
+error[syntax/expected-statement] 6:5..6:6 "%": expected a statement
+  at 6:5..6:8 "% b": skipped while recovering
+error[syntax/expected-token] 6:8: expected `}`
+  at 6:3..6:4 "{": opening delimiter is here
+  fix (safe): insert `}`
+    6:8 -> "}"
+
+== fixed (syntax/expected-expression, syntax/expected-statement, syntax/expected-token, syntax/unexpected-syntax remain) ==
+fn closer_in_discard() { _ = } "a"
+  x
+}
+fn opener_in_parens() { (a { * b) }
+fn opener_in_arguments() { g(a
+  { % b}) }
+
+== formatted ==
+fn closer_in_discard() {
+    _ = } "a"
+    x
+}
+fn opener_in_parens() {
+    (a { * b)
+}
+fn opener_in_arguments() {
+    g(a
+  { % b)
+}

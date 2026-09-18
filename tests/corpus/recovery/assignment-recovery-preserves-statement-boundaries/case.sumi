@@ -1,0 +1,9 @@
+fn in_parens() { (a = b) }
+fn missing_rhs() { x = }
+fn missing_lhs() { = x }
+fn two_on_a_line() { x = 1 y = 2 }
+fn chained() { x = y = z }
+fn rhs_on_next_line() {
+  x
+  = y
+}

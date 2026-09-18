@@ -145,21 +145,22 @@ error[syntax/unknown-punctuation] 2:5..2:6 ";": punctuation has no meaning in Su
 
 Something other than a function item at the top level of the file.
 
-Shown by [`tests/corpus/recovery/a-body-closes-at-the-nearest-matching-brace-1`](../../../tests/corpus/recovery/a-body-closes-at-the-nearest-matching-brace-1/case.sumi):
+Shown by [`tests/corpus/recovery/a-call-in-garbage-stays-garbage`](../../../tests/corpus/recovery/a-call-in-garbage-stays-garbage/case.sumi):
 
 ```sumi
-fn f() {
-  a
-  } + b
-  c
-}
-
-fn g() {}
+fn f() = 1
+if cond(x) { y }
+total = compute(x) { y }
+x g(y) == 2
+return g(y) { y }
+x g
+(y: int) { y }
+x g(y: int) =
 ```
 
 ```text
-error[syntax/expected-item] 3:5..3:6 "+": expected a function item
-  at 3:5..5:2 "+ b\n  c\n}": skipped while recovering
+error[syntax/expected-item] 2:1..2:3 "if": expected a function item
+  at 2:1..8:14 "if cond(x) { y }\ntotal = compute(x) { y }\nx g(y) == 2\nreturn g(y) { y }\nx g\n(y: int) { y }\nx g(y: int) =": skipped while recovering
 ```
 
 ### `syntax/expected-statement`
@@ -167,15 +168,17 @@ error[syntax/expected-item] 3:5..3:6 "+": expected a function item
 A token that cannot begin a statement where a block's next statement
 should start.
 
-Shown by [`tests/corpus/recovery/a-malformed-suffix-after-a-statement-is-reported-as-one-1`](../../../tests/corpus/recovery/a-malformed-suffix-after-a-statement-is-reported-as-one-1/case.sumi):
+Shown by [`tests/corpus/recovery/a-nested-fn-is-skipped-whole`](../../../tests/corpus/recovery/a-nested-fn-is-skipped-whole/case.sumi):
 
 ```sumi
-fn f() { x : 1 }
+fn f() {
+  fn g() {}
+}
 ```
 
 ```text
-error[syntax/expected-statement] 1:12..1:13 ":": expected a statement
-  at 1:12..1:15 ": 1": skipped while recovering
+error[syntax/expected-statement] 2:3..2:5 "fn": expected a statement
+  at 2:3..2:12 "fn g() {}": skipped while recovering
 ```
 
 ### `syntax/expected-expression`
@@ -183,43 +186,53 @@ error[syntax/expected-statement] 1:12..1:13 ":": expected a statement
 An expression is required, after an operator, `=`, or `(` for instance,
 and the next token cannot begin one.
 
-Shown by [`tests/corpus/recovery/a-closed-list-owns-everything-up-to-its-closer-3`](../../../tests/corpus/recovery/a-closed-list-owns-everything-up-to-its-closer-3/case.sumi):
+Shown by [`tests/corpus/recovery/a-prefix-without-an-operand-reports-only-the-missing-operand`](../../../tests/corpus/recovery/a-prefix-without-an-operand-reports-only-the-missing-operand/case.sumi):
 
 ```sumi
-fn f() { g(fn, b) }
+fn f() { - }
 ```
 
 ```text
-error[syntax/expected-expression] 1:12..1:14 "fn": expected an expression
+error[syntax/expected-expression] 1:12: expected an expression
 ```
 
 ### `syntax/expected-name`
 
 The name a `fn`, `let`, or parameter declares is missing.
 
-Shown by [`tests/corpus/recovery/a-closed-list-owns-everything-up-to-its-closer-2`](../../../tests/corpus/recovery/a-closed-list-owns-everything-up-to-its-closer-2/case.sumi):
+Shown by [`tests/corpus/recovery/a-missing-function-name-keeps-its-multiline-body`](../../../tests/corpus/recovery/a-missing-function-name-keeps-its-multiline-body/case.sumi):
 
 ```sumi
-fn x1(b: int, foo: int{ ) {}
+fn
+ () {g(
+)
+}
 ```
 
 ```text
-error[syntax/expected-name] 1:23..1:24 "{": expected a name
+error[syntax/expected-name] 2:2: expected a name
 ```
 
 ### `syntax/expected-type`
 
 A type is required after `:` or `->` and none follows.
 
-Shown by [`tests/corpus/recovery/a-closed-list-owns-a-boundary-an-unclosed-brace-restores-2`](../../../tests/corpus/recovery/a-closed-list-owns-a-boundary-an-unclosed-brace-restores-2/case.sumi):
+Shown by [`tests/corpus/semantic/damaged-bindings`](../../../tests/corpus/semantic/damaged-bindings/case.sumi):
 
 ```sumi
-fn f(a: { x
-b: int) {}
+fn damaged() {
+    let x = true
+    let x =
+    _ = x + 1
+    let y: = 1
+    _ = y
+    _ = missing
+}
+fn intact() -> int = 3
 ```
 
 ```text
-error[syntax/expected-type] 1:9: expected a type
+error[syntax/expected-type] 5:12: expected a type
 ```
 
 ### `syntax/expected-token`
@@ -229,16 +242,17 @@ bracket, a `,` between list elements, or the `(` of a parameter list.
 For a missing closer, a label points at the opener and the fix inserts
 the closer.
 
-Shown by [`tests/corpus/recovery/a-block-does-not-yield-to-a-paren-opened-inside-it-1`](../../../tests/corpus/recovery/a-block-does-not-yield-to-a-paren-opened-inside-it-1/case.sumi):
+Shown by [`tests/corpus/recovery/a-body-whose-closer-an-inner-block-took-ends-at-the-next-item`](../../../tests/corpus/recovery/a-body-whose-closer-an-inner-block-took-ends-at-the-next-item/case.sumi):
 
 ```sumi
-fn f() { (a b) }
+fn f() { (a { b) }
+fn g() {}
 ```
 
 ```text
 error[syntax/expected-token] 1:13: expected `)`
   at 1:10..1:11 "(": opening delimiter is here
-  at 1:13..1:15 "b)": skipped while recovering
+  at 1:13..1:17 "{ b)": skipped while recovering
   fix (safe): insert `)`
     1:12 -> ")"
 ```
@@ -266,14 +280,14 @@ error[syntax/expected-body] 3:5: expected a body, `{` or `=`
 Two statements share a line. A line break ends a statement; there is no
 `;`.
 
-Shown by [`tests/corpus/recovery/assignment-recovery-preserves-statement-boundaries-4`](../../../tests/corpus/recovery/assignment-recovery-preserves-statement-boundaries-4/case.sumi):
+Shown by [`tests/corpus/recovery/two-statements-on-one-line-are-an-error`](../../../tests/corpus/recovery/two-statements-on-one-line-are-an-error/case.sumi):
 
 ```sumi
-fn f() { x = 1 y = 2 }
+fn f() { a b }
 ```
 
 ```text
-error[syntax/expected-boundary] 1:16: expected a line break between statements
+error[syntax/expected-boundary] 1:12: expected a line break between statements
 ```
 
 ### `syntax/unexpected-syntax`

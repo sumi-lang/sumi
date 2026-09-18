@@ -1,0 +1,153 @@
+== tree ==
+SourceFile! 0..368
+  FnItem! 0..31
+    Error! 3..4 "}"
+    Name 5..23 "closer_before_name"
+    ParamList 23..25 "()"
+    Block 26..31
+      NameRef 28..29 "x"
+  FnItem! 32..40
+    ParamList 35..37 "()"
+    Block 38..40 "{}"
+  FnItem! 41..64
+    Name 44..51 "doubled"
+    Error! 52..59 "doubled"
+    ParamList 59..61 "()"
+    Block 62..64 "{}"
+  FnItem! 65..90
+    Name 68..83 "unopened_params"
+    Error! 83..84 ")"
+    Block 85..90
+      NameRef 87..88 "a"
+  FnItem! 91..114
+    Name 94..107 "brace_in_name"
+    Error! 107..108 "{"
+    ParamList 109..111 "()"
+    Block 112..114 "{}"
+  FnItem! 115..143
+    Name 118..133 "brace_in_params"
+    ParamList! 133..137
+      Error! 134..135 "{"
+    Block 138..143
+      NameRef 140..141 "x"
+  FnItem! 144..180
+    Name 147..163 "word_before_body"
+    ParamList 163..165 "()"
+    TypeRef 169..172 "int"
+    Error! 173..174 "x"
+    Block 175..180
+      NameRef 177..178 "y"
+  FnItem! 181..213
+    Name 184..196 "broken_arrow"
+    ParamList 196..198 "()"
+    Error! 199..207 "-) > int"
+    Block 208..213
+      NameRef 210..211 "b"
+  FnItem! 214..244
+    Name 217..234 "paren_before_body"
+    ParamList 234..236 "()"
+    Error! 237..238 "("
+    Block 239..244
+      NameRef 241..242 "x"
+  FnItem! 245..261
+    Name 245..253 "headless"
+    ParamList 253..255 "()"
+    Block 256..261
+      NameRef 258..259 "x"
+  Error! 262..269 "call(2)"
+  FnItem 270..290
+    Name 273..285 "after_a_call"
+    ParamList 285..287 "()"
+    Block 288..290 "{}"
+  FnItem! 291..305
+    Name 294..301 "no_body"
+    ParamList 301..303 "()"
+    Error! 304..305 "x"
+  FnItem! 306..330
+    Name 309..328 "operator_after_name"
+    Error! 329..330 "+"
+  Error! 331..339 "() { x }"
+  FnItem! 340..367
+    Name 340..355 "headless_result"
+    ParamList 355..357 "()"
+    TypeRef 361..364 "int"
+    Block 365..367 "{}"
+
+== evidence ==
+ExpectedName at 3
+ExpectedName at 35
+Expected(LParen) at 52
+Expected(LParen) at 83
+Expected(LParen) at 107
+ExpectedName at 134
+ExpectedBody at 173
+ExpectedBody at 199
+ExpectedBody at 237
+Expected(FnKw) at 245
+ExpectedItem at 262
+ExpectedBody at 304
+Expected(LParen) at 329
+ExpectedBody at 331
+ExpectedItem at 331
+Expected(FnKw) at 340
+
+== diagnostics ==
+error[syntax/expected-name] 1:4: expected a name
+  at 1:4..1:5 "}": skipped while recovering
+error[syntax/expected-name] 2:4: expected a name
+error[syntax/expected-token] 3:12: expected `(`
+  at 3:12..3:19 "doubled": skipped while recovering
+error[syntax/expected-token] 4:19: expected `(`
+  at 4:19..4:20 ")": skipped while recovering
+error[syntax/expected-token] 5:17: expected `(`
+  at 5:17..5:18 "{": skipped while recovering
+error[syntax/expected-name] 6:20..6:21 "{": expected a name
+error[syntax/expected-body] 7:30: expected a body, `{` or `=`
+  at 7:30..7:31 "x": skipped while recovering
+error[syntax/expected-body] 8:19: expected a body, `{` or `=`
+  at 8:19..8:27 "-) > int": skipped while recovering
+error[syntax/expected-body] 9:24: expected a body, `{` or `=`
+  at 9:24..9:25 "(": skipped while recovering
+error[syntax/expected-token] 10:1: expected `fn`
+error[syntax/expected-item] 11:1..11:5 "call": expected a function item
+  at 11:1..11:8 "call(2)": skipped while recovering
+error[syntax/expected-body] 13:14: expected a body, `{` or `=`
+  at 13:14..13:15 "x": skipped while recovering
+error[syntax/expected-token] 14:24: expected `(`
+  at 14:24..14:25 "+": skipped while recovering
+error[syntax/expected-body] 15:1: expected a body, `{` or `=`
+error[syntax/expected-item] 15:1..15:2 "(": expected a function item
+  at 15:1..15:9 "() { x }": skipped while recovering
+error[syntax/expected-token] 16:1: expected `fn`
+
+== formatted ==
+fn } closer_before_name() {
+    x
+}
+fn () {}
+fn doubled doubled() {}
+fn unopened_params) {
+    a
+}
+fn brace_in_name{ () {}
+fn brace_in_params({ ) {
+    x
+}
+fn word_before_body() -> int x {
+    y
+}
+fn broken_arrow() -) > int {
+    b
+}
+fn paren_before_body() ( {
+    x
+}
+headless() {
+    x
+}
+call(2)
+fn after_a_call() {}
+fn no_body() x
+fn operator_after_name +
+() { x }
+headless_result() -> int {}

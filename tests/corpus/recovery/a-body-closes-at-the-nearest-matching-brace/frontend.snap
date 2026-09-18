@@ -1,0 +1,39 @@
+== tree ==
+SourceFile! 0..81
+  FnItem 0..29
+    Name 3..17 "surplus_inside"
+    ParamList 17..19 "()"
+    Block 20..29
+      NameRef 24..25 "a"
+  Error! 30..39 "+ b\n  c\n}"
+  FnItem 41..65
+    Name 44..57 "surplus_after"
+    ParamList 57..59 "()"
+    Block 60..65
+      NameRef 62..63 "a"
+  Error! 66..67 "}"
+  FnItem 68..80
+    Name 71..75 "next"
+    ParamList 75..77 "()"
+    Block 78..80 "{}"
+
+== evidence ==
+ExpectedItem at 30
+ExpectedItem at 66
+
+== diagnostics ==
+error[syntax/expected-item] 3:5..3:6 "+": expected a function item
+  at 3:5..5:2 "+ b\n  c\n}": skipped while recovering
+error[syntax/expected-item] 7:26..7:27 "}": expected a function item
+
+== formatted ==
+fn surplus_inside() {
+    a
+} + b
+  c
+}
+
+fn surplus_after() {
+    a
+} }
+fn next() {}

@@ -1,0 +1,55 @@
+== tree ==
+SourceFile! 0..108
+  FnItem! 0..31
+    Name 3..10 "if_body"
+    ParamList 10..12 "()"
+    Block! 13..31
+      ParenExpr! 15..29
+        IfExpr! 16..28
+          NameRef 19..20 "a"
+          Block! 21..28
+            Error! 23..26 "+ b"
+  Error! 32..33 "{"
+  FnItem! 34..70
+    Name 37..48 "initializer"
+    ParamList 48..50 "()"
+    Block! 51..70
+      LetStmt! 53..68
+        Name 57..58 "x"
+        Block! 61..68
+          Error! 63..66 "+ b"
+  Error! 71..72 "{"
+  FnItem! 73..107
+    Name 76..92 "keyword_in_block"
+    ParamList 92..94 "()"
+    Block! 95..107
+      ParenExpr! 97..105
+        Block! 98..104
+          Error! 100..102 "fn"
+
+== evidence ==
+ExpectedStatement at 23
+ExpectedItem at 32
+ExpectedStatement at 63
+ExpectedItem at 71
+ExpectedExpression at 100
+
+== diagnostics ==
+error[syntax/expected-statement] 1:24..1:25 "+": expected a statement
+  at 1:24..1:27 "+ b": skipped while recovering
+error[syntax/expected-item] 1:33..1:34 "{": expected a function item
+error[syntax/expected-statement] 2:30..2:31 "+": expected a statement
+  at 2:30..2:33 "+ b": skipped while recovering
+error[syntax/expected-item] 2:38..2:39 "{": expected a function item
+error[syntax/expected-expression] 3:28..3:30 "fn": expected an expression
+
+== formatted ==
+fn if_body() {
+    (if a { + b })
+} {
+fn initializer() {
+    let x = { + b }
+} {
+fn keyword_in_block() {
+    ({ fn })
+}

@@ -1,0 +1,34 @@
+== tree ==
+SourceFile! 0..57
+  FnItem! 0..27
+    Name 3..17 "prefix_operand"
+    ParamList 17..19 "()"
+    Block! 20..27
+      PrefixExpr! 22..25
+        ParenExpr! 23..25 "()"
+  FnItem! 28..56
+    Name 31..39 "argument"
+    ParamList 39..41 "()"
+    Block! 42..56
+      BinaryExpr! 44..54
+        CallExpr! 44..49
+          NameRef 44..45 "g"
+          ArgList! 45..49
+            PrefixExpr! 46..47 "-"
+        NameRef 53..54 "x"
+
+== evidence ==
+ExpectedExpression at 24
+ExpectedExpression at 48
+
+== diagnostics ==
+error[syntax/expected-expression] 1:25: expected an expression
+error[syntax/expected-expression] 2:21: expected an expression
+
+== formatted ==
+fn prefix_operand() {
+    !()
+}
+fn argument() {
+    g(- ) == x
+}

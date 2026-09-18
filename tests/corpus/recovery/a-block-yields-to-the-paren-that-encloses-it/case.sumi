@@ -1,0 +1,2 @@
+fn unclosed_block() { ({ ) }
+fn surplus_closer() { g(a)) }

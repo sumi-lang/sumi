@@ -1,0 +1,14 @@
+fn binding_initializer() {
+  let x
+  = 1
+}
+fn binding_type() {
+  let x
+  : int = 1
+}
+fn discard() {
+  _
+  = v
+}
+fn signature
+() {}

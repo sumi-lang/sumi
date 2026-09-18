@@ -1,0 +1,10 @@
+fn clean(a: Int) -> Int {
+    let x = a + 1
+    x
+}
+fn wrapped_operand() { (x }
+fn error_node_not_siblings() { x ) }
+fn layout_violation() { a-b }
+fn missing_syntax_marks_ancestors() { let x = }
+fn _() {}
+fn unmarked_after_recovery() {}

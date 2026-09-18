@@ -1,0 +1,45 @@
+== tree ==
+SourceFile! 0..40
+  FnItem! 0..18
+    Name 3..9 "parens"
+    ParamList 9..11 "()"
+    Block! 12..18
+      ParenExpr! 14..16
+        NameRef 15..16 "a"
+  FnItem! 19..39
+    Name 22..31 "arguments"
+    ParamList 31..33 "()"
+    Block! 34..39
+      CallExpr! 36..39
+        NameRef 36..37 "g"
+        ArgList! 37..39
+          NameRef 38..39 "a"
+
+== evidence ==
+Expected(RParen) at 17
+Expected(RParen) at 40
+Expected(RBrace) at 40
+
+== diagnostics ==
+error[syntax/expected-token] 1:18: expected `)`
+  at 1:15..1:16 "(": opening delimiter is here
+  fix (safe): insert `)`
+    1:17 -> ")"
+error[syntax/expected-token] 3:1: expected `)`
+  at 2:19..2:20 "(": opening delimiter is here
+  fix (safe): insert `)`
+    2:21 -> ")"
+error[syntax/expected-token] 3:1: expected `}`
+  at 2:16..2:17 "{": opening delimiter is here
+  fix (safe): insert `}`
+    2:21 -> "}"
+
+== fixed ==
+fn parens() { (a) }
+fn arguments() { g(a)}
+
+== formatted ==
+fn parens() {
+    (a }
+fn arguments() {
+    g(a

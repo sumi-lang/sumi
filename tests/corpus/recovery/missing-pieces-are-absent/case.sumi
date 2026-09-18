@@ -1,0 +1,7 @@
+fn initializer() {
+  let x =
+}
+fn (a: int) {}
+fn parameter_type(a) {}
+fn parameter_closer(a: int
+fn everything(a:) -> { let x: = 1 }

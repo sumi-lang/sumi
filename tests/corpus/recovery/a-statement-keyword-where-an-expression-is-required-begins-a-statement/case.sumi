@@ -1,0 +1,5 @@
+fn on_the_same_line() { let x = let y = 1 }
+fn on_the_next_line() {
+  let x =
+  let y = 1
+}

@@ -1,0 +1,28 @@
+file: rejected
+frontend errors: 8 (see frontend.snap)
+semantic errors: 0
+
+fn initializer@0..30 () -> unit ∈ ∅
+  result: copy : unit @0..30
+    value:
+      let x@25..26: hole : ? @21..28
+      tail: unit : ? @17..30
+
+fn <missing>@31..45 (int ∈ ∅) -> unit ∈ ∅
+  param a@35..36: int
+  result: copy : unit @31..45
+    value: unit : unit @43..45
+
+fn parameter_type@46..69 signature: unavailable
+  param a@64..65: ?
+  body: unit : unit @67..69
+
+fn parameter_closer@70..96 signature: unavailable
+  param a@90..91: int
+  body: hole : ? @70..96
+
+fn everything@97..132 signature: unavailable
+  param a@111..112: ?
+  body:
+    let x@124..125: hole : ? @120..130
+    tail: unit : ? @118..132

@@ -1,0 +1,59 @@
+== tree ==
+SourceFile! 0..89
+  FnItem! 0..21
+    Name 3..12 "arguments"
+    ParamList 12..14 "()"
+    Block! 15..21
+      CallExpr! 17..19
+        NameRef 17..18 "g"
+        ArgList! 18..19 "("
+  FnItem! 22..36
+    Name 25..35 "parameters"
+    ParamList! 35..36 "("
+  FnItem 37..49
+    Name 40..44 "next"
+    ParamList 44..46 "()"
+    Block 47..49 "{}"
+  FnItem! 50..88
+    Name 53..71 "brace_in_arguments"
+    ParamList 71..73 "()"
+    Block! 74..88
+      CallExpr! 76..84
+        NameRef 76..77 "g"
+        ArgList! 77..84
+          NameRef 78..79 "a"
+          Error! 81..82 "{"
+      Error! 85..86 "x"
+
+== evidence ==
+Expected(RParen) at 20
+Expected(RParen) at 37
+ExpectedBody at 37
+ExpectedExpression at 81
+
+== diagnostics ==
+error[syntax/expected-token] 1:21: expected `)`
+  at 1:19..1:20 "(": opening delimiter is here
+  fix (safe): insert `)`
+    1:20 -> ")"
+error[syntax/expected-token] 3:1: expected `)`
+  at 2:14..2:15 "(": opening delimiter is here
+  fix (safe): insert `)`
+    2:15 -> ")"
+error[syntax/expected-body] 3:1: expected a body, `{` or `=`
+error[syntax/expected-expression] 4:32..4:33 "{": expected an expression
+  at 4:36..4:37 "x": skipped while recovering
+
+== fixed (syntax/expected-body, syntax/expected-expression remain) ==
+fn arguments() { g() }
+fn parameters()
+fn next() {}
+fn brace_in_arguments() { g(a, { ) x }
+
+== formatted ==
+fn arguments() {
+    g( }
+fn parameters(
+fn next() {}
+fn brace_in_arguments() {
+    g(a, { ) x }

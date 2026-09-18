@@ -1,0 +1,2 @@
+fn body_then_assignment() { a } = b
+fn damaged_if_in_parens() { (if a { + b }) }
