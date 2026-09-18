@@ -1,5 +1,5 @@
 == tree ==
-SourceFile 0..1016
+SourceFile 0..1371
   FnItem 0..40
     Name 3..17 "divide_by_zero"
     ParamList 17..19 "()"
@@ -276,6 +276,95 @@ SourceFile 0..1016
       ArgList 1009..1015
         LiteralExpr 1010..1011 "0"
         LiteralExpr 1013..1014 "1"
+  FnItem 1016..1049
+    Name 1019..1024 "plain"
+    ParamList 1024..1032
+      Param 1025..1031
+        Name 1025..1026 "k"
+        TypeRef 1028..1031 "int"
+    TypeRef 1036..1039 "int"
+    CallExpr 1042..1049
+      NameRef 1042..1046 "half"
+      ArgList 1046..1049
+        NameRef 1047..1048 "k"
+  FnItem 1050..1079
+    Name 1053..1059 "plains"
+    ParamList 1059..1061 "()"
+    TypeRef 1065..1068 "int"
+    CallExpr 1071..1079
+      NameRef 1071..1076 "plain"
+      ArgList 1076..1079
+        LiteralExpr 1077..1078 "0"
+  FnItem 1080..1127
+    Name 1083..1088 "bound"
+    ParamList 1088..1090 "()"
+    TypeRef 1094..1097 "int"
+    Block 1098..1127
+      LetStmt 1104..1113
+        Name 1108..1109 "z"
+        LiteralExpr 1112..1113 "0"
+      CallExpr 1118..1125
+        NameRef 1118..1122 "half"
+        ArgList 1122..1125
+          NameRef 1123..1124 "z"
+  FnItem 1128..1188
+    Name 1131..1138 "guarded"
+    ParamList 1138..1146
+      Param 1139..1145
+        Name 1139..1140 "k"
+        TypeRef 1142..1145 "int"
+    TypeRef 1150..1153 "int"
+    IfExpr 1156..1188
+      BinaryExpr 1159..1165
+        NameRef 1159..1160 "k"
+        LiteralExpr 1164..1165 "0"
+      Block 1166..1177
+        CallExpr 1168..1175
+          NameRef 1168..1172 "half"
+          ArgList 1172..1175
+            NameRef 1173..1174 "k"
+      Block 1183..1188
+        LiteralExpr 1185..1186 "1"
+  FnItem 1189..1222
+    Name 1192..1200 "guardeds"
+    ParamList 1200..1202 "()"
+    TypeRef 1206..1209 "int"
+    CallExpr 1212..1222
+      NameRef 1212..1219 "guarded"
+      ArgList 1219..1222
+        LiteralExpr 1220..1221 "0"
+  FnItem 1223..1370
+    Name 1226..1233 "chained"
+    ParamList 1233..1235 "()"
+    TypeRef 1239..1242 "int"
+    Block 1243..1370
+      LetStmt 1249..1258
+        Name 1253..1254 "a"
+        LiteralExpr 1257..1258 "0"
+      LetStmt 1263..1272
+        Name 1267..1268 "b"
+        NameRef 1271..1272 "a"
+      LetStmt 1277..1286
+        Name 1281..1282 "c"
+        NameRef 1285..1286 "b"
+      LetStmt 1291..1300
+        Name 1295..1296 "d"
+        NameRef 1299..1300 "c"
+      LetStmt 1305..1314
+        Name 1309..1310 "e"
+        NameRef 1313..1314 "d"
+      LetStmt 1319..1328
+        Name 1323..1324 "f"
+        NameRef 1327..1328 "e"
+      LetStmt 1333..1342
+        Name 1337..1338 "g"
+        NameRef 1341..1342 "f"
+      LetStmt 1347..1356
+        Name 1351..1352 "h"
+        NameRef 1355..1356 "g"
+      BinaryExpr 1361..1368
+        LiteralExpr 1361..1364 "100"
+        NameRef 1367..1368 "h"
 
 == formatted ==
 fn divide_by_zero() -> int = 1 / (2 - 2)
@@ -326,3 +415,26 @@ fn fixed(d: int) -> int = if d == 0 {
 fn fixeds() -> int = fixed(-5) + fixed(0) + fixed(5)
 fn arity(d: int) -> int = 100 / d
 fn wrong_arity() -> int = arity(0, 1)
+fn plain(k: int) -> int = half(k)
+fn plains() -> int = plain(0)
+fn bound() -> int {
+    let z = 0
+    half(z)
+}
+fn guarded(k: int) -> int = if k == 0 {
+    half(k)
+} else {
+    1
+}
+fn guardeds() -> int = guarded(0)
+fn chained() -> int {
+    let a = 0
+    let b = a
+    let c = b
+    let d = c
+    let e = d
+    let f = e
+    let g = f
+    let h = g
+    100 / h
+}
