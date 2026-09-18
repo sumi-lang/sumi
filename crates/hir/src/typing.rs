@@ -180,8 +180,7 @@ impl Lattice for Evidence {
         }
     }
 
-    /// Type claims never widen, so there is nothing to take back; and the
-    /// exact recomputation lacks the claims expectations made.
+    /// Type claims never widen, so there is nothing to take back.
     fn narrow(&mut self, _: &Self) -> bool {
         false
     }
@@ -245,8 +244,9 @@ pub(crate) struct Typing {
 
 impl Typing {
     /// A typing of `nodes` classes, `Var::new(0)` to `Var::new(nodes - 1)`,
-    /// with room for about a claim, a fact, and a flow per class. Only
-    /// the room is a guide.
+    /// with room for about a claim, a fact, and a flow per class: most
+    /// nodes make a fact, and the room for those that make none costs
+    /// less than growing would. Only the room is a guide.
     pub fn for_nodes(nodes: usize) -> Self {
         Self {
             solver: Solver::with_classes(nodes),
@@ -400,17 +400,17 @@ impl Typing {
     }
 
     /// The same classes carrying only the types known on their own account:
-    /// the facts, restated, and the calls whose callee result is solved. A refined read is
-    /// one class with its local here, so it is whatever the local is when a
-    /// demand asks, and a demand that conflicted the local elsewhere is
-    /// still blamed there. Replaying demands on it one at a time, in source
-    /// order, blames a disagreement on the first demand that raised it. An
-    /// unresolved or conflicted callee delivers nothing: it is reported at
-    /// its declaration. A branch is settled by [`Replay::branch`] when its
-    /// `if` comes up in that order, since what it delivers is shaped by the
-    /// demands before it. The replay resolves types and nothing else, so it
-    /// carries the type evidence alone: a quarter of a class, and no values
-    /// to copy or join.
+    /// the facts, restated, and the calls whose callee result is solved. A
+    /// refined read is one class with its local here, so it is whatever
+    /// the local is when a demand asks, and a demand that conflicted the
+    /// local elsewhere is still blamed there. Replaying demands on it one
+    /// at a time, in source order, blames a disagreement on the first
+    /// demand that raised it. An unresolved or conflicted callee delivers
+    /// nothing: it is reported at its declaration. A branch is settled by
+    /// [`Replay::branch`] when its `if` comes up in that order, since what
+    /// it delivers is shaped by the demands before it. The replay resolves
+    /// types and nothing else, so it carries the type evidence alone: a
+    /// quarter of a class, and no values to copy or join.
     pub fn replay(&self) -> Replay {
         let facts = self
             .facts
@@ -541,6 +541,8 @@ mod tests {
         assert_eq!(size_of::<Evidence>(), 12);
         assert_eq!(size_of::<Option<Claim>>(), 4);
         assert_eq!(size_of::<Option<Var>>(), 4);
+        // A fact restated to the replay is three words too.
+        assert_eq!(size_of::<(Var, Ty, Claim)>(), 12);
     }
 
     #[test]

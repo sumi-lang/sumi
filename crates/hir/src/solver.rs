@@ -105,12 +105,13 @@ pub trait Lattice: Clone + Eq {
         cx: &Self::Context,
     ) -> Self;
 
-    /// Take back what widening overshot: `exact` is what the class's facts
-    /// and flows deliver with no flow treated as cyclic, recomputed once the
-    /// worklist has settled, so it is at most `self` wherever it is
-    /// complete. Expectations are not part of it, so a lattice whose
-    /// expectations carry evidence keeps what `exact` lacks; one that never
-    /// widens has nothing to take back. Reports whether `self` changed.
+    /// Take back what widening overshot: `exact` is everything the class
+    /// held before its component was taken — what was joined into it
+    /// before the solve and what flowed in from outside — plus what the
+    /// flows inside the component deliver with none treated as cyclic,
+    /// recomputed once the worklist has settled, so it is at most `self`.
+    /// A lattice that never widens has nothing to take back. Reports
+    /// whether `self` changed.
     fn narrow(&mut self, exact: &Self) -> bool;
 }
 
@@ -1286,26 +1287,33 @@ mod tests {
         assert_eq!(*solver.evidence(c), (Set(5), Interval::new(51, 101)));
     }
 
+    /// A replay starts from the facts its caller restates and what the
+    /// settled flows export, and from nothing else: a demand joined into a
+    /// class before the solve is gone, a fact beside it stays, and an
+    /// export lands on it whatever the class held.
     #[test]
     fn replay_keeps_restated_facts_and_exported_flows_only() {
         let mut solver = Solver::<Set>::default();
         let known = solver.known(Set(1));
+        solver.expect(known, &Set(2));
         let demanded = solver.fresh();
         solver.expect(demanded, &Set(2));
         let conflicted = solver.fresh();
         solver.expect(conflicted, &Set(1));
         solver.expect(conflicted, &Set(2));
         let from_conflict = solver.import(conflicted, ());
-        let from_known = solver.import(known, ());
+        let provider = solver.known(Set(4));
+        solver.flow(provider, known, ());
         solver.solve(&());
-        let replay = solver.replay([(known, Set(1))], |set, _, ()| {
+        assert_eq!(*solver.evidence(known), Set(7));
+        let replay = solver.replay([(known, Set(1)), (provider, Set(4))], |set, _, ()| {
             (set.0.count_ones() == 1).then_some(*set)
         });
-        assert_eq!(*replay.evidence(known), Set(1));
+        assert_eq!(*replay.evidence(known), Set(5));
+        assert_eq!(*replay.evidence(provider), Set(4));
         assert_eq!(*replay.evidence(demanded), Set::bottom());
         assert_eq!(*replay.evidence(conflicted), Set::bottom());
         assert_eq!(*replay.evidence(from_conflict), Set::bottom());
-        assert_eq!(*replay.evidence(from_known), Set(1));
     }
 
     /// One constraint over eight pre-made classes: an equality, an

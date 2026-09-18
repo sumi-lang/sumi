@@ -172,9 +172,11 @@ impl Lattice for May {
         }
     }
 
-    /// Values arrive by facts and flows alone, an expectation carrying
-    /// none, so the exact recomputation is complete: what rounding widened
-    /// comes back to what the flows deliver without it.
+    /// The exact recomputation starts from what the class held before its
+    /// component moved it, a literal's value or an entry's liveness
+    /// included, and adds the flows without rounding, so it is complete:
+    /// what rounding widened comes back to what the flows deliver without
+    /// it.
     fn narrow(&mut self, exact: &Self) -> bool {
         if *self == *exact {
             return false;
