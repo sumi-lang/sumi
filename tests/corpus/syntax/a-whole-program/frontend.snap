@@ -1,0 +1,246 @@
+== tree ==
+SourceFile 0..1194
+  FnItem 126..458
+    Name 129..133 "main"
+    ParamList 133..135 "()"
+    Block 136..458
+      LetStmt 142..164
+        Name 146..151 "total"
+        CallExpr 154..164
+          NameRef 154..160 "sum_to"
+          ArgList 160..164
+            LiteralExpr 161..163 "10"
+      LetStmt 169..186
+        Name 177..182 "count"
+        LiteralExpr 185..186 "0"
+      AssignStmt 191..208
+        NameRef 191..196 "count"
+        BinaryExpr 199..208
+          NameRef 199..204 "count"
+          LiteralExpr 207..208 "1"
+      DiscardStmt 213..237
+        CallExpr 217..237
+          NameRef 217..223 "report"
+          ArgList 223..237
+            NameRef 224..229 "total"
+            NameRef 231..236 "count"
+      IfExpr 242..456
+        BinaryExpr 245..291
+          BinaryExpr 245..278
+            CallExpr 245..259
+              NameRef 245..252 "is_even"
+              ArgList 252..259
+                NameRef 253..258 "total"
+            PrefixExpr 263..278
+              CallExpr 264..278
+                NameRef 264..271 "is_zero"
+                ArgList 271..278
+                  NameRef 272..277 "count"
+          BinaryExpr 282..291
+            NameRef 282..287 "total"
+            LiteralExpr 290..291 "0"
+        Block 292..371
+          CallExpr 302..365
+            NameRef 302..306 "each"
+            ArgList 306..365
+              CallExpr 307..314
+                NameRef 307..312 "names"
+                ArgList 312..314 "()"
+              ClosureExpr 316..364
+                ParamList 318..324
+                  Param 319..323
+                    Name 319..323 "name"
+                Block 325..364
+                  DiscardStmt 339..354
+                    CallExpr 343..354
+                      NameRef 343..348 "greet"
+                      ArgList 348..354
+                        NameRef 349..353 "name"
+        IfExpr 377..456
+          BinaryExpr 380..392
+            NameRef 380..385 "total"
+            LiteralExpr 389..392 "100"
+          Block 393..415
+            ReturnStmt 403..409 "return"
+          Block 421..456
+            DiscardStmt 431..450
+              CallExpr 435..450
+                NameRef 435..440 "greet"
+                ArgList 440..450
+                  LiteralExpr 441..449 "\"nobody\""
+  FnItem 460..537
+    Name 463..469 "sum_to"
+    ParamList 469..477
+      Param 470..476
+        Name 470..471 "n"
+        TypeRef 473..476 "int"
+    TypeRef 481..484 "int"
+    IfExpr 487..537
+      BinaryExpr 490..496
+        NameRef 490..491 "n"
+        LiteralExpr 495..496 "0"
+      Block 497..506
+        LiteralExpr 503..504 "0"
+      Block 512..537
+        BinaryExpr 518..535
+          NameRef 518..519 "n"
+          CallExpr 522..535
+            NameRef 522..528 "sum_to"
+            ArgList 528..535
+              BinaryExpr 529..534
+                NameRef 529..530 "n"
+                LiteralExpr 533..534 "1"
+  FnItem 539..578
+    Name 542..549 "is_even"
+    ParamList 549..557
+      Param 550..556
+        Name 550..551 "n"
+        TypeRef 553..556 "int"
+    TypeRef 561..565 "bool"
+    BinaryExpr 568..578
+      BinaryExpr 568..573
+        NameRef 568..569 "n"
+        LiteralExpr 572..573 "2"
+      LiteralExpr 577..578 "0"
+  FnItem 580..615
+    Name 583..590 "is_zero"
+    ParamList 590..598
+      Param 591..597
+        Name 591..592 "n"
+        TypeRef 594..597 "int"
+    TypeRef 602..606 "bool"
+    BinaryExpr 609..615
+      NameRef 609..610 "n"
+      LiteralExpr 614..615 "0"
+  FnItem 617..787
+    Name 620..626 "report"
+    ParamList 626..650
+      Param 627..637
+        Name 627..632 "total"
+        TypeRef 634..637 "int"
+      Param 639..649
+        Name 639..644 "count"
+        TypeRef 646..649 "int"
+    TypeRef 654..657 "int"
+    Block 658..787
+      LetStmt 664..700
+        Name 668..674 "scaled"
+        BinaryExpr 677..700
+          ParenExpr 677..692
+            BinaryExpr 678..691
+              BinaryExpr 678..687
+                NameRef 678..683 "total"
+                LiteralExpr 686..687 "3"
+              LiteralExpr 690..691 "1"
+          NameRef 695..700 "count"
+      LetStmt 705..772
+        Name 709..716 "squared"
+        Block 719..772
+          LetStmt 729..746
+            Name 733..737 "base"
+            NameRef 740..746 "scaled"
+          BinaryExpr 755..766
+            NameRef 755..759 "base"
+            NameRef 762..766 "base"
+      PrefixExpr 777..785
+        NameRef 778..785 "squared"
+  FnItem 789..858
+    Name 792..797 "greet"
+    ParamList 797..808
+      Param 798..807
+        Name 798..802 "name"
+        TypeRef 804..807 "str"
+    TypeRef 812..815 "str"
+    LiteralExpr 818..858 "\"hello, {name}\\n\\t\\\"quoted\\\" \\\\ escaped\""
+  FnItem 860..883
+    Name 863..868 "names"
+    ParamList 868..870 "()"
+    TypeRef 874..878 "unit"
+    Block 881..883 "{}"
+  FnItem 885..950
+    Name 888..892 "each"
+    ParamList 892..918
+      Param 893..904
+        Name 893..898 "items"
+        TypeRef 900..904 "unit"
+      Param 906..917
+        Name 906..911 "visit"
+        TypeRef 913..917 "unit"
+    Block 919..950
+      DiscardStmt 925..934
+        NameRef 929..934 "items"
+      DiscardStmt 939..948
+        NameRef 943..948 "visit"
+  FnItem 952..999
+    Name 955..962 "compose"
+    ParamList 962..978
+      Param 963..969
+        Name 963..964 "f"
+        TypeRef 966..969 "int"
+      Param 971..977
+        Name 971..972 "g"
+        TypeRef 974..977 "int"
+    TypeRef 982..985 "int"
+    CallExpr 988..999
+      CallExpr 988..996
+        NameRef 988..993 "adder"
+        ArgList 993..996
+          NameRef 994..995 "f"
+      ArgList 996..999
+        NameRef 997..998 "g"
+  FnItem 1001..1045
+    Name 1004..1009 "adder"
+    ParamList 1009..1017
+      Param 1010..1016
+        Name 1010..1011 "x"
+        TypeRef 1013..1016 "int"
+    ClosureExpr 1020..1045
+      ParamList 1022..1030
+        Param 1023..1029
+          Name 1023..1024 "y"
+          TypeRef 1026..1029 "int"
+      TypeRef 1034..1037 "int"
+      BinaryExpr 1040..1045
+        NameRef 1040..1041 "x"
+        NameRef 1044..1045 "y"
+  FnItem 1047..1077
+    Name 1050..1055 "thunk"
+    ParamList 1055..1057 "()"
+    ClosureExpr 1060..1077
+      ParamList 1062..1064 "()"
+      CallExpr 1067..1077
+        NameRef 1067..1071 "work"
+        ArgList 1071..1077
+          LiteralExpr 1072..1073 "1"
+          LiteralExpr 1075..1076 "2"
+  FnItem 1079..1138
+    Name 1082..1086 "work"
+    ParamList 1086..1102
+      Param 1087..1093
+        Name 1087..1088 "a"
+        TypeRef 1090..1093 "int"
+      Param 1095..1101
+        Name 1095..1096 "b"
+        TypeRef 1098..1101 "int"
+    TypeRef 1106..1110 "bool"
+    BinaryExpr 1113..1138
+      BinaryExpr 1113..1129
+        BinaryExpr 1113..1119
+          NameRef 1113..1114 "a"
+          NameRef 1118..1119 "b"
+        BinaryExpr 1123..1129
+          NameRef 1123..1124 "a"
+          NameRef 1128..1129 "b"
+      BinaryExpr 1133..1138
+        NameRef 1133..1134 "a"
+        NameRef 1137..1138 "b"
+  FnItem 1140..1153
+    Name 1143..1148 "empty"
+    ParamList 1148..1150 "()"
+    Block 1151..1153 "{}"
+  FnItem 1155..1193
+    Name 1158..1168 "unit_value"
+    ParamList 1168..1170 "()"
+    TypeRef 1174..1178 "unit"
+    Block 1179..1193
+      ReturnStmt 1185..1191 "return"

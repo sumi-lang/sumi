@@ -1,22 +1,4 @@
-== tree ==
-SourceFile 0..89
-  FnItem 0..26
-    Name 3..12 "malformed"
-    ParamList 12..14 "()"
-    TypeRef 18..21 "int"
-    LiteralExpr 24..26 "01"
-  FnItem 27..61
-    Name 30..36 "layout"
-    ParamList 36..38 "()"
-    TypeRef 42..45 "int"
-    Block 46..61
-      LiteralExpr 52..53 "1"
-      LiteralExpr 58..59 "2"
-  FnItem 62..88
-    Name 65..71 "intact"
-    ParamList 71..73 "()"
-    TypeRef 77..81 "bool"
-    LiteralExpr 84..88 "true"
+tree: see hir.snap
 
 == diagnostics ==
 error[syntax/noncanonical-number] 1:25..1:26 "0": integer literal has leading zeros

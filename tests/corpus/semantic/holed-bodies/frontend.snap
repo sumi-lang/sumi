@@ -1,44 +1,4 @@
-== tree ==
-SourceFile! 0..231
-  FnItem 0..48
-    Name 3..12 "tail_held"
-    ParamList 12..14 "()"
-    TypeRef 18..22 "bool"
-    Block 23..48
-      DiscardStmt 29..40
-        NameRef 33..40 "missing"
-      LiteralExpr 45..46 "1"
-  FnItem 49..90
-    Name 52..60 "inferred"
-    ParamList 60..62 "()"
-    Block 65..90
-      DiscardStmt 71..82
-        NameRef 75..82 "missing"
-      LiteralExpr 87..88 "1"
-  FnItem 91..123
-    Name 94..100 "caller"
-    ParamList 100..102 "()"
-    TypeRef 106..110 "bool"
-    CallExpr 113..123
-      NameRef 113..121 "inferred"
-      ArgList 121..123 "()"
-  FnItem 124..198
-    Name 127..137 "statements"
-    ParamList 137..139 "()"
-    TypeRef 143..146 "int"
-    Block 147..198
-      Block 153..190
-        DiscardStmt 163..174
-          NameRef 167..174 "missing"
-        LiteralExpr 183..184 "5"
-      LiteralExpr 195..196 "0"
-  FnItem! 199..230
-    Name 202..209 "damaged"
-    ParamList 209..211 "()"
-    TypeRef 215..218 "int"
-    Block! 219..230
-      LiteralExpr 225..226 "5"
-      Error! 227..228 ")"
+tree: see hir.snap
 
 == evidence ==
 ExpectedStatement at 227

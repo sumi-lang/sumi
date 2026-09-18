@@ -1,0 +1,59 @@
+// One accepted program that uses every construct, kept as the golden
+// parse tree of a file whose parse is not in question.
+fn main() {
+    let total = sum_to(10)
+    let mut count = 0
+    count = count + 1
+    _ = report(total, count)
+    if is_even(total) && !is_zero(count) || total < 0 {
+        each(names(), fn(name) {
+            _ = greet(name)
+        })
+    } else if total >= 100 {
+        return
+    } else {
+        _ = greet("nobody")
+    }
+}
+
+fn sum_to(n: int) -> int = if n == 0 {
+    0
+} else {
+    n + sum_to(n - 1)
+}
+
+fn is_even(n: int) -> bool = n % 2 == 0
+
+fn is_zero(n: int) -> bool = n == 0
+
+fn report(total: int, count: int) -> int {
+    let scaled = (total * 3 - 1) / count
+    let squared = {
+        let base = scaled
+        base * base
+    }
+    -squared
+}
+
+fn greet(name: str) -> str = "hello, {name}\n\t\"quoted\" \\ escaped"
+
+fn names() -> unit = {}
+
+fn each(items: unit, visit: unit) {
+    _ = items
+    _ = visit
+}
+
+fn compose(f: int, g: int) -> int = adder(f)(g)
+
+fn adder(x: int) = fn(y: int) -> int = x + y
+
+fn thunk() = fn() = work(1, 2)
+
+fn work(a: int, b: int) -> bool = a != b && a <= b || a > b
+
+fn empty() {}
+
+fn unit_value() -> unit {
+    return
+}

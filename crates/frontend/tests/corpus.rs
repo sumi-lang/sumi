@@ -5,9 +5,11 @@
 //! evidence, the diagnostics, the source after every fix, its header
 //! naming any diagnostic that survives them, and the formatted source
 //! where it differs, its header counting the items left as written and
-//! naming any violation that survives formatting. Run with `UPDATE_FRONTEND=1` to
-//! rewrite the snapshots, then review the diff; a new case gets its first
-//! snapshot the same way.
+//! naming any violation that survives formatting. A case that selects
+//! `hir` has its tree in `hir.snap`, which anchors every node by span, so
+//! its frontend snapshot leaves the tree out. Run with `UPDATE_FRONTEND=1`
+//! to rewrite the snapshots, then review the diff; a new case gets its
+//! first snapshot the same way.
 
 use std::fmt::Write as _;
 
@@ -28,16 +30,21 @@ fn every_case_matches_its_snapshot() {
 }
 
 /// The snapshot of one case.
-fn snapshot(source: &str) -> String {
+fn snapshot(source: &str, stages: &[corpus::Stage]) -> String {
     let parsed = parse_source(FileId::new(0), source.into()).expect("corpus cases fit in u32");
     let lexed = parsed.lexed();
     let parse = parsed.parse();
     let index = LineIndex::new(source);
-    let mut out = String::from("== tree ==\n");
-    dump(parse.tree(), lexed, source, &mut out);
+    let mut out = String::new();
+    if stages.contains(&corpus::Stage::Hir) {
+        out.push_str("tree: see hir.snap\n");
+    } else {
+        section(&mut out, "tree");
+        dump(parse.tree(), lexed, source, &mut out);
+    }
 
     if !parse.evidence().is_empty() {
-        out.push_str("\n== evidence ==\n");
+        section(&mut out, "evidence");
         for evidence in parse.evidence() {
             let at = lexed.boundary(evidence_token(evidence)).to_u32();
             writeln!(out, "{} at {at}", evidence_name(evidence)).expect("writing to a string");
@@ -45,7 +52,7 @@ fn snapshot(source: &str) -> String {
     }
 
     if !parsed.diagnostics().is_empty() {
-        out.push_str("\n== diagnostics ==\n");
+        section(&mut out, "diagnostics");
         for diagnostic in parsed.diagnostics() {
             render(diagnostic, &index, source, &mut out);
         }
@@ -104,11 +111,7 @@ fn snapshot(source: &str) -> String {
             };
             notes.push(format!("{} {verb}", remaining.join(", ")));
         }
-        if notes.is_empty() {
-            out.push_str("\n== fixed ==\n");
-        } else {
-            writeln!(out, "\n== fixed ({}) ==", notes.join("; ")).expect("writing to a string");
-        }
+        section(&mut out, &titled("fixed", &notes));
         push_text(&mut out, &fixed);
     }
 
@@ -146,21 +149,33 @@ fn snapshot(source: &str) -> String {
                 };
                 notes.push(format!("{} {verb}", remaining.join(", ")));
             }
-            if notes.is_empty() {
-                out.push_str("\n== formatted ==\n");
-            } else {
-                writeln!(out, "\n== formatted ({}) ==", notes.join("; "))
-                    .expect("writing to a string");
-            }
+            section(&mut out, &titled("formatted", &notes));
             push_text(&mut out, &formatted.text);
         }
         Ok(_) => {}
         Err(defect) => {
-            out.push_str("\n== formatted (defect) ==\n");
+            section(&mut out, "formatted (defect)");
             push_text(&mut out, &defect.rejected);
         }
     }
     out
+}
+
+/// A section header, separated from the section before it by a blank line.
+fn section(out: &mut String, title: &str) {
+    if !out.is_empty() {
+        out.push('\n');
+    }
+    writeln!(out, "== {title} ==").expect("writing to a string");
+}
+
+/// A section title with its notes in parentheses, if it has any.
+fn titled(title: &str, notes: &[String]) -> String {
+    if notes.is_empty() {
+        title.to_owned()
+    } else {
+        format!("{title} ({})", notes.join("; "))
+    }
 }
 
 /// Append `text` as a section body, ending on a line break.

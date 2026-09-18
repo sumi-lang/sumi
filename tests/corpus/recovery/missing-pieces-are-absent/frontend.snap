@@ -1,38 +1,4 @@
-== tree ==
-SourceFile! 0..139
-  FnItem! 0..32
-    Name 3..14 "initializer"
-    ParamList 14..16 "()"
-    Block! 17..32
-      LetStmt! 23..30
-        Name 27..28 "x"
-  FnItem! 33..47
-    ParamList 36..44
-      Param 37..43
-        Name 37..38 "a"
-        TypeRef 40..43 "int"
-    Block 45..47 "{}"
-  FnItem! 48..71
-    Name 51..65 "parameter_type"
-    ParamList! 65..68
-      Param! 66..67
-        Name 66..67 "a"
-    Block 69..71 "{}"
-  FnItem! 72..98
-    Name 75..91 "parameter_closer"
-    ParamList! 91..98
-      Param 92..98
-        Name 92..93 "a"
-        TypeRef 95..98 "int"
-  FnItem! 99..138
-    Name 102..112 "everything"
-    ParamList! 112..116
-      Param! 113..115
-        Name 113..114 "a"
-    Block! 120..138
-      LetStmt! 126..136
-        Name 130..131 "x"
-        LiteralExpr 135..136 "1"
+tree: see hir.snap
 
 == evidence ==
 ExpectedExpression at 31
