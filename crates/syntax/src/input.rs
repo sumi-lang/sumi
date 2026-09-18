@@ -213,6 +213,22 @@ impl ParserInput {
         self.sig_at_or_after[raw.to_usize()]
     }
 
+    /// The raw tokens of the trivia before significant token `index`, or
+    /// after the last one when `index` is [`end`](Self::end): gap `index`
+    /// of the file, of which there is one more than there are tokens.
+    pub fn trivia_before(&self, index: SigIdx) -> Range<RawIdx> {
+        let start = match index.checked_sub(1) {
+            Some(previous) => self.token(previous) + 1,
+            None => RawIdx::new(0),
+        };
+        let end = if index == self.end() {
+            self.raw_len()
+        } else {
+            self.token(index)
+        };
+        start..end
+    }
+
     /// The index one past the last token of the underlying buffer, where
     /// ranges that run to end of input stop: the last raw index the table
     /// answers for.

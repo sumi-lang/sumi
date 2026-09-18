@@ -134,42 +134,18 @@ pub(crate) fn plan(lexed: &LexedFile, parse: &Parse) -> Plan {
 
     for gap in 0..=n {
         let g = &mut planner.gaps[gap];
+        let holds = |kind| holds(lexed, input, gap, kind);
         if g.frozen {
-            let start = if gap == 0 {
-                RawIdx::new(0)
-            } else {
-                input.token(SigIdx::new(gap as u32 - 1)) + 1
-            };
-            let end = if gap == n {
-                lexed.end()
-            } else {
-                input.token(SigIdx::new(gap as u32))
-            };
             g.breakable = false;
-            g.hard = start
-                .until(end)
-                .any(|raw| lexed.kind(raw) == SyntaxKind::Newline);
+            g.hard = holds(SyntaxKind::Newline);
             continue;
         }
         if gap == n && n > 0 {
             g.hard = true;
             g.level = 0;
         }
-        let start = if gap == 0 {
-            RawIdx::new(0)
-        } else {
-            input.token(SigIdx::new(gap as u32 - 1)) + 1
-        };
-        let end = if gap == n {
-            lexed.end()
-        } else {
-            input.token(SigIdx::new(gap as u32))
-        };
         // A comment ends its line.
-        if start
-            .until(end)
-            .any(|raw| lexed.kind(raw) == SyntaxKind::LineComment)
-        {
+        if holds(SyntaxKind::LineComment) {
             g.hard = true;
         }
     }
@@ -208,6 +184,15 @@ pub(crate) fn plan(lexed: &LexedFile, parse: &Parse) -> Plan {
         groups: planner.groups,
         layout_comma: planner.layout_comma,
     }
+}
+
+/// Whether the trivia of gap `gap` holds a token of `kind`.
+fn holds(lexed: &LexedFile, input: &ParserInput, gap: usize, kind: SyntaxKind) -> bool {
+    let trivia = input.trivia_before(SigIdx::new(gap as u32));
+    trivia
+        .start
+        .until(trivia.end)
+        .any(|raw| lexed.kind(raw) == kind)
 }
 
 struct Planner<'a> {
@@ -635,22 +620,6 @@ impl Planner<'_> {
                 ));
             }
         }
-        let n = self.input.len();
-        let has_newline = |planner: &Self, gap: usize| {
-            let start = if gap == 0 {
-                RawIdx::new(0)
-            } else {
-                planner.input.token(SigIdx::new(gap as u32 - 1)) + 1
-            };
-            let end = if gap == n {
-                lexed.end()
-            } else {
-                planner.input.token(SigIdx::new(gap as u32))
-            };
-            start
-                .until(end)
-                .any(|raw| lexed.kind(raw) == SyntaxKind::Newline)
-        };
         for gap in anchors {
             self.gaps[gap].frozen = true;
         }
@@ -659,7 +628,7 @@ impl Planner<'_> {
                 self.gaps[gap].frozen = true;
             }
             for edge in [start, end] {
-                if !(self.gaps[edge].hard && has_newline(self, edge)) {
+                if !(self.gaps[edge].hard && holds(lexed, self.input, edge, SyntaxKind::Newline)) {
                     self.gaps[edge].frozen = true;
                 }
             }

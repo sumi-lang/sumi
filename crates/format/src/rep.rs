@@ -9,7 +9,7 @@
 //! formatter may add or remove, so `rep` erases it and counts positions
 //! without it.
 
-use sumi_lexer::{LexedFile, RawIdx};
+use sumi_lexer::LexedFile;
 use sumi_syntax::{NodeIdx, NodeKind, Parse, SigIdx, SyntaxKind};
 
 use crate::trivia::{GapSignal, signal};
@@ -68,27 +68,15 @@ pub fn rep<'s>(source: &'s str, lexed: &LexedFile, parse: &Parse) -> Rep<'s> {
     let erased_index = |sig: u32| sig - before[sig as usize];
 
     // The trivia of gap `gap`, the tokens before an erased comma included.
-    let trivia = |gap: usize| -> Vec<RawIdx> {
-        let start = |gap: usize| {
-            if gap == 0 {
-                RawIdx::new(0)
-            } else {
-                input.token(SigIdx::new(gap as u32 - 1)) + 1
-            }
-        };
-        let end = if gap == n {
-            lexed.end()
-        } else {
-            input.token(SigIdx::new(gap as u32))
-        };
-        let mut tokens: Vec<RawIdx> = Vec::new();
-        if gap > 0 && erased[gap - 1] {
-            tokens.extend(start(gap - 1).until(input.token(SigIdx::new(gap as u32 - 1))));
-        }
-        tokens.extend(start(gap).until(end));
-        tokens
+    let trivia = |gap: usize| {
+        let range = input.trivia_before(SigIdx::new(gap as u32));
+        range.start.until(range.end)
     };
-    let signal_of = |gap: usize| signal(source, lexed, input, gap, trivia(gap).into_iter());
+    let signal_of = |gap: usize| {
+        let before_comma = (gap > 0 && erased[gap - 1]).then(|| trivia(gap - 1));
+        let tokens = before_comma.into_iter().flatten().chain(trivia(gap));
+        signal(source, lexed, input, gap, tokens)
+    };
 
     let mut items = Vec::new();
     let mut edges = Vec::new();

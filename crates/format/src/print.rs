@@ -2,6 +2,8 @@
 //! deciding each group where it opens and emitting each gap's separator,
 //! as the edits that turn the source into the formatted text.
 
+use std::ops::Range;
+
 use sumi_lexer::{LexedFile, RawIdx};
 use sumi_syntax::{ParserInput, SigIdx};
 use sumi_text::{TextEdit, TextRange};
@@ -40,31 +42,26 @@ pub(crate) fn print(
     };
 
     // The trivia of gap `gap`, merged with the gap before a layout comma.
-    let trivia_range = |gap: usize| -> (RawIdx, RawIdx) {
-        let end = if gap == n { lexed.end() } else { raw_of(gap) };
-        let mut start = if gap == 0 {
-            RawIdx::new(0)
-        } else {
-            raw_of(gap - 1) + 1
-        };
+    let trivia_range = |gap: usize| -> Range<RawIdx> {
+        let mut range = input.trivia_before(SigIdx::new(gap as u32));
         if gap > 0 && plan.layout_comma[gap - 1] {
-            start = if gap >= 2 {
-                raw_of(gap - 2) + 1
-            } else {
-                RawIdx::new(0)
-            };
+            range.start = input.trivia_before(SigIdx::new(gap as u32 - 1)).start;
         }
-        (start, end)
+        range
     };
     let trivia_tokens = |gap: usize| {
-        let (start, end) = trivia_range(gap);
+        let range = trivia_range(gap);
         let comma = (gap > 0 && plan.layout_comma[gap - 1]).then(|| raw_of(gap - 1));
-        start.until(end).filter(move |&raw| Some(raw) != comma)
+        range
+            .start
+            .until(range.end)
+            .filter(move |&raw| Some(raw) != comma)
     };
     let flat_trivia_width = |gap: usize| -> usize {
-        let (start, end) = trivia_range(gap);
-        start
-            .until(end)
+        let range = trivia_range(gap);
+        range
+            .start
+            .until(range.end)
             .map(|raw| width(lexed.text(source, raw)))
             .sum()
     };
@@ -145,8 +142,8 @@ pub(crate) fn print(
             continue;
         }
         let plan_gap = plan.gaps[gap];
-        let (start, end) = trivia_range(gap);
-        let input_range = TextRange::new(lexed.boundary(start), lexed.boundary(end));
+        let trivia = trivia_range(gap);
+        let input_range = TextRange::new(lexed.boundary(trivia.start), lexed.boundary(trivia.end));
         let input_text = input_range.text(source);
         let text: String = if plan_gap.frozen {
             input_text.to_owned()

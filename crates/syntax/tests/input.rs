@@ -562,3 +562,31 @@ fn sig_at_or_after_maps_every_raw_token_to_its_gap_or_itself() {
     }
     assert_eq!(input.sig_at_or_after(lexed.end()), input.end());
 }
+
+#[test]
+fn the_trivia_before_each_token_partitions_the_trivia_of_the_file() {
+    for source in ["", "  \n", "a", " a // c\n b\n", "a\nb"] {
+        let lexed = lex(source).unwrap();
+        let input = ParserInput::new(&lexed);
+        let mut seen = Vec::new();
+        for index in input.indices().chain([input.end()]) {
+            let trivia = input.trivia_before(index);
+            assert!(
+                trivia
+                    .start
+                    .until(trivia.end)
+                    .all(|raw| lexed.kind(raw).is_trivia()),
+                "{source:?} at {index:?}"
+            );
+            seen.extend(trivia.start.until(trivia.end));
+            if index < input.end() {
+                seen.push(input.token(index));
+            }
+        }
+        assert_eq!(
+            seen,
+            RawIdx::new(0).until(lexed.end()).collect::<Vec<_>>(),
+            "{source:?}"
+        );
+    }
+}
