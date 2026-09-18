@@ -13,21 +13,20 @@ use sumi_graph::{Domain, Graph, May, NodeId, Op, Ty};
 use sumi_syntax::NodeIdx;
 use sumi_text::Span;
 
-use crate::check::{Demand, DemandKind, Header, Placed};
 use crate::lattice::Edge;
+use crate::lower::{DemandKind, Header, Lowered};
 use crate::typing::Typing;
 
 /// The typing of the graph: one class per node, at the node's index. A
 /// node the walk gave no value has a class nothing flows into.
 pub(crate) fn draw(
     graph: &Graph,
-    placed: &Placed,
+    lowered: &Lowered,
     headers: &[Header],
-    demands: &[Demand],
     span: impl Fn(NodeIdx) -> Span,
 ) -> Typing {
     let mut typing = Typing::for_nodes(graph.nodes().len());
-    let typed = |node: NodeId| placed.typed[node.index()];
+    let typed = |node: NodeId| lowered.typed[node.index()];
 
     // Facts and the flows within a function, in one pass in node order:
     // every input precedes its reader, and a region's context and result
@@ -145,11 +144,11 @@ pub(crate) fn draw(
     // Every call reaches its callee's entry; a whole one delivers its
     // arguments to the parameters while its context is live, and learns
     // its callee's result, whichever comes first in the file.
-    for &(context, callee) in &placed.entered {
+    for &(context, callee) in &lowered.entered {
         let entry = graph.run(callee).entry();
         typing.flow(context, entry, Edge::Enter);
     }
-    for call in placed.calls() {
+    for call in &lowered.calls {
         let run = graph.run(call.callee);
         for (&arg, param) in graph.inputs(call.node).iter().zip(run.params()) {
             typing.derive(arg, call.context, param, Edge::Argument);
@@ -159,7 +158,7 @@ pub(crate) fn draw(
         }
     }
     // Demands, in the order the walk made them.
-    for demand in demands {
+    for demand in &lowered.demands {
         if let DemandKind::Type { expected, .. } = demand.kind {
             typing.expect(demand.actual, expected, span(demand.node));
         }
