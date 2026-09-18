@@ -352,9 +352,10 @@ impl<L: Lattice> Solver<L> {
     /// will get when its turn comes and delivers along its flows once, and
     /// a component some flow stays inside is settled by a worklist over its
     /// members, narrowed by a bounded number of exact passes when it can
-    /// grow, and then delivers along the flows that leave it. The work is
-    /// bounded by the flows times the height of the lattice, plus the exact
-    /// passes.
+    /// grow, and then delivers along the flows that leave it. A class is
+    /// visited once for each time it grows while not already waiting, and
+    /// a visit scans its outgoing flows, so the work is bounded by the
+    /// flows times the height of the lattice, plus the exact passes.
     pub fn solve(&mut self, cx: &L::Context) {
         let n = self.evidence.len();
         if self.flows.is_empty() {
