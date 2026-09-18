@@ -6,14 +6,14 @@
 //! It is token-local: every [`LexError`] names its token and a range inside
 //! it.
 
-mod file;
 mod generated;
 mod index;
+mod lex;
 mod token;
 
-pub use file::{
-    LexError, LexErrorKind, LexedFile, SourceTooLarge, canonicalize_number_literal, lex,
-};
 pub use generated::SyntaxKind;
 pub use index::RawIdx;
+pub use lex::{
+    LexError, LexErrorKind, LexedFile, SourceTooLarge, canonicalize_number_literal, lex,
+};
 pub use token::TokenFlags;
