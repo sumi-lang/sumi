@@ -5,12 +5,10 @@
 //! the lexer and parser; cross-phase wording, suppression, and ordering
 //! live here.
 
+pub mod codes;
 mod diagnostic;
 mod lower;
 pub use lower::diagnostics;
-
-mod generated;
-pub use generated::codes;
 
 pub use diagnostic::{Diagnostic, DiagnosticCode, DiagnosticGroup, Fix, Label};
 pub use sumi_lexer::SourceTooLarge;

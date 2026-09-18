@@ -1,7 +1,6 @@
-//! Every diagnostic code the registry declares is shown by a corpus case:
-//! some snapshot under `tests/corpus` reports it. A code no case reports
-//! has no witness in the repository and no example in the reference
-//! chapter, which takes its examples from the same snapshots.
+//! Every diagnostic code is shown by a corpus case: some snapshot under
+//! `tests/corpus` reports it. A code no case reports has no witness in the
+//! repository.
 
 use std::fs;
 use std::path::Path;

@@ -6,15 +6,13 @@
 //! locations refer to the owned snapshot.
 
 mod check;
+pub mod codes;
 mod flows;
 mod lattice;
 mod lower;
 mod recursion;
 mod solver;
 mod typing;
-
-mod generated;
-pub use generated::codes;
 
 use std::fmt;
 
