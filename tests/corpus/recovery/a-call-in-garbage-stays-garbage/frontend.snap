@@ -1,0 +1,14 @@
+== tree ==
+SourceFile! 0..116
+  FnItem 0..10
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    LiteralExpr 9..10 "1"
+  Error! 11..115 "if cond(x) { y }\ntotal = compute(x) { y }\nx g(y) == 2\nreturn g(y) { y }\nx g\n(y: int) { y }\nx g(y: int) ="
+
+== evidence ==
+ExpectedItem at 11
+
+== diagnostics ==
+error[syntax/expected-item] 2:1..2:3 "if": expected a function item
+  at 2:1..8:14 "if cond(x) { y }\ntotal = compute(x) { y }\nx g(y) == 2\nreturn g(y) { y }\nx g\n(y: int) { y }\nx g(y: int) =": skipped while recovering

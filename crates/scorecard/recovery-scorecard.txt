@@ -47,8 +47,8 @@ delete/delimiter            2.151         5        55.978         300          2
 delete/non-delim            1.000         2        22.475         134          1.000            2
 duplicate/delimiter         1.914         5        48.108         285          1.914            5
 duplicate/non-delim         1.354         3        20.509         123          1.354            3
-swap/delimiter              1.789         4        41.709         228          1.789            4
-swap/non-delim              1.509         3        30.710         180          1.509            3
+swap/delimiter              1.789         4        41.629         228          1.789            4
+swap/non-delim              1.510         3        30.692         180          1.509            3
 insert/delimiter            1.990         5        47.402         266          1.990            5
 insert/non-delim            1.360         3        25.798         150          1.357            3
 

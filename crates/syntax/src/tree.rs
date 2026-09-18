@@ -809,6 +809,23 @@ impl<'a> Marker<'_, 'a> {
             })
     }
 
+    /// The kind of the significant token before the next one; `None` at
+    /// the start of the file.
+    pub(crate) fn previous(&self) -> Option<SyntaxKind> {
+        let previous = self.builder.position.checked_sub(1)?;
+        self.builder.input.get(previous)
+    }
+
+    /// Whether a signature missing its `fn` begins at the next token, as
+    /// the stream reads the shape. Read on the whole stream: the shape
+    /// never reaches past the horizon, since no token of it can start an
+    /// item.
+    pub(crate) fn at_headless_signature(&self) -> bool {
+        let position = self.builder.position;
+        position.to_usize() < self.builder.input.len()
+            && self.builder.input.headless_signature_at(position)
+    }
+
     /// Whether the next token is glued to the previous one.
     pub(crate) fn joint_before(&self) -> bool {
         self.builder

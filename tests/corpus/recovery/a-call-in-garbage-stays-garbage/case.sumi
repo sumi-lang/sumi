@@ -1,0 +1,8 @@
+fn f() = 1
+if cond(x) { y }
+total = compute(x) { y }
+x g(y) == 2
+return g(y) { y }
+x g
+(y: int) { y }
+x g(y: int) =

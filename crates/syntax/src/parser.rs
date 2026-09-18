@@ -26,9 +26,9 @@
 use sumi_lexer::RawIdx;
 
 use crate::generated::{
-    BinaryOp, NodeKind as N, PREFIX_BP, SyntaxKind as T, binary_operator, encloses_statements,
-    introduces_statement, is_closer, is_opener, is_prefix_operator, opener, starts_expression,
-    starts_item, starts_statement,
+    BinaryOp, NodeKind as N, PREFIX_BP, SyntaxKind as T, binary_operator, can_end_statement,
+    encloses_statements, introduces_statement, is_closer, is_opener, is_prefix_operator, opener,
+    starts_expression, starts_item, starts_statement,
 };
 use crate::input::ParserInput;
 use crate::tree::{CompletedMarker, Marker, Parse, RecoveryHandle};
@@ -184,10 +184,16 @@ impl RawGap {
 pub const MAX_DEPTH: u32 = 256;
 
 /// Parse between hard declaration anchors. Within each interval, parser
-/// context decides whether `fn` begins a closure or a nameless item. Named
-/// declarations remain protected from recovery in the preceding interval.
+/// context decides whether `fn` begins a closure or a nameless item, and
+/// whether a signature without `fn` is an item's or a call in an
+/// expression: between items it is an item's wherever a statement could
+/// begin, a boundary before it or not, so garbage on its line does not
+/// take the body with it. Named declarations remain protected from
+/// recovery in the preceding interval.
 fn source_file(p: &mut Marker<'_, '_>) {
-    let item_candidate = |p: &Marker<'_, '_>| p.at(T::FnKw) && !p.in_matched_delimiters();
+    let item_candidate = |p: &Marker<'_, '_>| {
+        (p.at(T::FnKw) || begins_headless_item(p)) && !p.in_matched_delimiters()
+    };
     let mut item_ends_here = false;
     for anchor in 0..=p.item_anchor_count() {
         p.set_limit(p.item_anchor(anchor));
@@ -420,6 +426,18 @@ fn signature_tail(
         let body = block(m);
         m.field(&body, first_field + 2);
     }
+}
+
+/// Whether an item missing its `fn` begins at the next token, between
+/// items: the shape the stream anchors an item at when a boundary
+/// precedes it, here wherever a statement could begin instead — after a
+/// value or a closer, which nothing continues into a name. A call heading
+/// an `if` in garbage follows the keyword or an operator, and `return`
+/// takes the rest of its line, so those are garbage with what follows.
+fn begins_headless_item(m: &Marker<'_, '_>) -> bool {
+    m.previous()
+        .is_none_or(|previous| can_end_statement(previous) && previous != T::ReturnKw)
+        && m.at_headless_signature()
 }
 
 /// The `=` of an expression body: after a complete signature component
