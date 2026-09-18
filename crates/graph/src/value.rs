@@ -42,14 +42,14 @@ pub trait Domain: Clone {
 
 impl Op {
     /// The value of a data node from the values of its inputs. A copy is
-    /// what it reads, a narrowed read is what the domain makes of the
-    /// guard, and unit is unit. A parameter, a hole, a context, and a node
-    /// with a region are the reader's to evaluate, not the operator's.
+    /// what it reads, and a narrowed read is what the domain makes of the
+    /// guard. A parameter, a hole, a context, a unit held in a context, and
+    /// a node with a region are the reader's to evaluate, not the
+    /// operator's.
     pub fn apply<D: Domain>(&self, inputs: &[&D]) -> Result<D, Fault> {
         Ok(match self {
             Self::Int(value) => D::int(value),
             Self::Bool(value) => D::bool(*value),
-            Self::Unit => D::unit(),
             Self::Copy { .. } => inputs[0].clone(),
             Self::Refine {
                 op,
@@ -61,6 +61,7 @@ impl Op {
             Self::Not => inputs[0].not()?,
             Self::Binary(op) => D::binary(*op, inputs[0], inputs[1])?,
             Self::Param(_)
+            | Self::Unit
             | Self::Hole
             | Self::And { .. }
             | Self::Or { .. }
