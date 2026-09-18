@@ -38,10 +38,6 @@ pub(crate) fn draw(
     // The constant each node of the run folds to, by slot.
     let mut folded: Vec<Option<Int>> = Vec::new();
 
-    // Facts and the flows within a function, in one pass in node order:
-    // every input precedes its reader, and a region's context and result
-    // precede the node that reads them. Only a call reaches forward, to a
-    // callee whose run may come later, so calls flow last.
     for (index, run) in graph.runs().iter().enumerate() {
         let header = &headers[index];
         folded.clear();
@@ -158,8 +154,6 @@ pub(crate) fn draw(
                         },
                     );
                 }
-                // A call learns its callee's result once every run is
-                // passed.
                 Op::Call(_) => {}
                 Op::Hole => unreachable!("a hole has no value"),
             }
@@ -173,7 +167,7 @@ pub(crate) fn draw(
     }
     // Every call reaches its callee's entry; a whole one delivers its
     // arguments to the parameters while its context is live, and learns
-    // its callee's result, whichever comes first in the file.
+    // its callee's result.
     for &(context, callee) in &lowered.entered {
         let entry = graph.run(callee).entry();
         typing.flow(context, entry, Edge::Enter);
@@ -187,7 +181,6 @@ pub(crate) fn draw(
             typing.call(run.result(), call.node, graph.node(call.node).origin);
         }
     }
-    // Demands, in the order the walk made them.
     for demand in &lowered.demands {
         if let DemandKind::Type { expected, .. } = demand.kind {
             typing.expect(demand.actual, expected, span(demand.node));
