@@ -1,7 +1,7 @@
 //! What a Sumi program means, apart from whether it is valid: the scalar
 //! types, the mathematical integer, the graph of every definition a
 //! file's bodies make, the domains the graph is read in, one value per
-//! type or a set of them, and the machine that evaluates the graph in a
+//! type or a set of them, and the machine that evaluates the graph in the
 //! concrete domain. The checker above builds the graph and decides what
 //! is wrong with it; nothing here depends on the checker.
 
