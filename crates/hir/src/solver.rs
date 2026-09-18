@@ -108,53 +108,6 @@ pub trait Lattice: Clone + Eq {
     fn narrow(&mut self, exact: &Self) -> bool;
 }
 
-/// Two lattices side by side: evidence of both kinds on one class, joined
-/// componentwise and transferred by a pair of edges. Tuples nest, so any
-/// number of analyses share one solver.
-impl<A: Lattice, B: Lattice> Lattice for (A, B) {
-    type Edge = (A::Edge, B::Edge);
-    type Context = (A::Context, B::Context);
-
-    fn bottom() -> Self {
-        (A::bottom(), B::bottom())
-    }
-
-    fn join(&mut self, other: &Self) -> bool {
-        let a = self.0.join(&other.0);
-        let b = self.1.join(&other.1);
-        a | b
-    }
-
-    fn grows(edge: &Self::Edge) -> bool {
-        A::grows(&edge.0) || B::grows(&edge.1)
-    }
-
-    fn carries(edge: &Self::Edge, second: bool) -> bool {
-        A::carries(&edge.0, second) || B::carries(&edge.1, second)
-    }
-
-    fn transfer(
-        &self,
-        edge: &Self::Edge,
-        other: Option<&Self>,
-        cyclic: bool,
-        cx: &Self::Context,
-    ) -> Self {
-        (
-            self.0
-                .transfer(&edge.0, other.map(|other| &other.0), cyclic, &cx.0),
-            self.1
-                .transfer(&edge.1, other.map(|other| &other.1), cyclic, &cx.1),
-        )
-    }
-
-    fn narrow(&mut self, exact: &Self) -> bool {
-        let a = self.0.narrow(&exact.0);
-        let b = self.1.narrow(&exact.1);
-        a | b
-    }
-}
-
 /// The most exact passes a narrowing makes. One pass carries a tightening
 /// through every acyclic path, providers first; a cycle descends one pass
 /// at a time, and a pair of counters that bound each other can descend for
@@ -872,12 +825,9 @@ mod tests {
     /// Three classes, and an edge of two words: no edge carries where it
     /// came from, since the graph knows.
     #[test]
-    fn a_flow_is_six_words() {
+    fn a_flow_is_five_words() {
         assert_eq!(size_of::<Option<Var>>(), 4);
-        assert_eq!(
-            size_of::<Flow<(crate::typing::Edge, crate::ranges::RangeEdge)>>(),
-            24
-        );
+        assert_eq!(size_of::<Flow<crate::lattice::Edge>>(), 20);
     }
 
     #[test]
@@ -1144,17 +1094,6 @@ mod tests {
         solver.solve(&());
         assert_eq!(*solver.evidence(x), Interval::new(5, 10));
         assert!(solver.evidence(y).is_empty());
-    }
-
-    #[test]
-    fn products_join_and_transfer_componentwise() {
-        let (mut solver, [a, c]) = classes::<(Set, Interval), 2>();
-        solver.flow(a, c, ((), 1));
-        solver.expect(a, &(Set(1), Interval::new(0, 100)));
-        solver.expect(a, &(Set(4), Interval::new(50, 200)));
-        solver.solve(&((), ()));
-        assert_eq!(*solver.evidence(a), (Set(5), Interval::new(50, 100)));
-        assert_eq!(*solver.evidence(c), (Set(5), Interval::new(51, 101)));
     }
 
     /// One constraint over eight classes: an expectation, a flow, or a

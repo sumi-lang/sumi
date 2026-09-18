@@ -17,7 +17,7 @@ use sumi_text::Span;
 
 use crate::May;
 use crate::check::{Demand, DemandKind, Header, Placed};
-use crate::ranges::{RangeEdge, UnaryOp};
+use crate::lattice::Edge;
 use crate::solver::Var;
 use crate::typing::Typing;
 
@@ -77,13 +77,13 @@ pub(crate) fn draw(
                 // A context under a condition nothing follows is live as
                 // its parent is.
                 Op::Then | Op::Else if !typed(inputs[0]) => {
-                    typing.flow(class(inputs[1]), this, RangeEdge::Copy);
+                    typing.flow(class(inputs[1]), this, Edge::Copy);
                 }
                 Op::Then | Op::Else => {
                     let edge = if matches!(entry.op, Op::Then) {
-                        RangeEdge::Then
+                        Edge::Then
                     } else {
-                        RangeEdge::Else
+                        Edge::Else
                     };
                     typing.derive(class(inputs[0]), class(inputs[1]), this, edge);
                 }
@@ -91,24 +91,29 @@ pub(crate) fn draw(
                     op,
                     local_is_lhs,
                     sense,
-                } => typing.refine(
+                } => typing.derive(
                     class(inputs[0]),
                     class(inputs[1]),
                     this,
-                    RangeEdge::Refine {
+                    Edge::Refine {
                         op: *op,
                         local_is_lhs: *local_is_lhs,
                         sense: *sense,
                     },
                 ),
-                Op::Exactly(value) => typing.refine_bool(class(inputs[0]), this, *value),
+                Op::Exactly(value) => typing.flow(class(inputs[0]), this, Edge::Exactly(*value)),
                 Op::Join {
                     then,
                     else_: Some(else_),
                 } => {
                     for region in [*then, *else_] {
                         let region = graph.region(region);
-                        typing.branch(class(region.result()), class(region.context), this);
+                        typing.derive(
+                            class(region.result()),
+                            class(region.context),
+                            this,
+                            Edge::Branch,
+                        );
                     }
                 }
                 // Unit while the `if` itself can run: the context its
@@ -116,11 +121,11 @@ pub(crate) fn draw(
                 Op::Join { then, else_: None } => {
                     typing.known(this, Ty::Unit, origin);
                     let parent = graph.inputs(graph.region(*then).context)[1];
-                    typing.flow(class(parent), this, RangeEdge::Enter);
+                    typing.flow(class(parent), this, Edge::Enter);
                 }
                 Op::Unit => {
                     typing.known(this, Ty::Unit, origin);
-                    typing.flow(class(inputs[0]), this, RangeEdge::Enter);
+                    typing.flow(class(inputs[0]), this, Edge::Enter);
                 }
                 // A declared copy holds what flows in, when something does.
                 Op::Copy {
@@ -128,18 +133,18 @@ pub(crate) fn draw(
                 } => {
                     typing.known(this, *ty, *at);
                     if typed(inputs[0]) {
-                        typing.flow(class(inputs[0]), this, RangeEdge::Copy);
+                        typing.flow(class(inputs[0]), this, Edge::Copy);
                     }
                 }
                 // An unannotated `let` is its initializer.
-                Op::Copy { declared: None } => typing.copy(class(inputs[0]), this),
+                Op::Copy { declared: None } => typing.flow(class(inputs[0]), this, Edge::Bind),
                 Op::Neg => {
                     typing.known(this, Ty::Int, origin);
-                    typing.flow(class(inputs[0]), this, RangeEdge::Unary(UnaryOp::Neg));
+                    typing.flow(class(inputs[0]), this, Edge::Neg);
                 }
                 Op::Not => {
                     typing.known(this, Ty::Bool, origin);
-                    typing.flow(class(inputs[0]), this, RangeEdge::Unary(UnaryOp::Not));
+                    typing.flow(class(inputs[0]), this, Edge::Not);
                 }
                 Op::Binary(op) => {
                     let ty = match op {
@@ -156,12 +161,7 @@ pub(crate) fn draw(
                         | BinaryOp::Ge => Ty::Bool,
                     };
                     typing.known(this, ty, origin);
-                    typing.derive(
-                        class(inputs[0]),
-                        class(inputs[1]),
-                        this,
-                        RangeEdge::Binary(*op),
-                    );
+                    typing.derive(class(inputs[0]), class(inputs[1]), this, Edge::Binary(*op));
                 }
                 Op::And { rhs } | Op::Or { rhs } => {
                     typing.known(this, Ty::Bool, origin);
@@ -170,7 +170,7 @@ pub(crate) fn draw(
                         class(inputs[0]),
                         class(rhs),
                         this,
-                        RangeEdge::Lazy {
+                        Edge::Lazy {
                             and: matches!(entry.op, Op::And { .. }),
                         },
                     );
@@ -187,7 +187,7 @@ pub(crate) fn draw(
     // its callee's result, whichever comes first in the file.
     for &(context, callee) in &placed.entered {
         let entry = graph.run(callee).entry();
-        typing.flow(class(context), class(entry), RangeEdge::Enter);
+        typing.flow(class(context), class(entry), Edge::Enter);
     }
     for call in placed.calls() {
         let run = graph.run(call.callee);
@@ -196,7 +196,7 @@ pub(crate) fn draw(
                 class(arg),
                 class(call.context),
                 class(param),
-                RangeEdge::Argument,
+                Edge::Argument,
             );
         }
         if typed(call.node) {

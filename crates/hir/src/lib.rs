@@ -7,7 +7,7 @@
 
 mod check;
 mod flows;
-mod ranges;
+mod lattice;
 mod recursion;
 mod solver;
 mod typing;
@@ -114,7 +114,7 @@ impl Analysis {
             result: if self.may(run.entry()).live() {
                 self.may(run.result()).clone()
             } else {
-                <May as solver::Lattice>::bottom()
+                May::NONE
             },
         })
     }

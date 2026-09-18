@@ -34,6 +34,7 @@ use std::collections::{HashMap, HashSet};
 use std::hash::{BuildHasherDefault, Hasher};
 
 use sumi_frontend::{DiagnosticCode, Label, Location};
+use sumi_graph::Thresholds;
 use sumi_lexer::{RawIdx, SyntaxKind, TokenFlags};
 use sumi_syntax::{
     NodeIdx, NodeKind, SyntaxTree,
@@ -41,8 +42,9 @@ use sumi_syntax::{
 };
 
 use crate::codes;
+use crate::lattice::Claim;
 use crate::recursion;
-use crate::typing::{Claim, Expected, ProductContext, Typing};
+use crate::typing::{Expected, Typing};
 use crate::{flows, *};
 
 /// A hasher for identifiers and integer constants: a word at a time, with
@@ -505,8 +507,8 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     let mut typing = flows::draw(&graph, &placed, &headers, &demands, |node| {
         source.span(node)
     });
-    let cx: ProductContext = ((), constants.into_iter().collect());
-    typing.solve(&cx);
+    let thresholds: Thresholds = constants.into_iter().collect();
+    typing.solve(&thresholds);
     let mut replay = typing.replay();
     let mut failed = vec![false; functions.len()];
     let class = flows::var;
