@@ -809,6 +809,13 @@ impl<'a> Marker<'_, 'a> {
             })
     }
 
+    /// The kind of the significant token before the next one; `None` at
+    /// the start of the file.
+    pub(crate) fn previous(&self) -> Option<SyntaxKind> {
+        let previous = self.builder.position.checked_sub(1)?;
+        self.builder.input.get(previous)
+    }
+
     /// Whether the next token is glued to the previous one.
     pub(crate) fn joint_before(&self) -> bool {
         self.builder

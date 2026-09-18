@@ -26,9 +26,9 @@
 use sumi_lexer::RawIdx;
 
 use crate::generated::{
-    BinaryOp, NodeKind as N, PREFIX_BP, SyntaxKind as T, binary_operator, encloses_statements,
-    introduces_statement, is_closer, is_opener, is_prefix_operator, opener, starts_expression,
-    starts_item, starts_statement,
+    BinaryOp, NodeKind as N, PREFIX_BP, SyntaxKind as T, binary_operator, can_end_statement,
+    encloses_statements, introduces_statement, is_closer, is_opener, is_prefix_operator, opener,
+    starts_expression, starts_item, starts_statement,
 };
 use crate::input::ParserInput;
 use crate::tree::{CompletedMarker, Marker, Parse, RecoveryHandle};
@@ -431,13 +431,21 @@ fn signature_tail(
 /// Whether a signature missing its `fn` begins at the next token: a name,
 /// a parenthesized list the stream closes, and a body, a return type, or
 /// an expression body's `=` after the list, the shape the stream anchors
-/// an item at when a boundary precedes it.
+/// an item at when a boundary precedes it. Here the name need only
+/// begin where a statement could, after a token that can end one: a
+/// call heading an `if` in garbage follows the keyword or an operator
+/// and is garbage with it.
 fn at_headless_signature(m: &Marker<'_, '_>) -> bool {
     m.at(T::Ident)
+        && m.previous().is_none_or(can_end_statement)
         && m.nth(1) == Some(T::LParen)
         && m.nth_partner(1).is_some_and(|closer| {
             let after = closer + 1;
-            matches!(m.nth(after), Some(T::LBrace | T::Eq)) || nth_arrow(m, after)
+            // A `=` glued to another is `==`, a comparison of a call.
+            m.nth(after) == Some(T::LBrace)
+                || nth_arrow(m, after)
+                || (m.nth(after) == Some(T::Eq)
+                    && !(m.nth_joint(after) && m.nth(after + 1) == Some(T::Eq)))
         })
 }
 
