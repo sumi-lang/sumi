@@ -6,6 +6,11 @@
 
 /// The kind of a token: trivia (`is_trivia`), a kind with fixed text
 /// (`text`), or one whose text varies: `Ident`, the literals, and `Error`.
+///
+/// Every kind occupies a source range: there is deliberately no EOF
+/// sentinel (end of input is the end of the token buffer, surfaced as
+/// `Option` by lookahead APIs), and compound operators are not kinds: the
+/// parser glues them from adjacent punctuation.
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SyntaxKind {
