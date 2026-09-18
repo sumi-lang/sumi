@@ -275,4 +275,21 @@ fn the_bare_graph_refuses_what_the_checker_rejects() {
     let machine: Machine<'_, Value> =
         Machine::new(endless.graph(), FunctionId::new(1), &[], Some(4));
     assert!(matches!(machine.run(), Outcome::Refused(Refusal::Depth(_))));
+    for source in [
+        "fn f() -> int = if 1 { 2 } else { 3 }",
+        "fn f() -> int = -true",
+        "fn f() -> int = 1 + true",
+        "fn f() -> bool = !1",
+        "fn f() -> bool = true && 1",
+        "fn f() -> bool = 1 == true",
+    ] {
+        let typed = analysis(source);
+        assert!(typed.program().is_none(), "{source}");
+        let machine: Machine<'_, Value> =
+            Machine::new(typed.graph(), FunctionId::new(0), &[], None);
+        assert!(
+            matches!(machine.run(), Outcome::Refused(Refusal::Type(_))),
+            "{source}"
+        );
+    }
 }

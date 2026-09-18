@@ -645,7 +645,8 @@ error[semantic/type-mismatch]: expected int, found bool
 ### `semantic/unused-value`
 
 A statement's expression, other than a block's last, has a value that
-is not unit. Discard it with `_ =` to keep it.
+is not unit. Write `_ =` before it to say the value is dropped; a run
+then never computes it, since nothing reads it.
 
 Shown by [`tests/corpus/semantic/frontend-rejection`](../../../tests/corpus/semantic/frontend-rejection/case.sumi):
 

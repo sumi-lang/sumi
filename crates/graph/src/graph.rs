@@ -57,9 +57,14 @@ impl Run {
         self.result
     }
 
+    /// Whether `node` is one of the run's.
+    pub fn holds(&self, node: NodeId) -> bool {
+        (self.nodes.start as usize..self.nodes.end as usize).contains(&node.index())
+    }
+
     /// The position of `node` in the run, for a slot per node.
     pub fn slot(&self, node: NodeId) -> usize {
-        debug_assert!(self.nodes().any(|n| n == node), "a node of the run");
+        debug_assert!(self.holds(node), "a node of the run");
         node.index() - self.nodes.start as usize
     }
 }
@@ -315,10 +320,19 @@ impl Graph {
         self.nodes[id.index()].ty = ty;
     }
 
-    /// Close the run of the next function: the nodes from `start`, where
-    /// its entry was pushed, to here, with `arity` parameters after the
-    /// entry, its body `region`, and its `result`.
-    pub fn close_run(&mut self, start: NodeId, arity: u32, region: RegionId, result: NodeId) {
+    /// Close the run of `function`, which must be the next in declaration
+    /// order: the nodes from `start`, where its entry was pushed, to here,
+    /// with `arity` parameters after the entry, its body `region`, and its
+    /// `result`.
+    pub fn close_run(
+        &mut self,
+        function: FunctionId,
+        start: NodeId,
+        arity: u32,
+        region: RegionId,
+        result: NodeId,
+    ) {
+        assert_eq!(self.runs.len(), function.index(), "runs close in order");
         let end = u32::try_from(self.nodes.len()).expect("node count fits u32");
         let start = u32::try_from(start.index()).expect("node count fits u32");
         debug_assert!(matches!(self.nodes[start as usize].op, Op::Entry));
@@ -372,7 +386,7 @@ mod tests {
         let sum = graph.push(Op::Binary(BinaryOp::Add), &[param, one], at(3), None);
         graph.close(region, sum);
         let copy = graph.push(Op::Copy, &[sum], at(4), None);
-        graph.close_run(start, 1, region, copy);
+        graph.close_run(FunctionId::new(0), start, 1, region, copy);
         assert_eq!(graph.nodes().len(), 5);
         let run = graph.run(FunctionId::new(0));
         assert_eq!(

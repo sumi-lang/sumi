@@ -302,7 +302,8 @@ pub fn check_graph(analysis: &sumi_hir::Analysis) {
 pub fn check_run(parsed: ParsedSource) {
     use sumi_hir::{Bools, Int, Ints, Outcome, Ty, Value};
 
-    const STEPS: u64 = 1 << 18;
+    /// Values computed, abandoning past this many.
+    const STEPS: u64 = 1 << 17;
     const DIGITS: usize = 300;
     const TUPLES: usize = 32;
 

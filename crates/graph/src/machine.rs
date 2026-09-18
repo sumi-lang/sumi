@@ -8,12 +8,15 @@
 //! explicit and every [`Machine::step`] is one unit of work an instrument
 //! can observe, with the value it produced, if any, in [`Machine::latest`].
 //!
-//! The machine refuses rather than fails. A hole, a zero divisor, or a
-//! frame past the bound the caller set ends the run with a [`Refusal`]
-//! that says which; on a graph the checker proved, none can happen, and
-//! the checker's proof is what turns a refusal into a bug.
+//! The machine refuses rather than fails. A hole, a zero divisor, an
+//! operator over a value of the wrong type, or a frame past the bound the
+//! caller set ends the run with a [`Refusal`] that says which; on a graph
+//! the checker proved, none can happen, and the checker's proof is what
+//! turns a refusal into a bug. What the checker declared and did not
+//! prove, a parameter's type on a graph it rejected, is not the machine's
+//! to hold a value to.
 
-use crate::{Domain, FunctionId, Graph, NodeId, Op, RegionId};
+use crate::{Domain, Fault, FunctionId, Graph, NodeId, Op, RegionId};
 
 /// One unit of pending work.
 #[derive(Clone, Copy, Debug)]
@@ -39,6 +42,8 @@ struct Frame {
     function: FunctionId,
     /// Where this frame's slots begin in the shared slab.
     base: usize,
+    /// The first node of the function's run: its slot is the first.
+    first: usize,
 }
 
 /// How a run ended.
@@ -56,8 +61,19 @@ pub enum Refusal {
     Hole(NodeId),
     /// A division whose divisor is zero.
     Division(NodeId),
+    /// An operator over a value of the wrong type.
+    Type(NodeId),
     /// A call that would open a frame past the bound.
     Depth(NodeId),
+}
+
+impl Refusal {
+    fn of(fault: Fault, node: NodeId) -> Self {
+        match fault {
+            Fault::Division => Self::Division(node),
+            Fault::Type => Self::Type(node),
+        }
+    }
 }
 
 /// A run in progress: [`Machine::step`] advances it one unit of work.
@@ -158,7 +174,8 @@ impl<'a, D: Domain> Machine<'a, D> {
     /// The slot of `node` in the current frame.
     fn index(&self, node: NodeId) -> usize {
         let frame = self.frames.last().expect("a running machine has a frame");
-        frame.base + self.graph.run(frame.function).slot(node)
+        debug_assert!(self.graph.run(frame.function).holds(node));
+        frame.base + node.index() - frame.first
     }
 
     fn slot(&self, node: NodeId) -> &Option<D> {
@@ -178,18 +195,29 @@ impl<'a, D: Domain> Machine<'a, D> {
         self.steps += 1;
     }
 
-    /// Open a frame for `function` with its parameters bound to `args`,
-    /// and demand its result.
-    fn enter(&mut self, function: FunctionId, args: &[D]) {
+    /// Open a frame for `function`, and demand its result. Its parameters
+    /// are bound by the caller.
+    fn open(&mut self, function: FunctionId) -> usize {
         let run = self.graph.run(function);
         let base = self.slots.len();
         self.slots.resize(base + run.nodes().len(), None);
-        self.frames.push(Frame { function, base });
+        self.frames.push(Frame {
+            function,
+            base,
+            first: run.entry().index(),
+        });
         self.max_depth = self.max_depth.max(self.frames.len());
+        self.control.push(Control::Eval(run.result()));
+        base
+    }
+
+    /// Open a frame for `function` with its parameters bound to `args`.
+    fn enter(&mut self, function: FunctionId, args: &[D]) {
+        let base = self.open(function);
+        let run = self.graph.run(function);
         for (param, arg) in run.params().zip(args) {
             self.slots[base + run.slot(param)] = Some(arg.clone());
         }
-        self.control.push(Control::Eval(run.result()));
     }
 
     /// The value the region at `region` computes, as the value of `node`.
@@ -206,24 +234,11 @@ impl<'a, D: Domain> Machine<'a, D> {
                     return Ok(());
                 }
                 let inputs = self.graph.inputs(node);
-                match &self.graph.node(node).op {
-                    Op::Int(_) | Op::Bool(_) | Op::Unit => {
-                        let value = self.graph.node(node).op.apply::<D>(&[]);
-                        self.fill(node, value.expect("a leaf has a value"));
-                    }
+                let op = &self.graph.node(node).op;
+                match op {
                     Op::Param(_) => unreachable!("a parameter is bound on entry"),
                     Op::Hole => return Err(Refusal::Hole(node)),
                     Op::Entry | Op::Then | Op::Else => unreachable!("a context is not a value"),
-                    Op::Copy | Op::Refine { .. } | Op::Exactly(_) => {
-                        self.control.push(Control::Apply(node));
-                        self.control.push(Control::Eval(inputs[0]));
-                    }
-                    Op::Neg | Op::Not | Op::Binary(_) => {
-                        self.control.push(Control::Apply(node));
-                        for &input in inputs.iter().rev() {
-                            self.control.push(Control::Eval(input));
-                        }
-                    }
                     Op::And { .. } | Op::Or { .. } => {
                         self.control.push(Control::Lazy(node));
                         self.control.push(Control::Eval(inputs[0]));
@@ -238,28 +253,34 @@ impl<'a, D: Domain> Machine<'a, D> {
                             self.control.push(Control::Eval(arg));
                         }
                     }
+                    // A data operator: its operands first, then itself.
+                    _ => {
+                        self.control.push(Control::Apply(node));
+                        for &input in inputs[..op.reads(inputs.len())].iter().rev() {
+                            self.control.push(Control::Eval(input));
+                        }
+                    }
                 }
             }
             Control::Apply(node) => {
                 let op = &self.graph.node(node).op;
-                let inputs: Vec<D> = match op {
-                    // A narrowed read reads its definition; the other
-                    // operand of its guard is not a value it needs.
-                    Op::Refine { .. } => vec![self.value(self.graph.inputs(node)[0]).clone()],
-                    _ => self
-                        .graph
-                        .inputs(node)
-                        .iter()
-                        .map(|&input| self.value(input).clone())
-                        .collect(),
+                let inputs = self.graph.inputs(node);
+                let value = match op.reads(inputs.len()) {
+                    0 => op.apply(&[]),
+                    1 => op.apply(&[self.value(inputs[0])]),
+                    2 => op.apply(&[self.value(inputs[0]), self.value(inputs[1])]),
+                    _ => unreachable!("a data operator reads at most two inputs"),
                 };
-                match op.apply(&inputs) {
-                    Some(value) => self.fill(node, value),
-                    None => return Err(Refusal::Division(node)),
+                match value {
+                    Ok(value) => self.fill(node, value),
+                    Err(fault) => return Err(Refusal::of(fault, node)),
                 }
             }
             Control::Lazy(node) => {
-                let lhs = self.value(self.graph.inputs(node)[0]).truth();
+                let lhs = self
+                    .value(self.graph.inputs(node)[0])
+                    .truth()
+                    .map_err(|fault| Refusal::of(fault, node))?;
                 match self.graph.node(node).op {
                     Op::And { rhs } if lhs => self.demand_region(node, rhs),
                     Op::Or { rhs } if !lhs => self.demand_region(node, rhs),
@@ -267,7 +288,10 @@ impl<'a, D: Domain> Machine<'a, D> {
                 }
             }
             Control::Branch(node) => {
-                let condition = self.value(self.graph.inputs(node)[0]).truth();
+                let condition = self
+                    .value(self.graph.inputs(node)[0])
+                    .truth()
+                    .map_err(|fault| Refusal::of(fault, node))?;
                 let Op::Join { then, else_ } = self.graph.node(node).op else {
                     unreachable!("a branch is an if")
                 };
@@ -279,6 +303,11 @@ impl<'a, D: Domain> Machine<'a, D> {
             }
             Control::Take(node, from) => {
                 let value = self.value(from).clone();
+                // The right operand of `&&` or `||` is the operator's
+                // value, which must be a boolean like the left.
+                if matches!(self.graph.node(node).op, Op::And { .. } | Op::Or { .. }) {
+                    value.truth().map_err(|fault| Refusal::of(fault, node))?;
+                }
                 self.fill(node, value);
             }
             Control::Enter(node) => {
@@ -291,19 +320,26 @@ impl<'a, D: Domain> Machine<'a, D> {
                 {
                     return Err(Refusal::Depth(node));
                 }
-                let args: Vec<D> = self
+                // The arguments move from the caller's slots into the
+                // callee's, by index, so no list of them is built.
+                let from: Vec<usize> = self
                     .graph
                     .inputs(node)
                     .iter()
-                    .map(|&arg| self.value(arg).clone())
+                    .map(|&arg| self.index(arg))
                     .collect();
                 self.control.push(Control::Return(node));
-                self.enter(function, &args);
+                let base = self.open(function);
+                let run = self.graph.run(function);
+                for (param, from) in run.params().zip(from) {
+                    let value = self.slots[from].clone();
+                    self.slots[base + run.slot(param)] = value;
+                }
             }
             Control::Return(node) => {
                 let frame = self.frames.pop().expect("a return has a frame to leave");
                 let result = self.graph.run(frame.function).result();
-                let value = self.slots[frame.base + self.graph.run(frame.function).slot(result)]
+                let value = self.slots[frame.base + result.index() - frame.first]
                     .take()
                     .expect("a callee's result is in before it returns");
                 self.slots.truncate(frame.base);

@@ -461,6 +461,7 @@ fn operator(op: BinaryOp) -> &'static str {
 
 #[test]
 fn rendering_is_deterministic() {
-    let source = "fn f(x: int) -> int { let x = x + 1\n x }";
+    let source = "fn f(x: int) -> int { let x = x + 1\n x }\nfn g() -> int = f(f(1))";
     assert_eq!(snapshot(source), snapshot(source));
+    assert_eq!(run(source), run(source));
 }

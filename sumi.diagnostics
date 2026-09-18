@@ -128,7 +128,8 @@ code arity
 /// result against its return type, or `if` branches that disagree.
 code type-mismatch
 /// A statement's expression, other than a block's last, has a value that
-/// is not unit. Discard it with `_ =` to keep it.
+/// is not unit. Write `_ =` before it to say the value is dropped; a run
+/// then never computes it, since nothing reads it.
 code unused-value
 /// A function without a return type whose result cannot be determined: its
 /// result is used as two types, or nothing fixes it. Add a return type

@@ -681,9 +681,9 @@ struct Runs {
 /// nothing, since a zero divisor or a frame past the depth bound would be
 /// a refusal. `None` for a rejected program.
 fn check(source: &str) -> Option<Runs> {
-    /// A run past this many steps is abandoned: a deep recursion on a wide
-    /// hull can cost more than the check is worth.
-    const STEPS: u64 = 1 << 18;
+    /// A run past this many values computed is abandoned: a deep recursion
+    /// on a wide hull can cost more than the check is worth.
+    const STEPS: u64 = 1 << 17;
     /// A run holding an integer past this many decimal digits is abandoned:
     /// a value squared along a recursion doubles its width every frame, and
     /// one multiplication of such values can outlast any step budget.

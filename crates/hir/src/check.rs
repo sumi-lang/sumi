@@ -1174,7 +1174,8 @@ impl<'a, 's> Builder<'a, 's> {
             }
             _ => {}
         }
-        self.graph.close_run(start, arity, region, value);
+        self.graph
+            .close_run(FunctionId::new(owner), start, arity, region, value);
         if self.failed || root.is_none() {
             return None;
         }
@@ -2077,15 +2078,16 @@ impl<'a, 's> Builder<'a, 's> {
                         context: self.context(),
                     });
                 }
+                // An operator over constants is the constant the machine
+                // would compute, an integer for the thresholds.
                 let folded = match (&kind, &self.consts[lhs.index()], &self.consts[rhs.index()]) {
-                    (ExprKind::Binary { op, .. }, Some(a), Some(b)) => match op {
-                        BinaryOp::Add => Some(a + b),
-                        BinaryOp::Sub => Some(a - b),
-                        BinaryOp::Mul => Some(a * b),
-                        BinaryOp::Div => a.checked_div(b),
-                        BinaryOp::Rem => a.checked_rem(b),
-                        _ => None,
-                    },
+                    (ExprKind::Binary { op, .. }, Some(a), Some(b)) => {
+                        let (a, b) = (Value::Int(a.clone()), Value::Int(b.clone()));
+                        match Op::Binary(*op).apply(&[&a, &b]) {
+                            Ok(Value::Int(value)) => Some(value),
+                            _ => None,
+                        }
+                    }
                     _ => None,
                 };
                 let id = self.emit(node, kind, class);
