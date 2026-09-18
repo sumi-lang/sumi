@@ -10,7 +10,7 @@
 use std::fmt::Write as _;
 
 use sumi_frontend::{FileId, Location, Place, Severity, parse_source};
-use sumi_hir::{Analysis, BinaryOp, FunctionId, Graph, NodeId, Op, Outcome, RegionId, analyze};
+use sumi_hir::{Analysis, BinaryOp, FunctionId, Graph, NodeId, Op, RegionId, analyze};
 use sumi_text::Span;
 
 #[path = "../../../tests/support/corpus.rs"]
@@ -41,8 +41,8 @@ fn run(source: &str) -> String {
         let mut machine = program.machine(id, &[]);
         while !machine.step() {}
         let value = match machine.outcome().expect("a finished run has its outcome") {
-            Outcome::Value(value) => value,
-            Outcome::Refused(refusal) => panic!("fn {name} was refused: {refusal:?}"),
+            Ok(value) => value,
+            Err(refusal) => panic!("fn {name} was refused: {refusal:?}"),
         };
         write!(
             out,

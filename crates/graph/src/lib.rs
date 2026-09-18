@@ -15,9 +15,9 @@ use std::fmt;
 
 pub use graph::{Graph, Node, NodeId, Op, Region, RegionId, Run};
 pub use int::{Int, OutOfRange, ParseIntError};
-pub use machine::{Machine, Outcome, Refusal};
+pub use machine::{Machine, Refusal};
 pub use may::{Bools, Bound, Ints, May, Thresholds};
-pub use value::{Concrete, Domain, Fault, Value};
+pub use value::{Domain, Fault, Value};
 
 /// Eager scalar operators. `&&` and `||` are not among them: their right
 /// operand is a region, so they are [`Op::And`] and [`Op::Or`].

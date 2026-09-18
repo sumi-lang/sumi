@@ -2,7 +2,7 @@
 //! costs, through the checker's proof and the graph's machine.
 
 use sumi_frontend::{FileId, parse_source};
-use sumi_hir::{Analysis, Outcome, Ty, Value, analyze};
+use sumi_hir::{Analysis, Ty, Value, analyze};
 
 fn analysis(source: &str) -> Analysis {
     analyze(parse_source(FileId::new(0), source.into()).unwrap())
@@ -155,13 +155,13 @@ fn shallow() -> int = twice(twice(1))";
     assert_eq!(program.function(deep).depth_bound(), Some(60002));
     let mut machine = program.machine(deep, &[]);
     while !machine.step() {}
-    assert_eq!(machine.outcome(), Some(&Outcome::Value(int(60000))));
+    assert_eq!(machine.outcome(), Some(&Ok(int(60000))));
     assert_eq!(machine.max_depth(), 60002);
     let shallow = program.function_named("shallow").unwrap();
     assert_eq!(program.function(shallow).depth_bound(), Some(2));
     let mut machine = program.machine(shallow, &[]);
     while !machine.step() {}
-    assert_eq!(machine.outcome(), Some(&Outcome::Value(int(4))));
+    assert_eq!(machine.outcome(), Some(&Ok(int(4))));
     assert_eq!(machine.max_depth(), 2);
 }
 
@@ -182,7 +182,7 @@ fn shared() -> int {
     let program = analysis.program().unwrap();
     let mut machine = program.machine(program.function_named("dropped").unwrap(), &[]);
     while !machine.step() {}
-    assert_eq!(machine.outcome(), Some(&Outcome::Value(int(1))));
+    assert_eq!(machine.outcome(), Some(&Ok(int(1))));
     assert_eq!(
         machine.max_depth(),
         1,
@@ -190,7 +190,7 @@ fn shared() -> int {
     );
     let mut machine = program.machine(program.function_named("shared").unwrap(), &[]);
     while !machine.step() {}
-    assert_eq!(machine.outcome(), Some(&Outcome::Value(int(0))));
+    assert_eq!(machine.outcome(), Some(&Ok(int(0))));
     // Four frames of `costly` and the sum: the second read of `x` costs
     // nothing.
     assert_eq!(machine.max_depth(), 5);
@@ -217,7 +217,7 @@ fn stepping_is_observable_and_idempotent_at_the_end() {
         seen_depth_two |= machine.depth() == 2;
         values.extend(machine.latest().cloned());
     }
-    assert_eq!(machine.outcome(), Some(&Outcome::Value(int(4))));
+    assert_eq!(machine.outcome(), Some(&Ok(int(4))));
     assert!(seen_depth_two);
     assert_eq!((machine.depth(), machine.max_depth()), (1, 2));
     // Every value the run made appeared once as it was made: the literal
@@ -263,18 +263,14 @@ fn the_bare_graph_refuses_what_the_checker_rejects() {
     use sumi_hir::{FunctionId, Machine, Refusal};
     let rejected = analysis("fn f() -> int = 1 / 0");
     assert!(rejected.program().is_none());
-    let machine: Machine<'_, Value> = Machine::new(rejected.graph(), FunctionId::new(0), &[], None);
-    assert!(matches!(
-        machine.run(),
-        Outcome::Refused(Refusal::Division(_))
-    ));
+    let machine = Machine::new(rejected.graph(), FunctionId::new(0), &[], None);
+    assert!(matches!(machine.run(), Err(Refusal::Division(_))));
     let holed = analysis("fn f() -> int = missing");
-    let machine: Machine<'_, Value> = Machine::new(holed.graph(), FunctionId::new(0), &[], None);
-    assert!(matches!(machine.run(), Outcome::Refused(Refusal::Hole(_))));
+    let machine = Machine::new(holed.graph(), FunctionId::new(0), &[], None);
+    assert!(matches!(machine.run(), Err(Refusal::Hole(_))));
     let endless = analysis("fn f(n: int) -> int = f(n)\nfn g() -> int = f(1)");
-    let machine: Machine<'_, Value> =
-        Machine::new(endless.graph(), FunctionId::new(1), &[], Some(4));
-    assert!(matches!(machine.run(), Outcome::Refused(Refusal::Depth(_))));
+    let machine = Machine::new(endless.graph(), FunctionId::new(1), &[], Some(4));
+    assert!(matches!(machine.run(), Err(Refusal::Depth(_))));
     for source in [
         "fn f() -> int = if 1 { 2 } else { 3 }",
         "fn f() -> int = -true",
@@ -285,11 +281,7 @@ fn the_bare_graph_refuses_what_the_checker_rejects() {
     ] {
         let typed = analysis(source);
         assert!(typed.program().is_none(), "{source}");
-        let machine: Machine<'_, Value> =
-            Machine::new(typed.graph(), FunctionId::new(0), &[], None);
-        assert!(
-            matches!(machine.run(), Outcome::Refused(Refusal::Type(_))),
-            "{source}"
-        );
+        let machine = Machine::new(typed.graph(), FunctionId::new(0), &[], None);
+        assert!(matches!(machine.run(), Err(Refusal::Type(_))), "{source}");
     }
 }

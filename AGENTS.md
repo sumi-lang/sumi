@@ -16,7 +16,7 @@ You're in the core repository for Sumi, a novel statically typed general-purpose
 - `sumi-format`: `format` and its contract `rep`. On `sumi-syntax`.
 - `sumi-diagnostics`: the renderer-independent diagnostic: code, labels, notes, and fix. On `sumi-text`.
 - `sumi-frontend`: `parse_source`, which owns the source and lowers the lexer's and parser's evidence into diagnostics. On `sumi-syntax` and `sumi-diagnostics`.
-- `sumi-graph`: what a program means apart from whether it is valid: the scalar types, `Int`, the `Graph`, its domains, and `Machine<D>`. On `sumi-text` only; nothing here depends on the checker.
+- `sumi-graph`: what a program means apart from whether it is valid: the scalar types, `Int`, the `Graph`, the may-domain, and the concrete `Machine`. On `sumi-text` only; nothing here depends on the checker.
 - `sumi-hir`: semantic checking: `analyze` builds the graph and decides what is wrong with it, and `Program`, the proof that a file is valid, runs it. On `sumi-frontend` and `sumi-graph`.
 - `sumi-cli`: the `sumi` driver. On `sumi-frontend` and `sumi-hir` to check and run, and on `sumi-lexer`, `sumi-syntax`, and `sumi-format` to format, which reads no diagnostic.
 - `sumi-test`: the program generator, edits, layout perturbation, and the coverage account for tests and harnesses. On `sumi-syntax` and nothing above it; nothing ships it.

@@ -1251,7 +1251,10 @@ mod tests {
             for (set_a, x) in operands(&a) {
                 for (set_b, y) in operands(&b) {
                     for op in &ops {
-                        let arity = op.reads(2);
+                        let arity = match op {
+                            Op::Neg | Op::Not | Op::Exactly(_) => 1,
+                            _ => 2,
+                        };
                         let may = op.apply::<May>(&[&set_a, &set_b][..arity]).expect("the may-domain is total");
                         if let Ok(value) = op.apply::<Value>(&[&x, &y][..arity])
                             && reached(op, &x, &y)

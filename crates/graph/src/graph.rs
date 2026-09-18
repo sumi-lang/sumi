@@ -57,8 +57,7 @@ impl Run {
         self.result
     }
 
-    /// Whether `node` is one of the run's.
-    pub fn holds(&self, node: NodeId) -> bool {
+    fn holds(&self, node: NodeId) -> bool {
         (self.nodes.start as usize..self.nodes.end as usize).contains(&node.index())
     }
 
