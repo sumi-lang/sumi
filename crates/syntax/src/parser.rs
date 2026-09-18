@@ -184,10 +184,16 @@ impl RawGap {
 pub const MAX_DEPTH: u32 = 256;
 
 /// Parse between hard declaration anchors. Within each interval, parser
-/// context decides whether `fn` begins a closure or a nameless item. Named
-/// declarations remain protected from recovery in the preceding interval.
+/// context decides whether `fn` begins a closure or a nameless item, and
+/// whether a signature without `fn` is an item's or a call in an
+/// expression: between items it can only be an item's, whether or not a
+/// boundary precedes it, so garbage on its line does not take the body
+/// with it. Named declarations remain protected from recovery in the
+/// preceding interval.
 fn source_file(p: &mut Marker<'_, '_>) {
-    let item_candidate = |p: &Marker<'_, '_>| p.at(T::FnKw) && !p.in_matched_delimiters();
+    let item_candidate = |p: &Marker<'_, '_>| {
+        (p.at(T::FnKw) || at_headless_signature(p)) && !p.in_matched_delimiters()
+    };
     let mut item_ends_here = false;
     for anchor in 0..=p.item_anchor_count() {
         p.set_limit(p.item_anchor(anchor));
@@ -420,6 +426,19 @@ fn signature_tail(
         let body = block(m);
         m.field(&body, first_field + 2);
     }
+}
+
+/// Whether a signature missing its `fn` begins at the next token: a name,
+/// a parenthesized list the stream closes, and a body, a return type, or
+/// an expression body's `=` after the list, the shape the stream anchors
+/// an item at when a boundary precedes it.
+fn at_headless_signature(m: &Marker<'_, '_>) -> bool {
+    m.at(T::Ident)
+        && m.nth(1) == Some(T::LParen)
+        && m.nth_partner(1).is_some_and(|closer| {
+            let after = closer + 1;
+            matches!(m.nth(after), Some(T::LBrace | T::Eq)) || nth_arrow(m, after)
+        })
 }
 
 /// The `=` of an expression body: after a complete signature component

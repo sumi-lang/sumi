@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc c79afe96b393fb26355cfd9f199cb10f00c7d5fddd8157ae2e54cc2eccde6739 # shrinks to an `=` inserted before the `->` of a signature, found by CI on the first push of #60
+cc 9c921b00cfa07454c8bc4bee42b84c811e01722568ccb53980699b9e7eb68846 # shrinks to an item's `fn` swapped with the token before it, which leaves its headless signature behind garbage on its line
