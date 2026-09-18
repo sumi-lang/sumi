@@ -74,7 +74,9 @@ pub fn build(shape: &str, size: usize) -> Graph {
                 let call = if shape == "mixed-imports" && i % 2 == 1 {
                     call(&mut context, terms[i - 1])
                 } else {
-                    context.known(Ty::Int, HERE)
+                    let known = context.fresh();
+                    context.known(known, Ty::Int, HERE);
+                    known
                 };
                 equal(&mut context, term, call);
             }

@@ -181,7 +181,8 @@ impl Var {
         Self(NonZeroU32::new(past).expect("one past an index"))
     }
 
-    fn index(self) -> usize {
+    /// The index the class was opened at.
+    pub fn index(self) -> usize {
         self.0.get() as usize - 1
     }
 }
@@ -224,26 +225,29 @@ impl<L: Lattice> Solver<L> {
         }
     }
 
-    fn with_classes(n: usize) -> Self {
+    /// A solver of `n` classes, `Var::new(0)` to `Var::new(n - 1)`, that
+    /// nothing is known about yet, with room for about a fact and a flow
+    /// per class. The caller's numbering is the solver's.
+    pub fn with_classes(n: usize) -> Self {
         Self {
             parent: (0..n as u32).collect(),
             size: vec![1; n],
             evidence: vec![L::bottom(); n],
-            facts: Vec::new(),
-            flows: Vec::new(),
+            facts: Vec::with_capacity(n),
+            flows: Vec::with_capacity(n),
         }
     }
 
+    /// One more class, nothing known about it yet, numbered after every
+    /// class so far: how the solver's tests and benches grow a graph. The
+    /// checker opens every class at once.
+    #[allow(dead_code)]
     pub fn fresh(&mut self) -> Var {
-        self.open(L::bottom())
-    }
-
-    fn open(&mut self, evidence: L) -> Var {
         let var = Var::new(self.parent.len());
         let id = u32::try_from(self.parent.len()).expect("class count fits u32");
         self.parent.push(id);
         self.size.push(1);
-        self.evidence.push(evidence);
+        self.evidence.push(L::bottom());
         var
     }
 
@@ -284,12 +288,19 @@ impl<L: Lattice> Solver<L> {
         self.evidence[root].join(evidence);
     }
 
-    /// A fresh class known to carry `evidence` on its own account: an
-    /// annotation, or a literal. A fact; it survives a replay.
+    /// A fresh class known to carry `evidence` on its own account.
+    #[cfg(test)]
     pub fn known(&mut self, evidence: L) -> Var {
-        let var = self.open(evidence.clone());
-        self.facts.push((var, evidence));
+        let var = self.fresh();
+        self.fact(var, evidence);
         var
+    }
+
+    /// `var`'s class carries `evidence` on its own account: an annotation,
+    /// or a literal. A fact; it survives a replay.
+    pub fn fact(&mut self, var: Var, evidence: L) {
+        self.expect(var, &evidence);
+        self.facts.push((var, evidence));
     }
 
     /// Merge the classes of `a` and `b`, joining their evidence.
@@ -332,6 +343,19 @@ impl<L: Lattice> Solver<L> {
     /// `var`'s root, once every class is compressed: one load.
     fn class(&self, var: Var) -> usize {
         self.parent[var.index()] as usize
+    }
+
+    /// The evidence of every class by index, each merged class's being
+    /// its root's, and nothing else: what is left once no more flows
+    /// will be settled.
+    pub fn into_evidence(mut self) -> Vec<L> {
+        for index in 0..self.parent.len() {
+            let root = self.root(index);
+            if root != index {
+                self.evidence[index] = self.evidence[root].clone();
+            }
+        }
+        self.evidence
     }
 
     /// A flow's providers, each with whether it is the second.

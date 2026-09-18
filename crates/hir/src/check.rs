@@ -128,23 +128,13 @@ struct Local {
     pub node: NodeId,
 }
 
-/// What a demand asks of a value: a fixed type, or the type of a peer it
-/// is compared to.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Want {
-    Ty(Ty),
-    /// Compared with `Peer`: each learns the other's types and nothing of
-    /// its values.
-    Peer(NodeId),
-}
-
 /// What a context requires of an expression, checked after solving.
 pub(crate) enum DemandKind {
     /// The expression must have the expected type, which a declaration may
     /// have set: a called function, a result annotation, or a binding's
     /// annotation.
     Type {
-        expected: Want,
+        expected: Expected,
         declared: Option<NodeIdx>,
     },
     /// An expression statement's value must be unit.
@@ -187,10 +177,10 @@ struct Recorded {
     seen: HashSet<Int, BuildHasherDefault<NameHasher>>,
 }
 
-/// Where each node of the graph stands once the file is built: its class,
-/// and every whole call with the context it runs in and its arguments as
-/// written, which a read passed as an argument has no node of its own to
-/// say.
+/// Where each node of the graph stands once the file is built: whether
+/// it has a value, and every whole call with the context it runs in and
+/// its arguments as written, which a read passed as an argument has no
+/// node of its own to say.
 pub(crate) struct Placed {
     /// Whether the walk gave each node a value the typing follows: a hole
     /// has none, and neither has a node built over one.
@@ -224,14 +214,6 @@ impl Placed {
             arguments: Vec::new(),
             entered: Vec::new(),
         }
-    }
-    /// The values that may reach `node`: none for a node nothing flows to.
-    pub fn may<'t>(&self, typing: &'t Typing, node: NodeId) -> &'t May {
-        typing.may(flows::var(node))
-    }
-    /// Whether the context `node`, or a value at it, is live.
-    pub fn live(&self, typing: &Typing, node: NodeId) -> bool {
-        self.may(typing, node).live()
     }
     /// Every whole call.
     pub fn calls(&self) -> &[PlacedCall] {
@@ -535,7 +517,6 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         let actual = replay.resolve(actual_class);
         match demand.kind {
             DemandKind::Type { expected, declared } => {
-                let expected = flows::expected(expected);
                 let expected_ty = match expected {
                     Expected::Ty(ty) => Some(ty),
                     Expected::Peer(peer) => replay.resolve(peer),
@@ -599,22 +580,21 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     }
     for (index, header) in headers.into_iter().enumerate() {
         let run = graph.run(FunctionId::new(index));
-        // The result's class: the declared copy's, or the body's value's.
-        let result_class =
-            (!matches!(header.result, HeaderResult::None)).then(|| class(run.result()));
-        let evidence = result_class.map(|result| *typing.evidence(result));
+        // The result's evidence: the declared copy's, or the body's
+        // value's, when the header says which.
+        let evidence = (!matches!(header.result, HeaderResult::None))
+            .then(|| *typing.evidence(class(run.result())));
         let result = evidence.and_then(|evidence| evidence.ty());
         if let (Some(params), Some(result)) = (header.params, result) {
             functions[index].signature = Some(Signature { params, result });
             // A function nothing live reaches never returns either.
-            let result_class = result_class.unwrap();
             functions[index].ranges = Some(Ranges {
                 params: run
                     .params()
-                    .map(|param| placed.may(&typing, param).clone())
+                    .map(|param| flows::may(&typing, param).clone())
                     .collect(),
-                result: if placed.live(&typing, run.entry()) {
-                    typing.may(result_class).clone()
+                result: if flows::live(&typing, run.entry()) {
+                    flows::may(&typing, run.result()).clone()
                 } else {
                     May::bottom()
                 },
@@ -654,8 +634,8 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         if failed[obligation.owner as usize] {
             continue;
         }
-        let divisor = placed.may(&typing, obligation.divisor);
-        if !placed.live(&typing, obligation.context) || !divisor.ints.contains_zero() {
+        let divisor = flows::may(&typing, obligation.divisor);
+        if !flows::live(&typing, obligation.context) || !divisor.ints.contains_zero() {
             continue;
         }
         let message = if divisor.ints.is_zero() {
@@ -750,16 +730,13 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
             continue;
         }
         let run = graph.run(FunctionId::new(index));
-        let complete = run.nodes().all(|node| {
-            let ty = typing.resolve(class(node));
-            match graph.node(node).op {
-                Op::Entry | Op::Then | Op::Else => true,
-                Op::Call(callee) => functions[callee.index()]
-                    .signature
-                    .as_ref()
-                    .is_some_and(|signature| Some(signature.result) == ty),
-                _ => ty.is_some(),
-            }
+        let complete = run.nodes().all(|node| match graph.node(node).op {
+            Op::Entry | Op::Then | Op::Else => true,
+            Op::Call(callee) => functions[callee.index()]
+                .signature
+                .as_ref()
+                .is_some_and(|signature| Some(signature.result) == typing.resolve(class(node))),
+            _ => typing.resolve(class(node)).is_some(),
         });
         functions[index].complete = complete;
     }
@@ -770,7 +747,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     let analysis = Analysis {
         parsed,
         graph,
-        typing,
+        settled: typing.settle(),
         functions,
         diagnostics,
         depth: recursion.depth,
@@ -844,7 +821,7 @@ fn explain_zero(
         if labels.len() >= LABELS || !seen.insert(node) {
             continue;
         }
-        let may = placed.may(typing, node);
+        let may = flows::may(typing, node);
         if !may.ints.contains_zero() {
             continue;
         }
@@ -864,7 +841,7 @@ fn explain_zero(
             // A guard that narrowed the local is where the zero was
             // singled out, and the local is where it came from.
             Op::Refine { .. } => {
-                if may.ints != placed.may(typing, inputs[0]).ints {
+                if may.ints != flows::may(typing, inputs[0]).ints {
                     labels.push((
                         entry.origin,
                         describe(&may.ints, " under this guard").into(),
@@ -875,7 +852,7 @@ fn explain_zero(
             Op::Join { then, else_ } => {
                 for region in std::iter::once(then).chain(else_) {
                     let region = graph.region(region);
-                    if placed.live(typing, region.context) {
+                    if flows::live(typing, region.context) {
                         follow(&mut queue, region.result(), 1);
                     }
                 }
@@ -893,11 +870,11 @@ fn explain_zero(
                     if labels.len() >= LABELS {
                         break;
                     }
-                    if !placed.live(typing, call.context) {
+                    if !flows::live(typing, call.context) {
                         continue;
                     }
                     let arg = graph.inputs(call.node)[index as usize];
-                    let delivered = placed.may(typing, arg);
+                    let delivered = flows::may(typing, arg);
                     if delivered.ints.contains_zero() {
                         let written = placed.arguments(call)[index as usize];
                         labels.push((
@@ -1176,7 +1153,7 @@ impl<'a, 's> Builder<'a, 's> {
         // A declared result is a contract on the body; an inferred one is
         // the body's own value.
         if let (Some(root), HeaderResult::Declared(ty, node)) = (root, declared) {
-            self.require(root_node.unwrap(), root, Want::Ty(ty), Some(node));
+            self.require(root_node.unwrap(), root, Expected::Ty(ty), Some(node));
         }
         self.graph
             .close_run(FunctionId::new(owner), start, arity, region, value);
@@ -1497,10 +1474,10 @@ impl<'a, 's> Builder<'a, 's> {
         &mut self,
         node: NodeIdx,
         actual: NodeId,
-        expected: Want,
+        expected: Expected,
         declared: Option<NodeIdx>,
     ) {
-        if expected == Want::Peer(actual) {
+        if expected == Expected::Peer(flows::var(actual)) {
             return;
         }
         self.demand(node, actual, DemandKind::Type { expected, declared });
@@ -1791,7 +1768,7 @@ impl<'a, 's> Builder<'a, 's> {
                             self.require(
                                 initializer_node,
                                 initializer,
-                                Want::Ty(ty),
+                                Expected::Ty(ty),
                                 Some(annotation.node()),
                             );
                         }
@@ -1895,7 +1872,7 @@ impl<'a, 's> Builder<'a, 's> {
                 );
                 let value = self.typed(operand)?;
                 let ty = if neg { Ty::Int } else { Ty::Bool };
-                self.require(operand, value, Want::Ty(ty), None);
+                self.require(operand, value, Expected::Ty(ty), None);
                 let id = self.classify(node);
                 if neg && let Some(folded) = self.consts[operand_node.index() - self.base].clone() {
                     self.fold(id, -&folded);
@@ -1935,9 +1912,9 @@ impl<'a, 's> Builder<'a, 's> {
                 // `==` and `!=` compare like with like: whichever operand
                 // exists sets the other's expectation.
                 let operand = match op {
-                    Add | Sub | Mul | Div | Rem | Lt | Le | Gt | Ge => Some(Want::Ty(Ty::Int)),
-                    Eq | Ne => lhs.or(rhs).map(Want::Peer),
-                    And | Or => Some(Want::Ty(Ty::Bool)),
+                    Add | Sub | Mul | Div | Rem | Lt | Le | Gt | Ge => Some(Expected::Ty(Ty::Int)),
+                    Eq | Ne => lhs.or(rhs).map(|peer| Expected::Peer(flows::var(peer))),
+                    And | Or => Some(Expected::Ty(Ty::Bool)),
                 };
                 if let Some(operand) = operand {
                     for (child, value) in [(lhs_node, lhs), (rhs_node, rhs)] {
@@ -2009,14 +1986,14 @@ impl<'a, 's> Builder<'a, 's> {
                     None,
                 );
                 if let Some(condition) = condition {
-                    self.require(condition_node, condition, Want::Ty(Ty::Bool), None);
+                    self.require(condition_node, condition, Expected::Ty(Ty::Bool), None);
                 }
                 let then_branch = then_branch?;
                 match else_node {
                     // Without an else, the then branch is unit, and so is
                     // the `if`.
                     None => {
-                        self.require(then_node, then_branch, Want::Ty(Ty::Unit), None);
+                        self.require(then_node, then_branch, Expected::Ty(Ty::Unit), None);
                         condition?;
                         self.classify(node);
                     }
@@ -2063,7 +2040,7 @@ impl<'a, 's> Builder<'a, 's> {
             match (self.typed(syntax), params) {
                 (Some(value), Some(params)) => {
                     if let Some(&expected) = params.get(index) {
-                        self.require(syntax, value, Want::Ty(expected), Some(function.item));
+                        self.require(syntax, value, Expected::Ty(expected), Some(function.item));
                     }
                 }
                 (None, _) => complete = false,

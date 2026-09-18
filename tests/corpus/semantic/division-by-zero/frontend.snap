@@ -1,5 +1,5 @@
 == tree ==
-SourceFile 0..1371
+SourceFile 0..1489
   FnItem 0..40
     Name 3..17 "divide_by_zero"
     ParamList 17..19 "()"
@@ -365,6 +365,33 @@ SourceFile 0..1371
       BinaryExpr 1361..1368
         LiteralExpr 1361..1364 "100"
         NameRef 1367..1368 "h"
+  FnItem 1371..1405
+    Name 1374..1381 "divides"
+    ParamList 1381..1389
+      Param 1382..1388
+        Name 1382..1383 "n"
+        TypeRef 1385..1388 "int"
+    TypeRef 1393..1396 "int"
+    BinaryExpr 1399..1405
+      LiteralExpr 1399..1401 "10"
+      NameRef 1404..1405 "n"
+  FnItem 1406..1488
+    Name 1409..1421 "under_a_hole"
+    ParamList 1421..1423 "()"
+    TypeRef 1427..1430 "int"
+    Block 1431..1488
+      LetStmt 1437..1446
+        Name 1441..1442 "x"
+        LiteralExpr 1445..1446 "0"
+      IfExpr 1451..1486
+        NameRef 1454..1460 "absent"
+        Block 1461..1475
+          CallExpr 1463..1473
+            NameRef 1463..1470 "divides"
+            ArgList 1470..1473
+              NameRef 1471..1472 "x"
+        Block 1481..1486
+          LiteralExpr 1483..1484 "1"
 
 == formatted ==
 fn divide_by_zero() -> int = 1 / (2 - 2)
@@ -437,4 +464,13 @@ fn chained() -> int {
     let g = f
     let h = g
     100 / h
+}
+fn divides(n: int) -> int = 10 / n
+fn under_a_hole() -> int {
+    let x = 0
+    if absent {
+        divides(x)
+    } else {
+        1
+    }
 }

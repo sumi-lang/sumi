@@ -24,6 +24,7 @@ use std::collections::HashMap;
 use sumi_text::Span;
 
 use crate::check::{Placed, PlacedCall};
+use crate::flows;
 use crate::ranges::Ints;
 use crate::solver::components;
 use crate::typing::Typing;
@@ -123,7 +124,7 @@ pub(crate) fn check(graph: &Graph, placed: &Placed, typing: &Typing, failed: &[b
     let live: Vec<&PlacedCall> = placed
         .calls()
         .iter()
-        .filter(|call| placed.live(typing, call.context))
+        .filter(|call| flows::live(typing, call.context))
         .collect();
     let arcs: Vec<(u32, u32)> = live
         .iter()
@@ -181,7 +182,7 @@ pub(crate) fn check(graph: &Graph, placed: &Placed, typing: &Typing, failed: &[b
             };
             let mut offsets = HashMap::new();
             for (j, &arg) in graph.inputs(call.node).iter().enumerate() {
-                if let Some((i, band)) = delta(graph, placed, typing, arg) {
+                if let Some((i, band)) = delta(graph, typing, arg) {
                     offsets.insert((i as usize, j), band);
                 }
             }
@@ -199,7 +200,7 @@ pub(crate) fn check(graph: &Graph, placed: &Placed, typing: &Typing, failed: &[b
                 .params()
                 .nth(param)
                 .expect("a parameter of the member");
-            &placed.may(typing, node).ints
+            &flows::may(typing, node).ints
         };
         let mut found = None;
         // The first choice every call agreed with, when the cycle fails on
@@ -433,8 +434,8 @@ fn lax_edges_are_acyclic(members: usize, calls: &[Call], strict: &[bool]) -> boo
 /// with the other operand's set, and an `if` whose live arms agree on the
 /// parameter. The walk keeps its own stack, so a chain of `let`s or a
 /// nest of operators of any depth is read.
-fn delta(graph: &Graph, placed: &Placed, typing: &Typing, node: NodeId) -> Option<(u32, Ints)> {
-    let may = |node: NodeId| &placed.may(typing, node).ints;
+fn delta(graph: &Graph, typing: &Typing, node: NodeId) -> Option<(u32, Ints)> {
+    let may = |node: NodeId| &flows::may(typing, node).ints;
     /// What to do with the offset of the node being read.
     enum Frame {
         /// The left operand of `+`: `rhs` adds to its offset, or is read in
@@ -480,7 +481,7 @@ fn delta(graph: &Graph, placed: &Placed, typing: &Typing, node: NodeId) -> Optio
                 } => {
                     // An arm that cannot run contributes no value.
                     let (then, otherwise) = (graph.region(then), graph.region(else_));
-                    let live = |context| placed.live(typing, context);
+                    let live = |context| flows::live(typing, context);
                     match (live(then.context), live(otherwise.context)) {
                         (true, true) => {
                             frames.push(Frame::Then {

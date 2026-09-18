@@ -35,7 +35,7 @@ pub struct Analysis {
     graph: Graph,
     /// What the solve decided of every node, kept: a node and its class
     /// share an index.
-    typing: typing::Typing,
+    settled: typing::Settled,
     functions: Vec<Function>,
     diagnostics: Vec<Diagnostic>,
     /// The call depth bound of each function as an entry, by index.
@@ -65,11 +65,11 @@ impl Analysis {
     /// The type `node` resolved to; none for a hole, a context, a node
     /// built over a hole, or a class that conflicted.
     pub fn ty(&self, node: NodeId) -> Option<Ty> {
-        self.typing.resolve(flows::var(node))
+        self.settled.resolve(flows::var(node))
     }
     /// The values that may reach `node`.
     pub fn may(&self, node: NodeId) -> &May {
-        self.typing.may(flows::var(node))
+        self.settled.may(flows::var(node))
     }
     /// Semantic diagnostics only, in source order. Syntax diagnostics remain in `parsed`.
     pub fn diagnostics(&self) -> &[Diagnostic] {

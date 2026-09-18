@@ -758,6 +758,11 @@ fn chained() -> int {
     let h = g
     100 / h
 }
+fn divides(n: int) -> int = 10 / n
+fn under_a_hole() -> int {
+    let x = 0
+    if absent { divides(x) } else { 1 }
+}
 ```
 
 ```text
@@ -798,6 +803,9 @@ error[semantic/division-by-zero]: division by zero
 error[semantic/division-by-zero]: division by zero
   primary @1361..1368
   secondary @1257..1258: is 0
+error[semantic/division-by-zero]: division by zero
+  primary @1399..1405
+  secondary @1471..1472: argument is 0
 ```
 
 ### `semantic/unbounded-recursion`
