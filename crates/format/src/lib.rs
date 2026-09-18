@@ -17,7 +17,8 @@ use std::fmt;
 
 use sumi_lexer::{LexedFile, lex};
 use sumi_syntax::{
-    Parse, ParseViolation, ParseViolationKind, ParserInput, RawIdx, SyntaxKind, parse,
+    NodeIdx, Parse, ParseViolation, ParseViolationKind, ParserInput, RawIdx, SyntaxKind,
+    SyntaxTree, parse,
 };
 use sumi_text::{TextEdit, TextRange, TextSize};
 
@@ -72,14 +73,13 @@ pub fn format(source: &str, lexed: &LexedFile, parsed: &Parse) -> Result<Formatt
         // Drop the edits inside every item whose rep changed; the gaps
         // between items stay formatted.
         let tree = parsed.tree();
-        let sig_of_raw = rep::sig_of_raw(input, lexed);
         for (index, item) in tree.children(tree.root()).enumerate() {
             if !disagreeing.contains(&index) {
                 continue;
             }
             reverted += 1;
-            let first = sig_of_raw[tree.first_token(item).to_usize()] as usize;
-            let end = sig_of_raw[tree.end_token(item).to_usize() - 1] as usize + 1;
+            let first = first_sig(tree, input, item) as usize;
+            let end = end_sig(tree, input, item) as usize;
             edits.retain(|edit| edit.gap <= first || edit.gap >= end);
         }
         let candidate = apply_gap_edits(source, &edits);
@@ -99,6 +99,16 @@ pub fn format(source: &str, lexed: &LexedFile, parsed: &Parse) -> Result<Formatt
         edits: edits.into_iter().map(|edit| edit.edit).collect(),
         reverted,
     })
+}
+
+/// The significant index of the first token of `node`.
+pub(crate) fn first_sig(tree: &SyntaxTree, input: &ParserInput, node: NodeIdx) -> u32 {
+    input.sig_at_or_after(tree.first_token(node)).to_u32()
+}
+
+/// The significant index one past the last token of `node`.
+pub(crate) fn end_sig(tree: &SyntaxTree, input: &ParserInput, node: NodeIdx) -> u32 {
+    input.sig_at_or_after(tree.end_token(node)).to_u32()
 }
 
 fn apply_gap_edits(source: &str, edits: &[print::GapEdit]) -> String {

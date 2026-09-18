@@ -1,4 +1,4 @@
-use sumi_lexer::lex;
+use sumi_lexer::{RawIdx, lex};
 use sumi_syntax::{ParserInput, SigIdx, SyntaxKind};
 
 #[test]
@@ -546,4 +546,19 @@ fn would_end_statement_never_holds_at_the_edges() {
     assert!(input.would_end_statement(SigIdx::new(1)));
     assert!(!input.would_end_statement(SigIdx::new(0)));
     assert!(!input.would_end_statement(input.end()));
+}
+
+#[test]
+fn sig_at_or_after_maps_every_raw_token_to_its_gap_or_itself() {
+    let source = " fn f() { a // c\n + b }\n";
+    let lexed = lex(source).unwrap();
+    let input = ParserInput::new(&lexed);
+    let mut expected = SigIdx::new(0);
+    for raw in RawIdx::new(0).until(lexed.end()) {
+        assert_eq!(input.sig_at_or_after(raw), expected, "{raw:?}");
+        if !lexed.kind(raw).is_trivia() {
+            expected += 1;
+        }
+    }
+    assert_eq!(input.sig_at_or_after(lexed.end()), input.end());
 }

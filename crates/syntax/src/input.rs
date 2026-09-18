@@ -88,8 +88,9 @@ pub struct ParserInput {
     boundaries: Box<[SigIdx]>,
     /// Hard declaration recovery anchors, in source order.
     item_anchors: Box<[SigIdx]>,
-    /// The index one past the last token of the underlying buffer.
-    raw_len: RawIdx,
+    /// For every raw index up to and including the end of the buffer, the
+    /// first significant index at or after it.
+    sig_at_or_after: Box<[SigIdx]>,
 }
 
 impl ParserInput {
@@ -109,7 +110,9 @@ impl ParserInput {
         // ahead — whether an open `(` is ever closed — so they wait for
         // the second pass below.
         let mut newline = false;
+        let mut sig_at_or_after = Vec::with_capacity(lexed.end().to_usize() + 1);
         for (raw, kind) in lexed.indices().zip(lexed.kinds()) {
+            sig_at_or_after.push(SigIdx::new(build.slots.len() as u32));
             if kind.is_trivia() {
                 newline |= kind == SyntaxKind::Newline;
                 continue;
@@ -117,6 +120,7 @@ impl ParserInput {
             build.push(kind, raw, newline);
             newline = false;
         }
+        sig_at_or_after.push(SigIdx::new(build.slots.len() as u32));
 
         // The brackets open before each token, replayed from the pairs: an
         // opener is open until its partner closes it, which discards
@@ -166,7 +170,7 @@ impl ParserInput {
             slots: slots.into_boxed_slice(),
             boundaries: boundaries.into_boxed_slice(),
             item_anchors: item_anchors.into_boxed_slice(),
-            raw_len: lexed.end(),
+            sig_at_or_after: sig_at_or_after.into_boxed_slice(),
         }
     }
 
@@ -202,10 +206,18 @@ impl ParserInput {
         self.slots[index.to_usize()].token
     }
 
+    /// The index of the first significant token at or after raw token
+    /// `raw`, or [`end`](Self::end) when none follows: the significant
+    /// index of a significant token, and the gap a trivia token lies in.
+    pub fn sig_at_or_after(&self, raw: RawIdx) -> SigIdx {
+        self.sig_at_or_after[raw.to_usize()]
+    }
+
     /// The index one past the last token of the underlying buffer, where
-    /// ranges that run to end of input stop.
+    /// ranges that run to end of input stop: the last raw index the table
+    /// answers for.
     pub(crate) fn raw_len(&self) -> RawIdx {
-        self.raw_len
+        RawIdx::new(self.sig_at_or_after.len() as u32 - 1)
     }
 
     /// Whether token `index` is glued to token `index + 1`: no trivia

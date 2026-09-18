@@ -19,8 +19,6 @@ use sumi_syntax::{
     binary_operator,
 };
 
-use crate::rep::sig_of_raw;
-
 /// The line width the printer fits groups into.
 pub const WIDTH: usize = 100;
 /// One level of indentation.
@@ -115,7 +113,6 @@ pub(crate) fn plan(lexed: &LexedFile, parse: &Parse) -> Plan {
     let mut planner = Planner {
         tree: parse.tree(),
         input,
-        sig_of_raw: sig_of_raw(input, lexed),
         gaps: vec![
             Gap {
                 flat: Flat::Space,
@@ -216,7 +213,6 @@ pub(crate) fn plan(lexed: &LexedFile, parse: &Parse) -> Plan {
 struct Planner<'a> {
     tree: &'a SyntaxTree,
     input: &'a ParserInput,
-    sig_of_raw: Vec<u32>,
     gaps: Vec<Gap>,
     groups: Vec<Group>,
     layout_comma: Vec<bool>,
@@ -224,16 +220,11 @@ struct Planner<'a> {
 
 impl Planner<'_> {
     fn first_sig(&self, node: NodeIdx) -> u32 {
-        self.sig_of_raw[self.tree.first_token(node).to_usize()]
+        crate::first_sig(self.tree, self.input, node)
     }
 
     fn end_sig(&self, node: NodeIdx) -> u32 {
-        let end = self.tree.end_token(node);
-        if end == self.tree.first_token(node) {
-            self.first_sig(node)
-        } else {
-            self.sig_of_raw[end.to_usize() - 1] + 1
-        }
+        crate::end_sig(self.tree, self.input, node)
     }
 
     fn start(&self, el: El) -> u32 {
@@ -619,13 +610,7 @@ impl Planner<'_> {
     fn freeze(&mut self, lexed: &LexedFile, parse: &Parse) {
         // The gap before the first significant token at or after `raw`:
         // a range may end at a trivia token.
-        let gap_at = |planner: &Self, raw: RawIdx| -> usize {
-            planner
-                .input
-                .indices()
-                .collect::<Vec<_>>()
-                .partition_point(|&sig| planner.input.token(sig) < raw)
-        };
+        let gap_at = |planner: &Self, raw: RawIdx| planner.input.sig_at_or_after(raw).to_usize();
         let mut anchors: Vec<usize> = Vec::new();
         let mut ranges: Vec<(usize, usize)> = Vec::new();
         for evidence in parse.evidence() {

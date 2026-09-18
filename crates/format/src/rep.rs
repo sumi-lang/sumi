@@ -10,7 +10,7 @@
 //! without it.
 
 use sumi_lexer::{LexedFile, RawIdx};
-use sumi_syntax::{NodeIdx, NodeKind, Parse, ParserInput, SigIdx, SyntaxKind};
+use sumi_syntax::{NodeIdx, NodeKind, Parse, SigIdx, SyntaxKind};
 
 use crate::trivia::{GapSignal, signal};
 
@@ -43,16 +43,8 @@ pub struct ItemRep<'s> {
 pub fn rep<'s>(source: &'s str, lexed: &LexedFile, parse: &Parse) -> Rep<'s> {
     let (input, tree) = (parse.input(), parse.tree());
     let n = input.len();
-    let sig_of_raw = sig_of_raw(input, lexed);
-    let first_sig = |node: NodeIdx| sig_of_raw[tree.first_token(node).to_usize()];
-    let end_sig = |node: NodeIdx| {
-        let end = tree.end_token(node);
-        if end == tree.first_token(node) {
-            first_sig(node)
-        } else {
-            sig_of_raw[end.to_usize() - 1] + 1
-        }
-    };
+    let first_sig = |node: NodeIdx| crate::first_sig(tree, input, node);
+    let end_sig = |node: NodeIdx| crate::end_sig(tree, input, node);
 
     let mut erased = vec![false; n];
     for node in tree.nodes() {
@@ -139,14 +131,4 @@ pub fn rep<'s>(source: &'s str, lexed: &LexedFile, parse: &Parse) -> Rep<'s> {
     }
     edges.push(signal_of(n));
     Rep { items, edges }
-}
-
-/// The significant index of every raw token, meaningful at the significant
-/// ones only.
-pub(crate) fn sig_of_raw(input: &ParserInput, lexed: &LexedFile) -> Vec<u32> {
-    let mut map = vec![u32::MAX; lexed.len()];
-    for sig in input.indices() {
-        map[input.token(sig).to_usize()] = sig.to_u32();
-    }
-    map
 }
