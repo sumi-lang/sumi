@@ -543,11 +543,6 @@ impl<'a> Marker<'_, 'a> {
 
     fn set_field(&mut self, node: NodeIdx, field: u8) {
         let child = &mut self.builder.nodes[node.to_usize()];
-        // Error nodes stand where typed syntax was required but implement no
-        // typed field. Retaining their position must not make them a field.
-        if child.kind == NodeKind::Error {
-            return;
-        }
         assert_eq!(child.field, 0, "a node receives its field only once");
         child.field = field
             .checked_add(1)
