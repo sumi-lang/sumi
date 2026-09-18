@@ -117,6 +117,12 @@ impl<'a> Machine<'a> {
     pub fn depth_bound(&self) -> Option<u64> {
         self.bound
     }
+    /// The values computed and not yet consumed, innermost last: every
+    /// value a run makes passes through here, so an instrument watching
+    /// what a run computes sees each one as it appears.
+    pub fn stack(&self) -> &[Value] {
+        &self.values
+    }
 
     /// Step until the run ends.
     pub fn run(mut self) -> Value {

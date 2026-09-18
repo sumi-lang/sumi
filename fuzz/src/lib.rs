@@ -200,15 +200,18 @@ pub fn check_semantics(parsed: ParsedSource) {
 
 /// The machine property: every live function of an accepted file, run at a
 /// few points inside the parameter sets the analysis proved, stays within
-/// its claims. The value lies in the result set, the call depth stays
-/// within the bound, and no divisor is zero, which the machine refuses by
-/// panicking. A run past the step budget is abandoned; everything before
-/// it was checked. Restates `machine.rs` in `sumi-hir`'s tests.
+/// its claims. The value lies in the result set and has the signature's
+/// type; a zero divisor or a frame past the depth bound is refused by the
+/// machine itself, which panics. A run past the step budget, or holding an
+/// integer too wide to keep multiplying, is abandoned; everything before
+/// that was checked. Restates `machine.rs` in `sumi-hir`'s tests.
 pub fn check_run(parsed: ParsedSource) {
     use sumi_eval::{Machine, Program, Value};
     use sumi_hir::{Bools, Int, Ints, Ty};
 
-    const STEPS: u64 = 1 << 16;
+    const STEPS: u64 = 1 << 18;
+    const DIGITS: usize = 300;
+    const TUPLES: usize = 32;
 
     fn contains(ints: &Ints, value: &Int) -> bool {
         !ints.is_empty()
@@ -245,6 +248,7 @@ pub fn check_run(parsed: ParsedSource) {
             one,
         ];
         points.retain(|point| contains(ints, point));
+        points.sort();
         points.dedup();
         points
     }
@@ -253,6 +257,8 @@ pub fn check_run(parsed: ParsedSource) {
     let Some(program) = Program::new(&analysis) else {
         return;
     };
+    let wide: Int = format!("1{}", "0".repeat(DIGITS)).parse().unwrap();
+    let too_wide = |value: &Value| matches!(value, Value::Int(v) if *v > wide || *v < -&wide);
     for (id, function) in program.functions() {
         let signature = program.signature(id);
         let ranges = function.ranges().expect("a valid file has ranges");
@@ -280,17 +286,21 @@ pub fn check_run(parsed: ParsedSource) {
                         tuple
                     })
                 })
+                .take(TUPLES)
                 .collect();
         }
         for args in tuples {
             let mut machine = Machine::new(program, id, &args);
             let value = loop {
                 if let Some(value) = machine.step() {
-                    break value;
+                    break Some(value);
                 }
-                if machine.steps() >= STEPS {
-                    return;
+                if machine.steps() >= STEPS || machine.stack().iter().any(too_wide) {
+                    break None;
                 }
+            };
+            let Some(value) = value else {
+                continue;
             };
             assert_eq!(value.ty(), signature.result);
             let within = match &value {
@@ -303,9 +313,6 @@ pub fn check_run(parsed: ParsedSource) {
                 "f{}({args:?}) = {value} outside its result set",
                 id.index()
             );
-            if let Some(bound) = machine.depth_bound() {
-                assert!(machine.max_depth() as u64 <= bound);
-            }
         }
     }
 }

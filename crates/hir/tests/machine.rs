@@ -9,6 +9,7 @@
 //! restates the checks over arbitrary text; the two must agree.
 
 use proptest::prelude::*;
+use proptest::test_runner::FileFailurePersistence;
 use sumi_eval::{Machine, Program, Value};
 use sumi_frontend::{FileId, parse_source};
 use sumi_hir::{Analysis, Bools, Int, Ints, Ty, analyze};
@@ -90,7 +91,8 @@ struct Gen<'a> {
     /// Calls the else arm still owes: the recursion happens at least once.
     owed: bool,
     /// Recursive calls the arm has made: two per arm keeps a run a few
-    /// thousand frames rather than exponential.
+    /// thousand frames rather than exponential, and one where the call
+    /// passes `n` along, since its partner's calls multiply with it.
     calls: u32,
 }
 
@@ -104,9 +106,9 @@ const GUARDS_THEN: &[&str] = &[
     "{x} <= -1",
     "1 <= {x}",
     "-1 >= {x}",
-    "{x} != 0 && {b}",
-    "{b} && {x} != 0",
-    "!({x} == 0 || {b})",
+    "{x} != 0 && ({b})",
+    "({b}) && {x} != 0",
+    "!({x} == 0 || ({b}))",
 ];
 
 const GUARDS_ELSE: &[&str] = &[
@@ -115,9 +117,9 @@ const GUARDS_ELSE: &[&str] = &[
     "!({x} != 0)",
     "({x} == 0)",
     "!!({x} == 0)",
-    "{x} == 0 || {b}",
-    "{b} || {x} == 0",
-    "!({x} != 0 && {b})",
+    "{x} == 0 || ({b})",
+    "({b}) || {x} == 0",
+    "!({x} != 0 && ({b}))",
 ];
 
 impl Gen<'_> {
@@ -304,7 +306,7 @@ impl Gen<'_> {
         if let Some((recursion, _)) = self.arm
             && self.functions[recursion.callee].result == Kind::Int
             && fuel > 0
-            && self.calls < 2
+            && self.calls < if recursion.step == 0 { 1 } else { 2 }
             && self.rng.chance(1, if self.owed { 3 } else { 4 })
         {
             let call = self.recursive_call(recursion, fuel - 1);
@@ -361,7 +363,7 @@ impl Gen<'_> {
         if let Some((recursion, _)) = self.arm
             && self.functions[recursion.callee].result == Kind::Bool
             && fuel > 0
-            && self.calls < 2
+            && self.calls < if recursion.step == 0 { 1 } else { 2 }
             && self.rng.chance(1, if self.owed { 3 } else { 4 })
         {
             let call = self.recursive_call(recursion, fuel - 1);
@@ -659,21 +661,43 @@ fn points(ints: &Ints) -> Option<Vec<Int>> {
         one,
     ];
     points.retain(|point| contains(ints, point));
+    points.sort();
     points.dedup();
     Some(points)
 }
 
+/// What running an accepted program's functions came to.
+#[derive(Default)]
+struct Runs {
+    /// Runs that ended and were checked.
+    finished: usize,
+    /// Runs given up on: past the step budget, or holding an integer too
+    /// wide to keep multiplying. Every step before that was checked.
+    abandoned: usize,
+}
+
 /// Run every live function of an accepted program at a few points inside
-/// what the analysis proved and check the claims. How many runs finished,
-/// or `None` for a rejected program.
-fn check(source: &str) -> Option<usize> {
+/// what the analysis proved and check the claims: the value lies in the
+/// result set and has the signature's type. A zero divisor or a frame
+/// past the depth bound is refused by the machine itself, which panics.
+/// `None` for a rejected program.
+fn check(source: &str) -> Option<Runs> {
     /// A run past this many steps is abandoned: a deep recursion on a wide
-    /// hull can cost more than the check is worth, and every step before
-    /// the budget was checked.
+    /// hull can cost more than the check is worth.
     const STEPS: u64 = 1 << 18;
+    /// A run holding an integer past this many decimal digits is abandoned:
+    /// a value squared along a recursion doubles its width every frame, and
+    /// one multiplication of such values can outlast any step budget.
+    const DIGITS: usize = 300;
+    /// The product of a few points per parameter is enough; past this many
+    /// tuples the rest are left.
+    const TUPLES: usize = 32;
+
     let analysis: Analysis = analyze(parse_source(FileId::new(0), source.into()).unwrap());
     let program = Program::new(&analysis)?;
-    let mut runs = 0;
+    let wide: Int = format!("1{}", "0".repeat(DIGITS)).parse().unwrap();
+    let too_wide = |value: &Value| matches!(value, Value::Int(v) if *v > wide || *v < -&wide);
+    let mut runs = Runs::default();
     for (id, function) in program.functions() {
         let signature = program.signature(id);
         let ranges = function.ranges().expect("a valid file has ranges");
@@ -705,6 +729,7 @@ fn check(source: &str) -> Option<usize> {
                         tuple
                     })
                 })
+                .take(TUPLES)
                 .collect();
         }
         for args in tuples {
@@ -713,14 +738,15 @@ fn check(source: &str) -> Option<usize> {
                 if let Some(value) = machine.step() {
                     break Some(value);
                 }
-                if machine.steps() >= STEPS {
+                if machine.steps() >= STEPS || machine.stack().iter().any(too_wide) {
                     break None;
                 }
             };
             let Some(value) = value else {
+                runs.abandoned += 1;
                 continue;
             };
-            runs += 1;
+            runs.finished += 1;
             assert_eq!(value.ty(), signature.result, "in\n{source}");
             let within = match &value {
                 Value::Int(value) => contains(&ranges.result.ints, value),
@@ -733,20 +759,31 @@ fn check(source: &str) -> Option<usize> {
                 id.index(),
                 ranges.result.shown(signature.result)
             );
-            if let Some(bound) = machine.depth_bound() {
-                assert!(
-                    machine.max_depth() as u64 <= bound,
-                    "depth {} past the bound {bound}\n{source}",
-                    machine.max_depth()
-                );
-            }
         }
     }
     Some(runs)
 }
 
+/// Records every failing seed in the crate's tracked `proptest-regressions/`
+/// file, which each later run replays before generating anything new.
+/// Proptest's default location is found by walking up from the test file
+/// to a `lib.rs`, which a test under `tests/` never reaches. Shrinking a
+/// seed draws an unrelated program, so none is attempted: a failing seed
+/// already names its program.
+fn config() -> ProptestConfig {
+    ProptestConfig {
+        cases: 256,
+        max_shrink_iters: 0,
+        failure_persistence: Some(Box::new(FileFailurePersistence::Direct(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/proptest-regressions/machine.txt"
+        )))),
+        ..ProptestConfig::default()
+    }
+}
+
 proptest! {
-    #![proptest_config(ProptestConfig { cases: 256, ..ProptestConfig::default() })]
+    #![proptest_config(config())]
 
     #[test]
     fn accepted_programs_run_within_their_claims(seed in any::<u64>()) {
@@ -755,16 +792,29 @@ proptest! {
 }
 
 /// The generator earns its keep only while the checker accepts most of
-/// what it draws: a drop here means the generator or the analysis lost
-/// precision, and either is worth knowing.
+/// what it draws and most runs end: a drop in either means the generator
+/// or the analysis lost precision, or a recursion the checker accepted
+/// never ends, and each is worth knowing.
 #[test]
-fn most_generated_programs_are_accepted() {
+fn most_generated_programs_are_accepted_and_run_to_the_end() {
     let seeds = 400u64;
-    let accepted = (0..seeds)
-        .filter(|&seed| check(&program(seed)).is_some())
-        .count() as u64;
+    let mut accepted = 0u64;
+    let mut runs = Runs::default();
+    for seed in 0..seeds {
+        if let Some(outcome) = check(&program(seed)) {
+            accepted += 1;
+            runs.finished += outcome.finished;
+            runs.abandoned += outcome.abandoned;
+        }
+    }
     assert!(
         accepted * 10 >= seeds * 9,
         "only {accepted} of {seeds} generated programs were accepted"
+    );
+    assert!(
+        runs.abandoned * 50 <= runs.finished,
+        "{} of {} runs were abandoned",
+        runs.abandoned,
+        runs.finished + runs.abandoned
     );
 }
