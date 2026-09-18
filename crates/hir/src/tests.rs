@@ -544,7 +544,7 @@ fn call_requirements_replay_in_argument_order() {
     assert_eq!(mismatches.len(), 1);
     assert_eq!(mismatches[0].message.as_ref(), "expected bool, found int");
     assert_eq!(
-        mismatches[0].primary.start().to_usize(),
+        mismatches[0].primary.range().start().to_usize(),
         source.rfind("(x)").unwrap()
     );
 
@@ -698,9 +698,9 @@ fn diagnostics_are_one_list(analysis: &Analysis) {
             .zip(analysis.parsed().diagnostics())
             .all(|(listed, own)| *listed == own)
     );
-    assert!(all.is_sorted_by_key(|d| d.primary.start()));
+    assert!(all.is_sorted_by_key(|d| d.primary.range().start()));
     for pair in all.windows(2) {
-        if pair[0].primary.start() == pair[1].primary.start() {
+        if pair[0].primary.range().start() == pair[1].primary.range().start() {
             assert!(!Analysis::is_semantic(&pair[0]) || Analysis::is_semantic(&pair[1]));
         }
     }
@@ -718,7 +718,7 @@ fn unused_values_are_semantic_errors_without_complete_bodies() {
     // The two unused values share an inferred type and produce distinct errors.
     let a = check("fn f() = { let x = value()\n x\n x\n 0 }\nfn value() = 3");
     assert_eq!(codes(&a), [UNUSED_VALUE, UNUSED_VALUE]);
-    assert!(semantic(&a)[0].primary.start() < semantic(&a)[1].primary.start());
+    assert!(semantic(&a)[0].primary.range().start() < semantic(&a)[1].primary.range().start());
     assert!(!a.functions[0].complete());
 }
 
@@ -808,7 +808,7 @@ fn source_origins_are_utf8_byte_ranges() {
     assert_eq!(text(&a, a.graph().node(e).name.unwrap()), "e");
     let a = check("// café\nfn f() -> int = absent");
     assert_eq!(
-        semantic(&a)[0].primary.start().to_usize(),
+        semantic(&a)[0].primary.range().start().to_usize(),
         "// café\nfn f() -> int = ".len()
     );
 }
@@ -820,7 +820,7 @@ fn duplicate_functions_keep_the_first_origin_and_poison_calls() {
     assert_eq!(codes(&a), [DUPLICATE_NAME]);
     for diagnostic in a.diagnostics() {
         assert_eq!(diagnostic.labels.len(), 1);
-        let origin = diagnostic.labels[0].location.span().range();
+        let origin = diagnostic.labels[0].span.range();
         assert_eq!(origin.start().to_usize(), 3);
         assert_eq!(origin.end().to_usize(), 4);
     }
@@ -1212,10 +1212,10 @@ proptest::proptest! {
         diagnostics_are_one_list(&a);
         proptest::prop_assert_eq!(a.is_valid(), a.diagnostics().is_empty());
         for d in a.diagnostics() {
-            for location in std::iter::once(d.primary).chain(d.labels.iter().map(|label| label.location)) {
-                proptest::prop_assert_eq!(location.file, a.parsed.file());
-                proptest::prop_assert!(source.is_char_boundary(location.start().to_usize()));
-                proptest::prop_assert!(source.is_char_boundary(location.end().to_usize()));
+            for span in std::iter::once(d.primary).chain(d.labels.iter().map(|label| label.span)) {
+                proptest::prop_assert_eq!(span.file(), a.parsed.file());
+                proptest::prop_assert!(source.is_char_boundary(span.range().start().to_usize()));
+                proptest::prop_assert!(source.is_char_boundary(span.range().end().to_usize()));
             }
         }
     }

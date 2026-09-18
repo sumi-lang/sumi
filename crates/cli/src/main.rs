@@ -92,7 +92,7 @@ fn analyze(path: &Path) -> Result<(Analysis, bool), String> {
     for diagnostic in analysis.diagnostics() {
         eprintln!(
             "{}error[{}]: {}",
-            locate(path, &lines, diagnostic.primary.start()),
+            locate(path, &lines, diagnostic.primary.range().start()),
             diagnostic.code,
             diagnostic.message,
         );

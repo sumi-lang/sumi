@@ -12,12 +12,13 @@
 use std::collections::HashSet;
 
 use sumi_format::{format, rep};
-use sumi_frontend::{FileId, Location, ParsedSource, Place, codes, parse_source};
+use sumi_frontend::{FileId, ParsedSource, codes, parse_source};
 use sumi_lexer::{LexedFile, RawIdx, SyntaxKind, lex};
 use sumi_syntax::{
     BRACKET_PAIRS, NodeKind, Parse, ParseAnchor, ParseEvidence, ParserInput, SigIdx, parse,
 };
 use sumi_test::{Edit, Front, apply, changes_delimiter, front};
+use sumi_text::Span;
 
 /// The file every fuzzed source stands for.
 pub const FILE: FileId = FileId::new(0);
@@ -83,9 +84,9 @@ pub fn check_semantics(parsed: ParsedSource) {
             .zip(analysis.parsed().diagnostics())
             .all(|(listed, own)| *listed == own)
     );
-    assert!(all.is_sorted_by_key(|d| d.primary.start()));
+    assert!(all.is_sorted_by_key(|d| d.primary.range().start()));
     for pair in all.windows(2) {
-        if pair[0].primary.start() == pair[1].primary.start() {
+        if pair[0].primary.range().start() == pair[1].primary.range().start() {
             assert!(
                 !sumi_hir::Analysis::is_semantic(&pair[0])
                     || sumi_hir::Analysis::is_semantic(&pair[1])
@@ -94,10 +95,10 @@ pub fn check_semantics(parsed: ParsedSource) {
     }
     check_graph(&analysis);
     for diagnostic in analysis.diagnostics() {
-        for location in locations(diagnostic) {
-            assert_eq!(location.file, analysis.parsed().file());
-            assert!(source.is_char_boundary(location.start().to_usize()));
-            assert!(source.is_char_boundary(location.end().to_usize()));
+        for span in spans(diagnostic) {
+            assert_eq!(span.file(), analysis.parsed().file());
+            assert!(source.is_char_boundary(span.range().start().to_usize()));
+            assert!(source.is_char_boundary(span.range().end().to_usize()));
         }
     }
     check_typed(&analysis);
@@ -739,9 +740,9 @@ pub fn check_parse(source: &str, lexed: &LexedFile, parse: &Parse) {
     }
 }
 
-/// The primary location of `diagnostic` and every label's.
-fn locations(diagnostic: &sumi_frontend::Diagnostic) -> impl Iterator<Item = Location> + '_ {
-    std::iter::once(diagnostic.primary).chain(diagnostic.labels.iter().map(|label| label.location))
+/// The primary span of `diagnostic` and every label's.
+fn spans(diagnostic: &sumi_frontend::Diagnostic) -> impl Iterator<Item = Span> + '_ {
+    std::iter::once(diagnostic.primary).chain(diagnostic.labels.iter().map(|label| label.span))
 }
 
 /// Every canonical diagnostic names the parsed file, in source order, with
@@ -754,25 +755,21 @@ pub fn check_diagnostics(parsed: &ParsedSource) {
     let mut edits = Vec::new();
     for diagnostic in parsed.diagnostics() {
         let key = (
-            diagnostic.primary.start().to_u32(),
-            diagnostic.primary.end().to_u32(),
+            diagnostic.primary.range().start().to_u32(),
+            diagnostic.primary.range().end().to_u32(),
         );
         if let Some(previous) = previous {
             assert!(previous <= key, "diagnostics are not source sorted");
         }
         previous = Some(key);
 
-        for location in locations(diagnostic) {
-            assert_eq!(location.file, parsed.file());
-            let start = location.start().to_usize();
-            let end = location.end().to_usize();
-            assert!(start <= end && end <= source.len());
+        for span in spans(diagnostic) {
+            assert_eq!(span.file(), parsed.file());
+            let start = span.range().start().to_usize();
+            let end = span.range().end().to_usize();
+            assert!(end <= source.len());
             assert!(source.is_char_boundary(start));
             assert!(source.is_char_boundary(end));
-            if let Place::Point(point) = location.place {
-                assert_eq!(point.to_usize(), start);
-                assert_eq!(start, end);
-            }
         }
         if let Some(fix) = &diagnostic.fix {
             assert!(!fix.edits.is_empty());

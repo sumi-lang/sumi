@@ -9,7 +9,7 @@
 
 use std::fmt::Write as _;
 
-use sumi_frontend::{FileId, Location, Place, parse_source};
+use sumi_frontend::{FileId, parse_source};
 use sumi_hir::{Analysis, BinaryOp, FunctionId, Graph, NodeId, Op, RegionId, analyze};
 use sumi_text::Span;
 
@@ -59,18 +59,13 @@ fn run(source: &str) -> String {
     out
 }
 
+/// `@start..end`, or `@at` for an empty span.
 fn span(span: Span) -> String {
-    format!(
-        "@{}..{}",
-        span.range().start().to_u32(),
-        span.range().end().to_u32()
-    )
-}
-
-fn location(location: Location) -> String {
-    match location.place {
-        Place::Range(_) => span(location.span()),
-        Place::Point(offset) => format!("@{}", offset.to_u32()),
+    let (start, end) = (span.range().start().to_u32(), span.range().end().to_u32());
+    if start == end {
+        format!("@{start}")
+    } else {
+        format!("@{start}..{end}")
     }
 }
 
@@ -130,17 +125,11 @@ fn snapshot(source: &str) -> String {
                 "error[{}]: {}\n  primary {}",
                 diagnostic.code,
                 diagnostic.message,
-                location(diagnostic.primary)
+                span(diagnostic.primary)
             )
             .unwrap();
             for label in &diagnostic.labels {
-                writeln!(
-                    out,
-                    "  secondary {}: {}",
-                    location(label.location),
-                    label.message
-                )
-                .unwrap();
+                writeln!(out, "  secondary {}: {}", span(label.span), label.message).unwrap();
             }
             assert!(
                 diagnostic.fix.is_none(),

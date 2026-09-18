@@ -10,9 +10,7 @@ mod lower;
 mod generated;
 pub use generated::codes;
 
-pub use sumi_diagnostics::{
-    Diagnostic, DiagnosticCode, DiagnosticGroup, Fix, Label, Location, Place,
-};
+pub use sumi_diagnostics::{Diagnostic, DiagnosticCode, DiagnosticGroup, Fix, Label};
 pub use sumi_lexer::SourceTooLarge;
 use sumi_lexer::{LexedFile, lex};
 use sumi_syntax::{Parse, ParserInput, parse};

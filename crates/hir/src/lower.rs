@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 
 use rustc_hash::FxBuildHasher;
-use sumi_frontend::{DiagnosticCode, Label, Location};
+use sumi_frontend::{DiagnosticCode, Label};
 use sumi_lexer::{RawIdx, SyntaxKind, TokenFlags};
 use sumi_syntax::{
     NodeIdx, NodeKind, SyntaxTree,
@@ -284,13 +284,10 @@ pub(crate) fn diagnostic(
     Diagnostic {
         code,
         message: message.into(),
-        primary: Location::range(primary),
+        primary,
         labels: related
             .into_iter()
-            .map(|(span, message)| Label {
-                location: Location::range(span),
-                message,
-            })
+            .map(|(span, message)| Label { span, message })
             .collect(),
         fix: None,
     }

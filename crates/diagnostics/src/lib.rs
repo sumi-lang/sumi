@@ -2,13 +2,13 @@
 //!
 //! A frontend or later compiler phase owns the source snapshots and assigns
 //! stable codes, wording, labels, and fixes. Every diagnostic rejects the
-//! program. Every label names its file, so a diagnostic produced from one
+//! program. Every span names its file, so a diagnostic produced from one
 //! file can point into another — "defined here" — and renderers only
 //! project this canonical representation for their audience.
 
 use std::fmt;
 
-use sumi_text::{FileId, Span, TextEdit, TextRange, TextSize};
+use sumi_text::{Span, TextEdit};
 
 /// A namespace for related diagnostic codes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -72,65 +72,10 @@ const fn valid_component(value: &str) -> bool {
     true
 }
 
-/// Where a diagnostic label sits: a file, and within it either source text
-/// or a byte boundary where syntax is absent.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct Location {
-    pub file: FileId,
-    pub place: Place,
-}
-
-/// The part of a file a label points at.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Place {
-    /// Source text relevant to the diagnostic. The range may be empty when
-    /// the producer reported an empty source range.
-    Range(TextRange),
-    /// A byte boundary where syntax is absent.
-    Point(TextSize),
-}
-
-impl Location {
-    /// A label over the text of `span`.
-    pub const fn range(span: Span) -> Self {
-        Self {
-            file: span.file(),
-            place: Place::Range(span.range()),
-        }
-    }
-
-    /// A label at a byte boundary of `file` where syntax is absent.
-    pub const fn point(file: FileId, offset: TextSize) -> Self {
-        Self {
-            file,
-            place: Place::Point(offset),
-        }
-    }
-
-    /// The bytes the label covers; a point covers none.
-    pub const fn span(self) -> Span {
-        Span::new(self.file, TextRange::new(self.start(), self.end()))
-    }
-
-    pub const fn start(self) -> TextSize {
-        match self.place {
-            Place::Range(range) => range.start(),
-            Place::Point(point) => point,
-        }
-    }
-
-    pub const fn end(self) -> TextSize {
-        match self.place {
-            Place::Range(range) => range.end(),
-            Place::Point(point) => point,
-        }
-    }
-}
-
-/// Related evidence for a diagnostic: a location and what it shows.
+/// Related evidence for a diagnostic: a span and what it shows.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Label {
-    pub location: Location,
+    pub span: Span,
     pub message: Box<str>,
 }
 
@@ -152,9 +97,10 @@ pub struct Fix {
 pub struct Diagnostic {
     pub code: DiagnosticCode,
     pub message: Box<str>,
-    /// Where the diagnostic is.
-    pub primary: Location,
-    /// Related evidence, rendered after the primary location.
+    /// Where the diagnostic is: source text, or an empty span at the byte
+    /// boundary where syntax is absent.
+    pub primary: Span,
+    /// Related evidence, rendered after the primary span.
     pub labels: Box<[Label]>,
     /// A source action for the diagnostic's source snapshot.
     pub fix: Option<Fix>,
@@ -185,19 +131,5 @@ mod tests {
     #[should_panic(expected = "invalid diagnostic code name")]
     fn diagnostic_code_names_cannot_contain_the_serialization_separator() {
         DiagnosticCode::new(DiagnosticGroup::new("frontend"), "unknown/character");
-    }
-
-    #[test]
-    fn empty_ranges_remain_distinct_from_missing_syntax() {
-        let file = FileId::new(7);
-        let position = TextSize::new(3);
-        let range = Location::range(Span::new(file, TextRange::new(position, position)));
-        let point = Location::point(file, position);
-
-        assert_ne!(range, point);
-        assert_eq!((range.start(), range.end()), (position, position));
-        assert_eq!((point.start(), point.end()), (position, position));
-        assert_eq!(range.span(), point.span());
-        assert_eq!(point.span().file(), file);
     }
 }

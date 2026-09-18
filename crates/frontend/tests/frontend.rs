@@ -1,6 +1,6 @@
 use proptest::prelude::*;
 use proptest::test_runner::FileFailurePersistence;
-use sumi_frontend::{DiagnosticCode, FileId, ParsedSource, Place, codes, parse_source};
+use sumi_frontend::{DiagnosticCode, FileId, ParsedSource, codes, parse_source};
 use sumi_syntax::{RawIdx, SyntaxKind};
 
 /// The file every test source stands for; the frontend copies it into every
@@ -186,7 +186,7 @@ fn leading_zeros_are_fixed_around_a_suffix() {
     );
     let diagnostic = &front.diagnostics()[0];
     assert_eq!(
-        diagnostic.primary.start().to_usize()..diagnostic.primary.end().to_usize(),
+        diagnostic.primary.range().start().to_usize()..diagnostic.primary.range().end().to_usize(),
         9..10
     );
     assert_eq!(apply_fix(source, diagnostic), "fn f() = 1u32");
@@ -238,26 +238,22 @@ proptest! {
         let mut previous = None;
         for diagnostic in front.diagnostics() {
             let key = (
-                diagnostic.primary.start().to_u32(),
-                diagnostic.primary.end().to_u32(),
+                diagnostic.primary.range().start().to_u32(),
+                diagnostic.primary.range().end().to_u32(),
             );
             if let Some(previous) = previous {
                 prop_assert!(previous <= key, "diagnostics are not source sorted");
             }
             previous = Some(key);
 
-            let labels = diagnostic.labels.iter().map(|label| label.location);
-            for location in std::iter::once(diagnostic.primary).chain(labels) {
-                prop_assert_eq!(location.file, FILE);
-                let start = location.start().to_usize();
-                let end = location.end().to_usize();
-                prop_assert!(start <= end && end <= source.len());
+            let labels = diagnostic.labels.iter().map(|label| label.span);
+            for span in std::iter::once(diagnostic.primary).chain(labels) {
+                prop_assert_eq!(span.file(), FILE);
+                let start = span.range().start().to_usize();
+                let end = span.range().end().to_usize();
+                prop_assert!(end <= source.len());
                 prop_assert!(source.is_char_boundary(start));
                 prop_assert!(source.is_char_boundary(end));
-                if let Place::Point(point) = location.place {
-                    prop_assert_eq!(point.to_usize(), start);
-                    prop_assert_eq!(start, end);
-                }
             }
             if let Some(fix) = &diagnostic.fix {
                 prop_assert!(!fix.edits.is_empty());

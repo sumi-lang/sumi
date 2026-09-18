@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use sumi_diagnostics::{Diagnostic, DiagnosticCode, Fix, Label, Location};
+use sumi_diagnostics::{Diagnostic, DiagnosticCode, Fix, Label};
 use sumi_lexer::{LexError, LexErrorKind, LexedFile, TokenFlags, canonicalize_number_literal};
 use sumi_syntax::{
     Parse, ParseAnchor, ParseEvidence, ParseRecovery, ParseRecoveryKind, ParseViolation,
@@ -19,19 +19,20 @@ struct Snapshot<'a> {
 }
 
 impl Snapshot<'_> {
-    fn range(&self, range: TextRange) -> Location {
-        Location::range(Span::new(self.file, range))
+    fn range(&self, range: TextRange) -> Span {
+        Span::new(self.file, range)
     }
 
-    fn point(&self, offset: TextSize) -> Location {
-        Location::point(self.file, offset)
+    /// An empty span at a byte boundary where syntax is absent.
+    fn point(&self, offset: TextSize) -> Span {
+        self.range(TextRange::new(offset, offset))
     }
 
-    fn raw_range(&self, range: RawTokenRange) -> Location {
+    fn raw_range(&self, range: RawTokenRange) -> Span {
         self.range(lower_raw_range(range, self.lexed))
     }
 
-    fn anchor(&self, anchor: ParseAnchor) -> Location {
+    fn anchor(&self, anchor: ParseAnchor) -> Span {
         match anchor {
             ParseAnchor::Gap(gap) => self.point(self.lexed.boundary(gap.trivia_end())),
             ParseAnchor::Tokens(range) => self.raw_range(range),
@@ -58,8 +59,8 @@ pub(crate) fn diagnostics(
     // break ties at the same source location.
     diagnostics.sort_by_key(|diagnostic| {
         (
-            diagnostic.primary.start().to_u32(),
-            diagnostic.primary.end().to_u32(),
+            diagnostic.primary.range().start().to_u32(),
+            diagnostic.primary.range().end().to_u32(),
         )
     });
     diagnostics.into_boxed_slice()
@@ -87,7 +88,7 @@ fn lower_token_errors(
     for error in errors {
         let (code, message) = match error.kind {
             LexErrorKind::LeadingZero => {
-                let mut diagnostic = primary(
+                let mut diagnostic = diagnostic(
                     codes::NONCANONICAL_NUMBER,
                     "integer literal has leading zeros",
                     snapshot.range(error.range),
@@ -121,7 +122,7 @@ fn lower_token_errors(
                 "punctuation has no meaning in Sumi source",
             ),
         };
-        diagnostics.push(primary(code, message, snapshot.range(error.range)));
+        diagnostics.push(diagnostic(code, message, snapshot.range(error.range)));
     }
 }
 
@@ -151,7 +152,7 @@ fn lower_recovery(
     recovery: &ParseRecovery,
     closer_fix_sites: &mut HashSet<(SyntaxKind, u32)>,
 ) -> Diagnostic {
-    let location = snapshot.anchor(recovery.anchor);
+    let primary = snapshot.anchor(recovery.anchor);
     let (code, message): (DiagnosticCode, Box<str>) = match recovery.kind {
         ParseRecoveryKind::Item => (codes::EXPECTED_ITEM, "expected a function item".into()),
         ParseRecoveryKind::Statement => (codes::EXPECTED_STATEMENT, "expected a statement".into()),
@@ -183,12 +184,12 @@ fn lower_recovery(
     };
     let opener = match recovery.kind {
         ParseRecoveryKind::Closer { opener, .. } => Some(Label {
-            location: snapshot.raw_range(opener),
+            span: snapshot.raw_range(opener),
             message: "opening delimiter is here".into(),
         }),
         _ => None,
     };
-    let mut diagnostic = primary(code, message, location);
+    let mut diagnostic = diagnostic(code, message, primary);
     diagnostic.labels = opener
         .into_iter()
         .chain(
@@ -196,9 +197,9 @@ fn lower_recovery(
                 .skipped
                 .iter()
                 .map(|&range| snapshot.raw_range(range))
-                .filter(|&skipped| skipped != location)
-                .map(|location| Label {
-                    location,
+                .filter(|&skipped| skipped != primary)
+                .map(|span| Label {
+                    span,
                     message: "skipped while recovering".into(),
                 }),
         )
@@ -274,14 +275,14 @@ fn lower_violation(snapshot: &Snapshot<'_>, violation: ParseViolation) -> Diagno
             "comparison operators cannot be chained",
         ),
     };
-    primary(code, message, snapshot.raw_range(violation.range))
+    diagnostic(code, message, snapshot.raw_range(violation.range))
 }
 
-fn primary(code: DiagnosticCode, message: impl Into<Box<str>>, location: Location) -> Diagnostic {
+fn diagnostic(code: DiagnosticCode, message: impl Into<Box<str>>, primary: Span) -> Diagnostic {
     Diagnostic {
         code,
         message: message.into(),
-        primary: location,
+        primary,
         labels: Box::new([]),
         fix: None,
     }

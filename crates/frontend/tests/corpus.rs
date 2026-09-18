@@ -18,10 +18,10 @@ use std::fmt::Write as _;
 mod corpus;
 
 use sumi_format::format;
-use sumi_frontend::{Diagnostic, FileId, Location, Place, TextEdit, parse_source};
+use sumi_frontend::{Diagnostic, FileId, TextEdit, parse_source};
 use sumi_lexer::LexedFile;
 use sumi_syntax::{NodeIdx, ParseAnchor, ParseEvidence, ParseRecoveryKind, RawIdx, SyntaxTree};
-use sumi_text::{LineIndex, TextSize};
+use sumi_text::{LineIndex, TextRange, TextSize};
 
 #[test]
 fn every_case_matches_its_snapshot() {
@@ -274,7 +274,7 @@ fn render(diagnostic: &Diagnostic, index: &LineIndex, source: &str, out: &mut St
         out,
         "error[{}] {}: {}",
         diagnostic.code,
-        place(index, source, diagnostic.primary),
+        place(index, source, diagnostic.primary.range()),
         diagnostic.message
     )
     .expect("writing to a string");
@@ -282,7 +282,7 @@ fn render(diagnostic: &Diagnostic, index: &LineIndex, source: &str, out: &mut St
         writeln!(
             out,
             "  at {}: {}",
-            place(index, source, label.location),
+            place(index, source, label.span.range()),
             label.message
         )
         .expect("writing to a string");
@@ -290,16 +290,10 @@ fn render(diagnostic: &Diagnostic, index: &LineIndex, source: &str, out: &mut St
     if let Some(fix) = &diagnostic.fix {
         writeln!(out, "  fix: {}", fix.message).expect("writing to a string");
         for edit in &fix.edits {
-            let range = edit.range();
-            let location = if range.start() == range.end() {
-                Location::point(FileId::new(0), range.start())
-            } else {
-                Location::range(sumi_frontend::Span::new(FileId::new(0), range))
-            };
             writeln!(
                 out,
                 "    {} -> {:?}",
-                place(index, source, location),
+                place(index, source, edit.range()),
                 edit.replacement()
             )
             .expect("writing to a string");
@@ -307,20 +301,21 @@ fn render(diagnostic: &Diagnostic, index: &LineIndex, source: &str, out: &mut St
     }
 }
 
-/// A location as `line:col`, one-based with byte columns; a range as
-/// `start..end` followed by its text.
-fn place(index: &LineIndex, source: &str, location: Location) -> String {
+/// A range as `start..end` followed by its text, each end `line:col`,
+/// one-based with byte columns; an empty range as its one position.
+fn place(index: &LineIndex, source: &str, range: TextRange) -> String {
     let at = |offset: TextSize| {
         let position = index.line_col(offset);
         format!("{}:{}", position.line + 1, position.col + 1)
     };
-    match location.place {
-        Place::Point(offset) => at(offset),
-        Place::Range(range) => format!(
+    if range.start() == range.end() {
+        at(range.start())
+    } else {
+        format!(
             "{}..{} {:?}",
             at(range.start()),
             at(range.end()),
             range.text(source)
-        ),
+        )
     }
 }
