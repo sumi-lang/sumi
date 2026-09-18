@@ -25,7 +25,7 @@ use sumi_text::Span;
 
 pub use check::analyze;
 pub use sumi_graph::{
-    BinaryOp, Bools, Bound, Domain, FunctionId, Graph, Int, Ints, Machine, May, Node, NodeId, Op,
+    BinaryOp, Bools, Domain, FunctionId, Graph, Int, Ints, Machine, May, Node, NodeId, Op,
     OutOfRange, ParseIntError, Refusal, Region, RegionId, Run, Ty, Value,
 };
 

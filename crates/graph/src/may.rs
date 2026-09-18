@@ -28,7 +28,7 @@ use crate::{BinaryOp, Domain, Fault, Int, Ty};
 
 /// An endpoint over ℤ ∪ {±∞}. Ordered as the extended integers are.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Bound {
+enum Bound {
     NegInf,
     Finite(Int),
     PosInf,
@@ -185,11 +185,6 @@ impl From<Int> for Ints {
 
 impl Ints {
     pub const EMPTY: Self = Self(None);
-
-    /// Every integer.
-    pub fn all() -> Self {
-        Self::band(Bound::NegInf, Bound::PosInf, false)
-    }
 
     /// The canonical band, or nothing when it is empty.
     fn band(mut lo: Bound, mut hi: Bound, hole: bool) -> Self {

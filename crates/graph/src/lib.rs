@@ -16,7 +16,7 @@ use std::fmt;
 pub use graph::{Graph, Node, NodeId, Op, Region, RegionId, Run};
 pub use int::{Int, OutOfRange, ParseIntError};
 pub use machine::{Machine, Refusal};
-pub use may::{Bools, Bound, Ints, May, Thresholds};
+pub use may::{Bools, Ints, May, Thresholds};
 pub use value::{Domain, Fault, Value};
 
 /// Eager scalar operators. `&&` and `||` are not among them: their right
