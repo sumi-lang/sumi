@@ -37,9 +37,9 @@ pub struct Analysis {
     /// share an index.
     settled: typing::Settled,
     functions: Vec<Function>,
+    /// Every diagnostic, syntactic and semantic, in source order; the
+    /// syntactic ones stay in `parsed` too.
     diagnostics: Vec<Diagnostic>,
-    /// The call depth bound of each function as an entry, by index.
-    depth: Vec<Option<u64>>,
 }
 
 impl fmt::Debug for Analysis {
@@ -49,7 +49,6 @@ impl fmt::Debug for Analysis {
             .field("graph", &self.graph)
             .field("functions", &self.functions)
             .field("diagnostics", &self.diagnostics)
-            .field("depth", &self.depth)
             .finish_non_exhaustive()
     }
 }
@@ -71,9 +70,19 @@ impl Analysis {
     pub fn may(&self, node: NodeId) -> &May {
         self.settled.may(flows::var(node))
     }
-    /// Semantic diagnostics only, in source order. Syntax diagnostics remain in `parsed`.
+    /// Every diagnostic, syntactic and semantic, in source order, with a
+    /// syntactic one first where both stand at one position.
     pub fn diagnostics(&self) -> &[Diagnostic] {
         &self.diagnostics
+    }
+    /// Whether `diagnostic` is one of the checker's rather than the
+    /// frontend's.
+    pub fn is_semantic(diagnostic: &Diagnostic) -> bool {
+        diagnostic.code.group() == codes::SEMANTIC
+    }
+    /// The checker's diagnostics alone, in source order.
+    pub fn semantic_diagnostics(&self) -> impl Iterator<Item = &Diagnostic> {
+        self.diagnostics.iter().filter(|d| Self::is_semantic(d))
     }
     pub fn functions(&self) -> &[Function] {
         &self.functions
@@ -86,12 +95,29 @@ impl Analysis {
     pub fn function(&self, id: FunctionId) -> &Function {
         &self.functions[id.index()]
     }
-    /// The most call frames a run entered at `id` can hold at once, the
-    /// entry included, when every recursion it can reach has a measure
-    /// with a finite hull. A valid file's every recursion has a measure,
-    /// so a run of it is finite either way.
-    pub fn depth_bound(&self, id: FunctionId) -> Option<u64> {
-        self.depth[id.index()]
+    /// The function item named `name`, if any.
+    pub fn function_named(&self, name: &str) -> Option<FunctionId> {
+        self.function_ids().find(|&id| {
+            self.function(id)
+                .name
+                .is_some_and(|span| self.text(span) == name)
+        })
+    }
+    /// What may reach a function's parameters and its result, whenever it
+    /// has a signature: the hull of every live call site's arguments, and
+    /// nothing at all for a function no live call site reaches, whose body
+    /// is checked for nothing.
+    pub fn ranges(&self, id: FunctionId) -> Option<Ranges> {
+        self.function(id).signature.as_ref()?;
+        let run = self.graph.run(id);
+        Some(Ranges {
+            params: run.params().map(|param| self.may(param).clone()).collect(),
+            result: if self.may(run.entry()).live() {
+                self.may(run.result()).clone()
+            } else {
+                <May as solver::Lattice>::bottom()
+            },
+        })
     }
     /// The source text `span` covers: how a name in the HIR is read, since
     /// every name is kept as where it is written.
@@ -101,10 +127,8 @@ impl Analysis {
     }
     pub fn is_valid(&self) -> bool {
         !self
-            .parsed
-            .diagnostics()
+            .diagnostics
             .iter()
-            .chain(&self.diagnostics)
             .any(|d| d.severity == Severity::Error)
             && self.functions.iter().all(|f| f.complete)
     }
@@ -137,11 +161,11 @@ impl<'a> Program<'a> {
             .signature()
             .expect("a valid file's functions have signatures")
     }
-    /// What may reach a function's parameters and result; every function
-    /// of a valid file has it.
-    pub fn ranges(self, id: FunctionId) -> &'a Ranges {
-        self.function(id)
-            .ranges()
+    /// What may reach a function's parameters and result, read off the
+    /// evidence when asked; every function of a valid file has it.
+    pub fn ranges(self, id: FunctionId) -> Ranges {
+        self.analysis
+            .ranges(id)
             .expect("a valid file's functions have ranges")
     }
     /// Every function with its ID, in declaration order.
@@ -150,7 +174,8 @@ impl<'a> Program<'a> {
             .function_ids()
             .map(|id| (id, self.analysis.function(id)))
     }
-    /// The function item named `name`, if any.
+    /// The function item named `name`, if any: a valid file names each
+    /// function once.
     pub fn function_named(self, name: &str) -> Option<FunctionId> {
         self.functions()
             .find(|(_, function)| {
@@ -177,7 +202,7 @@ impl<'a> Program<'a> {
             self.analysis.graph(),
             function,
             args,
-            self.analysis.depth_bound(function),
+            self.function(function).depth_bound(),
         )
     }
     /// Run `function` on `args` to completion, as [`Program::machine`]
@@ -197,8 +222,8 @@ pub struct Function {
     name: Option<Span>,
     origin: Span,
     signature: Option<Signature>,
-    ranges: Option<Ranges>,
     complete: bool,
+    depth: Option<u64>,
 }
 
 impl Function {
@@ -221,10 +246,12 @@ impl Function {
     pub fn complete(&self) -> bool {
         self.complete
     }
-    /// The values that may reach the parameters and the result, whenever
-    /// the function has a signature.
-    pub fn ranges(&self) -> Option<&Ranges> {
-        self.ranges.as_ref()
+    /// The most call frames a run entered here can hold at once, the entry
+    /// included, when every recursion it can reach has a measure with a
+    /// finite hull. A valid file's every recursion has a measure, so a run
+    /// of it is finite either way.
+    pub fn depth_bound(&self) -> Option<u64> {
+        self.depth
     }
 }
 

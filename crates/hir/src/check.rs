@@ -15,8 +15,8 @@
 //! 3. **Verdicts.** The classes, facts, and flows are drawn from the graph
 //!    by `flows::draw`, the demands joined in, and the typing solves once.
 //!    Signatures are read off result classes, independent of declaration
-//!    order, and the values that may reach each parameter and result beside
-//!    them. Demands are then checked in source order against the final
+//!    order; what may reach each parameter and result is read off the kept
+//!    evidence whenever asked. Demands are then checked in source order against the final
 //!    evidence, so a disagreement is blamed on the first demand that raised
 //!    it. Every expression has one context, so it is held to one demand; an
 //!    expression whose type is undetermined, because its branches or its
@@ -41,9 +41,7 @@ use sumi_syntax::{
 };
 
 use crate::codes;
-use crate::ranges::May;
 use crate::recursion;
-use crate::solver::Lattice;
 use crate::typing::{Claim, Expected, ProductContext, Typing};
 use crate::{flows, *};
 
@@ -491,8 +489,8 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
             name,
             origin,
             signature: None,
-            ranges: None,
             complete: false,
+            depth: None,
         })
         .collect();
 
@@ -587,18 +585,6 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         let result = evidence.and_then(|evidence| evidence.ty());
         if let (Some(params), Some(result)) = (header.params, result) {
             functions[index].signature = Some(Signature { params, result });
-            // A function nothing live reaches never returns either.
-            functions[index].ranges = Some(Ranges {
-                params: run
-                    .params()
-                    .map(|param| flows::may(&typing, param).clone())
-                    .collect(),
-                result: if flows::live(&typing, run.entry()) {
-                    flows::may(&typing, run.result()).clone()
-                } else {
-                    May::bottom()
-                },
-            });
         }
         // A result to infer that did not resolve is reported here, unless a
         // demand in the body already explained it, or the trouble arrived
@@ -740,25 +726,32 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         });
         functions[index].complete = complete;
     }
-    source
-        .diagnostics
-        .sort_by_key(|d| d.primary.location.start());
-    let diagnostics = source.diagnostics;
+    debug_assert_eq!(recursion.depth.len(), functions.len());
+    for (function, depth) in functions.iter_mut().zip(recursion.depth) {
+        function.depth = depth;
+    }
+    // One list, in source order: a syntactic diagnostic first where both
+    // stand at one position, then the checker's in the order it made them.
+    // A clean parse, the common case, adds nothing.
+    let mut diagnostics = source.diagnostics;
+    if !parsed.diagnostics().is_empty() {
+        diagnostics.splice(0..0, parsed.diagnostics().iter().cloned());
+        diagnostics.sort_by_key(|d| d.primary.location.start());
+    } else {
+        diagnostics.sort_by_key(|d| d.primary.location.start());
+    }
     let analysis = Analysis {
         parsed,
         graph,
         settled: typing.settle(),
         functions,
         diagnostics,
-        depth: recursion.depth,
     };
     assert!(
         analysis.is_valid()
             || analysis
-                .parsed
-                .diagnostics()
+                .diagnostics
                 .iter()
-                .chain(&analysis.diagnostics)
                 .any(|d| d.severity == Severity::Error),
         "incomplete semantic analysis without an error"
     );
@@ -904,7 +897,7 @@ fn explain_zero(
 /// are explicit work items, so initializers see the old scope.
 #[derive(Clone, Copy)]
 enum Bound {
-    /// A local with a class the typing follows.
+    /// A local with a value the typing follows.
     Local(LocalId),
     /// A binding without one, still what the name reads: a parameter
     /// without a type, or a damaged `let`.
@@ -1801,7 +1794,7 @@ impl<'a, 's> Builder<'a, 's> {
                         let read = self.current(local);
                         self.nodes_of[node.to_usize()] = Some(read);
                     }
-                    // A binding without a class the typing follows is still
+                    // A binding without a value the typing follows is still
                     // what the name reads.
                     Some(Bound::Untyped(defined)) => {
                         self.nodes_of[node.to_usize()] = Some(defined);

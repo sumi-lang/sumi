@@ -26,6 +26,7 @@ pub const FILE: FileId = FileId::new(0);
 /// The HIR property's diagnostic-backed acceptance, source provenance, and
 /// completeness, through the read-only public API.
 pub fn check_semantics(parsed: ParsedSource) {
+    use sumi_hir::FunctionId;
     let analysis = sumi_hir::analyze(parsed);
     let source = analysis.parsed().source();
     // Mirror the HIR property: declaration order cannot choose a public type
@@ -46,10 +47,12 @@ pub fn check_semantics(parsed: ParsedSource) {
             sumi_hir::analyze(parse_source(FILE, declarations.join("\n").into()).unwrap());
         assert!(reversed.parsed().diagnostics().is_empty());
         assert_eq!(analysis.functions().len(), reversed.functions().len());
-        for (a, b) in analysis
+        let count = analysis.functions().len();
+        for (index, (a, b)) in analysis
             .functions()
             .iter()
             .zip(reversed.functions().iter().rev())
+            .enumerate()
         {
             assert_eq!(
                 a.name().map(|name| analysis.text(name)),
@@ -59,17 +62,41 @@ pub fn check_semantics(parsed: ParsedSource) {
                 a.signature().map(|s| (&s.params, s.result)),
                 b.signature().map(|s| (&s.params, s.result))
             );
-            assert_eq!(a.ranges(), b.ranges());
+            assert_eq!(
+                analysis.ranges(FunctionId::new(index)),
+                reversed.ranges(FunctionId::new(count - 1 - index))
+            );
             assert_eq!(a.complete(), b.complete());
         }
     }
     let errors = analysis
-        .parsed()
         .diagnostics()
         .iter()
-        .chain(analysis.diagnostics())
         .any(|d| d.severity == Severity::Error);
     assert_eq!(analysis.is_valid(), !errors);
+    // The frontend's diagnostics are among the analysis's, in source order,
+    // the frontend's first where both stand at one position.
+    let all = analysis.diagnostics();
+    let syntactic: Vec<_> = all
+        .iter()
+        .filter(|d| !sumi_hir::Analysis::is_semantic(d))
+        .collect();
+    assert_eq!(syntactic.len(), analysis.parsed().diagnostics().len());
+    assert!(
+        syntactic
+            .iter()
+            .zip(analysis.parsed().diagnostics())
+            .all(|(listed, own)| *listed == own)
+    );
+    assert!(all.is_sorted_by_key(|d| d.primary.location.start()));
+    for pair in all.windows(2) {
+        if pair[0].primary.location.start() == pair[1].primary.location.start() {
+            assert!(
+                !sumi_hir::Analysis::is_semantic(&pair[0])
+                    || sumi_hir::Analysis::is_semantic(&pair[1])
+            );
+        }
+    }
     check_graph(&analysis);
     for diagnostic in analysis.diagnostics() {
         for label in std::iter::once(&diagnostic.primary).chain(diagnostic.secondary.iter()) {

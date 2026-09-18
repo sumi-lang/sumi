@@ -1,5 +1,5 @@
 use super::*;
-use sumi_frontend::{DiagnosticCode, FileId, parse_source};
+use sumi_frontend::{Diagnostic, DiagnosticCode, FileId, parse_source};
 
 use crate::codes::*;
 
@@ -9,12 +9,7 @@ fn check(source: &str) -> Analysis {
 
 fn clean(source: &str) -> Analysis {
     let analysis = check(source);
-    assert!(
-        analysis.is_valid(),
-        "syntax: {:?}\nsemantic: {:?}",
-        analysis.parsed.diagnostics(),
-        analysis.diagnostics
-    );
+    assert!(analysis.is_valid(), "{:?}", analysis.diagnostics());
     assert!(analysis.functions.iter().all(Function::complete));
     graph_invariant(&analysis);
     analysis
@@ -143,8 +138,13 @@ fn text(analysis: &Analysis, span: Span) -> &str {
     analysis.text(span)
 }
 
+/// The checker's diagnostics, apart from the frontend's.
+fn semantic(analysis: &Analysis) -> Vec<&Diagnostic> {
+    analysis.semantic_diagnostics().collect()
+}
+
 fn codes(analysis: &Analysis) -> Vec<DiagnosticCode> {
-    analysis.diagnostics().iter().map(|d| d.code).collect()
+    semantic(analysis).iter().map(|d| d.code).collect()
 }
 
 fn reversed_declarations_preserve_types(analysis: &Analysis) {
@@ -165,10 +165,12 @@ fn reversed_declarations_preserve_types(analysis: &Analysis) {
     let reversed = check(&declarations.join("\n"));
     assert!(reversed.parsed().diagnostics().is_empty());
     assert_eq!(analysis.functions.len(), reversed.functions.len());
-    for (a, b) in analysis
+    let count = analysis.functions.len();
+    for (index, (a, b)) in analysis
         .functions
         .iter()
         .zip(reversed.functions.iter().rev())
+        .enumerate()
     {
         assert_eq!(
             a.name().map(|name| analysis.text(name)),
@@ -178,7 +180,10 @@ fn reversed_declarations_preserve_types(analysis: &Analysis) {
             a.signature().map(|s| (&s.params, s.result)),
             b.signature().map(|s| (&s.params, s.result))
         );
-        assert_eq!(a.ranges(), b.ranges());
+        assert_eq!(
+            analysis.ranges(FunctionId::new(index)),
+            reversed.ranges(FunctionId::new(count - 1 - index))
+        );
         assert_eq!(a.complete(), b.complete());
     }
     graph_invariant(&reversed);
@@ -358,7 +363,7 @@ fn lexical_scopes_and_sequential_shadowing() {
     assert_eq!(value(&a, 0), x1);
     let a = check("fn f() -> int = 1\nfn g() -> int {\n let f = 2\n f()\n}\n");
     assert_eq!(codes(&a), [NOT_CALLABLE]);
-    assert_eq!(a.diagnostics[0].secondary.len(), 1);
+    assert_eq!(semantic(&a)[0].secondary.len(), 1);
 }
 
 #[test]
@@ -394,7 +399,7 @@ fn mismatch_labels_distinguish_branches_from_declarations() {
     ] {
         let a = check(source);
         assert_eq!(codes(&a), [TYPE_MISMATCH]);
-        let labels: Vec<_> = a.diagnostics[0]
+        let labels: Vec<_> = semantic(&a)[0]
             .secondary
             .iter()
             .map(|label| label.message.as_deref().unwrap())
@@ -414,7 +419,7 @@ fn disagreeing_branches_are_undetermined_not_the_first_branch() {
         ));
         assert_eq!(codes(&a), [TYPE_MISMATCH], "{result}");
         assert_eq!(
-            a.diagnostics[0].message.as_ref(),
+            semantic(&a)[0].message.as_ref(),
             "if branches are int and bool"
         );
     }
@@ -422,10 +427,7 @@ fn disagreeing_branches_are_undetermined_not_the_first_branch() {
         "fn f() -> bool = { let a = 1\n let b = true\n _ = if a == 1 { a } else { b }\n !a }",
     );
     assert_eq!(codes(&a), [TYPE_MISMATCH, TYPE_MISMATCH]);
-    assert_eq!(
-        a.diagnostics[1].message.as_ref(),
-        "expected bool, found int"
-    );
+    assert_eq!(semantic(&a)[1].message.as_ref(), "expected bool, found int");
 }
 
 #[test]
@@ -462,7 +464,7 @@ fn literals_of_any_size_fold_a_leading_minus() {
         let a = check(&format!("fn f() -> int = {expr}"));
         assert!(!a.is_valid());
         assert!(!a.functions[0].complete());
-        assert!(a.diagnostics.is_empty());
+        assert!(semantic(&a).is_empty());
     }
 }
 
@@ -521,7 +523,7 @@ fn a_measure_is_read_through_any_depth_of_lets() {
         "{:?}",
         analysis.diagnostics()
     );
-    assert_eq!(analysis.depth_bound(FunctionId::new(1)), Some(7));
+    assert_eq!(analysis.functions[1].depth_bound(), Some(7));
 }
 
 #[test]
@@ -646,9 +648,9 @@ fn damaged_and_unsupported_declarations_hide_old_bindings() {
         assert!(
             !codes(&a).contains(&TYPE_MISMATCH),
             "{binding}: {:?}",
-            a.diagnostics
+            semantic(&a)
         );
-        assert!(a.diagnostics.last().unwrap().message.contains("missing"));
+        assert!(semantic(&a).last().unwrap().message.contains("missing"));
         assert!(!a.functions[0].complete());
         assert!(a.functions[1].complete());
     }
@@ -691,6 +693,27 @@ fn syntax_diagnostics_are_preserved_and_always_reject() {
         let a = analyze(parsed);
         assert!(!a.is_valid());
         assert_eq!(a.parsed.diagnostics(), before);
+        diagnostics_are_one_list(&a);
+    }
+}
+
+/// The analysis lists the frontend's diagnostics among its own, in source
+/// order, the frontend's first where both stand at one position.
+fn diagnostics_are_one_list(analysis: &Analysis) {
+    let all = analysis.diagnostics();
+    let syntactic: Vec<_> = all.iter().filter(|d| !Analysis::is_semantic(d)).collect();
+    assert_eq!(syntactic.len(), analysis.parsed().diagnostics().len());
+    assert!(
+        syntactic
+            .iter()
+            .zip(analysis.parsed().diagnostics())
+            .all(|(listed, own)| *listed == own)
+    );
+    assert!(all.is_sorted_by_key(|d| d.primary.location.start()));
+    for pair in all.windows(2) {
+        if pair[0].primary.location.start() == pair[1].primary.location.start() {
+            assert!(!Analysis::is_semantic(&pair[0]) || Analysis::is_semantic(&pair[1]));
+        }
     }
 }
 
@@ -706,7 +729,7 @@ fn unused_values_are_semantic_errors_without_complete_bodies() {
     // The two unused values share an inferred type and produce distinct errors.
     let a = check("fn f() = { let x = value()\n x\n x\n 0 }\nfn value() = 3");
     assert_eq!(codes(&a), [UNUSED_VALUE, UNUSED_VALUE]);
-    assert!(a.diagnostics[0].primary.location.start() < a.diagnostics[1].primary.location.start());
+    assert!(semantic(&a)[0].primary.location.start() < semantic(&a)[1].primary.location.start());
     assert!(!a.functions[0].complete());
 }
 
@@ -796,7 +819,7 @@ fn source_origins_are_utf8_byte_ranges() {
     assert_eq!(text(&a, a.graph().node(e).name.unwrap()), "e");
     let a = check("// café\nfn f() -> int = absent");
     assert_eq!(
-        a.diagnostics[0].primary.location.start().to_usize(),
+        semantic(&a)[0].primary.location.start().to_usize(),
         "// café\nfn f() -> int = ".len()
     );
 }
@@ -902,7 +925,7 @@ fn binary_requirements_survive_a_failed_operand() {
 fn recovery_does_not_expose_functions_or_leak_argument_scopes() {
     let a = check("fn f() -> int = 1\nfn g() {\n let f =\n _ = f()\n _ = absent\n}\n");
     assert_eq!(codes(&a), [UNKNOWN_NAME]);
-    assert!(a.diagnostics[0].message.contains("absent"));
+    assert!(semantic(&a)[0].message.contains("absent"));
     let a = check("fn f() {\n _ = missing({ let x = 1\n x }, x)\n}\n");
     assert_eq!(codes(&a), [UNKNOWN_NAME, UNKNOWN_NAME]);
     let a = check("fn f() {\n let x = absent\n let x = true\n _ = x + 1\n}\n");
@@ -1127,18 +1150,18 @@ fn large_definition_chains_and_cycles_are_stack_safe() {
                 // reported once.
                 let recursion = usize::from(!conflict);
                 assert_eq!(
-                    a.diagnostics.len(),
+                    semantic(&a).len(),
                     if conflict { 2 } else { COUNT + recursion }
                 );
                 assert_eq!(
-                    a.diagnostics
+                    semantic(&a)
                         .iter()
                         .filter(|d| d.code == UNBOUNDED_RECURSION)
                         .count(),
                     recursion
                 );
                 assert!(
-                    a.diagnostics
+                    semantic(&a)
                         .iter()
                         .all(|d| d.code == CANNOT_INFER || d.code == UNBOUNDED_RECURSION)
                 );
@@ -1188,7 +1211,7 @@ proptest::proptest! {
         proptest::sample::select(vec!["fn", "let", "mut", "x", "int", "bool", "unit", "if", "else", "return", "_", "=", "->", ":", "(", ")", "{", "}", ",", "1", "true", "+", "-", "&&", "\n"]), 0..100)) {
         let source = format!("fn f(x: int) -> int {{ {} }}\nfn g() -> int = 1", tokens.join(" "));
         let a = check(&source);
-        assert_eq!(a.is_valid(), !a.parsed.diagnostics().iter().chain(&a.diagnostics).any(|d| d.severity == Severity::Error));
+        assert_eq!(a.is_valid(), !a.diagnostics().iter().any(|d| d.severity == Severity::Error));
         graph_invariant(&a);
     }
 
@@ -1197,9 +1220,10 @@ proptest::proptest! {
         let a = check(&source);
         reversed_declarations_preserve_types(&a);
         graph_invariant(&a);
-        let errors = a.parsed.diagnostics().iter().chain(&a.diagnostics).any(|d| d.severity == Severity::Error);
+        diagnostics_are_one_list(&a);
+        let errors = a.diagnostics().iter().any(|d| d.severity == Severity::Error);
         proptest::prop_assert_eq!(a.is_valid(), !errors);
-        for d in &a.diagnostics {
+        for d in a.diagnostics() {
             for label in std::iter::once(&d.primary).chain(d.secondary.iter()) {
                 proptest::prop_assert_eq!(label.location.file, a.parsed.file());
                 proptest::prop_assert!(source.is_char_boundary(label.location.start().to_usize()));

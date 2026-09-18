@@ -51,7 +51,7 @@ fn run(source: &str) -> String {
             machine.max_depth()
         )
         .unwrap();
-        match analysis.depth_bound(id) {
+        match function.depth_bound() {
             Some(bound) => writeln!(out, " of at most {bound})").unwrap(),
             None => out.push_str(", unbounded)\n"),
         }
@@ -82,8 +82,8 @@ fn snapshot(source: &str) -> String {
         .iter()
         .filter(|d| d.severity == Severity::Error)
         .count();
-    let semantic_errors = analysis
-        .diagnostics()
+    let semantic: Vec<_> = analysis.semantic_diagnostics().collect();
+    let semantic_errors = semantic
         .iter()
         .filter(|d| d.severity == Severity::Error)
         .count();
@@ -106,7 +106,10 @@ fn snapshot(source: &str) -> String {
             span(function.origin())
         )
         .unwrap();
-        match (function.signature(), function.ranges()) {
+        match (
+            function.signature(),
+            analysis.ranges(FunctionId::new(index)),
+        ) {
             (Some(signature), Some(ranges)) => {
                 let params = signature
                     .params
@@ -127,9 +130,9 @@ fn snapshot(source: &str) -> String {
         }
         dump(&analysis, &shape, FunctionId::new(index), &mut out);
     }
-    if !analysis.diagnostics().is_empty() {
+    if !semantic.is_empty() {
         out.push_str("\n== semantic diagnostics ==\n");
-        for diagnostic in analysis.diagnostics() {
+        for diagnostic in semantic {
             writeln!(
                 out,
                 "{}[{}]: {}",
