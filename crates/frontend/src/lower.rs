@@ -1,14 +1,56 @@
+//! Lowering the lexer's errors and the parser's evidence into diagnostics:
+//! the code and wording of each, the fix where the repair is mechanical,
+//! the suppression of parser evidence a lexer error already explains, and
+//! source order.
+
 use std::collections::HashSet;
 
 use sumi_lexer::{LexError, LexErrorKind, LexedFile, TokenFlags, canonicalize_number_literal};
 use sumi_syntax::{
     Parse, ParseAnchor, ParseEvidence, ParseRecovery, ParseRecoveryKind, ParseViolation,
-    ParseViolationKind, RawGap, RawTokenRange, SyntaxKind,
+    ParseViolationKind, RawTokenRange, SyntaxKind,
 };
 use sumi_text::{FileId, Span, TextEdit, TextRange, TextSize};
 
 use crate::codes;
 use crate::diagnostic::{Diagnostic, DiagnosticCode, Fix, Label};
+
+pub(crate) fn diagnostics(
+    file: FileId,
+    source: &str,
+    lexed: &LexedFile,
+    parse: &Parse,
+) -> Box<[Diagnostic]> {
+    let snapshot = Snapshot {
+        file,
+        source,
+        lexed,
+    };
+    let mut diagnostics: Vec<Diagnostic> = lexed
+        .errors()
+        .iter()
+        .map(|error| snapshot.lex_error(error))
+        .collect();
+    let mut closer_fix_sites = HashSet::new();
+    diagnostics.extend(
+        parse
+            .evidence()
+            .iter()
+            .filter_map(|evidence| match evidence {
+                ParseEvidence::Recovery(recovery) => {
+                    snapshot.recovery(recovery, &mut closer_fix_sites)
+                }
+                ParseEvidence::Violation(violation) => snapshot.violation(*violation),
+            }),
+    );
+    // This sort is stable: phase precedence and producer observation order
+    // break ties at the same source location.
+    diagnostics.sort_by_key(|diagnostic| {
+        let range = diagnostic.primary.range();
+        (range.start().to_u32(), range.end().to_u32())
+    });
+    diagnostics.into_boxed_slice()
+}
 
 /// The source snapshot being lowered: the file its diagnostics name, its
 /// text, and its tokens.
@@ -29,7 +71,10 @@ impl Snapshot<'_> {
     }
 
     fn raw_range(&self, range: RawTokenRange) -> Span {
-        self.range(lower_raw_range(range, self.lexed))
+        self.range(TextRange::new(
+            self.lexed.boundary(range.start()),
+            self.lexed.boundary(range.end()),
+        ))
     }
 
     fn anchor(&self, anchor: ParseAnchor) -> Span {
@@ -38,271 +83,217 @@ impl Snapshot<'_> {
             ParseAnchor::Tokens(range) => self.raw_range(range),
         }
     }
-}
 
-pub(crate) fn diagnostics(
-    file: FileId,
-    source: &str,
-    lexed: &LexedFile,
-    parse: &Parse,
-) -> Box<[Diagnostic]> {
-    let snapshot = Snapshot {
-        file,
-        source,
-        lexed,
-    };
-    let mut diagnostics = Vec::new();
-    lower_lex(&snapshot, &mut diagnostics);
-    lower_parse(&snapshot, parse, &mut diagnostics);
-
-    // This sort is stable: phase precedence and producer observation order
-    // break ties at the same source location.
-    diagnostics.sort_by_key(|diagnostic| {
-        (
-            diagnostic.primary.range().start().to_u32(),
-            diagnostic.primary.range().end().to_u32(),
-        )
-    });
-    diagnostics.into_boxed_slice()
-}
-
-fn lower_lex(snapshot: &Snapshot<'_>, diagnostics: &mut Vec<Diagnostic>) {
-    let errors = snapshot.lexed.errors();
-    let mut start = 0;
-    while start < errors.len() {
-        let token = errors[start].token;
-        let mut end = start + 1;
-        while end < errors.len() && errors[end].token == token {
-            end += 1;
-        }
-        lower_token_errors(snapshot, &errors[start..end], diagnostics);
-        start = end;
+    fn has_error(&self, range: RawTokenRange) -> bool {
+        range
+            .iter()
+            .any(|raw| self.lexed.kind(raw) == SyntaxKind::Error)
     }
-}
 
-fn lower_token_errors(
-    snapshot: &Snapshot<'_>,
-    errors: &[LexError],
-    diagnostics: &mut Vec<Diagnostic>,
-) {
-    for error in errors {
-        let (code, message) = match error.kind {
-            LexErrorKind::LeadingZero => {
-                let mut diagnostic = diagnostic(
-                    codes::NONCANONICAL_NUMBER,
-                    "integer literal has leading zeros",
-                    snapshot.range(error.range),
-                );
-                let token_range = snapshot.lexed.range(error.token);
-                let text = snapshot.lexed.text(snapshot.source, error.token);
-                diagnostic.fix = canonicalize_number_literal(text).map(|replacement| Fix {
-                    message: "remove the leading zeros".into(),
-                    edits: vec![TextEdit::new(token_range, replacement)].into_boxed_slice(),
-                });
-                diagnostics.push(diagnostic);
-                continue;
+    /// Whether the lexer already reported what the anchor points at: a
+    /// token of the range, or the token after the gap.
+    fn anchor_has_error(&self, anchor: ParseAnchor) -> bool {
+        match anchor {
+            ParseAnchor::Gap(gap) => {
+                gap.trivia_end() < self.lexed.end()
+                    && self.lexed.kind(gap.trivia_end()) == SyntaxKind::Error
             }
-            LexErrorKind::UnterminatedString => {
-                (codes::UNTERMINATED_STRING, "unterminated string literal")
-            }
+            ParseAnchor::Tokens(range) => self.has_error(range),
+        }
+    }
+
+    fn lex_error(&self, error: &LexError) -> Diagnostic {
+        let (code, message, fix) = match error.kind {
+            LexErrorKind::LeadingZero => (
+                codes::NONCANONICAL_NUMBER,
+                "integer literal has leading zeros",
+                canonicalize_number_literal(self.lexed.text(self.source, error.token)).map(
+                    |replacement| Fix {
+                        message: "remove the leading zeros".into(),
+                        edits: Box::new([TextEdit::new(
+                            self.lexed.range(error.token),
+                            replacement,
+                        )]),
+                    },
+                ),
+            ),
+            LexErrorKind::UnterminatedString => (
+                codes::UNTERMINATED_STRING,
+                "unterminated string literal",
+                None,
+            ),
             LexErrorKind::LoneCarriageReturn => (
                 codes::LONE_CARRIAGE_RETURN,
                 "carriage return must be followed by a line feed",
+                None,
             ),
             LexErrorKind::UnknownCharacter => (
                 codes::UNKNOWN_CHARACTER,
                 "character has no meaning in Sumi source",
+                None,
             ),
-            LexErrorKind::UnknownSuffix => {
-                (codes::UNKNOWN_SUFFIX, "literal suffixes are not supported")
-            }
-            LexErrorKind::UnknownEscape => (codes::UNKNOWN_ESCAPE, "unknown escape sequence"),
+            LexErrorKind::UnknownSuffix => (
+                codes::UNKNOWN_SUFFIX,
+                "literal suffixes are not supported",
+                None,
+            ),
+            LexErrorKind::UnknownEscape => (codes::UNKNOWN_ESCAPE, "unknown escape sequence", None),
             LexErrorKind::UnknownPunctuation => (
                 codes::UNKNOWN_PUNCTUATION,
                 "punctuation has no meaning in Sumi source",
+                None,
             ),
         };
-        diagnostics.push(diagnostic(code, message, snapshot.range(error.range)));
+        Diagnostic {
+            code,
+            message: message.into(),
+            primary: self.range(error.range),
+            labels: Box::new([]),
+            fix,
+        }
     }
-}
 
-fn lower_parse(snapshot: &Snapshot<'_>, parse: &Parse, diagnostics: &mut Vec<Diagnostic>) {
-    let mut closer_fix_sites = HashSet::new();
-    for evidence in parse.evidence() {
-        match evidence {
-            ParseEvidence::Recovery(recovery) => {
-                if recovery.kind == ParseRecoveryKind::PriorPhaseError
-                    || anchor_has_error(recovery.anchor, snapshot.lexed)
-                {
-                    continue;
-                }
-                diagnostics.push(lower_recovery(snapshot, recovery, &mut closer_fix_sites));
+    /// A recovery's diagnostic, or none where the lexer already reported
+    /// the tokens it recovered around.
+    fn recovery(
+        &self,
+        recovery: &ParseRecovery,
+        closer_fix_sites: &mut HashSet<(SyntaxKind, u32)>,
+    ) -> Option<Diagnostic> {
+        if self.anchor_has_error(recovery.anchor) {
+            return None;
+        }
+        let (code, message): (DiagnosticCode, Box<str>) = match recovery.kind {
+            ParseRecoveryKind::Item => (codes::EXPECTED_ITEM, "expected a function item".into()),
+            ParseRecoveryKind::Statement => {
+                (codes::EXPECTED_STATEMENT, "expected a statement".into())
             }
-            ParseEvidence::Violation(violation) => {
-                if !tokens_have_error(violation.range, snapshot.lexed) {
-                    diagnostics.push(lower_violation(snapshot, *violation));
-                }
+            ParseRecoveryKind::Expression => {
+                (codes::EXPECTED_EXPRESSION, "expected an expression".into())
             }
+            ParseRecoveryKind::Name => (codes::EXPECTED_NAME, "expected a name".into()),
+            ParseRecoveryKind::Type => (codes::EXPECTED_TYPE, "expected a type".into()),
+            ParseRecoveryKind::Body => (codes::EXPECTED_BODY, "expected a body, `{` or `=`".into()),
+            ParseRecoveryKind::Token(kind) | ParseRecoveryKind::Closer { kind, .. } => (
+                codes::EXPECTED_TOKEN,
+                format!("expected {}", kind.describe()).into(),
+            ),
+            ParseRecoveryKind::Boundary => (
+                codes::EXPECTED_BOUNDARY,
+                "expected a line break between statements".into(),
+            ),
+            ParseRecoveryKind::Unexpected => (
+                codes::UNEXPECTED_SYNTAX,
+                "unexpected syntax in expression".into(),
+            ),
+            ParseRecoveryKind::NestingTooDeep => (
+                codes::NESTING_TOO_DEEP,
+                "expression nesting limit exceeded".into(),
+            ),
+            ParseRecoveryKind::PriorPhaseError => return None,
+        };
+        let primary = self.anchor(recovery.anchor);
+        let opener = match recovery.kind {
+            ParseRecoveryKind::Closer { opener, .. } => Some(Label {
+                span: self.raw_range(opener),
+                message: "opening delimiter is here".into(),
+            }),
+            _ => None,
+        };
+        let skipped = recovery
+            .skipped
+            .iter()
+            .map(|&range| self.raw_range(range))
+            .filter(|&skipped| skipped != primary)
+            .map(|span| Label {
+                span,
+                message: "skipped while recovering".into(),
+            });
+        Some(Diagnostic {
+            code,
+            message,
+            primary,
+            labels: opener.into_iter().chain(skipped).collect(),
+            fix: self.closer_fix(recovery, closer_fix_sites),
+        })
+    }
+
+    fn closer_fix(
+        &self,
+        recovery: &ParseRecovery,
+        sites: &mut HashSet<(SyntaxKind, u32)>,
+    ) -> Option<Fix> {
+        let lexed = self.lexed;
+        let (ParseRecoveryKind::Closer { kind, .. }, ParseAnchor::Gap(gap)) =
+            (recovery.kind, recovery.anchor)
+        else {
+            return None;
+        };
+        let replacement = kind
+            .text()
+            .unwrap_or_else(|| unreachable!("closer evidence names a closing delimiter"));
+        // An unterminated string's tail absorbs an insertion at its boundary,
+        // as its text rather than the promised delimiter.
+        let previous = gap.trivia_start().checked_sub(1);
+        if previous.is_some_and(|token| lexed.flags(token).contains(TokenFlags::UNTERMINATED)) {
+            return None;
         }
-    }
-}
-
-fn lower_recovery(
-    snapshot: &Snapshot<'_>,
-    recovery: &ParseRecovery,
-    closer_fix_sites: &mut HashSet<(SyntaxKind, u32)>,
-) -> Diagnostic {
-    let primary = snapshot.anchor(recovery.anchor);
-    let (code, message): (DiagnosticCode, Box<str>) = match recovery.kind {
-        ParseRecoveryKind::Item => (codes::EXPECTED_ITEM, "expected a function item".into()),
-        ParseRecoveryKind::Statement => (codes::EXPECTED_STATEMENT, "expected a statement".into()),
-        ParseRecoveryKind::Expression => {
-            (codes::EXPECTED_EXPRESSION, "expected an expression".into())
+        let at = lexed.boundary(gap.trivia_start());
+        // At one site a closer binds the innermost same-kind opener, regardless
+        // of which diagnostic offered it. Fix that one now; a reparse can then
+        // offer the next outer closer without a misleading duplicate action.
+        if !sites.insert((kind, at.to_u32())) {
+            return None;
         }
-        ParseRecoveryKind::Name => (codes::EXPECTED_NAME, "expected a name".into()),
-        ParseRecoveryKind::Type => (codes::EXPECTED_TYPE, "expected a type".into()),
-        ParseRecoveryKind::Body => (codes::EXPECTED_BODY, "expected a body, `{` or `=`".into()),
-        ParseRecoveryKind::Token(kind) | ParseRecoveryKind::Closer { kind, .. } => (
-            codes::EXPECTED_TOKEN,
-            format!("expected {}", kind.describe()).into(),
-        ),
-        ParseRecoveryKind::Boundary => (
-            codes::EXPECTED_BOUNDARY,
-            "expected a line break between statements".into(),
-        ),
-        ParseRecoveryKind::Unexpected => (
-            codes::UNEXPECTED_SYNTAX,
-            "unexpected syntax in expression".into(),
-        ),
-        ParseRecoveryKind::NestingTooDeep => (
-            codes::NESTING_TOO_DEEP,
-            "expression nesting limit exceeded".into(),
-        ),
-        ParseRecoveryKind::PriorPhaseError => {
-            unreachable!("prior-phase recovery is suppressed before lowering")
+        Some(Fix {
+            message: format!("insert {}", kind.describe()).into(),
+            edits: Box::new([TextEdit::new(TextRange::new(at, at), replacement)]),
+        })
+    }
+
+    /// A violation's diagnostic, or none where the lexer already reported
+    /// its tokens. No violation names a fix: layout is the formatter's to
+    /// repair, and `sumi fmt` repairs every one it can.
+    fn violation(&self, violation: ParseViolation) -> Option<Diagnostic> {
+        if self.has_error(violation.range) {
+            return None;
         }
-    };
-    let opener = match recovery.kind {
-        ParseRecoveryKind::Closer { opener, .. } => Some(Label {
-            span: snapshot.raw_range(opener),
-            message: "opening delimiter is here".into(),
-        }),
-        _ => None,
-    };
-    let mut diagnostic = diagnostic(code, message, primary);
-    diagnostic.labels = opener
-        .into_iter()
-        .chain(
-            recovery
-                .skipped
-                .iter()
-                .map(|&range| snapshot.raw_range(range))
-                .filter(|&skipped| skipped != primary)
-                .map(|span| Label {
-                    span,
-                    message: "skipped while recovering".into(),
-                }),
-        )
-        .collect();
-    diagnostic.fix = closer_fix(recovery, snapshot, closer_fix_sites);
-    diagnostic
-}
-
-fn closer_fix(
-    recovery: &ParseRecovery,
-    snapshot: &Snapshot<'_>,
-    sites: &mut HashSet<(SyntaxKind, u32)>,
-) -> Option<Fix> {
-    let lexed = snapshot.lexed;
-    let (ParseRecoveryKind::Closer { kind, .. }, ParseAnchor::Gap(gap)) =
-        (recovery.kind, recovery.anchor)
-    else {
-        return None;
-    };
-    let replacement = kind
-        .text()
-        .unwrap_or_else(|| unreachable!("closer evidence names a closing delimiter"));
-    // An unterminated string's tail absorbs an insertion at its boundary,
-    // as its text rather than the promised delimiter.
-    let previous = gap.trivia_start().checked_sub(1);
-    if previous.is_some_and(|token| lexed.flags(token).contains(TokenFlags::UNTERMINATED)) {
-        return None;
+        let (code, message) = match violation.kind {
+            ParseViolationKind::UnspacedBinaryOperator => (
+                codes::UNSPACED_BINARY_OPERATOR,
+                "binary operator must have spaces on both sides",
+            ),
+            ParseViolationKind::SpacedPrefixOperator => (
+                codes::SPACED_PREFIX_OPERATOR,
+                "prefix operator must be adjacent to its operand",
+            ),
+            ParseViolationKind::SpacedListOpener => (
+                codes::SPACED_LIST_OPENER,
+                "opening `(` must be adjacent to the function name or callee",
+            ),
+            ParseViolationKind::FunctionNameOnNextLine => (
+                codes::FUNCTION_NAME_ON_NEXT_LINE,
+                "function name must be on the same line as `fn`",
+            ),
+            ParseViolationKind::FunctionItemOnSameLine => (
+                codes::FUNCTION_ITEM_ON_SAME_LINE,
+                "function item must begin on a new line",
+            ),
+            ParseViolationKind::BindingNameOnNextLine => (
+                codes::BINDING_NAME_ON_NEXT_LINE,
+                "binding name must be on the same line as `let`",
+            ),
+            ParseViolationKind::ChainedComparison => (
+                codes::CHAINED_COMPARISON,
+                "comparison operators cannot be chained",
+            ),
+        };
+        Some(Diagnostic {
+            code,
+            message: message.into(),
+            primary: self.raw_range(violation.range),
+            labels: Box::new([]),
+            fix: None,
+        })
     }
-    let at = lexed.boundary(gap.trivia_start());
-    let site = (kind, at.to_u32());
-    // At one site a closer binds the innermost same-kind opener, regardless
-    // of which diagnostic offered it. Fix that one now; a reparse can then
-    // offer the next outer closer without a misleading duplicate action.
-    if !sites.insert(site) {
-        return None;
-    }
-    Some(Fix {
-        message: format!("insert {}", kind.describe()).into(),
-        edits: vec![TextEdit::new(TextRange::new(at, at), replacement)].into_boxed_slice(),
-    })
-}
-
-fn lower_violation(snapshot: &Snapshot<'_>, violation: ParseViolation) -> Diagnostic {
-    // No violation names a fix: layout is the formatter's to repair, and
-    // `sumi fmt` repairs every one it can.
-    let (code, message) = match violation.kind {
-        ParseViolationKind::UnspacedBinaryOperator => (
-            codes::UNSPACED_BINARY_OPERATOR,
-            "binary operator must have spaces on both sides",
-        ),
-        ParseViolationKind::SpacedPrefixOperator => (
-            codes::SPACED_PREFIX_OPERATOR,
-            "prefix operator must be adjacent to its operand",
-        ),
-        ParseViolationKind::SpacedListOpener => (
-            codes::SPACED_LIST_OPENER,
-            "opening `(` must be adjacent to the function name or callee",
-        ),
-        ParseViolationKind::FunctionNameOnNextLine => (
-            codes::FUNCTION_NAME_ON_NEXT_LINE,
-            "function name must be on the same line as `fn`",
-        ),
-        ParseViolationKind::FunctionItemOnSameLine => (
-            codes::FUNCTION_ITEM_ON_SAME_LINE,
-            "function item must begin on a new line",
-        ),
-        ParseViolationKind::BindingNameOnNextLine => (
-            codes::BINDING_NAME_ON_NEXT_LINE,
-            "binding name must be on the same line as `let`",
-        ),
-        ParseViolationKind::ChainedComparison => (
-            codes::CHAINED_COMPARISON,
-            "comparison operators cannot be chained",
-        ),
-    };
-    diagnostic(code, message, snapshot.raw_range(violation.range))
-}
-
-fn diagnostic(code: DiagnosticCode, message: impl Into<Box<str>>, primary: Span) -> Diagnostic {
-    Diagnostic {
-        code,
-        message: message.into(),
-        primary,
-        labels: Box::new([]),
-        fix: None,
-    }
-}
-
-fn lower_raw_range(range: RawTokenRange, lexed: &LexedFile) -> TextRange {
-    TextRange::new(lexed.boundary(range.start()), lexed.boundary(range.end()))
-}
-
-fn anchor_has_error(anchor: ParseAnchor, lexed: &LexedFile) -> bool {
-    match anchor {
-        ParseAnchor::Gap(gap) => gap_before_error(gap, lexed),
-        ParseAnchor::Tokens(range) => tokens_have_error(range, lexed),
-    }
-}
-
-fn gap_before_error(gap: RawGap, lexed: &LexedFile) -> bool {
-    gap.trivia_end() < lexed.end() && lexed.kind(gap.trivia_end()) == SyntaxKind::Error
-}
-
-fn tokens_have_error(range: RawTokenRange, lexed: &LexedFile) -> bool {
-    range.iter().any(|raw| lexed.kind(raw) == SyntaxKind::Error)
 }
