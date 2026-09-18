@@ -23,7 +23,7 @@ use std::collections::HashMap;
 
 use sumi_text::Span;
 
-use crate::check::Placed;
+use crate::check::{Placed, PlacedCall};
 use crate::ranges::Ints;
 use crate::solver::components;
 use crate::typing::Typing;
@@ -112,25 +112,23 @@ fn bounded(band: &Ints, direction: Direction) -> bool {
         }
 }
 
-/// Every call of the graph in a live context is an edge of the call
-/// graph; a call whose context is dead never happens. A cycle through a
-/// function that `failed` its verdicts, or whose body did not build, is
-/// out of scope: its arguments may have no offsets and its calls may be
-/// missing, and what it has is reported already.
+/// Every whole call of the graph in a live context is an edge of the call
+/// graph; a call whose context is dead never happens, and one that is not
+/// whole is a hole, no call. A cycle through a function that `failed`
+/// its verdicts, or whose body did not build, is out of scope: its
+/// arguments may have no offsets and its calls may be missing, and what
+/// it has is reported already.
 pub(crate) fn check(graph: &Graph, placed: &Placed, typing: &Typing, failed: &[bool]) -> Outcome {
     let count_functions = graph.runs().len();
-    let live = |node: NodeId| placed.context_live(graph, typing, node);
-    // Every whole call in a live context, by caller.
-    let mut arcs = Vec::new();
-    for (caller, run) in graph.runs().iter().enumerate() {
-        for node in run.nodes() {
-            if let Op::Call(callee) = graph.node(node).op
-                && live(node)
-            {
-                arcs.push((caller as u32, callee.index() as u32));
-            }
-        }
-    }
+    let live: Vec<&PlacedCall> = placed
+        .calls()
+        .iter()
+        .filter(|call| placed.live(typing, call.context))
+        .collect();
+    let arcs: Vec<(u32, u32)> = live
+        .iter()
+        .map(|call| (call.caller.index() as u32, call.callee.index() as u32))
+        .collect();
     let components = components(count_functions, &arcs);
     let component = &components.of;
     let count = components.count();
@@ -174,31 +172,25 @@ pub(crate) fn check(graph: &Graph, placed: &Placed, typing: &Typing, failed: &[b
         let position: HashMap<usize, usize> =
             members.iter().enumerate().map(|(i, &f)| (f, i)).collect();
         let mut inside = Vec::new();
-        for &function in members {
-            let run = graph.run(FunctionId::new(function));
-            for node in run.nodes() {
-                let Op::Call(callee) = graph.node(node).op else {
-                    continue;
-                };
-                if !live(node) {
-                    continue;
+        for call in &live {
+            let (Some(&from), Some(&to)) = (
+                position.get(&call.caller.index()),
+                position.get(&call.callee.index()),
+            ) else {
+                continue;
+            };
+            let mut offsets = HashMap::new();
+            for (j, &arg) in graph.inputs(call.node).iter().enumerate() {
+                if let Some((i, band)) = delta(graph, placed, typing, arg) {
+                    offsets.insert((i as usize, j), band);
                 }
-                let Some(&to) = position.get(&callee.index()) else {
-                    continue;
-                };
-                let mut offsets = HashMap::new();
-                for (j, &arg) in graph.inputs(node).iter().enumerate() {
-                    if let Some((i, band)) = delta(graph, placed, typing, arg) {
-                        offsets.insert((i as usize, j), band);
-                    }
-                }
-                inside.push(Call {
-                    from: position[&function],
-                    to,
-                    origin: graph.node(node).origin,
-                    offsets,
-                });
             }
+            inside.push(Call {
+                from,
+                to,
+                origin: graph.node(call.node).origin,
+                offsets,
+            });
         }
         let arity = |member: usize| graph.run(FunctionId::new(members[member])).params().len();
         let band = |member: usize, param: usize| {
@@ -488,7 +480,7 @@ fn delta(graph: &Graph, placed: &Placed, typing: &Typing, node: NodeId) -> Optio
                 } => {
                     // An arm that cannot run contributes no value.
                     let (then, otherwise) = (graph.region(then), graph.region(else_));
-                    let live = |context| placed.may(typing, context).live();
+                    let live = |context| placed.live(typing, context);
                     match (live(then.context), live(otherwise.context)) {
                         (true, true) => {
                             frames.push(Frame::Then {

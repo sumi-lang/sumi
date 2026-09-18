@@ -233,26 +233,37 @@ struct Recorded {
 }
 
 /// Where each node of the graph stands once the file is built: its class,
-/// the innermost region holding it, and the calls of every function.
+/// and every whole call with the context it runs in and its arguments as
+/// written, which a read passed as an argument has no node of its own to
+/// say.
 pub(crate) struct Placed {
     /// The class of each node, by index; none for a hole, or for a node
     /// built where the expression tree could not be.
     classes: Vec<Option<Var>>,
-    /// The innermost region holding each node, by index; none outside
-    /// every region: an entry, a parameter, a declared result's copy.
-    regions: Vec<Option<RegionId>>,
-    /// Every whole call of each function, by callee.
-    callers: Vec<Vec<NodeId>>,
+    /// Every whole call, in definition order.
+    calls: Vec<PlacedCall>,
+    /// The arguments of every whole call as written, one run per call.
+    arguments: Vec<NodeIdx>,
     bottom: May,
 }
 
+/// A whole call: its node, its ends, the context it runs in, and its run
+/// of the arguments as written.
+pub(crate) struct PlacedCall {
+    pub node: NodeId,
+    pub caller: FunctionId,
+    pub callee: FunctionId,
+    pub context: NodeId,
+    arguments: std::ops::Range<u32>,
+}
+
 impl Placed {
-    /// Room for a file of `functions` functions and about `nodes` nodes.
-    fn with_capacity(functions: usize, nodes: usize) -> Self {
+    /// Room for a file of about `nodes` nodes.
+    fn with_capacity(nodes: usize) -> Self {
         Self {
             classes: Vec::with_capacity(nodes),
-            regions: Vec::with_capacity(nodes),
-            callers: vec![Vec::new(); functions],
+            calls: Vec::new(),
+            arguments: Vec::new(),
             bottom: May::bottom(),
         }
     }
@@ -263,10 +274,17 @@ impl Placed {
             None => &self.bottom,
         }
     }
-    /// Whether the context `node` runs in is live.
-    pub fn context_live(&self, graph: &Graph, typing: &Typing, node: NodeId) -> bool {
-        let region = self.regions[node.index()].expect("a value node is in a region");
-        self.may(typing, graph.region(region).context).live()
+    /// Whether the context `node`, or a value at it, is live.
+    pub fn live(&self, typing: &Typing, node: NodeId) -> bool {
+        self.may(typing, node).live()
+    }
+    /// Every whole call.
+    pub fn calls(&self) -> &[PlacedCall] {
+        &self.calls
+    }
+    /// The arguments of `call` as written.
+    pub fn arguments(&self, call: &PlacedCall) -> &[NodeIdx] {
+        &self.arguments[call.arguments.start as usize..call.arguments.end as usize]
     }
 }
 
@@ -534,7 +552,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     let mut nodes_of = vec![None; tree.len()];
     // About a node per syntax node of a body; only a guide.
     let mut graph = Graph::with_capacity(tree.len());
-    let mut placed = Placed::with_capacity(items.len(), tree.len());
+    let mut placed = Placed::with_capacity(tree.len());
     let mut builder = Builder::new(
         &mut source,
         &headers,
@@ -708,7 +726,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         } else {
             "divisor may be zero"
         };
-        let labels = explain_zero(&graph, &placed, &typing, obligation.divisor);
+        let labels = explain_zero(&graph, &placed, &typing, &source, obligation.divisor);
         source.report(
             source.span(obligation.node),
             codes::DIVISION_BY_ZERO,
@@ -837,6 +855,7 @@ fn explain_zero(
     graph: &Graph,
     placed: &Placed,
     typing: &Typing,
+    source: &Source<'_>,
     divisor: NodeId,
 ) -> Vec<(Span, Box<str>)> {
     use std::collections::{HashSet, VecDeque};
@@ -865,16 +884,17 @@ fn explain_zero(
         }
         let entry = graph.node(node);
         let inputs = graph.inputs(node);
-        let follow = |queue: &mut VecDeque<(NodeId, usize)>, next: NodeId| {
-            if hops < HOPS {
-                queue.push_back((next, hops + 1));
+        let follow = |queue: &mut VecDeque<(NodeId, usize)>, next: NodeId, cost: usize| {
+            if hops + cost <= HOPS {
+                queue.push_back((next, hops + cost));
             }
         };
         match entry.op {
             Op::Int(_) | Op::Neg | Op::Binary(_) => {
                 labels.push((entry.origin, describe(&may.ints, "").into()));
             }
-            Op::Copy => follow(&mut queue, inputs[0]),
+            // A `let` passes the value on unchanged, at no distance.
+            Op::Copy => follow(&mut queue, inputs[0], 0),
             // A guard that narrowed the local is where the zero was
             // singled out, and the local is where it came from.
             Op::Refine { .. } => {
@@ -884,42 +904,38 @@ fn explain_zero(
                         describe(&may.ints, " under this guard").into(),
                     ));
                 }
-                follow(&mut queue, inputs[0]);
+                follow(&mut queue, inputs[0], 1);
             }
             Op::Join { then, else_ } => {
                 for region in std::iter::once(then).chain(else_) {
                     let region = graph.region(region);
-                    if placed.may(typing, region.context).live() {
-                        follow(&mut queue, region.result());
+                    if placed.live(typing, region.context) {
+                        follow(&mut queue, region.result(), 1);
                     }
                 }
             }
-            Op::Call(callee) => follow(&mut queue, graph.run(callee).result()),
+            Op::Call(callee) => follow(&mut queue, graph.run(callee).result(), 1),
             Op::Param(index) => {
-                let callee = placed.regions[node.index()].map_or_else(
-                    || {
-                        // A parameter is outside every region: its
-                        // function is the run that holds it.
-                        graph
-                            .runs()
-                            .iter()
-                            .position(|run| run.params().any(|param| param == node))
-                            .expect("a parameter of some function")
-                    },
-                    |_| unreachable!("a parameter is outside every region"),
-                );
-                for &call in &placed.callers[callee] {
+                // Runs are contiguous in declaration order: the parameter's
+                // function is the last whose entry precedes it.
+                let callee = graph
+                    .runs()
+                    .partition_point(|run| run.entry().index() <= node.index())
+                    - 1;
+                let callee = FunctionId::new(callee);
+                for call in placed.calls().iter().filter(|call| call.callee == callee) {
                     if labels.len() >= LABELS {
                         break;
                     }
-                    if !placed.context_live(graph, typing, call) {
+                    if !placed.live(typing, call.context) {
                         continue;
                     }
-                    let arg = graph.inputs(call)[index as usize];
+                    let arg = graph.inputs(call.node)[index as usize];
                     let delivered = placed.may(typing, arg);
                     if delivered.ints.contains_zero() {
+                        let written = placed.arguments(call)[index as usize];
                         labels.push((
-                            graph.node(arg).origin,
+                            source.span(written),
                             format!("argument {}", describe(&delivered.ints, "")).into(),
                         ));
                     }
@@ -956,10 +972,9 @@ enum Work {
     Branches(NodeIdx),
     /// A lazy operator whose left operand is walked: open the right one's.
     Rhs(NodeIdx),
-    /// Enter `region` in `context`, narrowing the locals the condition
-    /// `guard` compares, holding in its sense, for the reads inside it.
+    /// Enter `region`, narrowing the locals the condition `guard`
+    /// compares, holding in its sense, for the reads inside it.
     Push {
-        context: Var,
         region: RegionId,
         guard: (NodeIdx, bool),
     },
@@ -997,10 +1012,8 @@ struct Builder<'a, 's> {
     consts: Vec<Option<Int>>,
     args: Vec<ExprId>,
     statements: Vec<Statement>,
-    /// The context each point runs in, as its class and its node,
-    /// innermost last.
-    contexts: Vec<(Var, NodeId)>,
-    /// The open regions, innermost last: where a pushed node stands.
+    /// The open regions, innermost last: where a pushed node stands, and
+    /// whose context the point runs in.
     regions: Vec<RegionId>,
     /// The classes and nodes locals read as inside the open regions,
     /// innermost last.
@@ -1066,7 +1079,6 @@ impl<'a, 's> Builder<'a, 's> {
             consts: Vec::new(),
             args: Vec::new(),
             statements: Vec::new(),
-            contexts: Vec::new(),
             regions: Vec::new(),
             refinements: Vec::new(),
             marks: Vec::new(),
@@ -1101,7 +1113,6 @@ impl<'a, 's> Builder<'a, 's> {
         self.consts.clear();
         self.args.clear();
         self.statements.clear();
-        self.contexts.clear();
         self.regions.clear();
         self.refinements.clear();
         self.marks.clear();
@@ -1114,7 +1125,6 @@ impl<'a, 's> Builder<'a, 's> {
         let start = self.graph.next();
         let entry = self.push(item_node, Op::Entry, &[], None);
         self.placed.classes[entry.index()] = Some(entry_class);
-        self.contexts.push((entry_class, entry));
         let arity = u32::try_from(parameters.len()).expect("parameter count fits u32");
         for (index, param) in parameters.into_iter().enumerate() {
             let index = u32::try_from(index).expect("parameter count fits u32");
@@ -1173,13 +1183,7 @@ impl<'a, 's> Builder<'a, 's> {
                     Work::Holed(node) => self.holed(node),
                     Work::Branches(node) => self.branches(node, &mut work),
                     Work::Rhs(node) => self.rhs(node, &mut work),
-                    Work::Push {
-                        context,
-                        region,
-                        guard,
-                    } => {
-                        let node = self.graph.region(region).context;
-                        self.contexts.push((context, node));
+                    Work::Push { region, guard } => {
                         self.marks.push(self.refinements.len());
                         self.graph.enter(region);
                         self.regions.push(region);
@@ -1191,7 +1195,6 @@ impl<'a, 's> Builder<'a, 's> {
                         self.regions.pop();
                         let keep = self.marks.pop().expect("a region opened before it closes");
                         self.refinements.truncate(keep);
-                        self.contexts.pop();
                     }
                 }
             }
@@ -1242,19 +1245,17 @@ impl<'a, 's> Builder<'a, 's> {
             root: root.unwrap(),
         })
     }
-    /// A graph node at `node`, which reads `inputs`, placed in the open
-    /// region.
+    /// A graph node at `node`, which reads `inputs`.
     fn push(&mut self, node: NodeIdx, op: Op, inputs: &[NodeId], name: Option<Span>) -> NodeId {
         let id = self.place(op, inputs, self.source.span(node), name);
         self.nodes_of[node.to_usize()] = Some(id);
         id
     }
-    /// A graph node placed in the open region, without a class yet, that
-    /// no syntax node is said to have built.
+    /// A graph node without a class yet, that no syntax node is said to
+    /// have built.
     fn place(&mut self, op: Op, inputs: &[NodeId], origin: Span, name: Option<Span>) -> NodeId {
         let id = self.graph.push(op, inputs, origin, name);
         self.placed.classes.push(None);
-        self.placed.regions.push(self.regions.last().copied());
         id
     }
     /// A context node for the region whose syntax is `region`, derived
@@ -1356,17 +1357,13 @@ impl<'a, 's> Builder<'a, 's> {
                 |(_, class, node)| (*class, *node),
             )
     }
-    fn context(&self) -> Var {
-        self.contexts
-            .last()
-            .expect("a body runs in its entry context")
-            .0
-    }
+    /// The context the open region runs in.
     fn context_node(&self) -> NodeId {
-        self.contexts
-            .last()
-            .expect("a body runs in its entry context")
-            .1
+        let region = *self.regions.last().expect("a body runs in its region");
+        self.graph.region(region).context
+    }
+    fn context(&self) -> Var {
+        self.placed.classes[self.context_node().index()].expect("a context has a class")
     }
     /// The operator of a clean binary expression, read from the token gap
     /// between its operands.
@@ -1531,7 +1528,6 @@ impl<'a, 's> Builder<'a, 's> {
             });
             work.push(Work::Enter(else_node));
             work.push(Work::Push {
-                context: else_context,
                 region: else_region,
                 guard: (cond, false),
             });
@@ -1542,7 +1538,6 @@ impl<'a, 's> Builder<'a, 's> {
         });
         work.push(Work::Enter(then_node));
         work.push(Work::Push {
-            context: then_context,
             region: then_region,
             guard: (cond, true),
         });
@@ -1574,7 +1569,6 @@ impl<'a, 's> Builder<'a, 's> {
         work.push(Work::Pop { region, root: rhs });
         work.push(Work::Enter(rhs));
         work.push(Work::Push {
-            context,
             region,
             guard: (lhs, and),
         });
@@ -2279,13 +2273,21 @@ impl<'a, 's> Builder<'a, 's> {
             None,
         );
         self.inputs = inputs;
-        if whole {
-            self.placed.callers[target.index()].push(call);
-        }
         if !whole {
             self.args.truncate(start);
             return None;
         }
+        let written = run(self.placed.arguments.len());
+        self.placed
+            .arguments
+            .extend(list.args(tree).map(|arg| arg.node()));
+        self.placed.calls.push(PlacedCall {
+            node: call,
+            caller: FunctionId::new(self.owner as usize),
+            callee: target,
+            context: self.context_node(),
+            arguments: written..run(self.placed.arguments.len()),
+        });
         let param_classes = &self.param_classes[function.param_classes.clone()];
         // Only now do the arguments reach the parameters.
         for (&value, &param) in self.args[start..].iter().zip(param_classes) {
