@@ -14,9 +14,9 @@
 //! Three constraint forms feed it. [`equal`](Solver::equal) merges two
 //! classes and joins their evidence, and because join is commutative,
 //! associative, and idempotent the order of arrival is invisible in the
-//! result. [`known`](Solver::known) opens a class with a fact, what it is
-//! known to be on its own account; [`expect`](Solver::expect) joins into a
-//! class what one use of it demands, and only facts survive a
+//! result. [`expect`](Solver::expect) joins evidence into a class, what it
+//! is known to be on its own account or what one use of it demands alike;
+//! the instance remembers which is which, and restates the facts to a
 //! [`replay`](Solver::replay). [`flow`](Solver::flow) lets evidence
 //! pass from one class to another and never back: the consumer learns
 //! everything the provider knows, transformed by the edge, and the provider
@@ -105,12 +105,13 @@ pub trait Lattice: Clone + Eq {
         cx: &Self::Context,
     ) -> Self;
 
-    /// Take back what widening overshot: `exact` is what the class's facts
-    /// and flows deliver with no flow treated as cyclic, recomputed once the
-    /// worklist has settled, so it is at most `self` wherever it is
-    /// complete. Expectations are not part of it, so a lattice whose
-    /// expectations carry evidence keeps what `exact` lacks; one that never
-    /// widens has nothing to take back. Reports whether `self` changed.
+    /// Take back what widening overshot: `exact` is everything the class
+    /// held before its component was taken — what was joined into it
+    /// before the solve and what flowed in from outside — plus what the
+    /// flows inside the component deliver with none treated as cyclic,
+    /// recomputed once the worklist has settled, so it is at most `self`.
+    /// A lattice that never widens has nothing to take back. Reports
+    /// whether `self` changed.
     fn narrow(&mut self, exact: &Self) -> bool;
 }
 
@@ -201,7 +202,6 @@ pub struct Solver<L: Lattice> {
     size: Vec<u32>,
     /// Meaningful at roots only.
     evidence: Vec<L>,
-    facts: Vec<(Var, L)>,
     /// Settled by `solve`.
     flows: Vec<Flow<L::Edge>>,
 }
@@ -213,27 +213,25 @@ impl<L: Lattice> Default for Solver<L> {
 }
 
 impl<L: Lattice> Solver<L> {
-    /// A solver with room for `classes` classes and as many facts, and for
-    /// `flows` flows, before any vector grows. Only a guide.
+    /// A solver with room for `classes` classes and `flows` flows before
+    /// any vector grows. Only a guide.
     pub fn with_capacity(classes: usize, flows: usize) -> Self {
         Self {
             parent: Vec::with_capacity(classes),
             size: Vec::with_capacity(classes),
             evidence: Vec::with_capacity(classes),
-            facts: Vec::with_capacity(classes),
             flows: Vec::with_capacity(flows),
         }
     }
 
     /// A solver of `n` classes, `Var::new(0)` to `Var::new(n - 1)`, that
-    /// nothing is known about yet, with room for about a fact and a flow
-    /// per class. The caller's numbering is the solver's.
+    /// nothing is known about yet, with room for about a flow per class.
+    /// The caller's numbering is the solver's.
     pub fn with_classes(n: usize) -> Self {
         Self {
             parent: (0..n as u32).collect(),
             size: vec![1; n],
             evidence: vec![L::bottom(); n],
-            facts: Vec::with_capacity(n),
             flows: Vec::with_capacity(n),
         }
     }
@@ -281,26 +279,20 @@ impl<L: Lattice> Solver<L> {
         &self.evidence[self.root(var.index())]
     }
 
-    /// Join evidence one use of `var` demands into its class. Not remembered
-    /// by a replay, which re-applies expectations one at a time.
+    /// Join `evidence` into `var`'s class: a fact it carries on its own
+    /// account, or what one use of it demands. The solver keeps no record
+    /// of which; the instance restates its facts to a replay.
     pub fn expect(&mut self, var: Var, evidence: &L) {
         let root = self.compress(var.index());
         self.evidence[root].join(evidence);
     }
 
-    /// A fresh class known to carry `evidence` on its own account.
+    /// A fresh class carrying `evidence`.
     #[cfg(test)]
     pub fn known(&mut self, evidence: L) -> Var {
         let var = self.fresh();
-        self.fact(var, evidence);
-        var
-    }
-
-    /// `var`'s class carries `evidence` on its own account: an annotation,
-    /// or a literal. A fact; it survives a replay.
-    pub fn fact(&mut self, var: Var, evidence: L) {
         self.expect(var, &evidence);
-        self.facts.push((var, evidence));
+        var
     }
 
     /// Merge the classes of `a` and `b`, joining their evidence.
@@ -730,22 +722,22 @@ impl<L: Lattice> Solver<L> {
     }
 
     /// A solver over the same classes as singletons again, carrying only
-    /// what `fact` reads off each fact and what `export` lets each settled
-    /// flow deliver to its consumer, in a lattice `M` of the instance's
-    /// choosing: the part of the evidence its replay reads, which need not
-    /// be all of it. Replaying expectations one at a time on it attributes a
-    /// disagreement to the expectation that first raised it, with the flows
-    /// final rather than provisional. `export` sees the provider's settled
-    /// evidence, the second provider's for a two-provider flow, and the
-    /// edge.
+    /// the `facts` the instance restates, as its replay reads them, and
+    /// what `export` lets each settled flow deliver to its consumer, in a
+    /// lattice `M` of the instance's choosing: the part of the evidence its
+    /// replay reads, which need not be all of it. Replaying expectations
+    /// one at a time on it attributes a disagreement to the expectation
+    /// that first raised it, with the flows final rather than provisional.
+    /// `export` sees the provider's settled evidence, the second provider's
+    /// for a two-provider flow, and the edge.
     pub fn replay<M: Lattice>(
         &self,
-        fact: impl Fn(&L) -> M,
+        facts: impl IntoIterator<Item = (Var, M)>,
         export: impl Fn(&L, Option<&L>, &L::Edge) -> Option<M>,
     ) -> Solver<M> {
         let mut replay = Solver::with_classes(self.parent.len());
-        for (var, evidence) in &self.facts {
-            replay.expect(*var, &fact(evidence));
+        for (var, evidence) in facts {
+            replay.expect(var, &evidence);
         }
         for flow in &self.flows {
             let second = flow.second.map(|second| self.evidence(second));
@@ -1274,10 +1266,9 @@ mod tests {
         solver.solve(&());
         assert_eq!(*solver.evidence(x), Interval::new(5, 10));
         assert!(solver.evidence(y).is_empty());
-        let replay = solver.replay(
-            |band| *band,
-            |band, _, offset| (!band.is_empty()).then(|| band.transfer(offset, None, false, &())),
-        );
+        let replay = solver.replay([(x, Interval::new(0, 10))], |band, _, offset| {
+            (!band.is_empty()).then(|| band.transfer(offset, None, false, &()))
+        });
         assert_eq!(*replay.evidence(x), Interval::new(0, 10));
         assert_eq!(*replay.evidence(y), Interval::new(105, 110));
     }
@@ -1296,27 +1287,33 @@ mod tests {
         assert_eq!(*solver.evidence(c), (Set(5), Interval::new(51, 101)));
     }
 
+    /// A replay starts from the facts its caller restates and what the
+    /// settled flows export, and from nothing else: a demand joined into a
+    /// class before the solve is gone, a fact beside it stays, and an
+    /// export lands on it whatever the class held.
     #[test]
-    fn replay_keeps_facts_and_exported_flows_only() {
+    fn replay_keeps_restated_facts_and_exported_flows_only() {
         let mut solver = Solver::<Set>::default();
         let known = solver.known(Set(1));
+        solver.expect(known, &Set(2));
         let demanded = solver.fresh();
         solver.expect(demanded, &Set(2));
         let conflicted = solver.fresh();
         solver.expect(conflicted, &Set(1));
         solver.expect(conflicted, &Set(2));
         let from_conflict = solver.import(conflicted, ());
-        let from_known = solver.import(known, ());
+        let provider = solver.known(Set(4));
+        solver.flow(provider, known, ());
         solver.solve(&());
-        let replay = solver.replay(
-            |set| *set,
-            |set, _, ()| (set.0.count_ones() == 1).then_some(*set),
-        );
-        assert_eq!(*replay.evidence(known), Set(1));
+        assert_eq!(*solver.evidence(known), Set(7));
+        let replay = solver.replay([(known, Set(1)), (provider, Set(4))], |set, _, ()| {
+            (set.0.count_ones() == 1).then_some(*set)
+        });
+        assert_eq!(*replay.evidence(known), Set(5));
+        assert_eq!(*replay.evidence(provider), Set(4));
         assert_eq!(*replay.evidence(demanded), Set::bottom());
         assert_eq!(*replay.evidence(conflicted), Set::bottom());
         assert_eq!(*replay.evidence(from_conflict), Set::bottom());
-        assert_eq!(*replay.evidence(from_known), Set(1));
     }
 
     /// One constraint over eight pre-made classes: an equality, an

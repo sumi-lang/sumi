@@ -180,8 +180,7 @@ impl Lattice for Evidence {
         }
     }
 
-    /// Type claims never widen, so there is nothing to take back; and the
-    /// exact recomputation lacks the claims expectations made.
+    /// Type claims never widen, so there is nothing to take back.
     fn narrow(&mut self, _: &Self) -> bool {
         false
     }
@@ -230,6 +229,10 @@ pub(crate) struct Typing {
     solver: Solver<Product>,
     /// Where each claim was made, by claim index.
     origins: Vec<Span>,
+    /// Every type claimed on a class's own account, with the claim that
+    /// made it: what the replay starts from, restated to it since the
+    /// solver keeps no record of which evidence was a fact.
+    facts: Vec<(Var, Ty, Claim)>,
     /// Every class that is one with another in the replay, beside that
     /// other: a refined read beside the local it reads, and an
     /// unannotated `let` beside its initializer. The replay resolves
@@ -241,12 +244,14 @@ pub(crate) struct Typing {
 
 impl Typing {
     /// A typing of `nodes` classes, `Var::new(0)` to `Var::new(nodes - 1)`,
-    /// with room for about a claim and a flow per class. Only the room
-    /// is a guide.
+    /// with room for about a claim, a fact, and a flow per class: most
+    /// nodes make a fact, and the room for those that make none costs
+    /// less than growing would. Only the room is a guide.
     pub fn for_nodes(nodes: usize) -> Self {
         Self {
             solver: Solver::with_classes(nodes),
             origins: Vec::with_capacity(nodes),
+            facts: Vec::with_capacity(nodes),
             aliased: Vec::with_capacity(nodes / 8),
         }
     }
@@ -273,23 +278,29 @@ impl Typing {
     /// `var` is known to have `ty` because of what is at `origin`: an
     /// annotation, or an operator's result, whose values arrive by flows.
     pub fn known(&mut self, var: Var, ty: Ty, origin: Span) {
-        let claim = self.claim(origin);
-        self.solver
-            .fact(var, (Evidence::single(ty, claim), May::bottom()));
+        self.fact(var, ty, May::bottom(), origin);
     }
 
     /// `var` is a literal: known to have `ty` and to be exactly `value`.
     pub fn literal(&mut self, var: Var, ty: Ty, value: May, origin: Span) {
+        self.fact(var, ty, value, origin);
+    }
+
+    /// What `var` is on its own account: a claim of `ty` made at `origin`,
+    /// which survives a replay, and its own values.
+    fn fact(&mut self, var: Var, ty: Ty, value: May, origin: Span) {
         let claim = self.claim(origin);
-        self.solver.fact(var, (Evidence::single(ty, claim), value));
+        self.solver
+            .expect(var, &(Evidence::single(ty, claim), value));
+        self.facts.push((var, ty, claim));
     }
 
     /// `var` is a function's entry context: live on its own account when
     /// the function can be run without arguments, otherwise live when a
-    /// call site is.
+    /// call site is. Liveness is not a type claim, so no replay reads it.
     pub fn entry(&mut self, var: Var, runnable: bool) {
         if runnable {
-            self.solver.fact(var, (Evidence::bottom(), May::unit()));
+            self.solver.expect(var, &(Evidence::bottom(), May::unit()));
         }
     }
 
@@ -389,29 +400,32 @@ impl Typing {
     }
 
     /// The same classes carrying only the types known on their own account:
-    /// facts, and the calls whose callee result is solved. A refined read is
-    /// one class with its local here, so it is whatever the local is when a
-    /// demand asks, and a demand that conflicted the local elsewhere is
-    /// still blamed there. Replaying demands on it one at a time, in source
-    /// order, blames a disagreement on the first demand that raised it. An
-    /// unresolved or conflicted callee delivers nothing: it is reported at
-    /// its declaration. A branch is settled by [`Replay::branch`] when its
-    /// `if` comes up in that order, since what it delivers is shaped by the
-    /// demands before it. The replay resolves types and nothing else, so it
-    /// carries the type evidence alone: a quarter of a class, and no values
-    /// to copy or join.
+    /// the facts, restated, and the calls whose callee result is solved. A
+    /// refined read is one class with its local here, so it is whatever
+    /// the local is when a demand asks, and a demand that conflicted the
+    /// local elsewhere is still blamed there. Replaying demands on it one
+    /// at a time, in source order, blames a disagreement on the first
+    /// demand that raised it. An unresolved or conflicted callee delivers
+    /// nothing: it is reported at its declaration. A branch is settled by
+    /// [`Replay::branch`] when its `if` comes up in that order, since what
+    /// it delivers is shaped by the demands before it. The replay resolves
+    /// types and nothing else, so it carries the type evidence alone: a
+    /// quarter of a class, and no values to copy or join.
     pub fn replay(&self) -> Replay {
-        let mut solver = self.solver.replay(
-            |(evidence, _)| *evidence,
-            |solved, other, edge| match edge.0 {
+        let facts = self
+            .facts
+            .iter()
+            .map(|&(var, ty, claim)| (var, Evidence::single(ty, claim)));
+        let mut solver = self
+            .solver
+            .replay(facts, |solved, other, edge| match edge.0 {
                 Edge::Call(_) => solved.0.ty().is_some().then(|| {
                     solved
                         .0
                         .transfer(&edge.0, other.map(|other| &other.0), false, &())
                 }),
                 Edge::Branch | Edge::Peer | Edge::Refine | Edge::Copy | Edge::None => None,
-            },
-        );
+            });
         for &(alias, of) in &self.aliased {
             solver.equal(alias, of);
         }
@@ -527,6 +541,8 @@ mod tests {
         assert_eq!(size_of::<Evidence>(), 12);
         assert_eq!(size_of::<Option<Claim>>(), 4);
         assert_eq!(size_of::<Option<Var>>(), 4);
+        // A fact restated to the replay is three words too.
+        assert_eq!(size_of::<(Var, Ty, Claim)>(), 12);
     }
 
     #[test]
