@@ -3,7 +3,9 @@ tree: see hir.snap
 == evidence ==
 Expected(Colon) at 7
 Expected(Colon) at 29
+Expected(Colon) at 57
 
 == diagnostics ==
 error[syntax/expected-token] 1:8: expected `:`
 error[syntax/expected-token] 2:17: expected `:`
+error[syntax/expected-token] 3:12: expected `:`

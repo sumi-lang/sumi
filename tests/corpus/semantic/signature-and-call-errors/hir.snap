@@ -1,6 +1,6 @@
 file: rejected
 frontend errors: 0 (see frontend.snap)
-semantic errors: 12
+semantic errors: 14
 
 fn duplicate@0..17 () -> unit ∈ unit
   result: copy : unit @0..17
@@ -66,6 +66,20 @@ fn extra@372..404 () -> int ∈ ∅
       arg[0]: int 3 : int @399..400
       arg[1]: int 4 : int @402..403
 
+fn twice_named@405..462 (int ∈ ∅, bool ∈ ∅) -> unit ∈ ∅
+  param x@420..421: int
+  param x@428..429: ?
+  result: copy : unit @405..462
+    value:
+      discard: not : ? @447..449
+        operand: read x@428..429 : ?
+      discard: negate : ? @458..460
+        operand: read x@428..429 : ?
+      tail: unit : unit @437..462
+
+fn unknown_result@463..497 signature: unavailable
+  body: int 1 : int @496..497
+
 == semantic diagnostics ==
 error[semantic/duplicate-name]: duplicate function `duplicate`
   primary @21..30
@@ -99,3 +113,8 @@ error[semantic/type-mismatch]: expected int, found bool
 error[semantic/arity]: expected 1 arguments, found 2
   primary @392..404
   secondary @339..371: declared here
+error[semantic/duplicate-name]: duplicate parameter `x`
+  primary @428..429
+  secondary @420..421: declared here
+error[semantic/unknown-type]: unknown type `mystery`
+  primary @486..493

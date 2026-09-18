@@ -1,6 +1,6 @@
 file: rejected
 frontend errors: 2 (see frontend.snap)
-semantic errors: 2
+semantic errors: 5
 
 fn damaged@0..100 () -> unit ∈ ∅
   result: copy : unit @0..100
@@ -26,8 +26,36 @@ fn unknown_type@124..178 () -> unit ∈ unit
         part[0]: int 1 : int @165..166
       tail: unit : unit @142..178
 
+fn rebound@179..314 () -> unit ∈ unit
+  result: copy : unit @179..314
+    value:
+      let x@202..203: bool @198..210
+        initializer: bool true : bool @206..210
+      discard: hole : ? @215..228
+      let x@223..224: hole : ? @215..228
+      discard: eager + : ? @237..242
+        lhs: read x@223..224 : ?
+        rhs: int 1 : int @241..242
+      let x@251..252: hole : ? @247..265
+        part[0]: int 1 : int @264..265
+      discard: eager + : ? @274..279
+        lhs: read x@251..252 : ?
+        rhs: int 1 : int @278..279
+      let x@288..289: ? @284..298
+        initializer: hole : ? @292..298
+      discard: eager + : ? @307..312
+        lhs: read x@288..289 : ?
+        rhs: int 1 : int @311..312
+      tail: unit : unit @192..314
+
 == semantic diagnostics ==
 error[semantic/unknown-name]: unknown name `missing`
   primary @91..98
 error[semantic/unknown-type]: unknown type `mystery`
   primary @155..162
+error[semantic/unsupported]: construct is not supported by scalar checking
+  primary @215..228
+error[semantic/unknown-type]: unknown type `mystery`
+  primary @254..261
+error[semantic/unknown-name]: unknown name `absent`
+  primary @292..298

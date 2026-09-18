@@ -1,6 +1,6 @@
 file: rejected
 frontend errors: 0 (see frontend.snap)
-semantic errors: 13
+semantic errors: 16
 
 fn unsupported@0..59 () -> unit ∈ unit
   result: copy : unit @0..59
@@ -67,6 +67,21 @@ fn computed_call@358..488 () -> unit ∈ unit
           rhs: bool true : ? @481..485
       tail: unit : unit @377..488
 
+fn condition@489..538 () -> int ∈ ∅
+  result: copy : int @507..510
+    value: if : ? @513..538
+      condition: int 1 : ? @516..517
+      then: int 2 : int @520..521
+      else: bool false : bool @531..536
+
+fn assignment@539..582 () -> unit ∈ unit
+  result: copy : unit @539..582
+    value:
+      let x@565..566: int @561..570
+        initializer: int 1 : int @569..570
+      discard: hole : ? @575..580
+      tail: unit : unit @555..582
+
 == semantic diagnostics ==
 error[semantic/unsupported]: construct is not supported by scalar checking
   primary @23..36
@@ -98,3 +113,11 @@ error[semantic/unknown-name]: unknown name `missing`
   primary @468..475
 error[semantic/type-mismatch]: expected int, found bool
   primary @481..485
+error[semantic/type-mismatch]: if branches are int and bool
+  primary @513..538
+  secondary @520..521: int here
+  secondary @531..536: bool here
+error[semantic/type-mismatch]: expected bool, found int
+  primary @516..517
+error[semantic/unsupported]: construct is not supported by scalar checking
+  primary @575..580

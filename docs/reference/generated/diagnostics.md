@@ -236,6 +236,15 @@ fn unknown_type() {
     let z: mystery = 1
     _ = z
 }
+fn rebound() {
+    let x = true
+    let mut x = 1
+    _ = x + 1
+    let x: mystery = 1
+    _ = x + 1
+    let x = absent
+    _ = x + 1
+}
 ```
 
 ```text
@@ -503,11 +512,22 @@ fn unknown_type() {
     let z: mystery = 1
     _ = z
 }
+fn rebound() {
+    let x = true
+    let mut x = 1
+    _ = x + 1
+    let x: mystery = 1
+    _ = x + 1
+    let x = absent
+    _ = x + 1
+}
 ```
 
 ```text
 error[semantic/unknown-type]: unknown type `mystery`
   primary @155..162
+error[semantic/unknown-type]: unknown type `mystery`
+  primary @254..261
 ```
 
 ### `semantic/unknown-name`
@@ -551,6 +571,11 @@ fn hidden() -> int {
 fn broken_result(x: mystery) -> int = true
 fn scaled(n: int) -> int = n * 2
 fn extra() -> int = scaled(3, 4)
+fn twice_named(x: int, x: bool) {
+    _ = !x
+    _ = -x
+}
+fn unknown_result() -> mystery = 1
 ```
 
 ```text
@@ -560,6 +585,9 @@ error[semantic/duplicate-name]: duplicate function `duplicate`
 error[semantic/duplicate-name]: duplicate parameter `x`
   primary @179..180
   secondary @171..172: declared here
+error[semantic/duplicate-name]: duplicate parameter `x`
+  primary @428..429
+  secondary @420..421: declared here
 ```
 
 ### `semantic/not-callable`
@@ -585,6 +613,11 @@ fn hidden() -> int {
 fn broken_result(x: mystery) -> int = true
 fn scaled(n: int) -> int = n * 2
 fn extra() -> int = scaled(3, 4)
+fn twice_named(x: int, x: bool) {
+    _ = !x
+    _ = -x
+}
+fn unknown_result() -> mystery = 1
 ```
 
 ```text
@@ -627,28 +660,18 @@ An expression of one type where another is required: an operand, a
 condition, an initializer against its annotation, an argument, a
 result against its return type, or `if` branches that disagree.
 
-Shown by [`tests/corpus/semantic/independent-call-errors`](../../../tests/corpus/semantic/independent-call-errors/case.sumi):
+Shown by [`tests/corpus/semantic/untyped-item-parameters`](../../../tests/corpus/semantic/untyped-item-parameters/case.sumi):
 
 ```sumi
-fn probe() {
-    let x = 1
-    let x = missing(
-        {
-            let x = x + 1
-            x + true
-        },
-        x + false,
-    )
-    _ = x
-}
-fn intact() -> int = 3
+fn id(x) = x
+fn add(a: int, b) -> int = a + b
+fn broken(x) -> int = true
 ```
 
 ```text
 error[semantic/type-mismatch]: expected int, found bool
-  primary @100..104
-error[semantic/type-mismatch]: expected int, found bool
-  primary @128..133
+  primary @68..72
+  secondary @62..65: declared here
 ```
 
 ### `semantic/unused-value`

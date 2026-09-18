@@ -13,3 +13,8 @@ fn hidden() -> int {
 fn broken_result(x: mystery) -> int = true
 fn scaled(n: int) -> int = n * 2
 fn extra() -> int = scaled(3, 4)
+fn twice_named(x: int, x: bool) {
+    _ = !x
+    _ = -x
+}
+fn unknown_result() -> mystery = 1
