@@ -11,64 +11,20 @@ use sumi_text::{Span, TextEdit};
 
 /// A namespace for related diagnostic codes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct DiagnosticGroup(&'static str);
+pub struct DiagnosticGroup(pub &'static str);
 
-impl DiagnosticGroup {
-    pub const fn new(value: &'static str) -> Self {
-        assert!(valid_component(value), "invalid diagnostic group");
-        Self(value)
-    }
-
-    pub const fn as_str(self) -> &'static str {
-        self.0
-    }
-}
-
-/// A stable, public identifier for one class of diagnostic.
+/// A stable, public identifier for one class of diagnostic, declared in
+/// `sumi.diagnostics` and spelled `group/name`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct DiagnosticCode {
-    group: DiagnosticGroup,
-    name: &'static str,
+    pub group: DiagnosticGroup,
+    pub name: &'static str,
 }
 
-impl DiagnosticCode {
-    pub const fn new(group: DiagnosticGroup, name: &'static str) -> Self {
-        assert!(valid_component(name), "invalid diagnostic code name");
-        Self { group, name }
-    }
-
-    pub const fn group(self) -> DiagnosticGroup {
-        self.group
-    }
-
-    pub const fn name(self) -> &'static str {
-        self.name
-    }
-}
-
-/// The code's public spelling: its group and name joined by `/`, which
-/// neither component may contain.
 impl fmt::Display for DiagnosticCode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}/{}", self.group.0, self.name)
     }
-}
-
-const fn valid_component(value: &str) -> bool {
-    let bytes = value.as_bytes();
-    if bytes.is_empty() {
-        return false;
-    }
-
-    let mut index = 0;
-    while index < bytes.len() {
-        if bytes[index] == b'/' {
-            return false;
-        }
-        index += 1;
-    }
-
-    true
 }
 
 /// Related evidence for a diagnostic: a span and what it shows.
@@ -110,25 +66,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn diagnostic_codes_have_structured_identity() {
-        const LEXER: DiagnosticGroup = DiagnosticGroup::new("lexer");
-        const UNKNOWN_CHARACTER: DiagnosticCode = DiagnosticCode::new(LEXER, "unknown-character");
-
-        assert_eq!(UNKNOWN_CHARACTER.group(), LEXER);
-        assert_eq!(UNKNOWN_CHARACTER.group().as_str(), "lexer");
-        assert_eq!(UNKNOWN_CHARACTER.name(), "unknown-character");
+    fn a_code_is_spelled_group_slash_name() {
+        const LEXER: DiagnosticGroup = DiagnosticGroup("lexer");
+        const UNKNOWN_CHARACTER: DiagnosticCode = DiagnosticCode {
+            group: LEXER,
+            name: "unknown-character",
+        };
         assert_eq!(UNKNOWN_CHARACTER.to_string(), "lexer/unknown-character");
-    }
-
-    #[test]
-    #[should_panic(expected = "invalid diagnostic group")]
-    fn diagnostic_groups_cannot_contain_the_serialization_separator() {
-        DiagnosticGroup::new("front/end");
-    }
-
-    #[test]
-    #[should_panic(expected = "invalid diagnostic code name")]
-    fn diagnostic_code_names_cannot_contain_the_serialization_separator() {
-        DiagnosticCode::new(DiagnosticGroup::new("frontend"), "unknown/character");
     }
 }

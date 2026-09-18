@@ -78,7 +78,7 @@ impl Analysis {
     /// Whether `diagnostic` is one of the checker's rather than the
     /// frontend's.
     pub fn is_semantic(diagnostic: &Diagnostic) -> bool {
-        diagnostic.code.group() == codes::SEMANTIC
+        diagnostic.code.group == codes::SEMANTIC
     }
     /// The checker's diagnostics alone, in source order.
     pub fn semantic_diagnostics(&self) -> impl Iterator<Item = &Diagnostic> {

@@ -8,48 +8,75 @@ use sumi_frontend::{DiagnosticCode, DiagnosticGroup};
 /// complete: names, the scalar types `int`, `bool`, and `unit`, and calls.
 /// A function with a syntax error in its body is not checked, and every
 /// code here is an error.
-pub const SEMANTIC: DiagnosticGroup = DiagnosticGroup::new("semantic");
+pub const SEMANTIC: DiagnosticGroup = DiagnosticGroup("semantic");
 
 /// A type reference naming none of `int`, `bool`, and `unit`.
-pub const UNKNOWN_TYPE: DiagnosticCode = DiagnosticCode::new(SEMANTIC, "unknown-type");
+pub const UNKNOWN_TYPE: DiagnosticCode = DiagnosticCode {
+    group: SEMANTIC,
+    name: "unknown-type",
+};
 
 /// A name with no declaration in scope: no parameter or binding for a
 /// value, no function item for a call.
-pub const UNKNOWN_NAME: DiagnosticCode = DiagnosticCode::new(SEMANTIC, "unknown-name");
+pub const UNKNOWN_NAME: DiagnosticCode = DiagnosticCode {
+    group: SEMANTIC,
+    name: "unknown-name",
+};
 
 /// Two function items of one file, or two parameters of one function, with
 /// the same name. A label points at the first.
-pub const DUPLICATE_NAME: DiagnosticCode = DiagnosticCode::new(SEMANTIC, "duplicate-name");
+pub const DUPLICATE_NAME: DiagnosticCode = DiagnosticCode {
+    group: SEMANTIC,
+    name: "duplicate-name",
+};
 
 /// A call whose callee is a parameter or binding. Only function items are
 /// callable, since every local holds a scalar.
-pub const NOT_CALLABLE: DiagnosticCode = DiagnosticCode::new(SEMANTIC, "not-callable");
+pub const NOT_CALLABLE: DiagnosticCode = DiagnosticCode {
+    group: SEMANTIC,
+    name: "not-callable",
+};
 
 /// A call passing a different number of arguments than the function
 /// declares parameters. A label points at the declaration.
-pub const ARITY: DiagnosticCode = DiagnosticCode::new(SEMANTIC, "arity");
+pub const ARITY: DiagnosticCode = DiagnosticCode {
+    group: SEMANTIC,
+    name: "arity",
+};
 
 /// An expression of one type where another is required: an operand, a
 /// condition, an initializer against its annotation, an argument, a
 /// result against its return type, or `if` branches that disagree.
-pub const TYPE_MISMATCH: DiagnosticCode = DiagnosticCode::new(SEMANTIC, "type-mismatch");
+pub const TYPE_MISMATCH: DiagnosticCode = DiagnosticCode {
+    group: SEMANTIC,
+    name: "type-mismatch",
+};
 
 /// A statement's expression, other than a block's last, has a value that
 /// is not unit. Write `_ =` before it to say the value is dropped; a run
 /// then never computes it, since nothing reads it.
-pub const UNUSED_VALUE: DiagnosticCode = DiagnosticCode::new(SEMANTIC, "unused-value");
+pub const UNUSED_VALUE: DiagnosticCode = DiagnosticCode {
+    group: SEMANTIC,
+    name: "unused-value",
+};
 
 /// A function without a return type whose result cannot be determined: its
 /// result is used as two types, or nothing fixes it. Add a return type
 /// annotation.
-pub const CANNOT_INFER: DiagnosticCode = DiagnosticCode::new(SEMANTIC, "cannot-infer");
+pub const CANNOT_INFER: DiagnosticCode = DiagnosticCode {
+    group: SEMANTIC,
+    name: "cannot-infer",
+};
 
 /// A `/` or `%` whose divisor may be zero where the division can run: the
 /// values that reach the divisor, the hull of every argument and operand
 /// that flows into it, include zero. Labels name the values that put it
 /// there. A guard such as `if d != 0` narrows the divisor inside its
 /// branch, and a division no path reaches is not checked.
-pub const DIVISION_BY_ZERO: DiagnosticCode = DiagnosticCode::new(SEMANTIC, "division-by-zero");
+pub const DIVISION_BY_ZERO: DiagnosticCode = DiagnosticCode {
+    group: SEMANTIC,
+    name: "division-by-zero",
+};
 
 /// A cycle of calls with no argument that moves toward a bound: on every
 /// call around the cycle some one parameter of each function must be
@@ -62,13 +89,18 @@ pub const DIVISION_BY_ZERO: DiagnosticCode = DiagnosticCode::new(SEMANTIC, "divi
 /// parameter is reported even where its guard would end it. Labels name
 /// the recursive calls and what each does to the parameter that came
 /// closest.
-pub const UNBOUNDED_RECURSION: DiagnosticCode =
-    DiagnosticCode::new(SEMANTIC, "unbounded-recursion");
+pub const UNBOUNDED_RECURSION: DiagnosticCode = DiagnosticCode {
+    group: SEMANTIC,
+    name: "unbounded-recursion",
+};
 
 /// A construct scalar checking does not handle yet, such as a closure, a
 /// string literal, or a call through anything but a function name. The
 /// function is left unchecked.
-pub const UNSUPPORTED: DiagnosticCode = DiagnosticCode::new(SEMANTIC, "unsupported");
+pub const UNSUPPORTED: DiagnosticCode = DiagnosticCode {
+    group: SEMANTIC,
+    name: "unsupported",
+};
 
 /// Every code of the group, in declaration order.
 pub const ALL: [DiagnosticCode; 11] = [

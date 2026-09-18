@@ -130,7 +130,7 @@ fn frontend_diagnostic_identity_is_syntactic_not_phase_specific() {
         codes::NONCANONICAL_NUMBER,
         codes::EXPECTED_TOKEN,
     ] {
-        assert_eq!(code.group(), codes::SYNTAX);
+        assert_eq!(code.group, codes::SYNTAX);
     }
 }
 

@@ -905,7 +905,7 @@ fn binary_requirements_survive_a_failed_operand() {
     ] {
         let a = check(&format!("fn f() {{ _ = {expression} }}"));
         let mut actual = codes(&a);
-        actual.sort_unstable_by_key(|code| code.name());
+        actual.sort_unstable_by_key(|code| code.name);
         assert_eq!(actual, [TYPE_MISMATCH, UNKNOWN_NAME], "{expression}");
         assert!(!a.functions[0].complete());
     }

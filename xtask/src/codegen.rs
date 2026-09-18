@@ -1221,7 +1221,7 @@ pub fn codes(group: &Group, types: &str) -> String {
         .iter()
         .map(|code| {
             format!(
-                "{}pub const {}: DiagnosticCode = DiagnosticCode::new({group_const}, {:?});\n\n",
+                "{}pub const {}: DiagnosticCode = DiagnosticCode {{ group: {group_const}, name: {:?} }};\n\n",
                 docs(&code.doc),
                 constant(&code.name),
                 code.name
@@ -1236,7 +1236,7 @@ pub fn codes(group: &Group, types: &str) -> String {
 
 use {types}::{{DiagnosticCode, DiagnosticGroup}};
 
-{}pub const {group_const}: DiagnosticGroup = DiagnosticGroup::new({name:?});
+{}pub const {group_const}: DiagnosticGroup = DiagnosticGroup({name:?});
 
 {codes}/// Every code of the group, in declaration order.
 pub const ALL: [DiagnosticCode; {}] = [{all}];
