@@ -22,8 +22,8 @@ pub use generated::{
 pub use index::{NodeIdx, SigIdx};
 pub use input::ParserInput;
 pub use parser::{
-    MAX_DEPTH, ParseAnchor, ParseEvidence, ParseExpected, ParseRecovery, ParseRecoveryKind,
-    ParseViolation, ParseViolationKind, RawGap, RawTokenRange, parse,
+    MAX_DEPTH, ParseAnchor, ParseEvidence, ParseRecovery, ParseRecoveryKind, ParseViolation,
+    ParseViolationKind, RawGap, RawTokenRange, parse,
 };
 pub use sumi_lexer::RawIdx;
 pub use tree::{Parse, SyntaxTree};

@@ -54,19 +54,9 @@ pub struct ParseRecovery {
     pub skipped: Box<[RawTokenRange]>,
 }
 
+/// Why the parser recovered: what was missing, or what stood in the way.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ParseRecoveryKind {
-    Expected(ParseExpected),
-    /// A token inside an expression that neither continues nor ends it.
-    Unexpected,
-    /// Expressions nested more than [`MAX_DEPTH`] deep.
-    NestingTooDeep,
-    /// Recovery over tokens whose diagnostic belongs to the lexer.
-    PriorPhaseError,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum ParseExpected {
     /// Something other than a `fn` item at the top level.
     Item,
     /// A token that cannot start a statement.
@@ -89,6 +79,12 @@ pub enum ParseExpected {
     },
     /// A statement starts on the line of the previous one.
     Boundary,
+    /// A token inside an expression that neither continues nor ends it.
+    Unexpected,
+    /// Expressions nested more than [`MAX_DEPTH`] deep.
+    NestingTooDeep,
+    /// Recovery over tokens whose diagnostic belongs to the lexer.
+    PriorPhaseError,
 }
 
 /// A rule violation whose syntax remains structurally ordinary.
@@ -212,8 +208,7 @@ fn source_file(p: &mut Marker<'_, '_>) {
                 fn_item(p);
                 item_ends_here = false;
             } else {
-                let recovery =
-                    p.recover_tokens(ParseRecoveryKind::Expected(ParseExpected::Item), 1);
+                let recovery = p.recover_tokens(ParseRecoveryKind::Item, 1);
                 skip_all(p, recovery, item_candidate);
                 item_ends_here = false;
             }
@@ -305,10 +300,10 @@ fn fn_item(p: &mut Marker<'_, '_>) {
     if has_fn {
         m.token();
     } else {
-        m.missing(ParseExpected::Token(T::FnKw));
+        m.missing(ParseRecoveryKind::Token(T::FnKw));
     }
     if !m.at(T::Ident) && !m.at(T::Underscore) {
-        let recovery = m.missing(ParseExpected::Name);
+        let recovery = m.missing(ParseRecoveryKind::Name);
         signature_garbage(&mut m, Signature::Item, recovery, |m| {
             m.at(T::Ident) || m.at(T::Underscore) || m.at(T::LParen)
         });
@@ -346,7 +341,7 @@ fn closure_expr(p: &mut Marker<'_, '_>, follow: ExprFollow) -> CompletedMarker {
         })
         || nth_arrow(p, 1);
     if !signature_follows {
-        let recovery = p.recover_tokens(ParseRecoveryKind::Expected(ParseExpected::Expression), 1);
+        let recovery = p.recover_tokens(ParseRecoveryKind::Expression, 1);
         return skip_token(p, recovery);
     }
     let mut m = p.start();
@@ -384,7 +379,7 @@ fn signature_tail(
     // continues one. When an item's name is missing, its line is the one
     // after `fn` where the name and list would have begun.
     if !m.at(T::LParen) || (m.newline() && !allow_list_newline) {
-        let recovery = m.missing(ParseExpected::Token(T::LParen));
+        let recovery = m.missing(ParseRecoveryKind::Token(T::LParen));
         signature_garbage(m, signature, recovery, |m| {
             m.at(T::LParen) || nth_arrow(m, 0)
         });
@@ -402,7 +397,7 @@ fn signature_tail(
     let body_begins =
         |m: &Marker<'_, '_>, complete: bool| m.at(T::LBrace) || at_expression_body(m, complete);
     if !body_begins(m, complete) && !nth_arrow(m, 0) {
-        let recovery = m.missing(ParseExpected::Body);
+        let recovery = m.missing(ParseRecoveryKind::Body);
         signature_garbage(m, signature, recovery, |m| {
             nth_arrow(m, 0) || at_expression_body(m, complete)
         });
@@ -413,7 +408,7 @@ fn signature_tail(
         complete = m.at(T::Ident);
         type_ref(m, first_field + 1);
         if !body_begins(m, complete) {
-            let recovery = m.missing(ParseExpected::Body);
+            let recovery = m.missing(ParseRecoveryKind::Body);
             signature_garbage(m, signature, recovery, |m| at_expression_body(m, complete));
         }
     }
@@ -489,12 +484,12 @@ fn name(p: &mut Marker<'_, '_>) {
         p.field(&name, 0);
     } else if p.at(T::Underscore) {
         let mut m = p.start();
-        m.recover_tokens(ParseRecoveryKind::Expected(ParseExpected::Name), 1);
+        m.recover_tokens(ParseRecoveryKind::Name, 1);
         m.token();
         let name = m.complete(N::Name);
         p.field(&name, 0);
     } else {
-        p.missing(ParseExpected::Name);
+        p.missing(ParseRecoveryKind::Name);
     }
 }
 
@@ -506,7 +501,7 @@ fn type_ref(p: &mut Marker<'_, '_>, field: u8) {
         let ty = m.complete(N::TypeRef);
         p.field(&ty, field);
     } else {
-        p.missing(ParseExpected::Type);
+        p.missing(ParseRecoveryKind::Type);
     }
 }
 
@@ -521,7 +516,7 @@ fn type_ref(p: &mut Marker<'_, '_>, field: u8) {
 trait ListRule {
     const NODE: N;
     /// What is missing where an element should stand.
-    const ELEMENT: ParseExpected;
+    const ELEMENT: ParseRecoveryKind;
     /// Whether garbage where an element should stand ends where an element
     /// begins, so that element is still parsed. A parameter list's does
     /// not: a name inside its garbage is likelier a body's, after a `{`
@@ -545,7 +540,7 @@ struct Params<const TYPED: bool>;
 
 impl<const TYPED: bool> ListRule for Params<TYPED> {
     const NODE: N = N::ParamList;
-    const ELEMENT: ParseExpected = ParseExpected::Name;
+    const ELEMENT: ParseRecoveryKind = ParseRecoveryKind::Name;
     const RESUMES_AT_ELEMENT: bool = false;
 
     fn starts_element(m: &Marker<'_, '_>) -> bool {
@@ -571,7 +566,7 @@ struct Args;
 
 impl ListRule for Args {
     const NODE: N = N::ArgList;
-    const ELEMENT: ParseExpected = ParseExpected::Expression;
+    const ELEMENT: ParseRecoveryKind = ParseRecoveryKind::Expression;
     const RESUMES_AT_ELEMENT: bool = true;
 
     fn starts_element(m: &Marker<'_, '_>) -> bool {
@@ -627,12 +622,12 @@ fn delimited_list<R: ListRule>(p: &mut Marker<'_, '_>, field: u8) {
             // before the closer, is garbage: parsed as an element it would
             // take the closer with it.
             Some(kind) if is_opener(kind) && !m.partnered() && m.nth(1) == Some(close) => {
-                let recovery = m.recover_tokens(ParseRecoveryKind::Expected(R::ELEMENT), 1);
+                let recovery = m.recover_tokens(R::ELEMENT, 1);
                 skip_token(&mut m, recovery);
             }
             Some(_) if R::starts_element(&m) => R::parse_element(&mut m),
             Some(_) => {
-                let recovery = m.recover_tokens(ParseRecoveryKind::Expected(R::ELEMENT), 1);
+                let recovery = m.recover_tokens(R::ELEMENT, 1);
                 skip(&mut m, recovery, |m| {
                     m.at(T::Comma)
                         || m.at(close)
@@ -658,7 +653,7 @@ fn delimited_list<R: ListRule>(p: &mut Marker<'_, '_>, field: u8) {
             .current()
             .is_none_or(|kind| is_closer(kind) || starts_item(kind) || R::tolerated(kind))
         {
-            m.missing(ParseExpected::Token(T::Comma));
+            m.missing(ParseRecoveryKind::Token(T::Comma));
         }
     }
     let list = m.complete(R::NODE);
@@ -684,7 +679,7 @@ fn param(p: &mut Marker<'_, '_>, typed: bool) {
         m.token();
         type_ref(&mut m, 1);
     } else if typed || m.at(T::Ident) {
-        m.missing(ParseExpected::Token(T::Colon));
+        m.missing(ParseRecoveryKind::Token(T::Colon));
         if m.at(T::Ident) {
             type_ref(&mut m, 1);
         }
@@ -741,7 +736,7 @@ fn block(p: &mut Marker<'_, '_>) -> CompletedMarker {
                             .expect("a failed statement has recovery evidence");
                         skip_statement_garbage(&mut m, recovery);
                     } else if !failed && m.current().is_some_and(starts_statement) {
-                        m.missing(ParseExpected::Boundary);
+                        m.missing(ParseRecoveryKind::Boundary);
                     }
                 }
             }
@@ -765,8 +760,7 @@ fn statement(p: &mut Marker<'_, '_>) {
         Some(T::FnKw)
             if !p.nth_newline(1) && matches!(p.nth(1), Some(T::Ident | T::Underscore)) =>
         {
-            let recovery =
-                p.recover_tokens(ParseRecoveryKind::Expected(ParseExpected::Statement), 1);
+            let recovery = p.recover_tokens(ParseRecoveryKind::Statement, 1);
             skip_statement_garbage(p, recovery);
         }
         // Diagnosed by an earlier phase; retain the run as parser evidence.
@@ -795,8 +789,7 @@ fn statement(p: &mut Marker<'_, '_>) {
                     m.complete(N::AssignStmt);
                 }
             } else {
-                let recovery =
-                    p.recover_tokens(ParseRecoveryKind::Expected(ParseExpected::Statement), 1);
+                let recovery = p.recover_tokens(ParseRecoveryKind::Statement, 1);
                 skip_statement_garbage(p, recovery);
             }
         }
@@ -876,9 +869,9 @@ fn operand_before(
     }
     let displaced = !p.newline() && displaces_expression(p);
     let recovery = if displaced {
-        p.recover_tokens(ParseRecoveryKind::Expected(ParseExpected::Expression), 1)
+        p.recover_tokens(ParseRecoveryKind::Expression, 1)
     } else {
-        p.missing(ParseExpected::Expression)
+        p.missing(ParseRecoveryKind::Expression)
     };
     if !displaced {
         return None;
@@ -1173,12 +1166,9 @@ fn if_block(p: &mut Marker<'_, '_>) -> Option<CompletedMarker> {
     }
     let displaced = !(p.current().is_none_or(is_closer) || p.at(T::ElseKw) || p.newline());
     let recovery = if displaced {
-        p.recover_tokens(
-            ParseRecoveryKind::Expected(ParseExpected::Token(T::LBrace)),
-            1,
-        )
+        p.recover_tokens(ParseRecoveryKind::Token(T::LBrace), 1)
     } else {
-        p.missing(ParseExpected::Token(T::LBrace))
+        p.missing(ParseRecoveryKind::Token(T::LBrace))
     };
     if !displaced {
         return None;

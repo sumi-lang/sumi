@@ -4,8 +4,8 @@ use sumi_diagnostics::{Applicability, Diagnostic, DiagnosticCode, Fix, Label, Lo
 use sumi_format::layout_violation_edits;
 use sumi_lexer::{LexError, LexErrorKind, LexedFile, TokenFlags, canonicalize_number_literal};
 use sumi_syntax::{
-    Parse, ParseAnchor, ParseEvidence, ParseExpected, ParseRecovery, ParseRecoveryKind,
-    ParseViolation, ParseViolationKind, RawGap, RawTokenRange, SyntaxKind,
+    Parse, ParseAnchor, ParseEvidence, ParseRecovery, ParseRecoveryKind, ParseViolation,
+    ParseViolationKind, RawGap, RawTokenRange, SyntaxKind,
 };
 use sumi_text::{FileId, Span, TextEdit, TextRange, TextSize};
 
@@ -154,8 +154,23 @@ fn lower_recovery(
     closer_fix_sites: &mut HashSet<(SyntaxKind, u32)>,
 ) -> Diagnostic {
     let location = snapshot.anchor(recovery.anchor);
-    let (code, message) = match recovery.kind {
-        ParseRecoveryKind::Expected(expected) => expected_diagnostic(expected),
+    let (code, message): (DiagnosticCode, Box<str>) = match recovery.kind {
+        ParseRecoveryKind::Item => (codes::EXPECTED_ITEM, "expected a function item".into()),
+        ParseRecoveryKind::Statement => (codes::EXPECTED_STATEMENT, "expected a statement".into()),
+        ParseRecoveryKind::Expression => {
+            (codes::EXPECTED_EXPRESSION, "expected an expression".into())
+        }
+        ParseRecoveryKind::Name => (codes::EXPECTED_NAME, "expected a name".into()),
+        ParseRecoveryKind::Type => (codes::EXPECTED_TYPE, "expected a type".into()),
+        ParseRecoveryKind::Body => (codes::EXPECTED_BODY, "expected a body, `{` or `=`".into()),
+        ParseRecoveryKind::Token(kind) | ParseRecoveryKind::Closer { kind, .. } => (
+            codes::EXPECTED_TOKEN,
+            format!("expected {}", kind.describe()).into(),
+        ),
+        ParseRecoveryKind::Boundary => (
+            codes::EXPECTED_BOUNDARY,
+            "expected a line break between statements".into(),
+        ),
         ParseRecoveryKind::Unexpected => (
             codes::UNEXPECTED_SYNTAX,
             "unexpected syntax in expression".into(),
@@ -169,7 +184,7 @@ fn lower_recovery(
         }
     };
     let opener = match recovery.kind {
-        ParseRecoveryKind::Expected(ParseExpected::Closer { opener, .. }) => Some(Label {
+        ParseRecoveryKind::Closer { opener, .. } => Some(Label {
             location: snapshot.raw_range(opener),
             message: Some("opening delimiter is here".into()),
         }),
@@ -200,7 +215,7 @@ fn closer_fix(
     sites: &mut HashSet<(SyntaxKind, u32)>,
 ) -> Option<Fix> {
     let lexed = snapshot.lexed;
-    let (ParseRecoveryKind::Expected(ParseExpected::Closer { kind, .. }), ParseAnchor::Gap(gap)) =
+    let (ParseRecoveryKind::Closer { kind, .. }, ParseAnchor::Gap(gap)) =
         (recovery.kind, recovery.anchor)
     else {
         return None;
@@ -227,25 +242,6 @@ fn closer_fix(
         applicability: Applicability::Safe,
         edits: vec![TextEdit::new(TextRange::new(at, at), replacement)].into_boxed_slice(),
     })
-}
-
-fn expected_diagnostic(expected: ParseExpected) -> (DiagnosticCode, Box<str>) {
-    match expected {
-        ParseExpected::Item => (codes::EXPECTED_ITEM, "expected a function item".into()),
-        ParseExpected::Statement => (codes::EXPECTED_STATEMENT, "expected a statement".into()),
-        ParseExpected::Expression => (codes::EXPECTED_EXPRESSION, "expected an expression".into()),
-        ParseExpected::Name => (codes::EXPECTED_NAME, "expected a name".into()),
-        ParseExpected::Type => (codes::EXPECTED_TYPE, "expected a type".into()),
-        ParseExpected::Body => (codes::EXPECTED_BODY, "expected a body, `{` or `=`".into()),
-        ParseExpected::Token(kind) | ParseExpected::Closer { kind, .. } => (
-            codes::EXPECTED_TOKEN,
-            format!("expected {}", kind.describe()).into(),
-        ),
-        ParseExpected::Boundary => (
-            codes::EXPECTED_BOUNDARY,
-            "expected a line break between statements".into(),
-        ),
-    }
 }
 
 fn lower_violation(snapshot: &Snapshot<'_>, violation: ParseViolation) -> Diagnostic {

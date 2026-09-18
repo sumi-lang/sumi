@@ -7,8 +7,7 @@ mod common;
 
 use sumi_lexer::{LexedFile, lex};
 use sumi_syntax::{
-    ParseAnchor, ParseEvidence, ParseExpected, ParseRecoveryKind, ParseViolationKind, ParserInput,
-    RawIdx, parse,
+    ParseAnchor, ParseEvidence, ParseRecoveryKind, ParseViolationKind, ParserInput, RawIdx, parse,
 };
 
 fn raw_text<'a>(source: &'a str, lexed: &LexedFile, start: RawIdx, end: RawIdx) -> &'a str {
@@ -20,23 +19,21 @@ fn raw_text<'a>(source: &'a str, lexed: &LexedFile, start: RawIdx, end: RawIdx) 
 fn evidence_name(evidence: &ParseEvidence) -> String {
     match evidence {
         ParseEvidence::Recovery(recovery) => match recovery.kind {
-            ParseRecoveryKind::Expected(expected) => match expected {
-                ParseExpected::Item => "ExpectedItem".into(),
-                ParseExpected::Statement => "ExpectedStatement".into(),
-                ParseExpected::Expression => "ExpectedExpression".into(),
-                ParseExpected::Name => "ExpectedName".into(),
-                ParseExpected::Type => "ExpectedType".into(),
-                ParseExpected::Body => "ExpectedBody".into(),
-                ParseExpected::Token(kind) => format!("Expected({kind:?})"),
-                ParseExpected::Closer { kind, .. } => format!("Expected({kind:?})"),
-                ParseExpected::Boundary => "ExpectedBoundary".into(),
-            },
+            ParseRecoveryKind::Token(kind) | ParseRecoveryKind::Closer { kind, .. } => {
+                format!("Expected({kind:?})")
+            }
+            kind @ (ParseRecoveryKind::Item
+            | ParseRecoveryKind::Statement
+            | ParseRecoveryKind::Expression
+            | ParseRecoveryKind::Name
+            | ParseRecoveryKind::Type
+            | ParseRecoveryKind::Body
+            | ParseRecoveryKind::Boundary) => format!("Expected{kind:?}"),
             kind => format!("{kind:?}"),
         },
         ParseEvidence::Violation(violation) => format!("{:?}", violation.kind),
     }
 }
-
 #[test]
 fn a_missing_closer_retains_its_opener_and_insertion_gap() {
     let source = "fn f() { x // tail";
@@ -45,7 +42,7 @@ fn a_missing_closer_retains_its_opener_and_insertion_gap() {
     let [ParseEvidence::Recovery(recovery)] = parse.evidence() else {
         panic!("the unclosed block has one recovery")
     };
-    let ParseRecoveryKind::Expected(ParseExpected::Closer { kind, opener }) = recovery.kind else {
+    let ParseRecoveryKind::Closer { kind, opener } = recovery.kind else {
         panic!("the expected closer must retain its opener")
     };
     assert_eq!(kind, sumi_syntax::SyntaxKind::RBrace);
@@ -88,10 +85,7 @@ fn recovery_records_the_ranges_it_skips() {
     let [ParseEvidence::Recovery(recovery)] = parse.evidence() else {
         panic!("top-level garbage has one recovery")
     };
-    assert_eq!(
-        recovery.kind,
-        ParseRecoveryKind::Expected(ParseExpected::Item)
-    );
+    assert_eq!(recovery.kind, ParseRecoveryKind::Item);
     let ParseAnchor::Tokens(anchor) = recovery.anchor else {
         panic!("rejected syntax must anchor tokens")
     };
@@ -238,11 +232,11 @@ fn a_malformed_suffix_belongs_to_the_latest_statement_recovery() {
     let [ParseEvidence::Recovery(name), ParseEvidence::Recovery(eq)] = parse.evidence() else {
         panic!("the malformed statement has two recovery causes")
     };
-    assert_eq!(name.kind, ParseRecoveryKind::Expected(ParseExpected::Name));
+    assert_eq!(name.kind, ParseRecoveryKind::Name);
     assert!(name.skipped.is_empty());
     assert_eq!(
         eq.kind,
-        ParseRecoveryKind::Expected(ParseExpected::Token(sumi_syntax::SyntaxKind::Eq))
+        ParseRecoveryKind::Token(sumi_syntax::SyntaxKind::Eq)
     );
     let [skipped] = &*eq.skipped else {
         panic!("the latest recovery owns the malformed suffix")

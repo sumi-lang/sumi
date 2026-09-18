@@ -53,7 +53,7 @@ use crate::generated::{
 use crate::index::{NodeIdx, SigIdx};
 use crate::input::{ParserInput, Slot};
 use crate::parser::{
-    ParseAnchor, ParseEvidence, ParseExpected, ParseRecovery, ParseRecoveryKind, ParseViolation,
+    ParseAnchor, ParseEvidence, ParseRecovery, ParseRecoveryKind, ParseViolation,
     ParseViolationKind, RawGap, RawTokenRange,
 };
 
@@ -843,7 +843,7 @@ impl<'a> Marker<'_, 'a> {
             self.token();
             true
         } else {
-            self.missing(ParseExpected::Token(kind));
+            self.missing(ParseRecoveryKind::Token(kind));
             false
         }
     }
@@ -873,9 +873,9 @@ impl<'a> Marker<'_, 'a> {
     }
 
     /// Record syntax missing in the raw trivia gap at the cursor.
-    pub(crate) fn missing(&mut self, expected: ParseExpected) -> RecoveryHandle {
+    pub(crate) fn missing(&mut self, kind: ParseRecoveryKind) -> RecoveryHandle {
         let anchor = ParseAnchor::Gap(self.builder.raw_gap(self.builder.position));
-        self.record_recovery(ParseRecoveryKind::Expected(expected), anchor)
+        self.record_recovery(kind, anchor)
     }
 
     /// Record a closing delimiter missing from the cursor gap, retaining
@@ -888,7 +888,7 @@ impl<'a> Marker<'_, 'a> {
             .and_then(crate::generated::closer)
             .unwrap_or_else(|| unreachable!("a missing closer belongs to a bracket node"));
         let opener = self.builder.raw_range(self.start, self.start + 1);
-        self.missing(ParseExpected::Closer { kind, opener })
+        self.missing(ParseRecoveryKind::Closer { kind, opener })
     }
 
     /// Record structural recovery over `width` significant tokens at the
@@ -1017,7 +1017,7 @@ mod tests {
             root.violation(ParseViolationKind::SpacedPrefixOperator, 1);
             assert!(!root.recovered_since(checkpoint));
 
-            root.recover_tokens(ParseRecoveryKind::Expected(ParseExpected::Expression), 1);
+            root.recover_tokens(ParseRecoveryKind::Expression, 1);
             assert!(root.recovered_since(checkpoint));
             root.token();
         });

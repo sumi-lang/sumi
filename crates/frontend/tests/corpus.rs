@@ -20,9 +20,7 @@ mod corpus;
 use sumi_format::format;
 use sumi_frontend::{Applicability, Diagnostic, FileId, Location, Place, TextEdit, parse_source};
 use sumi_lexer::LexedFile;
-use sumi_syntax::{
-    NodeIdx, ParseAnchor, ParseEvidence, ParseExpected, ParseRecoveryKind, RawIdx, SyntaxTree,
-};
+use sumi_syntax::{NodeIdx, ParseAnchor, ParseEvidence, ParseRecoveryKind, RawIdx, SyntaxTree};
 use sumi_text::{LineIndex, TextSize};
 
 #[test]
@@ -247,23 +245,21 @@ fn render_node(
 fn evidence_name(evidence: &ParseEvidence) -> String {
     match evidence {
         ParseEvidence::Recovery(recovery) => match recovery.kind {
-            ParseRecoveryKind::Expected(expected) => match expected {
-                ParseExpected::Item => "ExpectedItem".into(),
-                ParseExpected::Statement => "ExpectedStatement".into(),
-                ParseExpected::Expression => "ExpectedExpression".into(),
-                ParseExpected::Name => "ExpectedName".into(),
-                ParseExpected::Type => "ExpectedType".into(),
-                ParseExpected::Body => "ExpectedBody".into(),
-                ParseExpected::Token(kind) => format!("Expected({kind:?})"),
-                ParseExpected::Closer { kind, .. } => format!("Expected({kind:?})"),
-                ParseExpected::Boundary => "ExpectedBoundary".into(),
-            },
+            ParseRecoveryKind::Token(kind) | ParseRecoveryKind::Closer { kind, .. } => {
+                format!("Expected({kind:?})")
+            }
+            kind @ (ParseRecoveryKind::Item
+            | ParseRecoveryKind::Statement
+            | ParseRecoveryKind::Expression
+            | ParseRecoveryKind::Name
+            | ParseRecoveryKind::Type
+            | ParseRecoveryKind::Body
+            | ParseRecoveryKind::Boundary) => format!("Expected{kind:?}"),
             kind => format!("{kind:?}"),
         },
         ParseEvidence::Violation(violation) => format!("{:?}", violation.kind),
     }
 }
-
 fn evidence_token(evidence: &ParseEvidence) -> RawIdx {
     match evidence {
         ParseEvidence::Recovery(recovery) => match recovery.anchor {
