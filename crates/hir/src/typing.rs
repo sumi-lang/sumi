@@ -70,38 +70,38 @@ impl Typing {
         self.origins.get(claim.index()).copied()
     }
 
-    /// `var` is known to have `ty` because of what is at `origin`: an
+    /// `node` is known to have `ty` because of what is at `origin`: an
     /// annotation, or an operator's result, whose values arrive by flows.
-    pub fn known(&mut self, var: NodeId, ty: Ty, origin: Span) {
-        self.fact(var, ty, May::NONE, origin);
+    pub fn known(&mut self, node: NodeId, ty: Ty, origin: Span) {
+        self.fact(node, ty, May::NONE, origin);
     }
 
-    /// `var` is a literal: known to have `ty` and to be exactly `value`.
-    pub fn literal(&mut self, var: NodeId, ty: Ty, value: May, origin: Span) {
-        self.fact(var, ty, value, origin);
+    /// `node` is a literal: known to have `ty` and to be exactly `value`.
+    pub fn literal(&mut self, node: NodeId, ty: Ty, value: May, origin: Span) {
+        self.fact(node, ty, value, origin);
     }
 
-    /// What `var` is on its own account: a claim of `ty` made at `origin`,
+    /// What `node` is on its own account: a claim of `ty` made at `origin`,
     /// which survives a replay, and its own values.
-    fn fact(&mut self, var: NodeId, ty: Ty, value: May, origin: Span) {
+    fn fact(&mut self, node: NodeId, ty: Ty, value: May, origin: Span) {
         let claim = self.claim(origin);
         self.solver.expect(
-            var,
+            node,
             &Product {
                 types: Evidence::single(ty, claim),
                 values: value,
             },
         );
-        self.facts.push((var, ty, claim));
+        self.facts.push((node, ty, claim));
     }
 
-    /// `var` is a function's entry context: live on its own account when
+    /// `node` is a function's entry context: live on its own account when
     /// the function can be run without arguments, otherwise live when a
     /// call site is. Liveness is not a type claim, so no replay reads it.
-    pub fn entry(&mut self, var: NodeId, runnable: bool) {
+    pub fn entry(&mut self, node: NodeId, runnable: bool) {
         if runnable {
             self.solver.expect(
-                var,
+                node,
                 &Product {
                     types: Evidence::NONE,
                     values: May::unit(),
@@ -135,13 +135,13 @@ impl Typing {
         }
     }
 
-    /// The use at `origin` demands that `var` be `expected`.
-    pub fn expect(&mut self, var: NodeId, expected: Expected, origin: Span) {
+    /// The use at `origin` demands that `node` be `expected`.
+    pub fn expect(&mut self, node: NodeId, expected: Expected, origin: Span) {
         match expected {
             Expected::Ty(ty) => {
                 let claim = self.claim(origin);
                 self.solver.expect(
-                    var,
+                    node,
                     &Product {
                         types: Evidence::single(ty, claim),
                         values: May::NONE,
@@ -149,22 +149,22 @@ impl Typing {
                 );
             }
             Expected::Peer(peer) => {
-                self.solver.flow(var, peer, Edge::Peer);
-                self.solver.flow(peer, var, Edge::Peer);
+                self.solver.flow(node, peer, Edge::Peer);
+                self.solver.flow(peer, node, Edge::Peer);
             }
         }
     }
 
-    pub fn evidence(&self, var: NodeId) -> &Evidence {
-        &self.solver.evidence(var).types
+    pub fn evidence(&self, node: NodeId) -> &Evidence {
+        &self.solver.evidence(node).types
     }
 
-    pub fn may(&self, var: NodeId) -> &May {
-        &self.solver.evidence(var).values
+    pub fn may(&self, node: NodeId) -> &May {
+        &self.solver.evidence(node).values
     }
 
-    pub fn resolve(&self, var: NodeId) -> Option<Ty> {
-        self.evidence(var).ty()
+    pub fn resolve(&self, node: NodeId) -> Option<Ty> {
+        self.evidence(node).ty()
     }
 
     /// Settle every flow. Signatures can be read off result classes after
@@ -181,8 +181,8 @@ impl Typing {
     /// comes up among the demands.
     pub fn replay(&self) -> Replay {
         let mut replay = Replay::new(self.solver.classes());
-        for &(var, ty, claim) in &self.facts {
-            replay.learn(var, &Evidence::single(ty, claim));
+        for &(node, ty, claim) in &self.facts {
+            replay.learn(node, &Evidence::single(ty, claim));
         }
         for (call, edge, solved) in self.solver.flows() {
             if let Edge::Call(claim) = *edge
@@ -210,12 +210,12 @@ impl Typing {
 pub(crate) struct Settled(Box<[Product]>);
 
 impl Settled {
-    pub fn resolve(&self, var: NodeId) -> Option<Ty> {
-        self.0[var.index()].types.ty()
+    pub fn resolve(&self, node: NodeId) -> Option<Ty> {
+        self.0[node.index()].types.ty()
     }
 
-    pub fn may(&self, var: NodeId) -> &May {
-        &self.0[var.index()].values
+    pub fn may(&self, node: NodeId) -> &May {
+        &self.0[node.index()].values
     }
 }
 
@@ -243,16 +243,16 @@ impl Replay {
         }
     }
 
-    fn root(&self, var: NodeId) -> usize {
-        let mut id = var.index();
+    fn root(&self, node: NodeId) -> usize {
+        let mut id = node.index();
         while self.parent[id] as usize != id {
             id = self.parent[id] as usize;
         }
         id
     }
 
-    fn learn(&mut self, var: NodeId, evidence: &Evidence) {
-        let root = self.root(var);
+    fn learn(&mut self, node: NodeId, evidence: &Evidence) {
+        let root = self.root(node);
         self.evidence[root].join(evidence);
     }
 
@@ -275,12 +275,12 @@ impl Replay {
         self.evidence[root].join(&evidence);
     }
 
-    pub fn evidence(&self, var: NodeId) -> &Evidence {
-        &self.evidence[self.root(var)]
+    pub fn evidence(&self, node: NodeId) -> &Evidence {
+        &self.evidence[self.root(node)]
     }
 
-    pub fn resolve(&self, var: NodeId) -> Option<Ty> {
-        self.evidence(var).ty()
+    pub fn resolve(&self, node: NodeId) -> Option<Ty> {
+        self.evidence(node).ty()
     }
 
     /// Settle a branch flow: what `branch` is so far, delivered to `join`,
@@ -293,10 +293,10 @@ impl Replay {
     }
 
     /// One demand, replayed.
-    pub fn expect(&mut self, var: NodeId, expected: Expected) {
+    pub fn expect(&mut self, node: NodeId, expected: Expected) {
         match expected {
-            Expected::Ty(ty) => self.learn(var, &Evidence::single(ty, Claim::REPLAYED)),
-            Expected::Peer(peer) => self.union(var, peer),
+            Expected::Ty(ty) => self.learn(node, &Evidence::single(ty, Claim::REPLAYED)),
+            Expected::Peer(peer) => self.union(node, peer),
         }
     }
 }

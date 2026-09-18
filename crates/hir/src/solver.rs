@@ -145,19 +145,21 @@ impl<L: Lattice> Solver<L> {
         }
     }
 
+    /// How many classes there are: the node count the solver was made
+    /// for, since nothing merges or adds a class.
     pub fn classes(&self) -> usize {
         self.evidence.len()
     }
 
-    /// The evidence on `var`.
-    pub fn evidence(&self, var: NodeId) -> &L {
-        &self.evidence[var.index()]
+    /// The evidence on `node`.
+    pub fn evidence(&self, node: NodeId) -> &L {
+        &self.evidence[node.index()]
     }
 
-    /// Join `evidence` into `var`: a fact it carries on its own account, or
+    /// Join `evidence` into `node`: a fact it carries on its own account, or
     /// what one use of it demands. The solver keeps no record of which.
-    pub fn expect(&mut self, var: NodeId, evidence: &L) {
-        self.evidence[var.index()].join(evidence);
+    pub fn expect(&mut self, node: NodeId, evidence: &L) {
+        self.evidence[node.index()].join(evidence);
     }
 
     /// Let everything `provider`'s class learns reach `consumer`'s class
