@@ -20,9 +20,7 @@ pub enum Fault {
 /// each operator does, once, for every reader. The concrete domain is
 /// [`Value`], one value per type, in which an operation faults rather
 /// than panics, so a graph the checker rejected still runs to a refusal.
-/// The may-domain is [`May`](crate::May), a set of values per type, in
-/// which every operator contains the concrete one on every member of its
-/// operands and none faults.
+/// The may-domain is [`May`](crate::May), a set of values per type.
 pub trait Domain: Clone {
     fn int(value: &Int) -> Self;
     fn bool(value: bool) -> Self;
