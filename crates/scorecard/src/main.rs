@@ -1,6 +1,8 @@
 //! The recovery scorecard: seeded, count-based measurements of recovery
 //! quality, so `cargo run --release -p sumi-scorecard` reproduces the
-//! committed `recovery-scorecard.txt` byte for byte, which CI checks.
+//! committed `recovery-scorecard.txt` byte for byte, which CI checks. It
+//! is a leaf package of its own, not an `xtask` command, so that `xtask`,
+//! which seeds the fuzzer, depends on no workspace crate.
 //!
 //! Part A makes one edit per (program, edit) pair drawn from the recovery
 //! properties' generator, per edit kind crossed with whether a delimiter
