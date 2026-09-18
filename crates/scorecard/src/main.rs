@@ -33,34 +33,14 @@ use sumi_lexer::LexedFile;
 use sumi_syntax::{
     NodeIdx, NodeKind, ParseEvidence, ParserInput, RawIdx, SigIdx, SyntaxKind, is_bracket,
 };
-use sumi_test::{Edit, EditSpan, Front, Programs, apply, changes_delimiter, corpus, front};
+use sumi_test::corpus::{self, Rng};
+use sumi_test::{Edit, EditSpan, Front, Programs, apply, changes_delimiter, front};
 
 /// Measured (program, edit) pairs per Part A class.
 const CLASS_TARGET: usize = 10_000;
 /// Samples per class drawn from one program, to spread classes over many
 /// programs instead of exhausting one.
 const PER_PROGRAM: usize = 2;
-
-/// Same LCG as the corpus generator, private to this harness.
-struct Lcg(u64);
-
-impl Lcg {
-    fn new(seed: u64) -> Self {
-        Self(seed ^ 0x9E37_79B9_7F4A_7C15)
-    }
-
-    fn below(&mut self, n: usize) -> usize {
-        self.0 = self
-            .0
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(1442695040888963407);
-        ((self.0 >> 33) as usize) % n
-    }
-
-    fn pick<'a, T: ?Sized>(&mut self, items: &'a [&'a T]) -> &'a T {
-        items[self.below(items.len())]
-    }
-}
 
 fn mean_f64(values: &[f64]) -> f64 {
     values.iter().sum::<f64>() / values.len().max(1) as f64
@@ -214,7 +194,7 @@ const KIND_NAMES: [&str; 4] = ["delete", "duplicate", "swap", "insert"];
 const CLASS_NAMES: [&str; 2] = ["delimiter", "non-delim"];
 
 fn scorecard() {
-    let mut rng = Lcg::new(0x5C0E_CA4D);
+    let mut rng = Rng::new(0x5C0E_CA4D);
     let mut programs = Programs::new(0xED17_ED17);
     // stats[kind][0] is the delimiter class, stats[kind][1] the rest.
     let mut stats: [[ClassStats; 2]; 4] = Default::default();
@@ -407,7 +387,7 @@ fn churn(
     })
 }
 
-fn churn_base(name: &str, source: &str, edits_per_kind: usize, rng: &mut Lcg) {
+fn churn_base(name: &str, source: &str, edits_per_kind: usize, rng: &mut Rng) {
     let before = front(source);
     let spans = before.spans();
     let len = before.input().len();
@@ -568,7 +548,7 @@ fn literal_edit(
     }
 }
 
-fn literal_edits(name: &str, source: &str, edits_per_class: usize, rng: &mut Lcg) {
+fn literal_edits(name: &str, source: &str, edits_per_class: usize, rng: &mut Rng) {
     let clean = sumi_frontend::parse_source(source.into()).expect("corpora fit in u32");
     assert!(
         clean.diagnostics().is_empty(),
@@ -635,7 +615,7 @@ fn main() {
     println!("or boundary_before() changed; items_disturbed = untouched top-level items");
     println!("that no longer survive with identical span and shape.");
     println!();
-    let mut rng = Lcg::new(0xB4A5_E0B5);
+    let mut rng = Rng::new(0xB4A5_E0B5);
     let clean_8k = corpus::generate(8 * 1024, 0xC0FFEE);
     let clean_64k = corpus::generate(64 * 1024, 0xBEEF);
     let clean_1m = corpus::generate(1024 * 1024, 0xDECAF);
@@ -647,7 +627,7 @@ fn main() {
     println!("spread = bytes of the longest literal token left where the edited one stood: how");
     println!("far the stray delimiter reaches: a literal reaches the end of its line at most.");
     println!();
-    let mut rng = Lcg::new(0x11E4_A15E);
+    let mut rng = Rng::new(0x11E4_A15E);
     literal_edits("clean_64k", &clean_64k, 200, &mut rng);
 }
 

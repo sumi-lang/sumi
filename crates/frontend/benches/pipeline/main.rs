@@ -25,12 +25,13 @@ const SMALL_VALID: &str = r#"fn transform(value: int, limit: int) -> int {
 }
 "#;
 
-// The seeds and damage parameters define the benchmark corpora; see
-// `corpus.rs` before touching them.
+// The seeds and damage parameters define the benchmark corpora; changing
+// one resets its benchmarks' history.
 const MEDIUM_SEED: u64 = 0xBEEF;
 const LARGE_SEED: u64 = 0xDECAF;
 const DAMAGE_SEED: u64 = 7;
-const DAMAGE_STRIDE: usize = 600;
+/// Significant tokens per edit of the malformed corpus.
+const DAMAGE_STRIDE: usize = 128;
 
 // Nesting depths for the adversarial ladder, pinned so the benchmark names
 // stay stable. The first three rungs must parse clean under [`MAX_DEPTH`];
@@ -51,7 +52,7 @@ fn corpora() -> &'static [(&'static str, String); 4] {
     static CORPORA: OnceLock<[(&str, String); 4]> = OnceLock::new();
     CORPORA.get_or_init(|| {
         let medium = corpus::generate(64 * KIB, MEDIUM_SEED);
-        let malformed = corpus::corrupt(&medium, DAMAGE_SEED, DAMAGE_STRIDE);
+        let malformed = corpus::damage(&medium, DAMAGE_SEED, DAMAGE_STRIDE);
         let corpora = [
             ("small-valid", SMALL_VALID.to_owned(), true),
             (MEDIUM_VALID, medium, true),
@@ -203,10 +204,10 @@ fn bench_queries(c: &mut Criterion) {
 
     let mut rng = Rng::new(QUERY_SEED);
     let offsets: Vec<TextSize> = (0..QUERY_BATCH)
-        .map(|_| TextSize::new(rng.below(source.len() as u32)))
+        .map(|_| TextSize::new(rng.below(source.len()) as u32))
         .collect();
     let tokens: Vec<RawIdx> = (0..QUERY_BATCH)
-        .map(|_| RawIdx::new(rng.below(lexed.len() as u32)))
+        .map(|_| RawIdx::new(rng.below(lexed.len()) as u32))
         .collect();
 
     let mut group = c.benchmark_group("queries/medium-valid");
