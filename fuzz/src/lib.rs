@@ -126,6 +126,11 @@ pub fn check_typed(analysis: &sumi_hir::Analysis) {
                 Op::Int(_) => assert_eq!(own, Some(Ty::Int)),
                 Op::Bool(_) => assert_eq!(own, Some(Ty::Bool)),
                 Op::Unit => assert_eq!(own, Some(Ty::Unit)),
+                Op::Unused => {
+                    assert_eq!(ty(inputs[0]), Some(Ty::Unit));
+                    assert_eq!(own, None);
+                    continue;
+                }
                 Op::Param(position) => {
                     assert_eq!(own, Some(signature.params[*position as usize]));
                 }
@@ -204,7 +209,7 @@ pub fn check_graph(analysis: &sumi_hir::Analysis) {
         }
         let arity = match node.op {
             Op::Int(_) | Op::Bool(_) | Op::Param(_) | Op::Entry => Some(0),
-            Op::Unit | Op::Copy { .. } | Op::Neg | Op::Not | Op::Exactly(_) => Some(1),
+            Op::Unit | Op::Unused | Op::Copy { .. } | Op::Neg | Op::Not | Op::Exactly(_) => Some(1),
             Op::And { .. } | Op::Or { .. } | Op::Join { .. } => Some(1),
             Op::Binary(_) | Op::Refine { .. } | Op::Then | Op::Else => Some(2),
             Op::Hole | Op::Call(_) => None,
@@ -222,7 +227,7 @@ pub fn check_graph(analysis: &sumi_hir::Analysis) {
         }
         if analysis.is_valid() {
             assert!(!matches!(node.op, Op::Hole));
-            if !matches!(node.op, Op::Entry | Op::Then | Op::Else) {
+            if !matches!(node.op, Op::Entry | Op::Then | Op::Else | Op::Unused) {
                 assert!(analysis.ty(id).is_some());
             }
         }
@@ -261,7 +266,7 @@ pub fn check_graph(analysis: &sumi_hir::Analysis) {
         let result = region.result().index();
         assert!(!matches!(
             graph.node(region.result()).op,
-            Op::Entry | Op::Then | Op::Else
+            Op::Entry | Op::Then | Op::Else | Op::Unused
         ));
         assert_eq!(owner[region.context.index()], owner[result]);
         assert!(owner[result].is_some());

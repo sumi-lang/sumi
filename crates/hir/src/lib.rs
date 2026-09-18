@@ -61,8 +61,9 @@ impl Analysis {
     pub fn graph(&self) -> &Graph {
         &self.graph
     }
-    /// The type `node` resolved to; none for a hole, a context, a node
-    /// built over a hole, or a class that conflicted.
+    /// The type `node` resolved to; none for a node that is no value,
+    /// which a hole, a node built over one, a context, and a statement
+    /// are, or for a class that conflicted.
     pub fn ty(&self, node: NodeId) -> Option<Ty> {
         self.settled.resolve(node)
     }

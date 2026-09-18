@@ -212,12 +212,12 @@ fn dump(analysis: &Analysis, shape: &Shape, function: FunctionId, out: &mut Stri
 }
 
 // Render each region as its statements and its value: a named copy is a
-// `let`, a node nothing reads is a discard, and every other node prints
-// inline under the node that reads it, so the rendering follows use, never
-// the table's order. A read of a named node uses its declaration spelling
-// and origin; a read under a guard names the guard. A statement that only
-// reads a local, `_ = x` or a bare `x`, is an edge and no node, so it does
-// not print: what it demanded is in the diagnostics.
+// `let`, an expression statement and a node nothing reads are each a
+// discard, and every other node prints inline under the node that reads
+// it, so the rendering follows use, never the table's order. A read of a
+// named node uses its declaration spelling and origin; a read under a
+// guard names the guard. `_ = x` only reads a local: an edge and no node,
+// so it does not print.
 fn dump_region(
     analysis: &Analysis,
     shape: &Shape,
@@ -267,6 +267,10 @@ fn dump_region(
             (Some(_), _) => {
                 let role = format!("let {}", named(analysis, node));
                 dump_definition(analysis, shape, &role, node, depth + 1, out);
+            }
+            (None, Op::Unused) => {
+                let value = graph.inputs(node)[0];
+                dump_node(analysis, shape, "discard", value, depth + 1, out);
             }
             (None, _) => dump_node(analysis, shape, "discard", node, depth + 1, out),
         }
@@ -348,6 +352,7 @@ fn dump_definition(
         Op::Bool(value) => format!("bool {value}"),
         Op::Param(index) => format!("param {index}"),
         Op::Unit => "unit".into(),
+        Op::Unused => "unused".into(),
         Op::Hole => "hole".into(),
         Op::Copy { .. } => "copy".into(),
         Op::Neg => "negate".into(),
@@ -393,7 +398,7 @@ fn dump_definition(
                 );
             }
         }
-        Op::Copy { .. } => dump_node(analysis, shape, "value", inputs[0], child, out),
+        Op::Copy { .. } | Op::Unused => dump_node(analysis, shape, "value", inputs[0], child, out),
         Op::Neg | Op::Not => dump_node(analysis, shape, "operand", inputs[0], child, out),
         Op::Binary(_) => {
             dump_node(analysis, shape, "lhs", inputs[0], child, out);

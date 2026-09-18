@@ -192,9 +192,9 @@ fn arity@1051..1084 (int ∈ ∅) -> int ∈ ∅
 
 fn wrong_arity@1085..1122 () -> int ∈ ∅
   result: copy : int @1105..1108
-    value: hole : ? @1111..1122
-      part[0]: int 0 : int @1117..1118
-      part[1]: int 1 : int @1120..1121
+    value: call arity@1051..1084 : ? @1111..1122
+      arg[0]: int 0 : int @1117..1118
+      arg[1]: int 1 : int @1120..1121
 
 fn plain@1123..1156 (int ∈ [0, 0]) -> int ∈ [-100, 100] \ 0
   param k@1132..1133: int
