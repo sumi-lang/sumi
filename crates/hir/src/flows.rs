@@ -55,7 +55,7 @@ pub(crate) fn draw(
                 // A context under a condition nothing follows is live as
                 // its parent is.
                 Op::Then | Op::Else if !typed(inputs[0]) => {
-                    typing.flow(inputs[1], node, Edge::Copy);
+                    typing.flow(inputs[1], node, Edge::Values);
                 }
                 Op::Then | Op::Else => {
                     let edge = if matches!(entry.op, Op::Then) {
@@ -106,7 +106,7 @@ pub(crate) fn draw(
                 } => {
                     typing.known(node, *ty, *at);
                     if typed(inputs[0]) {
-                        typing.flow(inputs[0], node, Edge::Copy);
+                        typing.flow(inputs[0], node, Edge::Values);
                     }
                 }
                 // An unannotated `let` is its initializer.

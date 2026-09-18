@@ -164,10 +164,10 @@ pub(crate) enum Edge {
     /// values as they are, and one class with it in the replay, so a
     /// demand on a read of the binding is a demand on what it was bound to.
     Bind,
-    /// A value unchanged and nothing of its types: a declared binding's
-    /// initializer, a declared result's body, and the parent context of a
-    /// branch whose condition has no value.
-    Copy,
+    /// The values as they are and nothing of the types: a declared
+    /// binding's initializer, a declared result's body, and the parent
+    /// context of a branch whose condition has no value.
+    Values,
     /// A read of a local narrowed by a comparison with the second provider
     /// holding in the given sense: the local's types as they are, and one
     /// class with it in the replay, so the read still types once solved.
@@ -275,7 +275,7 @@ impl Lattice for Product {
                 op,
                 BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Rem
             ),
-            Edge::Call(_) | Edge::Bind | Edge::Copy | Edge::Neg | Edge::Refine { .. } => true,
+            Edge::Call(_) | Edge::Bind | Edge::Values | Edge::Neg | Edge::Refine { .. } => true,
             Edge::Branch | Edge::Argument => !second,
         }
     }
@@ -306,7 +306,7 @@ impl Lattice for Product {
             Edge::Bind | Edge::Refine { .. } | Edge::Exactly(_) | Edge::Branch | Edge::Peer => {
                 self.types
             }
-            Edge::Copy
+            Edge::Values
             | Edge::Neg
             | Edge::Not
             | Edge::Binary(_)
@@ -319,7 +319,7 @@ impl Lattice for Product {
         let values = &self.values;
         let values = match *edge {
             Edge::Call(_) => rounded(values),
-            Edge::Bind | Edge::Copy => values.clone(),
+            Edge::Bind | Edge::Values => values.clone(),
             Edge::Peer => May::NONE,
             Edge::Neg => values.neg().expect(TOTAL),
             Edge::Not => values.not().expect(TOTAL),
@@ -433,7 +433,7 @@ mod tests {
             a.transfer(&Edge::Argument, Some(&live), true, &cx).values,
             band(3, 14)
         );
-        assert_eq!(a.transfer(&Edge::Copy, None, true, &cx).values, a.values);
+        assert_eq!(a.transfer(&Edge::Values, None, true, &cx).values, a.values);
         assert_eq!(a.transfer(&Edge::Peer, None, false, &cx).values, May::NONE);
     }
 
@@ -483,7 +483,7 @@ mod tests {
                 .types,
             int.types
         );
-        for edge in [Edge::Copy, Edge::Neg, Edge::Enter] {
+        for edge in [Edge::Values, Edge::Neg, Edge::Enter] {
             assert_eq!(int.transfer(&edge, None, false, &cx).types, Evidence::NONE);
         }
         assert_eq!(
