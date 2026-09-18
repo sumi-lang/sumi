@@ -1,6 +1,5 @@
 use std::collections::HashSet;
 
-use sumi_diagnostics::{Diagnostic, DiagnosticCode, Fix, Label};
 use sumi_lexer::{LexError, LexErrorKind, LexedFile, TokenFlags, canonicalize_number_literal};
 use sumi_syntax::{
     Parse, ParseAnchor, ParseEvidence, ParseRecovery, ParseRecoveryKind, ParseViolation,
@@ -9,6 +8,7 @@ use sumi_syntax::{
 use sumi_text::{FileId, Span, TextEdit, TextRange, TextSize};
 
 use crate::codes;
+use crate::diagnostic::{Diagnostic, DiagnosticCode, Fix, Label};
 
 /// The source snapshot being lowered: the file its diagnostics name, its
 /// text, and its tokens.

@@ -190,9 +190,8 @@ impl ClassStats {
             self.unguarded += 1;
         }
 
-        let parsed =
-            sumi_frontend::parse_source(sumi_frontend::FileId::new(0), edited.as_str().into())
-                .expect("edited sources fit in u32");
+        let parsed = sumi_frontend::parse_source(sumi_text::FileId::new(0), edited.as_str().into())
+            .expect("edited sources fit in u32");
         self.diags.push(parsed.diagnostics().len() as u64);
 
         let mut skipped = 0;
@@ -560,7 +559,7 @@ fn literal_edit(
         .map(|range| (range.end().to_usize() - range.start().to_usize()) as u64)
         .max()
         .unwrap_or(0);
-    let parsed = sumi_frontend::parse_source(sumi_frontend::FileId::new(0), edited.as_str().into())
+    let parsed = sumi_frontend::parse_source(sumi_text::FileId::new(0), edited.as_str().into())
         .expect("edited sources fit in u32");
     LiteralSample {
         spread,
@@ -570,7 +569,7 @@ fn literal_edit(
 }
 
 fn literal_edits(name: &str, source: &str, edits_per_class: usize, rng: &mut Lcg) {
-    let clean = sumi_frontend::parse_source(sumi_frontend::FileId::new(0), source.into())
+    let clean = sumi_frontend::parse_source(sumi_text::FileId::new(0), source.into())
         .expect("corpora fit in u32");
     assert!(
         clean.diagnostics().is_empty(),

@@ -10,8 +10,9 @@
 
 use proptest::prelude::*;
 use proptest::test_runner::FileFailurePersistence;
-use sumi_frontend::{FileId, parse_source};
+use sumi_frontend::parse_source;
 use sumi_hir::{Analysis, Bools, Int, Ints, Ty, Value, analyze};
+use sumi_text::FileId;
 
 /// xorshift64*: enough to draw a program from, and one word of state so a
 /// failing seed names its program.

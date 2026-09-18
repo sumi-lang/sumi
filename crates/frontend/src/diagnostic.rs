@@ -1,10 +1,9 @@
-//! Renderer-independent diagnostics for Sumi.
-//!
-//! A frontend or later compiler phase owns the source snapshots and assigns
-//! stable codes, wording, labels, and fixes. Every diagnostic rejects the
-//! program. Every span names its file, so a diagnostic produced from one
-//! file can point into another — "defined here" — and renderers only
-//! project this canonical representation for their audience.
+//! Renderer-independent diagnostics, as the frontend and every later
+//! phase produce them: a stable code, wording, labels, and a fix. Every
+//! diagnostic rejects the program. Every span names its file, so a
+//! diagnostic produced from one file can point into another — "defined
+//! here" — and renderers only project this canonical representation for
+//! their audience.
 
 use std::fmt;
 

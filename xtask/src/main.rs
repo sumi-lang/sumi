@@ -48,10 +48,15 @@ fn workspace_root() -> PathBuf {
         .to_path_buf()
 }
 
-/// Where each diagnostic group's constants are generated.
-const GROUP_HOMES: [(&str, &str); 2] = [
-    ("syntax", "crates/frontend/src/generated/codes.rs"),
-    ("semantic", "crates/hir/src/generated/codes.rs"),
+/// Where each diagnostic group's constants are generated, and the path
+/// the diagnostic types are reached by from there.
+const GROUP_HOMES: [(&str, &str, &str); 2] = [
+    ("syntax", "crates/frontend/src/generated/codes.rs", "crate"),
+    (
+        "semantic",
+        "crates/hir/src/generated/codes.rs",
+        "sumi_frontend",
+    ),
 ];
 
 /// The generated files, as `(path, content)`.
@@ -84,13 +89,13 @@ fn generated(
         ),
     ];
     for group in &registry.groups {
-        let (_, path) = GROUP_HOMES
+        let (_, path, types) = GROUP_HOMES
             .iter()
-            .find(|(name, _)| *name == group.name)
+            .find(|(name, _, _)| *name == group.name)
             .ok_or_else(|| format!("group {} has no home in GROUP_HOMES", group.name))?;
-        files.push((path, codegen::rustfmt(&codegen::codes(group))?));
+        files.push((path, codegen::rustfmt(&codegen::codes(group, types))?));
     }
-    for (name, _) in GROUP_HOMES {
+    for (name, _, _) in GROUP_HOMES {
         if registry.group(name).is_none() {
             return Err(format!("sumi.diagnostics declares no group {name}"));
         }
@@ -213,9 +218,9 @@ mod tests {
         let root = workspace_root();
         let source = fs::read_to_string(root.join("sumi.diagnostics")).unwrap();
         let registry = diagnostics::Registry::parse(&source).unwrap();
-        for (name, _) in GROUP_HOMES {
+        for (name, _, types) in GROUP_HOMES {
             let group = registry.group(name).unwrap();
-            assert!(codegen::codes(group).contains("pub const ALL"));
+            assert!(codegen::codes(group, types).contains("pub const ALL"));
         }
         let examples = corpus::examples(&root).unwrap();
         let chapter = codegen::catalogue(&registry, &examples);

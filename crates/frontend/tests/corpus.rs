@@ -18,10 +18,10 @@ use std::fmt::Write as _;
 mod corpus;
 
 use sumi_format::format;
-use sumi_frontend::{Diagnostic, FileId, TextEdit, parse_source};
+use sumi_frontend::{Diagnostic, parse_source};
 use sumi_lexer::LexedFile;
 use sumi_syntax::{NodeIdx, ParseAnchor, ParseEvidence, ParseRecoveryKind, RawIdx, SyntaxTree};
-use sumi_text::{LineIndex, TextRange, TextSize};
+use sumi_text::{FileId, LineIndex, TextEdit, TextRange, TextSize};
 
 #[test]
 fn every_case_matches_its_snapshot() {

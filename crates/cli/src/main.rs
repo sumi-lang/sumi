@@ -6,11 +6,11 @@ use std::io::Read;
 use std::path::Path;
 use std::process::ExitCode;
 
-use sumi_frontend::{FileId, parse_source};
+use sumi_frontend::parse_source;
 use sumi_hir::{Analysis, Value};
 use sumi_lexer::lex;
 use sumi_syntax::{ParserInput, parse};
-use sumi_text::{LineIndex, TextSize};
+use sumi_text::{FileId, LineIndex, TextSize};
 
 const USAGE: &str = "usage: sumi check <file>
        sumi run <file>

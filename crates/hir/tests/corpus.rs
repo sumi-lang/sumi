@@ -9,9 +9,9 @@
 
 use std::fmt::Write as _;
 
-use sumi_frontend::{FileId, parse_source};
+use sumi_frontend::parse_source;
 use sumi_hir::{Analysis, BinaryOp, FunctionId, Graph, NodeId, Op, RegionId, analyze};
-use sumi_text::Span;
+use sumi_text::{FileId, Span};
 
 #[path = "../../../tests/support/corpus.rs"]
 mod corpus;

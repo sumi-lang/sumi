@@ -1211,8 +1211,9 @@ fn token_witnesses(
 }
 
 /// One group's `codes.rs`: a constant per code, and every code in
-/// declaration order.
-pub fn codes(group: &Group) -> String {
+/// declaration order. `types` is the path the diagnostic types are
+/// reached by from the generated file.
+pub fn codes(group: &Group, types: &str) -> String {
     let name = &group.name;
     let group_const = constant(name);
     let codes: String = group
@@ -1233,7 +1234,7 @@ pub fn codes(group: &Group) -> String {
 //!
 //! {GENERATED_REGISTRY}
 
-use sumi_diagnostics::{{DiagnosticCode, DiagnosticGroup}};
+use {types}::{{DiagnosticCode, DiagnosticGroup}};
 
 {}pub const {group_const}: DiagnosticGroup = DiagnosticGroup::new({name:?});
 

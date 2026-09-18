@@ -1,7 +1,8 @@
 use proptest::prelude::*;
 use proptest::test_runner::FileFailurePersistence;
-use sumi_frontend::{DiagnosticCode, FileId, ParsedSource, codes, parse_source};
+use sumi_frontend::{DiagnosticCode, ParsedSource, codes, parse_source};
 use sumi_syntax::{RawIdx, SyntaxKind};
+use sumi_text::FileId;
 
 /// The file every test source stands for; the frontend copies it into every
 /// label rather than deriving it from anything.

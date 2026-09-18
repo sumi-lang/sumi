@@ -1,5 +1,6 @@
 use super::*;
-use sumi_frontend::{Diagnostic, DiagnosticCode, FileId, parse_source};
+use sumi_frontend::{Diagnostic, DiagnosticCode, parse_source};
+use sumi_text::FileId;
 
 use crate::codes::*;
 

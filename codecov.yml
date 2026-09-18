@@ -26,8 +26,6 @@ component_management:
       paths: [crates/frontend/**]
     - component_id: format
       paths: [crates/format/**]
-    - component_id: diagnostics
-      paths: [crates/diagnostics/**]
     - component_id: graph
       paths: [crates/graph/**]
     - component_id: hir

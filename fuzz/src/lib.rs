@@ -12,13 +12,13 @@
 use std::collections::HashSet;
 
 use sumi_format::{format, rep};
-use sumi_frontend::{FileId, ParsedSource, codes, parse_source};
+use sumi_frontend::{ParsedSource, codes, parse_source};
 use sumi_lexer::{LexedFile, RawIdx, SyntaxKind, lex};
 use sumi_syntax::{
     BRACKET_PAIRS, NodeKind, Parse, ParseAnchor, ParseEvidence, ParserInput, SigIdx, parse,
 };
 use sumi_test::{Edit, Front, apply, changes_delimiter, front};
-use sumi_text::Span;
+use sumi_text::{FileId, Span};
 
 /// The file every fuzzed source stands for.
 pub const FILE: FileId = FileId::new(0);

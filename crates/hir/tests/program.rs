@@ -1,8 +1,9 @@
 //! A valid file as a program: what runs, what it computes, and what a run
 //! costs, through the checker's proof and the graph's machine.
 
-use sumi_frontend::{FileId, parse_source};
+use sumi_frontend::parse_source;
 use sumi_hir::{Analysis, Ty, Value, analyze};
+use sumi_text::FileId;
 
 fn analysis(source: &str) -> Analysis {
     analyze(parse_source(FileId::new(0), source.into()).unwrap())

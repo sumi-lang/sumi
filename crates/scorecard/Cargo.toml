@@ -14,3 +14,4 @@ sumi-frontend = { path = "../frontend" }
 sumi-lexer = { path = "../lexer" }
 sumi-syntax = { path = "../syntax" }
 sumi-test = { path = "../test" }
+sumi-text = { path = "../text" }
