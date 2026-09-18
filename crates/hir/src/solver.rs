@@ -69,20 +69,13 @@ pub trait Lattice: Clone + Eq {
     /// Join `other` into `self`, reporting whether `self` grew.
     fn join(&mut self, other: &Self) -> bool;
 
-    /// Whether `edge` can deliver more than it receives: an operator over
-    /// its operands, where an edge that copies, narrows, or gates a value
-    /// cannot. A cycle with no such edge settles in one lap and is never
-    /// widened.
-    fn grows(edge: &Self::Edge) -> bool;
-
-    /// Whether what the first provider holds, or the `second` one's, can
-    /// climb through `edge` into the consumer: a value an operator computes
-    /// from it, a copy or a narrowing of it, the value a gate lets through.
-    /// The cycles an ascent can run on are cycles of such arcs, and those
-    /// are the cycles widening cuts. An edge that delivers nothing, or only
-    /// something finite, a boolean or whether a point is live, carries
-    /// none, and a cycle closed through it alone is no cycle of values.
-    fn carries(edge: &Self::Edge, second: bool) -> bool;
+    /// What of the first provider's evidence, or the `second` one's, can
+    /// climb through `edge` into the consumer. The cycles an ascent can
+    /// run on are cycles of arcs that carry, and a cycle some arc grows
+    /// along is what widening cuts; a cycle of arcs that only pass settles
+    /// in one lap, and a cycle closed through an arc that carries nothing
+    /// is no cycle of values.
+    fn carries(edge: &Self::Edge, second: bool) -> Carry;
 
     /// The evidence a consumer receives when `self`, and for a two-provider
     /// edge `other`, cross `edge`. `cyclic` says the flow lies on a cycle of
@@ -108,6 +101,20 @@ pub trait Lattice: Clone + Eq {
     /// A lattice that never widens has nothing to take back. Reports
     /// whether `self` changed.
     fn narrow(&mut self, exact: &Self) -> bool;
+}
+
+/// What a provider's evidence can do crossing an edge into the consumer,
+/// least first.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Carry {
+    /// Nothing that can climb: the edge delivers nothing of the provider's,
+    /// or only something finite, a boolean or whether a point is live.
+    Nothing,
+    /// A copy or a narrowing of it, or the value a gate lets through: never
+    /// more than the provider holds.
+    Passes,
+    /// More than the provider holds: a value an operator computes from it.
+    Grows,
 }
 
 /// The most exact passes a narrowing makes. One pass carries a tightening
@@ -201,6 +208,12 @@ impl<L: Lattice> Solver<L> {
     /// A flow's providers, each with whether it is the second.
     fn providers<'f>(&self, flow: &'f Flow<L::Edge>) -> impl Iterator<Item = (bool, NodeId)> + 'f {
         std::iter::once((false, flow.first)).chain(flow.second.map(|second| (true, second)))
+    }
+
+    /// Whether some provider's evidence grows crossing `flow`.
+    fn grows(&self, flow: &Flow<L::Edge>) -> bool {
+        self.providers(flow)
+            .any(|(second, _)| L::carries(&flow.edge, second) == Carry::Grows)
     }
 
     /// The consumer of flow `index` when the flow stays inside `component`
@@ -327,7 +340,7 @@ impl<L: Lattice> Solver<L> {
             let component = components.of[consumer as usize];
             if components.of[provider as usize] == component {
                 inside[component as usize] = true;
-                grows_inside |= L::grows(&self.flows[index as usize].edge);
+                grows_inside |= self.grows(&self.flows[index as usize]);
             }
         }
         // Values climb along the carrying arcs alone, so their cycles are
@@ -341,21 +354,23 @@ impl<L: Lattice> Solver<L> {
             for flow in &self.flows {
                 let consumer = flow.consumer.index() as u32;
                 for (second, provider) in self.providers(flow) {
-                    if L::carries(&flow.edge, second) {
+                    if L::carries(&flow.edge, second) != Carry::Nothing {
                         carrying.push((provider.index() as u32, consumer));
                     }
                 }
             }
             let values = self::components(n, &carrying);
             let mut climbs = vec![false; values.count()];
-            let carried = |flow: &Flow<L::Edge>, value: u32| {
+            // Whether some provider of `flow` inside the value component
+            // `value` carries at least `least` along it.
+            let carried = |flow: &Flow<L::Edge>, value: u32, least: Carry| {
                 self.providers(flow).any(|(second, p): (bool, NodeId)| {
-                    L::carries(&flow.edge, second) && values.of[p.index()] == value
+                    L::carries(&flow.edge, second) >= least && values.of[p.index()] == value
                 })
             };
             for flow in &self.flows {
                 let value = values.of[flow.consumer.index()];
-                if L::grows(&flow.edge) && carried(flow, value) {
+                if carried(flow, value, Carry::Grows) {
                     climbs[value as usize] = true;
                 }
             }
@@ -364,7 +379,7 @@ impl<L: Lattice> Solver<L> {
                 .iter()
                 .map(|flow| {
                     let value = values.of[flow.consumer.index()];
-                    climbs[value as usize] && carried(flow, value)
+                    climbs[value as usize] && carried(flow, value, Carry::Passes)
                 })
                 .collect();
             (values, climbs, cyclic)
@@ -729,12 +744,8 @@ mod tests {
         }
 
         /// A flow delivers the set; a derive delivers the union of both.
-        fn grows((): &()) -> bool {
-            false
-        }
-
-        fn carries((): &(), _: bool) -> bool {
-            true
+        fn carries((): &(), _: bool) -> Carry {
+            Carry::Passes
         }
 
         fn transfer(&self, (): &(), other: Option<&Self>, _: bool, (): &()) -> Self {
@@ -780,12 +791,12 @@ mod tests {
             before != *self
         }
 
-        fn carries(_: &i64, _: bool) -> bool {
-            true
-        }
-
-        fn grows(offset: &i64) -> bool {
-            *offset != 0
+        fn carries(offset: &i64, _: bool) -> Carry {
+            if *offset == 0 {
+                Carry::Passes
+            } else {
+                Carry::Grows
+            }
         }
 
         fn transfer(&self, offset: &i64, _: Option<&Self>, _: bool, (): &()) -> Self {
@@ -857,12 +868,8 @@ mod tests {
             before != *self
         }
 
-        fn grows((): &()) -> bool {
-            true
-        }
-
-        fn carries((): &(), _: bool) -> bool {
-            true
+        fn carries((): &(), _: bool) -> Carry {
+            Carry::Grows
         }
 
         /// Nothing comes of nothing: an empty set is not marked.
@@ -913,12 +920,12 @@ mod tests {
             before != *self
         }
 
-        fn carries(edge: &HullEdge, _: bool) -> bool {
-            !matches!(edge, HullEdge::Inert)
-        }
-
-        fn grows(edge: &HullEdge) -> bool {
-            matches!(edge, HullEdge::Add(k) if *k != 0)
+        fn carries(edge: &HullEdge, _: bool) -> Carry {
+            match edge {
+                HullEdge::Inert => Carry::Nothing,
+                HullEdge::Add(k) if *k != 0 => Carry::Grows,
+                _ => Carry::Passes,
+            }
         }
 
         fn transfer(&self, edge: &HullEdge, _: Option<&Self>, cyclic: bool, (): &()) -> Self {

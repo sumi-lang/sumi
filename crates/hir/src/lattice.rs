@@ -32,7 +32,7 @@ use std::num::NonZeroU32;
 
 use sumi_graph::{BinaryOp, Domain, May, Thresholds, Ty};
 
-use crate::solver::Lattice;
+use crate::solver::{Carry, Lattice};
 
 /// One claim that a class has some type, as its rank: the one-based sequence
 /// number of the claim in the walk, under a bit set once the claim has
@@ -244,25 +244,13 @@ impl Lattice for Product {
         types | ints | bools | unit
     }
 
-    /// An arithmetic result can outgrow its operands. Everything else
-    /// copies, narrows, or gates a value, or is a boolean, unit, or a set
-    /// of at most three type claims, none of which can climb.
-    fn grows(edge: &Edge) -> bool {
-        matches!(
-            edge,
-            Edge::Neg
-                | Edge::Binary(
-                    BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Rem
-                )
-        )
-    }
-
-    /// Integers climb through copies, arithmetic, refinement, branches,
-    /// arguments, and calls. A comparison, a lazy operator, and a context
-    /// deliver a boolean or liveness, which are finite; the context that
-    /// gates a branch or an argument carries nothing of its own; and type
-    /// claims never climb, so a peer carries nothing.
-    fn carries(edge: &Edge, second: bool) -> bool {
+    /// An arithmetic result can outgrow its operands; integers pass through
+    /// copies, refinement, branches, arguments, and calls. A comparison, a
+    /// lazy operator, and a context deliver a boolean or liveness, which
+    /// are finite; the context that gates a branch or an argument carries
+    /// nothing of its own; and type claims never climb, so a peer carries
+    /// nothing.
+    fn carries(edge: &Edge, second: bool) -> Carry {
         match edge {
             Edge::Peer
             | Edge::Not
@@ -270,13 +258,20 @@ impl Lattice for Product {
             | Edge::Then
             | Edge::Else
             | Edge::Enter
-            | Edge::Exactly(_) => false,
-            Edge::Binary(op) => matches!(
-                op,
-                BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Rem
-            ),
-            Edge::Call(_) | Edge::Bind | Edge::Values | Edge::Neg | Edge::Refine { .. } => true,
-            Edge::Branch | Edge::Argument => !second,
+            | Edge::Exactly(_) => Carry::Nothing,
+            Edge::Neg
+            | Edge::Binary(
+                BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Rem,
+            ) => Carry::Grows,
+            Edge::Binary(_) => Carry::Nothing,
+            Edge::Call(_) | Edge::Bind | Edge::Values | Edge::Refine { .. } => Carry::Passes,
+            Edge::Branch | Edge::Argument => {
+                if second {
+                    Carry::Nothing
+                } else {
+                    Carry::Passes
+                }
+            }
         }
     }
 
