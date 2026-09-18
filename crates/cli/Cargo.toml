@@ -12,6 +12,8 @@ path = "src/main.rs"
 sumi-format = { path = "../format" }
 sumi-frontend = { path = "../frontend" }
 sumi-hir = { path = "../hir" }
+sumi-lexer = { path = "../lexer" }
+sumi-syntax = { path = "../syntax" }
 sumi-text = { path = "../text" }
 
 [dev-dependencies]

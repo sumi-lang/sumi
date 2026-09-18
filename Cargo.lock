@@ -642,6 +642,8 @@ dependencies = [
  "sumi-format",
  "sumi-frontend",
  "sumi-hir",
+ "sumi-lexer",
+ "sumi-syntax",
  "sumi-text",
  "tempfile",
 ]
