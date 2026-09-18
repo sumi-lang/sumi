@@ -2,7 +2,7 @@ file: rejected
 frontend errors: 2 (see frontend.snap)
 semantic errors: 1
 
-fn damaged@0..100 () -> unit ∈ ∅
+fn damaged@0..100 () -> unit ∈ unit
   result: copy : unit @0..100
     value:
       let x@23..24: bool @19..31

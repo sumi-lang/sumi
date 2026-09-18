@@ -119,14 +119,16 @@ pub fn validate(shape: &str, size: usize, analysis: &Analysis) {
             analysis
                 .functions()
                 .iter()
-                .all(|f| f.signature().is_none() && f.body().is_none())
+                .all(|f| f.signature().is_none() && !f.complete())
         );
     } else {
         assert!(analysis.is_valid());
-        for function in analysis.functions() {
+        let graph = analysis.graph();
+        for (index, function) in analysis.functions().iter().enumerate() {
             assert_eq!(function.signature().unwrap().result, Ty::Int);
-            let body = function.body().unwrap();
-            assert_eq!(body.expression(body.root()).ty, Ty::Int);
+            assert!(function.complete());
+            let result = graph.run(sumi_hir::FunctionId::new(index)).result();
+            assert_eq!(graph.node(result).ty, Some(Ty::Int));
         }
     }
 }

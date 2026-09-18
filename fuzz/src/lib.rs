@@ -24,9 +24,8 @@ use sumi_test::{Edit, Front, apply, changes_delimiter, front};
 pub const FILE: FileId = FileId::new(0);
 
 /// The HIR property's diagnostic-backed acceptance, source provenance, and
-/// complete-body ownership/type invariants, through the read-only public API.
+/// completeness, through the read-only public API.
 pub fn check_semantics(parsed: ParsedSource) {
-    use sumi_hir::{ExprKind, StatementKind, Ty};
     let analysis = sumi_hir::analyze(parsed);
     let source = analysis.parsed().source();
     // Mirror the HIR property: declaration order cannot choose a public type
@@ -61,7 +60,7 @@ pub fn check_semantics(parsed: ParsedSource) {
                 b.signature().map(|s| (&s.params, s.result))
             );
             assert_eq!(a.ranges(), b.ranges());
-            assert_eq!(a.body().is_some(), b.body().is_some());
+            assert_eq!(a.complete(), b.complete());
         }
     }
     let errors = analysis
@@ -79,123 +78,15 @@ pub fn check_semantics(parsed: ParsedSource) {
             assert!(source.is_char_boundary(label.location.end().to_usize()));
         }
     }
+    // Every function of a valid file is complete, and a complete function
+    // has a signature its calls agree with.
+    if analysis.is_valid() {
+        assert!(analysis.functions().iter().all(|f| f.complete()));
+    }
     for function in analysis.functions() {
-        let Some(body) = function.body() else {
-            continue;
-        };
-        let signature = function.signature().unwrap();
-        assert_eq!(body.params().len(), signature.params.len());
-        assert_eq!(body.expression(body.root()).ty, signature.result);
-        let mut parents = vec![0; body.expressions().len()];
-        let mut declarations = vec![0; body.locals().len()];
-        for (&param, &ty) in body.params().iter().zip(&signature.params) {
-            assert_eq!(body.local(param).ty, ty);
-            assert!(std::ptr::eq(
-                body.local(param),
-                &body.locals()[param.index()]
-            ));
-            declarations[param.index()] += 1;
+        if function.complete() {
+            assert!(function.signature().is_some());
         }
-        for (index, expr) in body.expressions().iter().enumerate() {
-            let mut edges = Vec::new();
-            match &expr.kind {
-                ExprKind::Int(_) => assert_eq!(expr.ty, Ty::Int),
-                ExprKind::Bool(_) => assert_eq!(expr.ty, Ty::Bool),
-                ExprKind::Local(local) => assert_eq!(expr.ty, body.local(*local).ty),
-                ExprKind::Neg(child) => {
-                    assert_eq!(body.expression(*child).ty, Ty::Int);
-                    assert_eq!(expr.ty, Ty::Int);
-                    edges.push(*child);
-                }
-                ExprKind::Not(child) => {
-                    assert_eq!(body.expression(*child).ty, Ty::Bool);
-                    assert_eq!(expr.ty, Ty::Bool);
-                    edges.push(*child);
-                }
-                ExprKind::Binary { op, lhs, rhs } => {
-                    use sumi_hir::BinaryOp::*;
-                    let (operand, result) = match op {
-                        Add | Sub | Mul | Div | Rem => (Ty::Int, Ty::Int),
-                        Lt | Le | Gt | Ge => (Ty::Int, Ty::Bool),
-                        Eq | Ne => {
-                            let ty = body.expression(*lhs).ty;
-                            assert!(matches!(ty, Ty::Int | Ty::Bool));
-                            (ty, Ty::Bool)
-                        }
-                    };
-                    assert_eq!(body.expression(*lhs).ty, operand);
-                    assert_eq!(body.expression(*rhs).ty, operand);
-                    assert_eq!(expr.ty, result);
-                    edges.extend([*lhs, *rhs]);
-                }
-                ExprKind::And { lhs, rhs } | ExprKind::Or { lhs, rhs } => {
-                    assert_eq!(body.expression(*lhs).ty, Ty::Bool);
-                    assert_eq!(body.expression(*rhs).ty, Ty::Bool);
-                    assert_eq!(expr.ty, Ty::Bool);
-                    edges.extend([*lhs, *rhs]);
-                }
-                ExprKind::Call { function, args, .. } => {
-                    let args = body.args(*args);
-                    let signature = analysis.function(*function).signature().unwrap();
-                    assert_eq!(expr.ty, signature.result);
-                    assert_eq!(args.len(), signature.params.len());
-                    for (&arg, &ty) in args.iter().zip(&signature.params) {
-                        assert_eq!(body.expression(arg).ty, ty);
-                    }
-                    edges.extend_from_slice(args);
-                }
-                ExprKind::If {
-                    condition,
-                    then_branch,
-                    else_branch,
-                } => {
-                    assert_eq!(body.expression(*condition).ty, Ty::Bool);
-                    assert_eq!(body.expression(*then_branch).ty, expr.ty);
-                    assert_eq!(
-                        else_branch.map_or(Ty::Unit, |id| body.expression(id).ty),
-                        expr.ty
-                    );
-                    edges.extend([*condition, *then_branch]);
-                    edges.extend(else_branch);
-                }
-                ExprKind::Block { statements, tail } => {
-                    for statement in body.statements(*statements) {
-                        edges.push(match statement.kind {
-                            StatementKind::Let { local, initializer } => {
-                                assert!(std::ptr::eq(
-                                    body.local(local),
-                                    &body.locals()[local.index()]
-                                ));
-                                declarations[local.index()] += 1;
-                                assert_eq!(body.local(local).ty, body.expression(initializer).ty);
-                                initializer
-                            }
-                            StatementKind::Eval(id) => id,
-                        });
-                    }
-                    edges.extend(tail);
-                    assert_eq!(tail.map_or(Ty::Unit, |id| body.expression(id).ty), expr.ty);
-                }
-            }
-            for edge in edges {
-                assert!(std::ptr::eq(
-                    body.expression(edge),
-                    &body.expressions()[edge.index()]
-                ));
-                let child = edge.index();
-                assert!(child < index);
-                parents[child] += 1;
-            }
-        }
-        let root = body.root().index();
-        assert!(std::ptr::eq(
-            body.expression(body.root()),
-            &body.expressions()[root]
-        ));
-        for (index, count) in parents.into_iter().enumerate() {
-            assert_eq!(count, usize::from(index != root));
-        }
-        assert!(declarations.into_iter().all(|count| count == 1));
     }
 }
 

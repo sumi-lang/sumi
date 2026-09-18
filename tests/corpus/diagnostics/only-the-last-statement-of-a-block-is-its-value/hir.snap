@@ -2,7 +2,7 @@ file: rejected
 frontend errors: 0 (see frontend.snap)
 semantic errors: 7
 
-fn f@0..85 () -> int ∈ ∅
+fn f@0..85 () -> int ∈ [42, 42]
   result: copy : int @10..13
     value:
       discard: hole : ? @20..23

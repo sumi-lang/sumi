@@ -17,7 +17,7 @@ fn rejected@22..103 () -> int ∈ [-1, -1]
       discard: int 1 : int @91..92
       tail: int -1 : int @99..101
 
-fn separate@104..155 () -> unit ∈ ∅
+fn separate@104..155 () -> unit ∈ unit
   result: copy : unit @104..155
     value:
       discard: hole : ? @124..129

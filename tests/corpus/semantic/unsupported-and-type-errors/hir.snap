@@ -2,7 +2,7 @@ file: rejected
 frontend errors: 0 (see frontend.snap)
 semantic errors: 12
 
-fn unsupported@0..59 () -> unit ∈ ∅
+fn unsupported@0..59 () -> unit ∈ unit
   result: copy : unit @0..59
     value:
       discard: hole : ? @23..36
@@ -10,7 +10,7 @@ fn unsupported@0..59 () -> unit ∈ ∅
       discard: hole : ? @51..57
       tail: unit : unit @17..59
 
-fn closure@60..93 () -> unit ∈ ∅
+fn closure@60..93 () -> unit ∈ unit
   result: copy : unit @60..93
     value:
       let f@79..80: ? @75..91
@@ -50,7 +50,7 @@ fn unit_equality@270..307 () -> bool ∈ ∅
       lhs: unit : unit @299..301
       rhs: unit : unit @305..307
 
-fn computed_call@308..384 () -> unit ∈ ∅
+fn computed_call@308..384 () -> unit ∈ unit
   result: copy : unit @308..384
     value:
       discard: hole : ? @337..382
