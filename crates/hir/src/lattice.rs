@@ -259,11 +259,14 @@ impl Lattice for Product {
             | Edge::Else
             | Edge::Enter
             | Edge::Exactly(_) => Carry::Nothing,
-            Edge::Neg
-            | Edge::Binary(
-                BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Rem,
-            ) => Carry::Grows,
-            Edge::Binary(_) => Carry::Nothing,
+            Edge::Neg => Carry::Grows,
+            Edge::Binary(op) => {
+                if op.result() == Ty::Int {
+                    Carry::Grows
+                } else {
+                    Carry::Nothing
+                }
+            }
             Edge::Call(_) | Edge::Bind | Edge::Values | Edge::Refine { .. } => Carry::Passes,
             Edge::Branch | Edge::Argument => {
                 if second {

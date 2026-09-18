@@ -9,7 +9,7 @@
 //! joined into the evidence last, in the order the walk recorded them,
 //! which is the order the verdict pass replays them in.
 
-use sumi_graph::{BinaryOp, Domain, Graph, May, NodeId, Op, Ty};
+use sumi_graph::{Domain, Graph, May, NodeId, Op, Ty};
 use sumi_syntax::NodeIdx;
 use sumi_text::Span;
 
@@ -120,20 +120,7 @@ pub(crate) fn draw(
                     typing.flow(inputs[0], node, Edge::Not);
                 }
                 Op::Binary(op) => {
-                    let ty = match op {
-                        BinaryOp::Add
-                        | BinaryOp::Sub
-                        | BinaryOp::Mul
-                        | BinaryOp::Div
-                        | BinaryOp::Rem => Ty::Int,
-                        BinaryOp::Eq
-                        | BinaryOp::Ne
-                        | BinaryOp::Lt
-                        | BinaryOp::Le
-                        | BinaryOp::Gt
-                        | BinaryOp::Ge => Ty::Bool,
-                    };
-                    typing.known(node, ty, origin);
+                    typing.known(node, op.result(), origin);
                     typing.derive(inputs[0], inputs[1], node, Edge::Binary(*op));
                 }
                 Op::And { rhs } | Op::Or { rhs } => {
