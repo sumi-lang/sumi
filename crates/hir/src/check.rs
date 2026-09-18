@@ -41,9 +41,7 @@ use sumi_syntax::{
 };
 
 use crate::codes;
-use crate::ranges::May;
 use crate::recursion;
-use crate::solver::Lattice;
 use crate::typing::{Claim, Expected, ProductContext, Typing};
 use crate::{flows, *};
 
@@ -491,8 +489,8 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
             name,
             origin,
             signature: None,
-            ranges: None,
             complete: false,
+            depth: None,
         })
         .collect();
 
@@ -587,18 +585,6 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         let result = evidence.and_then(|evidence| evidence.ty());
         if let (Some(params), Some(result)) = (header.params, result) {
             functions[index].signature = Some(Signature { params, result });
-            // A function nothing live reaches never returns either.
-            functions[index].ranges = Some(Ranges {
-                params: run
-                    .params()
-                    .map(|param| flows::may(&typing, param).clone())
-                    .collect(),
-                result: if flows::live(&typing, run.entry()) {
-                    flows::may(&typing, run.result()).clone()
-                } else {
-                    May::bottom()
-                },
-            });
         }
         // A result to infer that did not resolve is reported here, unless a
         // demand in the body already explained it, or the trouble arrived
@@ -740,25 +726,26 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         });
         functions[index].complete = complete;
     }
-    source
-        .diagnostics
-        .sort_by_key(|d| d.primary.location.start());
-    let diagnostics = source.diagnostics;
+    for (function, depth) in functions.iter_mut().zip(recursion.depth) {
+        function.depth = depth;
+    }
+    // One list, in source order: a syntactic diagnostic first where both
+    // stand at one position, then the checker's in the order it made them.
+    let mut diagnostics = parsed.diagnostics().to_vec();
+    diagnostics.extend(source.diagnostics);
+    diagnostics.sort_by_key(|d| d.primary.location.start());
     let analysis = Analysis {
         parsed,
         graph,
         settled: typing.settle(),
         functions,
         diagnostics,
-        depth: recursion.depth,
     };
     assert!(
         analysis.is_valid()
             || analysis
-                .parsed
-                .diagnostics()
+                .diagnostics
                 .iter()
-                .chain(&analysis.diagnostics)
                 .any(|d| d.severity == Severity::Error),
         "incomplete semantic analysis without an error"
     );

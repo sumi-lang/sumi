@@ -93,12 +93,8 @@ fn analyze(path: &Path) -> Result<(Analysis, bool), String> {
         .map_err(|error| format!("{}: error[cli/source-too-large]: {error}", path.display()))?;
     let analysis = sumi_hir::analyze(parsed);
     let lines = LineIndex::new(analysis.parsed().source());
-    let mut diagnostics = analysis.parsed().diagnostics().to_vec();
-    diagnostics.extend_from_slice(analysis.diagnostics());
-    // Stable ordering: syntax first at an equal position, then emission order.
-    diagnostics.sort_by_key(|d| d.primary.location.start());
     let mut has_errors = false;
-    for diagnostic in &diagnostics {
+    for diagnostic in analysis.diagnostics() {
         has_errors |= diagnostic.severity == Severity::Error;
         eprintln!(
             "{}{}[{}]: {}",

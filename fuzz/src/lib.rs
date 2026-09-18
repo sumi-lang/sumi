@@ -26,6 +26,7 @@ pub const FILE: FileId = FileId::new(0);
 /// The HIR property's diagnostic-backed acceptance, source provenance, and
 /// completeness, through the read-only public API.
 pub fn check_semantics(parsed: ParsedSource) {
+    use sumi_hir::FunctionId;
     let analysis = sumi_hir::analyze(parsed);
     let source = analysis.parsed().source();
     // Mirror the HIR property: declaration order cannot choose a public type
@@ -46,10 +47,12 @@ pub fn check_semantics(parsed: ParsedSource) {
             sumi_hir::analyze(parse_source(FILE, declarations.join("\n").into()).unwrap());
         assert!(reversed.parsed().diagnostics().is_empty());
         assert_eq!(analysis.functions().len(), reversed.functions().len());
-        for (a, b) in analysis
+        let count = analysis.functions().len();
+        for (index, (a, b)) in analysis
             .functions()
             .iter()
             .zip(reversed.functions().iter().rev())
+            .enumerate()
         {
             assert_eq!(
                 a.name().map(|name| analysis.text(name)),
@@ -59,7 +62,10 @@ pub fn check_semantics(parsed: ParsedSource) {
                 a.signature().map(|s| (&s.params, s.result)),
                 b.signature().map(|s| (&s.params, s.result))
             );
-            assert_eq!(a.ranges(), b.ranges());
+            assert_eq!(
+                analysis.ranges(FunctionId::new(index)),
+                reversed.ranges(FunctionId::new(count - 1 - index))
+            );
             assert_eq!(a.complete(), b.complete());
         }
     }

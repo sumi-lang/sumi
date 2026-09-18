@@ -152,13 +152,13 @@ fn shallow() -> int = twice(twice(1))";
     // Recursion consumes the machine's stack, never the host's, however
     // deep, and the analysis claimed exactly the depth the run reaches.
     let deep = program.function_named("deep").unwrap();
-    assert_eq!(analysis.depth_bound(deep), Some(60002));
+    assert_eq!(program.function(deep).depth_bound(), Some(60002));
     let mut machine = program.machine(deep, &[]);
     while !machine.step() {}
     assert_eq!(machine.outcome(), Some(&Outcome::Value(int(60000))));
     assert_eq!(machine.max_depth(), 60002);
     let shallow = program.function_named("shallow").unwrap();
-    assert_eq!(analysis.depth_bound(shallow), Some(2));
+    assert_eq!(program.function(shallow).depth_bound(), Some(2));
     let mut machine = program.machine(shallow, &[]);
     while !machine.step() {}
     assert_eq!(machine.outcome(), Some(&Outcome::Value(int(4))));
