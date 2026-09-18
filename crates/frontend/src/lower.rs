@@ -10,7 +10,7 @@ use sumi_syntax::{
     Parse, ParseAnchor, ParseEvidence, ParseRecovery, ParseRecoveryKind, ParseViolation,
     ParseViolationKind, RawTokenRange, SyntaxKind,
 };
-use sumi_text::{TextEdit, TextRange, TextSize};
+use sumi_text::{TextEdit, TextRange};
 
 use crate::codes;
 use crate::diagnostic::{Diagnostic, DiagnosticCode, Fix, Label};
@@ -52,11 +52,6 @@ struct Snapshot<'a> {
 }
 
 impl Snapshot<'_> {
-    /// An empty range at a byte boundary where syntax is absent.
-    fn point(&self, offset: TextSize) -> TextRange {
-        TextRange::new(offset, offset)
-    }
-
     fn raw_range(&self, range: RawTokenRange) -> TextRange {
         TextRange::new(
             self.lexed.boundary(range.start()),
@@ -64,9 +59,14 @@ impl Snapshot<'_> {
         )
     }
 
+    /// The range an anchor names: a gap is the empty range at the byte
+    /// boundary where syntax is absent.
     fn anchor(&self, anchor: ParseAnchor) -> TextRange {
         match anchor {
-            ParseAnchor::Gap(gap) => self.point(self.lexed.boundary(gap.trivia_end())),
+            ParseAnchor::Gap(gap) => {
+                let at = self.lexed.boundary(gap.trivia_end());
+                TextRange::new(at, at)
+            }
             ParseAnchor::Tokens(range) => self.raw_range(range),
         }
     }
