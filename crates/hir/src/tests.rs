@@ -319,10 +319,7 @@ fn scalar_bodies_and_forward_recursive_calls() {
     let answer = analysis.functions[0].body().unwrap();
     assert!(matches!(
         answer.expression(answer.root).kind,
-        ExprKind::Call {
-            function: FunctionId(1),
-            ..
-        }
+        ExprKind::Call { function, .. } if function == FunctionId::new(1)
     ));
     clean(
         "fn start(n: int) -> bool = even(n)\nfn even(n: int) -> bool = if n == 0 { true } else { odd(n - 1) }\nfn odd(n: int) -> bool = if n == 0 { false } else { even(n - 1) }\n",
@@ -522,7 +519,7 @@ fn a_measure_is_read_through_any_depth_of_lets() {
         "{:?}",
         analysis.diagnostics()
     );
-    assert_eq!(analysis.depth_bound(FunctionId(1)), Some(7));
+    assert_eq!(analysis.depth_bound(FunctionId::new(1)), Some(7));
 }
 
 #[test]

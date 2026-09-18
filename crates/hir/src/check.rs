@@ -41,12 +41,12 @@ use sumi_syntax::{
 };
 
 use crate::codes;
-use crate::graph::{Graph, NodeId, Op, RegionId};
 use crate::ranges::{May, RangeEdge, UnaryOp};
 use crate::recursion;
 use crate::solver::{Backwards, Lattice, Var};
 use crate::typing::{Claim, Expected, ProductContext, Typing};
 use crate::*;
+use sumi_graph::{Graph, NodeId, Op, RegionId};
 
 /// A hasher for identifiers and integer constants: a word at a time, with
 /// a multiply to spread the bits, which is all a short ASCII name or a
@@ -408,7 +408,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     let mut param_classes = Vec::with_capacity(items.len());
     for item in &items {
         let name = source.name(item.name(tree));
-        let id = FunctionId(u32::try_from(named.len()).expect("function count fits u32"));
+        let id = FunctionId::new(named.len());
         let origin = source.span(item.node());
         if let Some((name, node)) = name {
             match names.entry(name) {
@@ -2194,7 +2194,7 @@ impl<'a, 's> Builder<'a, 's> {
         Some(())
     }
     fn call(&mut self, node: NodeIdx, target: FunctionId, callee: NodeIdx) -> Option<()> {
-        let caller = FunctionId(self.owner);
+        let caller = FunctionId::new(self.owner as usize);
         let context = self.context();
         self.recorded.calls.push((caller, target, context));
         let function = &self.headers[target.index()];

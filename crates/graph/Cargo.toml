@@ -1,0 +1,11 @@
+[package]
+name = "sumi-graph"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+
+[dependencies]
+sumi-text = { path = "../text" }
+
+[dev-dependencies]
+proptest = "=1.11.0"

@@ -5,8 +5,6 @@
 //! identities. All source locations refer to the owned snapshot.
 
 mod check;
-mod graph;
-mod int;
 mod ranges;
 mod recursion;
 mod solver;
@@ -23,67 +21,12 @@ use sumi_frontend::{Diagnostic, ParsedSource, Severity};
 use sumi_text::Span;
 
 pub use check::analyze;
-pub use graph::{Graph, Node, NodeId, Op, Region, RegionId};
-pub use int::{Int, OutOfRange, ParseIntError};
 pub use ranges::{Bools, Bound, Ints, May};
+pub use sumi_graph::{
+    BinaryOp, FunctionId, Graph, Int, Node, NodeId, Op, OutOfRange, ParseIntError, Region,
+    RegionId, Ty,
+};
 
-/// Eager scalar operators. Short-circuiting operators have separate expression kinds.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BinaryOp {
-    Add,
-    Sub,
-    Mul,
-    Div,
-    Rem,
-    Eq,
-    Ne,
-    Lt,
-    Le,
-    Gt,
-    Ge,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Ty {
-    Int,
-    Bool,
-    Unit,
-}
-
-impl Ty {
-    /// Every scalar type, in the order evidence and diagnostics list them.
-    pub const ALL: [Self; 3] = [Self::Int, Self::Bool, Self::Unit];
-
-    /// The type's name as written in source, and as diagnostics spell it.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Int => "int",
-            Self::Bool => "bool",
-            Self::Unit => "unit",
-        }
-    }
-
-    /// The type a source name denotes.
-    pub(crate) fn from_name(name: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|ty| ty.as_str() == name)
-    }
-}
-
-impl fmt::Display for Ty {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct FunctionId(u32);
-
-impl FunctionId {
-    /// Index into the owning analysis's `functions()` slice.
-    pub fn index(self) -> usize {
-        self.0 as usize
-    }
-}
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct ExprId(NonZeroU32);
@@ -155,7 +98,7 @@ impl Analysis {
     }
     /// Every function's ID, in declaration order: the index into `functions()`.
     pub fn function_ids(&self) -> impl ExactSizeIterator<Item = FunctionId> + use<> {
-        (0..u32::try_from(self.functions.len()).expect("function count fits u32")).map(FunctionId)
+        (0..self.functions.len()).map(FunctionId::new)
     }
     /// An ID must come from this analysis, not another source revision.
     pub fn function(&self, id: FunctionId) -> &Function {

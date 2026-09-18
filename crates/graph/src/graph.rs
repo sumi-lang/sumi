@@ -25,7 +25,8 @@ use crate::{BinaryOp, FunctionId, Int, Ty};
 pub struct NodeId(NonZeroU32);
 
 impl NodeId {
-    pub(crate) fn new(index: usize) -> Self {
+    /// The node at `index` of its graph.
+    pub fn new(index: usize) -> Self {
         Self(NonZeroU32::new(u32::try_from(index + 1).expect("node count fits u32")).unwrap())
     }
 
@@ -47,7 +48,8 @@ impl std::fmt::Debug for NodeId {
 pub struct RegionId(NonZeroU32);
 
 impl RegionId {
-    pub(crate) fn new(index: usize) -> Self {
+    /// The region at `index` of its graph.
+    pub fn new(index: usize) -> Self {
         Self(NonZeroU32::new(u32::try_from(index + 1).expect("region count fits u32")).unwrap())
     }
 
@@ -161,7 +163,9 @@ pub struct Graph {
 }
 
 impl Graph {
-    pub(crate) fn with_capacity(nodes: usize) -> Self {
+    /// A graph with room for `nodes` nodes and as many inputs before its
+    /// tables grow. Only a guide.
+    pub fn with_capacity(nodes: usize) -> Self {
         Self {
             nodes: Vec::with_capacity(nodes),
             inputs: Vec::with_capacity(nodes),
@@ -202,17 +206,13 @@ impl Graph {
     }
 
     /// The next node's ID: where a run starts.
-    pub(crate) fn next(&self) -> NodeId {
+    pub fn next(&self) -> NodeId {
         NodeId::new(self.nodes.len())
     }
 
-    pub(crate) fn push(
-        &mut self,
-        op: Op,
-        inputs: &[NodeId],
-        origin: Span,
-        name: Option<Span>,
-    ) -> NodeId {
+    /// A node computing `op` from `inputs`, which must be nodes of this
+    /// graph, at `origin`, named `name`.
+    pub fn push(&mut self, op: Op, inputs: &[NodeId], origin: Span, name: Option<Span>) -> NodeId {
         let start = u32::try_from(self.inputs.len()).expect("input count fits u32");
         self.inputs.extend_from_slice(inputs);
         let end = u32::try_from(self.inputs.len()).expect("input count fits u32");
@@ -229,7 +229,7 @@ impl Graph {
 
     /// Open a region gated by `context`; its nodes begin at the next node
     /// pushed after [`Graph::enter`].
-    pub(crate) fn open(&mut self, context: NodeId) -> RegionId {
+    pub fn open(&mut self, context: NodeId) -> RegionId {
         let id = RegionId::new(self.regions.len());
         self.regions.push(Region {
             context,
@@ -240,20 +240,21 @@ impl Graph {
     }
 
     /// The region's nodes begin here.
-    pub(crate) fn enter(&mut self, region: RegionId) {
+    pub fn enter(&mut self, region: RegionId) {
         let start = u32::try_from(self.nodes.len()).expect("node count fits u32");
         self.regions[region.index()].nodes = start..start;
     }
 
     /// The region's nodes end here, and `result` is its value.
-    pub(crate) fn close(&mut self, region: RegionId, result: NodeId) {
+    pub fn close(&mut self, region: RegionId, result: NodeId) {
         let end = u32::try_from(self.nodes.len()).expect("node count fits u32");
         let region = &mut self.regions[region.index()];
         region.nodes.end = end;
         region.result = Some(result);
     }
 
-    pub(crate) fn set_type(&mut self, id: NodeId, ty: Option<Ty>) {
+    /// The type `id`'s class resolved to, or none.
+    pub fn set_type(&mut self, id: NodeId, ty: Option<Ty>) {
         self.nodes[id.index()].ty = ty;
     }
 }
