@@ -534,7 +534,10 @@ struct Builder<'a, 's> {
     /// by the local's defining node.
     refinements: Vec<(NodeId, NodeId)>,
     // Scratch kept across bodies.
-    /// A pool of scopes: the first `depth` are open, innermost last.
+    /// A pool of scopes; the first `depth` are open, innermost last. A map
+    /// per scope costs a probe per enclosing scope on lookup, and nothing on
+    /// close; an undo log measured slower on binding-heavy code, since every
+    /// binding then pays a removal.
     scopes: Vec<Scope<'s>>,
     depth: usize,
     work: Vec<Work>,
