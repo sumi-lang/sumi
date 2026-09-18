@@ -15,8 +15,9 @@ use sumi_graph::{BinaryOp, Graph, NodeId, Op, Ty};
 use sumi_syntax::NodeIdx;
 use sumi_text::Span;
 
+use crate::May;
 use crate::check::{Demand, DemandKind, Header, Placed};
-use crate::ranges::{May, RangeEdge, UnaryOp};
+use crate::ranges::{RangeEdge, UnaryOp};
 use crate::solver::Var;
 use crate::typing::Typing;
 

@@ -16,7 +16,7 @@
 //! prove, a parameter's type on a graph it rejected, is not the machine's
 //! to hold a value to.
 
-use crate::{Domain, Fault, FunctionId, Graph, NodeId, Op, RegionId};
+use crate::{Concrete, Fault, FunctionId, Graph, NodeId, Op, RegionId};
 
 /// One unit of pending work.
 #[derive(Clone, Copy, Debug)]
@@ -31,7 +31,8 @@ enum Control {
     Branch(NodeId),
     /// The arguments of a call are in: enter the callee.
     Enter(NodeId),
-    /// A region's result is in: it is the node's value.
+    /// A region's result is in: a branch's value is its arm's, and a
+    /// lazy operator's is the operator over both operands.
     Take(NodeId, NodeId),
     /// The callee's result is in: leave its frame and it is the call's value.
     Return(NodeId),
@@ -93,7 +94,7 @@ pub struct Machine<'a, D> {
     outcome: Option<Outcome<D>>,
 }
 
-impl<'a, D: Domain> Machine<'a, D> {
+impl<'a, D: Concrete> Machine<'a, D> {
     /// A run about to call `function` on `args`, one per parameter, that
     /// will hold at most `bound` frames at once.
     pub fn new(graph: &'a Graph, function: FunctionId, args: &[D], bound: Option<u64>) -> Self {
@@ -302,12 +303,19 @@ impl<'a, D: Domain> Machine<'a, D> {
                 }
             }
             Control::Take(node, from) => {
-                let value = self.value(from).clone();
-                // The right operand of `&&` or `||` is the operator's
-                // value, which must be a boolean like the left.
-                if matches!(self.graph.node(node).op, Op::And { .. } | Op::Or { .. }) {
-                    value.truth().map_err(|fault| Refusal::of(fault, node))?;
-                }
+                let and = match self.graph.node(node).op {
+                    Op::And { .. } => Some(true),
+                    Op::Or { .. } => Some(false),
+                    _ => None,
+                };
+                let value = match and {
+                    Some(and) => {
+                        let lhs = self.value(self.graph.inputs(node)[0]);
+                        D::lazy(and, lhs, self.value(from))
+                            .map_err(|fault| Refusal::of(fault, node))?
+                    }
+                    None => self.value(from).clone(),
+                };
                 self.fill(node, value);
             }
             Control::Enter(node) => {

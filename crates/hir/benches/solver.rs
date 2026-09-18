@@ -1,5 +1,4 @@
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use sumi_hir::{BinaryOp, Int, Ty};
 
 // Compile the actual private solver, without exporting a benchmark-only API.
 #[path = "support/graphs.rs"]

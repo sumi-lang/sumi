@@ -36,8 +36,9 @@ use std::num::NonZeroU32;
 
 use sumi_text::Span;
 
-use crate::Ty;
-use crate::ranges::{May, RangeEdge, Thresholds};
+use sumi_graph::{May, Thresholds, Ty};
+
+use crate::ranges::RangeEdge;
 use crate::solver::{Lattice, Solver, Var};
 
 /// One claim that a class has some type, as its rank: the one-based sequence

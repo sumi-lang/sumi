@@ -24,10 +24,9 @@ use sumi_frontend::{Diagnostic, ParsedSource, Severity};
 use sumi_text::Span;
 
 pub use check::analyze;
-pub use ranges::{Bools, Bound, Ints, May};
 pub use sumi_graph::{
-    BinaryOp, Domain, FunctionId, Graph, Int, Machine, Node, NodeId, Op, OutOfRange, Outcome,
-    ParseIntError, Refusal, Region, RegionId, Run, Ty, Value,
+    BinaryOp, Bools, Bound, Concrete, Domain, FunctionId, Graph, Int, Ints, Machine, May, Node,
+    NodeId, Op, OutOfRange, Outcome, ParseIntError, Refusal, Region, RegionId, Run, Ty, Value,
 };
 
 pub struct Analysis {
