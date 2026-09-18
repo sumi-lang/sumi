@@ -64,23 +64,23 @@ pub fn changes_delimiter(input: &ParserInput, index: usize, edit: Edit) -> bool 
 pub fn edited_program() -> impl Strategy<Value = (String, usize, Edit)> {
     program()
         .prop_filter("an edit needs two tokens", |source| {
-            front(source).parse.input().len() >= 2
+            front(source).input().len() >= 2
         })
         .prop_flat_map(|source| {
-            let count = front(&source).parse.input().len();
+            let count = front(&source).input().len();
             (Just(source), 0..count, edit())
         })
 }
 
 pub fn non_delimiter_edited_program() -> impl Strategy<Value = (String, usize, Edit)> {
     edited_program().prop_filter("the edit changes no delimiter", |(source, index, edit)| {
-        !changes_delimiter(front(source).parse.input(), *index, *edit)
+        !changes_delimiter(front(source).input(), *index, *edit)
     })
 }
 
 pub fn delimiter_edited_program() -> impl Strategy<Value = (String, usize, Edit)> {
     edited_program().prop_filter("the edit changes a delimiter", |(source, index, edit)| {
-        changes_delimiter(front(source).parse.input(), *index, *edit)
+        changes_delimiter(front(source).input(), *index, *edit)
     })
 }
 

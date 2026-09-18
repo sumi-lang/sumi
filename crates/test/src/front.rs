@@ -17,9 +17,14 @@ pub fn front(source: &str) -> Front {
 }
 
 impl Front {
+    /// The token stream the tree was built over.
+    pub fn input(&self) -> &ParserInput {
+        self.parse.input()
+    }
+
     /// The byte spans of the significant tokens.
     pub fn spans(&self) -> Vec<(usize, usize)> {
-        let input = self.parse.input();
+        let input = self.input();
         input
             .indices()
             .map(|index| {

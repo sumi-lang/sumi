@@ -178,7 +178,7 @@ impl ClassStats {
         let (edited, touched, _moved, impact) = apply(source, spans, index, edit);
         let touched: Vec<RawIdx> = touched
             .iter()
-            .map(|&index| original.parse.input().token(sig(index)))
+            .map(|&index| original.input().token(sig(index)))
             .collect();
         let after = front(&edited);
 
@@ -199,7 +199,7 @@ impl ClassStats {
         for evidence in after.parse.evidence() {
             if let ParseEvidence::Recovery(recovery) = evidence {
                 for range in &recovery.skipped {
-                    skipped += significant_in(after.parse.input(), range.start(), range.end());
+                    skipped += significant_in(after.input(), range.start(), range.end());
                 }
             }
         }
@@ -229,7 +229,7 @@ fn scorecard() {
         let source = programs.next().expect("the program stream is endless");
         generated += 1;
         let original = front(&source);
-        let len = original.parse.input().len();
+        let len = original.input().len();
         if len < 2 {
             continue;
         }
@@ -237,28 +237,16 @@ fn scorecard() {
 
         let code = |_: Edit| 0..len;
         let delimiter: Vec<usize> = code(Edit::Delete)
-            .filter(|&index| {
-                original
-                    .parse
-                    .input()
-                    .get(sig(index))
-                    .is_some_and(is_bracket)
-            })
+            .filter(|&index| original.input().get(sig(index)).is_some_and(is_bracket))
             .collect();
         let non_delimiter: Vec<usize> = code(Edit::Delete)
-            .filter(|&index| {
-                !original
-                    .parse
-                    .input()
-                    .get(sig(index))
-                    .is_some_and(is_bracket)
-            })
+            .filter(|&index| !original.input().get(sig(index)).is_some_and(is_bracket))
             .collect();
         let swap_delimiter: Vec<usize> = code(Edit::Swap)
-            .filter(|&index| changes_delimiter(original.parse.input(), index, Edit::Swap))
+            .filter(|&index| changes_delimiter(original.input(), index, Edit::Swap))
             .collect();
         let swap_non_delimiter: Vec<usize> = code(Edit::Swap)
-            .filter(|&index| !changes_delimiter(original.parse.input(), index, Edit::Swap))
+            .filter(|&index| !changes_delimiter(original.input(), index, Edit::Swap))
             .collect();
         let all: Vec<usize> = (0..len).collect();
 
@@ -369,17 +357,17 @@ fn churn(
     let (edited, touched, _moved, impact) = apply(source, spans, index, edit);
     let touched: Vec<RawIdx> = touched
         .iter()
-        .map(|&index| before.parse.input().token(sig(index)))
+        .map(|&index| before.input().token(sig(index)))
         .collect();
     let after = front(&edited);
 
-    let len = before.parse.input().len();
+    let len = before.input().len();
     let expected = match edit {
         Edit::Insert(_) => len + 1,
         Edit::Delete => len - 1,
         _ => unreachable!("part B edits only insert openers or delete closers"),
     };
-    if after.parse.input().len() != expected {
+    if after.input().len() != expected {
         return None;
     }
     // The edited stream shifted by one at the edit point; the deleted token
@@ -396,14 +384,14 @@ fn churn(
     let (mut partner_changed, mut boundary_changed, mut any_changed) = (0, 0, 0);
     for i in (0..len).filter(|&i| map(i).is_some()) {
         let j = map(i).expect("filtered to mapped tokens");
-        let boundary = before.parse.input().boundary_before(sig(i))
-            != after.parse.input().boundary_before(sig(j));
+        let boundary =
+            before.input().boundary_before(sig(i)) != after.input().boundary_before(sig(j));
         // A partner that was deleted counts as changed outright.
-        let partner = match before.parse.input().partner(sig(i)) {
-            None => after.parse.input().partner(sig(j)).is_some(),
+        let partner = match before.input().partner(sig(i)) {
+            None => after.input().partner(sig(j)).is_some(),
             Some(p) => match map(p.to_usize()) {
                 None => true,
-                Some(q) => after.parse.input().partner(sig(j)) != Some(sig(q)),
+                Some(q) => after.input().partner(sig(j)) != Some(sig(q)),
             },
         };
         partner_changed += u64::from(partner);
@@ -423,10 +411,10 @@ fn churn(
 fn churn_base(name: &str, source: &str, edits_per_kind: usize, rng: &mut Lcg) {
     let before = front(source);
     let spans = before.spans();
-    let len = before.parse.input().len();
+    let len = before.input().len();
     let closers = |kind: SyntaxKind| -> Vec<usize> {
         (0..len)
-            .filter(|&index| before.parse.input().get(sig(index)) == Some(kind))
+            .filter(|&index| before.input().get(sig(index)) == Some(kind))
             .collect()
     };
     let rbraces = closers(SyntaxKind::RBrace);
@@ -551,10 +539,10 @@ fn literal_edit(
     };
     let edited = format!("{}{}", &source[..cut.start], &source[cut.end..]);
     let impact = EditSpan::new(cut.start, cut.end, cut.start);
-    let index = significant_at(before.parse.input(), token);
+    let index = significant_at(before.input(), token);
     let touched: Vec<RawIdx> = (index.saturating_sub(2)
-        ..=(index + 2).min(before.parse.input().len() - 1))
-        .map(|index| before.parse.input().token(sig(index)))
+        ..=(index + 2).min(before.input().len() - 1))
+        .map(|index| before.input().token(sig(index)))
         .collect();
     let after = front(&edited);
 
@@ -684,8 +672,8 @@ mod tests {
     #[test]
     fn churn_counts_an_inserted_opener_by_hand() {
         let before = front(BASE);
-        assert_eq!(before.parse.input().len(), 29);
-        assert_eq!(before.parse.input().get(sig(13)), Some(SyntaxKind::Ident));
+        assert_eq!(before.input().len(), 29);
+        assert_eq!(before.input().get(sig(13)), Some(SyntaxKind::Ident));
         let sample = churn(BASE, &before, &before.spans(), 13, Edit::Insert("{"))
             .expect("a punctuation insert never merges tokens");
         assert_eq!(sample.partner_changed, 2);
@@ -700,7 +688,7 @@ mod tests {
     #[test]
     fn churn_counts_a_deleted_closer_by_hand() {
         let before = front(BASE);
-        assert_eq!(before.parse.input().get(sig(17)), Some(SyntaxKind::RBrace));
+        assert_eq!(before.input().get(sig(17)), Some(SyntaxKind::RBrace));
         let sample = churn(BASE, &before, &before.spans(), 17, Edit::Delete)
             .expect("deleting this spaced closer merges no tokens");
         assert_eq!(sample.partner_changed, 1);

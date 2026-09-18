@@ -456,8 +456,8 @@ proptest! {
     ) {
         let original = front(&source);
         let (edited, touched, moved, impact) = apply(&source, &original.spans(), index, edit);
-        let touched: Vec<RawIdx> = touched.iter().map(|&index| original.parse.input().token(sig(index))).collect();
-        let moved: Vec<RawIdx> = moved.iter().map(|&index| original.parse.input().token(sig(index))).collect();
+        let touched: Vec<RawIdx> = touched.iter().map(|&index| original.input().token(sig(index))).collect();
+        let moved: Vec<RawIdx> = moved.iter().map(|&index| original.input().token(sig(index))).collect();
         let after = front(&edited);
         let survivors: HashSet<_> = after.parse.tree().nodes()
             .map(|node| (after.node_span(node), after.shape(&edited, node)))
@@ -468,7 +468,7 @@ proptest! {
             prop_assert!(
                 survivors.contains(&(span, shape.clone())),
                 "{:?} at token {} ({:?}) disturbs the {:?} {:?}\n--- original ---\n{}\n--- edited ---\n{}\nevidence: {:?}",
-                edit, index, original.parse.input().get(sig(index)), original.parse.tree().kind(node), shape.0,
+                edit, index, original.input().get(sig(index)), original.parse.tree().kind(node), shape.0,
                 source, edited, after.parse.evidence()
             );
         }
@@ -486,13 +486,13 @@ proptest! {
                 "fn first()\n= 0\nfn outer()\n= fn(x: int)\n-> int\n= x +\n1\nfn next()\n-> int\n= 2\n",
                 "fn first()\n{}\nfn outer()\n{ if { true }\n{}\nelse\n{} }\nfn next()\n{}\n",
             ]).prop_flat_map(|source| {
-                (Just(source.to_owned()), 0..front(source).parse.input().len(), sumi_test::edit())
+                (Just(source.to_owned()), 0..front(source).input().len(), sumi_test::edit())
             }).boxed(),
         ]
     ) {
         let original = front(&source);
         let (edited, touched, _, impact) = apply(&source, &original.spans(), index, edit);
-        let touched: Vec<RawIdx> = touched.iter().map(|&index| original.parse.input().token(sig(index))).collect();
+        let touched: Vec<RawIdx> = touched.iter().map(|&index| original.input().token(sig(index))).collect();
         let after = front(&edited);
         let tree = after.parse.tree();
         let survivors: HashSet<_> = tree
@@ -513,7 +513,7 @@ proptest! {
             prop_assert!(
                 survivors.contains(&(span, shape.clone())),
                 "{:?} at token {} ({:?}) disturbs the item {:?}\n--- original ---\n{}\n--- edited ---\n{}\nevidence: {:?}",
-                edit, index, original.parse.input().get(sig(index)), shape.0, source, edited,
+                edit, index, original.input().get(sig(index)), shape.0, source, edited,
                 after.parse.evidence()
             );
         }

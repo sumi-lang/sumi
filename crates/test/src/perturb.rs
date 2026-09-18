@@ -23,7 +23,7 @@ use crate::program::program;
 pub fn perturbed_program() -> impl Strategy<Value = (String, String)> {
     program()
         .prop_flat_map(|source| {
-            let gaps = front(&source).parse.input().len() + 1;
+            let gaps = front(&source).input().len() + 1;
             (Just(source), prop::collection::vec(any::<u32>(), gaps))
         })
         .prop_map(|(source, choices)| {
@@ -38,7 +38,7 @@ pub fn perturbed_program() -> impl Strategy<Value = (String, String)> {
 pub fn perturb(source: &str, choices: &[u32]) -> String {
     let products = front(source);
     let lexed = &products.lexed;
-    let input = products.parse.input();
+    let input = products.input();
     let tree = products.parse.tree();
     let n = input.len();
     assert_eq!(choices.len(), n + 1, "one choice per gap");
