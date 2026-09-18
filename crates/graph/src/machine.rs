@@ -16,7 +16,7 @@
 //! prove, a parameter's type on a graph it rejected, is not the machine's
 //! to hold a value to.
 
-use crate::{Domain, Fault, FunctionId, Graph, NodeId, Op, RegionId, Value};
+use crate::{Domain, Fault, FunctionId, Graph, NodeId, Op, RegionId, Run, Value};
 
 /// One unit of pending work.
 #[derive(Clone, Copy, Debug)]
@@ -39,8 +39,8 @@ enum Control {
 }
 
 #[derive(Debug)]
-struct Frame {
-    function: FunctionId,
+struct Frame<'a> {
+    run: &'a Run,
     /// Where this frame's slots begin in the shared slab.
     base: usize,
 }
@@ -75,7 +75,7 @@ pub struct Machine<'a> {
     control: Vec<Control>,
     /// A slot per node of every live frame, in frame order.
     slots: Vec<Option<Value>>,
-    frames: Vec<Frame>,
+    frames: Vec<Frame<'a>>,
     steps: u64,
     max_depth: usize,
     /// The most frames the run may hold at once, the entry included.
@@ -150,8 +150,12 @@ impl<'a> Machine<'a> {
         }
         self.latest = None;
         let Some(control) = self.control.pop() else {
-            let frame = self.frames.last().expect("the entry frame stays");
-            let result = self.graph.run(frame.function).result();
+            let result = self
+                .frames
+                .last()
+                .expect("the entry frame stays")
+                .run
+                .result();
             let value = self
                 .slot(result)
                 .clone()
@@ -169,7 +173,7 @@ impl<'a> Machine<'a> {
     /// The slot of `node` in the current frame.
     fn index(&self, node: NodeId) -> usize {
         let frame = self.frames.last().expect("a running machine has a frame");
-        frame.base + self.graph.run(frame.function).slot(node)
+        frame.base + frame.run.slot(node)
     }
 
     fn slot(&self, node: NodeId) -> &Option<Value> {
@@ -195,7 +199,7 @@ impl<'a> Machine<'a> {
         let run = self.graph.run(function);
         let base = self.slots.len();
         self.slots.resize(base + run.nodes().len(), None);
-        self.frames.push(Frame { function, base });
+        self.frames.push(Frame { run, base });
         self.max_depth = self.max_depth.max(self.frames.len());
         self.control.push(Control::Eval(run.result()));
         base
@@ -309,7 +313,7 @@ impl<'a> Machine<'a> {
                     return Err(Refusal::Depth(node));
                 }
                 let caller = self.frames.last().expect("a call has a caller");
-                let (caller_base, caller_run) = (caller.base, self.graph.run(caller.function));
+                let (caller_base, caller_run) = (caller.base, caller.run);
                 self.control.push(Control::Return(node));
                 let base = self.open(function);
                 let run = self.graph.run(function);
@@ -322,8 +326,7 @@ impl<'a> Machine<'a> {
             }
             Control::Return(node) => {
                 let frame = self.frames.pop().expect("a return has a frame to leave");
-                let run = self.graph.run(frame.function);
-                let value = self.slots[frame.base + run.slot(run.result())]
+                let value = self.slots[frame.base + frame.run.slot(frame.run.result())]
                     .take()
                     .expect("a callee's result is in before it returns");
                 self.slots.truncate(frame.base);
