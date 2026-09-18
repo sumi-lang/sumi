@@ -6,6 +6,7 @@
 //! locations refer to the owned snapshot.
 
 mod check;
+mod flows;
 mod ranges;
 mod recursion;
 mod solver;

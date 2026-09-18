@@ -2,7 +2,7 @@ use crate::ranges::Thresholds;
 use crate::solver::Var;
 use crate::typing::{Expected, ProductContext, Typing};
 use sumi_hir::Ty;
-use sumi_syntax::NodeIdx;
+use sumi_text::{FileId, Span, TextRange, TextSize};
 
 pub const SIZES: [usize; 4] = [8, 128, 1024, 8192];
 pub const SHAPES: [&str; 11] = [
@@ -19,9 +19,19 @@ pub const SHAPES: [&str; 11] = [
     "scattered-fanout",
 ];
 
-/// Every claim of a benchmark graph is made at the same node: provenance
+/// Every claim of a benchmark graph is made at the same span: provenance
 /// costs the same wherever it points.
-const HERE: NodeIdx = NodeIdx::new(0);
+const HERE: Span = Span::new(
+    FileId::new(0),
+    TextRange::new(TextSize::new(0), TextSize::new(1)),
+);
+
+/// A fresh class importing `result` through a call.
+fn call(context: &mut Typing, result: Var) -> Var {
+    let call = context.fresh();
+    context.call(result, call, HERE);
+    call
+}
 
 pub struct Graph {
     pub context: Typing,
@@ -55,14 +65,14 @@ pub fn build(shape: &str, size: usize) -> Graph {
             for i in 0..size {
                 // Interleave providers' edges and scatter destinations. The
                 // odd multiplier permutes our power-of-two benchmark sizes.
-                let call = context.call(terms[i % providers], HERE);
+                let call = call(&mut context, terms[i % providers]);
                 equal(&mut context, terms[(i * 4051) % size], call);
             }
         }
         "constant-imports" | "mixed-imports" => {
             for (i, &term) in terms.iter().enumerate() {
                 let call = if shape == "mixed-imports" && i % 2 == 1 {
-                    context.call(terms[i - 1], HERE)
+                    call(&mut context, terms[i - 1])
                 } else {
                     context.known(Ty::Int, HERE)
                 };
@@ -72,14 +82,14 @@ pub fn build(shape: &str, size: usize) -> Graph {
         "fan-out" => {
             int(&mut context, terms[0]);
             for &term in &terms[1..] {
-                let call = context.call(terms[0], HERE);
+                let call = call(&mut context, terms[0]);
                 equal(&mut context, term, call);
             }
         }
         "fan-in" => {
             for &term in &terms[1..] {
                 int(&mut context, term);
-                let call = context.call(term, HERE);
+                let call = call(&mut context, term);
                 equal(&mut context, terms[0], call);
             }
         }
@@ -99,11 +109,11 @@ pub fn build(shape: &str, size: usize) -> Graph {
         _ => {
             assert!(SHAPES.contains(&shape));
             for i in 0..size - 1 {
-                let call = context.call(terms[i + 1], HERE);
+                let call = call(&mut context, terms[i + 1]);
                 equal(&mut context, terms[i], call);
             }
             if shape.ends_with("cycle") {
-                let call = context.call(terms[0], HERE);
+                let call = call(&mut context, terms[0]);
                 equal(&mut context, terms[size - 1], call);
             }
             if shape != "unresolved-cycle" {

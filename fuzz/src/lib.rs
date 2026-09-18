@@ -147,7 +147,12 @@ pub fn check_typed(analysis: &sumi_hir::Analysis) {
                     assert_eq!(ty(inputs[0]), Some(Ty::Bool));
                     assert_eq!(ty(graph.region(*rhs).result()), Some(Ty::Bool));
                 }
-                Op::Copy => assert_eq!(entry.ty, ty(inputs[0])),
+                Op::Copy { declared } => {
+                    assert_eq!(entry.ty, ty(inputs[0]));
+                    if let Some(declared) = declared {
+                        assert_eq!(entry.ty, Some(*declared));
+                    }
+                }
                 Op::Refine { .. } | Op::Exactly(_) => assert_eq!(entry.ty, ty(inputs[0])),
                 Op::Join { then, else_ } => {
                     assert_eq!(ty(inputs[0]), Some(Ty::Bool));
@@ -191,7 +196,7 @@ pub fn check_graph(analysis: &sumi_hir::Analysis) {
         }
         let arity = match node.op {
             Op::Int(_) | Op::Bool(_) | Op::Param(_) | Op::Entry => Some(0),
-            Op::Unit | Op::Copy | Op::Neg | Op::Not | Op::Exactly(_) => Some(1),
+            Op::Unit | Op::Copy { .. } | Op::Neg | Op::Not | Op::Exactly(_) => Some(1),
             Op::And { .. } | Op::Or { .. } | Op::Join { .. } => Some(1),
             Op::Binary(_) | Op::Refine { .. } | Op::Then | Op::Else => Some(2),
             Op::Hole | Op::Call(_) => None,
@@ -205,7 +210,7 @@ pub fn check_graph(analysis: &sumi_hir::Analysis) {
             }
         }
         if node.name.is_some() {
-            assert!(matches!(node.op, Op::Param(_) | Op::Copy | Op::Hole));
+            assert!(matches!(node.op, Op::Param(_) | Op::Copy { .. } | Op::Hole));
         }
         if analysis.is_valid() {
             assert!(!matches!(node.op, Op::Hole));
@@ -233,7 +238,7 @@ pub fn check_graph(analysis: &sumi_hir::Analysis) {
             None => assert_eq!(function.result(), region.result()),
             Some(copy) => {
                 assert_eq!(copy, function.result());
-                assert!(matches!(graph.node(copy).op, Op::Copy));
+                assert!(matches!(graph.node(copy).op, Op::Copy { .. }));
                 assert_eq!(graph.inputs(copy), [region.result()]);
                 assert_eq!(run.next(), None);
             }

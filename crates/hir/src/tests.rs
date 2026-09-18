@@ -83,7 +83,12 @@ fn typed_invariant(analysis: &Analysis) {
                     assert_eq!(ty(inputs[0]), Some(Ty::Bool));
                     assert_eq!(ty(graph.region(*rhs).result()), Some(Ty::Bool));
                 }
-                Op::Copy => assert_eq!(entry.ty, ty(inputs[0])),
+                Op::Copy { declared } => {
+                    assert_eq!(entry.ty, ty(inputs[0]));
+                    if let Some(declared) = declared {
+                        assert_eq!(entry.ty, Some(*declared));
+                    }
+                }
                 Op::Refine { .. } | Op::Exactly(_) => assert_eq!(entry.ty, ty(inputs[0])),
                 Op::Join { then, else_ } => {
                     assert_eq!(ty(inputs[0]), Some(Ty::Bool));
@@ -196,7 +201,7 @@ fn graph_invariant(analysis: &Analysis) {
         }
         let arity = match node.op {
             Op::Int(_) | Op::Bool(_) | Op::Param(_) | Op::Entry => Some(0),
-            Op::Unit | Op::Copy | Op::Neg | Op::Not | Op::Exactly(_) => Some(1),
+            Op::Unit | Op::Copy { .. } | Op::Neg | Op::Not | Op::Exactly(_) => Some(1),
             Op::And { .. } | Op::Or { .. } | Op::Join { .. } => Some(1),
             Op::Binary(_) | Op::Refine { .. } | Op::Then | Op::Else => Some(2),
             Op::Hole | Op::Call(_) => None,
@@ -215,7 +220,7 @@ fn graph_invariant(analysis: &Analysis) {
             }
         }
         if node.name.is_some() {
-            assert!(matches!(node.op, Op::Param(_) | Op::Copy | Op::Hole));
+            assert!(matches!(node.op, Op::Param(_) | Op::Copy { .. } | Op::Hole));
         }
         if analysis.is_valid() {
             assert!(
@@ -249,7 +254,7 @@ fn graph_invariant(analysis: &Analysis) {
             None => assert_eq!(function.result(), region.result()),
             Some(copy) => {
                 assert_eq!(copy, function.result());
-                assert!(matches!(graph.node(copy).op, Op::Copy));
+                assert!(matches!(graph.node(copy).op, Op::Copy { .. }));
                 assert_eq!(graph.inputs(copy), [region.result()]);
                 assert_eq!(run.next(), None);
             }
@@ -300,7 +305,7 @@ fn scalar_bodies_and_forward_recursive_calls() {
     // `let y = x * 2` then `y`: the body's value is the binding, a copy of
     // the product of the parameter and the literal.
     let y = value(&analysis, 1);
-    assert!(matches!(op(&analysis, y), Op::Copy));
+    assert!(matches!(op(&analysis, y), Op::Copy { .. }));
     assert_eq!(text(&analysis, graph.node(y).name.unwrap()), "y");
     let product = graph.inputs(y)[0];
     assert!(matches!(op(&analysis, product), Op::Binary(BinaryOp::Mul)));
@@ -335,11 +340,11 @@ fn lexical_scopes_and_sequential_shadowing() {
     assert!(matches!(op(&a, one), Op::Int(_)));
     assert!(matches!(op(&a, sum), Op::Binary(BinaryOp::Add)));
     assert_eq!(graph.inputs(sum), [x0, one]);
-    assert!(matches!(op(&a, x1), Op::Copy));
+    assert!(matches!(op(&a, x1), Op::Copy { .. }));
     assert!(matches!(op(&a, two), Op::Int(_)));
     assert!(matches!(op(&a, product), Op::Binary(BinaryOp::Mul)));
     assert_eq!(graph.inputs(product), [x1, two]);
-    assert!(matches!(op(&a, x2), Op::Copy));
+    assert!(matches!(op(&a, x2), Op::Copy { .. }));
     assert!(matches!(op(&a, three), Op::Int(_)));
     assert!(matches!(op(&a, difference), Op::Binary(BinaryOp::Sub)));
     assert_eq!(graph.inputs(difference), [x2, three]);
@@ -709,7 +714,13 @@ fn blocks_preserve_statement_order_and_only_the_last_child_is_a_tail() {
     let ops: Vec<_> = nodes.iter().map(|&node| op(&a, node)).collect();
     assert!(matches!(
         ops[..],
-        [Op::Int(_), Op::Copy, Op::Int(_), Op::Unit, Op::Int(_)]
+        [
+            Op::Int(_),
+            Op::Copy { .. },
+            Op::Int(_),
+            Op::Unit,
+            Op::Int(_)
+        ]
     ));
     assert_eq!(text(&a, a.graph().node(nodes[1]).name.unwrap()), "x");
     assert_eq!(value(&a, 0), nodes[4]);
@@ -741,9 +752,9 @@ fn nested_blocks_consume_only_their_own_statements() {
         ops[..],
         [
             Op::Int(_),
-            Op::Copy,
+            Op::Copy { .. },
             Op::Int(_),
-            Op::Copy,
+            Op::Copy { .. },
             Op::Unit,
             Op::Int(_)
         ]

@@ -263,6 +263,14 @@ impl<L: Lattice> Solver<L> {
         root
     }
 
+    /// A fresh class that `provider` flows into through `edge`.
+    #[cfg(test)]
+    pub fn import(&mut self, provider: Var, edge: L::Edge) -> Var {
+        let consumer = self.fresh();
+        self.flow(provider, consumer, edge);
+        consumer
+    }
+
     /// The evidence on `var`'s class.
     pub fn evidence(&self, var: Var) -> &L {
         &self.evidence[self.root(var.index())]
@@ -318,13 +326,6 @@ impl<L: Lattice> Solver<L> {
             consumer,
             edge,
         });
-    }
-
-    /// A fresh class that `provider` flows into through `edge`.
-    pub fn import(&mut self, provider: Var, edge: L::Edge) -> Var {
-        let consumer = self.fresh();
-        self.flow(provider, consumer, edge);
-        consumer
     }
 
     /// `var`'s root, once every class is compressed: one load.

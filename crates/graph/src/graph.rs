@@ -129,9 +129,13 @@ pub enum Op {
     /// construct the checker refuses, a name it cannot resolve, syntax the
     /// parser could not repair. Its type is whatever its context asks.
     Hole,
-    /// The input, with a name: a `let` binding, or a declared result the
-    /// body's value is held to.
-    Copy,
+    /// The input, with a name or a declaration: a `let` binding, which
+    /// may declare its type, or a declared result the body's value is
+    /// held to. A declared copy is known to have its type on its own
+    /// account, whatever flows in.
+    Copy {
+        declared: Option<Ty>,
+    },
     Neg,
     Not,
     /// An eager operator over its two inputs.
@@ -385,7 +389,7 @@ mod tests {
         let one = graph.push(Op::Int(1.into()), &[], at(2), None);
         let sum = graph.push(Op::Binary(BinaryOp::Add), &[param, one], at(3), None);
         graph.close(region, sum);
-        let copy = graph.push(Op::Copy, &[sum], at(4), None);
+        let copy = graph.push(Op::Copy { declared: None }, &[sum], at(4), None);
         graph.close_run(FunctionId::new(0), start, 1, region, copy);
         assert_eq!(graph.nodes().len(), 5);
         let run = graph.run(FunctionId::new(0));

@@ -19,9 +19,9 @@
 //! than to whichever branch came first.
 //!
 //! A claim on a class is one word: its rank, which is also its identity. The
-//! node it was made at lives in a table on the [`Typing`], consulted only
-//! when a conflict is reported, so making a claim never computes a span and
-//! joining or transferring evidence never touches memory beyond the class.
+//! span it was made at lives in a table on the [`Typing`], consulted only
+//! when a conflict is reported, so joining or transferring evidence never
+//! touches memory beyond the class.
 //!
 //! Equality is local to a declaration; flows never unify caller and callee,
 //! so a caller's demands never decide a callee's result. Signatures are read
@@ -32,7 +32,7 @@
 
 use std::num::NonZeroU32;
 
-use sumi_syntax::NodeIdx;
+use sumi_text::Span;
 
 use crate::Ty;
 use crate::ranges::{May, RangeEdge, Thresholds};
@@ -222,8 +222,8 @@ pub(crate) type ProductContext = ((), Thresholds);
 #[derive(Default)]
 pub(crate) struct Typing {
     solver: Solver<Product>,
-    /// The node each claim was made at, by claim index.
-    origins: Vec<NodeIdx>,
+    /// Where each claim was made, by claim index.
+    origins: Vec<Span>,
     /// Every refined read beside the local it reads. A read is one class
     /// with its local in the replay, which resolves types alone, so a
     /// demand on the read is a demand on the local wherever the local's
@@ -232,25 +232,25 @@ pub(crate) struct Typing {
 }
 
 impl Typing {
-    /// A typing sized for a tree of `nodes` nodes: about a class per two
-    /// nodes, a claim per node, and a flow per node, so the common file
-    /// fills its vectors without growing them. Only a guide.
+    /// A typing sized for a graph of `nodes` nodes: about a class, a
+    /// claim, and a flow per node, so the common file fills its vectors
+    /// without growing them. Only a guide.
     pub fn for_nodes(nodes: usize) -> Self {
         Self {
-            solver: Solver::with_capacity(nodes / 2, nodes),
+            solver: Solver::with_capacity(nodes, nodes),
             origins: Vec::with_capacity(nodes),
             refined: Vec::new(),
         }
     }
 
-    fn claim(&mut self, node: NodeIdx) -> Claim {
+    fn claim(&mut self, origin: Span) -> Claim {
         let claim = Claim::local(self.origins.len());
-        self.origins.push(node);
+        self.origins.push(origin);
         claim
     }
 
-    /// The node `claim` was made at; none for a replay's own claims.
-    pub fn origin(&self, claim: Claim) -> Option<NodeIdx> {
+    /// Where `claim` was made; none for a replay's own claims.
+    pub fn origin(&self, claim: Claim) -> Option<Span> {
         self.origins.get(claim.index()).copied()
     }
 
@@ -259,27 +259,17 @@ impl Typing {
         self.solver.fresh()
     }
 
-    /// A class known to have `ty` because of `node`: an annotation, or an
-    /// operator's result, whose values arrive by flows.
-    pub fn known(&mut self, ty: Ty, node: NodeIdx) -> Var {
-        let claim = self.claim(node);
+    /// A class known to have `ty` because of what is at `origin`: an
+    /// annotation, or an operator's result, whose values arrive by flows.
+    pub fn known(&mut self, ty: Ty, origin: Span) -> Var {
+        let claim = self.claim(origin);
         self.solver
             .known((Evidence::single(ty, claim), May::bottom()))
     }
 
-    /// A class known to be unit because of `node`, a block without a tail
-    /// or an `if` without an else, whose one value it holds while
-    /// `context` is live.
-    pub fn unit(&mut self, context: Var, node: NodeIdx) -> Var {
-        let class = self.known(Ty::Unit, node);
-        self.solver
-            .flow(context, class, (Edge::None, RangeEdge::Enter));
-        class
-    }
-
     /// A literal: known to have `ty` and to be exactly `value`.
-    pub fn literal(&mut self, ty: Ty, value: May, node: NodeIdx) -> Var {
-        let claim = self.claim(node);
+    pub fn literal(&mut self, ty: Ty, value: May, origin: Span) -> Var {
+        let claim = self.claim(origin);
         self.solver.known((Evidence::single(ty, claim), value))
     }
 
@@ -293,12 +283,12 @@ impl Typing {
         }
     }
 
-    /// The class of the call at `node` whose callee's result class is
-    /// `result`.
-    pub fn call(&mut self, result: Var, node: NodeIdx) -> Var {
-        let claim = self.claim(node);
+    /// Let `call`, the class of a call at `origin`, learn its callee's
+    /// `result`: the same types, all claimed at the call site.
+    pub fn call(&mut self, result: Var, call: Var, origin: Span) {
+        let claim = self.claim(origin);
         self.solver
-            .import(result, (Edge::Call(claim), RangeEdge::Call))
+            .flow(result, call, (Edge::Call(claim), RangeEdge::Call));
     }
 
     /// Let `branch` decide `join`, the class of the `if` it is one arm of,
@@ -309,21 +299,19 @@ impl Typing {
             .derive(branch, context, join, (Edge::Branch, RangeEdge::Branch));
     }
 
-    /// A read of `local` narrowed by a comparison with `other`.
-    pub fn refine(&mut self, local: Var, other: Var, edge: RangeEdge) -> Var {
-        let read = self.solver.fresh();
+    /// Let `read`, a read of `local` narrowed by a comparison with
+    /// `other`, learn the narrowing; it is one class with `local` in the
+    /// replay.
+    pub fn refine(&mut self, local: Var, other: Var, read: Var, edge: RangeEdge) {
         self.solver.derive(local, other, read, (Edge::Refine, edge));
         self.refined.push((read, local));
-        read
     }
 
-    /// A read of a boolean `local` narrowed to one value.
-    pub fn refine_bool(&mut self, local: Var, value: bool) -> Var {
-        let read = self
-            .solver
-            .import(local, (Edge::Refine, RangeEdge::Exactly(value)));
+    /// Let `read`, a read of the boolean `local`, learn it is `value`.
+    pub fn refine_bool(&mut self, local: Var, read: Var, value: bool) {
+        self.solver
+            .flow(local, read, (Edge::Refine, RangeEdge::Exactly(value)));
         self.refined.push((read, local));
-        read
     }
 
     /// A range-only flow from one provider.
@@ -337,18 +325,11 @@ impl Typing {
             .derive(first, second, consumer, (Edge::None, edge));
     }
 
-    /// A fresh class deriving its values from `first` and `second`.
-    pub fn derived(&mut self, first: Var, second: Var, edge: RangeEdge) -> Var {
-        let consumer = self.solver.fresh();
-        self.derive(first, second, consumer, edge);
-        consumer
-    }
-
-    /// The use at `node` demands that `var` be `expected`.
-    pub fn expect(&mut self, var: Var, expected: Expected, node: NodeIdx) {
+    /// The use at `origin` demands that `var` be `expected`.
+    pub fn expect(&mut self, var: Var, expected: Expected, origin: Span) {
         match expected {
             Expected::Ty(ty) => {
-                let claim = self.claim(node);
+                let claim = self.claim(origin);
                 self.solver
                     .expect(var, &(Evidence::single(ty, claim), May::bottom()));
             }
@@ -445,8 +426,12 @@ impl Replay {
 mod tests {
     use super::*;
 
-    fn at(node: u32) -> NodeIdx {
-        NodeIdx::new(node)
+    fn at(offset: u32) -> Span {
+        use sumi_text::{FileId, TextRange, TextSize};
+        Span::new(
+            FileId::new(0),
+            TextRange::new(TextSize::new(offset), TextSize::new(offset + 1)),
+        )
     }
 
     fn typing() -> Typing {
@@ -457,8 +442,16 @@ mod tests {
         ((), Thresholds::default())
     }
 
-    fn call(typing: &mut Typing, result: Var, node: NodeIdx) -> Var {
-        typing.call(result, node)
+    fn call(typing: &mut Typing, result: Var, origin: Span) -> Var {
+        let call = typing.fresh();
+        typing.call(result, call, origin);
+        call
+    }
+
+    fn refine_bool(typing: &mut Typing, local: Var, value: bool) -> Var {
+        let read = typing.fresh();
+        typing.refine_bool(local, read, value);
+        read
     }
 
     #[test]
@@ -634,7 +627,7 @@ mod tests {
         typing.expect(conflict, Expected::Ty(Ty::Unit), at(4));
         let conflict_call = call(&mut typing, conflict, at(5));
         let literal_call = call(&mut typing, literal, at(6));
-        let refined = typing.refine_bool(literal, true);
+        let refined = refine_bool(&mut typing, literal, true);
         let cx = cx();
         typing.solve(&cx);
         let mut replay = typing.replay();
@@ -663,7 +656,7 @@ mod tests {
         let local = typing.fresh();
         typing.branch(then_branch, live, local);
         typing.branch(else_branch, live, local);
-        let refined = typing.refine_bool(local, true);
+        let refined = refine_bool(&mut typing, local, true);
         typing.solve(&cx());
         let mut replay = typing.replay();
         assert_eq!(replay.resolve(refined), None);
