@@ -4,9 +4,9 @@
 //! and what its declaration says of its result. A structural walk per
 //! function then resolves names and builds the body's nodes of the graph,
 //! marking which carry a value the typing follows, and records what the
-//! walk learns beyond the graph: the constants the file spells or folds,
-//! a demand wherever a context requires a value to have a type, and every
-//! division. The walk rejects nothing on type grounds; it fails only on
+//! walk learns beyond the graph: a demand wherever a context requires a
+//! value to have a type, and every division. The walk rejects nothing on
+//! type grounds; it fails only on
 //! names, syntax, and unsupported constructs, and what it refuses it
 //! leaves as a hole.
 //!
@@ -14,8 +14,8 @@
 //! and the one builder keeps its scratch across bodies, so a body costs
 //! its nodes of the graph and nothing else.
 
+use std::collections::HashMap;
 use std::collections::hash_map::Entry;
-use std::collections::{HashMap, HashSet};
 
 use rustc_hash::FxBuildHasher;
 use sumi_frontend::{DiagnosticCode, Label, Location};
@@ -138,9 +138,6 @@ pub(crate) struct Lowered {
     pub entered: Vec<(NodeId, FunctionId)>,
     pub demands: Vec<Demand>,
     pub obligations: Vec<Obligation>,
-    /// Every distinct integer the file spells or folds, in the order first
-    /// seen, for the thresholds.
-    pub constants: Vec<Int>,
 }
 
 impl Lowered {
@@ -520,13 +517,6 @@ struct Builder<'a, 's> {
     lowered: Lowered,
     /// The graph node each syntax node built, by node.
     nodes_of: Vec<Option<NodeId>>,
-    /// The value of each node of the body the walk can fold, by position
-    /// in its run, a constant the thresholds keep.
-    consts: Vec<Option<Int>>,
-    /// The constants seen so far, for `Lowered::constants`.
-    seen: HashSet<Int, FxBuildHasher>,
-    /// The first node of the run under construction.
-    base: usize,
     // The body under construction.
     owner: u32,
     failed: bool,
@@ -568,13 +558,9 @@ impl<'a, 's> Builder<'a, 's> {
                 entered: Vec::new(),
                 demands: Vec::with_capacity(nodes / 2),
                 obligations: Vec::new(),
-                constants: Vec::new(),
             },
             // Syntax node IDs are dense and bodies have disjoint nodes.
             nodes_of: vec![None; nodes],
-            consts: Vec::new(),
-            seen: HashSet::default(),
-            base: 0,
             owner: 0,
             failed: false,
             regions: Vec::new(),
@@ -597,8 +583,6 @@ impl<'a, 's> Builder<'a, 's> {
         let header = &self.headers[owner];
         let item_node = header.item;
         let start = self.graph.next();
-        self.base = start.index();
-        self.consts.clear();
         let entry = self.push(item_node, Op::Entry, &[], None);
         let arity = u32::try_from(parameters.len()).expect("parameter count fits u32");
         for (index, param) in parameters.iter().enumerate() {
@@ -700,7 +684,6 @@ impl<'a, 's> Builder<'a, 's> {
         let typed = self.follows(&op, inputs);
         let id = self.graph.push(op, inputs, origin, name);
         self.lowered.typed.push(typed);
-        self.consts.push(None);
         id
     }
     /// Whether a node computing `op` from `inputs` carries a value the
@@ -972,13 +955,6 @@ impl<'a, 's> Builder<'a, 's> {
             guard: (lhs, and),
         });
     }
-    /// Record that `node` folds to `value`, a constant the thresholds keep.
-    fn fold(&mut self, node: NodeId, value: Int) {
-        if self.seen.insert(value.clone()) {
-            self.lowered.constants.push(value.clone());
-        }
-        self.consts[node.index() - self.base] = Some(value);
-    }
     /// The context at `node` requires the value `actual` to be `expected`,
     /// which `declared` may have set. Recorded for the flows to join into
     /// the evidence, and for the verdict pass.
@@ -1191,9 +1167,7 @@ impl<'a, 's> Builder<'a, 's> {
             .parse()
             .expect("a well-formed literal is a run of digits");
         let value = if negative { -&magnitude } else { magnitude };
-        let id = self.push(origin, Op::Int(value.clone()), &[], None);
-        self.fold(id, value);
-        Some(id)
+        Some(self.push(origin, Op::Int(value), &[], None))
     }
     fn finish(&mut self, node: NodeIdx) -> Option<()> {
         let tree = self.source.tree;
@@ -1357,7 +1331,7 @@ impl<'a, 's> Builder<'a, 's> {
                     .tokens(tree.first_token(node), tree.first_token(operand))
                     .eq([SyntaxKind::Minus]);
                 let operand_node = self.node_of(operand);
-                let id = self.push(
+                self.push(
                     node,
                     if neg { Op::Neg } else { Op::Not },
                     &[operand_node],
@@ -1366,9 +1340,6 @@ impl<'a, 's> Builder<'a, 's> {
                 let value = self.typed(operand)?;
                 let ty = if neg { Ty::Int } else { Ty::Bool };
                 self.require(operand, value, Expected::Ty(ty), None);
-                if neg && let Some(folded) = self.consts[operand_node.index() - self.base].clone() {
-                    self.fold(id, -&folded);
-                }
             }
             NodeKind::BinaryExpr => {
                 use sumi_syntax::BinaryOp::*;
@@ -1382,7 +1353,7 @@ impl<'a, 's> Builder<'a, 's> {
                 let lhs_graph = self.node_of(lhs_node);
                 let rhs_graph = self.node_of(rhs_node);
                 let eager = eager(op).expect("a lazy operator finishes as its own item");
-                let id = self.push(node, Op::Binary(eager), &[lhs_graph, rhs_graph], None);
+                self.push(node, Op::Binary(eager), &[lhs_graph, rhs_graph], None);
                 // `==` and `!=` compare like with like: whichever operand
                 // exists sets the other's expectation.
                 let operand = match op {
@@ -1410,24 +1381,6 @@ impl<'a, 's> Builder<'a, 's> {
                         divisor: rhs_graph,
                         context: self.context(),
                     });
-                }
-                // An operator over constants is the constant the machine
-                // would compute, an integer for the thresholds.
-                let folded = match (
-                    &self.consts[lhs_graph.index() - self.base],
-                    &self.consts[rhs_graph.index() - self.base],
-                ) {
-                    (Some(a), Some(b)) => {
-                        let (a, b) = (Value::Int(a.clone()), Value::Int(b.clone()));
-                        match Op::Binary(eager).apply(&[&a, &b]) {
-                            Ok(Value::Int(value)) => Some(value),
-                            _ => None,
-                        }
-                    }
-                    _ => None,
-                };
-                if let Some(folded) = folded {
-                    self.fold(id, folded);
                 }
             }
             _ => unreachable!("scheduled supported node"),

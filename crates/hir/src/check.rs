@@ -14,7 +14,6 @@
 //! none of its demands failed, every value in it resolved, and every call
 //! agrees with its callee's signature.
 
-use sumi_graph::Thresholds;
 use sumi_syntax::ast::{self, AstNode};
 
 use crate::codes;
@@ -31,11 +30,10 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         .items(tree)
         .collect();
     let declared = lower::declare(&mut source, &items);
-    let (graph, mut lowered) = lower::lower(&mut source, &items, &declared);
+    let (graph, lowered) = lower::lower(&mut source, &items, &declared);
     let headers = declared.headers;
-    let mut typing = flows::draw(&graph, &lowered, &headers, |node| source.span(node));
-    let constants = std::mem::take(&mut lowered.constants);
-    let thresholds: Thresholds = constants.into_iter().collect();
+    let (mut typing, thresholds) =
+        flows::draw(&graph, &lowered, &headers, |node| source.span(node));
     typing.solve(&thresholds);
     let failed = replay(&mut source, &typing, &lowered);
     let mut functions: Vec<Function> = headers
