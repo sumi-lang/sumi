@@ -181,9 +181,6 @@ pub struct Node {
     pub origin: Span,
     /// The name a parameter or a `let` gives the node, where it is written.
     pub name: Option<Span>,
-    /// The node's type, once its class resolved; a hole has none, and a
-    /// node whose class conflicted has none either.
-    pub ty: Option<Ty>,
 }
 
 /// A run of nodes that runs only while its context is live, with the node
@@ -288,7 +285,6 @@ impl Graph {
             inputs: start..end,
             origin,
             name,
-            ty: None,
         });
         id
     }
@@ -317,11 +313,6 @@ impl Graph {
         let region = &mut self.regions[region.index()];
         region.nodes.end = end;
         region.result = Some(result);
-    }
-
-    /// Record the type `id` resolved to, or that it resolved to none.
-    pub fn set_type(&mut self, id: NodeId, ty: Option<Ty>) {
-        self.nodes[id.index()].ty = ty;
     }
 
     /// Close the run of `function`, which must be the next in declaration
@@ -414,9 +405,6 @@ mod tests {
         assert_eq!(region.nodes().collect::<Vec<_>>(), [one, sum]);
         assert_eq!(region.result(), sum);
         assert_eq!(graph.region_ids().count(), 1);
-        graph.set_type(sum, Some(Ty::Int));
-        assert_eq!(graph.node(sum).ty, Some(Ty::Int));
-        assert_eq!(graph.node(one).ty, None);
     }
 
     /// A region entered and closed around nothing is empty, and may still

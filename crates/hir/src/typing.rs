@@ -166,7 +166,7 @@ impl Lattice for Evidence {
 
     fn transfer(&self, edge: &Edge, _: Option<&Self>, _: bool, (): &()) -> Self {
         match *edge {
-            Edge::Branch | Edge::Peer | Edge::Refine => *self,
+            Edge::Branch | Edge::Peer | Edge::Refine | Edge::Copy => *self,
             Edge::Call(call) => {
                 let imported = Claim(call.0 | IMPORTED);
                 Self {
@@ -200,17 +200,19 @@ pub(crate) enum Edge {
     /// A read of a local under a refinement: the local's claims as they
     /// are, exported by a replay once solved, so the read still types.
     Refine,
+    /// A `let` without an annotation: its initializer's claims as they
+    /// are, and one class with it in the replay, so a demand on a read of
+    /// the binding is a demand on what it was bound to.
+    Copy,
     /// Nothing: the typing side of a range-only flow.
     None,
 }
 
-/// What a demand asks of an expression: a fixed type, the type of another
-/// class it is one value with, or the type of a peer it is compared to.
+/// What a demand asks of an expression: a fixed type, or the type of a
+/// peer it is compared to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Expected {
     Ty(Ty),
-    /// The same value as `Class`: the classes merge, values included.
-    Class(Var),
     /// Compared with `Peer`: each learns the other's types and nothing of
     /// its values.
     Peer(Var),
@@ -314,6 +316,22 @@ impl Typing {
         self.refined.push((read, local));
     }
 
+    /// Merge two classes: the union-find the solver keeps for the day
+    /// rewrites prove nodes equal. Nothing the checker draws merges
+    /// classes; the replay aliases, and the solver's benches merge.
+    #[allow(dead_code)]
+    pub fn equal(&mut self, a: Var, b: Var) {
+        self.solver.equal(a, b);
+    }
+
+    /// Let `copy`, a `let` without an annotation, be its `initializer`:
+    /// the same types and values, and one class with it in the replay.
+    pub fn copy(&mut self, initializer: Var, copy: Var) {
+        self.solver
+            .flow(initializer, copy, (Edge::Copy, RangeEdge::Copy));
+        self.refined.push((copy, initializer));
+    }
+
     /// A range-only flow from one provider.
     pub fn flow(&mut self, provider: Var, consumer: Var, edge: RangeEdge) {
         self.solver.flow(provider, consumer, (Edge::None, edge));
@@ -333,7 +351,6 @@ impl Typing {
                 self.solver
                     .expect(var, &(Evidence::single(ty, claim), May::bottom()));
             }
-            Expected::Class(class) => self.solver.equal(var, class),
             Expected::Peer(peer) => {
                 self.solver.flow(var, peer, (Edge::Peer, RangeEdge::None));
                 self.solver.flow(peer, var, (Edge::Peer, RangeEdge::None));
@@ -380,7 +397,7 @@ impl Typing {
                         .0
                         .transfer(&edge.0, other.map(|other| &other.0), false, &())
                 }),
-                Edge::Branch | Edge::Peer | Edge::Refine | Edge::None => None,
+                Edge::Branch | Edge::Peer | Edge::Refine | Edge::Copy | Edge::None => None,
             },
         );
         for &(read, local) in &self.refined {
@@ -417,7 +434,7 @@ impl Replay {
     pub fn expect(&mut self, var: Var, expected: Expected) {
         match expected {
             Expected::Ty(ty) => self.0.expect(var, &Evidence::single(ty, Claim::REPLAYED)),
-            Expected::Class(class) | Expected::Peer(class) => self.0.equal(var, class),
+            Expected::Peer(peer) => self.0.equal(var, peer),
         }
     }
 }
@@ -483,7 +500,7 @@ mod tests {
             }
             for (ty, offset) in types {
                 let literal = typing.known(ty, at(offset));
-                typing.expect(result, Expected::Class(literal), at(offset + 1));
+                typing.copy(literal, result);
             }
             let downstream = call(&mut typing, result, at(30));
             typing.solve(&cx());
@@ -637,7 +654,7 @@ mod tests {
         assert_eq!(replay.resolve(conflict_call), None);
         assert_eq!(replay.resolve(literal_call), Some(Ty::Int));
         assert_eq!(replay.resolve(refined), Some(Ty::Int));
-        replay.expect(demanded, Expected::Class(literal));
+        replay.expect(demanded, Expected::Peer(literal));
         assert_eq!(replay.resolve(demanded), Some(Ty::Int));
         replay.expect(unknown_call, Expected::Ty(Ty::Bool));
         assert_eq!(replay.resolve(unknown_call), Some(Ty::Bool));

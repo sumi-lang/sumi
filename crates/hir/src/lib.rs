@@ -18,6 +18,8 @@ pub use generated::codes;
 #[cfg(test)]
 mod tests;
 
+use std::fmt;
+
 use sumi_frontend::{Diagnostic, ParsedSource, Severity};
 use sumi_text::Span;
 
@@ -28,14 +30,28 @@ pub use sumi_graph::{
     ParseIntError, Refusal, Region, RegionId, Run, Ty, Value,
 };
 
-#[derive(Debug)]
 pub struct Analysis {
     parsed: ParsedSource,
     graph: Graph,
+    /// What the solve decided of every node, kept: a node and its class
+    /// share an index.
+    typing: typing::Typing,
     functions: Vec<Function>,
     diagnostics: Vec<Diagnostic>,
     /// The call depth bound of each function as an entry, by index.
     depth: Vec<Option<u64>>,
+}
+
+impl fmt::Debug for Analysis {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Analysis")
+            .field("parsed", &self.parsed)
+            .field("graph", &self.graph)
+            .field("functions", &self.functions)
+            .field("diagnostics", &self.diagnostics)
+            .field("depth", &self.depth)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Analysis {
@@ -45,6 +61,15 @@ impl Analysis {
     /// Every definition of every function, whole or holed.
     pub fn graph(&self) -> &Graph {
         &self.graph
+    }
+    /// The type `node` resolved to; none for a hole, a context, a node
+    /// built over a hole, or a class that conflicted.
+    pub fn ty(&self, node: NodeId) -> Option<Ty> {
+        self.typing.resolve(flows::var(node))
+    }
+    /// The values that may reach `node`.
+    pub fn may(&self, node: NodeId) -> &May {
+        self.typing.may(flows::var(node))
     }
     /// Semantic diagnostics only, in source order. Syntax diagnostics remain in `parsed`.
     pub fn diagnostics(&self) -> &[Diagnostic] {

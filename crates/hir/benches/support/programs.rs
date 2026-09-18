@@ -128,7 +128,7 @@ pub fn validate(shape: &str, size: usize, analysis: &Analysis) {
             assert_eq!(function.signature().unwrap().result, Ty::Int);
             assert!(function.complete());
             let result = graph.run(sumi_hir::FunctionId::new(index)).result();
-            assert_eq!(graph.node(result).ty, Some(Ty::Int));
+            assert_eq!(analysis.ty(result), Some(Ty::Int));
         }
     }
 }

@@ -1,7 +1,8 @@
-//! The typing drawn from the graph: a class for every node the walk gave a
-//! value, a fact for every node that knows something on its own account,
-//! and a flow for every edge that carries evidence, in one pass over the
-//! table.
+//! The typing drawn from the graph: a class for every node, a fact for
+//! every node that knows something on its own account, and a flow for
+//! every edge that carries evidence, in one pass over the table. Classes
+//! are opened in node order, so a node and its class share an index and
+//! no map stands between them.
 //!
 //! Within a function every input precedes its reader, so one pass in node
 //! order draws each node's class and flows as it reaches the node; only a
@@ -14,26 +15,31 @@ use sumi_graph::{BinaryOp, Graph, NodeId, Op, Ty};
 use sumi_syntax::NodeIdx;
 use sumi_text::Span;
 
-use crate::check::{Demand, DemandKind, Header, HeaderResult, Placed, Want};
+use crate::check::{Demand, DemandKind, Header, Placed, Want};
 use crate::ranges::{May, RangeEdge, UnaryOp};
 use crate::solver::Var;
 use crate::typing::{Expected, Typing};
 
-/// The typing of every node in `placed.classes`, and the result class of
-/// every function that has one: a declared result's copy, or a class of
-/// its own for a result to infer, which the body's value is one with.
+/// The class of `node`: the one opened for it, since every node has a
+/// class and they are opened in node order.
+pub(crate) fn var(node: NodeId) -> Var {
+    Var::new(node.index())
+}
+
+/// The typing of the graph: one class per node, in node order, so a node
+/// and its class have one index. A node the walk gave no value has a
+/// class nothing flows into.
 pub(crate) fn draw(
     graph: &Graph,
-    placed: &mut Placed,
+    placed: &Placed,
     headers: &[Header],
     demands: &[Demand],
     span: impl Fn(NodeIdx) -> Span,
-) -> (Typing, Vec<Option<Var>>) {
+) -> Typing {
     let nodes = graph.nodes().len();
     let mut typing = Typing::for_nodes(nodes);
-    let mut classes: Vec<Option<Var>> = vec![None; nodes];
-    let mut results: Vec<Option<Var>> = vec![None; headers.len()];
     let typed = |node: NodeId| placed.typed[node.index()];
+    let class = var;
 
     // Classes, facts, and the flows within a function, in one pass in node
     // order: every input precedes its reader, and a region's context and
@@ -43,13 +49,14 @@ pub(crate) fn draw(
         let header = &headers[index];
         for node in run.nodes() {
             if !typed(node) {
+                let opened = typing.fresh();
+                debug_assert_eq!(opened, class(node));
                 continue;
             }
             let entry = graph.node(node);
             let origin = entry.origin;
             let inputs = graph.inputs(node);
-            let class = |node: NodeId| classes[node.index()].expect("an input has its class");
-            let class = match &entry.op {
+            let opened = match &entry.op {
                 Op::Int(value) => typing.literal(Ty::Int, May::int(value.clone()), origin),
                 Op::Bool(value) => typing.literal(Ty::Bool, May::bool(*value), origin),
                 Op::Param(position) => {
@@ -57,8 +64,13 @@ pub(crate) fn draw(
                     typing.known(ty, entry.name.unwrap_or(origin))
                 }
                 Op::Entry => typing.entry(header.params.is_some() && run.params().len() == 0),
-                // A context under a condition nothing follows is its parent's.
-                Op::Then | Op::Else if !typed(inputs[0]) => class(inputs[1]),
+                // A context under a condition nothing follows is live as
+                // its parent is.
+                Op::Then | Op::Else if !typed(inputs[0]) => {
+                    let context = typing.fresh();
+                    typing.flow(class(inputs[1]), context, RangeEdge::Copy);
+                    context
+                }
                 Op::Then | Op::Else => {
                     let context = typing.fresh();
                     let edge = if matches!(entry.op, Op::Then) {
@@ -127,7 +139,11 @@ pub(crate) fn draw(
                     copy
                 }
                 // An unannotated `let` is its initializer.
-                Op::Copy { declared: None } => class(inputs[0]),
+                Op::Copy { declared: None } => {
+                    let copy = typing.fresh();
+                    typing.copy(class(inputs[0]), copy);
+                    copy
+                }
                 Op::Neg => {
                     let result = typing.known(Ty::Int, origin);
                     typing.flow(class(inputs[0]), result, RangeEdge::Unary(UnaryOp::Neg));
@@ -177,15 +193,9 @@ pub(crate) fn draw(
                 Op::Call(_) => typing.fresh(),
                 Op::Hole => unreachable!("a hole has no value"),
             };
-            classes[node.index()] = Some(class);
+            debug_assert_eq!(opened, class(node), "one class per node, in order");
         }
-        results[index] = match header.result {
-            HeaderResult::None => None,
-            HeaderResult::Declared(..) => classes[run.result().index()],
-            HeaderResult::Inferred => Some(typing.fresh()),
-        };
     }
-    let class = |node: NodeId| classes[node.index()].expect("a typed node has a class");
     // Every call reaches its callee's entry; a whole one delivers its
     // arguments to the parameters while its context is live, and learns
     // its callee's result, whichever comes first in the file.
@@ -204,9 +214,11 @@ pub(crate) fn draw(
             );
         }
         if typed(call.node) {
-            let result =
-                results[call.callee.index()].expect("a call with a value has a callee with one");
-            typing.call(result, class(call.node), graph.node(call.node).origin);
+            typing.call(
+                class(run.result()),
+                class(call.node),
+                graph.node(call.node).origin,
+            );
         }
     }
     // Demands, in the order the walk made them.
@@ -214,29 +226,20 @@ pub(crate) fn draw(
         let DemandKind::Type { expected, .. } = demand.kind else {
             continue;
         };
-        let expected = self::expected(expected, &results, class);
+        let expected = self::expected(expected);
         let actual = class(demand.actual);
-        if expected == Expected::Class(actual) || expected == Expected::Peer(actual) {
+        if expected == Expected::Peer(actual) {
             continue;
         }
         typing.expect(actual, expected, span(demand.node));
     }
-    placed.classes = classes;
-    (typing, results)
+    typing
 }
 
-/// What a demand asks, as the typing states it: the function's result
-/// class, or the peer's.
-pub(crate) fn expected(
-    want: Want,
-    results: &[Option<Var>],
-    class: impl Fn(NodeId) -> Var,
-) -> Expected {
+/// What a demand asks, as the typing states it.
+pub(crate) fn expected(want: Want) -> Expected {
     match want {
         Want::Ty(ty) => Expected::Ty(ty),
-        Want::Result(function) => {
-            Expected::Class(results[function.index()].expect("a result to infer"))
-        }
-        Want::Peer(peer) => Expected::Peer(class(peer)),
+        Want::Peer(peer) => Expected::Peer(var(peer)),
     }
 }

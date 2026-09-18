@@ -43,7 +43,7 @@ use sumi_syntax::{
 use crate::codes;
 use crate::ranges::May;
 use crate::recursion;
-use crate::solver::{Lattice, Var};
+use crate::solver::Lattice;
 use crate::typing::{Claim, Expected, ProductContext, Typing};
 use crate::{flows, *};
 
@@ -128,14 +128,11 @@ struct Local {
     pub node: NodeId,
 }
 
-/// What a demand asks of a value: a fixed type, the result of a function
-/// it is the body of, or the type of a peer it is compared to.
+/// What a demand asks of a value: a fixed type, or the type of a peer it
+/// is compared to.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Want {
     Ty(Ty),
-    /// One value with the function's result: the body of a function whose
-    /// result is inferred.
-    Result(FunctionId),
     /// Compared with `Peer`: each learns the other's types and nothing of
     /// its values.
     Peer(NodeId),
@@ -198,9 +195,6 @@ pub(crate) struct Placed {
     /// Whether the walk gave each node a value the typing follows: a hole
     /// has none, and neither has a node built over one.
     pub typed: Vec<bool>,
-    /// The class of each node, by index, once the flows are drawn; none
-    /// for a node that is not typed.
-    pub classes: Vec<Option<Var>>,
     /// Every whole call, in definition order.
     pub calls: Vec<PlacedCall>,
     /// The arguments of every whole call as written, one run per call.
@@ -209,7 +203,6 @@ pub(crate) struct Placed {
     /// the context it runs in and the callee: the callee is checked on the
     /// strength of any call to it.
     pub entered: Vec<(NodeId, FunctionId)>,
-    bottom: May,
 }
 
 /// A whole call: its node, its ends, the context it runs in, and its run
@@ -227,19 +220,14 @@ impl Placed {
     fn with_capacity(nodes: usize) -> Self {
         Self {
             typed: Vec::with_capacity(nodes),
-            classes: Vec::new(),
             calls: Vec::new(),
             arguments: Vec::new(),
             entered: Vec::new(),
-            bottom: May::bottom(),
         }
     }
-    /// The values that may reach `node`: none for a node without a class.
-    pub fn may<'t>(&'t self, typing: &'t Typing, node: NodeId) -> &'t May {
-        match self.classes[node.index()] {
-            Some(class) => typing.may(class),
-            None => &self.bottom,
-        }
+    /// The values that may reach `node`: none for a node nothing flows to.
+    pub fn may<'t>(&self, typing: &'t Typing, node: NodeId) -> &'t May {
+        typing.may(flows::var(node))
     }
     /// Whether the context `node`, or a value at it, is live.
     pub fn live(&self, typing: &Typing, node: NodeId) -> bool {
@@ -534,29 +522,23 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         constants,
         ..
     } = recorded;
-    let (mut typing, results) = flows::draw(&graph, &mut placed, &headers, &demands, |node| {
+    let mut typing = flows::draw(&graph, &placed, &headers, &demands, |node| {
         source.span(node)
     });
     let cx: ProductContext = ((), constants.into_iter().collect());
     typing.solve(&cx);
-    for (index, class) in placed.classes.iter().enumerate() {
-        graph.set_type(
-            NodeId::new(index),
-            class.and_then(|class| typing.resolve(class)),
-        );
-    }
     let mut replay = typing.replay();
     let mut failed = vec![false; functions.len()];
-    let class = |node: NodeId| placed.classes[node.index()].expect("a demanded node is typed");
+    let class = flows::var;
     for demand in demands {
         let actual_class = class(demand.actual);
         let actual = replay.resolve(actual_class);
         match demand.kind {
             DemandKind::Type { expected, declared } => {
-                let expected = flows::expected(expected, &results, class);
+                let expected = flows::expected(expected);
                 let expected_ty = match expected {
                     Expected::Ty(ty) => Some(ty),
-                    Expected::Class(class) | Expected::Peer(class) => replay.resolve(class),
+                    Expected::Peer(peer) => replay.resolve(peer),
                 };
                 match (actual, expected_ty) {
                     (Some(actual), Some(expected)) if actual != expected => {
@@ -617,7 +599,9 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     }
     for (index, header) in headers.into_iter().enumerate() {
         let run = graph.run(FunctionId::new(index));
-        let result_class = results[index];
+        // The result's class: the declared copy's, or the body's value's.
+        let result_class =
+            (!matches!(header.result, HeaderResult::None)).then(|| class(run.result()));
         let evidence = result_class.map(|result| *typing.evidence(result));
         let result = evidence.and_then(|evidence| evidence.ty());
         if let (Some(params), Some(result)) = (header.params, result) {
@@ -767,14 +751,14 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         }
         let run = graph.run(FunctionId::new(index));
         let complete = run.nodes().all(|node| {
-            let node = graph.node(node);
-            match node.op {
+            let ty = typing.resolve(class(node));
+            match graph.node(node).op {
                 Op::Entry | Op::Then | Op::Else => true,
                 Op::Call(callee) => functions[callee.index()]
                     .signature
                     .as_ref()
-                    .is_some_and(|signature| Some(signature.result) == node.ty),
-                _ => node.ty.is_some(),
+                    .is_some_and(|signature| Some(signature.result) == ty),
+                _ => ty.is_some(),
             }
         });
         functions[index].complete = complete;
@@ -786,6 +770,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     let analysis = Analysis {
         parsed,
         graph,
+        typing,
         functions,
         diagnostics,
         depth: recursion.depth,
@@ -1188,19 +1173,10 @@ impl<'a, 's> Builder<'a, 's> {
             }
             HeaderResult::Inferred | HeaderResult::None => body_value,
         };
-        match (root, declared) {
-            (Some(root), HeaderResult::Declared(ty, node)) => {
-                self.require(root_node.unwrap(), root, Want::Ty(ty), Some(node));
-            }
-            (Some(root), HeaderResult::Inferred) => {
-                self.require(
-                    root_node.unwrap(),
-                    root,
-                    Want::Result(FunctionId::new(owner)),
-                    None,
-                );
-            }
-            _ => {}
+        // A declared result is a contract on the body; an inferred one is
+        // the body's own value.
+        if let (Some(root), HeaderResult::Declared(ty, node)) = (root, declared) {
+            self.require(root_node.unwrap(), root, Want::Ty(ty), Some(node));
         }
         self.graph
             .close_run(FunctionId::new(owner), start, arity, region, value);

@@ -47,7 +47,7 @@ fn int(context: &mut Typing, term: Var) {
 }
 
 fn equal(context: &mut Typing, term: Var, other: Var) {
-    context.expect(term, Expected::Class(other), HERE);
+    context.equal(term, other);
 }
 
 pub fn build(shape: &str, size: usize) -> Graph {

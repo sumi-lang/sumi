@@ -175,7 +175,8 @@ const NARROWING_PASSES: usize = 8;
 pub struct Var(NonZeroU32);
 
 impl Var {
-    fn new(index: usize) -> Self {
+    /// The class at `index`: the `index`th one opened.
+    pub fn new(index: usize) -> Self {
         let past = u32::try_from(index + 1).expect("class count fits u32");
         Self(NonZeroU32::new(past).expect("one past an index"))
     }
