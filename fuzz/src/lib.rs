@@ -92,8 +92,8 @@ pub fn check_semantics(parsed: ParsedSource) {
     for pair in all.windows(2) {
         if pair[0].primary.location.start() == pair[1].primary.location.start() {
             assert!(
-                !(sumi_hir::Analysis::is_semantic(&pair[0])
-                    && !sumi_hir::Analysis::is_semantic(&pair[1]))
+                !sumi_hir::Analysis::is_semantic(&pair[0])
+                    || sumi_hir::Analysis::is_semantic(&pair[1])
             );
         }
     }

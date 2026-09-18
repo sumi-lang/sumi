@@ -712,7 +712,7 @@ fn diagnostics_are_one_list(analysis: &Analysis) {
     assert!(all.is_sorted_by_key(|d| d.primary.location.start()));
     for pair in all.windows(2) {
         if pair[0].primary.location.start() == pair[1].primary.location.start() {
-            assert!(!(Analysis::is_semantic(&pair[0]) && !Analysis::is_semantic(&pair[1])));
+            assert!(!Analysis::is_semantic(&pair[0]) || Analysis::is_semantic(&pair[1]));
         }
     }
 }

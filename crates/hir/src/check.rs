@@ -897,7 +897,7 @@ fn explain_zero(
 /// are explicit work items, so initializers see the old scope.
 #[derive(Clone, Copy)]
 enum Bound {
-    /// A local with a class the typing follows.
+    /// A local with a value the typing follows.
     Local(LocalId),
     /// A binding without one, still what the name reads: a parameter
     /// without a type, or a damaged `let`.
@@ -1794,7 +1794,7 @@ impl<'a, 's> Builder<'a, 's> {
                         let read = self.current(local);
                         self.nodes_of[node.to_usize()] = Some(read);
                     }
-                    // A binding without a class the typing follows is still
+                    // A binding without a value the typing follows is still
                     // what the name reads.
                     Some(Bound::Untyped(defined)) => {
                         self.nodes_of[node.to_usize()] = Some(defined);
