@@ -28,6 +28,8 @@ component_management:
       paths: [crates/format/**]
     - component_id: diagnostics
       paths: [crates/diagnostics/**]
+    - component_id: graph
+      paths: [crates/graph/**]
     - component_id: hir
       paths: [crates/hir/**]
     - component_id: eval

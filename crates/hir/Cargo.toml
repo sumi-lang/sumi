@@ -7,6 +7,7 @@ license.workspace = true
 [dependencies]
 sumi-diagnostics = { path = "../diagnostics" }
 sumi-frontend = { path = "../frontend" }
+sumi-graph = { path = "../graph" }
 sumi-lexer = { path = "../lexer" }
 sumi-syntax = { path = "../syntax" }
 sumi-text = { path = "../text" }

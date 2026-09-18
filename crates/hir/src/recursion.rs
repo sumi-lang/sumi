@@ -127,7 +127,7 @@ pub(crate) fn check(
     let arcs: Vec<_> = calls
         .iter()
         .filter(|&&(_, _, context)| typing.may(context).live())
-        .map(|&(caller, callee, _)| (caller.0, callee.0))
+        .map(|&(caller, callee, _)| (caller.index() as u32, callee.index() as u32))
         .collect();
     let components = components(bodies.len(), &arcs);
     let component = &components.of;
@@ -394,7 +394,7 @@ pub(crate) fn check(
                         .collect(),
                 };
                 failures.push(Failure {
-                    members: members.iter().map(|&f| FunctionId(f as u32)).collect(),
+                    members: members.iter().map(|&f| FunctionId::new(f)).collect(),
                     labels,
                 });
             }
