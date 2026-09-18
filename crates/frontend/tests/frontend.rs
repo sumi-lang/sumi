@@ -1,8 +1,6 @@
 use proptest::prelude::*;
 use proptest::test_runner::FileFailurePersistence;
-use sumi_frontend::{
-    Applicability, DiagnosticCode, FileId, ParsedSource, Place, Severity, codes, parse_source,
-};
+use sumi_frontend::{DiagnosticCode, FileId, ParsedSource, Place, codes, parse_source};
 use sumi_syntax::{RawIdx, SyntaxKind};
 
 /// The file every test source stands for; the frontend copies it into every
@@ -21,11 +19,9 @@ fn diagnostic_codes(front: &ParsedSource) -> Vec<DiagnosticCode> {
         .collect()
 }
 
-/// Apply the diagnostic's fix as a tool would, unread: the frontend's fixes
-/// are all mechanical, so it must call every one of them safe.
+/// Apply the diagnostic's fix as a tool would, unread.
 fn apply_fix(source: &str, diagnostic: &sumi_frontend::Diagnostic) -> String {
     let fix = diagnostic.fix.as_ref().expect("diagnostic has a fix");
-    assert_eq!(fix.applicability, Applicability::Safe);
     let mut result = source.to_owned();
     for edit in fix.edits.iter().rev() {
         let range = edit.range();
@@ -157,8 +153,8 @@ fn diagnostics_are_globally_sorted_with_stable_ties() {
         "expected a body, `{` or `=`"
     );
     assert_eq!(
-        front.diagnostics()[0].primary.location,
-        front.diagnostics()[1].primary.location
+        front.diagnostics()[0].primary,
+        front.diagnostics()[1].primary
     );
     assert_eq!(
         apply_fix("fn f(a: int", &front.diagnostics()[0]),
@@ -175,8 +171,8 @@ fn independent_same_token_facts_remain_independent() {
         [codes::UNKNOWN_ESCAPE, codes::UNKNOWN_ESCAPE]
     );
     assert_ne!(
-        front.diagnostics()[0].primary.location,
-        front.diagnostics()[1].primary.location
+        front.diagnostics()[0].primary,
+        front.diagnostics()[1].primary
     );
 }
 
@@ -190,8 +186,7 @@ fn leading_zeros_are_fixed_around_a_suffix() {
     );
     let diagnostic = &front.diagnostics()[0];
     assert_eq!(
-        diagnostic.primary.location.start().to_usize()
-            ..diagnostic.primary.location.end().to_usize(),
+        diagnostic.primary.start().to_usize()..diagnostic.primary.end().to_usize(),
         9..10
     );
     assert_eq!(apply_fix(source, diagnostic), "fn f() = 1u32");
@@ -242,30 +237,29 @@ proptest! {
         let source = front.source();
         let mut previous = None;
         for diagnostic in front.diagnostics() {
-            prop_assert_eq!(diagnostic.severity, Severity::Error);
             let key = (
-                diagnostic.primary.location.start().to_u32(),
-                diagnostic.primary.location.end().to_u32(),
+                diagnostic.primary.start().to_u32(),
+                diagnostic.primary.end().to_u32(),
             );
             if let Some(previous) = previous {
                 prop_assert!(previous <= key, "diagnostics are not source sorted");
             }
             previous = Some(key);
 
-            for label in std::iter::once(&diagnostic.primary).chain(&*diagnostic.secondary) {
-                prop_assert_eq!(label.location.file, FILE);
-                let start = label.location.start().to_usize();
-                let end = label.location.end().to_usize();
+            let labels = diagnostic.labels.iter().map(|label| label.location);
+            for location in std::iter::once(diagnostic.primary).chain(labels) {
+                prop_assert_eq!(location.file, FILE);
+                let start = location.start().to_usize();
+                let end = location.end().to_usize();
                 prop_assert!(start <= end && end <= source.len());
                 prop_assert!(source.is_char_boundary(start));
                 prop_assert!(source.is_char_boundary(end));
-                if let Place::Point(point) = label.location.place {
+                if let Place::Point(point) = location.place {
                     prop_assert_eq!(point.to_usize(), start);
                     prop_assert_eq!(start, end);
                 }
             }
             if let Some(fix) = &diagnostic.fix {
-                prop_assert_eq!(fix.applicability, Applicability::Safe);
                 prop_assert!(!fix.edits.is_empty());
                 let mut previous_end = None;
                 for edit in &fix.edits {

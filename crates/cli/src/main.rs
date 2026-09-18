@@ -6,7 +6,7 @@ use std::io::Read;
 use std::path::Path;
 use std::process::ExitCode;
 
-use sumi_frontend::{FileId, Severity, parse_source};
+use sumi_frontend::{FileId, parse_source};
 use sumi_hir::{Analysis, Value};
 use sumi_lexer::lex;
 use sumi_syntax::{ParserInput, parse};
@@ -82,24 +82,22 @@ fn locate(path: &Path, lines: &LineIndex, offset: TextSize) -> String {
 }
 
 /// Parse and check `path`, reporting every diagnostic; the analysis comes
-/// back with whether any was an error.
+/// back with whether there was any.
 fn analyze(path: &Path) -> Result<(Analysis, bool), String> {
     let source = read_source(path)?;
     let parsed = parse_source(FileId::new(0), source.into_boxed_str())
         .map_err(|error| format!("{}: error[cli/source-too-large]: {error}", path.display()))?;
     let analysis = sumi_hir::analyze(parsed);
     let lines = LineIndex::new(analysis.parsed().source());
-    let mut has_errors = false;
     for diagnostic in analysis.diagnostics() {
-        has_errors |= diagnostic.severity == Severity::Error;
         eprintln!(
-            "{}{}[{}]: {}",
-            locate(path, &lines, diagnostic.primary.location.start()),
-            diagnostic.severity.as_str(),
+            "{}error[{}]: {}",
+            locate(path, &lines, diagnostic.primary.start()),
             diagnostic.code,
             diagnostic.message,
         );
     }
+    let has_errors = !analysis.diagnostics().is_empty();
     Ok((analysis, has_errors))
 }
 

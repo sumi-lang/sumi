@@ -42,16 +42,16 @@ ExpectedItem at 92
 == diagnostics ==
 error[syntax/expected-token] 3:3: expected `)`
   at 2:6..2:7 "(": opening delimiter is here
-  fix (safe): insert `)`
+  fix: insert `)`
     2:8 -> ")"
 error[syntax/expected-expression] 6:7..6:8 "*": expected an expression
 error[syntax/expected-token] 7:3: expected `)`
   at 6:6..6:7 "(": opening delimiter is here
-  fix (safe): insert `)`
+  fix: insert `)`
     6:10 -> ")"
 error[syntax/expected-token] 10:3: expected `)`
   at 9:14..9:15 "(": opening delimiter is here
-  fix (safe): insert `)`
+  fix: insert `)`
     9:21 -> ")"
 error[syntax/expected-body] 10:3: expected a body, `{` or `=`
 error[syntax/expected-item] 10:3..10:4 "x": expected a function item

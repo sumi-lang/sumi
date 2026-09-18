@@ -70,12 +70,12 @@ ExpectedName at 233
 error[syntax/expected-token] 1:38: expected `,`
 error[syntax/expected-token] 1:38: expected `)`
   at 1:35..1:36 "(": opening delimiter is here
-  fix (safe): insert `)`
+  fix: insert `)`
     1:37 -> ")"
 error[syntax/expected-expression] 5:1: expected an expression
 error[syntax/expected-token] 5:1: expected `}`
   at 3:33..3:34 "{": opening delimiter is here
-  fix (safe): insert `}`
+  fix: insert `}`
     4:12 -> "}"
 error[syntax/expected-body] 6:26: expected a body, `{` or `=`
   at 6:26..6:27 "=": skipped while recovering

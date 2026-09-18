@@ -58,7 +58,7 @@ ExpectedName at 198
 == diagnostics ==
 error[syntax/expected-token] 5:27: expected `)`
   at 5:24..5:25 "(": opening delimiter is here
-  fix (safe): insert `)`
+  fix: insert `)`
     5:26 -> ")"
 error[syntax/unexpected-syntax] 6:34..6:35 ")": unexpected syntax in expression
 error[syntax/unspaced-binary-operator] 7:26..7:27 "-": binary operator must have spaces on both sides

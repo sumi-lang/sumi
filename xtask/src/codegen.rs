@@ -1280,7 +1280,7 @@ Generated from [`sumi.diagnostics`](../../../sumi.diagnostics), the one
 declaration of every diagnostic code Sumi reports. A code is spelled
 `group/name` and is stable: it is never renamed or reused. Each entry shows
 the corpus case that reports the code among the fewest other diagnostics,
-with the diagnostics as the case's snapshot renders them: severity, code,
+with the diagnostics as the case's snapshot renders them: code,
 location, and message, then any labels and fixes. A syntax snapshot
 locates by `line:column`; a semantic one by byte offset.
 

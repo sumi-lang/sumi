@@ -23,7 +23,7 @@ Unexpected at 63
 == diagnostics ==
 error[syntax/expected-token] 2:8: expected `}`
   at 2:6..2:7 "{": opening delimiter is here
-  fix (safe): insert `}`
+  fix: insert `}`
     2:7 -> "}"
 error[syntax/unexpected-syntax] 5:9..5:10 ")": unexpected syntax in expression
 

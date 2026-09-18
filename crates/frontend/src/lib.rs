@@ -11,8 +11,7 @@ mod generated;
 pub use generated::codes;
 
 pub use sumi_diagnostics::{
-    Applicability, Diagnostic, DiagnosticCode, DiagnosticGroup, Fix, Label, Location, Place,
-    Severity,
+    Diagnostic, DiagnosticCode, DiagnosticGroup, Fix, Label, Location, Place,
 };
 pub use sumi_lexer::SourceTooLarge;
 use sumi_lexer::{LexedFile, lex};

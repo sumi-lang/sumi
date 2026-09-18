@@ -69,7 +69,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     // stand at one position, then the checker's in the order it made them.
     let mut diagnostics = source.diagnostics;
     diagnostics.splice(0..0, parsed.diagnostics().iter().cloned());
-    diagnostics.sort_by_key(|d| d.primary.location.start());
+    diagnostics.sort_by_key(|d| d.primary.start());
     let analysis = Analysis {
         parsed,
         graph,
@@ -78,11 +78,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         diagnostics,
     };
     assert!(
-        analysis.is_valid()
-            || analysis
-                .diagnostics
-                .iter()
-                .any(|d| d.severity == Severity::Error),
+        analysis.is_valid() || !analysis.diagnostics.is_empty(),
         "incomplete semantic analysis without an error"
     );
     analysis

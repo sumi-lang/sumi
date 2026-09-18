@@ -283,20 +283,15 @@ pub(crate) fn diagnostic(
 ) -> Diagnostic {
     Diagnostic {
         code,
-        severity: Severity::Error,
         message: message.into(),
-        primary: Label {
-            location: Location::range(primary),
-            message: None,
-        },
-        secondary: related
+        primary: Location::range(primary),
+        labels: related
             .into_iter()
             .map(|(span, message)| Label {
                 location: Location::range(span),
-                message: Some(message),
+                message,
             })
             .collect(),
-        notes: Box::new([]),
         fix: None,
     }
 }

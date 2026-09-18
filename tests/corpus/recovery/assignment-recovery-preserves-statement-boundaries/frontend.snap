@@ -55,7 +55,7 @@ ExpectedStatement at 189
 error[syntax/expected-token] 2:8: expected `)`
   at 2:5..2:6 "(": opening delimiter is here
   at 2:8..2:12 "= b)": skipped while recovering
-  fix (safe): insert `)`
+  fix: insert `)`
     2:7 -> ")"
 error[syntax/expected-expression] 4:9: expected an expression
 error[syntax/expected-statement] 5:20..5:21 "=": expected a statement

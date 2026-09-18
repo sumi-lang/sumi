@@ -2,7 +2,7 @@ tree: see hir.snap
 
 == diagnostics ==
 error[syntax/noncanonical-number] 1:25..1:26 "0": integer literal has leading zeros
-  fix (safe): remove the leading zeros
+  fix: remove the leading zeros
     1:25..1:27 "01" -> "1"
 
 == fixed ==

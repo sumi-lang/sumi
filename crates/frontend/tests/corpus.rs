@@ -18,7 +18,7 @@ use std::fmt::Write as _;
 mod corpus;
 
 use sumi_format::format;
-use sumi_frontend::{Applicability, Diagnostic, FileId, Location, Place, TextEdit, parse_source};
+use sumi_frontend::{Diagnostic, FileId, Location, Place, TextEdit, parse_source};
 use sumi_lexer::LexedFile;
 use sumi_syntax::{NodeIdx, ParseAnchor, ParseEvidence, ParseRecoveryKind, RawIdx, SyntaxTree};
 use sumi_text::{LineIndex, TextSize};
@@ -267,37 +267,28 @@ fn evidence_token(evidence: &ParseEvidence) -> RawIdx {
     }
 }
 
-/// One diagnostic: its severity, code, place, and message on the first
-/// line, then its labels, notes, and fix indented under it.
+/// One diagnostic: its code, place, and message on the first line, then
+/// its labels and fix indented under it.
 fn render(diagnostic: &Diagnostic, index: &LineIndex, source: &str, out: &mut String) {
     writeln!(
         out,
-        "{}[{}] {}: {}",
-        diagnostic.severity.as_str(),
+        "error[{}] {}: {}",
         diagnostic.code,
-        place(index, source, diagnostic.primary.location),
+        place(index, source, diagnostic.primary),
         diagnostic.message
     )
     .expect("writing to a string");
-    if let Some(message) = &diagnostic.primary.message {
-        writeln!(out, "  primary: {message}").expect("writing to a string");
-    }
-    for label in &diagnostic.secondary {
-        write!(out, "  at {}", place(index, source, label.location)).expect("writing to a string");
-        if let Some(message) = &label.message {
-            write!(out, ": {message}").expect("writing to a string");
-        }
-        out.push('\n');
-    }
-    for note in &diagnostic.notes {
-        writeln!(out, "  note: {note}").expect("writing to a string");
+    for label in &diagnostic.labels {
+        writeln!(
+            out,
+            "  at {}: {}",
+            place(index, source, label.location),
+            label.message
+        )
+        .expect("writing to a string");
     }
     if let Some(fix) = &diagnostic.fix {
-        let applicability = match fix.applicability {
-            Applicability::Safe => "safe",
-            Applicability::MaybeIncorrect => "maybe incorrect",
-        };
-        writeln!(out, "  fix ({applicability}): {}", fix.message).expect("writing to a string");
+        writeln!(out, "  fix: {}", fix.message).expect("writing to a string");
         for edit in &fix.edits {
             let range = edit.range();
             let location = if range.start() == range.end() {

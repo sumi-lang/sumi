@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use sumi_diagnostics::{Applicability, Diagnostic, DiagnosticCode, Fix, Label, Location, Severity};
+use sumi_diagnostics::{Diagnostic, DiagnosticCode, Fix, Label, Location};
 use sumi_lexer::{LexError, LexErrorKind, LexedFile, TokenFlags, canonicalize_number_literal};
 use sumi_syntax::{
     Parse, ParseAnchor, ParseEvidence, ParseRecovery, ParseRecoveryKind, ParseViolation,
@@ -58,8 +58,8 @@ pub(crate) fn diagnostics(
     // break ties at the same source location.
     diagnostics.sort_by_key(|diagnostic| {
         (
-            diagnostic.primary.location.start().to_u32(),
-            diagnostic.primary.location.end().to_u32(),
+            diagnostic.primary.start().to_u32(),
+            diagnostic.primary.end().to_u32(),
         )
     });
     diagnostics.into_boxed_slice()
@@ -96,7 +96,6 @@ fn lower_token_errors(
                 let text = snapshot.lexed.text(snapshot.source, error.token);
                 diagnostic.fix = canonicalize_number_literal(text).map(|replacement| Fix {
                     message: "remove the leading zeros".into(),
-                    applicability: Applicability::Safe,
                     edits: vec![TextEdit::new(token_range, replacement)].into_boxed_slice(),
                 });
                 diagnostics.push(diagnostic);
@@ -185,12 +184,12 @@ fn lower_recovery(
     let opener = match recovery.kind {
         ParseRecoveryKind::Closer { opener, .. } => Some(Label {
             location: snapshot.raw_range(opener),
-            message: Some("opening delimiter is here".into()),
+            message: "opening delimiter is here".into(),
         }),
         _ => None,
     };
     let mut diagnostic = primary(code, message, location);
-    diagnostic.secondary = opener
+    diagnostic.labels = opener
         .into_iter()
         .chain(
             recovery
@@ -200,7 +199,7 @@ fn lower_recovery(
                 .filter(|&skipped| skipped != location)
                 .map(|location| Label {
                     location,
-                    message: Some("skipped while recovering".into()),
+                    message: "skipped while recovering".into(),
                 }),
         )
         .collect();
@@ -238,7 +237,6 @@ fn closer_fix(
     }
     Some(Fix {
         message: format!("insert {}", kind.describe()).into(),
-        applicability: Applicability::Safe,
         edits: vec![TextEdit::new(TextRange::new(at, at), replacement)].into_boxed_slice(),
     })
 }
@@ -282,14 +280,9 @@ fn lower_violation(snapshot: &Snapshot<'_>, violation: ParseViolation) -> Diagno
 fn primary(code: DiagnosticCode, message: impl Into<Box<str>>, location: Location) -> Diagnostic {
     Diagnostic {
         code,
-        severity: Severity::Error,
         message: message.into(),
-        primary: Label {
-            location,
-            message: None,
-        },
-        secondary: Box::new([]),
-        notes: Box::new([]),
+        primary: location,
+        labels: Box::new([]),
         fix: None,
     }
 }

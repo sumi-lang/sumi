@@ -1,10 +1,10 @@
 //! Renderer-independent diagnostics for Sumi.
 //!
 //! A frontend or later compiler phase owns the source snapshots and assigns
-//! stable codes, wording, labels, notes, and fixes. Every label names its
-//! file, so a diagnostic produced from one file can point into another —
-//! "defined here" — and renderers only project this canonical
-//! representation for their audience.
+//! stable codes, wording, labels, and fixes. Every diagnostic rejects the
+//! program. Every label names its file, so a diagnostic produced from one
+//! file can point into another — "defined here" — and renderers only
+//! project this canonical representation for their audience.
 
 use std::fmt;
 
@@ -72,34 +72,6 @@ const fn valid_component(value: &str) -> bool {
     true
 }
 
-/// How much a diagnostic matters: whether it rejects the program, and how
-/// a renderer or an editor presents it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Severity {
-    /// The program is rejected.
-    Error,
-    /// The program is accepted, but something in it is probably wrong.
-    Warning,
-    /// Something worth knowing that is neither: an allowed but notable
-    /// construct, or the outcome of an analysis.
-    Info,
-    /// A suggestion an editor shows unobtrusively, such as an unused name
-    /// it greys out.
-    Hint,
-}
-
-impl Severity {
-    /// The severity's public spelling, as a renderer prefixes a diagnostic.
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Error => "error",
-            Self::Warning => "warning",
-            Self::Info => "info",
-            Self::Hint => "hint",
-        }
-    }
-}
-
 /// Where a diagnostic label sits: a file, and within it either source text
 /// or a byte boundary where syntax is absent.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -155,48 +127,35 @@ impl Location {
     }
 }
 
-/// One source label. The primary label establishes the diagnostic's source
-/// location; secondary labels retain related evidence.
+/// Related evidence for a diagnostic: a location and what it shows.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Label {
     pub location: Location,
-    pub message: Option<Box<str>>,
+    pub message: Box<str>,
 }
 
-/// Whether a fix may be applied without anyone reading it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Applicability {
-    /// The edit is mechanically right: it keeps the program's meaning, or
-    /// restores the one the diagnostic says was intended. A tool may apply
-    /// it on its own.
-    Safe,
-    /// The edit is a plausible guess — a name that was probably meant, an
-    /// operand that would type-check — and needs a person to confirm it.
-    MaybeIncorrect,
-}
-
-/// One source action offered for a diagnostic. Every edit is relative to
-/// the same source snapshot and applies atomically. Edits must not overlap;
-/// their order is retained for insertions at the same byte boundary.
+/// One source action offered for a diagnostic. The edit is mechanically
+/// right — it keeps the program's meaning, or restores the one the
+/// diagnostic says was intended — so a tool may apply it unread. Every
+/// edit is relative to the same source snapshot and applies atomically.
+/// Edits must not overlap; their order is retained for insertions at the
+/// same byte boundary.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Fix {
     pub message: Box<str>,
-    pub applicability: Applicability,
     pub edits: Box<[TextEdit]>,
 }
 
 /// One canonical diagnostic, independent of terminal, protocol, or editor
-/// presentation.
+/// presentation. Every diagnostic is an error: it rejects the program.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Diagnostic {
     pub code: DiagnosticCode,
-    pub severity: Severity,
     pub message: Box<str>,
-    pub primary: Label,
-    pub secondary: Box<[Label]>,
-    /// Explanations that belong to no source location — what the rule is
-    /// and why, or what to do instead — rendered after the labels.
-    pub notes: Box<[Box<str>]>,
+    /// Where the diagnostic is.
+    pub primary: Location,
+    /// Related evidence, rendered after the primary location.
+    pub labels: Box<[Label]>,
     /// A source action for the diagnostic's source snapshot.
     pub fix: Option<Fix>,
 }

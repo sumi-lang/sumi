@@ -12,7 +12,7 @@
 use std::collections::HashSet;
 
 use sumi_format::{format, rep};
-use sumi_frontend::{Applicability, FileId, ParsedSource, Place, Severity, codes, parse_source};
+use sumi_frontend::{FileId, Location, ParsedSource, Place, codes, parse_source};
 use sumi_lexer::{LexedFile, RawIdx, SyntaxKind, lex};
 use sumi_syntax::{
     BRACKET_PAIRS, NodeKind, Parse, ParseAnchor, ParseEvidence, ParserInput, SigIdx, parse,
@@ -68,11 +68,7 @@ pub fn check_semantics(parsed: ParsedSource) {
             assert_eq!(a.complete(), b.complete());
         }
     }
-    let errors = analysis
-        .diagnostics()
-        .iter()
-        .any(|d| d.severity == Severity::Error);
-    assert_eq!(analysis.is_valid(), !errors);
+    assert_eq!(analysis.is_valid(), analysis.diagnostics().is_empty());
     // The frontend's diagnostics are among the analysis's, in source order,
     // the frontend's first where both stand at one position.
     let all = analysis.diagnostics();
@@ -87,9 +83,9 @@ pub fn check_semantics(parsed: ParsedSource) {
             .zip(analysis.parsed().diagnostics())
             .all(|(listed, own)| *listed == own)
     );
-    assert!(all.is_sorted_by_key(|d| d.primary.location.start()));
+    assert!(all.is_sorted_by_key(|d| d.primary.start()));
     for pair in all.windows(2) {
-        if pair[0].primary.location.start() == pair[1].primary.location.start() {
+        if pair[0].primary.start() == pair[1].primary.start() {
             assert!(
                 !sumi_hir::Analysis::is_semantic(&pair[0])
                     || sumi_hir::Analysis::is_semantic(&pair[1])
@@ -98,10 +94,10 @@ pub fn check_semantics(parsed: ParsedSource) {
     }
     check_graph(&analysis);
     for diagnostic in analysis.diagnostics() {
-        for label in std::iter::once(&diagnostic.primary).chain(diagnostic.secondary.iter()) {
-            assert_eq!(label.location.file, analysis.parsed().file());
-            assert!(source.is_char_boundary(label.location.start().to_usize()));
-            assert!(source.is_char_boundary(label.location.end().to_usize()));
+        for location in locations(diagnostic) {
+            assert_eq!(location.file, analysis.parsed().file());
+            assert!(source.is_char_boundary(location.start().to_usize()));
+            assert!(source.is_char_boundary(location.end().to_usize()));
         }
     }
     check_typed(&analysis);
@@ -743,39 +739,42 @@ pub fn check_parse(source: &str, lexed: &LexedFile, parse: &Parse) {
     }
 }
 
-/// Every canonical diagnostic is an error naming the parsed file, in
-/// source order, with in-bounds labels on character boundaries, and a
-/// safe fix of nonempty, ordered, disjoint edits; applying every
-/// non-overlapping fix leaves a source the frontend still parses.
+/// The primary location of `diagnostic` and every label's.
+fn locations(diagnostic: &sumi_frontend::Diagnostic) -> impl Iterator<Item = Location> + '_ {
+    std::iter::once(diagnostic.primary).chain(diagnostic.labels.iter().map(|label| label.location))
+}
+
+/// Every canonical diagnostic names the parsed file, in source order, with
+/// in-bounds labels on character boundaries, and a fix of nonempty,
+/// ordered, disjoint edits; applying every non-overlapping fix leaves a
+/// source the frontend still parses.
 pub fn check_diagnostics(parsed: &ParsedSource) {
     let source = parsed.source();
     let mut previous = None;
     let mut edits = Vec::new();
     for diagnostic in parsed.diagnostics() {
-        assert_eq!(diagnostic.severity, Severity::Error);
         let key = (
-            diagnostic.primary.location.start().to_u32(),
-            diagnostic.primary.location.end().to_u32(),
+            diagnostic.primary.start().to_u32(),
+            diagnostic.primary.end().to_u32(),
         );
         if let Some(previous) = previous {
             assert!(previous <= key, "diagnostics are not source sorted");
         }
         previous = Some(key);
 
-        for label in std::iter::once(&diagnostic.primary).chain(&*diagnostic.secondary) {
-            assert_eq!(label.location.file, parsed.file());
-            let start = label.location.start().to_usize();
-            let end = label.location.end().to_usize();
+        for location in locations(diagnostic) {
+            assert_eq!(location.file, parsed.file());
+            let start = location.start().to_usize();
+            let end = location.end().to_usize();
             assert!(start <= end && end <= source.len());
             assert!(source.is_char_boundary(start));
             assert!(source.is_char_boundary(end));
-            if let Place::Point(point) = label.location.place {
+            if let Place::Point(point) = location.place {
                 assert_eq!(point.to_usize(), start);
                 assert_eq!(start, end);
             }
         }
         if let Some(fix) = &diagnostic.fix {
-            assert_eq!(fix.applicability, Applicability::Safe);
             assert!(!fix.edits.is_empty());
             // Match the frontend property: each closer adds exactly its
             // code token and preserves all existing tokens and comments.

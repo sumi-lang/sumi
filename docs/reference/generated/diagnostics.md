@@ -6,7 +6,7 @@ Generated from [`sumi.diagnostics`](../../../sumi.diagnostics), the one
 declaration of every diagnostic code Sumi reports. A code is spelled
 `group/name` and is stable: it is never renamed or reused. Each entry shows
 the corpus case that reports the code among the fewest other diagnostics,
-with the diagnostics as the case's snapshot renders them: severity, code,
+with the diagnostics as the case's snapshot renders them: code,
 location, and message, then any labels and fixes. A syntax snapshot
 locates by `line:column`; a semantic one by byte offset.
 
@@ -100,7 +100,7 @@ fn intact() -> bool = true
 
 ```text
 error[syntax/noncanonical-number] 1:25..1:26 "0": integer literal has leading zeros
-  fix (safe): remove the leading zeros
+  fix: remove the leading zeros
     1:25..1:27 "01" -> "1"
 ```
 
@@ -261,7 +261,7 @@ fn g() {}
 error[syntax/expected-token] 2:8: expected `)`
   at 2:5..2:6 "(": opening delimiter is here
   at 2:8..2:12 "{ b)": skipped while recovering
-  fix (safe): insert `)`
+  fix: insert `)`
     2:7 -> ")"
 ```
 

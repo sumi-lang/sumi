@@ -15,7 +15,7 @@ error[syntax/expected-name] 1:7..1:8 "-": expected a name
   at 1:7..1:33 "-> str = \"before {} after\"": skipped while recovering
 error[syntax/expected-token] 2:1: expected `)`
   at 1:5..1:6 "(": opening delimiter is here
-  fix (safe): insert `)`
+  fix: insert `)`
     1:33 -> ")"
 error[syntax/expected-body] 2:1: expected a body, `{` or `=`
 

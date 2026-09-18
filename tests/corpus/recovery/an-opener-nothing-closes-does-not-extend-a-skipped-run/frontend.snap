@@ -19,7 +19,7 @@ error[syntax/expected-expression] 2:7..2:8 ":": expected an expression
   at 2:7..2:9 ":(": skipped while recovering
 error[syntax/expected-token] 2:13: expected `)`
   at 2:6..2:7 "(": opening delimiter is here
-  fix (safe): insert `)`
+  fix: insert `)`
     2:12 -> ")"
 
 == fixed (syntax/expected-expression, syntax/expected-token, syntax/unexpected-syntax remain) ==
