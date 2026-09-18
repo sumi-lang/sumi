@@ -304,12 +304,9 @@ fn fn_item(p: &mut Marker<'_, '_>) {
     }
     if !m.at(T::Ident) && !m.at(T::Underscore) {
         let recovery = m.missing(ParseRecoveryKind::Name);
-        signature_garbage(
-            &mut m,
-            Signature::Item { name_missing: true },
-            recovery,
-            |m| m.at(T::Ident) || m.at(T::Underscore) || m.at(T::LParen),
-        );
+        signature_garbage(&mut m, Signature::Item, recovery, |m| {
+            m.at(T::Ident) || m.at(T::Underscore) || m.at(T::LParen)
+        });
     }
     let name_missing = if m.at(T::Ident) || m.at(T::Underscore) {
         if has_fn && m.at(T::Ident) && m.newline() {
@@ -323,11 +320,7 @@ fn fn_item(p: &mut Marker<'_, '_>) {
     } else {
         true
     };
-    signature_tail(
-        &mut m,
-        ExprFollow::Anything,
-        Signature::Item { name_missing },
-    );
+    signature_tail(&mut m, ExprFollow::Anything, Signature::Item, name_missing);
     m.complete(N::FnItem);
 }
 
@@ -353,7 +346,7 @@ fn closure_expr(p: &mut Marker<'_, '_>, follow: ExprFollow) -> CompletedMarker {
     }
     let mut m = p.start();
     m.token(); // fn
-    signature_tail(&mut m, follow, Signature::Closure);
+    signature_tail(&mut m, follow, Signature::Closure, false);
     m.complete(N::ClosureExpr)
 }
 
@@ -364,12 +357,7 @@ fn closure_expr(p: &mut Marker<'_, '_>, follow: ExprFollow) -> CompletedMarker {
 /// what encloses it ends the run and is left to its owner.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Signature {
-    /// An item's, whose parameter list may begin on the line after `fn`
-    /// when the name is missing: the line where the name and list would
-    /// have begun.
-    Item {
-        name_missing: bool,
-    },
+    Item,
     Closure,
 }
 
@@ -380,11 +368,19 @@ enum Signature {
 /// when an expression can begin after it: anywhere else it is garbage
 /// like anything else, so a stray `=` in a signature never turns the
 /// list, the return type, or the block after it into a body.
-fn signature_tail(m: &mut Marker<'_, '_>, follow: ExprFollow, signature: Signature) {
-    let first_field = u8::from(matches!(signature, Signature::Item { .. }));
-    // The parameter list stays on the signature's line: `(` never
-    // continues one.
-    let allow_list_newline = signature == Signature::Item { name_missing: true };
+///
+/// The parameter list stays on the signature's line: `(` never continues
+/// one. An item whose name is missing is the exception, `name_missing`:
+/// its list may begin on the line after `fn`, where the name and list
+/// would have begun. A closure has no name, so never.
+fn signature_tail(
+    m: &mut Marker<'_, '_>,
+    follow: ExprFollow,
+    signature: Signature,
+    name_missing: bool,
+) {
+    let first_field = u8::from(signature == Signature::Item);
+    let allow_list_newline = name_missing;
     if !m.at(T::LParen) || (m.newline() && !allow_list_newline) {
         let recovery = m.missing(ParseRecoveryKind::Token(T::LParen));
         signature_garbage(m, signature, recovery, |m| {
@@ -394,7 +390,7 @@ fn signature_tail(m: &mut Marker<'_, '_>, follow: ExprFollow, signature: Signatu
     let mut complete = false;
     if m.at(T::LParen) && (!m.newline() || allow_list_newline) {
         match signature {
-            Signature::Item { .. } => delimited_list::<Params<true>>(m, first_field),
+            Signature::Item => delimited_list::<Params<true>>(m, first_field),
             Signature::Closure => delimited_list::<Params<false>>(m, first_field),
         }
         complete = true;
@@ -468,7 +464,7 @@ fn signature_garbage(
 ) {
     let stop = |m: &Marker<'_, '_>| resume(m) || m.newline() || (m.at(T::LBrace) && m.partnered());
     match signature {
-        Signature::Item { .. } => skip_all(m, recovery, stop),
+        Signature::Item => skip_all(m, recovery, stop),
         Signature::Closure => {
             let stop = |m: &Marker<'_, '_>| {
                 stop(m)
