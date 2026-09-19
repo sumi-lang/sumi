@@ -19,10 +19,10 @@ fn a_missing_closer_retains_its_opener_and_insertion_gap() {
     let [ParseEvidence::Recovery(recovery)] = parse.evidence() else {
         panic!("the unclosed block has one recovery")
     };
-    let ParseRecoveryKind::Closer { kind, opener } = recovery.kind else {
+    let ParseRecoveryKind::Closer { pair, opener } = recovery.kind else {
         panic!("the expected closer must retain its opener")
     };
-    assert_eq!(kind, sumi_syntax::SyntaxKind::RBrace);
+    assert_eq!(pair, sumi_syntax::Pair::Brace);
     assert_eq!(raw_text(source, &lexed, opener.start(), opener.end()), "{");
     let ParseAnchor::Gap(gap) = recovery.anchor else {
         panic!("missing syntax must anchor a gap")

@@ -5,7 +5,7 @@ use std::collections::HashSet;
 
 use sumi_lexer::{LexError, LexErrorKind, LexedFile, TokenFlags, canonicalize_number_literal};
 use sumi_syntax::{
-    Parse, ParseAnchor, ParseEvidence, ParseRecovery, ParseRecoveryKind, ParseViolation,
+    Pair, Parse, ParseAnchor, ParseEvidence, ParseRecovery, ParseRecoveryKind, ParseViolation,
     ParseViolationKind, RawTokenRange, SyntaxKind,
 };
 use sumi_text::{TextEdit, TextRange};
@@ -133,7 +133,7 @@ impl Snapshot<'_> {
     fn recovery(
         &self,
         recovery: &ParseRecovery,
-        closer_fix_sites: &mut HashSet<(SyntaxKind, u32)>,
+        closer_fix_sites: &mut HashSet<(Pair, u32)>,
     ) -> Option<Diagnostic> {
         if self.anchor_has_error(recovery.anchor) {
             return None;
@@ -149,9 +149,13 @@ impl Snapshot<'_> {
             ParseRecoveryKind::Name => (codes::EXPECTED_NAME, "expected a name".into()),
             ParseRecoveryKind::Type => (codes::EXPECTED_TYPE, "expected a type".into()),
             ParseRecoveryKind::Body => (codes::EXPECTED_BODY, "expected a body, `{` or `=`".into()),
-            ParseRecoveryKind::Token(kind) | ParseRecoveryKind::Closer { kind, .. } => (
+            ParseRecoveryKind::Token(kind) => (
                 codes::EXPECTED_TOKEN,
                 format!("expected {}", kind.describe()).into(),
+            ),
+            ParseRecoveryKind::Closer { pair, .. } => (
+                codes::EXPECTED_TOKEN,
+                format!("expected {}", pair.closer().kind().describe()).into(),
             ),
             ParseRecoveryKind::Boundary => (
                 codes::EXPECTED_BOUNDARY,
@@ -196,29 +200,27 @@ impl Snapshot<'_> {
     fn closer_fix(
         &self,
         recovery: &ParseRecovery,
-        sites: &mut HashSet<(SyntaxKind, u32)>,
+        sites: &mut HashSet<(Pair, u32)>,
     ) -> Option<Fix> {
         let lexed = self.lexed;
-        let (ParseRecoveryKind::Closer { kind, .. }, ParseAnchor::Gap(gap)) =
+        let (ParseRecoveryKind::Closer { pair, .. }, ParseAnchor::Gap(gap)) =
             (recovery.kind, recovery.anchor)
         else {
             return None;
         };
-        let replacement = kind
-            .text()
-            .unwrap_or_else(|| unreachable!("closer evidence names a closing delimiter"));
+        let closer = pair.closer();
         // Inserted after an unterminated string, the closer becomes string text.
         let previous = gap.trivia_start().checked_sub(1);
         if previous.is_some_and(|token| lexed.flags(token).contains(TokenFlags::UNTERMINATED)) {
             return None;
         }
         let at = lexed.boundary(gap.trivia_start());
-        if !sites.insert((kind, at.to_u32())) {
+        if !sites.insert((pair, at.to_u32())) {
             return None;
         }
         Some(Fix {
-            message: format!("insert {}", kind.describe()).into(),
-            edit: TextEdit::new(TextRange::new(at, at), replacement),
+            message: format!("insert {}", closer.kind().describe()).into(),
+            edit: TextEdit::new(TextRange::new(at, at), closer.text()),
         })
     }
 

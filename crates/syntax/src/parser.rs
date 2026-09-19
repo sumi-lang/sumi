@@ -6,9 +6,9 @@ use sumi_lexer::RawIdx;
 
 use crate::ast::NodeKind as N;
 use crate::grammar::{
-    BinaryOp, PREFIX_BP, SyntaxKind as T, binary_operator, can_end_statement, closer,
-    encloses_statements, introduces_statement, is_closer, is_literal, is_opener,
-    is_prefix_operator, opener, starts_expression, starts_item, starts_statement,
+    BinaryOp, PREFIX_BP, Pair, Side, SyntaxKind as T, binary_operator, bracket, can_end_statement,
+    introduces_statement, is_closer, is_literal, is_opener, is_prefix_operator, starts_expression,
+    starts_item, starts_statement,
 };
 use crate::input::ParserInput;
 use crate::tree::{CompletedMarker, Marker, Parse, RecoveryHandle};
@@ -41,7 +41,7 @@ pub enum ParseRecoveryKind {
     Token(T),
     /// The anchor is the gap where the closer is missing.
     Closer {
-        kind: T,
+        pair: Pair,
         opener: RawTokenRange,
     },
     Boundary,
@@ -397,6 +397,7 @@ fn type_ref(p: &mut Marker<'_, '_>, field: u8) {
 
 trait ListRule {
     const NODE: N;
+    const PAIR: Pair;
     const ELEMENT: ParseRecoveryKind;
     const RESUMES_AT_ELEMENT: bool;
     fn starts_element(m: &Marker<'_, '_>) -> bool;
@@ -410,6 +411,7 @@ struct Params<const TYPED: bool>;
 
 impl<const TYPED: bool> ListRule for Params<TYPED> {
     const NODE: N = N::ParamList;
+    const PAIR: Pair = Pair::Paren;
     const ELEMENT: ParseRecoveryKind = ParseRecoveryKind::Name;
     // A name in the garbage is likelier the body's, after a `{` standing where the `)` should, than
     // a parameter's.
@@ -437,6 +439,7 @@ struct Args;
 
 impl ListRule for Args {
     const NODE: N = N::ArgList;
+    const PAIR: Pair = Pair::Paren;
     const ELEMENT: ParseRecoveryKind = ParseRecoveryKind::Expression;
     const RESUMES_AT_ELEMENT: bool = true;
 
@@ -458,29 +461,24 @@ impl ListRule for Args {
 }
 
 fn delimited_list<R: ListRule>(p: &mut Marker<'_, '_>, field: u8) {
-    let close = p
-        .current()
-        .and_then(closer)
-        .expect("a list opens at its opener");
-    let mut m = p.start();
-    m.token();
-    m.enter();
+    let close = R::PAIR.closer().kind();
+    let mut m = p.open(R::PAIR);
     loop {
         match m.current() {
             None => {
-                m.missing_closer();
+                m.missing_closer(R::PAIR);
                 break;
             }
-            Some(kind) if kind == close && m.owns_closer() => {
+            Some(kind) if kind == close && m.owns_closer(R::PAIR) => {
                 m.token();
                 break;
             }
-            Some(kind) if kind == close && m.closes_open(close) => {
-                m.missing_closer();
+            Some(kind) if kind == close && m.closes_open(R::PAIR) => {
+                m.missing_closer(R::PAIR);
                 break;
             }
             Some(_) if !m.closed() && R::follows(&m) && !displaced_closer(&m) => {
-                m.missing_closer();
+                m.missing_closer(R::PAIR);
                 break;
             }
             Some(T::Comma) => {
@@ -510,7 +508,7 @@ fn delimited_list<R: ListRule>(p: &mut Marker<'_, '_>, field: u8) {
         // A list the stream closes owns every boundary through its closer; only an unclosed one
         // ends at its line.
         if !m.closed() && m.boundary() {
-            m.missing_closer();
+            m.missing_closer(R::PAIR);
             break;
         }
         if m.at(T::Comma) {
@@ -549,13 +547,11 @@ fn param(p: &mut Marker<'_, '_>, typed: bool) {
 }
 
 fn block(p: &mut Marker<'_, '_>) -> CompletedMarker {
-    let mut m = p.start();
-    m.token();
-    m.enter();
+    let mut m = p.open(Pair::Brace);
     loop {
         match m.current() {
             None => {
-                m.missing_closer();
+                m.missing_closer(Pair::Brace);
                 break;
             }
             Some(T::RBrace) if !m.closer_ahead() => {
@@ -563,7 +559,7 @@ fn block(p: &mut Marker<'_, '_>) -> CompletedMarker {
                 break;
             }
             Some(_) if m.closes_open_bracket() => {
-                m.missing_closer();
+                m.missing_closer(Pair::Brace);
                 break;
             }
             Some(_) => {
@@ -715,7 +711,7 @@ fn operand_before(
 }
 
 fn closes_expression_bracket(kind: T) -> bool {
-    opener(kind).is_some_and(|opener| !encloses_statements(opener))
+    matches!(bracket(kind), Some((pair, Side::Close)) if !pair.encloses_statements())
 }
 
 /// An opener the stream never closes began nothing and is garbage like the rest.
@@ -890,16 +886,14 @@ fn prefix_or_atom(p: &mut Marker<'_, '_>, follow: ExprFollow) -> Option<Complete
         T::Ident => leaf(p, N::NameRef),
         _ if is_literal(kind) => leaf(p, N::LiteralExpr),
         T::LParen => {
-            let mut m = p.start();
-            m.token();
-            m.enter();
+            let mut m = p.open(Pair::Paren);
             if let Some(inner) = operand(&mut m) {
                 m.field(&inner, 0);
             }
-            if m.owns_closer() {
+            if m.owns_closer(Pair::Paren) {
                 m.token();
             } else {
-                m.missing_closer();
+                m.missing_closer(Pair::Paren);
             }
             m.complete(N::ParenExpr)
         }

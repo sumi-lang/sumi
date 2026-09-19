@@ -10,8 +10,8 @@ mod tree;
 
 pub use ast::NodeKind;
 pub use grammar::{
-    ArithOp, BRACKET_PAIRS, BinaryOp, CmpOp, Literal, PrefixOp, SyntaxKind, TokenField,
-    binary_operator, is_bracket, is_closer, is_opener,
+    ArithOp, BinaryOp, CmpOp, Fixed, Literal, Pair, PrefixOp, Side, SyntaxKind, TokenField,
+    binary_operator, bracket, is_bracket, is_closer, is_opener,
 };
 pub use index::{NodeIdx, SigIdx};
 pub use input::ParserInput;

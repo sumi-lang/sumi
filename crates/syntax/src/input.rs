@@ -7,8 +7,8 @@ use std::num::NonZeroU32;
 use std::ops::Range;
 
 use crate::grammar::{
-    BRACKET_PAIRS, SyntaxKind, can_end_statement, continues_statement, encloses_statements,
-    is_closer, is_opener, opener, pair_index, starts_expression, starts_item,
+    Pair, Side, SyntaxKind, bracket, can_end_statement, continues_statement, starts_expression,
+    starts_item,
 };
 use crate::index::SigIdx;
 use sumi_lexer::{LexedFile, RawIdx};
@@ -45,7 +45,7 @@ impl ParserInput {
         let mut build = Build {
             slots: Vec::with_capacity(significant),
             openers: Vec::new(),
-            open_counts: [0; BRACKET_PAIRS.len()],
+            tops: [None; Pair::ALL.len()],
         };
 
         // Boundaries and anchors need to know which openers are ever closed, so they wait for the
@@ -80,20 +80,24 @@ impl ParserInput {
             if matched == 0 && item_anchor_at(&slots, index) {
                 item_anchors.push(SigIdx::new(index as u32));
             }
-            if is_opener(slot.kind) {
-                context = u8::from(!encloses_statements(slot.kind) && slot.partner.is_some())
-                    * IN_EXPRESSION_DELIMITERS;
-                if slot.partner.is_some() {
-                    matched += 1;
+            match bracket(slot.kind) {
+                Some((pair, Side::Open)) => {
+                    context = u8::from(!pair.encloses_statements() && slot.partner.is_some())
+                        * IN_EXPRESSION_DELIMITERS;
+                    if slot.partner.is_some() {
+                        matched += 1;
+                    }
                 }
-            } else if is_closer(slot.kind)
-                && let Some(partner) = slot.partner
-            {
-                // The opener's bit is its parent's context, so restoring it also discards unmatched
-                // inner openers.
-                let opener = (partner.get() - 1) as usize;
-                context = slots[opener].flags & IN_EXPRESSION_DELIMITERS;
-                matched -= 1;
+                Some((_, Side::Close)) => {
+                    if let Some(partner) = slot.partner {
+                        // The opener's bit is its parent's context, so restoring it also discards
+                        // unmatched inner openers.
+                        let opener = (partner.get() - 1) as usize;
+                        context = slots[opener].flags & IN_EXPRESSION_DELIMITERS;
+                        matched -= 1;
+                    }
+                }
+                None => {}
             }
         }
 
@@ -220,11 +224,21 @@ impl ParserInput {
     }
 }
 
+/// Per pair, the position in `openers` of its innermost opener, plus one.
+type Tops = [Option<NonZeroU32>; Pair::ALL.len()];
+
+/// An opener still open, with `tops` as it stood below it: a closer matches the innermost opener of
+/// its pair and drops every opener above it.
+struct Opener {
+    slot: u32,
+    tops: Tops,
+}
+
 struct Build {
     slots: Vec<Slot>,
-    /// Slot indices, innermost last.
-    openers: Vec<u32>,
-    open_counts: [usize; BRACKET_PAIRS.len()],
+    /// Innermost last.
+    openers: Vec<Opener>,
+    tops: Tops,
 }
 
 impl Build {
@@ -235,11 +249,13 @@ impl Build {
             last.flags |= JOINT;
         }
         let index = self.slots.len() as u32;
-        let partner = if is_opener(kind) {
-            self.open(index, kind);
-            None
-        } else {
-            opener(kind).and_then(|expected| self.close(index, expected))
+        let partner = match bracket(kind) {
+            Some((pair, Side::Open)) => {
+                self.open(index, pair);
+                None
+            }
+            Some((pair, Side::Close)) => self.close(index, pair),
+            None => None,
         };
         self.slots.push(Slot {
             kind,
@@ -249,30 +265,22 @@ impl Build {
         });
     }
 
-    fn count(&mut self, opener: SyntaxKind) -> &mut usize {
-        let pair = pair_index(opener).expect("only openers are counted");
-        &mut self.open_counts[pair]
+    fn open(&mut self, slot: u32, pair: Pair) {
+        self.openers.push(Opener {
+            slot,
+            tops: self.tops,
+        });
+        self.tops[pair.index()] = NonZeroU32::new(self.openers.len() as u32);
     }
 
-    fn open(&mut self, index: u32, kind: SyntaxKind) {
-        self.openers.push(index);
-        *self.count(kind) += 1;
-    }
-
-    fn close(&mut self, closer: u32, expected: SyntaxKind) -> Option<NonZeroU32> {
-        if *self.count(expected) == 0 {
-            return None;
-        }
-        while let Some(opener) = self.openers.pop() {
-            let kind = self.slots[opener as usize].kind;
-            *self.count(kind) -= 1;
-            if kind != expected {
-                continue;
-            }
-            self.slots[opener as usize].partner = NonZeroU32::new(closer + 1);
-            return NonZeroU32::new(opener + 1);
-        }
-        unreachable!("a nonzero count keeps a matching opener on the stack")
+    fn close(&mut self, closer: u32, pair: Pair) -> Option<NonZeroU32> {
+        let position = (self.tops[pair.index()]?.get() - 1) as usize;
+        let opener = &self.openers[position];
+        let slot = opener.slot;
+        self.tops = opener.tops;
+        self.openers.truncate(position);
+        self.slots[slot as usize].partner = NonZeroU32::new(closer + 1);
+        NonZeroU32::new(slot + 1)
     }
 }
 

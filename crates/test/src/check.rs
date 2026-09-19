@@ -9,7 +9,8 @@ use sumi_hir::{Analysis, Program};
 use sumi_lexer::{LexedFile, RawIdx, SyntaxKind, TokenFlags, lex};
 use sumi_syntax::ast::TokenRule;
 use sumi_syntax::{
-    BRACKET_PAIRS, NodeKind, Parse, ParseAnchor, ParseEvidence, ParserInput, SigIdx, SyntaxTree,
+    NodeKind, Parse, ParseAnchor, ParseEvidence, ParseRecoveryKind, ParserInput, Side, SigIdx,
+    SyntaxTree, bracket,
 };
 use sumi_text::TextRange;
 
@@ -93,7 +94,9 @@ pub fn input(lexed: &LexedFile, input: &ParserInput) {
         let kind = input.get(index).expect("indices below len are present");
         assert_eq!(input.in_matched_delimiters(index), !open.is_empty());
         let context = layout_open.last().is_some_and(|&opener| {
-            input.get(opener) != Some(SyntaxKind::LBrace) && input.partner(opener).is_some()
+            let pair = input.get(opener).and_then(bracket);
+            pair.is_some_and(|(pair, _)| !pair.encloses_statements())
+                && input.partner(opener).is_some()
         });
         assert_eq!(input.in_expression_delimiters(index), context);
         if sumi_syntax::is_opener(kind) {
@@ -144,11 +147,10 @@ pub fn input(lexed: &LexedFile, input: &ParserInput) {
             } else {
                 (partner, index)
             };
+            let opens = input.get(opener).and_then(bracket);
+            let closes = input.get(closer).and_then(bracket);
             assert!(
-                input
-                    .get(opener)
-                    .zip(input.get(closer))
-                    .is_some_and(|pair| BRACKET_PAIRS.contains(&pair)),
+                matches!((opens, closes), (Some((a, Side::Open)), Some((b, Side::Close))) if a == b),
                 "tokens {opener:?} and {closer:?} are partners but not a matching pair"
             );
             if partner > index {
@@ -352,6 +354,11 @@ pub fn parse(source: &str, lexed: &LexedFile, parse: &Parse) {
     for evidence in parse.evidence() {
         let anchor = match evidence {
             ParseEvidence::Recovery(recovery) => {
+                // A missing closer names the one token that opened its pair.
+                if let ParseRecoveryKind::Closer { pair, opener } = recovery.kind {
+                    assert_eq!(opener.end(), opener.start() + 1);
+                    assert_eq!(lexed.kind(opener.start()), pair.opener().kind());
+                }
                 let mut previous_end = None;
                 for skipped in &recovery.skipped {
                     assert!(skipped.start() < skipped.end());
