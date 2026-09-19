@@ -42,34 +42,11 @@ UnspacedBinaryOperator at 240
 
 == diagnostics ==
 error[syntax/unspaced-binary-operator] 4:9..4:10 "<": binary operator must have spaces on both sides
-  fix (safe): space binary operator
-    4:9 -> " "
-    4:10 -> " "
 error[syntax/unspaced-binary-operator] 5:9..5:10 "<": binary operator must have spaces on both sides
-  fix (safe): space binary operator
-    5:9 -> " "
-    5:10 -> " "
 error[syntax/unspaced-binary-operator] 5:11..5:12 ">": binary operator must have spaces on both sides
-  fix (safe): space binary operator
-    5:11 -> " "
-    5:12 -> " "
 error[syntax/chained-comparison] 5:11..5:12 ">": comparison operators cannot be chained
 error[syntax/unspaced-binary-operator] 6:14..6:15 "<": binary operator must have spaces on both sides
-  fix (safe): space binary operator
-    6:14 -> " "
 error[syntax/unspaced-binary-operator] 7:15..7:16 "<": binary operator must have spaces on both sides
-  fix (safe): space binary operator
-    7:16 -> " "
-
-== fixed (syntax/chained-comparison remains) ==
-// A `<` glued to the name before it is reserved for type arguments, so
-// every glued comparison stays an error until it becomes an unclosed list.
-fn f() {
-    if a < b { return 1 }
-    if a < b > (c) { return 2 }
-    let x = a < b
-    let y = a < b
-}
 
 == formatted (ChainedComparison, UnspacedBinaryOperator remain) ==
 // A `<` glued to the name before it is reserved for type arguments, so

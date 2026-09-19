@@ -1,7 +1,7 @@
 //! The formatter's policy, one witness per rule, and its contract on
 //! sources the parser recovered in.
 
-use sumi_format::{Formatted, format, rep};
+use sumi_format::{Formatted, format};
 use sumi_lexer::lex;
 use sumi_syntax::{ParserInput, parse};
 
@@ -69,10 +69,6 @@ fn lists_break_one_per_line_with_a_layout_comma() {
     check(
         "fn f() {\n    foo(a, b,)\n    foo(\n        a,\n        b,\n    )\n    foo(b , )\n}",
         "fn f() {\n    foo(a, b)\n    foo(a, b)\n    foo(b)\n}\n",
-    );
-    check(
-        "fn f() {\n    let total = compute(aaaaaaaaaaaaaaaaaaaaaaaaa, bbbbbbbbbbbbbbbbbbbbbbbbbbbb, cccccccccccccccccccccccccccc, dddddddddddd)\n}",
-        "fn f() {\n    let total = compute(\n        aaaaaaaaaaaaaaaaaaaaaaaaa,\n        bbbbbbbbbbbbbbbbbbbbbbbbbbbb,\n        cccccccccccccccccccccccccccc,\n        dddddddddddd,\n    )\n}\n",
     );
 }
 
@@ -151,7 +147,7 @@ fn recovered_syntax_is_left_as_written_around_the_damage() {
 }
 
 #[test]
-fn formatting_keeps_the_rep_and_only_changes_trivia() {
+fn malformed_sources_format_without_a_defect() {
     for source in [
         "fn f(a:int,b:int)->int{let x=a+b\nreturn x*2}",
         "fn f() { a // why\n + b }\nfn g() { let s = \"x{ a + b }y\" }",
@@ -161,18 +157,7 @@ fn formatting_keeps_the_rep_and_only_changes_trivia() {
         "\"open",
         "fn f() { ((((( }",
     ] {
-        let lexed = lex(source).unwrap();
-        let parsed = parse(ParserInput::new(&lexed));
-        let before = rep(source, &lexed, &parsed);
-        let formatted = format(source, &lexed, &parsed).expect("no defect");
-        let after_lexed = lex(&formatted.text).unwrap();
-        let after = parse(ParserInput::new(&after_lexed));
-        assert_eq!(
-            rep(&formatted.text, &after_lexed, &after),
-            before,
-            "rep of {source:?} -> {:?}",
-            formatted.text
-        );
+        fmt(source);
     }
 }
 

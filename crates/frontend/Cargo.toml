@@ -6,7 +6,6 @@ license.workspace = true
 
 [dependencies]
 sumi-diagnostics = { path = "../diagnostics" }
-sumi-format = { path = "../format" }
 sumi-lexer = { path = "../lexer" }
 sumi-syntax = { path = "../syntax" }
 sumi-text = { path = "../text" }
@@ -14,6 +13,7 @@ sumi-text = { path = "../text" }
 [dev-dependencies]
 criterion.workspace = true
 proptest.workspace = true
+sumi-format = { path = "../format" }
 sumi-test = { path = "../test" }
 tempfile.workspace = true
 

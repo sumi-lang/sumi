@@ -9,8 +9,8 @@
 //! formatter may add or remove, so `rep` erases it and counts positions
 //! without it.
 
-use sumi_lexer::{LexedFile, RawIdx};
-use sumi_syntax::{NodeIdx, NodeKind, Parse, ParserInput, SigIdx, SyntaxKind};
+use sumi_lexer::LexedFile;
+use sumi_syntax::{NodeIdx, NodeKind, Parse, SigIdx, SyntaxKind};
 
 use crate::trivia::{GapSignal, signal};
 
@@ -19,23 +19,23 @@ use crate::trivia::{GapSignal, signal};
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Rep<'s> {
     /// One entry per child of the root, in source order.
-    pub items: Vec<ItemRep<'s>>,
+    pub(crate) items: Vec<ItemRep<'s>>,
     /// The gap before each item, then the gap after the last one.
-    pub edges: Vec<GapSignal<'s>>,
+    pub(crate) edges: Vec<GapSignal<'s>>,
 }
 
 /// The layout-free content of one top-level item.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ItemRep<'s> {
-    pub kind: NodeKind,
+pub(crate) struct ItemRep<'s> {
+    kind: NodeKind,
     /// The significant tokens, layout commas erased.
-    pub tokens: Vec<(SyntaxKind, &'s str)>,
+    tokens: Vec<(SyntaxKind, &'s str)>,
     /// Every node of the subtree in preorder: its kind, extent, and range
     /// in erased significant indices relative to the item.
-    pub nodes: Vec<(NodeKind, u32, u32, u32)>,
+    nodes: Vec<(NodeKind, u32, u32, u32)>,
     /// The signal of every gap inside the item, in order; the gaps around
     /// an erased comma count as one.
-    pub gaps: Vec<GapSignal<'s>>,
+    gaps: Vec<GapSignal<'s>>,
 }
 
 /// The layout-free content of `source`, which `lexed` and `parse` must be
@@ -43,16 +43,8 @@ pub struct ItemRep<'s> {
 pub fn rep<'s>(source: &'s str, lexed: &LexedFile, parse: &Parse) -> Rep<'s> {
     let (input, tree) = (parse.input(), parse.tree());
     let n = input.len();
-    let sig_of_raw = sig_of_raw(input, lexed);
-    let first_sig = |node: NodeIdx| sig_of_raw[tree.first_token(node).to_usize()];
-    let end_sig = |node: NodeIdx| {
-        let end = tree.end_token(node);
-        if end == tree.first_token(node) {
-            first_sig(node)
-        } else {
-            sig_of_raw[end.to_usize() - 1] + 1
-        }
-    };
+    let first_sig = |node: NodeIdx| crate::first_sig(tree, input, node);
+    let end_sig = |node: NodeIdx| crate::end_sig(tree, input, node);
 
     let mut erased = vec![false; n];
     for node in tree.nodes() {
@@ -76,27 +68,15 @@ pub fn rep<'s>(source: &'s str, lexed: &LexedFile, parse: &Parse) -> Rep<'s> {
     let erased_index = |sig: u32| sig - before[sig as usize];
 
     // The trivia of gap `gap`, the tokens before an erased comma included.
-    let trivia = |gap: usize| -> Vec<RawIdx> {
-        let start = |gap: usize| {
-            if gap == 0 {
-                RawIdx::new(0)
-            } else {
-                input.token(SigIdx::new(gap as u32 - 1)) + 1
-            }
-        };
-        let end = if gap == n {
-            lexed.end()
-        } else {
-            input.token(SigIdx::new(gap as u32))
-        };
-        let mut tokens: Vec<RawIdx> = Vec::new();
-        if gap > 0 && erased[gap - 1] {
-            tokens.extend(start(gap - 1).until(input.token(SigIdx::new(gap as u32 - 1))));
-        }
-        tokens.extend(start(gap).until(end));
-        tokens
+    let trivia = |gap: usize| {
+        let range = input.trivia_before(SigIdx::new(gap as u32));
+        range.start.until(range.end)
     };
-    let signal_of = |gap: usize| signal(source, lexed, input, gap, trivia(gap).into_iter());
+    let signal_of = |gap: usize| {
+        let before_comma = (gap > 0 && erased[gap - 1]).then(|| trivia(gap - 1));
+        let tokens = before_comma.into_iter().flatten().chain(trivia(gap));
+        signal(source, lexed, input, gap, tokens)
+    };
 
     let mut items = Vec::new();
     let mut edges = Vec::new();
@@ -139,14 +119,4 @@ pub fn rep<'s>(source: &'s str, lexed: &LexedFile, parse: &Parse) -> Rep<'s> {
     }
     edges.push(signal_of(n));
     Rep { items, edges }
-}
-
-/// The significant index of every raw token, meaningful at the significant
-/// ones only.
-pub(crate) fn sig_of_raw(input: &ParserInput, lexed: &LexedFile) -> Vec<u32> {
-    let mut map = vec![u32::MAX; lexed.len()];
-    for sig in input.indices() {
-        map[input.token(sig).to_usize()] = sig.to_u32();
-    }
-    map
 }

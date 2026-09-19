@@ -80,20 +80,17 @@ error[syntax/expected-token] 5:1: expected `}`
 error[syntax/expected-body] 6:26: expected a body, `{` or `=`
   at 6:26..6:27 "=": skipped while recovering
 error[syntax/function-item-on-same-line] 6:28..6:30 "fn": function item must begin on a new line
-  fix (safe): move function item onto a new line
-    6:27..6:28 " " -> "\n"
 error[syntax/expected-name] 8:4: expected a name
 error[syntax/expected-name] 10:4: expected a name
 error[syntax/expected-name] 12:1: expected a name
 
-== fixed (syntax/expected-body, syntax/expected-expression, syntax/expected-name remain) ==
+== fixed (syntax/expected-body, syntax/expected-expression, syntax/expected-name, syntax/function-item-on-same-line remain) ==
 fn missing_parameter_closer() = fn(x) = 1
 fn next_a() -> int = 2
 fn missing_body_closer() = fn() {
     let x =}
 fn next_b() -> int = 3
-fn missing_body() = fn() =
-fn next_c() -> int = 4
+fn missing_body() = fn() = fn next_c() -> int = 4
 fn first() {}
 fn () {}
 fn second() {}

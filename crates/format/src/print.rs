@@ -2,11 +2,13 @@
 //! deciding each group where it opens and emitting each gap's separator,
 //! as the edits that turn the source into the formatted text.
 
+use std::ops::Range;
+
 use sumi_lexer::{LexedFile, RawIdx};
 use sumi_syntax::{ParserInput, SigIdx};
 use sumi_text::{TextEdit, TextRange};
 
-use crate::plan::{Flat, Group, INDENT, Plan, WIDTH};
+use crate::plan::{Breaks, Closer, Flat, Group, INDENT, Plan, WIDTH};
 use crate::trivia::signal;
 
 /// One gap's edit: the gap it came from, so a caller can tell which item
@@ -30,7 +32,7 @@ pub(crate) fn print(
     // Hard gaps up to each index, so a group's forcing is one subtraction.
     let mut hard_before = vec![0u32; n + 2];
     for gap in 0..=n {
-        hard_before[gap + 1] = hard_before[gap] + u32::from(plan.gaps[gap].hard);
+        hard_before[gap + 1] = hard_before[gap] + u32::from(plan.gaps[gap].breaks == Breaks::Hard);
     }
     // A group is forced by a hard gap outside its tail.
     let hard_in = |from: u32, to: u32| hard_before[to as usize] > hard_before[from as usize];
@@ -40,31 +42,26 @@ pub(crate) fn print(
     };
 
     // The trivia of gap `gap`, merged with the gap before a layout comma.
-    let trivia_range = |gap: usize| -> (RawIdx, RawIdx) {
-        let end = if gap == n { lexed.end() } else { raw_of(gap) };
-        let mut start = if gap == 0 {
-            RawIdx::new(0)
-        } else {
-            raw_of(gap - 1) + 1
-        };
+    let trivia_range = |gap: usize| -> Range<RawIdx> {
+        let mut range = input.trivia_before(SigIdx::new(gap as u32));
         if gap > 0 && plan.layout_comma[gap - 1] {
-            start = if gap >= 2 {
-                raw_of(gap - 2) + 1
-            } else {
-                RawIdx::new(0)
-            };
+            range.start = input.trivia_before(SigIdx::new(gap as u32 - 1)).start;
         }
-        (start, end)
+        range
     };
     let trivia_tokens = |gap: usize| {
-        let (start, end) = trivia_range(gap);
+        let range = trivia_range(gap);
         let comma = (gap > 0 && plan.layout_comma[gap - 1]).then(|| raw_of(gap - 1));
-        start.until(end).filter(move |&raw| Some(raw) != comma)
+        range
+            .start
+            .until(range.end)
+            .filter(move |&raw| Some(raw) != comma)
     };
     let flat_trivia_width = |gap: usize| -> usize {
-        let (start, end) = trivia_range(gap);
-        start
-            .until(end)
+        let range = trivia_range(gap);
+        range
+            .start
+            .until(range.end)
             .map(|raw| width(lexed.text(source, raw)))
             .sum()
     };
@@ -96,16 +93,17 @@ pub(crate) fn print(
                 let mut k = gap;
                 loop {
                     let plan_gap = plan.gaps[k];
-                    // A closer gap that breaks emits its comma first.
-                    let comma = usize::from(plan_gap.closer);
-                    if plan_gap.hard {
+                    // A list closer gap that breaks emits its comma first.
+                    let comma = usize::from(plan_gap.closer == Some(Closer::List));
+                    if plan_gap.breaks == Breaks::Hard {
                         w += comma;
                         break;
                     }
-                    if plan_gap.breakable && group.in_tail(k as u32) {
+                    let soft = plan_gap.breaks == Breaks::Soft;
+                    if soft && group.in_tail(k as u32) {
                         break;
                     }
-                    if k as u32 >= group.end && plan_gap.breakable {
+                    if k as u32 >= group.end && soft {
                         let enclosing = stack
                             .iter()
                             .rev()
@@ -145,17 +143,20 @@ pub(crate) fn print(
             continue;
         }
         let plan_gap = plan.gaps[gap];
-        let (start, end) = trivia_range(gap);
-        let input_range = TextRange::new(lexed.boundary(start), lexed.boundary(end));
+        let trivia = trivia_range(gap);
+        let input_range = TextRange::new(lexed.boundary(trivia.start), lexed.boundary(trivia.end));
         let input_text = input_range.text(source);
         let text: String = if plan_gap.frozen {
             input_text.to_owned()
         } else {
-            let breaks = plan_gap.hard
-                || (plan_gap.breakable && stack.last().is_some_and(|&open| broken[open]));
+            let breaks = match plan_gap.breaks {
+                Breaks::Never => false,
+                Breaks::Soft => stack.last().is_some_and(|&open| broken[open]),
+                Breaks::Hard => true,
+            };
             let sig = signal(source, lexed, input, gap, trivia_tokens(gap));
             let mut out = String::new();
-            if plan_gap.closer && breaks {
+            if plan_gap.closer == Some(Closer::List) && breaks {
                 out.push(',');
             }
             // Every broken group whose tail holds this gap indents it.
@@ -178,7 +179,7 @@ pub(crate) fn print(
                     if comment.blank_before {
                         out.push('\n');
                     }
-                    indent(&mut out, plan_gap.comment_level);
+                    indent(&mut out, plan_gap.comment_level());
                 }
                 out.push_str(comment.text);
             }

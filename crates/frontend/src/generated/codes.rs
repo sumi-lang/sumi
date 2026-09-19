@@ -7,7 +7,8 @@ use sumi_diagnostics::{DiagnosticCode, DiagnosticGroup};
 /// Reported by the frontend: what the lexer rejects, where the parser
 /// recovers, and the layout rules the parser checks. Every one is an
 /// error. The tree is still built around it, and a fix is attached where
-/// the repair is mechanical.
+/// the repair is a token: a closer or a canonical literal. A layout rule
+/// carries none; `sumi fmt` repairs every one it can.
 pub const SYNTAX: DiagnosticGroup = DiagnosticGroup::new("syntax");
 
 /// A string literal reaches the end of its line without a closing `"`. The
@@ -79,32 +80,31 @@ pub const NESTING_TOO_DEEP: DiagnosticCode = DiagnosticCode::new(SYNTAX, "nestin
 
 /// A binary operator glued to an operand, as in `a+b` or `a<b`. Binary
 /// operators are spaced on both sides; glued, `<` opens type arguments and
-/// `*` and `&` are reserved for prefix operators. The fix inserts the
-/// spaces.
+/// `*` and `&` are reserved for prefix operators. `sumi fmt` spaces it.
 pub const UNSPACED_BINARY_OPERATOR: DiagnosticCode =
     DiagnosticCode::new(SYNTAX, "unspaced-binary-operator");
 
 /// A prefix operator separated from its operand, as in `- x`. Prefix
-/// operators are glued; the fix removes the space.
+/// operators are glued; `sumi fmt` removes the space.
 pub const SPACED_PREFIX_OPERATOR: DiagnosticCode =
     DiagnosticCode::new(SYNTAX, "spaced-prefix-operator");
 
-/// A space between a function name or callee and its `(`. The fix removes
-/// it.
+/// A space between a function name or callee and its `(`, which
+/// `sumi fmt` removes.
 pub const SPACED_LIST_OPENER: DiagnosticCode = DiagnosticCode::new(SYNTAX, "spaced-list-opener");
 
-/// A function item's name on the line after its `fn`. The fix moves the
-/// name onto the `fn` line.
+/// A function item's name on the line after its `fn`. `sumi fmt` moves
+/// the name onto the `fn` line.
 pub const FUNCTION_NAME_ON_NEXT_LINE: DiagnosticCode =
     DiagnosticCode::new(SYNTAX, "function-name-on-next-line");
 
-/// A function item beginning on the line where the previous one ended. The
-/// fix moves it onto a line of its own.
+/// A function item beginning on the line where the previous one ended.
+/// `sumi fmt` moves it onto a line of its own.
 pub const FUNCTION_ITEM_ON_SAME_LINE: DiagnosticCode =
     DiagnosticCode::new(SYNTAX, "function-item-on-same-line");
 
-/// A binding's name on the line after its `let`. The fix moves the name
-/// onto the `let` line.
+/// A binding's name on the line after its `let`. `sumi fmt` moves the
+/// name onto the `let` line.
 pub const BINDING_NAME_ON_NEXT_LINE: DiagnosticCode =
     DiagnosticCode::new(SYNTAX, "binding-name-on-next-line");
 

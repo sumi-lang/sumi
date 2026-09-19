@@ -1,0 +1,26 @@
+== tree ==
+SourceFile 0..265
+  FnItem 124..264
+    Name 127..128 "f"
+    ParamList 128..130 "()"
+    Block 131..264
+      LetStmt 137..262
+        Name 141..147 "result"
+        BinaryExpr 150..262
+          NameRef 150..220 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          NameRef 221..262 "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+
+== evidence ==
+UnspacedBinaryOperator at 220
+
+== diagnostics ==
+error[syntax/unspaced-binary-operator] 4:88..4:89 "+": binary operator must have spaces on both sides
+
+== formatted ==
+// The binding overflows the width, so the formatter breaks it before the
+// `+`, and the glued operator is still reported.
+fn f() {
+    let result =
+        aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+            + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+}

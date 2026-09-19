@@ -60,41 +60,16 @@ error[syntax/expected-statement] 3:5..3:6 "=": expected a statement
 error[syntax/expected-statement] 7:5..7:6 "=": expected a statement
   at 7:5..7:8 "= 1": skipped while recovering
 error[syntax/spaced-list-opener] 9:11..9:12 "(": opening `(` must be adjacent to the function name or callee
-  fix (safe): remove space before `(`
-    9:10..9:11 " " -> ""
 error[syntax/expected-token] 11:1: expected `(`
 error[syntax/expected-body] 11:1: expected a body, `{` or `=`
 error[syntax/expected-item] 11:1..11:2 "(": expected a function item
   at 11:1..11:6 "() {}": skipped while recovering
 error[syntax/spaced-list-opener] 13:12..13:13 "(": opening `(` must be adjacent to the function name or callee
-  fix (safe): remove space before `(`
-    13:11..13:12 " " -> ""
 error[syntax/expected-expression] 15:6: expected an expression
 error[syntax/expected-token] 18:1: expected `(`
 error[syntax/expected-body] 18:1: expected a body, `{` or `=`
 error[syntax/expected-item] 18:1..18:2 "(": expected a function item
   at 18:1..18:7 "() = 1": skipped while recovering
-
-== fixed (syntax/expected-body, syntax/expected-expression, syntax/expected-item, syntax/expected-statement, syntax/expected-token remain) ==
-fn binding() {
-    let x
-    = 1
-}
-fn assignment() {
-    x
-    = 1
-}
-fn spaced() {}
-fn split
-() {}
-fn calls() {
-    spaced()
-    spaced
-    ()
-}
-fn closure() = fn
-() = 1
-fn survivor() {}
 
 == formatted ==
 fn binding() {

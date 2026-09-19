@@ -11,7 +11,7 @@ fn nested() -> int = (
 fn compound() -> bool =
     1
         <= // continue after the comment
-2
+        2
         && true
 fn statements() -> int = (
     {

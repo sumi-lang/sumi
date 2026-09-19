@@ -29,25 +29,9 @@ SpacedListOpener at 83
 
 == diagnostics ==
 error[syntax/spaced-list-opener] 1:10..1:11 "(": opening `(` must be adjacent to the function name or callee
-  fix (safe): remove space before `(`
-    1:9..1:10 " " -> ""
 error[syntax/spaced-list-opener] 3:11..3:12 "(": opening `(` must be adjacent to the function name or callee
-  fix (safe): remove space before `(`
-    3:10..3:11 " " -> ""
 error[syntax/spaced-list-opener] 4:13..4:14 "(": opening `(` must be adjacent to the function name or callee
-  fix (safe): remove space before `(`
-    4:12..4:13 " " -> ""
 error[syntax/spaced-list-opener] 5:11..5:12 "(": opening `(` must be adjacent to the function name or callee
-  fix (safe): remove space before `(`
-    5:10..5:11 "\t" -> ""
-
-== fixed ==
-fn value() -> int = 1
-fn caller() -> int {
-    value()
-    (value)( )
-    value()
-}
 
 == formatted ==
 fn value() -> int = 1

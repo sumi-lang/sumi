@@ -1,0 +1,5 @@
+// The binding overflows the width, so the formatter breaks it before the
+// `+`, and the glued operator is still reported.
+fn f() {
+    let result = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+}

@@ -10,5 +10,4 @@ sumi-text = { path = "../text" }
 
 [dev-dependencies]
 proptest.workspace = true
-sumi-format = { path = "../format" }
 sumi-test = { path = "../test" }

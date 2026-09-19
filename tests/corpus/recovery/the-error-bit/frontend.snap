@@ -62,20 +62,17 @@ error[syntax/expected-token] 5:27: expected `)`
     5:26 -> ")"
 error[syntax/unexpected-syntax] 6:34..6:35 ")": unexpected syntax in expression
 error[syntax/unspaced-binary-operator] 7:26..7:27 "-": binary operator must have spaces on both sides
-  fix (safe): space binary operator
-    7:26 -> " "
-    7:27 -> " "
 error[syntax/expected-expression] 8:47: expected an expression
 error[syntax/expected-name] 9:4..9:5 "_": expected a name
 
-== fixed (syntax/expected-expression, syntax/expected-name, syntax/unexpected-syntax remain) ==
+== fixed (syntax/expected-expression, syntax/expected-name, syntax/unexpected-syntax, syntax/unspaced-binary-operator remain) ==
 fn clean(a: Int) -> Int {
     let x = a + 1
     x
 }
 fn wrapped_operand() { (x) }
 fn error_node_not_siblings() { x ) }
-fn layout_violation() { a - b }
+fn layout_violation() { a-b }
 fn missing_syntax_marks_ancestors() { let x = }
 fn _() {}
 fn unmarked_after_recovery() {}

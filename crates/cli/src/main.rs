@@ -8,6 +8,8 @@ use std::process::ExitCode;
 
 use sumi_frontend::{FileId, Severity, parse_source};
 use sumi_hir::{Analysis, Value};
+use sumi_lexer::lex;
+use sumi_syntax::{ParserInput, parse};
 use sumi_text::{LineIndex, TextSize};
 
 const USAGE: &str = "usage: sumi check <file>
@@ -185,10 +187,14 @@ fn fmt(args: &[OsString]) -> Result<ExitCode, String> {
     })
 }
 
+/// Lex, parse, and format `source`. The formatter reads the tokens and
+/// the tree, never a diagnostic, so this stops short of `parse_source`,
+/// which would lower the evidence into diagnostics nothing here reads.
 fn format_source(path: &Path, source: &str) -> Result<String, String> {
-    let parsed = parse_source(FileId::new(0), source.into())
+    let lexed = lex(source)
         .map_err(|error| format!("{}: error[cli/source-too-large]: {error}", path.display()))?;
-    let formatted = sumi_format::format(source, parsed.lexed(), parsed.parse())
+    let parse = parse(ParserInput::new(&lexed));
+    let formatted = sumi_format::format(source, &lexed, &parse)
         .map_err(|defect| format!("{}: error[cli/format-defect]: {defect}", path.display()))?;
     Ok(formatted.text)
 }
