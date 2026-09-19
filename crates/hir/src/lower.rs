@@ -386,8 +386,9 @@ enum Finish {
     },
 }
 
+/// `&&` when `and`, else `||`, with its expression.
 #[derive(Clone, Copy)]
-struct Lazy {
+struct LazyOp {
     expr: Clean<ast::BinaryExpr>,
     and: bool,
 }
@@ -400,19 +401,17 @@ enum Work {
     Unused(NodeIdx),
     Call {
         call: Clean<ast::CallExpr>,
-        /// Peeled; read as an input only without a `target`.
-        callee: NodeIdx,
         target: Option<FunctionId>,
     },
     Branches(Clean<ast::IfExpr>),
-    Rhs(Lazy),
+    Rhs(LazyOp),
     Join {
         branch: Clean<ast::IfExpr>,
         then: RegionId,
         else_: Option<RegionId>,
     },
     Lazy {
-        expr: Lazy,
+        expr: LazyOp,
         rhs: RegionId,
     },
     Push {
@@ -519,11 +518,7 @@ impl<'a, 's> Builder<'a, 's> {
                 let built = match task {
                     Work::Finish(finish) => self.finish(finish),
                     Work::Block(node) => self.block(node),
-                    Work::Call {
-                        call,
-                        callee,
-                        target,
-                    } => self.call(call, callee, target),
+                    Work::Call { call, target } => self.call(call, target),
                     Work::Join {
                         branch,
                         then,
@@ -709,8 +704,6 @@ impl<'a, 's> Builder<'a, 's> {
         let (region, _) = *self.regions.last().expect("a body runs in its region");
         self.graph.region(region).context
     }
-    /// The operator and operands of a binary expression without an error.
-    /// The operator and operands of a binary expression.
     fn binary(&self, binary: Clean<ast::BinaryExpr>) -> (sumi_syntax::BinaryOp, NodeIdx, NodeIdx) {
         let tree = self.source.tree;
         let lhs = binary.lhs().node();
@@ -740,7 +733,6 @@ impl<'a, 's> Builder<'a, 's> {
             )
             .eq([SyntaxKind::Minus])
     }
-    /// Whether a prefix expression without an error negates, else it inverts, and its operand.
     /// The scope is as it was when the read was built: a region is entered right after its
     /// condition finishes.
     fn read(&self, node: NodeIdx) -> Option<NodeId> {
@@ -748,8 +740,11 @@ impl<'a, 's> Builder<'a, 's> {
         let ast::Expr::NameRef(name) = self.source.peel(ast::Expr::cast(tree, node)?) else {
             return None;
         };
-        let node = name.node();
-        let defined = self.lookup(self.source.text(node))?;
+        self.local(name)
+    }
+    /// The typed local `name` refers to.
+    fn local(&self, name: ast::NameRef) -> Option<NodeId> {
+        let defined = self.lookup(self.source.text(name.node()))?;
         self.lowered.typed[defined.index()].then_some(defined)
     }
     /// Narrow the locals `cond` compares, for `cond` holding in `sense`.
@@ -781,7 +776,7 @@ impl<'a, 's> Builder<'a, 's> {
                         self.refine(lhs, sense);
                         self.refine(rhs, sense);
                     }
-                    op @ (Lt | Le | Gt | Ge | Eq | Ne) => {
+                    Lt | Le | Gt | Ge | Eq | Ne => {
                         let op = eager(op).expect("a comparison is eager");
                         for (side, other, local_is_lhs) in [(lhs, rhs, true), (rhs, lhs, false)] {
                             if let (Some(local), Some(value)) = (self.read(side), self.typed(other))
@@ -807,8 +802,8 @@ impl<'a, 's> Builder<'a, 's> {
                     _ => {}
                 }
             }
-            CleanExpr::NameRef(_) => {
-                if let Some(local) = self.read(node) {
+            CleanExpr::NameRef(name) => {
+                if let Some(local) = self.local(name.view()) {
                     let at = self.source.range(node);
                     let inputs = [(self.current(local), at)];
                     let read = self.place(Op::Exactly(sense), &inputs, at, None);
@@ -859,7 +854,7 @@ impl<'a, 's> Builder<'a, 's> {
             guard: (cond, true),
         });
     }
-    fn rhs(&mut self, expr: Lazy, work: &mut Vec<Work>) {
+    fn rhs(&mut self, expr: LazyOp, work: &mut Vec<Work>) {
         let and = expr.and;
         let lhs = expr.expr.lhs().node();
         let rhs = expr.expr.rhs().node();
@@ -939,7 +934,7 @@ impl<'a, 's> Builder<'a, 's> {
                         work.push(Work::Finish(Finish::Binary { expr, op }));
                         work.push(Work::Enter(rhs));
                     }
-                    None => work.push(Work::Rhs(Lazy {
+                    None => work.push(Work::Rhs(LazyOp {
                         expr,
                         and: op == sumi_syntax::BinaryOp::And,
                     })),
@@ -979,22 +974,14 @@ impl<'a, 's> Builder<'a, 's> {
                         None
                     }
                 };
-                work.push(Work::Call {
-                    call,
-                    callee: callee.node(),
-                    target,
-                });
+                work.push(Work::Call { call, target });
                 enter_each(work, call.arg_list().args(tree).map(|arg| arg.node()));
             }
             CleanStmt::Expr(CleanExpr::NameRef(name)) => {
-                if self.finish(Finish::NameRef(name)).is_none() {
-                    self.failed = true;
-                }
+                work.push(Work::Finish(Finish::NameRef(name)));
             }
             CleanStmt::Expr(CleanExpr::LiteralExpr(literal)) => {
-                if self.finish(Finish::Literal(literal)).is_none() {
-                    self.failed = true;
-                }
+                work.push(Work::Finish(Finish::Literal(literal)));
             }
             CleanStmt::Expr(CleanExpr::ClosureExpr(_))
             | CleanStmt::AssignStmt(_)
@@ -1226,7 +1213,7 @@ impl<'a, 's> Builder<'a, 's> {
         }
         Some(())
     }
-    fn lazy(&mut self, expr: Lazy, rhs: RegionId) -> Option<()> {
+    fn lazy(&mut self, expr: LazyOp, rhs: RegionId) -> Option<()> {
         let lhs = expr.expr.lhs().node();
         let lhs_input = self.input(lhs);
         let op = if expr.and {
@@ -1256,12 +1243,7 @@ impl<'a, 's> Builder<'a, 's> {
         self.typed(cond)?;
         Some(())
     }
-    fn call(
-        &mut self,
-        call: Clean<ast::CallExpr>,
-        callee_node: NodeIdx,
-        target: Option<FunctionId>,
-    ) -> Option<()> {
+    fn call(&mut self, call: Clean<ast::CallExpr>, target: Option<FunctionId>) -> Option<()> {
         let context = self.context();
         let tree = self.source.tree;
         let node = call.node();
@@ -1275,10 +1257,11 @@ impl<'a, 's> Builder<'a, 's> {
         // Every argument is read, arity aside: the typing holds each to its parameter.
         let mut inputs = std::mem::take(&mut self.inputs);
         inputs.clear();
-        if target.is_none()
-            && let Some(built) = self.nodes_of[callee_node.to_usize()]
-        {
-            inputs.push((built, self.source.range(callee_node)));
+        if target.is_none() {
+            let callee = self.source.peel(call.callee()).node();
+            if let Some(built) = self.nodes_of[callee.to_usize()] {
+                inputs.push((built, self.source.range(callee)));
+            }
         }
         let mut count = 0;
         for arg in call.arg_list().args(tree) {
