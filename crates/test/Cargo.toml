@@ -6,6 +6,6 @@ license.workspace = true
 publish = false
 
 [dependencies]
-proptest = "=1.11.0"
+proptest.workspace = true
 sumi-lexer = { path = "../lexer" }
 sumi-syntax = { path = "../syntax" }

@@ -4,3 +4,8 @@ members = ["crates/*", "fuzz", "xtask"]
 
 [workspace.package]
 license = "UPL-1.0"
+
+[workspace.dependencies]
+criterion = { package = "codspeed-criterion-compat", version = "5.0.1", default-features = false, features = ["cargo_bench_support"] }
+proptest = "1.11.0"
+tempfile = "3.27.0"

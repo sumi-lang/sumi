@@ -10,5 +10,5 @@ sumi-syntax = { path = "../syntax" }
 sumi-text = { path = "../text" }
 
 [dev-dependencies]
-proptest = "=1.11.0"
+proptest.workspace = true
 sumi-test = { path = "../test" }
