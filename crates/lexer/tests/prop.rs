@@ -1,22 +1,15 @@
-//! Property tests: the partition invariants of `lex`, over generated sources
-//! instead of the hand-written cases in `lex.rs`.
-
 use proptest::prelude::*;
 use sumi_lexer::{SyntaxKind, lex};
 use sumi_test::check;
 
-/// Fragments beyond every keyword and punctuation text of the language that
-/// each lex to exactly one token on their own, stay terminated, and do not
-/// absorb a following space-separated fragment. [`spaced_tokens_roundtrip`]
-/// depends on all three; keep new entries within them.
+/// Each entry lexes to one token on its own and absorbs no following space-separated fragment;
+/// [`spaced_tokens_roundtrip`] relies on both.
 const EXTRA_SINGLE_TOKENS: &[&str] = &[
-    // Identifiers.
     "x",
     "foo",
     "_a",
     "r",
     "raw",
-    // Numbers, valid and pathological: suffixes and padding.
     "0",
     "123",
     "1_000",
@@ -24,22 +17,17 @@ const EXTRA_SINGLE_TOKENS: &[&str] = &[
     "0123",
     "1u32",
     "0x1F",
-    // Terminated string literals.
     "\"abc\"",
     "\"a\\\"b\"",
-    // Punctuation outside the language.
     ";",
     "[",
     "]",
     "@",
     "#",
     "\\",
-    // A character with no token to belong to.
     "€",
 ];
 
-/// Every keyword and punctuation text of the language, then
-/// [`EXTRA_SINGLE_TOKENS`].
 fn single_tokens() -> Vec<&'static str> {
     SyntaxKind::ALL
         .iter()
@@ -48,9 +36,6 @@ fn single_tokens() -> Vec<&'static str> {
         .collect()
 }
 
-/// Fragments that are only safe in free concatenation: trivia, comments,
-/// strings terminated and not, escapes known and unknown, and characters
-/// with no meaning.
 const LOOSE_FRAGMENTS: &[&str] = &[
     " ",
     "\t",
@@ -77,16 +62,11 @@ fn fragment() -> impl Strategy<Value = String> {
     ]
 }
 
-/// Concatenated fragments: the boundaries between them are what exercises
-/// maximal munch.
 fn soup() -> impl Strategy<Value = String> {
     proptest::collection::vec(fragment(), 0..64).prop_map(|fragments| fragments.concat())
 }
 
-/// Number-shaped sources: digits, the separator, the point, an exponent,
-/// a sign, a suffix, and a hex digit, concatenated in every order, so the
-/// pathological literals the malformed flag is held to are sampled densely
-/// rather than by chance in [`soup`].
+/// Malformed number literals arise in [`soup`] only by chance; here they are dense.
 fn number_soup() -> impl Strategy<Value = String> {
     const PIECES: &[&str] = &[
         "0", "1", "9", "123", "_", ".", "e", "-", "5", "u32", "x", " ",

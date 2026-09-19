@@ -1,6 +1,3 @@
-//! The tokens of hand-written sources: kinds, ranges, flags, and the
-//! errors of the tokens that have them.
-
 use sumi_lexer::{LexError, LexErrorKind, RawIdx, lex};
 use sumi_text::{TextRange, TextSize};
 
@@ -12,8 +9,6 @@ fn error(token: u32, start: u32, end: u32, kind: LexErrorKind) -> LexError {
     }
 }
 
-/// Lex `source` and render one line per token: `SyntaxKind start..end
-/// "text"` plus any flags.
 fn dump(source: &str) -> Vec<String> {
     let file = lex(source).expect("test sources fit in u32");
     file.indices()
@@ -154,8 +149,6 @@ fn punctuation_classifies_per_character() {
 
 #[test]
 fn unused_punctuation_is_an_error_token() {
-    // Reported here, so every later phase can treat an `Error` token as
-    // already diagnosed.
     check(
         "(;)",
         &[
@@ -173,7 +166,6 @@ fn unused_punctuation_is_an_error_token() {
 
 #[test]
 fn slash_star_is_just_punctuation() {
-    // Sumi has line comments only; there is no block-comment syntax.
     check(
         "/* x",
         &[
@@ -259,8 +251,6 @@ fn line_comments_have_no_flavors() {
 
 #[test]
 fn identifiers_are_ascii() {
-    // A non-ASCII letter is no part of a name: it lexes alone, as any
-    // character without a role does.
     check(
         "Δx aé",
         &[
@@ -291,7 +281,6 @@ fn control_chars_are_unknown() {
 
 #[test]
 fn a_byte_order_mark_is_an_unknown_character() {
-    // Even at byte zero: a source is UTF-8 without a signature.
     let source = "\u{feff}x";
     check(source, &[r#"Error 0..3 "\u{feff}""#, r#"Ident 3..4 "x""#]);
     assert_eq!(
@@ -341,8 +330,6 @@ fn number_suffixes_attach() {
         "1u32",
         &[r#"IntLiteral 0..4 "1u32" TokenFlags(MALFORMED_NUMBER)"#],
     );
-    // Separators and exponents are suffixes too: `_` and `e` continue an
-    // identifier, and there are no floats.
     check(
         "1_000",
         &[r#"IntLiteral 0..5 "1_000" TokenFlags(MALFORMED_NUMBER)"#],
@@ -355,7 +342,6 @@ fn number_suffixes_attach() {
             r#"IntLiteral 3..4 "5""#,
         ],
     );
-    // With no base prefixes in the language, `x1F` is just a suffix.
     check(
         "0x1F",
         &[r#"IntLiteral 0..4 "0x1F" TokenFlags(MALFORMED_NUMBER)"#],
@@ -385,8 +371,6 @@ fn unterminated_string() {
 
 #[test]
 fn line_literals_end_at_the_line() {
-    // A literal never crosses a line break: what follows lexes as usual,
-    // and a backslash before the break does not carry it over.
     check(
         "\"a\nb\"",
         &[
