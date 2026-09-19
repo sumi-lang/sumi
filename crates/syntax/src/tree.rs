@@ -205,7 +205,9 @@ impl Parse {
         let mut evidence = Vec::with_capacity(recoveries.len() + violations.len());
         let mut violations = violations.into_iter().peekable();
         for (index, recovery) in recoveries.into_iter().enumerate() {
-            while let Some((_, violation)) = violations.next_if(|&(before, _)| before == index) {
+            while let Some((_, violation)) =
+                violations.next_if(|&(before, _)| before.0 as usize <= index)
+            {
                 evidence.push(ParseEvidence::Violation(violation));
             }
             evidence.push(ParseEvidence::Recovery(recovery.finish()));
@@ -245,8 +247,8 @@ struct Builder<'a> {
     /// Apart from `recoveries`: a violation makes an `Error` node without one.
     error_nodes: u32,
     recoveries: Vec<Recovery>,
-    /// Each with the count of recoveries before it, which keeps observation order.
-    violations: Vec<(usize, ParseViolation)>,
+    /// Each with the checkpoint it was recorded at, which keeps observation order.
+    violations: Vec<(RecoveryCheckpoint, ParseViolation)>,
 }
 
 impl Builder<'_> {
@@ -294,7 +296,7 @@ impl Recovery {
 
 /// The count of recoveries recorded so far.
 #[derive(Clone, Copy)]
-pub(crate) struct RecoveryCheckpoint(usize);
+pub(crate) struct RecoveryCheckpoint(u32);
 
 /// A recovery's index in the builder.
 #[derive(Clone, Copy)]
@@ -307,9 +309,9 @@ pub(crate) struct Marker<'p, 'a> {
     /// The subtree's start in `builder.nodes`; every node completed since is inside it.
     first: NodeIdx,
     start: SigIdx,
-    /// When the node opened; any recovery since happened inside it.
+    /// The checkpoint at open; any recovery since happened inside the node.
     recoveries: RecoveryCheckpoint,
-    /// `builder.error_nodes` when the node opened, likewise.
+    /// `builder.error_nodes` at open, likewise.
     error_nodes: u32,
     id: u32,
     parent: u32,
@@ -700,19 +702,19 @@ impl<'a> Marker<'_, 'a> {
     }
 
     pub(crate) fn recovery_checkpoint(&self) -> RecoveryCheckpoint {
-        RecoveryCheckpoint(self.builder.recoveries.len())
+        RecoveryCheckpoint(to_u32(self.builder.recoveries.len()))
     }
 
     pub(crate) fn recovered_since(&self, checkpoint: RecoveryCheckpoint) -> bool {
-        self.builder.recoveries.len() > checkpoint.0
+        self.builder.recoveries.len() > checkpoint.0 as usize
     }
 
     pub(crate) fn latest_recovery_since(
         &self,
         checkpoint: RecoveryCheckpoint,
     ) -> Option<RecoveryHandle> {
-        let count = self.builder.recoveries.len();
-        (count > checkpoint.0).then(|| RecoveryHandle(count - 1))
+        self.recovered_since(checkpoint)
+            .then(|| RecoveryHandle(self.builder.recoveries.len() - 1))
     }
 
     pub(crate) fn missing(&mut self, kind: ParseRecoveryKind) -> RecoveryHandle {
@@ -752,10 +754,10 @@ impl<'a> Marker<'_, 'a> {
 
     pub(crate) fn violation(&mut self, kind: ParseViolationKind, width: usize) {
         let range = self.raw_token_range(width);
-        let before = self.builder.recoveries.len();
+        let at = self.recovery_checkpoint();
         self.builder
             .violations
-            .push((before, ParseViolation { kind, range }));
+            .push((at, ParseViolation { kind, range }));
     }
 
     pub(crate) fn skipped(&mut self, recovery: RecoveryHandle, range: RawTokenRange) {
