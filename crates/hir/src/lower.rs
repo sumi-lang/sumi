@@ -6,6 +6,7 @@ use std::collections::hash_map::Entry;
 
 use rustc_hash::FxBuildHasher;
 use sumi_frontend::{DiagnosticCode, Label};
+use sumi_graph::GraphBuilder;
 use sumi_lexer::{LexedFile, RawIdx, SyntaxKind, TokenFlags};
 use sumi_syntax::{
     Literal, NodeIdx, PrefixOp, SyntaxTree,
@@ -236,7 +237,7 @@ pub(crate) struct Declarations<'s> {
 pub(crate) fn declare<'s>(
     source: &mut Source<'s>,
     items: &[ast::FnItem],
-    graph: &mut Graph,
+    graph: &mut GraphBuilder,
 ) -> Declarations<'s> {
     let tree = source.tree;
     let mut names: NameMap<Named> = NameMap::with_capacity_and_hasher(items.len(), FxBuildHasher);
@@ -339,14 +340,14 @@ pub(crate) fn lower<'s>(
     source: &mut Source<'s>,
     items: &[ast::FnItem],
     declared: &Declarations<'s>,
-    graph: Graph,
+    graph: GraphBuilder,
 ) -> (Graph, Lowered) {
     let mut builder = Builder::new(source, &declared.headers, &declared.names, graph);
     for (index, (item, params)) in items.iter().zip(&declared.parameters).enumerate() {
         let built = builder.build(index, *item, params);
         builder.lowered.built.push(built);
     }
-    (builder.graph, builder.lowered)
+    (builder.graph.finish(), builder.lowered)
 }
 
 /// The syntax's operator in the graph's vocabulary, which has no lazy operator.
@@ -450,7 +451,7 @@ struct Builder<'a, 's> {
     source: &'a mut Source<'s>,
     headers: &'a [Header],
     names: &'a NameMap<'s, Named>,
-    graph: Graph,
+    graph: GraphBuilder,
     lowered: Lowered,
     nodes_of: Vec<Option<NodeId>>,
     owner: u32,
@@ -471,7 +472,7 @@ impl<'a, 's> Builder<'a, 's> {
         source: &'a mut Source<'s>,
         headers: &'a [Header],
         names: &'a NameMap<'s, Named>,
-        graph: Graph,
+        graph: GraphBuilder,
     ) -> Self {
         let nodes = source.tree.len();
         Self {
@@ -507,9 +508,8 @@ impl<'a, 's> Builder<'a, 's> {
         self.refinements.clear();
         let header = &self.headers[owner];
         let item_node = header.item;
-        let start = self.graph.next();
+        let run = self.graph.open_run(FunctionId::new(owner));
         let entry = self.push(item_node, Op::Entry, &[], None);
-        let arity = u32::try_from(parameters.len()).expect("parameter count fits u32");
         for (index, param) in parameters.iter().enumerate() {
             let index = u32::try_from(index).expect("parameter count fits u32");
             let name = param.name.map(|(_, node)| self.source.range(node));
@@ -603,8 +603,7 @@ impl<'a, 's> Builder<'a, 's> {
             ),
             HeaderResult::Inferred | HeaderResult::None => body.0,
         };
-        self.graph
-            .close_run(FunctionId::new(owner), start, arity, region, value);
+        self.graph.close_run(run, region, value);
         !self.failed && root.is_some()
     }
     fn push(
@@ -634,7 +633,7 @@ impl<'a, 's> Builder<'a, 's> {
     /// Whether a node of `op` over `inputs` carries a value the typing follows.
     fn follows(&self, op: &Op, inputs: &[(NodeId, TextRange)]) -> bool {
         let typed = |node: NodeId| self.lowered.typed[node.index()];
-        let result = |region: RegionId| typed(self.graph.region(region).result());
+        let result = |region: RegionId| self.graph.result(region).is_some_and(typed);
         match *op {
             Op::Hole | Op::Unused => false,
             Op::Entry | Op::Then | Op::Else | Op::Copy { declared: Some(_) } => true,
@@ -715,7 +714,7 @@ impl<'a, 's> Builder<'a, 's> {
     }
     fn context(&self) -> NodeId {
         let (region, _) = *self.regions.last().expect("a body runs in its region");
-        self.graph.region(region).context
+        self.graph.context(region)
     }
     /// The scope is as it was when the read was built: a region is entered right after its
     /// condition finishes.

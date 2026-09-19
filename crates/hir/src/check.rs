@@ -3,7 +3,7 @@
 //! expression the conflict left undetermined satisfies every later demand silently.
 
 use sumi_frontend::ParsedSource;
-use sumi_graph::{FunctionId, Graph, NodeId, Op, Ty};
+use sumi_graph::{FunctionId, Graph, GraphBuilder, NodeId, Op, Ty};
 use sumi_syntax::ast::{self, View};
 use sumi_text::TextRange;
 
@@ -21,7 +21,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         .unwrap()
         .items(tree)
         .collect();
-    let mut graph = Graph::with_capacity(tree.len());
+    let mut graph = GraphBuilder::new(items.len(), tree.len());
     let declared = lower::declare(&mut source, &items, &mut graph);
     let (graph, lowered) = lower::lower(&mut source, &items, &declared, graph);
     let headers = declared.headers;

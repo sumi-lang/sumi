@@ -9,7 +9,9 @@ mod value;
 
 use std::fmt;
 
-pub use graph::{Callable, Callee, Graph, Node, NodeId, Op, Region, RegionId, Run};
+pub use graph::{
+    Callable, Callee, Graph, GraphBuilder, Node, NodeId, Op, OpenRun, Region, RegionId, Run,
+};
 pub use int::{Int, OutOfRange, ParseIntError};
 pub use machine::{Machine, Refusal};
 pub use may::{Bools, Ints, May, Thresholds};
