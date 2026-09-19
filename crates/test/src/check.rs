@@ -854,21 +854,21 @@ pub fn run(program: Program<'_>) -> Runs {
         }
         for args in tuples {
             let mut machine = program.machine(id, &args);
-            let finished = loop {
-                if machine.step() {
-                    break true;
+            let outcome = loop {
+                if let Some(outcome) = machine.step() {
+                    break Some(outcome.clone());
                 }
                 if machine.steps() >= STEPS || machine.latest().is_some_and(too_wide) {
-                    break false;
+                    break None;
                 }
             };
-            if !finished {
+            let Some(outcome) = outcome else {
                 runs.abandoned += 1;
                 continue;
-            }
+            };
             runs.finished += 1;
-            let value = match machine.outcome().expect("a finished run has its outcome") {
-                Ok(value) => value.clone(),
+            let value = match outcome {
+                Ok(value) => value,
                 Err(refusal) => panic!("f{} was refused: {refusal:?}", id.index()),
             };
             assert_eq!(value.ty(), signature.result);

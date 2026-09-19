@@ -7,10 +7,31 @@ use crate::{Domain, Fault, FunctionId, Graph, NodeId, Op, RegionId, Run, Value};
 enum Control {
     Eval(NodeId),
     Apply(NodeId),
-    Lazy(NodeId),
-    Branch(NodeId),
-    Enter(NodeId),
-    Take(NodeId, NodeId),
+    /// `&&` when `and`, else `||`, once its left operand is in.
+    Lazy {
+        node: NodeId,
+        and: bool,
+        rhs: RegionId,
+    },
+    Branch {
+        node: NodeId,
+        then: RegionId,
+        else_: Option<RegionId>,
+    },
+    Enter {
+        node: NodeId,
+        function: FunctionId,
+    },
+    Take {
+        node: NodeId,
+        from: NodeId,
+    },
+    /// `node`, a lazy operator, combines its left operand with `from`'s value.
+    Combine {
+        node: NodeId,
+        from: NodeId,
+        and: bool,
+    },
     Return(NodeId),
 }
 
@@ -31,6 +52,8 @@ pub enum Refusal {
     Hole(NodeId),
     Division(NodeId),
     Type(NodeId),
+    /// A call with other than one argument per parameter.
+    Arity(NodeId),
     Depth(NodeId),
 }
 
@@ -102,35 +125,45 @@ impl<'a> Machine<'a> {
     }
 
     pub fn run(mut self) -> Result<Value, Refusal> {
-        while !self.step() {}
-        self.outcome.expect("a finished run has its outcome")
+        if let Some(outcome) = self.outcome {
+            return outcome;
+        }
+        loop {
+            if let Some(outcome) = self.advance() {
+                return outcome;
+            }
+        }
     }
 
-    /// True once the run has ended, and it stays ended.
-    pub fn step(&mut self) -> bool {
-        if self.outcome.is_some() {
-            return true;
+    /// The outcome once the run has ended, and it stays ended.
+    pub fn step(&mut self) -> Option<&Result<Value, Refusal>> {
+        if self.outcome.is_none()
+            && let Some(outcome) = self.advance()
+        {
+            self.outcome = Some(outcome);
         }
+        self.outcome.as_ref()
+    }
+
+    /// One step of a run that has not ended; the outcome when this one ends it.
+    fn advance(&mut self) -> Option<Result<Value, Refusal>> {
         self.latest = None;
-        let Some(control) = self.control.pop() else {
-            let result = self
-                .frames
-                .last()
-                .expect("the entry frame stays")
-                .run
-                .result();
-            let value = self
-                .slot(result)
-                .clone()
-                .expect("a finished run has its value");
-            self.outcome = Some(Ok(value));
-            return true;
-        };
-        if let Err(refusal) = self.apply(control) {
-            self.outcome = Some(Err(refusal));
-            return true;
+        match self.control.pop() {
+            None => {
+                let result = self
+                    .frames
+                    .last()
+                    .expect("the entry frame stays")
+                    .run
+                    .result();
+                let index = self.index(result);
+                let value = self.slots[index]
+                    .take()
+                    .expect("a finished run has its value");
+                Some(Ok(value))
+            }
+            Some(control) => self.apply(control).err().map(Err),
         }
-        false
     }
 
     fn index(&self, node: NodeId) -> usize {
@@ -165,10 +198,11 @@ impl<'a> Machine<'a> {
         base
     }
 
-    fn demand_region(&mut self, node: NodeId, region: RegionId) {
-        let result = self.graph.region(region).result();
-        self.control.push(Control::Take(node, result));
-        self.control.push(Control::Eval(result));
+    /// Evaluate `region`'s result, then `take` it.
+    fn demand_region(&mut self, region: RegionId, take: impl FnOnce(NodeId) -> Control) {
+        let from = self.graph.region(region).result();
+        self.control.push(take(from));
+        self.control.push(Control::Eval(from));
     }
 
     fn apply(&mut self, control: Control) -> Result<(), Refusal> {
@@ -185,16 +219,17 @@ impl<'a> Machine<'a> {
                         unreachable!("a context or a statement is not a value")
                     }
                     Op::Unit => self.fill(node, Value::Unit),
-                    Op::And { .. } | Op::Or { .. } => {
-                        self.control.push(Control::Lazy(node));
+                    ref op @ (Op::And { rhs } | Op::Or { rhs }) => {
+                        let and = matches!(op, Op::And { .. });
+                        self.control.push(Control::Lazy { node, and, rhs });
                         self.control.push(Control::Eval(inputs[0]));
                     }
-                    Op::Join { .. } => {
-                        self.control.push(Control::Branch(node));
+                    Op::Join { then, else_ } => {
+                        self.control.push(Control::Branch { node, then, else_ });
                         self.control.push(Control::Eval(inputs[0]));
                     }
-                    Op::Call(_) => {
-                        self.control.push(Control::Enter(node));
+                    Op::Call(function) => {
+                        self.control.push(Control::Enter { node, function });
                         for &arg in inputs.iter().rev() {
                             self.control.push(Control::Eval(arg));
                         }
@@ -220,51 +255,43 @@ impl<'a> Machine<'a> {
                     Err(fault) => return Err(Refusal::of(fault, node)),
                 }
             }
-            Control::Lazy(node) => {
+            Control::Lazy { node, and, rhs } => {
                 let lhs = self
                     .value(self.graph.inputs(node)[0])
                     .truth()
                     .map_err(|fault| Refusal::of(fault, node))?;
-                match self.graph.node(node).op {
-                    Op::And { rhs } if lhs => self.demand_region(node, rhs),
-                    Op::Or { rhs } if !lhs => self.demand_region(node, rhs),
-                    _ => self.fill(node, Value::Bool(lhs)),
+                if lhs == and {
+                    self.demand_region(rhs, |from| Control::Combine { node, from, and });
+                } else {
+                    self.fill(node, Value::Bool(lhs));
                 }
             }
-            Control::Branch(node) => {
+            Control::Branch { node, then, else_ } => {
                 let condition = self
                     .value(self.graph.inputs(node)[0])
                     .truth()
                     .map_err(|fault| Refusal::of(fault, node))?;
-                let Op::Join { then, else_ } = self.graph.node(node).op else {
-                    unreachable!("a branch is an if")
-                };
+                let take = |from| Control::Take { node, from };
                 match (condition, else_) {
-                    (true, _) => self.demand_region(node, then),
-                    (false, Some(else_)) => self.demand_region(node, else_),
+                    (true, _) => self.demand_region(then, take),
+                    (false, Some(else_)) => self.demand_region(else_, take),
                     (false, None) => self.fill(node, Value::Unit),
                 }
             }
-            Control::Take(node, from) => {
-                let and = match self.graph.node(node).op {
-                    Op::And { .. } => Some(true),
-                    Op::Or { .. } => Some(false),
-                    _ => None,
-                };
-                let value = match and {
-                    Some(and) => {
-                        let lhs = self.value(self.graph.inputs(node)[0]);
-                        Value::lazy(and, lhs, self.value(from))
-                            .map_err(|fault| Refusal::of(fault, node))?
-                    }
-                    None => self.value(from).clone(),
-                };
+            Control::Take { node, from } => {
+                let value = self.value(from).clone();
                 self.fill(node, value);
             }
-            Control::Enter(node) => {
-                let Op::Call(function) = self.graph.node(node).op else {
-                    unreachable!("a call is entered")
-                };
+            Control::Combine { node, from, and } => {
+                let lhs = self.value(self.graph.inputs(node)[0]);
+                let value = Value::lazy(and, lhs, self.value(from))
+                    .map_err(|fault| Refusal::of(fault, node))?;
+                self.fill(node, value);
+            }
+            Control::Enter { node, function } => {
+                if self.graph.inputs(node).len() != self.graph.run(function).params().len() {
+                    return Err(Refusal::Arity(node));
+                }
                 if self
                     .bound
                     .is_some_and(|bound| u64::try_from(self.frames.len()).unwrap() >= bound)

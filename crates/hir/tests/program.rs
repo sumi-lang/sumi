@@ -146,13 +146,13 @@ fn shallow() -> int = twice(twice(1))";
     let deep = program.function_named("deep").unwrap();
     assert_eq!(program.function(deep).depth_bound(), Some(60002));
     let mut machine = program.machine(deep, &[]);
-    while !machine.step() {}
+    while machine.step().is_none() {}
     assert_eq!(machine.outcome(), Some(&Ok(int(60000))));
     assert_eq!(machine.max_depth(), 60002);
     let shallow = program.function_named("shallow").unwrap();
     assert_eq!(program.function(shallow).depth_bound(), Some(2));
     let mut machine = program.machine(shallow, &[]);
-    while !machine.step() {}
+    while machine.step().is_none() {}
     assert_eq!(machine.outcome(), Some(&Ok(int(4))));
     assert_eq!(machine.max_depth(), 2);
 }
@@ -171,7 +171,7 @@ fn shared() -> int {
     let analysis = analysis(source);
     let program = analysis.program().unwrap();
     let mut machine = program.machine(program.function_named("dropped").unwrap(), &[]);
-    while !machine.step() {}
+    while machine.step().is_none() {}
     assert_eq!(machine.outcome(), Some(&Ok(int(1))));
     assert_eq!(
         machine.max_depth(),
@@ -179,12 +179,12 @@ fn shared() -> int {
         "the discarded call is never entered"
     );
     let mut machine = program.machine(program.function_named("shared").unwrap(), &[]);
-    while !machine.step() {}
+    while machine.step().is_none() {}
     assert_eq!(machine.outcome(), Some(&Ok(int(0))));
     assert_eq!(machine.max_depth(), 5);
     let once = machine.steps();
     let mut machine = program.machine(program.function_named("shared").unwrap(), &[]);
-    while !machine.step() {}
+    while machine.step().is_none() {}
     assert_eq!(machine.steps(), once);
 }
 
@@ -201,7 +201,7 @@ fn stepping_is_observable_and_idempotent_at_the_end() {
     assert_eq!(machine.outcome(), None);
     let mut seen_depth_two = false;
     let mut values = Vec::new();
-    while !machine.step() {
+    while machine.step().is_none() {
         seen_depth_two |= machine.depth() == 2;
         values.extend(machine.latest().cloned());
     }
@@ -212,7 +212,7 @@ fn stepping_is_observable_and_idempotent_at_the_end() {
     assert_eq!(values, trace);
     let steps = machine.steps();
     assert_eq!(steps, values.len() as u64);
-    assert!(machine.step());
+    assert_eq!(machine.step(), Some(&Ok(int(4))));
     assert_eq!(machine.steps(), steps);
     let sub = program.function_named("twice").unwrap();
     assert_eq!(program.evaluate(sub, &[int(21)]), int(42));
@@ -251,6 +251,9 @@ fn the_bare_graph_refuses_what_the_checker_rejects() {
     let endless = analysis("fn f(n: int) -> int = f(n)\nfn g() -> int = f(1)");
     let machine = Machine::new(endless.graph(), FunctionId::new(1), &[], Some(4));
     assert!(matches!(machine.run(), Err(Refusal::Depth(_))));
+    let short = analysis("fn f(x: int) -> int = x\nfn g() -> int = f()");
+    let machine = Machine::new(short.graph(), FunctionId::new(1), &[], None);
+    assert!(matches!(machine.run(), Err(Refusal::Arity(_))));
     for source in [
         "fn f() -> int = if 1 { 2 } else { 3 }",
         "fn f() -> int = -true",
