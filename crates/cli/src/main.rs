@@ -32,17 +32,11 @@ Exit status: 0 = no errors, 1 = source errors or files that would change,
 
 fn main() -> ExitCode {
     let args: Vec<OsString> = std::env::args_os().skip(1).collect();
+    if args.iter().any(|arg| arg == "--help" || arg == "-h") {
+        println!("{USAGE}");
+        return ExitCode::SUCCESS;
+    }
     let result = match args.as_slice() {
-        [help] if help == "--help" || help == "-h" => {
-            println!("{USAGE}");
-            return ExitCode::SUCCESS;
-        }
-        [command, help]
-            if (command == "check" || command == "run") && (help == "--help" || help == "-h") =>
-        {
-            println!("{USAGE}");
-            return ExitCode::SUCCESS;
-        }
         [command, file] if command == "check" => check(Path::new(file)),
         [command, file] if command == "run" => run(Path::new(file)),
         [command, rest @ ..] if command == "fmt" && !rest.is_empty() => fmt(rest),
