@@ -15,13 +15,7 @@ Unexpected at 13
 
 == diagnostics ==
 error[syntax/unspaced-binary-operator] 1:11..1:12 "+": binary operator must have spaces on both sides
-  fix (safe): space binary operator
-    1:11 -> " "
-    1:12 -> " "
 error[syntax/unexpected-syntax] 1:14..1:15 ":": unexpected syntax in expression
-
-== fixed (syntax/unexpected-syntax remains) ==
-fn f() { a + b : }
 
 == formatted ==
 fn f() {

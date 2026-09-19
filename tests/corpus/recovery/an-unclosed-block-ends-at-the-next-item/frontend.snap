@@ -74,20 +74,16 @@ error[syntax/expected-token] 12:7: expected `}`
   fix (safe): insert `}`
     12:6 -> "}"
 error[syntax/function-item-on-same-line] 12:7..12:9 "fn": function item must begin on a new line
-  fix (safe): move function item onto a new line
-    12:6..12:7 " " -> "\n"
 error[syntax/expected-statement] 13:22..13:23 ":": expected a statement
 error[syntax/expected-token] 13:24: expected `}`
   at 13:20..13:21 "{": opening delimiter is here
   fix (safe): insert `}`
     13:23 -> "}"
 error[syntax/function-item-on-same-line] 13:24..13:26 "fn": function item must begin on a new line
-  fix (safe): move function item onto a new line
-    13:23..13:24 " " -> "\n"
 error[syntax/expected-statement] 14:34..14:35 ":": expected a statement
   at 14:34..14:50 ": fn next_e() {}": skipped while recovering
 
-== fixed (syntax/expected-statement, syntax/expected-token remain) ==
+== fixed (syntax/expected-statement, syntax/expected-token, syntax/function-item-on-same-line remain) ==
 fn inner_block() -> int {
     {
         b
@@ -99,8 +95,6 @@ fn if_body() {
         x}
 fn next_b() {}
 fn after_a_statement() {
-    x}
-fn next_c() {}
-fn after_garbage() { :}
-fn next_d() {}
+    x} fn next_c() {}
+fn after_garbage() { :} fn next_d() {}
 fn after_garbage_then_closed() { : fn next_e() {} }

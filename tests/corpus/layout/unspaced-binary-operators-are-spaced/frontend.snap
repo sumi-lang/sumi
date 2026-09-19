@@ -58,39 +58,12 @@ UnspacedBinaryOperator at 149
 
 == diagnostics ==
 error[syntax/unspaced-binary-operator] 1:15..1:17 "==": binary operator must have spaces on both sides
-  fix (safe): space binary operator
-    1:15 -> " "
-    1:17 -> " "
 error[syntax/unspaced-binary-operator] 2:21..2:22 "+": binary operator must have spaces on both sides
-  fix (safe): space binary operator
-    2:22 -> " "
 error[syntax/unspaced-binary-operator] 3:21..3:22 "+": binary operator must have spaces on both sides
-  fix (safe): space binary operator
-    3:21 -> " "
 error[syntax/unspaced-binary-operator] 4:21..4:23 "<=": binary operator must have spaces on both sides
-  fix (safe): space binary operator
-    4:21 -> " "
-    4:23 -> " "
 error[syntax/unspaced-binary-operator] 4:24..4:25 "*": binary operator must have spaces on both sides
-  fix (safe): space binary operator
-    4:24 -> " "
-    4:25 -> " "
 error[syntax/unspaced-binary-operator] 5:21..5:22 "-": binary operator must have spaces on both sides
-  fix (safe): space binary operator
-    5:21 -> " "
-    5:22 -> " "
 error[syntax/unspaced-binary-operator] 6:26..6:27 "+": binary operator must have spaces on both sides
-  fix (safe): space binary operator
-    6:26 -> " "
-
-== fixed ==
-fn glued() { a == b }
-fn glued_left() { a + b }
-fn glued_right() { a + b }
-fn glued_twice() { a <= b * c }
-fn glued_minus() { a - b }
-fn trailing() { let x = a +
-b }
 
 == formatted ==
 fn glued() {

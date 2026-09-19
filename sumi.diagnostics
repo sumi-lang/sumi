@@ -26,7 +26,8 @@
 /// Reported by the frontend: what the lexer rejects, where the parser
 /// recovers, and the layout rules the parser checks. Every one is an
 /// error. The tree is still built around it, and a fix is attached where
-/// the repair is mechanical.
+/// the repair is a token: a closer or a canonical literal. A layout rule
+/// carries none; `sumi fmt` repairs every one it can.
 group syntax
 
 /// A string literal reaches the end of its line without a closing `"`. The
@@ -81,23 +82,22 @@ code unexpected-syntax
 code nesting-too-deep
 /// A binary operator glued to an operand, as in `a+b` or `a<b`. Binary
 /// operators are spaced on both sides; glued, `<` opens type arguments and
-/// `*` and `&` are reserved for prefix operators. The fix inserts the
-/// spaces.
+/// `*` and `&` are reserved for prefix operators. `sumi fmt` spaces it.
 code unspaced-binary-operator
 /// A prefix operator separated from its operand, as in `- x`. Prefix
-/// operators are glued; the fix removes the space.
+/// operators are glued; `sumi fmt` removes the space.
 code spaced-prefix-operator
-/// A space between a function name or callee and its `(`. The fix removes
-/// it.
+/// A space between a function name or callee and its `(`, which
+/// `sumi fmt` removes.
 code spaced-list-opener
-/// A function item's name on the line after its `fn`. The fix moves the
-/// name onto the `fn` line.
+/// A function item's name on the line after its `fn`. `sumi fmt` moves
+/// the name onto the `fn` line.
 code function-name-on-next-line
-/// A function item beginning on the line where the previous one ended. The
-/// fix moves it onto a line of its own.
+/// A function item beginning on the line where the previous one ended.
+/// `sumi fmt` moves it onto a line of its own.
 code function-item-on-same-line
-/// A binding's name on the line after its `let`. The fix moves the name
-/// onto the `let` line.
+/// A binding's name on the line after its `let`. `sumi fmt` moves the
+/// name onto the `let` line.
 code binding-name-on-next-line
 /// Comparisons chained, as in `a < b < c`. A comparison yields a boolean
 /// that no comparison accepts; write two comparisons joined by `&&`.

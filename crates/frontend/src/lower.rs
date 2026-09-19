@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 
 use sumi_diagnostics::{Applicability, Diagnostic, DiagnosticCode, Fix, Label, Location, Severity};
-use sumi_format::layout_violation_edits;
 use sumi_lexer::{LexError, LexErrorKind, LexedFile, TokenFlags, canonicalize_number_literal};
 use sumi_syntax::{
     Parse, ParseAnchor, ParseEvidence, ParseRecovery, ParseRecoveryKind, ParseViolation,
@@ -245,54 +244,39 @@ fn closer_fix(
 }
 
 fn lower_violation(snapshot: &Snapshot<'_>, violation: ParseViolation) -> Diagnostic {
-    // Each rule: its code, its message, and the name of its layout fix when
-    // one is mechanical.
-    let (code, message, fix_message) = match violation.kind {
+    // No violation names a fix: layout is the formatter's to repair, and
+    // `sumi fmt` repairs every one it can.
+    let (code, message) = match violation.kind {
         ParseViolationKind::UnspacedBinaryOperator => (
             codes::UNSPACED_BINARY_OPERATOR,
             "binary operator must have spaces on both sides",
-            Some("space binary operator"),
         ),
         ParseViolationKind::SpacedPrefixOperator => (
             codes::SPACED_PREFIX_OPERATOR,
             "prefix operator must be adjacent to its operand",
-            Some("remove space after prefix operator"),
         ),
         ParseViolationKind::SpacedListOpener => (
             codes::SPACED_LIST_OPENER,
             "opening `(` must be adjacent to the function name or callee",
-            Some("remove space before `(`"),
         ),
         ParseViolationKind::FunctionNameOnNextLine => (
             codes::FUNCTION_NAME_ON_NEXT_LINE,
             "function name must be on the same line as `fn`",
-            Some("move function name onto `fn` line"),
         ),
         ParseViolationKind::FunctionItemOnSameLine => (
             codes::FUNCTION_ITEM_ON_SAME_LINE,
             "function item must begin on a new line",
-            Some("move function item onto a new line"),
         ),
         ParseViolationKind::BindingNameOnNextLine => (
             codes::BINDING_NAME_ON_NEXT_LINE,
             "binding name must be on the same line as `let`",
-            Some("move binding name onto `let` line"),
         ),
         ParseViolationKind::ChainedComparison => (
             codes::CHAINED_COMPARISON,
             "comparison operators cannot be chained",
-            None,
         ),
     };
-    let mut diagnostic = primary(code, message, snapshot.raw_range(violation.range));
-    diagnostic.fix = layout_violation_edits(snapshot.lexed, violation).map(|edits| Fix {
-        message: fix_message
-            .unwrap_or_else(|| unreachable!("a rule with layout edits names its fix"))
-            .into(),
-        applicability: Applicability::Safe,
-        edits,
-    });
-    diagnostic
+    primary(code, message, snapshot.raw_range(violation.range))
 }
 
 fn primary(code: DiagnosticCode, message: impl Into<Box<str>>, location: Location) -> Diagnostic {

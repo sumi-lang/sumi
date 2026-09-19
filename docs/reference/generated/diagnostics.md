@@ -15,7 +15,8 @@ locates by `line:column`; a semantic one by byte offset.
 Reported by the frontend: what the lexer rejects, where the parser
 recovers, and the layout rules the parser checks. Every one is an
 error. The tree is still built around it, and a fix is attached where
-the repair is mechanical.
+the repair is a token: a closer or a canonical literal. A layout rule
+carries none; `sumi fmt` repairs every one it can.
 
 ### `syntax/unterminated-string`
 
@@ -335,26 +336,26 @@ error[syntax/nesting-too-deep] 4:260..4:261 "!": expression nesting limit exceed
 
 A binary operator glued to an operand, as in `a+b` or `a<b`. Binary
 operators are spaced on both sides; glued, `<` opens type arguments and
-`*` and `&` are reserved for prefix operators. The fix inserts the
-spaces.
+`*` and `&` are reserved for prefix operators. `sumi fmt` spaces it.
 
-Shown by [`tests/corpus/layout/spacing-fix-survives-recovery`](../../../tests/corpus/layout/spacing-fix-survives-recovery/case.sumi):
+Shown by [`tests/corpus/layout/a-long-binding-breaks-before-the-operator`](../../../tests/corpus/layout/a-long-binding-breaks-before-the-operator/case.sumi):
 
 ```sumi
-fn f() { a+b : }
+// The binding overflows the width, so the formatter breaks it before the
+// `+`, and the glued operator is still reported.
+fn f() {
+    let result = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+}
 ```
 
 ```text
-error[syntax/unspaced-binary-operator] 1:11..1:12 "+": binary operator must have spaces on both sides
-  fix (safe): space binary operator
-    1:11 -> " "
-    1:12 -> " "
+error[syntax/unspaced-binary-operator] 4:88..4:89 "+": binary operator must have spaces on both sides
 ```
 
 ### `syntax/spaced-prefix-operator`
 
 A prefix operator separated from its operand, as in `- x`. Prefix
-operators are glued; the fix removes the space.
+operators are glued; `sumi fmt` removes the space.
 
 Shown by [`tests/corpus/layout/prefix-gap-holds-a-comment`](../../../tests/corpus/layout/prefix-gap-holds-a-comment/case.sumi):
 
@@ -369,8 +370,8 @@ error[syntax/spaced-prefix-operator] 1:10..1:11 "-": prefix operator must be adj
 
 ### `syntax/spaced-list-opener`
 
-A space between a function name or callee and its `(`. The fix removes
-it.
+A space between a function name or callee and its `(`, which
+`sumi fmt` removes.
 
 Shown by [`tests/corpus/layout/spaced-list-openers`](../../../tests/corpus/layout/spaced-list-openers/case.sumi):
 
@@ -385,23 +386,15 @@ fn caller() -> int {
 
 ```text
 error[syntax/spaced-list-opener] 1:10..1:11 "(": opening `(` must be adjacent to the function name or callee
-  fix (safe): remove space before `(`
-    1:9..1:10 " " -> ""
 error[syntax/spaced-list-opener] 3:11..3:12 "(": opening `(` must be adjacent to the function name or callee
-  fix (safe): remove space before `(`
-    3:10..3:11 " " -> ""
 error[syntax/spaced-list-opener] 4:13..4:14 "(": opening `(` must be adjacent to the function name or callee
-  fix (safe): remove space before `(`
-    4:12..4:13 " " -> ""
 error[syntax/spaced-list-opener] 5:11..5:12 "(": opening `(` must be adjacent to the function name or callee
-  fix (safe): remove space before `(`
-    5:10..5:11 "\t" -> ""
 ```
 
 ### `syntax/function-name-on-next-line`
 
-A function item's name on the line after its `fn`. The fix moves the
-name onto the `fn` line.
+A function item's name on the line after its `fn`. `sumi fmt` moves
+the name onto the `fn` line.
 
 Shown by [`tests/corpus/layout/function-name-on-next-line`](../../../tests/corpus/layout/function-name-on-next-line/case.sumi):
 
@@ -415,15 +408,13 @@ fn survivor() {}
 
 ```text
 error[syntax/function-name-on-next-line] 2:1..2:6 "plain": function name must be on the same line as `fn`
-  fix (safe): move function name onto `fn` line
-    1:3..2:1 "\n" -> " "
 error[syntax/function-name-on-next-line] 4:1..4:10 "commented": function name must be on the same line as `fn`
 ```
 
 ### `syntax/function-item-on-same-line`
 
-A function item beginning on the line where the previous one ended. The
-fix moves it onto a line of its own.
+A function item beginning on the line where the previous one ended.
+`sumi fmt` moves it onto a line of its own.
 
 Shown by [`tests/corpus/layout/function-items-share-a-line`](../../../tests/corpus/layout/function-items-share-a-line/case.sumi):
 
@@ -435,17 +426,13 @@ fn survivor() {}
 
 ```text
 error[syntax/function-item-on-same-line] 1:14..1:16 "fn": function item must begin on a new line
-  fix (safe): move function item onto a new line
-    1:14 -> "\n"
 error[syntax/function-item-on-same-line] 2:16..2:18 "fn": function item must begin on a new line
-  fix (safe): move function item onto a new line
-    2:15..2:16 " " -> "\n"
 ```
 
 ### `syntax/binding-name-on-next-line`
 
-A binding's name on the line after its `let`. The fix moves the name
-onto the `let` line.
+A binding's name on the line after its `let`. `sumi fmt` moves the
+name onto the `let` line.
 
 Shown by [`tests/corpus/layout/binding-name-on-next-line`](../../../tests/corpus/layout/binding-name-on-next-line/case.sumi):
 
@@ -463,12 +450,7 @@ fn bindings() {
 
 ```text
 error[syntax/binding-name-on-next-line] 3:5..3:10 "plain": binding name must be on the same line as `let`
-  fix (safe): move binding name onto `let` line
-    2:8..3:5 "\n    " -> " "
 error[syntax/binding-name-on-next-line] 6:5..6:12 "mutable": binding name must be on the same line as `let`
-  fix (safe): move binding name onto `let` line
-    4:8..5:5 "\n    " -> " "
-    5:8..6:5 "\n    " -> " "
 error[syntax/binding-name-on-next-line] 8:5..8:14 "commented": binding name must be on the same line as `let`
 ```
 

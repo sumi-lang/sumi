@@ -32,21 +32,19 @@ Expected(RParen) at 112
 == diagnostics ==
 error[syntax/expected-expression] 2:6: expected an expression
 error[syntax/unspaced-binary-operator] 6:9..6:10 "+": binary operator must have spaces on both sides
-  fix (safe): space binary operator
-    6:10 -> " "
 error[syntax/expected-expression] 6:10: expected an expression
 error[syntax/expected-token] 11:5: expected `)`
   at 10:5..10:6 "(": opening delimiter is here
   fix (safe): insert `)`
     10:7 -> ")"
 
-== fixed (syntax/expected-expression remains) ==
+== fixed (syntax/expected-expression, syntax/unspaced-binary-operator remain) ==
 fn empty() {
     ()
     return
 }
 fn damaged_inner() {
-    ((1 + ))
+    ((1 +))
     return
 }
 fn missing_closer() {
