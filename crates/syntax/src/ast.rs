@@ -301,7 +301,7 @@ macro_rules! grammar {
         grammar!(@tokens $name [$($token)* TokenRule::Field {
             name: stringify!($field),
             variants: <$ty as TokenField>::ALL.len(),
-            variant: |index| format!("{:?}", <$ty as TokenField>::ALL[index]),
+            variant: |index| <$ty as TokenField>::ALL[index].to_string(),
             reads: |first, glued| <$ty as TokenField>::read(first, glued).map(|(_, spans)| spans),
             present: |tree, lexed, node, index| {
                 $name::cast(tree, node).is_some_and(|view| {
@@ -604,7 +604,7 @@ mod tests {
             panic!("a field")
         };
         assert_eq!((name, variants), ("op", BinaryOp::ALL.len()));
-        assert_eq!(variant(0), "Or");
+        assert_eq!(variant(0), "`||`");
         assert_eq!(reads(SyntaxKind::Lt, Some(SyntaxKind::Eq)), Some(true));
         assert_eq!(reads(SyntaxKind::Lt, Some(SyntaxKind::Minus)), Some(false));
         assert_eq!(reads(SyntaxKind::Ident, None), None);

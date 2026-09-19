@@ -4,7 +4,9 @@
 use std::fmt::Write as _;
 
 use sumi_frontend::parse_source;
-use sumi_hir::{Analysis, BinaryOp, FunctionId, Graph, NodeId, Op, RegionId, analyze};
+use sumi_hir::{
+    Analysis, ArithOp, BinaryOp, CmpOp, FunctionId, Graph, NodeId, Op, RegionId, analyze,
+};
 use sumi_test::corpus;
 use sumi_text::TextRange;
 
@@ -405,17 +407,17 @@ fn dump_definition(
 
 fn operator(op: BinaryOp) -> &'static str {
     match op {
-        BinaryOp::Add => "+",
-        BinaryOp::Sub => "-",
-        BinaryOp::Mul => "*",
-        BinaryOp::Div => "/",
-        BinaryOp::Rem => "%",
-        BinaryOp::Eq => "==",
-        BinaryOp::Ne => "!=",
-        BinaryOp::Lt => "<",
-        BinaryOp::Le => "<=",
-        BinaryOp::Gt => ">",
-        BinaryOp::Ge => ">=",
+        BinaryOp::Cmp(CmpOp::Eq) => "==",
+        BinaryOp::Cmp(CmpOp::Ne) => "!=",
+        BinaryOp::Cmp(CmpOp::Lt) => "<",
+        BinaryOp::Cmp(CmpOp::Le) => "<=",
+        BinaryOp::Cmp(CmpOp::Gt) => ">",
+        BinaryOp::Cmp(CmpOp::Ge) => ">=",
+        BinaryOp::Arith(ArithOp::Add) => "+",
+        BinaryOp::Arith(ArithOp::Sub) => "-",
+        BinaryOp::Arith(ArithOp::Mul) => "*",
+        BinaryOp::Arith(ArithOp::Div) => "/",
+        BinaryOp::Arith(ArithOp::Rem) => "%",
     }
 }
 

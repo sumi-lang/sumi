@@ -637,7 +637,7 @@ pub fn semantics(analysis: &Analysis) {
 }
 
 fn typed(analysis: &Analysis) {
-    use sumi_hir::{BinaryOp, FunctionId, NodeId, Op, Ty};
+    use sumi_hir::{BinaryOp, CmpOp, FunctionId, NodeId, Op, Ty};
     let graph = analysis.graph();
     for (index, function) in analysis.functions().iter().enumerate() {
         if !function.complete() {
@@ -677,7 +677,7 @@ fn typed(analysis: &Analysis) {
                 Op::Binary(op) => {
                     assert_eq!(own, Some(op.result()));
                     match op {
-                        BinaryOp::Eq | BinaryOp::Ne => {
+                        BinaryOp::Cmp(CmpOp::Eq | CmpOp::Ne) => {
                             assert!(matches!(ty(inputs[0]), Some(Ty::Int | Ty::Bool)));
                             assert_eq!(ty(inputs[0]), ty(inputs[1]));
                         }

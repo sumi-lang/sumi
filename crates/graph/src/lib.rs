@@ -15,15 +15,22 @@ pub use machine::{Machine, Refusal};
 pub use may::{Bools, Ints, May, Thresholds};
 pub use value::{Domain, Fault, Value};
 
-/// Eager operators only; `&&` and `||` take a region as right operand and are [`Op::And`] and
-/// [`Op::Or`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BinaryOp {
+pub enum ArithOp {
     Add,
     Sub,
     Mul,
     Div,
     Rem,
+}
+
+#[cfg(test)]
+impl ArithOp {
+    pub const ALL: [Self; 5] = [Self::Add, Self::Sub, Self::Mul, Self::Div, Self::Rem];
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CmpOp {
     Eq,
     Ne,
     Lt,
@@ -32,11 +39,49 @@ pub enum BinaryOp {
     Ge,
 }
 
+#[cfg(test)]
+impl CmpOp {
+    pub const ALL: [Self; 6] = [Self::Eq, Self::Ne, Self::Lt, Self::Le, Self::Gt, Self::Ge];
+}
+
+impl CmpOp {
+    /// The comparison with its operands exchanged.
+    pub(crate) fn flip(self) -> Self {
+        match self {
+            Self::Lt => Self::Gt,
+            Self::Le => Self::Ge,
+            Self::Gt => Self::Lt,
+            Self::Ge => Self::Le,
+            Self::Eq | Self::Ne => self,
+        }
+    }
+
+    /// The comparison that holds when this one does not.
+    pub(crate) fn negate(self) -> Self {
+        match self {
+            Self::Lt => Self::Ge,
+            Self::Le => Self::Gt,
+            Self::Gt => Self::Le,
+            Self::Ge => Self::Lt,
+            Self::Eq => Self::Ne,
+            Self::Ne => Self::Eq,
+        }
+    }
+}
+
+/// Eager operators only; `&&` and `||` take a region as right operand and are [`Op::And`] and
+/// [`Op::Or`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BinaryOp {
+    Cmp(CmpOp),
+    Arith(ArithOp),
+}
+
 impl BinaryOp {
     pub fn result(self) -> Ty {
         match self {
-            Self::Add | Self::Sub | Self::Mul | Self::Div | Self::Rem => Ty::Int,
-            Self::Eq | Self::Ne | Self::Lt | Self::Le | Self::Gt | Self::Ge => Ty::Bool,
+            Self::Cmp(_) => Ty::Bool,
+            Self::Arith(_) => Ty::Int,
         }
     }
 }

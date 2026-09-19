@@ -1,14 +1,15 @@
 //! Token classes, bracket pairs, and operator tables.
 
-use std::fmt::Debug;
+use std::fmt::{self, Debug};
 use std::hash::Hash;
 
 use sumi_lexer::SyntaxKind as T;
 
-pub use sumi_lexer::SyntaxKind;
+pub use sumi_lexer::{Fixed, SyntaxKind};
 
-/// A value a rule reads from a token it holds, or from that token and the one glued after it.
-pub trait TokenField: Copy + Debug + Eq + Hash + 'static {
+/// A value a rule reads from a token it holds, or from that token and the one glued after it; it
+/// displays as the token reads after "expected".
+pub trait TokenField: Copy + Debug + fmt::Display + Eq + Hash + 'static {
     const ALL: &[Self];
 
     /// The value at `first`, and whether it spans `glued`, the token joint after `first` inside
@@ -22,16 +23,38 @@ pub enum PrefixOp {
     Not,
 }
 
+impl PrefixOp {
+    pub const fn token(self) -> Fixed {
+        match self {
+            Self::Neg => Fixed::Minus,
+            Self::Not => Fixed::Bang,
+        }
+    }
+}
+
+/// Per token kind, the prefix operator it is.
+const PREFIX_BY_KIND: [Option<PrefixOp>; SyntaxKind::ALL.len()] = {
+    let mut table = [None; SyntaxKind::ALL.len()];
+    let mut index = 0;
+    while index < PrefixOp::ALL.len() {
+        let op = PrefixOp::ALL[index];
+        table[op.token().kind() as usize] = Some(op);
+        index += 1;
+    }
+    table
+};
+
 impl TokenField for PrefixOp {
     const ALL: &[Self] = &[Self::Neg, Self::Not];
 
     fn read(first: SyntaxKind, _: Option<SyntaxKind>) -> Option<(Self, bool)> {
-        let op = match first {
-            T::Minus => Self::Neg,
-            T::Bang => Self::Not,
-            _ => return None,
-        };
-        Some((op, false))
+        PREFIX_BY_KIND[first as usize].map(|op| (op, false))
+    }
+}
+
+impl fmt::Display for PrefixOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.token().kind().describe())
     }
 }
 
@@ -43,18 +66,40 @@ pub enum Literal {
     False,
 }
 
+impl Literal {
+    pub const fn token(self) -> SyntaxKind {
+        match self {
+            Self::Int => T::IntLiteral,
+            Self::String => T::StringLiteral,
+            Self::True => T::TrueKw,
+            Self::False => T::FalseKw,
+        }
+    }
+}
+
+/// Per token kind, the literal it is.
+const LITERAL_BY_KIND: [Option<Literal>; SyntaxKind::ALL.len()] = {
+    let mut table = [None; SyntaxKind::ALL.len()];
+    let mut index = 0;
+    while index < Literal::ALL.len() {
+        let literal = Literal::ALL[index];
+        table[literal.token() as usize] = Some(literal);
+        index += 1;
+    }
+    table
+};
+
 impl TokenField for Literal {
     const ALL: &[Self] = &[Self::Int, Self::String, Self::True, Self::False];
 
     fn read(first: SyntaxKind, _: Option<SyntaxKind>) -> Option<(Self, bool)> {
-        let literal = match first {
-            T::IntLiteral => Self::Int,
-            T::StringLiteral => Self::String,
-            T::TrueKw => Self::True,
-            T::FalseKw => Self::False,
-            _ => return None,
-        };
-        Some((literal, false))
+        LITERAL_BY_KIND[first as usize].map(|literal| (literal, false))
+    }
+}
+
+impl fmt::Display for Literal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.token().describe())
     }
 }
 
@@ -151,15 +196,7 @@ pub fn is_literal(kind: SyntaxKind) -> bool {
 pub const PREFIX_BP: u8 = 11;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum BinaryOp {
-    Or,
-    And,
-    Eq,
-    Ne,
-    Lt,
-    Le,
-    Gt,
-    Ge,
+pub enum ArithOp {
     Add,
     Sub,
     Mul,
@@ -167,21 +204,39 @@ pub enum BinaryOp {
     Rem,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum CmpOp {
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum BinaryOp {
+    Or,
+    And,
+    Cmp(CmpOp),
+    Arith(ArithOp),
+}
+
 impl TokenField for BinaryOp {
     const ALL: &[Self] = &[
         Self::Or,
         Self::And,
-        Self::Eq,
-        Self::Ne,
-        Self::Lt,
-        Self::Le,
-        Self::Gt,
-        Self::Ge,
-        Self::Add,
-        Self::Sub,
-        Self::Mul,
-        Self::Div,
-        Self::Rem,
+        Self::Cmp(CmpOp::Eq),
+        Self::Cmp(CmpOp::Ne),
+        Self::Cmp(CmpOp::Lt),
+        Self::Cmp(CmpOp::Le),
+        Self::Cmp(CmpOp::Gt),
+        Self::Cmp(CmpOp::Ge),
+        Self::Arith(ArithOp::Add),
+        Self::Arith(ArithOp::Sub),
+        Self::Arith(ArithOp::Mul),
+        Self::Arith(ArithOp::Div),
+        Self::Arith(ArithOp::Rem),
     ];
 
     fn read(first: SyntaxKind, glued: Option<SyntaxKind>) -> Option<(Self, bool)> {
@@ -189,14 +244,55 @@ impl TokenField for BinaryOp {
     }
 }
 
+impl fmt::Display for BinaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let (first, glued) = self.tokens();
+        write!(f, "`{}{}`", first.text(), glued.map_or("", Fixed::text))
+    }
+}
+
+/// Per first token kind, the operator spanning a glued token and the one not.
+const OPERATORS_BY_FIRST: [[Option<BinaryOp>; 2]; SyntaxKind::ALL.len()] = {
+    let mut table = [[None; 2]; SyntaxKind::ALL.len()];
+    let mut index = 0;
+    while index < BinaryOp::ALL.len() {
+        let op = BinaryOp::ALL[index];
+        let (first, glued) = op.tokens();
+        let slot = &mut table[first.kind() as usize][glued.is_none() as usize];
+        assert!(slot.is_none(), "one operator per first token and width");
+        *slot = Some(op);
+        index += 1;
+    }
+    table
+};
+
 impl BinaryOp {
+    /// The operator's first token and the one glued after it.
+    pub const fn tokens(self) -> (Fixed, Option<Fixed>) {
+        match self {
+            Self::Or => (Fixed::Pipe, Some(Fixed::Pipe)),
+            Self::And => (Fixed::Amp, Some(Fixed::Amp)),
+            Self::Cmp(CmpOp::Eq) => (Fixed::Eq, Some(Fixed::Eq)),
+            Self::Cmp(CmpOp::Ne) => (Fixed::Bang, Some(Fixed::Eq)),
+            Self::Cmp(CmpOp::Le) => (Fixed::Lt, Some(Fixed::Eq)),
+            Self::Cmp(CmpOp::Ge) => (Fixed::Gt, Some(Fixed::Eq)),
+            Self::Cmp(CmpOp::Lt) => (Fixed::Lt, None),
+            Self::Cmp(CmpOp::Gt) => (Fixed::Gt, None),
+            Self::Arith(ArithOp::Add) => (Fixed::Plus, None),
+            Self::Arith(ArithOp::Sub) => (Fixed::Minus, None),
+            Self::Arith(ArithOp::Mul) => (Fixed::Star, None),
+            Self::Arith(ArithOp::Div) => (Fixed::Slash, None),
+            Self::Arith(ArithOp::Rem) => (Fixed::Percent, None),
+        }
+    }
+
     fn level(self) -> u8 {
         match self {
             Self::Or => 1,
             Self::And => 2,
-            Self::Eq | Self::Ne | Self::Lt | Self::Le | Self::Gt | Self::Ge => 3,
-            Self::Add | Self::Sub => 4,
-            Self::Mul | Self::Div | Self::Rem => 5,
+            Self::Cmp(_) => 3,
+            Self::Arith(ArithOp::Add | ArithOp::Sub) => 4,
+            Self::Arith(ArithOp::Mul | ArithOp::Div | ArithOp::Rem) => 5,
         }
     }
 
@@ -208,32 +304,21 @@ impl BinaryOp {
     }
 
     pub fn is_comparison(self) -> bool {
-        matches!(
-            self,
-            Self::Eq | Self::Ne | Self::Lt | Self::Le | Self::Gt | Self::Ge
-        )
+        matches!(self, Self::Cmp(_))
     }
 }
 
 /// `glued` is the kind of the token glued after `first`, if any; the `usize` is the operator's
 /// width in tokens.
 pub fn binary_operator(first: SyntaxKind, glued: Option<SyntaxKind>) -> Option<(BinaryOp, usize)> {
-    Some(match first {
-        T::Pipe if glued == Some(T::Pipe) => (BinaryOp::Or, 2),
-        T::Amp if glued == Some(T::Amp) => (BinaryOp::And, 2),
-        T::Eq if glued == Some(T::Eq) => (BinaryOp::Eq, 2),
-        T::Bang if glued == Some(T::Eq) => (BinaryOp::Ne, 2),
-        T::Lt if glued == Some(T::Eq) => (BinaryOp::Le, 2),
-        T::Gt if glued == Some(T::Eq) => (BinaryOp::Ge, 2),
-        T::Lt => (BinaryOp::Lt, 1),
-        T::Gt => (BinaryOp::Gt, 1),
-        T::Plus => (BinaryOp::Add, 1),
-        T::Minus => (BinaryOp::Sub, 1),
-        T::Star => (BinaryOp::Mul, 1),
-        T::Slash => (BinaryOp::Div, 1),
-        T::Percent => (BinaryOp::Rem, 1),
-        _ => return None,
-    })
+    let [spanning, alone] = OPERATORS_BY_FIRST[first as usize];
+    if let Some(op) = spanning
+        && let (_, Some(second)) = op.tokens()
+        && glued == Some(second.kind())
+    {
+        return Some((op, 2));
+    }
+    alone.map(|op| (op, 1))
 }
 
 #[cfg(test)]
@@ -248,6 +333,33 @@ mod tests {
             .max()
             .unwrap();
         assert_eq!(PREFIX_BP, tightest + 1);
+    }
+
+    #[test]
+    fn every_operator_reads_back_as_its_tokens() {
+        assert_eq!(BinaryOp::ALL.len(), 13);
+        for &op in BinaryOp::ALL {
+            let (first, glued) = op.tokens();
+            let width = 1 + usize::from(glued.is_some());
+            assert_eq!(
+                binary_operator(first.kind(), glued.map(Fixed::kind)),
+                Some((op, width)),
+                "{op}"
+            );
+            assert_eq!(
+                BinaryOp::read(first.kind(), glued.map(Fixed::kind)),
+                Some((op, width == 2))
+            );
+        }
+        assert_eq!(
+            binary_operator(T::Lt, Some(T::Ident)),
+            Some((BinaryOp::Cmp(CmpOp::Lt), 1))
+        );
+        assert_eq!(binary_operator(T::Eq, None), None);
+        assert_eq!(BinaryOp::Cmp(CmpOp::Le).to_string(), "`<=`");
+        assert_eq!(PrefixOp::Not.to_string(), "`!`");
+        assert_eq!(Literal::Int.to_string(), "an integer literal");
+        assert_eq!(Literal::True.to_string(), "`true`");
     }
 
     #[test]

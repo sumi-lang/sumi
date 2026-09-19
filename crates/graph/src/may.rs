@@ -6,7 +6,7 @@ use std::convert::Infallible;
 use std::fmt;
 use std::ops::{Add, BitAnd, Div, Mul, Neg, Rem, Sub};
 
-use crate::{BinaryOp, Domain, Int, Ty};
+use crate::{ArithOp, BinaryOp, CmpOp, Domain, Int, Ty};
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Bound {
@@ -262,47 +262,45 @@ impl Ints {
         halves
     }
 
-    fn compare(&self, op: BinaryOp, other: &Self) -> Bools {
+    fn compare(&self, op: CmpOp, other: &Self) -> Bools {
         let (Some(a), Some(b)) = (&self.0, &other.0) else {
             return Bools::EMPTY;
         };
         let (may_true, may_false) = match op {
-            BinaryOp::Lt => (a.lo < b.hi, a.hi >= b.lo),
-            BinaryOp::Le => (a.lo <= b.hi, a.hi > b.lo),
-            BinaryOp::Gt => (a.hi > b.lo, a.lo <= b.hi),
-            BinaryOp::Ge => (a.hi >= b.lo, a.lo < b.hi),
-            BinaryOp::Eq | BinaryOp::Ne => {
+            CmpOp::Lt => (a.lo < b.hi, a.hi >= b.lo),
+            CmpOp::Le => (a.lo <= b.hi, a.hi > b.lo),
+            CmpOp::Gt => (a.hi > b.lo, a.lo <= b.hi),
+            CmpOp::Ge => (a.hi >= b.lo, a.lo < b.hi),
+            CmpOp::Eq | CmpOp::Ne => {
                 let equal = !(self & other).is_empty();
                 let unequal = !(self.is_point() && self == other);
-                if op == BinaryOp::Eq {
+                if op == CmpOp::Eq {
                     (equal, unequal)
                 } else {
                     (unequal, equal)
                 }
             }
-            _ => unreachable!("a comparison"),
         };
         Bools::of(may_true, may_false)
     }
 
-    fn refine(&self, op: BinaryOp, other: &Self) -> Self {
+    fn refine(&self, op: CmpOp, other: &Self) -> Self {
         let (Some(Band { lo, hi, hole }), Some(b)) = (&self.0, &other.0) else {
             return Self::EMPTY;
         };
         match op {
-            BinaryOp::Lt => Self::band(lo.clone(), min(hi, &b.hi.pred()).clone(), *hole),
-            BinaryOp::Le => Self::band(lo.clone(), min(hi, &b.hi).clone(), *hole),
-            BinaryOp::Gt => Self::band(max(lo, &b.lo.succ()).clone(), hi.clone(), *hole),
-            BinaryOp::Ge => Self::band(max(lo, &b.lo).clone(), hi.clone(), *hole),
-            BinaryOp::Eq => self & other,
-            BinaryOp::Ne => {
+            CmpOp::Lt => Self::band(lo.clone(), min(hi, &b.hi.pred()).clone(), *hole),
+            CmpOp::Le => Self::band(lo.clone(), min(hi, &b.hi).clone(), *hole),
+            CmpOp::Gt => Self::band(max(lo, &b.lo.succ()).clone(), hi.clone(), *hole),
+            CmpOp::Ge => Self::band(max(lo, &b.lo).clone(), hi.clone(), *hole),
+            CmpOp::Eq => self & other,
+            CmpOp::Ne => {
                 if other.is_point() {
                     self.without(&b.lo)
                 } else {
                     self.clone()
                 }
             }
-            _ => unreachable!("a comparison"),
         }
     }
 
@@ -591,28 +589,6 @@ impl May {
     }
 }
 
-fn flip(op: BinaryOp) -> BinaryOp {
-    match op {
-        BinaryOp::Lt => BinaryOp::Gt,
-        BinaryOp::Le => BinaryOp::Ge,
-        BinaryOp::Gt => BinaryOp::Lt,
-        BinaryOp::Ge => BinaryOp::Le,
-        other => other,
-    }
-}
-
-fn negate(op: BinaryOp) -> BinaryOp {
-    match op {
-        BinaryOp::Lt => BinaryOp::Ge,
-        BinaryOp::Le => BinaryOp::Gt,
-        BinaryOp::Gt => BinaryOp::Le,
-        BinaryOp::Ge => BinaryOp::Lt,
-        BinaryOp::Eq => BinaryOp::Ne,
-        BinaryOp::Ne => BinaryOp::Eq,
-        other => other,
-    }
-}
-
 pub struct Shown<'a>(&'a May, Ty);
 
 impl fmt::Display for Shown<'_> {
@@ -701,24 +677,20 @@ impl Domain for May {
     #[inline]
     fn binary(op: BinaryOp, lhs: &Self, rhs: &Self) -> Result<Self, Infallible> {
         Ok(match op {
-            BinaryOp::Add => Self::ints(&lhs.ints + &rhs.ints),
-            BinaryOp::Sub => Self::ints(&lhs.ints - &rhs.ints),
-            BinaryOp::Mul => Self::ints(&lhs.ints * &rhs.ints),
-            BinaryOp::Div => Self::ints(&lhs.ints / &rhs.ints),
-            BinaryOp::Rem => Self::ints(&lhs.ints % &rhs.ints),
-            BinaryOp::Eq | BinaryOp::Ne => {
+            BinaryOp::Arith(op) => Self::ints(match op {
+                ArithOp::Add => &lhs.ints + &rhs.ints,
+                ArithOp::Sub => &lhs.ints - &rhs.ints,
+                ArithOp::Mul => &lhs.ints * &rhs.ints,
+                ArithOp::Div => &lhs.ints / &rhs.ints,
+                ArithOp::Rem => &lhs.ints % &rhs.ints,
+            }),
+            BinaryOp::Cmp(op @ (CmpOp::Eq | CmpOp::Ne)) => {
                 let mut bools = lhs.ints.compare(op, &rhs.ints);
                 let of_bools = lhs.bools.eq(rhs.bools);
-                bools.join(if op == BinaryOp::Eq {
-                    of_bools
-                } else {
-                    !of_bools
-                });
+                bools.join(if op == CmpOp::Eq { of_bools } else { !of_bools });
                 Self::bools(bools)
             }
-            BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge => {
-                Self::bools(lhs.ints.compare(op, &rhs.ints))
-            }
+            BinaryOp::Cmp(op) => Self::bools(lhs.ints.compare(op, &rhs.ints)),
         })
     }
 
@@ -732,14 +704,12 @@ impl Domain for May {
     }
 
     #[inline]
-    fn refine(&self, op: BinaryOp, local_is_lhs: bool, sense: bool, other: &Self) -> Self {
-        let op = if local_is_lhs { op } else { flip(op) };
-        let op = if sense { op } else { negate(op) };
+    fn refine(&self, op: CmpOp, local_is_lhs: bool, sense: bool, other: &Self) -> Self {
+        let op = if local_is_lhs { op } else { op.flip() };
+        let op = if sense { op } else { op.negate() };
         let bools = match op {
-            BinaryOp::Eq => self.bools & other.bools,
-            BinaryOp::Ne
-                if other.bools == Bools::from(true) || other.bools == Bools::from(false) =>
-            {
+            CmpOp::Eq => self.bools & other.bools,
+            CmpOp::Ne if other.bools == Bools::from(true) || other.bools == Bools::from(false) => {
                 self.bools & !other.bools
             }
             _ => self.bools,
@@ -870,52 +840,50 @@ mod tests {
     #[test]
     fn comparisons_and_refinements_agree() {
         let n = ints("[0, 15]");
-        assert_eq!(n.compare(BinaryOp::Lt, &ints("[2, 2]")), Bools::BOTH);
+        assert_eq!(n.compare(CmpOp::Lt, &ints("[2, 2]")), Bools::BOTH);
         assert_eq!(
-            ints("[0, 1]").compare(BinaryOp::Lt, &ints("[2, 2]")),
+            ints("[0, 1]").compare(CmpOp::Lt, &ints("[2, 2]")),
             Bools::from(true)
         );
         assert_eq!(
-            ints("[2, 9]").compare(BinaryOp::Lt, &ints("[2, 2]")),
+            ints("[2, 9]").compare(CmpOp::Lt, &ints("[2, 2]")),
             Bools::from(false)
         );
         assert_eq!(
-            ints("[-5, 5] \\ 0").compare(BinaryOp::Eq, &ints("[0, 0]")),
+            ints("[-5, 5] \\ 0").compare(CmpOp::Eq, &ints("[0, 0]")),
             Bools::from(false)
         );
         assert_eq!(
-            ints("[3, 3]").compare(BinaryOp::Ne, &ints("[3, 3]")),
+            ints("[3, 3]").compare(CmpOp::Ne, &ints("[3, 3]")),
             Bools::from(false)
         );
-        assert_eq!(n.refine(BinaryOp::Lt, &ints("[2, 2]")), ints("[0, 1]"));
-        assert_eq!(n.refine(BinaryOp::Ge, &ints("[2, 2]")), ints("[2, 15]"));
-        assert_eq!(n.refine(BinaryOp::Ne, &ints("[0, 0]")), ints("[1, 15]"));
+        assert_eq!(n.refine(CmpOp::Lt, &ints("[2, 2]")), ints("[0, 1]"));
+        assert_eq!(n.refine(CmpOp::Ge, &ints("[2, 2]")), ints("[2, 15]"));
+        assert_eq!(n.refine(CmpOp::Ne, &ints("[0, 0]")), ints("[1, 15]"));
         assert_eq!(
-            ints("[-5, 5]").refine(BinaryOp::Ne, &ints("[0, 0]")),
+            ints("[-5, 5]").refine(CmpOp::Ne, &ints("[0, 0]")),
             ints("[-5, 5] \\ 0")
         );
-        assert_eq!(n.refine(BinaryOp::Eq, &ints("[10, 20]")), ints("[10, 15]"));
-        assert_eq!(n.refine(BinaryOp::Gt, &ints("[20, 20]")), Ints::EMPTY);
-        assert_eq!(n.refine(BinaryOp::Ne, &ints("[1, 2]")), n);
+        assert_eq!(n.refine(CmpOp::Eq, &ints("[10, 20]")), ints("[10, 15]"));
+        assert_eq!(n.refine(CmpOp::Gt, &ints("[20, 20]")), Ints::EMPTY);
+        assert_eq!(n.refine(CmpOp::Ne, &ints("[1, 2]")), n);
         let may = May::ints(n.clone());
         let two = May::int(&2.into());
         assert_eq!(
-            may.refine(BinaryOp::Gt, false, true, &two).ints,
+            may.refine(CmpOp::Gt, false, true, &two).ints,
             ints("[0, 1]")
         );
         assert_eq!(
-            may.refine(BinaryOp::Gt, false, false, &two).ints,
+            may.refine(CmpOp::Gt, false, false, &two).ints,
             ints("[2, 15]")
         );
         let flag = May::bools(Bools::BOTH);
         assert_eq!(
-            flag.refine(BinaryOp::Eq, true, true, &May::bool(true))
-                .bools,
+            flag.refine(CmpOp::Eq, true, true, &May::bool(true)).bools,
             Bools::from(true)
         );
         assert_eq!(
-            flag.refine(BinaryOp::Ne, true, true, &May::bool(true))
-                .bools,
+            flag.refine(CmpOp::Ne, true, true, &May::bool(true)).bools,
             Bools::from(false)
         );
     }
@@ -996,30 +964,9 @@ mod tests {
 
     fn data_ops() -> Vec<Op> {
         let mut ops = vec![Op::Neg, Op::Not];
-        ops.extend(
-            [
-                BinaryOp::Add,
-                BinaryOp::Sub,
-                BinaryOp::Mul,
-                BinaryOp::Div,
-                BinaryOp::Rem,
-                BinaryOp::Eq,
-                BinaryOp::Ne,
-                BinaryOp::Lt,
-                BinaryOp::Le,
-                BinaryOp::Gt,
-                BinaryOp::Ge,
-            ]
-            .map(Op::Binary),
-        );
-        for op in [
-            BinaryOp::Lt,
-            BinaryOp::Le,
-            BinaryOp::Gt,
-            BinaryOp::Ge,
-            BinaryOp::Eq,
-            BinaryOp::Ne,
-        ] {
+        ops.extend(ArithOp::ALL.map(BinaryOp::Arith).map(Op::Binary));
+        ops.extend(CmpOp::ALL.map(BinaryOp::Cmp).map(Op::Binary));
+        for op in CmpOp::ALL {
             for local_is_lhs in [false, true] {
                 for sense in [false, true] {
                     ops.push(Op::Refine {
@@ -1051,7 +998,7 @@ mod tests {
                 sense,
             } => {
                 let (lhs, rhs) = if local_is_lhs { (x, y) } else { (y, x) };
-                Value::binary(op, lhs, rhs) == Ok(Value::Bool(sense))
+                Value::binary(BinaryOp::Cmp(op), lhs, rhs) == Ok(Value::Bool(sense))
             }
             Op::Exactly(value) => *x == Value::Bool(value),
             _ => true,

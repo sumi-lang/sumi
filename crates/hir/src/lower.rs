@@ -349,22 +349,37 @@ pub(crate) fn lower<'s>(
     (builder.graph, builder.lowered)
 }
 
+/// The syntax's operator in the graph's vocabulary, which has no lazy operator.
 fn eager(op: sumi_syntax::BinaryOp) -> Option<BinaryOp> {
-    use sumi_syntax::BinaryOp::*;
+    use sumi_syntax::BinaryOp as S;
     Some(match op {
-        Add => BinaryOp::Add,
-        Sub => BinaryOp::Sub,
-        Mul => BinaryOp::Mul,
-        Div => BinaryOp::Div,
-        Rem => BinaryOp::Rem,
-        Eq => BinaryOp::Eq,
-        Ne => BinaryOp::Ne,
-        Lt => BinaryOp::Lt,
-        Le => BinaryOp::Le,
-        Gt => BinaryOp::Gt,
-        Ge => BinaryOp::Ge,
-        And | Or => return None,
+        S::Or | S::And => return None,
+        S::Cmp(op) => BinaryOp::Cmp(cmp(op)),
+        S::Arith(op) => BinaryOp::Arith(arith(op)),
     })
+}
+
+fn cmp(op: sumi_syntax::CmpOp) -> CmpOp {
+    use sumi_syntax::CmpOp as S;
+    match op {
+        S::Eq => CmpOp::Eq,
+        S::Ne => CmpOp::Ne,
+        S::Lt => CmpOp::Lt,
+        S::Le => CmpOp::Le,
+        S::Gt => CmpOp::Gt,
+        S::Ge => CmpOp::Ge,
+    }
+}
+
+fn arith(op: sumi_syntax::ArithOp) -> ArithOp {
+    use sumi_syntax::ArithOp as S;
+    match op {
+        S::Add => ArithOp::Add,
+        S::Sub => ArithOp::Sub,
+        S::Mul => ArithOp::Mul,
+        S::Div => ArithOp::Div,
+        S::Rem => ArithOp::Rem,
+    }
 }
 
 /// A `let` binds at `Work::Finish`, after its initializer, so the initializer reads any outer
@@ -749,8 +764,8 @@ impl<'a, 's> Builder<'a, 's> {
                         self.refine(lhs, sense);
                         self.refine(rhs, sense);
                     }
-                    Lt | Le | Gt | Ge | Eq | Ne => {
-                        let op = eager(op).expect("a comparison is eager");
+                    Cmp(op) => {
+                        let op = cmp(op);
                         for (side, other, local_is_lhs) in [(lhs, rhs, true), (rhs, lhs, false)] {
                             if let (Some(local), Some(value)) = (self.read(side), self.typed(other))
                             {
@@ -1165,7 +1180,7 @@ impl<'a, 's> Builder<'a, 's> {
                 self.push(node, Op::Binary(op), &[lhs_input, rhs_input], None);
                 self.typed(lhs)?;
                 self.typed(rhs)?;
-                if matches!(op, BinaryOp::Div | BinaryOp::Rem) {
+                if matches!(op, BinaryOp::Arith(ArithOp::Div | ArithOp::Rem)) {
                     self.lowered.obligations.push(Obligation {
                         owner: self.owner,
                         node,

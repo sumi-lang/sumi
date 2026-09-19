@@ -5,7 +5,9 @@
 use std::collections::HashSet;
 
 use rustc_hash::FxBuildHasher;
-use sumi_graph::{BinaryOp, Domain, Graph, Int, May, Node, NodeId, Op, Thresholds, Ty, Value};
+use sumi_graph::{
+    BinaryOp, CmpOp, Domain, Graph, Int, May, Node, NodeId, Op, Thresholds, Ty, Value,
+};
 use sumi_text::TextRange;
 
 use crate::lattice::Edge;
@@ -71,7 +73,7 @@ impl Demands<'_> {
         match &entry.op {
             Op::Neg => require(reads[0], inputs[0], Expected::Ty(Ty::Int), None),
             Op::Not => require(reads[0], inputs[0], Expected::Ty(Ty::Bool), None),
-            Op::Binary(BinaryOp::Eq | BinaryOp::Ne) => {
+            Op::Binary(BinaryOp::Cmp(CmpOp::Eq | CmpOp::Ne)) => {
                 if let Some(&operand) = inputs.iter().find(|&&input| typed(input)) {
                     for (&at, &input) in reads.iter().zip(inputs) {
                         require(at, input, Expected::Peer(operand), None);

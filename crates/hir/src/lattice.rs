@@ -4,7 +4,7 @@
 
 use std::num::NonZeroU32;
 
-use sumi_graph::{BinaryOp, Domain, May, Thresholds, Ty};
+use sumi_graph::{BinaryOp, CmpOp, Domain, May, Thresholds, Ty};
 
 use crate::solver::{Carry, Lattice};
 
@@ -124,7 +124,7 @@ pub(crate) enum Edge {
     Bind,
     Values,
     Refine {
-        op: BinaryOp,
+        op: CmpOp,
         local_is_lhs: bool,
         sense: bool,
     },
@@ -188,13 +188,8 @@ impl Lattice for Product {
             | Edge::Enter
             | Edge::Exactly(_) => Carry::Nothing,
             Edge::Neg => Carry::Grows,
-            Edge::Binary(op) => {
-                if op.result() == Ty::Int {
-                    Carry::Grows
-                } else {
-                    Carry::Nothing
-                }
-            }
+            Edge::Binary(BinaryOp::Arith(_)) => Carry::Grows,
+            Edge::Binary(BinaryOp::Cmp(_)) => Carry::Nothing,
             Edge::Call(_) | Edge::Bind | Edge::Values | Edge::Refine { .. } => Carry::Passes,
             Edge::Branch | Edge::Argument => {
                 if second {
@@ -299,7 +294,7 @@ impl Lattice for Product {
 
 #[cfg(test)]
 mod tests {
-    use sumi_graph::{Bools, Int};
+    use sumi_graph::{ArithOp, Bools, Int};
 
     use super::*;
 
@@ -333,9 +328,9 @@ mod tests {
         let cx = [15, 2].map(Int::from).into_iter().collect::<Thresholds>();
         let a = values(band(4, 13));
         let b = values(May::int(&2.into()));
-        let edge = Edge::Binary(BinaryOp::Mul);
+        let edge = Edge::Binary(BinaryOp::Arith(ArithOp::Mul));
         assert_eq!(a.transfer(&edge, Some(&b), false, &cx).values, band(8, 26));
-        let edge = Edge::Binary(BinaryOp::Lt);
+        let edge = Edge::Binary(BinaryOp::Cmp(CmpOp::Lt));
         assert_eq!(
             a.transfer(&edge, Some(&b), false, &cx).values.bools,
             Bools::from(false)

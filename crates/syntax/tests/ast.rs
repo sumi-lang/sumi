@@ -253,7 +253,7 @@ fn missing_children_are_absent_and_the_node_is_flagged() {
 #[test]
 fn a_clean_view_holds_every_required_child() {
     use sumi_syntax::ast::{CleanElseBranch, CleanExpr, CleanStmt};
-    use sumi_syntax::{BinaryOp, Literal, PrefixOp};
+    use sumi_syntax::{ArithOp, BinaryOp, CmpOp, Literal, PrefixOp};
 
     let parsed =
         Parsed::new("fn f() { let mut x: Int = 1 + 2\nif !x { 3 } else if x <= -4 { true } }");
@@ -275,11 +275,14 @@ fn a_clean_view_holds_every_required_child() {
     let Some(CleanExpr::BinaryExpr(sum)) = binding.initializer().clean(tree, lexed) else {
         panic!("a clean sum")
     };
-    assert_eq!(sum.op(), BinaryOp::Add);
+    assert_eq!(sum.op(), BinaryOp::Arith(ArithOp::Add));
     assert_eq!(parsed.text(sum.lhs()), "1");
     assert_eq!(parsed.text(sum.rhs()), "2");
     assert_eq!(sum.view().node(), sum.node());
-    assert_eq!(sum.view().op(tree, lexed), Some(BinaryOp::Add));
+    assert_eq!(
+        sum.view().op(tree, lexed),
+        Some(BinaryOp::Arith(ArithOp::Add))
+    );
     let Some(CleanExpr::LiteralExpr(one)) = sum.lhs().clean(tree, lexed) else {
         panic!("a clean literal")
     };
@@ -304,7 +307,7 @@ fn a_clean_view_holds_every_required_child() {
     let Some(CleanExpr::BinaryExpr(le)) = else_if.condition().clean(tree, lexed) else {
         panic!("a clean comparison")
     };
-    assert_eq!(le.op(), BinaryOp::Le);
+    assert_eq!(le.op(), BinaryOp::Cmp(CmpOp::Le));
     let Some(CleanExpr::PrefixExpr(neg)) = le.rhs().clean(tree, lexed) else {
         panic!("a clean negation")
     };
