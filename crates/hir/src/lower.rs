@@ -245,7 +245,7 @@ pub(crate) fn declare<'s>(
     let mut headers = Vec::with_capacity(items.len());
     for item in items {
         let name = source.name(item.name(tree));
-        let id = FunctionId::new(headers.len());
+        let id = graph.function();
         if let Some((name, node)) = name {
             match names.entry(name) {
                 Entry::Occupied(mut entry) => {
@@ -613,7 +613,20 @@ impl<'a, 's> Builder<'a, 's> {
         inputs: &[(NodeId, TextRange)],
         name: Option<TextRange>,
     ) -> NodeId {
-        let id = self.place(op, inputs, self.source.range(node), name);
+        self.push_over(node, op, inputs, name, &[])
+    }
+    /// `results` are those of the regions `op` holds.
+    fn push_over(
+        &mut self,
+        node: NodeIdx,
+        op: Op,
+        inputs: &[(NodeId, TextRange)],
+        name: Option<TextRange>,
+        results: &[NodeId],
+    ) -> NodeId {
+        let typed = self.follows(&op, inputs, results);
+        let id = self.graph.push(op, inputs, self.source.range(node), name);
+        self.lowered.typed.push(typed);
         self.nodes_of[node.to_usize()] = Some(id);
         id
     }
@@ -625,15 +638,15 @@ impl<'a, 's> Builder<'a, 's> {
         origin: TextRange,
         name: Option<TextRange>,
     ) -> NodeId {
-        let typed = self.follows(&op, inputs);
+        let typed = self.follows(&op, inputs, &[]);
         let id = self.graph.push(op, inputs, origin, name);
         self.lowered.typed.push(typed);
         id
     }
-    /// Whether a node of `op` over `inputs` carries a value the typing follows.
-    fn follows(&self, op: &Op, inputs: &[(NodeId, TextRange)]) -> bool {
+    /// Whether a node of `op` over `inputs`, and over the regions with `results`, carries a value
+    /// the typing follows.
+    fn follows(&self, op: &Op, inputs: &[(NodeId, TextRange)], results: &[NodeId]) -> bool {
         let typed = |node: NodeId| self.lowered.typed[node.index()];
-        let result = |region: RegionId| self.graph.result(region).is_some_and(typed);
         match *op {
             Op::Hole | Op::Unused => false,
             Op::Entry | Op::Then | Op::Else | Op::Copy { declared: Some(_) } => true,
@@ -643,9 +656,8 @@ impl<'a, 's> Builder<'a, 's> {
                 self.whole(callee, inputs)
                     && !matches!(self.headers[function.index()].result, HeaderResult::None)
             }
-            Op::And { rhs } | Op::Or { rhs } => typed(inputs[0].0) && result(rhs),
-            Op::Join { then, else_ } => {
-                typed(inputs[0].0) && result(then) && else_.is_none_or(result)
+            Op::And { .. } | Op::Or { .. } | Op::Join { .. } => {
+                typed(inputs[0].0) && results.iter().all(|&result| typed(result))
             }
             _ => inputs.iter().all(|&(input, _)| typed(input)),
         }
@@ -1190,15 +1202,17 @@ impl<'a, 's> Builder<'a, 's> {
     }
     fn lazy(&mut self, expr: LazyOp, rhs: RegionId) -> Option<()> {
         let lhs = expr.expr.lhs().node();
+        let rhs_node = expr.expr.rhs().node();
         let lhs_input = self.input(lhs);
+        let result = self.node_of(rhs_node);
         let op = if expr.and {
             Op::And { rhs }
         } else {
             Op::Or { rhs }
         };
-        self.push(expr.expr.node(), op, &[lhs_input], None);
+        self.push_over(expr.expr.node(), op, &[lhs_input], None, &[result]);
         self.typed(lhs)?;
-        self.typed(expr.expr.rhs().node())?;
+        self.typed(rhs_node)?;
         Some(())
     }
     fn join(
@@ -1209,11 +1223,21 @@ impl<'a, 's> Builder<'a, 's> {
     ) -> Option<()> {
         let tree = self.source.tree;
         let cond = branch.condition().node();
+        let then_node = branch.then_branch().node();
+        let else_node = branch.else_branch(tree).map(|e| e.node());
         let condition = self.input(cond);
-        self.push(branch.node(), Op::Join { then, else_ }, &[condition], None);
-        self.typed(branch.then_branch().node())?;
-        if let Some(else_node) = branch.else_branch(tree) {
-            self.typed(else_node.node())?;
+        let mut results = vec![self.node_of(then_node)];
+        results.extend(else_node.map(|else_node| self.node_of(else_node)));
+        self.push_over(
+            branch.node(),
+            Op::Join { then, else_ },
+            &[condition],
+            None,
+            &results,
+        );
+        self.typed(then_node)?;
+        if let Some(else_node) = else_node {
+            self.typed(else_node)?;
         }
         self.typed(cond)?;
         Some(())

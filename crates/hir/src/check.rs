@@ -21,7 +21,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         .unwrap()
         .items(tree)
         .collect();
-    let mut graph = GraphBuilder::new(items.len(), tree.len());
+    let mut graph = GraphBuilder::new(tree.len());
     let declared = lower::declare(&mut source, &items, &mut graph);
     let (graph, lowered) = lower::lower(&mut source, &items, &declared, graph);
     let headers = declared.headers;
