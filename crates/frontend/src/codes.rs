@@ -1,39 +1,25 @@
-//! Stable codes for `syntax` diagnostics.
-//!
-//! A code is spelled `group/name`, both kebab-case, and is stable: never
-//! renamed or reused for something else. Every code is shown by a case
-//! under `tests/corpus/`, which `crates/hir/tests/codes.rs` checks.
+//! The frontend's diagnostic codes: what the lexer rejects, where the parser recovers, and the
+//! layout rules. A code is never renamed or reused.
 
 crate::codes! {
-    /// Reported by the frontend: what the lexer rejects, where the parser
-    /// recovers, and the layout rules the parser checks. Every one is an
-    /// error. The tree is still built around it, and a fix is attached where
-    /// the repair is a token: a closer or a canonical literal. A layout rule
-    /// carries none; `sumi fmt` repairs every one it can.
     SYNTAX = "syntax";
 
-    /// A string literal reaches the end of its line without a closing `"`. The
-    /// literal ends at the line break, so nothing after that line is affected.
+    /// A string literal reaches the end of its line without a closing `"`.
     UNTERMINATED_STRING = "unterminated-string";
 
-    /// A carriage return not followed by a line feed. A line ends with `\n` or
-    /// `\r\n`.
+    /// A carriage return not followed by a line feed.
     LONE_CARRIAGE_RETURN = "lone-carriage-return";
 
     /// A character with no meaning in Sumi source outside a string or comment.
-    /// Names are ASCII letters, digits, and `_`.
     UNKNOWN_CHARACTER = "unknown-character";
 
-    /// Identifier characters attached to an integer literal, as in `1u32`,
-    /// `1e5`, or `1_000`. Literals take no suffix, exponent, or separator.
+    /// Identifier characters attached to an integer literal, as in `1u32`.
     UNKNOWN_SUFFIX = "unknown-suffix";
 
-    /// An integer literal with leading zeros, as in `007`. The fix removes
-    /// them.
+    /// An integer literal with leading zeros, as in `007`.
     NONCANONICAL_NUMBER = "noncanonical-number";
 
-    /// A backslash in a string literal beginning none of the escapes `\n`,
-    /// `\r`, `\t`, `\\`, `\"`, and `\0`.
+    /// A string escape other than `\n`, `\r`, `\t`, `\\`, `\"`, or `\0`.
     UNKNOWN_ESCAPE = "unknown-escape";
 
     /// Punctuation with no role in the language, such as `;`, `[`, or `@`.
@@ -42,12 +28,10 @@ crate::codes! {
     /// Something other than a function item at the top level of the file.
     EXPECTED_ITEM = "expected-item";
 
-    /// A token that cannot begin a statement where a block's next statement
-    /// should start.
+    /// A token that cannot begin a statement where a block expects one.
     EXPECTED_STATEMENT = "expected-statement";
 
-    /// An expression is required, after an operator, `=`, or `(` for instance,
-    /// and the next token cannot begin one.
+    /// A token that cannot begin an expression where one is required.
     EXPECTED_EXPRESSION = "expected-expression";
 
     /// The name a `fn`, `let`, or parameter declares is missing.
@@ -56,54 +40,39 @@ crate::codes! {
     /// A type is required after `:` or `->` and none follows.
     EXPECTED_TYPE = "expected-type";
 
-    /// One particular token is required and the message names it: a closing
-    /// bracket, a `,` between list elements, or the `(` of a parameter list.
-    /// For a missing closer, a label points at the opener and the fix inserts
-    /// the closer.
+    /// One particular token is required and missing; the message names it.
     EXPECTED_TOKEN = "expected-token";
 
-    /// A function signature is followed by neither a block nor `=` and an
-    /// expression.
+    /// A function signature followed by neither `{` nor `=`.
     EXPECTED_BODY = "expected-body";
 
-    /// Two statements share a line. A line break ends a statement; there is no
-    /// `;`.
+    /// Two statements share a line.
     EXPECTED_BOUNDARY = "expected-boundary";
 
-    /// A token inside an expression that neither continues nor ends it. The
-    /// parser skips to where it can resume and labels what it skipped.
+    /// A token inside an expression that neither continues nor ends it.
     UNEXPECTED_SYNTAX = "unexpected-syntax";
 
-    /// Expressions nest deeper than the parser's limit of 256 levels, which
-    /// keeps parsing on a bounded stack.
+    /// Expressions nest deeper than the parser's limit.
     NESTING_TOO_DEEP = "nesting-too-deep";
 
-    /// A binary operator glued to an operand, as in `a+b` or `a<b`. Binary
-    /// operators are spaced on both sides; glued, `<` opens type arguments and
-    /// `*` and `&` are reserved for prefix operators. `sumi fmt` spaces it.
+    /// A binary operator glued to an operand, as in `a+b`.
     UNSPACED_BINARY_OPERATOR = "unspaced-binary-operator";
 
-    /// A prefix operator separated from its operand, as in `- x`. Prefix
-    /// operators are glued; `sumi fmt` removes the space.
+    /// A prefix operator separated from its operand, as in `- x`.
     SPACED_PREFIX_OPERATOR = "spaced-prefix-operator";
 
-    /// A space between a function name or callee and its `(`, which
-    /// `sumi fmt` removes.
+    /// A space between a function name or callee and its `(`.
     SPACED_LIST_OPENER = "spaced-list-opener";
 
-    /// A function item's name on the line after its `fn`. `sumi fmt` moves
-    /// the name onto the `fn` line.
+    /// A function item's name on the line after its `fn`.
     FUNCTION_NAME_ON_NEXT_LINE = "function-name-on-next-line";
 
     /// A function item beginning on the line where the previous one ended.
-    /// `sumi fmt` moves it onto a line of its own.
     FUNCTION_ITEM_ON_SAME_LINE = "function-item-on-same-line";
 
-    /// A binding's name on the line after its `let`. `sumi fmt` moves the
-    /// name onto the `let` line.
+    /// A binding's name on the line after its `let`.
     BINDING_NAME_ON_NEXT_LINE = "binding-name-on-next-line";
 
-    /// Comparisons chained, as in `a < b < c`. A comparison yields a boolean
-    /// that no comparison accepts; write two comparisons joined by `&&`.
+    /// Comparisons chained, as in `a < b < c`.
     CHAINED_COMPARISON = "chained-comparison";
 }

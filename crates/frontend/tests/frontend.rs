@@ -1,5 +1,4 @@
-//! Diagnostics a snapshot cannot express: their order, their fixes, and
-//! their independence, over hand-written and generated sources.
+//! Diagnostic order, fixes, and independence: behavior a snapshot cannot express.
 
 use proptest::prelude::*;
 use sumi_frontend::{DiagnosticCode, ParsedSource, codes, parse_source};
@@ -18,7 +17,6 @@ fn diagnostic_codes(front: &ParsedSource) -> Vec<DiagnosticCode> {
         .collect()
 }
 
-/// Apply the diagnostic's fix as a tool would, unread.
 fn apply_fix(source: &str, diagnostic: &sumi_frontend::Diagnostic) -> String {
     let fix = diagnostic.fix.as_ref().expect("diagnostic has a fix");
     sumi_text::apply(source, [&fix.edit])
@@ -43,8 +41,7 @@ fn nested_closer_repairs_remain_available_inside_out() {
 
 #[test]
 fn diagnostics_are_globally_sorted_with_stable_ties() {
-    // The lexer observes the later `€` before parser diagnostics are lowered,
-    // so source sorting must move the missing `:` ahead of it.
+    // Lexer facts are observed before parser facts; source order can differ.
     let front = parsed("fn f(a) { € }");
     assert_eq!(
         diagnostic_codes(&front),
@@ -101,8 +98,6 @@ fn leading_zeros_are_fixed_around_a_suffix() {
     assert!(front.diagnostics()[1].fix.is_none());
 }
 
-/// Source fragments beyond every keyword and punctuation text of the
-/// language: names, malformed literals, roleless punctuation, and trivia.
 const EXTRA_FRAGMENTS: &[&str] = &[
     "x", "0", "01u32", "1e", r#""\q""#, "\"open", ";", " ", "\n", "// c", "€",
 ];

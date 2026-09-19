@@ -1,9 +1,5 @@
-//! The source-owning syntactic frontend for Sumi.
-//!
-//! [`parse_source`] runs every syntactic phase and lowers their immutable,
-//! phase-local evidence into canonical diagnostics. Detection remains in
-//! the lexer and parser; cross-phase wording, suppression, and ordering
-//! live here.
+//! The source-owning syntactic frontend for Sumi. Detection stays in the lexer and parser; this
+//! crate turns that evidence into diagnostics.
 
 pub mod codes;
 mod diagnostic;
@@ -15,10 +11,8 @@ pub use sumi_lexer::SourceTooLarge;
 use sumi_lexer::{LexedFile, lex};
 use sumi_syntax::{Parse, ParserInput, parse};
 
-/// Parse one immutable source snapshot.
-///
-/// Malformed source still produces every syntactic product. The only failure
-/// is a source too large for Sumi's `u32` coordinate space.
+/// Malformed source still produces every syntactic product. The only failure is a source too large
+/// for Sumi's `u32` coordinate space.
 pub fn parse_source(source: Box<str>) -> Result<ParsedSource, SourceTooLarge> {
     let lexed = lex(&source)?;
     let parse = parse(ParserInput::new(&lexed));
@@ -32,7 +26,6 @@ pub fn parse_source(source: Box<str>) -> Result<ParsedSource, SourceTooLarge> {
     })
 }
 
-/// All immutable syntactic products for one source revision.
 #[derive(Clone, Debug)]
 pub struct ParsedSource {
     source: Box<str>,

@@ -25,29 +25,19 @@ const SMALL_VALID: &str = r#"fn transform(value: int, limit: int) -> int {
 }
 "#;
 
-// The seeds and damage parameters define the benchmark corpora; changing
-// one resets its benchmarks' history.
 const MEDIUM_SEED: u64 = 0xBEEF;
 const LARGE_SEED: u64 = 0xDECAF;
 const DAMAGE_SEED: u64 = 7;
-/// Significant tokens per edit of the malformed corpus.
 const DAMAGE_STRIDE: usize = 128;
 
-// Nesting depths for the adversarial ladder, pinned so the benchmark names
-// stay stable. The first three rungs must parse clean under [`MAX_DEPTH`];
-// the last must trip the depth guard and recover past thousands of
-// unconsumed closers.
 const NESTED_RUNGS: [(usize, bool); 4] = [(4, true), (32, true), (224, true), (4096, false)];
 
-// The positional query batches: unrelated draws, unlike a stride, so
-// lookups cannot ride the branch predictor.
+// Random draws, not a stride, so lookups cannot ride the branch predictor.
 const QUERY_SEED: u64 = 0xC0FFEE;
 const QUERY_BATCH: usize = 1024;
 
 const MEDIUM_VALID: &str = "medium-valid";
 
-/// The benchmark corpora by name, built and checked once for every
-/// benchmark: each is as valid or as malformed as its name says.
 fn corpora() -> &'static [(&'static str, String); 4] {
     static CORPORA: OnceLock<[(&str, String); 4]> = OnceLock::new();
     CORPORA.get_or_init(|| {
@@ -73,7 +63,6 @@ fn corpora() -> &'static [(&'static str, String); 4] {
     })
 }
 
-/// The corpus named `name` in [`corpora`].
 fn corpus(name: &str) -> &'static str {
     let (_, source) = corpora()
         .iter()
@@ -122,8 +111,6 @@ fn bench_frontend(c: &mut Criterion) {
     group.finish();
 }
 
-// Files imported from another language often repeat the same unsupported
-// escape or number spelling.
 fn bench_lex_diagnostics(c: &mut Criterion) {
     let mut group = c.benchmark_group("frontend/lex-diagnostics");
     for (name, literal, per_token) in [("escapes", r#""\q\x\z""#, 3), ("numbers", "01suffix", 2)] {
@@ -144,10 +131,6 @@ fn bench_lex_diagnostics(c: &mut Criterion) {
     group.finish();
 }
 
-/// Functions whose bodies each return one expression nested `depth` groups
-/// deep, repeated until the file reaches `total` bytes. Group pairing, Pratt
-/// recursion, and the depth guard all scale with nesting, which the
-/// realistic corpora keep shallow.
 fn nested_groups(total: usize, depth: usize) -> String {
     let mut source = String::with_capacity(total + 64 + 2 * depth);
     let mut index = 0;
@@ -259,9 +242,7 @@ fn bench_format(c: &mut Criterion) {
         "the tree must reprint its corpus byte for byte"
     );
 
-    // The valid corpus spaces every binary operator; gluing two of them
-    // degrades layout without touching structure. Neither pattern occurs
-    // in the string literals the generator emits.
+    // No generated string literal contains " + " or " * ", so only operators are glued.
     let glued = source.replace(" + ", "+").replace(" * ", "*");
     let glued_lexed = lex(&glued).expect("benchmark corpus fits in Sumi's source coordinate space");
     let glued_parse = parse(ParserInput::new(&glued_lexed));
@@ -310,7 +291,6 @@ fn bench_ast(c: &mut Criterion) {
     let lexed = lex(source).expect("benchmark corpus fits in Sumi's source coordinate space");
     let parsed = parse(ParserInput::new(&lexed));
     let tree = parsed.tree();
-    // Both walks count the names; the views must reach every one.
     assert_eq!(walk_views(tree), walk_nodes(tree));
 
     let mut group = c.benchmark_group("ast/medium-valid");
@@ -320,8 +300,6 @@ fn bench_ast(c: &mut Criterion) {
     group.finish();
 }
 
-/// Every name and name reference reached through the typed views: items,
-/// signatures, bodies, statements, and expressions, each by its accessors.
 fn walk_views(tree: &SyntaxTree) -> usize {
     let file = SourceFile::cast(tree, tree.root()).expect("the root is a source file");
     let mut names = 0;
@@ -394,8 +372,6 @@ fn walk_expr(tree: &SyntaxTree, expr: Expr) -> usize {
     }
 }
 
-/// The same count from a raw walk of the tree: every node by kind, with
-/// the children found by extent, on one shared stack.
 fn walk_nodes(tree: &SyntaxTree) -> usize {
     let mut names = 0;
     let mut pending = vec![tree.root()];
