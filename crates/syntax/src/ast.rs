@@ -67,8 +67,8 @@ pub struct Child {
 /// A token a rule holds itself.
 #[derive(Clone, Copy, Debug)]
 pub enum TokenRule {
-    /// `first`, with `glued` joint after it when given.
-    Fixed {
+    /// A token of kind `first`, with `glued` joint after it when given.
+    Kind {
         first: SyntaxKind,
         glued: Option<SyntaxKind>,
         optional: bool,
@@ -93,7 +93,7 @@ pub enum TokenRule {
 impl fmt::Display for TokenRule {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
-            Self::Fixed { first, glued, .. } => match (first.text(), glued.map(SyntaxKind::text)) {
+            Self::Kind { first, glued, .. } => match (first.text(), glued.map(SyntaxKind::text)) {
                 (Some(first), None) => write!(f, "'{first}'"),
                 (Some(first), Some(Some(glued))) => write!(f, "'{first}{glued}'"),
                 (_, None) => write!(f, "{first:?}"),
@@ -233,7 +233,7 @@ macro_rules! grammar {
     };
     (@tokens $name:ident [$($token:tt)*] [$($required:tt)*] [$($by:tt)*] [$($index:tt)*]
         [$first:ident, $glued:ident] $(, $($rest:tt)*)?) => {
-        grammar!(@tokens $name [$($token)* TokenRule::Fixed {
+        grammar!(@tokens $name [$($token)* TokenRule::Kind {
             first: SyntaxKind::$first,
             glued: Some(SyntaxKind::$glued),
             optional: false,
@@ -241,7 +241,7 @@ macro_rules! grammar {
     };
     (@tokens $name:ident [$($token:tt)*] [$($required:tt)*] [$($by:tt)*] [$($index:tt)*]
         [$first:ident, $glued:ident]? $(, $($rest:tt)*)?) => {
-        grammar!(@tokens $name [$($token)* TokenRule::Fixed {
+        grammar!(@tokens $name [$($token)* TokenRule::Kind {
             first: SyntaxKind::$first,
             glued: Some(SyntaxKind::$glued),
             optional: true,
@@ -249,7 +249,7 @@ macro_rules! grammar {
     };
     (@tokens $name:ident [$($token:tt)*] [$($required:tt)*] [$($by:tt)*] [$($index:tt)*]
         $kind:ident? $(, $($rest:tt)*)?) => {
-        grammar!(@tokens $name [$($token)* TokenRule::Fixed {
+        grammar!(@tokens $name [$($token)* TokenRule::Kind {
             first: SyntaxKind::$kind,
             glued: None,
             optional: true,
@@ -257,7 +257,7 @@ macro_rules! grammar {
     };
     (@tokens $name:ident [$($token:tt)*] [$($required:tt)*] [$($by:tt)*] [$($index:tt)*]
         $kind:ident $(, $($rest:tt)*)?) => {
-        grammar!(@tokens $name [$($token)* TokenRule::Fixed {
+        grammar!(@tokens $name [$($token)* TokenRule::Kind {
             first: SyntaxKind::$kind,
             glued: None,
             optional: false,
@@ -556,7 +556,7 @@ mod tests {
         };
         assert!(matches!(
             let_kw,
-            TokenRule::Fixed {
+            TokenRule::Kind {
                 first: SyntaxKind::LetKw,
                 glued: None,
                 optional: false
@@ -571,7 +571,7 @@ mod tests {
         ));
         assert!(matches!(
             colon,
-            TokenRule::Fixed {
+            TokenRule::Kind {
                 first: SyntaxKind::Colon,
                 optional: true,
                 ..
@@ -583,7 +583,7 @@ mod tests {
         };
         assert!(matches!(
             arrow,
-            TokenRule::Fixed {
+            TokenRule::Kind {
                 first: SyntaxKind::Minus,
                 glued: Some(SyntaxKind::Gt),
                 optional: true

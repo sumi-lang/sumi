@@ -45,7 +45,7 @@ fn witnesses() -> Vec<Witness> {
             .iter()
             .flat_map(move |rule| -> Vec<Witness> {
                 match *rule {
-                    TokenRule::Fixed {
+                    TokenRule::Kind {
                         first,
                         glued,
                         optional,

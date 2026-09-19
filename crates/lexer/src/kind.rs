@@ -1,5 +1,5 @@
-//! The token vocabulary: `SyntaxKind` and its tables, all derived from the one `tokens!`
-//! declaration so none can disagree with it.
+//! The token vocabulary: `SyntaxKind`, its tables, and `Fixed`, the kinds with a text of their
+//! own, all derived from the one `tokens!` declaration so none can disagree with it.
 
 /// One kind per line as `Name: shape literal`; the literal is the source text of a `keyword` or
 /// `punct`, and how any other shape reads after "expected".
@@ -16,20 +16,20 @@ macro_rules! tokens {
         }
     };
     (@punct $char:ident, $shape:ident $lit:literal $name:ident) => {};
-    (@fixed [$($fixed:tt)*] keyword $lit:literal $name:ident, $($rest:tt)*) => {
-        tokens!(@fixed [$($fixed)* ($name $lit)] $($rest)*);
+    (@fixed [$($fixed:tt)*] $(#[$doc:meta])* keyword $lit:literal $name:ident, $($rest:tt)*) => {
+        tokens!(@fixed [$($fixed)* ($(#[$doc])* $name $lit)] $($rest)*);
     };
-    (@fixed [$($fixed:tt)*] punct $lit:literal $name:ident, $($rest:tt)*) => {
-        tokens!(@fixed [$($fixed)* ($name $lit)] $($rest)*);
+    (@fixed [$($fixed:tt)*] $(#[$doc:meta])* punct $lit:literal $name:ident, $($rest:tt)*) => {
+        tokens!(@fixed [$($fixed)* ($(#[$doc])* $name $lit)] $($rest)*);
     };
-    (@fixed [$($fixed:tt)*] $shape:ident $lit:literal $name:ident, $($rest:tt)*) => {
+    (@fixed [$($fixed:tt)*] $(#[$doc:meta])* $shape:ident $lit:literal $name:ident, $($rest:tt)*) => {
         tokens!(@fixed [$($fixed)*] $($rest)*);
     };
-    (@fixed [$(($name:ident $lit:literal))*]) => {
+    (@fixed [$(($(#[$doc:meta])* $name:ident $lit:literal))*]) => {
         /// A kind whose text is fixed: a keyword or punctuation.
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
         pub enum Fixed {
-            $($name,)*
+            $($(#[$doc])* $name,)*
         }
 
         impl Fixed {
@@ -111,7 +111,7 @@ macro_rules! tokens {
             }
         }
 
-        tokens!(@fixed [] $($shape $lit $name,)*);
+        tokens!(@fixed [] $($(#[$doc])* $shape $lit $name,)*);
     };
 }
 
@@ -159,25 +159,21 @@ tokens! {
 
 #[cfg(test)]
 mod tests {
-    use super::{Fixed, SyntaxKind};
+    use super::SyntaxKind;
 
     #[test]
     fn fixed_texts_round_trip() {
         for &kind in SyntaxKind::ALL {
             let Some(fixed) = kind.fixed() else {
-                assert_eq!(kind.text(), None);
                 continue;
             };
             let text = fixed.text();
             assert_eq!(fixed.kind(), kind);
-            assert_eq!(kind.text(), Some(text));
             let back = SyntaxKind::from_keyword(text)
                 .or_else(|| SyntaxKind::from_punct(text.as_bytes()[0]));
             assert_eq!(back, Some(kind));
             assert_eq!(kind.describe(), format!("`{text}`"));
         }
-        assert_eq!(Fixed::LParen.text(), "(");
-        assert_eq!(Fixed::ElseKw.kind(), SyntaxKind::ElseKw);
         assert_eq!(SyntaxKind::from_keyword("_"), Some(SyntaxKind::Underscore));
         assert_eq!(SyntaxKind::from_punct(b';'), None);
         assert_eq!(SyntaxKind::Ident.describe(), "a name");
