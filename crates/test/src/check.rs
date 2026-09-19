@@ -261,7 +261,8 @@ pub fn tree(tree: &SyntaxTree, lexed: &LexedFile) {
             for child in tree.kind(node).children() {
                 assert!(
                     child.optional || (child.present)(tree, node),
-                    "node {node:?} has no error but lacks its `{}`",
+                    "{:?} {node:?} has no error but lacks its `{}`",
+                    tree.kind(node),
                     child.name
                 );
             }

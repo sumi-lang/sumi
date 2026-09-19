@@ -252,12 +252,15 @@ fn missing_children_are_absent_and_the_node_is_flagged() {
 
 #[test]
 fn a_clean_view_holds_every_required_child() {
-    use sumi_syntax::ast::{Clean, CleanExpr, CleanStmt, LetStmt};
+    use sumi_syntax::ast::{Clean, CleanElseBranch, CleanExpr, CleanStmt, LetStmt};
 
-    let parsed = Parsed::new("fn f() { let x: Int = 1 + 2 }");
+    let parsed = Parsed::new("fn f() { let x: Int = 1 + 2\nif x { 3 } else if x { 4 } }");
     let tree = parsed.tree();
-    let body = block(parsed.item().body(tree));
-    let stmt = body.stmts(tree).next().expect("one binding");
+    let body = block(parsed.item().body(tree))
+        .clean(tree)
+        .expect("a clean body");
+    let mut stmts = body.stmts(tree);
+    let stmt = stmts.next().expect("a binding");
     let Some(CleanStmt::LetStmt(binding)) = stmt.clean(tree) else {
         panic!("a clean binding")
     };
@@ -273,7 +276,21 @@ fn a_clean_view_holds_every_required_child() {
     assert_eq!(parsed.text(sum.rhs()), "2");
     assert_eq!(sum.view().node(), sum.node());
     assert_eq!(Clean::<LetStmt>::cast(tree, stmt.node()), Some(binding));
+    assert_eq!(CleanStmt::cast(tree, stmt.node()), stmt.clean(tree));
     assert_eq!(binding.clean(tree), Some(binding));
+    let branch = stmts.next().expect("a branch");
+    let Some(CleanStmt::Expr(CleanExpr::IfExpr(branch))) = branch.clean(tree) else {
+        panic!("a clean branch")
+    };
+    assert_eq!(parsed.text(branch.condition()), "x");
+    assert_eq!(parsed.text(branch.then_branch()), "{ 3 }");
+    let else_if = branch
+        .else_branch(tree)
+        .and_then(|e| e.clean(tree))
+        .expect("a clean else");
+    assert!(matches!(else_if, CleanElseBranch::IfExpr(_)));
+    assert_eq!(parsed.text(else_if), "if x { 4 }");
+    assert!(stmts.next().is_none());
 
     let parsed = Parsed::new("fn f() { let x = }");
     let tree = parsed.tree();

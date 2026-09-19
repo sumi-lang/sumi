@@ -75,19 +75,6 @@ macro_rules! count {
 /// `@fields` carries the slots taken, the child table, the required children's types and names,
 /// and the tuple indices left for them.
 macro_rules! grammar {
-    (@fields $name:ident [$($slot:tt)*] [$($child:tt)*] [] [] [$($index:tt)*]) => {
-        impl $name {
-            pub const CHILDREN: &[Child] = &[$($child)*];
-        }
-
-        impl Fields for $name {
-            type Required = ();
-
-            fn required(self, _: &SyntaxTree) -> Option<()> {
-                Some(())
-            }
-        }
-    };
     (@fields $name:ident [$($slot:tt)*] [$($child:tt)*] [$($required:tt)*] [$($by:ident)*]
         [$($index:tt)*]) => {
         impl $name {
@@ -97,8 +84,8 @@ macro_rules! grammar {
         impl Fields for $name {
             type Required = ($($required)*);
 
-            fn required(self, tree: &SyntaxTree) -> Option<Self::Required> {
-                Some(($(self.$by(tree)?,)*))
+            fn required(self, _tree: &SyntaxTree) -> Option<Self::Required> {
+                Some(($(self.$by(_tree)?,)*))
             }
         }
     };
@@ -176,6 +163,12 @@ macro_rules! grammar {
                 $name::cast(tree, node).is_some_and(|view| view.$field(tree).is_some())
             },
         },] [$($required)* $ty,] [$($by)* $field] [$($next)*] $($($rest)*)?);
+    };
+    (@fields $name:ident [$($slot:tt)*] [$($child:tt)*] [$($required:tt)*] [$($by:ident)*] []
+        $field:ident: $ty:ident $(, $($rest:tt)*)?) => {
+        compile_error!(concat!(
+            "`", stringify!($name), "` holds more required children than `Clean` has indices for"
+        ));
     };
     (@nodes [$($variant:tt)*] [$($kind:ident)*]
         $(#[$doc:meta])* struct $name:ident { $($fields:tt)* } $($rest:tt)*) => {
