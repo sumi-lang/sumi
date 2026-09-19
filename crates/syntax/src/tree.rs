@@ -164,16 +164,15 @@ impl Parse {
             position: SigIdx::new(0),
             slots: input.slots(),
             opened: 1,
-            recoveries: 0,
             error_nodes: 0,
-            last_recovery_evidence: None,
-            evidence: Vec::new(),
+            recoveries: Vec::new(),
+            violations: Vec::new(),
         };
         body(&mut Marker {
             builder: &mut builder,
             first: NodeIdx::new(0),
             start: SigIdx::new(0),
-            recoveries: 0,
+            recoveries: RecoveryCheckpoint(0),
             error_nodes: 0,
             id: 0,
             parent: 0,
@@ -191,21 +190,33 @@ impl Parse {
         );
         builder.nodes.push(Node {
             kind: NodeKind::SourceFile,
-            has_error: builder.recoveries > 0 || builder.error_nodes > 0,
+            has_error: !builder.recoveries.is_empty() || builder.error_nodes > 0,
             field: 0,
             extent: to_u32(builder.nodes.len() + 1),
             first_token: RawIdx::new(0),
             end_token: input.raw_len(),
         });
         let Builder {
-            nodes, evidence, ..
+            nodes,
+            recoveries,
+            violations,
+            ..
         } = builder;
+        let mut evidence = Vec::with_capacity(recoveries.len() + violations.len());
+        let mut violations = violations.into_iter().peekable();
+        for (index, recovery) in recoveries.into_iter().enumerate() {
+            while let Some((_, violation)) = violations.next_if(|&(before, _)| before == index) {
+                evidence.push(ParseEvidence::Violation(violation));
+            }
+            evidence.push(ParseEvidence::Recovery(recovery.finish()));
+        }
+        evidence.extend(violations.map(|(_, violation)| ParseEvidence::Violation(violation)));
         Self {
             input,
             tree: SyntaxTree {
                 nodes: preorder(&nodes),
             },
-            evidence: evidence.into_iter().map(EvidenceBuilder::finish).collect(),
+            evidence: evidence.into_boxed_slice(),
         }
     }
 
@@ -231,11 +242,11 @@ struct Builder<'a> {
     /// The input's slots up to the horizon; lookahead reads only these.
     slots: &'a [Slot],
     opened: u32,
-    recoveries: u32,
     /// Apart from `recoveries`: a violation makes an `Error` node without one.
     error_nodes: u32,
-    last_recovery_evidence: Option<usize>,
-    evidence: Vec<EvidenceBuilder>,
+    recoveries: Vec<Recovery>,
+    /// Each with the count of recoveries before it, which keeps observation order.
+    violations: Vec<(usize, ParseViolation)>,
 }
 
 impl Builder<'_> {
@@ -265,35 +276,27 @@ impl Builder<'_> {
     }
 }
 
-enum EvidenceBuilder {
-    Recovery {
-        kind: ParseRecoveryKind,
-        anchor: ParseAnchor,
-        skipped: Vec<RawTokenRange>,
-    },
-    Violation(ParseViolation),
+struct Recovery {
+    kind: ParseRecoveryKind,
+    anchor: ParseAnchor,
+    skipped: Vec<RawTokenRange>,
 }
 
-impl EvidenceBuilder {
-    fn finish(self) -> ParseEvidence {
-        match self {
-            Self::Recovery {
-                kind,
-                anchor,
-                skipped,
-            } => ParseEvidence::Recovery(ParseRecovery {
-                kind,
-                anchor,
-                skipped: skipped.into_boxed_slice(),
-            }),
-            Self::Violation(violation) => ParseEvidence::Violation(violation),
+impl Recovery {
+    fn finish(self) -> ParseRecovery {
+        ParseRecovery {
+            kind: self.kind,
+            anchor: self.anchor,
+            skipped: self.skipped.into_boxed_slice(),
         }
     }
 }
 
+/// The count of recoveries recorded so far.
 #[derive(Clone, Copy)]
-pub(crate) struct RecoveryCheckpoint(u32);
+pub(crate) struct RecoveryCheckpoint(usize);
 
+/// A recovery's index in the builder.
 #[derive(Clone, Copy)]
 pub(crate) struct RecoveryHandle(usize);
 
@@ -304,8 +307,8 @@ pub(crate) struct Marker<'p, 'a> {
     /// The subtree's start in `builder.nodes`; every node completed since is inside it.
     first: NodeIdx,
     start: SigIdx,
-    /// `builder.recoveries` when the node opened; any more at completion happened inside it.
-    recoveries: u32,
+    /// When the node opened; any recovery since happened inside it.
+    recoveries: RecoveryCheckpoint,
     /// `builder.error_nodes` when the node opened, likewise.
     error_nodes: u32,
     id: u32,
@@ -366,7 +369,7 @@ impl<'a> Marker<'_, 'a> {
     pub(crate) fn start(&mut self) -> Marker<'_, 'a> {
         let first = NodeIdx::new(to_u32(self.builder.nodes.len()));
         let start = self.builder.position;
-        let recoveries = self.builder.recoveries;
+        let recoveries = self.recovery_checkpoint();
         let error_nodes = self.builder.error_nodes;
         let id = self.builder.open();
         Marker {
@@ -451,15 +454,15 @@ impl<'a> Marker<'_, 'a> {
     /// The node must cover at least one token.
     #[inline]
     pub(crate) fn complete(mut self, kind: NodeKind) -> CompletedMarker {
+        let is_error = kind == NodeKind::Error;
+        let has_error = is_error
+            || self.recovered_since(self.recoveries)
+            || self.builder.error_nodes > self.error_nodes;
         let builder = &mut *self.builder;
         assert!(
             builder.position > self.start,
             "a node must cover at least one token"
         );
-        let is_error = kind == NodeKind::Error;
-        let has_error = is_error
-            || builder.recoveries > self.recoveries
-            || builder.error_nodes > self.error_nodes;
         builder.error_nodes += u32::from(is_error);
         let first_token = builder.input.token(self.start);
         let end_token = builder.input.token(builder.position - 1) + 1;
@@ -697,24 +700,19 @@ impl<'a> Marker<'_, 'a> {
     }
 
     pub(crate) fn recovery_checkpoint(&self) -> RecoveryCheckpoint {
-        RecoveryCheckpoint(self.builder.recoveries)
+        RecoveryCheckpoint(self.builder.recoveries.len())
     }
 
     pub(crate) fn recovered_since(&self, checkpoint: RecoveryCheckpoint) -> bool {
-        self.builder.recoveries > checkpoint.0
+        self.builder.recoveries.len() > checkpoint.0
     }
 
     pub(crate) fn latest_recovery_since(
         &self,
         checkpoint: RecoveryCheckpoint,
     ) -> Option<RecoveryHandle> {
-        (self.builder.recoveries > checkpoint.0).then(|| {
-            RecoveryHandle(
-                self.builder
-                    .last_recovery_evidence
-                    .expect("every recovery has evidence"),
-            )
-        })
+        let count = self.builder.recoveries.len();
+        (count > checkpoint.0).then(|| RecoveryHandle(count - 1))
     }
 
     pub(crate) fn missing(&mut self, kind: ParseRecoveryKind) -> RecoveryHandle {
@@ -754,17 +752,14 @@ impl<'a> Marker<'_, 'a> {
 
     pub(crate) fn violation(&mut self, kind: ParseViolationKind, width: usize) {
         let range = self.raw_token_range(width);
+        let before = self.builder.recoveries.len();
         self.builder
-            .evidence
-            .push(EvidenceBuilder::Violation(ParseViolation { kind, range }));
+            .violations
+            .push((before, ParseViolation { kind, range }));
     }
 
     pub(crate) fn skipped(&mut self, recovery: RecoveryHandle, range: RawTokenRange) {
-        let EvidenceBuilder::Recovery { skipped, .. } = &mut self.builder.evidence[recovery.0]
-        else {
-            unreachable!("a recovery handle names recovery evidence")
-        };
-        skipped.push(range);
+        self.builder.recoveries[recovery.0].skipped.push(range);
     }
 
     pub(crate) fn covered_range(&self) -> RawTokenRange {
@@ -783,15 +778,13 @@ impl<'a> Marker<'_, 'a> {
     }
 
     fn record_recovery(&mut self, kind: ParseRecoveryKind, anchor: ParseAnchor) -> RecoveryHandle {
-        let evidence = self.builder.evidence.len();
-        self.builder.evidence.push(EvidenceBuilder::Recovery {
+        let handle = RecoveryHandle(self.builder.recoveries.len());
+        self.builder.recoveries.push(Recovery {
             kind,
             anchor,
             skipped: Vec::new(),
         });
-        self.builder.recoveries += 1;
-        self.builder.last_recovery_evidence = Some(evidence);
-        RecoveryHandle(evidence)
+        handle
     }
 }
 
@@ -808,7 +801,7 @@ pub(crate) struct CompletedMarker {
     node: NodeIdx,
     first: NodeIdx,
     start: SigIdx,
-    recoveries: u32,
+    recoveries: RecoveryCheckpoint,
     error_nodes: u32,
     parent: u32,
 }
