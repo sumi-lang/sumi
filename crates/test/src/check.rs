@@ -7,6 +7,7 @@ use sumi_format::{Formatted, rep};
 use sumi_frontend::{ParsedSource, codes, parse_source};
 use sumi_hir::{Analysis, Program};
 use sumi_lexer::{LexedFile, RawIdx, SyntaxKind, TokenFlags, lex};
+use sumi_syntax::ast::TokenShape;
 use sumi_syntax::{
     BRACKET_PAIRS, NodeKind, Parse, ParseAnchor, ParseEvidence, ParserInput, SigIdx, SyntaxTree,
 };
@@ -258,12 +259,25 @@ pub fn tree(tree: &SyntaxTree, lexed: &LexedFile) {
 
         // What a clean view rests on.
         if !tree.has_error(node) {
-            for child in tree.kind(node).children() {
+            let kind = tree.kind(node);
+            for child in kind.children() {
                 assert!(
                     child.optional || (child.present)(tree, node),
-                    "{:?} {node:?} has no error but lacks its `{}`",
-                    tree.kind(node),
+                    "{kind:?} {node:?} has no error but lacks its `{}`",
                     child.name
+                );
+            }
+            for rule in kind.tokens() {
+                let held = match rule.shape {
+                    TokenShape::Fixed(first, glued) => tree.holds(node, lexed, first, glued),
+                    TokenShape::Field {
+                        variants, present, ..
+                    } => (0..variants).any(|index| present(tree, lexed, node, index)),
+                };
+                assert!(
+                    rule.optional || held,
+                    "{kind:?} {node:?} has no error but lacks its {:?}",
+                    rule.shape
                 );
             }
         }
@@ -534,7 +548,7 @@ pub fn semantics(analysis: &Analysis) {
     use sumi_hir::FunctionId;
     let source = analysis.parsed().source();
     if analysis.parsed().diagnostics().is_empty() {
-        use sumi_syntax::ast::{AstNode, SourceFile};
+        use sumi_syntax::ast::{AstNode, SourceFile, View};
         let tree = analysis.parsed().parse().tree();
         let mut declarations: Vec<_> = SourceFile::cast(tree, tree.root())
             .unwrap()

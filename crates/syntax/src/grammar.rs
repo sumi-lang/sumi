@@ -1,8 +1,58 @@
 //! Token classes, bracket pairs, and operator tables.
 
+use std::fmt::Debug;
+
 use sumi_lexer::SyntaxKind as T;
 
 pub use sumi_lexer::SyntaxKind;
+
+/// A value a rule reads from a token it holds, or from that token and the one glued after it.
+pub trait TokenField: Copy + Debug + PartialEq + 'static {
+    const ALL: &[Self];
+
+    /// `glued` is the token joint to `first` inside the same node, if any.
+    fn read(first: SyntaxKind, glued: Option<SyntaxKind>) -> Option<Self>;
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum PrefixOp {
+    Neg,
+    Not,
+}
+
+impl TokenField for PrefixOp {
+    const ALL: &[Self] = &[Self::Neg, Self::Not];
+
+    fn read(first: SyntaxKind, _: Option<SyntaxKind>) -> Option<Self> {
+        Some(match first {
+            T::Minus => Self::Neg,
+            T::Bang => Self::Not,
+            _ => return None,
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Literal {
+    Int,
+    String,
+    True,
+    False,
+}
+
+impl TokenField for Literal {
+    const ALL: &[Self] = &[Self::Int, Self::String, Self::True, Self::False];
+
+    fn read(first: SyntaxKind, _: Option<SyntaxKind>) -> Option<Self> {
+        Some(match first {
+            T::IntLiteral => Self::Int,
+            T::StringLiteral => Self::String,
+            T::TrueKw => Self::True,
+            T::FalseKw => Self::False,
+            _ => return None,
+        })
+    }
+}
 
 pub fn starts_expression(kind: SyntaxKind) -> bool {
     matches!(
@@ -105,7 +155,7 @@ pub fn encloses_statements(opener: SyntaxKind) -> bool {
 }
 
 pub fn is_prefix_operator(kind: SyntaxKind) -> bool {
-    matches!(kind, T::Minus | T::Bang)
+    PrefixOp::read(kind, None).is_some()
 }
 
 /// A binding power above every binary operator's.
@@ -128,8 +178,8 @@ pub enum BinaryOp {
     Rem,
 }
 
-impl BinaryOp {
-    pub const ALL: &[Self] = &[
+impl TokenField for BinaryOp {
+    const ALL: &[Self] = &[
         Self::Or,
         Self::And,
         Self::Eq,
@@ -145,6 +195,12 @@ impl BinaryOp {
         Self::Rem,
     ];
 
+    fn read(first: SyntaxKind, glued: Option<SyntaxKind>) -> Option<Self> {
+        binary_operator(first, glued).map(|(op, _)| op)
+    }
+}
+
+impl BinaryOp {
     fn level(self) -> u8 {
         match self {
             Self::Or => 1,
