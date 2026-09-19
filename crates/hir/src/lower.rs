@@ -8,8 +8,8 @@ use rustc_hash::FxBuildHasher;
 use sumi_frontend::{DiagnosticCode, Label};
 use sumi_lexer::{RawIdx, SyntaxKind, TokenFlags};
 use sumi_syntax::{
-    NodeIdx, NodeKind, SyntaxTree,
-    ast::{self, AstNode},
+    NodeIdx, SyntaxTree,
+    ast::{self, AstNode, Clean, CleanExpr, CleanStmt},
 };
 
 use crate::codes;
@@ -193,10 +193,10 @@ impl<'s> Source<'s> {
     }
     fn peel(&self, mut expr: ast::Expr) -> ast::Expr {
         while let ast::Expr::ParenExpr(paren) = expr {
-            if self.tree.has_error(paren.node()) {
+            let Some(paren) = paren.clean(self.tree) else {
                 break;
-            }
-            expr = paren.inner(self.tree).expect("clean parentheses");
+            };
+            expr = paren.inner();
         }
         expr
     }
@@ -370,20 +370,48 @@ fn eager(op: sumi_syntax::BinaryOp) -> Option<BinaryOp> {
 /// binding of the name.
 type Scope<'s> = NameMap<'s, NodeId>;
 
+enum Finish {
+    Let(Clean<ast::LetStmt>),
+    Discard(Clean<ast::DiscardStmt>),
+    NameRef(Clean<ast::NameRef>),
+    Literal(Clean<ast::LiteralExpr>),
+    Paren(Clean<ast::ParenExpr>),
+    Prefix {
+        expr: Clean<ast::PrefixExpr>,
+        neg: bool,
+    },
+    Binary {
+        expr: Clean<ast::BinaryExpr>,
+        op: BinaryOp,
+    },
+}
+
+/// `&&` when `and`, else `||`, with its expression.
+#[derive(Clone, Copy)]
+struct LazyOp {
+    expr: Clean<ast::BinaryExpr>,
+    and: bool,
+}
+
 enum Work {
     Enter(NodeIdx),
-    Finish(NodeIdx),
+    Finish(Finish),
+    /// Damaged or not: a block runs its statements.
+    Block(NodeIdx),
     Unused(NodeIdx),
-    Call(NodeIdx, Option<FunctionId>),
-    Branches(NodeIdx),
-    Rhs(NodeIdx),
+    Call {
+        call: Clean<ast::CallExpr>,
+        target: Option<FunctionId>,
+    },
+    Branches(Clean<ast::IfExpr>),
+    Rhs(LazyOp),
     Join {
-        node: NodeIdx,
+        branch: Clean<ast::IfExpr>,
         then: RegionId,
         else_: Option<RegionId>,
     },
     Lazy {
-        node: NodeIdx,
+        expr: LazyOp,
         rhs: RegionId,
     },
     Push {
@@ -488,10 +516,15 @@ impl<'a, 's> Builder<'a, 's> {
             work.push(Work::Enter(root_node));
             while let Some(task) = work.pop() {
                 let built = match task {
-                    Work::Finish(node) => self.finish(node),
-                    Work::Call(node, target) => self.call(node, target),
-                    Work::Join { node, then, else_ } => self.join(node, then, else_),
-                    Work::Lazy { node, rhs } => self.lazy(node, rhs),
+                    Work::Finish(finish) => self.finish(finish),
+                    Work::Block(node) => self.block(node),
+                    Work::Call { call, target } => self.call(call, target),
+                    Work::Join {
+                        branch,
+                        then,
+                        else_,
+                    } => self.join(branch, then, else_),
+                    Work::Lazy { expr, rhs } => self.lazy(expr, rhs),
                     Work::Enter(node) => {
                         self.enter(node, &mut work);
                         continue;
@@ -501,12 +534,12 @@ impl<'a, 's> Builder<'a, 's> {
                         self.place(Op::Unused, &[input], input.1, None);
                         continue;
                     }
-                    Work::Branches(node) => {
-                        self.branches(node, &mut work);
+                    Work::Branches(branch) => {
+                        self.branches(branch, &mut work);
                         continue;
                     }
-                    Work::Rhs(node) => {
-                        self.rhs(node, &mut work);
+                    Work::Rhs(expr) => {
+                        self.rhs(expr, &mut work);
                         continue;
                     }
                     Work::Push { region, guard } => {
@@ -671,34 +704,47 @@ impl<'a, 's> Builder<'a, 's> {
         let (region, _) = *self.regions.last().expect("a body runs in its region");
         self.graph.region(region).context
     }
-    fn binary_op(&self, node: NodeIdx) -> sumi_syntax::BinaryOp {
+    fn binary(&self, binary: Clean<ast::BinaryExpr>) -> (sumi_syntax::BinaryOp, NodeIdx, NodeIdx) {
         let tree = self.source.tree;
-        let binary = ast::BinaryExpr::cast(tree, node).unwrap();
-        let lhs_node = binary.lhs(tree).unwrap().node();
-        let rhs_node = binary.rhs(tree).unwrap().node();
+        let lhs = binary.lhs().node();
+        let rhs = binary.rhs().node();
         let lexed = self.source.parsed.lexed();
-        let end = tree.first_token(rhs_node);
+        let end = tree.first_token(rhs);
         let first = tree
-            .end_token(lhs_node)
+            .end_token(lhs)
             .until(end)
             .find(|&raw| !lexed.kind(raw).is_trivia())
             .expect("clean binary operator");
         // Raw tokens partition the source, so the token at `first + 1` is glued to `first` unless
         // it is trivia.
         let glued = (first + 1 < end).then(|| lexed.kind(first + 1));
-        sumi_syntax::binary_operator(lexed.kind(first), glued)
+        let op = sumi_syntax::binary_operator(lexed.kind(first), glued)
             .expect("clean binary operator")
-            .0
+            .0;
+        (op, lhs, rhs)
+    }
+    /// Whether a prefix expression negates, else it inverts.
+    fn negates(&self, prefix: Clean<ast::PrefixExpr>) -> bool {
+        let tree = self.source.tree;
+        self.source
+            .tokens(
+                tree.first_token(prefix.node()),
+                tree.first_token(prefix.operand().node()),
+            )
+            .eq([SyntaxKind::Minus])
     }
     /// The scope is as it was when the read was built: a region is entered right after its
     /// condition finishes.
     fn read(&self, node: NodeIdx) -> Option<NodeId> {
         let tree = self.source.tree;
-        let node = self.source.peel(ast::Expr::cast(tree, node)?).node();
-        if tree.kind(node) != NodeKind::NameRef {
+        let ast::Expr::NameRef(name) = self.source.peel(ast::Expr::cast(tree, node)?) else {
             return None;
-        }
-        let defined = self.lookup(self.source.text(node))?;
+        };
+        self.local(name)
+    }
+    /// The typed local `name` refers to.
+    fn local(&self, name: ast::NameRef) -> Option<NodeId> {
+        let defined = self.lookup(self.source.text(name.node()))?;
         self.lowered.typed[defined.index()].then_some(defined)
     }
     /// Narrow the locals `cond` compares, for `cond` holding in `sense`.
@@ -706,33 +752,21 @@ impl<'a, 's> Builder<'a, 's> {
         use sumi_syntax::BinaryOp::*;
 
         let tree = self.source.tree;
-        let Some(expr) = ast::Expr::cast(tree, cond) else {
+        let Some(expr) = ast::Expr::cast(tree, cond)
+            .map(|expr| self.source.peel(expr))
+            .and_then(|expr| expr.clean(tree))
+        else {
             return;
         };
-        let node = self.source.peel(expr).node();
-        if tree.has_error(node) {
-            return;
-        }
-        match tree.kind(node) {
-            NodeKind::PrefixExpr => {
-                let operand = ast::PrefixExpr::cast(tree, node)
-                    .unwrap()
-                    .operand(tree)
-                    .unwrap()
-                    .node();
-                let not = self
-                    .source
-                    .tokens(tree.first_token(node), tree.first_token(operand))
-                    .eq([SyntaxKind::Bang]);
-                if not {
-                    self.refine(operand, !sense);
+        let node = expr.node();
+        match expr {
+            CleanExpr::PrefixExpr(prefix) => {
+                if !self.negates(prefix) {
+                    self.refine(prefix.operand().node(), !sense);
                 }
             }
-            NodeKind::BinaryExpr => {
-                let binary = ast::BinaryExpr::cast(tree, node).unwrap();
-                let lhs = binary.lhs(tree).unwrap().node();
-                let rhs = binary.rhs(tree).unwrap().node();
-                let op = self.binary_op(node);
+            CleanExpr::BinaryExpr(binary) => {
+                let (op, lhs, rhs) = self.binary(binary);
                 match op {
                     And if sense => {
                         self.refine(lhs, sense);
@@ -768,8 +802,8 @@ impl<'a, 's> Builder<'a, 's> {
                     _ => {}
                 }
             }
-            NodeKind::NameRef => {
-                if let Some(local) = self.read(node) {
+            CleanExpr::NameRef(name) => {
+                if let Some(local) = self.local(name.view()) {
                     let at = self.source.range(node);
                     let inputs = [(self.current(local), at)];
                     let read = self.place(Op::Exactly(sense), &inputs, at, None);
@@ -779,11 +813,10 @@ impl<'a, 's> Builder<'a, 's> {
             _ => {}
         }
     }
-    fn branches(&mut self, node: NodeIdx, work: &mut Vec<Work>) {
+    fn branches(&mut self, branch: Clean<ast::IfExpr>, work: &mut Vec<Work>) {
         let tree = self.source.tree;
-        let branch = ast::IfExpr::cast(tree, node).unwrap();
-        let cond = branch.condition(tree).unwrap().node();
-        let then_node = branch.then_branch(tree).unwrap().node();
+        let cond = branch.condition().node();
+        let then_node = branch.then_branch().node();
         let else_node = branch.else_branch(tree).map(|e| e.node());
         let parent = self.context();
         let condition = self.input(cond);
@@ -795,7 +828,11 @@ impl<'a, 's> Builder<'a, 's> {
             let context = self.context_at(else_node, Op::Else, condition, parent);
             self.graph.open(context)
         });
-        work.push(Work::Join { node, then, else_ });
+        work.push(Work::Join {
+            branch,
+            then,
+            else_,
+        });
         if let (Some(else_node), Some(region)) = (else_node, else_) {
             work.push(Work::Pop {
                 region,
@@ -817,18 +854,16 @@ impl<'a, 's> Builder<'a, 's> {
             guard: (cond, true),
         });
     }
-    fn rhs(&mut self, node: NodeIdx, work: &mut Vec<Work>) {
-        let tree = self.source.tree;
-        let binary = ast::BinaryExpr::cast(tree, node).unwrap();
-        let lhs = binary.lhs(tree).unwrap().node();
-        let rhs = binary.rhs(tree).unwrap().node();
-        let and = self.binary_op(node) == sumi_syntax::BinaryOp::And;
+    fn rhs(&mut self, expr: LazyOp, work: &mut Vec<Work>) {
+        let and = expr.and;
+        let lhs = expr.expr.lhs().node();
+        let rhs = expr.expr.rhs().node();
         let parent = self.context();
         let op = if and { Op::Then } else { Op::Else };
         let left = self.input(lhs);
         let context = self.context_at(rhs, op, left, parent);
         let region = self.graph.open(context);
-        work.push(Work::Lazy { node, rhs: region });
+        work.push(Work::Lazy { expr, rhs: region });
         work.push(Work::Pop { region, root: rhs });
         work.push(Work::Enter(rhs));
         work.push(Work::Push {
@@ -847,74 +882,70 @@ impl<'a, 's> Builder<'a, 's> {
         self.failed = true;
     }
     fn enter(&mut self, node: NodeIdx, work: &mut Vec<Work>) {
+        use ast::{Expr, Stmt};
+
         let tree = self.source.tree;
-        let kind = tree.kind(node);
-        let error = tree.has_error(node);
-        match kind {
-            NodeKind::LetStmt => {
-                let binding = ast::LetStmt::cast(tree, node).unwrap();
+        let stmt = Stmt::cast(tree, node);
+        let Some(clean) = stmt.and_then(|stmt| stmt.clean(tree)) else {
+            match stmt {
+                Some(Stmt::LetStmt(binding)) => self.damaged_let(binding),
+                Some(Stmt::Expr(Expr::Block(_))) => {
+                    self.failed = true;
+                    self.block_statements(node, work);
+                }
+                _ if tree.has_error(node) => {
+                    self.hole(node);
+                    self.failed = true;
+                }
+                _ => self.unsupported(node),
+            }
+            return;
+        };
+        match clean {
+            CleanStmt::LetStmt(binding) => {
                 let mutable = self
                     .source
                     .tokens(
                         tree.first_token(node),
-                        binding
-                            .name(tree)
-                            .map_or(tree.end_token(node), |n| tree.first_token(n.node())),
+                        tree.first_token(binding.name().node()),
                     )
                     .eq([SyntaxKind::LetKw, SyntaxKind::MutKw]);
-                if error || mutable {
-                    if mutable && !error {
-                        self.unsupported(node);
-                    }
-                    if let Some((name, name_node)) = self.source.name(binding.name(tree)) {
-                        let hole =
-                            self.push(node, Op::Hole, &[], Some(self.source.range(name_node)));
-                        self.bind(name, hole);
-                    }
-                    self.failed = true;
+                if mutable {
+                    self.unsupported(node);
+                    self.damaged_let(binding.view());
                     return;
                 }
+                work.push(Work::Finish(Finish::Let(binding)));
+                work.push(Work::Enter(binding.initializer().node()));
             }
-            NodeKind::Block => {
-                self.failed |= error;
-                self.open_scope();
+            CleanStmt::Expr(CleanExpr::Block(_)) => self.block_statements(node, work),
+            CleanStmt::DiscardStmt(discard) => {
+                work.push(Work::Finish(Finish::Discard(discard)));
+                work.push(Work::Enter(discard.value().node()));
             }
-            _ if error => {
-                self.hole(node);
-                self.failed = true;
-                return;
+            CleanStmt::Expr(CleanExpr::IfExpr(branch)) => {
+                work.push(Work::Branches(branch));
+                work.push(Work::Enter(branch.condition().node()));
             }
-            NodeKind::IfExpr => {
-                let branch = ast::IfExpr::cast(tree, node).unwrap();
-                let cond = branch.condition(tree).unwrap().node();
-                work.push(Work::Branches(node));
-                work.push(Work::Enter(cond));
-                return;
-            }
-            NodeKind::BinaryExpr
-                if matches!(
-                    self.binary_op(node),
-                    sumi_syntax::BinaryOp::And | sumi_syntax::BinaryOp::Or
-                ) =>
-            {
-                let binary = ast::BinaryExpr::cast(tree, node).unwrap();
-                let lhs = binary.lhs(tree).unwrap().node();
-                work.push(Work::Rhs(node));
+            CleanStmt::Expr(CleanExpr::BinaryExpr(expr)) => {
+                let (op, lhs, rhs) = self.binary(expr);
+                match eager(op) {
+                    Some(op) => {
+                        work.push(Work::Finish(Finish::Binary { expr, op }));
+                        work.push(Work::Enter(rhs));
+                    }
+                    None => work.push(Work::Rhs(LazyOp {
+                        expr,
+                        and: op == sumi_syntax::BinaryOp::And,
+                    })),
+                }
                 work.push(Work::Enter(lhs));
-                return;
             }
-            NodeKind::PrefixExpr => {
-                let operand = ast::PrefixExpr::cast(tree, node)
-                    .unwrap()
-                    .operand(tree)
-                    .unwrap();
-                let neg = self
-                    .source
-                    .tokens(tree.first_token(node), tree.first_token(operand.node()))
-                    .eq([SyntaxKind::Minus]);
-                let peeled = self.source.peel(operand);
+            CleanStmt::Expr(CleanExpr::PrefixExpr(expr)) => {
+                let neg = self.negates(expr);
+                let peeled = self.source.peel(expr.operand());
                 if neg
-                    && tree.kind(peeled.node()) == NodeKind::LiteralExpr
+                    && matches!(peeled, Expr::LiteralExpr(_))
                     && self
                         .source
                         .parsed
@@ -927,64 +958,64 @@ impl<'a, 's> Builder<'a, 's> {
                     }
                     return;
                 }
+                work.push(Work::Finish(Finish::Prefix { expr, neg }));
+                work.push(Work::Enter(expr.operand().node()));
             }
-            NodeKind::CallExpr => {
-                let call = ast::CallExpr::cast(tree, node).unwrap();
-                let callee = self.source.peel(call.callee(tree).unwrap()).node();
-                let target = if tree.kind(callee) == NodeKind::NameRef {
-                    self.target(callee)
-                } else {
-                    self.unsupported(callee);
-                    None
-                };
-                let list = call.arg_list(tree).unwrap();
-                work.push(Work::Call(node, target));
-                enter_each(
-                    work,
-                    tree.children(list.node())
-                        .filter_map(|child| ast::Expr::cast(tree, child))
-                        .map(|arg| arg.node()),
-                );
-                return;
+            CleanStmt::Expr(CleanExpr::ParenExpr(paren)) => {
+                work.push(Work::Finish(Finish::Paren(paren)));
+                work.push(Work::Enter(paren.inner().node()));
             }
-            _ => {}
-        }
-        match kind {
-            NodeKind::Block => {
-                work.push(Work::Finish(node));
-                let base = work.len();
-                let mut children = tree.children(node).peekable();
-                while let Some(child) = children.next() {
-                    let statement =
-                        children.peek().is_some() && ast::Expr::cast(tree, child).is_some();
-                    work.push(Work::Enter(child));
-                    if statement {
-                        work.push(Work::Unused(child));
+            CleanStmt::Expr(CleanExpr::CallExpr(call)) => {
+                let callee = self.source.peel(call.callee());
+                let target = match callee {
+                    Expr::NameRef(name) => self.target(name.node()),
+                    _ => {
+                        self.unsupported(callee.node());
+                        None
                     }
-                }
-                work[base..].reverse();
+                };
+                work.push(Work::Call { call, target });
+                enter_each(work, call.arg_list().args(tree).map(|arg| arg.node()));
             }
-            NodeKind::LetStmt
-            | NodeKind::DiscardStmt
-            | NodeKind::PrefixExpr
-            | NodeKind::BinaryExpr
-            | NodeKind::ParenExpr
-            | NodeKind::IfExpr => {
-                work.push(Work::Finish(node));
-                enter_each(
-                    work,
-                    tree.children(node).filter(|&child| {
-                        !matches!(tree.kind(child), NodeKind::Name | NodeKind::TypeRef)
-                    }),
-                );
+            CleanStmt::Expr(CleanExpr::NameRef(name)) => {
+                work.push(Work::Finish(Finish::NameRef(name)));
             }
-            NodeKind::NameRef | NodeKind::LiteralExpr => {
-                if self.finish(node).is_none() {
-                    self.failed = true;
-                }
+            CleanStmt::Expr(CleanExpr::LiteralExpr(literal)) => {
+                work.push(Work::Finish(Finish::Literal(literal)));
             }
-            _ => self.unsupported(node),
+            CleanStmt::Expr(CleanExpr::ClosureExpr(_))
+            | CleanStmt::AssignStmt(_)
+            | CleanStmt::ReturnStmt(_) => self.unsupported(node),
         }
+    }
+    /// A binding that cannot be built still takes its name, as a hole.
+    fn damaged_let(&mut self, binding: ast::LetStmt) {
+        let tree = self.source.tree;
+        if let Some((name, name_node)) = self.source.name(binding.name(tree)) {
+            let hole = self.push(
+                binding.node(),
+                Op::Hole,
+                &[],
+                Some(self.source.range(name_node)),
+            );
+            self.bind(name, hole);
+        }
+        self.failed = true;
+    }
+    fn block_statements(&mut self, node: NodeIdx, work: &mut Vec<Work>) {
+        let tree = self.source.tree;
+        self.open_scope();
+        work.push(Work::Block(node));
+        let base = work.len();
+        let mut children = tree.children(node).peekable();
+        while let Some(child) = children.next() {
+            let statement = children.peek().is_some() && ast::Expr::cast(tree, child).is_some();
+            work.push(Work::Enter(child));
+            if statement {
+                work.push(Work::Unused(child));
+            }
+        }
+        work[base..].reverse();
     }
     fn target(&mut self, node: NodeIdx) -> Option<FunctionId> {
         let name = self.source.text(node);
@@ -1038,52 +1069,52 @@ impl<'a, 's> Builder<'a, 's> {
         let value = if negative { -&magnitude } else { magnitude };
         Some(self.push(origin, Op::Int(value), &[], None))
     }
-    fn finish(&mut self, node: NodeIdx) -> Option<()> {
+    fn block(&mut self, node: NodeIdx) -> Option<()> {
         let tree = self.source.tree;
-        match tree.kind(node) {
-            NodeKind::Block => {
-                self.close_scope();
-                let mut tail = None;
-                let mut valid = !tree.has_error(node);
-                let mut children = tree.children(node).peekable();
-                while let Some(child) = children.next() {
-                    let expression = ast::Expr::cast(tree, child).is_some();
-                    if children.peek().is_none() && expression {
-                        tail = Some(child);
-                        break;
-                    }
-                    if self.typed(child).is_none() {
-                        self.node_of(child);
-                        valid = false;
-                    }
-                }
-                // A damaged block may have lost its tail to recovery, so without one it is a hole,
-                // not unit.
-                let damaged = tree.has_error(node);
-                match tail {
-                    Some(tail) => {
-                        let value = self.node_of(tail);
-                        self.nodes_of[node.to_usize()] = Some(value);
-                    }
-                    None if damaged => {
-                        self.hole(node);
-                    }
-                    None => {
-                        let context = self.context();
-                        let at = self.source.range(node);
-                        self.push(node, Op::Unit, &[(context, at)], None);
-                    }
-                }
-                if !valid || damaged {
-                    return None;
-                }
-                self.typed(node)?;
+        self.close_scope();
+        let mut tail = None;
+        let damaged = tree.has_error(node);
+        let mut valid = !damaged;
+        let mut children = tree.children(node).peekable();
+        while let Some(child) = children.next() {
+            let expression = ast::Expr::cast(tree, child).is_some();
+            if children.peek().is_none() && expression {
+                tail = Some(child);
+                break;
             }
-            NodeKind::LetStmt => {
-                let binding = ast::LetStmt::cast(tree, node).unwrap();
-                let initializer_node = binding.initializer(tree).unwrap().node();
-                let value = self.input(initializer_node);
-                let name = self.source.name(binding.name(tree));
+            if self.typed(child).is_none() {
+                self.node_of(child);
+                valid = false;
+            }
+        }
+        // A damaged block may have lost its tail to recovery, so without one it is a hole, not
+        // unit.
+        match tail {
+            Some(tail) => {
+                let value = self.node_of(tail);
+                self.nodes_of[node.to_usize()] = Some(value);
+            }
+            None if damaged => {
+                self.hole(node);
+            }
+            None => {
+                let context = self.context();
+                let at = self.source.range(node);
+                self.push(node, Op::Unit, &[(context, at)], None);
+            }
+        }
+        if !valid || damaged {
+            return None;
+        }
+        self.typed(node)?;
+        Some(())
+    }
+    fn finish(&mut self, finish: Finish) -> Option<()> {
+        let tree = self.source.tree;
+        match finish {
+            Finish::Let(binding) => {
+                let name = binding.name().node();
+                let value = self.input(binding.initializer().node());
                 let annotation = binding.type_ref(tree);
                 let declared = annotation.and_then(|annotation| {
                     let ty = self.source.ty(annotation)?;
@@ -1093,27 +1124,18 @@ impl<'a, 's> Builder<'a, 's> {
                     (Some(_), None) => Op::Hole,
                     _ => Op::Copy { declared },
                 };
-                let copy = self.push(
-                    node,
-                    op,
-                    &[value],
-                    name.map(|(_, node)| self.source.range(node)),
-                );
-                let (name, _) = name?;
-                self.bind(name, copy);
+                let copy = self.push(binding.node(), op, &[value], Some(self.source.range(name)));
+                self.bind(self.source.text(name), copy);
                 self.lowered.typed[copy.index()].then_some(())?;
             }
-            NodeKind::DiscardStmt => {
-                let value = ast::DiscardStmt::cast(tree, node)
-                    .unwrap()
-                    .value(tree)
-                    .unwrap()
-                    .node();
+            Finish::Discard(discard) => {
+                let value = discard.value().node();
                 let discarded = self.node_of(value);
-                self.nodes_of[node.to_usize()] = Some(discarded);
+                self.nodes_of[discard.node().to_usize()] = Some(discarded);
                 self.typed(value)?;
             }
-            NodeKind::NameRef => {
+            Finish::NameRef(name) => {
+                let node = name.node();
                 let name = self.source.text(node);
                 match self.lookup(name) {
                     Some(defined) => {
@@ -1137,7 +1159,8 @@ impl<'a, 's> Builder<'a, 's> {
                     }
                 }
             }
-            NodeKind::LiteralExpr => {
+            Finish::Literal(literal) => {
+                let node = literal.node();
                 match self.source.parsed.lexed().kind(tree.first_token(node)) {
                     SyntaxKind::IntLiteral => {
                         self.integer(node, node, false)?;
@@ -1152,89 +1175,78 @@ impl<'a, 's> Builder<'a, 's> {
                     }
                 }
             }
-            NodeKind::ParenExpr => {
-                let inner = ast::ParenExpr::cast(tree, node)
-                    .unwrap()
-                    .inner(tree)
-                    .unwrap()
-                    .node();
+            Finish::Paren(paren) => {
+                let inner = paren.inner().node();
                 let value = self.node_of(inner);
-                self.nodes_of[node.to_usize()] = Some(value);
+                self.nodes_of[paren.node().to_usize()] = Some(value);
                 self.typed(inner)?;
             }
-            NodeKind::PrefixExpr => {
-                let operand = ast::PrefixExpr::cast(tree, node)
-                    .unwrap()
-                    .operand(tree)
-                    .unwrap()
-                    .node();
-                let neg = self
-                    .source
-                    .tokens(tree.first_token(node), tree.first_token(operand))
-                    .eq([SyntaxKind::Minus]);
+            Finish::Prefix { expr, neg } => {
+                let operand = expr.operand().node();
                 let value = self.input(operand);
-                self.push(node, if neg { Op::Neg } else { Op::Not }, &[value], None);
+                self.push(
+                    expr.node(),
+                    if neg { Op::Neg } else { Op::Not },
+                    &[value],
+                    None,
+                );
                 self.typed(operand)?;
             }
-            NodeKind::BinaryExpr => {
-                use sumi_syntax::BinaryOp::*;
-
-                let binary = ast::BinaryExpr::cast(tree, node).unwrap();
-                let lhs_node = binary.lhs(tree).unwrap().node();
-                let rhs_node = binary.rhs(tree).unwrap().node();
-                let op = self.binary_op(node);
-                let lhs = self.input(lhs_node);
-                let rhs = self.input(rhs_node);
-                let eager = eager(op).expect("a lazy operator finishes as its own item");
-                self.push(node, Op::Binary(eager), &[lhs, rhs], None);
-                self.typed(lhs_node)?;
-                self.typed(rhs_node)?;
-                if matches!(op, Div | Rem) {
+            Finish::Binary { expr, op } => {
+                let node = expr.node();
+                let lhs = expr.lhs().node();
+                let rhs = expr.rhs().node();
+                let lhs_input = self.input(lhs);
+                let rhs_input = self.input(rhs);
+                self.push(node, Op::Binary(op), &[lhs_input, rhs_input], None);
+                self.typed(lhs)?;
+                self.typed(rhs)?;
+                if matches!(op, BinaryOp::Div | BinaryOp::Rem) {
                     self.lowered.obligations.push(Obligation {
                         owner: self.owner,
                         node,
-                        divisor: rhs.0,
+                        divisor: rhs_input.0,
                         context: self.context(),
                     });
                 }
             }
-            _ => unreachable!("scheduled supported node"),
         }
         Some(())
     }
-    fn lazy(&mut self, node: NodeIdx, rhs: RegionId) -> Option<()> {
-        let tree = self.source.tree;
-        let binary = ast::BinaryExpr::cast(tree, node).unwrap();
-        let lhs_node = binary.lhs(tree).unwrap().node();
-        let rhs_node = binary.rhs(tree).unwrap().node();
-        let and = self.binary_op(node) == sumi_syntax::BinaryOp::And;
-        let lhs = self.input(lhs_node);
-        let op = if and { Op::And { rhs } } else { Op::Or { rhs } };
-        self.push(node, op, &[lhs], None);
-        self.typed(lhs_node)?;
-        self.typed(rhs_node)?;
+    fn lazy(&mut self, expr: LazyOp, rhs: RegionId) -> Option<()> {
+        let lhs = expr.expr.lhs().node();
+        let lhs_input = self.input(lhs);
+        let op = if expr.and {
+            Op::And { rhs }
+        } else {
+            Op::Or { rhs }
+        };
+        self.push(expr.expr.node(), op, &[lhs_input], None);
+        self.typed(lhs)?;
+        self.typed(expr.expr.rhs().node())?;
         Some(())
     }
-    fn join(&mut self, node: NodeIdx, then: RegionId, else_: Option<RegionId>) -> Option<()> {
+    fn join(
+        &mut self,
+        branch: Clean<ast::IfExpr>,
+        then: RegionId,
+        else_: Option<RegionId>,
+    ) -> Option<()> {
         let tree = self.source.tree;
-        let branch = ast::IfExpr::cast(tree, node).unwrap();
-        let condition_node = branch.condition(tree).unwrap().node();
-        let then_node = branch.then_branch(tree).unwrap().node();
-        let else_node = branch.else_branch(tree).map(|e| e.node());
-        let condition = self.input(condition_node);
-        self.push(node, Op::Join { then, else_ }, &[condition], None);
-        self.typed(then_node)?;
-        if let Some(else_node) = else_node {
-            self.typed(else_node)?;
+        let cond = branch.condition().node();
+        let condition = self.input(cond);
+        self.push(branch.node(), Op::Join { then, else_ }, &[condition], None);
+        self.typed(branch.then_branch().node())?;
+        if let Some(else_node) = branch.else_branch(tree) {
+            self.typed(else_node.node())?;
         }
-        self.typed(condition_node)?;
+        self.typed(cond)?;
         Some(())
     }
-    fn call(&mut self, node: NodeIdx, target: Option<FunctionId>) -> Option<()> {
+    fn call(&mut self, call: Clean<ast::CallExpr>, target: Option<FunctionId>) -> Option<()> {
         let context = self.context();
         let tree = self.source.tree;
-        let call = ast::CallExpr::cast(tree, node).unwrap();
-        let list = call.arg_list(tree).unwrap();
+        let node = call.node();
         let callee: Option<(FunctionId, &Header, &[Ty])> = target.and_then(|target| {
             let function = &self.headers[target.index()];
             Some((target, function, function.params.as_deref()?))
@@ -1246,13 +1258,13 @@ impl<'a, 's> Builder<'a, 's> {
         let mut inputs = std::mem::take(&mut self.inputs);
         inputs.clear();
         if target.is_none() {
-            let callee = self.source.peel(call.callee(tree).unwrap()).node();
+            let callee = self.source.peel(call.callee()).node();
             if let Some(built) = self.nodes_of[callee.to_usize()] {
                 inputs.push((built, self.source.range(callee)));
             }
         }
         let mut count = 0;
-        for arg in list.args(tree) {
+        for arg in call.arg_list().args(tree) {
             count += 1;
             inputs.push(self.input(arg.node()));
         }
