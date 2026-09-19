@@ -49,3 +49,10 @@ You're in the core repository for Sumi, a novel statically typed general-purpose
 
 - Follow YAGNI: don't implement functions which aren't necessary (also helps keep diffs reviewable)
 - Prefer making invariants unrepresentable vs. adding asserts or explicit documentation.
+
+## Comment Style
+
+- Comments are terse. They state what the code cannot: the invariant a type leaves open, why the obvious alternative is wrong, what a reader would otherwise have to derive. They do not restate what the code does.
+- No storytelling: how the code came to be, what it replaced, or what was tried belongs in the commit message, not the source.
+- No speculative notes: no "could", "might", or "later"; work no one has committed to is not a comment.
+- No references to external plans, designs, reviews, or conversations. A comment stands on the code alone, since that is all a reader has.
