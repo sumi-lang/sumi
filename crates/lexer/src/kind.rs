@@ -16,17 +16,45 @@ macro_rules! tokens {
         }
     };
     (@punct $char:ident, $shape:ident $lit:literal $name:ident) => {};
-    (@text $kind:ident, keyword $word:literal $name:ident) => {
-        if $kind == Self::$name {
-            return Some($word);
+    (@fixed [$($fixed:tt)*] keyword $lit:literal $name:ident, $($rest:tt)*) => {
+        tokens!(@fixed [$($fixed)* ($name $lit)] $($rest)*);
+    };
+    (@fixed [$($fixed:tt)*] punct $lit:literal $name:ident, $($rest:tt)*) => {
+        tokens!(@fixed [$($fixed)* ($name $lit)] $($rest)*);
+    };
+    (@fixed [$($fixed:tt)*] $shape:ident $lit:literal $name:ident, $($rest:tt)*) => {
+        tokens!(@fixed [$($fixed)*] $($rest)*);
+    };
+    (@fixed [$(($name:ident $lit:literal))*]) => {
+        /// A kind whose text is fixed: a keyword or punctuation.
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+        pub enum Fixed {
+            $($name,)*
+        }
+
+        impl Fixed {
+            pub fn kind(self) -> SyntaxKind {
+                match self {
+                    $(Self::$name => SyntaxKind::$name,)*
+                }
+            }
+
+            pub fn text(self) -> &'static str {
+                match self {
+                    $(Self::$name => concat!($lit),)*
+                }
+            }
+        }
+
+        impl SyntaxKind {
+            pub fn fixed(self) -> Option<Fixed> {
+                match self {
+                    $(Self::$name => Some(Fixed::$name),)*
+                    _ => None,
+                }
+            }
         }
     };
-    (@text $kind:ident, punct $c:literal $name:ident) => {
-        if $kind == Self::$name {
-            return Some(concat!($c));
-        }
-    };
-    (@text $kind:ident, $shape:ident $lit:literal $name:ident) => {};
     (@describe keyword $lit:literal) => {
         concat!("`", $lit, "`")
     };
@@ -67,8 +95,7 @@ macro_rules! tokens {
             }
 
             pub fn text(self) -> Option<&'static str> {
-                $(tokens!(@text self, $shape $lit $name);)*
-                None
+                self.fixed().map(Fixed::text)
             }
 
             pub fn is_trivia(self) -> bool {
@@ -83,6 +110,8 @@ macro_rules! tokens {
                 }
             }
         }
+
+        tokens!(@fixed [] $($shape $lit $name,)*);
     };
 }
 
@@ -130,19 +159,25 @@ tokens! {
 
 #[cfg(test)]
 mod tests {
-    use super::SyntaxKind;
+    use super::{Fixed, SyntaxKind};
 
     #[test]
     fn fixed_texts_round_trip() {
         for &kind in SyntaxKind::ALL {
-            let Some(text) = kind.text() else {
+            let Some(fixed) = kind.fixed() else {
+                assert_eq!(kind.text(), None);
                 continue;
             };
+            let text = fixed.text();
+            assert_eq!(fixed.kind(), kind);
+            assert_eq!(kind.text(), Some(text));
             let back = SyntaxKind::from_keyword(text)
                 .or_else(|| SyntaxKind::from_punct(text.as_bytes()[0]));
             assert_eq!(back, Some(kind));
             assert_eq!(kind.describe(), format!("`{text}`"));
         }
+        assert_eq!(Fixed::LParen.text(), "(");
+        assert_eq!(Fixed::ElseKw.kind(), SyntaxKind::ElseKw);
         assert_eq!(SyntaxKind::from_keyword("_"), Some(SyntaxKind::Underscore));
         assert_eq!(SyntaxKind::from_punct(b';'), None);
         assert_eq!(SyntaxKind::Ident.describe(), "a name");
