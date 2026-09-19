@@ -1,13 +1,59 @@
 //! The node vocabulary and the typed views over the tree, from one `grammar!` declaration. Single
 //! fields take slots in declaration order, which the parser's `field` calls must match.
 
+use std::fmt::Debug;
+use std::hash::Hash;
+
 use crate::index::NodeIdx;
 use crate::tree::SyntaxTree;
 
 pub trait AstNode: Copy {
+    /// The same node with every required child in hand.
+    type Clean: AstNode;
+
     fn cast(tree: &SyntaxTree, node: NodeIdx) -> Option<Self>;
 
     fn node(self) -> NodeIdx;
+
+    /// `None` for a node with an error, which may lack a required child.
+    fn clean(self, tree: &SyntaxTree) -> Option<Self::Clean>;
+}
+
+/// A kind with fields; its clean view is [`Clean`] over it.
+pub trait Fields: AstNode<Clean = Clean<Self>> {
+    /// The required children, in declaration order.
+    type Required: Copy + Debug + Eq + Hash;
+
+    fn required(self, tree: &SyntaxTree) -> Option<Self::Required>;
+}
+
+/// A node without an error, holding every child its kind requires.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Clean<N: Fields> {
+    view: N,
+    required: N::Required,
+}
+
+impl<N: Fields> Clean<N> {
+    pub fn view(self) -> N {
+        self.view
+    }
+}
+
+impl<N: Fields> AstNode for Clean<N> {
+    type Clean = Self;
+
+    fn cast(tree: &SyntaxTree, node: NodeIdx) -> Option<Self> {
+        N::cast(tree, node)?.clean(tree)
+    }
+
+    fn node(self) -> NodeIdx {
+        self.view.node()
+    }
+
+    fn clean(self, _: &SyntaxTree) -> Option<Self> {
+        Some(self)
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -26,19 +72,37 @@ macro_rules! count {
     (() $($rest:tt)*) => { 1u8 + count!($($rest)*) };
 }
 
+/// `@fields` carries the slots taken, the child table, the required children's types and names,
+/// and the tuple indices left for them.
 macro_rules! grammar {
-    (@fields $name:ident [$($slot:tt)*] [$($child:tt)*]) => {
+    (@fields $name:ident [$($slot:tt)*] [$($child:tt)*] [$($required:tt)*] [$($by:ident)*]
+        [$($index:tt)*]) => {
         impl $name {
             pub const CHILDREN: &[Child] = &[$($child)*];
         }
+
+        impl Fields for $name {
+            type Required = ($($required)*);
+
+            fn required(self, _tree: &SyntaxTree) -> Option<Self::Required> {
+                Some(($(self.$by(_tree)?,)*))
+            }
+        }
     };
-    (@fields $name:ident [$($slot:tt)*] [$($child:tt)*]
-        $field:ident: Option<$ty:ident> $(, $($rest:tt)*)?) => {
+    (@fields $name:ident [$($slot:tt)*] [$($child:tt)*] [$($required:tt)*] [$($by:ident)*]
+        [$($index:tt)*] $field:ident: Option<$ty:ident> $(, $($rest:tt)*)?) => {
         impl $name {
             #[doc = concat!("The `", stringify!($field), "` child, a `", stringify!($ty), "`, optional.")]
             pub fn $field(self, tree: &SyntaxTree) -> Option<$ty> {
                 tree.child_in_field(self.0, count!($($slot)*))
                     .and_then(|node| $ty::cast(tree, node))
+            }
+        }
+
+        impl Clean<$name> {
+            #[doc = concat!("The `", stringify!($field), "` child, a `", stringify!($ty), "`, optional.")]
+            pub fn $field(self, tree: &SyntaxTree) -> Option<$ty> {
+                self.view.$field(tree)
             }
         }
         grammar!(@fields $name [$($slot)* ()] [$($child)* Child {
@@ -48,15 +112,22 @@ macro_rules! grammar {
             present: |tree, node| {
                 $name::cast(tree, node).is_some_and(|view| view.$field(tree).is_some())
             },
-        },] $($($rest)*)?);
+        },] [$($required)*] [$($by)*] [$($index)*] $($($rest)*)?);
     };
-    (@fields $name:ident [$($slot:tt)*] [$($child:tt)*]
-        $field:ident: [$ty:ident] $(, $($rest:tt)*)?) => {
+    (@fields $name:ident [$($slot:tt)*] [$($child:tt)*] [$($required:tt)*] [$($by:ident)*]
+        [$($index:tt)*] $field:ident: [$ty:ident] $(, $($rest:tt)*)?) => {
         impl $name {
             #[doc = concat!("The `", stringify!($field), "` children, each a `", stringify!($ty), "`, in source order.")]
             pub fn $field<'t>(self, tree: &'t SyntaxTree) -> impl Iterator<Item = $ty> + 't {
                 tree.children(self.0)
                     .filter_map(move |child| $ty::cast(tree, child))
+            }
+        }
+
+        impl Clean<$name> {
+            #[doc = concat!("The `", stringify!($field), "` children, each a `", stringify!($ty), "`, in source order.")]
+            pub fn $field<'t>(self, tree: &'t SyntaxTree) -> impl Iterator<Item = $ty> + 't {
+                self.view.$field(tree)
             }
         }
         grammar!(@fields $name [$($slot)*] [$($child)* Child {
@@ -66,15 +137,22 @@ macro_rules! grammar {
             present: |tree, node| {
                 $name::cast(tree, node).is_some_and(|view| view.$field(tree).next().is_some())
             },
-        },] $($($rest)*)?);
+        },] [$($required)*] [$($by)*] [$($index)*] $($($rest)*)?);
     };
-    (@fields $name:ident [$($slot:tt)*] [$($child:tt)*]
-        $field:ident: $ty:ident $(, $($rest:tt)*)?) => {
+    (@fields $name:ident [$($slot:tt)*] [$($child:tt)*] [$($required:tt)*] [$($by:ident)*]
+        [$index:tt $($next:tt)*] $field:ident: $ty:ident $(, $($rest:tt)*)?) => {
         impl $name {
             #[doc = concat!("The `", stringify!($field), "` child, a `", stringify!($ty), "`, present on a node without an error.")]
             pub fn $field(self, tree: &SyntaxTree) -> Option<$ty> {
                 tree.child_in_field(self.0, count!($($slot)*))
                     .and_then(|node| $ty::cast(tree, node))
+            }
+        }
+
+        impl Clean<$name> {
+            #[doc = concat!("The `", stringify!($field), "` child, a `", stringify!($ty), "`.")]
+            pub fn $field(self) -> $ty {
+                self.required.$index
             }
         }
         grammar!(@fields $name [$($slot)* ()] [$($child)* Child {
@@ -84,7 +162,13 @@ macro_rules! grammar {
             present: |tree, node| {
                 $name::cast(tree, node).is_some_and(|view| view.$field(tree).is_some())
             },
-        },] $($($rest)*)?);
+        },] [$($required)* $ty,] [$($by)* $field] [$($next)*] $($($rest)*)?);
+    };
+    (@fields $name:ident [$($slot:tt)*] [$($child:tt)*] [$($required:tt)*] [$($by:ident)*] []
+        $field:ident: $ty:ident $(, $($rest:tt)*)?) => {
+        compile_error!(concat!(
+            "`", stringify!($name), "` holds more required children than `Clean` has indices for"
+        ));
     };
     (@nodes [$($variant:tt)*] [$($kind:ident)*]
         $(#[$doc:meta])* struct $name:ident { $($fields:tt)* } $($rest:tt)*) => {
@@ -93,6 +177,8 @@ macro_rules! grammar {
         pub struct $name(NodeIdx);
 
         impl AstNode for $name {
+            type Clean = Clean<Self>;
+
             fn cast(tree: &SyntaxTree, node: NodeIdx) -> Option<Self> {
                 (tree.kind(node) == NodeKind::$name).then_some(Self(node))
             }
@@ -100,20 +186,39 @@ macro_rules! grammar {
             fn node(self) -> NodeIdx {
                 self.0
             }
+
+            fn clean(self, tree: &SyntaxTree) -> Option<Clean<Self>> {
+                if tree.has_error(self.0) {
+                    return None;
+                }
+                Some(Clean {
+                    view: self,
+                    required: self.required(tree)?,
+                })
+            }
         }
 
-        grammar!(@fields $name [] [] $($fields)*);
+        grammar!(@fields $name [] [] [] [] [0 1 2 3 4 5 6 7] $($fields)*);
         grammar!(@nodes [$($variant)* $(#[$doc])* $name,] [$($kind)* $name] $($rest)*);
     };
     (@nodes [$($variant:tt)*] [$($kind:ident)*]
-        $(#[$doc:meta])* enum $name:ident { $($member:ident),* $(,)? } $($rest:tt)*) => {
+        $(#[$doc:meta])* enum $name:ident as $clean:ident { $($member:ident),* $(,)? }
+        $($rest:tt)*) => {
         $(#[$doc])*
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
         pub enum $name {
             $($member($member),)*
         }
 
+        #[doc = concat!("[`", stringify!($name), "`] without an error.")]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+        pub enum $clean {
+            $($member(<$member as AstNode>::Clean),)*
+        }
+
         impl AstNode for $name {
+            type Clean = $clean;
+
             fn cast(tree: &SyntaxTree, node: NodeIdx) -> Option<Self> {
                 None$(.or_else(|| $member::cast(tree, node).map(Self::$member)))*
             }
@@ -122,6 +227,30 @@ macro_rules! grammar {
                 match self {
                     $(Self::$member(inner) => inner.node(),)*
                 }
+            }
+
+            fn clean(self, tree: &SyntaxTree) -> Option<$clean> {
+                match self {
+                    $(Self::$member(inner) => inner.clean(tree).map($clean::$member),)*
+                }
+            }
+        }
+
+        impl AstNode for $clean {
+            type Clean = Self;
+
+            fn cast(tree: &SyntaxTree, node: NodeIdx) -> Option<Self> {
+                $name::cast(tree, node)?.clean(tree)
+            }
+
+            fn node(self) -> NodeIdx {
+                match self {
+                    $(Self::$member(inner) => inner.node(),)*
+                }
+            }
+
+            fn clean(self, _: &SyntaxTree) -> Option<Self> {
+                Some(self)
             }
         }
 
@@ -173,7 +302,7 @@ grammar! {
 
     struct Block { stmts: [Stmt] }
 
-    enum Stmt { LetStmt, AssignStmt, DiscardStmt, ReturnStmt, Expr }
+    enum Stmt as CleanStmt { LetStmt, AssignStmt, DiscardStmt, ReturnStmt, Expr }
 
     /// `'let' 'mut'? Name (':' TypeRef)? '=' initializer:Expr`.
     struct LetStmt { name: Name, type_ref: Option<TypeRef>, initializer: Expr }
@@ -184,7 +313,7 @@ grammar! {
 
     struct ReturnStmt { value: Option<Expr> }
 
-    enum Expr {
+    enum Expr as CleanExpr {
         NameRef,
         LiteralExpr,
         PrefixExpr,
@@ -216,7 +345,7 @@ grammar! {
     /// `'if' condition:Expr then_branch:Block ('else' else_branch:ElseBranch)?`.
     struct IfExpr { condition: Expr, then_branch: Block, else_branch: Option<ElseBranch> }
 
-    enum ElseBranch { IfExpr, Block }
+    enum ElseBranch as CleanElseBranch { IfExpr, Block }
 
     /// `'fn' ParamList ('->' ret:TypeRef)? '='? body:Expr`.
     struct ClosureExpr { param_list: ParamList, ret: Option<TypeRef>, body: Expr }

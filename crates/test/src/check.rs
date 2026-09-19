@@ -256,6 +256,18 @@ pub fn tree(tree: &SyntaxTree, lexed: &LexedFile) {
             );
         }
 
+        // What a clean view rests on.
+        if !tree.has_error(node) {
+            for child in tree.kind(node).children() {
+                assert!(
+                    child.optional || (child.present)(tree, node),
+                    "{:?} {node:?} has no error but lacks its `{}`",
+                    tree.kind(node),
+                    child.name
+                );
+            }
+        }
+
         let mut previous_end = first;
         for child in tree.children(node) {
             assert!(
