@@ -34,6 +34,7 @@ use std::collections::{HashMap, HashSet};
 use std::hash::{BuildHasherDefault, Hasher};
 
 use sumi_frontend::{DiagnosticCode, Label, Location};
+use sumi_graph::Thresholds;
 use sumi_lexer::{RawIdx, SyntaxKind, TokenFlags};
 use sumi_syntax::{
     NodeIdx, NodeKind, SyntaxTree,
@@ -41,8 +42,9 @@ use sumi_syntax::{
 };
 
 use crate::codes;
+use crate::lattice::Claim;
 use crate::recursion;
-use crate::typing::{Claim, Expected, ProductContext, Typing};
+use crate::typing::{Expected, Typing};
 use crate::{flows, *};
 
 /// A hasher for identifiers and integer constants: a word at a time, with
@@ -505,13 +507,12 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     let mut typing = flows::draw(&graph, &placed, &headers, &demands, |node| {
         source.span(node)
     });
-    let cx: ProductContext = ((), constants.into_iter().collect());
-    typing.solve(&cx);
+    let thresholds: Thresholds = constants.into_iter().collect();
+    typing.solve(&thresholds);
     let mut replay = typing.replay();
     let mut failed = vec![false; functions.len()];
-    let class = flows::var;
     for demand in demands {
-        let actual_class = class(demand.actual);
+        let actual_class = demand.actual;
         let actual = replay.resolve(actual_class);
         match demand.kind {
             DemandKind::Type { expected, declared } => {
@@ -559,7 +560,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
             // type is held to no type it never had.
             DemandKind::Agree { branches } => {
                 for branch in branches {
-                    replay.branch(class(branch), actual_class);
+                    replay.branch(branch, actual_class);
                 }
                 let evidence = *replay.evidence(actual_class);
                 if !evidence.is_conflict() {
@@ -580,8 +581,8 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         let run = graph.run(FunctionId::new(index));
         // The result's evidence: the declared copy's, or the body's
         // value's, when the header says which.
-        let evidence = (!matches!(header.result, HeaderResult::None))
-            .then(|| *typing.evidence(class(run.result())));
+        let evidence =
+            (!matches!(header.result, HeaderResult::None)).then(|| *typing.evidence(run.result()));
         let result = evidence.and_then(|evidence| evidence.ty());
         if let (Some(params), Some(result)) = (header.params, result) {
             functions[index].signature = Some(Signature { params, result });
@@ -620,8 +621,8 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         if failed[obligation.owner as usize] {
             continue;
         }
-        let divisor = flows::may(&typing, obligation.divisor);
-        if !flows::live(&typing, obligation.context) || !divisor.ints.contains_zero() {
+        let divisor = typing.may(obligation.divisor);
+        if !typing.may(obligation.context).live() || !divisor.ints.contains_zero() {
             continue;
         }
         let message = if divisor.ints.is_zero() {
@@ -721,8 +722,8 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
             Op::Call(callee) => functions[callee.index()]
                 .signature
                 .as_ref()
-                .is_some_and(|signature| Some(signature.result) == typing.resolve(class(node))),
-            _ => typing.resolve(class(node)).is_some(),
+                .is_some_and(|signature| Some(signature.result) == typing.resolve(node)),
+            _ => typing.resolve(node).is_some(),
         });
         functions[index].complete = complete;
     }
@@ -814,7 +815,7 @@ fn explain_zero(
         if labels.len() >= LABELS || !seen.insert(node) {
             continue;
         }
-        let may = flows::may(typing, node);
+        let may = typing.may(node);
         if !may.ints.contains_zero() {
             continue;
         }
@@ -834,7 +835,7 @@ fn explain_zero(
             // A guard that narrowed the local is where the zero was
             // singled out, and the local is where it came from.
             Op::Refine { .. } => {
-                if may.ints != flows::may(typing, inputs[0]).ints {
+                if may.ints != typing.may(inputs[0]).ints {
                     labels.push((
                         entry.origin,
                         describe(&may.ints, " under this guard").into(),
@@ -845,7 +846,7 @@ fn explain_zero(
             Op::Join { then, else_ } => {
                 for region in std::iter::once(then).chain(else_) {
                     let region = graph.region(region);
-                    if flows::live(typing, region.context) {
+                    if typing.may(region.context).live() {
                         follow(&mut queue, region.result(), 1);
                     }
                 }
@@ -863,11 +864,11 @@ fn explain_zero(
                     if labels.len() >= LABELS {
                         break;
                     }
-                    if !flows::live(typing, call.context) {
+                    if !typing.may(call.context).live() {
                         continue;
                     }
                     let arg = graph.inputs(call.node)[index as usize];
-                    let delivered = flows::may(typing, arg);
+                    let delivered = typing.may(arg);
                     if delivered.ints.contains_zero() {
                         let written = placed.arguments(call)[index as usize];
                         labels.push((
@@ -1478,7 +1479,7 @@ impl<'a, 's> Builder<'a, 's> {
         expected: Expected,
         declared: Option<NodeIdx>,
     ) {
-        if expected == Expected::Peer(flows::var(actual)) {
+        if expected == Expected::Peer(actual) {
             return;
         }
         self.demand(node, actual, DemandKind::Type { expected, declared });
@@ -1914,7 +1915,7 @@ impl<'a, 's> Builder<'a, 's> {
                 // exists sets the other's expectation.
                 let operand = match op {
                     Add | Sub | Mul | Div | Rem | Lt | Le | Gt | Ge => Some(Expected::Ty(Ty::Int)),
-                    Eq | Ne => lhs.or(rhs).map(|peer| Expected::Peer(flows::var(peer))),
+                    Eq | Ne => lhs.or(rhs).map(Expected::Peer),
                     And | Or => Some(Expected::Ty(Ty::Bool)),
                 };
                 if let Some(operand) = operand {

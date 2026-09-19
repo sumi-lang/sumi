@@ -47,6 +47,8 @@
 use std::collections::VecDeque;
 use std::num::NonZeroU32;
 
+use sumi_graph::NodeId;
+
 /// The evidence a solver carries on each class: a join-semilattice with a
 /// transfer function for flows.
 ///
@@ -67,20 +69,13 @@ pub trait Lattice: Clone + Eq {
     /// Join `other` into `self`, reporting whether `self` grew.
     fn join(&mut self, other: &Self) -> bool;
 
-    /// Whether `edge` can deliver more than it receives: an operator over
-    /// its operands, where an edge that copies, narrows, or gates a value
-    /// cannot. A cycle with no such edge settles in one lap and is never
-    /// widened.
-    fn grows(edge: &Self::Edge) -> bool;
-
-    /// Whether what the first provider holds, or the `second` one's, can
-    /// climb through `edge` into the consumer: a value an operator computes
-    /// from it, a copy or a narrowing of it, the value a gate lets through.
-    /// The cycles an ascent can run on are cycles of such arcs, and those
-    /// are the cycles widening cuts. An edge that delivers nothing, or only
-    /// something finite, a boolean or whether a point is live, carries
-    /// none, and a cycle closed through it alone is no cycle of values.
-    fn carries(edge: &Self::Edge, second: bool) -> bool;
+    /// What of the first provider's evidence, or the `second` one's, can
+    /// climb through `edge` into the consumer. The cycles an ascent can
+    /// run on are cycles of arcs that carry, and a cycle some arc grows
+    /// along is what widening cuts; a cycle of arcs that only pass settles
+    /// in one lap, and a cycle closed through an arc that carries nothing
+    /// is no cycle of values.
+    fn carries(edge: &Self::Edge, second: bool) -> Carry;
 
     /// The evidence a consumer receives when `self`, and for a two-provider
     /// edge `other`, cross `edge`. `cyclic` says the flow lies on a cycle of
@@ -108,51 +103,18 @@ pub trait Lattice: Clone + Eq {
     fn narrow(&mut self, exact: &Self) -> bool;
 }
 
-/// Two lattices side by side: evidence of both kinds on one class, joined
-/// componentwise and transferred by a pair of edges. Tuples nest, so any
-/// number of analyses share one solver.
-impl<A: Lattice, B: Lattice> Lattice for (A, B) {
-    type Edge = (A::Edge, B::Edge);
-    type Context = (A::Context, B::Context);
-
-    fn bottom() -> Self {
-        (A::bottom(), B::bottom())
-    }
-
-    fn join(&mut self, other: &Self) -> bool {
-        let a = self.0.join(&other.0);
-        let b = self.1.join(&other.1);
-        a | b
-    }
-
-    fn grows(edge: &Self::Edge) -> bool {
-        A::grows(&edge.0) || B::grows(&edge.1)
-    }
-
-    fn carries(edge: &Self::Edge, second: bool) -> bool {
-        A::carries(&edge.0, second) || B::carries(&edge.1, second)
-    }
-
-    fn transfer(
-        &self,
-        edge: &Self::Edge,
-        other: Option<&Self>,
-        cyclic: bool,
-        cx: &Self::Context,
-    ) -> Self {
-        (
-            self.0
-                .transfer(&edge.0, other.map(|other| &other.0), cyclic, &cx.0),
-            self.1
-                .transfer(&edge.1, other.map(|other| &other.1), cyclic, &cx.1),
-        )
-    }
-
-    fn narrow(&mut self, exact: &Self) -> bool {
-        let a = self.0.narrow(&exact.0);
-        let b = self.1.narrow(&exact.1);
-        a | b
-    }
+/// What a provider's evidence can do crossing an edge into the consumer,
+/// least first.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Carry {
+    /// Nothing that can climb: the edge delivers nothing of the provider's,
+    /// or only something finite, a boolean or whether a point is live.
+    Nothing,
+    /// A copy or a narrowing of it, or the value a gate lets through: never
+    /// more than the provider holds.
+    Passes,
+    /// More than the provider holds: a value an operator computes from it.
+    Grows,
 }
 
 /// The most exact passes a narrowing makes. One pass carries a tightening
@@ -163,30 +125,12 @@ impl<A: Lattice, B: Lattice> Lattice for (A, B) {
 /// soundness.
 const NARROWING_PASSES: usize = 8;
 
-/// A class: the `index`th one opened. One past its index, so an
-/// `Option<Var>` is one word.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct Var(NonZeroU32);
-
-impl Var {
-    /// The class at `index`: the `index`th one opened.
-    pub fn new(index: usize) -> Self {
-        let past = u32::try_from(index + 1).expect("class count fits u32");
-        Self(NonZeroU32::new(past).expect("one past an index"))
-    }
-
-    /// The index the class was opened at.
-    pub fn index(self) -> usize {
-        self.0.get() as usize - 1
-    }
-}
-
 /// One flow: what `consumer` learns from `first`, and from `second` when
 /// the edge has two providers, through `edge`.
 struct Flow<E> {
-    first: Var,
-    second: Option<Var>,
-    consumer: Var,
+    first: NodeId,
+    second: Option<NodeId>,
+    consumer: NodeId,
     edge: E,
 }
 
@@ -198,9 +142,9 @@ pub struct Solver<L: Lattice> {
 }
 
 impl<L: Lattice> Solver<L> {
-    /// A solver of `n` classes, `Var::new(0)` to `Var::new(n - 1)`, that
-    /// nothing is known about yet, with room for about a flow per class.
-    /// The caller's numbering is the solver's.
+    /// A solver of `n` classes, one per node of a graph of `n` nodes at
+    /// the node's index, that nothing is known about yet, with room for
+    /// about a flow per class.
     pub fn with_classes(n: usize) -> Self {
         Self {
             evidence: vec![L::bottom(); n],
@@ -208,24 +152,26 @@ impl<L: Lattice> Solver<L> {
         }
     }
 
+    /// How many classes there are: the node count the solver was made
+    /// for, since nothing merges or adds a class.
     pub fn classes(&self) -> usize {
         self.evidence.len()
     }
 
-    /// The evidence on `var`.
-    pub fn evidence(&self, var: Var) -> &L {
-        &self.evidence[var.index()]
+    /// The evidence on `node`.
+    pub fn evidence(&self, node: NodeId) -> &L {
+        &self.evidence[node.index()]
     }
 
-    /// Join `evidence` into `var`: a fact it carries on its own account, or
+    /// Join `evidence` into `node`: a fact it carries on its own account, or
     /// what one use of it demands. The solver keeps no record of which.
-    pub fn expect(&mut self, var: Var, evidence: &L) {
-        self.evidence[var.index()].join(evidence);
+    pub fn expect(&mut self, node: NodeId, evidence: &L) {
+        self.evidence[node.index()].join(evidence);
     }
 
     /// Let everything `provider`'s class learns reach `consumer`'s class
     /// through `edge`, and nothing travel back. Settled by `solve`.
-    pub fn flow(&mut self, provider: Var, consumer: Var, edge: L::Edge) {
+    pub fn flow(&mut self, provider: NodeId, consumer: NodeId, edge: L::Edge) {
         self.flows.push(Flow {
             first: provider,
             second: None,
@@ -236,7 +182,7 @@ impl<L: Lattice> Solver<L> {
 
     /// Let `consumer`'s class learn the transfer of `first`'s and
     /// `second`'s evidence through `edge`, recomputed whenever either grows.
-    pub fn derive(&mut self, first: Var, second: Var, consumer: Var, edge: L::Edge) {
+    pub fn derive(&mut self, first: NodeId, second: NodeId, consumer: NodeId, edge: L::Edge) {
         self.flows.push(Flow {
             first,
             second: Some(second),
@@ -253,15 +199,21 @@ impl<L: Lattice> Solver<L> {
 
     /// Every flow: its consumer, its edge, and what its first provider
     /// holds.
-    pub fn flows(&self) -> impl Iterator<Item = (Var, &L::Edge, &L)> {
+    pub fn flows(&self) -> impl Iterator<Item = (NodeId, &L::Edge, &L)> {
         self.flows
             .iter()
             .map(|flow| (flow.consumer, &flow.edge, self.evidence(flow.first)))
     }
 
     /// A flow's providers, each with whether it is the second.
-    fn providers<'f>(&self, flow: &'f Flow<L::Edge>) -> impl Iterator<Item = (bool, Var)> + 'f {
+    fn providers<'f>(&self, flow: &'f Flow<L::Edge>) -> impl Iterator<Item = (bool, NodeId)> + 'f {
         std::iter::once((false, flow.first)).chain(flow.second.map(|second| (true, second)))
+    }
+
+    /// Whether some provider's evidence grows crossing `flow`.
+    fn grows(&self, flow: &Flow<L::Edge>) -> bool {
+        self.providers(flow)
+            .any(|(second, _)| L::carries(&flow.edge, second) == Carry::Grows)
     }
 
     /// The consumer of flow `index` when the flow stays inside `component`
@@ -388,7 +340,7 @@ impl<L: Lattice> Solver<L> {
             let component = components.of[consumer as usize];
             if components.of[provider as usize] == component {
                 inside[component as usize] = true;
-                grows_inside |= L::grows(&self.flows[index as usize].edge);
+                grows_inside |= self.grows(&self.flows[index as usize]);
             }
         }
         // Values climb along the carrying arcs alone, so their cycles are
@@ -402,21 +354,23 @@ impl<L: Lattice> Solver<L> {
             for flow in &self.flows {
                 let consumer = flow.consumer.index() as u32;
                 for (second, provider) in self.providers(flow) {
-                    if L::carries(&flow.edge, second) {
+                    if L::carries(&flow.edge, second) != Carry::Nothing {
                         carrying.push((provider.index() as u32, consumer));
                     }
                 }
             }
             let values = self::components(n, &carrying);
             let mut climbs = vec![false; values.count()];
-            let carried = |flow: &Flow<L::Edge>, value: u32| {
-                self.providers(flow).any(|(second, p): (bool, Var)| {
-                    L::carries(&flow.edge, second) && values.of[p.index()] == value
+            // Whether some provider of `flow` inside the value component
+            // `value` carries at least `least` along it.
+            let carried = |flow: &Flow<L::Edge>, value: u32, least: Carry| {
+                self.providers(flow).any(|(second, p): (bool, NodeId)| {
+                    L::carries(&flow.edge, second) >= least && values.of[p.index()] == value
                 })
             };
             for flow in &self.flows {
                 let value = values.of[flow.consumer.index()];
-                if L::grows(&flow.edge) && carried(flow, value) {
+                if carried(flow, value, Carry::Grows) {
                     climbs[value as usize] = true;
                 }
             }
@@ -425,7 +379,7 @@ impl<L: Lattice> Solver<L> {
                 .iter()
                 .map(|flow| {
                     let value = values.of[flow.consumer.index()];
-                    climbs[value as usize] && carried(flow, value)
+                    climbs[value as usize] && carried(flow, value, Carry::Passes)
                 })
                 .collect();
             (values, climbs, cyclic)
@@ -458,12 +412,9 @@ impl<L: Lattice> Solver<L> {
         let mut incoming: Vec<u32> = Vec::new();
         let mut preorder: Vec<u32> = Vec::new();
         let mut reached: Vec<bool> = Vec::new();
-        // Every class, providers first: a class outside any cycle has all it
-        // will get by the time it is reached, so it delivers once. A delivery
-        // made from outside a component happens once, so it is never
-        // widened: only the worklist inside a growing component rounds, and
-        // what a member holds before its component is taken stays exact for
-        // the narrowing to recompute from.
+        // A delivery from outside a component is made once and never
+        // widened; what a member holds before its component is taken is
+        // what the narrowing recomputes from.
         let mut at = components.order.len();
         while at > 0 {
             at -= 1;
@@ -793,12 +744,8 @@ mod tests {
         }
 
         /// A flow delivers the set; a derive delivers the union of both.
-        fn grows((): &()) -> bool {
-            false
-        }
-
-        fn carries((): &(), _: bool) -> bool {
-            true
+        fn carries((): &(), _: bool) -> Carry {
+            Carry::Passes
         }
 
         fn transfer(&self, (): &(), other: Option<&Self>, _: bool, (): &()) -> Self {
@@ -844,12 +791,12 @@ mod tests {
             before != *self
         }
 
-        fn carries(_: &i64, _: bool) -> bool {
-            true
-        }
-
-        fn grows(offset: &i64) -> bool {
-            *offset != 0
+        fn carries(offset: &i64, _: bool) -> Carry {
+            if *offset == 0 {
+                Carry::Passes
+            } else {
+                Carry::Grows
+            }
         }
 
         fn transfer(&self, offset: &i64, _: Option<&Self>, _: bool, (): &()) -> Self {
@@ -865,19 +812,16 @@ mod tests {
     }
 
     /// `N` classes nothing is known about yet, by index.
-    fn classes<L: Lattice, const N: usize>() -> (Solver<L>, [Var; N]) {
-        (Solver::with_classes(N), std::array::from_fn(Var::new))
+    fn classes<L: Lattice, const N: usize>() -> (Solver<L>, [NodeId; N]) {
+        (Solver::with_classes(N), std::array::from_fn(NodeId::new))
     }
 
     /// Three classes, and an edge of two words: no edge carries where it
     /// came from, since the graph knows.
     #[test]
-    fn a_flow_is_six_words() {
-        assert_eq!(size_of::<Option<Var>>(), 4);
-        assert_eq!(
-            size_of::<Flow<(crate::typing::Edge, crate::ranges::RangeEdge)>>(),
-            24
-        );
+    fn a_flow_is_five_words() {
+        assert_eq!(size_of::<Option<NodeId>>(), 4);
+        assert_eq!(size_of::<Flow<crate::lattice::Edge>>(), 20);
     }
 
     #[test]
@@ -924,12 +868,8 @@ mod tests {
             before != *self
         }
 
-        fn grows((): &()) -> bool {
-            true
-        }
-
-        fn carries((): &(), _: bool) -> bool {
-            true
+        fn carries((): &(), _: bool) -> Carry {
+            Carry::Grows
         }
 
         /// Nothing comes of nothing: an empty set is not marked.
@@ -980,12 +920,12 @@ mod tests {
             before != *self
         }
 
-        fn carries(edge: &HullEdge, _: bool) -> bool {
-            !matches!(edge, HullEdge::Inert)
-        }
-
-        fn grows(edge: &HullEdge) -> bool {
-            matches!(edge, HullEdge::Add(k) if *k != 0)
+        fn carries(edge: &HullEdge, _: bool) -> Carry {
+            match edge {
+                HullEdge::Inert => Carry::Nothing,
+                HullEdge::Add(k) if *k != 0 => Carry::Grows,
+                _ => Carry::Passes,
+            }
         }
 
         fn transfer(&self, edge: &HullEdge, _: Option<&Self>, cyclic: bool, (): &()) -> Self {
@@ -1146,24 +1086,13 @@ mod tests {
         assert!(solver.evidence(y).is_empty());
     }
 
-    #[test]
-    fn products_join_and_transfer_componentwise() {
-        let (mut solver, [a, c]) = classes::<(Set, Interval), 2>();
-        solver.flow(a, c, ((), 1));
-        solver.expect(a, &(Set(1), Interval::new(0, 100)));
-        solver.expect(a, &(Set(4), Interval::new(50, 200)));
-        solver.solve(&((), ()));
-        assert_eq!(*solver.evidence(a), (Set(5), Interval::new(50, 100)));
-        assert_eq!(*solver.evidence(c), (Set(5), Interval::new(51, 101)));
-    }
-
     /// One constraint over eight classes: an expectation, a flow, or a
     /// derive into the class after the second.
     fn constraint() -> impl proptest::strategy::Strategy<Value = (u8, usize, usize)> {
         (0u8..3, 0usize..8, 0usize..8)
     }
 
-    fn apply(solver: &mut Solver<Set>, vars: &[Var], (kind, a, b): (u8, usize, usize)) {
+    fn apply(solver: &mut Solver<Set>, vars: &[NodeId], (kind, a, b): (u8, usize, usize)) {
         match kind {
             0 => solver.expect(vars[a], &Set(1 << (b % 3))),
             1 => solver.flow(vars[a], vars[b], ()),

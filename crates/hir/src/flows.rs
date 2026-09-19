@@ -1,8 +1,6 @@
 //! The typing drawn from the graph: a class for every node, a fact for
 //! every node that knows something on its own account, and a flow for
-//! every edge that carries evidence, in one pass over the table. The
-//! typing is opened with a class per node, so a node and its class share
-//! an index by construction and no map stands between them.
+//! every edge that carries evidence, in one pass over the table.
 //!
 //! Within a function every input precedes its reader, so one pass in node
 //! order draws each node's facts and flows as it reaches the node; only a
@@ -11,31 +9,13 @@
 //! joined into the evidence last, in the order the walk recorded them,
 //! which is the order the verdict pass replays them in.
 
-use sumi_graph::{BinaryOp, Domain, Graph, NodeId, Op, Ty};
+use sumi_graph::{Domain, Graph, May, NodeId, Op, Ty};
 use sumi_syntax::NodeIdx;
 use sumi_text::Span;
 
-use crate::May;
 use crate::check::{Demand, DemandKind, Header, Placed};
-use crate::ranges::{RangeEdge, UnaryOp};
-use crate::solver::Var;
+use crate::lattice::Edge;
 use crate::typing::Typing;
-
-/// The class of `node`: the one at its index, since the typing has one
-/// class per node.
-pub(crate) fn var(node: NodeId) -> Var {
-    Var::new(node.index())
-}
-
-/// The values that may reach `node`: none for a node nothing flows to.
-pub(crate) fn may(typing: &Typing, node: NodeId) -> &May {
-    typing.may(var(node))
-}
-
-/// Whether the context `node`, or a value at it, is live.
-pub(crate) fn live(typing: &Typing, node: NodeId) -> bool {
-    may(typing, node).live()
-}
 
 /// The typing of the graph: one class per node, at the node's index. A
 /// node the walk gave no value has a class nothing flows into.
@@ -48,7 +28,6 @@ pub(crate) fn draw(
 ) -> Typing {
     let mut typing = Typing::for_nodes(graph.nodes().len());
     let typed = |node: NodeId| placed.typed[node.index()];
-    let class = var;
 
     // Facts and the flows within a function, in one pass in node order:
     // every input precedes its reader, and a region's context and result
@@ -63,114 +42,95 @@ pub(crate) fn draw(
             let entry = graph.node(node);
             let origin = entry.origin;
             let inputs = graph.inputs(node);
-            let this = class(node);
             match &entry.op {
-                Op::Int(value) => typing.literal(this, Ty::Int, May::int(value), origin),
-                Op::Bool(value) => typing.literal(this, Ty::Bool, May::bool(*value), origin),
+                Op::Int(value) => typing.literal(node, Ty::Int, May::int(value), origin),
+                Op::Bool(value) => typing.literal(node, Ty::Bool, May::bool(*value), origin),
                 Op::Param(position) => {
                     let ty = header.param_types[*position as usize].expect("a typed parameter");
-                    typing.known(this, ty, entry.name.unwrap_or(origin));
+                    typing.known(node, ty, entry.name.unwrap_or(origin));
                 }
                 Op::Entry => {
-                    typing.entry(this, header.params.is_some() && run.params().len() == 0);
+                    typing.entry(node, header.params.is_some() && run.params().len() == 0);
                 }
                 // A context under a condition nothing follows is live as
                 // its parent is.
                 Op::Then | Op::Else if !typed(inputs[0]) => {
-                    typing.flow(class(inputs[1]), this, RangeEdge::Copy);
+                    typing.flow(inputs[1], node, Edge::Values);
                 }
                 Op::Then | Op::Else => {
                     let edge = if matches!(entry.op, Op::Then) {
-                        RangeEdge::Then
+                        Edge::Then
                     } else {
-                        RangeEdge::Else
+                        Edge::Else
                     };
-                    typing.derive(class(inputs[0]), class(inputs[1]), this, edge);
+                    typing.derive(inputs[0], inputs[1], node, edge);
                 }
                 Op::Refine {
                     op,
                     local_is_lhs,
                     sense,
-                } => typing.refine(
-                    class(inputs[0]),
-                    class(inputs[1]),
-                    this,
-                    RangeEdge::Refine {
+                } => typing.derive(
+                    inputs[0],
+                    inputs[1],
+                    node,
+                    Edge::Refine {
                         op: *op,
                         local_is_lhs: *local_is_lhs,
                         sense: *sense,
                     },
                 ),
-                Op::Exactly(value) => typing.refine_bool(class(inputs[0]), this, *value),
+                Op::Exactly(value) => typing.flow(inputs[0], node, Edge::Exactly(*value)),
                 Op::Join {
                     then,
                     else_: Some(else_),
                 } => {
                     for region in [*then, *else_] {
                         let region = graph.region(region);
-                        typing.branch(class(region.result()), class(region.context), this);
+                        typing.derive(region.result(), region.context, node, Edge::Branch);
                     }
                 }
                 // Unit while the `if` itself can run: the context its
                 // branch's context derives from.
                 Op::Join { then, else_: None } => {
-                    typing.known(this, Ty::Unit, origin);
+                    typing.known(node, Ty::Unit, origin);
                     let parent = graph.inputs(graph.region(*then).context)[1];
-                    typing.flow(class(parent), this, RangeEdge::Enter);
+                    typing.flow(parent, node, Edge::Enter);
                 }
                 Op::Unit => {
-                    typing.known(this, Ty::Unit, origin);
-                    typing.flow(class(inputs[0]), this, RangeEdge::Enter);
+                    typing.known(node, Ty::Unit, origin);
+                    typing.flow(inputs[0], node, Edge::Enter);
                 }
                 // A declared copy holds what flows in, when something does.
                 Op::Copy {
                     declared: Some((ty, at)),
                 } => {
-                    typing.known(this, *ty, *at);
+                    typing.known(node, *ty, *at);
                     if typed(inputs[0]) {
-                        typing.flow(class(inputs[0]), this, RangeEdge::Copy);
+                        typing.flow(inputs[0], node, Edge::Values);
                     }
                 }
                 // An unannotated `let` is its initializer.
-                Op::Copy { declared: None } => typing.copy(class(inputs[0]), this),
+                Op::Copy { declared: None } => typing.flow(inputs[0], node, Edge::Bind),
                 Op::Neg => {
-                    typing.known(this, Ty::Int, origin);
-                    typing.flow(class(inputs[0]), this, RangeEdge::Unary(UnaryOp::Neg));
+                    typing.known(node, Ty::Int, origin);
+                    typing.flow(inputs[0], node, Edge::Neg);
                 }
                 Op::Not => {
-                    typing.known(this, Ty::Bool, origin);
-                    typing.flow(class(inputs[0]), this, RangeEdge::Unary(UnaryOp::Not));
+                    typing.known(node, Ty::Bool, origin);
+                    typing.flow(inputs[0], node, Edge::Not);
                 }
                 Op::Binary(op) => {
-                    let ty = match op {
-                        BinaryOp::Add
-                        | BinaryOp::Sub
-                        | BinaryOp::Mul
-                        | BinaryOp::Div
-                        | BinaryOp::Rem => Ty::Int,
-                        BinaryOp::Eq
-                        | BinaryOp::Ne
-                        | BinaryOp::Lt
-                        | BinaryOp::Le
-                        | BinaryOp::Gt
-                        | BinaryOp::Ge => Ty::Bool,
-                    };
-                    typing.known(this, ty, origin);
-                    typing.derive(
-                        class(inputs[0]),
-                        class(inputs[1]),
-                        this,
-                        RangeEdge::Binary(*op),
-                    );
+                    typing.known(node, op.result(), origin);
+                    typing.derive(inputs[0], inputs[1], node, Edge::Binary(*op));
                 }
                 Op::And { rhs } | Op::Or { rhs } => {
-                    typing.known(this, Ty::Bool, origin);
+                    typing.known(node, Ty::Bool, origin);
                     let rhs = graph.region(*rhs).result();
                     typing.derive(
-                        class(inputs[0]),
-                        class(rhs),
-                        this,
-                        RangeEdge::Lazy {
+                        inputs[0],
+                        rhs,
+                        node,
+                        Edge::Lazy {
                             and: matches!(entry.op, Op::And { .. }),
                         },
                     );
@@ -187,30 +147,21 @@ pub(crate) fn draw(
     // its callee's result, whichever comes first in the file.
     for &(context, callee) in &placed.entered {
         let entry = graph.run(callee).entry();
-        typing.flow(class(context), class(entry), RangeEdge::Enter);
+        typing.flow(context, entry, Edge::Enter);
     }
     for call in placed.calls() {
         let run = graph.run(call.callee);
         for (&arg, param) in graph.inputs(call.node).iter().zip(run.params()) {
-            typing.derive(
-                class(arg),
-                class(call.context),
-                class(param),
-                RangeEdge::Argument,
-            );
+            typing.derive(arg, call.context, param, Edge::Argument);
         }
         if typed(call.node) {
-            typing.call(
-                class(run.result()),
-                class(call.node),
-                graph.node(call.node).origin,
-            );
+            typing.call(run.result(), call.node, graph.node(call.node).origin);
         }
     }
     // Demands, in the order the walk made them.
     for demand in demands {
         if let DemandKind::Type { expected, .. } = demand.kind {
-            typing.expect(class(demand.actual), expected, span(demand.node));
+            typing.expect(demand.actual, expected, span(demand.node));
         }
     }
     typing

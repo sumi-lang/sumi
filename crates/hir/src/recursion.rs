@@ -24,7 +24,6 @@ use std::collections::HashMap;
 use sumi_text::Span;
 
 use crate::check::{Placed, PlacedCall};
-use crate::flows;
 use crate::solver::components;
 use crate::typing::Typing;
 use crate::{BinaryOp, FunctionId, Graph, Int, Ints, NodeId, Op};
@@ -123,7 +122,7 @@ pub(crate) fn check(graph: &Graph, placed: &Placed, typing: &Typing, failed: &[b
     let live: Vec<&PlacedCall> = placed
         .calls()
         .iter()
-        .filter(|call| flows::live(typing, call.context))
+        .filter(|call| typing.may(call.context).live())
         .collect();
     let arcs: Vec<(u32, u32)> = live
         .iter()
@@ -199,7 +198,7 @@ pub(crate) fn check(graph: &Graph, placed: &Placed, typing: &Typing, failed: &[b
                 .params()
                 .nth(param)
                 .expect("a parameter of the member");
-            &flows::may(typing, node).ints
+            &typing.may(node).ints
         };
         let mut found = None;
         // The first choice every call agreed with, when the cycle fails on
@@ -434,7 +433,7 @@ fn lax_edges_are_acyclic(members: usize, calls: &[Call], strict: &[bool]) -> boo
 /// parameter. The walk keeps its own stack, so a chain of `let`s or a
 /// nest of operators of any depth is read.
 fn delta(graph: &Graph, typing: &Typing, node: NodeId) -> Option<(u32, Ints)> {
-    let may = |node: NodeId| &flows::may(typing, node).ints;
+    let may = |node: NodeId| &typing.may(node).ints;
     /// What to do with the offset of the node being read.
     enum Frame {
         /// The left operand of `+`: `rhs` adds to its offset, or is read in
@@ -480,7 +479,7 @@ fn delta(graph: &Graph, typing: &Typing, node: NodeId) -> Option<(u32, Ints)> {
                 } => {
                     // An arm that cannot run contributes no value.
                     let (then, otherwise) = (graph.region(then), graph.region(else_));
-                    let live = |context| flows::live(typing, context);
+                    let live = |context| typing.may(context).live();
                     match (live(then.context), live(otherwise.context)) {
                         (true, true) => {
                             frames.push(Frame::Then {

@@ -146,26 +146,15 @@ pub fn check_typed(analysis: &sumi_hir::Analysis) {
                     assert_eq!(own, Some(Ty::Bool));
                 }
                 Op::Binary(op) => {
-                    let (operand, result) = match op {
-                        BinaryOp::Add
-                        | BinaryOp::Sub
-                        | BinaryOp::Mul
-                        | BinaryOp::Div
-                        | BinaryOp::Rem => (Some(Ty::Int), Ty::Int),
-                        BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge => {
-                            (Some(Ty::Int), Ty::Bool)
-                        }
-                        BinaryOp::Eq | BinaryOp::Ne => (None, Ty::Bool),
-                    };
-                    assert_eq!(own, Some(result));
-                    match operand {
-                        Some(operand) => {
-                            assert_eq!(ty(inputs[0]), Some(operand));
-                            assert_eq!(ty(inputs[1]), Some(operand));
-                        }
-                        None => {
+                    assert_eq!(own, Some(op.result()));
+                    match op {
+                        BinaryOp::Eq | BinaryOp::Ne => {
                             assert!(matches!(ty(inputs[0]), Some(Ty::Int | Ty::Bool)));
                             assert_eq!(ty(inputs[0]), ty(inputs[1]));
+                        }
+                        _ => {
+                            assert_eq!(ty(inputs[0]), Some(Ty::Int));
+                            assert_eq!(ty(inputs[1]), Some(Ty::Int));
                         }
                     }
                 }

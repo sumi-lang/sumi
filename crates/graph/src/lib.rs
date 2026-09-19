@@ -36,6 +36,17 @@ pub enum BinaryOp {
     Ge,
 }
 
+impl BinaryOp {
+    /// The type of the operator's result: an arithmetic operator delivers
+    /// an integer, a comparison a boolean.
+    pub fn result(self) -> Ty {
+        match self {
+            Self::Add | Self::Sub | Self::Mul | Self::Div | Self::Rem => Ty::Int,
+            Self::Eq | Self::Ne | Self::Lt | Self::Le | Self::Gt | Self::Ge => Ty::Bool,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Ty {
     Int,
