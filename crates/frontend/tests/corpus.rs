@@ -18,10 +18,10 @@ use std::fmt::Write as _;
 mod corpus;
 
 use sumi_format::format;
-use sumi_frontend::{Applicability, Diagnostic, FileId, Location, Place, TextEdit, parse_source};
+use sumi_frontend::{Diagnostic, parse_source};
 use sumi_lexer::LexedFile;
 use sumi_syntax::{NodeIdx, ParseAnchor, ParseEvidence, ParseRecoveryKind, RawIdx, SyntaxTree};
-use sumi_text::{LineIndex, TextSize};
+use sumi_text::{FileId, LineIndex, TextEdit, TextRange, TextSize};
 
 #[test]
 fn every_case_matches_its_snapshot() {
@@ -61,7 +61,7 @@ fn snapshot(source: &str, stages: &[corpus::Stage]) -> String {
         .diagnostics()
         .iter()
         .filter_map(|diagnostic| diagnostic.fix.as_ref())
-        .flat_map(|fix| fix.edits.iter())
+        .map(|fix| &fix.edit)
         .collect();
     if !edits.is_empty() {
         // Every fix applies to the original source; where two of them
@@ -267,69 +267,53 @@ fn evidence_token(evidence: &ParseEvidence) -> RawIdx {
     }
 }
 
-/// One diagnostic: its severity, code, place, and message on the first
-/// line, then its labels, notes, and fix indented under it.
+/// One diagnostic: its code, place, and message on the first line, then
+/// its labels and fix indented under it.
 fn render(diagnostic: &Diagnostic, index: &LineIndex, source: &str, out: &mut String) {
     writeln!(
         out,
-        "{}[{}] {}: {}",
-        diagnostic.severity.as_str(),
+        "error[{}] {}: {}",
         diagnostic.code,
-        place(index, source, diagnostic.primary.location),
+        place(index, source, diagnostic.primary.range()),
         diagnostic.message
     )
     .expect("writing to a string");
-    if let Some(message) = &diagnostic.primary.message {
-        writeln!(out, "  primary: {message}").expect("writing to a string");
-    }
-    for label in &diagnostic.secondary {
-        write!(out, "  at {}", place(index, source, label.location)).expect("writing to a string");
-        if let Some(message) = &label.message {
-            write!(out, ": {message}").expect("writing to a string");
-        }
-        out.push('\n');
-    }
-    for note in &diagnostic.notes {
-        writeln!(out, "  note: {note}").expect("writing to a string");
+    for label in &diagnostic.labels {
+        writeln!(
+            out,
+            "  at {}: {}",
+            place(index, source, label.span.range()),
+            label.message
+        )
+        .expect("writing to a string");
     }
     if let Some(fix) = &diagnostic.fix {
-        let applicability = match fix.applicability {
-            Applicability::Safe => "safe",
-            Applicability::MaybeIncorrect => "maybe incorrect",
-        };
-        writeln!(out, "  fix ({applicability}): {}", fix.message).expect("writing to a string");
-        for edit in &fix.edits {
-            let range = edit.range();
-            let location = if range.start() == range.end() {
-                Location::point(FileId::new(0), range.start())
-            } else {
-                Location::range(sumi_frontend::Span::new(FileId::new(0), range))
-            };
-            writeln!(
-                out,
-                "    {} -> {:?}",
-                place(index, source, location),
-                edit.replacement()
-            )
-            .expect("writing to a string");
-        }
+        writeln!(out, "  fix: {}", fix.message).expect("writing to a string");
+        writeln!(
+            out,
+            "    {} -> {:?}",
+            place(index, source, fix.edit.range()),
+            fix.edit.replacement()
+        )
+        .expect("writing to a string");
     }
 }
 
-/// A location as `line:col`, one-based with byte columns; a range as
-/// `start..end` followed by its text.
-fn place(index: &LineIndex, source: &str, location: Location) -> String {
+/// A range as `start..end` followed by its text, each end `line:col`,
+/// one-based with byte columns; an empty range as its one position.
+fn place(index: &LineIndex, source: &str, range: TextRange) -> String {
     let at = |offset: TextSize| {
         let position = index.line_col(offset);
         format!("{}:{}", position.line + 1, position.col + 1)
     };
-    match location.place {
-        Place::Point(offset) => at(offset),
-        Place::Range(range) => format!(
+    if range.start() == range.end() {
+        at(range.start())
+    } else {
+        format!(
             "{}..{} {:?}",
             at(range.start()),
             at(range.end()),
             range.text(source)
-        ),
+        )
     }
 }

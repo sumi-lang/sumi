@@ -12,12 +12,13 @@
 use std::collections::HashSet;
 
 use sumi_format::{format, rep};
-use sumi_frontend::{Applicability, FileId, ParsedSource, Place, Severity, codes, parse_source};
+use sumi_frontend::{ParsedSource, codes, parse_source};
 use sumi_lexer::{LexedFile, RawIdx, SyntaxKind, lex};
 use sumi_syntax::{
     BRACKET_PAIRS, NodeKind, Parse, ParseAnchor, ParseEvidence, ParserInput, SigIdx, parse,
 };
 use sumi_test::{Edit, Front, apply, changes_delimiter, front};
+use sumi_text::{FileId, Span};
 
 /// The file every fuzzed source stands for.
 pub const FILE: FileId = FileId::new(0);
@@ -68,11 +69,7 @@ pub fn check_semantics(parsed: ParsedSource) {
             assert_eq!(a.complete(), b.complete());
         }
     }
-    let errors = analysis
-        .diagnostics()
-        .iter()
-        .any(|d| d.severity == Severity::Error);
-    assert_eq!(analysis.is_valid(), !errors);
+    assert_eq!(analysis.is_valid(), analysis.diagnostics().is_empty());
     // The frontend's diagnostics are among the analysis's, in source order,
     // the frontend's first where both stand at one position.
     let all = analysis.diagnostics();
@@ -87,9 +84,9 @@ pub fn check_semantics(parsed: ParsedSource) {
             .zip(analysis.parsed().diagnostics())
             .all(|(listed, own)| *listed == own)
     );
-    assert!(all.is_sorted_by_key(|d| d.primary.location.start()));
+    assert!(all.is_sorted_by_key(|d| d.primary.range().start()));
     for pair in all.windows(2) {
-        if pair[0].primary.location.start() == pair[1].primary.location.start() {
+        if pair[0].primary.range().start() == pair[1].primary.range().start() {
             assert!(
                 !sumi_hir::Analysis::is_semantic(&pair[0])
                     || sumi_hir::Analysis::is_semantic(&pair[1])
@@ -98,10 +95,10 @@ pub fn check_semantics(parsed: ParsedSource) {
     }
     check_graph(&analysis);
     for diagnostic in analysis.diagnostics() {
-        for label in std::iter::once(&diagnostic.primary).chain(diagnostic.secondary.iter()) {
-            assert_eq!(label.location.file, analysis.parsed().file());
-            assert!(source.is_char_boundary(label.location.start().to_usize()));
-            assert!(source.is_char_boundary(label.location.end().to_usize()));
+        for span in spans(diagnostic) {
+            assert_eq!(span.file(), analysis.parsed().file());
+            assert!(source.is_char_boundary(span.range().start().to_usize()));
+            assert!(source.is_char_boundary(span.range().end().to_usize()));
         }
     }
     check_typed(&analysis);
@@ -743,47 +740,44 @@ pub fn check_parse(source: &str, lexed: &LexedFile, parse: &Parse) {
     }
 }
 
-/// Every canonical diagnostic is an error naming the parsed file, in
-/// source order, with in-bounds labels on character boundaries, and a
-/// safe fix of nonempty, ordered, disjoint edits; applying every
-/// non-overlapping fix leaves a source the frontend still parses.
+/// The primary span of `diagnostic` and every label's.
+fn spans(diagnostic: &sumi_frontend::Diagnostic) -> impl Iterator<Item = Span> + '_ {
+    std::iter::once(diagnostic.primary).chain(diagnostic.labels.iter().map(|label| label.span))
+}
+
+/// Every canonical diagnostic names the parsed file, in source order, with
+/// in-bounds labels on character boundaries, and a fix of nonempty,
+/// ordered, disjoint edits; applying every non-overlapping fix leaves a
+/// source the frontend still parses.
 pub fn check_diagnostics(parsed: &ParsedSource) {
     let source = parsed.source();
     let mut previous = None;
     let mut edits = Vec::new();
     for diagnostic in parsed.diagnostics() {
-        assert_eq!(diagnostic.severity, Severity::Error);
         let key = (
-            diagnostic.primary.location.start().to_u32(),
-            diagnostic.primary.location.end().to_u32(),
+            diagnostic.primary.range().start().to_u32(),
+            diagnostic.primary.range().end().to_u32(),
         );
         if let Some(previous) = previous {
             assert!(previous <= key, "diagnostics are not source sorted");
         }
         previous = Some(key);
 
-        for label in std::iter::once(&diagnostic.primary).chain(&*diagnostic.secondary) {
-            assert_eq!(label.location.file, parsed.file());
-            let start = label.location.start().to_usize();
-            let end = label.location.end().to_usize();
-            assert!(start <= end && end <= source.len());
+        for span in spans(diagnostic) {
+            assert_eq!(span.file(), parsed.file());
+            let start = span.range().start().to_usize();
+            let end = span.range().end().to_usize();
+            assert!(end <= source.len());
             assert!(source.is_char_boundary(start));
             assert!(source.is_char_boundary(end));
-            if let Place::Point(point) = label.location.place {
-                assert_eq!(point.to_usize(), start);
-                assert_eq!(start, end);
-            }
         }
         if let Some(fix) = &diagnostic.fix {
-            assert_eq!(fix.applicability, Applicability::Safe);
-            assert!(!fix.edits.is_empty());
+            let edit = &fix.edit;
             // Match the frontend property: each closer adds exactly its
             // code token and preserves all existing tokens and comments.
             // Nested same-kind repairs can legitimately be reoffered and
             // expose later errors, so do not compare global error counts.
             if diagnostic.code == codes::EXPECTED_TOKEN {
-                assert_eq!(fix.edits.len(), 1);
-                let edit = &fix.edits[0];
                 assert_eq!(edit.range().start(), edit.range().end());
                 let kind = match edit.replacement() {
                     ")" => SyntaxKind::RParen,
@@ -809,20 +803,13 @@ pub fn check_diagnostics(parsed: &ParsedSource) {
                 assert_eq!(tokens, significant(parsed.lexed(), source));
                 assert_eq!(comments(&after, &fixed), comments(parsed.lexed(), source));
             }
-            let mut previous_end = None;
-            for edit in &fix.edits {
-                let range = edit.range();
-                let start = range.start().to_usize();
-                let end = range.end().to_usize();
-                assert!(start <= end && end <= source.len());
-                assert!(source.is_char_boundary(start));
-                assert!(source.is_char_boundary(end));
-                if let Some(previous_end) = previous_end {
-                    assert!(previous_end <= start);
-                }
-                previous_end = Some(end);
-                edits.push(edit);
-            }
+            let range = edit.range();
+            let start = range.start().to_usize();
+            let end = range.end().to_usize();
+            assert!(start <= end && end <= source.len());
+            assert!(source.is_char_boundary(start));
+            assert!(source.is_char_boundary(end));
+            edits.push(edit);
         }
     }
 

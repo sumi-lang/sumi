@@ -1,6 +1,7 @@
 use std::fmt::Write;
-use sumi_frontend::{FileId, ParsedSource, parse_source};
+use sumi_frontend::{ParsedSource, parse_source};
 use sumi_hir::{Analysis, Ty};
+use sumi_text::FileId;
 
 pub const SIZES: [usize; 3] = [128, 1024, 8192];
 pub const SHAPES: [&str; 12] = [

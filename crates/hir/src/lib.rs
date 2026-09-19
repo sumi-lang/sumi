@@ -21,7 +21,7 @@ mod tests;
 
 use std::fmt;
 
-use sumi_frontend::{Diagnostic, ParsedSource, Severity};
+use sumi_frontend::{Diagnostic, ParsedSource};
 use sumi_text::Span;
 
 pub use check::analyze;
@@ -78,7 +78,7 @@ impl Analysis {
     /// Whether `diagnostic` is one of the checker's rather than the
     /// frontend's.
     pub fn is_semantic(diagnostic: &Diagnostic) -> bool {
-        diagnostic.code.group() == codes::SEMANTIC
+        diagnostic.code.group == codes::SEMANTIC
     }
     /// The checker's diagnostics alone, in source order.
     pub fn semantic_diagnostics(&self) -> impl Iterator<Item = &Diagnostic> {
@@ -126,21 +126,17 @@ impl Analysis {
         &self.parsed.source()[range.start().to_usize()..range.end().to_usize()]
     }
     pub fn is_valid(&self) -> bool {
-        !self
-            .diagnostics
-            .iter()
-            .any(|d| d.severity == Severity::Error)
-            && self.functions.iter().all(|f| f.complete)
+        self.diagnostics.is_empty() && self.functions.iter().all(|f| f.complete)
     }
-    /// The file as a program, when it is valid: `None` when any diagnostic
-    /// is an error.
+    /// The file as a program, when it is valid: `None` when there is any
+    /// diagnostic.
     pub fn program(&self) -> Option<Program<'_>> {
         self.is_valid().then_some(Program { analysis: self })
     }
 }
 
 /// A valid analysis: every function has a signature and a complete body,
-/// and no diagnostic is an error. Only such a file runs, so a run of it
+/// and there is no diagnostic. Only such a file runs, so a run of it
 /// has no path to an ill-typed operation, a zero divisor, a hole, or a
 /// recursion without end, and the machine's refusals are checker bugs.
 #[derive(Clone, Copy, Debug)]

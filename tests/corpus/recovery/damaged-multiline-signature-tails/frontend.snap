@@ -68,7 +68,7 @@ error[syntax/expected-body] 10:1: expected a body, `{` or `=`
 error[syntax/expected-item] 10:1..10:2 "=": expected a function item
 error[syntax/expected-token] 15:5: expected `)`
   at 14:21..14:22 "(": opening delimiter is here
-  fix (safe): insert `)`
+  fix: insert `)`
     14:23 -> ")"
 
 == fixed (syntax/expected-body, syntax/expected-item, syntax/expected-token, syntax/expected-type remain) ==

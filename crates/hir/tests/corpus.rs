@@ -9,9 +9,9 @@
 
 use std::fmt::Write as _;
 
-use sumi_frontend::{FileId, Location, Place, Severity, parse_source};
+use sumi_frontend::parse_source;
 use sumi_hir::{Analysis, BinaryOp, FunctionId, Graph, NodeId, Op, RegionId, analyze};
-use sumi_text::Span;
+use sumi_text::{FileId, Span};
 
 #[path = "../../../tests/support/corpus.rs"]
 mod corpus;
@@ -59,34 +59,21 @@ fn run(source: &str) -> String {
     out
 }
 
+/// `@start..end`, or `@at` for an empty span.
 fn span(span: Span) -> String {
-    format!(
-        "@{}..{}",
-        span.range().start().to_u32(),
-        span.range().end().to_u32()
-    )
-}
-
-fn location(location: Location) -> String {
-    match location.place {
-        Place::Range(_) => span(location.span()),
-        Place::Point(offset) => format!("@{}", offset.to_u32()),
+    let (start, end) = (span.range().start().to_u32(), span.range().end().to_u32());
+    if start == end {
+        format!("@{start}")
+    } else {
+        format!("@{start}..{end}")
     }
 }
 
 fn snapshot(source: &str) -> String {
     let analysis = analyze(parse_source(FileId::new(0), source.into()).unwrap());
-    let syntax_errors = analysis
-        .parsed()
-        .diagnostics()
-        .iter()
-        .filter(|d| d.severity == Severity::Error)
-        .count();
+    let syntax_errors = analysis.parsed().diagnostics().len();
     let semantic: Vec<_> = analysis.semantic_diagnostics().collect();
-    let semantic_errors = semantic
-        .iter()
-        .filter(|d| d.severity == Severity::Error)
-        .count();
+    let semantic_errors = semantic.len();
     let mut out = format!(
         "file: {}\nfrontend errors: {syntax_errors} (see frontend.snap)\nsemantic errors: {semantic_errors}\n",
         if analysis.is_valid() {
@@ -135,26 +122,14 @@ fn snapshot(source: &str) -> String {
         for diagnostic in semantic {
             writeln!(
                 out,
-                "{}[{}]: {}",
-                diagnostic.severity.as_str(),
+                "error[{}]: {}\n  primary {}",
                 diagnostic.code,
-                diagnostic.message
+                diagnostic.message,
+                span(diagnostic.primary)
             )
             .unwrap();
-            for (role, label) in std::iter::once(("primary", &diagnostic.primary)).chain(
-                diagnostic
-                    .secondary
-                    .iter()
-                    .map(|label| ("secondary", label)),
-            ) {
-                write!(out, "  {role} {}", location(label.location)).unwrap();
-                if let Some(message) = &label.message {
-                    write!(out, ": {message}").unwrap();
-                }
-                out.push('\n');
-            }
-            for note in &diagnostic.notes {
-                writeln!(out, "  note: {note}").unwrap();
+            for label in &diagnostic.labels {
+                writeln!(out, "  secondary {}: {}", span(label.span), label.message).unwrap();
             }
             assert!(
                 diagnostic.fix.is_none(),

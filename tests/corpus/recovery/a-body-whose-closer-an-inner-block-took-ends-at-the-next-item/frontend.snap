@@ -19,7 +19,7 @@ Expected(RParen) at 16
 error[syntax/expected-token] 2:8: expected `)`
   at 2:5..2:6 "(": opening delimiter is here
   at 2:8..2:12 "{ b)": skipped while recovering
-  fix (safe): insert `)`
+  fix: insert `)`
     2:7 -> ")"
 
 == fixed (syntax/expected-boundary, syntax/expected-token, syntax/unexpected-syntax remain) ==

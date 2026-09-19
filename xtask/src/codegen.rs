@@ -1211,8 +1211,9 @@ fn token_witnesses(
 }
 
 /// One group's `codes.rs`: a constant per code, and every code in
-/// declaration order.
-pub fn codes(group: &Group) -> String {
+/// declaration order. `types` is the path the diagnostic types are
+/// reached by from the generated file.
+pub fn codes(group: &Group, types: &str) -> String {
     let name = &group.name;
     let group_const = constant(name);
     let codes: String = group
@@ -1220,7 +1221,7 @@ pub fn codes(group: &Group) -> String {
         .iter()
         .map(|code| {
             format!(
-                "{}pub const {}: DiagnosticCode = DiagnosticCode::new({group_const}, {:?});\n\n",
+                "{}pub const {}: DiagnosticCode = DiagnosticCode {{ group: {group_const}, name: {:?} }};\n\n",
                 docs(&code.doc),
                 constant(&code.name),
                 code.name
@@ -1233,9 +1234,9 @@ pub fn codes(group: &Group) -> String {
 //!
 //! {GENERATED_REGISTRY}
 
-use sumi_diagnostics::{{DiagnosticCode, DiagnosticGroup}};
+use {types}::{{DiagnosticCode, DiagnosticGroup}};
 
-{}pub const {group_const}: DiagnosticGroup = DiagnosticGroup::new({name:?});
+{}pub const {group_const}: DiagnosticGroup = DiagnosticGroup({name:?});
 
 {codes}/// Every code of the group, in declaration order.
 pub const ALL: [DiagnosticCode; {}] = [{all}];
@@ -1280,7 +1281,7 @@ Generated from [`sumi.diagnostics`](../../../sumi.diagnostics), the one
 declaration of every diagnostic code Sumi reports. A code is spelled
 `group/name` and is stable: it is never renamed or reused. Each entry shows
 the corpus case that reports the code among the fewest other diagnostics,
-with the diagnostics as the case's snapshot renders them: severity, code,
+with the diagnostics as the case's snapshot renders them: code,
 location, and message, then any labels and fixes. A syntax snapshot
 locates by `line:column`; a semantic one by byte offset.
 

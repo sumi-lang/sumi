@@ -2,22 +2,20 @@
 //!
 //! [`parse_source`] runs every syntactic phase and lowers their immutable,
 //! phase-local evidence into canonical diagnostics. Detection remains in
-//! the lexer and parser; cross-phase wording, grouping,
-//! suppression, and ordering live here.
+//! the lexer and parser; cross-phase wording, suppression, and ordering
+//! live here.
 
+mod diagnostic;
 mod lower;
 
 mod generated;
 pub use generated::codes;
 
-pub use sumi_diagnostics::{
-    Applicability, Diagnostic, DiagnosticCode, DiagnosticGroup, Fix, Label, Location, Place,
-    Severity,
-};
+pub use diagnostic::{Diagnostic, DiagnosticCode, DiagnosticGroup, Fix, Label};
 pub use sumi_lexer::SourceTooLarge;
 use sumi_lexer::{LexedFile, lex};
 use sumi_syntax::{Parse, ParserInput, parse};
-pub use sumi_text::{FileId, Span, TextEdit};
+use sumi_text::FileId;
 
 /// Parse one immutable source snapshot, the text of `file`.
 ///

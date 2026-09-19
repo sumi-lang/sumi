@@ -35,7 +35,7 @@ error[syntax/unspaced-binary-operator] 6:9..6:10 "+": binary operator must have 
 error[syntax/expected-expression] 6:10: expected an expression
 error[syntax/expected-token] 11:5: expected `)`
   at 10:5..10:6 "(": opening delimiter is here
-  fix (safe): insert `)`
+  fix: insert `)`
     10:7 -> ")"
 
 == fixed (syntax/expected-expression, syntax/unspaced-binary-operator remain) ==

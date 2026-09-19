@@ -6,7 +6,7 @@
 use std::fs;
 use std::path::Path;
 
-use sumi_diagnostics::DiagnosticCode;
+use sumi_frontend::DiagnosticCode;
 
 /// Every snapshot under `dir`, concatenated.
 fn snapshots(dir: &Path, out: &mut String) {

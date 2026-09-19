@@ -51,31 +51,31 @@ error[syntax/expected-statement] 1:24..1:25 ":": expected a statement
   at 1:24..1:39 ": { fn g() {} }": skipped while recovering
 error[syntax/expected-token] 2:1: expected `}`
   at 1:22..1:23 "{": opening delimiter is here
-  fix (safe): insert `}`
+  fix: insert `}`
     1:39 -> "}"
 error[syntax/expected-statement] 3:8..3:9 ":": expected a statement
   at 3:8..3:23 ": { fn g() {} }": skipped while recovering
 error[syntax/expected-token] 3:24: expected `}`
   at 3:6..3:7 "{": opening delimiter is here
-  fix (safe): insert `}`
+  fix: insert `}`
     3:23 -> "}"
 error[syntax/expected-expression] 9:19..9:20 "}": expected an expression
 error[syntax/expected-token] 9:23: expected `)`
   at 8:14..8:15 "(": opening delimiter is here
-  fix (safe): insert `)`
+  fix: insert `)`
     9:22 -> ")"
 error[syntax/expected-token] 9:23: expected `}`
   at 7:9..7:10 "{": opening delimiter is here
-  fix (safe): insert `}`
+  fix: insert `}`
     9:22 -> "}"
 error[syntax/expected-expression] 14:14..14:15 "}": expected an expression
 error[syntax/expected-token] 14:18: expected `)`
   at 14:13..14:14 "(": opening delimiter is here
-  fix (safe): insert `)`
+  fix: insert `)`
     14:17 -> ")"
 error[syntax/expected-token] 14:18: expected `}`
   at 13:9..13:10 "{": opening delimiter is here
-  fix (safe): insert `}`
+  fix: insert `}`
     14:17 -> "}"
 
 == fixed (syntax/expected-expression, syntax/expected-item, syntax/expected-statement, syntax/expected-token remain) ==

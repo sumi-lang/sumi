@@ -45,7 +45,7 @@ Expected(RParen) at 144
 error[syntax/expected-expression] 8:1: expected an expression
 error[syntax/expected-token] 11:1: expected `)`
   at 9:25..9:26 "(": opening delimiter is here
-  fix (safe): insert `)`
+  fix: insert `)`
     10:6 -> ")"
 
 == fixed (syntax/expected-expression remains) ==

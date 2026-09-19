@@ -50,7 +50,7 @@ error[syntax/expected-name] 4:4: expected a name
 error[syntax/expected-token] 5:20: expected `:`
 error[syntax/expected-token] 7:1: expected `)`
   at 6:20..6:21 "(": opening delimiter is here
-  fix (safe): insert `)`
+  fix: insert `)`
     6:27 -> ")"
 error[syntax/expected-body] 7:1: expected a body, `{` or `=`
 error[syntax/expected-type] 7:17: expected a type

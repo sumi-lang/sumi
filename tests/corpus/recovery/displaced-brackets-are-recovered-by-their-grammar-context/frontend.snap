@@ -43,7 +43,7 @@ error[syntax/expected-statement] 10:5..10:6 "%": expected a statement
   at 10:5..10:8 "% b": skipped while recovering
 error[syntax/expected-token] 10:8: expected `}`
   at 10:3..10:4 "{": opening delimiter is here
-  fix (safe): insert `}`
+  fix: insert `}`
     10:8 -> "}"
 
 == fixed (syntax/expected-expression, syntax/expected-statement, syntax/expected-token, syntax/unexpected-syntax remain) ==

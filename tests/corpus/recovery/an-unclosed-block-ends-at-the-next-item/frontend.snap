@@ -61,23 +61,23 @@ ExpectedStatement at 232
 == diagnostics ==
 error[syntax/expected-token] 6:1: expected `}`
   at 1:25..1:26 "{": opening delimiter is here
-  fix (safe): insert `}`
+  fix: insert `}`
     4:6 -> "}"
 error[syntax/expected-token] 10:1: expected `}`
   at 8:10..8:11 "{": opening delimiter is here
-  fix (safe): insert `}`
+  fix: insert `}`
     9:10 -> "}"
 error[syntax/expected-token] 10:1: expected `}`
   at 7:14..7:15 "{": opening delimiter is here
 error[syntax/expected-token] 12:7: expected `}`
   at 11:24..11:25 "{": opening delimiter is here
-  fix (safe): insert `}`
+  fix: insert `}`
     12:6 -> "}"
 error[syntax/function-item-on-same-line] 12:7..12:9 "fn": function item must begin on a new line
 error[syntax/expected-statement] 13:22..13:23 ":": expected a statement
 error[syntax/expected-token] 13:24: expected `}`
   at 13:20..13:21 "{": opening delimiter is here
-  fix (safe): insert `}`
+  fix: insert `}`
     13:23 -> "}"
 error[syntax/function-item-on-same-line] 13:24..13:26 "fn": function item must begin on a new line
 error[syntax/expected-statement] 14:34..14:35 ":": expected a statement

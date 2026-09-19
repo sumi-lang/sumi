@@ -20,7 +20,7 @@ error[syntax/unterminated-string] 1:6..1:12 "\"f{{ -": unterminated string liter
 error[syntax/expected-token] 2:3: expected `)`
   at 2:1..2:2 "(": opening delimiter is here
   at 2:3..2:5 "\"f": skipped while recovering
-  fix (safe): insert `)`
+  fix: insert `)`
     2:3 -> ")"
 error[syntax/unterminated-string] 2:3..2:5 "\"f": unterminated string literal
 error[syntax/expected-token] 2:5: expected `}`

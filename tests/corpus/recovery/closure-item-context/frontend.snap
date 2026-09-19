@@ -108,21 +108,21 @@ error[syntax/expected-item] 6:1..6:2 "(": expected a function item
   at 6:1..6:7 "() = 1": skipped while recovering
 error[syntax/expected-token] 11:1: expected `}`
   at 8:20..8:21 "{": opening delimiter is here
-  fix (safe): insert `}`
+  fix: insert `}`
     10:13 -> "}"
 error[syntax/expected-name] 12:4..12:5 "_": expected a name
 error[syntax/expected-token] 14:1: expected `(`
 error[syntax/expected-body] 14:1: expected a body, `{` or `=`
 error[syntax/expected-token] 14:20: expected `)`
   at 14:17..14:18 "(": opening delimiter is here
-  fix (safe): insert `)`
+  fix: insert `)`
     14:19 -> ")"
 error[syntax/expected-item] 14:20..14:22 "fn": expected a function item
   at 14:20..14:34 "fn hidden() {}": skipped while recovering
   at 14:34..14:35 ")": skipped while recovering
 error[syntax/expected-token] 16:34: expected `)`
   at 16:31..16:32 "(": opening delimiter is here
-  fix (safe): insert `)`
+  fix: insert `)`
     16:33 -> ")"
 error[syntax/expected-item] 16:34..16:35 ",": expected a function item
   at 16:34..16:50 ", fn hidden() {}": skipped while recovering

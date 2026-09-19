@@ -25,12 +25,12 @@ ExpectedItem at 68
 error[syntax/expected-token] 2:8: expected `)`
   at 2:5..2:6 "(": opening delimiter is here
   at 2:8..2:10 "b)": skipped while recovering
-  fix (safe): insert `)`
+  fix: insert `)`
     2:7 -> ")"
 error[syntax/expected-token] 4:8: expected `)`
   at 4:5..4:6 "(": opening delimiter is here
   at 4:8..4:12 "{ b)": skipped while recovering
-  fix (safe): insert `)`
+  fix: insert `)`
     4:7 -> ")"
 error[syntax/expected-item] 4:15..4:16 "}": expected a function item
 

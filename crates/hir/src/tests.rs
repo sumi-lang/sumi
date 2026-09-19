@@ -1,5 +1,6 @@
 use super::*;
-use sumi_frontend::{Diagnostic, DiagnosticCode, FileId, parse_source};
+use sumi_frontend::{Diagnostic, DiagnosticCode, parse_source};
+use sumi_text::FileId;
 
 use crate::codes::*;
 
@@ -352,7 +353,7 @@ fn lexical_scopes_and_sequential_shadowing() {
     assert_eq!(value(&a, 0), x1);
     let a = check("fn f() -> int = 1\nfn g() -> int {\n let f = 2\n f()\n}\n");
     assert_eq!(codes(&a), [NOT_CALLABLE]);
-    assert_eq!(semantic(&a)[0].secondary.len(), 1);
+    assert_eq!(semantic(&a)[0].labels.len(), 1);
 }
 
 #[test]
@@ -389,9 +390,9 @@ fn mismatch_labels_distinguish_branches_from_declarations() {
         let a = check(source);
         assert_eq!(codes(&a), [TYPE_MISMATCH]);
         let labels: Vec<_> = semantic(&a)[0]
-            .secondary
+            .labels
             .iter()
-            .map(|label| label.message.as_deref().unwrap())
+            .map(|label| &*label.message)
             .collect();
         assert_eq!(labels, expected, "{source}");
     }
@@ -544,7 +545,7 @@ fn call_requirements_replay_in_argument_order() {
     assert_eq!(mismatches.len(), 1);
     assert_eq!(mismatches[0].message.as_ref(), "expected bool, found int");
     assert_eq!(
-        mismatches[0].primary.location.start().to_usize(),
+        mismatches[0].primary.range().start().to_usize(),
         source.rfind("(x)").unwrap()
     );
 
@@ -698,9 +699,9 @@ fn diagnostics_are_one_list(analysis: &Analysis) {
             .zip(analysis.parsed().diagnostics())
             .all(|(listed, own)| *listed == own)
     );
-    assert!(all.is_sorted_by_key(|d| d.primary.location.start()));
+    assert!(all.is_sorted_by_key(|d| d.primary.range().start()));
     for pair in all.windows(2) {
-        if pair[0].primary.location.start() == pair[1].primary.location.start() {
+        if pair[0].primary.range().start() == pair[1].primary.range().start() {
             assert!(!Analysis::is_semantic(&pair[0]) || Analysis::is_semantic(&pair[1]));
         }
     }
@@ -718,7 +719,7 @@ fn unused_values_are_semantic_errors_without_complete_bodies() {
     // The two unused values share an inferred type and produce distinct errors.
     let a = check("fn f() = { let x = value()\n x\n x\n 0 }\nfn value() = 3");
     assert_eq!(codes(&a), [UNUSED_VALUE, UNUSED_VALUE]);
-    assert!(semantic(&a)[0].primary.location.start() < semantic(&a)[1].primary.location.start());
+    assert!(semantic(&a)[0].primary.range().start() < semantic(&a)[1].primary.range().start());
     assert!(!a.functions[0].complete());
 }
 
@@ -808,7 +809,7 @@ fn source_origins_are_utf8_byte_ranges() {
     assert_eq!(text(&a, a.graph().node(e).name.unwrap()), "e");
     let a = check("// café\nfn f() -> int = absent");
     assert_eq!(
-        semantic(&a)[0].primary.location.start().to_usize(),
+        semantic(&a)[0].primary.range().start().to_usize(),
         "// café\nfn f() -> int = ".len()
     );
 }
@@ -819,8 +820,8 @@ fn duplicate_functions_keep_the_first_origin_and_poison_calls() {
     assert!(a.parsed().diagnostics().is_empty());
     assert_eq!(codes(&a), [DUPLICATE_NAME]);
     for diagnostic in a.diagnostics() {
-        assert_eq!(diagnostic.secondary.len(), 1);
-        let origin = diagnostic.secondary[0].location.span().range();
+        assert_eq!(diagnostic.labels.len(), 1);
+        let origin = diagnostic.labels[0].span.range();
         assert_eq!(origin.start().to_usize(), 3);
         assert_eq!(origin.end().to_usize(), 4);
     }
@@ -904,7 +905,7 @@ fn binary_requirements_survive_a_failed_operand() {
     ] {
         let a = check(&format!("fn f() {{ _ = {expression} }}"));
         let mut actual = codes(&a);
-        actual.sort_unstable_by_key(|code| code.name());
+        actual.sort_unstable_by_key(|code| code.name);
         assert_eq!(actual, [TYPE_MISMATCH, UNKNOWN_NAME], "{expression}");
         assert!(!a.functions[0].complete());
     }
@@ -1200,7 +1201,7 @@ proptest::proptest! {
         proptest::sample::select(vec!["fn", "let", "mut", "x", "int", "bool", "unit", "if", "else", "return", "_", "=", "->", ":", "(", ")", "{", "}", ",", "1", "true", "+", "-", "&&", "\n"]), 0..100)) {
         let source = format!("fn f(x: int) -> int {{ {} }}\nfn g() -> int = 1", tokens.join(" "));
         let a = check(&source);
-        assert_eq!(a.is_valid(), !a.diagnostics().iter().any(|d| d.severity == Severity::Error));
+        assert_eq!(a.is_valid(), a.diagnostics().is_empty());
         graph_invariant(&a);
     }
 
@@ -1210,13 +1211,12 @@ proptest::proptest! {
         reversed_declarations_preserve_types(&a);
         graph_invariant(&a);
         diagnostics_are_one_list(&a);
-        let errors = a.diagnostics().iter().any(|d| d.severity == Severity::Error);
-        proptest::prop_assert_eq!(a.is_valid(), !errors);
+        proptest::prop_assert_eq!(a.is_valid(), a.diagnostics().is_empty());
         for d in a.diagnostics() {
-            for label in std::iter::once(&d.primary).chain(d.secondary.iter()) {
-                proptest::prop_assert_eq!(label.location.file, a.parsed.file());
-                proptest::prop_assert!(source.is_char_boundary(label.location.start().to_usize()));
-                proptest::prop_assert!(source.is_char_boundary(label.location.end().to_usize()));
+            for span in std::iter::once(d.primary).chain(d.labels.iter().map(|label| label.span)) {
+                proptest::prop_assert_eq!(span.file(), a.parsed.file());
+                proptest::prop_assert!(source.is_char_boundary(span.range().start().to_usize()));
+                proptest::prop_assert!(source.is_char_boundary(span.range().end().to_usize()));
             }
         }
     }

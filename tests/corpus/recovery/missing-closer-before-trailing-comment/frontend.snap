@@ -12,7 +12,7 @@ Expected(RBrace) at 22
 == diagnostics ==
 error[syntax/expected-token] 2:14: expected `}`
   at 1:8..1:9 "{": opening delimiter is here
-  fix (safe): insert `}`
+  fix: insert `}`
     2:6 -> "}"
 
 == fixed ==

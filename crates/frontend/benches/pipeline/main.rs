@@ -2,12 +2,12 @@ use criterion::{
     BatchSize, BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main,
 };
 use sumi_format::format;
-use sumi_frontend::{FileId, parse_source};
+use sumi_frontend::parse_source;
 use sumi_lexer::lex;
 use sumi_syntax::ast::{AstNode, Block, ElseBranch, Expr, SourceFile, Stmt};
 use sumi_syntax::{MAX_DEPTH, NodeKind, ParseEvidence, ParserInput, RawIdx, SyntaxTree, parse};
 use sumi_test::corpus;
-use sumi_text::{LineIndex, TextSize};
+use sumi_text::{FileId, LineIndex, TextSize};
 
 const KIB: usize = 1024;
 

@@ -5,7 +5,6 @@ edition = "2024"
 license.workspace = true
 
 [dependencies]
-sumi-diagnostics = { path = "../diagnostics" }
 sumi-lexer = { path = "../lexer" }
 sumi-syntax = { path = "../syntax" }
 sumi-text = { path = "../text" }

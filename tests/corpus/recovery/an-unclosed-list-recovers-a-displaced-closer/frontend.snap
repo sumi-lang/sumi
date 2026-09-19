@@ -21,7 +21,7 @@ error[syntax/expected-expression] 2:9..2:10 "}": expected an expression
   at 2:9..2:12 "} =": skipped while recovering
 error[syntax/expected-token] 3:1: expected `)`
   at 2:6..2:7 "(": opening delimiter is here
-  fix (safe): insert `)`
+  fix: insert `)`
     2:14 -> ")"
 
 == fixed (syntax/expected-expression remains) ==
