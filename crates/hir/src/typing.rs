@@ -6,7 +6,7 @@ use sumi_text::TextRange;
 
 use sumi_graph::{Domain, May, NodeId, Thresholds, Ty};
 
-use crate::lattice::{Claim, Edge, Evidence, Product};
+use crate::lattice::{Claim, Edge, Evidence, Pair, Product};
 use crate::solver::Solver;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -91,9 +91,9 @@ impl Typing {
         }
     }
 
-    pub fn derive(&mut self, first: NodeId, second: NodeId, consumer: NodeId, edge: Edge) {
-        self.solver.derive(first, second, consumer, edge);
-        if edge.aliases() {
+    pub fn derive(&mut self, first: NodeId, second: NodeId, consumer: NodeId, pair: Pair) {
+        self.solver.derive(first, second, consumer, pair);
+        if pair.aliases() {
             self.aliased.push((consumer, first));
         }
     }
@@ -363,8 +363,8 @@ mod tests {
         typing.entry(live, true);
         typing.known(then_branch, Ty::Int, at(0));
         typing.known(else_branch, Ty::Bool, at(1));
-        typing.derive(then_branch, live, join, Edge::Branch);
-        typing.derive(else_branch, live, join, Edge::Branch);
+        typing.derive(then_branch, live, join, Pair::Branch);
+        typing.derive(else_branch, live, join, Pair::Branch);
         typing.call(join, call, at(2));
         let cx = cx();
         typing.solve(&cx);
@@ -399,8 +399,8 @@ mod tests {
         typing.entry(live, true);
         typing.literal(then_branch, Ty::Int, May::int(&1.into()), at(0));
         typing.literal(else_branch, Ty::Int, May::int(&2.into()), at(1));
-        typing.derive(then_branch, dead, join, Edge::Branch);
-        typing.derive(else_branch, live, join, Edge::Branch);
+        typing.derive(then_branch, dead, join, Pair::Branch);
+        typing.derive(else_branch, live, join, Pair::Branch);
         typing.solve(&cx());
         assert_eq!(typing.resolve(join), Some(Ty::Int));
         assert_eq!(typing.may(join), &May::int(&2.into()));
@@ -450,8 +450,8 @@ mod tests {
         typing.entry(live, true);
         typing.known(then_branch, Ty::Int, at(0));
         typing.known(else_branch, Ty::Int, at(1));
-        typing.derive(then_branch, live, local, Edge::Branch);
-        typing.derive(else_branch, live, local, Edge::Branch);
+        typing.derive(then_branch, live, local, Pair::Branch);
+        typing.derive(else_branch, live, local, Pair::Branch);
         typing.flow(local, refined, Edge::Exactly(true));
         typing.solve(&cx());
         let mut replay = typing.replay();
