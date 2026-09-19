@@ -1,18 +1,5 @@
-//! The recovery scorecard: seeded, count-based measurements of recovery
-//! quality, so `cargo run --release -p sumi-scorecard` reproduces the
-//! committed `recovery-scorecard.txt` byte for byte, which CI checks. It
-//! is a leaf package of its own above `sumi-test`.
-//!
-//! Part A makes one edit per (program, edit) pair drawn from the recovery
-//! properties' generator, per edit kind crossed with whether a delimiter
-//! changes, and holds every untouched top-level item to surviving with
-//! its span and shape: preservation 1.0. Part B inserts an opener or
-//! deletes a closer in a clean corpus and counts the significant tokens
-//! whose partner or boundary changed, which stays within the bracket
-//! nesting around the edit, and the untouched items disturbed, which is
-//! 0. Part C deletes one quote of a string literal, an edit inside a
-//! token, and measures how far the literal then reaches: its line at
-//! most, and no item disturbed.
+//! The recovery scorecard: seeded, count-based measures of recovery quality. Its output must match
+//! the committed `recovery-scorecard.txt` byte for byte.
 
 use std::collections::HashSet;
 
@@ -23,10 +10,7 @@ use sumi_syntax::{
 use sumi_test::bench::{self, Rng};
 use sumi_test::{Edit, EditSpan, Front, INSERTS, Programs, apply, changes_delimiter, front};
 
-/// Measured (program, edit) pairs per Part A class.
 const CLASS_TARGET: usize = 10_000;
-/// Samples per class drawn from one program, to spread classes over many
-/// programs instead of exhausting one.
 const PER_PROGRAM: usize = 2;
 
 fn mean_f64(values: &[f64]) -> f64 {
@@ -37,7 +21,6 @@ fn mean_u64(values: &[u64]) -> f64 {
     values.iter().sum::<u64>() as f64 / values.len().max(1) as f64
 }
 
-/// Nearest-rank percentile of an unsorted sample; `q` in (0, 1].
 fn percentile_u64(values: &[u64], q: f64) -> u64 {
     let mut sorted = values.to_vec();
     sorted.sort_unstable();
@@ -50,7 +33,6 @@ fn percentile_f64(values: &[f64], q: f64) -> f64 {
     sorted[((q * sorted.len() as f64).ceil() as usize).clamp(1, sorted.len()) - 1]
 }
 
-/// The number of diagnostics the frontend reports for `source`.
 fn diagnostics(source: &str, front: &Front) -> u64 {
     sumi_frontend::diagnostics(source, &front.lexed, &front.parse).len() as u64
 }
@@ -73,12 +55,10 @@ fn significant_at(input: &ParserInput, raw: RawIdx) -> usize {
     low
 }
 
-/// The number of significant tokens whose raw index lies in `[start, end)`.
 fn significant_in(input: &ParserInput, start: RawIdx, end: RawIdx) -> u64 {
     (significant_at(input, end) - significant_at(input, start)) as u64
 }
 
-/// The top-level `FnItem` nodes of a parse.
 fn items(front: &Front) -> Vec<NodeIdx> {
     let tree = front.parse.tree();
     tree.children(tree.root())
@@ -86,9 +66,8 @@ fn items(front: &Front) -> Vec<NodeIdx> {
         .collect()
 }
 
-/// Item survival across one edit: of the original top-level items covering
-/// none of the touched raw tokens, how many appear in the edited parse with
-/// identical span and shape.
+/// (untouched, preserved): items covering no touched token, and those of them found in `after` with
+/// the same span and shape.
 fn preservation(
     source: &str,
     original: &Front,
@@ -121,13 +100,9 @@ fn preservation(
     (untouched, preserved)
 }
 
-// --- Part A: the scorecard. ---
-
 #[derive(Default)]
 struct ClassStats {
-    /// Preservation rate per edit with at least one untouched item.
     rates: Vec<f64>,
-    /// Edits with no untouched item to guard.
     unguarded: usize,
     diags: Vec<u64>,
     skipped: Vec<u64>,
@@ -183,10 +158,8 @@ const CLASS_NAMES: [&str; 2] = ["delimiter", "non-delim"];
 fn scorecard() {
     let mut rng = Rng::new(0x5C0E_CA4D);
     let mut programs = Programs::new(0xED17_ED17);
-    // stats[kind][0] is the delimiter class, stats[kind][1] the rest.
     let mut stats: [[ClassStats; 2]; 4] = Default::default();
     let mut generated = 0usize;
-    // The insert pools: brackets, and the rest.
     let (delimiter_inserts, non_delimiter_inserts): (Vec<&str>, Vec<&str>) =
         INSERTS.iter().partition(|&&text| {
             SyntaxKind::ALL
@@ -307,8 +280,6 @@ fn scorecard() {
     }
 }
 
-// --- Part B: delimiter-breaking churn. ---
-
 struct ChurnSample {
     partner_changed: u64,
     boundary_changed: u64,
@@ -316,9 +287,7 @@ struct ChurnSample {
     untouched_disturbed: u64,
 }
 
-/// Stream-fact churn across one insert-opener or delete-closer edit.
-/// `None` when the edit merged or split neighbouring tokens, leaving no
-/// one-to-one alignment to compare against.
+/// `None` when the edit merged or split tokens, which breaks the alignment.
 fn churn(
     source: &str,
     before: &Front,
@@ -342,8 +311,6 @@ fn churn(
     if after.input().len() != expected {
         return None;
     }
-    // The edited stream shifted by one at the edit point; the deleted token
-    // itself has no image.
     let map = |i: usize| -> Option<usize> {
         match edit {
             Edit::Insert(_) => Some(if i < index { i } else { i + 1 }),
@@ -358,7 +325,6 @@ fn churn(
         let j = map(i).expect("filtered to mapped tokens");
         let boundary =
             before.input().boundary_before(sig(i)) != after.input().boundary_before(sig(j));
-        // A partner that was deleted counts as changed outright.
         let partner = match before.input().partner(sig(i)) {
             None => after.input().partner(sig(j)).is_some(),
             Some(p) => match map(p.to_usize()) {
@@ -448,23 +414,16 @@ fn churn_base(name: &str, source: &str, edits_per_kind: usize, rng: &mut Rng) {
     }
 }
 
-// --- Part C: one quote deleted from a string literal, the one literal
-// form with delimiters. ---
-
 fn is_string(lexed: &LexedFile, index: RawIdx) -> bool {
     lexed.kind(index) == SyntaxKind::StringLiteral
 }
 
 struct LiteralSample {
-    /// Bytes of the longest literal token left where the edited one stood:
-    /// how far the stray delimiter reaches.
     spread: u64,
     diags: u64,
     untouched_disturbed: u64,
 }
 
-/// The string literal at `token` with its opening quote deleted, or its
-/// closing one.
 fn literal_edit(source: &str, before: &Front, token: RawIdx, opener: bool) -> LiteralSample {
     let range = before.lexed.range(token);
     let (start, end) = (range.start().to_usize(), range.end().to_usize());
@@ -479,7 +438,6 @@ fn literal_edit(source: &str, before: &Front, token: RawIdx, opener: bool) -> Li
     let after = front(&edited);
 
     let (untouched, preserved) = preservation(source, before, &touched, impact, &edited, &after);
-    // Where the token stood, in the edited source.
     let stood = start..end - 1;
     let spread = after
         .lexed
@@ -582,18 +540,9 @@ fn main() {
 mod tests {
     use super::*;
 
-    /// Two items; the significant tokens of the first are indices 0..18,
-    /// with `g(a)`'s callee at 13 and the body's `}` at 17.
     const BASE: &str =
         "fn f() {\n    let a = (1 + 2)\n    g(a)\n}\n\nfn g(x: Int) {\n    return x\n}\n";
 
-    /// Hand-checked churn for an unmatched `{` inserted mid-body: the
-    /// body's `{` loses its partner and its `}` re-pairs with the insert
-    /// (2 partner changes), the insert absorbs the line break before the
-    /// callee (1 boundary change), and the untouched second item survives.
-    /// The expectations hold with the pairing reset on or off: the second
-    /// item's boundary resets a stack that is already reduced to the one
-    /// unmatched opener.
     #[test]
     fn churn_counts_an_inserted_opener_by_hand() {
         let before = front(BASE);
@@ -607,9 +556,6 @@ mod tests {
         assert_eq!(sample.untouched_disturbed, 0);
     }
 
-    /// Hand-checked churn for the body's `}` deleted: only its `{` loses a
-    /// partner. The second item sits within two significant tokens of the
-    /// edit, so no item is untouched and none can count as disturbed.
     #[test]
     fn churn_counts_a_deleted_closer_by_hand() {
         let before = front(BASE);
