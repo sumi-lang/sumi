@@ -1,5 +1,5 @@
 use sumi_lexer::{LexedFile, lex};
-use sumi_syntax::ast::{AstNode, Block, ElseBranch, Expr, SourceFile, Stmt};
+use sumi_syntax::ast::{AstNode, Block, ElseBranch, Expr, SourceFile, Stmt, View};
 use sumi_syntax::{NodeKind, Parse, ParserInput, SyntaxTree, parse};
 
 struct Parsed {
@@ -252,53 +252,84 @@ fn missing_children_are_absent_and_the_node_is_flagged() {
 
 #[test]
 fn a_clean_view_holds_every_required_child() {
-    use sumi_syntax::ast::{Clean, CleanElseBranch, CleanExpr, CleanStmt, LetStmt};
+    use sumi_syntax::ast::{CleanElseBranch, CleanExpr, CleanStmt};
+    use sumi_syntax::{BinaryOp, Literal, PrefixOp};
 
-    let parsed = Parsed::new("fn f() { let x: Int = 1 + 2\nif x { 3 } else if x { 4 } }");
-    let tree = parsed.tree();
+    let parsed =
+        Parsed::new("fn f() { let mut x: Int = 1 + 2\nif !x { 3 } else if x <= -4 { true } }");
+    let (tree, lexed) = (parsed.tree(), &parsed.lexed);
     let body = block(parsed.item().body(tree))
-        .clean(tree)
+        .clean(tree, lexed)
         .expect("a clean body");
     let mut stmts = body.stmts(tree);
     let stmt = stmts.next().expect("a binding");
-    let Some(CleanStmt::LetStmt(binding)) = stmt.clean(tree) else {
+    let Some(CleanStmt::LetStmt(binding)) = stmt.clean(tree, lexed) else {
         panic!("a clean binding")
     };
+    assert!(binding.mutable());
     assert_eq!(parsed.text(binding.name()), "x");
     assert_eq!(
         parsed.text(binding.type_ref(tree).expect("annotated")),
         "Int"
     );
-    let Some(CleanExpr::BinaryExpr(sum)) = binding.initializer().clean(tree) else {
+    let Some(CleanExpr::BinaryExpr(sum)) = binding.initializer().clean(tree, lexed) else {
         panic!("a clean sum")
     };
+    assert_eq!(sum.op(), BinaryOp::Add);
     assert_eq!(parsed.text(sum.lhs()), "1");
     assert_eq!(parsed.text(sum.rhs()), "2");
     assert_eq!(sum.view().node(), sum.node());
-    assert_eq!(Clean::<LetStmt>::cast(tree, stmt.node()), Some(binding));
-    assert_eq!(CleanStmt::cast(tree, stmt.node()), stmt.clean(tree));
-    assert_eq!(binding.clean(tree), Some(binding));
+    assert_eq!(sum.view().op(tree, lexed), Some(BinaryOp::Add));
+    let Some(CleanExpr::LiteralExpr(one)) = sum.lhs().clean(tree, lexed) else {
+        panic!("a clean literal")
+    };
+    assert_eq!(one.value(), Literal::Int);
     let branch = stmts.next().expect("a branch");
-    let Some(CleanStmt::Expr(CleanExpr::IfExpr(branch))) = branch.clean(tree) else {
+    let Some(CleanStmt::Expr(CleanExpr::IfExpr(branch))) = branch.clean(tree, lexed) else {
         panic!("a clean branch")
     };
-    assert_eq!(parsed.text(branch.condition()), "x");
+    let Some(CleanExpr::PrefixExpr(not)) = branch.condition().clean(tree, lexed) else {
+        panic!("a clean prefix")
+    };
+    assert_eq!(not.op(), PrefixOp::Not);
+    assert_eq!(parsed.text(not.operand()), "x");
     assert_eq!(parsed.text(branch.then_branch()), "{ 3 }");
     let else_if = branch
         .else_branch(tree)
-        .and_then(|e| e.clean(tree))
+        .and_then(|e| e.clean(tree, lexed))
         .expect("a clean else");
-    assert!(matches!(else_if, CleanElseBranch::IfExpr(_)));
-    assert_eq!(parsed.text(else_if), "if x { 4 }");
+    let CleanElseBranch::IfExpr(else_if) = else_if else {
+        panic!("an else if")
+    };
+    let Some(CleanExpr::BinaryExpr(le)) = else_if.condition().clean(tree, lexed) else {
+        panic!("a clean comparison")
+    };
+    assert_eq!(le.op(), BinaryOp::Le);
+    let Some(CleanExpr::PrefixExpr(neg)) = le.rhs().clean(tree, lexed) else {
+        panic!("a clean negation")
+    };
+    assert_eq!(neg.op(), PrefixOp::Neg);
     assert!(stmts.next().is_none());
 
+    let parsed = Parsed::new("fn f() { let x = 1 }");
+    let (tree, lexed) = (parsed.tree(), &parsed.lexed);
+    let body = block(parsed.item().body(tree));
+    let stmt = body.stmts(tree).next().expect("one binding");
+    let Some(CleanStmt::LetStmt(binding)) = stmt.clean(tree, lexed) else {
+        panic!("a clean binding")
+    };
+    assert!(!binding.mutable());
+
     let parsed = Parsed::new("fn f() { let x = }");
-    let tree = parsed.tree();
+    let (tree, lexed) = (parsed.tree(), &parsed.lexed);
     let body = block(parsed.item().body(tree));
     let stmt = body.stmts(tree).next().expect("one binding");
     assert!(tree.has_error(stmt.node()));
-    assert_eq!(stmt.clean(tree), None);
-    assert_eq!(CleanStmt::cast(tree, stmt.node()), None);
+    assert_eq!(stmt.clean(tree, lexed), None);
+    let Stmt::LetStmt(binding) = stmt else {
+        panic!("a binding")
+    };
+    assert!(!binding.mutable(tree, lexed));
 }
 
 #[test]

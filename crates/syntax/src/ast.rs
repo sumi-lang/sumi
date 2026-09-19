@@ -1,33 +1,40 @@
 //! The node vocabulary and the typed views over the tree, from one `grammar!` declaration. Single
-//! fields take slots in declaration order, which the parser's `field` calls must match.
+//! fields take slots in declaration order, which the parser's `field` calls must match; `tokens`
+//! lists what a rule holds itself, a named one read as a value.
 
-use std::fmt::Debug;
+use std::fmt::{self, Debug};
 use std::hash::Hash;
 
+use sumi_lexer::LexedFile;
+
+use crate::grammar::{BinaryOp, Literal, PrefixOp, SyntaxKind, TokenField};
 use crate::index::NodeIdx;
 use crate::tree::SyntaxTree;
 
 pub trait AstNode: Copy {
-    /// The same node with every required child in hand.
+    fn node(self) -> NodeIdx;
+}
+
+/// A view of a node as the tree records it, whatever its errors.
+pub trait View: AstNode {
+    /// The same node with every required child and token in hand.
     type Clean: AstNode;
 
     fn cast(tree: &SyntaxTree, node: NodeIdx) -> Option<Self>;
 
-    fn node(self) -> NodeIdx;
-
-    /// `None` for a node with an error, which may lack a required child.
-    fn clean(self, tree: &SyntaxTree) -> Option<Self::Clean>;
+    /// `None` for a node with an error, which may lack a required child or token.
+    fn clean(self, tree: &SyntaxTree, lexed: &LexedFile) -> Option<Self::Clean>;
 }
 
 /// A kind with fields; its clean view is [`Clean`] over it.
-pub trait Fields: AstNode<Clean = Clean<Self>> {
-    /// The required children, in declaration order.
+pub trait Fields: View<Clean = Clean<Self>> {
+    /// The required children, then the named tokens, in declaration order.
     type Required: Copy + Debug + Eq + Hash;
 
-    fn required(self, tree: &SyntaxTree) -> Option<Self::Required>;
+    fn required(self, tree: &SyntaxTree, lexed: &LexedFile) -> Option<Self::Required>;
 }
 
-/// A node without an error, holding every child its kind requires.
+/// A node without an error, holding every child and token its kind requires.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Clean<N: Fields> {
     view: N,
@@ -41,18 +48,8 @@ impl<N: Fields> Clean<N> {
 }
 
 impl<N: Fields> AstNode for Clean<N> {
-    type Clean = Self;
-
-    fn cast(tree: &SyntaxTree, node: NodeIdx) -> Option<Self> {
-        N::cast(tree, node)?.clean(tree)
-    }
-
     fn node(self) -> NodeIdx {
         self.view.node()
-    }
-
-    fn clean(self, _: &SyntaxTree) -> Option<Self> {
-        Some(self)
     }
 }
 
@@ -67,30 +64,70 @@ pub struct Child {
     pub present: fn(&SyntaxTree, NodeIdx) -> bool,
 }
 
+/// A token a rule holds itself.
+#[derive(Clone, Copy, Debug)]
+pub enum TokenRule {
+    /// `first`, with `glued` joint after it when given.
+    Fixed {
+        first: SyntaxKind,
+        glued: Option<SyntaxKind>,
+        optional: bool,
+    },
+    /// Whether the node holds `kind`, read under `name`.
+    Flag {
+        name: &'static str,
+        kind: SyntaxKind,
+    },
+    /// A value read under `name`, one of `variants`.
+    Field {
+        name: &'static str,
+        variants: usize,
+        variant: fn(usize) -> String,
+        /// Whether a value is read at a token of the first kind, and spans the glued one.
+        reads: fn(SyntaxKind, Option<SyntaxKind>) -> Option<bool>,
+        /// Whether `node` reads the variant at the index; `false` on a node of another kind.
+        present: fn(&SyntaxTree, &LexedFile, NodeIdx, usize) -> bool,
+    },
+}
+
+impl fmt::Display for TokenRule {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match *self {
+            Self::Fixed { first, glued, .. } => match (first.text(), glued.map(SyntaxKind::text)) {
+                (Some(first), None) => write!(f, "'{first}'"),
+                (Some(first), Some(Some(glued))) => write!(f, "'{first}{glued}'"),
+                (_, None) => write!(f, "{first:?}"),
+                (_, Some(_)) => write!(f, "{first:?} {glued:?}"),
+            },
+            Self::Flag { name, .. } | Self::Field { name, .. } => f.write_str(name),
+        }
+    }
+}
+
+fn read<T: TokenField>(tree: &SyntaxTree, lexed: &LexedFile, node: NodeIdx) -> Option<T> {
+    tree.own_pairs(node, lexed)
+        .find_map(|(first, glued)| T::read(first, glued))
+        .map(|(value, _)| value)
+}
+
 macro_rules! count {
     () => { 0u8 };
     (() $($rest:tt)*) => { 1u8 + count!($($rest)*) };
 }
 
-/// `@fields` carries the slots taken, the child table, the required children's types and names,
-/// and the tuple indices left for them.
+/// `@fields` and `@tokens` carry the slots taken, the child and token tables, the required
+/// values' types and how each is read, and the tuple indices left for them.
 macro_rules! grammar {
-    (@fields $name:ident [$($slot:tt)*] [$($child:tt)*] [$($required:tt)*] [$($by:ident)*]
-        [$($index:tt)*]) => {
+    (@fields $name:ident [$($slot:tt)*] [$($child:tt)*] [$($required:tt)*] [$($by:tt)*]
+        [$($index:tt)*] [$($tokens:tt)*]) => {
         impl $name {
             pub const CHILDREN: &[Child] = &[$($child)*];
         }
 
-        impl Fields for $name {
-            type Required = ($($required)*);
-
-            fn required(self, _tree: &SyntaxTree) -> Option<Self::Required> {
-                Some(($(self.$by(_tree)?,)*))
-            }
-        }
+        grammar!(@tokens $name [] [$($required)*] [$($by)*] [$($index)*] $($tokens)*);
     };
-    (@fields $name:ident [$($slot:tt)*] [$($child:tt)*] [$($required:tt)*] [$($by:ident)*]
-        [$($index:tt)*] $field:ident: Option<$ty:ident> $(, $($rest:tt)*)?) => {
+    (@fields $name:ident [$($slot:tt)*] [$($child:tt)*] [$($required:tt)*] [$($by:tt)*]
+        [$($index:tt)*] [$($tokens:tt)*] $field:ident: Option<$ty:ident> $(, $($rest:tt)*)?) => {
         impl $name {
             #[doc = concat!("The `", stringify!($field), "` child, a `", stringify!($ty), "`, optional.")]
             pub fn $field(self, tree: &SyntaxTree) -> Option<$ty> {
@@ -112,10 +149,10 @@ macro_rules! grammar {
             present: |tree, node| {
                 $name::cast(tree, node).is_some_and(|view| view.$field(tree).is_some())
             },
-        },] [$($required)*] [$($by)*] [$($index)*] $($($rest)*)?);
+        },] [$($required)*] [$($by)*] [$($index)*] [$($tokens)*] $($($rest)*)?);
     };
-    (@fields $name:ident [$($slot:tt)*] [$($child:tt)*] [$($required:tt)*] [$($by:ident)*]
-        [$($index:tt)*] $field:ident: [$ty:ident] $(, $($rest:tt)*)?) => {
+    (@fields $name:ident [$($slot:tt)*] [$($child:tt)*] [$($required:tt)*] [$($by:tt)*]
+        [$($index:tt)*] [$($tokens:tt)*] $field:ident: [$ty:ident] $(, $($rest:tt)*)?) => {
         impl $name {
             #[doc = concat!("The `", stringify!($field), "` children, each a `", stringify!($ty), "`, in source order.")]
             pub fn $field<'t>(self, tree: &'t SyntaxTree) -> impl Iterator<Item = $ty> + 't {
@@ -137,10 +174,10 @@ macro_rules! grammar {
             present: |tree, node| {
                 $name::cast(tree, node).is_some_and(|view| view.$field(tree).next().is_some())
             },
-        },] [$($required)*] [$($by)*] [$($index)*] $($($rest)*)?);
+        },] [$($required)*] [$($by)*] [$($index)*] [$($tokens)*] $($($rest)*)?);
     };
-    (@fields $name:ident [$($slot:tt)*] [$($child:tt)*] [$($required:tt)*] [$($by:ident)*]
-        [$index:tt $($next:tt)*] $field:ident: $ty:ident $(, $($rest:tt)*)?) => {
+    (@fields $name:ident [$($slot:tt)*] [$($child:tt)*] [$($required:tt)*] [$($by:tt)*]
+        [$index:tt $($next:tt)*] [$($tokens:tt)*] $field:ident: $ty:ident $(, $($rest:tt)*)?) => {
         impl $name {
             #[doc = concat!("The `", stringify!($field), "` child, a `", stringify!($ty), "`, present on a node without an error.")]
             pub fn $field(self, tree: &SyntaxTree) -> Option<$ty> {
@@ -162,44 +199,161 @@ macro_rules! grammar {
             present: |tree, node| {
                 $name::cast(tree, node).is_some_and(|view| view.$field(tree).is_some())
             },
-        },] [$($required)* $ty,] [$($by)* $field] [$($next)*] $($($rest)*)?);
+        },] [$($required)* $ty,] [$($by)* (child $field)] [$($next)*] [$($tokens)*]
+            $($($rest)*)?);
     };
-    (@fields $name:ident [$($slot:tt)*] [$($child:tt)*] [$($required:tt)*] [$($by:ident)*] []
-        $field:ident: $ty:ident $(, $($rest:tt)*)?) => {
+    (@fields $name:ident [$($slot:tt)*] [$($child:tt)*] [$($required:tt)*] [$($by:tt)*] []
+        [$($tokens:tt)*] $field:ident: $ty:ident $(, $($rest:tt)*)?) => {
         compile_error!(concat!(
-            "`", stringify!($name), "` holds more required children than `Clean` has indices for"
+            "`", stringify!($name), "` holds more required values than `Clean` has indices for"
+        ));
+    };
+    (@tokens $name:ident [$($token:tt)*] [$($required:tt)*] [$($by:tt)*] [$($index:tt)*]) => {
+        impl $name {
+            pub const TOKENS: &[TokenRule] = &[$($token)*];
+        }
+
+        impl Fields for $name {
+            type Required = ($($required)*);
+
+            fn required(self, tree: &SyntaxTree, lexed: &LexedFile) -> Option<Self::Required> {
+                let _ = (tree, lexed);
+                Some(($(grammar!(@read self tree lexed $by),)*))
+            }
+        }
+    };
+    (@read $this:ident $tree:ident $lexed:ident (child $field:ident)) => {
+        $this.$field($tree)?
+    };
+    (@read $this:ident $tree:ident $lexed:ident (flag $field:ident)) => {
+        $this.$field($tree, $lexed)
+    };
+    (@read $this:ident $tree:ident $lexed:ident (field $field:ident)) => {
+        $this.$field($tree, $lexed)?
+    };
+    (@tokens $name:ident [$($token:tt)*] [$($required:tt)*] [$($by:tt)*] [$($index:tt)*]
+        [$first:ident, $glued:ident] $(, $($rest:tt)*)?) => {
+        grammar!(@tokens $name [$($token)* TokenRule::Fixed {
+            first: SyntaxKind::$first,
+            glued: Some(SyntaxKind::$glued),
+            optional: false,
+        },] [$($required)*] [$($by)*] [$($index)*] $($($rest)*)?);
+    };
+    (@tokens $name:ident [$($token:tt)*] [$($required:tt)*] [$($by:tt)*] [$($index:tt)*]
+        [$first:ident, $glued:ident]? $(, $($rest:tt)*)?) => {
+        grammar!(@tokens $name [$($token)* TokenRule::Fixed {
+            first: SyntaxKind::$first,
+            glued: Some(SyntaxKind::$glued),
+            optional: true,
+        },] [$($required)*] [$($by)*] [$($index)*] $($($rest)*)?);
+    };
+    (@tokens $name:ident [$($token:tt)*] [$($required:tt)*] [$($by:tt)*] [$($index:tt)*]
+        $kind:ident? $(, $($rest:tt)*)?) => {
+        grammar!(@tokens $name [$($token)* TokenRule::Fixed {
+            first: SyntaxKind::$kind,
+            glued: None,
+            optional: true,
+        },] [$($required)*] [$($by)*] [$($index)*] $($($rest)*)?);
+    };
+    (@tokens $name:ident [$($token:tt)*] [$($required:tt)*] [$($by:tt)*] [$($index:tt)*]
+        $kind:ident $(, $($rest:tt)*)?) => {
+        grammar!(@tokens $name [$($token)* TokenRule::Fixed {
+            first: SyntaxKind::$kind,
+            glued: None,
+            optional: false,
+        },] [$($required)*] [$($by)*] [$($index)*] $($($rest)*)?);
+    };
+    (@tokens $name:ident [$($token:tt)*] [$($required:tt)*] [$($by:tt)*] [$index:tt $($next:tt)*]
+        $field:ident: $kind:ident? $(, $($rest:tt)*)?) => {
+        impl $name {
+            #[doc = concat!("Whether the node holds `", stringify!($kind), "`.")]
+            pub fn $field(self, tree: &SyntaxTree, lexed: &LexedFile) -> bool {
+                tree.holds(self.0, lexed, SyntaxKind::$kind, None)
+            }
+        }
+
+        impl Clean<$name> {
+            #[doc = concat!("Whether the node holds `", stringify!($kind), "`.")]
+            pub fn $field(self) -> bool {
+                self.required.$index
+            }
+        }
+        grammar!(@tokens $name [$($token)* TokenRule::Flag {
+            name: stringify!($field),
+            kind: SyntaxKind::$kind,
+        },] [$($required)* bool,] [$($by)* (flag $field)] [$($next)*] $($($rest)*)?);
+    };
+    (@tokens $name:ident [$($token:tt)*] [$($required:tt)*] [$($by:tt)*] [$index:tt $($next:tt)*]
+        $field:ident: $ty:ident $(, $($rest:tt)*)?) => {
+        impl $name {
+            #[doc = concat!("The `", stringify!($field), "` the node holds, a `", stringify!($ty), "`, present on a node without an error.")]
+            pub fn $field(self, tree: &SyntaxTree, lexed: &LexedFile) -> Option<$ty> {
+                read(tree, lexed, self.0)
+            }
+        }
+
+        impl Clean<$name> {
+            #[doc = concat!("The `", stringify!($field), "` the node holds, a `", stringify!($ty), "`.")]
+            pub fn $field(self) -> $ty {
+                self.required.$index
+            }
+        }
+        grammar!(@tokens $name [$($token)* TokenRule::Field {
+            name: stringify!($field),
+            variants: <$ty as TokenField>::ALL.len(),
+            variant: |index| format!("{:?}", <$ty as TokenField>::ALL[index]),
+            reads: |first, glued| <$ty as TokenField>::read(first, glued).map(|(_, spans)| spans),
+            present: |tree, lexed, node, index| {
+                $name::cast(tree, node).is_some_and(|view| {
+                    view.$field(tree, lexed) == Some(<$ty as TokenField>::ALL[index])
+                })
+            },
+        },] [$($required)* $ty,] [$($by)* (field $field)] [$($next)*] $($($rest)*)?);
+    };
+    (@tokens $name:ident [$($token:tt)*] [$($required:tt)*] [$($by:tt)*] []
+        $field:ident: $($rest:tt)*) => {
+        compile_error!(concat!(
+            "`", stringify!($name), "` holds more required values than `Clean` has indices for"
         ));
     };
     (@nodes [$($variant:tt)*] [$($kind:ident)*]
-        $(#[$doc:meta])* struct $name:ident { $($fields:tt)* } $($rest:tt)*) => {
+        $(#[$doc:meta])* struct $name:ident { $($fields:tt)* } tokens { $($tokens:tt)* }
+        $($rest:tt)*) => {
         $(#[$doc])*
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
         pub struct $name(NodeIdx);
 
         impl AstNode for $name {
+            fn node(self) -> NodeIdx {
+                self.0
+            }
+        }
+
+        impl View for $name {
             type Clean = Clean<Self>;
 
             fn cast(tree: &SyntaxTree, node: NodeIdx) -> Option<Self> {
                 (tree.kind(node) == NodeKind::$name).then_some(Self(node))
             }
 
-            fn node(self) -> NodeIdx {
-                self.0
-            }
-
-            fn clean(self, tree: &SyntaxTree) -> Option<Clean<Self>> {
+            fn clean(self, tree: &SyntaxTree, lexed: &LexedFile) -> Option<Clean<Self>> {
                 if tree.has_error(self.0) {
                     return None;
                 }
                 Some(Clean {
                     view: self,
-                    required: self.required(tree)?,
+                    required: self.required(tree, lexed)?,
                 })
             }
         }
 
-        grammar!(@fields $name [] [] [] [] [0 1 2 3 4 5 6 7] $($fields)*);
+        grammar!(@fields $name [] [] [] [] [0 1 2 3 4 5 6 7] [$($tokens)*] $($fields)*);
         grammar!(@nodes [$($variant)* $(#[$doc])* $name,] [$($kind)* $name] $($rest)*);
+    };
+    (@nodes [$($variant:tt)*] [$($kind:ident)*]
+        $(#[$doc:meta])* struct $name:ident { $($fields:tt)* } $($rest:tt)*) => {
+        grammar!(@nodes [$($variant)*] [$($kind)*]
+            $(#[$doc])* struct $name { $($fields)* } tokens {} $($rest)*);
     };
     (@nodes [$($variant:tt)*] [$($kind:ident)*]
         $(#[$doc:meta])* enum $name:ident as $clean:ident { $($member:ident),* $(,)? }
@@ -213,44 +367,36 @@ macro_rules! grammar {
         #[doc = concat!("[`", stringify!($name), "`] without an error.")]
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
         pub enum $clean {
-            $($member(<$member as AstNode>::Clean),)*
+            $($member(<$member as View>::Clean),)*
         }
 
         impl AstNode for $name {
+            fn node(self) -> NodeIdx {
+                match self {
+                    $(Self::$member(inner) => inner.node(),)*
+                }
+            }
+        }
+
+        impl View for $name {
             type Clean = $clean;
 
             fn cast(tree: &SyntaxTree, node: NodeIdx) -> Option<Self> {
                 None$(.or_else(|| $member::cast(tree, node).map(Self::$member)))*
             }
 
-            fn node(self) -> NodeIdx {
+            fn clean(self, tree: &SyntaxTree, lexed: &LexedFile) -> Option<$clean> {
                 match self {
-                    $(Self::$member(inner) => inner.node(),)*
-                }
-            }
-
-            fn clean(self, tree: &SyntaxTree) -> Option<$clean> {
-                match self {
-                    $(Self::$member(inner) => inner.clean(tree).map($clean::$member),)*
+                    $(Self::$member(inner) => inner.clean(tree, lexed).map($clean::$member),)*
                 }
             }
         }
 
         impl AstNode for $clean {
-            type Clean = Self;
-
-            fn cast(tree: &SyntaxTree, node: NodeIdx) -> Option<Self> {
-                $name::cast(tree, node)?.clean(tree)
-            }
-
             fn node(self) -> NodeIdx {
                 match self {
                     $(Self::$member(inner) => inner.node(),)*
                 }
-            }
-
-            fn clean(self, _: &SyntaxTree) -> Option<Self> {
-                Some(self)
             }
         }
 
@@ -275,6 +421,13 @@ macro_rules! grammar {
                     Self::Error => &[],
                 }
             }
+
+            pub fn tokens(self) -> &'static [TokenRule] {
+                match self {
+                    $(Self::$kind => $kind::TOKENS,)*
+                    Self::Error => &[],
+                }
+            }
         }
     };
     ($($declaration:tt)*) => {
@@ -287,31 +440,41 @@ grammar! {
 
     /// `'fn' Name ParamList ('->' ret:TypeRef)? '='? body:Expr`.
     struct FnItem { name: Name, param_list: ParamList, ret: Option<TypeRef>, body: Expr }
+    tokens { FnKw, [Minus, Gt]?, Eq? }
 
     /// `'(' (Param (',' Param)* ','?)? ')'`.
     struct ParamList { params: [Param] }
+    tokens { LParen, Comma?, RParen }
 
     /// `Name (':' TypeRef)?`; only a closure's parameter may lack the type.
     struct Param { name: Name, type_ref: Option<TypeRef> }
+    tokens { Colon? }
 
     /// A declaring occurrence of a name, `Ident`; a use is a `NameRef`.
     struct Name {}
+    tokens { Ident }
 
     /// `Ident`.
     struct TypeRef {}
+    tokens { Ident }
 
     struct Block { stmts: [Stmt] }
+    tokens { LBrace, RBrace }
 
     enum Stmt as CleanStmt { LetStmt, AssignStmt, DiscardStmt, ReturnStmt, Expr }
 
     /// `'let' 'mut'? Name (':' TypeRef)? '=' initializer:Expr`.
     struct LetStmt { name: Name, type_ref: Option<TypeRef>, initializer: Expr }
+    tokens { LetKw, mutable: MutKw?, Colon?, Eq }
 
     struct AssignStmt { target: Expr, value: Expr }
+    tokens { Eq }
 
     struct DiscardStmt { value: Expr }
+    tokens { Underscore, Eq }
 
     struct ReturnStmt { value: Option<Expr> }
+    tokens { ReturnKw }
 
     enum Expr as CleanExpr {
         NameRef,
@@ -327,28 +490,36 @@ grammar! {
 
     /// A use of a name, `Ident`.
     struct NameRef {}
+    tokens { Ident }
 
     /// `IntLiteral | StringLiteral | 'true' | 'false'`.
     struct LiteralExpr {}
+    tokens { value: Literal }
 
     struct PrefixExpr { operand: Expr }
+    tokens { op: PrefixOp }
 
     struct BinaryExpr { lhs: Expr, rhs: Expr }
+    tokens { op: BinaryOp }
 
     struct ParenExpr { inner: Expr }
+    tokens { LParen, RParen }
 
     struct CallExpr { callee: Expr, arg_list: ArgList }
 
     /// `'(' (Expr (',' Expr)* ','?)? ')'`.
     struct ArgList { args: [Expr] }
+    tokens { LParen, Comma?, RParen }
 
     /// `'if' condition:Expr then_branch:Block ('else' else_branch:ElseBranch)?`.
     struct IfExpr { condition: Expr, then_branch: Block, else_branch: Option<ElseBranch> }
+    tokens { IfKw, ElseKw? }
 
     enum ElseBranch as CleanElseBranch { IfExpr, Block }
 
     /// `'fn' ParamList ('->' ret:TypeRef)? '='? body:Expr`.
     struct ClosureExpr { param_list: ParamList, ret: Option<TypeRef>, body: Expr }
+    tokens { FnKw, [Minus, Gt]?, Eq? }
 }
 
 #[cfg(test)]
@@ -376,5 +547,67 @@ mod tests {
         assert_eq!(NodeKind::FnItem.children()[2].name, "ret");
         assert_eq!(NodeKind::FnItem.children()[2].slot, Some(2));
         assert!(NodeKind::FnItem.children()[2].optional);
+    }
+
+    #[test]
+    fn tokens_follow_the_declaration() {
+        let [let_kw, mutable, colon, eq] = LetStmt::TOKENS else {
+            panic!("four tokens")
+        };
+        assert!(matches!(
+            let_kw,
+            TokenRule::Fixed {
+                first: SyntaxKind::LetKw,
+                glued: None,
+                optional: false
+            }
+        ));
+        assert!(matches!(
+            mutable,
+            TokenRule::Flag {
+                name: "mutable",
+                kind: SyntaxKind::MutKw
+            }
+        ));
+        assert!(matches!(
+            colon,
+            TokenRule::Fixed {
+                first: SyntaxKind::Colon,
+                optional: true,
+                ..
+            }
+        ));
+        assert_eq!(eq.to_string(), "'='");
+        let [arrow] = &FnItem::TOKENS[1..2] else {
+            panic!("an arrow")
+        };
+        assert!(matches!(
+            arrow,
+            TokenRule::Fixed {
+                first: SyntaxKind::Minus,
+                glued: Some(SyntaxKind::Gt),
+                optional: true
+            }
+        ));
+        assert_eq!(arrow.to_string(), "'->'");
+        let [op] = BinaryExpr::TOKENS else {
+            panic!("one token")
+        };
+        let TokenRule::Field {
+            name,
+            variants,
+            variant,
+            reads,
+            ..
+        } = *op
+        else {
+            panic!("a field")
+        };
+        assert_eq!((name, variants), ("op", BinaryOp::ALL.len()));
+        assert_eq!(variant(0), "Or");
+        assert_eq!(reads(SyntaxKind::Lt, Some(SyntaxKind::Eq)), Some(true));
+        assert_eq!(reads(SyntaxKind::Lt, Some(SyntaxKind::Minus)), Some(false));
+        assert_eq!(reads(SyntaxKind::Ident, None), None);
+        assert!(CallExpr::TOKENS.is_empty());
     }
 }

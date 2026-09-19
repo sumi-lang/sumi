@@ -6,10 +6,10 @@ use std::collections::hash_map::Entry;
 
 use rustc_hash::FxBuildHasher;
 use sumi_frontend::{DiagnosticCode, Label};
-use sumi_lexer::{RawIdx, SyntaxKind, TokenFlags};
+use sumi_lexer::{LexedFile, RawIdx, SyntaxKind, TokenFlags};
 use sumi_syntax::{
-    NodeIdx, SyntaxTree,
-    ast::{self, AstNode, Clean, CleanExpr, CleanStmt},
+    Literal, NodeIdx, PrefixOp, SyntaxTree,
+    ast::{self, AstNode, Clean, CleanExpr, CleanStmt, View},
 };
 
 use crate::codes;
@@ -94,19 +94,20 @@ impl<'s> Source<'s> {
             diagnostics: Vec::new(),
         }
     }
+    pub fn lexed(&self) -> &'s LexedFile {
+        self.parsed.lexed()
+    }
     pub fn range(&self, node: NodeIdx) -> TextRange {
-        self.tree.byte_range(node, self.parsed.lexed())
+        self.tree.byte_range(node, self.lexed())
     }
     pub fn text(&self, node: NodeIdx) -> &'s str {
         self.tree
-            .byte_range(node, self.parsed.lexed())
+            .byte_range(node, self.lexed())
             .text(self.parsed.source())
     }
     fn name(&self, name: Option<ast::Name>) -> Option<(&'s str, NodeIdx)> {
-        let node = name?.node();
-        (!self.tree.has_error(node)
-            && self.parsed.lexed().kind(self.tree.first_token(node)) == SyntaxKind::Ident)
-            .then(|| (self.text(node), node))
+        let node = name?.clean(self.tree, self.lexed())?.node();
+        Some((self.text(node), node))
     }
     pub fn error(
         &mut self,
@@ -188,12 +189,12 @@ impl<'s> Source<'s> {
     fn tokens(&self, start: RawIdx, end: RawIdx) -> impl Iterator<Item = SyntaxKind> + '_ {
         start
             .until(end)
-            .map(|raw| self.parsed.lexed().kind(raw))
+            .map(|raw| self.lexed().kind(raw))
             .filter(|kind| !kind.is_trivia())
     }
     fn peel(&self, mut expr: ast::Expr) -> ast::Expr {
         while let ast::Expr::ParenExpr(paren) = expr {
-            let Some(paren) = paren.clean(self.tree) else {
+            let Some(paren) = paren.clean(self.tree, self.lexed()) else {
                 break;
             };
             expr = paren.inner();
@@ -704,35 +705,6 @@ impl<'a, 's> Builder<'a, 's> {
         let (region, _) = *self.regions.last().expect("a body runs in its region");
         self.graph.region(region).context
     }
-    fn binary(&self, binary: Clean<ast::BinaryExpr>) -> (sumi_syntax::BinaryOp, NodeIdx, NodeIdx) {
-        let tree = self.source.tree;
-        let lhs = binary.lhs().node();
-        let rhs = binary.rhs().node();
-        let lexed = self.source.parsed.lexed();
-        let end = tree.first_token(rhs);
-        let first = tree
-            .end_token(lhs)
-            .until(end)
-            .find(|&raw| !lexed.kind(raw).is_trivia())
-            .expect("clean binary operator");
-        // Raw tokens partition the source, so the token at `first + 1` is glued to `first` unless
-        // it is trivia.
-        let glued = (first + 1 < end).then(|| lexed.kind(first + 1));
-        let op = sumi_syntax::binary_operator(lexed.kind(first), glued)
-            .expect("clean binary operator")
-            .0;
-        (op, lhs, rhs)
-    }
-    /// Whether a prefix expression negates, else it inverts.
-    fn negates(&self, prefix: Clean<ast::PrefixExpr>) -> bool {
-        let tree = self.source.tree;
-        self.source
-            .tokens(
-                tree.first_token(prefix.node()),
-                tree.first_token(prefix.operand().node()),
-            )
-            .eq([SyntaxKind::Minus])
-    }
     /// The scope is as it was when the read was built: a region is entered right after its
     /// condition finishes.
     fn read(&self, node: NodeIdx) -> Option<NodeId> {
@@ -754,19 +726,20 @@ impl<'a, 's> Builder<'a, 's> {
         let tree = self.source.tree;
         let Some(expr) = ast::Expr::cast(tree, cond)
             .map(|expr| self.source.peel(expr))
-            .and_then(|expr| expr.clean(tree))
+            .and_then(|expr| expr.clean(tree, self.source.lexed()))
         else {
             return;
         };
         let node = expr.node();
         match expr {
-            CleanExpr::PrefixExpr(prefix) => {
-                if !self.negates(prefix) {
-                    self.refine(prefix.operand().node(), !sense);
-                }
-            }
+            CleanExpr::PrefixExpr(prefix) => match prefix.op() {
+                PrefixOp::Not => self.refine(prefix.operand().node(), !sense),
+                PrefixOp::Neg => {}
+            },
             CleanExpr::BinaryExpr(binary) => {
-                let (op, lhs, rhs) = self.binary(binary);
+                let lhs = binary.lhs().node();
+                let rhs = binary.rhs().node();
+                let op = binary.op();
                 match op {
                     And if sense => {
                         self.refine(lhs, sense);
@@ -886,7 +859,7 @@ impl<'a, 's> Builder<'a, 's> {
 
         let tree = self.source.tree;
         let stmt = Stmt::cast(tree, node);
-        let Some(clean) = stmt.and_then(|stmt| stmt.clean(tree)) else {
+        let Some(clean) = stmt.and_then(|stmt| stmt.clean(tree, self.source.lexed())) else {
             match stmt {
                 Some(Stmt::LetStmt(binding)) => self.damaged_let(binding),
                 Some(Stmt::Expr(Expr::Block(_))) => {
@@ -903,14 +876,7 @@ impl<'a, 's> Builder<'a, 's> {
         };
         match clean {
             CleanStmt::LetStmt(binding) => {
-                let mutable = self
-                    .source
-                    .tokens(
-                        tree.first_token(node),
-                        tree.first_token(binding.name().node()),
-                    )
-                    .eq([SyntaxKind::LetKw, SyntaxKind::MutKw]);
-                if mutable {
+                if binding.mutable() {
                     self.unsupported(node);
                     self.damaged_let(binding.view());
                     return;
@@ -928,7 +894,9 @@ impl<'a, 's> Builder<'a, 's> {
                 work.push(Work::Enter(branch.condition().node()));
             }
             CleanStmt::Expr(CleanExpr::BinaryExpr(expr)) => {
-                let (op, lhs, rhs) = self.binary(expr);
+                let op = expr.op();
+                let lhs = expr.lhs().node();
+                let rhs = expr.rhs().node();
                 match eager(op) {
                     Some(op) => {
                         work.push(Work::Finish(Finish::Binary { expr, op }));
@@ -942,18 +910,13 @@ impl<'a, 's> Builder<'a, 's> {
                 work.push(Work::Enter(lhs));
             }
             CleanStmt::Expr(CleanExpr::PrefixExpr(expr)) => {
-                let neg = self.negates(expr);
+                let neg = expr.op() == PrefixOp::Neg;
                 let peeled = self.source.peel(expr.operand());
                 if neg
-                    && matches!(peeled, Expr::LiteralExpr(_))
-                    && self
-                        .source
-                        .parsed
-                        .lexed()
-                        .kind(tree.first_token(peeled.node()))
-                        == SyntaxKind::IntLiteral
+                    && let Expr::LiteralExpr(literal) = peeled
+                    && literal.value(tree, self.source.lexed()) == Some(Literal::Int)
                 {
-                    if self.integer(node, peeled.node(), true).is_none() {
+                    if self.integer(node, literal.node(), true).is_none() {
                         self.failed = true;
                     }
                     return;
@@ -1053,7 +1016,6 @@ impl<'a, 's> Builder<'a, 's> {
         let raw = self.source.tree.first_token(literal);
         if self
             .source
-            .parsed
             .lexed()
             .flags(raw)
             .contains(TokenFlags::MALFORMED_NUMBER)
@@ -1161,15 +1123,17 @@ impl<'a, 's> Builder<'a, 's> {
             }
             Finish::Literal(literal) => {
                 let node = literal.node();
-                match self.source.parsed.lexed().kind(tree.first_token(node)) {
-                    SyntaxKind::IntLiteral => {
+                match literal.value() {
+                    Literal::Int => {
                         self.integer(node, node, false)?;
                     }
-                    _ if matches!(self.source.text(node), "true" | "false") => {
-                        let value = self.source.text(node) == "true";
-                        self.push(node, Op::Bool(value), &[], None);
+                    Literal::True => {
+                        self.push(node, Op::Bool(true), &[], None);
                     }
-                    _ => {
+                    Literal::False => {
+                        self.push(node, Op::Bool(false), &[], None);
+                    }
+                    Literal::String => {
                         self.unsupported(node);
                         return None;
                     }

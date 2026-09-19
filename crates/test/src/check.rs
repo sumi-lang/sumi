@@ -7,6 +7,7 @@ use sumi_format::{Formatted, rep};
 use sumi_frontend::{ParsedSource, codes, parse_source};
 use sumi_hir::{Analysis, Program};
 use sumi_lexer::{LexedFile, RawIdx, SyntaxKind, TokenFlags, lex};
+use sumi_syntax::ast::TokenRule;
 use sumi_syntax::{
     BRACKET_PAIRS, NodeKind, Parse, ParseAnchor, ParseEvidence, ParserInput, SigIdx, SyntaxTree,
 };
@@ -258,13 +259,49 @@ pub fn tree(tree: &SyntaxTree, lexed: &LexedFile) {
 
         // What a clean view rests on.
         if !tree.has_error(node) {
-            for child in tree.kind(node).children() {
+            let kind = tree.kind(node);
+            for child in kind.children() {
                 assert!(
                     child.optional || (child.present)(tree, node),
-                    "{:?} {node:?} has no error but lacks its `{}`",
-                    tree.kind(node),
+                    "{kind:?} {node:?} has no error but lacks its `{}`",
                     child.name
                 );
+            }
+            for rule in kind.tokens() {
+                let held = match *rule {
+                    TokenRule::Fixed {
+                        first,
+                        glued,
+                        optional,
+                    } => optional || tree.holds(node, lexed, first, glued),
+                    TokenRule::Flag { .. } => true,
+                    TokenRule::Field { reads, .. } => tree
+                        .own_pairs(node, lexed)
+                        .any(|(first, glued)| reads(first, glued).is_some()),
+                };
+                assert!(held, "{kind:?} {node:?} has no error but lacks its {rule}");
+            }
+            // And the converse: the grammar declares every token the rule holds.
+            let mut spanned = false;
+            for (first, glued) in tree.own_pairs(node, lexed) {
+                if spanned {
+                    spanned = false;
+                    continue;
+                }
+                let declared = kind.tokens().iter().find_map(|rule| match *rule {
+                    TokenRule::Fixed {
+                        first: kind,
+                        glued: pair,
+                        ..
+                    } if kind == first && (pair.is_none() || pair == glued) => Some(pair.is_some()),
+                    TokenRule::Flag { kind, .. } if kind == first => Some(false),
+                    TokenRule::Field { reads, .. } => reads(first, glued),
+                    _ => None,
+                });
+                let Some(spans) = declared else {
+                    panic!("{kind:?} {node:?} holds {first:?}, which no rule of its kind declares");
+                };
+                spanned = spans;
             }
         }
 
@@ -534,7 +571,7 @@ pub fn semantics(analysis: &Analysis) {
     use sumi_hir::FunctionId;
     let source = analysis.parsed().source();
     if analysis.parsed().diagnostics().is_empty() {
-        use sumi_syntax::ast::{AstNode, SourceFile};
+        use sumi_syntax::ast::{AstNode, SourceFile, View};
         let tree = analysis.parsed().parse().tree();
         let mut declarations: Vec<_> = SourceFile::cast(tree, tree.root())
             .unwrap()

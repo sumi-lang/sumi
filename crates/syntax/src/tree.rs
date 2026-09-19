@@ -117,6 +117,65 @@ impl SyntaxTree {
         out
     }
 
+    /// The significant tokens `index` holds itself, outside every child, in order; `lexed` must
+    /// be the file this tree was parsed from.
+    fn own_tokens<'a>(
+        &'a self,
+        index: NodeIdx,
+        lexed: &'a LexedFile,
+    ) -> impl Iterator<Item = RawIdx> + 'a {
+        let end = self.end_token(index);
+        let mut children = self.children(index);
+        let mut child = children.next();
+        let mut raw = self.first_token(index);
+        std::iter::from_fn(move || {
+            while raw < end {
+                if let Some(next) = child
+                    && raw >= self.first_token(next)
+                {
+                    raw = self.end_token(next);
+                    child = children.next();
+                    continue;
+                }
+                let current = raw;
+                raw += 1;
+                if !lexed.kind(current).is_trivia() {
+                    return Some(current);
+                }
+            }
+            None
+        })
+    }
+
+    /// Whether `index` holds `first` itself, with `glued` joint after it when given.
+    pub fn holds(
+        &self,
+        index: NodeIdx,
+        lexed: &LexedFile,
+        first: SyntaxKind,
+        glued: Option<SyntaxKind>,
+    ) -> bool {
+        self.own_pairs(index, lexed)
+            .any(|(kind, next)| kind == first && (glued.is_none() || next == glued))
+    }
+
+    /// Each significant token `index` holds itself, with the kind of the own token glued after it.
+    pub fn own_pairs<'a>(
+        &'a self,
+        index: NodeIdx,
+        lexed: &'a LexedFile,
+    ) -> impl Iterator<Item = (SyntaxKind, Option<SyntaxKind>)> + 'a {
+        let mut own = self.own_tokens(index, lexed).peekable();
+        std::iter::from_fn(move || {
+            let raw = own.next()?;
+            let glued = own
+                .peek()
+                .filter(|&&next| next == raw + 1)
+                .map(|&next| lexed.kind(next));
+            Some((lexed.kind(raw), glued))
+        })
+    }
+
     pub fn children(&self, index: NodeIdx) -> impl Iterator<Item = NodeIdx> + '_ {
         let end = index.to_usize() + self.nodes[index.to_usize()].extent as usize;
         let mut child = index.to_usize() + 1;

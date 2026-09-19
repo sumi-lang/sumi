@@ -7,8 +7,8 @@ use sumi_lexer::RawIdx;
 use crate::ast::NodeKind as N;
 use crate::grammar::{
     BinaryOp, PREFIX_BP, SyntaxKind as T, binary_operator, can_end_statement, closer,
-    encloses_statements, introduces_statement, is_closer, is_opener, is_prefix_operator, opener,
-    starts_expression, starts_item, starts_statement,
+    encloses_statements, introduces_statement, is_closer, is_literal, is_opener,
+    is_prefix_operator, opener, starts_expression, starts_item, starts_statement,
 };
 use crate::input::ParserInput;
 use crate::tree::{CompletedMarker, Marker, Parse, RecoveryHandle};
@@ -888,7 +888,7 @@ fn prefix_or_atom(p: &mut Marker<'_, '_>, follow: ExprFollow) -> Option<Complete
             m.complete(N::PrefixExpr)
         }
         T::Ident => leaf(p, N::NameRef),
-        T::IntLiteral | T::StringLiteral | T::TrueKw | T::FalseKw => leaf(p, N::LiteralExpr),
+        _ if is_literal(kind) => leaf(p, N::LiteralExpr),
         T::LParen => {
             let mut m = p.start();
             m.token();

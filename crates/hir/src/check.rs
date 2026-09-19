@@ -4,7 +4,7 @@
 
 use sumi_frontend::ParsedSource;
 use sumi_graph::{FunctionId, Graph, NodeId, Op, Ty};
-use sumi_syntax::ast::{self, AstNode};
+use sumi_syntax::ast::{self, View};
 use sumi_text::TextRange;
 
 use crate::codes;

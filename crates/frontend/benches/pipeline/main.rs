@@ -6,7 +6,7 @@ use criterion::{
 use sumi_format::format;
 use sumi_frontend::parse_source;
 use sumi_lexer::lex;
-use sumi_syntax::ast::{AstNode, Block, ElseBranch, Expr, SourceFile, Stmt};
+use sumi_syntax::ast::{Block, ElseBranch, Expr, SourceFile, Stmt, View};
 use sumi_syntax::{MAX_DEPTH, NodeKind, ParseEvidence, ParserInput, RawIdx, SyntaxTree, parse};
 use sumi_test::bench::{self, Rng};
 use sumi_text::{LineIndex, TextSize};
