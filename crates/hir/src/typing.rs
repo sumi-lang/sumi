@@ -139,7 +139,7 @@ impl Typing {
         for &(node, ty, claim) in &self.facts {
             replay.learn(node, &Evidence::single(ty, claim));
         }
-        for (call, edge, solved) in self.solver.flows() {
+        for (call, edge, solved) in self.solver.edges() {
             if let Edge::Call(claim) = *edge
                 && solved.types.ty().is_some()
             {

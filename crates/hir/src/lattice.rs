@@ -1,5 +1,5 @@
 //! The [`Lattice`] the solver carries: per class, the best claim of each scalar type and the
-//! [`May`] values, crossing the same [`Edge`]s. A call or argument edge that closes a cycle rounds
+//! [`May`] values, crossing the same [`Edge`]s and [`Pair`]s. A call or argument edge that closes a cycle rounds
 //! the ints to the thresholds, so every ascending chain is finite.
 
 use std::num::NonZeroU32;
@@ -169,18 +169,16 @@ pub(crate) struct Product {
     pub values: May,
 }
 
-impl Product {
-    /// A body's flow graph is acyclic, so every cycle crosses a call and an argument edge; rounding
-    /// those two keeps every chain finite.
-    fn rounded(&self, cyclic: bool, cx: &Thresholds) -> May {
-        if cyclic {
-            May {
-                ints: self.values.ints.round(cx),
-                ..self.values.clone()
-            }
-        } else {
-            self.values.clone()
+/// A body's flow graph is acyclic, so every cycle crosses a call and an argument edge; rounding
+/// those two keeps every chain finite.
+fn rounded(values: &May, cyclic: bool, cx: &Thresholds) -> May {
+    if cyclic {
+        May {
+            ints: values.ints.round(cx),
+            ..values.clone()
         }
+    } else {
+        values.clone()
     }
 }
 
@@ -214,19 +212,14 @@ impl Lattice for Product {
         }
     }
 
-    fn carries_pair(pair: &Pair, second: bool) -> Carry {
+    /// A gating context carries nothing of its own.
+    fn carries_pair(pair: &Pair) -> [Carry; 2] {
         match pair {
-            Pair::Lazy { .. } | Pair::Then | Pair::Else => Carry::Nothing,
-            Pair::Binary(BinaryOp::Arith(_)) => Carry::Grows,
-            Pair::Binary(BinaryOp::Cmp(_)) => Carry::Nothing,
-            Pair::Refine { .. } => Carry::Passes,
-            Pair::Branch | Pair::Argument => {
-                if second {
-                    Carry::Nothing
-                } else {
-                    Carry::Passes
-                }
-            }
+            Pair::Lazy { .. } | Pair::Then | Pair::Else => [Carry::Nothing; 2],
+            Pair::Binary(BinaryOp::Arith(_)) => [Carry::Grows; 2],
+            Pair::Binary(BinaryOp::Cmp(_)) => [Carry::Nothing; 2],
+            Pair::Refine { .. } => [Carry::Passes; 2],
+            Pair::Branch | Pair::Argument => [Carry::Passes, Carry::Nothing],
         }
     }
 
@@ -238,7 +231,7 @@ impl Lattice for Product {
         };
         let values = &self.values;
         let values = match *edge {
-            Edge::Call(_) => self.rounded(cyclic, cx),
+            Edge::Call(_) => rounded(values, cyclic, cx),
             Edge::Bind | Edge::Values => values.clone(),
             Edge::Peer => May::NONE,
             Edge::Neg => {
@@ -288,7 +281,7 @@ impl Lattice for Product {
             }
             Pair::Argument => {
                 if second.live() {
-                    self.rounded(cyclic, cx)
+                    rounded(values, cyclic, cx)
                 } else {
                     May::NONE
                 }
