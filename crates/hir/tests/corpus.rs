@@ -1,11 +1,5 @@
-//! Semantic goldens selected by `stages`, not by the existence of `hir.snap`:
-//! the graph with what the checker decided, and, for cases that select
-//! `eval`, every parameterless function of an accepted case run to its
-//! value, with the machine's step count and deepest call nesting as the
-//! witnesses of what running it costs, and the depth the analysis claimed
-//! beside the depth the run observed. Update with
-//! `UPDATE_HIR=1 cargo test -p sumi-hir --test corpus` and
-//! `UPDATE_EVAL=1 cargo test -p sumi-hir --test corpus`.
+//! Semantic goldens: `hir.snap` for the graph the checker built, `eval.snap` for every
+//! parameterless function of an accepted case run to its value.
 
 use std::fmt::Write as _;
 
@@ -57,7 +51,6 @@ fn run(source: &str) -> String {
     out
 }
 
-/// `@start..end`, or `@at` for an empty range.
 fn at(range: TextRange) -> String {
     let (start, end) = (range.start().to_u32(), range.end().to_u32());
     if start == end {
@@ -138,8 +131,6 @@ fn snapshot(source: &str) -> String {
     out
 }
 
-/// What the graph does not store but a rendering needs: how often each
-/// node is read, and the innermost region each node sits in.
 struct Shape {
     users: Vec<u32>,
     region_of: Vec<Option<RegionId>>,
@@ -153,8 +144,8 @@ impl Shape {
                 users[input.index()] += 1;
             }
         }
-        // Regions open outermost first, so a later region's run refines
-        // an earlier one's.
+        // Regions are numbered outermost first, so the last write leaves each node's innermost
+        // region.
         let mut region_of = vec![None; graph.nodes().len()];
         for region in graph.region_ids() {
             for node in graph.region(region).nodes() {
@@ -171,7 +162,6 @@ fn ty(analysis: &Analysis, node: NodeId) -> String {
         .map_or_else(|| "?".to_owned(), |ty| ty.to_string())
 }
 
-/// A named definition, as its declaration spelling and origin.
 fn named(analysis: &Analysis, node: NodeId) -> String {
     match analysis.graph().node(node).name {
         Some(name) => format!("{}{}", analysis.text(name), at(name)),
@@ -196,7 +186,6 @@ fn dump(analysis: &Analysis, shape: &Shape, function: FunctionId, out: &mut Stri
     if result == graph.region(region).result() {
         dump_region(analysis, shape, "body", region, 1, out);
     } else {
-        // The declared result the body's value is held to.
         let node = graph.node(result);
         writeln!(
             out,
@@ -209,13 +198,6 @@ fn dump(analysis: &Analysis, shape: &Shape, function: FunctionId, out: &mut Stri
     }
 }
 
-// Render each region as its statements and its value: a named copy is a
-// `let`, an expression statement and a node nothing reads are each a
-// discard, and every other node prints inline under the node that reads
-// it, so the rendering follows use, never the table's order. A read of a
-// named node uses its declaration spelling and origin; a read under a
-// guard names the guard. `_ = x` only reads a local: an edge and no node,
-// so it does not print.
 fn dump_region(
     analysis: &Analysis,
     shape: &Shape,
@@ -227,8 +209,7 @@ fn dump_region(
     let graph = analysis.graph();
     let region_ref = graph.region(region);
     let result = region_ref.result();
-    // The result prints as the tail, unless it is a `let`, which prints as
-    // its statement and is read by the tail.
+    // A named result prints as its `let` statement, and the tail reads it.
     let statements: Vec<NodeId> = region_ref
         .nodes()
         .filter(|&node| shape.region_of[node.index()] == Some(region))
@@ -261,7 +242,7 @@ fn dump_region(
                 let initializer = graph.inputs(node)[0];
                 dump_node(analysis, shape, "initializer", initializer, depth + 2, out);
             }
-            // A binding too damaged to have an initializer.
+            // A named node that is not a copy is a binding recovery left without an initializer.
             (Some(_), _) => {
                 let role = format!("let {}", named(analysis, node));
                 dump_definition(analysis, shape, &role, node, depth + 1, out);
@@ -276,8 +257,6 @@ fn dump_region(
     dump_node(analysis, shape, "tail", result, depth + 1, out);
 }
 
-/// The guards a read at `node` is narrowed by, innermost first, and the
-/// definition it reads.
 fn guards(analysis: &Analysis, mut node: NodeId) -> (Vec<String>, NodeId) {
     let graph = analysis.graph();
     let mut guards = Vec::new();
@@ -302,8 +281,6 @@ fn guards(analysis: &Analysis, mut node: NodeId) -> (Vec<String>, NodeId) {
     }
 }
 
-/// A use of `node`: a read, by name, of a named definition, under the
-/// guards that narrow it, or the definition itself inline.
 fn dump_node(
     analysis: &Analysis,
     shape: &Shape,

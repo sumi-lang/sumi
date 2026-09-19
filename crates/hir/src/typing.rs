@@ -1,18 +1,6 @@
-//! The checker's instance of the [`Solver`]: a class for every node of the
-//! graph, the one at its index, carrying the [`Product`] of its type
-//! claims and may-values.
-//!
-//! Nothing the checker draws merges two classes: what the solve decides of
-//! a node is read back at the node. Equality is local to a declaration;
-//! flows never unify caller and callee, so a caller's demands never decide
-//! a callee's result, and signatures are read off result classes after one
-//! solve, in any declaration order.
-//!
-//! The typing keeps what the solver does not: where each claim was made,
-//! which claims were facts rather than demands, and which classes are one
-//! in the [`Replay`], where demands are checked one at a time against the
-//! settled flows so a disagreement is blamed on the first demand that
-//! raised it.
+//! The checker's [`Solver`]: one class per graph node, at the node's index, carrying a [`Product`].
+//! Flows never merge classes, so a caller's demands never reach its callee and signatures are read
+//! off result classes after one solve, in any declaration order.
 
 use sumi_text::TextRange;
 
@@ -21,35 +9,23 @@ use sumi_graph::{Domain, May, NodeId, Thresholds, Ty};
 use crate::lattice::{Claim, Edge, Evidence, Product};
 use crate::solver::Solver;
 
-/// What a demand asks of an expression: a fixed type, or the type of a
-/// peer it is compared to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Expected {
     Ty(Ty),
-    /// Compared with `Peer`: each learns the other's types and nothing of
-    /// its values.
+    /// Each learns the other's types and nothing of its values.
     Peer(NodeId),
 }
 
 pub(crate) struct Typing {
     solver: Solver<Product>,
-    /// Where each claim was made, by claim index.
     origins: Vec<TextRange>,
-    /// Every type claimed on a class's own account, with the claim that
-    /// made it: what the replay starts from, restated to it since the
-    /// solver keeps no record of which evidence was a fact.
     facts: Vec<(NodeId, Ty, Claim)>,
-    /// Every class that is one with another in the replay, beside that
-    /// other: the consumer of each aliasing edge beside its provider. The
-    /// replay resolves types alone, so a demand on the read or the
-    /// binding is a demand on the local or the initializer wherever its
-    /// type comes from, a branch settled later included.
+    /// Unioned in the replay rather than delivered like a call: a demand on the alias must reach
+    /// its provider, whose type a branch may settle only later.
     aliased: Vec<(NodeId, NodeId)>,
 }
 
 impl Typing {
-    /// A typing of `nodes` classes, one per node at the node's index, with
-    /// room for about a claim, a fact, and a flow per class.
     pub fn for_nodes(nodes: usize) -> Self {
         Self {
             solver: Solver::with_classes(nodes),
@@ -65,24 +41,19 @@ impl Typing {
         claim
     }
 
-    /// Where `claim` was made; none for a replay's own claims.
+    /// None for a replay's own claims.
     pub fn origin(&self, claim: Claim) -> Option<TextRange> {
         self.origins.get(claim.index()).copied()
     }
 
-    /// `node` is known to have `ty` because of what is at `origin`: an
-    /// annotation, or an operator's result, whose values arrive by flows.
     pub fn known(&mut self, node: NodeId, ty: Ty, origin: TextRange) {
         self.fact(node, ty, May::NONE, origin);
     }
 
-    /// `node` is a literal: known to have `ty` and to be exactly `value`.
     pub fn literal(&mut self, node: NodeId, ty: Ty, value: May, origin: TextRange) {
         self.fact(node, ty, value, origin);
     }
 
-    /// What `node` is on its own account: a claim of `ty` made at `origin`,
-    /// which survives a replay, and its own values.
     fn fact(&mut self, node: NodeId, ty: Ty, value: May, origin: TextRange) {
         let claim = self.claim(origin);
         self.solver.expect(
@@ -95,9 +66,7 @@ impl Typing {
         self.facts.push((node, ty, claim));
     }
 
-    /// `node` is a function's entry context: live on its own account when
-    /// the function can be run without arguments, otherwise live when a
-    /// call site is. Liveness is not a type claim, so no replay reads it.
+    /// Liveness is not a type claim, so no replay reads it.
     pub fn entry(&mut self, node: NodeId, runnable: bool) {
         if runnable {
             self.solver.expect(
@@ -110,15 +79,11 @@ impl Typing {
         }
     }
 
-    /// Let `call`, the class of a call at `origin`, learn its callee's
-    /// `result`: the same types, all claimed at the call site.
     pub fn call(&mut self, result: NodeId, call: NodeId, origin: TextRange) {
         let claim = self.claim(origin);
         self.flow(result, call, Edge::Call(claim));
     }
 
-    /// Let everything `provider` learns reach `consumer` through `edge`,
-    /// and nothing travel back.
     pub fn flow(&mut self, provider: NodeId, consumer: NodeId, edge: Edge) {
         self.solver.flow(provider, consumer, edge);
         if edge.aliases() {
@@ -126,8 +91,6 @@ impl Typing {
         }
     }
 
-    /// Let `consumer` learn the transfer of `first` and `second` through
-    /// `edge`, recomputed whenever either grows.
     pub fn derive(&mut self, first: NodeId, second: NodeId, consumer: NodeId, edge: Edge) {
         self.solver.derive(first, second, consumer, edge);
         if edge.aliases() {
@@ -135,7 +98,6 @@ impl Typing {
         }
     }
 
-    /// The use at `origin` demands that `node` be `expected`.
     pub fn expect(&mut self, node: NodeId, expected: Expected, origin: TextRange) {
         match expected {
             Expected::Ty(ty) => {
@@ -167,18 +129,11 @@ impl Typing {
         self.evidence(node).ty()
     }
 
-    /// Settle every flow. Signatures can be read off result classes after
-    /// this, in any declaration order.
     pub fn solve(&mut self, thresholds: &Thresholds) {
         self.solver.solve(thresholds);
     }
 
-    /// The same classes carrying only the types known on their own account:
-    /// the facts, restated, and the calls whose callee result is solved,
-    /// with each aliased class one with the class it aliases. An unresolved
-    /// or conflicted callee delivers nothing: it is reported at its
-    /// declaration. A branch is settled by [`Replay::branch`] when its `if`
-    /// comes up among the demands.
+    /// A conflicted callee delivers nothing: it is reported at its declaration.
     pub fn replay(&self) -> Replay {
         let mut replay = Replay::new(self.solver.classes());
         for &(node, ty, claim) in &self.facts {
@@ -197,16 +152,11 @@ impl Typing {
         replay
     }
 
-    /// What the solve decided of every class, and nothing else: the flows,
-    /// facts, claim origins, and aliases are done with once the verdicts
-    /// are given.
     pub fn settle(self) -> Settled {
         Settled(self.solver.into_evidence().into_boxed_slice())
     }
 }
 
-/// The evidence of every class once the flows are settled and the
-/// verdicts given, by class index.
 pub(crate) struct Settled(Box<[Product]>);
 
 impl Settled {
@@ -219,17 +169,10 @@ impl Settled {
     }
 }
 
-/// A [`Typing::replay`]: the classes again, carrying type evidence alone
-/// over a union-find, so an aliased class or a peer reads and takes the
-/// evidence of the class it is one with. Handed the demands one at a
-/// time, in node order, it blames a disagreement on the first demand
-/// that raised it, with the flows final rather than provisional. Its own
-/// claims record no origin; the claims flows delivered do.
+/// Handed the demands one at a time in node order, it blames a disagreement on the first that
+/// raised it.
 pub(crate) struct Replay {
-    /// Each class's parent; a root is its own.
     parent: Vec<u32>,
-    /// How many classes a root is one with, itself included; meaningful
-    /// at roots only, as is the evidence.
     size: Vec<u32>,
     evidence: Vec<Evidence>,
 }
@@ -256,9 +199,6 @@ impl Replay {
         self.evidence[root].join(evidence);
     }
 
-    /// Make `a` and `b` one class, joining their evidence. The smaller
-    /// class goes under the larger root, so no chain outgrows the
-    /// logarithm of the class count however many reads alias one local.
     fn union(&mut self, a: NodeId, b: NodeId) {
         let (a, b) = (self.root(a), self.root(b));
         if a == b {
@@ -283,8 +223,8 @@ impl Replay {
         self.evidence(node).ty()
     }
 
-    /// Settle a branch flow: what `branch` is so far, delivered to `join`,
-    /// the class of its `if`, as a solved call is delivered.
+    /// `join` is the `if`; `branch` delivers what it is so far, so this is called when the `if`
+    /// comes up among the demands.
     pub fn branch(&mut self, branch: NodeId, join: NodeId) {
         let evidence = *self.evidence(branch);
         if evidence.ty().is_some() {
@@ -292,7 +232,6 @@ impl Replay {
         }
     }
 
-    /// One demand, replayed.
     pub fn expect(&mut self, node: NodeId, expected: Expected) {
         match expected {
             Expected::Ty(ty) => self.learn(node, &Evidence::single(ty, Claim::REPLAYED)),
@@ -310,7 +249,6 @@ mod tests {
         TextRange::new(TextSize::new(offset), TextSize::new(offset + 1))
     }
 
-    /// A typing of `N` classes nothing is known about yet, by index.
     fn classes<const N: usize>() -> (Typing, [NodeId; N]) {
         (Typing::for_nodes(N), std::array::from_fn(NodeId::new))
     }
@@ -319,7 +257,6 @@ mod tests {
         Thresholds::default()
     }
 
-    /// A fact restated to the replay is three words.
     #[test]
     fn a_fact_is_three_words() {
         assert_eq!(size_of::<(NodeId, Ty, Claim)>(), 12);
@@ -442,9 +379,6 @@ mod tests {
             .collect();
         assert_eq!(origins, [(Ty::Int, at(0)), (Ty::Bool, at(1))]);
         assert!(typing.evidence(call).inherited());
-        // A replay settles the branches when asked, from what the branches
-        // are in the replay; a demand refused before then does not reach
-        // the `if`.
         let mut replay = typing.replay();
         assert_eq!(replay.resolve(join), None);
         assert_eq!(replay.resolve(call), None);
@@ -468,7 +402,6 @@ mod tests {
         typing.derive(then_branch, dead, join, Edge::Branch);
         typing.derive(else_branch, live, join, Edge::Branch);
         typing.solve(&cx());
-        // The type still arrives from both arms; the value from the live one.
         assert_eq!(typing.resolve(join), Some(Ty::Int));
         assert_eq!(typing.may(join), &May::int(&2.into()));
     }
@@ -511,10 +444,6 @@ mod tests {
         assert_eq!(replay.resolve(unknown_call), Some(Ty::Bool));
     }
 
-    /// A refined read of a local whose type arrives only when its `if` is
-    /// settled in the replay is one class with the local there, so it
-    /// resolves once the branches deliver and a demand on it is a demand
-    /// on the local.
     #[test]
     fn a_refined_read_of_a_branch_bound_local_resolves_with_its_if() {
         let (mut typing, [live, then_branch, else_branch, local, refined]) = classes();
@@ -535,11 +464,6 @@ mod tests {
         assert!(replay.evidence(local).is_conflict());
     }
 
-    /// An unannotated `let` is its initializer: the same types and
-    /// values in the solve, where the two stay apart, so a demand on the
-    /// binding conflicts the binding and not the initializer; and one
-    /// class in the replay, so the demand is blamed on the initializer's
-    /// type there, a call settled by the replay included.
     #[test]
     fn a_let_copies_its_initializer_and_is_one_with_it_in_the_replay() {
         let (mut typing, [literal, binding, unknown, unknown_call, bound_call]) = classes();
@@ -559,10 +483,6 @@ mod tests {
         assert_eq!(replay.resolve(unknown_call), Some(Ty::Bool));
     }
 
-    /// Every read of one local aliases it, whichever way each union is
-    /// stated: the larger class stays the root, so no read ever reaches its
-    /// evidence through another read, and a local's type still reaches
-    /// every read once it is learned.
     #[test]
     fn reads_aliasing_one_local_stay_one_step_from_its_root() {
         const READS: usize = 1000;
@@ -582,7 +502,6 @@ mod tests {
         assert_eq!(replay.resolve(NodeId::new(READS)), Some(Ty::Int));
     }
 
-    /// Once settled, every class reads back what the solve decided of it.
     #[test]
     fn settled_evidence_is_read_by_class() {
         let (mut typing, [literal, copied, apart]) = classes();

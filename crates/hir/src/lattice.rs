@@ -1,32 +1,6 @@
-//! The evidence on every class of the graph, and what it becomes crossing
-//! each kind of flow: the [`Lattice`] the [`Solver`](crate::solver::Solver)
-//! carries for the checker.
-//!
-//! A class holds a [`Product`]: the set of scalar types claimed for it,
-//! each with the best claim that made it, so a conflicted class explains
-//! itself, and the [`May`] set of values that reach it. A claim is one
-//! word, its rank, which is also its identity; the range it was made at
-//! lives in a table on the typing, consulted only when a conflict is
-//! reported, so joining or transferring evidence never touches memory
-//! beyond the class. A conflict is kept rather than retracted, so its
-//! report can name every side.
-//!
-//! Types and values cross the same [`Edge`]. A call relabels the claims to
-//! the call site, so no origin ever points outside the declaration that
-//! owns the class, and a conflict whose every claim arrived through a call
-//! was already a conflict where it arose and is reported there, once. A
-//! branch delivers its types to its `if` whichever branch is live, and the
-//! `if` never unifies with its branches: branches that disagree make a
-//! conflict on the `if` alone.
-//!
-//! Values arrive by flows only. A literal and a known-unit class are facts;
-//! everything else is derived along an edge from one or two providers. An
-//! operator's edge reads the operator in the may-[`Domain`], the one
-//! semantics every reader of the graph shares; the other edges copy, gate,
-//! or narrow a value by the contexts the graph records. Hull is the join,
-//! and a recursion would climb forever, so an edge that closes a cycle of
-//! the flow graph rounds its endpoints to the program's [`Thresholds`],
-//! which keeps every ascending chain finite.
+//! The [`Lattice`] the solver carries: per class, the best claim of each scalar type and the
+//! [`May`] values, crossing the same [`Edge`]s. A call or argument edge that closes a cycle rounds
+//! the ints to the thresholds, so every ascending chain is finite.
 
 use std::num::NonZeroU32;
 
@@ -34,26 +8,21 @@ use sumi_graph::{BinaryOp, Domain, May, Thresholds, Ty};
 
 use crate::solver::{Carry, Lattice};
 
-/// One claim that a class has some type, as its rank: the one-based sequence
-/// number of the claim in the walk, under a bit set once the claim has
-/// crossed a flow. A claim made on the class itself therefore outranks one
-/// delivered by a flow, and an earlier claim outranks a later one. One-based
-/// so an absent claim needs no extra word.
+/// A claim that a class has a type, as its rank: its one-based index in the walk, with `IMPORTED`
+/// set once it crossed a flow. Lower wins.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct Claim(NonZeroU32);
 
 const IMPORTED: u32 = 1 << 31;
 
 impl Claim {
-    /// The claim made `index` claims into the walk.
     pub fn local(index: usize) -> Self {
         let rank = u32::try_from(index + 1).expect("claim count fits u32");
         assert!(rank < IMPORTED, "claim count fits below the imported bit");
         Self(NonZeroU32::new(rank).unwrap())
     }
 
-    /// The one claim a replay makes: it records no origin, since nothing is
-    /// reported from where a replay's evidence came.
+    /// The claim a replay makes: no origin, since a replay reports nothing.
     pub const REPLAYED: Self = Self(NonZeroU32::MAX);
 
     fn imported(self) -> bool {
@@ -65,15 +34,12 @@ impl Claim {
     }
 }
 
-/// The type evidence on a class: for each scalar type, the best claim that
-/// the class has it. No claim is unresolved, one is solved, and more than
-/// one is a conflict.
+/// Per scalar type, the best claim that the class has it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Evidence {
     claims: [Option<Claim>; Ty::ALL.len()],
 }
 
-/// Evidence slots are indexed by discriminant, in the order `Ty::ALL` lists.
 const _: () = {
     let mut index = 0;
     while index < Ty::ALL.len() {
@@ -93,8 +59,6 @@ impl Evidence {
         evidence
     }
 
-    /// Join `other` in, keeping the best claim of each type: whether
-    /// anything changed.
     pub fn join(&mut self, other: &Self) -> bool {
         let mut grew = false;
         for (mine, theirs) in self.claims.iter_mut().zip(&other.claims) {
@@ -108,7 +72,6 @@ impl Evidence {
         grew
     }
 
-    /// The same types, all claimed by `claim` on the far side of a call.
     pub fn imported(&self, claim: Claim) -> Self {
         let imported = Claim(claim.0 | IMPORTED);
         Self {
@@ -116,7 +79,7 @@ impl Evidence {
         }
     }
 
-    /// The one type claimed, if exactly one is.
+    /// The type claimed, if exactly one is.
     pub fn ty(&self) -> Option<Ty> {
         let mut found = None;
         for (ty, claim) in Ty::ALL.iter().zip(&self.claims) {
@@ -134,13 +97,12 @@ impl Evidence {
         self.claims.iter().filter(|claim| claim.is_some()).count() > 1
     }
 
-    /// Whether this is a conflict whose every claim arrived through a flow:
-    /// it was already a conflict where it came from, and is reported there.
+    /// A conflict whose every claim crossed a flow; it is reported where it arose.
     pub fn inherited(&self) -> bool {
         self.is_conflict() && self.claims.iter().flatten().all(|claim| claim.imported())
     }
 
-    /// Every type claimed and the claim behind it, best first.
+    /// Every claim, best first.
     pub fn claims(&self) -> Vec<(Ty, Claim)> {
         let mut claims: Vec<_> = Ty::ALL
             .iter()
@@ -152,72 +114,43 @@ impl Evidence {
     }
 }
 
-/// What a class learns crossing a flow: its types and values in terms of
-/// the first provider's, and the second's for a two-provider edge.
+/// The second provider of `Binary`, `Lazy`, and `Refine` is the other operand; of `Branch`, `Then`,
+/// `Else`, and `Argument`, the context that gates them.
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Edge {
-    /// A callee's result into a call: the same types, all claimed at the
-    /// call site, and the values, rounded to the thresholds when the flow
-    /// closes a cycle.
+    /// A callee's result into a call, its types relabeled to the call site's claim.
     Call(Claim),
-    /// A `let` without an annotation from its initializer: the types and
-    /// values as they are, and one class with it in the replay, so a
-    /// demand on a read of the binding is a demand on what it was bound to.
+    /// An unannotated `let` from its initializer.
     Bind,
-    /// The values as they are and nothing of the types: a declared
-    /// binding's initializer, a declared result's body, and the parent
-    /// context of a branch whose condition has no value.
     Values,
-    /// A read of a local narrowed by a comparison with the second provider
-    /// holding in the given sense: the local's types as they are, and one
-    /// class with it in the replay, so the read still types once solved.
     Refine {
         op: BinaryOp,
         local_is_lhs: bool,
         sense: bool,
     },
-    /// A read of a boolean local narrowed to one value, typed as `Refine`.
     Exactly(bool),
-    /// A branch's value into its `if`, while the branch's context, the
-    /// second provider, is live; its types either way, so the `if` learns
-    /// what each arm is and never decides what an arm is.
     Branch,
-    /// One operand of `==` or `!=` telling the other its types, each way,
-    /// and nothing of its values, since comparing two values says nothing
-    /// about their ranges.
+    /// One operand of `==` or `!=` typing the other.
     Peer,
     Neg,
     Not,
-    /// An eager operator over its operands.
     Binary(BinaryOp),
-    /// `&&` or `||` over its operands' values.
     Lazy {
         and: bool,
     },
-    /// A context: live when the condition may be true, or false, and the
-    /// enclosing context, the second provider, is live.
     Then,
     Else,
-    /// An argument into a parameter, while the call's context, the second
-    /// provider, is live. Rounded to the thresholds when the flow closes a
-    /// cycle.
     Argument,
-    /// A context into a class that is unit while the context is live: a
-    /// call's into the callee's entry, a block's into its tail-less self.
     Enter,
 }
 
 impl Edge {
-    /// Whether the consumer is one class with the first provider in the
-    /// replay: a binding with its initializer, a narrowed read with its
-    /// local.
+    /// Whether the consumer is one class with its first provider in the replay.
     pub fn aliases(self) -> bool {
         matches!(self, Self::Bind | Self::Refine { .. } | Self::Exactly(_))
     }
 }
 
-/// The evidence on a class: its types and its values, joined side by side
-/// and crossing the same edges.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Product {
     pub types: Evidence,
@@ -244,12 +177,7 @@ impl Lattice for Product {
         types | ints | bools | unit
     }
 
-    /// An arithmetic result can outgrow its operands; integers pass through
-    /// copies, refinement, branches, arguments, and calls. A comparison, a
-    /// lazy operator, and a context deliver a boolean or liveness, which
-    /// are finite; the context that gates a branch or an argument carries
-    /// nothing of its own; and type claims never climb, so a peer carries
-    /// nothing.
+    /// Only values climb: type claims are finite, so `Peer` carries nothing.
     fn carries(edge: &Edge, second: bool) -> Carry {
         match edge {
             Edge::Peer
@@ -284,9 +212,8 @@ impl Lattice for Product {
                 .expect("a two-provider edge has its second provider")
                 .values
         };
-        // Within one body the flow graph is acyclic, so every cycle crosses
-        // a call and back: rounding the two interprocedural edges on a cycle
-        // is what keeps every ascending chain finite.
+        // A body's flow graph is acyclic, so every cycle crosses a call and an argument edge;
+        // rounding those two keeps every chain finite.
         let rounded = |value: &May| {
             if cyclic {
                 May {
@@ -297,7 +224,6 @@ impl Lattice for Product {
                 value.clone()
             }
         };
-        // An operator is read in the may-domain, where it never faults.
         const TOTAL: &str = "the may-domain is total";
         let types = match *edge {
             Edge::Call(claim) => self.types.imported(claim),
@@ -350,11 +276,7 @@ impl Lattice for Product {
         Self { types, values }
     }
 
-    /// Type claims never widen. The exact recomputation of the values
-    /// starts from what the class held before its component moved it, a
-    /// literal's value or an entry's liveness included, and adds the flows
-    /// without rounding, so it is complete: what rounding widened comes
-    /// back to what the flows deliver without it.
+    /// Types never widen, so only the values narrow.
     fn narrow(&mut self, exact: &Self) -> bool {
         if self.values == exact.values {
             return false;
@@ -370,8 +292,7 @@ mod tests {
 
     use super::*;
 
-    /// The may-values of every integer from `lo` to `hi`, zero included
-    /// when it lies between: the join of two points keeps a hole there.
+    /// `lo` to `hi` inclusive; the join of two points leaves a hole at zero.
     fn band(lo: i64, hi: i64) -> May {
         let mut band = May::int(&Int::from(lo));
         for point in [0, hi] {
@@ -462,9 +383,6 @@ mod tests {
         assert_eq!(dead.transfer(&Edge::Enter, None, false, &cx), dead);
     }
 
-    /// Types cross the edges that carry a value unchanged or narrowed,
-    /// and a call relabels them; an operator's result, a context, and a
-    /// declared copy learn nothing of their providers' types.
     #[test]
     fn types_cross_aliasing_edges_and_are_relabeled_by_calls() {
         let cx = Thresholds::default();

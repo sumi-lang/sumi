@@ -1,6 +1,3 @@
-//! A valid file as a program: what runs, what it computes, and what a run
-//! costs, through the checker's proof and the graph's machine.
-
 use sumi_frontend::parse_source;
 use sumi_hir::{Analysis, Ty, Value, analyze};
 
@@ -12,7 +9,6 @@ fn int(value: i64) -> Value {
     Value::Int(value.into())
 }
 
-/// Run the nullary function `name` of `source`.
 fn run(source: &str, name: &str) -> Value {
     let analysis = analysis(source);
     let program = analysis.program().expect("a valid file");
@@ -25,7 +21,6 @@ fn invalid_files_never_run() {
         "fn f() -> int = true",
         "fn f(",
         "fn f() = g()",
-        // What used to trap is a static error, so it never reaches here.
         "fn f() -> int = 1 / 0",
         "fn f() -> int = 7 % (2 - 2)",
         "fn f() -> int = f()",
@@ -51,7 +46,6 @@ fn quotient() -> int = -7 / 2";
     assert_eq!(run(source, "logic"), Value::Bool(true));
     assert_eq!(run(source, "bools"), Value::Bool(true));
     assert_eq!(run(source, "nothing"), Value::Unit);
-    // Truncating: the remainder takes the dividend's sign.
     assert_eq!(run(source, "remainder"), int(-1));
     assert_eq!(run(source, "quotient"), int(-3));
 }
@@ -149,8 +143,6 @@ fn twice(x: int) -> int = x * 2
 fn shallow() -> int = twice(twice(1))";
     let analysis = analysis(source);
     let program = analysis.program().unwrap();
-    // Recursion consumes the machine's stack, never the host's, however
-    // deep, and the analysis claimed exactly the depth the run reaches.
     let deep = program.function_named("deep").unwrap();
     assert_eq!(program.function(deep).depth_bound(), Some(60002));
     let mut machine = program.machine(deep, &[]);
@@ -165,8 +157,6 @@ fn shallow() -> int = twice(twice(1))";
     assert_eq!(machine.max_depth(), 2);
 }
 
-/// A run computes what its result depends on: a discarded call is never
-/// entered, and a `let` read twice is computed once.
 #[test]
 fn only_what_the_result_needs_is_computed() {
     let source = "fn costly(n: int) -> int = if n == 0 { 0 } else { costly(n - 1) }
@@ -191,8 +181,6 @@ fn shared() -> int {
     let mut machine = program.machine(program.function_named("shared").unwrap(), &[]);
     while !machine.step() {}
     assert_eq!(machine.outcome(), Some(&Ok(int(0))));
-    // Four frames of `costly` and the sum: the second read of `x` costs
-    // nothing.
     assert_eq!(machine.max_depth(), 5);
     let once = machine.steps();
     let mut machine = program.machine(program.function_named("shared").unwrap(), &[]);
@@ -220,17 +208,12 @@ fn stepping_is_observable_and_idempotent_at_the_end() {
     assert_eq!(machine.outcome(), Some(&Ok(int(4))));
     assert!(seen_depth_two);
     assert_eq!((machine.depth(), machine.max_depth()), (1, 2));
-    // Every value the run made appeared once as it was made: the literal
-    // 1; in the inner frame the literal 2, the product, and the declared
-    // result's copy; the call's value; then the same three in the outer
-    // frame, the call's value, and the entry's own copy.
     let trace = [1, 2, 2, 2, 2, 2, 4, 4, 4, 4].map(int);
     assert_eq!(values, trace);
     let steps = machine.steps();
     assert_eq!(steps, values.len() as u64);
     assert!(machine.step());
     assert_eq!(machine.steps(), steps);
-    // Arguments reach parameters in order.
     let sub = program.function_named("twice").unwrap();
     assert_eq!(program.evaluate(sub, &[int(21)]), int(42));
 }
@@ -255,9 +238,6 @@ fn values_display_as_source_spells_them() {
     assert_eq!(Value::Unit.ty(), Ty::Unit);
 }
 
-/// The proof is what makes a run whole: a `Program` is only had for a
-/// valid file, and a machine on the bare graph of an invalid one refuses
-/// what the checker would have caught.
 #[test]
 fn the_bare_graph_refuses_what_the_checker_rejects() {
     use sumi_hir::{FunctionId, Machine, Refusal};

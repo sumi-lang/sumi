@@ -1,6 +1,5 @@
-//! Allocation counts, deliberately separate from wall-time benchmarks so the
-//! instrumentation cannot distort them. Counts include successful realloc calls
-//! and their full requested sizes; bytes are allocation traffic, not peak RSS.
+//! Allocation counts, kept separate from wall-time benchmarks so instrumentation doesn't distort
+//! them. Counts include successful reallocs; bytes are requested-size traffic, not peak RSS.
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 use sumi_hir::analyze;
@@ -19,9 +18,8 @@ fn record(pointer: *mut u8, bytes: usize) {
     }
 }
 
-// SAFETY: Every allocation/deallocation is delegated unchanged to System.
-// Instrumentation uses only nonallocating atomics. No production crate uses
-// this allocator; this single-threaded executable measures one phase at a time.
+// SAFETY: allocation and deallocation are delegated unchanged to System; only nonallocating atomics
+// record counts.
 unsafe impl GlobalAlloc for Counting {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let pointer = unsafe { System.alloc(layout) };

@@ -1,19 +1,5 @@
-//! Lowering of one file to the graph: names, structure, and holes.
-//!
-//! Every function's header is read first: its name, its parameter types,
-//! and what its declaration says of its result. A structural walk per
-//! function then resolves names and builds the body's nodes of the graph,
-//! marking which carry a value the typing follows, and records what the
-//! walk learns beyond the graph: every whole call, the callees reached,
-//! and every division. What a context requires of a value is not among
-//! it: the graph says what each node reads and where, and the typing
-//! draws the demands from that. The walk rejects nothing on type grounds;
-//! it fails only on names, syntax, and unsupported constructs, and what
-//! it refuses it leaves as a hole.
-//!
-//! Names are never copied: every map is keyed by a slice of the source,
-//! and the one builder keeps its scratch across bodies, so a body costs
-//! its nodes of the graph and nothing else.
+//! Lowering of one file to the graph: names, structure, and holes. The walk rejects nothing on type
+//! grounds; it fails only on names, syntax, and unsupported constructs, and leaves each as a hole.
 
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
@@ -31,15 +17,11 @@ use crate::lattice::Claim;
 use crate::typing::Typing;
 use crate::*;
 
-/// A map from names, as slices of the source, to whatever they name.
 type NameMap<'s, V> = HashMap<&'s str, V, FxBuildHasher>;
 
-/// What a function name resolves to. One word, so the table of every
-/// function in the file stays small enough to probe from cache.
 #[derive(Clone, Copy)]
 enum Named {
     Function(FunctionId),
-    /// Declared more than once; the first declaration, for the report.
     Ambiguous(FunctionId),
 }
 
@@ -52,31 +34,26 @@ impl Named {
 }
 
 pub(crate) struct Header {
-    /// Where the name is written, when the item has one.
     pub name: Option<TextRange>,
-    /// The parameter types, when the parameter list is whole.
+    /// `None` when the parameter list is not whole.
     pub params: Option<Box<[Ty]>>,
-    /// The type each parameter's node carries, whole list or not: none for
-    /// a parameter without one, or a duplicate, whose reads are held to
-    /// nothing while the signature keeps its type.
+    /// Per parameter, whole list or not; a duplicate name is `None` here while `params` keeps its
+    /// type.
     pub param_types: Box<[Option<Ty>]>,
     pub result: HeaderResult,
     pub item: NodeIdx,
 }
 
-/// What a declaration says of its result.
 #[derive(Clone, Copy)]
 pub(crate) enum HeaderResult {
-    /// The declaration is too damaged to have one.
+    /// The declaration is damaged; an omitted annotation is never this.
     None,
-    /// A declared type, at the annotation or, for a bare block body, the
-    /// whole item: a contract the body is held to, never changed by it.
+    /// The node is the annotation, or the whole item for a bare block body.
     Declared(Ty, NodeIdx),
-    /// A result to infer from the body.
     Inferred,
 }
 
-/// A division whose divisor must exclude zero wherever it can run.
+/// A division whose divisor must exclude zero under `context`.
 pub(crate) struct Obligation {
     pub owner: u32,
     pub node: NodeIdx,
@@ -84,7 +61,6 @@ pub(crate) struct Obligation {
     pub context: NodeId,
 }
 
-/// A whole call: its node, its ends, and the context it runs in.
 pub(crate) struct Call {
     pub node: NodeId,
     pub caller: FunctionId,
@@ -92,23 +68,18 @@ pub(crate) struct Call {
     pub context: NodeId,
 }
 
-/// What the walk of every body leaves beside the graph for the verdicts.
 pub(crate) struct Lowered {
-    /// Whether each body built whole.
+    /// By function.
     pub built: Vec<bool>,
-    /// Whether each node carries a value the typing follows, by
-    /// [`Builder::follows`].
+    /// By node.
     pub typed: Vec<bool>,
-    /// Every whole call, in definition order.
+    /// Whole calls only, in definition order.
     pub calls: Vec<Call>,
-    /// Every call that reached a callee with parameters, whole or not, as
-    /// the context it runs in and the callee: the callee is checked on the
-    /// strength of any call to it.
+    /// (context, callee) of every call whose callee has a whole parameter list, whole call or not.
     pub entered: Vec<(NodeId, FunctionId)>,
     pub obligations: Vec<Obligation>,
 }
 
-/// One file's source and tree, and the diagnostics checking it makes.
 pub(crate) struct Source<'s> {
     pub parsed: &'s ParsedSource,
     pub tree: &'s SyntaxTree,
@@ -172,9 +143,7 @@ impl<'s> Source<'s> {
             related,
         );
     }
-    /// Report that what is at `at` is claimed to be every type in
-    /// `claims`, in source order, and where each claim was made. `message`
-    /// wraps the list of types.
+    /// `message` receives the claimed types joined as a list, in source order.
     pub fn conflict(
         &mut self,
         at: TextRange,
@@ -216,7 +185,6 @@ impl<'s> Source<'s> {
         }
         ty
     }
-    // Read only a token gap, never scan an expression subtree for its operator.
     fn tokens(&self, start: RawIdx, end: RawIdx) -> impl Iterator<Item = SyntaxKind> + '_ {
         start
             .until(end)
@@ -234,7 +202,6 @@ impl<'s> Source<'s> {
     }
 }
 
-/// An error at `primary` with `related` labels.
 pub(crate) fn diagnostic(
     primary: TextRange,
     code: DiagnosticCode,
@@ -256,23 +223,17 @@ pub(crate) fn diagnostic(
 pub(crate) struct Parameter<'s> {
     node: NodeIdx,
     name: Option<(&'s str, NodeIdx)>,
-    /// The declared type, whether or not the name is a duplicate: the
-    /// signature keeps it.
     ty: Option<Ty>,
-    /// Named like an earlier parameter, whose reads are held to nothing.
     duplicate: bool,
 }
 
-/// The headers of every function, the names that resolve to them, and
-/// their parameters.
 pub(crate) struct Declarations<'s> {
     pub headers: Vec<Header>,
     names: NameMap<'s, Named>,
     parameters: Vec<Vec<Parameter<'s>>>,
 }
 
-/// The header of every item: its name, parameter types, and what its
-/// declaration says of its result.
+/// In item order, so a `FunctionId` indexes `items`.
 pub(crate) fn declare<'s>(source: &mut Source<'s>, items: &[ast::FnItem]) -> Declarations<'s> {
     let tree = source.tree;
     let mut names: NameMap<Named> = NameMap::with_capacity_and_hasher(items.len(), FxBuildHasher);
@@ -306,8 +267,7 @@ pub(crate) fn declare<'s>(source: &mut Source<'s>, items: &[ast::FnItem]) -> Dec
         let mut params: Vec<Parameter> = Vec::new();
         if let Some(list) = list {
             for param in list.params(tree) {
-                // An item's parameter has a type or a syntax error: the
-                // parser requires the annotation.
+                // A parameter without a type is a syntax error the parser already reported.
                 let ty = param.type_ref(tree).and_then(|ty| source.ty(ty));
                 valid &= ty.is_some();
                 let name = source.name(param.name(tree));
@@ -339,9 +299,8 @@ pub(crate) fn declare<'s>(source: &mut Source<'s>, items: &[ast::FnItem]) -> Dec
                 None => HeaderResult::None,
             }
         } else {
-            // A missing annotation can mean damaged syntax, not omission.
-            // Only an empty gap or the expression-body `=` says it was left
-            // out: a bare block is unit, an expression body is inferred.
+            // A missing annotation may be damage: only an empty gap or the expression-body `=` says
+            // it was left out.
             let gap = list
                 .filter(|list| !tree.has_error(list.node()))
                 .map(|list| {
@@ -376,7 +335,6 @@ pub(crate) fn declare<'s>(source: &mut Source<'s>, items: &[ast::FnItem]) -> Dec
     }
 }
 
-/// The graph of every body, and what the walk left beside it.
 pub(crate) fn lower<'s>(
     source: &mut Source<'s>,
     items: &[ast::FnItem],
@@ -390,7 +348,6 @@ pub(crate) fn lower<'s>(
     (builder.graph, builder.lowered)
 }
 
-/// The eager operator a syntactic one is, if it is not lazy.
 fn eager(op: sumi_syntax::BinaryOp) -> Option<BinaryOp> {
     use sumi_syntax::BinaryOp::*;
     Some(match op {
@@ -409,87 +366,59 @@ fn eager(op: sumi_syntax::BinaryOp) -> Option<BinaryOp> {
     })
 }
 
-/// The names in scope, each bound to the node that defines it: a
-/// parameter, a `let`, or the hole a damaged `let` leaves. Scope
-/// transitions and let completion are explicit work items, so
-/// initializers see the old scope.
+/// A `let` binds at `Work::Finish`, after its initializer, so the initializer reads any outer
+/// binding of the name.
 type Scope<'s> = NameMap<'s, NodeId>;
 
 enum Work {
     Enter(NodeIdx),
     Finish(NodeIdx),
-    /// An expression statement whose expression is walked: the node its
-    /// value goes unused at.
     Unused(NodeIdx),
-    /// A call whose arguments are walked, to the function its callee
-    /// names, when it names one.
     Call(NodeIdx, Option<FunctionId>),
-    /// An `if` whose condition is walked: open its branches' contexts.
     Branches(NodeIdx),
-    /// A lazy operator whose left operand is walked: open the right one's.
     Rhs(NodeIdx),
-    /// An `if` whose branches are walked in these regions.
     Join {
         node: NodeIdx,
         then: RegionId,
         else_: Option<RegionId>,
     },
-    /// A lazy operator whose right operand is walked in `rhs`.
     Lazy {
         node: NodeIdx,
         rhs: RegionId,
     },
-    /// Enter `region`, narrowing the locals the condition `guard`
-    /// compares, holding in its sense, for the reads inside it.
     Push {
         region: RegionId,
         guard: (NodeIdx, bool),
     },
-    /// Leave `region`, whose value is what `root` built.
     Pop {
         region: RegionId,
         root: NodeIdx,
     },
 }
 
-/// Push `nodes` to enter, first to be entered last: the stack walks them
-/// in the order given.
 fn enter_each(work: &mut Vec<Work>, nodes: impl Iterator<Item = NodeIdx>) {
     let base = work.len();
     work.extend(nodes.map(Work::Enter));
     work[base..].reverse();
 }
 
-/// The one walker for every body of the file. What a body builds are its
-/// nodes of the graph; everything else the walk needs is kept and reused,
-/// so no body pays for scratch.
 struct Builder<'a, 's> {
     source: &'a mut Source<'s>,
     headers: &'a [Header],
     names: &'a NameMap<'s, Named>,
     graph: Graph,
     lowered: Lowered,
-    /// The graph node each syntax node built, by node.
     nodes_of: Vec<Option<NodeId>>,
-    // The body under construction.
     owner: u32,
     failed: bool,
-    /// The open regions, innermost last: where a pushed node stands, and
-    /// whose context the point runs in, with where each one's refinements
-    /// begin in `refinements`.
+    /// Open regions, innermost last, each with where its refinements begin in `refinements`.
     regions: Vec<(RegionId, usize)>,
-    /// The nodes locals read as inside the open regions, innermost last,
-    /// by the local's defining node.
+    /// (defining node, the node its reads see) for the open regions, innermost last.
     refinements: Vec<(NodeId, NodeId)>,
-    // Scratch kept across bodies.
-    /// A pool of scopes; the first `depth` are open, innermost last. A map
-    /// per scope costs a probe per enclosing scope on lookup, and nothing on
-    /// close; an undo log measured slower on binding-heavy code, since every
-    /// binding then pays a removal.
+    /// The first `depth` scopes are open, innermost last.
     scopes: Vec<Scope<'s>>,
     depth: usize,
     work: Vec<Work>,
-    /// The inputs of the node being pushed, when there are more than two.
     inputs: Vec<(NodeId, TextRange)>,
 }
 
@@ -499,7 +428,6 @@ impl<'a, 's> Builder<'a, 's> {
         headers: &'a [Header],
         names: &'a NameMap<'s, Named>,
     ) -> Self {
-        // About a node per syntax node of a body; only a guide.
         let nodes = source.tree.len();
         Self {
             source,
@@ -513,7 +441,6 @@ impl<'a, 's> Builder<'a, 's> {
                 entered: Vec::new(),
                 obligations: Vec::new(),
             },
-            // Syntax node IDs are dense and bodies have disjoint nodes.
             nodes_of: vec![None; nodes],
             owner: 0,
             failed: false,
@@ -525,8 +452,7 @@ impl<'a, 's> Builder<'a, 's> {
             inputs: Vec::new(),
         }
     }
-    /// Build the body of the function `owner`, closing its run of the
-    /// graph: whether the walk built it whole.
+    /// Whether the body built whole.
     fn build(&mut self, owner: usize, item: ast::FnItem, parameters: &[Parameter<'s>]) -> bool {
         self.owner = u32::try_from(owner).expect("function count fits u32");
         self.failed = false;
@@ -614,9 +540,7 @@ impl<'a, 's> Builder<'a, 's> {
         };
         self.graph.close(region, body.0);
         self.regions.pop();
-        // A failed parameter does not erase an independently known result
-        // type. A declared result is a contract on the body; an inferred one
-        // is the body's own value.
+        // A failed parameter does not erase a declared result; the body is still held to it.
         let value = match declared {
             HeaderResult::Declared(ty, node) => self.push(
                 node,
@@ -632,7 +556,6 @@ impl<'a, 's> Builder<'a, 's> {
             .close_run(FunctionId::new(owner), start, arity, region, value);
         !self.failed && root.is_some()
     }
-    /// A graph node at `node`, which reads `inputs`.
     fn push(
         &mut self,
         node: NodeIdx,
@@ -644,7 +567,7 @@ impl<'a, 's> Builder<'a, 's> {
         self.nodes_of[node.to_usize()] = Some(id);
         id
     }
-    /// A graph node that no syntax node is said to have built.
+    /// Unlike `push`, records no syntax node as having built the node.
     fn place(
         &mut self,
         op: Op,
@@ -657,13 +580,7 @@ impl<'a, 's> Builder<'a, 's> {
         self.lowered.typed.push(typed);
         id
     }
-    /// Whether a node computing `op` from `inputs` carries a value the
-    /// typing follows. A hole carries none, a statement is none, and
-    /// neither is a node built over a hole: a lazy operator or an `if`
-    /// over an untyped operand or branch, a call that is not whole. A
-    /// context is followed whatever its condition; a parameter needs a
-    /// type, a call a callee with a result, and a declared copy has its
-    /// declaration whatever flows in.
+    /// Whether a node of `op` over `inputs` carries a value the typing follows.
     fn follows(&self, op: &Op, inputs: &[(NodeId, TextRange)]) -> bool {
         let typed = |node: NodeId| self.lowered.typed[node.index()];
         let result = |region: RegionId| typed(self.graph.region(region).result());
@@ -684,8 +601,7 @@ impl<'a, 's> Builder<'a, 's> {
             _ => inputs.iter().all(|&(input, _)| typed(input)),
         }
     }
-    /// Whether a call to `callee` reading `inputs` is whole: an argument
-    /// per parameter, and none a hole.
+    /// A whole call has an argument per parameter, none a hole.
     fn whole(&self, callee: FunctionId, inputs: &[(NodeId, TextRange)]) -> bool {
         let params = self.headers[callee.index()]
             .params
@@ -696,9 +612,6 @@ impl<'a, 's> Builder<'a, 's> {
                 .iter()
                 .all(|&(input, _)| self.lowered.typed[input.index()])
     }
-    /// A context node for the region whose syntax is `region`, derived
-    /// from `condition` under `parent`. It is not what `region` built: the
-    /// region's own node is its value, which the context gates.
     fn context_at(
         &mut self,
         region: NodeIdx,
@@ -709,26 +622,19 @@ impl<'a, 's> Builder<'a, 's> {
         let at = self.source.range(region);
         self.place(op, &[condition, (parent, at)], at, None)
     }
-    /// The graph node `node` built, or a hole where nothing was: syntax
-    /// the walk could not reach.
     fn node_of(&mut self, node: NodeIdx) -> NodeId {
         match self.nodes_of[node.to_usize()] {
             Some(id) => id,
             None => self.push(node, Op::Hole, &[], None),
         }
     }
-    /// What `node` built, read where `node` stands: an input of the node
-    /// that reads it.
     fn input(&mut self, node: NodeIdx) -> (NodeId, TextRange) {
         (self.node_of(node), self.source.range(node))
     }
-    /// The value `node` built, if it built one the typing follows: a hole,
-    /// and a node built over one, are none.
     fn typed(&self, node: NodeIdx) -> Option<NodeId> {
         let id = self.nodes_of[node.to_usize()]?;
         self.lowered.typed[id.index()].then_some(id)
     }
-    /// A hole at `node`, over nothing: syntax the walk refuses.
     fn hole(&mut self, node: NodeIdx) -> NodeId {
         self.push(node, Op::Hole, &[], None)
     }
@@ -743,23 +649,17 @@ impl<'a, 's> Builder<'a, 's> {
     fn close_scope(&mut self) {
         self.depth -= 1;
     }
-    /// Bind `name` to the local `node` defines until the innermost scope
-    /// closes.
     fn bind(&mut self, name: &'s str, node: NodeId) {
         self.scopes[self.depth - 1].insert(name, node);
     }
-    /// The node defining the local `name` reads, if one is in scope.
     fn lookup(&self, name: &str) -> Option<NodeId> {
-        // An empty scope, the common case for a function's own, would cost
-        // a hash to find nothing in.
+        // An empty scope is common and would cost a hash to find nothing in.
         self.scopes[..self.depth]
             .iter()
             .rev()
             .filter(|scope| !scope.is_empty())
             .find_map(|scope| scope.get(name).copied())
     }
-    /// The node a read of the local `defined` reads here: the innermost
-    /// refinement that covers it, or the local's own.
     fn current(&self, defined: NodeId) -> NodeId {
         self.refinements
             .iter()
@@ -767,13 +667,10 @@ impl<'a, 's> Builder<'a, 's> {
             .find(|(local, _)| *local == defined)
             .map_or(defined, |(_, node)| *node)
     }
-    /// The context the open region runs in.
     fn context(&self) -> NodeId {
         let (region, _) = *self.regions.last().expect("a body runs in its region");
         self.graph.region(region).context
     }
-    /// The operator of a clean binary expression, read from the token gap
-    /// between its operands.
     fn binary_op(&self, node: NodeIdx) -> sumi_syntax::BinaryOp {
         let tree = self.source.tree;
         let binary = ast::BinaryExpr::cast(tree, node).unwrap();
@@ -786,16 +683,15 @@ impl<'a, 's> Builder<'a, 's> {
             .until(end)
             .find(|&raw| !lexed.kind(raw).is_trivia())
             .expect("clean binary operator");
-        // Raw tokens partition source: the immediately adjacent token is
-        // glued, whereas any intervening trivia breaks a compound.
+        // Raw tokens partition the source, so the token at `first + 1` is glued to `first` unless
+        // it is trivia.
         let glued = (first + 1 < end).then(|| lexed.kind(first + 1));
         sumi_syntax::binary_operator(lexed.kind(first), glued)
             .expect("clean binary operator")
             .0
     }
-    /// The local the name at `node` reads, if it is a read of one with a
-    /// value the typing follows. The scope is as it was when the read was
-    /// built: a region is entered right after its condition finishes.
+    /// The scope is as it was when the read was built: a region is entered right after its
+    /// condition finishes.
     fn read(&self, node: NodeIdx) -> Option<NodeId> {
         let tree = self.source.tree;
         let node = self.source.peel(ast::Expr::cast(tree, node)?).node();
@@ -805,12 +701,7 @@ impl<'a, 's> Builder<'a, 's> {
         let defined = self.lookup(self.source.text(node))?;
         self.lowered.typed[defined.index()].then_some(defined)
     }
-    /// What the condition at `cond` holding in `sense` says about the
-    /// locals it compares: a refined class and node per local, read inside
-    /// the region just entered, each on top of what an earlier conjunct
-    /// left. The condition's shape is syntactic: a comparison, a negation,
-    /// a conjunction under the true sense, a disjunction under the false
-    /// sense, or a bare boolean local.
+    /// Narrow the locals `cond` compares, for `cond` holding in `sense`.
     fn refine(&mut self, cond: NodeIdx, sense: bool) {
         use sumi_syntax::BinaryOp::*;
 
@@ -888,9 +779,6 @@ impl<'a, 's> Builder<'a, 's> {
             _ => {}
         }
     }
-    /// The condition of the `if` at `node` is walked: open a context and a
-    /// region per branch and schedule the branches inside them, and the
-    /// `if` after them.
     fn branches(&mut self, node: NodeIdx, work: &mut Vec<Work>) {
         let tree = self.source.tree;
         let branch = ast::IfExpr::cast(tree, node).unwrap();
@@ -908,8 +796,6 @@ impl<'a, 's> Builder<'a, 's> {
             self.graph.open(context)
         });
         work.push(Work::Join { node, then, else_ });
-        // The else branch is entered last. Without an else nothing enters
-        // the false sense, so nothing is narrowed for it.
         if let (Some(else_node), Some(region)) = (else_node, else_) {
             work.push(Work::Pop {
                 region,
@@ -931,9 +817,6 @@ impl<'a, 's> Builder<'a, 's> {
             guard: (cond, true),
         });
     }
-    /// The left operand of the lazy operator at `node` is walked: open the
-    /// context and region the right one runs in and schedule it inside,
-    /// and the operator after it.
     fn rhs(&mut self, node: NodeIdx, work: &mut Vec<Work>) {
         let tree = self.source.tree;
         let binary = ast::BinaryExpr::cast(tree, node).unwrap();
@@ -953,7 +836,6 @@ impl<'a, 's> Builder<'a, 's> {
             guard: (lhs, and),
         });
     }
-    /// Refuse the construct at `node`, which leaves a hole.
     fn unsupported(&mut self, node: NodeIdx) {
         self.source.error(
             node,
@@ -1068,8 +950,6 @@ impl<'a, 's> Builder<'a, 's> {
             _ => {}
         }
         match kind {
-            // Only the last child can be the tail; an expression before it
-            // is a statement, whose value goes unused.
             NodeKind::Block => {
                 work.push(Work::Finish(node));
                 let base = work.len();
@@ -1137,7 +1017,6 @@ impl<'a, 's> Builder<'a, 's> {
             }
         }
     }
-    /// The literal's value, negated when a `-` prefix is folded into it.
     /// `None` for a malformed literal, which the lexer already reported.
     fn integer(&mut self, origin: NodeIdx, literal: NodeIdx, negative: bool) -> Option<NodeId> {
         let raw = self.source.tree.first_token(literal);
@@ -1164,9 +1043,6 @@ impl<'a, 's> Builder<'a, 's> {
         match tree.kind(node) {
             NodeKind::Block => {
                 self.close_scope();
-                // Only the last child can be the tail. A statement built
-                // itself; a child that built nothing is a hole where it
-                // stood.
                 let mut tail = None;
                 let mut valid = !tree.has_error(node);
                 let mut children = tree.children(node).peekable();
@@ -1181,10 +1057,8 @@ impl<'a, 's> Builder<'a, 's> {
                         valid = false;
                     }
                 }
-                // A block is its tail, or unit without one, whether or not
-                // the rest of it built. A block the parser could not repair
-                // may have lost its tail to recovery, so without one it is
-                // a hole.
+                // A damaged block may have lost its tail to recovery, so without one it is a hole,
+                // not unit.
                 let damaged = tree.has_error(node);
                 match tail {
                     Some(tail) => {
@@ -1210,9 +1084,6 @@ impl<'a, 's> Builder<'a, 's> {
                 let initializer_node = binding.initializer(tree).unwrap().node();
                 let value = self.input(initializer_node);
                 let name = self.source.name(binding.name(tree));
-                // An annotated binding has its declared type whatever its
-                // initializer turns out to be; the initializer is held to it.
-                // An annotation naming no type leaves a hole over it.
                 let annotation = binding.type_ref(tree);
                 let declared = annotation.and_then(|annotation| {
                     let ty = self.source.ty(annotation)?;
@@ -1238,7 +1109,6 @@ impl<'a, 's> Builder<'a, 's> {
                     .value(tree)
                     .unwrap()
                     .node();
-                // The statement is its value, whether or not it built.
                 let discarded = self.node_of(value);
                 self.nodes_of[node.to_usize()] = Some(discarded);
                 self.typed(value)?;
@@ -1246,8 +1116,6 @@ impl<'a, 's> Builder<'a, 's> {
             NodeKind::NameRef => {
                 let name = self.source.text(node);
                 match self.lookup(name) {
-                    // A binding without a value the typing follows is still
-                    // what the name reads.
                     Some(defined) => {
                         let read = self.current(defined);
                         self.nodes_of[node.to_usize()] = Some(read);
@@ -1334,8 +1202,6 @@ impl<'a, 's> Builder<'a, 's> {
         }
         Some(())
     }
-    /// The lazy operator at `node`, whose right operand is the region
-    /// `rhs`.
     fn lazy(&mut self, node: NodeIdx, rhs: RegionId) -> Option<()> {
         let tree = self.source.tree;
         let binary = ast::BinaryExpr::cast(tree, node).unwrap();
@@ -1349,8 +1215,6 @@ impl<'a, 's> Builder<'a, 's> {
         self.typed(rhs_node)?;
         Some(())
     }
-    /// The `if` at `node`, whose branches are the regions `then` and
-    /// `else_`.
     fn join(&mut self, node: NodeIdx, then: RegionId, else_: Option<RegionId>) -> Option<()> {
         let tree = self.source.tree;
         let branch = ast::IfExpr::cast(tree, node).unwrap();
@@ -1366,28 +1230,19 @@ impl<'a, 's> Builder<'a, 's> {
         self.typed(condition_node)?;
         Some(())
     }
-    /// The call at `node`, whose arguments are walked, to `target` when
-    /// its callee names a function. A call is a call when its callee has
-    /// parameters to hold it to, whole when every argument is there and
-    /// none is a hole; otherwise it never happens, and is a hole over what
-    /// it walked: its callee, when that built, and its arguments.
     fn call(&mut self, node: NodeIdx, target: Option<FunctionId>) -> Option<()> {
         let context = self.context();
         let tree = self.source.tree;
         let call = ast::CallExpr::cast(tree, node).unwrap();
         let list = call.arg_list(tree).unwrap();
-        // The callee that holds the call: one with a whole parameter list.
         let callee: Option<(FunctionId, &Header, &[Ty])> = target.and_then(|target| {
             let function = &self.headers[target.index()];
             Some((target, function, function.params.as_deref()?))
         });
         if let Some((target, ..)) = callee {
-            // The callee is reached, whole call or not: what it does is
-            // checked on the strength of any call to it.
             self.lowered.entered.push((context, target));
         }
-        // Every argument that exists is read, arity aside: the typing holds
-        // each to its parameter.
+        // Every argument is read, arity aside: the typing holds each to its parameter.
         let mut inputs = std::mem::take(&mut self.inputs);
         inputs.clear();
         if target.is_none() {
@@ -1422,7 +1277,6 @@ impl<'a, 's> Builder<'a, 's> {
             callee: target,
             context,
         });
-        // The call has a value when its callee has a result.
         (!matches!(function.result, HeaderResult::None)).then_some(())
     }
 }
