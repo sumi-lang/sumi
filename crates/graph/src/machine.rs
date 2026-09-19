@@ -22,11 +22,15 @@ enum Control {
         node: NodeId,
         function: FunctionId,
     },
-    /// `node` takes `from`'s value, combined with its left operand for a lazy operator.
     Take {
         node: NodeId,
         from: NodeId,
-        lazy: Option<bool>,
+    },
+    /// `node`, a lazy operator, combines its left operand with `from`'s value.
+    Combine {
+        node: NodeId,
+        from: NodeId,
+        and: bool,
     },
     Return(NodeId),
 }
@@ -119,20 +123,30 @@ impl<'a> Machine<'a> {
     }
 
     pub fn run(mut self) -> Result<Value, Refusal> {
+        if let Some(outcome) = self.outcome {
+            return outcome;
+        }
         loop {
-            if let Some(outcome) = self.step() {
-                return outcome.clone();
+            if let Some(outcome) = self.advance() {
+                return outcome;
             }
         }
     }
 
     /// The outcome once the run has ended, and it stays ended.
     pub fn step(&mut self) -> Option<&Result<Value, Refusal>> {
-        if self.outcome.is_some() {
-            return self.outcome.as_ref();
+        if self.outcome.is_none()
+            && let Some(outcome) = self.advance()
+        {
+            self.outcome = Some(outcome);
         }
+        self.outcome.as_ref()
+    }
+
+    /// One step of a run that has not ended; the outcome when this one ends it.
+    fn advance(&mut self) -> Option<Result<Value, Refusal>> {
         self.latest = None;
-        let outcome = match self.control.pop() {
+        match self.control.pop() {
             None => {
                 let result = self
                     .frames
@@ -140,14 +154,14 @@ impl<'a> Machine<'a> {
                     .expect("the entry frame stays")
                     .run
                     .result();
-                Ok(self.value(result).clone())
+                let index = self.index(result);
+                let value = self.slots[index]
+                    .take()
+                    .expect("a finished run has its value");
+                Some(Ok(value))
             }
-            Some(control) => match self.apply(control) {
-                Ok(()) => return None,
-                Err(refusal) => Err(refusal),
-            },
-        };
-        Some(&*self.outcome.insert(outcome))
+            Some(control) => self.apply(control).err().map(Err),
+        }
     }
 
     fn index(&self, node: NodeId) -> usize {
@@ -182,9 +196,10 @@ impl<'a> Machine<'a> {
         base
     }
 
-    fn demand_region(&mut self, node: NodeId, region: RegionId, lazy: Option<bool>) {
+    /// Evaluate `region`'s result, then `take` it.
+    fn demand_region(&mut self, region: RegionId, take: impl FnOnce(NodeId) -> Control) {
         let from = self.graph.region(region).result();
-        self.control.push(Control::Take { node, from, lazy });
+        self.control.push(take(from));
         self.control.push(Control::Eval(from));
     }
 
@@ -202,20 +217,9 @@ impl<'a> Machine<'a> {
                         unreachable!("a context or a statement is not a value")
                     }
                     Op::Unit => self.fill(node, Value::Unit),
-                    Op::And { rhs } => {
-                        self.control.push(Control::Lazy {
-                            node,
-                            and: true,
-                            rhs,
-                        });
-                        self.control.push(Control::Eval(inputs[0]));
-                    }
-                    Op::Or { rhs } => {
-                        self.control.push(Control::Lazy {
-                            node,
-                            and: false,
-                            rhs,
-                        });
+                    ref op @ (Op::And { rhs } | Op::Or { rhs }) => {
+                        let and = matches!(op, Op::And { .. });
+                        self.control.push(Control::Lazy { node, and, rhs });
                         self.control.push(Control::Eval(inputs[0]));
                     }
                     Op::Join { then, else_ } => {
@@ -255,7 +259,7 @@ impl<'a> Machine<'a> {
                     .truth()
                     .map_err(|fault| Refusal::of(fault, node))?;
                 if lhs == and {
-                    self.demand_region(node, rhs, Some(and));
+                    self.demand_region(rhs, |from| Control::Combine { node, from, and });
                 } else {
                     self.fill(node, Value::Bool(lhs));
                 }
@@ -265,21 +269,21 @@ impl<'a> Machine<'a> {
                     .value(self.graph.inputs(node)[0])
                     .truth()
                     .map_err(|fault| Refusal::of(fault, node))?;
+                let take = |from| Control::Take { node, from };
                 match (condition, else_) {
-                    (true, _) => self.demand_region(node, then, None),
-                    (false, Some(else_)) => self.demand_region(node, else_, None),
+                    (true, _) => self.demand_region(then, take),
+                    (false, Some(else_)) => self.demand_region(else_, take),
                     (false, None) => self.fill(node, Value::Unit),
                 }
             }
-            Control::Take { node, from, lazy } => {
-                let value = match lazy {
-                    Some(and) => {
-                        let lhs = self.value(self.graph.inputs(node)[0]);
-                        Value::lazy(and, lhs, self.value(from))
-                            .map_err(|fault| Refusal::of(fault, node))?
-                    }
-                    None => self.value(from).clone(),
-                };
+            Control::Take { node, from } => {
+                let value = self.value(from).clone();
+                self.fill(node, value);
+            }
+            Control::Combine { node, from, and } => {
+                let lhs = self.value(self.graph.inputs(node)[0]);
+                let value = Value::lazy(and, lhs, self.value(from))
+                    .map_err(|fault| Refusal::of(fault, node))?;
                 self.fill(node, value);
             }
             Control::Enter { node, function } => {
