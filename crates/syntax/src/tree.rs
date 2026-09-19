@@ -24,21 +24,8 @@
 //! # Building
 //!
 //! Trees come only from [`Parse::build`], which lends the root as a
-//! [`Marker`]: an open node, and the parser's cursor into the input.
-//! Starting a child reborrows the parent marker for as long as the child is
-//! open, so the borrow checker holds the stack of open nodes. A parent
-//! cannot take a token, start a sibling, or complete while a child is open;
-//! the root, only ever lent, cannot complete at all; and completing a
-//! marker is the one way to close its node. A [`CompletedMarker`] is plain
-//! data — holding one borrows nothing — and is wrapped after the fact from
-//! the marker that contained it. What types cannot express stays a run-time
-//! check, raised where the parser went wrong: a node is preceded only from
-//! the node that contained it, every node covers at least one token, no
-//! node wraps one of its own kind over exactly its tokens (a debug-build
-//! check; the parser never does), a marker dropped uncompleted panics where it drops, and `build` rejects a
-//! token past the input horizon or tokens left over.
-//!
-//! The build records nodes as they complete, and completion order is the
+//! [`Marker`], the parser's one handle on an open node and its cursor. The
+//! build records nodes as they complete, and completion order is the
 //! stored order. That is what lets a parser choose a node's kind after its
 //! children exist, and wrap a node it has already completed: a wrapper's
 //! subtree is simply everything completed since the wrapped node began —
@@ -54,7 +41,7 @@ use crate::generated::{
 use crate::index::{NodeIdx, SigIdx};
 use crate::input::{ParserInput, Slot};
 use crate::parser::{
-    ParseAnchor, ParseEvidence, ParseExpected, ParseRecovery, ParseRecoveryKind, ParseViolation,
+    ParseAnchor, ParseEvidence, ParseRecovery, ParseRecoveryKind, ParseViolation,
     ParseViolationKind, RawGap, RawTokenRange,
 };
 
@@ -100,19 +87,6 @@ impl SyntaxTree {
 
     pub fn kind(&self, index: NodeIdx) -> NodeKind {
         self.nodes[index.to_usize()].kind
-    }
-
-    /// Whether the trees have the same node kinds and parent-child structure.
-    /// Token positions, token text, recovery flags, and field roles are ignored.
-    pub fn same_shape(&self, other: &Self) -> bool {
-        // In postorder, a node's extent fixes its subtree's start. Matching
-        // every extent therefore matches the parents without building links.
-        self.nodes.len() == other.nodes.len()
-            && self
-                .nodes
-                .iter()
-                .zip(&other.nodes)
-                .all(|(a, b)| a.kind == b.kind && a.extent == b.extent)
     }
 
     /// Whether node `index` contains a syntax error: it is an `Error` node,
@@ -211,116 +185,6 @@ impl SyntaxTree {
             .map(node_idx)
             .expect("the root covers every token in the file")
     }
-
-    /// The nodes covering raw token `token`, innermost first: the node
-    /// [`covering`](Self::covering) answers, then each enclosing node out
-    /// to the root — every node's parent is the entry after it. Never
-    /// empty, since the root covers every token; `token` must lie in the
-    /// file. Root children have disjoint ranges, so only the containing
-    /// subtree can contribute ancestors besides the root. The scan stays
-    /// within that subtree and allocates nothing.
-    pub fn covering_chain(&self, token: RawIdx) -> impl Iterator<Item = NodeIdx> + '_ {
-        assert!(
-            token < self.nodes[self.root().to_usize()].end_token,
-            "token must be within the file"
-        );
-        let root = self.root();
-        let containing = self
-            .children(root)
-            .find(|&child| self.first_token(child) <= token)
-            .filter(|&child| token < self.end_token(child));
-        let (from, end) = containing.map_or((0, 0), |child| {
-            let end = child.to_usize() + 1;
-            let start = end - self.nodes[child.to_usize()].extent as usize;
-            let from =
-                start + self.nodes[start..end].partition_point(|node| node.end_token <= token);
-            (from, end)
-        });
-        (from..end)
-            .filter(move |&index| self.nodes[index].first_token <= token)
-            .map(node_idx)
-            .chain(std::iter::once(root))
-    }
-
-    /// The parent of every node, one entry per node from its direct children;
-    /// the root names itself. The tree stores no parent links — the
-    /// covering chain answers parents for positional queries — so a
-    /// consumer needing random-access parents builds this table on demand.
-    pub fn parents(&self) -> Vec<NodeIdx> {
-        let mut parents = vec![self.root(); self.nodes.len()];
-        for node in self.nodes() {
-            for child in self.children(node) {
-                parents[child.to_usize()] = node;
-            }
-        }
-        parents
-    }
-
-    /// The pointer naming node `index`: its kind and byte range, which is
-    /// what a later phase keeps to find the node again. `lexed` must be the
-    /// file this tree was parsed from.
-    pub fn ptr(&self, index: NodeIdx, lexed: &LexedFile) -> NodePtr {
-        NodePtr {
-            kind: self.kind(index),
-            range: self.byte_range(index, lexed),
-        }
-    }
-
-    /// The node `ptr` names in this tree: the one of its kind over exactly
-    /// its byte range and text, if there is one. `ptr_source` must be the
-    /// source the pointer came from; `lexed` and `source` must be the file
-    /// this tree was parsed from. A pointer taken from another parse
-    /// resolves here when the node it named still stands at the same bytes
-    /// with the same text — a reparse of the same text, or of text edited
-    /// only after the node — and answers `None` once the node has moved,
-    /// changed, or gone. A pointer names at most one node: the parser never
-    /// wraps a node in one of its own kind over exactly the same tokens, and
-    /// debug builds reject a hand-built tree that does.
-    pub fn resolve(
-        &self,
-        ptr: NodePtr,
-        ptr_source: &str,
-        lexed: &LexedFile,
-        source: &str,
-    ) -> Option<NodeIdx> {
-        let root = self.root();
-        if ptr.range.start() == ptr.range.end() {
-            // Only the root of an empty file is empty.
-            let empty_root = lexed.is_empty() && ptr.kind == self.kind(root);
-            return empty_root.then_some(root);
-        }
-        // The range must begin and end on token boundaries.
-        let first = lexed.token_at(ptr.range.start())?;
-        let last = lexed.token_before(ptr.range.end())?;
-        if lexed.range(first).start() != ptr.range.start()
-            || lexed.range(last).end() != ptr.range.end()
-        {
-            return None;
-        }
-        let end = last + 1;
-        // `end_token` is non-decreasing in postorder, so the nodes ending
-        // at `end` are contiguous; among them the kind and the first token
-        // pick the node.
-        let from = self.nodes.partition_point(|node| node.end_token < end);
-        let node = self.nodes[from..]
-            .iter()
-            .take_while(|node| node.end_token == end)
-            .position(|node| node.first_token == first && node.kind == ptr.kind)
-            .map(|offset| node_idx(from + offset));
-        node.filter(|_| ptr.range.text(ptr_source) == ptr.range.text(source))
-    }
-}
-
-/// A node's identity independent of the tree that holds it: its kind and
-/// byte range, which name at most one node in any parsed tree when paired
-/// with the source snapshot it came from. Semantic phases keep pointers,
-/// not indices, so their results can point back into a tree that has since
-/// been reparsed; [`SyntaxTree::resolve`] finds the node again while it
-/// stands at the same bytes with the same text.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct NodePtr {
-    pub kind: NodeKind,
-    pub range: TextRange,
 }
 
 /// A parsed file: its tree and the evidence observed while building it.
@@ -410,11 +274,8 @@ struct Builder<'a> {
     nodes: Vec<Node>,
     /// The next significant token to attach.
     position: SigIdx,
-    /// The slots up to the input horizon: lookahead reads this prefix of
-    /// the input's slots, so nothing can be seen or consumed at or past
-    /// its end. `source_file` moves the horizon from one item start to the
-    /// next, which makes recovery inside an item unable to take another
-    /// item's tokens — there is no rule to get wrong.
+    /// The slots up to the input horizon: lookahead reads only this prefix
+    /// of the input's slots, and [`Marker::set_limit`] moves it.
     slots: &'a [Slot],
     /// Nodes opened so far, numbering the next one; the root is 0.
     opened: u32,
@@ -493,44 +354,18 @@ pub(crate) struct RecoveryHandle(usize);
 /// [`start`](Self::start) or [`precede`](Self::precede). Tokens attach to
 /// the innermost open node. A child reborrows its parent for as long as it
 /// is open, so the parent is untouchable until the child completes: the
-/// stack of open nodes is a chain of borrows on the parser's own stack.
-/// Completing a marker is the only way to close its node; dropping it
-/// instead is a parser bug and panics on the spot.
+/// stack of open nodes is a chain of borrows on the parser's own stack, and
+/// the root, only ever lent, cannot complete at all. Completing a marker is
+/// the only way to close its node; dropping it instead is a parser bug and
+/// panics on the spot. What types cannot express is checked where the
+/// parser went wrong: a node is preceded only from the node that contained
+/// it, every node covers at least one token, and `build` rejects a token
+/// past the input horizon or tokens left over.
 ///
 /// Within the crate, the marker is also the parser's view of the input:
 /// lookahead, the stream facts (jointness, newlines, boundaries, bracket
 /// partners) at the cursor, and evidence recording, so one cursor serves
 /// building and reading alike.
-///
-/// Completing the outer of two open nodes is a borrow error:
-///
-/// ```compile_fail,E0505
-/// use sumi_lexer::lex;
-/// use sumi_syntax::{NodeKind, Parse, ParserInput};
-///
-/// let input = ParserInput::new(&lex("x y").unwrap());
-/// Parse::build(&input, |root| {
-///     let mut outer = root.start();
-///     outer.token();
-///     let mut inner = outer.start();
-///     inner.token();
-///     outer.complete(NodeKind::LetStmt); // `outer` is borrowed by `inner`
-///     inner.complete(NodeKind::NameRef);
-/// });
-/// ```
-///
-/// So is completing the root, which is only ever lent:
-///
-/// ```compile_fail,E0507
-/// use sumi_lexer::lex;
-/// use sumi_syntax::{NodeKind, Parse, ParserInput};
-///
-/// let input = ParserInput::new(&lex("x").unwrap());
-/// Parse::build(&input, |root| {
-///     root.token();
-///     root.complete(NodeKind::SourceFile); // cannot move out of `*root`
-/// });
-/// ```
 #[must_use = "a started node must be completed"]
 pub(crate) struct Marker<'p, 'a> {
     builder: &'p mut Builder<'a>,
@@ -697,11 +532,6 @@ impl<'a> Marker<'_, 'a> {
 
     fn set_field(&mut self, node: NodeIdx, field: u8) {
         let child = &mut self.builder.nodes[node.to_usize()];
-        // Error nodes stand where typed syntax was required but implement no
-        // typed field. Retaining their position must not make them a field.
-        if child.kind == NodeKind::Error {
-            return;
-        }
         assert_eq!(child.field, 0, "a node receives its field only once");
         child.field = field
             .checked_add(1)
@@ -727,25 +557,6 @@ impl<'a> Marker<'_, 'a> {
         builder.error_nodes += u32::from(is_error);
         let first_token = builder.input.token(self.start);
         let end_token = builder.input.token(builder.position - 1) + 1;
-        // A node wrapping one of its own kind over exactly its tokens would
-        // be indistinguishable from it by kind and range, which is how a
-        // [`NodePtr`] names a node. The parser never builds one, and debug
-        // builds — every test run, the property tests over garbage input
-        // included — reject the shape; in release the two compares per node
-        // measured two percent of the parser, so it trusts the parser. Such
-        // a chain is sole children all the way down, so it hangs off the
-        // last node, and only a last child over the same tokens needs the
-        // walk.
-        if cfg!(debug_assertions)
-            && let Some(child) = builder
-                .nodes
-                .get(self.first.to_usize()..)
-                .and_then(<[Node]>::last)
-            && child.first_token == first_token
-            && child.end_token == end_token
-        {
-            reject_same_kind_chain(&builder.nodes[self.first.to_usize()..], kind);
-        }
         let node = NodeIdx::new(to_u32(builder.nodes.len()));
         builder.nodes.push(Node {
             kind,
@@ -1021,7 +832,7 @@ impl<'a> Marker<'_, 'a> {
             self.token();
             true
         } else {
-            self.missing(ParseExpected::Token(kind));
+            self.missing(ParseRecoveryKind::Token(kind));
             false
         }
     }
@@ -1051,9 +862,9 @@ impl<'a> Marker<'_, 'a> {
     }
 
     /// Record syntax missing in the raw trivia gap at the cursor.
-    pub(crate) fn missing(&mut self, expected: ParseExpected) -> RecoveryHandle {
+    pub(crate) fn missing(&mut self, kind: ParseRecoveryKind) -> RecoveryHandle {
         let anchor = ParseAnchor::Gap(self.builder.raw_gap(self.builder.position));
-        self.record_recovery(ParseRecoveryKind::Expected(expected), anchor)
+        self.record_recovery(kind, anchor)
     }
 
     /// Record a closing delimiter missing from the cursor gap, retaining
@@ -1066,7 +877,7 @@ impl<'a> Marker<'_, 'a> {
             .and_then(crate::generated::closer)
             .unwrap_or_else(|| unreachable!("a missing closer belongs to a bracket node"));
         let opener = self.builder.raw_range(self.start, self.start + 1);
-        self.missing(ParseExpected::Closer { kind, opener })
+        self.missing(ParseRecoveryKind::Closer { kind, opener })
     }
 
     /// Record structural recovery over `width` significant tokens at the
@@ -1163,32 +974,6 @@ pub(crate) struct CompletedMarker {
     parent: u32,
 }
 
-/// Panic if the chain of nodes covering exactly the same tokens as the
-/// node being completed — `subtree`'s last node and its sole children down
-/// from it — contains `kind`. Out of the completion path: a last child
-/// over the same tokens is rare, and the walk is shorter than it.
-#[cold]
-#[inline(never)]
-fn reject_same_kind_chain(subtree: &[Node], kind: NodeKind) {
-    let last = subtree.len() - 1;
-    let (first_token, end_token) = (subtree[last].first_token, subtree[last].end_token);
-    let mut index = last;
-    loop {
-        let child = subtree[index];
-        if child.first_token != first_token || child.end_token != end_token {
-            break;
-        }
-        assert!(
-            child.kind != kind,
-            "a node must not wrap a node of its own kind over the same tokens"
-        );
-        if child.extent == 1 || index == 0 {
-            break;
-        }
-        index -= 1;
-    }
-}
-
 /// Node counts are stored as `u32`; nothing bounds them by the source
 /// length the way token indices are, so the narrowing is checked.
 #[inline]
@@ -1221,7 +1006,7 @@ mod tests {
             root.violation(ParseViolationKind::SpacedPrefixOperator, 1);
             assert!(!root.recovered_since(checkpoint));
 
-            root.recover_tokens(ParseRecoveryKind::Expected(ParseExpected::Expression), 1);
+            root.recover_tokens(ParseRecoveryKind::Expression, 1);
             assert!(root.recovered_since(checkpoint));
             root.token();
         });
@@ -1554,10 +1339,6 @@ mod tests {
         assert_eq!(kind_at(8), NameRef); // `y`
     }
 
-    // What the types cannot rule out is checked at run time. (What they can —
-    // completing a parent before its child, completing the root — is pinned by
-    // the `compile_fail` examples on `Marker`.)
-
     #[test]
     #[should_panic(expected = "at least one token")]
     fn an_empty_node_panics_at_completion() {
@@ -1620,35 +1401,10 @@ mod tests {
         dump("x y", |b| b.token());
     }
 
+    /// Trailing trivia belongs to the root, and interior trivia to the
+    /// innermost node spanning it.
     #[test]
-    #[should_panic(expected = "wrap a node of its own kind over the same tokens")]
-    fn wrapping_a_node_of_its_own_kind_over_its_tokens_panics() {
-        dump("x", |b| {
-            let name = leaf(b, NameRef);
-            b.precede(name).complete(NameRef);
-        });
-    }
-
-    #[test]
-    fn wrapping_a_node_of_another_kind_over_its_tokens_is_fine() {
-        check(
-            "x",
-            |b| {
-                let name = leaf(b, NameRef);
-                b.precede(name).complete(ParenExpr);
-            },
-            &[
-                "SourceFile 0..1",
-                "  ParenExpr 0..1",
-                r#"    NameRef 0..1 "x""#,
-            ],
-        );
-    }
-
-    /// Build `let x = 1` by hand and probe the boundaries the parsed goldens
-    /// cannot pin: interior trivia answers the innermost node spanning it.
-    #[test]
-    fn trivia_between_children_belongs_to_the_spanning_node() {
+    fn edge_and_interior_trivia_answer_the_spanning_node() {
         let source = "let x = 1 // c";
         let lexed = lex(source).expect("test sources fit in u32");
         let input = ParserInput::new(&lexed);
@@ -1661,20 +1417,12 @@ mod tests {
             });
         });
         let tree = built.tree();
-        // Nodes complete in postorder: NameRef 0, LiteralExpr 1, LetStmt 2,
-        // the root 3. Tokens: `let` ` ` `x` ` ` `=` ` ` `1` ` ` `// c`.
-        let chain = |token| {
-            tree.covering_chain(RawIdx::new(token))
-                .map(NodeIdx::to_usize)
-                .collect::<Vec<_>>()
-        };
-        assert_eq!(chain(0), [2, 3]); // `let` — the statement
-        assert_eq!(chain(1), [2, 3]); // the space inside it too
-        assert_eq!(chain(2), [0, 2, 3]); // `x` — out from the name
-        assert_eq!(chain(6), [1, 2, 3]); // `1` — out from the literal
-        assert_eq!(chain(7), [3]); // trailing trivia — the root only
-        assert_eq!(chain(8), [3]);
-        assert_eq!(tree.covering(RawIdx::new(6)).to_usize(), 1);
+        // Tokens: `let` ` ` `x` ` ` `=` ` ` `1` ` ` `// c`.
+        let kind_at = |token| tree.kind(tree.covering(RawIdx::new(token)));
+        assert_eq!(kind_at(1), LetStmt);
+        assert_eq!(kind_at(2), NameRef);
+        assert_eq!(kind_at(7), SourceFile);
+        assert_eq!(kind_at(8), SourceFile);
     }
 
     #[test]
@@ -1689,9 +1437,6 @@ mod tests {
         built.tree().covering(RawIdx::new(1));
     }
 
-    /// Assert the tree invariants and render one line per node: `Kind
-    /// start..end` byte ranges, indented by depth, with the text of childless
-    /// nodes appended.
     /// Assert the tree invariants and render one line per node: `Kind
     /// start..end` byte ranges, indented by depth, with the text of childless
     /// nodes appended.

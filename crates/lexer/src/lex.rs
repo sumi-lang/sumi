@@ -335,8 +335,7 @@ impl LexedFile {
     /// The token containing the byte at `offset`, by binary search over the
     /// token starts. `None` at or past the end of the source, where there is
     /// no byte. A cursor sitting on a token boundary gets the token to its
-    /// right; [`token_before`](Self::token_before) is the left-biased
-    /// counterpart.
+    /// right.
     pub fn token_at(&self, offset: TextSize) -> Option<RawIdx> {
         if offset >= self.source_len {
             return None;
@@ -346,13 +345,6 @@ impl LexedFile {
         // one always exists.
         let index = self.tokens.partition_point(|token| token.start <= offset) - 1;
         Some(RawIdx::new(index as u32))
-    }
-
-    /// The token containing the byte before `offset`: the one a cursor at
-    /// `offset` touches on its left. `None` at the start of the source.
-    pub fn token_before(&self, offset: TextSize) -> Option<RawIdx> {
-        let previous = offset.to_u32().checked_sub(1)?;
-        self.token_at(TextSize::new(previous))
     }
 }
 

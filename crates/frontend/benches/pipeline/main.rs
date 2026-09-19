@@ -247,9 +247,6 @@ fn bench_queries(c: &mut Criterion) {
     group.bench_function("line-index", |b| {
         b.iter_with_large_drop(|| LineIndex::new(black_box(&source)));
     });
-    group.bench_function("parents", |b| {
-        b.iter_with_large_drop(|| black_box(tree).parents());
-    });
 
     group.throughput(Throughput::Elements(QUERY_BATCH as u64));
     group.bench_function("line-col", |b| {
@@ -281,44 +278,7 @@ fn bench_queries(c: &mut Criterion) {
                 .sum::<usize>()
         });
     });
-    group.bench_function("covering-chain", |b| {
-        b.iter(|| {
-            black_box(&tokens)
-                .iter()
-                .map(|&token| tree.covering_chain(token).count())
-                .sum::<usize>()
-        });
-    });
     group.finish();
-}
-
-// A file-sized subtree offers no unrelated functions to skip. Wide blocks
-// and deep expression chains guard the other side of the query tradeoff.
-fn bench_single_subtree_queries(c: &mut Criterion) {
-    for (name, source) in [
-        ("wide", format!("fn f() {{ {} }}", "_ = 1\n".repeat(2048))),
-        ("deep", format!("fn f() = {}1", "1 + ".repeat(2048))),
-    ] {
-        let lexed = lex(&source).unwrap();
-        let parsed = parse(&ParserInput::new(&lexed));
-        assert!(parsed.evidence().is_empty());
-        let tree = parsed.tree();
-        let mut rng = Lcg(QUERY_SEED);
-        let tokens: Vec<_> = (0..QUERY_BATCH)
-            .map(|_| RawIdx::new(rng.below(lexed.len() as u32)))
-            .collect();
-        let mut group = c.benchmark_group(format!("queries/single-{name}"));
-        group.throughput(Throughput::Elements(QUERY_BATCH as u64));
-        group.bench_function("covering-chain", |b| {
-            b.iter(|| {
-                black_box(&tokens)
-                    .iter()
-                    .map(|&token| tree.covering_chain(token).count())
-                    .sum::<usize>()
-            });
-        });
-        group.finish();
-    }
 }
 
 fn bench_format(c: &mut Criterion) {
@@ -372,7 +332,6 @@ criterion_group!(
     bench_lex_diagnostics,
     bench_adversarial,
     bench_queries,
-    bench_single_subtree_queries,
     bench_format,
     bench_ast,
 );

@@ -138,12 +138,7 @@ impl ParserInput {
         for index in 0..slots.len() {
             let slot = slots[index];
             slots[index].flags |= context | (u8::from(matched != 0) * IN_MATCHED_DELIMITERS);
-            if index > 0
-                && slot.flags & NEWLINE_BEFORE != 0
-                && context == 0
-                && can_end_statement(slots[index - 1].kind)
-                && !continues_line(&slots, index)
-            {
+            if slot.flags & NEWLINE_BEFORE != 0 && would_end_statement_at(&slots, index) {
                 slots[index].flags |= BOUNDARY_BEFORE;
                 boundaries.push(SigIdx::new(index as u32));
             }
@@ -253,28 +248,18 @@ impl ParserInput {
     /// Whether a line break before token `index` would be a statement
     /// boundary under the newline rule: every condition of the rule but
     /// the line break itself, so a layout tool can ask before it breaks a
-    /// line. Never true for the first token. Agrees with
-    /// [`boundary_before`](Self::boundary_before) wherever a line break
-    /// stands, since bracket pairing and the token classes read no trivia.
+    /// line. Never true for the first token.
+    /// [`boundary_before`](Self::boundary_before) is this where a line
+    /// break stands.
     pub fn would_end_statement(&self, index: SigIdx) -> bool {
-        let glued = self
-            .slots
-            .get(index.to_usize())
-            .filter(|slot| slot.flags & JOINT != 0)
-            .and_then(|_| self.get(index + 1));
-        self.would_end_statement_if(index, glued)
+        would_end_statement_at(&self.slots, index.to_usize())
     }
 
     /// [`would_end_statement`](Self::would_end_statement) with the token
     /// after `index` glued to it, or not, as `glued` says instead of the
     /// source: what a layout tool that respaces the tokens asks.
     pub fn would_end_statement_if(&self, index: SigIdx, glued: Option<SyntaxKind>) -> bool {
-        let index = index.to_usize();
-        index > 0
-            && index < self.slots.len()
-            && self.slots[index].flags & IN_EXPRESSION_DELIMITERS == 0
-            && can_end_statement(self.slots[index - 1].kind)
-            && !continues_statement(self.slots[index].kind, glued)
+        would_end_statement_if(&self.slots, index.to_usize(), glued)
     }
 
     /// Whether a statement boundary precedes any token in `range`. Binary
@@ -428,16 +413,27 @@ fn headless_signature_at(slots: &[Slot], index: usize) -> bool {
         })
 }
 
-/// Whether the token at `index` continues the statement left open on the
-/// previous line: the grammar's [`continues_statement`] over its kind and
-/// the kind it is glued to. `(` could not start a statement either, but
-/// deliberately does not continue: arguments must not attach to a callee
-/// across a line break.
-fn continues_line(slots: &[Slot], index: usize) -> bool {
-    let glued = if slots[index].flags & JOINT != 0 {
-        slots.get(index + 1).map(|slot| slot.kind)
-    } else {
-        None
-    };
-    continues_statement(slots[index].kind, glued)
+/// The newline rule, the line break aside: whether a line break before
+/// token `index` would end a statement, with the token after `index`
+/// glued to it, or not, as `glued` says. Bracket pairing and the token
+/// classes read no trivia, so the answer is the same whether or not a
+/// line break stands there. `(` could not start a statement either, but
+/// deliberately does not continue one: arguments must not attach to a
+/// callee across a line break.
+fn would_end_statement_if(slots: &[Slot], index: usize, glued: Option<SyntaxKind>) -> bool {
+    index > 0
+        && index < slots.len()
+        && slots[index].flags & IN_EXPRESSION_DELIMITERS == 0
+        && can_end_statement(slots[index - 1].kind)
+        && !continues_statement(slots[index].kind, glued)
+}
+
+/// [`would_end_statement_if`] with the gluing the source has.
+fn would_end_statement_at(slots: &[Slot], index: usize) -> bool {
+    let glued = slots
+        .get(index)
+        .filter(|slot| slot.flags & JOINT != 0)
+        .and_then(|_| slots.get(index + 1))
+        .map(|slot| slot.kind);
+    would_end_statement_if(slots, index, glued)
 }

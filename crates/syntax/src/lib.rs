@@ -15,15 +15,14 @@ mod tree;
 
 pub use generated::ast;
 pub use generated::{
-    BRACKET_PAIRS, BinaryOp, NodeKind, SyntaxKind, binary_operator, can_end_statement, closer,
-    continues_statement, introduces_statement, is_bracket, is_closer, is_opener,
-    is_prefix_operator, opener, starts_expression, starts_item, starts_statement,
+    BRACKET_PAIRS, BinaryOp, NodeKind, SyntaxKind, binary_operator, is_bracket, is_closer,
+    is_opener,
 };
 pub use index::{NodeIdx, SigIdx};
 pub use input::ParserInput;
 pub use parser::{
-    MAX_DEPTH, ParseAnchor, ParseEvidence, ParseExpected, ParseRecovery, ParseRecoveryKind,
-    ParseViolation, ParseViolationKind, RawGap, RawTokenRange, parse,
+    MAX_DEPTH, ParseAnchor, ParseEvidence, ParseRecovery, ParseRecoveryKind, ParseViolation,
+    ParseViolationKind, RawGap, RawTokenRange, parse,
 };
 pub use sumi_lexer::RawIdx;
-pub use tree::{NodePtr, Parse, SyntaxTree};
+pub use tree::{Parse, SyntaxTree};
