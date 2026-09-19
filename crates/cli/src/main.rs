@@ -53,7 +53,6 @@ fn main() -> ExitCode {
     }
 }
 
-/// Read `path` as a source file, refusing one past the coordinate space.
 fn read_source(path: &Path) -> Result<String, String> {
     let input_error = |error| format!("{}: error[cli/input]: {error}", path.display());
     let mut file = fs::File::open(path).map_err(input_error)?;
@@ -70,7 +69,6 @@ fn read_source(path: &Path) -> Result<String, String> {
     Ok(source)
 }
 
-/// `path:line:col: ` for a byte offset of `source`.
 fn locate(path: &Path, lines: &LineIndex, offset: TextSize) -> String {
     let position = lines.line_col(offset);
     format!(
@@ -81,8 +79,6 @@ fn locate(path: &Path, lines: &LineIndex, offset: TextSize) -> String {
     )
 }
 
-/// Parse and check `path`, reporting every diagnostic; the analysis comes
-/// back with whether there was any.
 fn analyze(path: &Path) -> Result<(Analysis, bool), String> {
     let source = read_source(path)?;
     let parsed = parse_source(source.into_boxed_str())
@@ -110,9 +106,6 @@ fn check(path: &Path) -> Result<ExitCode, String> {
     })
 }
 
-/// Check, then run `fn main()`: its value goes to stdout unless unit. A
-/// file without a parameterless `main` cannot be run and is an input
-/// error.
 fn run(path: &Path) -> Result<ExitCode, String> {
     let (analysis, has_errors) = analyze(path)?;
     if has_errors {
@@ -139,10 +132,6 @@ fn run(path: &Path) -> Result<ExitCode, String> {
     Ok(ExitCode::SUCCESS)
 }
 
-/// Format each file in place, or list the files `--check` would change, or
-/// filter standard input. A file the parser recovered in is still
-/// formatted where it is sound; a defect leaves the file untouched and is
-/// an input error, since it is a formatter bug.
 fn fmt(args: &[OsString]) -> Result<ExitCode, String> {
     let check_only = args[0] == "--check";
     let paths = if check_only { &args[1..] } else { args };
@@ -181,9 +170,7 @@ fn fmt(args: &[OsString]) -> Result<ExitCode, String> {
     })
 }
 
-/// Lex, parse, and format `source`. The formatter reads the tokens and
-/// the tree, never a diagnostic, so this stops short of `parse_source`,
-/// which would lower the evidence into diagnostics nothing here reads.
+/// Not `parse_source`: the formatter reads tokens and the tree, never a diagnostic.
 fn format_source(path: &Path, source: &str) -> Result<String, String> {
     let lexed = lex(source)
         .map_err(|error| format!("{}: error[cli/source-too-large]: {error}", path.display()))?;
