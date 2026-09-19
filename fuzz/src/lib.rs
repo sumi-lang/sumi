@@ -308,7 +308,7 @@ pub fn check_graph(analysis: &sumi_hir::Analysis) {
 /// everything before that was checked. Restates `machine.rs` in
 /// `sumi-hir`'s tests.
 pub fn check_run(parsed: ParsedSource) {
-    use sumi_hir::{Bools, Int, Ints, Outcome, Ty, Value};
+    use sumi_hir::{Bools, Int, Ints, Ty, Value};
 
     /// Values computed, abandoning past this many.
     const STEPS: u64 = 1 << 17;
@@ -405,8 +405,8 @@ pub fn check_run(parsed: ParsedSource) {
                 continue;
             }
             let value = match machine.outcome().expect("a finished run has its outcome") {
-                Outcome::Value(value) => value.clone(),
-                Outcome::Refused(refusal) => panic!("f{} was refused: {refusal:?}", id.index()),
+                Ok(value) => value.clone(),
+                Err(refusal) => panic!("f{} was refused: {refusal:?}", id.index()),
             };
             assert_eq!(value.ty(), signature.result);
             let within = match &value {

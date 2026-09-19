@@ -10,17 +10,14 @@
 //!
 //! The band with a hole is the shape a guard leaves: `d != 0` on a signed
 //! `d` excludes one point from the middle, and a product of two such bands
-//! keeps the hole. Every operation is total and sound: the result of an
-//! operation on two bands contains the result of the operation on any two
-//! of their members, which a property test checks against the concrete
-//! integers, through the one [`Domain`] every operator is read in.
+//! keeps the hole.
 //!
 //! Hull is the join, and a recursion would climb forever, so the solver
 //! above rounds the endpoints of a band that travels around a cycle to
 //! the program's [`Thresholds`], which keeps every ascending chain finite
 //! without a widening operator.
 
-use std::cmp::Ordering;
+use std::cmp::{Ordering, max, min};
 use std::fmt;
 use std::ops::{Add, BitAnd, Div, Mul, Neg, Rem, Sub};
 
@@ -28,7 +25,7 @@ use crate::{BinaryOp, Domain, Fault, Int, Ty};
 
 /// An endpoint over ℤ ∪ {±∞}. Ordered as the extended integers are.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Bound {
+enum Bound {
     NegInf,
     Finite(Int),
     PosInf,
@@ -165,61 +162,11 @@ impl fmt::Display for Bound {
 /// The hole is canonical: it is set only when `lo < 0 < hi`, and a zero at
 /// an endpoint is removed by moving the endpoint, so equal sets have equal
 /// representations.
-///
-/// A band whose finite endpoints fit a word is three words and no
-/// allocation, which is every band a program without a wide literal makes.
-/// One with an endpoint past that is boxed, and never holds a band the
-/// small form could, so derived equality is set equality either way.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Ints(Repr);
+pub struct Ints(Option<Band>);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-enum Repr {
-    Empty,
-    Small(Small),
-    Wide(Box<Wide>),
-}
-
-/// A band whose finite endpoints fit a word. An infinite endpoint's word is
-/// zero, so equal bands are equal words. The flags are booleans rather than
-/// bits so their spare values hold the discriminant of [`Repr`], which
-/// keeps a set in three words.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Small {
-    lo: i64,
-    hi: i64,
-    lo_inf: bool,
-    hi_inf: bool,
-    hole: bool,
-}
-
-impl Small {
-    /// The lower endpoint's word, or `None` for `-∞`.
-    fn lo_word(self) -> Option<i64> {
-        (!self.lo_inf).then_some(self.lo)
-    }
-
-    /// The upper endpoint's word, or `None` for `+∞`.
-    fn hi_word(self) -> Option<i64> {
-        (!self.hi_inf).then_some(self.hi)
-    }
-
-    fn lo(self) -> Bound {
-        self.lo_word().map_or(Bound::NegInf, Bound::finite)
-    }
-
-    fn hi(self) -> Bound {
-        self.hi_word().map_or(Bound::PosInf, Bound::finite)
-    }
-
-    fn contains_zero(self) -> bool {
-        !self.hole && (self.lo_inf || self.lo <= 0) && (self.hi_inf || self.hi >= 0)
-    }
-}
-
-/// A band with an endpoint past the word-sized range.
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct Wide {
+struct Band {
     lo: Bound,
     hi: Bound,
     hole: bool,
@@ -234,18 +181,7 @@ impl From<Int> for Ints {
 }
 
 impl Ints {
-    pub const EMPTY: Self = Self(Repr::Empty);
-
-    /// Every integer.
-    pub fn all() -> Self {
-        Self(Repr::Small(Small {
-            lo: 0,
-            hi: 0,
-            lo_inf: true,
-            hi_inf: true,
-            hole: false,
-        }))
-    }
+    pub const EMPTY: Self = Self(None);
 
     /// The canonical band, or nothing when it is empty.
     fn band(mut lo: Bound, mut hi: Bound, hole: bool) -> Self {
@@ -263,118 +199,50 @@ impl Ints {
             return Self::EMPTY;
         }
         let hole = hole && lo.sign() == Ordering::Less && hi.sign() == Ordering::Greater;
-        let word = |bound: &Bound| match bound {
-            Bound::NegInf | Bound::PosInf => Some(0),
-            Bound::Finite(value) => i64::try_from(value).ok(),
-        };
-        match (word(&lo), word(&hi)) {
-            (Some(lo_word), Some(hi_word)) => Self(Repr::Small(Small {
-                lo: lo_word,
-                hi: hi_word,
-                lo_inf: lo == Bound::NegInf,
-                hi_inf: hi == Bound::PosInf,
-                hole,
-            })),
-            _ => Self(Repr::Wide(Box::new(Wide { lo, hi, hole }))),
-        }
-    }
-
-    /// The canonical band over words, `None` an infinite endpoint, or
-    /// nothing when it is empty.
-    fn small(mut lo: Option<i64>, mut hi: Option<i64>, hole: bool) -> Self {
-        if hole {
-            if lo == Some(0) {
-                lo = Some(1);
-            }
-            if hi == Some(0) {
-                hi = Some(-1);
-            }
-        }
-        if let (Some(lo), Some(hi)) = (lo, hi)
-            && lo > hi
-        {
-            return Self::EMPTY;
-        }
-        let hole = hole && lo.is_none_or(|lo| lo < 0) && hi.is_none_or(|hi| hi > 0);
-        Self(Repr::Small(Small {
-            lo: lo.unwrap_or(0),
-            hi: hi.unwrap_or(0),
-            lo_inf: lo.is_none(),
-            hi_inf: hi.is_none(),
-            hole,
-        }))
-    }
-
-    /// The endpoints and the hole, for the paths that compute over the
-    /// extended integers whatever the representation.
-    fn parts(&self) -> Option<(Bound, Bound, bool)> {
-        match &self.0 {
-            Repr::Empty => None,
-            Repr::Small(small) => Some((small.lo(), small.hi(), small.hole)),
-            Repr::Wide(wide) => Some((wide.lo.clone(), wide.hi.clone(), wide.hole)),
-        }
+        Self(Some(Band { lo, hi, hole }))
     }
 
     #[inline]
     pub fn is_empty(&self) -> bool {
-        matches!(self.0, Repr::Empty)
+        self.0.is_none()
     }
 
     #[inline]
     pub fn contains_zero(&self) -> bool {
-        match &self.0 {
-            Repr::Empty => false,
-            Repr::Small(small) => small.contains_zero(),
-            Repr::Wide(wide) => {
-                !wide.hole
-                    && wide.lo.sign() != Ordering::Greater
-                    && wide.hi.sign() != Ordering::Less
-            }
-        }
+        self.0.as_ref().is_some_and(|band| {
+            !band.hole && band.lo.sign() != Ordering::Greater && band.hi.sign() != Ordering::Less
+        })
     }
 
     /// Exactly `[0, 0]`.
     pub fn is_zero(&self) -> bool {
-        matches!(
-            self.0,
-            Repr::Small(Small {
-                lo: 0,
-                hi: 0,
-                lo_inf: false,
-                hi_inf: false,
-                hole: false,
-            })
-        )
+        self.0.as_ref().is_some_and(|band| {
+            band.lo.sign() == Ordering::Equal && band.hi.sign() == Ordering::Equal
+        })
     }
 
     fn is_point(&self) -> bool {
-        match &self.0 {
-            Repr::Empty => false,
-            Repr::Small(small) => !small.lo_inf && !small.hi_inf && small.lo == small.hi,
-            Repr::Wide(wide) => wide.lo == wide.hi,
-        }
+        self.0.as_ref().is_some_and(|band| band.lo == band.hi)
     }
 
     /// The endpoints, when the set is bounded on that side.
     pub fn lo(&self) -> Option<Int> {
         match &self.0 {
-            Repr::Empty => None,
-            Repr::Small(small) => small.lo_word().map(Int::from),
-            Repr::Wide(wide) => match &wide.lo {
-                Bound::Finite(value) => Some(value.clone()),
-                _ => None,
-            },
+            Some(Band {
+                lo: Bound::Finite(value),
+                ..
+            }) => Some(value.clone()),
+            _ => None,
         }
     }
 
     pub fn hi(&self) -> Option<Int> {
         match &self.0 {
-            Repr::Empty => None,
-            Repr::Small(small) => small.hi_word().map(Int::from),
-            Repr::Wide(wide) => match &wide.hi {
-                Bound::Finite(value) => Some(value.clone()),
-                _ => None,
-            },
+            Some(Band {
+                hi: Bound::Finite(value),
+                ..
+            }) => Some(value.clone()),
+            _ => None,
         }
     }
 
@@ -382,19 +250,11 @@ impl Ints {
     #[inline]
     pub fn join(&mut self, other: &Self) -> bool {
         let joined = match (&self.0, &other.0) {
-            (_, Repr::Empty) => return false,
-            (Repr::Empty, _) => other.clone(),
-            (Repr::Small(a), Repr::Small(b)) => {
-                let hole = !a.contains_zero() && !b.contains_zero();
-                let lo = a.lo_word().zip(b.lo_word()).map(|(a, b)| a.min(b));
-                let hi = a.hi_word().zip(b.hi_word()).map(|(a, b)| a.max(b));
-                Self::small(lo, hi, hole)
-            }
-            _ => {
-                let (lo1, hi1, _) = self.parts().unwrap();
-                let (lo2, hi2, _) = other.parts().unwrap();
+            (_, None) => return false,
+            (None, Some(_)) => other.clone(),
+            (Some(a), Some(b)) => {
                 let hole = !self.contains_zero() && !other.contains_zero();
-                Self::band(lo1.min(lo2), hi1.max(hi2), hole)
+                Self::band(min(&a.lo, &b.lo).clone(), max(&a.hi, &b.hi).clone(), hole)
             }
         };
         let grew = joined != *self;
@@ -403,65 +263,45 @@ impl Ints {
     }
 
     fn without(&self, point: &Bound) -> Self {
-        let Some((lo, hi, hole)) = self.parts() else {
+        let Some(Band { lo, hi, hole }) = &self.0 else {
             return Self::EMPTY;
         };
-        if lo == *point {
-            Self::band(lo.succ(), hi, hole)
-        } else if hi == *point {
-            Self::band(lo, hi.pred(), hole)
+        if lo == point {
+            Self::band(lo.succ(), hi.clone(), *hole)
+        } else if hi == point {
+            Self::band(lo.clone(), hi.pred(), *hole)
         } else if point.sign() == Ordering::Equal {
-            Self::band(lo, hi, true)
+            Self::band(lo.clone(), hi.clone(), true)
         } else {
             self.clone()
         }
     }
 
-    /// An endpoint computed over words: `None` for an infinite one, then
-    /// `None` again when the result left the words, which the wide path
-    /// handles. Flattened to the small form's endpoint when it did not.
-    fn word(endpoint: Option<Option<i64>>) -> Option<Option<i64>> {
-        match endpoint {
-            None => Some(None),
-            Some(None) => None,
-            Some(Some(word)) => Some(Some(word)),
-        }
-    }
-
-    /// `f` over two endpoints, in the form [`Ints::word`] reads.
-    fn words(
-        a: Option<i64>,
-        b: Option<i64>,
-        f: fn(i64, i64) -> Option<i64>,
-    ) -> Option<Option<i64>> {
-        Self::word(a.zip(b).map(|(a, b)| f(a, b)))
-    }
-
     /// The divisor's non-zero halves, each a band with one sign.
     fn halves(&self) -> Vec<(Bound, Bound)> {
-        let Some((lo, hi, _)) = self.parts() else {
+        let Some(Band { lo, hi, .. }) = &self.0 else {
             return Vec::new();
         };
         let mut halves = Vec::with_capacity(2);
         if lo.sign() == Ordering::Less {
-            halves.push((lo.clone(), hi.clone().min(Bound::finite(-1))));
+            halves.push((lo.clone(), min(hi, &Bound::finite(-1)).clone()));
         }
         if hi.sign() == Ordering::Greater {
-            halves.push((lo.max(Bound::finite(1)), hi));
+            halves.push((max(lo, &Bound::finite(1)).clone(), hi.clone()));
         }
         halves
     }
 
     /// The booleans `self op other` may be.
     fn compare(&self, op: BinaryOp, other: &Self) -> Bools {
-        let (Some((lo1, hi1, _)), Some((lo2, hi2, _))) = (self.parts(), other.parts()) else {
+        let (Some(a), Some(b)) = (&self.0, &other.0) else {
             return Bools::EMPTY;
         };
         let (may_true, may_false) = match op {
-            BinaryOp::Lt => (lo1 < hi2, hi1 >= lo2),
-            BinaryOp::Le => (lo1 <= hi2, hi1 > lo2),
-            BinaryOp::Gt => (hi1 > lo2, lo1 <= hi2),
-            BinaryOp::Ge => (hi1 >= lo2, lo1 < hi2),
+            BinaryOp::Lt => (a.lo < b.hi, a.hi >= b.lo),
+            BinaryOp::Le => (a.lo <= b.hi, a.hi > b.lo),
+            BinaryOp::Gt => (a.hi > b.lo, a.lo <= b.hi),
+            BinaryOp::Ge => (a.hi >= b.lo, a.lo < b.hi),
             BinaryOp::Eq | BinaryOp::Ne => {
                 let equal = !(self & other).is_empty();
                 let unequal = !(self.is_point() && self == other);
@@ -478,21 +318,18 @@ impl Ints {
 
     /// `self` narrowed by `self op other` holding, with `self` on the left.
     fn refine(&self, op: BinaryOp, other: &Self) -> Self {
-        let Some((lo, hi, hole)) = self.parts() else {
-            return Self::EMPTY;
-        };
-        let Some((lo2, hi2, _)) = other.parts() else {
+        let (Some(Band { lo, hi, hole }), Some(b)) = (&self.0, &other.0) else {
             return Self::EMPTY;
         };
         match op {
-            BinaryOp::Lt => Self::band(lo, hi.min(hi2.pred()), hole),
-            BinaryOp::Le => Self::band(lo, hi.min(hi2), hole),
-            BinaryOp::Gt => Self::band(lo.max(lo2.succ()), hi, hole),
-            BinaryOp::Ge => Self::band(lo.max(lo2), hi, hole),
+            BinaryOp::Lt => Self::band(lo.clone(), min(hi, &b.hi.pred()).clone(), *hole),
+            BinaryOp::Le => Self::band(lo.clone(), min(hi, &b.hi).clone(), *hole),
+            BinaryOp::Gt => Self::band(max(lo, &b.lo.succ()).clone(), hi.clone(), *hole),
+            BinaryOp::Ge => Self::band(max(lo, &b.lo).clone(), hi.clone(), *hole),
             BinaryOp::Eq => self & other,
             BinaryOp::Ne => {
                 if other.is_point() {
-                    self.without(&lo2)
+                    self.without(&b.lo)
                 } else {
                     self.clone()
                 }
@@ -503,21 +340,21 @@ impl Ints {
 
     /// Endpoints moved outward to the thresholds; a point is left exact.
     pub fn round(&self, thresholds: &Thresholds) -> Self {
-        let Some((lo, hi, hole)) = self.parts() else {
+        let Some(Band { lo, hi, hole }) = &self.0 else {
             return Self::EMPTY;
         };
         if lo == hi {
             return self.clone();
         }
         let lo = match lo {
-            Bound::Finite(value) => thresholds.below(&value),
-            _ => lo,
+            Bound::Finite(value) => thresholds.below(value),
+            _ => lo.clone(),
         };
         let hi = match hi {
-            Bound::Finite(value) => thresholds.above(&value),
-            _ => hi,
+            Bound::Finite(value) => thresholds.above(value),
+            _ => hi.clone(),
         };
-        Self::band(lo, hi, hole)
+        Self::band(lo, hi, *hole)
     }
 }
 
@@ -525,10 +362,12 @@ impl Ints {
 impl BitAnd<&Ints> for &Ints {
     type Output = Ints;
     fn bitand(self, other: &Ints) -> Ints {
-        match (self.parts(), other.parts()) {
-            (Some((lo1, hi1, hole1)), Some((lo2, hi2, hole2))) => {
-                Ints::band(lo1.max(lo2), hi1.min(hi2), hole1 || hole2)
-            }
+        match (&self.0, &other.0) {
+            (Some(a), Some(b)) => Ints::band(
+                max(&a.lo, &b.lo).clone(),
+                min(&a.hi, &b.hi).clone(),
+                a.hole || b.hole,
+            ),
             _ => Ints::EMPTY,
         }
     }
@@ -537,15 +376,9 @@ impl BitAnd<&Ints> for &Ints {
 impl Neg for &Ints {
     type Output = Ints;
     fn neg(self) -> Ints {
-        if let Repr::Small(small) = &self.0
-            && let Some(lo) = Ints::word(small.hi_word().map(i64::checked_neg))
-            && let Some(hi) = Ints::word(small.lo_word().map(i64::checked_neg))
-        {
-            return Ints::small(lo, hi, small.hole);
-        }
-        match self.parts() {
+        match &self.0 {
             None => Ints::EMPTY,
-            Some((lo, hi, hole)) => Ints::band(-&hi, -&lo, hole),
+            Some(Band { lo, hi, hole }) => Ints::band(-hi, -lo, *hole),
         }
     }
 }
@@ -553,16 +386,8 @@ impl Neg for &Ints {
 impl Add<&Ints> for &Ints {
     type Output = Ints;
     fn add(self, other: &Ints) -> Ints {
-        if let (Repr::Small(a), Repr::Small(b)) = (&self.0, &other.0)
-            && let Some(lo) = Ints::words(a.lo_word(), b.lo_word(), i64::checked_add)
-            && let Some(hi) = Ints::words(a.hi_word(), b.hi_word(), i64::checked_add)
-        {
-            return Ints::small(lo, hi, false);
-        }
-        match (self.parts(), other.parts()) {
-            (Some((lo1, hi1, _)), Some((lo2, hi2, _))) => {
-                Ints::band(&lo1 + &lo2, &hi1 + &hi2, false)
-            }
+        match (&self.0, &other.0) {
+            (Some(a), Some(b)) => Ints::band(&a.lo + &b.lo, &a.hi + &b.hi, false),
             _ => Ints::EMPTY,
         }
     }
@@ -571,16 +396,8 @@ impl Add<&Ints> for &Ints {
 impl Sub<&Ints> for &Ints {
     type Output = Ints;
     fn sub(self, other: &Ints) -> Ints {
-        if let (Repr::Small(a), Repr::Small(b)) = (&self.0, &other.0)
-            && let Some(lo) = Ints::words(a.lo_word(), b.hi_word(), i64::checked_sub)
-            && let Some(hi) = Ints::words(a.hi_word(), b.lo_word(), i64::checked_sub)
-        {
-            return Ints::small(lo, hi, false);
-        }
-        match (self.parts(), other.parts()) {
-            (Some((lo1, hi1, _)), Some((lo2, hi2, _))) => {
-                Ints::band(&lo1 - &hi2, &hi1 - &lo2, false)
-            }
+        match (&self.0, &other.0) {
+            (Some(a), Some(b)) => Ints::band(&a.lo - &b.hi, &a.hi - &b.lo, false),
             _ => Ints::EMPTY,
         }
     }
@@ -589,9 +406,9 @@ impl Sub<&Ints> for &Ints {
 impl Mul<&Ints> for &Ints {
     type Output = Ints;
     fn mul(self, other: &Ints) -> Ints {
-        match (self.parts(), other.parts()) {
-            (Some((lo1, hi1, _)), Some((lo2, hi2, _))) => {
-                let corners = [&lo1 * &lo2, &lo1 * &hi2, &hi1 * &lo2, &hi1 * &hi2];
+        match (&self.0, &other.0) {
+            (Some(a), Some(b)) => {
+                let corners = [&a.lo * &b.lo, &a.lo * &b.hi, &a.hi * &b.lo, &a.hi * &b.hi];
                 let lo = corners.iter().min().unwrap().clone();
                 let hi = corners.iter().max().unwrap().clone();
                 // A product of non-zeros is non-zero over ℤ.
@@ -608,12 +425,15 @@ impl Mul<&Ints> for &Ints {
 impl Div<&Ints> for &Ints {
     type Output = Ints;
     fn div(self, other: &Ints) -> Ints {
-        let Some((lo1, hi1, _)) = self.parts() else {
+        let Some(Band {
+            lo: lo1, hi: hi1, ..
+        }) = &self.0
+        else {
             return Ints::EMPTY;
         };
         let mut result = Ints::EMPTY;
         for (lo2, hi2) in other.halves() {
-            let corners = [&lo1 / &lo2, &lo1 / &hi2, &hi1 / &lo2, &hi1 / &hi2];
+            let corners = [lo1 / &lo2, lo1 / &hi2, hi1 / &lo2, hi1 / &hi2];
             let lo = corners.iter().min().unwrap().clone();
             let hi = corners.iter().max().unwrap().clone();
             result.join(&Ints::band(lo, hi, false));
@@ -634,23 +454,23 @@ impl Rem<&Ints> for &Ints {
         {
             return a.checked_rem(&b).map_or(Ints::EMPTY, Ints::from);
         }
-        let (Some((lo1, hi1, _)), Some((lo2, hi2, _))) = (self.parts(), other.parts()) else {
+        let (Some(a), Some(b)) = (&self.0, &other.0) else {
             return Ints::EMPTY;
         };
-        let magnitude = lo2.abs().max(hi2.abs());
+        let magnitude = b.lo.abs().max(b.hi.abs());
         if magnitude.sign() == Ordering::Equal {
             return Ints::EMPTY;
         }
         let limit = magnitude.pred();
-        let lo = if lo1.sign() != Ordering::Less {
+        let lo = if a.lo.sign() != Ordering::Less {
             Bound::zero()
         } else {
-            lo1.max(-&limit)
+            max(&a.lo, &-&limit).clone()
         };
-        let hi = if hi1.sign() != Ordering::Greater {
+        let hi = if a.hi.sign() != Ordering::Greater {
             Bound::zero()
         } else {
-            hi1.min(limit)
+            min(&a.hi, &limit).clone()
         };
         Ints::band(lo, hi, false)
     }
@@ -658,13 +478,13 @@ impl Rem<&Ints> for &Ints {
 
 impl fmt::Display for Ints {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.parts() {
+        match &self.0 {
             None => f.write_str("∅"),
-            Some((lo, hi, hole)) => {
+            Some(Band { lo, hi, hole }) => {
                 let open = if lo.is_finite() { '[' } else { '(' };
                 let close = if hi.is_finite() { ']' } else { ')' };
                 write!(f, "{open}{lo}, {hi}{close}")?;
-                if hole {
+                if *hole {
                     f.write_str(" \\ 0")?;
                 }
                 Ok(())
@@ -787,18 +607,6 @@ impl May {
         unit: false,
     };
 
-    pub fn int(value: Int) -> Self {
-        Self::ints(Ints::from(value))
-    }
-
-    pub fn bool(value: bool) -> Self {
-        Self::bools(Bools::from(value))
-    }
-
-    pub fn unit() -> Self {
-        Self::of_unit(true)
-    }
-
     pub fn ints(ints: Ints) -> Self {
         Self {
             ints,
@@ -886,15 +694,12 @@ impl FromIterator<Int> for Thresholds {
     fn from_iter<I: IntoIterator<Item = Int>>(constants: I) -> Self {
         let one = Int::from(1);
         let constants: Vec<Int> = constants.into_iter().collect();
-        // The constants arrive in the order the file spells them, which is
-        // nearly sorted more often than not, and the sort merges runs it
-        // finds: each shift of the constants is one run, not a descent
-        // every third value.
         let mut values: Vec<Int> = Vec::with_capacity(3 * constants.len() + 3);
         values.extend([-1, 0, 1].map(Int::from));
         values.extend(constants.iter().map(|constant| constant - &one));
         values.extend(constants.iter().map(|constant| constant + &one));
         values.extend(constants);
+        // Stable: each shift of the constants is a nearly sorted run to merge.
         values.sort();
         values.dedup();
         Self(values)
@@ -928,17 +733,17 @@ impl Thresholds {
 impl Domain for May {
     #[inline]
     fn int(value: &Int) -> Self {
-        Self::int(value.clone())
+        Self::ints(Ints::from(value.clone()))
     }
 
     #[inline]
     fn bool(value: bool) -> Self {
-        Self::bool(value)
+        Self::bools(Bools::from(value))
     }
 
     #[inline]
     fn unit() -> Self {
-        Self::unit()
+        Self::of_unit(true)
     }
 
     #[inline]
@@ -1055,20 +860,15 @@ mod tests {
     }
 
     #[test]
-    fn a_set_is_three_words_and_only_a_wide_endpoint_allocates() {
-        assert_eq!(size_of::<Ints>(), 24);
-        assert_eq!(size_of::<May>(), 32);
+    fn endpoints_past_the_words_round_trip() {
         let max = Ints::from(Int::from(i64::MAX));
         let one = Ints::from(Int::from(1));
         let past = &max + &one;
-        assert!(matches!(past.0, Repr::Wide(_)));
         assert_eq!(
             past.to_string(),
             "[9223372036854775808, 9223372036854775808]"
         );
-        let back = &past - &one;
-        assert!(matches!(back.0, Repr::Small(_)));
-        assert_eq!(back, max);
+        assert_eq!(&past - &one, max);
         let min = Ints::from(Int::from(i64::MIN));
         assert_eq!(
             (-&min).to_string(),
@@ -1081,7 +881,7 @@ mod tests {
         let mut joined = ints("[20, inf]");
         assert!(!joined.join(&ints("[30, inf]")));
         assert!(joined.join(&ints("[-inf, 30]")));
-        assert_eq!(joined, Ints::all());
+        assert_eq!(joined, ints("[-inf, inf]"));
         let mut wide = past.clone();
         assert!(wide.join(&one));
         assert_eq!(wide.to_string(), "[1, 9223372036854775808]");
@@ -1159,7 +959,7 @@ mod tests {
         assert_eq!(n.refine(BinaryOp::Gt, &ints("[20, 20]")), Ints::EMPTY);
         assert_eq!(n.refine(BinaryOp::Ne, &ints("[1, 2]")), n);
         let may = May::ints(n.clone());
-        let two = May::int(2.into());
+        let two = May::int(&2.into());
         // `2 > n` reads as `n < 2`; its false sense is `n >= 2`.
         assert_eq!(
             may.refine(BinaryOp::Gt, false, true, &two).ints,
@@ -1198,7 +998,7 @@ mod tests {
         assert_eq!(May::unit().shown(Ty::Unit).to_string(), "unit");
         assert_eq!(May::NONE.shown(Ty::Unit).to_string(), "∅");
         assert_eq!(May::bool(true).shown(Ty::Bool).to_string(), "{true}");
-        assert_eq!(May::int(5.into()).shown(Ty::Int).to_string(), "[5, 5]");
+        assert_eq!(May::int(&5.into()).shown(Ty::Int).to_string(), "[5, 5]");
     }
 
     #[test]
@@ -1231,29 +1031,30 @@ mod tests {
             proptest::option::of(0i64..25),
         )
             .prop_map(|(lo, len)| {
-                let hi = len.map(|len| lo.unwrap_or(0) + len);
-                (Ints::small(lo, hi, false), Ints::small(lo, hi, true))
+                let hi = len.map_or(Bound::PosInf, |len| Bound::finite(lo.unwrap_or(0) + len));
+                let lo = lo.map_or(Bound::NegInf, Bound::finite);
+                (
+                    Ints::band(lo.clone(), hi.clone(), false),
+                    Ints::band(lo, hi, true),
+                )
             })
     }
 
     fn members(band: &Ints) -> Vec<i64> {
-        let Some((lo, hi, hole)) = band.parts() else {
+        let Some(Band { lo, hi, hole }) = &band.0 else {
             return Vec::new();
         };
         let (Bound::Finite(lo), Bound::Finite(hi)) = (lo, hi) else {
             unreachable!("finite test bands");
         };
-        let (lo, hi) = (
-            lo.to_string().parse::<i64>().unwrap(),
-            hi.to_string().parse::<i64>().unwrap(),
-        );
-        (lo..=hi).filter(|v| !(hole && *v == 0)).collect()
+        let (lo, hi) = (i64::try_from(lo).unwrap(), i64::try_from(hi).unwrap());
+        (lo..=hi).filter(|v| !(*hole && *v == 0)).collect()
     }
 
     fn contains(band: &Ints, value: i64) -> bool {
-        band.parts().is_some_and(|(lo, hi, hole)| {
+        band.0.as_ref().is_some_and(|band| {
             let value = Bound::finite(value);
-            lo <= value && value <= hi && !(hole && value.sign() == Ordering::Equal)
+            band.lo <= value && value <= band.hi && !(band.hole && value.sign() == Ordering::Equal)
         })
     }
 
@@ -1343,53 +1144,10 @@ mod tests {
     }
 
     proptest! {
-        /// Every operation over-approximates the concrete operation on every
-        /// member of its operands, which is soundness.
+        /// A shift past the words and back returns the hull it started
+        /// from, and two negations return the band, hole included.
         #[test]
-        fn operations_are_sound(a in band(), b in band()) {
-            let xs = members(&a);
-            let ys = members(&b);
-            let sum = &a + &b;
-            let difference = &a - &b;
-            let product = &a * &b;
-            let quotient = &a / &b;
-            let remainder = &a % &b;
-            let negated = -&a;
-            for &x in &xs {
-                prop_assert!(contains(&negated, -x));
-                for &y in &ys {
-                    prop_assert!(contains(&sum, x + y), "{a} + {b} ∌ {x} + {y}");
-                    prop_assert!(contains(&difference, x - y));
-                    prop_assert!(contains(&product, x * y), "{a} * {b} ∌ {x} * {y}");
-                    if y != 0 {
-                        prop_assert!(contains(&quotient, x / y), "{a} / {b} ∌ {x} / {y}");
-                        prop_assert!(contains(&remainder, x % y), "{a} % {b} ∌ {x} % {y}");
-                    }
-                    for op in [BinaryOp::Lt, BinaryOp::Le, BinaryOp::Gt, BinaryOp::Ge, BinaryOp::Eq, BinaryOp::Ne] {
-                        let holds = match op {
-                            BinaryOp::Lt => x < y,
-                            BinaryOp::Le => x <= y,
-                            BinaryOp::Gt => x > y,
-                            BinaryOp::Ge => x >= y,
-                            BinaryOp::Eq => x == y,
-                            _ => x != y,
-                        };
-                        let bools = a.compare(op, &b);
-                        let seen = if holds { bools.may_true() } else { bools.may_false() };
-                        prop_assert!(seen, "{a} {op:?} {b} misses {x} {op:?} {y}");
-                        if holds {
-                            prop_assert!(contains(&a.refine(op, &b), x), "{a} refined by {op:?} {b} ∌ {x}");
-                        }
-                    }
-                }
-            }
-        }
-
-        /// The wide path agrees with the small one: a shift past the words
-        /// and back returns the hull it started from, and two negations
-        /// return the band, hole included.
-        #[test]
-        fn the_wide_path_round_trips((hull, holed) in any_band(), far in prop::sample::select(vec![i64::MAX, i64::MIN + 1, 1 << 62])) {
+        fn shifts_past_the_words_round_trip((hull, holed) in any_band(), far in prop::sample::select(vec![i64::MAX, i64::MIN + 1, 1 << 62])) {
             let shift = Ints::from(Int::from(far));
             prop_assert_eq!(&(&(&hull + &shift) - &shift), &hull);
             prop_assert_eq!(&(&(&hull - &shift) + &shift), &hull);
@@ -1417,18 +1175,21 @@ mod tests {
             prop_assert_eq!(a.contains_zero(), rounded.contains_zero());
         }
 
-        /// Every operator, read in both domains: the may-value of the
-        /// operator over the sets contains its value over any members,
-        /// and where the concrete operator faults the may-domain still
-        /// answers. The data operators are read through [`Op::apply`];
-        /// the lazy ones have no data node, so they are read directly.
+        /// Soundness: the may-value of an operator over the sets contains
+        /// its concrete value over any members, and where the concrete
+        /// operator faults the may-domain still answers. The data
+        /// operators are read through [`Op::apply`]; the lazy ones have no
+        /// data node, so they are read directly.
         #[test]
-        fn every_operator_agrees_between_the_domains(a in band(), b in band()) {
+        fn every_operator_over_approximates_the_concrete_one(a in band(), b in band()) {
             let ops = data_ops();
             for (set_a, x) in operands(&a) {
                 for (set_b, y) in operands(&b) {
                     for op in &ops {
-                        let arity = op.reads(2);
+                        let arity = match op {
+                            Op::Neg | Op::Not | Op::Exactly(_) => 1,
+                            _ => 2,
+                        };
                         let may = op.apply::<May>(&[&set_a, &set_b][..arity]).expect("the may-domain is total");
                         if let Ok(value) = op.apply::<Value>(&[&x, &y][..arity])
                             && reached(op, &x, &y)

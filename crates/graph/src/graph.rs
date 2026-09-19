@@ -57,8 +57,7 @@ impl Run {
         self.result
     }
 
-    /// Whether `node` is one of the run's.
-    pub fn holds(&self, node: NodeId) -> bool {
+    fn holds(&self, node: NodeId) -> bool {
         (self.nodes.start as usize..self.nodes.end as usize).contains(&node.index())
     }
 
@@ -103,7 +102,7 @@ impl RegionId {
         Self(NonZeroU32::new(u32::try_from(index + 1).expect("region count fits u32")).unwrap())
     }
 
-    /// Index into the graph's `regions()`.
+    /// Index into the graph's `region_ids()`.
     pub fn index(self) -> usize {
         (self.0.get() - 1) as usize
     }
@@ -243,10 +242,6 @@ impl Graph {
     /// Every node's ID, in definition order: the index into `nodes()`.
     pub fn node_ids(&self) -> impl ExactSizeIterator<Item = NodeId> + use<> {
         (0..self.nodes.len()).map(NodeId::new)
-    }
-
-    pub fn regions(&self) -> &[Region] {
-        &self.regions
     }
 
     /// Every region's ID, outermost first where regions nest.

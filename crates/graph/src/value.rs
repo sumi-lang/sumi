@@ -20,9 +20,7 @@ pub enum Fault {
 /// each operator does, once, for every reader. The concrete domain is
 /// [`Value`], one value per type, in which an operation faults rather
 /// than panics, so a graph the checker rejected still runs to a refusal.
-/// The may-domain is [`May`](crate::May), a set of values per type, in
-/// which every operator contains the concrete one on every member of its
-/// operands and none faults.
+/// The may-domain is [`May`](crate::May), a set of values per type.
 pub trait Domain: Clone {
     fn int(value: &Int) -> Self;
     fn bool(value: bool) -> Self;
@@ -42,42 +40,16 @@ pub trait Domain: Clone {
     fn exactly(&self, value: bool) -> Self;
 }
 
-/// A domain in which every value is one value, so a condition goes one
-/// way and a run in it takes one path. The may-domain is not one: the
-/// solver takes every path a set allows.
-pub trait Concrete: Domain {
-    /// Which way a condition goes.
-    fn truth(&self) -> Result<bool, Fault>;
-}
-
 impl Op {
-    /// How many of the node's inputs, from the first, are values it
-    /// computes from. The rest is the context recorded beside them. A
-    /// call reads every argument. A narrowed read reads the guard's other
-    /// operand too, for the domain that narrows by it; the read is placed
-    /// where its guard holds, so that operand has always run by then and
-    /// a concrete reader finds it already valued.
-    pub fn reads(&self, inputs: usize) -> usize {
-        match self {
-            Self::Int(_) | Self::Bool(_) | Self::Param(_) | Self::Unit | Self::Hole => 0,
-            Self::Entry | Self::Then | Self::Else => 0,
-            Self::Copy { .. } | Self::Exactly(_) | Self::Neg | Self::Not => 1,
-            Self::And { .. } | Self::Or { .. } | Self::Join { .. } => 1,
-            Self::Binary(_) | Self::Refine { .. } => 2,
-            Self::Call(_) => inputs,
-        }
-    }
-
-    /// The value of a data node from the values of the inputs it reads,
-    /// as [`Op::reads`] counts them. A copy is what it reads, a narrowed
-    /// read is what the domain makes of the guard, and unit is unit. A
-    /// parameter, a hole, a context, and a node with a region are the
-    /// reader's to evaluate, not the operator's.
+    /// The value of a data node from the values of its inputs. A copy is
+    /// what it reads, and a narrowed read is what the domain makes of the
+    /// guard. A parameter, a hole, a context, a unit held in a context, and
+    /// a node with a region are the reader's to evaluate, not the
+    /// operator's.
     pub fn apply<D: Domain>(&self, inputs: &[&D]) -> Result<D, Fault> {
         Ok(match self {
             Self::Int(value) => D::int(value),
             Self::Bool(value) => D::bool(*value),
-            Self::Unit => D::unit(),
             Self::Copy { .. } => inputs[0].clone(),
             Self::Refine {
                 op,
@@ -89,6 +61,7 @@ impl Op {
             Self::Not => inputs[0].not()?,
             Self::Binary(op) => D::binary(*op, inputs[0], inputs[1])?,
             Self::Param(_)
+            | Self::Unit
             | Self::Hole
             | Self::And { .. }
             | Self::Or { .. }
@@ -115,6 +88,14 @@ impl Value {
             Self::Int(_) => Ty::Int,
             Self::Bool(_) => Ty::Bool,
             Self::Unit => Ty::Unit,
+        }
+    }
+
+    /// Which way a condition goes.
+    pub fn truth(&self) -> Result<bool, Fault> {
+        match self {
+            Self::Bool(value) => Ok(*value),
+            _ => Err(Fault::Type),
         }
     }
 }
@@ -193,14 +174,5 @@ impl Domain for Value {
 
     fn exactly(&self, _: bool) -> Self {
         self.clone()
-    }
-}
-
-impl Concrete for Value {
-    fn truth(&self) -> Result<bool, Fault> {
-        match self {
-            Self::Bool(value) => Ok(*value),
-            _ => Err(Fault::Type),
-        }
     }
 }

@@ -25,8 +25,8 @@ use sumi_text::Span;
 
 pub use check::analyze;
 pub use sumi_graph::{
-    BinaryOp, Bools, Bound, Concrete, Domain, FunctionId, Graph, Int, Ints, Machine, May, Node,
-    NodeId, Op, OutOfRange, Outcome, ParseIntError, Refusal, Region, RegionId, Run, Ty, Value,
+    BinaryOp, Bools, Domain, FunctionId, Graph, Int, Ints, Machine, May, Node, NodeId, Op,
+    OutOfRange, ParseIntError, Refusal, Region, RegionId, Run, Ty, Value,
 };
 
 pub struct Analysis {
@@ -187,7 +187,7 @@ impl<'a> Program<'a> {
     /// A machine about to call `function` on `args`, which must match the
     /// signature in count and type and lie within the parameters' ranges,
     /// bounded by the depth the analysis proved.
-    pub fn machine(self, function: FunctionId, args: &[Value]) -> Machine<'a, Value> {
+    pub fn machine(self, function: FunctionId, args: &[Value]) -> Machine<'a> {
         let signature = self.signature(function);
         assert!(
             args.len() == signature.params.len()
@@ -207,12 +207,11 @@ impl<'a> Program<'a> {
     /// Run `function` on `args` to completion, as [`Program::machine`]
     /// takes them. The checker proved the run cannot be refused.
     pub fn evaluate(self, function: FunctionId, args: &[Value]) -> Value {
-        match self.machine(function, args).run() {
-            Outcome::Value(value) => value,
-            Outcome::Refused(refusal) => {
+        self.machine(function, args)
+            .run()
+            .unwrap_or_else(|refusal| {
                 unreachable!("the checker proved this run: it was refused with {refusal:?}")
-            }
-        }
+            })
     }
 }
 

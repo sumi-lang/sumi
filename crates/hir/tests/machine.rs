@@ -11,7 +11,7 @@
 use proptest::prelude::*;
 use proptest::test_runner::FileFailurePersistence;
 use sumi_frontend::{FileId, parse_source};
-use sumi_hir::{Analysis, Bools, Int, Ints, Outcome, Ty, Value, analyze};
+use sumi_hir::{Analysis, Bools, Int, Ints, Ty, Value, analyze};
 
 /// xorshift64*: enough to draw a program from, and one word of state so a
 /// failing seed names its program.
@@ -747,8 +747,8 @@ fn check(source: &str) -> Option<Runs> {
             }
             runs.finished += 1;
             let value = match machine.outcome().expect("a finished run has its outcome") {
-                Outcome::Value(value) => value.clone(),
-                Outcome::Refused(refusal) => {
+                Ok(value) => value.clone(),
+                Err(refusal) => {
                     panic!(
                         "f{}({args:?}) was refused: {refusal:?}\n{source}",
                         id.index()
