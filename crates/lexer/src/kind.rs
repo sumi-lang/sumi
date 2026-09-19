@@ -1,5 +1,5 @@
-//! The token vocabulary: `SyntaxKind` and its tables, all derived from the one `tokens!`
-//! declaration so none can disagree with it.
+//! The token vocabulary: `SyntaxKind`, its tables, and `Fixed`, the kinds with a text of their
+//! own, all derived from the one `tokens!` declaration so none can disagree with it.
 
 /// One kind per line as `Name: shape literal`; the literal is the source text of a `keyword` or
 /// `punct`, and how any other shape reads after "expected".
@@ -16,17 +16,45 @@ macro_rules! tokens {
         }
     };
     (@punct $char:ident, $shape:ident $lit:literal $name:ident) => {};
-    (@text $kind:ident, keyword $word:literal $name:ident) => {
-        if $kind == Self::$name {
-            return Some($word);
+    (@fixed [$($fixed:tt)*] $(#[$doc:meta])* keyword $lit:literal $name:ident, $($rest:tt)*) => {
+        tokens!(@fixed [$($fixed)* ($(#[$doc])* $name $lit)] $($rest)*);
+    };
+    (@fixed [$($fixed:tt)*] $(#[$doc:meta])* punct $lit:literal $name:ident, $($rest:tt)*) => {
+        tokens!(@fixed [$($fixed)* ($(#[$doc])* $name $lit)] $($rest)*);
+    };
+    (@fixed [$($fixed:tt)*] $(#[$doc:meta])* $shape:ident $lit:literal $name:ident, $($rest:tt)*) => {
+        tokens!(@fixed [$($fixed)*] $($rest)*);
+    };
+    (@fixed [$(($(#[$doc:meta])* $name:ident $lit:literal))*]) => {
+        /// A kind whose text is fixed: a keyword or punctuation.
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+        pub enum Fixed {
+            $($(#[$doc])* $name,)*
+        }
+
+        impl Fixed {
+            pub fn kind(self) -> SyntaxKind {
+                match self {
+                    $(Self::$name => SyntaxKind::$name,)*
+                }
+            }
+
+            pub fn text(self) -> &'static str {
+                match self {
+                    $(Self::$name => concat!($lit),)*
+                }
+            }
+        }
+
+        impl SyntaxKind {
+            pub fn fixed(self) -> Option<Fixed> {
+                match self {
+                    $(Self::$name => Some(Fixed::$name),)*
+                    _ => None,
+                }
+            }
         }
     };
-    (@text $kind:ident, punct $c:literal $name:ident) => {
-        if $kind == Self::$name {
-            return Some(concat!($c));
-        }
-    };
-    (@text $kind:ident, $shape:ident $lit:literal $name:ident) => {};
     (@describe keyword $lit:literal) => {
         concat!("`", $lit, "`")
     };
@@ -67,8 +95,7 @@ macro_rules! tokens {
             }
 
             pub fn text(self) -> Option<&'static str> {
-                $(tokens!(@text self, $shape $lit $name);)*
-                None
+                self.fixed().map(Fixed::text)
             }
 
             pub fn is_trivia(self) -> bool {
@@ -83,6 +110,8 @@ macro_rules! tokens {
                 }
             }
         }
+
+        tokens!(@fixed [] $($(#[$doc])* $shape $lit $name,)*);
     };
 }
 
@@ -135,9 +164,11 @@ mod tests {
     #[test]
     fn fixed_texts_round_trip() {
         for &kind in SyntaxKind::ALL {
-            let Some(text) = kind.text() else {
+            let Some(fixed) = kind.fixed() else {
                 continue;
             };
+            let text = fixed.text();
+            assert_eq!(fixed.kind(), kind);
             let back = SyntaxKind::from_keyword(text)
                 .or_else(|| SyntaxKind::from_punct(text.as_bytes()[0]));
             assert_eq!(back, Some(kind));

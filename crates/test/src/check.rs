@@ -269,7 +269,7 @@ pub fn tree(tree: &SyntaxTree, lexed: &LexedFile) {
             }
             for rule in kind.tokens() {
                 let held = match *rule {
-                    TokenRule::Fixed {
+                    TokenRule::Kind {
                         first,
                         glued,
                         optional,
@@ -289,7 +289,7 @@ pub fn tree(tree: &SyntaxTree, lexed: &LexedFile) {
                     continue;
                 }
                 let declared = kind.tokens().iter().find_map(|rule| match *rule {
-                    TokenRule::Fixed {
+                    TokenRule::Kind {
                         first: kind,
                         glued: pair,
                         ..

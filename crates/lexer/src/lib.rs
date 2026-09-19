@@ -7,7 +7,7 @@ mod lex;
 mod token;
 
 pub use index::RawIdx;
-pub use kind::SyntaxKind;
+pub use kind::{Fixed, SyntaxKind};
 pub use lex::{
     LexError, LexErrorKind, LexedFile, SourceTooLarge, canonicalize_number_literal, lex,
 };
