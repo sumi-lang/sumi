@@ -119,7 +119,7 @@ impl SyntaxTree {
 
     /// The significant tokens `index` holds itself, outside every child, in order; `lexed` must
     /// be the file this tree was parsed from.
-    pub fn own_tokens<'a>(
+    fn own_tokens<'a>(
         &'a self,
         index: NodeIdx,
         lexed: &'a LexedFile,

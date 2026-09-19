@@ -311,6 +311,15 @@ fn a_clean_view_holds_every_required_child() {
     assert_eq!(neg.op(), PrefixOp::Neg);
     assert!(stmts.next().is_none());
 
+    let parsed = Parsed::new("fn f() { let x = 1 }");
+    let (tree, lexed) = (parsed.tree(), &parsed.lexed);
+    let body = block(parsed.item().body(tree));
+    let stmt = body.stmts(tree).next().expect("one binding");
+    let Some(CleanStmt::LetStmt(binding)) = stmt.clean(tree, lexed) else {
+        panic!("a clean binding")
+    };
+    assert!(!binding.mutable());
+
     let parsed = Parsed::new("fn f() { let x = }");
     let (tree, lexed) = (parsed.tree(), &parsed.lexed);
     let body = block(parsed.item().body(tree));

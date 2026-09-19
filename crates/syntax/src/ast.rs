@@ -2,7 +2,7 @@
 //! fields take slots in declaration order, which the parser's `field` calls must match; `tokens`
 //! lists what a rule holds itself, a named one read as a value.
 
-use std::fmt::Debug;
+use std::fmt::{self, Debug};
 use std::hash::Hash;
 
 use sumi_lexer::LexedFile;
@@ -66,29 +66,48 @@ pub struct Child {
 
 /// A token a rule holds itself.
 #[derive(Clone, Copy, Debug)]
-pub struct TokenRule {
-    /// The accessor's name; `None` for a token the views do not read.
-    pub name: Option<&'static str>,
-    pub optional: bool,
-    pub shape: TokenShape,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum TokenShape {
-    /// A token, with the one glued after it when given.
-    Fixed(SyntaxKind, Option<SyntaxKind>),
-    /// A value read from the tokens, one of `variants`.
+pub enum TokenRule {
+    /// `first`, with `glued` joint after it when given.
+    Fixed {
+        first: SyntaxKind,
+        glued: Option<SyntaxKind>,
+        optional: bool,
+    },
+    /// Whether the node holds `kind`, read under `name`.
+    Flag {
+        name: &'static str,
+        kind: SyntaxKind,
+    },
+    /// A value read under `name`, one of `variants`.
     Field {
+        name: &'static str,
         variants: usize,
         variant: fn(usize) -> String,
+        /// Whether a value is read at a token of the first kind, and spans the glued one.
+        reads: fn(SyntaxKind, Option<SyntaxKind>) -> Option<bool>,
         /// Whether `node` reads the variant at the index; `false` on a node of another kind.
         present: fn(&SyntaxTree, &LexedFile, NodeIdx, usize) -> bool,
     },
 }
 
+impl fmt::Display for TokenRule {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match *self {
+            Self::Fixed { first, glued, .. } => match (first.text(), glued.map(SyntaxKind::text)) {
+                (Some(first), None) => write!(f, "'{first}'"),
+                (Some(first), Some(Some(glued))) => write!(f, "'{first}{glued}'"),
+                (_, None) => write!(f, "{first:?}"),
+                (_, Some(_)) => write!(f, "{first:?} {glued:?}"),
+            },
+            Self::Flag { name, .. } | Self::Field { name, .. } => f.write_str(name),
+        }
+    }
+}
+
 fn read<T: TokenField>(tree: &SyntaxTree, lexed: &LexedFile, node: NodeIdx) -> Option<T> {
     tree.own_pairs(node, lexed)
         .find_map(|(first, glued)| T::read(first, glued))
+        .map(|(value, _)| value)
 }
 
 macro_rules! count {
@@ -214,34 +233,34 @@ macro_rules! grammar {
     };
     (@tokens $name:ident [$($token:tt)*] [$($required:tt)*] [$($by:tt)*] [$($index:tt)*]
         [$first:ident, $glued:ident] $(, $($rest:tt)*)?) => {
-        grammar!(@tokens $name [$($token)* TokenRule {
-            name: None,
+        grammar!(@tokens $name [$($token)* TokenRule::Fixed {
+            first: SyntaxKind::$first,
+            glued: Some(SyntaxKind::$glued),
             optional: false,
-            shape: TokenShape::Fixed(SyntaxKind::$first, Some(SyntaxKind::$glued)),
         },] [$($required)*] [$($by)*] [$($index)*] $($($rest)*)?);
     };
     (@tokens $name:ident [$($token:tt)*] [$($required:tt)*] [$($by:tt)*] [$($index:tt)*]
         [$first:ident, $glued:ident]? $(, $($rest:tt)*)?) => {
-        grammar!(@tokens $name [$($token)* TokenRule {
-            name: None,
+        grammar!(@tokens $name [$($token)* TokenRule::Fixed {
+            first: SyntaxKind::$first,
+            glued: Some(SyntaxKind::$glued),
             optional: true,
-            shape: TokenShape::Fixed(SyntaxKind::$first, Some(SyntaxKind::$glued)),
         },] [$($required)*] [$($by)*] [$($index)*] $($($rest)*)?);
     };
     (@tokens $name:ident [$($token:tt)*] [$($required:tt)*] [$($by:tt)*] [$($index:tt)*]
         $kind:ident? $(, $($rest:tt)*)?) => {
-        grammar!(@tokens $name [$($token)* TokenRule {
-            name: None,
+        grammar!(@tokens $name [$($token)* TokenRule::Fixed {
+            first: SyntaxKind::$kind,
+            glued: None,
             optional: true,
-            shape: TokenShape::Fixed(SyntaxKind::$kind, None),
         },] [$($required)*] [$($by)*] [$($index)*] $($($rest)*)?);
     };
     (@tokens $name:ident [$($token:tt)*] [$($required:tt)*] [$($by:tt)*] [$($index:tt)*]
         $kind:ident $(, $($rest:tt)*)?) => {
-        grammar!(@tokens $name [$($token)* TokenRule {
-            name: None,
+        grammar!(@tokens $name [$($token)* TokenRule::Fixed {
+            first: SyntaxKind::$kind,
+            glued: None,
             optional: false,
-            shape: TokenShape::Fixed(SyntaxKind::$kind, None),
         },] [$($required)*] [$($by)*] [$($index)*] $($($rest)*)?);
     };
     (@tokens $name:ident [$($token:tt)*] [$($required:tt)*] [$($by:tt)*] [$index:tt $($next:tt)*]
@@ -259,10 +278,9 @@ macro_rules! grammar {
                 self.required.$index
             }
         }
-        grammar!(@tokens $name [$($token)* TokenRule {
-            name: Some(stringify!($field)),
-            optional: true,
-            shape: TokenShape::Fixed(SyntaxKind::$kind, None),
+        grammar!(@tokens $name [$($token)* TokenRule::Flag {
+            name: stringify!($field),
+            kind: SyntaxKind::$kind,
         },] [$($required)* bool,] [$($by)* (flag $field)] [$($next)*] $($($rest)*)?);
     };
     (@tokens $name:ident [$($token:tt)*] [$($required:tt)*] [$($by:tt)*] [$index:tt $($next:tt)*]
@@ -280,17 +298,15 @@ macro_rules! grammar {
                 self.required.$index
             }
         }
-        grammar!(@tokens $name [$($token)* TokenRule {
-            name: Some(stringify!($field)),
-            optional: false,
-            shape: TokenShape::Field {
-                variants: <$ty as TokenField>::ALL.len(),
-                variant: |index| format!("{:?}", <$ty as TokenField>::ALL[index]),
-                present: |tree, lexed, node, index| {
-                    $name::cast(tree, node).is_some_and(|view| {
-                        view.$field(tree, lexed) == Some(<$ty as TokenField>::ALL[index])
-                    })
-                },
+        grammar!(@tokens $name [$($token)* TokenRule::Field {
+            name: stringify!($field),
+            variants: <$ty as TokenField>::ALL.len(),
+            variant: |index| format!("{:?}", <$ty as TokenField>::ALL[index]),
+            reads: |first, glued| <$ty as TokenField>::read(first, glued).map(|(_, spans)| spans),
+            present: |tree, lexed, node, index| {
+                $name::cast(tree, node).is_some_and(|view| {
+                    view.$field(tree, lexed) == Some(<$ty as TokenField>::ALL[index])
+                })
             },
         },] [$($required)* $ty,] [$($by)* (field $field)] [$($next)*] $($($rest)*)?);
     };
@@ -531,5 +547,67 @@ mod tests {
         assert_eq!(NodeKind::FnItem.children()[2].name, "ret");
         assert_eq!(NodeKind::FnItem.children()[2].slot, Some(2));
         assert!(NodeKind::FnItem.children()[2].optional);
+    }
+
+    #[test]
+    fn tokens_follow_the_declaration() {
+        let [let_kw, mutable, colon, eq] = LetStmt::TOKENS else {
+            panic!("four tokens")
+        };
+        assert!(matches!(
+            let_kw,
+            TokenRule::Fixed {
+                first: SyntaxKind::LetKw,
+                glued: None,
+                optional: false
+            }
+        ));
+        assert!(matches!(
+            mutable,
+            TokenRule::Flag {
+                name: "mutable",
+                kind: SyntaxKind::MutKw
+            }
+        ));
+        assert!(matches!(
+            colon,
+            TokenRule::Fixed {
+                first: SyntaxKind::Colon,
+                optional: true,
+                ..
+            }
+        ));
+        assert_eq!(eq.to_string(), "'='");
+        let [arrow] = &FnItem::TOKENS[1..2] else {
+            panic!("an arrow")
+        };
+        assert!(matches!(
+            arrow,
+            TokenRule::Fixed {
+                first: SyntaxKind::Minus,
+                glued: Some(SyntaxKind::Gt),
+                optional: true
+            }
+        ));
+        assert_eq!(arrow.to_string(), "'->'");
+        let [op] = BinaryExpr::TOKENS else {
+            panic!("one token")
+        };
+        let TokenRule::Field {
+            name,
+            variants,
+            variant,
+            reads,
+            ..
+        } = *op
+        else {
+            panic!("a field")
+        };
+        assert_eq!((name, variants), ("op", BinaryOp::ALL.len()));
+        assert_eq!(variant(0), "Or");
+        assert_eq!(reads(SyntaxKind::Lt, Some(SyntaxKind::Eq)), Some(true));
+        assert_eq!(reads(SyntaxKind::Lt, Some(SyntaxKind::Minus)), Some(false));
+        assert_eq!(reads(SyntaxKind::Ident, None), None);
+        assert!(CallExpr::TOKENS.is_empty());
     }
 }

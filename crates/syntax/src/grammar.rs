@@ -1,17 +1,19 @@
 //! Token classes, bracket pairs, and operator tables.
 
 use std::fmt::Debug;
+use std::hash::Hash;
 
 use sumi_lexer::SyntaxKind as T;
 
 pub use sumi_lexer::SyntaxKind;
 
 /// A value a rule reads from a token it holds, or from that token and the one glued after it.
-pub trait TokenField: Copy + Debug + PartialEq + 'static {
+pub trait TokenField: Copy + Debug + Eq + Hash + 'static {
     const ALL: &[Self];
 
-    /// `glued` is the token joint to `first` inside the same node, if any.
-    fn read(first: SyntaxKind, glued: Option<SyntaxKind>) -> Option<Self>;
+    /// The value at `first`, and whether it spans `glued`, the token joint after `first` inside
+    /// the same node.
+    fn read(first: SyntaxKind, glued: Option<SyntaxKind>) -> Option<(Self, bool)>;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -23,12 +25,13 @@ pub enum PrefixOp {
 impl TokenField for PrefixOp {
     const ALL: &[Self] = &[Self::Neg, Self::Not];
 
-    fn read(first: SyntaxKind, _: Option<SyntaxKind>) -> Option<Self> {
-        Some(match first {
+    fn read(first: SyntaxKind, _: Option<SyntaxKind>) -> Option<(Self, bool)> {
+        let op = match first {
             T::Minus => Self::Neg,
             T::Bang => Self::Not,
             _ => return None,
-        })
+        };
+        Some((op, false))
     }
 }
 
@@ -43,32 +46,22 @@ pub enum Literal {
 impl TokenField for Literal {
     const ALL: &[Self] = &[Self::Int, Self::String, Self::True, Self::False];
 
-    fn read(first: SyntaxKind, _: Option<SyntaxKind>) -> Option<Self> {
-        Some(match first {
+    fn read(first: SyntaxKind, _: Option<SyntaxKind>) -> Option<(Self, bool)> {
+        let literal = match first {
             T::IntLiteral => Self::Int,
             T::StringLiteral => Self::String,
             T::TrueKw => Self::True,
             T::FalseKw => Self::False,
             _ => return None,
-        })
+        };
+        Some((literal, false))
     }
 }
 
 pub fn starts_expression(kind: SyntaxKind) -> bool {
-    matches!(
-        kind,
-        T::Ident
-            | T::IntLiteral
-            | T::StringLiteral
-            | T::TrueKw
-            | T::FalseKw
-            | T::FnKw
-            | T::IfKw
-            | T::LParen
-            | T::LBrace
-            | T::Minus
-            | T::Bang
-    )
+    is_literal(kind)
+        || is_prefix_operator(kind)
+        || matches!(kind, T::Ident | T::FnKw | T::IfKw | T::LParen | T::LBrace)
 }
 
 /// Statement starters that are not expression starters.
@@ -81,19 +74,11 @@ pub fn starts_statement(kind: SyntaxKind) -> bool {
 }
 
 pub fn can_end_statement(kind: SyntaxKind) -> bool {
-    matches!(
-        kind,
-        T::Ident
-            | T::IntLiteral
-            | T::StringLiteral
-            | T::TrueKw
-            | T::FalseKw
-            | T::ReturnKw
-            | T::Underscore
-            | T::RParen
-            | T::RBrace
-            | T::Error
-    )
+    is_literal(kind)
+        || matches!(
+            kind,
+            T::Ident | T::ReturnKw | T::Underscore | T::RParen | T::RBrace | T::Error
+        )
 }
 
 pub fn starts_item(kind: SyntaxKind) -> bool {
@@ -158,6 +143,10 @@ pub fn is_prefix_operator(kind: SyntaxKind) -> bool {
     PrefixOp::read(kind, None).is_some()
 }
 
+pub fn is_literal(kind: SyntaxKind) -> bool {
+    Literal::read(kind, None).is_some()
+}
+
 /// A binding power above every binary operator's.
 pub const PREFIX_BP: u8 = 11;
 
@@ -195,8 +184,8 @@ impl TokenField for BinaryOp {
         Self::Rem,
     ];
 
-    fn read(first: SyntaxKind, glued: Option<SyntaxKind>) -> Option<Self> {
-        binary_operator(first, glued).map(|(op, _)| op)
+    fn read(first: SyntaxKind, glued: Option<SyntaxKind>) -> Option<(Self, bool)> {
+        binary_operator(first, glued).map(|(op, width)| (op, width == 2))
     }
 }
 

@@ -106,10 +106,8 @@ impl<'s> Source<'s> {
             .text(self.parsed.source())
     }
     fn name(&self, name: Option<ast::Name>) -> Option<(&'s str, NodeIdx)> {
-        let node = name?.node();
-        (!self.tree.has_error(node)
-            && self.lexed().kind(self.tree.first_token(node)) == SyntaxKind::Ident)
-            .then(|| (self.text(node), node))
+        let node = name?.clean(self.tree, self.lexed())?.node();
+        Some((self.text(node), node))
     }
     pub fn error(
         &mut self,

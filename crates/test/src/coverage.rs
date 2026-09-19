@@ -2,7 +2,7 @@
 //! Only a node without an error counts; an erroring node may lack any child.
 
 use sumi_lexer::LexedFile;
-use sumi_syntax::ast::TokenShape;
+use sumi_syntax::ast::TokenRule;
 use sumi_syntax::{NodeIdx, NodeKind, SyntaxKind, SyntaxTree};
 
 use NodeKind as N;
@@ -44,24 +44,28 @@ fn witnesses() -> Vec<Witness> {
             .tokens()
             .iter()
             .flat_map(move |rule| -> Vec<Witness> {
-                match rule.shape {
-                    TokenShape::Fixed(first, glued) => {
-                        let name = match (first.text(), glued.map(SyntaxKind::text)) {
-                            (Some(first), None) => format!("'{first}'"),
-                            (Some(first), Some(Some(glued))) => format!("'{first}{glued}'"),
-                            _ => format!("{first:?}{glued:?}"),
-                        };
-                        vec![Witness {
-                            parent,
-                            name,
-                            optional: rule.optional,
-                            check: Check::Tokens(first, glued),
-                        }]
-                    }
-                    TokenShape::Field {
+                match *rule {
+                    TokenRule::Fixed {
+                        first,
+                        glued,
+                        optional,
+                    } => vec![Witness {
+                        parent,
+                        name: rule.to_string(),
+                        optional,
+                        check: Check::Tokens(first, glued),
+                    }],
+                    TokenRule::Flag { kind, .. } => vec![Witness {
+                        parent,
+                        name: rule.to_string(),
+                        optional: true,
+                        check: Check::Tokens(kind, None),
+                    }],
+                    TokenRule::Field {
                         variants,
                         variant,
                         present,
+                        ..
                     } => (0..variants)
                         .map(|index| Witness {
                             parent,
