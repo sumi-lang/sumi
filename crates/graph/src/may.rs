@@ -669,8 +669,7 @@ impl Thresholds {
     }
 }
 
-/// Every operator over-approximates the concrete one on every member of its operands, and none
-/// faults.
+/// Every operator over-approximates the concrete one on every member of its operands.
 impl Domain for May {
     type Fault = Infallible;
 

@@ -2,7 +2,6 @@
 //! [`May`] values, crossing the same [`Edge`]s. A call or argument edge that closes a cycle rounds
 //! the ints to the thresholds, so every ascending chain is finite.
 
-use std::convert::Infallible;
 use std::num::NonZeroU32;
 
 use sumi_graph::{BinaryOp, Domain, May, Thresholds, Ty};
@@ -112,12 +111,6 @@ impl Evidence {
             .collect();
         claims.sort_by_key(|(_, claim)| *claim);
         claims
-    }
-}
-
-fn total(result: Result<May, Infallible>) -> May {
-    match result {
-        Ok(value) => value,
     }
 }
 
@@ -251,10 +244,22 @@ impl Lattice for Product {
             Edge::Call(_) => rounded(values),
             Edge::Bind | Edge::Values => values.clone(),
             Edge::Peer => May::NONE,
-            Edge::Neg => total(values.neg()),
-            Edge::Not => total(values.not()),
-            Edge::Binary(op) => total(May::binary(op, values, second())),
-            Edge::Lazy { and } => total(May::lazy(and, values, second())),
+            Edge::Neg => {
+                let Ok(negated) = values.neg();
+                negated
+            }
+            Edge::Not => {
+                let Ok(inverted) = values.not();
+                inverted
+            }
+            Edge::Binary(op) => {
+                let Ok(combined) = May::binary(op, values, second());
+                combined
+            }
+            Edge::Lazy { and } => {
+                let Ok(combined) = May::lazy(and, values, second());
+                combined
+            }
             Edge::Refine {
                 op,
                 local_is_lhs,
