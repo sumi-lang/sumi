@@ -64,15 +64,18 @@ impl Failure {
         let message = format!("{cycle} has no argument that moves toward a bound on every call");
         let labels = self.labels.into_iter().take(8).map(|(call, reason)| {
             let text = match reason {
-                Reason::Unbounded { param, direction } => {
+                Reason::Moves {
+                    param,
+                    direction,
+                    bounded,
+                } => {
                     let (moves, side) = direction.words();
-                    format!(
-                        "argument {moves} `{}`, which is unbounded {side}",
-                        text(param)
-                    )
-                }
-                Reason::Moves { param, direction } => {
-                    format!("argument {} `{}`", direction.words().0, text(param))
+                    let unbounded = if bounded {
+                        String::new()
+                    } else {
+                        format!(", which is unbounded {side}")
+                    };
+                    format!("argument {moves} `{}`{unbounded}", text(param))
                 }
                 Reason::Passes { param } => format!("argument passes `{}` along", text(param)),
                 Reason::Nothing => "no argument is a parameter moved by a constant".to_owned(),
@@ -91,17 +94,16 @@ impl Failure {
 /// What a call inside a cycle without a measure does to a parameter of its
 /// callee, named by the parameter's declaration.
 pub(crate) enum Reason {
-    /// The argument moves the parameter in `direction`, and the parameter's
-    /// set is unbounded on that side: the chosen measure fails here.
-    Unbounded {
-        param: TextRange,
-        direction: Direction,
-    },
-    /// The argument moves the parameter in `direction`; the cycle fails
-    /// elsewhere, on another call's direction or on a bound.
+    /// The argument moves the parameter in `direction`. Under a choice
+    /// every call agreed with, `bounded` says whether the parameter's set
+    /// is bounded on that side: unbounded, the chosen measure fails here,
+    /// otherwise the cycle fails elsewhere. Where no choice satisfies every
+    /// call there is no measure to hold a bound against, and `bounded` is
+    /// true: the label says only where the argument moves.
     Moves {
         param: TextRange,
         direction: Direction,
+        bounded: bool,
     },
     /// The argument passes the parameter along without moving it.
     Passes { param: TextRange },
@@ -109,7 +111,7 @@ pub(crate) enum Reason {
     Nothing,
 }
 
-pub(crate) struct Outcome {
+pub(crate) struct Verdicts {
     pub failures: Vec<Failure>,
     /// The most frames a run entered at each function can hold at once,
     /// when every cycle it can reach has a measure with a finite hull.
@@ -176,7 +178,12 @@ fn bounded(band: &Ints, direction: Direction) -> bool {
 /// its verdicts, or whose body did not build, is out of scope: its
 /// arguments may have no offsets and its calls may be missing, and what
 /// it has is reported already.
-pub(crate) fn check(graph: &Graph, lowered: &Lowered, typing: &Typing, failed: &[bool]) -> Outcome {
+pub(crate) fn check(
+    graph: &Graph,
+    lowered: &Lowered,
+    typing: &Typing,
+    failed: &[bool],
+) -> Verdicts {
     let count_functions = graph.runs().len();
     let live: Vec<&lower::Call> = lowered
         .calls
@@ -251,14 +258,14 @@ pub(crate) fn check(graph: &Graph, lowered: &Lowered, typing: &Typing, failed: &
             });
         }
         let arity = |member: usize| graph.run(FunctionId::new(members[member])).params().len();
-        let band = |member: usize, param: usize| {
-            let node = graph
+        let param_node = |member: usize, param: usize| {
+            graph
                 .run(FunctionId::new(members[member]))
                 .params()
                 .nth(param)
-                .expect("a parameter of the member");
-            &typing.may(node).ints
+                .expect("a parameter of the member")
         };
+        let band = |member: usize, param: usize| &typing.may(param_node(member, param)).ints;
         let mut found = None;
         // The first choice every call agreed with, when the cycle fails on
         // a bound or on the calls that only pass the measure along.
@@ -350,12 +357,7 @@ pub(crate) fn check(graph: &Graph, lowered: &Lowered, typing: &Typing, failed: &
                 chain[c] = None;
                 // The parameter's name, where it is written.
                 let param = |member: usize, j: usize| {
-                    let node = graph
-                        .run(FunctionId::new(members[member]))
-                        .params()
-                        .nth(j)
-                        .expect("a parameter of the member");
-                    let node = graph.node(node);
+                    let node = graph.node(param_node(member, j));
                     node.name.unwrap_or(node.origin)
                 };
                 let labels = match &agreed {
@@ -367,18 +369,15 @@ pub(crate) fn check(graph: &Graph, lowered: &Lowered, typing: &Typing, failed: &
                         .zip(strict)
                         .map(|(call, &strict)| {
                             let j = choice[call.to];
-                            let param = param(call.to, j);
-                            let reason = if !strict {
-                                Reason::Passes { param }
-                            } else if bounded(band(call.to, j), *direction) {
+                            let reason = if strict {
                                 Reason::Moves {
-                                    param,
+                                    param: param(call.to, j),
                                     direction: *direction,
+                                    bounded: bounded(band(call.to, j), *direction),
                                 }
                             } else {
-                                Reason::Unbounded {
-                                    param,
-                                    direction: *direction,
+                                Reason::Passes {
+                                    param: param(call.to, j),
                                 }
                             };
                             (call.origin, reason)
@@ -404,6 +403,7 @@ pub(crate) fn check(graph: &Graph, lowered: &Lowered, typing: &Typing, failed: &
                                 Some(Reason::Moves {
                                     param: param(call.to, j),
                                     direction,
+                                    bounded: true,
                                 })
                             });
                             let reason = strict.unwrap_or_else(|| {
@@ -441,7 +441,7 @@ pub(crate) fn check(graph: &Graph, lowered: &Lowered, typing: &Typing, failed: &
             _ => None,
         };
     }
-    Outcome {
+    Verdicts {
         failures,
         depth: component.iter().map(|&c| depth[c as usize]).collect(),
     }
