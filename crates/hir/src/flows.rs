@@ -10,7 +10,7 @@ use sumi_graph::{
 };
 use sumi_text::TextRange;
 
-use crate::lattice::Edge;
+use crate::lattice::{Edge, Pair};
 use crate::lower::{Header, Lowered};
 use crate::typing::{Expected, Typing};
 
@@ -187,9 +187,9 @@ pub(crate) fn draw(
                 }
                 Op::Then | Op::Else => {
                     let edge = if matches!(entry.op, Op::Then) {
-                        Edge::Then
+                        Pair::Then
                     } else {
-                        Edge::Else
+                        Pair::Else
                     };
                     typing.derive(inputs[0], inputs[1], node, edge);
                 }
@@ -201,7 +201,7 @@ pub(crate) fn draw(
                     inputs[0],
                     inputs[1],
                     node,
-                    Edge::Refine {
+                    Pair::Refine {
                         op: *op,
                         local_is_lhs: *local_is_lhs,
                         sense: *sense,
@@ -214,7 +214,7 @@ pub(crate) fn draw(
                 } => {
                     for region in [*then, *else_] {
                         let region = graph.region(region);
-                        typing.derive(region.result(), region.context, node, Edge::Branch);
+                        typing.derive(region.result(), region.context, node, Pair::Branch);
                     }
                 }
                 Op::Join { then, else_: None } => {
@@ -246,7 +246,7 @@ pub(crate) fn draw(
                 }
                 Op::Binary(op) => {
                     typing.known(node, op.result(), origin);
-                    typing.derive(inputs[0], inputs[1], node, Edge::Binary(*op));
+                    typing.derive(inputs[0], inputs[1], node, Pair::Binary(*op));
                     if let (Some(lhs), Some(rhs)) = (constant(0), constant(1)) {
                         let (lhs, rhs) = (Value::Int(lhs.clone()), Value::Int(rhs.clone()));
                         if let Ok(Value::Int(value)) = Op::Binary(*op).apply(&[&lhs, &rhs]) {
@@ -261,7 +261,7 @@ pub(crate) fn draw(
                         inputs[0],
                         rhs,
                         node,
-                        Edge::Lazy {
+                        Pair::Lazy {
                             and: matches!(entry.op, Op::And { .. }),
                         },
                     );
@@ -284,7 +284,7 @@ pub(crate) fn draw(
     for call in &lowered.calls {
         let run = graph.run(call.callee);
         for (&arg, param) in graph.inputs(call.node).iter().zip(run.params()) {
-            typing.derive(arg, call.context, param, Edge::Argument);
+            typing.derive(arg, call.context, param, Pair::Argument);
         }
         if typed(call.node) {
             typing.call(run.result(), call.node, graph.node(call.node).origin);

@@ -1,5 +1,5 @@
 //! The [`Lattice`] the solver carries: per class, the best claim of each scalar type and the
-//! [`May`] values, crossing the same [`Edge`]s. A call or argument edge that closes a cycle rounds
+//! [`May`] values, crossing the same [`Edge`]s and [`Pair`]s. A call or argument edge that closes a cycle rounds
 //! the ints to the thresholds, so every ascending chain is finite.
 
 use std::num::NonZeroU32;
@@ -114,8 +114,7 @@ impl Evidence {
     }
 }
 
-/// The second provider of `Binary`, `Lazy`, and `Refine` is the other operand; of `Branch`, `Then`,
-/// `Else`, and `Argument`, the context that gates them.
+/// A flow from one provider.
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Edge {
     /// A callee's result into a call, its types relabeled to the call site's claim.
@@ -123,17 +122,31 @@ pub(crate) enum Edge {
     /// An unannotated `let` from its initializer.
     Bind,
     Values,
+    Exactly(bool),
+    /// One operand of `==` or `!=` typing the other.
+    Peer,
+    Neg,
+    Not,
+    Enter,
+}
+
+impl Edge {
+    /// Whether the consumer is one class with its provider in the replay.
+    pub fn aliases(self) -> bool {
+        matches!(self, Self::Bind | Self::Exactly(_))
+    }
+}
+
+/// A flow from two providers. The second of `Binary`, `Lazy`, and `Refine` is the other operand;
+/// of `Branch`, `Then`, `Else`, and `Argument`, the context that gates them.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Pair {
     Refine {
         op: CmpOp,
         local_is_lhs: bool,
         sense: bool,
     },
-    Exactly(bool),
     Branch,
-    /// One operand of `==` or `!=` typing the other.
-    Peer,
-    Neg,
-    Not,
     Binary(BinaryOp),
     Lazy {
         and: bool,
@@ -141,13 +154,12 @@ pub(crate) enum Edge {
     Then,
     Else,
     Argument,
-    Enter,
 }
 
-impl Edge {
+impl Pair {
     /// Whether the consumer is one class with its first provider in the replay.
     pub fn aliases(self) -> bool {
-        matches!(self, Self::Bind | Self::Refine { .. } | Self::Exactly(_))
+        matches!(self, Self::Refine { .. })
     }
 }
 
@@ -157,8 +169,22 @@ pub(crate) struct Product {
     pub values: May,
 }
 
+/// A body's flow graph is acyclic, so every cycle crosses a call and an argument edge; rounding
+/// those two keeps every chain finite.
+fn rounded(values: &May, cyclic: bool, cx: &Thresholds) -> May {
+    if cyclic {
+        May {
+            ints: values.ints.round(cx),
+            ..values.clone()
+        }
+    } else {
+        values.clone()
+    }
+}
+
 impl Lattice for Product {
     type Edge = Edge;
+    type Pair = Pair;
     type Context = Thresholds;
 
     fn bottom() -> Self {
@@ -178,65 +204,34 @@ impl Lattice for Product {
     }
 
     /// Only values climb: type claims are finite, so `Peer` carries nothing.
-    fn carries(edge: &Edge, second: bool) -> Carry {
+    fn carries(edge: &Edge) -> Carry {
         match edge {
-            Edge::Peer
-            | Edge::Not
-            | Edge::Lazy { .. }
-            | Edge::Then
-            | Edge::Else
-            | Edge::Enter
-            | Edge::Exactly(_) => Carry::Nothing,
+            Edge::Peer | Edge::Not | Edge::Enter | Edge::Exactly(_) => Carry::Nothing,
             Edge::Neg => Carry::Grows,
-            Edge::Binary(BinaryOp::Arith(_)) => Carry::Grows,
-            Edge::Binary(BinaryOp::Cmp(_)) => Carry::Nothing,
-            Edge::Call(_) | Edge::Bind | Edge::Values | Edge::Refine { .. } => Carry::Passes,
-            Edge::Branch | Edge::Argument => {
-                if second {
-                    Carry::Nothing
-                } else {
-                    Carry::Passes
-                }
-            }
+            Edge::Call(_) | Edge::Bind | Edge::Values => Carry::Passes,
         }
     }
 
-    fn transfer(&self, edge: &Edge, other: Option<&Self>, cyclic: bool, cx: &Thresholds) -> Self {
-        let second = || {
-            &other
-                .expect("a two-provider edge has its second provider")
-                .values
-        };
-        // A body's flow graph is acyclic, so every cycle crosses a call and an argument edge;
-        // rounding those two keeps every chain finite.
-        let rounded = |value: &May| {
-            if cyclic {
-                May {
-                    ints: value.ints.round(cx),
-                    ..value.clone()
-                }
-            } else {
-                value.clone()
-            }
-        };
+    /// A gating context carries nothing of its own.
+    fn carries_pair(pair: &Pair) -> [Carry; 2] {
+        match pair {
+            Pair::Lazy { .. } | Pair::Then | Pair::Else => [Carry::Nothing; 2],
+            Pair::Binary(BinaryOp::Arith(_)) => [Carry::Grows; 2],
+            Pair::Binary(BinaryOp::Cmp(_)) => [Carry::Nothing; 2],
+            Pair::Refine { .. } => [Carry::Passes; 2],
+            Pair::Branch | Pair::Argument => [Carry::Passes, Carry::Nothing],
+        }
+    }
+
+    fn transfer(&self, edge: &Edge, cyclic: bool, cx: &Thresholds) -> Self {
         let types = match *edge {
             Edge::Call(claim) => self.types.imported(claim),
-            Edge::Bind | Edge::Refine { .. } | Edge::Exactly(_) | Edge::Branch | Edge::Peer => {
-                self.types
-            }
-            Edge::Values
-            | Edge::Neg
-            | Edge::Not
-            | Edge::Binary(_)
-            | Edge::Lazy { .. }
-            | Edge::Then
-            | Edge::Else
-            | Edge::Argument
-            | Edge::Enter => Evidence::NONE,
+            Edge::Bind | Edge::Exactly(_) | Edge::Peer => self.types,
+            Edge::Values | Edge::Neg | Edge::Not | Edge::Enter => Evidence::NONE,
         };
         let values = &self.values;
         let values = match *edge {
-            Edge::Call(_) => rounded(values),
+            Edge::Call(_) => rounded(values, cyclic, cx),
             Edge::Bind | Edge::Values => values.clone(),
             Edge::Peer => May::NONE,
             Edge::Neg => {
@@ -247,37 +242,50 @@ impl Lattice for Product {
                 let Ok(inverted) = values.not();
                 inverted
             }
-            Edge::Binary(op) => {
-                let Ok(combined) = May::binary(op, values, second());
+            Edge::Exactly(value) => values.exactly(value),
+            Edge::Enter => May::of_unit(values.live()),
+        };
+        Self { types, values }
+    }
+
+    fn combine(&self, pair: &Pair, other: &Self, cyclic: bool, cx: &Thresholds) -> Self {
+        let types = match *pair {
+            Pair::Refine { .. } | Pair::Branch => self.types,
+            Pair::Binary(_) | Pair::Lazy { .. } | Pair::Then | Pair::Else | Pair::Argument => {
+                Evidence::NONE
+            }
+        };
+        let (values, second) = (&self.values, &other.values);
+        let values = match *pair {
+            Pair::Binary(op) => {
+                let Ok(combined) = May::binary(op, values, second);
                 combined
             }
-            Edge::Lazy { and } => {
-                let Ok(combined) = May::lazy(and, values, second());
+            Pair::Lazy { and } => {
+                let Ok(combined) = May::lazy(and, values, second);
                 combined
             }
-            Edge::Refine {
+            Pair::Refine {
                 op,
                 local_is_lhs,
                 sense,
-            } => values.refine(op, local_is_lhs, sense, second()),
-            Edge::Exactly(value) => values.exactly(value),
-            Edge::Then => May::of_unit(values.bools.may_true() && second().live()),
-            Edge::Else => May::of_unit(values.bools.may_false() && second().live()),
-            Edge::Branch => {
-                if second().live() {
+            } => values.refine(op, local_is_lhs, sense, second),
+            Pair::Then => May::of_unit(values.bools.may_true() && second.live()),
+            Pair::Else => May::of_unit(values.bools.may_false() && second.live()),
+            Pair::Branch => {
+                if second.live() {
                     values.clone()
                 } else {
                     May::NONE
                 }
             }
-            Edge::Argument => {
-                if second().live() {
-                    rounded(values)
+            Pair::Argument => {
+                if second.live() {
+                    rounded(values, cyclic, cx)
                 } else {
                     May::NONE
                 }
             }
-            Edge::Enter => May::of_unit(values.live()),
         };
         Self { types, values }
     }
@@ -328,38 +336,38 @@ mod tests {
         let cx = [15, 2].map(Int::from).into_iter().collect::<Thresholds>();
         let a = values(band(4, 13));
         let b = values(May::int(&2.into()));
-        let edge = Edge::Binary(BinaryOp::Arith(ArithOp::Mul));
-        assert_eq!(a.transfer(&edge, Some(&b), false, &cx).values, band(8, 26));
-        let edge = Edge::Binary(BinaryOp::Cmp(CmpOp::Lt));
+        let edge = Pair::Binary(BinaryOp::Arith(ArithOp::Mul));
+        assert_eq!(a.combine(&edge, &b, false, &cx).values, band(8, 26));
+        let edge = Pair::Binary(BinaryOp::Cmp(CmpOp::Lt));
         assert_eq!(
-            a.transfer(&edge, Some(&b), false, &cx).values.bools,
+            a.combine(&edge, &b, false, &cx).values.bools,
             Bools::from(false)
         );
-        let edge = Edge::Lazy { and: true };
+        let edge = Pair::Lazy { and: true };
         assert_eq!(
             values(May::bool(false))
-                .transfer(&edge, Some(&Product::bottom()), false, &cx)
+                .combine(&edge, &Product::bottom(), false, &cx)
                 .values
                 .bools,
             Bools::from(false)
         );
         assert_eq!(
             values(May::bool(true))
-                .transfer(&Edge::Not, None, false, &cx)
+                .transfer(&Edge::Not, false, &cx)
                 .values
                 .bools,
             Bools::from(false)
         );
         let call = Edge::Call(Claim::local(0));
-        assert_eq!(a.transfer(&call, None, false, &cx).values, a.values);
-        assert_eq!(a.transfer(&call, None, true, &cx).values, band(3, 14));
+        assert_eq!(a.transfer(&call, false, &cx).values, a.values);
+        assert_eq!(a.transfer(&call, true, &cx).values, band(3, 14));
         let live = values(May::unit());
         assert_eq!(
-            a.transfer(&Edge::Argument, Some(&live), true, &cx).values,
+            a.combine(&Pair::Argument, &live, true, &cx).values,
             band(3, 14)
         );
-        assert_eq!(a.transfer(&Edge::Values, None, true, &cx).values, a.values);
-        assert_eq!(a.transfer(&Edge::Peer, None, false, &cx).values, May::NONE);
+        assert_eq!(a.transfer(&Edge::Values, true, &cx).values, a.values);
+        assert_eq!(a.transfer(&Edge::Peer, false, &cx).values, May::NONE);
     }
 
     #[test]
@@ -368,25 +376,16 @@ mod tests {
         let live = values(May::unit());
         let dead = Product::bottom();
         let cond = values(May::bool(false));
-        assert_eq!(cond.transfer(&Edge::Then, Some(&live), false, &cx), dead);
-        assert_eq!(cond.transfer(&Edge::Else, Some(&live), false, &cx), live);
-        assert_eq!(cond.transfer(&Edge::Else, Some(&dead), false, &cx), dead);
+        assert_eq!(cond.combine(&Pair::Then, &live, false, &cx), dead);
+        assert_eq!(cond.combine(&Pair::Else, &live, false, &cx), live);
+        assert_eq!(cond.combine(&Pair::Else, &dead, false, &cx), dead);
         let value = values(May::int(&3.into()));
-        assert_eq!(
-            value.transfer(&Edge::Branch, Some(&live), false, &cx),
-            value
-        );
-        assert_eq!(value.transfer(&Edge::Branch, Some(&dead), false, &cx), dead);
-        assert_eq!(
-            value.transfer(&Edge::Argument, Some(&dead), false, &cx),
-            dead
-        );
-        assert_eq!(
-            value.transfer(&Edge::Argument, Some(&live), false, &cx),
-            value
-        );
-        assert_eq!(live.transfer(&Edge::Enter, None, false, &cx), live);
-        assert_eq!(dead.transfer(&Edge::Enter, None, false, &cx), dead);
+        assert_eq!(value.combine(&Pair::Branch, &live, false, &cx), value);
+        assert_eq!(value.combine(&Pair::Branch, &dead, false, &cx), dead);
+        assert_eq!(value.combine(&Pair::Argument, &dead, false, &cx), dead);
+        assert_eq!(value.combine(&Pair::Argument, &live, false, &cx), value);
+        assert_eq!(live.transfer(&Edge::Enter, false, &cx), live);
+        assert_eq!(dead.transfer(&Edge::Enter, false, &cx), dead);
     }
 
     #[test]
@@ -398,21 +397,21 @@ mod tests {
         };
         let live = values(May::unit());
         for edge in [Edge::Bind, Edge::Exactly(true), Edge::Peer] {
-            assert_eq!(int.transfer(&edge, None, false, &cx).types, int.types);
+            assert_eq!(int.transfer(&edge, false, &cx).types, int.types);
         }
         assert_eq!(
-            int.transfer(&Edge::Branch, Some(&Product::bottom()), false, &cx)
+            int.combine(&Pair::Branch, &Product::bottom(), false, &cx)
                 .types,
             int.types
         );
         for edge in [Edge::Values, Edge::Neg, Edge::Enter] {
-            assert_eq!(int.transfer(&edge, None, false, &cx).types, Evidence::NONE);
+            assert_eq!(int.transfer(&edge, false, &cx).types, Evidence::NONE);
         }
         assert_eq!(
-            int.transfer(&Edge::Argument, Some(&live), false, &cx).types,
+            int.combine(&Pair::Argument, &live, false, &cx).types,
             Evidence::NONE
         );
-        let called = int.transfer(&Edge::Call(Claim::local(7)), None, false, &cx);
+        let called = int.transfer(&Edge::Call(Claim::local(7)), false, &cx);
         assert_eq!(called.types.ty(), Some(Ty::Int));
         assert!(called.types.claims()[0].1.imported());
         assert_eq!(called.types.claims()[0].1.index(), 7);
@@ -423,7 +422,7 @@ mod tests {
         let flag = values(May::bools(Bools::BOTH));
         let cx = Thresholds::default();
         assert_eq!(
-            flag.transfer(&Edge::Exactly(false), None, false, &cx)
+            flag.transfer(&Edge::Exactly(false), false, &cx)
                 .values
                 .bools,
             Bools::from(false)
