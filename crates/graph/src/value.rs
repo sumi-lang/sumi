@@ -62,6 +62,7 @@ impl Op {
             Self::Binary(op) => D::binary(*op, inputs[0], inputs[1])?,
             Self::Param(_)
             | Self::Unit
+            | Self::Unused
             | Self::Hole
             | Self::And { .. }
             | Self::Or { .. }

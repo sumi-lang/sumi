@@ -15,6 +15,8 @@ fn accepted@37..197 () -> int ∈ [1, 1]
     value:
       let u@68..69: unit @64..80
         initializer: call action@22..36 : unit @72..80
+      discard: read u@68..69 : unit
+      discard: read u@68..69 : unit
       discard: call action@22..36 : unit @99..107
       discard: call action@22..36 : unit @113..121
       discard: unit : unit @127..129
@@ -31,6 +33,8 @@ fn rejected@198..376 () -> int ∈ [0, 0]
     value:
       let x@229..230: int @225..234
         initializer: int 1 : int @233..234
+      discard: read x@229..230 : int
+      discard: read x@229..230 : int
       discard: eager + : int @253..258
         lhs: int 1 : int @253..254
         rhs: int 2 : int @257..258

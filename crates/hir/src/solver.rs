@@ -265,8 +265,9 @@ impl<L: Lattice> Solver<L> {
     /// consumer that grows. A class waits in the queue at most once however
     /// often it grows before its turn: a join can improve evidence in ways
     /// no transfer passes on, and every visit rescans every outgoing flow.
-    /// Every flow from a member to a member closes a cycle, and `grows` says
-    /// whether that cycle can grow.
+    /// Every flow from a member to a member closes a cycle, and `cyclic`
+    /// says of each flow whether its cycle of values can grow, which is
+    /// what its delivery widens against.
     fn ascend(
         &mut self,
         outgoing: &Outgoing,
@@ -354,7 +355,7 @@ impl<L: Lattice> Solver<L> {
             for flow in &self.flows {
                 let consumer = flow.consumer.index() as u32;
                 for (second, provider) in self.providers(flow) {
-                    if L::carries(&flow.edge, second) != Carry::Nothing {
+                    if L::carries(&flow.edge, second) >= Carry::Passes {
                         carrying.push((provider.index() as u32, consumer));
                     }
                 }

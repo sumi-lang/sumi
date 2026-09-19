@@ -45,6 +45,11 @@ fn typed_invariant(analysis: &Analysis) {
                 Op::Int(_) => assert_eq!(own, Some(Ty::Int)),
                 Op::Bool(_) => assert_eq!(own, Some(Ty::Bool)),
                 Op::Unit => assert_eq!(own, Some(Ty::Unit)),
+                Op::Unused => {
+                    assert_eq!(ty(inputs[0]), Some(Ty::Unit));
+                    assert_eq!(own, None);
+                    continue;
+                }
                 Op::Param(position) => {
                     assert_eq!(own, Some(signature.params[*position as usize]));
                 }
@@ -196,7 +201,7 @@ fn graph_invariant(analysis: &Analysis) {
         }
         let arity = match node.op {
             Op::Int(_) | Op::Bool(_) | Op::Param(_) | Op::Entry => Some(0),
-            Op::Unit | Op::Copy { .. } | Op::Neg | Op::Not | Op::Exactly(_) => Some(1),
+            Op::Unit | Op::Unused | Op::Copy { .. } | Op::Neg | Op::Not | Op::Exactly(_) => Some(1),
             Op::And { .. } | Op::Or { .. } | Op::Join { .. } => Some(1),
             Op::Binary(_) | Op::Refine { .. } | Op::Then | Op::Else => Some(2),
             Op::Hole | Op::Call(_) => None,
@@ -222,7 +227,7 @@ fn graph_invariant(analysis: &Analysis) {
                 !matches!(node.op, Op::Hole),
                 "an accepted file has no holes"
             );
-            if !matches!(node.op, Op::Entry | Op::Then | Op::Else) {
+            if !matches!(node.op, Op::Entry | Op::Then | Op::Else | Op::Unused) {
                 assert!(
                     analysis.ty(id).is_some(),
                     "{id:?} {:?} has no type",
@@ -269,7 +274,7 @@ fn graph_invariant(analysis: &Analysis) {
         assert!(
             !matches!(
                 graph.node(region.result()).op,
-                Op::Entry | Op::Then | Op::Else
+                Op::Entry | Op::Then | Op::Else | Op::Unused
             ),
             "{id:?} results in a context"
         );
@@ -348,7 +353,9 @@ fn lexical_scopes_and_sequential_shadowing() {
     assert!(matches!(op(&a, difference), Op::Binary(BinaryOp::Sub)));
     assert_eq!(graph.inputs(difference), [x2, three]);
     assert!(matches!(op(&a, unit), Op::Unit));
-    assert_eq!(nodes.len(), 9);
+    // The inner block is a statement: a node that leaves its unit unused.
+    assert!(matches!(op(&a, nodes[9]), Op::Unused));
+    assert_eq!(nodes.len(), 10);
     assert_eq!(value(&a, 0), x1);
     let a = check("fn f() -> int = 1\nfn g() -> int {\n let f = 2\n f()\n}\n");
     assert_eq!(codes(&a), [NOT_CALLABLE]);
@@ -726,7 +733,8 @@ fn unused_values_are_semantic_errors_without_complete_bodies() {
 fn blocks_preserve_statement_order_and_only_the_last_child_is_a_tail() {
     let a = clean("fn f() = { let x = 11\n _ = 29\n {}\n 7 }\nfn g() = { _ = 5 }\nfn h() = {}");
     // The literal, its binding, the discarded literal, the empty block's
-    // unit, and the tail, in source order.
+    // unit and the statement that leaves it unused, and the tail, in
+    // source order.
     let nodes = body(&a, 0);
     let ops: Vec<_> = nodes.iter().map(|&node| op(&a, node)).collect();
     assert!(matches!(
@@ -736,12 +744,13 @@ fn blocks_preserve_statement_order_and_only_the_last_child_is_a_tail() {
             Op::Copy { .. },
             Op::Int(_),
             Op::Unit,
+            Op::Unused,
             Op::Int(_)
         ]
     ));
     assert_eq!(text(&a, a.graph().node(nodes[1]).name.unwrap()), "x");
-    assert_eq!(value(&a, 0), nodes[4]);
-    assert!(matches!(op(&a, nodes[4]), Op::Int(n) if *n == Int::from(7)));
+    assert_eq!(value(&a, 0), nodes[5]);
+    assert!(matches!(op(&a, nodes[5]), Op::Int(n) if *n == Int::from(7)));
     // A block without a tail is unit, after whatever it discards.
     let g = body(&a, 1);
     assert!(matches!(
@@ -761,8 +770,9 @@ fn nested_blocks_consume_only_their_own_statements() {
     let source = "fn f() = { let a = 11\n let b = { _ = a\n 29 }\n { _ = b }\n _ = 7\n b }";
     let a = clean(source);
     // A block is its value: the inner blocks leave their literal, their
-    // unit, and their reads, which are edges, and the outer block's
-    // bindings and discards stand in source order with the value last.
+    // unit with the statement that leaves it unused, and their reads,
+    // which are edges, and the outer block's bindings and discards stand
+    // in source order with the value last.
     let nodes = body(&a, 0);
     let ops: Vec<_> = nodes.iter().map(|&node| op(&a, node)).collect();
     assert!(matches!(
@@ -773,6 +783,7 @@ fn nested_blocks_consume_only_their_own_statements() {
             Op::Int(_),
             Op::Copy { .. },
             Op::Unit,
+            Op::Unused,
             Op::Int(_)
         ]
     ));

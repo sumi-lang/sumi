@@ -228,7 +228,9 @@ impl<'a> Machine<'a> {
                 match self.graph.node(node).op {
                     Op::Param(_) => unreachable!("a parameter is bound on entry"),
                     Op::Hole => return Err(Refusal::Hole(node)),
-                    Op::Entry | Op::Then | Op::Else => unreachable!("a context is not a value"),
+                    Op::Entry | Op::Then | Op::Else | Op::Unused => {
+                        unreachable!("a context or a statement is not a value")
+                    }
                     // Its input is the context it is held in, not a value.
                     Op::Unit => self.fill(node, Value::Unit),
                     Op::And { .. } | Op::Or { .. } => {

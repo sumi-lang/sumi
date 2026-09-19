@@ -4,10 +4,12 @@
 //! and what its declaration says of its result. A structural walk per
 //! function then resolves names and builds the body's nodes of the graph,
 //! marking which carry a value the typing follows, and records what the
-//! walk learns beyond the graph: a demand wherever a context requires a
-//! value to have a type, and every division. The walk rejects nothing on
-//! type grounds; it fails only on names, syntax, and unsupported
-//! constructs, and what it refuses it leaves as a hole.
+//! walk learns beyond the graph: every whole call, the callees reached,
+//! and every division. What a context requires of a value is not among
+//! it: the graph says what each node reads and where, and the typing
+//! draws the demands from that. The walk rejects nothing on type grounds;
+//! it fails only on names, syntax, and unsupported constructs, and what
+//! it refuses it leaves as a hole.
 //!
 //! Names are never copied: every map is keyed by a slice of the source,
 //! and the one builder keeps its scratch across bodies, so a body costs
@@ -26,7 +28,7 @@ use sumi_syntax::{
 
 use crate::codes;
 use crate::lattice::Claim;
-use crate::typing::{Expected, Typing};
+use crate::typing::Typing;
 use crate::*;
 
 /// A map from names, as slices of the source, to whatever they name.
@@ -74,33 +76,6 @@ pub(crate) enum HeaderResult {
     Inferred,
 }
 
-/// What a context requires of an expression, checked after solving.
-pub(crate) enum DemandKind {
-    /// The expression must have the expected type, which a declaration may
-    /// have set: a called function, a result annotation, or a binding's
-    /// annotation.
-    Type {
-        expected: Expected,
-        declared: Option<NodeIdx>,
-    },
-    /// An expression statement's value must be unit.
-    Unused,
-    /// The operands of `==` and `!=` must not be unit.
-    Comparable,
-    /// The branches of an `if` must agree on one type: the expression is
-    /// the `if`, and each branch delivers its type to it first.
-    Agree { branches: [NodeId; 2] },
-}
-
-/// One demand, kept small: the verdict pass reads every one, and a body
-/// makes one per operand, argument, branch, and statement.
-pub(crate) struct Demand {
-    pub owner: u32,
-    pub node: NodeIdx,
-    pub actual: NodeId,
-    pub kind: DemandKind,
-}
-
 /// A division whose divisor must exclude zero wherever it can run.
 pub(crate) struct Obligation {
     pub owner: u32,
@@ -109,14 +84,12 @@ pub(crate) struct Obligation {
     pub context: NodeId,
 }
 
-/// A whole call: its node, its ends, the context it runs in, and its run
-/// of the arguments as written.
+/// A whole call: its node, its ends, and the context it runs in.
 pub(crate) struct Call {
     pub node: NodeId,
     pub caller: FunctionId,
     pub callee: FunctionId,
     pub context: NodeId,
-    arguments: std::ops::Range<u32>,
 }
 
 /// What the walk of every body leaves beside the graph for the verdicts.
@@ -128,22 +101,11 @@ pub(crate) struct Lowered {
     pub typed: Vec<bool>,
     /// Every whole call, in definition order.
     pub calls: Vec<Call>,
-    /// The arguments of every whole call as written, one run per call,
-    /// which a read passed as an argument has no node of its own to say.
-    arguments: Vec<NodeIdx>,
     /// Every call that reached a callee with parameters, whole or not, as
     /// the context it runs in and the callee: the callee is checked on the
     /// strength of any call to it.
     pub entered: Vec<(NodeId, FunctionId)>,
-    pub demands: Vec<Demand>,
     pub obligations: Vec<Obligation>,
-}
-
-impl Lowered {
-    /// The arguments of `call` as written.
-    pub fn arguments(&self, call: &Call) -> &[NodeIdx] {
-        &self.arguments[call.arguments.start as usize..call.arguments.end as usize]
-    }
 }
 
 /// One file's source and tree, and the diagnostics checking it makes.
@@ -197,24 +159,25 @@ impl<'s> Source<'s> {
     }
     pub fn type_mismatch(
         &mut self,
-        node: NodeIdx,
+        at: TextRange,
         expected: Ty,
         actual: Ty,
         related: Option<(TextRange, &'static str)>,
     ) {
-        self.error(
-            node,
+        let related = related.map(|(range, message)| (range, Box::from(message)));
+        self.report(
+            at,
             codes::TYPE_MISMATCH,
             format!("expected {expected}, found {actual}"),
             related,
         );
     }
-    /// Report that `node` is claimed to be every type in `claims`, in
-    /// source order, and where each claim was made. `message` wraps the
-    /// list of types.
+    /// Report that what is at `at` is claimed to be every type in
+    /// `claims`, in source order, and where each claim was made. `message`
+    /// wraps the list of types.
     pub fn conflict(
         &mut self,
-        node: NodeIdx,
+        at: TextRange,
         code: DiagnosticCode,
         typing: &Typing,
         claims: &[(Ty, Claim)],
@@ -235,7 +198,7 @@ impl<'s> Source<'s> {
         let labels = claims
             .into_iter()
             .filter_map(|(ty, origin)| Some((origin?, format!("{ty} here").into())));
-        self.report(self.range(node), code, message(joined), labels);
+        self.report(at, code, message(joined), labels);
     }
     fn ty(&mut self, node: ast::TypeRef) -> Option<Ty> {
         if self.tree.has_error(node.node()) {
@@ -446,12 +409,6 @@ fn eager(op: sumi_syntax::BinaryOp) -> Option<BinaryOp> {
     })
 }
 
-/// An index into a run of the placed arguments, which the syntax tree's
-/// node count bounds.
-fn run(index: usize) -> u32 {
-    u32::try_from(index).expect("list index fits u32")
-}
-
 /// The names in scope, each bound to the node that defines it: a
 /// parameter, a `let`, or the hole a damaged `let` leaves. Scope
 /// transitions and let completion are explicit work items, so
@@ -461,6 +418,9 @@ type Scope<'s> = NameMap<'s, NodeId>;
 enum Work {
     Enter(NodeIdx),
     Finish(NodeIdx),
+    /// An expression statement whose expression is walked: the node its
+    /// value goes unused at.
+    Unused(NodeIdx),
     /// A call whose arguments are walked, to the function its callee
     /// names, when it names one.
     Call(NodeIdx, Option<FunctionId>),
@@ -530,7 +490,7 @@ struct Builder<'a, 's> {
     depth: usize,
     work: Vec<Work>,
     /// The inputs of the node being pushed, when there are more than two.
-    inputs: Vec<NodeId>,
+    inputs: Vec<(NodeId, TextRange)>,
 }
 
 impl<'a, 's> Builder<'a, 's> {
@@ -539,8 +499,7 @@ impl<'a, 's> Builder<'a, 's> {
         headers: &'a [Header],
         names: &'a NameMap<'s, Named>,
     ) -> Self {
-        // About a node per syntax node of a body, and a demand per two;
-        // only a guide.
+        // About a node per syntax node of a body; only a guide.
         let nodes = source.tree.len();
         Self {
             source,
@@ -551,9 +510,7 @@ impl<'a, 's> Builder<'a, 's> {
                 built: Vec::with_capacity(headers.len()),
                 typed: Vec::with_capacity(nodes),
                 calls: Vec::new(),
-                arguments: Vec::new(),
                 entered: Vec::new(),
-                demands: Vec::with_capacity(nodes / 2),
                 obligations: Vec::new(),
             },
             // Syntax node IDs are dense and bodies have disjoint nodes.
@@ -613,6 +570,11 @@ impl<'a, 's> Builder<'a, 's> {
                         self.enter(node, &mut work);
                         continue;
                     }
+                    Work::Unused(node) => {
+                        let input = self.input(node);
+                        self.place(Op::Unused, &[input], input.1, None);
+                        continue;
+                    }
                     Work::Branches(node) => {
                         self.branches(node, &mut work);
                         continue;
@@ -643,11 +605,14 @@ impl<'a, 's> Builder<'a, 's> {
             self.work = work;
         }
         let root = root_node.and_then(|root| self.typed(root));
-        let body_value = match root_node {
-            Some(root) => self.node_of(root),
-            None => self.push(item_node, Op::Hole, &[], None),
+        let body = match root_node {
+            Some(root) => self.input(root),
+            None => {
+                let hole = self.push(item_node, Op::Hole, &[], None);
+                (hole, self.source.range(item_node))
+            }
         };
-        self.graph.close(region, body_value);
+        self.graph.close(region, body.0);
         self.regions.pop();
         // A failed parameter does not erase an independently known result
         // type. A declared result is a contract on the body; an inferred one
@@ -658,14 +623,11 @@ impl<'a, 's> Builder<'a, 's> {
                 Op::Copy {
                     declared: Some((ty, self.source.range(node))),
                 },
-                &[body_value],
+                &[body],
                 None,
             ),
-            HeaderResult::Inferred | HeaderResult::None => body_value,
+            HeaderResult::Inferred | HeaderResult::None => body.0,
         };
-        if let (Some(root), HeaderResult::Declared(ty, node)) = (root, declared) {
-            self.require(root_node.unwrap(), root, Expected::Ty(ty), Some(node));
-        }
         self.graph
             .close_run(FunctionId::new(owner), start, arity, region, value);
         !self.failed && root.is_some()
@@ -675,7 +637,7 @@ impl<'a, 's> Builder<'a, 's> {
         &mut self,
         node: NodeIdx,
         op: Op,
-        inputs: &[NodeId],
+        inputs: &[(NodeId, TextRange)],
         name: Option<TextRange>,
     ) -> NodeId {
         let id = self.place(op, inputs, self.source.range(node), name);
@@ -686,7 +648,7 @@ impl<'a, 's> Builder<'a, 's> {
     fn place(
         &mut self,
         op: Op,
-        inputs: &[NodeId],
+        inputs: &[(NodeId, TextRange)],
         origin: TextRange,
         name: Option<TextRange>,
     ) -> NodeId {
@@ -696,37 +658,56 @@ impl<'a, 's> Builder<'a, 's> {
         id
     }
     /// Whether a node computing `op` from `inputs` carries a value the
-    /// typing follows. A hole carries none, and neither does a node built
-    /// over one: a lazy operator or an `if` over an untyped operand or
-    /// branch, a call short of an argument, which is a hole. A context is
-    /// followed whatever its condition; a parameter needs a type, a call
-    /// a callee with a result, and a declared copy has its declaration
-    /// whatever flows in.
-    fn follows(&self, op: &Op, inputs: &[NodeId]) -> bool {
+    /// typing follows. A hole carries none, a statement is none, and
+    /// neither is a node built over a hole: a lazy operator or an `if`
+    /// over an untyped operand or branch, a call that is not whole. A
+    /// context is followed whatever its condition; a parameter needs a
+    /// type, a call a callee with a result, and a declared copy has its
+    /// declaration whatever flows in.
+    fn follows(&self, op: &Op, inputs: &[(NodeId, TextRange)]) -> bool {
         let typed = |node: NodeId| self.lowered.typed[node.index()];
         let result = |region: RegionId| typed(self.graph.region(region).result());
         match *op {
-            Op::Hole => false,
+            Op::Hole | Op::Unused => false,
             Op::Entry | Op::Then | Op::Else | Op::Copy { declared: Some(_) } => true,
             Op::Param(index) => {
                 self.headers[self.owner as usize].param_types[index as usize].is_some()
             }
             Op::Call(callee) => {
-                inputs.iter().all(|&input| typed(input))
+                self.whole(callee, inputs)
                     && !matches!(self.headers[callee.index()].result, HeaderResult::None)
             }
-            Op::And { rhs } | Op::Or { rhs } => typed(inputs[0]) && result(rhs),
+            Op::And { rhs } | Op::Or { rhs } => typed(inputs[0].0) && result(rhs),
             Op::Join { then, else_ } => {
-                typed(inputs[0]) && result(then) && else_.is_none_or(result)
+                typed(inputs[0].0) && result(then) && else_.is_none_or(result)
             }
-            _ => inputs.iter().all(|&input| typed(input)),
+            _ => inputs.iter().all(|&(input, _)| typed(input)),
         }
+    }
+    /// Whether a call to `callee` reading `inputs` is whole: an argument
+    /// per parameter, and none a hole.
+    fn whole(&self, callee: FunctionId, inputs: &[(NodeId, TextRange)]) -> bool {
+        let params = self.headers[callee.index()]
+            .params
+            .as_deref()
+            .expect("a call names a whole callee");
+        params.len() == inputs.len()
+            && inputs
+                .iter()
+                .all(|&(input, _)| self.lowered.typed[input.index()])
     }
     /// A context node for the region whose syntax is `region`, derived
     /// from `condition` under `parent`. It is not what `region` built: the
     /// region's own node is its value, which the context gates.
-    fn context_at(&mut self, region: NodeIdx, op: Op, condition: NodeId, parent: NodeId) -> NodeId {
-        self.place(op, &[condition, parent], self.source.range(region), None)
+    fn context_at(
+        &mut self,
+        region: NodeIdx,
+        op: Op,
+        condition: (NodeId, TextRange),
+        parent: NodeId,
+    ) -> NodeId {
+        let at = self.source.range(region);
+        self.place(op, &[condition, (parent, at)], at, None)
     }
     /// The graph node `node` built, or a hole where nothing was: syntax
     /// the walk could not reach.
@@ -735,6 +716,11 @@ impl<'a, 's> Builder<'a, 's> {
             Some(id) => id,
             None => self.push(node, Op::Hole, &[], None),
         }
+    }
+    /// What `node` built, read where `node` stands: an input of the node
+    /// that reads it.
+    fn input(&mut self, node: NodeIdx) -> (NodeId, TextRange) {
+        (self.node_of(node), self.source.range(node))
     }
     /// The value `node` built, if it built one the typing follows: a hole,
     /// and a node built over one, are none.
@@ -868,9 +854,12 @@ impl<'a, 's> Builder<'a, 's> {
                     Lt | Le | Gt | Ge | Eq | Ne => {
                         let op = eager(op).expect("a comparison is eager");
                         for (side, other, local_is_lhs) in [(lhs, rhs, true), (rhs, lhs, false)] {
-                            if let (Some(local), Some(other)) = (self.read(side), self.typed(other))
+                            if let (Some(local), Some(value)) = (self.read(side), self.typed(other))
                             {
-                                let inputs = [self.current(local), other];
+                                let inputs = [
+                                    (self.current(local), self.source.range(side)),
+                                    (value, self.source.range(other)),
+                                ];
                                 let read = self.place(
                                     Op::Refine {
                                         op,
@@ -890,9 +879,9 @@ impl<'a, 's> Builder<'a, 's> {
             }
             NodeKind::NameRef => {
                 if let Some(local) = self.read(node) {
-                    let inputs = [self.current(local)];
-                    let read =
-                        self.place(Op::Exactly(sense), &inputs, self.source.range(node), None);
+                    let at = self.source.range(node);
+                    let inputs = [(self.current(local), at)];
+                    let read = self.place(Op::Exactly(sense), &inputs, at, None);
                     self.refinements.push((local, read));
                 }
             }
@@ -909,13 +898,13 @@ impl<'a, 's> Builder<'a, 's> {
         let then_node = branch.then_branch(tree).unwrap().node();
         let else_node = branch.else_branch(tree).map(|e| e.node());
         let parent = self.context();
-        let cond_node = self.node_of(cond);
+        let condition = self.input(cond);
         let then = {
-            let context = self.context_at(then_node, Op::Then, cond_node, parent);
+            let context = self.context_at(then_node, Op::Then, condition, parent);
             self.graph.open(context)
         };
         let else_ = else_node.map(|else_node| {
-            let context = self.context_at(else_node, Op::Else, cond_node, parent);
+            let context = self.context_at(else_node, Op::Else, condition, parent);
             self.graph.open(context)
         });
         work.push(Work::Join { node, then, else_ });
@@ -953,8 +942,8 @@ impl<'a, 's> Builder<'a, 's> {
         let and = self.binary_op(node) == sumi_syntax::BinaryOp::And;
         let parent = self.context();
         let op = if and { Op::Then } else { Op::Else };
-        let lhs_node = self.node_of(lhs);
-        let context = self.context_at(rhs, op, lhs_node, parent);
+        let left = self.input(lhs);
+        let context = self.context_at(rhs, op, left, parent);
         let region = self.graph.open(context);
         work.push(Work::Lazy { node, rhs: region });
         work.push(Work::Pop { region, root: rhs });
@@ -962,29 +951,6 @@ impl<'a, 's> Builder<'a, 's> {
         work.push(Work::Push {
             region,
             guard: (lhs, and),
-        });
-    }
-    /// The context at `node` requires the value `actual` to be `expected`,
-    /// which `declared` may have set. Recorded for the flows to join into
-    /// the evidence, and for the verdict pass.
-    fn require(
-        &mut self,
-        node: NodeIdx,
-        actual: NodeId,
-        expected: Expected,
-        declared: Option<NodeIdx>,
-    ) {
-        if expected == Expected::Peer(actual) {
-            return;
-        }
-        self.demand(node, actual, DemandKind::Type { expected, declared });
-    }
-    fn demand(&mut self, node: NodeIdx, actual: NodeId, kind: DemandKind) {
-        self.lowered.demands.push(Demand {
-            owner: self.owner,
-            node,
-            actual,
-            kind,
         });
     }
     /// Refuse the construct at `node`, which leaves a hole.
@@ -1102,8 +1068,23 @@ impl<'a, 's> Builder<'a, 's> {
             _ => {}
         }
         match kind {
-            NodeKind::Block
-            | NodeKind::LetStmt
+            // Only the last child can be the tail; an expression before it
+            // is a statement, whose value goes unused.
+            NodeKind::Block => {
+                work.push(Work::Finish(node));
+                let base = work.len();
+                let mut children = tree.children(node).peekable();
+                while let Some(child) = children.next() {
+                    let statement =
+                        children.peek().is_some() && ast::Expr::cast(tree, child).is_some();
+                    work.push(Work::Enter(child));
+                    if statement {
+                        work.push(Work::Unused(child));
+                    }
+                }
+                work[base..].reverse();
+            }
+            NodeKind::LetStmt
             | NodeKind::DiscardStmt
             | NodeKind::PrefixExpr
             | NodeKind::BinaryExpr
@@ -1184,8 +1165,8 @@ impl<'a, 's> Builder<'a, 's> {
             NodeKind::Block => {
                 self.close_scope();
                 // Only the last child can be the tail. A statement built
-                // itself; an expression statement must be unit; a child
-                // that built nothing is a hole where it stood.
+                // itself; a child that built nothing is a hole where it
+                // stood.
                 let mut tail = None;
                 let mut valid = !tree.has_error(node);
                 let mut children = tree.children(node).peekable();
@@ -1195,15 +1176,9 @@ impl<'a, 's> Builder<'a, 's> {
                         tail = Some(child);
                         break;
                     }
-                    match self.typed(child) {
-                        Some(value) if expression => {
-                            self.demand(child, value, DemandKind::Unused);
-                        }
-                        Some(_) => {}
-                        None => {
-                            self.node_of(child);
-                            valid = false;
-                        }
+                    if self.typed(child).is_none() {
+                        self.node_of(child);
+                        valid = false;
                     }
                 }
                 // A block is its tail, or unit without one, whether or not
@@ -1221,7 +1196,8 @@ impl<'a, 's> Builder<'a, 's> {
                     }
                     None => {
                         let context = self.context();
-                        self.push(node, Op::Unit, &[context], None);
+                        let at = self.source.range(node);
+                        self.push(node, Op::Unit, &[(context, at)], None);
                     }
                 }
                 if !valid || damaged {
@@ -1232,8 +1208,7 @@ impl<'a, 's> Builder<'a, 's> {
             NodeKind::LetStmt => {
                 let binding = ast::LetStmt::cast(tree, node).unwrap();
                 let initializer_node = binding.initializer(tree).unwrap().node();
-                let initializer = self.typed(initializer_node);
-                let value = self.node_of(initializer_node);
+                let value = self.input(initializer_node);
                 let name = self.source.name(binding.name(tree));
                 // An annotated binding has its declared type whatever its
                 // initializer turns out to be; the initializer is held to it.
@@ -1254,16 +1229,6 @@ impl<'a, 's> Builder<'a, 's> {
                     name.map(|(_, node)| self.source.range(node)),
                 );
                 let (name, _) = name?;
-                if let (Some(annotation), Some((ty, _)), Some(initializer)) =
-                    (annotation, declared, initializer)
-                {
-                    self.require(
-                        initializer_node,
-                        initializer,
-                        Expected::Ty(ty),
-                        Some(annotation.node()),
-                    );
-                }
                 self.bind(name, copy);
                 self.lowered.typed[copy.index()].then_some(())?;
             }
@@ -1339,16 +1304,9 @@ impl<'a, 's> Builder<'a, 's> {
                     .source
                     .tokens(tree.first_token(node), tree.first_token(operand))
                     .eq([SyntaxKind::Minus]);
-                let operand_node = self.node_of(operand);
-                self.push(
-                    node,
-                    if neg { Op::Neg } else { Op::Not },
-                    &[operand_node],
-                    None,
-                );
-                let value = self.typed(operand)?;
-                let ty = if neg { Ty::Int } else { Ty::Bool };
-                self.require(operand, value, Expected::Ty(ty), None);
+                let value = self.input(operand);
+                self.push(node, if neg { Op::Neg } else { Op::Not }, &[value], None);
+                self.typed(operand)?;
             }
             NodeKind::BinaryExpr => {
                 use sumi_syntax::BinaryOp::*;
@@ -1357,37 +1315,17 @@ impl<'a, 's> Builder<'a, 's> {
                 let lhs_node = binary.lhs(tree).unwrap().node();
                 let rhs_node = binary.rhs(tree).unwrap().node();
                 let op = self.binary_op(node);
-                let lhs = self.typed(lhs_node);
-                let rhs = self.typed(rhs_node);
-                let lhs_graph = self.node_of(lhs_node);
-                let rhs_graph = self.node_of(rhs_node);
+                let lhs = self.input(lhs_node);
+                let rhs = self.input(rhs_node);
                 let eager = eager(op).expect("a lazy operator finishes as its own item");
-                self.push(node, Op::Binary(eager), &[lhs_graph, rhs_graph], None);
-                // `==` and `!=` compare like with like: whichever operand
-                // exists sets the other's expectation.
-                let operand = match op {
-                    Eq | Ne => lhs.or(rhs).map(Expected::Peer),
-                    _ => Some(Expected::Ty(Ty::Int)),
-                };
-                if let Some(operand) = operand {
-                    for (child, value) in [(lhs_node, lhs), (rhs_node, rhs)] {
-                        if let Some(value) = value {
-                            self.require(child, value, operand, None);
-                        }
-                    }
-                    if matches!(op, Eq | Ne)
-                        && let Some(operand) = lhs.or(rhs)
-                    {
-                        self.demand(node, operand, DemandKind::Comparable);
-                    }
-                }
-                lhs?;
-                rhs?;
+                self.push(node, Op::Binary(eager), &[lhs, rhs], None);
+                self.typed(lhs_node)?;
+                self.typed(rhs_node)?;
                 if matches!(op, Div | Rem) {
                     self.lowered.obligations.push(Obligation {
                         owner: self.owner,
                         node,
-                        divisor: rhs_graph,
+                        divisor: rhs.0,
                         context: self.context(),
                     });
                 }
@@ -1404,18 +1342,11 @@ impl<'a, 's> Builder<'a, 's> {
         let lhs_node = binary.lhs(tree).unwrap().node();
         let rhs_node = binary.rhs(tree).unwrap().node();
         let and = self.binary_op(node) == sumi_syntax::BinaryOp::And;
-        let lhs = self.typed(lhs_node);
-        let rhs_value = self.typed(rhs_node);
-        let lhs_graph = self.node_of(lhs_node);
+        let lhs = self.input(lhs_node);
         let op = if and { Op::And { rhs } } else { Op::Or { rhs } };
-        self.push(node, op, &[lhs_graph], None);
-        for (child, value) in [(lhs_node, lhs), (rhs_node, rhs_value)] {
-            if let Some(value) = value {
-                self.require(child, value, Expected::Ty(Ty::Bool), None);
-            }
-        }
-        lhs?;
-        rhs_value?;
+        self.push(node, op, &[lhs], None);
+        self.typed(lhs_node)?;
+        self.typed(rhs_node)?;
         Some(())
     }
     /// The `if` at `node`, whose branches are the regions `then` and
@@ -1424,40 +1355,22 @@ impl<'a, 's> Builder<'a, 's> {
         let tree = self.source.tree;
         let branch = ast::IfExpr::cast(tree, node).unwrap();
         let condition_node = branch.condition(tree).unwrap().node();
-        let condition = self.typed(condition_node);
         let then_node = branch.then_branch(tree).unwrap().node();
-        let then_branch = self.typed(then_node);
         let else_node = branch.else_branch(tree).map(|e| e.node());
-        let else_branch = else_node.and_then(|n| self.typed(n));
-        let cond_graph = self.node_of(condition_node);
-        let join = self.push(node, Op::Join { then, else_ }, &[cond_graph], None);
-        if let Some(condition) = condition {
-            self.require(condition_node, condition, Expected::Ty(Ty::Bool), None);
+        let condition = self.input(condition_node);
+        self.push(node, Op::Join { then, else_ }, &[condition], None);
+        self.typed(then_node)?;
+        if let Some(else_node) = else_node {
+            self.typed(else_node)?;
         }
-        let then_branch = then_branch?;
-        match else_node {
-            // Without an else, the then branch is unit, and so is the `if`.
-            None => {
-                self.require(then_node, then_branch, Expected::Ty(Ty::Unit), None);
-                condition?;
-            }
-            // Each branch decides the `if` and learns nothing from the
-            // other, so branches that disagree leave the `if` undetermined,
-            // conflicted on its own class, and keep their own types. The
-            // verdict pass reports it there.
-            Some(_) => {
-                let branches = [then_branch, else_branch?];
-                condition?;
-                self.demand(node, join, DemandKind::Agree { branches });
-            }
-        }
+        self.typed(condition_node)?;
         Some(())
     }
     /// The call at `node`, whose arguments are walked, to `target` when
     /// its callee names a function. A call is a call when its callee has
-    /// parameters to hold it to and every argument is there; otherwise it
-    /// never happens, and is a hole over what it walked: its callee, when
-    /// that built, and its arguments.
+    /// parameters to hold it to, whole when every argument is there and
+    /// none is a hole; otherwise it never happens, and is a hole over what
+    /// it walked: its callee, when that built, and its arguments.
     fn call(&mut self, node: NodeIdx, target: Option<FunctionId>) -> Option<()> {
         let context = self.context();
         let tree = self.source.tree;
@@ -1473,31 +1386,20 @@ impl<'a, 's> Builder<'a, 's> {
             // checked on the strength of any call to it.
             self.lowered.entered.push((context, target));
         }
-        // Every argument that exists is held to its parameter, arity aside;
-        // its node and its syntax are kept in case the call is whole.
+        // Every argument that exists is read, arity aside: the typing holds
+        // each to its parameter.
         let mut inputs = std::mem::take(&mut self.inputs);
         inputs.clear();
         if target.is_none() {
             let callee = self.source.peel(call.callee(tree).unwrap()).node();
-            inputs.extend(self.nodes_of[callee.to_usize()]);
-        }
-        let written = run(self.lowered.arguments.len());
-        let mut complete = true;
-        let mut count = 0;
-        for (index, arg) in list.args(tree).enumerate() {
-            let syntax = arg.node();
-            count += 1;
-            inputs.push(self.node_of(syntax));
-            self.lowered.arguments.push(syntax);
-            match (self.typed(syntax), callee) {
-                (Some(value), Some((_, function, params))) => {
-                    if let Some(&expected) = params.get(index) {
-                        self.require(syntax, value, Expected::Ty(expected), Some(function.item));
-                    }
-                }
-                (None, _) => complete = false,
-                _ => {}
+            if let Some(built) = self.nodes_of[callee.to_usize()] {
+                inputs.push((built, self.source.range(callee)));
             }
+        }
+        let mut count = 0;
+        for arg in list.args(tree) {
+            count += 1;
+            inputs.push(self.input(arg.node()));
         }
         if let Some((_, function, params)) = callee
             && count != params.len()
@@ -1509,20 +1411,16 @@ impl<'a, 's> Builder<'a, 's> {
                 Some((self.source.range(function.item), "declared here")),
             );
         }
-        let whole = callee.filter(|(_, _, params)| count == params.len() && complete);
-        let op = whole.map_or(Op::Hole, |(target, ..)| Op::Call(target));
+        let whole = callee.filter(|&(target, ..)| self.whole(target, &inputs));
+        let op = callee.map_or(Op::Hole, |(target, ..)| Op::Call(target));
         let id = self.push(node, op, &inputs, None);
         self.inputs = inputs;
-        let Some((target, function, _)) = whole else {
-            self.lowered.arguments.truncate(written as usize);
-            return None;
-        };
+        let (target, function, _) = whole?;
         self.lowered.calls.push(Call {
             node: id,
             caller: FunctionId::new(self.owner as usize),
             callee: target,
             context,
-            arguments: written..run(self.lowered.arguments.len()),
         });
         // The call has a value when its callee has a result.
         (!matches!(function.result, HeaderResult::None)).then_some(())

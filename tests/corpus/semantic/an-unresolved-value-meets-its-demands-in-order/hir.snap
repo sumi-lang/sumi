@@ -1,0 +1,40 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 5
+
+fn k@217..229 signature: unavailable
+  body: call k@217..229 : ? @226..229
+
+fn later_use_is_blamed@230..315 () -> int ∈ ∅
+  result: copy : int @258..261
+    value:
+      let v@274..275: bool @270..281
+        initializer: call k@217..229 : ? @278..281
+      discard: read v@274..275 : bool
+      tail: if : int @292..313
+        condition: read v@274..275 : bool
+        then: int 1 : int @299..300
+        else: int 2 : int @310..311
+
+fn each_later_use_is_blamed@316..393 () -> int ∈ [0, 0]
+  result: copy : int @349..352
+    value:
+      let v@365..366: int @361..372
+        initializer: call k@217..229 : ? @369..372
+      discard: read v@365..366 : int
+      discard: negate : int @383..385
+        operand: read v@365..366 : int
+      tail: int 0 : int @390..391
+
+== semantic diagnostics ==
+error[semantic/cannot-infer]: cannot infer function result; add a return type annotation
+  primary @217..229
+error[semantic/unbounded-recursion]: recursion in `k` has no argument that moves toward a bound on every call
+  primary @220..221
+  secondary @226..229: no argument is a parameter moved by a constant
+error[semantic/type-mismatch]: expected bool, found unit
+  primary @295..296
+error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
+  primary @383..385
+error[semantic/type-mismatch]: expected int, found unit
+  primary @384..385

@@ -1,0 +1,22 @@
+tree: see hir.snap
+
+== formatted ==
+// `k` never settles, so `v` has no type of its own: the first demand on
+// it holds, and a later demand that disagrees is what gets blamed.
+// A statement's demand is made at the statement, before the uses after it.
+fn k() = k()
+fn later_use_is_blamed() -> int = {
+    let v = k()
+    v
+    if v {
+        1
+    } else {
+        2
+    }
+}
+fn each_later_use_is_blamed() -> int = {
+    let v = k()
+    v
+    -v
+    0
+}

@@ -869,27 +869,30 @@ parameter is reported even where its guard would end it. Labels name
 the recursive calls and what each does to the parameter that came
 closest.
 
-Shown by [`tests/corpus/semantic/inference-boundaries`](../../../tests/corpus/semantic/inference-boundaries/case.sumi):
+Shown by [`tests/corpus/semantic/an-unresolved-value-meets-its-demands-in-order`](../../../tests/corpus/semantic/an-unresolved-value-meets-its-demands-in-order/case.sumi):
 
 ```sumi
-fn spin(x: int) = spin(x)
-fn consumer() -> int = spin(1)
-fn grounded() = spin(1) + 1
-fn recovered() = grounded()
-fn bad_arguments() = spin(true, missing)
-fn bare() {
-    1
+// `k` never settles, so `v` has no type of its own: the first demand on
+// it holds, and a later demand that disagrees is what gets blamed.
+// A statement's demand is made at the statement, before the uses after it.
+fn k() = k()
+fn later_use_is_blamed() -> int = {
+    let v = k()
+    v
+    if v { 1 } else { 2 }
 }
-fn malformed() -> = {
-    1
+fn each_later_use_is_blamed() -> int = {
+    let v = k()
+    v
+    -v
+    0
 }
-fn intact() = true
 ```
 
 ```text
-error[semantic/unbounded-recursion]: recursion in `spin` has no argument that moves toward a bound on every call
-  primary @3..7
-  secondary @18..25: argument passes `x` along
+error[semantic/unbounded-recursion]: recursion in `k` has no argument that moves toward a bound on every call
+  primary @220..221
+  secondary @226..229: no argument is a parameter moved by a constant
 ```
 
 ### `semantic/unsupported`

@@ -17,7 +17,8 @@
 use sumi_syntax::ast::{self, AstNode};
 
 use crate::codes;
-use crate::lower::{self, DemandKind, HeaderResult, Lowered, Source};
+use crate::flows::{Demand, DemandKind};
+use crate::lower::{self, HeaderResult, Lowered, Source};
 use crate::recursion;
 use crate::typing::{Expected, Replay, Typing};
 use crate::{flows, *};
@@ -32,10 +33,9 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     let declared = lower::declare(&mut source, &items);
     let (graph, lowered) = lower::lower(&mut source, &items, &declared);
     let headers = declared.headers;
-    let (mut typing, thresholds) =
-        flows::draw(&graph, &lowered, &headers, |node| source.range(node));
+    let (mut typing, thresholds, demands) = flows::draw(&graph, &lowered, &headers);
     typing.solve(&thresholds);
-    let failed = replay(&mut source, &typing, &lowered);
+    let failed = replay(&mut source, &typing, &demands, headers.len());
     let mut functions: Vec<Function> = headers
         .iter()
         .map(|header| Function {
@@ -84,12 +84,17 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     analysis
 }
 
-/// Every demand checked in the order the walk made it, against the
-/// evidence it left: which functions failed one.
-fn replay(source: &mut Source<'_>, typing: &Typing, lowered: &Lowered) -> Vec<bool> {
+/// Every demand checked in node order, against the evidence the solve
+/// left: which of the `functions` failed one.
+fn replay(
+    source: &mut Source<'_>,
+    typing: &Typing,
+    demands: &[Demand],
+    functions: usize,
+) -> Vec<bool> {
     let mut replay = typing.replay();
-    let mut failed = vec![false; lowered.built.len()];
-    for demand in &lowered.demands {
+    let mut failed = vec![false; functions];
+    for demand in demands {
         if !holds(source, typing, &mut replay, demand) {
             failed[demand.owner as usize] = true;
         }
@@ -99,12 +104,7 @@ fn replay(source: &mut Source<'_>, typing: &Typing, lowered: &Lowered) -> Vec<bo
 
 /// Whether `demand` holds of the evidence so far, which it joins when it
 /// does; reported where it was made when it does not.
-fn holds(
-    source: &mut Source<'_>,
-    typing: &Typing,
-    replay: &mut Replay,
-    demand: &lower::Demand,
-) -> bool {
+fn holds(source: &mut Source<'_>, typing: &Typing, replay: &mut Replay, demand: &Demand) -> bool {
     let actual_class = demand.actual;
     let actual = replay.resolve(actual_class);
     match demand.kind {
@@ -115,8 +115,8 @@ fn holds(
             };
             match (actual, expected_ty) {
                 (Some(actual), Some(expected)) if actual != expected => {
-                    let related = declared.map(|node| (source.range(node), "declared here"));
-                    source.type_mismatch(demand.node, expected, actual, related);
+                    let related = declared.map(|at| (at, "declared here"));
+                    source.type_mismatch(demand.at, expected, actual, related);
                 }
                 _ => {
                     replay.expect(actual_class, expected);
@@ -125,11 +125,11 @@ fn holds(
             }
         }
         DemandKind::Unused => match actual {
-            Some(ty) if ty != Ty::Unit => source.error(
-                demand.node,
+            Some(ty) if ty != Ty::Unit => source.report(
+                demand.at,
                 codes::UNUSED_VALUE,
                 format!("unused value of type {ty}; use `_ =` to discard it"),
-                None,
+                [],
             ),
             _ => {
                 replay.expect(actual_class, Expected::Ty(Ty::Unit));
@@ -140,11 +140,11 @@ fn holds(
             if actual != Some(Ty::Unit) {
                 return true;
             }
-            source.error(
-                demand.node,
+            source.report(
+                demand.at,
                 codes::TYPE_MISMATCH,
                 "unit values cannot be compared",
-                None,
+                [],
             );
         }
         // Each branch delivers what it is so far, and only that: a
@@ -160,7 +160,7 @@ fn holds(
                 return true;
             }
             source.conflict(
-                demand.node,
+                demand.at,
                 codes::TYPE_MISMATCH,
                 typing,
                 &evidence.claims(),
@@ -201,7 +201,7 @@ fn signatures(
         {
             if evidence.is_conflict() {
                 source.conflict(
-                    header.item,
+                    source.range(header.item),
                     codes::CANNOT_INFER,
                     typing,
                     &evidence.claims(),
@@ -242,7 +242,7 @@ fn divisions(
         } else {
             "divisor may be zero"
         };
-        let labels = explain_zero(source, graph, typing, lowered, obligation.divisor);
+        let labels = explain_zero(graph, typing, lowered, obligation.divisor);
         source.report(
             source.range(obligation.node),
             codes::DIVISION_BY_ZERO,
@@ -257,7 +257,6 @@ fn divisions(
 /// arguments that pass a value along until a literal or an operator
 /// produced it.
 fn explain_zero(
-    source: &Source<'_>,
     graph: &Graph,
     typing: &Typing,
     lowered: &Lowered,
@@ -338,9 +337,8 @@ fn explain_zero(
                     let arg = graph.inputs(call.node)[index as usize];
                     let delivered = typing.may(arg);
                     if delivered.ints.contains_zero() {
-                        let written = lowered.arguments(call)[index as usize];
                         labels.push((
-                            source.range(written),
+                            graph.reads(call.node)[index as usize],
                             format!("argument {}", describe(&delivered.ints, "")).into(),
                         ));
                     }
@@ -348,6 +346,7 @@ fn explain_zero(
             }
             Op::Bool(_)
             | Op::Unit
+            | Op::Unused
             | Op::Hole
             | Op::Not
             | Op::And { .. }
@@ -406,7 +405,8 @@ fn complete(
         }
         let run = graph.run(FunctionId::new(index));
         let complete = run.nodes().all(|node| match graph.node(node).op {
-            Op::Entry | Op::Then | Op::Else => true,
+            // No value, so nothing to resolve.
+            Op::Entry | Op::Then | Op::Else | Op::Unused => true,
             Op::Call(callee) => functions[callee.index()]
                 .signature
                 .as_ref()

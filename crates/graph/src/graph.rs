@@ -6,7 +6,8 @@
 //! parameters first; a region's nodes are a run inside its function's,
 //! with the regions of its branches nested inside. A read of a local is
 //! not a node but an edge to the local's definition, or to the narrowed
-//! definition a guard gives it inside a branch. What could not be built is
+//! definition a guard gives it inside a branch; every edge says where the
+//! read is written, as every node says where it is. What could not be built is
 //! a hole over whatever was built beneath it, so every function has a
 //! result and every construct a node, and a rejected file is as complete
 //! a graph as an accepted one.
@@ -157,6 +158,10 @@ pub enum Op {
     },
     /// A read of a boolean local narrowed to one value.
     Exactly(bool),
+    /// An expression statement: the input's value goes unused, so it must
+    /// be unit, or be discarded with `_ =`, which reads the value without
+    /// a node. Like a context, the statement is no value itself.
+    Unused,
     /// A function's entry context: live when the function can run.
     Entry,
     /// A branch's context: live when the first input, a condition, may be
@@ -169,7 +174,10 @@ pub enum Op {
         then: RegionId,
         else_: Option<RegionId>,
     },
-    /// A call: the inputs are its arguments.
+    /// A call: the inputs are its arguments as written, which may be
+    /// fewer or more than the callee's parameters, or read a hole; such a
+    /// call is no value, though each argument is still held to its
+    /// parameter.
     Call(FunctionId),
 }
 
@@ -209,6 +217,8 @@ impl Region {
 pub struct Graph {
     nodes: Vec<Node>,
     inputs: Vec<NodeId>,
+    /// Where each input is read, beside it.
+    reads: Vec<TextRange>,
     regions: Vec<Region>,
     runs: Vec<Run>,
 }
@@ -220,6 +230,7 @@ impl Graph {
         Self {
             nodes: Vec::with_capacity(nodes),
             inputs: Vec::with_capacity(nodes),
+            reads: Vec::with_capacity(nodes),
             regions: Vec::new(),
             runs: Vec::new(),
         }
@@ -263,22 +274,35 @@ impl Graph {
         &self.inputs[node.inputs.start as usize..node.inputs.end as usize]
     }
 
+    /// Where `id` reads each of its inputs, in operand order: the operand
+    /// as written, which for a read of a local is the read, not the
+    /// definition it is an edge to.
+    pub fn reads(&self, id: NodeId) -> &[TextRange] {
+        let node = &self.nodes[id.index()];
+        &self.reads[node.inputs.start as usize..node.inputs.end as usize]
+    }
+
     /// The next node's ID: where a run starts.
     pub fn next(&self) -> NodeId {
         NodeId::new(self.nodes.len())
     }
 
-    /// A node computing `op` from `inputs`, which must be nodes of this
-    /// graph, at `origin`, named `name`.
+    /// A node computing `op` from `inputs`, each a node of this graph and
+    /// where it is read, at `origin`, named `name`.
     pub fn push(
         &mut self,
         op: Op,
-        inputs: &[NodeId],
+        inputs: &[(NodeId, TextRange)],
         origin: TextRange,
         name: Option<TextRange>,
     ) -> NodeId {
         let start = u32::try_from(self.inputs.len()).expect("input count fits u32");
-        self.inputs.extend_from_slice(inputs);
+        self.inputs.reserve(inputs.len());
+        self.reads.reserve(inputs.len());
+        for &(input, read) in inputs {
+            self.inputs.push(input);
+            self.reads.push(read);
+        }
         let end = u32::try_from(self.inputs.len()).expect("input count fits u32");
         let id = self.next();
         self.nodes.push(Node {
@@ -376,9 +400,14 @@ mod tests {
         let region = graph.open(entry);
         graph.enter(region);
         let one = graph.push(Op::Int(1.into()), &[], at(2), None);
-        let sum = graph.push(Op::Binary(BinaryOp::Add), &[param, one], at(3), None);
+        let sum = graph.push(
+            Op::Binary(BinaryOp::Add),
+            &[(param, at(5)), (one, at(2))],
+            at(3),
+            None,
+        );
         graph.close(region, sum);
-        let copy = graph.push(Op::Copy { declared: None }, &[sum], at(4), None);
+        let copy = graph.push(Op::Copy { declared: None }, &[(sum, at(3))], at(4), None);
         graph.close_run(FunctionId::new(0), start, 1, region, copy);
         assert_eq!(graph.nodes().len(), 5);
         let run = graph.run(FunctionId::new(0));
@@ -396,7 +425,9 @@ mod tests {
             [entry, param, one, sum, copy]
         );
         assert_eq!(graph.inputs(sum), [param, one]);
+        assert_eq!(graph.reads(sum), [at(5), at(2)]);
         assert_eq!(graph.inputs(entry), []);
+        assert_eq!(graph.reads(entry), []);
         assert_eq!(graph.node(param).name, Some(at(1)));
         let region = graph.region(region);
         assert_eq!(region.context, entry);
