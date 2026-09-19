@@ -1,56 +1,6 @@
 use std::fmt;
 use std::ops::{BitOr, BitOrAssign};
 
-use sumi_text::TextSize;
-
-use crate::generated::SyntaxKind;
-
-/// A transient scanner result: one lexical atom, classified both ways.
-///
-/// Raw tokens never own source text and carry no absolute position; the
-/// collector tracks offsets while accumulating a [`LexedFile`](crate::LexedFile).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct RawToken {
-    pub(crate) kind: SyntaxKind,
-    pub(crate) raw: RawKind,
-    /// Length in UTF-8 bytes. Always positive; EOF is iterator `None`.
-    pub(crate) len: TextSize,
-    pub(crate) flags: TokenFlags,
-}
-
-/// The shape of a lexical atom, stored beside its [`SyntaxKind`].
-///
-/// Raw kinds are context-free: keywords are [`Ident`](RawKind::Ident)s,
-/// compound operators are sequences of single-character
-/// [`Punct`](RawKind::Punct)s, and malformed tokens keep their intended
-/// kind, with details in [`TokenFlags`] and the file's error list.
-#[repr(u8)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum RawKind {
-    /// A run of spaces and horizontal tabs.
-    HorizontalSpace,
-    /// One `\n`, `\r\n`, or lone `\r` (the latter flagged
-    /// [`LONE_CR`](TokenFlags::LONE_CR)).
-    Newline,
-
-    /// `// ...` up to, not including, the end of the line.
-    LineComment,
-
-    /// An identifier or keyword; also plain `_`.
-    Ident,
-
-    /// A decimal integer literal, including any suffix.
-    Number,
-    /// A `"..."` literal, ended by the line if unterminated.
-    String,
-
-    /// A single ASCII punctuation character.
-    Punct,
-
-    /// Anything not recognized above.
-    Unknown,
-}
-
 /// Properties discovered while scanning a token.
 #[derive(Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct TokenFlags(u16);
@@ -59,19 +9,12 @@ impl TokenFlags {
     pub const EMPTY: Self = Self(0);
     /// The closing delimiter was never found.
     pub const UNTERMINATED: Self = Self(1 << 0);
-    /// A string literal contains at least one `\` escape.
-    pub const HAS_ESCAPE: Self = Self(1 << 1);
-    /// A line break that is a lone `\r` not followed by `\n`.
-    pub const LONE_CR: Self = Self(1 << 2);
-    /// A number literal that breaks a literal rule — a suffix or a leading
-    /// zero — so the collector owes it errors. Unflagged numbers are canonical and
-    /// skip validation entirely.
-    pub const MALFORMED_NUMBER: Self = Self(1 << 3);
+    /// The literal breaks a rule the file's errors state: a suffix or a
+    /// leading zero.
+    pub const MALFORMED_NUMBER: Self = Self(1 << 1);
 
-    const NAMES: [(Self, &'static str); 4] = [
+    const NAMES: [(Self, &'static str); 2] = [
         (Self::UNTERMINATED, "UNTERMINATED"),
-        (Self::HAS_ESCAPE, "HAS_ESCAPE"),
-        (Self::LONE_CR, "LONE_CR"),
         (Self::MALFORMED_NUMBER, "MALFORMED_NUMBER"),
     ];
 

@@ -1,9 +1,9 @@
 //! Property tests: the partition invariants of `lex`, over generated sources
-//! instead of the hand-written corpus in `lex.rs`.
+//! instead of the hand-written cases in `lex.rs`.
 
 use proptest::prelude::*;
 use proptest::test_runner::FileFailurePersistence;
-use sumi_lexer::{RawIdx, RawKind, SyntaxKind, TokenFlags, lex};
+use sumi_lexer::{RawIdx, SyntaxKind, TokenFlags, lex};
 
 /// Fragments beyond every keyword and punctuation text of the language that
 /// each lex to exactly one token on their own, stay terminated, and do not
@@ -83,12 +83,16 @@ fn soup() -> impl Strategy<Value = String> {
     proptest::collection::vec(fragment(), 0..64).prop_map(|fragments| fragments.concat())
 }
 
+/// Number-shaped sources: digits, the separator, the point, an exponent,
+/// a sign, a suffix, and a hex digit, concatenated in every order, so the
+/// pathological literals the malformed flag is held to are sampled densely
+/// rather than by chance in [`soup`].
 fn number_soup() -> impl Strategy<Value = String> {
     const PIECES: &[&str] = &[
         "0", "1", "9", "123", "_", ".", "e", "-", "5", "u32", "x", " ",
     ];
     proptest::collection::vec(prop::sample::select(PIECES).prop_map(str::to_owned), 1..12)
-        .prop_map(|fragments| fragments.concat())
+        .prop_map(|pieces| pieces.concat())
 }
 
 /// Records every failing seed in the crate's tracked `proptest-regressions/`
@@ -109,7 +113,7 @@ fn config() -> ProptestConfig {
 proptest! {
     #![proptest_config(config())]
     #[test]
-    fn lex_is_total_and_partitions(source in soup()) {
+    fn lex_is_total_and_partitions(source in prop_oneof![soup(), number_soup()]) {
         let file = lex(&source).expect("generated sources fit in u32");
         prop_assert_eq!(file.source_len().to_usize(), source.len());
 
@@ -145,36 +149,25 @@ proptest! {
         }
 
         for index in file.indices() {
+            let has_error = file.errors().iter().any(|error| error.token == index);
             if file.kind(index) == SyntaxKind::Error {
-                prop_assert!(
-                    file.errors().iter().any(|error| error.token == index),
-                    "error token {:?} has no lexical error", index
+                prop_assert!(has_error, "error token {:?} has no lexical error", index);
+            }
+            // The flag hir reads before parsing a literal states exactly what
+            // the errors state.
+            if file.kind(index) == SyntaxKind::IntLiteral {
+                prop_assert_eq!(
+                    file.flags(index).contains(TokenFlags::MALFORMED_NUMBER), has_error,
+                    "literal {:?} disagrees with its errors about being malformed", index
                 );
             }
             // Only a line break spans lines.
             if file.text(&source, index).contains(['\n', '\r']) {
-                prop_assert!(
-                    file.raw_kind(index) == RawKind::Newline,
+                prop_assert_eq!(
+                    file.kind(index), SyntaxKind::Newline,
                     "token {:?} crosses a line break", index
                 );
             }
-        }
-    }
-
-    #[test]
-    fn the_number_scan_and_validation_agree(source in number_soup()) {
-        let file = lex(&source).expect("generated sources fit in u32");
-        for index in file.indices() {
-            if file.raw_kind(index) != RawKind::Number {
-                continue;
-            }
-            let flagged = file.flags(index).contains(TokenFlags::MALFORMED_NUMBER);
-            let has_error = file.errors().iter().any(|error| error.token == index);
-            prop_assert_eq!(
-                flagged, has_error,
-                "number {:?} flagged={} but has-error={}",
-                file.text(&source, index), flagged, has_error
-            );
         }
     }
 
@@ -189,7 +182,7 @@ proptest! {
         let file = lex(&source).expect("generated sources fit in u32");
 
         let tokens: Vec<&str> = file.indices()
-            .filter(|&index| file.raw_kind(index) != RawKind::HorizontalSpace)
+            .filter(|&index| file.kind(index) != SyntaxKind::Whitespace)
             .map(|index| file.text(&source, index))
             .collect();
         let expected: Vec<&str> = fragments.iter().map(String::as_str).collect();

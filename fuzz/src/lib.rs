@@ -13,7 +13,7 @@ use std::collections::HashSet;
 
 use sumi_format::{format, rep, reprint};
 use sumi_frontend::{Applicability, FileId, ParsedSource, Place, Severity, codes, parse_source};
-use sumi_lexer::{LexedFile, RawIdx, RawKind, SyntaxKind, TokenFlags, lex};
+use sumi_lexer::{LexedFile, RawIdx, SyntaxKind, lex};
 use sumi_syntax::{
     BRACKET_PAIRS, NodeIdx, NodeKind, Parse, ParseAnchor, ParseEvidence, ParserInput, SigIdx,
     SyntaxTree, parse,
@@ -426,9 +426,8 @@ pub fn check_run(parsed: ParsedSource) {
 
 /// `lex` partitions the source: tokens are nonempty, contiguous, on
 /// character boundaries, and reproduce it byte for byte; every lexical
-/// error sits inside its token; every `Error` token has one; only a line
-/// break spans lines; and a number is flagged malformed exactly when it
-/// has an error.
+/// error sits inside its token; every `Error` token has one; and only a
+/// line break spans lines.
 pub fn check_lexed(source: &str, file: &LexedFile) {
     assert_eq!(file.source_len().to_usize(), source.len());
 
@@ -444,8 +443,9 @@ pub fn check_lexed(source: &str, file: &LexedFile) {
 
         let text = file.text(source, index);
         if text.contains(['\n', '\r']) {
-            assert!(
-                matches!(file.raw_kind(index), RawKind::Newline),
+            assert_eq!(
+                file.kind(index),
+                SyntaxKind::Newline,
                 "token {index:?} crosses a line break"
             );
         }
@@ -453,14 +453,6 @@ pub fn check_lexed(source: &str, file: &LexedFile) {
             assert!(
                 file.errors().iter().any(|error| error.token == index),
                 "error token {index:?} has no lexical error"
-            );
-        }
-        if file.raw_kind(index) == RawKind::Number {
-            let flagged = file.flags(index).contains(TokenFlags::MALFORMED_NUMBER);
-            let has_error = file.errors().iter().any(|error| error.token == index);
-            assert_eq!(
-                flagged, has_error,
-                "number {text:?} flagged={flagged} but has-error={has_error}"
             );
         }
     }
@@ -592,7 +584,7 @@ pub fn check_widening(source: &str, lexed: &LexedFile, input: &ParserInput) {
     let mut widened = String::with_capacity(source.len() + lexed.len());
     for index in lexed.indices() {
         widened.push_str(lexed.text(source, index));
-        if lexed.raw_kind(index) == RawKind::HorizontalSpace {
+        if lexed.kind(index) == SyntaxKind::Whitespace {
             widened.push(' ');
         }
     }

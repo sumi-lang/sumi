@@ -1,3 +1,6 @@
+//! The tokens of hand-written sources: kinds, ranges, flags, and the
+//! errors of the tokens that have them.
+
 use sumi_lexer::{LexError, LexErrorKind, RawIdx, lex};
 use sumi_text::{TextRange, TextSize};
 
@@ -9,46 +12,17 @@ fn error(token: u32, start: u32, end: u32, kind: LexErrorKind) -> LexError {
     }
 }
 
-/// Lex `source`, assert the partition invariants every lex must uphold, and
-/// render one line per token: `RawKind start..end "text"` plus any flags.
+/// Lex `source` and render one line per token: `SyntaxKind start..end
+/// "text"` plus any flags.
 fn dump(source: &str) -> Vec<String> {
     let file = lex(source).expect("test sources fit in u32");
-
-    let mut concatenated = String::new();
-    for index in file.indices() {
-        let range = file.range(index);
-        assert!(range.start() < range.end(), "token {index:?} is empty");
-        assert!(source.is_char_boundary(range.start().to_usize()));
-        assert!(source.is_char_boundary(range.end().to_usize()));
-
-        if index == RawIdx::new(0) {
-            assert_eq!(range.start().to_u32(), 0, "first token must start at 0");
-        } else {
-            assert_eq!(
-                range.start(),
-                file.range(index - 1).end(),
-                "token {index:?} is not contiguous"
-            );
-        }
-
-        concatenated.push_str(file.text(source, index));
-    }
-    assert_eq!(concatenated, source, "tokens must reproduce the source");
-
-    if let Some(last) = file.end().checked_sub(1) {
-        assert_eq!(file.range(last).end(), file.source_len());
-    }
-    for error in file.errors() {
-        assert!(error.token < file.end());
-    }
-
     file.indices()
         .map(|index| {
             let range = file.range(index);
             let flags = file.flags(index);
             let mut line = format!(
                 "{:?} {}..{} {:?}",
-                file.raw_kind(index),
+                file.kind(index),
                 range.start().to_u32(),
                 range.end().to_u32(),
                 file.text(source, index),
@@ -73,41 +47,154 @@ fn empty_source_has_no_tokens() {
 }
 
 #[test]
-fn keywords_lex_as_plain_idents() {
+fn keywords_classify() {
     check(
         "fn map",
         &[
-            r#"Ident 0..2 "fn""#,
-            r#"HorizontalSpace 2..3 " ""#,
+            r#"FnKw 0..2 "fn""#,
+            r#"Whitespace 2..3 " ""#,
             r#"Ident 3..6 "map""#,
         ],
     );
 }
 
 #[test]
-fn compound_punct_lexes_as_single_chars() {
-    check(
-        "x >>= 2",
-        &[
-            r#"Ident 0..1 "x""#,
-            r#"HorizontalSpace 1..2 " ""#,
-            r#"Punct 2..3 ">""#,
-            r#"Punct 3..4 ">""#,
-            r#"Punct 4..5 "=""#,
-            r#"HorizontalSpace 5..6 " ""#,
-            r#"Number 6..7 "2""#,
+fn every_v0_keyword_classifies() {
+    let source = "else false fn if let mut return true";
+    let lexed = lex(source).unwrap();
+
+    let keyword_kinds: Vec<String> = lexed
+        .indices()
+        .map(|index| format!("{:?}", lexed.kind(index)))
+        .filter(|kind| kind.ends_with("Kw"))
+        .collect();
+    assert_eq!(
+        keyword_kinds,
+        [
+            "ElseKw", "FalseKw", "FnKw", "IfKw", "LetKw", "MutKw", "ReturnKw", "TrueKw",
         ],
     );
 }
 
 #[test]
-fn ascii_punct_lexes_individually() {
+fn near_misses_stay_idents() {
+    check(
+        "fnx Fn lets _if",
+        &[
+            r#"Ident 0..3 "fnx""#,
+            r#"Whitespace 3..4 " ""#,
+            r#"Ident 4..6 "Fn""#,
+            r#"Whitespace 6..7 " ""#,
+            r#"Ident 7..11 "lets""#,
+            r#"Whitespace 11..12 " ""#,
+            r#"Ident 12..15 "_if""#,
+        ],
+    );
+}
+
+#[test]
+fn keywords_inside_strings_and_comments_stay_put() {
+    check(
+        "\"fn\" // let\n",
+        &[
+            r#"StringLiteral 0..4 "\"fn\"""#,
+            r#"Whitespace 4..5 " ""#,
+            r#"LineComment 5..11 "// let""#,
+            r#"Newline 11..12 "\n""#,
+        ],
+    );
+}
+
+#[test]
+fn a_lone_underscore_is_its_own_kind() {
+    check(
+        "_ _x",
+        &[
+            r#"Underscore 0..1 "_""#,
+            r#"Whitespace 1..2 " ""#,
+            r#"Ident 2..4 "_x""#,
+        ],
+    );
+}
+
+#[test]
+fn punct_stays_split_until_the_parser_glues() {
+    check(
+        "x >>= 2",
+        &[
+            r#"Ident 0..1 "x""#,
+            r#"Whitespace 1..2 " ""#,
+            r#"Gt 2..3 ">""#,
+            r#"Gt 3..4 ">""#,
+            r#"Eq 4..5 "=""#,
+            r#"Whitespace 5..6 " ""#,
+            r#"IntLiteral 6..7 "2""#,
+        ],
+    );
+}
+
+#[test]
+fn punctuation_classifies_per_character() {
+    let source = "( ) { } , : . = < > ! + - * / % & |";
+    let lexed = lex(source).unwrap();
+
+    let kinds: Vec<String> = lexed
+        .indices()
+        .map(|index| format!("{:?}", lexed.kind(index)))
+        .filter(|kind| kind != "Whitespace")
+        .collect();
+    assert_eq!(
+        kinds,
+        [
+            "LParen", "RParen", "LBrace", "RBrace", "Comma", "Colon", "Dot", "Eq", "Lt", "Gt",
+            "Bang", "Plus", "Minus", "Star", "Slash", "Percent", "Amp", "Pipe",
+        ],
+    );
+}
+
+#[test]
+fn unused_punctuation_is_an_error_token() {
+    // Reported here, so every later phase can treat an `Error` token as
+    // already diagnosed.
     check(
         "(;)",
         &[
-            r#"Punct 0..1 "(""#,
-            r#"Punct 1..2 ";""#,
-            r#"Punct 2..3 ")""#,
+            r#"LParen 0..1 "(""#,
+            r#"Error 1..2 ";""#,
+            r#"RParen 2..3 ")""#,
+        ],
+    );
+    check("[", &[r#"Error 0..1 "[""#]);
+    assert_eq!(
+        lex("(;)").unwrap().errors(),
+        &[error(1, 1, 2, LexErrorKind::UnknownPunctuation)],
+    );
+}
+
+#[test]
+fn slash_star_is_just_punctuation() {
+    // Sumi has line comments only; there is no block-comment syntax.
+    check(
+        "/* x",
+        &[
+            r#"Slash 0..1 "/""#,
+            r#"Star 1..2 "*""#,
+            r#"Whitespace 2..3 " ""#,
+            r#"Ident 3..4 "x""#,
+        ],
+    );
+}
+
+#[test]
+fn r_without_quote_is_an_ident() {
+    check("r", &[r#"Ident 0..1 "r""#]);
+    check("raw", &[r#"Ident 0..3 "raw""#]);
+    check(
+        "r#x",
+        &[
+            r#"Ident 0..1 "r""#,
+            r##"Error 1..2 "#""##,
+            r#"Ident 2..3 "x""#,
         ],
     );
 }
@@ -116,78 +203,7 @@ fn ascii_punct_lexes_individually() {
 fn horizontal_space_lexes_as_one_run() {
     check(
         "  \t x",
-        &[r#"HorizontalSpace 0..4 "  \t ""#, r#"Ident 4..5 "x""#],
-    );
-}
-
-#[test]
-fn underscore_starts_idents() {
-    check(
-        "_ _x",
-        &[
-            r#"Ident 0..1 "_""#,
-            r#"HorizontalSpace 1..2 " ""#,
-            r#"Ident 2..4 "_x""#,
-        ],
-    );
-}
-
-#[test]
-fn identifiers_are_ascii() {
-    // A non-ASCII letter is no part of a name: it lexes alone, as any
-    // character without a role does.
-    check(
-        "Δx aé",
-        &[
-            r#"Unknown 0..2 "Δ""#,
-            r#"Ident 2..3 "x""#,
-            r#"HorizontalSpace 3..4 " ""#,
-            r#"Ident 4..5 "a""#,
-            r#"Unknown 5..7 "é""#,
-        ],
-    );
-    assert_eq!(
-        lex("Δx aé").unwrap().errors(),
-        &[
-            error(0, 0, 2, LexErrorKind::UnknownCharacter),
-            error(4, 5, 7, LexErrorKind::UnknownCharacter),
-        ],
-    );
-}
-
-#[test]
-fn non_ascii_non_ident_is_unknown() {
-    check(
-        "a€b",
-        &[
-            r#"Ident 0..1 "a""#,
-            r#"Unknown 1..4 "€""#,
-            r#"Ident 4..5 "b""#,
-        ],
-    );
-    assert_eq!(
-        lex("a€b").unwrap().errors(),
-        &[error(1, 1, 4, LexErrorKind::UnknownCharacter)],
-    );
-}
-
-#[test]
-fn control_chars_are_unknown() {
-    check("\u{1}", &[r#"Unknown 0..1 "\u{1}""#]);
-    assert_eq!(
-        lex("\u{1}").unwrap().errors(),
-        &[error(0, 0, 1, LexErrorKind::UnknownCharacter)],
-    );
-}
-
-#[test]
-fn a_byte_order_mark_is_an_unknown_character() {
-    // Even at byte zero: a source is UTF-8 without a signature.
-    let source = "\u{feff}x";
-    check(source, &[r#"Unknown 0..3 "\u{feff}""#, r#"Ident 3..4 "x""#]);
-    assert_eq!(
-        lex(source).unwrap().errors(),
-        &[error(0, 0, 3, LexErrorKind::UnknownCharacter)],
+        &[r#"Whitespace 0..4 "  \t ""#, r#"Ident 4..5 "x""#],
     );
 }
 
@@ -212,7 +228,7 @@ fn consecutive_newlines_stay_separate() {
 
 #[test]
 fn lone_carriage_return_is_an_error() {
-    check("\r", &[r#"Newline 0..1 "\r" TokenFlags(LONE_CR)"#]);
+    check("\r", &[r#"Newline 0..1 "\r""#]);
     assert_eq!(
         lex("\r").unwrap().errors(),
         &[error(0, 0, 1, LexErrorKind::LoneCarriageReturn)],
@@ -222,11 +238,13 @@ fn lone_carriage_return_is_an_error() {
 #[test]
 fn line_comments_end_at_newline() {
     check(
-        "// c\nx",
+        "a // c\nb",
         &[
-            r#"LineComment 0..4 "// c""#,
-            r#"Newline 4..5 "\n""#,
-            r#"Ident 5..6 "x""#,
+            r#"Ident 0..1 "a""#,
+            r#"Whitespace 1..2 " ""#,
+            r#"LineComment 2..6 "// c""#,
+            r#"Newline 6..7 "\n""#,
+            r#"Ident 7..8 "b""#,
         ],
     );
 }
@@ -240,27 +258,58 @@ fn line_comments_have_no_flavors() {
 }
 
 #[test]
-fn slash_star_is_just_punctuation() {
-    // Sumi has line comments only; there is no block-comment syntax.
+fn identifiers_are_ascii() {
+    // A non-ASCII letter is no part of a name: it lexes alone, as any
+    // character without a role does.
     check(
-        "/* x",
+        "Δx aé",
         &[
-            r#"Punct 0..1 "/""#,
-            r#"Punct 1..2 "*""#,
-            r#"HorizontalSpace 2..3 " ""#,
-            r#"Ident 3..4 "x""#,
+            r#"Error 0..2 "Δ""#,
+            r#"Ident 2..3 "x""#,
+            r#"Whitespace 3..4 " ""#,
+            r#"Ident 4..5 "a""#,
+            r#"Error 5..7 "é""#,
+        ],
+    );
+    assert_eq!(
+        lex("Δx aé").unwrap().errors(),
+        &[
+            error(0, 0, 2, LexErrorKind::UnknownCharacter),
+            error(4, 5, 7, LexErrorKind::UnknownCharacter),
         ],
     );
 }
 
 #[test]
-fn integer_shapes() {
+fn control_chars_are_unknown() {
+    check("\u{1}", &[r#"Error 0..1 "\u{1}""#]);
+    assert_eq!(
+        lex("\u{1}").unwrap().errors(),
+        &[error(0, 0, 1, LexErrorKind::UnknownCharacter)],
+    );
+}
+
+#[test]
+fn a_byte_order_mark_is_an_unknown_character() {
+    // Even at byte zero: a source is UTF-8 without a signature.
+    let source = "\u{feff}x";
+    check(source, &[r#"Error 0..3 "\u{feff}""#, r#"Ident 3..4 "x""#]);
+    assert_eq!(
+        lex(source).unwrap().errors(),
+        &[error(0, 0, 3, LexErrorKind::UnknownCharacter)],
+    );
+}
+
+#[test]
+fn literal_kinds() {
     check(
-        "0 123",
+        r#"0 123 "s""#,
         &[
-            r#"Number 0..1 "0""#,
-            r#"HorizontalSpace 1..2 " ""#,
-            r#"Number 2..5 "123""#,
+            r#"IntLiteral 0..1 "0""#,
+            r#"Whitespace 1..2 " ""#,
+            r#"IntLiteral 2..5 "123""#,
+            r#"Whitespace 5..6 " ""#,
+            r#"StringLiteral 6..9 "\"s\"""#,
         ],
     );
 }
@@ -270,46 +319,46 @@ fn a_dot_never_continues_a_number() {
     check(
         "1.5",
         &[
-            r#"Number 0..1 "1""#,
-            r#"Punct 1..2 ".""#,
-            r#"Number 2..3 "5""#,
+            r#"IntLiteral 0..1 "1""#,
+            r#"Dot 1..2 ".""#,
+            r#"IntLiteral 2..3 "5""#,
         ],
     );
     check(
         "1.foo",
         &[
-            r#"Number 0..1 "1""#,
-            r#"Punct 1..2 ".""#,
+            r#"IntLiteral 0..1 "1""#,
+            r#"Dot 1..2 ".""#,
             r#"Ident 2..5 "foo""#,
         ],
     );
-    check("1.", &[r#"Number 0..1 "1""#, r#"Punct 1..2 ".""#]);
+    check("1.", &[r#"IntLiteral 0..1 "1""#, r#"Dot 1..2 ".""#]);
 }
 
 #[test]
 fn number_suffixes_attach() {
     check(
         "1u32",
-        &[r#"Number 0..4 "1u32" TokenFlags(MALFORMED_NUMBER)"#],
+        &[r#"IntLiteral 0..4 "1u32" TokenFlags(MALFORMED_NUMBER)"#],
     );
     // Separators and exponents are suffixes too: `_` and `e` continue an
     // identifier, and there are no floats.
     check(
         "1_000",
-        &[r#"Number 0..5 "1_000" TokenFlags(MALFORMED_NUMBER)"#],
+        &[r#"IntLiteral 0..5 "1_000" TokenFlags(MALFORMED_NUMBER)"#],
     );
     check(
         "1e-5",
         &[
-            r#"Number 0..2 "1e" TokenFlags(MALFORMED_NUMBER)"#,
-            r#"Punct 2..3 "-""#,
-            r#"Number 3..4 "5""#,
+            r#"IntLiteral 0..2 "1e" TokenFlags(MALFORMED_NUMBER)"#,
+            r#"Minus 2..3 "-""#,
+            r#"IntLiteral 3..4 "5""#,
         ],
     );
     // With no base prefixes in the language, `x1F` is just a suffix.
     check(
         "0x1F",
-        &[r#"Number 0..4 "0x1F" TokenFlags(MALFORMED_NUMBER)"#],
+        &[r#"IntLiteral 0..4 "0x1F" TokenFlags(MALFORMED_NUMBER)"#],
     );
     assert_eq!(
         lex("0x1F").unwrap().errors(),
@@ -318,8 +367,20 @@ fn number_suffixes_attach() {
 }
 
 #[test]
-fn string_shapes() {
-    check(r#""abc""#, &[r#"String 0..5 "\"abc\"""#]);
+fn an_escaped_quote_never_closes() {
+    check(r#""a\"b""#, &[r#"StringLiteral 0..6 "\"a\\\"b\"""#]);
+}
+
+#[test]
+fn unterminated_string() {
+    check(
+        "\"ab",
+        &[r#"StringLiteral 0..3 "\"ab" TokenFlags(UNTERMINATED)"#],
+    );
+    assert_eq!(
+        lex("\"ab").unwrap().errors(),
+        &[error(0, 0, 3, LexErrorKind::UnterminatedString)],
+    );
 }
 
 #[test]
@@ -329,10 +390,10 @@ fn line_literals_end_at_the_line() {
     check(
         "\"a\nb\"",
         &[
-            r#"String 0..2 "\"a" TokenFlags(UNTERMINATED)"#,
+            r#"StringLiteral 0..2 "\"a" TokenFlags(UNTERMINATED)"#,
             r#"Newline 2..3 "\n""#,
             r#"Ident 3..4 "b""#,
-            r#"String 4..5 "\"" TokenFlags(UNTERMINATED)"#,
+            r#"StringLiteral 4..5 "\"" TokenFlags(UNTERMINATED)"#,
         ],
     );
     assert_eq!(
@@ -345,52 +406,9 @@ fn line_literals_end_at_the_line() {
     check(
         "\"a\\\nb",
         &[
-            r#"String 0..3 "\"a\\" TokenFlags(UNTERMINATED | HAS_ESCAPE)"#,
+            r#"StringLiteral 0..3 "\"a\\" TokenFlags(UNTERMINATED)"#,
             r#"Newline 3..4 "\n""#,
             r#"Ident 4..5 "b""#,
         ],
     );
-}
-
-#[test]
-fn string_escapes_are_flagged() {
-    check(
-        r#""a\"b""#,
-        &[r#"String 0..6 "\"a\\\"b\"" TokenFlags(HAS_ESCAPE)"#],
-    );
-}
-
-#[test]
-fn unterminated_string() {
-    check("\"ab", &[r#"String 0..3 "\"ab" TokenFlags(UNTERMINATED)"#]);
-    assert_eq!(
-        lex("\"ab").unwrap().errors(),
-        &[error(0, 0, 3, LexErrorKind::UnterminatedString)],
-    );
-}
-
-#[test]
-fn r_without_quote_is_an_ident() {
-    check("r", &[r#"Ident 0..1 "r""#]);
-    check("raw", &[r#"Ident 0..3 "raw""#]);
-    check(
-        "r#x",
-        &[
-            r#"Ident 0..1 "r""#,
-            r##"Punct 1..2 "#""##,
-            r#"Ident 2..3 "x""#,
-        ],
-    );
-}
-
-#[test]
-fn clean_source_has_no_errors() {
-    let source = "fn main() {\n    x >>= 2\n}\n";
-    assert_eq!(lex(source).unwrap().errors(), &[]);
-}
-
-#[test]
-fn partition_smoke() {
-    let source = "fn main() {\r\n\tlet s = \"raw\"; // trailing\n\t\"str\" 25 0xFF\n}\n";
-    dump(source);
 }

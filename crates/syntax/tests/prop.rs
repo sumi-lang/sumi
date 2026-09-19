@@ -8,7 +8,7 @@ use std::collections::HashSet;
 
 use proptest::prelude::*;
 use proptest::test_runner::FileFailurePersistence;
-use sumi_lexer::{LexedFile, RawKind, lex};
+use sumi_lexer::{LexedFile, lex};
 use sumi_syntax::{
     BRACKET_PAIRS, NodeIdx, NodeKind, ParseAnchor, ParseEvidence, ParserInput, RawIdx, SigIdx,
     SyntaxKind, SyntaxTree, parse,
@@ -234,7 +234,7 @@ proptest! {
         let mut widened = String::new();
         for index in lexed.indices() {
             widened.push_str(lexed.text(&source, index));
-            if lexed.raw_kind(index) == RawKind::HorizontalSpace {
+            if lexed.kind(index) == SyntaxKind::Whitespace {
                 widened.push(' ');
             }
         }

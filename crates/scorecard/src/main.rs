@@ -29,7 +29,7 @@
 
 use std::collections::HashSet;
 
-use sumi_lexer::{LexedFile, RawKind};
+use sumi_lexer::LexedFile;
 use sumi_syntax::{
     NodeIdx, NodeKind, ParseEvidence, ParserInput, RawIdx, SigIdx, SyntaxKind, is_bracket,
 };
@@ -500,7 +500,7 @@ impl LiteralClass {
 }
 
 fn is_literal(lexed: &LexedFile, index: RawIdx) -> bool {
-    lexed.raw_kind(index) == RawKind::String
+    lexed.kind(index) == SyntaxKind::StringLiteral
 }
 
 const LITERAL_CLASSES: [LiteralClass; 2] = [
