@@ -24,7 +24,7 @@ pub enum PrefixOp {
 }
 
 impl PrefixOp {
-    pub fn token(self) -> Fixed {
+    pub const fn token(self) -> Fixed {
         match self {
             Self::Neg => Fixed::Minus,
             Self::Not => Fixed::Bang,
@@ -32,14 +32,23 @@ impl PrefixOp {
     }
 }
 
+/// Per token kind, the prefix operator it is.
+const PREFIX_BY_KIND: [Option<PrefixOp>; SyntaxKind::ALL.len()] = {
+    let mut table = [None; SyntaxKind::ALL.len()];
+    let mut index = 0;
+    while index < PrefixOp::ALL.len() {
+        let op = PrefixOp::ALL[index];
+        table[op.token().kind() as usize] = Some(op);
+        index += 1;
+    }
+    table
+};
+
 impl TokenField for PrefixOp {
     const ALL: &[Self] = &[Self::Neg, Self::Not];
 
     fn read(first: SyntaxKind, _: Option<SyntaxKind>) -> Option<(Self, bool)> {
-        Self::ALL
-            .iter()
-            .find(|op| op.token().kind() == first)
-            .map(|&op| (op, false))
+        PREFIX_BY_KIND[first as usize].map(|op| (op, false))
     }
 }
 
@@ -58,7 +67,7 @@ pub enum Literal {
 }
 
 impl Literal {
-    pub fn token(self) -> SyntaxKind {
+    pub const fn token(self) -> SyntaxKind {
         match self {
             Self::Int => T::IntLiteral,
             Self::String => T::StringLiteral,
@@ -68,14 +77,23 @@ impl Literal {
     }
 }
 
+/// Per token kind, the literal it is.
+const LITERAL_BY_KIND: [Option<Literal>; SyntaxKind::ALL.len()] = {
+    let mut table = [None; SyntaxKind::ALL.len()];
+    let mut index = 0;
+    while index < Literal::ALL.len() {
+        let literal = Literal::ALL[index];
+        table[literal.token() as usize] = Some(literal);
+        index += 1;
+    }
+    table
+};
+
 impl TokenField for Literal {
     const ALL: &[Self] = &[Self::Int, Self::String, Self::True, Self::False];
 
     fn read(first: SyntaxKind, _: Option<SyntaxKind>) -> Option<(Self, bool)> {
-        Self::ALL
-            .iter()
-            .find(|literal| literal.token() == first)
-            .map(|&literal| (literal, false))
+        LITERAL_BY_KIND[first as usize].map(|literal| (literal, false))
     }
 }
 
@@ -205,17 +223,15 @@ pub enum BinaryOp {
 }
 
 impl TokenField for BinaryOp {
-    /// A two-token operator precedes the one-token operator that begins it, so a read takes the
-    /// longer.
     const ALL: &[Self] = &[
         Self::Or,
         Self::And,
         Self::Cmp(CmpOp::Eq),
         Self::Cmp(CmpOp::Ne),
-        Self::Cmp(CmpOp::Le),
-        Self::Cmp(CmpOp::Ge),
         Self::Cmp(CmpOp::Lt),
+        Self::Cmp(CmpOp::Le),
         Self::Cmp(CmpOp::Gt),
+        Self::Cmp(CmpOp::Ge),
         Self::Arith(ArithOp::Add),
         Self::Arith(ArithOp::Sub),
         Self::Arith(ArithOp::Mul),
@@ -235,9 +251,24 @@ impl fmt::Display for BinaryOp {
     }
 }
 
+/// Per first token kind, the operator spanning a glued token and the one not.
+const OPERATORS_BY_FIRST: [[Option<BinaryOp>; 2]; SyntaxKind::ALL.len()] = {
+    let mut table = [[None; 2]; SyntaxKind::ALL.len()];
+    let mut index = 0;
+    while index < BinaryOp::ALL.len() {
+        let op = BinaryOp::ALL[index];
+        let (first, glued) = op.tokens();
+        let slot = &mut table[first.kind() as usize][glued.is_none() as usize];
+        assert!(slot.is_none(), "one operator per first token and width");
+        *slot = Some(op);
+        index += 1;
+    }
+    table
+};
+
 impl BinaryOp {
     /// The operator's first token and the one glued after it.
-    pub fn tokens(self) -> (Fixed, Option<Fixed>) {
+    pub const fn tokens(self) -> (Fixed, Option<Fixed>) {
         match self {
             Self::Or => (Fixed::Pipe, Some(Fixed::Pipe)),
             Self::And => (Fixed::Amp, Some(Fixed::Amp)),
@@ -280,11 +311,14 @@ impl BinaryOp {
 /// `glued` is the kind of the token glued after `first`, if any; the `usize` is the operator's
 /// width in tokens.
 pub fn binary_operator(first: SyntaxKind, glued: Option<SyntaxKind>) -> Option<(BinaryOp, usize)> {
-    BinaryOp::ALL.iter().find_map(|&op| {
-        let (at, then) = op.tokens();
-        (at.kind() == first && then.is_none_or(|then| glued == Some(then.kind())))
-            .then(|| (op, 1 + usize::from(then.is_some())))
-    })
+    let [spanning, alone] = OPERATORS_BY_FIRST[first as usize];
+    if let Some(op) = spanning
+        && let (_, Some(second)) = op.tokens()
+        && glued == Some(second.kind())
+    {
+        return Some((op, 2));
+    }
+    alone.map(|op| (op, 1))
 }
 
 #[cfg(test)]

@@ -33,7 +33,7 @@ macro_rules! tokens {
         }
 
         impl Fixed {
-            pub fn kind(self) -> SyntaxKind {
+            pub const fn kind(self) -> SyntaxKind {
                 match self {
                     $(Self::$name => SyntaxKind::$name,)*
                 }
