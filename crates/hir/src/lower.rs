@@ -33,6 +33,7 @@ impl Named {
     }
 }
 
+#[derive(Clone, Copy)]
 pub(crate) struct Header {
     pub name: Option<TextRange>,
     /// `None` when the parameter list is not whole.
@@ -265,6 +266,7 @@ pub(crate) fn declare<'s>(
             }
         }
         let list = item.param_list(tree);
+        let whole_list = list.filter(|list| !tree.has_error(list.node()));
         let mut params: Vec<Parameter> = Vec::new();
         if let Some(list) = list {
             for param in list.params(tree) {
@@ -301,15 +303,13 @@ pub(crate) fn declare<'s>(
         } else {
             // A missing annotation may be damage: only an empty gap or the expression-body `=` says
             // it was left out.
-            let gap = list
-                .filter(|list| !tree.has_error(list.node()))
-                .map(|list| {
-                    let end = item
-                        .body(tree)
-                        .map_or(tree.end_token(item.node()), |e| tree.first_token(e.node()));
-                    let mut tokens = source.tokens(tree.end_token(list.node()), end);
-                    (tokens.next(), tokens.next())
-                });
+            let gap = whole_list.map(|list| {
+                let end = item
+                    .body(tree)
+                    .map_or(tree.end_token(item.node()), |e| tree.first_token(e.node()));
+                let mut tokens = source.tokens(tree.end_token(list.node()), end);
+                (tokens.next(), tokens.next())
+            });
             match gap {
                 Some((None, None)) => HeaderResult::Declared(Ty::Unit, item.node()),
                 Some((Some(SyntaxKind::Eq), None)) => HeaderResult::Inferred,
@@ -317,10 +317,8 @@ pub(crate) fn declare<'s>(
             }
         };
         // A whole list has every parameter typed, a repeated name aside.
-        let types: Option<Box<[Ty]>> = params.iter().map(|p| p.ty).collect();
-        let callee = list
-            .filter(|list| !tree.has_error(list.node()))
-            .and(types)
+        let callee = whole_list
+            .and_then(|_| params.iter().map(|p| p.ty).collect::<Option<Box<[Ty]>>>())
             .map(|types| graph.declare(id, types));
         headers.push(Header {
             name: name.map(|(_, node)| source.range(node)),
@@ -1247,9 +1245,9 @@ impl<'a, 's> Builder<'a, 's> {
             inputs.push(self.input(arg.node()));
         }
         if let Some((_, function, id)) = callee
-            && count != self.graph.callable(id).params.len()
+            && let arity = self.graph.callable(id).params.len()
+            && count != arity
         {
-            let arity = self.graph.callable(id).params.len();
             self.source.error(
                 node,
                 codes::ARITY,

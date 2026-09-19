@@ -43,7 +43,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         &graph,
         &typing,
         &lowered,
-        headers,
+        &headers,
         &failed,
         &mut functions,
     );
@@ -158,11 +158,11 @@ fn signatures(
     graph: &Graph,
     typing: &Typing,
     lowered: &Lowered,
-    headers: Vec<lower::Header>,
+    headers: &[lower::Header],
     failed: &[bool],
     functions: &mut [Function],
 ) {
-    for (index, header) in headers.into_iter().enumerate() {
+    for (index, header) in headers.iter().enumerate() {
         let run = graph.run(FunctionId::new(index));
         let evidence =
             (!matches!(header.result, HeaderResult::None)).then(|| *typing.evidence(run.result()));

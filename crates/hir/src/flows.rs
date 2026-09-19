@@ -176,8 +176,8 @@ pub(crate) fn draw(
                 Op::Param { ty: Some(ty), .. } => {
                     typing.known(node, *ty, entry.name.unwrap_or(origin));
                 }
-                // An untyped parameter is no value.
-                Op::Param { ty: None, .. } => {}
+                // No value to type.
+                Op::Param { ty: None, .. } | Op::Hole | Op::Unused => {}
                 Op::Entry => {
                     typing.entry(node, header.callee.is_some() && run.params().len() == 0);
                 }
@@ -268,7 +268,6 @@ pub(crate) fn draw(
                 }
                 // Drawn once every run is passed; the callee's run may come later.
                 Op::Call(_) => {}
-                Op::Hole | Op::Unused => unreachable!("a hole or a statement is no value"),
             }
             if let Some(value) = folds {
                 if seen.insert(value.clone()) {

@@ -766,6 +766,18 @@ fn graph(analysis: &Analysis) {
         }
     }
     typed(analysis);
+    // A callable's parameters are its run's, a repeated name's type kept in the signature alone.
+    for callable in graph.callables() {
+        let run = graph.run(callable.function);
+        assert_eq!(callable.params.len(), run.params().len());
+        for (param, &declared) in run.params().zip(&callable.params) {
+            let Op::Param { index, ty } = graph.node(param).op else {
+                panic!("a run's parameters are parameter nodes")
+            };
+            assert_eq!(callable.params[index as usize], declared);
+            assert!(ty.is_none_or(|ty| ty == declared));
+        }
+    }
     let mut owner = vec![None; graph.nodes().len()];
     assert_eq!(graph.runs().len(), analysis.functions().len());
     for (index, function) in graph.runs().iter().enumerate() {

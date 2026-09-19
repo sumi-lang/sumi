@@ -92,12 +92,13 @@ impl std::fmt::Debug for RegionId {
     }
 }
 
-/// A function a call may be held to: one with a whole parameter list.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+/// A function a call may be held to: one with a whole parameter list. An ID from one graph names
+/// nothing in another.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Callee(u32);
 
 impl Callee {
-    pub fn index(self) -> usize {
+    fn index(self) -> usize {
         self.0 as usize
     }
 }
@@ -212,6 +213,12 @@ impl Graph {
         &self.callables[callee.index()]
     }
 
+    /// In declaration order.
+    pub fn callables(&self) -> &[Callable] {
+        &self.callables
+    }
+
+    /// `params` is `function`'s whole parameter list, one type per parameter node of its run.
     pub fn declare(&mut self, function: FunctionId, params: Box<[Ty]>) -> Callee {
         let callee = Callee(u32::try_from(self.callables.len()).expect("function count fits u32"));
         self.callables.push(Callable { function, params });
