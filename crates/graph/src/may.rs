@@ -2,10 +2,11 @@
 //! Reachability is no separate bit: a node with every set empty is unreachable.
 
 use std::cmp::{Ordering, max, min};
+use std::convert::Infallible;
 use std::fmt;
 use std::ops::{Add, BitAnd, Div, Mul, Neg, Rem, Sub};
 
-use crate::{BinaryOp, Domain, Fault, Int, Ty};
+use crate::{BinaryOp, Domain, Int, Ty};
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Bound {
@@ -671,6 +672,8 @@ impl Thresholds {
 /// Every operator over-approximates the concrete one on every member of its operands, and none
 /// faults.
 impl Domain for May {
+    type Fault = Infallible;
+
     #[inline]
     fn int(value: &Int) -> Self {
         Self::ints(Ints::from(value.clone()))
@@ -687,17 +690,17 @@ impl Domain for May {
     }
 
     #[inline]
-    fn neg(&self) -> Result<Self, Fault> {
+    fn neg(&self) -> Result<Self, Infallible> {
         Ok(Self::ints(-&self.ints))
     }
 
     #[inline]
-    fn not(&self) -> Result<Self, Fault> {
+    fn not(&self) -> Result<Self, Infallible> {
         Ok(Self::bools(!self.bools))
     }
 
     #[inline]
-    fn binary(op: BinaryOp, lhs: &Self, rhs: &Self) -> Result<Self, Fault> {
+    fn binary(op: BinaryOp, lhs: &Self, rhs: &Self) -> Result<Self, Infallible> {
         Ok(match op {
             BinaryOp::Add => Self::ints(&lhs.ints + &rhs.ints),
             BinaryOp::Sub => Self::ints(&lhs.ints - &rhs.ints),
@@ -721,7 +724,7 @@ impl Domain for May {
     }
 
     #[inline]
-    fn lazy(and: bool, lhs: &Self, rhs: &Self) -> Result<Self, Fault> {
+    fn lazy(and: bool, lhs: &Self, rhs: &Self) -> Result<Self, Infallible> {
         Ok(Self::bools(if and {
             lhs.bools.and(rhs.bools)
         } else {
@@ -1108,7 +1111,7 @@ mod tests {
                             Op::Neg | Op::Not | Op::Exactly(_) => 1,
                             _ => 2,
                         };
-                        let may = op.apply::<May>(&[&set_a, &set_b][..arity]).expect("the may-domain is total");
+                        let Ok(may) = op.apply::<May>(&[&set_a, &set_b][..arity]);
                         if let Ok(value) = op.apply::<Value>(&[&x, &y][..arity])
                             && reached(op, &x, &y)
                         {
@@ -1116,7 +1119,7 @@ mod tests {
                         }
                     }
                     for and in [false, true] {
-                        let may = May::lazy(and, &set_a, &set_b).expect("the may-domain is total");
+                        let Ok(may) = May::lazy(and, &set_a, &set_b);
                         if let Ok(value) = Value::lazy(and, &x, &y) {
                             prop_assert!(member(&may, &value), "lazy {and} over {set_a:?}, {set_b:?} ∌ {value} from {x}, {y}");
                         }
