@@ -1,51 +1,7 @@
-//! The parser's token stream: significant tokens plus the stream facts the
-//! grammar needs once trivia is gone.
-//!
-//! Construction strips whitespace, newlines, and comments, and precomputes
-//! six per-token facts:
-//!
-//! - **jointness**: no trivia separates the token from its successor. The
-//!   parser glues compound operators (`==`, `->`) from joint pairs, and the
-//!   spacing rules for operator arity (unary glued, binary spaced) read the
-//!   same bit.
-//! - **newline before**: at least one line break sits in the trivia before
-//!   the token.
-//! - **boundary before**: that line break ends a statement under the newline
-//!   rule below.
-//! - **expression delimiters**: the nearest enclosing opener is matched and
-//!   does not enclose statements; line wrapping is allowed in this context.
-//! - **matched delimiters**: any matched pair encloses the token, even when
-//!   an unmatched inner opener changes its expression-layout context.
-//! - **partner**: for a bracket, the index of the bracket matching it, if
-//!   one does. Pairing is mechanical: a closer pairs with the nearest open
-//!   bracket of its kind, discarding unmatched openers above that match; an
-//!   orphan closer discards nothing. Grammar decides whether a bracket is
-//!   meaningful where it appears. The parser's recovery takes a matched
-//!   pair whole only where the surrounding construct owns it.
-//!
-//! Construction also emits **item anchors**: named declaration heads and the
-//! headless signature shape [`item_anchor_at`] recognizes, outside every
-//! matched bracket pair. The parser cannot consume an anchor while parsing
-//! the preceding item. Other `fn` tokens are interpreted in parser context:
-//! closures in expressions, or missing-name declarations at file level.
-//!
-//! # The newline rule
-//!
-//! Sumi has no `;`; statements end at line breaks. A newline is a statement
-//! boundary iff all of:
-//!
-//! 1. it is not inside a bracket pair the stream closes whose kind does not
-//!    enclose statements — `(...)` suspends termination, and a `{...}`
-//!    within restores it; a `(` never closed suspends nothing, so the line
-//!    ends the statement it would otherwise swallow;
-//! 2. the token before it can end a statement: an identifier or `_`, a
-//!    literal, `true`/`false`, `return`, `)`, or `}`;
-//! 3. the token after it cannot continue one: `else` and binary operators
-//!    continue the previous line; everything else starts fresh. Both sets
-//!    are the grammar's classes.
-//!
-//! The bits record where statements end; operator spacing is enforced by
-//! the parser, where the grammar position gives diagnostics their context.
+//! The parser's token stream: the significant tokens of a lexed file, with jointness, bracket
+//! partners, statement boundaries, and item anchors precomputed. A line break ends a statement iff
+//! no closed pair that does not enclose statements surrounds it, the token before it can end one,
+//! and the token after it cannot continue one.
 
 use std::num::NonZeroU32;
 use std::ops::Range;
@@ -63,41 +19,28 @@ const BOUNDARY_BEFORE: u8 = 1 << 2;
 const IN_EXPRESSION_DELIMITERS: u8 = 1 << 3;
 const IN_MATCHED_DELIMITERS: u8 = 1 << 4;
 
-/// One significant token's stream facts, packed so the kind, flags, raw
-/// index, and partner the parser reads at one cursor position share a cache
-/// line instead of four allocations.
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Slot {
     pub(crate) kind: SyntaxKind,
     flags: u8,
-    /// The token's index in the underlying token buffer.
     token: RawIdx,
-    /// The index of the bracket matching this one plus one, so the field
-    /// has a niche; `None` for anything that is not a matched bracket.
+    /// The matching bracket's slot index plus one.
     partner: Option<NonZeroU32>,
 }
 
-/// The significant tokens of one lexed file, with jointness and statement
-/// boundaries precomputed.
 #[derive(Clone, Debug)]
 pub struct ParserInput {
     slots: Box<[Slot]>,
-    /// Tokens preceded by a statement boundary, in source order. Recovery
-    /// can search these without storing a prefix count for every token.
+    /// Tokens with a boundary before them, ascending.
     boundaries: Box<[SigIdx]>,
-    /// Hard declaration recovery anchors, in source order.
     item_anchors: Box<[SigIdx]>,
-    /// For every raw index up to and including the end of the buffer, the
-    /// first significant index at or after it.
+    /// One entry per raw index, plus a final entry past the end of the buffer.
     sig_at_or_after: Box<[SigIdx]>,
 }
 
 impl ParserInput {
     pub fn new(lexed: &LexedFile) -> Self {
-        // Sized exactly and filled once: counting the significant tokens
-        // first is one cheap scan, and spares both the doubling
-        // reallocations of a growing vector and a final shrink.
         let significant = lexed.kinds().filter(|kind| !kind.is_trivia()).count();
         let mut build = Build {
             slots: Vec::with_capacity(significant),
@@ -105,10 +48,8 @@ impl ParserInput {
             open_counts: [0; BRACKET_PAIRS.len()],
         };
 
-        // One pass strips trivia and pairs brackets as their closers
-        // arrive. Boundaries and item starts need pairs whose closers lie
-        // ahead — whether an open `(` is ever closed — so they wait for
-        // the second pass below.
+        // Boundaries and anchors need to know which openers are ever closed, so they wait for the
+        // second pass.
         let mut newline = false;
         let mut sig_at_or_after = Vec::with_capacity(lexed.end().to_usize() + 1);
         for (raw, kind) in lexed.indices().zip(lexed.kinds()) {
@@ -122,18 +63,8 @@ impl ParserInput {
         }
         sig_at_or_after.push(SigIdx::new(build.slots.len() as u32));
 
-        // The brackets open before each token, replayed from the pairs: an
-        // opener is open until its partner closes it, which discards
-        // whatever opened inside and never closed; an orphan closer opens
-        // and closes nothing. Only an opener the stream closes suspends
-        // termination, and only one whose pair does not enclose statements
-        // — one never closed would suspend it to the end of the file, so
-        // the line ends the statement instead.
-        //
-        // The same replay finds item anchors: a matched opener encloses
-        // everything up to its closer, so anchors exist only while
-        // `matched` is zero. An unmatched opener encloses nothing for good
-        // and hides no item.
+        // Only an opener the stream closes suspends termination; one never closed would suspend it
+        // to the end of the file.
         let Build { mut slots, .. } = build;
         let mut boundaries = Vec::new();
         let mut item_anchors: Vec<SigIdx> = Vec::new();
@@ -158,8 +89,8 @@ impl ParserInput {
             } else if is_closer(slot.kind)
                 && let Some(partner) = slot.partner
             {
-                // The opener's bit records its parent context, before entering
-                // it. Restoring that also discards unmatched inner openers.
+                // The opener's bit is its parent's context, so restoring it also discards unmatched
+                // inner openers.
                 let opener = (partner.get() - 1) as usize;
                 context = slots[opener].flags & IN_EXPRESSION_DELIMITERS;
                 matched -= 1;
@@ -174,7 +105,6 @@ impl ParserInput {
         }
     }
 
-    /// The number of significant tokens.
     pub fn len(&self) -> usize {
         self.slots.len()
     }
@@ -183,39 +113,29 @@ impl ParserInput {
         self.slots.is_empty()
     }
 
-    /// The index one past the last significant token: where a range running
-    /// to the end of the input stops.
+    /// One past the last significant token.
     pub fn end(&self) -> SigIdx {
         SigIdx::new(self.slots.len() as u32)
     }
 
-    /// Every significant token's index, in order.
     pub fn indices(&self) -> impl DoubleEndedIterator<Item = SigIdx> + ExactSizeIterator {
         SigIdx::new(0).until(self.end())
     }
 
-    /// The kind of significant token `index`, or `None` past the end. End of
-    /// input is the end of the buffer, never a sentinel kind.
     pub fn get(&self, index: SigIdx) -> Option<SyntaxKind> {
         self.slots.get(index.to_usize()).map(|slot| slot.kind)
     }
 
-    /// The index of significant token `index` in the raw lexed token
-    /// buffer, for ranges, text, and flags.
     pub fn token(&self, index: SigIdx) -> RawIdx {
         self.slots[index.to_usize()].token
     }
 
-    /// The index of the first significant token at or after raw token
-    /// `raw`, or [`end`](Self::end) when none follows: the significant
-    /// index of a significant token, and the gap a trivia token lies in.
+    /// [`end`](Self::end) when no significant token follows `raw`.
     pub fn sig_at_or_after(&self, raw: RawIdx) -> SigIdx {
         self.sig_at_or_after[raw.to_usize()]
     }
 
-    /// The raw tokens of the trivia before significant token `index`, or
-    /// after the last one when `index` is [`end`](Self::end): gap `index`
-    /// of the file, of which there is one more than there are tokens.
+    /// `index` may be [`end`](Self::end), for the trivia after the last token.
     pub fn trivia_before(&self, index: SigIdx) -> Range<RawIdx> {
         let start = match index.checked_sub(1) {
             Some(previous) => self.token(previous) + 1,
@@ -229,71 +149,51 @@ impl ParserInput {
         start..end
     }
 
-    /// The index one past the last token of the underlying buffer, where
-    /// ranges that run to end of input stop: the last raw index the table
-    /// answers for.
     pub(crate) fn raw_len(&self) -> RawIdx {
         RawIdx::new(self.sig_at_or_after.len() as u32 - 1)
     }
 
-    /// Whether token `index` is glued to token `index + 1`: no trivia
-    /// between them.
+    /// No trivia between token `index` and `index + 1`.
     pub fn is_joint(&self, index: SigIdx) -> bool {
         self.slots[index.to_usize()].flags & JOINT != 0
     }
 
-    /// Whether at least one line break sits between token `index` and the
-    /// previous significant token.
     pub fn newline_before(&self, index: SigIdx) -> bool {
         self.slots[index.to_usize()].flags & NEWLINE_BEFORE != 0
     }
 
-    /// Whether the nearest opener enclosing this token is matched and does
-    /// not enclose statements. Measured before processing this token's bracket.
+    /// The nearest opener enclosing `index` is matched and does not enclose statements; a bracket
+    /// at `index` does not enclose itself.
     pub fn in_expression_delimiters(&self, index: SigIdx) -> bool {
         self.slots[index.to_usize()].flags & IN_EXPRESSION_DELIMITERS != 0
     }
 
-    /// Whether any matched pair encloses this token. Measured before processing
-    /// this token's bracket, independently of expression-layout context.
+    /// Some matched pair encloses `index`; a bracket at `index` does not enclose itself.
     pub fn in_matched_delimiters(&self, index: SigIdx) -> bool {
         self.slots[index.to_usize()].flags & IN_MATCHED_DELIMITERS != 0
     }
 
-    /// Whether a statement boundary immediately precedes token `index` under
-    /// the newline rule. Never true for the first token.
     pub fn boundary_before(&self, index: SigIdx) -> bool {
         self.slots[index.to_usize()].flags & BOUNDARY_BEFORE != 0
     }
 
-    /// Whether a signature missing its `fn` begins at token `index`: the
-    /// shape [`headless_signature_at`] reads, which the parser also reads
-    /// where it stands between items without a boundary before it.
+    /// A signature missing its `fn` begins at `index`.
     pub fn headless_signature_at(&self, index: SigIdx) -> bool {
         headless_signature_at(&self.slots, index.to_usize())
     }
 
-    /// Whether a line break before token `index` would be a statement
-    /// boundary under the newline rule: every condition of the rule but
-    /// the line break itself, so a layout tool can ask before it breaks a
-    /// line. Never true for the first token.
-    /// [`boundary_before`](Self::boundary_before) is this where a line
-    /// break stands.
+    /// [`boundary_before`](Self::boundary_before) as if a line break stood before `index`.
     pub fn would_end_statement(&self, index: SigIdx) -> bool {
         would_end_statement_at(&self.slots, index.to_usize())
     }
 
-    /// [`would_end_statement`](Self::would_end_statement) with the token
-    /// after `index` glued to it, or not, as `glued` says instead of the
-    /// source: what a layout tool that respaces the tokens asks.
+    /// [`would_end_statement`](Self::would_end_statement) with `glued` as the token joint to
+    /// `index`, or none, in place of the source's spacing.
     pub fn would_end_statement_if(&self, index: SigIdx, glued: Option<SyntaxKind>) -> bool {
         would_end_statement_if(&self.slots, index.to_usize(), glued)
     }
 
-    /// Whether a statement boundary precedes any token in `range`. Binary
-    /// search over the boundary positions lets recovery reject a bracket
-    /// group spanning a boundary without rescanning its interior. `range.end` may be
-    /// [`end`](Self::end).
+    /// A boundary before any token in `range`, its first included.
     pub fn boundary_in(&self, range: Range<SigIdx>) -> bool {
         let first = self
             .boundaries
@@ -303,45 +203,31 @@ impl ParserInput {
             .is_some_and(|&boundary| boundary < range.end)
     }
 
-    /// The index of the bracket matching significant token `index`: an
-    /// opener's closer or a closer's opener. `None` for an unmatched
-    /// bracket, and for anything that is not one.
     pub fn partner(&self, index: SigIdx) -> Option<SigIdx> {
         self.slots[index.to_usize()]
             .partner
             .map(|partner| SigIdx::new(partner.get() - 1))
     }
 
-    /// Named declaration heads and recoverable headless signatures outside
-    /// matched pairs, in source order. Not every recovered item has an anchor.
+    /// Tokens beginning `fn name` or a headless signature outside every matched pair, ascending;
+    /// not every item has one.
     pub fn item_anchors(&self) -> &[SigIdx] {
         &self.item_anchors
     }
 
-    /// The significant token slots as a slice, so the parser can hold a
-    /// prefix of it as its input horizon.
     pub(crate) fn slots(&self) -> &[Slot] {
         &self.slots
     }
 }
 
-/// The build in progress: the slots so far, and mechanical bracket pairing
-/// threaded through the same pass. A closer with a compatible opener
-/// discards unmatched openers above its nearest match; an orphan closer
-/// changes nothing. Every opener is pushed and popped at most once, so
-/// pairing is linear even over long runs of opposite delimiters.
 struct Build {
     slots: Vec<Slot>,
-    /// The brackets still open, innermost last, by slot index.
+    /// Slot indices, innermost last.
     openers: Vec<u32>,
-    /// How many of them belong to each pair, in [`BRACKET_PAIRS`] order, so
-    /// an orphan closer is known without a search.
     open_counts: [usize; BRACKET_PAIRS.len()],
 }
 
 impl Build {
-    /// Append one significant token: glue it to a raw-adjacent predecessor,
-    /// and pair it if it is a bracket.
     fn push(&mut self, kind: SyntaxKind, raw: RawIdx, newline: bool) {
         if let Some(last) = self.slots.last_mut()
             && last.token + 1 == raw
@@ -363,7 +249,6 @@ impl Build {
         });
     }
 
-    /// The open count of the pair `opener` begins.
     fn count(&mut self, opener: SyntaxKind) -> &mut usize {
         let pair = pair_index(opener).expect("only openers are counted");
         &mut self.open_counts[pair]
@@ -374,9 +259,6 @@ impl Build {
         *self.count(kind) += 1;
     }
 
-    /// Close the innermost open `expected`, discarding openers above it,
-    /// and hand back the closer's own partner value. A closer with none
-    /// open is an orphan and discards nothing.
     fn close(&mut self, closer: u32, expected: SyntaxKind) -> Option<NonZeroU32> {
         if *self.count(expected) == 0 {
             return None;
@@ -394,13 +276,11 @@ impl Build {
     }
 }
 
-/// Whether a declaration recovery anchor starts at `index`: `fn` plus a
-/// name, or a signature missing it where a statement boundary precedes
-/// the name, which nothing else at the top level looks like. The caller
-/// has established that no matched bracket pair encloses `index`.
+/// No matched pair may enclose `index`. A headless signature after a boundary counts because
+/// nothing else at file level looks like one.
 fn item_anchor_at(slots: &[Slot], index: usize) -> bool {
     if starts_item(slots[index].kind) {
-        // `_` is an invalid name, but still identifies a declaration head.
+        // `_` is an invalid name but still marks a declaration head.
         return slots
             .get(index + 1)
             .is_some_and(|next| matches!(next.kind, SyntaxKind::Ident | SyntaxKind::Underscore));
@@ -408,15 +288,8 @@ fn item_anchor_at(slots: &[Slot], index: usize) -> bool {
     (index == 0 || slots[index].flags & BOUNDARY_BEFORE != 0) && headless_signature_at(slots, index)
 }
 
-/// Whether a signature missing its `fn` begins at `index`: a name, a
-/// parenthesized list on its line that the stream closes, and after the
-/// list what the grammar takes as the rest of a signature — a `{`, closed
-/// or left open as a body being written is, a return type's `->`, or an
-/// expression body's `=` before something an expression can begin with,
-/// on any line. Exactly what the parser will take, so no such shape is
-/// promised an item and then parsed as garbage: a `=` nothing follows is
-/// garbage, and so is half of `==`. A misplaced call has none of these
-/// after its list and stays garbage.
+/// This matches exactly what the parser takes after the list; anything looser promises an item that
+/// then parses as garbage.
 fn headless_signature_at(slots: &[Slot], index: usize) -> bool {
     let kind = |index: usize| slots.get(index).map(|slot| slot.kind);
     let arrow = |index: usize| {
@@ -428,8 +301,7 @@ fn headless_signature_at(slots: &[Slot], index: usize) -> bool {
         && kind(index + 1) == Some(SyntaxKind::LParen)
         && slots[index + 1].flags & NEWLINE_BEFORE == 0
         && slots[index + 1].partner.is_some_and(|partner| {
-            // The partner encoding is the closer's index plus one: exactly
-            // the token after the list.
+            // The partner is the closer plus one, so this is the token after the list.
             let after = partner.get() as usize;
             match kind(after) {
                 Some(SyntaxKind::LBrace) => true,
@@ -441,13 +313,6 @@ fn headless_signature_at(slots: &[Slot], index: usize) -> bool {
         })
 }
 
-/// The newline rule, the line break aside: whether a line break before
-/// token `index` would end a statement, with the token after `index`
-/// glued to it, or not, as `glued` says. Bracket pairing and the token
-/// classes read no trivia, so the answer is the same whether or not a
-/// line break stands there. `(` could not start a statement either, but
-/// deliberately does not continue one: arguments must not attach to a
-/// callee across a line break.
 fn would_end_statement_if(slots: &[Slot], index: usize, glued: Option<SyntaxKind>) -> bool {
     index > 0
         && index < slots.len()
@@ -456,7 +321,6 @@ fn would_end_statement_if(slots: &[Slot], index: usize, glued: Option<SyntaxKind
         && !continues_statement(slots[index].kind, glued)
 }
 
-/// [`would_end_statement_if`] with the gluing the source has.
 fn would_end_statement_at(slots: &[Slot], index: usize) -> bool {
     let glued = slots
         .get(index)

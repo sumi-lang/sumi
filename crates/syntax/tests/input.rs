@@ -55,7 +55,6 @@ fn expression_layout_restores_parent_context_after_malformed_brackets() {
         .collect();
     assert_eq!(newlines, [SigIdx::new(4), SigIdx::new(5), SigIdx::new(7)]);
     assert_eq!(boundaries, [SigIdx::new(4), SigIdx::new(7)]);
-    // Bare `fn` is recoverable at file level, but is not a hard anchor.
     assert!(input.item_anchors().is_empty());
 }
 
@@ -78,11 +77,7 @@ fn expression_layout_uses_the_nearest_opener() {
     }
 }
 
-/// Lex and stream `source`, assert the stream invariants, and render
-/// one line per significant token: `Kind "text"` plus `newline`, `boundary`,
-/// `joint`, and `partner N` markers. `newline`/`boundary` describe the gap
-/// before the token; `joint` glues it to the next one; `partner` names the
-/// bracket matching it.
+/// Every call asserts the stream invariants; some callers discard the lines.
 fn dump(source: &str) -> Vec<String> {
     let lexed = lex(source).expect("test sources fit in u32");
     let input = ParserInput::new(&lexed);
@@ -157,7 +152,6 @@ fn check(source: &str, expected: &[&str]) {
     assert_eq!(dump(source), expected, "for source {source:?}");
 }
 
-/// Whether any statement boundary occurs in `source`.
 #[track_caller]
 fn has_boundary(source: &str) -> bool {
     dump(source); // invariants
@@ -235,8 +229,6 @@ fn newlines_end_statements() {
 
 #[test]
 fn incomplete_lines_continue() {
-    // The left look: a token that cannot end a statement keeps the line
-    // open, whatever follows.
     assert!(!has_boundary("let x =\n1"));
     assert!(!has_boundary("a &&\nb"));
     assert!(!has_boundary("let\nmut x = 1"));
@@ -244,8 +236,6 @@ fn incomplete_lines_continue() {
 
 #[test]
 fn leading_operators_continue() {
-    // The right look: tokens that can never start a statement continue the
-    // previous line.
     assert!(!has_boundary("a\n+ b"));
     assert!(!has_boundary("a\n* b"));
     assert!(!has_boundary("a\n/ b"));
@@ -258,35 +248,28 @@ fn leading_operators_continue() {
     assert!(!has_boundary("a\n&& b"));
     assert!(!has_boundary("a\n|| b"));
 
-    // A lone `=`, `&`, `|`, or `!` is not a binary operator: fresh statement.
+    // `=`, `&`, `|`, `!`, and `.` are not binary operators.
     assert!(has_boundary("a\n= b"));
     assert!(has_boundary("a\n& b"));
     assert!(has_boundary("a\n| b"));
     assert!(has_boundary("a\n!b"));
-    // Nor is `.`, until member access exists.
     assert!(has_boundary("a\n.b()"));
 }
 
 #[test]
 fn leading_minus_arity_is_jointness() {
-    // Spaced: binary, the line continues. Glued: a negation starts fresh.
     assert!(!has_boundary("a\n- b"));
     assert!(has_boundary("a\n-b"));
-    // A joint `->` is an arrow, never a continuation.
     assert!(has_boundary("f(x)\n-> int"));
 }
 
 #[test]
 fn call_arguments_stay_on_the_callee_line() {
-    // `(` never continues a line: the JavaScript `f\n(x)` hazard is two
-    // statements here, loudly.
     assert!(has_boundary("f\n(x)"));
 }
 
 #[test]
 fn leading_dots_do_not_continue_until_member_access_exists() {
-    // The continuation set mirrors the grammar, which has no `.` yet; a
-    // leading `.` joins it with member access, and this test flips then.
     check(
         "let value = base\n    .offset(dx)\n    .scale(2)\nlet other = 1",
         &[
@@ -320,15 +303,11 @@ fn continuations_may_span_blank_lines_and_comments() {
 
 #[test]
 fn unclosed_parens_do_not_suspend_termination() {
-    // A `(` the stream never closes would suspend termination to the end
-    // of the file; the line ends the statement instead.
     assert!(has_boundary("f(a\nb"));
     assert!(has_boundary("f(a\nb }"));
     // A trailing `,` cannot end a statement, so the list continues.
     assert!(!has_boundary("f(a,\nb"));
-    // A `(` inside restores nothing on its own.
     assert!(!has_boundary("f((a\nb)"));
-    // An unclosed `{` inside a closed `(` still restores.
     assert!(has_boundary("(a { b\nc )"));
 }
 
@@ -366,8 +345,6 @@ fn braces_restore_termination() {
 
 #[test]
 fn braces_do_not_continue() {
-    // `{` can start a block statement, so it never continues a line: the
-    // brace of an `if` or `fn` must open on the same line.
     assert!(has_boundary("if c\n{}"));
     assert!(has_boundary("{ a }\n{ b }"));
 }
@@ -391,8 +368,6 @@ fn a_literal_ends_at_the_break_so_the_next_line_is_a_statement() {
 
 #[test]
 fn error_tokens_end_statements() {
-    // Recovery: garbage ends at the line break instead of swallowing the
-    // next statement.
     assert!(has_boundary("€\nx"));
 }
 
@@ -434,9 +409,6 @@ fn brackets_pair_and_closers_synchronize() {
             r#"RBrace "}" partner 0"#,
         ],
     );
-    // A closer pops openers until its match: the `(` a `}` discards on the
-    // way to its `{` partners with nothing, and a `)` after that has
-    // nothing left to close.
     check(
         "{(a})",
         &[
@@ -447,8 +419,6 @@ fn brackets_pair_and_closers_synchronize() {
             r#"RParen ")""#,
         ],
     );
-    // A closer with no match is an orphan and discards nothing, so the `{`
-    // an orphan `)` sits inside still pairs.
     check(
         "(a}",
         &[r#"LParen "(" joint"#, r#"Ident "a" joint"#, r#"RBrace "}""#],

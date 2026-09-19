@@ -1,6 +1,3 @@
-//! The typed views: accessors over a parsed tree, on clean and on
-//! erroneous syntax.
-
 use sumi_lexer::{LexedFile, lex};
 use sumi_syntax::ast::{AstNode, Block, ElseBranch, Expr, SourceFile, Stmt};
 use sumi_syntax::{NodeKind, Parse, ParserInput, SyntaxTree, parse};
@@ -26,14 +23,12 @@ impl Parsed {
         self.parse.tree()
     }
 
-    /// The source text of a view.
     fn text(&self, view: impl AstNode) -> &str {
         self.tree()
             .byte_range(view.node(), &self.lexed)
             .text(self.source)
     }
 
-    /// The one item of the file.
     fn item(&self) -> sumi_syntax::ast::FnItem {
         let tree = self.tree();
         let file = SourceFile::cast(tree, tree.root()).expect("the root is a source file");
@@ -44,7 +39,6 @@ impl Parsed {
     }
 }
 
-/// The block a body is, on an item whose body is not an expression.
 fn block(body: Option<Expr>) -> Block {
     match body {
         Some(Expr::Block(block)) => block,
@@ -99,7 +93,6 @@ fn missing_signature_fields_do_not_shift_later_roles() {
         );
         assert_eq!(parsed.text(item.body(tree).unwrap()), "{}");
     }
-    // Closures share signature parsing, but their field slots omit the name.
     for (source, has_return_type) in [
         ("fn outer() = fn -> int {}", true),
         ("fn outer() = fn() -> {}", false),
@@ -270,8 +263,6 @@ fn casts_refuse_other_kinds() {
     );
 }
 
-/// A declared child is present as its accessor answers: on the declaring
-/// kind, by the view the slot holds; on any other kind, never.
 #[test]
 fn declared_children_are_present_as_their_accessors_answer() {
     let parsed = Parsed::new("fn f(x) = x\n");
@@ -320,8 +311,6 @@ fn multiline_if_blocks_keep_their_roles() {
 
 #[test]
 fn parser_known_roles_survive_recovery() {
-    // `if {}` parses with the block as the body and the condition missing.
-    // Although the block's type fits either field, the parser knows its role.
     let parsed = Parsed::new("fn f() { if {} }");
     let tree = parsed.tree();
     let body = block(parsed.item().body(tree));
@@ -336,8 +325,6 @@ fn parser_known_roles_survive_recovery() {
     );
     assert!(branch.else_branch(tree).is_none());
 
-    // Likewise, punctuation has already settled which side a lone operand
-    // belongs to in assignments and binary expressions.
     let parsed = Parsed::new("fn f() { x = }");
     let tree = parsed.tree();
     let body = block(parsed.item().body(tree));
@@ -361,8 +348,6 @@ fn parser_known_roles_survive_recovery() {
     assert_eq!(parsed.text(binary.lhs(tree).expect("the parsed lhs")), "x");
     assert!(binary.rhs(tree).is_none());
 
-    // A known right-hand role survives even when the left child is an
-    // `Error`, which no typed expression field accepts.
     let parsed = Parsed::new("fn f() { fn + x }");
     let tree = parsed.tree();
     let body = block(parsed.item().body(tree));
@@ -372,8 +357,6 @@ fn parser_known_roles_survive_recovery() {
     assert!(binary.lhs(tree).is_none());
     assert_eq!(parsed.text(binary.rhs(tree).expect("the parsed rhs")), "x");
 
-    // Wrapping an existing binary expression gives that whole expression
-    // the new wrapper's `lhs` role, not one inherited from its own children.
     let parsed = Parsed::new("fn f() { x + y + }");
     let tree = parsed.tree();
     let body = block(parsed.item().body(tree));
@@ -386,8 +369,6 @@ fn parser_known_roles_survive_recovery() {
     );
     assert!(outer.rhs(tree).is_none());
 
-    // Missing neighboring fields do not hide an outer condition or else
-    // branch whose role the parser settled.
     let parsed = Parsed::new("fn f() { if if a {} }");
     let tree = parsed.tree();
     let body = block(parsed.item().body(tree));
@@ -410,8 +391,6 @@ fn parser_known_roles_survive_recovery() {
         Some(ElseBranch::Block(_))
     ));
 
-    // A chained comparison is retained as `Error`, propagates that error to
-    // its ancestors, and still establishes the following assignment value.
     let parsed = Parsed::new("fn f() { a < b < c = d }");
     let tree = parsed.tree();
     let body = block(parsed.item().body(tree));
@@ -422,9 +401,6 @@ fn parser_known_roles_survive_recovery() {
     assert!(assignment.target(tree).is_none());
     assert_eq!(parsed.text(assignment.value(tree).expect("the value")), "d");
 
-    // Without that propagation, strict field assignment rejects every
-    // reading when the required initializer is the untyped `Error`, hiding
-    // the name and type that are still present.
     let parsed = Parsed::new("fn f() { let x: Int = a < b < c }");
     let tree = parsed.tree();
     let body = block(parsed.item().body(tree));
@@ -442,8 +418,6 @@ fn parser_known_roles_survive_recovery() {
 
 #[test]
 fn a_child_of_one_possible_field_is_answered_despite_an_error() {
-    // The name fits nothing but `name`, so the missing initializer does not
-    // hide it; the return type fits nothing but `ret`.
     let parsed = Parsed::new("fn f() -> Int { let x: Int = }");
     let tree = parsed.tree();
     let item = parsed.item();
