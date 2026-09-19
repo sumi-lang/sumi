@@ -1,0 +1,25 @@
+== tree ==
+SourceFile 0..37
+  FnItem 0..36
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block 7..36
+      LetStmt 13..34
+        Name 17..18 "x"
+        BinaryExpr 21..34
+          NameRef 21..22 "a"
+          NameRef 33..34 "b"
+
+== evidence ==
+UnspacedBinaryOperator at 22
+
+== diagnostics ==
+error[syntax/unspaced-binary-operator] 2:14..2:15 "+": binary operator must have spaces on both sides
+
+== formatted ==
+fn f() {
+    let x =
+        a
+            + // c
+            b
+}
