@@ -663,8 +663,9 @@ fn typed(analysis: &Analysis) {
                     assert_eq!(own, None);
                     continue;
                 }
-                Op::Param(position) => {
-                    assert_eq!(own, Some(signature.params[*position as usize]));
+                Op::Param { index, ty } => {
+                    assert_eq!(*ty, Some(signature.params[*index as usize]));
+                    assert_eq!(own, *ty);
                 }
                 Op::Neg => {
                     assert_eq!(ty(inputs[0]), Some(Ty::Int));
@@ -708,13 +709,15 @@ fn typed(analysis: &Analysis) {
                     }
                 }
                 Op::Call(callee) => {
-                    let callee = analysis
-                        .function(*callee)
+                    let callable = graph.callable(*callee);
+                    let signature = analysis
+                        .function(callable.function)
                         .signature()
                         .expect("a called function has a signature");
-                    assert_eq!(own, Some(callee.result));
-                    assert_eq!(inputs.len(), callee.params.len());
-                    for (&input, &param) in inputs.iter().zip(&callee.params) {
+                    assert_eq!(signature.params, callable.params);
+                    assert_eq!(own, Some(signature.result));
+                    assert_eq!(inputs.len(), callable.params.len());
+                    for (&input, &param) in inputs.iter().zip(&callable.params) {
                         assert_eq!(ty(input), Some(param));
                     }
                 }
@@ -735,7 +738,7 @@ fn graph(analysis: &Analysis) {
             assert!(input.index() < id.index());
         }
         let arity = match node.op {
-            Op::Int(_) | Op::Bool(_) | Op::Param(_) | Op::Entry => Some(0),
+            Op::Int(_) | Op::Bool(_) | Op::Param { .. } | Op::Entry => Some(0),
             Op::Unit | Op::Unused | Op::Copy { .. } | Op::Neg | Op::Not | Op::Exactly(_) => Some(1),
             Op::And { .. } | Op::Or { .. } | Op::Join { .. } => Some(1),
             Op::Binary(_) | Op::Refine { .. } | Op::Then | Op::Else => Some(2),
@@ -750,7 +753,10 @@ fn graph(analysis: &Analysis) {
             }
         }
         if node.name.is_some() {
-            assert!(matches!(node.op, Op::Param(_) | Op::Copy { .. } | Op::Hole));
+            assert!(matches!(
+                node.op,
+                Op::Param { .. } | Op::Copy { .. } | Op::Hole
+            ));
         }
         if analysis.is_valid() {
             assert!(!matches!(node.op, Op::Hole));
@@ -768,7 +774,9 @@ fn graph(analysis: &Analysis) {
         assert!(matches!(graph.node(function.entry()).op, Op::Entry));
         for (position, param) in function.params().enumerate() {
             assert_eq!(run.next(), Some(param));
-            assert!(matches!(graph.node(param).op, Op::Param(i) if i as usize == position));
+            assert!(
+                matches!(graph.node(param).op, Op::Param { index, .. } if index as usize == position)
+            );
         }
         let region = graph.region(function.region());
         assert_eq!(region.context, function.entry());

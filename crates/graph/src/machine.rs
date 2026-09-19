@@ -213,7 +213,7 @@ impl<'a> Machine<'a> {
                 }
                 let inputs = self.graph.inputs(node);
                 match self.graph.node(node).op {
-                    Op::Param(_) => unreachable!("a parameter is bound on entry"),
+                    Op::Param { .. } => unreachable!("a parameter is bound on entry"),
                     Op::Hole => return Err(Refusal::Hole(node)),
                     Op::Entry | Op::Then | Op::Else | Op::Unused => {
                         unreachable!("a context or a statement is not a value")
@@ -228,7 +228,8 @@ impl<'a> Machine<'a> {
                         self.control.push(Control::Branch { node, then, else_ });
                         self.control.push(Control::Eval(inputs[0]));
                     }
-                    Op::Call(function) => {
+                    Op::Call(callee) => {
+                        let function = self.graph.callable(callee).function;
                         self.control.push(Control::Enter { node, function });
                         for &arg in inputs.iter().rev() {
                             self.control.push(Control::Eval(arg));

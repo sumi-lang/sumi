@@ -36,7 +36,6 @@ pub(crate) struct Demand {
 
 struct Demands<'a> {
     graph: &'a Graph,
-    headers: &'a [Header],
     typed: &'a [bool],
     made: Vec<Demand>,
 }
@@ -109,12 +108,9 @@ impl Demands<'_> {
                 declared: Some((ty, at)),
             } => require(reads[0], inputs[0], Expected::Ty(*ty), Some(*at)),
             Op::Call(callee) => {
-                let params = self.headers[callee.index()]
-                    .params
-                    .as_deref()
-                    .expect("a call names a whole callee");
-                let declared = graph.node(graph.run(*callee).entry()).origin;
-                for ((&at, &input), &ty) in reads.iter().zip(inputs).zip(params) {
+                let callable = graph.callable(*callee);
+                let declared = graph.node(graph.run(callable.function).entry()).origin;
+                for ((&at, &input), &ty) in reads.iter().zip(inputs).zip(&callable.params) {
                     require(at, input, Expected::Ty(ty), Some(declared));
                 }
             }
@@ -125,7 +121,7 @@ impl Demands<'_> {
             }
             Op::Int(_)
             | Op::Bool(_)
-            | Op::Param(_)
+            | Op::Param { .. }
             | Op::Unit
             | Op::Hole
             | Op::Copy { declared: None }
@@ -152,7 +148,6 @@ pub(crate) fn draw(
     let mut folded: Vec<Option<Int>> = Vec::new();
     let mut demands = Demands {
         graph,
-        headers,
         typed: &lowered.typed,
         made: Vec::with_capacity(graph.nodes().len() / 2),
     };
@@ -178,12 +173,13 @@ pub(crate) fn draw(
                     folds = Some(value.clone());
                 }
                 Op::Bool(value) => typing.literal(node, Ty::Bool, May::bool(*value), origin),
-                Op::Param(position) => {
-                    let ty = header.param_types[*position as usize].expect("a typed parameter");
-                    typing.known(node, ty, entry.name.unwrap_or(origin));
+                Op::Param { ty: Some(ty), .. } => {
+                    typing.known(node, *ty, entry.name.unwrap_or(origin));
                 }
+                // An untyped parameter is no value.
+                Op::Param { ty: None, .. } => {}
                 Op::Entry => {
-                    typing.entry(node, header.params.is_some() && run.params().len() == 0);
+                    typing.entry(node, header.callee.is_some() && run.params().len() == 0);
                 }
                 // An untyped condition decides nothing; the context is live as its parent is.
                 Op::Then | Op::Else if !typed(inputs[0]) => {

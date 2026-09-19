@@ -45,7 +45,7 @@ impl Op {
             Self::Neg => inputs[0].neg()?,
             Self::Not => inputs[0].not()?,
             Self::Binary(op) => D::binary(*op, inputs[0], inputs[1])?,
-            Self::Param(_)
+            Self::Param { .. }
             | Self::Unit
             | Self::Unused
             | Self::Hole
