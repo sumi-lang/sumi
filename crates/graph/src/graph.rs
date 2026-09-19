@@ -173,7 +173,7 @@ pub struct Node {
 pub struct Region {
     pub context: NodeId,
     nodes: Range<u32>,
-    result: Option<NodeId>,
+    result: NodeId,
 }
 
 impl Region {
@@ -183,11 +183,11 @@ impl Region {
     }
 
     pub fn result(&self) -> NodeId {
-        self.result.expect("a closed region has a result")
+        self.result
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Graph {
     nodes: Vec<Node>,
     inputs: Vec<NodeId>,
@@ -198,17 +198,6 @@ pub struct Graph {
 }
 
 impl Graph {
-    pub fn with_capacity(nodes: usize) -> Self {
-        Self {
-            nodes: Vec::with_capacity(nodes),
-            inputs: Vec::with_capacity(nodes),
-            reads: Vec::with_capacity(nodes),
-            regions: Vec::new(),
-            runs: Vec::new(),
-            callables: Vec::new(),
-        }
-    }
-
     pub fn callable(&self, callee: Callee) -> &Callable {
         &self.callables[callee.index()]
     }
@@ -216,13 +205,6 @@ impl Graph {
     /// In declaration order.
     pub fn callables(&self) -> &[Callable] {
         &self.callables
-    }
-
-    /// `params` is `function`'s whole parameter list, one type per parameter node of its run.
-    pub fn declare(&mut self, function: FunctionId, params: Box<[Ty]>) -> Callee {
-        let callee = Callee(u32::try_from(self.callables.len()).expect("function count fits u32"));
-        self.callables.push(Callable { function, params });
-        callee
     }
 
     /// Indexed by function ID.
@@ -265,9 +247,77 @@ impl Graph {
         let node = &self.nodes[id.index()];
         &self.reads[node.inputs.start as usize..node.inputs.end as usize]
     }
+}
 
-    pub fn next(&self) -> NodeId {
-        NodeId::new(self.nodes.len())
+#[derive(Debug)]
+struct Opening {
+    context: NodeId,
+    /// The first node's index once entered.
+    start: Option<u32>,
+    /// The end and the result once closed.
+    closed: Option<(u32, NodeId)>,
+}
+
+#[derive(Debug)]
+enum Slot {
+    Declared,
+    Open,
+    Closed(Run),
+}
+
+/// A run between `open_run` and `close_run`.
+#[must_use = "a run opened is closed"]
+#[derive(Debug)]
+pub struct OpenRun {
+    function: FunctionId,
+    start: u32,
+}
+
+/// Builds a [`Graph`]: nodes in push order, each region's nodes those pushed between `enter` and
+/// `close`, each run's those pushed between `open_run` and `close_run`; runs do not overlap.
+#[derive(Debug)]
+pub struct GraphBuilder {
+    nodes: Vec<Node>,
+    inputs: Vec<NodeId>,
+    reads: Vec<TextRange>,
+    regions: Vec<Opening>,
+    runs: Vec<Slot>,
+    callables: Vec<Callable>,
+}
+
+impl GraphBuilder {
+    /// `nodes` is the count to expect.
+    pub fn new(nodes: usize) -> Self {
+        Self {
+            nodes: Vec::with_capacity(nodes),
+            inputs: Vec::with_capacity(nodes),
+            reads: Vec::with_capacity(nodes),
+            regions: Vec::new(),
+            runs: Vec::new(),
+            callables: Vec::new(),
+        }
+    }
+
+    /// The next function, in declaration order.
+    pub fn function(&mut self) -> FunctionId {
+        let function = FunctionId::new(self.runs.len());
+        self.runs.push(Slot::Declared);
+        function
+    }
+
+    pub fn callable(&self, callee: Callee) -> &Callable {
+        &self.callables[callee.index()]
+    }
+
+    /// `params` is `function`'s whole parameter list, one type per parameter node of its run.
+    pub fn declare(&mut self, function: FunctionId, params: Box<[Ty]>) -> Callee {
+        let callee = Callee(u32::try_from(self.callables.len()).expect("function count fits u32"));
+        self.callables.push(Callable { function, params });
+        callee
+    }
+
+    pub fn node(&self, id: NodeId) -> &Node {
+        &self.nodes[id.index()]
     }
 
     /// Each input is a node and where it is read.
@@ -286,7 +336,7 @@ impl Graph {
             self.reads.push(read);
         }
         let end = u32::try_from(self.inputs.len()).expect("input count fits u32");
-        let id = self.next();
+        let id = NodeId::new(self.nodes.len());
         self.nodes.push(Node {
             op,
             inputs: start..end,
@@ -296,49 +346,97 @@ impl Graph {
         id
     }
 
-    /// The region's nodes are those pushed between `enter` and `close`; an `if` opens both branches
-    /// before entering either.
+    /// An `if` opens both branches before entering either.
     pub fn open(&mut self, context: NodeId) -> RegionId {
         let id = RegionId::new(self.regions.len());
-        self.regions.push(Region {
+        self.regions.push(Opening {
             context,
-            nodes: 0..0,
-            result: None,
+            start: None,
+            closed: None,
         });
         id
     }
 
     pub fn enter(&mut self, region: RegionId) {
         let start = u32::try_from(self.nodes.len()).expect("node count fits u32");
-        self.regions[region.index()].nodes = start..start;
+        self.regions[region.index()].start = Some(start);
     }
 
+    /// The region must have been entered.
     pub fn close(&mut self, region: RegionId, result: NodeId) {
         let end = u32::try_from(self.nodes.len()).expect("node count fits u32");
-        let region = &mut self.regions[region.index()];
-        region.nodes.end = end;
-        region.result = Some(result);
+        let opening = &mut self.regions[region.index()];
+        assert!(
+            opening.start.is_some(),
+            "a region is entered before it closes"
+        );
+        opening.closed = Some((end, result));
     }
 
-    pub fn close_run(
-        &mut self,
-        function: FunctionId,
-        start: NodeId,
-        arity: u32,
-        region: RegionId,
-        result: NodeId,
-    ) {
-        assert_eq!(self.runs.len(), function.index(), "runs close in order");
+    pub fn context(&self, region: RegionId) -> NodeId {
+        self.regions[region.index()].context
+    }
+
+    /// The run's nodes begin with the next push: its entry, then one per parameter. A function's
+    /// run opens once.
+    pub fn open_run(&mut self, function: FunctionId) -> OpenRun {
+        let slot = &mut self.runs[function.index()];
+        assert!(
+            matches!(slot, Slot::Declared),
+            "a function's run opens once"
+        );
+        *slot = Slot::Open;
+        OpenRun {
+            function,
+            start: u32::try_from(self.nodes.len()).expect("node count fits u32"),
+        }
+    }
+
+    /// `region` is the body's, already closed.
+    pub fn close_run(&mut self, run: OpenRun, region: RegionId, result: NodeId) {
         let end = u32::try_from(self.nodes.len()).expect("node count fits u32");
-        let start = u32::try_from(start.index()).expect("node count fits u32");
-        debug_assert!(matches!(self.nodes[start as usize].op, Op::Entry));
-        debug_assert!(start + 1 + arity <= end);
-        self.runs.push(Run {
-            nodes: start..end,
-            arity,
+        let arity = self.nodes[run.start as usize..]
+            .iter()
+            .skip(1)
+            .take_while(|node| matches!(node.op, Op::Param { .. }))
+            .count();
+        self.runs[run.function.index()] = Slot::Closed(Run {
+            nodes: run.start..end,
+            arity: u32::try_from(arity).expect("parameter count fits u32"),
             region,
             result,
         });
+    }
+
+    /// Every region opened must be closed, and every function's run opened and closed.
+    pub fn finish(self) -> Graph {
+        Graph {
+            nodes: self.nodes,
+            inputs: self.inputs,
+            reads: self.reads,
+            regions: self
+                .regions
+                .into_iter()
+                .map(|opening| {
+                    let (end, result) = opening.closed.expect("a region opened is closed");
+                    Region {
+                        context: opening.context,
+                        nodes: opening.start.expect("a region closed was entered")..end,
+                        result,
+                    }
+                })
+                .collect(),
+            runs: self
+                .runs
+                .into_iter()
+                .map(|slot| match slot {
+                    Slot::Closed(run) => run,
+                    Slot::Open => panic!("a run opened is closed"),
+                    Slot::Declared => panic!("a function declared has a run"),
+                })
+                .collect(),
+            callables: self.callables,
+        }
     }
 }
 
@@ -366,11 +464,11 @@ mod tests {
 
     #[test]
     fn runs_and_regions_follow_the_protocol() {
-        let mut graph = Graph::with_capacity(8);
-        let start = graph.next();
-        let entry = graph.push(Op::Entry, &[], at(0), None);
-        assert_eq!(entry, start);
-        let param = graph.push(
+        let mut builder = GraphBuilder::new(8);
+        let function = builder.function();
+        let run = builder.open_run(function);
+        let entry = builder.push(Op::Entry, &[], at(0), None);
+        let param = builder.push(
             Op::Param {
                 index: 0,
                 ty: Some(Ty::Int),
@@ -379,20 +477,22 @@ mod tests {
             at(1),
             Some(at(1)),
         );
-        let region = graph.open(entry);
-        graph.enter(region);
-        let one = graph.push(Op::Int(1.into()), &[], at(2), None);
-        let sum = graph.push(
+        let region = builder.open(entry);
+        assert_eq!(builder.context(region), entry);
+        builder.enter(region);
+        let one = builder.push(Op::Int(1.into()), &[], at(2), None);
+        let sum = builder.push(
             Op::Binary(BinaryOp::Arith(ArithOp::Add)),
             &[(param, at(5)), (one, at(2))],
             at(3),
             None,
         );
-        graph.close(region, sum);
-        let copy = graph.push(Op::Copy { declared: None }, &[(sum, at(3))], at(4), None);
-        graph.close_run(FunctionId::new(0), start, 1, region, copy);
+        builder.close(region, sum);
+        let copy = builder.push(Op::Copy { declared: None }, &[(sum, at(3))], at(4), None);
+        builder.close_run(run, region, copy);
+        let graph = builder.finish();
         assert_eq!(graph.nodes().len(), 5);
-        let run = graph.run(FunctionId::new(0));
+        let run = graph.run(function);
         assert_eq!(
             run.nodes().collect::<Vec<_>>(),
             [entry, param, one, sum, copy]
@@ -420,9 +520,11 @@ mod tests {
 
     #[test]
     fn an_empty_region_reads_an_outer_definition() {
-        let mut graph = Graph::default();
-        let entry = graph.push(Op::Entry, &[], at(0), None);
-        let param = graph.push(
+        let mut builder = GraphBuilder::new(2);
+        let function = builder.function();
+        let run = builder.open_run(function);
+        let entry = builder.push(Op::Entry, &[], at(0), None);
+        let param = builder.push(
             Op::Param {
                 index: 0,
                 ty: Some(Ty::Int),
@@ -431,19 +533,63 @@ mod tests {
             at(1),
             Some(at(1)),
         );
-        let region = graph.open(entry);
-        graph.enter(region);
-        graph.close(region, param);
+        let region = builder.open(entry);
+        builder.enter(region);
+        builder.close(region, param);
+        builder.close_run(run, region, param);
+        let graph = builder.finish();
         assert_eq!(graph.region(region).nodes().len(), 0);
         assert_eq!(graph.region(region).result(), param);
     }
 
     #[test]
-    #[should_panic(expected = "a closed region has a result")]
-    fn an_open_region_has_no_result() {
-        let mut graph = Graph::default();
-        let entry = graph.push(Op::Entry, &[], at(0), None);
-        let region = graph.open(entry);
-        graph.region(region).result();
+    #[should_panic(expected = "a region opened is closed")]
+    fn an_open_region_does_not_finish() {
+        let mut builder = GraphBuilder::new(1);
+        let entry = builder.push(Op::Entry, &[], at(0), None);
+        builder.open(entry);
+        builder.finish();
+    }
+
+    #[test]
+    #[should_panic(expected = "a region is entered before it closes")]
+    fn a_region_closes_only_entered() {
+        let mut builder = GraphBuilder::new(1);
+        let entry = builder.push(Op::Entry, &[], at(0), None);
+        let region = builder.open(entry);
+        builder.close(region, entry);
+    }
+
+    #[test]
+    #[should_panic(expected = "a run opened is closed")]
+    fn an_open_run_does_not_finish() {
+        let mut builder = GraphBuilder::new(1);
+        let function = builder.function();
+        let run = builder.open_run(function);
+        builder.push(Op::Entry, &[], at(0), None);
+        drop(run);
+        builder.finish();
+    }
+
+    #[test]
+    #[should_panic(expected = "a function declared has a run")]
+    fn a_function_without_a_run_does_not_finish() {
+        let mut builder = GraphBuilder::new(0);
+        builder.function();
+        builder.finish();
+    }
+
+    #[test]
+    #[should_panic(expected = "a function's run opens once")]
+    fn a_run_opens_once() {
+        let mut builder = GraphBuilder::new(2);
+        let function = builder.function();
+        let run = builder.open_run(function);
+        let entry = builder.push(Op::Entry, &[], at(0), None);
+        let region = builder.open(entry);
+        builder.enter(region);
+        builder.close(region, entry);
+        builder.close_run(run, region, entry);
+        let _again = builder.open_run(function);
     }
 }
