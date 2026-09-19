@@ -52,6 +52,8 @@ pub enum Refusal {
     Hole(NodeId),
     Division(NodeId),
     Type(NodeId),
+    /// A call with other than one argument per parameter.
+    Arity(NodeId),
     Depth(NodeId),
 }
 
@@ -287,6 +289,9 @@ impl<'a> Machine<'a> {
                 self.fill(node, value);
             }
             Control::Enter { node, function } => {
+                if self.graph.inputs(node).len() != self.graph.run(function).params().len() {
+                    return Err(Refusal::Arity(node));
+                }
                 if self
                     .bound
                     .is_some_and(|bound| u64::try_from(self.frames.len()).unwrap() >= bound)

@@ -251,6 +251,9 @@ fn the_bare_graph_refuses_what_the_checker_rejects() {
     let endless = analysis("fn f(n: int) -> int = f(n)\nfn g() -> int = f(1)");
     let machine = Machine::new(endless.graph(), FunctionId::new(1), &[], Some(4));
     assert!(matches!(machine.run(), Err(Refusal::Depth(_))));
+    let short = analysis("fn f(x: int) -> int = x\nfn g() -> int = f()");
+    let machine = Machine::new(short.graph(), FunctionId::new(1), &[], None);
+    assert!(matches!(machine.run(), Err(Refusal::Arity(_))));
     for source in [
         "fn f() -> int = if 1 { 2 } else { 3 }",
         "fn f() -> int = -true",
