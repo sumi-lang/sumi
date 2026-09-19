@@ -224,19 +224,21 @@ impl ParserInput {
     }
 }
 
+/// Per pair, the position in `openers` of its innermost opener, plus one.
+type Tops = [Option<NonZeroU32>; Pair::ALL.len()];
+
 /// An opener still open, with `tops` as it stood below it: a closer matches the innermost opener of
 /// its pair and drops every opener above it.
 struct Opener {
     slot: u32,
-    tops: [Option<usize>; Pair::ALL.len()],
+    tops: Tops,
 }
 
 struct Build {
     slots: Vec<Slot>,
     /// Innermost last.
     openers: Vec<Opener>,
-    /// Per pair, the position in `openers` of its innermost opener.
-    tops: [Option<usize>; Pair::ALL.len()],
+    tops: Tops,
 }
 
 impl Build {
@@ -268,11 +270,11 @@ impl Build {
             slot,
             tops: self.tops,
         });
-        self.tops[pair.index()] = Some(self.openers.len() - 1);
+        self.tops[pair.index()] = NonZeroU32::new(self.openers.len() as u32);
     }
 
     fn close(&mut self, closer: u32, pair: Pair) -> Option<NonZeroU32> {
-        let position = self.tops[pair.index()]?;
+        let position = (self.tops[pair.index()]?.get() - 1) as usize;
         let opener = &self.openers[position];
         let slot = opener.slot;
         self.tops = opener.tops;

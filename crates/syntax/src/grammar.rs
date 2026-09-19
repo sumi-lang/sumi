@@ -154,7 +154,7 @@ pub enum Side {
 }
 
 impl Pair {
-    pub const ALL: [Self; 2] = [Self::Paren, Self::Brace];
+    pub(crate) const ALL: [Self; 2] = [Self::Paren, Self::Brace];
 
     pub fn opener(self) -> Fixed {
         match self {
@@ -178,19 +178,33 @@ impl Pair {
         }
     }
 
-    pub fn index(self) -> usize {
-        self as usize
+    /// Into an array sized by `ALL`.
+    pub(crate) const fn index(self) -> usize {
+        match self {
+            Self::Paren => 0,
+            Self::Brace => 1,
+        }
     }
 }
 
+const _: () = {
+    let mut index = 0;
+    while index < Pair::ALL.len() {
+        assert!(Pair::ALL[index].index() == index);
+        index += 1;
+    }
+};
+
 /// The pair `kind` opens or closes.
 pub fn bracket(kind: SyntaxKind) -> Option<(Pair, Side)> {
-    Some(match kind {
-        T::LParen => (Pair::Paren, Side::Open),
-        T::RParen => (Pair::Paren, Side::Close),
-        T::LBrace => (Pair::Brace, Side::Open),
-        T::RBrace => (Pair::Brace, Side::Close),
-        _ => return None,
+    Pair::ALL.iter().find_map(|&pair| {
+        if kind == pair.opener().kind() {
+            Some((pair, Side::Open))
+        } else if kind == pair.closer().kind() {
+            Some((pair, Side::Close))
+        } else {
+            None
+        }
     })
 }
 

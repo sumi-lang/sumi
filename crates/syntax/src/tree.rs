@@ -695,11 +695,18 @@ impl<'a> Marker<'_, 'a> {
             })
     }
 
-    /// Mark this node a `pair` construct; its first token is the opener.
-    pub(crate) fn enter(&mut self, pair: Pair) {
-        self.enclosing_closer = self.closer.or(self.enclosing_closer);
-        self.closer = self.builder.input.partner(self.start);
-        self.open[pair.index()] = Some(self.start);
+    /// Start a `pair` construct at the next token, which must be its opener, and take it.
+    pub(crate) fn open(&mut self, pair: Pair) -> Marker<'_, 'a> {
+        assert!(
+            self.at(pair.opener().kind()),
+            "a construct opens at its opener"
+        );
+        let mut m = self.start();
+        m.token();
+        m.enclosing_closer = m.closer.or(m.enclosing_closer);
+        m.closer = m.builder.input.partner(m.start);
+        m.open[pair.index()] = Some(m.start);
+        m
     }
 
     pub(crate) fn closed(&self) -> bool {

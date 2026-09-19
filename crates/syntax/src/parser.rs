@@ -462,9 +462,7 @@ impl ListRule for Args {
 
 fn delimited_list<R: ListRule>(p: &mut Marker<'_, '_>, field: u8) {
     let close = R::PAIR.closer().kind();
-    let mut m = p.start();
-    m.token();
-    m.enter(R::PAIR);
+    let mut m = p.open(R::PAIR);
     loop {
         match m.current() {
             None => {
@@ -549,9 +547,7 @@ fn param(p: &mut Marker<'_, '_>, typed: bool) {
 }
 
 fn block(p: &mut Marker<'_, '_>) -> CompletedMarker {
-    let mut m = p.start();
-    m.token();
-    m.enter(Pair::Brace);
+    let mut m = p.open(Pair::Brace);
     loop {
         match m.current() {
             None => {
@@ -890,9 +886,7 @@ fn prefix_or_atom(p: &mut Marker<'_, '_>, follow: ExprFollow) -> Option<Complete
         T::Ident => leaf(p, N::NameRef),
         _ if is_literal(kind) => leaf(p, N::LiteralExpr),
         T::LParen => {
-            let mut m = p.start();
-            m.token();
-            m.enter(Pair::Paren);
+            let mut m = p.open(Pair::Paren);
             if let Some(inner) = operand(&mut m) {
                 m.field(&inner, 0);
             }
