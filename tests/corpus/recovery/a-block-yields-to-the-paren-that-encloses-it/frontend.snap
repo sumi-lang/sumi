@@ -1,0 +1,35 @@
+== tree ==
+SourceFile! 0..67
+  FnItem! 0..32
+    Name 3..17 "unclosed_block"
+    ParamList 17..19 "()"
+    Block! 20..32
+      ParenExpr! 26..30
+        Block! 27..28 "{"
+  FnItem! 33..66
+    Name 36..50 "surplus_closer"
+    ParamList 50..52 "()"
+    Block! 53..66
+      CallExpr 59..63
+        NameRef 59..60 "g"
+        ArgList 60..63
+          NameRef 61..62 "a"
+      Error! 63..64 ")"
+
+== evidence ==
+Expected(RBrace) at 29
+Unexpected at 63
+
+== diagnostics ==
+error[syntax/expected-token] 2:8: expected `}`
+  at 2:6..2:7 "{": opening delimiter is here
+  fix (safe): insert `}`
+    2:7 -> "}"
+error[syntax/unexpected-syntax] 5:9..5:10 ")": unexpected syntax in expression
+
+== fixed (syntax/unexpected-syntax remains) ==
+fn unclosed_block() {
+    ({} )
+}
+fn surplus_closer() {
+    g(a)) }

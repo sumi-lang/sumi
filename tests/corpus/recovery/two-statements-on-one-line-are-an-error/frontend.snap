@@ -1,19 +1,14 @@
 == tree ==
-SourceFile! 0..14
-  FnItem! 0..14
+SourceFile! 0..19
+  FnItem! 0..18
     Name 3..4 "f"
     ParamList 4..6 "()"
-    Block! 7..14
-      NameRef 9..10 "a"
-      NameRef 11..12 "b"
+    Block! 7..18
+      NameRef 13..14 "a"
+      NameRef 15..16 "b"
 
 == evidence ==
-ExpectedBoundary at 11
+ExpectedBoundary at 15
 
 == diagnostics ==
-error[syntax/expected-boundary] 1:12: expected a line break between statements
-
-== formatted ==
-fn f() {
-    a b
-}
+error[syntax/expected-boundary] 2:7: expected a line break between statements

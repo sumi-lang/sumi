@@ -26,14 +26,6 @@ impl Stage {
             Self::Eval => "UPDATE_EVAL",
         }
     }
-    /// The name a `stages` line spells; the frontend needs no selection.
-    fn name(self) -> Option<&'static str> {
-        match self {
-            Self::Frontend => None,
-            Self::Hir => Some("hir"),
-            Self::Eval => Some("eval"),
-        }
-    }
 }
 
 /// Sorted leaf-case discovery, also used to find orphan products and metadata.
@@ -53,35 +45,33 @@ fn directories_holding(dir: &Path, file: &str, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// `stages` is deliberately a list of stage names, one per line, not a
-/// general configuration language. Frontend coverage is unconditional.
-/// Expected files never select a stage.
-fn stage_selected(case: &Path, stage: Stage) -> Result<bool, String> {
-    let Some(name) = stage.name() else {
-        return Ok(true);
-    };
+/// The stages a case selects: the frontend unconditionally, and the names
+/// its `stages` file lists, one per line, deliberately not a general
+/// configuration language. Expected files never select a stage.
+fn stages(case: &Path) -> Result<Vec<Stage>, String> {
+    let mut stages = vec![Stage::Frontend];
     match fs::read_to_string(case.join("stages")) {
         Ok(text) => {
-            let mut selected = false;
             for line in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
-                match line {
-                    "hir" | "eval" => selected |= line == name,
+                stages.push(match line {
+                    "hir" => Stage::Hir,
+                    "eval" => Stage::Eval,
                     other => {
                         return Err(format!(
                             "{}: stages lists `hir` and `eval`, one per line, not `{other}`",
                             case.display()
                         ));
                     }
-                }
+                });
             }
-            Ok(selected)
         }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
-        Err(error) => Err(format!("{}: {error}", case.join("stages").display())),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(format!("{}: {error}", case.join("stages").display())),
     }
+    Ok(stages)
 }
 
-pub fn check(stage: Stage, snapshot: impl Fn(&str) -> String) {
+pub fn check(stage: Stage, snapshot: impl Fn(&str, &[Stage]) -> String) {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/corpus");
     verify(
         &root,
@@ -97,7 +87,7 @@ pub fn verify(
     root: &Path,
     stage: Stage,
     update: bool,
-    snapshot: impl Fn(&str) -> String,
+    snapshot: impl Fn(&str, &[Stage]) -> String,
 ) -> Result<(), String> {
     let mut cases = Vec::new();
     directories_holding(root, "case.sumi", &mut cases);
@@ -108,7 +98,8 @@ pub fn verify(
     let mut selected = 0;
     for case in &cases {
         let path = case.join(stage.filename());
-        if !stage_selected(case, stage)? {
+        let stages = stages(case)?;
+        if !stages.contains(&stage) {
             if path.exists() {
                 failures.push(format!(
                     "{}: snapshot for an unselected stage",
@@ -119,7 +110,7 @@ pub fn verify(
         }
         selected += 1;
         let source = fs::read_to_string(case.join("case.sumi")).expect("a case is UTF-8");
-        let actual = snapshot(&source);
+        let actual = snapshot(&source, &stages);
         let expected = match fs::read_to_string(&path) {
             Ok(text) => Some(text),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
@@ -231,7 +222,7 @@ fn selection_is_independent_of_snapshots_and_updates_are_stage_local() {
     fs::create_dir(&case).unwrap();
     fs::write(case.join("case.sumi"), "source").unwrap();
     fs::write(case.join("stages"), "hir\n").unwrap();
-    let render = |_: &str| "golden\n".to_owned();
+    let render = |_: &str, _: &[Stage]| "golden\n".to_owned();
     for stage in [Stage::Frontend, Stage::Hir] {
         assert!(
             verify(root.path(), stage, false, render)
@@ -284,7 +275,7 @@ fn malformed_metadata_or_orphan_products_fail_even_in_update_mode() {
     fs::create_dir(&case).unwrap();
     fs::write(case.join("case.sumi"), "source").unwrap();
     fs::write(case.join("stages"), "hri\n").unwrap();
-    let render = |_: &str| "golden\n".to_owned();
+    let render = |_: &str, _: &[Stage]| "golden\n".to_owned();
     assert!(
         verify(root.path(), Stage::Hir, true, render)
             .unwrap_err()

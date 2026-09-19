@@ -1,0 +1,37 @@
+== tree ==
+SourceFile! 0..123
+  FnItem! 0..45
+    Name 3..20 "between_operators"
+    ParamList 20..22 "()"
+    Block! 23..45
+      NameRef 29..30 "a"
+      Error! 31..37 "&{ & b"
+      NameRef 42..43 "c"
+  FnItem! 46..81
+    Name 49..63 "after_a_callee"
+    ParamList 63..65 "()"
+    Block! 66..81
+      ParenExpr! 72..79
+        NameRef 73..76 "foo"
+        Error! 76..77 "{"
+  FnItem! 82..122
+    Name 85..94 "after_let"
+    ParamList 94..96 "()"
+    Block! 97..122
+      LetStmt! 103..106 "let"
+      Error! 107..114 "{ a = 1"
+      NameRef 119..120 "b"
+
+== evidence ==
+ExpectedStatement at 31
+Unexpected at 76
+ExpectedName at 107
+Expected(Eq) at 107
+
+== diagnostics ==
+error[syntax/expected-statement] 2:7..2:8 "&": expected a statement
+  at 2:7..2:13 "&{ & b": skipped while recovering
+error[syntax/unexpected-syntax] 6:9..6:10 "{": unexpected syntax in expression
+error[syntax/expected-name] 9:9: expected a name
+error[syntax/expected-token] 9:9: expected `=`
+  at 9:9..9:16 "{ a = 1": skipped while recovering

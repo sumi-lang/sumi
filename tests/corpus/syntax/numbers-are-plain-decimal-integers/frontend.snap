@@ -1,0 +1,40 @@
+== tree ==
+SourceFile! 0..98
+  FnItem! 0..25
+    Name 3..11 "fraction"
+    ParamList 11..13 "()"
+    Block! 14..25
+      LiteralExpr 20..21 "1"
+      Error! 21..23 ".5"
+  FnItem 26..68
+    Name 29..52 "leading_zero_and_suffix"
+    ParamList 52..54 "()"
+    Block 55..68
+      LiteralExpr 61..66 "01u32"
+  FnItem 69..97
+    Name 72..81 "separator"
+    ParamList 81..83 "()"
+    Block 84..97
+      LiteralExpr 90..95 "1_000"
+
+== evidence ==
+ExpectedStatement at 21
+
+== diagnostics ==
+error[syntax/expected-statement] 2:6..2:7 ".": expected a statement
+  at 2:6..2:8 ".5": skipped while recovering
+error[syntax/noncanonical-number] 4:5..4:6 "0": integer literal has leading zeros
+  fix (safe): remove the leading zeros
+    4:5..4:10 "01u32" -> "1u32"
+error[syntax/unknown-suffix] 4:7..4:10 "u32": literal suffixes are not supported
+error[syntax/unknown-suffix] 7:6..7:10 "_000": literal suffixes are not supported
+
+== fixed (syntax/expected-statement, syntax/unknown-suffix remain) ==
+fn fraction() {
+    1.5 }
+fn leading_zero_and_suffix() {
+    1u32
+}
+fn separator() {
+    1_000
+}

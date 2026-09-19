@@ -1,0 +1,7 @@
+fn chained() { g()(a, b,) }
+fn multiline() {
+  g(
+    a,
+    b
+  )
+}

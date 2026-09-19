@@ -3,9 +3,26 @@ fn sequence() -> int {
     value()
     (value())
     ((value()))
-    (if true { 1 } else { 2 })
-    (({ 3 }))
+    (
+        if true {
+            1
+        } else {
+            2
+        }
+    )
+    (
+        (
+            {
+                3
+            }
+        )
+    )
     let action = 4
     (value())
     (action)
+}
+fn separate() {
+    value
+    (value())
+    _ = 1
 }

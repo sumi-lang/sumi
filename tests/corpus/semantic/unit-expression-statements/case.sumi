@@ -21,19 +21,29 @@ fn rejected() -> int {
     true
     value()
     (value())
-    { 1 }
-    if true { 1 } else { 2 }
+    {
+        1
+    }
+    if true {
+        1
+    } else {
+        2
+    }
     0
 }
 fn failed_expressions() {
     missing
     1 + true
-    if true { 1 }
+    if true {
+        1
+    }
     _ = 0
 }
 fn nested_failure() {
-    { value()
-      2 }
+    {
+        value()
+        2
+    }
     _ = 0
 }
 fn tail_requires_unit() {

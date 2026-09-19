@@ -1,0 +1,8 @@
+fn value() = 1
+x g(y: int) {
+    y
+}
+fn bare_fn() = 0 + fn
+"s" h(y: int) {
+    y
+}

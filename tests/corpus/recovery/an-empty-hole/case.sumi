@@ -1,2 +1,0 @@
-// A hole holds an expression; an empty one is missing it.
-fn f() -> str = "before {} after"

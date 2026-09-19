@@ -1,0 +1,28 @@
+== tree ==
+SourceFile! 0..98
+  FnItem! 0..47
+    Name 3..19 "on_the_same_line"
+    ParamList 19..21 "()"
+    Block! 22..47
+      LetStmt! 28..35
+        Name 32..33 "x"
+      LetStmt 36..45
+        Name 40..41 "y"
+        LiteralExpr 44..45 "1"
+  FnItem! 48..97
+    Name 51..67 "on_the_next_line"
+    ParamList 67..69 "()"
+    Block! 70..97
+      LetStmt! 76..83
+        Name 80..81 "x"
+      LetStmt 86..95
+        Name 90..91 "y"
+        LiteralExpr 94..95 "1"
+
+== evidence ==
+ExpectedExpression at 36
+ExpectedExpression at 86
+
+== diagnostics ==
+error[syntax/expected-expression] 2:13: expected an expression
+error[syntax/expected-expression] 6:3: expected an expression

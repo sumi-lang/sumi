@@ -1,10 +1,24 @@
-fn dead_branch() -> int = if false { 1 } else { 2 }
+fn dead_branch() -> int = if false {
+    1
+} else {
+    2
+}
 fn dead_rhs() -> bool = false && absent(1)
 fn absent(n: int) -> bool = n > 0
-fn nested() -> int = if true { if false { 1 } else { 2 } } else { 3 }
+fn nested() -> int = if true {
+    if false {
+        1
+    } else {
+        2
+    }
+} else {
+    3
+}
 fn uncalled(n: int) -> int = n
 fn called(n: int) -> int = n
 fn caller() -> int = called(5)
 fn uncalled_unit(u: unit, n: int) -> int = n
 fn constant_uncalled(n: int) -> int = 7
-fn plain() = { _ = 1 }
+fn plain() = {
+    _ = 1
+}

@@ -1,0 +1,4 @@
+fn parens() {
+    (a }
+fn arguments() {
+    g(a

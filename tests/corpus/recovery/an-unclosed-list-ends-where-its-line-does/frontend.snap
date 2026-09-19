@@ -1,0 +1,70 @@
+== tree ==
+SourceFile! 0..107
+  FnItem! 0..30
+    Name 3..12 "arguments"
+    ParamList 12..14 "()"
+    Block! 15..30
+      CallExpr! 21..24
+        NameRef 21..22 "g"
+        ArgList! 22..24
+          NameRef 23..24 "a"
+      NameRef 27..28 "b"
+  FnItem! 31..68
+    Name 34..48 "prefix_operand"
+    ParamList 48..50 "()"
+    Block! 51..68
+      CallExpr! 57..62
+        NameRef 57..58 "g"
+        ArgList! 58..62
+          Error! 59..60 "*"
+          NameRef 61..62 "a"
+      NameRef 65..66 "b"
+  FnItem! 69..89
+    Name 72..82 "parameters"
+    ParamList! 82..89
+      Param 83..89
+        Name 83..84 "a"
+        TypeRef 86..89 "int"
+  Error! 92..93 "x"
+  FnItem 94..106
+    Name 97..101 "next"
+    ParamList 101..103 "()"
+    Block 104..106 "{}"
+
+== evidence ==
+Expected(RParen) at 27
+ExpectedExpression at 59
+Expected(RParen) at 65
+Expected(RParen) at 92
+ExpectedBody at 92
+ExpectedItem at 92
+
+== diagnostics ==
+error[syntax/expected-token] 3:3: expected `)`
+  at 2:6..2:7 "(": opening delimiter is here
+  fix (safe): insert `)`
+    2:8 -> ")"
+error[syntax/expected-expression] 6:7..6:8 "*": expected an expression
+error[syntax/expected-token] 7:3: expected `)`
+  at 6:6..6:7 "(": opening delimiter is here
+  fix (safe): insert `)`
+    6:10 -> ")"
+error[syntax/expected-token] 10:3: expected `)`
+  at 9:14..9:15 "(": opening delimiter is here
+  fix (safe): insert `)`
+    9:21 -> ")"
+error[syntax/expected-body] 10:3: expected a body, `{` or `=`
+error[syntax/expected-item] 10:3..10:4 "x": expected a function item
+
+== fixed (syntax/expected-body, syntax/expected-expression, syntax/expected-item remain) ==
+fn arguments() {
+    g(a)
+  b
+}
+fn prefix_operand() {
+    g(* a)
+  b
+}
+fn parameters(a: int)
+  x
+fn next() {}

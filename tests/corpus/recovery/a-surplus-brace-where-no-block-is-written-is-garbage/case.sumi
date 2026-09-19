@@ -1,0 +1,11 @@
+fn between_operators() {
+    a &{ & b
+    c
+}
+fn after_a_callee() {
+    (foo{ )
+}
+fn after_let() {
+    let { a = 1
+    b
+}

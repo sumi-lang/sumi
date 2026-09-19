@@ -1,20 +1,15 @@
 == tree ==
-SourceFile! 0..22
-  FnItem! 0..22
+SourceFile! 0..27
+  FnItem! 0..26
     Name 3..4 "f"
     ParamList 4..6 "()"
-    Block! 7..22
-      NameRef 9..10 "x"
-      Error! 11..20 ": { a\nb }"
+    Block! 7..26
+      NameRef 13..14 "x"
+      Error! 15..24 ": { a\nb }"
 
 == evidence ==
-ExpectedStatement at 11
+ExpectedStatement at 15
 
 == diagnostics ==
-error[syntax/expected-statement] 1:12..1:13 ":": expected a statement
-  at 1:12..2:4 ": { a\nb }": skipped while recovering
-
-== formatted ==
-fn f() {
-    x : { a
-b } }
+error[syntax/expected-statement] 2:7..2:8 ":": expected a statement
+  at 2:7..3:4 ": { a\nb }": skipped while recovering

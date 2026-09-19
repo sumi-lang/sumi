@@ -2,8 +2,8 @@ file: rejected
 frontend errors: 0 (see frontend.snap)
 semantic errors: 3
 
-fn probe@0..151 () -> unit ∈ unit
-  result: copy : unit @0..151
+fn probe@0..152 () -> unit ∈ unit
+  result: copy : unit @0..152
     value:
       let x@21..22: int @17..26
         initializer: int 1 : int @25..26
@@ -11,19 +11,19 @@ fn probe@0..151 () -> unit ∈ unit
         initializer: eager + : int @78..83
           lhs: read x@21..22 : int
           rhs: int 1 : int @82..83
-      let x@35..36: ? @31..139
-        initializer: hole : ? @39..139
+      let x@35..36: ? @31..140
+        initializer: hole : ? @39..140
           part[0]: eager + : int @96..104
             lhs: read x@74..75 : int
             rhs: bool true : ? @100..104
           part[1]: eager + : int @124..133
             lhs: read x@21..22 : int
             rhs: bool false : ? @128..133
-      tail: unit : unit @11..151
+      tail: unit : unit @11..152
 
-fn intact@152..174 () -> int ∈ [3, 3]
-  result: copy : int @167..170
-    value: int 3 : int @173..174
+fn intact@153..175 () -> int ∈ [3, 3]
+  result: copy : int @168..171
+    value: int 3 : int @174..175
 
 == semantic diagnostics ==
 error[semantic/unknown-name]: unknown function `missing`

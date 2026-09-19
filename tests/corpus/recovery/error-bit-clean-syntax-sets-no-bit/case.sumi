@@ -1,4 +1,0 @@
-fn f(a: Int) -> Int {
-    let x = a + 1
-    x
-}

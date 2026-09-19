@@ -1,21 +1,16 @@
 == tree ==
-SourceFile! 0..17
-  FnItem! 0..17
+SourceFile! 0..22
+  FnItem! 0..21
     Name 3..4 "f"
     ParamList 4..6 "()"
-    Block! 7..17
-      BinaryExpr! 9..15
-        NameRef 9..10 "a"
-        Error! 11..12 ":"
-        NameRef 14..15 "b"
+    Block! 7..21
+      BinaryExpr! 13..19
+        NameRef 13..14 "a"
+        Error! 15..16 ":"
+        NameRef 18..19 "b"
 
 == evidence ==
-Unexpected at 11
+Unexpected at 15
 
 == diagnostics ==
-error[syntax/unexpected-syntax] 1:12..1:13 ":": unexpected syntax in expression
-
-== formatted ==
-fn f() {
-    a :+ b
-}
+error[syntax/unexpected-syntax] 2:7..2:8 ":": unexpected syntax in expression

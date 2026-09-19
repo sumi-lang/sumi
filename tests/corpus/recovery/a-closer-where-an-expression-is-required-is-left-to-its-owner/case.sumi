@@ -1,0 +1,6 @@
+fn prefix_operand() {
+    !()
+}
+fn argument() {
+    g(- ) == x
+}

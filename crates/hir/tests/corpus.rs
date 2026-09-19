@@ -18,12 +18,12 @@ mod corpus;
 
 #[test]
 fn selected_cases_match_their_snapshots() {
-    corpus::check(corpus::Stage::Hir, snapshot);
+    corpus::check(corpus::Stage::Hir, |source, _| snapshot(source));
 }
 
 #[test]
 fn selected_cases_run_as_their_snapshots_say() {
-    corpus::check(corpus::Stage::Eval, run);
+    corpus::check(corpus::Stage::Eval, |source, _| run(source));
 }
 
 fn run(source: &str) -> String {

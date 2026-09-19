@@ -1,0 +1,6 @@
+fn arguments() {
+    g(:{ a
+b)
+}
+fn parameters(a: { x
+b: int) {}

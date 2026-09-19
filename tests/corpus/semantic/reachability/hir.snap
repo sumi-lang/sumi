@@ -2,64 +2,64 @@ file: accepted
 frontend errors: 0 (see frontend.snap)
 semantic errors: 0
 
-fn dead_branch@0..51 () -> int ∈ [2, 2]
+fn dead_branch@0..59 () -> int ∈ [2, 2]
   result: copy : int @20..23
-    value: if : int @26..51
+    value: if : int @26..59
       condition: bool false : bool @29..34
-      then: int 1 : int @37..38
-      else: int 2 : int @48..49
+      then: int 1 : int @41..42
+      else: int 2 : int @56..57
 
-fn dead_rhs@52..94 () -> bool ∈ {false}
-  result: copy : bool @69..73
-    value: lazy and : bool @76..94
-      lhs: bool false : bool @76..81
-      rhs: call absent@95..128 : bool @85..94
-        arg[0]: int 1 : int @92..93
+fn dead_rhs@60..102 () -> bool ∈ {false}
+  result: copy : bool @77..81
+    value: lazy and : bool @84..102
+      lhs: bool false : bool @84..89
+      rhs: call absent@103..136 : bool @93..102
+        arg[0]: int 1 : int @100..101
 
-fn absent@95..128 (int ∈ ∅) -> bool ∈ ∅
-  param n@105..106: int
-  result: copy : bool @116..120
-    value: eager > : bool @123..128
-      lhs: read n@105..106 : int
-      rhs: int 0 : int @127..128
+fn absent@103..136 (int ∈ ∅) -> bool ∈ ∅
+  param n@113..114: int
+  result: copy : bool @124..128
+    value: eager > : bool @131..136
+      lhs: read n@113..114 : int
+      rhs: int 0 : int @135..136
 
-fn nested@129..198 () -> int ∈ [2, 2]
-  result: copy : int @144..147
-    value: if : int @150..198
-      condition: bool true : bool @153..157
-      then: if : int @160..185
-        condition: bool false : bool @163..168
-        then: int 1 : int @171..172
-        else: int 2 : int @182..183
-      else: int 3 : int @195..196
+fn nested@137..238 () -> int ∈ [2, 2]
+  result: copy : int @152..155
+    value: if : int @158..238
+      condition: bool true : bool @161..165
+      then: if : int @172..221
+        condition: bool false : bool @175..180
+        then: int 1 : int @191..192
+        else: int 2 : int @214..215
+      else: int 3 : int @235..236
 
-fn uncalled@199..229 (int ∈ ∅) -> int ∈ ∅
-  param n@211..212: int
-  result: copy : int @222..225
-    value: read n@211..212 : int
+fn uncalled@239..269 (int ∈ ∅) -> int ∈ ∅
+  param n@251..252: int
+  result: copy : int @262..265
+    value: read n@251..252 : int
 
-fn called@230..258 (int ∈ [5, 5]) -> int ∈ [5, 5]
-  param n@240..241: int
-  result: copy : int @251..254
-    value: read n@240..241 : int
+fn called@270..298 (int ∈ [5, 5]) -> int ∈ [5, 5]
+  param n@280..281: int
+  result: copy : int @291..294
+    value: read n@280..281 : int
 
-fn caller@259..289 () -> int ∈ [5, 5]
-  result: copy : int @274..277
-    value: call called@230..258 : int @280..289
-      arg[0]: int 5 : int @287..288
+fn caller@299..329 () -> int ∈ [5, 5]
+  result: copy : int @314..317
+    value: call called@270..298 : int @320..329
+      arg[0]: int 5 : int @327..328
 
-fn uncalled_unit@290..334 (unit ∈ ∅, int ∈ ∅) -> int ∈ ∅
-  param u@307..308: unit
-  param n@316..317: int
-  result: copy : int @327..330
-    value: read n@316..317 : int
-
-fn constant_uncalled@335..374 (int ∈ ∅) -> int ∈ ∅
+fn uncalled_unit@330..374 (unit ∈ ∅, int ∈ ∅) -> int ∈ ∅
+  param u@347..348: unit
   param n@356..357: int
   result: copy : int @367..370
-    value: int 7 : int @373..374
+    value: read n@356..357 : int
 
-fn plain@375..397 () -> unit ∈ unit
+fn constant_uncalled@375..414 (int ∈ ∅) -> int ∈ ∅
+  param n@396..397: int
+  result: copy : int @407..410
+    value: int 7 : int @413..414
+
+fn plain@415..441 () -> unit ∈ unit
   body:
-    discard: int 1 : int @394..395
-    tail: unit : unit @388..397
+    discard: int 1 : int @438..439
+    tail: unit : unit @428..441

@@ -1,0 +1,3 @@
+fn main() {}
+fn add(a: int, b: int) -> int { a + b }
+fn trailing_comma(a: int,) {}

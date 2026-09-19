@@ -1,0 +1,4 @@
+fn missing_closer() {
+    (a b) }
+fn block_inside() {
+    (a { b) } }

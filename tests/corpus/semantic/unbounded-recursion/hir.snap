@@ -15,104 +15,104 @@ fn too_deep@43..76 () -> int ∈ ∅
     value: call forever@0..42 : int @66..76
       arg[0]: int 0 : int @74..75
 
-fn fall@77..139 (int ∈ (-∞, 5]) -> int ∈ ∅
+fn fall@77..147 (int ∈ (-∞, 5]) -> int ∈ ∅
   param n@85..86: int
   result: copy : int @96..99
-    value: if : int @102..139
+    value: if : int @102..147
       condition: eager > : bool @105..112
         lhs: read n@85..86 : int
         rhs: int 100 : int @109..112
-      then: int 0 : int @115..116
-      else: call fall@77..139 : int @126..137
-        arg[0]: eager - : int @131..136
+      then: int 0 : int @119..120
+      else: call fall@77..147 : int @134..145
+        arg[0]: eager - : int @139..144
           lhs: read n@85..86 [n > 100 fails@105..112] : int
-          rhs: int 1 : int @135..136
+          rhs: int 1 : int @143..144
 
-fn falls@140..167 () -> int ∈ ∅
-  result: copy : int @154..157
-    value: call fall@77..139 : int @160..167
-      arg[0]: int 5 : int @165..166
+fn falls@148..175 () -> int ∈ ∅
+  result: copy : int @162..165
+    value: call fall@77..147 : int @168..175
+      arg[0]: int 5 : int @173..174
 
-fn swap@168..211 (int ∈ [1, 2], int ∈ [1, 2]) -> int ∈ ∅
-  param a@176..177: int
-  param b@184..185: int
-  result: copy : int @195..198
-    value: call swap@168..211 : int @201..211
-      arg[0]: read b@184..185 : int
-      arg[1]: read a@176..177 : int
+fn swap@176..219 (int ∈ [1, 2], int ∈ [1, 2]) -> int ∈ ∅
+  param a@184..185: int
+  param b@192..193: int
+  result: copy : int @203..206
+    value: call swap@176..219 : int @209..219
+      arg[0]: read b@192..193 : int
+      arg[1]: read a@184..185 : int
 
-fn swapped@212..244 () -> int ∈ ∅
-  result: copy : int @228..231
-    value: call swap@168..211 : int @234..244
-      arg[0]: int 1 : int @239..240
-      arg[1]: int 2 : int @242..243
+fn swapped@220..252 () -> int ∈ ∅
+  result: copy : int @236..239
+    value: call swap@176..219 : int @242..252
+      arg[0]: int 1 : int @247..248
+      arg[1]: int 2 : int @250..251
 
-fn spin@245..270 () -> int ∈ ∅
-  result: copy : int @258..261
-    value: call spin@245..270 : int @264..270
+fn spin@253..278 () -> int ∈ ∅
+  result: copy : int @266..269
+    value: call spin@253..278 : int @272..278
 
-fn both@271..322 (int ∈ [0, +∞), int ∈ [0, +∞)) -> int ∈ ∅
-  param a@279..280: int
-  param b@287..288: int
-  result: copy : int @298..301
-    value: call both@271..322 : int @304..322
-      arg[0]: eager + : int @309..314
-        lhs: read a@279..280 : int
-        rhs: int 1 : int @313..314
-      arg[1]: eager + : int @316..321
-        lhs: read b@287..288 : int
-        rhs: int 1 : int @320..321
+fn both@279..330 (int ∈ [0, +∞), int ∈ [0, +∞)) -> int ∈ ∅
+  param a@287..288: int
+  param b@295..296: int
+  result: copy : int @306..309
+    value: call both@279..330 : int @312..330
+      arg[0]: eager + : int @317..322
+        lhs: read a@287..288 : int
+        rhs: int 1 : int @321..322
+      arg[1]: eager + : int @324..329
+        lhs: read b@295..296 : int
+        rhs: int 1 : int @328..329
 
-fn boths@323..353 () -> int ∈ ∅
-  result: copy : int @337..340
-    value: call both@271..322 : int @343..353
-      arg[0]: int 0 : int @348..349
-      arg[1]: int 0 : int @351..352
+fn boths@331..361 () -> int ∈ ∅
+  result: copy : int @345..348
+    value: call both@279..330 : int @351..361
+      arg[0]: int 0 : int @356..357
+      arg[1]: int 0 : int @359..360
 
-fn either@354..459 (int ∈ [-1, 11]) -> int ∈ [0, 0]
-  param n@364..365: int
-  result: copy : int @375..378
-    value: if : int @381..459
-      condition: eager > : bool @384..390
-        lhs: read n@364..365 : int
-        rhs: int 10 : int @388..390
-      then: int 0 : int @393..394
-      else: if : int @404..457
-        condition: eager < : bool @407..412
-          lhs: read n@364..365 [n > 10 fails@384..390] : int
-          rhs: int 0 : int @411..412
-        then: int 0 : int @415..416
-        else: eager + : int @426..455
-          lhs: call either@354..459 : int @426..439
-            arg[0]: eager - : int @433..438
-              lhs: read n@364..365 [n < 0 fails@407..412, n > 10 fails@384..390] : int
-              rhs: int 1 : int @437..438
-          rhs: call either@354..459 : int @442..455
-            arg[0]: eager + : int @449..454
-              lhs: read n@364..365 [n < 0 fails@407..412, n > 10 fails@384..390] : int
-              rhs: int 1 : int @453..454
+fn either@362..499 (int ∈ [-1, 11]) -> int ∈ [0, 0]
+  param n@372..373: int
+  result: copy : int @383..386
+    value: if : int @389..499
+      condition: eager > : bool @392..398
+        lhs: read n@372..373 : int
+        rhs: int 10 : int @396..398
+      then: int 0 : int @405..406
+      else: if : int @420..497
+        condition: eager < : bool @423..428
+          lhs: read n@372..373 [n > 10 fails@392..398] : int
+          rhs: int 0 : int @427..428
+        then: int 0 : int @439..440
+        else: eager + : int @462..491
+          lhs: call either@362..499 : int @462..475
+            arg[0]: eager - : int @469..474
+              lhs: read n@372..373 [n < 0 fails@423..428, n > 10 fails@392..398] : int
+              rhs: int 1 : int @473..474
+          rhs: call either@362..499 : int @478..491
+            arg[0]: eager + : int @485..490
+              lhs: read n@372..373 [n < 0 fails@423..428, n > 10 fails@392..398] : int
+              rhs: int 1 : int @489..490
 
-fn eithers@460..491 () -> int ∈ [0, 0]
-  result: copy : int @476..479
-    value: call either@354..459 : int @482..491
-      arg[0]: int 5 : int @489..490
+fn eithers@500..531 () -> int ∈ [0, 0]
+  result: copy : int @516..519
+    value: call either@362..499 : int @522..531
+      arg[0]: int 5 : int @529..530
 
-fn ping@492..524 (int ∈ [3, 3]) -> int ∈ ∅
-  param n@500..501: int
-  result: copy : int @511..514
-    value: call pong@525..557 : int @517..524
-      arg[0]: read n@500..501 : int
+fn ping@532..564 (int ∈ [3, 3]) -> int ∈ ∅
+  param n@540..541: int
+  result: copy : int @551..554
+    value: call pong@565..597 : int @557..564
+      arg[0]: read n@540..541 : int
 
-fn pong@525..557 (int ∈ [3, 3]) -> int ∈ ∅
-  param n@533..534: int
-  result: copy : int @544..547
-    value: call ping@492..524 : int @550..557
-      arg[0]: read n@533..534 : int
+fn pong@565..597 (int ∈ [3, 3]) -> int ∈ ∅
+  param n@573..574: int
+  result: copy : int @584..587
+    value: call ping@532..564 : int @590..597
+      arg[0]: read n@573..574 : int
 
-fn pings@558..585 () -> int ∈ ∅
-  result: copy : int @572..575
-    value: call ping@492..524 : int @578..585
-      arg[0]: int 3 : int @583..584
+fn pings@598..625 () -> int ∈ ∅
+  result: copy : int @612..615
+    value: call ping@532..564 : int @618..625
+      arg[0]: int 3 : int @623..624
 
 == semantic diagnostics ==
 error[semantic/unbounded-recursion]: recursion in `forever` has no argument that moves toward a bound on every call
@@ -120,21 +120,21 @@ error[semantic/unbounded-recursion]: recursion in `forever` has no argument that
   secondary @28..42: argument increases `n`, which is unbounded above
 error[semantic/unbounded-recursion]: recursion in `fall` has no argument that moves toward a bound on every call
   primary @80..84
-  secondary @126..137: argument decreases `n`, which is unbounded below
+  secondary @134..145: argument decreases `n`, which is unbounded below
 error[semantic/unbounded-recursion]: recursion in `swap` has no argument that moves toward a bound on every call
-  primary @171..175
-  secondary @201..211: argument passes `a` along
+  primary @179..183
+  secondary @209..219: argument passes `a` along
 error[semantic/unbounded-recursion]: recursion in `spin` has no argument that moves toward a bound on every call
-  primary @248..252
-  secondary @264..270: no argument is a parameter moved by a constant
+  primary @256..260
+  secondary @272..278: no argument is a parameter moved by a constant
 error[semantic/unbounded-recursion]: recursion in `both` has no argument that moves toward a bound on every call
-  primary @274..278
-  secondary @304..322: argument increases `a`, which is unbounded above
+  primary @282..286
+  secondary @312..330: argument increases `a`, which is unbounded above
 error[semantic/unbounded-recursion]: recursion in `either` has no argument that moves toward a bound on every call
-  primary @357..363
-  secondary @426..439: argument decreases `n`
-  secondary @442..455: argument increases `n`
+  primary @365..371
+  secondary @462..475: argument decreases `n`
+  secondary @478..491: argument increases `n`
 error[semantic/unbounded-recursion]: recursion between `ping` and `pong` has no argument that moves toward a bound on every call
-  primary @495..499
-  secondary @517..524: argument passes `n` along
-  secondary @550..557: argument passes `n` along
+  primary @535..539
+  secondary @557..564: argument passes `n` along
+  secondary @590..597: argument passes `n` along

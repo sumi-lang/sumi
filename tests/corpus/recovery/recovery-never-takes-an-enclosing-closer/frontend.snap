@@ -1,22 +1,17 @@
 == tree ==
-SourceFile! 0..16
-  FnItem! 0..16
+SourceFile! 0..21
+  FnItem! 0..20
     Name 3..4 "f"
     ParamList 4..6 "()"
-    Block! 7..16
-      CallExpr! 9..14
-        NameRef 9..10 "g"
-        ArgList! 10..14
-          Error! 11..13 ":{"
+    Block! 7..20
+      CallExpr! 13..18
+        NameRef 13..14 "g"
+        ArgList! 14..18
+          Error! 15..17 ":{"
 
 == evidence ==
-ExpectedExpression at 11
+ExpectedExpression at 15
 
 == diagnostics ==
-error[syntax/expected-expression] 1:12..1:13 ":": expected an expression
-  at 1:12..1:14 ":{": skipped while recovering
-
-== formatted ==
-fn f() {
-    g(:{)
-}
+error[syntax/expected-expression] 2:7..2:8 ":": expected an expression
+  at 2:7..2:9 ":{": skipped while recovering

@@ -1,0 +1,38 @@
+== tree ==
+SourceFile! 0..136
+  FnItem! 0..28
+    Name 3..10 "operand"
+    ParamList 10..12 "()"
+    Block! 13..28
+      BinaryExpr! 19..26
+        NameRef 19..20 "a"
+        Error! 23..24 "*"
+        NameRef 25..26 "b"
+  FnItem! 29..76
+    Name 32..41 "condition"
+    ParamList 41..43 "()"
+    Block! 44..76
+      IfExpr! 50..74
+        Error! 53..54 ")"
+        NameRef 55..56 "x"
+        Block 57..74
+          NameRef 67..68 "a"
+  FnItem! 77..135
+    Name 80..97 "keyword_condition"
+    ParamList 97..99 "()"
+    Block! 100..135
+      IfExpr! 106..133
+        Error! 109..113 "else"
+        NameRef 114..115 "c"
+        Block 116..133
+          NameRef 126..127 "a"
+
+== evidence ==
+ExpectedExpression at 23
+ExpectedExpression at 53
+ExpectedExpression at 109
+
+== diagnostics ==
+error[syntax/expected-expression] 2:9..2:10 "*": expected an expression
+error[syntax/expected-expression] 5:8..5:9 ")": expected an expression
+error[syntax/expected-expression] 10:8..10:12 "else": expected an expression

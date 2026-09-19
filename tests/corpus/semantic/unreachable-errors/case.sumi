@@ -1,5 +1,13 @@
 fn or_name() -> bool = true || missing_or
 fn and_type() -> bool = false && 1
-fn then_name() -> int = if false { missing_then } else { 1 }
-fn else_type() -> int = if true { 1 } else { false }
+fn then_name() -> int = if false {
+    missing_then
+} else {
+    1
+}
+fn else_type() -> int = if true {
+    1
+} else {
+    false
+}
 fn independent() -> int = 42

@@ -1,0 +1,13 @@
+fn operand() {
+    a + * b
+}
+fn condition() {
+    if ) x {
+        a
+    }
+}
+fn keyword_condition() {
+    if else c {
+        a
+    }
+}

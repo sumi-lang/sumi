@@ -1,0 +1,46 @@
+== tree ==
+SourceFile! 0..83
+  FnItem 0..14
+    Name 3..8 "value"
+    ParamList 8..10 "()"
+    LiteralExpr 13..14 "1"
+  Error! 15..16 "x"
+  FnItem! 17..36
+    Name 17..18 "g"
+    ParamList 18..26
+      Param 19..25
+        Name 19..20 "y"
+        TypeRef 22..25 "int"
+    Block 27..36
+      NameRef 33..34 "y"
+  FnItem! 37..58
+    Name 40..47 "bare_fn"
+    ParamList 47..49 "()"
+    BinaryExpr! 52..58
+      LiteralExpr 52..53 "0"
+      ClosureExpr! 56..58 "fn"
+  Error! 59..62 "\"s\""
+  FnItem! 63..82
+    Name 63..64 "h"
+    ParamList 64..72
+      Param 65..71
+        Name 65..66 "y"
+        TypeRef 68..71 "int"
+    Block 73..82
+      NameRef 79..80 "y"
+
+== evidence ==
+ExpectedItem at 15
+Expected(FnKw) at 17
+Expected(LParen) at 59
+ExpectedBody at 59
+ExpectedItem at 59
+Expected(FnKw) at 63
+
+== diagnostics ==
+error[syntax/expected-item] 2:1..2:2 "x": expected a function item
+error[syntax/expected-token] 2:3: expected `fn`
+error[syntax/expected-token] 6:1: expected `(`
+error[syntax/expected-body] 6:1: expected a body, `{` or `=`
+error[syntax/expected-item] 6:1..6:4 "\"s\"": expected a function item
+error[syntax/expected-token] 6:5: expected `fn`

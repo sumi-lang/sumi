@@ -1,0 +1,33 @@
+== tree ==
+SourceFile! 0..65
+  FnItem! 0..32
+    Name 3..12 "arguments"
+    ParamList 12..14 "()"
+    Block! 15..32
+      CallExpr! 21..30
+        NameRef 21..22 "g"
+        ArgList! 22..30
+          Error! 23..25 ":{"
+          NameRef 26..27 "a"
+          NameRef 28..29 "b"
+  FnItem! 33..64
+    Name 36..46 "parameters"
+    ParamList! 46..61
+      Param! 47..49
+        Name 47..48 "a"
+      Error! 50..60 "{ x\nb: int"
+    Block 62..64 "{}"
+
+== evidence ==
+ExpectedExpression at 23
+Expected(Comma) at 28
+ExpectedType at 50
+ExpectedName at 50
+
+== diagnostics ==
+error[syntax/expected-expression] 2:7..2:8 ":": expected an expression
+  at 2:7..2:9 ":{": skipped while recovering
+error[syntax/expected-token] 3:1: expected `,`
+error[syntax/expected-type] 5:18: expected a type
+error[syntax/expected-name] 5:18..5:19 "{": expected a name
+  at 5:18..6:7 "{ x\nb: int": skipped while recovering

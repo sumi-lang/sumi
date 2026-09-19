@@ -2,80 +2,80 @@ file: rejected
 frontend errors: 0 (see frontend.snap)
 semantic errors: 7
 
-fn a@0..35 signature: unavailable
-  body: if : ? @9..35
+fn a@0..43 signature: unavailable
+  body: if : ? @9..43
     condition: bool true : bool @12..16
-    then: int 1 : int @19..20
-    else: call b@36..74 : ? @30..33
+    then: int 1 : int @23..24
+    else: call b@44..90 : ? @38..41
 
-fn b@36..74 signature: unavailable
-  body: if : ? @45..74
-    condition: bool true : bool @48..52
-    then: bool true : bool @55..59
-    else: call a@0..35 : ? @69..72
+fn b@44..90 signature: unavailable
+  body: if : ? @53..90
+    condition: bool true : bool @56..60
+    then: bool true : bool @67..71
+    else: call a@0..43 : ? @85..88
 
-fn consumer@75..101 () -> int ∈ [1, 1]
-  result: copy : int @92..95
-    value: call a@0..35 : ? @98..101
+fn consumer@91..117 () -> int ∈ [1, 1]
+  result: copy : int @108..111
+    value: call a@0..43 : ? @114..117
 
-fn mismatch@102..135 () -> bool ∈ ∅
-  result: copy : bool @119..123
-    value: call integer@260..276 : ? @126..135
+fn mismatch@118..151 () -> bool ∈ ∅
+  result: copy : bool @135..139
+    value: call integer@288..304 : ? @142..151
 
-fn branch@136..186 signature: unavailable
-  body: if : ? @150..186
-    condition: bool true : bool @153..157
-    then: call integer@260..276 : int @160..169
-    else: bool false : bool @179..184
+fn branch@152..210 signature: unavailable
+  body: if : ? @166..210
+    condition: bool true : bool @169..173
+    then: call integer@288..304 : int @180..189
+    else: bool false : bool @203..208
 
-fn unused@187..222 () -> unit ∈ unit
-  result: copy : unit @187..222
+fn unused@211..250 () -> unit ∈ unit
+  result: copy : unit @211..250
     value:
-      discard: call integer@260..276 : int @203..212
-      discard: int 1 : int @219..220
-      tail: unit : unit @199..222
+      discard: call integer@288..304 : int @229..238
+      discard: int 1 : int @247..248
+      tail: unit : unit @223..250
 
-fn comparison@223..259 () -> bool ∈ ∅
-  body: eager == : bool @241..259
-    lhs: call empty@277..292 : unit @241..248
-    rhs: call empty@277..292 : unit @252..259
+fn comparison@251..287 () -> bool ∈ ∅
+  body: eager == : bool @269..287
+    lhs: call empty@305..320 : unit @269..276
+    rhs: call empty@305..320 : unit @280..287
 
-fn integer@260..276 () -> int ∈ [1, 1]
-  body: int 1 : int @275..276
+fn integer@288..304 () -> int ∈ [1, 1]
+  body: int 1 : int @303..304
 
-fn empty@277..292 () -> unit ∈ unit
-  body: unit : unit @290..292
+fn empty@305..320 () -> unit ∈ unit
+  body: unit : unit @318..320
 
-fn annotated@293..353 signature: unavailable
-  body: if : ? @310..353
-    condition: bool true : bool @313..317
+fn annotated@321..392 signature: unavailable
+  body: if : ? @338..392
+    condition: bool true : bool @341..345
     then:
-      let x@324..325: int @320..334
-        initializer: int 1 : int @333..334
-      tail: read x@324..325 : int
-    else: bool true : bool @347..351
+      let x@356..357: int @352..366
+        initializer: int 1 : int @365..366
+      tail: read x@356..357 : int
+    else: bool true : bool @386..390
 
 == semantic diagnostics ==
 error[semantic/cannot-infer]: function result is both int and bool; add a return type annotation
-  primary @0..35
-  secondary @19..20: int here
-  secondary @30..33: bool here
+  primary @0..43
+  secondary @23..24: int here
+  secondary @38..41: bool here
 error[semantic/cannot-infer]: function result is both bool and int; add a return type annotation
-  primary @36..74
-  secondary @55..59: bool here
-  secondary @69..72: int here
+  primary @44..90
+  secondary @67..71: bool here
+  secondary @85..88: int here
 error[semantic/type-mismatch]: expected bool, found int
-  primary @126..135
-  secondary @119..123: declared here
+  primary @142..151
+  secondary @135..139: declared here
 error[semantic/type-mismatch]: if branches are int and bool
-  primary @150..186
-  secondary @160..169: int here
-  secondary @179..184: bool here
+  primary @166..210
+  secondary @180..189: int here
+  secondary @203..208: bool here
 error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
-  primary @203..212
+  primary @229..238
 error[semantic/type-mismatch]: unit values cannot be compared
-  primary @241..259
+  primary @269..287
 error[semantic/type-mismatch]: if branches are int and bool
-  primary @310..353
-  secondary @327..330: int here
-  secondary @347..351: bool here
+  primary @338..392
+  secondary @359..362: int here
+  secondary @386..390: bool here

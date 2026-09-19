@@ -1,0 +1,26 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 3
+
+fn body@0..20 signature: unavailable
+  body: hole : ? @12..20
+
+fn typed@21..61 signature: unavailable
+  body: hole : ? @34..61
+
+fn operand@62..89 signature: unavailable
+  body: eager + : ? @77..89
+    lhs: int 0 : int @77..78
+    rhs: hole : ? @81..89
+
+fn next@90..110 () -> int ∈ [2, 2]
+  result: copy : int @103..106
+    value: int 2 : int @109..110
+
+== semantic diagnostics ==
+error[semantic/unsupported]: construct is not supported by scalar checking
+  primary @12..20
+error[semantic/unsupported]: construct is not supported by scalar checking
+  primary @34..61
+error[semantic/unsupported]: construct is not supported by scalar checking
+  primary @81..89

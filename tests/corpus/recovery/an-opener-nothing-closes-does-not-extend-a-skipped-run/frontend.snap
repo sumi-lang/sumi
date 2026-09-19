@@ -1,30 +1,27 @@
 == tree ==
-SourceFile! 0..18
-  FnItem! 0..18
+SourceFile! 0..23
+  FnItem! 0..22
     Name 3..4 "f"
     ParamList 4..6 "()"
-    Block! 7..18
-      CallExpr! 9..16
-        NameRef 9..10 "g"
-        ArgList! 10..16
-          Error! 11..13 ":("
-          NameRef 15..16 "b"
+    Block! 7..22
+      CallExpr! 13..20
+        NameRef 13..14 "g"
+        ArgList! 14..20
+          Error! 15..17 ":("
+          NameRef 19..20 "b"
 
 == evidence ==
-ExpectedExpression at 11
-Expected(RParen) at 17
+ExpectedExpression at 15
+Expected(RParen) at 21
 
 == diagnostics ==
-error[syntax/expected-expression] 1:12..1:13 ":": expected an expression
-  at 1:12..1:14 ":(": skipped while recovering
-error[syntax/expected-token] 1:18: expected `)`
-  at 1:11..1:12 "(": opening delimiter is here
+error[syntax/expected-expression] 2:7..2:8 ":": expected an expression
+  at 2:7..2:9 ":(": skipped while recovering
+error[syntax/expected-token] 2:13: expected `)`
+  at 2:6..2:7 "(": opening delimiter is here
   fix (safe): insert `)`
-    1:17 -> ")"
+    2:12 -> ")"
 
 == fixed (syntax/expected-expression, syntax/expected-token, syntax/unexpected-syntax remain) ==
-fn f() { g(:(, b) }
-
-== formatted ==
 fn f() {
-    g(:(, b }
+    g(:(, b) }

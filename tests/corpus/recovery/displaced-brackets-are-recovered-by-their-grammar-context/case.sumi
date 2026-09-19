@@ -1,0 +1,11 @@
+fn closer_in_discard() {
+    _ = } "a"
+    x
+}
+fn opener_in_parens() {
+    (a { * b)
+}
+fn opener_in_arguments() {
+    g(a
+  { % b)
+}

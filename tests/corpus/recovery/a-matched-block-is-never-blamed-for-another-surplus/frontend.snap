@@ -1,0 +1,44 @@
+== tree ==
+SourceFile! 0..120
+  FnItem! 0..35
+    Name 3..10 "if_body"
+    ParamList 10..12 "()"
+    Block! 13..35
+      ParenExpr! 19..33
+        IfExpr! 20..32
+          NameRef 23..24 "a"
+          Block! 25..32
+            Error! 27..30 "+ b"
+  Error! 36..37 "{"
+  FnItem! 38..78
+    Name 41..52 "initializer"
+    ParamList 52..54 "()"
+    Block! 55..78
+      LetStmt! 61..76
+        Name 65..66 "x"
+        Block! 69..76
+          Error! 71..74 "+ b"
+  Error! 79..80 "{"
+  FnItem! 81..119
+    Name 84..100 "keyword_in_block"
+    ParamList 100..102 "()"
+    Block! 103..119
+      ParenExpr! 109..117
+        Block! 110..116
+          Error! 112..114 "fn"
+
+== evidence ==
+ExpectedStatement at 27
+ExpectedItem at 36
+ExpectedStatement at 71
+ExpectedItem at 79
+ExpectedExpression at 112
+
+== diagnostics ==
+error[syntax/expected-statement] 2:13..2:14 "+": expected a statement
+  at 2:13..2:16 "+ b": skipped while recovering
+error[syntax/expected-item] 3:3..3:4 "{": expected a function item
+error[syntax/expected-statement] 5:15..5:16 "+": expected a statement
+  at 5:15..5:18 "+ b": skipped while recovering
+error[syntax/expected-item] 6:3..6:4 "{": expected a function item
+error[syntax/expected-expression] 8:8..8:10 "fn": expected an expression

@@ -2,182 +2,182 @@ file: accepted
 frontend errors: 0 (see frontend.snap)
 semantic errors: 0
 
-fn climb@0..64 (int ∈ [0, 107]) -> int ∈ [101, 107]
+fn climb@0..72 (int ∈ [0, 107]) -> int ∈ [101, 107]
   param n@9..10: int
   result: copy : int @20..23
-    value: if : int @26..64
+    value: if : int @26..72
       condition: eager > : bool @29..36
         lhs: read n@9..10 : int
         rhs: int 100 : int @33..36
       then: read n@9..10 [n > 100 holds@29..36] : int
-      else: call climb@0..64 : int @50..62
-        arg[0]: eager + : int @56..61
+      else: call climb@0..72 : int @58..70
+        arg[0]: eager + : int @64..69
           lhs: read n@9..10 [n > 100 fails@29..36] : int
-          rhs: int 7 : int @60..61
+          rhs: int 7 : int @68..69
 
-fn climbed@65..95 () -> int ∈ [101, 107]
-  result: copy : int @81..84
-    value: call climb@0..64 : int @87..95
-      arg[0]: int 0 : int @93..94
+fn climbed@73..103 () -> int ∈ [101, 107]
+  result: copy : int @89..92
+    value: call climb@0..72 : int @95..103
+      arg[0]: int 0 : int @101..102
 
-fn descend@96..162 (int ∈ [-2, 50]) -> int ∈ [-2, 2]
-  param n@107..108: int
-  result: copy : int @118..121
-    value: if : int @124..162
-      condition: eager < : bool @127..132
-        lhs: read n@107..108 : int
-        rhs: int 3 : int @131..132
-      then: read n@107..108 [n < 3 holds@127..132] : int
-      else: call descend@96..162 : int @146..160
-        arg[0]: eager - : int @154..159
-          lhs: read n@107..108 [n < 3 fails@127..132] : int
-          rhs: int 5 : int @158..159
+fn descend@104..178 (int ∈ [-2, 50]) -> int ∈ [-2, 2]
+  param n@115..116: int
+  result: copy : int @126..129
+    value: if : int @132..178
+      condition: eager < : bool @135..140
+        lhs: read n@115..116 : int
+        rhs: int 3 : int @139..140
+      then: read n@115..116 [n < 3 holds@135..140] : int
+      else: call descend@104..178 : int @162..176
+        arg[0]: eager - : int @170..175
+          lhs: read n@115..116 [n < 3 fails@135..140] : int
+          rhs: int 5 : int @174..175
 
-fn descended@163..198 () -> int ∈ [-2, 2]
-  result: copy : int @181..184
-    value: call descend@96..162 : int @187..198
-      arg[0]: int 50 : int @195..197
+fn descended@179..214 () -> int ∈ [-2, 2]
+  result: copy : int @197..200
+    value: call descend@104..178 : int @203..214
+      arg[0]: int 50 : int @211..213
 
-fn lapped@199..278 (int ∈ [0, 1000], int ∈ [0, 1000]) -> int ∈ [0, 1000]
-  param n@209..210: int
-  param m@217..218: int
-  result: copy : int @228..231
-    value: if : int @234..278
-      condition: eager < : bool @237..242
-        lhs: read n@209..210 : int
-        rhs: read m@217..218 : int
-      then: call lapped@199..278 : int @245..265
-        arg[0]: eager + : int @252..257
-          lhs: read n@209..210 [n < m holds@237..242] : int
-          rhs: int 1 : int @256..257
-        arg[1]: eager - : int @259..264
-          lhs: read m@217..218 [n < m holds@237..242] : int
-          rhs: int 1 : int @263..264
-      else: read n@209..210 [n < m fails@237..242] : int
+fn lapped@215..302 (int ∈ [0, 1000], int ∈ [0, 1000]) -> int ∈ [0, 1000]
+  param n@225..226: int
+  param m@233..234: int
+  result: copy : int @244..247
+    value: if : int @250..302
+      condition: eager < : bool @253..258
+        lhs: read n@225..226 : int
+        rhs: read m@233..234 : int
+      then: call lapped@215..302 : int @265..285
+        arg[0]: eager + : int @272..277
+          lhs: read n@225..226 [n < m holds@253..258] : int
+          rhs: int 1 : int @276..277
+        arg[1]: eager - : int @279..284
+          lhs: read m@233..234 [n < m holds@253..258] : int
+          rhs: int 1 : int @283..284
+      else: read n@225..226 [n < m fails@253..258] : int
 
-fn laps@279..313 () -> int ∈ [0, 1000]
-  result: copy : int @292..295
-    value: call lapped@199..278 : int @298..313
-      arg[0]: int 0 : int @305..306
-      arg[1]: int 1000 : int @308..312
+fn laps@303..337 () -> int ∈ [0, 1000]
+  result: copy : int @316..319
+    value: call lapped@215..302 : int @322..337
+      arg[0]: int 0 : int @329..330
+      arg[1]: int 1000 : int @332..336
 
-fn rise@314..374 (int ∈ [0, 7]) -> int ∈ [6, 7]
-  param n@322..323: int
-  result: copy : int @333..336
-    value: if : int @339..374
-      condition: eager > : bool @342..347
-        lhs: read n@322..323 : int
-        rhs: int 5 : int @346..347
-      then: read n@322..323 [n > 5 holds@342..347] : int
-      else: call rise@314..374 : int @361..372
-        arg[0]: eager + : int @366..371
-          lhs: read n@322..323 [n > 5 fails@342..347] : int
-          rhs: int 2 : int @370..371
+fn rise@338..406 (int ∈ [0, 7]) -> int ∈ [6, 7]
+  param n@346..347: int
+  result: copy : int @357..360
+    value: if : int @363..406
+      condition: eager > : bool @366..371
+        lhs: read n@346..347 : int
+        rhs: int 5 : int @370..371
+      then: read n@346..347 [n > 5 holds@366..371] : int
+      else: call rise@338..406 : int @393..404
+        arg[0]: eager + : int @398..403
+          lhs: read n@346..347 [n > 5 fails@366..371] : int
+          rhs: int 2 : int @402..403
 
-fn upto@375..446 (int ∈ [0, 11], int ∈ [9, 10]) -> int ∈ [10, 11]
-  param n@383..384: int
-  param k@391..392: int
-  result: copy : int @402..405
-    value: if : int @408..446
-      condition: eager > : bool @411..416
-        lhs: read n@383..384 : int
-        rhs: read k@391..392 : int
-      then: read n@383..384 [n > k holds@411..416] : int
-      else: call upto@375..446 : int @430..444
-        arg[0]: eager + : int @435..440
-          lhs: read n@383..384 [n > k fails@411..416] : int
-          rhs: int 1 : int @439..440
-        arg[1]: read k@391..392 [n > k fails@411..416] : int
+fn upto@407..486 (int ∈ [0, 11], int ∈ [9, 10]) -> int ∈ [10, 11]
+  param n@415..416: int
+  param k@423..424: int
+  result: copy : int @434..437
+    value: if : int @440..486
+      condition: eager > : bool @443..448
+        lhs: read n@415..416 : int
+        rhs: read k@423..424 : int
+      then: read n@415..416 [n > k holds@443..448] : int
+      else: call upto@407..486 : int @470..484
+        arg[0]: eager + : int @475..480
+          lhs: read n@415..416 [n > k fails@443..448] : int
+          rhs: int 1 : int @479..480
+        arg[1]: read k@423..424 [n > k fails@443..448] : int
 
-fn passed_through@447..496 () -> int ∈ [10, 11]
-  result: copy : int @470..473
-    value: call upto@375..446 : int @476..496
-      arg[0]: int 0 : int @481..482
-      arg[1]: eager + : int @484..495
-        lhs: call rise@314..374 : int @484..491
-          arg[0]: int 0 : int @489..490
-        rhs: int 3 : int @494..495
+fn passed_through@487..536 () -> int ∈ [10, 11]
+  result: copy : int @510..513
+    value: call upto@407..486 : int @516..536
+      arg[0]: int 0 : int @521..522
+      arg[1]: eager + : int @524..535
+        lhs: call rise@338..406 : int @524..531
+          arg[0]: int 0 : int @529..530
+        rhs: int 3 : int @534..535
 
-fn same@497..523 (int ∈ [3, 6]) -> int ∈ [3, 6]
-  param n@505..506: int
-  result: copy : int @516..519
-    value: read n@505..506 : int
+fn same@537..563 (int ∈ [3, 6]) -> int ∈ [3, 6]
+  param n@545..546: int
+  result: copy : int @556..559
+    value: read n@545..546 : int
 
-fn compared@524..589 (int ∈ [1, 2]) -> int ∈ [0, 0]
-  param a@536..537: int
-  result: copy : int @547..550
-    value: if : int @553..589
-      condition: eager == : bool @556..572
-        lhs: call same@497..523 : int @556..567
-          arg[0]: eager * : int @561..566
-            lhs: read a@536..537 : int
-            rhs: int 3 : int @565..566
-        rhs: read a@536..537 : int
-      then: int 1 : int @575..576
-      else: int 0 : int @586..587
+fn compared@564..637 (int ∈ [1, 2]) -> int ∈ [0, 0]
+  param a@576..577: int
+  result: copy : int @587..590
+    value: if : int @593..637
+      condition: eager == : bool @596..612
+        lhs: call same@537..563 : int @596..607
+          arg[0]: eager * : int @601..606
+            lhs: read a@576..577 : int
+            rhs: int 3 : int @605..606
+        rhs: read a@576..577 : int
+      then: int 1 : int @619..620
+      else: int 0 : int @634..635
 
-fn compareds@590..639 () -> int ∈ [0, 0]
-  result: copy : int @608..611
-    value: eager + : int @614..639
-      lhs: call compared@524..589 : int @614..625
-        arg[0]: int 1 : int @623..624
-      rhs: call compared@524..589 : int @628..639
-        arg[0]: int 2 : int @637..638
+fn compareds@638..687 () -> int ∈ [0, 0]
+  result: copy : int @656..659
+    value: eager + : int @662..687
+      lhs: call compared@564..637 : int @662..673
+        arg[0]: int 1 : int @671..672
+      rhs: call compared@564..637 : int @676..687
+        arg[0]: int 2 : int @685..686
 
-fn climb_compared@640..712 (int ∈ [1, 2]) -> int ∈ [0, 0]
-  param a@658..659: int
-  result: copy : int @669..672
-    value: if : int @675..712
-      condition: eager == : bool @678..695
-        lhs: call climb@0..64 : int @678..690
-          arg[0]: eager * : int @684..689
-            lhs: read a@658..659 : int
-            rhs: int 3 : int @688..689
-        rhs: read a@658..659 : int
-      then: int 1 : int @698..699
-      else: int 0 : int @709..710
+fn climb_compared@688..768 (int ∈ [1, 2]) -> int ∈ [0, 0]
+  param a@706..707: int
+  result: copy : int @717..720
+    value: if : int @723..768
+      condition: eager == : bool @726..743
+        lhs: call climb@0..72 : int @726..738
+          arg[0]: eager * : int @732..737
+            lhs: read a@706..707 : int
+            rhs: int 3 : int @736..737
+        rhs: read a@706..707 : int
+      then: int 1 : int @750..751
+      else: int 0 : int @765..766
 
-fn climbs_compared@713..780 () -> int ∈ [0, 0]
-  result: copy : int @737..740
-    value: eager + : int @743..780
-      lhs: call climb_compared@640..712 : int @743..760
-        arg[0]: int 1 : int @758..759
-      rhs: call climb_compared@640..712 : int @763..780
-        arg[0]: int 2 : int @778..779
+fn climbs_compared@769..836 () -> int ∈ [0, 0]
+  result: copy : int @793..796
+    value: eager + : int @799..836
+      lhs: call climb_compared@688..768 : int @799..816
+        arg[0]: int 1 : int @814..815
+      rhs: call climb_compared@688..768 : int @819..836
+        arg[0]: int 2 : int @834..835
 
-fn relay@781..1022 (int ∈ [0, 107]) -> int ∈ [101, 107]
-  param n@790..791: int
-  result: copy : int @801..804
+fn relay@837..1102 (int ∈ [0, 107]) -> int ∈ [101, 107]
+  param n@846..847: int
+  result: copy : int @857..860
     value:
-      let a@815..816: int @811..825
-        initializer: read n@790..791 : int
-      let b@834..835: int @830..844
-        initializer: read a@815..816 : int
-      let c@853..854: int @849..863
-        initializer: read b@834..835 : int
-      let d@872..873: int @868..882
-        initializer: read c@853..854 : int
-      let e@891..892: int @887..901
-        initializer: read d@872..873 : int
-      let f@910..911: int @906..920
-        initializer: read e@891..892 : int
-      let g@929..930: int @925..939
-        initializer: read f@910..911 : int
-      let h@948..949: int @944..958
-        initializer: read g@929..930 : int
-      let i@967..968: int @963..977
-        initializer: read h@948..949 : int
-      tail: if : int @982..1020
-        condition: eager > : bool @985..992
-          lhs: read i@967..968 : int
-          rhs: int 100 : int @989..992
-        then: read i@967..968 [i > 100 holds@985..992] : int
-        else: call relay@781..1022 : int @1006..1018
-          arg[0]: eager + : int @1012..1017
-            lhs: read i@967..968 [i > 100 fails@985..992] : int
-            rhs: int 7 : int @1016..1017
+      let a@871..872: int @867..881
+        initializer: read n@846..847 : int
+      let b@890..891: int @886..900
+        initializer: read a@871..872 : int
+      let c@909..910: int @905..919
+        initializer: read b@890..891 : int
+      let d@928..929: int @924..938
+        initializer: read c@909..910 : int
+      let e@947..948: int @943..957
+        initializer: read d@928..929 : int
+      let f@966..967: int @962..976
+        initializer: read e@947..948 : int
+      let g@985..986: int @981..995
+        initializer: read f@966..967 : int
+      let h@1004..1005: int @1000..1014
+        initializer: read g@985..986 : int
+      let i@1023..1024: int @1019..1033
+        initializer: read h@1004..1005 : int
+      tail: if : int @1038..1100
+        condition: eager > : bool @1041..1048
+          lhs: read i@1023..1024 : int
+          rhs: int 100 : int @1045..1048
+        then: read i@1023..1024 [i > 100 holds@1041..1048] : int
+        else: call relay@837..1102 : int @1082..1094
+          arg[0]: eager + : int @1088..1093
+            lhs: read i@1023..1024 [i > 100 fails@1041..1048] : int
+            rhs: int 7 : int @1092..1093
 
-fn relayed@1023..1053 () -> int ∈ [101, 107]
-  result: copy : int @1039..1042
-    value: call relay@781..1022 : int @1045..1053
-      arg[0]: int 0 : int @1051..1052
+fn relayed@1103..1133 () -> int ∈ [101, 107]
+  result: copy : int @1119..1122
+    value: call relay@837..1102 : int @1125..1133
+      arg[0]: int 0 : int @1131..1132

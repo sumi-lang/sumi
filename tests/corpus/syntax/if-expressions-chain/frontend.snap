@@ -1,0 +1,44 @@
+== tree ==
+SourceFile 0..113
+  FnItem 0..55
+    Name 3..11 "one_line"
+    ParamList 11..13 "()"
+    Block 14..55
+      IfExpr 16..53
+        NameRef 19..20 "a"
+        Block 21..26
+          LiteralExpr 23..24 "1"
+        IfExpr 32..53
+          NameRef 35..36 "b"
+          Block 37..42
+            LiteralExpr 39..40 "2"
+          Block 48..53
+            LiteralExpr 50..51 "3"
+  FnItem 56..112
+    Name 59..80 "else_on_the_next_line"
+    ParamList 80..82 "()"
+    Block 83..112
+      IfExpr 87..110
+        NameRef 90..91 "a"
+        Block 92..97
+          LiteralExpr 94..95 "1"
+        Block 105..110
+          LiteralExpr 107..108 "2"
+
+== formatted ==
+fn one_line() {
+    if a {
+        1
+    } else if b {
+        2
+    } else {
+        3
+    }
+}
+fn else_on_the_next_line() {
+    if a {
+        1
+    } else {
+        2
+    }
+}

@@ -1,0 +1,27 @@
+== tree ==
+SourceFile! 0..60
+  FnItem! 0..26
+    Name 3..10 "chained"
+    ParamList 10..12 "()"
+    Block! 13..26
+      Error! 15..24
+        BinaryExpr 15..20
+          NameRef 15..16 "a"
+          NameRef 19..20 "b"
+        NameRef 23..24 "c"
+  FnItem 27..59
+    Name 30..37 "grouped"
+    ParamList 37..39 "()"
+    Block 40..59
+      BinaryExpr 46..57
+        ParenExpr 46..53
+          BinaryExpr 47..52
+            NameRef 47..48 "a"
+            NameRef 51..52 "b"
+        NameRef 56..57 "c"
+
+== evidence ==
+ChainedComparison at 21
+
+== diagnostics ==
+error[syntax/chained-comparison] 1:22..1:23 "<": comparison operators cannot be chained

@@ -1,0 +1,96 @@
+== tree ==
+SourceFile! 0..244
+  FnItem! 0..38
+    Name 3..18 "item_in_garbage"
+    ParamList 18..20 "()"
+    Block! 21..38
+      Error! 23..38 ": { fn g() {} }"
+  FnItem! 39..98
+    Name 42..67 "item_in_garbage_in_parens"
+    ParamList 67..69 "()"
+    Block! 70..98
+      ParenExpr! 76..96
+        Block! 77..94
+          Error! 79..94 ": { fn g() {} }"
+  FnItem! 99..182
+    Name 102..121 "closer_in_arguments"
+    ParamList 121..123 "()"
+    Block! 124..182
+      ParenExpr! 130..180
+        Block! 140..178
+          CallExpr! 154..178
+            NameRef 154..155 "g"
+            ArgList! 155..178
+              NameRef 173..174 "a"
+              Error! 175..176 "}"
+              NameRef 177..178 "x"
+  FnItem! 183..243
+    Name 186..202 "closer_in_parens"
+    ParamList 202..204 "()"
+    Block! 205..243
+      ParenExpr! 211..241
+        Block! 221..239
+          ParenExpr! 235..239
+            Error! 236..237 "}"
+            NameRef 238..239 "x"
+
+== evidence ==
+ExpectedStatement at 23
+Expected(RBrace) at 39
+ExpectedStatement at 79
+Expected(RBrace) at 95
+ExpectedExpression at 175
+Expected(RParen) at 179
+Expected(RBrace) at 179
+ExpectedExpression at 236
+Expected(RParen) at 240
+Expected(RBrace) at 240
+
+== diagnostics ==
+error[syntax/expected-statement] 1:24..1:25 ":": expected a statement
+  at 1:24..1:39 ": { fn g() {} }": skipped while recovering
+error[syntax/expected-token] 2:1: expected `}`
+  at 1:22..1:23 "{": opening delimiter is here
+  fix (safe): insert `}`
+    1:39 -> "}"
+error[syntax/expected-statement] 3:8..3:9 ":": expected a statement
+  at 3:8..3:23 ": { fn g() {} }": skipped while recovering
+error[syntax/expected-token] 3:24: expected `}`
+  at 3:6..3:7 "{": opening delimiter is here
+  fix (safe): insert `}`
+    3:23 -> "}"
+error[syntax/expected-expression] 9:19..9:20 "}": expected an expression
+error[syntax/expected-token] 9:23: expected `)`
+  at 8:14..8:15 "(": opening delimiter is here
+  fix (safe): insert `)`
+    9:22 -> ")"
+error[syntax/expected-token] 9:23: expected `}`
+  at 7:9..7:10 "{": opening delimiter is here
+  fix (safe): insert `}`
+    9:22 -> "}"
+error[syntax/expected-expression] 14:14..14:15 "}": expected an expression
+error[syntax/expected-token] 14:18: expected `)`
+  at 14:13..14:14 "(": opening delimiter is here
+  fix (safe): insert `)`
+    14:17 -> ")"
+error[syntax/expected-token] 14:18: expected `}`
+  at 13:9..13:10 "{": opening delimiter is here
+  fix (safe): insert `}`
+    14:17 -> "}"
+
+== fixed (syntax/expected-expression, syntax/expected-item, syntax/expected-statement, syntax/expected-token remain) ==
+fn item_in_garbage() { : { fn g() {} }}
+fn item_in_garbage_in_parens() {
+    ({ : { fn g() {} }} )
+}
+fn closer_in_arguments() {
+    (
+        {
+            g(
+                a } x)} )
+}
+fn closer_in_parens() {
+    (
+        {
+            (} x)} )
+}

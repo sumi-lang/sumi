@@ -1,0 +1,106 @@
+== tree ==
+SourceFile! 0..251
+  FnItem! 0..47
+    Name 3..14 "inner_block"
+    ParamList 14..16 "()"
+    TypeRef 20..23 "int"
+    Block! 24..47
+      Block 30..47
+        NameRef 40..41 "b"
+  FnItem 49..63
+    Name 52..58 "next_a"
+    ParamList 58..60 "()"
+    Block 61..63 "{}"
+  FnItem! 64..99
+    Name 67..74 "if_body"
+    ParamList 74..76 "()"
+    Block! 77..99
+      IfExpr! 83..99
+        NameRef 86..87 "c"
+        Block! 88..99
+          NameRef 98..99 "x"
+  FnItem 100..114
+    Name 103..109 "next_b"
+    ParamList 109..111 "()"
+    Block 112..114 "{}"
+  FnItem! 115..145
+    Name 118..135 "after_a_statement"
+    ParamList 135..137 "()"
+    Block! 138..145
+      NameRef 144..145 "x"
+  FnItem 146..160
+    Name 149..155 "next_c"
+    ParamList 155..157 "()"
+    Block 158..160 "{}"
+  FnItem! 161..183
+    Name 164..177 "after_garbage"
+    ParamList 177..179 "()"
+    Block! 180..183
+      Error! 182..183 ":"
+  FnItem 184..198
+    Name 187..193 "next_d"
+    ParamList 193..195 "()"
+    Block 196..198 "{}"
+  FnItem! 199..250
+    Name 202..227 "after_garbage_then_closed"
+    ParamList 227..229 "()"
+    Block! 230..250
+      Error! 232..248 ": fn next_e() {}"
+
+== evidence ==
+Expected(RBrace) at 49
+Expected(RBrace) at 100
+Expected(RBrace) at 100
+Expected(RBrace) at 146
+FunctionItemOnSameLine at 146
+ExpectedStatement at 182
+Expected(RBrace) at 184
+FunctionItemOnSameLine at 184
+ExpectedStatement at 232
+
+== diagnostics ==
+error[syntax/expected-token] 6:1: expected `}`
+  at 1:25..1:26 "{": opening delimiter is here
+  fix (safe): insert `}`
+    4:6 -> "}"
+error[syntax/expected-token] 10:1: expected `}`
+  at 8:10..8:11 "{": opening delimiter is here
+  fix (safe): insert `}`
+    9:10 -> "}"
+error[syntax/expected-token] 10:1: expected `}`
+  at 7:14..7:15 "{": opening delimiter is here
+error[syntax/expected-token] 12:7: expected `}`
+  at 11:24..11:25 "{": opening delimiter is here
+  fix (safe): insert `}`
+    12:6 -> "}"
+error[syntax/function-item-on-same-line] 12:7..12:9 "fn": function item must begin on a new line
+  fix (safe): move function item onto a new line
+    12:6..12:7 " " -> "\n"
+error[syntax/expected-statement] 13:22..13:23 ":": expected a statement
+error[syntax/expected-token] 13:24: expected `}`
+  at 13:20..13:21 "{": opening delimiter is here
+  fix (safe): insert `}`
+    13:23 -> "}"
+error[syntax/function-item-on-same-line] 13:24..13:26 "fn": function item must begin on a new line
+  fix (safe): move function item onto a new line
+    13:23..13:24 " " -> "\n"
+error[syntax/expected-statement] 14:34..14:35 ":": expected a statement
+  at 14:34..14:50 ": fn next_e() {}": skipped while recovering
+
+== fixed (syntax/expected-statement, syntax/expected-token remain) ==
+fn inner_block() -> int {
+    {
+        b
+    }}
+
+fn next_a() {}
+fn if_body() {
+    if c {
+        x}
+fn next_b() {}
+fn after_a_statement() {
+    x}
+fn next_c() {}
+fn after_garbage() { :}
+fn next_d() {}
+fn after_garbage_then_closed() { : fn next_e() {} }

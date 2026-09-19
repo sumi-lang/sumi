@@ -1,0 +1,42 @@
+== tree ==
+SourceFile! 0..52
+  FnItem! 0..27
+    Name 3..9 "braces"
+    ParamList 9..11 "()"
+    Block! 12..27
+      IfExpr! 18..27
+        LiteralExpr 21..25 "true"
+        Block! 26..27 "{"
+  FnItem! 28..51
+    Name 31..37 "parens"
+    ParamList 37..39 "()"
+    Block! 40..51
+      ParenExpr! 46..49
+        ParenExpr! 47..49
+          LiteralExpr 48..49 "1"
+
+== evidence ==
+Expected(RBrace) at 28
+Expected(RBrace) at 28
+Expected(RParen) at 50
+Expected(RParen) at 50
+
+== diagnostics ==
+error[syntax/expected-token] 3:1: expected `}`
+  at 2:13..2:14 "{": opening delimiter is here
+  fix (safe): insert `}`
+    2:14 -> "}"
+error[syntax/expected-token] 3:1: expected `}`
+  at 1:13..1:14 "{": opening delimiter is here
+error[syntax/expected-token] 4:9: expected `)`
+  at 4:6..4:7 "(": opening delimiter is here
+  fix (safe): insert `)`
+    4:8 -> ")"
+error[syntax/expected-token] 4:9: expected `)`
+  at 4:5..4:6 "(": opening delimiter is here
+
+== fixed (syntax/expected-token remains) ==
+fn braces() {
+    if true {}
+fn parens() {
+    ((1) }

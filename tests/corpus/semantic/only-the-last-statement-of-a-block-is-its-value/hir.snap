@@ -1,0 +1,34 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 7
+
+fn f@0..109 () -> int ∈ [42, 42]
+  result: copy : int @10..13
+    value:
+      discard: hole : ? @20..23
+      discard: if : ? @28..52
+        condition: hole : ? @31..32
+        then: hole : ? @43..46
+        else: unit (implicit)
+      discard: hole : ? @67..70
+      discard: hole : ? @81..90
+      discard: eager + : ? @95..100
+        lhs: hole : ? @95..96
+        rhs: hole : ? @99..100
+      tail: int 42 : int @105..107
+
+== semantic diagnostics ==
+error[semantic/unknown-name]: unknown function `g`
+  primary @20..21
+error[semantic/unknown-name]: unknown name `c`
+  primary @31..32
+error[semantic/unknown-name]: unknown function `h`
+  primary @43..44
+error[semantic/unknown-name]: unknown function `k`
+  primary @67..68
+error[semantic/unsupported]: construct is not supported by scalar checking
+  primary @81..90
+error[semantic/unknown-name]: unknown name `a`
+  primary @95..96
+error[semantic/unknown-name]: unknown name `b`
+  primary @99..100

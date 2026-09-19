@@ -1,0 +1,6 @@
+fn body() = fn() = 1
+fn typed() = fn(x: int) -> int {
+    x
+}
+fn operand() = 0 + fn() = 1
+fn next() -> int = 2

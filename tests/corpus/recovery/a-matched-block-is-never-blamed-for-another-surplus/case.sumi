@@ -1,0 +1,9 @@
+fn if_body() {
+    (if a { + b })
+} {
+fn initializer() {
+    let x = { + b }
+} {
+fn keyword_in_block() {
+    ({ fn })
+}

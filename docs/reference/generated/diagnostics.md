@@ -22,7 +22,7 @@ the repair is mechanical.
 A string literal reaches the end of its line without a closing `"`. The
 literal ends at the line break, so nothing after that line is affected.
 
-Shown by [`tests/corpus/strings/plain-string-ends-at-its-line`](../../../tests/corpus/strings/plain-string-ends-at-its-line/case.sumi):
+Shown by [`tests/corpus/syntax/plain-string-ends-at-its-line`](../../../tests/corpus/syntax/plain-string-ends-at-its-line/case.sumi):
 
 ```sumi
 fn f() {
@@ -55,14 +55,15 @@ error[syntax/lone-carriage-return] 1:12..2:1 "\r": carriage return must be follo
 A character with no meaning in Sumi source outside a string or comment.
 Names are ASCII letters, digits, and `_`.
 
-Shown by [`tests/corpus/diagnostics/unknown-character-in-expression`](../../../tests/corpus/diagnostics/unknown-character-in-expression/case.sumi):
+Shown by [`tests/corpus/recovery/lexer-errors-do-not-hide-statement-recovery`](../../../tests/corpus/recovery/lexer-errors-do-not-hide-statement-recovery/case.sumi):
 
 ```sumi
-fn f() { a € + b }
+fn f() {
+    a € + b c }
 ```
 
 ```text
-error[syntax/unknown-character] 1:12..1:15 "€": character has no meaning in Sumi source
+error[syntax/unknown-character] 2:7..2:10 "€": character has no meaning in Sumi source
 ```
 
 ### `syntax/unknown-suffix`
@@ -70,14 +71,14 @@ error[syntax/unknown-character] 1:12..1:15 "€": character has no meaning in Su
 Identifier characters attached to an integer literal, as in `1u32`,
 `1e5`, or `1_000`. Literals take no suffix, exponent, or separator.
 
-Shown by [`tests/corpus/diagnostics/number-separator-is-a-suffix`](../../../tests/corpus/diagnostics/number-separator-is-a-suffix/case.sumi):
+Shown by [`tests/corpus/recovery/malformed-literals-are-structurally-ordinary`](../../../tests/corpus/recovery/malformed-literals-are-structurally-ordinary/case.sumi):
 
 ```sumi
-fn f() { 1_000 }
+1e
 ```
 
 ```text
-error[syntax/unknown-suffix] 1:11..1:15 "_000": literal suffixes are not supported
+error[syntax/unknown-suffix] 1:2..1:3 "e": literal suffixes are not supported
 ```
 
 ### `syntax/noncanonical-number`
@@ -107,7 +108,7 @@ error[syntax/noncanonical-number] 1:25..1:26 "0": integer literal has leading ze
 A backslash in a string literal beginning none of the escapes `\n`,
 `\r`, `\t`, `\\`, `\"`, and `\0`.
 
-Shown by [`tests/corpus/strings/escapes-are-judged-in-every-literal`](../../../tests/corpus/strings/escapes-are-judged-in-every-literal/case.sumi):
+Shown by [`tests/corpus/syntax/escapes-are-judged-in-every-literal`](../../../tests/corpus/syntax/escapes-are-judged-in-every-literal/case.sumi):
 
 ```sumi
 // Escapes are checked in every string literal, terminated or not, and a
@@ -132,34 +133,35 @@ Shown by [`tests/corpus/recovery/prior-phase-tokens-are-recorded-as-recovery`](.
 
 ```sumi
 fn f() {
-  a ;
-  b
+    a ;
+    b
 }
 ```
 
 ```text
-error[syntax/unknown-punctuation] 2:5..2:6 ";": punctuation has no meaning in Sumi source
+error[syntax/unknown-punctuation] 2:7..2:8 ";": punctuation has no meaning in Sumi source
 ```
 
 ### `syntax/expected-item`
 
 Something other than a function item at the top level of the file.
 
-Shown by [`tests/corpus/recovery/a-body-closes-at-the-nearest-matching-brace-1`](../../../tests/corpus/recovery/a-body-closes-at-the-nearest-matching-brace-1/case.sumi):
+Shown by [`tests/corpus/recovery/a-call-in-garbage-stays-garbage`](../../../tests/corpus/recovery/a-call-in-garbage-stays-garbage/case.sumi):
 
 ```sumi
-fn f() {
-  a
-  } + b
-  c
-}
-
-fn g() {}
+fn f() = 1
+if cond(x) { y }
+total = compute(x) { y }
+x g(y) == 2
+return g(y) { y }
+x g
+(y: int) { y }
+x g(y: int) =
 ```
 
 ```text
-error[syntax/expected-item] 3:5..3:6 "+": expected a function item
-  at 3:5..5:2 "+ b\n  c\n}": skipped while recovering
+error[syntax/expected-item] 2:1..2:3 "if": expected a function item
+  at 2:1..8:14 "if cond(x) { y }\ntotal = compute(x) { y }\nx g(y) == 2\nreturn g(y) { y }\nx g\n(y: int) { y }\nx g(y: int) =": skipped while recovering
 ```
 
 ### `syntax/expected-statement`
@@ -167,15 +169,17 @@ error[syntax/expected-item] 3:5..3:6 "+": expected a function item
 A token that cannot begin a statement where a block's next statement
 should start.
 
-Shown by [`tests/corpus/diagnostics/number-fraction-is-not-a-token`](../../../tests/corpus/diagnostics/number-fraction-is-not-a-token/case.sumi):
+Shown by [`tests/corpus/recovery/a-nested-fn-is-skipped-whole`](../../../tests/corpus/recovery/a-nested-fn-is-skipped-whole/case.sumi):
 
 ```sumi
-fn f() { 1.5 }
+fn f() {
+    fn g() {}
+}
 ```
 
 ```text
-error[syntax/expected-statement] 1:11..1:12 ".": expected a statement
-  at 1:11..1:13 ".5": skipped while recovering
+error[syntax/expected-statement] 2:5..2:7 "fn": expected a statement
+  at 2:5..2:14 "fn g() {}": skipped while recovering
 ```
 
 ### `syntax/expected-expression`
@@ -183,43 +187,54 @@ error[syntax/expected-statement] 1:11..1:12 ".": expected a statement
 An expression is required, after an operator, `=`, or `(` for instance,
 and the next token cannot begin one.
 
-Shown by [`tests/corpus/recovery/a-closed-list-owns-everything-up-to-its-closer-3`](../../../tests/corpus/recovery/a-closed-list-owns-everything-up-to-its-closer-3/case.sumi):
+Shown by [`tests/corpus/recovery/a-prefix-without-an-operand-reports-only-the-missing-operand`](../../../tests/corpus/recovery/a-prefix-without-an-operand-reports-only-the-missing-operand/case.sumi):
 
 ```sumi
-fn f() { g(fn, b) }
+fn f() {
+    - }
 ```
 
 ```text
-error[syntax/expected-expression] 1:12..1:14 "fn": expected an expression
+error[syntax/expected-expression] 2:7: expected an expression
 ```
 
 ### `syntax/expected-name`
 
 The name a `fn`, `let`, or parameter declares is missing.
 
-Shown by [`tests/corpus/recovery/a-closed-list-owns-everything-up-to-its-closer-2`](../../../tests/corpus/recovery/a-closed-list-owns-everything-up-to-its-closer-2/case.sumi):
+Shown by [`tests/corpus/recovery/a-missing-function-name-keeps-its-multiline-body`](../../../tests/corpus/recovery/a-missing-function-name-keeps-its-multiline-body/case.sumi):
 
 ```sumi
-fn x1(b: int, foo: int{ ) {}
+fn
+ () {g(
+)
+}
 ```
 
 ```text
-error[syntax/expected-name] 1:23..1:24 "{": expected a name
+error[syntax/expected-name] 2:2: expected a name
 ```
 
 ### `syntax/expected-type`
 
 A type is required after `:` or `->` and none follows.
 
-Shown by [`tests/corpus/recovery/a-closed-list-owns-a-boundary-an-unclosed-brace-restores-2`](../../../tests/corpus/recovery/a-closed-list-owns-a-boundary-an-unclosed-brace-restores-2/case.sumi):
+Shown by [`tests/corpus/semantic/damaged-bindings`](../../../tests/corpus/semantic/damaged-bindings/case.sumi):
 
 ```sumi
-fn f(a: { x
-b: int) {}
+fn damaged() {
+    let x = true
+    let x =
+    _ = x + 1
+    let y: = 1
+    _ = y
+    _ = missing
+}
+fn intact() -> int = 3
 ```
 
 ```text
-error[syntax/expected-type] 1:9: expected a type
+error[syntax/expected-type] 5:12: expected a type
 ```
 
 ### `syntax/expected-token`
@@ -229,17 +244,20 @@ bracket, a `,` between list elements, or the `(` of a parameter list.
 For a missing closer, a label points at the opener and the fix inserts
 the closer.
 
-Shown by [`tests/corpus/diagnostics/missing-closer-before-trailing-comment`](../../../tests/corpus/diagnostics/missing-closer-before-trailing-comment/case.sumi):
+Shown by [`tests/corpus/recovery/a-body-whose-closer-an-inner-block-took-ends-at-the-next-item`](../../../tests/corpus/recovery/a-body-whose-closer-an-inner-block-took-ends-at-the-next-item/case.sumi):
 
 ```sumi
-fn f() { x // tail
+fn f() {
+    (a { b) }
+fn g() {}
 ```
 
 ```text
-error[syntax/expected-token] 1:19: expected `}`
-  at 1:8..1:9 "{": opening delimiter is here
-  fix (safe): insert `}`
-    1:11 -> "}"
+error[syntax/expected-token] 2:8: expected `)`
+  at 2:5..2:6 "(": opening delimiter is here
+  at 2:8..2:12 "{ b)": skipped while recovering
+  fix (safe): insert `)`
+    2:7 -> ")"
 ```
 
 ### `syntax/expected-body`
@@ -265,14 +283,16 @@ error[syntax/expected-body] 3:5: expected a body, `{` or `=`
 Two statements share a line. A line break ends a statement; there is no
 `;`.
 
-Shown by [`tests/corpus/recovery/assignment-recovery-preserves-statement-boundaries-4`](../../../tests/corpus/recovery/assignment-recovery-preserves-statement-boundaries-4/case.sumi):
+Shown by [`tests/corpus/recovery/two-statements-on-one-line-are-an-error`](../../../tests/corpus/recovery/two-statements-on-one-line-are-an-error/case.sumi):
 
 ```sumi
-fn f() { x = 1 y = 2 }
+fn f() {
+    a b
+}
 ```
 
 ```text
-error[syntax/expected-boundary] 1:16: expected a line break between statements
+error[syntax/expected-boundary] 2:7: expected a line break between statements
 ```
 
 ### `syntax/unexpected-syntax`
@@ -296,18 +316,19 @@ error[syntax/unexpected-syntax] 2:4..2:5 ":": unexpected syntax in expression
 Expressions nest deeper than the parser's limit of 256 levels, which
 keeps parsing on a bounded stack.
 
-Shown by [`tests/corpus/diagnostics/expression-nesting-limit`](../../../tests/corpus/diagnostics/expression-nesting-limit/case.sumi):
+Shown by [`tests/corpus/recovery/expression-nesting-limit`](../../../tests/corpus/recovery/expression-nesting-limit/case.sumi):
 
 ```sumi
 // Past the nesting limit the rest of the expression is skipped as one run
 // and reported once, and the next item still parses.
-fn deep() = !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!x
+fn deep() =
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!x
 fn after() = 1
 ```
 
 ```text
-error[syntax/nesting-too-deep] 3:268..3:269 "!": expression nesting limit exceeded
-  at 3:268..3:314 "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!x": skipped while recovering
+error[syntax/nesting-too-deep] 4:260..4:261 "!": expression nesting limit exceeded
+  at 4:260..4:306 "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!x": skipped while recovering
 ```
 
 ### `syntax/unspaced-binary-operator`
@@ -317,17 +338,17 @@ operators are spaced on both sides; glued, `<` opens type arguments and
 `*` and `&` are reserved for prefix operators. The fix inserts the
 spaces.
 
-Shown by [`tests/corpus/layout/normalize-spaces-trailing-operator`](../../../tests/corpus/layout/normalize-spaces-trailing-operator/case.sumi):
+Shown by [`tests/corpus/layout/spacing-fix-survives-recovery`](../../../tests/corpus/layout/spacing-fix-survives-recovery/case.sumi):
 
 ```sumi
-fn f() { let x = a+
-b }
+fn f() { a+b : }
 ```
 
 ```text
-error[syntax/unspaced-binary-operator] 1:19..1:20 "+": binary operator must have spaces on both sides
+error[syntax/unspaced-binary-operator] 1:11..1:12 "+": binary operator must have spaces on both sides
   fix (safe): space binary operator
-    1:19 -> " "
+    1:11 -> " "
+    1:12 -> " "
 ```
 
 ### `syntax/spaced-prefix-operator`
@@ -335,16 +356,15 @@ error[syntax/unspaced-binary-operator] 1:19..1:20 "+": binary operator must have
 A prefix operator separated from its operand, as in `- x`. Prefix
 operators are glued; the fix removes the space.
 
-Shown by [`tests/corpus/layout/normalize-glues-spaced-prefix-operators-1`](../../../tests/corpus/layout/normalize-glues-spaced-prefix-operators-1/case.sumi):
+Shown by [`tests/corpus/layout/prefix-gap-holds-a-comment`](../../../tests/corpus/layout/prefix-gap-holds-a-comment/case.sumi):
 
 ```sumi
-fn f() { let x = - 1 }
+fn f() { - // why
+ 1 }
 ```
 
 ```text
-error[syntax/spaced-prefix-operator] 1:18..1:19 "-": prefix operator must be adjacent to its operand
-  fix (safe): remove space after prefix operator
-    1:19..1:20 " " -> ""
+error[syntax/spaced-prefix-operator] 1:10..1:11 "-": prefix operator must be adjacent to its operand
 ```
 
 ### `syntax/spaced-list-opener`
@@ -352,7 +372,7 @@ error[syntax/spaced-prefix-operator] 1:18..1:19 "-": prefix operator must be adj
 A space between a function name or callee and its `(`. The fix removes
 it.
 
-Shown by [`tests/corpus/diagnostics/spaced-list-openers`](../../../tests/corpus/diagnostics/spaced-list-openers/case.sumi):
+Shown by [`tests/corpus/layout/spaced-list-openers`](../../../tests/corpus/layout/spaced-list-openers/case.sumi):
 
 ```sumi
 fn value () -> int = 1
@@ -383,7 +403,7 @@ error[syntax/spaced-list-opener] 5:11..5:12 "(": opening `(` must be adjacent to
 A function item's name on the line after its `fn`. The fix moves the
 name onto the `fn` line.
 
-Shown by [`tests/corpus/diagnostics/function-name-on-next-line`](../../../tests/corpus/diagnostics/function-name-on-next-line/case.sumi):
+Shown by [`tests/corpus/layout/function-name-on-next-line`](../../../tests/corpus/layout/function-name-on-next-line/case.sumi):
 
 ```sumi
 fn
@@ -405,7 +425,7 @@ error[syntax/function-name-on-next-line] 4:1..4:10 "commented": function name mu
 A function item beginning on the line where the previous one ended. The
 fix moves it onto a line of its own.
 
-Shown by [`tests/corpus/diagnostics/function-items-share-a-line`](../../../tests/corpus/diagnostics/function-items-share-a-line/case.sumi):
+Shown by [`tests/corpus/layout/function-items-share-a-line`](../../../tests/corpus/layout/function-items-share-a-line/case.sumi):
 
 ```sumi
 fn first() {}fn second() {}
@@ -427,7 +447,7 @@ error[syntax/function-item-on-same-line] 2:16..2:18 "fn": function item must beg
 A binding's name on the line after its `let`. The fix moves the name
 onto the `let` line.
 
-Shown by [`tests/corpus/diagnostics/binding-name-on-next-line`](../../../tests/corpus/diagnostics/binding-name-on-next-line/case.sumi):
+Shown by [`tests/corpus/layout/binding-name-on-next-line`](../../../tests/corpus/layout/binding-name-on-next-line/case.sumi):
 
 ```sumi
 fn bindings() {
@@ -457,14 +477,17 @@ error[syntax/binding-name-on-next-line] 8:5..8:14 "commented": binding name must
 Comparisons chained, as in `a < b < c`. A comparison yields a boolean
 that no comparison accepts; write two comparisons joined by `&&`.
 
-Shown by [`tests/corpus/layout/chained-comparison-has-no-fix`](../../../tests/corpus/layout/chained-comparison-has-no-fix/case.sumi):
+Shown by [`tests/corpus/syntax/comparisons-do-not-chain`](../../../tests/corpus/syntax/comparisons-do-not-chain/case.sumi):
 
 ```sumi
-fn f() { a < b < c }
+fn chained() { a < b < c }
+fn grouped() {
+    (a < b) < c
+}
 ```
 
 ```text
-error[syntax/chained-comparison] 1:16..1:17 "<": comparison operators cannot be chained
+error[syntax/chained-comparison] 1:22..1:23 "<": comparison operators cannot be chained
 ```
 
 ## semantic
@@ -601,8 +624,12 @@ fn consumer() -> int = spin(1)
 fn grounded() = spin(1) + 1
 fn recovered() = grounded()
 fn bad_arguments() = spin(true, missing)
-fn bare() { 1 }
-fn malformed() -> = { 1 }
+fn bare() {
+    1
+}
+fn malformed() -> = {
+    1
+}
 fn intact() = true
 ```
 
@@ -628,7 +655,7 @@ fn probe() {
             let x = x + 1
             x + true
         },
-        x + false
+        x + false,
     )
     _ = x
 }
@@ -675,27 +702,39 @@ Shown by [`tests/corpus/semantic/three-way-conflicts`](../../../tests/corpus/sem
 ```sumi
 // A conflict lists every type claimed, in source order: two with "and",
 // more with commas and an "and" before the last.
-fn a() = if true { 1 } else { b() }
-fn b() = if true { true } else { c() }
-fn c() = if true { {} } else { a() }
+fn a() = if true {
+    1
+} else {
+    b()
+}
+fn b() = if true {
+    true
+} else {
+    c()
+}
+fn c() = if true {
+    {}
+} else {
+    a()
+}
 ```
 
 ```text
 error[semantic/cannot-infer]: function result is both int, bool, and unit; add a return type annotation
-  primary @123..158
-  secondary @142..143: int here
-  secondary @153..156: bool here
-  secondary @153..156: unit here
+  primary @123..166
+  secondary @146..147: int here
+  secondary @161..164: bool here
+  secondary @161..164: unit here
 error[semantic/cannot-infer]: function result is both bool, int, and unit; add a return type annotation
-  primary @159..197
-  secondary @178..182: bool here
-  secondary @192..195: int here
-  secondary @192..195: unit here
+  primary @167..213
+  secondary @190..194: bool here
+  secondary @208..211: int here
+  secondary @208..211: unit here
 error[semantic/cannot-infer]: function result is both unit, int, and bool; add a return type annotation
-  primary @198..234
-  secondary @217..219: unit here
-  secondary @229..232: int here
-  secondary @229..232: bool here
+  primary @214..258
+  secondary @237..239: unit here
+  secondary @253..256: int here
+  secondary @253..256: bool here
 ```
 
 ### `semantic/division-by-zero`
@@ -721,21 +760,39 @@ fn statements() -> int {
     let b = a + 1
     let a = b * 10
     _ = a / 0 == 0 || true
-    if a > b { a - b } else { b - a }
+    if a > b {
+        a - b
+    } else {
+        b - a
+    }
 }
 fn inner_guard(n: int, m: int) -> int {
-    if n > 0 { if m != 0 { _ = 1 }
- 0 } else { 100 / m }
+    if n > 0 {
+        if m != 0 {
+            _ = 1
+        }
+        0
+    } else {
+        100 / m
+    }
 }
 fn inner_guards() -> int = inner_guard(0, 0) + inner_guard(1, 5)
 fn inverse(d: int) -> int = 100 / d
 fn inverses() -> int = inverse(0) + inverse(0) + inverse(0) + inverse(0) + inverse(0)
 fn compared(d: int) -> int {
     let z = 0
-    if d == z { 1 } else { 100 / z }
+    if d == z {
+        1
+    } else {
+        100 / z
+    }
 }
 fn compareds() -> int = compared(1)
-fn fixed(d: int) -> int = if d == 0 { 100 / d } else { 1 }
+fn fixed(d: int) -> int = if d == 0 {
+    100 / d
+} else {
+    1
+}
 fn fixeds() -> int = fixed(-5) + fixed(0) + fixed(5)
 fn arity(d: int) -> int = 100 / d
 fn wrong_arity() -> int = arity(0, 1)
@@ -745,7 +802,11 @@ fn bound() -> int {
     let z = 0
     half(z)
 }
-fn guarded(k: int) -> int = if k == 0 { half(k) } else { 1 }
+fn guarded(k: int) -> int = if k == 0 {
+    half(k)
+} else {
+    1
+}
 fn guardeds() -> int = guarded(0)
 fn chained() -> int {
     let a = 0
@@ -761,7 +822,11 @@ fn chained() -> int {
 fn divides(n: int) -> int = 10 / n
 fn under_a_hole() -> int {
     let x = 0
-    if absent { divides(x) } else { 1 }
+    if absent {
+        divides(x)
+    } else {
+        1
+    }
 }
 ```
 
@@ -778,34 +843,34 @@ error[semantic/division-by-zero]: division by zero
 error[semantic/division-by-zero]: divisor may be zero
   primary @194..201
   secondary @234..239: argument may be 0: [-3, 3]
-  secondary @1047..1048: argument is 0
-  secondary @1123..1124: argument is 0
-  secondary @1173..1174: argument is 0
+  secondary @1154..1155: argument is 0
+  secondary @1230..1231: argument is 0
+  secondary @1284..1285: argument is 0
 error[semantic/division-by-zero]: division by zero
   primary @369..374
   secondary @373..374: is 0
 error[semantic/division-by-zero]: divisor may be zero
-  primary @515..522
-  secondary @569..570: argument is 0
+  primary @586..593
+  secondary @644..645: argument is 0
 error[semantic/division-by-zero]: division by zero
-  primary @620..627
-  secondary @659..660: argument is 0
-  secondary @672..673: argument is 0
-  secondary @685..686: argument is 0
-  secondary @698..699: argument is 0
+  primary @695..702
+  secondary @734..735: argument is 0
+  secondary @747..748: argument is 0
+  secondary @760..761: argument is 0
+  secondary @773..774: argument is 0
 error[semantic/division-by-zero]: division by zero
-  primary @784..791
-  secondary @755..756: is 0
+  primary @879..886
+  secondary @830..831: is 0
 error[semantic/division-by-zero]: division by zero
-  primary @870..877
-  secondary @861..867: is 0 under this guard
-  secondary @930..931: argument is 0
+  primary @973..980
+  secondary @960..966: is 0 under this guard
+  secondary @1037..1038: argument is 0
 error[semantic/division-by-zero]: division by zero
-  primary @1361..1368
-  secondary @1257..1258: is 0
+  primary @1476..1483
+  secondary @1372..1373: is 0
 error[semantic/division-by-zero]: division by zero
-  primary @1399..1405
-  secondary @1471..1472: argument is 0
+  primary @1514..1520
+  secondary @1594..1595: argument is 0
 ```
 
 ### `semantic/unbounded-recursion`
@@ -830,8 +895,12 @@ fn consumer() -> int = spin(1)
 fn grounded() = spin(1) + 1
 fn recovered() = grounded()
 fn bad_arguments() = spin(true, missing)
-fn bare() { 1 }
-fn malformed() -> = { 1 }
+fn bare() {
+    1
+}
+fn malformed() -> = {
+    1
+}
 fn intact() = true
 ```
 
@@ -847,29 +916,22 @@ A construct scalar checking does not handle yet, such as a closure, a
 string literal, or a call through anything but a function name. The
 function is left unchecked.
 
-Shown by [`tests/corpus/diagnostics/grouped-expression-statements`](../../../tests/corpus/diagnostics/grouped-expression-statements/case.sumi):
+Shown by [`tests/corpus/semantic/closures-are-holes`](../../../tests/corpus/semantic/closures-are-holes/case.sumi):
 
 ```sumi
-fn value() -> int = 1
-fn rejected() -> int {
-    let x = 1
-    (x)
-    (value() + 1)
-    ((1))
-    -1
+fn body() = fn() = 1
+fn typed() = fn(x: int) -> int {
+    x
 }
-fn separate() {
-    value
-    (value())
-    _ = 1
-}
-fn accepted() -> int {
-    _ = value() + 1
-    value() + 1
-}
+fn operand() = 0 + fn() = 1
+fn next() -> int = 2
 ```
 
 ```text
 error[semantic/unsupported]: construct is not supported by scalar checking
-  primary @124..129
+  primary @12..20
+error[semantic/unsupported]: construct is not supported by scalar checking
+  primary @34..61
+error[semantic/unsupported]: construct is not supported by scalar checking
+  primary @81..89
 ```

@@ -1,0 +1,69 @@
+== tree ==
+SourceFile! 0..139
+  FnItem! 0..32
+    Name 3..14 "initializer"
+    ParamList 14..16 "()"
+    Block! 17..32
+      LetStmt! 23..30
+        Name 27..28 "x"
+  FnItem! 33..47
+    ParamList 36..44
+      Param 37..43
+        Name 37..38 "a"
+        TypeRef 40..43 "int"
+    Block 45..47 "{}"
+  FnItem! 48..71
+    Name 51..65 "parameter_type"
+    ParamList! 65..68
+      Param! 66..67
+        Name 66..67 "a"
+    Block 69..71 "{}"
+  FnItem! 72..98
+    Name 75..91 "parameter_closer"
+    ParamList! 91..98
+      Param 92..98
+        Name 92..93 "a"
+        TypeRef 95..98 "int"
+  FnItem! 99..138
+    Name 102..112 "everything"
+    ParamList! 112..116
+      Param! 113..115
+        Name 113..114 "a"
+    Block! 120..138
+      LetStmt! 126..136
+        Name 130..131 "x"
+        LiteralExpr 135..136 "1"
+
+== evidence ==
+ExpectedExpression at 31
+ExpectedName at 36
+Expected(Colon) at 67
+Expected(RParen) at 99
+ExpectedBody at 99
+ExpectedType at 115
+ExpectedType at 120
+ExpectedType at 133
+
+== diagnostics ==
+error[syntax/expected-expression] 3:1: expected an expression
+error[syntax/expected-name] 4:4: expected a name
+error[syntax/expected-token] 5:20: expected `:`
+error[syntax/expected-token] 7:1: expected `)`
+  at 6:20..6:21 "(": opening delimiter is here
+  fix (safe): insert `)`
+    6:27 -> ")"
+error[syntax/expected-body] 7:1: expected a body, `{` or `=`
+error[syntax/expected-type] 7:17: expected a type
+error[syntax/expected-type] 7:22: expected a type
+error[syntax/expected-type] 8:12: expected a type
+
+== fixed (syntax/expected-body, syntax/expected-expression, syntax/expected-name, syntax/expected-token, syntax/expected-type remain) ==
+fn initializer() {
+    let x =
+}
+fn (a: int) {}
+fn parameter_type(a) {}
+fn parameter_closer(a: int)
+fn everything(a:) -> {
+    let x: = 1
+}

@@ -1,0 +1,16 @@
+== tree ==
+SourceFile! 0..25
+  FnItem! 0..24
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block! 7..24
+      BinaryExpr! 13..22
+        NameRef 13..14 "a"
+        Error! 15..18 "€"
+        NameRef 21..22 "b"
+
+== evidence ==
+Unexpected at 15
+
+== diagnostics ==
+error[syntax/unknown-character] 2:7..2:10 "€": character has no meaning in Sumi source

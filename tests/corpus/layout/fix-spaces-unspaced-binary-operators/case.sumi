@@ -1,0 +1,7 @@
+fn glued() { a==b }
+fn glued_left() { a +b }
+fn glued_right() { a+ b }
+fn glued_twice() { a<=b*c }
+fn glued_minus() { a-b }
+fn trailing() { let x = a+
+b }

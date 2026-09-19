@@ -1,0 +1,4 @@
+fn spaced() { - a }
+fn in_initializer() { let x = - 1 }
+fn not_with_tab() { let x = ! 	 flag }
+fn minus_with_tab() { - 	1 }
