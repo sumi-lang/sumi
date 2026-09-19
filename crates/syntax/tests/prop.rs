@@ -10,8 +10,8 @@ use proptest::prelude::*;
 use proptest::test_runner::FileFailurePersistence;
 use sumi_lexer::{LexedFile, lex};
 use sumi_syntax::{
-    BRACKET_PAIRS, NodeIdx, NodeKind, Parse, ParseAnchor, ParseEvidence, ParserInput, RawIdx,
-    SigIdx, SyntaxKind, parse,
+    BRACKET_PAIRS, NodeKind, Parse, ParseAnchor, ParseEvidence, ParserInput, RawIdx, SigIdx,
+    SyntaxKind, parse,
 };
 use sumi_test::{apply, delimiter_edited_program, front, non_delimiter_edited_program, program};
 
@@ -341,21 +341,20 @@ fn check_tree(parse: &Parse, lexed: &LexedFile) -> Result<(), TestCaseError> {
                 node
             );
         }
-        // Children come last first, so ordering is checked back to front.
-        let mut next_start = end;
+        let mut previous_end = first;
         for child in tree.children(node) {
             prop_assert!(
-                tree.end_token(child) <= next_start,
+                tree.first_token(child) >= previous_end,
                 "children of {:?} overlap",
                 node
             );
             prop_assert!(
-                tree.first_token(child) >= first,
+                tree.end_token(child) <= end,
                 "child {:?} escapes {:?}",
                 child,
                 node
             );
-            next_start = tree.first_token(child);
+            previous_end = tree.end_token(child);
             pending.push(child);
         }
     }
@@ -377,9 +376,7 @@ proptest! {
 
         // The parser attaches no token to the root itself: every significant
         // token lies in some item or top-level error node.
-        let mut items: Vec<NodeIdx> = tree.children(tree.root()).collect();
-        items.reverse();
-        let mut children = items.into_iter().peekable();
+        let mut children = tree.children(tree.root()).peekable();
         for index in input.indices() {
             let token = input.token(index);
             while children.peek().is_some_and(|&child| tree.end_token(child) <= token) {

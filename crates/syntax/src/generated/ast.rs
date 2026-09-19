@@ -46,10 +46,9 @@ impl AstNode for SourceFile {
 impl SourceFile {
     pub const KIND: NodeKind = NodeKind::SourceFile;
 
-    /// The `items` children, each a `FnItem`, in source order: collected once
-    /// per call, since the tree stores children last first.
+    /// The `items` children, each a `FnItem`, in source order.
     pub fn items<'t>(self, tree: &'t SyntaxTree) -> impl Iterator<Item = FnItem> + 't {
-        tree.children_in_order(self.0)
+        tree.children(self.0)
             .filter_map(move |child| FnItem::cast(tree, child))
     }
 }
@@ -117,10 +116,9 @@ impl AstNode for ParamList {
 impl ParamList {
     pub const KIND: NodeKind = NodeKind::ParamList;
 
-    /// The `params` children, each a `Param`, in source order: collected once
-    /// per call, since the tree stores children last first.
+    /// The `params` children, each a `Param`, in source order.
     pub fn params<'t>(self, tree: &'t SyntaxTree) -> impl Iterator<Item = Param> + 't {
-        tree.children_in_order(self.0)
+        tree.children(self.0)
             .filter_map(move |child| Param::cast(tree, child))
     }
 }
@@ -213,10 +211,9 @@ impl AstNode for Block {
 impl Block {
     pub const KIND: NodeKind = NodeKind::Block;
 
-    /// The `stmts` children, each a `Stmt`, in source order: collected once
-    /// per call, since the tree stores children last first.
+    /// The `stmts` children, each a `Stmt`, in source order.
     pub fn stmts<'t>(self, tree: &'t SyntaxTree) -> impl Iterator<Item = Stmt> + 't {
-        tree.children_in_order(self.0)
+        tree.children(self.0)
             .filter_map(move |child| Stmt::cast(tree, child))
     }
 }
@@ -577,10 +574,9 @@ impl AstNode for ArgList {
 impl ArgList {
     pub const KIND: NodeKind = NodeKind::ArgList;
 
-    /// The `args` children, each a `Expr`, in source order: collected once
-    /// per call, since the tree stores children last first.
+    /// The `args` children, each a `Expr`, in source order.
     pub fn args<'t>(self, tree: &'t SyntaxTree) -> impl Iterator<Item = Expr> + 't {
-        tree.children_in_order(self.0)
+        tree.children(self.0)
             .filter_map(move |child| Expr::cast(tree, child))
     }
 }

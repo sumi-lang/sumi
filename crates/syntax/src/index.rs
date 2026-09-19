@@ -12,7 +12,7 @@ sumi_text::index! {
 
 sumi_text::index! {
     /// The index of a node in a [`SyntaxTree`](crate::SyntaxTree): its
-    /// position in postorder, so a node's index is larger than every node
-    /// in its subtree, and the root's is the largest.
+    /// position in preorder, so the root is 0 and a node's subtree is the
+    /// run of indices from its own.
     NodeIdx
 }

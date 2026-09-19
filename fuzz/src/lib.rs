@@ -15,7 +15,7 @@ use sumi_format::{format, rep, reprint};
 use sumi_frontend::{Applicability, FileId, ParsedSource, Place, Severity, codes, parse_source};
 use sumi_lexer::{LexedFile, RawIdx, SyntaxKind, lex};
 use sumi_syntax::{
-    BRACKET_PAIRS, NodeIdx, NodeKind, Parse, ParseAnchor, ParseEvidence, ParserInput, SigIdx, parse,
+    BRACKET_PAIRS, NodeKind, Parse, ParseAnchor, ParseEvidence, ParserInput, SigIdx, parse,
 };
 use sumi_test::{Edit, Front, apply, changes_delimiter, front};
 
@@ -669,18 +669,17 @@ pub fn check_tree(parse: &Parse, lexed: &LexedFile) {
             );
         }
 
-        // The tree yields children last first.
-        let mut next_start = end;
+        let mut previous_end = first;
         for child in tree.children(node) {
             assert!(
-                tree.end_token(child) <= next_start,
+                tree.first_token(child) >= previous_end,
                 "children of {node:?} must be ordered and disjoint"
             );
             assert!(
-                tree.first_token(child) >= first,
+                tree.end_token(child) <= end,
                 "a child of {node:?} must stay inside its parent"
             );
-            next_start = tree.first_token(child);
+            previous_end = tree.end_token(child);
             pending.push(child);
         }
     }
@@ -699,9 +698,7 @@ pub fn check_parse(source: &str, lexed: &LexedFile, parse: &Parse) {
         "the tree is not lossless"
     );
 
-    let mut items: Vec<NodeIdx> = tree.children(tree.root()).collect();
-    items.reverse();
-    let mut children = items.into_iter().peekable();
+    let mut children = tree.children(tree.root()).peekable();
     for index in input.indices() {
         let token = input.token(index);
         while children
