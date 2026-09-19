@@ -15,6 +15,7 @@ sumi-text = { path = "../text" }
 [dev-dependencies]
 criterion.workspace = true
 proptest.workspace = true
+sumi-test = { path = "../test" }
 tempfile.workspace = true
 
 [[bench]]

@@ -1,19 +1,14 @@
-//! Property tests: ParserInput invariants over generated sources instead of
-//! the hand-written corpus in `input.rs`.
-//!
-//! The well-formed program generator and the single-edit machinery live in
-//! `sumi-test`, shared with any harness that measures recovery quality.
-
-use std::collections::HashSet;
+//! Property tests: the stream, tree, and recovery invariants over
+//! generated sources instead of the hand-written corpus. The well-formed
+//! program generator and the single-edit machinery live in `sumi-test`,
+//! shared with any harness that measures recovery quality.
 
 use proptest::prelude::*;
-use proptest::test_runner::FileFailurePersistence;
-use sumi_lexer::{LexedFile, lex};
-use sumi_syntax::{
-    BRACKET_PAIRS, NodeKind, Parse, ParseAnchor, ParseEvidence, ParserInput, RawIdx, SigIdx,
-    SyntaxKind, parse,
+use sumi_lexer::lex;
+use sumi_syntax::{ParserInput, SigIdx, SyntaxKind, parse};
+use sumi_test::{
+    Edit, INSERTS, check, delimiter_edited_program, front, non_delimiter_edited_program, program,
 };
-use sumi_test::{apply, delimiter_edited_program, front, non_delimiter_edited_program, program};
 
 /// Source fragments beyond every keyword and punctuation text of the
 /// language, valid and pathological; concatenation composes the adjacencies
@@ -108,156 +103,21 @@ fn soup() -> impl Strategy<Value = String> {
     proptest::collection::vec(fragment(), 0..64).prop_map(|fragments| fragments.concat())
 }
 
-/// The significant index of position `index` in a program's spans.
-fn sig(index: usize) -> SigIdx {
-    SigIdx::new(u32::try_from(index).expect("significant positions fit in u32"))
-}
-
-fn is_trivia(kind: SyntaxKind) -> bool {
-    matches!(
-        kind,
-        SyntaxKind::Whitespace | SyntaxKind::Newline | SyntaxKind::LineComment
-    )
-}
-
-/// Records every failing seed in the crate's tracked `proptest-regressions/`
-/// file, which each later run replays before generating anything new, so a
-/// failure found once stays found. Proptest's default location is found by
-/// walking up from the test file to a `lib.rs`, which a test under `tests/`
-/// never reaches; this path is fixed at compile time instead.
-fn config() -> ProptestConfig {
-    ProptestConfig {
-        failure_persistence: Some(Box::new(FileFailurePersistence::Direct(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/proptest-regressions/prop.txt"
-        )))),
-        ..ProptestConfig::default()
-    }
-}
-
 proptest! {
-    #![proptest_config(config())]
+    #![proptest_config(sumi_test::regressions(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/proptest-regressions/prop.txt"
+    )))]
     #[test]
     fn parser_input_invariants(source in soup()) {
         let lexed = lex(&source).expect("generated sources fit in u32");
-        let input = ParserInput::new(&lexed);
-
-        prop_assert!(input.len() <= lexed.len());
-        prop_assert_eq!(input.get(input.end()), None);
-
-        let mut remaining_boundaries = input.indices().filter(|&i| input.boundary_before(i)).count();
-        prop_assert!(!input.boundary_in(input.end()..input.end()));
-        for index in input.indices() {
-            prop_assert!(!input.boundary_in(index..index));
-            prop_assert_eq!(input.boundary_in(index..index + 1), input.boundary_before(index));
-            prop_assert_eq!(input.boundary_in(index..input.end()), remaining_boundaries != 0);
-            remaining_boundaries -= usize::from(input.boundary_before(index));
-        }
-
-        let mut previous: Option<RawIdx> = None;
-        let mut open: Vec<SigIdx> = Vec::new();
-        let mut layout_open: Vec<SigIdx> = Vec::new();
-        for index in input.indices() {
-            let token = input.token(index);
-            let kind = input.get(index).expect("indices below len are present");
-            prop_assert_eq!(input.in_matched_delimiters(index), !open.is_empty());
-            let context = layout_open.last().is_some_and(|&opener| {
-                input.get(opener) != Some(SyntaxKind::LBrace) && input.partner(opener).is_some()
-            });
-            prop_assert_eq!(input.in_expression_delimiters(index), context);
-            if sumi_syntax::is_opener(kind) {
-                layout_open.push(index);
-            } else if let Some(partner) = input.partner(index).filter(|&p| p < index) {
-                let position = layout_open.iter().rposition(|&p| p == partner).unwrap();
-                layout_open.truncate(position);
-            }
-            if let Some(previous) = previous {
-                prop_assert!(previous < token, "token mappings must strictly increase");
-            }
-            prop_assert_eq!(kind, lexed.kind(token), "kinds must come from the scan");
-            prop_assert!(!is_trivia(kind), "token {:?} is trivia", index);
-
-            // Everything skipped between kept tokens must be trivia, and the
-            // newline fact must match what was skipped.
-            let skipped = previous.map_or(RawIdx::new(0), |previous| previous + 1).until(token);
-            let newline = skipped.clone().any(|j| lexed.kind(j) == SyntaxKind::Newline);
-            for j in skipped {
-                prop_assert!(is_trivia(lexed.kind(j)), "token {:?} was dropped", j);
-            }
-            prop_assert_eq!(input.newline_before(index), newline);
-
-            // Jointness is adjacency, checked through ranges rather than
-            // token indices.
-            if index + 1 < input.end() {
-                let next = input.token(index + 1);
-                let adjacent = lexed.range(token).end() == lexed.range(next).start();
-                prop_assert_eq!(input.is_joint(index), adjacent);
-            } else {
-                prop_assert!(!input.is_joint(index));
-            }
-
-            if input.boundary_before(index) {
-                prop_assert!(index > SigIdx::new(0), "no boundary before the first token");
-                prop_assert!(input.newline_before(index), "boundaries need a newline");
-            }
-
-            // Partners are mutual, of matching kinds, and nest: an opener
-            // whose partner lies ahead is pushed, and a closer must close
-            // the innermost open pair.
-            if let Some(partner) = input.partner(index) {
-                prop_assert!(partner < input.end());
-                prop_assert_eq!(input.partner(partner), Some(index), "partners must be mutual");
-                let (opener, closer) = if index < partner { (index, partner) } else { (partner, index) };
-                prop_assert!(
-                    input.get(opener).zip(input.get(closer)).is_some_and(|pair| BRACKET_PAIRS.contains(&pair)),
-                    "tokens {:?} and {:?} are partners but not a matching pair", opener, closer
-                );
-                if partner > index {
-                    open.push(index);
-                } else {
-                    prop_assert_eq!(open.pop(), Some(partner), "pairs must nest");
-                }
-            }
-            previous = Some(token);
-        }
-        prop_assert!(open.is_empty(), "every pushed opener must have been closed");
-
-        // Nothing significant may be dropped after the last kept token.
-        for j in previous.map_or(RawIdx::new(0), |previous| previous + 1).until(lexed.end()) {
-            prop_assert!(is_trivia(lexed.kind(j)), "token {:?} was dropped", j);
-        }
+        check::input(&lexed, &ParserInput::new(&lexed));
     }
 
     #[test]
     fn widening_space_runs_changes_nothing(source in soup()) {
         let lexed = lex(&source).expect("generated sources fit in u32");
-        let mut widened = String::new();
-        for index in lexed.indices() {
-            widened.push_str(lexed.text(&source, index));
-            if lexed.kind(index) == SyntaxKind::Whitespace {
-                widened.push(' ');
-            }
-        }
-
-        // Widening an existing space run merges back into the same token, so
-        // everything but the ranges is untouched: kinds, jointness, newline
-        // facts, and boundaries.
-        let widened_lexed = lex(&widened).expect("widened sources fit in u32");
-        prop_assert_eq!(widened_lexed.len(), lexed.len());
-
-        for index in lexed.indices() {
-            prop_assert_eq!(lexed.kind(index), widened_lexed.kind(index));
-        }
-
-        let input = ParserInput::new(&lexed);
-        let widened_input = ParserInput::new(&widened_lexed);
-        prop_assert_eq!(input.len(), widened_input.len());
-        for index in input.indices() {
-            prop_assert_eq!(input.token(index), widened_input.token(index));
-            prop_assert_eq!(input.is_joint(index), widened_input.is_joint(index));
-            prop_assert_eq!(input.newline_before(index), widened_input.newline_before(index));
-            prop_assert_eq!(input.boundary_before(index), widened_input.boundary_before(index));
-        }
+        check::widening(&source, &lexed, &ParserInput::new(&lexed));
     }
 
     #[test]
@@ -280,154 +140,12 @@ proptest! {
             );
         }
     }
-}
 
-/// Walk `tree` and check every structural invariant: extents partition the
-/// nodes; children are ordered, disjoint, and inside their parent; every
-/// node but the root covers at least one token and starts and ends on a
-/// significant one; the root covers the whole buffer.
-fn check_tree(parse: &Parse, lexed: &LexedFile) -> Result<(), TestCaseError> {
-    let (input, tree) = (parse.input(), parse.tree());
-    let raw_len = lexed.end();
-    let root = tree.root();
-    let item_starts: HashSet<_> = tree
-        .children(root)
-        .filter(|&node| tree.kind(node) == NodeKind::FnItem)
-        .map(|node| tree.first_token(node))
-        .collect();
-    for index in input
-        .indices()
-        .filter(|&i| item_starts.contains(&input.token(i)))
-    {
-        prop_assert!(
-            !input.in_matched_delimiters(index),
-            "root item starts inside a matched pair"
-        );
-    }
-    prop_assert_eq!(tree.kind(root), NodeKind::SourceFile);
-    prop_assert_eq!(
-        (tree.first_token(root), tree.end_token(root)),
-        (RawIdx::new(0), raw_len)
-    );
-
-    if !lexed.is_empty() {
-        // Sample the file's edges and middle; the exhaustive reference is
-        // linear per query, not quadratic in arbitrarily large fuzz inputs.
-        for index in [0, lexed.len() / 2, lexed.len() - 1] {
-            let token = RawIdx::new(index as u32);
-            let innermost = tree
-                .nodes()
-                .filter(|&node| tree.first_token(node) <= token && token < tree.end_token(node))
-                .min_by_key(|&node| tree.subtree_len(node));
-            prop_assert_eq!(Some(tree.covering(token)), innermost);
-        }
-    }
-
-    let mut visited = 0usize;
-    let mut pending = vec![root];
-    while let Some(node) = pending.pop() {
-        visited += 1;
-        let (first, end) = (tree.first_token(node), tree.end_token(node));
-        if node != root {
-            prop_assert!(first < end, "node {:?} is empty", node);
-            prop_assert!(
-                !is_trivia(lexed.kind(first)),
-                "node {:?} starts on trivia",
-                node
-            );
-            prop_assert!(
-                !is_trivia(lexed.kind(end - 1)),
-                "node {:?} ends on trivia",
-                node
-            );
-        }
-        let mut previous_end = first;
-        for child in tree.children(node) {
-            prop_assert!(
-                tree.first_token(child) >= previous_end,
-                "children of {:?} overlap",
-                node
-            );
-            prop_assert!(
-                tree.end_token(child) <= end,
-                "child {:?} escapes {:?}",
-                child,
-                node
-            );
-            previous_end = tree.end_token(child);
-            pending.push(child);
-        }
-    }
-    prop_assert_eq!(visited, tree.len(), "extents must partition the tree");
-    Ok(())
-}
-
-proptest! {
-    #![proptest_config(config())]
     #[test]
     fn parse_is_total_and_trees_are_well_formed(source in soup()) {
         let lexed = lex(&source).expect("generated sources fit in u32");
-        let parse = parse(ParserInput::new(&lexed));
-        let (input, tree) = (parse.input(), parse.tree());
-        check_tree(&parse, &lexed)?;
-
-        // The tree is lossless: walking its elements reprints the source.
-        prop_assert_eq!(&tree.reprint(&lexed, &source), &source);
-
-        // The parser attaches no token to the root itself: every significant
-        // token lies in some item or top-level error node.
-        let mut children = tree.children(tree.root()).peekable();
-        for index in input.indices() {
-            let token = input.token(index);
-            while children.peek().is_some_and(|&child| tree.end_token(child) <= token) {
-                children.next();
-            }
-            prop_assert!(
-                children.peek().is_some_and(|&child| tree.first_token(child) <= token),
-                "token {:?} is attached to the root", token
-            );
-        }
-
-        // Present syntax gets nonempty in-bounds raw ranges. Missing syntax
-        // gets the exact, possibly empty trivia interval between significant
-        // tokens. Recovery effects are nonempty in-bounds ranges too.
-        let raw_len = lexed.end();
-        for evidence in parse.evidence() {
-            let anchor = match evidence {
-                ParseEvidence::Recovery(recovery) => {
-                    let mut previous_end = None;
-                    for skipped in &recovery.skipped {
-                        prop_assert!(skipped.start() < skipped.end());
-                        prop_assert!(skipped.end() <= raw_len);
-                        if let Some(previous_end) = previous_end {
-                            prop_assert!(previous_end <= skipped.start());
-                        }
-                        previous_end = Some(skipped.end());
-                    }
-                    recovery.anchor
-                }
-                ParseEvidence::Violation(violation) => ParseAnchor::Tokens(violation.range),
-            };
-            match anchor {
-                ParseAnchor::Tokens(range) => {
-                    prop_assert!(range.start() < range.end());
-                    prop_assert!(range.end() <= raw_len);
-                }
-                ParseAnchor::Gap(gap) => {
-                    prop_assert!(gap.trivia_start() <= gap.trivia_end());
-                    prop_assert!(gap.trivia_end() <= raw_len);
-                    if let Some(before) = gap.trivia_start().checked_sub(1) {
-                        prop_assert!(!is_trivia(lexed.kind(before)));
-                    }
-                    for token in gap.trivia_start().until(gap.trivia_end()) {
-                        prop_assert!(is_trivia(lexed.kind(token)));
-                    }
-                    if gap.trivia_end() < raw_len {
-                        prop_assert!(!is_trivia(lexed.kind(gap.trivia_end())));
-                    }
-                }
-            }
-        }
+        let input = ParserInput::new(&lexed);
+        check::parse(&source, &lexed, &parse(input));
     }
 
     #[test]
@@ -435,87 +153,51 @@ proptest! {
         let lexed = lex(&source).expect("generated sources fit in u32");
         prop_assert!(lexed.errors().is_empty(), "lexer errors in {:?}", source);
         let parse = parse(ParserInput::new(&lexed));
-        check_tree(&parse, &lexed)?;
+        check::parse(&source, &lexed, &parse);
         prop_assert!(
             parse.evidence().is_empty(),
             "parse evidence {:?} in {:?}", parse.evidence(), source
         );
     }
-}
 
-// Recovery quality, measured. The tests above prove the parser is total and
-// accepts every well-formed program. These require recovery after one edit to
-// remain local: at statement level for non-delimiters, and at item level for
-// delimiters, which can legitimately reparent nearby syntax.
+    // Recovery quality, measured. The tests above prove the parser is
+    // total and accepts every well-formed program. These require recovery
+    // after one edit to remain local: at statement level for
+    // non-delimiters, and at item level for delimiters.
 
-proptest! {
-    #![proptest_config(config())]
     #[test]
     fn a_single_non_delimiter_edit_disturbs_only_where_it_lands(
         (source, index, edit) in non_delimiter_edited_program()
     ) {
-        let original = front(&source);
-        let (edited, touched, moved, impact) = apply(&source, &original.spans(), index, edit);
-        let touched: Vec<RawIdx> = touched.iter().map(|&index| original.input().token(sig(index))).collect();
-        let moved: Vec<RawIdx> = moved.iter().map(|&index| original.input().token(sig(index))).collect();
-        let after = front(&edited);
-        let survivors: HashSet<_> = after.parse.tree().nodes()
-            .map(|node| (after.node_span(node), after.shape(&edited, node)))
-            .collect();
-        for node in original.guarded(&touched, &moved) {
-            let shape = original.shape(&source, node);
-            let span = impact.map(original.node_span(node));
-            prop_assert!(
-                survivors.contains(&(span, shape.clone())),
-                "{:?} at token {} ({:?}) disturbs the {:?} {:?}\n--- original ---\n{}\n--- edited ---\n{}\nevidence: {:?}",
-                edit, index, original.input().get(sig(index)), original.parse.tree().kind(node), shape.0,
-                source, edited, after.parse.evidence()
-            );
-        }
+        check::recovery(&source, &front(&source), index, edit);
     }
 
     #[test]
-    fn a_single_edit_preserves_unaffected_items(
-        (source, index, edit) in prop_oneof![
-            delimiter_edited_program().boxed(),
-            // All edit kinds around exposed closures, which the general
-            // block-bodied program generator does not produce.
-            prop::sample::select(vec![
-                "fn first() = 0\nfn outer() = fn() = fn(x) = x\nfn next() = 2\n",
-                "fn first() = 0\nfn outer() =\n fn(x: int) { x }\nfn next() = 2\n",
-                "fn first()\n= 0\nfn outer()\n= fn(x: int)\n-> int\n= x +\n1\nfn next()\n-> int\n= 2\n",
-                "fn first()\n{}\nfn outer()\n{ if { true }\n{}\nelse\n{} }\nfn next()\n{}\n",
-            ]).prop_flat_map(|source| {
-                (Just(source.to_owned()), 0..front(source).input().len(), sumi_test::edit())
-            }).boxed(),
-        ]
+    fn a_single_delimiter_edit_preserves_unaffected_items(
+        (source, index, edit) in delimiter_edited_program()
     ) {
-        let original = front(&source);
-        let (edited, touched, _, impact) = apply(&source, &original.spans(), index, edit);
-        let touched: Vec<RawIdx> = touched.iter().map(|&index| original.input().token(sig(index))).collect();
-        let after = front(&edited);
-        let tree = after.parse.tree();
-        let survivors: HashSet<_> = tree
-            .children(tree.root())
-            .filter(|&node| tree.kind(node) == NodeKind::FnItem)
-            .map(|node| (after.node_span(node), after.shape(&edited, node)))
-            .collect();
+        check::recovery(&source, &front(&source), index, edit);
+    }
+}
 
-        let tree = original.parse.tree();
-        for item in tree.children(tree.root()).filter(|&node| {
-            tree.kind(node) == NodeKind::FnItem
-                && !touched.iter().any(|&token| {
-                    tree.first_token(node) <= token && token < tree.end_token(node)
-                })
-        }) {
-            let shape = original.shape(&source, item);
-            let span = impact.map(original.node_span(item));
-            prop_assert!(
-                survivors.contains(&(span, shape.clone())),
-                "{:?} at token {} ({:?}) disturbs the item {:?}\n--- original ---\n{}\n--- edited ---\n{}\nevidence: {:?}",
-                edit, index, original.input().get(sig(index)), shape.0, source, edited,
-                after.parse.evidence()
-            );
+/// Every edit at every token of programs with exposed closures, which the
+/// block-bodied program generator does not produce.
+#[test]
+fn every_edit_around_an_exposed_closure_recovers_locally() {
+    let edits = [Edit::Delete, Edit::Duplicate, Edit::Swap]
+        .into_iter()
+        .chain(INSERTS.iter().map(|&text| Edit::Insert(text)));
+    for source in [
+        "fn first() = 0\nfn outer() = fn() = fn(x) = x\nfn next() = 2\n",
+        "fn first() = 0\nfn outer() =\n fn(x: int) { x }\nfn next() = 2\n",
+        "fn first()\n= 0\nfn outer()\n= fn(x: int)\n-> int\n= x +\n1\nfn next()\n-> int\n= 2\n",
+        "fn first()\n{}\nfn outer()\n{ if { true }\n{}\nelse\n{} }\nfn next()\n{}\n",
+    ] {
+        let original = front(source);
+        for index in 0..original.input().len() {
+            for edit in edits.clone() {
+                check::recovery(source, &original, index, edit);
+            }
         }
     }
 }

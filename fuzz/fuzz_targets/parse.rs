@@ -6,6 +6,7 @@
 
 use libfuzzer_sys::fuzz_target;
 use sumi_frontend::parse_source;
+use sumi_test::check;
 
 fuzz_target!(|data: &[u8]| {
     let Ok(source) = std::str::from_utf8(data) else {
@@ -15,11 +16,10 @@ fuzz_target!(|data: &[u8]| {
     let lexed = parsed.lexed();
     let parse = parsed.parse();
 
-    sumi_fuzz::check_lexed(source, lexed);
-    sumi_fuzz::check_input(lexed, parse.input());
-    sumi_fuzz::check_tree(parse, lexed);
-    sumi_fuzz::check_parse(source, lexed, parse);
-    sumi_fuzz::check_diagnostics(&parsed);
-    sumi_fuzz::check_format(source, lexed, parse);
-    sumi_fuzz::check_widening(source, lexed, parse.input());
+    check::lexed(source, lexed);
+    check::input(lexed, parse.input());
+    check::widening(source, lexed, parse.input());
+    check::parse(source, lexed, parse);
+    check::diagnostics(&parsed);
+    check::format(source);
 });

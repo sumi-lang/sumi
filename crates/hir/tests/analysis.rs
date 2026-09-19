@@ -1,10 +1,10 @@
 //! The analysis held to its contracts: what the graph of a body is, which
 //! files are accepted, and what each diagnostic says.
 
-use proptest::test_runner::FileFailurePersistence;
 use sumi_frontend::{Diagnostic, DiagnosticCode, parse_source};
 use sumi_hir::codes::*;
 use sumi_hir::{Analysis, BinaryOp, Function, FunctionId, Int, NodeId, Op, Ty, analyze};
+use sumi_test::check;
 use sumi_text::TextRange;
 
 fn check(source: &str) -> Analysis {
@@ -15,99 +15,8 @@ fn clean(source: &str) -> Analysis {
     let analysis = check(source);
     assert!(analysis.is_valid(), "{:?}", analysis.diagnostics());
     assert!(analysis.functions().iter().all(Function::complete));
-    graph_invariant(&analysis);
+    check::semantics(&analysis);
     analysis
-}
-
-/// The typed shape of every complete function: each value has a type, no
-/// hole stands in it, and each operator's type agrees with its inputs',
-/// a call's with its callee's signature, a join's with its arms', and a
-/// copy's or a narrowed read's with what it reads. Holds for a complete
-/// function of a rejected file too.
-fn typed_invariant(analysis: &Analysis) {
-    let graph = analysis.graph();
-    for (index, function) in analysis.functions().iter().enumerate() {
-        if !function.complete() {
-            continue;
-        }
-        let signature = function
-            .signature()
-            .expect("a complete function has a signature");
-        let run = graph.run(FunctionId::new(index));
-        let ty = |node: NodeId| analysis.ty(node);
-        for node in run.nodes() {
-            let entry = graph.node(node);
-            let own = ty(node);
-            let inputs = graph.inputs(node);
-            let unary = |expected: Ty| {
-                assert_eq!(ty(inputs[0]), Some(expected), "{node:?} {:?}", entry.op);
-                assert_eq!(own, Some(expected), "{node:?} {:?}", entry.op);
-            };
-            match &entry.op {
-                Op::Entry | Op::Then | Op::Else => continue,
-                Op::Hole => panic!("{node:?}: a hole in a complete function"),
-                Op::Int(_) => assert_eq!(own, Some(Ty::Int)),
-                Op::Bool(_) => assert_eq!(own, Some(Ty::Bool)),
-                Op::Unit => assert_eq!(own, Some(Ty::Unit)),
-                Op::Unused => {
-                    assert_eq!(ty(inputs[0]), Some(Ty::Unit));
-                    assert_eq!(own, None);
-                    continue;
-                }
-                Op::Param(position) => {
-                    assert_eq!(own, Some(signature.params[*position as usize]));
-                }
-                Op::Neg => unary(Ty::Int),
-                Op::Not => unary(Ty::Bool),
-                Op::Binary(op) => {
-                    assert_eq!(own, Some(op.result()));
-                    match op {
-                        BinaryOp::Eq | BinaryOp::Ne => {
-                            assert!(matches!(ty(inputs[0]), Some(Ty::Int | Ty::Bool)));
-                            assert_eq!(ty(inputs[0]), ty(inputs[1]));
-                        }
-                        _ => {
-                            assert_eq!(ty(inputs[0]), Some(Ty::Int));
-                            assert_eq!(ty(inputs[1]), Some(Ty::Int));
-                        }
-                    }
-                }
-                Op::And { rhs } | Op::Or { rhs } => {
-                    assert_eq!(own, Some(Ty::Bool));
-                    assert_eq!(ty(inputs[0]), Some(Ty::Bool));
-                    assert_eq!(ty(graph.region(*rhs).result()), Some(Ty::Bool));
-                }
-                Op::Copy { declared } => {
-                    assert_eq!(own, ty(inputs[0]));
-                    if let Some((declared, _)) = declared {
-                        assert_eq!(own, Some(*declared));
-                    }
-                }
-                Op::Refine { .. } | Op::Exactly(_) => assert_eq!(own, ty(inputs[0])),
-                Op::Join { then, else_ } => {
-                    assert_eq!(ty(inputs[0]), Some(Ty::Bool));
-                    assert_eq!(ty(graph.region(*then).result()), own);
-                    match else_ {
-                        Some(else_) => assert_eq!(ty(graph.region(*else_).result()), own),
-                        None => assert_eq!(own, Some(Ty::Unit)),
-                    }
-                }
-                Op::Call(callee) => {
-                    let callee = analysis
-                        .function(*callee)
-                        .signature()
-                        .expect("a called function has a signature");
-                    assert_eq!(own, Some(callee.result));
-                    assert_eq!(inputs.len(), callee.params.len());
-                    for (&input, &param) in inputs.iter().zip(&callee.params) {
-                        assert_eq!(ty(input), Some(param));
-                    }
-                }
-            }
-            assert!(own.is_some(), "{node:?} {:?}", entry.op);
-        }
-        assert_eq!(ty(run.result()), Some(signature.result));
-    }
 }
 
 /// The value a function's body computes: its region's result, before the
@@ -143,158 +52,6 @@ fn semantic(analysis: &Analysis) -> Vec<&Diagnostic> {
 
 fn codes(analysis: &Analysis) -> Vec<DiagnosticCode> {
     semantic(analysis).iter().map(|d| d.code).collect()
-}
-
-fn reversed_declarations_preserve_types(analysis: &Analysis) {
-    use sumi_syntax::ast::{AstNode, SourceFile};
-    if !analysis.parsed().diagnostics().is_empty() {
-        return;
-    }
-    let tree = analysis.parsed().parse().tree();
-    let mut declarations: Vec<_> = SourceFile::cast(tree, tree.root())
-        .unwrap()
-        .items(tree)
-        .map(|item| {
-            tree.byte_range(item.node(), analysis.parsed().lexed())
-                .text(analysis.parsed().source())
-        })
-        .collect();
-    declarations.reverse();
-    let reversed = check(&declarations.join("\n"));
-    assert!(reversed.parsed().diagnostics().is_empty());
-    assert_eq!(analysis.functions().len(), reversed.functions().len());
-    let count = analysis.functions().len();
-    for (index, (a, b)) in analysis
-        .functions()
-        .iter()
-        .zip(reversed.functions().iter().rev())
-        .enumerate()
-    {
-        assert_eq!(
-            a.name().map(|name| analysis.text(name)),
-            b.name().map(|name| reversed.text(name))
-        );
-        assert_eq!(a.signature(), b.signature());
-        assert_eq!(
-            analysis.ranges(FunctionId::new(index)),
-            reversed.ranges(FunctionId::new(count - 1 - index))
-        );
-        assert_eq!(a.complete(), b.complete());
-    }
-    graph_invariant(&reversed);
-}
-
-/// The graph's shape: inputs precede their readers; a function's run is
-/// its entry, a node per parameter, and its body region; regions nest
-/// inside their function's run and each other; every op reads what its
-/// kind takes; and an accepted file has a type on every value and no hole.
-fn graph_invariant(analysis: &Analysis) {
-    let graph = analysis.graph();
-    let nodes = graph.nodes();
-    for id in graph.node_ids() {
-        let node = graph.node(id);
-        let inputs = graph.inputs(id);
-        for input in inputs {
-            assert!(
-                input.index() < id.index(),
-                "{id:?} reads {input:?} before it is defined"
-            );
-        }
-        let arity = match node.op {
-            Op::Int(_) | Op::Bool(_) | Op::Param(_) | Op::Entry => Some(0),
-            Op::Unit | Op::Unused | Op::Copy { .. } | Op::Neg | Op::Not | Op::Exactly(_) => Some(1),
-            Op::And { .. } | Op::Or { .. } | Op::Join { .. } => Some(1),
-            Op::Binary(_) | Op::Refine { .. } | Op::Then | Op::Else => Some(2),
-            Op::Hole | Op::Call(_) => None,
-        };
-        if let Some(arity) = arity {
-            assert_eq!(inputs.len(), arity, "{id:?} {:?}", node.op);
-        }
-        // A context is read only by what it gates: another context, or the
-        // unit a tail-less block holds while it is live.
-        for &input in inputs {
-            if matches!(graph.node(input).op, Op::Entry | Op::Then | Op::Else) {
-                assert!(
-                    matches!(node.op, Op::Then | Op::Else | Op::Unit),
-                    "{id:?} reads a context"
-                );
-            }
-        }
-        if node.name.is_some() {
-            assert!(matches!(node.op, Op::Param(_) | Op::Copy { .. } | Op::Hole));
-        }
-        if analysis.is_valid() {
-            assert!(
-                !matches!(node.op, Op::Hole),
-                "an accepted file has no holes"
-            );
-            if !matches!(node.op, Op::Entry | Op::Then | Op::Else | Op::Unused) {
-                assert!(
-                    analysis.ty(id).is_some(),
-                    "{id:?} {:?} has no type",
-                    node.op
-                );
-            }
-        }
-    }
-    typed_invariant(analysis);
-    let mut owner = vec![None; nodes.len()];
-    assert_eq!(graph.runs().len(), analysis.functions().len());
-    for (index, function) in graph.runs().iter().enumerate() {
-        let mut run = function.nodes();
-        assert_eq!(run.next(), Some(function.entry()));
-        assert!(matches!(graph.node(function.entry()).op, Op::Entry));
-        for (position, param) in function.params().enumerate() {
-            assert_eq!(run.next(), Some(param));
-            assert!(matches!(graph.node(param).op, Op::Param(i) if i as usize == position));
-        }
-        let region = graph.region(function.region());
-        assert_eq!(region.context, function.entry());
-        for node in region.nodes() {
-            assert_eq!(run.next(), Some(node));
-        }
-        // After the body: nothing, or the copy a declared result holds
-        // the body's value in.
-        match run.next() {
-            None => assert_eq!(function.result(), region.result()),
-            Some(copy) => {
-                assert_eq!(copy, function.result());
-                assert!(matches!(graph.node(copy).op, Op::Copy { .. }));
-                assert_eq!(graph.inputs(copy), [region.result()]);
-                assert_eq!(run.next(), None);
-            }
-        }
-        for node in function.nodes() {
-            owner[node.index()] = Some(index);
-        }
-    }
-    let mut spans: Vec<(usize, usize)> = Vec::new();
-    for id in graph.region_ids() {
-        let region = graph.region(id);
-        let result = region.result().index();
-        assert!(
-            !matches!(
-                graph.node(region.result()).op,
-                Op::Entry | Op::Then | Op::Else | Op::Unused
-            ),
-            "{id:?} results in a context"
-        );
-        let owner_of = |index: usize| owner[index].expect("every node belongs to a function");
-        assert_eq!(owner_of(region.context.index()), owner_of(result));
-        // An empty region is a read of something defined outside it.
-        let Some(first) = region.nodes().next() else {
-            continue;
-        };
-        let (start, end) = (first.index(), first.index() + region.nodes().len());
-        assert!(region.context.index() < start);
-        assert!(result < end, "{id:?} results in a later node");
-        for &(s, e) in &spans {
-            let disjoint = end <= s || e <= start;
-            let nested = (s <= start && end <= e) || (start <= s && e <= end);
-            assert!(disjoint || nested, "{id:?} overlaps another region");
-        }
-        spans.push((start, end));
-    }
 }
 
 /// A disagreement between branches is reported once, at the `if`, and
@@ -432,27 +189,7 @@ fn syntax_diagnostics_are_preserved_and_always_reject() {
         let a = analyze(parsed);
         assert!(!a.is_valid());
         assert_eq!(a.parsed().diagnostics(), before);
-        diagnostics_are_one_list(&a);
-    }
-}
-
-/// The analysis lists the frontend's diagnostics among its own, in source
-/// order, the frontend's first where both stand at one position.
-fn diagnostics_are_one_list(analysis: &Analysis) {
-    let all = analysis.diagnostics();
-    let syntactic: Vec<_> = all.iter().filter(|d| !Analysis::is_semantic(d)).collect();
-    assert_eq!(syntactic.len(), analysis.parsed().diagnostics().len());
-    assert!(
-        syntactic
-            .iter()
-            .zip(analysis.parsed().diagnostics())
-            .all(|(listed, own)| *listed == own)
-    );
-    assert!(all.is_sorted_by_key(|d| d.primary.start()));
-    for pair in all.windows(2) {
-        if pair[0].primary.start() == pair[1].primary.start() {
-            assert!(!Analysis::is_semantic(&pair[0]) || Analysis::is_semantic(&pair[1]));
-        }
+        check::semantics(&a);
     }
 }
 
@@ -581,9 +318,7 @@ fn existing_corpus_never_panics_or_silently_rejects() {
             if path.is_dir() {
                 directories.push(path);
             } else if path.file_name().unwrap() == "case.sumi" {
-                let a = check(&std::fs::read_to_string(&path).unwrap());
-                reversed_declarations_preserve_types(&a);
-                graph_invariant(&a);
+                check::semantics(&check(&std::fs::read_to_string(&path).unwrap()));
                 count += 1;
             }
         }
@@ -663,23 +398,11 @@ fn large_definition_chains_and_cycles_are_stack_safe() {
     }
 }
 
-/// Records every failing seed in the crate's tracked `proptest-regressions/`
-/// file, which each later run replays before generating anything new.
-/// Proptest's default location is found by walking up from the test file
-/// to a `lib.rs`, which a test under `tests/` never reaches; this path is
-/// fixed at compile time instead.
-fn config() -> proptest::test_runner::Config {
-    proptest::test_runner::Config {
-        failure_persistence: Some(Box::new(FileFailurePersistence::Direct(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/proptest-regressions/analysis.txt"
-        )))),
-        ..Default::default()
-    }
-}
-
 proptest::proptest! {
-    #![proptest_config(config())]
+    #![proptest_config(sumi_test::regressions(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/proptest-regressions/analysis.txt"
+    )))]
     #[test]
     fn declaration_order_does_not_choose_inferred_signatures(
         choices in proptest::collection::vec((0usize..20, 0u8..6, proptest::num::u32::ANY), 1..20)
@@ -714,23 +437,11 @@ proptest::proptest! {
     fn damaged_token_sequences_do_not_panic(tokens in proptest::collection::vec(
         proptest::sample::select(vec!["fn", "let", "mut", "x", "int", "bool", "unit", "if", "else", "return", "_", "=", "->", ":", "(", ")", "{", "}", ",", "1", "true", "+", "-", "&&", "\n"]), 0..100)) {
         let source = format!("fn f(x: int) -> int {{ {} }}\nfn g() -> int = 1", tokens.join(" "));
-        let a = check(&source);
-        assert_eq!(a.is_valid(), a.diagnostics().is_empty());
-        graph_invariant(&a);
+        check::semantics(&check(&source));
     }
 
     #[test]
     fn arbitrary_source_has_diagnostic_backed_acceptance(source in ".{0,256}") {
-        let a = check(&source);
-        reversed_declarations_preserve_types(&a);
-        graph_invariant(&a);
-        diagnostics_are_one_list(&a);
-        proptest::prop_assert_eq!(a.is_valid(), a.diagnostics().is_empty());
-        for d in a.diagnostics() {
-            for range in std::iter::once(d.primary).chain(d.labels.iter().map(|label| label.range)) {
-                proptest::prop_assert!(source.is_char_boundary(range.start().to_usize()));
-                proptest::prop_assert!(source.is_char_boundary(range.end().to_usize()));
-            }
-        }
+        check::semantics(&check(&source));
     }
 }
