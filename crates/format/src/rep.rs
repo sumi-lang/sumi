@@ -1,45 +1,31 @@
-//! Layout equivalence as a value. Two sources are layout-equivalent when
-//! they lex to the same significant tokens, parse to the same tree over
-//! them, and hold the same comments and retained blank lines at the same
-//! positions among those tokens. [`rep`] is everything the parser sees
-//! plus that retained signal, and nothing else: the formatter writes a
-//! result only when its `rep` is the input's.
-//!
-//! The comma before a list closer is a layout token, the one token the
-//! formatter may add or remove, so `rep` erases it and counts positions
-//! without it.
+//! Layout equivalence: the significant tokens, the tree over them, and the comments and retained
+//! blank lines at their positions among those tokens. The comma before a list closer is layout, so
+//! [`rep`](fn@rep) erases it.
 
 use sumi_lexer::LexedFile;
 use sumi_syntax::{NodeIdx, NodeKind, Parse, SigIdx, SyntaxKind};
 
 use crate::trivia::{GapSignal, signal};
 
-/// The layout-free content of one file: its items, and the signal of the
-/// gaps around them.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Rep<'s> {
-    /// One entry per child of the root, in source order.
     pub(crate) items: Vec<ItemRep<'s>>,
-    /// The gap before each item, then the gap after the last one.
+    /// The gap before each item, then the gap after the last.
     pub(crate) edges: Vec<GapSignal<'s>>,
 }
 
-/// The layout-free content of one top-level item.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ItemRep<'s> {
     kind: NodeKind,
-    /// The significant tokens, layout commas erased.
     tokens: Vec<(SyntaxKind, &'s str)>,
-    /// Every node of the subtree in preorder: its kind, extent, and range
-    /// in erased significant indices relative to the item.
+    /// Each subtree node in preorder: its kind, extent, and range in erased token indices relative
+    /// to the item.
     nodes: Vec<(NodeKind, u32, u32, u32)>,
-    /// The signal of every gap inside the item, in order; the gaps around
-    /// an erased comma count as one.
+    /// The gaps around an erased comma count as one.
     gaps: Vec<GapSignal<'s>>,
 }
 
-/// The layout-free content of `source`, which `lexed` and `parse` must be
-/// the products of.
+/// `lexed` and `parse` must be the products of `source`.
 pub fn rep<'s>(source: &'s str, lexed: &LexedFile, parse: &Parse) -> Rep<'s> {
     let (input, tree) = (parse.input(), parse.tree());
     let n = input.len();
@@ -60,14 +46,12 @@ pub fn rep<'s>(source: &'s str, lexed: &LexedFile, parse: &Parse) -> Rep<'s> {
             }
         }
     }
-    // Erased tokens before each significant index, one entry past the end.
     let mut before = vec![0u32; n + 1];
     for sig in 0..n {
         before[sig + 1] = before[sig] + u32::from(erased[sig]);
     }
     let erased_index = |sig: u32| sig - before[sig as usize];
 
-    // The trivia of gap `gap`, the tokens before an erased comma included.
     let trivia = |gap: usize| {
         let range = input.trivia_before(SigIdx::new(gap as u32));
         range.start.until(range.end)
@@ -105,7 +89,6 @@ pub fn rep<'s>(source: &'s str, lexed: &LexedFile, parse: &Parse) -> Rep<'s> {
                 )
             })
             .collect();
-        // The gap before an erased comma merges into the one after it.
         let gaps = (first as usize + 1..end as usize)
             .filter(|&gap| !erased[gap])
             .map(signal_of)

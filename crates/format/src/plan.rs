@@ -1,17 +1,6 @@
-//! The layout plan: one separator per gap between adjacent significant
-//! tokens, and the groups that decide which separators break.
-//!
-//! With the tokens fixed, formatting has one degree of freedom per gap:
-//! nothing, a space, or a line break at some indentation. The rules here
-//! walk the tree and fill a [`Gap`] per gap with its flat form, its break
-//! form, and whether it may break at all; a [`Group`] is a range of gaps
-//! that break together when the group does not fit. Gaps the parser
-//! recovered around are frozen and keep their trivia as written.
-//!
-//! Legality comes from the parser's own stream: a break that would end a
-//! statement, by [`ParserInput::would_end_statement`], is never offered
-//! inside one, so a mistaken rule widens a line instead of changing the
-//! program.
+//! The layout plan: one [`Gap`] per gap between adjacent significant tokens, and the [`Group`]s
+//! that decide which ones break. A break that would end a statement is never offered inside one, so
+//! a wrong rule widens a line instead of changing the program.
 
 use sumi_lexer::{LexedFile, RawIdx, SyntaxKind};
 use sumi_syntax::{
@@ -19,46 +8,36 @@ use sumi_syntax::{
     binary_operator,
 };
 
-/// The line width the printer fits groups into.
+/// The line width, in characters.
 pub const WIDTH: usize = 100;
-/// One level of indentation.
 pub(crate) const INDENT: &str = "    ";
 
-/// The separator of a gap that does not break.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Flat {
     Glue,
     Space,
 }
 
-/// When a gap breaks.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Breaks {
     Never,
-    /// When its group does.
     Soft,
-    /// Always: a statement or item boundary, a comment, or frozen trivia
-    /// holding a line break.
     Hard,
 }
 
-/// The closer a gap precedes, whose comments sit one level in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Closer {
     Block,
-    /// A comma precedes the gap's break.
+    /// A comma precedes the break.
     List,
 }
 
-/// One gap's plan: the rule's choice, then what the post-passes learn.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Gap {
     pub(crate) flat: Flat,
-    /// The indentation level of the token after the gap when it breaks.
     pub(crate) level: u32,
     pub(crate) breaks: Breaks,
     pub(crate) closer: Option<Closer>,
-    /// The gap's trivia is emitted as written.
     pub(crate) frozen: bool,
 }
 
@@ -73,76 +52,59 @@ impl Gap {
         }
     }
 
-    /// Nothing.
     fn glue(level: u32) -> Self {
         Self::new(Flat::Glue, level, Breaks::Never, None)
     }
 
-    /// A space.
     fn space(level: u32) -> Self {
         Self::new(Flat::Space, level, Breaks::Never, None)
     }
 
-    /// A space, or a break at the level.
     fn soft(level: u32) -> Self {
         Self::new(Flat::Space, level, Breaks::Soft, None)
     }
 
-    /// Nothing, or a break at the level.
     fn soft_glue(level: u32) -> Self {
         Self::new(Flat::Glue, level, Breaks::Soft, None)
     }
 
-    /// A break at the level.
     fn hard(level: u32) -> Self {
         Self::new(Flat::Space, level, Breaks::Hard, None)
     }
 
-    /// Nothing, or `closer`'s break at the level.
     fn closer(closer: Closer, level: u32, breaks: Breaks) -> Self {
         Self::new(Flat::Glue, level, breaks, Some(closer))
     }
 
-    /// The indentation level of comments on their own line in the gap.
     pub(crate) fn comment_level(&self) -> u32 {
         self.level + u32::from(self.closer.is_some())
     }
 }
 
-/// A range of gaps, `first..end`, that break together. A group may name
-/// a tail, the gaps inside its last element, which decide for themselves.
-/// The group is forced only by hard gaps outside its tail, it fits when
-/// the text up to the tail's first break opportunity does, and when it
-/// breaks it indents its tail one level: so `let x = foo(` keeps the call
-/// on the binding's line with the arguments breaking inside, and moves
-/// the value to the next line only when even its head does not fit.
+/// Gaps `first..end` break together, except the tail `from..to` inside them: its gaps break on
+/// their own, one level in when the group breaks.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Group {
     pub(crate) first: u32,
     pub(crate) end: u32,
-    /// The tail's gaps, `from..to`, inside `first..end`.
     pub(crate) tail: Option<(u32, u32)>,
 }
 
 impl Group {
-    /// Whether `gap` lies in the tail.
     pub(crate) fn in_tail(&self, gap: u32) -> bool {
         self.tail.is_some_and(|(from, to)| from <= gap && gap < to)
     }
 }
 
 pub(crate) struct Plan {
-    /// One per gap: gap `i` precedes significant token `i`, and gap `n`
-    /// ends the file.
+    /// Gap `i` precedes significant token `i`; gap `n` ends the file.
     pub(crate) gaps: Vec<Gap>,
-    /// In preorder: by first gap, then the widest first.
+    /// By first gap, then widest first.
     pub(crate) groups: Vec<Group>,
-    /// The significant tokens that are layout commas, emitted only when
-    /// the gap after them breaks.
+    /// Per significant token: a comma emitted only when the gap after it breaks.
     pub(crate) layout_comma: Vec<bool>,
 }
 
-/// One element of a node in significant-index space.
 #[derive(Clone, Copy)]
 enum El {
     Tok(u32, SyntaxKind),
@@ -177,15 +139,11 @@ pub(crate) fn plan(lexed: &LexedFile, parse: &Parse) -> Plan {
             g.breaks = Breaks::Hard;
             g.level = 0;
         }
-        // A comment ends its line.
         if holds(SyntaxKind::LineComment) {
             g.breaks = Breaks::Hard;
         }
     }
-    // Inside a statement, a break that would end it is not a layout. The
-    // rule reads whether the token after the gap is glued to its
-    // successor, which is the plan's to decide, not the source's: a frozen
-    // gap keeps the source's spacing, and every other gap the plan's.
+    // A non-frozen gap's glue comes from the plan; only a frozen gap keeps the source's spacing.
     for gap in 1..n {
         if planner.gaps[gap].breaks != Breaks::Soft {
             continue;
@@ -218,7 +176,6 @@ pub(crate) fn plan(lexed: &LexedFile, parse: &Parse) -> Plan {
     }
 }
 
-/// Whether the trivia of gap `gap` holds a token of `kind`.
 fn holds(lexed: &LexedFile, input: &ParserInput, gap: usize, kind: SyntaxKind) -> bool {
     let trivia = input.trivia_before(SigIdx::new(gap as u32));
     trivia
@@ -251,7 +208,6 @@ impl Planner<'_> {
         }
     }
 
-    /// The direct tokens and children of `node`, in source order.
     fn elements(&self, node: NodeIdx) -> Vec<El> {
         let mut els = Vec::new();
         let mut cursor = self.first_sig(node);
@@ -285,8 +241,6 @@ impl Planner<'_> {
         self.gaps[gap as usize] = sep;
     }
 
-    /// The gaps `first..end` break together; a last element `tail`
-    /// decides for itself.
     fn group(&mut self, first: u32, end: u32, tail: Option<NodeIdx>) {
         if first < end {
             let tail = tail
@@ -296,18 +250,15 @@ impl Planner<'_> {
         }
     }
 
-    /// Lay out the value after `=` of a binding or an expression body:
-    /// the tail of the group from the gap after `=` to the end of `node`,
-    /// unless it is an operator chain, which reads better moved whole to
-    /// the next line before it breaks at its operators.
     fn value(&mut self, node: NodeIdx, eq: u32, value: NodeIdx, level: u32) {
+        // A chain is not the tail: it moves whole to the next line before it breaks at its
+        // operators.
         let chain = self.tree.kind(value) == NodeKind::BinaryExpr;
         self.group(eq + 1, self.end_sig(node), (!chain).then_some(value));
         self.node(value, if chain { level + 1 } else { level });
     }
 
-    /// Lay out `node` at indentation `level`, the level of the line it
-    /// begins on.
+    /// `level` is the indentation of the line `node` begins on.
     fn node(&mut self, node: NodeIdx, level: u32) {
         let kind = self.tree.kind(node);
         if kind == NodeKind::Error {
@@ -376,7 +327,6 @@ impl Planner<'_> {
         }
     }
 
-    /// Items on their own lines; the gaps between them keep blank lines.
     fn source_file(&mut self) {
         let root = self.tree.root();
         let items: Vec<NodeIdx> = self.tree.children(root).collect();
@@ -389,9 +339,6 @@ impl Planner<'_> {
         }
     }
 
-    /// A function item or closure: the head on one line, and the body a
-    /// block after a space or an expression after `=`, laid out as a
-    /// binding's value.
     fn function(&mut self, node: NodeIdx, els: &[El], level: u32) {
         self.pairs(els, |a, b| match (a, b) {
             (El::Tok(_, SyntaxKind::FnKw), El::Node(_, NodeKind::ParamList)) => Gap::glue(level),
@@ -403,8 +350,6 @@ impl Planner<'_> {
         self.head_and_value(node, els, level);
     }
 
-    /// Lay out the children of a construct whose `=`, if any, is followed
-    /// by its value.
     fn head_and_value(&mut self, node: NodeIdx, els: &[El], level: u32) {
         let mut eq = None;
         for &el in els {
@@ -419,9 +364,6 @@ impl Planner<'_> {
         }
     }
 
-    /// A parameter or argument list: glued to its owner, elements spaced
-    /// after commas, and one element per line with a trailing comma when
-    /// the list breaks.
     fn list(&mut self, node: NodeIdx, els: &[El], level: u32) {
         self.pairs(els, |a, b| match (a, b) {
             (El::Tok(_, SyntaxKind::LParen), El::Tok(_, SyntaxKind::RParen)) => Gap::glue(level),
@@ -431,11 +373,8 @@ impl Planner<'_> {
             (El::Tok(_, SyntaxKind::Comma), _) => Gap::soft(level + 1),
             _ => Gap::space(level + 1),
         });
-        // A list the parser recovered in keeps its comma and its shape.
         let sound = !self.tree.has_error(node);
         if sound {
-            // The comma before the closer is a layout token: dropped when
-            // the list is flat.
             for pair in els.windows(2) {
                 if let (El::Tok(sig, SyntaxKind::Comma), El::Tok(_, SyntaxKind::RParen)) =
                     (pair[0], pair[1])
@@ -444,9 +383,7 @@ impl Planner<'_> {
                 }
             }
         }
-        // The last element hugs the closer when it opens a block: it is the
-        // group's tail and, flat, sits at this level; broken, it is one
-        // level in like the rest, through the tail's indentation.
+        // The hug is the tail, which the printer indents one more when the list breaks.
         let last = els.iter().rev().find_map(|&el| match el {
             El::Node(child, _) => Some(child),
             El::Tok(..) => None,
@@ -463,8 +400,6 @@ impl Planner<'_> {
         }
     }
 
-    /// Whether `node` begins a block on its line: a block, an `if`, or a
-    /// closure with a block body. Such a last element hugs a list.
     fn opens_block(&self, node: NodeIdx) -> bool {
         match self.tree.kind(node) {
             NodeKind::Block | NodeKind::IfExpr => true,
@@ -477,7 +412,6 @@ impl Planner<'_> {
         }
     }
 
-    /// A block: statements one per line, one level in.
     fn block(&mut self, els: &[El], level: u32) {
         self.pairs(els, |a, b| match (a, b) {
             (El::Tok(_, SyntaxKind::LBrace), El::Tok(_, SyntaxKind::RBrace)) => {
@@ -489,8 +423,6 @@ impl Planner<'_> {
         self.children(els, level + 1);
     }
 
-    /// A binding or assignment: the head on one line, and the value after
-    /// `=` as the tail of the binding's group.
     fn binding(&mut self, node: NodeIdx, els: &[El], level: u32) {
         self.pairs(els, |a, b| match (a, b) {
             (_, El::Tok(_, SyntaxKind::Colon)) => Gap::glue(level),
@@ -500,9 +432,6 @@ impl Planner<'_> {
         self.head_and_value(node, els, level);
     }
 
-    /// A binary expression: operators spaced, and a chain of one
-    /// precedence breaking before each operator, one level in. `chain` is
-    /// the continuation level of the chain this node extends, if any.
     fn binary(&mut self, node: NodeIdx, els: &[El], level: u32, chain: Option<u32>) {
         let cont = chain.unwrap_or(level + 1);
         self.pairs(els, |a, b| match (a, b) {
@@ -532,7 +461,6 @@ impl Planner<'_> {
         }
     }
 
-    /// The left binding power of the operator among `els`.
     fn power(&self, els: &[El]) -> Option<u8> {
         let mut tokens = els.iter().filter_map(|el| match el {
             El::Tok(sig, kind) => Some((*sig, *kind)),
@@ -550,14 +478,8 @@ impl Planner<'_> {
         self.power(&self.elements(node))
     }
 
-    /// Freeze every gap the parser recovered around: the anchor of every
-    /// recovery, and the inside and edges of every skipped range and every
-    /// `Error` node. Recovery is layout-sensitive, but it reads nothing of
-    /// a gap beyond whether a line break stands in it, so an edge gap that
-    /// holds a line break the rules keep is reindented rather than frozen.
     fn freeze(&mut self, lexed: &LexedFile, parse: &Parse) {
-        // The gap before the first significant token at or after `raw`:
-        // a range may end at a trivia token.
+        // A range may end at a trivia token.
         let gap_at = |planner: &Self, raw: RawIdx| planner.input.sig_at_or_after(raw).to_usize();
         let mut anchors: Vec<usize> = Vec::new();
         let mut ranges: Vec<(usize, usize)> = Vec::new();
@@ -590,6 +512,8 @@ impl Planner<'_> {
             for gap in start + 1..end {
                 self.gaps[gap].frozen = true;
             }
+            // Recovery reads nothing of a gap but whether it holds a line break, so an edge whose
+            // break the rules keep is reindented, not frozen.
             for edge in [start, end] {
                 let kept_break = self.gaps[edge].breaks == Breaks::Hard
                     && holds(lexed, self.input, edge, SyntaxKind::Newline);

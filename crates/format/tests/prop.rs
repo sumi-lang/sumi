@@ -5,16 +5,13 @@ use sumi_format::rep;
 use sumi_syntax::SyntaxKind;
 use sumi_test::{Front, check, front};
 
-/// Source fragments beyond every keyword and punctuation text of the
-/// language, valid and pathological, echoing the parser soup property;
-/// concatenation composes the adjacencies goldens cannot enumerate.
 const EXTRA_FRAGMENTS: &[&str] = &[
     "x", "foo", "x = y", "0", "123", "1.5", "1e", "0123", "1u32", "\"abc\"", "\"open", ";", "[",
     " ", "\t", "\n", "\r\n", "\r", "// c", "€",
 ];
 
-/// Token soup, half the time wrapped in a function body: violations are
-/// recorded while parsing expressions, which live in blocks.
+/// Bare soup parses only items; the half wrapped in a body reaches the expression parser, where
+/// most violations are recorded.
 fn soup() -> impl Strategy<Value = String> {
     let fragments: Vec<&'static str> = SyntaxKind::ALL
         .iter()
@@ -29,7 +26,6 @@ fn soup() -> impl Strategy<Value = String> {
     ]
 }
 
-/// The layout-free content of `source`: what formatting must keep.
 fn layout_free<'s>(source: &'s str, front: &Front) -> sumi_format::Rep<'s> {
     rep(source, &front.lexed, &front.parse)
 }
@@ -62,7 +58,6 @@ proptest! {
     fn a_layout_perturbation_formats_to_the_same_text(
         (source, perturbed) in sumi_test::perturbed_program()
     ) {
-        // The perturbation is layout-neutral: it keeps the rep.
         let original = front(&source);
         let changed = front(&perturbed);
         prop_assert_eq!(
@@ -72,7 +67,6 @@ proptest! {
             source,
             perturbed
         );
-        // So the formatter, a function of the rep, prints it the same.
         let formatted = check::format(&source);
         let perturbed_formatted = check::format(&perturbed);
         prop_assert_eq!(

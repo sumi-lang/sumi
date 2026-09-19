@@ -1,32 +1,22 @@
-//! The retained signal of a gap: what the formatter reads from the trivia
-//! between two significant tokens, and what [`rep`](crate::rep) records.
-//! Both read it through one function, so what the formatter keeps is by
-//! definition what the oracle compares.
+//! The signal a gap retains: its comments, and whether blank lines survive. The printer and
+//! [`rep`](fn@crate::rep) both call [`signal`], so the two can't disagree.
 
 use sumi_lexer::{LexedFile, RawIdx};
 use sumi_syntax::{ParserInput, SigIdx, SyntaxKind, is_closer};
 
-/// One line comment in a gap.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Comment<'s> {
     pub(crate) text: &'s str,
-    /// The comment followed the previous token on its line.
     pub(crate) trailing: bool,
-    /// A retained blank line precedes the comment.
     pub(crate) blank_before: bool,
 }
 
-/// The retained signal of one gap: its comments in order, and whether a
-/// retained blank line precedes the token after it.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct GapSignal<'s> {
     pub(crate) comments: Vec<Comment<'s>>,
     pub(crate) blank_before_token: bool,
 }
 
-/// Whether gap `gap` retains blank lines: the file's edges, and every gap
-/// where a line break would end a statement unless a closer follows. A
-/// leading blank line of the file and one before nothing are never kept.
 fn retains_blank(input: &ParserInput, gap: usize) -> bool {
     let n = input.len();
     gap == 0
@@ -35,7 +25,7 @@ fn retains_blank(input: &ParserInput, gap: usize) -> bool {
             && !input.get(SigIdx::new(gap as u32)).is_some_and(is_closer))
 }
 
-/// Read the signal of gap `gap` from `trivia`, its trivia tokens in order.
+/// `trivia` must be the gap's tokens in raw order.
 pub(crate) fn signal<'s>(
     source: &'s str,
     lexed: &LexedFile,
@@ -62,7 +52,6 @@ pub(crate) fn signal<'s>(
             _ => {}
         }
     }
-    // Blank lines at the head of the file are kept only after a comment.
     let leading = gap == 0 && comments.is_empty();
     GapSignal {
         comments,
