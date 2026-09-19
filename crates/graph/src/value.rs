@@ -13,14 +13,16 @@ pub enum Fault {
 /// One reading of every leaf and operator. An operation faults instead of panicking, so a graph the
 /// checker did not prove still runs to a refusal.
 pub trait Domain: Clone {
+    /// `Infallible` where no operation faults.
+    type Fault;
     fn int(value: &Int) -> Self;
     fn bool(value: bool) -> Self;
     fn unit() -> Self;
-    fn neg(&self) -> Result<Self, Fault>;
-    fn not(&self) -> Result<Self, Fault>;
-    fn binary(op: BinaryOp, lhs: &Self, rhs: &Self) -> Result<Self, Fault>;
+    fn neg(&self) -> Result<Self, Self::Fault>;
+    fn not(&self) -> Result<Self, Self::Fault>;
+    fn binary(op: BinaryOp, lhs: &Self, rhs: &Self) -> Result<Self, Self::Fault>;
     /// `&&` when `and`, else `||`. The short circuit is the graph's, so both operands have run.
-    fn lazy(and: bool, lhs: &Self, rhs: &Self) -> Result<Self, Fault>;
+    fn lazy(and: bool, lhs: &Self, rhs: &Self) -> Result<Self, Self::Fault>;
     /// `self` narrowed to where `self op other` (`other op self` unless `local_is_lhs`) is `sense`.
     fn refine(&self, op: BinaryOp, local_is_lhs: bool, sense: bool, other: &Self) -> Self;
     /// `self` narrowed to where it is `value`.
@@ -29,7 +31,7 @@ pub trait Domain: Clone {
 
 impl Op {
     /// Panics unless `self` is a data operator; the rest are the reader's to evaluate.
-    pub fn apply<D: Domain>(&self, inputs: &[&D]) -> Result<D, Fault> {
+    pub fn apply<D: Domain>(&self, inputs: &[&D]) -> Result<D, D::Fault> {
         Ok(match self {
             Self::Int(value) => D::int(value),
             Self::Bool(value) => D::bool(*value),
@@ -93,6 +95,8 @@ impl fmt::Display for Value {
 }
 
 impl Domain for Value {
+    type Fault = Fault;
+
     fn int(value: &Int) -> Self {
         Self::Int(value.clone())
     }

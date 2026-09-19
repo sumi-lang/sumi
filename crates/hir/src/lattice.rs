@@ -224,7 +224,6 @@ impl Lattice for Product {
                 value.clone()
             }
         };
-        const TOTAL: &str = "the may-domain is total";
         let types = match *edge {
             Edge::Call(claim) => self.types.imported(claim),
             Edge::Bind | Edge::Refine { .. } | Edge::Exactly(_) | Edge::Branch | Edge::Peer => {
@@ -245,10 +244,22 @@ impl Lattice for Product {
             Edge::Call(_) => rounded(values),
             Edge::Bind | Edge::Values => values.clone(),
             Edge::Peer => May::NONE,
-            Edge::Neg => values.neg().expect(TOTAL),
-            Edge::Not => values.not().expect(TOTAL),
-            Edge::Binary(op) => May::binary(op, values, second()).expect(TOTAL),
-            Edge::Lazy { and } => May::lazy(and, values, second()).expect(TOTAL),
+            Edge::Neg => {
+                let Ok(negated) = values.neg();
+                negated
+            }
+            Edge::Not => {
+                let Ok(inverted) = values.not();
+                inverted
+            }
+            Edge::Binary(op) => {
+                let Ok(combined) = May::binary(op, values, second());
+                combined
+            }
+            Edge::Lazy { and } => {
+                let Ok(combined) = May::lazy(and, values, second());
+                combined
+            }
             Edge::Refine {
                 op,
                 local_is_lhs,
