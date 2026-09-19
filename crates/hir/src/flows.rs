@@ -129,7 +129,12 @@ impl Demands<'_> {
             | Op::Exactly(_)
             | Op::Entry
             | Op::Then
-            | Op::Else => {}
+            | Op::Else
+            | Op::Return
+            | Op::Sequence
+            | Op::Observe { .. }
+            | Op::After
+            | Op::Result { .. } => {}
         }
     }
 }
@@ -267,7 +272,12 @@ pub(crate) fn draw(
                     );
                 }
                 // Drawn once every run is passed; the callee's run may come later.
-                Op::Call(_) => {}
+                Op::Call(_)
+                | Op::Return
+                | Op::Sequence
+                | Op::Observe { .. }
+                | Op::After
+                | Op::Result { .. } => {}
             }
             if let Some(value) = folds {
                 if seen.insert(value.clone()) {

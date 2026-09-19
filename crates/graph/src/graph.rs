@@ -157,6 +157,21 @@ pub enum Op {
         then: RegionId,
         else_: Option<RegionId>,
     },
+    /// Completes the current function with its first input; the second is its analysis context.
+    Return,
+    /// Evaluates its first input for control, then yields its second.
+    Sequence,
+    /// Observes only the selected region's control projection and yields unit if it falls through.
+    Observe {
+        then: Option<RegionId>,
+        else_: Option<RegionId>,
+    },
+    /// A continuation context after the control in its first input, inside its second input.
+    After,
+    /// The first input is the ordinary body result; the rest are explicit returns.
+    Result {
+        declared: Option<(Ty, TextRange)>,
+    },
     /// The inputs are the arguments as written, which may not match the callee's arity.
     Call(Callee),
 }
@@ -174,6 +189,7 @@ pub struct Region {
     pub context: NodeId,
     nodes: Range<u32>,
     result: NodeId,
+    control: Option<NodeId>,
 }
 
 impl Region {
@@ -184,6 +200,10 @@ impl Region {
 
     pub fn result(&self) -> NodeId {
         self.result
+    }
+
+    pub fn control(&self) -> Option<NodeId> {
+        self.control
     }
 }
 
@@ -255,7 +275,7 @@ struct Opening {
     /// The first node's index once entered.
     start: Option<u32>,
     /// The end and the result once closed.
-    closed: Option<(u32, NodeId)>,
+    closed: Option<(u32, NodeId, Option<NodeId>)>,
 }
 
 #[derive(Debug)]
@@ -364,13 +384,23 @@ impl GraphBuilder {
 
     /// The region must have been entered.
     pub fn close(&mut self, region: RegionId, result: NodeId) {
+        self.close_with_control(region, result, None);
+    }
+
+    /// The region must have been entered; `control` observes returns without demanding `result`.
+    pub fn close_with_control(
+        &mut self,
+        region: RegionId,
+        result: NodeId,
+        control: Option<NodeId>,
+    ) {
         let end = u32::try_from(self.nodes.len()).expect("node count fits u32");
         let opening = &mut self.regions[region.index()];
         assert!(
             opening.start.is_some(),
             "a region is entered before it closes"
         );
-        opening.closed = Some((end, result));
+        opening.closed = Some((end, result, control));
     }
 
     pub fn context(&self, region: RegionId) -> NodeId {
@@ -418,11 +448,12 @@ impl GraphBuilder {
                 .regions
                 .into_iter()
                 .map(|opening| {
-                    let (end, result) = opening.closed.expect("a region opened is closed");
+                    let (end, result, control) = opening.closed.expect("a region opened is closed");
                     Region {
                         context: opening.context,
                         nodes: opening.start.expect("a region closed was entered")..end,
                         result,
+                        control,
                     }
                 })
                 .collect(),
@@ -515,6 +546,7 @@ mod tests {
         assert_eq!(region.context, entry);
         assert_eq!(region.nodes().collect::<Vec<_>>(), [one, sum]);
         assert_eq!(region.result(), sum);
+        assert_eq!(region.control(), None);
         assert_eq!(graph.region_ids().count(), 1);
     }
 
