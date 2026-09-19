@@ -224,11 +224,8 @@ fn render_node(
     }
     out.push('\n');
 
-    // The tree yields children last first; the dump reads in source order.
-    let mut children: Vec<NodeIdx> = tree.children(node).collect();
-    children.reverse();
     let mut previous_end = first;
-    for child in children {
+    for child in tree.children(node) {
         assert!(
             tree.first_token(child) >= previous_end,
             "children must be ordered and disjoint"

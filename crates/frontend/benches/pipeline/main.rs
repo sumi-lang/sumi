@@ -100,7 +100,7 @@ fn bench_phases(c: &mut Criterion, corpus_name: &str, source: &str, valid: bool)
         b.iter_with_large_drop(|| ParserInput::new(black_box(&lexed)));
     });
     group.bench_function("parse", |b| {
-        b.iter_with_large_drop(|| parse(black_box(&input)));
+        b.iter_batched(|| input.clone(), parse, BatchSize::LargeInput);
     });
     group.finish();
 }
@@ -229,8 +229,7 @@ fn bench_adversarial(c: &mut Criterion) {
 fn bench_queries(c: &mut Criterion) {
     let source = corpus::generate(64 * KIB, MEDIUM_SEED);
     let lexed = lex(&source).expect("benchmark corpus fits in Sumi's source coordinate space");
-    let input = ParserInput::new(&lexed);
-    let parsed = parse(&input);
+    let parsed = parse(ParserInput::new(&lexed));
     let tree = parsed.tree();
     let index = LineIndex::new(&source);
 
@@ -284,7 +283,7 @@ fn bench_queries(c: &mut Criterion) {
 fn bench_format(c: &mut Criterion) {
     let source = corpus::generate(64 * KIB, MEDIUM_SEED);
     let lexed = lex(&source).expect("benchmark corpus fits in Sumi's source coordinate space");
-    let parsed = parse(&ParserInput::new(&lexed));
+    let parsed = parse(ParserInput::new(&lexed));
     assert_eq!(
         reprint(parsed.tree(), &lexed, &source),
         source,
@@ -296,7 +295,7 @@ fn bench_format(c: &mut Criterion) {
     // in the string literals the generator emits.
     let glued = source.replace(" + ", "+").replace(" * ", "*");
     let glued_lexed = lex(&glued).expect("benchmark corpus fits in Sumi's source coordinate space");
-    let glued_parse = parse(&ParserInput::new(&glued_lexed));
+    let glued_parse = parse(ParserInput::new(&glued_lexed));
     let violations = glued_parse
         .evidence()
         .iter()
@@ -340,8 +339,7 @@ criterion_main!(benches);
 fn bench_ast(c: &mut Criterion) {
     let source = corpus::generate(64 * KIB, MEDIUM_SEED);
     let lexed = lex(&source).expect("benchmark corpus fits in Sumi's source coordinate space");
-    let input = ParserInput::new(&lexed);
-    let parsed = parse(&input);
+    let parsed = parse(ParserInput::new(&lexed));
     let tree = parsed.tree();
     // Both walks count the names; the views must reach every one.
     assert_eq!(walk_views(tree), walk_nodes(tree));

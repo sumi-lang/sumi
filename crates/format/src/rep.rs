@@ -10,7 +10,7 @@
 //! without it.
 
 use sumi_lexer::{LexedFile, RawIdx};
-use sumi_syntax::{NodeIdx, NodeKind, ParserInput, SigIdx, SyntaxKind, SyntaxTree};
+use sumi_syntax::{NodeIdx, NodeKind, Parse, ParserInput, SigIdx, SyntaxKind};
 
 use crate::trivia::{GapSignal, signal};
 
@@ -30,7 +30,7 @@ pub struct ItemRep<'s> {
     pub kind: NodeKind,
     /// The significant tokens, layout commas erased.
     pub tokens: Vec<(SyntaxKind, &'s str)>,
-    /// Every node of the subtree in postorder: its kind, extent, and range
+    /// Every node of the subtree in preorder: its kind, extent, and range
     /// in erased significant indices relative to the item.
     pub nodes: Vec<(NodeKind, u32, u32, u32)>,
     /// The signal of every gap inside the item, in order; the gaps around
@@ -38,14 +38,10 @@ pub struct ItemRep<'s> {
     pub gaps: Vec<GapSignal<'s>>,
 }
 
-/// The layout-free content of `source`, which `lexed`, `input`, and `tree`
-/// must be the products of.
-pub fn rep<'s>(
-    source: &'s str,
-    lexed: &LexedFile,
-    input: &ParserInput,
-    tree: &SyntaxTree,
-) -> Rep<'s> {
+/// The layout-free content of `source`, which `lexed` and `parse` must be
+/// the products of.
+pub fn rep<'s>(source: &'s str, lexed: &LexedFile, parse: &Parse) -> Rep<'s> {
+    let (input, tree) = (parse.input(), parse.tree());
     let n = input.len();
     let sig_of_raw = sig_of_raw(input, lexed);
     let first_sig = |node: NodeIdx| sig_of_raw[tree.first_token(node).to_usize()];
@@ -104,7 +100,7 @@ pub fn rep<'s>(
 
     let mut items = Vec::new();
     let mut edges = Vec::new();
-    for item in tree.children_in_order(tree.root()) {
+    for item in tree.children(tree.root()) {
         let (first, end) = (first_sig(item), end_sig(item));
         edges.push(signal_of(first as usize));
         let tokens = (first..end)
@@ -118,8 +114,7 @@ pub fn rep<'s>(
             })
             .collect();
         let base = erased_index(first);
-        let subtree_start = item.to_usize() + 1 - tree.subtree_len(item);
-        let nodes = (subtree_start..=item.to_usize())
+        let nodes = (item.to_usize()..item.to_usize() + tree.subtree_len(item))
             .map(|node| NodeIdx::new(node as u32))
             .map(|node| {
                 (

@@ -109,7 +109,8 @@ enum El {
     Node(NodeIdx, NodeKind),
 }
 
-pub(crate) fn plan(lexed: &LexedFile, input: &ParserInput, parse: &Parse) -> Plan {
+pub(crate) fn plan(lexed: &LexedFile, parse: &Parse) -> Plan {
+    let input = parse.input();
     let n = input.len();
     let mut planner = Planner {
         tree: parse.tree(),
@@ -247,7 +248,7 @@ impl Planner<'_> {
         let mut els = Vec::new();
         let mut cursor = self.first_sig(node);
         let end = self.end_sig(node);
-        for child in self.tree.children_in_order(node) {
+        for child in self.tree.children(node) {
             let first = self.first_sig(child);
             while cursor < first {
                 els.push(self.tok(cursor));
@@ -417,7 +418,7 @@ impl Planner<'_> {
     /// Items on their own lines; the gaps between them keep blank lines.
     fn source_file(&mut self) {
         let root = self.tree.root();
-        let items: Vec<NodeIdx> = self.tree.children_in_order(root).collect();
+        let items: Vec<NodeIdx> = self.tree.children(root).collect();
         for pair in items.windows(2) {
             let gap = self.first_sig(pair[1]);
             self.set(gap, Sep::Hard(0));
@@ -526,7 +527,7 @@ impl Planner<'_> {
             NodeKind::ClosureExpr => self
                 .tree
                 .children(node)
-                .next()
+                .last()
                 .is_some_and(|last| self.tree.kind(last) == NodeKind::Block),
             _ => false,
         }

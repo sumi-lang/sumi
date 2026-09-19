@@ -34,7 +34,7 @@ use crate::input::ParserInput;
 use crate::tree::{CompletedMarker, Marker, Parse, RecoveryHandle};
 
 /// Parse one file.
-pub fn parse(input: &ParserInput) -> Parse {
+pub fn parse(input: ParserInput) -> Parse {
     Parse::build(input, source_file)
 }
 

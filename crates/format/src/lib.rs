@@ -65,10 +65,10 @@ impl std::error::Error for Defect {}
 /// source, or an item that would not is left as written, or the whole is
 /// a [`Defect`].
 pub fn format(source: &str, lexed: &LexedFile, parsed: &Parse) -> Result<Formatted, Defect> {
-    let input = ParserInput::new(lexed);
-    let plan = plan::plan(lexed, &input, parsed);
-    let mut edits = print::print(source, lexed, &input, &plan);
-    let before = rep(source, lexed, &input, parsed.tree());
+    let input = parsed.input();
+    let plan = plan::plan(lexed, parsed);
+    let mut edits = print::print(source, lexed, input, &plan);
+    let before = rep(source, lexed, parsed);
 
     let candidate = apply_gap_edits(source, &edits);
     let mut reverted = 0;
@@ -76,9 +76,8 @@ pub fn format(source: &str, lexed: &LexedFile, parsed: &Parse) -> Result<Formatt
         // Drop the edits inside every item whose rep changed; the gaps
         // between items stay formatted.
         let tree = parsed.tree();
-        let sig_of_raw = rep::sig_of_raw(&input, lexed);
-        let items: Vec<NodeIdx> = tree.children_in_order(tree.root()).collect();
-        for (index, &item) in items.iter().enumerate() {
+        let sig_of_raw = rep::sig_of_raw(input, lexed);
+        for (index, item) in tree.children(tree.root()).enumerate() {
             if !disagreeing.contains(&index) {
                 continue;
             }
@@ -117,9 +116,7 @@ fn mismatch(before: &Rep<'_>, candidate: &str) -> Option<Vec<usize>> {
     let Ok(lexed) = lex(candidate) else {
         return Some((0..before.items.len()).collect());
     };
-    let input = ParserInput::new(&lexed);
-    let parsed = parse(&input);
-    let after = rep(candidate, &lexed, &input, parsed.tree());
+    let after = rep(candidate, &lexed, &parse(ParserInput::new(&lexed)));
     if after == *before {
         return None;
     }
@@ -148,12 +145,7 @@ pub enum Element {
 /// Iterate the elements of node `index`: its directly attached raw tokens
 /// interleaved with its children.
 pub fn elements(tree: &SyntaxTree, index: NodeIdx) -> impl Iterator<Item = Element> + '_ {
-    // The tree yields children last first; elements read in source order.
-    // The public lazy iterator owns this reversal; reprinting instead uses
-    // shared traversal stacks so it does not allocate once per node.
-    let mut children: Vec<NodeIdx> = tree.children(index).collect();
-    children.reverse();
-    let mut children = children.into_iter().peekable();
+    let mut children = tree.children(index).peekable();
     let mut cursor = tree.first_token(index);
     let end = tree.end_token(index);
     std::iter::from_fn(move || {
@@ -178,28 +170,33 @@ pub fn elements(tree: &SyntaxTree, index: NodeIdx) -> impl Iterator<Item = Eleme
 /// `lexed` and `source` must be the file and text the tree was parsed from.
 pub fn reprint(tree: &SyntaxTree, lexed: &LexedFile, source: &str) -> String {
     let mut out = String::with_capacity(source.len());
-    let mut pending = Vec::new();
-    let root = tree.root();
-    pending.extend(tree.children(root));
-    let mut frames = vec![(root, 0, tree.first_token(root))];
-
-    while let Some((node, base, mut cursor)) = frames.pop() {
-        if pending.len() > base {
-            let child = pending.pop().expect("a pending child exists above base");
-            for token in cursor.until(tree.first_token(child)) {
-                out.push_str(lexed.text(source, token));
-            }
-            cursor = tree.end_token(child);
-            frames.push((node, base, cursor));
-
-            let child_base = pending.len();
-            pending.extend(tree.children(child));
-            frames.push((child, child_base, tree.first_token(child)));
-        } else {
-            for token in cursor.until(tree.end_token(node)) {
-                out.push_str(lexed.text(source, token));
-            }
+    let mut print = |from: RawIdx, to: RawIdx| {
+        for token in from.until(to) {
+            out.push_str(lexed.text(source, token));
         }
+    };
+    // The open nodes, innermost last: where each one's subtree ends in the
+    // array, its last token, and the next token of its own to print.
+    let mut open: Vec<(usize, RawIdx, RawIdx)> = Vec::new();
+    for node in tree.nodes() {
+        while let Some(&(end, end_token, cursor)) = open.last()
+            && node.to_usize() >= end
+        {
+            print(cursor, end_token);
+            open.pop();
+        }
+        if let Some((_, _, cursor)) = open.last_mut() {
+            print(*cursor, tree.first_token(node));
+            *cursor = tree.end_token(node);
+        }
+        open.push((
+            node.to_usize() + tree.subtree_len(node),
+            tree.end_token(node),
+            tree.first_token(node),
+        ));
+    }
+    while let Some((_, end_token, cursor)) = open.pop() {
+        print(cursor, end_token);
     }
     out
 }

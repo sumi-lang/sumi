@@ -968,10 +968,9 @@ impl {name} {{
         let ty = type_of(field);
         out += &format!(
             r#"
-    /// The `{}` children, each a `{ty}`, in source order: collected once
-    /// per call, since the tree stores children last first.
+    /// The `{}` children, each a `{ty}`, in source order.
     pub fn {}<'t>(self, tree: &'t SyntaxTree) -> impl Iterator<Item = {ty}> + 't {{
-        tree.children_in_order(self.0)
+        tree.children(self.0)
             .filter_map(move |child| {ty}::cast(tree, child))
     }}
 "#,

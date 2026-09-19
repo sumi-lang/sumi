@@ -1,16 +1,15 @@
-//! The syntax tree: flat, postorder, token-anchored.
+//! The syntax tree: flat, preorder, token-anchored.
 //!
-//! A [`SyntaxTree`] stores structure only. Each node is a kind, its grammatical
-//! field recorded by the parser, a subtree
-//! extent, and a half-open range of raw token indices; text, spans, and
-//! trivia stay in the token buffers, so the tree holds no second copy of the
-//! source. Nodes lie in postorder — the order they complete in, children
-//! before parents — so node `index`'s subtree occupies
-//! `index + 1 - extent..=index` and children are found by walking extents
-//! backward from `index - 1`, last child first. The root is the last node,
-//! and because a node completes only as the cursor passes its last token,
-//! `end_token` is non-decreasing across the array: the node covering a
-//! token is found by binary search on it.
+//! A [`SyntaxTree`] stores structure only. Each node is a kind, its
+//! grammatical field recorded by the parser, a subtree extent, and a
+//! half-open range of raw token indices; text, spans, and trivia stay in
+//! the token buffers, so the tree holds no second copy of the source. Nodes
+//! lie in preorder: the root is node 0, node `index`'s subtree occupies
+//! `index..index + extent`, its first child is `index + 1`, and each next
+//! sibling follows the extent of the one before, so children are read in
+//! source order by walking extents forward. Because every node begins at
+//! or after the node before it, `first_token` is non-decreasing across the
+//! array: the node covering a token is found by binary search on it.
 //!
 //! A node's range runs from its first significant token to just past its
 //! last one, and every node but the root covers at least one token, so a
@@ -25,12 +24,12 @@
 //!
 //! Trees come only from [`Parse::build`], which lends the root as a
 //! [`Marker`], the parser's one handle on an open node and its cursor. The
-//! build records nodes as they complete, and completion order is the
-//! stored order. That is what lets a parser choose a node's kind after its
-//! children exist, and wrap a node it has already completed: a wrapper's
-//! subtree is simply everything completed since the wrapped node began —
-//! how a Pratt parser wraps an already-parsed left operand into a binary
-//! expression.
+//! build records nodes as they complete, children before parents. That is
+//! what lets a parser choose a node's kind after its children exist, and
+//! wrap a node it has already completed: a wrapper's subtree is simply
+//! everything completed since the wrapped node began — how a Pratt parser
+//! wraps an already-parsed left operand into a binary expression. The
+//! finished array is that record put into preorder.
 
 use sumi_lexer::{LexedFile, RawIdx};
 use sumi_text::TextRange;
@@ -62,7 +61,7 @@ struct Node {
 
 const _: () = assert!(size_of::<Node>() == 16, "nodes stay sixteen bytes");
 
-/// A parsed file: its nodes in postorder.
+/// A parsed file: its nodes in preorder.
 #[derive(Clone, Debug)]
 pub struct SyntaxTree {
     nodes: Box<[Node]>,
@@ -75,12 +74,12 @@ impl SyntaxTree {
         self.nodes.len()
     }
 
-    /// The root, which completes last: the last node.
+    /// The root: node 0.
     pub fn root(&self) -> NodeIdx {
-        node_idx(self.nodes.len() - 1)
+        NodeIdx::new(0)
     }
 
-    /// Every node's index, in postorder.
+    /// Every node's index, in preorder.
     pub fn nodes(&self) -> impl DoubleEndedIterator<Item = NodeIdx> + ExactSizeIterator {
         NodeIdx::new(0).until(node_idx(self.nodes.len()))
     }
@@ -117,8 +116,8 @@ impl SyntaxTree {
         self.nodes[index.to_usize()].end_token
     }
 
-    /// The number of nodes in the subtree of `index`, itself included: what
-    /// a consumer that stores something per node of a construct sizes by.
+    /// The number of nodes in the subtree of `index`, itself included: the
+    /// subtree is the nodes `index..index + subtree_len`.
     pub fn subtree_len(&self, index: NodeIdx) -> usize {
         self.nodes[index.to_usize()].extent as usize
     }
@@ -136,36 +135,17 @@ impl SyntaxTree {
         )
     }
 
-    /// The direct children of node `index`, last child first — the order a
-    /// stack walk wants: popping a node and pushing its children visits the
-    /// tree in preorder. Collect and reverse for source order.
+    /// The direct children of node `index`, in source order.
     pub fn children(&self, index: NodeIdx) -> impl Iterator<Item = NodeIdx> + '_ {
-        // Nodes of the subtree still unvisited, all below `child`.
-        let mut remaining = self.nodes[index.to_usize()].extent as usize - 1;
-        let mut child = index.to_usize();
+        let end = index.to_usize() + self.nodes[index.to_usize()].extent as usize;
+        let mut child = index.to_usize() + 1;
         std::iter::from_fn(move || {
-            (remaining > 0).then(|| {
-                child -= 1;
-                let size = self.nodes[child].extent as usize;
-                remaining -= size;
+            (child < end).then(|| {
                 let current = child;
-                child -= size - 1;
+                child += self.nodes[child].extent as usize;
                 node_idx(current)
             })
         })
-    }
-
-    /// The direct children of node `index` in source order. The tree keeps
-    /// children last first, so this collects them: the typed views read
-    /// through it, while a walk over whole subtrees should take
-    /// [`children`](Self::children) and its stack order instead.
-    pub fn children_in_order(
-        &self,
-        index: NodeIdx,
-    ) -> impl DoubleEndedIterator<Item = NodeIdx> + ExactSizeIterator + use<> {
-        let mut children: Vec<NodeIdx> = self.children(index).collect();
-        children.reverse();
-        children.into_iter()
     }
 
     /// The innermost node covering raw token `token`, which must lie in the
@@ -177,19 +157,21 @@ impl SyntaxTree {
             token < self.end_token(self.root()),
             "token must be within the file"
         );
-        // Completion ends are monotone. Finding just the innermost node
-        // can stop at the first match without constructing an ancestor path.
-        let from = self.nodes.partition_point(|node| node.end_token <= token);
-        (from..self.nodes.len())
-            .find(|&index| self.nodes[index].first_token <= token)
+        // The nodes starting at or before the token are a prefix; those of
+        // them ending past it are its ancestors, innermost last.
+        let until = self.nodes.partition_point(|node| node.first_token <= token);
+        (0..until)
+            .rfind(|&index| token < self.nodes[index].end_token)
             .map(node_idx)
             .expect("the root covers every token in the file")
     }
 }
 
-/// A parsed file: its tree and the evidence observed while building it.
+/// A parsed file: the input it was parsed from, its tree, and the
+/// evidence observed while building it.
 #[derive(Clone, Debug)]
 pub struct Parse {
+    input: ParserInput,
     tree: SyntaxTree,
     evidence: Box<[ParseEvidence]>,
 }
@@ -198,12 +180,12 @@ impl Parse {
     /// Build a tree over the significant tokens of `input`, in source
     /// order: open the root, run `body` inside it, and close it. `body`
     /// must attach every significant token.
-    pub(crate) fn build<'a>(
-        input: &'a ParserInput,
-        body: impl FnOnce(&mut Marker<'_, 'a>),
+    pub(crate) fn build(
+        input: ParserInput,
+        body: impl for<'a> FnOnce(&mut Marker<'_, 'a>),
     ) -> Self {
         let mut builder = Builder {
-            input,
+            input: &input,
             nodes: Vec::new(),
             position: SigIdx::new(0),
             slots: input.slots(),
@@ -244,16 +226,21 @@ impl Parse {
             first_token: RawIdx::new(0),
             end_token: input.raw_len(),
         });
+        let Builder {
+            nodes, evidence, ..
+        } = builder;
         Self {
+            input,
             tree: SyntaxTree {
-                nodes: builder.nodes.into_boxed_slice(),
+                nodes: preorder(&nodes),
             },
-            evidence: builder
-                .evidence
-                .into_iter()
-                .map(EvidenceBuilder::finish)
-                .collect(),
+            evidence: evidence.into_iter().map(EvidenceBuilder::finish).collect(),
         }
+    }
+
+    /// The token stream the tree was built over.
+    pub fn input(&self) -> &ParserInput {
+        &self.input
     }
 
     pub fn tree(&self) -> &SyntaxTree {
@@ -989,6 +976,39 @@ fn node_idx(index: usize) -> NodeIdx {
     NodeIdx::new(index as u32)
 }
 
+/// The nodes of `completed`, which lie children before parents with the
+/// root last, in preorder. One pass backward over the array places each
+/// node: the root at 0, and every other node ending where its parent's
+/// subtree ends less the extents of the siblings after it, which the pass
+/// placed already since they completed later. Only the open ancestors are
+/// live: for each, where its next earlier child ends and how many of its
+/// descendants are still to place. The output begins as a copy of the
+/// input, cheaper than a fill, and every slot of it is then written.
+fn preorder(completed: &[Node]) -> Box<[Node]> {
+    let root = completed.len() - 1;
+    let mut nodes = completed.to_vec();
+    nodes[0] = completed[root];
+    let mut open: Vec<(usize, usize)> = vec![(completed.len(), root)];
+    for index in (0..root).rev() {
+        let node = completed[index];
+        let extent = node.extent as usize;
+        while let Some(&(_, 0)) = open.last() {
+            open.pop();
+        }
+        let (end, remaining) = open
+            .last_mut()
+            .expect("every node but the root has a parent");
+        *end -= extent;
+        *remaining -= extent;
+        let slot = *end;
+        nodes[slot] = node;
+        if extent > 1 {
+            open.push((slot + extent, extent - 1));
+        }
+    }
+    nodes.into_boxed_slice()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1000,8 +1020,7 @@ mod tests {
     #[test]
     fn parser_evidence_retains_same_position_facts() {
         let lexed = lex("x").expect("test source fits in u32");
-        let input = ParserInput::new(&lexed);
-        let parse = Parse::build(&input, |root| {
+        let parse = Parse::build(ParserInput::new(&lexed), |root| {
             let checkpoint = root.recovery_checkpoint();
             root.violation(ParseViolationKind::SpacedPrefixOperator, 1);
             assert!(!root.recovered_since(checkpoint));
@@ -1051,8 +1070,7 @@ mod tests {
     /// root, then dump it.
     fn dump(source: &str, build: impl FnOnce(&mut Marker<'_, '_>)) -> Vec<String> {
         let lexed = lex(source).expect("test sources fit in u32");
-        let input = ParserInput::new(&lexed);
-        let parse = Parse::build(&input, build);
+        let parse = Parse::build(ParserInput::new(&lexed), build);
         assert!(
             parse.evidence().is_empty(),
             "hand-built trees record no parser evidence"
@@ -1320,8 +1338,7 @@ mod tests {
     fn covering_finds_the_innermost_node() {
         let source = "let x = 1\ny";
         let lexed = lex(source).expect("test sources fit in u32");
-        let input = ParserInput::new(&lexed);
-        let parse = Parse::build(&input, |b| {
+        let parse = Parse::build(ParserInput::new(&lexed), |b| {
             node(b, LetStmt, |b| {
                 tokens(b, 3); // let x =
                 leaf(b, LiteralExpr);
@@ -1407,8 +1424,7 @@ mod tests {
     fn edge_and_interior_trivia_answer_the_spanning_node() {
         let source = "let x = 1 // c";
         let lexed = lex(source).expect("test sources fit in u32");
-        let input = ParserInput::new(&lexed);
-        let built = Parse::build(&input, |root| {
+        let built = Parse::build(ParserInput::new(&lexed), |root| {
             node(root, LetStmt, |stmt| {
                 stmt.token(); // let
                 node(stmt, NameRef, |name| name.token());
@@ -1430,8 +1446,7 @@ mod tests {
     fn covering_a_token_past_the_file_panics() {
         let source = "x";
         let lexed = lex(source).expect("test sources fit in u32");
-        let input = ParserInput::new(&lexed);
-        let built = Parse::build(&input, |root| {
+        let built = Parse::build(ParserInput::new(&lexed), |root| {
             node(root, NameRef, |name| name.token());
         });
         built.tree().covering(RawIdx::new(1));
@@ -1483,11 +1498,8 @@ mod tests {
         }
         lines.push(line);
 
-        // The tree yields children last first; the dump reads in source order.
-        let mut children: Vec<NodeIdx> = tree.children(node).collect();
-        children.reverse();
         let mut previous_end = first;
-        for child in children {
+        for child in tree.children(node) {
             assert!(
                 tree.first_token(child) >= previous_end,
                 "children must be ordered and disjoint"

@@ -26,8 +26,7 @@ pub use sumi_text::{FileId, Span, TextEdit};
 /// caller allocates the [`FileId`]; every diagnostic label names it.
 pub fn parse_source(file: FileId, source: Box<str>) -> Result<ParsedSource, SourceTooLarge> {
     let lexed = lex(&source)?;
-    let input = ParserInput::new(&lexed);
-    let parse = parse(&input);
+    let parse = parse(ParserInput::new(&lexed));
     let diagnostics = lower::diagnostics(file, &source, &lexed, &parse);
 
     Ok(ParsedSource {

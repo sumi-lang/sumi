@@ -7,28 +7,28 @@ use sumi_syntax::{NodeIdx, NodeKind, Parse, ParserInput, RawIdx, parse};
 /// Every front-end product for one source.
 pub struct Front {
     pub lexed: LexedFile,
-    pub input: ParserInput,
     pub parse: Parse,
 }
 
 pub fn front(source: &str) -> Front {
     let lexed = lex(source).expect("test sources fit in u32");
-    let input = ParserInput::new(&lexed);
-    let parse = parse(&input);
-    Front {
-        lexed,
-        input,
-        parse,
-    }
+    let parse = parse(ParserInput::new(&lexed));
+    Front { lexed, parse }
 }
 
 impl Front {
+    /// The token stream the tree was built over.
+    pub fn input(&self) -> &ParserInput {
+        self.parse.input()
+    }
+
     /// The byte spans of the significant tokens.
     pub fn spans(&self) -> Vec<(usize, usize)> {
-        self.input
+        let input = self.input();
+        input
             .indices()
             .map(|index| {
-                let range = self.lexed.range(self.input.token(index));
+                let range = self.lexed.range(input.token(index));
                 (range.start().to_usize(), range.end().to_usize())
             })
             .collect()
@@ -45,15 +45,13 @@ impl Front {
     pub fn shape(&self, source: &str, node: NodeIdx) -> (String, Vec<(NodeKind, usize, usize)>) {
         let tree = self.parse.tree();
         let (base, stop) = self.node_span(node);
-        let mut nodes = Vec::new();
-        let mut pending = vec![node];
-        while let Some(node) = pending.pop() {
-            let (start, end) = self.node_span(node);
-            nodes.push((tree.kind(node), start - base, end - base));
-            // Children come last first, so pushing them as yielded pops the
-            // first child next: the walk stays preorder.
-            pending.extend(tree.children(node));
-        }
+        let nodes = (node.to_usize()..node.to_usize() + tree.subtree_len(node))
+            .map(|index| NodeIdx::new(index as u32))
+            .map(|node| {
+                let (start, end) = self.node_span(node);
+                (tree.kind(node), start - base, end - base)
+            })
+            .collect();
         (source[base..stop].to_owned(), nodes)
     }
 

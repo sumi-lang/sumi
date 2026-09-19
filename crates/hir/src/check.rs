@@ -931,6 +931,14 @@ enum Work {
     },
 }
 
+/// Push `nodes` to enter, first to be entered last: the stack walks them
+/// in the order given.
+fn enter_each(work: &mut Vec<Work>, nodes: impl Iterator<Item = NodeIdx>) {
+    let base = work.len();
+    work.extend(nodes.map(Work::Enter));
+    work[base..].reverse();
+}
+
 /// A local of the body under construction: an index into the builder's
 /// locals.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1594,10 +1602,11 @@ impl<'a, 's> Builder<'a, 's> {
                     work.push(Work::Holed(node));
                     self.failed = true;
                 }
-                work.extend(
+                enter_each(
+                    work,
                     tree.children(list.node())
                         .filter_map(|child| ast::Expr::cast(tree, child))
-                        .map(|arg| Work::Enter(arg.node())),
+                        .map(|arg| arg.node()),
                 );
                 return;
             }
@@ -1612,12 +1621,11 @@ impl<'a, 's> Builder<'a, 's> {
             | NodeKind::ParenExpr
             | NodeKind::IfExpr => {
                 work.push(Work::Finish(node));
-                work.extend(
-                    tree.children(node)
-                        .filter(|&child| {
-                            !matches!(tree.kind(child), NodeKind::Name | NodeKind::TypeRef)
-                        })
-                        .map(Work::Enter),
+                enter_each(
+                    work,
+                    tree.children(node).filter(|&child| {
+                        !matches!(tree.kind(child), NodeKind::Name | NodeKind::TypeRef)
+                    }),
                 );
             }
             NodeKind::NameRef | NodeKind::LiteralExpr => {
@@ -1685,17 +1693,17 @@ impl<'a, 's> Builder<'a, 's> {
         match tree.kind(node) {
             NodeKind::Block => {
                 self.close_scope();
-                // Children arrive last first; only the first can be the
-                // tail. A statement built itself; an expression statement
-                // must be unit; a child that built nothing is a hole where
-                // it stood.
+                // Only the last child can be the tail. A statement built
+                // itself; an expression statement must be unit; a child
+                // that built nothing is a hole where it stood.
                 let mut tail = None;
                 let mut valid = !tree.has_error(node);
-                for (index, child) in tree.children(node).enumerate() {
+                let mut children = tree.children(node).peekable();
+                while let Some(child) = children.next() {
                     let expression = ast::Expr::cast(tree, child).is_some();
-                    if index == 0 && expression {
+                    if children.peek().is_none() && expression {
                         tail = Some(child);
-                        continue;
+                        break;
                     }
                     match self.typed(child) {
                         Some(value) if expression => {

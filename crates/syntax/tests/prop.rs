@@ -10,8 +10,8 @@ use proptest::prelude::*;
 use proptest::test_runner::FileFailurePersistence;
 use sumi_lexer::{LexedFile, lex};
 use sumi_syntax::{
-    BRACKET_PAIRS, NodeIdx, NodeKind, ParseAnchor, ParseEvidence, ParserInput, RawIdx, SigIdx,
-    SyntaxKind, SyntaxTree, parse,
+    BRACKET_PAIRS, NodeKind, Parse, ParseAnchor, ParseEvidence, ParserInput, RawIdx, SigIdx,
+    SyntaxKind, parse,
 };
 use sumi_test::{apply, delimiter_edited_program, front, non_delimiter_edited_program, program};
 
@@ -286,7 +286,8 @@ proptest! {
 /// nodes; children are ordered, disjoint, and inside their parent; every
 /// node but the root covers at least one token and starts and ends on a
 /// significant one; the root covers the whole buffer.
-fn check_tree(tree: &SyntaxTree, lexed: &LexedFile) -> Result<(), TestCaseError> {
+fn check_tree(parse: &Parse, lexed: &LexedFile) -> Result<(), TestCaseError> {
+    let (input, tree) = (parse.input(), parse.tree());
     let raw_len = lexed.end();
     let root = tree.root();
     let item_starts: HashSet<_> = tree
@@ -294,7 +295,6 @@ fn check_tree(tree: &SyntaxTree, lexed: &LexedFile) -> Result<(), TestCaseError>
         .filter(|&node| tree.kind(node) == NodeKind::FnItem)
         .map(|node| tree.first_token(node))
         .collect();
-    let input = ParserInput::new(lexed);
     for index in input
         .indices()
         .filter(|&i| item_starts.contains(&input.token(i)))
@@ -341,21 +341,20 @@ fn check_tree(tree: &SyntaxTree, lexed: &LexedFile) -> Result<(), TestCaseError>
                 node
             );
         }
-        // Children come last first, so ordering is checked back to front.
-        let mut next_start = end;
+        let mut previous_end = first;
         for child in tree.children(node) {
             prop_assert!(
-                tree.end_token(child) <= next_start,
+                tree.first_token(child) >= previous_end,
                 "children of {:?} overlap",
                 node
             );
             prop_assert!(
-                tree.first_token(child) >= first,
+                tree.end_token(child) <= end,
                 "child {:?} escapes {:?}",
                 child,
                 node
             );
-            next_start = tree.first_token(child);
+            previous_end = tree.end_token(child);
             pending.push(child);
         }
     }
@@ -368,19 +367,16 @@ proptest! {
     #[test]
     fn parse_is_total_and_trees_are_well_formed(source in soup()) {
         let lexed = lex(&source).expect("generated sources fit in u32");
-        let input = ParserInput::new(&lexed);
-        let parse = parse(&input);
-        let tree = parse.tree();
-        check_tree(tree, &lexed)?;
+        let parse = parse(ParserInput::new(&lexed));
+        let (input, tree) = (parse.input(), parse.tree());
+        check_tree(&parse, &lexed)?;
 
         // The tree is lossless: walking its elements reprints the source.
         prop_assert_eq!(&sumi_format::reprint(tree, &lexed, &source), &source);
 
         // The parser attaches no token to the root itself: every significant
         // token lies in some item or top-level error node.
-        let mut items: Vec<NodeIdx> = tree.children(tree.root()).collect();
-        items.reverse();
-        let mut children = items.into_iter().peekable();
+        let mut children = tree.children(tree.root()).peekable();
         for index in input.indices() {
             let token = input.token(index);
             while children.peek().is_some_and(|&child| tree.end_token(child) <= token) {
@@ -438,8 +434,8 @@ proptest! {
     fn well_formed_programs_produce_no_parse_evidence(source in program()) {
         let lexed = lex(&source).expect("generated sources fit in u32");
         prop_assert!(lexed.errors().is_empty(), "lexer errors in {:?}", source);
-        let parse = parse(&ParserInput::new(&lexed));
-        check_tree(parse.tree(), &lexed)?;
+        let parse = parse(ParserInput::new(&lexed));
+        check_tree(&parse, &lexed)?;
         prop_assert!(
             parse.evidence().is_empty(),
             "parse evidence {:?} in {:?}", parse.evidence(), source
@@ -460,8 +456,8 @@ proptest! {
     ) {
         let original = front(&source);
         let (edited, touched, moved, impact) = apply(&source, &original.spans(), index, edit);
-        let touched: Vec<RawIdx> = touched.iter().map(|&index| original.input.token(sig(index))).collect();
-        let moved: Vec<RawIdx> = moved.iter().map(|&index| original.input.token(sig(index))).collect();
+        let touched: Vec<RawIdx> = touched.iter().map(|&index| original.input().token(sig(index))).collect();
+        let moved: Vec<RawIdx> = moved.iter().map(|&index| original.input().token(sig(index))).collect();
         let after = front(&edited);
         let survivors: HashSet<_> = after.parse.tree().nodes()
             .map(|node| (after.node_span(node), after.shape(&edited, node)))
@@ -472,7 +468,7 @@ proptest! {
             prop_assert!(
                 survivors.contains(&(span, shape.clone())),
                 "{:?} at token {} ({:?}) disturbs the {:?} {:?}\n--- original ---\n{}\n--- edited ---\n{}\nevidence: {:?}",
-                edit, index, original.input.get(sig(index)), original.parse.tree().kind(node), shape.0,
+                edit, index, original.input().get(sig(index)), original.parse.tree().kind(node), shape.0,
                 source, edited, after.parse.evidence()
             );
         }
@@ -490,13 +486,13 @@ proptest! {
                 "fn first()\n= 0\nfn outer()\n= fn(x: int)\n-> int\n= x +\n1\nfn next()\n-> int\n= 2\n",
                 "fn first()\n{}\nfn outer()\n{ if { true }\n{}\nelse\n{} }\nfn next()\n{}\n",
             ]).prop_flat_map(|source| {
-                (Just(source.to_owned()), 0..front(source).input.len(), sumi_test::edit())
+                (Just(source.to_owned()), 0..front(source).input().len(), sumi_test::edit())
             }).boxed(),
         ]
     ) {
         let original = front(&source);
         let (edited, touched, _, impact) = apply(&source, &original.spans(), index, edit);
-        let touched: Vec<RawIdx> = touched.iter().map(|&index| original.input.token(sig(index))).collect();
+        let touched: Vec<RawIdx> = touched.iter().map(|&index| original.input().token(sig(index))).collect();
         let after = front(&edited);
         let tree = after.parse.tree();
         let survivors: HashSet<_> = tree
@@ -517,7 +513,7 @@ proptest! {
             prop_assert!(
                 survivors.contains(&(span, shape.clone())),
                 "{:?} at token {} ({:?}) disturbs the item {:?}\n--- original ---\n{}\n--- edited ---\n{}\nevidence: {:?}",
-                edit, index, original.input.get(sig(index)), shape.0, source, edited,
+                edit, index, original.input().get(sig(index)), shape.0, source, edited,
                 after.parse.evidence()
             );
         }
