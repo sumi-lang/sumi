@@ -9,7 +9,7 @@ use sumi_hir::{Analysis, Program};
 use sumi_lexer::{LexedFile, RawIdx, SyntaxKind, TokenFlags, lex};
 use sumi_syntax::ast::TokenRule;
 use sumi_syntax::{
-    BRACKET_PAIRS, NodeKind, Parse, ParseAnchor, ParseEvidence, ParserInput, SigIdx, SyntaxTree,
+    NodeKind, Parse, ParseAnchor, ParseEvidence, ParserInput, Side, SigIdx, SyntaxTree, bracket,
 };
 use sumi_text::TextRange;
 
@@ -144,11 +144,10 @@ pub fn input(lexed: &LexedFile, input: &ParserInput) {
             } else {
                 (partner, index)
             };
+            let opens = input.get(opener).and_then(bracket);
+            let closes = input.get(closer).and_then(bracket);
             assert!(
-                input
-                    .get(opener)
-                    .zip(input.get(closer))
-                    .is_some_and(|pair| BRACKET_PAIRS.contains(&pair)),
+                matches!((opens, closes), (Some((a, Side::Open)), Some((b, Side::Close))) if a == b),
                 "tokens {opener:?} and {closer:?} are partners but not a matching pair"
             );
             if partner > index {

@@ -6,7 +6,7 @@ use sumi_lexer::{LexedFile, RawIdx};
 use sumi_text::TextRange;
 
 use crate::ast::NodeKind;
-use crate::grammar::{BRACKET_PAIRS, SyntaxKind, encloses_statements, opener, pair_index};
+use crate::grammar::{Pair, Side, SyntaxKind, bracket};
 use crate::index::{NodeIdx, SigIdx};
 use crate::input::{ParserInput, Slot};
 use crate::parser::{
@@ -236,7 +236,7 @@ impl Parse {
             id: 0,
             parent: 0,
             depth: 0,
-            open: [None; BRACKET_PAIRS.len()],
+            open: [None; Pair::ALL.len()],
             closer: None,
             enclosing_closer: None,
             // The root never completes; `build` closes it below.
@@ -376,7 +376,7 @@ pub(crate) struct Marker<'p, 'a> {
     parent: u32,
     depth: u32,
     /// Per bracket pair, the opener of the innermost construct entered around this node.
-    open: [Option<SigIdx>; BRACKET_PAIRS.len()],
+    open: [Option<SigIdx>; Pair::ALL.len()],
     /// The stream's closer for the innermost construct entered around this node; `None` when the
     /// stream closes none.
     closer: Option<SigIdx>,
@@ -661,16 +661,10 @@ impl<'a> Marker<'_, 'a> {
             .map(|offset| offset as usize)
     }
 
-    /// Whether the next token is this construct's closer: paired with its opener, or an orphan,
+    /// Whether the next token closes this `pair` construct: paired with its opener, or an orphan,
     /// since recovery may have skipped the paired one.
-    pub(crate) fn owns_closer(&self) -> bool {
-        let closer = self
-            .builder
-            .input
-            .get(self.start)
-            .and_then(crate::grammar::closer)
-            .unwrap_or_else(|| unreachable!("only a bracket construct owns a closer"));
-        self.at(closer)
+    pub(crate) fn owns_closer(&self, pair: Pair) -> bool {
+        self.at(pair.closer().kind())
             && self
                 .builder
                 .input
@@ -678,13 +672,13 @@ impl<'a> Marker<'_, 'a> {
                 .is_none_or(|partner| partner == self.start)
     }
 
-    /// Whether the next token is a `closer` some construct still open around this node can own:
-    /// paired with its opener or one outside, or an orphan.
-    pub(crate) fn closes_open(&self, closer: SyntaxKind) -> bool {
-        let Some(open) = pair_index(closer).and_then(|pair| self.open[pair]) else {
+    /// Whether the next token closes `pair` for some construct still open around this node: paired
+    /// with its opener or one outside, or an orphan.
+    pub(crate) fn closes_open(&self, pair: Pair) -> bool {
+        let Some(open) = self.open[pair.index()] else {
             return false;
         };
-        self.at(closer)
+        self.at(pair.closer().kind())
             && self
                 .builder
                 .input
@@ -694,23 +688,18 @@ impl<'a> Marker<'_, 'a> {
 
     /// `closes_open` for a pair that does not enclose statements.
     pub(crate) fn closes_open_bracket(&self) -> bool {
-        self.current().is_some_and(|kind| {
-            opener(kind).is_some_and(|opener| !encloses_statements(opener))
-                && self.closes_open(kind)
-        })
+        self.current()
+            .and_then(bracket)
+            .is_some_and(|(pair, side)| {
+                side == Side::Close && !pair.encloses_statements() && self.closes_open(pair)
+            })
     }
 
-    /// Mark this node a bracket construct; its first token must be the opener.
-    pub(crate) fn enter(&mut self) {
+    /// Mark this node a `pair` construct; its first token is the opener.
+    pub(crate) fn enter(&mut self, pair: Pair) {
         self.enclosing_closer = self.closer.or(self.enclosing_closer);
         self.closer = self.builder.input.partner(self.start);
-        let pair = self
-            .builder
-            .input
-            .get(self.start)
-            .and_then(pair_index)
-            .unwrap_or_else(|| unreachable!("an entered construct opens with a bracket"));
-        self.open[pair] = Some(self.start);
+        self.open[pair.index()] = Some(self.start);
     }
 
     pub(crate) fn closed(&self) -> bool {
@@ -781,16 +770,10 @@ impl<'a> Marker<'_, 'a> {
         self.record_recovery(kind, anchor)
     }
 
-    /// This node's first token must be the opener.
-    pub(crate) fn missing_closer(&mut self) -> RecoveryHandle {
-        let kind = self
-            .builder
-            .input
-            .get(self.start)
-            .and_then(crate::grammar::closer)
-            .unwrap_or_else(|| unreachable!("a missing closer belongs to a bracket node"));
+    /// This node's first token is the opener of `pair`.
+    pub(crate) fn missing_closer(&mut self, pair: Pair) -> RecoveryHandle {
         let opener = self.builder.raw_range(self.start, self.start + 1);
-        self.missing(ParseRecoveryKind::Closer { kind, opener })
+        self.missing(ParseRecoveryKind::Closer { pair, opener })
     }
 
     pub(crate) fn recover_tokens(

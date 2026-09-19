@@ -81,8 +81,9 @@ impl Front {
 pub fn evidence_name(evidence: &ParseEvidence) -> String {
     match evidence {
         ParseEvidence::Recovery(recovery) => match recovery.kind {
-            ParseRecoveryKind::Token(kind) | ParseRecoveryKind::Closer { kind, .. } => {
-                format!("Expected({kind:?})")
+            ParseRecoveryKind::Token(kind) => format!("Expected({kind:?})"),
+            ParseRecoveryKind::Closer { pair, .. } => {
+                format!("Expected({:?})", pair.closer().kind())
             }
             kind @ (ParseRecoveryKind::Item
             | ParseRecoveryKind::Statement

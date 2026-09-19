@@ -140,48 +140,70 @@ pub fn continues_statement(kind: SyntaxKind, glued: Option<SyntaxKind>) -> bool 
         }
 }
 
-pub const BRACKET_PAIRS: [(SyntaxKind, SyntaxKind); 2] =
-    [(T::LParen, T::RParen), (T::LBrace, T::RBrace)];
+/// A bracket pair.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Pair {
+    Paren,
+    Brace,
+}
 
-/// The index in [`BRACKET_PAIRS`] of the pair `kind` opens or closes.
-pub fn pair_index(kind: SyntaxKind) -> Option<usize> {
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Side {
+    Open,
+    Close,
+}
+
+impl Pair {
+    pub const ALL: [Self; 2] = [Self::Paren, Self::Brace];
+
+    pub fn opener(self) -> Fixed {
+        match self {
+            Self::Paren => Fixed::LParen,
+            Self::Brace => Fixed::LBrace,
+        }
+    }
+
+    pub fn closer(self) -> Fixed {
+        match self {
+            Self::Paren => Fixed::RParen,
+            Self::Brace => Fixed::RBrace,
+        }
+    }
+
+    /// Whether a line break inside ends a statement.
+    pub fn encloses_statements(self) -> bool {
+        match self {
+            Self::Paren => false,
+            Self::Brace => true,
+        }
+    }
+
+    pub fn index(self) -> usize {
+        self as usize
+    }
+}
+
+/// The pair `kind` opens or closes.
+pub fn bracket(kind: SyntaxKind) -> Option<(Pair, Side)> {
     Some(match kind {
-        T::LParen | T::RParen => 0,
-        T::LBrace | T::RBrace => 1,
-        _ => return None,
-    })
-}
-
-pub fn closer(opener: SyntaxKind) -> Option<SyntaxKind> {
-    Some(match opener {
-        T::LParen => T::RParen,
-        T::LBrace => T::RBrace,
-        _ => return None,
-    })
-}
-
-pub fn opener(closer: SyntaxKind) -> Option<SyntaxKind> {
-    Some(match closer {
-        T::RParen => T::LParen,
-        T::RBrace => T::LBrace,
+        T::LParen => (Pair::Paren, Side::Open),
+        T::RParen => (Pair::Paren, Side::Close),
+        T::LBrace => (Pair::Brace, Side::Open),
+        T::RBrace => (Pair::Brace, Side::Close),
         _ => return None,
     })
 }
 
 pub fn is_opener(kind: SyntaxKind) -> bool {
-    closer(kind).is_some()
+    matches!(bracket(kind), Some((_, Side::Open)))
 }
 
 pub fn is_closer(kind: SyntaxKind) -> bool {
-    opener(kind).is_some()
+    matches!(bracket(kind), Some((_, Side::Close)))
 }
 
 pub fn is_bracket(kind: SyntaxKind) -> bool {
-    is_opener(kind) || is_closer(kind)
-}
-
-pub fn encloses_statements(opener: SyntaxKind) -> bool {
-    opener == T::LBrace
+    bracket(kind).is_some()
 }
 
 pub fn is_prefix_operator(kind: SyntaxKind) -> bool {
