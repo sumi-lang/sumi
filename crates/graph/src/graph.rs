@@ -8,7 +8,7 @@ use std::ops::Range;
 
 use sumi_text::TextRange;
 
-use crate::{BinaryOp, FunctionId, Int, Ty};
+use crate::{BinaryOp, CmpOp, FunctionId, Int, Ty};
 
 /// A function's nodes: the entry, then one per parameter, then its body region's, then the
 /// declared-result copy if any.
@@ -118,7 +118,7 @@ pub enum Op {
     /// A narrowed read: the first input is the local's definition, the second what `op` compares it
     /// with, and the comparison holds iff `sense`.
     Refine {
-        op: BinaryOp,
+        op: CmpOp,
         local_is_lhs: bool,
         sense: bool,
     },
@@ -334,7 +334,7 @@ mod tests {
         graph.enter(region);
         let one = graph.push(Op::Int(1.into()), &[], at(2), None);
         let sum = graph.push(
-            Op::Binary(BinaryOp::Add),
+            Op::Binary(BinaryOp::Arith(crate::ArithOp::Add)),
             &[(param, at(5)), (one, at(2))],
             at(3),
             None,

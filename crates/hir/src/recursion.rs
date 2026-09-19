@@ -9,7 +9,7 @@ use sumi_text::TextRange;
 use crate::lower::{self, Lowered};
 use crate::solver::components;
 use crate::typing::Typing;
-use crate::{BinaryOp, Function, FunctionId, Graph, Int, Ints, NodeId, Op, codes};
+use crate::{ArithOp, BinaryOp, Function, FunctionId, Graph, Int, Ints, NodeId, Op, codes};
 
 pub(crate) struct Failure {
     pub members: Vec<FunctionId>,
@@ -455,7 +455,7 @@ fn delta(graph: &Graph, typing: &Typing, node: NodeId) -> Option<(u32, Ints)> {
                     next = Some(inputs[0]);
                     continue;
                 }
-                Op::Binary(BinaryOp::Add) => {
+                Op::Binary(BinaryOp::Arith(ArithOp::Add)) => {
                     frames.push(Frame::AddLhs {
                         lhs: inputs[0],
                         rhs: inputs[1],
@@ -463,7 +463,7 @@ fn delta(graph: &Graph, typing: &Typing, node: NodeId) -> Option<(u32, Ints)> {
                     next = Some(inputs[0]);
                     continue;
                 }
-                Op::Binary(BinaryOp::Sub) => {
+                Op::Binary(BinaryOp::Arith(ArithOp::Sub)) => {
                     frames.push(Frame::Sub { rhs: inputs[1] });
                     next = Some(inputs[0]);
                     continue;

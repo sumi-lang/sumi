@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use crate::{BinaryOp, Int, Op, Ty};
+use crate::{ArithOp, BinaryOp, CmpOp, Int, Op, Ty};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Fault {
@@ -24,7 +24,7 @@ pub trait Domain: Clone {
     /// `&&` when `and`, else `||`. The short circuit is the graph's, so both operands have run.
     fn lazy(and: bool, lhs: &Self, rhs: &Self) -> Result<Self, Self::Fault>;
     /// `self` narrowed to where `self op other` (`other op self` unless `local_is_lhs`) is `sense`.
-    fn refine(&self, op: BinaryOp, local_is_lhs: bool, sense: bool, other: &Self) -> Self;
+    fn refine(&self, op: CmpOp, local_is_lhs: bool, sense: bool, other: &Self) -> Self;
     /// `self` narrowed to where it is `value`.
     fn exactly(&self, value: bool) -> Self;
 }
@@ -125,20 +125,23 @@ impl Domain for Value {
 
     fn binary(op: BinaryOp, lhs: &Self, rhs: &Self) -> Result<Self, Fault> {
         Ok(match (op, lhs, rhs) {
-            (BinaryOp::Eq, lhs, rhs) if lhs.ty() == rhs.ty() => Self::Bool(lhs == rhs),
-            (BinaryOp::Ne, lhs, rhs) if lhs.ty() == rhs.ty() => Self::Bool(lhs != rhs),
-            (op, Self::Int(lhs), Self::Int(rhs)) => match op {
-                BinaryOp::Add => Self::Int(lhs + rhs),
-                BinaryOp::Sub => Self::Int(lhs - rhs),
-                BinaryOp::Mul => Self::Int(lhs * rhs),
-                BinaryOp::Div => Self::Int(lhs.checked_div(rhs).ok_or(Fault::Division)?),
-                BinaryOp::Rem => Self::Int(lhs.checked_rem(rhs).ok_or(Fault::Division)?),
-                BinaryOp::Lt => Self::Bool(lhs < rhs),
-                BinaryOp::Le => Self::Bool(lhs <= rhs),
-                BinaryOp::Gt => Self::Bool(lhs > rhs),
-                BinaryOp::Ge => Self::Bool(lhs >= rhs),
-                BinaryOp::Eq | BinaryOp::Ne => unreachable!("handled for every type"),
-            },
+            (BinaryOp::Cmp(op), Self::Int(lhs), Self::Int(rhs)) => Self::Bool(match op {
+                CmpOp::Eq => lhs == rhs,
+                CmpOp::Ne => lhs != rhs,
+                CmpOp::Lt => lhs < rhs,
+                CmpOp::Le => lhs <= rhs,
+                CmpOp::Gt => lhs > rhs,
+                CmpOp::Ge => lhs >= rhs,
+            }),
+            (BinaryOp::Cmp(CmpOp::Eq), lhs, rhs) if lhs.ty() == rhs.ty() => Self::Bool(lhs == rhs),
+            (BinaryOp::Cmp(CmpOp::Ne), lhs, rhs) if lhs.ty() == rhs.ty() => Self::Bool(lhs != rhs),
+            (BinaryOp::Arith(op), Self::Int(lhs), Self::Int(rhs)) => Self::Int(match op {
+                ArithOp::Add => lhs + rhs,
+                ArithOp::Sub => lhs - rhs,
+                ArithOp::Mul => lhs * rhs,
+                ArithOp::Div => lhs.checked_div(rhs).ok_or(Fault::Division)?,
+                ArithOp::Rem => lhs.checked_rem(rhs).ok_or(Fault::Division)?,
+            }),
             _ => return Err(Fault::Type),
         })
     }
@@ -152,7 +155,7 @@ impl Domain for Value {
         }
     }
 
-    fn refine(&self, _: BinaryOp, _: bool, _: bool, _: &Self) -> Self {
+    fn refine(&self, _: CmpOp, _: bool, _: bool, _: &Self) -> Self {
         self.clone()
     }
 

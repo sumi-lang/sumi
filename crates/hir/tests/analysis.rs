@@ -1,6 +1,8 @@
 use sumi_frontend::{Diagnostic, DiagnosticCode, parse_source};
 use sumi_hir::codes::*;
-use sumi_hir::{Analysis, BinaryOp, Function, FunctionId, Int, NodeId, Op, Ty, analyze};
+use sumi_hir::{
+    Analysis, ArithOp, BinaryOp, CmpOp, Function, FunctionId, Int, NodeId, Op, Ty, analyze,
+};
 use sumi_test::{check, corpus};
 use sumi_text::TextRange;
 
@@ -214,17 +216,17 @@ fn long_chains_are_stack_safe_even_when_rejected() {
 fn scalar_operator_type_matrix() {
     let values = [("1", "int"), ("true", "bool"), ("{}", "unit")];
     for (op, eager) in [
-        ("+", Some(BinaryOp::Add)),
-        ("-", Some(BinaryOp::Sub)),
-        ("*", Some(BinaryOp::Mul)),
-        ("/", Some(BinaryOp::Div)),
-        ("%", Some(BinaryOp::Rem)),
-        ("<", Some(BinaryOp::Lt)),
-        ("<=", Some(BinaryOp::Le)),
-        (">", Some(BinaryOp::Gt)),
-        (">=", Some(BinaryOp::Ge)),
-        ("==", Some(BinaryOp::Eq)),
-        ("!=", Some(BinaryOp::Ne)),
+        ("+", Some(BinaryOp::Arith(ArithOp::Add))),
+        ("-", Some(BinaryOp::Arith(ArithOp::Sub))),
+        ("*", Some(BinaryOp::Arith(ArithOp::Mul))),
+        ("/", Some(BinaryOp::Arith(ArithOp::Div))),
+        ("%", Some(BinaryOp::Arith(ArithOp::Rem))),
+        ("<", Some(BinaryOp::Cmp(CmpOp::Lt))),
+        ("<=", Some(BinaryOp::Cmp(CmpOp::Le))),
+        (">", Some(BinaryOp::Cmp(CmpOp::Gt))),
+        (">=", Some(BinaryOp::Cmp(CmpOp::Ge))),
+        ("==", Some(BinaryOp::Cmp(CmpOp::Eq))),
+        ("!=", Some(BinaryOp::Cmp(CmpOp::Ne))),
         ("&&", None),
         ("||", None),
     ] {

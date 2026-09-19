@@ -17,8 +17,8 @@ use sumi_text::TextRange;
 
 pub use check::analyze;
 pub use sumi_graph::{
-    BinaryOp, Bools, FunctionId, Graph, Int, Ints, Machine, May, NodeId, Op, Refusal, RegionId,
-    Run, Ty, Value,
+    ArithOp, BinaryOp, Bools, CmpOp, FunctionId, Graph, Int, Ints, Machine, May, NodeId, Op,
+    Refusal, RegionId, Run, Ty, Value,
 };
 
 pub struct Analysis {

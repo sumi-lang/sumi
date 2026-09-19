@@ -4,7 +4,7 @@
 use std::fmt::Write as _;
 
 use sumi_frontend::parse_source;
-use sumi_hir::{Analysis, BinaryOp, FunctionId, Graph, NodeId, Op, RegionId, analyze};
+use sumi_hir::{Analysis, FunctionId, Graph, NodeId, Op, RegionId, analyze};
 use sumi_test::corpus;
 use sumi_text::TextRange;
 
@@ -334,7 +334,7 @@ fn dump_definition(
         Op::Copy { .. } => "copy".into(),
         Op::Neg => "negate".into(),
         Op::Not => "not".into(),
-        Op::Binary(op) => format!("eager {}", operator(*op)),
+        Op::Binary(op) => format!("eager {op}"),
         Op::And { .. } => "lazy and".into(),
         Op::Or { .. } => "lazy or".into(),
         Op::Refine { .. } | Op::Exactly(_) => unreachable!("a narrowed read reads its definition"),
@@ -400,22 +400,6 @@ fn dump_definition(
                 dump_node(analysis, shape, &format!("arg[{index}]"), input, child, out);
             }
         }
-    }
-}
-
-fn operator(op: BinaryOp) -> &'static str {
-    match op {
-        BinaryOp::Add => "+",
-        BinaryOp::Sub => "-",
-        BinaryOp::Mul => "*",
-        BinaryOp::Div => "/",
-        BinaryOp::Rem => "%",
-        BinaryOp::Eq => "==",
-        BinaryOp::Ne => "!=",
-        BinaryOp::Lt => "<",
-        BinaryOp::Le => "<=",
-        BinaryOp::Gt => ">",
-        BinaryOp::Ge => ">=",
     }
 }
 

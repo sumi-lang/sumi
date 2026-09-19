@@ -151,15 +151,7 @@ pub fn is_literal(kind: SyntaxKind) -> bool {
 pub const PREFIX_BP: u8 = 11;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum BinaryOp {
-    Or,
-    And,
-    Eq,
-    Ne,
-    Lt,
-    Le,
-    Gt,
-    Ge,
+pub enum ArithOp {
     Add,
     Sub,
     Mul,
@@ -167,21 +159,39 @@ pub enum BinaryOp {
     Rem,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum CmpOp {
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum BinaryOp {
+    Or,
+    And,
+    Cmp(CmpOp),
+    Arith(ArithOp),
+}
+
 impl TokenField for BinaryOp {
     const ALL: &[Self] = &[
         Self::Or,
         Self::And,
-        Self::Eq,
-        Self::Ne,
-        Self::Lt,
-        Self::Le,
-        Self::Gt,
-        Self::Ge,
-        Self::Add,
-        Self::Sub,
-        Self::Mul,
-        Self::Div,
-        Self::Rem,
+        Self::Cmp(CmpOp::Eq),
+        Self::Cmp(CmpOp::Ne),
+        Self::Cmp(CmpOp::Lt),
+        Self::Cmp(CmpOp::Le),
+        Self::Cmp(CmpOp::Gt),
+        Self::Cmp(CmpOp::Ge),
+        Self::Arith(ArithOp::Add),
+        Self::Arith(ArithOp::Sub),
+        Self::Arith(ArithOp::Mul),
+        Self::Arith(ArithOp::Div),
+        Self::Arith(ArithOp::Rem),
     ];
 
     fn read(first: SyntaxKind, glued: Option<SyntaxKind>) -> Option<(Self, bool)> {
@@ -194,9 +204,9 @@ impl BinaryOp {
         match self {
             Self::Or => 1,
             Self::And => 2,
-            Self::Eq | Self::Ne | Self::Lt | Self::Le | Self::Gt | Self::Ge => 3,
-            Self::Add | Self::Sub => 4,
-            Self::Mul | Self::Div | Self::Rem => 5,
+            Self::Cmp(_) => 3,
+            Self::Arith(ArithOp::Add | ArithOp::Sub) => 4,
+            Self::Arith(ArithOp::Mul | ArithOp::Div | ArithOp::Rem) => 5,
         }
     }
 
@@ -208,30 +218,28 @@ impl BinaryOp {
     }
 
     pub fn is_comparison(self) -> bool {
-        matches!(
-            self,
-            Self::Eq | Self::Ne | Self::Lt | Self::Le | Self::Gt | Self::Ge
-        )
+        matches!(self, Self::Cmp(_))
     }
 }
 
 /// `glued` is the kind of the token glued after `first`, if any; the `usize` is the operator's
 /// width in tokens.
 pub fn binary_operator(first: SyntaxKind, glued: Option<SyntaxKind>) -> Option<(BinaryOp, usize)> {
+    use BinaryOp::{And, Arith, Cmp, Or};
     Some(match first {
-        T::Pipe if glued == Some(T::Pipe) => (BinaryOp::Or, 2),
-        T::Amp if glued == Some(T::Amp) => (BinaryOp::And, 2),
-        T::Eq if glued == Some(T::Eq) => (BinaryOp::Eq, 2),
-        T::Bang if glued == Some(T::Eq) => (BinaryOp::Ne, 2),
-        T::Lt if glued == Some(T::Eq) => (BinaryOp::Le, 2),
-        T::Gt if glued == Some(T::Eq) => (BinaryOp::Ge, 2),
-        T::Lt => (BinaryOp::Lt, 1),
-        T::Gt => (BinaryOp::Gt, 1),
-        T::Plus => (BinaryOp::Add, 1),
-        T::Minus => (BinaryOp::Sub, 1),
-        T::Star => (BinaryOp::Mul, 1),
-        T::Slash => (BinaryOp::Div, 1),
-        T::Percent => (BinaryOp::Rem, 1),
+        T::Pipe if glued == Some(T::Pipe) => (Or, 2),
+        T::Amp if glued == Some(T::Amp) => (And, 2),
+        T::Eq if glued == Some(T::Eq) => (Cmp(CmpOp::Eq), 2),
+        T::Bang if glued == Some(T::Eq) => (Cmp(CmpOp::Ne), 2),
+        T::Lt if glued == Some(T::Eq) => (Cmp(CmpOp::Le), 2),
+        T::Gt if glued == Some(T::Eq) => (Cmp(CmpOp::Ge), 2),
+        T::Lt => (Cmp(CmpOp::Lt), 1),
+        T::Gt => (Cmp(CmpOp::Gt), 1),
+        T::Plus => (Arith(ArithOp::Add), 1),
+        T::Minus => (Arith(ArithOp::Sub), 1),
+        T::Star => (Arith(ArithOp::Mul), 1),
+        T::Slash => (Arith(ArithOp::Div), 1),
+        T::Percent => (Arith(ArithOp::Rem), 1),
         _ => return None,
     })
 }

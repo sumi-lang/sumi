@@ -350,21 +350,34 @@ pub(crate) fn lower<'s>(
 }
 
 fn eager(op: sumi_syntax::BinaryOp) -> Option<BinaryOp> {
-    use sumi_syntax::BinaryOp::*;
     Some(match op {
-        Add => BinaryOp::Add,
-        Sub => BinaryOp::Sub,
-        Mul => BinaryOp::Mul,
-        Div => BinaryOp::Div,
-        Rem => BinaryOp::Rem,
-        Eq => BinaryOp::Eq,
-        Ne => BinaryOp::Ne,
-        Lt => BinaryOp::Lt,
-        Le => BinaryOp::Le,
-        Gt => BinaryOp::Gt,
-        Ge => BinaryOp::Ge,
-        And | Or => return None,
+        sumi_syntax::BinaryOp::Or | sumi_syntax::BinaryOp::And => return None,
+        sumi_syntax::BinaryOp::Cmp(op) => BinaryOp::Cmp(cmp(op)),
+        sumi_syntax::BinaryOp::Arith(op) => BinaryOp::Arith(arith(op)),
     })
+}
+
+fn cmp(op: sumi_syntax::CmpOp) -> CmpOp {
+    use sumi_syntax::CmpOp::*;
+    match op {
+        Eq => CmpOp::Eq,
+        Ne => CmpOp::Ne,
+        Lt => CmpOp::Lt,
+        Le => CmpOp::Le,
+        Gt => CmpOp::Gt,
+        Ge => CmpOp::Ge,
+    }
+}
+
+fn arith(op: sumi_syntax::ArithOp) -> ArithOp {
+    use sumi_syntax::ArithOp::*;
+    match op {
+        Add => ArithOp::Add,
+        Sub => ArithOp::Sub,
+        Mul => ArithOp::Mul,
+        Div => ArithOp::Div,
+        Rem => ArithOp::Rem,
+    }
 }
 
 /// A `let` binds at `Work::Finish`, after its initializer, so the initializer reads any outer
@@ -749,8 +762,8 @@ impl<'a, 's> Builder<'a, 's> {
                         self.refine(lhs, sense);
                         self.refine(rhs, sense);
                     }
-                    Lt | Le | Gt | Ge | Eq | Ne => {
-                        let op = eager(op).expect("a comparison is eager");
+                    Cmp(op) => {
+                        let op = cmp(op);
                         for (side, other, local_is_lhs) in [(lhs, rhs, true), (rhs, lhs, false)] {
                             if let (Some(local), Some(value)) = (self.read(side), self.typed(other))
                             {
@@ -1165,7 +1178,7 @@ impl<'a, 's> Builder<'a, 's> {
                 self.push(node, Op::Binary(op), &[lhs_input, rhs_input], None);
                 self.typed(lhs)?;
                 self.typed(rhs)?;
-                if matches!(op, BinaryOp::Div | BinaryOp::Rem) {
+                if matches!(op, BinaryOp::Arith(ArithOp::Div | ArithOp::Rem)) {
                     self.lowered.obligations.push(Obligation {
                         owner: self.owner,
                         node,
