@@ -21,18 +21,74 @@
 
 use std::collections::HashMap;
 
+use sumi_frontend::Diagnostic;
 use sumi_text::Span;
 
-use crate::check::{Placed, PlacedCall};
+use crate::lower::{self, Lowered};
 use crate::solver::components;
 use crate::typing::Typing;
-use crate::{BinaryOp, FunctionId, Graph, Int, Ints, NodeId, Op};
+use crate::{BinaryOp, Function, FunctionId, Graph, Int, Ints, NodeId, Op, codes};
 
 /// A cycle with no measure: its members, and what each call inside it does
 /// to the parameter that came closest to being the measure.
 pub(crate) struct Failure {
     pub members: Vec<FunctionId>,
     pub labels: Vec<(Span, Reason)>,
+}
+
+impl Failure {
+    /// The error: the cycle by its first few members, at the first one's
+    /// name, with what the first few calls inside it do. A cycle of
+    /// thousands of calls is one error; the first few calls locate it.
+    pub fn report(self, functions: &[Function], source: &str) -> Diagnostic {
+        let text = |span: Span| {
+            let range = span.range();
+            &source[range.start().to_usize()..range.end().to_usize()]
+        };
+        let at = |id: FunctionId| {
+            let function = &functions[id.index()];
+            function.name.unwrap_or(function.origin)
+        };
+        let names: Vec<_> = self
+            .members
+            .iter()
+            .take(4)
+            .map(|&id| format!("`{}`", text(at(id))))
+            .collect();
+        let others = self.members.len() - names.len();
+        let cycle = match names.as_slice() {
+            [name] => format!("recursion in {name}"),
+            [first, second] => format!("recursion between {first} and {second}"),
+            [rest @ .., last] if others == 0 => {
+                format!("recursion between {}, and {last}", rest.join(", "))
+            }
+            _ => format!("recursion between {}, and {others} more", names.join(", ")),
+        };
+        let message = format!("{cycle} has no argument that moves toward a bound on every call");
+        let labels = self.labels.into_iter().take(8).map(|(call, reason)| {
+            let text = match reason {
+                Reason::Unbounded { param, direction } => {
+                    let (moves, side) = direction.words();
+                    format!(
+                        "argument {moves} `{}`, which is unbounded {side}",
+                        text(param)
+                    )
+                }
+                Reason::Moves { param, direction } => {
+                    format!("argument {} `{}`", direction.words().0, text(param))
+                }
+                Reason::Passes { param } => format!("argument passes `{}` along", text(param)),
+                Reason::Nothing => "no argument is a parameter moved by a constant".to_owned(),
+            };
+            (call, text.into())
+        });
+        lower::diagnostic(
+            at(self.members[0]),
+            codes::UNBOUNDED_RECURSION,
+            message,
+            labels,
+        )
+    }
 }
 
 /// What a call inside a cycle without a measure does to a parameter of its
@@ -117,10 +173,10 @@ fn bounded(band: &Ints, direction: Direction) -> bool {
 /// its verdicts, or whose body did not build, is out of scope: its
 /// arguments may have no offsets and its calls may be missing, and what
 /// it has is reported already.
-pub(crate) fn check(graph: &Graph, placed: &Placed, typing: &Typing, failed: &[bool]) -> Outcome {
+pub(crate) fn check(graph: &Graph, lowered: &Lowered, typing: &Typing, failed: &[bool]) -> Outcome {
     let count_functions = graph.runs().len();
-    let live: Vec<&PlacedCall> = placed
-        .calls()
+    let live: Vec<&lower::Call> = lowered
+        .calls
         .iter()
         .filter(|call| typing.may(call.context).live())
         .collect();

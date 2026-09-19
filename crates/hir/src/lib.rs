@@ -8,6 +8,7 @@
 mod check;
 mod flows;
 mod lattice;
+mod lower;
 mod recursion;
 mod solver;
 mod typing;

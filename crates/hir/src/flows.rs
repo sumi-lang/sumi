@@ -9,32 +9,39 @@
 //! joined into the evidence last, in the order the walk recorded them,
 //! which is the order the verdict pass replays them in.
 
-use sumi_graph::{Domain, Graph, May, NodeId, Op, Ty};
+use std::collections::HashSet;
+
+use rustc_hash::FxBuildHasher;
+use sumi_graph::{Domain, Graph, Int, May, NodeId, Op, Thresholds, Ty, Value};
 use sumi_syntax::NodeIdx;
 use sumi_text::Span;
 
-use crate::check::{Demand, DemandKind, Header, Placed};
 use crate::lattice::Edge;
+use crate::lower::{DemandKind, Header, Lowered};
 use crate::typing::Typing;
 
-/// The typing of the graph: one class per node, at the node's index. A
-/// node the walk gave no value has a class nothing flows into.
+/// The typing of the graph, one class per node at the node's index, and
+/// the thresholds of the file's constants. A node the walk gave no value
+/// has a class nothing flows into. A constant is an integer the file
+/// spells, or an operator over constants, which is the constant the
+/// machine would compute; each is kept once, in the order first seen.
 pub(crate) fn draw(
     graph: &Graph,
-    placed: &Placed,
+    lowered: &Lowered,
     headers: &[Header],
-    demands: &[Demand],
     span: impl Fn(NodeIdx) -> Span,
-) -> Typing {
+) -> (Typing, Thresholds) {
     let mut typing = Typing::for_nodes(graph.nodes().len());
-    let typed = |node: NodeId| placed.typed[node.index()];
+    let typed = |node: NodeId| lowered.typed[node.index()];
+    let mut constants: Vec<Int> = Vec::new();
+    let mut seen: HashSet<Int, FxBuildHasher> = HashSet::default();
+    // The constant each node of the run folds to, by slot.
+    let mut folded: Vec<Option<Int>> = Vec::new();
 
-    // Facts and the flows within a function, in one pass in node order:
-    // every input precedes its reader, and a region's context and result
-    // precede the node that reads them. Only a call reaches forward, to a
-    // callee whose run may come later, so calls flow last.
     for (index, run) in graph.runs().iter().enumerate() {
         let header = &headers[index];
+        folded.clear();
+        folded.resize(run.nodes().len(), None);
         for node in run.nodes() {
             if !typed(node) {
                 continue;
@@ -42,8 +49,13 @@ pub(crate) fn draw(
             let entry = graph.node(node);
             let origin = entry.origin;
             let inputs = graph.inputs(node);
+            let constant = |index: usize| folded[run.slot(inputs[index])].as_ref();
+            let mut folds = None;
             match &entry.op {
-                Op::Int(value) => typing.literal(node, Ty::Int, May::int(value), origin),
+                Op::Int(value) => {
+                    typing.literal(node, Ty::Int, May::int(value), origin);
+                    folds = Some(value.clone());
+                }
                 Op::Bool(value) => typing.literal(node, Ty::Bool, May::bool(*value), origin),
                 Op::Param(position) => {
                     let ty = header.param_types[*position as usize].expect("a typed parameter");
@@ -114,6 +126,7 @@ pub(crate) fn draw(
                 Op::Neg => {
                     typing.known(node, Ty::Int, origin);
                     typing.flow(inputs[0], node, Edge::Neg);
+                    folds = constant(0).map(|value| -value);
                 }
                 Op::Not => {
                     typing.known(node, Ty::Bool, origin);
@@ -122,6 +135,12 @@ pub(crate) fn draw(
                 Op::Binary(op) => {
                     typing.known(node, op.result(), origin);
                     typing.derive(inputs[0], inputs[1], node, Edge::Binary(*op));
+                    if let (Some(lhs), Some(rhs)) = (constant(0), constant(1)) {
+                        let (lhs, rhs) = (Value::Int(lhs.clone()), Value::Int(rhs.clone()));
+                        if let Ok(Value::Int(value)) = Op::Binary(*op).apply(&[&lhs, &rhs]) {
+                            folds = Some(value);
+                        }
+                    }
                 }
                 Op::And { rhs } | Op::Or { rhs } => {
                     typing.known(node, Ty::Bool, origin);
@@ -135,21 +154,26 @@ pub(crate) fn draw(
                         },
                     );
                 }
-                // A call learns its callee's result once every run is
-                // passed.
+                // A call's flows are drawn below, once every run is passed.
                 Op::Call(_) => {}
                 Op::Hole => unreachable!("a hole has no value"),
+            }
+            if let Some(value) = folds {
+                if seen.insert(value.clone()) {
+                    constants.push(value.clone());
+                }
+                folded[run.slot(node)] = Some(value);
             }
         }
     }
     // Every call reaches its callee's entry; a whole one delivers its
     // arguments to the parameters while its context is live, and learns
-    // its callee's result, whichever comes first in the file.
-    for &(context, callee) in &placed.entered {
+    // its callee's result.
+    for &(context, callee) in &lowered.entered {
         let entry = graph.run(callee).entry();
         typing.flow(context, entry, Edge::Enter);
     }
-    for call in placed.calls() {
+    for call in &lowered.calls {
         let run = graph.run(call.callee);
         for (&arg, param) in graph.inputs(call.node).iter().zip(run.params()) {
             typing.derive(arg, call.context, param, Edge::Argument);
@@ -158,11 +182,10 @@ pub(crate) fn draw(
             typing.call(run.result(), call.node, graph.node(call.node).origin);
         }
     }
-    // Demands, in the order the walk made them.
-    for demand in demands {
+    for demand in &lowered.demands {
         if let DemandKind::Type { expected, .. } = demand.kind {
             typing.expect(demand.actual, expected, span(demand.node));
         }
     }
-    typing
+    (typing, constants.into_iter().collect())
 }

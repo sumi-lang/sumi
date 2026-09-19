@@ -232,6 +232,10 @@ fn damaged() {
     _ = missing
 }
 fn intact() -> int = 3
+fn unknown_type() {
+    let z: mystery = 1
+    _ = z
+}
 ```
 
 ```text
@@ -483,37 +487,6 @@ code here is an error.
 
 A type reference naming none of `int`, `bool`, and `unit`.
 
-Shown by [`tests/corpus/semantic/signature-and-call-errors`](../../../tests/corpus/semantic/signature-and-call-errors/case.sumi):
-
-```sumi
-fn duplicate() {}
-fn duplicate() {}
-fn ambiguous() = duplicate()
-fn unknown(x: mystery) {}
-fn suppressed() = unknown(absent)
-fn typed(x: int, b: bool) -> int = x
-fn wrong() -> int = typed(true, 1, missing)
-fn hidden() -> int {
-    let typed = 1
-    typed()
-}
-fn broken_result(x: mystery) -> int = true
-fn scaled(n: int) -> int = n * 2
-fn extra() -> int = scaled(3, 4)
-```
-
-```text
-error[semantic/unknown-type]: unknown type `mystery`
-  primary @79..86
-error[semantic/unknown-type]: unknown type `mystery`
-  primary @279..286
-```
-
-### `semantic/unknown-name`
-
-A name with no declaration in scope: no parameter or binding for a
-value, no function item for a call.
-
 Shown by [`tests/corpus/semantic/damaged-bindings`](../../../tests/corpus/semantic/damaged-bindings/case.sumi):
 
 ```sumi
@@ -526,11 +499,33 @@ fn damaged() {
     _ = missing
 }
 fn intact() -> int = 3
+fn unknown_type() {
+    let z: mystery = 1
+    _ = z
+}
+```
+
+```text
+error[semantic/unknown-type]: unknown type `mystery`
+  primary @155..162
+```
+
+### `semantic/unknown-name`
+
+A name with no declaration in scope: no parameter or binding for a
+value, no function item for a call.
+
+Shown by [`tests/corpus/semantic/damaged-block`](../../../tests/corpus/semantic/damaged-block/case.sumi):
+
+```sumi
+fn unclosed() -> int {
+    _ = missing
+    1
 ```
 
 ```text
 error[semantic/unknown-name]: unknown name `missing`
-  primary @91..98
+  primary @31..38
 ```
 
 ### `semantic/duplicate-name`
@@ -547,6 +542,7 @@ fn ambiguous() = duplicate()
 fn unknown(x: mystery) {}
 fn suppressed() = unknown(absent)
 fn typed(x: int, b: bool) -> int = x
+fn twice(x: int, x: bool) -> int = x
 fn wrong() -> int = typed(true, 1, missing)
 fn hidden() -> int {
     let typed = 1
@@ -561,6 +557,9 @@ fn extra() -> int = scaled(3, 4)
 error[semantic/duplicate-name]: duplicate function `duplicate`
   primary @21..30
   secondary @3..12: declared here
+error[semantic/duplicate-name]: duplicate parameter `x`
+  primary @179..180
+  secondary @171..172: declared here
 ```
 
 ### `semantic/not-callable`
@@ -577,6 +576,7 @@ fn ambiguous() = duplicate()
 fn unknown(x: mystery) {}
 fn suppressed() = unknown(absent)
 fn typed(x: int, b: bool) -> int = x
+fn twice(x: int, x: bool) -> int = x
 fn wrong() -> int = typed(true, 1, missing)
 fn hidden() -> int {
     let typed = 1
@@ -589,8 +589,8 @@ fn extra() -> int = scaled(3, 4)
 
 ```text
 error[semantic/not-callable]: local `typed` is not callable
-  primary @249..254
-  secondary @235..240: declared here
+  primary @286..291
+  secondary @272..277: declared here
 ```
 
 ### `semantic/arity`

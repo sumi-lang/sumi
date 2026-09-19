@@ -1,6 +1,6 @@
 file: rejected
 frontend errors: 0 (see frontend.snap)
-semantic errors: 11
+semantic errors: 12
 
 fn duplicate@0..17 () -> unit ∈ unit
   result: copy : unit @0..17
@@ -28,37 +28,43 @@ fn typed@125..161 (int ∈ ∅, bool ∈ ∅) -> int ∈ ∅
   result: copy : int @154..157
     value: read x@134..135 : int
 
-fn wrong@162..205 () -> int ∈ ∅
-  result: copy : int @176..179
-    value: hole : ? @182..205
-      part[0]: bool true : ? @188..192
-      part[1]: int 1 : ? @194..195
-      part[2]: hole : ? @197..204
+fn twice@162..198 (int ∈ ∅, bool ∈ ∅) -> int ∈ ∅
+  param x@171..172: int
+  param x@179..180: ?
+  result: copy : int @191..194
+    value: read x@179..180 : ?
 
-fn hidden@206..258 () -> int ∈ ∅
-  result: copy : int @221..224
+fn wrong@199..242 () -> int ∈ ∅
+  result: copy : int @213..216
+    value: hole : ? @219..242
+      part[0]: bool true : ? @225..229
+      part[1]: int 1 : ? @231..232
+      part[2]: hole : ? @234..241
+
+fn hidden@243..295 () -> int ∈ ∅
+  result: copy : int @258..261
     value:
-      let typed@235..240: int @231..244
-        initializer: int 1 : int @243..244
-      tail: hole : ? @249..256
+      let typed@272..277: int @268..281
+        initializer: int 1 : int @280..281
+      tail: hole : ? @286..293
 
-fn broken_result@259..301 signature: unavailable
-  param x@276..277: ?
-  result: copy : int @291..294
-    value: bool true : ? @297..301
+fn broken_result@296..338 signature: unavailable
+  param x@313..314: ?
+  result: copy : int @328..331
+    value: bool true : ? @334..338
 
-fn scaled@302..334 (int ∈ ∅) -> int ∈ ∅
-  param n@312..313: int
-  result: copy : int @323..326
-    value: eager * : int @329..334
-      lhs: read n@312..313 : int
-      rhs: int 2 : int @333..334
+fn scaled@339..371 (int ∈ ∅) -> int ∈ ∅
+  param n@349..350: int
+  result: copy : int @360..363
+    value: eager * : int @366..371
+      lhs: read n@349..350 : int
+      rhs: int 2 : int @370..371
 
-fn extra@335..367 () -> int ∈ ∅
-  result: copy : int @349..352
-    value: hole : ? @355..367
-      part[0]: int 3 : int @362..363
-      part[1]: int 4 : int @365..366
+fn extra@372..404 () -> int ∈ ∅
+  result: copy : int @386..389
+    value: hole : ? @392..404
+      part[0]: int 3 : int @399..400
+      part[1]: int 4 : int @402..403
 
 == semantic diagnostics ==
 error[semantic/duplicate-name]: duplicate function `duplicate`
@@ -68,25 +74,28 @@ error[semantic/unknown-type]: unknown type `mystery`
   primary @79..86
 error[semantic/unknown-name]: unknown name `absent`
   primary @117..123
+error[semantic/duplicate-name]: duplicate parameter `x`
+  primary @179..180
+  secondary @171..172: declared here
 error[semantic/arity]: expected 2 arguments, found 3
-  primary @182..205
+  primary @219..242
   secondary @125..161: declared here
 error[semantic/type-mismatch]: expected int, found bool
-  primary @188..192
+  primary @225..229
   secondary @125..161: declared here
 error[semantic/type-mismatch]: expected bool, found int
-  primary @194..195
+  primary @231..232
   secondary @125..161: declared here
 error[semantic/unknown-name]: unknown name `missing`
-  primary @197..204
+  primary @234..241
 error[semantic/not-callable]: local `typed` is not callable
-  primary @249..254
-  secondary @235..240: declared here
+  primary @286..291
+  secondary @272..277: declared here
 error[semantic/unknown-type]: unknown type `mystery`
-  primary @279..286
+  primary @316..323
 error[semantic/type-mismatch]: expected int, found bool
-  primary @297..301
-  secondary @291..294: declared here
+  primary @334..338
+  secondary @328..331: declared here
 error[semantic/arity]: expected 1 arguments, found 2
-  primary @355..367
-  secondary @302..334: declared here
+  primary @392..404
+  secondary @339..371: declared here

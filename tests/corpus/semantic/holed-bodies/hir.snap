@@ -29,7 +29,7 @@ fn damaged@199..230 () -> int ∈ ∅
     value:
       discard: int 5 : int @225..226
       discard: hole : ? @227..228
-      tail: unit : ? @219..230
+      tail: hole : ? @219..230
 
 == semantic diagnostics ==
 error[semantic/type-mismatch]: expected bool, found int
