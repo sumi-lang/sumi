@@ -379,36 +379,27 @@ impl Typing {
     }
 
     /// The same classes carrying only the types known on their own account:
-    /// the facts, restated, and the calls whose callee result is solved. A
-    /// refined read is one class with its local here, so it is whatever
-    /// the local is when a demand asks, and a demand that conflicted the
-    /// local elsewhere is still blamed there. Replaying demands on it one
-    /// at a time, in source order, blames a disagreement on the first
-    /// demand that raised it. An unresolved or conflicted callee delivers
-    /// nothing: it is reported at its declaration. A branch is settled by
-    /// [`Replay::branch`] when its `if` comes up in that order, since what
-    /// it delivers is shaped by the demands before it. The replay resolves
-    /// types and nothing else, so it carries the type evidence alone: a
-    /// quarter of a class, and no values to copy or join.
+    /// the facts, restated, and the calls whose callee result is solved,
+    /// with each aliased class one with the class it aliases. An unresolved
+    /// or conflicted callee delivers nothing: it is reported at its
+    /// declaration. A branch is settled by [`Replay::branch`] when its `if`
+    /// comes up among the demands.
     pub fn replay(&self) -> Replay {
-        let facts = self
-            .facts
-            .iter()
-            .map(|&(var, ty, claim)| (var, Evidence::single(ty, claim)));
-        let mut solver = self
-            .solver
-            .replay(facts, |solved, other, edge| match edge.0 {
-                Edge::Call(_) => solved.0.ty().is_some().then(|| {
-                    solved
-                        .0
-                        .transfer(&edge.0, other.map(|other| &other.0), false, &())
-                }),
-                Edge::Branch | Edge::Peer | Edge::Refine | Edge::Copy | Edge::None => None,
-            });
-        for &(alias, of) in &self.aliased {
-            solver.equal(alias, of);
+        let mut replay = Replay::new(self.solver.classes());
+        for &(var, ty, claim) in &self.facts {
+            replay.learn(var, &Evidence::single(ty, claim));
         }
-        Replay(solver)
+        for (call, edge, solved) in self.solver.flows() {
+            if let Edge::Call(_) = edge.0
+                && solved.0.ty().is_some()
+            {
+                replay.learn(call, &solved.0.transfer(&edge.0, None, false, &()));
+            }
+        }
+        for &(alias, of) in &self.aliased {
+            replay.union(alias, of);
+        }
+        replay
     }
 
     /// What the solve decided of every class, and nothing else: the flows,
@@ -433,13 +424,64 @@ impl Settled {
     }
 }
 
-/// A [`Typing::replay`]: the classes again, to be handed the demands in
-/// order. Its own claims record no origin; the claims flows delivered do.
-pub(crate) struct Replay(Solver<Evidence>);
+/// A [`Typing::replay`]: the classes again, carrying type evidence alone
+/// over a union-find, so an aliased class or a peer reads and takes the
+/// evidence of the class it is one with. Handed the demands one at a
+/// time, in source order, it blames a disagreement on the first demand
+/// that raised it, with the flows final rather than provisional. Its own
+/// claims record no origin; the claims flows delivered do.
+pub(crate) struct Replay {
+    /// Each class's parent; a root is its own.
+    parent: Vec<u32>,
+    /// How many classes a root is one with, itself included; meaningful
+    /// at roots only, as is the evidence.
+    size: Vec<u32>,
+    evidence: Vec<Evidence>,
+}
 
 impl Replay {
+    fn new(classes: usize) -> Self {
+        Self {
+            parent: (0..classes as u32).collect(),
+            size: vec![1; classes],
+            evidence: vec![Evidence::bottom(); classes],
+        }
+    }
+
+    fn root(&self, var: Var) -> usize {
+        let mut id = var.index();
+        while self.parent[id] as usize != id {
+            id = self.parent[id] as usize;
+        }
+        id
+    }
+
+    fn learn(&mut self, var: Var, evidence: &Evidence) {
+        let root = self.root(var);
+        self.evidence[root].join(evidence);
+    }
+
+    /// Make `a` and `b` one class, joining their evidence. The smaller
+    /// class goes under the larger root, so no chain outgrows the
+    /// logarithm of the class count however many reads alias one local.
+    fn union(&mut self, a: Var, b: Var) {
+        let (a, b) = (self.root(a), self.root(b));
+        if a == b {
+            return;
+        }
+        let (root, absorbed) = if self.size[a] >= self.size[b] {
+            (a, b)
+        } else {
+            (b, a)
+        };
+        self.parent[absorbed] = root as u32;
+        self.size[root] += self.size[absorbed];
+        let evidence = std::mem::replace(&mut self.evidence[absorbed], Evidence::bottom());
+        self.evidence[root].join(&evidence);
+    }
+
     pub fn evidence(&self, var: Var) -> &Evidence {
-        self.0.evidence(var)
+        &self.evidence[self.root(var)]
     }
 
     pub fn resolve(&self, var: Var) -> Option<Ty> {
@@ -451,16 +493,15 @@ impl Replay {
     pub fn branch(&mut self, branch: Var, join: Var) {
         let evidence = *self.evidence(branch);
         if evidence.ty().is_some() {
-            self.0
-                .expect(join, &evidence.transfer(&Edge::Branch, None, false, &()));
+            self.learn(join, &evidence.transfer(&Edge::Branch, None, false, &()));
         }
     }
 
     /// One demand, replayed.
     pub fn expect(&mut self, var: Var, expected: Expected) {
         match expected {
-            Expected::Ty(ty) => self.0.expect(var, &Evidence::single(ty, Claim::REPLAYED)),
-            Expected::Peer(peer) => self.0.equal(var, peer),
+            Expected::Ty(ty) => self.learn(var, &Evidence::single(ty, Claim::REPLAYED)),
+            Expected::Peer(peer) => self.union(var, peer),
         }
     }
 }
@@ -727,6 +768,29 @@ mod tests {
         assert_eq!(replay.resolve(binding), Some(Ty::Int));
         replay.expect(bound_call, Expected::Ty(Ty::Bool));
         assert_eq!(replay.resolve(unknown_call), Some(Ty::Bool));
+    }
+
+    /// Every read of one local aliases it, whichever way each union is
+    /// stated: the larger class stays the root, so no read ever reaches its
+    /// evidence through another read, and a local's type still reaches
+    /// every read once it is learned.
+    #[test]
+    fn reads_aliasing_one_local_stay_one_step_from_its_root() {
+        const READS: usize = 1000;
+        let mut typing = Typing::for_nodes(READS + 1);
+        let local = Var::new(0);
+        for read in 1..=READS {
+            typing.refine_bool(local, Var::new(read), true);
+        }
+        typing.solve(&cx());
+        let mut replay = typing.replay();
+        let root = replay.root(local);
+        for class in 0..=READS {
+            let parent = replay.parent[class] as usize;
+            assert!(parent == root || parent == class && class == root);
+        }
+        replay.expect(local, Expected::Ty(Ty::Int));
+        assert_eq!(replay.resolve(Var::new(READS)), Some(Ty::Int));
     }
 
     /// Once settled, every class reads back what the solve decided of it.
