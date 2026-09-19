@@ -1,45 +1,19 @@
-//! The machine: an evaluation of the graph in the concrete domain, driven
-//! by demand from a function's result.
-//!
-//! A run computes what its result depends on and nothing else. Each frame
-//! holds a slot per node of its function, filled the first time the node
-//! is demanded, so a value shared through a `let` is computed once and a
-//! region that is not chosen is never entered. The control stack is
-//! explicit and every [`Machine::step`] is one unit of work an instrument
-//! can observe, with the value it produced, if any, in [`Machine::latest`].
-//!
-//! The machine refuses rather than fails. A hole, a zero divisor, an
-//! operator over a value of the wrong type, or a frame past the bound the
-//! caller set ends the run with a [`Refusal`] that says which; on a graph
-//! the checker proved, none can happen, and the checker's proof is what
-//! turns a refusal into a bug. What the checker declared and did not
-//! prove, a parameter's type on a graph it rejected, is not the machine's
-//! to hold a value to.
+//! The machine: the graph evaluated in the concrete domain by demand from a function's result. It
+//! refuses rather than fails: no [`Refusal`] arises on a graph the checker proved.
 
 use crate::{Domain, Fault, FunctionId, Graph, NodeId, Op, RegionId, Run, Value};
 
-/// One unit of pending work.
 #[derive(Clone, Copy, Debug)]
 enum Control {
-    /// Demand the node's value.
     Eval(NodeId),
-    /// Its inputs are in: apply the node's operator.
     Apply(NodeId),
-    /// The left operand of `&&` or `||` is in: decide the right one.
     Lazy(NodeId),
-    /// The condition of an `if` is in: choose a region.
     Branch(NodeId),
-    /// The arguments of a call are in: enter the callee.
     Enter(NodeId),
-    /// A region's result is in: a branch's value is its arm's, and a
-    /// lazy operator's is the operator over both operands.
     Take(NodeId, NodeId),
-    /// The callee's result is in: leave its frame and it is the call's value.
     Return(NodeId),
 }
 
-/// Bind the parameters of a frame of `run`, whose slots are `slots`, to
-/// `args`, one per parameter.
 fn bind(slots: &mut [Option<Value>], run: &Run, args: impl IntoIterator<Item = Value>) {
     for (param, arg) in run.params().zip(args) {
         slots[run.slot(param)] = Some(arg);
@@ -49,21 +23,14 @@ fn bind(slots: &mut [Option<Value>], run: &Run, args: impl IntoIterator<Item = V
 #[derive(Debug)]
 struct Frame<'a> {
     run: &'a Run,
-    /// Where this frame's slots begin in the shared slab.
     base: usize,
 }
 
-/// What a run was asked to do that it will not: on a graph the checker
-/// proved, none of these arise.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Refusal {
-    /// A node that was never built.
     Hole(NodeId),
-    /// A division whose divisor is zero.
     Division(NodeId),
-    /// An operator over a value of the wrong type.
     Type(NodeId),
-    /// A call that would open a frame past the bound.
     Depth(NodeId),
 }
 
@@ -76,26 +43,22 @@ impl Refusal {
     }
 }
 
-/// A run in progress: [`Machine::step`] advances it one unit of work.
 #[derive(Debug)]
 pub struct Machine<'a> {
     graph: &'a Graph,
     control: Vec<Control>,
-    /// A slot per node of every live frame, in frame order.
+    /// Every live frame's slots, contiguous, in frame order.
     slots: Vec<Option<Value>>,
     frames: Vec<Frame<'a>>,
     steps: u64,
     max_depth: usize,
-    /// The most frames the run may hold at once, the entry included.
     bound: Option<u64>,
-    /// The slot the last step filled.
     latest: Option<usize>,
     outcome: Option<Result<Value, Refusal>>,
 }
 
 impl<'a> Machine<'a> {
-    /// A run about to call `function` on `args`, one per parameter, that
-    /// will hold at most `bound` frames at once.
+    /// `args` is one per parameter, their types unchecked; `bound` caps [`Self::depth`].
     pub fn new(graph: &'a Graph, function: FunctionId, args: &[Value], bound: Option<u64>) -> Self {
         let run = graph.run(function);
         assert_eq!(args.len(), run.params().len(), "one argument per parameter");
@@ -115,41 +78,35 @@ impl<'a> Machine<'a> {
         machine
     }
 
-    /// Values computed so far: every node evaluated, in every frame, a
-    /// parameter's binding not among them.
+    /// Values computed so far, one per node evaluated per frame; binding a parameter is not one.
     pub fn steps(&self) -> u64 {
         self.steps
     }
 
-    /// Frames live right now.
+    /// Frames live now, the entry counted.
     pub fn depth(&self) -> usize {
         self.frames.len()
     }
 
-    /// The most frames live at once so far.
     pub fn max_depth(&self) -> usize {
         self.max_depth
     }
 
-    /// The value the last step produced, if it produced one: every value
-    /// a run makes appears here once.
+    /// Every value a run computes appears here once.
     pub fn latest(&self) -> Option<&Value> {
         self.latest.and_then(|slot| self.slots[slot].as_ref())
     }
 
-    /// How the run ended, once it has.
     pub fn outcome(&self) -> Option<&Result<Value, Refusal>> {
         self.outcome.as_ref()
     }
 
-    /// Step until the run ends.
     pub fn run(mut self) -> Result<Value, Refusal> {
         while !self.step() {}
         self.outcome.expect("a finished run has its outcome")
     }
 
-    /// Do one unit of work: whether the run has ended. A finished machine
-    /// stays finished.
+    /// True once the run has ended, and it stays ended.
     pub fn step(&mut self) -> bool {
         if self.outcome.is_some() {
             return true;
@@ -176,7 +133,6 @@ impl<'a> Machine<'a> {
         false
     }
 
-    /// The slot of `node` in the current frame.
     fn index(&self, node: NodeId) -> usize {
         let frame = self.frames.last().expect("a running machine has a frame");
         frame.base + frame.run.slot(node)
@@ -199,8 +155,6 @@ impl<'a> Machine<'a> {
         self.steps += 1;
     }
 
-    /// Open a frame for `function`, and demand its result. Its parameters
-    /// are bound by the caller.
     fn open(&mut self, function: FunctionId) -> usize {
         let run = self.graph.run(function);
         let base = self.slots.len();
@@ -211,7 +165,6 @@ impl<'a> Machine<'a> {
         base
     }
 
-    /// The value the region at `region` computes, as the value of `node`.
     fn demand_region(&mut self, node: NodeId, region: RegionId) {
         let result = self.graph.region(region).result();
         self.control.push(Control::Take(node, result));
@@ -231,7 +184,6 @@ impl<'a> Machine<'a> {
                     Op::Entry | Op::Then | Op::Else | Op::Unused => {
                         unreachable!("a context or a statement is not a value")
                     }
-                    // Its input is the context it is held in, not a value.
                     Op::Unit => self.fill(node, Value::Unit),
                     Op::And { .. } | Op::Or { .. } => {
                         self.control.push(Control::Lazy(node));
@@ -247,7 +199,6 @@ impl<'a> Machine<'a> {
                             self.control.push(Control::Eval(arg));
                         }
                     }
-                    // A data operator: its operands first, then itself.
                     _ => {
                         self.control.push(Control::Apply(node));
                         for &input in inputs.iter().rev() {
@@ -325,8 +276,6 @@ impl<'a> Machine<'a> {
                 self.control.push(Control::Return(node));
                 let base = self.open(function);
                 let graph = self.graph;
-                // The arguments are copied from the caller's slots, which
-                // lie before the callee's, into the callee's.
                 let (callers, callee) = self.slots.split_at_mut(base);
                 let args = graph.inputs(node).iter().map(|&arg| {
                     callers[caller_base + caller_run.slot(arg)]

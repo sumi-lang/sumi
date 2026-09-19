@@ -1,51 +1,34 @@
-//! The values a graph is read in: the domain every operator has one
-//! semantics in, and the concrete one, a scalar per type. The may-domain
-//! beside it, a set per type, is [`May`](crate::May).
+//! The domains a graph is read in; `Value` is the concrete one, a scalar per type.
 
 use std::fmt;
 
 use crate::{BinaryOp, Int, Op, Ty};
 
-/// Why an operation has no value: the two ways a graph the checker did
-/// not prove can ask for one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Fault {
-    /// A division by zero.
     Division,
-    /// An operator over a value of the wrong type.
     Type,
 }
 
-/// A domain of values the graph is read in: what each leaf is and what
-/// each operator does, once, for every reader. The concrete domain is
-/// [`Value`], one value per type, in which an operation faults rather
-/// than panics, so a graph the checker rejected still runs to a refusal.
-/// The may-domain is [`May`](crate::May), a set of values per type.
+/// One reading of every leaf and operator. An operation faults instead of panicking, so a graph the
+/// checker did not prove still runs to a refusal.
 pub trait Domain: Clone {
     fn int(value: &Int) -> Self;
     fn bool(value: bool) -> Self;
     fn unit() -> Self;
     fn neg(&self) -> Result<Self, Fault>;
     fn not(&self) -> Result<Self, Fault>;
-    /// An eager operator over two values.
     fn binary(op: BinaryOp, lhs: &Self, rhs: &Self) -> Result<Self, Fault>;
-    /// `&&` when `and`, else `||`, over both operands' values: what the
-    /// operator is once its right operand has run.
+    /// `&&` when `and`, else `||`. The short circuit is the graph's, so both operands have run.
     fn lazy(and: bool, lhs: &Self, rhs: &Self) -> Result<Self, Fault>;
-    /// A read of `self` where `self op other`, or `other op self` when
-    /// the local is not the left operand, holds in `sense`. One value is
-    /// itself; a set is narrowed to where the comparison holds.
+    /// `self` narrowed to where `self op other` (`other op self` unless `local_is_lhs`) is `sense`.
     fn refine(&self, op: BinaryOp, local_is_lhs: bool, sense: bool, other: &Self) -> Self;
-    /// A read of the boolean `self` where it is `value`.
+    /// `self` narrowed to where it is `value`.
     fn exactly(&self, value: bool) -> Self;
 }
 
 impl Op {
-    /// The value of a data node from the values of its inputs. A copy is
-    /// what it reads, and a narrowed read is what the domain makes of the
-    /// guard. A parameter, a hole, a context, a unit held in a context, and
-    /// a node with a region are the reader's to evaluate, not the
-    /// operator's.
+    /// Panics unless `self` is a data operator; the rest are the reader's to evaluate.
     pub fn apply<D: Domain>(&self, inputs: &[&D]) -> Result<D, Fault> {
         Ok(match self {
             Self::Int(value) => D::int(value),
@@ -75,7 +58,6 @@ impl Op {
     }
 }
 
-/// A scalar value, one per [`Ty`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Value {
     Int(Int),
@@ -92,7 +74,6 @@ impl Value {
         }
     }
 
-    /// Which way a condition goes.
     pub fn truth(&self) -> Result<bool, Fault> {
         match self {
             Self::Bool(value) => Ok(*value),
@@ -146,8 +127,6 @@ impl Domain for Value {
                 BinaryOp::Add => Self::Int(lhs + rhs),
                 BinaryOp::Sub => Self::Int(lhs - rhs),
                 BinaryOp::Mul => Self::Int(lhs * rhs),
-                // Truncating: the quotient rounds toward zero and the
-                // remainder takes the dividend's sign.
                 BinaryOp::Div => Self::Int(lhs.checked_div(rhs).ok_or(Fault::Division)?),
                 BinaryOp::Rem => Self::Int(lhs.checked_rem(rhs).ok_or(Fault::Division)?),
                 BinaryOp::Lt => Self::Bool(lhs < rhs),

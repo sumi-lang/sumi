@@ -1,21 +1,5 @@
-//! May-values: the set of values that may reach a node, one set per
-//! scalar type, and the may-domain they make.
-//!
-//! A [`May`] is a product of one set per scalar type: a band of integers
-//! over ℤ ∪ {±∞} with an optional hole at zero, a set of booleans, and a
-//! unit bit. A well-typed node populates one of them, and a node with
-//! none populated has no values: it is unreachable, or nothing flows into
-//! it. Reachability is therefore not a separate bit: a context node is a
-//! unit-valued node that is live exactly when its region can run.
-//!
-//! The band with a hole is the shape a guard leaves: `d != 0` on a signed
-//! `d` excludes one point from the middle, and a product of two such bands
-//! keeps the hole.
-//!
-//! Hull is the join, and a recursion would climb forever, so the solver
-//! above rounds the endpoints of a band that travels around a cycle to
-//! the program's [`Thresholds`], which keeps every ascending chain finite
-//! without a widening operator.
+//! The values that may reach a node, one set per scalar type, and the may-domain over them.
+//! Reachability is no separate bit: a node with every set empty is unreachable.
 
 use std::cmp::{Ordering, max, min};
 use std::fmt;
@@ -23,7 +7,6 @@ use std::ops::{Add, BitAnd, Div, Mul, Neg, Rem, Sub};
 
 use crate::{BinaryOp, Domain, Fault, Int, Ty};
 
-/// An endpoint over ℤ ∪ {±∞}. Ordered as the extended integers are.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Bound {
     NegInf,
@@ -80,8 +63,6 @@ impl Neg for &Bound {
     }
 }
 
-/// Never asked to add opposite infinities: every use adds two lower or two
-/// upper endpoints.
 impl Add<&Bound> for &Bound {
     type Output = Bound;
     fn add(self, other: &Bound) -> Bound {
@@ -103,7 +84,7 @@ impl Sub<&Bound> for &Bound {
     }
 }
 
-/// With `0 · ±∞ = 0`, which is what a hull of products needs.
+/// `0 · ±∞ = 0`; otherwise a corner of `[0, 0] · [1, +∞)` is infinite.
 impl Mul<&Bound> for &Bound {
     type Output = Bound;
     fn mul(self, other: &Bound) -> Bound {
@@ -123,9 +104,6 @@ impl Mul<&Bound> for &Bound {
     }
 }
 
-/// Truncating division by a non-zero divisor. An infinite dividend stays
-/// infinite with the combined sign; a finite one over an infinite divisor
-/// is zero.
 impl Div<&Bound> for &Bound {
     type Output = Bound;
     fn div(self, other: &Bound) -> Bound {
@@ -158,10 +136,8 @@ impl fmt::Display for Bound {
     }
 }
 
-/// A set of integers: nothing, or a band with an optional hole at zero.
-/// The hole is canonical: it is set only when `lo < 0 < hi`, and a zero at
-/// an endpoint is removed by moving the endpoint, so equal sets have equal
-/// representations.
+/// Integers as one band with an optional hole at zero, or nothing. Canonical: the hole is set only
+/// when `lo < 0 < hi`, so equal sets compare equal.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Ints(Option<Band>);
 
@@ -172,7 +148,6 @@ struct Band {
     hole: bool,
 }
 
-/// The set of one value.
 impl From<Int> for Ints {
     fn from(value: Int) -> Self {
         let bound = Bound::Finite(value);
@@ -183,7 +158,6 @@ impl From<Int> for Ints {
 impl Ints {
     pub const EMPTY: Self = Self(None);
 
-    /// The canonical band, or nothing when it is empty.
     fn band(mut lo: Bound, mut hi: Bound, hole: bool) -> Self {
         if hole {
             if lo.sign() == Ordering::Equal {
@@ -193,8 +167,6 @@ impl Ints {
                 hi = hi.pred();
             }
         }
-        // No integer sits at or past an infinity, so a band that starts at
-        // `+∞` or ends at `-∞` holds none.
         if lo > hi || lo == Bound::PosInf || hi == Bound::NegInf {
             return Self::EMPTY;
         }
@@ -214,7 +186,6 @@ impl Ints {
         })
     }
 
-    /// Exactly `[0, 0]`.
     pub fn is_zero(&self) -> bool {
         self.0.as_ref().is_some_and(|band| {
             band.lo.sign() == Ordering::Equal && band.hi.sign() == Ordering::Equal
@@ -225,7 +196,6 @@ impl Ints {
         self.0.as_ref().is_some_and(|band| band.lo == band.hi)
     }
 
-    /// The endpoints, when the set is bounded on that side.
     pub fn lo(&self) -> Option<Int> {
         match &self.0 {
             Some(Band {
@@ -246,7 +216,7 @@ impl Ints {
         }
     }
 
-    /// The smallest band containing both. Reports growth.
+    /// True when `self` grew.
     #[inline]
     pub fn join(&mut self, other: &Self) -> bool {
         let joined = match (&self.0, &other.0) {
@@ -277,7 +247,6 @@ impl Ints {
         }
     }
 
-    /// The divisor's non-zero halves, each a band with one sign.
     fn halves(&self) -> Vec<(Bound, Bound)> {
         let Some(Band { lo, hi, .. }) = &self.0 else {
             return Vec::new();
@@ -292,7 +261,6 @@ impl Ints {
         halves
     }
 
-    /// The booleans `self op other` may be.
     fn compare(&self, op: BinaryOp, other: &Self) -> Bools {
         let (Some(a), Some(b)) = (&self.0, &other.0) else {
             return Bools::EMPTY;
@@ -316,7 +284,6 @@ impl Ints {
         Bools::of(may_true, may_false)
     }
 
-    /// `self` narrowed by `self op other` holding, with `self` on the left.
     fn refine(&self, op: BinaryOp, other: &Self) -> Self {
         let (Some(Band { lo, hi, hole }), Some(b)) = (&self.0, &other.0) else {
             return Self::EMPTY;
@@ -338,7 +305,7 @@ impl Ints {
         }
     }
 
-    /// Endpoints moved outward to the thresholds; a point is left exact.
+    /// Each endpoint widened outward to a threshold; a point stays exact.
     pub fn round(&self, thresholds: &Thresholds) -> Self {
         let Some(Band { lo, hi, hole }) = &self.0 else {
             return Self::EMPTY;
@@ -358,7 +325,6 @@ impl Ints {
     }
 }
 
-/// Intersection.
 impl BitAnd<&Ints> for &Ints {
     type Output = Ints;
     fn bitand(self, other: &Ints) -> Ints {
@@ -411,7 +377,6 @@ impl Mul<&Ints> for &Ints {
                 let corners = [&a.lo * &b.lo, &a.lo * &b.hi, &a.hi * &b.lo, &a.hi * &b.hi];
                 let lo = corners.iter().min().unwrap().clone();
                 let hi = corners.iter().max().unwrap().clone();
-                // A product of non-zeros is non-zero over ℤ.
                 Ints::band(lo, hi, !self.contains_zero() && !other.contains_zero())
             }
             _ => Ints::EMPTY,
@@ -419,9 +384,7 @@ impl Mul<&Ints> for &Ints {
     }
 }
 
-/// Truncating quotient: exact on the corners of each non-zero half of the
-/// divisor, so an error at one division does not cascade, and empty over a
-/// divisor that is only zero.
+/// Empty over a divisor that is only zero; a wider divisor's zero is skipped.
 impl Div<&Ints> for &Ints {
     type Output = Ints;
     fn div(self, other: &Ints) -> Ints {
@@ -442,9 +405,7 @@ impl Div<&Ints> for &Ints {
     }
 }
 
-/// Truncating remainder: exact over two points, otherwise the dividend's
-/// sign, bounded by the largest divisor magnitude minus one, and empty
-/// over a divisor that is only zero.
+/// Empty over a divisor that is only zero.
 impl Rem<&Ints> for &Ints {
     type Output = Ints;
     fn rem(self, other: &Ints) -> Ints {
@@ -493,7 +454,6 @@ impl fmt::Display for Ints {
     }
 }
 
-/// A set of booleans.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Bools(u8);
 
@@ -522,8 +482,7 @@ impl Bools {
         self.0 & Self::FALSE.0 != 0
     }
 
-    /// `self && other`: the right operand runs only when the left is true,
-    /// so an empty right side still leaves `false` from the left.
+    /// A left `false` never runs the right side, so an empty right side keeps it.
     fn and(self, other: Self) -> Self {
         Self::of(
             self.may_true() && other.may_true(),
@@ -531,7 +490,6 @@ impl Bools {
         )
     }
 
-    /// `self || other`, likewise.
     fn or(self, other: Self) -> Self {
         Self::of(
             self.may_true() || (self.may_false() && other.may_true()),
@@ -557,7 +515,6 @@ impl Bools {
     }
 }
 
-/// Intersection.
 impl BitAnd for Bools {
     type Output = Self;
     fn bitand(self, other: Self) -> Self {
@@ -565,7 +522,6 @@ impl BitAnd for Bools {
     }
 }
 
-/// The set of one value.
 impl From<bool> for Bools {
     fn from(value: bool) -> Self {
         if value { Self::TRUE } else { Self::FALSE }
@@ -590,8 +546,6 @@ impl fmt::Display for Bools {
     }
 }
 
-/// The values that may reach a node, one set per scalar type. Empty in
-/// every component means no value ever does.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct May {
     pub ints: Ints,
@@ -600,7 +554,6 @@ pub struct May {
 }
 
 impl May {
-    /// No value of any type: nothing reaches, or nothing flows in.
     pub const NONE: Self = Self {
         ints: Ints::EMPTY,
         bools: Bools::EMPTY,
@@ -627,19 +580,16 @@ impl May {
         Self { unit, ..Self::NONE }
     }
 
-    /// Whether any value at all may reach the node.
     #[inline]
     pub fn live(&self) -> bool {
         !self.ints.is_empty() || !self.bools.is_empty() || self.unit
     }
 
-    /// The set as a type reads it, for snapshots and reports.
     pub fn shown(&self, ty: Ty) -> Shown<'_> {
         Shown(self, ty)
     }
 }
 
-/// `a op b` read as `b op' a`.
 fn flip(op: BinaryOp) -> BinaryOp {
     match op {
         BinaryOp::Lt => BinaryOp::Gt,
@@ -650,7 +600,6 @@ fn flip(op: BinaryOp) -> BinaryOp {
     }
 }
 
-/// The comparison that holds when `op` does not.
 fn negate(op: BinaryOp) -> BinaryOp {
     match op {
         BinaryOp::Lt => BinaryOp::Ge,
@@ -663,7 +612,6 @@ fn negate(op: BinaryOp) -> BinaryOp {
     }
 }
 
-/// A [`May`] displayed as one type's set.
 pub struct Shown<'a>(&'a May, Ty);
 
 impl fmt::Display for Shown<'_> {
@@ -676,20 +624,17 @@ impl fmt::Display for Shown<'_> {
     }
 }
 
-/// The finite set an endpoint may round to: the file's constants and their
-/// neighbors, always including `-1`, `0`, and `1`, so a band keeps its sign
-/// however far it travels around a recursion.
+/// The values an endpoint rounds to: the constants collected, each ±1, and always `-1`, `0`, and
+/// `1`, so rounding keeps a band's sign.
 #[derive(Clone, Debug)]
 pub struct Thresholds(Vec<Int>);
 
-/// The thresholds of no constants: `-1`, `0`, and `1` alone.
 impl Default for Thresholds {
     fn default() -> Self {
         std::iter::empty().collect()
     }
 }
 
-/// The thresholds of a file's constants.
 impl FromIterator<Int> for Thresholds {
     fn from_iter<I: IntoIterator<Item = Int>>(constants: I) -> Self {
         let one = Int::from(1);
@@ -699,7 +644,6 @@ impl FromIterator<Int> for Thresholds {
         values.extend(constants.iter().map(|constant| constant - &one));
         values.extend(constants.iter().map(|constant| constant + &one));
         values.extend(constants);
-        // Stable: each shift of the constants is a nearly sorted run to merge.
         values.sort();
         values.dedup();
         Self(values)
@@ -707,7 +651,6 @@ impl FromIterator<Int> for Thresholds {
 }
 
 impl Thresholds {
-    /// The greatest threshold not above `value`, or `-∞`.
     fn below(&self, value: &Int) -> Bound {
         let index = self.0.partition_point(|threshold| threshold <= value);
         match index.checked_sub(1) {
@@ -716,7 +659,6 @@ impl Thresholds {
         }
     }
 
-    /// The least threshold not below `value`, or `+∞`.
     fn above(&self, value: &Int) -> Bound {
         let index = self.0.partition_point(|threshold| threshold < value);
         match self.0.get(index) {
@@ -726,10 +668,8 @@ impl Thresholds {
     }
 }
 
-/// The may-domain: every operator over-approximates the concrete one on
-/// every member of its operands, which a property test checks, and none
-/// faults, since what the checker asks of a value it reads off the sets
-/// after the solve.
+/// Every operator over-approximates the concrete one on every member of its operands, and none
+/// faults.
 impl Domain for May {
     #[inline]
     fn int(value: &Int) -> Self {
@@ -789,7 +729,6 @@ impl Domain for May {
         }))
     }
 
-    /// The local's side of the comparison, narrowed to where it holds.
     #[inline]
     fn refine(&self, op: BinaryOp, local_is_lhs: bool, sense: bool, other: &Self) -> Self {
         let op = if local_is_lhs { op } else { flip(op) };
@@ -823,8 +762,6 @@ mod tests {
     use proptest::prelude::*;
 
     fn ints(text: &str) -> Ints {
-        // `[lo, hi]`, `[lo, hi] \ 0`, `∅`, with `-inf` and `inf` as the
-        // infinite endpoints.
         if text == "∅" {
             return Ints::EMPTY;
         }
@@ -960,7 +897,6 @@ mod tests {
         assert_eq!(n.refine(BinaryOp::Ne, &ints("[1, 2]")), n);
         let may = May::ints(n.clone());
         let two = May::int(&2.into());
-        // `2 > n` reads as `n < 2`; its false sense is `n >= 2`.
         assert_eq!(
             may.refine(BinaryOp::Gt, false, true, &two).ints,
             ints("[0, 1]")
@@ -1012,7 +948,6 @@ mod tests {
         assert_eq!(ints("[-7, 7] \\ 0").round(&t), ints("[-inf, 14] \\ 0"));
         assert_eq!(ints("[-3, -2]").round(&t), ints("[-inf, -1]"));
         assert_eq!(Ints::EMPTY.round(&t), Ints::EMPTY);
-        // The thresholds of no constants still keep a sign.
         let none = Thresholds::default();
         assert_eq!(ints("[2, 5]").round(&none), ints("[1, inf]"));
         assert_eq!(ints("[-5, -2]").round(&none), ints("[-inf, -1]"));
@@ -1024,7 +959,6 @@ mod tests {
         })
     }
 
-    /// A band with endpoints that may be infinite, with and without a hole.
     fn any_band() -> impl Strategy<Value = (Ints, Ints)> {
         (
             proptest::option::of(-20i64..20),
@@ -1058,7 +992,6 @@ mod tests {
         })
     }
 
-    /// Every operator [`Op::apply`] reads.
     fn data_ops() -> Vec<Op> {
         let mut ops = vec![Op::Neg, Op::Not];
         ops.extend(
@@ -1099,7 +1032,6 @@ mod tests {
         ops
     }
 
-    /// Whether `value` is a member of `set`.
     fn member(set: &May, value: &Value) -> bool {
         match value {
             Value::Int(value) => contains(&set.ints, value.to_string().parse().unwrap()),
@@ -1109,9 +1041,6 @@ mod tests {
         }
     }
 
-    /// Whether the read a narrowing operator guards is reached on `x`
-    /// and `y`: the comparison holds in its sense. Any other operator is
-    /// reached on anything.
     fn reached(op: &Op, x: &Value, y: &Value) -> bool {
         match *op {
             Op::Refine {
@@ -1127,9 +1056,6 @@ mod tests {
         }
     }
 
-    /// An operand and a member of it: every integer of a finite band, and
-    /// each boolean in every set that holds it, so every operator sees
-    /// both types and the narrowings see a point.
     fn operands(band: &Ints) -> Vec<(May, Value)> {
         let mut pairs: Vec<_> = members(band)
             .into_iter()
@@ -1144,8 +1070,6 @@ mod tests {
     }
 
     proptest! {
-        /// A shift past the words and back returns the hull it started
-        /// from, and two negations return the band, hole included.
         #[test]
         fn shifts_past_the_words_round_trip((hull, holed) in any_band(), far in prop::sample::select(vec![i64::MAX, i64::MIN + 1, 1 << 62])) {
             let shift = Ints::from(Int::from(far));
@@ -1159,7 +1083,6 @@ mod tests {
             }
         }
 
-        /// Join is an upper bound of both, and rounding only widens.
         #[test]
         fn join_and_rounding_widen(a in band(), b in band(), constants in prop::collection::vec(-20i64..20, 0..4)) {
             let mut joined = a.clone();
@@ -1175,11 +1098,6 @@ mod tests {
             prop_assert_eq!(a.contains_zero(), rounded.contains_zero());
         }
 
-        /// Soundness: the may-value of an operator over the sets contains
-        /// its concrete value over any members, and where the concrete
-        /// operator faults the may-domain still answers. The data
-        /// operators are read through [`Op::apply`]; the lazy ones have no
-        /// data node, so they are read directly.
         #[test]
         fn every_operator_over_approximates_the_concrete_one(a in band(), b in band()) {
             let ops = data_ops();

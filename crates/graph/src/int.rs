@@ -1,11 +1,5 @@
-//! Mathematical integers: the value of every `int` literal and, in the
-//! interpreter, of every `int` expression.
-//!
-//! `int` denotes ℤ. There is no width to overflow, so `+`, `-`, `*`, and
-//! negation are total, and division fails only on a zero divisor. The
-//! representation is the compiler's concern, not the language's: a value
-//! that fits a machine word stays in one, so the common program never
-//! allocates, and past that the magnitude is a boxed run of limbs.
+//! Mathematical integers, the value of every `int` expression. `+`, `-`, `*`, and negation are
+//! total; division fails only on a zero divisor.
 
 use std::borrow::Cow;
 use std::cmp::Ordering;
@@ -13,31 +7,26 @@ use std::fmt;
 use std::ops::{Add, Mul, Neg, Sub};
 use std::str::FromStr;
 
-/// An integer of any size: two words, one of them a pointer only past the
-/// word-sized range.
+/// An integer of any size.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Int(Repr);
 
-/// `Big` holds only what `Small` cannot, so equal values have equal
-/// representations and the derived equality and hash are the mathematical
+/// `Big` holds only what `Small` cannot, so the derived equality and hash are the mathematical
 /// ones.
 #[derive(Clone, PartialEq, Eq, Hash)]
 enum Repr {
     Small(i64),
-    /// A value outside `i64`.
     Big(Box<Big>),
 }
 
-/// A sign and a magnitude's limbs, least significant first, the last one
-/// non-zero.
+/// Limbs least significant first, the last one non-zero.
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct Big {
     negative: bool,
     limbs: Box<[u64]>,
 }
 
-/// A sign and a magnitude, the form the slow paths compute in. Zero is
-/// non-negative with no limbs; otherwise the last limb is non-zero.
+/// Zero is non-negative with no limbs; otherwise the last limb is non-zero.
 struct Parts<'a> {
     negative: bool,
     limbs: Cow<'a, [u64]>,
@@ -61,15 +50,12 @@ impl Int {
         }
     }
 
-    /// The one way to build a value from its parts: it lands in `Small`
-    /// whenever it fits there.
     fn from_parts(negative: bool, limbs: Vec<u64>) -> Self {
         let limbs = trim(limbs);
         match limbs.as_slice() {
             [] => Self(Repr::Small(0)),
             &[limb] if negative && limb <= 1 << 63 => {
-                // `1 << 63` is `i64::MIN` reinterpreted, and its wrapping
-                // negation is itself: exactly the value wanted.
+                // `1 << 63` casts to `i64::MIN`; plain negation overflows.
                 Self(Repr::Small((limb as i64).wrapping_neg()))
             }
             &[limb] if !negative && limb <= i64::MAX as u64 => Self(Repr::Small(limb as i64)),
@@ -80,7 +66,6 @@ impl Int {
         }
     }
 
-    /// `self ± rhs`, past the word-sized fast path.
     fn combine(&self, rhs: &Self, subtract: bool) -> Self {
         let (a, mut b) = (self.parts(), rhs.parts());
         b.negative ^= subtract;
@@ -93,8 +78,6 @@ impl Int {
         }
     }
 
-    /// Truncating division: the quotient rounds toward zero and the
-    /// remainder takes the dividend's sign. `None` for a zero divisor.
     fn div_rem(&self, rhs: &Self) -> Option<(Self, Self)> {
         if let (Repr::Small(a), Repr::Small(b)) = (&self.0, &rhs.0)
             && let (Some(quotient), Some(remainder)) = (a.checked_div(*b), a.checked_rem(*b))
@@ -117,14 +100,12 @@ impl Int {
         self.div_rem(rhs).map(|(quotient, _)| quotient)
     }
 
-    /// The remainder of [`Int::checked_div`], with the dividend's sign, or
-    /// `None` for a zero divisor.
+    /// The remainder with the dividend's sign, or `None` for a zero divisor.
     pub fn checked_rem(&self, rhs: &Self) -> Option<Self> {
         self.div_rem(rhs).map(|(_, remainder)| remainder)
     }
 }
 
-/// The value as a machine word, when it fits one.
 impl TryFrom<&Int> for i64 {
     type Error = OutOfRange;
     fn try_from(value: &Int) -> Result<Self, OutOfRange> {
@@ -135,7 +116,6 @@ impl TryFrom<&Int> for i64 {
     }
 }
 
-/// An [`Int`] past the range of the type it was converted to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct OutOfRange;
 
@@ -224,15 +204,12 @@ impl PartialOrd for Int {
     }
 }
 
-/// Decimal digits, as source spells them.
 impl fmt::Display for Int {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let (negative, limbs) = match &self.0 {
             Repr::Small(value) => return fmt::Display::fmt(value, f),
             Repr::Big(big) => (big.negative, &big.limbs),
         };
-        // Peel groups of nineteen digits, the most a limb's division can
-        // deliver at once, least significant first.
         let mut groups = Vec::new();
         let mut magnitude = limbs.to_vec();
         while !magnitude.is_empty() {
@@ -254,10 +231,9 @@ impl fmt::Debug for Int {
     }
 }
 
-/// Ten to the nineteenth: the largest power of ten a limb holds.
+/// The largest power of ten a limb holds.
 const DIGIT_GROUP: u64 = 10_000_000_000_000_000_000;
 
-/// The text was not an optional `-` followed by ASCII digits.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ParseIntError;
 
@@ -269,7 +245,7 @@ impl fmt::Display for ParseIntError {
 
 impl std::error::Error for ParseIntError {}
 
-/// Decimal digits with an optional leading `-`, of any length.
+/// An optional `-` then ASCII digits, nothing else.
 impl FromStr for Int {
     type Err = ParseIntError;
     fn from_str(text: &str) -> Result<Self, ParseIntError> {
@@ -295,8 +271,7 @@ impl FromStr for Int {
     }
 }
 
-// Magnitude arithmetic over little-endian limbs. Every argument and result
-// is trimmed: no trailing zero limb, and zero is the empty run.
+// Every magnitude below is little-endian with no trailing zero limb.
 
 fn trim(mut limbs: Vec<u64>) -> Vec<u64> {
     while limbs.last() == Some(&0) {
@@ -326,7 +301,6 @@ fn add_mag(a: &[u64], b: &[u64]) -> Vec<u64> {
     trim(out)
 }
 
-/// `a - b`, for `a >= b`.
 fn sub_mag(a: &[u64], b: &[u64]) -> Vec<u64> {
     debug_assert!(cmp_mag(a, b) != Ordering::Less);
     let mut out = Vec::with_capacity(a.len());
@@ -359,7 +333,6 @@ fn mul_mag(a: &[u64], b: &[u64]) -> Vec<u64> {
     trim(out)
 }
 
-/// `a * scale + addend`.
 fn mul_limb_add(a: &[u64], scale: u64, addend: u64) -> Vec<u64> {
     let mut out = Vec::with_capacity(a.len() + 1);
     let mut carry = u128::from(addend);
@@ -372,7 +345,6 @@ fn mul_limb_add(a: &[u64], scale: u64, addend: u64) -> Vec<u64> {
     trim(out)
 }
 
-/// `a / d` and `a % d` for a non-zero limb `d`.
 fn div_rem_limb(a: &[u64], d: u64) -> (Vec<u64>, u64) {
     let mut quotient = vec![0; a.len()];
     let mut remainder = 0u128;
@@ -384,7 +356,6 @@ fn div_rem_limb(a: &[u64], d: u64) -> (Vec<u64>, u64) {
     (trim(quotient), remainder as u64)
 }
 
-/// `a / b` and `a % b` for non-zero `b`.
 fn div_rem_mag(a: &[u64], b: &[u64]) -> (Vec<u64>, Vec<u64>) {
     if cmp_mag(a, b) == Ordering::Less {
         return (Vec::new(), a.to_vec());
@@ -393,8 +364,6 @@ fn div_rem_mag(a: &[u64], b: &[u64]) -> (Vec<u64>, Vec<u64>) {
         let (quotient, remainder) = div_rem_limb(a, d);
         return (quotient, trim(vec![remainder]));
     }
-    // Long division one bit at a time: bring the dividend's bits down into
-    // the remainder from the top, and subtract the divisor whenever it fits.
     let mut quotient = vec![0; a.len()];
     let mut remainder = Vec::new();
     for bit in (0..a.len() * 64).rev() {
@@ -407,7 +376,6 @@ fn div_rem_mag(a: &[u64], b: &[u64]) -> (Vec<u64>, Vec<u64>) {
     (trim(quotient), remainder)
 }
 
-/// Double `limbs` and add `bit`.
 fn shift_in(limbs: &mut Vec<u64>, bit: u64) {
     let mut carry = bit;
     for limb in limbs.iter_mut() {
@@ -429,7 +397,6 @@ mod tests {
         text.parse().unwrap()
     }
 
-    /// The value as the host computes it; every test value fits.
     fn i128_of(value: &Int) -> i128 {
         value.to_string().parse().unwrap()
     }
@@ -583,8 +550,6 @@ mod tests {
     }
 
     proptest! {
-        /// Every operation agrees with 128-bit host arithmetic wherever the
-        /// host can compute it, and lands in `Small` exactly when it fits.
         #[test]
         fn agrees_with_the_host(a in any::<i64>(), b in any::<i64>()) {
             let (x, y) = (Int::from(a), Int::from(b));
@@ -607,8 +572,6 @@ mod tests {
             }
         }
 
-        /// Multi-limb division satisfies the division identity with a
-        /// remainder smaller than the divisor.
         #[test]
         fn wide_division_identity(
             a in prop::collection::vec(any::<u64>(), 0..5),
@@ -625,8 +588,6 @@ mod tests {
             let (dividend, divisor) = (a.parts(), b.parts());
             let (quotient, remainder) = (quotient.parts(), remainder.parts());
             prop_assert_eq!(cmp_mag(&remainder.limbs, &divisor.limbs), Ordering::Less);
-            // Zero is never negative; otherwise the remainder takes the
-            // dividend's sign and the quotient the operands' combined sign.
             if !remainder.limbs.is_empty() {
                 prop_assert_eq!(remainder.negative, dividend.negative);
             }
@@ -635,7 +596,6 @@ mod tests {
             }
         }
 
-        /// Parsing is the inverse of display for any digit string.
         #[test]
         fn digits_round_trip(negative in any::<bool>(), digits in "[1-9][0-9]{0,60}") {
             let text = if negative { format!("-{digits}") } else { digits };
