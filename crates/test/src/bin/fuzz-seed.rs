@@ -1,16 +1,10 @@
-//! Seed every fuzz target's corpus under `fuzz/corpus/` from the file-based
-//! cases, as `cargo run -p sumi-test --bin fuzz-seed`. `lex`, `parse`,
-//! `check`, and `run` read a case as it is; `edit` reads the seeds
-//! `edit_seeds` writes, one per edit kind. The corpus directories are
-//! untracked; a seed that adds no coverage over what is already there is
-//! simply not kept.
+//! Seeds every fuzz target's corpus under `fuzz/corpus/` from the file-based cases.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use sumi_test::{corpus, edit_seeds};
 
-/// The fuzz targets: every one but `edit` reads a case as it is.
 const TARGETS: [&str; 5] = ["lex", "parse", "check", "run", "edit"];
 
 fn main() {

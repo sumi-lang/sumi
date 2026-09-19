@@ -1,10 +1,5 @@
-//! The invariants of every layer, each stated once. A property test
-//! samples them over generated sources a few hundred times; a fuzz target
-//! runs them millions of times over arbitrary bytes a coverage-guided
-//! mutator steers toward code the corpus has not reached. Each check
-//! panics on the invariant it finds broken, which proptest shrinks and
-//! libFuzzer records beside the input.
-//! The checks stand in the order of the crates they hold to.
+//! Every layer's invariants, each stated once, so a property test and a fuzz target share them. A
+//! check panics on the invariant it finds broken.
 
 use std::collections::HashSet;
 
@@ -19,11 +14,6 @@ use sumi_text::TextRange;
 
 use crate::{Edit, Front, apply, changes_delimiter, front};
 
-/// `lex` partitions the source: tokens are nonempty, contiguous, on
-/// character boundaries, and reproduce it byte for byte; every lexical
-/// error sits inside its token; every `Error` token has one; only a line
-/// break spans lines; and a number is flagged malformed exactly when it
-/// has an error.
 pub fn lexed(source: &str, file: &LexedFile) {
     assert_eq!(file.source_len().to_usize(), source.len());
 
@@ -72,10 +62,6 @@ pub fn lexed(source: &str, file: &LexedFile) {
     }
 }
 
-/// The parser-facing stream keeps every significant token in order with
-/// the scan's kinds, drops only trivia, records newlines and jointness
-/// as the raw stream has them, puts boundaries only after a newline, and
-/// pairs brackets mutually, by matching kinds, and nested.
 pub fn input(lexed: &LexedFile, input: &ParserInput) {
     assert!(input.len() <= lexed.len());
     assert_eq!(input.get(input.end()), None);
@@ -182,8 +168,6 @@ pub fn input(lexed: &LexedFile, input: &ParserInput) {
     }
 }
 
-/// Widening every run of horizontal space by one column changes nothing
-/// but the ranges: kinds, jointness, newline facts, and boundaries stay.
 pub fn widening(source: &str, lexed: &LexedFile, input: &ParserInput) {
     let mut widened = String::with_capacity(source.len() + lexed.len());
     for index in lexed.indices() {
@@ -219,12 +203,6 @@ pub fn widening(source: &str, lexed: &LexedFile, input: &ParserInput) {
     }
 }
 
-/// Every structural invariant of a tree: extents partition the nodes;
-/// children are ordered, disjoint, and inside their parent; every node
-/// but the root covers at least one token and starts and ends on a
-/// significant one; the root is the source file and covers the whole
-/// buffer; no item starts inside a matched pair; and the covering query
-/// agrees with the extents.
 pub fn tree(tree: &SyntaxTree, lexed: &LexedFile) {
     let input = ParserInput::new(lexed);
     let root = tree.root();
@@ -247,8 +225,7 @@ pub fn tree(tree: &SyntaxTree, lexed: &LexedFile) {
     assert_eq!(tree.end_token(root), lexed.end());
 
     if !lexed.is_empty() {
-        // Sample the file's edges and middle; the exhaustive reference is
-        // linear per query, not quadratic in arbitrarily large inputs.
+        // Three tokens only: the reference is linear per query, so every token would be quadratic.
         for index in [0, lexed.len() / 2, lexed.len() - 1] {
             let token = RawIdx::new(index as u32);
             let innermost = tree
@@ -296,11 +273,6 @@ pub fn tree(tree: &SyntaxTree, lexed: &LexedFile) {
     assert_eq!(visited, tree.len(), "extents must partition the tree");
 }
 
-/// The parse is total over any source: its tree is well formed and
-/// lossless, attaches no significant token to the root itself, and
-/// anchors every piece of evidence in bounds, present syntax and skipped
-/// ranges nonempty and missing syntax naming the exact trivia interval
-/// between two significant tokens.
 pub fn parse(source: &str, lexed: &LexedFile, parse: &Parse) {
     let (input, tree) = (parse.input(), parse.tree());
     self::tree(tree, lexed);
@@ -366,10 +338,8 @@ pub fn parse(source: &str, lexed: &LexedFile, parse: &Parse) {
     }
 }
 
-/// Recovery after one edit to a well-formed program stays local: a
-/// non-delimiter edit disturbs only the items and statements it lands in,
-/// and a delimiter edit, which can legitimately reparent nearby syntax,
-/// preserves every item it does not touch.
+/// `source` lexes and parses without evidence; `index` is a position in its significant-token
+/// stream.
 pub fn recovery(source: &str, original: &Front, index: usize, edit: Edit) {
     let sig = |index: usize| SigIdx::new(u32::try_from(index).expect("positions fit in u32"));
     let (edited, touched, moved, impact) = apply(source, &original.spans(), index, edit);
@@ -380,6 +350,7 @@ pub fn recovery(source: &str, original: &Front, index: usize, edit: Edit) {
     let after = front(&edited);
     tree(after.parse.tree(), &after.lexed);
 
+    // A bracket edit reparents nearby statements, so only the untouched items must survive.
     if changes_delimiter(original.parse.input(), index, edit) {
         let tree = after.parse.tree();
         let survivors: HashSet<_> = tree
@@ -430,8 +401,6 @@ pub fn recovery(source: &str, original: &Front, index: usize, edit: Edit) {
     }
 }
 
-/// The formatter's contract: the rep is kept, the edits are the text, a
-/// second pass changes nothing, and no defect.
 pub fn format(source: &str) -> Formatted {
     let before = front(source);
     let formatted = sumi_format::format(source, &before.lexed, &before.parse)
@@ -459,16 +428,10 @@ pub fn format(source: &str) -> Formatted {
     formatted
 }
 
-/// The primary range of `diagnostic` and every label's.
 fn ranges(diagnostic: &sumi_frontend::Diagnostic) -> impl Iterator<Item = TextRange> + '_ {
     std::iter::once(diagnostic.primary).chain(diagnostic.labels.iter().map(|label| label.range))
 }
 
-/// Every canonical diagnostic is in source order, with in-bounds labels on
-/// character boundaries and a fix whose edit is too; a closer repair adds
-/// exactly its named token, keeping every other significant token and
-/// comment in order; and applying every non-overlapping fix leaves a
-/// source the frontend still parses.
 pub fn diagnostics(parsed: &ParsedSource) {
     let source = parsed.source();
     let mut previous = None;
@@ -492,9 +455,7 @@ pub fn diagnostics(parsed: &ParsedSource) {
         }
         if let Some(fix) = &diagnostic.fix {
             let edit = &fix.edit;
-            // Nested same-kind repairs are offered inside out and expose
-            // later errors, so neither a same-site reoffer nor a global
-            // error count is a repair oracle; the token lists are.
+            // A repair exposes later errors, so the error count is no oracle; the token lists are.
             if diagnostic.code == codes::EXPECTED_TOKEN {
                 assert_eq!(edit.range().start(), edit.range().end());
                 let kind = match edit.replacement() {
@@ -530,8 +491,6 @@ pub fn diagnostics(parsed: &ParsedSource) {
         }
     }
 
-    // Apply every fix as the corpus runner does, dropping the later of two
-    // that overlap, and parse what is left.
     edits.sort_by_key(|edit| (edit.range().start(), edit.range().end()));
     let mut applied_end = None;
     let mut applied = Vec::new();
@@ -547,12 +506,10 @@ pub fn diagnostics(parsed: &ParsedSource) {
     tree(reparsed.parse().tree(), reparsed.lexed());
 }
 
-/// What a repair must keep: the significant tokens and the comments.
 fn kept(kind: SyntaxKind) -> bool {
     !kind.is_trivia() || kind == SyntaxKind::LineComment
 }
 
-/// The kept tokens in order, kinds and texts.
 fn preserved(lexed: &LexedFile, source: &str) -> Vec<(SyntaxKind, String)> {
     lexed
         .indices()
@@ -561,12 +518,6 @@ fn preserved(lexed: &LexedFile, source: &str) -> Vec<(SyntaxKind, String)> {
         .collect()
 }
 
-/// The analysis of any source: it is accepted exactly when it has no
-/// diagnostic; it lists the frontend's diagnostics among its own, in
-/// source order, the frontend's first where both stand at one position;
-/// every range is on character boundaries; the graph holds its shape; and
-/// declaration order chooses no public type and makes no incomplete body
-/// complete.
 pub fn semantics(analysis: &Analysis) {
     use sumi_hir::FunctionId;
     let source = analysis.parsed().source();
@@ -606,8 +557,6 @@ pub fn semantics(analysis: &Analysis) {
         graph(&reversed);
     }
     assert_eq!(analysis.is_valid(), analysis.diagnostics().is_empty());
-    // The frontend's diagnostics are among the analysis's, in source order,
-    // the frontend's first where both stand at one position.
     let all = analysis.diagnostics();
     let syntactic: Vec<_> = all
         .iter()
@@ -638,11 +587,6 @@ pub fn semantics(analysis: &Analysis) {
     graph(analysis);
 }
 
-/// The typed shape of every complete function, of a rejected file too:
-/// each value has a type, no hole stands in it, a statement reads unit,
-/// and each operator's type agrees with its inputs', a call's with its
-/// callee's signature, a join's with its arms', and a copy's or a
-/// narrowed read's with what it reads.
 fn typed(analysis: &Analysis) {
     use sumi_hir::{BinaryOp, FunctionId, NodeId, Op, Ty};
     let graph = analysis.graph();
@@ -732,11 +676,6 @@ fn typed(analysis: &Analysis) {
     }
 }
 
-/// The graph's shape: inputs precede their readers; a function's run is
-/// its entry, a node per parameter, its body region, and a copy for a
-/// declared result; regions nest inside their function's run and each
-/// other; every op reads what its kind takes; an accepted file has a type
-/// on every value and no hole; and every complete function is typed.
 fn graph(analysis: &Analysis) {
     use sumi_hir::Op;
     let graph = analysis.graph();
@@ -825,33 +764,19 @@ fn graph(analysis: &Analysis) {
     }
 }
 
-/// What running an accepted program's functions came to.
 #[derive(Default)]
 pub struct Runs {
-    /// Runs that ended and were checked.
     pub finished: usize,
-    /// Runs given up on: past the step budget, or holding an integer too
-    /// wide to keep multiplying. Every step before that was checked.
     pub abandoned: usize,
 }
 
-/// The analysis held to the machine: every live function of an accepted
-/// file, run at a few points inside the parameter sets the analysis
-/// proved, stays within its claims. The value lies in the result set and
-/// has the signature's type, and the machine refused nothing, since a
-/// zero divisor or a frame past the depth bound would be a refusal.
 pub fn run(program: Program<'_>) -> Runs {
     use sumi_hir::{Bools, Int, Ints, Ty, Value};
 
-    /// A run past this many values computed is abandoned: a deep recursion
-    /// on a wide hull can cost more than the check is worth.
     const STEPS: u64 = 1 << 17;
-    /// A run holding an integer past this many decimal digits is abandoned:
-    /// a value squared along a recursion doubles its width every frame, and
-    /// one multiplication of such values can outlast any step budget.
+    /// The step budget is not enough: squaring along a recursion doubles the width every frame, and
+    /// one multiplication then outlasts it.
     const DIGITS: usize = 300;
-    /// The product of a few points per parameter is enough; past this many
-    /// tuples the rest are left.
     const TUPLES: usize = 32;
 
     fn contains(ints: &Ints, value: &Int) -> bool {
