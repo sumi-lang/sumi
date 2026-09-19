@@ -1,3 +1,5 @@
+use std::sync::OnceLock;
+
 use criterion::{
     BatchSize, BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main,
 };
@@ -6,7 +8,7 @@ use sumi_frontend::parse_source;
 use sumi_lexer::lex;
 use sumi_syntax::ast::{AstNode, Block, ElseBranch, Expr, SourceFile, Stmt};
 use sumi_syntax::{MAX_DEPTH, NodeKind, ParseEvidence, ParserInput, RawIdx, SyntaxTree, parse};
-use sumi_test::corpus;
+use sumi_test::corpus::{self, Rng};
 use sumi_text::{LineIndex, TextSize};
 
 const KIB: usize = 1024;
@@ -23,12 +25,13 @@ const SMALL_VALID: &str = r#"fn transform(value: int, limit: int) -> int {
 }
 "#;
 
-// The seeds and damage parameters define the benchmark corpora; see the
-// baseline note in `corpus.rs` before touching them.
+// The seeds and damage parameters define the benchmark corpora; changing
+// one resets its benchmarks' history.
 const MEDIUM_SEED: u64 = 0xBEEF;
 const LARGE_SEED: u64 = 0xDECAF;
 const DAMAGE_SEED: u64 = 7;
-const DAMAGE_STRIDE: usize = 600;
+/// Significant tokens per edit of the malformed corpus.
+const DAMAGE_STRIDE: usize = 128;
 
 // Nesting depths for the adversarial ladder, pinned so the benchmark names
 // stay stable. The first three rungs must parse clean under [`MAX_DEPTH`];
@@ -41,103 +44,69 @@ const NESTED_RUNGS: [(usize, bool); 4] = [(4, true), (32, true), (224, true), (4
 const QUERY_SEED: u64 = 0xC0FFEE;
 const QUERY_BATCH: usize = 1024;
 
-/// The corpus module keeps its generator private; the query batches only
-/// need a pinned stream of bounded draws.
-struct Lcg(u64);
+const MEDIUM_VALID: &str = "medium-valid";
 
-impl Lcg {
-    fn below(&mut self, n: u32) -> u32 {
-        self.0 = self
-            .0
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(1442695040888963407);
-        ((self.0 >> 33) as u32) % n
-    }
+/// The benchmark corpora by name, built and checked once for every
+/// benchmark: each is as valid or as malformed as its name says.
+fn corpora() -> &'static [(&'static str, String); 4] {
+    static CORPORA: OnceLock<[(&str, String); 4]> = OnceLock::new();
+    CORPORA.get_or_init(|| {
+        let medium = corpus::generate(64 * KIB, MEDIUM_SEED);
+        let malformed = corpus::damage(&medium, DAMAGE_SEED, DAMAGE_STRIDE);
+        let corpora = [
+            ("small-valid", SMALL_VALID.to_owned(), true),
+            (MEDIUM_VALID, medium, true),
+            ("large-valid", corpus::generate(512 * KIB, LARGE_SEED), true),
+            ("medium-malformed", malformed, false),
+        ];
+        corpora.map(|(name, source, valid)| {
+            let parsed = parse_source(source.clone().into_boxed_str())
+                .expect("benchmark corpus fits in Sumi's source coordinate space");
+            assert_eq!(
+                parsed.diagnostics().is_empty(),
+                valid,
+                "benchmark corpus validity changed for {name}: {:?}",
+                parsed.diagnostics().first()
+            );
+            (name, source)
+        })
+    })
+}
+
+/// The corpus named `name` in [`corpora`].
+fn corpus(name: &str) -> &'static str {
+    let (_, source) = corpora()
+        .iter()
+        .find(|(candidate, _)| *candidate == name)
+        .expect("every benchmark names a corpus in the table");
+    source
 }
 
 fn bench_pipeline_phases(c: &mut Criterion) {
-    bench_phases(
-        c,
-        "medium-valid",
-        &corpus::generate(64 * KIB, MEDIUM_SEED),
-        true,
-    );
-    bench_phases(
-        c,
-        "medium-malformed",
-        &corpus::corrupt(
-            &corpus::generate(64 * KIB, MEDIUM_SEED),
-            DAMAGE_SEED,
-            DAMAGE_STRIDE,
-        ),
-        false,
-    );
-}
-
-fn bench_phases(c: &mut Criterion, corpus_name: &str, source: &str, valid: bool) {
-    let lexed = lex(source).expect("benchmark corpus fits in Sumi's source coordinate space");
-    let input = ParserInput::new(&lexed);
-
-    let parsed = parse_source(source.to_owned().into_boxed_str())
-        .expect("benchmark corpus fits in Sumi's source coordinate space");
-    assert_eq!(
-        parsed.diagnostics().is_empty(),
-        valid,
-        "benchmark corpus validity changed for {corpus_name}: {:?}",
-        parsed.diagnostics().first()
-    );
-
-    let mut group = c.benchmark_group(format!("pipeline-phases/{corpus_name}"));
-    group.throughput(Throughput::Bytes(source.len() as u64));
-    // This ID measured the old scan plus cook stages together, so it remains
-    // the comparable history for the now-unified operation.
-    group.bench_function("lex+cook", |b| {
-        b.iter_with_large_drop(|| {
-            lex(black_box(source)).expect("benchmark corpus fits in Sumi's source coordinate space")
+    for (name, source) in corpora() {
+        let lexed = lex(source).expect("benchmark corpus fits in Sumi's source coordinate space");
+        let input = ParserInput::new(&lexed);
+        let mut group = c.benchmark_group(format!("pipeline-phases/{name}"));
+        group.throughput(Throughput::Bytes(source.len() as u64));
+        group.bench_function("lex", |b| {
+            b.iter_with_large_drop(|| {
+                lex(black_box(source))
+                    .expect("benchmark corpus fits in Sumi's source coordinate space")
+            });
         });
-    });
-    group.bench_function("parser-input", |b| {
-        b.iter_with_large_drop(|| ParserInput::new(black_box(&lexed)));
-    });
-    group.bench_function("parse", |b| {
-        b.iter_batched(|| input.clone(), parse, BatchSize::LargeInput);
-    });
-    group.finish();
+        group.bench_function("parser-input", |b| {
+            b.iter_with_large_drop(|| ParserInput::new(black_box(&lexed)));
+        });
+        group.bench_function("parse", |b| {
+            b.iter_batched(|| input.clone(), parse, BatchSize::LargeInput);
+        });
+        group.finish();
+    }
 }
 
 fn bench_frontend(c: &mut Criterion) {
-    let corpora = [
-        ("small-valid", SMALL_VALID.to_owned(), true),
-        (
-            "medium-valid",
-            corpus::generate(64 * KIB, MEDIUM_SEED),
-            true,
-        ),
-        ("large-valid", corpus::generate(512 * KIB, LARGE_SEED), true),
-        (
-            "medium-malformed",
-            corpus::corrupt(
-                &corpus::generate(64 * KIB, MEDIUM_SEED),
-                DAMAGE_SEED,
-                DAMAGE_STRIDE,
-            ),
-            false,
-        ),
-    ];
-
-    for (name, source, valid) in &corpora {
-        let parsed = parse_source(source.clone().into_boxed_str())
-            .expect("benchmark corpus fits in Sumi's source coordinate space");
-        assert_eq!(
-            parsed.diagnostics().is_empty(),
-            *valid,
-            "benchmark corpus validity changed for {name}: {:?}",
-            parsed.diagnostics().first()
-        );
-    }
-
     let mut group = c.benchmark_group("frontend");
-    for (name, source, _) in &corpora {
+    for (name, source) in corpora() {
         group.throughput(Throughput::Bytes(source.len() as u64));
         group.bench_with_input(BenchmarkId::from_parameter(name), source, |b, source| {
             b.iter_batched(
@@ -154,7 +123,7 @@ fn bench_frontend(c: &mut Criterion) {
 }
 
 // Files imported from another language often repeat the same unsupported
-// escape or number spelling. Keep both independent and grouped lex errors.
+// escape or number spelling.
 fn bench_lex_diagnostics(c: &mut Criterion) {
     let mut group = c.benchmark_group("frontend/lex-diagnostics");
     for (name, literal, per_token) in [("escapes", r#""\q\x\z""#, 3), ("numbers", "01suffix", 2)] {
@@ -227,24 +196,24 @@ fn bench_adversarial(c: &mut Criterion) {
 }
 
 fn bench_queries(c: &mut Criterion) {
-    let source = corpus::generate(64 * KIB, MEDIUM_SEED);
-    let lexed = lex(&source).expect("benchmark corpus fits in Sumi's source coordinate space");
+    let source = corpus(MEDIUM_VALID);
+    let lexed = lex(source).expect("benchmark corpus fits in Sumi's source coordinate space");
     let parsed = parse(ParserInput::new(&lexed));
     let tree = parsed.tree();
-    let index = LineIndex::new(&source);
+    let index = LineIndex::new(source);
 
-    let mut rng = Lcg(QUERY_SEED);
+    let mut rng = Rng::new(QUERY_SEED);
     let offsets: Vec<TextSize> = (0..QUERY_BATCH)
-        .map(|_| TextSize::new(rng.below(source.len() as u32)))
+        .map(|_| TextSize::new(rng.below(source.len()) as u32))
         .collect();
     let tokens: Vec<RawIdx> = (0..QUERY_BATCH)
-        .map(|_| RawIdx::new(rng.below(lexed.len() as u32)))
+        .map(|_| RawIdx::new(rng.below(lexed.len()) as u32))
         .collect();
 
     let mut group = c.benchmark_group("queries/medium-valid");
     group.throughput(Throughput::Bytes(source.len() as u64));
     group.bench_function("line-index", |b| {
-        b.iter_with_large_drop(|| LineIndex::new(black_box(&source)));
+        b.iter_with_large_drop(|| LineIndex::new(black_box(source)));
     });
 
     group.throughput(Throughput::Elements(QUERY_BATCH as u64));
@@ -281,11 +250,11 @@ fn bench_queries(c: &mut Criterion) {
 }
 
 fn bench_format(c: &mut Criterion) {
-    let source = corpus::generate(64 * KIB, MEDIUM_SEED);
-    let lexed = lex(&source).expect("benchmark corpus fits in Sumi's source coordinate space");
+    let source = corpus(MEDIUM_VALID);
+    let lexed = lex(source).expect("benchmark corpus fits in Sumi's source coordinate space");
     let parsed = parse(ParserInput::new(&lexed));
     assert_eq!(
-        parsed.tree().reprint(&lexed, &source),
+        parsed.tree().reprint(&lexed, source),
         source,
         "the tree must reprint its corpus byte for byte"
     );
@@ -309,10 +278,10 @@ fn bench_format(c: &mut Criterion) {
     let mut group = c.benchmark_group("format/medium-valid");
     group.throughput(Throughput::Bytes(source.len() as u64));
     group.bench_function("reprint", |b| {
-        b.iter_with_large_drop(|| black_box(parsed.tree()).reprint(&lexed, &source));
+        b.iter_with_large_drop(|| black_box(parsed.tree()).reprint(&lexed, source));
     });
     group.bench_function("format", |b| {
-        b.iter_with_large_drop(|| format(black_box(&source), &lexed, &parsed));
+        b.iter_with_large_drop(|| format(black_box(source), &lexed, &parsed));
     });
     group.finish();
 
@@ -337,8 +306,8 @@ criterion_group!(
 criterion_main!(benches);
 
 fn bench_ast(c: &mut Criterion) {
-    let source = corpus::generate(64 * KIB, MEDIUM_SEED);
-    let lexed = lex(&source).expect("benchmark corpus fits in Sumi's source coordinate space");
+    let source = corpus(MEDIUM_VALID);
+    let lexed = lex(source).expect("benchmark corpus fits in Sumi's source coordinate space");
     let parsed = parse(ParserInput::new(&lexed));
     let tree = parsed.tree();
     // Both walks count the names; the views must reach every one.
