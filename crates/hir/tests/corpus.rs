@@ -11,10 +11,8 @@ use std::fmt::Write as _;
 
 use sumi_frontend::parse_source;
 use sumi_hir::{Analysis, BinaryOp, FunctionId, Graph, NodeId, Op, RegionId, analyze};
+use sumi_test::corpus;
 use sumi_text::TextRange;
-
-#[path = "../../../tests/support/corpus.rs"]
-mod corpus;
 
 #[test]
 fn selected_cases_match_their_snapshots() {

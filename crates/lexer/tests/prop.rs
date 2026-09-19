@@ -96,10 +96,7 @@ fn number_soup() -> impl Strategy<Value = String> {
 }
 
 proptest! {
-    #![proptest_config(sumi_test::regressions(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/proptest-regressions/prop.txt"
-    )))]
+    #![proptest_config(sumi_test::regressions!("prop.txt"))]
     #[test]
     fn lex_is_total_and_partitions(source in prop_oneof![soup(), number_soup()]) {
         check::lexed(&source, &lex(&source).expect("generated sources fit in u32"));

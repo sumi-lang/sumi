@@ -14,14 +14,17 @@
 //! none of its demands failed, every value in it resolved, and every call
 //! agrees with its callee's signature.
 
+use sumi_frontend::ParsedSource;
+use sumi_graph::{FunctionId, Graph, NodeId, Op, Ty};
 use sumi_syntax::ast::{self, AstNode};
+use sumi_text::TextRange;
 
 use crate::codes;
 use crate::flows::{Demand, DemandKind};
 use crate::lower::{self, HeaderResult, Lowered, Source};
 use crate::recursion;
 use crate::typing::{Expected, Replay, Typing};
-use crate::{flows, *};
+use crate::{Analysis, Function, Signature, flows};
 
 pub fn analyze(parsed: ParsedSource) -> Analysis {
     let mut source = Source::new(&parsed);

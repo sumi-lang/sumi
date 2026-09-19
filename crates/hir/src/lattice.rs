@@ -5,7 +5,7 @@
 //! A class holds a [`Product`]: the set of scalar types claimed for it,
 //! each with the best claim that made it, so a conflicted class explains
 //! itself, and the [`May`] set of values that reach it. A claim is one
-//! word, its rank, which is also its identity; the span it was made at
+//! word, its rank, which is also its identity; the range it was made at
 //! lives in a table on the typing, consulted only when a conflict is
 //! reported, so joining or transferring evidence never touches memory
 //! beyond the class. A conflict is kept rather than retracted, so its

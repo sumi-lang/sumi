@@ -4,15 +4,15 @@
 use sumi_frontend::{Diagnostic, DiagnosticCode, parse_source};
 use sumi_hir::codes::*;
 use sumi_hir::{Analysis, BinaryOp, Function, FunctionId, Int, NodeId, Op, Ty, analyze};
-use sumi_test::check;
+use sumi_test::{check, corpus};
 use sumi_text::TextRange;
 
-fn check(source: &str) -> Analysis {
+fn analyzed(source: &str) -> Analysis {
     analyze(parse_source(source.into()).unwrap())
 }
 
 fn clean(source: &str) -> Analysis {
-    let analysis = check(source);
+    let analysis = analyzed(source);
     assert!(analysis.is_valid(), "{:?}", analysis.diagnostics());
     assert!(analysis.functions().iter().all(Function::complete));
     check::semantics(&analysis);
@@ -60,7 +60,7 @@ fn codes(analysis: &Analysis) -> Vec<DiagnosticCode> {
 #[test]
 fn disagreeing_branches_are_undetermined_not_the_first_branch() {
     for result in ["bool", "int"] {
-        let a = check(&format!(
+        let a = analyzed(&format!(
             "fn f(c: bool) -> {result} = {{ let x = if c {{ 1 }} else {{ true }}\n x }}"
         ));
         assert_eq!(codes(&a), [TYPE_MISMATCH], "{result}");
@@ -69,7 +69,7 @@ fn disagreeing_branches_are_undetermined_not_the_first_branch() {
             "if branches are int and bool"
         );
     }
-    let a = check(
+    let a = analyzed(
         "fn f() -> bool = { let a = 1\n let b = true\n _ = if a == 1 { a } else { b }\n !a }",
     );
     assert_eq!(codes(&a), [TYPE_MISMATCH, TYPE_MISMATCH]);
@@ -107,7 +107,7 @@ fn literals_of_any_size_fold_a_leading_minus() {
         assert!(matches!(op(&a, value(&a, 0)), Op::Neg), "{expr}");
     }
     for expr in ["01", "1_000", "1u32"] {
-        let a = check(&format!("fn f() -> int = {expr}"));
+        let a = analyzed(&format!("fn f() -> int = {expr}"));
         assert!(!a.is_valid());
         assert!(!a.functions()[0].complete());
         assert!(semantic(&a).is_empty());
@@ -124,7 +124,7 @@ fn a_measure_is_read_through_any_depth_of_lets() {
         writeln!(source, "    let a{i} = a{} - 0", i - 1).unwrap();
     }
     source.push_str("    if a399 < 0 { 0 } else { f(a399) }\n}\nfn main() -> int = f(5)\n");
-    let analysis = check(&source);
+    let analysis = analyzed(&source);
     assert!(
         analysis.diagnostics().is_empty(),
         "{:?}",
@@ -136,7 +136,7 @@ fn a_measure_is_read_through_any_depth_of_lets() {
 #[test]
 fn call_requirements_replay_in_argument_order() {
     let source = "fn unknown() = unknown()\nfn take(a: int, b: bool) {}\nfn caller() = { let x = unknown()\n take(x, (x)) }";
-    let a = check(source);
+    let a = analyzed(source);
     assert!(a.parsed().diagnostics().is_empty());
     let mismatches: Vec<_> = a
         .diagnostics()
@@ -150,7 +150,7 @@ fn call_requirements_replay_in_argument_order() {
         source.rfind("(x)").unwrap()
     );
 
-    let a = check("fn take(a: int, b: bool) {}\nfn caller() { take(missing, 23) }");
+    let a = analyzed("fn take(a: int, b: bool) {}\nfn caller() { take(missing, 23) }");
     assert_eq!(codes(&a), [UNKNOWN_NAME, TYPE_MISMATCH]);
 }
 
@@ -172,7 +172,7 @@ fn token_gaps_ignore_trivia_without_losing_semantics() {
     );
     assert!(matches!(op(&a, value(&a, 3)), Op::Not));
 
-    let a = check("fn f() = { let\tmut\tvalue = 3\n value }");
+    let a = analyzed("fn f() = { let\tmut\tvalue = 3\n value }");
     assert!(a.parsed().diagnostics().is_empty());
     assert_eq!(codes(&a), [UNSUPPORTED]);
     assert!(!a.functions()[0].complete());
@@ -202,7 +202,7 @@ fn source_origins_are_utf8_byte_ranges() {
     let e = a.graph().inputs(sum)[0];
     assert!(matches!(op(&a, e), Op::Param(0)));
     assert_eq!(text(&a, a.graph().node(e).name.unwrap()), "e");
-    let a = check("// café\nfn f() -> int = absent");
+    let a = analyzed("// café\nfn f() -> int = absent");
     assert_eq!(
         semantic(&a)[0].primary.start().to_usize(),
         "// café\nfn f() -> int = ".len()
@@ -216,7 +216,7 @@ fn long_chains_are_stack_safe_even_when_rejected() {
         .join(" + ");
     let a = clean(&format!("fn f() -> int = {chain}"));
     assert_eq!(body(&a, 0).len(), 39_999);
-    let a = check(&format!(
+    let a = analyzed(&format!(
         "fn f() -> int = {chain} + true + missing\nfn g() -> int = absent\n"
     ));
     assert_eq!(codes(&a), [TYPE_MISMATCH, UNKNOWN_NAME, UNKNOWN_NAME]);
@@ -249,7 +249,7 @@ fn scalar_operator_type_matrix() {
                     _ => (left_ty == "bool" && right_ty == "bool", "bool"),
                 };
                 let source = format!("fn f() -> {result} = {lhs} {op} {rhs}");
-                let a = check(&source);
+                let a = analyzed(&source);
                 assert!(a.parsed().diagnostics().is_empty(), "{source}");
                 assert_eq!(a.is_valid(), accepted, "{source}");
                 if accepted {
@@ -270,7 +270,7 @@ fn scalar_operator_type_matrix() {
         "fn f(x: int) -> int = -x\nfn g(x: bool) -> bool = !x\nfn h() -> bool = true != false\nfn u(x: unit) -> unit { let y: unit = x\n y }\n",
     );
     for source in ["fn f() -> int = -true", "fn f() -> bool = !1"] {
-        assert_eq!(codes(&check(source)), [TYPE_MISMATCH]);
+        assert_eq!(codes(&analyzed(source)), [TYPE_MISMATCH]);
     }
     clean("fn f(x: int) -> bool = x // comparison\n <= 1\n");
 }
@@ -283,7 +283,7 @@ fn binary_requirements_survive_a_failed_operand() {
         "1 && missing",
         "missing == {}",
     ] {
-        let a = check(&format!("fn f() {{ _ = {expression} }}"));
+        let a = analyzed(&format!("fn f() {{ _ = {expression} }}"));
         let mut actual = codes(&a);
         actual.sort_unstable_by_key(|code| code.name);
         assert_eq!(actual, [TYPE_MISMATCH, UNKNOWN_NAME], "{expression}");
@@ -293,37 +293,26 @@ fn binary_requirements_survive_a_failed_operand() {
 
 #[test]
 fn recovery_does_not_expose_functions_or_leak_argument_scopes() {
-    let a = check("fn f() -> int = 1\nfn g() {\n let f =\n _ = f()\n _ = absent\n}\n");
+    let a = analyzed("fn f() -> int = 1\nfn g() {\n let f =\n _ = f()\n _ = absent\n}\n");
     assert_eq!(codes(&a), [UNKNOWN_NAME]);
     assert!(semantic(&a)[0].message.contains("absent"));
-    let a = check("fn f() {\n _ = missing({ let x = 1\n x }, x)\n}\n");
+    let a = analyzed("fn f() {\n _ = missing({ let x = 1\n x }, x)\n}\n");
     assert_eq!(codes(&a), [UNKNOWN_NAME, UNKNOWN_NAME]);
-    let a = check("fn f() {\n let x = absent\n let x = true\n _ = x + 1\n}\n");
+    let a = analyzed("fn f() {\n let x = absent\n let x = true\n _ = x + 1\n}\n");
     assert_eq!(codes(&a), [UNKNOWN_NAME, TYPE_MISMATCH]);
-    let a = check("fn f() -> int {\n _ = absent\n 1\n}\n");
+    let a = analyzed("fn f() -> int {\n _ = absent\n 1\n}\n");
     assert!(!a.functions()[0].complete());
     clean("fn f() -> int {\n let x =\n 1\n x\n}\n");
 }
 
 #[test]
 fn existing_corpus_never_panics_or_silently_rejects() {
-    let mut directories = vec![std::path::PathBuf::from(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../tests/corpus"
-    ))];
-    let mut count = 0;
-    while let Some(directory) = directories.pop() {
-        for entry in std::fs::read_dir(directory).unwrap() {
-            let path = entry.unwrap().path();
-            if path.is_dir() {
-                directories.push(path);
-            } else if path.file_name().unwrap() == "case.sumi" {
-                check::semantics(&check(&std::fs::read_to_string(&path).unwrap()));
-                count += 1;
-            }
-        }
+    let cases = corpus::cases();
+    assert!(cases.len() > 100);
+    for case in cases {
+        let source = std::fs::read_to_string(case.join("case.sumi")).unwrap();
+        check::semantics(&analyzed(&source));
     }
-    assert!(count > 100);
 }
 
 #[test]
@@ -362,7 +351,7 @@ fn large_definition_chains_and_cycles_are_stack_safe() {
             for declaration in definitions {
                 writeln!(source, "{declaration}").unwrap();
             }
-            let a = check(&source);
+            let a = analyzed(&source);
             assert_eq!(a.is_valid(), grounded);
             if grounded {
                 assert!(a.functions().iter().all(Function::complete));
@@ -399,10 +388,7 @@ fn large_definition_chains_and_cycles_are_stack_safe() {
 }
 
 proptest::proptest! {
-    #![proptest_config(sumi_test::regressions(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/proptest-regressions/analysis.txt"
-    )))]
+    #![proptest_config(sumi_test::regressions!("analysis.txt"))]
     #[test]
     fn declaration_order_does_not_choose_inferred_signatures(
         choices in proptest::collection::vec((0usize..20, 0u8..6, proptest::num::u32::ANY), 1..20)
@@ -419,10 +405,10 @@ proptest::proptest! {
             };
             format!("fn f{i}() = {body}")
         }).collect();
-        let a = check(&definitions.join("\n"));
+        let a = analyzed(&definitions.join("\n"));
         let mut order: Vec<_> = (0..choices.len()).collect();
         order.sort_by_key(|&i| choices[i].2);
-        let b = check(&order.iter().map(|&i| definitions[i].as_str()).collect::<Vec<_>>().join("\n"));
+        let b = analyzed(&order.iter().map(|&i| definitions[i].as_str()).collect::<Vec<_>>().join("\n"));
         for (analysis, other) in [(&a, &b), (&b, &a)] {
             for function in analysis.functions() {
                 let name = function.name().map(|name| analysis.text(name));
@@ -437,11 +423,11 @@ proptest::proptest! {
     fn damaged_token_sequences_do_not_panic(tokens in proptest::collection::vec(
         proptest::sample::select(vec!["fn", "let", "mut", "x", "int", "bool", "unit", "if", "else", "return", "_", "=", "->", ":", "(", ")", "{", "}", ",", "1", "true", "+", "-", "&&", "\n"]), 0..100)) {
         let source = format!("fn f(x: int) -> int {{ {} }}\nfn g() -> int = 1", tokens.join(" "));
-        check::semantics(&check(&source));
+        check::semantics(&analyzed(&source));
     }
 
     #[test]
     fn arbitrary_source_has_diagnostic_backed_acceptance(source in ".{0,256}") {
-        check::semantics(&check(&source));
+        check::semantics(&analyzed(&source));
     }
 }

@@ -118,10 +118,7 @@ fn source() -> impl Strategy<Value = String> {
 }
 
 proptest! {
-    #![proptest_config(sumi_test::regressions(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/proptest-regressions/frontend.txt"
-    )))]
+    #![proptest_config(sumi_test::regressions!("frontend.txt"))]
     #[test]
     fn every_diagnostic_is_canonical_and_its_fix_safe(source in source()) {
         check::diagnostics(&parsed(&source));

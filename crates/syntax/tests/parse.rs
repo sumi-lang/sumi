@@ -7,6 +7,7 @@ use sumi_lexer::{LexedFile, lex};
 use sumi_syntax::{
     ParseAnchor, ParseEvidence, ParseRecoveryKind, ParseViolationKind, ParserInput, RawIdx, parse,
 };
+use sumi_test::{check, evidence_name};
 
 /// The text from the start of raw token `start` to the start of `end`, or
 /// to the end of the source one past the last token.
@@ -14,24 +15,6 @@ fn raw_text<'a>(source: &'a str, lexed: &LexedFile, start: RawIdx, end: RawIdx) 
     &source[lexed.boundary(start).to_usize()..lexed.boundary(end).to_usize()]
 }
 
-fn evidence_name(evidence: &ParseEvidence) -> String {
-    match evidence {
-        ParseEvidence::Recovery(recovery) => match recovery.kind {
-            ParseRecoveryKind::Token(kind) | ParseRecoveryKind::Closer { kind, .. } => {
-                format!("Expected({kind:?})")
-            }
-            kind @ (ParseRecoveryKind::Item
-            | ParseRecoveryKind::Statement
-            | ParseRecoveryKind::Expression
-            | ParseRecoveryKind::Name
-            | ParseRecoveryKind::Type
-            | ParseRecoveryKind::Body
-            | ParseRecoveryKind::Boundary) => format!("Expected{kind:?}"),
-            kind => format!("{kind:?}"),
-        },
-        ParseEvidence::Violation(violation) => format!("{:?}", violation.kind),
-    }
-}
 #[test]
 fn a_missing_closer_retains_its_opener_and_insertion_gap() {
     let source = "fn f() { x // tail";
@@ -135,7 +118,7 @@ fn prior_phase_tokens_are_recorded_as_recovery() {
 fn evidence_kinds(source: &str) -> Vec<String> {
     let lexed = lex(source).expect("test sources fit in u32");
     let parse = parse(ParserInput::new(&lexed));
-    sumi_test::check::tree(parse.tree(), &lexed);
+    check::tree(parse.tree(), &lexed);
     parse.evidence().iter().map(evidence_name).collect()
 }
 

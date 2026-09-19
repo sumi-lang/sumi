@@ -26,6 +26,37 @@ pub const INSERTS: &[&str] = &[
     "(", ")", "{", "}", ",", "=", "fn", "let", "else", "x", "0", "+", "-",
 ];
 
+/// The `edit` fuzz target's input, read from the fuzzer's bytes: one byte
+/// for the edit, its kind in the low two bits and, for an insert, the
+/// index into [`INSERTS`] above them; the significant token it lands on as
+/// a little-endian `u16` the target reduces by the token count; then the
+/// source. [`edit_seeds`] writes the same layout, so it is stated here
+/// alone.
+pub fn edit_input(data: &[u8]) -> Option<(Edit, u16, &str)> {
+    let [kind, low, high, source @ ..] = data else {
+        return None;
+    };
+    let edit = match kind % 4 {
+        0 => Edit::Delete,
+        1 => Edit::Duplicate,
+        2 => Edit::Swap,
+        _ => Edit::Insert(INSERTS[usize::from(kind / 4) % INSERTS.len()]),
+    };
+    Some((
+        edit,
+        u16::from_le_bytes([*low, *high]),
+        std::str::from_utf8(source).ok()?,
+    ))
+}
+
+/// A source's seeds for the `edit` fuzz target, as [`edit_input`] reads
+/// them: one per edit kind, at the second significant token.
+pub fn edit_seeds(source: &str) -> Vec<Vec<u8>> {
+    (0u8..4)
+        .map(|kind| [&[kind, 1, 0], source.as_bytes()].concat())
+        .collect()
+}
+
 pub fn edit() -> impl Strategy<Value = Edit> {
     prop_oneof![
         3 => Just(Edit::Delete),
@@ -205,4 +236,29 @@ pub fn apply(
         Edit::Duplicate | Edit::Insert(_) => Vec::new(),
     };
     (edited, touched, moved, impact)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The seeds decode to every edit kind at the second token, with the
+    /// source intact.
+    #[test]
+    fn the_seeds_are_inputs() {
+        let seeds = edit_seeds("fn f() {}");
+        let edits: Vec<_> = seeds
+            .iter()
+            .map(|seed| {
+                let (edit, index, source) = edit_input(seed).expect("a seed is an input");
+                assert_eq!((index, source), (1, "fn f() {}"));
+                edit
+            })
+            .collect();
+        assert!(matches!(
+            edits[..],
+            [Edit::Delete, Edit::Duplicate, Edit::Swap, Edit::Insert("(")]
+        ));
+        assert_eq!(edit_input(b"\x00\x01").map(|_| ()), None);
+    }
 }

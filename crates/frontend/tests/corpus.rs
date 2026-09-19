@@ -7,20 +7,18 @@
 //! where it differs, its header counting the items left as written and
 //! naming any violation that survives formatting. A case that selects
 //! `hir` leaves the tree out: `hir.snap` anchors the graph the checker
-//! built by span, not every parse-tree node, so a case whose parse is the
+//! built by range, not every parse-tree node, so a case whose parse is the
 //! point does not select `hir`. Run with `UPDATE_FRONTEND=1` to rewrite
 //! the snapshots, then review the diff; a new case gets its first
 //! snapshot the same way.
 
 use std::fmt::Write as _;
 
-#[path = "../../../tests/support/corpus.rs"]
-mod corpus;
-
 use sumi_format::format;
 use sumi_frontend::{Diagnostic, parse_source};
 use sumi_lexer::LexedFile;
-use sumi_syntax::{NodeIdx, ParseAnchor, ParseEvidence, ParseRecoveryKind, RawIdx, SyntaxTree};
+use sumi_syntax::{NodeIdx, ParseAnchor, ParseEvidence, RawIdx, SyntaxTree};
+use sumi_test::{check, corpus, evidence_name};
 use sumi_text::{LineIndex, TextEdit, TextRange, TextSize};
 
 #[test]
@@ -177,13 +175,12 @@ fn push_text(out: &mut String, text: &str) {
     }
 }
 
-/// Assert the tree invariants and render one line per node: `Kind
-/// start..end` byte ranges, indented by depth, `!` after the kind of a node
-/// that contains an error, and the text of childless nodes appended.
+/// Render one line per node: `Kind start..end` byte ranges, indented by
+/// depth, `!` after the kind of a node that contains an error, and the
+/// text of childless nodes appended.
 fn dump(tree: &SyntaxTree, lexed: &LexedFile, source: &str, out: &mut String) {
-    let mut visited = 0usize;
-    render_node(tree, lexed, source, tree.root(), 0, out, &mut visited);
-    assert_eq!(visited, tree.len(), "extents must partition the tree");
+    check::tree(tree, lexed);
+    render_node(tree, lexed, source, tree.root(), 0, out);
 }
 
 fn render_node(
@@ -193,13 +190,7 @@ fn render_node(
     node: NodeIdx,
     depth: usize,
     out: &mut String,
-    visited: &mut usize,
 ) {
-    *visited += 1;
-    let first = tree.first_token(node);
-    let end = tree.end_token(node);
-    assert!(first <= end, "node {node:?} has a backwards token range");
-
     let range = tree.byte_range(node, lexed);
     let (from, to) = (range.start().to_u32(), range.end().to_u32());
     let mark = if tree.has_error(node) { "!" } else { "" };
@@ -216,39 +207,11 @@ fn render_node(
     }
     out.push('\n');
 
-    let mut previous_end = first;
     for child in tree.children(node) {
-        assert!(
-            tree.first_token(child) >= previous_end,
-            "children must be ordered and disjoint"
-        );
-        assert!(
-            tree.end_token(child) <= end,
-            "a child must stay inside its parent"
-        );
-        previous_end = tree.end_token(child);
-        render_node(tree, lexed, source, child, depth + 1, out, visited);
+        render_node(tree, lexed, source, child, depth + 1, out);
     }
 }
 
-fn evidence_name(evidence: &ParseEvidence) -> String {
-    match evidence {
-        ParseEvidence::Recovery(recovery) => match recovery.kind {
-            ParseRecoveryKind::Token(kind) | ParseRecoveryKind::Closer { kind, .. } => {
-                format!("Expected({kind:?})")
-            }
-            kind @ (ParseRecoveryKind::Item
-            | ParseRecoveryKind::Statement
-            | ParseRecoveryKind::Expression
-            | ParseRecoveryKind::Name
-            | ParseRecoveryKind::Type
-            | ParseRecoveryKind::Body
-            | ParseRecoveryKind::Boundary) => format!("Expected{kind:?}"),
-            kind => format!("{kind:?}"),
-        },
-        ParseEvidence::Violation(violation) => format!("{:?}", violation.kind),
-    }
-}
 fn evidence_token(evidence: &ParseEvidence) -> RawIdx {
     match evidence {
         ParseEvidence::Recovery(recovery) => match recovery.anchor {

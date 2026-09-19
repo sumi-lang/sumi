@@ -35,10 +35,7 @@ fn layout_free<'s>(source: &'s str, front: &Front) -> sumi_format::Rep<'s> {
 }
 
 proptest! {
-    #![proptest_config(sumi_test::regressions(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/proptest-regressions/prop.txt"
-    )))]
+    #![proptest_config(sumi_test::regressions!("prop.txt"))]
     #[test]
     fn format_keeps_the_rep_and_settles(source in soup()) {
         check::format(&source);

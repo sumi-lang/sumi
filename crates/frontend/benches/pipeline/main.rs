@@ -8,7 +8,7 @@ use sumi_frontend::parse_source;
 use sumi_lexer::lex;
 use sumi_syntax::ast::{AstNode, Block, ElseBranch, Expr, SourceFile, Stmt};
 use sumi_syntax::{MAX_DEPTH, NodeKind, ParseEvidence, ParserInput, RawIdx, SyntaxTree, parse};
-use sumi_test::corpus::{self, Rng};
+use sumi_test::bench::{self, Rng};
 use sumi_text::{LineIndex, TextSize};
 
 const KIB: usize = 1024;
@@ -51,12 +51,12 @@ const MEDIUM_VALID: &str = "medium-valid";
 fn corpora() -> &'static [(&'static str, String); 4] {
     static CORPORA: OnceLock<[(&str, String); 4]> = OnceLock::new();
     CORPORA.get_or_init(|| {
-        let medium = corpus::generate(64 * KIB, MEDIUM_SEED);
-        let malformed = corpus::damage(&medium, DAMAGE_SEED, DAMAGE_STRIDE);
+        let medium = bench::generate(64 * KIB, MEDIUM_SEED);
+        let malformed = bench::damage(&medium, DAMAGE_SEED, DAMAGE_STRIDE);
         let corpora = [
             ("small-valid", SMALL_VALID.to_owned(), true),
             (MEDIUM_VALID, medium, true),
-            ("large-valid", corpus::generate(512 * KIB, LARGE_SEED), true),
+            ("large-valid", bench::generate(512 * KIB, LARGE_SEED), true),
             ("medium-malformed", malformed, false),
         ];
         corpora.map(|(name, source, valid)| {

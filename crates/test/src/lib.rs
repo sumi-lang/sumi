@@ -10,9 +10,12 @@
 //! canonical-form property. The coverage account says whether a body of
 //! trees, the corpus or the generator's, reaches everything the grammar
 //! allows. The checks state each layer's invariants once, for the property
-//! tests and the fuzz targets alike. Nothing here ships: this crate sits
-//! above every other, and production crates must not depend on it.
+//! tests and the fuzz targets alike. The corpus runner compares a stage's
+//! rendering of every file-based case with the snapshot beside it. Nothing
+//! here ships: this crate sits above every other, and production crates
+//! must not depend on it.
 
+pub mod bench;
 pub mod check;
 pub mod corpus;
 pub mod coverage;
@@ -24,19 +27,33 @@ mod program;
 use proptest::test_runner::{Config, FileFailurePersistence};
 
 pub use edit::{
-    Edit, EditSpan, INSERTS, apply, changes_delimiter, delimiter_edited_program, edit,
-    edited_program, non_delimiter_edited_program,
+    Edit, EditSpan, INSERTS, apply, changes_delimiter, delimiter_edited_program, edit, edit_input,
+    edit_seeds, edited_program, non_delimiter_edited_program,
 };
-pub use front::{Front, front};
+pub use front::{Front, evidence_name, front};
 pub use perturb::perturbed_program;
 pub use program::{Programs, program};
 
 /// The configuration of a property test under `tests/`: every failing
-/// seed is recorded in `file`, the crate's tracked `proptest-regressions/`
-/// file, which each later run replays before generating anything new, so
-/// a failure found once stays found. Proptest's default location is found
-/// by walking up from the test file to a `lib.rs`, which a test under
-/// `tests/` never reaches.
+/// seed is recorded in `file`, named relative to the calling crate's
+/// tracked `proptest-regressions/` directory, which each later run
+/// replays before generating anything new, so a failure found once stays
+/// found. Proptest's default location is found by walking up from the
+/// test file to a `lib.rs`, which a test under `tests/` never reaches. A
+/// macro, because `CARGO_MANIFEST_DIR` must be read where the test is.
+#[macro_export]
+macro_rules! regressions {
+    ($file:literal) => {
+        $crate::regressions(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/proptest-regressions/",
+            $file
+        ))
+    };
+}
+
+/// What [`regressions!`] expands to, over the file's full path.
+#[doc(hidden)]
 pub fn regressions(file: &'static str) -> Config {
     Config {
         failure_persistence: Some(Box::new(FileFailurePersistence::Direct(file))),

@@ -1,8 +1,11 @@
 //! Every front-end product for one source, with the span and shape helpers
-//! the recovery measurements compare across an edit.
+//! the recovery measurements compare across an edit, and the one spelling
+//! of a piece of evidence the snapshots and the parser tests share.
 
 use sumi_lexer::{LexedFile, lex};
-use sumi_syntax::{NodeIdx, NodeKind, Parse, ParserInput, RawIdx, parse};
+use sumi_syntax::{
+    NodeIdx, NodeKind, Parse, ParseEvidence, ParseRecoveryKind, ParserInput, RawIdx, parse,
+};
 
 /// Every front-end product for one source.
 pub struct Front {
@@ -78,5 +81,27 @@ impl Front {
                 .any(|&token| tree.first_token(node) <= token && token < tree.end_token(node))
         });
         nodes
+    }
+}
+
+/// The name the snapshots and the parser tests spell for a piece of
+/// evidence: the kind of recovery or violation, with an expected token
+/// named and an expected closer's opener left out.
+pub fn evidence_name(evidence: &ParseEvidence) -> String {
+    match evidence {
+        ParseEvidence::Recovery(recovery) => match recovery.kind {
+            ParseRecoveryKind::Token(kind) | ParseRecoveryKind::Closer { kind, .. } => {
+                format!("Expected({kind:?})")
+            }
+            kind @ (ParseRecoveryKind::Item
+            | ParseRecoveryKind::Statement
+            | ParseRecoveryKind::Expression
+            | ParseRecoveryKind::Name
+            | ParseRecoveryKind::Type
+            | ParseRecoveryKind::Body
+            | ParseRecoveryKind::Boundary) => format!("Expected{kind:?}"),
+            kind => format!("{kind:?}"),
+        },
+        ParseEvidence::Violation(violation) => format!("{:?}", violation.kind),
     }
 }
