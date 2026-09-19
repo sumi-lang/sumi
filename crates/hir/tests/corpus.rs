@@ -31,10 +31,12 @@ fn run(source: &str) -> String {
             continue;
         }
         let mut machine = program.machine(id, &[]);
-        while !machine.step() {}
-        let value = match machine.outcome().expect("a finished run has its outcome") {
-            Ok(value) => value,
-            Err(refusal) => panic!("fn {name} was refused: {refusal:?}"),
+        let value = loop {
+            match machine.step() {
+                None => continue,
+                Some(Ok(value)) => break value.clone(),
+                Some(Err(refusal)) => panic!("fn {name} was refused: {refusal:?}"),
+            }
         };
         write!(
             out,
