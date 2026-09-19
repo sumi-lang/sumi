@@ -42,7 +42,7 @@
 //!    literal, `true`/`false`, `return`, `)`, or `}`;
 //! 3. the token after it cannot continue one: `else` and binary operators
 //!    continue the previous line; everything else starts fresh. Both sets
-//!    are the grammar's, generated from `sumi.grammar`.
+//!    are the grammar's classes.
 //!
 //! The bits record where statements end; operator spacing is enforced by
 //! the parser, where the grammar position gives diagnostics their context.
@@ -50,7 +50,7 @@
 use std::num::NonZeroU32;
 use std::ops::Range;
 
-use crate::generated::{
+use crate::grammar::{
     BRACKET_PAIRS, SyntaxKind, can_end_statement, continues_statement, encloses_statements,
     is_closer, is_opener, opener, pair_index, starts_expression, starts_item,
 };

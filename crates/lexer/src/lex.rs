@@ -4,8 +4,8 @@ use std::ops::Range;
 
 use sumi_text::{TextRange, TextSize};
 
-use crate::generated::SyntaxKind;
 use crate::index::RawIdx;
+use crate::kind::SyntaxKind;
 use crate::token::TokenFlags;
 
 /// Lex `source` into a [`LexedFile`], with its faults in

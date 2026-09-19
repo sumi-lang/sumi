@@ -34,9 +34,8 @@
 use sumi_lexer::{LexedFile, RawIdx};
 use sumi_text::TextRange;
 
-use crate::generated::{
-    BRACKET_PAIRS, NodeKind, SyntaxKind, encloses_statements, opener, pair_index,
-};
+use crate::ast::NodeKind;
+use crate::grammar::{BRACKET_PAIRS, SyntaxKind, encloses_statements, opener, pair_index};
 use crate::index::{NodeIdx, SigIdx};
 use crate::input::{ParserInput, Slot};
 use crate::parser::{
@@ -98,9 +97,9 @@ impl SyntaxTree {
         self.nodes[index.to_usize()].has_error
     }
 
-    /// The direct child assigned to this single-valued grammatical field.
-    /// Zero denotes no field; stored slots are one-based.
-    pub(crate) fn child_in_field(&self, node: NodeIdx, field: u8) -> Option<NodeIdx> {
+    /// The direct child assigned to this single-valued grammatical field,
+    /// by the slot the typed views declare.
+    pub fn child_in_field(&self, node: NodeIdx, field: u8) -> Option<NodeIdx> {
         self.children(node)
             .find(|child| self.nodes[child.to_usize()].field == field + 1)
     }
@@ -713,7 +712,7 @@ impl<'a> Marker<'_, 'a> {
     /// expression where this holds takes at least that token.
     pub(crate) fn starts_expression(&self) -> bool {
         self.current()
-            .is_some_and(crate::generated::starts_expression)
+            .is_some_and(crate::grammar::starts_expression)
     }
 
     /// Whether the next token is a bracket the stream pairs with another,
@@ -748,7 +747,7 @@ impl<'a> Marker<'_, 'a> {
             .builder
             .input
             .get(self.start)
-            .and_then(crate::generated::closer)
+            .and_then(crate::grammar::closer)
             .unwrap_or_else(|| unreachable!("only a bracket construct owns a closer"));
         self.at(closer)
             && self
@@ -897,7 +896,7 @@ impl<'a> Marker<'_, 'a> {
             .builder
             .input
             .get(self.start)
-            .and_then(crate::generated::closer)
+            .and_then(crate::grammar::closer)
             .unwrap_or_else(|| unreachable!("a missing closer belongs to a bracket node"));
         let opener = self.builder.raw_range(self.start, self.start + 1);
         self.missing(ParseRecoveryKind::Closer { kind, opener })

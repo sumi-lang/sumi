@@ -1,9 +1,9 @@
-//! The typed views generated from `sumi.grammar`: accessors over a parsed
-//! tree, on clean and on erroneous syntax.
+//! The typed views: accessors over a parsed tree, on clean and on
+//! erroneous syntax.
 
 use sumi_lexer::{LexedFile, lex};
 use sumi_syntax::ast::{AstNode, Block, ElseBranch, Expr, SourceFile, Stmt};
-use sumi_syntax::{Parse, ParserInput, SyntaxTree, parse};
+use sumi_syntax::{NodeKind, Parse, ParserInput, SyntaxTree, parse};
 
 struct Parsed {
     source: &'static str,
@@ -268,6 +268,28 @@ fn casts_refuse_other_kinds() {
         SourceFile::cast(tree, tree.root()).map(AstNode::node),
         Some(tree.root())
     );
+}
+
+/// A declared child is present as its accessor answers: on the declaring
+/// kind, by the view the slot holds; on any other kind, never.
+#[test]
+fn declared_children_are_present_as_their_accessors_answer() {
+    let parsed = Parsed::new("fn f(x) = x\n");
+    let tree = parsed.tree();
+    let item = parsed.item();
+    let child = |name: &str| {
+        *NodeKind::FnItem
+            .children()
+            .iter()
+            .find(|child| child.name == name)
+            .expect("a declared child")
+    };
+    assert!((child("name").present)(tree, item.node()));
+    assert!((child("param_list").present)(tree, item.node()));
+    assert!(!(child("ret").present)(tree, item.node()));
+    assert!((child("body").present)(tree, item.node()));
+    let param_list = item.param_list(tree).expect("a parameter list").node();
+    assert!(!(child("name").present)(tree, param_list));
 }
 
 #[test]

@@ -12,7 +12,7 @@ You're in the core repository for Sumi, a novel statically typed general-purpose
 - Dependencies point one way. Each line names what a crate owns and what it sits on directly; what those sit on follows.
 - `sumi-text`: offsets, ranges, spans, edits, and the line index. Depends on nothing.
 - `sumi-lexer`: the total, lossless lexer and the token vocabulary. On `sumi-text`.
-- `sumi-syntax`: the parser, the flat tree, parse evidence, recovery, and the vocabulary generated from `sumi.grammar`. On `sumi-lexer`.
+- `sumi-syntax`: the parser, the flat tree and its reprint, parse evidence, recovery, and the node vocabulary with its typed views. On `sumi-lexer`.
 - `sumi-format`: `format` and its contract `rep`. On `sumi-syntax`.
 - `sumi-frontend`: the diagnostic type every later phase reports with, and `parse_source`, which owns the source and lowers the lexer's and parser's evidence into diagnostics. On `sumi-syntax`.
 - `sumi-graph`: what a program means apart from whether it is valid: the scalar types, `Int`, the `Graph`, the may-domain, and the concrete `Machine`. On `sumi-text` only; nothing here depends on the checker.
@@ -21,7 +21,7 @@ You're in the core repository for Sumi, a novel statically typed general-purpose
 - `sumi-test`: the program generator, edits, layout perturbation, and the coverage account for tests and harnesses. On `sumi-syntax` and nothing above it; nothing ships it.
 - `sumi-scorecard`: the recovery scorecard, a leaf on `sumi-frontend` and `sumi-test`; nothing ships it.
 - `sumi-fuzz` (`fuzz/`): the fuzz targets, a leaf above every crate; nothing ships it.
-- `xtask`: codegen. On no workspace crate, so it runs while they do not compile.
+- `xtask`: the fuzz seeder. On no workspace crate.
 - A crate's integration tests may use crates above it, which Cargo allows. A library's unit tests never import a crate above it: rust-analyzer's crate graph has no room for that cycle and drops the edge without a word, leaving those tests unresolved in the editor.
 
 ## Formatting
@@ -30,7 +30,7 @@ You're in the core repository for Sumi, a novel statically typed general-purpose
 
 ## Grammar and diagnostics
 
-- `sumi.grammar` at the workspace root is the one declaration of the token and node vocabularies, the token classes, bracket pairs, and operators. To add or change syntax, edit it — never the generated files it lists — and run `cargo xtask codegen`; CI runs `cargo xtask codegen --check`.
+- The token vocabulary is one `tokens!` declaration in `crates/lexer/src/kind.rs`, which derives the keyword and punctuation tables, texts, and descriptions. The node vocabulary and the typed views are one `grammar!` declaration in `crates/syntax/src/ast.rs`: a struct per node kind listing the children the parser records, whose slots are their declaration order, and an enum per category. The token classes, bracket pairs, and operator tables are plain functions in `crates/syntax/src/grammar.rs`. A token a rule holds itself is listed in `RULES` in `crates/test/src/coverage.rs`, which is what the coverage check reads beyond the views.
 - Diagnostic codes are one `codes!` declaration per group, in `crates/frontend/src/codes.rs` (`syntax`) and `crates/hir/src/codes.rs` (`semantic`), each code documented where it is declared; the macro derives the constants and the group's `ALL`, so no code goes unlisted. To add a code, declare it there, emit it, and add a corpus case that shows it: `crates/hir/tests/codes.rs` fails on a code no snapshot reports. A code is never renamed or reused for something else.
 
 ## Tests
@@ -38,12 +38,12 @@ You're in the core repository for Sumi, a novel statically typed general-purpose
 - `tests/corpus/` at the workspace root is the shared file-based corpus. Every case directory holds `case.sumi` and `frontend.snap`, keeping the tree, parser evidence, frontend diagnostics, fixed source, and formatted source together; a case that selects `hir` leaves the tree out, since `hir.snap` anchors the graph the checker built by span, not every parse-tree node, so a case whose parse is the point does not select `hir`. `syntax/a-whole-program` is the tree golden of a large accepted file. `crates/frontend/tests/corpus.rs` runs every case; generate or update snapshots with `UPDATE_FRONTEND=1 cargo test -p sumi-frontend --test corpus`.
 - For semantic-focused cases and useful recovery witnesses, not every syntax fixture, add a `stages` file listing `hir` to select an additional `hir.snap`, and `eval` (one name per line) to select an `eval.snap` that runs every parameterless function of an accepted case to its value, with the machine's step count and deepest call nesting beside the depth the analysis proved. Snapshot presence does not select a stage. Generate or update them with `UPDATE_HIR=1 cargo test -p sumi-hir --test corpus` and `UPDATE_EVAL=1 cargo test -p sumi-hir --test corpus`. Keep huge stress inputs out of golden snapshots. Review every generated diff.
 - Behavior that a snapshot cannot express — invariants, API contracts, properties — stays in the crates' own tests. `crates/hir/tests/machine.rs` is the analysis held to the machine: generated programs the checker should accept, each run inside the parameter sets it proved and checked against its claims. A change to what the checker accepts or proves must keep that harness green, and the fuzz `run` target restates it.
-- `crates/syntax/tests/coverage.rs` checks that the corpus and `sumi-test`'s program generator each reach every node kind and every child `sumi.grammar` allows, through the witnesses codegen writes to `crates/test/src/generated/mod.rs`. A grammar change therefore needs a corpus case and generator support before CI passes; the failure names what is missing.
+- `crates/syntax/tests/coverage.rs` checks that the corpus and `sumi-test`'s program generator each reach every node kind and every child the grammar allows: the children every view declares, and `RULES` in `crates/test/src/coverage.rs`. A grammar change therefore needs a corpus case and generator support before CI passes; the failure names what is missing.
 
 ## Fuzzing
 
 - `fuzz/` is a libFuzzer package, `sumi-fuzz`, driven by [cargo-fuzz](https://rust-fuzz.github.io/book/cargo-fuzz.html): a leaf above every crate that nothing ships, like `sumi-scorecard`. Its library restates the crates' property-test invariants over arbitrary input; each target under `fuzz_targets/` feeds one layer: `lex` the lexer, `parse` the whole frontend and formatter, `check` semantic acceptance and complete-body invariants, `run` every accepted file on the machine inside the parameter sets the analysis proved, and `edit` the single-edit recovery properties, with the fuzzer's bytes choosing the edit and the source in place of the generators of `sumi-test`. A new invariant goes into the property test first and the fuzz library second; the two must agree. Proptest's pass-through RNG cannot stand in for the generators: it halves its bytes at every nested strategy, and the zeros it yields once they run out send rand's range sampling into an endless rejection loop.
-- The crates are safe Rust, so run without a sanitizer, which is what keeps the stable toolchain enough: `cargo xtask fuzz-seed`, then `cargo fuzz run -s none parse -- -dict=fuzz/sumi.dict`. The seeds are the file-based cases; `edit` needs them, since mutation alone never assembles a program the parser accepts without evidence. `fuzz/corpus/` and `fuzz/artifacts/` are untracked, and `fuzz/sumi.dict` is generated from `sumi.grammar`.
+- The crates are safe Rust, so run without a sanitizer, which is what keeps the stable toolchain enough: `cargo xtask fuzz-seed`, then `cargo fuzz run -s none parse -- -dict=fuzz/sumi.dict`. The seeds are the file-based cases; `edit` needs them, since mutation alone never assembles a program the parser accepts without evidence. `fuzz/corpus/` and `fuzz/artifacts/` are untracked, and `fuzz/sumi.dict` lists every fixed token text; keep it with the `tokens!` declaration.
 - A finding lands in `fuzz/artifacts/<target>/`. Minimize it with `cargo fuzz tmin -s none <target> <artifact>`, then keep it as a corpus case under `tests/corpus/` with the fix, so the regression stays found without the fuzzer.
 
 ## Code Style
