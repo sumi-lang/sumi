@@ -64,6 +64,8 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         parsed,
         graph,
         settled: typing.settle(),
+        input_values: lowered.values,
+        result_values: lowered.results,
         functions,
         diagnostics,
     };
@@ -280,7 +282,7 @@ fn explain_zero(
                 }
                 follow(&mut queue, inputs[0], 1);
             }
-            Op::Join { then, else_ } => {
+            Op::Join { then, else_, .. } => {
                 for region in std::iter::once(then).chain(else_) {
                     let region = graph.region(region);
                     if typing.may(region.context).live() {
@@ -327,7 +329,7 @@ fn explain_zero(
             | Op::Entry
             | Op::Then
             | Op::Else
-            | Op::Return
+            | Op::Return { .. }
             | Op::Sequence
             | Op::Observe { .. }
             | Op::After
@@ -376,7 +378,24 @@ fn complete(
         let run = graph.run(FunctionId::new(index));
         let complete = run.nodes().all(|node| match graph.node(node).op {
             // No value, so nothing to resolve.
-            Op::Entry | Op::Then | Op::Else | Op::Unused => true,
+            Op::Entry
+            | Op::Then
+            | Op::Else
+            | Op::Unused
+            | Op::Sequence
+            | Op::Observe { .. }
+            | Op::After => true,
+            Op::And {
+                lhs_value: false, ..
+            }
+            | Op::Or {
+                lhs_value: false, ..
+            }
+            | Op::Return { value: false } => true,
+            Op::Join {
+                values: [false, false],
+                ..
+            } => true,
             // A caller's demand can resolve the call without the callee resolving.
             Op::Call(callee) => functions[graph.callable(callee).function.index()]
                 .signature

@@ -133,9 +133,11 @@ pub enum Op {
     Binary(BinaryOp),
     And {
         rhs: RegionId,
+        lhs_value: bool,
     },
     Or {
         rhs: RegionId,
+        lhs_value: bool,
     },
     /// A narrowed read: the first input is the local's definition, the second what `op` compares it
     /// with, and the comparison holds iff `sense`.
@@ -156,21 +158,27 @@ pub enum Op {
     Join {
         then: RegionId,
         else_: Option<RegionId>,
+        values: [bool; 2],
     },
     /// Completes the current function with its first input; the second is its analysis context.
-    Return,
+    Return {
+        value: bool,
+    },
     /// Evaluates its first input for control, then yields its second.
     Sequence,
-    /// Observes only the selected region's control projection and yields unit if it falls through.
+    /// The inputs are the condition and analysis context. Observes only the selected region's
+    /// control projection and yields unit if it falls through.
     Observe {
         then: Option<RegionId>,
         else_: Option<RegionId>,
     },
     /// A continuation context after the control in its first input, inside its second input.
     After,
-    /// The first input is the ordinary body result; the rest are explicit returns.
+    /// The first input is the ordinary body result; the rest are explicit returns. `falls_through`
+    /// says whether that first outcome is reachable.
     Result {
         declared: Option<(Ty, TextRange)>,
+        falls_through: bool,
     },
     /// The inputs are the arguments as written, which may not match the callee's arity.
     Call(Callee),

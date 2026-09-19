@@ -1,123 +1,120 @@
 file: rejected
 frontend errors: 0 (see frontend.snap)
-semantic errors: 16
+semantic errors: 15
 
-fn unsupported@0..59 () -> unit ∈ unit
-  result: copy : unit @0..59
+fn unsupported@0..48 () -> unit ∈ unit
+  result: copy : unit @0..48
     value:
       discard: hole : ? @23..36
       let x@31..32: hole : ? @23..36
-      discard: hole : ? @51..57
-      tail: unit : unit @17..59
+      tail: unit : unit @17..48
 
-fn closure@60..97 () -> unit ∈ unit
-  result: copy : unit @60..97
+fn closure@49..86 () -> unit ∈ unit
+  result: copy : unit @49..86
     value:
-      let f@83..84: ? @79..95
-        initializer: hole : ? @87..95
-      tail: unit : unit @73..97
+      let f@72..73: ? @68..84
+        initializer: hole : ? @76..84
+      tail: unit : unit @62..86
 
-fn literal@98..125 signature: unavailable
-  body: hole : ? @113..125
+fn literal@87..114 signature: unavailable
+  body: hole : ? @102..114
 
-fn mismatch@126..151 () -> bool ∈ ∅
-  result: copy : bool @143..147
-    value: int 1 : ? @150..151
+fn mismatch@115..140 () -> bool ∈ ∅
+  result: copy : bool @132..136
+    value: int 1 : ? @139..140
 
-fn branches@152..211 () -> int ∈ [1, 1]
-  result: copy : int @169..172
-    value: if : ? @175..211
-      condition: bool true : bool @178..182
-      then: int 1 : int @189..190
-      else: bool false : bool @204..209
+fn branches@141..200 () -> int ∈ [1, 1]
+  result: copy : int @158..161
+    value: if : ? @164..200
+      condition: bool true : bool @167..171
+      then: int 1 : int @178..179
+      else: bool false : bool @193..198
 
-fn missing_else@212..249 () -> unit ∈ unit
-  body: if : unit @232..249
-    condition: bool true : bool @235..239
-    then: int 1 : ? @246..247
+fn missing_else@201..238 () -> unit ∈ unit
+  body: if : unit @221..238
+    condition: bool true : bool @224..228
+    then: int 1 : ? @235..236
     else: unit (implicit)
 
-fn annotation@250..289 () -> unit ∈ unit
-  result: copy : unit @250..289
+fn annotation@239..278 () -> unit ∈ unit
+  result: copy : unit @239..278
     value:
-      let x@276..277: bool @272..287
-        initializer: int 1 : ? @286..287
-      tail: unit : unit @266..289
+      let x@265..266: bool @261..276
+        initializer: int 1 : ? @275..276
+      tail: unit : unit @255..278
 
-fn unit_equality@290..327 () -> bool ∈ ∅
-  result: copy : bool @312..316
-    value: eager == : bool @319..327
-      lhs: unit : unit @319..321
-      rhs: unit : unit @325..327
+fn unit_equality@279..316 () -> bool ∈ ∅
+  result: copy : bool @301..305
+    value: eager == : bool @308..316
+      lhs: unit : unit @308..310
+      rhs: unit : unit @314..316
 
-fn unit_sum@328..357 () -> int ∈ ∅
-  result: copy : int @345..348
-    value: eager + : int @351..357
-      lhs: unit : ? @351..353
-      rhs: int 1 : int @356..357
+fn unit_sum@317..346 () -> int ∈ ∅
+  result: copy : int @334..337
+    value: eager + : int @340..346
+      lhs: unit : ? @340..342
+      rhs: int 1 : int @345..346
 
-fn computed_call@358..488 () -> unit ∈ unit
-  result: copy : unit @358..488
+fn computed_call@347..477 () -> unit ∈ unit
+  result: copy : unit @347..477
     value:
-      discard: hole : ? @387..486
-        part[0]: hole : ? @397..461
-        part[1]: hole : ? @468..475
-        part[2]: eager + : int @477..485
-          lhs: int 1 : int @477..478
-          rhs: bool true : ? @481..485
-      tail: unit : unit @377..488
+      discard: hole : ? @376..475
+        part[0]: hole : ? @386..450
+        part[1]: hole : ? @457..464
+        part[2]: eager + : int @466..474
+          lhs: int 1 : int @466..467
+          rhs: bool true : ? @470..474
+      tail: unit : unit @366..477
 
-fn condition@489..538 () -> int ∈ ∅
-  result: copy : int @507..510
-    value: if : ? @513..538
-      condition: int 1 : ? @516..517
-      then: int 2 : int @520..521
-      else: bool false : bool @531..536
+fn condition@478..527 () -> int ∈ ∅
+  result: copy : int @496..499
+    value: if : ? @502..527
+      condition: int 1 : ? @505..506
+      then: int 2 : int @509..510
+      else: bool false : bool @520..525
 
-fn assignment@539..582 () -> unit ∈ unit
-  result: copy : unit @539..582
+fn assignment@528..571 () -> unit ∈ unit
+  result: copy : unit @528..571
     value:
-      let x@565..566: int @561..570
-        initializer: int 1 : int @569..570
-      discard: hole : ? @575..580
-      tail: unit : unit @555..582
+      let x@554..555: int @550..559
+        initializer: int 1 : int @558..559
+      discard: hole : ? @564..569
+      tail: unit : unit @544..571
 
 == semantic diagnostics ==
 error[semantic/unsupported]: construct is not supported by scalar checking
   primary @23..36
 error[semantic/unsupported]: construct is not supported by scalar checking
-  primary @51..57
+  primary @76..84
 error[semantic/unsupported]: construct is not supported by scalar checking
-  primary @87..95
-error[semantic/unsupported]: construct is not supported by scalar checking
-  primary @113..125
+  primary @102..114
 error[semantic/type-mismatch]: expected bool, found int
-  primary @150..151
-  secondary @143..147: declared here
+  primary @139..140
+  secondary @132..136: declared here
 error[semantic/type-mismatch]: if branches are int and bool
-  primary @175..211
-  secondary @189..190: int here
-  secondary @204..209: bool here
+  primary @164..200
+  secondary @178..179: int here
+  secondary @193..198: bool here
 error[semantic/type-mismatch]: expected unit, found int
-  primary @240..249
+  primary @229..238
 error[semantic/type-mismatch]: expected bool, found int
-  primary @286..287
-  secondary @279..283: declared here
+  primary @275..276
+  secondary @268..272: declared here
 error[semantic/type-mismatch]: unit values cannot be compared
-  primary @319..327
+  primary @308..316
 error[semantic/type-mismatch]: expected int, found unit
-  primary @351..353
+  primary @340..342
 error[semantic/unsupported]: construct is not supported by scalar checking
-  primary @397..461
+  primary @386..450
 error[semantic/unknown-name]: unknown name `missing`
-  primary @468..475
+  primary @457..464
 error[semantic/type-mismatch]: expected int, found bool
-  primary @481..485
+  primary @470..474
 error[semantic/type-mismatch]: if branches are int and bool
-  primary @513..538
-  secondary @520..521: int here
-  secondary @531..536: bool here
+  primary @502..527
+  secondary @509..510: int here
+  secondary @520..525: bool here
 error[semantic/type-mismatch]: expected bool, found int
-  primary @516..517
+  primary @505..506
 error[semantic/unsupported]: construct is not supported by scalar checking
-  primary @575..580
+  primary @564..569

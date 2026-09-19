@@ -55,7 +55,7 @@ impl Op {
             | Self::Then
             | Self::Else
             | Self::Join { .. }
-            | Self::Return
+            | Self::Return { .. }
             | Self::Sequence
             | Self::Observe { .. }
             | Self::After

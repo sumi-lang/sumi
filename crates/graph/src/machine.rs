@@ -241,7 +241,7 @@ impl<'a> Machine<'a> {
                     }
                     Op::After => unreachable!("a continuation context is not a value"),
                     Op::Unit => self.fill(node, Value::Unit),
-                    Op::Return => {
+                    Op::Return { .. } => {
                         self.control.push(Control::Return(inputs[0]));
                         self.control.push(Control::Eval(inputs[0]));
                     }
@@ -272,12 +272,12 @@ impl<'a> Machine<'a> {
                             self.control.push(Control::Eval(body));
                         }
                     }
-                    ref op @ (Op::And { rhs } | Op::Or { rhs }) => {
+                    ref op @ (Op::And { rhs, .. } | Op::Or { rhs, .. }) => {
                         let and = matches!(op, Op::And { .. });
                         self.control.push(Control::Lazy { node, and, rhs });
                         self.control.push(Control::Eval(inputs[0]));
                     }
-                    Op::Join { then, else_ } => {
+                    Op::Join { then, else_, .. } => {
                         self.control.push(Control::Branch { node, then, else_ });
                         self.control.push(Control::Eval(inputs[0]));
                     }
@@ -432,10 +432,13 @@ mod tests {
         builder.enter(region);
         let tail = push(&mut builder, Op::Int(1.into()), &[]);
         let payload = push(&mut builder, Op::Int(2.into()), &[]);
-        let return_ = push(&mut builder, Op::Return, &[payload, entry]);
+        let return_ = push(&mut builder, Op::Return { value: true }, &[payload, entry]);
         let result = push(
             &mut builder,
-            Op::Result { declared: None },
+            Op::Result {
+                declared: None,
+                falls_through: true,
+            },
             &[tail, return_],
         );
         builder.close_with_control(region, tail, Some(return_));
@@ -461,10 +464,13 @@ mod tests {
         builder.enter(region);
         let tail = push(&mut builder, Op::Int(9.into()), &[]);
         let payload = push(&mut builder, Op::Int(4.into()), &[]);
-        let return_ = push(&mut builder, Op::Return, &[payload, entry]);
+        let return_ = push(&mut builder, Op::Return { value: true }, &[payload, entry]);
         let result = push(
             &mut builder,
-            Op::Result { declared: None },
+            Op::Result {
+                declared: None,
+                falls_through: true,
+            },
             &[tail, return_],
         );
         builder.close_with_control(region, tail, Some(return_));
@@ -501,11 +507,15 @@ mod tests {
         let else_ = builder.open(entry);
         builder.enter(then);
         let selected = push(&mut builder, Op::Int(3.into()), &[]);
-        let selected_return = push(&mut builder, Op::Return, &[selected, entry]);
+        let selected_return = push(&mut builder, Op::Return { value: true }, &[selected, entry]);
         builder.close_with_control(then, selected, Some(selected_return));
         builder.enter(else_);
         let unselected = push(&mut builder, Op::Int(8.into()), &[]);
-        let unselected_return = push(&mut builder, Op::Return, &[unselected, entry]);
+        let unselected_return = push(
+            &mut builder,
+            Op::Return { value: true },
+            &[unselected, entry],
+        );
         builder.close_with_control(else_, unselected, Some(unselected_return));
         let region = builder.open(entry);
         builder.enter(region);
@@ -519,7 +529,14 @@ mod tests {
             &[condition],
         );
         let tail = push(&mut builder, Op::Int(1.into()), &[]);
-        let result = push(&mut builder, Op::Result { declared: None }, &[tail]);
+        let result = push(
+            &mut builder,
+            Op::Result {
+                declared: None,
+                falls_through: true,
+            },
+            &[tail],
+        );
         builder.close_with_control(region, tail, Some(observe));
         builder.close_run(run, region, result);
         let graph = builder.finish();
@@ -539,7 +556,7 @@ mod tests {
         let then = builder.open(entry);
         builder.enter(then);
         let payload = push(&mut builder, Op::Int(3.into()), &[]);
-        let return_ = push(&mut builder, Op::Return, &[payload, entry]);
+        let return_ = push(&mut builder, Op::Return { value: true }, &[payload, entry]);
         builder.close_with_control(then, payload, Some(return_));
         let region = builder.open(entry);
         builder.enter(region);
@@ -574,11 +591,14 @@ mod tests {
         builder.enter(region);
         let tail = push(&mut builder, Op::Int(0.into()), &[]);
         let payload = push(&mut builder, Op::Int(7.into()), &[]);
-        let inner = push(&mut builder, Op::Return, &[payload, entry]);
-        let outer = push(&mut builder, Op::Return, &[inner, entry]);
+        let inner = push(&mut builder, Op::Return { value: true }, &[payload, entry]);
+        let outer = push(&mut builder, Op::Return { value: true }, &[inner, entry]);
         let result = push(
             &mut builder,
-            Op::Result { declared: None },
+            Op::Result {
+                declared: None,
+                falls_through: true,
+            },
             &[tail, inner, outer],
         );
         builder.close_with_control(region, tail, Some(outer));

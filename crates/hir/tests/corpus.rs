@@ -189,6 +189,26 @@ fn dump(analysis: &Analysis, shape: &Shape, function: FunctionId, out: &mut Stri
     let result = function.result();
     if result == graph.region(region).result() {
         dump_region(analysis, shape, "body", region, 1, out);
+    } else if matches!(graph.node(result).op, Op::Result { .. }) {
+        let node = graph.node(result);
+        writeln!(
+            out,
+            "  result: result : {} {}",
+            ty(analysis, result),
+            at(node.origin)
+        )
+        .unwrap();
+        dump_region(analysis, shape, "outcome[0]", region, 2, out);
+        for (index, &returned) in graph.inputs(result)[1..].iter().enumerate() {
+            dump_node(
+                analysis,
+                shape,
+                &format!("outcome[{}]", index + 1),
+                returned,
+                2,
+                out,
+            );
+        }
     } else {
         let node = graph.node(result);
         writeln!(
@@ -354,9 +374,11 @@ fn dump_definition(
                 at(function.origin())
             )
         }
-        Op::Return | Op::Sequence | Op::Observe { .. } | Op::After | Op::Result { .. } => {
-            unreachable!("HIR does not lower source returns yet")
-        }
+        Op::Return { .. } => "return".into(),
+        Op::Sequence => "sequence".into(),
+        Op::Observe { .. } => "observe".into(),
+        Op::After => "after".into(),
+        Op::Result { .. } => "result".into(),
     };
     writeln!(
         out,
@@ -393,12 +415,12 @@ fn dump_definition(
             dump_node(analysis, shape, "lhs", inputs[0], child, out);
             dump_node(analysis, shape, "rhs", inputs[1], child, out);
         }
-        Op::And { rhs } | Op::Or { rhs } => {
+        Op::And { rhs, .. } | Op::Or { rhs, .. } => {
             dump_node(analysis, shape, "lhs", inputs[0], child, out);
             dump_region(analysis, shape, "rhs", *rhs, child, out);
         }
         Op::Refine { .. } | Op::Exactly(_) => unreachable!("a narrowed read reads its definition"),
-        Op::Join { then, else_ } => {
+        Op::Join { then, else_, .. } => {
             dump_node(analysis, shape, "condition", inputs[0], child, out);
             dump_region(analysis, shape, "then", *then, child, out);
             match else_ {
@@ -411,8 +433,32 @@ fn dump_definition(
                 dump_node(analysis, shape, &format!("arg[{index}]"), input, child, out);
             }
         }
-        Op::Return | Op::Sequence | Op::Observe { .. } | Op::After | Op::Result { .. } => {
-            unreachable!("HIR does not lower source returns yet")
+        Op::Return { .. } => dump_node(analysis, shape, "payload", inputs[0], child, out),
+        Op::Sequence => {
+            dump_node(analysis, shape, "before", inputs[0], child, out);
+            dump_node(analysis, shape, "value", inputs[1], child, out);
+        }
+        Op::Observe { then, else_ } => {
+            dump_node(analysis, shape, "condition", inputs[0], child, out);
+            if let Some(then) = then {
+                dump_region(analysis, shape, "then control", *then, child, out);
+            }
+            if let Some(else_) = else_ {
+                dump_region(analysis, shape, "else control", *else_, child, out);
+            }
+        }
+        Op::After => {}
+        Op::Result { .. } => {
+            for (index, &input) in inputs.iter().enumerate() {
+                dump_node(
+                    analysis,
+                    shape,
+                    &format!("outcome[{index}]"),
+                    input,
+                    child,
+                    out,
+                );
+            }
         }
     }
 }

@@ -1,0 +1,71 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 8
+
+fn default_unit@0..34 () -> unit ∈ ∅
+  result: result : unit @0..34
+    outcome[0]: unit : unit @18..34
+    outcome[1]: return : ? @24..32
+      payload: int 1 : ? @31..32
+
+fn declared@35..122 () -> int ∈ ∅
+  result: result : int @52..55
+    outcome[0]:
+      discard: if : unit @62..98
+        condition: bool true : bool @65..69
+        then: unit : unit @70..98
+        else: unit (implicit)
+      discard: after : ? @103..114
+      tail: int 1 : int @119..120
+    outcome[1]: return : ? @80..92
+      payload: bool false : ? @87..92
+    outcome[2]: return : ? @103..114
+      payload: bool true : ? @110..114
+
+fn inferred@123..189 signature: unavailable
+  result: result : ? @123..189
+    outcome[0]:
+      discard: if : unit @145..177
+        condition: bool true : bool @148..152
+        then: unit : unit @153..177
+        else: unit (implicit)
+      discard: after : ? @145..177
+      tail: bool false : bool @182..187
+    outcome[1]: return : ? @163..171
+      payload: int 1 : ? @170..171
+
+fn unreachable@190..270 () -> int ∈ [1, 1]
+  result: result : int @210..213
+    outcome[0]:
+      discard: after : ? @220..228
+      discard: eager + : ? @233..251
+        lhs: hole : ? @233..239
+        rhs: hole : ? @242..251
+      tail: eager + : int @256..268
+        lhs: bool true : ? @256..260
+        rhs: bool false : ? @263..268
+    outcome[1]: return : int @220..228
+      payload: int 1 : int @227..228
+
+== semantic diagnostics ==
+error[semantic/type-mismatch]: expected unit, found int
+  primary @24..32
+  secondary @0..34: declared here
+error[semantic/type-mismatch]: expected int, found bool
+  primary @80..92
+  secondary @52..55: declared here
+error[semantic/type-mismatch]: expected int, found bool
+  primary @103..114
+  secondary @52..55: declared here
+error[semantic/cannot-infer]: function result is both int and bool; add a return type annotation
+  primary @123..189
+  secondary @170..171: int here
+  secondary @182..187: bool here
+error[semantic/unknown-name]: unknown name `absent`
+  primary @233..239
+error[semantic/unknown-name]: unknown function `missing`
+  primary @242..249
+error[semantic/type-mismatch]: expected int, found bool
+  primary @256..260
+error[semantic/type-mismatch]: expected int, found bool
+  primary @263..268

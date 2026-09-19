@@ -471,6 +471,7 @@ fn delta(graph: &Graph, typing: &Typing, node: NodeId) -> Option<(u32, Ints)> {
                 Op::Join {
                     then,
                     else_: Some(else_),
+                    ..
                 } => {
                     // An arm that cannot run contributes no value.
                     let (then, otherwise) = (graph.region(then), graph.region(else_));

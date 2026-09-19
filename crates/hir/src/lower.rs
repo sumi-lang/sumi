@@ -72,6 +72,10 @@ pub(crate) struct Lowered {
     pub built: Vec<bool>,
     /// By node.
     pub typed: Vec<bool>,
+    /// Per graph node, whether each input is an ordinary value rather than a completing expression.
+    pub values: Vec<Box<[bool]>>,
+    /// Per graph node, the same distinction for held region results.
+    pub results: Vec<Box<[bool]>>,
     /// Whole calls only, in definition order.
     pub calls: Vec<Call>,
     /// (context, callee) of every call whose callee has a whole parameter list, whole call or not.
@@ -412,6 +416,7 @@ struct LazyOp {
 
 enum Work {
     Enter(NodeIdx),
+    Advance(NodeIdx),
     Finish(Finish),
     /// Damaged or not: a block runs its statements.
     Block(NodeIdx),
@@ -439,12 +444,23 @@ enum Work {
         region: RegionId,
         root: NodeIdx,
     },
+    Return(Clean<ast::ReturnStmt>),
 }
 
 fn enter_each(work: &mut Vec<Work>, nodes: impl Iterator<Item = NodeIdx>) {
     let base = work.len();
-    work.extend(nodes.map(Work::Enter));
+    for node in nodes {
+        work.push(Work::Enter(node));
+        work.push(Work::Advance(node));
+    }
     work[base..].reverse();
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Form {
+    Damaged,
+    Bottom,
+    Scalar,
 }
 
 struct Builder<'a, 's> {
@@ -457,7 +473,7 @@ struct Builder<'a, 's> {
     owner: u32,
     failed: bool,
     /// Open regions, innermost last, each with where its refinements begin in `refinements`.
-    regions: Vec<(RegionId, usize)>,
+    regions: Vec<(RegionId, usize, NodeId)>,
     /// (defining node, the node its reads see) for the open regions, innermost last.
     refinements: Vec<(NodeId, NodeId)>,
     /// The first `depth` scopes are open, innermost last.
@@ -465,6 +481,9 @@ struct Builder<'a, 's> {
     depth: usize,
     work: Vec<Work>,
     inputs: Vec<(NodeId, TextRange)>,
+    controls: Vec<Option<NodeId>>,
+    forms: Vec<Form>,
+    returns: Vec<(NodeId, TextRange)>,
 }
 
 impl<'a, 's> Builder<'a, 's> {
@@ -483,6 +502,8 @@ impl<'a, 's> Builder<'a, 's> {
             lowered: Lowered {
                 built: Vec::with_capacity(headers.len()),
                 typed: Vec::with_capacity(nodes),
+                values: Vec::with_capacity(nodes),
+                results: Vec::with_capacity(nodes),
                 calls: Vec::new(),
                 entered: Vec::new(),
                 obligations: Vec::new(),
@@ -496,6 +517,9 @@ impl<'a, 's> Builder<'a, 's> {
             depth: 0,
             work: Vec::new(),
             inputs: Vec::new(),
+            controls: vec![None; nodes],
+            forms: vec![Form::Damaged; nodes],
+            returns: Vec::new(),
         }
     }
     /// Whether the body built whole.
@@ -506,6 +530,7 @@ impl<'a, 's> Builder<'a, 's> {
         self.open_scope();
         self.regions.clear();
         self.refinements.clear();
+        self.returns.clear();
         let header = &self.headers[owner];
         let item_node = header.item;
         let run = self.graph.open_run(FunctionId::new(owner));
@@ -527,7 +552,7 @@ impl<'a, 's> Builder<'a, 's> {
         let tree = self.source.tree;
         let region = self.graph.open(entry);
         self.graph.enter(region);
-        self.regions.push((region, 0));
+        self.regions.push((region, 0, entry));
         let root_node = item.body(tree).map(|body| body.node());
         if let Some(root_node) = root_node {
             let mut work = std::mem::take(&mut self.work);
@@ -547,9 +572,16 @@ impl<'a, 's> Builder<'a, 's> {
                         self.enter(node, &mut work);
                         continue;
                     }
+                    Work::Advance(node) => {
+                        self.advance(node);
+                        continue;
+                    }
                     Work::Unused(node) => {
                         let input = self.input(node);
-                        self.place(Op::Unused, &[input], input.1, None);
+                        let unused = self.place(Op::Unused, &[input], input.1, None);
+                        if self.form(node) == Form::Bottom {
+                            self.completes_input(unused, 0);
+                        }
                         continue;
                     }
                     Work::Branches(branch) => {
@@ -561,27 +593,36 @@ impl<'a, 's> Builder<'a, 's> {
                         continue;
                     }
                     Work::Push { region, guard } => {
-                        self.regions.push((region, self.refinements.len()));
+                        self.regions.push((
+                            region,
+                            self.refinements.len(),
+                            self.graph.context(region),
+                        ));
                         self.graph.enter(region);
                         self.refine(guard.0, guard.1);
                         continue;
                     }
                     Work::Pop { region, root } => {
                         let result = self.node_of(root);
-                        self.graph.close(region, result);
-                        let (_, keep) = self
+                        self.graph
+                            .close_with_control(region, result, self.control(root));
+                        let (_, keep, _) = self
                             .regions
                             .pop()
                             .expect("a region opened before it closes");
                         self.refinements.truncate(keep);
                         continue;
                     }
+                    Work::Return(return_) => self.return_(return_),
                 };
                 self.failed |= built.is_none();
             }
             self.work = work;
         }
-        let root = root_node.and_then(|root| self.typed(root));
+        let root = root_node.and_then(|root| match self.form(root) {
+            Form::Damaged => None,
+            Form::Bottom | Form::Scalar => Some(self.node_of(root)),
+        });
         let body = match root_node {
             Some(root) => self.input(root),
             None => {
@@ -589,11 +630,18 @@ impl<'a, 's> Builder<'a, 's> {
                 (hole, self.source.range(item_node))
             }
         };
-        self.graph.close(region, body.0);
+        let control = root_node.and_then(|root| self.control(root));
+        let fallthrough = if self.returns.is_empty() {
+            None
+        } else {
+            control
+                .map(|control| self.place(Op::Sequence, &[(control, body.1), body], body.1, None))
+        };
+        self.graph.close_with_control(region, body.0, control);
         self.regions.pop();
         // A failed parameter does not erase a declared result; the body is still held to it.
-        let value = match declared {
-            HeaderResult::Declared(ty, node) => self.push(
+        let value = match (self.returns.is_empty(), declared) {
+            (true, HeaderResult::Declared(ty, node)) => self.push(
                 node,
                 Op::Copy {
                     declared: Some((ty, self.source.range(node))),
@@ -601,7 +649,30 @@ impl<'a, 's> Builder<'a, 's> {
                 &[body],
                 None,
             ),
-            HeaderResult::Inferred | HeaderResult::None => body.0,
+            (true, HeaderResult::Inferred | HeaderResult::None) => body.0,
+            (false, declared) => {
+                let node = match declared {
+                    HeaderResult::Declared(_, node) => node,
+                    HeaderResult::Inferred | HeaderResult::None => item_node,
+                };
+                let declared = match declared {
+                    HeaderResult::Declared(ty, node) => Some((ty, self.source.range(node))),
+                    HeaderResult::Inferred | HeaderResult::None => None,
+                };
+                let mut outcomes = Vec::with_capacity(self.returns.len() + 1);
+                outcomes.push((fallthrough.unwrap_or(body.0), body.1));
+                outcomes.extend(self.returns.iter().copied());
+                self.push(
+                    node,
+                    Op::Result {
+                        declared,
+                        falls_through: root_node
+                            .is_some_and(|root| self.form(root) != Form::Bottom),
+                    },
+                    &outcomes,
+                    None,
+                )
+            }
         };
         self.graph.close_run(run, region, value);
         !self.failed && root.is_some()
@@ -627,6 +698,8 @@ impl<'a, 's> Builder<'a, 's> {
         let typed = self.follows(&op, inputs, results);
         let id = self.graph.push(op, inputs, self.source.range(node), name);
         self.lowered.typed.push(typed);
+        self.lowered.values.push(vec![true; inputs.len()].into());
+        self.lowered.results.push(vec![true; results.len()].into());
         self.nodes_of[node.to_usize()] = Some(id);
         id
     }
@@ -641,7 +714,15 @@ impl<'a, 's> Builder<'a, 's> {
         let typed = self.follows(&op, inputs, &[]);
         let id = self.graph.push(op, inputs, origin, name);
         self.lowered.typed.push(typed);
+        self.lowered.values.push(vec![true; inputs.len()].into());
+        self.lowered.results.push(Box::new([]));
         id
+    }
+    fn completes_input(&mut self, node: NodeId, index: usize) {
+        self.lowered.values[node.index()][index] = false;
+    }
+    fn completes_result(&mut self, node: NodeId, index: usize) {
+        self.lowered.results[node.index()][index] = false;
     }
     /// Whether a node of `op` over `inputs`, and over the regions with `results`, carries a value
     /// the typing follows.
@@ -649,7 +730,18 @@ impl<'a, 's> Builder<'a, 's> {
         let typed = |node: NodeId| self.lowered.typed[node.index()];
         match *op {
             Op::Hole | Op::Unused => false,
-            Op::Entry | Op::Then | Op::Else | Op::Copy { declared: Some(_) } => true,
+            Op::Entry
+            | Op::Then
+            | Op::Else
+            | Op::Return { .. }
+            | Op::Sequence
+            | Op::Observe { .. }
+            | Op::After
+            | Op::Result {
+                declared: Some(_), ..
+            }
+            | Op::Copy { declared: Some(_) } => true,
+            Op::Result { declared: None, .. } => inputs.iter().all(|&(input, _)| typed(input)),
             Op::Param { ty, .. } => ty.is_some(),
             Op::Call(callee) => {
                 let function = self.graph.callable(callee).function;
@@ -725,8 +817,38 @@ impl<'a, 's> Builder<'a, 's> {
             .map_or(defined, |(_, node)| *node)
     }
     fn context(&self) -> NodeId {
-        let (region, _) = *self.regions.last().expect("a body runs in its region");
-        self.graph.context(region)
+        self.regions.last().expect("a body runs in its region").2
+    }
+    fn form(&self, node: NodeIdx) -> Form {
+        match self.forms[node.to_usize()] {
+            Form::Bottom => Form::Bottom,
+            Form::Damaged | Form::Scalar if self.typed(node).is_some() => Form::Scalar,
+            Form::Damaged | Form::Scalar => Form::Damaged,
+        }
+    }
+    fn control(&self, node: NodeIdx) -> Option<NodeId> {
+        self.controls[node.to_usize()]
+    }
+    fn compose_control(
+        &mut self,
+        node: NodeIdx,
+        parts: impl IntoIterator<Item = Option<NodeId>>,
+    ) -> Option<NodeId> {
+        let at = self.source.range(node);
+        parts.into_iter().flatten().reduce(|before, value| {
+            self.place(Op::Sequence, &[(before, at), (value, at)], at, None)
+        })
+    }
+    fn advance(&mut self, node: NodeIdx) {
+        let Some(control) = self.control(node) else {
+            return;
+        };
+        let at = self.source.range(node);
+        let after = self.place(Op::After, &[(control, at), (self.context(), at)], at, None);
+        self.regions
+            .last_mut()
+            .expect("a body runs in its region")
+            .2 = after;
     }
     /// The scope is as it was when the read was built: a region is entered right after its
     /// condition finishes.
@@ -812,6 +934,7 @@ impl<'a, 's> Builder<'a, 's> {
     fn branches(&mut self, branch: Clean<ast::IfExpr>, work: &mut Vec<Work>) {
         let tree = self.source.tree;
         let cond = branch.condition().node();
+        self.advance(cond);
         let then_node = branch.then_branch().node();
         let else_node = branch.else_branch(tree).map(|e| e.node());
         let parent = self.context();
@@ -853,6 +976,7 @@ impl<'a, 's> Builder<'a, 's> {
     fn rhs(&mut self, expr: LazyOp, work: &mut Vec<Work>) {
         let and = expr.and;
         let lhs = expr.expr.lhs().node();
+        self.advance(lhs);
         let rhs = expr.expr.rhs().node();
         let parent = self.context();
         let op = if and { Op::Then } else { Op::Else };
@@ -905,11 +1029,13 @@ impl<'a, 's> Builder<'a, 's> {
                     return;
                 }
                 work.push(Work::Finish(Finish::Let(binding)));
+                work.push(Work::Advance(binding.initializer().node()));
                 work.push(Work::Enter(binding.initializer().node()));
             }
             CleanStmt::Expr(CleanExpr::Block(_)) => self.block_statements(node, work),
             CleanStmt::DiscardStmt(discard) => {
                 work.push(Work::Finish(Finish::Discard(discard)));
+                work.push(Work::Advance(discard.value().node()));
                 work.push(Work::Enter(discard.value().node()));
             }
             CleanStmt::Expr(CleanExpr::IfExpr(branch)) => {
@@ -924,6 +1050,7 @@ impl<'a, 's> Builder<'a, 's> {
                     Some(op) => {
                         work.push(Work::Finish(Finish::Binary { expr, op }));
                         work.push(Work::Enter(rhs));
+                        work.push(Work::Advance(lhs));
                     }
                     None => work.push(Work::Rhs(LazyOp {
                         expr,
@@ -945,10 +1072,12 @@ impl<'a, 's> Builder<'a, 's> {
                     return;
                 }
                 work.push(Work::Finish(Finish::Prefix { expr, neg }));
+                work.push(Work::Advance(expr.operand().node()));
                 work.push(Work::Enter(expr.operand().node()));
             }
             CleanStmt::Expr(CleanExpr::ParenExpr(paren)) => {
                 work.push(Work::Finish(Finish::Paren(paren)));
+                work.push(Work::Advance(paren.inner().node()));
                 work.push(Work::Enter(paren.inner().node()));
             }
             CleanStmt::Expr(CleanExpr::CallExpr(call)) => {
@@ -969,9 +1098,56 @@ impl<'a, 's> Builder<'a, 's> {
             CleanStmt::Expr(CleanExpr::LiteralExpr(literal)) => {
                 work.push(Work::Finish(Finish::Literal(literal)));
             }
-            CleanStmt::Expr(CleanExpr::ClosureExpr(_))
-            | CleanStmt::AssignStmt(_)
-            | CleanStmt::ReturnStmt(_) => self.unsupported(node),
+            CleanStmt::ReturnStmt(return_) => {
+                work.push(Work::Return(return_));
+                if let Some(value) = return_.value(tree) {
+                    work.push(Work::Advance(value.node()));
+                    work.push(Work::Enter(value.node()));
+                }
+            }
+            CleanStmt::Expr(CleanExpr::ClosureExpr(_)) | CleanStmt::AssignStmt(_) => {
+                self.unsupported(node)
+            }
+        }
+    }
+    fn return_(&mut self, return_: Clean<ast::ReturnStmt>) -> Option<()> {
+        let node = return_.node();
+        let at = self.source.range(node);
+        let value = return_.value(self.source.tree);
+        let payload = match value {
+            Some(value) => self.input(value.node()),
+            None => {
+                let unit = self.push(node, Op::Unit, &[(self.context(), at)], None);
+                (unit, at)
+            }
+        };
+        let value = value.map(|value| (value, self.form(value.node())));
+        let returned = self.push(
+            node,
+            Op::Return {
+                value: value.is_none_or(|(_, form)| form != Form::Bottom),
+            },
+            &[payload, (self.context(), at)],
+            None,
+        );
+        let control = self.compose_control(
+            node,
+            [
+                value.and_then(|(value, _)| self.control(value.node())),
+                Some(returned),
+            ],
+        );
+        self.controls[node.to_usize()] = control;
+        if value.is_some_and(|(_, form)| form == Form::Bottom) {
+            self.completes_input(returned, 0);
+        } else {
+            self.returns.push((returned, at));
+        }
+        if value.is_none_or(|(_, form)| form != Form::Damaged) {
+            self.forms[node.to_usize()] = Form::Bottom;
+            Some(())
+        } else {
+            None
         }
     }
     /// A binding that cannot be built still takes its name, as a hole.
@@ -1000,6 +1176,7 @@ impl<'a, 's> Builder<'a, 's> {
             if statement {
                 work.push(Work::Unused(child));
             }
+            work.push(Work::Advance(child));
         }
         work[base..].reverse();
     }
@@ -1060,18 +1237,28 @@ impl<'a, 's> Builder<'a, 's> {
         let mut tail = None;
         let damaged = tree.has_error(node);
         let mut valid = !damaged;
+        let mut bottom = false;
+        let mut controls = Vec::new();
         let mut children = tree.children(node).peekable();
         while let Some(child) = children.next() {
             let expression = ast::Expr::cast(tree, child).is_some();
             if children.peek().is_none() && expression {
                 tail = Some(child);
+                controls.push(self.control(child));
+                bottom |= self.form(child) == Form::Bottom;
                 break;
             }
-            if self.typed(child).is_none() {
-                self.node_of(child);
-                valid = false;
+            controls.push(self.control(child));
+            match self.form(child) {
+                Form::Damaged => {
+                    self.node_of(child);
+                    valid = false;
+                }
+                Form::Bottom => bottom = true,
+                Form::Scalar => {}
             }
         }
+        self.controls[node.to_usize()] = self.compose_control(node, controls);
         // A damaged block may have lost its tail to recovery, so without one it is a hole, not
         // unit.
         match tail {
@@ -1088,10 +1275,15 @@ impl<'a, 's> Builder<'a, 's> {
                 self.push(node, Op::Unit, &[(context, at)], None);
             }
         }
+        if bottom {
+            self.forms[node.to_usize()] = Form::Bottom;
+        }
         if !valid || damaged {
             return None;
         }
-        self.typed(node)?;
+        if !bottom {
+            self.typed(node)?;
+        }
         Some(())
     }
     fn finish(&mut self, finish: Finish) -> Option<()> {
@@ -1111,12 +1303,24 @@ impl<'a, 's> Builder<'a, 's> {
                 };
                 let copy = self.push(binding.node(), op, &[value], Some(self.source.range(name)));
                 self.bind(self.source.text(name), copy);
+                let initializer = binding.initializer().node();
+                self.controls[binding.node().to_usize()] = self.control(initializer);
+                self.forms[binding.node().to_usize()] = self.form(initializer);
+                if self.form(initializer) == Form::Bottom {
+                    self.completes_input(copy, 0);
+                    return Some(());
+                }
                 self.lowered.typed[copy.index()].then_some(())?;
             }
             Finish::Discard(discard) => {
                 let value = discard.value().node();
                 let discarded = self.node_of(value);
                 self.nodes_of[discard.node().to_usize()] = Some(discarded);
+                self.controls[discard.node().to_usize()] = self.control(value);
+                self.forms[discard.node().to_usize()] = self.form(value);
+                if self.form(value) == Form::Bottom {
+                    return Some(());
+                }
                 self.typed(value)?;
             }
             Finish::NameRef(name) => {
@@ -1166,17 +1370,28 @@ impl<'a, 's> Builder<'a, 's> {
                 let inner = paren.inner().node();
                 let value = self.node_of(inner);
                 self.nodes_of[paren.node().to_usize()] = Some(value);
+                self.controls[paren.node().to_usize()] = self.control(inner);
+                self.forms[paren.node().to_usize()] = self.form(inner);
+                if self.form(inner) == Form::Bottom {
+                    return Some(());
+                }
                 self.typed(inner)?;
             }
             Finish::Prefix { expr, neg } => {
                 let operand = expr.operand().node();
                 let value = self.input(operand);
-                self.push(
+                let id = self.push(
                     expr.node(),
                     if neg { Op::Neg } else { Op::Not },
                     &[value],
                     None,
                 );
+                self.controls[expr.node().to_usize()] = self.control(operand);
+                self.forms[expr.node().to_usize()] = self.form(operand);
+                if self.form(operand) == Form::Bottom {
+                    self.completes_input(id, 0);
+                    return Some(());
+                }
                 self.typed(operand)?;
             }
             Finish::Binary { expr, op } => {
@@ -1185,7 +1400,19 @@ impl<'a, 's> Builder<'a, 's> {
                 let rhs = expr.rhs().node();
                 let lhs_input = self.input(lhs);
                 let rhs_input = self.input(rhs);
-                self.push(node, Op::Binary(op), &[lhs_input, rhs_input], None);
+                let id = self.push(node, Op::Binary(op), &[lhs_input, rhs_input], None);
+                self.controls[node.to_usize()] =
+                    self.compose_control(node, [self.control(lhs), self.control(rhs)]);
+                if self.form(lhs) == Form::Bottom || self.form(rhs) == Form::Bottom {
+                    if self.form(lhs) == Form::Bottom {
+                        self.completes_input(id, 0);
+                    }
+                    if self.form(rhs) == Form::Bottom {
+                        self.completes_input(id, 1);
+                    }
+                    self.forms[node.to_usize()] = Form::Bottom;
+                    return Some(());
+                }
                 self.typed(lhs)?;
                 self.typed(rhs)?;
                 if matches!(op, BinaryOp::Arith(ArithOp::Div | ArithOp::Rem)) {
@@ -1205,14 +1432,56 @@ impl<'a, 's> Builder<'a, 's> {
         let rhs_node = expr.expr.rhs().node();
         let lhs_input = self.input(lhs);
         let result = self.node_of(rhs_node);
+        let rhs_form = self.form(rhs_node);
         let op = if expr.and {
-            Op::And { rhs }
+            Op::And {
+                rhs,
+                lhs_value: self.form(lhs) != Form::Bottom,
+            }
         } else {
-            Op::Or { rhs }
+            Op::Or {
+                rhs,
+                lhs_value: self.form(lhs) != Form::Bottom,
+            }
         };
-        self.push_over(expr.expr.node(), op, &[lhs_input], None, &[result]);
+        let id = self.push_over(expr.expr.node(), op, &[lhs_input], None, &[result]);
+        let selected = self.control(rhs_node).map(|_| rhs);
+        let observe = selected.map(|region| {
+            let (then, else_) = if expr.and {
+                (Some(region), None)
+            } else {
+                (None, Some(region))
+            };
+            self.place(
+                Op::Observe { then, else_ },
+                &[
+                    lhs_input,
+                    (self.context(), self.source.range(expr.expr.node())),
+                ],
+                self.source.range(expr.expr.node()),
+                None,
+            )
+        });
+        self.controls[expr.expr.node().to_usize()] =
+            self.compose_control(expr.expr.node(), [self.control(lhs), observe]);
+        if rhs_form == Form::Bottom {
+            self.completes_result(id, 0);
+        }
+        if self.form(lhs) == Form::Bottom {
+            self.completes_input(id, 0);
+            self.forms[expr.expr.node().to_usize()] = Form::Bottom;
+            return Some(());
+        }
         self.typed(lhs)?;
-        self.typed(rhs_node)?;
+        match rhs_form {
+            Form::Damaged => return None,
+            Form::Bottom => {
+                self.refine(lhs, !expr.and);
+            }
+            Form::Scalar => {
+                self.typed(rhs_node)?;
+            }
+        }
         Some(())
     }
     fn join(
@@ -1228,16 +1497,72 @@ impl<'a, 's> Builder<'a, 's> {
         let condition = self.input(cond);
         let mut results = vec![self.node_of(then_node)];
         results.extend(else_node.map(|else_node| self.node_of(else_node)));
-        self.push_over(
+        let then_form = self.form(then_node);
+        let else_form = else_node.map_or(Form::Scalar, |node| self.form(node));
+        let id = self.push_over(
             branch.node(),
-            Op::Join { then, else_ },
+            Op::Join {
+                then,
+                else_,
+                values: [then_form != Form::Bottom, else_form != Form::Bottom],
+            },
             &[condition],
             None,
             &results,
         );
-        self.typed(then_node)?;
-        if let Some(else_node) = else_node {
-            self.typed(else_node)?;
+        let observe = (self.control(then_node).is_some()
+            || else_node.is_some_and(|node| self.control(node).is_some()))
+        .then(|| {
+            self.place(
+                Op::Observe {
+                    then: Some(then),
+                    else_,
+                },
+                &[
+                    condition,
+                    (self.context(), self.source.range(branch.node())),
+                ],
+                self.source.range(branch.node()),
+                None,
+            )
+        });
+        self.controls[branch.node().to_usize()] =
+            self.compose_control(branch.node(), [self.control(cond), observe]);
+        if then_form == Form::Bottom {
+            self.completes_result(id, 0);
+        }
+        if else_form == Form::Bottom && else_node.is_some() {
+            self.completes_result(id, 1);
+        }
+        if self.form(cond) == Form::Bottom {
+            self.completes_input(id, 0);
+            for index in 0..self.lowered.results[id.index()].len() {
+                self.completes_result(id, index);
+            }
+        }
+        if self.form(cond) == Form::Damaged
+            || then_form == Form::Damaged
+            || else_form == Form::Damaged
+        {
+            return None;
+        }
+        if self.form(cond) == Form::Bottom
+            || (then_form == Form::Bottom && else_form == Form::Bottom)
+        {
+            self.forms[branch.node().to_usize()] = Form::Bottom;
+        } else {
+            if then_form == Form::Scalar {
+                self.typed(then_node)?;
+            } else {
+                self.refine(cond, false);
+            }
+            if let Some(else_node) = else_node {
+                if else_form == Form::Scalar {
+                    self.typed(else_node)?;
+                } else {
+                    self.refine(cond, true);
+                }
+            }
         }
         self.typed(cond)?;
         Some(())
@@ -1281,7 +1606,21 @@ impl<'a, 's> Builder<'a, 's> {
         let whole = callee.filter(|&(.., id)| self.whole(id, &inputs));
         let op = callee.map_or(Op::Hole, |(.., id)| Op::Call(id));
         let id = self.push(node, op, &inputs, None);
+        let args: Vec<_> = call.arg_list().args(tree).map(|arg| arg.node()).collect();
+        let controls: Vec<_> = args.iter().map(|&arg| self.control(arg)).collect();
+        self.controls[node.to_usize()] = self.compose_control(node, controls);
+        let bottom = args.iter().any(|&arg| self.form(arg) == Form::Bottom);
+        let damaged = args.iter().any(|&arg| self.form(arg) == Form::Damaged);
+        let first_arg = inputs.len() - args.len();
+        for (index, &arg) in args.iter().enumerate() {
+            if self.form(arg) == Form::Bottom {
+                self.completes_input(id, first_arg + index);
+            }
+        }
         self.inputs = inputs;
+        if damaged {
+            return None;
+        }
         let (target, function, _) = whole?;
         self.lowered.calls.push(Call {
             node: id,
@@ -1289,6 +1628,10 @@ impl<'a, 's> Builder<'a, 's> {
             callee: target,
             context,
         });
+        if bottom {
+            self.forms[node.to_usize()] = Form::Bottom;
+            return Some(());
+        }
         (!matches!(function.result, HeaderResult::None)).then_some(())
     }
 }
