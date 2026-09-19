@@ -1,31 +1,23 @@
-//! Offset → line/column conversion for one source snapshot.
-//!
-//! A [`LineIndex`] stores where each line starts. Line terminators are
-//! `\n`, `\r\n`, and lone `\r`, matching the lexer, and a terminator ends
-//! its line, so a source ending in one has a final empty line.
+//! Offset to line/column conversion for one source snapshot. Line terminators are `\n`, `\r\n`, and
+//! lone `\r`, the lexer's set; a trailing one opens a final empty line.
 
 use crate::TextSize;
 
-/// A zero-based line and column; the column counts UTF-8 bytes from the
-/// line start.
+/// Zero-based; `col` counts UTF-8 bytes from the line start.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct LineCol {
     pub line: u32,
     pub col: u32,
 }
 
-/// The line-start table for one source snapshot.
 #[derive(Clone, Debug)]
 pub struct LineIndex {
-    /// Byte offset of each line start; line 0 starts at zero, so the table
-    /// is never empty and is strictly increasing.
     line_starts: Box<[TextSize]>,
     source_len: TextSize,
 }
 
 impl LineIndex {
-    /// Build the index for `source`. The caller must have validated that
-    /// `source.len()` fits in `u32`, as the lexer's entry point does.
+    /// Panics unless `source.len()` fits in `u32`.
     pub fn new(source: &str) -> Self {
         let source_len = u32::try_from(source.len()).expect("source length fits in u32");
 
@@ -48,8 +40,7 @@ impl LineIndex {
         }
     }
 
-    /// The line and byte column of `offset`, which must not exceed the
-    /// source length. The end of the source belongs to the last line.
+    /// Panics if `offset` exceeds the source length.
     pub fn line_col(&self, offset: TextSize) -> LineCol {
         assert!(offset <= self.source_len, "offset past end of source");
         let line = self
@@ -79,7 +70,6 @@ mod tests {
 
     #[test]
     fn terminators_match_the_lexer() {
-        // "a\n" | "bc\r\n" | "d\r" | "e"
         let index = LineIndex::new("a\nbc\r\nd\re");
         let lines: Vec<u32> = (0..=9).map(|offset| line_col(&index, offset).0).collect();
         assert_eq!(lines, [0, 0, 1, 1, 1, 1, 2, 2, 3, 3]);
