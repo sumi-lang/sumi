@@ -305,6 +305,7 @@ impl Graph {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ArithOp;
     use sumi_text::TextSize;
 
     fn at(offset: u32) -> TextRange {
@@ -334,7 +335,7 @@ mod tests {
         graph.enter(region);
         let one = graph.push(Op::Int(1.into()), &[], at(2), None);
         let sum = graph.push(
-            Op::Binary(BinaryOp::Arith(crate::ArithOp::Add)),
+            Op::Binary(BinaryOp::Arith(ArithOp::Add)),
             &[(param, at(5)), (one, at(2))],
             at(3),
             None,

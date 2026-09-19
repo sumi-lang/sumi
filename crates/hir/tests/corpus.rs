@@ -4,7 +4,9 @@
 use std::fmt::Write as _;
 
 use sumi_frontend::parse_source;
-use sumi_hir::{Analysis, FunctionId, Graph, NodeId, Op, RegionId, analyze};
+use sumi_hir::{
+    Analysis, ArithOp, BinaryOp, CmpOp, FunctionId, Graph, NodeId, Op, RegionId, analyze,
+};
 use sumi_test::corpus;
 use sumi_text::TextRange;
 
@@ -334,7 +336,7 @@ fn dump_definition(
         Op::Copy { .. } => "copy".into(),
         Op::Neg => "negate".into(),
         Op::Not => "not".into(),
-        Op::Binary(op) => format!("eager {op}"),
+        Op::Binary(op) => format!("eager {}", operator(*op)),
         Op::And { .. } => "lazy and".into(),
         Op::Or { .. } => "lazy or".into(),
         Op::Refine { .. } | Op::Exactly(_) => unreachable!("a narrowed read reads its definition"),
@@ -400,6 +402,22 @@ fn dump_definition(
                 dump_node(analysis, shape, &format!("arg[{index}]"), input, child, out);
             }
         }
+    }
+}
+
+fn operator(op: BinaryOp) -> &'static str {
+    match op {
+        BinaryOp::Cmp(CmpOp::Eq) => "==",
+        BinaryOp::Cmp(CmpOp::Ne) => "!=",
+        BinaryOp::Cmp(CmpOp::Lt) => "<",
+        BinaryOp::Cmp(CmpOp::Le) => "<=",
+        BinaryOp::Cmp(CmpOp::Gt) => ">",
+        BinaryOp::Cmp(CmpOp::Ge) => ">=",
+        BinaryOp::Arith(ArithOp::Add) => "+",
+        BinaryOp::Arith(ArithOp::Sub) => "-",
+        BinaryOp::Arith(ArithOp::Mul) => "*",
+        BinaryOp::Arith(ArithOp::Div) => "/",
+        BinaryOp::Arith(ArithOp::Rem) => "%",
     }
 }
 

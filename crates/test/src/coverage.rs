@@ -229,7 +229,7 @@ mod tests {
             "FnItem never has 'fn'",
             "FnItem never has ret",
             "IfExpr never has else_branch: Block",
-            "BinaryExpr never has Cmp(Lt)",
+            "BinaryExpr never has `<`",
         ] {
             assert!(!missing.iter().any(|line| line == shown), "{shown}");
         }
@@ -239,7 +239,7 @@ mod tests {
             "FnItem never lacks '->'",
             "IfExpr never has else_branch: IfExpr",
             "IfExpr never lacks 'else'",
-            "BinaryExpr never has Arith(Add)",
+            "BinaryExpr never has `+`",
             "ParamList never lacks params",
         ] {
             assert!(

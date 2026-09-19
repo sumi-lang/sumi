@@ -349,34 +349,36 @@ pub(crate) fn lower<'s>(
     (builder.graph, builder.lowered)
 }
 
+/// The syntax's operator in the graph's vocabulary, which has no lazy operator.
 fn eager(op: sumi_syntax::BinaryOp) -> Option<BinaryOp> {
+    use sumi_syntax::BinaryOp as S;
     Some(match op {
-        sumi_syntax::BinaryOp::Or | sumi_syntax::BinaryOp::And => return None,
-        sumi_syntax::BinaryOp::Cmp(op) => BinaryOp::Cmp(cmp(op)),
-        sumi_syntax::BinaryOp::Arith(op) => BinaryOp::Arith(arith(op)),
+        S::Or | S::And => return None,
+        S::Cmp(op) => BinaryOp::Cmp(cmp(op)),
+        S::Arith(op) => BinaryOp::Arith(arith(op)),
     })
 }
 
 fn cmp(op: sumi_syntax::CmpOp) -> CmpOp {
-    use sumi_syntax::CmpOp::*;
+    use sumi_syntax::CmpOp as S;
     match op {
-        Eq => CmpOp::Eq,
-        Ne => CmpOp::Ne,
-        Lt => CmpOp::Lt,
-        Le => CmpOp::Le,
-        Gt => CmpOp::Gt,
-        Ge => CmpOp::Ge,
+        S::Eq => CmpOp::Eq,
+        S::Ne => CmpOp::Ne,
+        S::Lt => CmpOp::Lt,
+        S::Le => CmpOp::Le,
+        S::Gt => CmpOp::Gt,
+        S::Ge => CmpOp::Ge,
     }
 }
 
 fn arith(op: sumi_syntax::ArithOp) -> ArithOp {
-    use sumi_syntax::ArithOp::*;
+    use sumi_syntax::ArithOp as S;
     match op {
-        Add => ArithOp::Add,
-        Sub => ArithOp::Sub,
-        Mul => ArithOp::Mul,
-        Div => ArithOp::Div,
-        Rem => ArithOp::Rem,
+        S::Add => ArithOp::Add,
+        S::Sub => ArithOp::Sub,
+        S::Mul => ArithOp::Mul,
+        S::Div => ArithOp::Div,
+        S::Rem => ArithOp::Rem,
     }
 }
 

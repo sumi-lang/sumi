@@ -1,14 +1,15 @@
 //! Token classes, bracket pairs, and operator tables.
 
-use std::fmt::Debug;
+use std::fmt::{self, Debug};
 use std::hash::Hash;
 
 use sumi_lexer::SyntaxKind as T;
 
-pub use sumi_lexer::SyntaxKind;
+pub use sumi_lexer::{Fixed, SyntaxKind};
 
-/// A value a rule reads from a token it holds, or from that token and the one glued after it.
-pub trait TokenField: Copy + Debug + Eq + Hash + 'static {
+/// A value a rule reads from a token it holds, or from that token and the one glued after it; it
+/// displays as the token reads after "expected".
+pub trait TokenField: Copy + Debug + fmt::Display + Eq + Hash + 'static {
     const ALL: &[Self];
 
     /// The value at `first`, and whether it spans `glued`, the token joint after `first` inside
@@ -22,16 +23,29 @@ pub enum PrefixOp {
     Not,
 }
 
+impl PrefixOp {
+    pub fn token(self) -> Fixed {
+        match self {
+            Self::Neg => Fixed::Minus,
+            Self::Not => Fixed::Bang,
+        }
+    }
+}
+
 impl TokenField for PrefixOp {
     const ALL: &[Self] = &[Self::Neg, Self::Not];
 
     fn read(first: SyntaxKind, _: Option<SyntaxKind>) -> Option<(Self, bool)> {
-        let op = match first {
-            T::Minus => Self::Neg,
-            T::Bang => Self::Not,
-            _ => return None,
-        };
-        Some((op, false))
+        Self::ALL
+            .iter()
+            .find(|op| op.token().kind() == first)
+            .map(|&op| (op, false))
+    }
+}
+
+impl fmt::Display for PrefixOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.token().kind().describe())
     }
 }
 
@@ -43,18 +57,31 @@ pub enum Literal {
     False,
 }
 
+impl Literal {
+    pub fn token(self) -> SyntaxKind {
+        match self {
+            Self::Int => T::IntLiteral,
+            Self::String => T::StringLiteral,
+            Self::True => T::TrueKw,
+            Self::False => T::FalseKw,
+        }
+    }
+}
+
 impl TokenField for Literal {
     const ALL: &[Self] = &[Self::Int, Self::String, Self::True, Self::False];
 
     fn read(first: SyntaxKind, _: Option<SyntaxKind>) -> Option<(Self, bool)> {
-        let literal = match first {
-            T::IntLiteral => Self::Int,
-            T::StringLiteral => Self::String,
-            T::TrueKw => Self::True,
-            T::FalseKw => Self::False,
-            _ => return None,
-        };
-        Some((literal, false))
+        Self::ALL
+            .iter()
+            .find(|literal| literal.token() == first)
+            .map(|&literal| (literal, false))
+    }
+}
+
+impl fmt::Display for Literal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.token().describe())
     }
 }
 
@@ -178,15 +205,17 @@ pub enum BinaryOp {
 }
 
 impl TokenField for BinaryOp {
+    /// A two-token operator precedes the one-token operator that begins it, so a read takes the
+    /// longer.
     const ALL: &[Self] = &[
         Self::Or,
         Self::And,
         Self::Cmp(CmpOp::Eq),
         Self::Cmp(CmpOp::Ne),
-        Self::Cmp(CmpOp::Lt),
         Self::Cmp(CmpOp::Le),
-        Self::Cmp(CmpOp::Gt),
         Self::Cmp(CmpOp::Ge),
+        Self::Cmp(CmpOp::Lt),
+        Self::Cmp(CmpOp::Gt),
         Self::Arith(ArithOp::Add),
         Self::Arith(ArithOp::Sub),
         Self::Arith(ArithOp::Mul),
@@ -199,7 +228,33 @@ impl TokenField for BinaryOp {
     }
 }
 
+impl fmt::Display for BinaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let (first, glued) = self.tokens();
+        write!(f, "`{}{}`", first.text(), glued.map_or("", Fixed::text))
+    }
+}
+
 impl BinaryOp {
+    /// The operator's first token and the one glued after it.
+    pub fn tokens(self) -> (Fixed, Option<Fixed>) {
+        match self {
+            Self::Or => (Fixed::Pipe, Some(Fixed::Pipe)),
+            Self::And => (Fixed::Amp, Some(Fixed::Amp)),
+            Self::Cmp(CmpOp::Eq) => (Fixed::Eq, Some(Fixed::Eq)),
+            Self::Cmp(CmpOp::Ne) => (Fixed::Bang, Some(Fixed::Eq)),
+            Self::Cmp(CmpOp::Le) => (Fixed::Lt, Some(Fixed::Eq)),
+            Self::Cmp(CmpOp::Ge) => (Fixed::Gt, Some(Fixed::Eq)),
+            Self::Cmp(CmpOp::Lt) => (Fixed::Lt, None),
+            Self::Cmp(CmpOp::Gt) => (Fixed::Gt, None),
+            Self::Arith(ArithOp::Add) => (Fixed::Plus, None),
+            Self::Arith(ArithOp::Sub) => (Fixed::Minus, None),
+            Self::Arith(ArithOp::Mul) => (Fixed::Star, None),
+            Self::Arith(ArithOp::Div) => (Fixed::Slash, None),
+            Self::Arith(ArithOp::Rem) => (Fixed::Percent, None),
+        }
+    }
+
     fn level(self) -> u8 {
         match self {
             Self::Or => 1,
@@ -225,22 +280,10 @@ impl BinaryOp {
 /// `glued` is the kind of the token glued after `first`, if any; the `usize` is the operator's
 /// width in tokens.
 pub fn binary_operator(first: SyntaxKind, glued: Option<SyntaxKind>) -> Option<(BinaryOp, usize)> {
-    use BinaryOp::{And, Arith, Cmp, Or};
-    Some(match first {
-        T::Pipe if glued == Some(T::Pipe) => (Or, 2),
-        T::Amp if glued == Some(T::Amp) => (And, 2),
-        T::Eq if glued == Some(T::Eq) => (Cmp(CmpOp::Eq), 2),
-        T::Bang if glued == Some(T::Eq) => (Cmp(CmpOp::Ne), 2),
-        T::Lt if glued == Some(T::Eq) => (Cmp(CmpOp::Le), 2),
-        T::Gt if glued == Some(T::Eq) => (Cmp(CmpOp::Ge), 2),
-        T::Lt => (Cmp(CmpOp::Lt), 1),
-        T::Gt => (Cmp(CmpOp::Gt), 1),
-        T::Plus => (Arith(ArithOp::Add), 1),
-        T::Minus => (Arith(ArithOp::Sub), 1),
-        T::Star => (Arith(ArithOp::Mul), 1),
-        T::Slash => (Arith(ArithOp::Div), 1),
-        T::Percent => (Arith(ArithOp::Rem), 1),
-        _ => return None,
+    BinaryOp::ALL.iter().find_map(|&op| {
+        let (at, then) = op.tokens();
+        (at.kind() == first && then.is_none_or(|then| glued == Some(then.kind())))
+            .then(|| (op, 1 + usize::from(then.is_some())))
     })
 }
 
@@ -256,6 +299,33 @@ mod tests {
             .max()
             .unwrap();
         assert_eq!(PREFIX_BP, tightest + 1);
+    }
+
+    #[test]
+    fn every_operator_reads_back_as_its_tokens() {
+        assert_eq!(BinaryOp::ALL.len(), 13);
+        for &op in BinaryOp::ALL {
+            let (first, glued) = op.tokens();
+            let width = 1 + usize::from(glued.is_some());
+            assert_eq!(
+                binary_operator(first.kind(), glued.map(Fixed::kind)),
+                Some((op, width)),
+                "{op}"
+            );
+            assert_eq!(
+                BinaryOp::read(first.kind(), glued.map(Fixed::kind)),
+                Some((op, width == 2))
+            );
+        }
+        assert_eq!(
+            binary_operator(T::Lt, Some(T::Ident)),
+            Some((BinaryOp::Cmp(CmpOp::Lt), 1))
+        );
+        assert_eq!(binary_operator(T::Eq, None), None);
+        assert_eq!(BinaryOp::Cmp(CmpOp::Le).to_string(), "`<=`");
+        assert_eq!(PrefixOp::Not.to_string(), "`!`");
+        assert_eq!(Literal::Int.to_string(), "an integer literal");
+        assert_eq!(Literal::True.to_string(), "`true`");
     }
 
     #[test]

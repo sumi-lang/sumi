@@ -15,7 +15,7 @@ pub use machine::{Machine, Refusal};
 pub use may::{Bools, Ints, May, Thresholds};
 pub use value::{Domain, Fault, Value};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ArithOp {
     Add,
     Sub,
@@ -24,23 +24,12 @@ pub enum ArithOp {
     Rem,
 }
 
+#[cfg(test)]
 impl ArithOp {
     pub const ALL: [Self; 5] = [Self::Add, Self::Sub, Self::Mul, Self::Div, Self::Rem];
 }
 
-impl fmt::Display for ArithOp {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Add => "+",
-            Self::Sub => "-",
-            Self::Mul => "*",
-            Self::Div => "/",
-            Self::Rem => "%",
-        })
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CmpOp {
     Eq,
     Ne,
@@ -50,11 +39,14 @@ pub enum CmpOp {
     Ge,
 }
 
+#[cfg(test)]
 impl CmpOp {
     pub const ALL: [Self; 6] = [Self::Eq, Self::Ne, Self::Lt, Self::Le, Self::Gt, Self::Ge];
+}
 
+impl CmpOp {
     /// The comparison with its operands exchanged.
-    pub fn flip(self) -> Self {
+    pub(crate) fn flip(self) -> Self {
         match self {
             Self::Lt => Self::Gt,
             Self::Le => Self::Ge,
@@ -65,7 +57,7 @@ impl CmpOp {
     }
 
     /// The comparison that holds when this one does not.
-    pub fn negate(self) -> Self {
+    pub(crate) fn negate(self) -> Self {
         match self {
             Self::Lt => Self::Ge,
             Self::Le => Self::Gt,
@@ -77,41 +69,19 @@ impl CmpOp {
     }
 }
 
-impl fmt::Display for CmpOp {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Eq => "==",
-            Self::Ne => "!=",
-            Self::Lt => "<",
-            Self::Le => "<=",
-            Self::Gt => ">",
-            Self::Ge => ">=",
-        })
-    }
-}
-
 /// Eager operators only; `&&` and `||` take a region as right operand and are [`Op::And`] and
 /// [`Op::Or`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BinaryOp {
-    Arith(ArithOp),
     Cmp(CmpOp),
+    Arith(ArithOp),
 }
 
 impl BinaryOp {
     pub fn result(self) -> Ty {
         match self {
-            Self::Arith(_) => Ty::Int,
             Self::Cmp(_) => Ty::Bool,
-        }
-    }
-}
-
-impl fmt::Display for BinaryOp {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Arith(op) => op.fmt(f),
-            Self::Cmp(op) => op.fmt(f),
+            Self::Arith(_) => Ty::Int,
         }
     }
 }

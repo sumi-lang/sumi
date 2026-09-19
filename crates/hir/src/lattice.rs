@@ -294,7 +294,7 @@ impl Lattice for Product {
 
 #[cfg(test)]
 mod tests {
-    use sumi_graph::{Bools, Int};
+    use sumi_graph::{ArithOp, Bools, Int};
 
     use super::*;
 
@@ -328,7 +328,7 @@ mod tests {
         let cx = [15, 2].map(Int::from).into_iter().collect::<Thresholds>();
         let a = values(band(4, 13));
         let b = values(May::int(&2.into()));
-        let edge = Edge::Binary(BinaryOp::Arith(sumi_graph::ArithOp::Mul));
+        let edge = Edge::Binary(BinaryOp::Arith(ArithOp::Mul));
         assert_eq!(a.transfer(&edge, Some(&b), false, &cx).values, band(8, 26));
         let edge = Edge::Binary(BinaryOp::Cmp(CmpOp::Lt));
         assert_eq!(

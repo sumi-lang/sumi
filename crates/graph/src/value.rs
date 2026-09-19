@@ -133,8 +133,9 @@ impl Domain for Value {
                 CmpOp::Gt => lhs > rhs,
                 CmpOp::Ge => lhs >= rhs,
             }),
-            (BinaryOp::Cmp(CmpOp::Eq), lhs, rhs) if lhs.ty() == rhs.ty() => Self::Bool(lhs == rhs),
-            (BinaryOp::Cmp(CmpOp::Ne), lhs, rhs) if lhs.ty() == rhs.ty() => Self::Bool(lhs != rhs),
+            (BinaryOp::Cmp(op @ (CmpOp::Eq | CmpOp::Ne)), lhs, rhs) if lhs.ty() == rhs.ty() => {
+                Self::Bool((lhs == rhs) == (op == CmpOp::Eq))
+            }
             (BinaryOp::Arith(op), Self::Int(lhs), Self::Int(rhs)) => Self::Int(match op {
                 ArithOp::Add => lhs + rhs,
                 ArithOp::Sub => lhs - rhs,
