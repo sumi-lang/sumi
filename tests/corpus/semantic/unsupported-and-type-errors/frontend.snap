@@ -1,5 +1,5 @@
 == tree ==
-SourceFile 0..385
+SourceFile 0..415
   FnItem 0..59
     Name 3..14 "unsupported"
     ParamList 14..16 "()"
@@ -60,24 +60,31 @@ SourceFile 0..385
     BinaryExpr 299..307
       Block 299..301 "{}"
       Block 305..307 "{}"
-  FnItem 308..384
-    Name 311..324 "computed_call"
-    ParamList 324..326 "()"
-    Block 327..384
-      DiscardStmt 333..382
-        CallExpr 337..382
-          ParenExpr 337..363
-            IfExpr 338..362
-              LiteralExpr 341..345 "true"
-              Block 346..351
-                LiteralExpr 348..349 "1"
-              Block 357..362
-                LiteralExpr 359..360 "2"
-          ArgList 363..382
-            NameRef 364..371 "missing"
-            BinaryExpr 373..381
-              LiteralExpr 373..374 "1"
-              LiteralExpr 377..381 "true"
+  FnItem 308..337
+    Name 311..319 "unit_sum"
+    ParamList 319..321 "()"
+    TypeRef 325..328 "int"
+    BinaryExpr 331..337
+      Block 331..333 "{}"
+      LiteralExpr 336..337 "1"
+  FnItem 338..414
+    Name 341..354 "computed_call"
+    ParamList 354..356 "()"
+    Block 357..414
+      DiscardStmt 363..412
+        CallExpr 367..412
+          ParenExpr 367..393
+            IfExpr 368..392
+              LiteralExpr 371..375 "true"
+              Block 376..381
+                LiteralExpr 378..379 "1"
+              Block 387..392
+                LiteralExpr 389..390 "2"
+          ArgList 393..412
+            NameRef 394..401 "missing"
+            BinaryExpr 403..411
+              LiteralExpr 403..404 "1"
+              LiteralExpr 407..411 "true"
 
 == formatted ==
 fn unsupported() {
@@ -102,6 +109,7 @@ fn annotation() {
     let x: bool = 1
 }
 fn unit_equality() -> bool = {} == {}
+fn unit_sum() -> int = {} + 1
 fn computed_call() {
     _ = (
         if true {

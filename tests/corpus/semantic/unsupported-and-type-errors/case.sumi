@@ -10,6 +10,7 @@ fn branches() -> int = if true { 1 } else { false }
 fn missing_else() = if true { 1 }
 fn annotation() { let x: bool = 1 }
 fn unit_equality() -> bool = {} == {}
+fn unit_sum() -> int = {} + 1
 fn computed_call() {
     _ = (if true { 1 } else { 2 })(missing, 1 + true)
 }

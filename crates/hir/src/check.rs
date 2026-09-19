@@ -1915,7 +1915,9 @@ impl<'a, 's> Builder<'a, 's> {
                             self.require(child, value, operand, None);
                         }
                     }
-                    if let Some(operand) = lhs.or(rhs) {
+                    if matches!(op, Eq | Ne)
+                        && let Some(operand) = lhs.or(rhs)
+                    {
                         self.demand(node, operand, DemandKind::Comparable);
                     }
                 }
