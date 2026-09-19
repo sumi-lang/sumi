@@ -25,8 +25,9 @@
 
 use sumi_lexer::RawIdx;
 
-use crate::generated::{
-    BinaryOp, NodeKind as N, PREFIX_BP, SyntaxKind as T, binary_operator, can_end_statement,
+use crate::ast::NodeKind as N;
+use crate::grammar::{
+    BinaryOp, PREFIX_BP, SyntaxKind as T, binary_operator, can_end_statement, closer,
     encloses_statements, introduces_statement, is_closer, is_opener, is_prefix_operator, opener,
     starts_expression, starts_item, starts_statement,
 };
@@ -592,7 +593,7 @@ impl ListRule for Args {
 fn delimited_list<R: ListRule>(p: &mut Marker<'_, '_>, field: u8) {
     let close = p
         .current()
-        .and_then(crate::generated::closer)
+        .and_then(closer)
         .expect("a list opens at its opener");
     let mut m = p.start();
     m.token(); // the opener

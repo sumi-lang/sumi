@@ -1,5 +1,5 @@
 //! Grammar coverage: the file-based corpus and the program generator each
-//! reach every node kind and every child `sumi.grammar` allows, present
+//! reach every node kind and every child the grammar allows, present
 //! and, where the rule permits, absent. A construct the grammar admits
 //! that neither reaches has no snapshot and no property behind it, and
 //! every generated program is one the properties and the scorecard measure.

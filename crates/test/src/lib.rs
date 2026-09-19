@@ -6,7 +6,6 @@ pub mod corpus;
 pub mod coverage;
 mod edit;
 mod front;
-mod generated;
 mod perturb;
 mod program;
 
