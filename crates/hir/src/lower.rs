@@ -33,13 +33,11 @@ impl Named {
     }
 }
 
+#[derive(Clone, Copy)]
 pub(crate) struct Header {
     pub name: Option<TextRange>,
     /// `None` when the parameter list is not whole.
-    pub params: Option<Box<[Ty]>>,
-    /// Per parameter, whole list or not; a duplicate name is `None` here while `params` keeps its
-    /// type.
-    pub param_types: Box<[Option<Ty>]>,
+    pub callee: Option<Callee>,
     pub result: HeaderResult,
     pub item: NodeIdx,
 }
@@ -235,7 +233,11 @@ pub(crate) struct Declarations<'s> {
 }
 
 /// In item order, so a `FunctionId` indexes `items`.
-pub(crate) fn declare<'s>(source: &mut Source<'s>, items: &[ast::FnItem]) -> Declarations<'s> {
+pub(crate) fn declare<'s>(
+    source: &mut Source<'s>,
+    items: &[ast::FnItem],
+    graph: &mut Graph,
+) -> Declarations<'s> {
     let tree = source.tree;
     let mut names: NameMap<Named> = NameMap::with_capacity_and_hasher(items.len(), FxBuildHasher);
     let mut parameters = Vec::with_capacity(items.len());
@@ -264,13 +266,12 @@ pub(crate) fn declare<'s>(source: &mut Source<'s>, items: &[ast::FnItem]) -> Dec
             }
         }
         let list = item.param_list(tree);
-        let mut valid = list.is_some_and(|list| !tree.has_error(list.node()));
+        let whole_list = list.filter(|list| !tree.has_error(list.node()));
         let mut params: Vec<Parameter> = Vec::new();
         if let Some(list) = list {
             for param in list.params(tree) {
                 // A parameter without a type is a syntax error the parser already reported.
                 let ty = param.type_ref(tree).and_then(|ty| source.ty(ty));
-                valid &= ty.is_some();
                 let name = source.name(param.name(tree));
                 let first = name.and_then(|(name, node)| {
                     let first = params
@@ -302,28 +303,26 @@ pub(crate) fn declare<'s>(source: &mut Source<'s>, items: &[ast::FnItem]) -> Dec
         } else {
             // A missing annotation may be damage: only an empty gap or the expression-body `=` says
             // it was left out.
-            let gap = list
-                .filter(|list| !tree.has_error(list.node()))
-                .map(|list| {
-                    let end = item
-                        .body(tree)
-                        .map_or(tree.end_token(item.node()), |e| tree.first_token(e.node()));
-                    let mut tokens = source.tokens(tree.end_token(list.node()), end);
-                    (tokens.next(), tokens.next())
-                });
+            let gap = whole_list.map(|list| {
+                let end = item
+                    .body(tree)
+                    .map_or(tree.end_token(item.node()), |e| tree.first_token(e.node()));
+                let mut tokens = source.tokens(tree.end_token(list.node()), end);
+                (tokens.next(), tokens.next())
+            });
             match gap {
                 Some((None, None)) => HeaderResult::Declared(Ty::Unit, item.node()),
                 Some((Some(SyntaxKind::Eq), None)) => HeaderResult::Inferred,
                 _ => HeaderResult::None,
             }
         };
+        // A whole list has every parameter typed, a repeated name aside.
+        let callee = whole_list
+            .and_then(|_| params.iter().map(|p| p.ty).collect::<Option<Box<[Ty]>>>())
+            .map(|types| graph.declare(id, types));
         headers.push(Header {
             name: name.map(|(_, node)| source.range(node)),
-            params: valid.then(|| params.iter().map(|p| p.ty.unwrap()).collect()),
-            param_types: params
-                .iter()
-                .map(|p| p.ty.filter(|_| !p.duplicate))
-                .collect(),
+            callee,
             result,
             item: item.node(),
         });
@@ -340,8 +339,9 @@ pub(crate) fn lower<'s>(
     source: &mut Source<'s>,
     items: &[ast::FnItem],
     declared: &Declarations<'s>,
+    graph: Graph,
 ) -> (Graph, Lowered) {
-    let mut builder = Builder::new(source, &declared.headers, &declared.names);
+    let mut builder = Builder::new(source, &declared.headers, &declared.names, graph);
     for (index, (item, params)) in items.iter().zip(&declared.parameters).enumerate() {
         let built = builder.build(index, *item, params);
         builder.lowered.built.push(built);
@@ -471,13 +471,14 @@ impl<'a, 's> Builder<'a, 's> {
         source: &'a mut Source<'s>,
         headers: &'a [Header],
         names: &'a NameMap<'s, Named>,
+        graph: Graph,
     ) -> Self {
         let nodes = source.tree.len();
         Self {
             source,
             headers,
             names,
-            graph: Graph::with_capacity(nodes),
+            graph,
             lowered: Lowered {
                 built: Vec::with_capacity(headers.len()),
                 typed: Vec::with_capacity(nodes),
@@ -512,8 +513,9 @@ impl<'a, 's> Builder<'a, 's> {
         for (index, param) in parameters.iter().enumerate() {
             let index = u32::try_from(index).expect("parameter count fits u32");
             let name = param.name.map(|(_, node)| self.source.range(node));
-            let node = self.push(param.node, Op::Param(index), &[], name);
-            self.failed |= param.ty.is_none() || param.duplicate;
+            let ty = param.ty.filter(|_| !param.duplicate);
+            let node = self.push(param.node, Op::Param { index, ty }, &[], name);
+            self.failed |= ty.is_none();
             if let Some((name, _)) = param.name {
                 self.bind(name, node);
             } else {
@@ -521,7 +523,7 @@ impl<'a, 's> Builder<'a, 's> {
             }
         }
         let declared = header.result;
-        self.failed |= header.params.is_none() || matches!(declared, HeaderResult::None);
+        self.failed |= header.callee.is_none() || matches!(declared, HeaderResult::None);
         let tree = self.source.tree;
         let region = self.graph.open(entry);
         self.graph.enter(region);
@@ -636,12 +638,11 @@ impl<'a, 's> Builder<'a, 's> {
         match *op {
             Op::Hole | Op::Unused => false,
             Op::Entry | Op::Then | Op::Else | Op::Copy { declared: Some(_) } => true,
-            Op::Param(index) => {
-                self.headers[self.owner as usize].param_types[index as usize].is_some()
-            }
+            Op::Param { ty, .. } => ty.is_some(),
             Op::Call(callee) => {
+                let function = self.graph.callable(callee).function;
                 self.whole(callee, inputs)
-                    && !matches!(self.headers[callee.index()].result, HeaderResult::None)
+                    && !matches!(self.headers[function.index()].result, HeaderResult::None)
             }
             Op::And { rhs } | Op::Or { rhs } => typed(inputs[0].0) && result(rhs),
             Op::Join { then, else_ } => {
@@ -651,12 +652,8 @@ impl<'a, 's> Builder<'a, 's> {
         }
     }
     /// A whole call has an argument per parameter, none a hole.
-    fn whole(&self, callee: FunctionId, inputs: &[(NodeId, TextRange)]) -> bool {
-        let params = self.headers[callee.index()]
-            .params
-            .as_deref()
-            .expect("a call names a whole callee");
-        params.len() == inputs.len()
+    fn whole(&self, callee: Callee, inputs: &[(NodeId, TextRange)]) -> bool {
+        self.graph.callable(callee).params.len() == inputs.len()
             && inputs
                 .iter()
                 .all(|&(input, _)| self.lowered.typed[input.index()])
@@ -1226,9 +1223,9 @@ impl<'a, 's> Builder<'a, 's> {
         let context = self.context();
         let tree = self.source.tree;
         let node = call.node();
-        let callee: Option<(FunctionId, &Header, &[Ty])> = target.and_then(|target| {
+        let callee: Option<(FunctionId, &Header, Callee)> = target.and_then(|target| {
             let function = &self.headers[target.index()];
-            Some((target, function, function.params.as_deref()?))
+            Some((target, function, function.callee?))
         });
         if let Some((target, ..)) = callee {
             self.lowered.entered.push((context, target));
@@ -1247,18 +1244,19 @@ impl<'a, 's> Builder<'a, 's> {
             count += 1;
             inputs.push(self.input(arg.node()));
         }
-        if let Some((_, function, params)) = callee
-            && count != params.len()
+        if let Some((_, function, id)) = callee
+            && let arity = self.graph.callable(id).params.len()
+            && count != arity
         {
             self.source.error(
                 node,
                 codes::ARITY,
-                format!("expected {} arguments, found {count}", params.len()),
+                format!("expected {arity} arguments, found {count}"),
                 Some((self.source.range(function.item), "declared here")),
             );
         }
-        let whole = callee.filter(|&(target, ..)| self.whole(target, &inputs));
-        let op = callee.map_or(Op::Hole, |(target, ..)| Op::Call(target));
+        let whole = callee.filter(|&(.., id)| self.whole(id, &inputs));
+        let op = callee.map_or(Op::Hole, |(.., id)| Op::Call(id));
         let id = self.push(node, op, &inputs, None);
         self.inputs = inputs;
         let (target, function, _) = whole?;

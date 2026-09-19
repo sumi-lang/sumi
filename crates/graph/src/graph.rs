@@ -92,11 +92,33 @@ impl std::fmt::Debug for RegionId {
     }
 }
 
+/// A function a call may be held to: one with a whole parameter list. An ID from one graph names
+/// nothing in another.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Callee(u32);
+
+impl Callee {
+    fn index(self) -> usize {
+        self.0 as usize
+    }
+}
+
+#[derive(Debug)]
+pub struct Callable {
+    pub function: FunctionId,
+    pub params: Box<[Ty]>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Op {
     Int(Int),
     Bool(bool),
-    Param(u32),
+    /// `ty` is the parameter's declared type when the node carries it; a parameter that fails
+    /// its declaration, or repeats a name, has none.
+    Param {
+        index: u32,
+        ty: Option<Ty>,
+    },
     /// Its input is the context it is held in.
     Unit,
     /// Its type is whatever its context asks.
@@ -136,7 +158,7 @@ pub enum Op {
         else_: Option<RegionId>,
     },
     /// The inputs are the arguments as written, which may not match the callee's arity.
-    Call(FunctionId),
+    Call(Callee),
 }
 
 #[derive(Debug)]
@@ -172,6 +194,7 @@ pub struct Graph {
     reads: Vec<TextRange>,
     regions: Vec<Region>,
     runs: Vec<Run>,
+    callables: Vec<Callable>,
 }
 
 impl Graph {
@@ -182,7 +205,24 @@ impl Graph {
             reads: Vec::with_capacity(nodes),
             regions: Vec::new(),
             runs: Vec::new(),
+            callables: Vec::new(),
         }
+    }
+
+    pub fn callable(&self, callee: Callee) -> &Callable {
+        &self.callables[callee.index()]
+    }
+
+    /// In declaration order.
+    pub fn callables(&self) -> &[Callable] {
+        &self.callables
+    }
+
+    /// `params` is `function`'s whole parameter list, one type per parameter node of its run.
+    pub fn declare(&mut self, function: FunctionId, params: Box<[Ty]>) -> Callee {
+        let callee = Callee(u32::try_from(self.callables.len()).expect("function count fits u32"));
+        self.callables.push(Callable { function, params });
+        callee
     }
 
     /// Indexed by function ID.
@@ -330,7 +370,15 @@ mod tests {
         let start = graph.next();
         let entry = graph.push(Op::Entry, &[], at(0), None);
         assert_eq!(entry, start);
-        let param = graph.push(Op::Param(0), &[], at(1), Some(at(1)));
+        let param = graph.push(
+            Op::Param {
+                index: 0,
+                ty: Some(Ty::Int),
+            },
+            &[],
+            at(1),
+            Some(at(1)),
+        );
         let region = graph.open(entry);
         graph.enter(region);
         let one = graph.push(Op::Int(1.into()), &[], at(2), None);
@@ -374,7 +422,15 @@ mod tests {
     fn an_empty_region_reads_an_outer_definition() {
         let mut graph = Graph::default();
         let entry = graph.push(Op::Entry, &[], at(0), None);
-        let param = graph.push(Op::Param(0), &[], at(1), Some(at(1)));
+        let param = graph.push(
+            Op::Param {
+                index: 0,
+                ty: Some(Ty::Int),
+            },
+            &[],
+            at(1),
+            Some(at(1)),
+        );
         let region = graph.open(entry);
         graph.enter(region);
         graph.close(region, param);

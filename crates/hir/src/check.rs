@@ -21,8 +21,9 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         .unwrap()
         .items(tree)
         .collect();
-    let declared = lower::declare(&mut source, &items);
-    let (graph, lowered) = lower::lower(&mut source, &items, &declared);
+    let mut graph = Graph::with_capacity(tree.len());
+    let declared = lower::declare(&mut source, &items, &mut graph);
+    let (graph, lowered) = lower::lower(&mut source, &items, &declared, graph);
     let headers = declared.headers;
     let (mut typing, thresholds, demands) = flows::draw(&graph, &lowered, &headers);
     typing.solve(&thresholds);
@@ -42,7 +43,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         &graph,
         &typing,
         &lowered,
-        headers,
+        &headers,
         &failed,
         &mut functions,
     );
@@ -157,16 +158,17 @@ fn signatures(
     graph: &Graph,
     typing: &Typing,
     lowered: &Lowered,
-    headers: Vec<lower::Header>,
+    headers: &[lower::Header],
     failed: &[bool],
     functions: &mut [Function],
 ) {
-    for (index, header) in headers.into_iter().enumerate() {
+    for (index, header) in headers.iter().enumerate() {
         let run = graph.run(FunctionId::new(index));
         let evidence =
             (!matches!(header.result, HeaderResult::None)).then(|| *typing.evidence(run.result()));
         let result = evidence.and_then(|evidence| evidence.ty());
-        if let (Some(params), Some(result)) = (header.params, result) {
+        if let (Some(callee), Some(result)) = (header.callee, result) {
+            let params = graph.callable(callee).params.clone();
             functions[index].signature = Some(Signature { params, result });
         }
         // A failed demand, or the callee this inherits from, already reports it.
@@ -286,8 +288,11 @@ fn explain_zero(
                     }
                 }
             }
-            Op::Call(callee) => follow(&mut queue, graph.run(callee).result(), 1),
-            Op::Param(index) => {
+            Op::Call(callee) => {
+                let function = graph.callable(callee).function;
+                follow(&mut queue, graph.run(function).result(), 1);
+            }
+            Op::Param { index, .. } => {
                 // Runs are contiguous in declaration order.
                 let callee = graph
                     .runs()
@@ -368,7 +373,7 @@ fn complete(
             // No value, so nothing to resolve.
             Op::Entry | Op::Then | Op::Else | Op::Unused => true,
             // A caller's demand can resolve the call without the callee resolving.
-            Op::Call(callee) => functions[callee.index()]
+            Op::Call(callee) => functions[graph.callable(callee).function.index()]
                 .signature
                 .as_ref()
                 .is_some_and(|signature| Some(signature.result) == typing.resolve(node)),

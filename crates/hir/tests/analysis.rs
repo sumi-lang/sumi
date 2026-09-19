@@ -190,7 +190,7 @@ fn source_origins_are_utf8_byte_ranges() {
     let origin = a.graph().node(sum).origin;
     assert_eq!(text(&a, origin), "e + 1");
     let e = a.graph().inputs(sum)[0];
-    assert!(matches!(op(&a, e), Op::Param(0)));
+    assert!(matches!(op(&a, e), Op::Param { index: 0, .. }));
     assert_eq!(text(&a, a.graph().node(e).name.unwrap()), "e");
     let a = analyzed("// café\nfn f() -> int = absent");
     assert_eq!(

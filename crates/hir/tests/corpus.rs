@@ -329,7 +329,7 @@ fn dump_definition(
     let operation = match &entry.op {
         Op::Int(value) => format!("int {value}"),
         Op::Bool(value) => format!("bool {value}"),
-        Op::Param(index) => format!("param {index}"),
+        Op::Param { index, .. } => format!("param {index}"),
         Op::Unit => "unit".into(),
         Op::Unused => unreachable!("nothing reads a statement; dump_region discards its input"),
         Op::Hole => "hole".into(),
@@ -344,8 +344,8 @@ fn dump_definition(
         Op::Then => "then".into(),
         Op::Else => "else".into(),
         Op::Join { .. } => "if".into(),
-        Op::Call(function) => {
-            let function = analysis.function(*function);
+        Op::Call(callee) => {
+            let function = analysis.function(analysis.graph().callable(*callee).function);
             format!(
                 "call {}{}",
                 function
@@ -364,7 +364,13 @@ fn dump_definition(
     .unwrap();
     let child = depth + 1;
     match &entry.op {
-        Op::Int(_) | Op::Bool(_) | Op::Param(_) | Op::Unit | Op::Entry | Op::Then | Op::Else => {}
+        Op::Int(_)
+        | Op::Bool(_)
+        | Op::Param { .. }
+        | Op::Unit
+        | Op::Entry
+        | Op::Then
+        | Op::Else => {}
         Op::Hole => {
             for (index, &input) in inputs.iter().enumerate() {
                 dump_node(
