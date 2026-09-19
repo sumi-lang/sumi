@@ -78,7 +78,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         diagnostics,
     };
     assert!(
-        analysis.is_valid() || !analysis.diagnostics.is_empty(),
+        !analysis.is_valid() || analysis.functions.iter().all(|f| f.complete),
         "incomplete semantic analysis without an error"
     );
     analysis
