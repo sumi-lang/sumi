@@ -1,12 +1,6 @@
-//! The analysis held to the machine. A generator draws programs the checker
-//! should accept: scalar functions with typed parameters, guarded
-//! divisions, and recursions that decrease a parameter under a bound. Each
-//! accepted program runs on every live function at points inside the
-//! parameter sets the analysis proved, and the run is checked against the
-//! claims: the value lies in the result set, the call depth stays within
-//! the bound, and no divisor is zero, which the machine refuses. A rejected
-//! program only has to leave the checker standing. The check is
-//! `sumi-test`'s, which the fuzz `run` target samples over arbitrary text.
+//! The analysis held to the machine: generated programs the checker should accept, run by
+//! `check::run` inside the sets it proved and held to its claims. A rejected program only has to
+//! not crash the checker.
 
 use proptest::prelude::*;
 use sumi_frontend::parse_source;
@@ -14,14 +8,11 @@ use sumi_hir::analyze;
 use sumi_test::check;
 use sumi_test::check::Runs;
 
-/// xorshift64*: enough to draw a program from, and one word of state so a
-/// failing seed names its program.
 struct Rng(u64);
 
 impl Rng {
     fn new(seed: u64) -> Self {
-        // splitmix64 spreads the seed, so neighbouring seeds draw nothing
-        // alike; the state only has to be nonzero.
+        // The state must be nonzero: zero is xorshift's fixed point.
         let mut z = seed.wrapping_add(0x9E37_79B9_7F4A_7C15);
         z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
         z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
@@ -39,12 +30,10 @@ impl Rng {
         (self.next() >> 33) % n
     }
 
-    /// An integer in `lo..=hi`.
     fn between(&mut self, lo: i64, hi: i64) -> i64 {
         lo + self.below((hi - lo + 1) as u64) as i64
     }
 
-    /// True `num` times in `den`.
     fn chance(&mut self, num: u64, den: u64) -> bool {
         self.below(den) < num
     }
@@ -60,9 +49,6 @@ enum Kind {
     Bool,
 }
 
-/// How a function recurses, if it does: its first parameter is `n`, its
-/// body is `if n <= base { … } else { … }`, and the else arm calls
-/// `callee` with `n - step` first.
 #[derive(Clone, Copy)]
 struct Recursion {
     callee: usize,
@@ -76,23 +62,17 @@ struct Signature {
     recursion: Option<Recursion>,
 }
 
-/// One program's functions and the scope of the body being generated.
 struct Gen<'a> {
     rng: Rng,
     functions: &'a [Signature],
-    /// The function whose body is being generated.
     current: usize,
-    /// Locals in scope, innermost last.
     scope: Vec<(String, Kind)>,
     fresh: usize,
-    /// Inside the else arm of a recursive body: the call it must make, and
-    /// whether `n` is known to be positive there.
+    /// The bool is whether `n` is positive in that arm.
     arm: Option<(Recursion, bool)>,
-    /// Calls the else arm still owes: the recursion happens at least once.
     owed: bool,
-    /// Recursive calls the arm has made: two per arm keeps a run a few
-    /// thousand frames rather than exponential, and one where the call
-    /// passes `n` along, since its partner's calls multiply with it.
+    /// The cap is two per arm, one when the call passes `n` along; otherwise a run goes
+    /// exponential.
     calls: u32,
 }
 
@@ -141,9 +121,6 @@ impl Gen<'_> {
             .collect()
     }
 
-    /// Functions the body may call freely: those declared before it, its
-    /// recursion partner excluded, so the call graph is acyclic apart from
-    /// the recursions the generator shapes.
     fn callable(&self, kind: Kind) -> Vec<usize> {
         let partner = self.functions[self.current]
             .recursion
@@ -151,8 +128,6 @@ impl Gen<'_> {
         (0..self.current)
             .filter(|&f| Some(f) != partner && self.functions[f].result == kind)
             .filter(|&f| {
-                // A callee that recurses with this one must not be reached
-                // by any other call.
                 self.functions[f]
                     .recursion
                     .is_none_or(|recursion| recursion.callee != self.current)
@@ -174,7 +149,6 @@ impl Gen<'_> {
         }
     }
 
-    /// A leaf of `kind`: a literal, a local, or a call with leaf arguments.
     fn leaf(&mut self, kind: Kind) -> String {
         let locals = self.locals(kind);
         if !locals.is_empty() && self.rng.chance(1, 2) {
@@ -196,8 +170,6 @@ impl Gen<'_> {
         format!("f{callee}({})", args.join(", "))
     }
 
-    /// The call a recursive else arm makes: `n - step` first, then
-    /// whatever the callee's other parameters take.
     fn recursive_call(&mut self, recursion: Recursion, fuel: u32) -> String {
         self.owed = false;
         self.calls += 1;
@@ -214,8 +186,6 @@ impl Gen<'_> {
         format!("f{}({})", recursion.callee, args.join(", "))
     }
 
-    /// A divisor the checker can see is not zero: a literal, or `n` inside a
-    /// recursive arm whose bound keeps it positive.
     fn nonzero(&mut self) -> String {
         if let Some((_, positive)) = self.arm
             && positive
@@ -231,8 +201,6 @@ impl Gen<'_> {
         }
     }
 
-    /// A division under a guard on a local: the guard holds where the
-    /// division runs, or its negation does.
     fn guarded(&mut self, fuel: u32) -> Option<String> {
         let locals = self.locals(Kind::Int);
         if locals.is_empty() {
@@ -247,8 +215,6 @@ impl Gen<'_> {
         let b = self.bool(fuel.saturating_sub(2));
         let guard = guard.replace("{x}", &x).replace("{b}", &b);
         let divisor = if self.rng.chance(1, 4) {
-            // The guard narrows what the local is; a copy of it inside the
-            // branch is the narrowed value.
             let copy = self.fresh(Kind::Int);
             self.scope.push((copy.clone(), Kind::Int));
             Some((copy, x.clone()))
@@ -281,7 +247,6 @@ impl Gen<'_> {
         })
     }
 
-    /// `division` combined into a larger expression, or as it is.
     fn int_after(&mut self, division: &str, fuel: u32) -> String {
         if self.rng.chance(1, 2) {
             let other = self.operand(Kind::Int, fuel);
@@ -292,8 +257,6 @@ impl Gen<'_> {
         }
     }
 
-    /// An operand of a binary operator: a leaf, or a parenthesized
-    /// expression, so precedence never surprises.
     fn operand(&mut self, kind: Kind, fuel: u32) -> String {
         if fuel == 0 || self.rng.chance(1, 2) {
             self.leaf(kind)
@@ -415,8 +378,6 @@ impl Gen<'_> {
         }
     }
 
-    /// A block of a few statements and a tail of `kind`: bindings, which
-    /// shadow freely, discards, and an `if` without an else as a statement.
     fn block(&mut self, kind: Kind, fuel: u32) -> String {
         let depth = self.scope.len();
         let mut lines = Vec::new();
@@ -429,8 +390,7 @@ impl Gen<'_> {
                         Kind::Bool
                     };
                     let value = self.expr(kind, fuel);
-                    // Shadow a binding now and then, never a parameter: a
-                    // recursion reads `n` as declared.
+                    // The recursive call refers to `n` literally; a shadowed local would break it.
                     let bindings: Vec<String> = self
                         .locals(kind)
                         .into_iter()
@@ -465,8 +425,6 @@ impl Gen<'_> {
         format!("{{\n{}\n{tail}\n}}", lines.join("\n"))
     }
 
-    /// The body of the current function: a recursive shape or an
-    /// expression, either as `= expr` or as a block.
     fn body(&mut self) -> String {
         let signature = &self.functions[self.current];
         let result = signature.result;
@@ -478,7 +436,6 @@ impl Gen<'_> {
                 self.calls = 0;
                 let mut arm = self.expr(result, 3);
                 if self.owed {
-                    // The arm never reached a call: make one its tail.
                     let call = self.recursive_call(recursion, 1);
                     arm = format!("{{\nlet r0 = {call}\n{arm}\n}}");
                 }
@@ -501,9 +458,6 @@ impl Gen<'_> {
     }
 }
 
-/// A program of two to six functions the checker should accept. Every
-/// function is named `f` and its index; parameters are `n` first, then
-/// `a`, `b`; the last function takes no parameters, so something runs.
 fn program(seed: u64) -> String {
     let mut rng = Rng::new(seed);
     let count = rng.between(2, 6) as usize;
@@ -511,6 +465,8 @@ fn program(seed: u64) -> String {
     let mut index = 0;
     while index < count {
         let last = index + 1 == count;
+        // The last function takes no parameters, so it is live and runs even when no call reaches
+        // the others.
         let arity = if last { 0 } else { rng.between(0, 2) as usize };
         let params: Vec<Kind> = (0..arity)
             .map(|i| {
@@ -531,7 +487,6 @@ fn program(seed: u64) -> String {
             Some(Recursion {
                 callee: index + 1,
                 base: rng.between(-2, 3),
-                // One call of a pair may pass `n` along; the other decreases.
                 step: if rng.chance(1, 3) {
                     0
                 } else {
@@ -622,15 +577,12 @@ fn program(seed: u64) -> String {
     text
 }
 
-/// Run `source` inside what the analysis proved; `None` for a rejected
-/// program.
 fn runs_of(source: &str) -> Option<Runs> {
     let analysis = analyze(parse_source(source.into()).unwrap());
     analysis.program().map(check::run)
 }
 
-/// Shrinking a seed draws an unrelated program, so none is attempted: a
-/// failing seed already names its program.
+/// No shrinking: a shrunk seed draws an unrelated program.
 fn config() -> ProptestConfig {
     ProptestConfig {
         cases: 256,
@@ -648,10 +600,6 @@ proptest! {
     }
 }
 
-/// The generator earns its keep only while the checker accepts most of
-/// what it draws and most runs end: a drop in either means the generator
-/// or the analysis lost precision, or a recursion the checker accepted
-/// never ends, and each is worth knowing.
 #[test]
 fn most_generated_programs_are_accepted_and_run_to_the_end() {
     let seeds = 400u64;

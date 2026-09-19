@@ -1,7 +1,5 @@
-//! Lowering the lexer's errors and the parser's evidence into diagnostics:
-//! the code and wording of each, the fix where the repair is a token (a
-//! closer or a canonical literal), the suppression of parser evidence a
-//! lexer error already explains, and source order.
+//! Lowering lexer errors and parser evidence into diagnostics. Parser evidence anchored on an
+//! `Error` token is dropped.
 
 use std::collections::HashSet;
 
@@ -15,9 +13,7 @@ use sumi_text::{TextEdit, TextRange};
 use crate::codes;
 use crate::diagnostic::{Diagnostic, DiagnosticCode, Fix, Label};
 
-/// The canonical diagnostics of one source snapshot, from the evidence its
-/// lexed file and parse hold: what [`parse_source`](crate::parse_source)
-/// lowers, for a caller that already ran the phases.
+/// `lexed` and `parse` must be of `source`; the result is in source order.
 pub fn diagnostics(source: &str, lexed: &LexedFile, parse: &Parse) -> Box<[Diagnostic]> {
     let snapshot = Snapshot { source, lexed };
     let mut diagnostics: Vec<Diagnostic> = lexed
@@ -37,8 +33,7 @@ pub fn diagnostics(source: &str, lexed: &LexedFile, parse: &Parse) -> Box<[Diagn
                 ParseEvidence::Violation(violation) => snapshot.violation(*violation),
             }),
     );
-    // This sort is stable: phase precedence and producer observation order
-    // break ties at the same source location.
+    // Stable, so lexer diagnostics stay before parser ones at one range.
     diagnostics.sort_by_key(|diagnostic| {
         (
             diagnostic.primary.start().to_u32(),
@@ -48,7 +43,6 @@ pub fn diagnostics(source: &str, lexed: &LexedFile, parse: &Parse) -> Box<[Diagn
     diagnostics.into_boxed_slice()
 }
 
-/// The source snapshot being lowered: its text and its tokens.
 struct Snapshot<'a> {
     source: &'a str,
     lexed: &'a LexedFile,
@@ -62,8 +56,6 @@ impl Snapshot<'_> {
         )
     }
 
-    /// The range an anchor names: a gap is the empty range at the byte
-    /// boundary where syntax is absent.
     fn anchor(&self, anchor: ParseAnchor) -> TextRange {
         match anchor {
             ParseAnchor::Gap(gap) => {
@@ -80,8 +72,6 @@ impl Snapshot<'_> {
             .any(|raw| self.lexed.kind(raw) == SyntaxKind::Error)
     }
 
-    /// Whether the lexer already reported what the anchor points at: a
-    /// token of the range, or the token after the gap.
     fn anchor_has_error(&self, anchor: ParseAnchor) -> bool {
         match anchor {
             ParseAnchor::Gap(gap) => {
@@ -140,8 +130,6 @@ impl Snapshot<'_> {
         }
     }
 
-    /// A recovery's diagnostic, or none where the lexer already reported
-    /// the tokens it recovered around.
     fn recovery(
         &self,
         recovery: &ParseRecovery,
@@ -219,16 +207,12 @@ impl Snapshot<'_> {
         let replacement = kind
             .text()
             .unwrap_or_else(|| unreachable!("closer evidence names a closing delimiter"));
-        // An unterminated string's tail absorbs an insertion at its boundary,
-        // as its text rather than the promised delimiter.
+        // Inserted after an unterminated string, the closer becomes string text.
         let previous = gap.trivia_start().checked_sub(1);
         if previous.is_some_and(|token| lexed.flags(token).contains(TokenFlags::UNTERMINATED)) {
             return None;
         }
         let at = lexed.boundary(gap.trivia_start());
-        // At one site a closer binds the innermost same-kind opener, regardless
-        // of which diagnostic offered it. Fix that one now; a reparse can then
-        // offer the next outer closer without a misleading duplicate action.
         if !sites.insert((kind, at.to_u32())) {
             return None;
         }
@@ -238,9 +222,6 @@ impl Snapshot<'_> {
         })
     }
 
-    /// A violation's diagnostic, or none where the lexer already reported
-    /// its tokens. No violation names a fix: layout is the formatter's to
-    /// repair, and `sumi fmt` repairs every one it can.
     fn violation(&self, violation: ParseViolation) -> Option<Diagnostic> {
         if self.has_error(violation.range) {
             return None;

@@ -1,10 +1,5 @@
-//! Single-file scalar semantic analysis over the frontend's immutable
-//! snapshot.
-//!
-//! Analysis keeps the graph of every body, whole or holed, with what it
-//! decided about each node, and independent diagnostics. Handles are
-//! relative to their analysis, not persistent identities. All source
-//! locations refer to the owned snapshot.
+//! Semantic analysis of one file over the frontend's snapshot. Handles and ranges are relative to
+//! the analysis that made them.
 
 mod check;
 pub mod codes;
@@ -29,12 +24,8 @@ pub use sumi_graph::{
 pub struct Analysis {
     parsed: ParsedSource,
     graph: Graph,
-    /// What the solve decided of every node, kept: a node and its class
-    /// share an index.
     settled: typing::Settled,
     functions: Vec<Function>,
-    /// Every diagnostic, syntactic and semantic, in source order; the
-    /// syntactic ones stay in `parsed` too.
     diagnostics: Vec<Diagnostic>,
 }
 
@@ -53,44 +44,35 @@ impl Analysis {
     pub fn parsed(&self) -> &ParsedSource {
         &self.parsed
     }
-    /// Every definition of every function, whole or holed.
+    /// Every body is in it, holed ones too.
     pub fn graph(&self) -> &Graph {
         &self.graph
     }
-    /// The type `node` resolved to; none for a node that is no value,
-    /// which a hole, a node built over one, a context, and a statement
-    /// are, or for a class that conflicted.
+    /// None for a node that is no value, or whose class conflicted.
     pub fn ty(&self, node: NodeId) -> Option<Ty> {
         self.settled.resolve(node)
     }
     fn may(&self, node: NodeId) -> &May {
         self.settled.may(node)
     }
-    /// Every diagnostic, syntactic and semantic, in source order, with a
-    /// syntactic one first where both stand at one position.
+    /// In source order, a syntactic one first at a shared position.
     pub fn diagnostics(&self) -> &[Diagnostic] {
         &self.diagnostics
     }
-    /// Whether `diagnostic` is one of the checker's rather than the
-    /// frontend's.
     pub fn is_semantic(diagnostic: &Diagnostic) -> bool {
         diagnostic.code.group == codes::SEMANTIC
     }
-    /// The checker's diagnostics alone, in source order.
     pub fn semantic_diagnostics(&self) -> impl Iterator<Item = &Diagnostic> {
         self.diagnostics.iter().filter(|d| Self::is_semantic(d))
     }
+    /// In declaration order.
     pub fn functions(&self) -> &[Function] {
         &self.functions
     }
-    /// An ID must come from this analysis, not another source revision.
     pub fn function(&self, id: FunctionId) -> &Function {
         &self.functions[id.index()]
     }
-    /// What may reach a function's parameters and its result, whenever it
-    /// has a signature: the hull of every live call site's arguments, and
-    /// nothing at all for a function no live call site reaches, whose body
-    /// is checked for nothing.
+    /// None for a function without a signature.
     pub fn ranges(&self, id: FunctionId) -> Option<Ranges> {
         self.function(id).signature.as_ref()?;
         let run = self.graph.run(id);
@@ -103,26 +85,19 @@ impl Analysis {
             },
         })
     }
-    /// The source text `range` covers: how a name in the HIR is read, since
-    /// every name is kept as where it is written.
     pub fn text(&self, range: TextRange) -> &str {
         range.text(self.parsed.source())
     }
-    /// Whether there is no diagnostic.
     pub fn is_valid(&self) -> bool {
         self.diagnostics.is_empty()
     }
-    /// The file as a program, when it is valid.
     pub fn program(&self) -> Option<Program<'_>> {
         self.is_valid().then_some(Program { analysis: self })
     }
 }
 
-/// A valid analysis: there is no diagnostic, and the checker guarantees
-/// every function of such a file has a signature and a complete body.
-/// Only such a file runs, so a run of it has no path to an ill-typed
-/// operation, a zero divisor, a hole, or a recursion without end, and the
-/// machine's refusals are checker bugs.
+/// An analysis with no diagnostic: every function has a signature and a complete body, and a
+/// refusal from the machine is a checker bug.
 #[derive(Clone, Copy, Debug)]
 pub struct Program<'a> {
     analysis: &'a Analysis,
@@ -132,20 +107,16 @@ impl<'a> Program<'a> {
     pub fn function(self, id: FunctionId) -> &'a Function {
         self.analysis.function(id)
     }
-    /// A function's contract; every function of a valid file has one.
     pub fn signature(self, id: FunctionId) -> &'a Signature {
         self.function(id)
             .signature()
             .expect("a valid file's functions have signatures")
     }
-    /// What may reach a function's parameters and result, read off the
-    /// evidence when asked; every function of a valid file has it.
     pub fn ranges(self, id: FunctionId) -> Ranges {
         self.analysis
             .ranges(id)
             .expect("a valid file's functions have ranges")
     }
-    /// Every function with its ID, in declaration order.
     pub fn functions(self) -> impl Iterator<Item = (FunctionId, &'a Function)> {
         self.analysis
             .functions
@@ -153,8 +124,7 @@ impl<'a> Program<'a> {
             .enumerate()
             .map(|(index, function)| (FunctionId::new(index), function))
     }
-    /// The function item named `name`, if any: a valid file names each
-    /// function once.
+    /// A valid file names each function once.
     pub fn function_named(self, name: &str) -> Option<FunctionId> {
         self.functions()
             .find(|(_, function)| {
@@ -164,9 +134,8 @@ impl<'a> Program<'a> {
             })
             .map(|(id, _)| id)
     }
-    /// A machine about to call `function` on `args`, which must match the
-    /// signature in count and type and lie within the parameters' ranges,
-    /// bounded by the depth the analysis proved.
+    /// `args` must lie within `ranges(function).params`; only the match against the signature is
+    /// asserted.
     pub fn machine(self, function: FunctionId, args: &[Value]) -> Machine<'a> {
         let signature = self.signature(function);
         assert!(
@@ -184,8 +153,6 @@ impl<'a> Program<'a> {
             self.function(function).depth_bound(),
         )
     }
-    /// Run `function` on `args` to completion, as [`Program::machine`]
-    /// takes them. The checker proved the run cannot be refused.
     pub fn evaluate(self, function: FunctionId, args: &[Value]) -> Value {
         self.machine(function, args)
             .run()
@@ -205,37 +172,29 @@ pub struct Function {
 }
 
 impl Function {
-    /// Where the name is written; [`Analysis::text`] reads it.
     pub fn name(&self) -> Option<TextRange> {
         self.name
     }
     pub fn origin(&self) -> TextRange {
         self.origin
     }
-    /// A concrete declaration contract, not a guarantee that its body is valid.
-    /// Expression bodies (`=`, including `= { ... }`) infer an omitted result;
-    /// bare block bodies default to unit. Callers never determine this result.
+    /// Present when the declaration resolved; it says nothing of the body.
     pub fn signature(&self) -> Option<&Signature> {
         self.signature.as_ref()
     }
-    /// Whether the body built whole and every value in it resolved: what a
-    /// run needs of it. A complete body is not permission to execute an
-    /// invalid file.
+    /// The body built whole and every value in it resolved.
     pub fn complete(&self) -> bool {
         self.complete
     }
-    /// The most call frames a run entered here can hold at once, the entry
-    /// included, when every recursion it can reach has a measure with a
-    /// finite hull. A valid file's every recursion has a measure, so a run
-    /// of it is finite either way.
+    /// Most frames a run from here holds at once, the entry included; none when a measure's hull is
+    /// unbounded. A valid file's run is finite either way.
     pub fn depth_bound(&self) -> Option<u64> {
         self.depth
     }
 }
 
-/// What may reach a function's parameters, the hull of its live call sites'
-/// arguments, and what its result may be. A function no live call site
-/// reaches holds nothing in either, and nothing in it is checked.
+/// The hull of every live call site's arguments, and the result over them; both empty for a
+/// function no live call site reaches.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Ranges {
     pub params: Box<[May]>,

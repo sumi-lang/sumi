@@ -1,13 +1,11 @@
-//! Every front-end product for one source, with the span and shape helpers
-//! the recovery measurements compare across an edit, and the one spelling
-//! of a piece of evidence the snapshots and the parser tests share.
+//! The lexer's and parser's products for one test source, and the spelling of parse evidence the
+//! snapshots and the parser tests share.
 
 use sumi_lexer::{LexedFile, lex};
 use sumi_syntax::{
     NodeIdx, NodeKind, Parse, ParseEvidence, ParseRecoveryKind, ParserInput, RawIdx, parse,
 };
 
-/// Every front-end product for one source.
 pub struct Front {
     pub lexed: LexedFile,
     pub parse: Parse,
@@ -20,12 +18,11 @@ pub fn front(source: &str) -> Front {
 }
 
 impl Front {
-    /// The token stream the tree was built over.
     pub fn input(&self) -> &ParserInput {
         self.parse.input()
     }
 
-    /// The byte spans of the significant tokens.
+    /// Byte spans of the significant tokens.
     pub fn spans(&self) -> Vec<(usize, usize)> {
         let input = self.input();
         input
@@ -43,8 +40,8 @@ impl Front {
         (range.start().to_usize(), range.end().to_usize())
     }
 
-    /// A node's text and the shape of its subtree: kinds with byte spans
-    /// relative to the node, in preorder.
+    /// The node's text and its subtree in preorder, each kind with a byte span relative to the
+    /// node's start.
     pub fn shape(&self, source: &str, node: NodeIdx) -> (String, Vec<(NodeKind, usize, usize)>) {
         let tree = self.parse.tree();
         let (base, stop) = self.node_span(node);
@@ -58,11 +55,8 @@ impl Front {
         (source[base..stop].to_owned(), nodes)
     }
 
-    /// The items, and the statements of their bodies, that cover none of
-    /// the raw tokens in `touched`: what an edit there must leave alone.
-    /// The statements of a body whose `{` is among the raw tokens in
-    /// `moved` are not among them: an edit that removes or moves the
-    /// delimiter they sit inside necessarily reparents them.
+    /// The items, and their bodies' statements, that cover no token in `touched`. A block whose `{`
+    /// is in `moved` contributes none, since the edit reparents them.
     pub fn guarded(&self, touched: &[RawIdx], moved: &[RawIdx]) -> Vec<NodeIdx> {
         let tree = self.parse.tree();
         let mut nodes = Vec::new();
@@ -84,9 +78,6 @@ impl Front {
     }
 }
 
-/// The name the snapshots and the parser tests spell for a piece of
-/// evidence: the kind of recovery or violation, with an expected token
-/// named and an expected closer's opener left out.
 pub fn evidence_name(evidence: &ParseEvidence) -> String {
     match evidence {
         ParseEvidence::Recovery(recovery) => match recovery.kind {

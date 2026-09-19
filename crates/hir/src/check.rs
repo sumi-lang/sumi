@@ -1,18 +1,6 @@
-//! Semantic checking of one file: the verdicts on what lowering built.
-//!
-//! The headers are read, the bodies lowered to the graph, and the
-//! classes, facts, and flows drawn from it by `flows::draw`, the demands
-//! joined in, and the typing solves once. Signatures are read off result
-//! classes, independent of declaration order; what may reach each
-//! parameter and result is read off the kept evidence whenever asked.
-//! Demands are then checked in walk order against the final evidence, so
-//! a disagreement is blamed on the first demand that raised it. Every
-//! expression has one context, so it is held to one demand; an expression
-//! whose type is undetermined, because its branches or its callee
-//! disagree, satisfies any demand silently, and the disagreement is
-//! reported where it arose. A body is complete when its walk succeeded,
-//! none of its demands failed, every value in it resolved, and every call
-//! agrees with its callee's signature.
+//! Semantic checking of one file, over the graph lowering built. Demands replay in walk order
+//! against the solved evidence, so a conflict is blamed on the first demand that raised it, and an
+//! expression the conflict left undetermined satisfies every later demand silently.
 
 use sumi_frontend::ParsedSource;
 use sumi_graph::{FunctionId, Graph, NodeId, Op, Ty};
@@ -68,8 +56,6 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         &mut functions,
     );
     complete(&graph, &typing, &lowered, &failed, &mut functions);
-    // One list, in source order: a syntactic diagnostic first where both
-    // stand at one position, then the checker's in the order it made them.
     let mut diagnostics = source.diagnostics;
     diagnostics.splice(0..0, parsed.diagnostics().iter().cloned());
     diagnostics.sort_by_key(|d| d.primary.start());
@@ -87,8 +73,6 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     analysis
 }
 
-/// Every demand checked in node order, against the evidence the solve
-/// left: which of the `functions` failed one.
 fn replay(
     source: &mut Source<'_>,
     typing: &Typing,
@@ -105,8 +89,6 @@ fn replay(
     failed
 }
 
-/// Whether `demand` holds of the evidence so far, which it joins when it
-/// does; reported where it was made when it does not.
 fn holds(source: &mut Source<'_>, typing: &Typing, replay: &mut Replay, demand: &Demand) -> bool {
     let actual_class = demand.actual;
     let actual = replay.resolve(actual_class);
@@ -150,10 +132,6 @@ fn holds(source: &mut Source<'_>, typing: &Typing, replay: &mut Replay, demand: 
                 [],
             );
         }
-        // Each branch delivers what it is so far, and only that: a
-        // conflict on the `if` is the branches disagreeing, and nothing
-        // else. The `if` then resolves to nothing, so whatever takes its
-        // type is held to no type it never had.
         DemandKind::Agree { branches } => {
             for branch in branches {
                 replay.branch(branch, actual_class);
@@ -174,10 +152,6 @@ fn holds(source: &mut Source<'_>, typing: &Typing, replay: &mut Replay, demand: 
     false
 }
 
-/// Every signature the result classes give, and a result to infer that
-/// did not resolve, reported unless a demand in the body already
-/// explained it or the trouble arrived whole from a callee, which reports
-/// it at its own declaration.
 fn signatures(
     source: &mut Source<'_>,
     graph: &Graph,
@@ -189,14 +163,13 @@ fn signatures(
 ) {
     for (index, header) in headers.into_iter().enumerate() {
         let run = graph.run(FunctionId::new(index));
-        // The result's evidence: the declared copy's, or the body's
-        // value's, when the header says which.
         let evidence =
             (!matches!(header.result, HeaderResult::None)).then(|| *typing.evidence(run.result()));
         let result = evidence.and_then(|evidence| evidence.ty());
         if let (Some(params), Some(result)) = (header.params, result) {
             functions[index].signature = Some(Signature { params, result });
         }
+        // A failed demand, or the callee this inherits from, already reports it.
         if let (HeaderResult::Inferred, Some(evidence), None) = (header.result, evidence, result)
             && lowered.built[index]
             && !failed[index]
@@ -224,7 +197,6 @@ fn signatures(
     }
 }
 
-/// Every reachable division excludes zero.
 fn divisions(
     source: &mut Source<'_>,
     graph: &Graph,
@@ -255,10 +227,6 @@ fn divisions(
     }
 }
 
-/// Labels for the values that put zero into `divisor`: what it reads,
-/// followed through the copies, narrowed reads, branches, calls, and
-/// arguments that pass a value along until a literal or an operator
-/// produced it.
 fn explain_zero(
     graph: &Graph,
     typing: &Typing,
@@ -300,10 +268,7 @@ fn explain_zero(
             Op::Int(_) | Op::Neg | Op::Binary(_) => {
                 labels.push((entry.origin, describe(&may.ints, "").into()));
             }
-            // A `let` passes the value on unchanged, at no distance.
             Op::Copy { .. } => follow(&mut queue, inputs[0], 0),
-            // A guard that narrowed the local is where the zero was
-            // singled out, and the local is where it came from.
             Op::Refine { .. } => {
                 if may.ints != typing.may(inputs[0]).ints {
                     labels.push((
@@ -323,8 +288,7 @@ fn explain_zero(
             }
             Op::Call(callee) => follow(&mut queue, graph.run(callee).result(), 1),
             Op::Param(index) => {
-                // Runs are contiguous in declaration order: the parameter's
-                // function is the last whose entry precedes it.
+                // Runs are contiguous in declaration order.
                 let callee = graph
                     .runs()
                     .partition_point(|run| run.entry().index() <= node.index())
@@ -364,9 +328,6 @@ fn explain_zero(
     labels
 }
 
-/// Every recursion is bounded, and the call depth each function is
-/// proved to reach. A function whose body did not build is out of scope
-/// like one that failed a verdict.
 fn bounds(
     source: &mut Source<'_>,
     graph: &Graph,
@@ -391,10 +352,6 @@ fn bounds(
     }
 }
 
-/// A body is complete when it built, none of its demands failed, every
-/// value in it resolved, and every call agrees with its callee's
-/// signature: a caller's demands can resolve its call's class without
-/// resolving the callee, and that is not a complete call.
 fn complete(
     graph: &Graph,
     typing: &Typing,
@@ -410,6 +367,7 @@ fn complete(
         let complete = run.nodes().all(|node| match graph.node(node).op {
             // No value, so nothing to resolve.
             Op::Entry | Op::Then | Op::Else | Op::Unused => true,
+            // A caller's demand can resolve the call without the callee resolving.
             Op::Call(callee) => functions[callee.index()]
                 .signature
                 .as_ref()

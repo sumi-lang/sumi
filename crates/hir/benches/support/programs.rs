@@ -104,11 +104,9 @@ pub fn validate(shape: &str, size: usize, analysis: &Analysis) {
     assert_eq!(analysis.functions().len(), functions);
     if matches!(shape, "unresolved-cycle" | "conflict-cycle") {
         assert!(!analysis.is_valid());
-        // An unresolved result is reported at every function, and its
-        // cycle is live, so it is also a recursion with no measure, reported
-        // once. A conflict is reported once at each end of the cycle that
-        // claims a type, and the functions between them inherit it
-        // silently; its cycle closes under `if true`, so it never runs.
+        // unresolved-cycle: one report per function, plus one recursion with no measure since its
+        // cycle is live. conflict-cycle: one report at each endpoint, the rest inherit silently;
+        // its cycle is dead under `if true`, so no recursion report.
         let reports = if shape == "conflict-cycle" {
             2
         } else {

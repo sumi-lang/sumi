@@ -1,6 +1,4 @@
-//! The lexer over arbitrary text: total, and a partition of its input.
-//! Cheap enough to run an order of magnitude faster than `parse`, which
-//! matters for the byte-level literal and number logic this exercises.
+//! Fuzzes the lexer over arbitrary bytes.
 
 #![no_main]
 

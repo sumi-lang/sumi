@@ -47,8 +47,6 @@ fn clean_sources_have_no_errors() {
 
 #[test]
 fn unused_punctuation_has_an_error() {
-    // Reported here, where every later phase can treat an `Error` token as
-    // already diagnosed.
     check_errors(";", &[(0, LexErrorKind::UnknownPunctuation)]);
     // A quote mark opens nothing: there are no character literals.
     check_errors("'", &[(0, LexErrorKind::UnknownPunctuation)]);
@@ -125,7 +123,6 @@ fn leading_zeros_are_rejected() {
     check_errors("0123", &[(0, LexErrorKind::LeadingZero)]);
     check_errors("00", &[(0, LexErrorKind::LeadingZero)]);
     check_errors("0", &[]);
-    // A suffix does not count as padding: `0x` is only a suffix.
     check_errors("0x", &[(0, LexErrorKind::UnknownSuffix)]);
 }
 
@@ -136,8 +133,8 @@ fn suffixes_are_rejected() {
     // Base prefixes are not part of the language; `x…` is just a suffix.
     check_errors("0x1F", &[(0, LexErrorKind::UnknownSuffix)]);
     check_errors("0b10", &[(0, LexErrorKind::UnknownSuffix)]);
-    // Neither are digit separators or exponents: `_000` and `e5` are
-    // suffixes too, and `.5` is two tokens after the integer.
+    // Digit separators and exponents are not part of the language either: `_000` and `e5` are
+    // suffixes, and `.5` lexes as two tokens after the integer.
     check_errors("1_000", &[(0, LexErrorKind::UnknownSuffix)]);
     check_errors("1e5", &[(0, LexErrorKind::UnknownSuffix)]);
     check_errors("1.5", &[]);

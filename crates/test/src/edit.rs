@@ -1,5 +1,5 @@
-//! One edit to a well-formed program, made at a significant token, and the
-//! mapping that carries unaffected spans into the edited source.
+//! One edit to a well-formed program, made at a significant token, and the mapping that carries
+//! unaffected spans into the edited source.
 
 use proptest::prelude::*;
 use sumi_syntax::{ParserInput, SigIdx, SyntaxKind, is_bracket};
@@ -7,31 +7,20 @@ use sumi_syntax::{ParserInput, SigIdx, SyntaxKind, is_bracket};
 use crate::front::front;
 use crate::program::program;
 
-/// One edit to a well-formed program, made at a significant token.
 #[derive(Clone, Copy, Debug)]
 pub enum Edit {
-    /// Remove the token.
     Delete,
-    /// Insert a spaced copy of the token after it.
     Duplicate,
-    /// Exchange the token with its neighbour, keeping the trivia between.
     Swap,
-    /// Insert this text, spaced, before the token.
     Insert(&'static str),
 }
 
-/// Tokens to insert: brackets above all, then keywords and operators that
-/// start or continue something.
 pub const INSERTS: &[&str] = &[
     "(", ")", "{", "}", ",", "=", "fn", "let", "else", "x", "0", "+", "-",
 ];
 
-/// The `edit` fuzz target's input, read from the fuzzer's bytes: one byte
-/// for the edit, its kind in the low two bits and, for an insert, the
-/// index into [`INSERTS`] above them; the significant token it lands on as
-/// a little-endian `u16` the target reduces by the token count; then the
-/// source. [`edit_seeds`] writes the same layout, so it is stated here
-/// alone.
+/// The `edit` fuzz target's input: one byte for the edit, a little-endian `u16` for the significant
+/// token it lands on, then the source.
 pub fn edit_input(data: &[u8]) -> Option<(Edit, u16, &str)> {
     let [kind, low, high, source @ ..] = data else {
         return None;
@@ -49,8 +38,7 @@ pub fn edit_input(data: &[u8]) -> Option<(Edit, u16, &str)> {
     ))
 }
 
-/// A source's seeds for the `edit` fuzz target, as [`edit_input`] reads
-/// them: one per edit kind, at the second significant token.
+/// One seed per edit kind, at the second significant token, in [`edit_input`]'s layout.
 pub fn edit_seeds(source: &str) -> Vec<Vec<u8>> {
     (0u8..4)
         .map(|kind| [&[kind, 1, 0], source.as_bytes()].concat())
@@ -66,12 +54,10 @@ pub fn edit() -> impl Strategy<Value = Edit> {
     ]
 }
 
-/// The significant index of position `index` in a program's spans.
 fn sig(index: usize) -> SigIdx {
     SigIdx::new(u32::try_from(index).expect("significant positions fit in u32"))
 }
 
-/// Whether `edit` inserts, removes, duplicates, or moves a bracket.
 pub fn changes_delimiter(input: &ParserInput, index: usize, edit: Edit) -> bool {
     let bracket_at = |index: usize| input.get(sig(index)).is_some_and(is_bracket);
     match edit {
@@ -90,8 +76,8 @@ pub fn changes_delimiter(input: &ParserInput, index: usize, edit: Edit) -> bool 
     }
 }
 
-/// A well-formed program with at least two significant tokens, the index of
-/// one of them, and an edit to make there.
+/// A program with two or more significant tokens, the index of one of them, and an edit to make
+/// there.
 pub fn edited_program() -> impl Strategy<Value = (String, usize, Edit)> {
     program()
         .prop_filter("an edit needs two tokens", |source| {
@@ -115,7 +101,8 @@ pub fn delimiter_edited_program() -> impl Strategy<Value = (String, usize, Edit)
     })
 }
 
-/// The replaced byte interval in the original and where it ends afterward.
+/// The bytes `start..old_end` of the original, replaced by text that ends at `new_end` in the
+/// edited source.
 #[derive(Clone, Copy)]
 pub struct EditSpan {
     start: usize,
@@ -124,8 +111,6 @@ pub struct EditSpan {
 }
 
 impl EditSpan {
-    /// The interval `start..old_end` of the original, replaced by text that
-    /// ends at `new_end` in the edited source.
     pub fn new(start: usize, old_end: usize, new_end: usize) -> Self {
         Self {
             start,
@@ -134,7 +119,7 @@ impl EditSpan {
         }
     }
 
-    /// Map a span disjoint from the edit into the edited source.
+    /// Map a span that does not overlap the edit into the edited source.
     pub fn map(self, (start, end): (usize, usize)) -> (usize, usize) {
         if end <= self.start {
             return (start, end);
@@ -151,18 +136,8 @@ impl EditSpan {
     }
 }
 
-/// Apply `edit` at significant token `index` of `source`: the edited text,
-/// the significant indices the edit touches, those it removes or moves, and
-/// the replaced byte interval for mapping unaffected nodes.
-///
-/// The touched indices include two tokens on either side of the edit: an
-/// inserted token joins whatever it lands next to — a leading operator or
-/// `else` continues the statement above, a `(` after a name makes a call —
-/// and a deleted token can leave a dangling operator that takes the next
-/// line as its operand. Jointness can change the arity of that neighbouring
-/// operator and therefore the boundary after the token before it. Those are
-/// the language's rules, not recovery, so this local context is the edit's
-/// own business.
+/// The edited source, the significant indices the edit touches, those it removes or moves, and the
+/// replaced byte interval.
 pub fn apply(
     source: &str,
     spans: &[(usize, usize)],
@@ -229,6 +204,8 @@ pub fn apply(
             )
         }
     };
+    // An inserted or deleted token can change a neighbouring operator's arity and with it the
+    // boundary a token further out.
     let touched = (left.saturating_sub(2)..=(right + 2).min(spans.len() - 1)).collect();
     let moved = match edit {
         Edit::Delete => vec![index],
@@ -242,8 +219,6 @@ pub fn apply(
 mod tests {
     use super::*;
 
-    /// The seeds decode to every edit kind at the second token, with the
-    /// source intact.
     #[test]
     fn the_seeds_are_inputs() {
         let seeds = edit_seeds("fn f() {}");

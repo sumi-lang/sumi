@@ -1,6 +1,5 @@
-//! The printer: one left-to-right pass over the gaps of a [`Plan`],
-//! deciding each group where it opens and emitting each gap's separator,
-//! as the edits that turn the source into the formatted text.
+//! The printer: one pass over a [`Plan`]'s gaps, deciding each group where it opens and emitting
+//! the edits that format the source.
 
 use std::ops::Range;
 
@@ -11,8 +10,7 @@ use sumi_text::{TextEdit, TextRange};
 use crate::plan::{Breaks, Closer, Flat, Group, INDENT, Plan, WIDTH};
 use crate::trivia::signal;
 
-/// One gap's edit: the gap it came from, so a caller can tell which item
-/// it lies in, and the edit.
+/// `gap` indexes the plan's gaps.
 pub(crate) struct GapEdit {
     pub(crate) gap: usize,
     pub(crate) edit: TextEdit,
@@ -29,19 +27,16 @@ pub(crate) fn print(
     let token_text = |sig: usize| lexed.text(source, raw_of(sig));
     let width = |text: &str| text.chars().count();
 
-    // Hard gaps up to each index, so a group's forcing is one subtraction.
     let mut hard_before = vec![0u32; n + 2];
     for gap in 0..=n {
         hard_before[gap + 1] = hard_before[gap] + u32::from(plan.gaps[gap].breaks == Breaks::Hard);
     }
-    // A group is forced by a hard gap outside its tail.
     let hard_in = |from: u32, to: u32| hard_before[to as usize] > hard_before[from as usize];
     let forced = |group: &Group| match group.tail {
         Some((from, to)) => hard_in(group.first, from) || hard_in(to, group.end),
         None => hard_in(group.first, group.end),
     };
 
-    // The trivia of gap `gap`, merged with the gap before a layout comma.
     let trivia_range = |gap: usize| -> Range<RawIdx> {
         let mut range = input.trivia_before(SigIdx::new(gap as u32));
         if gap > 0 && plan.layout_comma[gap - 1] {
@@ -84,16 +79,11 @@ pub(crate) fn print(
             next_group += 1;
             let group = plan.groups[g];
             broken[g] = forced(&group) || {
-                // Measure from here, every undecided gap flat, to the first
-                // gap that may break: in the group's tail, after the group
-                // in a broken enclosing group, or in the tail of a flat
-                // one.
                 let mut w = 0usize;
                 let mut fits = true;
                 let mut k = gap;
                 loop {
                     let plan_gap = plan.gaps[k];
-                    // A list closer gap that breaks emits its comma first.
                     let comma = usize::from(plan_gap.closer == Some(Closer::List));
                     if plan_gap.breaks == Breaks::Hard {
                         w += comma;
@@ -138,7 +128,6 @@ pub(crate) fn print(
             stack.push(g);
         }
 
-        // A layout comma and the gap before it belong to the closer gap.
         if gap < n && plan.layout_comma[gap] {
             continue;
         }
@@ -159,7 +148,6 @@ pub(crate) fn print(
             if plan_gap.closer == Some(Closer::List) && breaks {
                 out.push(',');
             }
-            // Every broken group whose tail holds this gap indents it.
             let extra = stack
                 .iter()
                 .filter(|&&open| broken[open] && plan.groups[open].in_tail(gap as u32))

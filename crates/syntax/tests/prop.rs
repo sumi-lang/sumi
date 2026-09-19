@@ -1,7 +1,4 @@
-//! Property tests: the stream, tree, and recovery invariants over
-//! generated sources instead of the hand-written corpus. The well-formed
-//! program generator and the single-edit machinery live in `sumi-test`,
-//! shared with any harness that measures recovery quality.
+//! The syntax layer's invariants from `sumi_test::check`, sampled over generated sources.
 
 use proptest::prelude::*;
 use sumi_lexer::lex;
@@ -10,9 +7,6 @@ use sumi_test::{
     Edit, INSERTS, check, delimiter_edited_program, front, non_delimiter_edited_program, program,
 };
 
-/// Source fragments beyond every keyword and punctuation text of the
-/// language, valid and pathological; concatenation composes the adjacencies
-/// goldens cannot enumerate.
 const EXTRA_FRAGMENTS: &[&str] = &[
     "x",
     "foo",
@@ -40,7 +34,6 @@ const EXTRA_FRAGMENTS: &[&str] = &[
     "€",
 ];
 
-/// Every fixed token text of the language, then [`EXTRA_FRAGMENTS`].
 fn fragments() -> Vec<&'static str> {
     SyntaxKind::ALL
         .iter()
@@ -49,11 +42,8 @@ fn fragments() -> Vec<&'static str> {
         .collect()
 }
 
-/// Fragments free of `)` and `}` (each would close the wrapping paren), of
-/// `{` (it would restore termination), and of a lone `(` (it would take
-/// the wrapping paren's closer, leaving the wrapper unclosed and suspending
-/// nothing) — nested parens come closed — for
-/// [`newlines_inside_parens_never_terminate`].
+/// No `)`, `}`, `{`, or unmatched `(`: each would close or unbalance the wrapping paren in
+/// [`newlines_inside_parens_never_terminate`], or restore termination.
 const PAREN_SAFE: &[&str] = &[
     "fn",
     "let",
@@ -127,8 +117,8 @@ proptest! {
         let source = format!("f({})", pieces.concat());
         let lexed = lex(&source).expect("generated sources fit in u32");
         let input = ParserInput::new(&lexed);
-        // Pieces can form a `//` that hides the wrapping paren's closer;
-        // only a `(` the stream closes suspends termination.
+        // Two `/` pieces make a `//` that comments out the closer, and an unclosed `(` suspends
+        // nothing.
         prop_assume!(input.partner(SigIdx::new(1)) == Some(input.end() - 1));
         for index in input.indices() {
             prop_assert!(
@@ -157,11 +147,6 @@ proptest! {
         );
     }
 
-    // Recovery quality, measured. The tests above prove the parser is
-    // total and accepts every well-formed program. These require recovery
-    // after one edit to remain local: at statement level for
-    // non-delimiters, and at item level for delimiters.
-
     #[test]
     fn a_single_non_delimiter_edit_disturbs_only_where_it_lands(
         (source, index, edit) in non_delimiter_edited_program()
@@ -177,8 +162,7 @@ proptest! {
     }
 }
 
-/// Every edit at every token of programs with exposed closures, which the
-/// block-bodied program generator does not produce.
+/// The program generator produces no exposed closures, so these are enumerated by hand.
 #[test]
 fn every_edit_around_an_exposed_closure_recovers_locally() {
     let edits = [Edit::Delete, Edit::Duplicate, Edit::Swap]

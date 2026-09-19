@@ -1,6 +1,5 @@
-# Every fixed token text and compound operator, so byte-level mutation can
-# splice in whole tokens, and the lexer's texts: a comment's start, and a
-# string's delimiter with an escape.
+# Every fixed token text, in step with tokens! in crates/lexer/src/kind.rs, and every operator the
+# parser glues, plus a comment start and an escaped string delimiter.
 Underscore="_"
 ElseKw="else"
 FalseKw="false"

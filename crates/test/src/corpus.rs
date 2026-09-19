@@ -1,8 +1,5 @@
-//! The file-based corpus: every directory under `tests/corpus` at the
-//! workspace root that holds a `case.sumi`, and the snapshot of each
-//! stage beside it. Each stage's integration test owns its rendering;
-//! this compares it with the snapshot, or rewrites the snapshot when the
-//! stage's `UPDATE_*` variable is set.
+//! The file-based corpus: each case directory under `tests/corpus` holds `case.sumi` and a snapshot
+//! per stage.
 
 use std::fmt::Write as _;
 use std::fs;
@@ -18,7 +15,6 @@ pub enum Stage {
 impl Stage {
     pub const ALL: [Self; 3] = [Self::Frontend, Self::Hir, Self::Eval];
 
-    /// The snapshot's name in a case directory.
     pub fn filename(self) -> &'static str {
         match self {
             Self::Frontend => "frontend.snap",
@@ -35,7 +31,7 @@ impl Stage {
     }
 }
 
-/// The corpus root, `tests/corpus` at the workspace root.
+/// `tests/corpus` at the workspace root.
 pub fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/corpus")
 }
@@ -47,7 +43,6 @@ pub fn cases() -> Vec<PathBuf> {
     cases
 }
 
-/// Sorted leaf-case discovery, also used to find orphan products and metadata.
 fn directories_holding(dir: &Path, file: &str, out: &mut Vec<PathBuf>) {
     let mut entries: Vec<_> = fs::read_dir(dir)
         .unwrap_or_else(|error| panic!("cannot read {}: {error}", dir.display()))
@@ -64,9 +59,6 @@ fn directories_holding(dir: &Path, file: &str, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// The stages a case selects: the frontend unconditionally, and the names
-/// its `stages` file lists, one per line, deliberately not a general
-/// configuration language. Expected files never select a stage.
 fn stages(case: &Path) -> Result<Vec<Stage>, String> {
     let mut stages = vec![Stage::Frontend];
     match fs::read_to_string(case.join("stages")) {
@@ -101,7 +93,6 @@ pub fn check(stage: Stage, snapshot: impl Fn(&str, &[Stage]) -> String) {
     .unwrap_or_else(|error| panic!("{error}"));
 }
 
-/// Kept separate from environment lookup so coverage/update contracts are testable.
 fn verify(
     root: &Path,
     stage: Stage,
@@ -180,7 +171,6 @@ fn verify(
     ))
 }
 
-/// A line diff with two context lines, by longest common subsequence.
 fn diff(expected: &str, actual: &str) -> String {
     let old: Vec<&str> = expected.lines().collect();
     let new: Vec<&str> = actual.lines().collect();

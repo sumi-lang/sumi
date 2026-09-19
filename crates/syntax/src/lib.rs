@@ -1,11 +1,5 @@
-//! Grammar and validity for Sumi.
-//!
-//! `sumi-syntax` consumes the classified, validated token stream from
-//! `sumi-lexer` and builds the parser-facing token stream, flat token-anchored
-//! syntax tree, and parse evidence. Compound operators are glued by the
-//! parser, using token adjacency. The node vocabulary and the typed views
-//! are declared once in `ast`; the token classes, bracket pairs, and
-//! operator tables in `grammar`.
+//! The parser and flat syntax tree for Sumi. Compound operators are glued from adjacent tokens by
+//! the parser, not the lexer.
 
 pub mod ast;
 mod grammar;

@@ -1,10 +1,5 @@
-//! Recovery after one edit, over arbitrary well-formed sources: the
-//! recovery properties of `sumi-syntax` with the fuzzer in place of the
-//! program generator. `edit_input` reads the edit, the significant token it
-//! lands on, and the source from the bytes. A source the parser does not
-//! accept without evidence has no recovery to measure and returns early;
-//! coverage feedback is what leads the fuzzer past that gate, since every
-//! input that reaches the check covers code no rejected one does.
+//! Fuzzes single-edit recovery in `sumi-syntax`, feeding `sumi-test`'s recovery check arbitrary
+//! bytes in place of the program generator.
 
 #![no_main]
 

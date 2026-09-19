@@ -1,6 +1,3 @@
-//! The analysis held to its contracts: what the graph of a body is, which
-//! files are accepted, and what each diagnostic says.
-
 use sumi_frontend::{Diagnostic, DiagnosticCode, parse_source};
 use sumi_hir::codes::*;
 use sumi_hir::{Analysis, BinaryOp, Function, FunctionId, Int, NodeId, Op, Ty, analyze};
@@ -19,8 +16,7 @@ fn clean(source: &str) -> Analysis {
     analysis
 }
 
-/// The value a function's body computes: its region's result, before the
-/// copy a declared result holds it in.
+/// Not `Run::result`, which is the declared-result copy when there is one.
 fn value(analysis: &Analysis, function: usize) -> NodeId {
     let graph = analysis.graph();
     graph
@@ -32,7 +28,6 @@ fn op(analysis: &Analysis, node: NodeId) -> &Op {
     &analysis.graph().node(node).op
 }
 
-/// The nodes a function's body region defines, in definition order.
 fn body(analysis: &Analysis, function: usize) -> Vec<NodeId> {
     let graph = analysis.graph();
     graph
@@ -45,7 +40,6 @@ fn text(analysis: &Analysis, range: TextRange) -> &str {
     analysis.text(range)
 }
 
-/// The checker's diagnostics, apart from the frontend's.
 fn semantic(analysis: &Analysis) -> Vec<&Diagnostic> {
     analysis.semantic_diagnostics().collect()
 }
@@ -54,9 +48,6 @@ fn codes(analysis: &Analysis) -> Vec<DiagnosticCode> {
     semantic(analysis).iter().map(|d| d.code).collect()
 }
 
-/// A disagreement between branches is reported once, at the `if`, and
-/// leaves the `if` undetermined: nothing that takes its type is held to a
-/// type it never had, while the branches keep their own.
 #[test]
 fn disagreeing_branches_are_undetermined_not_the_first_branch() {
     for result in ["bool", "int"] {
@@ -101,7 +92,6 @@ fn literals_of_any_size_fold_a_leading_minus() {
         };
         assert_eq!(literal, &value.parse::<Int>().unwrap(), "{expr}");
     }
-    // Only a `-` directly on the literal folds; the rest is a negation.
     for expr in ["--9223372036854775808", "-(9223372036854775808 + 0)"] {
         let a = clean(&format!("fn f() -> int = {expr}"));
         assert!(matches!(op(&a, value(&a, 0)), Op::Neg), "{expr}");
@@ -114,8 +104,6 @@ fn literals_of_any_size_fold_a_leading_minus() {
     }
 }
 
-/// The offset an argument carries is read through a chain of `let`s of
-/// any length, since the walk keeps its own stack.
 #[test]
 fn a_measure_is_read_through_any_depth_of_lets() {
     use std::fmt::Write as _;
@@ -319,8 +307,6 @@ fn existing_corpus_never_panics_or_silently_rejects() {
 fn large_definition_chains_and_cycles_are_stack_safe() {
     use std::fmt::Write;
     const COUNT: usize = 10_000;
-    // A chain of calls that is grounded, grounded through a cycle, an
-    // unresolved cycle, or a cycle that claims two types at its ends.
     for (cycle, grounded, conflict) in [
         (false, true, false),
         (true, true, false),
@@ -356,10 +342,6 @@ fn large_definition_chains_and_cycles_are_stack_safe() {
             if grounded {
                 assert!(a.functions().iter().all(Function::complete));
             } else {
-                // A conflict is reported once at each end that claims a
-                // type; every function between inherits it silently. A live
-                // cycle with no ground is also a recursion with no measure,
-                // reported once.
                 let recursion = usize::from(!conflict);
                 assert_eq!(
                     semantic(&a).len(),

@@ -1,8 +1,6 @@
-# The gate is on the patch: new and changed lines must be covered. The
-# project total is reported but never blocks, since a refactor that moves
-# uncovered code should not fail for it.
 coverage:
   status:
+    # The project total never blocks, since a refactor that moves uncovered code should not fail.
     project:
       default:
         informational: true

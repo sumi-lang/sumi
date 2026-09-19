@@ -1,6 +1,3 @@
-//! The formatter's policy, one witness per rule, and its contract on
-//! sources the parser recovered in.
-
 use sumi_format::{Formatted, format};
 use sumi_lexer::lex;
 use sumi_syntax::{ParserInput, parse};
@@ -74,13 +71,10 @@ fn lists_break_one_per_line_with_a_layout_comma() {
 
 #[test]
 fn chains_break_before_operators_and_values_move_after_eq() {
-    // Ninety columns: past the width after `let x = `, within it one
-    // level in.
     check(
         "fn f() {\n    let x = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n}",
         "fn f() {\n    let x =\n        aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n}\n",
     );
-    // Wider still: the chain breaks before each operator of its level.
     check(
         "fn f() {\n    let x = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n}",
         "fn f() {\n    let x =\n        aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n            + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n}\n",
@@ -130,14 +124,11 @@ fn empty_and_trivia_only_sources() {
 
 #[test]
 fn recovered_syntax_is_left_as_written_around_the_damage() {
-    // The chained comparison is an `Error` node: frozen. The unclosed
-    // paren anchors a recovery at the gap where `)` is missing: frozen.
-    // Everything else, the sound item included, is formatted.
     check(
         "fn f() {\n    let x = a < b < c\n    let y = (\n}\nfn g() { ok(1) }",
         "fn f() {\n    let x = a < b < c\n    let y = (\n}\nfn g() {\n    ok(1)\n}\n",
     );
-    // A frozen final gap keeps even the missing trailing newline.
+    // The final gap is frozen, so no trailing newline is added.
     check("fn f( { ) }", "fn f( { ) }");
     check("fn 0() fn", "fn 0() fn");
     check(
@@ -163,9 +154,6 @@ fn malformed_sources_format_without_a_defect() {
 
 #[test]
 fn a_value_hugs_its_binding_line_when_its_head_fits() {
-    // The call's head `let total = compute(` fits, so the arguments break
-    // inside it; the whole moves to the next line only when even the head
-    // does not fit, and then its inside is one level deeper.
     check(
         "fn f() {\n    let total = compute(aaaaaaaaaaaaaaaaaaaaaaaaa, bbbbbbbbbbbbbbbbbbbbbbbbbbbb, cccccccccccccccccccccccccccc, dddddddddddd)\n}",
         "fn f() {\n    let total = compute(\n        aaaaaaaaaaaaaaaaaaaaaaaaa,\n        bbbbbbbbbbbbbbbbbbbbbbbbbbbb,\n        cccccccccccccccccccccccccccc,\n        dddddddddddd,\n    )\n}\n",
@@ -194,13 +182,10 @@ fn a_block_bodied_closure_hugs_the_list_it_ends() {
         "fn f() {\n    each(items, fn(item) {\n        visit(item)\n    })\n}",
         "fn f() {\n    each(items, fn(item) {\n        visit(item)\n    })\n}\n",
     );
-    // When the head does not fit, the list breaks and the closure moves
-    // one level in with the other elements.
     check(
         "fn f() {\n    each(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, fn(item) {\n        visit(item)\n    })\n}",
         "fn f() {\n    each(\n        aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,\n        bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb,\n        fn(item) {\n            visit(item)\n        },\n    )\n}\n",
     );
-    // A comment before the closure forces the list; one inside it does not.
     check(
         "fn f() {\n    each(items, // all\n fn(item) {\n        visit(item) // one\n    })\n}",
         "fn f() {\n    each(\n        items, // all\n        fn(item) {\n            visit(item) // one\n        },\n    )\n}\n",

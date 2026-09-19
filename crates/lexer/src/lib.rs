@@ -1,10 +1,5 @@
-//! Lexical analysis for Sumi.
-//!
-//! The lexer is total: any `&str` lexes. It is lossless: the tokens
-//! partition the source, trivia included. It is line-bounded: no token but
-//! a line break spans a line, and an unterminated string ends at its line.
-//! It is token-local: every [`LexError`] names its token and a range inside
-//! it.
+//! Lexical analysis for Sumi: total (any `&str` lexes) and lossless (the tokens partition the
+//! source, trivia included). No token but `Newline` contains a line break.
 
 mod index;
 mod kind;

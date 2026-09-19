@@ -22,8 +22,7 @@ fn analysis(c: &mut Criterion) {
     group.finish();
 }
 
-// Include lexing, parsing, diagnostics, source ownership, and semantic checking
-// so moving work between the parser and typed consumers cannot hide its cost.
+// Benches parsing and analysis together, so moving cost between them can't hide it.
 fn check_source(c: &mut Criterion) {
     let mut group = c.benchmark_group("hir/check-source");
     for shape in programs::SHAPES {

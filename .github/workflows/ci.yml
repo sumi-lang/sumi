@@ -38,10 +38,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - run: cargo test --workspace --locked
-      # A failing property writes its seed to the crate's tracked
-      # `proptest-regressions/` file, which every later run replays before
-      # generating anything new. The runner's copy would die with the job,
-      # so keep it as an artifact to commit.
+      # The regression file a failing property writes is tracked; upload it to commit.
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: failure()
         with:
@@ -58,16 +55,13 @@ jobs:
         with:
           toolchain: nightly
           components: llvm-tools-preview
-      # Instrumented artifacts share nothing with the plain test build, so
-      # keep them out of its cache.
+      # Instrumented artifacts share nothing with the test build's cache.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: coverage
       - uses: taiki-e/install-action@9534c84618278caac52cb373bb164ed464dbd8af # v2.87.11
         with:
           tool: cargo-llvm-cov
-      # Tests and benches are already left out of the report; the leaves
-      # that nothing ships run under instrumentation but stay out too.
       - run: >
           cargo llvm-cov --workspace --locked --branch
           --ignore-filename-regex '(^|/)(fuzz|crates/(scorecard|test))/'
@@ -85,8 +79,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-      # The harness is seeded and count-based, so its output must match the
-      # committed reference byte for byte.
+      # The harness is seeded and count-based, so the reference matches byte for byte.
       - run: |
           cargo run --release --locked -p sumi-scorecard > scorecard.txt
           if ! diff crates/scorecard/recovery-scorecard.txt scorecard.txt; then

@@ -1,5 +1,4 @@
-//! A generator for well-formed programs: grammar-directed, with the spacing
-//! and line-break rules built in, so the parser must accept every output.
+//! Generated programs; the parser accepts every output with no evidence.
 
 use proptest::prelude::*;
 use proptest::strategy::ValueTree;
@@ -17,8 +16,6 @@ fn literal() -> BoxedStrategy<String> {
         .boxed()
 }
 
-/// A binary operator applied left to right over `operands`, spaced, with
-/// each operator either on the line or leading the next one.
 fn chain(
     operand: BoxedStrategy<String>,
     ops: &'static [&'static str],
@@ -41,8 +38,6 @@ fn chain(
         .boxed()
 }
 
-/// A parameter list on one line: names, each typed unless `inferred` lets
-/// it go bare, with or without a trailing comma.
 fn param_list(inferred: bool) -> BoxedStrategy<String> {
     (
         prop::collection::vec((name(), any::<bool>()), 0..3),
@@ -69,9 +64,6 @@ fn param_list(inferred: bool) -> BoxedStrategy<String> {
         .boxed()
 }
 
-/// What follows a parameter list, for items and closures alike: an
-/// optional return type, then a block or `=` and an expression, and
-/// whether it was the expression.
 fn signature_tail(
     block: BoxedStrategy<String>,
     body: BoxedStrategy<String>,
@@ -88,9 +80,7 @@ fn signature_tail(
         .boxed()
 }
 
-/// An expression that nothing follows: an initializer, a returned value,
-/// or a body. Only there may a closure take an expression body bare, since
-/// that body absorbs every operator and argument list after it.
+/// A closure takes a bare expression body only here, since it absorbs every following operator.
 fn tail_expr(expr: BoxedStrategy<String>) -> BoxedStrategy<String> {
     let closure =
         (param_list(true), any::<bool>(), expr.clone()).prop_map(|(params, returns, body)| {
@@ -103,8 +93,6 @@ fn tail_expr(expr: BoxedStrategy<String>) -> BoxedStrategy<String> {
 fn expr() -> BoxedStrategy<String> {
     let leaf = prop_oneof![name(), literal()];
     leaf.prop_recursive(3, 24, 3, |expr| {
-        // An `else` takes a block or one more `if`, which takes no `else`
-        // of its own: one link witnesses the chain.
         let otherwise = prop_oneof![
             2 => block(expr.clone()),
             1 => (expr.clone(), block(expr.clone()))
@@ -129,26 +117,20 @@ fn expr() -> BoxedStrategy<String> {
                     None => format!("if {condition} {then}"),
                 }),
             1 => block(expr.clone()),
-            // Where an operator may follow, an expression body is
-            // parenthesized with its closure.
             1 => (param_list(true), signature_tail(block(expr.clone()), expr.clone()))
                 .prop_map(|(params, (tail, bare))| {
                     if bare { format!("(fn{params}{tail})") } else { format!("fn{params}{tail}") }
                 }),
         ]
         .boxed();
-        // Prefix operators are glued to their operand.
         let unary = prop_oneof![
             6 => atom.clone(),
             1 => (prop::sample::select(&["-", "!"][..]), atom).prop_map(|(op, e)| format!("{op}{e}")),
         ]
         .boxed();
-        // At most one operator per tier: five tiers already compound, and
-        // program size is what generation time and shrinking scale with —
-        // three operands per tier made the average program 6 KB.
         let product = chain(unary, &["*", "/", "%"], 2);
         let sum = chain(product, &["+", "-"], 2);
-        // Comparisons never chain.
+        // A chained comparison is a parse violation.
         let comparison = chain(sum, &["==", "!=", "<", "<=", ">", ">="], 2);
         let conjunction = chain(comparison, &["&&"], 2);
         chain(conjunction, &["||"], 2)
@@ -156,8 +138,6 @@ fn expr() -> BoxedStrategy<String> {
     .boxed()
 }
 
-/// A statement, and whether it is a bare expression. The generator uses
-/// explicit discards outside tail position without relying on its type.
 fn statement(expr: BoxedStrategy<String>) -> BoxedStrategy<(String, bool)> {
     prop_oneof![
         3 => expr.clone().prop_map(|e| (e, true)),
@@ -176,9 +156,7 @@ fn statement(expr: BoxedStrategy<String>) -> BoxedStrategy<(String, bool)> {
     .boxed()
 }
 
-/// A block: one statement per line, or a single expression on the braces'
-/// line, or nothing. A bare expression before another statement is
-/// discarded explicitly, so the block stays well-formed.
+/// A bare value before the last statement is `unused-value`; it is discarded.
 fn block(expr: BoxedStrategy<String>) -> BoxedStrategy<String> {
     prop_oneof![
         1 => Just("{}".to_owned()),
@@ -199,8 +177,6 @@ fn block(expr: BoxedStrategy<String>) -> BoxedStrategy<String> {
     .boxed()
 }
 
-/// A well-formed program: zero to three function items, each with typed
-/// parameters.
 pub fn program() -> BoxedStrategy<String> {
     let item = (
         name(),
@@ -222,8 +198,7 @@ pub fn program() -> BoxedStrategy<String> {
         .boxed()
 }
 
-/// A deterministic, endless sequence of programs drawn from [`program`],
-/// for harnesses that need seeded values outside a proptest runner.
+/// Programs from [`program`], seeded; the iterator never ends.
 pub struct Programs {
     strategy: BoxedStrategy<String>,
     runner: TestRunner,

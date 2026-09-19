@@ -1,10 +1,7 @@
-//! Corpora for benchmarks and the scorecard: generated programs one after
-//! another to a size, clean or with one edit in every stride of tokens.
+//! Corpora for benchmarks and the scorecard.
 
 use crate::{Edit, INSERTS, Programs, apply, front};
 
-/// A seeded stream of bounded draws, for a harness that selects outside a
-/// proptest runner.
 pub struct Rng(u64);
 
 impl Rng {
@@ -25,8 +22,7 @@ impl Rng {
     }
 }
 
-/// At least `bytes` of well-formed source: the programs [`Programs`] draws
-/// from `seed`, one after another.
+/// At least `bytes` of well-formed source.
 pub fn generate(bytes: usize, seed: u64) -> String {
     let mut source = String::with_capacity(bytes + 1024);
     for program in Programs::new(seed) {
@@ -39,8 +35,7 @@ pub fn generate(bytes: usize, seed: u64) -> String {
     source
 }
 
-/// `source` with one edit from the recovery properties' pool in every
-/// `stride` significant tokens.
+/// `source` with one edit in every `stride` significant tokens.
 pub fn damage(source: &str, seed: u64, stride: usize) -> String {
     assert!(
         stride >= 2,
@@ -49,8 +44,8 @@ pub fn damage(source: &str, seed: u64, stride: usize) -> String {
     let spans = front(source).spans();
     let mut rng = Rng::new(seed);
     let mut damaged = source.to_owned();
-    // Later edits first: the original's spans still locate every earlier
-    // token, and a swap reaches one token to the right.
+    // Highest index first, so `spans` still locates every earlier token; swap also touches the
+    // token to its right.
     let mut end = spans.len();
     while end > stride {
         let index = end - stride + rng.below(stride - 1);

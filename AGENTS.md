@@ -52,7 +52,9 @@ You're in the core repository for Sumi, a novel statically typed general-purpose
 
 ## Comment Style
 
-- Comments are terse. They state what the code cannot: the invariant a type leaves open, why the obvious alternative is wrong, what a reader would otherwise have to derive. They do not restate what the code does.
+- A comment exists only to say what the code cannot: an invariant the types leave open, a contract the signature leaves open on an item others call, or why the obvious alternative is wrong, as a present-tense fact. Nothing else: not what the code does, not what a name already says, not what a test tests.
+- One line, two at most; a module doc is at most two sentences. Plain register, noun first. Comments fill to 100 columns like the code.
+- Private helpers, fields, variants, and tests carry no doc unless the name would mislead without one. A doc repeated on a caller and its callee stays on the callee. A `codes!` entry keeps one line: what triggers the code.
 - No storytelling: how the code came to be, what it replaced, or what was tried belongs in the commit message, not the source.
 - No speculative notes: no "could", "might", or "later"; work no one has committed to is not a comment.
-- No references to external plans, designs, reviews, or conversations. A comment stands on the code alone, since that is all a reader has.
+- No references to external plans, designs, reviews, or conversations: a comment stands on the code alone, since that is all a reader has.

@@ -1,16 +1,14 @@
 use std::fmt;
 use std::ops::{BitOr, BitOrAssign};
 
-/// Properties discovered while scanning a token.
+/// A set flag has an entry in the file's `errors()` on the same token, so a consumer reports
+/// nothing of its own.
 #[derive(Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct TokenFlags(u16);
 
 impl TokenFlags {
     pub const EMPTY: Self = Self(0);
-    /// The closing delimiter was never found.
     pub const UNTERMINATED: Self = Self(1 << 0);
-    /// The literal breaks a rule the file's errors state: a suffix or a
-    /// leading zero.
     pub const MALFORMED_NUMBER: Self = Self(1 << 1);
 
     const NAMES: [(Self, &'static str); 2] = [

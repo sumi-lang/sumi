@@ -1,16 +1,7 @@
-//! The value graph: every definition a file's bodies make, as a node with
-//! an operation and the nodes it reads, in regions that run only when
-//! their context is live.
-//!
-//! One table holds the whole file. A function's nodes are a run of it, its
-//! parameters first; a region's nodes are a run inside its function's,
-//! with the regions of its branches nested inside. A read of a local is
-//! not a node but an edge to the local's definition, or to the narrowed
-//! definition a guard gives it inside a branch; every edge says where the
-//! read is written, as every node says where it is. What could not be built is
-//! a hole over whatever was built beneath it, so every function has a
-//! result and every construct a node, and a rejected file is as complete
-//! a graph as an accepted one.
+//! The value graph: one table of nodes per file, each an op over the nodes it reads, in regions
+//! that run only while their context node is live. A read of a local is an edge to its definition,
+//! not a node, and what could not be built is a hole over what was, so a rejected file's graph is
+//! complete.
 
 use std::num::NonZeroU32;
 use std::ops::Range;
@@ -19,9 +10,8 @@ use sumi_text::TextRange;
 
 use crate::{BinaryOp, FunctionId, Int, Ty};
 
-/// A function's run of the graph: its entry context, then a node per
-/// parameter, then its body region's nodes, then, for a declared result,
-/// the copy the body's value is held in.
+/// A function's nodes: the entry, then one per parameter, then its body region's, then the
+/// declared-result copy if any.
 #[derive(Debug)]
 pub struct Run {
     nodes: Range<u32>,
@@ -31,29 +21,23 @@ pub struct Run {
 }
 
 impl Run {
-    /// The function's nodes, in definition order.
     pub fn nodes(&self) -> impl ExactSizeIterator<Item = NodeId> + use<> {
         (self.nodes.start as usize..self.nodes.end as usize).map(NodeId::new)
     }
 
-    /// The context the function runs in: live when it can be called.
     pub fn entry(&self) -> NodeId {
         NodeId::new(self.nodes.start as usize)
     }
 
-    /// A node per parameter, in declaration order.
     pub fn params(&self) -> impl ExactSizeIterator<Item = NodeId> + use<> {
         let first = self.nodes.start as usize + 1;
         (first..first + self.arity as usize).map(NodeId::new)
     }
 
-    /// The body's region, run in the entry context.
     pub fn region(&self) -> RegionId {
         self.region
     }
 
-    /// The function's value: the body region's result, or the declared
-    /// result the body's value is held to.
     pub fn result(&self) -> NodeId {
         self.result
     }
@@ -62,26 +46,21 @@ impl Run {
         (self.nodes.start as usize..self.nodes.end as usize).contains(&node.index())
     }
 
-    /// The position of `node` in the run, for a slot per node.
     pub fn slot(&self, node: NodeId) -> usize {
         debug_assert!(self.holds(node), "a node of the run");
         node.index() - self.nodes.start as usize
     }
 }
 
-/// A node of the file's graph. One past its index, so an `Option<NodeId>`
-/// is one word.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct NodeId(NonZeroU32);
 
 impl NodeId {
-    /// The node at `index` of its graph.
     pub fn new(index: usize) -> Self {
         Self(NonZeroU32::new(u32::try_from(index + 1).expect("node count fits u32")).unwrap())
     }
 
-    /// Index into the graph's `nodes()`.
     pub fn index(self) -> usize {
         (self.0.get() - 1) as usize
     }
@@ -93,7 +72,6 @@ impl std::fmt::Debug for NodeId {
     }
 }
 
-/// A region of the file's graph.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct RegionId(NonZeroU32);
@@ -103,7 +81,6 @@ impl RegionId {
         Self(NonZeroU32::new(u32::try_from(index + 1).expect("region count fits u32")).unwrap())
     }
 
-    /// Index into the graph's `region_ids()`.
     pub fn index(self) -> usize {
         (self.0.get() - 1) as usize
     }
@@ -115,42 +92,31 @@ impl std::fmt::Debug for RegionId {
     }
 }
 
-/// What a node computes from its inputs.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Op {
     Int(Int),
     Bool(bool),
-    /// The function's parameter at `index`.
     Param(u32),
-    /// Unit, held while its input, a context, is live: a block without a
-    /// tail. An `if` without an else is unit too, as its own `Join`.
+    /// Its input is the context it is held in.
     Unit,
-    /// What could not be built, over whatever was built beneath it: a
-    /// construct the checker refuses, a name it cannot resolve, syntax the
-    /// parser could not repair. Its type is whatever its context asks.
+    /// Its type is whatever its context asks.
     Hole,
-    /// The input, with a name or a declaration: a `let` binding, which
-    /// may declare its type, or a declared result the body's value is
-    /// held to. A declared copy is known to have its type on its own
-    /// account, whatever flows in, because of the annotation at the range.
+    /// The input under a `let` name or a declared result; `declared` is the annotation's type and
+    /// range, and the copy has that type whatever flows in.
     Copy {
         declared: Option<(Ty, TextRange)>,
     },
     Neg,
     Not,
-    /// An eager operator over its two inputs.
     Binary(BinaryOp),
-    /// `&&` or `||`: the left input, then the region of the right operand,
-    /// which runs only when the left leaves the answer open.
     And {
         rhs: RegionId,
     },
     Or {
         rhs: RegionId,
     },
-    /// A read of a local narrowed by a comparison with the second input
-    /// holding in `sense`: the first input is the local's definition as
-    /// read outside the guard.
+    /// A narrowed read: the first input is the local's definition, the second what `op` compares it
+    /// with, and the comparison holds iff `sense`.
     Refine {
         op: BinaryOp,
         local_is_lhs: bool,
@@ -158,26 +124,18 @@ pub enum Op {
     },
     /// A read of a boolean local narrowed to one value.
     Exactly(bool),
-    /// An expression statement: the input's value goes unused, so it must
-    /// be unit, or be discarded with `_ =`, which reads the value without
-    /// a node. Like a context, the statement is no value itself.
+    /// An expression statement: no value itself.
     Unused,
-    /// A function's entry context: live when the function can run.
     Entry,
-    /// A branch's context: live when the first input, a condition, may be
-    /// true, or false, and the second, the enclosing context, is live.
+    /// A branch's context: the inputs are the condition, then the enclosing context.
     Then,
     Else,
-    /// An `if`: the input is its condition, and its value is the result of
-    /// whichever region runs. Without an else region the value is unit.
+    /// The input is the condition; the value is the run branch's result, or unit without `else_`.
     Join {
         then: RegionId,
         else_: Option<RegionId>,
     },
-    /// A call: the inputs are its arguments as written, which may be
-    /// fewer or more than the callee's parameters, or read a hole; such a
-    /// call is no value, though each argument is still held to its
-    /// parameter.
+    /// The inputs are the arguments as written, which may not match the callee's arity.
     Call(FunctionId),
 }
 
@@ -186,12 +144,9 @@ pub struct Node {
     pub op: Op,
     inputs: Range<u32>,
     pub origin: TextRange,
-    /// The name a parameter or a `let` gives the node, where it is written.
     pub name: Option<TextRange>,
 }
 
-/// A run of nodes that runs only while its context is live, with the node
-/// its value is.
 #[derive(Debug)]
 pub struct Region {
     pub context: NodeId,
@@ -200,14 +155,11 @@ pub struct Region {
 }
 
 impl Region {
-    /// The nodes the region defines, in definition order, nested regions'
-    /// included.
+    /// Includes the nodes of nested regions.
     pub fn nodes(&self) -> impl ExactSizeIterator<Item = NodeId> + use<> {
         (self.nodes.start as usize..self.nodes.end as usize).map(NodeId::new)
     }
 
-    /// The region's value: a region opened but never closed has none,
-    /// which a complete build leaves no region.
     pub fn result(&self) -> NodeId {
         self.result.expect("a closed region has a result")
     }
@@ -217,15 +169,12 @@ impl Region {
 pub struct Graph {
     nodes: Vec<Node>,
     inputs: Vec<NodeId>,
-    /// Where each input is read, beside it.
     reads: Vec<TextRange>,
     regions: Vec<Region>,
     runs: Vec<Run>,
 }
 
 impl Graph {
-    /// A graph with room for `nodes` nodes and as many inputs before its
-    /// tables grow. Only a guide.
     pub fn with_capacity(nodes: usize) -> Self {
         Self {
             nodes: Vec::with_capacity(nodes),
@@ -236,8 +185,7 @@ impl Graph {
         }
     }
 
-    /// Every function's run, in declaration order: the index is the
-    /// function's ID.
+    /// Indexed by function ID.
     pub fn runs(&self) -> &[Run] {
         &self.runs
     }
@@ -250,12 +198,11 @@ impl Graph {
         &self.nodes
     }
 
-    /// Every node's ID, in definition order: the index into `nodes()`.
     pub fn node_ids(&self) -> impl ExactSizeIterator<Item = NodeId> + use<> {
         (0..self.nodes.len()).map(NodeId::new)
     }
 
-    /// Every region's ID, outermost first where regions nest.
+    /// Outermost first where regions nest.
     pub fn region_ids(&self) -> impl ExactSizeIterator<Item = RegionId> + use<> {
         (0..self.regions.len()).map(RegionId::new)
     }
@@ -268,27 +215,22 @@ impl Graph {
         &self.regions[id.index()]
     }
 
-    /// The nodes `id` reads, in operand order.
     pub fn inputs(&self, id: NodeId) -> &[NodeId] {
         let node = &self.nodes[id.index()];
         &self.inputs[node.inputs.start as usize..node.inputs.end as usize]
     }
 
-    /// Where `id` reads each of its inputs, in operand order: the operand
-    /// as written, which for a read of a local is the read, not the
-    /// definition it is an edge to.
+    /// Where `id` reads each input, parallel to `inputs`: the read's range, not the definition's.
     pub fn reads(&self, id: NodeId) -> &[TextRange] {
         let node = &self.nodes[id.index()];
         &self.reads[node.inputs.start as usize..node.inputs.end as usize]
     }
 
-    /// The next node's ID: where a run starts.
     pub fn next(&self) -> NodeId {
         NodeId::new(self.nodes.len())
     }
 
-    /// A node computing `op` from `inputs`, each a node of this graph and
-    /// where it is read, at `origin`, named `name`.
+    /// Each input is a node and where it is read.
     pub fn push(
         &mut self,
         op: Op,
@@ -314,8 +256,8 @@ impl Graph {
         id
     }
 
-    /// Open a region gated by `context`; its nodes begin at the next node
-    /// pushed after [`Graph::enter`].
+    /// The region's nodes are those pushed between `enter` and `close`; an `if` opens both branches
+    /// before entering either.
     pub fn open(&mut self, context: NodeId) -> RegionId {
         let id = RegionId::new(self.regions.len());
         self.regions.push(Region {
@@ -326,13 +268,11 @@ impl Graph {
         id
     }
 
-    /// The region's nodes begin here.
     pub fn enter(&mut self, region: RegionId) {
         let start = u32::try_from(self.nodes.len()).expect("node count fits u32");
         self.regions[region.index()].nodes = start..start;
     }
 
-    /// The region's nodes end here, and `result` is its value.
     pub fn close(&mut self, region: RegionId, result: NodeId) {
         let end = u32::try_from(self.nodes.len()).expect("node count fits u32");
         let region = &mut self.regions[region.index()];
@@ -340,10 +280,6 @@ impl Graph {
         region.result = Some(result);
     }
 
-    /// Close the run of `function`, which must be the next in declaration
-    /// order: the nodes from `start`, where its entry was pushed, to here,
-    /// with `arity` parameters after the entry, its body `region`, and its
-    /// `result`.
     pub fn close_run(
         &mut self,
         function: FunctionId,
@@ -387,9 +323,6 @@ mod tests {
         }
     }
 
-    /// A function's run: an entry, a parameter, a region opened in the
-    /// entry whose nodes begin after `enter` and end at `close`, and a
-    /// node after it reading the region's result.
     #[test]
     fn runs_and_regions_follow_the_protocol() {
         let mut graph = Graph::with_capacity(8);
@@ -436,8 +369,6 @@ mod tests {
         assert_eq!(graph.region_ids().count(), 1);
     }
 
-    /// A region entered and closed around nothing is empty, and may still
-    /// have a result defined outside it.
     #[test]
     fn an_empty_region_reads_an_outer_definition() {
         let mut graph = Graph::default();

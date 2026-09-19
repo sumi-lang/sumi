@@ -1,6 +1,5 @@
-//! Every diagnostic code is shown by a corpus case: some snapshot under
-//! `tests/corpus` reports it. A code no case reports has no witness in the
-//! repository.
+//! Every diagnostic code must appear in some corpus snapshot. A code no snapshot reports fails this
+//! test.
 
 use std::fs;
 

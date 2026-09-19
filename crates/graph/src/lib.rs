@@ -1,9 +1,5 @@
-//! What a Sumi program means, apart from whether it is valid: the scalar
-//! types, the mathematical integer, the graph of every definition a
-//! file's bodies make, the domains the graph is read in, one value per
-//! type or a set of them, and the machine that evaluates the graph in the
-//! concrete domain. The checker above builds the graph and decides what
-//! is wrong with it; nothing here depends on the checker.
+//! What a program means apart from whether it is valid: the scalar types, `Int`, the `Graph`, its
+//! domains, and the `Machine`. Nothing here depends on the checker.
 
 mod graph;
 mod int;
@@ -19,8 +15,8 @@ pub use machine::{Machine, Refusal};
 pub use may::{Bools, Ints, May, Thresholds};
 pub use value::{Domain, Fault, Value};
 
-/// Eager scalar operators. `&&` and `||` are not among them: their right
-/// operand is a region, so they are [`Op::And`] and [`Op::Or`].
+/// Eager operators only; `&&` and `||` take a region as right operand and are [`Op::And`] and
+/// [`Op::Or`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BinaryOp {
     Add,
@@ -37,8 +33,6 @@ pub enum BinaryOp {
 }
 
 impl BinaryOp {
-    /// The type of the operator's result: an arithmetic operator delivers
-    /// an integer, a comparison a boolean.
     pub fn result(self) -> Ty {
         match self {
             Self::Add | Self::Sub | Self::Mul | Self::Div | Self::Rem => Ty::Int,
@@ -55,10 +49,8 @@ pub enum Ty {
 }
 
 impl Ty {
-    /// Every scalar type, in the order diagnostics list them.
     pub const ALL: [Self; 3] = [Self::Int, Self::Bool, Self::Unit];
 
-    /// The type's name as written in source, and as diagnostics spell it.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Int => "int",
@@ -67,7 +59,6 @@ impl Ty {
         }
     }
 
-    /// The type a source name denotes.
     pub fn from_name(name: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|ty| ty.as_str() == name)
     }
@@ -79,19 +70,16 @@ impl fmt::Display for Ty {
     }
 }
 
-/// A function of the file, by its position among the file's functions.
+/// A function's index in its file, in declaration order; an ID from one analysis names nothing in
+/// another.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FunctionId(u32);
 
 impl FunctionId {
-    /// The function at `index` in the file: an ID from one analysis names
-    /// nothing in another.
     pub fn new(index: usize) -> Self {
         Self(u32::try_from(index).expect("function count fits u32"))
     }
 
-    /// The function's position among the file's functions, in declaration
-    /// order.
     pub fn index(self) -> usize {
         self.0 as usize
     }

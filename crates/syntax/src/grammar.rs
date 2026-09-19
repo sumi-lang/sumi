@@ -1,19 +1,9 @@
-//! The grammar's token side: the classes the newline rule and the parser
-//! sort tokens into, the bracket pairs the token stream matches, and the
-//! operator tables.
+//! Token classes, bracket pairs, and operator tables.
 
 use sumi_lexer::SyntaxKind as T;
 
-/// The language-level kind of a token, assigned by the fused lexer and
-/// re-exported here where the grammar consumes it.
-///
-/// Kept separate from the tree's [`NodeKind`](crate::NodeKind): nodes
-/// cover ranges of tokens rather than sitting among them, so the two
-/// vocabularies never share a slot.
 pub use sumi_lexer::SyntaxKind;
 
-/// Whether a token of this kind can begin an expression: a value, an
-/// opener, a prefix operator, or a keyword that begins one.
 pub fn starts_expression(kind: SyntaxKind) -> bool {
     matches!(
         kind,
@@ -31,19 +21,15 @@ pub fn starts_expression(kind: SyntaxKind) -> bool {
     )
 }
 
-/// Whether a token of this kind begins a statement that is not an
-/// expression: a declaration keyword, `_`, or an `Error` run.
+/// Statement starters that are not expression starters.
 pub fn introduces_statement(kind: SyntaxKind) -> bool {
     matches!(kind, T::LetKw | T::ReturnKw | T::Underscore | T::Error)
 }
 
-/// Whether a token of this kind can begin a statement.
 pub fn starts_statement(kind: SyntaxKind) -> bool {
     introduces_statement(kind) || starts_expression(kind)
 }
 
-/// Whether a statement can end after a token of this kind: values and
-/// closers can; operators, openers, and introducer keywords need more.
 pub fn can_end_statement(kind: SyntaxKind) -> bool {
     matches!(
         kind,
@@ -60,19 +46,11 @@ pub fn can_end_statement(kind: SyntaxKind) -> bool {
     )
 }
 
-/// Whether a token of this kind begins a top-level item.
 pub fn starts_item(kind: SyntaxKind) -> bool {
     kind == T::FnKw
 }
 
-/// Whether a token of this kind continues a statement left open on the
-/// previous line; `glued` is the kind of the token glued after it, if
-/// any.
-///
-/// Continuation tokens can never start a statement: `else`, and the
-/// binary operators — a compound one only when glued into shape, and one
-/// that is also a prefix operator only when spaced from what follows,
-/// since glued it opens an operand instead.
+/// A glued prefix operator opens an operand, so it continues nothing.
 pub fn continues_statement(kind: SyntaxKind, glued: Option<SyntaxKind>) -> bool {
     kind == T::ElseKw
         || match binary_operator(kind, glued) {
@@ -82,12 +60,10 @@ pub fn continues_statement(kind: SyntaxKind, glued: Option<SyntaxKind>) -> bool 
         }
 }
 
-/// The bracket pairs the token stream matches, opener then closer.
 pub const BRACKET_PAIRS: [(SyntaxKind, SyntaxKind); 2] =
     [(T::LParen, T::RParen), (T::LBrace, T::RBrace)];
 
-/// The index in [`BRACKET_PAIRS`] of the pair a token of this kind opens
-/// or closes.
+/// The index in [`BRACKET_PAIRS`] of the pair `kind` opens or closes.
 pub fn pair_index(kind: SyntaxKind) -> Option<usize> {
     Some(match kind {
         T::LParen | T::RParen => 0,
@@ -96,7 +72,6 @@ pub fn pair_index(kind: SyntaxKind) -> Option<usize> {
     })
 }
 
-/// The closer pairing with an opener of this kind.
 pub fn closer(opener: SyntaxKind) -> Option<SyntaxKind> {
     Some(match opener {
         T::LParen => T::RParen,
@@ -105,7 +80,6 @@ pub fn closer(opener: SyntaxKind) -> Option<SyntaxKind> {
     })
 }
 
-/// The opener pairing with a closer of this kind.
 pub fn opener(closer: SyntaxKind) -> Option<SyntaxKind> {
     Some(match closer {
         T::RParen => T::LParen,
@@ -114,70 +88,47 @@ pub fn opener(closer: SyntaxKind) -> Option<SyntaxKind> {
     })
 }
 
-/// Whether a token of this kind opens a bracket pair.
 pub fn is_opener(kind: SyntaxKind) -> bool {
     closer(kind).is_some()
 }
 
-/// Whether a token of this kind closes a bracket pair.
 pub fn is_closer(kind: SyntaxKind) -> bool {
     opener(kind).is_some()
 }
 
-/// Whether a token of this kind opens or closes a bracket pair.
 pub fn is_bracket(kind: SyntaxKind) -> bool {
     is_opener(kind) || is_closer(kind)
 }
 
-/// Whether the pair opened by this kind encloses statements, so that line
-/// breaks inside it end statements as a block's do. Every other pair
-/// suspends the newline rule between its brackets.
 pub fn encloses_statements(opener: SyntaxKind) -> bool {
     opener == T::LBrace
 }
 
-/// Whether a token of this kind is a prefix operator.
 pub fn is_prefix_operator(kind: SyntaxKind) -> bool {
     matches!(kind, T::Minus | T::Bang)
 }
 
-/// The binding power of a prefix operator's operand: tighter than every
-/// binary operator, so only a call binds closer.
+/// A binding power above every binary operator's.
 pub const PREFIX_BP: u8 = 11;
 
-/// A binary operator.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum BinaryOp {
-    /// `||`
     Or,
-    /// `&&`
     And,
-    /// `==`
     Eq,
-    /// `!=`
     Ne,
-    /// `<`
     Lt,
-    /// `<=`
     Le,
-    /// `>`
     Gt,
-    /// `>=`
     Ge,
-    /// `+`
     Add,
-    /// `-`
     Sub,
-    /// `*`
     Mul,
-    /// `/`
     Div,
-    /// `%`
     Rem,
 }
 
 impl BinaryOp {
-    /// Every operator, in the order of [`binary_operator`]'s table.
     pub const ALL: &[Self] = &[
         Self::Or,
         Self::And,
@@ -194,7 +145,6 @@ impl BinaryOp {
         Self::Rem,
     ];
 
-    /// The precedence level: higher binds tighter.
     fn level(self) -> u8 {
         match self {
             Self::Or => 1,
@@ -205,15 +155,13 @@ impl BinaryOp {
         }
     }
 
-    /// Left and right binding powers. Every operator associates left, so
-    /// it binds tighter on the right; comparisons too, so a chain parses
-    /// left to right and is then rejected.
+    /// `(left, right)`. Comparisons associate left like the rest, so a chain parses and is then
+    /// rejected.
     pub fn binding_power(self) -> (u8, u8) {
         let right = 2 * self.level();
         (right - 1, right)
     }
 
-    /// Whether the operator is a comparison, which does not chain.
     pub fn is_comparison(self) -> bool {
         matches!(
             self,
@@ -222,9 +170,8 @@ impl BinaryOp {
     }
 }
 
-/// The binary operator a token of kind `first` begins, and its width in
-/// tokens; `glued` is the kind of the token glued after it, if any. A
-/// compound operator is its tokens glued; a lone `=` is no operator.
+/// `glued` is the kind of the token glued after `first`, if any; the `usize` is the operator's
+/// width in tokens.
 pub fn binary_operator(first: SyntaxKind, glued: Option<SyntaxKind>) -> Option<(BinaryOp, usize)> {
     Some(match first {
         T::Pipe if glued == Some(T::Pipe) => (BinaryOp::Or, 2),
@@ -248,7 +195,6 @@ pub fn binary_operator(first: SyntaxKind, glued: Option<SyntaxKind>) -> Option<(
 mod tests {
     use super::*;
 
-    /// The prefix binding power is above every binary operator's.
     #[test]
     fn prefix_binds_tightest() {
         let tightest = BinaryOp::ALL
@@ -259,9 +205,6 @@ mod tests {
         assert_eq!(PREFIX_BP, tightest + 1);
     }
 
-    /// A binary operator continues a line unless, being a prefix operator
-    /// too, it is glued to an operand; a compound only when glued into
-    /// shape.
     #[test]
     fn operators_continue_statements() {
         assert!(continues_statement(T::Plus, Some(T::Ident)));

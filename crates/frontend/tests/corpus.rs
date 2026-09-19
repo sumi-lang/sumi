@@ -1,16 +1,5 @@
-//! The file-based corpus: every directory under `tests/corpus` at the
-//! workspace root that holds a `case.sumi`, run through the frontend and
-//! compared with the `frontend.snap` beside it. A snapshot records the
-//! tree, with `!` on every node that contains an error, the parser's
-//! evidence, the diagnostics, the source after every fix, its header
-//! naming any diagnostic that survives them, and the formatted source
-//! where it differs, its header counting the items left as written and
-//! naming any violation that survives formatting. A case that selects
-//! `hir` leaves the tree out: `hir.snap` anchors the graph the checker
-//! built by range, not every parse-tree node, so a case whose parse is the
-//! point does not select `hir`. Run with `UPDATE_FRONTEND=1` to rewrite
-//! the snapshots, then review the diff; a new case gets its first
-//! snapshot the same way.
+//! Every corpus case run through the frontend and the formatter and compared with its
+//! `frontend.snap`.
 
 use std::fmt::Write as _;
 
@@ -26,13 +15,13 @@ fn every_case_matches_its_snapshot() {
     corpus::check(corpus::Stage::Frontend, snapshot);
 }
 
-/// The snapshot of one case.
 fn snapshot(source: &str, stages: &[corpus::Stage]) -> String {
     let parsed = parse_source(source.into()).expect("corpus cases fit in u32");
     let lexed = parsed.lexed();
     let parse = parsed.parse();
     let index = LineIndex::new(source);
     let mut out = String::new();
+    // A hir case gets no tree golden, so a case whose parse is the point does not select hir.
     if stages.contains(&corpus::Stage::Hir) {
         out.push_str("tree: see hir.snap\n");
     } else {
@@ -62,8 +51,6 @@ fn snapshot(source: &str, stages: &[corpus::Stage]) -> String {
         .map(|fix| &fix.edit)
         .collect();
     if !edits.is_empty() {
-        // Every fix applies to the original source; where two of them
-        // overlap, the later one is left out and the header says so.
         edits.sort_by_key(|edit| (edit.range().start(), edit.range().end()));
         let mut applied: Vec<&TextEdit> = Vec::new();
         let mut skipped = 0usize;
@@ -78,8 +65,6 @@ fn snapshot(source: &str, stages: &[corpus::Stage]) -> String {
             }
         }
         let fixed = sumi_text::apply(source, applied);
-        // A fix that leaves a diagnostic standing, or that only makes the
-        // next fix possible, says so in the header.
         let reparsed = parse_source(fixed.as_str().into()).expect("fixed cases fit in u32");
         let mut remaining: Vec<String> = reparsed
             .diagnostics()
@@ -106,8 +91,6 @@ fn snapshot(source: &str, stages: &[corpus::Stage]) -> String {
 
     match format(source, lexed, parse) {
         Ok(formatted) if formatted.text != source => {
-            // Formatting leaves an item as written when its rep would
-            // change, and cannot fix a chained comparison; the header says.
             let reparsed =
                 parse_source(formatted.text.as_str().into()).expect("formatted cases fit in u32");
             let mut remaining: Vec<String> = reparsed
@@ -150,7 +133,6 @@ fn snapshot(source: &str, stages: &[corpus::Stage]) -> String {
     out
 }
 
-/// A section header, separated from the section before it by a blank line.
 fn section(out: &mut String, title: &str) {
     if !out.is_empty() {
         out.push('\n');
@@ -158,7 +140,6 @@ fn section(out: &mut String, title: &str) {
     writeln!(out, "== {title} ==").expect("writing to a string");
 }
 
-/// A section title with its notes in parentheses, if it has any.
 fn titled(title: &str, notes: &[String]) -> String {
     if notes.is_empty() {
         title.to_owned()
@@ -167,7 +148,6 @@ fn titled(title: &str, notes: &[String]) -> String {
     }
 }
 
-/// Append `text` as a section body, ending on a line break.
 fn push_text(out: &mut String, text: &str) {
     out.push_str(text);
     if !text.ends_with('\n') {
@@ -175,9 +155,6 @@ fn push_text(out: &mut String, text: &str) {
     }
 }
 
-/// Render one line per node: `Kind start..end` byte ranges, indented by
-/// depth, `!` after the kind of a node that contains an error, and the
-/// text of childless nodes appended.
 fn dump(tree: &SyntaxTree, lexed: &LexedFile, source: &str, out: &mut String) {
     check::tree(tree, lexed);
     render_node(tree, lexed, source, tree.root(), 0, out);
@@ -222,8 +199,6 @@ fn evidence_token(evidence: &ParseEvidence) -> RawIdx {
     }
 }
 
-/// One diagnostic: its code, place, and message on the first line, then
-/// its labels and fix indented under it.
 fn render(diagnostic: &Diagnostic, index: &LineIndex, source: &str, out: &mut String) {
     writeln!(
         out,
@@ -254,8 +229,6 @@ fn render(diagnostic: &Diagnostic, index: &LineIndex, source: &str, out: &mut St
     }
 }
 
-/// A range as `start..end` followed by its text, each end `line:col`,
-/// one-based with byte columns; an empty range as its one position.
 fn place(index: &LineIndex, source: &str, range: TextRange) -> String {
     let at = |offset: TextSize| {
         let position = index.line_col(offset);

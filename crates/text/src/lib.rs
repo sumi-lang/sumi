@@ -2,9 +2,7 @@ mod line_index;
 
 pub use line_index::{LineCol, LineIndex};
 
-/// Define an index newtype over `u32`: a position in one buffer, kept
-/// apart by type from positions in every other, with the arithmetic a
-/// cursor needs.
+/// A distinct `u32` index newtype per name, so positions from different buffers can't mix.
 #[macro_export]
 macro_rules! index {
     ($(#[$doc:meta])* $name:ident) => {
@@ -25,12 +23,10 @@ macro_rules! index {
                 self.0 as usize
             }
 
-            /// The index `count` further on, if it exists.
             pub fn checked_add(self, count: u32) -> Option<Self> {
                 self.0.checked_add(count).map(Self)
             }
 
-            /// The index `count` back, if there is one.
             pub fn checked_sub(self, count: u32) -> Option<Self> {
                 self.0.checked_sub(count).map(Self)
             }
@@ -111,7 +107,6 @@ impl TextRange {
     }
 }
 
-/// One replacement of a byte range in a source snapshot.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct TextEdit {
     range: TextRange,
@@ -135,9 +130,8 @@ impl TextEdit {
     }
 }
 
-/// Apply `edits` to `source`. The edits must be sorted by start and must
-/// not overlap; two may touch, and insertions at one offset keep their
-/// order.
+/// Edits must be sorted by start and not overlap; touching is fine, and insertions at the same
+/// offset apply in the given order.
 pub fn apply<'a, I>(source: &str, edits: I) -> String
 where
     I: IntoIterator<Item = &'a TextEdit>,

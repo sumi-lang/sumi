@@ -1,11 +1,8 @@
-//! The positional query: `covering` against an exhaustive reference.
+//! `covering`, checked against an exhaustive reference implementation.
 
 use sumi_lexer::lex;
 use sumi_syntax::{ParserInput, parse};
 
-/// Parse `source` and check `covering` for every raw token against the
-/// innermost node whose token range contains it, found by scanning the
-/// whole tree.
 #[track_caller]
 fn check_covering(source: &str) {
     let lexed = lex(source).expect("test sources fit in u32");

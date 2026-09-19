@@ -1,23 +1,5 @@
-//! Termination of recursion, and the call depth it bounds.
-//!
-//! Every cycle of the call graph needs a measure: one parameter per member
-//! function such that each call inside the cycle moves the callee's
-//! measure from the caller's by a known offset, never in the wrong
-//! direction, and strictly often enough that the calls which merely pass
-//! it along form no cycle of their own. The measure's set is bounded on the
-//! side it moves toward, so the sequence of its values along any chain of
-//! calls is finite. This is size-change termination on one parameter per
-//! function, which covers structural recursion, mutual recursion, and a
-//! helper on the cycle; a lexicographic pair, as Ackermann's function
-//! needs, is the extension.
-//!
-//! The offset comes from a small symbolic reading of an argument: `p + c`
-//! for a parameter `p` and a band `c` taken from the may-sets of whatever
-//! else the argument adds or subtracts, so `n - k` with `k ∈ [1, 5]` is a
-//! strict decrease. With the sets settled, a chain through a component
-//! visits at most as many frames as the measure has values, and the depth
-//! of an entry is the longest path through the condensation, weighted by
-//! each component's chain bound.
+//! Termination of recursion, and the call depth it bounds. A cycle's measure is one parameter per
+//! member, moved toward a bound by every call inside it.
 
 use std::collections::HashMap;
 
@@ -29,17 +11,12 @@ use crate::solver::components;
 use crate::typing::Typing;
 use crate::{BinaryOp, Function, FunctionId, Graph, Int, Ints, NodeId, Op, codes};
 
-/// A cycle with no measure: its members, and what each call inside it does
-/// to the parameter that came closest to being the measure.
 pub(crate) struct Failure {
     pub members: Vec<FunctionId>,
     pub labels: Vec<(TextRange, Reason)>,
 }
 
 impl Failure {
-    /// The error: the cycle by its first few members, at the first one's
-    /// name, with what the first few calls inside it do. A cycle of
-    /// thousands of calls is one error; the first few calls locate it.
     pub fn report(self, functions: &[Function], source: &str) -> Diagnostic {
         let text = |range: TextRange| range.text(source);
         let at = |id: FunctionId| {
@@ -91,40 +68,32 @@ impl Failure {
     }
 }
 
-/// What a call inside a cycle without a measure does to a parameter of its
-/// callee, named by the parameter's declaration.
+/// What a call does to a parameter of its callee, `param` naming which.
 pub(crate) enum Reason {
-    /// The argument moves the parameter in `direction`. Under a choice
-    /// every call agreed with, `bounded` says whether the parameter's set
-    /// is bounded on that side: unbounded, the chosen measure fails here,
-    /// otherwise the cycle fails elsewhere. Where no choice satisfies every
-    /// call there is no measure to hold a bound against, and `bounded` is
-    /// true: the label says only where the argument moves.
     Moves {
         param: TextRange,
         direction: Direction,
         bounded: bool,
     },
-    /// The argument passes the parameter along without moving it.
-    Passes { param: TextRange },
-    /// No argument is a parameter of the caller plus a constant.
+    Passes {
+        param: TextRange,
+    },
     Nothing,
 }
 
 pub(crate) struct Verdicts {
     pub failures: Vec<Failure>,
-    /// The most frames a run entered at each function can hold at once,
-    /// when every cycle it can reach has a measure with a finite hull.
+    /// Per function, the most frames a run entered there holds at once, or `None` unless every
+    /// reachable cycle has a measure with a finite hull.
     pub depth: Vec<Option<u64>>,
 }
 
-/// One call inside a component: from a member to a member, with the offset
-/// each argument has from each parameter of the caller, when it has one.
+/// `from` and `to` index the component's members, not the functions.
 struct Call {
     from: usize,
     to: usize,
     origin: TextRange,
-    /// `(caller parameter, callee parameter) -> offset band`.
+    /// Keyed by `(caller parameter, callee parameter)`.
     offsets: HashMap<(usize, usize), Ints>,
 }
 
@@ -135,8 +104,6 @@ pub(crate) enum Direction {
 }
 
 impl Direction {
-    /// How an argument moves a measure this way, and the side it moves
-    /// toward.
     pub fn words(self) -> (&'static str, &'static str) {
         match self {
             Self::Decreasing => ("decreases", "below"),
@@ -145,10 +112,10 @@ impl Direction {
     }
 }
 
-/// Whether an offset moves the measure the right way, and strictly.
+/// `Some(strict)` when the offset never moves the wrong way, `None` when it may.
 fn moves(offset: &Ints, direction: Direction) -> Option<bool> {
     if offset.is_empty() {
-        // The argument is never evaluated: the call never happens.
+        // An empty set is an argument never evaluated, so the call never happens.
         return Some(true);
     }
     match direction {
@@ -163,7 +130,6 @@ fn moves(offset: &Ints, direction: Direction) -> Option<bool> {
     }
 }
 
-/// Whether `band` is bounded on the side the measure moves toward.
 fn bounded(band: &Ints, direction: Direction) -> bool {
     band.is_empty()
         || match direction {
@@ -172,12 +138,8 @@ fn bounded(band: &Ints, direction: Direction) -> bool {
         }
 }
 
-/// Every whole call of the graph in a live context is an edge of the call
-/// graph; a call whose context is dead never happens, and one that is not
-/// whole is a hole, no call. A cycle through a function that `failed`
-/// its verdicts, or whose body did not build, is out of scope: its
-/// arguments may have no offsets and its calls may be missing, and what
-/// it has is reported already.
+/// `failed` marks functions whose verdicts failed or whose body did not build; a cycle through one
+/// is skipped, since its calls may be missing.
 pub(crate) fn check(
     graph: &Graph,
     lowered: &Lowered,
@@ -197,7 +159,6 @@ pub(crate) fn check(
     let components = components(count_functions, &arcs);
     let component = &components.of;
     let count = components.count();
-    // Functions grouped by component, in declaration order within one.
     let mut grouped: Vec<usize> = (0..count_functions).collect();
     grouped.sort_by_key(|&function| component[function]);
     let mut group_start = vec![0; count + 1];
@@ -208,7 +169,6 @@ pub(crate) fn check(
         group_start[c + 1] += group_start[c];
     }
     let mut cyclic = vec![false; count];
-    // Calls between components, as `(from, to)`, sorted.
     let mut between = Vec::new();
     for &(caller, callee) in &arcs {
         let (from, to) = (
@@ -267,14 +227,7 @@ pub(crate) fn check(
         };
         let band = |member: usize, param: usize| &typing.may(param_node(member, param)).ints;
         let mut found = None;
-        // The first choice every call agreed with, when the cycle fails on
-        // a bound or on the calls that only pass the measure along.
         let mut agreed: Option<(Direction, Vec<usize>, Vec<bool>)> = None;
-        // `delta` gives each callee parameter at most one source, so once a
-        // member's parameter is chosen every call into it forces its caller's:
-        // the component is strongly connected, so a choice for the first
-        // member propagates backwards along the calls to every member, and
-        // there are as many candidates as that member has parameters.
         'directions: for direction in [Direction::Decreasing, Direction::Increasing] {
             'candidates: for first in 0..arity(0) {
                 let mut choice: Vec<Option<usize>> = vec![None; members.len()];
@@ -355,15 +308,11 @@ pub(crate) fn check(
             }
             None => {
                 chain[c] = None;
-                // The parameter's name, where it is written.
                 let param = |member: usize, j: usize| {
                     let node = graph.node(param_node(member, j));
                     node.name.unwrap_or(node.origin)
                 };
                 let labels = match &agreed {
-                    // Every call agreed with this choice, so the cycle
-                    // failed on a bound, or on the calls that only pass
-                    // the measure along forming a cycle of their own.
                     Some((direction, choice, strict)) => inside
                         .iter()
                         .zip(strict)
@@ -383,13 +332,11 @@ pub(crate) fn check(
                             (call.origin, reason)
                         })
                         .collect(),
-                    // No choice satisfies every call: say what each call
-                    // does, by callee parameter, so the labels do not
-                    // follow the map's iteration order.
                     None => inside
                         .iter()
                         .map(|call| {
                             let mut offsets: Vec<_> = call.offsets.iter().collect();
+                            // The map's iteration order varies between runs.
                             offsets.sort_by_key(|((_, j), _)| *j);
                             let strict = offsets.iter().find_map(|&(&(_, j), offset)| {
                                 let direction =
@@ -403,6 +350,8 @@ pub(crate) fn check(
                                 Some(Reason::Moves {
                                     param: param(call.to, j),
                                     direction,
+                                    // No choice held, so no bound is at issue; the label says only
+                                    // where the argument moves.
                                     bounded: true,
                                 })
                             });
@@ -424,8 +373,7 @@ pub(crate) fn check(
             }
         }
     }
-    // Components complete callees first, so a callee's depth is known by
-    // the time its caller's is computed.
+    // Callees' components are numbered first, so `depth[to]` is set when read.
     let mut depth: Vec<Option<u64>> = vec![None; count];
     let mut edge = 0;
     for c in 0..count {
@@ -447,8 +395,6 @@ pub(crate) fn check(
     }
 }
 
-/// Whether the calls that only pass the measure along form no cycle among
-/// the members, so every cycle contains a strict step.
 fn lax_edges_are_acyclic(members: usize, calls: &[Call], strict: &[bool]) -> bool {
     let mut adjacent = vec![Vec::new(); members];
     for (call, &strict) in calls.iter().zip(strict) {
@@ -486,25 +432,15 @@ fn lax_edges_are_acyclic(members: usize, calls: &[Call], strict: &[bool]) -> boo
     true
 }
 
-/// `Some((p, c))` when on every run the node's value is in `p + c` for
-/// the parameter at `p`: through a `let`, a narrowed read, `+` and `-`
-/// with the other operand's set, and an `if` whose live arms agree on the
-/// parameter. The walk keeps its own stack, so a chain of `let`s or a
-/// nest of operators of any depth is read.
+/// `Some((p, c))` when on every run the node's value is in parameter `p` plus `c`. The walk keeps
+/// its own stack, since a nest can outgrow the call stack.
 fn delta(graph: &Graph, typing: &Typing, node: NodeId) -> Option<(u32, Ints)> {
     let may = |node: NodeId| &typing.may(node).ints;
-    /// What to do with the offset of the node being read.
     enum Frame {
-        /// The left operand of `+`: `rhs` adds to its offset, or is read in
-        /// turn when it has none.
         AddLhs { lhs: NodeId, rhs: NodeId },
-        /// The right operand of `+`, the left having no offset: `lhs` adds.
         AddRhs { lhs: NodeId },
-        /// The left operand of `-`: `rhs` subtracts.
         Sub { rhs: NodeId },
-        /// The then arm of an `if` whose else arm `otherwise` runs too.
         Then { otherwise: NodeId },
-        /// The else arm, `then` being the then arm's offset.
         Else { then: (u32, Ints) },
     }
     let mut frames: Vec<Frame> = Vec::new();
@@ -561,7 +497,6 @@ fn delta(graph: &Graph, typing: &Typing, node: NodeId) -> Option<(u32, Ints)> {
                 _ => None,
             };
         }
-        // An offset, or none, is in hand: the innermost frame takes it.
         let Some(frame) = frames.pop() else {
             return result;
         };

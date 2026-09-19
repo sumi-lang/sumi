@@ -1,14 +1,6 @@
-//! The typing drawn from the graph: a class for every node, a fact for
-//! every node that knows something on its own account, a flow for every
-//! edge that carries evidence, and a demand for every read an operator
-//! holds to a type, in one pass over the table.
-//!
-//! Within a function every input precedes its reader, so one pass in node
-//! order draws each node's facts and flows as it reaches the node; only a
-//! call reaches forward, to a callee whose run may come later in the file,
-//! so the flows of calls are drawn once every run is passed. Demands are
-//! joined into the evidence last, in node order, which is the order the
-//! verdict pass replays them in.
+//! The typing drawn from the graph: a class per node, a fact or flow per node that knows or passes
+//! on a type, and a demand per typed read. Demands are joined into the evidence last, in node
+//! order, the order the verdict pass replays them in.
 
 use std::collections::HashSet;
 
@@ -20,36 +12,26 @@ use crate::lattice::Edge;
 use crate::lower::{Header, Lowered};
 use crate::typing::{Expected, Typing};
 
-/// What a node requires of a value it reads, checked after solving.
 pub(crate) enum DemandKind {
-    /// The value must have the expected type, which a declaration may
-    /// have set: a called function, a result annotation, or a binding's
-    /// annotation.
     Type {
         expected: Expected,
         declared: Option<TextRange>,
     },
-    /// An expression statement's value must be unit.
     Unused,
-    /// The operands of `==` and `!=` must not be unit.
     Comparable,
-    /// The branches of an `if` must agree on one type: the value is the
-    /// `if`, and each branch delivers its type to it first.
-    Agree { branches: [NodeId; 2] },
+    /// `actual` is the `if`; `branches` are the results of its two arms.
+    Agree {
+        branches: [NodeId; 2],
+    },
 }
 
-/// One demand, kept small: the verdict pass reads every one, and a body
-/// makes one per operand, argument, branch, and statement.
 pub(crate) struct Demand {
-    /// The function the demand is made in.
     pub owner: u32,
-    /// Where the value is read: where a failure is reported.
     pub at: TextRange,
     pub actual: NodeId,
     pub kind: DemandKind,
 }
 
-/// The demands drawn so far, and what they are drawn from.
 struct Demands<'a> {
     graph: &'a Graph,
     headers: &'a [Header],
@@ -58,11 +40,6 @@ struct Demands<'a> {
 }
 
 impl Demands<'_> {
-    /// The demands the node `node` of the function `owner`, which is
-    /// `entry` reading `inputs` at `reads`, makes of what it reads: one
-    /// per typed operand, argument, branch, and statement, in operand
-    /// order. A read of a hole is held to nothing; an untyped node still
-    /// holds its typed operands.
     fn of(
         &mut self,
         owner: u32,
@@ -87,8 +64,6 @@ impl Demands<'_> {
                 demand(at, actual, DemandKind::Type { expected, declared });
             }
         };
-        // A region's value is read where the region is entered: at its
-        // context.
         let region = |region| {
             let region = graph.region(region);
             (graph.node(region.context).origin, region.result())
@@ -96,8 +71,6 @@ impl Demands<'_> {
         match &entry.op {
             Op::Neg => require(reads[0], inputs[0], Expected::Ty(Ty::Int), None),
             Op::Not => require(reads[0], inputs[0], Expected::Ty(Ty::Bool), None),
-            // `==` and `!=` compare like with like: whichever operand exists
-            // sets the other's expectation, and neither may be unit.
             Op::Binary(BinaryOp::Eq | BinaryOp::Ne) => {
                 if let Some(&operand) = inputs.iter().find(|&&input| typed(input)) {
                     for (&at, &input) in reads.iter().zip(inputs) {
@@ -119,16 +92,10 @@ impl Demands<'_> {
             Op::Join { then, else_ } => {
                 require(reads[0], inputs[0], Expected::Ty(Ty::Bool), None);
                 match else_ {
-                    // Without an else, the then branch is unit, and so is the
-                    // `if`.
                     None => {
                         let (at, then) = region(*then);
                         require(at, then, Expected::Ty(Ty::Unit), None);
                     }
-                    // Each branch decides the `if` and learns nothing from the
-                    // other, so branches that disagree leave the `if`
-                    // undetermined, conflicted on its own class, and keep their
-                    // own types. The verdict pass reports it there.
                     Some(else_) if typed(node) => {
                         let branches = [region(*then).1, region(*else_).1];
                         demand(entry.origin, node, DemandKind::Agree { branches });
@@ -139,9 +106,6 @@ impl Demands<'_> {
             Op::Copy {
                 declared: Some((ty, at)),
             } => require(reads[0], inputs[0], Expected::Ty(*ty), Some(*at)),
-            // Every argument there is, arity aside, is held to its parameter,
-            // on the strength of the declaration, which is where the callee's
-            // entry stands.
             Op::Call(callee) => {
                 let params = self.headers[callee.index()]
                     .params
@@ -172,12 +136,8 @@ impl Demands<'_> {
     }
 }
 
-/// The typing of the graph, one class per node at the node's index, the
-/// thresholds of the file's constants, and the demands, in node order. A
-/// node the walk gave no value has a class nothing flows into. A constant
-/// is an integer the file spells, or an operator over constants, which is
-/// the constant the machine would compute; each is kept once, in the
-/// order first seen.
+/// The thresholds are every integer the file spells or folds from constants, each once. A node the
+/// walk gave no value has a class nothing flows into.
 pub(crate) fn draw(
     graph: &Graph,
     lowered: &Lowered,
@@ -187,7 +147,6 @@ pub(crate) fn draw(
     let typed = |node: NodeId| lowered.typed[node.index()];
     let mut constants: Vec<Int> = Vec::new();
     let mut seen: HashSet<Int, FxBuildHasher> = HashSet::default();
-    // The constant each node of the run folds to, by slot.
     let mut folded: Vec<Option<Int>> = Vec::new();
     let mut demands = Demands {
         graph,
@@ -224,8 +183,7 @@ pub(crate) fn draw(
                 Op::Entry => {
                     typing.entry(node, header.params.is_some() && run.params().len() == 0);
                 }
-                // A context under a condition nothing follows is live as
-                // its parent is.
+                // An untyped condition decides nothing; the context is live as its parent is.
                 Op::Then | Op::Else if !typed(inputs[0]) => {
                     typing.flow(inputs[1], node, Edge::Values);
                 }
@@ -261,8 +219,6 @@ pub(crate) fn draw(
                         typing.derive(region.result(), region.context, node, Edge::Branch);
                     }
                 }
-                // Unit while the `if` itself can run: the context its
-                // branch's context derives from.
                 Op::Join { then, else_: None } => {
                     typing.known(node, Ty::Unit, origin);
                     let parent = graph.inputs(graph.region(*then).context)[1];
@@ -272,7 +228,6 @@ pub(crate) fn draw(
                     typing.known(node, Ty::Unit, origin);
                     typing.flow(inputs[0], node, Edge::Enter);
                 }
-                // A declared copy holds what flows in, when something does.
                 Op::Copy {
                     declared: Some((ty, at)),
                 } => {
@@ -281,7 +236,6 @@ pub(crate) fn draw(
                         typing.flow(inputs[0], node, Edge::Values);
                     }
                 }
-                // An unannotated `let` is its initializer.
                 Op::Copy { declared: None } => typing.flow(inputs[0], node, Edge::Bind),
                 Op::Neg => {
                     typing.known(node, Ty::Int, origin);
@@ -314,7 +268,7 @@ pub(crate) fn draw(
                         },
                     );
                 }
-                // A call's flows are drawn below, once every run is passed.
+                // Drawn once every run is passed; the callee's run may come later.
                 Op::Call(_) => {}
                 Op::Hole | Op::Unused => unreachable!("a hole or a statement is no value"),
             }
@@ -326,9 +280,6 @@ pub(crate) fn draw(
             }
         }
     }
-    // Every call reaches its callee's entry; a whole one delivers its
-    // arguments to the parameters while its context is live, and learns
-    // its callee's result.
     for &(context, callee) in &lowered.entered {
         let entry = graph.run(callee).entry();
         typing.flow(context, entry, Edge::Enter);

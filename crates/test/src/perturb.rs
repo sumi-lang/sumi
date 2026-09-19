@@ -1,17 +1,5 @@
-//! Layout perturbation of a well-formed program: every rewrite of its
-//! trivia that keeps what the formatter must keep — the tokens, the tree,
-//! the comments where they stand, and the blank lines at statement and
-//! item boundaries — so a formatter with a canonical form must print the
-//! perturbed program exactly as the original.
-//!
-//! A gap that separates two glued tokens stays glued, since gluing is
-//! grammar. Every other gap may change its horizontal whitespace, and a
-//! gap where the newline rule ends nothing may gain or lose a line break,
-//! with any indentation and a blank line after, unless a line break there
-//! would separate a keyword from the name it introduces or a `(` from its
-//! owner, which the parser reports. A gap holding a comment keeps its
-//! line breaks and varies only the whitespace around them. The comma
-//! before a list closer is a layout token and comes or goes.
+//! Layout perturbation of a well-formed program. A rewrite keeps the tokens, tree, comments, and
+//! boundary blank lines, so the formatter returns the original.
 
 use proptest::prelude::*;
 use sumi_syntax::{NodeKind, SigIdx, SyntaxKind};
@@ -32,9 +20,6 @@ pub fn perturbed_program() -> impl Strategy<Value = (String, String)> {
         })
 }
 
-/// Rewrite the trivia of `source`, a well-formed program, as `choices`
-/// says, one per gap between significant tokens, the file's edges
-/// included.
 fn perturb(source: &str, choices: &[u32]) -> String {
     let products = front(source);
     let lexed = &products.lexed;
@@ -43,8 +28,8 @@ fn perturb(source: &str, choices: &[u32]) -> String {
     let n = input.len();
     assert_eq!(choices.len(), n + 1, "one choice per gap");
 
-    // The closer gap of every valid, nonempty list, and whether a comma
-    // precedes its closer.
+    // Indexed by gap; at a valid, nonempty list's closer, whether a comma precedes it. The trailing
+    // comma is layout to `rep`, so it comes or goes.
     let mut closers: Vec<Option<bool>> = vec![None; n + 1];
     for node in tree.nodes() {
         if !matches!(tree.kind(node), NodeKind::ArgList | NodeKind::ParamList)
@@ -67,7 +52,6 @@ fn perturb(source: &str, choices: &[u32]) -> String {
     for gap in 0..=n {
         let choice = choices[gap];
         let toggle_comma = choice & 1 == 1;
-        // A trailing comma the choice removes: the closer gap's choice.
         if gap < n
             && closers.get(gap + 1).copied().flatten() == Some(true)
             && choices[gap + 1] & 1 == 1
@@ -106,7 +90,6 @@ fn perturb(source: &str, choices: &[u32]) -> String {
                 out.push_str(lexed.text(source, raw));
             }
         } else if has_comment || boundary {
-            // Line breaks stay; the whitespace around them varies.
             let mut after_newline = false;
             for &raw in &trivia {
                 match lexed.kind(raw) {
@@ -121,6 +104,8 @@ fn perturb(source: &str, choices: &[u32]) -> String {
                 }
             }
         } else {
+            // A break between a keyword and its name is parse evidence, and a `(` on a new line
+            // opens no list or call.
             let may_break = !input.would_end_statement(SigIdx::new(gap as u32))
                 && next != Some(SyntaxKind::LParen)
                 && !matches!(
@@ -148,8 +133,6 @@ fn perturb(source: &str, choices: &[u32]) -> String {
     out
 }
 
-/// Horizontal whitespace drawn from `choice`: at least one space between
-/// tokens on a line, any amount at the start of one.
 fn whitespace(choice: u32, indentation: bool) -> String {
     let bits = (choice >> 8) & 0xf;
     let count = if indentation {
