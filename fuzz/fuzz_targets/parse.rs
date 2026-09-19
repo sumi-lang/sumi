@@ -1,6 +1,5 @@
-//! The whole frontend over arbitrary text: every syntactic product is
-//! built and every structural invariant of the token stream, the tree, the
-//! evidence, the diagnostics, and formatting is checked.
+//! The parse fuzz target runs the frontend pipeline on arbitrary bytes against `sumi_test::check`'s
+//! invariants.
 
 #![no_main]
 
