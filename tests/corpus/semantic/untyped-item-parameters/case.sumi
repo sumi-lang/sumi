@@ -1,2 +1,3 @@
 fn id(x) = x
 fn add(a: int, b) -> int = a + b
+fn broken(x) -> int = true

@@ -49,3 +49,20 @@ fn maybe@200..243 (bool ∈ ∅) -> unit ∈ ∅
       discard: call safe@147..199 : bool @235..241
       tail: unit : unit @225..243
     else: unit (implicit)
+
+fn spin@244..298 (int ∈ [0, 3]) -> unit ∈ unit
+  param n@252..253: int
+  result: copy : unit @263..267
+    value: if : unit @270..298
+      condition: eager > : bool @273..278
+        lhs: read n@252..253 : int
+        rhs: int 0 : int @277..278
+      then: call spin@244..298 : unit @285..296
+        arg[0]: eager - : int @290..295
+          lhs: read n@252..253 [n > 0 holds@273..278] : int
+          rhs: int 1 : int @294..295
+      else: unit (implicit)
+
+fn spins@299..319 () -> unit ∈ unit
+  body: call spin@244..298 : unit @312..319
+    arg[0]: int 3 : int @317..318

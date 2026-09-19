@@ -1,7 +1,11 @@
-use super::*;
-use sumi_frontend::{Diagnostic, DiagnosticCode, parse_source};
+//! The analysis held to its contracts: what the graph of a body is, which
+//! files are accepted, and what each diagnostic says.
 
-use crate::codes::*;
+use proptest::test_runner::FileFailurePersistence;
+use sumi_frontend::{Diagnostic, DiagnosticCode, parse_source};
+use sumi_hir::codes::*;
+use sumi_hir::{Analysis, BinaryOp, Function, FunctionId, Int, NodeId, Op, Ty, analyze};
+use sumi_text::TextRange;
 
 fn check(source: &str) -> Analysis {
     analyze(parse_source(source.into()).unwrap())
@@ -10,7 +14,7 @@ fn check(source: &str) -> Analysis {
 fn clean(source: &str) -> Analysis {
     let analysis = check(source);
     assert!(analysis.is_valid(), "{:?}", analysis.diagnostics());
-    assert!(analysis.functions.iter().all(Function::complete));
+    assert!(analysis.functions().iter().all(Function::complete));
     graph_invariant(&analysis);
     analysis
 }
@@ -158,12 +162,12 @@ fn reversed_declarations_preserve_types(analysis: &Analysis) {
     declarations.reverse();
     let reversed = check(&declarations.join("\n"));
     assert!(reversed.parsed().diagnostics().is_empty());
-    assert_eq!(analysis.functions.len(), reversed.functions.len());
-    let count = analysis.functions.len();
+    assert_eq!(analysis.functions().len(), reversed.functions().len());
+    let count = analysis.functions().len();
     for (index, (a, b)) in analysis
-        .functions
+        .functions()
         .iter()
-        .zip(reversed.functions.iter().rev())
+        .zip(reversed.functions().iter().rev())
         .enumerate()
     {
         assert_eq!(
@@ -293,114 +297,6 @@ fn graph_invariant(analysis: &Analysis) {
     }
 }
 
-#[test]
-fn scalar_bodies_and_forward_recursive_calls() {
-    let analysis = clean(
-        "fn answer() -> int = (twice)(21)\nfn twice(x: int) -> int {\n let y = x * 2\n y\n}\nfn spin(n: int) -> unit = if n > 0 { spin(n - 1) }\n",
-    );
-    let graph = analysis.graph();
-    let twice = graph.run(FunctionId::new(1));
-    let [x] = twice.params().collect::<Vec<_>>()[..] else {
-        panic!("one parameter")
-    };
-    // `let y = x * 2` then `y`: the body's value is the binding, a copy of
-    // the product of the parameter and the literal.
-    let y = value(&analysis, 1);
-    assert!(matches!(op(&analysis, y), Op::Copy { .. }));
-    assert_eq!(text(&analysis, graph.node(y).name.unwrap()), "y");
-    let product = graph.inputs(y)[0];
-    assert!(matches!(op(&analysis, product), Op::Binary(BinaryOp::Mul)));
-    assert_eq!(graph.inputs(product)[0], x);
-    let two = graph.inputs(product)[1];
-    assert!(matches!(op(&analysis, two), Op::Int(n) if *n == Int::from(2)));
-    assert_eq!(body(&analysis, 1), [two, product, y]);
-    assert!(matches!(
-        op(&analysis, value(&analysis, 0)),
-        Op::Call(function) if *function == FunctionId::new(1)
-    ));
-    clean(
-        "fn start(n: int) -> bool = even(n)\nfn even(n: int) -> bool = if n == 0 { true } else { odd(n - 1) }\nfn odd(n: int) -> bool = if n == 0 { false } else { even(n - 1) }\n",
-    );
-}
-
-#[test]
-fn lexical_scopes_and_sequential_shadowing() {
-    let a = clean(
-        "fn shadow(x: int) -> int {\n let x = x + 1\n {\n let x = x * 2\n _ = x - 3\n }\n x\n}\n",
-    );
-    // Each `x` reads the innermost binding: the parameter in the first
-    // `let`, that `let` in the inner one, the inner one in the inner
-    // block's discard, and the first `let` again as the value, the inner
-    // block's binding having closed.
-    let graph = a.graph();
-    let x0 = graph.run(FunctionId::new(0)).params().next().unwrap();
-    let nodes = body(&a, 0);
-    let [one, sum, x1, two, product, x2, three, difference, unit, ..] = nodes[..] else {
-        panic!("the body's nodes");
-    };
-    assert!(matches!(op(&a, one), Op::Int(_)));
-    assert!(matches!(op(&a, sum), Op::Binary(BinaryOp::Add)));
-    assert_eq!(graph.inputs(sum), [x0, one]);
-    assert!(matches!(op(&a, x1), Op::Copy { .. }));
-    assert!(matches!(op(&a, two), Op::Int(_)));
-    assert!(matches!(op(&a, product), Op::Binary(BinaryOp::Mul)));
-    assert_eq!(graph.inputs(product), [x1, two]);
-    assert!(matches!(op(&a, x2), Op::Copy { .. }));
-    assert!(matches!(op(&a, three), Op::Int(_)));
-    assert!(matches!(op(&a, difference), Op::Binary(BinaryOp::Sub)));
-    assert_eq!(graph.inputs(difference), [x2, three]);
-    assert!(matches!(op(&a, unit), Op::Unit));
-    // The inner block is a statement: a node that leaves its unit unused.
-    assert!(matches!(op(&a, nodes[9]), Op::Unused));
-    assert_eq!(nodes.len(), 10);
-    assert_eq!(value(&a, 0), x1);
-    let a = check("fn f() -> int = 1\nfn g() -> int {\n let f = 2\n f()\n}\n");
-    assert_eq!(codes(&a), [NOT_CALLABLE]);
-    assert_eq!(semantic(&a)[0].labels.len(), 1);
-}
-
-#[test]
-fn lazy_structure_and_unit_policy() {
-    let a = clean(
-        "fn safe() -> bool = false && (1 / 0 == 0)\nfn choose() -> int = if true { 7 } else { 1 / 0 }\nfn ignore() {\n _ = choose()\n}\nfn maybe(b: bool) = if b { _ = choose() }\nfn either() -> bool = true || false\n",
-    );
-    assert!(matches!(op(&a, value(&a, 0)), Op::And { .. }));
-    for source in [
-        "fn f() { 1 }",
-        "fn f() = if true { 7 }",
-        "fn f() -> bool = {} == {}",
-        "fn f() -> int = if 1 { 2 } else { false }",
-    ] {
-        let a = check(source);
-        assert!(!a.is_valid(), "{source}");
-        assert!(codes(&a).contains(&TYPE_MISMATCH), "{source}");
-    }
-    let a =
-        check("fn f() -> bool = true || missing\nfn g() -> int = if true { 1 } else { absent }\n");
-    assert_eq!(codes(&a), [UNKNOWN_NAME, UNKNOWN_NAME]);
-}
-
-#[test]
-fn mismatch_labels_distinguish_branches_from_declarations() {
-    for (source, expected) in [
-        (
-            "fn f() -> int = if true { 1 } else { false }",
-            &["int here", "bool here"][..],
-        ),
-        ("fn f() -> bool = 1", &["declared here"]),
-        ("fn f() { let x: bool = 1 }", &["declared here"]),
-    ] {
-        let a = check(source);
-        assert_eq!(codes(&a), [TYPE_MISMATCH]);
-        let labels: Vec<_> = semantic(&a)[0]
-            .labels
-            .iter()
-            .map(|label| &*label.message)
-            .collect();
-        assert_eq!(labels, expected, "{source}");
-    }
-}
-
 /// A disagreement between branches is reported once, at the `if`, and
 /// leaves the `if` undetermined: nothing that takes its type is held to a
 /// type it never had, while the branches keep their own.
@@ -456,48 +352,9 @@ fn literals_of_any_size_fold_a_leading_minus() {
     for expr in ["01", "1_000", "1u32"] {
         let a = check(&format!("fn f() -> int = {expr}"));
         assert!(!a.is_valid());
-        assert!(!a.functions[0].complete());
+        assert!(!a.functions()[0].complete());
         assert!(semantic(&a).is_empty());
     }
-}
-
-#[test]
-fn bad_calls_check_arguments_before_poisoning_binding() {
-    let a = check(
-        "fn probe() {\n let x = 1\n let x = missing(\n {\n let x = x + 1\n x + true\n },\n x + false\n )\n _ = x\n}\n",
-    );
-    assert!(a.parsed.diagnostics().is_empty());
-    assert_eq!(codes(&a), [UNKNOWN_NAME, TYPE_MISMATCH, TYPE_MISMATCH]);
-    assert!(!a.functions[0].complete());
-    let a = check("fn f(x: int, y: bool) {}\nfn g() { _ = f(true, 1, absent) }\n");
-    assert_eq!(
-        codes(&a),
-        [ARITY, TYPE_MISMATCH, TYPE_MISMATCH, UNKNOWN_NAME]
-    );
-}
-
-#[test]
-fn expression_results_stay_body_local_across_failed_bodies() {
-    let a = check(
-        "fn first() = (23 + 7)\nfn failed() = (missing)\nfn flag() = ((true))\nfn last() = -((17))",
-    );
-    assert_eq!(codes(&a), [UNKNOWN_NAME]);
-    assert!(!a.functions[1].complete());
-    for index in [0, 2, 3] {
-        assert!(a.functions[index].complete());
-    }
-    let first = body(&a, 0);
-    assert_eq!(first.len(), 3);
-    assert!(matches!(op(&a, first[0]), Op::Int(n) if *n == Int::from(23)));
-    assert!(matches!(op(&a, first[1]), Op::Int(n) if *n == Int::from(7)));
-    assert!(matches!(op(&a, first[2]), Op::Binary(BinaryOp::Add)));
-    let flag = body(&a, 2);
-    assert_eq!(flag.len(), 1);
-    assert!(matches!(op(&a, value(&a, 2)), Op::Bool(true)));
-    let last = body(&a, 3);
-    assert_eq!(last.len(), 1);
-    assert!(matches!(op(&a, value(&a, 3)), Op::Int(n) if *n == Int::from(-17)));
-    reversed_declarations_preserve_types(&a);
 }
 
 /// The offset an argument carries is read through a chain of `let`s of
@@ -516,30 +373,14 @@ fn a_measure_is_read_through_any_depth_of_lets() {
         "{:?}",
         analysis.diagnostics()
     );
-    assert_eq!(analysis.functions[1].depth_bound(), Some(7));
-}
-
-#[test]
-fn call_arguments_keep_source_order() {
-    let a = clean("fn select(a: int, b: int, c: int) -> int = b\nfn caller() = select(11, 29, 7)");
-    let call = value(&a, 1);
-    assert!(matches!(op(&a, call), Op::Call(_)));
-    let args = a.graph().inputs(call);
-    let nodes = body(&a, 1);
-    for (index, &expected) in [11, 29, 7].iter().enumerate() {
-        // Both definition order and the argument positions matter.
-        let expected = Int::from(expected);
-        assert!(matches!(op(&a, nodes[index]), Op::Int(n) if *n == expected));
-        assert!(matches!(op(&a, args[index]), Op::Int(n) if *n == expected));
-    }
-    assert_eq!(args.len(), 3);
+    assert_eq!(analysis.functions()[1].depth_bound(), Some(7));
 }
 
 #[test]
 fn call_requirements_replay_in_argument_order() {
     let source = "fn unknown() = unknown()\nfn take(a: int, b: bool) {}\nfn caller() = { let x = unknown()\n take(x, (x)) }";
     let a = check(source);
-    assert!(a.parsed.diagnostics().is_empty());
+    assert!(a.parsed().diagnostics().is_empty());
     let mismatches: Vec<_> = a
         .diagnostics()
         .iter()
@@ -554,33 +395,6 @@ fn call_requirements_replay_in_argument_order() {
 
     let a = check("fn take(a: int, b: bool) {}\nfn caller() { take(missing, 23) }");
     assert_eq!(codes(&a), [UNKNOWN_NAME, TYPE_MISMATCH]);
-}
-
-#[test]
-fn signatures_do_not_invent_missing_types_or_resolve_ambiguity() {
-    for source in [
-        "fn f(a:) -> { let x: = 1 }",
-        "fn f() -> = 1",
-        "fn f() == 1",
-        "fn f() = = 1",
-        "fn f(a: int, ) ->",
-        "fn f(a) {}",
-    ] {
-        let a = check(source);
-        assert!(!a.is_valid(), "{source}");
-        assert!(a.functions[0].signature().is_none(), "{source}");
-    }
-    let a = check("fn f(x: mystery) {}\nfn g() { _ = f(unknown, 1) }\n");
-    assert_eq!(codes(&a), [UNKNOWN_TYPE, UNKNOWN_NAME]);
-    assert!(!a.functions.iter().any(Function::complete));
-    let a = check("fn f() {}\nfn f() {}\nfn g() = f()\n");
-    assert_eq!(codes(&a), [DUPLICATE_NAME]);
-    assert!(!a.functions[2].complete());
-    let a = check("fn f(x: int, x: bool) {\n _ = !x\n _ = -x\n}\nfn g() = f(1, true)\n");
-    assert_eq!(codes(&a), [DUPLICATE_NAME]);
-    assert!(a.functions[0].signature().is_some());
-    assert!(!a.functions[0].complete());
-    assert!(a.functions[1].complete());
 }
 
 #[test]
@@ -608,74 +422,6 @@ fn token_gaps_ignore_trivia_without_losing_semantics() {
 }
 
 #[test]
-fn invalid_parameters_do_not_hide_independent_result_errors() {
-    for (parameter, expected) in [
-        ("x: mystery", &[UNKNOWN_TYPE, TYPE_MISMATCH][..]),
-        // Missing annotations are already diagnosed by the parser.
-        ("x", &[TYPE_MISMATCH][..]),
-    ] {
-        let a = check(&format!(
-            "fn broken({parameter}) -> int = true\nfn independent() -> int = 42\n"
-        ));
-        assert!(!a.is_valid());
-        assert_eq!(codes(&a), expected);
-        assert!(a.functions[0].signature().is_none());
-        assert!(!a.functions[0].complete());
-        assert!(a.functions[1].complete());
-    }
-}
-
-#[test]
-fn damaged_and_unsupported_declarations_hide_old_bindings() {
-    for binding in [
-        "let x =",
-        "let x: = 1",
-        "let mut x = true",
-        "let x: mystery = true",
-        "let x = absent",
-    ] {
-        let a = check(&format!(
-            "fn f() {{\n let x = true\n {binding}\n _ = x + 1\n _ = missing\n}}\nfn intact() -> int = 3\n"
-        ));
-        assert!(!a.is_valid(), "{binding}");
-        assert!(
-            !codes(&a).contains(&TYPE_MISMATCH),
-            "{binding}: {:?}",
-            semantic(&a)
-        );
-        assert!(semantic(&a).last().unwrap().message.contains("missing"));
-        assert!(!a.functions[0].complete());
-        assert!(a.functions[1].complete());
-    }
-    for source in [
-        "fn f() { let = x }",
-        "fn f() { let _ = 1 }",
-        "fn f() -> int { 1 ; }",
-        "fn f() -> int { 1",
-        "fn f()",
-        "fn f() {\n let x = 1\n _ = missing\n",
-    ] {
-        let a = check(source);
-        assert!(!a.is_valid(), "{source}");
-        assert!(!a.functions[0].complete(), "{source}");
-    }
-    let a = check("fn f() {\n _ = missing\n");
-    assert_eq!(codes(&a), [UNKNOWN_NAME]);
-    for source in [
-        "fn f() { return }",
-        "fn f() { let x = 1\n x = 2 }",
-        "fn f() { let g = fn() = 1 }",
-        "fn f() = \"hello\"",
-        "fn f() = (if true { 1 } else { 2 })()",
-    ] {
-        let a = check(source);
-        assert!(a.parsed.diagnostics().is_empty(), "{source}");
-        assert!(!a.is_valid());
-        assert!(codes(&a).contains(&UNSUPPORTED), "{source}");
-    }
-}
-
-#[test]
 fn syntax_diagnostics_are_preserved_and_always_reject() {
     for source in ["fn f() -> int = 01", "fn f() {}\r"] {
         let parsed = parse_source(source.into()).unwrap();
@@ -685,7 +431,7 @@ fn syntax_diagnostics_are_preserved_and_always_reject() {
         let before = parsed.diagnostics().to_vec();
         let a = analyze(parsed);
         assert!(!a.is_valid());
-        assert_eq!(a.parsed.diagnostics(), before);
+        assert_eq!(a.parsed().diagnostics(), before);
         diagnostics_are_one_list(&a);
     }
 }
@@ -711,100 +457,6 @@ fn diagnostics_are_one_list(analysis: &Analysis) {
 }
 
 #[test]
-fn unused_values_are_semantic_errors_without_complete_bodies() {
-    let a = check("fn f() -> int { 1\n 2 }");
-    assert!(a.parsed.diagnostics().is_empty());
-    assert_eq!(codes(&a), [UNUSED_VALUE]);
-    assert!(!a.is_valid());
-    assert!(!a.functions[0].complete());
-    clean("fn f() -> int { let u = {}\n u\n _ = 1\n 2 }");
-
-    // The two unused values share an inferred type and produce distinct errors.
-    let a = check("fn f() = { let x = value()\n x\n x\n 0 }\nfn value() = 3");
-    assert_eq!(codes(&a), [UNUSED_VALUE, UNUSED_VALUE]);
-    assert!(semantic(&a)[0].primary.start() < semantic(&a)[1].primary.start());
-    assert!(!a.functions[0].complete());
-}
-
-#[test]
-fn blocks_preserve_statement_order_and_only_the_last_child_is_a_tail() {
-    let a = clean("fn f() = { let x = 11\n _ = 29\n {}\n 7 }\nfn g() = { _ = 5 }\nfn h() = {}");
-    // The literal, its binding, the discarded literal, the empty block's
-    // unit and the statement that leaves it unused, and the tail, in
-    // source order.
-    let nodes = body(&a, 0);
-    let ops: Vec<_> = nodes.iter().map(|&node| op(&a, node)).collect();
-    assert!(matches!(
-        ops[..],
-        [
-            Op::Int(_),
-            Op::Copy { .. },
-            Op::Int(_),
-            Op::Unit,
-            Op::Unused,
-            Op::Int(_)
-        ]
-    ));
-    assert_eq!(text(&a, a.graph().node(nodes[1]).name.unwrap()), "x");
-    assert_eq!(value(&a, 0), nodes[5]);
-    assert!(matches!(op(&a, nodes[5]), Op::Int(n) if *n == Int::from(7)));
-    // A block without a tail is unit, after whatever it discards.
-    let g = body(&a, 1);
-    assert!(matches!(
-        g.iter().map(|&node| op(&a, node)).collect::<Vec<_>>()[..],
-        [Op::Int(_), Op::Unit]
-    ));
-    assert_eq!(value(&a, 1), g[1]);
-    let h = body(&a, 2);
-    assert!(matches!(
-        h.iter().map(|&node| op(&a, node)).collect::<Vec<_>>()[..],
-        [Op::Unit]
-    ));
-}
-
-#[test]
-fn nested_blocks_consume_only_their_own_statements() {
-    let source = "fn f() = { let a = 11\n let b = { _ = a\n 29 }\n { _ = b }\n _ = 7\n b }";
-    let a = clean(source);
-    // A block is its value: the inner blocks leave their literal, their
-    // unit with the statement that leaves it unused, and their reads,
-    // which are edges, and the outer block's bindings and discards stand
-    // in source order with the value last.
-    let nodes = body(&a, 0);
-    let ops: Vec<_> = nodes.iter().map(|&node| op(&a, node)).collect();
-    assert!(matches!(
-        ops[..],
-        [
-            Op::Int(_),
-            Op::Copy { .. },
-            Op::Int(_),
-            Op::Copy { .. },
-            Op::Unit,
-            Op::Unused,
-            Op::Int(_)
-        ]
-    ));
-    let names: Vec<_> = nodes
-        .iter()
-        .filter_map(|&node| a.graph().node(node).name)
-        .map(|name| text(&a, name))
-        .collect();
-    assert_eq!(names, ["a", "b"]);
-    assert_eq!(value(&a, 0), nodes[3]);
-    assert!(matches!(op(&a, a.graph().inputs(nodes[3])[0]), Op::Int(n) if *n == Int::from(29)));
-
-    // A failed inner tail must not disturb checking the rest of the outer
-    // block or the next body.
-    let a = check(&format!(
-        "{}\nfn g() = {{ _ = 5\n 3 }}",
-        source.replace("29", "missing")
-    ));
-    assert_eq!(codes(&a), [UNKNOWN_NAME]);
-    assert!(!a.functions[0].complete());
-    assert!(a.functions[1].complete());
-}
-
-#[test]
 fn source_origins_are_utf8_byte_ranges() {
     let a = clean("// café\nfn f(e: int) -> int = e + 1");
     let sum = value(&a, 0);
@@ -818,21 +470,6 @@ fn source_origins_are_utf8_byte_ranges() {
         semantic(&a)[0].primary.start().to_usize(),
         "// café\nfn f() -> int = ".len()
     );
-}
-
-#[test]
-fn duplicate_functions_keep_the_first_origin_and_poison_calls() {
-    let a = check("fn K() = 1\nfn K() = true\nfn caller() = K()");
-    assert!(a.parsed().diagnostics().is_empty());
-    assert_eq!(codes(&a), [DUPLICATE_NAME]);
-    for diagnostic in a.diagnostics() {
-        assert_eq!(diagnostic.labels.len(), 1);
-        let origin = diagnostic.labels[0].range;
-        assert_eq!(origin.start().to_usize(), 3);
-        assert_eq!(origin.end().to_usize(), 4);
-    }
-    assert!(a.functions()[2].signature().is_none());
-    assert!(!a.functions()[2].complete());
 }
 
 #[test]
@@ -876,10 +513,10 @@ fn scalar_operator_type_matrix() {
                 };
                 let source = format!("fn f() -> {result} = {lhs} {op} {rhs}");
                 let a = check(&source);
-                assert!(a.parsed.diagnostics().is_empty(), "{source}");
+                assert!(a.parsed().diagnostics().is_empty(), "{source}");
                 assert_eq!(a.is_valid(), accepted, "{source}");
                 if accepted {
-                    assert!(a.functions[0].complete());
+                    assert!(a.functions()[0].complete());
                     match *self::op(&a, value(&a, 0)) {
                         Op::Binary(found) => assert_eq!(Some(found), eager),
                         Op::And { .. } => assert_eq!(op, "&&"),
@@ -913,7 +550,7 @@ fn binary_requirements_survive_a_failed_operand() {
         let mut actual = codes(&a);
         actual.sort_unstable_by_key(|code| code.name);
         assert_eq!(actual, [TYPE_MISMATCH, UNKNOWN_NAME], "{expression}");
-        assert!(!a.functions[0].complete());
+        assert!(!a.functions()[0].complete());
     }
 }
 
@@ -927,7 +564,7 @@ fn recovery_does_not_expose_functions_or_leak_argument_scopes() {
     let a = check("fn f() {\n let x = absent\n let x = true\n _ = x + 1\n}\n");
     assert_eq!(codes(&a), [UNKNOWN_NAME, TYPE_MISMATCH]);
     let a = check("fn f() -> int {\n _ = absent\n 1\n}\n");
-    assert!(!a.functions[0].complete());
+    assert!(!a.functions()[0].complete());
     clean("fn f() -> int {\n let x =\n 1\n x\n}\n");
 }
 
@@ -952,151 +589,6 @@ fn existing_corpus_never_panics_or_silently_rejects() {
         }
     }
     assert!(count > 100);
-}
-
-#[test]
-fn inferred_results_and_recursive_constraints() {
-    for (source, expected) in [
-        ("fn value() = 1", vec![Ty::Int]),
-        ("fn value() -> int = 1", vec![Ty::Int]),
-        ("fn value() = { 1 }", vec![Ty::Int]),
-        ("fn value() = {}", vec![Ty::Unit]),
-        ("fn f() = g()\nfn g() = 1", vec![Ty::Int, Ty::Int]),
-        ("fn f() = if true { 1 } else { f() }", vec![Ty::Int]),
-        ("fn f() = if false { f() } else { 1 }", vec![Ty::Int]),
-        // A type flows through a cycle of calls even when the call that
-        // closes the cycle can never run.
-        (
-            "fn f() -> int = if true { 1 } else { g() }\nfn g() = f()",
-            vec![Ty::Int, Ty::Int],
-        ),
-        (
-            "fn a() = { if false { _ = b() }\n1 }\nfn b() = { _ = a()\ntrue }",
-            vec![Ty::Int, Ty::Bool],
-        ),
-        (
-            "fn f() = { let x = g()\n let x = x + 1\n x }\nfn g() = 1",
-            vec![Ty::Int, Ty::Int],
-        ),
-        ("fn K() = 1\nfn f() = K()", vec![Ty::Int, Ty::Int]),
-    ] {
-        let a = clean(source);
-        let actual: Vec<_> = a
-            .functions
-            .iter()
-            .map(|f| f.signature().unwrap().result)
-            .collect();
-        assert_eq!(actual, expected, "{source}");
-        reversed_declarations_preserve_types(&a);
-    }
-}
-
-#[test]
-fn callers_cannot_solve_providers_or_publish_incomplete_calls() {
-    let a = check(
-        "fn spin() = spin()\nfn consumer() -> int = spin()\nfn grounded() = spin() + 1\nfn recovered() = grounded()\n",
-    );
-    // `spin` is both unresolvable and unbounded, each reported once.
-    assert_eq!(codes(&a), [CANNOT_INFER, UNBOUNDED_RECURSION]);
-    assert!(a.functions[0].signature().is_none());
-    for function in &a.functions[1..] {
-        assert_eq!(function.signature().unwrap().result, Ty::Int);
-    }
-    assert!(!a.functions[..3].iter().any(Function::complete));
-    assert!(a.functions[3].complete());
-    let a = check("fn spin(x: int) = spin(x)\nfn caller() = spin(true, missing)\nfn intact() = 42");
-    assert_eq!(
-        codes(&a),
-        [
-            CANNOT_INFER,
-            UNBOUNDED_RECURSION,
-            ARITY,
-            TYPE_MISMATCH,
-            UNKNOWN_NAME
-        ]
-    );
-    assert!(a.functions[2].complete());
-}
-
-#[test]
-fn inferred_conflicts_and_deferred_scalar_rules() {
-    for definitions in [
-        vec![
-            "fn a() = if true { 1 } else { b() }",
-            "fn b() = if true { true } else { a() }",
-        ],
-        vec![
-            "fn a() = b()",
-            "fn b() = if true { integer() } else { boolean() }",
-            "fn integer() = 1",
-            "fn boolean() = true",
-        ],
-    ] {
-        for reverse in [false, true] {
-            let mut definitions = definitions.clone();
-            if reverse {
-                definitions.reverse();
-            }
-            let a = check(&definitions.join("\n"));
-            assert!(!a.is_valid());
-            for function in &a.functions {
-                let named = matches!(function.name().map(|name| a.text(name)), Some("a" | "b"));
-                assert_eq!(function.signature().is_some(), !named);
-                assert_eq!(function.complete(), !named);
-            }
-        }
-    }
-    for (source, expected) in [
-        ("fn f() { g()\n _ = 1 }\nfn g() = 1", UNUSED_VALUE),
-        ("fn f() = g() == g()\nfn g() = {}", TYPE_MISMATCH),
-        ("fn f() -> bool = g()\nfn g() = 1", TYPE_MISMATCH),
-        (
-            "fn f() = if true { g() } else { false }\nfn g() = 1",
-            TYPE_MISMATCH,
-        ),
-        (
-            "fn f() = { let x: bool = g()\n x }\nfn g() = 1",
-            TYPE_MISMATCH,
-        ),
-    ] {
-        let a = check(source);
-        assert_eq!(codes(&a), [expected], "{source}");
-        assert!(!a.functions[0].complete());
-        assert!(a.functions[1].complete());
-    }
-    clean("fn f() { g()\n _ = 1 }\nfn g() = {}");
-}
-
-#[test]
-fn inference_preserves_resolution_poison_and_annotation_boundaries() {
-    for (source, expected) in [
-        ("fn f() = 1\nfn g() = { let f = true\n f() }", NOT_CALLABLE),
-        (
-            "fn f() = 1\nfn F() = 2\nfn F() = 3\nfn g() = F()",
-            DUPLICATE_NAME,
-        ),
-        (
-            "fn f() = 1\nfn g() = { let f = absent\n f() }",
-            UNKNOWN_NAME,
-        ),
-        ("fn f() = 1\nfn g() = { let mut f = 1\n f() }", UNSUPPORTED),
-    ] {
-        let a = check(source);
-        assert_eq!(codes(&a), [expected]);
-        assert!(!a.functions.last().unwrap().complete());
-        assert!(a.functions[0].complete());
-    }
-    for declaration in [
-        "fn f() -> = 1",
-        "fn f() -> mystery = 1",
-        "fn f(x) = 1",
-        "fn f() -> = { 1 }",
-    ] {
-        let a = check(declaration);
-        assert!(a.functions[0].signature().is_none(), "{declaration}");
-        assert!(!a.functions[0].complete());
-        assert!(!codes(&a).contains(&CANNOT_INFER));
-    }
 }
 
 #[test]
@@ -1138,7 +630,7 @@ fn large_definition_chains_and_cycles_are_stack_safe() {
             let a = check(&source);
             assert_eq!(a.is_valid(), grounded);
             if grounded {
-                assert!(a.functions.iter().all(Function::complete));
+                assert!(a.functions().iter().all(Function::complete));
             } else {
                 // A conflict is reported once at each end that claims a
                 // type; every function between inherits it silently. A live
@@ -1162,7 +654,7 @@ fn large_definition_chains_and_cycles_are_stack_safe() {
                         .all(|d| d.code == CANNOT_INFER || d.code == UNBOUNDED_RECURSION)
                 );
                 assert!(
-                    a.functions
+                    a.functions()
                         .iter()
                         .all(|f| f.signature().is_none() && !f.complete())
                 );
@@ -1171,7 +663,23 @@ fn large_definition_chains_and_cycles_are_stack_safe() {
     }
 }
 
+/// Records every failing seed in the crate's tracked `proptest-regressions/`
+/// file, which each later run replays before generating anything new.
+/// Proptest's default location is found by walking up from the test file
+/// to a `lib.rs`, which a test under `tests/` never reaches; this path is
+/// fixed at compile time instead.
+fn config() -> proptest::test_runner::Config {
+    proptest::test_runner::Config {
+        failure_persistence: Some(Box::new(FileFailurePersistence::Direct(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/proptest-regressions/analysis.txt"
+        )))),
+        ..Default::default()
+    }
+}
+
 proptest::proptest! {
+    #![proptest_config(config())]
     #[test]
     fn declaration_order_does_not_choose_inferred_signatures(
         choices in proptest::collection::vec((0usize..20, 0u8..6, proptest::num::u32::ANY), 1..20)
@@ -1193,9 +701,9 @@ proptest::proptest! {
         order.sort_by_key(|&i| choices[i].2);
         let b = check(&order.iter().map(|&i| definitions[i].as_str()).collect::<Vec<_>>().join("\n"));
         for (analysis, other) in [(&a, &b), (&b, &a)] {
-            for function in &analysis.functions {
+            for function in analysis.functions() {
                 let name = function.name().map(|name| analysis.text(name));
-                let counterpart = other.functions.iter().find(|f| f.name().map(|n| other.text(n)) == name).unwrap();
+                let counterpart = other.functions().iter().find(|f| f.name().map(|n| other.text(n)) == name).unwrap();
                 proptest::prop_assert_eq!(function.signature().map(|s| s.result), counterpart.signature().map(|s| s.result));
                 proptest::prop_assert_eq!(function.complete(), counterpart.complete());
             }

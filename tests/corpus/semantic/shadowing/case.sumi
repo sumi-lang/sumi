@@ -6,3 +6,12 @@ fn shadow(x: int) -> int {
     }
     x
 }
+fn innermost(x: int) -> int {
+    let x = x * 2
+    let y = {
+        let x = x - 3
+        x + 1
+    }
+    x + y
+}
+fn innermosts() -> int = innermost(5)

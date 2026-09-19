@@ -1,6 +1,6 @@
 file: rejected
 frontend errors: 1 (see frontend.snap)
-semantic errors: 7
+semantic errors: 8
 
 fn tail_held@0..48 () -> bool ∈ ∅
   result: copy : bool @18..22
@@ -31,6 +31,12 @@ fn damaged@199..230 () -> int ∈ ∅
       discard: hole : ? @227..228
       tail: hole : ? @219..230
 
+fn grouped@231..255 signature: unavailable
+  body: hole : ? @247..254
+
+fn after@256..277 () -> bool ∈ {true}
+  body: bool true : bool @271..275
+
 == semantic diagnostics ==
 error[semantic/type-mismatch]: expected bool, found int
   primary @23..48
@@ -48,3 +54,5 @@ error[semantic/unknown-name]: unknown name `missing`
   primary @167..174
 error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
   primary @225..226
+error[semantic/unknown-name]: unknown name `missing`
+  primary @247..254

@@ -11,3 +11,12 @@ fn unknown_type() {
     let z: mystery = 1
     _ = z
 }
+fn rebound() {
+    let x = true
+    let mut x = 1
+    _ = x + 1
+    let x: mystery = 1
+    _ = x + 1
+    let x = absent
+    _ = x + 1
+}

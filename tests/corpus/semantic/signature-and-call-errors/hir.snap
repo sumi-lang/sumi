@@ -1,6 +1,6 @@
 file: rejected
 frontend errors: 0 (see frontend.snap)
-semantic errors: 12
+semantic errors: 16
 
 fn duplicate@0..17 () -> unit ∈ unit
   result: copy : unit @0..17
@@ -28,7 +28,7 @@ fn typed@125..161 (int ∈ ∅, bool ∈ ∅) -> int ∈ ∅
   result: copy : int @154..157
     value: read x@134..135 : int
 
-fn twice@162..198 (int ∈ ∅, bool ∈ ∅) -> int ∈ ∅
+fn twice@162..198 (int ∈ [1, 1], bool ∈ {true}) -> int ∈ ∅
   param x@171..172: int
   param x@179..180: ?
   result: copy : int @191..194
@@ -66,6 +66,45 @@ fn extra@372..404 () -> int ∈ ∅
       arg[0]: int 3 : int @399..400
       arg[1]: int 4 : int @402..403
 
+fn twice_named@405..462 (int ∈ ∅, bool ∈ ∅) -> unit ∈ ∅
+  param x@420..421: int
+  param x@428..429: ?
+  result: copy : unit @405..462
+    value:
+      discard: not : ? @447..449
+        operand: read x@428..429 : ?
+      discard: negate : ? @458..460
+        operand: read x@428..429 : ?
+      tail: unit : unit @437..462
+
+fn unknown_result@463..497 signature: unavailable
+  body: int 1 : int @496..497
+
+fn poisoned@498..557 () -> int ∈ ∅
+  result: copy : int @515..518
+    value:
+      let typed@529..534: ? @525..543
+        initializer: hole : ? @537..543
+      tail: hole : ? @548..555
+
+fn mutable@558..615 () -> int ∈ ∅
+  result: copy : int @574..577
+    value:
+      discard: hole : ? @584..601
+      let typed@592..597: hole : ? @584..601
+      tail: hole : ? @606..613
+
+fn suppressed_arity@616..653 signature: unavailable
+  body: hole : ? @640..653
+    part[0]: int 1 : int @648..649
+    part[1]: int 2 : int @651..652
+
+fn calls_twice@654..694 () -> int ∈ ∅
+  result: copy : int @674..677
+    value: call twice@162..198 : int @680..694
+      arg[0]: int 1 : int @686..687
+      arg[1]: bool true : bool @689..693
+
 == semantic diagnostics ==
 error[semantic/duplicate-name]: duplicate function `duplicate`
   primary @21..30
@@ -99,3 +138,12 @@ error[semantic/type-mismatch]: expected int, found bool
 error[semantic/arity]: expected 1 arguments, found 2
   primary @392..404
   secondary @339..371: declared here
+error[semantic/duplicate-name]: duplicate parameter `x`
+  primary @428..429
+  secondary @420..421: declared here
+error[semantic/unknown-type]: unknown type `mystery`
+  primary @486..493
+error[semantic/unknown-name]: unknown name `absent`
+  primary @537..543
+error[semantic/unsupported]: construct is not supported by scalar checking
+  primary @584..601

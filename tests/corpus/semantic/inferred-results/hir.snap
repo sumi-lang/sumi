@@ -45,3 +45,20 @@ fn boolean@300..345 () -> bool ∈ {true}
 
 fn empty@346..361 () -> unit ∈ unit
   body: unit : unit @359..361
+
+fn chained@362..426 () -> int ∈ [2, 2]
+  body:
+    let x@387..388: int @383..400
+      initializer: call forward@23..47 : int @391..400
+    let x@409..410: int @405..418
+      initializer: eager + : int @413..418
+        lhs: read x@387..388 : int
+        rhs: int 1 : int @417..418
+    tail: read x@409..410 : int
+
+fn discards@427..466 () -> unit ∈ unit
+  result: copy : unit @427..466
+    value:
+      discard: call empty@346..361 : unit @447..454
+      discard: int 1 : int @463..464
+      tail: unit : unit @441..466

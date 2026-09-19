@@ -30,3 +30,8 @@ fn computed_call() {
         }
     )(missing, 1 + true)
 }
+fn condition() -> int = if 1 { 2 } else { false }
+fn assignment() {
+    let x = 1
+    x = 2
+}

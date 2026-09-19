@@ -13,3 +13,18 @@ fn hidden() -> int {
 fn broken_result(x: mystery) -> int = true
 fn scaled(n: int) -> int = n * 2
 fn extra() -> int = scaled(3, 4)
+fn twice_named(x: int, x: bool) {
+    _ = !x
+    _ = -x
+}
+fn unknown_result() -> mystery = 1
+fn poisoned() -> int {
+    let typed = absent
+    typed()
+}
+fn mutable() -> int {
+    let mut typed = 1
+    typed()
+}
+fn suppressed_arity() = unknown(1, 2)
+fn calls_twice() -> int = twice(1, true)

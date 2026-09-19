@@ -3,4 +3,14 @@ fn unclosed(a: int
 fn untyped(a:) -> {
     let x: = 1
 }
+fn stray_before_params= (a: int) {
+    a
+}
+fn stray_in_result() -> = int {
+    a
+}
+fn stray_signature x = 1
+fn stray_before_result() = -> int {
+    a
+}
 fn intact() -> int = 3

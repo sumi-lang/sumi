@@ -1,6 +1,6 @@
 file: rejected
-frontend errors: 6 (see frontend.snap)
-semantic errors: 0
+frontend errors: 12 (see frontend.snap)
+semantic errors: 3
 
 fn <missing>@0..14 (int ∈ ∅) -> unit ∈ ∅
   param a@4..5: int
@@ -17,6 +17,30 @@ fn untyped@34..70 signature: unavailable
     let x@62..63: hole : ? @58..68
     tail: hole : ? @52..70
 
-fn intact@71..93 () -> int ∈ [3, 3]
-  result: copy : int @86..89
-    value: int 3 : int @92..93
+fn stray_before_params@71..113 (int ∈ ∅) -> unit ∈ ∅
+  param a@96..97: ?
+  result: copy : unit @71..113
+    value: read a@96..97 : ?
+
+fn stray_in_result@114..153 signature: unavailable
+  body: hole : ? @150..151
+
+fn stray_signature@154..178 signature: unavailable
+  body: hole : ? @154..178
+
+fn stray_before_result@179..222 () -> int ∈ ∅
+  result: copy : int @209..212
+    value: hole : ? @219..220
+
+fn intact@223..245 () -> int ∈ [3, 3]
+  result: copy : int @238..241
+    value: int 3 : int @244..245
+
+== semantic diagnostics ==
+error[semantic/type-mismatch]: expected unit, found int
+  primary @104..113
+  secondary @71..113: declared here
+error[semantic/unknown-name]: unknown name `a`
+  primary @150..151
+error[semantic/unknown-name]: unknown name `a`
+  primary @219..220

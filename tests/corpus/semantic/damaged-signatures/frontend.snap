@@ -7,6 +7,12 @@ ExpectedBody at 34
 ExpectedType at 47
 ExpectedType at 52
 ExpectedType at 65
+Expected(LParen) at 93
+ExpectedType at 138
+ExpectedBody at 138
+Expected(LParen) at 173
+ExpectedBody at 179
+ExpectedBody at 204
 
 == diagnostics ==
 error[syntax/expected-name] 1:4: expected a name
@@ -18,11 +24,31 @@ error[syntax/expected-body] 3:1: expected a body, `{` or `=`
 error[syntax/expected-type] 3:14: expected a type
 error[syntax/expected-type] 3:19: expected a type
 error[syntax/expected-type] 4:12: expected a type
+error[syntax/expected-token] 6:23: expected `(`
+  at 6:23..6:24 "=": skipped while recovering
+error[syntax/expected-type] 9:25: expected a type
+error[syntax/expected-body] 9:25: expected a body, `{` or `=`
+  at 9:25..9:30 "= int": skipped while recovering
+error[syntax/expected-token] 12:20: expected `(`
+  at 12:20..12:25 "x = 1": skipped while recovering
+error[syntax/expected-body] 13:1: expected a body, `{` or `=`
+error[syntax/expected-body] 13:26: expected a body, `{` or `=`
+  at 13:26..13:27 "=": skipped while recovering
 
-== fixed (syntax/expected-body, syntax/expected-name, syntax/expected-type remain) ==
+== fixed (syntax/expected-body, syntax/expected-name, syntax/expected-token, syntax/expected-type remain) ==
 fn (a: int) {}
 fn unclosed(a: int)
 fn untyped(a:) -> {
     let x: = 1
+}
+fn stray_before_params= (a: int) {
+    a
+}
+fn stray_in_result() -> = int {
+    a
+}
+fn stray_signature x = 1
+fn stray_before_result() = -> int {
+    a
 }
 fn intact() -> int = 3

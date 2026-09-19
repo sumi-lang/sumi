@@ -182,3 +182,12 @@ fn boundeds@978..1038 () -> int ∈ [-300, 300]
           arg[0]: int 0 : int @1023..1024
       rhs: call bounded@898..977 : int @1028..1038
         arg[0]: int 5 : int @1036..1037
+
+fn dead_else@1039..1099 () -> int ∈ [7, 7]
+  result: copy : int @1057..1060
+    value: if : int @1063..1099
+      condition: bool true : bool @1066..1070
+      then: int 7 : int @1077..1078
+      else: eager / : int @1092..1097
+        lhs: int 1 : int @1092..1093
+        rhs: int 0 : int @1096..1097

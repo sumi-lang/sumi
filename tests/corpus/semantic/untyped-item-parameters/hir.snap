@@ -1,6 +1,6 @@
 file: rejected
-frontend errors: 2 (see frontend.snap)
-semantic errors: 0
+frontend errors: 3 (see frontend.snap)
+semantic errors: 1
 
 fn id@0..12 signature: unavailable
   param x@6..7: ?
@@ -13,3 +13,13 @@ fn add@13..45 signature: unavailable
     value: eager + : ? @40..45
       lhs: read a@20..21 : int
       rhs: read b@28..29 : ?
+
+fn broken@46..72 signature: unavailable
+  param x@56..57: ?
+  result: copy : int @62..65
+    value: bool true : ? @68..72
+
+== semantic diagnostics ==
+error[semantic/type-mismatch]: expected int, found bool
+  primary @68..72
+  secondary @62..65: declared here

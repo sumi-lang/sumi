@@ -3,3 +3,5 @@ fn even: takes arguments, not run
 fn odd: takes arguments, not run
 fn safe = true (steps 43, depth 6 of at most 6)
 fn maybe: takes arguments, not run
+fn spin: takes arguments, not run
+fn spins = unit (steps 30, depth 5 of at most 5)
