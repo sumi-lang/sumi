@@ -98,8 +98,7 @@ pub(crate) fn end_sig(tree: &SyntaxTree, input: &ParserInput, node: NodeIdx) -> 
 }
 
 fn apply_gap_edits(source: &str, edits: &[print::GapEdit]) -> String {
-    let edits: Vec<TextEdit> = edits.iter().map(|edit| edit.edit.clone()).collect();
-    sumi_text::apply(source, &edits)
+    sumi_text::apply(source, edits.iter().map(|edit| &edit.edit))
 }
 
 /// The items of `before` whose rep differs in `candidate`, or every item

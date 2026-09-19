@@ -22,7 +22,7 @@ mod tests;
 use std::fmt;
 
 use sumi_frontend::{Diagnostic, ParsedSource};
-use sumi_text::Span;
+use sumi_text::TextRange;
 
 pub use check::analyze;
 pub use sumi_graph::{
@@ -100,7 +100,7 @@ impl Analysis {
         self.function_ids().find(|&id| {
             self.function(id)
                 .name
-                .is_some_and(|span| self.text(span) == name)
+                .is_some_and(|range| self.text(range) == name)
         })
     }
     /// What may reach a function's parameters and its result, whenever it
@@ -119,11 +119,10 @@ impl Analysis {
             },
         })
     }
-    /// The source text `span` covers: how a name in the HIR is read, since
+    /// The source text `range` covers: how a name in the HIR is read, since
     /// every name is kept as where it is written.
-    pub fn text(&self, span: Span) -> &str {
-        let range = span.range();
-        &self.parsed.source()[range.start().to_usize()..range.end().to_usize()]
+    pub fn text(&self, range: TextRange) -> &str {
+        range.text(self.parsed.source())
     }
     pub fn is_valid(&self) -> bool {
         self.diagnostics.is_empty() && self.functions.iter().all(|f| f.complete)
@@ -177,7 +176,7 @@ impl<'a> Program<'a> {
             .find(|(_, function)| {
                 function
                     .name()
-                    .is_some_and(|span| self.analysis.text(span) == name)
+                    .is_some_and(|range| self.analysis.text(range) == name)
             })
             .map(|(id, _)| id)
     }
@@ -214,8 +213,8 @@ impl<'a> Program<'a> {
 
 #[derive(Debug)]
 pub struct Function {
-    name: Option<Span>,
-    origin: Span,
+    name: Option<TextRange>,
+    origin: TextRange,
     signature: Option<Signature>,
     complete: bool,
     depth: Option<u64>,
@@ -223,10 +222,10 @@ pub struct Function {
 
 impl Function {
     /// Where the name is written; [`Analysis::text`] reads it.
-    pub fn name(&self) -> Option<Span> {
+    pub fn name(&self) -> Option<TextRange> {
         self.name
     }
-    pub fn origin(&self) -> Span {
+    pub fn origin(&self) -> TextRange {
         self.origin
     }
     /// A concrete declaration contract, not a guarantee that its body is valid.

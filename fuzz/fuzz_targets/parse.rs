@@ -11,7 +11,7 @@ fuzz_target!(|data: &[u8]| {
     let Ok(source) = std::str::from_utf8(data) else {
         return;
     };
-    let parsed = parse_source(sumi_fuzz::FILE, source.into()).expect("fuzz inputs fit in u32");
+    let parsed = parse_source(source.into()).expect("fuzz inputs fit in u32");
     let lexed = parsed.lexed();
     let parse = parsed.parse();
 

@@ -12,7 +12,6 @@ use proptest::prelude::*;
 use proptest::test_runner::FileFailurePersistence;
 use sumi_frontend::parse_source;
 use sumi_hir::{Analysis, Bools, Int, Ints, Ty, Value, analyze};
-use sumi_text::FileId;
 
 /// xorshift64*: enough to draw a program from, and one word of state so a
 /// failing seed names its program.
@@ -693,7 +692,7 @@ fn check(source: &str) -> Option<Runs> {
     /// tuples the rest are left.
     const TUPLES: usize = 32;
 
-    let analysis: Analysis = analyze(parse_source(FileId::new(0), source.into()).unwrap());
+    let analysis: Analysis = analyze(parse_source(source.into()).unwrap());
     let program = analysis.program()?;
     let wide: Int = format!("1{}", "0".repeat(DIGITS)).parse().unwrap();
     let too_wide = |value: &Value| matches!(value, Value::Int(v) if *v > wide || *v < -&wide);

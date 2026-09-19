@@ -10,7 +10,7 @@ use sumi_frontend::parse_source;
 use sumi_hir::{Analysis, Value};
 use sumi_lexer::lex;
 use sumi_syntax::{ParserInput, parse};
-use sumi_text::{FileId, LineIndex, TextSize};
+use sumi_text::{LineIndex, TextSize};
 
 const USAGE: &str = "usage: sumi check <file>
        sumi run <file>
@@ -85,14 +85,14 @@ fn locate(path: &Path, lines: &LineIndex, offset: TextSize) -> String {
 /// back with whether there was any.
 fn analyze(path: &Path) -> Result<(Analysis, bool), String> {
     let source = read_source(path)?;
-    let parsed = parse_source(FileId::new(0), source.into_boxed_str())
+    let parsed = parse_source(source.into_boxed_str())
         .map_err(|error| format!("{}: error[cli/source-too-large]: {error}", path.display()))?;
     let analysis = sumi_hir::analyze(parsed);
     let lines = LineIndex::new(analysis.parsed().source());
     for diagnostic in analysis.diagnostics() {
         eprintln!(
             "{}error[{}]: {}",
-            locate(path, &lines, diagnostic.primary.range().start()),
+            locate(path, &lines, diagnostic.primary.start()),
             diagnostic.code,
             diagnostic.message,
         );
@@ -129,11 +129,7 @@ fn run(path: &Path) -> Result<ExitCode, String> {
     if !program.signature(main).params.is_empty() {
         return Err(format!(
             "{}error[cli/main-parameters]: `main` takes arguments; `sumi run` passes none",
-            locate(
-                path,
-                &lines,
-                program.function(main).origin().range().start()
-            ),
+            locate(path, &lines, program.function(main).origin().start()),
         ));
     }
     match program.evaluate(main, &[]) {

@@ -1,13 +1,12 @@
 //! Renderer-independent diagnostics, as the frontend and every later
 //! phase produce them: a stable code, wording, labels, and a fix. Every
-//! diagnostic rejects the program. Every span names its file, so a
-//! diagnostic produced from one file can point into another — "defined
-//! here" — and renderers only project this canonical representation for
-//! their audience.
+//! diagnostic rejects the program, and every range is into the one source
+//! it was produced from; renderers only project this canonical
+//! representation for their audience.
 
 use std::fmt;
 
-use sumi_text::{Span, TextEdit};
+use sumi_text::{TextEdit, TextRange};
 
 /// A namespace for related diagnostic codes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -27,10 +26,10 @@ impl fmt::Display for DiagnosticCode {
     }
 }
 
-/// Related evidence for a diagnostic: a span and what it shows.
+/// Related evidence for a diagnostic: a range and what it shows.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Label {
-    pub span: Span,
+    pub range: TextRange,
     pub message: Box<str>,
 }
 
@@ -50,10 +49,10 @@ pub struct Fix {
 pub struct Diagnostic {
     pub code: DiagnosticCode,
     pub message: Box<str>,
-    /// Where the diagnostic is: source text, or an empty span at the byte
+    /// Where the diagnostic is: source text, or an empty range at the byte
     /// boundary where syntax is absent.
-    pub primary: Span,
-    /// Related evidence, rendered after the primary span.
+    pub primary: TextRange,
+    /// Related evidence, rendered after the primary range.
     pub labels: Box<[Label]>,
     /// A source action for the diagnostic's source snapshot.
     pub fix: Option<Fix>,

@@ -33,14 +33,14 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     let (graph, lowered) = lower::lower(&mut source, &items, &declared);
     let headers = declared.headers;
     let (mut typing, thresholds) =
-        flows::draw(&graph, &lowered, &headers, |node| source.span(node));
+        flows::draw(&graph, &lowered, &headers, |node| source.range(node));
     typing.solve(&thresholds);
     let failed = replay(&mut source, &typing, &lowered);
     let mut functions: Vec<Function> = headers
         .iter()
         .map(|header| Function {
             name: header.name,
-            origin: source.span(header.item),
+            origin: source.range(header.item),
             signature: None,
             complete: false,
             depth: None,
@@ -69,7 +69,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     // stand at one position, then the checker's in the order it made them.
     let mut diagnostics = source.diagnostics;
     diagnostics.splice(0..0, parsed.diagnostics().iter().cloned());
-    diagnostics.sort_by_key(|d| d.primary.range().start());
+    diagnostics.sort_by_key(|d| d.primary.start());
     let analysis = Analysis {
         parsed,
         graph,
@@ -115,7 +115,7 @@ fn holds(
             };
             match (actual, expected_ty) {
                 (Some(actual), Some(expected)) if actual != expected => {
-                    let related = declared.map(|node| (source.span(node), "declared here"));
+                    let related = declared.map(|node| (source.range(node), "declared here"));
                     source.type_mismatch(demand.node, expected, actual, related);
                 }
                 _ => {
@@ -244,7 +244,7 @@ fn divisions(
         };
         let labels = explain_zero(source, graph, typing, lowered, obligation.divisor);
         source.report(
-            source.span(obligation.node),
+            source.range(obligation.node),
             codes::DIVISION_BY_ZERO,
             message,
             labels,
@@ -262,7 +262,7 @@ fn explain_zero(
     typing: &Typing,
     lowered: &Lowered,
     divisor: NodeId,
-) -> Vec<(Span, Box<str>)> {
+) -> Vec<(TextRange, Box<str>)> {
     use std::collections::{HashSet, VecDeque};
 
     use crate::Ints;
@@ -276,7 +276,7 @@ fn explain_zero(
             format!("may be 0{where_}: {ints}")
         }
     };
-    let mut labels: Vec<(Span, Box<str>)> = Vec::new();
+    let mut labels: Vec<(TextRange, Box<str>)> = Vec::new();
     let mut seen = HashSet::new();
     let mut queue = VecDeque::from([(divisor, 0)]);
     while let Some((node, hops)) = queue.pop_front() {
@@ -340,7 +340,7 @@ fn explain_zero(
                     if delivered.ints.contains_zero() {
                         let written = lowered.arguments(call)[index as usize];
                         labels.push((
-                            source.span(written),
+                            source.range(written),
                             format!("argument {}", describe(&delivered.ints, "")).into(),
                         ));
                     }
@@ -358,7 +358,7 @@ fn explain_zero(
             | Op::Else => {}
         }
     }
-    labels.sort_by_key(|(span, _)| span.range().start());
+    labels.sort_by_key(|(range, _)| range.start());
     labels
 }
 

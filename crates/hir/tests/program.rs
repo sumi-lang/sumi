@@ -3,10 +3,9 @@
 
 use sumi_frontend::parse_source;
 use sumi_hir::{Analysis, Ty, Value, analyze};
-use sumi_text::FileId;
 
 fn analysis(source: &str) -> Analysis {
-    analyze(parse_source(FileId::new(0), source.into()).unwrap())
+    analyze(parse_source(source.into()).unwrap())
 }
 
 fn int(value: i64) -> Value {

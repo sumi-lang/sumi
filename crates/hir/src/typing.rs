@@ -14,7 +14,7 @@
 //! settled flows so a disagreement is blamed on the first demand that
 //! raised it.
 
-use sumi_text::Span;
+use sumi_text::TextRange;
 
 use sumi_graph::{Domain, May, NodeId, Thresholds, Ty};
 
@@ -34,7 +34,7 @@ pub(crate) enum Expected {
 pub(crate) struct Typing {
     solver: Solver<Product>,
     /// Where each claim was made, by claim index.
-    origins: Vec<Span>,
+    origins: Vec<TextRange>,
     /// Every type claimed on a class's own account, with the claim that
     /// made it: what the replay starts from, restated to it since the
     /// solver keeps no record of which evidence was a fact.
@@ -59,31 +59,31 @@ impl Typing {
         }
     }
 
-    fn claim(&mut self, origin: Span) -> Claim {
+    fn claim(&mut self, origin: TextRange) -> Claim {
         let claim = Claim::local(self.origins.len());
         self.origins.push(origin);
         claim
     }
 
     /// Where `claim` was made; none for a replay's own claims.
-    pub fn origin(&self, claim: Claim) -> Option<Span> {
+    pub fn origin(&self, claim: Claim) -> Option<TextRange> {
         self.origins.get(claim.index()).copied()
     }
 
     /// `node` is known to have `ty` because of what is at `origin`: an
     /// annotation, or an operator's result, whose values arrive by flows.
-    pub fn known(&mut self, node: NodeId, ty: Ty, origin: Span) {
+    pub fn known(&mut self, node: NodeId, ty: Ty, origin: TextRange) {
         self.fact(node, ty, May::NONE, origin);
     }
 
     /// `node` is a literal: known to have `ty` and to be exactly `value`.
-    pub fn literal(&mut self, node: NodeId, ty: Ty, value: May, origin: Span) {
+    pub fn literal(&mut self, node: NodeId, ty: Ty, value: May, origin: TextRange) {
         self.fact(node, ty, value, origin);
     }
 
     /// What `node` is on its own account: a claim of `ty` made at `origin`,
     /// which survives a replay, and its own values.
-    fn fact(&mut self, node: NodeId, ty: Ty, value: May, origin: Span) {
+    fn fact(&mut self, node: NodeId, ty: Ty, value: May, origin: TextRange) {
         let claim = self.claim(origin);
         self.solver.expect(
             node,
@@ -112,7 +112,7 @@ impl Typing {
 
     /// Let `call`, the class of a call at `origin`, learn its callee's
     /// `result`: the same types, all claimed at the call site.
-    pub fn call(&mut self, result: NodeId, call: NodeId, origin: Span) {
+    pub fn call(&mut self, result: NodeId, call: NodeId, origin: TextRange) {
         let claim = self.claim(origin);
         self.flow(result, call, Edge::Call(claim));
     }
@@ -136,7 +136,7 @@ impl Typing {
     }
 
     /// The use at `origin` demands that `node` be `expected`.
-    pub fn expect(&mut self, node: NodeId, expected: Expected, origin: Span) {
+    pub fn expect(&mut self, node: NodeId, expected: Expected, origin: TextRange) {
         match expected {
             Expected::Ty(ty) => {
                 let claim = self.claim(origin);
@@ -305,12 +305,9 @@ impl Replay {
 mod tests {
     use super::*;
 
-    fn at(offset: u32) -> Span {
-        use sumi_text::{FileId, TextRange, TextSize};
-        Span::new(
-            FileId::new(0),
-            TextRange::new(TextSize::new(offset), TextSize::new(offset + 1)),
-        )
+    fn at(offset: u32) -> TextRange {
+        use sumi_text::TextSize;
+        TextRange::new(TextSize::new(offset), TextSize::new(offset + 1))
     }
 
     /// A typing of `N` classes nothing is known about yet, by index.

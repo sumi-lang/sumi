@@ -15,20 +15,17 @@ pub use diagnostic::{Diagnostic, DiagnosticCode, DiagnosticGroup, Fix, Label};
 pub use sumi_lexer::SourceTooLarge;
 use sumi_lexer::{LexedFile, lex};
 use sumi_syntax::{Parse, ParserInput, parse};
-use sumi_text::FileId;
 
-/// Parse one immutable source snapshot, the text of `file`.
+/// Parse one immutable source snapshot.
 ///
 /// Malformed source still produces every syntactic product. The only failure
-/// is a source too large for Sumi's `u32` file-local coordinate space. The
-/// caller allocates the [`FileId`]; every diagnostic label names it.
-pub fn parse_source(file: FileId, source: Box<str>) -> Result<ParsedSource, SourceTooLarge> {
+/// is a source too large for Sumi's `u32` coordinate space.
+pub fn parse_source(source: Box<str>) -> Result<ParsedSource, SourceTooLarge> {
     let lexed = lex(&source)?;
     let parse = parse(ParserInput::new(&lexed));
-    let diagnostics = lower::diagnostics(file, &source, &lexed, &parse);
+    let diagnostics = lower::diagnostics(&source, &lexed, &parse);
 
     Ok(ParsedSource {
-        file,
         source,
         lexed,
         parse,
@@ -39,7 +36,6 @@ pub fn parse_source(file: FileId, source: Box<str>) -> Result<ParsedSource, Sour
 /// All immutable syntactic products for one source revision.
 #[derive(Clone, Debug)]
 pub struct ParsedSource {
-    file: FileId,
     source: Box<str>,
     lexed: LexedFile,
     parse: Parse,
@@ -47,11 +43,6 @@ pub struct ParsedSource {
 }
 
 impl ParsedSource {
-    /// The file the source is the text of.
-    pub fn file(&self) -> FileId {
-        self.file
-    }
-
     pub fn source(&self) -> &str {
         &self.source
     }

@@ -7,7 +7,7 @@ use sumi_lexer::lex;
 use sumi_syntax::ast::{AstNode, Block, ElseBranch, Expr, SourceFile, Stmt};
 use sumi_syntax::{MAX_DEPTH, NodeKind, ParseEvidence, ParserInput, RawIdx, SyntaxTree, parse};
 use sumi_test::corpus;
-use sumi_text::{FileId, LineIndex, TextSize};
+use sumi_text::{LineIndex, TextSize};
 
 const KIB: usize = 1024;
 
@@ -78,7 +78,7 @@ fn bench_phases(c: &mut Criterion, corpus_name: &str, source: &str, valid: bool)
     let lexed = lex(source).expect("benchmark corpus fits in Sumi's source coordinate space");
     let input = ParserInput::new(&lexed);
 
-    let parsed = parse_source(FileId::new(0), source.to_owned().into_boxed_str())
+    let parsed = parse_source(source.to_owned().into_boxed_str())
         .expect("benchmark corpus fits in Sumi's source coordinate space");
     assert_eq!(
         parsed.diagnostics().is_empty(),
@@ -126,7 +126,7 @@ fn bench_frontend(c: &mut Criterion) {
     ];
 
     for (name, source, valid) in &corpora {
-        let parsed = parse_source(FileId::new(0), source.clone().into_boxed_str())
+        let parsed = parse_source(source.clone().into_boxed_str())
             .expect("benchmark corpus fits in Sumi's source coordinate space");
         assert_eq!(
             parsed.diagnostics().is_empty(),
@@ -143,7 +143,7 @@ fn bench_frontend(c: &mut Criterion) {
             b.iter_batched(
                 || source.clone().into_boxed_str(),
                 |source| {
-                    parse_source(FileId::new(0), source)
+                    parse_source(source)
                         .expect("benchmark corpus fits in Sumi's source coordinate space")
                 },
                 BatchSize::LargeInput,
@@ -161,13 +161,13 @@ fn bench_lex_diagnostics(c: &mut Criterion) {
         let source: String = (0..2048)
             .map(|index| format!("fn f{index}() = {literal}\n"))
             .collect();
-        let parsed = parse_source(FileId::new(0), source.clone().into_boxed_str()).unwrap();
+        let parsed = parse_source(source.clone().into_boxed_str()).unwrap();
         assert_eq!(parsed.diagnostics().len(), 2048 * per_token);
         group.throughput(Throughput::Bytes(source.len() as u64));
         group.bench_function(name, |b| {
             b.iter_batched(
                 || source.clone().into_boxed_str(),
-                |source| parse_source(FileId::new(0), source).unwrap(),
+                |source| parse_source(source).unwrap(),
                 BatchSize::LargeInput,
             );
         });
@@ -203,7 +203,7 @@ fn bench_adversarial(c: &mut Criterion) {
     let mut group = c.benchmark_group("adversarial/nested-groups");
     for (depth, valid) in NESTED_RUNGS {
         let source = nested_groups(64 * KIB, depth);
-        let parsed = parse_source(FileId::new(0), source.clone().into_boxed_str())
+        let parsed = parse_source(source.clone().into_boxed_str())
             .expect("benchmark corpus fits in Sumi's source coordinate space");
         assert_eq!(
             parsed.diagnostics().is_empty(),
@@ -216,7 +216,7 @@ fn bench_adversarial(c: &mut Criterion) {
             b.iter_batched(
                 || source.clone().into_boxed_str(),
                 |source| {
-                    parse_source(FileId::new(0), source)
+                    parse_source(source)
                         .expect("benchmark corpus fits in Sumi's source coordinate space")
                 },
                 BatchSize::LargeInput,

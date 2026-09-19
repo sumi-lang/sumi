@@ -22,7 +22,7 @@
 use std::collections::HashMap;
 
 use sumi_frontend::Diagnostic;
-use sumi_text::Span;
+use sumi_text::TextRange;
 
 use crate::lower::{self, Lowered};
 use crate::solver::components;
@@ -33,7 +33,7 @@ use crate::{BinaryOp, Function, FunctionId, Graph, Int, Ints, NodeId, Op, codes}
 /// to the parameter that came closest to being the measure.
 pub(crate) struct Failure {
     pub members: Vec<FunctionId>,
-    pub labels: Vec<(Span, Reason)>,
+    pub labels: Vec<(TextRange, Reason)>,
 }
 
 impl Failure {
@@ -41,10 +41,7 @@ impl Failure {
     /// name, with what the first few calls inside it do. A cycle of
     /// thousands of calls is one error; the first few calls locate it.
     pub fn report(self, functions: &[Function], source: &str) -> Diagnostic {
-        let text = |span: Span| {
-            let range = span.range();
-            &source[range.start().to_usize()..range.end().to_usize()]
-        };
+        let text = |range: TextRange| range.text(source);
         let at = |id: FunctionId| {
             let function = &functions[id.index()];
             function.name.unwrap_or(function.origin)
@@ -96,12 +93,18 @@ impl Failure {
 pub(crate) enum Reason {
     /// The argument moves the parameter in `direction`, and the parameter's
     /// set is unbounded on that side: the chosen measure fails here.
-    Unbounded { param: Span, direction: Direction },
+    Unbounded {
+        param: TextRange,
+        direction: Direction,
+    },
     /// The argument moves the parameter in `direction`; the cycle fails
     /// elsewhere, on another call's direction or on a bound.
-    Moves { param: Span, direction: Direction },
+    Moves {
+        param: TextRange,
+        direction: Direction,
+    },
     /// The argument passes the parameter along without moving it.
-    Passes { param: Span },
+    Passes { param: TextRange },
     /// No argument is a parameter of the caller plus a constant.
     Nothing,
 }
@@ -118,7 +121,7 @@ pub(crate) struct Outcome {
 struct Call {
     from: usize,
     to: usize,
-    origin: Span,
+    origin: TextRange,
     /// `(caller parameter, callee parameter) -> offset band`.
     offsets: HashMap<(usize, usize), Ints>,
 }
