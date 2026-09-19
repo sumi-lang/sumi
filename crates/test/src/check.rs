@@ -799,7 +799,7 @@ fn typed(analysis: &Analysis) {
                     }
                 }
             }
-            assert!(own.is_some());
+            assert!(own.is_some() || values.iter().any(|&value| !value));
         }
         assert_eq!(ty(run.result()), Some(signature.result));
     }
@@ -861,19 +861,21 @@ fn graph(analysis: &Analysis) {
                     | Op::Sequence
                     | Op::Observe { .. }
                     | Op::After
-            ) && !matches!(
-                node.op,
-                Op::Join {
-                    values: [false, false],
-                    ..
-                } | Op::And {
-                    lhs_value: false,
-                    ..
-                } | Op::Or {
-                    lhs_value: false,
-                    ..
-                } | Op::Return { value: false }
-            ) {
+            ) && analysis.input_values(id).iter().all(|&value| value)
+                && !matches!(
+                    node.op,
+                    Op::Join {
+                        values: [false, false],
+                        ..
+                    } | Op::And {
+                        lhs_value: false,
+                        ..
+                    } | Op::Or {
+                        lhs_value: false,
+                        ..
+                    } | Op::Return { value: false }
+                )
+            {
                 assert!(analysis.ty(id).is_some());
             }
         }

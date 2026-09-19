@@ -385,6 +385,7 @@ fn complete(
             | Op::Sequence
             | Op::Observe { .. }
             | Op::After => true,
+            _ if lowered.values[node.index()].iter().any(|&value| !value) => true,
             Op::And {
                 lhs_value: false, ..
             }

@@ -233,10 +233,17 @@ fn completing_expressions_do_not_supply_fictitious_values() {
 fn argument() -> int { let unused = id({ return 1 })\n 2 }
 fn eager() -> int = 10 + { return 3 }
 fn lazy() -> int { _ = false && { return 4 }\n 5 }
-fn choose(b: bool) -> int = if b { return 6 } else { 7 }";
+fn choose(b: bool) -> int = if b { return 6 } else { 7 }
+fn condition() -> bool = if { return false\n true } { true } else { false }
+fn condition_binding() -> bool {
+    let unreachable = if { return false\n true } { true } else { false }
+    true
+}";
     for (name, value) in [("argument", int(1)), ("eager", int(3)), ("lazy", int(5))] {
         assert_eq!(run(source, name), value, "{name}");
     }
+    assert_eq!(run(source, "condition"), Value::Bool(false));
+    assert_eq!(run(source, "condition_binding"), Value::Bool(false));
     let checked = analysis(source);
     let program = checked.program().unwrap();
     let choose = program.function_named("choose").unwrap();
