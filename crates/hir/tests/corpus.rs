@@ -323,15 +323,15 @@ fn dump_node(
 ) {
     let graph = analysis.graph();
     let (guards, definition) = guards(analysis, node);
+    let guard = if guards.is_empty() {
+        String::new()
+    } else {
+        format!(" [{}]", guards.join(", "))
+    };
     if graph.node(definition).name.is_some() {
-        let guards = if guards.is_empty() {
-            String::new()
-        } else {
-            format!(" [{}]", guards.join(", "))
-        };
         writeln!(
             out,
-            "{}{role}: read {}{guards} : {}",
+            "{}{role}: read {}{guard} : {}",
             "  ".repeat(depth),
             named(analysis, definition),
             ty(analysis, node)
@@ -339,7 +339,14 @@ fn dump_node(
         .unwrap();
         return;
     }
-    dump_definition(analysis, shape, role, node, depth, out);
+    dump_definition(
+        analysis,
+        shape,
+        &format!("{role}{guard}"),
+        definition,
+        depth,
+        out,
+    );
 }
 
 fn dump_definition(

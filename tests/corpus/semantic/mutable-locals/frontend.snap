@@ -62,3 +62,38 @@ fn returning(flag: bool) -> int {
     10 / x
 }
 fn returns() -> int = returning(false) * 10 + returning(true)
+fn refined(flag: bool) -> int {
+    let mut x = 1
+    _ = if flag {
+        x = 2
+    }
+    if x != 0 {
+        10 / x
+    } else {
+        0
+    }
+}
+fn exact(flag: bool) -> int {
+    let mut b = false
+    _ = if flag {
+        b = true
+    }
+    if b {
+        1
+    } else {
+        0
+    }
+}
+fn exact_read(flag: bool) -> bool {
+    let mut b = false
+    _ = if flag {
+        b = true
+    }
+    if b {
+        b
+    } else {
+        b
+    }
+}
+fn refinements() -> int =
+    refined(false) * 1000 + refined(true) * 100 + exact(false) * 10 + exact(true)

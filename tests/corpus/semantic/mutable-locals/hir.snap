@@ -192,3 +192,105 @@ fn returns@918..979 () -> int ∈ [55, 77]
         rhs: int 10 : int @959..961
       rhs: call returning@785..917 : int @964..979
         arg[0]: bool true : bool @974..978
+
+fn refined@980..1093 (bool ∈ {true, false}) -> int ∈ [5, 10]
+  param flag@991..995: bool
+  result: copy : int @1006..1009
+    value:
+      let x@1024..1025: int @1016..1029
+        initializer: int 1 : int @1028..1029
+      discard: if : unit @1038..1055
+        condition: read flag@991..995 : bool
+        then:
+          assignment: assign x@1024..1025 : int @1048..1053
+            value: int 2 : int @1052..1053
+          tail: unit : unit @1046..1055
+        else: unit (implicit)
+      tail: if : int @1060..1091
+        condition: eager != : bool @1063..1069
+          lhs: phi x@1024..1025 : int @1038..1055
+            condition: read flag@991..995 : bool
+            then: assign x@1024..1025 : int @1048..1053
+              value: int 2 : int @1052..1053
+            else: read x@1024..1025 : int
+          rhs: int 0 : int @1068..1069
+        then: eager / : int @1072..1078
+          lhs: int 10 : int @1072..1074
+          rhs [x != 0 holds@1063..1069]: phi x@1024..1025 : int @1038..1055
+            condition: read flag@991..995 : bool
+            then: assign x@1024..1025 : int @1048..1053
+              value: int 2 : int @1052..1053
+            else: read x@1024..1025 : int
+        else: int 0 : int @1088..1089
+
+fn exact@1094..1202 (bool ∈ {true, false}) -> int ∈ [0, 1]
+  param flag@1103..1107: bool
+  result: copy : int @1118..1121
+    value:
+      let b@1136..1137: bool @1128..1145
+        initializer: bool false : bool @1140..1145
+      discard: if : unit @1154..1174
+        condition: read flag@1103..1107 : bool
+        then:
+          assignment: assign b@1136..1137 : bool @1164..1172
+            value: bool true : bool @1168..1172
+          tail: unit : unit @1162..1174
+        else: unit (implicit)
+      tail: if : int @1179..1200
+        condition: phi b@1136..1137 : bool @1154..1174
+          condition: read flag@1103..1107 : bool
+          then: assign b@1136..1137 : bool @1164..1172
+            value: bool true : bool @1168..1172
+          else: read b@1136..1137 : bool
+        then: int 1 : int @1186..1187
+        else: int 0 : int @1197..1198
+
+fn exact_read@1203..1317 (bool ∈ ∅) -> bool ∈ ∅
+  param flag@1217..1221: bool
+  result: copy : bool @1232..1236
+    value:
+      let b@1251..1252: bool @1243..1260
+        initializer: bool false : bool @1255..1260
+      discard: if : unit @1269..1289
+        condition: read flag@1217..1221 : bool
+        then:
+          assignment: assign b@1251..1252 : bool @1279..1287
+            value: bool true : bool @1283..1287
+          tail: unit : unit @1277..1289
+        else: unit (implicit)
+      tail: if : bool @1294..1315
+        condition: phi b@1251..1252 : bool @1269..1289
+          condition: read flag@1217..1221 : bool
+          then: assign b@1251..1252 : bool @1279..1287
+            value: bool true : bool @1283..1287
+          else: read b@1251..1252 : bool
+        then [is true]: phi b@1251..1252 : bool @1269..1289
+          condition: read flag@1217..1221 : bool
+          then: assign b@1251..1252 : bool @1279..1287
+            value: bool true : bool @1283..1287
+          else: read b@1251..1252 : bool
+        else [is false]: phi b@1251..1252 : bool @1269..1289
+          condition: read flag@1217..1221 : bool
+          then: assign b@1251..1252 : bool @1279..1287
+            value: bool true : bool @1283..1287
+          else: read b@1251..1252 : bool
+
+fn refinements@1318..1425 () -> int ∈ [5500, 11011]
+  result: copy : int @1338..1341
+    value: eager + : int @1348..1425
+      lhs: eager + : int @1348..1411
+        lhs: eager + : int @1348..1391
+          lhs: eager * : int @1348..1369
+            lhs: call refined@980..1093 : int @1348..1362
+              arg[0]: bool false : bool @1356..1361
+            rhs: int 1000 : int @1365..1369
+          rhs: eager * : int @1372..1391
+            lhs: call refined@980..1093 : int @1372..1385
+              arg[0]: bool true : bool @1380..1384
+            rhs: int 100 : int @1388..1391
+        rhs: eager * : int @1394..1411
+          lhs: call exact@1094..1202 : int @1394..1406
+            arg[0]: bool false : bool @1400..1405
+          rhs: int 10 : int @1409..1411
+      rhs: call exact@1094..1202 : int @1414..1425
+        arg[0]: bool true : bool @1420..1424

@@ -223,6 +223,46 @@ fn forwarded_return_paths_keep_their_static_types() {
 }
 
 #[test]
+fn stale_boolean_guards_do_not_refine_new_versions() {
+    let analysis = analyzed(
+        "fn and_case() -> int {
+    let mut b = true
+    if b && { b = false\n true } {
+        if b { 1 } else { 1 / 0 }
+    } else { 1 }
+}
+fn or_case() -> int {
+    let mut b = false
+    if b || { b = true\n false } {
+        1
+    } else if b { 1 / 0 } else { 1 }
+}",
+    );
+    check::semantics(&analysis);
+    assert_eq!(
+        analysis
+            .semantic_diagnostics()
+            .filter(|diagnostic| diagnostic.code == DIVISION_BY_ZERO)
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn recursive_delta_shares_repeated_phi_diamonds() {
+    let forks = "    _ = if b { x = x - 1 } else { x = x - 2 }\n".repeat(30);
+    let source = format!(
+        "fn descend(n: int, b: bool) -> int {{
+    if n <= 100 {{ return 0 }}
+    let mut x = n
+{forks}    descend(x, b)
+}}"
+    );
+    let analysis = clean(&source);
+    assert!(analysis.functions()[0].depth_bound().is_some());
+}
+
+#[test]
 fn literals_of_any_size_fold_a_leading_minus() {
     for (expr, value) in [
         ("9223372036854775807", "9223372036854775807"),

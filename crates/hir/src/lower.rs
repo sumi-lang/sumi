@@ -1039,10 +1039,6 @@ impl<'a, 's> Builder<'a, 's> {
         };
         self.reads_of[name.node().to_usize()]
     }
-    fn local(&self, name: ast::NameRef) -> Option<LocalId> {
-        let local = self.lookup(self.source.text(name.node()))?;
-        self.lowered.typed[self.current(local).index()].then_some(local)
-    }
     /// Narrow the locals `cond` compares, for `cond` holding in `sense`.
     fn refine(&mut self, cond: NodeIdx, sense: bool) {
         use sumi_syntax::BinaryOp::*;
@@ -1101,9 +1097,10 @@ impl<'a, 's> Builder<'a, 's> {
                     _ => {}
                 }
             }
-            CleanExpr::NameRef(name) => {
-                if let Some(local) = self.local(name.view()) {
-                    let version = self.locals[local.index()].current;
+            CleanExpr::NameRef(_) => {
+                if let Some((local, version)) = self.read(node)
+                    && self.locals[local.index()].current == version
+                {
                     let at = self.source.range(node);
                     let inputs = [(self.current(local), at)];
                     let read = self.place(Op::Exactly(sense), &inputs, at, None);

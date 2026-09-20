@@ -10,3 +10,7 @@ fn guarded: takes arguments, not run
 fn guardeds = 15 (steps 23, depth 2 of at most 2)
 fn returning: takes arguments, not run
 fn returns = 57 (steps 18, depth 2 of at most 2)
+fn refined: takes arguments, not run
+fn exact: takes arguments, not run
+fn exact_read: takes arguments, not run
+fn refinements = 10501 (steps 50, depth 2 of at most 2)
