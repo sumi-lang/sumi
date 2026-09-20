@@ -390,9 +390,23 @@ fn arith(op: sumi_syntax::ArithOp) -> ArithOp {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct LocalId(u32);
+
+impl LocalId {
+    fn index(self) -> usize {
+        self.0 as usize
+    }
+}
+
+struct Local {
+    declaration: NodeId,
+    current: NodeId,
+}
+
 /// A `let` binds at `Work::Finish`, after its initializer, so the initializer reads any outer
 /// binding of the name.
-type Scope<'s> = NameMap<'s, NodeId>;
+type Scope<'s> = NameMap<'s, LocalId>;
 
 enum Finish {
     Let(Clean<ast::LetStmt>),
@@ -487,11 +501,14 @@ struct Builder<'a, 's> {
     failed: bool,
     /// Open regions, innermost last, each with where its refinements begin in `refinements`.
     regions: Vec<(RegionId, usize, NodeId)>,
-    /// (defining node, the node its reads see) for the open regions, innermost last.
-    refinements: Vec<(NodeId, NodeId)>,
+    /// (local, source version, the node its reads see) for open regions, innermost last.
+    refinements: Vec<(LocalId, NodeId, NodeId)>,
     /// The first `depth` scopes are open, innermost last.
     scopes: Vec<Scope<'s>>,
     depth: usize,
+    locals: Vec<Local>,
+    /// The local and underlying version read by each name reference.
+    reads_of: Vec<Option<(LocalId, NodeId)>>,
     work: Vec<Work>,
     inputs: Vec<(NodeId, TextRange)>,
     controls: Vec<Option<NodeId>>,
@@ -527,6 +544,8 @@ impl<'a, 's> Builder<'a, 's> {
             refinements: Vec::new(),
             scopes: Vec::new(),
             depth: 0,
+            locals: Vec::new(),
+            reads_of: vec![None; nodes],
             work: Vec::new(),
             inputs: Vec::new(),
             controls: vec![None; nodes],
@@ -542,6 +561,7 @@ impl<'a, 's> Builder<'a, 's> {
         self.open_scope();
         self.regions.clear();
         self.refinements.clear();
+        self.locals.clear();
         self.returns.clear();
         let header = &self.headers[owner];
         let item_node = header.item;
@@ -817,10 +837,16 @@ impl<'a, 's> Builder<'a, 's> {
     fn close_scope(&mut self) {
         self.depth -= 1;
     }
-    fn bind(&mut self, name: &'s str, node: NodeId) {
-        self.scopes[self.depth - 1].insert(name, node);
+    fn bind(&mut self, name: &'s str, node: NodeId) -> LocalId {
+        let id = LocalId(u32::try_from(self.locals.len()).expect("local count fits u32"));
+        self.locals.push(Local {
+            declaration: node,
+            current: node,
+        });
+        self.scopes[self.depth - 1].insert(name, id);
+        id
     }
-    fn lookup(&self, name: &str) -> Option<NodeId> {
+    fn lookup(&self, name: &str) -> Option<LocalId> {
         // An empty scope is common and would cost a hash to find nothing in.
         self.scopes[..self.depth]
             .iter()
@@ -828,12 +854,13 @@ impl<'a, 's> Builder<'a, 's> {
             .filter(|scope| !scope.is_empty())
             .find_map(|scope| scope.get(name).copied())
     }
-    fn current(&self, defined: NodeId) -> NodeId {
+    fn current(&self, local: LocalId) -> NodeId {
+        let version = self.locals[local.index()].current;
         self.refinements
             .iter()
             .rev()
-            .find(|(local, _)| *local == defined)
-            .map_or(defined, |(_, node)| *node)
+            .find(|&&(refined, source, _)| refined == local && source == version)
+            .map_or(version, |&(_, _, node)| node)
     }
     fn context(&self) -> NodeId {
         self.regions.last().expect("a body runs in its region").2
@@ -888,17 +915,16 @@ impl<'a, 's> Builder<'a, 's> {
     }
     /// The scope is as it was when the read was built: a region is entered right after its
     /// condition finishes.
-    fn read(&self, node: NodeIdx) -> Option<NodeId> {
+    fn read(&self, node: NodeIdx) -> Option<(LocalId, NodeId)> {
         let tree = self.source.tree;
         let ast::Expr::NameRef(name) = self.source.peel(ast::Expr::cast(tree, node)?) else {
             return None;
         };
-        self.local(name)
+        self.reads_of[name.node().to_usize()]
     }
-    /// The typed local `name` refers to.
-    fn local(&self, name: ast::NameRef) -> Option<NodeId> {
-        let defined = self.lookup(self.source.text(name.node()))?;
-        self.lowered.typed[defined.index()].then_some(defined)
+    fn local(&self, name: ast::NameRef) -> Option<LocalId> {
+        let local = self.lookup(self.source.text(name.node()))?;
+        self.lowered.typed[self.current(local).index()].then_some(local)
     }
     /// Narrow the locals `cond` compares, for `cond` holding in `sense`.
     fn refine(&mut self, cond: NodeIdx, sense: bool) {
@@ -933,7 +959,9 @@ impl<'a, 's> Builder<'a, 's> {
                     Cmp(op) => {
                         let op = cmp(op);
                         for (side, other, local_is_lhs) in [(lhs, rhs, true), (rhs, lhs, false)] {
-                            if let (Some(local), Some(value)) = (self.read(side), self.typed(other))
+                            if let (Some((local, version)), Some(_), Some(value)) =
+                                (self.read(side), self.typed(side), self.typed(other))
+                                && self.locals[local.index()].current == version
                             {
                                 let inputs = [
                                     (self.current(local), self.source.range(side)),
@@ -949,7 +977,7 @@ impl<'a, 's> Builder<'a, 's> {
                                     self.source.range(node),
                                     None,
                                 );
-                                self.refinements.push((local, read));
+                                self.refinements.push((local, version, read));
                             }
                         }
                     }
@@ -958,10 +986,11 @@ impl<'a, 's> Builder<'a, 's> {
             }
             CleanExpr::NameRef(name) => {
                 if let Some(local) = self.local(name.view()) {
+                    let version = self.locals[local.index()].current;
                     let at = self.source.range(node);
                     let inputs = [(self.current(local), at)];
                     let read = self.place(Op::Exactly(sense), &inputs, at, None);
-                    self.refinements.push((local, read));
+                    self.refinements.push((local, version, read));
                 }
             }
             _ => {}
@@ -1208,14 +1237,15 @@ impl<'a, 's> Builder<'a, 's> {
     fn target(&mut self, node: NodeIdx) -> Option<FunctionId> {
         let name = self.source.text(node);
         if let Some(local) = self.lookup(name) {
+            let declaration = self.locals[local.index()].declaration;
             // A binding that failed is reported once, where it failed.
-            if self.lowered.typed[local.index()] {
+            if self.lowered.typed[declaration.index()] {
                 self.source.error(
                     node,
                     codes::NOT_CALLABLE,
                     format!("local `{name}` is not callable"),
                     self.graph
-                        .node(local)
+                        .node(declaration)
                         .name
                         .map(|range| (range, "declared here")),
                 );
@@ -1359,9 +1389,11 @@ impl<'a, 's> Builder<'a, 's> {
                 let node = name.node();
                 let name = self.source.text(node);
                 match self.lookup(name) {
-                    Some(defined) => {
-                        let read = self.current(defined);
+                    Some(local) => {
+                        let version = self.locals[local.index()].current;
+                        let read = self.current(local);
                         self.nodes_of[node.to_usize()] = Some(read);
+                        self.reads_of[node.to_usize()] = Some((local, version));
                         self.lowered.typed[read.index()].then_some(())?;
                     }
                     None => {
