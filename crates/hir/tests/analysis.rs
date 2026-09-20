@@ -85,6 +85,62 @@ fn completing_inputs_are_not_scalar_reads() {
 }
 
 #[test]
+fn completing_paths_do_not_erase_a_live_unit_fallthrough() {
+    for source in [
+        "fn f(b: bool) -> int { if b { return 6 }\n _ = 1 }",
+        "fn f() -> int { _ = false && { return 6\n true } }",
+    ] {
+        let analysis = analyzed(source);
+        assert_eq!(codes(&analysis), [TYPE_MISMATCH], "{source}");
+        assert_eq!(
+            semantic(&analysis)[0].message.as_ref(),
+            "expected int, found unit",
+            "{source}"
+        );
+        assert!(!analysis.functions()[0].complete(), "{source}");
+        check::semantics(&analysis);
+    }
+}
+
+#[test]
+fn a_wholly_returning_body_has_no_unit_fallthrough() {
+    clean("fn f() -> int { return 1 }");
+}
+
+#[test]
+fn an_inferred_unit_fallthrough_conflicts_with_a_return() {
+    let source = "fn f(b: bool) = { if b { return 6 }\n _ = 1 }";
+    let analysis = analyzed(source);
+    assert_eq!(codes(&analysis), [CANNOT_INFER]);
+    assert_eq!(
+        semantic(&analysis)[0].message.as_ref(),
+        "function result is both unit and int; add a return type annotation"
+    );
+    assert!(!analysis.functions()[0].complete());
+    check::semantics(&analysis);
+}
+
+#[test]
+fn damaged_values_with_completing_inputs_remain_incomplete() {
+    for (source, function) in [
+        (
+            "fn id(x: int) = met8\nfn f() -> int { id({ return 4 }) }",
+            1,
+        ),
+        (
+            "fn id(x: int) = id(x)\nfn f() -> int { id({ return 4 }) }",
+            1,
+        ),
+        ("fn f() -> int { let u: ud = { return 3 } }", 0),
+    ] {
+        let analysis = analyzed(source);
+        assert!(!analysis.is_valid(), "{source}");
+        assert!(!analysis.functions()[function].complete(), "{source}");
+        check::semantics(&analysis);
+    }
+}
+
+#[test]
 fn completing_conditions_do_not_hide_errors_inside_branches() {
     let analysis = analyzed(
         "fn arms() -> int = if { return 1 } { true + false } else { false + true }

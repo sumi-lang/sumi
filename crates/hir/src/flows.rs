@@ -11,7 +11,7 @@ use sumi_graph::{
 use sumi_text::TextRange;
 
 use crate::lattice::{Edge, Pair};
-use crate::lower::{ExplicitTail, Header, Lowered};
+use crate::lower::{Fallthrough, Header, Lowered};
 use crate::typing::{Expected, Typing};
 
 pub(crate) enum DemandKind {
@@ -37,7 +37,7 @@ pub(crate) struct Demand {
 struct Demands<'a> {
     graph: &'a Graph,
     typed: &'a [bool],
-    explicit_tails: &'a [Option<ExplicitTail>],
+    fallthroughs: &'a [Option<Fallthrough>],
     made: Vec<Demand>,
 }
 
@@ -53,7 +53,7 @@ impl Demands<'_> {
         let graph = self.graph;
         let typed = |node: NodeId| self.typed[node.index()];
         let value = |index: usize| graph.input_values(node)[index];
-        let tail = self.explicit_tails[owner as usize];
+        let fallthrough = self.fallthroughs[owner as usize];
         let made = &mut self.made;
         let mut demand = |at: TextRange, actual: NodeId, kind: DemandKind| {
             made.push(Demand {
@@ -155,8 +155,13 @@ impl Demands<'_> {
             Op::Return => {}
             Op::Result { declared } => {
                 let expected = declared.map_or(Expected::Peer(node), |(ty, _)| Expected::Ty(ty));
-                if let Some(tail) = tail {
-                    require(tail.at, tail.value, expected, declared.map(|(_, at)| at));
+                if let Some(fallthrough) = fallthrough {
+                    require(
+                        fallthrough.at,
+                        fallthrough.value,
+                        expected,
+                        declared.map(|(_, at)| at),
+                    );
                 } else if value(0) {
                     require(reads[0], inputs[0], expected, declared.map(|(_, at)| at));
                 }
@@ -197,7 +202,7 @@ pub(crate) fn draw(
     let mut demands = Demands {
         graph,
         typed: &lowered.typed,
-        explicit_tails: &lowered.explicit_tails,
+        fallthroughs: &lowered.fallthroughs,
         made: Vec::with_capacity(graph.nodes().len() / 2),
     };
 
