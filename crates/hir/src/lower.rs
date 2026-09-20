@@ -459,11 +459,21 @@ fn enter_each(work: &mut Vec<Work>, nodes: impl Iterator<Item = NodeIdx>) {
     work[base..].reverse();
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Form {
-    Damaged,
-    Bottom,
-    Scalar,
+#[derive(Clone, Copy)]
+struct Form {
+    valid: bool,
+    completes: bool,
+}
+
+impl Form {
+    const SCALAR: Self = Self {
+        valid: true,
+        completes: false,
+    };
+
+    fn scalar(self) -> bool {
+        self.valid && !self.completes
+    }
 }
 
 struct Builder<'a, 's> {
@@ -582,7 +592,7 @@ impl<'a, 's> Builder<'a, 's> {
                     Work::Unused(node) => {
                         let input = self.input(node);
                         let unused = self.place(Op::Unused, &[input], input.1, None);
-                        if self.form(node) == Form::Bottom {
+                        if self.form(node).completes {
                             self.completes_input(unused, 0);
                         }
                         continue;
@@ -610,7 +620,7 @@ impl<'a, 's> Builder<'a, 's> {
                         self.graph.close_with_control(
                             region,
                             result,
-                            self.form(root) != Form::Bottom,
+                            !self.form(root).completes,
                             self.control(root),
                         );
                         let (_, keep, _) = self
@@ -626,10 +636,7 @@ impl<'a, 's> Builder<'a, 's> {
             }
             self.work = work;
         }
-        let root = root_node.and_then(|root| match self.form(root) {
-            Form::Damaged => None,
-            Form::Bottom | Form::Scalar => Some(self.node_of(root)),
-        });
+        let root = root_node.and_then(|root| self.form(root).valid.then(|| self.node_of(root)));
         let body = match root_node {
             Some(root) => self.input(root),
             None => {
@@ -647,7 +654,7 @@ impl<'a, 's> Builder<'a, 's> {
         self.graph.close_with_control(
             region,
             body.0,
-            root_node.is_none_or(|root| self.form(root) != Form::Bottom),
+            root_node.is_none_or(|root| !self.form(root).completes),
             control,
         );
         self.regions.pop();
@@ -675,12 +682,11 @@ impl<'a, 's> Builder<'a, 's> {
                 outcomes.push((fallthrough.unwrap_or(body.0), body.1));
                 outcomes.extend(self.returns.iter().copied());
                 let result = self.push(node, Op::Result { declared }, &outcomes, None);
-                let completes = root_node.is_none_or(|root| self.form(root) == Form::Bottom);
+                let completes = root_node.is_none_or(|root| self.form(root).completes);
                 let fallthrough = explicit_tail
-                    .filter(|&tail| self.form(tail) == Form::Scalar)
+                    .filter(|&tail| self.form(tail).scalar())
                     .or_else(|| {
-                        root_node
-                            .filter(|&root| declared.is_some() && self.form(root) == Form::Scalar)
+                        root_node.filter(|&root| declared.is_some() && self.form(root).scalar())
                     });
                 if (declared.is_some() || completes)
                     && let Some(fallthrough) = fallthrough
@@ -845,12 +851,9 @@ impl<'a, 's> Builder<'a, 's> {
         }
     }
     fn form(&self, node: NodeIdx) -> Form {
-        if self.bottoms[node.to_usize()] {
-            Form::Bottom
-        } else if self.typed(node).is_some() {
-            Form::Scalar
-        } else {
-            Form::Damaged
+        Form {
+            valid: self.typed(node).is_some(),
+            completes: self.bottoms[node.to_usize()],
         }
     }
     fn control(&self, node: NodeIdx) -> Option<NodeId> {
@@ -1160,12 +1163,12 @@ impl<'a, 's> Builder<'a, 's> {
             ],
         );
         self.controls[node.to_usize()] = control;
-        if value.is_some_and(|(_, form)| form == Form::Bottom) {
+        if value.is_some_and(|(_, form)| form.completes) {
             self.completes_input(returned, 0);
         } else {
             self.returns.push((returned, at));
         }
-        if value.is_none_or(|(_, form)| form != Form::Damaged) {
+        if value.is_none_or(|(_, form)| form.valid) {
             self.bottoms[node.to_usize()] = true;
             Some(())
         } else {
@@ -1267,18 +1270,18 @@ impl<'a, 's> Builder<'a, 's> {
             if children.peek().is_none() && expression {
                 tail = Some(child);
                 controls.push(self.control(child));
-                bottom |= self.form(child) == Form::Bottom;
+                let form = self.form(child);
+                valid &= form.valid;
+                bottom |= form.completes;
                 break;
             }
             controls.push(self.control(child));
-            match self.form(child) {
-                Form::Damaged => {
-                    self.node_of(child);
-                    valid = false;
-                }
-                Form::Bottom => bottom = true,
-                Form::Scalar => {}
+            let form = self.form(child);
+            if !form.valid {
+                self.node_of(child);
+                valid = false;
             }
+            bottom |= form.completes;
         }
         self.controls[node.to_usize()] = self.compose_control(node, controls);
         // A damaged block may have lost its tail to recovery, so without one it is a hole, not
@@ -1327,20 +1330,27 @@ impl<'a, 's> Builder<'a, 's> {
                 self.bind(self.source.text(name), copy);
                 let initializer = binding.initializer().node();
                 self.controls[binding.node().to_usize()] = self.control(initializer);
-                self.bottoms[binding.node().to_usize()] = self.form(initializer) == Form::Bottom;
-                if self.form(initializer) == Form::Bottom {
+                let form = self.form(initializer);
+                self.bottoms[binding.node().to_usize()] = form.completes;
+                if !form.valid || !self.lowered.typed[copy.index()] {
+                    return None;
+                }
+                if form.completes {
                     self.completes_input(copy, 0);
                     return Some(());
                 }
-                self.lowered.typed[copy.index()].then_some(())?;
             }
             Finish::Discard(discard) => {
                 let value = discard.value().node();
                 let discarded = self.node_of(value);
                 self.nodes_of[discard.node().to_usize()] = Some(discarded);
                 self.controls[discard.node().to_usize()] = self.control(value);
-                self.bottoms[discard.node().to_usize()] = self.form(value) == Form::Bottom;
-                if self.form(value) == Form::Bottom {
+                let form = self.form(value);
+                self.bottoms[discard.node().to_usize()] = form.completes;
+                if !form.valid {
+                    return None;
+                }
+                if form.completes {
                     return Some(());
                 }
                 self.typed(value)?;
@@ -1393,8 +1403,12 @@ impl<'a, 's> Builder<'a, 's> {
                 let value = self.node_of(inner);
                 self.nodes_of[paren.node().to_usize()] = Some(value);
                 self.controls[paren.node().to_usize()] = self.control(inner);
-                self.bottoms[paren.node().to_usize()] = self.form(inner) == Form::Bottom;
-                if self.form(inner) == Form::Bottom {
+                let form = self.form(inner);
+                self.bottoms[paren.node().to_usize()] = form.completes;
+                if !form.valid {
+                    return None;
+                }
+                if form.completes {
                     return Some(());
                 }
                 self.typed(inner)?;
@@ -1409,8 +1423,10 @@ impl<'a, 's> Builder<'a, 's> {
                     None,
                 );
                 self.controls[expr.node().to_usize()] = self.control(operand);
-                self.bottoms[expr.node().to_usize()] = self.form(operand) == Form::Bottom;
-                if self.form(operand) == Form::Bottom {
+                let form = self.form(operand);
+                self.bottoms[expr.node().to_usize()] = form.completes;
+                self.lowered.typed[id.index()].then_some(())?;
+                if form.completes {
                     self.completes_input(id, 0);
                     return Some(());
                 }
@@ -1425,11 +1441,16 @@ impl<'a, 's> Builder<'a, 's> {
                 let id = self.push(node, Op::Binary(op), &[lhs_input, rhs_input], None);
                 self.controls[node.to_usize()] =
                     self.compose_control(node, [self.control(lhs), self.control(rhs)]);
-                if self.form(lhs) == Form::Bottom || self.form(rhs) == Form::Bottom {
-                    if self.form(lhs) == Form::Bottom {
+                let lhs_form = self.form(lhs);
+                let rhs_form = self.form(rhs);
+                if !lhs_form.valid || !rhs_form.valid {
+                    return None;
+                }
+                if lhs_form.completes || rhs_form.completes {
+                    if lhs_form.completes {
                         self.completes_input(id, 0);
                     }
-                    if self.form(rhs) == Form::Bottom {
+                    if rhs_form.completes {
                         self.completes_input(id, 1);
                     }
                     self.bottoms[node.to_usize()] = true;
@@ -1480,20 +1501,23 @@ impl<'a, 's> Builder<'a, 's> {
         });
         self.controls[expr.expr.node().to_usize()] =
             self.compose_control(expr.expr.node(), [self.control(lhs), observe]);
-        if self.form(lhs) == Form::Bottom {
+        let lhs_form = self.form(lhs);
+        if !lhs_form.valid {
+            return None;
+        }
+        if lhs_form.completes {
             self.completes_input(id, 0);
             self.bottoms[expr.expr.node().to_usize()] = true;
             return Some(());
         }
         self.typed(lhs)?;
-        match rhs_form {
-            Form::Damaged => return None,
-            Form::Bottom => {
-                self.refine(lhs, !expr.and);
-            }
-            Form::Scalar => {
-                self.typed(rhs_node)?;
-            }
+        if !rhs_form.valid {
+            return None;
+        }
+        if rhs_form.completes {
+            self.refine(lhs, !expr.and);
+        } else {
+            self.typed(rhs_node)?;
         }
         Some(())
     }
@@ -1511,7 +1535,7 @@ impl<'a, 's> Builder<'a, 's> {
         let mut results = vec![self.node_of(then_node)];
         results.extend(else_node.map(|else_node| self.node_of(else_node)));
         let then_form = self.form(then_node);
-        let else_form = else_node.map_or(Form::Scalar, |node| self.form(node));
+        let else_form = else_node.map_or(Form::SCALAR, |node| self.form(node));
         let id = self.push_over(
             branch.node(),
             Op::Join { then, else_ },
@@ -1537,27 +1561,23 @@ impl<'a, 's> Builder<'a, 's> {
         });
         self.controls[branch.node().to_usize()] =
             self.compose_control(branch.node(), [self.control(cond), observe]);
-        if self.form(cond) == Form::Bottom {
+        let cond_form = self.form(cond);
+        if cond_form.completes {
             self.completes_input(id, 0);
         }
-        if self.form(cond) == Form::Damaged
-            || then_form == Form::Damaged
-            || else_form == Form::Damaged
-        {
+        if !cond_form.valid || !then_form.valid || !else_form.valid {
             return None;
         }
-        if self.form(cond) == Form::Bottom
-            || (then_form == Form::Bottom && else_form == Form::Bottom)
-        {
+        if cond_form.completes || (then_form.completes && else_form.completes) {
             self.bottoms[branch.node().to_usize()] = true;
         } else {
-            if then_form == Form::Scalar {
+            if then_form.scalar() {
                 self.typed(then_node)?;
             } else {
                 self.refine(cond, false);
             }
             if let Some(else_node) = else_node {
-                if else_form == Form::Scalar {
+                if else_form.scalar() {
                     self.typed(else_node)?;
                 } else {
                     self.refine(cond, true);
@@ -1609,11 +1629,14 @@ impl<'a, 's> Builder<'a, 's> {
         let args: Vec<_> = call.arg_list().args(tree).map(|arg| arg.node()).collect();
         let controls: Vec<_> = args.iter().map(|&arg| self.control(arg)).collect();
         self.controls[node.to_usize()] = self.compose_control(node, controls);
-        let bottom = args.iter().any(|&arg| self.form(arg) == Form::Bottom);
-        let damaged = args.iter().any(|&arg| self.form(arg) == Form::Damaged);
+        let mut bottom = false;
+        let mut damaged = false;
         let first_arg = inputs.len() - args.len();
         for (index, &arg) in args.iter().enumerate() {
-            if self.form(arg) == Form::Bottom {
+            let form = self.form(arg);
+            bottom |= form.completes;
+            damaged |= !form.valid;
+            if form.completes {
                 self.completes_input(id, first_arg + index);
             }
         }
