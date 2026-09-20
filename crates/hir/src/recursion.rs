@@ -205,8 +205,9 @@ pub(crate) fn check(
                 continue;
             };
             let mut offsets = HashMap::new();
+            let mut deltas = HashMap::new();
             for (j, &arg) in graph.inputs(call.node).iter().enumerate() {
-                if let Some((i, band)) = delta(graph, typing, arg) {
+                if let Some((i, band)) = delta(graph, typing, arg, &mut deltas) {
                     offsets.insert((i as usize, j), band);
                 }
             }
@@ -434,7 +435,12 @@ fn lax_edges_are_acyclic(members: usize, calls: &[Call], strict: &[bool]) -> boo
 
 /// `Some((p, c))` when on every run the node's value is in parameter `p` plus `c`. The walk keeps
 /// its own stack, since a nest can outgrow the call stack.
-fn delta(graph: &Graph, typing: &Typing, node: NodeId) -> Option<(u32, Ints)> {
+fn delta(
+    graph: &Graph,
+    typing: &Typing,
+    node: NodeId,
+    memo: &mut HashMap<NodeId, Option<(u32, Ints)>>,
+) -> Option<(u32, Ints)> {
     let may = |node: NodeId| &typing.may(node).ints;
     enum Frame {
         AddLhs { lhs: NodeId, rhs: NodeId },
@@ -442,87 +448,94 @@ fn delta(graph: &Graph, typing: &Typing, node: NodeId) -> Option<(u32, Ints)> {
         Sub { rhs: NodeId },
         Then { otherwise: NodeId },
         Else { then: (u32, Ints) },
+        Memo(NodeId),
     }
     let mut frames: Vec<Frame> = Vec::new();
     let mut next = Some(node);
     let mut result: Option<(u32, Ints)> = None;
     loop {
         if let Some(node) = next.take() {
-            let inputs = graph.inputs(node);
-            result = match graph.node(node).op {
-                Op::Param { index, .. } => Some((index, Ints::from(Int::from(0)))),
-                Op::Copy { .. } | Op::Assign { .. } | Op::Refine { .. } | Op::Exactly(_) => {
-                    next = Some(inputs[0]);
-                    continue;
-                }
-                Op::Phi { contexts, .. } => {
-                    let live = |index: usize| {
-                        graph.input_values(node)[index + 1] && typing.may(contexts[index]).live()
-                    };
-                    match (live(0), live(1)) {
-                        (true, true) => {
-                            frames.push(Frame::Then {
-                                otherwise: inputs[2],
-                            });
-                            next = Some(inputs[1]);
-                            continue;
-                        }
-                        (true, false) => {
-                            next = Some(inputs[1]);
-                            continue;
-                        }
-                        (false, true) => {
-                            next = Some(inputs[2]);
-                            continue;
-                        }
-                        (false, false) => None,
+            if let Some(known) = memo.get(&node) {
+                result = known.clone();
+            } else {
+                frames.push(Frame::Memo(node));
+                let inputs = graph.inputs(node);
+                result = match graph.node(node).op {
+                    Op::Param { index, .. } => Some((index, Ints::from(Int::from(0)))),
+                    Op::Copy { .. } | Op::Assign { .. } | Op::Refine { .. } | Op::Exactly(_) => {
+                        next = Some(inputs[0]);
+                        continue;
                     }
-                }
-                Op::Binary(BinaryOp::Arith(ArithOp::Add)) => {
-                    frames.push(Frame::AddLhs {
-                        lhs: inputs[0],
-                        rhs: inputs[1],
-                    });
-                    next = Some(inputs[0]);
-                    continue;
-                }
-                Op::Binary(BinaryOp::Arith(ArithOp::Sub)) => {
-                    frames.push(Frame::Sub { rhs: inputs[1] });
-                    next = Some(inputs[0]);
-                    continue;
-                }
-                Op::Join {
-                    then,
-                    else_: Some(else_),
-                    ..
-                } => {
-                    // An arm that cannot run contributes no value.
-                    let (then, otherwise) = (graph.region(then), graph.region(else_));
-                    let live = |context| typing.may(context).live();
-                    match (
-                        then.result_has_value() && live(then.context),
-                        otherwise.result_has_value() && live(otherwise.context),
-                    ) {
-                        (true, true) => {
-                            frames.push(Frame::Then {
-                                otherwise: otherwise.result(),
-                            });
-                            next = Some(then.result());
-                            continue;
+                    Op::Phi { contexts, .. } => {
+                        let live = |index: usize| {
+                            graph.input_values(node)[index + 1]
+                                && typing.may(contexts[index]).live()
+                        };
+                        match (live(0), live(1)) {
+                            (true, true) => {
+                                frames.push(Frame::Then {
+                                    otherwise: inputs[2],
+                                });
+                                next = Some(inputs[1]);
+                                continue;
+                            }
+                            (true, false) => {
+                                next = Some(inputs[1]);
+                                continue;
+                            }
+                            (false, true) => {
+                                next = Some(inputs[2]);
+                                continue;
+                            }
+                            (false, false) => None,
                         }
-                        (true, false) => {
-                            next = Some(then.result());
-                            continue;
-                        }
-                        (false, true) => {
-                            next = Some(otherwise.result());
-                            continue;
-                        }
-                        (false, false) => None,
                     }
-                }
-                _ => None,
-            };
+                    Op::Binary(BinaryOp::Arith(ArithOp::Add)) => {
+                        frames.push(Frame::AddLhs {
+                            lhs: inputs[0],
+                            rhs: inputs[1],
+                        });
+                        next = Some(inputs[0]);
+                        continue;
+                    }
+                    Op::Binary(BinaryOp::Arith(ArithOp::Sub)) => {
+                        frames.push(Frame::Sub { rhs: inputs[1] });
+                        next = Some(inputs[0]);
+                        continue;
+                    }
+                    Op::Join {
+                        then,
+                        else_: Some(else_),
+                        ..
+                    } => {
+                        // An arm that cannot run contributes no value.
+                        let (then, otherwise) = (graph.region(then), graph.region(else_));
+                        let live = |context| typing.may(context).live();
+                        match (
+                            then.result_has_value() && live(then.context),
+                            otherwise.result_has_value() && live(otherwise.context),
+                        ) {
+                            (true, true) => {
+                                frames.push(Frame::Then {
+                                    otherwise: otherwise.result(),
+                                });
+                                next = Some(then.result());
+                                continue;
+                            }
+                            (true, false) => {
+                                next = Some(then.result());
+                                continue;
+                            }
+                            (false, true) => {
+                                next = Some(otherwise.result());
+                                continue;
+                            }
+                            (false, false) => None,
+                        }
+                    }
+                    _ => None,
+                };
+            }
         }
         let Some(frame) = frames.pop() else {
             return result;
@@ -552,6 +565,9 @@ fn delta(graph: &Graph, typing: &Typing, node: NodeId) -> Option<(u32, Ints)> {
                     }
                     _ => None,
                 };
+            }
+            Frame::Memo(node) => {
+                memo.insert(node, result.clone());
             }
         }
     }
