@@ -2,6 +2,8 @@
 //! `check::run` inside the sets it proved and held to its claims. A rejected program only has to
 //! not crash the checker.
 
+use std::collections::HashSet;
+
 use proptest::prelude::*;
 use sumi_frontend::parse_source;
 use sumi_hir::analyze;
@@ -66,7 +68,7 @@ struct Gen<'a> {
     rng: Rng,
     functions: &'a [Signature],
     current: usize,
-    scope: Vec<(String, Kind)>,
+    scope: Vec<(String, Kind, bool)>,
     fresh: usize,
     /// The bool is whether `n` is positive in that arm.
     arm: Option<(Recursion, bool)>,
@@ -114,10 +116,24 @@ impl Gen<'_> {
     }
 
     fn locals(&self, kind: Kind) -> Vec<String> {
+        let mut seen = HashSet::new();
         self.scope
             .iter()
-            .filter(|(_, k)| *k == kind)
-            .map(|(name, _)| name.clone())
+            .rev()
+            .filter(|(name, _, _)| seen.insert(name.as_str()))
+            .filter(|(_, k, _)| *k == kind)
+            .map(|(name, _, _)| name.clone())
+            .collect()
+    }
+
+    fn mutable_locals(&self) -> Vec<(String, Kind)> {
+        let mut seen = HashSet::new();
+        self.scope
+            .iter()
+            .rev()
+            .filter(|(name, _, _)| seen.insert(name.as_str()))
+            .filter(|(_, _, mutable)| *mutable)
+            .map(|(name, kind, _)| (name.clone(), *kind))
             .collect()
     }
 
@@ -216,7 +232,7 @@ impl Gen<'_> {
         let guard = guard.replace("{x}", &x).replace("{b}", &b);
         let divisor = if self.rng.chance(1, 4) {
             let copy = self.fresh(Kind::Int);
-            self.scope.push((copy.clone(), Kind::Int));
+            self.scope.push((copy.clone(), Kind::Int, false));
             Some((copy, x.clone()))
         } else {
             None
@@ -382,7 +398,7 @@ impl Gen<'_> {
         let depth = self.scope.len();
         let mut lines = Vec::new();
         for _ in 0..self.rng.between(1, 3) {
-            let line = match self.rng.below(7) {
+            let line = match self.rng.below(10) {
                 0..=2 => {
                     let kind = if self.rng.chance(3, 4) {
                         Kind::Int
@@ -401,8 +417,9 @@ impl Gen<'_> {
                     } else {
                         self.fresh(kind)
                     };
-                    self.scope.push((name.clone(), kind));
-                    format!("let {name} = {value}")
+                    let mutable = self.rng.chance(1, 3);
+                    self.scope.push((name.clone(), kind, mutable));
+                    format!("let {}{name} = {value}", if mutable { "mut " } else { "" })
                 }
                 3 => {
                     let value = self.expr(Kind::Int, fuel);
@@ -423,10 +440,48 @@ impl Gen<'_> {
                     let value = self.expr(Kind::Bool, fuel);
                     format!("_ = {value}")
                 }
-                _ => {
+                6 => {
                     let result = self.functions[self.current].result;
                     let value = self.expr(result, fuel);
                     format!("return {value}")
+                }
+                7 => {
+                    let locals = self.mutable_locals();
+                    if let Some((name, kind)) =
+                        (!locals.is_empty()).then(|| self.rng.pick(&locals).clone())
+                    {
+                        let value = self.expr(kind, fuel);
+                        format!("{name} = {value}")
+                    } else {
+                        format!("_ = {}", self.expr(Kind::Int, fuel))
+                    }
+                }
+                8 => {
+                    let locals = self.mutable_locals();
+                    if let Some((name, kind)) =
+                        (!locals.is_empty()).then(|| self.rng.pick(&locals).clone())
+                    {
+                        let condition = self.bool(fuel);
+                        let then = self.expr(kind, fuel);
+                        let otherwise = self.expr(kind, fuel);
+                        format!(
+                            "_ = if {condition} {{ {name} = {then} }} else {{ {name} = {otherwise} }}"
+                        )
+                    } else {
+                        format!("_ = {}", self.expr(Kind::Bool, fuel))
+                    }
+                }
+                _ => {
+                    let locals = self.mutable_locals();
+                    if let Some((name, kind)) =
+                        (!locals.is_empty()).then(|| self.rng.pick(&locals).clone())
+                    {
+                        let condition = self.bool(fuel);
+                        let value = self.expr(kind, fuel);
+                        format!("_ = {condition} && {{ {name} = {value}\ntrue }}")
+                    } else {
+                        format!("_ = {}", self.expr(Kind::Bool, fuel))
+                    }
                 }
             };
             lines.push(line);
@@ -566,7 +621,7 @@ fn program(seed: u64) -> String {
             .iter()
             .enumerate()
             .map(|(i, &kind)| {
-                body.scope.push((names[i].to_owned(), kind));
+                body.scope.push((names[i].to_owned(), kind, false));
                 format!(
                     "{}: {}",
                     names[i],
@@ -616,6 +671,7 @@ fn most_generated_programs_are_accepted_and_run_to_the_end() {
     let seeds = 400u64;
     let mut accepted = 0u64;
     let mut returning = 0usize;
+    let mut mutating = 0usize;
     let mut runs = Runs::default();
     for seed in 0..seeds {
         let source = program(seed);
@@ -623,6 +679,14 @@ fn most_generated_programs_are_accepted_and_run_to_the_end() {
         if let Some(outcome) = runs_of(&source) {
             accepted += 1;
             returning += usize::from(source_returns != 0 && outcome.finished != 0);
+            mutating += usize::from(
+                source.contains("let mut ")
+                    && source.lines().any(|line| {
+                        let line = line.trim_start();
+                        line.starts_with(['v', 'p']) && line.contains(" = ")
+                    })
+                    && outcome.finished != 0,
+            );
             runs.finished += outcome.finished;
             runs.abandoned += outcome.abandoned;
         }
@@ -630,6 +694,10 @@ fn most_generated_programs_are_accepted_and_run_to_the_end() {
     assert_ne!(
         returning, 0,
         "no accepted return-bearing program ran to the end"
+    );
+    assert_ne!(
+        mutating, 0,
+        "no accepted mutation-bearing program ran to the end"
     );
     assert!(
         accepted * 10 >= seeds * 9,
