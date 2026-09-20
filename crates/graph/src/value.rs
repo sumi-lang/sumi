@@ -35,7 +35,7 @@ impl Op {
         Ok(match self {
             Self::Int(value) => D::int(value),
             Self::Bool(value) => D::bool(*value),
-            Self::Copy { .. } | Self::Result { .. } => inputs[0].clone(),
+            Self::Copy { .. } => inputs[0].clone(),
             Self::Refine {
                 op,
                 local_is_lhs,
@@ -59,6 +59,7 @@ impl Op {
             | Self::Sequence
             | Self::Observe { .. }
             | Self::After
+            | Self::Result { .. }
             | Self::Call(_) => unreachable!("{self:?} is not a data operator"),
         })
     }

@@ -438,7 +438,7 @@ mod tests {
             Op::Result { declared: None },
             &[tail, return_],
         );
-        builder.close_with_control(region, tail, Some(return_));
+        builder.close_with_control(region, tail, false, Some(return_));
         builder.close_run(run, region, result);
         let graph = builder.finish();
 
@@ -467,7 +467,7 @@ mod tests {
             Op::Result { declared: None },
             &[tail, return_],
         );
-        builder.close_with_control(region, tail, Some(return_));
+        builder.close_with_control(region, tail, false, Some(return_));
         builder.close_run(run, region, result);
 
         let run = builder.open_run(caller);
@@ -502,11 +502,11 @@ mod tests {
         builder.enter(then);
         let selected = push(&mut builder, Op::Int(3.into()), &[]);
         let selected_return = push(&mut builder, Op::Return, &[selected, entry]);
-        builder.close_with_control(then, selected, Some(selected_return));
+        builder.close_with_control(then, selected, false, Some(selected_return));
         builder.enter(else_);
         let unselected = push(&mut builder, Op::Int(8.into()), &[]);
         let unselected_return = push(&mut builder, Op::Return, &[unselected, entry]);
-        builder.close_with_control(else_, unselected, Some(unselected_return));
+        builder.close_with_control(else_, unselected, false, Some(unselected_return));
         let region = builder.open(entry);
         builder.enter(region);
         let condition = push(&mut builder, Op::Bool(true), &[]);
@@ -516,11 +516,11 @@ mod tests {
                 then: Some(then),
                 else_: Some(else_),
             },
-            &[condition],
+            &[condition, entry],
         );
         let tail = push(&mut builder, Op::Int(1.into()), &[]);
         let result = push(&mut builder, Op::Result { declared: None }, &[tail]);
-        builder.close_with_control(region, tail, Some(observe));
+        builder.close_with_control(region, tail, false, Some(observe));
         builder.close_run(run, region, result);
         let graph = builder.finish();
 
@@ -540,7 +540,7 @@ mod tests {
         builder.enter(then);
         let payload = push(&mut builder, Op::Int(3.into()), &[]);
         let return_ = push(&mut builder, Op::Return, &[payload, entry]);
-        builder.close_with_control(then, payload, Some(return_));
+        builder.close_with_control(then, payload, false, Some(return_));
         let region = builder.open(entry);
         builder.enter(region);
         let condition = push(&mut builder, Op::Bool(false), &[]);
@@ -550,7 +550,7 @@ mod tests {
                 then: Some(then),
                 else_: None,
             },
-            &[condition],
+            &[condition, entry],
         );
         let tail = push(&mut builder, Op::Int(1.into()), &[]);
         let sequence = push(&mut builder, Op::Sequence, &[observe, tail]);
@@ -581,7 +581,7 @@ mod tests {
             Op::Result { declared: None },
             &[tail, inner, outer],
         );
-        builder.close_with_control(region, tail, Some(outer));
+        builder.close_with_control(region, tail, false, Some(outer));
         builder.close_run(run, region, result);
         let graph = builder.finish();
 
