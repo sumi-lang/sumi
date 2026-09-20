@@ -1,0 +1,27 @@
+fn target() {}
+fn immutable_local() {
+    let x = 1
+    x = 2
+}
+fn immutable_param(x: int) {
+    x = 2
+}
+fn expression_target() {
+    let mut x = 1
+    (x + 1) = 2
+}
+fn function_target() {
+    target = 1
+}
+fn unknown_target() {
+    missing = 1
+}
+fn mismatch() -> int {
+    let mut x = 1
+    x = true
+    x
+}
+fn damaged_value() {
+    let mut x = 1
+    x = absent
+}

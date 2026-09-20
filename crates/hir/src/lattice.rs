@@ -123,6 +123,8 @@ pub(crate) enum Edge {
     Bind,
     /// Carries type evidence but no abstract values.
     Types,
+    /// A mutable SSA version has its declaration's type but not its original value.
+    TypeBind,
     Values,
     Exactly(bool),
     /// One operand of `==` or `!=` typing the other.
@@ -135,7 +137,7 @@ pub(crate) enum Edge {
 impl Edge {
     /// Whether the consumer is one class with its provider in the replay.
     pub fn aliases(self) -> bool {
-        matches!(self, Self::Bind | Self::Exactly(_))
+        matches!(self, Self::Bind | Self::TypeBind | Self::Exactly(_))
     }
 }
 
@@ -210,7 +212,12 @@ impl Lattice for Product {
     /// Only values climb: type claims are finite, so `Peer` carries nothing.
     fn carries(edge: &Edge) -> Carry {
         match edge {
-            Edge::Peer | Edge::Types | Edge::Not | Edge::Enter | Edge::Exactly(_) => Carry::Nothing,
+            Edge::Peer
+            | Edge::Types
+            | Edge::TypeBind
+            | Edge::Not
+            | Edge::Enter
+            | Edge::Exactly(_) => Carry::Nothing,
             Edge::Neg => Carry::Grows,
             Edge::Call(_) | Edge::Bind | Edge::Values => Carry::Passes,
         }
@@ -232,14 +239,14 @@ impl Lattice for Product {
     fn transfer(&self, edge: &Edge, cyclic: bool, cx: &Thresholds) -> Self {
         let types = match *edge {
             Edge::Call(claim) => self.types.imported(claim),
-            Edge::Bind | Edge::Types | Edge::Exactly(_) | Edge::Peer => self.types,
+            Edge::Bind | Edge::Types | Edge::TypeBind | Edge::Exactly(_) | Edge::Peer => self.types,
             Edge::Values | Edge::Neg | Edge::Not | Edge::Enter => Evidence::NONE,
         };
         let values = &self.values;
         let values = match *edge {
             Edge::Call(_) => rounded(values, cyclic, cx),
             Edge::Bind | Edge::Values => values.clone(),
-            Edge::Types => May::NONE,
+            Edge::Types | Edge::TypeBind => May::NONE,
             Edge::Peer => May::NONE,
             Edge::Neg => {
                 let Ok(negated) = values.neg();
@@ -404,11 +411,18 @@ mod tests {
             values: May::int(&1.into()),
         };
         let live = values(May::unit());
-        for edge in [Edge::Bind, Edge::Types, Edge::Exactly(true), Edge::Peer] {
+        for edge in [
+            Edge::Bind,
+            Edge::Types,
+            Edge::TypeBind,
+            Edge::Exactly(true),
+            Edge::Peer,
+        ] {
             assert_eq!(int.transfer(&edge, false, &cx).types, int.types);
         }
         assert_eq!(Product::carries(&Edge::Types), Carry::Nothing);
         assert_eq!(int.transfer(&Edge::Types, false, &cx).values, May::NONE);
+        assert_eq!(int.transfer(&Edge::TypeBind, false, &cx).values, May::NONE);
         assert_eq!(
             int.combine(&Pair::Branch, &Product::bottom(), false, &cx)
                 .types,

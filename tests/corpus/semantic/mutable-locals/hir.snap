@@ -1,0 +1,296 @@
+file: accepted
+frontend errors: 0 (see frontend.snap)
+semantic errors: 0
+
+fn sequence@0..92 () -> int ∈ [9, 9]
+  result: copy : int @17..20
+    value:
+      let x@35..36: int @27..40
+        initializer: int 1 : int @39..40
+      assignment: assign x@35..36 : int @45..54
+        value: eager + : int @49..54
+          lhs: read x@35..36 : int
+          rhs: int 2 : int @53..54
+      assignment: assign x@35..36 : int @69..78
+        value: eager * : int @73..78
+          lhs: read x@35..36 : int
+          rhs: int 3 : int @77..78
+      discard: unit : unit @59..84
+      tail: read x@35..36 : int
+
+fn choose@93..214 (bool ∈ {true, false}) -> int ∈ [2, 3]
+  param flag@103..107: bool
+  result: copy : int @118..121
+    value:
+      let x@136..137: int @128..141
+        initializer: int 1 : int @140..141
+      discard: if : unit @150..206
+        condition: read flag@103..107 : bool
+        then:
+          assignment: assign x@136..137 : int @168..173
+            value: int 2 : int @172..173
+          tail: unit : unit @158..179
+        else:
+          assignment: assign x@136..137 : int @195..200
+            value: int 3 : int @199..200
+          tail: unit : unit @185..206
+      tail: phi x@136..137 : int @150..206
+        condition: read flag@103..107 : bool
+        then: assign x@136..137 : int @168..173
+          value: int 2 : int @172..173
+        else: assign x@136..137 : int @195..200
+          value: int 3 : int @199..200
+
+fn choices@215..270 () -> int ∈ [22, 33]
+  result: copy : int @231..234
+    value: eager + : int @237..270
+      lhs: eager * : int @237..255
+        lhs: call choose@93..214 : int @237..250
+          arg[0]: bool false : bool @244..249
+        rhs: int 10 : int @253..255
+      rhs: call choose@93..214 : int @258..270
+        arg[0]: bool true : bool @265..269
+
+fn optional@271..367 (bool ∈ {true, false}) -> int ∈ [4, 5]
+  param flag@283..287: bool
+  result: copy : int @298..301
+    value:
+      let x@316..317: int @308..321
+        initializer: int 4 : int @320..321
+      discard: if : unit @330..359
+        condition: read flag@283..287 : bool
+        then:
+          assignment: assign x@316..317 : int @348..353
+            value: int 5 : int @352..353
+          tail: unit : unit @338..359
+        else: unit (implicit)
+      tail: phi x@316..317 : int @330..359
+        condition: read flag@283..287 : bool
+        then: assign x@316..317 : int @348..353
+          value: int 5 : int @352..353
+        else: read x@316..317 : int
+
+fn optionals@368..429 () -> int ∈ [44, 55]
+  result: copy : int @386..389
+    value: eager + : int @392..429
+      lhs: eager * : int @392..412
+        lhs: call optional@271..367 : int @392..407
+          arg[0]: bool false : bool @401..406
+        rhs: int 10 : int @410..412
+      rhs: call optional@271..367 : int @415..429
+        arg[0]: bool true : bool @424..428
+
+fn lazy@430..587 (bool ∈ {true, false}) -> int ∈ [1, 7]
+  param flag@438..442: bool
+  result: copy : int @453..456
+    value:
+      let x@471..472: int @463..476
+        initializer: int 1 : int @475..476
+      discard: lazy and : bool @485..527
+        lhs: read flag@438..442 : bool
+        rhs:
+          assignment: assign x@471..472 : int @503..508
+            value: int 6 : int @507..508
+          tail: bool true : bool @517..521
+      discard: lazy or : bool @536..579
+        lhs: read flag@438..442 : bool
+        rhs:
+          assignment: assign x@471..472 : int @554..559
+            value: int 7 : int @558..559
+          tail: bool false : bool @568..573
+      tail: phi x@471..472 : int @536..579
+        condition: read flag@438..442 : bool
+        then: phi x@471..472 : int @485..527
+          condition: read flag@438..442 : bool
+          then: assign x@471..472 : int @503..508
+            value: int 6 : int @507..508
+          else: read x@471..472 : int
+        else: assign x@471..472 : int @554..559
+          value: int 7 : int @558..559
+
+fn lazies@588..638 () -> int ∈ [11, 77]
+  result: copy : int @603..606
+    value: eager + : int @609..638
+      lhs: eager * : int @609..625
+        lhs: call lazy@430..587 : int @609..620
+          arg[0]: bool false : bool @614..619
+        rhs: int 10 : int @623..625
+      rhs: call lazy@430..587 : int @628..638
+        arg[0]: bool true : bool @633..637
+
+fn guarded@639..737 (int ∈ [0, 2]) -> int ∈ [5, 10]
+  param n@650..651: int
+  result: copy : int @661..664
+    value:
+      let x@679..680: int @671..684
+        initializer: read n@650..651 : int
+      discard: if : unit @693..724
+        condition: eager == : bool @696..702
+          lhs: read x@679..680 : int
+          rhs: int 0 : int @701..702
+        then:
+          assignment: assign x@679..680 : int @713..718
+            value: int 1 : int @717..718
+          tail: unit : unit @703..724
+        else: unit (implicit)
+      tail: eager / : int @729..735
+        lhs: int 10 : int @729..731
+        rhs: phi x@679..680 : int @693..724
+          condition: eager == : bool @696..702
+            lhs: read x@679..680 : int
+            rhs: int 0 : int @701..702
+          then: assign x@679..680 : int @713..718
+            value: int 1 : int @717..718
+          else: read x@679..680 [x == 0 fails@696..702] : int
+
+fn guardeds@738..784 () -> int ∈ [10, 20]
+  result: copy : int @755..758
+    value: eager + : int @761..784
+      lhs: call guarded@639..737 : int @761..771
+        arg[0]: int 0 : int @769..770
+      rhs: call guarded@639..737 : int @774..784
+        arg[0]: int 2 : int @782..783
+
+fn returning@785..917 (bool ∈ {true, false}) -> int ∈ [5, 7]
+  param flag@798..802: bool
+  result: result : int @813..816
+    outcome[0]:
+      let x@831..832: int @823..836
+        initializer: int 0 : int @835..836
+      discard: if : unit @845..904
+        condition: read flag@798..802 : bool
+        then: unit : unit @853..877
+        else:
+          assignment: assign x@831..832 : int @893..898
+            value: int 2 : int @897..898
+          tail: unit : unit @883..904
+      discard: after : ? @841..904
+        control: observe : ? @845..904
+          condition: read flag@798..802 : bool
+          then control: unit : unit @853..877
+          else control:
+            assignment: assign x@831..832 : int @893..898
+              value: int 2 : int @897..898
+            tail: unit : unit @883..904
+        context: entry : ? @785..917
+      tail: eager / : int @909..915
+        lhs: int 10 : int @909..911
+        rhs: phi x@831..832 : int @845..904
+          condition: read flag@798..802 : bool
+          then: read x@831..832 : int
+          else: assign x@831..832 : int @893..898
+            value: int 2 : int @897..898
+    outcome[1]: return : int @863..871
+      payload: int 7 : int @870..871
+
+fn returns@918..979 () -> int ∈ [55, 77]
+  result: copy : int @934..937
+    value: eager + : int @940..979
+      lhs: eager * : int @940..961
+        lhs: call returning@785..917 : int @940..956
+          arg[0]: bool false : bool @950..955
+        rhs: int 10 : int @959..961
+      rhs: call returning@785..917 : int @964..979
+        arg[0]: bool true : bool @974..978
+
+fn refined@980..1093 (bool ∈ {true, false}) -> int ∈ [5, 10]
+  param flag@991..995: bool
+  result: copy : int @1006..1009
+    value:
+      let x@1024..1025: int @1016..1029
+        initializer: int 1 : int @1028..1029
+      discard: if : unit @1038..1055
+        condition: read flag@991..995 : bool
+        then:
+          assignment: assign x@1024..1025 : int @1048..1053
+            value: int 2 : int @1052..1053
+          tail: unit : unit @1046..1055
+        else: unit (implicit)
+      tail: if : int @1060..1091
+        condition: eager != : bool @1063..1069
+          lhs: phi x@1024..1025 : int @1038..1055
+            condition: read flag@991..995 : bool
+            then: assign x@1024..1025 : int @1048..1053
+              value: int 2 : int @1052..1053
+            else: read x@1024..1025 : int
+          rhs: int 0 : int @1068..1069
+        then: eager / : int @1072..1078
+          lhs: int 10 : int @1072..1074
+          rhs [x != 0 holds@1063..1069]: phi x@1024..1025 : int @1038..1055
+            condition: read flag@991..995 : bool
+            then: assign x@1024..1025 : int @1048..1053
+              value: int 2 : int @1052..1053
+            else: read x@1024..1025 : int
+        else: int 0 : int @1088..1089
+
+fn exact@1094..1202 (bool ∈ {true, false}) -> int ∈ [0, 1]
+  param flag@1103..1107: bool
+  result: copy : int @1118..1121
+    value:
+      let b@1136..1137: bool @1128..1145
+        initializer: bool false : bool @1140..1145
+      discard: if : unit @1154..1174
+        condition: read flag@1103..1107 : bool
+        then:
+          assignment: assign b@1136..1137 : bool @1164..1172
+            value: bool true : bool @1168..1172
+          tail: unit : unit @1162..1174
+        else: unit (implicit)
+      tail: if : int @1179..1200
+        condition: phi b@1136..1137 : bool @1154..1174
+          condition: read flag@1103..1107 : bool
+          then: assign b@1136..1137 : bool @1164..1172
+            value: bool true : bool @1168..1172
+          else: read b@1136..1137 : bool
+        then: int 1 : int @1186..1187
+        else: int 0 : int @1197..1198
+
+fn exact_read@1203..1317 (bool ∈ ∅) -> bool ∈ ∅
+  param flag@1217..1221: bool
+  result: copy : bool @1232..1236
+    value:
+      let b@1251..1252: bool @1243..1260
+        initializer: bool false : bool @1255..1260
+      discard: if : unit @1269..1289
+        condition: read flag@1217..1221 : bool
+        then:
+          assignment: assign b@1251..1252 : bool @1279..1287
+            value: bool true : bool @1283..1287
+          tail: unit : unit @1277..1289
+        else: unit (implicit)
+      tail: if : bool @1294..1315
+        condition: phi b@1251..1252 : bool @1269..1289
+          condition: read flag@1217..1221 : bool
+          then: assign b@1251..1252 : bool @1279..1287
+            value: bool true : bool @1283..1287
+          else: read b@1251..1252 : bool
+        then [is true]: phi b@1251..1252 : bool @1269..1289
+          condition: read flag@1217..1221 : bool
+          then: assign b@1251..1252 : bool @1279..1287
+            value: bool true : bool @1283..1287
+          else: read b@1251..1252 : bool
+        else [is false]: phi b@1251..1252 : bool @1269..1289
+          condition: read flag@1217..1221 : bool
+          then: assign b@1251..1252 : bool @1279..1287
+            value: bool true : bool @1283..1287
+          else: read b@1251..1252 : bool
+
+fn refinements@1318..1425 () -> int ∈ [5500, 11011]
+  result: copy : int @1338..1341
+    value: eager + : int @1348..1425
+      lhs: eager + : int @1348..1411
+        lhs: eager + : int @1348..1391
+          lhs: eager * : int @1348..1369
+            lhs: call refined@980..1093 : int @1348..1362
+              arg[0]: bool false : bool @1356..1361
+            rhs: int 1000 : int @1365..1369
+          rhs: eager * : int @1372..1391
+            lhs: call refined@980..1093 : int @1372..1385
+              arg[0]: bool true : bool @1380..1384
+            rhs: int 100 : int @1388..1391
+        rhs: eager * : int @1394..1411
+          lhs: call exact@1094..1202 : int @1394..1406
+            arg[0]: bool false : bool @1400..1405
+          rhs: int 10 : int @1409..1411
+      rhs: call exact@1094..1202 : int @1414..1425
+        arg[0]: bool true : bool @1420..1424

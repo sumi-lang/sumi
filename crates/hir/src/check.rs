@@ -270,7 +270,18 @@ fn explain_zero(
             Op::Int(_) | Op::Neg | Op::Binary(_) => {
                 labels.push((entry.origin, describe(&may.ints, "").into()));
             }
-            Op::Copy { .. } => follow(&mut queue, inputs[0], 0),
+            Op::Copy { .. } | Op::Assign { .. } => follow(&mut queue, inputs[0], 0),
+            Op::Phi { contexts, .. } => {
+                for ((&value, &context), &has_value) in inputs[1..]
+                    .iter()
+                    .zip(&contexts)
+                    .zip(&graph.input_values(node)[1..])
+                {
+                    if has_value && typing.may(context).live() {
+                        follow(&mut queue, value, 1);
+                    }
+                }
+            }
             Op::Refine { .. } => {
                 if may.ints != typing.may(inputs[0]).ints {
                     labels.push((

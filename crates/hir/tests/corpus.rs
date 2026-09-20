@@ -243,7 +243,9 @@ fn dump_region(
                 graph.node(node).op,
                 Op::Then | Op::Else | Op::Entry | Op::Refine { .. } | Op::Exactly(_)
             );
-            named || (node != result && !contextual && shape.users[node.index()] == 0)
+            named
+                || matches!(graph.node(node).op, Op::Assign { .. })
+                || (node != result && !contextual && shape.users[node.index()] == 0)
         })
         .collect();
     let indent = "  ".repeat(depth);
@@ -270,6 +272,9 @@ fn dump_region(
             (Some(_), _) => {
                 let role = format!("let {}", named(analysis, node));
                 dump_definition(analysis, shape, &role, node, depth + 1, out);
+            }
+            (None, Op::Assign { .. }) => {
+                dump_definition(analysis, shape, "assignment", node, depth + 1, out)
             }
             (None, Op::Unused) => {
                 let value = graph.inputs(node)[0];
@@ -300,6 +305,9 @@ fn guards(analysis: &Analysis, mut node: NodeId) -> (Vec<String>, NodeId) {
                 guards.push(format!("is {value}"));
                 node = graph.inputs(node)[0];
             }
+            Op::Assign { declaration } => {
+                return (guards, declaration);
+            }
             _ => return (guards, node),
         }
     }
@@ -315,15 +323,15 @@ fn dump_node(
 ) {
     let graph = analysis.graph();
     let (guards, definition) = guards(analysis, node);
+    let guard = if guards.is_empty() {
+        String::new()
+    } else {
+        format!(" [{}]", guards.join(", "))
+    };
     if graph.node(definition).name.is_some() {
-        let guards = if guards.is_empty() {
-            String::new()
-        } else {
-            format!(" [{}]", guards.join(", "))
-        };
         writeln!(
             out,
-            "{}{role}: read {}{guards} : {}",
+            "{}{role}: read {}{guard} : {}",
             "  ".repeat(depth),
             named(analysis, definition),
             ty(analysis, node)
@@ -331,7 +339,14 @@ fn dump_node(
         .unwrap();
         return;
     }
-    dump_definition(analysis, shape, role, node, depth, out);
+    dump_definition(
+        analysis,
+        shape,
+        &format!("{role}{guard}"),
+        definition,
+        depth,
+        out,
+    );
 }
 
 fn dump_definition(
@@ -354,6 +369,8 @@ fn dump_definition(
         Op::Unused => unreachable!("nothing reads a statement; dump_region discards its input"),
         Op::Hole => "hole".into(),
         Op::Copy { .. } => "copy".into(),
+        Op::Assign { declaration } => format!("assign {}", named(analysis, *declaration)),
+        Op::Phi { declaration, .. } => format!("phi {}", named(analysis, *declaration)),
         Op::Neg => "negate".into(),
         Op::Not => "not".into(),
         Op::Binary(op) => format!("eager {}", operator(*op)),
@@ -408,7 +425,19 @@ fn dump_definition(
                 );
             }
         }
-        Op::Copy { .. } => dump_node(analysis, shape, "value", inputs[0], child, out),
+        Op::Copy { .. } | Op::Assign { .. } => {
+            dump_node(analysis, shape, "value", inputs[0], child, out)
+        }
+        Op::Phi { .. } => {
+            dump_node(analysis, shape, "condition", inputs[0], child, out);
+            for (role, &input) in [("then", &inputs[1]), ("else", &inputs[2])] {
+                if matches!(graph.node(input).op, Op::Assign { .. } | Op::Phi { .. }) {
+                    dump_definition(analysis, shape, role, input, child, out);
+                } else {
+                    dump_node(analysis, shape, role, input, child, out);
+                }
+            }
+        }
         Op::Unused => unreachable!("nothing reads a statement; dump_region discards its input"),
         Op::Neg | Op::Not => dump_node(analysis, shape, "operand", inputs[0], child, out),
         Op::Binary(_) => {

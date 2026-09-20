@@ -72,6 +72,114 @@ fn empty() = {}";
 }
 
 #[test]
+fn mutable_locals_follow_structured_control_flow() {
+    let source = "fn sequential() -> int {
+    let mut x = 1
+    x = x + 2
+    x
+}
+fn nested() -> int {
+    let mut x = 1
+    { x = 4 }
+    x
+}
+fn choose(b: bool) -> int {
+    let mut x = 1
+    _ = if b { x = 2 } else { x = 3 }
+    x
+}
+fn optional(b: bool) -> int {
+    let mut x = 1
+    _ = if b { x = 5 }
+    x
+}
+fn lazy_and(b: bool) -> int {
+    let mut x = 1
+    _ = b && { x = 6\n true }
+    x
+}
+fn lazy_or(b: bool) -> int {
+    let mut x = 1
+    _ = b || { x = 7\n false }
+    x
+}
+fn condition() -> int {
+    let mut x = 1
+    _ = if { x = 8\n true } { 0 } else { 0 }
+    x
+}
+fn rhs_return() -> int {
+    let mut x = 0
+    x = { return 7 }
+    x
+}
+fn rhs_mutation() -> int {
+    let mut x = 0
+    x = { x = 4\n x + 1 }
+    x
+}";
+    assert_eq!(run(source, "sequential"), int(3));
+    assert_eq!(run(source, "nested"), int(4));
+    let checked = analysis(source);
+    check::semantics(&checked);
+    let program = checked.program().unwrap();
+    for (name, values) in [
+        ("choose", [3, 2]),
+        ("optional", [1, 5]),
+        ("lazy_and", [1, 6]),
+        ("lazy_or", [7, 1]),
+    ] {
+        let function = program.function_named(name).unwrap();
+        for (condition, expected) in [false, true].into_iter().zip(values) {
+            assert_eq!(
+                program.evaluate(function, &[Value::Bool(condition)]),
+                int(expected),
+                "{name}({condition})"
+            );
+        }
+    }
+    assert_eq!(run(source, "condition"), int(8));
+    assert_eq!(run(source, "rhs_return"), int(7));
+    assert_eq!(run(source, "rhs_mutation"), int(5));
+}
+
+#[test]
+fn mutation_and_guards_track_the_same_local_version() {
+    let source = "fn repaired(n: int) -> int {
+    let mut x = n
+    _ = if x == 0 { x = 1 }
+    10 / x
+}
+fn returning(b: bool) -> int {
+    let mut x = 0
+    _ = if b { return 7 } else { x = 2 }
+    10 / x
+}
+fn zero() -> int = repaired(0)
+fn two() -> int = repaired(2)";
+    assert_eq!(run(source, "zero"), int(10));
+    assert_eq!(run(source, "two"), int(5));
+    let checked = analysis(source);
+    check::semantics(&checked);
+    let program = checked.program().unwrap();
+    let returning = program.function_named("returning").unwrap();
+    assert_eq!(program.evaluate(returning, &[Value::Bool(true)]), int(7));
+    assert_eq!(program.evaluate(returning, &[Value::Bool(false)]), int(5));
+
+    let stale = analysis(
+        "fn stale(n: int) -> int { let mut x = n\n _ = x != 0 && { x = 0\n true }\n 10 / x }\nfn entry() -> int = stale(1)",
+    );
+    check::semantics(&stale);
+    assert!(stale.program().is_none());
+    assert!(
+        stale
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| { diagnostic.code == sumi_hir::codes::DIVISION_BY_ZERO })
+    );
+}
+
+#[test]
 fn calls_and_recursion() {
     let source = "fn fib(n: int) -> int = if n < 2 { n } else { fib(n - 1) + fib(n - 2) }
 fn twenty() -> int = fib(20)

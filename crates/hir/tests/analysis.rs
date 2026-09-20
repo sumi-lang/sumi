@@ -223,6 +223,56 @@ fn forwarded_return_paths_keep_their_static_types() {
 }
 
 #[test]
+fn stale_boolean_guards_do_not_refine_new_versions() {
+    let analysis = analyzed(
+        "fn and_case() -> int {
+    let mut b = true
+    if b && { b = false\n true } {
+        if b { 1 } else { 1 / 0 }
+    } else { 1 }
+}
+fn or_case() -> int {
+    let mut b = false
+    if b || { b = true\n false } {
+        1
+    } else if b { 1 / 0 } else { 1 }
+}",
+    );
+    check::semantics(&analysis);
+    assert_eq!(
+        analysis
+            .semantic_diagnostics()
+            .filter(|diagnostic| diagnostic.code == DIVISION_BY_ZERO)
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn recursive_delta_shares_repeated_phi_diamonds() {
+    let forks = "    _ = if b { x = x - 1 } else { x = x - 2 }\n".repeat(30);
+    let source = format!(
+        "fn descend(n: int, b: bool) -> int {{
+    if n <= 100 {{ return 0 }}
+    let mut x = n
+{forks}    descend(x, b)
+}}
+fn entry() -> int = descend(160, true) + descend(160, false)"
+    );
+    let analysis = clean(&source);
+    assert_eq!(
+        analysis.ranges(FunctionId::new(0)).unwrap().params[1].bools,
+        sumi_hir::Bools::BOTH
+    );
+    assert!(
+        analysis.functions()[0]
+            .depth_bound()
+            .is_some_and(|depth| depth > 1)
+    );
+    check::run(analysis.program().unwrap());
+}
+
+#[test]
 fn literals_of_any_size_fold_a_leading_minus() {
     for (expr, value) in [
         ("9223372036854775807", "9223372036854775807"),
@@ -315,10 +365,9 @@ fn token_gaps_ignore_trivia_without_losing_semantics() {
     );
     assert!(matches!(op(&a, value(&a, 3)), Op::Not));
 
-    let a = analyzed("fn f() = { let\tmut\tvalue = 3\n value }");
+    let a = clean("fn f() = { let\tmut\tvalue = 3\n value }");
     assert!(a.parsed().diagnostics().is_empty());
-    assert_eq!(codes(&a), [UNSUPPORTED]);
-    assert!(!a.functions()[0].complete());
+    assert_eq!(a.functions()[0].signature().unwrap().result, Ty::Int);
 }
 
 #[test]

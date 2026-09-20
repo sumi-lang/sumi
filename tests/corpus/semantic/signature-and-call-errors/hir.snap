@@ -90,8 +90,8 @@ fn poisoned@498..557 () -> int ∈ ∅
 fn mutable@558..615 () -> int ∈ ∅
   result: copy : int @574..577
     value:
-      discard: hole : ? @584..601
-      let typed@592..597: hole : ? @584..601
+      let typed@592..597: int @584..601
+        initializer: int 1 : int @600..601
       tail: hole : ? @606..613
 
 fn suppressed_arity@616..653 signature: unavailable
@@ -145,5 +145,6 @@ error[semantic/unknown-type]: unknown type `mystery`
   primary @486..493
 error[semantic/unknown-name]: unknown name `absent`
   primary @537..543
-error[semantic/unsupported]: construct is not supported by scalar checking
-  primary @584..601
+error[semantic/not-callable]: local `typed` is not callable
+  primary @606..611
+  secondary @592..597: declared here

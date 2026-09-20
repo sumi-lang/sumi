@@ -1,12 +1,12 @@
 file: rejected
 frontend errors: 0 (see frontend.snap)
-semantic errors: 15
+semantic errors: 14
 
 fn unsupported@0..48 () -> unit ∈ unit
   result: copy : unit @0..48
     value:
-      discard: hole : ? @23..36
-      let x@31..32: hole : ? @23..36
+      let x@31..32: int @23..36
+        initializer: int 1 : int @35..36
       tail: unit : unit @17..48
 
 fn closure@49..86 () -> unit ∈ unit
@@ -79,11 +79,10 @@ fn assignment@528..571 () -> unit ∈ unit
       let x@554..555: int @550..559
         initializer: int 1 : int @558..559
       discard: hole : ? @564..569
+        part[0]: int 2 : int @568..569
       tail: unit : unit @544..571
 
 == semantic diagnostics ==
-error[semantic/unsupported]: construct is not supported by scalar checking
-  primary @23..36
 error[semantic/unsupported]: construct is not supported by scalar checking
   primary @76..84
 error[semantic/unsupported]: construct is not supported by scalar checking
@@ -116,5 +115,6 @@ error[semantic/type-mismatch]: if branches are int and bool
   secondary @520..525: bool here
 error[semantic/type-mismatch]: expected bool, found int
   primary @505..506
-error[semantic/unsupported]: construct is not supported by scalar checking
-  primary @564..569
+error[semantic/immutable-assignment]: cannot assign to immutable local `x`
+  primary @564..565
+  secondary @554..555: declared here

@@ -128,6 +128,16 @@ pub enum Op {
     Copy {
         declared: Option<(Ty, TextRange)>,
     },
+    /// A mutable local's next SSA version; its input is the assigned value.
+    Assign {
+        declaration: NodeId,
+    },
+    /// A mutable local's value after a conditional fork. Inputs are the condition, true value,
+    /// and false value; `contexts` gate the corresponding values in the abstract domain.
+    Phi {
+        declaration: NodeId,
+        contexts: [NodeId; 2],
+    },
     Neg,
     Not,
     Binary(BinaryOp),

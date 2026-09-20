@@ -18,6 +18,7 @@ enum Control {
         then: RegionId,
         else_: Option<RegionId>,
     },
+    Phi(NodeId),
     Sequence {
         node: NodeId,
         value: NodeId,
@@ -281,6 +282,10 @@ impl<'a> Machine<'a> {
                         self.control.push(Control::Branch { node, then, else_ });
                         self.control.push(Control::Eval(inputs[0]));
                     }
+                    Op::Phi { .. } => {
+                        self.control.push(Control::Phi(node));
+                        self.control.push(Control::Eval(inputs[0]));
+                    }
                     Op::Call(callee) => {
                         let function = self.graph.callable(callee).function;
                         self.control.push(Control::Enter { node, function });
@@ -331,6 +336,16 @@ impl<'a> Machine<'a> {
                     (false, Some(else_)) => self.demand_region(else_, take),
                     (false, None) => self.fill(node, Value::Unit),
                 }
+            }
+            Control::Phi(node) => {
+                let inputs = self.graph.inputs(node);
+                let condition = self
+                    .value(inputs[0])
+                    .truth()
+                    .map_err(|fault| Refusal::of(fault, node))?;
+                let from = inputs[if condition { 1 } else { 2 }];
+                self.control.push(Control::Take { node, from });
+                self.control.push(Control::Eval(from));
             }
             Control::Sequence { node, value } => {
                 self.control.push(Control::Take { node, from: value });
@@ -527,6 +542,52 @@ mod tests {
         assert_eq!(
             Machine::new(&graph, function, &[], None).run(),
             Ok(Value::Int(3.into()))
+        );
+    }
+
+    #[test]
+    fn phi_demands_only_its_selected_version() {
+        let mut builder = GraphBuilder::new(9);
+        let function = builder.function();
+        let run = builder.open_run(function);
+        let entry = push(&mut builder, Op::Entry, &[]);
+        let region = builder.open(entry);
+        builder.enter(region);
+        let zero = push(&mut builder, Op::Int(0.into()), &[]);
+        let declaration = push(&mut builder, Op::Copy { declared: None }, &[zero]);
+        let seven = push(&mut builder, Op::Int(7.into()), &[]);
+        let nine = push(&mut builder, Op::Int(9.into()), &[]);
+        let hole = push(&mut builder, Op::Hole, &[]);
+        let yes = push(&mut builder, Op::Bool(true), &[]);
+        let no = push(&mut builder, Op::Bool(false), &[]);
+        let from_true = push(
+            &mut builder,
+            Op::Phi {
+                declaration,
+                contexts: [entry; 2],
+            },
+            &[yes, seven, hole],
+        );
+        let from_false = push(
+            &mut builder,
+            Op::Phi {
+                declaration,
+                contexts: [entry; 2],
+            },
+            &[no, hole, nine],
+        );
+        let sum = push(
+            &mut builder,
+            Op::Binary(BinaryOp::Arith(ArithOp::Add)),
+            &[from_true, from_false],
+        );
+        builder.close(region, sum);
+        builder.close_run(run, region, sum);
+        let graph = builder.finish();
+
+        assert_eq!(
+            Machine::new(&graph, function, &[], None).run(),
+            Ok(Value::Int(16.into()))
         );
     }
 
