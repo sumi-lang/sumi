@@ -100,6 +100,29 @@ fn no_else() -> int = if { return 2 } { true + false }",
 }
 
 #[test]
+fn forwarded_return_paths_keep_their_static_types() {
+    for (source, message) in [
+        (
+            "fn f() -> int { if false { return 1 }\n true }\nfn entry() -> int = f() + 1",
+            "expected int, found bool",
+        ),
+        (
+            "fn f() -> int { let x: bool = if false { return 1 } else { 2 }\n 3 }",
+            "expected bool, found int",
+        ),
+        (
+            "fn f() -> int { return 1\n false }",
+            "expected int, found bool",
+        ),
+    ] {
+        let analysis = analyzed(source);
+        assert_eq!(codes(&analysis), [TYPE_MISMATCH], "{source}");
+        assert_eq!(semantic(&analysis)[0].message.as_ref(), message, "{source}");
+        check::semantics(&analysis);
+    }
+}
+
+#[test]
 fn literals_of_any_size_fold_a_leading_minus() {
     for (expr, value) in [
         ("9223372036854775807", "9223372036854775807"),

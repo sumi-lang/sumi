@@ -140,7 +140,7 @@ impl Edge {
 }
 
 /// A flow from two providers. The second of `Binary`, `Lazy`, and `Refine` is the other operand;
-/// of `Branch`, `Then`, `Else`, and `Argument`, the context that gates them.
+/// of `Branch`, `Forward`, `Then`, `Else`, and `Argument`, the context that gates them.
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Pair {
     Refine {
@@ -149,6 +149,7 @@ pub(crate) enum Pair {
         sense: bool,
     },
     Branch,
+    Forward,
     Outcome,
     Binary(BinaryOp),
     Lazy {
@@ -162,7 +163,7 @@ pub(crate) enum Pair {
 impl Pair {
     /// Whether the consumer is one class with its first provider in the replay.
     pub fn aliases(self) -> bool {
-        matches!(self, Self::Refine { .. })
+        matches!(self, Self::Refine { .. } | Self::Forward)
     }
 }
 
@@ -222,7 +223,9 @@ impl Lattice for Product {
             Pair::Binary(BinaryOp::Arith(_)) => [Carry::Grows; 2],
             Pair::Binary(BinaryOp::Cmp(_)) => [Carry::Nothing; 2],
             Pair::Refine { .. } => [Carry::Passes; 2],
-            Pair::Branch | Pair::Outcome | Pair::Argument => [Carry::Passes, Carry::Nothing],
+            Pair::Branch | Pair::Forward | Pair::Outcome | Pair::Argument => {
+                [Carry::Passes, Carry::Nothing]
+            }
         }
     }
 
@@ -254,7 +257,7 @@ impl Lattice for Product {
 
     fn combine(&self, pair: &Pair, other: &Self, cyclic: bool, cx: &Thresholds) -> Self {
         let types = match *pair {
-            Pair::Refine { .. } | Pair::Branch => self.types,
+            Pair::Refine { .. } | Pair::Branch | Pair::Forward => self.types,
             Pair::Outcome => Evidence::NONE,
             Pair::Binary(_) | Pair::Lazy { .. } | Pair::Then | Pair::Else | Pair::Argument => {
                 Evidence::NONE
@@ -277,7 +280,7 @@ impl Lattice for Product {
             } => values.refine(op, local_is_lhs, sense, second),
             Pair::Then => May::of_unit(values.bools.may_true() && second.live()),
             Pair::Else => May::of_unit(values.bools.may_false() && second.live()),
-            Pair::Branch | Pair::Outcome => {
+            Pair::Branch | Pair::Forward | Pair::Outcome => {
                 if second.live() {
                     values.clone()
                 } else {

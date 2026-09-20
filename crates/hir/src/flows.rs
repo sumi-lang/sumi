@@ -11,7 +11,7 @@ use sumi_graph::{
 use sumi_text::TextRange;
 
 use crate::lattice::{Edge, Pair};
-use crate::lower::{Header, Lowered};
+use crate::lower::{ExplicitTail, Header, Lowered};
 use crate::typing::{Expected, Typing};
 
 pub(crate) enum DemandKind {
@@ -37,6 +37,7 @@ pub(crate) struct Demand {
 struct Demands<'a> {
     graph: &'a Graph,
     typed: &'a [bool],
+    explicit_tails: &'a [Option<ExplicitTail>],
     made: Vec<Demand>,
 }
 
@@ -52,6 +53,7 @@ impl Demands<'_> {
         let graph = self.graph;
         let typed = |node: NodeId| self.typed[node.index()];
         let value = |index: usize| graph.input_values(node)[index];
+        let tail = self.explicit_tails[owner as usize];
         let made = &mut self.made;
         let mut demand = |at: TextRange, actual: NodeId, kind: DemandKind| {
             made.push(Demand {
@@ -152,10 +154,13 @@ impl Demands<'_> {
             Op::Return if value(0) => require(reads[0], inputs[0], Expected::Peer(node), None),
             Op::Return => {}
             Op::Result { declared } => {
-                let first = usize::from(!value(0));
-                for (&at, &input) in reads[first..].iter().zip(&inputs[first..]) {
-                    let expected =
-                        declared.map_or(Expected::Peer(node), |(ty, _)| Expected::Ty(ty));
+                let expected = declared.map_or(Expected::Peer(node), |(ty, _)| Expected::Ty(ty));
+                if let Some(tail) = tail {
+                    require(tail.at, tail.value, expected, declared.map(|(_, at)| at));
+                } else if value(0) {
+                    require(reads[0], inputs[0], expected, declared.map(|(_, at)| at));
+                }
+                for (&at, &input) in reads[1..].iter().zip(&inputs[1..]) {
                     require(at, input, expected, declared.map(|(_, at)| at));
                 }
             }
@@ -192,6 +197,7 @@ pub(crate) fn draw(
     let mut demands = Demands {
         graph,
         typed: &lowered.typed,
+        explicit_tails: &lowered.explicit_tails,
         made: Vec::with_capacity(graph.nodes().len() / 2),
     };
 
@@ -255,12 +261,19 @@ pub(crate) fn draw(
                     then,
                     else_: Some(else_),
                 } => {
-                    for region in [*then, *else_] {
+                    let regions = [*then, *else_];
+                    let values = regions.map(|region| graph.region(region).result_has_value());
+                    let pair = if values.into_iter().filter(|&value| value).count() == 1 {
+                        Pair::Forward
+                    } else {
+                        Pair::Branch
+                    };
+                    for (region, value) in regions.into_iter().zip(values) {
                         let region = graph.region(region);
-                        if !graph.input_values(node)[0] || !region.result_has_value() {
+                        if !graph.input_values(node)[0] || !value {
                             continue;
                         }
-                        typing.derive(region.result(), region.context, node, Pair::Branch);
+                        typing.derive(region.result(), region.context, node, pair);
                     }
                 }
                 Op::Join { then, else_: None } => {

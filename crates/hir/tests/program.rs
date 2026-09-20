@@ -1,5 +1,6 @@
 use sumi_frontend::parse_source;
 use sumi_hir::{Analysis, Ty, Value, analyze};
+use sumi_test::check;
 
 fn analysis(source: &str) -> Analysis {
     analyze(parse_source(source.into()).unwrap())
@@ -216,15 +217,17 @@ fn inferred() = { return 13 }";
 #[test]
 fn return_guards_refine_the_continuation() {
     let source = "fn divide(n: int) -> int { if n == 0 { return 0 }\n 10 / n }
+fn zero() -> int = divide(0)
+fn half() -> int = divide(2)
 fn count(n: int) -> int { if n == 0 { return 0 }\n 1 + count(n - 1) }
 fn three() -> int = count(3)";
     let checked = analysis(source);
     let program = checked.program().unwrap();
-    let divide = program.function_named("divide").unwrap();
-    assert_eq!(program.evaluate(divide, &[int(0)]), int(0));
-    assert_eq!(program.evaluate(divide, &[int(2)]), int(5));
-    let three = program.function_named("three").unwrap();
-    assert_eq!(program.evaluate(three, &[]), int(3));
+    check::run(program);
+    for (name, expected) in [("zero", 0), ("half", 5), ("three", 3)] {
+        let function = program.function_named(name).unwrap();
+        assert_eq!(program.evaluate(function, &[]), int(expected));
+    }
 }
 
 #[test]

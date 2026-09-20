@@ -67,6 +67,12 @@ pub(crate) struct Call {
     pub context: NodeId,
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct ExplicitTail {
+    pub value: NodeId,
+    pub at: TextRange,
+}
+
 pub(crate) struct Lowered {
     /// By function.
     pub built: Vec<bool>,
@@ -77,6 +83,7 @@ pub(crate) struct Lowered {
     /// (context, callee) of every call whose callee has a whole parameter list, whole call or not.
     pub entered: Vec<(NodeId, FunctionId)>,
     pub obligations: Vec<Obligation>,
+    pub explicit_tails: Vec<Option<ExplicitTail>>,
 }
 
 pub(crate) struct Source<'s> {
@@ -501,6 +508,7 @@ impl<'a, 's> Builder<'a, 's> {
                 calls: Vec::new(),
                 entered: Vec::new(),
                 obligations: Vec::new(),
+                explicit_tails: vec![None; headers.len()],
             },
             nodes_of: vec![None; nodes],
             owner: 0,
@@ -548,6 +556,7 @@ impl<'a, 's> Builder<'a, 's> {
         self.graph.enter(region);
         self.regions.push((region, 0, entry));
         let root_node = item.body(tree).map(|body| body.node());
+        let explicit_tail = root_node.and_then(|root| self.explicit_tail(root));
         if let Some(root_node) = root_node {
             let mut work = std::mem::take(&mut self.work);
             work.push(Work::Enter(root_node));
@@ -666,7 +675,17 @@ impl<'a, 's> Builder<'a, 's> {
                 outcomes.push((fallthrough.unwrap_or(body.0), body.1));
                 outcomes.extend(self.returns.iter().copied());
                 let result = self.push(node, Op::Result { declared }, &outcomes, None);
-                if root_node.is_none_or(|root| self.form(root) == Form::Bottom) {
+                let completes = root_node.is_none_or(|root| self.form(root) == Form::Bottom);
+                if (declared.is_some() || completes)
+                    && let Some(tail) =
+                        explicit_tail.filter(|&tail| self.form(tail) == Form::Scalar)
+                {
+                    self.lowered.explicit_tails[self.owner as usize] = Some(ExplicitTail {
+                        value: self.node_of(tail),
+                        at: self.source.range(tail),
+                    });
+                }
+                if completes {
                     self.completes_input(result, 0);
                 }
                 result
@@ -807,6 +826,18 @@ impl<'a, 's> Builder<'a, 's> {
     }
     fn context(&self) -> NodeId {
         self.regions.last().expect("a body runs in its region").2
+    }
+    fn explicit_tail(&self, root: NodeIdx) -> Option<NodeIdx> {
+        match ast::Expr::cast(self.source.tree, root) {
+            Some(ast::Expr::Block(_)) => self
+                .source
+                .tree
+                .children(root)
+                .last()
+                .filter(|&node| ast::Expr::cast(self.source.tree, node).is_some()),
+            Some(_) => Some(root),
+            None => None,
+        }
     }
     fn form(&self, node: NodeIdx) -> Form {
         if self.bottoms[node.to_usize()] {

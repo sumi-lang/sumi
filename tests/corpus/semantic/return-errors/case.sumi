@@ -19,3 +19,21 @@ fn unreachable() -> int {
     absent + missing()
     true + false
 }
+fn sequence_type() -> int {
+    if false {
+        return 1
+    }
+    true
+}
+fn branch_type() -> int {
+    let x: bool = if false {
+        return 1
+    } else {
+        2
+    }
+    3
+}
+fn unreachable_tail() -> int {
+    return 1
+    false
+}
