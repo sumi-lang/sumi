@@ -1,5 +1,6 @@
 use sumi_frontend::parse_source;
 use sumi_hir::{Analysis, Ty, Value, analyze};
+use sumi_test::check;
 
 fn analysis(source: &str) -> Analysis {
     analyze(parse_source(source.into()).unwrap())
@@ -186,6 +187,96 @@ fn shared() -> int {
     let mut machine = program.machine(program.function_named("shared").unwrap(), &[]);
     while machine.step().is_none() {}
     assert_eq!(machine.steps(), once);
+}
+
+#[test]
+fn returns_complete_the_current_call_in_source_order() {
+    let source = "fn callee() -> int { return 4\n 9 }
+fn direct() -> int { return 1\n 2 }
+fn nested() -> int { let unused = { return 3\n 0 }\n 8 }
+fn boundary() -> int = callee() + 1
+fn lazy_skips() -> int { _ = false && { return 6\n true }\n _ = true || { return 7\n false }\n 5 }
+fn lazy_takes() -> int { _ = true && { return 8\n true }\n 9 }
+fn eager() -> int { _ = { return 10\n 1 } + { return 11\n 2 }\n 12 }
+fn bare() { return\n _ = 1 }
+fn inferred() = { return 13 }";
+    for (name, value) in [
+        ("direct", int(1)),
+        ("nested", int(3)),
+        ("boundary", int(5)),
+        ("lazy_skips", int(5)),
+        ("lazy_takes", int(8)),
+        ("eager", int(10)),
+        ("bare", Value::Unit),
+        ("inferred", int(13)),
+    ] {
+        assert_eq!(run(source, name), value, "{name}");
+    }
+}
+
+#[test]
+fn return_guards_refine_the_continuation() {
+    let source = "fn divide(n: int) -> int { if n == 0 { return 0 }\n 10 / n }
+fn zero() -> int = divide(0)
+fn half() -> int = divide(2)
+fn count(n: int) -> int { if n == 0 { return 0 }\n 1 + count(n - 1) }
+fn three() -> int = count(3)";
+    let checked = analysis(source);
+    let program = checked.program().unwrap();
+    check::run(program);
+    for (name, expected) in [("zero", 0), ("half", 5), ("three", 3)] {
+        let function = program.function_named(name).unwrap();
+        assert_eq!(program.evaluate(function, &[]), int(expected));
+    }
+}
+
+#[test]
+fn completing_expressions_do_not_supply_fictitious_values() {
+    let source = "fn id(x: int) -> int = x
+fn argument() -> int { let unused = id({ return 1 })\n 2 }
+fn eager() -> int = 10 + { return 3 }
+fn lazy() -> int { _ = false && { return 4 }\n 5 }
+fn choose(b: bool) -> int = if b { return 6 } else { 7 }
+fn condition() -> bool = if { return false\n true } { true } else { false }
+fn condition_binding() -> bool {
+    let unreachable = if { return false\n true } { true } else { false }
+    true
+}";
+    for (name, value) in [("argument", int(1)), ("eager", int(3)), ("lazy", int(5))] {
+        assert_eq!(run(source, name), value, "{name}");
+    }
+    assert_eq!(run(source, "condition"), Value::Bool(false));
+    assert_eq!(run(source, "condition_binding"), Value::Bool(false));
+    let checked = analysis(source);
+    let program = checked.program().unwrap();
+    let choose = program.function_named("choose").unwrap();
+    assert_eq!(program.evaluate(choose, &[Value::Bool(true)]), int(6));
+    assert_eq!(program.evaluate(choose, &[Value::Bool(false)]), int(7));
+
+    let source = "fn both(b: bool) -> int = if b { return 8 } else { return 9 }
+fn lazy_and() -> int = { return 10 } && { return 11 }
+fn lazy_or() -> int = { return 12 } || { return 13 }
+fn outer(b: bool) -> int { return if b { return 14 } else { return 15 } }";
+    assert_eq!(run(source, "lazy_and"), int(10));
+    assert_eq!(run(source, "lazy_or"), int(12));
+    let checked = analysis(source);
+    let program = checked.program().unwrap();
+    for (name, values) in [("both", [8, 9]), ("outer", [14, 15])] {
+        let function = program.function_named(name).unwrap();
+        for (condition, expected) in [true, false].into_iter().zip(values) {
+            assert_eq!(
+                program.evaluate(function, &[Value::Bool(condition)]),
+                int(expected),
+                "{name}({condition})"
+            );
+        }
+    }
+
+    assert!(
+        analysis("fn bad() -> int = { return 1 } && { _ = true + false\n return 2 }")
+            .program()
+            .is_none()
+    );
 }
 
 #[test]

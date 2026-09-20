@@ -1,0 +1,39 @@
+fn default_unit() {
+    return 1
+}
+fn declared() -> int {
+    if true {
+        return false
+    }
+    return true
+    1
+}
+fn inferred() = {
+    if true {
+        return 1
+    }
+    false
+}
+fn unreachable() -> int {
+    return 1
+    absent + missing()
+    true + false
+}
+fn sequence_type() -> int {
+    if false {
+        return 1
+    }
+    true
+}
+fn branch_type() -> int {
+    let x: bool = if false {
+        return 1
+    } else {
+        2
+    }
+    3
+}
+fn unreachable_tail() -> int {
+    return 1
+    false
+}

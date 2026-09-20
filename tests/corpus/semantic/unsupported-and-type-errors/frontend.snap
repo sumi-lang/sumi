@@ -4,7 +4,6 @@ tree: see hir.snap
 fn unsupported() {
     let mut x = 1
     _ = x
-    return
 }
 fn closure() {
     let f = fn() = 1

@@ -283,7 +283,7 @@ fn explain_zero(
             Op::Join { then, else_ } => {
                 for region in std::iter::once(then).chain(else_) {
                     let region = graph.region(region);
-                    if typing.may(region.context).live() {
+                    if region.result_has_value() && typing.may(region.context).live() {
                         follow(&mut queue, region.result(), 1);
                     }
                 }
@@ -291,6 +291,23 @@ fn explain_zero(
             Op::Call(callee) => {
                 let function = graph.callable(callee).function;
                 follow(&mut queue, graph.run(function).result(), 1);
+            }
+            Op::Return => {
+                if graph.input_values(node)[0] && typing.may(inputs[1]).live() {
+                    follow(&mut queue, inputs[0], 0);
+                }
+            }
+            Op::Sequence => follow(&mut queue, inputs[1], 0),
+            Op::Result { .. } => {
+                if graph.input_values(node)[0] {
+                    follow(&mut queue, inputs[0], 0);
+                }
+                for &returned in &inputs[1..] {
+                    let returned_inputs = graph.inputs(returned);
+                    if graph.input_values(returned)[0] && typing.may(returned_inputs[1]).live() {
+                        follow(&mut queue, returned_inputs[0], 1);
+                    }
+                }
             }
             Op::Param { index, .. } => {
                 // Runs are contiguous in declaration order.
@@ -327,11 +344,8 @@ fn explain_zero(
             | Op::Entry
             | Op::Then
             | Op::Else
-            | Op::Return
-            | Op::Sequence
             | Op::Observe { .. }
-            | Op::After
-            | Op::Result { .. } => {}
+            | Op::After => {}
         }
     }
     labels.sort_by_key(|(range, _)| range.start());
@@ -376,7 +390,22 @@ fn complete(
         let run = graph.run(FunctionId::new(index));
         let complete = run.nodes().all(|node| match graph.node(node).op {
             // No value, so nothing to resolve.
-            Op::Entry | Op::Then | Op::Else | Op::Unused => true,
+            Op::Entry
+            | Op::Then
+            | Op::Else
+            | Op::Unused
+            | Op::Sequence
+            | Op::Observe { .. }
+            | Op::After => true,
+            _ if graph.input_values(node).iter().any(|&value| !value) => true,
+            Op::Join {
+                then,
+                else_: Some(else_),
+            } if !graph.region(then).result_has_value()
+                && !graph.region(else_).result_has_value() =>
+            {
+                true
+            }
             // A caller's demand can resolve the call without the callee resolving.
             Op::Call(callee) => functions[graph.callable(callee).function.index()]
                 .signature

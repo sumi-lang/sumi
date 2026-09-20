@@ -70,6 +70,59 @@ fn disagreeing_branches_are_undetermined_not_the_first_branch() {
 }
 
 #[test]
+fn completing_inputs_are_not_scalar_reads() {
+    for source in [
+        "fn f() -> int = 10 + { return 16 }",
+        "fn f() -> int = 10 + { return 16\n false }",
+        "fn f() -> int { _ = false && { return 4\n true }\n 5 }",
+        "fn f(b: bool) -> int = if b { return 8 } else { return 9 }",
+        "fn f() -> int = { return 10 } && { return 11 }",
+    ] {
+        clean(source);
+    }
+
+    assert_eq!(codes(&analyzed("fn f() -> int = 10 + {}")), [TYPE_MISMATCH]);
+}
+
+#[test]
+fn completing_conditions_do_not_hide_errors_inside_branches() {
+    let analysis = analyzed(
+        "fn arms() -> int = if { return 1 } { true + false } else { false + true }
+fn no_else() -> int = if { return 2 } { true + false }",
+    );
+    assert_eq!(codes(&analysis), [TYPE_MISMATCH; 6]);
+    assert!(
+        semantic(&analysis)
+            .iter()
+            .all(|diagnostic| diagnostic.message.as_ref() == "expected int, found bool")
+    );
+    check::semantics(&analysis);
+}
+
+#[test]
+fn forwarded_return_paths_keep_their_static_types() {
+    for (source, message) in [
+        (
+            "fn f() -> int { if false { return 1 }\n true }\nfn entry() -> int = f() + 1",
+            "expected int, found bool",
+        ),
+        (
+            "fn f() -> int { let x: bool = if false { return 1 } else { 2 }\n 3 }",
+            "expected bool, found int",
+        ),
+        (
+            "fn f() -> int { return 1\n false }",
+            "expected int, found bool",
+        ),
+    ] {
+        let analysis = analyzed(source);
+        assert_eq!(codes(&analysis), [TYPE_MISMATCH], "{source}");
+        assert_eq!(semantic(&analysis)[0].message.as_ref(), message, "{source}");
+        check::semantics(&analysis);
+    }
+}
+
+#[test]
 fn literals_of_any_size_fold_a_leading_minus() {
     for (expr, value) in [
         ("9223372036854775807", "9223372036854775807"),

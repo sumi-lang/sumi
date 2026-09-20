@@ -382,7 +382,7 @@ impl Gen<'_> {
         let depth = self.scope.len();
         let mut lines = Vec::new();
         for _ in 0..self.rng.between(1, 3) {
-            let line = match self.rng.below(6) {
+            let line = match self.rng.below(7) {
                 0..=2 => {
                     let kind = if self.rng.chance(3, 4) {
                         Kind::Int
@@ -410,12 +410,23 @@ impl Gen<'_> {
                 }
                 4 => {
                     let condition = self.bool(fuel);
-                    let value = self.expr(Kind::Int, fuel);
-                    format!("if {condition} {{ _ = {value} }}")
+                    if self.rng.chance(1, 2) {
+                        let result = self.functions[self.current].result;
+                        let value = self.expr(result, fuel);
+                        format!("if {condition} {{ return {value} }}")
+                    } else {
+                        let value = self.expr(Kind::Int, fuel);
+                        format!("if {condition} {{ _ = {value} }}")
+                    }
                 }
-                _ => {
+                5 => {
                     let value = self.expr(Kind::Bool, fuel);
                     format!("_ = {value}")
+                }
+                _ => {
+                    let result = self.functions[self.current].result;
+                    let value = self.expr(result, fuel);
+                    format!("return {value}")
                 }
             };
             lines.push(line);
@@ -604,14 +615,22 @@ proptest! {
 fn most_generated_programs_are_accepted_and_run_to_the_end() {
     let seeds = 400u64;
     let mut accepted = 0u64;
+    let mut returning = 0usize;
     let mut runs = Runs::default();
     for seed in 0..seeds {
-        if let Some(outcome) = runs_of(&program(seed)) {
+        let source = program(seed);
+        let source_returns = source.matches("return ").count();
+        if let Some(outcome) = runs_of(&source) {
             accepted += 1;
+            returning += usize::from(source_returns != 0 && outcome.finished != 0);
             runs.finished += outcome.finished;
             runs.abandoned += outcome.abandoned;
         }
     }
+    assert_ne!(
+        returning, 0,
+        "no accepted return-bearing program ran to the end"
+    );
     assert!(
         accepted * 10 >= seeds * 9,
         "only {accepted} of {seeds} generated programs were accepted"

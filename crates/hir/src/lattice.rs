@@ -121,6 +121,8 @@ pub(crate) enum Edge {
     Call(Claim),
     /// An unannotated `let` from its initializer.
     Bind,
+    /// Carries type evidence but no abstract values.
+    Types,
     Values,
     Exactly(bool),
     /// One operand of `==` or `!=` typing the other.
@@ -138,7 +140,7 @@ impl Edge {
 }
 
 /// A flow from two providers. The second of `Binary`, `Lazy`, and `Refine` is the other operand;
-/// of `Branch`, `Then`, `Else`, and `Argument`, the context that gates them.
+/// of `Branch`, `Forward`, `Then`, `Else`, and `Argument`, the context that gates them.
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Pair {
     Refine {
@@ -147,6 +149,8 @@ pub(crate) enum Pair {
         sense: bool,
     },
     Branch,
+    Forward,
+    Outcome,
     Binary(BinaryOp),
     Lazy {
         and: bool,
@@ -159,7 +163,7 @@ pub(crate) enum Pair {
 impl Pair {
     /// Whether the consumer is one class with its first provider in the replay.
     pub fn aliases(self) -> bool {
-        matches!(self, Self::Refine { .. })
+        matches!(self, Self::Refine { .. } | Self::Forward)
     }
 }
 
@@ -206,7 +210,7 @@ impl Lattice for Product {
     /// Only values climb: type claims are finite, so `Peer` carries nothing.
     fn carries(edge: &Edge) -> Carry {
         match edge {
-            Edge::Peer | Edge::Not | Edge::Enter | Edge::Exactly(_) => Carry::Nothing,
+            Edge::Peer | Edge::Types | Edge::Not | Edge::Enter | Edge::Exactly(_) => Carry::Nothing,
             Edge::Neg => Carry::Grows,
             Edge::Call(_) | Edge::Bind | Edge::Values => Carry::Passes,
         }
@@ -219,20 +223,23 @@ impl Lattice for Product {
             Pair::Binary(BinaryOp::Arith(_)) => [Carry::Grows; 2],
             Pair::Binary(BinaryOp::Cmp(_)) => [Carry::Nothing; 2],
             Pair::Refine { .. } => [Carry::Passes; 2],
-            Pair::Branch | Pair::Argument => [Carry::Passes, Carry::Nothing],
+            Pair::Branch | Pair::Forward | Pair::Outcome | Pair::Argument => {
+                [Carry::Passes, Carry::Nothing]
+            }
         }
     }
 
     fn transfer(&self, edge: &Edge, cyclic: bool, cx: &Thresholds) -> Self {
         let types = match *edge {
             Edge::Call(claim) => self.types.imported(claim),
-            Edge::Bind | Edge::Exactly(_) | Edge::Peer => self.types,
+            Edge::Bind | Edge::Types | Edge::Exactly(_) | Edge::Peer => self.types,
             Edge::Values | Edge::Neg | Edge::Not | Edge::Enter => Evidence::NONE,
         };
         let values = &self.values;
         let values = match *edge {
             Edge::Call(_) => rounded(values, cyclic, cx),
             Edge::Bind | Edge::Values => values.clone(),
+            Edge::Types => May::NONE,
             Edge::Peer => May::NONE,
             Edge::Neg => {
                 let Ok(negated) = values.neg();
@@ -250,7 +257,8 @@ impl Lattice for Product {
 
     fn combine(&self, pair: &Pair, other: &Self, cyclic: bool, cx: &Thresholds) -> Self {
         let types = match *pair {
-            Pair::Refine { .. } | Pair::Branch => self.types,
+            Pair::Refine { .. } | Pair::Branch | Pair::Forward => self.types,
+            Pair::Outcome => Evidence::NONE,
             Pair::Binary(_) | Pair::Lazy { .. } | Pair::Then | Pair::Else | Pair::Argument => {
                 Evidence::NONE
             }
@@ -272,7 +280,7 @@ impl Lattice for Product {
             } => values.refine(op, local_is_lhs, sense, second),
             Pair::Then => May::of_unit(values.bools.may_true() && second.live()),
             Pair::Else => May::of_unit(values.bools.may_false() && second.live()),
-            Pair::Branch => {
+            Pair::Branch | Pair::Forward | Pair::Outcome => {
                 if second.live() {
                     values.clone()
                 } else {
@@ -396,9 +404,11 @@ mod tests {
             values: May::int(&1.into()),
         };
         let live = values(May::unit());
-        for edge in [Edge::Bind, Edge::Exactly(true), Edge::Peer] {
+        for edge in [Edge::Bind, Edge::Types, Edge::Exactly(true), Edge::Peer] {
             assert_eq!(int.transfer(&edge, false, &cx).types, int.types);
         }
+        assert_eq!(Product::carries(&Edge::Types), Carry::Nothing);
+        assert_eq!(int.transfer(&Edge::Types, false, &cx).values, May::NONE);
         assert_eq!(
             int.combine(&Pair::Branch, &Product::bottom(), false, &cx)
                 .types,
@@ -409,6 +419,10 @@ mod tests {
         }
         assert_eq!(
             int.combine(&Pair::Argument, &live, false, &cx).types,
+            Evidence::NONE
+        );
+        assert_eq!(
+            int.combine(&Pair::Outcome, &live, false, &cx).types,
             Evidence::NONE
         );
         let called = int.transfer(&Edge::Call(Claim::local(7)), false, &cx);
