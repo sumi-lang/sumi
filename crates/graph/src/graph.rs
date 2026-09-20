@@ -161,7 +161,8 @@ pub enum Op {
     Return,
     /// Evaluates its first input for control, then yields its second.
     Sequence,
-    /// Observes only the selected region's control projection and yields unit if it falls through.
+    /// The inputs are the condition and analysis context. Observes only the selected region's
+    /// control projection and yields unit if it falls through.
     Observe {
         then: Option<RegionId>,
         else_: Option<RegionId>,
@@ -353,6 +354,11 @@ impl GraphBuilder {
 
     pub fn node(&self, id: NodeId) -> &Node {
         &self.nodes[id.index()]
+    }
+
+    pub fn inputs(&self, id: NodeId) -> &[NodeId] {
+        let node = &self.nodes[id.index()];
+        &self.inputs[node.inputs.start as usize..node.inputs.end as usize]
     }
 
     /// Each input is a node and where it is read.
