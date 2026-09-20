@@ -21,3 +21,7 @@ fn mismatch() -> int {
     x = true
     x
 }
+fn damaged_value() {
+    let mut x = 1
+    x = absent
+}

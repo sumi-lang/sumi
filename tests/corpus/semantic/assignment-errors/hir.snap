@@ -1,6 +1,6 @@
 file: rejected
 frontend errors: 0 (see frontend.snap)
-semantic errors: 6
+semantic errors: 7
 
 fn target@0..14 () -> unit ∈ unit
   result: copy : unit @0..14
@@ -55,6 +55,15 @@ fn mismatch@246..307 () -> int ∈ ∅
         value: bool true : ? @295..299
       tail: read x@281..282 : ?
 
+fn damaged_value@308..363 () -> unit ∈ unit
+  result: copy : unit @308..363
+    value:
+      let x@341..342: int @333..346
+        initializer: int 1 : int @345..346
+      assignment: assign x@341..342 : ? @351..361
+        value: hole : ? @355..361
+      tail: unit : unit @327..363
+
 == semantic diagnostics ==
 error[semantic/immutable-assignment]: cannot assign to immutable local `x`
   primary @56..57
@@ -71,3 +80,5 @@ error[semantic/unknown-name]: unknown name `missing`
 error[semantic/type-mismatch]: expected int, found bool
   primary @295..299
   secondary @281..282: declared here
+error[semantic/unknown-name]: unknown name `absent`
+  primary @355..361
