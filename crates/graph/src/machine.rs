@@ -32,7 +32,7 @@ enum Control {
         from: NodeId,
         and: bool,
     },
-    Return(NodeId),
+    ResumeCaller(NodeId),
 }
 
 fn bind(slots: &mut [Option<Value>], run: &Run, args: impl IntoIterator<Item = Value>) {
@@ -301,7 +301,7 @@ impl<'a> Machine<'a> {
                 }
                 let caller = self.frames.last().expect("a call has a caller");
                 let (caller_base, caller_run) = (caller.base, caller.run);
-                self.control.push(Control::Return(node));
+                self.control.push(Control::ResumeCaller(node));
                 let base = self.open(function);
                 let graph = self.graph;
                 let (callers, callee) = self.slots.split_at_mut(base);
@@ -312,7 +312,7 @@ impl<'a> Machine<'a> {
                 });
                 bind(callee, graph.run(function), args);
             }
-            Control::Return(node) => {
+            Control::ResumeCaller(node) => {
                 let frame = self.frames.pop().expect("a return has a frame to leave");
                 let value = self.slots[frame.base + frame.run.slot(frame.run.result())]
                     .take()
