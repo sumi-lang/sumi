@@ -402,6 +402,13 @@ impl LocalId {
 struct Local {
     declaration: NodeId,
     current: NodeId,
+    mutable: bool,
+}
+
+struct RegionState {
+    versions: Box<[NodeId]>,
+    values: Box<[NodeId]>,
+    context: NodeId,
 }
 
 /// A `let` binds at `Work::Finish`, after its initializer, so the initializer reads any outer
@@ -410,6 +417,10 @@ type Scope<'s> = NameMap<'s, LocalId>;
 
 enum Finish {
     Let(Clean<ast::LetStmt>),
+    Assign {
+        assignment: Clean<ast::AssignStmt>,
+        target: Option<LocalId>,
+    },
     Discard(Clean<ast::DiscardStmt>),
     NameRef(Clean<ast::NameRef>),
     Literal(Clean<ast::LiteralExpr>),
@@ -448,14 +459,19 @@ enum Work {
         branch: Clean<ast::IfExpr>,
         then: RegionId,
         else_: Option<RegionId>,
+        baseline: Box<[NodeId]>,
+        contexts: [NodeId; 2],
     },
     Lazy {
         expr: LazyOp,
         rhs: RegionId,
+        baseline: Box<[NodeId]>,
+        contexts: [NodeId; 2],
     },
     Push {
         region: RegionId,
         guard: (NodeIdx, bool),
+        versions: Box<[NodeId]>,
     },
     Pop {
         region: RegionId,
@@ -507,6 +523,8 @@ struct Builder<'a, 's> {
     scopes: Vec<Scope<'s>>,
     depth: usize,
     locals: Vec<Local>,
+    version_stack: Vec<Box<[NodeId]>>,
+    region_states: Vec<Option<RegionState>>,
     /// The local and underlying version read by each name reference.
     reads_of: Vec<Option<(LocalId, NodeId)>>,
     work: Vec<Work>,
@@ -545,6 +563,8 @@ impl<'a, 's> Builder<'a, 's> {
             scopes: Vec::new(),
             depth: 0,
             locals: Vec::new(),
+            version_stack: Vec::new(),
+            region_states: Vec::new(),
             reads_of: vec![None; nodes],
             work: Vec::new(),
             inputs: Vec::new(),
@@ -562,6 +582,8 @@ impl<'a, 's> Builder<'a, 's> {
         self.regions.clear();
         self.refinements.clear();
         self.locals.clear();
+        self.version_stack.clear();
+        self.region_states.clear();
         self.returns.clear();
         let header = &self.headers[owner];
         let item_node = header.item;
@@ -574,7 +596,7 @@ impl<'a, 's> Builder<'a, 's> {
             let node = self.push(param.node, Op::Param { index, ty }, &[], name);
             self.failed |= ty.is_none();
             if let Some((name, _)) = param.name {
-                self.bind(name, node);
+                self.bind(name, node, false);
             } else {
                 self.failed = true;
             }
@@ -599,8 +621,15 @@ impl<'a, 's> Builder<'a, 's> {
                         branch,
                         then,
                         else_,
-                    } => self.join(branch, then, else_),
-                    Work::Lazy { expr, rhs } => self.lazy(expr, rhs),
+                        baseline,
+                        contexts,
+                    } => self.join(branch, then, else_, &baseline, contexts),
+                    Work::Lazy {
+                        expr,
+                        rhs,
+                        baseline,
+                        contexts,
+                    } => self.lazy(expr, rhs, &baseline, contexts),
                     Work::Enter(node) => {
                         self.enter(node, &mut work);
                         continue;
@@ -625,7 +654,14 @@ impl<'a, 's> Builder<'a, 's> {
                         self.rhs(expr, &mut work);
                         continue;
                     }
-                    Work::Push { region, guard } => {
+                    Work::Push {
+                        region,
+                        guard,
+                        versions,
+                    } => {
+                        let parent = self.versions(versions.len(), false);
+                        self.restore_versions(&versions);
+                        self.version_stack.push(parent);
                         self.regions.push((
                             region,
                             self.refinements.len(),
@@ -636,7 +672,9 @@ impl<'a, 's> Builder<'a, 's> {
                         continue;
                     }
                     Work::Pop { region, root } => {
+                        self.advance(root);
                         let result = self.node_of(root);
+                        let fallthrough = self.context();
                         self.graph.close_with_control(
                             region,
                             result,
@@ -647,6 +685,25 @@ impl<'a, 's> Builder<'a, 's> {
                             .regions
                             .pop()
                             .expect("a region opened before it closes");
+                        let count = self
+                            .version_stack
+                            .last()
+                            .expect("a region fork saves its parent versions")
+                            .len();
+                        let state = RegionState {
+                            versions: self.versions(count, false),
+                            values: self.versions(count, true),
+                            context: fallthrough,
+                        };
+                        if self.region_states.len() <= region.index() {
+                            self.region_states.resize_with(region.index() + 1, || None);
+                        }
+                        self.region_states[region.index()] = Some(state);
+                        let parent = self
+                            .version_stack
+                            .pop()
+                            .expect("a region fork saves its parent versions");
+                        self.restore_versions(&parent);
                         self.refinements.truncate(keep);
                         continue;
                     }
@@ -841,14 +898,70 @@ impl<'a, 's> Builder<'a, 's> {
     fn close_scope(&mut self) {
         self.depth -= 1;
     }
-    fn bind(&mut self, name: &'s str, node: NodeId) -> LocalId {
+    fn bind(&mut self, name: &'s str, node: NodeId, mutable: bool) -> LocalId {
         let id = LocalId(u32::try_from(self.locals.len()).expect("local count fits u32"));
         self.locals.push(Local {
             declaration: node,
             current: node,
+            mutable,
         });
         self.scopes[self.depth - 1].insert(name, id);
         id
+    }
+    fn versions(&self, count: usize, refined: bool) -> Box<[NodeId]> {
+        (0..count)
+            .map(|index| {
+                let local = LocalId(u32::try_from(index).expect("local count fits u32"));
+                if refined {
+                    self.current(local)
+                } else {
+                    self.locals[index].current
+                }
+            })
+            .collect()
+    }
+    fn restore_versions(&mut self, versions: &[NodeId]) {
+        for (local, &version) in self.locals.iter_mut().zip(versions) {
+            local.current = version;
+        }
+    }
+    fn guarded_versions(
+        &mut self,
+        condition: NodeIdx,
+        sense: bool,
+        baseline: &[NodeId],
+    ) -> Box<[NodeId]> {
+        self.restore_versions(baseline);
+        let keep = self.refinements.len();
+        self.refine(condition, sense);
+        let values = self.versions(baseline.len(), true);
+        self.refinements.truncate(keep);
+        values
+    }
+    fn merge_versions(&mut self, condition: NodeIdx, states: [&RegionState; 2], at: TextRange) {
+        let condition = self.input(condition);
+        for index in 0..states[0].values.len() {
+            let [true_value, false_value] = [states[0].values[index], states[1].values[index]];
+            if states[0].versions[index] == states[1].versions[index] {
+                continue;
+            }
+            let declaration = self.locals[index].declaration;
+            let inputs = [
+                condition,
+                (true_value, self.graph.node(true_value).origin),
+                (false_value, self.graph.node(false_value).origin),
+            ];
+            let phi = self.place(
+                Op::Phi {
+                    declaration,
+                    contexts: [states[0].context, states[1].context],
+                },
+                &inputs,
+                at,
+                None,
+            );
+            self.locals[index].current = phi;
+        }
     }
     fn lookup(&self, name: &str) -> Option<LocalId> {
         // An empty scope is common and would cost a hash to find nothing in.
@@ -1008,18 +1121,23 @@ impl<'a, 's> Builder<'a, 's> {
         let else_node = branch.else_branch(tree).map(|e| e.node());
         let parent = self.context();
         let condition = self.input(cond);
-        let then = {
-            let context = self.context_at(then_node, Op::Then, condition, parent);
-            self.graph.open(context)
-        };
-        let else_ = else_node.map(|else_node| {
-            let context = self.context_at(else_node, Op::Else, condition, parent);
-            self.graph.open(context)
-        });
+        let then_context = self.context_at(then_node, Op::Then, condition, parent);
+        let else_context = self.context_at(
+            else_node.unwrap_or(branch.node()),
+            Op::Else,
+            condition,
+            parent,
+        );
+        let contexts = [then_context, else_context];
+        let then = self.graph.open(then_context);
+        let else_ = else_node.map(|_| self.graph.open(else_context));
+        let baseline = self.versions(self.locals.len(), false);
         work.push(Work::Join {
             branch,
             then,
             else_,
+            baseline: baseline.clone(),
+            contexts,
         });
         if let (Some(else_node), Some(region)) = (else_node, else_) {
             work.push(Work::Pop {
@@ -1030,6 +1148,7 @@ impl<'a, 's> Builder<'a, 's> {
             work.push(Work::Push {
                 region,
                 guard: (cond, false),
+                versions: baseline.clone(),
             });
         }
         work.push(Work::Pop {
@@ -1040,6 +1159,7 @@ impl<'a, 's> Builder<'a, 's> {
         work.push(Work::Push {
             region: then,
             guard: (cond, true),
+            versions: baseline,
         });
     }
     fn rhs(&mut self, expr: LazyOp, work: &mut Vec<Work>) {
@@ -1048,16 +1168,26 @@ impl<'a, 's> Builder<'a, 's> {
         self.advance(lhs);
         let rhs = expr.expr.rhs().node();
         let parent = self.context();
-        let op = if and { Op::Then } else { Op::Else };
         let left = self.input(lhs);
-        let context = self.context_at(rhs, op, left, parent);
+        let contexts = [
+            self.context_at(rhs, Op::Then, left, parent),
+            self.context_at(rhs, Op::Else, left, parent),
+        ];
+        let context = contexts[usize::from(!and)];
         let region = self.graph.open(context);
-        work.push(Work::Lazy { expr, rhs: region });
+        let baseline = self.versions(self.locals.len(), false);
+        work.push(Work::Lazy {
+            expr,
+            rhs: region,
+            baseline: baseline.clone(),
+            contexts,
+        });
         work.push(Work::Pop { region, root: rhs });
         work.push(Work::Enter(rhs));
         work.push(Work::Push {
             region,
             guard: (lhs, and),
+            versions: baseline,
         });
     }
     fn unsupported(&mut self, node: NodeIdx) {
@@ -1092,13 +1222,13 @@ impl<'a, 's> Builder<'a, 's> {
         };
         match clean {
             CleanStmt::LetStmt(binding) => {
-                if binding.mutable() {
-                    self.unsupported(node);
-                    self.damaged_let(binding.view());
-                    return;
-                }
                 work.push(Work::Finish(Finish::Let(binding)));
                 work.push(Work::Enter(binding.initializer().node()));
+            }
+            CleanStmt::AssignStmt(assignment) => {
+                let target = self.assignment_target(assignment);
+                work.push(Work::Finish(Finish::Assign { assignment, target }));
+                work.push(Work::Enter(assignment.value().node()));
             }
             CleanStmt::Expr(CleanExpr::Block(_)) => self.block_statements(node, work),
             CleanStmt::DiscardStmt(discard) => {
@@ -1170,10 +1300,53 @@ impl<'a, 's> Builder<'a, 's> {
                     work.push(Work::Enter(value.node()));
                 }
             }
-            CleanStmt::Expr(CleanExpr::ClosureExpr(_)) | CleanStmt::AssignStmt(_) => {
-                self.unsupported(node)
-            }
+            CleanStmt::Expr(CleanExpr::ClosureExpr(_)) => self.unsupported(node),
         }
+    }
+    fn assignment_target(&mut self, assignment: Clean<ast::AssignStmt>) -> Option<LocalId> {
+        let target = self.source.peel(assignment.target());
+        let ast::Expr::NameRef(name) = target else {
+            self.source.error(
+                target.node(),
+                codes::INVALID_ASSIGNMENT_TARGET,
+                "assignment target must be a mutable local name",
+                None,
+            );
+            return None;
+        };
+        let text = self.source.text(name.node());
+        let Some(local) = self.lookup(text) else {
+            if self.names.contains_key(text) {
+                self.source.error(
+                    name.node(),
+                    codes::INVALID_ASSIGNMENT_TARGET,
+                    format!("function `{text}` is not assignable"),
+                    None,
+                );
+            } else {
+                self.source.error(
+                    name.node(),
+                    codes::UNKNOWN_NAME,
+                    format!("unknown name `{text}`"),
+                    None,
+                );
+            }
+            return None;
+        };
+        if !self.locals[local.index()].mutable {
+            let declaration = self.locals[local.index()].declaration;
+            self.source.error(
+                name.node(),
+                codes::IMMUTABLE_ASSIGNMENT,
+                format!("cannot assign to immutable local `{text}`"),
+                self.graph
+                    .node(declaration)
+                    .name
+                    .map(|range| (range, "declared here")),
+            );
+            return None;
+        }
+        Some(local)
     }
     fn return_(&mut self, return_: Clean<ast::ReturnStmt>) -> Option<()> {
         let node = return_.node();
@@ -1218,7 +1391,7 @@ impl<'a, 's> Builder<'a, 's> {
                 &[],
                 Some(self.source.range(name_node)),
             );
-            self.bind(name, hole);
+            self.bind(name, hole, binding.mutable(tree, self.source.lexed()));
         }
         self.failed = true;
     }
@@ -1361,7 +1534,7 @@ impl<'a, 's> Builder<'a, 's> {
                     _ => Op::Copy { declared },
                 };
                 let copy = self.push(binding.node(), op, &[value], Some(self.source.range(name)));
-                self.bind(self.source.text(name), copy);
+                self.bind(self.source.text(name), copy, binding.mutable());
                 let initializer = binding.initializer().node();
                 self.controls[binding.node().to_usize()] = self.control(initializer);
                 let form = self.form(initializer);
@@ -1372,6 +1545,35 @@ impl<'a, 's> Builder<'a, 's> {
                 if form.completes {
                     self.completes_input(copy, 0);
                     return Some(());
+                }
+            }
+            Finish::Assign { assignment, target } => {
+                let node = assignment.node();
+                let value = assignment.value().node();
+                let input = self.input(value);
+                let assigned = match target {
+                    Some(local) => self.push(
+                        node,
+                        Op::Assign {
+                            declaration: self.locals[local.index()].declaration,
+                        },
+                        &[input],
+                        None,
+                    ),
+                    None => self.push(node, Op::Hole, &[input], None),
+                };
+                self.controls[node.to_usize()] = self.control(value);
+                let form = self.form(value);
+                self.bottoms[node.to_usize()] = form.completes;
+                if form.completes {
+                    self.completes_input(assigned, 0);
+                }
+                let local = target?;
+                if !form.valid || !self.lowered.typed[assigned.index()] {
+                    return None;
+                }
+                if !form.completes {
+                    self.locals[local.index()].current = assigned;
                 }
             }
             Finish::Discard(discard) => {
@@ -1506,9 +1708,18 @@ impl<'a, 's> Builder<'a, 's> {
         }
         Some(())
     }
-    fn lazy(&mut self, expr: LazyOp, rhs: RegionId) -> Option<()> {
+    fn lazy(
+        &mut self,
+        expr: LazyOp,
+        rhs: RegionId,
+        baseline: &[NodeId],
+        contexts: [NodeId; 2],
+    ) -> Option<()> {
         let lhs = expr.expr.lhs().node();
         let rhs_node = expr.expr.rhs().node();
+        let state = self.region_states[rhs.index()]
+            .take()
+            .expect("a closed RHS has local state");
         let lhs_input = self.input(lhs);
         let result = self.node_of(rhs_node);
         let rhs_form = self.form(rhs_node);
@@ -1554,6 +1765,17 @@ impl<'a, 's> Builder<'a, 's> {
             self.refine(lhs, !expr.and);
         } else {
             self.typed(rhs_node)?;
+            let skipped = RegionState {
+                versions: baseline.into(),
+                values: self.guarded_versions(lhs, !expr.and, baseline),
+                context: contexts[usize::from(expr.and)],
+            };
+            let states = if expr.and {
+                [&state, &skipped]
+            } else {
+                [&skipped, &state]
+            };
+            self.merge_versions(lhs, states, self.source.range(expr.expr.node()));
         }
         Some(())
     }
@@ -1562,11 +1784,26 @@ impl<'a, 's> Builder<'a, 's> {
         branch: Clean<ast::IfExpr>,
         then: RegionId,
         else_: Option<RegionId>,
+        baseline: &[NodeId],
+        contexts: [NodeId; 2],
     ) -> Option<()> {
         let tree = self.source.tree;
         let cond = branch.condition().node();
         let then_node = branch.then_branch().node();
         let else_node = branch.else_branch(tree).map(|e| e.node());
+        let then_state = self.region_states[then.index()]
+            .take()
+            .expect("a closed branch has local state");
+        let false_state = match else_ {
+            Some(else_) => self.region_states[else_.index()]
+                .take()
+                .expect("a closed branch has local state"),
+            None => RegionState {
+                versions: baseline.into(),
+                values: self.guarded_versions(cond, false, baseline),
+                context: contexts[1],
+            },
+        };
         let condition = self.input(cond);
         let mut results = vec![self.node_of(then_node)];
         results.extend(else_node.map(|else_node| self.node_of(else_node)));
@@ -1607,6 +1844,11 @@ impl<'a, 's> Builder<'a, 's> {
         if cond_form.completes || (then_form.completes && else_form.completes) {
             self.bottoms[branch.node().to_usize()] = true;
         } else {
+            self.merge_versions(
+                cond,
+                [&then_state, &false_state],
+                self.source.range(branch.node()),
+            );
             if then_form.scalar() {
                 self.typed(then_node)?;
             } else {

@@ -1,6 +1,6 @@
 file: rejected
 frontend errors: 2 (see frontend.snap)
-semantic errors: 5
+semantic errors: 4
 
 fn damaged@0..100 () -> unit ∈ ∅
   result: copy : unit @0..100
@@ -31,10 +31,10 @@ fn rebound@179..314 () -> unit ∈ unit
     value:
       let x@202..203: bool @198..210
         initializer: bool true : bool @206..210
-      discard: hole : ? @215..228
-      let x@223..224: hole : ? @215..228
-      discard: eager + : ? @237..242
-        lhs: read x@223..224 : ?
+      let x@223..224: int @215..228
+        initializer: int 1 : int @227..228
+      discard: eager + : int @237..242
+        lhs: read x@223..224 : int
         rhs: int 1 : int @241..242
       let x@251..252: hole : ? @247..265
         part[0]: int 1 : int @264..265
@@ -53,8 +53,6 @@ error[semantic/unknown-name]: unknown name `missing`
   primary @91..98
 error[semantic/unknown-type]: unknown type `mystery`
   primary @155..162
-error[semantic/unsupported]: construct is not supported by scalar checking
-  primary @215..228
 error[semantic/unknown-type]: unknown type `mystery`
   primary @254..261
 error[semantic/unknown-name]: unknown name `absent`

@@ -1,0 +1,12 @@
+file: accepted
+fn sequence = 9 (steps 9, depth 1 of at most 1)
+fn choose: takes arguments, not run
+fn choices = 32 (steps 16, depth 2 of at most 2)
+fn optional: takes arguments, not run
+fn optionals = 45 (steps 16, depth 2 of at most 2)
+fn lazy: takes arguments, not run
+fn lazies = 76 (steps 17, depth 2 of at most 2)
+fn guarded: takes arguments, not run
+fn guardeds = 15 (steps 23, depth 2 of at most 2)
+fn returning: takes arguments, not run
+fn returns = 57 (steps 18, depth 2 of at most 2)

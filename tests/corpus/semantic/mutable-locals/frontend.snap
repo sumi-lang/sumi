@@ -1,0 +1,64 @@
+tree: see hir.snap
+
+== formatted ==
+fn sequence() -> int {
+    let mut x = 1
+    x = x + 2
+    {
+        x = x * 3
+    }
+    x
+}
+fn choose(flag: bool) -> int {
+    let mut x = 1
+    _ = if flag {
+        x = 2
+    } else {
+        x = 3
+    }
+    x
+}
+fn choices() -> int = choose(false) * 10 + choose(true)
+fn optional(flag: bool) -> int {
+    let mut x = 4
+    _ = if flag {
+        x = 5
+    }
+    x
+}
+fn optionals() -> int = optional(false) * 10 + optional(true)
+fn lazy(flag: bool) -> int {
+    let mut x = 1
+    _ =
+        flag
+            && {
+                x = 6
+                true
+            }
+    _ =
+        flag
+            || {
+                x = 7
+                false
+            }
+    x
+}
+fn lazies() -> int = lazy(false) * 10 + lazy(true)
+fn guarded(n: int) -> int {
+    let mut x = n
+    _ = if x == 0 {
+        x = 1
+    }
+    10 / x
+}
+fn guardeds() -> int = guarded(0) + guarded(2)
+fn returning(flag: bool) -> int {
+    let mut x = 0
+    _ = if flag {
+        return 7
+    } else {
+        x = 2
+    }
+    10 / x
+}
+fn returns() -> int = returning(false) * 10 + returning(true)

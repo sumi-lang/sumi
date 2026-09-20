@@ -1,0 +1,73 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 6
+
+fn target@0..14 () -> unit ∈ unit
+  result: copy : unit @0..14
+    value: unit : unit @12..14
+
+fn immutable_local@15..63 () -> unit ∈ unit
+  result: copy : unit @15..63
+    value:
+      let x@46..47: int @42..51
+        initializer: int 1 : int @50..51
+      discard: hole : ? @56..61
+        part[0]: int 2 : int @60..61
+      tail: unit : unit @36..63
+
+fn immutable_param@64..104 (int ∈ ∅) -> unit ∈ ∅
+  param x@83..84: int
+  result: copy : unit @64..104
+    value:
+      discard: hole : ? @97..102
+        part[0]: int 2 : int @101..102
+      tail: unit : unit @91..104
+
+fn expression_target@105..165 () -> unit ∈ unit
+  result: copy : unit @105..165
+    value:
+      let x@142..143: int @134..147
+        initializer: int 1 : int @146..147
+      discard: hole : ? @152..163
+        part[0]: int 2 : int @162..163
+      tail: unit : unit @128..165
+
+fn function_target@166..205 () -> unit ∈ unit
+  result: copy : unit @166..205
+    value:
+      discard: hole : ? @193..203
+        part[0]: int 1 : int @202..203
+      tail: unit : unit @187..205
+
+fn unknown_target@206..245 () -> unit ∈ unit
+  result: copy : unit @206..245
+    value:
+      discard: hole : ? @232..243
+        part[0]: int 1 : int @242..243
+      tail: unit : unit @226..245
+
+fn mismatch@246..307 () -> int ∈ ∅
+  result: copy : int @263..266
+    value:
+      let x@281..282: ? @273..286
+        initializer: int 1 : int @285..286
+      assignment: assign x@281..282 : ? @291..299
+        value: bool true : ? @295..299
+      tail: read x@281..282 : ?
+
+== semantic diagnostics ==
+error[semantic/immutable-assignment]: cannot assign to immutable local `x`
+  primary @56..57
+  secondary @46..47: declared here
+error[semantic/immutable-assignment]: cannot assign to immutable local `x`
+  primary @97..98
+  secondary @83..84: declared here
+error[semantic/invalid-assignment-target]: assignment target must be a mutable local name
+  primary @153..158
+error[semantic/invalid-assignment-target]: function `target` is not assignable
+  primary @193..199
+error[semantic/unknown-name]: unknown name `missing`
+  primary @232..239
+error[semantic/type-mismatch]: expected int, found bool
+  primary @295..299
+  secondary @281..282: declared here

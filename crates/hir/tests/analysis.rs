@@ -315,10 +315,9 @@ fn token_gaps_ignore_trivia_without_losing_semantics() {
     );
     assert!(matches!(op(&a, value(&a, 3)), Op::Not));
 
-    let a = analyzed("fn f() = { let\tmut\tvalue = 3\n value }");
+    let a = clean("fn f() = { let\tmut\tvalue = 3\n value }");
     assert!(a.parsed().diagnostics().is_empty());
-    assert_eq!(codes(&a), [UNSUPPORTED]);
-    assert!(!a.functions()[0].complete());
+    assert_eq!(a.functions()[0].signature().unwrap().result, Ty::Int);
 }
 
 #[test]

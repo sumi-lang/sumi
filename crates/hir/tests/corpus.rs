@@ -273,6 +273,9 @@ fn dump_region(
                 let role = format!("let {}", named(analysis, node));
                 dump_definition(analysis, shape, &role, node, depth + 1, out);
             }
+            (None, Op::Assign { .. }) => {
+                dump_definition(analysis, shape, "assignment", node, depth + 1, out)
+            }
             (None, Op::Unused) => {
                 let value = graph.inputs(node)[0];
                 dump_node(analysis, shape, "discard", value, depth + 1, out);
@@ -302,7 +305,7 @@ fn guards(analysis: &Analysis, mut node: NodeId) -> (Vec<String>, NodeId) {
                 guards.push(format!("is {value}"));
                 node = graph.inputs(node)[0];
             }
-            Op::Assign { declaration } | Op::Phi { declaration, .. } => {
+            Op::Assign { declaration } => {
                 return (guards, declaration);
             }
             _ => return (guards, node),
@@ -420,8 +423,13 @@ fn dump_definition(
         }
         Op::Phi { .. } => {
             dump_node(analysis, shape, "condition", inputs[0], child, out);
-            dump_node(analysis, shape, "then", inputs[1], child, out);
-            dump_node(analysis, shape, "else", inputs[2], child, out);
+            for (role, &input) in [("then", &inputs[1]), ("else", &inputs[2])] {
+                if matches!(graph.node(input).op, Op::Assign { .. } | Op::Phi { .. }) {
+                    dump_definition(analysis, shape, role, input, child, out);
+                } else {
+                    dump_node(analysis, shape, role, input, child, out);
+                }
+            }
         }
         Op::Unused => unreachable!("nothing reads a statement; dump_region discards its input"),
         Op::Neg | Op::Not => dump_node(analysis, shape, "operand", inputs[0], child, out),

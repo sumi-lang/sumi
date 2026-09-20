@@ -19,6 +19,12 @@ sumi_frontend::codes! {
     /// A call whose argument count differs from the callee's parameter count.
     ARITY = "arity";
 
+    /// An assignment whose target is not a local name.
+    INVALID_ASSIGNMENT_TARGET = "invalid-assignment-target";
+
+    /// An assignment to a parameter or a local declared without `mut`.
+    IMMUTABLE_ASSIGNMENT = "immutable-assignment";
+
     /// An expression of one type where another is required.
     TYPE_MISMATCH = "type-mismatch";
 
