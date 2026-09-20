@@ -326,7 +326,12 @@ fn explain_zero(
             | Op::Exactly(_)
             | Op::Entry
             | Op::Then
-            | Op::Else => {}
+            | Op::Else
+            | Op::Return
+            | Op::Sequence
+            | Op::Observe { .. }
+            | Op::After
+            | Op::Result { .. } => {}
         }
     }
     labels.sort_by_key(|(range, _)| range.start());

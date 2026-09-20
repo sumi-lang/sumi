@@ -157,6 +157,22 @@ pub enum Op {
         then: RegionId,
         else_: Option<RegionId>,
     },
+    /// Completes the current function with its first input; the second is its analysis context.
+    Return,
+    /// Evaluates its first input for control, then yields its second.
+    Sequence,
+    /// The inputs are the condition and analysis context. Observes only the selected region's
+    /// control projection and yields unit if it falls through.
+    Observe {
+        then: Option<RegionId>,
+        else_: Option<RegionId>,
+    },
+    /// A continuation context after the control in its first input, inside its second input.
+    After,
+    /// The first input is the ordinary body result; the rest are explicit returns.
+    Result {
+        declared: Option<(Ty, TextRange)>,
+    },
     /// The inputs are the arguments as written, which may not match the callee's arity.
     Call(Callee),
 }
@@ -174,6 +190,8 @@ pub struct Region {
     pub context: NodeId,
     nodes: Range<u32>,
     result: NodeId,
+    result_value: bool,
+    control: Option<NodeId>,
 }
 
 impl Region {
@@ -185,12 +203,22 @@ impl Region {
     pub fn result(&self) -> NodeId {
         self.result
     }
+
+    /// Whether the result supplies an ordinary value when the region is entered.
+    pub fn result_has_value(&self) -> bool {
+        self.result_value
+    }
+
+    pub fn control(&self) -> Option<NodeId> {
+        self.control
+    }
 }
 
 #[derive(Debug)]
 pub struct Graph {
     nodes: Vec<Node>,
     inputs: Vec<NodeId>,
+    input_values: Vec<bool>,
     reads: Vec<TextRange>,
     regions: Vec<Region>,
     runs: Vec<Run>,
@@ -242,6 +270,12 @@ impl Graph {
         &self.inputs[node.inputs.start as usize..node.inputs.end as usize]
     }
 
+    /// Whether each input supplies an ordinary value rather than completing its function.
+    pub fn input_values(&self, id: NodeId) -> &[bool] {
+        let node = &self.nodes[id.index()];
+        &self.input_values[node.inputs.start as usize..node.inputs.end as usize]
+    }
+
     /// Where `id` reads each input, parallel to `inputs`: the read's range, not the definition's.
     pub fn reads(&self, id: NodeId) -> &[TextRange] {
         let node = &self.nodes[id.index()];
@@ -254,8 +288,8 @@ struct Opening {
     context: NodeId,
     /// The first node's index once entered.
     start: Option<u32>,
-    /// The end and the result once closed.
-    closed: Option<(u32, NodeId)>,
+    /// The end, result, whether it supplies a value, and control once closed.
+    closed: Option<(u32, NodeId, bool, Option<NodeId>)>,
 }
 
 #[derive(Debug)]
@@ -279,6 +313,7 @@ pub struct OpenRun {
 pub struct GraphBuilder {
     nodes: Vec<Node>,
     inputs: Vec<NodeId>,
+    input_values: Vec<bool>,
     reads: Vec<TextRange>,
     regions: Vec<Opening>,
     runs: Vec<Slot>,
@@ -291,6 +326,7 @@ impl GraphBuilder {
         Self {
             nodes: Vec::with_capacity(nodes),
             inputs: Vec::with_capacity(nodes),
+            input_values: Vec::with_capacity(nodes),
             reads: Vec::with_capacity(nodes),
             regions: Vec::new(),
             runs: Vec::new(),
@@ -320,6 +356,11 @@ impl GraphBuilder {
         &self.nodes[id.index()]
     }
 
+    pub fn inputs(&self, id: NodeId) -> &[NodeId] {
+        let node = &self.nodes[id.index()];
+        &self.inputs[node.inputs.start as usize..node.inputs.end as usize]
+    }
+
     /// Each input is a node and where it is read.
     pub fn push(
         &mut self,
@@ -330,9 +371,11 @@ impl GraphBuilder {
     ) -> NodeId {
         let start = u32::try_from(self.inputs.len()).expect("input count fits u32");
         self.inputs.reserve(inputs.len());
+        self.input_values.reserve(inputs.len());
         self.reads.reserve(inputs.len());
         for &(input, read) in inputs {
             self.inputs.push(input);
+            self.input_values.push(true);
             self.reads.push(read);
         }
         let end = u32::try_from(self.inputs.len()).expect("input count fits u32");
@@ -344,6 +387,13 @@ impl GraphBuilder {
             name,
         });
         id
+    }
+
+    /// Marks an input as structurally completing the current function instead of yielding a value.
+    pub fn complete_input(&mut self, node: NodeId, index: usize) {
+        let inputs = self.nodes[node.index()].inputs.clone();
+        assert!(index < inputs.len(), "an input exists before it completes");
+        self.input_values[inputs.start as usize + index] = false;
     }
 
     /// An `if` opens both branches before entering either.
@@ -364,13 +414,24 @@ impl GraphBuilder {
 
     /// The region must have been entered.
     pub fn close(&mut self, region: RegionId, result: NodeId) {
+        self.close_with_control(region, result, true, None);
+    }
+
+    /// The region must have been entered; `control` observes returns without demanding `result`.
+    pub fn close_with_control(
+        &mut self,
+        region: RegionId,
+        result: NodeId,
+        result_value: bool,
+        control: Option<NodeId>,
+    ) {
         let end = u32::try_from(self.nodes.len()).expect("node count fits u32");
         let opening = &mut self.regions[region.index()];
         assert!(
             opening.start.is_some(),
             "a region is entered before it closes"
         );
-        opening.closed = Some((end, result));
+        opening.closed = Some((end, result, result_value, control));
     }
 
     pub fn context(&self, region: RegionId) -> NodeId {
@@ -413,16 +474,20 @@ impl GraphBuilder {
         Graph {
             nodes: self.nodes,
             inputs: self.inputs,
+            input_values: self.input_values,
             reads: self.reads,
             regions: self
                 .regions
                 .into_iter()
                 .map(|opening| {
-                    let (end, result) = opening.closed.expect("a region opened is closed");
+                    let (end, result, result_value, control) =
+                        opening.closed.expect("a region opened is closed");
                     Region {
                         context: opening.context,
                         nodes: opening.start.expect("a region closed was entered")..end,
                         result,
+                        result_value,
+                        control,
                     }
                 })
                 .collect(),
@@ -460,6 +525,28 @@ mod tests {
             assert_eq!(format!("{:?}", NodeId::new(index)), format!("n{index}"));
             assert_eq!(RegionId::new(index).index(), index);
         }
+    }
+
+    #[test]
+    fn value_completion_belongs_to_reads_and_region_results() {
+        let mut builder = GraphBuilder::new(3);
+        let entry = builder.push(Op::Entry, &[], at(0), None);
+        let region = builder.open(entry);
+        builder.enter(region);
+        let one = builder.push(Op::Int(1.into()), &[], at(1), None);
+        let sum = builder.push(
+            Op::Binary(BinaryOp::Arith(ArithOp::Add)),
+            &[(one, at(2)), (one, at(3))],
+            at(4),
+            None,
+        );
+        builder.complete_input(sum, 1);
+        builder.close_with_control(region, sum, false, None);
+        let graph = builder.finish();
+
+        assert_eq!(graph.inputs(sum), [one, one]);
+        assert_eq!(graph.input_values(sum), [true, false]);
+        assert!(!graph.region(region).result_has_value());
     }
 
     #[test]
@@ -507,14 +594,18 @@ mod tests {
             [entry, param, one, sum, copy]
         );
         assert_eq!(graph.inputs(sum), [param, one]);
+        assert_eq!(graph.input_values(sum), [true, true]);
         assert_eq!(graph.reads(sum), [at(5), at(2)]);
         assert_eq!(graph.inputs(entry), []);
+        assert_eq!(graph.input_values(entry), []);
         assert_eq!(graph.reads(entry), []);
         assert_eq!(graph.node(param).name, Some(at(1)));
         let region = graph.region(region);
         assert_eq!(region.context, entry);
         assert_eq!(region.nodes().collect::<Vec<_>>(), [one, sum]);
         assert_eq!(region.result(), sum);
+        assert!(region.result_has_value());
+        assert_eq!(region.control(), None);
         assert_eq!(graph.region_ids().count(), 1);
     }
 

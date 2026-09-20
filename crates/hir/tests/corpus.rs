@@ -354,6 +354,9 @@ fn dump_definition(
                 at(function.origin())
             )
         }
+        Op::Return | Op::Sequence | Op::Observe { .. } | Op::After | Op::Result { .. } => {
+            unreachable!("HIR does not lower source returns yet")
+        }
     };
     writeln!(
         out,
@@ -407,6 +410,9 @@ fn dump_definition(
             for (index, &input) in inputs.iter().enumerate() {
                 dump_node(analysis, shape, &format!("arg[{index}]"), input, child, out);
             }
+        }
+        Op::Return | Op::Sequence | Op::Observe { .. } | Op::After | Op::Result { .. } => {
+            unreachable!("HIR does not lower source returns yet")
         }
     }
 }

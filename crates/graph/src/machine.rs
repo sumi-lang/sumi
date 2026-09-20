@@ -18,6 +18,21 @@ enum Control {
         then: RegionId,
         else_: Option<RegionId>,
     },
+    Sequence {
+        node: NodeId,
+        value: NodeId,
+    },
+    Observe {
+        node: NodeId,
+        then: Option<RegionId>,
+        else_: Option<RegionId>,
+    },
+    CompleteObserve(NodeId),
+    ResultBody {
+        node: NodeId,
+        body: NodeId,
+    },
+    Return(NodeId),
     Enter {
         node: NodeId,
         function: FunctionId,
@@ -45,6 +60,7 @@ fn bind(slots: &mut [Option<Value>], run: &Run, args: impl IntoIterator<Item = V
 struct Frame<'a> {
     run: &'a Run,
     base: usize,
+    control_base: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -192,7 +208,12 @@ impl<'a> Machine<'a> {
         let run = self.graph.run(function);
         let base = self.slots.len();
         self.slots.resize(base + run.nodes().len(), None);
-        self.frames.push(Frame { run, base });
+        let control_base = self.control.len();
+        self.frames.push(Frame {
+            run,
+            base,
+            control_base,
+        });
         self.max_depth = self.max_depth.max(self.frames.len());
         self.control.push(Control::Eval(run.result()));
         base
@@ -218,7 +239,39 @@ impl<'a> Machine<'a> {
                     Op::Entry | Op::Then | Op::Else | Op::Unused => {
                         unreachable!("a context or a statement is not a value")
                     }
+                    Op::After => unreachable!("a continuation context is not a value"),
                     Op::Unit => self.fill(node, Value::Unit),
+                    Op::Return => {
+                        self.control.push(Control::Return(inputs[0]));
+                        self.control.push(Control::Eval(inputs[0]));
+                    }
+                    Op::Sequence => {
+                        self.control.push(Control::Sequence {
+                            node,
+                            value: inputs[1],
+                        });
+                        self.control.push(Control::Eval(inputs[0]));
+                    }
+                    Op::Observe { then, else_ } => {
+                        self.control.push(Control::Observe { node, then, else_ });
+                        self.control.push(Control::Eval(inputs[0]));
+                    }
+                    Op::Result { .. } => {
+                        let body = inputs[0];
+                        let region = self
+                            .frames
+                            .last()
+                            .expect("a result has a frame")
+                            .run
+                            .region();
+                        if let Some(control) = self.graph.region(region).control() {
+                            self.control.push(Control::ResultBody { node, body });
+                            self.control.push(Control::Eval(control));
+                        } else {
+                            self.control.push(Control::Take { node, from: body });
+                            self.control.push(Control::Eval(body));
+                        }
+                    }
                     ref op @ (Op::And { rhs } | Op::Or { rhs }) => {
                         let and = matches!(op, Op::And { .. });
                         self.control.push(Control::Lazy { node, and, rhs });
@@ -279,6 +332,35 @@ impl<'a> Machine<'a> {
                     (false, None) => self.fill(node, Value::Unit),
                 }
             }
+            Control::Sequence { node, value } => {
+                self.control.push(Control::Take { node, from: value });
+                self.control.push(Control::Eval(value));
+            }
+            Control::Observe { node, then, else_ } => {
+                let condition = self
+                    .value(self.graph.inputs(node)[0])
+                    .truth()
+                    .map_err(|fault| Refusal::of(fault, node))?;
+                let region = if condition { then } else { else_ };
+                if let Some(control) = region.and_then(|region| self.graph.region(region).control())
+                {
+                    self.control.push(Control::CompleteObserve(node));
+                    self.control.push(Control::Eval(control));
+                } else {
+                    self.fill(node, Value::Unit);
+                }
+            }
+            Control::CompleteObserve(node) => self.fill(node, Value::Unit),
+            Control::ResultBody { node, body } => {
+                self.control.push(Control::Take { node, from: body });
+                self.control.push(Control::Eval(body));
+            }
+            Control::Return(payload) => {
+                let value = self.value(payload).clone();
+                let frame = self.frames.last().expect("a return has a frame");
+                self.control.truncate(frame.control_base);
+                self.fill(frame.run.result(), value);
+            }
             Control::Take { node, from } => {
                 let value = self.value(from).clone();
                 self.fill(node, value);
@@ -322,5 +404,190 @@ impl<'a> Machine<'a> {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{ArithOp, BinaryOp, GraphBuilder};
+    use sumi_text::{TextRange, TextSize};
+
+    fn at() -> TextRange {
+        TextRange::new(TextSize::new(0), TextSize::new(0))
+    }
+
+    fn push(builder: &mut GraphBuilder, op: Op, inputs: &[NodeId]) -> NodeId {
+        let inputs = inputs.iter().map(|&node| (node, at())).collect::<Vec<_>>();
+        builder.push(op, &inputs, at(), None)
+    }
+
+    #[test]
+    fn root_return_overrides_tail() {
+        let mut builder = GraphBuilder::new(5);
+        let function = builder.function();
+        let run = builder.open_run(function);
+        let entry = push(&mut builder, Op::Entry, &[]);
+        let region = builder.open(entry);
+        builder.enter(region);
+        let tail = push(&mut builder, Op::Int(1.into()), &[]);
+        let payload = push(&mut builder, Op::Int(2.into()), &[]);
+        let return_ = push(&mut builder, Op::Return, &[payload, entry]);
+        let result = push(
+            &mut builder,
+            Op::Result { declared: None },
+            &[tail, return_],
+        );
+        builder.close_with_control(region, tail, false, Some(return_));
+        builder.close_run(run, region, result);
+        let graph = builder.finish();
+
+        assert_eq!(
+            Machine::new(&graph, function, &[], None).run(),
+            Ok(Value::Int(2.into()))
+        );
+    }
+
+    #[test]
+    fn callee_return_resumes_caller_computation() {
+        let mut builder = GraphBuilder::new(10);
+        let callee = builder.function();
+        let caller = builder.function();
+        let callable = builder.declare(callee, Box::new([]));
+
+        let run = builder.open_run(callee);
+        let entry = push(&mut builder, Op::Entry, &[]);
+        let region = builder.open(entry);
+        builder.enter(region);
+        let tail = push(&mut builder, Op::Int(9.into()), &[]);
+        let payload = push(&mut builder, Op::Int(4.into()), &[]);
+        let return_ = push(&mut builder, Op::Return, &[payload, entry]);
+        let result = push(
+            &mut builder,
+            Op::Result { declared: None },
+            &[tail, return_],
+        );
+        builder.close_with_control(region, tail, false, Some(return_));
+        builder.close_run(run, region, result);
+
+        let run = builder.open_run(caller);
+        let entry = push(&mut builder, Op::Entry, &[]);
+        let region = builder.open(entry);
+        builder.enter(region);
+        let call = push(&mut builder, Op::Call(callable), &[]);
+        let one = push(&mut builder, Op::Int(1.into()), &[]);
+        let sum = push(
+            &mut builder,
+            Op::Binary(BinaryOp::Arith(ArithOp::Add)),
+            &[call, one],
+        );
+        builder.close(region, sum);
+        builder.close_run(run, region, sum);
+        let graph = builder.finish();
+
+        assert_eq!(
+            Machine::new(&graph, caller, &[], None).run(),
+            Ok(Value::Int(5.into()))
+        );
+    }
+
+    #[test]
+    fn observe_demands_only_selected_control() {
+        let mut builder = GraphBuilder::new(9);
+        let function = builder.function();
+        let run = builder.open_run(function);
+        let entry = push(&mut builder, Op::Entry, &[]);
+        let then = builder.open(entry);
+        let else_ = builder.open(entry);
+        builder.enter(then);
+        let selected = push(&mut builder, Op::Int(3.into()), &[]);
+        let selected_return = push(&mut builder, Op::Return, &[selected, entry]);
+        builder.close_with_control(then, selected, false, Some(selected_return));
+        builder.enter(else_);
+        let unselected = push(&mut builder, Op::Int(8.into()), &[]);
+        let unselected_return = push(&mut builder, Op::Return, &[unselected, entry]);
+        builder.close_with_control(else_, unselected, false, Some(unselected_return));
+        let region = builder.open(entry);
+        builder.enter(region);
+        let condition = push(&mut builder, Op::Bool(true), &[]);
+        let observe = push(
+            &mut builder,
+            Op::Observe {
+                then: Some(then),
+                else_: Some(else_),
+            },
+            &[condition, entry],
+        );
+        let tail = push(&mut builder, Op::Int(1.into()), &[]);
+        let result = push(&mut builder, Op::Result { declared: None }, &[tail]);
+        builder.close_with_control(region, tail, false, Some(observe));
+        builder.close_run(run, region, result);
+        let graph = builder.finish();
+
+        assert_eq!(
+            Machine::new(&graph, function, &[], None).run(),
+            Ok(Value::Int(3.into()))
+        );
+    }
+
+    #[test]
+    fn sequence_continues_after_an_unselected_return() {
+        let mut builder = GraphBuilder::new(7);
+        let function = builder.function();
+        let run = builder.open_run(function);
+        let entry = push(&mut builder, Op::Entry, &[]);
+        let then = builder.open(entry);
+        builder.enter(then);
+        let payload = push(&mut builder, Op::Int(3.into()), &[]);
+        let return_ = push(&mut builder, Op::Return, &[payload, entry]);
+        builder.close_with_control(then, payload, false, Some(return_));
+        let region = builder.open(entry);
+        builder.enter(region);
+        let condition = push(&mut builder, Op::Bool(false), &[]);
+        let observe = push(
+            &mut builder,
+            Op::Observe {
+                then: Some(then),
+                else_: None,
+            },
+            &[condition, entry],
+        );
+        let tail = push(&mut builder, Op::Int(1.into()), &[]);
+        let sequence = push(&mut builder, Op::Sequence, &[observe, tail]);
+        builder.close(region, sequence);
+        builder.close_run(run, region, sequence);
+        let graph = builder.finish();
+
+        assert_eq!(
+            Machine::new(&graph, function, &[], None).run(),
+            Ok(Value::Int(1.into()))
+        );
+    }
+
+    #[test]
+    fn nested_payload_return_wins() {
+        let mut builder = GraphBuilder::new(6);
+        let function = builder.function();
+        let run = builder.open_run(function);
+        let entry = push(&mut builder, Op::Entry, &[]);
+        let region = builder.open(entry);
+        builder.enter(region);
+        let tail = push(&mut builder, Op::Int(0.into()), &[]);
+        let payload = push(&mut builder, Op::Int(7.into()), &[]);
+        let inner = push(&mut builder, Op::Return, &[payload, entry]);
+        let outer = push(&mut builder, Op::Return, &[inner, entry]);
+        let result = push(
+            &mut builder,
+            Op::Result { declared: None },
+            &[tail, inner, outer],
+        );
+        builder.close_with_control(region, tail, false, Some(outer));
+        builder.close_run(run, region, result);
+        let graph = builder.finish();
+
+        assert_eq!(
+            Machine::new(&graph, function, &[], None).run(),
+            Ok(Value::Int(7.into()))
+        );
     }
 }

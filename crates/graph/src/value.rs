@@ -55,6 +55,11 @@ impl Op {
             | Self::Then
             | Self::Else
             | Self::Join { .. }
+            | Self::Return
+            | Self::Sequence
+            | Self::Observe { .. }
+            | Self::After
+            | Self::Result { .. }
             | Self::Call(_) => unreachable!("{self:?} is not a data operator"),
         })
     }

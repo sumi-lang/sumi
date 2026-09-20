@@ -660,7 +660,14 @@ fn typed(analysis: &Analysis) {
             let own = ty(node);
             let inputs = graph.inputs(node);
             match &entry.op {
-                Op::Entry | Op::Then | Op::Else => continue,
+                Op::Entry
+                | Op::Then
+                | Op::Else
+                | Op::Return
+                | Op::Sequence
+                | Op::Observe { .. }
+                | Op::After
+                | Op::Result { .. } => continue,
                 Op::Hole => panic!("a hole in a complete function"),
                 Op::Int(_) => assert_eq!(own, Some(Ty::Int)),
                 Op::Bool(_) => assert_eq!(own, Some(Ty::Bool)),
@@ -748,8 +755,15 @@ fn graph(analysis: &Analysis) {
             Op::Int(_) | Op::Bool(_) | Op::Param { .. } | Op::Entry => Some(0),
             Op::Unit | Op::Unused | Op::Copy { .. } | Op::Neg | Op::Not | Op::Exactly(_) => Some(1),
             Op::And { .. } | Op::Or { .. } | Op::Join { .. } => Some(1),
-            Op::Binary(_) | Op::Refine { .. } | Op::Then | Op::Else => Some(2),
-            Op::Hole | Op::Call(_) => None,
+            Op::Observe { .. } => Some(1),
+            Op::Binary(_)
+            | Op::Refine { .. }
+            | Op::Then
+            | Op::Else
+            | Op::Return
+            | Op::Sequence
+            | Op::After => Some(2),
+            Op::Hole | Op::Call(_) | Op::Result { .. } => None,
         };
         if let Some(arity) = arity {
             assert_eq!(inputs.len(), arity);
