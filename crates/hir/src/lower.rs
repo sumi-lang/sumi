@@ -523,6 +523,7 @@ struct Builder<'a, 's> {
     scopes: Vec<Scope<'s>>,
     depth: usize,
     locals: Vec<Local>,
+    mutable_locals: Vec<LocalId>,
     version_stack: Vec<Box<[NodeId]>>,
     region_states: Vec<Option<RegionState>>,
     /// The local and underlying version read by each name reference.
@@ -563,6 +564,7 @@ impl<'a, 's> Builder<'a, 's> {
             scopes: Vec::new(),
             depth: 0,
             locals: Vec::new(),
+            mutable_locals: Vec::new(),
             version_stack: Vec::new(),
             region_states: Vec::new(),
             reads_of: vec![None; nodes],
@@ -582,8 +584,8 @@ impl<'a, 's> Builder<'a, 's> {
         self.regions.clear();
         self.refinements.clear();
         self.locals.clear();
+        self.mutable_locals.clear();
         self.version_stack.clear();
-        self.region_states.clear();
         self.returns.clear();
         let header = &self.headers[owner];
         let item_node = header.item;
@@ -905,24 +907,27 @@ impl<'a, 's> Builder<'a, 's> {
             current: node,
             mutable,
         });
+        if mutable {
+            self.mutable_locals.push(id);
+        }
         self.scopes[self.depth - 1].insert(name, id);
         id
     }
     fn versions(&self, count: usize, refined: bool) -> Box<[NodeId]> {
-        (0..count)
-            .map(|index| {
-                let local = LocalId(u32::try_from(index).expect("local count fits u32"));
+        self.mutable_locals[..count]
+            .iter()
+            .map(|&local| {
                 if refined {
                     self.current(local)
                 } else {
-                    self.locals[index].current
+                    self.locals[local.index()].current
                 }
             })
             .collect()
     }
     fn restore_versions(&mut self, versions: &[NodeId]) {
-        for (local, &version) in self.locals.iter_mut().zip(versions) {
-            local.current = version;
+        for (&local, &version) in self.mutable_locals.iter().zip(versions) {
+            self.locals[local.index()].current = version;
         }
     }
     fn guarded_versions(
@@ -945,7 +950,8 @@ impl<'a, 's> Builder<'a, 's> {
             if states[0].versions[index] == states[1].versions[index] {
                 continue;
             }
-            let declaration = self.locals[index].declaration;
+            let local = self.mutable_locals[index];
+            let declaration = self.locals[local.index()].declaration;
             let inputs = [
                 condition,
                 (true_value, self.graph.node(true_value).origin),
@@ -960,7 +966,7 @@ impl<'a, 's> Builder<'a, 's> {
                 at,
                 None,
             );
-            self.locals[index].current = phi;
+            self.locals[local.index()].current = phi;
         }
     }
     fn lookup(&self, name: &str) -> Option<LocalId> {
@@ -1119,16 +1125,17 @@ impl<'a, 's> Builder<'a, 's> {
         let parent = self.context();
         let condition = self.input(cond);
         let then_context = self.context_at(then_node, Op::Then, condition, parent);
-        let else_context = self.context_at(
-            else_node.unwrap_or(branch.node()),
-            Op::Else,
-            condition,
-            parent,
-        );
+        let else_context = match else_node {
+            Some(else_node) => self.context_at(else_node, Op::Else, condition, parent),
+            None if !self.mutable_locals.is_empty() => {
+                self.context_at(branch.node(), Op::Else, condition, parent)
+            }
+            None => parent,
+        };
         let contexts = [then_context, else_context];
         let then = self.graph.open(then_context);
         let else_ = else_node.map(|_| self.graph.open(else_context));
-        let baseline = self.versions(self.locals.len(), false);
+        let baseline = self.versions(self.mutable_locals.len(), false);
         work.push(Work::Join {
             branch,
             then,
@@ -1166,13 +1173,17 @@ impl<'a, 's> Builder<'a, 's> {
         let rhs = expr.expr.rhs().node();
         let parent = self.context();
         let left = self.input(lhs);
-        let contexts = [
-            self.context_at(rhs, Op::Then, left, parent),
-            self.context_at(rhs, Op::Else, left, parent),
-        ];
-        let context = contexts[usize::from(!and)];
+        let selected = usize::from(!and);
+        let mut contexts = [parent; 2];
+        contexts[selected] =
+            self.context_at(rhs, if and { Op::Then } else { Op::Else }, left, parent);
+        if !self.mutable_locals.is_empty() {
+            contexts[usize::from(and)] =
+                self.context_at(rhs, if and { Op::Else } else { Op::Then }, left, parent);
+        }
+        let context = contexts[selected];
         let region = self.graph.open(context);
-        let baseline = self.versions(self.locals.len(), false);
+        let baseline = self.versions(self.mutable_locals.len(), false);
         work.push(Work::Lazy {
             expr,
             rhs: region,
