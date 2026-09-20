@@ -521,6 +521,7 @@ struct Builder<'a, 's> {
     refinements: Vec<(LocalId, NodeId, NodeId)>,
     /// The first `depth` scopes are open, innermost last.
     scopes: Vec<Scope<'s>>,
+    scope_mutables: Vec<usize>,
     depth: usize,
     locals: Vec<Local>,
     mutable_locals: Vec<LocalId>,
@@ -562,6 +563,7 @@ impl<'a, 's> Builder<'a, 's> {
             regions: Vec::new(),
             refinements: Vec::new(),
             scopes: Vec::new(),
+            scope_mutables: Vec::new(),
             depth: 0,
             locals: Vec::new(),
             mutable_locals: Vec::new(),
@@ -580,11 +582,11 @@ impl<'a, 's> Builder<'a, 's> {
         self.owner = u32::try_from(owner).expect("function count fits u32");
         self.failed = false;
         self.depth = 0;
-        self.open_scope();
         self.regions.clear();
         self.refinements.clear();
         self.locals.clear();
         self.mutable_locals.clear();
+        self.open_scope();
         self.version_stack.clear();
         self.returns.clear();
         let header = &self.headers[owner];
@@ -892,13 +894,17 @@ impl<'a, 's> Builder<'a, 's> {
     fn open_scope(&mut self) {
         if self.depth == self.scopes.len() {
             self.scopes.push(Scope::default());
+            self.scope_mutables.push(self.mutable_locals.len());
         } else {
             self.scopes[self.depth].clear();
+            self.scope_mutables[self.depth] = self.mutable_locals.len();
         }
         self.depth += 1;
     }
     fn close_scope(&mut self) {
         self.depth -= 1;
+        self.mutable_locals
+            .truncate(self.scope_mutables[self.depth]);
     }
     fn bind(&mut self, name: &'s str, node: NodeId, mutable: bool) -> LocalId {
         let id = LocalId(u32::try_from(self.locals.len()).expect("local count fits u32"));

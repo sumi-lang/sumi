@@ -3,7 +3,7 @@ use sumi_frontend::{ParsedSource, parse_source};
 use sumi_hir::{Analysis, Ty};
 
 pub const SIZES: [usize; 3] = [128, 1024, 8192];
-pub const SHAPES: [&str; 12] = [
+pub const SHAPES: [&str; 13] = [
     "annotated-forward",
     "annotated-reverse",
     "inferred-forward",
@@ -14,6 +14,7 @@ pub const SHAPES: [&str; 12] = [
     "locals",
     "arguments",
     "branches",
+    "scoped-mutation",
     "expression-chain",
     "call-block",
 ];
@@ -31,6 +32,14 @@ pub fn source(shape: &str, size: usize) -> String {
             writeln!(source, "_ = select({i}, true)").unwrap();
         }
         source.push_str("7 }");
+        return source;
+    }
+    if shape == "scoped-mutation" {
+        let mut source = String::from("fn scoped() -> int {\n");
+        for i in 0..size {
+            writeln!(source, "_ = if true {{ let mut x{i} = 0\n x{i} = 1 }}").unwrap();
+        }
+        source.push_str("0 }");
         return source;
     }
     let mut declarations = Vec::with_capacity(size);
@@ -97,7 +106,7 @@ pub fn parse(source: &str) -> ParsedSource {
 
 pub fn validate(shape: &str, size: usize, analysis: &Analysis) {
     let functions = match shape {
-        "expression-chain" => 1,
+        "expression-chain" | "scoped-mutation" => 1,
         "call-block" => 2,
         _ => size,
     };

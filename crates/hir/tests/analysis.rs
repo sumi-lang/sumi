@@ -256,10 +256,20 @@ fn recursive_delta_shares_repeated_phi_diamonds() {
     if n <= 100 {{ return 0 }}
     let mut x = n
 {forks}    descend(x, b)
-}}"
+}}
+fn entry() -> int = descend(160, true) + descend(160, false)"
     );
     let analysis = clean(&source);
-    assert!(analysis.functions()[0].depth_bound().is_some());
+    assert_eq!(
+        analysis.ranges(FunctionId::new(0)).unwrap().params[1].bools,
+        sumi_hir::Bools::BOTH
+    );
+    assert!(
+        analysis.functions()[0]
+            .depth_bound()
+            .is_some_and(|depth| depth > 1)
+    );
+    check::run(analysis.program().unwrap());
 }
 
 #[test]
