@@ -209,9 +209,9 @@ impl Lattice for Product {
     /// Only values climb: type claims are finite, so `Peer` carries nothing.
     fn carries(edge: &Edge) -> Carry {
         match edge {
-            Edge::Peer | Edge::Not | Edge::Enter | Edge::Exactly(_) => Carry::Nothing,
+            Edge::Peer | Edge::Types | Edge::Not | Edge::Enter | Edge::Exactly(_) => Carry::Nothing,
             Edge::Neg => Carry::Grows,
-            Edge::Call(_) | Edge::Bind | Edge::Types | Edge::Values => Carry::Passes,
+            Edge::Call(_) | Edge::Bind | Edge::Values => Carry::Passes,
         }
     }
 
@@ -404,6 +404,7 @@ mod tests {
         for edge in [Edge::Bind, Edge::Types, Edge::Exactly(true), Edge::Peer] {
             assert_eq!(int.transfer(&edge, false, &cx).types, int.types);
         }
+        assert_eq!(Product::carries(&Edge::Types), Carry::Nothing);
         assert_eq!(int.transfer(&Edge::Types, false, &cx).values, May::NONE);
         assert_eq!(
             int.combine(&Pair::Branch, &Product::bottom(), false, &cx)

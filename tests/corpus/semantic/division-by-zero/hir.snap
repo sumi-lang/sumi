@@ -1,6 +1,6 @@
 file: rejected
 frontend errors: 0 (see frontend.snap)
-semantic errors: 13
+semantic errors: 14
 
 fn divide_by_zero@0..40 () -> int ∈ ∅
   result: copy : int @23..26
@@ -272,6 +272,30 @@ fn under_a_hole@1521..1627 () -> int ∈ ∅
           arg[0]: read x@1556..1557 : int
         else: int 1 : int @1618..1619
 
+fn returning_zero@1628..1705 (bool ∈ {true}) -> int ∈ [0, 0]
+  param b@1646..1647: bool
+  result: result : int @1658..1661
+    outcome[0]:
+      discard: if : unit @1668..1697
+        condition: read b@1646..1647 : bool
+        then: unit : unit @1673..1697
+        else: unit (implicit)
+      discard: after : ? @1668..1697
+        control: observe : ? @1668..1697
+          condition: read b@1646..1647 : bool
+          then control: unit : unit @1673..1697
+        context: entry : ? @1628..1705
+      tail: int 1 : int @1702..1703
+    outcome[1]: return : int @1683..1691
+      payload: int 0 : int @1690..1691
+
+fn through_return@1706..1760 () -> int ∈ ∅
+  result: copy : int @1729..1732
+    value: eager / : int @1735..1760
+      lhs: int 10 : int @1735..1737
+      rhs: call returning_zero@1628..1705 : int @1740..1760
+        arg[0]: bool true : bool @1755..1759
+
 == semantic diagnostics ==
 error[semantic/division-by-zero]: division by zero
   primary @29..40
@@ -318,3 +342,6 @@ error[semantic/division-by-zero]: division by zero
   secondary @1594..1595: argument is 0
 error[semantic/unknown-name]: unknown name `absent`
   primary @1569..1575
+error[semantic/division-by-zero]: division by zero
+  primary @1735..1760
+  secondary @1690..1691: is 0

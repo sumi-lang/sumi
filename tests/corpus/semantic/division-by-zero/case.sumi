@@ -78,3 +78,10 @@ fn under_a_hole() -> int {
         1
     }
 }
+fn returning_zero(b: bool) -> int {
+    if b {
+        return 0
+    }
+    1
+}
+fn through_return() -> int = 10 / returning_zero(true)
