@@ -85,6 +85,21 @@ fn completing_inputs_are_not_scalar_reads() {
 }
 
 #[test]
+fn completing_conditions_do_not_hide_errors_inside_branches() {
+    let analysis = analyzed(
+        "fn arms() -> int = if { return 1 } { true + false } else { false + true }
+fn no_else() -> int = if { return 2 } { true + false }",
+    );
+    assert_eq!(codes(&analysis), [TYPE_MISMATCH; 6]);
+    assert!(
+        semantic(&analysis)
+            .iter()
+            .all(|diagnostic| diagnostic.message.as_ref() == "expected int, found bool")
+    );
+    check::semantics(&analysis);
+}
+
+#[test]
 fn literals_of_any_size_fold_a_leading_minus() {
     for (expr, value) in [
         ("9223372036854775807", "9223372036854775807"),

@@ -615,18 +615,22 @@ proptest! {
 fn most_generated_programs_are_accepted_and_run_to_the_end() {
     let seeds = 400u64;
     let mut accepted = 0u64;
-    let mut returns = 0usize;
+    let mut returning = 0usize;
     let mut runs = Runs::default();
     for seed in 0..seeds {
         let source = program(seed);
-        returns += source.matches("return ").count();
+        let source_returns = source.matches("return ").count();
         if let Some(outcome) = runs_of(&source) {
             accepted += 1;
+            returning += usize::from(source_returns != 0 && outcome.finished != 0);
             runs.finished += outcome.finished;
             runs.abandoned += outcome.abandoned;
         }
     }
-    assert_ne!(returns, 0, "the generated programs never exercise return");
+    assert_ne!(
+        returning, 0,
+        "no accepted return-bearing program ran to the end"
+    );
     assert!(
         accepted * 10 >= seeds * 9,
         "only {accepted} of {seeds} generated programs were accepted"

@@ -16,6 +16,13 @@ fn declared@35..122 () -> int ∈ ∅
         then: unit : unit @70..98
         else: unit (implicit)
       discard: after : ? @103..114
+        control: return : ? @103..114
+          payload: bool true : ? @110..114
+        context: after : ? @62..98
+          control: observe : ? @62..98
+            condition: bool true : bool @65..69
+            then control: unit : unit @70..98
+          context: entry : ? @35..122
       tail: int 1 : int @119..120
     outcome[1]: return : ? @80..92
       payload: bool false : ? @87..92
@@ -30,6 +37,10 @@ fn inferred@123..189 signature: unavailable
         then: unit : unit @153..177
         else: unit (implicit)
       discard: after : ? @145..177
+        control: observe : ? @145..177
+          condition: bool true : bool @148..152
+          then control: unit : unit @153..177
+        context: entry : ? @123..189
       tail: bool false : bool @182..187
     outcome[1]: return : ? @163..171
       payload: int 1 : ? @170..171
@@ -38,6 +49,9 @@ fn unreachable@190..270 () -> int ∈ [1, 1]
   result: result : int @210..213
     outcome[0]:
       discard: after : ? @220..228
+        control: return : int @220..228
+          payload: int 1 : int @227..228
+        context: entry : ? @190..270
       discard: eager + : ? @233..251
         lhs: hole : ? @233..239
         rhs: hole : ? @242..251

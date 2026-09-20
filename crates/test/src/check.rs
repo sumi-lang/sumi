@@ -659,13 +659,12 @@ fn typed(analysis: &Analysis) {
             let entry = graph.node(node);
             let own = ty(node);
             let inputs = graph.inputs(node);
-            let values = analysis.input_values(node);
-            let results = analysis.result_values(node);
+            let values = graph.input_values(node);
             match &entry.op {
                 Op::Entry
                 | Op::Then
                 | Op::Else
-                | Op::Return { .. }
+                | Op::Return
                 | Op::Sequence
                 | Op::Observe { .. }
                 | Op::After
@@ -719,30 +718,16 @@ fn typed(analysis: &Analysis) {
                         }
                     }
                 }
-                Op::And {
-                    rhs,
-                    lhs_value: true,
-                }
-                | Op::Or {
-                    rhs,
-                    lhs_value: true,
-                } => {
-                    assert_eq!(own, Some(Ty::Bool));
+                Op::And { rhs } | Op::Or { rhs } => {
                     if values[0] {
+                        assert_eq!(own, Some(Ty::Bool));
                         assert_eq!(ty(inputs[0]), Some(Ty::Bool));
+                    } else {
+                        assert_eq!(own, None);
                     }
-                    if results[0] {
+                    if graph.region(*rhs).result_has_value() {
                         assert_eq!(ty(graph.region(*rhs).result()), Some(Ty::Bool));
                     }
-                }
-                Op::And {
-                    lhs_value: false, ..
-                }
-                | Op::Or {
-                    lhs_value: false, ..
-                } => {
-                    assert_eq!(own, None);
-                    continue;
                 }
                 Op::Copy { declared } => {
                     if values[0] {
@@ -757,25 +742,24 @@ fn typed(analysis: &Analysis) {
                         assert_eq!(own, ty(inputs[0]));
                     }
                 }
-                Op::Join {
-                    then,
-                    else_,
-                    values: branch_values,
-                } => {
+                Op::Join { then, else_ } => {
                     if values[0] {
                         assert_eq!(ty(inputs[0]), Some(Ty::Bool));
                     } else {
                         continue;
                     }
-                    if branch_values.iter().all(|&value| !value) {
+                    let then_value = graph.region(*then).result_has_value();
+                    let else_value =
+                        else_.is_none_or(|region| graph.region(region).result_has_value());
+                    if !then_value && !else_value {
                         assert_eq!(own, None);
                         continue;
                     }
-                    if results[0] {
+                    if then_value {
                         assert_eq!(ty(graph.region(*then).result()), own);
                     }
                     match else_ {
-                        Some(else_) if results[1] => {
+                        Some(else_) if graph.region(*else_).result_has_value() => {
                             assert_eq!(ty(graph.region(*else_).result()), own)
                         }
                         Some(_) => {}
@@ -823,7 +807,7 @@ fn graph(analysis: &Analysis) {
             | Op::Refine { .. }
             | Op::Then
             | Op::Else
-            | Op::Return { .. }
+            | Op::Return
             | Op::Sequence
             | Op::After => Some(2),
             Op::Hole | Op::Call(_) | Op::Result { .. } => None,
@@ -831,16 +815,16 @@ fn graph(analysis: &Analysis) {
         if let Some(arity) = arity {
             assert_eq!(inputs.len(), arity);
         }
-        for &input in inputs {
-            if matches!(graph.node(input).op, Op::Entry | Op::Then | Op::Else) {
+        for (index, &input) in inputs.iter().enumerate() {
+            if matches!(
+                graph.node(input).op,
+                Op::Entry | Op::Then | Op::Else | Op::After
+            ) {
                 assert!(matches!(
-                    node.op,
-                    Op::Then
-                        | Op::Else
-                        | Op::Unit
-                        | Op::Return { .. }
-                        | Op::Observe { .. }
-                        | Op::After
+                    (&node.op, index),
+                    (Op::Unit, 0)
+                        | (Op::Then | Op::Else | Op::Return | Op::Observe { .. }, 1)
+                        | (Op::After, 0 | 1)
                 ));
             }
         }
@@ -861,19 +845,14 @@ fn graph(analysis: &Analysis) {
                     | Op::Sequence
                     | Op::Observe { .. }
                     | Op::After
-            ) && analysis.input_values(id).iter().all(|&value| value)
+            ) && graph.input_values(id).iter().all(|&value| value)
                 && !matches!(
                     node.op,
                     Op::Join {
-                        values: [false, false],
-                        ..
-                    } | Op::And {
-                        lhs_value: false,
-                        ..
-                    } | Op::Or {
-                        lhs_value: false,
-                        ..
-                    } | Op::Return { value: false }
+                        then,
+                        else_: Some(else_),
+                    } if !graph.region(then).result_has_value()
+                        && !graph.region(else_).result_has_value()
                 )
             {
                 assert!(analysis.ty(id).is_some());

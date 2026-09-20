@@ -64,8 +64,6 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         parsed,
         graph,
         settled: typing.settle(),
-        input_values: lowered.values,
-        result_values: lowered.results,
         functions,
         diagnostics,
     };
@@ -385,18 +383,15 @@ fn complete(
             | Op::Sequence
             | Op::Observe { .. }
             | Op::After => true,
-            _ if lowered.values[node.index()].iter().any(|&value| !value) => true,
-            Op::And {
-                lhs_value: false, ..
-            }
-            | Op::Or {
-                lhs_value: false, ..
-            }
-            | Op::Return { value: false } => true,
+            _ if graph.input_values(node).iter().any(|&value| !value) => true,
             Op::Join {
-                values: [false, false],
-                ..
-            } => true,
+                then,
+                else_: Some(else_),
+            } if !graph.region(then).result_has_value()
+                && !graph.region(else_).result_has_value() =>
+            {
+                true
+            }
             // A caller's demand can resolve the call without the callee resolving.
             Op::Call(callee) => functions[graph.callable(callee).function.index()]
                 .signature

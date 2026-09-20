@@ -37,8 +37,6 @@ pub(crate) struct Demand {
 struct Demands<'a> {
     graph: &'a Graph,
     typed: &'a [bool],
-    values: &'a [Box<[bool]>],
-    results: &'a [Box<[bool]>],
     made: Vec<Demand>,
 }
 
@@ -53,8 +51,7 @@ impl Demands<'_> {
     ) {
         let graph = self.graph;
         let typed = |node: NodeId| self.typed[node.index()];
-        let value = |index: usize| self.values[node.index()][index];
-        let result = |index: usize| self.results[node.index()][index];
+        let value = |index: usize| graph.input_values(node)[index];
         let made = &mut self.made;
         let mut demand = |at: TextRange, actual: NodeId, kind: DemandKind| {
             made.push(Demand {
@@ -98,27 +95,34 @@ impl Demands<'_> {
                     }
                 }
             }
-            Op::And { rhs, .. } | Op::Or { rhs, .. } => {
+            Op::And { rhs } | Op::Or { rhs } => {
                 if value(0) {
                     require(reads[0], inputs[0], Expected::Ty(Ty::Bool), None);
                 }
-                let (at, rhs) = region(*rhs);
-                if result(0) {
+                let rhs_region = *rhs;
+                let (at, rhs) = region(rhs_region);
+                if graph.region(rhs_region).result_has_value() {
                     require(at, rhs, Expected::Ty(Ty::Bool), None);
                 }
             }
-            Op::Join { then, else_, .. } => {
+            Op::Join { then, else_ } => {
                 if value(0) {
                     require(reads[0], inputs[0], Expected::Ty(Ty::Bool), None);
                 }
                 match else_ {
                     None => {
-                        let (at, then) = region(*then);
-                        if result(0) {
-                            require(at, then, Expected::Ty(Ty::Unit), None);
+                        let then_region = *then;
+                        let (at, result) = region(then_region);
+                        if value(0) && graph.region(then_region).result_has_value() {
+                            require(at, result, Expected::Ty(Ty::Unit), None);
                         }
                     }
-                    Some(else_) if typed(node) && self.results[node.index()].iter().all(|&r| r) => {
+                    Some(else_)
+                        if typed(node)
+                            && value(0)
+                            && graph.region(*then).result_has_value()
+                            && graph.region(*else_).result_has_value() =>
+                    {
                         let branches = [region(*then).1, region(*else_).1];
                         demand(entry.origin, node, DemandKind::Agree { branches });
                     }
@@ -145,15 +149,10 @@ impl Demands<'_> {
                     demand(reads[0], inputs[0], DemandKind::Unused);
                 }
             }
-            Op::Return { .. } if value(0) => {
-                require(reads[0], inputs[0], Expected::Peer(node), None)
-            }
-            Op::Return { .. } => {}
-            Op::Result {
-                declared,
-                falls_through,
-            } => {
-                let first = usize::from(!falls_through);
+            Op::Return if value(0) => require(reads[0], inputs[0], Expected::Peer(node), None),
+            Op::Return => {}
+            Op::Result { declared } => {
+                let first = usize::from(!value(0));
                 for (&at, &input) in reads[first..].iter().zip(&inputs[first..]) {
                     let expected =
                         declared.map_or(Expected::Peer(node), |(ty, _)| Expected::Ty(ty));
@@ -193,8 +192,6 @@ pub(crate) fn draw(
     let mut demands = Demands {
         graph,
         typed: &lowered.typed,
-        values: &lowered.values,
-        results: &lowered.results,
         made: Vec::with_capacity(graph.nodes().len() / 2),
     };
 
@@ -257,19 +254,16 @@ pub(crate) fn draw(
                 Op::Join {
                     then,
                     else_: Some(else_),
-                    ..
                 } => {
-                    for (index, region) in [*then, *else_].into_iter().enumerate() {
-                        if !lowered.results[node.index()][index] {
+                    for region in [*then, *else_] {
+                        let region = graph.region(region);
+                        if !graph.input_values(node)[0] || !region.result_has_value() {
                             continue;
                         }
-                        let region = graph.region(region);
                         typing.derive(region.result(), region.context, node, Pair::Branch);
                     }
                 }
-                Op::Join {
-                    then, else_: None, ..
-                } => {
+                Op::Join { then, else_: None } => {
                     typing.known(node, Ty::Unit, origin);
                     let parent = graph.inputs(graph.region(*then).context)[1];
                     typing.flow(parent, node, Edge::Enter);
@@ -306,31 +300,22 @@ pub(crate) fn draw(
                         }
                     }
                 }
-                Op::And {
-                    rhs,
-                    lhs_value: true,
-                }
-                | Op::Or {
-                    rhs,
-                    lhs_value: true,
-                } => {
+                Op::And { rhs } | Op::Or { rhs } if graph.input_values(node)[0] => {
                     typing.known(node, Ty::Bool, origin);
-                    let rhs = graph.region(*rhs).result();
+                    let region = graph.region(*rhs);
+                    let rhs = region.result();
                     let and = matches!(entry.op, Op::And { .. });
-                    if lowered.results[node.index()][0] {
+                    if region.result_has_value() {
                         typing.derive(inputs[0], rhs, node, Pair::Lazy { and });
                     } else {
                         typing.flow(inputs[0], node, Edge::Exactly(!and));
                     }
                 }
-                Op::And {
-                    lhs_value: false, ..
+                Op::And { .. } | Op::Or { .. } => {}
+                Op::Return if graph.input_values(node)[0] => {
+                    typing.flow(inputs[0], node, Edge::Types)
                 }
-                | Op::Or {
-                    lhs_value: false, ..
-                } => {}
-                Op::Return { value: true } => typing.flow(inputs[0], node, Edge::Types),
-                Op::Return { value: false } => {}
+                Op::Return => {}
                 Op::Sequence => typing.derive(inputs[1], inputs[0], node, Pair::Branch),
                 Op::Observe { then, else_ } => {
                     let parent = inputs[1];
@@ -356,10 +341,7 @@ pub(crate) fn draw(
                     }
                 }
                 Op::After => typing.derive(inputs[1], inputs[0], node, Pair::Branch),
-                Op::Result {
-                    declared,
-                    falls_through,
-                } => {
+                Op::Result { declared } => {
                     if let Some((ty, at)) = declared {
                         typing.known(node, *ty, *at);
                     }
@@ -368,7 +350,7 @@ pub(crate) fn draw(
                     } else {
                         Edge::Bind
                     };
-                    if *falls_through {
+                    if graph.input_values(node)[0] {
                         typing.flow(inputs[0], node, edge);
                     }
                     for &returned in &inputs[1..] {

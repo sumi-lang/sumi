@@ -25,8 +25,6 @@ pub struct Analysis {
     parsed: ParsedSource,
     graph: Graph,
     settled: typing::Settled,
-    input_values: Vec<Box<[bool]>>,
-    result_values: Vec<Box<[bool]>>,
     functions: Vec<Function>,
     diagnostics: Vec<Diagnostic>,
 }
@@ -53,14 +51,6 @@ impl Analysis {
     /// None for a node that is no value, or whose class conflicted.
     pub fn ty(&self, node: NodeId) -> Option<Ty> {
         self.settled.resolve(node)
-    }
-    /// Whether each graph input supplies an ordinary value rather than completing its call.
-    pub fn input_values(&self, node: NodeId) -> &[bool] {
-        &self.input_values[node.index()]
-    }
-    /// The same distinction for each region result held by a graph node.
-    pub fn result_values(&self, node: NodeId) -> &[bool] {
-        &self.result_values[node.index()]
     }
     fn may(&self, node: NodeId) -> &May {
         self.settled.may(node)

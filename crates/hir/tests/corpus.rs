@@ -374,7 +374,7 @@ fn dump_definition(
                 at(function.origin())
             )
         }
-        Op::Return { .. } => "return".into(),
+        Op::Return => "return".into(),
         Op::Sequence => "sequence".into(),
         Op::Observe { .. } => "observe".into(),
         Op::After => "after".into(),
@@ -433,7 +433,7 @@ fn dump_definition(
                 dump_node(analysis, shape, &format!("arg[{index}]"), input, child, out);
             }
         }
-        Op::Return { .. } => dump_node(analysis, shape, "payload", inputs[0], child, out),
+        Op::Return => dump_node(analysis, shape, "payload", inputs[0], child, out),
         Op::Sequence => {
             dump_node(analysis, shape, "before", inputs[0], child, out);
             dump_node(analysis, shape, "value", inputs[1], child, out);
@@ -447,7 +447,10 @@ fn dump_definition(
                 dump_region(analysis, shape, "else control", *else_, child, out);
             }
         }
-        Op::After => {}
+        Op::After => {
+            dump_node(analysis, shape, "control", inputs[0], child, out);
+            dump_node(analysis, shape, "context", inputs[1], child, out);
+        }
         Op::Result { .. } => {
             for (index, &input) in inputs.iter().enumerate() {
                 dump_node(

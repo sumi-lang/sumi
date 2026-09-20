@@ -476,7 +476,10 @@ fn delta(graph: &Graph, typing: &Typing, node: NodeId) -> Option<(u32, Ints)> {
                     // An arm that cannot run contributes no value.
                     let (then, otherwise) = (graph.region(then), graph.region(else_));
                     let live = |context| typing.may(context).live();
-                    match (live(then.context), live(otherwise.context)) {
+                    match (
+                        then.result_has_value() && live(then.context),
+                        otherwise.result_has_value() && live(otherwise.context),
+                    ) {
                         (true, true) => {
                             frames.push(Frame::Then {
                                 otherwise: otherwise.result(),

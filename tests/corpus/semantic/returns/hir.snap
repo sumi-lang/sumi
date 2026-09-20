@@ -6,6 +6,9 @@ fn callee@0..41 () -> int ∈ [4, 4]
   result: result : int @15..18
     outcome[0]:
       discard: after : ? @25..33
+        control: return : int @25..33
+          payload: int 4 : int @32..33
+        context: entry : ? @0..41
       tail: int 9 : int @38..39
     outcome[1]: return : int @25..33
       payload: int 4 : int @32..33
@@ -13,9 +16,12 @@ fn callee@0..41 () -> int ∈ [4, 4]
 fn nested@42..122 () -> int ∈ [3, 3]
   result: result : int @57..60
     outcome[0]:
+      discard: after : ? @90..98
+        control: return : int @90..98
+          payload: int 3 : int @97..98
+        context: entry : ? @42..122
       let unused@71..77: int @67..114
         initializer: int 0 : int @107..108
-      discard: after : ? @67..114
       tail: int 8 : int @119..120
     outcome[1]: return : int @90..98
       payload: int 3 : int @97..98
@@ -33,8 +39,20 @@ fn lazy_skips@159..246 () -> int ∈ [5, 5]
         lhs: bool false : bool @192..197
         rhs:
           discard: after : ? @211..219
+            control: return : int @211..219
+              payload: int 6 : int @218..219
+            context: then : ? @201..238
           tail: bool true : bool @228..232
       discard: after : ? @188..238
+        control: observe : ? @192..238
+          condition: bool false : bool @192..197
+          then control:
+            discard: after : ? @211..219
+              control: return : int @211..219
+                payload: int 6 : int @218..219
+              context: then : ? @201..238
+            tail: bool true : bool @228..232
+        context: entry : ? @159..246
       tail: int 5 : int @243..244
     outcome[1]: return : int @211..219
       payload: int 6 : int @218..219
@@ -46,8 +64,20 @@ fn lazy_takes@247..333 () -> int ∈ [7, 7]
         lhs: bool true : bool @280..284
         rhs:
           discard: after : ? @298..306
+            control: return : int @298..306
+              payload: int 7 : int @305..306
+            context: then : ? @288..325
           tail: bool true : bool @315..319
       discard: after : ? @276..325
+        control: observe : ? @280..325
+          condition: bool true : bool @280..284
+          then control:
+            discard: after : ? @298..306
+              control: return : int @298..306
+                payload: int 7 : int @305..306
+              context: then : ? @288..325
+            tail: bool true : bool @315..319
+        context: entry : ? @247..333
       tail: int 8 : int @330..331
     outcome[1]: return : int @298..306
       payload: int 7 : int @305..306
@@ -59,6 +89,18 @@ fn ordered@334..445 () -> int ∈ [9, 9]
         lhs: int 1 : int @391..392
         rhs: int 2 : int @429..430
       discard: after : ? @360..436
+        control: sequence : int @364..436
+          before: return : int @374..382
+            payload: int 9 : int @381..382
+          value: return : int @411..420
+            payload: int 10 : int @418..420
+        context: after : ? @411..420
+          control: return : int @411..420
+            payload: int 10 : int @418..420
+          context: after : ? @374..382
+            control: return : int @374..382
+              payload: int 9 : int @381..382
+            context: entry : ? @334..445
       tail: int 11 : int @441..443
     outcome[1]: return : int @374..382
       payload: int 9 : int @381..382
@@ -76,6 +118,12 @@ fn divide@446..524 (int ∈ ∅) -> int ∈ ∅
         then: unit : unit @487..511
         else: unit (implicit)
       discard: after : ? @477..511
+        control: observe : ? @477..511
+          condition: eager == : bool @480..486
+            lhs: read n@456..457 : int
+            rhs: int 0 : int @485..486
+          then control: unit : unit @487..511
+        context: entry : ? @446..524
       tail: eager / : int @516..522
         lhs: int 10 : int @516..518
         rhs: read n@456..457 [n == 0 fails@480..486] : int
@@ -93,6 +141,12 @@ fn count@525..612 (int ∈ [0, 3]) -> int ∈ [0, +∞)
         then: unit : unit @565..589
         else: unit (implicit)
       discard: after : ? @555..589
+        control: observe : ? @555..589
+          condition: eager == : bool @558..564
+            lhs: read n@534..535 : int
+            rhs: int 0 : int @563..564
+          then control: unit : unit @565..589
+        context: entry : ? @525..612
       tail: eager + : int @594..610
         lhs: int 1 : int @594..595
         rhs: call count@525..612 : int @598..610
@@ -119,6 +173,9 @@ fn dead_checks@677..750 () -> int ∈ [12, 12]
   result: result : int @697..700
     outcome[0]:
       discard: after : ? @707..716
+        control: return : int @707..716
+          payload: int 12 : int @714..716
+        context: entry : ? @677..750
       discard: eager / : int @725..730
         lhs: int 1 : int @725..726
         rhs: int 0 : int @729..730
@@ -143,7 +200,6 @@ fn argument@810..888 () -> int ∈ [14, 14]
       let unused@841..847: int @837..879
         initializer: call id@785..809 : int @850..879
           arg[0]: unit : unit @853..878
-      discard: after : ? @837..879
       tail: int 15 : int @884..886
     outcome[1]: return : int @863..872
       payload: int 14 : int @870..872
