@@ -74,9 +74,13 @@ fn completing_inputs_are_not_scalar_reads() {
     for source in [
         "fn f() -> int = 10 + { return 16 }",
         "fn f() -> int = 10 + { return 16\n false }",
+        "fn f() -> int = -{ return 16 }",
+        "fn f() -> int = ({ return 16 })",
         "fn f() -> int { _ = false && { return 4\n true }\n 5 }",
+        "fn f() -> int { let x: bool = { return 7 } }",
         "fn f(b: bool) -> int = if b { return 8 } else { return 9 }",
         "fn f() -> int = { return 10 } && { return 11 }",
+        "fn id(x: int) -> int = x\nfn f() -> int = id({ return 12 })",
     ] {
         clean(source);
     }
@@ -132,6 +136,46 @@ fn damaged_values_with_completing_inputs_remain_incomplete() {
             1,
         ),
         ("fn f() -> int { let u: ud = { return 3 } }", 0),
+    ] {
+        let analysis = analyzed(source);
+        assert!(!analysis.is_valid(), "{source}");
+        assert!(!analysis.functions()[function].complete(), "{source}");
+        check::semantics(&analysis);
+    }
+}
+
+#[test]
+fn validity_and_completion_are_independent() {
+    for (lhs, rhs, valid) in [
+        ("1", "2", true),
+        ("1", "{ return 3 }", true),
+        ("absent", "2", false),
+        ("absent", "{ return 3 }", false),
+    ] {
+        let source = format!("fn f() -> int = {lhs} + {rhs}");
+        let analysis = analyzed(&source);
+        assert_eq!(analysis.is_valid(), valid, "{source}");
+        assert_eq!(analysis.functions()[0].complete(), valid, "{source}");
+        check::semantics(&analysis);
+    }
+}
+
+#[test]
+fn damaged_completion_propagates_through_expression_forms() {
+    for (source, function) in [
+        ("fn f() -> int = ({ _ = absent\n return 1 })", 0),
+        ("fn f() -> int = -{ _ = absent\n return 1 }", 0),
+        ("fn f() -> int = absent + { return 1 }", 0),
+        ("fn f() -> int = false && { _ = absent\n return true }", 0),
+        (
+            "fn f() -> int = if true { _ = absent\n return 1 } else { return 2 }",
+            0,
+        ),
+        ("fn f() -> int { _ = { _ = absent\n return 1 } }", 0),
+        (
+            "fn id(x: int) -> int = x\nfn f() -> int = id({ _ = absent\n return 1 })",
+            1,
+        ),
     ] {
         let analysis = analyzed(source);
         assert!(!analysis.is_valid(), "{source}");
