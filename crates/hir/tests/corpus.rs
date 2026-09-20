@@ -243,7 +243,9 @@ fn dump_region(
                 graph.node(node).op,
                 Op::Then | Op::Else | Op::Entry | Op::Refine { .. } | Op::Exactly(_)
             );
-            named || (node != result && !contextual && shape.users[node.index()] == 0)
+            named
+                || matches!(graph.node(node).op, Op::Assign { .. })
+                || (node != result && !contextual && shape.users[node.index()] == 0)
         })
         .collect();
     let indent = "  ".repeat(depth);
@@ -300,6 +302,9 @@ fn guards(analysis: &Analysis, mut node: NodeId) -> (Vec<String>, NodeId) {
                 guards.push(format!("is {value}"));
                 node = graph.inputs(node)[0];
             }
+            Op::Assign { declaration } | Op::Phi { declaration, .. } => {
+                return (guards, declaration);
+            }
             _ => return (guards, node),
         }
     }
@@ -354,6 +359,8 @@ fn dump_definition(
         Op::Unused => unreachable!("nothing reads a statement; dump_region discards its input"),
         Op::Hole => "hole".into(),
         Op::Copy { .. } => "copy".into(),
+        Op::Assign { declaration } => format!("assign {}", named(analysis, *declaration)),
+        Op::Phi { declaration, .. } => format!("phi {}", named(analysis, *declaration)),
         Op::Neg => "negate".into(),
         Op::Not => "not".into(),
         Op::Binary(op) => format!("eager {}", operator(*op)),
@@ -408,7 +415,14 @@ fn dump_definition(
                 );
             }
         }
-        Op::Copy { .. } => dump_node(analysis, shape, "value", inputs[0], child, out),
+        Op::Copy { .. } | Op::Assign { .. } => {
+            dump_node(analysis, shape, "value", inputs[0], child, out)
+        }
+        Op::Phi { .. } => {
+            dump_node(analysis, shape, "condition", inputs[0], child, out);
+            dump_node(analysis, shape, "then", inputs[1], child, out);
+            dump_node(analysis, shape, "else", inputs[2], child, out);
+        }
         Op::Unused => unreachable!("nothing reads a statement; dump_region discards its input"),
         Op::Neg | Op::Not => dump_node(analysis, shape, "operand", inputs[0], child, out),
         Op::Binary(_) => {

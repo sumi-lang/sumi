@@ -135,6 +135,13 @@ impl Demands<'_> {
                 declared: Some((ty, at)),
             } if value(0) => require(reads[0], inputs[0], Expected::Ty(*ty), Some(*at)),
             Op::Copy { declared: Some(_) } => {}
+            Op::Assign { declaration } if value(0) => require(
+                reads[0],
+                inputs[0],
+                Expected::Peer(*declaration),
+                graph.node(*declaration).name,
+            ),
+            Op::Assign { .. } => {}
             Op::Call(callee) => {
                 let callable = graph.callable(*callee);
                 let declared = graph.node(graph.run(callable.function).entry()).origin;
@@ -175,6 +182,7 @@ impl Demands<'_> {
             | Op::Unit
             | Op::Hole
             | Op::Copy { declared: None }
+            | Op::Phi { .. }
             | Op::Refine { .. }
             | Op::Exactly(_)
             | Op::Entry
@@ -299,6 +307,29 @@ pub(crate) fn draw(
                     }
                 }
                 Op::Copy { declared: None } => typing.flow(inputs[0], node, Edge::Bind),
+                Op::Assign { declaration } => {
+                    typing.flow(*declaration, node, Edge::TypeBind);
+                    if graph.input_values(node)[0] {
+                        typing.flow(inputs[0], node, Edge::Values);
+                    }
+                }
+                Op::Phi {
+                    declaration,
+                    contexts,
+                } => {
+                    typing.flow(*declaration, node, Edge::TypeBind);
+                    if graph.input_values(node)[0] {
+                        for ((&value, &context), has_value) in inputs[1..]
+                            .iter()
+                            .zip(contexts)
+                            .zip(&graph.input_values(node)[1..])
+                        {
+                            if *has_value {
+                                typing.derive(value, context, node, Pair::Outcome);
+                            }
+                        }
+                    }
+                }
                 Op::Neg => {
                     typing.known(node, Ty::Int, origin);
                     typing.flow(inputs[0], node, Edge::Neg);

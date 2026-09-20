@@ -451,9 +451,32 @@ fn delta(graph: &Graph, typing: &Typing, node: NodeId) -> Option<(u32, Ints)> {
             let inputs = graph.inputs(node);
             result = match graph.node(node).op {
                 Op::Param { index, .. } => Some((index, Ints::from(Int::from(0)))),
-                Op::Copy { .. } | Op::Refine { .. } | Op::Exactly(_) => {
+                Op::Copy { .. } | Op::Assign { .. } | Op::Refine { .. } | Op::Exactly(_) => {
                     next = Some(inputs[0]);
                     continue;
+                }
+                Op::Phi { contexts, .. } => {
+                    let live = |index: usize| {
+                        graph.input_values(node)[index + 1] && typing.may(contexts[index]).live()
+                    };
+                    match (live(0), live(1)) {
+                        (true, true) => {
+                            frames.push(Frame::Then {
+                                otherwise: inputs[2],
+                            });
+                            next = Some(inputs[1]);
+                            continue;
+                        }
+                        (true, false) => {
+                            next = Some(inputs[1]);
+                            continue;
+                        }
+                        (false, true) => {
+                            next = Some(inputs[2]);
+                            continue;
+                        }
+                        (false, false) => None,
+                    }
                 }
                 Op::Binary(BinaryOp::Arith(ArithOp::Add)) => {
                     frames.push(Frame::AddLhs {

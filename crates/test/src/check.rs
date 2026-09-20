@@ -737,6 +737,26 @@ fn typed(analysis: &Analysis) {
                         assert_eq!(own, Some(*declared));
                     }
                 }
+                Op::Assign { declaration } => {
+                    assert_eq!(own, ty(*declaration));
+                    if values[0] {
+                        assert_eq!(ty(inputs[0]), own);
+                    }
+                }
+                Op::Phi {
+                    declaration,
+                    contexts: _,
+                } => {
+                    assert_eq!(own, ty(*declaration));
+                    if values[0] {
+                        assert_eq!(ty(inputs[0]), Some(Ty::Bool));
+                    }
+                    for (index, &input) in inputs[1..].iter().enumerate() {
+                        if values[index + 1] {
+                            assert_eq!(ty(input), own);
+                        }
+                    }
+                }
                 Op::Refine { .. } | Op::Exactly(_) => {
                     if values[0] {
                         assert_eq!(own, ty(inputs[0]));
@@ -790,7 +810,7 @@ fn typed(analysis: &Analysis) {
 }
 
 fn graph(analysis: &Analysis) {
-    use sumi_hir::Op;
+    use sumi_hir::{NodeId, Op};
     let graph = analysis.graph();
     for id in graph.node_ids() {
         let node = graph.node(id);
@@ -800,7 +820,14 @@ fn graph(analysis: &Analysis) {
         }
         let arity = match node.op {
             Op::Int(_) | Op::Bool(_) | Op::Param { .. } | Op::Entry => Some(0),
-            Op::Unit | Op::Unused | Op::Copy { .. } | Op::Neg | Op::Not | Op::Exactly(_) => Some(1),
+            Op::Unit
+            | Op::Unused
+            | Op::Copy { .. }
+            | Op::Assign { .. }
+            | Op::Neg
+            | Op::Not
+            | Op::Exactly(_) => Some(1),
+            Op::Phi { .. } => Some(3),
             Op::And { .. } | Op::Or { .. } | Op::Join { .. } => Some(1),
             Op::Observe { .. } => Some(2),
             Op::Binary(_)
@@ -909,6 +936,23 @@ fn graph(analysis: &Analysis) {
         }
         for node in function.nodes() {
             owner[node.index()] = Some(index);
+        }
+    }
+    for node in graph.node_ids() {
+        let check = |reference: NodeId| {
+            assert!(reference.index() < node.index());
+            assert_eq!(owner[reference.index()], owner[node.index()]);
+        };
+        match &graph.node(node).op {
+            Op::Assign { declaration } => check(*declaration),
+            Op::Phi {
+                declaration,
+                contexts,
+            } => {
+                check(*declaration);
+                contexts.iter().copied().for_each(check);
+            }
+            _ => {}
         }
     }
     let mut spans: Vec<(usize, usize)> = Vec::new();

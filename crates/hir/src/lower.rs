@@ -787,6 +787,10 @@ impl<'a, 's> Builder<'a, 's> {
                 self.whole(callee, inputs)
                     && !matches!(self.headers[function.index()].result, HeaderResult::None)
             }
+            Op::Assign { declaration } => typed(declaration) && typed(inputs[0].0),
+            Op::Phi { declaration, .. } => {
+                typed(declaration) && inputs.iter().all(|&(input, _)| typed(input))
+            }
             Op::And { .. } | Op::Or { .. } | Op::Join { .. } => {
                 typed(inputs[0].0) && results.iter().all(|&result| typed(result))
             }
