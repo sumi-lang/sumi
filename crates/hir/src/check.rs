@@ -397,6 +397,12 @@ fn complete(
             | Op::Sequence
             | Op::Observe { .. }
             | Op::After => true,
+            Op::Hole => false,
+            // A caller's demand can resolve the call without the callee resolving.
+            Op::Call(callee) => functions[graph.callable(callee).function.index()]
+                .signature
+                .as_ref()
+                .is_some_and(|signature| Some(signature.result) == typing.resolve(node)),
             _ if graph.input_values(node).iter().any(|&value| !value) => true,
             Op::Join {
                 then,
@@ -406,11 +412,6 @@ fn complete(
             {
                 true
             }
-            // A caller's demand can resolve the call without the callee resolving.
-            Op::Call(callee) => functions[graph.callable(callee).function.index()]
-                .signature
-                .as_ref()
-                .is_some_and(|signature| Some(signature.result) == typing.resolve(node)),
             _ => typing.resolve(node).is_some(),
         });
         functions[index].complete = complete;

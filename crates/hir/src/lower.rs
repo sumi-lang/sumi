@@ -68,7 +68,7 @@ pub(crate) struct Call {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct ExplicitTail {
+pub(crate) struct Fallthrough {
     pub value: NodeId,
     pub at: TextRange,
 }
@@ -83,7 +83,7 @@ pub(crate) struct Lowered {
     /// (context, callee) of every call whose callee has a whole parameter list, whole call or not.
     pub entered: Vec<(NodeId, FunctionId)>,
     pub obligations: Vec<Obligation>,
-    pub explicit_tails: Vec<Option<ExplicitTail>>,
+    pub fallthroughs: Vec<Option<Fallthrough>>,
 }
 
 pub(crate) struct Source<'s> {
@@ -508,7 +508,7 @@ impl<'a, 's> Builder<'a, 's> {
                 calls: Vec::new(),
                 entered: Vec::new(),
                 obligations: Vec::new(),
-                explicit_tails: vec![None; headers.len()],
+                fallthroughs: vec![None; headers.len()],
             },
             nodes_of: vec![None; nodes],
             owner: 0,
@@ -676,13 +676,18 @@ impl<'a, 's> Builder<'a, 's> {
                 outcomes.extend(self.returns.iter().copied());
                 let result = self.push(node, Op::Result { declared }, &outcomes, None);
                 let completes = root_node.is_none_or(|root| self.form(root) == Form::Bottom);
+                let fallthrough = explicit_tail
+                    .filter(|&tail| self.form(tail) == Form::Scalar)
+                    .or_else(|| {
+                        root_node
+                            .filter(|&root| declared.is_some() && self.form(root) == Form::Scalar)
+                    });
                 if (declared.is_some() || completes)
-                    && let Some(tail) =
-                        explicit_tail.filter(|&tail| self.form(tail) == Form::Scalar)
+                    && let Some(fallthrough) = fallthrough
                 {
-                    self.lowered.explicit_tails[self.owner as usize] = Some(ExplicitTail {
-                        value: self.node_of(tail),
-                        at: self.source.range(tail),
+                    self.lowered.fallthroughs[self.owner as usize] = Some(Fallthrough {
+                        value: self.node_of(fallthrough),
+                        at: self.source.range(fallthrough),
                     });
                 }
                 if completes {
