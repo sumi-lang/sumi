@@ -153,12 +153,26 @@ impl<'a> Program<'a> {
             self.function(function).depth_bound(),
         )
     }
+    /// Evaluate within `ranges(function).params`, without the machine's observable trace.
     pub fn evaluate(self, function: FunctionId, args: &[Value]) -> Value {
-        self.machine(function, args)
-            .run()
-            .unwrap_or_else(|refusal| {
+        let machine = self.machine(function, args);
+        let run = self.analysis.graph.run(function);
+        let may = self.analysis.may(run.result());
+        let known = match self.signature(function).result {
+            Ty::Int => may.ints.lo().zip(may.ints.hi()).and_then(|(lo, hi)| {
+                // Singleton detection stays constant-time even for large interval endpoints.
+                (i64::try_from(&lo).is_ok() && lo == hi).then_some(Value::Int(lo))
+            }),
+            Ty::Bool if may.bools == Bools::from(true) => Some(Value::Bool(true)),
+            Ty::Bool if may.bools == Bools::from(false) => Some(Value::Bool(false)),
+            Ty::Unit if may.unit => Some(Value::Unit),
+            _ => None,
+        };
+        known.unwrap_or_else(|| {
+            machine.run().unwrap_or_else(|refusal| {
                 unreachable!("the checker proved this run: it was refused with {refusal:?}")
             })
+        })
     }
 }
 

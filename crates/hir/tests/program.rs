@@ -597,6 +597,41 @@ fn the_bare_graph_refuses_what_the_checker_rejects() {
 }
 
 #[test]
+fn known_results_and_varying_results_agree_with_the_machine() {
+    let analysis = analysis(
+        "fn known(n: int) -> int = if n <= 0 { 7 } else { known(n - 1) }
+fn varying(n: int) -> int = if n <= 0 { 2 } else { varying(n - 1) + 1 }
+fn early(n: int) -> bool { if n > 0 { return early(n - 1) }\n true }
+fn nothing(n: int) -> unit { if n > 0 { _ = nothing(n - 1) } }
+fn main() -> int { _ = known(24)\n _ = varying(24)\n _ = early(24)\n _ = nothing(24)\n 7 }
+fn skipped() -> bool = false && known(1) == 7",
+    );
+    let program = analysis.program().unwrap();
+    for (name, args, expected) in [
+        ("known", vec![int(24)], int(7)),
+        ("varying", vec![int(0)], int(2)),
+        ("varying", vec![int(24)], int(26)),
+        ("early", vec![int(24)], Value::Bool(true)),
+        ("nothing", vec![int(24)], Value::Unit),
+        ("main", vec![], int(7)),
+        ("skipped", vec![], Value::Bool(false)),
+    ] {
+        let function = program.function_named(name).unwrap();
+        assert_eq!(program.evaluate(function, &args), expected);
+        assert_eq!(program.machine(function, &args).run(), Ok(expected));
+    }
+    check::run(program);
+}
+
+#[test]
+#[should_panic(expected = "arguments must match the signature")]
+fn known_results_still_validate_argument_types() {
+    let analysis = analysis("fn f(n: int) -> int = 7\nfn main() -> int = f(1)");
+    let program = analysis.program().unwrap();
+    program.evaluate(program.function_named("f").unwrap(), &[Value::Bool(true)]);
+}
+
+#[test]
 fn a_shared_call_can_suspend_under_different_continuations() {
     let padding: String = (0..300)
         .map(|i| format!("let unused{i} = a + {i}\n"))

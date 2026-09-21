@@ -1088,6 +1088,7 @@ pub fn run(program: Program<'_>) -> Runs {
                 Err(refusal) => panic!("f{} was refused: {refusal:?}", id.index()),
             };
             assert_eq!(program.machine(id, &args).run(), Ok(value.clone()));
+            assert_eq!(program.evaluate(id, &args), value);
             assert_eq!(value.ty(), signature.result);
             let within = match &value {
                 Value::Int(value) => contains(&ranges.result.ints, value),
