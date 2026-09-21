@@ -38,7 +38,7 @@ proptest! {
     }
 
     #[test]
-    fn formatted_lines_fit_the_width(source in sumi_test::program()) {
+    fn well_formed_programs_format_cleanly_within_width(source in sumi_test::program()) {
         let formatted = check::format(&source);
         for line in formatted.text.lines() {
             // A trailing comment may run past the width; code may not.
@@ -52,6 +52,15 @@ proptest! {
                 line
             );
         }
+        prop_assert_eq!(formatted.reverted, 0, "reverted items in {:?}", source);
+        let after = front(&formatted.text);
+        prop_assert!(
+            after.parse.evidence().is_empty(),
+            "formatted {:?} -> {:?} has evidence {:?}",
+            source,
+            formatted.text,
+            after.parse.evidence()
+        );
     }
 
     #[test]
@@ -75,20 +84,6 @@ proptest! {
             "formatting {:?} differs from formatting {:?}",
             perturbed,
             source
-        );
-    }
-
-    #[test]
-    fn well_formed_programs_format_without_reverting(source in sumi_test::program()) {
-        let formatted = check::format(&source);
-        prop_assert_eq!(formatted.reverted, 0, "reverted items in {:?}", source);
-        let after = front(&formatted.text);
-        prop_assert!(
-            after.parse.evidence().is_empty(),
-            "formatted {:?} -> {:?} has evidence {:?}",
-            source,
-            formatted.text,
-            after.parse.evidence()
         );
     }
 }
