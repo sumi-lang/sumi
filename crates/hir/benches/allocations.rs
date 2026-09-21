@@ -22,6 +22,9 @@ mod slots;
 #[path = "support/recursion_forms.rs"]
 mod forms;
 
+#[path = "support/entry.rs"]
+mod entry;
+
 struct Counting;
 static CALLS: AtomicUsize = AtomicUsize::new(0);
 static BYTES: AtomicUsize = AtomicUsize::new(0);
@@ -83,6 +86,22 @@ fn measure<T>(phase: &str, shape: &str, size: usize, run: impl FnOnce() -> T) ->
 
 fn main() {
     println!("phase,shape,size,allocation_calls,requested_bytes,peak_extra_live_bytes");
+    if std::env::args().any(|arg| arg == "--entry") {
+        for &shape in entry::SHAPES {
+            for &width in entry::WIDTHS {
+                let source = entry::source(shape, width);
+                let parsed = workloads::parse(&source);
+                let analysis = measure("analyze", shape, width, || analyze(parsed));
+                entry::validate(shape, &analysis);
+                let program = analysis.program().unwrap();
+                let function = program.function_named("entry").unwrap();
+                measure("evaluate", shape, width, || {
+                    program.evaluate(function, &[sumi_hir::Value::Bool(true)])
+                });
+            }
+        }
+        return;
+    }
     if std::env::args().any(|arg| arg == "--forms") {
         for &shape in forms::SHAPES {
             for &size in forms::SIZES {

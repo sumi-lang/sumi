@@ -44,3 +44,7 @@ harness = false
 [[bench]]
 name = "recursion_forms"
 harness = false
+
+[[bench]]
+name = "entry"
+harness = false
