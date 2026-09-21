@@ -3,7 +3,11 @@
 
 use crate::{Domain, Fault, FunctionId, Graph, NodeId, Op, RegionId, Run, Value};
 
-#[derive(Clone, Copy, Debug)]
+#[path = "suspend.rs"]
+mod suspend;
+use suspend::Suspensions;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Control {
     Eval(NodeId),
     Apply(NodeId),
@@ -49,6 +53,7 @@ enum Control {
         and: bool,
     },
     ResumeCaller(NodeId),
+    ResumePackedCaller(NodeId),
 }
 
 fn bind(slots: &mut [Option<Value>], run: &Run, args: impl IntoIterator<Item = Value>) {
@@ -89,7 +94,7 @@ impl Refusal {
 pub struct Machine<'a> {
     graph: &'a Graph,
     control: Vec<Control>,
-    /// Every live frame's slots, contiguous, in frame order.
+    /// The active frame is dense; suspended frames may hold only their continuation's live slots.
     slots: Vec<Option<Value>>,
     frames: Vec<Frame<'a>>,
     steps: u64,
@@ -98,6 +103,7 @@ pub struct Machine<'a> {
     latest: Option<usize>,
     outcome: Option<Result<Value, Refusal>>,
     tail_args: Vec<Value>,
+    suspensions: Suspensions,
 }
 
 impl<'a> Machine<'a> {
@@ -116,6 +122,7 @@ impl<'a> Machine<'a> {
             latest: None,
             outcome: None,
             tail_args: Vec::new(),
+            suspensions: Suspensions::new(),
         };
         let base = machine.open(function);
         bind(&mut machine.slots[base..], run, args.iter().cloned());
@@ -145,7 +152,7 @@ impl<'a> Machine<'a> {
         self.outcome.as_ref()
     }
 
-    /// Tail calls reuse storage only here; stepping retains every intermediate value and frame.
+    /// Consuming execution may reuse storage; stepping retains every intermediate value and frame.
     pub fn run(mut self) -> Result<Value, Refusal> {
         if let Some(outcome) = self.outcome {
             return outcome;
@@ -449,6 +456,41 @@ impl<'a> Machine<'a> {
                 }
                 let caller = self.frames.last().expect("a call has a caller");
                 let (caller_base, caller_run) = (caller.base, caller.run);
+                if TAIL
+                    && caller_run.nodes().len() * size_of::<Option<Value>>() >= 4096
+                    && self
+                        .bound
+                        .is_none_or(|bound| bound.saturating_sub(caller.depth as u64) > 1)
+                {
+                    let layout = self.suspensions.slots(
+                        self.graph,
+                        caller_run,
+                        node,
+                        &self.control[caller.control_base..],
+                    );
+                    if let Some(layout) = layout {
+                        for &arg in self.graph.inputs(node) {
+                            self.tail_args.push(
+                                self.slots[caller_base + caller_run.slot(arg)]
+                                    .clone()
+                                    .unwrap(),
+                            );
+                        }
+                        for (packed, &slot) in layout.iter().enumerate() {
+                            let value = self.slots[caller_base + slot].take();
+                            self.slots[caller_base + packed] = value;
+                        }
+                        self.slots.truncate(caller_base + layout.len());
+                        self.control.push(Control::ResumePackedCaller(node));
+                        let base = self.open(function);
+                        bind(
+                            &mut self.slots[base..],
+                            self.graph.run(function),
+                            self.tail_args.drain(..),
+                        );
+                        return Ok(());
+                    }
+                }
                 self.control.push(Control::ResumeCaller(node));
                 let base = self.open(function);
                 let graph = self.graph;
@@ -460,12 +502,22 @@ impl<'a> Machine<'a> {
                 });
                 bind(callee, graph.run(function), args);
             }
-            Control::ResumeCaller(node) => {
+            Control::ResumeCaller(node) | Control::ResumePackedCaller(node) => {
                 let frame = self.frames.pop().expect("a return has a frame to leave");
                 let value = self.slots[frame.base + frame.run.slot(frame.run.result())]
                     .take()
                     .expect("a callee's result is in before it returns");
                 self.slots.truncate(frame.base);
+                if matches!(control, Control::ResumePackedCaller(_)) {
+                    let caller = self.frames.last().unwrap();
+                    let layout = self.suspensions.saved(node);
+                    self.slots
+                        .resize(caller.base + caller.run.nodes().len(), None);
+                    for (packed, &slot) in layout.iter().enumerate().rev() {
+                        let value = self.slots[caller.base + packed].take();
+                        self.slots[caller.base + slot] = value;
+                    }
+                }
                 self.fill(node, value);
             }
         }
@@ -745,5 +797,87 @@ mod tests {
             Machine::new(&graph, function, &[], None).run(),
             Ok(Value::Int(7.into()))
         );
+    }
+
+    #[test]
+    fn suspended_shared_values_preserve_steps_and_depth() {
+        for padding in [0, 300] {
+            let mut builder = GraphBuilder::new(padding + 10);
+            let leaf = builder.function();
+            let caller = builder.function();
+            let callee = builder.declare(leaf, Box::new([crate::Ty::Int; 2]));
+            let run = builder.open_run(leaf);
+            let entry = push(&mut builder, Op::Entry, &[]);
+            let params = [0, 1].map(|index| {
+                push(
+                    &mut builder,
+                    Op::Param {
+                        index,
+                        ty: Some(crate::Ty::Int),
+                    },
+                    &[],
+                )
+            });
+            let region = builder.open(entry);
+            builder.enter(region);
+            let difference = push(
+                &mut builder,
+                Op::Binary(BinaryOp::Arith(ArithOp::Sub)),
+                &params,
+            );
+            builder.close(region, difference);
+            builder.close_run(run, region, difference);
+            let run = builder.open_run(caller);
+            let entry = push(&mut builder, Op::Entry, &[]);
+            let region = builder.open(entry);
+            builder.enter(region);
+            for _ in 0..padding {
+                push(&mut builder, Op::Int(0.into()), &[]);
+            }
+            let value = push(&mut builder, Op::Int(4_294_967_296_i64.into()), &[]);
+            let square = push(
+                &mut builder,
+                Op::Binary(BinaryOp::Arith(ArithOp::Mul)),
+                &[value, value],
+            );
+            let call = push(&mut builder, Op::Call(callee), &[square, square]);
+            let inner = push(
+                &mut builder,
+                Op::Binary(BinaryOp::Arith(ArithOp::Add)),
+                &[call, square],
+            );
+            let result = push(
+                &mut builder,
+                Op::Binary(BinaryOp::Arith(ArithOp::Add)),
+                &[square, inner],
+            );
+            builder.close(region, result);
+            builder.close_run(run, region, result);
+            let graph = builder.finish();
+            for bound in [Some(1), Some(2), Some(8), None] {
+                let mut reference = Machine::new(&graph, caller, &[], bound);
+                while reference.step().is_none() {}
+                let mut fast = Machine::new(&graph, caller, &[], bound);
+                let outcome = loop {
+                    if let Some(outcome) = fast.advance::<true>() {
+                        break outcome;
+                    }
+                };
+                assert_eq!(reference.outcome(), Some(&outcome));
+                assert_eq!(fast.steps(), reference.steps());
+                assert_eq!(fast.max_depth(), reference.max_depth());
+                if bound == Some(1) {
+                    assert_eq!(outcome, Err(Refusal::Depth(call)));
+                    assert_eq!(fast.steps(), 2);
+                } else {
+                    assert_eq!(
+                        outcome,
+                        Ok(Value::Int("36893488147419103232".parse().unwrap()))
+                    );
+                    assert_eq!(fast.steps(), 6);
+                    assert_eq!(fast.max_depth(), 2);
+                }
+            }
+        }
     }
 }
