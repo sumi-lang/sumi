@@ -273,6 +273,32 @@ fn entry() -> int = descend(160, true) + descend(160, false)"
 }
 
 #[test]
+fn nested_mutation_retires_shadowed_locals_and_restores_outer_versions() {
+    let analysis = clean(
+        "fn choose(b: bool) -> int {
+    let mut x = 3
+    let mut y = 11
+    if b {
+        y = y + 5
+        _ = if true { let mut x = 100\n x = x + 7 }
+        x = x + 2
+    } else {
+        x = x - 1
+        if x > 0 { y = x + 1 } else { return -99 }
+    }
+    x * 100 + y
+}
+fn main() -> int = choose(true) + choose(false)",
+    );
+    let program = analysis.program().unwrap();
+    assert_eq!(
+        program.evaluate(program.function_named("main").unwrap(), &[]),
+        sumi_hir::Value::Int(719.into())
+    );
+    check::run(program);
+}
+
+#[test]
 fn literals_of_any_size_fold_a_leading_minus() {
     for (expr, value) in [
         ("9223372036854775807", "9223372036854775807"),

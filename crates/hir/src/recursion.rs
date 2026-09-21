@@ -168,15 +168,24 @@ pub(crate) fn check(
     for c in 0..count {
         group_start[c + 1] += group_start[c];
     }
-    let mut cyclic = vec![false; count];
+    let mut position = vec![0; count_functions];
+    for c in 0..count {
+        for (index, &function) in grouped[group_start[c]..group_start[c + 1]]
+            .iter()
+            .enumerate()
+        {
+            position[function] = index;
+        }
+    }
+    let mut internal = vec![Vec::new(); count];
     let mut between = Vec::new();
-    for &(caller, callee) in &arcs {
+    for call in &live {
         let (from, to) = (
-            component[caller as usize] as usize,
-            component[callee as usize] as usize,
+            component[call.caller.index()] as usize,
+            component[call.callee.index()] as usize,
         );
         if from == to {
-            cyclic[from] = true;
+            internal[from].push(*call);
         } else {
             between.push((from, to));
         }
@@ -185,8 +194,9 @@ pub(crate) fn check(
     between.dedup();
     let mut failures = Vec::new();
     let mut chain: Vec<Option<u64>> = vec![Some(1); count];
+    let mut deltas = HashMap::new();
     for c in 0..count {
-        if !cyclic[c] {
+        if internal[c].is_empty() {
             continue;
         }
         let members = &grouped[group_start[c]..group_start[c + 1]];
@@ -194,23 +204,24 @@ pub(crate) fn check(
             chain[c] = None;
             continue;
         }
-        let position: HashMap<usize, usize> =
-            members.iter().enumerate().map(|(i, &f)| (f, i)).collect();
         let mut inside = Vec::new();
-        for call in &live {
-            let (Some(&from), Some(&to)) = (
-                position.get(&call.caller.index()),
-                position.get(&call.callee.index()),
-            ) else {
-                continue;
-            };
+        let mut incoming = vec![Vec::new(); members.len()];
+        let mut caller = None;
+        for call in &internal[c] {
+            let from = position[call.caller.index()];
+            let to = position[call.callee.index()];
+            if caller != Some(call.caller) {
+                // Clearing retains capacity and makes small callers scan an earlier large DAG's map.
+                deltas = HashMap::new();
+                caller = Some(call.caller);
+            }
             let mut offsets = HashMap::new();
-            let mut deltas = HashMap::new();
             for (j, &arg) in graph.inputs(call.node).iter().enumerate() {
                 if let Some((i, band)) = delta(graph, typing, arg, &mut deltas) {
                     offsets.insert((i as usize, j), band);
                 }
             }
+            incoming[to].push(inside.len());
             inside.push(Call {
                 from,
                 to,
@@ -236,7 +247,8 @@ pub(crate) fn check(
                 let mut work = vec![0];
                 while let Some(to) = work.pop() {
                     let j = choice[to].expect("queued once chosen");
-                    for call in inside.iter().filter(|call| call.to == to) {
+                    for &index in &incoming[to] {
+                        let call = &inside[index];
                         let forced = call.offsets.iter().find_map(|(&(i, k), offset)| {
                             (k == j && moves(offset, direction).is_some()).then_some(i)
                         });
