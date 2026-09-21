@@ -1,0 +1,220 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Sumi",
+  "scopeName": "source.sumi",
+  "patterns": [
+    { "include": "#expression" }
+  ],
+  "repository": {
+    "expression": {
+      "patterns": [
+        { "include": "#comments" },
+        { "include": "#strings" },
+        { "include": "#function-declaration" },
+        { "include": "#binding-declaration" },
+        { "include": "#type-reference" },
+        { "include": "#invalid-number" },
+        { "include": "#numbers" },
+        { "include": "#keywords" },
+        { "include": "#constants" },
+        { "include": "#function-call" },
+        { "include": "#identifier" },
+        { "include": "#operators" },
+        { "include": "#nested-braces" },
+        { "include": "#punctuation" },
+        { "include": "#invalid-source" }
+      ]
+    },
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.sumi",
+          "begin": "//",
+          "beginCaptures": {
+            "0": { "name": "punctuation.definition.comment.sumi" }
+          },
+          "end": "$"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.sumi",
+          "begin": "\"",
+          "beginCaptures": {
+            "0": { "name": "punctuation.definition.string.begin.sumi" }
+          },
+          "end": "\"|(?=\\r?$)",
+          "endCaptures": {
+            "0": { "name": "punctuation.definition.string.end.sumi" }
+          },
+          "patterns": [
+            { "include": "#escapes" },
+            { "include": "#invalid-escape" }
+          ]
+        }
+      ]
+    },
+    "escapes": {
+      "patterns": [
+        {
+          "name": "constant.character.escape.sumi",
+          "match": "\\\\[nrt\\\\\"0]"
+        }
+      ]
+    },
+    "invalid-escape": {
+      "patterns": [
+        {
+          "name": "invalid.illegal.escape.sumi",
+          "match": "\\\\(?:.|(?=\\r?$))"
+        }
+      ]
+    },
+    "invalid-number": {
+      "patterns": [
+        {
+          "name": "invalid.illegal.numeric.sumi",
+          "match": "(?<![A-Za-z0-9_])(?:0[0-9]+|[0-9]+[A-Za-z_][A-Za-z0-9_]*)(?![A-Za-z0-9_])"
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.integer.sumi",
+          "match": "(?<![A-Za-z0-9_])[0-9]+(?![A-Za-z0-9_])"
+        }
+      ]
+    },
+    "function-declaration": {
+      "patterns": [
+        {
+          "match": "\\b(fn)([ \\t]+)((?!_\\b)[A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": { "name": "storage.type.function.sumi" },
+            "3": { "name": "entity.name.function.sumi" }
+          }
+        }
+      ]
+    },
+    "binding-declaration": {
+      "patterns": [
+        {
+          "match": "\\b(let)([ \\t]+)(?:(mut)([ \\t]+))?((?!_\\b)[A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": { "name": "keyword.declaration.sumi" },
+            "3": { "name": "storage.modifier.sumi" },
+            "5": { "name": "variable.other.definition.sumi" }
+          }
+        }
+      ]
+    },
+    "type-reference": {
+      "patterns": [
+        {
+          "match": "(:|->)([ \\t]*)((?!_\\b)[A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": { "name": "keyword.operator.type.annotation.sumi" },
+            "3": { "name": "entity.name.type.sumi" }
+          }
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.sumi",
+          "match": "\\b(?:else|if|return)\\b"
+        },
+        {
+          "name": "keyword.declaration.sumi",
+          "match": "\\b(?:fn|let)\\b"
+        },
+        {
+          "name": "storage.modifier.sumi",
+          "match": "\\bmut\\b"
+        },
+        {
+          "name": "keyword.other.discard.sumi",
+          "match": "\\b_\\b"
+        }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        {
+          "name": "constant.language.boolean.sumi",
+          "match": "\\b(?:false|true)\\b"
+        }
+      ]
+    },
+    "function-call": {
+      "patterns": [
+        {
+          "name": "entity.name.function.call.sumi",
+          "match": "(?!_\\b)[A-Za-z_][A-Za-z0-9_]*(?=[ \\t]*\\()"
+        }
+      ]
+    },
+    "identifier": {
+      "patterns": [
+        {
+          "name": "variable.other.readwrite.sumi",
+          "match": "(?!_\\b)[A-Za-z_][A-Za-z0-9_]*"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.sumi",
+          "match": "->|==|!=|<=|>=|&&|\\|\\||[=<>!+\\-*/%&|]"
+        }
+      ]
+    },
+    "nested-braces": {
+      "name": "meta.block.sumi",
+      "begin": "\\{",
+      "beginCaptures": {
+        "0": { "name": "punctuation.section.block.begin.sumi" }
+      },
+      "end": "\\}",
+      "endCaptures": {
+        "0": { "name": "punctuation.section.block.end.sumi" }
+      },
+      "patterns": [
+        { "include": "#expression" }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.separator.sumi",
+          "match": "[,:]"
+        },
+        {
+          "name": "punctuation.separator.period.sumi",
+          "match": "\\."
+        },
+        {
+          "name": "punctuation.section.group.sumi",
+          "match": "[()]"
+        },
+        {
+          "name": "punctuation.section.block.sumi",
+          "match": "[{}]"
+        }
+      ]
+    },
+    "invalid-source": {
+      "patterns": [
+        {
+          "name": "invalid.illegal.character.sumi",
+          "match": "[^\\x00-\\x7F]|[#$'@;?\\[\\]\\\\^`~]"
+        }
+      ]
+    }
+  }
+}
