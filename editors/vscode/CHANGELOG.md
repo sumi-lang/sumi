@@ -4,6 +4,7 @@
 
 - Add the Sumi icon to the Marketplace listing.
 - Remove snippets while the language syntax is still evolving.
+- Match the compiler's simplified literals, escapes, and ASCII identifiers.
 
 ## 0.0.1
 

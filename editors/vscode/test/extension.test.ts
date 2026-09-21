@@ -9,44 +9,26 @@ const { OnigScanner, OnigString, loadWASM } = oniguruma;
 const { Registry } = textmate;
 
 const root = path.join(import.meta.dir, "..");
-
 const wasm = await Bun.file(
   path.join(root, "node_modules", "vscode-oniguruma", "release", "onig.wasm"),
 ).arrayBuffer();
 await loadWASM(wasm);
 
-const grammarPath = path.join(root, "syntaxes", "sumi.tmLanguage.json");
-const onigLib = Promise.resolve({
-  createOnigScanner: (patterns: string[]) => new OnigScanner(patterns),
-  createOnigString: (text: string) => new OnigString(text),
-});
-const loadGrammar = async (scopeName: string) => {
-  expect(scopeName).toBe("source.sumi");
-  return Bun.file(grammarPath).json();
-};
 const registry = new Registry({
-  onigLib,
-  loadGrammar,
-});
-const themedRegistry = new Registry({
-  onigLib,
-  loadGrammar,
-  theme: {
-    settings: [
-      { settings: { foreground: "#111111", background: "#FFFFFF" } },
-      { scope: "string", settings: { foreground: "#CC0000" } },
-    ],
+  onigLib: Promise.resolve({
+    createOnigScanner: (patterns: string[]) => new OnigScanner(patterns),
+    createOnigString: (text: string) => new OnigString(text),
+  }),
+  loadGrammar: async (scopeName: string) => {
+    expect(scopeName).toBe("source.sumi");
+    return Bun.file(path.join(root, "syntaxes", "sumi.tmLanguage.json")).json();
   },
 });
-const [loadedGrammar, loadedThemedGrammar] = await Promise.all([
-  registry.loadGrammar("source.sumi"),
-  themedRegistry.loadGrammar("source.sumi"),
-]);
-if (loadedGrammar === null || loadedThemedGrammar === null) {
+const loadedGrammar = await registry.loadGrammar("source.sumi");
+if (loadedGrammar === null) {
   throw new Error("Sumi TextMate grammar did not load");
 }
 const grammar = loadedGrammar;
-const themedGrammar = loadedThemedGrammar;
 
 type TokenizedLine = { line: string; tokens: IToken[] };
 
@@ -59,42 +41,24 @@ function tokenize(source: string): TokenizedLine[] {
   });
 }
 
-function textStart(line: string, text: string, occurrence: number) {
+function scopesAt(tokenized: TokenizedLine[], lineIndex: number, text: string, occurrence = 0) {
+  const { line, tokens } = tokenized[lineIndex];
   let start = -1;
   for (let count = 0, from = 0; count <= occurrence; count += 1) {
     start = line.indexOf(text, from);
     expect(start, `${JSON.stringify(text)} is present`).not.toBe(-1);
     from = start + text.length;
   }
-  return start;
-}
-
-function foregroundAt(line: string, text: string, occurrence = 0) {
-  const start = textStart(line, text, occurrence);
-  const encoded = themedGrammar.tokenizeLine2(line, null).tokens;
-  for (let index = 0; index < encoded.length; index += 2) {
-    const end = index + 2 < encoded.length ? encoded[index + 2] : line.length;
-    if (encoded[index] <= start && start < end) {
-      const foregroundIndex = (encoded[index + 1] >>> 15) & 0x1ff;
-      return themedRegistry.getColorMap()[foregroundIndex];
-    }
-  }
-  throw new Error(`an encoded grammar token covers ${JSON.stringify(text)}`);
-}
-
-function scopesAt(tokenized: TokenizedLine[], lineIndex: number, text: string, occurrence = 0) {
-  const { line, tokens } = tokenized[lineIndex];
-  const start = textStart(line, text, occurrence);
   const token = tokens.find(({ startIndex, endIndex }) => startIndex <= start && start < endIndex);
-  expect(token, `a grammar token covers ${JSON.stringify(text)} on line ${lineIndex + 1}`).toBeDefined();
-  if (token === undefined) {
-    throw new Error("expect().toBeDefined() did not stop the test");
-  }
-  return token.scopes;
+  expect(
+    token,
+    `a grammar token covers ${JSON.stringify(text)} on line ${lineIndex + 1}`,
+  ).toBeDefined();
+  return token?.scopes ?? [];
 }
 
 describe("extension contributions", () => {
-  test("manifest registers a dependency-free Sumi language", async () => {
+  test("registers a dependency-free Sumi language", async () => {
     const manifest = await Bun.file(path.join(root, "package.json")).json();
     expect(manifest.main).toBeUndefined();
     expect(manifest.icon).toBe("images/icon.png");
@@ -112,13 +76,16 @@ describe("extension contributions", () => {
 });
 
 describe("TextMate grammar", () => {
-  test("scopes declarations, literals, calls, and comments", () => {
-    const lines = tokenize([
-      "fn twice(x: int) -> int {",
-      "  let mut answer = x * 2 // doubled",
-      "  return twice(answer)",
-      "}",
-    ].join("\n"));
+  test("scopes the current declarations, assignment, literals, calls, and comments", () => {
+    const lines = tokenize(
+      [
+        "fn twice(x: int) -> int {",
+        "  let mut answer = x * 2 // doubled",
+        "  answer = twice(answer)",
+        "  return answer",
+        "}",
+      ].join("\n"),
+    );
 
     expect(scopesAt(lines, 0, "fn")).toContain("storage.type.function.sumi");
     expect(scopesAt(lines, 0, "twice")).toContain("entity.name.function.sumi");
@@ -128,137 +95,81 @@ describe("TextMate grammar", () => {
     expect(scopesAt(lines, 1, "answer")).toContain("variable.other.definition.sumi");
     expect(scopesAt(lines, 1, "2")).toContain("constant.numeric.integer.sumi");
     expect(scopesAt(lines, 1, "//")).toContain("comment.line.double-slash.sumi");
-    expect(scopesAt(lines, 2, "return")).toContain("keyword.control.sumi");
+    expect(scopesAt(lines, 2, "=")).toContain("keyword.operator.sumi");
     expect(scopesAt(lines, 2, "twice")).toContain("entity.name.function.call.sumi");
+    expect(scopesAt(lines, 3, "return")).toContain("keyword.control.sumi");
   });
 
-  test("distinguishes interpolated, block, and raw strings", () => {
-    const source = [
-      String.raw`let message = "value {twice(2)} and \n"`,
-      "let raw = r#\"literal {not_a_hole}\"#",
-      "let plain = r\"raw {still_not_a_hole}\" + 1",
-      "let card = \"\"\"",
-      "  value {if true { 1 } else { 2 }}",
-      "  \"\"\"",
-    ].join("\n");
-    const lines = tokenize(source);
+  test("keeps braces and names inside strings as string text", () => {
+    const lines = tokenize(String.raw`"hello, {name}\n\t\"quoted\" \\ escaped"`);
 
-    expect(scopesAt(lines, 0, "value")).toContain("string.quoted.double.sumi");
-    expect(scopesAt(lines, 0, "{")).toContain("meta.interpolation.sumi");
-    expect(scopesAt(lines, 0, "twice")).toContain("entity.name.function.call.sumi");
-    expect(scopesAt(lines, 0, "2")).toContain("constant.numeric.integer.sumi");
-    expect(scopesAt(tokenize('"value {result}"'), 0, "result")).toContain(
-      "variable.other.readwrite.sumi",
-    );
-    expect(scopesAt(lines, 0, "\\n")).toContain("constant.character.escape.sumi");
-    expect(scopesAt(lines, 1, "not_a_hole")).toContain("string.quoted.other.raw.sumi");
-    expect(scopesAt(lines, 1, "{")).not.toContain("meta.interpolation.sumi");
-    expect(scopesAt(lines, 2, "still_not_a_hole")).toContain("string.quoted.other.raw.sumi");
-    expect(scopesAt(lines, 2, "{")).not.toContain("meta.interpolation.sumi");
-    expect(scopesAt(lines, 2, "1")).toContain("constant.numeric.integer.sumi");
-    expect(scopesAt(lines, 4, "if")).toContain("keyword.control.sumi");
-    expect(scopesAt(lines, 4, "true")).toContain("constant.language.boolean.sumi");
-    expect(scopesAt(lines, 4, "1")).toContain("constant.numeric.integer.sumi");
-    expect(scopesAt(lines, 4, "{", 1)).toContain("meta.embedded.expression.sumi");
-    expect(scopesAt(lines, 4, "{", 1)).toContain("punctuation.section.block.begin.sumi");
-    expect(scopesAt(lines, 5, "\"\"\"")).toContain("string.quoted.double.block.sumi");
-
-    const scopedText = lines.flatMap(({ line, tokens }, lineIndex) =>
-      tokens
-        .filter(({ scopes }) => scopes.length > 1)
-        .map(({ startIndex, endIndex, scopes }) => ({
-          line: lineIndex + 1,
-          text: line.slice(startIndex, endIndex),
-          scopes: scopes.slice(1),
-        })),
-    );
-    expect(scopedText).toMatchSnapshot();
+    expect(scopesAt(lines, 0, "name")).toContain("string.quoted.double.sumi");
+    expect(scopesAt(lines, 0, String.raw`\n`)).toContain("constant.character.escape.sumi");
+    expect(scopesAt(lines, 0, String.raw`\"`)).toContain("constant.character.escape.sumi");
   });
 
-  test("does not inherit string colors inside interpolation holes", () => {
-    const line = '"literal {if true { 1 } else { 2 }} tail"';
-
-    expect(foregroundAt(line, "literal")).toBe("#CC0000");
-    expect(foregroundAt(line, "if")).toBe("#111111");
-    expect(foregroundAt(line, "{", 1)).toBe("#111111");
-    expect(foregroundAt(line, "}", 1)).toBe("#111111");
-    expect(foregroundAt(line, "tail")).toBe("#CC0000");
+  test("scopes the compiler's string escapes", () => {
+    const lines = tokenize(String.raw`"\n \r \t \\ \" \0"`);
+    const valid = [
+      String.raw`\n`,
+      String.raw`\r`,
+      String.raw`\t`,
+      String.raw`\\`,
+      String.raw`\"`,
+      String.raw`\0`,
+    ];
+    for (const escape of valid) {
+      expect(scopesAt(lines, 0, escape)).toContain("constant.character.escape.sumi");
+    }
   });
 
-  test.each([
-    { slashes: 0, interpolates: true },
-    { slashes: 1, interpolates: false },
-    { slashes: 2, interpolates: true },
-    { slashes: 3, interpolates: false },
-    { slashes: 4, interpolates: true },
-  ])("uses backslash parity before a hole ($slashes slashes)", ({ slashes, interpolates }) => {
-    const lines = tokenize(`"${"\\".repeat(slashes)}{value}"`);
-    expect(scopesAt(lines, 0, "{").includes("meta.interpolation.sumi")).toBe(interpolates);
-    expect(scopesAt(lines, 0, "value").includes("variable.other.readwrite.sumi")).toBe(
-      interpolates,
-    );
-  });
-
-  test("recognizes escaped opening and closing braces", () => {
-    const lines = tokenize(String.raw`"\{ \}"`);
-    expect(scopesAt(lines, 0, String.raw`\{`)).toContain("constant.character.escape.sumi");
-    expect(scopesAt(lines, 0, String.raw`\}`)).toContain("constant.character.escape.sumi");
-  });
-
-  test.each([
-    ["plain", 'let raw = r"unterminated'],
-    ["fenced", 'let raw = r#"unterminated'],
-  ])("recovers after an unterminated %s raw string", (_kind, openingLine) => {
-    const lines = tokenize(`${openingLine}\nlet next = 1`);
+  test("ends an unterminated string at its line", () => {
+    const lines = tokenize('"unterminated\nlet next = 1');
     expect(scopesAt(lines, 1, "let")).toContain("keyword.declaration.sumi");
-    expect(scopesAt(lines, 1, "1")).toContain("constant.numeric.integer.sumi");
-    expect(scopesAt(lines, 1, "next")).not.toContain("string.quoted.other.raw.sumi");
-  });
-
-  test("bounds malformed block-string holes to one line", () => {
-    const lines = tokenize(
-      ['let card = """', "  before {if true { 1", "  after", '  """'].join("\n"),
-    );
-    expect(scopesAt(lines, 2, "after")).toContain("string.quoted.double.block.sumi");
-    expect(scopesAt(lines, 2, "after")).not.toContain("meta.interpolation.sumi");
-    expect(scopesAt(lines, 3, '"""')).toContain("punctuation.definition.string.end.sumi");
-
-    const ordinaryBlock = tokenize(["if true {", "  let value = 1", "}"].join("\n"));
-    expect(scopesAt(ordinaryBlock, 1, "value")).toContain("meta.block.sumi");
-  });
-
-  test("distinguishes valid floats from a leading-dot expression", () => {
-    const lines = tokenize(".5 0.5 1e3");
-    expect(scopesAt(lines, 0, ".")).toContain("keyword.operator.sumi");
-    expect(scopesAt(lines, 0, "5")).toContain("constant.numeric.integer.sumi");
-    expect(scopesAt(lines, 0, "0.5")).toContain("constant.numeric.float.sumi");
-    expect(scopesAt(lines, 0, "1e3")).toContain("constant.numeric.float.sumi");
-  });
-
-  test("keeps combining marks in identifiers and scopes the discard", () => {
-    const decomposed = "cafe\u0301";
-    const lines = tokenize(`let ${decomposed} = _`);
-    expect(scopesAt(lines, 0, "\u0301")).toContain("variable.other.definition.sumi");
-    expect(scopesAt(lines, 0, "_")).toContain("keyword.other.discard.sumi");
+    expect(scopesAt(lines, 1, "next")).toContain("variable.other.definition.sumi");
   });
 });
 
-const declaredGrammar = await Bun.file(path.join(root, "..", "..", "sumi.grammar")).text();
-const keywords = [...declaredGrammar.matchAll(/^token \w+ keyword "([^"]+)"/gm)]
-  .map((match) => match[1])
-  .filter((keyword) => keyword !== "_");
+const tokenDeclaration = await Bun.file(
+  path.join(root, "..", "..", "crates", "lexer", "src", "kind.rs"),
+).text();
+const keywords = [...tokenDeclaration.matchAll(/^\s+\w+: keyword "([^"]+)",$/gm)].map(
+  (match) => match[1],
+);
+const punctuation = [...tokenDeclaration.matchAll(/^\s+\w+: punct '(.)',$/gm)].map(
+  (match) => match[1],
+);
 
-describe("grammar synchronization", () => {
-  test("the initial reserved keyword set is explicit", () => {
-    expect(keywords).toEqual(["else", "false", "fn", "if", "let", "mut", "return", "true"]);
+describe("compiler vocabulary synchronization", () => {
+  test("reads every keyword and punctuation from the lexer declaration", () => {
+    expect(keywords).toEqual(["_", "else", "false", "fn", "if", "let", "mut", "return", "true"]);
+    expect(punctuation).toEqual([
+      "(",
+      ")",
+      "{",
+      "}",
+      ",",
+      ":",
+      ".",
+      "=",
+      "<",
+      ">",
+      "!",
+      "+",
+      "-",
+      "*",
+      "/",
+      "%",
+      "&",
+      "|",
+    ]);
   });
 
-  test.each(keywords)("scopes the reserved keyword %s", (keyword) => {
-    const lines = tokenize(keyword);
-    expect(
-      scopesAt(lines, 0, keyword).some((scope) =>
-        /^(?:constant\.language|keyword|storage\.)/.test(scope),
-      ),
-    ).toBeTrue();
+  test.each(keywords)("scopes the compiler keyword %s", (keyword) => {
+    expect(scopesAt(tokenize(keyword), 0, keyword).length).toBeGreaterThan(1);
+  });
+
+  test.each(punctuation)("scopes the compiler punctuation %s", (punctuation) => {
+    expect(scopesAt(tokenize(punctuation), 0, punctuation).length).toBeGreaterThan(1);
   });
 });

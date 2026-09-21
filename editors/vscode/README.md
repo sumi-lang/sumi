@@ -5,7 +5,8 @@ Language support for the experimental [Sumi programming language](https://sumi-l
 This initial extension provides:
 
 - `.sumi` file recognition;
-- syntax highlighting, including string interpolation and raw strings;
+- syntax highlighting for the compiler's current keywords, declarations, operators, literals, and
+  comments;
 - comment, bracket, indentation, and auto-closing configuration.
 
 Sumi does not yet have a language server. Diagnostics, navigation, completion,
