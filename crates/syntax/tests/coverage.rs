@@ -30,7 +30,7 @@ fn the_corpus_covers_the_grammar() {
     );
     let mut coverage = Coverage::new();
     for case in cases {
-        let source = fs::read_to_string(case.join("case.sumi")).expect("a case is UTF-8");
+        let source = fs::read_to_string(case.join("case.su")).expect("a case is UTF-8");
         record(&mut coverage, &source);
     }
     assert_covered(&coverage, "the corpus");
