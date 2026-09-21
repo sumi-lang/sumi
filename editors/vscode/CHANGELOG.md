@@ -1,8 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.0.4
 
 - Recognize `.su` files instead of `.sumi` files.
+- Show a Sumi icon beside `.su` files in light and dark editor themes.
 
 ## 0.0.3
 
