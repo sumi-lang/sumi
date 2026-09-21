@@ -56,3 +56,21 @@ impl fmt::Debug for TokenFlags {
         write!(f, ")")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn flags_debug_as_names() {
+        assert_eq!(format!("{:?}", TokenFlags::EMPTY), "TokenFlags(EMPTY)");
+        let combined = TokenFlags::UNTERMINATED | TokenFlags::MALFORMED_NUMBER;
+        assert_eq!(
+            format!("{combined:?}"),
+            "TokenFlags(UNTERMINATED | MALFORMED_NUMBER)"
+        );
+        let mut assigned = TokenFlags::UNTERMINATED;
+        assigned |= TokenFlags::MALFORMED_NUMBER;
+        assert_eq!(assigned, combined);
+    }
+}

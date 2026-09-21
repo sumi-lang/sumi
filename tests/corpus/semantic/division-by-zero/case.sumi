@@ -85,3 +85,19 @@ fn returning_zero(b: bool) -> int {
     1
 }
 fn through_return() -> int = 10 / returning_zero(true)
+fn selected_zero(b: bool) -> int = if b {
+    0
+} else {
+    1
+}
+fn through_join() -> int = 10 / selected_zero(true)
+fn through_sequence() -> int =
+    10
+        / {
+            _ = 1
+            0
+        }
+fn returned_zero() -> int {
+    return 0
+}
+fn through_result() -> int = 10 / returned_zero()
