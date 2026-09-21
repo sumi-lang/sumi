@@ -446,6 +446,43 @@ fn stepping_is_observable_and_idempotent_at_the_end() {
 }
 
 #[test]
+fn consuming_a_suspended_tail_call_preserves_results_and_refusals() {
+    use sumi_hir::Machine;
+
+    let analysis = analysis(
+        "fn rotate(n: int, a: int, b: int) -> int {
+    if n > 0 { return other(b, a + 2, n - 1, true) }
+    a - b
+}
+fn other(a: int, b: int, n: int, yes: bool) -> int = if yes { rotate(n, a, b) } else { 0 }
+fn entry() -> int = 2 * rotate(5, 3, 11) + 1",
+    );
+    let program = analysis.program().unwrap();
+    let entry = program.function_named("entry").unwrap();
+    for bound in [11, 12, 13] {
+        let mut stepped = Machine::new(analysis.graph(), entry, &[], Some(bound));
+        let mut ticks = 0;
+        while stepped.step().is_none() {
+            ticks += 1;
+        }
+        let expected = stepped.outcome().unwrap();
+        if bound >= 12 {
+            assert_eq!(expected, &Ok(int(13)));
+            assert_eq!(stepped.max_depth(), 12);
+        } else {
+            assert!(matches!(expected, Err(sumi_hir::Refusal::Depth(_))));
+        }
+        for prefix in 0..=ticks + 2 {
+            let mut resumed = Machine::new(analysis.graph(), entry, &[], Some(bound));
+            for _ in 0..prefix {
+                resumed.step();
+            }
+            assert_eq!(&resumed.run(), expected, "bound={bound}, prefix={prefix}");
+        }
+    }
+}
+
+#[test]
 #[should_panic(expected = "arguments must match the signature")]
 fn arguments_must_match_the_signature() {
     let analysis = analysis("fn f(x: int) -> int = x");
@@ -487,6 +524,7 @@ fn the_bare_graph_refuses_what_the_checker_rejects() {
         "fn f() -> int = 1 + true",
         "fn f() -> bool = !1",
         "fn f() -> bool = true && 1",
+        "fn f() -> bool = true && g()\nfn g() -> int = 1",
         "fn f() -> bool = 1 == true",
     ] {
         let typed = analysis(source);
