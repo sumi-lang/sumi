@@ -406,8 +406,8 @@ struct Local {
 }
 
 struct RegionState {
-    versions: Box<[NodeId]>,
-    values: Box<[NodeId]>,
+    changes: Vec<(LocalId, NodeId, NodeId)>,
+    refinements: Vec<(LocalId, NodeId, NodeId)>,
     context: NodeId,
 }
 
@@ -459,19 +459,16 @@ enum Work {
         branch: Clean<ast::IfExpr>,
         then: RegionId,
         else_: Option<RegionId>,
-        baseline: Box<[NodeId]>,
         contexts: [NodeId; 2],
     },
     Lazy {
         expr: LazyOp,
         rhs: RegionId,
-        baseline: Box<[NodeId]>,
         contexts: [NodeId; 2],
     },
     Push {
         region: RegionId,
         guard: (NodeIdx, bool),
-        versions: Box<[NodeId]>,
     },
     Pop {
         region: RegionId,
@@ -525,7 +522,9 @@ struct Builder<'a, 's> {
     depth: usize,
     locals: Vec<Local>,
     mutable_locals: Vec<LocalId>,
-    version_stack: Vec<Box<[NodeId]>>,
+    undo: Vec<(LocalId, NodeId)>,
+    /// (undo length, local count) for open regions, innermost last.
+    version_stack: Vec<(usize, usize)>,
     region_states: Vec<Option<RegionState>>,
     /// The local and underlying version read by each name reference.
     reads_of: Vec<Option<(LocalId, NodeId)>>,
@@ -567,6 +566,7 @@ impl<'a, 's> Builder<'a, 's> {
             depth: 0,
             locals: Vec::new(),
             mutable_locals: Vec::new(),
+            undo: Vec::new(),
             version_stack: Vec::new(),
             region_states: Vec::new(),
             reads_of: vec![None; nodes],
@@ -587,6 +587,7 @@ impl<'a, 's> Builder<'a, 's> {
         self.locals.clear();
         self.mutable_locals.clear();
         self.open_scope();
+        self.undo.clear();
         self.version_stack.clear();
         self.returns.clear();
         let header = &self.headers[owner];
@@ -625,15 +626,13 @@ impl<'a, 's> Builder<'a, 's> {
                         branch,
                         then,
                         else_,
-                        baseline,
                         contexts,
-                    } => self.join(branch, then, else_, &baseline, contexts),
+                    } => self.join(branch, then, else_, contexts),
                     Work::Lazy {
                         expr,
                         rhs,
-                        baseline,
                         contexts,
-                    } => self.lazy(expr, rhs, &baseline, contexts),
+                    } => self.lazy(expr, rhs, contexts),
                     Work::Enter(node) => {
                         self.enter(node, &mut work);
                         continue;
@@ -658,14 +657,9 @@ impl<'a, 's> Builder<'a, 's> {
                         self.rhs(expr, &mut work);
                         continue;
                     }
-                    Work::Push {
-                        region,
-                        guard,
-                        versions,
-                    } => {
-                        let parent = self.versions(versions.len(), false);
-                        self.restore_versions(&versions);
-                        self.version_stack.push(parent);
+                    Work::Push { region, guard } => {
+                        self.version_stack
+                            .push((self.undo.len(), self.locals.len()));
                         self.regions.push((
                             region,
                             self.refinements.len(),
@@ -689,25 +683,19 @@ impl<'a, 's> Builder<'a, 's> {
                             .regions
                             .pop()
                             .expect("a region opened before it closes");
-                        let count = self
-                            .version_stack
-                            .last()
-                            .expect("a region fork saves its parent versions")
-                            .len();
-                        let state = RegionState {
-                            versions: self.versions(count, false),
-                            values: self.versions(count, true),
-                            context: fallthrough,
-                        };
+                        let (mark, _) = self.version_stack.pop().expect("a region fork has a mark");
+                        let mut changed: Vec<_> =
+                            self.undo[mark..].iter().map(|&(local, _)| local).collect();
+                        changed.sort_unstable_by_key(|local| local.index());
+                        changed.dedup();
+                        let state = self.region_state(&changed, keep, fallthrough);
                         if self.region_states.len() <= region.index() {
                             self.region_states.resize_with(region.index() + 1, || None);
                         }
                         self.region_states[region.index()] = Some(state);
-                        let parent = self
-                            .version_stack
-                            .pop()
-                            .expect("a region fork saves its parent versions");
-                        self.restore_versions(&parent);
+                        for (local, version) in self.undo.drain(mark..).rev() {
+                            self.locals[local.index()].current = version;
+                        }
                         self.refinements.truncate(keep);
                         continue;
                     }
@@ -919,44 +907,72 @@ impl<'a, 's> Builder<'a, 's> {
         self.scopes[self.depth - 1].insert(name, id);
         id
     }
-    fn versions(&self, count: usize, refined: bool) -> Box<[NodeId]> {
-        self.mutable_locals[..count]
-            .iter()
-            .map(|&local| {
-                if refined {
-                    self.current(local)
-                } else {
-                    self.locals[local.index()].current
-                }
-            })
-            .collect()
+    fn set_version(&mut self, local: LocalId, version: NodeId) {
+        if let Some(&(_, count)) = self.version_stack.last()
+            && local.index() < count
+        {
+            self.undo.push((local, self.locals[local.index()].current));
+        }
+        self.locals[local.index()].current = version;
     }
-    fn restore_versions(&mut self, versions: &[NodeId]) {
-        for (&local, &version) in self.mutable_locals.iter().zip(versions) {
-            self.locals[local.index()].current = version;
+    fn region_state(&self, changed: &[LocalId], keep: usize, context: NodeId) -> RegionState {
+        RegionState {
+            changes: changed
+                .iter()
+                .map(|&local| {
+                    (
+                        local,
+                        self.locals[local.index()].current,
+                        self.current(local),
+                    )
+                })
+                .collect(),
+            refinements: self.refinements[keep..]
+                .iter()
+                .copied()
+                .filter(|&(local, _, _)| self.locals[local.index()].mutable)
+                .collect(),
+            context,
         }
     }
-    fn guarded_versions(
-        &mut self,
-        condition: NodeIdx,
-        sense: bool,
-        baseline: &[NodeId],
-    ) -> Box<[NodeId]> {
-        self.restore_versions(baseline);
+    fn guarded_state(&mut self, condition: NodeIdx, sense: bool, context: NodeId) -> RegionState {
         let keep = self.refinements.len();
         self.refine(condition, sense);
-        let values = self.versions(baseline.len(), true);
+        let state = self.region_state(&[], keep, context);
         self.refinements.truncate(keep);
-        values
+        state
     }
     fn merge_versions(&mut self, condition: NodeIdx, states: [&RegionState; 2], at: TextRange) {
         let condition = self.input(condition);
-        for index in 0..states[0].values.len() {
-            let [true_value, false_value] = [states[0].values[index], states[1].values[index]];
-            if states[0].versions[index] == states[1].versions[index] {
+        let mut changed: Vec<_> = states
+            .iter()
+            .flat_map(|state| state.changes.iter().map(|&(local, _, _)| local))
+            .collect();
+        changed.sort_unstable_by_key(|local| local.index());
+        changed.dedup();
+        for local in changed {
+            let values = states.map(|state| {
+                if let Ok(index) = state
+                    .changes
+                    .binary_search_by_key(&local.index(), |&(local, _, _)| local.index())
+                {
+                    let (_, version, value) = state.changes[index];
+                    (version, value)
+                } else {
+                    let version = self.locals[local.index()].current;
+                    let value = state
+                        .refinements
+                        .iter()
+                        .rev()
+                        .find(|&&(id, source, _)| id == local && source == version)
+                        .map_or_else(|| self.current(local), |&(_, _, value)| value);
+                    (version, value)
+                }
+            });
+            if values[0].0 == values[1].0 {
                 continue;
             }
-            let local = self.mutable_locals[index];
+            let [true_value, false_value] = values.map(|(_, value)| value);
             let declaration = self.locals[local.index()].declaration;
             let inputs = [
                 condition,
@@ -972,7 +988,7 @@ impl<'a, 's> Builder<'a, 's> {
                 at,
                 None,
             );
-            self.locals[local.index()].current = phi;
+            self.set_version(local, phi);
         }
     }
     fn lookup(&self, name: &str) -> Option<LocalId> {
@@ -1141,12 +1157,10 @@ impl<'a, 's> Builder<'a, 's> {
         let contexts = [then_context, else_context];
         let then = self.graph.open(then_context);
         let else_ = else_node.map(|_| self.graph.open(else_context));
-        let baseline = self.versions(self.mutable_locals.len(), false);
         work.push(Work::Join {
             branch,
             then,
             else_,
-            baseline: baseline.clone(),
             contexts,
         });
         if let (Some(else_node), Some(region)) = (else_node, else_) {
@@ -1158,7 +1172,6 @@ impl<'a, 's> Builder<'a, 's> {
             work.push(Work::Push {
                 region,
                 guard: (cond, false),
-                versions: baseline.clone(),
             });
         }
         work.push(Work::Pop {
@@ -1169,7 +1182,6 @@ impl<'a, 's> Builder<'a, 's> {
         work.push(Work::Push {
             region: then,
             guard: (cond, true),
-            versions: baseline,
         });
     }
     fn rhs(&mut self, expr: LazyOp, work: &mut Vec<Work>) {
@@ -1189,11 +1201,9 @@ impl<'a, 's> Builder<'a, 's> {
         }
         let context = contexts[selected];
         let region = self.graph.open(context);
-        let baseline = self.versions(self.mutable_locals.len(), false);
         work.push(Work::Lazy {
             expr,
             rhs: region,
-            baseline: baseline.clone(),
             contexts,
         });
         work.push(Work::Pop { region, root: rhs });
@@ -1201,7 +1211,6 @@ impl<'a, 's> Builder<'a, 's> {
         work.push(Work::Push {
             region,
             guard: (lhs, and),
-            versions: baseline,
         });
     }
     fn unsupported(&mut self, node: NodeIdx) {
@@ -1587,7 +1596,7 @@ impl<'a, 's> Builder<'a, 's> {
                     return None;
                 }
                 if !form.completes {
-                    self.locals[local.index()].current = assigned;
+                    self.set_version(local, assigned);
                 }
             }
             Finish::Discard(discard) => {
@@ -1722,13 +1731,7 @@ impl<'a, 's> Builder<'a, 's> {
         }
         Some(())
     }
-    fn lazy(
-        &mut self,
-        expr: LazyOp,
-        rhs: RegionId,
-        baseline: &[NodeId],
-        contexts: [NodeId; 2],
-    ) -> Option<()> {
+    fn lazy(&mut self, expr: LazyOp, rhs: RegionId, contexts: [NodeId; 2]) -> Option<()> {
         let lhs = expr.expr.lhs().node();
         let rhs_node = expr.expr.rhs().node();
         let state = self.region_states[rhs.index()]
@@ -1779,11 +1782,7 @@ impl<'a, 's> Builder<'a, 's> {
             self.refine(lhs, !expr.and);
         } else {
             self.typed(rhs_node)?;
-            let skipped = RegionState {
-                versions: baseline.into(),
-                values: self.guarded_versions(lhs, !expr.and, baseline),
-                context: contexts[usize::from(expr.and)],
-            };
+            let skipped = self.guarded_state(lhs, !expr.and, contexts[usize::from(expr.and)]);
             let states = if expr.and {
                 [&state, &skipped]
             } else {
@@ -1798,7 +1797,6 @@ impl<'a, 's> Builder<'a, 's> {
         branch: Clean<ast::IfExpr>,
         then: RegionId,
         else_: Option<RegionId>,
-        baseline: &[NodeId],
         contexts: [NodeId; 2],
     ) -> Option<()> {
         let tree = self.source.tree;
@@ -1812,11 +1810,7 @@ impl<'a, 's> Builder<'a, 's> {
             Some(else_) => self.region_states[else_.index()]
                 .take()
                 .expect("a closed branch has local state"),
-            None => RegionState {
-                versions: baseline.into(),
-                values: self.guarded_versions(cond, false, baseline),
-                context: contexts[1],
-            },
+            None => self.guarded_state(cond, false, contexts[1]),
         };
         let condition = self.input(cond);
         let mut results = vec![self.node_of(then_node)];
