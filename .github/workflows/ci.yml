@@ -69,6 +69,8 @@ jobs:
       - uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         with:
           files: lcov.info
+          override_branch: ${{ github.event_name == 'pull_request' && format('pr{0}:{1}', github.event.number, github.head_ref) || github.ref_name }}
+          override_pr: ${{ github.event.number }}
           fail_ci_if_error: true
 
   scorecard:
