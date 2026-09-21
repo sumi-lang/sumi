@@ -20,3 +20,24 @@ fn recursive_forms_include_unrolled_remainders() {
         }
     }
 }
+
+#[test]
+fn unit_returns_demand_recursion_but_discarded_calls_do_not() {
+    for size in [0, 1, 17, 128] {
+        for (shape, depth) in [
+            ("known-unit", size + 2),
+            ("unused-unit-call", 2),
+            ("unused-int-call", 1),
+        ] {
+            let parsed = sumi_frontend::parse_source(forms::source(shape, size).into()).unwrap();
+            let analysis = sumi_hir::analyze(parsed);
+            let program = analysis.program().unwrap();
+            let main = program.function_named("main").unwrap();
+            let mut machine = program.machine(main, &[]);
+            while machine.step().is_none() {}
+            assert_eq!(machine.max_depth(), depth, "{shape}/{size}");
+            assert_eq!(machine.outcome(), Some(&Ok(forms::expected(shape, size))));
+            assert_eq!(program.evaluate(main, &[]), forms::expected(shape, size));
+        }
+    }
+}

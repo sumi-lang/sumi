@@ -13,7 +13,8 @@ pub const SHAPES: &[&str] = &[
     "known-int",
     "known-bool",
     "known-unit",
-    "known-observed",
+    "unused-unit-call",
+    "unused-int-call",
 ];
 
 pub fn source(shape: &str, size: usize) -> String {
@@ -71,11 +72,16 @@ pub fn source(shape: &str, size: usize) -> String {
             "bool",
         ),
         "known-unit" => (
+            "fn f(n: int) -> unit { if n > 0 { return f(n - 1) } }".into(),
+            format!("f({size})"),
+            "unit",
+        ),
+        "unused-unit-call" => (
             "fn f(n: int) -> unit { if n > 0 { _ = f(n - 1) } }".into(),
             format!("f({size})"),
             "unit",
         ),
-        "known-observed" => (
+        "unused-int-call" => (
             "fn f(n: int) -> int = if n <= 0 { 7 } else { f(n - 1) }".into(),
             format!("{{ _ = f({size})\n 23 }}"),
             "int",
@@ -88,7 +94,7 @@ pub fn source(shape: &str, size: usize) -> String {
 pub fn expected(shape: &str, size: usize) -> Value {
     match shape {
         "known-bool" => Value::Bool(true),
-        "known-unit" => Value::Unit,
+        "known-unit" | "unused-unit-call" => Value::Unit,
         "product" | "product-accumulator" => {
             let mut digits = vec![1_usize];
             for factor in 1..=size {
@@ -115,7 +121,7 @@ pub fn expected(shape: &str, size: usize) -> Value {
                 "sum" | "sum-accumulator" | "sum-unroll4" => (size * (size + 1) / 2) as i64,
                 "generic-step" | "specialized-step" | "affine-closed" => (3 * size + 7) as i64,
                 "known-int" => 7,
-                "known-observed" => 23,
+                "unused-int-call" => 23,
                 _ => unreachable!(),
             }
             .into(),

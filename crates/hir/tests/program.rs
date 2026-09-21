@@ -117,7 +117,9 @@ fn rhs_mutation() -> int {
     let mut x = 0
     x = { x = 4\n x + 1 }
     x
-}";
+}
+fn both() -> int = choose(false) + choose(true) + optional(false) + optional(true)
+    + lazy_and(false) + lazy_and(true) + lazy_or(false) + lazy_or(true)";
     assert_eq!(run(source, "sequential"), int(3));
     assert_eq!(run(source, "nested"), int(4));
     let checked = analysis(source);
@@ -130,6 +132,10 @@ fn rhs_mutation() -> int {
         ("lazy_or", [7, 1]),
     ] {
         let function = program.function_named(name).unwrap();
+        assert_eq!(
+            program.ranges(function).params[0].bools,
+            sumi_hir::Bools::BOTH
+        );
         for (condition, expected) in [false, true].into_iter().zip(values) {
             assert_eq!(
                 program.evaluate(function, &[Value::Bool(condition)]),
@@ -141,6 +147,7 @@ fn rhs_mutation() -> int {
     assert_eq!(run(source, "condition"), int(8));
     assert_eq!(run(source, "rhs_return"), int(7));
     assert_eq!(run(source, "rhs_mutation"), int(5));
+    check::run(program);
 }
 
 #[test]
@@ -156,15 +163,21 @@ fn returning(b: bool) -> int {
     10 / x
 }
 fn zero() -> int = repaired(0)
-fn two() -> int = repaired(2)";
+fn two() -> int = repaired(2)
+fn both() -> int = returning(false) + returning(true)";
     assert_eq!(run(source, "zero"), int(10));
     assert_eq!(run(source, "two"), int(5));
     let checked = analysis(source);
     check::semantics(&checked);
     let program = checked.program().unwrap();
     let returning = program.function_named("returning").unwrap();
+    assert_eq!(
+        program.ranges(returning).params[0].bools,
+        sumi_hir::Bools::BOTH
+    );
     assert_eq!(program.evaluate(returning, &[Value::Bool(true)]), int(7));
     assert_eq!(program.evaluate(returning, &[Value::Bool(false)]), int(5));
+    check::run(program);
 
     let stale = analysis(
         "fn stale(n: int) -> int { let mut x = n\n _ = x != 0 && { x = 0\n true }\n 10 / x }\nfn entry() -> int = stale(1)",
@@ -349,7 +362,8 @@ fn condition() -> bool = if { return false\n true } { true } else { false }
 fn condition_binding() -> bool {
     let unreachable = if { return false\n true } { true } else { false }
     true
-}";
+}
+fn callers() -> int = choose(false) + choose(true)";
     for (name, value) in [("argument", int(1)), ("eager", int(3)), ("lazy", int(5))] {
         assert_eq!(run(source, name), value, "{name}");
     }
@@ -358,19 +372,29 @@ fn condition_binding() -> bool {
     let checked = analysis(source);
     let program = checked.program().unwrap();
     let choose = program.function_named("choose").unwrap();
+    assert_eq!(
+        program.ranges(choose).params[0].bools,
+        sumi_hir::Bools::BOTH
+    );
     assert_eq!(program.evaluate(choose, &[Value::Bool(true)]), int(6));
     assert_eq!(program.evaluate(choose, &[Value::Bool(false)]), int(7));
+    check::run(program);
 
     let source = "fn both(b: bool) -> int = if b { return 8 } else { return 9 }
 fn lazy_and() -> int = { return 10 } && { return 11 }
 fn lazy_or() -> int = { return 12 } || { return 13 }
-fn outer(b: bool) -> int { return if b { return 14 } else { return 15 } }";
+fn outer(b: bool) -> int { return if b { return 14 } else { return 15 } }
+fn callers() -> int = both(false) + both(true) + outer(false) + outer(true)";
     assert_eq!(run(source, "lazy_and"), int(10));
     assert_eq!(run(source, "lazy_or"), int(12));
     let checked = analysis(source);
     let program = checked.program().unwrap();
     for (name, values) in [("both", [8, 9]), ("outer", [14, 15])] {
         let function = program.function_named(name).unwrap();
+        assert_eq!(
+            program.ranges(function).params[0].bools,
+            sumi_hir::Bools::BOTH
+        );
         for (condition, expected) in [true, false].into_iter().zip(values) {
             assert_eq!(
                 program.evaluate(function, &[Value::Bool(condition)]),
@@ -379,6 +403,7 @@ fn outer(b: bool) -> int { return if b { return 14 } else { return 15 } }";
             );
         }
     }
+    check::run(program);
 
     assert!(
         analysis("fn bad() -> int = { return 1 } && { _ = true + false\n return 2 }")
@@ -414,7 +439,10 @@ fn stepping_is_observable_and_idempotent_at_the_end() {
     assert_eq!(machine.step(), Some(&Ok(int(4))));
     assert_eq!(machine.steps(), steps);
     let sub = program.function_named("twice").unwrap();
-    assert_eq!(program.evaluate(sub, &[int(21)]), int(42));
+    assert_eq!(
+        sumi_hir::Machine::new(analysis.graph(), sub, &[int(21)], None).run(),
+        Ok(int(42))
+    );
 }
 
 #[test]
