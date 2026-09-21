@@ -4,7 +4,7 @@ Language support for the experimental [Sumi programming language](https://sumi-l
 
 This initial extension provides:
 
-- `.sumi` file recognition;
+- `.su` file recognition;
 - syntax highlighting for the compiler's current keywords, declarations, operators, literals, and
   comments;
 - comment, bracket, indentation, and auto-closing configuration.

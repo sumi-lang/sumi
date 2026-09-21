@@ -2,8 +2,8 @@ use sumi_frontend::{ParsedSource, parse_source};
 use sumi_hir::{Analysis, Value};
 
 pub const CASES: &[(&str, &str, i64)] = &[
-    ("fibonacci", include_str!("programs/fibonacci.sumi"), 6765),
-    ("big-int", include_str!("programs/big-int.sumi"), 100),
+    ("fibonacci", include_str!("programs/fibonacci.su"), 6765),
+    ("big-int", include_str!("programs/big-int.su"), 100),
 ];
 
 pub fn parse(source: &str) -> ParsedSource {

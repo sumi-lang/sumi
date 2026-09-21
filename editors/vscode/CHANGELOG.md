@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Recognize `.su` files instead of `.sumi` files.
+
 ## 0.0.3
 
 - Match syntax highlighting and editor behavior to the compiler's current literals, escapes, ASCII

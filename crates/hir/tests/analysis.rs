@@ -528,7 +528,7 @@ fn existing_corpus_never_panics_or_silently_rejects() {
     let cases = corpus::cases();
     assert!(cases.len() > 100);
     for case in cases {
-        let source = std::fs::read_to_string(case.join("case.sumi")).unwrap();
+        let source = std::fs::read_to_string(case.join("case.su")).unwrap();
         check::semantics(&analyzed(&source));
     }
 }

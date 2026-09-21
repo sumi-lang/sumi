@@ -63,7 +63,7 @@ describe("extension contributions", () => {
     expect(manifest.main).toBeUndefined();
     expect(manifest.icon).toBe("images/icon.png");
     expect(manifest.contributes.snippets).toBeUndefined();
-    expect(manifest.contributes.languages[0].extensions).toEqual([".sumi"]);
+    expect(manifest.contributes.languages[0].extensions).toEqual([".su"]);
     expect(manifest.contributes.grammars[0].scopeName).toBe("source.sumi");
 
     const configuration = await Bun.file(path.join(root, "language-configuration.json")).json();

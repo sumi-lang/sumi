@@ -1,4 +1,4 @@
-//! The file-based corpus: each case directory under `tests/corpus` holds `case.sumi` and a snapshot
+//! The file-based corpus: each case directory under `tests/corpus` holds `case.su` and a snapshot
 //! per stage.
 
 use std::fmt::Write as _;
@@ -39,7 +39,7 @@ pub fn root() -> PathBuf {
 /// Every case directory of the corpus, in path order.
 pub fn cases() -> Vec<PathBuf> {
     let mut cases = Vec::new();
-    directories_holding(&root(), "case.sumi", &mut cases);
+    directories_holding(&root(), "case.su", &mut cases);
     cases
 }
 
@@ -100,7 +100,7 @@ fn verify(
     snapshot: impl Fn(&str, &[Stage]) -> String,
 ) -> Result<(), String> {
     let mut cases = Vec::new();
-    directories_holding(root, "case.sumi", &mut cases);
+    directories_holding(root, "case.su", &mut cases);
     if cases.is_empty() {
         return Err(format!("no cases under {}", root.display()));
     }
@@ -119,7 +119,7 @@ fn verify(
             continue;
         }
         selected += 1;
-        let source = fs::read_to_string(case.join("case.sumi")).expect("a case is UTF-8");
+        let source = fs::read_to_string(case.join("case.su")).expect("a case is UTF-8");
         let actual = snapshot(&source, &stages);
         let expected = match fs::read_to_string(&path) {
             Ok(text) => Some(text),
@@ -148,7 +148,7 @@ fn verify(
         let mut products = Vec::new();
         directories_holding(root, file, &mut products);
         for directory in products {
-            if !directory.join("case.sumi").is_file() {
+            if !directory.join("case.su").is_file() {
                 failures.push(format!(
                     "{}: {file} with no case beside it",
                     directory.display()
@@ -228,7 +228,7 @@ fn selection_is_independent_of_snapshots_and_updates_are_stage_local() {
     let root = tempfile::tempdir().unwrap();
     let case = root.path().join("example");
     fs::create_dir(&case).unwrap();
-    fs::write(case.join("case.sumi"), "source").unwrap();
+    fs::write(case.join("case.su"), "source").unwrap();
     fs::write(case.join("stages"), "hir\n").unwrap();
     let render = |_: &str, _: &[Stage]| "golden\n".to_owned();
     for stage in [Stage::Frontend, Stage::Hir] {
@@ -281,7 +281,7 @@ fn malformed_metadata_or_orphan_products_fail_even_in_update_mode() {
     let root = tempfile::tempdir().unwrap();
     let case = root.path().join("example");
     fs::create_dir(&case).unwrap();
-    fs::write(case.join("case.sumi"), "source").unwrap();
+    fs::write(case.join("case.su"), "source").unwrap();
     fs::write(case.join("stages"), "hri\n").unwrap();
     let render = |_: &str, _: &[Stage]| "golden\n".to_owned();
     assert!(

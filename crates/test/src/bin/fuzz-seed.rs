@@ -34,7 +34,7 @@ fn main() {
             .unwrap_or_else(|error| panic!("cannot write {}: {error}", path.display()));
     };
     for case in &cases {
-        let source = fs::read_to_string(case.join("case.sumi"))
+        let source = fs::read_to_string(case.join("case.su"))
             .unwrap_or_else(|error| panic!("cannot read {}: {error}", case.display()));
         let name = case
             .strip_prefix(corpus::root())
