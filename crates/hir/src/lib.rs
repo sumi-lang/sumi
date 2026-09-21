@@ -134,9 +134,7 @@ impl<'a> Program<'a> {
             })
             .map(|(id, _)| id)
     }
-    /// `args` must lie within `ranges(function).params`; only the match against the signature is
-    /// asserted.
-    pub fn machine(self, function: FunctionId, args: &[Value]) -> Machine<'a> {
+    fn check_arguments(self, function: FunctionId, args: &[Value]) -> &'a Signature {
         let signature = self.signature(function);
         assert!(
             args.len() == signature.params.len()
@@ -146,6 +144,12 @@ impl<'a> Program<'a> {
                     .all(|(arg, &param)| arg.ty() == param),
             "arguments must match the signature"
         );
+        signature
+    }
+    /// `args` must lie within `ranges(function).params`; only the match against the signature is
+    /// asserted.
+    pub fn machine(self, function: FunctionId, args: &[Value]) -> Machine<'a> {
+        self.check_arguments(function, args);
         Machine::new(
             self.analysis.graph(),
             function,
@@ -155,10 +159,10 @@ impl<'a> Program<'a> {
     }
     /// Evaluate within `ranges(function).params`, without the machine's observable trace.
     pub fn evaluate(self, function: FunctionId, args: &[Value]) -> Value {
-        let machine = self.machine(function, args);
+        let signature = self.check_arguments(function, args);
         let run = self.analysis.graph.run(function);
         let may = self.analysis.may(run.result());
-        let known = match self.signature(function).result {
+        let known = match signature.result {
             Ty::Int => may.ints.lo().zip(may.ints.hi()).and_then(|(lo, hi)| {
                 // Singleton detection stays constant-time even for large interval endpoints.
                 (i64::try_from(&lo).is_ok() && lo == hi).then_some(Value::Int(lo))
@@ -169,7 +173,14 @@ impl<'a> Program<'a> {
             _ => None,
         };
         known.unwrap_or_else(|| {
-            machine.run().unwrap_or_else(|refusal| {
+            Machine::new(
+                self.analysis.graph(),
+                function,
+                args,
+                self.function(function).depth_bound(),
+            )
+            .run()
+            .unwrap_or_else(|refusal| {
                 unreachable!("the checker proved this run: it was refused with {refusal:?}")
             })
         })
