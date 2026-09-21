@@ -1,7 +1,7 @@
-#[path = "../benches/support/recursion.rs"]
+#[path = "support/recursion.rs"]
 mod recursion;
 
-#[path = "../benches/support/recursion_forms.rs"]
+#[path = "support/recursion_forms.rs"]
 mod forms;
 
 #[test]

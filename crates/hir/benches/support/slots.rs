@@ -1,17 +1,6 @@
 use std::fmt::Write;
 use sumi_hir::{Analysis, Value};
 
-pub const SHAPES: &[&str] = &["tail", "non-tail", "outlined"];
-pub const SIZES: &[(usize, usize)] = &[
-    (32, 64),
-    (256, 1),
-    (2048, 1),
-    (256, 8),
-    (256, 64),
-    (2048, 64),
-    (256, 512),
-];
-
 pub fn source(shape: &str, width: usize, depth: usize) -> String {
     let mut source = String::from(if shape == "outlined" {
         "fn base(seed: int) -> int {\nlet x0 = seed\n"
@@ -44,15 +33,16 @@ pub fn source(shape: &str, width: usize, depth: usize) -> String {
     source
 }
 
-pub fn evaluate(analysis: &Analysis) -> Value {
-    let program = analysis.program().unwrap();
-    program.evaluate(program.function_named("main").unwrap(), &[])
-}
-
 pub fn validate(analysis: &Analysis, width: usize, depth: usize) {
     assert!(analysis.is_valid(), "{:?}", analysis.diagnostics());
+    let program = analysis.program().unwrap();
+    let main = program.function_named("main").unwrap();
     assert_eq!(
-        evaluate(analysis),
+        program.machine(main, &[]).run(),
+        Ok(Value::Int((width as i64 + depth as i64 + 7).into()))
+    );
+    assert_eq!(
+        program.evaluate(main, &[]),
         Value::Int((width as i64 + depth as i64 + 7).into())
     );
 }

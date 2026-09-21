@@ -18,33 +18,5 @@ proptest.workspace = true
 sumi-test = { path = "../test" }
 
 [[bench]]
-name = "analysis"
-harness = false
-
-[[bench]]
-name = "allocations"
-harness = false
-
-[[bench]]
-name = "workloads"
-harness = false
-
-[[bench]]
-name = "deep"
-harness = false
-
-[[bench]]
-name = "recursion"
-harness = false
-
-[[bench]]
-name = "slots"
-harness = false
-
-[[bench]]
-name = "recursion_forms"
-harness = false
-
-[[bench]]
-name = "entry"
+name = "performance"
 harness = false

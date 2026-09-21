@@ -1,89 +1,30 @@
 use std::fmt::Write;
+
 use sumi_frontend::{ParsedSource, parse_source};
 use sumi_hir::{Analysis, Ty};
 
-pub const SIZES: [usize; 3] = [128, 1024, 8192];
-pub const SHAPES: [&str; 16] = [
-    "annotated-forward",
-    "annotated-reverse",
-    "inferred-forward",
+const SHAPES: [&str; 4] = [
     "inferred-reverse",
-    "grounded-cycle",
     "unresolved-cycle",
-    "conflict-cycle",
-    "locals",
-    "arguments",
     "branches",
-    "scoped-mutation",
-    "wide-mutation",
-    "narrow-mutation",
     "nested-mutation",
-    "expression-chain",
-    "call-block",
 ];
 
 pub fn source(shape: &str, size: usize) -> String {
     assert!(SHAPES.contains(&shape));
-    if matches!(
-        shape,
-        "wide-mutation" | "narrow-mutation" | "nested-mutation"
-    ) {
-        let mut source = String::from("fn wide(b: bool) -> int {\n");
-        let locals = if shape == "narrow-mutation" { 1 } else { size };
-        for i in 0..locals {
-            writeln!(source, "let mut x{i} = 0").unwrap();
-        }
+    if shape == "nested-mutation" {
+        let mut source = String::from("fn mutate(b: bool) -> int {\nlet mut x = 0\n");
         for _ in 0..size {
-            if shape == "nested-mutation" {
-                writeln!(source, "if b {{ if b {{ x0 = x0 + 1 }} else {{ x0 = x0 + 2 }} }} else {{ x0 = x0 + 3 }}").unwrap();
-            } else {
-                writeln!(source, "if b {{ x0 = x0 + 1 }}").unwrap();
-            }
+            source.push_str("if b { if b { x = x + 1 } else { x = x + 2 } } else { x = x + 3 }\n");
         }
-        source.push_str("x0 }\nfn main() -> int = wide(true)");
+        source.push_str("x }\nfn main() -> int = mutate(true)");
         return source;
     }
-    if shape == "expression-chain" {
-        return format!("fn sum() -> int = 1{}", " + 2".repeat(size));
-    }
-    if shape == "call-block" {
-        let mut source = String::from(
-            "fn select(x: int, b: bool) -> int = if b { x } else { 0 }\nfn calls() -> int = {\n",
-        );
-        for i in 0..size {
-            writeln!(source, "_ = select({i}, true)").unwrap();
-        }
-        source.push_str("7 }");
-        return source;
-    }
-    if shape == "scoped-mutation" {
-        let mut source = String::from("fn scoped() -> int {\n");
-        for i in 0..size {
-            writeln!(source, "_ = if true {{ let mut x{i} = 0\n x{i} = 1 }}").unwrap();
-        }
-        source.push_str("0 }");
-        return source;
-    }
+
     let mut declarations = Vec::with_capacity(size);
     for i in 0..size {
-        let annotation = if shape.starts_with("annotated") {
-            " -> int"
-        } else {
-            ""
-        };
-        let parameters = if shape == "arguments" {
-            "x: int, b: bool"
-        } else {
-            ""
-        };
-        let mut declaration = format!("fn f{i}({parameters}){annotation} = ");
-        if shape == "arguments" {
-            if i + 1 < size {
-                write!(declaration, "f{}(x + 1, !b)", i + 1).unwrap();
-            } else {
-                declaration.push_str("if b { x } else { 0 }");
-            }
-        } else if shape == "branches" {
+        let mut declaration = format!("fn f{i}() = ");
+        if shape == "branches" {
             declaration.push_str("{ let x0 = 1\n");
             for j in 1..16 {
                 writeln!(
@@ -95,26 +36,16 @@ pub fn source(shape: &str, size: usize) -> String {
                 .unwrap();
             }
             declaration.push_str("x15 }");
-        } else if shape == "locals" {
-            declaration.push_str("{ let x0 = 1\n");
-            for j in 1..16 {
-                writeln!(declaration, "let x{j} = x{} + 1", j - 1).unwrap();
-            }
-            declaration.push_str("x15 }");
-        } else if shape == "conflict-cycle" && i == 0 {
-            declaration.push_str("if true { true } else { f1() }");
         } else if i + 1 < size {
             write!(declaration, "f{}()", i + 1).unwrap();
+        } else if shape == "unresolved-cycle" {
+            declaration.push_str("f0()");
         } else {
-            declaration.push_str(match shape {
-                "grounded-cycle" | "conflict-cycle" => "if true { 1 } else { f0() }",
-                "unresolved-cycle" => "f0()",
-                _ => "1",
-            });
+            declaration.push('1');
         }
         declarations.push(declaration);
     }
-    if shape.ends_with("reverse") {
+    if shape == "inferred-reverse" {
         declarations.reverse();
     }
     declarations.join("\n")
@@ -127,48 +58,34 @@ pub fn parse(source: &str) -> ParsedSource {
 }
 
 pub fn validate(shape: &str, size: usize, analysis: &Analysis) {
-    let functions = match shape {
-        "expression-chain" | "scoped-mutation" => 1,
-        "call-block" | "wide-mutation" | "narrow-mutation" | "nested-mutation" => 2,
-        _ => size,
-    };
+    let functions = if shape == "nested-mutation" { 2 } else { size };
     assert_eq!(analysis.functions().len(), functions);
-    if matches!(shape, "unresolved-cycle" | "conflict-cycle") {
+    if shape == "unresolved-cycle" {
         assert!(!analysis.is_valid());
-        // unresolved-cycle: one report per function, plus one recursion with no measure since its
-        // cycle is live. conflict-cycle: one report at each endpoint, the rest inherit silently;
-        // its cycle is dead under `if true`, so no recursion report.
-        let reports = if shape == "conflict-cycle" {
-            2
-        } else {
-            size + 1
-        };
-        assert_eq!(analysis.diagnostics().len(), reports);
+        assert_eq!(analysis.diagnostics().len(), size + 1);
         assert!(
             analysis
                 .functions()
                 .iter()
-                .all(|f| f.signature().is_none() && !f.complete())
+                .all(|function| function.signature().is_none() && !function.complete())
         );
-    } else {
-        assert!(analysis.is_valid());
-        let graph = analysis.graph();
-        for (index, function) in analysis.functions().iter().enumerate() {
-            assert_eq!(function.signature().unwrap().result, Ty::Int);
-            assert!(function.complete());
-            let result = graph.run(sumi_hir::FunctionId::new(index)).result();
-            assert_eq!(analysis.ty(result), Some(Ty::Int));
-        }
-        if matches!(
-            shape,
-            "wide-mutation" | "narrow-mutation" | "nested-mutation"
-        ) {
-            let program = analysis.program().unwrap();
-            let main = program.function_named("main").unwrap();
-            assert_eq!(
-                program.evaluate(main, &[]),
-                sumi_hir::Value::Int((size as i64).into())
-            );
-        }
+        return;
+    }
+
+    assert!(analysis.is_valid());
+    let graph = analysis.graph();
+    for (index, function) in analysis.functions().iter().enumerate() {
+        assert_eq!(function.signature().unwrap().result, Ty::Int);
+        assert!(function.complete());
+        let result = graph.run(sumi_hir::FunctionId::new(index)).result();
+        assert_eq!(analysis.ty(result), Some(Ty::Int));
+    }
+    if shape == "nested-mutation" {
+        let program = analysis.program().unwrap();
+        let main = program.function_named("main").unwrap();
+        assert_eq!(
+            program.evaluate(main, &[]),
+            sumi_hir::Value::Int((size as i64).into())
+        );
     }
 }

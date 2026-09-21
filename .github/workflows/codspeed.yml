@@ -7,13 +7,33 @@ on:
       - .github/workflows/codspeed.yml
       - Cargo.lock
       - Cargo.toml
-      - crates/**
+      - crates/*/Cargo.toml
+      - crates/text/src/**
+      - crates/lexer/src/**
+      - crates/syntax/src/**
+      - crates/format/src/**
+      - crates/frontend/src/**
+      - crates/frontend/benches/**
+      - crates/graph/src/**
+      - crates/hir/src/**
+      - crates/hir/benches/**
+      - crates/test/src/**
   pull_request:
     paths:
       - .github/workflows/codspeed.yml
       - Cargo.lock
       - Cargo.toml
-      - crates/**
+      - crates/*/Cargo.toml
+      - crates/text/src/**
+      - crates/lexer/src/**
+      - crates/syntax/src/**
+      - crates/format/src/**
+      - crates/frontend/src/**
+      - crates/frontend/benches/**
+      - crates/graph/src/**
+      - crates/hir/src/**
+      - crates/hir/benches/**
+      - crates/test/src/**
   workflow_dispatch:
 
 permissions:
@@ -25,15 +45,16 @@ concurrency:
 
 jobs:
   benchmarks:
-    name: ${{ matrix.target.name }} benchmarks (${{ matrix.mode }})
+    name: Benchmarks (${{ matrix.mode }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        mode: [simulation, memory]
-        target:
-          - { name: Frontend, package: sumi-frontend, bench: pipeline }
-          - { name: HIR, package: sumi-hir, bench: analysis }
+        include:
+          - { mode: simulation, set: timing }
+          - { mode: memory, set: memory }
+    env:
+      SUMI_BENCH_SET: ${{ matrix.set }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: moonrepo/setup-rust@abb2d32350334249b178c401e5ec5836e0cd88d3 # v1.3.0
@@ -46,12 +67,14 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Build benchmarks
         run: >
-          cargo codspeed build --package ${{ matrix.target.package }} --bench ${{ matrix.target.bench }}
+          cargo codspeed build --package sumi-frontend --package sumi-hir
+          --bench pipeline --bench performance
           --measurement-mode ${{ matrix.mode }} --locked
       - name: Run benchmarks
         uses: CodSpeedHQ/action@373d6868929f444bc08d901fd0eb0ad52a8875ea # v5.2.1
         with:
           mode: ${{ matrix.mode }}
           run: >
-            cargo codspeed run --package ${{ matrix.target.package }} --bench ${{ matrix.target.bench }}
+            cargo codspeed run --package sumi-frontend --package sumi-hir
+            --bench pipeline --bench performance
             --measurement-mode ${{ matrix.mode }}

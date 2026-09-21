@@ -3,14 +3,6 @@ use sumi_hir::{Analysis, Value};
 
 pub const CASES: &[(&str, &str, i64)] = &[
     ("fibonacci", include_str!("programs/fibonacci.sumi"), 6765),
-    ("sum", include_str!("programs/sum.sumi"), 20100),
-    ("gcd", include_str!("programs/gcd.sumi"), 21),
-    ("mutation", include_str!("programs/mutation.sumi"), 5050),
-    (
-        "short-circuit",
-        include_str!("programs/short-circuit.sumi"),
-        100,
-    ),
     ("big-int", include_str!("programs/big-int.sumi"), 100),
 ];
 

@@ -1,4 +1,4 @@
-#[path = "../benches/support/entry.rs"]
+#[path = "support/entry.rs"]
 mod entry;
 
 use sumi_frontend::parse_source;

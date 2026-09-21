@@ -1,5 +1,0 @@
-fn gcd(a: int, b: int, fuel: int) -> int {
-    if b == 0 || fuel <= 0 { return a }
-    gcd(b, a % b, fuel - 1)
-}
-fn main() -> int = gcd(1071, 462, 10)
