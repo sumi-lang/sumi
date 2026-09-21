@@ -96,15 +96,12 @@ fn soup() -> impl Strategy<Value = String> {
 proptest! {
     #![proptest_config(sumi_test::regressions!("prop.txt"))]
     #[test]
-    fn parser_input_invariants(source in soup()) {
+    fn arbitrary_source_invariants(source in soup()) {
         let lexed = lex(&source).expect("generated sources fit in u32");
-        check::input(&lexed, &ParserInput::new(&lexed));
-    }
-
-    #[test]
-    fn widening_space_runs_changes_nothing(source in soup()) {
-        let lexed = lex(&source).expect("generated sources fit in u32");
-        check::widening(&source, &lexed, &ParserInput::new(&lexed));
+        let input = ParserInput::new(&lexed);
+        check::input(&lexed, &input);
+        check::widening(&source, &lexed, &input);
+        check::parse(&source, &lexed, &parse(input));
     }
 
     #[test]
@@ -126,13 +123,6 @@ proptest! {
                 "boundary before token {:?} in {:?}", index, source
             );
         }
-    }
-
-    #[test]
-    fn parse_is_total_and_trees_are_well_formed(source in soup()) {
-        let lexed = lex(&source).expect("generated sources fit in u32");
-        let input = ParserInput::new(&lexed);
-        check::parse(&source, &lexed, &parse(input));
     }
 
     #[test]
