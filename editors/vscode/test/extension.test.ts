@@ -65,12 +65,12 @@ describe("extension contributions", () => {
     expect(manifest.contributes.snippets).toBeUndefined();
     expect(manifest.contributes.languages[0].extensions).toEqual([".su"]);
     expect(manifest.contributes.languages[0].icon).toEqual({
-      light: "./images/file-icon-light.png",
-      dark: "./images/file-icon-dark.png",
+      light: "./images/file-icon-light.svg",
+      dark: "./images/file-icon-dark.svg",
     });
     expect(manifest.contributes.grammars[0].scopeName).toBe("source.sumi");
-    const lightIcon = Bun.file(path.join(root, "images", "file-icon-light.png"));
-    const darkIcon = Bun.file(path.join(root, "images", "file-icon-dark.png"));
+    const lightIcon = Bun.file(path.join(root, "images", "file-icon-light.svg"));
+    const darkIcon = Bun.file(path.join(root, "images", "file-icon-dark.svg"));
     expect(await lightIcon.exists()).toBeTrue();
     expect(await darkIcon.exists()).toBeTrue();
 

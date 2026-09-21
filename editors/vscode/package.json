@@ -39,8 +39,8 @@
           ".su"
         ],
         "icon": {
-          "light": "./images/file-icon-light.png",
-          "dark": "./images/file-icon-dark.png"
+          "light": "./images/file-icon-light.svg",
+          "dark": "./images/file-icon-dark.svg"
         },
         "configuration": "./language-configuration.json"
       }
