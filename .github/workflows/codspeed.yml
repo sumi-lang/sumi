@@ -3,37 +3,7 @@ name: CodSpeed
 on:
   push:
     branches: [main]
-    paths:
-      - .github/workflows/codspeed.yml
-      - Cargo.lock
-      - Cargo.toml
-      - crates/*/Cargo.toml
-      - crates/text/src/**
-      - crates/lexer/src/**
-      - crates/syntax/src/**
-      - crates/format/src/**
-      - crates/frontend/src/**
-      - crates/frontend/benches/**
-      - crates/graph/src/**
-      - crates/hir/src/**
-      - crates/hir/benches/**
-      - crates/test/src/**
   pull_request:
-    paths:
-      - .github/workflows/codspeed.yml
-      - Cargo.lock
-      - Cargo.toml
-      - crates/*/Cargo.toml
-      - crates/text/src/**
-      - crates/lexer/src/**
-      - crates/syntax/src/**
-      - crates/format/src/**
-      - crates/frontend/src/**
-      - crates/frontend/benches/**
-      - crates/graph/src/**
-      - crates/hir/src/**
-      - crates/hir/benches/**
-      - crates/test/src/**
   workflow_dispatch:
 
 permissions:
