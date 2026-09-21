@@ -1,6 +1,3 @@
-pub const SHAPES: &[&str] = &["tail", "mutual-tail", "return-tail", "non-tail"];
-pub const SIZES: &[usize] = &[1000, 10_000, 100_000];
-
 pub fn source(shape: &str, depth: usize) -> String {
     let body = match shape {
         "tail" => "fn count(n: int, total: int) -> int = if n <= 0 { total } else { count(n - 1, total + 1) }",
