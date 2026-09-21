@@ -1,0 +1,7 @@
+fn positive(n: int) -> bool = n > 0
+fn count(n: int) -> int {
+    if n == 0 || (positive(n) && n < 0) { return 0 }
+    if false && 1 / 0 == 0 { return 999 }
+    1 + count(n - 1)
+}
+fn main() -> int = count(100)

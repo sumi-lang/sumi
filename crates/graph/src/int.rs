@@ -6,6 +6,7 @@ use std::cmp::Ordering;
 use std::fmt;
 use std::ops::{Add, Mul, Neg, Sub};
 use std::str::FromStr;
+use std::sync::Arc;
 
 /// An integer of any size.
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -16,7 +17,7 @@ pub struct Int(Repr);
 #[derive(Clone, PartialEq, Eq, Hash)]
 enum Repr {
     Small(i64),
-    Big(Box<Big>),
+    Big(Arc<Big>),
 }
 
 /// Limbs least significant first, the last one non-zero.
@@ -59,7 +60,7 @@ impl Int {
                 Self(Repr::Small((limb as i64).wrapping_neg()))
             }
             &[limb] if !negative && limb <= i64::MAX as u64 => Self(Repr::Small(limb as i64)),
-            _ => Self(Repr::Big(Box::new(Big {
+            _ => Self(Repr::Big(Arc::new(Big {
                 negative,
                 limbs: limbs.into_boxed_slice(),
             }))),
@@ -185,15 +186,28 @@ impl Neg for &Int {
 
 impl Ord for Int {
     fn cmp(&self, other: &Self) -> Ordering {
-        if let (Repr::Small(a), Repr::Small(b)) = (&self.0, &other.0) {
-            return a.cmp(b);
-        }
-        let (a, b) = (self.parts(), other.parts());
-        match (a.negative, b.negative) {
-            (false, true) => Ordering::Greater,
-            (true, false) => Ordering::Less,
-            (false, false) => cmp_mag(&a.limbs, &b.limbs),
-            (true, true) => cmp_mag(&b.limbs, &a.limbs),
+        match (&self.0, &other.0) {
+            (Repr::Small(a), Repr::Small(b)) => a.cmp(b),
+            (Repr::Small(_), Repr::Big(b)) => {
+                if b.negative {
+                    Ordering::Greater
+                } else {
+                    Ordering::Less
+                }
+            }
+            (Repr::Big(a), Repr::Small(_)) => {
+                if a.negative {
+                    Ordering::Less
+                } else {
+                    Ordering::Greater
+                }
+            }
+            (Repr::Big(a), Repr::Big(b)) => match (a.negative, b.negative) {
+                (false, true) => Ordering::Greater,
+                (true, false) => Ordering::Less,
+                (false, false) => cmp_mag(&a.limbs, &b.limbs),
+                (true, true) => cmp_mag(&b.limbs, &a.limbs),
+            },
         }
     }
 }
