@@ -1,0 +1,6 @@
+fn count(n: int, value: int) -> int {
+    if n <= 0 { return 0 }
+    let next = value + 3
+    if next > 1 { 1 + count(n - 1, next) } else { 0 }
+}
+fn main() -> int = count(100, 9223372036854775808)

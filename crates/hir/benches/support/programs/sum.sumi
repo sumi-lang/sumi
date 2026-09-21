@@ -1,0 +1,5 @@
+fn sum(n: int, total: int) -> int {
+    if n <= 0 { return total }
+    sum(n - 1, total + n)
+}
+fn main() -> int = sum(200, 0)

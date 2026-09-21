@@ -1,0 +1,8 @@
+fn accumulate(n: int, total: int) -> int {
+    let mut next = total
+    if n > 0 { next = next + n } else { return next }
+    let mut remaining = n
+    remaining = remaining - 1
+    accumulate(remaining, next)
+}
+fn main() -> int = accumulate(100, 0)

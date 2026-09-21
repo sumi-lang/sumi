@@ -3,7 +3,7 @@ use sumi_frontend::{ParsedSource, parse_source};
 use sumi_hir::{Analysis, Ty};
 
 pub const SIZES: [usize; 3] = [128, 1024, 8192];
-pub const SHAPES: [&str; 13] = [
+pub const SHAPES: [&str; 16] = [
     "annotated-forward",
     "annotated-reverse",
     "inferred-forward",
@@ -15,12 +15,34 @@ pub const SHAPES: [&str; 13] = [
     "arguments",
     "branches",
     "scoped-mutation",
+    "wide-mutation",
+    "narrow-mutation",
+    "nested-mutation",
     "expression-chain",
     "call-block",
 ];
 
 pub fn source(shape: &str, size: usize) -> String {
     assert!(SHAPES.contains(&shape));
+    if matches!(
+        shape,
+        "wide-mutation" | "narrow-mutation" | "nested-mutation"
+    ) {
+        let mut source = String::from("fn wide(b: bool) -> int {\n");
+        let locals = if shape == "narrow-mutation" { 1 } else { size };
+        for i in 0..locals {
+            writeln!(source, "let mut x{i} = 0").unwrap();
+        }
+        for _ in 0..size {
+            if shape == "nested-mutation" {
+                writeln!(source, "if b {{ if b {{ x0 = x0 + 1 }} else {{ x0 = x0 + 2 }} }} else {{ x0 = x0 + 3 }}").unwrap();
+            } else {
+                writeln!(source, "if b {{ x0 = x0 + 1 }}").unwrap();
+            }
+        }
+        source.push_str("x0 }\nfn main() -> int = wide(true)");
+        return source;
+    }
     if shape == "expression-chain" {
         return format!("fn sum() -> int = 1{}", " + 2".repeat(size));
     }
@@ -107,7 +129,7 @@ pub fn parse(source: &str) -> ParsedSource {
 pub fn validate(shape: &str, size: usize, analysis: &Analysis) {
     let functions = match shape {
         "expression-chain" | "scoped-mutation" => 1,
-        "call-block" => 2,
+        "call-block" | "wide-mutation" | "narrow-mutation" | "nested-mutation" => 2,
         _ => size,
     };
     assert_eq!(analysis.functions().len(), functions);
@@ -136,6 +158,17 @@ pub fn validate(shape: &str, size: usize, analysis: &Analysis) {
             assert!(function.complete());
             let result = graph.run(sumi_hir::FunctionId::new(index)).result();
             assert_eq!(analysis.ty(result), Some(Ty::Int));
+        }
+        if matches!(
+            shape,
+            "wide-mutation" | "narrow-mutation" | "nested-mutation"
+        ) {
+            let program = analysis.program().unwrap();
+            let main = program.function_named("main").unwrap();
+            assert_eq!(
+                program.evaluate(main, &[]),
+                sumi_hir::Value::Int((size as i64).into())
+            );
         }
     }
 }
