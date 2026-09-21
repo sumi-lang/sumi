@@ -1,6 +1,6 @@
 file: rejected
 frontend errors: 0 (see frontend.snap)
-semantic errors: 14
+semantic errors: 17
 
 fn divide_by_zero@0..40 () -> int ∈ ∅
   result: copy : int @23..26
@@ -296,6 +296,41 @@ fn through_return@1706..1760 () -> int ∈ ∅
       rhs: call returning_zero@1628..1705 : int @1740..1760
         arg[0]: bool true : bool @1755..1759
 
+fn selected_zero@1761..1825 (bool ∈ {true}) -> int ∈ [0, 0]
+  param b@1778..1779: bool
+  result: copy : int @1790..1793
+    value: if : int @1796..1825
+      condition: read b@1778..1779 : bool
+      then: int 0 : int @1807..1808
+      else: int 1 : int @1822..1823
+
+fn through_join@1826..1877 () -> int ∈ ∅
+  result: copy : int @1847..1850
+    value: eager / : int @1853..1877
+      lhs: int 10 : int @1853..1855
+      rhs: call selected_zero@1761..1825 : int @1858..1877
+        arg[0]: bool true : bool @1872..1876
+
+fn through_sequence@1878..1969 () -> int ∈ ∅
+  result: copy : int @1903..1906
+    value:
+      discard: int 1 : int @1944..1945
+      tail: eager / : int @1913..1969
+        lhs: int 10 : int @1913..1915
+        rhs: int 0 : int @1958..1959
+
+fn returned_zero@1970..2012 () -> int ∈ [0, 0]
+  result: result : int @1992..1995
+    outcome[0]: unit : unit @1996..2012
+    outcome[1]: return : int @2002..2010
+      payload: int 0 : int @2009..2010
+
+fn through_result@2013..2062 () -> int ∈ ∅
+  result: copy : int @2036..2039
+    value: eager / : int @2042..2062
+      lhs: int 10 : int @2042..2044
+      rhs: call returned_zero@1970..2012 : int @2047..2062
+
 == semantic diagnostics ==
 error[semantic/division-by-zero]: division by zero
   primary @29..40
@@ -345,3 +380,12 @@ error[semantic/unknown-name]: unknown name `absent`
 error[semantic/division-by-zero]: division by zero
   primary @1735..1760
   secondary @1690..1691: is 0
+error[semantic/division-by-zero]: division by zero
+  primary @1853..1877
+  secondary @1807..1808: is 0
+error[semantic/division-by-zero]: division by zero
+  primary @1913..1969
+  secondary @1958..1959: is 0
+error[semantic/division-by-zero]: division by zero
+  primary @2042..2062
+  secondary @2009..2010: is 0

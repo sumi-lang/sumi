@@ -553,6 +553,62 @@ fn main() -> int = f(3, 2, 7)"
 }
 
 #[test]
+fn consuming_suspended_calls_preserves_control_shapes() {
+    use sumi_hir::Machine;
+
+    let padding: String = (0..300)
+        .map(|i| format!("let unused{i} = a + {i}\n"))
+        .collect();
+    let source = format!(
+        "fn leaf(x: int) -> int = x
+fn lazy(a: int) -> bool {{
+{padding}
+leaf(a) > 0 && a > 0
+}}
+fn branch(a: int) -> int {{
+{padding}
+if leaf(a) > 0 {{ a }} else {{ -a }}
+}}
+fn observe(a: int) -> int {{
+{padding}
+if leaf(a) > 0 {{ return a }}
+a + 1
+}}
+fn sequence(a: int) -> int {{
+{padding}
+_ = leaf(a)
+a + 1
+}}"
+    );
+    let analysis = analysis(&source);
+    let program = analysis.program().unwrap();
+    for (name, arg, expected) in [
+        ("lazy", -2, Value::Bool(false)),
+        ("lazy", 2, Value::Bool(true)),
+        ("branch", -3, int(3)),
+        ("branch", 3, int(3)),
+        ("observe", -4, int(-3)),
+        ("observe", 4, int(4)),
+        ("sequence", 5, int(6)),
+    ] {
+        let function = program.function_named(name).unwrap();
+        let args = [int(arg)];
+        let mut reference = Machine::new(analysis.graph(), function, &args, None);
+        while reference.step().is_none() {}
+        assert_eq!(
+            reference.outcome(),
+            Some(&Ok(expected.clone())),
+            "{name}({arg})"
+        );
+        assert_eq!(
+            Machine::new(analysis.graph(), function, &args, None).run(),
+            Ok(expected),
+            "{name}({arg})"
+        );
+    }
+}
+
+#[test]
 fn values_display_as_source_spells_them() {
     assert_eq!(int(-7).to_string(), "-7");
     assert_eq!(

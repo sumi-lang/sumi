@@ -6,7 +6,7 @@ coverage:
         informational: true
     patch:
       default:
-        target: 80%
+        target: 90%
 
 comment:
   layout: condensed_header, diff, components
