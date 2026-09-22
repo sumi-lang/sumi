@@ -57,53 +57,59 @@ fn in_dead_branch@314..350 (int ∈ ∅) -> int ∈ ∅
   result: copy : int @343..346
     value: read n@332..333 : int
 
-fn _kept@351..378 (int ∈ ∅) -> int ∈ ∅
+fn _kept@351..394 (int ∈ ∅) -> int ∈ ∅
   param n@360..361: int
   result: copy : int @371..374
-    value: read n@360..361 : int
+    value: call only_from_kept@395..431 : int @377..394
+      arg[0]: read n@360..361 : int
 
-fn used@379..409 (int ∈ [3, 3]) -> int ∈ [6, 6]
-  param n@387..388: int
-  result: copy : int @398..401
-    value: eager * : int @404..409
-      lhs: read n@387..388 : int
-      rhs: int 2 : int @408..409
+fn only_from_kept@395..431 (int ∈ ∅) -> int ∈ ∅
+  param n@413..414: int
+  result: copy : int @424..427
+    value: read n@413..414 : int
 
-fn parameterless@410..439 () -> int ∈ [7, 7]
-  result: copy : int @432..435
-    value: int 7 : int @438..439
+fn used@432..462 (int ∈ [3, 3]) -> int ∈ [6, 6]
+  param n@440..441: int
+  result: copy : int @451..454
+    value: eager * : int @457..462
+      lhs: read n@440..441 : int
+      rhs: int 2 : int @461..462
 
-fn main@440..526 () -> int ∈ [6, 6]
-  result: result : int @453..456
+fn parameterless@463..492 () -> int ∈ [7, 7]
+  result: copy : int @485..488
+    value: int 7 : int @491..492
+
+fn main@493..579 () -> int ∈ [6, 6]
+  result: result : int @506..509
     outcome[0]:
-      discard: if : unit @463..512
-        condition: bool false : bool @466..471
-        then: unit : unit @472..512
+      discard: if : unit @516..565
+        condition: bool false : bool @519..524
+        then: unit : unit @525..565
         else: unit (implicit)
-      discard: after : ? @463..512
-        control: observe : ? @463..512
-          condition: bool false : bool @466..471
-          then control: unit : unit @472..512
-        context: entry : ? @440..526
-      tail: call used@379..409 : int @517..524
-        arg[0]: int 3 : int @522..523
-    outcome[1]: return : int @482..506
-      payload: call in_dead_branch@314..350 : int @489..506
-        arg[0]: int 1 : int @504..505
+      discard: after : ? @516..565
+        control: observe : ? @516..565
+          condition: bool false : bool @519..524
+          then control: unit : unit @525..565
+        context: entry : ? @493..579
+      tail: call used@432..462 : int @570..577
+        arg[0]: int 3 : int @575..576
+    outcome[1]: return : int @535..559
+      payload: call in_dead_branch@314..350 : int @542..559
+        arg[0]: int 1 : int @557..558
 
 == semantic diagnostics ==
 warning[semantic/unused-function]: function `uncalled` is never called
   primary @3..11
-warning[semantic/unused-function]: function `only_from_uncalled` is never called
+warning[semantic/unused-function]: function `only_from_uncalled` is only called from functions never called
   primary @34..52
 warning[semantic/unused-function]: function `caller_of_it` is never called
   primary @79..91
-warning[semantic/unused-function]: function `countdown` is never called
+warning[semantic/unused-function]: function `countdown` is only called by itself
   primary @134..143
-warning[semantic/unused-function]: function `ping` is never called
+warning[semantic/unused-function]: function `ping` is only called from functions never called
   primary @214..218
-warning[semantic/unused-function]: function `pong` is never called
+warning[semantic/unused-function]: function `pong` is only called from functions never called
   primary @284..288
 warning[semantic/constant-condition]: condition is always false
-  primary @466..471
-  secondary @472..512: this branch never runs
+  primary @519..524
+  secondary @525..565: this branch never runs

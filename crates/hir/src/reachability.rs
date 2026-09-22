@@ -164,17 +164,34 @@ pub(crate) fn warn(
     }
 }
 
-/// A function with parameters that no chain of calls from a parameterless one reaches. A call in
-/// a branch that never runs still counts, so the verdict never rests on values.
+/// A function with parameters that no chain of calls from a parameterless or `_`-named one
+/// reaches. A call in a branch that never runs still counts, so the verdict never rests on values.
 fn unused_functions(source: &mut Source<'_>, graph: &Graph, lowered: &Lowered, headers: &[Header]) {
+    let names: Vec<&str> = headers
+        .iter()
+        .map(|header| {
+            let name = header.name.expect("a valid file names its functions");
+            name.text(source.parsed.source())
+        })
+        .collect();
     let mut reached: Vec<bool> = graph
         .runs()
         .iter()
-        .map(|run| run.params().len() == 0)
+        .zip(&names)
+        .map(|(run, name)| run.params().len() == 0 || name.starts_with('_'))
         .collect();
     let mut callees = vec![Vec::new(); reached.len()];
+    // Whether anything but the function itself calls it.
+    let mut called = vec![false; reached.len()];
+    let mut recursive = vec![false; reached.len()];
     for call in &lowered.calls {
-        callees[call.caller.index()].push(call.callee.index());
+        let (caller, callee) = (call.caller.index(), call.callee.index());
+        callees[caller].push(callee);
+        if caller == callee {
+            recursive[callee] = true;
+        } else {
+            called[callee] = true;
+        }
     }
     let mut queue: Vec<usize> = (0..reached.len()).filter(|&f| reached[f]).collect();
     while let Some(function) = queue.pop() {
@@ -185,17 +202,22 @@ fn unused_functions(source: &mut Source<'_>, graph: &Graph, lowered: &Lowered, h
             }
         }
     }
-    for (header, reached) in headers.iter().zip(reached) {
-        let name = header.name.expect("a valid file names its functions");
-        let text = name.text(source.parsed.source());
-        if !reached && !text.starts_with('_') {
-            source.report(
-                name,
-                codes::UNUSED_FUNCTION,
-                format!("function `{text}` is never called"),
-                [],
-            );
+    for (index, header) in headers.iter().enumerate() {
+        if reached[index] {
+            continue;
         }
+        let name = names[index];
+        let message = match (called[index], recursive[index]) {
+            (true, _) => format!("function `{name}` is only called from functions never called"),
+            (false, true) => format!("function `{name}` is only called by itself"),
+            (false, false) => format!("function `{name}` is never called"),
+        };
+        source.report(
+            header.name.expect("a valid file names its functions"),
+            codes::UNUSED_FUNCTION,
+            message,
+            [],
+        );
     }
 }
 

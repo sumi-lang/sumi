@@ -13,7 +13,8 @@ fn ping(n: int) -> int = if n <= 0 {
 }
 fn pong(n: int) -> int = ping(n)
 fn in_dead_branch(n: int) -> int = n
-fn _kept(n: int) -> int = n
+fn _kept(n: int) -> int = only_from_kept(n)
+fn only_from_kept(n: int) -> int = n
 fn used(n: int) -> int = n * 2
 fn parameterless() -> int = 7
 fn main() -> int {

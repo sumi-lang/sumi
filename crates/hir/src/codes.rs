@@ -53,6 +53,6 @@ sumi_frontend::codes! {
     /// Statements after one that never completes for any argument.
     UNREACHABLE_CODE: Warning = "unreachable-code";
 
-    /// A function with parameters, named without `_`, that no call from a parameterless one reaches.
+    /// A function with parameters that no call from a parameterless or `_`-named function reaches.
     UNUSED_FUNCTION: Warning = "unused-function";
 }
