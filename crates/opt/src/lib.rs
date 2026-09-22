@@ -1,7 +1,7 @@
 //! The middle end: rewrites a proven graph into a smaller one that computes the same values, for
 //! whichever backend runs it. The result is a graph like the analysis's, contexts and all.
 
-use sumi_graph::{FunctionId, Graph, GraphBuilder, Loop, LoopId, NodeId, Op, RegionId};
+use sumi_graph::{FunctionId, Graph, GraphBuilder, Loop, LoopId, May, NodeId, Op, RegionId};
 
 /// A rewritten graph and the node of the original each of its nodes computes.
 pub struct Optimized {
@@ -16,24 +16,98 @@ impl Optimized {
 }
 
 /// Keeps what each run's result can demand, reading through copies and narrowed reads, which
-/// compute nothing.
-pub fn optimize(graph: &Graph) -> Optimized {
-    let forward = forwards(graph);
-    let kept = marks(graph, &forward);
-    emit(graph, &forward, &kept)
+/// compute nothing, and taking only the side of a condition `facts` decide.
+///
+/// `facts` must hold every value a run computes at each node, and the rewritten graph agrees with
+/// this one only on the runs they cover.
+pub fn optimize<'a>(graph: &Graph, facts: impl Fn(NodeId) -> &'a May) -> Optimized {
+    let (forward, becomes) = plan(graph, facts);
+    let kept = marks(graph, &forward, &becomes);
+    emit(graph, &forward, &becomes, &kept)
 }
 
-/// Per node, the node whose value it has.
-fn forwards(graph: &Graph) -> Vec<NodeId> {
+/// Per node, the node whose value it has, and the literal it becomes when its value needs none.
+fn plan<'a>(graph: &Graph, facts: impl Fn(NodeId) -> &'a May) -> (Vec<NodeId>, Vec<Option<Op>>) {
     let mut forward: Vec<NodeId> = graph.node_ids().collect();
+    let mut becomes: Vec<Option<Op>> = vec![None; forward.len()];
+    let decided = |node: NodeId| {
+        let bools = facts(node).bools;
+        (bools.may_true() != bools.may_false()).then_some(bools.may_true())
+    };
+    let valued = |region: RegionId| {
+        let region = graph.region(region);
+        region.result_has_value().then_some(region.result())
+    };
+    let returning = returning(graph);
     for node in graph.node_ids() {
-        let identity = matches!(
-            graph.node(node).op,
+        let inputs = graph.inputs(node);
+        let values = graph.input_values(node);
+        let (to, literal) = match graph.node(node).op {
             Op::Copy { .. } | Op::Assign { .. } | Op::Refine { .. } | Op::Exactly(_)
-        );
-        if identity && graph.input_values(node)[0] {
-            forward[node.index()] = graph.inputs(node)[0];
+                if values[0] =>
+            {
+                (Some(inputs[0]), None)
+            }
+            // A branch its condition always takes runs wherever its parent does.
+            Op::Then if values[0] && decided(inputs[0]) == Some(true) => (Some(inputs[1]), None),
+            Op::Else if values[0] && decided(inputs[0]) == Some(false) => (Some(inputs[1]), None),
+            Op::Join { then, else_ } if values[0] => match (decided(inputs[0]), else_) {
+                (Some(true), _) => (valued(then), None),
+                (Some(false), Some(else_)) => (valued(else_), None),
+                _ => (None, None),
+            },
+            Op::Phi { .. } if values[0] => match decided(inputs[0]) {
+                Some(truth) => {
+                    let taken = if truth { 1 } else { 2 };
+                    (values[taken].then_some(inputs[taken]), None)
+                }
+                None => (None, None),
+            },
+            Op::Observe { then, else_ } if values[0] => match decided(inputs[0]) {
+                Some(truth) => {
+                    let taken = if truth { then } else { else_ };
+                    match taken.and_then(|region| graph.region(region).control()) {
+                        Some(control) => (Some(control), None),
+                        None => (None, Some(Op::Unit)),
+                    }
+                }
+                None => (None, None),
+            },
+            ref op @ (Op::And { rhs } | Op::Or { rhs }) if values[0] => {
+                let and = matches!(op, Op::And { .. });
+                match decided(inputs[0]) {
+                    Some(left) if left != and => (None, Some(Op::Bool(left))),
+                    Some(_) => (valued(rhs), None),
+                    None => (None, None),
+                }
+            }
+            // The loop is its statement's control, so its bounds' returns run when it does.
+            Op::Loop(id)
+                if !facts(graph.region(graph.loop_(id).body).context).live()
+                    && !graph
+                        .loop_(id)
+                        .carried
+                        .iter()
+                        .any(|&(carry, _)| returning[graph.inputs(carry)[0].index()])
+                    && !inputs.iter().any(|&bound| returning[bound.index()]) =>
+            {
+                (None, Some(Op::Unit))
+            }
+            Op::LoopValue { loop_, index } => {
+                let loop_ = graph.loop_(loop_);
+                let carry = loop_.carried[index as usize].0;
+                let empty = !facts(graph.region(loop_.body).context).live();
+                (
+                    (empty && graph.input_values(carry)[0]).then(|| graph.inputs(carry)[0]),
+                    None,
+                )
+            }
+            _ => (None, None),
+        };
+        if let Some(to) = to {
+            forward[node.index()] = to;
         }
+        becomes[node.index()] = literal;
     }
     for index in 0..forward.len() {
         let mut target = forward[index];
@@ -42,7 +116,36 @@ fn forwards(graph: &Graph) -> Vec<NodeId> {
         }
         forward[index] = target;
     }
-    forward
+    (forward, becomes)
+}
+
+/// Per node, whether evaluating it can reach a return: through a control it sequences or runs, or
+/// through a value it reads.
+fn returning(graph: &Graph) -> Vec<bool> {
+    let mut returning = vec![false; graph.nodes().len()];
+    for node in graph.node_ids() {
+        // Inputs precede their readers; one that does not is taken to return.
+        let reads = |input: NodeId| input.index() >= node.index() || returning[input.index()];
+        let region = |region: RegionId| reads(graph.region(region).result());
+        let own = match graph.node(node).op {
+            Op::Return | Op::Sequence | Op::Observe { .. } | Op::Loop(_) | Op::Result { .. } => {
+                true
+            }
+            Op::Join { then, else_ } => region(then) || else_.is_some_and(region),
+            Op::And { rhs } | Op::Or { rhs } => region(rhs),
+            _ => false,
+        };
+        returning[node.index()] = own
+            || graph
+                .inputs(node)
+                .iter()
+                .any(|&input| !is_context(&graph.node(input).op) && reads(input));
+    }
+    returning
+}
+
+fn is_context(op: &Op) -> bool {
+    matches!(op, Op::Entry | Op::Then | Op::Else | Op::After)
 }
 
 fn owned(op: &Op, graph: &Graph) -> Vec<RegionId> {
@@ -55,13 +158,16 @@ fn owned(op: &Op, graph: &Graph) -> Vec<RegionId> {
     }
 }
 
-/// The regions whose owner survives, and every run's own.
-fn kept_regions(graph: &Graph, kept: &[bool]) -> Vec<bool> {
+/// The regions whose owner survives unchanged, and every run's own.
+fn kept_regions(graph: &Graph, becomes: &[Option<Op>], kept: &[bool]) -> Vec<bool> {
     let mut regions = vec![false; graph.region_ids().len()];
     for run in graph.runs() {
         regions[run.region().index()] = true;
     }
-    for node in graph.node_ids().filter(|node| kept[node.index()]) {
+    for node in graph
+        .node_ids()
+        .filter(|node| kept[node.index()] && becomes[node.index()].is_none())
+    {
         for region in owned(&graph.node(node).op, graph) {
             regions[region.index()] = true;
         }
@@ -71,7 +177,7 @@ fn kept_regions(graph: &Graph, kept: &[bool]) -> Vec<bool> {
 
 /// What survives: whatever a run's result can demand, and the contexts and declarations the
 /// survivors name, which keep the graph as well formed as the analysis's.
-fn marks(graph: &Graph, forward: &[NodeId]) -> Vec<bool> {
+fn marks(graph: &Graph, forward: &[NodeId], becomes: &[Option<Op>]) -> Vec<bool> {
     let mut kept = vec![false; graph.nodes().len()];
     let mut stack: Vec<NodeId> = Vec::new();
     let region = |stack: &mut Vec<NodeId>, region: RegionId| {
@@ -92,6 +198,9 @@ fn marks(graph: &Graph, forward: &[NodeId]) -> Vec<bool> {
             continue;
         }
         kept[node.index()] = true;
+        if becomes[node.index()].is_some() {
+            continue;
+        }
         let inputs = graph.inputs(node);
         match graph.node(node).op {
             Op::Unused | Op::Int(_) | Op::Bool(_) | Op::Hole => {}
@@ -125,8 +234,8 @@ fn marks(graph: &Graph, forward: &[NodeId]) -> Vec<bool> {
     kept
 }
 
-fn emit(graph: &Graph, forward: &[NodeId], kept: &[bool]) -> Optimized {
-    let regions = kept_regions(graph, kept);
+fn emit(graph: &Graph, forward: &[NodeId], becomes: &[Option<Op>], kept: &[bool]) -> Optimized {
+    let regions = kept_regions(graph, becomes, kept);
     let mut builder = GraphBuilder::new(kept.iter().filter(|&&kept| kept).count());
     for _ in graph.runs() {
         builder.function();
@@ -163,6 +272,8 @@ fn emit(graph: &Graph, forward: &[NodeId], kept: &[bool]) -> Optimized {
         }
         events.sort_by_key(|&(at, order, region)| (at, order, region.index()));
         let mut events = events.into_iter().peekable();
+        // The contexts of the regions open here, innermost last.
+        let mut contexts: Vec<NodeId> = Vec::new();
         for at in first..=end {
             while let Some((_, order, region)) = events.next_if(|&(event, _, _)| event == at) {
                 let map = |node: NodeId| {
@@ -174,6 +285,7 @@ fn emit(graph: &Graph, forward: &[NodeId], kept: &[bool]) -> Optimized {
                     let new = builder.open(context);
                     builder.enter(new);
                     new_region[region.index()] = Some(new);
+                    contexts.push(context);
                 } else {
                     builder.close_with_control(
                         new_region[region.index()].expect("a region closes after it opens"),
@@ -181,6 +293,7 @@ fn emit(graph: &Graph, forward: &[NodeId], kept: &[bool]) -> Optimized {
                         old.result_has_value(),
                         old.control().map(map),
                     );
+                    contexts.pop();
                 }
             }
             if at == end || !kept[at] {
@@ -191,6 +304,16 @@ fn emit(graph: &Graph, forward: &[NodeId], kept: &[bool]) -> Optimized {
                 new_of[forward[node.index()].index()].expect("what a kept node names is kept")
             };
             let entry = graph.node(node);
+            if let Some(literal) = &becomes[at] {
+                let context = *contexts.last().expect("a node runs in its run's region");
+                let inputs: &[_] = match literal {
+                    Op::Unit => &[(context, entry.origin)],
+                    _ => &[],
+                };
+                new_of[at] = Some(builder.push(literal.clone(), inputs, entry.origin, None));
+                origins.push(node);
+                continue;
+            }
             let op = match entry.op.clone() {
                 Op::Join { then, else_ } => Op::Join {
                     then: new_region[then.index()].unwrap(),

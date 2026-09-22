@@ -181,7 +181,7 @@ impl<'a> Program<'a> {
     pub fn compile(self) -> Compiled<'a> {
         Compiled {
             program: self,
-            optimized: sumi_opt::optimize(self.analysis.graph()),
+            optimized: sumi_opt::optimize(self.analysis.graph(), |node| self.analysis.may(node)),
         }
     }
     /// The result when the analysis proved it a single value.
