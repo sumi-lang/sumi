@@ -1,7 +1,12 @@
 {
   "compilerOptions": {
     "noEmit": true,
-    "types": ["bun"]
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "target": "es2022",
+    "skipLibCheck": true,
+    "strict": true,
+    "types": ["bun", "mocha", "node", "vscode"]
   },
-  "include": ["test/**/*.ts"]
+  "include": ["src/**/*.ts", "test/**/*.ts"]
 }

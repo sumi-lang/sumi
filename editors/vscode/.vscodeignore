@@ -1,7 +1,10 @@
 .vscodeignore
+.vscode-test.mjs
 .gitignore
 dist/**
 node_modules/**
+out/test/**
+src/**
 test/**
 bun.lock
 tsconfig.json
