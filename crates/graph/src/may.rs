@@ -597,6 +597,15 @@ impl May {
         !self.ints.is_empty() || !self.bools.is_empty() || self.unit
     }
 
+    /// True when `self` grew.
+    pub fn join(&mut self, other: &Self) -> bool {
+        let ints = self.ints.join(&other.ints);
+        let bools = self.bools.join(other.bools);
+        let unit = !self.unit && other.unit;
+        self.unit |= other.unit;
+        ints | bools | unit
+    }
+
     pub fn shown(&self, ty: Ty) -> Shown<'_> {
         Shown(self, ty)
     }

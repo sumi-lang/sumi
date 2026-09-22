@@ -203,12 +203,7 @@ impl Lattice for Product {
     }
 
     fn join(&mut self, other: &Self) -> bool {
-        let types = self.types.join(&other.types);
-        let ints = self.values.ints.join(&other.values.ints);
-        let bools = self.values.bools.join(other.values.bools);
-        let unit = !self.values.unit && other.values.unit;
-        self.values.unit |= other.values.unit;
-        types | ints | bools | unit
+        self.types.join(&other.types) | self.values.join(&other.values)
     }
 
     /// Only values climb: type claims are finite, so `Peer` carries nothing.

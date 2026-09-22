@@ -129,6 +129,11 @@ impl<L: Lattice> Solver<L> {
         self.evidence[node.index()].join(evidence);
     }
 
+    /// [`expect`](Self::expect) joined in place, for a lattice built of parts.
+    pub fn class_mut(&mut self, node: NodeId) -> &mut L {
+        &mut self.evidence[node.index()]
+    }
+
     pub fn flow(&mut self, provider: NodeId, consumer: NodeId, edge: L::Edge) {
         self.flows.push(Flow {
             consumer,

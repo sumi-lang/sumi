@@ -56,13 +56,9 @@ impl Typing {
 
     fn fact(&mut self, node: NodeId, ty: Ty, value: May, origin: TextRange) {
         let claim = self.claim(origin);
-        self.solver.expect(
-            node,
-            &Product {
-                types: Evidence::single(ty, claim),
-                values: value,
-            },
-        );
+        let class = self.solver.class_mut(node);
+        class.types.join(&Evidence::single(ty, claim));
+        class.values.join(&value);
         self.facts.push((node, ty, claim));
     }
 
@@ -102,13 +98,10 @@ impl Typing {
         match expected {
             Expected::Ty(ty) => {
                 let claim = self.claim(origin);
-                self.solver.expect(
-                    node,
-                    &Product {
-                        types: Evidence::single(ty, claim),
-                        values: May::NONE,
-                    },
-                );
+                self.solver
+                    .class_mut(node)
+                    .types
+                    .join(&Evidence::single(ty, claim));
             }
             Expected::Peer(peer) => {
                 self.solver.flow(node, peer, Edge::Peer);
