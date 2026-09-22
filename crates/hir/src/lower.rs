@@ -464,7 +464,7 @@ enum Work {
     },
     Branches(Clean<ast::IfExpr>),
     LoopBody(Clean<ast::ForExpr>),
-    LoopEnd(LoopState),
+    LoopEnd(Box<LoopState>),
     Rhs(LazyOp),
     Join {
         branch: Clean<ast::IfExpr>,
@@ -536,7 +536,8 @@ struct Builder<'a, 's> {
     undo: Vec<(LocalId, NodeId)>,
     /// (undo length, local count) for open regions, innermost last.
     version_stack: Vec<(usize, usize)>,
-    region_states: Vec<Option<RegionState>>,
+    /// Closed regions whose state the enclosing join, lazy op, or loop has yet to take.
+    region_states: Vec<(RegionId, RegionState)>,
     /// The local and underlying version read by each name reference.
     reads_of: Vec<Option<(LocalId, NodeId)>>,
     work: Vec<Work>,
@@ -668,7 +669,7 @@ impl<'a, 's> Builder<'a, 's> {
                         self.loop_body(expr, &mut work);
                         continue;
                     }
-                    Work::LoopEnd(state) => self.loop_end(state),
+                    Work::LoopEnd(state) => self.loop_end(*state),
                     Work::Rhs(expr) => {
                         self.rhs(expr, &mut work);
                         continue;
@@ -705,10 +706,7 @@ impl<'a, 's> Builder<'a, 's> {
                         changed.sort_unstable_by_key(|local| local.index());
                         changed.dedup();
                         let state = self.region_state(&changed, keep, fallthrough);
-                        if self.region_states.len() <= region.index() {
-                            self.region_states.resize_with(region.index() + 1, || None);
-                        }
-                        self.region_states[region.index()] = Some(state);
+                        self.region_states.push((region, state));
                         for (local, version) in self.undo.drain(mark..).rev() {
                             self.locals[local.index()].current = version;
                         }
@@ -949,6 +947,14 @@ impl<'a, 's> Builder<'a, 's> {
                 .collect(),
             context,
         }
+    }
+    fn closed(&mut self, region: RegionId) -> RegionState {
+        let position = self
+            .region_states
+            .iter()
+            .rposition(|&(closed, _)| closed == region)
+            .expect("a closed region has local state");
+        self.region_states.remove(position).1
     }
     fn guarded_state(&mut self, condition: NodeIdx, sense: bool, context: NodeId) -> RegionState {
         let keep = self.refinements.len();
@@ -1280,13 +1286,13 @@ impl<'a, 's> Builder<'a, 's> {
             self.set_version(local, header);
             carried.push((local, header));
         }
-        work.push(Work::LoopEnd(LoopState {
+        work.push(Work::LoopEnd(Box::new(LoopState {
             expr,
             region,
             index,
             empty,
             carried,
-        }));
+        })));
         work.push(Work::Pop {
             region,
             root: expr.body().node(),
@@ -1302,9 +1308,7 @@ impl<'a, 's> Builder<'a, 's> {
             carried,
         } = state;
         self.close_scope();
-        let body = self.region_states[region.index()]
-            .take()
-            .expect("a closed loop has local state");
+        let body = self.closed(region);
         let next: Vec<_> = carried
             .iter()
             .map(|&(local, header)| {
@@ -1888,9 +1892,7 @@ impl<'a, 's> Builder<'a, 's> {
     fn lazy(&mut self, expr: LazyOp, rhs: RegionId, contexts: [NodeId; 2]) -> Option<()> {
         let lhs = expr.expr.lhs().node();
         let rhs_node = expr.expr.rhs().node();
-        let state = self.region_states[rhs.index()]
-            .take()
-            .expect("a closed RHS has local state");
+        let state = self.closed(rhs);
         let lhs_input = self.input(lhs);
         let result = self.node_of(rhs_node);
         let rhs_form = self.form(rhs_node);
@@ -1957,13 +1959,9 @@ impl<'a, 's> Builder<'a, 's> {
         let cond = branch.condition().node();
         let then_node = branch.then_branch().node();
         let else_node = branch.else_branch(tree).map(|e| e.node());
-        let then_state = self.region_states[then.index()]
-            .take()
-            .expect("a closed branch has local state");
+        let then_state = self.closed(then);
         let false_state = match else_ {
-            Some(else_) => self.region_states[else_.index()]
-                .take()
-                .expect("a closed branch has local state"),
+            Some(else_) => self.closed(else_),
             None => self.guarded_state(cond, false, contexts[1]),
         };
         let condition = self.input(cond);
