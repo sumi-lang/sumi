@@ -1,0 +1,167 @@
+file: accepted
+frontend errors: 0 (see frontend.snap)
+semantic errors: 0
+
+fn after_return@0..61 () -> int ∈ [1, 1]
+  result: result : int @21..24
+    outcome[0]:
+      discard: after : ? @31..39
+        control: return : int @31..39
+          payload: int 1 : int @38..39
+        context: entry : ? @0..61
+      let x@48..49: int @44..53
+        initializer: int 2 : int @52..53
+      tail: read x@48..49 : int
+    outcome[1]: return : int @31..39
+      payload: int 1 : int @38..39
+
+fn after_decided_if@62..137 () -> int ∈ [1, 1]
+  result: result : int @87..90
+    outcome[0]:
+      discard: if : unit @97..129
+        condition: bool true : bool @100..104
+        then: unit : unit @105..129
+        else: unit (implicit)
+      discard: after : ? @97..129
+        control: observe : ? @97..129
+          condition: bool true : bool @100..104
+          then control: unit : unit @105..129
+        context: entry : ? @62..137
+      tail: int 2 : int @134..135
+    outcome[1]: return : int @115..123
+      payload: int 1 : int @122..123
+
+fn after_both_branches@138..250 (bool ∈ {true}) -> int ∈ [1, 1]
+  param b@161..162: bool
+  result: result : int @173..176
+    outcome[0]:
+      discard: if : ? @183..242
+        condition: read b@161..162 : bool
+        then: unit : unit @188..212
+        else: unit : unit @218..242
+      discard: after : ? @183..242
+        control: observe : ? @183..242
+          condition: read b@161..162 : bool
+          then control: unit : unit @188..212
+          else control: unit : unit @218..242
+        context: entry : ? @138..250
+      tail: int 3 : int @247..248
+    outcome[1]: return : int @198..206
+      payload: int 1 : int @205..206
+    outcome[2]: return : int @228..236
+      payload: int 2 : int @235..236
+
+fn after_guarded@251..369 (int ∈ [-1, 1] \ 0) -> int ∈ [0, 1]
+  param n@268..269: int
+  result: result : int @279..282
+    outcome[0]:
+      discard: if : unit @289..322
+        condition: eager > : bool @292..297
+          lhs: read n@268..269 : int
+          rhs: int 0 : int @296..297
+        then: unit : unit @298..322
+        else: unit (implicit)
+      discard: if : unit @327..361
+        condition: eager <= : bool @330..336
+          lhs: read n@268..269 [n > 0 fails@292..297] : int
+          rhs: int 0 : int @335..336
+        then: unit : unit @337..361
+        else: unit (implicit)
+      discard: after : ? @327..361
+        control: observe : ? @327..361
+          condition: eager <= : bool @330..336
+            lhs: read n@268..269 [n > 0 fails@292..297] : int
+            rhs: int 0 : int @335..336
+          then control: unit : unit @337..361
+        context: after : ? @289..322
+          control: observe : ? @289..322
+            condition: eager > : bool @292..297
+              lhs: read n@268..269 : int
+              rhs: int 0 : int @296..297
+            then control: unit : unit @298..322
+          context: entry : ? @251..369
+      tail: read n@268..269 [n <= 0 fails@330..336, n > 0 fails@292..297] : int
+    outcome[1]: return : int @308..316
+      payload: read n@268..269 [n > 0 holds@292..297] : int
+    outcome[2]: return : int @347..355
+      payload: int 0 : int @354..355
+
+fn nested@370..437 () -> int ∈ [1, 1]
+  result: result : int @385..388
+    outcome[0]:
+      discard: after : ? @405..413
+        control: return : int @405..413
+          payload: int 1 : int @412..413
+        context: entry : ? @370..437
+      discard: int 2 : int @422..423
+      tail: int 3 : int @434..435
+    outcome[1]: return : int @405..413
+      payload: int 1 : int @412..413
+
+fn by_callers@438..514 (int ∈ [4, 4]) -> int ∈ [4, 4]
+  param n@452..453: int
+  result: result : int @463..466
+    outcome[0]:
+      discard: if : unit @473..506
+        condition: eager < : bool @476..481
+          lhs: read n@452..453 : int
+          rhs: int 0 : int @480..481
+        then: unit : unit @482..506
+        else: unit (implicit)
+      discard: after : ? @473..506
+        control: observe : ? @473..506
+          condition: eager < : bool @476..481
+            lhs: read n@452..453 : int
+            rhs: int 0 : int @480..481
+          then control: unit : unit @482..506
+        context: entry : ? @438..514
+      tail: read n@452..453 [n < 0 fails@476..481] : int
+    outcome[1]: return : int @492..500
+      payload: int 0 : int @499..500
+
+fn in_expression@515..559 () -> int ∈ [1, 1]
+  result: result : int @537..540
+    outcome[0]: eager + : int @543..559
+      lhs: unit : unit @543..555
+      rhs: int 2 : int @558..559
+    outcome[1]: return : int @545..553
+      payload: int 1 : int @552..553
+
+fn main@560..659 () -> int ∈ [5, 7]
+  result: copy : int @573..576
+    value: eager + : int @579..659
+      lhs: eager + : int @579..643
+        lhs: eager + : int @579..623
+          lhs: call after_both_branches@138..250 : int @579..604
+            arg[0]: bool true : bool @599..603
+          rhs: call after_guarded@251..369 : int @607..623
+            arg[0]: int 1 : int @621..622
+        rhs: call after_guarded@251..369 : int @626..643
+          arg[0]: int -1 : int @640..642
+      rhs: call by_callers@438..514 : int @646..659
+        arg[0]: int 4 : int @657..658
+
+== semantic diagnostics ==
+warning[semantic/unreachable-code]: unreachable code
+  primary @44..59
+  secondary @31..39: no path continues past this
+warning[semantic/constant-condition]: condition is always true
+  primary @100..104
+warning[semantic/unreachable-code]: unreachable code
+  primary @134..135
+  secondary @97..129: no path continues past this
+warning[semantic/unreachable-code]: unreachable code
+  primary @247..248
+  secondary @183..242: no path continues past this
+warning[semantic/constant-condition]: condition is always true
+  primary @330..336
+  secondary @292..297: ∈ (-∞, 0] under this guard
+warning[semantic/unreachable-code]: unreachable code
+  primary @366..367
+  secondary @327..361: no path continues past this
+warning[semantic/unreachable-code]: unreachable code
+  primary @422..423
+  secondary @405..413: no path continues past this
+warning[semantic/unreachable-code]: unreachable code
+  primary @434..435
+  secondary @395..429: no path continues past this

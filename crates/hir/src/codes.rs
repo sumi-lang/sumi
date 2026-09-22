@@ -46,4 +46,10 @@ sumi_frontend::codes! {
     /// A parameter or local never read whose name does not begin with `_`, in a function that
     /// lowers whole.
     UNUSED_NAME: Warning = "unused-name";
+
+    /// An `if` condition, `&&` or `||` operand, or always-empty loop range, alike for any argument.
+    CONSTANT_CONDITION: Warning = "constant-condition";
+
+    /// Statements after one that never completes for any argument.
+    UNREACHABLE_CODE: Warning = "unreachable-code";
 }

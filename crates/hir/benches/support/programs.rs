@@ -3,11 +3,12 @@ use std::fmt::Write;
 use sumi_frontend::{ParsedSource, parse_source};
 use sumi_hir::{Analysis, Ty};
 
-const SHAPES: [&str; 4] = [
+const SHAPES: [&str; 5] = [
     "inferred-reverse",
     "unresolved-cycle",
     "branches",
     "nested-mutation",
+    "caller-guards",
 ];
 
 pub fn source(shape: &str, size: usize) -> String {
@@ -18,6 +19,17 @@ pub fn source(shape: &str, size: usize) -> String {
             source.push_str("if b { if b { x = x + 1 } else { x = x + 2 } } else { x = x + 3 }\n");
         }
         source.push_str("x }\nfn main() -> int = mutate(true)");
+        return source;
+    }
+    if shape == "caller-guards" {
+        let mut source = String::new();
+        for i in 0..size {
+            writeln!(
+                source,
+                "fn g{i}(n: int) -> int = if n < 0 {{ 0 - n }} else {{ n + 1 }}\nfn c{i}() -> int = g{i}({i})"
+            )
+            .unwrap();
+        }
         return source;
     }
 
@@ -58,7 +70,11 @@ pub fn parse(source: &str) -> ParsedSource {
 }
 
 pub fn validate(shape: &str, size: usize, analysis: &Analysis) {
-    let functions = if shape == "nested-mutation" { 2 } else { size };
+    let functions = match shape {
+        "nested-mutation" => 2,
+        "caller-guards" => 2 * size,
+        _ => size,
+    };
     assert_eq!(analysis.functions().len(), functions);
     if shape == "unresolved-cycle" {
         assert!(!analysis.is_valid());
@@ -73,6 +89,12 @@ pub fn validate(shape: &str, size: usize, analysis: &Analysis) {
     }
 
     assert!(analysis.is_valid());
+    if shape == "caller-guards" {
+        assert!(
+            analysis.diagnostics().is_empty(),
+            "a guard its callers decide is not reported"
+        );
+    }
     let graph = analysis.graph();
     for (index, function) in analysis.functions().iter().enumerate() {
         assert_eq!(function.signature().unwrap().result, Ty::Int);

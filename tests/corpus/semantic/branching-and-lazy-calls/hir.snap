@@ -66,3 +66,7 @@ fn spin@244..298 (int ∈ [0, 3]) -> unit ∈ unit
 fn spins@299..319 () -> unit ∈ unit
   body: call spin@244..298 : unit @312..319
     arg[0]: int 3 : int @317..318
+
+== semantic diagnostics ==
+warning[semantic/constant-condition]: condition is always false
+  primary @167..188

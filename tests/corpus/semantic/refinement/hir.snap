@@ -236,3 +236,9 @@ fn negated_wrappeds@1293..1363 () -> int ∈ [2, 20]
         arg[0]: int 0 : int @1340..1341
       rhs: call negated_wrapped@1212..1292 : int @1345..1363
         arg[0]: int 5 : int @1361..1362
+
+== semantic diagnostics ==
+warning[semantic/constant-condition]: condition is always true
+  primary @491..501
+warning[semantic/constant-condition]: condition is always true
+  primary @505..516

@@ -62,3 +62,14 @@ fn discards@427..466 () -> unit ∈ unit
       discard: call empty@346..361 : unit @447..454
       discard: int 1 : int @463..464
       tail: unit : unit @441..466
+
+== semantic diagnostics ==
+warning[semantic/constant-condition]: condition is always true
+  primary @99..103
+  secondary @119..138: this branch never runs
+warning[semantic/constant-condition]: condition is always false
+  primary @165..170
+  secondary @171..189: this branch never runs
+warning[semantic/constant-condition]: condition is always false
+  primary @256..261
+  secondary @262..291: this branch never runs

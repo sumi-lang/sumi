@@ -6,6 +6,7 @@ pub mod codes;
 mod flows;
 mod lattice;
 mod lower;
+mod reachability;
 mod recursion;
 mod solver;
 mod typing;
@@ -116,6 +117,9 @@ impl<'a> Program<'a> {
         self.analysis
             .ranges(id)
             .expect("a valid file's functions have ranges")
+    }
+    pub fn analysis(self) -> &'a Analysis {
+        self.analysis
     }
     /// Every value a run within `ranges` computes at `node` lies here.
     pub fn may(self, node: NodeId) -> &'a May {

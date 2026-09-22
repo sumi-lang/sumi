@@ -1,0 +1,60 @@
+fn literal() -> int = if false {
+    1
+} else {
+    2
+}
+fn local() -> int {
+    let x = 5
+    if x > 10 {
+        1
+    } else {
+        2
+    }
+}
+fn repeated(n: int) -> int {
+    let mut total = 0
+    if n > 0 {
+        if n > 0 {
+            total = 1
+        }
+    }
+    total
+}
+fn defensive(n: int) -> int = if n < 0 {
+    0 - n
+} else {
+    n
+}
+fn skipped(b: bool) -> bool = false && b
+fn redundant(b: bool) -> bool = b || true
+fn whole() -> bool = true && true
+fn empty() -> int {
+    let mut total = 0
+    for i in 5..5 {
+        total = total + i
+    }
+    total
+}
+fn index() -> int {
+    let mut total = 0
+    for i in 0..10 {
+        if i > 20 {
+            total = 1
+        }
+    }
+    total
+}
+fn always() -> bool = true
+fn called() -> int = if always() {
+    1
+} else {
+    2
+}
+fn uncalled(n: int) -> int = if false {
+    n
+} else {
+    0
+}
+fn main() -> int = repeated(1) + defensive(3) + index()
+fn skips() -> bool = skipped(true)
+fn redundants() -> bool = redundant(false)

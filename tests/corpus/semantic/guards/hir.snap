@@ -191,3 +191,17 @@ fn dead_else@1039..1099 () -> int ∈ [7, 7]
       else: eager / : int @1092..1097
         lhs: int 1 : int @1092..1093
         rhs: int 0 : int @1096..1097
+
+== semantic diagnostics ==
+warning[semantic/constant-condition]: condition is always false
+  primary @23..28
+  secondary @32..42: the right side never runs
+warning[semantic/constant-condition]: condition is always false
+  primary @72..77
+  secondary @78..91: this branch never runs
+warning[semantic/constant-condition]: condition is always false
+  primary @136..141
+  secondary @142..202: this branch never runs
+warning[semantic/constant-condition]: condition is always true
+  primary @1066..1070
+  secondary @1086..1099: this branch never runs

@@ -638,6 +638,18 @@ pub fn semantics(analysis: &Analysis) {
         analysis.is_valid(),
         !analysis.diagnostics().iter().any(|d| d.is_error())
     );
+    let reachability = [
+        sumi_hir::codes::CONSTANT_CONDITION,
+        sumi_hir::codes::UNREACHABLE_CODE,
+    ];
+    assert!(
+        analysis.is_valid()
+            || !analysis
+                .diagnostics()
+                .iter()
+                .any(|d| reachability.contains(&d.code)),
+        "reachability warnings rest on a rejected file's ranges"
+    );
     let all = analysis.diagnostics();
     let syntactic: Vec<_> = all
         .iter()
@@ -1215,5 +1227,80 @@ pub fn run(program: Program<'_>) -> Runs {
             );
         }
     }
+    dead_code_stays_dead(program);
     runs
+}
+
+/// Code a reachability warning calls dead computes nothing, whatever the arguments: those warnings
+/// rest on facts that hold beyond the ranges the file's own calls prove.
+fn dead_code_stays_dead(program: Program<'_>) {
+    use sumi_hir::{Machine, Ty, Value, codes};
+
+    const STEPS: u64 = 1 << 14;
+    const TUPLES: usize = 16;
+    let analysis = program.analysis();
+    let dead: Vec<TextRange> = analysis
+        .diagnostics()
+        .iter()
+        .flat_map(|diagnostic| {
+            let labels = diagnostic
+                .labels
+                .iter()
+                .filter(|label| label.message.ends_with("never runs"))
+                .map(|label| label.range);
+            match diagnostic.code {
+                code if code == codes::UNREACHABLE_CODE => vec![diagnostic.primary],
+                code if code == codes::CONSTANT_CONDITION => labels.collect(),
+                _ => Vec::new(),
+            }
+        })
+        .collect();
+    if dead.is_empty() {
+        return;
+    }
+    let graph = analysis.graph();
+    for (id, _) in program.functions() {
+        let mut tuples: Vec<Vec<Value>> = vec![Vec::new()];
+        for &ty in &program.signature(id).params {
+            let values: Vec<Value> = match ty {
+                Ty::Int => [-9, -1, 0, 1, 9]
+                    .into_iter()
+                    .map(|value| Value::Int(value.into()))
+                    .collect(),
+                Ty::Bool => vec![Value::Bool(true), Value::Bool(false)],
+                Ty::Unit => vec![Value::Unit],
+            };
+            tuples = tuples
+                .iter()
+                .flat_map(|tuple| {
+                    values.iter().map(|value| {
+                        let mut tuple = tuple.clone();
+                        tuple.push(value.clone());
+                        tuple
+                    })
+                })
+                .take(TUPLES)
+                .collect();
+        }
+        for args in tuples {
+            // Outside the proven ranges a run may be refused or run long; either ends the check.
+            let mut machine = Machine::new(graph, id, &args, None);
+            for _ in 0..STEPS {
+                if machine.step().is_some() {
+                    break;
+                }
+                if let Some((node, _)) = machine.latest() {
+                    let origin = graph.node(node).origin;
+                    assert!(
+                        !dead
+                            .iter()
+                            .any(|range| range.start() <= origin.start()
+                                && origin.end() <= range.end()),
+                        "f{}({args:?}) computed {node:?} in code a warning calls dead",
+                        id.index()
+                    );
+                }
+            }
+        }
+    }
 }

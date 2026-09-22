@@ -2,7 +2,7 @@
 //! against the solved evidence, so a conflict is blamed on the first demand that raised it, and an
 //! expression the conflict left undetermined satisfies every later demand silently.
 
-use sumi_frontend::ParsedSource;
+use sumi_frontend::{Diagnostic, ParsedSource};
 use sumi_graph::{FunctionId, Graph, GraphBuilder, NodeId, Op, Ty};
 use sumi_syntax::ast::{self, View};
 use sumi_text::TextRange;
@@ -10,9 +10,9 @@ use sumi_text::TextRange;
 use crate::codes;
 use crate::flows::{Demand, DemandKind};
 use crate::lower::{self, Call, HeaderResult, Lowered, Source};
-use crate::recursion;
 use crate::typing::{Expected, Replay, Typing};
 use crate::{Analysis, Function, Ints, Signature, flows};
+use crate::{reachability, recursion};
 
 pub fn analyze(parsed: ParsedSource) -> Analysis {
     let mut source = Source::new(&parsed);
@@ -25,7 +25,8 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     let declared = lower::declare(&mut source, &items, &mut graph);
     let (graph, lowered) = lower::lower(&mut source, &items, &declared, graph);
     let headers = declared.headers;
-    let (mut typing, thresholds, demands) = flows::draw(&graph, &lowered, &headers);
+    let (mut typing, thresholds, demands) =
+        flows::draw(&graph, &lowered, &headers, flows::Arguments::Delivered);
     typing.solve(&thresholds);
     let failed = replay(&mut source, &typing, &demands, headers.len());
     let mut functions: Vec<Function> = headers
@@ -57,6 +58,15 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         &mut functions,
     );
     complete(&graph, &typing, &lowered, &failed, &mut functions);
+    // A rejected file's holes and dropped bodies distort the ranges these warnings rest on.
+    if !source
+        .diagnostics
+        .iter()
+        .chain(parsed.diagnostics())
+        .any(Diagnostic::is_error)
+    {
+        reachability::warn(&mut source, &graph, &typing, &lowered, &headers);
+    }
     let mut diagnostics = source.diagnostics;
     diagnostics.splice(0..0, parsed.diagnostics().iter().cloned());
     diagnostics.sort_by_key(|d| d.primary.start());
@@ -281,7 +291,7 @@ pub(crate) fn explain(
             Op::Copy { .. } | Op::Assign { .. } => follow(&mut queue, inputs[0], 0),
             Op::LoopIndex | Op::Carry { .. } => {
                 labels.push((
-                    entry.origin,
+                    entry.name.unwrap_or(entry.origin),
                     describe(&may.ints, " on a loop iteration").into(),
                 ));
             }

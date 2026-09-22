@@ -43,3 +43,19 @@ fn grouped@314..351 () -> unit ∈ unit
     condition: bool true : bool @334..338
     then: unit : unit @340..342
     else: unit : unit @348..350
+
+== semantic diagnostics ==
+warning[semantic/constant-condition]: condition is always true
+  primary @131..139
+  secondary @151..156: this branch never runs
+warning[semantic/constant-condition]: condition is always true
+  primary @191..222
+  secondary @234..259: this branch never runs
+warning[semantic/constant-condition]: condition is always true
+  primary @194..198
+  secondary @213..222: this branch never runs
+warning[semantic/constant-condition]: condition is always true
+  primary @290..310
+warning[semantic/constant-condition]: condition is always true
+  primary @333..339
+  secondary @348..350: this branch never runs

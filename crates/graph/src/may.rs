@@ -158,6 +158,11 @@ impl From<Int> for Ints {
 
 impl Ints {
     pub const EMPTY: Self = Self(None);
+    pub const ALL: Self = Self(Some(Band {
+        lo: Bound::NegInf,
+        hi: Bound::PosInf,
+        hole: false,
+    }));
 
     /// The hull of indices in every start-inclusive, end-exclusive range of the two sets.
     pub fn range(start: &Self, end: &Self) -> Self {
@@ -592,6 +597,14 @@ impl May {
         Self { unit, ..Self::NONE }
     }
 
+    pub fn every(ty: Ty) -> Self {
+        match ty {
+            Ty::Int => Self::ints(Ints::ALL),
+            Ty::Bool => Self::bools(Bools::BOTH),
+            Ty::Unit => Self::of_unit(true),
+        }
+    }
+
     #[inline]
     pub fn live(&self) -> bool {
         !self.ints.is_empty() || !self.bools.is_empty() || self.unit
@@ -873,6 +886,17 @@ mod tests {
         assert_eq!(&ints("[-7, -7]") % &ints("[3, 3]"), ints("[-1, -1]"));
         assert_eq!(&ints("[6, 6]") % &ints("[4, 4]"), ints("[2, 2]"));
         assert_eq!(&ints("[6, 6]") % &ints("[0, 0]"), Ints::EMPTY);
+    }
+
+    #[test]
+    fn every_value_of_a_type_is_admitted() {
+        assert_eq!(Ints::ALL, ints("[-inf, inf]"));
+        assert!(Ints::ALL.contains_zero());
+        assert_eq!(May::every(Ty::Bool).bools, Bools::BOTH);
+        assert!(May::every(Ty::Unit).unit);
+        for ty in Ty::ALL {
+            assert!(May::every(ty).live());
+        }
     }
 
     #[test]
