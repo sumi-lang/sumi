@@ -13,8 +13,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
-    name: Build extension
+  check:
+    name: Check extension
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -40,11 +40,9 @@ jobs:
             exit 1
           fi
       - run: bun run check
-      - name: Prepare release artifact
+      - name: Prepare release metadata
         run: |
           version="${GITHUB_REF_NAME#vscode-v}"
-          vsix="sumi-language-$version.vsix"
-          (cd dist && sha256sum "$vsix" > "$vsix.sha256")
           awk -v heading="## $version" '
             $0 == heading { found = 1; next }
             found && /^## / { exit }
@@ -52,23 +50,134 @@ jobs:
             END { if (!found) exit 1 }
           ' CHANGELOG.md > dist/release-notes.md
           test -s dist/release-notes.md
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sumi-vscode-serverless
+          path: editors/vscode/dist/*.vsix
+          if-no-files-found: error
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sumi-vscode-metadata
+          path: editors/vscode/dist/release-notes.md
+          if-no-files-found: error
+
+  build:
+    name: Build extension (${{ matrix.vscode_target }})
+    needs: check
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            rust_target: x86_64-unknown-linux-musl
+            vscode_target: linux-x64
+            executable: sumi-lsp
+          - runner: ubuntu-22.04-arm
+            rust_target: aarch64-unknown-linux-musl
+            vscode_target: linux-arm64
+            executable: sumi-lsp
+          - runner: macos-15-intel
+            rust_target: x86_64-apple-darwin
+            vscode_target: darwin-x64
+            executable: sumi-lsp
+          - runner: macos-15
+            rust_target: aarch64-apple-darwin
+            vscode_target: darwin-arm64
+            executable: sumi-lsp
+          - runner: windows-2022
+            rust_target: x86_64-pc-windows-msvc
+            vscode_target: win32-x64
+            executable: sumi-lsp.exe
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+        with:
+          targets: ${{ matrix.rust_target }}
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: vscode-${{ matrix.rust_target }}
+      - run: bun install --frozen-lockfile
+        working-directory: editors/vscode
+      - run: cargo build --release --locked -p sumi-lsp --target "${{ matrix.rust_target }}"
+      - name: Package extension
+        working-directory: editors/vscode
+        run: |
+          version="${GITHUB_REF_NAME#vscode-v}"
+          mkdir -p server dist
+          cp "../../target/${{ matrix.rust_target }}/release/${{ matrix.executable }}" \
+            "server/${{ matrix.executable }}"
+          bun run build:extension
+          bunx --bun vsce package --no-dependencies \
+            --target "${{ matrix.vscode_target }}" \
+            --out "dist/sumi-language-$version-${{ matrix.vscode_target }}.vsix"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sumi-vscode-${{ matrix.vscode_target }}
+          path: editors/vscode/dist/*.vsix
+          if-no-files-found: error
+
+  bundle:
+    name: Bundle release artifacts
+    needs: [check, build]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: editors/vscode
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: sumi-vscode-*
+          path: editors/vscode/dist
+          merge-multiple: true
+      - name: Verify release artifacts
+        run: |
+          version="${GITHUB_REF_NAME#vscode-v}"
+          targets=(linux-x64 linux-arm64 darwin-x64 darwin-arm64 win32-x64)
+          universal="dist/sumi-language-$version.vsix"
+          test -f "$universal"
+          if unzip -Z1 "$universal" | grep -q '^extension/server/'; then
+            echo "::error::the universal extension contains a language server"
+            exit 1
+          fi
+          if unzip -p "$universal" extension.vsixmanifest | grep -q 'TargetPlatform='; then
+            echo "::error::the universal extension has a target platform"
+            exit 1
+          fi
+          for target in "${targets[@]}"; do
+            vsix="dist/sumi-language-$version-$target.vsix"
+            test -f "$vsix"
+            executable=sumi-lsp
+            if [ "$target" = win32-x64 ]; then executable=sumi-lsp.exe; fi
+            unzip -Z1 "$vsix" | grep -qx "extension/server/$executable"
+            unzip -p "$vsix" extension.vsixmanifest | grep -q "TargetPlatform=\"$target\""
+          done
+          (cd dist && sha256sum *.vsix > SHA256SUMS)
           {
             echo "### VS Code extension $version"
             echo
-            echo "\`$(cat "dist/$vsix.sha256")\`"
+            echo '```text'
+            cat dist/SHA256SUMS
+            echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: sumi-vscode-release
           path: |
             editors/vscode/dist/*.vsix
-            editors/vscode/dist/*.sha256
+            editors/vscode/dist/SHA256SUMS
             editors/vscode/dist/release-notes.md
           if-no-files-found: error
 
   publish-marketplace:
     name: Publish to Visual Studio Marketplace
-    needs: build
+    needs: bundle
     runs-on: ubuntu-latest
     environment: vscode-marketplace
     permissions:
@@ -84,17 +193,17 @@ jobs:
         with:
           name: sumi-vscode-release
           path: editors/vscode/dist
-      - run: cd dist && sha256sum --check "sumi-language-${GITHUB_REF_NAME#vscode-v}.vsix.sha256"
+      - run: cd dist && sha256sum --check SHA256SUMS
       - name: Publish to Visual Studio Marketplace
-        run: >-
-          bunx @vscode/vsce@3.9.2 publish
-          --packagePath "dist/sumi-language-${GITHUB_REF_NAME#vscode-v}.vsix"
+        run: |
+          mapfile -t packages < <(find dist -maxdepth 1 -name '*.vsix' -print | sort)
+          bunx @vscode/vsce@3.9.2 publish --packagePath "${packages[@]}"
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
 
   publish-openvsx:
     name: Publish to Open VSX
-    needs: build
+    needs: bundle
     runs-on: ubuntu-latest
     environment: vscode-openvsx
     permissions:
@@ -110,11 +219,16 @@ jobs:
         with:
           name: sumi-vscode-release
           path: editors/vscode/dist
-      - run: cd dist && sha256sum --check "sumi-language-${GITHUB_REF_NAME#vscode-v}.vsix.sha256"
+      - run: cd dist && sha256sum --check SHA256SUMS
       - name: Publish to Open VSX
-        run: >-
-          bunx ovsx@1.1.1 publish
-          "dist/sumi-language-${GITHUB_REF_NAME#vscode-v}.vsix"
+        run: |
+          version="${GITHUB_REF_NAME#vscode-v}"
+          bunx ovsx@1.1.1 publish "dist/sumi-language-$version.vsix"
+          for vsix in dist/sumi-language-$version-*.vsix; do
+            target="${vsix#dist/sumi-language-$version-}"
+            target="${target%.vsix}"
+            bunx ovsx@1.1.1 publish "$vsix" --target "$target"
+          done
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
 
@@ -132,7 +246,7 @@ jobs:
         with:
           name: sumi-vscode-release
           path: editors/vscode/dist
-      - run: cd dist && sha256sum --check "sumi-language-${GITHUB_REF_NAME#vscode-v}.vsix.sha256"
+      - run: cd dist && sha256sum --check SHA256SUMS
       - name: Create GitHub release
         run: |
           version="${GITHUB_REF_NAME#vscode-v}"
@@ -150,8 +264,8 @@ jobs:
               --verify-tag
           fi
           gh release upload "$GITHUB_REF_NAME" \
-            "dist/sumi-language-$version.vsix" \
-            "dist/sumi-language-$version.vsix.sha256" \
+            dist/*.vsix \
+            dist/SHA256SUMS \
             --clobber
           gh release edit "$GITHUB_REF_NAME" --draft=false --latest=false
         env:

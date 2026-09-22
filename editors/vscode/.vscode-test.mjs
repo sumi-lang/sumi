@@ -7,14 +7,16 @@ import { defineConfig } from "@vscode/test-cli";
 const extension = path.dirname(fileURLToPath(import.meta.url));
 const generated = path.join(extension, ".vscode-test", `run-${process.pid}`);
 const workspace = path.join(generated, "workspace");
-fs.mkdirSync(path.join(workspace, ".vscode"), { recursive: true });
-fs.writeFileSync(
-  path.join(workspace, ".vscode", "settings.json"),
-  JSON.stringify({ "sumi.server.path": path.resolve(extension, "../../target/debug/sumi-lsp") }),
-);
+const executable = process.platform === "win32" ? "sumi-lsp.exe" : "sumi-lsp";
+const server = path.join(extension, "server", executable);
+fs.mkdirSync(workspace, { recursive: true });
+fs.mkdirSync(path.dirname(server), { recursive: true });
+fs.copyFileSync(path.resolve(extension, "../../target/debug", executable), server);
+fs.chmodSync(server, 0o755);
 
 process.on("exit", () => {
   fs.rmSync(generated, { recursive: true, force: true });
+  fs.rmSync(path.dirname(server), { recursive: true, force: true });
 });
 
 export default defineConfig({

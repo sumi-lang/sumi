@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import path from "node:path";
+
 import * as vscode from "vscode";
 import {
   LanguageClient,
@@ -8,7 +11,10 @@ import {
 let client: LanguageClient | undefined;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
-  const command = vscode.workspace.getConfiguration("sumi.server").get<string>("path", "sumi-lsp");
+  const configured = vscode.workspace.getConfiguration("sumi.server").get<string>("path", "");
+  const executable = process.platform === "win32" ? "sumi-lsp.exe" : "sumi-lsp";
+  const bundled = context.asAbsolutePath(path.join("server", executable));
+  const command = configured || (fs.existsSync(bundled) ? bundled : "sumi-lsp");
   const serverOptions: ServerOptions = { command };
   const clientOptions: LanguageClientOptions = {
     documentSelector: [
