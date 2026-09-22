@@ -16,7 +16,7 @@ use lsp_types::{
     TextDocumentSyncKind, TextDocumentSyncOptions, TextEdit, Uri, WorkspaceEdit,
 };
 use serde_json::Value;
-use sumi_frontend::{Diagnostic, Fix, parse_source};
+use sumi_frontend::{Diagnostic, Fix, Severity, parse_source};
 use sumi_hir::analyze;
 
 use crate::position::{Encoding, Positions};
@@ -595,7 +595,10 @@ fn diagnostic_to_lsp(
 ) -> lsp_types::Diagnostic {
     lsp_types::Diagnostic {
         range: positions.range(diagnostic.primary),
-        severity: Some(DiagnosticSeverity::ERROR),
+        severity: Some(match diagnostic.code.severity {
+            Severity::Error => DiagnosticSeverity::ERROR,
+            Severity::Warning => DiagnosticSeverity::WARNING,
+        }),
         code: Some(lsp_types::NumberOrString::String(
             diagnostic.code.to_string(),
         )),

@@ -87,13 +87,14 @@ fn analyze(path: &Path) -> Result<(Analysis, bool), String> {
     let lines = LineIndex::new(analysis.parsed().source());
     for diagnostic in analysis.diagnostics() {
         eprintln!(
-            "{}error[{}]: {}",
+            "{}{}[{}]: {}",
             locate(path, &lines, diagnostic.primary.start()),
+            diagnostic.code.severity,
             diagnostic.code,
             diagnostic.message,
         );
     }
-    let has_errors = !analysis.diagnostics().is_empty();
+    let has_errors = !analysis.is_valid();
     Ok((analysis, has_errors))
 }
 

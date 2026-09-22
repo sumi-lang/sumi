@@ -202,7 +202,8 @@ fn evidence_token(evidence: &ParseEvidence) -> RawIdx {
 fn render(diagnostic: &Diagnostic, index: &LineIndex, source: &str, out: &mut String) {
     writeln!(
         out,
-        "error[{}] {}: {}",
+        "{}[{}] {}: {}",
+        diagnostic.code.severity,
         diagnostic.code,
         place(index, source, diagnostic.primary),
         diagnostic.message

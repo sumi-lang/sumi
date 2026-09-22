@@ -612,7 +612,10 @@ pub fn semantics(analysis: &Analysis) {
         }
         graph(&reversed);
     }
-    assert_eq!(analysis.is_valid(), analysis.diagnostics().is_empty());
+    assert_eq!(
+        analysis.is_valid(),
+        !analysis.diagnostics().iter().any(|d| d.is_error())
+    );
     let all = analysis.diagnostics();
     let syntactic: Vec<_> = all
         .iter()

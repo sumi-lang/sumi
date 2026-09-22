@@ -25,7 +25,7 @@ fn every_code_is_shown_by_a_corpus_case() {
         .iter()
         .chain(sumi_hir::codes::ALL.iter());
     let unshown: Vec<String> = codes
-        .filter(|code| !text.contains(&format!("[{code}]")))
+        .filter(|code| !text.contains(&format!("{}[{code}]", code.severity)))
         .map(DiagnosticCode::to_string)
         .collect();
     assert!(
