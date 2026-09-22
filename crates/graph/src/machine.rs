@@ -108,7 +108,7 @@ pub struct Machine<'a> {
     steps: u64,
     max_depth: usize,
     bound: Option<u64>,
-    latest: Option<usize>,
+    latest: Option<(NodeId, usize)>,
     outcome: Option<Result<Value, Refusal>>,
     tail_args: Vec<Value>,
     suspensions: Suspensions,
@@ -154,9 +154,10 @@ impl<'a> Machine<'a> {
         self.max_depth
     }
 
-    /// Every value a run computes appears here once.
-    pub fn latest(&self) -> Option<&Value> {
-        self.latest.and_then(|slot| self.slots[slot].as_ref())
+    /// Every value a run computes appears here once, beside the node that computed it.
+    pub fn latest(&self) -> Option<(NodeId, &Value)> {
+        let (node, slot) = self.latest?;
+        Some((node, self.slots[slot].as_ref()?))
     }
 
     pub fn outcome(&self) -> Option<&Result<Value, Refusal>> {
@@ -236,7 +237,7 @@ impl<'a> Machine<'a> {
     fn fill(&mut self, node: NodeId, value: Value) {
         let index = self.index(node);
         self.slots[index] = Some(value);
-        self.latest = Some(index);
+        self.latest = Some((node, index));
         self.steps += 1;
     }
 
@@ -860,7 +861,7 @@ mod tests {
         let mut stepped = Machine::new(&graph, function, &[], None);
         let mut bounds_seen = Vec::new();
         while stepped.step().is_none() {
-            if let Some(Value::Int(value)) = stepped.latest()
+            if let Some((_, Value::Int(value))) = stepped.latest()
                 && value > &100.into()
             {
                 bounds_seen.push(value.to_string());

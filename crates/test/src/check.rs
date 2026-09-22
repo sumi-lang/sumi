@@ -1065,7 +1065,7 @@ pub struct Runs {
 }
 
 pub fn run(program: Program<'_>) -> Runs {
-    use sumi_hir::{Bools, Int, Ints, Ty, Value};
+    use sumi_hir::{Bools, Int, Ints, May, Ty, Value};
 
     const STEPS: u64 = 1 << 17;
     /// The step budget is not enough: squaring along a recursion doubles the width every frame, and
@@ -1084,6 +1084,13 @@ pub fn run(program: Program<'_>) -> Runs {
             bools.may_true()
         } else {
             bools.may_false()
+        }
+    }
+    fn holds(may: &May, value: &Value) -> bool {
+        match value {
+            Value::Int(value) => contains(&may.ints, value),
+            Value::Bool(value) => admits(may.bools, *value),
+            Value::Unit => may.unit,
         }
     }
     fn points(ints: &Ints) -> Vec<Int> {
@@ -1154,8 +1161,16 @@ pub fn run(program: Program<'_>) -> Runs {
                 if let Some(outcome) = machine.step() {
                     break Some(outcome.clone());
                 }
+                if let Some((node, value)) = machine.latest() {
+                    assert!(
+                        holds(program.may(node), value),
+                        "f{}({args:?}) computed {value} at {node:?}, outside {:?}",
+                        id.index(),
+                        program.may(node)
+                    );
+                }
                 remaining -= 1;
-                if remaining == 0 || machine.latest().is_some_and(too_wide) {
+                if remaining == 0 || machine.latest().is_some_and(|(_, value)| too_wide(value)) {
                     break None;
                 }
             };
@@ -1171,13 +1186,8 @@ pub fn run(program: Program<'_>) -> Runs {
             assert_eq!(program.machine(id, &args).run(), Ok(value.clone()));
             assert_eq!(program.evaluate(id, &args), value);
             assert_eq!(value.ty(), signature.result);
-            let within = match &value {
-                Value::Int(value) => contains(&ranges.result.ints, value),
-                Value::Bool(value) => admits(ranges.result.bools, *value),
-                Value::Unit => ranges.result.unit,
-            };
             assert!(
-                within,
+                holds(&ranges.result, &value),
                 "f{}({args:?}) = {value} outside its result set",
                 id.index()
             );

@@ -427,7 +427,7 @@ fn stepping_is_observable_and_idempotent_at_the_end() {
     let mut values = Vec::new();
     while machine.step().is_none() {
         seen_depth_two |= machine.depth() == 2;
-        values.extend(machine.latest().cloned());
+        values.extend(machine.latest().map(|(_, value)| value.clone()));
     }
     assert_eq!(machine.outcome(), Some(&Ok(int(4))));
     assert!(seen_depth_two);
