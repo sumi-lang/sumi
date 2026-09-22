@@ -1,8 +1,8 @@
 //! Lowering of one file to the graph: names, structure, and holes. The walk rejects nothing on type
 //! grounds; it fails only on names, syntax, and unsupported constructs, and leaves each as a hole.
 
-use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+use std::collections::{HashMap, HashSet};
 
 use rustc_hash::FxBuildHasher;
 use sumi_frontend::{DiagnosticCode, Fix, Label};
@@ -797,6 +797,11 @@ impl<'a, 's> Builder<'a, 's> {
     }
     /// Only after a whole build: a walk that stopped early leaves reads unresolved.
     fn unused(&mut self) {
+        if self.locals.iter().all(|local| local.read) {
+            return;
+        }
+        let taken: HashSet<&str, FxBuildHasher> =
+            self.locals.iter().map(|local| local.name).collect();
         for local in &self.locals {
             if local.read {
                 continue;
@@ -813,7 +818,7 @@ impl<'a, 's> Builder<'a, 's> {
             // Renaming onto a name already in use would capture its reads or duplicate it.
             let free = !local.assigned
                 && !self.names.contains_key(renamed.as_str())
-                && self.locals.iter().all(|other| other.name != renamed);
+                && !taken.contains(renamed.as_str());
             let mut diagnostic = diagnostic(
                 at,
                 codes::UNUSED_NAME,
