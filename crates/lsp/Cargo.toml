@@ -1,0 +1,15 @@
+[package]
+name = "sumi-lsp"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+
+[dependencies]
+crossbeam-channel = "0.5.15"
+lsp-server = "0.10.0"
+lsp-types = "0.97.0"
+serde_json = "1.0.145"
+sumi-format = { path = "../format" }
+sumi-frontend = { path = "../frontend" }
+sumi-hir = { path = "../hir" }
+sumi-text = { path = "../text" }
