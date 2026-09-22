@@ -1,17 +1,18 @@
 //! Lowering of one file to the graph: names, structure, and holes. The walk rejects nothing on type
 //! grounds; it fails only on names, syntax, and unsupported constructs, and leaves each as a hole.
 
-use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+use std::collections::{HashMap, HashSet};
 
 use rustc_hash::FxBuildHasher;
-use sumi_frontend::{DiagnosticCode, Label};
+use sumi_frontend::{DiagnosticCode, Fix, Label};
 use sumi_graph::{GraphBuilder, Loop};
 use sumi_lexer::{LexedFile, RawIdx, SyntaxKind, TokenFlags};
 use sumi_syntax::{
     Literal, NodeIdx, PrefixOp, SyntaxTree,
     ast::{self, AstNode, Clean, CleanExpr, CleanStmt, View},
 };
+use sumi_text::{TextEdit, TextRange};
 
 use crate::codes;
 use crate::lattice::Claim;
@@ -399,11 +400,15 @@ impl LocalId {
     }
 }
 
-struct Local {
+struct Local<'s> {
+    name: &'s str,
     declaration: NodeId,
     current: NodeId,
     mutable: bool,
     completes: bool,
+    /// A name beginning with `_` counts as read from its declaration.
+    read: bool,
+    assigned: bool,
 }
 
 struct RegionState {
@@ -531,7 +536,7 @@ struct Builder<'a, 's> {
     scopes: Vec<Scope<'s>>,
     scope_mutables: Vec<usize>,
     depth: usize,
-    locals: Vec<Local>,
+    locals: Vec<Local<'s>>,
     mutable_locals: Vec<LocalId>,
     undo: Vec<(LocalId, NodeId)>,
     /// (undo length, local count) for open regions, innermost last.
@@ -782,7 +787,48 @@ impl<'a, 's> Builder<'a, 's> {
             }
         };
         self.graph.close_run(run, region, value);
-        !self.failed && root.is_some()
+        let whole = !self.failed && root.is_some();
+        if whole {
+            self.unused();
+        }
+        whole
+    }
+    /// Only after a whole build: a walk that stopped early leaves reads unresolved.
+    fn unused(&mut self) {
+        if self.locals.iter().all(|local| local.read) {
+            return;
+        }
+        let taken: HashSet<&str, FxBuildHasher> =
+            self.locals.iter().map(|local| local.name).collect();
+        for local in &self.locals {
+            if local.read {
+                continue;
+            }
+            let declaration = self.graph.node(local.declaration);
+            let at = declaration.name.expect("a bound local is named");
+            let (kind, reads) = match (&declaration.op, local.assigned) {
+                (Op::Param { .. }, _) => ("parameter", "is never read"),
+                (Op::LoopIndex, _) => ("loop index", "is never read"),
+                (_, false) => ("local", "is never read"),
+                (_, true) => ("local", "is assigned but never read"),
+            };
+            let renamed = format!("_{}", local.name);
+            // Renaming onto a name already in use would capture its reads or duplicate it.
+            let free = !local.assigned
+                && !self.names.contains_key(renamed.as_str())
+                && !taken.contains(renamed.as_str());
+            let mut diagnostic = diagnostic(
+                at,
+                codes::UNUSED_NAME,
+                format!("{kind} `{}` {reads}", local.name),
+                [],
+            );
+            diagnostic.fix = free.then(|| Fix {
+                message: "prefix the name with `_`".into(),
+                edit: TextEdit::new(TextRange::new(at.start(), at.start()), "_"),
+            });
+            self.source.diagnostics.push(diagnostic);
+        }
     }
     fn push(
         &mut self,
@@ -909,10 +955,13 @@ impl<'a, 's> Builder<'a, 's> {
     fn bind(&mut self, name: &'s str, node: NodeId, mutable: bool) -> LocalId {
         let id = LocalId(u32::try_from(self.locals.len()).expect("local count fits u32"));
         self.locals.push(Local {
+            name,
             declaration: node,
             current: node,
             mutable,
             completes: false,
+            read: name.starts_with('_'),
+            assigned: false,
         });
         if mutable {
             self.mutable_locals.push(id);
@@ -1525,6 +1574,7 @@ impl<'a, 's> Builder<'a, 's> {
             );
             return None;
         }
+        self.locals[local.index()].assigned = true;
         Some(local)
     }
     fn return_(&mut self, return_: Clean<ast::ReturnStmt>) -> Option<()> {
@@ -1593,6 +1643,7 @@ impl<'a, 's> Builder<'a, 's> {
     fn target(&mut self, node: NodeIdx) -> Option<FunctionId> {
         let name = self.source.text(node);
         if let Some(local) = self.lookup(name) {
+            self.locals[local.index()].read = true;
             let declaration = self.locals[local.index()].declaration;
             // A binding that failed is reported once, where it failed.
             if self.lowered.typed[declaration.index()] {
@@ -1776,6 +1827,7 @@ impl<'a, 's> Builder<'a, 's> {
                 let name = self.source.text(node);
                 match self.lookup(name) {
                     Some(local) => {
+                        self.locals[local.index()].read = true;
                         let version = self.locals[local.index()].current;
                         let read = self.current(local);
                         self.nodes_of[node.to_usize()] = Some(read);

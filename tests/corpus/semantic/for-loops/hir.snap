@@ -841,3 +841,26 @@ fn huge_bounds@1782..1939 () -> int ∈ [100000000000000000000000, +∞)
         context: entry : ? @1782..1939
       tail: loop value 0 : int @1834..1927
         loop: @1834..1927
+
+== semantic diagnostics ==
+warning[semantic/unused-name]: loop index `i` is never read
+  primary @156..157
+  fix @156 -> "_": prefix the name with `_`
+warning[semantic/unused-name]: loop index `i` is never read
+  primary @188..189
+  fix @188 -> "_": prefix the name with `_`
+warning[semantic/unused-name]: loop index `i` is never read
+  primary @1059..1060
+  fix @1059 -> "_": prefix the name with `_`
+warning[semantic/unused-name]: loop index `i` is never read
+  primary @1428..1429
+  fix @1428 -> "_": prefix the name with `_`
+warning[semantic/unused-name]: loop index `i` is never read
+  primary @1499..1500
+  fix @1499 -> "_": prefix the name with `_`
+warning[semantic/unused-name]: loop index `i` is never read
+  primary @1562..1563
+  fix @1562 -> "_": prefix the name with `_`
+warning[semantic/unused-name]: loop index `i` is never read
+  primary @1711..1712
+  fix @1711 -> "_": prefix the name with `_`

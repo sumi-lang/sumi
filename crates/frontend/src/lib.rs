@@ -6,7 +6,7 @@ mod diagnostic;
 mod lower;
 pub use lower::diagnostics;
 
-pub use diagnostic::{Diagnostic, DiagnosticCode, DiagnosticGroup, Fix, Label};
+pub use diagnostic::{Diagnostic, DiagnosticCode, DiagnosticGroup, Fix, Label, Severity};
 pub use sumi_lexer::SourceTooLarge;
 use sumi_lexer::{LexedFile, lex};
 use sumi_syntax::{Parse, ParserInput, parse};

@@ -89,14 +89,14 @@ impl Analysis {
         range.text(self.parsed.source())
     }
     pub fn is_valid(&self) -> bool {
-        self.diagnostics.is_empty()
+        !self.diagnostics.iter().any(Diagnostic::is_error)
     }
     pub fn program(&self) -> Option<Program<'_>> {
         self.is_valid().then_some(Program { analysis: self })
     }
 }
 
-/// An analysis with no diagnostic: every function has a signature and a complete body, and a
+/// An analysis with no error: every function has a signature and a complete body, and a
 /// refusal from the machine is a checker bug.
 #[derive(Clone, Copy, Debug)]
 pub struct Program<'a> {

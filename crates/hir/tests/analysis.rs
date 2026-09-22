@@ -207,7 +207,7 @@ fn forwarded_return_paths_keep_their_static_types() {
             "expected int, found bool",
         ),
         (
-            "fn f() -> int { let x: bool = if false { return 1 } else { 2 }\n 3 }",
+            "fn f() -> int { let _x: bool = if false { return 1 } else { 2 }\n 3 }",
             "expected bool, found int",
         ),
         (
@@ -369,7 +369,7 @@ fn call_requirements_replay_in_argument_order() {
         source.rfind("(x)").unwrap()
     );
 
-    let a = analyzed("fn take(a: int, b: bool) {}\nfn caller() { take(missing, 23) }");
+    let a = analyzed("fn take(_a: int, _b: bool) {}\nfn caller() { take(missing, 23) }");
     assert_eq!(codes(&a), [UNKNOWN_NAME, TYPE_MISMATCH]);
 }
 

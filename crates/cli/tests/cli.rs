@@ -66,6 +66,18 @@ fn diagnostic_output_is_one_plain_line() {
 }
 
 #[test]
+fn warnings_are_reported_without_failing() {
+    let warning = "case.su:1:6: warning[semantic/unused-name]: parameter `x` is never read\n";
+    let (_dir, output) = check(b"fn f(x: int) -> int = 1");
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(String::from_utf8(output.stderr).unwrap(), warning);
+    let output = run("fn f(x: int) -> int = 1\nfn main() -> int = f(2)\n");
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(String::from_utf8(output.stdout).unwrap(), "1\n");
+    assert_eq!(String::from_utf8(output.stderr).unwrap(), warning);
+}
+
+#[test]
 #[cfg(target_os = "linux")]
 fn oversized_file_is_rejected_before_reading() {
     let dir = tempfile::tempdir().unwrap();

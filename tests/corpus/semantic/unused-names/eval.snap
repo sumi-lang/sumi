@@ -1,0 +1,12 @@
+file: accepted
+fn parameter: takes arguments, not run
+fn binding = 2 (steps 2, depth 1 of at most 1)
+fn silenced: takes arguments, not run
+fn loop_index = 3 (steps 20, depth 1 of at most 1)
+fn assigned = 4 (steps 2, depth 1 of at most 1)
+fn shadowed = 2 (steps 3, depth 1 of at most 1)
+fn dead_read: takes arguments, not run
+fn local_taken: takes arguments, not run
+fn _six = 6 (steps 2, depth 1 of at most 1)
+fn function_taken: takes arguments, not run
+fn caller = 18 (steps 24, depth 3 of at most 3)

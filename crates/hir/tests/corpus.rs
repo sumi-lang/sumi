@@ -66,9 +66,14 @@ fn at(range: TextRange) -> String {
 
 fn snapshot(source: &str) -> String {
     let analysis = analyze(parse_source(source.into()).unwrap());
-    let syntax_errors = analysis.parsed().diagnostics().len();
+    let syntax_errors = analysis
+        .parsed()
+        .diagnostics()
+        .iter()
+        .filter(|d| d.is_error())
+        .count();
     let semantic: Vec<_> = analysis.semantic_diagnostics().collect();
-    let semantic_errors = semantic.len();
+    let semantic_errors = semantic.iter().filter(|d| d.is_error()).count();
     let mut out = format!(
         "file: {}\nfrontend errors: {syntax_errors} (see frontend.snap)\nsemantic errors: {semantic_errors}\n",
         if analysis.is_valid() {
@@ -117,7 +122,8 @@ fn snapshot(source: &str) -> String {
         for diagnostic in semantic {
             writeln!(
                 out,
-                "error[{}]: {}\n  primary {}",
+                "{}[{}]: {}\n  primary {}",
+                diagnostic.code.severity,
                 diagnostic.code,
                 diagnostic.message,
                 at(diagnostic.primary)
@@ -126,10 +132,16 @@ fn snapshot(source: &str) -> String {
             for label in &diagnostic.labels {
                 writeln!(out, "  secondary {}: {}", at(label.range), label.message).unwrap();
             }
-            assert!(
-                diagnostic.fix.is_none(),
-                "add semantic fix rendering when fixes are introduced"
-            );
+            if let Some(fix) = &diagnostic.fix {
+                writeln!(
+                    out,
+                    "  fix {} -> {:?}: {}",
+                    at(fix.edit.range()),
+                    fix.edit.replacement(),
+                    fix.message
+                )
+                .unwrap();
+            }
         }
     }
     out

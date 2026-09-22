@@ -1,0 +1,23 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 1
+
+fn damaged@0..56 (int ∈ ∅) -> int ∈ ∅
+  param x@11..12: int
+  result: copy : int @22..25
+    value:
+      let f@36..37: ? @32..48
+        initializer: hole : ? @40..48
+      tail: int 2 : int @53..54
+
+fn whole@57..84 (int ∈ ∅) -> int ∈ ∅
+  param x@66..67: int
+  result: copy : int @77..80
+    value: int 3 : int @83..84
+
+== semantic diagnostics ==
+error[semantic/unsupported]: construct is not supported by scalar checking
+  primary @40..48
+warning[semantic/unused-name]: parameter `x` is never read
+  primary @66..67
+  fix @66 -> "_": prefix the name with `_`

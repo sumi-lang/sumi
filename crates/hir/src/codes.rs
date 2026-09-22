@@ -5,41 +5,45 @@ sumi_frontend::codes! {
     SEMANTIC = "semantic";
 
     /// A type reference naming none of `int`, `bool`, and `unit`.
-    UNKNOWN_TYPE = "unknown-type";
+    UNKNOWN_TYPE: Error = "unknown-type";
 
     /// A name with no declaration in scope.
-    UNKNOWN_NAME = "unknown-name";
+    UNKNOWN_NAME: Error = "unknown-name";
 
     /// Two functions in a file, or two parameters of a function, with the same name.
-    DUPLICATE_NAME = "duplicate-name";
+    DUPLICATE_NAME: Error = "duplicate-name";
 
     /// A call whose callee is a parameter or binding.
-    NOT_CALLABLE = "not-callable";
+    NOT_CALLABLE: Error = "not-callable";
 
     /// A call whose argument count differs from the callee's parameter count.
-    ARITY = "arity";
+    ARITY: Error = "arity";
 
     /// An assignment whose target is not a local name.
-    INVALID_ASSIGNMENT_TARGET = "invalid-assignment-target";
+    INVALID_ASSIGNMENT_TARGET: Error = "invalid-assignment-target";
 
     /// An assignment to a parameter or a local declared without `mut`.
-    IMMUTABLE_ASSIGNMENT = "immutable-assignment";
+    IMMUTABLE_ASSIGNMENT: Error = "immutable-assignment";
 
     /// An expression of one type where another is required.
-    TYPE_MISMATCH = "type-mismatch";
+    TYPE_MISMATCH: Error = "type-mismatch";
 
     /// A statement's expression, other than a block's last, with a value that is not unit.
-    UNUSED_VALUE = "unused-value";
+    UNUSED_VALUE: Error = "unused-value";
 
     /// A function with no return type whose result is used as two types or fixed by nothing.
-    CANNOT_INFER = "cannot-infer";
+    CANNOT_INFER: Error = "cannot-infer";
 
     /// A `/` or `%` that can run with a divisor whose range includes zero.
-    DIVISION_BY_ZERO = "division-by-zero";
+    DIVISION_BY_ZERO: Error = "division-by-zero";
 
     /// A cycle of calls in which no parameter strictly moves toward a bound.
-    UNBOUNDED_RECURSION = "unbounded-recursion";
+    UNBOUNDED_RECURSION: Error = "unbounded-recursion";
 
     /// A construct the checker does not handle; the function is left unchecked.
-    UNSUPPORTED = "unsupported";
+    UNSUPPORTED: Error = "unsupported";
+
+    /// A parameter or local never read whose name does not begin with `_`, in a function that
+    /// lowers whole.
+    UNUSED_NAME: Warning = "unused-name";
 }
