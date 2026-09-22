@@ -1084,7 +1084,8 @@ pub fn run(program: Program<'_>) -> Runs {
     }
 
     let wide: Int = format!("1{}", "0".repeat(DIGITS)).parse().unwrap();
-    let too_wide = |value: &Value| matches!(value, Value::Int(v) if *v > wide || *v < -&wide);
+    let narrow = -&wide;
+    let too_wide = |value: &Value| matches!(value, Value::Int(v) if *v > wide || *v < narrow);
     let mut runs = Runs::default();
     for (id, _) in program.functions() {
         let signature = program.signature(id);
