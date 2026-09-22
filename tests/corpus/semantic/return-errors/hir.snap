@@ -131,6 +131,9 @@ error[semantic/type-mismatch]: expected int, found bool
 error[semantic/type-mismatch]: expected int, found bool
   primary @341..345
   secondary @293..296: declared here
+warning[semantic/unused-name]: local `x` is never read
+  primary @382..383
+  fix @382 -> "_": prefix the name with `_`
 error[semantic/type-mismatch]: expected bool, found int
   primary @392..448
   secondary @385..389: declared here

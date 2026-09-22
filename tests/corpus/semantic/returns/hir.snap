@@ -221,3 +221,11 @@ fn choose@945..1011 (bool ∈ ∅) -> int ∈ ∅
       else: int 18 : int @1007..1009
     outcome[1]: return : int @984..993
       payload: int 17 : int @991..993
+
+== semantic diagnostics ==
+warning[semantic/unused-name]: local `unused` is never read
+  primary @71..77
+  fix @71 -> "_": prefix the name with `_`
+warning[semantic/unused-name]: local `unused` is never read
+  primary @841..847
+  fix @841 -> "_": prefix the name with `_`

@@ -63,3 +63,11 @@ fn plain@415..441 () -> unit ∈ unit
   body:
     discard: int 1 : int @438..439
     tail: unit : unit @428..441
+
+== semantic diagnostics ==
+warning[semantic/unused-name]: parameter `u` is never read
+  primary @347..348
+  fix @347 -> "_": prefix the name with `_`
+warning[semantic/unused-name]: parameter `n` is never read
+  primary @396..397
+  fix @396 -> "_": prefix the name with `_`

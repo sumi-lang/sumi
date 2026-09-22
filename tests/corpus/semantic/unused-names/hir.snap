@@ -1,0 +1,137 @@
+file: accepted
+frontend errors: 0 (see frontend.snap)
+semantic errors: 0
+
+fn parameter@0..39 (int ∈ [1, 1], int ∈ [2, 2]) -> int ∈ [2, 2]
+  param n@13..14: int
+  param m@21..22: int
+  result: copy : int @32..35
+    value: read m@21..22 : int
+
+fn binding@40..83 () -> int ∈ [2, 2]
+  result: copy : int @56..59
+    value:
+      let x@70..71: int @66..75
+        initializer: int 1 : int @74..75
+      tail: int 2 : int @80..81
+
+fn silenced@84..136 (int ∈ ∅) -> int ∈ ∅
+  param _n@96..98: int
+  result: copy : int @108..111
+    value:
+      let _x@122..124: int @118..128
+        initializer: int 1 : int @127..128
+      tail: int 3 : int @133..134
+
+fn loop_index@137..247 () -> int ∈ [1, +∞)
+  result: result : int @156..159
+    outcome[0]:
+      let total@174..179: int @166..183
+        initializer: int 0 : int @182..183
+      discard: loop : unit @188..235
+        start: int 0 : int @197..198
+        end: int 3 : int @200..201
+        body:
+          let i@192..193: loop index : int @188..235
+            start: int 0 : int @197..198
+            end: int 3 : int @200..201
+          assignment: assign total@174..179 : int @212..229
+            value: eager + : int @220..229
+              lhs: read total@174..179 : int
+              rhs: int 1 : int @228..229
+          tail: unit : unit @202..235
+        next[0]: read total@174..179 : int
+      discard: after : ? @188..235
+        control: loop : unit @188..235
+          start: int 0 : int @197..198
+          end: int 3 : int @200..201
+          body:
+            let i@192..193: loop index : int @188..235
+              start: int 0 : int @197..198
+              end: int 3 : int @200..201
+            assignment: assign total@174..179 : int @212..229
+              value: eager + : int @220..229
+                lhs: read total@174..179 : int
+                rhs: int 1 : int @228..229
+            tail: unit : unit @202..235
+          next[0]: read total@174..179 : int
+        context: entry : ? @137..247
+      tail: loop value 0 : int @188..235
+        loop: @188..235
+
+fn assigned@248..306 () -> int ∈ [4, 4]
+  result: copy : int @265..268
+    value:
+      let x@283..284: int @275..288
+        initializer: int 1 : int @287..288
+      assignment: assign x@283..284 : int @293..298
+        value: int 2 : int @297..298
+      tail: int 4 : int @303..304
+
+fn shadowed@307..365 () -> int ∈ [2, 2]
+  result: copy : int @324..327
+    value:
+      let x@338..339: int @334..343
+        initializer: int 1 : int @342..343
+      let x@352..353: int @348..357
+        initializer: int 2 : int @356..357
+      tail: read x@352..353 : int
+
+fn dead_read@366..429 (int ∈ [3, 3]) -> int ∈ [5, 5]
+  param n@379..380: int
+  result: copy : int @390..393
+    value: if : int @396..429
+      condition: bool false : bool @399..404
+      then: read n@379..380 : int
+      else: int 5 : int @426..427
+
+fn local_taken@430..473 (int ∈ [4, 4], int ∈ [5, 5]) -> int ∈ [5, 5]
+  param x@445..446: int
+  param _x@453..455: int
+  result: copy : int @465..468
+    value: read _x@453..455 : int
+
+fn _six@474..494 () -> int ∈ [6, 6]
+  result: copy : int @487..490
+    value: int 6 : int @493..494
+
+fn function_taken@495..538 (int ∈ [6, 6]) -> int ∈ [6, 6]
+  param six@513..516: int
+  result: copy : int @526..529
+    value: call _six@474..494 : int @532..538
+
+fn caller@539..630 () -> int ∈ [18, 18]
+  result: copy : int @554..557
+    value: eager + : int @560..630
+      lhs: eager + : int @560..610
+        lhs: eager + : int @560..590
+          lhs: call parameter@0..39 : int @560..575
+            arg[0]: int 1 : int @570..571
+            arg[1]: int 2 : int @573..574
+          rhs: call dead_read@366..429 : int @578..590
+            arg[0]: int 3 : int @588..589
+        rhs: call local_taken@430..473 : int @593..610
+          arg[0]: int 4 : int @605..606
+          arg[1]: int 5 : int @608..609
+      rhs: call function_taken@495..538 : int @613..630
+        arg[0]: int 6 : int @628..629
+
+== semantic diagnostics ==
+warning[semantic/unused-name]: parameter `n` is never read
+  primary @13..14
+  fix @13 -> "_": prefix the name with `_`
+warning[semantic/unused-name]: local `x` is never read
+  primary @70..71
+  fix @70 -> "_": prefix the name with `_`
+warning[semantic/unused-name]: loop index `i` is never read
+  primary @192..193
+  fix @192 -> "_": prefix the name with `_`
+warning[semantic/unused-name]: local `x` is assigned but never read
+  primary @283..284
+warning[semantic/unused-name]: local `x` is never read
+  primary @338..339
+  fix @338 -> "_": prefix the name with `_`
+warning[semantic/unused-name]: parameter `x` is never read
+  primary @445..446
+warning[semantic/unused-name]: parameter `six` is never read
+  primary @513..516

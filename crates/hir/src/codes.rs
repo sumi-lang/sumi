@@ -42,4 +42,8 @@ sumi_frontend::codes! {
 
     /// A construct the checker does not handle; the function is left unchecked.
     UNSUPPORTED: Error = "unsupported";
+
+    /// A parameter or local never read whose name does not begin with `_`, in a function that
+    /// lowers whole.
+    UNUSED_NAME: Warning = "unused-name";
 }

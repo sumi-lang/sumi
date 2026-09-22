@@ -37,6 +37,9 @@ fn intact@223..245 () -> int ∈ [3, 3]
     value: int 3 : int @244..245
 
 == semantic diagnostics ==
+warning[semantic/unused-name]: parameter `a` is never read
+  primary @4..5
+  fix @4 -> "_": prefix the name with `_`
 error[semantic/type-mismatch]: expected unit, found int
   primary @104..113
   secondary @71..113: declared here

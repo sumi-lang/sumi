@@ -132,10 +132,16 @@ fn snapshot(source: &str) -> String {
             for label in &diagnostic.labels {
                 writeln!(out, "  secondary {}: {}", at(label.range), label.message).unwrap();
             }
-            assert!(
-                diagnostic.fix.is_none(),
-                "add semantic fix rendering when fixes are introduced"
-            );
+            if let Some(fix) = &diagnostic.fix {
+                writeln!(
+                    out,
+                    "  fix {} -> {:?}: {}",
+                    at(fix.edit.range()),
+                    fix.edit.replacement(),
+                    fix.message
+                )
+                .unwrap();
+            }
         }
     }
     out

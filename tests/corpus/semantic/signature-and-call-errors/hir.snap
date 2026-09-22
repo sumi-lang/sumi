@@ -113,6 +113,9 @@ error[semantic/unknown-type]: unknown type `mystery`
   primary @79..86
 error[semantic/unknown-name]: unknown name `absent`
   primary @117..123
+warning[semantic/unused-name]: parameter `b` is never read
+  primary @142..143
+  fix @142 -> "_": prefix the name with `_`
 error[semantic/duplicate-name]: duplicate parameter `x`
   primary @179..180
   secondary @171..172: declared here

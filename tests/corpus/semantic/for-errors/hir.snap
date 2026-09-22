@@ -242,9 +242,15 @@ fn changed_type@518..589 () -> unit ∈ unit
         next[0]: read x@550..551 : ?
 
 == semantic diagnostics ==
+warning[semantic/unused-name]: loop index `i` is never read
+  primary @84..85
+  fix @84 -> "_": prefix the name with `_`
 error[semantic/division-by-zero]: divisor may be zero
   primary @120..132
   secondary @80..168: may be 0 on a loop iteration: (-∞, 2]
+warning[semantic/unused-name]: loop index `i` is never read
+  primary @238..239
+  fix @238 -> "_": prefix the name with `_`
 error[semantic/division-by-zero]: division by zero
   primary @268..280
   secondary @228..229: is 0
@@ -253,12 +259,23 @@ error[semantic/immutable-assignment]: cannot assign to immutable local `i`
   secondary @314..315: declared here
 error[semantic/unknown-name]: unknown name `i`
   primary @387..388
+warning[semantic/unused-name]: loop index `i` is never read
+  primary @416..417
+  fix @416 -> "_": prefix the name with `_`
 error[semantic/type-mismatch]: expected int, found bool
   primary @421..426
+warning[semantic/unused-name]: loop index `i` is never read
+  primary @458..459
+  fix @458 -> "_": prefix the name with `_`
 error[semantic/type-mismatch]: expected int, found bool
   primary @466..470
 error[semantic/type-mismatch]: expected unit, found int
   primary @510..515
+warning[semantic/unused-name]: local `x` is assigned but never read
+  primary @550..551
+warning[semantic/unused-name]: loop index `i` is never read
+  primary @564..565
+  fix @564 -> "_": prefix the name with `_`
 error[semantic/type-mismatch]: expected int, found bool
   primary @580..585
   secondary @550..551: declared here

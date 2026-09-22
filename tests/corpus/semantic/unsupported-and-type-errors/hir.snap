@@ -96,6 +96,9 @@ error[semantic/type-mismatch]: if branches are int and bool
   secondary @193..198: bool here
 error[semantic/type-mismatch]: expected unit, found int
   primary @229..238
+warning[semantic/unused-name]: local `x` is never read
+  primary @265..266
+  fix @265 -> "_": prefix the name with `_`
 error[semantic/type-mismatch]: expected bool, found int
   primary @275..276
   secondary @268..272: declared here

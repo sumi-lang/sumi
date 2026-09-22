@@ -643,7 +643,34 @@ pub fn semantics(analysis: &Analysis) {
             assert!(source.is_char_boundary(range.end().to_usize()));
         }
     }
+    fixes(analysis);
     graph(analysis);
+}
+
+/// Semantic fixes apply unread: together they change no verdict or proven range and leave none.
+fn fixes(analysis: &Analysis) {
+    use sumi_hir::FunctionId;
+    let edits: Vec<_> = analysis
+        .semantic_diagnostics()
+        .filter_map(|diagnostic| diagnostic.fix.as_ref())
+        .map(|fix| &fix.edit)
+        .collect();
+    if edits.is_empty() {
+        return;
+    }
+    let fixed = sumi_text::apply(analysis.parsed().source(), edits);
+    let fixed = sumi_hir::analyze(parse_source(fixed.into()).unwrap());
+    assert_eq!(fixed.is_valid(), analysis.is_valid());
+    assert_eq!(fixed.functions().len(), analysis.functions().len());
+    for index in 0..analysis.functions().len() {
+        let id = FunctionId::new(index);
+        assert_eq!(fixed.ranges(id), analysis.ranges(id));
+    }
+    assert!(
+        fixed
+            .semantic_diagnostics()
+            .all(|diagnostic| diagnostic.fix.is_none())
+    );
 }
 
 fn typed(analysis: &Analysis) {
