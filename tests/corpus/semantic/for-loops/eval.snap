@@ -1,7 +1,7 @@
 file: accepted
-optimized: nodes 244 of 386, regions 31 of 40, calls 0 of 0
+optimized: nodes 235 of 386, regions 30 of 40, calls 0 of 0
 fn sum = 10 (steps 26, optimized 19, depth 1 of at most 1)
-fn empty = 13 (steps 13, optimized 8, depth 1 of at most 1)
+fn empty = 13 (steps 13, optimized 6, depth 1 of at most 1)
 fn bounds = 234 (steps 35, optimized 22, depth 1 of at most 1)
 fn nested = 145 (steps 53, optimized 46, depth 1 of at most 1)
 fn shadowing = 12 (steps 9, optimized 8, depth 1 of at most 1)

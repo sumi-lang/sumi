@@ -157,8 +157,15 @@ fn returning(graph: &Graph) -> Vec<bool> {
         let reads = |input: NodeId| input.index() >= node.index() || returning[input.index()];
         let region = |region: RegionId| reads(graph.region(region).result());
         let own = match graph.node(node).op {
-            Op::Return | Op::Sequence | Op::Observe { .. } | Op::Loop(_) | Op::Result { .. } => {
-                true
+            Op::Return | Op::Sequence | Op::Observe { .. } | Op::Result { .. } => true,
+            Op::Loop(id) => {
+                let loop_ = graph.loop_(id);
+                graph.region(loop_.body).control().is_some()
+                    || region(loop_.body)
+                    || loop_
+                        .carried
+                        .iter()
+                        .any(|&(carry, next)| reads(graph.inputs(carry)[0]) || reads(next))
             }
             Op::Join { then, else_ } => region(then) || else_.is_some_and(region),
             Op::And { rhs } | Op::Or { rhs } => region(rhs),
