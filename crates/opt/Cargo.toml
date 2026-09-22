@@ -6,4 +6,3 @@ license.workspace = true
 
 [dependencies]
 sumi-graph = { path = "../graph" }
-sumi-text = { path = "../text" }
