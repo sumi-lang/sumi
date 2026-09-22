@@ -264,6 +264,14 @@ impl Lattice for Product {
         Self { types, values }
     }
 
+    fn widens(edge: &Edge) -> bool {
+        matches!(edge, Edge::Call(_))
+    }
+
+    fn widens_pair(pair: &Pair) -> bool {
+        matches!(pair, Pair::Argument | Pair::Backedge)
+    }
+
     fn combine(&self, pair: &Pair, other: &Self, cyclic: bool, cx: &Thresholds) -> Self {
         let types = match *pair {
             Pair::Refine { .. } | Pair::Branch | Pair::Forward => self.types,

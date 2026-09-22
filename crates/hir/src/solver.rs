@@ -31,6 +31,18 @@ pub trait Lattice: Clone + Eq {
     /// here. When the provider is `bottom` the result is `bottom`.
     fn transfer(&self, edge: &Self::Edge, cyclic: bool, cx: &Self::Context) -> Self;
 
+    /// Whether `transfer` over `edge` reads `cyclic`; when it doesn't, a cyclic delivery is exact.
+    fn widens(edge: &Self::Edge) -> bool {
+        let _ = edge;
+        true
+    }
+
+    /// Whether `combine` over `pair` reads `cyclic`.
+    fn widens_pair(pair: &Self::Pair) -> bool {
+        let _ = pair;
+        true
+    }
+
     /// `transfer` from two providers, `self` the first; when both are `bottom` the result is
     /// `bottom`.
     fn combine(&self, pair: &Self::Pair, other: &Self, cyclic: bool, cx: &Self::Context) -> Self;
@@ -76,6 +88,13 @@ impl<L: Lattice> Flow<L> {
             }
         };
         std::iter::once((first, self.first)).chain(second)
+    }
+
+    fn widens(&self) -> bool {
+        match &self.shape {
+            Shape::Edge(edge) => L::widens(edge),
+            Shape::Pair { pair, .. } => L::widens_pair(pair),
+        }
     }
 
     fn grows(&self) -> bool {
@@ -166,7 +185,7 @@ impl<L: Lattice> Solver<L> {
     fn deliver(&mut self, index: usize, cyclic: bool, cx: &L::Context) -> bool {
         let consumer = self.flows[index].consumer.index();
         let exact = self.delivery(index, false, cx);
-        if !cyclic {
+        if !cyclic || !self.flows[index].widens() {
             return self.evidence[consumer].join(&exact);
         }
         let mut probe = self.evidence[consumer].clone();
