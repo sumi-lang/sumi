@@ -210,27 +210,46 @@ mod tests {
                 .windows(2)
                 .all(|pair| pair[0].parent as u8 <= pair[1].parent as u8)
         );
-        let else_branch = NodeKind::IfExpr
-            .children()
-            .iter()
-            .find(|child| child.name == "else_branch")
-            .and_then(|child| child.slot);
+        let slot = |parent: NodeKind, field| {
+            parent
+                .children()
+                .iter()
+                .find(|child| child.name == field)
+                .and_then(|child| child.slot)
+                .unwrap()
+        };
+        let bounds = [
+            N::NameRef,
+            N::LiteralExpr,
+            N::PrefixExpr,
+            N::BinaryExpr,
+            N::ParenExpr,
+            N::CallExpr,
+            N::IfExpr,
+            N::ForExpr,
+            N::ClosureExpr,
+            N::Block,
+        ];
+        let expected: Vec<_> = [
+            (N::IfExpr, "else_branch", N::IfExpr),
+            (N::IfExpr, "else_branch", N::Block),
+        ]
+        .into_iter()
+        .chain(
+            ["start", "end"]
+                .into_iter()
+                .flat_map(|field| bounds.map(|kind| (N::ForExpr, field, kind))),
+        )
+        .map(|(parent, field, kind)| (parent, slot(parent, field), kind))
+        .collect();
         let members: Vec<_> = witnesses
             .iter()
             .filter_map(|witness| match witness.check {
-                Check::Member(slot, kind) if witness.parent == N::IfExpr => {
-                    Some((witness.parent, slot, kind))
-                }
+                Check::Member(slot, kind) => Some((witness.parent, slot, kind)),
                 _ => None,
             })
             .collect();
-        assert_eq!(
-            members,
-            [
-                (N::IfExpr, else_branch.unwrap(), N::IfExpr),
-                (N::IfExpr, else_branch.unwrap(), N::Block),
-            ]
-        );
+        assert_eq!(members, expected);
         let operators = witnesses
             .iter()
             .filter(|witness| {
