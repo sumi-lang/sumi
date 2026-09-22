@@ -733,3 +733,13 @@ fn main() -> int = f(true, 2) + f(false, 5)"
         assert_eq!(fast.run(), Ok(int(539)));
     }
 }
+
+#[test]
+fn an_empty_branch_leaves_its_sibling_innermost() {
+    let analysis = analysis(
+        "fn g(n: int) -> bool = n < 3\n\
+         fn f(n: int) -> int {\n    let x = 1\n    if g(n) { x } else {\n        for i in 0..0 {}\n        2\n    }\n}\n\
+         fn main() -> int = f(1) + f(5)",
+    );
+    check::run(analysis.program().unwrap());
+}

@@ -1339,7 +1339,8 @@ fn dead_code_stays_dead(program: Program<'_>) {
 }
 
 /// An optimized graph computes each original node at most once, keeps every run's parameters,
-/// holds no copy, narrowed read, or statement, and names a context wherever the analysis's does.
+/// holds no copy, narrowed read, or statement, and names a context wherever the analysis's does,
+/// one whose chain of parents reaches the context of the innermost region holding its namer.
 fn optimized(compiled: &Compiled<'_>) {
     use sumi_hir::Op;
 
@@ -1383,7 +1384,33 @@ fn optimized(compiled: &Compiled<'_>) {
             compiled.program().signature(id).params.len()
         );
     }
-    for region in graph.region_ids() {
+    let mut innermost = vec![None; graph.nodes().len()];
+    let mut regions: Vec<_> = graph.region_ids().collect();
+    regions.sort_by_key(|&region| {
+        let region = graph.region(region);
+        (region.start(), std::cmp::Reverse(region.nodes().len()))
+    });
+    for region in regions {
         assert!(context(graph.region(region).context));
+        for node in graph.region(region).nodes() {
+            innermost[node.index()] = Some(graph.region(region).context);
+        }
+    }
+    for node in graph.node_ids() {
+        let named = match graph.node(node).op {
+            Op::Unit => graph.inputs(node)[0],
+            Op::Return | Op::Observe { .. } => graph.inputs(node)[1],
+            _ => continue,
+        };
+        let Some(held) = innermost[node.index()] else {
+            continue;
+        };
+        let mut at = named;
+        while at != held {
+            at = match graph.node(at).op {
+                Op::Then | Op::Else | Op::After => graph.inputs(at)[1],
+                _ => panic!("{node:?} names {named:?}, outside the region holding it"),
+            };
+        }
     }
 }

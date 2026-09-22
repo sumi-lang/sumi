@@ -262,13 +262,16 @@ fn emit(graph: &Graph, forward: &[NodeId], becomes: &[Option<Op>], kept: &[bool]
         let open = builder.open_run(FunctionId::new(index));
         let first = run.entry().index();
         let end = first + run.nodes().len();
-        // (where, whether it enters or closes there, region), in the order the builder takes.
+        // (where, whether it closes or enters there, region), in the order the builder takes. An
+        // empty region closes as it enters, so a sibling entered at the same place stays innermost.
         let mut events: Vec<(usize, u8, RegionId)> = Vec::new();
         for &region in &run_regions[index] {
             let start = graph.region(region).start();
             let stop = start + graph.region(region).nodes().len();
             events.push((start, 1, region));
-            events.push((stop, if stop == start { 2 } else { 0 }, region));
+            if stop > start {
+                events.push((stop, 0, region));
+            }
         }
         events.sort_by_key(|&(at, order, region)| (at, order, region.index()));
         let mut events = events.into_iter().peekable();
@@ -280,18 +283,28 @@ fn emit(graph: &Graph, forward: &[NodeId], becomes: &[Option<Op>], kept: &[bool]
                     new_of[forward[node.index()].index()].expect("a kept region's nodes are kept")
                 };
                 let old = graph.region(region);
+                let close = |builder: &mut GraphBuilder, new: RegionId| {
+                    builder.close_with_control(
+                        new,
+                        map(old.result()),
+                        old.result_has_value(),
+                        old.control().map(map),
+                    );
+                };
                 if order == 1 {
                     let context = map(old.context);
                     let new = builder.open(context);
                     builder.enter(new);
                     new_region[region.index()] = Some(new);
-                    contexts.push(context);
+                    if old.nodes().len() == 0 {
+                        close(&mut builder, new);
+                    } else {
+                        contexts.push(context);
+                    }
                 } else {
-                    builder.close_with_control(
+                    close(
+                        &mut builder,
                         new_region[region.index()].expect("a region closes after it opens"),
-                        map(old.result()),
-                        old.result_has_value(),
-                        old.control().map(map),
                     );
                     contexts.pop();
                 }
