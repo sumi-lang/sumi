@@ -112,6 +112,8 @@ pub struct Machine<'a> {
     outcome: Option<Result<Value, Refusal>>,
     tail_args: Vec<Value>,
     suspensions: Suspensions,
+    /// The active frame's slot for node `n` is `n.index() + offset`, wrapping.
+    offset: usize,
 }
 
 impl<'a> Machine<'a> {
@@ -121,9 +123,9 @@ impl<'a> Machine<'a> {
         assert_eq!(args.len(), run.params().len(), "one argument per parameter");
         let mut machine = Self {
             graph,
-            control: Vec::new(),
-            slots: Vec::new(),
-            frames: Vec::new(),
+            control: Vec::with_capacity(64),
+            slots: Vec::with_capacity(4 * run.nodes().len()),
+            frames: Vec::with_capacity(8),
             steps: 0,
             max_depth: 0,
             bound,
@@ -131,6 +133,7 @@ impl<'a> Machine<'a> {
             outcome: None,
             tail_args: Vec::new(),
             suspensions: Suspensions::new(),
+            offset: 0,
         };
         let base = machine.open(function);
         bind(&mut machine.slots[base..], run, args.iter().cloned());
@@ -204,8 +207,20 @@ impl<'a> Machine<'a> {
     }
 
     fn index(&self, node: NodeId) -> usize {
-        let frame = self.frames.last().expect("a running machine has a frame");
-        frame.base + frame.run.slot(node)
+        debug_assert!(
+            self.frames
+                .last()
+                .is_some_and(|frame| frame.base + frame.run.slot(node)
+                    == node.index().wrapping_add(self.offset)),
+            "the offset tracks the active frame"
+        );
+        node.index().wrapping_add(self.offset)
+    }
+
+    fn refocus(&mut self) {
+        if let Some(frame) = self.frames.last() {
+            self.offset = frame.base.wrapping_sub(frame.run.entry().index());
+        }
     }
 
     fn slot(&self, node: NodeId) -> &Option<Value> {
@@ -237,6 +252,7 @@ impl<'a> Machine<'a> {
             control_base,
             depth,
         });
+        self.refocus();
         self.max_depth = self.max_depth.max(depth);
         self.control.push(Control::Eval(run.result()));
         base
@@ -269,6 +285,26 @@ impl<'a> Machine<'a> {
         value == frame.run.result()
     }
 
+    /// `node` is a data operator whose inputs are all in.
+    fn compute(&mut self, node: NodeId) -> Result<(), Refusal> {
+        let op = &self.graph.node(node).op;
+        let value = match *self.graph.inputs(node) {
+            [] => op.apply(&[]),
+            [a] => op.apply(&[self.value(a)]),
+            [a, b] => op.apply(&[self.value(a), self.value(b)]),
+            _ => unreachable!("a data operator has at most two inputs"),
+        };
+        let value = value.map_err(|fault| Refusal::of(fault, node))?;
+        self.fill(node, value);
+        Ok(())
+    }
+
+    fn demand(&mut self, node: NodeId) {
+        if self.slot(node).is_none() {
+            self.control.push(Control::Eval(node));
+        }
+    }
+
     fn apply<const TAIL: bool>(&mut self, control: Control) -> Result<(), Refusal> {
         match control {
             Control::Eval(node) => {
@@ -283,13 +319,13 @@ impl<'a> Machine<'a> {
                     Op::Loop(_) => {
                         self.control.push(Control::LoopBounds(node));
                         for &input in inputs.iter().rev() {
-                            self.control.push(Control::Eval(input));
+                            self.demand(input);
                         }
                     }
                     Op::LoopValue { loop_, index } => {
                         let from = self.graph.loop_(loop_).carried[index as usize].0;
                         self.control.push(Control::LoopValue { node, from });
-                        self.control.push(Control::Eval(inputs[0]));
+                        self.demand(inputs[0]);
                     }
                     Op::Hole => return Err(Refusal::Hole(node)),
                     Op::Entry | Op::Then | Op::Else | Op::Unused => {
@@ -299,18 +335,18 @@ impl<'a> Machine<'a> {
                     Op::Unit => self.fill(node, Value::Unit),
                     Op::Return => {
                         self.control.push(Control::Return(inputs[0]));
-                        self.control.push(Control::Eval(inputs[0]));
+                        self.demand(inputs[0]);
                     }
                     Op::Sequence => {
                         self.control.push(Control::Sequence {
                             node,
                             value: inputs[1],
                         });
-                        self.control.push(Control::Eval(inputs[0]));
+                        self.demand(inputs[0]);
                     }
                     Op::Observe { then, else_ } => {
                         self.control.push(Control::Observe { node, then, else_ });
-                        self.control.push(Control::Eval(inputs[0]));
+                        self.demand(inputs[0]);
                     }
                     Op::Result { .. } => {
                         let body = inputs[0];
@@ -322,36 +358,41 @@ impl<'a> Machine<'a> {
                             .region();
                         if let Some(control) = self.graph.region(region).control() {
                             self.control.push(Control::ResultBody { node, body });
-                            self.control.push(Control::Eval(control));
+                            self.demand(control);
                         } else {
                             self.control.push(Control::Take { node, from: body });
-                            self.control.push(Control::Eval(body));
+                            self.demand(body);
                         }
                     }
                     ref op @ (Op::And { rhs } | Op::Or { rhs }) => {
                         let and = matches!(op, Op::And { .. });
                         self.control.push(Control::Lazy { node, and, rhs });
-                        self.control.push(Control::Eval(inputs[0]));
+                        self.demand(inputs[0]);
                     }
                     Op::Join { then, else_ } => {
                         self.control.push(Control::Branch { node, then, else_ });
-                        self.control.push(Control::Eval(inputs[0]));
+                        self.demand(inputs[0]);
                     }
                     Op::Phi { .. } => {
                         self.control.push(Control::Phi(node));
-                        self.control.push(Control::Eval(inputs[0]));
+                        self.demand(inputs[0]);
                     }
                     Op::Call(callee) => {
                         let function = self.graph.callable(callee).function;
                         self.control.push(Control::Enter { node, function });
                         for &arg in inputs.iter().rev() {
-                            self.control.push(Control::Eval(arg));
+                            self.demand(arg);
                         }
                     }
                     _ => {
+                        let pending = self.control.len();
                         self.control.push(Control::Apply(node));
                         for &input in inputs.iter().rev() {
-                            self.control.push(Control::Eval(input));
+                            self.demand(input);
+                        }
+                        if self.control.len() == pending + 1 {
+                            self.control.pop();
+                            return self.compute(node);
                         }
                     }
                 }
@@ -424,7 +465,7 @@ impl<'a> Machine<'a> {
                     self.control
                         .push(Control::Eval(self.graph.region(loop_.body).result()));
                     if let Some(control) = self.graph.region(loop_.body).control() {
-                        self.control.push(Control::Eval(control));
+                        self.demand(control);
                     }
                 } else {
                     self.fill(node, Value::Unit);
@@ -440,23 +481,11 @@ impl<'a> Machine<'a> {
                 }
                 self.control.push(Control::LoopRebind(node));
                 for &(_, next) in loop_.carried.iter().rev() {
-                    self.control.push(Control::Eval(next));
+                    self.demand(next);
                 }
             }
             Control::LoopValue { node, from } => self.fill(node, self.value(from).clone()),
-            Control::Apply(node) => {
-                let op = &self.graph.node(node).op;
-                let value = match *self.graph.inputs(node) {
-                    [] => op.apply(&[]),
-                    [a] => op.apply(&[self.value(a)]),
-                    [a, b] => op.apply(&[self.value(a), self.value(b)]),
-                    _ => unreachable!("a data operator has at most two inputs"),
-                };
-                match value {
-                    Ok(value) => self.fill(node, value),
-                    Err(fault) => return Err(Refusal::of(fault, node)),
-                }
-            }
+            Control::Apply(node) => return self.compute(node),
             Control::Lazy { node, and, rhs } => {
                 let lhs = self
                     .value(self.graph.inputs(node)[0])
@@ -488,11 +517,11 @@ impl<'a> Machine<'a> {
                     .map_err(|fault| Refusal::of(fault, node))?;
                 let from = inputs[if condition { 1 } else { 2 }];
                 self.control.push(Control::Take { node, from });
-                self.control.push(Control::Eval(from));
+                self.demand(from);
             }
             Control::Sequence { node, value } => {
                 self.control.push(Control::Take { node, from: value });
-                self.control.push(Control::Eval(value));
+                self.demand(value);
             }
             Control::Observe { node, then, else_ } => {
                 let condition = self
@@ -503,7 +532,7 @@ impl<'a> Machine<'a> {
                 if let Some(control) = region.and_then(|region| self.graph.region(region).control())
                 {
                     self.control.push(Control::CompleteObserve(node));
-                    self.control.push(Control::Eval(control));
+                    self.demand(control);
                 } else {
                     self.fill(node, Value::Unit);
                 }
@@ -511,7 +540,7 @@ impl<'a> Machine<'a> {
             Control::CompleteObserve(node) => self.fill(node, Value::Unit),
             Control::ResultBody { node, body } => {
                 self.control.push(Control::Take { node, from: body });
-                self.control.push(Control::Eval(body));
+                self.demand(body);
             }
             Control::Return(payload) => {
                 let value = self.value(payload).clone();
@@ -552,6 +581,7 @@ impl<'a> Machine<'a> {
                     self.slots.truncate(frame.base);
                     frame.run = self.graph.run(function);
                     frame.depth += 1;
+                    self.offset = frame.base.wrapping_sub(frame.run.entry().index());
                     self.max_depth = self.max_depth.max(frame.depth);
                     self.slots
                         .resize(frame.base + frame.run.nodes().len(), None);
@@ -613,6 +643,7 @@ impl<'a> Machine<'a> {
             }
             Control::ResumeCaller(node) | Control::ResumePackedCaller(node) => {
                 let frame = self.frames.pop().expect("a return has a frame to leave");
+                self.refocus();
                 let value = self.slots[frame.base + frame.run.slot(frame.run.result())]
                     .take()
                     .expect("a callee's result is in before it returns");
