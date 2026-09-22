@@ -2,7 +2,7 @@
   "name": "sumi-language",
   "displayName": "Sumi Language",
   "description": "Language support for the Sumi programming language",
-  "version": "0.0.4",
+  "version": "0.1.0",
   "publisher": "sumi-lang",
   "packageManager": "bun@1.4.2",
   "license": "UPL-1.0",
@@ -16,6 +16,10 @@
     "url": "https://github.com/sumi-lang/sumi/issues"
   },
   "homepage": "https://sumi-lang.org",
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onLanguage:sumi"
+  ],
   "engines": {
     "vscode": "^1.90.0"
   },
@@ -25,9 +29,20 @@
   "keywords": [
     "sumi",
     "language",
-    "syntax"
+    "syntax",
+    "lsp"
   ],
   "contributes": {
+    "configuration": {
+      "title": "Sumi",
+      "properties": {
+        "sumi.server.path": {
+          "type": "string",
+          "default": "sumi-lsp",
+          "description": "Path to the sumi-lsp executable. Reload the window after changing it."
+        }
+      }
+    },
     "languages": [
       {
         "id": "sumi",
@@ -54,16 +69,29 @@
     ]
   },
   "scripts": {
+    "build": "bun run build:extension && bun run build:integration",
+    "build:extension": "esbuild src/extension.ts --bundle --external:vscode --format=cjs --platform=node --outfile=out/extension.js",
+    "build:integration": "esbuild test/integration/extension.test.ts --bundle --external:vscode --format=cjs --platform=node --outfile=out/test/extension.test.js",
     "typecheck": "tsc --noEmit",
-    "test": "bun test",
-    "package": "mkdir -p dist && bunx vsce package --no-dependencies --out dist/sumi-language-$(bun -p 'require(\"./package.json\").version').vsix",
-    "check": "bun run typecheck && bun test && bun run package"
+    "test": "bun test test/extension.test.ts",
+    "test:integration": "cargo build --manifest-path ../../Cargo.toml -p sumi-lsp && bun run build && bun --bun run vscode-test",
+    "package": "bun run build && mkdir -p dist && bunx --bun vsce package --no-dependencies --out dist/sumi-language-$(bun -p 'require(\"./package.json\").version').vsix",
+    "check": "bun run typecheck && bun run test && bun run package"
   },
   "devDependencies": {
     "@types/bun": "1.4.2",
+    "@types/mocha": "10.0.10",
+    "@types/node": "24.5.2",
+    "@types/vscode": "1.90.0",
+    "@vscode/test-cli": "0.0.15",
+    "@vscode/test-electron": "3.1.0",
     "@vscode/vsce": "3.9.2",
+    "esbuild": "0.25.10",
     "typescript": "7.0.2",
     "vscode-oniguruma": "2.0.1",
     "vscode-textmate": "9.3.2"
+  },
+  "dependencies": {
+    "vscode-languageclient": "9.0.1"
   }
 }

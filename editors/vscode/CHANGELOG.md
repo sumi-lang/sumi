@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.0
+
+- Add syntax and semantic diagnostics for saved and untitled Sumi files through `sumi-lsp`.
+- Add compiler quick fixes, full-document formatting, and document symbols.
+
 ## 0.0.4
 
 - Recognize `.su` files instead of `.sumi` files.
