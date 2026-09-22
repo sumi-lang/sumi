@@ -66,6 +66,7 @@ pub(crate) fn print(
     let mut next_group = 0;
     let mut column = 0usize;
     let mut edits = Vec::new();
+    let mut out = String::new();
 
     for gap in 0..=n {
         while stack
@@ -135,8 +136,8 @@ pub(crate) fn print(
         let trivia = trivia_range(gap);
         let input_range = TextRange::new(lexed.boundary(trivia.start), lexed.boundary(trivia.end));
         let input_text = input_range.text(source);
-        let text: String = if plan_gap.frozen {
-            input_text.to_owned()
+        let text: &str = if plan_gap.frozen {
+            input_text
         } else {
             let breaks = match plan_gap.breaks {
                 Breaks::Never => false,
@@ -144,7 +145,7 @@ pub(crate) fn print(
                 Breaks::Hard => true,
             };
             let sig = signal(source, lexed, input, gap, trivia_tokens(gap));
-            let mut out = String::new();
+            out.clear();
             if plan_gap.closer == Some(Closer::List) && breaks {
                 out.push(',');
             }
@@ -186,16 +187,16 @@ pub(crate) fn print(
             } else if plan_gap.flat == Flat::Space {
                 out.push(' ');
             }
-            out
+            &out
         };
         match text.rfind('\n') {
             Some(at) => column = width(&text[at + 1..]),
-            None => column += width(&text),
+            None => column += width(text),
         }
         if text != input_text {
             edits.push(GapEdit {
                 gap,
-                edit: TextEdit::new(input_range, text),
+                edit: TextEdit::new(input_range, text.to_owned()),
             });
         }
         if gap < n && !plan.layout_comma[gap] {

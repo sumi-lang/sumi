@@ -43,6 +43,13 @@ pub fn format(source: &str, lexed: &LexedFile, parsed: &Parse) -> Result<Formatt
     let input = parsed.input();
     let plan = plan::plan(lexed, parsed);
     let mut edits = print::print(source, lexed, input, &plan);
+    if edits.is_empty() {
+        return Ok(Formatted {
+            text: source.to_owned(),
+            edits: Box::new([]),
+            reverted: 0,
+        });
+    }
     let before = rep(source, lexed, parsed);
 
     let mut text = apply_gap_edits(source, &edits);

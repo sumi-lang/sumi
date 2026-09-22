@@ -1,7 +1,7 @@
 use std::sync::OnceLock;
 
 use criterion::{BatchSize, Criterion, Throughput, black_box, criterion_group, criterion_main};
-use sumi_format::format;
+use sumi_format::{Formatted, format};
 use sumi_frontend::parse_source;
 use sumi_lexer::lex;
 use sumi_syntax::{ParserInput, parse};
@@ -78,9 +78,24 @@ fn valid_pipeline(c: &mut Criterion) {
 
 fn formatting(c: &mut Criterion) {
     let source = corpus(MEDIUM_VALID);
+    format_source(c, "format/medium-valid", source);
+    let formatted = parse_and_format(source).text;
+    assert!(
+        parse_and_format(&formatted).edits.is_empty(),
+        "formatting is idempotent on the benchmark corpus"
+    );
+    format_source(c, "format/medium-formatted", &formatted);
+}
+
+fn parse_and_format(source: &str) -> Formatted {
+    let lexed = lex(source).expect("benchmark corpus fits in Sumi's source coordinate space");
+    format(source, &lexed, &parse(ParserInput::new(&lexed))).expect("the corpus formats")
+}
+
+fn format_source(c: &mut Criterion, group: &str, source: &str) {
     let lexed = lex(source).expect("benchmark corpus fits in Sumi's source coordinate space");
     let parsed = parse(ParserInput::new(&lexed));
-    let mut group = c.benchmark_group("format/medium-valid");
+    let mut group = c.benchmark_group(group);
     group.throughput(Throughput::Bytes(source.len() as u64));
     group.bench_function("format", |b| {
         b.iter_with_large_drop(|| format(black_box(source), &lexed, &parsed));
