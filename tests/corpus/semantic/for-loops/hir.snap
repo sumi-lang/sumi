@@ -1,0 +1,843 @@
+file: accepted
+frontend errors: 0 (see frontend.snap)
+semantic errors: 0
+
+fn sum@0..104 () -> int ∈ (-∞, +∞)
+  result: result : int @12..15
+    outcome[0]:
+      let total@30..35: int @22..39
+        initializer: int 7 : int @38..39
+      discard: loop : unit @44..92
+        start: int -2 : int @53..55
+        end: int 4 : int @57..58
+        body:
+          let i@48..49: loop index : int @44..92
+            start: int -2 : int @53..55
+            end: int 4 : int @57..58
+          assignment: assign total@30..35 : int @69..86
+            value: eager + : int @77..86
+              lhs: read total@30..35 : int
+              rhs: read i@48..49 : int
+          tail: unit : unit @59..92
+        next[0]: read total@30..35 : int
+      discard: after : ? @44..92
+        control: loop : unit @44..92
+          start: int -2 : int @53..55
+          end: int 4 : int @57..58
+          body:
+            let i@48..49: loop index : int @44..92
+              start: int -2 : int @53..55
+              end: int 4 : int @57..58
+            assignment: assign total@30..35 : int @69..86
+              value: eager + : int @77..86
+                lhs: read total@30..35 : int
+                rhs: read i@48..49 : int
+            tail: unit : unit @59..92
+          next[0]: read total@30..35 : int
+        context: entry : ? @0..104
+      tail: loop value 0 : int @44..92
+        loop: @44..92
+
+fn empty@105..223 () -> int ∈ [13, 13]
+  result: result : int @119..122
+    outcome[0]:
+      let total@137..142: int @129..147
+        initializer: int 13 : int @145..147
+      discard: loop : unit @152..179
+        start: int 4 : int @161..162
+        end: int 4 : int @164..165
+        body:
+          let i@156..157: loop index : int @152..179
+            start: int 4 : int @161..162
+            end: int 4 : int @164..165
+          discard: read total@137..142 : int
+          assignment: assign total@137..142 : int @168..177
+            value: int 0 : int @176..177
+          tail: unit : unit @166..179
+        next[0]: read total@137..142 : int
+      discard: loop : unit @184..211
+        start: int 9 : int @193..194
+        end: int 2 : int @196..197
+        body:
+          let i@188..189: loop index : int @184..211
+            start: int 9 : int @193..194
+            end: int 2 : int @196..197
+          discard: read total@137..142 : int
+          assignment: assign total@137..142 : int @200..209
+            value: int 1 : int @208..209
+          tail: unit : unit @198..211
+        next[0]: read total@137..142 : int
+      discard: after : ? @184..211
+        control: loop : unit @184..211
+          start: int 9 : int @193..194
+          end: int 2 : int @196..197
+          body:
+            let i@188..189: loop index : int @184..211
+              start: int 9 : int @193..194
+              end: int 2 : int @196..197
+            discard: read total@137..142 : int
+            assignment: assign total@137..142 : int @200..209
+              value: int 1 : int @208..209
+            tail: unit : unit @198..211
+          next[0]: read total@137..142 : int
+        context: after : ? @152..179
+          control: loop : unit @152..179
+            start: int 4 : int @161..162
+            end: int 4 : int @164..165
+            body:
+              let i@156..157: loop index : int @152..179
+                start: int 4 : int @161..162
+                end: int 4 : int @164..165
+              discard: read total@137..142 : int
+              assignment: assign total@137..142 : int @168..177
+                value: int 0 : int @176..177
+              tail: unit : unit @166..179
+            next[0]: read total@137..142 : int
+          context: entry : ? @105..223
+      tail: loop value 0 : int @184..211
+        loop: @184..211
+
+fn bounds@224..411 () -> int ∈ [2, +∞)
+  result: result : int @239..242
+    outcome[0]:
+      let n@257..258: int @249..262
+        initializer: int 1 : int @261..262
+      let total@275..280: int @267..284
+        initializer: int 0 : int @283..284
+      assignment: assign n@257..258 : int @300..309
+        value: eager + : int @304..309
+          lhs: read n@257..258 : int
+          rhs: int 1 : int @308..309
+      assignment: assign n@257..258 : int @325..334
+        value: eager + : int @329..334
+          lhs: read n@257..258 : int
+          rhs: int 3 : int @333..334
+      discard: loop value 0 : int @289..399
+        loop: @289..399
+      discard: loop : unit @289..399
+        start: read n@257..258 : int
+        end: read n@257..258 : int
+        body:
+          let i@293..294: loop index : int @289..399
+            start: read n@257..258 : int
+            end: read n@257..258 : int
+          discard: read n@257..258 : int
+          assignment: assign total@275..280 : int @357..379
+            value: eager + : int @365..379
+              lhs: eager * : int @365..375
+                lhs: read total@275..280 : int
+                rhs: int 10 : int @373..375
+              rhs: read i@293..294 : int
+          assignment: assign n@257..258 : int @388..393
+            value: int 0 : int @392..393
+          tail: unit : unit @347..399
+        next[0]: read n@257..258 : int
+        next[1]: read total@275..280 : int
+      discard: after : ? @289..399
+        control: loop : unit @289..399
+          start: read n@257..258 : int
+          end: read n@257..258 : int
+          body:
+            let i@293..294: loop index : int @289..399
+              start: read n@257..258 : int
+              end: read n@257..258 : int
+            discard: read n@257..258 : int
+            assignment: assign total@275..280 : int @357..379
+              value: eager + : int @365..379
+                lhs: eager * : int @365..375
+                  lhs: read total@275..280 : int
+                  rhs: int 10 : int @373..375
+                rhs: read i@293..294 : int
+            assignment: assign n@257..258 : int @388..393
+              value: int 0 : int @392..393
+            tail: unit : unit @347..399
+          next[0]: read n@257..258 : int
+          next[1]: read total@275..280 : int
+        context: entry : ? @224..411
+      tail: loop value 1 : int @289..399
+        loop: @289..399
+
+fn nested@412..565 () -> int ∈ [11, +∞)
+  result: result : int @427..430
+    outcome[0]:
+      let total@445..450: int @437..454
+        initializer: int 1 : int @453..454
+      discard: loop : unit @459..553
+        start: int 1 : int @468..469
+        end: int 4 : int @471..472
+        body:
+          let i@463..464: loop index : int @459..553
+            start: int 1 : int @468..469
+            end: int 4 : int @471..472
+          discard: loop value 0 : int @483..547
+            loop: @483..547
+          discard: after : ? @483..547
+            control: loop : unit @483..547
+              start: int 0 : int @492..493
+              end: read i@463..464 : int
+              body:
+                let j@487..488: loop index : int @483..547
+                  start: int 0 : int @492..493
+                  end: read i@463..464 : int
+                assignment: assign total@445..450 : int @511..537
+                  value: eager + : int @519..537
+                    lhs: eager + : int @519..533
+                      lhs: read total@445..450 : int
+                      rhs: eager * : int @527..533
+                        lhs: read i@463..464 : int
+                        rhs: int 10 : int @531..533
+                    rhs: read j@487..488 : int
+                tail: unit : unit @497..547
+              next[0]: read total@445..450 : int
+            context: then : ? @473..553
+          tail: loop : unit @483..547
+            start: int 0 : int @492..493
+            end: read i@463..464 : int
+            body:
+              let j@487..488: loop index : int @483..547
+                start: int 0 : int @492..493
+                end: read i@463..464 : int
+              assignment: assign total@445..450 : int @511..537
+                value: eager + : int @519..537
+                  lhs: eager + : int @519..533
+                    lhs: read total@445..450 : int
+                    rhs: eager * : int @527..533
+                      lhs: read i@463..464 : int
+                      rhs: int 10 : int @531..533
+                  rhs: read j@487..488 : int
+              tail: unit : unit @497..547
+            next[0]: read total@445..450 : int
+        next[0]: loop value 0 : int @483..547
+          loop: @483..547
+      discard: after : ? @459..553
+        control: loop : unit @459..553
+          start: int 1 : int @468..469
+          end: int 4 : int @471..472
+          body:
+            let i@463..464: loop index : int @459..553
+              start: int 1 : int @468..469
+              end: int 4 : int @471..472
+            discard: loop value 0 : int @483..547
+              loop: @483..547
+            discard: after : ? @483..547
+              control: loop : unit @483..547
+                start: int 0 : int @492..493
+                end: read i@463..464 : int
+                body:
+                  let j@487..488: loop index : int @483..547
+                    start: int 0 : int @492..493
+                    end: read i@463..464 : int
+                  assignment: assign total@445..450 : int @511..537
+                    value: eager + : int @519..537
+                      lhs: eager + : int @519..533
+                        lhs: read total@445..450 : int
+                        rhs: eager * : int @527..533
+                          lhs: read i@463..464 : int
+                          rhs: int 10 : int @531..533
+                      rhs: read j@487..488 : int
+                  tail: unit : unit @497..547
+                next[0]: read total@445..450 : int
+              context: then : ? @473..553
+            tail: loop : unit @483..547
+              start: int 0 : int @492..493
+              end: read i@463..464 : int
+              body:
+                let j@487..488: loop index : int @483..547
+                  start: int 0 : int @492..493
+                  end: read i@463..464 : int
+                assignment: assign total@445..450 : int @511..537
+                  value: eager + : int @519..537
+                    lhs: eager + : int @519..533
+                      lhs: read total@445..450 : int
+                      rhs: eager * : int @527..533
+                        lhs: read i@463..464 : int
+                        rhs: int 10 : int @531..533
+                    rhs: read j@487..488 : int
+                tail: unit : unit @497..547
+              next[0]: read total@445..450 : int
+          next[0]: loop value 0 : int @483..547
+            loop: @483..547
+        context: entry : ? @412..565
+      tail: loop value 0 : int @459..553
+        loop: @459..553
+
+fn shadowing@566..687 () -> int ∈ [12, 12]
+  result: result : int @584..587
+    outcome[0]:
+      let i@602..603: int @594..608
+        initializer: int 12 : int @606..608
+      discard: loop : unit @613..679
+        start: read i@602..603 : int
+        end: int 15 : int @625..627
+        body:
+          let i@617..618: loop index : int @613..679
+            start: read i@602..603 : int
+            end: int 15 : int @625..627
+          discard: read i@602..603 : int
+          let i@646..647: int @638..655
+            initializer: eager + : int @650..655
+              lhs: read i@617..618 : int
+              rhs: int 1 : int @654..655
+          assignment: assign i@646..647 : int @664..673
+            value: eager * : int @668..673
+              lhs: read i@646..647 : int
+              rhs: int 2 : int @672..673
+          tail: unit : unit @628..679
+        next[0]: read i@602..603 : int
+      discard: after : ? @613..679
+        control: loop : unit @613..679
+          start: read i@602..603 : int
+          end: int 15 : int @625..627
+          body:
+            let i@617..618: loop index : int @613..679
+              start: read i@602..603 : int
+              end: int 15 : int @625..627
+            discard: read i@602..603 : int
+            let i@646..647: int @638..655
+              initializer: eager + : int @650..655
+                lhs: read i@617..618 : int
+                rhs: int 1 : int @654..655
+            assignment: assign i@646..647 : int @664..673
+              value: eager * : int @668..673
+                lhs: read i@646..647 : int
+                rhs: int 2 : int @672..673
+            tail: unit : unit @628..679
+          next[0]: read i@602..603 : int
+        context: entry : ? @566..687
+      tail: read i@602..603 : int
+
+fn returned@688..780 () -> int ∈ [12, 99]
+  result: result : int @705..708
+    outcome[0]:
+      discard: loop : unit @715..771
+        start: int 2 : int @724..725
+        end: int 7 : int @727..728
+        body:
+          let i@719..720: loop index : int @715..771
+            start: int 2 : int @724..725
+            end: int 7 : int @727..728
+          discard: after : ? @739..765
+            control: observe : ? @739..765
+              condition: eager == : bool @742..748
+                lhs: read i@719..720 : int
+                rhs: int 4 : int @747..748
+              then control: unit : unit @749..765
+            context: then : ? @729..771
+          tail: if : unit @739..765
+            condition: eager == : bool @742..748
+              lhs: read i@719..720 : int
+              rhs: int 4 : int @747..748
+            then: unit : unit @749..765
+            else: unit (implicit)
+      discard: after : ? @715..771
+        control: loop : unit @715..771
+          start: int 2 : int @724..725
+          end: int 7 : int @727..728
+          body:
+            let i@719..720: loop index : int @715..771
+              start: int 2 : int @724..725
+              end: int 7 : int @727..728
+            discard: after : ? @739..765
+              control: observe : ? @739..765
+                condition: eager == : bool @742..748
+                  lhs: read i@719..720 : int
+                  rhs: int 4 : int @747..748
+                then control: unit : unit @749..765
+              context: then : ? @729..771
+            tail: if : unit @739..765
+              condition: eager == : bool @742..748
+                lhs: read i@719..720 : int
+                rhs: int 4 : int @747..748
+              then: unit : unit @749..765
+              else: unit (implicit)
+        context: entry : ? @688..780
+      tail: int 99 : int @776..778
+    outcome[1]: return : int @751..763
+      payload: eager * : int @758..763
+        lhs: read i@719..720 [i == 4 holds@742..748] : int
+        rhs: int 3 : int @762..763
+
+fn skipped_return@781..848 () -> int ∈ [8, 8]
+  result: result : int @804..807
+    outcome[0]:
+      discard: loop : unit @814..840
+        start: int 4 : int @823..824
+        end: int 2 : int @826..827
+        body:
+          let i@818..819: loop index : int @814..840
+            start: int 4 : int @823..824
+            end: int 2 : int @826..827
+          tail: unit : unit @828..840
+      discard: after : ? @814..840
+        control: loop : unit @814..840
+          start: int 4 : int @823..824
+          end: int 2 : int @826..827
+          body:
+            let i@818..819: loop index : int @814..840
+              start: int 4 : int @823..824
+              end: int 2 : int @826..827
+            tail: unit : unit @828..840
+        context: entry : ? @781..848
+      tail: int 8 : int @845..846
+    outcome[1]: return : int @830..838
+      payload: read i@818..819 : int
+
+fn guarded@849..976 () -> int ∈ (-∞, +∞)
+  result: result : int @865..868
+    outcome[0]:
+      let total@883..888: int @875..892
+        initializer: int 0 : int @891..892
+      discard: loop : unit @897..964
+        start: int -3 : int @906..908
+        end: int 4 : int @910..911
+        body:
+          let i@901..902: loop index : int @897..964
+            start: int -3 : int @906..908
+            end: int 4 : int @910..911
+          discard: phi total@883..888 : int @922..958
+            condition: eager != : bool @925..931
+              lhs: read i@901..902 : int
+              rhs: int 0 : int @930..931
+            then: assign total@883..888 : int @934..956
+              value: eager + : int @942..956
+                lhs: read total@883..888 : int
+                rhs: eager / : int @950..956
+                  lhs: int 12 : int @950..952
+                  rhs: read i@901..902 [i != 0 holds@925..931] : int
+            else: read total@883..888 : int
+          tail: if : unit @922..958
+            condition: eager != : bool @925..931
+              lhs: read i@901..902 : int
+              rhs: int 0 : int @930..931
+            then:
+              assignment: assign total@883..888 : int @934..956
+                value: eager + : int @942..956
+                  lhs: read total@883..888 : int
+                  rhs: eager / : int @950..956
+                    lhs: int 12 : int @950..952
+                    rhs: read i@901..902 [i != 0 holds@925..931] : int
+              tail: unit : unit @932..958
+            else: unit (implicit)
+        next[0]: phi total@883..888 : int @922..958
+          condition: eager != : bool @925..931
+            lhs: read i@901..902 : int
+            rhs: int 0 : int @930..931
+          then: assign total@883..888 : int @934..956
+            value: eager + : int @942..956
+              lhs: read total@883..888 : int
+              rhs: eager / : int @950..956
+                lhs: int 12 : int @950..952
+                rhs: read i@901..902 [i != 0 holds@925..931] : int
+          else: read total@883..888 : int
+      discard: after : ? @897..964
+        control: loop : unit @897..964
+          start: int -3 : int @906..908
+          end: int 4 : int @910..911
+          body:
+            let i@901..902: loop index : int @897..964
+              start: int -3 : int @906..908
+              end: int 4 : int @910..911
+            discard: phi total@883..888 : int @922..958
+              condition: eager != : bool @925..931
+                lhs: read i@901..902 : int
+                rhs: int 0 : int @930..931
+              then: assign total@883..888 : int @934..956
+                value: eager + : int @942..956
+                  lhs: read total@883..888 : int
+                  rhs: eager / : int @950..956
+                    lhs: int 12 : int @950..952
+                    rhs: read i@901..902 [i != 0 holds@925..931] : int
+              else: read total@883..888 : int
+            tail: if : unit @922..958
+              condition: eager != : bool @925..931
+                lhs: read i@901..902 : int
+                rhs: int 0 : int @930..931
+              then:
+                assignment: assign total@883..888 : int @934..956
+                  value: eager + : int @942..956
+                    lhs: read total@883..888 : int
+                    rhs: eager / : int @950..956
+                      lhs: int 12 : int @950..952
+                      rhs: read i@901..902 [i != 0 holds@925..931] : int
+                tail: unit : unit @932..958
+              else: unit (implicit)
+          next[0]: phi total@883..888 : int @922..958
+            condition: eager != : bool @925..931
+              lhs: read i@901..902 : int
+              rhs: int 0 : int @930..931
+            then: assign total@883..888 : int @934..956
+              value: eager + : int @942..956
+                lhs: read total@883..888 : int
+                rhs: eager / : int @950..956
+                  lhs: int 12 : int @950..952
+                  rhs: read i@901..902 [i != 0 holds@925..931] : int
+            else: read total@883..888 : int
+        context: entry : ? @849..976
+      tail: loop value 0 : int @897..964
+        loop: @897..964
+
+fn carried_guard@977..1175 () -> int ∈ (-∞, +∞)
+  result: result : int @999..1002
+    outcome[0]:
+      let divisor@1017..1024: int @1009..1028
+        initializer: int 2 : int @1027..1028
+      let total@1041..1046: int @1033..1050
+        initializer: int 0 : int @1049..1050
+      discard: loop value 0 : int @1055..1163
+        loop: @1055..1163
+      discard: loop : unit @1055..1163
+        start: int 0 : int @1064..1065
+        end: int 5 : int @1067..1068
+        body:
+          let i@1059..1060: loop index : int @1055..1163
+            start: int 0 : int @1064..1065
+            end: int 5 : int @1067..1068
+          discard: phi total@1041..1046 : int @1079..1127
+            condition: eager != : bool @1082..1094
+              lhs: read divisor@1017..1024 : int
+              rhs: int 0 : int @1093..1094
+            then: assign total@1041..1046 : int @1097..1125
+              value: eager + : int @1105..1125
+                lhs: read total@1041..1046 : int
+                rhs: eager / : int @1113..1125
+                  lhs: int 12 : int @1113..1115
+                  rhs: read divisor@1017..1024 [divisor != 0 holds@1082..1094] : int
+            else: read total@1041..1046 : int
+          discard: if : unit @1079..1127
+            condition: eager != : bool @1082..1094
+              lhs: read divisor@1017..1024 : int
+              rhs: int 0 : int @1093..1094
+            then:
+              assignment: assign total@1041..1046 : int @1097..1125
+                value: eager + : int @1105..1125
+                  lhs: read total@1041..1046 : int
+                  rhs: eager / : int @1113..1125
+                    lhs: int 12 : int @1113..1115
+                    rhs: read divisor@1017..1024 [divisor != 0 holds@1082..1094] : int
+              tail: unit : unit @1095..1127
+            else: unit (implicit)
+          assignment: assign divisor@1017..1024 : int @1136..1157
+            value: eager - : int @1146..1157
+              lhs: read divisor@1017..1024 : int
+              rhs: int 1 : int @1156..1157
+          tail: unit : unit @1069..1163
+        next[0]: read divisor@1017..1024 : int
+        next[1]: phi total@1041..1046 : int @1079..1127
+          condition: eager != : bool @1082..1094
+            lhs: read divisor@1017..1024 : int
+            rhs: int 0 : int @1093..1094
+          then: assign total@1041..1046 : int @1097..1125
+            value: eager + : int @1105..1125
+              lhs: read total@1041..1046 : int
+              rhs: eager / : int @1113..1125
+                lhs: int 12 : int @1113..1115
+                rhs: read divisor@1017..1024 [divisor != 0 holds@1082..1094] : int
+          else: read total@1041..1046 : int
+      discard: after : ? @1055..1163
+        control: loop : unit @1055..1163
+          start: int 0 : int @1064..1065
+          end: int 5 : int @1067..1068
+          body:
+            let i@1059..1060: loop index : int @1055..1163
+              start: int 0 : int @1064..1065
+              end: int 5 : int @1067..1068
+            discard: phi total@1041..1046 : int @1079..1127
+              condition: eager != : bool @1082..1094
+                lhs: read divisor@1017..1024 : int
+                rhs: int 0 : int @1093..1094
+              then: assign total@1041..1046 : int @1097..1125
+                value: eager + : int @1105..1125
+                  lhs: read total@1041..1046 : int
+                  rhs: eager / : int @1113..1125
+                    lhs: int 12 : int @1113..1115
+                    rhs: read divisor@1017..1024 [divisor != 0 holds@1082..1094] : int
+              else: read total@1041..1046 : int
+            discard: if : unit @1079..1127
+              condition: eager != : bool @1082..1094
+                lhs: read divisor@1017..1024 : int
+                rhs: int 0 : int @1093..1094
+              then:
+                assignment: assign total@1041..1046 : int @1097..1125
+                  value: eager + : int @1105..1125
+                    lhs: read total@1041..1046 : int
+                    rhs: eager / : int @1113..1125
+                      lhs: int 12 : int @1113..1115
+                      rhs: read divisor@1017..1024 [divisor != 0 holds@1082..1094] : int
+                tail: unit : unit @1095..1127
+              else: unit (implicit)
+            assignment: assign divisor@1017..1024 : int @1136..1157
+              value: eager - : int @1146..1157
+                lhs: read divisor@1017..1024 : int
+                rhs: int 1 : int @1156..1157
+            tail: unit : unit @1069..1163
+          next[0]: read divisor@1017..1024 : int
+          next[1]: phi total@1041..1046 : int @1079..1127
+            condition: eager != : bool @1082..1094
+              lhs: read divisor@1017..1024 : int
+              rhs: int 0 : int @1093..1094
+            then: assign total@1041..1046 : int @1097..1125
+              value: eager + : int @1105..1125
+                lhs: read total@1041..1046 : int
+                rhs: eager / : int @1113..1125
+                  lhs: int 12 : int @1113..1115
+                  rhs: read divisor@1017..1024 [divisor != 0 holds@1082..1094] : int
+            else: read total@1041..1046 : int
+        context: entry : ? @977..1175
+      tail: loop value 1 : int @1055..1163
+        loop: @1055..1163
+
+fn positive_index@1176..1283 () -> int ∈ [4, +∞)
+  result: result : int @1199..1202
+    outcome[0]:
+      let total@1217..1222: int @1209..1226
+        initializer: int 0 : int @1225..1226
+      discard: loop : unit @1231..1271
+        start: int 1 : int @1240..1241
+        end: int 4 : int @1243..1244
+        body:
+          let i@1235..1236: loop index : int @1231..1271
+            start: int 1 : int @1240..1241
+            end: int 4 : int @1243..1244
+          assignment: assign total@1217..1222 : int @1247..1269
+            value: eager + : int @1255..1269
+              lhs: read total@1217..1222 : int
+              rhs: eager / : int @1263..1269
+                lhs: int 12 : int @1263..1265
+                rhs: read i@1235..1236 : int
+          tail: unit : unit @1245..1271
+        next[0]: read total@1217..1222 : int
+      discard: after : ? @1231..1271
+        control: loop : unit @1231..1271
+          start: int 1 : int @1240..1241
+          end: int 4 : int @1243..1244
+          body:
+            let i@1235..1236: loop index : int @1231..1271
+              start: int 1 : int @1240..1241
+              end: int 4 : int @1243..1244
+            assignment: assign total@1217..1222 : int @1247..1269
+              value: eager + : int @1255..1269
+                lhs: read total@1217..1222 : int
+                rhs: eager / : int @1263..1269
+                  lhs: int 12 : int @1263..1265
+                  rhs: read i@1235..1236 : int
+            tail: unit : unit @1245..1271
+          next[0]: read total@1217..1222 : int
+        context: entry : ? @1176..1283
+      tail: loop value 0 : int @1231..1271
+        loop: @1231..1271
+
+fn after_assignment@1284..1391 () -> int ∈ [3, 6]
+  result: result : int @1309..1312
+    outcome[0]:
+      let divisor@1327..1334: int @1319..1338
+        initializer: int 0 : int @1337..1338
+      discard: loop : unit @1343..1372
+        start: int 2 : int @1352..1353
+        end: int 5 : int @1355..1356
+        body:
+          let i@1347..1348: loop index : int @1343..1372
+            start: int 2 : int @1352..1353
+            end: int 5 : int @1355..1356
+          discard: read divisor@1327..1334 : int
+          assignment: assign divisor@1327..1334 : int @1359..1370
+            value: read i@1347..1348 : int
+          tail: unit : unit @1357..1372
+        next[0]: read divisor@1327..1334 : int
+      discard: after : ? @1343..1372
+        control: loop : unit @1343..1372
+          start: int 2 : int @1352..1353
+          end: int 5 : int @1355..1356
+          body:
+            let i@1347..1348: loop index : int @1343..1372
+              start: int 2 : int @1352..1353
+              end: int 5 : int @1355..1356
+            discard: read divisor@1327..1334 : int
+            assignment: assign divisor@1327..1334 : int @1359..1370
+              value: read i@1347..1348 : int
+            tail: unit : unit @1357..1372
+          next[0]: read divisor@1327..1334 : int
+        context: entry : ? @1284..1391
+      tail: eager / : int @1377..1389
+        lhs: int 12 : int @1377..1379
+        rhs: loop value 0 : int @1343..1372
+          loop: @1343..1372
+
+fn skipped_fault@1392..1460 () -> int ∈ [11, 11]
+  result: result : int @1414..1417
+    outcome[0]:
+      discard: loop : unit @1424..1451
+        start: int 3 : int @1433..1434
+        end: int 3 : int @1436..1437
+        body:
+          let i@1428..1429: loop index : int @1424..1451
+            start: int 3 : int @1433..1434
+            end: int 3 : int @1436..1437
+          discard: eager / : int @1444..1449
+            lhs: int 1 : int @1444..1445
+            rhs: int 0 : int @1448..1449
+          tail: unit : unit @1438..1451
+      discard: after : ? @1424..1451
+        control: loop : unit @1424..1451
+          start: int 3 : int @1433..1434
+          end: int 3 : int @1436..1437
+          body:
+            let i@1428..1429: loop index : int @1424..1451
+              start: int 3 : int @1433..1434
+              end: int 3 : int @1436..1437
+            discard: eager / : int @1444..1449
+              lhs: int 1 : int @1444..1445
+              rhs: int 0 : int @1448..1449
+            tail: unit : unit @1438..1451
+        context: entry : ? @1392..1460
+      tail: int 11 : int @1456..1458
+
+fn returning_bound@1461..1525 () -> int ∈ [17, 17]
+  result: result : int @1485..1488
+    outcome[0]:
+      discard: after : ? @1495..1523
+        control: loop : unit @1495..1523
+          start: sequence : unit @1504..1517
+            before: return : int @1506..1515
+              payload: int 17 : int @1513..1515
+            value: unit : unit @1504..1517
+          end: int 3 : int @1519..1520
+          body:
+            let i@1499..1500: loop index : int @1495..1523
+              start: unit : unit @1504..1517
+              end: int 3 : int @1519..1520
+            tail: unit : unit @1521..1523
+        context: after : ? @1506..1515
+          control: return : int @1506..1515
+            payload: int 17 : int @1513..1515
+          context: entry : ? @1461..1525
+      tail: loop : unit @1495..1523
+        start: sequence : unit @1504..1517
+          before: return : int @1506..1515
+            payload: int 17 : int @1513..1515
+          value: unit : unit @1504..1517
+        end: int 3 : int @1519..1520
+        body:
+          let i@1499..1500: loop index : int @1495..1523
+            start: unit : unit @1504..1517
+            end: int 3 : int @1519..1520
+          tail: unit : unit @1521..1523
+    outcome[1]: return : int @1506..1515
+      payload: int 17 : int @1513..1515
+
+fn returning_end@1526..1595 () -> int ∈ [18, 18]
+  result: result : int @1548..1551
+    outcome[0]:
+      discard: after : ? @1558..1593
+        control: loop : unit @1558..1593
+          start: int 0 : int @1567..1568
+          end: sequence : unit @1570..1583
+            before: return : int @1572..1581
+              payload: int 18 : int @1579..1581
+            value: unit : unit @1570..1583
+          body:
+            let i@1562..1563: loop index : int @1558..1593
+              start: int 0 : int @1567..1568
+              end: unit : unit @1570..1583
+            tail: bool false : bool @1586..1591
+        context: after : ? @1572..1581
+          control: return : int @1572..1581
+            payload: int 18 : int @1579..1581
+          context: entry : ? @1526..1595
+      tail: loop : unit @1558..1593
+        start: int 0 : int @1567..1568
+        end: sequence : unit @1570..1583
+          before: return : int @1572..1581
+            payload: int 18 : int @1579..1581
+          value: unit : unit @1570..1583
+        body:
+          let i@1562..1563: loop index : int @1558..1593
+            start: int 0 : int @1567..1568
+            end: unit : unit @1570..1583
+          tail: bool false : bool @1586..1591
+    outcome[1]: return : int @1572..1581
+      payload: int 18 : int @1579..1581
+
+fn completed_binding@1596..1781 () -> int ∈ [19, 19]
+  result: result : int @1622..1625
+    outcome[0]:
+      let value@1640..1645: bool @1632..1702
+        initializer: if : ? @1648..1702
+          condition: bool false : bool @1671..1676
+          then: bool true : bool @1681..1685
+          else: bool false : bool @1695..1700
+      discard: loop : unit @1707..1772
+        start: int 0 : int @1716..1717
+        end: int 2 : int @1719..1720
+        body:
+          let i@1711..1712: loop index : int @1707..1772
+            start: int 0 : int @1716..1717
+            end: int 2 : int @1719..1720
+          tail: if : unit @1731..1766
+            condition: eager == : bool @1734..1748
+              lhs: read value@1640..1645 : bool
+              rhs: read value@1640..1645 : bool
+            then:
+              assignment: assign value@1640..1645 : bool @1751..1764
+                value: bool false : bool @1759..1764
+              tail: unit : unit @1749..1766
+            else: unit (implicit)
+      discard: after : ? @1707..1772
+        control: loop : unit @1707..1772
+          start: int 0 : int @1716..1717
+          end: int 2 : int @1719..1720
+          body:
+            let i@1711..1712: loop index : int @1707..1772
+              start: int 0 : int @1716..1717
+              end: int 2 : int @1719..1720
+            tail: if : unit @1731..1766
+              condition: eager == : bool @1734..1748
+                lhs: read value@1640..1645 : bool
+                rhs: read value@1640..1645 : bool
+              then:
+                assignment: assign value@1640..1645 : bool @1751..1764
+                  value: bool false : bool @1759..1764
+                tail: unit : unit @1749..1766
+              else: unit (implicit)
+        context: after : ? @1653..1662
+          control: return : int @1653..1662
+            payload: int 19 : int @1660..1662
+          context: entry : ? @1596..1781
+      tail: int 23 : int @1777..1779
+    outcome[1]: return : int @1653..1662
+      payload: int 19 : int @1660..1662
+
+fn huge_bounds@1782..1939 () -> int ∈ [100000000000000000000000, +∞)
+  result: result : int @1802..1805
+    outcome[0]:
+      let total@1820..1825: int @1812..1829
+        initializer: int 0 : int @1828..1829
+      discard: loop : unit @1834..1927
+        start: int 100000000000000000000000 : int @1843..1867
+        end: int 100000000000000000000003 : int @1869..1893
+        body:
+          let i@1838..1839: loop index : int @1834..1927
+            start: int 100000000000000000000000 : int @1843..1867
+            end: int 100000000000000000000003 : int @1869..1893
+          assignment: assign total@1820..1825 : int @1904..1921
+            value: eager + : int @1912..1921
+              lhs: read total@1820..1825 : int
+              rhs: read i@1838..1839 : int
+          tail: unit : unit @1894..1927
+        next[0]: read total@1820..1825 : int
+      discard: after : ? @1834..1927
+        control: loop : unit @1834..1927
+          start: int 100000000000000000000000 : int @1843..1867
+          end: int 100000000000000000000003 : int @1869..1893
+          body:
+            let i@1838..1839: loop index : int @1834..1927
+              start: int 100000000000000000000000 : int @1843..1867
+              end: int 100000000000000000000003 : int @1869..1893
+            assignment: assign total@1820..1825 : int @1904..1921
+              value: eager + : int @1912..1921
+                lhs: read total@1820..1825 : int
+                rhs: read i@1838..1839 : int
+            tail: unit : unit @1894..1927
+          next[0]: read total@1820..1825 : int
+        context: entry : ? @1782..1939
+      tail: loop value 0 : int @1834..1927
+        loop: @1834..1927

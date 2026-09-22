@@ -46,6 +46,10 @@ impl Op {
             Self::Not => inputs[0].not()?,
             Self::Binary(op) => D::binary(*op, inputs[0], inputs[1])?,
             Self::Param { .. }
+            | Self::LoopIndex
+            | Self::Carry { .. }
+            | Self::Loop(_)
+            | Self::LoopValue { .. }
             | Self::Unit
             | Self::Unused
             | Self::Hole

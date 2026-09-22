@@ -116,6 +116,8 @@ fn expr() -> BoxedStrategy<String> {
                     Some(otherwise) => format!("if {condition} {then} else {otherwise}"),
                     None => format!("if {condition} {then}"),
                 }),
+            2 => (name(), expr.clone(), expr.clone(), block(expr.clone()))
+                .prop_map(|(name, start, end, body)| format!("for {name} in {start}..{end} {body}")),
             1 => block(expr.clone()),
             1 => (param_list(true), signature_tail(block(expr.clone()), expr.clone()))
                 .prop_map(|(params, (tail, bare))| {
@@ -128,12 +130,12 @@ fn expr() -> BoxedStrategy<String> {
             1 => (prop::sample::select(&["-", "!"][..]), atom).prop_map(|(op, e)| format!("{op}{e}")),
         ]
         .boxed();
-        let product = chain(unary, &["*", "/", "%"], 2);
+        let product = chain(unary.clone(), &["*", "/", "%"], 2);
         let sum = chain(product, &["+", "-"], 2);
         // A chained comparison is a parse violation.
         let comparison = chain(sum, &["==", "!=", "<", "<=", ">", ">="], 2);
         let conjunction = chain(comparison, &["&&"], 2);
-        chain(conjunction, &["||"], 2)
+        prop_oneof![unary, chain(conjunction, &["||"], 2)].boxed()
     })
     .boxed()
 }

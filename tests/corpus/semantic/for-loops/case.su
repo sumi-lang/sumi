@@ -1,0 +1,102 @@
+fn sum() -> int {
+    let mut total = 7
+    for i in -2..4 {
+        total = total + i
+    }
+    total
+}
+fn empty() -> int {
+    let mut total = 13
+    for i in 4..4 { total = 0 }
+    for i in 9..2 { total = 1 }
+    total
+}
+fn bounds() -> int {
+    let mut n = 1
+    let mut total = 0
+    for i in { n = n + 1
+        n }..{ n = n + 3
+        n } {
+        total = total * 10 + i
+        n = 0
+    }
+    total
+}
+fn nested() -> int {
+    let mut total = 1
+    for i in 1..4 {
+        for j in 0..i {
+            total = total + i * 10 + j
+        }
+    }
+    total
+}
+fn shadowing() -> int {
+    let mut i = 12
+    for i in i..15 {
+        let mut i = i + 1
+        i = i * 2
+    }
+    i
+}
+fn returned() -> int {
+    for i in 2..7 {
+        if i == 4 { return i * 3 }
+    }
+    99
+}
+fn skipped_return() -> int {
+    for i in 4..2 { return i }
+    8
+}
+fn guarded() -> int {
+    let mut total = 0
+    for i in -3..4 {
+        if i != 0 { total = total + 12 / i }
+    }
+    total
+}
+fn carried_guard() -> int {
+    let mut divisor = 2
+    let mut total = 0
+    for i in 0..5 {
+        if divisor != 0 { total = total + 12 / divisor }
+        divisor = divisor - 1
+    }
+    total
+}
+fn positive_index() -> int {
+    let mut total = 0
+    for i in 1..4 { total = total + 12 / i }
+    total
+}
+fn after_assignment() -> int {
+    let mut divisor = 0
+    for i in 2..5 { divisor = i }
+    12 / divisor
+}
+fn skipped_fault() -> int {
+    for i in 3..3 { _ = 1 / 0 }
+    11
+}
+fn returning_bound() -> int {
+    for i in { return 17 }..3 {}
+}
+fn returning_end() -> int {
+    for i in 0..{ return 18 } { false }
+}
+fn completed_binding() -> int {
+    let mut value = if { return 19
+        false } { true } else { false }
+    for i in 0..2 {
+        if value == value { value = false }
+    }
+    23
+}
+fn huge_bounds() -> int {
+    let mut total = 0
+    for i in 100000000000000000000000..100000000000000000000003 {
+        total = total + i
+    }
+    total
+}

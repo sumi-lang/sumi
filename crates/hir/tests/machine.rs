@@ -398,7 +398,17 @@ impl Gen<'_> {
         let depth = self.scope.len();
         let mut lines = Vec::new();
         for _ in 0..self.rng.between(1, 3) {
-            let line = match self.rng.below(10) {
+            let line = match self.rng.below(11) {
+                10 if fuel > 0 => {
+                    let name = self.fresh(Kind::Int);
+                    let start = self.rng.between(-2, 2);
+                    let end = start + self.rng.between(-1, 3);
+                    let scope = self.scope.len();
+                    self.scope.push((name.clone(), Kind::Int, false));
+                    let body = self.block(kind, fuel - 1);
+                    self.scope.truncate(scope);
+                    format!("for {name} in {start}..{end} {{ _ = {body} }}")
+                }
                 0..=2 => {
                     let kind = if self.rng.chance(3, 4) {
                         Kind::Int
@@ -644,7 +654,8 @@ fn program(seed: u64) -> String {
 }
 
 fn runs_of(source: &str) -> Option<Runs> {
-    let analysis = analyze(parse_source(source.into()).unwrap());
+    let analysis = std::panic::catch_unwind(|| analyze(parse_source(source.into()).unwrap()))
+        .unwrap_or_else(|_| panic!("analysis panicked for:\n{source}"));
     analysis.program().map(check::run)
 }
 
@@ -664,6 +675,119 @@ proptest! {
     fn accepted_programs_run_within_their_claims(seed in any::<u64>()) {
         runs_of(&program(seed));
     }
+
+    #[test]
+    fn counted_loops_match_the_reference(
+        start in -4i64..6,
+        end in -4i64..6,
+        a in -9i64..10,
+        b in -9i64..10,
+        stop in -4i64..6,
+        early in any::<bool>(),
+    ) {
+        let source = format!("fn id(x: int) -> int = x
+fn main() -> int {{
+    let mut a = {a}
+    let mut b = {b}
+    let mut end = {end}
+    let mut total = 3
+    for i in {start}..end {{
+        let old = a
+        a = b
+        b = id(old + i)
+        end = end + 1
+        for j in -2..i {{ total = total + a * 7 + b + j }}
+        if {early} && i == {stop} {{ return total - 1000 }}
+    }}
+    total + a * 100 + b * 10 + end
+}}");
+        let (mut ra, mut rb, mut bound, mut total) = (a, b, end, 3);
+        let mut returned = None;
+        for i in start..end {
+            (ra, rb) = (rb, ra + i);
+            bound += 1;
+            for j in -2..i {
+                total += ra * 7 + rb + j;
+            }
+            if early && i == stop {
+                returned = Some(total - 1000);
+                break;
+            }
+        }
+        let expected = sumi_hir::Value::Int(returned.unwrap_or(total + ra * 100 + rb * 10 + bound).into());
+        let analysis = analyze(parse_source(source.clone().into()).unwrap());
+        prop_assert!(analysis.is_valid(), "{}\n{:?}", source, analysis.diagnostics());
+        check::semantics(&analysis);
+        let program = analysis.program().unwrap();
+        let main = program.function_named("main").unwrap();
+        let runs = check::run(program);
+        prop_assert_eq!(runs.abandoned, 0);
+        prop_assert_eq!(program.machine(main, &[]).run(), Ok(expected.clone()), "{}", source);
+        prop_assert_eq!(program.evaluate(main, &[]), expected, "{}", source);
+    }
+}
+
+#[test]
+fn discarded_loops_evaluate_both_bounds_once() {
+    for (start, end) in [(101, 103), (107, 107), (113, 109)] {
+        let source = format!("fn main() -> int {{ for i in {start}..{end} {{}}\n 42 }}");
+        let analysis = analyze(parse_source(source.into()).unwrap());
+        assert!(analysis.is_valid(), "{:?}", analysis.diagnostics());
+        let program = analysis.program().unwrap();
+        let mut machine = program.machine(program.function_named("main").unwrap(), &[]);
+        let mut bounds = Vec::new();
+        while machine.step().is_none() {
+            if let Some(sumi_hir::Value::Int(value)) = machine.latest()
+                && (*value == start.into() || *value == end.into())
+            {
+                bounds.push(value.clone());
+            }
+        }
+        assert_eq!(
+            machine.outcome(),
+            Some(&Ok(sumi_hir::Value::Int(42.into())))
+        );
+        assert_eq!(bounds, [start.into(), end.into()], "{start}..{end}");
+    }
+}
+
+#[test]
+fn start_bound_is_evaluated_before_a_returning_end() {
+    let source = "fn main() -> int { for i in 101..{ return 42 } {} }";
+    let analysis = analyze(parse_source(source.into()).unwrap());
+    assert!(analysis.is_valid(), "{:?}", analysis.diagnostics());
+    let program = analysis.program().unwrap();
+    let mut machine = program.machine(program.function_named("main").unwrap(), &[]);
+    let mut values = Vec::new();
+    while machine.step().is_none() {
+        values.extend(machine.latest().cloned());
+    }
+    assert_eq!(
+        machine.outcome(),
+        Some(&Ok(sumi_hir::Value::Int(42.into())))
+    );
+    assert_eq!(values.first(), Some(&sumi_hir::Value::Int(101.into())));
+    assert_eq!(
+        values
+            .iter()
+            .filter(|value| **value == sumi_hir::Value::Int(101.into()))
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn execution_budget_bounds_loops_with_memoized_bodies() {
+    let analysis = analyze(
+        parse_source(
+            "fn main() { let u = {}\n for i in 0..100000000000000000000 { u }\n {} }".into(),
+        )
+        .unwrap(),
+    );
+    assert!(analysis.is_valid(), "{:?}", analysis.diagnostics());
+    let runs = check::run(analysis.program().unwrap());
+    assert_eq!(runs.finished, 0);
+    assert_eq!(runs.abandoned, 1);
 }
 
 #[test]
@@ -672,6 +796,7 @@ fn most_generated_programs_are_accepted_and_run_to_the_end() {
     let mut accepted = 0u64;
     let mut returning = 0usize;
     let mut mutating = 0usize;
+    let mut looping = 0usize;
     let mut runs = Runs::default();
     for seed in 0..seeds {
         let source = program(seed);
@@ -679,6 +804,7 @@ fn most_generated_programs_are_accepted_and_run_to_the_end() {
         if let Some(outcome) = runs_of(&source) {
             accepted += 1;
             returning += usize::from(source_returns != 0 && outcome.finished != 0);
+            looping += usize::from(source.contains("for ") && outcome.finished != 0);
             mutating += usize::from(
                 source.contains("let mut ")
                     && source.lines().any(|line| {
@@ -698,6 +824,10 @@ fn most_generated_programs_are_accepted_and_run_to_the_end() {
     assert_ne!(
         mutating, 0,
         "no accepted mutation-bearing program ran to the end"
+    );
+    assert_ne!(
+        looping, 0,
+        "no accepted loop-bearing program ran to the end"
     );
     assert!(
         accepted * 10 >= seeds * 9,

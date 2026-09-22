@@ -131,6 +131,13 @@ impl Demands<'_> {
                     Some(_) => {}
                 }
             }
+            Op::Loop(id) => {
+                let body = graph.loop_(*id).body;
+                let (at, result) = region(body);
+                if value(0) && value(1) && graph.region(body).result_has_value() {
+                    require(at, result, Expected::Ty(Ty::Unit), None);
+                }
+            }
             Op::Copy {
                 declared: Some((ty, at)),
             } if value(0) => require(reads[0], inputs[0], Expected::Ty(*ty), Some(*at)),
@@ -183,6 +190,9 @@ impl Demands<'_> {
             | Op::Hole
             | Op::Copy { declared: None }
             | Op::Phi { .. }
+            | Op::LoopIndex
+            | Op::Carry { .. }
+            | Op::LoopValue { .. }
             | Op::Refine { .. }
             | Op::Exactly(_)
             | Op::Entry
@@ -329,6 +339,35 @@ pub(crate) fn draw(
                             }
                         }
                     }
+                }
+                Op::LoopIndex => {
+                    typing.known(node, Ty::Int, entry.name.unwrap_or(origin));
+                    typing.derive(inputs[0], inputs[1], node, Pair::Range);
+                }
+                Op::Carry { declaration } => {
+                    typing.flow(*declaration, node, Edge::TypeBind);
+                }
+                Op::Loop(id) => {
+                    let loop_ = graph.loop_(*id);
+                    typing.known(node, Ty::Unit, origin);
+                    typing.flow(loop_.empty, node, Edge::Enter);
+                    typing.flow(loop_.continuation, node, Edge::Enter);
+                    for &(header, next) in &loop_.carried {
+                        typing.derive(
+                            graph.inputs(header)[0],
+                            graph.region(loop_.body).context,
+                            header,
+                            Pair::Outcome,
+                        );
+                        typing.derive(next, loop_.continuation, header, Pair::Backedge);
+                    }
+                }
+                Op::LoopValue { loop_, index } => {
+                    let loop_ = graph.loop_(*loop_);
+                    let (header, next) = loop_.carried[*index as usize];
+                    typing.flow(header, node, Edge::TypeBind);
+                    typing.derive(graph.inputs(header)[0], loop_.empty, node, Pair::Outcome);
+                    typing.derive(next, loop_.continuation, node, Pair::Outcome);
                 }
                 Op::Neg => {
                     typing.known(node, Ty::Int, origin);

@@ -1,0 +1,20 @@
+fn bounds() {
+    for i in lower..upper {}
+    for i in 2..7 {}
+    for i in -2..-1 {}
+    for i in a + 2..b * 3 {}
+    for i in (2)..(7) {}
+    for i in lower()..upper() {}
+    for i in if a { 2 } else { 3 }..if b { 7 } else { 8 } {}
+    for i in for j in 0..1 {}..for k in 2..3 {} {}
+    for i in fn() {}..fn() {} {}
+    for i in { 2 }..{ 7 } {}
+}
+
+fn positions() = for i in 2..7 {
+    let x = for j in 0..i {}
+    _ = apply(for j in 0..i {})
+    if for j in 0..i {} {}
+    (for j in 0..i {})
+    return for j in 0..i {}
+}

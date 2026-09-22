@@ -484,6 +484,7 @@ grammar! {
         ParenExpr,
         CallExpr,
         IfExpr,
+        ForExpr,
         ClosureExpr,
         Block,
     }
@@ -514,6 +515,9 @@ grammar! {
     /// `'if' condition:Expr then_branch:Block ('else' else_branch:ElseBranch)?`.
     struct IfExpr { condition: Expr, then_branch: Block, else_branch: Option<ElseBranch> }
     tokens { IfKw, ElseKw? }
+
+    struct ForExpr { name: Name, start: Expr, end: Expr, body: Block }
+    tokens { ForKw, InKw, [Dot, Dot] }
 
     enum ElseBranch as CleanElseBranch { IfExpr, Block }
 

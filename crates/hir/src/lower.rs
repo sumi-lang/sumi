@@ -6,7 +6,7 @@ use std::collections::hash_map::Entry;
 
 use rustc_hash::FxBuildHasher;
 use sumi_frontend::{DiagnosticCode, Label};
-use sumi_graph::GraphBuilder;
+use sumi_graph::{GraphBuilder, Loop};
 use sumi_lexer::{LexedFile, RawIdx, SyntaxKind, TokenFlags};
 use sumi_syntax::{
     Literal, NodeIdx, PrefixOp, SyntaxTree,
@@ -403,12 +403,21 @@ struct Local {
     declaration: NodeId,
     current: NodeId,
     mutable: bool,
+    completes: bool,
 }
 
 struct RegionState {
     changes: Vec<(LocalId, NodeId, NodeId)>,
     refinements: Vec<(LocalId, NodeId, NodeId)>,
     context: NodeId,
+}
+
+struct LoopState {
+    expr: Clean<ast::ForExpr>,
+    region: RegionId,
+    index: NodeId,
+    empty: NodeId,
+    carried: Vec<(LocalId, NodeId)>,
 }
 
 /// A `let` binds at `Work::Finish`, after its initializer, so the initializer reads any outer
@@ -454,6 +463,8 @@ enum Work {
         target: Option<FunctionId>,
     },
     Branches(Clean<ast::IfExpr>),
+    LoopBody(Clean<ast::ForExpr>),
+    LoopEnd(LoopState),
     Rhs(LazyOp),
     Join {
         branch: Clean<ast::IfExpr>,
@@ -653,6 +664,11 @@ impl<'a, 's> Builder<'a, 's> {
                         self.branches(branch, &mut work);
                         continue;
                     }
+                    Work::LoopBody(expr) => {
+                        self.loop_body(expr, &mut work);
+                        continue;
+                    }
+                    Work::LoopEnd(state) => self.loop_end(state),
                     Work::Rhs(expr) => {
                         self.rhs(expr, &mut work);
                         continue;
@@ -714,12 +730,8 @@ impl<'a, 's> Builder<'a, 's> {
             }
         };
         let control = root_node.and_then(|root| self.control(root));
-        let fallthrough = if self.returns.is_empty() {
-            None
-        } else {
-            control
-                .map(|control| self.place(Op::Sequence, &[(control, body.1), body], body.1, None))
-        };
+        let fallthrough = control
+            .map(|control| self.place(Op::Sequence, &[(control, body.1), body], body.1, None));
         self.graph.close_with_control(
             region,
             body.0,
@@ -728,7 +740,7 @@ impl<'a, 's> Builder<'a, 's> {
         );
         self.regions.pop();
         // A failed parameter does not erase a declared result; the body is still held to it.
-        let value = match (self.returns.is_empty(), declared) {
+        let value = match (control.is_none() && self.returns.is_empty(), declared) {
             (true, HeaderResult::Declared(ty, node)) => self.push(
                 node,
                 Op::Copy {
@@ -829,6 +841,8 @@ impl<'a, 's> Builder<'a, 's> {
             | Op::After
             | Op::Result { declared: Some(_) }
             | Op::Copy { declared: Some(_) } => true,
+            Op::Loop(_) | Op::LoopIndex => true,
+            Op::Carry { declaration } => typed(declaration),
             Op::Result { declared: None } => inputs.iter().all(|&(input, _)| typed(input)),
             Op::Param { ty, .. } => ty.is_some(),
             Op::Call(callee) => {
@@ -900,6 +914,7 @@ impl<'a, 's> Builder<'a, 's> {
             declaration: node,
             current: node,
             mutable,
+            completes: false,
         });
         if mutable {
             self.mutable_locals.push(id);
@@ -1071,6 +1086,9 @@ impl<'a, 's> Builder<'a, 's> {
     fn refine(&mut self, cond: NodeIdx, sense: bool) {
         use sumi_syntax::BinaryOp::*;
 
+        if self.form(cond).completes {
+            return;
+        }
         let tree = self.source.tree;
         let Some(expr) = ast::Expr::cast(tree, cond)
             .map(|expr| self.source.peel(expr))
@@ -1213,6 +1231,136 @@ impl<'a, 's> Builder<'a, 's> {
             guard: (lhs, and),
         });
     }
+    fn loop_body(&mut self, expr: Clean<ast::ForExpr>, work: &mut Vec<Work>) {
+        let at = self.source.range(expr.node());
+        let bounds = [
+            self.input(expr.start().node()),
+            self.input(expr.end().node()),
+        ];
+        let condition = self.place(Op::Binary(BinaryOp::Cmp(CmpOp::Lt)), &bounds, at, None);
+        let context = self.context_at(
+            expr.body().node(),
+            Op::Then,
+            (condition, at),
+            self.context(),
+        );
+        let empty = self.context_at(expr.node(), Op::Else, (condition, at), self.context());
+        let region = self.graph.open(context);
+        self.version_stack
+            .push((self.undo.len(), self.locals.len()));
+        self.regions.push((region, self.refinements.len(), context));
+        self.graph.enter(region);
+        self.open_scope();
+        let name = expr.name().node();
+        let index = self.place(Op::LoopIndex, &bounds, at, Some(self.source.range(name)));
+        for (position, bound) in [expr.start().node(), expr.end().node()]
+            .into_iter()
+            .enumerate()
+        {
+            if self.form(bound).completes {
+                self.completes_input(condition, position);
+                self.completes_input(index, position);
+            }
+        }
+        self.bind(self.source.text(name), index, false);
+        let mut carried = Vec::with_capacity(self.mutable_locals.len());
+        for position in 0..self.mutable_locals.len() {
+            let local = self.mutable_locals[position];
+            if self.locals[local.index()].completes {
+                continue;
+            }
+            let initial = self.current(local);
+            let declaration = self.locals[local.index()].declaration;
+            let header = self.place(
+                Op::Carry { declaration },
+                &[(initial, self.graph.node(initial).origin)],
+                at,
+                None,
+            );
+            self.set_version(local, header);
+            carried.push((local, header));
+        }
+        work.push(Work::LoopEnd(LoopState {
+            expr,
+            region,
+            index,
+            empty,
+            carried,
+        }));
+        work.push(Work::Pop {
+            region,
+            root: expr.body().node(),
+        });
+        work.push(Work::Enter(expr.body().node()));
+    }
+    fn loop_end(&mut self, state: LoopState) -> Option<()> {
+        let LoopState {
+            expr,
+            region,
+            index,
+            empty,
+            carried,
+        } = state;
+        self.close_scope();
+        let body = self.region_states[region.index()]
+            .take()
+            .expect("a closed loop has local state");
+        let next: Vec<_> = carried
+            .iter()
+            .map(|&(local, header)| {
+                let position = body
+                    .changes
+                    .binary_search_by_key(&local.index(), |&(local, _, _)| local.index())
+                    .expect("a carried local has a header version");
+                (header, body.changes[position].2)
+            })
+            .collect();
+        let id = self.graph.push_loop(Loop {
+            body: region,
+            index,
+            carried: next.clone().into_boxed_slice(),
+            continuation: body.context,
+            empty,
+        });
+        let at = self.source.range(expr.node());
+        let bounds = [expr.start().node(), expr.end().node()].map(|bound| {
+            let (value, at) = self.input(bound);
+            let value = self.control(bound).map_or(value, |control| {
+                self.place(Op::Sequence, &[(control, at), (value, at)], at, None)
+            });
+            (value, at)
+        });
+        let node = self.push(expr.node(), Op::Loop(id), &bounds, None);
+        self.controls[expr.node().to_usize()] = Some(node);
+        for (position, ((local, header), (_, next))) in carried.into_iter().zip(next).enumerate() {
+            if header == next {
+                continue;
+            }
+            let value = self.place(
+                Op::LoopValue {
+                    loop_: id,
+                    index: u32::try_from(position).expect("carried local count fits u32"),
+                },
+                &[(node, at)],
+                at,
+                None,
+            );
+            self.set_version(local, value);
+        }
+        let mut valid = self.form(expr.body().node()).valid;
+        for (position, bound) in [expr.start().node(), expr.end().node()]
+            .into_iter()
+            .enumerate()
+        {
+            let form = self.form(bound);
+            valid &= form.valid;
+            if form.completes {
+                self.completes_input(node, position);
+                self.bottoms[expr.node().to_usize()] = true;
+            }
+        }
+        valid.then_some(())
+    }
     fn unsupported(&mut self, node: NodeIdx) {
         self.source.error(
             node,
@@ -1261,6 +1409,10 @@ impl<'a, 's> Builder<'a, 's> {
             CleanStmt::Expr(CleanExpr::IfExpr(branch)) => {
                 work.push(Work::Branches(branch));
                 work.push(Work::Enter(branch.condition().node()));
+            }
+            CleanStmt::Expr(CleanExpr::ForExpr(expr)) => {
+                work.push(Work::LoopBody(expr));
+                enter_each(work, [expr.start().node(), expr.end().node()].into_iter());
             }
             CleanStmt::Expr(CleanExpr::BinaryExpr(expr)) => {
                 let op = expr.op();
@@ -1557,10 +1709,11 @@ impl<'a, 's> Builder<'a, 's> {
                     _ => Op::Copy { declared },
                 };
                 let copy = self.push(binding.node(), op, &[value], Some(self.source.range(name)));
-                self.bind(self.source.text(name), copy, binding.mutable());
+                let local = self.bind(self.source.text(name), copy, binding.mutable());
                 let initializer = binding.initializer().node();
                 self.controls[binding.node().to_usize()] = self.control(initializer);
                 let form = self.form(initializer);
+                self.locals[local.index()].completes = form.completes;
                 self.bottoms[binding.node().to_usize()] = form.completes;
                 if !form.valid || !self.lowered.typed[copy.index()] {
                     return None;
@@ -1623,6 +1776,7 @@ impl<'a, 's> Builder<'a, 's> {
                         let read = self.current(local);
                         self.nodes_of[node.to_usize()] = Some(read);
                         self.reads_of[node.to_usize()] = Some((local, version));
+                        self.bottoms[node.to_usize()] = self.locals[local.index()].completes;
                         self.lowered.typed[read.index()].then_some(())?;
                     }
                     None => {

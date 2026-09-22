@@ -12,6 +12,26 @@ use NodeKind as N;
 pub const MEMBERS: &[(NodeKind, &str, NodeKind)] = &[
     (N::IfExpr, "else_branch", N::IfExpr),
     (N::IfExpr, "else_branch", N::Block),
+    (N::ForExpr, "start", N::NameRef),
+    (N::ForExpr, "start", N::LiteralExpr),
+    (N::ForExpr, "start", N::PrefixExpr),
+    (N::ForExpr, "start", N::BinaryExpr),
+    (N::ForExpr, "start", N::ParenExpr),
+    (N::ForExpr, "start", N::CallExpr),
+    (N::ForExpr, "start", N::IfExpr),
+    (N::ForExpr, "start", N::ForExpr),
+    (N::ForExpr, "start", N::ClosureExpr),
+    (N::ForExpr, "start", N::Block),
+    (N::ForExpr, "end", N::NameRef),
+    (N::ForExpr, "end", N::LiteralExpr),
+    (N::ForExpr, "end", N::PrefixExpr),
+    (N::ForExpr, "end", N::BinaryExpr),
+    (N::ForExpr, "end", N::ParenExpr),
+    (N::ForExpr, "end", N::CallExpr),
+    (N::ForExpr, "end", N::IfExpr),
+    (N::ForExpr, "end", N::ForExpr),
+    (N::ForExpr, "end", N::ClosureExpr),
+    (N::ForExpr, "end", N::Block),
 ];
 
 #[derive(Clone, Copy)]
@@ -184,17 +204,44 @@ mod tests {
     #[test]
     fn the_witnesses_follow_the_grammar() {
         let witnesses = witnesses();
-        assert_eq!(witnesses.len(), 80);
+        assert_eq!(witnesses.len(), 107);
         assert!(
             witnesses
                 .windows(2)
                 .all(|pair| pair[0].parent as u8 <= pair[1].parent as u8)
         );
-        let else_branch = NodeKind::IfExpr
-            .children()
-            .iter()
-            .find(|child| child.name == "else_branch")
-            .and_then(|child| child.slot);
+        let slot = |parent: NodeKind, field| {
+            parent
+                .children()
+                .iter()
+                .find(|child| child.name == field)
+                .and_then(|child| child.slot)
+                .unwrap()
+        };
+        let bounds = [
+            N::NameRef,
+            N::LiteralExpr,
+            N::PrefixExpr,
+            N::BinaryExpr,
+            N::ParenExpr,
+            N::CallExpr,
+            N::IfExpr,
+            N::ForExpr,
+            N::ClosureExpr,
+            N::Block,
+        ];
+        let expected: Vec<_> = [
+            (N::IfExpr, "else_branch", N::IfExpr),
+            (N::IfExpr, "else_branch", N::Block),
+        ]
+        .into_iter()
+        .chain(
+            ["start", "end"]
+                .into_iter()
+                .flat_map(|field| bounds.map(|kind| (N::ForExpr, field, kind))),
+        )
+        .map(|(parent, field, kind)| (parent, slot(parent, field), kind))
+        .collect();
         let members: Vec<_> = witnesses
             .iter()
             .filter_map(|witness| match witness.check {
@@ -202,13 +249,7 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(
-            members,
-            [
-                (N::IfExpr, else_branch.unwrap(), N::IfExpr),
-                (N::IfExpr, else_branch.unwrap(), N::Block),
-            ]
-        );
+        assert_eq!(members, expected);
         let operators = witnesses
             .iter()
             .filter(|witness| {

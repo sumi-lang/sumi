@@ -1,0 +1,28 @@
+fn later_iteration() -> int {
+    let mut divisor = 2
+    let mut total = 0
+    for i in 0..4 {
+        total = total + 12 / divisor
+        divisor = divisor - 1
+    }
+    total
+}
+fn empty_path() -> int {
+    let mut divisor = 0
+    for i in 3..3 { divisor = 2 }
+    12 / divisor
+}
+fn immutable_index() {
+    for i in 0..3 { i = 2 }
+}
+fn index_scope() -> int {
+    for i in 0..3 {}
+    i
+}
+fn boolean_start() { for i in false..3 {} }
+fn boolean_end() { for i in 0..true {} }
+fn nonunit_body() { for i in 0..3 { i } }
+fn changed_type() {
+    let mut x = 1
+    for i in 0..3 { x = false }
+}

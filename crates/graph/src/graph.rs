@@ -76,6 +76,24 @@ impl std::fmt::Debug for NodeId {
 #[repr(transparent)]
 pub struct RegionId(NonZeroU32);
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct LoopId(u32);
+
+impl LoopId {
+    pub fn index(self) -> usize {
+        self.0 as usize
+    }
+}
+
+#[derive(Debug)]
+pub struct Loop {
+    pub body: RegionId,
+    pub index: NodeId,
+    pub carried: Box<[(NodeId, NodeId)]>,
+    pub continuation: NodeId,
+    pub empty: NodeId,
+}
+
 impl RegionId {
     fn new(index: usize) -> Self {
         Self(NonZeroU32::new(u32::try_from(index + 1).expect("region count fits u32")).unwrap())
@@ -131,6 +149,19 @@ pub enum Op {
     /// A mutable local's next SSA version; its input is the assigned value.
     Assign {
         declaration: NodeId,
+    },
+    /// The machine-bound index; inputs are the inclusive start and exclusive end.
+    LoopIndex,
+    /// A machine-bound mutable local at the loop header; its input is the initial value.
+    Carry {
+        declaration: NodeId,
+    },
+    /// Executes the body for each integer in its start-inclusive, end-exclusive input bounds.
+    Loop(LoopId),
+    /// The final carry at `index`, including on zero trips; its input is the loop node.
+    LoopValue {
+        loop_: LoopId,
+        index: u32,
     },
     /// A mutable local's value after a conditional fork. Inputs are the condition, true value,
     /// and false value; `contexts` gate the corresponding values in the abstract domain.
@@ -227,6 +258,7 @@ impl Region {
 #[derive(Debug)]
 pub struct Graph {
     nodes: Vec<Node>,
+    loops: Vec<Loop>,
     inputs: Vec<NodeId>,
     input_values: Vec<bool>,
     reads: Vec<TextRange>,
@@ -236,6 +268,14 @@ pub struct Graph {
 }
 
 impl Graph {
+    pub fn loop_(&self, id: LoopId) -> &Loop {
+        &self.loops[id.index()]
+    }
+
+    pub fn loop_ids(&self) -> impl ExactSizeIterator<Item = LoopId> + use<> {
+        (0..self.loops.len()).map(|index| LoopId(index as u32))
+    }
+
     pub fn callable(&self, callee: Callee) -> &Callable {
         &self.callables[callee.index()]
     }
@@ -322,6 +362,7 @@ pub struct OpenRun {
 #[derive(Debug)]
 pub struct GraphBuilder {
     nodes: Vec<Node>,
+    loops: Vec<Loop>,
     inputs: Vec<NodeId>,
     input_values: Vec<bool>,
     reads: Vec<TextRange>,
@@ -335,6 +376,7 @@ impl GraphBuilder {
     pub fn new(nodes: usize) -> Self {
         Self {
             nodes: Vec::with_capacity(nodes),
+            loops: Vec::new(),
             inputs: Vec::with_capacity(nodes),
             input_values: Vec::with_capacity(nodes),
             reads: Vec::with_capacity(nodes),
@@ -342,6 +384,12 @@ impl GraphBuilder {
             runs: Vec::new(),
             callables: Vec::new(),
         }
+    }
+
+    pub fn push_loop(&mut self, loop_: Loop) -> LoopId {
+        let id = LoopId(u32::try_from(self.loops.len()).expect("loop count fits u32"));
+        self.loops.push(loop_);
+        id
     }
 
     /// The next function, in declaration order.
@@ -483,6 +531,7 @@ impl GraphBuilder {
     pub fn finish(self) -> Graph {
         Graph {
             nodes: self.nodes,
+            loops: self.loops,
             inputs: self.inputs,
             input_values: self.input_values,
             reads: self.reads,

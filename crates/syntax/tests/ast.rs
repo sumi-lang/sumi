@@ -47,6 +47,48 @@ fn block(body: Option<Expr>) -> Block {
 }
 
 #[test]
+fn for_bounds_keep_their_roles_in_typed_and_clean_views() {
+    let parsed = Parsed::new("fn f() = for i in left() + 2..{ right() } { use(i) }");
+    let tree = parsed.tree();
+    assert!(parsed.parse.evidence().is_empty());
+    let Some(Expr::ForExpr(loop_)) = parsed.item().body(tree) else {
+        panic!("a loop expression")
+    };
+    assert_eq!(parsed.text(loop_.name(tree).unwrap()), "i");
+    assert_eq!(parsed.text(loop_.start(tree).unwrap()), "left() + 2");
+    assert_eq!(parsed.text(loop_.end(tree).unwrap()), "{ right() }");
+    assert_eq!(parsed.text(loop_.body(tree).unwrap()), "{ use(i) }");
+    let clean = loop_.clean(tree, &parsed.lexed).unwrap();
+    assert_eq!(parsed.text(clean.name()), "i");
+    assert_eq!(parsed.text(clean.start()), "left() + 2");
+    assert_eq!(parsed.text(clean.end()), "{ right() }");
+    assert_eq!(parsed.text(clean.body()), "{ use(i) }");
+}
+
+#[test]
+fn missing_for_fields_do_not_shift_later_roles() {
+    for (source, name, start, end) in [
+        ("fn f() = for in 2..7 {}", false, true, true),
+        ("fn f() = for i in ..7 {}", true, false, true),
+        ("fn f() = for i in 2.. {}", true, true, false),
+    ] {
+        let parsed = Parsed::new(source);
+        let tree = parsed.tree();
+        let Some(Expr::ForExpr(loop_)) = parsed.item().body(tree) else {
+            panic!("a recovered loop")
+        };
+        assert!(loop_.clean(tree, &parsed.lexed).is_none());
+        assert_eq!(loop_.name(tree).is_some(), name);
+        assert_eq!(
+            loop_.start(tree).map(|e| parsed.text(e)),
+            start.then_some("2")
+        );
+        assert_eq!(loop_.end(tree).map(|e| parsed.text(e)), end.then_some("7"));
+        assert_eq!(parsed.text(loop_.body(tree).unwrap()), "{}");
+    }
+}
+
+#[test]
 fn expression_bodies_and_closures_have_views() {
     let parsed = Parsed::new("fn twice(x: Int) -> Int = apply(fn(y: Int) -> Int = y * 2, x)\n");
     let tree = parsed.tree();

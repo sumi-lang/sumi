@@ -271,6 +271,22 @@ fn explain_zero(
                 labels.push((entry.origin, describe(&may.ints, "").into()));
             }
             Op::Copy { .. } | Op::Assign { .. } => follow(&mut queue, inputs[0], 0),
+            Op::LoopIndex | Op::Carry { .. } => {
+                labels.push((
+                    entry.origin,
+                    describe(&may.ints, " on a loop iteration").into(),
+                ));
+            }
+            Op::LoopValue { loop_, index } => {
+                let loop_ = graph.loop_(loop_);
+                let (header, next) = loop_.carried[index as usize];
+                if typing.may(loop_.empty).live() {
+                    follow(&mut queue, graph.inputs(header)[0], 1);
+                }
+                if typing.may(loop_.continuation).live() {
+                    follow(&mut queue, next, 1);
+                }
+            }
             Op::Phi { contexts, .. } => {
                 for ((&value, &context), &has_value) in inputs[1..]
                     .iter()
@@ -346,6 +362,7 @@ fn explain_zero(
             }
             Op::Bool(_)
             | Op::Unit
+            | Op::Loop(_)
             | Op::Unused
             | Op::Hole
             | Op::Not

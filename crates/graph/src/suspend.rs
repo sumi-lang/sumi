@@ -73,6 +73,7 @@ impl Layout {
         let mut produced = vec![false; width];
         produced[run.slot(call)] = true;
         let mut roots = Vec::new();
+        let mut repeating = Vec::new();
         let region = |region: RegionId, control: bool| {
             if control {
                 graph.region(region).control()
@@ -85,6 +86,18 @@ impl Layout {
                 return None;
             }
             let output = match control {
+                Control::LoopBounds(node)
+                | Control::LoopStart(node)
+                | Control::LoopNext(node)
+                | Control::LoopRebind(node) => {
+                    repeating.push(node);
+                    node
+                }
+                Control::LoopValue { node, from } => {
+                    roots.push(from);
+                    roots.extend_from_slice(graph.inputs(node));
+                    node
+                }
                 Control::Eval(node) => {
                     roots.push(node);
                     continue;
@@ -139,33 +152,51 @@ impl Layout {
             }
         }
         let mut seen = vec![false; width];
-        while let Some(node) = roots.pop() {
-            *budget = budget.checked_sub(1)?;
-            let slot = run.slot(node);
-            if produced[slot] || seen[slot] {
-                continue;
-            }
-            seen[slot] = true;
-            let inputs = graph.inputs(node);
-            if roots.len() + inputs.len() > *budget {
-                return None;
-            }
-            roots.extend_from_slice(inputs);
-            match graph.node(node).op {
-                Op::Join { then, else_ } => {
-                    roots.extend(region(then, false));
-                    roots.extend(else_.and_then(|r| region(r, false)));
+        // Later iterations read dependencies across pending writes in this iteration.
+        for (mut roots, repeating) in [(repeating, true), (roots, false)] {
+            while let Some(node) = roots.pop() {
+                *budget = budget.checked_sub(1)?;
+                let slot = run.slot(node);
+                if (!repeating && produced[slot]) || seen[slot] {
+                    continue;
                 }
-                Op::Observe { then, else_ } => {
-                    roots.extend(then.and_then(|r| region(r, true)));
-                    roots.extend(else_.and_then(|r| region(r, true)));
+                seen[slot] = true;
+                let inputs = graph.inputs(node);
+                if roots.len() + inputs.len() > *budget {
+                    return None;
                 }
-                Op::And { rhs } | Op::Or { rhs } => roots.extend(region(rhs, false)),
-                Op::Result { .. } => roots.extend(region(run.region(), true)),
-                _ => {}
-            }
-            if roots.len() > *budget {
-                return None;
+                roots.extend_from_slice(inputs);
+                match graph.node(node).op {
+                    Op::Loop(id) => {
+                        let loop_ = graph.loop_(id);
+                        roots.push(loop_.index);
+                        roots.extend(
+                            loop_
+                                .carried
+                                .iter()
+                                .flat_map(|&(carry, next)| [carry, next]),
+                        );
+                        roots.extend(region(loop_.body, false));
+                        roots.extend(region(loop_.body, true));
+                    }
+                    Op::LoopValue { loop_, index } => {
+                        roots.push(graph.loop_(loop_).carried[index as usize].0);
+                    }
+                    Op::Join { then, else_ } => {
+                        roots.extend(region(then, false));
+                        roots.extend(else_.and_then(|r| region(r, false)));
+                    }
+                    Op::Observe { then, else_ } => {
+                        roots.extend(then.and_then(|r| region(r, true)));
+                        roots.extend(else_.and_then(|r| region(r, true)));
+                    }
+                    Op::And { rhs } | Op::Or { rhs } => roots.extend(region(rhs, false)),
+                    Op::Result { .. } => roots.extend(region(run.region(), true)),
+                    _ => {}
+                }
+                if roots.len() > *budget {
+                    return None;
+                }
             }
         }
         let slots: Box<_> = seen
