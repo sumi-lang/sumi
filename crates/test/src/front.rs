@@ -91,7 +91,8 @@ pub fn evidence_name(evidence: &ParseEvidence) -> String {
             | ParseRecoveryKind::Name
             | ParseRecoveryKind::Type
             | ParseRecoveryKind::Body
-            | ParseRecoveryKind::Boundary) => format!("Expected{kind:?}"),
+            | ParseRecoveryKind::Boundary
+            | ParseRecoveryKind::RangeOperator) => format!("Expected{kind:?}"),
             kind => format!("{kind:?}"),
         },
         ParseEvidence::Violation(violation) => format!("{:?}", violation.kind),

@@ -153,6 +153,7 @@ impl Snapshot<'_> {
                 codes::EXPECTED_TOKEN,
                 format!("expected {}", kind.describe()).into(),
             ),
+            ParseRecoveryKind::RangeOperator => (codes::EXPECTED_TOKEN, "expected `..`".into()),
             ParseRecoveryKind::Closer { pair, .. } => (
                 codes::EXPECTED_TOKEN,
                 format!("expected {}", pair.closer().kind().describe()).into(),

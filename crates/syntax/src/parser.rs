@@ -39,6 +39,8 @@ pub enum ParseRecoveryKind {
     Type,
     Body,
     Token(T),
+    /// `..`, which the lexer yields as two joint `.` tokens.
+    RangeOperator,
     /// The anchor is the gap where the closer is missing.
     Closer {
         pair: Pair,
@@ -777,7 +779,7 @@ enum ExprFollow {
 }
 
 fn expr_bp(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) -> Option<CompletedMarker> {
-    if follow == ExprFollow::Block && p.at(T::LBrace) && !block_starts_condition(p) {
+    if follow != ExprFollow::Anything && p.at(T::LBrace) && !block_starts_head(p, follow) {
         return None;
     }
     let mut lhs = prefix_or_atom(p, follow)?;
@@ -850,10 +852,11 @@ fn expr_bp(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) -> Option<Com
     Some(lhs)
 }
 
-fn block_starts_condition(p: &Marker<'_, '_>) -> bool {
+fn block_starts_head(p: &Marker<'_, '_>, follow: ExprFollow) -> bool {
     p.nth_partner(0).is_some_and(|close| {
         let next = close + 1;
         p.nth(next) == Some(T::LBrace)
+            || (follow == ExprFollow::Range && p.nth(next) == Some(T::Dot))
             || (!p.nth_boundary(next)
                 && ((!p.nth_newline(next) && p.nth(next) == Some(T::LParen))
                     || binary_op(p, next).is_some()))
@@ -923,22 +926,21 @@ fn for_expr(p: &mut Marker<'_, '_>) -> CompletedMarker {
     let mut m = p.start();
     m.token();
     name(&mut m);
-    if m.at(T::InKw) {
+    let written_in = m.at(T::InKw);
+    if written_in {
         m.token();
     } else {
         m.missing(ParseRecoveryKind::Token(T::InKw));
     }
-    let start = operand_before(&mut m, 0, ExprFollow::Range);
-    if m.at(T::Dot) && m.nth(1) == Some(T::Dot) && !m.joint() {
-        m.recover_tokens(ParseRecoveryKind::Unexpected, 2);
-    }
-    if m.at(T::Dot) {
-        m.token();
-        m.expect(T::Dot);
+    let (start, end) = if m.at(T::LBrace) && !block_starts_head(&m, ExprFollow::Range) {
+        // With `in` missing too, its evidence alone covers the absent range.
+        if written_in {
+            m.missing(ParseRecoveryKind::Expression);
+        }
+        (None, None)
     } else {
-        m.missing(ParseRecoveryKind::Token(T::Dot));
-    }
-    let end = operand_before(&mut m, 0, ExprFollow::Block);
+        range(&mut m)
+    };
     let body = if_block(&mut m);
     for (field, child) in [start, end, body].iter().enumerate() {
         if let Some(child) = child {
@@ -946,6 +948,20 @@ fn for_expr(p: &mut Marker<'_, '_>) -> CompletedMarker {
         }
     }
     m.complete(N::ForExpr)
+}
+
+fn range(p: &mut Marker<'_, '_>) -> (Option<CompletedMarker>, Option<CompletedMarker>) {
+    let start = operand_before(p, 0, ExprFollow::Range);
+    if p.at(T::Dot) && p.nth(1) == Some(T::Dot) && !p.joint() {
+        p.recover_tokens(ParseRecoveryKind::Unexpected, 2);
+    }
+    if p.at(T::Dot) {
+        p.token();
+        p.expect(T::Dot);
+    } else {
+        p.missing(ParseRecoveryKind::RangeOperator);
+    }
+    (start, operand_before(p, 0, ExprFollow::Block))
 }
 
 fn if_expr(p: &mut Marker<'_, '_>) -> CompletedMarker {
