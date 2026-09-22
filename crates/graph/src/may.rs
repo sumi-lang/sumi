@@ -231,6 +231,11 @@ impl Ints {
         let joined = match (&self.0, &other.0) {
             (_, None) => return false,
             (None, Some(_)) => other.clone(),
+            (Some(a), Some(b))
+                if a.lo <= b.lo && b.hi <= a.hi && (!a.hole || !other.contains_zero()) =>
+            {
+                return false;
+            }
             (Some(a), Some(b)) => {
                 let hole = !self.contains_zero() && !other.contains_zero();
                 Self::band(min(&a.lo, &b.lo).clone(), max(&a.hi, &b.hi).clone(), hole)
