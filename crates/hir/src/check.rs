@@ -9,10 +9,10 @@ use sumi_text::TextRange;
 
 use crate::codes;
 use crate::flows::{Demand, DemandKind};
-use crate::lower::{self, HeaderResult, Lowered, Source};
+use crate::lower::{self, Call, HeaderResult, Lowered, Source};
 use crate::recursion;
 use crate::typing::{Expected, Replay, Typing};
-use crate::{Analysis, Function, Signature, flows};
+use crate::{Analysis, Function, Ints, Signature, flows};
 
 pub fn analyze(parsed: ParsedSource) -> Analysis {
     let mut source = Source::new(&parsed);
@@ -219,7 +219,20 @@ fn divisions(
         } else {
             "divisor may be zero"
         };
-        let labels = explain_zero(graph, typing, lowered, obligation.divisor);
+        let labels = explain(
+            graph,
+            typing,
+            Some(&lowered.calls),
+            obligation.divisor,
+            Ints::contains_zero,
+            |ints, where_| {
+                if ints.is_zero() {
+                    format!("is 0{where_}")
+                } else {
+                    format!("may be 0{where_}: {ints}")
+                }
+            },
+        );
         source.report(
             source.range(obligation.node),
             codes::DIVISION_BY_ZERO,
@@ -229,34 +242,29 @@ fn divisions(
     }
 }
 
-fn explain_zero(
+/// Labels where `start`'s integers come from, crossing at most `HOPS` flows and none into a node
+/// whose integers `relevant` rejects. A parameter leads to its callers' arguments only with `calls`.
+pub(crate) fn explain(
     graph: &Graph,
     typing: &Typing,
-    lowered: &Lowered,
-    divisor: NodeId,
+    calls: Option<&[Call]>,
+    start: NodeId,
+    relevant: impl Fn(&Ints) -> bool,
+    describe: impl Fn(&Ints, &str) -> String,
 ) -> Vec<(TextRange, Box<str>)> {
     use std::collections::{HashSet, VecDeque};
 
-    use crate::Ints;
-
     const LABELS: usize = 4;
     const HOPS: usize = 6;
-    let describe = |ints: &Ints, where_: &str| {
-        if ints.is_zero() {
-            format!("is 0{where_}")
-        } else {
-            format!("may be 0{where_}: {ints}")
-        }
-    };
     let mut labels: Vec<(TextRange, Box<str>)> = Vec::new();
     let mut seen = HashSet::new();
-    let mut queue = VecDeque::from([(divisor, 0)]);
+    let mut queue = VecDeque::from([(start, 0)]);
     while let Some((node, hops)) = queue.pop_front() {
         if labels.len() >= LABELS || !seen.insert(node) {
             continue;
         }
         let may = typing.may(node);
-        if !may.ints.contains_zero() {
+        if !relevant(&may.ints) {
             continue;
         }
         let entry = graph.node(node);
@@ -337,13 +345,16 @@ fn explain_zero(
                 }
             }
             Op::Param { index, .. } => {
+                let Some(calls) = calls else {
+                    continue;
+                };
                 // Runs are contiguous in declaration order.
                 let callee = graph
                     .runs()
                     .partition_point(|run| run.entry().index() <= node.index())
                     - 1;
                 let callee = FunctionId::new(callee);
-                for call in lowered.calls.iter().filter(|call| call.callee == callee) {
+                for call in calls.iter().filter(|call| call.callee == callee) {
                     if labels.len() >= LABELS {
                         break;
                     }
@@ -352,7 +363,7 @@ fn explain_zero(
                     }
                     let arg = graph.inputs(call.node)[index as usize];
                     let delivered = typing.may(arg);
-                    if delivered.ints.contains_zero() {
+                    if relevant(&delivered.ints) {
                         labels.push((
                             graph.reads(call.node)[index as usize],
                             format!("argument {}", describe(&delivered.ints, "")).into(),
