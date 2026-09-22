@@ -59,3 +59,23 @@ pub(crate) fn signal<'s>(
         blank_before_token: newlines >= 2 && !last && !leading && retained(),
     }
 }
+
+/// Per gap, saturating: one per line break, two per comment. A gap whose trivia, with any it
+/// merges, weighs under two has the default signal.
+pub(crate) fn marks(lexed: &LexedFile, input: &ParserInput) -> Vec<u8> {
+    let mut marks = vec![0u8; input.len() + 1];
+    let mut gap = 0;
+    for kind in lexed.kinds() {
+        let weight = match kind {
+            SyntaxKind::Newline => 1,
+            SyntaxKind::LineComment => 2,
+            kind if kind.is_trivia() => continue,
+            _ => {
+                gap += 1;
+                continue;
+            }
+        };
+        marks[gap] = marks[gap].saturating_add(weight);
+    }
+    marks
+}

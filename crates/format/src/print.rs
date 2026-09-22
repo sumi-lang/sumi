@@ -8,7 +8,7 @@ use sumi_syntax::{ParserInput, SigIdx};
 use sumi_text::{TextEdit, TextRange};
 
 use crate::plan::{Breaks, Closer, Flat, Group, INDENT, Plan, WIDTH};
-use crate::trivia::signal;
+use crate::trivia::{GapSignal, marks, signal};
 
 /// `gap` indexes the plan's gaps.
 pub(crate) struct GapEdit {
@@ -25,8 +25,15 @@ pub(crate) fn print(
     let n = input.len();
     let raw_of = |sig: usize| input.token(SigIdx::new(sig as u32));
     let token_text = |sig: usize| lexed.text(source, raw_of(sig));
-    let width = |text: &str| text.chars().count();
+    let width = |text: &str| {
+        if text.is_ascii() {
+            text.len()
+        } else {
+            text.chars().count()
+        }
+    };
 
+    let token_width: Vec<u32> = (0..n).map(|sig| width(token_text(sig)) as u32).collect();
     let mut hard_before = vec![0u32; n + 2];
     for gap in 0..=n {
         hard_before[gap + 1] = hard_before[gap] + u32::from(plan.gaps[gap].breaks == Breaks::Hard);
@@ -61,6 +68,7 @@ pub(crate) fn print(
             .sum()
     };
 
+    let marks = marks(lexed, input);
     let mut broken = vec![false; plan.groups.len()];
     let mut stack: Vec<usize> = Vec::new();
     let mut next_group = 0;
@@ -116,7 +124,7 @@ pub(crate) fn print(
                         break;
                     }
                     if !plan.layout_comma[k] {
-                        w += width(token_text(k));
+                        w += token_width[k] as usize;
                     }
                     if column + w > WIDTH {
                         fits = false;
@@ -144,17 +152,28 @@ pub(crate) fn print(
                 Breaks::Soft => stack.last().is_some_and(|&open| broken[open]),
                 Breaks::Hard => true,
             };
-            let sig = signal(source, lexed, input, gap, trivia_tokens(gap));
+            let merged = if gap > 0 && plan.layout_comma[gap - 1] {
+                marks[gap - 1]
+            } else {
+                0
+            };
+            let sig = if marks[gap].saturating_add(merged) >= 2 {
+                signal(source, lexed, input, gap, trivia_tokens(gap))
+            } else {
+                GapSignal::default()
+            };
             out.clear();
             if plan_gap.closer == Some(Closer::List) && breaks {
                 out.push(',');
             }
-            let extra = stack
-                .iter()
-                .filter(|&&open| broken[open] && plan.groups[open].in_tail(gap as u32))
-                .count() as u32;
+            let extra = || {
+                stack
+                    .iter()
+                    .filter(|&&open| broken[open] && plan.groups[open].in_tail(gap as u32))
+                    .count() as u32
+            };
             let indent = |out: &mut String, level: u32| {
-                for _ in 0..level + extra {
+                for _ in 0..level + extra() {
                     out.push_str(INDENT);
                 }
             };
@@ -200,7 +219,7 @@ pub(crate) fn print(
             });
         }
         if gap < n && !plan.layout_comma[gap] {
-            column += width(token_text(gap));
+            column += token_width[gap] as usize;
         }
     }
     edits

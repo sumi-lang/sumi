@@ -120,6 +120,7 @@ pub(crate) fn plan(lexed: &LexedFile, parse: &Parse) -> Plan {
         gaps: vec![Gap::glue(0); n + 1],
         groups: Vec::new(),
         layout_comma: vec![false; n],
+        pool: Vec::new(),
     };
     planner.source_file();
     planner.freeze(lexed, parse);
@@ -190,6 +191,7 @@ struct Planner<'a> {
     gaps: Vec<Gap>,
     groups: Vec<Group>,
     layout_comma: Vec<bool>,
+    pool: Vec<Vec<El>>,
 }
 
 impl Planner<'_> {
@@ -208,8 +210,13 @@ impl Planner<'_> {
         }
     }
 
-    fn elements(&self, node: NodeIdx) -> Vec<El> {
-        let mut els = Vec::new();
+    fn release(&mut self, mut els: Vec<El>) {
+        els.clear();
+        self.pool.push(els);
+    }
+
+    fn elements(&mut self, node: NodeIdx) -> Vec<El> {
+        let mut els = self.pool.pop().unwrap_or_default();
         let mut cursor = self.first_sig(node);
         let end = self.end_sig(node);
         for child in self.tree.children(node) {
@@ -319,6 +326,7 @@ impl Planner<'_> {
                 self.children(&els, level);
             }
         }
+        self.release(els);
     }
 
     fn pairs(&mut self, els: &[El], rule: impl Fn(El, El) -> Gap) {
@@ -460,6 +468,7 @@ impl Planner<'_> {
                     if child_kind == NodeKind::BinaryExpr && self.power_of(child) == power {
                         let child_els = self.elements(child);
                         self.binary(child, &child_els, level, Some(cont));
+                        self.release(child_els);
                         continue;
                     }
                     self.node(child, level);
@@ -483,8 +492,11 @@ impl Planner<'_> {
         binary_operator(first, glued).map(|(op, _)| op.binding_power().0)
     }
 
-    fn power_of(&self, node: NodeIdx) -> Option<u8> {
-        self.power(&self.elements(node))
+    fn power_of(&mut self, node: NodeIdx) -> Option<u8> {
+        let els = self.elements(node);
+        let power = self.power(&els);
+        self.release(els);
+        power
     }
 
     fn freeze(&mut self, lexed: &LexedFile, parse: &Parse) {
