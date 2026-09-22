@@ -21,8 +21,9 @@ pub(crate) struct ItemRep<'s> {
     /// Each subtree node in preorder: its kind, extent, and range in erased token indices relative
     /// to the item.
     nodes: Vec<(NodeKind, u32, u32, u32)>,
-    /// The gaps around an erased comma count as one.
-    gaps: Vec<GapSignal<'s>>,
+    /// Each gap with a signal, by its erased index relative to the item; the gaps around an erased
+    /// comma count as one.
+    gaps: Vec<(u32, GapSignal<'s>)>,
 }
 
 /// `lexed` and `parse` must be the products of `source`.
@@ -91,7 +92,8 @@ pub fn rep<'s>(source: &'s str, lexed: &LexedFile, parse: &Parse) -> Rep<'s> {
             .collect();
         let gaps = (first as usize + 1..end as usize)
             .filter(|&gap| !erased[gap])
-            .map(signal_of)
+            .map(|gap| (erased_index(gap as u32) - base, signal_of(gap)))
+            .filter(|(_, signal)| *signal != GapSignal::default())
             .collect();
         items.push(ItemRep {
             kind: tree.kind(item),

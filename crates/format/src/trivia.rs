@@ -33,10 +33,11 @@ pub(crate) fn signal<'s>(
     gap: usize,
     trivia: impl Iterator<Item = RawIdx>,
 ) -> GapSignal<'s> {
-    let retained = retains_blank(input, gap);
     let last = gap == input.len();
     let mut comments = Vec::new();
     let mut newlines = 0usize;
+    let mut retained = None;
+    let mut retained = || *retained.get_or_insert_with(|| retains_blank(input, gap));
     for raw in trivia {
         match lexed.kind(raw) {
             SyntaxKind::Newline => newlines += 1,
@@ -45,7 +46,7 @@ pub(crate) fn signal<'s>(
                 comments.push(Comment {
                     text: lexed.text(source, raw),
                     trailing: first && gap > 0 && newlines == 0,
-                    blank_before: retained && !(gap == 0 && first) && newlines >= 2,
+                    blank_before: newlines >= 2 && !(gap == 0 && first) && retained(),
                 });
                 newlines = 0;
             }
@@ -55,6 +56,6 @@ pub(crate) fn signal<'s>(
     let leading = gap == 0 && comments.is_empty();
     GapSignal {
         comments,
-        blank_before_token: !last && !leading && retained && newlines >= 2,
+        blank_before_token: newlines >= 2 && !last && !leading && retained(),
     }
 }
