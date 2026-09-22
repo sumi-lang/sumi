@@ -74,8 +74,8 @@
     "build:integration": "esbuild test/integration/extension.test.ts --bundle --external:vscode --format=cjs --platform=node --outfile=out/test/extension.test.js",
     "typecheck": "tsc --noEmit",
     "test": "bun test test/extension.test.ts",
-    "test:integration": "cargo build --manifest-path ../../Cargo.toml -p sumi-lsp && bun run build && vscode-test",
-    "package": "bun run build && mkdir -p dist && bunx vsce package --no-dependencies --out dist/sumi-language-$(bun -p 'require(\"./package.json\").version').vsix",
+    "test:integration": "cargo build --manifest-path ../../Cargo.toml -p sumi-lsp && bun run build && bun --bun run vscode-test",
+    "package": "bun run build && mkdir -p dist && bunx --bun vsce package --no-dependencies --out dist/sumi-language-$(bun -p 'require(\"./package.json\").version').vsix",
     "check": "bun run typecheck && bun run test && bun run package"
   },
   "devDependencies": {
