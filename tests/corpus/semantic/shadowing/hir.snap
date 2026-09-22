@@ -41,3 +41,7 @@ fn innermosts@217..254 () -> int ∈ [18, 18]
   result: copy : int @236..239
     value: call innermost@101..216 : int @242..254
       arg[0]: int 5 : int @252..253
+
+== semantic diagnostics ==
+warning[semantic/unused-function]: function `shadow` is never called
+  primary @3..9

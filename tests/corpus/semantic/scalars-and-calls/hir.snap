@@ -49,3 +49,9 @@ fn ordered@212..255 () -> int ∈ [-1, -1]
           lhs: int 2 : int @246..247
           rhs: int 1 : int @250..251
       rhs: int 4 : int @254..255
+
+== semantic diagnostics ==
+warning[semantic/unused-function]: function `cafe` is never called
+  primary @93..97
+warning[semantic/unused-function]: function `ignore` is never called
+  primary @123..129

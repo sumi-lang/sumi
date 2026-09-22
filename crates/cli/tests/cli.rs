@@ -67,11 +67,12 @@ fn diagnostic_output_is_one_plain_line() {
 
 #[test]
 fn warnings_are_reported_without_failing() {
+    let source = "fn f(x: int) -> int = 1\nfn main() -> int = f(2)\n";
     let warning = "case.su:1:6: warning[semantic/unused-name]: parameter `x` is never read\n";
-    let (_dir, output) = check(b"fn f(x: int) -> int = 1");
+    let (_dir, output) = check(source.as_bytes());
     assert_eq!(output.status.code(), Some(0));
     assert_eq!(String::from_utf8(output.stderr).unwrap(), warning);
-    let output = run("fn f(x: int) -> int = 1\nfn main() -> int = f(2)\n");
+    let output = run(source);
     assert_eq!(output.status.code(), Some(0));
     assert_eq!(String::from_utf8(output.stdout).unwrap(), "1\n");
     assert_eq!(String::from_utf8(output.stderr).unwrap(), warning);
@@ -342,7 +343,8 @@ fn run_needs_a_parameterless_main() {
         ),
         (
             "fn main(x: int) -> int = x\n",
-            "case.su:1:1: error[cli/main-parameters]: `main` takes arguments; `sumi run` passes none\n",
+            "case.su:1:4: warning[semantic/unused-function]: function `main` is never called\n\
+             case.su:1:1: error[cli/main-parameters]: `main` takes arguments; `sumi run` passes none\n",
         ),
     ] {
         let output = run(source);

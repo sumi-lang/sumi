@@ -252,6 +252,8 @@ warning[semantic/unreachable-code]: unreachable code
 warning[semantic/unreachable-code]: unreachable code
   primary @441..443
   secondary @360..436: no path continues past this
+warning[semantic/unused-function]: function `divide` is never called
+  primary @449..455
 warning[semantic/unreachable-code]: unreachable code
   primary @669..674
   secondary @658..664: no path continues past this
@@ -264,3 +266,5 @@ warning[semantic/unused-name]: local `unused` is never read
 warning[semantic/unreachable-code]: unreachable code
   primary @884..886
   secondary @837..879: no path continues past this
+warning[semantic/unused-function]: function `choose` is never called
+  primary @948..954

@@ -70,3 +70,5 @@ fn spins@299..319 () -> unit ∈ unit
 == semantic diagnostics ==
 warning[semantic/constant-condition]: condition is always false
   primary @167..188
+warning[semantic/unused-function]: function `maybe` is never called
+  primary @203..208

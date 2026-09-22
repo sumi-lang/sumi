@@ -305,3 +305,5 @@ warning[semantic/constant-condition]: condition is always true
   secondary @1086..1091: this branch never runs
   secondary @1028..1029: is 1
   secondary @1052..1053: is 2
+warning[semantic/unused-function]: function `exact_read` is never called
+  primary @1206..1216

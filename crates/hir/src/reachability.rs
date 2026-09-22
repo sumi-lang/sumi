@@ -1,5 +1,5 @@
 //! Warnings about what holds whatever a function is called with: a condition that always decides
-//! the same way, and code after a statement that never completes.
+//! the same way, code after a statement that never completes, and a function no call reaches.
 
 use std::collections::HashSet;
 
@@ -49,6 +49,7 @@ pub(crate) fn warn(
     lowered: &Lowered,
     headers: &[Header],
 ) {
+    unused_functions(source, graph, lowered, headers);
     // A site is reported only where the program reaches it and both solves decide it, so whether
     // the second solve runs never changes what is reported.
     let conditions: Vec<_> = conditions(graph)
@@ -160,6 +161,41 @@ pub(crate) fn warn(
             "unreachable code",
             [(before.range, Box::from("no path continues past this"))],
         );
+    }
+}
+
+/// A function with parameters that no chain of calls from a parameterless one reaches. A call in
+/// a branch that never runs still counts, so the verdict never rests on values.
+fn unused_functions(source: &mut Source<'_>, graph: &Graph, lowered: &Lowered, headers: &[Header]) {
+    let mut reached: Vec<bool> = graph
+        .runs()
+        .iter()
+        .map(|run| run.params().len() == 0)
+        .collect();
+    let mut callees = vec![Vec::new(); reached.len()];
+    for call in &lowered.calls {
+        callees[call.caller.index()].push(call.callee.index());
+    }
+    let mut queue: Vec<usize> = (0..reached.len()).filter(|&f| reached[f]).collect();
+    while let Some(function) = queue.pop() {
+        for &callee in &callees[function] {
+            if !reached[callee] {
+                reached[callee] = true;
+                queue.push(callee);
+            }
+        }
+    }
+    for (header, reached) in headers.iter().zip(reached) {
+        let name = header.name.expect("a valid file names its functions");
+        let text = name.text(source.parsed.source());
+        if !reached && !text.starts_with('_') {
+            source.report(
+                name,
+                codes::UNUSED_FUNCTION,
+                format!("function `{text}` is never called"),
+                [],
+            );
+        }
     }
 }
 
