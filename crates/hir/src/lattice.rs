@@ -203,12 +203,7 @@ impl Lattice for Product {
     }
 
     fn join(&mut self, other: &Self) -> bool {
-        let types = self.types.join(&other.types);
-        let ints = self.values.ints.join(&other.values.ints);
-        let bools = self.values.bools.join(other.values.bools);
-        let unit = !self.values.unit && other.values.unit;
-        self.values.unit |= other.values.unit;
-        types | ints | bools | unit
+        self.types.join(&other.types) | self.values.join(&other.values)
     }
 
     /// Only values climb: type claims are finite, so `Peer` carries nothing.
@@ -262,6 +257,14 @@ impl Lattice for Product {
             Edge::Enter => May::of_unit(values.live()),
         };
         Self { types, values }
+    }
+
+    fn widens(edge: &Edge) -> bool {
+        matches!(edge, Edge::Call(_))
+    }
+
+    fn widens_pair(pair: &Pair) -> bool {
+        matches!(pair, Pair::Argument | Pair::Backedge)
     }
 
     fn combine(&self, pair: &Pair, other: &Self, cyclic: bool, cx: &Thresholds) -> Self {

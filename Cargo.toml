@@ -9,3 +9,7 @@ license = "UPL-1.0"
 criterion = { package = "codspeed-criterion-compat", version = "5.0.1", default-features = false, features = ["cargo_bench_support"] }
 proptest = "1.11.0"
 tempfile = "3.27.0"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1

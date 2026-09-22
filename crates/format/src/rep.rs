@@ -5,7 +5,7 @@
 use sumi_lexer::LexedFile;
 use sumi_syntax::{NodeIdx, NodeKind, Parse, SigIdx, SyntaxKind};
 
-use crate::trivia::{GapSignal, signal};
+use crate::trivia::{GapSignal, marks, signal};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Rep<'s> {
@@ -57,6 +57,15 @@ pub fn rep<'s>(source: &'s str, lexed: &LexedFile, parse: &Parse) -> Rep<'s> {
         let range = input.trivia_before(SigIdx::new(gap as u32));
         range.start.until(range.end)
     };
+    let marks = marks(lexed, input);
+    let marked = |gap: usize| {
+        let before_comma = if gap > 0 && erased[gap - 1] {
+            marks[gap - 1]
+        } else {
+            0
+        };
+        marks[gap].saturating_add(before_comma) >= 2
+    };
     let signal_of = |gap: usize| {
         let before_comma = (gap > 0 && erased[gap - 1]).then(|| trivia(gap - 1));
         let tokens = before_comma.into_iter().flatten().chain(trivia(gap));
@@ -91,7 +100,7 @@ pub fn rep<'s>(source: &'s str, lexed: &LexedFile, parse: &Parse) -> Rep<'s> {
             })
             .collect();
         let gaps = (first as usize + 1..end as usize)
-            .filter(|&gap| !erased[gap])
+            .filter(|&gap| !erased[gap] && marked(gap))
             .map(|gap| (erased_index(gap as u32) - base, signal_of(gap)))
             .filter(|(_, signal)| *signal != GapSignal::default())
             .collect();

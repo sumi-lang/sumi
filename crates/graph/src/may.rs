@@ -231,6 +231,11 @@ impl Ints {
         let joined = match (&self.0, &other.0) {
             (_, None) => return false,
             (None, Some(_)) => other.clone(),
+            (Some(a), Some(b))
+                if a.lo <= b.lo && b.hi <= a.hi && (!a.hole || !other.contains_zero()) =>
+            {
+                return false;
+            }
             (Some(a), Some(b)) => {
                 let hole = !self.contains_zero() && !other.contains_zero();
                 Self::band(min(&a.lo, &b.lo).clone(), max(&a.hi, &b.hi).clone(), hole)
@@ -590,6 +595,15 @@ impl May {
     #[inline]
     pub fn live(&self) -> bool {
         !self.ints.is_empty() || !self.bools.is_empty() || self.unit
+    }
+
+    /// True when `self` grew.
+    pub fn join(&mut self, other: &Self) -> bool {
+        let ints = self.ints.join(&other.ints);
+        let bools = self.bools.join(other.bools);
+        let unit = !self.unit && other.unit;
+        self.unit |= other.unit;
+        ints | bools | unit
     }
 
     pub fn shown(&self, ty: Ty) -> Shown<'_> {
