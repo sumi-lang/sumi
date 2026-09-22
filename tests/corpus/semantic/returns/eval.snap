@@ -1,8 +1,8 @@
 file: accepted
-optimized: nodes 121 of 172, regions 20 of 22, calls 4 of 5
+optimized: nodes 119 of 172, regions 20 of 22, calls 2 of 5
 fn callee = 4 (steps 2, optimized 2, depth 1 of at most 1)
 fn nested = 3 (steps 2, optimized 2, depth 1 of at most 1)
-fn boundary = 5 (steps 6, optimized 5, depth 2 of at most 2)
+fn boundary = 5 (steps 6, optimized 1, depth 2 of at most 2)
 fn lazy_skips = 5 (steps 5, optimized 4, depth 1 of at most 1)
 fn lazy_takes = 7 (steps 3, optimized 2, depth 1 of at most 1)
 fn ordered = 9 (steps 2, optimized 2, depth 1 of at most 1)

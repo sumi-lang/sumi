@@ -1,5 +1,5 @@
 file: accepted
-optimized: nodes 52 of 82, regions 12 of 14, calls 5 of 5
+optimized: nodes 40 of 82, regions 12 of 14, calls 0 of 5
 fn parameter: takes arguments, not run
 fn binding = 2 (steps 2, optimized 1, depth 1 of at most 1)
 fn silenced: takes arguments, not run
@@ -10,4 +10,4 @@ fn dead_read: takes arguments, not run
 fn local_taken: takes arguments, not run
 fn _six = 6 (steps 2, optimized 1, depth 1 of at most 1)
 fn function_taken: takes arguments, not run
-fn caller = 18 (steps 24, optimized 16, depth 3 of at most 3)
+fn caller = 18 (steps 24, optimized 1, depth 3 of at most 3)

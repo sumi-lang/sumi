@@ -1,13 +1,13 @@
 file: accepted
-optimized: nodes 248 of 386, regions 32 of 40, calls 0 of 0
+optimized: nodes 244 of 386, regions 31 of 40, calls 0 of 0
 fn sum = 10 (steps 26, optimized 19, depth 1 of at most 1)
 fn empty = 13 (steps 13, optimized 8, depth 1 of at most 1)
-fn bounds = 234 (steps 35, optimized 25, depth 1 of at most 1)
+fn bounds = 234 (steps 35, optimized 22, depth 1 of at most 1)
 fn nested = 145 (steps 53, optimized 46, depth 1 of at most 1)
 fn shadowing = 12 (steps 9, optimized 8, depth 1 of at most 1)
-fn returned = 12 (steps 16, optimized 15, depth 1 of at most 1)
+fn returned = 12 (steps 16, optimized 14, depth 1 of at most 1)
 fn skipped_return = 8 (steps 6, optimized 4, depth 1 of at most 1)
-fn guarded = 0 (steps 72, optimized 59, depth 1 of at most 1)
+fn guarded = 0 (steps 72, optimized 53, depth 1 of at most 1)
 fn carried_guard = 0 (steps 65, optimized 50, depth 1 of at most 1)
 fn positive_index = 22 (steps 23, optimized 19, depth 1 of at most 1)
 fn after_assignment = 3 (steps 16, optimized 12, depth 1 of at most 1)

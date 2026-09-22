@@ -1,13 +1,13 @@
 file: accepted
-optimized: nodes 24 of 49, regions 11 of 16, calls 4 of 9
-fn value = 1 (steps 2, optimized 2, depth 2 of at most 2)
+optimized: nodes 22 of 49, regions 11 of 16, calls 0 of 9
+fn value = 1 (steps 2, optimized 1, depth 2 of at most 2)
 fn forward = 1 (steps 1, optimized 1, depth 1 of at most 1)
-fn explicit = 1 (steps 4, optimized 3, depth 3 of at most 3)
+fn explicit = 1 (steps 4, optimized 1, depth 3 of at most 3)
 fn recursive = 1 (steps 3, optimized 1, depth 1 of at most 1)
 fn anchored = 1 (steps 4, optimized 1, depth 1 of at most 1)
-fn inferred = 1 (steps 5, optimized 2, depth 2 of at most 2)
+fn inferred = 1 (steps 5, optimized 1, depth 2 of at most 2)
 fn integer = 1 (steps 1, optimized 1, depth 1 of at most 1)
 fn boolean = true (steps 1, optimized 1, depth 1 of at most 2)
 fn empty = unit (steps 1, optimized 1, depth 1 of at most 1)
-fn chained = 2 (steps 6, optimized 4, depth 2 of at most 2)
+fn chained = 2 (steps 6, optimized 1, depth 2 of at most 2)
 fn discards = unit (steps 2, optimized 1, depth 1 of at most 2)
