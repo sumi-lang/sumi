@@ -305,7 +305,7 @@ fn guards(analysis: &Analysis, mut node: NodeId) -> (Vec<String>, NodeId) {
                 guards.push(format!("is {value}"));
                 node = graph.inputs(node)[0];
             }
-            Op::Assign { declaration } => {
+            Op::Assign { declaration } | Op::Carry { declaration } => {
                 return (guards, declaration);
             }
             _ => return (guards, node),
@@ -371,6 +371,10 @@ fn dump_definition(
         Op::Copy { .. } => "copy".into(),
         Op::Assign { declaration } => format!("assign {}", named(analysis, *declaration)),
         Op::Phi { declaration, .. } => format!("phi {}", named(analysis, *declaration)),
+        Op::LoopIndex => "loop index".into(),
+        Op::Carry { declaration } => format!("carry {}", named(analysis, *declaration)),
+        Op::Loop(_) => "loop".into(),
+        Op::LoopValue { index, .. } => format!("loop value {index}"),
         Op::Neg => "negate".into(),
         Op::Not => "not".into(),
         Op::Binary(op) => format!("eager {}", operator(*op)),
@@ -425,8 +429,30 @@ fn dump_definition(
                 );
             }
         }
-        Op::Copy { .. } | Op::Assign { .. } => {
+        Op::Copy { .. } | Op::Assign { .. } | Op::Carry { .. } => {
             dump_node(analysis, shape, "value", inputs[0], child, out)
+        }
+        Op::LoopIndex => {
+            dump_node(analysis, shape, "start", inputs[0], child, out);
+            dump_node(analysis, shape, "end", inputs[1], child, out);
+        }
+        Op::Loop(id) => {
+            let loop_ = graph.loop_(*id);
+            dump_node(analysis, shape, "start", inputs[0], child, out);
+            dump_node(analysis, shape, "end", inputs[1], child, out);
+            dump_region(analysis, shape, "body", loop_.body, child, out);
+            for (index, &(_, next)) in loop_.carried.iter().enumerate() {
+                dump_node(analysis, shape, &format!("next[{index}]"), next, child, out);
+            }
+        }
+        Op::LoopValue { .. } => {
+            writeln!(
+                out,
+                "{}loop: {}",
+                "  ".repeat(child),
+                at(graph.node(inputs[0]).origin)
+            )
+            .unwrap();
         }
         Op::Phi { .. } => {
             dump_node(analysis, shape, "condition", inputs[0], child, out);

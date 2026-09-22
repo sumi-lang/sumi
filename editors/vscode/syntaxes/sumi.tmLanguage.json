@@ -126,7 +126,7 @@
       "patterns": [
         {
           "name": "keyword.control.sumi",
-          "match": "\\b(?:else|if|return)\\b"
+          "match": "\\b(?:else|for|if|in|return)\\b"
         },
         {
           "name": "keyword.declaration.sumi",
@@ -170,7 +170,7 @@
       "patterns": [
         {
           "name": "keyword.operator.sumi",
-          "match": "->|==|!=|<=|>=|&&|\\|\\||[=<>!+\\-*/%&|]"
+          "match": "\\.\\.|->|==|!=|<=|>=|&&|\\|\\||[=<>!+\\-*/%&|]"
         }
       ]
     },

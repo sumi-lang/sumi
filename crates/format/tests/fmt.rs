@@ -45,6 +45,22 @@ fn blocks_are_vertical_and_else_chains_stay_chains() {
 }
 
 #[test]
+fn for_headers_glue_ranges_and_indent_bodies() {
+    check(
+        "fn f(){for i in start() .. end() {use(i)}}",
+        "fn f() {\n    for i in start()..end() {\n        use(i)\n    }\n}\n",
+    );
+    check(
+        "fn f() = apply(for i in 2..7 {use(i)})",
+        "fn f() = apply(for i in 2..7 {\n    use(i)\n})\n",
+    );
+    check(
+        "fn f() = for i in {2}..{7} {use(i)}",
+        "fn f() = for i in {\n    2\n}..{\n    7\n} {\n    use(i)\n}\n",
+    );
+}
+
+#[test]
 fn items_are_separated_by_lines_and_blank_lines_are_retained_singly() {
     check(
         "// header\n\n\nfn f() {}\n\n\nfn g() = 1\n// tail\n",

@@ -301,6 +301,15 @@ impl Planner<'_> {
                 self.pairs(&els, |_, _| Gap::space(level));
                 self.children(&els, level);
             }
+            NodeKind::ForExpr => {
+                self.pairs(&els, |a, b| match (a, b) {
+                    (El::Tok(_, SyntaxKind::Dot), _) | (_, El::Tok(_, SyntaxKind::Dot)) => {
+                        Gap::glue(level)
+                    }
+                    _ => Gap::space(level),
+                });
+                self.children(&els, level);
+            }
             NodeKind::Name
             | NodeKind::TypeRef
             | NodeKind::NameRef
@@ -402,7 +411,7 @@ impl Planner<'_> {
 
     fn opens_block(&self, node: NodeIdx) -> bool {
         match self.tree.kind(node) {
-            NodeKind::Block | NodeKind::IfExpr => true,
+            NodeKind::Block | NodeKind::IfExpr | NodeKind::ForExpr => true,
             NodeKind::ClosureExpr => self
                 .tree
                 .children(node)

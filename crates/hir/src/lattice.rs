@@ -1,10 +1,10 @@
 //! The [`Lattice`] the solver carries: per class, the best claim of each scalar type and the
-//! [`May`] values, crossing the same [`Edge`]s and [`Pair`]s. A call or argument edge that closes a cycle rounds
-//! the ints to the thresholds, so every ascending chain is finite.
+//! [`May`] values, crossing the same [`Edge`]s and [`Pair`]s. Calls, arguments, and loop backedges
+//! round cyclic integer flows to thresholds, so every ascending chain is finite.
 
 use std::num::NonZeroU32;
 
-use sumi_graph::{BinaryOp, CmpOp, Domain, May, Thresholds, Ty};
+use sumi_graph::{BinaryOp, CmpOp, Domain, Ints, May, Thresholds, Ty};
 
 use crate::solver::{Carry, Lattice};
 
@@ -160,6 +160,8 @@ pub(crate) enum Pair {
     Then,
     Else,
     Argument,
+    Backedge,
+    Range,
 }
 
 impl Pair {
@@ -175,8 +177,8 @@ pub(crate) struct Product {
     pub values: May,
 }
 
-/// A body's flow graph is acyclic, so every cycle crosses a call and an argument edge; rounding
-/// those two keeps every chain finite.
+/// Every value cycle crosses a call, an argument, or a loop backedge; rounding there keeps every
+/// ascending chain finite.
 fn rounded(values: &May, cyclic: bool, cx: &Thresholds) -> May {
     if cyclic {
         May {
@@ -229,8 +231,8 @@ impl Lattice for Product {
             Pair::Lazy { .. } | Pair::Then | Pair::Else => [Carry::Nothing; 2],
             Pair::Binary(BinaryOp::Arith(_)) => [Carry::Grows; 2],
             Pair::Binary(BinaryOp::Cmp(_)) => [Carry::Nothing; 2],
-            Pair::Refine { .. } => [Carry::Passes; 2],
-            Pair::Branch | Pair::Forward | Pair::Outcome | Pair::Argument => {
+            Pair::Refine { .. } | Pair::Range => [Carry::Passes; 2],
+            Pair::Branch | Pair::Forward | Pair::Outcome | Pair::Argument | Pair::Backedge => {
                 [Carry::Passes, Carry::Nothing]
             }
         }
@@ -266,9 +268,13 @@ impl Lattice for Product {
         let types = match *pair {
             Pair::Refine { .. } | Pair::Branch | Pair::Forward => self.types,
             Pair::Outcome => Evidence::NONE,
-            Pair::Binary(_) | Pair::Lazy { .. } | Pair::Then | Pair::Else | Pair::Argument => {
-                Evidence::NONE
-            }
+            Pair::Binary(_)
+            | Pair::Lazy { .. }
+            | Pair::Then
+            | Pair::Else
+            | Pair::Argument
+            | Pair::Backedge
+            | Pair::Range => Evidence::NONE,
         };
         let (values, second) = (&self.values, &other.values);
         let values = match *pair {
@@ -287,6 +293,7 @@ impl Lattice for Product {
             } => values.refine(op, local_is_lhs, sense, second),
             Pair::Then => May::of_unit(values.bools.may_true() && second.live()),
             Pair::Else => May::of_unit(values.bools.may_false() && second.live()),
+            Pair::Range => May::ints(Ints::range(&values.ints, &second.ints)),
             Pair::Branch | Pair::Forward | Pair::Outcome => {
                 if second.live() {
                     values.clone()
@@ -294,7 +301,7 @@ impl Lattice for Product {
                     May::NONE
                 }
             }
-            Pair::Argument => {
+            Pair::Argument | Pair::Backedge => {
                 if second.live() {
                     rounded(values, cyclic, cx)
                 } else {

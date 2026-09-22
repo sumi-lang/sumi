@@ -1,0 +1,77 @@
+== tree ==
+SourceFile! 0..238
+  FnItem! 0..237
+    Name 3..4 "f"
+    ParamList 4..6 "()"
+    Block! 7..237
+      ForExpr 13..82
+        Name 17..18 "i"
+        CallExpr 30..37
+          NameRef 30..35 "lower"
+          ArgList 35..37 "()"
+        CallExpr 48..55
+          NameRef 48..53 "upper"
+          ArgList 53..55 "()"
+        Block 60..82
+          CallExpr 70..76
+            NameRef 70..73 "use"
+            ArgList 73..76
+              NameRef 74..75 "i"
+      ForExpr 87..114
+        Name 91..92 "j"
+        PrefixExpr 96..98
+          LiteralExpr 97..98 "2"
+        PrefixExpr 109..111
+          LiteralExpr 110..111 "1"
+        Block 112..114 "{}"
+      ForExpr 119..164
+        Name 123..124 "k"
+        Block 128..133
+          LiteralExpr 130..131 "1"
+        Block 144..149
+          LiteralExpr 146..147 "4"
+        Block 154..164
+          CallExpr 156..162
+            NameRef 156..159 "use"
+            ArgList 159..162
+              NameRef 160..161 "k"
+      ForExpr! 169..186
+        Name 173..174 "m"
+        LiteralExpr 178..179 "0"
+        NameRef 181..186 "limit"
+      ParenExpr 191..197
+        NameRef 192..196 "next"
+      Block 202..204 "{}"
+      ForExpr 209..235
+        Name 213..214 "n"
+        LiteralExpr 218..219 "0"
+        CallExpr 221..232
+          NameRef 221..226 "limit"
+          ArgList 226..232
+            NameRef 227..231 "next"
+        Block 233..235 "{}"
+
+== evidence ==
+Expected(LBrace) at 191
+
+== diagnostics ==
+error[syntax/expected-token] 14:5: expected `{`
+
+== formatted ==
+fn f() {
+    for i in lower()..upper() {
+        use(i)
+    }
+    for j in -2..-1 {}
+    for k in {
+        1
+    }..{
+        4
+    } {
+        use(k)
+    }
+    for m in 0..limit
+    (next)
+    {}
+    for n in 0..limit(next) {}
+}

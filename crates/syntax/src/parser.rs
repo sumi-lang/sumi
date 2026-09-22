@@ -688,6 +688,10 @@ fn operand_before(
     min_bp: u8,
     follow: ExprFollow,
 ) -> Option<CompletedMarker> {
+    if follow == ExprFollow::Range && p.at(T::Dot) {
+        p.missing(ParseRecoveryKind::Expression);
+        return None;
+    }
     if let Some(expression) = expr_bp(p, min_bp, follow) {
         return Some(expression);
     }
@@ -769,6 +773,7 @@ fn garbage_in_expression(p: &Marker<'_, '_>, follow: ExprFollow) -> bool {
 enum ExprFollow {
     Anything,
     Block,
+    Range,
 }
 
 fn expr_bp(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) -> Option<CompletedMarker> {
@@ -784,6 +789,9 @@ fn expr_bp(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) -> Option<Com
             break;
         }
         if follow == ExprFollow::Block && p.at(T::LBrace) {
+            break;
+        }
+        if follow == ExprFollow::Range && p.at(T::Dot) {
             break;
         }
         // `newline`, not `boundary`: parentheses suspend boundaries, but a `(` on a new line is
@@ -899,6 +907,7 @@ fn prefix_or_atom(p: &mut Marker<'_, '_>, follow: ExprFollow) -> Option<Complete
         }
         T::LBrace => block(p),
         T::IfKw => if_expr(p),
+        T::ForKw => for_expr(p),
         T::FnKw => closure_expr(p, follow),
         _ => return None,
     })
@@ -908,6 +917,35 @@ fn leaf(p: &mut Marker<'_, '_>, kind: N) -> CompletedMarker {
     let mut m = p.start();
     m.token();
     m.complete(kind)
+}
+
+fn for_expr(p: &mut Marker<'_, '_>) -> CompletedMarker {
+    let mut m = p.start();
+    m.token();
+    name(&mut m);
+    if m.at(T::InKw) {
+        m.token();
+    } else {
+        m.missing(ParseRecoveryKind::Token(T::InKw));
+    }
+    let start = operand_before(&mut m, 0, ExprFollow::Range);
+    if m.at(T::Dot) && m.nth(1) == Some(T::Dot) && !m.joint() {
+        m.recover_tokens(ParseRecoveryKind::Unexpected, 2);
+    }
+    if m.at(T::Dot) {
+        m.token();
+        m.expect(T::Dot);
+    } else {
+        m.missing(ParseRecoveryKind::Token(T::Dot));
+    }
+    let end = operand_before(&mut m, 0, ExprFollow::Block);
+    let body = if_block(&mut m);
+    for (field, child) in [start, end, body].iter().enumerate() {
+        if let Some(child) = child {
+            m.field(child, field as u8 + 1);
+        }
+    }
+    m.complete(N::ForExpr)
 }
 
 fn if_expr(p: &mut Marker<'_, '_>) -> CompletedMarker {

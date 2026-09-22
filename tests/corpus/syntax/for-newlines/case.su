@@ -1,0 +1,17 @@
+fn f() {
+    for i in
+        lower()
+        ..upper()
+    {
+        use(i)
+    }
+    for j in -2..
+        -1 {}
+    for k in { 1 }..
+        { 4 }
+    { use(k) }
+    for m in 0..limit
+    (next)
+    {}
+    for n in 0..limit(next) {}
+}

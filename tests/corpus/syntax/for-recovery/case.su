@@ -1,0 +1,13 @@
+fn missing_name() = for in 2..7 {}
+fn missing_in() = for i 2..7 {}
+fn missing_start() = for i in ..7 {}
+fn missing_end() = for i in 2.. {}
+fn missing_range() = for i in 2 7 {}
+fn missing_dot() = for i in 2.7 {}
+fn split_dots() = for i in 2. .7 {}
+fn commented_dots() = for i in 2. // split
+    .7 {}
+fn inclusive() = for i in 2..=7 {}
+fn missing_body() = for i in 2..7
+fn no_range_value() = 2..7
+fn after() = 42

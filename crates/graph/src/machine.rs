@@ -11,6 +11,14 @@ use suspend::Suspensions;
 enum Control {
     Eval(NodeId),
     Apply(NodeId),
+    LoopBounds(NodeId),
+    LoopStart(NodeId),
+    LoopNext(NodeId),
+    LoopRebind(NodeId),
+    LoopValue {
+        node: NodeId,
+        from: NodeId,
+    },
     /// `&&` when `and`, else `||`, once its left operand is in.
     Lazy {
         node: NodeId,
@@ -129,7 +137,7 @@ impl<'a> Machine<'a> {
         machine
     }
 
-    /// Values computed so far, one per node evaluated per frame; binding a parameter is not one.
+    /// Values computed so far; parameter, loop-index, and carry bindings are not computations.
     pub fn steps(&self) -> u64 {
         self.steps
     }
@@ -152,7 +160,7 @@ impl<'a> Machine<'a> {
         self.outcome.as_ref()
     }
 
-    /// Consuming execution may reuse storage; stepping retains every intermediate value and frame.
+    /// Consuming execution may reuse frame storage; both modes reuse loop-body slots each iteration.
     pub fn run(mut self) -> Result<Value, Refusal> {
         if let Some(outcome) = self.outcome {
             return outcome;
@@ -269,7 +277,20 @@ impl<'a> Machine<'a> {
                 }
                 let inputs = self.graph.inputs(node);
                 match self.graph.node(node).op {
-                    Op::Param { .. } => unreachable!("a parameter is bound on entry"),
+                    Op::Param { .. } | Op::LoopIndex | Op::Carry { .. } => {
+                        unreachable!("parameters and loop headers are bound on entry")
+                    }
+                    Op::Loop(_) => {
+                        self.control.push(Control::LoopBounds(node));
+                        for &input in inputs.iter().rev() {
+                            self.control.push(Control::Eval(input));
+                        }
+                    }
+                    Op::LoopValue { loop_, index } => {
+                        let from = self.graph.loop_(loop_).carried[index as usize].0;
+                        self.control.push(Control::LoopValue { node, from });
+                        self.control.push(Control::Eval(inputs[0]));
+                    }
                     Op::Hole => return Err(Refusal::Hole(node)),
                     Op::Entry | Op::Then | Op::Else | Op::Unused => {
                         unreachable!("a context or a statement is not a value")
@@ -335,6 +356,94 @@ impl<'a> Machine<'a> {
                     }
                 }
             }
+            Control::LoopBounds(node) => {
+                let [start, end] = *self.graph.inputs(node) else {
+                    unreachable!()
+                };
+                if !matches!(
+                    (self.value(start), self.value(end)),
+                    (Value::Int(_), Value::Int(_))
+                ) {
+                    return Err(Refusal::Type(node));
+                }
+                let Op::Loop(id) = self.graph.node(node).op else {
+                    unreachable!()
+                };
+                self.control.push(Control::LoopStart(node));
+                for &(carry, _) in self.graph.loop_(id).carried.iter().rev() {
+                    self.control
+                        .push(Control::Eval(self.graph.inputs(carry)[0]));
+                }
+            }
+            Control::LoopStart(node) | Control::LoopRebind(node) => {
+                let Op::Loop(id) = self.graph.node(node).op else {
+                    unreachable!()
+                };
+                let loop_ = self.graph.loop_(id);
+                let initial = matches!(control, Control::LoopStart(_));
+                let Value::Int(index) = self.value(if initial {
+                    self.graph.inputs(node)[0]
+                } else {
+                    loop_.index
+                }) else {
+                    unreachable!()
+                };
+                let index = if initial {
+                    index.clone()
+                } else {
+                    index + &1.into()
+                };
+                let values: Vec<_> = loop_
+                    .carried
+                    .iter()
+                    .map(|&(carry, next)| {
+                        self.value(if initial {
+                            self.graph.inputs(carry)[0]
+                        } else {
+                            next
+                        })
+                        .clone()
+                    })
+                    .collect();
+                for body_node in self.graph.region(loop_.body).nodes() {
+                    let slot = self.index(body_node);
+                    self.slots[slot] = None;
+                }
+                for (&(carry, _), value) in loop_.carried.iter().zip(values) {
+                    let slot = self.index(carry);
+                    self.slots[slot] = Some(value);
+                }
+                let Value::Int(end) = self.value(self.graph.inputs(node)[1]) else {
+                    unreachable!()
+                };
+                let more = index < *end;
+                let slot = self.index(loop_.index);
+                self.slots[slot] = Some(Value::Int(index));
+                if more {
+                    self.control.push(Control::LoopNext(node));
+                    self.control
+                        .push(Control::Eval(self.graph.region(loop_.body).result()));
+                    if let Some(control) = self.graph.region(loop_.body).control() {
+                        self.control.push(Control::Eval(control));
+                    }
+                } else {
+                    self.fill(node, Value::Unit);
+                }
+            }
+            Control::LoopNext(node) => {
+                let Op::Loop(id) = self.graph.node(node).op else {
+                    unreachable!()
+                };
+                let loop_ = self.graph.loop_(id);
+                if self.value(self.graph.region(loop_.body).result()) != &Value::Unit {
+                    return Err(Refusal::Type(node));
+                }
+                self.control.push(Control::LoopRebind(node));
+                for &(_, next) in loop_.carried.iter().rev() {
+                    self.control.push(Control::Eval(next));
+                }
+            }
+            Control::LoopValue { node, from } => self.fill(node, self.value(from).clone()),
             Control::Apply(node) => {
                 let op = &self.graph.node(node).op;
                 let value = match *self.graph.inputs(node) {
@@ -538,6 +647,239 @@ mod tests {
     fn push(builder: &mut GraphBuilder, op: Op, inputs: &[NodeId]) -> NodeId {
         let inputs = inputs.iter().map(|&node| (node, at())).collect::<Vec<_>>();
         builder.push(op, &inputs, at(), None)
+    }
+
+    #[test]
+    fn loops_bind_simultaneously_and_survive_suspension() {
+        for (start, end, expected) in [(2, 2, 29), (4, 2, 29), (2, 5, 92)] {
+            for returning in [false, true] {
+                let mut builder = GraphBuilder::new(400);
+                let leaf = builder.function();
+                let caller = builder.function();
+                let callee = builder.declare(leaf, Box::new([crate::Ty::Int]));
+                let run = builder.open_run(leaf);
+                let entry = push(&mut builder, Op::Entry, &[]);
+                let param = push(
+                    &mut builder,
+                    Op::Param {
+                        index: 0,
+                        ty: Some(crate::Ty::Int),
+                    },
+                    &[],
+                );
+                let region = builder.open(entry);
+                builder.enter(region);
+                builder.close(region, param);
+                builder.close_run(run, region, param);
+                let run = builder.open_run(caller);
+                let entry = push(&mut builder, Op::Entry, &[]);
+                let region = builder.open(entry);
+                builder.enter(region);
+                for _ in 0..300 {
+                    push(&mut builder, Op::Int(0.into()), &[]);
+                }
+                let start = push(&mut builder, Op::Int(start.into()), &[]);
+                let end = push(&mut builder, Op::Int(end.into()), &[]);
+                let a = push(&mut builder, Op::Int(2.into()), &[]);
+                let b = push(&mut builder, Op::Int(9.into()), &[]);
+                let body = builder.open(entry);
+                builder.enter(body);
+                let index = push(&mut builder, Op::LoopIndex, &[start, end]);
+                let ca = push(&mut builder, Op::Carry { declaration: a }, &[a]);
+                let cb = push(&mut builder, Op::Carry { declaration: b }, &[b]);
+                let next = push(&mut builder, Op::Call(callee), &[ca]);
+                let unit = push(&mut builder, Op::Unit, &[entry]);
+                let control = returning.then(|| push(&mut builder, Op::Return, &[index, entry]));
+                builder.close_with_control(body, unit, true, control);
+                let id = builder.push_loop(crate::Loop {
+                    body,
+                    index,
+                    carried: Box::new([(ca, cb), (cb, next)]),
+                    continuation: entry,
+                    empty: entry,
+                });
+                let loop_node = push(&mut builder, Op::Loop(id), &[start, end]);
+                let va = push(
+                    &mut builder,
+                    Op::LoopValue {
+                        loop_: id,
+                        index: 0,
+                    },
+                    &[loop_node],
+                );
+                let vb = push(
+                    &mut builder,
+                    Op::LoopValue {
+                        loop_: id,
+                        index: 1,
+                    },
+                    &[loop_node],
+                );
+                let ten = push(&mut builder, Op::Int(10.into()), &[]);
+                let tens = push(
+                    &mut builder,
+                    Op::Binary(BinaryOp::Arith(ArithOp::Mul)),
+                    &[va, ten],
+                );
+                let result = push(
+                    &mut builder,
+                    Op::Binary(BinaryOp::Arith(ArithOp::Add)),
+                    &[tens, vb],
+                );
+                builder.close(region, result);
+                builder.close_run(run, region, result);
+                let graph = builder.finish();
+                let mut stepped = Machine::new(&graph, caller, &[], None);
+                let mut computed = 0;
+                while stepped.step().is_none() {
+                    computed += u64::from(stepped.latest().is_some());
+                }
+                assert_eq!(computed, stepped.steps());
+                let expected = if returning && expected == 92 {
+                    2
+                } else {
+                    expected
+                };
+                assert_eq!(stepped.outcome(), Some(&Ok(Value::Int(expected.into()))));
+                let mut fast = Machine::new(&graph, caller, &[], None);
+                let mut packed = false;
+                let outcome = loop {
+                    packed |= fast
+                        .control
+                        .iter()
+                        .any(|c| matches!(c, Control::ResumePackedCaller(_)));
+                    if let Some(outcome) = fast.advance::<true>() {
+                        break outcome;
+                    }
+                };
+                assert_eq!(stepped.outcome(), Some(&outcome));
+                assert_eq!(stepped.steps(), fast.steps());
+                assert_eq!(stepped.max_depth(), fast.max_depth());
+                if expected == 92 {
+                    assert!(packed);
+                }
+            }
+        }
+    }
+
+    fn counting_loop(
+        builder: &mut GraphBuilder,
+        entry: NodeId,
+        bounds: [NodeId; 2],
+        nested: bool,
+    ) -> NodeId {
+        let zero = push(builder, Op::Int(0.into()), &[]);
+        let body = builder.open(entry);
+        builder.enter(body);
+        let index = push(builder, Op::LoopIndex, &bounds);
+        let carry = push(builder, Op::Carry { declaration: zero }, &[zero]);
+        let increment = if nested {
+            let two = push(builder, Op::Int(2.into()), &[]);
+            counting_loop(builder, entry, [zero, two], false)
+        } else {
+            push(builder, Op::Int(1.into()), &[])
+        };
+        let next = push(
+            builder,
+            Op::Binary(BinaryOp::Arith(ArithOp::Add)),
+            &[carry, increment],
+        );
+        let unit = push(builder, Op::Unit, &[entry]);
+        builder.close(body, unit);
+        let id = builder.push_loop(crate::Loop {
+            body,
+            index,
+            carried: Box::new([(carry, next)]),
+            continuation: entry,
+            empty: entry,
+        });
+        let node = push(builder, Op::Loop(id), &bounds);
+        push(
+            builder,
+            Op::LoopValue {
+                loop_: id,
+                index: 0,
+            },
+            &[node],
+        )
+    }
+
+    #[test]
+    fn nested_loops_reset_only_their_body_and_use_mathematical_bounds() {
+        let mut builder = GraphBuilder::new(40);
+        let function = builder.function();
+        let run = builder.open_run(function);
+        let entry = push(&mut builder, Op::Entry, &[]);
+        let region = builder.open(entry);
+        builder.enter(region);
+        let start = push(
+            &mut builder,
+            Op::Int("18446744073709551616".parse().unwrap()),
+            &[],
+        );
+        let end = push(
+            &mut builder,
+            Op::Int("18446744073709551619".parse().unwrap()),
+            &[],
+        );
+        let result = counting_loop(&mut builder, entry, [start, end], true);
+        builder.close(region, result);
+        builder.close_run(run, region, result);
+        let graph = builder.finish();
+        let mut stepped = Machine::new(&graph, function, &[], None);
+        let mut bounds_seen = Vec::new();
+        while stepped.step().is_none() {
+            if let Some(Value::Int(value)) = stepped.latest()
+                && value > &100.into()
+            {
+                bounds_seen.push(value.to_string());
+            }
+        }
+        assert_eq!(
+            bounds_seen,
+            ["18446744073709551616", "18446744073709551619"]
+        );
+        assert_eq!(stepped.outcome(), Some(&Ok(Value::Int(6.into()))));
+        assert_eq!(
+            Machine::new(&graph, function, &[], None).run(),
+            Ok(Value::Int(6.into()))
+        );
+    }
+
+    #[test]
+    fn loop_bounds_refuse_types_and_preserve_fault_order() {
+        for ops in [
+            [Op::Bool(false), Op::Int(2.into())],
+            [Op::Int(0.into()), Op::Bool(true)],
+            [Op::Hole, Op::Hole],
+            [Op::Int(0.into()), Op::Hole],
+        ] {
+            let mut builder = GraphBuilder::new(20);
+            let function = builder.function();
+            let run = builder.open_run(function);
+            let entry = push(&mut builder, Op::Entry, &[]);
+            let region = builder.open(entry);
+            builder.enter(region);
+            let bounds = ops.clone().map(|op| push(&mut builder, op, &[]));
+            let result = counting_loop(&mut builder, entry, bounds, false);
+            builder.close(region, result);
+            builder.close_run(run, region, result);
+            let graph = builder.finish();
+            let loop_node = graph.inputs(result)[0];
+            let expected = ops
+                .iter()
+                .position(|op| matches!(op, Op::Hole))
+                .map_or(Refusal::Type(loop_node), |index| {
+                    Refusal::Hole(bounds[index])
+                });
+            let mut stepped = Machine::new(&graph, function, &[], None);
+            while stepped.step().is_none() {}
+            assert_eq!(stepped.outcome(), Some(&Err(expected)));
+            assert_eq!(
+                Machine::new(&graph, function, &[], None).run(),
+                Err(expected)
+            );
+        }
     }
 
     #[test]

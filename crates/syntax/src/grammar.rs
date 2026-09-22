@@ -106,7 +106,10 @@ impl fmt::Display for Literal {
 pub fn starts_expression(kind: SyntaxKind) -> bool {
     is_literal(kind)
         || is_prefix_operator(kind)
-        || matches!(kind, T::Ident | T::FnKw | T::IfKw | T::LParen | T::LBrace)
+        || matches!(
+            kind,
+            T::Ident | T::FnKw | T::IfKw | T::ForKw | T::LParen | T::LBrace
+        )
 }
 
 /// Statement starters that are not expression starters.

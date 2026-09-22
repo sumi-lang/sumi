@@ -671,6 +671,30 @@ fn typed(analysis: &Analysis) {
                 | Op::Result { .. } => continue,
                 Op::Hole => panic!("a hole in a complete function"),
                 Op::Int(_) => assert_eq!(own, Some(Ty::Int)),
+                Op::LoopIndex => {
+                    assert_eq!(own, Some(Ty::Int));
+                    for (position, &input) in inputs.iter().enumerate() {
+                        if values[position] {
+                            assert_eq!(ty(input), Some(Ty::Int));
+                        }
+                    }
+                }
+                Op::Carry { declaration } => {
+                    assert_eq!(own, ty(*declaration));
+                    assert_eq!(own, ty(inputs[0]));
+                }
+                Op::Loop(id) => {
+                    assert_eq!(own, Some(Ty::Unit));
+                    let body = graph.region(graph.loop_(*id).body);
+                    if values.iter().all(|&value| value) && body.result_has_value() {
+                        assert_eq!(ty(body.result()), Some(Ty::Unit));
+                    }
+                }
+                Op::LoopValue { loop_, index } => {
+                    let (header, next) = graph.loop_(*loop_).carried[*index as usize];
+                    assert_eq!(own, ty(header));
+                    assert_eq!(own, ty(next));
+                }
                 Op::Bool(_) => assert_eq!(own, Some(Ty::Bool)),
                 Op::Unit => assert_eq!(own, Some(Ty::Unit)),
                 Op::Unused => {
@@ -824,6 +848,8 @@ fn graph(analysis: &Analysis) {
             | Op::Unused
             | Op::Copy { .. }
             | Op::Assign { .. }
+            | Op::Carry { .. }
+            | Op::LoopValue { .. }
             | Op::Neg
             | Op::Not
             | Op::Exactly(_) => Some(1),
@@ -831,6 +857,8 @@ fn graph(analysis: &Analysis) {
             Op::And { .. } | Op::Or { .. } | Op::Join { .. } => Some(1),
             Op::Observe { .. } => Some(2),
             Op::Binary(_)
+            | Op::LoopIndex
+            | Op::Loop(_)
             | Op::Refine { .. }
             | Op::Then
             | Op::Else
@@ -858,7 +886,7 @@ fn graph(analysis: &Analysis) {
         if node.name.is_some() {
             assert!(matches!(
                 node.op,
-                Op::Param { .. } | Op::Copy { .. } | Op::Hole
+                Op::Param { .. } | Op::Copy { .. } | Op::Hole | Op::LoopIndex
             ));
         }
         if analysis.is_valid() {
@@ -944,7 +972,7 @@ fn graph(analysis: &Analysis) {
             assert_eq!(owner[reference.index()], owner[node.index()]);
         };
         match &graph.node(node).op {
-            Op::Assign { declaration } => check(*declaration),
+            Op::Assign { declaration } | Op::Carry { declaration } => check(*declaration),
             Op::Phi {
                 declaration,
                 contexts,
@@ -953,6 +981,26 @@ fn graph(analysis: &Analysis) {
                 contexts.iter().copied().for_each(check);
             }
             _ => {}
+        }
+    }
+    for id in graph.loop_ids() {
+        let loop_ = graph.loop_(id);
+        let body = graph.region(loop_.body);
+        let nodes: Vec<_> = body.nodes().collect();
+        assert!(nodes.contains(&loop_.index));
+        assert!(matches!(graph.node(loop_.index).op, Op::LoopIndex));
+        assert_eq!(
+            owner[loop_.index.index()],
+            owner[loop_.continuation.index()]
+        );
+        assert_eq!(owner[loop_.index.index()], owner[loop_.empty.index()]);
+        for &(header, next) in &loop_.carried {
+            assert!(nodes.contains(&header));
+            assert!(matches!(graph.node(header).op, Op::Carry { .. }));
+            assert_eq!(owner[header.index()], owner[next.index()]);
+            assert_eq!(owner[header.index()], owner[loop_.index.index()]);
+            assert_eq!(graph.inputs(header).len(), 1);
+            assert!(graph.inputs(header)[0].index() < loop_.index.index());
         }
     }
     let mut spans: Vec<(usize, usize)> = Vec::new();
@@ -1070,11 +1118,13 @@ pub fn run(program: Program<'_>) -> Runs {
         }
         for args in tuples {
             let mut machine = program.machine(id, &args);
+            let mut remaining = STEPS;
             let outcome = loop {
                 if let Some(outcome) = machine.step() {
                     break Some(outcome.clone());
                 }
-                if machine.steps() >= STEPS || machine.latest().is_some_and(too_wide) {
+                remaining -= 1;
+                if remaining == 0 || machine.latest().is_some_and(too_wide) {
                     break None;
                 }
             };

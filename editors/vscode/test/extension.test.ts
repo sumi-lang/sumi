@@ -87,6 +87,16 @@ describe("extension contributions", () => {
 });
 
 describe("TextMate grammar", () => {
+  test("scopes bounded for loops without matching keyword prefixes", () => {
+    const lines = tokenize("for i in first..finish { forward(index) }");
+    for (const keyword of ["for", "in"]) {
+      expect(scopesAt(lines, 0, keyword)).toContain("keyword.control.sumi");
+    }
+    expect(scopesAt(lines, 0, "..")).toContain("keyword.operator.sumi");
+    expect(scopesAt(lines, 0, "index")).toContain("variable.other.readwrite.sumi");
+    expect(scopesAt(lines, 0, "forward")).toContain("entity.name.function.call.sumi");
+  });
+
   test("scopes the current declarations, assignment, literals, calls, and comments", () => {
     const lines = tokenize(
       [
@@ -153,7 +163,7 @@ const punctuation = [...tokenDeclaration.matchAll(/^\s+\w+: punct '(.)',$/gm)].m
 
 describe("compiler vocabulary synchronization", () => {
   test("reads every keyword and punctuation from the lexer declaration", () => {
-    expect(keywords).toEqual(["_", "else", "false", "fn", "if", "let", "mut", "return", "true"]);
+    expect(keywords).toEqual(["_", "else", "false", "fn", "for", "if", "in", "let", "mut", "return", "true"]);
     expect(punctuation).toEqual([
       "(",
       ")",

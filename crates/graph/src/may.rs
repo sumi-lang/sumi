@@ -159,6 +159,14 @@ impl From<Int> for Ints {
 impl Ints {
     pub const EMPTY: Self = Self(None);
 
+    /// The hull of indices in every start-inclusive, end-exclusive range of the two sets.
+    pub fn range(start: &Self, end: &Self) -> Self {
+        let (Some(start), Some(end)) = (&start.0, &end.0) else {
+            return Self::EMPTY;
+        };
+        Self::band(start.lo.clone(), end.hi.pred(), false)
+    }
+
     fn band(mut lo: Bound, mut hi: Bound, hole: bool) -> Self {
         if hole {
             if lo.sign() == Ordering::Equal {
@@ -749,6 +757,22 @@ mod tests {
             _ => Bound::Finite(text.parse().unwrap()),
         };
         Ints::band(bound(lo), bound(hi), hole)
+    }
+
+    #[test]
+    fn loop_ranges_use_outer_endpoints_without_zero_holes() {
+        for (start, end, expected) in [
+            ("[2, 8]", "[4, 12]", "[2, 11]"),
+            ("[8, 9]", "[1, 8]", "∅"),
+            ("[9, 10]", "[-2, 8]", "∅"),
+            ("∅", "[1, 8]", "∅"),
+            ("[1, 8]", "∅", "∅"),
+            ("[-3, 5] \\ 0", "[-2, 9] \\ 0", "[-3, 8]"),
+            ("[-inf, 4]", "[2, inf]", "[-inf, inf]"),
+            ("[3, inf]", "[-inf, 7]", "[3, 6]"),
+        ] {
+            assert_eq!(Ints::range(&ints(start), &ints(end)), ints(expected));
+        }
     }
 
     #[test]
