@@ -1,19 +1,20 @@
 file: accepted
-fn guarded = false (steps 3, depth 1 of at most 1)
-fn dead_branch = 1 (steps 4, depth 1 of at most 1)
-fn nested_dead = 3 (steps 4, depth 1 of at most 1)
+optimized: nodes 161 of 193, regions 41 of 41, calls 17 of 17
+fn guarded = false (steps 3, optimized 2, depth 1 of at most 1)
+fn dead_branch = 1 (steps 4, optimized 3, depth 1 of at most 1)
+fn nested_dead = 3 (steps 4, optimized 3, depth 1 of at most 1)
 fn safe: takes arguments, not run
-fn signed = 0 (steps 29, depth 2 of at most 2)
+fn signed = 0 (steps 29, optimized 23, depth 2 of at most 2)
 fn positive: takes arguments, not run
-fn positives = 13 (steps 18, depth 2 of at most 2)
+fn positives = 13 (steps 18, optimized 14, depth 2 of at most 2)
 fn nonzero: takes arguments, not run
-fn nonzeros = 1 (steps 18, depth 2 of at most 2)
+fn nonzeros = 1 (steps 18, optimized 14, depth 2 of at most 2)
 fn either: takes arguments, not run
-fn either_sign = 0 (steps 12, depth 2 of at most 2)
+fn either_sign = 0 (steps 12, optimized 9, depth 2 of at most 2)
 fn even: takes arguments, not run
 fn odd: takes arguments, not run
 fn pass: takes arguments, not run
-fn parity = true (steps 169, depth 17 of at most 34)
+fn parity = true (steps 169, optimized 124, depth 17 of at most 34)
 fn bounded: takes arguments, not run
-fn boundeds = -13 (steps 39, depth 2 of at most 2)
-fn dead_else = 7 (steps 4, depth 1 of at most 1)
+fn boundeds = -13 (steps 39, optimized 29, depth 2 of at most 2)
+fn dead_else = 7 (steps 4, optimized 3, depth 1 of at most 1)

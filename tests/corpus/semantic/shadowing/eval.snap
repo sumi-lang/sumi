@@ -1,4 +1,5 @@
 file: accepted
+optimized: nodes 16 of 28, regions 3 of 3, calls 1 of 1
 fn shadow: takes arguments, not run
 fn innermost: takes arguments, not run
-fn innermosts = 18 (steps 14, depth 2 of at most 2)
+fn innermosts = 18 (steps 14, optimized 9, depth 2 of at most 2)

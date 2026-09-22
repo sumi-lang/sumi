@@ -1,5 +1,6 @@
 file: accepted
+optimized: nodes 32 of 36, regions 4 of 4, calls 3 of 3
 fn pair: takes arguments, not run
-fn left_to_right = 154 (steps 20, depth 2 of at most 2)
-fn operands = 87 (steps 12, depth 1 of at most 1)
-fn truthy = true (steps 6, depth 1 of at most 1)
+fn left_to_right = 154 (steps 20, optimized 16, depth 2 of at most 2)
+fn operands = 87 (steps 12, optimized 11, depth 1 of at most 1)
+fn truthy = true (steps 6, optimized 5, depth 1 of at most 1)

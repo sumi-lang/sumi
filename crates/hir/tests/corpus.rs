@@ -26,6 +26,22 @@ fn run(source: &str) -> String {
         return "file: rejected (see hir.snap); nothing runs\n".to_owned();
     };
     let mut out = "file: accepted\n".to_owned();
+    let compiled = program.compile();
+    let count = |graph: &Graph| {
+        let calls = graph
+            .nodes()
+            .iter()
+            .filter(|node| matches!(node.op, Op::Call(_)))
+            .count();
+        (graph.nodes().len(), graph.region_ids().len(), calls)
+    };
+    let (before, after) = (count(analysis.graph()), count(compiled.graph()));
+    writeln!(
+        out,
+        "optimized: nodes {} of {}, regions {} of {}, calls {} of {}",
+        after.0, before.0, after.1, before.1, after.2, before.2
+    )
+    .unwrap();
     for (id, function) in program.functions() {
         let name = analysis.text(function.name().expect("a valid file names its functions"));
         if !program.signature(id).params.is_empty() {
@@ -40,10 +56,18 @@ fn run(source: &str) -> String {
                 Some(Err(refusal)) => panic!("fn {name} was refused: {refusal:?}"),
             }
         };
+        let mut optimized = compiled.machine(id, &[]);
+        let outcome = loop {
+            if let Some(outcome) = optimized.step() {
+                break outcome.clone();
+            }
+        };
+        assert_eq!(outcome, Ok(value.clone()), "optimized fn {name}");
         write!(
             out,
-            "fn {name} = {value} (steps {}, depth {}",
+            "fn {name} = {value} (steps {}, optimized {}, depth {}",
             machine.steps(),
+            optimized.steps(),
             machine.max_depth()
         )
         .unwrap();

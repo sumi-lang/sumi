@@ -241,6 +241,11 @@ impl Region {
         (self.nodes.start as usize..self.nodes.end as usize).map(NodeId::new)
     }
 
+    /// The index in node order where the region begins, which an empty region has too.
+    pub fn start(&self) -> usize {
+        self.nodes.start as usize
+    }
+
     pub fn result(&self) -> NodeId {
         self.result
     }
@@ -689,6 +694,7 @@ mod tests {
         builder.close_run(run, region, param);
         let graph = builder.finish();
         assert_eq!(graph.region(region).nodes().len(), 0);
+        assert_eq!(graph.region(region).start(), 2);
         assert_eq!(graph.region(region).result(), param);
     }
 

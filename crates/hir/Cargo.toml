@@ -8,6 +8,7 @@ license.workspace = true
 rustc-hash = "2.1.3"
 sumi-frontend = { path = "../frontend" }
 sumi-graph = { path = "../graph" }
+sumi-opt = { path = "../opt" }
 sumi-lexer = { path = "../lexer" }
 sumi-syntax = { path = "../syntax" }
 sumi-text = { path = "../text" }

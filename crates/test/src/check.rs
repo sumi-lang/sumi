@@ -5,7 +5,7 @@ use std::collections::HashSet;
 
 use sumi_format::{Formatted, rep};
 use sumi_frontend::{ParsedSource, codes, parse_source};
-use sumi_hir::{Analysis, Program};
+use sumi_hir::{Analysis, Compiled, NodeId, Program};
 use sumi_lexer::{LexedFile, RawIdx, SyntaxKind, TokenFlags, lex};
 use sumi_syntax::ast::TokenRule;
 use sumi_syntax::{
@@ -1159,6 +1159,8 @@ pub fn run(program: Program<'_>) -> Runs {
     let narrow = -&wide;
     let too_wide = |value: &Value| matches!(value, Value::Int(v) if *v > wide || *v < narrow);
     let mut runs = Runs::default();
+    let compiled = program.compile();
+    optimized(&compiled);
     for (id, _) in program.functions() {
         let signature = program.signature(id);
         let ranges = program.ranges(id);
@@ -1220,6 +1222,36 @@ pub fn run(program: Program<'_>) -> Runs {
             };
             assert_eq!(program.machine(id, &args).run(), Ok(value.clone()));
             assert_eq!(program.evaluate(id, &args), value);
+            let mut optimized = compiled.machine(id, &args);
+            let optimized_outcome = loop {
+                if let Some(outcome) = optimized.step() {
+                    break outcome.clone();
+                }
+                assert!(
+                    optimized.steps() <= machine.steps(),
+                    "optimized f{}({args:?}) outran its original",
+                    id.index()
+                );
+                if let Some((node, value)) = optimized.latest() {
+                    assert!(
+                        holds(compiled.may(node), value),
+                        "optimized f{}({args:?}) computed {value} at {node:?}, from {:?}, \
+                         outside {:?}",
+                        id.index(),
+                        compiled.origin(node),
+                        compiled.may(node)
+                    );
+                }
+            };
+            assert_eq!(
+                optimized_outcome,
+                Ok(value.clone()),
+                "optimized f{}({args:?})",
+                id.index()
+            );
+            assert!(optimized.max_depth() <= machine.max_depth());
+            assert_eq!(compiled.machine(id, &args).run(), Ok(value.clone()));
+            assert_eq!(compiled.evaluate(id, &args), value);
             assert_eq!(value.ty(), signature.result);
             assert!(
                 holds(&ranges.result, &value),
@@ -1303,5 +1335,55 @@ fn dead_code_stays_dead(program: Program<'_>) {
                 }
             }
         }
+    }
+}
+
+/// An optimized graph computes each original node at most once, keeps every run's parameters,
+/// holds no copy, narrowed read, or statement, and names a context wherever the analysis's does.
+fn optimized(compiled: &Compiled<'_>) {
+    use sumi_hir::Op;
+
+    let graph = compiled.graph();
+    let context = |node| {
+        matches!(
+            graph.node(node).op,
+            Op::Entry | Op::Then | Op::Else | Op::After
+        )
+    };
+    let mut origins = HashSet::new();
+    for node in graph.node_ids() {
+        assert!(
+            origins.insert(compiled.origin(node).index()),
+            "two optimized nodes compute {:?}",
+            compiled.origin(node)
+        );
+        let op = &graph.node(node).op;
+        let inputs = graph.inputs(node);
+        let dropped = match op {
+            Op::Unused => true,
+            Op::Copy { .. } | Op::Assign { .. } | Op::Refine { .. } | Op::Exactly(_) => {
+                graph.input_values(node)[0]
+            }
+            _ => false,
+        };
+        assert!(!dropped, "an optimized graph holds {op:?}");
+        let contexts: &[NodeId] = match op {
+            Op::Return | Op::Observe { .. } => &inputs[1..],
+            Op::Unit | Op::Then | Op::Else | Op::After => &inputs[inputs.len() - 1..],
+            _ => &[],
+        };
+        assert!(
+            contexts.iter().all(|&input| context(input)),
+            "{op:?} names no context"
+        );
+    }
+    for (id, _) in compiled.program().functions() {
+        assert_eq!(
+            graph.run(id).params().len(),
+            compiled.program().signature(id).params.len()
+        );
+    }
+    for region in graph.region_ids() {
+        assert!(context(graph.region(region).context));
     }
 }

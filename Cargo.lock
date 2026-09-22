@@ -781,6 +781,7 @@ dependencies = [
  "sumi-frontend",
  "sumi-graph",
  "sumi-lexer",
+ "sumi-opt",
  "sumi-syntax",
  "sumi-test",
  "sumi-text",
@@ -806,6 +807,14 @@ dependencies = [
  "sumi-format",
  "sumi-frontend",
  "sumi-hir",
+ "sumi-text",
+]
+
+[[package]]
+name = "sumi-opt"
+version = "0.1.0"
+dependencies = [
+ "sumi-graph",
  "sumi-text",
 ]
 
