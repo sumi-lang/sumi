@@ -233,35 +233,57 @@ impl<L: Lattice> Solver<L> {
         let components = self::components(n, &arcs);
         let count = components.count();
         let mut inside = vec![false; count];
-        let mut grows_inside = false;
+        let mut grows_in = vec![false; count];
         for (&(provider, consumer), &(index, _)) in arcs.iter().zip(&outgoing.links) {
             let component = components.of[consumer as usize];
             if components.of[provider as usize] == component {
                 inside[component as usize] = true;
-                grows_inside |= self.flows[index as usize].grows();
+                grows_in[component as usize] |= self.flows[index as usize].grows();
             }
         }
         // Cycles of values are SCCs of the carrying arcs alone: a cycle closed through an arc that
-        // carries nothing must not widen.
-        let values = grows_inside.then(|| {
-            let mut carrying: Vec<(u32, u32)> = Vec::with_capacity(self.flows.len());
+        // carries nothing must not widen. One that climbs lies in a component a growing flow is
+        // inside, so only those components' members get a value, `NEVER` marking the rest.
+        const NEVER: u32 = u32::MAX;
+        let values = grows_in.contains(&true).then(|| {
+            let mut local = vec![NEVER; n];
+            let mut numbered = 0u32;
+            for component in (0..count).filter(|&component| grows_in[component]) {
+                for &member in components.members(component) {
+                    local[member as usize] = numbered;
+                    numbered += 1;
+                }
+            }
+            let mut carrying: Vec<(u32, u32)> = Vec::new();
             for flow in &self.flows {
-                let consumer = flow.consumer.index() as u32;
+                let consumer = flow.consumer.index();
+                if local[consumer] == NEVER {
+                    continue;
+                }
                 for (carry, provider) in flow.providers() {
-                    if carry >= Carry::Passes {
-                        carrying.push((provider.index() as u32, consumer));
+                    let provider = provider.index();
+                    if carry >= Carry::Passes && components.of[provider] == components.of[consumer]
+                    {
+                        carrying.push((local[provider], local[consumer]));
                     }
                 }
             }
-            let values = self::components(n, &carrying);
-            let mut climbs = vec![false; values.count()];
+            let components = self::components(numbered as usize, &carrying);
+            let values: Vec<u32> = local
+                .iter()
+                .map(|&local| match local {
+                    NEVER => NEVER,
+                    local => components.of[local as usize],
+                })
+                .collect();
+            let mut climbs = vec![false; components.count()];
             let carried = |flow: &Flow<L>, value: u32, least: Carry| {
                 flow.providers()
-                    .any(|(carry, p)| carry >= least && values.of[p.index()] == value)
+                    .any(|(carry, p)| carry >= least && values[p.index()] == value)
             };
             for flow in &self.flows {
-                let value = values.of[flow.consumer.index()];
-                if carried(flow, value, Carry::Grows) {
+                let value = values[flow.consumer.index()];
+                if value != NEVER && carried(flow, value, Carry::Grows) {
                     climbs[value as usize] = true;
                 }
             }
@@ -269,8 +291,8 @@ impl<L: Lattice> Solver<L> {
                 .flows
                 .iter()
                 .map(|flow| {
-                    let value = values.of[flow.consumer.index()];
-                    climbs[value as usize] && carried(flow, value, Carry::Passes)
+                    let value = values[flow.consumer.index()];
+                    value != NEVER && climbs[value as usize] && carried(flow, value, Carry::Passes)
                 })
                 .collect();
             (values, climbs, cyclic)
@@ -336,7 +358,7 @@ impl<L: Lattice> Solver<L> {
                 let (values, climbing, _) = values
                     .as_ref()
                     .expect("a growing component has a climbing cycle");
-                let climbs = |member: usize| climbing[values.of[member] as usize];
+                let climbs = |member: usize| climbing[values[member] as usize];
                 for (position_of, &member) in members.iter().enumerate() {
                     position[member as usize] = position_of as u32;
                 }
