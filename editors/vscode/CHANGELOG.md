@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.0
+
+- Bundle the matching `sumi-lsp` with platform-specific extension packages for Linux, macOS, and
+  Windows.
+- Keep a serverless package and `sumi.server.path` override for unsupported platforms and custom
+  builds.
+
 ## 0.1.0
 
 - Add syntax and semantic diagnostics for saved and untitled Sumi files through `sumi-lsp`.

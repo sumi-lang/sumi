@@ -61,10 +61,9 @@ describe("extension contributions", () => {
   test("registers Sumi and its language server", async () => {
     const manifest = await Bun.file(path.join(root, "package.json")).json();
     expect(manifest.main).toBe("./out/extension.js");
+    expect(manifest.extensionKind).toEqual(["workspace"]);
     expect(manifest.activationEvents).toContain("onLanguage:sumi");
-    expect(manifest.contributes.configuration.properties["sumi.server.path"].default).toBe(
-      "sumi-lsp",
-    );
+    expect(manifest.contributes.configuration.properties["sumi.server.path"].default).toBe("");
     expect(manifest.icon).toBe("images/icon.png");
     expect(manifest.contributes.snippets).toBeUndefined();
     expect(manifest.contributes.languages[0].extensions).toEqual([".su"]);

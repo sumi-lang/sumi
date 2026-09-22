@@ -2,7 +2,7 @@
   "name": "sumi-language",
   "displayName": "Sumi Language",
   "description": "Language support for the Sumi programming language",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "sumi-lang",
   "packageManager": "bun@1.4.2",
   "license": "UPL-1.0",
@@ -17,6 +17,9 @@
   },
   "homepage": "https://sumi-lang.org",
   "main": "./out/extension.js",
+  "extensionKind": [
+    "workspace"
+  ],
   "activationEvents": [
     "onLanguage:sumi"
   ],
@@ -38,8 +41,8 @@
       "properties": {
         "sumi.server.path": {
           "type": "string",
-          "default": "sumi-lsp",
-          "description": "Path to the sumi-lsp executable. Reload the window after changing it."
+          "default": "",
+          "description": "Path to a custom sumi-lsp executable. The bundled server is used when this is empty. Reload the window after changing it."
         }
       }
     },
