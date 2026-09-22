@@ -3,12 +3,13 @@ use std::fmt::Write;
 use sumi_frontend::{ParsedSource, parse_source};
 use sumi_hir::{Analysis, Ty};
 
-const SHAPES: [&str; 5] = [
+const SHAPES: [&str; 6] = [
     "inferred-reverse",
     "unresolved-cycle",
     "branches",
     "nested-mutation",
     "caller-guards",
+    "caller-arithmetic-guards",
 ];
 
 pub fn source(shape: &str, size: usize) -> String {
@@ -21,12 +22,18 @@ pub fn source(shape: &str, size: usize) -> String {
         source.push_str("x }\nfn main() -> int = mutate(true)");
         return source;
     }
-    if shape == "caller-guards" {
+    if shape.starts_with("caller-") {
+        // A parameter compared with a literal never reaches the second solve; `n + 0` does.
+        let guarded = if shape == "caller-guards" {
+            "n"
+        } else {
+            "n + 0"
+        };
         let mut source = String::new();
         for i in 0..size {
             writeln!(
                 source,
-                "fn g{i}(n: int) -> int = if n < 0 {{ 0 - n }} else {{ n + 1 }}\nfn c{i}() -> int = g{i}({i})"
+                "fn g{i}(n: int) -> int = if {guarded} < 0 {{ 0 - n }} else {{ n + 1 }}\nfn c{i}() -> int = g{i}({i})"
             )
             .unwrap();
         }
@@ -72,7 +79,7 @@ pub fn parse(source: &str) -> ParsedSource {
 pub fn validate(shape: &str, size: usize, analysis: &Analysis) {
     let functions = match shape {
         "nested-mutation" => 2,
-        "caller-guards" => 2 * size,
+        "caller-guards" | "caller-arithmetic-guards" => 2 * size,
         _ => size,
     };
     assert_eq!(analysis.functions().len(), functions);
@@ -89,7 +96,7 @@ pub fn validate(shape: &str, size: usize, analysis: &Analysis) {
     }
 
     assert!(analysis.is_valid());
-    if shape == "caller-guards" {
+    if shape.starts_with("caller-") {
         assert!(
             analysis.diagnostics().is_empty(),
             "a guard its callers decide is not reported"
