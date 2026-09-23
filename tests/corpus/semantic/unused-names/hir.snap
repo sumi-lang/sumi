@@ -123,6 +123,8 @@ warning[semantic/unused-name]: parameter `n` is never read
 warning[semantic/unused-name]: local `x` is never read
   primary @70..71
   fix @70 -> "_": prefix the name with `_`
+warning[semantic/unused-function]: function `silenced` is never called
+  primary @87..95
 warning[semantic/unused-name]: loop index `i` is never read
   primary @192..193
   fix @192 -> "_": prefix the name with `_`

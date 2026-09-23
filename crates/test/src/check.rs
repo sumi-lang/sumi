@@ -641,6 +641,7 @@ pub fn semantics(analysis: &Analysis) {
     let reachability = [
         sumi_hir::codes::CONSTANT_CONDITION,
         sumi_hir::codes::UNREACHABLE_CODE,
+        sumi_hir::codes::UNUSED_FUNCTION,
     ];
     assert!(
         analysis.is_valid()

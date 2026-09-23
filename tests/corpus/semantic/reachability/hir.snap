@@ -77,9 +77,15 @@ warning[semantic/constant-condition]: condition is always true
 warning[semantic/constant-condition]: condition is always false
   primary @175..180
   secondary @181..198: this branch never runs
+warning[semantic/unused-function]: function `uncalled` is never called
+  primary @242..250
+warning[semantic/unused-function]: function `uncalled_unit` is never called
+  primary @333..346
 warning[semantic/unused-name]: parameter `u` is never read
   primary @347..348
   fix @347 -> "_": prefix the name with `_`
+warning[semantic/unused-function]: function `constant_uncalled` is never called
+  primary @378..395
 warning[semantic/unused-name]: parameter `n` is never read
   primary @396..397
   fix @396 -> "_": prefix the name with `_`

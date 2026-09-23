@@ -1,0 +1,25 @@
+fn uncalled(n: int) -> int = n
+fn only_from_uncalled(n: int) -> int = n + 1
+fn caller_of_it(n: int) -> int = only_from_uncalled(n)
+fn countdown(n: int) -> int = if n <= 0 {
+    0
+} else {
+    countdown(n - 1)
+}
+fn ping(n: int) -> int = if n <= 0 {
+    0
+} else {
+    pong(n - 1)
+}
+fn pong(n: int) -> int = ping(n)
+fn in_dead_branch(n: int) -> int = n
+fn _kept(n: int) -> int = only_from_kept(n)
+fn only_from_kept(n: int) -> int = n
+fn used(n: int) -> int = n * 2
+fn parameterless() -> int = 7
+fn main() -> int {
+    if false {
+        return in_dead_branch(1)
+    }
+    used(3)
+}

@@ -261,3 +261,5 @@ warning[semantic/constant-condition]: condition is always false
 warning[semantic/constant-condition]: condition is always true
   primary @757..765
   secondary @781..790: this branch never runs
+warning[semantic/unused-function]: function `uncalled` is never called
+  primary @794..802
