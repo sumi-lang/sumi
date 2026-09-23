@@ -743,3 +743,21 @@ fn an_empty_branch_leaves_its_sibling_innermost() {
     );
     check::run(analysis.program().unwrap());
 }
+
+#[test]
+fn a_loop_value_the_facts_pin_is_a_literal() {
+    let analysis = analysis(
+        "fn f(n: int) -> int {\n    let mut x = 5\n    for i in 0..n { x = 5 }\n    x\n}\n\
+         fn main() -> int = f(3) + f(0)",
+    );
+    let program = analysis.program().unwrap();
+    let compiled = program.compile();
+    assert!(
+        !compiled
+            .graph()
+            .nodes()
+            .iter()
+            .any(|node| matches!(node.op, sumi_hir::Op::LoopValue { .. }))
+    );
+    check::run(program);
+}

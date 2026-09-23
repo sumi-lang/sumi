@@ -243,10 +243,7 @@ impl<'a> Compiled<'a> {
     }
     /// Evaluate within `ranges(function).params`, without the machine's observable trace.
     pub fn evaluate(&self, function: FunctionId, args: &[Value]) -> Value {
-        self.program.check_arguments(function, args);
-        self.program
-            .known(function)
-            .unwrap_or_else(|| finish(self.machine(function, args)))
+        finish(self.machine(function, args))
     }
 }
 

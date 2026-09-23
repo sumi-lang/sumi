@@ -1,5 +1,5 @@
 file: accepted
-optimized: nodes 128 of 193, regions 32 of 41, calls 17 of 17
+optimized: nodes 127 of 193, regions 32 of 41, calls 17 of 17
 fn guarded = false (steps 3, optimized 1, depth 1 of at most 1)
 fn dead_branch = 1 (steps 4, optimized 1, depth 1 of at most 1)
 fn nested_dead = 3 (steps 4, optimized 1, depth 1 of at most 1)
@@ -16,5 +16,5 @@ fn odd: takes arguments, not run
 fn pass: takes arguments, not run
 fn parity = true (steps 169, optimized 124, depth 17 of at most 34)
 fn bounded: takes arguments, not run
-fn boundeds = -13 (steps 39, optimized 29, depth 2 of at most 2)
+fn boundeds = -13 (steps 39, optimized 27, depth 2 of at most 2)
 fn dead_else = 7 (steps 4, optimized 1, depth 1 of at most 1)

@@ -16,7 +16,8 @@ impl Optimized {
 }
 
 /// Keeps what each run's result can demand, reading through copies and narrowed reads, which
-/// compute nothing, and taking only the side of a condition `facts` decide.
+/// compute nothing, taking only the side of a condition `facts` decide, and writing a value they
+/// pin to one as a literal.
 ///
 /// `facts` must hold every value a run computes at each node, and the rewritten graph agrees with
 /// this one only on the runs they cover.
@@ -104,6 +105,22 @@ fn plan<'a>(graph: &Graph, facts: impl Fn(NodeId) -> &'a May) -> (Vec<NodeId>, V
             }
             _ => (None, None),
         };
+        let foldable = matches!(
+            graph.node(node).op,
+            Op::Neg
+                | Op::Not
+                | Op::Binary(_)
+                | Op::Call(_)
+                | Op::Join { .. }
+                | Op::Phi { .. }
+                | Op::And { .. }
+                | Op::Or { .. }
+                | Op::LoopValue { .. }
+        );
+        let literal = match (to, literal) {
+            (None, None) if foldable && !returning[node.index()] => single(facts(node)),
+            (_, literal) => literal,
+        };
         if let Some(to) = to {
             forward[node.index()] = to;
         }
@@ -119,6 +136,18 @@ fn plan<'a>(graph: &Graph, facts: impl Fn(NodeId) -> &'a May) -> (Vec<NodeId>, V
     (forward, becomes)
 }
 
+/// The literal for the one value `may` holds, if it holds one.
+fn single(may: &May) -> Option<Op> {
+    let bools = may.bools;
+    match (may.ints.lo(), may.ints.hi()) {
+        (Some(lo), Some(hi)) if lo == hi && bools.is_empty() && !may.unit => Some(Op::Int(lo)),
+        _ if !may.ints.is_empty() => None,
+        _ if bools.may_true() != bools.may_false() && !may.unit => Some(Op::Bool(bools.may_true())),
+        _ if bools.is_empty() && may.unit => Some(Op::Unit),
+        _ => None,
+    }
+}
+
 /// Per node, whether evaluating it can reach a return: through a control it sequences or runs, or
 /// through a value it reads.
 fn returning(graph: &Graph) -> Vec<bool> {
@@ -128,8 +157,15 @@ fn returning(graph: &Graph) -> Vec<bool> {
         let reads = |input: NodeId| input.index() >= node.index() || returning[input.index()];
         let region = |region: RegionId| reads(graph.region(region).result());
         let own = match graph.node(node).op {
-            Op::Return | Op::Sequence | Op::Observe { .. } | Op::Loop(_) | Op::Result { .. } => {
-                true
+            Op::Return | Op::Sequence | Op::Observe { .. } | Op::Result { .. } => true,
+            Op::Loop(id) => {
+                let loop_ = graph.loop_(id);
+                graph.region(loop_.body).control().is_some()
+                    || region(loop_.body)
+                    || loop_
+                        .carried
+                        .iter()
+                        .any(|&(carry, next)| reads(graph.inputs(carry)[0]) || reads(next))
             }
             Op::Join { then, else_ } => region(then) || else_.is_some_and(region),
             Op::And { rhs } | Op::Or { rhs } => region(rhs),

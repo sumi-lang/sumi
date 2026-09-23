@@ -1,6 +1,6 @@
 file: accepted
-optimized: nodes 146 of 233, regions 21 of 32, calls 14 of 14
-fn sequence = 9 (steps 9, optimized 5, depth 1 of at most 1)
+optimized: nodes 138 of 233, regions 21 of 32, calls 14 of 14
+fn sequence = 9 (steps 9, optimized 1, depth 1 of at most 1)
 fn choose: takes arguments, not run
 fn choices = 32 (steps 16, optimized 11, depth 2 of at most 2)
 fn optional: takes arguments, not run
@@ -10,7 +10,7 @@ fn lazies = 76 (steps 17, optimized 12, depth 2 of at most 2)
 fn guarded: takes arguments, not run
 fn guardeds = 15 (steps 23, optimized 16, depth 2 of at most 2)
 fn returning: takes arguments, not run
-fn returns = 57 (steps 18, optimized 16, depth 2 of at most 2)
+fn returns = 57 (steps 18, optimized 13, depth 2 of at most 2)
 fn refined: takes arguments, not run
 fn exact: takes arguments, not run
 fn exact_read: takes arguments, not run
