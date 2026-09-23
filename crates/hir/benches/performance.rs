@@ -33,9 +33,17 @@ fn workload(c: &mut Criterion, name: &str) {
     workloads::validate(&analysis, expected);
     let program = analysis.program().unwrap();
     let main = program.function_named("main").unwrap();
+    let compiled = program.compile();
+    assert_eq!(
+        compiled.machine(main, &[]).run(),
+        program.machine(main, &[]).run()
+    );
     let mut group = c.benchmark_group("graph/execute");
     group.bench_function(name, |b| {
         b.iter(|| program.machine(black_box(main), &[]).run());
+    });
+    group.bench_function(format!("{name}-optimized"), |b| {
+        b.iter(|| compiled.machine(black_box(main), &[]).run());
     });
     group.finish();
 }
@@ -50,9 +58,13 @@ fn tail_recursion(c: &mut Criterion) {
         program.machine(main, &[]).run(),
         Ok(Value::Int((depth as i64 + 7).into()))
     );
+    let compiled = program.compile();
     let mut group = c.benchmark_group("graph/execute");
     group.bench_function("tail-recursion-100000", |b| {
         b.iter(|| program.machine(black_box(main), &[]).run());
+    });
+    group.bench_function("tail-recursion-100000-optimized", |b| {
+        b.iter(|| compiled.machine(black_box(main), &[]).run());
     });
     group.finish();
 }
@@ -92,6 +104,16 @@ fn singleton_entry(c: &mut Criterion) {
     group.finish();
 }
 
+fn optimize(c: &mut Criterion, shape: &str, size: usize) {
+    let analysis = analyze(programs::parse(&programs::source(shape, size)));
+    let program = analysis.program().unwrap();
+    let mut group = c.benchmark_group("opt/optimize");
+    group.bench_function(BenchmarkId::new(shape, size), |b| {
+        b.iter(|| black_box(program).compile());
+    });
+    group.finish();
+}
+
 fn timing(c: &mut Criterion) {
     analyze_case(c, "inferred-reverse", 8192);
     analyze_case(c, "unresolved-cycle", 8192);
@@ -99,6 +121,8 @@ fn timing(c: &mut Criterion) {
     analyze_case(c, "nested-mutation", 1024);
     analyze_case(c, "caller-guards", 1024);
     analyze_case(c, "caller-arithmetic-guards", 1024);
+    optimize(c, "branches", 1024);
+    optimize(c, "nested-mutation", 1024);
     workload(c, "fibonacci");
     tail_recursion(c);
     suspended_frames(c);

@@ -1,7 +1,8 @@
 file: accepted
+optimized: nodes 52 of 65, regions 14 of 14, calls 5 of 6
 fn even: takes arguments, not run
 fn odd: takes arguments, not run
-fn safe = true (steps 43, depth 6 of at most 6)
+fn safe = true (steps 43, optimized 33, depth 6 of at most 6)
 fn maybe: takes arguments, not run
 fn spin: takes arguments, not run
-fn spins = unit (steps 30, depth 5 of at most 5)
+fn spins = unit (steps 30, optimized 23, depth 5 of at most 5)

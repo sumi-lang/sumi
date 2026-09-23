@@ -1,17 +1,18 @@
 file: accepted
-fn callee = 4 (steps 2, depth 1 of at most 1)
-fn nested = 3 (steps 2, depth 1 of at most 1)
-fn boundary = 5 (steps 6, depth 2 of at most 2)
-fn lazy_skips = 5 (steps 5, depth 1 of at most 1)
-fn lazy_takes = 7 (steps 3, depth 1 of at most 1)
-fn ordered = 9 (steps 2, depth 1 of at most 1)
+optimized: nodes 130 of 172, regions 22 of 22, calls 4 of 5
+fn callee = 4 (steps 2, optimized 2, depth 1 of at most 1)
+fn nested = 3 (steps 2, optimized 2, depth 1 of at most 1)
+fn boundary = 5 (steps 6, optimized 5, depth 2 of at most 2)
+fn lazy_skips = 5 (steps 5, optimized 5, depth 1 of at most 1)
+fn lazy_takes = 7 (steps 3, optimized 3, depth 1 of at most 1)
+fn ordered = 9 (steps 2, optimized 2, depth 1 of at most 1)
 fn divide: takes arguments, not run
 fn count: takes arguments, not run
-fn three = 3 (steps 40, depth 5 of at most 5)
-fn bare = unit (steps 2, depth 1 of at most 1)
-fn dead_checks = 12 (steps 2, depth 1 of at most 1)
-fn inferred = 13 (steps 2, depth 1 of at most 1)
+fn three = 3 (steps 40, optimized 36, depth 5 of at most 5)
+fn bare = unit (steps 2, optimized 2, depth 1 of at most 1)
+fn dead_checks = 12 (steps 2, optimized 2, depth 1 of at most 1)
+fn inferred = 13 (steps 2, optimized 2, depth 1 of at most 1)
 fn id: takes arguments, not run
-fn argument = 14 (steps 2, depth 1 of at most 1)
-fn eager_without_tail = 16 (steps 2, depth 1 of at most 1)
+fn argument = 14 (steps 2, optimized 2, depth 1 of at most 1)
+fn eager_without_tail = 16 (steps 2, optimized 2, depth 1 of at most 1)
 fn choose: takes arguments, not run

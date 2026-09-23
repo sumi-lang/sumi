@@ -1,12 +1,13 @@
 file: accepted
+optimized: nodes 57 of 82, regions 14 of 14, calls 5 of 5
 fn parameter: takes arguments, not run
-fn binding = 2 (steps 2, depth 1 of at most 1)
+fn binding = 2 (steps 2, optimized 1, depth 1 of at most 1)
 fn silenced: takes arguments, not run
-fn loop_index = 3 (steps 20, depth 1 of at most 1)
-fn assigned = 4 (steps 2, depth 1 of at most 1)
-fn shadowed = 2 (steps 3, depth 1 of at most 1)
+fn loop_index = 3 (steps 20, optimized 16, depth 1 of at most 1)
+fn assigned = 4 (steps 2, optimized 1, depth 1 of at most 1)
+fn shadowed = 2 (steps 3, optimized 1, depth 1 of at most 1)
 fn dead_read: takes arguments, not run
 fn local_taken: takes arguments, not run
-fn _six = 6 (steps 2, depth 1 of at most 1)
+fn _six = 6 (steps 2, optimized 1, depth 1 of at most 1)
 fn function_taken: takes arguments, not run
-fn caller = 18 (steps 24, depth 3 of at most 3)
+fn caller = 18 (steps 24, optimized 18, depth 3 of at most 3)

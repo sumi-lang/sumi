@@ -167,10 +167,28 @@ impl<'a> Program<'a> {
     }
     /// Evaluate within `ranges(function).params`, without the machine's observable trace.
     pub fn evaluate(self, function: FunctionId, args: &[Value]) -> Value {
-        let signature = self.check_arguments(function, args);
+        self.check_arguments(function, args);
+        self.known(function).unwrap_or_else(|| {
+            finish(Machine::new(
+                self.analysis.graph(),
+                function,
+                args,
+                self.function(function).depth_bound(),
+            ))
+        })
+    }
+    /// The program through the middle end.
+    pub fn compile(self) -> Compiled<'a> {
+        Compiled {
+            program: self,
+            optimized: sumi_opt::optimize(self.analysis.graph()),
+        }
+    }
+    /// The result when the analysis proved it a single value.
+    fn known(self, function: FunctionId) -> Option<Value> {
         let run = self.analysis.graph.run(function);
         let may = self.analysis.may(run.result());
-        let known = match signature.result {
+        match self.signature(function).result {
             Ty::Int => may.ints.lo().zip(may.ints.hi()).and_then(|(lo, hi)| {
                 // Singleton detection stays constant-time even for large interval endpoints.
                 (i64::try_from(&lo).is_ok() && lo == hi).then_some(Value::Int(lo))
@@ -179,19 +197,56 @@ impl<'a> Program<'a> {
             Ty::Bool if may.bools == Bools::from(false) => Some(Value::Bool(false)),
             Ty::Unit if may.unit => Some(Value::Unit),
             _ => None,
-        };
-        known.unwrap_or_else(|| {
-            Machine::new(
-                self.analysis.graph(),
-                function,
-                args,
-                self.function(function).depth_bound(),
-            )
-            .run()
-            .unwrap_or_else(|refusal| {
-                unreachable!("the checker proved this run: it was refused with {refusal:?}")
-            })
-        })
+        }
+    }
+}
+
+fn finish(machine: Machine<'_>) -> Value {
+    machine.run().unwrap_or_else(|refusal| {
+        unreachable!("the checker proved this run: it was refused with {refusal:?}")
+    })
+}
+
+/// A valid file through the middle end: the optimized graph a backend takes, each node's origin in
+/// the analysis's graph, and the facts proved there. A run within `ranges` returns what the
+/// analysis's graph does.
+pub struct Compiled<'a> {
+    program: Program<'a>,
+    optimized: sumi_opt::Optimized,
+}
+
+impl<'a> Compiled<'a> {
+    pub fn program(&self) -> Program<'a> {
+        self.program
+    }
+    pub fn graph(&self) -> &Graph {
+        &self.optimized.graph
+    }
+    /// The node of the analysis's graph that `node` computes.
+    pub fn origin(&self, node: NodeId) -> NodeId {
+        self.optimized.origin(node)
+    }
+    /// Every value a run within `ranges` computes at `node` lies here.
+    pub fn may(&self, node: NodeId) -> &'a May {
+        self.program.may(self.origin(node))
+    }
+    /// `args` must lie within `ranges(function).params`; only the match against the signature is
+    /// asserted.
+    pub fn machine(&self, function: FunctionId, args: &[Value]) -> Machine<'_> {
+        self.program.check_arguments(function, args);
+        Machine::new(
+            &self.optimized.graph,
+            function,
+            args,
+            self.program.function(function).depth_bound(),
+        )
+    }
+    /// Evaluate within `ranges(function).params`, without the machine's observable trace.
+    pub fn evaluate(&self, function: FunctionId, args: &[Value]) -> Value {
+        self.program.check_arguments(function, args);
+        self.program
+            .known(function)
+            .unwrap_or_else(|| finish(self.machine(function, args)))
     }
 }
 

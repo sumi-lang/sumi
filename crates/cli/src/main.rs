@@ -126,7 +126,8 @@ fn run(path: &Path) -> Result<ExitCode, String> {
             locate(path, &lines, program.function(main).origin().start()),
         ));
     }
-    match program.evaluate(main, &[]) {
+    let compiled = program.compile();
+    match compiled.evaluate(main, &[]) {
         Value::Unit => {}
         value => println!("{value}"),
     }
