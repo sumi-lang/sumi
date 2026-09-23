@@ -223,9 +223,44 @@ fn choose@945..1011 (bool ∈ ∅) -> int ∈ ∅
       payload: int 17 : int @991..993
 
 == semantic diagnostics ==
+warning[semantic/unreachable-code]: unreachable code
+  primary @38..39
+  secondary @25..33: no path continues past this
 warning[semantic/unused-name]: local `unused` is never read
   primary @71..77
   fix @71 -> "_": prefix the name with `_`
+warning[semantic/unreachable-code]: unreachable code
+  primary @107..108
+  secondary @90..98: no path continues past this
+warning[semantic/unreachable-code]: unreachable code
+  primary @119..120
+  secondary @67..114: no path continues past this
+warning[semantic/constant-condition]: condition is always false
+  primary @192..197
+  secondary @201..238: the right side never runs
+warning[semantic/constant-condition]: condition is always true
+  primary @280..284
+warning[semantic/unreachable-code]: unreachable code
+  primary @315..319
+  secondary @298..306: no path continues past this
+warning[semantic/unreachable-code]: unreachable code
+  primary @330..331
+  secondary @276..325: no path continues past this
+warning[semantic/unreachable-code]: unreachable code
+  primary @391..392
+  secondary @374..382: no path continues past this
+warning[semantic/unreachable-code]: unreachable code
+  primary @441..443
+  secondary @360..436: no path continues past this
+warning[semantic/unreachable-code]: unreachable code
+  primary @669..674
+  secondary @658..664: no path continues past this
+warning[semantic/unreachable-code]: unreachable code
+  primary @721..748
+  secondary @707..716: no path continues past this
 warning[semantic/unused-name]: local `unused` is never read
   primary @841..847
   fix @841 -> "_": prefix the name with `_`
+warning[semantic/unreachable-code]: unreachable code
+  primary @884..886
+  secondary @837..879: no path continues past this

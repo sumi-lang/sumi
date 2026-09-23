@@ -97,6 +97,8 @@ fn timing(c: &mut Criterion) {
     analyze_case(c, "unresolved-cycle", 8192);
     analyze_case(c, "branches", 1024);
     analyze_case(c, "nested-mutation", 1024);
+    analyze_case(c, "caller-guards", 1024);
+    analyze_case(c, "caller-arithmetic-guards", 1024);
     workload(c, "fibonacci");
     tail_recursion(c);
     suspended_frames(c);

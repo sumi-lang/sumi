@@ -212,3 +212,11 @@ fn dead_arms@1105..1140 () -> int ∈ [0, 0]
   result: copy : int @1123..1126
     value: call dead_arm@976..1104 : int @1129..1140
       arg[0]: int 6 : int @1138..1139
+
+== semantic diagnostics ==
+warning[semantic/constant-condition]: condition is always false
+  primary @295..300
+  secondary @301..333: this branch never runs
+warning[semantic/constant-condition]: condition is always true
+  primary @1048..1052
+  secondary @1080..1101: this branch never runs

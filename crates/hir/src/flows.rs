@@ -205,12 +205,22 @@ impl Demands<'_> {
     }
 }
 
+/// Where a parameter's values come from.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Arguments {
+    /// The live call sites' arguments; a function no live call site enters is dead.
+    Delivered,
+    /// Every value of the parameter's type, in every function with a whole header.
+    Any,
+}
+
 /// The thresholds are every integer the file spells or folds from constants, each once. A node the
 /// walk gave no value has a class nothing flows into.
 pub(crate) fn draw(
     graph: &Graph,
     lowered: &Lowered,
     headers: &[Header],
+    arguments: Arguments,
 ) -> (Typing, Thresholds, Vec<Demand>) {
     let mut typing = Typing::for_nodes(graph.nodes().len());
     let typed = |node: NodeId| lowered.typed[node.index()];
@@ -246,13 +256,19 @@ pub(crate) fn draw(
                 }
                 Op::Bool(value) => typing.literal(node, Ty::Bool, May::bool(*value), origin),
                 Op::Param { ty: Some(ty), .. } => {
-                    typing.known(node, *ty, entry.name.unwrap_or(origin));
+                    let origin = entry.name.unwrap_or(origin);
+                    match arguments {
+                        Arguments::Delivered => typing.known(node, *ty, origin),
+                        Arguments::Any => typing.literal(node, *ty, May::every(*ty), origin),
+                    }
                 }
                 // No value to type.
                 Op::Param { ty: None, .. } | Op::Hole | Op::Unused => {}
-                Op::Entry => {
-                    typing.entry(node, header.callee.is_some() && run.params().len() == 0);
-                }
+                Op::Entry => typing.entry(
+                    node,
+                    header.callee.is_some()
+                        && (arguments == Arguments::Any || run.params().len() == 0),
+                ),
                 // An untyped condition decides nothing; the context is live as its parent is.
                 Op::Then | Op::Else if !typed(inputs[0]) => {
                     typing.flow(inputs[1], node, Edge::Values);
@@ -466,14 +482,18 @@ pub(crate) fn draw(
             }
         }
     }
-    for &(context, callee) in &lowered.entered {
-        let entry = graph.run(callee).entry();
-        typing.flow(context, entry, Edge::Enter);
+    if arguments == Arguments::Delivered {
+        for &(context, callee) in &lowered.entered {
+            let entry = graph.run(callee).entry();
+            typing.flow(context, entry, Edge::Enter);
+        }
     }
     for call in &lowered.calls {
         let run = graph.run(call.callee);
-        for (&arg, param) in graph.inputs(call.node).iter().zip(run.params()) {
-            typing.derive(arg, call.context, param, Pair::Argument);
+        if arguments == Arguments::Delivered {
+            for (&arg, param) in graph.inputs(call.node).iter().zip(run.params()) {
+                typing.derive(arg, call.context, param, Pair::Argument);
+            }
         }
         if typed(call.node) {
             typing.call(run.result(), call.node, graph.node(call.node).origin);

@@ -47,3 +47,9 @@ fn leading@270..301 () -> int ∈ [-1, -1]
     value: eager - : int @292..301
       lhs: int 1 : int @292..293
       rhs: int 2 : int @300..301
+
+== semantic diagnostics ==
+warning[semantic/constant-condition]: condition is always true
+  primary @125..165
+warning[semantic/constant-condition]: condition is always true
+  primary @173..177

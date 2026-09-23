@@ -294,3 +294,14 @@ fn refinements@1318..1425 () -> int ∈ [5500, 11011]
           rhs: int 10 : int @1409..1411
       rhs: call exact@1094..1202 : int @1414..1425
         arg[0]: bool true : bool @1420..1424
+
+== semantic diagnostics ==
+warning[semantic/constant-condition]: condition is always true
+  primary @493..527
+warning[semantic/constant-condition]: condition is always false
+  primary @544..579
+warning[semantic/constant-condition]: condition is always true
+  primary @1063..1069
+  secondary @1086..1091: this branch never runs
+  secondary @1028..1029: is 1
+  secondary @1052..1053: is 2

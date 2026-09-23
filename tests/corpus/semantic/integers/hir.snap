@@ -98,3 +98,15 @@ fn wide_argument@1048..1111 () -> int ∈ [8507059173023461586584365185794205286
   result: copy : int @1070..1073
     value: call through_a_call@1007..1047 : int @1076..1111
       arg[0]: int 9223372036854775808 : int @1091..1110
+
+== semantic diagnostics ==
+warning[semantic/constant-condition]: condition is always true
+  primary @796..837
+warning[semantic/constant-condition]: condition is always true
+  primary @841..884
+warning[semantic/constant-condition]: condition is always true
+  primary @910..956
+  secondary @910..933: is 9223372036854775808
+warning[semantic/constant-condition]: condition is always true
+  primary @960..1006
+  secondary @960..983: is 9223372036854775807

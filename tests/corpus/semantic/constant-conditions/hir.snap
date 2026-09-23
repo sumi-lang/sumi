@@ -1,0 +1,263 @@
+file: accepted
+frontend errors: 0 (see frontend.snap)
+semantic errors: 0
+
+fn literal@0..55 () -> int ∈ [2, 2]
+  result: copy : int @16..19
+    value: if : int @22..55
+      condition: bool false : bool @25..30
+      then: int 1 : int @37..38
+      else: int 2 : int @52..53
+
+fn local@56..146 () -> int ∈ [2, 2]
+  result: copy : int @70..73
+    value:
+      let x@84..85: int @80..89
+        initializer: int 5 : int @88..89
+      tail: if : int @94..144
+        condition: eager > : bool @97..103
+          lhs: read x@84..85 : int
+          rhs: int 10 : int @101..103
+        then: int 1 : int @114..115
+        else: int 2 : int @137..138
+
+fn repeated@147..281 (int ∈ [1, 1]) -> int ∈ [1, 1]
+  param n@159..160: int
+  result: copy : int @170..173
+    value:
+      let total@188..193: int @180..197
+        initializer: int 0 : int @196..197
+      discard: if : unit @202..269
+        condition: eager > : bool @205..210
+          lhs: read n@159..160 : int
+          rhs: int 0 : int @209..210
+        then: if : unit @221..263
+          condition: eager > : bool @224..229
+            lhs: read n@159..160 [n > 0 holds@205..210] : int
+            rhs: int 0 : int @228..229
+          then:
+            assignment: assign total@188..193 : int @244..253
+              value: int 1 : int @252..253
+            tail: unit : unit @230..263
+          else: unit (implicit)
+        else: unit (implicit)
+      tail: phi total@188..193 : int @202..269
+        condition: eager > : bool @205..210
+          lhs: read n@159..160 : int
+          rhs: int 0 : int @209..210
+        then: phi total@188..193 : int @221..263
+          condition: eager > : bool @224..229
+            lhs: read n@159..160 [n > 0 holds@205..210] : int
+            rhs: int 0 : int @228..229
+          then: assign total@188..193 : int @244..253
+            value: int 1 : int @252..253
+          else: read total@188..193 : int
+        else: read total@188..193 : int
+
+fn defensive@282..349 (int ∈ [3, 3]) -> int ∈ [3, 3]
+  param n@295..296: int
+  result: copy : int @306..309
+    value: if : int @312..349
+      condition: eager < : bool @315..320
+        lhs: read n@295..296 : int
+        rhs: int 0 : int @319..320
+      then: eager - : int @327..332
+        lhs: int 0 : int @327..328
+        rhs: read n@295..296 [n < 0 holds@315..320] : int
+      else: read n@295..296 [n < 0 fails@315..320] : int
+
+fn skipped@350..390 (bool ∈ {true}) -> bool ∈ {false}
+  param b@361..362: bool
+  result: copy : bool @373..377
+    value: lazy and : bool @380..390
+      lhs: bool false : bool @380..385
+      rhs: read b@361..362 : bool
+
+fn redundant@391..432 (bool ∈ {false}) -> bool ∈ {true}
+  param b@404..405: bool
+  result: copy : bool @416..420
+    value: lazy or : bool @423..432
+      lhs: read b@404..405 : bool
+      rhs: bool true : bool @428..432
+
+fn whole@433..466 () -> bool ∈ {true}
+  result: copy : bool @447..451
+    value: lazy and : bool @454..466
+      lhs: bool true : bool @454..458
+      rhs: bool true : bool @462..466
+
+fn empty@467..572 () -> int ∈ [0, 0]
+  result: result : int @481..484
+    outcome[0]:
+      let total@499..504: int @491..508
+        initializer: int 0 : int @507..508
+      discard: loop : unit @513..560
+        start: int 5 : int @522..523
+        end: int 5 : int @525..526
+        body:
+          let i@517..518: loop index : int @513..560
+            start: int 5 : int @522..523
+            end: int 5 : int @525..526
+          assignment: assign total@499..504 : int @537..554
+            value: eager + : int @545..554
+              lhs: read total@499..504 : int
+              rhs: read i@517..518 : int
+          tail: unit : unit @527..560
+        next[0]: read total@499..504 : int
+      discard: after : ? @513..560
+        control: loop : unit @513..560
+          start: int 5 : int @522..523
+          end: int 5 : int @525..526
+          body:
+            let i@517..518: loop index : int @513..560
+              start: int 5 : int @522..523
+              end: int 5 : int @525..526
+            assignment: assign total@499..504 : int @537..554
+              value: eager + : int @545..554
+                lhs: read total@499..504 : int
+                rhs: read i@517..518 : int
+            tail: unit : unit @527..560
+          next[0]: read total@499..504 : int
+        context: entry : ? @467..572
+      tail: loop value 0 : int @513..560
+        loop: @513..560
+
+fn index@573..705 () -> int ∈ [0, 0]
+  result: result : int @587..590
+    outcome[0]:
+      let total@605..610: int @597..614
+        initializer: int 0 : int @613..614
+      discard: loop : unit @619..693
+        start: int 0 : int @628..629
+        end: int 10 : int @631..633
+        body:
+          let i@623..624: loop index : int @619..693
+            start: int 0 : int @628..629
+            end: int 10 : int @631..633
+          discard: phi total@605..610 : int @644..687
+            condition: eager > : bool @647..653
+              lhs: read i@623..624 : int
+              rhs: int 20 : int @651..653
+            then: assign total@605..610 : int @668..677
+              value: int 1 : int @676..677
+            else: read total@605..610 : int
+          tail: if : unit @644..687
+            condition: eager > : bool @647..653
+              lhs: read i@623..624 : int
+              rhs: int 20 : int @651..653
+            then:
+              assignment: assign total@605..610 : int @668..677
+                value: int 1 : int @676..677
+              tail: unit : unit @654..687
+            else: unit (implicit)
+        next[0]: phi total@605..610 : int @644..687
+          condition: eager > : bool @647..653
+            lhs: read i@623..624 : int
+            rhs: int 20 : int @651..653
+          then: assign total@605..610 : int @668..677
+            value: int 1 : int @676..677
+          else: read total@605..610 : int
+      discard: after : ? @619..693
+        control: loop : unit @619..693
+          start: int 0 : int @628..629
+          end: int 10 : int @631..633
+          body:
+            let i@623..624: loop index : int @619..693
+              start: int 0 : int @628..629
+              end: int 10 : int @631..633
+            discard: phi total@605..610 : int @644..687
+              condition: eager > : bool @647..653
+                lhs: read i@623..624 : int
+                rhs: int 20 : int @651..653
+              then: assign total@605..610 : int @668..677
+                value: int 1 : int @676..677
+              else: read total@605..610 : int
+            tail: if : unit @644..687
+              condition: eager > : bool @647..653
+                lhs: read i@623..624 : int
+                rhs: int 20 : int @651..653
+              then:
+                assignment: assign total@605..610 : int @668..677
+                  value: int 1 : int @676..677
+                tail: unit : unit @654..687
+              else: unit (implicit)
+          next[0]: phi total@605..610 : int @644..687
+            condition: eager > : bool @647..653
+              lhs: read i@623..624 : int
+              rhs: int 20 : int @651..653
+            then: assign total@605..610 : int @668..677
+              value: int 1 : int @676..677
+            else: read total@605..610 : int
+        context: entry : ? @573..705
+      tail: loop value 0 : int @619..693
+        loop: @619..693
+
+fn always@706..732 () -> bool ∈ {true}
+  result: copy : bool @721..725
+    value: bool true : bool @728..732
+
+fn called@733..790 () -> int ∈ [1, 1]
+  result: copy : int @748..751
+    value: if : int @754..790
+      condition: call always@706..732 : bool @757..765
+      then: int 1 : int @772..773
+      else: int 2 : int @787..788
+
+fn uncalled@791..853 (int ∈ ∅) -> int ∈ ∅
+  param n@803..804: int
+  result: copy : int @814..817
+    value: if : int @820..853
+      condition: bool false : bool @823..828
+      then: read n@803..804 : int
+      else: int 0 : int @850..851
+
+fn main@854..909 () -> int ∈ [4, 4]
+  result: copy : int @867..870
+    value: eager + : int @873..909
+      lhs: eager + : int @873..899
+        lhs: call repeated@147..281 : int @873..884
+          arg[0]: int 1 : int @882..883
+        rhs: call defensive@282..349 : int @887..899
+          arg[0]: int 3 : int @897..898
+      rhs: call index@573..705 : int @902..909
+
+fn skips@910..944 () -> bool ∈ {false}
+  result: copy : bool @924..928
+    value: call skipped@350..390 : bool @931..944
+      arg[0]: bool true : bool @939..943
+
+fn redundants@945..987 () -> bool ∈ {true}
+  result: copy : bool @964..968
+    value: call redundant@391..432 : bool @971..987
+      arg[0]: bool false : bool @981..986
+
+== semantic diagnostics ==
+warning[semantic/constant-condition]: condition is always false
+  primary @25..30
+  secondary @31..40: this branch never runs
+warning[semantic/constant-condition]: condition is always false
+  primary @97..103
+  secondary @104..121: this branch never runs
+  secondary @88..89: is 5
+warning[semantic/constant-condition]: condition is always true
+  primary @224..229
+  secondary @205..210: ∈ [1, +∞) under this guard
+warning[semantic/constant-condition]: condition is always false
+  primary @380..385
+  secondary @389..390: the right side never runs
+warning[semantic/constant-condition]: condition is always true
+  primary @428..432
+warning[semantic/constant-condition]: condition is always true
+  primary @454..458
+warning[semantic/constant-condition]: condition is always true
+  primary @462..466
+warning[semantic/constant-condition]: range is always empty
+  primary @522..526
+  secondary @527..560: the loop body never runs
+warning[semantic/constant-condition]: condition is always false
+  primary @647..653
+  secondary @654..687: this branch never runs
+  secondary @623..624: ∈ [0, 9] on a loop iteration
+warning[semantic/constant-condition]: condition is always true
+  primary @757..765
+  secondary @781..790: this branch never runs

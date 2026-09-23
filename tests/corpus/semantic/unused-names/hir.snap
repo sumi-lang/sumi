@@ -131,6 +131,9 @@ warning[semantic/unused-name]: local `x` is assigned but never read
 warning[semantic/unused-name]: local `x` is never read
   primary @338..339
   fix @338 -> "_": prefix the name with `_`
+warning[semantic/constant-condition]: condition is always false
+  primary @399..404
+  secondary @405..414: this branch never runs
 warning[semantic/unused-name]: parameter `x` is never read
   primary @445..446
 warning[semantic/unused-name]: parameter `six` is never read

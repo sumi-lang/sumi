@@ -68,6 +68,13 @@ pub(crate) struct Call {
     pub context: NodeId,
 }
 
+/// A block's statement and the context it runs in, which is dead after one that never completes.
+pub(crate) struct Statement {
+    pub block: NodeIdx,
+    pub range: TextRange,
+    pub context: NodeId,
+}
+
 #[derive(Clone, Copy)]
 pub(crate) struct Fallthrough {
     pub value: NodeId,
@@ -85,6 +92,8 @@ pub(crate) struct Lowered {
     pub entered: Vec<(NodeId, FunctionId)>,
     pub obligations: Vec<Obligation>,
     pub fallthroughs: Vec<Option<Fallthrough>>,
+    /// In source order within each block.
+    pub statements: Vec<Statement>,
 }
 
 pub(crate) struct Source<'s> {
@@ -463,6 +472,10 @@ enum Work {
     /// Damaged or not: a block runs its statements.
     Block(NodeIdx),
     Unused(NodeIdx),
+    Statement {
+        block: NodeIdx,
+        child: NodeIdx,
+    },
     Call {
         call: Clean<ast::CallExpr>,
         target: Option<FunctionId>,
@@ -572,6 +585,7 @@ impl<'a, 's> Builder<'a, 's> {
                 entered: Vec::new(),
                 obligations: Vec::new(),
                 fallthroughs: vec![None; headers.len()],
+                statements: Vec::new(),
             },
             nodes_of: vec![None; nodes],
             owner: 0,
@@ -656,6 +670,14 @@ impl<'a, 's> Builder<'a, 's> {
                     }
                     Work::Advance(node) => {
                         self.advance(node);
+                        continue;
+                    }
+                    Work::Statement { block, child } => {
+                        self.lowered.statements.push(Statement {
+                            block,
+                            range: self.source.range(child),
+                            context: self.context(),
+                        });
                         continue;
                     }
                     Work::Unused(node) => {
@@ -1632,6 +1654,7 @@ impl<'a, 's> Builder<'a, 's> {
         let mut children = tree.children(node).peekable();
         while let Some(child) = children.next() {
             let statement = children.peek().is_some() && ast::Expr::cast(tree, child).is_some();
+            work.push(Work::Statement { block: node, child });
             work.push(Work::Enter(child));
             if statement {
                 work.push(Work::Unused(child));

@@ -1,0 +1,50 @@
+tree: see hir.snap
+
+== formatted ==
+fn after_return() -> int {
+    return 1
+    let x = 2
+    x
+}
+fn after_decided_if() -> int {
+    if true {
+        return 1
+    }
+    2
+}
+fn after_both_branches(b: bool) -> int {
+    if b {
+        return 1
+    } else {
+        return 2
+    }
+    3
+}
+fn after_guarded(n: int) -> int {
+    if n > 0 {
+        return n
+    }
+    if n <= 0 {
+        return 0
+    }
+    n
+}
+fn nested() -> int {
+    {
+        return 1
+        2
+    }
+    3
+}
+fn by_callers(n: int) -> int {
+    if n < 0 {
+        return 0
+    }
+    n
+}
+fn in_expression() -> int =
+    {
+        return 1
+    }
+        + 2
+fn main() -> int = after_both_branches(true) + after_guarded(1) + after_guarded(-1) + by_callers(4)
