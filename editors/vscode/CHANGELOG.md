@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0
+
+- Report warnings beside errors: a name nothing reads, with a quick fix that prefixes it with `_`;
+  a condition or loop range that always decides the same way; code after a statement that never
+  completes; and a function nothing calls. A file with only warnings still counts as valid.
+- Check and highlight bounded `for` loops.
+- Analyze and format files faster.
+
 ## 0.2.0
 
 - Bundle the matching `sumi-lsp` with platform-specific extension packages for Linux, macOS, and

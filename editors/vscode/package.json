@@ -2,7 +2,7 @@
   "name": "sumi-language",
   "displayName": "Sumi Language",
   "description": "Language support for the Sumi programming language",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "sumi-lang",
   "packageManager": "bun@1.4.2",
   "license": "UPL-1.0",
