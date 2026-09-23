@@ -117,6 +117,10 @@ impl<'a> Program<'a> {
             .ranges(id)
             .expect("a valid file's functions have ranges")
     }
+    /// Every value a run within `ranges` computes at `node` lies here.
+    pub fn may(self, node: NodeId) -> &'a May {
+        self.analysis.may(node)
+    }
     pub fn functions(self) -> impl Iterator<Item = (FunctionId, &'a Function)> {
         self.analysis
             .functions

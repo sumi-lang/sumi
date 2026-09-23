@@ -737,7 +737,7 @@ fn discarded_loops_evaluate_both_bounds_once() {
         let mut machine = program.machine(program.function_named("main").unwrap(), &[]);
         let mut bounds = Vec::new();
         while machine.step().is_none() {
-            if let Some(sumi_hir::Value::Int(value)) = machine.latest()
+            if let Some((_, sumi_hir::Value::Int(value))) = machine.latest()
                 && (*value == start.into() || *value == end.into())
             {
                 bounds.push(value.clone());
@@ -760,7 +760,7 @@ fn start_bound_is_evaluated_before_a_returning_end() {
     let mut machine = program.machine(program.function_named("main").unwrap(), &[]);
     let mut values = Vec::new();
     while machine.step().is_none() {
-        values.extend(machine.latest().cloned());
+        values.extend(machine.latest().map(|(_, value)| value.clone()));
     }
     assert_eq!(
         machine.outcome(),
