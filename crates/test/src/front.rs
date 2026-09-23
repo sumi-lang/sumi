@@ -57,9 +57,14 @@ impl Front {
 
     /// The items, and their bodies' statements, that cover no token in `touched`. A block whose `{`
     /// is in `moved` contributes none, since the edit reparents them. Nor does a statement opening
-    /// with `{` right after a touched one: a required block may follow a line break, so an edit
-    /// that leaves an `if` or `for` short of its block can take that statement's.
-    pub fn guarded(&self, touched: &[RawIdx], moved: &[RawIdx]) -> Vec<NodeIdx> {
+    /// with `{` right after a touched one that is `takeable`: a required block may follow a line
+    /// break, so an edited `if` or `for` can take that one's.
+    pub fn guarded(
+        &self,
+        touched: &[RawIdx],
+        moved: &[RawIdx],
+        takeable: impl Fn(NodeIdx) -> bool,
+    ) -> Vec<NodeIdx> {
         let tree = self.parse.tree();
         let covers = |node: NodeIdx| {
             touched
@@ -76,7 +81,11 @@ impl Front {
                     for statement in tree.children(child) {
                         let opens_block =
                             self.lexed.kind(tree.first_token(statement)) == SyntaxKind::LBrace;
-                        if !(after_touched && opens_block) {
+                        let taken = after_touched
+                            && opens_block
+                            && !covers(statement)
+                            && takeable(statement);
+                        if !taken {
                             nodes.push(statement);
                         }
                         after_touched = covers(statement);
