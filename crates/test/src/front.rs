@@ -1,7 +1,7 @@
 //! The lexer's and parser's products for one test source, and the spelling of parse evidence the
 //! snapshots and the parser tests share.
 
-use sumi_lexer::{LexedFile, lex};
+use sumi_lexer::{LexedFile, SyntaxKind, lex};
 use sumi_syntax::{
     NodeIdx, NodeKind, Parse, ParseEvidence, ParseRecoveryKind, ParserInput, RawIdx, parse,
 };
@@ -56,24 +56,44 @@ impl Front {
     }
 
     /// The items, and their bodies' statements, that cover no token in `touched`. A block whose `{`
-    /// is in `moved` contributes none, since the edit reparents them.
-    pub fn guarded(&self, touched: &[RawIdx], moved: &[RawIdx]) -> Vec<NodeIdx> {
+    /// is in `moved` contributes none, since the edit reparents them. Nor does a statement opening
+    /// with `{` right after a touched one that is `takeable`: a required block may follow a line
+    /// break, so an edited `if` or `for` can take that one's.
+    pub fn guarded(
+        &self,
+        touched: &[RawIdx],
+        moved: &[RawIdx],
+        takeable: impl Fn(NodeIdx) -> bool,
+    ) -> Vec<NodeIdx> {
         let tree = self.parse.tree();
+        let covers = |node: NodeIdx| {
+            touched
+                .iter()
+                .any(|&token| tree.first_token(node) <= token && token < tree.end_token(node))
+        };
         let mut nodes = Vec::new();
         for item in tree.children(tree.root()) {
             nodes.push(item);
             for child in tree.children(item) {
                 if tree.kind(child) == NodeKind::Block && !moved.contains(&tree.first_token(child))
                 {
-                    nodes.extend(tree.children(child));
+                    let mut after_touched = false;
+                    for statement in tree.children(child) {
+                        let opens_block =
+                            self.lexed.kind(tree.first_token(statement)) == SyntaxKind::LBrace;
+                        let taken = after_touched
+                            && opens_block
+                            && !covers(statement)
+                            && takeable(statement);
+                        if !taken {
+                            nodes.push(statement);
+                        }
+                        after_touched = covers(statement);
+                    }
                 }
             }
         }
-        nodes.retain(|&node| {
-            !touched
-                .iter()
-                .any(|&token| tree.first_token(node) <= token && token < tree.end_token(node))
-        });
+        nodes.retain(|&node| !covers(node));
         nodes
     }
 }

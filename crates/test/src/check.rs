@@ -442,7 +442,29 @@ pub fn recovery(source: &str, original: &Front, index: usize, edit: Edit) {
             .nodes()
             .map(|node| (after.node_span(node), after.shape(&edited, node)))
             .collect();
-        for node in original.guarded(&touched, &moved) {
+        // A block taken after the edited parse first recovers may be the recovery's doing.
+        let recovered = after
+            .parse
+            .evidence()
+            .iter()
+            .map(|evidence| {
+                let token = match evidence {
+                    ParseEvidence::Recovery(recovery) => match recovery.anchor {
+                        ParseAnchor::Gap(gap) => gap.trivia_end(),
+                        ParseAnchor::Tokens(range) => range.start(),
+                    },
+                    ParseEvidence::Violation(violation) => violation.range.start(),
+                };
+                if token < after.lexed.end() {
+                    after.lexed.range(token).start().to_usize()
+                } else {
+                    edited.len()
+                }
+            })
+            .min()
+            .unwrap_or(usize::MAX);
+        let takeable = |node| impact.map(original.node_span(node)).0 <= recovered;
+        for node in original.guarded(&touched, &moved, takeable) {
             let shape = original.shape(source, node);
             let span = impact.map(original.node_span(node));
             assert!(

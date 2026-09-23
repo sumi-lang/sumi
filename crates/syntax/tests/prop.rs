@@ -152,6 +152,12 @@ proptest! {
     }
 }
 
+#[test]
+fn a_duplicated_if_may_take_the_next_lines_block() {
+    let source = "fn o() {\n    (e) = if {} {}\n    {} && a / {}\n}\n";
+    check::recovery(source, &front(source), 9, Edit::Duplicate);
+}
+
 /// The program generator produces no exposed closures, so these are enumerated by hand.
 #[test]
 fn every_edit_around_an_exposed_closure_recovers_locally() {
