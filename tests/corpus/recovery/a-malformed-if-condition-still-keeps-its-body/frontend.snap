@@ -1,23 +1,23 @@
 == tree ==
-SourceFile! 0..64
-  FnItem! 0..26
-    Name 3..10 "missing"
-    ParamList 10..12 "()"
-    Block! 13..26
-      IfExpr! 19..24
-        Block 22..24 "{}"
-  FnItem! 27..63
-    Name 30..43 "two_on_a_line"
-    ParamList 43..45 "()"
-    Block! 46..63
-      IfExpr! 52..61
-        LiteralExpr 55..56 "1"
-        Error! 57..58 "1"
-        Block 59..61 "{}"
+SourceFile! 1:1..7:1
+  FnItem! 1:1..3:2
+    Name 1:4..1:11 "missing"
+    ParamList 1:11..1:13 "()"
+    Block! 1:14..3:2
+      IfExpr! 2:5..2:10
+        Block 2:8..2:10 "{}"
+  FnItem! 4:1..6:2
+    Name 4:4..4:17 "two_on_a_line"
+    ParamList 4:17..4:19 "()"
+    Block! 4:20..6:2
+      IfExpr! 5:5..5:14
+        LiteralExpr 5:8..5:9 "1"
+        Error! 5:10..5:11 "1"
+        Block 5:12..5:14 "{}"
 
 == evidence ==
-ExpectedExpression at 22
-Expected(LBrace) at 57
+ExpectedExpression at 2:8
+Expected(LBrace) at 5:10
 
 == diagnostics ==
 error[syntax/expected-expression] 2:8: expected an expression

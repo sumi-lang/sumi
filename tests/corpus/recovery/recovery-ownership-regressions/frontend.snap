@@ -1,50 +1,50 @@
 == tree ==
-SourceFile! 0..244
-  FnItem! 0..38
-    Name 3..18 "item_in_garbage"
-    ParamList 18..20 "()"
-    Block! 21..38
-      Error! 23..38 ": { fn g() {} }"
-  FnItem! 39..98
-    Name 42..67 "item_in_garbage_in_parens"
-    ParamList 67..69 "()"
-    Block! 70..98
-      ParenExpr! 76..96
-        Block! 77..94
-          Error! 79..94 ": { fn g() {} }"
-  FnItem! 99..182
-    Name 102..121 "closer_in_arguments"
-    ParamList 121..123 "()"
-    Block! 124..182
-      ParenExpr! 130..180
-        Block! 140..178
-          CallExpr! 154..178
-            NameRef 154..155 "g"
-            ArgList! 155..178
-              NameRef 173..174 "a"
-              Error! 175..176 "}"
-              NameRef 177..178 "x"
-  FnItem! 183..243
-    Name 186..202 "closer_in_parens"
-    ParamList 202..204 "()"
-    Block! 205..243
-      ParenExpr! 211..241
-        Block! 221..239
-          ParenExpr! 235..239
-            Error! 236..237 "}"
-            NameRef 238..239 "x"
+SourceFile! 1:1..16:1
+  FnItem! 1:1..1:39
+    Name 1:4..1:19 "item_in_garbage"
+    ParamList 1:19..1:21 "()"
+    Block! 1:22..1:39
+      Error! 1:24..1:39 ": { fn g() {} }"
+  FnItem! 2:1..4:2
+    Name 2:4..2:29 "item_in_garbage_in_parens"
+    ParamList 2:29..2:31 "()"
+    Block! 2:32..4:2
+      ParenExpr! 3:5..3:25
+        Block! 3:6..3:23
+          Error! 3:8..3:23 ": { fn g() {} }"
+  FnItem! 5:1..10:2
+    Name 5:4..5:23 "closer_in_arguments"
+    ParamList 5:23..5:25 "()"
+    Block! 5:26..10:2
+      ParenExpr! 6:5..9:24
+        Block! 7:9..9:22
+          CallExpr! 8:13..9:22
+            NameRef 8:13..8:14 "g"
+            ArgList! 8:14..9:22
+              NameRef 9:17..9:18 "a"
+              Error! 9:19..9:20 "}"
+              NameRef 9:21..9:22 "x"
+  FnItem! 11:1..15:2
+    Name 11:4..11:20 "closer_in_parens"
+    ParamList 11:20..11:22 "()"
+    Block! 11:23..15:2
+      ParenExpr! 12:5..14:19
+        Block! 13:9..14:17
+          ParenExpr! 14:13..14:17
+            Error! 14:14..14:15 "}"
+            NameRef 14:16..14:17 "x"
 
 == evidence ==
-ExpectedStatement at 23
-Expected(RBrace) at 39
-ExpectedStatement at 79
-Expected(RBrace) at 95
-ExpectedExpression at 175
-Expected(RParen) at 179
-Expected(RBrace) at 179
-ExpectedExpression at 236
-Expected(RParen) at 240
-Expected(RBrace) at 240
+ExpectedStatement at 1:24
+Expected(RBrace) at 2:1
+ExpectedStatement at 3:8
+Expected(RBrace) at 3:24
+ExpectedExpression at 9:19
+Expected(RParen) at 9:23
+Expected(RBrace) at 9:23
+ExpectedExpression at 14:14
+Expected(RParen) at 14:18
+Expected(RBrace) at 14:18
 
 == diagnostics ==
 error[syntax/expected-statement] 1:24..1:25 ":": expected a statement

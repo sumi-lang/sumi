@@ -1,33 +1,33 @@
 == tree ==
-SourceFile! 0..121
-  FnItem! 0..32
-    Name 3..8 "empty"
-    ParamList 8..10 "()"
-    Block! 11..32
-      ParenExpr! 17..19 "()"
-      ReturnStmt 24..30 "return"
-  FnItem! 33..78
-    Name 36..49 "damaged_inner"
-    ParamList 49..51 "()"
-    Block! 52..78
-      ParenExpr! 58..65
-        ParenExpr! 59..64
-          BinaryExpr! 60..63
-            LiteralExpr 60..61 "1"
-      ReturnStmt 70..76 "return"
-  FnItem! 79..120
-    Name 82..96 "missing_closer"
-    ParamList 96..98 "()"
-    Block! 99..120
-      ParenExpr! 105..107
-        LiteralExpr 106..107 "1"
-      ReturnStmt 112..118 "return"
+SourceFile! 1:1..13:1
+  FnItem! 1:1..4:2
+    Name 1:4..1:9 "empty"
+    ParamList 1:9..1:11 "()"
+    Block! 1:12..4:2
+      ParenExpr! 2:5..2:7 "()"
+      ReturnStmt 3:5..3:11 "return"
+  FnItem! 5:1..8:2
+    Name 5:4..5:17 "damaged_inner"
+    ParamList 5:17..5:19 "()"
+    Block! 5:20..8:2
+      ParenExpr! 6:5..6:12
+        ParenExpr! 6:6..6:11
+          BinaryExpr! 6:7..6:10
+            LiteralExpr 6:7..6:8 "1"
+      ReturnStmt 7:5..7:11 "return"
+  FnItem! 9:1..12:2
+    Name 9:4..9:18 "missing_closer"
+    ParamList 9:18..9:20 "()"
+    Block! 9:21..12:2
+      ParenExpr! 10:5..10:7
+        LiteralExpr 10:6..10:7 "1"
+      ReturnStmt 11:5..11:11 "return"
 
 == evidence ==
-ExpectedExpression at 18
-UnspacedBinaryOperator at 62
-ExpectedExpression at 63
-Expected(RParen) at 112
+ExpectedExpression at 2:6
+UnspacedBinaryOperator at 6:9
+ExpectedExpression at 6:10
+Expected(RParen) at 11:5
 
 == diagnostics ==
 error[syntax/expected-expression] 2:6: expected an expression

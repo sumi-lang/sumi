@@ -2,37 +2,37 @@ file: rejected
 frontend errors: 0 (see frontend.snap)
 semantic errors: 3
 
-fn a@123..166 signature: unavailable
-  body: if : ? @132..166
-    condition: bool true : bool @135..139
-    then: int 1 : int @146..147
-    else: call b@167..213 : ? @161..164
+fn a@3:1..7:2 signature: unavailable
+  body: if : ? @3:10..7:2
+    condition: bool true : bool @3:13..3:17
+    then: int 1 : int @4:5..4:6
+    else: call b@8:1..12:2 : ? @6:5..6:8
 
-fn b@167..213 signature: unavailable
-  body: if : ? @176..213
-    condition: bool true : bool @179..183
-    then: bool true : bool @190..194
-    else: call c@214..258 : ? @208..211
+fn b@8:1..12:2 signature: unavailable
+  body: if : ? @8:10..12:2
+    condition: bool true : bool @8:13..8:17
+    then: bool true : bool @9:5..9:9
+    else: call c@13:1..17:2 : ? @11:5..11:8
 
-fn c@214..258 signature: unavailable
-  body: if : ? @223..258
-    condition: bool true : bool @226..230
-    then: unit : unit @237..239
-    else: call a@123..166 : ? @253..256
+fn c@13:1..17:2 signature: unavailable
+  body: if : ? @13:10..17:2
+    condition: bool true : bool @13:13..13:17
+    then: unit : unit @14:5..14:7
+    else: call a@3:1..7:2 : ? @16:5..16:8
 
 == semantic diagnostics ==
 error[semantic/cannot-infer]: function result is both int, bool, and unit; add a return type annotation
-  primary @123..166
-  secondary @146..147: int here
-  secondary @161..164: bool here
-  secondary @161..164: unit here
+  primary @3:1..7:2
+  secondary @4:5..4:6: int here
+  secondary @6:5..6:8: bool here
+  secondary @6:5..6:8: unit here
 error[semantic/cannot-infer]: function result is both bool, int, and unit; add a return type annotation
-  primary @167..213
-  secondary @190..194: bool here
-  secondary @208..211: int here
-  secondary @208..211: unit here
+  primary @8:1..12:2
+  secondary @9:5..9:9: bool here
+  secondary @11:5..11:8: int here
+  secondary @11:5..11:8: unit here
 error[semantic/cannot-infer]: function result is both unit, int, and bool; add a return type annotation
-  primary @214..258
-  secondary @237..239: unit here
-  secondary @253..256: int here
-  secondary @253..256: bool here
+  primary @13:1..17:2
+  secondary @14:5..14:7: unit here
+  secondary @16:5..16:8: int here
+  secondary @16:5..16:8: bool here

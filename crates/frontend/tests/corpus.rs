@@ -8,7 +8,7 @@ use sumi_frontend::{Diagnostic, parse_source};
 use sumi_lexer::LexedFile;
 use sumi_syntax::{NodeIdx, ParseAnchor, ParseEvidence, RawIdx, SyntaxTree};
 use sumi_test::{check, corpus, evidence_name};
-use sumi_text::{Encoding, LineIndex, TextEdit, TextRange, TextSize};
+use sumi_text::{LineIndex, TextEdit, TextRange};
 
 #[test]
 fn every_case_matches_its_snapshot() {
@@ -26,13 +26,22 @@ fn snapshot(source: &str, stages: &[corpus::Stage]) -> String {
         out.push_str("tree: see hir.snap\n");
     } else {
         section(&mut out, "tree");
-        dump(parse.tree(), lexed, source, &mut out);
+        check::tree(parse.tree(), lexed);
+        render_node(
+            parse.tree(),
+            lexed,
+            source,
+            &index,
+            parse.tree().root(),
+            0,
+            &mut out,
+        );
     }
 
     if !parse.evidence().is_empty() {
         section(&mut out, "evidence");
         for evidence in parse.evidence() {
-            let at = lexed.boundary(evidence_token(evidence)).to_u32();
+            let at = index.display_offset(lexed.boundary(evidence_token(evidence)));
             writeln!(out, "{} at {at}", evidence_name(evidence)).expect("writing to a string");
         }
     }
@@ -155,27 +164,23 @@ fn push_text(out: &mut String, text: &str) {
     }
 }
 
-fn dump(tree: &SyntaxTree, lexed: &LexedFile, source: &str, out: &mut String) {
-    check::tree(tree, lexed);
-    render_node(tree, lexed, source, tree.root(), 0, out);
-}
-
 fn render_node(
     tree: &SyntaxTree,
     lexed: &LexedFile,
     source: &str,
+    index: &LineIndex<'_>,
     node: NodeIdx,
     depth: usize,
     out: &mut String,
 ) {
     let range = tree.byte_range(node, lexed);
-    let (from, to) = (range.start().to_u32(), range.end().to_u32());
     let mark = if tree.has_error(node) { "!" } else { "" };
     write!(
         out,
-        "{:indent$}{:?}{mark} {from}..{to}",
+        "{:indent$}{:?}{mark} {}",
         "",
         tree.kind(node),
+        index.display_range(range),
         indent = depth * 2
     )
     .expect("writing to a string");
@@ -185,7 +190,7 @@ fn render_node(
     out.push('\n');
 
     for child in tree.children(node) {
-        render_node(tree, lexed, source, child, depth + 1, out);
+        render_node(tree, lexed, source, index, child, depth + 1, out);
     }
 }
 
@@ -231,18 +236,10 @@ fn render(diagnostic: &Diagnostic, index: &LineIndex<'_>, source: &str, out: &mu
 }
 
 fn place(index: &LineIndex<'_>, source: &str, range: TextRange) -> String {
-    let at = |offset: TextSize| {
-        let position = index.line_col(offset, Encoding::Utf8);
-        format!("{}:{}", position.line + 1, position.col + 1)
-    };
+    let at = index.display_range(range);
     if range.start() == range.end() {
-        at(range.start())
+        at.to_string()
     } else {
-        format!(
-            "{}..{} {:?}",
-            at(range.start()),
-            at(range.end()),
-            range.text(source)
-        )
+        format!("{at} {:?}", range.text(source))
     }
 }

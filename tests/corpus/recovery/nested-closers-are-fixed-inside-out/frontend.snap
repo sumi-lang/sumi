@@ -1,25 +1,25 @@
 == tree ==
-SourceFile! 0..52
-  FnItem! 0..27
-    Name 3..9 "braces"
-    ParamList 9..11 "()"
-    Block! 12..27
-      IfExpr! 18..27
-        LiteralExpr 21..25 "true"
-        Block! 26..27 "{"
-  FnItem! 28..51
-    Name 31..37 "parens"
-    ParamList 37..39 "()"
-    Block! 40..51
-      ParenExpr! 46..49
-        ParenExpr! 47..49
-          LiteralExpr 48..49 "1"
+SourceFile! 1:1..5:1
+  FnItem! 1:1..2:14
+    Name 1:4..1:10 "braces"
+    ParamList 1:10..1:12 "()"
+    Block! 1:13..2:14
+      IfExpr! 2:5..2:14
+        LiteralExpr 2:8..2:12 "true"
+        Block! 2:13..2:14 "{"
+  FnItem! 3:1..4:10
+    Name 3:4..3:10 "parens"
+    ParamList 3:10..3:12 "()"
+    Block! 3:13..4:10
+      ParenExpr! 4:5..4:8
+        ParenExpr! 4:6..4:8
+          LiteralExpr 4:7..4:8 "1"
 
 == evidence ==
-Expected(RBrace) at 28
-Expected(RBrace) at 28
-Expected(RParen) at 50
-Expected(RParen) at 50
+Expected(RBrace) at 3:1
+Expected(RBrace) at 3:1
+Expected(RParen) at 4:9
+Expected(RParen) at 4:9
 
 == diagnostics ==
 error[syntax/expected-token] 3:1: expected `}`

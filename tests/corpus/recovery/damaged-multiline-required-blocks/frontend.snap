@@ -1,48 +1,48 @@
 == tree ==
-SourceFile! 0..166
-  FnItem! 0..13
-    Name 0..8 "headless"
-    ParamList 8..10 "()"
-    Block 11..13 "{}"
-  FnItem! 14..52
-    Name 17..34 "missing_condition"
-    ParamList 34..36 "()"
-    IfExpr! 39..52
-      Block 42..44 "{}"
-      Block 50..52 "{}"
-  FnItem! 53..80
-    Name 56..68 "missing_body"
-    ParamList 68..70 "()"
-    IfExpr! 73..80
-      LiteralExpr 76..80 "true"
-  FnItem! 81..95
-    Name 81..90 "unrelated"
-    ParamList 90..92 "()"
-    Block 93..95 "{}"
-  FnItem 96..120
-    Name 99..107 "survivor"
-    ParamList 107..109 "()"
-    TypeRef 113..116 "int"
-    LiteralExpr 119..120 "1"
-  FnItem! 121..144
-    Name 124..132 "unclosed"
-    ParamList 132..134 "()"
-    Block! 135..144
-      BinaryExpr! 141..144
-        LiteralExpr 141..142 "1"
-  FnItem 145..165
-    Name 148..152 "next"
-    ParamList 152..154 "()"
-    TypeRef 158..161 "int"
-    LiteralExpr 164..165 "2"
+SourceFile! 1:1..15:1
+  FnItem! 1:1..2:3
+    Name 1:1..1:9 "headless"
+    ParamList 1:9..1:11 "()"
+    Block 2:1..2:3 "{}"
+  FnItem! 3:1..6:3
+    Name 3:4..3:21 "missing_condition"
+    ParamList 3:21..3:23 "()"
+    IfExpr! 3:26..6:3
+      Block 4:1..4:3 "{}"
+      Block 6:1..6:3 "{}"
+  FnItem! 7:1..7:28
+    Name 7:4..7:16 "missing_body"
+    ParamList 7:16..7:18 "()"
+    IfExpr! 7:21..7:28
+      LiteralExpr 7:24..7:28 "true"
+  FnItem! 8:1..9:3
+    Name 8:1..8:10 "unrelated"
+    ParamList 8:10..8:12 "()"
+    Block 9:1..9:3 "{}"
+  FnItem 10:1..10:25
+    Name 10:4..10:12 "survivor"
+    ParamList 10:12..10:14 "()"
+    TypeRef 10:18..10:21 "int"
+    LiteralExpr 10:24..10:25 "1"
+  FnItem! 11:1..13:8
+    Name 11:4..11:12 "unclosed"
+    ParamList 11:12..11:14 "()"
+    Block! 12:1..13:8
+      BinaryExpr! 13:5..13:8
+        LiteralExpr 13:5..13:6 "1"
+  FnItem 14:1..14:21
+    Name 14:4..14:8 "next"
+    ParamList 14:8..14:10 "()"
+    TypeRef 14:14..14:17 "int"
+    LiteralExpr 14:20..14:21 "2"
 
 == evidence ==
-Expected(FnKw) at 0
-ExpectedExpression at 42
-Expected(LBrace) at 81
-Expected(FnKw) at 81
-ExpectedExpression at 145
-Expected(RBrace) at 145
+Expected(FnKw) at 1:1
+ExpectedExpression at 4:1
+Expected(LBrace) at 8:1
+Expected(FnKw) at 8:1
+ExpectedExpression at 14:1
+Expected(RBrace) at 14:1
 
 == diagnostics ==
 error[syntax/expected-token] 1:1: expected `fn`

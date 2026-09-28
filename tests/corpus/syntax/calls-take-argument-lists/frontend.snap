@@ -1,23 +1,23 @@
 == tree ==
-SourceFile 0..66
-  FnItem 0..24
-    Name 3..9 "inline"
-    ParamList 9..11 "()"
-    Block 12..24
-      CallExpr 14..22
-        NameRef 14..15 "g"
-        ArgList 15..22
-          NameRef 16..17 "a"
-          NameRef 19..20 "b"
-  FnItem 25..65
-    Name 28..37 "multiline"
-    ParamList 37..39 "()"
-    Block 40..65
-      CallExpr 44..63
-        NameRef 44..45 "g"
-        ArgList 45..63
-          NameRef 51..52 "a"
-          NameRef 58..59 "b"
+SourceFile 1:1..8:1
+  FnItem 1:1..1:25
+    Name 1:4..1:10 "inline"
+    ParamList 1:10..1:12 "()"
+    Block 1:13..1:25
+      CallExpr 1:15..1:23
+        NameRef 1:15..1:16 "g"
+        ArgList 1:16..1:23
+          NameRef 1:17..1:18 "a"
+          NameRef 1:20..1:21 "b"
+  FnItem 2:1..7:2
+    Name 2:4..2:13 "multiline"
+    ParamList 2:13..2:15 "()"
+    Block 2:16..7:2
+      CallExpr 3:3..6:4
+        NameRef 3:3..3:4 "g"
+        ArgList 3:4..6:4
+          NameRef 4:5..4:6 "a"
+          NameRef 5:5..5:6 "b"
 
 == formatted ==
 fn inline() {

@@ -2,100 +2,100 @@ file: rejected
 frontend errors: 0 (see frontend.snap)
 semantic errors: 10
 
-fn mutable_use@0..48 () -> unit ∈ unit
-  result: copy : unit @0..48
+fn mutable_use@1:1..4:2 () -> unit ∈ unit
+  result: copy : unit @1:1..4:2
     value:
-      let x@31..32: int @23..36
-        initializer: int 1 : int @35..36
-      tail: unit : unit @17..48
+      let x@2:13..2:14: int @2:5..2:18
+        initializer: int 1 : int @2:17..2:18
+      tail: unit : unit @1:18..4:2
 
-fn function_value@49..93 () -> unit ∈ unit
-  result: copy : unit @49..93
+fn function_value@5:1..7:2 () -> unit ∈ unit
+  result: copy : unit @5:1..7:2
     value:
-      let f@79..80: ? @75..91
-        initializer: hole : ? @83..91
-      tail: unit : unit @69..93
+      let f@6:9..6:10: ? @6:5..6:21
+        initializer: hole : ? @6:13..6:21
+      tail: unit : unit @5:21..7:2
 
-fn mismatch@94..119 () -> bool ∈ ∅
-  result: copy : bool @111..115
-    value: int 1 : ? @118..119
+fn mismatch@8:1..8:26 () -> bool ∈ ∅
+  result: copy : bool @8:18..8:22
+    value: int 1 : ? @8:25..8:26
 
-fn branches@120..179 () -> int ∈ [1, 1]
-  result: copy : int @137..140
-    value: if : ? @143..179
-      condition: bool true : bool @146..150
-      then: int 1 : int @157..158
-      else: bool false : bool @172..177
+fn branches@9:1..13:2 () -> int ∈ [1, 1]
+  result: copy : int @9:18..9:21
+    value: if : ? @9:24..13:2
+      condition: bool true : bool @9:27..9:31
+      then: int 1 : int @10:5..10:6
+      else: bool false : bool @12:5..12:10
 
-fn missing_else@180..217 () -> unit ∈ unit
-  body: if : unit @200..217
-    condition: bool true : bool @203..207
-    then: int 1 : ? @214..215
+fn missing_else@14:1..16:2 () -> unit ∈ unit
+  body: if : unit @14:21..16:2
+    condition: bool true : bool @14:24..14:28
+    then: int 1 : ? @15:5..15:6
     else: unit (implicit)
 
-fn annotation@218..257 () -> unit ∈ unit
-  result: copy : unit @218..257
+fn annotation@17:1..19:2 () -> unit ∈ unit
+  result: copy : unit @17:1..19:2
     value:
-      let x@244..245: bool @240..255
-        initializer: int 1 : ? @254..255
-      tail: unit : unit @234..257
+      let x@18:9..18:10: bool @18:5..18:20
+        initializer: int 1 : ? @18:19..18:20
+      tail: unit : unit @17:17..19:2
 
-fn unit_equality@258..295 () -> bool ∈ ∅
-  result: copy : bool @280..284
-    value: eager == : bool @287..295
-      lhs: unit : unit @287..289
-      rhs: unit : unit @293..295
+fn unit_equality@20:1..20:38 () -> bool ∈ ∅
+  result: copy : bool @20:23..20:27
+    value: eager == : bool @20:30..20:38
+      lhs: unit : unit @20:30..20:32
+      rhs: unit : unit @20:36..20:38
 
-fn unit_sum@296..325 () -> int ∈ ∅
-  result: copy : int @313..316
-    value: eager + : int @319..325
-      lhs: unit : ? @319..321
-      rhs: int 1 : int @324..325
+fn unit_sum@21:1..21:30 () -> int ∈ ∅
+  result: copy : int @21:18..21:21
+    value: eager + : int @21:24..21:30
+      lhs: unit : ? @21:24..21:26
+      rhs: int 1 : int @21:29..21:30
 
-fn condition@326..375 () -> int ∈ ∅
-  result: copy : int @344..347
-    value: if : ? @350..375
-      condition: int 1 : ? @353..354
-      then: int 2 : int @357..358
-      else: bool false : bool @368..373
+fn condition@22:1..22:50 () -> int ∈ ∅
+  result: copy : int @22:19..22:22
+    value: if : ? @22:25..22:50
+      condition: int 1 : ? @22:28..22:29
+      then: int 2 : int @22:32..22:33
+      else: bool false : bool @22:43..22:48
 
-fn assignment@376..419 () -> unit ∈ unit
-  result: copy : unit @376..419
+fn assignment@23:1..26:2 () -> unit ∈ unit
+  result: copy : unit @23:1..26:2
     value:
-      let x@402..403: int @398..407
-        initializer: int 1 : int @406..407
-      discard: hole : ? @412..417
-        part[0]: int 2 : int @416..417
-      tail: unit : unit @392..419
+      let x@24:9..24:10: int @24:5..24:14
+        initializer: int 1 : int @24:13..24:14
+      discard: hole : ? @25:5..25:10
+        part[0]: int 2 : int @25:9..25:10
+      tail: unit : unit @23:17..26:2
 
 == semantic diagnostics ==
 error[semantic/not-a-value]: function `mismatch` is not a value
-  primary @83..91
+  primary @6:13..6:21
 error[semantic/type-mismatch]: expected bool, found int
-  primary @118..119
-  secondary @111..115: declared here
+  primary @8:25..8:26
+  secondary @8:18..8:22: declared here
 error[semantic/type-mismatch]: if branches are int and bool
-  primary @143..179
-  secondary @157..158: int here
-  secondary @172..177: bool here
+  primary @9:24..13:2
+  secondary @10:5..10:6: int here
+  secondary @12:5..12:10: bool here
 error[semantic/type-mismatch]: expected unit, found int
-  primary @208..217
+  primary @14:29..16:2
 warning[semantic/unused-name]: local `x` is never read
-  primary @244..245
-  fix @244 -> "_": prefix the name with `_`
+  primary @18:9..18:10
+  fix @18:9 -> "_": prefix the name with `_`
 error[semantic/type-mismatch]: expected bool, found int
-  primary @254..255
-  secondary @247..251: declared here
+  primary @18:19..18:20
+  secondary @18:12..18:16: declared here
 error[semantic/type-mismatch]: unit values cannot be compared
-  primary @287..295
+  primary @20:30..20:38
 error[semantic/type-mismatch]: expected int, found unit
-  primary @319..321
+  primary @21:24..21:26
 error[semantic/type-mismatch]: if branches are int and bool
-  primary @350..375
-  secondary @357..358: int here
-  secondary @368..373: bool here
+  primary @22:25..22:50
+  secondary @22:32..22:33: int here
+  secondary @22:43..22:48: bool here
 error[semantic/type-mismatch]: expected bool, found int
-  primary @353..354
+  primary @22:28..22:29
 error[semantic/immutable-assignment]: cannot assign to immutable local `x`
-  primary @412..413
-  secondary @402..403: declared here
+  primary @25:5..25:6
+  secondary @24:9..24:10: declared here

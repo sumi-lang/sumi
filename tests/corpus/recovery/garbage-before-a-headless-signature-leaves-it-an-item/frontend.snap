@@ -1,22 +1,22 @@
 == tree ==
-SourceFile! 0..37
-  FnItem 0..14
-    Name 3..8 "value"
-    ParamList 8..10 "()"
-    LiteralExpr 13..14 "1"
-  Error! 15..16 "x"
-  FnItem! 17..36
-    Name 17..18 "g"
-    ParamList 18..26
-      Param 19..25
-        Name 19..20 "y"
-        TypeRef 22..25 "int"
-    Block 27..36
-      NameRef 33..34 "y"
+SourceFile! 1:1..5:1
+  FnItem 1:1..1:15
+    Name 1:4..1:9 "value"
+    ParamList 1:9..1:11 "()"
+    LiteralExpr 1:14..1:15 "1"
+  Error! 2:1..2:2 "x"
+  FnItem! 2:3..4:2
+    Name 2:3..2:4 "g"
+    ParamList 2:4..2:12
+      Param 2:5..2:11
+        Name 2:5..2:6 "y"
+        TypeRef 2:8..2:11 "int"
+    Block 2:13..4:2
+      NameRef 3:5..3:6 "y"
 
 == evidence ==
-ExpectedItem at 15
-Expected(FnKw) at 17
+ExpectedItem at 2:1
+Expected(FnKw) at 2:3
 
 == diagnostics ==
 error[syntax/expected-item] 2:1..2:2 "x": expected a function item

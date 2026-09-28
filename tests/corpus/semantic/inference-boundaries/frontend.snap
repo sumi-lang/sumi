@@ -1,8 +1,8 @@
 tree: see hir.snap
 
 == evidence ==
-ExpectedType at 192
-ExpectedBody at 192
+ExpectedType at 9:19
+ExpectedBody at 9:19
 
 == diagnostics ==
 error[syntax/expected-type] 9:19: expected a type

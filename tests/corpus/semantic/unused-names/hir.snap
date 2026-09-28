@@ -2,141 +2,141 @@ file: accepted
 frontend errors: 0 (see frontend.snap)
 semantic errors: 0
 
-fn parameter@0..39 (int ∈ [1, 1], int ∈ [2, 2]) -> int ∈ [2, 2]
-  param n@13..14: int
-  param m@21..22: int
-  result: copy : int @32..35
-    value: read m@21..22 : int
+fn parameter@1:1..1:40 (int ∈ [1, 1], int ∈ [2, 2]) -> int ∈ [2, 2]
+  param n@1:14..1:15: int
+  param m@1:22..1:23: int
+  result: copy : int @1:33..1:36
+    value: read m@1:22..1:23 : int
 
-fn binding@40..83 () -> int ∈ [2, 2]
-  result: copy : int @56..59
+fn binding@2:1..5:2 () -> int ∈ [2, 2]
+  result: copy : int @2:17..2:20
     value:
-      let x@70..71: int @66..75
-        initializer: int 1 : int @74..75
-      tail: int 2 : int @80..81
+      let x@3:9..3:10: int @3:5..3:14
+        initializer: int 1 : int @3:13..3:14
+      tail: int 2 : int @4:5..4:6
 
-fn silenced@84..136 (int ∈ ∅) -> int ∈ ∅
-  param _n@96..98: int
-  result: copy : int @108..111
+fn silenced@6:1..9:2 (int ∈ ∅) -> int ∈ ∅
+  param _n@6:13..6:15: int
+  result: copy : int @6:25..6:28
     value:
-      let _x@122..124: int @118..128
-        initializer: int 1 : int @127..128
-      tail: int 3 : int @133..134
+      let _x@7:9..7:11: int @7:5..7:15
+        initializer: int 1 : int @7:14..7:15
+      tail: int 3 : int @8:5..8:6
 
-fn loop_index@137..247 () -> int ∈ [1, +∞)
-  result: result : int @156..159
+fn loop_index@10:1..16:2 () -> int ∈ [1, +∞)
+  result: result : int @10:20..10:23
     outcome[0]:
-      let total@174..179: int @166..183
-        initializer: int 0 : int @182..183
-      discard: loop : unit @188..235
-        start: int 0 : int @197..198
-        end: int 3 : int @200..201
+      let total@11:13..11:18: int @11:5..11:22
+        initializer: int 0 : int @11:21..11:22
+      discard: loop : unit @12:5..14:6
+        start: int 0 : int @12:14..12:15
+        end: int 3 : int @12:17..12:18
         body:
-          let i@192..193: loop index : int @188..235
-            start: int 0 : int @197..198
-            end: int 3 : int @200..201
-          assignment: assign total@174..179 : int @212..229
-            value: eager + : int @220..229
-              lhs: read total@174..179 : int
-              rhs: int 1 : int @228..229
-          tail: unit : unit @202..235
-        next[0]: read total@174..179 : int
-      discard: after : ? @188..235
-        control: loop : unit @188..235
-          start: int 0 : int @197..198
-          end: int 3 : int @200..201
+          let i@12:9..12:10: loop index : int @12:5..14:6
+            start: int 0 : int @12:14..12:15
+            end: int 3 : int @12:17..12:18
+          assignment: assign total@11:13..11:18 : int @13:9..13:26
+            value: eager + : int @13:17..13:26
+              lhs: read total@11:13..11:18 : int
+              rhs: int 1 : int @13:25..13:26
+          tail: unit : unit @12:19..14:6
+        next[0]: read total@11:13..11:18 : int
+      discard: after : ? @12:5..14:6
+        control: loop : unit @12:5..14:6
+          start: int 0 : int @12:14..12:15
+          end: int 3 : int @12:17..12:18
           body:
-            let i@192..193: loop index : int @188..235
-              start: int 0 : int @197..198
-              end: int 3 : int @200..201
-            assignment: assign total@174..179 : int @212..229
-              value: eager + : int @220..229
-                lhs: read total@174..179 : int
-                rhs: int 1 : int @228..229
-            tail: unit : unit @202..235
-          next[0]: read total@174..179 : int
-        context: entry : ? @137..247
-      tail: loop value 0 : int @188..235
-        loop: @188..235
+            let i@12:9..12:10: loop index : int @12:5..14:6
+              start: int 0 : int @12:14..12:15
+              end: int 3 : int @12:17..12:18
+            assignment: assign total@11:13..11:18 : int @13:9..13:26
+              value: eager + : int @13:17..13:26
+                lhs: read total@11:13..11:18 : int
+                rhs: int 1 : int @13:25..13:26
+            tail: unit : unit @12:19..14:6
+          next[0]: read total@11:13..11:18 : int
+        context: entry : ? @10:1..16:2
+      tail: loop value 0 : int @12:5..14:6
+        loop: @12:5..14:6
 
-fn assigned@248..306 () -> int ∈ [4, 4]
-  result: copy : int @265..268
+fn assigned@17:1..21:2 () -> int ∈ [4, 4]
+  result: copy : int @17:18..17:21
     value:
-      let x@283..284: int @275..288
-        initializer: int 1 : int @287..288
-      assignment: assign x@283..284 : int @293..298
-        value: int 2 : int @297..298
-      tail: int 4 : int @303..304
+      let x@18:13..18:14: int @18:5..18:18
+        initializer: int 1 : int @18:17..18:18
+      assignment: assign x@18:13..18:14 : int @19:5..19:10
+        value: int 2 : int @19:9..19:10
+      tail: int 4 : int @20:5..20:6
 
-fn shadowed@307..365 () -> int ∈ [2, 2]
-  result: copy : int @324..327
+fn shadowed@22:1..26:2 () -> int ∈ [2, 2]
+  result: copy : int @22:18..22:21
     value:
-      let x@338..339: int @334..343
-        initializer: int 1 : int @342..343
-      let x@352..353: int @348..357
-        initializer: int 2 : int @356..357
-      tail: read x@352..353 : int
+      let x@23:9..23:10: int @23:5..23:14
+        initializer: int 1 : int @23:13..23:14
+      let x@24:9..24:10: int @24:5..24:14
+        initializer: int 2 : int @24:13..24:14
+      tail: read x@24:9..24:10 : int
 
-fn dead_read@366..429 (int ∈ [3, 3]) -> int ∈ [5, 5]
-  param n@379..380: int
-  result: copy : int @390..393
-    value: if : int @396..429
-      condition: bool false : bool @399..404
-      then: read n@379..380 : int
-      else: int 5 : int @426..427
+fn dead_read@27:1..31:2 (int ∈ [3, 3]) -> int ∈ [5, 5]
+  param n@27:14..27:15: int
+  result: copy : int @27:25..27:28
+    value: if : int @27:31..31:2
+      condition: bool false : bool @27:34..27:39
+      then: read n@27:14..27:15 : int
+      else: int 5 : int @30:5..30:6
 
-fn local_taken@430..473 (int ∈ [4, 4], int ∈ [5, 5]) -> int ∈ [5, 5]
-  param x@445..446: int
-  param _x@453..455: int
-  result: copy : int @465..468
-    value: read _x@453..455 : int
+fn local_taken@32:1..32:44 (int ∈ [4, 4], int ∈ [5, 5]) -> int ∈ [5, 5]
+  param x@32:16..32:17: int
+  param _x@32:24..32:26: int
+  result: copy : int @32:36..32:39
+    value: read _x@32:24..32:26 : int
 
-fn _six@474..494 () -> int ∈ [6, 6]
-  result: copy : int @487..490
-    value: int 6 : int @493..494
+fn _six@33:1..33:21 () -> int ∈ [6, 6]
+  result: copy : int @33:14..33:17
+    value: int 6 : int @33:20..33:21
 
-fn function_taken@495..538 (int ∈ [6, 6]) -> int ∈ [6, 6]
-  param six@513..516: int
-  result: copy : int @526..529
-    value: call _six@474..494 : int @532..538
+fn function_taken@34:1..34:44 (int ∈ [6, 6]) -> int ∈ [6, 6]
+  param six@34:19..34:22: int
+  result: copy : int @34:32..34:35
+    value: call _six@33:1..33:21 : int @34:38..34:44
 
-fn caller@539..630 () -> int ∈ [18, 18]
-  result: copy : int @554..557
-    value: eager + : int @560..630
-      lhs: eager + : int @560..610
-        lhs: eager + : int @560..590
-          lhs: call parameter@0..39 : int @560..575
-            arg[0]: int 1 : int @570..571
-            arg[1]: int 2 : int @573..574
-          rhs: call dead_read@366..429 : int @578..590
-            arg[0]: int 3 : int @588..589
-        rhs: call local_taken@430..473 : int @593..610
-          arg[0]: int 4 : int @605..606
-          arg[1]: int 5 : int @608..609
-      rhs: call function_taken@495..538 : int @613..630
-        arg[0]: int 6 : int @628..629
+fn caller@35:1..35:92 () -> int ∈ [18, 18]
+  result: copy : int @35:16..35:19
+    value: eager + : int @35:22..35:92
+      lhs: eager + : int @35:22..35:72
+        lhs: eager + : int @35:22..35:52
+          lhs: call parameter@1:1..1:40 : int @35:22..35:37
+            arg[0]: int 1 : int @35:32..35:33
+            arg[1]: int 2 : int @35:35..35:36
+          rhs: call dead_read@27:1..31:2 : int @35:40..35:52
+            arg[0]: int 3 : int @35:50..35:51
+        rhs: call local_taken@32:1..32:44 : int @35:55..35:72
+          arg[0]: int 4 : int @35:67..35:68
+          arg[1]: int 5 : int @35:70..35:71
+      rhs: call function_taken@34:1..34:44 : int @35:75..35:92
+        arg[0]: int 6 : int @35:90..35:91
 
 == semantic diagnostics ==
 warning[semantic/unused-name]: parameter `n` is never read
-  primary @13..14
-  fix @13 -> "_": prefix the name with `_`
+  primary @1:14..1:15
+  fix @1:14 -> "_": prefix the name with `_`
 warning[semantic/unused-name]: local `x` is never read
-  primary @70..71
-  fix @70 -> "_": prefix the name with `_`
+  primary @3:9..3:10
+  fix @3:9 -> "_": prefix the name with `_`
 warning[semantic/unused-function]: function `silenced` is never called
-  primary @87..95
+  primary @6:4..6:12
 warning[semantic/unused-name]: loop index `i` is never read
-  primary @192..193
-  fix @192 -> "_": prefix the name with `_`
+  primary @12:9..12:10
+  fix @12:9 -> "_": prefix the name with `_`
 warning[semantic/unused-name]: local `x` is assigned but never read
-  primary @283..284
+  primary @18:13..18:14
 warning[semantic/unused-name]: local `x` is never read
-  primary @338..339
-  fix @338 -> "_": prefix the name with `_`
+  primary @23:9..23:10
+  fix @23:9 -> "_": prefix the name with `_`
 warning[semantic/constant-condition]: condition is always false
-  primary @399..404
-  secondary @405..414: this branch never runs
+  primary @27:34..27:39
+  secondary @27:40..29:2: this branch never runs
 warning[semantic/unused-name]: parameter `x` is never read
-  primary @445..446
+  primary @32:16..32:17
 warning[semantic/unused-name]: parameter `six` is never read
-  primary @513..516
+  primary @34:19..34:22

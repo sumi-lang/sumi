@@ -1,24 +1,24 @@
 == tree ==
-SourceFile! 0..98
-  FnItem! 0..25
-    Name 3..11 "fraction"
-    ParamList 11..13 "()"
-    Block! 14..25
-      LiteralExpr 20..21 "1"
-      Error! 21..23 ".5"
-  FnItem 26..68
-    Name 29..52 "leading_zero_and_suffix"
-    ParamList 52..54 "()"
-    Block 55..68
-      LiteralExpr 61..66 "01u32"
-  FnItem 69..97
-    Name 72..81 "separator"
-    ParamList 81..83 "()"
-    Block 84..97
-      LiteralExpr 90..95 "1_000"
+SourceFile! 1:1..9:1
+  FnItem! 1:1..2:10
+    Name 1:4..1:12 "fraction"
+    ParamList 1:12..1:14 "()"
+    Block! 1:15..2:10
+      LiteralExpr 2:5..2:6 "1"
+      Error! 2:6..2:8 ".5"
+  FnItem 3:1..5:2
+    Name 3:4..3:27 "leading_zero_and_suffix"
+    ParamList 3:27..3:29 "()"
+    Block 3:30..5:2
+      LiteralExpr 4:5..4:10 "01u32"
+  FnItem 6:1..8:2
+    Name 6:4..6:13 "separator"
+    ParamList 6:13..6:15 "()"
+    Block 6:16..8:2
+      LiteralExpr 7:5..7:10 "1_000"
 
 == evidence ==
-ExpectedStatement at 21
+ExpectedStatement at 2:6
 
 == diagnostics ==
 error[syntax/expected-statement] 2:6..2:7 ".": expected a statement

@@ -1,118 +1,118 @@
 == tree ==
-SourceFile! 0..488
-  FnItem! 0..34
-    Name 3..15 "missing_name"
-    ParamList 15..17 "()"
-    ForExpr! 20..34
-      LiteralExpr 27..28 "2"
-      LiteralExpr 30..31 "7"
-      Block 32..34 "{}"
-  FnItem! 35..66
-    Name 38..48 "missing_in"
-    ParamList 48..50 "()"
-    ForExpr! 53..66
-      Name 57..58 "i"
-      LiteralExpr 59..60 "2"
-      LiteralExpr 62..63 "7"
-      Block 64..66 "{}"
-  FnItem! 67..103
-    Name 70..83 "missing_start"
-    ParamList 83..85 "()"
-    ForExpr! 88..103
-      Name 92..93 "i"
-      LiteralExpr 99..100 "7"
-      Block 101..103 "{}"
-  FnItem! 104..138
-    Name 107..118 "missing_end"
-    ParamList 118..120 "()"
-    ForExpr! 123..138
-      Name 127..128 "i"
-      LiteralExpr 132..133 "2"
-      Block 136..138 "{}"
-  FnItem! 139..175
-    Name 142..155 "missing_range"
-    ParamList 155..157 "()"
-    ForExpr! 160..175
-      Name 164..165 "i"
-      LiteralExpr 169..170 "2"
-      LiteralExpr 171..172 "7"
-      Block 173..175 "{}"
-  FnItem! 176..212
-    Name 179..199 "missing_in_and_range"
-    ParamList 199..201 "()"
-    ForExpr! 204..212
-      Name 208..209 "i"
-      Block 210..212 "{}"
-  FnItem! 213..251
-    Name 216..235 "missing_whole_range"
-    ParamList 235..237 "()"
-    ForExpr! 240..251
-      Name 244..245 "i"
-      Block 249..251 "{}"
-  FnItem! 252..286
-    Name 255..266 "missing_dot"
-    ParamList 266..268 "()"
-    ForExpr! 271..286
-      Name 275..276 "i"
-      LiteralExpr 280..281 "2"
-      LiteralExpr 282..283 "7"
-      Block 284..286 "{}"
-  FnItem! 287..322
-    Name 290..300 "split_dots"
-    ParamList 300..302 "()"
-    ForExpr! 305..322
-      Name 309..310 "i"
-      LiteralExpr 314..315 "2"
-      LiteralExpr 318..319 "7"
-      Block 320..322 "{}"
-  FnItem! 323..375
-    Name 326..340 "commented_dots"
-    ParamList 340..342 "()"
-    ForExpr! 345..375
-      Name 349..350 "i"
-      LiteralExpr 354..355 "2"
-      LiteralExpr 371..372 "7"
-      Block 373..375 "{}"
-  FnItem! 376..410
-    Name 379..388 "inclusive"
-    ParamList 388..390 "()"
-    ForExpr! 393..410
-      Name 397..398 "i"
-      LiteralExpr 402..403 "2"
-      Error! 405..406 "="
-      LiteralExpr 406..407 "7"
-      Block 408..410 "{}"
-  FnItem! 411..444
-    Name 414..426 "missing_body"
-    ParamList 426..428 "()"
-    ForExpr! 431..444
-      Name 435..436 "i"
-      LiteralExpr 440..441 "2"
-      LiteralExpr 443..444 "7"
-  FnItem 445..468
-    Name 448..462 "no_range_value"
-    ParamList 462..464 "()"
-    LiteralExpr 467..468 "2"
-  Error! 468..471 "..7"
-  FnItem 472..487
-    Name 475..480 "after"
-    ParamList 480..482 "()"
-    LiteralExpr 485..487 "42"
+SourceFile! 1:1..16:1
+  FnItem! 1:1..1:35
+    Name 1:4..1:16 "missing_name"
+    ParamList 1:16..1:18 "()"
+    ForExpr! 1:21..1:35
+      LiteralExpr 1:28..1:29 "2"
+      LiteralExpr 1:31..1:32 "7"
+      Block 1:33..1:35 "{}"
+  FnItem! 2:1..2:32
+    Name 2:4..2:14 "missing_in"
+    ParamList 2:14..2:16 "()"
+    ForExpr! 2:19..2:32
+      Name 2:23..2:24 "i"
+      LiteralExpr 2:25..2:26 "2"
+      LiteralExpr 2:28..2:29 "7"
+      Block 2:30..2:32 "{}"
+  FnItem! 3:1..3:37
+    Name 3:4..3:17 "missing_start"
+    ParamList 3:17..3:19 "()"
+    ForExpr! 3:22..3:37
+      Name 3:26..3:27 "i"
+      LiteralExpr 3:33..3:34 "7"
+      Block 3:35..3:37 "{}"
+  FnItem! 4:1..4:35
+    Name 4:4..4:15 "missing_end"
+    ParamList 4:15..4:17 "()"
+    ForExpr! 4:20..4:35
+      Name 4:24..4:25 "i"
+      LiteralExpr 4:29..4:30 "2"
+      Block 4:33..4:35 "{}"
+  FnItem! 5:1..5:37
+    Name 5:4..5:17 "missing_range"
+    ParamList 5:17..5:19 "()"
+    ForExpr! 5:22..5:37
+      Name 5:26..5:27 "i"
+      LiteralExpr 5:31..5:32 "2"
+      LiteralExpr 5:33..5:34 "7"
+      Block 5:35..5:37 "{}"
+  FnItem! 6:1..6:37
+    Name 6:4..6:24 "missing_in_and_range"
+    ParamList 6:24..6:26 "()"
+    ForExpr! 6:29..6:37
+      Name 6:33..6:34 "i"
+      Block 6:35..6:37 "{}"
+  FnItem! 7:1..7:39
+    Name 7:4..7:23 "missing_whole_range"
+    ParamList 7:23..7:25 "()"
+    ForExpr! 7:28..7:39
+      Name 7:32..7:33 "i"
+      Block 7:37..7:39 "{}"
+  FnItem! 8:1..8:35
+    Name 8:4..8:15 "missing_dot"
+    ParamList 8:15..8:17 "()"
+    ForExpr! 8:20..8:35
+      Name 8:24..8:25 "i"
+      LiteralExpr 8:29..8:30 "2"
+      LiteralExpr 8:31..8:32 "7"
+      Block 8:33..8:35 "{}"
+  FnItem! 9:1..9:36
+    Name 9:4..9:14 "split_dots"
+    ParamList 9:14..9:16 "()"
+    ForExpr! 9:19..9:36
+      Name 9:23..9:24 "i"
+      LiteralExpr 9:28..9:29 "2"
+      LiteralExpr 9:32..9:33 "7"
+      Block 9:34..9:36 "{}"
+  FnItem! 10:1..11:10
+    Name 10:4..10:18 "commented_dots"
+    ParamList 10:18..10:20 "()"
+    ForExpr! 10:23..11:10
+      Name 10:27..10:28 "i"
+      LiteralExpr 10:32..10:33 "2"
+      LiteralExpr 11:6..11:7 "7"
+      Block 11:8..11:10 "{}"
+  FnItem! 12:1..12:35
+    Name 12:4..12:13 "inclusive"
+    ParamList 12:13..12:15 "()"
+    ForExpr! 12:18..12:35
+      Name 12:22..12:23 "i"
+      LiteralExpr 12:27..12:28 "2"
+      Error! 12:30..12:31 "="
+      LiteralExpr 12:31..12:32 "7"
+      Block 12:33..12:35 "{}"
+  FnItem! 13:1..13:34
+    Name 13:4..13:16 "missing_body"
+    ParamList 13:16..13:18 "()"
+    ForExpr! 13:21..13:34
+      Name 13:25..13:26 "i"
+      LiteralExpr 13:30..13:31 "2"
+      LiteralExpr 13:33..13:34 "7"
+  FnItem 14:1..14:24
+    Name 14:4..14:18 "no_range_value"
+    ParamList 14:18..14:20 "()"
+    LiteralExpr 14:23..14:24 "2"
+  Error! 14:24..14:27 "..7"
+  FnItem 15:1..15:16
+    Name 15:4..15:9 "after"
+    ParamList 15:9..15:11 "()"
+    LiteralExpr 15:14..15:16 "42"
 
 == evidence ==
-ExpectedName at 24
-Expected(InKw) at 59
-ExpectedExpression at 97
-ExpectedExpression at 136
-ExpectedRangeOperator at 171
-Expected(InKw) at 210
-ExpectedExpression at 249
-Expected(Dot) at 282
-Unexpected at 315
-Unexpected at 355
-ExpectedExpression at 405
-Expected(LBrace) at 445
-ExpectedItem at 468
+ExpectedName at 1:25
+Expected(InKw) at 2:25
+ExpectedExpression at 3:31
+ExpectedExpression at 4:33
+ExpectedRangeOperator at 5:33
+Expected(InKw) at 6:35
+ExpectedExpression at 7:37
+Expected(Dot) at 8:31
+Unexpected at 9:29
+Unexpected at 10:33
+ExpectedExpression at 12:30
+Expected(LBrace) at 14:1
+ExpectedItem at 14:24
 
 == diagnostics ==
 error[syntax/expected-name] 1:25: expected a name

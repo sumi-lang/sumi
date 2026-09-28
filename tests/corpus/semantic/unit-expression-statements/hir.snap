@@ -2,107 +2,107 @@ file: rejected
 frontend errors: 0 (see frontend.snap)
 semantic errors: 15
 
-fn value@0..21 () -> int ∈ [1, 1]
-  result: copy : int @14..17
-    value: int 1 : int @20..21
+fn value@1:1..1:22 () -> int ∈ [1, 1]
+  result: copy : int @1:15..1:18
+    value: int 1 : int @1:21..1:22
 
-fn action@22..36 () -> unit ∈ unit
-  result: copy : unit @22..36
-    value: unit : unit @34..36
+fn action@2:1..2:15 () -> unit ∈ unit
+  result: copy : unit @2:1..2:15
+    value: unit : unit @2:13..2:15
 
-fn accepted@37..197 () -> int ∈ [1, 1]
-  result: copy : int @54..57
+fn accepted@3:1..15:2 () -> int ∈ [1, 1]
+  result: copy : int @3:18..3:21
     value:
-      let u@68..69: unit @64..80
-        initializer: call action@22..36 : unit @72..80
-      discard: read u@68..69 : unit
-      discard: read u@68..69 : unit
-      discard: call action@22..36 : unit @99..107
-      discard: call action@22..36 : unit @113..121
-      discard: unit : unit @127..129
-      discard: if : unit @134..144
-        condition: bool true : bool @137..141
-        then: unit : unit @142..144
+      let u@4:9..4:10: unit @4:5..4:21
+        initializer: call action@2:1..2:15 : unit @4:13..4:21
+      discard: read u@4:9..4:10 : unit
+      discard: read u@4:9..4:10 : unit
+      discard: call action@2:1..2:15 : unit @7:5..7:13
+      discard: call action@2:1..2:15 : unit @8:6..8:14
+      discard: unit : unit @9:5..9:7
+      discard: if : unit @10:5..10:15
+        condition: bool true : bool @10:8..10:12
+        then: unit : unit @10:13..10:15
         else: unit (implicit)
-      discard: call value@0..21 : int @153..160
-      discard: bool true : bool @169..173
-      tail: call value@0..21 : int @188..195
+      discard: call value@1:1..1:22 : int @11:9..11:16
+      discard: bool true : bool @12:9..12:13
+      tail: call value@1:1..1:22 : int @14:5..14:12
 
-fn rejected@198..376 () -> int ∈ [0, 0]
-  result: copy : int @215..218
+fn rejected@16:1..33:2 () -> int ∈ [0, 0]
+  result: copy : int @16:18..16:21
     value:
-      let x@229..230: int @225..234
-        initializer: int 1 : int @233..234
-      discard: read x@229..230 : int
-      discard: read x@229..230 : int
-      discard: eager + : int @253..258
-        lhs: int 1 : int @253..254
-        rhs: int 2 : int @257..258
-      discard: bool true : bool @263..267
-      discard: call value@0..21 : int @272..279
-      discard: call value@0..21 : int @285..292
-      discard: int 1 : int @308..309
-      discard: if : int @320..368
-        condition: bool true : bool @323..327
-        then: int 1 : int @338..339
-        else: int 2 : int @361..362
-      tail: int 0 : int @373..374
+      let x@17:9..17:10: int @17:5..17:14
+        initializer: int 1 : int @17:13..17:14
+      discard: read x@17:9..17:10 : int
+      discard: read x@17:9..17:10 : int
+      discard: eager + : int @20:5..20:10
+        lhs: int 1 : int @20:5..20:6
+        rhs: int 2 : int @20:9..20:10
+      discard: bool true : bool @21:5..21:9
+      discard: call value@1:1..1:22 : int @22:5..22:12
+      discard: call value@1:1..1:22 : int @23:6..23:13
+      discard: int 1 : int @25:9..25:10
+      discard: if : int @27:5..31:6
+        condition: bool true : bool @27:8..27:12
+        then: int 1 : int @28:9..28:10
+        else: int 2 : int @30:9..30:10
+      tail: int 0 : int @32:5..32:6
 
-fn failed_expressions@377..469 () -> unit ∈ unit
-  result: copy : unit @377..469
+fn failed_expressions@34:1..41:2 () -> unit ∈ unit
+  result: copy : unit @34:1..41:2
     value:
-      discard: hole : ? @407..414
-      discard: eager + : int @419..427
-        lhs: int 1 : int @419..420
-        rhs: bool true : ? @423..427
-      discard: if : unit @432..457
-        condition: bool true : bool @435..439
-        then: int 1 : ? @450..451
+      discard: hole : ? @35:5..35:12
+      discard: eager + : int @36:5..36:13
+        lhs: int 1 : int @36:5..36:6
+        rhs: bool true : ? @36:9..36:13
+      discard: if : unit @37:5..39:6
+        condition: bool true : bool @37:8..37:12
+        then: int 1 : ? @38:9..38:10
         else: unit (implicit)
-      discard: int 0 : int @466..467
-      tail: unit : unit @401..469
+      discard: int 0 : int @40:9..40:10
+      tail: unit : unit @34:25..41:2
 
-fn nested_failure@470..541 () -> unit ∈ unit
-  result: copy : unit @470..541
+fn nested_failure@42:1..48:2 () -> unit ∈ unit
+  result: copy : unit @42:1..48:2
     value:
-      discard: call value@0..21 : int @506..513
-      discard: int 2 : int @522..523
-      discard: int 0 : int @538..539
-      tail: unit : unit @490..541
+      discard: call value@1:1..1:22 : int @44:9..44:16
+      discard: int 2 : int @45:9..45:10
+      discard: int 0 : int @47:9..47:10
+      tail: unit : unit @42:21..48:2
 
-fn tail_requires_unit@542..581 () -> unit ∈ ∅
-  result: copy : unit @542..581
-    value: call value@0..21 : ? @572..579
+fn tail_requires_unit@49:1..51:2 () -> unit ∈ ∅
+  result: copy : unit @49:1..51:2
+    value: call value@1:1..1:22 : ? @50:5..50:12
 
 == semantic diagnostics ==
 error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
-  primary @239..240
+  primary @18:5..18:6
 error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
-  primary @245..248
+  primary @19:5..19:8
 error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
-  primary @253..258
+  primary @20:5..20:10
 error[semantic/unused-value]: unused value of type bool; use `_ =` to discard it
-  primary @263..267
+  primary @21:5..21:9
 error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
-  primary @272..279
+  primary @22:5..22:12
 error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
-  primary @284..293
+  primary @23:5..23:14
 error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
-  primary @298..315
+  primary @24:5..26:6
 error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
-  primary @320..368
+  primary @27:5..31:6
 error[semantic/unknown-name]: unknown name `missing`
-  primary @407..414
+  primary @35:5..35:12
 error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
-  primary @419..427
+  primary @36:5..36:13
 error[semantic/type-mismatch]: expected int, found bool
-  primary @423..427
+  primary @36:9..36:13
 error[semantic/type-mismatch]: expected unit, found int
-  primary @440..457
+  primary @37:13..39:6
 error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
-  primary @496..529
+  primary @43:5..46:6
 error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
-  primary @506..513
+  primary @44:9..44:16
 error[semantic/type-mismatch]: expected unit, found int
-  primary @566..581
-  secondary @542..581: declared here
+  primary @49:25..51:2
+  secondary @49:1..51:2: declared here

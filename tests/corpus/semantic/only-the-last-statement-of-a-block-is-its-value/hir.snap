@@ -2,30 +2,30 @@ file: rejected
 frontend errors: 0 (see frontend.snap)
 semantic errors: 6
 
-fn f@0..95 () -> int ∈ [42, 42]
-  result: copy : int @10..13
+fn f@1:1..11:2 () -> int ∈ [42, 42]
+  result: copy : int @1:11..1:14
     value:
-      discard: hole : ? @20..23
-      discard: if : ? @28..52
-        condition: hole : ? @31..32
-        then: hole : ? @43..46
+      discard: hole : ? @2:5..2:8
+      discard: if : ? @3:5..5:6
+        condition: hole : ? @3:8..3:9
+        then: hole : ? @4:9..4:12
         else: unit (implicit)
-      discard: hole : ? @67..70
-      discard: eager + : ? @81..86
-        lhs: hole : ? @81..82
-        rhs: hole : ? @85..86
-      tail: int 42 : int @91..93
+      discard: hole : ? @7:9..7:12
+      discard: eager + : ? @9:5..9:10
+        lhs: hole : ? @9:5..9:6
+        rhs: hole : ? @9:9..9:10
+      tail: int 42 : int @10:5..10:7
 
 == semantic diagnostics ==
 error[semantic/unknown-name]: unknown function `g`
-  primary @20..21
+  primary @2:5..2:6
 error[semantic/unknown-name]: unknown name `c`
-  primary @31..32
+  primary @3:8..3:9
 error[semantic/unknown-name]: unknown function `h`
-  primary @43..44
+  primary @4:9..4:10
 error[semantic/unknown-name]: unknown function `k`
-  primary @67..68
+  primary @7:9..7:10
 error[semantic/unknown-name]: unknown name `a`
-  primary @81..82
+  primary @9:5..9:6
 error[semantic/unknown-name]: unknown name `b`
-  primary @85..86
+  primary @9:9..9:10

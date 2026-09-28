@@ -1,37 +1,37 @@
 == tree ==
-SourceFile! 0..103
-  FnItem! 0..102
-    Name 3..4 "f"
-    ParamList 4..6 "()"
-    Block! 7..102
-      LetStmt 13..27
-        Name 17..23 "before"
-        LiteralExpr 26..27 "0"
-      Error! 32..41
-        BinaryExpr 32..37
-          NameRef 32..33 "a"
-          NameRef 36..37 "b"
-        NameRef 40..41 "c"
-      LetStmt 46..60
-        Name 50..56 "middle"
-        LiteralExpr 59..60 "1"
-      Error! 65..82
-        BinaryExpr! 65..78
-          Error! 65..74
-            BinaryExpr 65..70
-              NameRef 65..66 "e"
-              NameRef 69..70 "f"
-            NameRef 73..74 "g"
-          NameRef 77..78 "h"
-        NameRef 81..82 "i"
-      LetStmt 87..100
-        Name 91..96 "after"
-        LiteralExpr 99..100 "2"
+SourceFile! 1:1..8:1
+  FnItem! 1:1..7:2
+    Name 1:4..1:5 "f"
+    ParamList 1:5..1:7 "()"
+    Block! 1:8..7:2
+      LetStmt 2:5..2:19
+        Name 2:9..2:15 "before"
+        LiteralExpr 2:18..2:19 "0"
+      Error! 3:5..3:14
+        BinaryExpr 3:5..3:10
+          NameRef 3:5..3:6 "a"
+          NameRef 3:9..3:10 "b"
+        NameRef 3:13..3:14 "c"
+      LetStmt 4:5..4:19
+        Name 4:9..4:15 "middle"
+        LiteralExpr 4:18..4:19 "1"
+      Error! 5:5..5:22
+        BinaryExpr! 5:5..5:18
+          Error! 5:5..5:14
+            BinaryExpr 5:5..5:10
+              NameRef 5:5..5:6 "e"
+              NameRef 5:9..5:10 "f"
+            NameRef 5:13..5:14 "g"
+          NameRef 5:17..5:18 "h"
+        NameRef 5:21..5:22 "i"
+      LetStmt 6:5..6:18
+        Name 6:9..6:14 "after"
+        LiteralExpr 6:17..6:18 "2"
 
 == evidence ==
-ChainedComparison at 38
-ChainedComparison at 71
-ChainedComparison at 79
+ChainedComparison at 3:11
+ChainedComparison at 5:11
+ChainedComparison at 5:19
 
 == diagnostics ==
 error[syntax/chained-comparison] 3:11..3:12 "<": comparison operators cannot be chained

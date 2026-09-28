@@ -2,22 +2,22 @@ file: rejected
 frontend errors: 0 (see frontend.snap)
 semantic errors: 1
 
-fn damaged@0..53 (int ∈ ∅) -> int ∈ ∅
-  param x@11..12: int
-  result: copy : int @22..25
+fn damaged@1:1..4:2 (int ∈ ∅) -> int ∈ ∅
+  param x@1:12..1:13: int
+  result: copy : int @1:23..1:26
     value:
-      let f@36..37: ? @32..45
-        initializer: hole : ? @40..45
-      tail: int 2 : int @50..51
+      let f@2:9..2:10: ? @2:5..2:18
+        initializer: hole : ? @2:13..2:18
+      tail: int 2 : int @3:5..3:6
 
-fn whole@54..81 (int ∈ ∅) -> int ∈ ∅
-  param x@63..64: int
-  result: copy : int @74..77
-    value: int 3 : int @80..81
+fn whole@5:1..5:28 (int ∈ ∅) -> int ∈ ∅
+  param x@5:10..5:11: int
+  result: copy : int @5:21..5:24
+    value: int 3 : int @5:27..5:28
 
 == semantic diagnostics ==
 error[semantic/not-a-value]: function `whole` is not a value
-  primary @40..45
+  primary @2:13..2:18
 warning[semantic/unused-name]: parameter `x` is never read
-  primary @63..64
-  fix @63 -> "_": prefix the name with `_`
+  primary @5:10..5:11
+  fix @5:10 -> "_": prefix the name with `_`

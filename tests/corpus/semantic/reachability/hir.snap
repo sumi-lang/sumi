@@ -2,90 +2,90 @@ file: accepted
 frontend errors: 0 (see frontend.snap)
 semantic errors: 0
 
-fn dead_branch@0..59 () -> int ∈ [2, 2]
-  result: copy : int @20..23
-    value: if : int @26..59
-      condition: bool false : bool @29..34
-      then: int 1 : int @41..42
-      else: int 2 : int @56..57
+fn dead_branch@1:1..5:2 () -> int ∈ [2, 2]
+  result: copy : int @1:21..1:24
+    value: if : int @1:27..5:2
+      condition: bool false : bool @1:30..1:35
+      then: int 1 : int @2:5..2:6
+      else: int 2 : int @4:5..4:6
 
-fn dead_rhs@60..102 () -> bool ∈ {false}
-  result: copy : bool @77..81
-    value: lazy and : bool @84..102
-      lhs: bool false : bool @84..89
-      rhs: call absent@103..136 : bool @93..102
-        arg[0]: int 1 : int @100..101
+fn dead_rhs@6:1..6:43 () -> bool ∈ {false}
+  result: copy : bool @6:18..6:22
+    value: lazy and : bool @6:25..6:43
+      lhs: bool false : bool @6:25..6:30
+      rhs: call absent@7:1..7:34 : bool @6:34..6:43
+        arg[0]: int 1 : int @6:41..6:42
 
-fn absent@103..136 (int ∈ ∅) -> bool ∈ ∅
-  param n@113..114: int
-  result: copy : bool @124..128
-    value: eager > : bool @131..136
-      lhs: read n@113..114 : int
-      rhs: int 0 : int @135..136
+fn absent@7:1..7:34 (int ∈ ∅) -> bool ∈ ∅
+  param n@7:11..7:12: int
+  result: copy : bool @7:22..7:26
+    value: eager > : bool @7:29..7:34
+      lhs: read n@7:11..7:12 : int
+      rhs: int 0 : int @7:33..7:34
 
-fn nested@137..238 () -> int ∈ [2, 2]
-  result: copy : int @152..155
-    value: if : int @158..238
-      condition: bool true : bool @161..165
-      then: if : int @172..221
-        condition: bool false : bool @175..180
-        then: int 1 : int @191..192
-        else: int 2 : int @214..215
-      else: int 3 : int @235..236
+fn nested@8:1..16:2 () -> int ∈ [2, 2]
+  result: copy : int @8:16..8:19
+    value: if : int @8:22..16:2
+      condition: bool true : bool @8:25..8:29
+      then: if : int @9:5..13:6
+        condition: bool false : bool @9:8..9:13
+        then: int 1 : int @10:9..10:10
+        else: int 2 : int @12:9..12:10
+      else: int 3 : int @15:5..15:6
 
-fn uncalled@239..269 (int ∈ ∅) -> int ∈ ∅
-  param n@251..252: int
-  result: copy : int @262..265
-    value: read n@251..252 : int
+fn uncalled@17:1..17:31 (int ∈ ∅) -> int ∈ ∅
+  param n@17:13..17:14: int
+  result: copy : int @17:24..17:27
+    value: read n@17:13..17:14 : int
 
-fn called@270..298 (int ∈ [5, 5]) -> int ∈ [5, 5]
-  param n@280..281: int
-  result: copy : int @291..294
-    value: read n@280..281 : int
+fn called@18:1..18:29 (int ∈ [5, 5]) -> int ∈ [5, 5]
+  param n@18:11..18:12: int
+  result: copy : int @18:22..18:25
+    value: read n@18:11..18:12 : int
 
-fn caller@299..329 () -> int ∈ [5, 5]
-  result: copy : int @314..317
-    value: call called@270..298 : int @320..329
-      arg[0]: int 5 : int @327..328
+fn caller@19:1..19:31 () -> int ∈ [5, 5]
+  result: copy : int @19:16..19:19
+    value: call called@18:1..18:29 : int @19:22..19:31
+      arg[0]: int 5 : int @19:29..19:30
 
-fn uncalled_unit@330..374 (unit ∈ ∅, int ∈ ∅) -> int ∈ ∅
-  param u@347..348: unit
-  param n@356..357: int
-  result: copy : int @367..370
-    value: read n@356..357 : int
+fn uncalled_unit@20:1..20:45 (unit ∈ ∅, int ∈ ∅) -> int ∈ ∅
+  param u@20:18..20:19: unit
+  param n@20:27..20:28: int
+  result: copy : int @20:38..20:41
+    value: read n@20:27..20:28 : int
 
-fn constant_uncalled@375..414 (int ∈ ∅) -> int ∈ ∅
-  param n@396..397: int
-  result: copy : int @407..410
-    value: int 7 : int @413..414
+fn constant_uncalled@21:1..21:40 (int ∈ ∅) -> int ∈ ∅
+  param n@21:22..21:23: int
+  result: copy : int @21:33..21:36
+    value: int 7 : int @21:39..21:40
 
-fn plain@415..441 () -> unit ∈ unit
+fn plain@22:1..24:2 () -> unit ∈ unit
   body:
-    discard: int 1 : int @438..439
-    tail: unit : unit @428..441
+    discard: int 1 : int @23:9..23:10
+    tail: unit : unit @22:14..24:2
 
 == semantic diagnostics ==
 warning[semantic/constant-condition]: condition is always false
-  primary @29..34
-  secondary @35..44: this branch never runs
+  primary @1:30..1:35
+  secondary @1:36..3:2: this branch never runs
 warning[semantic/constant-condition]: condition is always false
-  primary @84..89
-  secondary @93..102: the right side never runs
+  primary @6:25..6:30
+  secondary @6:34..6:43: the right side never runs
 warning[semantic/constant-condition]: condition is always true
-  primary @161..165
-  secondary @229..238: this branch never runs
+  primary @8:25..8:29
+  secondary @14:8..16:2: this branch never runs
 warning[semantic/constant-condition]: condition is always false
-  primary @175..180
-  secondary @181..198: this branch never runs
+  primary @9:8..9:13
+  secondary @9:14..11:6: this branch never runs
 warning[semantic/unused-function]: function `uncalled` is never called
-  primary @242..250
+  primary @17:4..17:12
 warning[semantic/unused-function]: function `uncalled_unit` is never called
-  primary @333..346
+  primary @20:4..20:17
 warning[semantic/unused-name]: parameter `u` is never read
-  primary @347..348
-  fix @347 -> "_": prefix the name with `_`
+  primary @20:18..20:19
+  fix @20:18 -> "_": prefix the name with `_`
 warning[semantic/unused-function]: function `constant_uncalled` is never called
-  primary @378..395
+  primary @21:4..21:21
 warning[semantic/unused-name]: parameter `n` is never read
-  primary @396..397
-  fix @396 -> "_": prefix the name with `_`
+  primary @21:22..21:23
+  fix @21:22 -> "_": prefix the name with `_`

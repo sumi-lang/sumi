@@ -1,19 +1,19 @@
 == tree ==
-SourceFile 0..56
-  FnItem 0..55
-    Name 3..4 "f"
-    ParamList 4..6 "()"
-    Block 7..55
-      LetStmt 13..24
-        Name 17..18 "x"
-        NameRef 21..24 "foo"
-      BinaryExpr 29..40
-        ParenExpr 29..36
-          BinaryExpr 30..35
-            LiteralExpr 30..31 "1"
-            LiteralExpr 34..35 "2"
-        LiteralExpr 39..40 "3"
-      CallExpr 45..53
-        NameRef 45..50 "print"
-        ArgList 50..53
-          NameRef 51..52 "x"
+SourceFile 1:1..6:1
+  FnItem 1:1..5:2
+    Name 1:4..1:5 "f"
+    ParamList 1:5..1:7 "()"
+    Block 1:8..5:2
+      LetStmt 2:5..2:16
+        Name 2:9..2:10 "x"
+        NameRef 2:13..2:16 "foo"
+      BinaryExpr 3:5..3:16
+        ParenExpr 3:5..3:12
+          BinaryExpr 3:6..3:11
+            LiteralExpr 3:6..3:7 "1"
+            LiteralExpr 3:10..3:11 "2"
+        LiteralExpr 3:15..3:16 "3"
+      CallExpr 4:5..4:13
+        NameRef 4:5..4:10 "print"
+        ArgList 4:10..4:13
+          NameRef 4:11..4:12 "x"

@@ -1,38 +1,38 @@
 == tree ==
-SourceFile! 0..88
-  FnItem! 0..24
-    Name 3..4 "f"
-    Error! 4..5 "="
-    ParamList 6..14
-      Param 7..13
-        Name 7..8 "a"
-        TypeRef 10..13 "int"
-    Block 15..24
-      NameRef 21..22 "a"
-  FnItem! 25..50
-    Name 28..29 "g"
-    ParamList 29..31 "()"
-    Error! 35..40 "= int"
-    Block 41..50
-      NameRef 47..48 "a"
-  FnItem! 51..61
-    Name 54..55 "h"
-    Error! 56..61 "x = 1"
-  FnItem! 62..87
-    Name 65..66 "i"
-    ParamList 66..68 "()"
-    Error! 69..70 "="
-    TypeRef 74..77 "int"
-    Block 78..87
-      NameRef 84..85 "a"
+SourceFile! 1:1..11:1
+  FnItem! 1:1..3:2
+    Name 1:4..1:5 "f"
+    Error! 1:5..1:6 "="
+    ParamList 1:7..1:15
+      Param 1:8..1:14
+        Name 1:8..1:9 "a"
+        TypeRef 1:11..1:14 "int"
+    Block 1:16..3:2
+      NameRef 2:5..2:6 "a"
+  FnItem! 4:1..6:2
+    Name 4:4..4:5 "g"
+    ParamList 4:5..4:7 "()"
+    Error! 4:11..4:16 "= int"
+    Block 4:17..6:2
+      NameRef 5:5..5:6 "a"
+  FnItem! 7:1..7:11
+    Name 7:4..7:5 "h"
+    Error! 7:6..7:11 "x = 1"
+  FnItem! 8:1..10:2
+    Name 8:4..8:5 "i"
+    ParamList 8:5..8:7 "()"
+    Error! 8:8..8:9 "="
+    TypeRef 8:13..8:16 "int"
+    Block 8:17..10:2
+      NameRef 9:5..9:6 "a"
 
 == evidence ==
-Expected(LParen) at 4
-ExpectedType at 35
-ExpectedBody at 35
-Expected(LParen) at 56
-ExpectedBody at 62
-ExpectedBody at 69
+Expected(LParen) at 1:5
+ExpectedType at 4:11
+ExpectedBody at 4:11
+Expected(LParen) at 7:6
+ExpectedBody at 8:1
+ExpectedBody at 8:8
 
 == diagnostics ==
 error[syntax/expected-token] 1:5: expected `(`

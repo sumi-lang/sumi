@@ -2,166 +2,166 @@ file: accepted
 frontend errors: 0 (see frontend.snap)
 semantic errors: 0
 
-fn after_return@0..61 () -> int ∈ [1, 1]
-  result: result : int @21..24
+fn after_return@1:1..5:2 () -> int ∈ [1, 1]
+  result: result : int @1:22..1:25
     outcome[0]:
-      discard: after : ? @31..39
-        control: return : int @31..39
-          payload: int 1 : int @38..39
-        context: entry : ? @0..61
-      let x@48..49: int @44..53
-        initializer: int 2 : int @52..53
-      tail: read x@48..49 : int
-    outcome[1]: return : int @31..39
-      payload: int 1 : int @38..39
+      discard: after : ? @2:5..2:13
+        control: return : int @2:5..2:13
+          payload: int 1 : int @2:12..2:13
+        context: entry : ? @1:1..5:2
+      let x@3:9..3:10: int @3:5..3:14
+        initializer: int 2 : int @3:13..3:14
+      tail: read x@3:9..3:10 : int
+    outcome[1]: return : int @2:5..2:13
+      payload: int 1 : int @2:12..2:13
 
-fn after_decided_if@62..137 () -> int ∈ [1, 1]
-  result: result : int @87..90
+fn after_decided_if@6:1..11:2 () -> int ∈ [1, 1]
+  result: result : int @6:26..6:29
     outcome[0]:
-      discard: if : unit @97..129
-        condition: bool true : bool @100..104
-        then: unit : unit @105..129
+      discard: if : unit @7:5..9:6
+        condition: bool true : bool @7:8..7:12
+        then: unit : unit @7:13..9:6
         else: unit (implicit)
-      discard: after : ? @97..129
-        control: observe : ? @97..129
-          condition: bool true : bool @100..104
-          then control: unit : unit @105..129
-        context: entry : ? @62..137
-      tail: int 2 : int @134..135
-    outcome[1]: return : int @115..123
-      payload: int 1 : int @122..123
+      discard: after : ? @7:5..9:6
+        control: observe : ? @7:5..9:6
+          condition: bool true : bool @7:8..7:12
+          then control: unit : unit @7:13..9:6
+        context: entry : ? @6:1..11:2
+      tail: int 2 : int @10:5..10:6
+    outcome[1]: return : int @8:9..8:17
+      payload: int 1 : int @8:16..8:17
 
-fn after_both_branches@138..250 (bool ∈ {true}) -> int ∈ [1, 1]
-  param b@161..162: bool
-  result: result : int @173..176
+fn after_both_branches@12:1..19:2 (bool ∈ {true}) -> int ∈ [1, 1]
+  param b@12:24..12:25: bool
+  result: result : int @12:36..12:39
     outcome[0]:
-      discard: if : ? @183..242
-        condition: read b@161..162 : bool
-        then: unit : unit @188..212
-        else: unit : unit @218..242
-      discard: after : ? @183..242
-        control: observe : ? @183..242
-          condition: read b@161..162 : bool
-          then control: unit : unit @188..212
-          else control: unit : unit @218..242
-        context: entry : ? @138..250
-      tail: int 3 : int @247..248
-    outcome[1]: return : int @198..206
-      payload: int 1 : int @205..206
-    outcome[2]: return : int @228..236
-      payload: int 2 : int @235..236
+      discard: if : ? @13:5..17:6
+        condition: read b@12:24..12:25 : bool
+        then: unit : unit @13:10..15:6
+        else: unit : unit @15:12..17:6
+      discard: after : ? @13:5..17:6
+        control: observe : ? @13:5..17:6
+          condition: read b@12:24..12:25 : bool
+          then control: unit : unit @13:10..15:6
+          else control: unit : unit @15:12..17:6
+        context: entry : ? @12:1..19:2
+      tail: int 3 : int @18:5..18:6
+    outcome[1]: return : int @14:9..14:17
+      payload: int 1 : int @14:16..14:17
+    outcome[2]: return : int @16:9..16:17
+      payload: int 2 : int @16:16..16:17
 
-fn after_guarded@251..369 (int ∈ [-1, 1] \ 0) -> int ∈ [0, 1]
-  param n@268..269: int
-  result: result : int @279..282
+fn after_guarded@20:1..28:2 (int ∈ [-1, 1] \ 0) -> int ∈ [0, 1]
+  param n@20:18..20:19: int
+  result: result : int @20:29..20:32
     outcome[0]:
-      discard: if : unit @289..322
-        condition: eager > : bool @292..297
-          lhs: read n@268..269 : int
-          rhs: int 0 : int @296..297
-        then: unit : unit @298..322
+      discard: if : unit @21:5..23:6
+        condition: eager > : bool @21:8..21:13
+          lhs: read n@20:18..20:19 : int
+          rhs: int 0 : int @21:12..21:13
+        then: unit : unit @21:14..23:6
         else: unit (implicit)
-      discard: if : unit @327..361
-        condition: eager <= : bool @330..336
-          lhs: read n@268..269 [n > 0 fails@292..297] : int
-          rhs: int 0 : int @335..336
-        then: unit : unit @337..361
+      discard: if : unit @24:5..26:6
+        condition: eager <= : bool @24:8..24:14
+          lhs: read n@20:18..20:19 [n > 0 fails@21:8..21:13] : int
+          rhs: int 0 : int @24:13..24:14
+        then: unit : unit @24:15..26:6
         else: unit (implicit)
-      discard: after : ? @327..361
-        control: observe : ? @327..361
-          condition: eager <= : bool @330..336
-            lhs: read n@268..269 [n > 0 fails@292..297] : int
-            rhs: int 0 : int @335..336
-          then control: unit : unit @337..361
-        context: after : ? @289..322
-          control: observe : ? @289..322
-            condition: eager > : bool @292..297
-              lhs: read n@268..269 : int
-              rhs: int 0 : int @296..297
-            then control: unit : unit @298..322
-          context: entry : ? @251..369
-      tail: read n@268..269 [n <= 0 fails@330..336, n > 0 fails@292..297] : int
-    outcome[1]: return : int @308..316
-      payload: read n@268..269 [n > 0 holds@292..297] : int
-    outcome[2]: return : int @347..355
-      payload: int 0 : int @354..355
+      discard: after : ? @24:5..26:6
+        control: observe : ? @24:5..26:6
+          condition: eager <= : bool @24:8..24:14
+            lhs: read n@20:18..20:19 [n > 0 fails@21:8..21:13] : int
+            rhs: int 0 : int @24:13..24:14
+          then control: unit : unit @24:15..26:6
+        context: after : ? @21:5..23:6
+          control: observe : ? @21:5..23:6
+            condition: eager > : bool @21:8..21:13
+              lhs: read n@20:18..20:19 : int
+              rhs: int 0 : int @21:12..21:13
+            then control: unit : unit @21:14..23:6
+          context: entry : ? @20:1..28:2
+      tail: read n@20:18..20:19 [n <= 0 fails@24:8..24:14, n > 0 fails@21:8..21:13] : int
+    outcome[1]: return : int @22:9..22:17
+      payload: read n@20:18..20:19 [n > 0 holds@21:8..21:13] : int
+    outcome[2]: return : int @25:9..25:17
+      payload: int 0 : int @25:16..25:17
 
-fn nested@370..437 () -> int ∈ [1, 1]
-  result: result : int @385..388
+fn nested@29:1..35:2 () -> int ∈ [1, 1]
+  result: result : int @29:16..29:19
     outcome[0]:
-      discard: after : ? @405..413
-        control: return : int @405..413
-          payload: int 1 : int @412..413
-        context: entry : ? @370..437
-      discard: int 2 : int @422..423
-      tail: int 3 : int @434..435
-    outcome[1]: return : int @405..413
-      payload: int 1 : int @412..413
+      discard: after : ? @31:9..31:17
+        control: return : int @31:9..31:17
+          payload: int 1 : int @31:16..31:17
+        context: entry : ? @29:1..35:2
+      discard: int 2 : int @32:9..32:10
+      tail: int 3 : int @34:5..34:6
+    outcome[1]: return : int @31:9..31:17
+      payload: int 1 : int @31:16..31:17
 
-fn by_callers@438..514 (int ∈ [4, 4]) -> int ∈ [4, 4]
-  param n@452..453: int
-  result: result : int @463..466
+fn by_callers@36:1..41:2 (int ∈ [4, 4]) -> int ∈ [4, 4]
+  param n@36:15..36:16: int
+  result: result : int @36:26..36:29
     outcome[0]:
-      discard: if : unit @473..506
-        condition: eager < : bool @476..481
-          lhs: read n@452..453 : int
-          rhs: int 0 : int @480..481
-        then: unit : unit @482..506
+      discard: if : unit @37:5..39:6
+        condition: eager < : bool @37:8..37:13
+          lhs: read n@36:15..36:16 : int
+          rhs: int 0 : int @37:12..37:13
+        then: unit : unit @37:14..39:6
         else: unit (implicit)
-      discard: after : ? @473..506
-        control: observe : ? @473..506
-          condition: eager < : bool @476..481
-            lhs: read n@452..453 : int
-            rhs: int 0 : int @480..481
-          then control: unit : unit @482..506
-        context: entry : ? @438..514
-      tail: read n@452..453 [n < 0 fails@476..481] : int
-    outcome[1]: return : int @492..500
-      payload: int 0 : int @499..500
+      discard: after : ? @37:5..39:6
+        control: observe : ? @37:5..39:6
+          condition: eager < : bool @37:8..37:13
+            lhs: read n@36:15..36:16 : int
+            rhs: int 0 : int @37:12..37:13
+          then control: unit : unit @37:14..39:6
+        context: entry : ? @36:1..41:2
+      tail: read n@36:15..36:16 [n < 0 fails@37:8..37:13] : int
+    outcome[1]: return : int @38:9..38:17
+      payload: int 0 : int @38:16..38:17
 
-fn in_expression@515..559 () -> int ∈ [1, 1]
-  result: result : int @537..540
-    outcome[0]: eager + : int @543..559
-      lhs: unit : unit @543..555
-      rhs: int 2 : int @558..559
-    outcome[1]: return : int @545..553
-      payload: int 1 : int @552..553
+fn in_expression@42:1..42:45 () -> int ∈ [1, 1]
+  result: result : int @42:23..42:26
+    outcome[0]: eager + : int @42:29..42:45
+      lhs: unit : unit @42:29..42:41
+      rhs: int 2 : int @42:44..42:45
+    outcome[1]: return : int @42:31..42:39
+      payload: int 1 : int @42:38..42:39
 
-fn main@560..659 () -> int ∈ [5, 7]
-  result: copy : int @573..576
-    value: eager + : int @579..659
-      lhs: eager + : int @579..643
-        lhs: eager + : int @579..623
-          lhs: call after_both_branches@138..250 : int @579..604
-            arg[0]: bool true : bool @599..603
-          rhs: call after_guarded@251..369 : int @607..623
-            arg[0]: int 1 : int @621..622
-        rhs: call after_guarded@251..369 : int @626..643
-          arg[0]: int -1 : int @640..642
-      rhs: call by_callers@438..514 : int @646..659
-        arg[0]: int 4 : int @657..658
+fn main@43:1..43:100 () -> int ∈ [5, 7]
+  result: copy : int @43:14..43:17
+    value: eager + : int @43:20..43:100
+      lhs: eager + : int @43:20..43:84
+        lhs: eager + : int @43:20..43:64
+          lhs: call after_both_branches@12:1..19:2 : int @43:20..43:45
+            arg[0]: bool true : bool @43:40..43:44
+          rhs: call after_guarded@20:1..28:2 : int @43:48..43:64
+            arg[0]: int 1 : int @43:62..43:63
+        rhs: call after_guarded@20:1..28:2 : int @43:67..43:84
+          arg[0]: int -1 : int @43:81..43:83
+      rhs: call by_callers@36:1..41:2 : int @43:87..43:100
+        arg[0]: int 4 : int @43:98..43:99
 
 == semantic diagnostics ==
 warning[semantic/unreachable-code]: unreachable code
-  primary @44..59
-  secondary @31..39: no path continues past this
+  primary @3:5..4:6
+  secondary @2:5..2:13: no path continues past this
 warning[semantic/constant-condition]: condition is always true
-  primary @100..104
+  primary @7:8..7:12
 warning[semantic/unreachable-code]: unreachable code
-  primary @134..135
-  secondary @97..129: no path continues past this
+  primary @10:5..10:6
+  secondary @7:5..9:6: no path continues past this
 warning[semantic/unreachable-code]: unreachable code
-  primary @247..248
-  secondary @183..242: no path continues past this
+  primary @18:5..18:6
+  secondary @13:5..17:6: no path continues past this
 warning[semantic/constant-condition]: condition is always true
-  primary @330..336
-  secondary @292..297: ∈ (-∞, 0] under this guard
+  primary @24:8..24:14
+  secondary @21:8..21:13: ∈ (-∞, 0] under this guard
 warning[semantic/unreachable-code]: unreachable code
-  primary @366..367
-  secondary @327..361: no path continues past this
+  primary @27:5..27:6
+  secondary @24:5..26:6: no path continues past this
 warning[semantic/unreachable-code]: unreachable code
-  primary @422..423
-  secondary @405..413: no path continues past this
+  primary @32:9..32:10
+  secondary @31:9..31:17: no path continues past this
 warning[semantic/unreachable-code]: unreachable code
-  primary @434..435
-  secondary @395..429: no path continues past this
+  primary @34:5..34:6
+  secondary @30:5..33:6: no path continues past this

@@ -1,24 +1,24 @@
 == tree ==
-SourceFile! 0..89
-  FnItem 0..35
-    Name 3..23 "body_then_assignment"
-    ParamList 23..25 "()"
-    Block 26..35
-      NameRef 32..33 "a"
-  Error! 36..39 "= b"
-  FnItem! 40..88
-    Name 43..63 "damaged_if_in_parens"
-    ParamList 63..65 "()"
-    Block! 66..88
-      ParenExpr! 72..86
-        IfExpr! 73..85
-          NameRef 76..77 "a"
-          Block! 78..85
-            Error! 80..83 "+ b"
+SourceFile! 1:1..7:1
+  FnItem 1:1..3:2
+    Name 1:4..1:24 "body_then_assignment"
+    ParamList 1:24..1:26 "()"
+    Block 1:27..3:2
+      NameRef 2:5..2:6 "a"
+  Error! 3:3..3:6 "= b"
+  FnItem! 4:1..6:2
+    Name 4:4..4:24 "damaged_if_in_parens"
+    ParamList 4:24..4:26 "()"
+    Block! 4:27..6:2
+      ParenExpr! 5:5..5:19
+        IfExpr! 5:6..5:18
+          NameRef 5:9..5:10 "a"
+          Block! 5:11..5:18
+            Error! 5:13..5:16 "+ b"
 
 == evidence ==
-ExpectedItem at 36
-ExpectedStatement at 80
+ExpectedItem at 3:3
+ExpectedStatement at 5:13
 
 == diagnostics ==
 error[syntax/expected-item] 3:3..3:4 "=": expected a function item

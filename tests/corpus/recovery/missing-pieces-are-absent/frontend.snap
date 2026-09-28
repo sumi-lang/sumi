@@ -1,48 +1,48 @@
 == tree ==
-SourceFile! 0..139
-  FnItem! 0..32
-    Name 3..14 "initializer"
-    ParamList 14..16 "()"
-    Block! 17..32
-      LetStmt! 23..30
-        Name 27..28 "x"
-  FnItem! 33..47
-    ParamList 36..44
-      Param 37..43
-        Name 37..38 "a"
-        TypeRef 40..43 "int"
-    Block 45..47 "{}"
-  FnItem! 48..71
-    Name 51..65 "parameter_type"
-    ParamList! 65..68
-      Param! 66..67
-        Name 66..67 "a"
-    Block 69..71 "{}"
-  FnItem! 72..98
-    Name 75..91 "parameter_closer"
-    ParamList! 91..98
-      Param 92..98
-        Name 92..93 "a"
-        TypeRef 95..98 "int"
-  FnItem! 99..138
-    Name 102..112 "everything"
-    ParamList! 112..116
-      Param! 113..115
-        Name 113..114 "a"
-    Block! 120..138
-      LetStmt! 126..136
-        Name 130..131 "x"
-        LiteralExpr 135..136 "1"
+SourceFile! 1:1..10:1
+  FnItem! 1:1..3:2
+    Name 1:4..1:15 "initializer"
+    ParamList 1:15..1:17 "()"
+    Block! 1:18..3:2
+      LetStmt! 2:5..2:12
+        Name 2:9..2:10 "x"
+  FnItem! 4:1..4:15
+    ParamList 4:4..4:12
+      Param 4:5..4:11
+        Name 4:5..4:6 "a"
+        TypeRef 4:8..4:11 "int"
+    Block 4:13..4:15 "{}"
+  FnItem! 5:1..5:24
+    Name 5:4..5:18 "parameter_type"
+    ParamList! 5:18..5:21
+      Param! 5:19..5:20
+        Name 5:19..5:20 "a"
+    Block 5:22..5:24 "{}"
+  FnItem! 6:1..6:27
+    Name 6:4..6:20 "parameter_closer"
+    ParamList! 6:20..6:27
+      Param 6:21..6:27
+        Name 6:21..6:22 "a"
+        TypeRef 6:24..6:27 "int"
+  FnItem! 7:1..9:2
+    Name 7:4..7:14 "everything"
+    ParamList! 7:14..7:18
+      Param! 7:15..7:17
+        Name 7:15..7:16 "a"
+    Block! 7:22..9:2
+      LetStmt! 8:5..8:15
+        Name 8:9..8:10 "x"
+        LiteralExpr 8:14..8:15 "1"
 
 == evidence ==
-ExpectedExpression at 31
-ExpectedName at 36
-Expected(Colon) at 67
-Expected(RParen) at 99
-ExpectedBody at 99
-ExpectedType at 115
-ExpectedType at 120
-ExpectedType at 133
+ExpectedExpression at 3:1
+ExpectedName at 4:4
+Expected(Colon) at 5:20
+Expected(RParen) at 7:1
+ExpectedBody at 7:1
+ExpectedType at 7:17
+ExpectedType at 7:22
+ExpectedType at 8:12
 
 == diagnostics ==
 error[syntax/expected-expression] 3:1: expected an expression

@@ -1,53 +1,53 @@
 == tree ==
-SourceFile! 0..191
-  FnItem! 0..21
-    Name 0..8 "headless"
-    ParamList 8..10 "()"
-    TypeRef 14..17 "int"
-    LiteralExpr 20..21 "1"
-  FnItem! 22..33
-    Name 22..27 "other"
-    ParamList 27..29 "()"
-    LiteralExpr 32..33 "2"
-  FnItem! 34..48
-    Name 37..43 "broken"
-    ParamList 43..45 "()"
-  FnItem 49..73
-    Name 52..60 "survivor"
-    ParamList 60..62 "()"
-    TypeRef 66..69 "int"
-    LiteralExpr 72..73 "3"
-  FnItem! 74..91
-    Name 77..89 "missing_body"
-    ParamList 89..91 "()"
-  Error! 92..93 "="
-  FnItem 94..114
-    Name 97..101 "next"
-    ParamList 101..103 "()"
-    TypeRef 107..110 "int"
-    LiteralExpr 113..114 "4"
-  FnItem 115..169
-    Name 118..139 "call_is_not_an_anchor"
-    ParamList 139..141 "()"
-    TypeRef 145..148 "int"
-    BinaryExpr 151..169
-      LiteralExpr 151..152 "1"
-      CallExpr 159..169
-        NameRef 159..167 "survivor"
-        ArgList 167..169 "()"
-  FnItem 170..190
-    Name 173..177 "last"
-    ParamList 177..179 "()"
-    TypeRef 183..186 "int"
-    LiteralExpr 189..190 "5"
+SourceFile! 1:1..15:1
+  FnItem! 1:1..3:4
+    Name 1:1..1:9 "headless"
+    ParamList 1:9..1:11 "()"
+    TypeRef 2:4..2:7 "int"
+    LiteralExpr 3:3..3:4 "1"
+  FnItem! 4:1..5:4
+    Name 4:1..4:6 "other"
+    ParamList 4:6..4:8 "()"
+    LiteralExpr 5:3..5:4 "2"
+  FnItem! 6:1..7:3
+    Name 6:4..6:10 "broken"
+    ParamList 6:10..6:12 "()"
+  FnItem 8:1..8:25
+    Name 8:4..8:12 "survivor"
+    ParamList 8:12..8:14 "()"
+    TypeRef 8:18..8:21 "int"
+    LiteralExpr 8:24..8:25 "3"
+  FnItem! 9:1..9:18
+    Name 9:4..9:16 "missing_body"
+    ParamList 9:16..9:18 "()"
+  Error! 10:1..10:2 "="
+  FnItem 11:1..11:21
+    Name 11:4..11:8 "next"
+    ParamList 11:8..11:10 "()"
+    TypeRef 11:14..11:17 "int"
+    LiteralExpr 11:20..11:21 "4"
+  FnItem 12:1..13:15
+    Name 12:4..12:25 "call_is_not_an_anchor"
+    ParamList 12:25..12:27 "()"
+    TypeRef 12:31..12:34 "int"
+    BinaryExpr 12:37..13:15
+      LiteralExpr 12:37..12:38 "1"
+      CallExpr 13:5..13:15
+        NameRef 13:5..13:13 "survivor"
+        ArgList 13:13..13:15 "()"
+  FnItem 14:1..14:21
+    Name 14:4..14:8 "last"
+    ParamList 14:8..14:10 "()"
+    TypeRef 14:14..14:17 "int"
+    LiteralExpr 14:20..14:21 "5"
 
 == evidence ==
-Expected(FnKw) at 0
-Expected(FnKw) at 22
-ExpectedType at 49
-ExpectedBody at 49
-ExpectedBody at 92
-ExpectedItem at 92
+Expected(FnKw) at 1:1
+Expected(FnKw) at 4:1
+ExpectedType at 8:1
+ExpectedBody at 8:1
+ExpectedBody at 10:1
+ExpectedItem at 10:1
 
 == diagnostics ==
 error[syntax/expected-token] 1:1: expected `fn`

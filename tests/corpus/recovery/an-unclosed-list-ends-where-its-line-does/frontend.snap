@@ -1,43 +1,43 @@
 == tree ==
-SourceFile! 0..107
-  FnItem! 0..30
-    Name 3..12 "arguments"
-    ParamList 12..14 "()"
-    Block! 15..30
-      CallExpr! 21..24
-        NameRef 21..22 "g"
-        ArgList! 22..24
-          NameRef 23..24 "a"
-      NameRef 27..28 "b"
-  FnItem! 31..68
-    Name 34..48 "prefix_operand"
-    ParamList 48..50 "()"
-    Block! 51..68
-      CallExpr! 57..62
-        NameRef 57..58 "g"
-        ArgList! 58..62
-          Error! 59..60 "*"
-          NameRef 61..62 "a"
-      NameRef 65..66 "b"
-  FnItem! 69..89
-    Name 72..82 "parameters"
-    ParamList! 82..89
-      Param 83..89
-        Name 83..84 "a"
-        TypeRef 86..89 "int"
-  Error! 92..93 "x"
-  FnItem 94..106
-    Name 97..101 "next"
-    ParamList 101..103 "()"
-    Block 104..106 "{}"
+SourceFile! 1:1..12:1
+  FnItem! 1:1..4:2
+    Name 1:4..1:13 "arguments"
+    ParamList 1:13..1:15 "()"
+    Block! 1:16..4:2
+      CallExpr! 2:5..2:8
+        NameRef 2:5..2:6 "g"
+        ArgList! 2:6..2:8
+          NameRef 2:7..2:8 "a"
+      NameRef 3:3..3:4 "b"
+  FnItem! 5:1..8:2
+    Name 5:4..5:18 "prefix_operand"
+    ParamList 5:18..5:20 "()"
+    Block! 5:21..8:2
+      CallExpr! 6:5..6:10
+        NameRef 6:5..6:6 "g"
+        ArgList! 6:6..6:10
+          Error! 6:7..6:8 "*"
+          NameRef 6:9..6:10 "a"
+      NameRef 7:3..7:4 "b"
+  FnItem! 9:1..9:21
+    Name 9:4..9:14 "parameters"
+    ParamList! 9:14..9:21
+      Param 9:15..9:21
+        Name 9:15..9:16 "a"
+        TypeRef 9:18..9:21 "int"
+  Error! 10:3..10:4 "x"
+  FnItem 11:1..11:13
+    Name 11:4..11:8 "next"
+    ParamList 11:8..11:10 "()"
+    Block 11:11..11:13 "{}"
 
 == evidence ==
-Expected(RParen) at 27
-ExpectedExpression at 59
-Expected(RParen) at 65
-Expected(RParen) at 92
-ExpectedBody at 92
-ExpectedItem at 92
+Expected(RParen) at 3:3
+ExpectedExpression at 6:7
+Expected(RParen) at 7:3
+Expected(RParen) at 10:3
+ExpectedBody at 10:3
+ExpectedItem at 10:3
 
 == diagnostics ==
 error[syntax/expected-token] 3:3: expected `)`

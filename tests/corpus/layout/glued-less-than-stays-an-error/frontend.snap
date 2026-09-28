@@ -1,44 +1,44 @@
 == tree ==
-SourceFile! 0..245
-  FnItem! 148..244
-    Name 151..152 "f"
-    ParamList 152..154 "()"
-    Block! 155..244
-      IfExpr 161..180
-        BinaryExpr 164..167
-          NameRef 164..165 "a"
-          NameRef 166..167 "b"
-        Block 168..180
-          ReturnStmt 170..178
-            LiteralExpr 177..178 "1"
-      IfExpr! 185..208
-        Error! 188..195
-          BinaryExpr 188..191
-            NameRef 188..189 "a"
-            NameRef 190..191 "b"
-          ParenExpr 192..195
-            NameRef 193..194 "c"
-        Block 196..208
-          ReturnStmt 198..206
-            LiteralExpr 205..206 "2"
-      LetStmt 213..225
-        Name 217..218 "x"
-        BinaryExpr 221..225
-          NameRef 221..222 "a"
-          NameRef 224..225 "b"
-      LetStmt 230..242
-        Name 234..235 "y"
-        BinaryExpr 238..242
-          NameRef 238..239 "a"
-          NameRef 241..242 "b"
+SourceFile! 1:1..9:1
+  FnItem! 3:1..8:2
+    Name 3:4..3:5 "f"
+    ParamList 3:5..3:7 "()"
+    Block! 3:8..8:2
+      IfExpr 4:5..4:24
+        BinaryExpr 4:8..4:11
+          NameRef 4:8..4:9 "a"
+          NameRef 4:10..4:11 "b"
+        Block 4:12..4:24
+          ReturnStmt 4:14..4:22
+            LiteralExpr 4:21..4:22 "1"
+      IfExpr! 5:5..5:28
+        Error! 5:8..5:15
+          BinaryExpr 5:8..5:11
+            NameRef 5:8..5:9 "a"
+            NameRef 5:10..5:11 "b"
+          ParenExpr 5:12..5:15
+            NameRef 5:13..5:14 "c"
+        Block 5:16..5:28
+          ReturnStmt 5:18..5:26
+            LiteralExpr 5:25..5:26 "2"
+      LetStmt 6:5..6:17
+        Name 6:9..6:10 "x"
+        BinaryExpr 6:13..6:17
+          NameRef 6:13..6:14 "a"
+          NameRef 6:16..6:17 "b"
+      LetStmt 7:5..7:17
+        Name 7:9..7:10 "y"
+        BinaryExpr 7:13..7:17
+          NameRef 7:13..7:14 "a"
+          NameRef 7:16..7:17 "b"
 
 == evidence ==
-UnspacedBinaryOperator at 165
-UnspacedBinaryOperator at 189
-UnspacedBinaryOperator at 191
-ChainedComparison at 191
-UnspacedBinaryOperator at 222
-UnspacedBinaryOperator at 240
+UnspacedBinaryOperator at 4:9
+UnspacedBinaryOperator at 5:9
+UnspacedBinaryOperator at 5:11
+ChainedComparison at 5:11
+UnspacedBinaryOperator at 6:14
+UnspacedBinaryOperator at 7:15
 
 == diagnostics ==
 error[syntax/unspaced-binary-operator] 4:9..4:10 "<": binary operator must have spaces on both sides

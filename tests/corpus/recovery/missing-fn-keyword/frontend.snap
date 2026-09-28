@@ -1,31 +1,31 @@
 == tree ==
-SourceFile! 0..63
-  FnItem! 7..17
-    Name 7..12 "block"
-    ParamList 12..14 "()"
-    Block 15..17 "{}"
-  FnItem! 18..47
-    Name 18..24 "double"
-    ParamList 24..32
-      Param 25..31
-        Name 25..26 "x"
-        TypeRef 28..31 "int"
-    TypeRef 36..39 "int"
-    BinaryExpr 42..47
-      NameRef 42..43 "x"
-      LiteralExpr 46..47 "2"
-  FnItem! 48..62
-    Name 48..50 "id"
-    ParamList 50..58
-      Param 51..57
-        Name 51..52 "x"
-        TypeRef 54..57 "int"
-    NameRef 61..62 "x"
+SourceFile! 1:1..5:1
+  FnItem! 2:1..2:11
+    Name 2:1..2:6 "block"
+    ParamList 2:6..2:8 "()"
+    Block 2:9..2:11 "{}"
+  FnItem! 3:1..3:30
+    Name 3:1..3:7 "double"
+    ParamList 3:7..3:15
+      Param 3:8..3:14
+        Name 3:8..3:9 "x"
+        TypeRef 3:11..3:14 "int"
+    TypeRef 3:19..3:22 "int"
+    BinaryExpr 3:25..3:30
+      NameRef 3:25..3:26 "x"
+      LiteralExpr 3:29..3:30 "2"
+  FnItem! 4:1..4:15
+    Name 4:1..4:3 "id"
+    ParamList 4:3..4:11
+      Param 4:4..4:10
+        Name 4:4..4:5 "x"
+        TypeRef 4:7..4:10 "int"
+    NameRef 4:14..4:15 "x"
 
 == evidence ==
-Expected(FnKw) at 7
-Expected(FnKw) at 18
-Expected(FnKw) at 48
+Expected(FnKw) at 2:1
+Expected(FnKw) at 3:1
+Expected(FnKw) at 4:1
 
 == diagnostics ==
 error[syntax/expected-token] 2:1: expected `fn`

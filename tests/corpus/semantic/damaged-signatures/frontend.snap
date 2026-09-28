@@ -1,18 +1,18 @@
 tree: see hir.snap
 
 == evidence ==
-ExpectedName at 3
-Expected(RParen) at 34
-ExpectedBody at 34
-ExpectedType at 47
-ExpectedType at 52
-ExpectedType at 65
-Expected(LParen) at 93
-ExpectedType at 138
-ExpectedBody at 138
-Expected(LParen) at 173
-ExpectedBody at 179
-ExpectedBody at 204
+ExpectedName at 1:4
+Expected(RParen) at 3:1
+ExpectedBody at 3:1
+ExpectedType at 3:14
+ExpectedType at 3:19
+ExpectedType at 4:12
+Expected(LParen) at 6:23
+ExpectedType at 9:25
+ExpectedBody at 9:25
+Expected(LParen) at 12:20
+ExpectedBody at 13:1
+ExpectedBody at 13:26
 
 == diagnostics ==
 error[syntax/expected-name] 1:4: expected a name

@@ -2,269 +2,269 @@ file: accepted
 frontend errors: 0 (see frontend.snap)
 semantic errors: 0
 
-fn callee@0..41 () -> int ∈ [4, 4]
-  result: result : int @15..18
+fn callee@1:1..4:2 () -> int ∈ [4, 4]
+  result: result : int @1:16..1:19
     outcome[0]:
-      discard: after : ? @25..33
-        control: return : int @25..33
-          payload: int 4 : int @32..33
-        context: entry : ? @0..41
-      tail: int 9 : int @38..39
-    outcome[1]: return : int @25..33
-      payload: int 4 : int @32..33
+      discard: after : ? @2:5..2:13
+        control: return : int @2:5..2:13
+          payload: int 4 : int @2:12..2:13
+        context: entry : ? @1:1..4:2
+      tail: int 9 : int @3:5..3:6
+    outcome[1]: return : int @2:5..2:13
+      payload: int 4 : int @2:12..2:13
 
-fn nested@42..122 () -> int ∈ [3, 3]
-  result: result : int @57..60
+fn nested@5:1..11:2 () -> int ∈ [3, 3]
+  result: result : int @5:16..5:19
     outcome[0]:
-      discard: after : ? @90..98
-        control: return : int @90..98
-          payload: int 3 : int @97..98
-        context: entry : ? @42..122
-      let unused@71..77: int @67..114
-        initializer: int 0 : int @107..108
-      tail: int 8 : int @119..120
-    outcome[1]: return : int @90..98
-      payload: int 3 : int @97..98
+      discard: after : ? @7:9..7:17
+        control: return : int @7:9..7:17
+          payload: int 3 : int @7:16..7:17
+        context: entry : ? @5:1..11:2
+      let unused@6:9..6:15: int @6:5..9:6
+        initializer: int 0 : int @8:9..8:10
+      tail: int 8 : int @10:5..10:6
+    outcome[1]: return : int @7:9..7:17
+      payload: int 3 : int @7:16..7:17
 
-fn boundary@123..158 () -> int ∈ [5, 5]
-  result: copy : int @140..143
-    value: eager + : int @146..158
-      lhs: call callee@0..41 : int @146..154
-      rhs: int 1 : int @157..158
+fn boundary@12:1..12:36 () -> int ∈ [5, 5]
+  result: copy : int @12:18..12:21
+    value: eager + : int @12:24..12:36
+      lhs: call callee@1:1..4:2 : int @12:24..12:32
+      rhs: int 1 : int @12:35..12:36
 
-fn lazy_skips@159..246 () -> int ∈ [5, 5]
-  result: result : int @178..181
+fn lazy_skips@13:1..19:2 () -> int ∈ [5, 5]
+  result: result : int @13:20..13:23
     outcome[0]:
-      discard: lazy and : bool @192..238
-        lhs: bool false : bool @192..197
+      discard: lazy and : bool @14:9..17:6
+        lhs: bool false : bool @14:9..14:14
         rhs:
-          discard: after : ? @211..219
-            control: return : int @211..219
-              payload: int 6 : int @218..219
-            context: then : ? @201..238
-          tail: bool true : bool @228..232
-      discard: after : ? @188..238
-        control: observe : ? @192..238
-          condition: bool false : bool @192..197
+          discard: after : ? @15:9..15:17
+            control: return : int @15:9..15:17
+              payload: int 6 : int @15:16..15:17
+            context: then : ? @14:18..17:6
+          tail: bool true : bool @16:9..16:13
+      discard: after : ? @14:5..17:6
+        control: observe : ? @14:9..17:6
+          condition: bool false : bool @14:9..14:14
           then control:
-            discard: after : ? @211..219
-              control: return : int @211..219
-                payload: int 6 : int @218..219
-              context: then : ? @201..238
-            tail: bool true : bool @228..232
-        context: entry : ? @159..246
-      tail: int 5 : int @243..244
-    outcome[1]: return : int @211..219
-      payload: int 6 : int @218..219
+            discard: after : ? @15:9..15:17
+              control: return : int @15:9..15:17
+                payload: int 6 : int @15:16..15:17
+              context: then : ? @14:18..17:6
+            tail: bool true : bool @16:9..16:13
+        context: entry : ? @13:1..19:2
+      tail: int 5 : int @18:5..18:6
+    outcome[1]: return : int @15:9..15:17
+      payload: int 6 : int @15:16..15:17
 
-fn lazy_takes@247..333 () -> int ∈ [7, 7]
-  result: result : int @266..269
+fn lazy_takes@20:1..26:2 () -> int ∈ [7, 7]
+  result: result : int @20:20..20:23
     outcome[0]:
-      discard: lazy and : bool @280..325
-        lhs: bool true : bool @280..284
+      discard: lazy and : bool @21:9..24:6
+        lhs: bool true : bool @21:9..21:13
         rhs:
-          discard: after : ? @298..306
-            control: return : int @298..306
-              payload: int 7 : int @305..306
-            context: then : ? @288..325
-          tail: bool true : bool @315..319
-      discard: after : ? @276..325
-        control: observe : ? @280..325
-          condition: bool true : bool @280..284
+          discard: after : ? @22:9..22:17
+            control: return : int @22:9..22:17
+              payload: int 7 : int @22:16..22:17
+            context: then : ? @21:17..24:6
+          tail: bool true : bool @23:9..23:13
+      discard: after : ? @21:5..24:6
+        control: observe : ? @21:9..24:6
+          condition: bool true : bool @21:9..21:13
           then control:
-            discard: after : ? @298..306
-              control: return : int @298..306
-                payload: int 7 : int @305..306
-              context: then : ? @288..325
-            tail: bool true : bool @315..319
-        context: entry : ? @247..333
-      tail: int 8 : int @330..331
-    outcome[1]: return : int @298..306
-      payload: int 7 : int @305..306
+            discard: after : ? @22:9..22:17
+              control: return : int @22:9..22:17
+                payload: int 7 : int @22:16..22:17
+              context: then : ? @21:17..24:6
+            tail: bool true : bool @23:9..23:13
+        context: entry : ? @20:1..26:2
+      tail: int 8 : int @25:5..25:6
+    outcome[1]: return : int @22:9..22:17
+      payload: int 7 : int @22:16..22:17
 
-fn ordered@334..445 () -> int ∈ [9, 9]
-  result: result : int @350..353
+fn ordered@27:1..36:2 () -> int ∈ [9, 9]
+  result: result : int @27:17..27:20
     outcome[0]:
-      discard: eager + : int @364..436
-        lhs: int 1 : int @391..392
-        rhs: int 2 : int @429..430
-      discard: after : ? @360..436
-        control: sequence : int @364..436
-          before: return : int @374..382
-            payload: int 9 : int @381..382
-          value: return : int @411..420
-            payload: int 10 : int @418..420
-        context: after : ? @411..420
-          control: return : int @411..420
-            payload: int 10 : int @418..420
-          context: after : ? @374..382
-            control: return : int @374..382
-              payload: int 9 : int @381..382
-            context: entry : ? @334..445
-      tail: int 11 : int @441..443
-    outcome[1]: return : int @374..382
-      payload: int 9 : int @381..382
-    outcome[2]: return : int @411..420
-      payload: int 10 : int @418..420
+      discard: eager + : int @28:9..34:6
+        lhs: int 1 : int @30:9..30:10
+        rhs: int 2 : int @33:9..33:10
+      discard: after : ? @28:5..34:6
+        control: sequence : int @28:9..34:6
+          before: return : int @29:9..29:17
+            payload: int 9 : int @29:16..29:17
+          value: return : int @32:9..32:18
+            payload: int 10 : int @32:16..32:18
+        context: after : ? @32:9..32:18
+          control: return : int @32:9..32:18
+            payload: int 10 : int @32:16..32:18
+          context: after : ? @29:9..29:17
+            control: return : int @29:9..29:17
+              payload: int 9 : int @29:16..29:17
+            context: entry : ? @27:1..36:2
+      tail: int 11 : int @35:5..35:7
+    outcome[1]: return : int @29:9..29:17
+      payload: int 9 : int @29:16..29:17
+    outcome[2]: return : int @32:9..32:18
+      payload: int 10 : int @32:16..32:18
 
-fn divide@446..524 (int ∈ ∅) -> int ∈ ∅
-  param n@456..457: int
-  result: result : int @467..470
+fn divide@37:1..42:2 (int ∈ ∅) -> int ∈ ∅
+  param n@37:11..37:12: int
+  result: result : int @37:22..37:25
     outcome[0]:
-      discard: if : unit @477..511
-        condition: eager == : bool @480..486
-          lhs: read n@456..457 : int
-          rhs: int 0 : int @485..486
-        then: unit : unit @487..511
+      discard: if : unit @38:5..40:6
+        condition: eager == : bool @38:8..38:14
+          lhs: read n@37:11..37:12 : int
+          rhs: int 0 : int @38:13..38:14
+        then: unit : unit @38:15..40:6
         else: unit (implicit)
-      discard: after : ? @477..511
-        control: observe : ? @477..511
-          condition: eager == : bool @480..486
-            lhs: read n@456..457 : int
-            rhs: int 0 : int @485..486
-          then control: unit : unit @487..511
-        context: entry : ? @446..524
-      tail: eager / : int @516..522
-        lhs: int 10 : int @516..518
-        rhs: read n@456..457 [n == 0 fails@480..486] : int
-    outcome[1]: return : int @497..505
-      payload: int 0 : int @504..505
+      discard: after : ? @38:5..40:6
+        control: observe : ? @38:5..40:6
+          condition: eager == : bool @38:8..38:14
+            lhs: read n@37:11..37:12 : int
+            rhs: int 0 : int @38:13..38:14
+          then control: unit : unit @38:15..40:6
+        context: entry : ? @37:1..42:2
+      tail: eager / : int @41:5..41:11
+        lhs: int 10 : int @41:5..41:7
+        rhs: read n@37:11..37:12 [n == 0 fails@38:8..38:14] : int
+    outcome[1]: return : int @39:9..39:17
+      payload: int 0 : int @39:16..39:17
 
-fn count@525..612 (int ∈ [0, 3]) -> int ∈ [0, +∞)
-  param n@534..535: int
-  result: result : int @545..548
+fn count@43:1..48:2 (int ∈ [0, 3]) -> int ∈ [0, +∞)
+  param n@43:10..43:11: int
+  result: result : int @43:21..43:24
     outcome[0]:
-      discard: if : unit @555..589
-        condition: eager == : bool @558..564
-          lhs: read n@534..535 : int
-          rhs: int 0 : int @563..564
-        then: unit : unit @565..589
+      discard: if : unit @44:5..46:6
+        condition: eager == : bool @44:8..44:14
+          lhs: read n@43:10..43:11 : int
+          rhs: int 0 : int @44:13..44:14
+        then: unit : unit @44:15..46:6
         else: unit (implicit)
-      discard: after : ? @555..589
-        control: observe : ? @555..589
-          condition: eager == : bool @558..564
-            lhs: read n@534..535 : int
-            rhs: int 0 : int @563..564
-          then control: unit : unit @565..589
-        context: entry : ? @525..612
-      tail: eager + : int @594..610
-        lhs: int 1 : int @594..595
-        rhs: call count@525..612 : int @598..610
-          arg[0]: eager - : int @604..609
-            lhs: read n@534..535 [n == 0 fails@558..564] : int
-            rhs: int 1 : int @608..609
-    outcome[1]: return : int @575..583
-      payload: int 0 : int @582..583
+      discard: after : ? @44:5..46:6
+        control: observe : ? @44:5..46:6
+          condition: eager == : bool @44:8..44:14
+            lhs: read n@43:10..43:11 : int
+            rhs: int 0 : int @44:13..44:14
+          then control: unit : unit @44:15..46:6
+        context: entry : ? @43:1..48:2
+      tail: eager + : int @47:5..47:21
+        lhs: int 1 : int @47:5..47:6
+        rhs: call count@43:1..48:2 : int @47:9..47:21
+          arg[0]: eager - : int @47:15..47:20
+            lhs: read n@43:10..43:11 [n == 0 fails@44:8..44:14] : int
+            rhs: int 1 : int @47:19..47:20
+    outcome[1]: return : int @45:9..45:17
+      payload: int 0 : int @45:16..45:17
 
-fn three@613..641 () -> int ∈ [0, +∞)
-  result: copy : int @627..630
-    value: call count@525..612 : int @633..641
-      arg[0]: int 3 : int @639..640
+fn three@49:1..49:29 () -> int ∈ [0, +∞)
+  result: copy : int @49:15..49:18
+    value: call count@43:1..48:2 : int @49:21..49:29
+      arg[0]: int 3 : int @49:27..49:28
 
-fn bare@642..676 () -> unit ∈ unit
-  result: result : unit @642..676
+fn bare@50:1..53:2 () -> unit ∈ unit
+  result: result : unit @50:1..53:2
     outcome[0]:
-      discard: int 1 : int @673..674
-      tail: unit : unit @652..676
-    outcome[1]: return : unit @658..664
-      payload: unit : unit @658..664
+      discard: int 1 : int @52:9..52:10
+      tail: unit : unit @50:11..53:2
+    outcome[1]: return : unit @51:5..51:11
+      payload: unit : unit @51:5..51:11
 
-fn dead_checks@677..750 () -> int ∈ [12, 12]
-  result: result : int @697..700
+fn dead_checks@54:1..58:2 () -> int ∈ [12, 12]
+  result: result : int @54:21..54:24
     outcome[0]:
-      discard: after : ? @707..716
-        control: return : int @707..716
-          payload: int 12 : int @714..716
-        context: entry : ? @677..750
-      discard: eager / : int @725..730
-        lhs: int 1 : int @725..726
-        rhs: int 0 : int @729..730
-      tail: call dead_checks@677..750 : int @735..748
-    outcome[1]: return : int @707..716
-      payload: int 12 : int @714..716
+      discard: after : ? @55:5..55:14
+        control: return : int @55:5..55:14
+          payload: int 12 : int @55:12..55:14
+        context: entry : ? @54:1..58:2
+      discard: eager / : int @56:9..56:14
+        lhs: int 1 : int @56:9..56:10
+        rhs: int 0 : int @56:13..56:14
+      tail: call dead_checks@54:1..58:2 : int @57:5..57:18
+    outcome[1]: return : int @55:5..55:14
+      payload: int 12 : int @55:12..55:14
 
-fn inferred@751..784 () -> int ∈ [13, 13]
-  result: result : int @751..784
-    outcome[0]: unit : unit @767..784
-    outcome[1]: return : int @773..782
-      payload: int 13 : int @780..782
+fn inferred@59:1..61:2 () -> int ∈ [13, 13]
+  result: result : int @59:1..61:2
+    outcome[0]: unit : unit @59:17..61:2
+    outcome[1]: return : int @60:5..60:14
+      payload: int 13 : int @60:12..60:14
 
-fn id@785..809 (int ∈ ∅) -> int ∈ ∅
-  param x@791..792: int
-  result: copy : int @802..805
-    value: read x@791..792 : int
+fn id@62:1..62:25 (int ∈ ∅) -> int ∈ ∅
+  param x@62:7..62:8: int
+  result: copy : int @62:18..62:21
+    value: read x@62:7..62:8 : int
 
-fn argument@810..888 () -> int ∈ [14, 14]
-  result: result : int @827..830
+fn argument@63:1..68:2 () -> int ∈ [14, 14]
+  result: result : int @63:18..63:21
     outcome[0]:
-      let unused@841..847: int @837..879
-        initializer: call id@785..809 : int @850..879
-          arg[0]: unit : unit @853..878
-      tail: int 15 : int @884..886
-    outcome[1]: return : int @863..872
-      payload: int 14 : int @870..872
+      let unused@64:9..64:15: int @64:5..66:7
+        initializer: call id@62:1..62:25 : int @64:18..66:7
+          arg[0]: unit : unit @64:21..66:6
+      tail: int 15 : int @67:5..67:7
+    outcome[1]: return : int @65:9..65:18
+      payload: int 14 : int @65:16..65:18
 
-fn eager_without_tail@889..944 () -> int ∈ [16, 16]
-  result: result : int @916..919
-    outcome[0]: eager + : int @922..944
-      lhs: int 10 : int @922..924
-      rhs: unit : unit @927..944
-    outcome[1]: return : int @933..942
-      payload: int 16 : int @940..942
+fn eager_without_tail@69:1..71:2 () -> int ∈ [16, 16]
+  result: result : int @69:28..69:31
+    outcome[0]: eager + : int @69:34..71:2
+      lhs: int 10 : int @69:34..69:36
+      rhs: unit : unit @69:39..71:2
+    outcome[1]: return : int @70:5..70:14
+      payload: int 16 : int @70:12..70:14
 
-fn choose@945..1011 (bool ∈ ∅) -> int ∈ ∅
-  param b@955..956: bool
-  result: result : int @967..970
-    outcome[0]: if : int @973..1011
-      condition: read b@955..956 : bool
-      then: unit : unit @978..995
-      else: int 18 : int @1007..1009
-    outcome[1]: return : int @984..993
-      payload: int 17 : int @991..993
+fn choose@72:1..76:2 (bool ∈ ∅) -> int ∈ ∅
+  param b@72:11..72:12: bool
+  result: result : int @72:23..72:26
+    outcome[0]: if : int @72:29..76:2
+      condition: read b@72:11..72:12 : bool
+      then: unit : unit @72:34..74:2
+      else: int 18 : int @75:5..75:7
+    outcome[1]: return : int @73:5..73:14
+      payload: int 17 : int @73:12..73:14
 
 == semantic diagnostics ==
 warning[semantic/unreachable-code]: unreachable code
-  primary @38..39
-  secondary @25..33: no path continues past this
+  primary @3:5..3:6
+  secondary @2:5..2:13: no path continues past this
 warning[semantic/unused-name]: local `unused` is never read
-  primary @71..77
-  fix @71 -> "_": prefix the name with `_`
+  primary @6:9..6:15
+  fix @6:9 -> "_": prefix the name with `_`
 warning[semantic/unreachable-code]: unreachable code
-  primary @107..108
-  secondary @90..98: no path continues past this
+  primary @8:9..8:10
+  secondary @7:9..7:17: no path continues past this
 warning[semantic/unreachable-code]: unreachable code
-  primary @119..120
-  secondary @67..114: no path continues past this
+  primary @10:5..10:6
+  secondary @6:5..9:6: no path continues past this
 warning[semantic/constant-condition]: condition is always false
-  primary @192..197
-  secondary @201..238: the right side never runs
+  primary @14:9..14:14
+  secondary @14:18..17:6: the right side never runs
 warning[semantic/constant-condition]: condition is always true
-  primary @280..284
+  primary @21:9..21:13
 warning[semantic/unreachable-code]: unreachable code
-  primary @315..319
-  secondary @298..306: no path continues past this
+  primary @23:9..23:13
+  secondary @22:9..22:17: no path continues past this
 warning[semantic/unreachable-code]: unreachable code
-  primary @330..331
-  secondary @276..325: no path continues past this
+  primary @25:5..25:6
+  secondary @21:5..24:6: no path continues past this
 warning[semantic/unreachable-code]: unreachable code
-  primary @391..392
-  secondary @374..382: no path continues past this
+  primary @30:9..30:10
+  secondary @29:9..29:17: no path continues past this
 warning[semantic/unreachable-code]: unreachable code
-  primary @441..443
-  secondary @360..436: no path continues past this
+  primary @35:5..35:7
+  secondary @28:5..34:6: no path continues past this
 warning[semantic/unused-function]: function `divide` is never called
-  primary @449..455
+  primary @37:4..37:10
 warning[semantic/unreachable-code]: unreachable code
-  primary @669..674
-  secondary @658..664: no path continues past this
+  primary @52:5..52:10
+  secondary @51:5..51:11: no path continues past this
 warning[semantic/unreachable-code]: unreachable code
-  primary @721..748
-  secondary @707..716: no path continues past this
+  primary @56:5..57:18
+  secondary @55:5..55:14: no path continues past this
 warning[semantic/unused-name]: local `unused` is never read
-  primary @841..847
-  fix @841 -> "_": prefix the name with `_`
+  primary @64:9..64:15
+  fix @64:9 -> "_": prefix the name with `_`
 warning[semantic/unreachable-code]: unreachable code
-  primary @884..886
-  secondary @837..879: no path continues past this
+  primary @67:5..67:7
+  secondary @64:5..66:7: no path continues past this
 warning[semantic/unused-function]: function `choose` is never called
-  primary @948..954
+  primary @72:4..72:10

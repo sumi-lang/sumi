@@ -2,44 +2,44 @@ file: rejected
 frontend errors: 0 (see frontend.snap)
 semantic errors: 4
 
-fn or_name@0..41 () -> bool ∈ ∅
-  result: copy : bool @16..20
-    value: lazy or : ? @23..41
-      lhs: bool true : bool @23..27
-      rhs: hole : ? @31..41
+fn or_name@1:1..1:42 () -> bool ∈ ∅
+  result: copy : bool @1:17..1:21
+    value: lazy or : ? @1:24..1:42
+      lhs: bool true : bool @1:24..1:28
+      rhs: hole : ? @1:32..1:42
 
-fn and_type@42..76 () -> bool ∈ {false}
-  result: copy : bool @59..63
-    value: lazy and : bool @66..76
-      lhs: bool false : bool @66..71
-      rhs: int 1 : ? @75..76
+fn and_type@2:1..2:35 () -> bool ∈ {false}
+  result: copy : bool @2:18..2:22
+    value: lazy and : bool @2:25..2:35
+      lhs: bool false : bool @2:25..2:30
+      rhs: int 1 : ? @2:34..2:35
 
-fn then_name@77..145 () -> int ∈ ∅
-  result: copy : int @95..98
-    value: if : ? @101..145
-      condition: bool false : bool @104..109
-      then: hole : ? @116..128
-      else: int 1 : int @142..143
+fn then_name@3:1..7:2 () -> int ∈ ∅
+  result: copy : int @3:19..3:22
+    value: if : ? @3:25..7:2
+      condition: bool false : bool @3:28..3:33
+      then: hole : ? @4:5..4:17
+      else: int 1 : int @6:5..6:6
 
-fn else_type@146..206 () -> int ∈ [1, 1]
-  result: copy : int @164..167
-    value: if : ? @170..206
-      condition: bool true : bool @173..177
-      then: int 1 : int @184..185
-      else: bool false : bool @199..204
+fn else_type@8:1..12:2 () -> int ∈ [1, 1]
+  result: copy : int @8:19..8:22
+    value: if : ? @8:25..12:2
+      condition: bool true : bool @8:28..8:32
+      then: int 1 : int @9:5..9:6
+      else: bool false : bool @11:5..11:10
 
-fn independent@207..235 () -> int ∈ [42, 42]
-  result: copy : int @227..230
-    value: int 42 : int @233..235
+fn independent@13:1..13:29 () -> int ∈ [42, 42]
+  result: copy : int @13:21..13:24
+    value: int 42 : int @13:27..13:29
 
 == semantic diagnostics ==
 error[semantic/unknown-name]: unknown name `missing_or`
-  primary @31..41
+  primary @1:32..1:42
 error[semantic/type-mismatch]: expected bool, found int
-  primary @75..76
+  primary @2:34..2:35
 error[semantic/unknown-name]: unknown name `missing_then`
-  primary @116..128
+  primary @4:5..4:17
 error[semantic/type-mismatch]: if branches are int and bool
-  primary @170..206
-  secondary @184..185: int here
-  secondary @199..204: bool here
+  primary @8:25..12:2
+  secondary @9:5..9:6: int here
+  secondary @11:5..11:10: bool here

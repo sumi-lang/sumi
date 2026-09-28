@@ -1,16 +1,16 @@
 == tree ==
-SourceFile! 0..25
-  FnItem! 0..24
-    Name 3..4 "f"
-    ParamList 4..6 "()"
-    Block! 7..24
-      NameRef 13..14 "a"
-      Error! 15..16 ";"
-      NameRef 21..22 "b"
+SourceFile! 1:1..5:1
+  FnItem! 1:1..4:2
+    Name 1:4..1:5 "f"
+    ParamList 1:5..1:7 "()"
+    Block! 1:8..4:2
+      NameRef 2:5..2:6 "a"
+      Error! 2:7..2:8 ";"
+      NameRef 3:5..3:6 "b"
 
 == evidence ==
-ExpectedBoundary at 15
-PriorPhaseError at 15
+ExpectedBoundary at 2:7
+PriorPhaseError at 2:7
 
 == diagnostics ==
 error[syntax/unknown-punctuation] 2:7..2:8 ";": punctuation has no meaning in Sumi source

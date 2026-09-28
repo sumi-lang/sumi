@@ -1,60 +1,60 @@
 == tree ==
-SourceFile 0..155
-  FnItem 0..19
-    Name 3..8 "glued"
-    ParamList 8..10 "()"
-    Block 11..19
-      BinaryExpr 13..17
-        NameRef 13..14 "a"
-        NameRef 16..17 "b"
-  FnItem 20..44
-    Name 23..33 "glued_left"
-    ParamList 33..35 "()"
-    Block 36..44
-      BinaryExpr 38..42
-        NameRef 38..39 "a"
-        NameRef 41..42 "b"
-  FnItem 45..70
-    Name 48..59 "glued_right"
-    ParamList 59..61 "()"
-    Block 62..70
-      BinaryExpr 64..68
-        NameRef 64..65 "a"
-        NameRef 67..68 "b"
-  FnItem 71..98
-    Name 74..85 "glued_twice"
-    ParamList 85..87 "()"
-    Block 88..98
-      BinaryExpr 90..96
-        NameRef 90..91 "a"
-        BinaryExpr 93..96
-          NameRef 93..94 "b"
-          NameRef 95..96 "c"
-  FnItem 99..123
-    Name 102..113 "glued_minus"
-    ParamList 113..115 "()"
-    Block 116..123
-      BinaryExpr 118..121
-        NameRef 118..119 "a"
-        NameRef 120..121 "b"
-  FnItem 124..154
-    Name 127..135 "trailing"
-    ParamList 135..137 "()"
-    Block 138..154
-      LetStmt 140..152
-        Name 144..145 "x"
-        BinaryExpr 148..152
-          NameRef 148..149 "a"
-          NameRef 151..152 "b"
+SourceFile 1:1..8:1
+  FnItem 1:1..1:20
+    Name 1:4..1:9 "glued"
+    ParamList 1:9..1:11 "()"
+    Block 1:12..1:20
+      BinaryExpr 1:14..1:18
+        NameRef 1:14..1:15 "a"
+        NameRef 1:17..1:18 "b"
+  FnItem 2:1..2:25
+    Name 2:4..2:14 "glued_left"
+    ParamList 2:14..2:16 "()"
+    Block 2:17..2:25
+      BinaryExpr 2:19..2:23
+        NameRef 2:19..2:20 "a"
+        NameRef 2:22..2:23 "b"
+  FnItem 3:1..3:26
+    Name 3:4..3:15 "glued_right"
+    ParamList 3:15..3:17 "()"
+    Block 3:18..3:26
+      BinaryExpr 3:20..3:24
+        NameRef 3:20..3:21 "a"
+        NameRef 3:23..3:24 "b"
+  FnItem 4:1..4:28
+    Name 4:4..4:15 "glued_twice"
+    ParamList 4:15..4:17 "()"
+    Block 4:18..4:28
+      BinaryExpr 4:20..4:26
+        NameRef 4:20..4:21 "a"
+        BinaryExpr 4:23..4:26
+          NameRef 4:23..4:24 "b"
+          NameRef 4:25..4:26 "c"
+  FnItem 5:1..5:25
+    Name 5:4..5:15 "glued_minus"
+    ParamList 5:15..5:17 "()"
+    Block 5:18..5:25
+      BinaryExpr 5:20..5:23
+        NameRef 5:20..5:21 "a"
+        NameRef 5:22..5:23 "b"
+  FnItem 6:1..7:4
+    Name 6:4..6:12 "trailing"
+    ParamList 6:12..6:14 "()"
+    Block 6:15..7:4
+      LetStmt 6:17..7:2
+        Name 6:21..6:22 "x"
+        BinaryExpr 6:25..7:2
+          NameRef 6:25..6:26 "a"
+          NameRef 7:1..7:2 "b"
 
 == evidence ==
-UnspacedBinaryOperator at 14
-UnspacedBinaryOperator at 40
-UnspacedBinaryOperator at 65
-UnspacedBinaryOperator at 91
-UnspacedBinaryOperator at 94
-UnspacedBinaryOperator at 119
-UnspacedBinaryOperator at 149
+UnspacedBinaryOperator at 1:15
+UnspacedBinaryOperator at 2:21
+UnspacedBinaryOperator at 3:21
+UnspacedBinaryOperator at 4:21
+UnspacedBinaryOperator at 4:24
+UnspacedBinaryOperator at 5:21
+UnspacedBinaryOperator at 6:26
 
 == diagnostics ==
 error[syntax/unspaced-binary-operator] 1:15..1:17 "==": binary operator must have spaces on both sides

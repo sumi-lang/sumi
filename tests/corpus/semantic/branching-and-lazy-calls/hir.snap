@@ -2,73 +2,73 @@ file: accepted
 frontend errors: 0 (see frontend.snap)
 semantic errors: 0
 
-fn even@0..72 (int ∈ [0, 4]) -> bool ∈ {true, false}
-  param n@8..9: int
-  result: copy : bool @19..23
-    value: if : bool @26..72
-      condition: eager == : bool @29..35
-        lhs: read n@8..9 : int
-        rhs: int 0 : int @34..35
-      then: bool true : bool @42..46
-      else: call odd@73..146 : bool @60..70
-        arg[0]: eager - : int @64..69
-          lhs: read n@8..9 [n == 0 fails@29..35] : int
-          rhs: int 1 : int @68..69
+fn even@1:1..5:2 (int ∈ [0, 4]) -> bool ∈ {true, false}
+  param n@1:9..1:10: int
+  result: copy : bool @1:20..1:24
+    value: if : bool @1:27..5:2
+      condition: eager == : bool @1:30..1:36
+        lhs: read n@1:9..1:10 : int
+        rhs: int 0 : int @1:35..1:36
+      then: bool true : bool @2:5..2:9
+      else: call odd@6:1..10:2 : bool @4:5..4:15
+        arg[0]: eager - : int @4:9..4:14
+          lhs: read n@1:9..1:10 [n == 0 fails@1:30..1:36] : int
+          rhs: int 1 : int @4:13..4:14
 
-fn odd@73..146 (int ∈ [0, 3]) -> bool ∈ {true, false}
-  param n@80..81: int
-  result: copy : bool @91..95
-    value: if : bool @98..146
-      condition: eager == : bool @101..107
-        lhs: read n@80..81 : int
-        rhs: int 0 : int @106..107
-      then: bool false : bool @114..119
-      else: call even@0..72 : bool @133..144
-        arg[0]: eager - : int @138..143
-          lhs: read n@80..81 [n == 0 fails@101..107] : int
-          rhs: int 1 : int @142..143
+fn odd@6:1..10:2 (int ∈ [0, 3]) -> bool ∈ {true, false}
+  param n@6:8..6:9: int
+  result: copy : bool @6:19..6:23
+    value: if : bool @6:26..10:2
+      condition: eager == : bool @6:29..6:35
+        lhs: read n@6:8..6:9 : int
+        rhs: int 0 : int @6:34..6:35
+      then: bool false : bool @7:5..7:10
+      else: call even@1:1..5:2 : bool @9:5..9:16
+        arg[0]: eager - : int @9:10..9:15
+          lhs: read n@6:8..6:9 [n == 0 fails@6:29..6:35] : int
+          rhs: int 1 : int @9:14..9:15
 
-fn safe@147..199 () -> bool ∈ {true, false}
-  result: copy : bool @160..164
-    value: lazy or : bool @167..199
-      lhs: lazy and : bool @167..188
-        lhs: bool false : bool @167..172
-        rhs: eager == : bool @177..187
-          lhs: eager / : int @177..182
-            lhs: int 1 : int @177..178
-            rhs: int 0 : int @181..182
-          rhs: int 0 : int @186..187
-      rhs: call even@0..72 : bool @192..199
-        arg[0]: int 4 : int @197..198
+fn safe@11:1..11:53 () -> bool ∈ {true, false}
+  result: copy : bool @11:14..11:18
+    value: lazy or : bool @11:21..11:53
+      lhs: lazy and : bool @11:21..11:42
+        lhs: bool false : bool @11:21..11:26
+        rhs: eager == : bool @11:31..11:41
+          lhs: eager / : int @11:31..11:36
+            lhs: int 1 : int @11:31..11:32
+            rhs: int 0 : int @11:35..11:36
+          rhs: int 0 : int @11:40..11:41
+      rhs: call even@1:1..5:2 : bool @11:46..11:53
+        arg[0]: int 4 : int @11:51..11:52
 
-fn maybe@200..243 (bool ∈ ∅) -> unit ∈ ∅
-  param b@209..210: bool
-  body: if : unit @220..243
-    condition: read b@209..210 : bool
+fn maybe@12:1..14:2 (bool ∈ ∅) -> unit ∈ ∅
+  param b@12:10..12:11: bool
+  body: if : unit @12:21..14:2
+    condition: read b@12:10..12:11 : bool
     then:
-      discard: call safe@147..199 : bool @235..241
-      tail: unit : unit @225..243
+      discard: call safe@11:1..11:53 : bool @13:9..13:15
+      tail: unit : unit @12:26..14:2
     else: unit (implicit)
 
-fn spin@244..298 (int ∈ [0, 3]) -> unit ∈ unit
-  param n@252..253: int
-  result: copy : unit @263..267
-    value: if : unit @270..298
-      condition: eager > : bool @273..278
-        lhs: read n@252..253 : int
-        rhs: int 0 : int @277..278
-      then: call spin@244..298 : unit @285..296
-        arg[0]: eager - : int @290..295
-          lhs: read n@252..253 [n > 0 holds@273..278] : int
-          rhs: int 1 : int @294..295
+fn spin@15:1..17:2 (int ∈ [0, 3]) -> unit ∈ unit
+  param n@15:9..15:10: int
+  result: copy : unit @15:20..15:24
+    value: if : unit @15:27..17:2
+      condition: eager > : bool @15:30..15:35
+        lhs: read n@15:9..15:10 : int
+        rhs: int 0 : int @15:34..15:35
+      then: call spin@15:1..17:2 : unit @16:5..16:16
+        arg[0]: eager - : int @16:10..16:15
+          lhs: read n@15:9..15:10 [n > 0 holds@15:30..15:35] : int
+          rhs: int 1 : int @16:14..16:15
       else: unit (implicit)
 
-fn spins@299..319 () -> unit ∈ unit
-  body: call spin@244..298 : unit @312..319
-    arg[0]: int 3 : int @317..318
+fn spins@18:1..18:21 () -> unit ∈ unit
+  body: call spin@15:1..17:2 : unit @18:14..18:21
+    arg[0]: int 3 : int @18:19..18:20
 
 == semantic diagnostics ==
 warning[semantic/constant-condition]: condition is always false
-  primary @167..188
+  primary @11:21..11:42
 warning[semantic/unused-function]: function `maybe` is never called
-  primary @203..208
+  primary @12:4..12:9

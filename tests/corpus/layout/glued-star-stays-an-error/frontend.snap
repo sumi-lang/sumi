@@ -1,29 +1,29 @@
 == tree ==
-SourceFile 0..191
-  FnItem 126..190
-    Name 129..130 "f"
-    ParamList 130..132 "()"
-    Block 133..190
-      LetStmt 139..150
-        Name 143..144 "x"
-        BinaryExpr 147..150
-          NameRef 147..148 "a"
-          NameRef 149..150 "b"
-      LetStmt 155..167
-        Name 159..160 "y"
-        BinaryExpr 163..167
-          NameRef 163..164 "a"
-          NameRef 166..167 "b"
-      LetStmt 172..188
-        Name 176..177 "z"
-        BinaryExpr 180..188
-          NameRef 180..181 "x"
-          NameRef 187..188 "b"
+SourceFile 1:1..9:1
+  FnItem 3:1..8:2
+    Name 3:4..3:5 "f"
+    ParamList 3:5..3:7 "()"
+    Block 3:8..8:2
+      LetStmt 4:5..4:16
+        Name 4:9..4:10 "x"
+        BinaryExpr 4:13..4:16
+          NameRef 4:13..4:14 "a"
+          NameRef 4:15..4:16 "b"
+      LetStmt 5:5..5:17
+        Name 5:9..5:10 "y"
+        BinaryExpr 5:13..5:17
+          NameRef 5:13..5:14 "a"
+          NameRef 5:16..5:17 "b"
+      LetStmt 6:5..7:7
+        Name 6:9..6:10 "z"
+        BinaryExpr 6:13..7:7
+          NameRef 6:13..6:14 "x"
+          NameRef 7:6..7:7 "b"
 
 == evidence ==
-UnspacedBinaryOperator at 148
-UnspacedBinaryOperator at 165
-UnspacedBinaryOperator at 186
+UnspacedBinaryOperator at 4:14
+UnspacedBinaryOperator at 5:15
+UnspacedBinaryOperator at 7:5
 
 == diagnostics ==
 error[syntax/unspaced-binary-operator] 4:14..4:15 "*": binary operator must have spaces on both sides

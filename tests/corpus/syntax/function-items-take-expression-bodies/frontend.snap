@@ -1,26 +1,26 @@
 == tree ==
-SourceFile 0..72
-  FnItem 0..32
-    Name 3..9 "double"
-    ParamList 9..17
-      Param 10..16
-        Name 10..11 "x"
-        TypeRef 13..16 "int"
-    TypeRef 21..24 "int"
-    BinaryExpr 27..32
-      NameRef 27..28 "x"
-      LiteralExpr 31..32 "2"
-  FnItem 33..50
-    Name 36..38 "id"
-    ParamList 38..46
-      Param 39..45
-        Name 39..40 "x"
-        TypeRef 42..45 "int"
-    NameRef 49..50 "x"
-  FnItem 51..71
-    Name 54..60 "answer"
-    ParamList 60..62 "()"
-    LiteralExpr 69..71 "42"
+SourceFile 1:1..5:1
+  FnItem 1:1..1:33
+    Name 1:4..1:10 "double"
+    ParamList 1:10..1:18
+      Param 1:11..1:17
+        Name 1:11..1:12 "x"
+        TypeRef 1:14..1:17 "int"
+    TypeRef 1:22..1:25 "int"
+    BinaryExpr 1:28..1:33
+      NameRef 1:28..1:29 "x"
+      LiteralExpr 1:32..1:33 "2"
+  FnItem 2:1..2:18
+    Name 2:4..2:6 "id"
+    ParamList 2:6..2:14
+      Param 2:7..2:13
+        Name 2:7..2:8 "x"
+        TypeRef 2:10..2:13 "int"
+    NameRef 2:17..2:18 "x"
+  FnItem 3:1..4:7
+    Name 3:4..3:10 "answer"
+    ParamList 3:10..3:12 "()"
+    LiteralExpr 4:5..4:7 "42"
 
 == formatted ==
 fn double(x: int) -> int = x * 2

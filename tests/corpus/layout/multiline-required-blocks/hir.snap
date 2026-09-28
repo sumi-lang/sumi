@@ -2,62 +2,62 @@ file: accepted
 frontend errors: 0 (see frontend.snap)
 semantic errors: 0
 
-fn choose@0..97 (bool ∈ ∅) -> int ∈ ∅
-  param flag@10..14: bool
-  result: copy : int @25..28
-    value: if : int @35..95
-      condition: read flag@10..14 : bool
-      then: int 1 : int @57..58
-      else: int 2 : int @88..89
+fn choose@1:1..11:2 (bool ∈ ∅) -> int ∈ ∅
+  param flag@1:11..1:15: bool
+  result: copy : int @1:26..1:29
+    value: if : int @3:5..10:6
+      condition: read flag@1:11..1:15 : bool
+      then: int 1 : int @5:9..5:10
+      else: int 2 : int @9:9..9:10
 
-fn block_condition@98..156 () -> int ∈ [1, 1]
-  result: copy : int @122..125
-    value: if : int @128..156
-      condition: bool true : bool @133..137
-      then: int 1 : int @142..143
-      else: int 2 : int @153..154
+fn block_condition@12:1..15:6 () -> int ∈ [1, 1]
+  result: copy : int @12:25..12:28
+    value: if : int @12:31..15:6
+      condition: bool true : bool @12:36..12:40
+      then: int 1 : int @13:3..13:4
+      else: int 2 : int @15:3..15:4
 
-fn nested_condition@157..259 () -> int ∈ [1, 1]
-  result: copy : int @182..185
-    value: if : int @188..259
-      condition: if : bool @191..222
-        condition: bool true : bool @194..198
-        then: bool true : bool @201..205
-        else: bool false : bool @215..220
-      then: int 1 : int @225..226
-      else: if : int @234..259
-        condition: bool false : bool @237..242
-        then: int 2 : int @245..246
-        else: int 3 : int @256..257
+fn nested_condition@16:1..24:6 () -> int ∈ [1, 1]
+  result: copy : int @16:26..16:29
+    value: if : int @16:32..24:6
+      condition: if : bool @16:35..19:10
+        condition: bool true : bool @16:38..16:42
+        then: bool true : bool @17:3..17:7
+        else: bool false : bool @19:3..19:8
+      then: int 1 : int @20:3..20:4
+      else: if : int @21:6..24:6
+        condition: bool false : bool @21:9..21:14
+        then: int 2 : int @22:3..22:4
+        else: int 3 : int @24:3..24:4
 
-fn continued_condition@260..313 () -> unit ∈ unit
-  body: if : unit @287..313
-    condition: lazy and : bool @290..310
-      lhs: bool true : bool @292..296
-      rhs: bool true : bool @306..310
-    then: unit : unit @311..313
+fn continued_condition@25:1..27:3 () -> unit ∈ unit
+  body: if : unit @25:28..27:3
+    condition: lazy and : bool @25:31..26:12
+      lhs: bool true : bool @25:33..25:37
+      rhs: bool true : bool @26:8..26:12
+    then: unit : unit @27:1..27:3
     else: unit (implicit)
 
-fn grouped@314..351 () -> unit ∈ unit
-  body: if : unit @330..350
-    condition: bool true : bool @334..338
-    then: unit : unit @340..342
-    else: unit : unit @348..350
+fn grouped@28:1..31:4 () -> unit ∈ unit
+  body: if : unit @28:17..31:3
+    condition: bool true : bool @28:21..28:25
+    then: unit : unit @29:1..29:3
+    else: unit : unit @31:1..31:3
 
 == semantic diagnostics ==
 warning[semantic/unused-function]: function `choose` is never called
-  primary @3..9
+  primary @1:4..1:10
 warning[semantic/constant-condition]: condition is always true
-  primary @131..139
-  secondary @151..156: this branch never runs
+  primary @12:34..12:42
+  secondary @15:1..15:6: this branch never runs
 warning[semantic/constant-condition]: condition is always true
-  primary @191..222
-  secondary @234..259: this branch never runs
+  primary @16:35..19:10
+  secondary @21:6..24:6: this branch never runs
 warning[semantic/constant-condition]: condition is always true
-  primary @194..198
-  secondary @213..222: this branch never runs
+  primary @16:38..16:42
+  secondary @19:1..19:10: this branch never runs
 warning[semantic/constant-condition]: condition is always true
-  primary @290..310
+  primary @25:31..26:12
 warning[semantic/constant-condition]: condition is always true
-  primary @333..339
-  secondary @348..350: this branch never runs
+  primary @28:20..28:26
+  secondary @31:1..31:3: this branch never runs

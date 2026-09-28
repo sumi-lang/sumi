@@ -1,21 +1,21 @@
 == tree ==
-SourceFile 0..44
-  FnItem 0..43
-    Name 3..4 "f"
-    ParamList 4..6 "()"
-    Block 7..43
-      BinaryExpr 13..41
-        NameRef 13..14 "a"
-        BinaryExpr 18..41
-          NameRef 18..19 "b"
-          BinaryExpr 23..41
-            NameRef 23..24 "c"
-            BinaryExpr 28..41
-              NameRef 28..29 "d"
-              BinaryExpr 32..41
-                NameRef 32..33 "e"
-                PrefixExpr 36..41
-                  CallExpr 37..41
-                    NameRef 37..38 "f"
-                    ArgList 38..41
-                      NameRef 39..40 "g"
+SourceFile 1:1..4:1
+  FnItem 1:1..3:2
+    Name 1:4..1:5 "f"
+    ParamList 1:5..1:7 "()"
+    Block 1:8..3:2
+      BinaryExpr 2:5..2:33
+        NameRef 2:5..2:6 "a"
+        BinaryExpr 2:10..2:33
+          NameRef 2:10..2:11 "b"
+          BinaryExpr 2:15..2:33
+            NameRef 2:15..2:16 "c"
+            BinaryExpr 2:20..2:33
+              NameRef 2:20..2:21 "d"
+              BinaryExpr 2:24..2:33
+                NameRef 2:24..2:25 "e"
+                PrefixExpr 2:28..2:33
+                  CallExpr 2:29..2:33
+                    NameRef 2:29..2:30 "f"
+                    ArgList 2:30..2:33
+                      NameRef 2:31..2:32 "g"

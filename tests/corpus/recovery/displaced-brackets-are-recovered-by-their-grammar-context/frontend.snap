@@ -1,39 +1,39 @@
 == tree ==
-SourceFile! 0..131
-  FnItem! 0..44
-    Name 3..20 "closer_in_discard"
-    ParamList 20..22 "()"
-    Block! 23..44
-      DiscardStmt! 29..36
-        Error! 33..34 "}"
-        LiteralExpr 35..36 "1"
-      NameRef 41..42 "x"
-  FnItem! 45..84
-    Name 48..64 "opener_in_parens"
-    ParamList 64..66 "()"
-    Block! 67..84
-      ParenExpr! 73..82
-        BinaryExpr! 74..81
-          NameRef 74..75 "a"
-          Error! 76..77 "{"
-          NameRef 80..81 "b"
-  FnItem! 85..130
-    Name 88..107 "opener_in_arguments"
-    ParamList 107..109 "()"
-    Block! 110..130
-      CallExpr! 116..128
-        NameRef 116..117 "g"
-        ArgList! 117..128
-          NameRef 118..119 "a"
-          Block! 122..127
-            Error! 124..127 "% b"
+SourceFile! 1:1..12:1
+  FnItem! 1:1..4:2
+    Name 1:4..1:21 "closer_in_discard"
+    ParamList 1:21..1:23 "()"
+    Block! 1:24..4:2
+      DiscardStmt! 2:5..2:12
+        Error! 2:9..2:10 "}"
+        LiteralExpr 2:11..2:12 "1"
+      NameRef 3:5..3:6 "x"
+  FnItem! 5:1..7:2
+    Name 5:4..5:20 "opener_in_parens"
+    ParamList 5:20..5:22 "()"
+    Block! 5:23..7:2
+      ParenExpr! 6:5..6:14
+        BinaryExpr! 6:6..6:13
+          NameRef 6:6..6:7 "a"
+          Error! 6:8..6:9 "{"
+          NameRef 6:12..6:13 "b"
+  FnItem! 8:1..11:2
+    Name 8:4..8:23 "opener_in_arguments"
+    ParamList 8:23..8:25 "()"
+    Block! 8:26..11:2
+      CallExpr! 9:5..10:9
+        NameRef 9:5..9:6 "g"
+        ArgList! 9:6..10:9
+          NameRef 9:7..9:8 "a"
+          Block! 10:3..10:8
+            Error! 10:5..10:8 "% b"
 
 == evidence ==
-ExpectedExpression at 33
-Unexpected at 76
-Expected(Comma) at 122
-ExpectedStatement at 124
-Expected(RBrace) at 127
+ExpectedExpression at 2:9
+Unexpected at 6:8
+Expected(Comma) at 10:3
+ExpectedStatement at 10:5
+Expected(RBrace) at 10:8
 
 == diagnostics ==
 error[syntax/expected-expression] 2:9..2:10 "}": expected an expression

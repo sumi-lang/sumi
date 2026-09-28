@@ -1,7 +1,7 @@
 tree: see hir.snap
 
 == evidence ==
-Expected(RBrace) at 45
+Expected(RBrace) at 4:1
 
 == diagnostics ==
 error[syntax/expected-token] 4:1: expected `}`

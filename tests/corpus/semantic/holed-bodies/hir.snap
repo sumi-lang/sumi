@@ -2,57 +2,57 @@ file: rejected
 frontend errors: 1 (see frontend.snap)
 semantic errors: 8
 
-fn tail_held@0..48 () -> bool ∈ ∅
-  result: copy : bool @18..22
+fn tail_held@1:1..4:2 () -> bool ∈ ∅
+  result: copy : bool @1:19..1:23
     value:
-      discard: hole : ? @33..40
-      tail: int 1 : ? @45..46
+      discard: hole : ? @2:9..2:16
+      tail: int 1 : ? @3:5..3:6
 
-fn inferred@49..90 () -> int ∈ [1, 1]
+fn inferred@5:1..8:2 () -> int ∈ [1, 1]
   body:
-    discard: hole : ? @75..82
-    tail: int 1 : int @87..88
+    discard: hole : ? @6:9..6:16
+    tail: int 1 : int @7:5..7:6
 
-fn caller@91..123 () -> bool ∈ ∅
-  result: copy : bool @106..110
-    value: call inferred@49..90 : ? @113..123
+fn caller@9:1..9:33 () -> bool ∈ ∅
+  result: copy : bool @9:16..9:20
+    value: call inferred@5:1..8:2 : ? @9:23..9:33
 
-fn statements@124..198 () -> int ∈ [0, 0]
-  result: copy : int @143..146
+fn statements@10:1..16:2 () -> int ∈ [0, 0]
+  result: copy : int @10:20..10:23
     value:
-      discard: hole : ? @167..174
-      discard: int 5 : int @183..184
-      tail: int 0 : int @195..196
+      discard: hole : ? @12:13..12:20
+      discard: int 5 : int @13:9..13:10
+      tail: int 0 : int @15:5..15:6
 
-fn damaged@199..230 () -> int ∈ ∅
-  result: copy : int @215..218
+fn damaged@17:1..19:2 () -> int ∈ ∅
+  result: copy : int @17:17..17:20
     value:
-      discard: int 5 : int @225..226
-      discard: hole : ? @227..228
-      tail: hole : ? @219..230
+      discard: int 5 : int @18:5..18:6
+      discard: hole : ? @18:7..18:8
+      tail: hole : ? @17:21..19:2
 
-fn grouped@231..255 signature: unavailable
-  body: hole : ? @247..254
+fn grouped@20:1..20:25 signature: unavailable
+  body: hole : ? @20:17..20:24
 
-fn after@256..277 () -> bool ∈ {true}
-  body: bool true : bool @271..275
+fn after@21:1..21:22 () -> bool ∈ {true}
+  body: bool true : bool @21:16..21:20
 
 == semantic diagnostics ==
 error[semantic/type-mismatch]: expected bool, found int
-  primary @23..48
-  secondary @18..22: declared here
+  primary @1:24..4:2
+  secondary @1:19..1:23: declared here
 error[semantic/unknown-name]: unknown name `missing`
-  primary @33..40
+  primary @2:9..2:16
 error[semantic/unknown-name]: unknown name `missing`
-  primary @75..82
+  primary @6:9..6:16
 error[semantic/type-mismatch]: expected bool, found int
-  primary @113..123
-  secondary @106..110: declared here
+  primary @9:23..9:33
+  secondary @9:16..9:20: declared here
 error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
-  primary @153..190
+  primary @11:5..14:6
 error[semantic/unknown-name]: unknown name `missing`
-  primary @167..174
+  primary @12:13..12:20
 error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
-  primary @225..226
+  primary @18:5..18:6
 error[semantic/unknown-name]: unknown name `missing`
-  primary @247..254
+  primary @20:17..20:24

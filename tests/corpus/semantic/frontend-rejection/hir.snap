@@ -2,20 +2,20 @@ file: rejected
 frontend errors: 1 (see frontend.snap)
 semantic errors: 1
 
-fn malformed@0..26 () -> int ∈ ∅
-  result: copy : int @18..21
-    value: hole : ? @24..26
+fn malformed@1:1..1:27 () -> int ∈ ∅
+  result: copy : int @1:19..1:22
+    value: hole : ? @1:25..1:27
 
-fn layout@27..61 () -> int ∈ [2, 2]
-  result: copy : int @42..45
+fn layout@2:1..5:2 () -> int ∈ [2, 2]
+  result: copy : int @2:16..2:19
     value:
-      discard: int 1 : int @52..53
-      tail: int 2 : int @58..59
+      discard: int 1 : int @3:5..3:6
+      tail: int 2 : int @4:5..4:6
 
-fn intact@62..88 () -> bool ∈ {true}
-  result: copy : bool @77..81
-    value: bool true : bool @84..88
+fn intact@6:1..6:27 () -> bool ∈ {true}
+  result: copy : bool @6:16..6:20
+    value: bool true : bool @6:23..6:27
 
 == semantic diagnostics ==
 error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
-  primary @52..53
+  primary @3:5..3:6

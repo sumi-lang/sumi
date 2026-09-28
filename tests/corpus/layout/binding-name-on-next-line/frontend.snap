@@ -1,23 +1,23 @@
 == tree ==
-SourceFile 0..105
-  FnItem 0..104
-    Name 3..11 "bindings"
-    ParamList 11..13 "()"
-    Block 14..104
-      LetStmt 20..37
-        Name 28..33 "plain"
-        LiteralExpr 36..37 "1"
-      LetStmt 42..69
-        Name 58..65 "mutable"
-        LiteralExpr 68..69 "2"
-      LetStmt 74..102
-        Name 89..98 "commented"
-        LiteralExpr 101..102 "3"
+SourceFile 1:1..10:1
+  FnItem 1:1..9:2
+    Name 1:4..1:12 "bindings"
+    ParamList 1:12..1:14 "()"
+    Block 1:15..9:2
+      LetStmt 2:5..3:14
+        Name 3:5..3:10 "plain"
+        LiteralExpr 3:13..3:14 "1"
+      LetStmt 4:5..6:16
+        Name 6:5..6:12 "mutable"
+        LiteralExpr 6:15..6:16 "2"
+      LetStmt 7:5..8:18
+        Name 8:5..8:14 "commented"
+        LiteralExpr 8:17..8:18 "3"
 
 == evidence ==
-BindingNameOnNextLine at 28
-BindingNameOnNextLine at 58
-BindingNameOnNextLine at 89
+BindingNameOnNextLine at 3:5
+BindingNameOnNextLine at 6:5
+BindingNameOnNextLine at 8:5
 
 == diagnostics ==
 error[syntax/binding-name-on-next-line] 3:5..3:10 "plain": binding name must be on the same line as `let`

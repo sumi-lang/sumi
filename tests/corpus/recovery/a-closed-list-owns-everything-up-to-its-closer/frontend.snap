@@ -1,39 +1,39 @@
 == tree ==
-SourceFile! 0..119
-  FnItem! 0..36
-    Name 3..16 "brace_in_type"
-    ParamList! 16..26
-      Param! 17..19
-        Name 17..18 "a"
-      Error! 20..25 "{ int"
-    Block 27..36
-      NameRef 33..34 "x"
-  FnItem! 37..79
-    Name 40..56 "brace_after_type"
-    ParamList! 56..76
-      Param 57..63
-        Name 57..58 "b"
-        TypeRef 60..63 "int"
-      Param 65..73
-        Name 65..68 "foo"
-        TypeRef 70..73 "int"
-      Error! 73..74 "{"
-    Block 77..79 "{}"
-  FnItem! 80..118
-    Name 83..99 "keyword_argument"
-    ParamList 99..101 "()"
-    Block! 102..118
-      CallExpr! 108..116
-        NameRef 108..109 "g"
-        ArgList! 109..116
-          Error! 110..112 "fn"
-          NameRef 114..115 "b"
+SourceFile! 1:1..8:1
+  FnItem! 1:1..3:2
+    Name 1:4..1:17 "brace_in_type"
+    ParamList! 1:17..1:27
+      Param! 1:18..1:20
+        Name 1:18..1:19 "a"
+      Error! 1:21..1:26 "{ int"
+    Block 1:28..3:2
+      NameRef 2:5..2:6 "x"
+  FnItem! 4:1..4:43
+    Name 4:4..4:20 "brace_after_type"
+    ParamList! 4:20..4:40
+      Param 4:21..4:27
+        Name 4:21..4:22 "b"
+        TypeRef 4:24..4:27 "int"
+      Param 4:29..4:37
+        Name 4:29..4:32 "foo"
+        TypeRef 4:34..4:37 "int"
+      Error! 4:37..4:38 "{"
+    Block 4:41..4:43 "{}"
+  FnItem! 5:1..7:2
+    Name 5:4..5:20 "keyword_argument"
+    ParamList 5:20..5:22 "()"
+    Block! 5:23..7:2
+      CallExpr! 6:5..6:13
+        NameRef 6:5..6:6 "g"
+        ArgList! 6:6..6:13
+          Error! 6:7..6:9 "fn"
+          NameRef 6:11..6:12 "b"
 
 == evidence ==
-ExpectedType at 20
-ExpectedName at 20
-ExpectedName at 73
-ExpectedExpression at 110
+ExpectedType at 1:21
+ExpectedName at 1:21
+ExpectedName at 4:37
+ExpectedExpression at 6:7
 
 == diagnostics ==
 error[syntax/expected-type] 1:21: expected a type

@@ -2,243 +2,243 @@ file: accepted
 frontend errors: 0 (see frontend.snap)
 semantic errors: 0
 
-fn clamp@0..107 (int ∈ [-5, 20] \ 0) -> int ∈ [0, 9]
-  param n@9..10: int
-  result: copy : int @20..23
-    value: if : int @26..107
-      condition: eager < : bool @29..34
-        lhs: read n@9..10 : int
-        rhs: int 0 : int @33..34
-      then: int 0 : int @41..42
-      else: if : int @56..105
-        condition: eager > : bool @59..64
-          lhs: read n@9..10 [n < 0 fails@29..34] : int
-          rhs: int 9 : int @63..64
-        then: int 9 : int @75..76
-        else: read n@9..10 [n > 9 fails@59..64, n < 0 fails@29..34] : int
+fn clamp@1:1..9:2 (int ∈ [-5, 20] \ 0) -> int ∈ [0, 9]
+  param n@1:10..1:11: int
+  result: copy : int @1:21..1:24
+    value: if : int @1:27..9:2
+      condition: eager < : bool @1:30..1:35
+        lhs: read n@1:10..1:11 : int
+        rhs: int 0 : int @1:34..1:35
+      then: int 0 : int @2:5..2:6
+      else: if : int @4:5..8:6
+        condition: eager > : bool @4:8..4:13
+          lhs: read n@1:10..1:11 [n < 0 fails@1:30..1:35] : int
+          rhs: int 9 : int @4:12..4:13
+        then: int 9 : int @5:9..5:10
+        else: read n@1:10..1:11 [n > 9 fails@4:8..4:13, n < 0 fails@1:30..1:35] : int
 
-fn clamped@108..162 () -> int ∈ [0, 27]
-  result: copy : int @124..127
-    value: eager + : int @130..162
-      lhs: eager + : int @130..150
-        lhs: call clamp@0..107 : int @130..139
-          arg[0]: int -5 : int @136..138
-        rhs: call clamp@0..107 : int @142..150
-          arg[0]: int 3 : int @148..149
-      rhs: call clamp@0..107 : int @153..162
-        arg[0]: int 20 : int @159..161
+fn clamped@10:1..10:55 () -> int ∈ [0, 27]
+  result: copy : int @10:17..10:20
+    value: eager + : int @10:23..10:55
+      lhs: eager + : int @10:23..10:43
+        lhs: call clamp@1:1..9:2 : int @10:23..10:32
+          arg[0]: int -5 : int @10:29..10:31
+        rhs: call clamp@1:1..9:2 : int @10:35..10:43
+          arg[0]: int 3 : int @10:41..10:42
+      rhs: call clamp@1:1..9:2 : int @10:46..10:55
+        arg[0]: int 20 : int @10:52..10:54
 
-fn nonzero@163..225 (int ∈ [-2, 2]) -> int ∈ [-2, 2] \ 0
-  param d@174..175: int
-  result: copy : int @185..188
-    value: if : int @191..225
-      condition: eager != : bool @194..200
-        lhs: read d@174..175 : int
-        rhs: int 0 : int @199..200
-      then: read d@174..175 [d != 0 holds@194..200] : int
-      else: int 1 : int @222..223
+fn nonzero@11:1..15:2 (int ∈ [-2, 2]) -> int ∈ [-2, 2] \ 0
+  param d@11:12..11:13: int
+  result: copy : int @11:23..11:26
+    value: if : int @11:29..15:2
+      condition: eager != : bool @11:32..11:38
+        lhs: read d@11:12..11:13 : int
+        rhs: int 0 : int @11:37..11:38
+      then: read d@11:12..11:13 [d != 0 holds@11:32..11:38] : int
+      else: int 1 : int @14:5..14:6
 
-fn nonzeros@226..286 () -> int ∈ [-6, 6]
-  result: copy : int @243..246
-    value: eager + : int @249..286
-      lhs: eager + : int @249..273
-        lhs: call nonzero@163..225 : int @249..260
-          arg[0]: int -2 : int @257..259
-        rhs: call nonzero@163..225 : int @263..273
-          arg[0]: int 0 : int @271..272
-      rhs: call nonzero@163..225 : int @276..286
-        arg[0]: int 2 : int @284..285
+fn nonzeros@16:1..16:61 () -> int ∈ [-6, 6]
+  result: copy : int @16:18..16:21
+    value: eager + : int @16:24..16:61
+      lhs: eager + : int @16:24..16:48
+        lhs: call nonzero@11:1..15:2 : int @16:24..16:35
+          arg[0]: int -2 : int @16:32..16:34
+        rhs: call nonzero@11:1..15:2 : int @16:38..16:48
+          arg[0]: int 0 : int @16:46..16:47
+      rhs: call nonzero@11:1..15:2 : int @16:51..16:61
+        arg[0]: int 2 : int @16:59..16:60
 
-fn both@287..366 (int ∈ [-1, 3] \ 0, int ∈ [4, 5]) -> int ∈ [0, 8]
-  param a@295..296: int
-  param b@303..304: int
-  result: copy : int @314..317
-    value: if : int @320..366
-      condition: lazy and : bool @323..337
-        lhs: eager > : bool @323..328
-          lhs: read a@295..296 : int
-          rhs: int 0 : int @327..328
-        rhs: eager > : bool @332..337
-          lhs: read b@303..304 : int
-          rhs: int 0 : int @336..337
-      then: eager + : int @344..349
-        lhs: read a@295..296 [a > 0 holds@323..328] : int
-        rhs: read b@303..304 [b > 0 holds@332..337] : int
-      else: int 0 : int @363..364
+fn both@17:1..21:2 (int ∈ [-1, 3] \ 0, int ∈ [4, 5]) -> int ∈ [0, 8]
+  param a@17:9..17:10: int
+  param b@17:17..17:18: int
+  result: copy : int @17:28..17:31
+    value: if : int @17:34..21:2
+      condition: lazy and : bool @17:37..17:51
+        lhs: eager > : bool @17:37..17:42
+          lhs: read a@17:9..17:10 : int
+          rhs: int 0 : int @17:41..17:42
+        rhs: eager > : bool @17:46..17:51
+          lhs: read b@17:17..17:18 : int
+          rhs: int 0 : int @17:50..17:51
+      then: eager + : int @18:5..18:10
+        lhs: read a@17:9..17:10 [a > 0 holds@17:37..17:42] : int
+        rhs: read b@17:17..17:18 [b > 0 holds@17:46..17:51] : int
+      else: int 0 : int @20:5..20:6
 
-fn boths@367..411 () -> int ∈ [0, 16]
-  result: copy : int @381..384
-    value: eager + : int @387..411
-      lhs: call both@287..366 : int @387..398
-        arg[0]: int -1 : int @392..394
-        arg[1]: int 5 : int @396..397
-      rhs: call both@287..366 : int @401..411
-        arg[0]: int 3 : int @406..407
-        arg[1]: int 4 : int @409..410
+fn boths@22:1..22:45 () -> int ∈ [0, 16]
+  result: copy : int @22:15..22:18
+    value: eager + : int @22:21..22:45
+      lhs: call both@17:1..21:2 : int @22:21..22:32
+        arg[0]: int -1 : int @22:26..22:28
+        arg[1]: int 5 : int @22:30..22:31
+      rhs: call both@17:1..21:2 : int @22:35..22:45
+        arg[0]: int 3 : int @22:40..22:41
+        arg[1]: int 4 : int @22:43..22:44
 
-fn flag@412..469 (bool ∈ {true, false}) -> bool ∈ {true}
-  param f@420..421: bool
-  result: copy : bool @432..436
-    value: if : bool @439..469
-      condition: read f@420..421 : bool
-      then: read f@420..421 [is true] : bool
-      else: not : bool @465..467
-        operand: read f@420..421 [is false] : bool
+fn flag@23:1..27:2 (bool ∈ {true, false}) -> bool ∈ {true}
+  param f@23:9..23:10: bool
+  result: copy : bool @23:21..23:25
+    value: if : bool @23:28..27:2
+      condition: read f@23:9..23:10 : bool
+      then: read f@23:9..23:10 [is true] : bool
+      else: not : bool @26:5..26:7
+        operand: read f@23:9..23:10 [is false] : bool
 
-fn flags@470..516 () -> bool ∈ {true}
-  result: copy : bool @484..488
-    value: lazy and : bool @491..516
-      lhs: call flag@412..469 : bool @491..501
-        arg[0]: bool true : bool @496..500
-      rhs: call flag@412..469 : bool @505..516
-        arg[0]: bool false : bool @510..515
+fn flags@28:1..28:47 () -> bool ∈ {true}
+  result: copy : bool @28:15..28:19
+    value: lazy and : bool @28:22..28:47
+      lhs: call flag@23:1..27:2 : bool @28:22..28:32
+        arg[0]: bool true : bool @28:27..28:31
+      rhs: call flag@23:1..27:2 : bool @28:36..28:47
+        arg[0]: bool false : bool @28:41..28:46
 
-fn negated@517..581 (int ∈ [1, 7]) -> int ∈ [3, 7]
-  param n@528..529: int
-  result: copy : int @539..542
-    value: if : int @545..581
-      condition: not : bool @548..556
-        operand: eager < : bool @550..555
-          lhs: read n@528..529 : int
-          rhs: int 3 : int @554..555
-      then: read n@528..529 [n < 3 fails@550..555] : int
-      else: int 3 : int @578..579
+fn negated@29:1..33:2 (int ∈ [1, 7]) -> int ∈ [3, 7]
+  param n@29:12..29:13: int
+  result: copy : int @29:23..29:26
+    value: if : int @29:29..33:2
+      condition: not : bool @29:32..29:40
+        operand: eager < : bool @29:34..29:39
+          lhs: read n@29:12..29:13 : int
+          rhs: int 3 : int @29:38..29:39
+      then: read n@29:12..29:13 [n < 3 fails@29:34..29:39] : int
+      else: int 3 : int @32:5..32:6
 
-fn negateds@582..628 () -> int ∈ [6, 14]
-  result: copy : int @599..602
-    value: eager + : int @605..628
-      lhs: call negated@517..581 : int @605..615
-        arg[0]: int 1 : int @613..614
-      rhs: call negated@517..581 : int @618..628
-        arg[0]: int 7 : int @626..627
+fn negateds@34:1..34:47 () -> int ∈ [6, 14]
+  result: copy : int @34:18..34:21
+    value: eager + : int @34:24..34:47
+      lhs: call negated@29:1..33:2 : int @34:24..34:34
+        arg[0]: int 1 : int @34:32..34:33
+      rhs: call negated@29:1..33:2 : int @34:37..34:47
+        arg[0]: int 7 : int @34:45..34:46
 
-fn between@629..700 (int ∈ [-3, 50] \ 0) -> int ∈ [0, 9]
-  param n@640..641: int
-  result: copy : int @651..654
-    value: if : int @657..700
-      condition: lazy and : bool @660..675
-        lhs: eager > : bool @660..665
-          lhs: read n@640..641 : int
-          rhs: int 0 : int @664..665
-        rhs: eager < : bool @669..675
-          lhs: read n@640..641 [n > 0 holds@660..665] : int
-          rhs: int 10 : int @673..675
-      then: read n@640..641 [n < 10 holds@669..675, n > 0 holds@660..665] : int
-      else: int 0 : int @697..698
+fn between@35:1..39:2 (int ∈ [-3, 50] \ 0) -> int ∈ [0, 9]
+  param n@35:12..35:13: int
+  result: copy : int @35:23..35:26
+    value: if : int @35:29..39:2
+      condition: lazy and : bool @35:32..35:47
+        lhs: eager > : bool @35:32..35:37
+          lhs: read n@35:12..35:13 : int
+          rhs: int 0 : int @35:36..35:37
+        rhs: eager < : bool @35:41..35:47
+          lhs: read n@35:12..35:13 [n > 0 holds@35:32..35:37] : int
+          rhs: int 10 : int @35:45..35:47
+      then: read n@35:12..35:13 [n < 10 holds@35:41..35:47, n > 0 holds@35:32..35:37] : int
+      else: int 0 : int @38:5..38:6
 
-fn betweens@701..762 () -> int ∈ [0, 27]
-  result: copy : int @718..721
-    value: eager + : int @724..762
-      lhs: eager + : int @724..748
-        lhs: call between@629..700 : int @724..735
-          arg[0]: int -3 : int @732..734
-        rhs: call between@629..700 : int @738..748
-          arg[0]: int 5 : int @746..747
-      rhs: call between@629..700 : int @751..762
-        arg[0]: int 50 : int @759..761
+fn betweens@40:1..40:62 () -> int ∈ [0, 27]
+  result: copy : int @40:18..40:21
+    value: eager + : int @40:24..40:62
+      lhs: eager + : int @40:24..40:48
+        lhs: call between@35:1..39:2 : int @40:24..40:35
+          arg[0]: int -3 : int @40:32..40:34
+        rhs: call between@35:1..39:2 : int @40:38..40:48
+          arg[0]: int 5 : int @40:46..40:47
+      rhs: call between@35:1..39:2 : int @40:51..40:62
+        arg[0]: int 50 : int @40:59..40:61
 
-fn outside@763..833 (int ∈ [-3, 50] \ 0) -> int ∈ [0, 9]
-  param n@774..775: int
-  result: copy : int @785..788
-    value: if : int @791..833
-      condition: lazy or : bool @794..808
-        lhs: eager < : bool @794..799
-          lhs: read n@774..775 : int
-          rhs: int 1 : int @798..799
-        rhs: eager > : bool @803..808
-          lhs: read n@774..775 [n < 1 fails@794..799] : int
-          rhs: int 9 : int @807..808
-      then: int 0 : int @815..816
-      else: read n@774..775 [n > 9 fails@803..808, n < 1 fails@794..799] : int
+fn outside@41:1..45:2 (int ∈ [-3, 50] \ 0) -> int ∈ [0, 9]
+  param n@41:12..41:13: int
+  result: copy : int @41:23..41:26
+    value: if : int @41:29..45:2
+      condition: lazy or : bool @41:32..41:46
+        lhs: eager < : bool @41:32..41:37
+          lhs: read n@41:12..41:13 : int
+          rhs: int 1 : int @41:36..41:37
+        rhs: eager > : bool @41:41..41:46
+          lhs: read n@41:12..41:13 [n < 1 fails@41:32..41:37] : int
+          rhs: int 9 : int @41:45..41:46
+      then: int 0 : int @42:5..42:6
+      else: read n@41:12..41:13 [n > 9 fails@41:41..41:46, n < 1 fails@41:32..41:37] : int
 
-fn outsides@834..895 () -> int ∈ [0, 27]
-  result: copy : int @851..854
-    value: eager + : int @857..895
-      lhs: eager + : int @857..881
-        lhs: call outside@763..833 : int @857..868
-          arg[0]: int -3 : int @865..867
-        rhs: call outside@763..833 : int @871..881
-          arg[0]: int 5 : int @879..880
-      rhs: call outside@763..833 : int @884..895
-        arg[0]: int 50 : int @892..894
+fn outsides@46:1..46:62 () -> int ∈ [0, 27]
+  result: copy : int @46:18..46:21
+    value: eager + : int @46:24..46:62
+      lhs: eager + : int @46:24..46:48
+        lhs: call outside@41:1..45:2 : int @46:24..46:35
+          arg[0]: int -3 : int @46:32..46:34
+        rhs: call outside@41:1..45:2 : int @46:38..46:48
+          arg[0]: int 5 : int @46:46..46:47
+      rhs: call outside@41:1..45:2 : int @46:51..46:62
+        arg[0]: int 50 : int @46:59..46:61
 
-fn inner@896..1033 (int ∈ [0, 1], int ∈ [-5, 5]) -> int ∈ [-5, 5]
-  param n@905..906: int
-  param m@913..914: int
-  result: copy : int @924..927
-    value: if : int @934..1031
-      condition: eager > : bool @937..942
-        lhs: read n@905..906 : int
-        rhs: int 0 : int @941..942
+fn inner@47:1..56:2 (int ∈ [0, 1], int ∈ [-5, 5]) -> int ∈ [-5, 5]
+  param n@47:10..47:11: int
+  param m@47:18..47:19: int
+  result: copy : int @47:29..47:32
+    value: if : int @48:5..55:6
+      condition: eager > : bool @48:8..48:13
+        lhs: read n@47:10..47:11 : int
+        rhs: int 0 : int @48:12..48:13
       then:
-        discard: if : unit @953..992
-          condition: eager != : bool @956..962
-            lhs: read m@913..914 : int
-            rhs: int 0 : int @961..962
+        discard: if : unit @49:9..51:10
+          condition: eager != : bool @49:12..49:18
+            lhs: read m@47:18..47:19 : int
+            rhs: int 0 : int @49:17..49:18
           then:
-            discard: int 1 : int @981..982
-            tail: unit : unit @963..992
+            discard: int 1 : int @50:17..50:18
+            tail: unit : unit @49:19..51:10
           else: unit (implicit)
-        tail: int 0 : int @1001..1002
-      else: read m@913..914 : int
+        tail: int 0 : int @52:9..52:10
+      else: read m@47:18..47:19 : int
 
-fn inners@1034..1095 () -> int ∈ [-15, 15]
-  result: copy : int @1049..1052
-    value: eager + : int @1055..1095
-      lhs: eager + : int @1055..1080
-        lhs: call inner@896..1033 : int @1055..1066
-          arg[0]: int 0 : int @1061..1062
-          arg[1]: int 0 : int @1064..1065
-        rhs: call inner@896..1033 : int @1069..1080
-          arg[0]: int 0 : int @1075..1076
-          arg[1]: int 5 : int @1078..1079
-      rhs: call inner@896..1033 : int @1083..1095
-        arg[0]: int 1 : int @1089..1090
-        arg[1]: int -5 : int @1092..1094
+fn inners@57:1..57:62 () -> int ∈ [-15, 15]
+  result: copy : int @57:16..57:19
+    value: eager + : int @57:22..57:62
+      lhs: eager + : int @57:22..57:47
+        lhs: call inner@47:1..56:2 : int @57:22..57:33
+          arg[0]: int 0 : int @57:28..57:29
+          arg[1]: int 0 : int @57:31..57:32
+        rhs: call inner@47:1..56:2 : int @57:36..57:47
+          arg[0]: int 0 : int @57:42..57:43
+          arg[1]: int 5 : int @57:45..57:46
+      rhs: call inner@47:1..56:2 : int @57:50..57:62
+        arg[0]: int 1 : int @57:56..57:57
+        arg[1]: int -5 : int @57:59..57:61
 
-fn wrapped@1096..1164 (int ∈ [0, 5]) -> int ∈ [1, 10]
-  param x@1107..1108: int
-  result: copy : int @1118..1121
-    value: if : int @1124..1164
-      condition: eager > : bool @1127..1134
-        lhs: read x@1107..1108 : int
-        rhs: int 0 : int @1133..1134
-      then: eager / : int @1141..1147
-        lhs: int 10 : int @1141..1143
-        rhs: read x@1107..1108 [(x) > 0 holds@1127..1134] : int
-      else: int 1 : int @1161..1162
+fn wrapped@58:1..62:2 (int ∈ [0, 5]) -> int ∈ [1, 10]
+  param x@58:12..58:13: int
+  result: copy : int @58:23..58:26
+    value: if : int @58:29..62:2
+      condition: eager > : bool @58:32..58:39
+        lhs: read x@58:12..58:13 : int
+        rhs: int 0 : int @58:38..58:39
+      then: eager / : int @59:5..59:11
+        lhs: int 10 : int @59:5..59:7
+        rhs: read x@58:12..58:13 [(x) > 0 holds@58:32..58:39] : int
+      else: int 1 : int @61:5..61:6
 
-fn wrappeds@1165..1211 () -> int ∈ [2, 20]
-  result: copy : int @1182..1185
-    value: eager + : int @1188..1211
-      lhs: call wrapped@1096..1164 : int @1188..1198
-        arg[0]: int 0 : int @1196..1197
-      rhs: call wrapped@1096..1164 : int @1201..1211
-        arg[0]: int 5 : int @1209..1210
+fn wrappeds@63:1..63:47 () -> int ∈ [2, 20]
+  result: copy : int @63:18..63:21
+    value: eager + : int @63:24..63:47
+      lhs: call wrapped@58:1..62:2 : int @63:24..63:34
+        arg[0]: int 0 : int @63:32..63:33
+      rhs: call wrapped@58:1..62:2 : int @63:37..63:47
+        arg[0]: int 5 : int @63:45..63:46
 
-fn negated_wrapped@1212..1292 (int ∈ [0, 5]) -> int ∈ [1, 10]
-  param x@1231..1232: int
-  result: copy : int @1242..1245
-    value: if : int @1248..1292
-      condition: not : bool @1251..1262
-        operand: eager == : bool @1253..1261
-          lhs: read x@1231..1232 : int
-          rhs: int 0 : int @1260..1261
-      then: eager / : int @1269..1275
-        lhs: int 10 : int @1269..1271
-        rhs: read x@1231..1232 [(x) == 0 fails@1253..1261] : int
-      else: int 1 : int @1289..1290
+fn negated_wrapped@64:1..68:2 (int ∈ [0, 5]) -> int ∈ [1, 10]
+  param x@64:20..64:21: int
+  result: copy : int @64:31..64:34
+    value: if : int @64:37..68:2
+      condition: not : bool @64:40..64:51
+        operand: eager == : bool @64:42..64:50
+          lhs: read x@64:20..64:21 : int
+          rhs: int 0 : int @64:49..64:50
+      then: eager / : int @65:5..65:11
+        lhs: int 10 : int @65:5..65:7
+        rhs: read x@64:20..64:21 [(x) == 0 fails@64:42..64:50] : int
+      else: int 1 : int @67:5..67:6
 
-fn negated_wrappeds@1293..1363 () -> int ∈ [2, 20]
-  result: copy : int @1318..1321
-    value: eager + : int @1324..1363
-      lhs: call negated_wrapped@1212..1292 : int @1324..1342
-        arg[0]: int 0 : int @1340..1341
-      rhs: call negated_wrapped@1212..1292 : int @1345..1363
-        arg[0]: int 5 : int @1361..1362
+fn negated_wrappeds@69:1..69:71 () -> int ∈ [2, 20]
+  result: copy : int @69:26..69:29
+    value: eager + : int @69:32..69:71
+      lhs: call negated_wrapped@64:1..68:2 : int @69:32..69:50
+        arg[0]: int 0 : int @69:48..69:49
+      rhs: call negated_wrapped@64:1..68:2 : int @69:53..69:71
+        arg[0]: int 5 : int @69:69..69:70
 
 == semantic diagnostics ==
 warning[semantic/constant-condition]: condition is always true
-  primary @491..501
+  primary @28:22..28:32
 warning[semantic/constant-condition]: condition is always true
-  primary @505..516
+  primary @28:36..28:47
