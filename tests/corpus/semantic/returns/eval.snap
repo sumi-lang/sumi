@@ -1,5 +1,5 @@
 file: accepted
-optimized: nodes 119 of 172, regions 20 of 22, calls 2 of 5
+optimized: nodes 81 of 172, regions 20 of 22, calls 2 of 5
 fn callee = 4 (steps 2, optimized 2, depth 1 of at most 1)
 fn nested = 3 (steps 2, optimized 2, depth 1 of at most 1)
 fn boundary = 5 (steps 6, optimized 1, depth 2 of at most 2)

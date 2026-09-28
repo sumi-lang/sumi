@@ -761,3 +761,83 @@ fn a_loop_value_the_facts_pin_is_a_literal() {
     );
     check::run(program);
 }
+
+#[test]
+fn terminating_control_drops_dead_values_but_keeps_live_fallthroughs() {
+    let analysis = analysis(
+        "fn direct() -> int { return 7\n 101 }
+fn both(b: bool) -> int {
+    if b { return 11 } else { return 23 }
+    103
+}
+fn partial(b: bool) -> int {
+    if b { return 31 }
+    47
+}
+fn bound() -> int {
+    for i in 0..{ return 59 } { 107 }
+    109
+}
+fn ordered(b: bool) -> int {
+    for i in { if b { return 67 }\n 0 }..{ return 71 } {}
+}
+fn first() -> int {
+    for i in { return 73 }..{ return 79 } {}
+}
+fn main() -> int = both(true) + both(false) + partial(true) + partial(false)
+fn bounds() -> int = ordered(true) + ordered(false)",
+    );
+    let program = analysis.program().unwrap();
+    let compiled = program.compile();
+    for node in compiled.graph().nodes() {
+        if let sumi_hir::Op::Int(value) = &node.op {
+            assert!(
+                ![101, 103, 107, 109]
+                    .iter()
+                    .any(|&dead| *value == dead.into())
+            );
+        }
+    }
+    for (name, value) in [
+        ("direct", 7),
+        ("bound", 59),
+        ("first", 73),
+        ("main", 112),
+        ("bounds", 138),
+    ] {
+        let id = program.function_named(name).unwrap();
+        assert_eq!(compiled.evaluate(id, &[]), int(value));
+    }
+    let ordered = program.function_named("ordered").unwrap();
+    for (arg, value) in [(true, 67), (false, 71)] {
+        assert_eq!(compiled.evaluate(ordered, &[Value::Bool(arg)]), int(value));
+    }
+    check::run(program);
+}
+
+#[test]
+fn returning_bounds_drop_carried_loop_state() {
+    let analysis = analysis(
+        "fn carried(b: bool) -> int {
+    let mut x = 5
+    for i in { if b { return x }\n 0 }..{ return x + 1 } {
+        x = 99
+    }
+    x
+}
+fn callers() -> int = carried(true) + carried(false)",
+    );
+    let program = analysis.program().unwrap();
+    let compiled = program.compile();
+    let carried = program.function_named("carried").unwrap();
+    for (arg, expected) in [(true, 5), (false, 6)] {
+        let args = [Value::Bool(arg)];
+        assert_eq!(program.machine(carried, &args).run(), Ok(int(expected)));
+        assert_eq!(compiled.machine(carried, &args).run(), Ok(int(expected)));
+    }
+    assert!(!compiled.graph().nodes().iter().any(|node| matches!(
+        node.op,
+        sumi_hir::Op::Loop(_) | sumi_hir::Op::Carry { .. } | sumi_hir::Op::LoopValue { .. }
+    )));
+    check::run(program);
+}

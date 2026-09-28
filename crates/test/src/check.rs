@@ -1345,6 +1345,18 @@ fn optimized(compiled: &Compiled<'_>) {
         );
         let op = &graph.node(node).op;
         let inputs = graph.inputs(node);
+        if matches!(op, Op::Sequence) {
+            assert!(
+                compiled.may(inputs[0]).live(),
+                "{node:?} keeps a continuation after control that never completes"
+            );
+        }
+        if matches!(op, Op::Loop(_)) {
+            assert!(
+                inputs.iter().all(|&bound| compiled.may(bound).live()),
+                "{node:?} keeps a loop body after a bound that never completes"
+            );
+        }
         let dropped = match op {
             Op::Unused => true,
             Op::Copy { .. } | Op::Assign { .. } | Op::Refine { .. } | Op::Exactly(_) => {
@@ -1377,6 +1389,13 @@ fn optimized(compiled: &Compiled<'_>) {
     });
     for region in regions {
         assert!(context(graph.region(region).context));
+        let exit = graph.region(region);
+        if let Some(control) = exit.control()
+            && !compiled.may(control).live()
+        {
+            assert_eq!(exit.result(), control);
+            assert!(!exit.result_has_value());
+        }
         for node in graph.region(region).nodes() {
             innermost[node.index()] = Some(graph.region(region).context);
         }
