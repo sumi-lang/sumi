@@ -1,8 +1,8 @@
 tree: see hir.snap
 
 == evidence ==
-ExpectedExpression at 48
-ExpectedType at 69
+ExpectedExpression at 4:5
+ExpectedType at 5:12
 
 == diagnostics ==
 error[syntax/expected-expression] 4:5: expected an expression

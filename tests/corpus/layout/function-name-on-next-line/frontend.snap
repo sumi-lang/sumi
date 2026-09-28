@@ -1,21 +1,21 @@
 == tree ==
-SourceFile 0..56
-  FnItem 0..13
-    Name 3..8 "plain"
-    ParamList 8..10 "()"
-    Block 11..13 "{}"
-  FnItem 14..38
-    Name 24..33 "commented"
-    ParamList 33..35 "()"
-    Block 36..38 "{}"
-  FnItem 39..55
-    Name 42..50 "survivor"
-    ParamList 50..52 "()"
-    Block 53..55 "{}"
+SourceFile 1:1..6:1
+  FnItem 1:1..2:11
+    Name 2:1..2:6 "plain"
+    ParamList 2:6..2:8 "()"
+    Block 2:9..2:11 "{}"
+  FnItem 3:1..4:15
+    Name 4:1..4:10 "commented"
+    ParamList 4:10..4:12 "()"
+    Block 4:13..4:15 "{}"
+  FnItem 5:1..5:17
+    Name 5:4..5:12 "survivor"
+    ParamList 5:12..5:14 "()"
+    Block 5:15..5:17 "{}"
 
 == evidence ==
-FunctionNameOnNextLine at 3
-FunctionNameOnNextLine at 24
+FunctionNameOnNextLine at 2:1
+FunctionNameOnNextLine at 4:1
 
 == diagnostics ==
 error[syntax/function-name-on-next-line] 2:1..2:6 "plain": function name must be on the same line as `fn`

@@ -2,58 +2,58 @@ file: rejected
 frontend errors: 2 (see frontend.snap)
 semantic errors: 4
 
-fn damaged@0..100 () -> unit ∈ ∅
-  result: copy : unit @0..100
+fn damaged@1:1..8:2 () -> unit ∈ ∅
+  result: copy : unit @1:1..8:2
     value:
-      let x@23..24: bool @19..31
-        initializer: bool true : bool @27..31
-      let x@40..41: hole : ? @36..43
-      discard: eager + : ? @52..57
-        lhs: read x@40..41 : ?
-        rhs: int 1 : int @56..57
-      let y@66..67: hole : ? @62..72
-      discard: hole : ? @91..98
-      tail: hole : ? @13..100
+      let x@2:9..2:10: bool @2:5..2:17
+        initializer: bool true : bool @2:13..2:17
+      let x@3:9..3:10: hole : ? @3:5..3:12
+      discard: eager + : ? @4:9..4:14
+        lhs: read x@3:9..3:10 : ?
+        rhs: int 1 : int @4:13..4:14
+      let y@5:9..5:10: hole : ? @5:5..5:15
+      discard: hole : ? @7:9..7:16
+      tail: hole : ? @1:14..8:2
 
-fn intact@101..123 () -> int ∈ [3, 3]
-  result: copy : int @116..119
-    value: int 3 : int @122..123
+fn intact@9:1..9:23 () -> int ∈ [3, 3]
+  result: copy : int @9:16..9:19
+    value: int 3 : int @9:22..9:23
 
-fn unknown_type@124..178 () -> unit ∈ unit
-  result: copy : unit @124..178
+fn unknown_type@10:1..13:2 () -> unit ∈ unit
+  result: copy : unit @10:1..13:2
     value:
-      let z@152..153: hole : ? @148..166
-        part[0]: int 1 : int @165..166
-      tail: unit : unit @142..178
+      let z@11:9..11:10: hole : ? @11:5..11:23
+        part[0]: int 1 : int @11:22..11:23
+      tail: unit : unit @10:19..13:2
 
-fn rebound@179..314 () -> unit ∈ unit
-  result: copy : unit @179..314
+fn rebound@14:1..22:2 () -> unit ∈ unit
+  result: copy : unit @14:1..22:2
     value:
-      let x@202..203: bool @198..210
-        initializer: bool true : bool @206..210
-      let x@223..224: int @215..228
-        initializer: int 1 : int @227..228
-      discard: eager + : int @237..242
-        lhs: read x@223..224 : int
-        rhs: int 1 : int @241..242
-      let x@251..252: hole : ? @247..265
-        part[0]: int 1 : int @264..265
-      discard: eager + : ? @274..279
-        lhs: read x@251..252 : ?
-        rhs: int 1 : int @278..279
-      let x@288..289: ? @284..298
-        initializer: hole : ? @292..298
-      discard: eager + : ? @307..312
-        lhs: read x@288..289 : ?
-        rhs: int 1 : int @311..312
-      tail: unit : unit @192..314
+      let x@15:9..15:10: bool @15:5..15:17
+        initializer: bool true : bool @15:13..15:17
+      let x@16:13..16:14: int @16:5..16:18
+        initializer: int 1 : int @16:17..16:18
+      discard: eager + : int @17:9..17:14
+        lhs: read x@16:13..16:14 : int
+        rhs: int 1 : int @17:13..17:14
+      let x@18:9..18:10: hole : ? @18:5..18:23
+        part[0]: int 1 : int @18:22..18:23
+      discard: eager + : ? @19:9..19:14
+        lhs: read x@18:9..18:10 : ?
+        rhs: int 1 : int @19:13..19:14
+      let x@20:9..20:10: ? @20:5..20:19
+        initializer: hole : ? @20:13..20:19
+      discard: eager + : ? @21:9..21:14
+        lhs: read x@20:9..20:10 : ?
+        rhs: int 1 : int @21:13..21:14
+      tail: unit : unit @14:14..22:2
 
 == semantic diagnostics ==
 error[semantic/unknown-name]: unknown name `missing`
-  primary @91..98
+  primary @7:9..7:16
 error[semantic/unknown-type]: unknown type `mystery`
-  primary @155..162
+  primary @11:12..11:19
 error[semantic/unknown-type]: unknown type `mystery`
-  primary @254..261
+  primary @18:12..18:19
 error[semantic/unknown-name]: unknown name `absent`
-  primary @292..298
+  primary @20:13..20:19

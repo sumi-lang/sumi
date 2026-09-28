@@ -1,25 +1,25 @@
 == tree ==
-SourceFile! 0..85
-  FnItem 0..29
-    Name 3..17 "surplus_inside"
-    ParamList 17..19 "()"
-    Block 20..29
-      NameRef 26..27 "a"
-  Error! 30..39 "+ b\n  c\n}"
-  FnItem 41..69
-    Name 44..57 "surplus_after"
-    ParamList 57..59 "()"
-    Block 60..69
-      NameRef 66..67 "a"
-  Error! 70..71 "}"
-  FnItem 72..84
-    Name 75..79 "next"
-    ParamList 79..81 "()"
-    Block 82..84 "{}"
+SourceFile! 1:1..11:1
+  FnItem 1:1..3:2
+    Name 1:4..1:18 "surplus_inside"
+    ParamList 1:18..1:20 "()"
+    Block 1:21..3:2
+      NameRef 2:5..2:6 "a"
+  Error! 3:3..5:2 "+ b\n  c\n}"
+  FnItem 7:1..9:2
+    Name 7:4..7:17 "surplus_after"
+    ParamList 7:17..7:19 "()"
+    Block 7:20..9:2
+      NameRef 8:5..8:6 "a"
+  Error! 9:3..9:4 "}"
+  FnItem 10:1..10:13
+    Name 10:4..10:8 "next"
+    ParamList 10:8..10:10 "()"
+    Block 10:11..10:13 "{}"
 
 == evidence ==
-ExpectedItem at 30
-ExpectedItem at 70
+ExpectedItem at 3:3
+ExpectedItem at 9:3
 
 == diagnostics ==
 error[syntax/expected-item] 3:3..3:4 "+": expected a function item

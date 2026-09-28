@@ -1,17 +1,17 @@
 == tree ==
-SourceFile! 0..16
-  FnItem! 0..16
-    Name 3..4 "f"
-    ParamList 4..6 "()"
-    Block! 7..16
-      BinaryExpr! 9..14
-        NameRef 9..10 "a"
-        NameRef 11..12 "b"
-        Error! 13..14 ":"
+SourceFile! 1:1..1:17
+  FnItem! 1:1..1:17
+    Name 1:4..1:5 "f"
+    ParamList 1:5..1:7 "()"
+    Block! 1:8..1:17
+      BinaryExpr! 1:10..1:15
+        NameRef 1:10..1:11 "a"
+        NameRef 1:12..1:13 "b"
+        Error! 1:14..1:15 ":"
 
 == evidence ==
-UnspacedBinaryOperator at 10
-Unexpected at 13
+UnspacedBinaryOperator at 1:11
+Unexpected at 1:14
 
 == diagnostics ==
 error[syntax/unspaced-binary-operator] 1:11..1:12 "+": binary operator must have spaces on both sides

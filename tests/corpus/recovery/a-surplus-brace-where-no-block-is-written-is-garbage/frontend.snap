@@ -1,32 +1,32 @@
 == tree ==
-SourceFile! 0..123
-  FnItem! 0..45
-    Name 3..20 "between_operators"
-    ParamList 20..22 "()"
-    Block! 23..45
-      NameRef 29..30 "a"
-      Error! 31..37 "&{ & b"
-      NameRef 42..43 "c"
-  FnItem! 46..81
-    Name 49..63 "after_a_callee"
-    ParamList 63..65 "()"
-    Block! 66..81
-      ParenExpr! 72..79
-        NameRef 73..76 "foo"
-        Error! 76..77 "{"
-  FnItem! 82..122
-    Name 85..94 "after_let"
-    ParamList 94..96 "()"
-    Block! 97..122
-      LetStmt! 103..106 "let"
-      Error! 107..114 "{ a = 1"
-      NameRef 119..120 "b"
+SourceFile! 1:1..12:1
+  FnItem! 1:1..4:2
+    Name 1:4..1:21 "between_operators"
+    ParamList 1:21..1:23 "()"
+    Block! 1:24..4:2
+      NameRef 2:5..2:6 "a"
+      Error! 2:7..2:13 "&{ & b"
+      NameRef 3:5..3:6 "c"
+  FnItem! 5:1..7:2
+    Name 5:4..5:18 "after_a_callee"
+    ParamList 5:18..5:20 "()"
+    Block! 5:21..7:2
+      ParenExpr! 6:5..6:12
+        NameRef 6:6..6:9 "foo"
+        Error! 6:9..6:10 "{"
+  FnItem! 8:1..11:2
+    Name 8:4..8:13 "after_let"
+    ParamList 8:13..8:15 "()"
+    Block! 8:16..11:2
+      LetStmt! 9:5..9:8 "let"
+      Error! 9:9..9:16 "{ a = 1"
+      NameRef 10:5..10:6 "b"
 
 == evidence ==
-ExpectedStatement at 31
-Unexpected at 76
-ExpectedName at 107
-Expected(Eq) at 107
+ExpectedStatement at 2:7
+Unexpected at 6:9
+ExpectedName at 9:9
+Expected(Eq) at 9:9
 
 == diagnostics ==
 error[syntax/expected-statement] 2:7..2:8 "&": expected a statement

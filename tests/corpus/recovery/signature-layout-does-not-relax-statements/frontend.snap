@@ -1,49 +1,49 @@
 == tree ==
-SourceFile! 0..164
-  FnItem! 0..34
-    Name 3..10 "binding"
-    ParamList 10..12 "()"
-    Block! 13..34
-      LetStmt! 19..24
-        Name 23..24 "x"
-      Error! 29..32 "= 1"
-  FnItem! 35..68
-    Name 38..48 "assignment"
-    ParamList 48..50 "()"
-    Block! 51..68
-      NameRef 57..58 "x"
-      Error! 63..66 "= 1"
-  FnItem 69..84
-    Name 72..78 "spaced"
-    ParamList 79..81 "()"
-    Block 82..84 "{}"
-  FnItem! 85..93
-    Name 88..93 "split"
-  Error! 94..99 "() {}"
-  FnItem! 100..146
-    Name 103..108 "calls"
-    ParamList 108..110 "()"
-    Block! 111..146
-      CallExpr 117..126
-        NameRef 117..123 "spaced"
-        ArgList 124..126 "()"
-      NameRef 131..137 "spaced"
-      ParenExpr! 142..144 "()"
-  FnItem 147..163
-    Name 150..158 "survivor"
-    ParamList 158..160 "()"
-    Block 161..163 "{}"
+SourceFile! 1:1..18:1
+  FnItem! 1:1..4:2
+    Name 1:4..1:11 "binding"
+    ParamList 1:11..1:13 "()"
+    Block! 1:14..4:2
+      LetStmt! 2:5..2:10
+        Name 2:9..2:10 "x"
+      Error! 3:5..3:8 "= 1"
+  FnItem! 5:1..8:2
+    Name 5:4..5:14 "assignment"
+    ParamList 5:14..5:16 "()"
+    Block! 5:17..8:2
+      NameRef 6:5..6:6 "x"
+      Error! 7:5..7:8 "= 1"
+  FnItem 9:1..9:16
+    Name 9:4..9:10 "spaced"
+    ParamList 9:11..9:13 "()"
+    Block 9:14..9:16 "{}"
+  FnItem! 10:1..10:9
+    Name 10:4..10:9 "split"
+  Error! 11:1..11:6 "() {}"
+  FnItem! 12:1..16:2
+    Name 12:4..12:9 "calls"
+    ParamList 12:9..12:11 "()"
+    Block! 12:12..16:2
+      CallExpr 13:5..13:14
+        NameRef 13:5..13:11 "spaced"
+        ArgList 13:12..13:14 "()"
+      NameRef 14:5..14:11 "spaced"
+      ParenExpr! 15:5..15:7 "()"
+  FnItem 17:1..17:17
+    Name 17:4..17:12 "survivor"
+    ParamList 17:12..17:14 "()"
+    Block 17:15..17:17 "{}"
 
 == evidence ==
-Expected(Eq) at 29
-ExpectedStatement at 29
-ExpectedStatement at 63
-SpacedListOpener at 79
-Expected(LParen) at 94
-ExpectedBody at 94
-ExpectedItem at 94
-SpacedListOpener at 124
-ExpectedExpression at 143
+Expected(Eq) at 3:5
+ExpectedStatement at 3:5
+ExpectedStatement at 7:5
+SpacedListOpener at 9:11
+Expected(LParen) at 11:1
+ExpectedBody at 11:1
+ExpectedItem at 11:1
+SpacedListOpener at 13:12
+ExpectedExpression at 15:6
 
 == diagnostics ==
 error[syntax/expected-token] 3:5: expected `=`

@@ -2,46 +2,46 @@ file: accepted
 frontend errors: 0 (see frontend.snap)
 semantic errors: 0
 
-fn shadow@0..100 (int ∈ ∅) -> int ∈ ∅
-  param x@10..11: int
-  result: copy : int @21..24
+fn shadow@1:1..8:2 (int ∈ ∅) -> int ∈ ∅
+  param x@1:11..1:12: int
+  result: copy : int @1:22..1:25
     value:
-      let x@35..36: int @31..44
-        initializer: eager + : int @39..44
-          lhs: read x@10..11 : int
-          rhs: int 1 : int @43..44
-      let x@63..64: int @59..72
-        initializer: eager * : int @67..72
-          lhs: read x@35..36 : int
-          rhs: int 2 : int @71..72
-      discard: unit : unit @49..92
-      tail: read x@35..36 : int
+      let x@2:9..2:10: int @2:5..2:18
+        initializer: eager + : int @2:13..2:18
+          lhs: read x@1:11..1:12 : int
+          rhs: int 1 : int @2:17..2:18
+      let x@4:13..4:14: int @4:9..4:22
+        initializer: eager * : int @4:17..4:22
+          lhs: read x@2:9..2:10 : int
+          rhs: int 2 : int @4:21..4:22
+      discard: unit : unit @3:5..6:6
+      tail: read x@2:9..2:10 : int
 
-fn innermost@101..216 (int ∈ [5, 5]) -> int ∈ [18, 18]
-  param x@114..115: int
-  result: copy : int @125..128
+fn innermost@9:1..16:2 (int ∈ [5, 5]) -> int ∈ [18, 18]
+  param x@9:14..9:15: int
+  result: copy : int @9:25..9:28
     value:
-      let x@139..140: int @135..148
-        initializer: eager * : int @143..148
-          lhs: read x@114..115 : int
-          rhs: int 2 : int @147..148
-      let x@175..176: int @171..184
-        initializer: eager - : int @179..184
-          lhs: read x@139..140 : int
-          rhs: int 3 : int @183..184
-      let y@157..158: int @153..204
-        initializer: eager + : int @193..198
-          lhs: read x@175..176 : int
-          rhs: int 1 : int @197..198
-      tail: eager + : int @209..214
-        lhs: read x@139..140 : int
-        rhs: read y@157..158 : int
+      let x@10:9..10:10: int @10:5..10:18
+        initializer: eager * : int @10:13..10:18
+          lhs: read x@9:14..9:15 : int
+          rhs: int 2 : int @10:17..10:18
+      let x@12:13..12:14: int @12:9..12:22
+        initializer: eager - : int @12:17..12:22
+          lhs: read x@10:9..10:10 : int
+          rhs: int 3 : int @12:21..12:22
+      let y@11:9..11:10: int @11:5..14:6
+        initializer: eager + : int @13:9..13:14
+          lhs: read x@12:13..12:14 : int
+          rhs: int 1 : int @13:13..13:14
+      tail: eager + : int @15:5..15:10
+        lhs: read x@10:9..10:10 : int
+        rhs: read y@11:9..11:10 : int
 
-fn innermosts@217..254 () -> int ∈ [18, 18]
-  result: copy : int @236..239
-    value: call innermost@101..216 : int @242..254
-      arg[0]: int 5 : int @252..253
+fn innermosts@17:1..17:38 () -> int ∈ [18, 18]
+  result: copy : int @17:20..17:23
+    value: call innermost@9:1..16:2 : int @17:26..17:38
+      arg[0]: int 5 : int @17:36..17:37
 
 == semantic diagnostics ==
 warning[semantic/unused-function]: function `shadow` is never called
-  primary @3..9
+  primary @1:4..1:10

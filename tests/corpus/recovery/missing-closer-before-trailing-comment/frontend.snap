@@ -1,13 +1,13 @@
 == tree ==
-SourceFile! 0..22
-  FnItem! 0..14
-    Name 3..4 "f"
-    ParamList 4..6 "()"
-    Block! 7..14
-      NameRef 13..14 "x"
+SourceFile! 1:1..2:14
+  FnItem! 1:1..2:6
+    Name 1:4..1:5 "f"
+    ParamList 1:5..1:7 "()"
+    Block! 1:8..2:6
+      NameRef 2:5..2:6 "x"
 
 == evidence ==
-Expected(RBrace) at 22
+Expected(RBrace) at 2:14
 
 == diagnostics ==
 error[syntax/expected-token] 2:14: expected `}`

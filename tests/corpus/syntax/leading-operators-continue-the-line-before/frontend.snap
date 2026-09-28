@@ -1,14 +1,14 @@
 == tree ==
-SourceFile 0..27
-  FnItem 0..27
-    Name 3..4 "f"
-    ParamList 4..6 "()"
-    Block 7..27
-      BinaryExpr 11..25
-        BinaryExpr 11..18
-          NameRef 11..12 "a"
-          NameRef 17..18 "b"
-        NameRef 24..25 "c"
+SourceFile 1:1..5:2
+  FnItem 1:1..5:2
+    Name 1:4..1:5 "f"
+    ParamList 1:5..1:7 "()"
+    Block 1:8..5:2
+      BinaryExpr 2:3..4:7
+        BinaryExpr 2:3..3:6
+          NameRef 2:3..2:4 "a"
+          NameRef 3:5..3:6 "b"
+        NameRef 4:6..4:7 "c"
 
 == formatted ==
 fn f() {

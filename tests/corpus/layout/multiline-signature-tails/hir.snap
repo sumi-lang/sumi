@@ -2,23 +2,23 @@ file: accepted
 frontend errors: 0 (see frontend.snap)
 semantic errors: 0
 
-fn value@0..37 () -> int ∈ [1, 1]
-  result: copy : int @22..25
-    value: int 1 : int @36..37
+fn value@1:1..5:6 () -> int ∈ [1, 1]
+  result: copy : int @3:5..3:8
+    value: int 1 : int @5:5..5:6
 
-fn identity@38..93 (int ∈ [1, 1]) -> int ∈ [1, 1]
-  param x@55..56: int
-  result: copy : int @78..81
-    value: read x@55..56 : int
+fn identity@6:1..12:4 (int ∈ [1, 1]) -> int ∈ [1, 1]
+  param x@7:5..7:6: int
+  result: copy : int @10:4..10:7
+    value: read x@7:5..7:6 : int
 
-fn empty@94..109 () -> unit ∈ unit
-  body: unit : unit @107..109
+fn empty@13:1..14:5 () -> unit ∈ unit
+  body: unit : unit @14:3..14:5
 
-fn block@110..139 () -> unit ∈ unit
-  result: copy : unit @124..128
-    value: unit : unit @137..139
+fn block@15:1..18:3 () -> unit ∈ unit
+  result: copy : unit @16:4..16:8
+    value: unit : unit @18:1..18:3
 
-fn caller@140..185 () -> int ∈ [1, 1]
-  result: copy : int @155..158
-    value: call identity@38..93 : int @161..185
-      arg[0]: call value@0..37 : int @175..182
+fn caller@19:1..21:2 () -> int ∈ [1, 1]
+  result: copy : int @19:16..19:19
+    value: call identity@6:1..12:4 : int @19:22..21:2
+      arg[0]: call value@1:1..5:6 : int @20:5..20:12

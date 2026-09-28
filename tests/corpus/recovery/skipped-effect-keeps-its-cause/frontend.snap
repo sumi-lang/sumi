@@ -1,9 +1,9 @@
 == tree ==
-SourceFile! 0..5
-  Error! 0..5 ": €"
+SourceFile! 1:1..1:6
+  Error! 1:1..1:6 ": €"
 
 == evidence ==
-ExpectedItem at 0
+ExpectedItem at 1:1
 
 == diagnostics ==
 error[syntax/expected-item] 1:1..1:2 ":": expected a function item

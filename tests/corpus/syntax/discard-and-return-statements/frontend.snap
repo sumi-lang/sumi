@@ -1,12 +1,12 @@
 == tree ==
-SourceFile 0..35
-  FnItem 0..34
-    Name 3..4 "f"
-    ParamList 4..6 "()"
-    Block 7..34
-      DiscardStmt 13..21
-        CallExpr 17..21
-          NameRef 17..18 "g"
-          ArgList 18..21
-            LiteralExpr 19..20 "1"
-      ReturnStmt 26..32 "return"
+SourceFile 1:1..5:1
+  FnItem 1:1..4:2
+    Name 1:4..1:5 "f"
+    ParamList 1:5..1:7 "()"
+    Block 1:8..4:2
+      DiscardStmt 2:5..2:13
+        CallExpr 2:9..2:13
+          NameRef 2:9..2:10 "g"
+          ArgList 2:10..2:13
+            LiteralExpr 2:11..2:12 "1"
+      ReturnStmt 3:5..3:11 "return"

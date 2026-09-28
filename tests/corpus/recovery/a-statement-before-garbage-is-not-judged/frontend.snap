@@ -1,19 +1,19 @@
 == tree ==
-SourceFile! 0..41
-  FnItem! 0..40
-    Name 3..4 "f"
-    ParamList 4..6 "()"
-    Block! 7..40
-      NameRef 13..14 "a"
-      Error! 19..22 ") b"
-      NameRef 27..28 "c"
-      Error! 29..32 "€"
-      NameRef 37..38 "d"
+SourceFile! 1:1..7:1
+  FnItem! 1:1..6:2
+    Name 1:4..1:5 "f"
+    ParamList 1:5..1:7 "()"
+    Block! 1:8..6:2
+      NameRef 2:5..2:6 "a"
+      Error! 3:5..3:8 ") b"
+      NameRef 4:5..4:6 "c"
+      Error! 4:7..4:10 "€"
+      NameRef 5:5..5:6 "d"
 
 == evidence ==
-ExpectedStatement at 19
-ExpectedBoundary at 29
-PriorPhaseError at 29
+ExpectedStatement at 3:5
+ExpectedBoundary at 4:7
+PriorPhaseError at 4:7
 
 == diagnostics ==
 error[syntax/expected-statement] 3:5..3:6 ")": expected a statement

@@ -8,7 +8,7 @@ use sumi_hir::{
     Analysis, ArithOp, BinaryOp, CmpOp, FunctionId, Graph, NodeId, Op, RegionId, analyze,
 };
 use sumi_test::corpus;
-use sumi_text::TextRange;
+use sumi_text::{LineIndex, TextRange};
 
 #[test]
 fn selected_cases_match_their_snapshots() {
@@ -79,15 +79,6 @@ fn run(source: &str) -> String {
     out
 }
 
-fn at(range: TextRange) -> String {
-    let (start, end) = (range.start().to_u32(), range.end().to_u32());
-    if start == end {
-        format!("@{start}")
-    } else {
-        format!("@{start}..{end}")
-    }
-}
-
 fn snapshot(source: &str) -> String {
     let analysis = analyze(parse_source(source.into()).unwrap());
     let syntax_errors = analysis
@@ -106,7 +97,7 @@ fn snapshot(source: &str) -> String {
             "rejected"
         }
     );
-    let shape = Shape::of(analysis.graph());
+    let shape = Rendering::new(analysis.graph(), source);
     for (index, function) in analysis.functions().iter().enumerate() {
         write!(
             out,
@@ -114,7 +105,7 @@ fn snapshot(source: &str) -> String {
             function
                 .name()
                 .map_or("<missing>", |name| analysis.text(name)),
-            at(function.origin())
+            shape.at(function.origin())
         )
         .unwrap();
         match (
@@ -150,17 +141,23 @@ fn snapshot(source: &str) -> String {
                 diagnostic.code.severity,
                 diagnostic.code,
                 diagnostic.message,
-                at(diagnostic.primary)
+                shape.at(diagnostic.primary)
             )
             .unwrap();
             for label in &diagnostic.labels {
-                writeln!(out, "  secondary {}: {}", at(label.range), label.message).unwrap();
+                writeln!(
+                    out,
+                    "  secondary {}: {}",
+                    shape.at(label.range),
+                    label.message
+                )
+                .unwrap();
             }
             if let Some(fix) = &diagnostic.fix {
                 writeln!(
                     out,
                     "  fix {} -> {:?}: {}",
-                    at(fix.edit.range()),
+                    shape.at(fix.edit.range()),
                     fix.edit.replacement(),
                     fix.message
                 )
@@ -171,13 +168,14 @@ fn snapshot(source: &str) -> String {
     out
 }
 
-struct Shape {
+struct Rendering<'a> {
     users: Vec<u32>,
     region_of: Vec<Option<RegionId>>,
+    lines: LineIndex<'a>,
 }
 
-impl Shape {
-    fn of(graph: &Graph) -> Self {
+impl<'a> Rendering<'a> {
+    fn new(graph: &Graph, source: &'a str) -> Self {
         let mut users = vec![0; graph.nodes().len()];
         for node in graph.node_ids() {
             for &input in graph.inputs(node) {
@@ -192,7 +190,15 @@ impl Shape {
                 region_of[node.index()] = Some(region);
             }
         }
-        Self { users, region_of }
+        Self {
+            users,
+            region_of,
+            lines: LineIndex::new(source),
+        }
+    }
+
+    fn at(&self, range: TextRange) -> String {
+        format!("@{}", self.lines.display_range(range))
     }
 }
 
@@ -202,21 +208,21 @@ fn ty(analysis: &Analysis, node: NodeId) -> String {
         .map_or_else(|| "?".to_owned(), |ty| ty.to_string())
 }
 
-fn named(analysis: &Analysis, node: NodeId) -> String {
+fn named(analysis: &Analysis, shape: &Rendering<'_>, node: NodeId) -> String {
     match analysis.graph().node(node).name {
-        Some(name) => format!("{}{}", analysis.text(name), at(name)),
-        None => format!("<unnamed>{}", at(analysis.graph().node(node).origin)),
+        Some(name) => format!("{}{}", analysis.text(name), shape.at(name)),
+        None => format!("<unnamed>{}", shape.at(analysis.graph().node(node).origin)),
     }
 }
 
-fn dump(analysis: &Analysis, shape: &Shape, function: FunctionId, out: &mut String) {
+fn dump(analysis: &Analysis, shape: &Rendering<'_>, function: FunctionId, out: &mut String) {
     let graph = analysis.graph();
     let function = graph.run(function);
     for param in function.params() {
         writeln!(
             out,
             "  param {}: {}",
-            named(analysis, param),
+            named(analysis, shape, param),
             ty(analysis, param)
         )
         .unwrap();
@@ -231,7 +237,7 @@ fn dump(analysis: &Analysis, shape: &Shape, function: FunctionId, out: &mut Stri
             out,
             "  result: result : {} {}",
             ty(analysis, result),
-            at(node.origin)
+            shape.at(node.origin)
         )
         .unwrap();
         dump_region(analysis, shape, "outcome[0]", region, 2, out);
@@ -251,7 +257,7 @@ fn dump(analysis: &Analysis, shape: &Shape, function: FunctionId, out: &mut Stri
             out,
             "  result: copy : {} {}",
             ty(analysis, result),
-            at(node.origin)
+            shape.at(node.origin)
         )
         .unwrap();
         dump_region(analysis, shape, "value", region, 2, out);
@@ -260,7 +266,7 @@ fn dump(analysis: &Analysis, shape: &Shape, function: FunctionId, out: &mut Stri
 
 fn dump_region(
     analysis: &Analysis,
-    shape: &Shape,
+    shape: &Rendering<'_>,
     role: &str,
     region: RegionId,
     depth: usize,
@@ -296,9 +302,9 @@ fn dump_region(
                 writeln!(
                     out,
                     "{indent}  let {}: {} {}",
-                    named(analysis, node),
+                    named(analysis, shape, node),
                     ty(analysis, node),
-                    at(graph.node(node).origin)
+                    shape.at(graph.node(node).origin)
                 )
                 .unwrap();
                 let initializer = graph.inputs(node)[0];
@@ -306,7 +312,7 @@ fn dump_region(
             }
             // A named node that is not a copy is a binding recovery left without an initializer.
             (Some(_), _) => {
-                let role = format!("let {}", named(analysis, node));
+                let role = format!("let {}", named(analysis, shape, node));
                 dump_definition(analysis, shape, &role, node, depth + 1, out);
             }
             (None, Op::Assign { .. }) => {
@@ -322,7 +328,7 @@ fn dump_region(
     dump_node(analysis, shape, "tail", result, depth + 1, out);
 }
 
-fn guards(analysis: &Analysis, mut node: NodeId) -> (Vec<String>, NodeId) {
+fn guards(analysis: &Analysis, shape: &Rendering<'_>, mut node: NodeId) -> (Vec<String>, NodeId) {
     let graph = analysis.graph();
     let mut guards = Vec::new();
     loop {
@@ -333,7 +339,7 @@ fn guards(analysis: &Analysis, mut node: NodeId) -> (Vec<String>, NodeId) {
                     "{} {}{}",
                     analysis.text(origin),
                     if sense { "holds" } else { "fails" },
-                    at(origin)
+                    shape.at(origin)
                 ));
                 node = graph.inputs(node)[0];
             }
@@ -351,14 +357,14 @@ fn guards(analysis: &Analysis, mut node: NodeId) -> (Vec<String>, NodeId) {
 
 fn dump_node(
     analysis: &Analysis,
-    shape: &Shape,
+    shape: &Rendering<'_>,
     role: &str,
     node: NodeId,
     depth: usize,
     out: &mut String,
 ) {
     let graph = analysis.graph();
-    let (guards, definition) = guards(analysis, node);
+    let (guards, definition) = guards(analysis, shape, node);
     let guard = if guards.is_empty() {
         String::new()
     } else {
@@ -369,7 +375,7 @@ fn dump_node(
             out,
             "{}{role}: read {}{guard} : {}",
             "  ".repeat(depth),
-            named(analysis, definition),
+            named(analysis, shape, definition),
             ty(analysis, node)
         )
         .unwrap();
@@ -387,7 +393,7 @@ fn dump_node(
 
 fn dump_definition(
     analysis: &Analysis,
-    shape: &Shape,
+    shape: &Rendering<'_>,
     role: &str,
     node: NodeId,
     depth: usize,
@@ -405,10 +411,10 @@ fn dump_definition(
         Op::Unused => unreachable!("nothing reads a statement; dump_region discards its input"),
         Op::Hole => "hole".into(),
         Op::Copy { .. } => "copy".into(),
-        Op::Assign { declaration } => format!("assign {}", named(analysis, *declaration)),
-        Op::Phi { declaration, .. } => format!("phi {}", named(analysis, *declaration)),
+        Op::Assign { declaration } => format!("assign {}", named(analysis, shape, *declaration)),
+        Op::Phi { declaration, .. } => format!("phi {}", named(analysis, shape, *declaration)),
         Op::LoopIndex => "loop index".into(),
-        Op::Carry { declaration } => format!("carry {}", named(analysis, *declaration)),
+        Op::Carry { declaration } => format!("carry {}", named(analysis, shape, *declaration)),
         Op::Loop(_) => "loop".into(),
         Op::LoopValue { index, .. } => format!("loop value {index}"),
         Op::Neg => "negate".into(),
@@ -428,7 +434,7 @@ fn dump_definition(
                 function
                     .name()
                     .map_or("<missing>", |name| analysis.text(name)),
-                at(function.origin())
+                shape.at(function.origin())
             )
         }
         Op::Return => "return".into(),
@@ -441,7 +447,7 @@ fn dump_definition(
         out,
         "{indent}{role}: {operation} : {} {}",
         ty(analysis, node),
-        at(entry.origin)
+        shape.at(entry.origin)
     )
     .unwrap();
     let child = depth + 1;
@@ -486,7 +492,7 @@ fn dump_definition(
                 out,
                 "{}loop: {}",
                 "  ".repeat(child),
-                at(graph.node(inputs[0]).origin)
+                shape.at(graph.node(inputs[0]).origin)
             )
             .unwrap();
         }

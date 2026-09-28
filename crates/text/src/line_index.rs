@@ -1,7 +1,9 @@
 //! Offset to line/column conversion for one source snapshot. Line terminators are `\n`, `\r\n`, and
 //! lone `\r`, the lexer's set; a trailing one opens a final empty line.
 
-use crate::TextSize;
+use std::fmt;
+
+use crate::{TextRange, TextSize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Encoding {
@@ -99,6 +101,20 @@ impl<'a> LineIndex<'a> {
         }
     }
 
+    /// Displays one-based `line:column` in UTF-8 bytes, with `line_col`'s clamping and panics.
+    pub fn display_offset(&self, offset: TextSize) -> impl fmt::Display {
+        ShownPosition(self.line_col(offset, Encoding::Utf8))
+    }
+
+    /// Displays exclusive endpoints as `line:column..line:column`, or one position for an empty range.
+    pub fn display_range(&self, range: TextRange) -> impl fmt::Display {
+        ShownRange {
+            start: ShownPosition(self.line_col(range.start(), Encoding::Utf8)),
+            end: (range.start() != range.end())
+                .then(|| ShownPosition(self.line_col(range.end(), Encoding::Utf8))),
+        }
+    }
+
     fn content_end(&self, line: usize) -> usize {
         let Some(next) = self.line_starts.get(line + 1) else {
             return self.source.len();
@@ -112,9 +128,71 @@ impl<'a> LineIndex<'a> {
     }
 }
 
+struct ShownPosition(LineCol);
+
+impl fmt::Display for ShownPosition {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}:{}",
+            u64::from(self.0.line) + 1,
+            u64::from(self.0.col) + 1
+        )
+    }
+}
+
+struct ShownRange {
+    start: ShownPosition,
+    end: Option<ShownPosition>,
+}
+
+impl fmt::Display for ShownRange {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.start)?;
+        if let Some(end) = &self.end {
+            write!(f, "..{end}")?;
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn display_uses_one_based_byte_columns_and_exclusive_ends() {
+        let index = LineIndex::new("a😀b\r\nΔ\rz\n");
+        for (start, end, expected) in [
+            (0, 0, "1:1"),
+            (5, 6, "1:6..1:7"),
+            (5, 10, "1:6..2:3"),
+            (6, 7, "1:7..1:7"),
+            (7, 8, "1:7..2:1"),
+            (11, 12, "3:1..3:2"),
+            (13, 13, "4:1"),
+        ] {
+            let range = TextRange::new(TextSize::new(start), TextSize::new(end));
+            assert_eq!(index.display_range(range).to_string(), expected);
+        }
+        assert_eq!(index.display_offset(TextSize::new(5)).to_string(), "1:6");
+        for (source, end, expected) in [("", 0, "1:1"), ("Δ", 2, "1:3")] {
+            assert_eq!(
+                LineIndex::new(source)
+                    .display_offset(TextSize::new(end))
+                    .to_string(),
+                expected
+            );
+        }
+        assert_eq!(
+            ShownPosition(LineCol {
+                line: u32::MAX,
+                col: u32::MAX
+            })
+            .to_string(),
+            "4294967296:4294967296"
+        );
+    }
 
     fn line_col(index: &LineIndex<'_>, offset: u32) -> (u32, u32) {
         let position = index.line_col(TextSize::new(offset), Encoding::Utf8);

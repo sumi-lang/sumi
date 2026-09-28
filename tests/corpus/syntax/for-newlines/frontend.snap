@@ -1,58 +1,58 @@
 == tree ==
-SourceFile! 0..238
-  FnItem! 0..237
-    Name 3..4 "f"
-    ParamList 4..6 "()"
-    Block! 7..237
-      ForExpr 13..82
-        Name 17..18 "i"
-        CallExpr 30..37
-          NameRef 30..35 "lower"
-          ArgList 35..37 "()"
-        CallExpr 48..55
-          NameRef 48..53 "upper"
-          ArgList 53..55 "()"
-        Block 60..82
-          CallExpr 70..76
-            NameRef 70..73 "use"
-            ArgList 73..76
-              NameRef 74..75 "i"
-      ForExpr 87..114
-        Name 91..92 "j"
-        PrefixExpr 96..98
-          LiteralExpr 97..98 "2"
-        PrefixExpr 109..111
-          LiteralExpr 110..111 "1"
-        Block 112..114 "{}"
-      ForExpr 119..164
-        Name 123..124 "k"
-        Block 128..133
-          LiteralExpr 130..131 "1"
-        Block 144..149
-          LiteralExpr 146..147 "4"
-        Block 154..164
-          CallExpr 156..162
-            NameRef 156..159 "use"
-            ArgList 159..162
-              NameRef 160..161 "k"
-      ForExpr! 169..186
-        Name 173..174 "m"
-        LiteralExpr 178..179 "0"
-        NameRef 181..186 "limit"
-      ParenExpr 191..197
-        NameRef 192..196 "next"
-      Block 202..204 "{}"
-      ForExpr 209..235
-        Name 213..214 "n"
-        LiteralExpr 218..219 "0"
-        CallExpr 221..232
-          NameRef 221..226 "limit"
-          ArgList 226..232
-            NameRef 227..231 "next"
-        Block 233..235 "{}"
+SourceFile! 1:1..18:1
+  FnItem! 1:1..17:2
+    Name 1:4..1:5 "f"
+    ParamList 1:5..1:7 "()"
+    Block! 1:8..17:2
+      ForExpr 2:5..7:6
+        Name 2:9..2:10 "i"
+        CallExpr 3:9..3:16
+          NameRef 3:9..3:14 "lower"
+          ArgList 3:14..3:16 "()"
+        CallExpr 4:11..4:18
+          NameRef 4:11..4:16 "upper"
+          ArgList 4:16..4:18 "()"
+        Block 5:5..7:6
+          CallExpr 6:9..6:15
+            NameRef 6:9..6:12 "use"
+            ArgList 6:12..6:15
+              NameRef 6:13..6:14 "i"
+      ForExpr 8:5..9:14
+        Name 8:9..8:10 "j"
+        PrefixExpr 8:14..8:16
+          LiteralExpr 8:15..8:16 "2"
+        PrefixExpr 9:9..9:11
+          LiteralExpr 9:10..9:11 "1"
+        Block 9:12..9:14 "{}"
+      ForExpr 10:5..12:15
+        Name 10:9..10:10 "k"
+        Block 10:14..10:19
+          LiteralExpr 10:16..10:17 "1"
+        Block 11:9..11:14
+          LiteralExpr 11:11..11:12 "4"
+        Block 12:5..12:15
+          CallExpr 12:7..12:13
+            NameRef 12:7..12:10 "use"
+            ArgList 12:10..12:13
+              NameRef 12:11..12:12 "k"
+      ForExpr! 13:5..13:22
+        Name 13:9..13:10 "m"
+        LiteralExpr 13:14..13:15 "0"
+        NameRef 13:17..13:22 "limit"
+      ParenExpr 14:5..14:11
+        NameRef 14:6..14:10 "next"
+      Block 15:5..15:7 "{}"
+      ForExpr 16:5..16:31
+        Name 16:9..16:10 "n"
+        LiteralExpr 16:14..16:15 "0"
+        CallExpr 16:17..16:28
+          NameRef 16:17..16:22 "limit"
+          ArgList 16:22..16:28
+            NameRef 16:23..16:27 "next"
+        Block 16:29..16:31 "{}"
 
 == evidence ==
-Expected(LBrace) at 191
+Expected(LBrace) at 14:5
 
 == diagnostics ==
 error[syntax/expected-token] 14:5: expected `{`

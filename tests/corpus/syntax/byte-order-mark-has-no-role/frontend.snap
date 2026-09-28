@@ -1,13 +1,13 @@
 == tree ==
-SourceFile! 0..14
-  Error! 0..3 "\u{feff}"
-  FnItem 3..13
-    Name 6..7 "f"
-    ParamList 7..9 "()"
-    LiteralExpr 12..13 "1"
+SourceFile! 1:1..2:1
+  Error! 1:1..1:4 "\u{feff}"
+  FnItem 1:4..1:14
+    Name 1:7..1:8 "f"
+    ParamList 1:8..1:10 "()"
+    LiteralExpr 1:13..1:14 "1"
 
 == evidence ==
-ExpectedItem at 0
+ExpectedItem at 1:1
 
 == diagnostics ==
 error[syntax/unknown-character] 1:1..1:4 "\u{feff}": character has no meaning in Sumi source

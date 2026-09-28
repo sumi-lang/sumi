@@ -1,29 +1,29 @@
 == tree ==
-SourceFile 0..113
-  FnItem 0..55
-    Name 3..11 "one_line"
-    ParamList 11..13 "()"
-    Block 14..55
-      IfExpr 16..53
-        NameRef 19..20 "a"
-        Block 21..26
-          LiteralExpr 23..24 "1"
-        IfExpr 32..53
-          NameRef 35..36 "b"
-          Block 37..42
-            LiteralExpr 39..40 "2"
-          Block 48..53
-            LiteralExpr 50..51 "3"
-  FnItem 56..112
-    Name 59..80 "else_on_the_next_line"
-    ParamList 80..82 "()"
-    Block 83..112
-      IfExpr 87..110
-        NameRef 90..91 "a"
-        Block 92..97
-          LiteralExpr 94..95 "1"
-        Block 105..110
-          LiteralExpr 107..108 "2"
+SourceFile 1:1..6:1
+  FnItem 1:1..1:56
+    Name 1:4..1:12 "one_line"
+    ParamList 1:12..1:14 "()"
+    Block 1:15..1:56
+      IfExpr 1:17..1:54
+        NameRef 1:20..1:21 "a"
+        Block 1:22..1:27
+          LiteralExpr 1:24..1:25 "1"
+        IfExpr 1:33..1:54
+          NameRef 1:36..1:37 "b"
+          Block 1:38..1:43
+            LiteralExpr 1:40..1:41 "2"
+          Block 1:49..1:54
+            LiteralExpr 1:51..1:52 "3"
+  FnItem 2:1..5:2
+    Name 2:4..2:25 "else_on_the_next_line"
+    ParamList 2:25..2:27 "()"
+    Block 2:28..5:2
+      IfExpr 3:3..4:13
+        NameRef 3:6..3:7 "a"
+        Block 3:8..3:13
+          LiteralExpr 3:10..3:11 "1"
+        Block 4:8..4:13
+          LiteralExpr 4:10..4:11 "2"
 
 == formatted ==
 fn one_line() {

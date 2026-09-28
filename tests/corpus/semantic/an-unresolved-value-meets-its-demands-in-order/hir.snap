@@ -2,39 +2,39 @@ file: rejected
 frontend errors: 0 (see frontend.snap)
 semantic errors: 5
 
-fn k@217..229 signature: unavailable
-  body: call k@217..229 : ? @226..229
+fn k@4:1..4:13 signature: unavailable
+  body: call k@4:1..4:13 : ? @4:10..4:13
 
-fn later_use_is_blamed@230..315 () -> int ∈ ∅
-  result: copy : int @258..261
+fn later_use_is_blamed@5:1..9:2 () -> int ∈ ∅
+  result: copy : int @5:29..5:32
     value:
-      let v@274..275: bool @270..281
-        initializer: call k@217..229 : ? @278..281
-      discard: read v@274..275 : bool
-      tail: if : int @292..313
-        condition: read v@274..275 : bool
-        then: int 1 : int @299..300
-        else: int 2 : int @310..311
+      let v@6:9..6:10: bool @6:5..6:16
+        initializer: call k@4:1..4:13 : ? @6:13..6:16
+      discard: read v@6:9..6:10 : bool
+      tail: if : int @8:5..8:26
+        condition: read v@6:9..6:10 : bool
+        then: int 1 : int @8:12..8:13
+        else: int 2 : int @8:23..8:24
 
-fn each_later_use_is_blamed@316..393 () -> int ∈ [0, 0]
-  result: copy : int @349..352
+fn each_later_use_is_blamed@10:1..15:2 () -> int ∈ [0, 0]
+  result: copy : int @10:34..10:37
     value:
-      let v@365..366: int @361..372
-        initializer: call k@217..229 : ? @369..372
-      discard: read v@365..366 : int
-      discard: negate : int @383..385
-        operand: read v@365..366 : int
-      tail: int 0 : int @390..391
+      let v@11:9..11:10: int @11:5..11:16
+        initializer: call k@4:1..4:13 : ? @11:13..11:16
+      discard: read v@11:9..11:10 : int
+      discard: negate : int @13:5..13:7
+        operand: read v@11:9..11:10 : int
+      tail: int 0 : int @14:5..14:6
 
 == semantic diagnostics ==
 error[semantic/cannot-infer]: cannot infer function result; add a return type annotation
-  primary @217..229
+  primary @4:1..4:13
 error[semantic/unbounded-recursion]: recursion in `k` has no argument that moves toward a bound on every call
-  primary @220..221
-  secondary @226..229: no argument is a parameter moved by a constant
+  primary @4:4..4:5
+  secondary @4:10..4:13: no argument is a parameter moved by a constant
 error[semantic/type-mismatch]: expected bool, found unit
-  primary @295..296
+  primary @8:8..8:9
 error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
-  primary @383..385
+  primary @13:5..13:7
 error[semantic/type-mismatch]: expected int, found unit
-  primary @384..385
+  primary @13:6..13:7

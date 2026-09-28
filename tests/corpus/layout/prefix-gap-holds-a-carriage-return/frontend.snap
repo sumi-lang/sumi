@@ -1,14 +1,14 @@
 == tree ==
-SourceFile 0..15
-  FnItem 0..15
-    Name 3..4 "f"
-    ParamList 4..6 "()"
-    Block 7..15
-      PrefixExpr 9..13
-        LiteralExpr 12..13 "1"
+SourceFile 1:1..2:4
+  FnItem 1:1..2:4
+    Name 1:4..1:5 "f"
+    ParamList 1:5..1:7 "()"
+    Block 1:8..2:4
+      PrefixExpr 1:10..2:2
+        LiteralExpr 2:1..2:2 "1"
 
 == evidence ==
-SpacedPrefixOperator at 9
+SpacedPrefixOperator at 1:10
 
 == diagnostics ==
 error[syntax/spaced-prefix-operator] 1:10..1:11 "-": prefix operator must be adjacent to its operand

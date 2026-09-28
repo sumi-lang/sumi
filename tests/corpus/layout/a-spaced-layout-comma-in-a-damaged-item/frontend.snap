@@ -1,16 +1,16 @@
 == tree ==
-SourceFile! 0..15
-  FnItem! 0..14
-    ParamList! 3..4 "("
-    Block 5..14
-      CallExpr 7..13
-        NameRef 7..8 "g"
-        ArgList 8..13
-          NameRef 9..10 "b"
+SourceFile! 1:1..2:1
+  FnItem! 1:1..1:15
+    ParamList! 1:4..1:5 "("
+    Block 1:6..1:15
+      CallExpr 1:8..1:14
+        NameRef 1:8..1:9 "g"
+        ArgList 1:9..1:14
+          NameRef 1:10..1:11 "b"
 
 == evidence ==
-ExpectedName at 3
-Expected(RParen) at 5
+ExpectedName at 1:4
+Expected(RParen) at 1:6
 
 == diagnostics ==
 error[syntax/expected-name] 1:4: expected a name

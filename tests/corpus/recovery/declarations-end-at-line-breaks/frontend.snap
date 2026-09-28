@@ -1,39 +1,39 @@
 == tree ==
-SourceFile! 0..137
-  FnItem! 0..44
-    Name 3..22 "binding_initializer"
-    ParamList 22..24 "()"
-    Block! 25..44
-      LetStmt! 31..36
-        Name 35..36 "x"
-      Error! 39..42 "= 1"
-  FnItem! 45..88
-    Name 48..60 "binding_type"
-    ParamList 60..62 "()"
-    Block! 63..88
-      LetStmt! 69..74
-        Name 73..74 "x"
-      Error! 77..86 ": int = 1"
-  FnItem! 89..117
-    Name 92..99 "discard"
-    ParamList 99..101 "()"
-    Block! 102..117
-      DiscardStmt! 108..109 "_"
-      Error! 112..115 "= v"
-  FnItem! 118..130
-    Name 121..130 "signature"
-  Error! 131..136 "() {}"
+SourceFile! 1:1..15:1
+  FnItem! 1:1..4:2
+    Name 1:4..1:23 "binding_initializer"
+    ParamList 1:23..1:25 "()"
+    Block! 1:26..4:2
+      LetStmt! 2:5..2:10
+        Name 2:9..2:10 "x"
+      Error! 3:3..3:6 "= 1"
+  FnItem! 5:1..8:2
+    Name 5:4..5:16 "binding_type"
+    ParamList 5:16..5:18 "()"
+    Block! 5:19..8:2
+      LetStmt! 6:5..6:10
+        Name 6:9..6:10 "x"
+      Error! 7:3..7:12 ": int = 1"
+  FnItem! 9:1..12:2
+    Name 9:4..9:11 "discard"
+    ParamList 9:11..9:13 "()"
+    Block! 9:14..12:2
+      DiscardStmt! 10:5..10:6 "_"
+      Error! 11:3..11:6 "= v"
+  FnItem! 13:1..13:13
+    Name 13:4..13:13 "signature"
+  Error! 14:1..14:6 "() {}"
 
 == evidence ==
-Expected(Eq) at 39
-ExpectedStatement at 39
-Expected(Eq) at 77
-ExpectedStatement at 77
-Expected(Eq) at 112
-ExpectedStatement at 112
-Expected(LParen) at 131
-ExpectedBody at 131
-ExpectedItem at 131
+Expected(Eq) at 3:3
+ExpectedStatement at 3:3
+Expected(Eq) at 7:3
+ExpectedStatement at 7:3
+Expected(Eq) at 11:3
+ExpectedStatement at 11:3
+Expected(LParen) at 14:1
+ExpectedBody at 14:1
+ExpectedItem at 14:1
 
 == diagnostics ==
 error[syntax/expected-token] 3:3: expected `=`

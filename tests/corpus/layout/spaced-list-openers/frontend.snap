@@ -1,26 +1,26 @@
 == tree ==
-SourceFile 0..72
-  FnItem 0..22
-    Name 3..8 "value"
-    ParamList 9..11 "()"
-    TypeRef 15..18 "int"
-    LiteralExpr 21..22 "1"
-  FnItem 23..71
-    Name 26..32 "caller"
-    ParamList 32..34 "()"
-    TypeRef 38..41 "int"
-    Block 42..71
-      CallExpr 48..56
-        NameRef 48..53 "value"
-        ArgList 54..56 "()"
-      CallExpr 61..69
-        NameRef 61..66 "value"
-        ArgList 67..69 "()"
+SourceFile 1:1..6:1
+  FnItem 1:1..1:23
+    Name 1:4..1:9 "value"
+    ParamList 1:10..1:12 "()"
+    TypeRef 1:16..1:19 "int"
+    LiteralExpr 1:22..1:23 "1"
+  FnItem 2:1..5:2
+    Name 2:4..2:10 "caller"
+    ParamList 2:10..2:12 "()"
+    TypeRef 2:16..2:19 "int"
+    Block 2:20..5:2
+      CallExpr 3:5..3:13
+        NameRef 3:5..3:10 "value"
+        ArgList 3:11..3:13 "()"
+      CallExpr 4:5..4:13
+        NameRef 4:5..4:10 "value"
+        ArgList 4:11..4:13 "()"
 
 == evidence ==
-SpacedListOpener at 9
-SpacedListOpener at 54
-SpacedListOpener at 67
+SpacedListOpener at 1:10
+SpacedListOpener at 3:11
+SpacedListOpener at 4:11
 
 == diagnostics ==
 error[syntax/spaced-list-opener] 1:10..1:11 "(": opening `(` must be adjacent to the function name

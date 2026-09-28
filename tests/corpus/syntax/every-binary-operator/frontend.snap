@@ -1,38 +1,38 @@
 == tree ==
-SourceFile 0..113
-  FnItem 0..112
-    Name 3..4 "f"
-    ParamList 4..6 "()"
-    Block 7..112
-      BinaryExpr 13..19
-        NameRef 13..14 "a"
-        NameRef 18..19 "b"
-      BinaryExpr 24..30
-        NameRef 24..25 "a"
-        NameRef 29..30 "b"
-      BinaryExpr 35..40
-        NameRef 35..36 "a"
-        NameRef 39..40 "b"
-      BinaryExpr 45..61
-        NameRef 45..46 "a"
-        BinaryExpr 50..61
-          NameRef 50..51 "b"
-          BinaryExpr 55..61
-            NameRef 55..56 "c"
-            NameRef 60..61 "d"
-      BinaryExpr 66..72
-        NameRef 66..67 "a"
-        NameRef 71..72 "b"
-      BinaryExpr 77..82
-        NameRef 77..78 "a"
-        NameRef 81..82 "b"
-      BinaryExpr 87..92
-        NameRef 87..88 "a"
-        NameRef 91..92 "b"
-      BinaryExpr 97..110
-        NameRef 97..98 "a"
-        BinaryExpr 101..110
-          BinaryExpr 101..106
-            NameRef 101..102 "b"
-            NameRef 105..106 "c"
-          NameRef 109..110 "d"
+SourceFile 1:1..11:1
+  FnItem 1:1..10:2
+    Name 1:4..1:5 "f"
+    ParamList 1:5..1:7 "()"
+    Block 1:8..10:2
+      BinaryExpr 2:5..2:11
+        NameRef 2:5..2:6 "a"
+        NameRef 2:10..2:11 "b"
+      BinaryExpr 3:5..3:11
+        NameRef 3:5..3:6 "a"
+        NameRef 3:10..3:11 "b"
+      BinaryExpr 4:5..4:10
+        NameRef 4:5..4:6 "a"
+        NameRef 4:9..4:10 "b"
+      BinaryExpr 5:5..5:21
+        NameRef 5:5..5:6 "a"
+        BinaryExpr 5:10..5:21
+          NameRef 5:10..5:11 "b"
+          BinaryExpr 5:15..5:21
+            NameRef 5:15..5:16 "c"
+            NameRef 5:20..5:21 "d"
+      BinaryExpr 6:5..6:11
+        NameRef 6:5..6:6 "a"
+        NameRef 6:10..6:11 "b"
+      BinaryExpr 7:5..7:10
+        NameRef 7:5..7:6 "a"
+        NameRef 7:9..7:10 "b"
+      BinaryExpr 8:5..8:10
+        NameRef 8:5..8:6 "a"
+        NameRef 8:9..8:10 "b"
+      BinaryExpr 9:5..9:18
+        NameRef 9:5..9:6 "a"
+        BinaryExpr 9:9..9:18
+          BinaryExpr 9:9..9:14
+            NameRef 9:9..9:10 "b"
+            NameRef 9:13..9:14 "c"
+          NameRef 9:17..9:18 "d"

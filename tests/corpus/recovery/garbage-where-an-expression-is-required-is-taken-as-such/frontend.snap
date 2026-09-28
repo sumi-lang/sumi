@@ -1,36 +1,36 @@
 == tree ==
-SourceFile! 0..136
-  FnItem! 0..28
-    Name 3..10 "operand"
-    ParamList 10..12 "()"
-    Block! 13..28
-      BinaryExpr! 19..26
-        NameRef 19..20 "a"
-        Error! 23..24 "*"
-        NameRef 25..26 "b"
-  FnItem! 29..76
-    Name 32..41 "condition"
-    ParamList 41..43 "()"
-    Block! 44..76
-      IfExpr! 50..74
-        Error! 53..54 ")"
-        NameRef 55..56 "x"
-        Block 57..74
-          NameRef 67..68 "a"
-  FnItem! 77..135
-    Name 80..97 "keyword_condition"
-    ParamList 97..99 "()"
-    Block! 100..135
-      IfExpr! 106..133
-        Error! 109..113 "else"
-        NameRef 114..115 "c"
-        Block 116..133
-          NameRef 126..127 "a"
+SourceFile! 1:1..14:1
+  FnItem! 1:1..3:2
+    Name 1:4..1:11 "operand"
+    ParamList 1:11..1:13 "()"
+    Block! 1:14..3:2
+      BinaryExpr! 2:5..2:12
+        NameRef 2:5..2:6 "a"
+        Error! 2:9..2:10 "*"
+        NameRef 2:11..2:12 "b"
+  FnItem! 4:1..8:2
+    Name 4:4..4:13 "condition"
+    ParamList 4:13..4:15 "()"
+    Block! 4:16..8:2
+      IfExpr! 5:5..7:6
+        Error! 5:8..5:9 ")"
+        NameRef 5:10..5:11 "x"
+        Block 5:12..7:6
+          NameRef 6:9..6:10 "a"
+  FnItem! 9:1..13:2
+    Name 9:4..9:21 "keyword_condition"
+    ParamList 9:21..9:23 "()"
+    Block! 9:24..13:2
+      IfExpr! 10:5..12:6
+        Error! 10:8..10:12 "else"
+        NameRef 10:13..10:14 "c"
+        Block 10:15..12:6
+          NameRef 11:9..11:10 "a"
 
 == evidence ==
-ExpectedExpression at 23
-ExpectedExpression at 53
-ExpectedExpression at 109
+ExpectedExpression at 2:9
+ExpectedExpression at 5:8
+ExpectedExpression at 10:8
 
 == diagnostics ==
 error[syntax/expected-expression] 2:9..2:10 "*": expected an expression

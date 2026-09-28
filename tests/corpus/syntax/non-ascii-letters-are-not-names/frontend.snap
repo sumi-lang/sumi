@@ -1,18 +1,18 @@
 == tree ==
-SourceFile! 0..31
-  FnItem! 0..14
-    Name 3..6 "caf"
-    Error! 6..8 "é"
-    ParamList 8..10 "()"
-    LiteralExpr 13..14 "1"
-  FnItem! 15..30
-    Error! 18..24 "ｆｎ"
-    ParamList 24..26 "()"
-    LiteralExpr 29..30 "2"
+SourceFile! 1:1..3:1
+  FnItem! 1:1..1:15
+    Name 1:4..1:7 "caf"
+    Error! 1:7..1:9 "é"
+    ParamList 1:9..1:11 "()"
+    LiteralExpr 1:14..1:15 "1"
+  FnItem! 2:1..2:16
+    Error! 2:4..2:10 "ｆｎ"
+    ParamList 2:10..2:12 "()"
+    LiteralExpr 2:15..2:16 "2"
 
 == evidence ==
-Expected(LParen) at 6
-ExpectedName at 18
+Expected(LParen) at 1:7
+ExpectedName at 2:4
 
 == diagnostics ==
 error[syntax/unknown-character] 1:7..1:9 "é": character has no meaning in Sumi source

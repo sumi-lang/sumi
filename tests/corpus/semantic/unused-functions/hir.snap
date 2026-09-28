@@ -2,114 +2,114 @@ file: accepted
 frontend errors: 0 (see frontend.snap)
 semantic errors: 0
 
-fn uncalled@0..30 (int ∈ ∅) -> int ∈ ∅
-  param n@12..13: int
-  result: copy : int @23..26
-    value: read n@12..13 : int
+fn uncalled@1:1..1:31 (int ∈ ∅) -> int ∈ ∅
+  param n@1:13..1:14: int
+  result: copy : int @1:24..1:27
+    value: read n@1:13..1:14 : int
 
-fn only_from_uncalled@31..75 (int ∈ ∅) -> int ∈ ∅
-  param n@53..54: int
-  result: copy : int @64..67
-    value: eager + : int @70..75
-      lhs: read n@53..54 : int
-      rhs: int 1 : int @74..75
+fn only_from_uncalled@2:1..2:45 (int ∈ ∅) -> int ∈ ∅
+  param n@2:23..2:24: int
+  result: copy : int @2:34..2:37
+    value: eager + : int @2:40..2:45
+      lhs: read n@2:23..2:24 : int
+      rhs: int 1 : int @2:44..2:45
 
-fn caller_of_it@76..130 (int ∈ ∅) -> int ∈ ∅
-  param n@92..93: int
-  result: copy : int @103..106
-    value: call only_from_uncalled@31..75 : int @109..130
-      arg[0]: read n@92..93 : int
+fn caller_of_it@3:1..3:55 (int ∈ ∅) -> int ∈ ∅
+  param n@3:17..3:18: int
+  result: copy : int @3:28..3:31
+    value: call only_from_uncalled@2:1..2:45 : int @3:34..3:55
+      arg[0]: read n@3:17..3:18 : int
 
-fn countdown@131..210 (int ∈ ∅) -> int ∈ ∅
-  param n@144..145: int
-  result: copy : int @155..158
-    value: if : int @161..210
-      condition: eager <= : bool @164..170
-        lhs: read n@144..145 : int
-        rhs: int 0 : int @169..170
-      then: int 0 : int @177..178
-      else: call countdown@131..210 : int @192..208
-        arg[0]: eager - : int @202..207
-          lhs: read n@144..145 [n <= 0 fails@164..170] : int
-          rhs: int 1 : int @206..207
+fn countdown@4:1..8:2 (int ∈ ∅) -> int ∈ ∅
+  param n@4:14..4:15: int
+  result: copy : int @4:25..4:28
+    value: if : int @4:31..8:2
+      condition: eager <= : bool @4:34..4:40
+        lhs: read n@4:14..4:15 : int
+        rhs: int 0 : int @4:39..4:40
+      then: int 0 : int @5:5..5:6
+      else: call countdown@4:1..8:2 : int @7:5..7:21
+        arg[0]: eager - : int @7:15..7:20
+          lhs: read n@4:14..4:15 [n <= 0 fails@4:34..4:40] : int
+          rhs: int 1 : int @7:19..7:20
 
-fn ping@211..280 (int ∈ ∅) -> int ∈ ∅
-  param n@219..220: int
-  result: copy : int @230..233
-    value: if : int @236..280
-      condition: eager <= : bool @239..245
-        lhs: read n@219..220 : int
-        rhs: int 0 : int @244..245
-      then: int 0 : int @252..253
-      else: call pong@281..313 : int @267..278
-        arg[0]: eager - : int @272..277
-          lhs: read n@219..220 [n <= 0 fails@239..245] : int
-          rhs: int 1 : int @276..277
+fn ping@9:1..13:2 (int ∈ ∅) -> int ∈ ∅
+  param n@9:9..9:10: int
+  result: copy : int @9:20..9:23
+    value: if : int @9:26..13:2
+      condition: eager <= : bool @9:29..9:35
+        lhs: read n@9:9..9:10 : int
+        rhs: int 0 : int @9:34..9:35
+      then: int 0 : int @10:5..10:6
+      else: call pong@14:1..14:33 : int @12:5..12:16
+        arg[0]: eager - : int @12:10..12:15
+          lhs: read n@9:9..9:10 [n <= 0 fails@9:29..9:35] : int
+          rhs: int 1 : int @12:14..12:15
 
-fn pong@281..313 (int ∈ ∅) -> int ∈ ∅
-  param n@289..290: int
-  result: copy : int @300..303
-    value: call ping@211..280 : int @306..313
-      arg[0]: read n@289..290 : int
+fn pong@14:1..14:33 (int ∈ ∅) -> int ∈ ∅
+  param n@14:9..14:10: int
+  result: copy : int @14:20..14:23
+    value: call ping@9:1..13:2 : int @14:26..14:33
+      arg[0]: read n@14:9..14:10 : int
 
-fn in_dead_branch@314..350 (int ∈ ∅) -> int ∈ ∅
-  param n@332..333: int
-  result: copy : int @343..346
-    value: read n@332..333 : int
+fn in_dead_branch@15:1..15:37 (int ∈ ∅) -> int ∈ ∅
+  param n@15:19..15:20: int
+  result: copy : int @15:30..15:33
+    value: read n@15:19..15:20 : int
 
-fn _kept@351..394 (int ∈ ∅) -> int ∈ ∅
-  param n@360..361: int
-  result: copy : int @371..374
-    value: call only_from_kept@395..431 : int @377..394
-      arg[0]: read n@360..361 : int
+fn _kept@16:1..16:44 (int ∈ ∅) -> int ∈ ∅
+  param n@16:10..16:11: int
+  result: copy : int @16:21..16:24
+    value: call only_from_kept@17:1..17:37 : int @16:27..16:44
+      arg[0]: read n@16:10..16:11 : int
 
-fn only_from_kept@395..431 (int ∈ ∅) -> int ∈ ∅
-  param n@413..414: int
-  result: copy : int @424..427
-    value: read n@413..414 : int
+fn only_from_kept@17:1..17:37 (int ∈ ∅) -> int ∈ ∅
+  param n@17:19..17:20: int
+  result: copy : int @17:30..17:33
+    value: read n@17:19..17:20 : int
 
-fn used@432..462 (int ∈ [3, 3]) -> int ∈ [6, 6]
-  param n@440..441: int
-  result: copy : int @451..454
-    value: eager * : int @457..462
-      lhs: read n@440..441 : int
-      rhs: int 2 : int @461..462
+fn used@18:1..18:31 (int ∈ [3, 3]) -> int ∈ [6, 6]
+  param n@18:9..18:10: int
+  result: copy : int @18:20..18:23
+    value: eager * : int @18:26..18:31
+      lhs: read n@18:9..18:10 : int
+      rhs: int 2 : int @18:30..18:31
 
-fn parameterless@463..492 () -> int ∈ [7, 7]
-  result: copy : int @485..488
-    value: int 7 : int @491..492
+fn parameterless@19:1..19:30 () -> int ∈ [7, 7]
+  result: copy : int @19:23..19:26
+    value: int 7 : int @19:29..19:30
 
-fn main@493..579 () -> int ∈ [6, 6]
-  result: result : int @506..509
+fn main@20:1..25:2 () -> int ∈ [6, 6]
+  result: result : int @20:14..20:17
     outcome[0]:
-      discard: if : unit @516..565
-        condition: bool false : bool @519..524
-        then: unit : unit @525..565
+      discard: if : unit @21:5..23:6
+        condition: bool false : bool @21:8..21:13
+        then: unit : unit @21:14..23:6
         else: unit (implicit)
-      discard: after : ? @516..565
-        control: observe : ? @516..565
-          condition: bool false : bool @519..524
-          then control: unit : unit @525..565
-        context: entry : ? @493..579
-      tail: call used@432..462 : int @570..577
-        arg[0]: int 3 : int @575..576
-    outcome[1]: return : int @535..559
-      payload: call in_dead_branch@314..350 : int @542..559
-        arg[0]: int 1 : int @557..558
+      discard: after : ? @21:5..23:6
+        control: observe : ? @21:5..23:6
+          condition: bool false : bool @21:8..21:13
+          then control: unit : unit @21:14..23:6
+        context: entry : ? @20:1..25:2
+      tail: call used@18:1..18:31 : int @24:5..24:12
+        arg[0]: int 3 : int @24:10..24:11
+    outcome[1]: return : int @22:9..22:33
+      payload: call in_dead_branch@15:1..15:37 : int @22:16..22:33
+        arg[0]: int 1 : int @22:31..22:32
 
 == semantic diagnostics ==
 warning[semantic/unused-function]: function `uncalled` is never called
-  primary @3..11
+  primary @1:4..1:12
 warning[semantic/unused-function]: function `only_from_uncalled` is only called from functions never called
-  primary @34..52
+  primary @2:4..2:22
 warning[semantic/unused-function]: function `caller_of_it` is never called
-  primary @79..91
+  primary @3:4..3:16
 warning[semantic/unused-function]: function `countdown` is only called by itself
-  primary @134..143
+  primary @4:4..4:13
 warning[semantic/unused-function]: function `ping` is only called from functions never called
-  primary @214..218
+  primary @9:4..9:8
 warning[semantic/unused-function]: function `pong` is only called from functions never called
-  primary @284..288
+  primary @14:4..14:8
 warning[semantic/constant-condition]: condition is always false
-  primary @519..524
-  secondary @525..565: this branch never runs
+  primary @21:8..21:13
+  secondary @21:14..23:6: this branch never runs

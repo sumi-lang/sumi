@@ -2,10 +2,10 @@ file: accepted
 frontend errors: 0 (see frontend.snap)
 semantic errors: 0
 
-fn value@0..22 () -> int ∈ [1, 1]
-  result: copy : int @15..18
-    value: int 1 : int @21..22
+fn value@1:1..2:13 () -> int ∈ [1, 1]
+  result: copy : int @2:6..2:9
+    value: int 1 : int @2:12..2:13
 
-fn caller@23..52 () -> int ∈ [1, 1]
-  result: copy : int @38..41
-    value: call value@0..22 : int @44..52
+fn caller@3:1..4:2 () -> int ∈ [1, 1]
+  result: copy : int @3:16..3:19
+    value: call value@1:1..2:13 : int @3:22..4:2

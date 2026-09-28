@@ -1,10 +1,10 @@
 == tree ==
-SourceFile 0..41
-  FnItem 0..40
-    Name 3..4 "f"
-    ParamList 4..6 "()"
-    Block 7..40
-      ReturnStmt 13..21
-        NameRef 20..21 "x"
-      ReturnStmt 26..32 "return"
-      NameRef 37..38 "x"
+SourceFile 1:1..6:1
+  FnItem 1:1..5:2
+    Name 1:4..1:5 "f"
+    ParamList 1:5..1:7 "()"
+    Block 1:8..5:2
+      ReturnStmt 2:5..2:13
+        NameRef 2:12..2:13 "x"
+      ReturnStmt 3:5..3:11 "return"
+      NameRef 4:5..4:6 "x"

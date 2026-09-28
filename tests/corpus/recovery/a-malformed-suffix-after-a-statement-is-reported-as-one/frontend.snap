@@ -1,21 +1,21 @@
 == tree ==
-SourceFile! 0..53
-  FnItem! 0..24
-    Name 3..8 "colon"
-    ParamList 8..10 "()"
-    Block! 11..24
-      NameRef 17..18 "x"
-      Error! 19..22 ": 1"
-  FnItem! 25..52
-    Name 28..35 "keyword"
-    ParamList 35..37 "()"
-    Block! 38..52
-      NameRef 44..45 "x"
-      Error! 46..50 "else"
+SourceFile! 1:1..5:1
+  FnItem! 1:1..2:12
+    Name 1:4..1:9 "colon"
+    ParamList 1:9..1:11 "()"
+    Block! 1:12..2:12
+      NameRef 2:5..2:6 "x"
+      Error! 2:7..2:10 ": 1"
+  FnItem! 3:1..4:13
+    Name 3:4..3:11 "keyword"
+    ParamList 3:11..3:13 "()"
+    Block! 3:14..4:13
+      NameRef 4:5..4:6 "x"
+      Error! 4:7..4:11 "else"
 
 == evidence ==
-ExpectedStatement at 19
-ExpectedStatement at 46
+ExpectedStatement at 2:7
+ExpectedStatement at 4:7
 
 == diagnostics ==
 error[syntax/expected-statement] 2:7..2:8 ":": expected a statement
