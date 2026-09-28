@@ -1,4 +1,4 @@
-fn answer() -> int = (twice)(21)
+fn answer() -> int = twice(21)
 fn twice(x: int) -> int {
     let y: int = x * 2
     y

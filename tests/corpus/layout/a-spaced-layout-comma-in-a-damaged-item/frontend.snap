@@ -1,14 +1,12 @@
 == tree ==
-SourceFile! 0..16
-  FnItem! 0..16
+SourceFile! 0..15
+  FnItem! 0..14
     ParamList! 3..4 "("
-    Block 5..16
-      CallExpr 7..15
-        CallExpr 7..10
-          NameRef 7..8 "g"
-          ArgList 8..10 "()"
-        ArgList 10..15
-          NameRef 11..12 "b"
+    Block 5..14
+      CallExpr 7..13
+        NameRef 7..8 "g"
+        ArgList 8..13
+          NameRef 9..10 "b"
 
 == evidence ==
 ExpectedName at 3
@@ -22,9 +20,9 @@ error[syntax/expected-token] 1:6: expected `)`
     1:5 -> ")"
 
 == fixed (syntax/expected-name remains) ==
-fn () { g()(b ,)}
+fn () { g(b ,)}
 
 == formatted ==
 fn ( {
-    g()(b)
+    g(b)
 }

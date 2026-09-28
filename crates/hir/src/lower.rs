@@ -1526,14 +1526,7 @@ impl<'a, 's> Builder<'a, 's> {
                 work.push(Work::Enter(paren.inner().node()));
             }
             CleanStmt::Expr(CleanExpr::CallExpr(call)) => {
-                let callee = self.source.peel(call.callee());
-                let target = match callee {
-                    Expr::NameRef(name) => self.target(name.node()),
-                    _ => {
-                        self.unsupported(callee.node());
-                        None
-                    }
-                };
+                let target = self.target(call.callee().node());
                 work.push(Work::Call { call, target });
                 enter_each(work, call.arg_list().args(tree).map(|arg| arg.node()));
             }
@@ -2110,12 +2103,6 @@ impl<'a, 's> Builder<'a, 's> {
         // Every argument is read, arity aside: the typing holds each to its parameter.
         let mut inputs = std::mem::take(&mut self.inputs);
         inputs.clear();
-        if target.is_none() {
-            let callee = self.source.peel(call.callee()).node();
-            if let Some(built) = self.nodes_of[callee.to_usize()] {
-                inputs.push((built, self.source.range(callee)));
-            }
-        }
         let mut count = 0;
         for arg in call.arg_list().args(tree) {
             count += 1;

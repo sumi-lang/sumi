@@ -438,7 +438,7 @@ fn multiline_if_blocks_keep_their_roles() {
 
 #[test]
 fn parser_known_roles_survive_recovery() {
-    let parsed = Parsed::new("fn f() { if {} }");
+    let parsed = Parsed::new("fn f() { if {}(x) }");
     let tree = parsed.tree();
     let body = block(parsed.item().body(tree));
     let Some(Stmt::Expr(Expr::IfExpr(branch))) = body.stmts(tree).next() else {

@@ -44,7 +44,7 @@ fn each(items: unit, visit: unit) {
     _ = visit
 }
 
-fn compose(f: int, g: int) -> int = adder(f)(g)
+fn compose(f: int, g: int) -> int = f + g
 
 fn adder(x: int) = fn(y: int) -> int = x + y
 
