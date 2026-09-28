@@ -15,71 +15,139 @@ impl Optimized {
     }
 }
 
-/// Keeps what each run's result can demand, reading through copies and narrowed reads, which
-/// compute nothing, taking only the side of a condition `facts` decide, and writing a value they
-/// pin to one as a literal.
-///
-/// `facts` must hold every value a run computes at each node, and the rewritten graph agrees with
-/// this one only on the runs they cover.
+/// Rewrites values and control while preserving every run covered by `facts`. Each fact must
+/// contain every value computed at its node on those runs.
 pub fn optimize<'a>(graph: &Graph, facts: impl Fn(NodeId) -> &'a May) -> Optimized {
-    let (forward, becomes) = plan(graph, facts);
-    let kept = marks(graph, &forward, &becomes);
-    emit(graph, &forward, &becomes, &kept)
+    let plan = plan(graph, facts);
+    let kept = marks(graph, &plan);
+    emit(graph, &plan, &kept)
 }
 
-/// Per node, the node whose value it has, and the literal it becomes when its value needs none.
-fn plan<'a>(graph: &Graph, facts: impl Fn(NodeId) -> &'a May) -> (Vec<NodeId>, Vec<Option<Op>>) {
-    let mut forward: Vec<NodeId> = graph.node_ids().collect();
-    let mut becomes: Vec<Option<Op>> = vec![None; forward.len()];
+enum Rewrite {
+    Keep,
+    Alias(NodeId),
+    Literal(Op),
+    // The replacement retains the original input edges and their order.
+    Replace(Op),
+}
+
+struct Exit {
+    result: NodeId,
+    value: bool,
+    control: Option<NodeId>,
+}
+
+struct Plan {
+    nodes: Vec<Rewrite>,
+    exits: Vec<Exit>,
+}
+
+impl Plan {
+    fn op<'a>(&'a self, graph: &'a Graph, node: NodeId) -> &'a Op {
+        match &self.nodes[node.index()] {
+            Rewrite::Replace(op) | Rewrite::Literal(op) => op,
+            _ => &graph.node(node).op,
+        }
+    }
+
+    fn target(&self, mut node: NodeId) -> NodeId {
+        while let Rewrite::Alias(to) = self.nodes[node.index()] {
+            node = to;
+        }
+        node
+    }
+
+    fn literal(&self, node: NodeId) -> Option<&Op> {
+        match &self.nodes[node.index()] {
+            Rewrite::Literal(op) => Some(op),
+            _ => None,
+        }
+    }
+
+    fn exit(&self, region: RegionId) -> &Exit {
+        &self.exits[region.index()]
+    }
+}
+
+fn plan<'a>(graph: &Graph, facts: impl Fn(NodeId) -> &'a May) -> Plan {
+    let mut plan = Plan {
+        nodes: graph.node_ids().map(|_| Rewrite::Keep).collect(),
+        exits: graph
+            .region_ids()
+            .map(|id| {
+                let region = graph.region(id);
+                Exit {
+                    result: region.result(),
+                    value: region.result_has_value(),
+                    control: region.control(),
+                }
+            })
+            .collect(),
+    };
+    for exit in &mut plan.exits {
+        if let Some(control) = exit.control
+            && !facts(control).live()
+        {
+            exit.result = control;
+            exit.value = false;
+        }
+    }
     let decided = |node: NodeId| {
         let bools = facts(node).bools;
         (bools.may_true() != bools.may_false()).then_some(bools.may_true())
     };
     let valued = |region: RegionId| {
-        let region = graph.region(region);
-        region.result_has_value().then_some(region.result())
+        let exit = &plan.exits[region.index()];
+        exit.value.then_some(exit.result)
     };
     let returning = returning(graph);
     for node in graph.node_ids() {
         let inputs = graph.inputs(node);
         let values = graph.input_values(node);
-        let (to, literal) = match graph.node(node).op {
+        let rewrite = match graph.node(node).op {
+            Op::Sequence | Op::Loop(_) if !facts(inputs[0]).live() => Rewrite::Alias(inputs[0]),
+            Op::Loop(_) if !facts(inputs[1]).live() => Rewrite::Replace(Op::Sequence),
             Op::Copy { .. } | Op::Assign { .. } | Op::Refine { .. } | Op::Exactly(_)
                 if values[0] =>
             {
-                (Some(inputs[0]), None)
+                Rewrite::Alias(inputs[0])
             }
             // A branch its condition always takes runs wherever its parent does.
-            Op::Then if values[0] && decided(inputs[0]) == Some(true) => (Some(inputs[1]), None),
-            Op::Else if values[0] && decided(inputs[0]) == Some(false) => (Some(inputs[1]), None),
-            Op::Join { then, else_ } if values[0] => match (decided(inputs[0]), else_) {
-                (Some(true), _) => (valued(then), None),
-                (Some(false), Some(else_)) => (valued(else_), None),
-                _ => (None, None),
-            },
+            Op::Then if values[0] && decided(inputs[0]) == Some(true) => Rewrite::Alias(inputs[1]),
+            Op::Else if values[0] && decided(inputs[0]) == Some(false) => Rewrite::Alias(inputs[1]),
+            Op::Join { then, else_ } if values[0] => {
+                let to = match (decided(inputs[0]), else_) {
+                    (Some(true), _) => valued(then),
+                    (Some(false), Some(else_)) => valued(else_),
+                    _ => None,
+                };
+                to.map_or(Rewrite::Keep, Rewrite::Alias)
+            }
             Op::Phi { .. } if values[0] => match decided(inputs[0]) {
                 Some(truth) => {
                     let taken = if truth { 1 } else { 2 };
-                    (values[taken].then_some(inputs[taken]), None)
+                    values[taken]
+                        .then_some(inputs[taken])
+                        .map_or(Rewrite::Keep, Rewrite::Alias)
                 }
-                None => (None, None),
+                None => Rewrite::Keep,
             },
             Op::Observe { then, else_ } if values[0] => match decided(inputs[0]) {
                 Some(truth) => {
                     let taken = if truth { then } else { else_ };
-                    match taken.and_then(|region| graph.region(region).control()) {
-                        Some(control) => (Some(control), None),
-                        None => (None, Some(Op::Unit)),
+                    match taken.and_then(|region| plan.exits[region.index()].control) {
+                        Some(control) => Rewrite::Alias(control),
+                        None => Rewrite::Literal(Op::Unit),
                     }
                 }
-                None => (None, None),
+                None => Rewrite::Keep,
             },
             ref op @ (Op::And { rhs } | Op::Or { rhs }) if values[0] => {
                 let and = matches!(op, Op::And { .. });
                 match decided(inputs[0]) {
-                    Some(left) if left != and => (None, Some(Op::Bool(left))),
-                    Some(_) => (valued(rhs), None),
-                    None => (None, None),
+                    Some(left) if left != and => Rewrite::Literal(Op::Bool(left)),
+                    Some(_) => valued(rhs).map_or(Rewrite::Keep, Rewrite::Alias),
+                    None => Rewrite::Keep,
                 }
             }
             // The loop is its statement's control, so its bounds' returns run when it does.
@@ -92,18 +160,17 @@ fn plan<'a>(graph: &Graph, facts: impl Fn(NodeId) -> &'a May) -> (Vec<NodeId>, V
                         .any(|&(carry, _)| returning[graph.inputs(carry)[0].index()])
                     && !inputs.iter().any(|&bound| returning[bound.index()]) =>
             {
-                (None, Some(Op::Unit))
+                Rewrite::Literal(Op::Unit)
             }
             Op::LoopValue { loop_, index } => {
                 let loop_ = graph.loop_(loop_);
                 let carry = loop_.carried[index as usize].0;
                 let empty = !facts(graph.region(loop_.body).context).live();
-                (
-                    (empty && graph.input_values(carry)[0]).then(|| graph.inputs(carry)[0]),
-                    None,
-                )
+                (empty && graph.input_values(carry)[0])
+                    .then(|| graph.inputs(carry)[0])
+                    .map_or(Rewrite::Keep, Rewrite::Alias)
             }
-            _ => (None, None),
+            _ => Rewrite::Keep,
         };
         let foldable = matches!(
             graph.node(node).op,
@@ -117,23 +184,19 @@ fn plan<'a>(graph: &Graph, facts: impl Fn(NodeId) -> &'a May) -> (Vec<NodeId>, V
                 | Op::Or { .. }
                 | Op::LoopValue { .. }
         );
-        let literal = match (to, literal) {
-            (None, None) if foldable && !returning[node.index()] => single(facts(node)),
-            (_, literal) => literal,
+        plan.nodes[node.index()] = match rewrite {
+            Rewrite::Keep if foldable && !returning[node.index()] => {
+                single(facts(node)).map_or(Rewrite::Keep, Rewrite::Literal)
+            }
+            rewrite => rewrite,
         };
-        if let Some(to) = to {
-            forward[node.index()] = to;
-        }
-        becomes[node.index()] = literal;
     }
-    for index in 0..forward.len() {
-        let mut target = forward[index];
-        while forward[target.index()] != target {
-            target = forward[target.index()];
+    for node in graph.node_ids() {
+        if matches!(plan.nodes[node.index()], Rewrite::Alias(_)) {
+            plan.nodes[node.index()] = Rewrite::Alias(plan.target(node));
         }
-        forward[index] = target;
     }
-    (forward, becomes)
+    plan
 }
 
 /// The literal for the one value `may` holds, if it holds one.
@@ -194,17 +257,16 @@ fn owned(op: &Op, graph: &Graph) -> Vec<RegionId> {
     }
 }
 
-/// The regions whose owner survives unchanged, and every run's own.
-fn kept_regions(graph: &Graph, becomes: &[Option<Op>], kept: &[bool]) -> Vec<bool> {
+fn kept_regions(graph: &Graph, plan: &Plan, kept: &[bool]) -> Vec<bool> {
     let mut regions = vec![false; graph.region_ids().len()];
     for run in graph.runs() {
         regions[run.region().index()] = true;
     }
     for node in graph
         .node_ids()
-        .filter(|node| kept[node.index()] && becomes[node.index()].is_none())
+        .filter(|&node| kept[node.index()] && plan.literal(node).is_none())
     {
-        for region in owned(&graph.node(node).op, graph) {
+        for region in owned(plan.op(graph, node), graph) {
             regions[region.index()] = true;
         }
     }
@@ -213,14 +275,14 @@ fn kept_regions(graph: &Graph, becomes: &[Option<Op>], kept: &[bool]) -> Vec<boo
 
 /// What survives: whatever a run's result can demand, and the contexts and declarations the
 /// survivors name, which keep the graph as well formed as the analysis's.
-fn marks(graph: &Graph, forward: &[NodeId], becomes: &[Option<Op>]) -> Vec<bool> {
+fn marks(graph: &Graph, plan: &Plan) -> Vec<bool> {
     let mut kept = vec![false; graph.nodes().len()];
     let mut stack: Vec<NodeId> = Vec::new();
     let region = |stack: &mut Vec<NodeId>, region: RegionId| {
-        let region = graph.region(region);
-        stack.push(region.context);
-        stack.push(region.result());
-        stack.extend(region.control());
+        let exit = plan.exit(region);
+        stack.push(graph.region(region).context);
+        stack.push(exit.result);
+        stack.extend(exit.control);
     };
     for run in graph.runs() {
         stack.push(run.entry());
@@ -229,16 +291,16 @@ fn marks(graph: &Graph, forward: &[NodeId], becomes: &[Option<Op>]) -> Vec<bool>
         region(&mut stack, run.region());
     }
     while let Some(node) = stack.pop() {
-        let node = forward[node.index()];
+        let node = plan.target(node);
         if kept[node.index()] {
             continue;
         }
         kept[node.index()] = true;
-        if becomes[node.index()].is_some() {
+        if plan.literal(node).is_some() {
             continue;
         }
         let inputs = graph.inputs(node);
-        match graph.node(node).op {
+        match *plan.op(graph, node) {
             Op::Unused | Op::Int(_) | Op::Bool(_) | Op::Hole => {}
             Op::Result { .. } => stack.push(inputs[0]),
             Op::Phi {
@@ -263,15 +325,15 @@ fn marks(graph: &Graph, forward: &[NodeId], becomes: &[Option<Op>]) -> Vec<bool>
             }
             _ => stack.extend_from_slice(inputs),
         }
-        for owned in owned(&graph.node(node).op, graph) {
+        for owned in owned(plan.op(graph, node), graph) {
             region(&mut stack, owned);
         }
     }
     kept
 }
 
-fn emit(graph: &Graph, forward: &[NodeId], becomes: &[Option<Op>], kept: &[bool]) -> Optimized {
-    let regions = kept_regions(graph, becomes, kept);
+fn emit(graph: &Graph, plan: &Plan, kept: &[bool]) -> Optimized {
+    let regions = kept_regions(graph, plan, kept);
     let mut builder = GraphBuilder::new(kept.iter().filter(|&&kept| kept).count());
     for _ in graph.runs() {
         builder.function();
@@ -316,15 +378,16 @@ fn emit(graph: &Graph, forward: &[NodeId], becomes: &[Option<Op>], kept: &[bool]
         for at in first..=end {
             while let Some((_, order, region)) = events.next_if(|&(event, _, _)| event == at) {
                 let map = |node: NodeId| {
-                    new_of[forward[node.index()].index()].expect("a kept region's nodes are kept")
+                    new_of[plan.target(node).index()].expect("a kept region's nodes are kept")
                 };
                 let old = graph.region(region);
+                let exit = plan.exit(region);
                 let close = |builder: &mut GraphBuilder, new: RegionId| {
                     builder.close_with_control(
                         new,
-                        map(old.result()),
-                        old.result_has_value(),
-                        old.control().map(map),
+                        map(exit.result),
+                        exit.value,
+                        exit.control.map(map),
                     );
                 };
                 if order == 1 {
@@ -350,10 +413,10 @@ fn emit(graph: &Graph, forward: &[NodeId], becomes: &[Option<Op>], kept: &[bool]
             }
             let node = NodeId::new(at);
             let map = |node: NodeId| {
-                new_of[forward[node.index()].index()].expect("what a kept node names is kept")
+                new_of[plan.target(node).index()].expect("what a kept node names is kept")
             };
             let entry = graph.node(node);
-            if let Some(literal) = &becomes[at] {
+            if let Some(literal) = plan.literal(node) {
                 let context = *contexts.last().expect("a node runs in its run's region");
                 let inputs: &[_] = match literal {
                     Op::Unit => &[(context, entry.origin)],
@@ -363,7 +426,7 @@ fn emit(graph: &Graph, forward: &[NodeId], becomes: &[Option<Op>], kept: &[bool]
                 origins.push(node);
                 continue;
             }
-            let op = match entry.op.clone() {
+            let op = match plan.op(graph, node).clone() {
                 Op::Join { then, else_ } => Op::Join {
                     then: new_region[then.index()].unwrap(),
                     else_: else_.map(|region| new_region[region.index()].unwrap()),
@@ -423,7 +486,7 @@ fn emit(graph: &Graph, forward: &[NodeId], becomes: &[Option<Op>], kept: &[bool]
                 .zip(graph.input_values(node))
                 .enumerate()
             {
-                let new = match new_of[forward[input.index()].index()] {
+                let new = match new_of[plan.target(input).index()] {
                     Some(new) => new,
                     // A return no kept control reaches never runs.
                     None if returns && position > 0 => continue,
@@ -441,7 +504,7 @@ fn emit(graph: &Graph, forward: &[NodeId], becomes: &[Option<Op>], kept: &[bool]
             new_of[at] = Some(new);
             origins.push(node);
         }
-        let result = new_of[forward[run.result().index()].index()].expect("a run's result is kept");
+        let result = new_of[plan.target(run.result()).index()].expect("a run's result is kept");
         let region = new_region[run.region().index()].expect("a run's region is kept");
         builder.close_run(open, region, result);
     }
