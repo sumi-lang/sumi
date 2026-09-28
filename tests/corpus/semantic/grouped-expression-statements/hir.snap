@@ -43,7 +43,7 @@ error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
   primary @176..249
 error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
   primary @273..282
-error[semantic/unsupported]: construct is not supported by scalar checking
+error[semantic/not-a-value]: function `value` is not a value
   primary @318..323
 error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
   primary @328..337
