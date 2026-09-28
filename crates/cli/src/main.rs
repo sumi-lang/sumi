@@ -10,7 +10,7 @@ use sumi_frontend::parse_source;
 use sumi_hir::{Analysis, Value};
 use sumi_lexer::lex;
 use sumi_syntax::{ParserInput, parse};
-use sumi_text::{Encoding, LineIndex, TextSize};
+use sumi_text::{LineIndex, TextSize};
 
 const USAGE: &str = "usage: sumi check <file>
        sumi run <file>
@@ -70,13 +70,7 @@ fn read_source(path: &Path) -> Result<String, String> {
 }
 
 fn locate(path: &Path, lines: &LineIndex<'_>, offset: TextSize) -> String {
-    let position = lines.line_col(offset, Encoding::Utf8);
-    format!(
-        "{}:{}:{}: ",
-        path.display(),
-        position.line + 1,
-        u64::from(position.col) + 1
-    )
+    format!("{}:{}: ", path.display(), lines.display_offset(offset))
 }
 
 fn analyze(path: &Path) -> Result<(Analysis, bool), String> {
