@@ -1,6 +1,6 @@
 mod line_index;
 
-pub use line_index::{LineCol, LineIndex};
+pub use line_index::{Encoding, LineCol, LineIndex};
 
 /// A distinct `u32` index newtype per name, so positions from different buffers can't mix.
 #[macro_export]

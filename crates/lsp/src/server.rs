@@ -18,8 +18,9 @@ use lsp_types::{
 use serde_json::Value;
 use sumi_frontend::{Diagnostic, Fix, Severity, parse_source};
 use sumi_hir::{Dead, DeadCause, analyze};
+use sumi_text::Encoding;
 
-use crate::position::{Encoding, Positions};
+use crate::position::Positions;
 
 #[derive(Clone)]
 struct Document {

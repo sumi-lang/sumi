@@ -8,7 +8,7 @@ use sumi_frontend::{Diagnostic, parse_source};
 use sumi_lexer::LexedFile;
 use sumi_syntax::{NodeIdx, ParseAnchor, ParseEvidence, RawIdx, SyntaxTree};
 use sumi_test::{check, corpus, evidence_name};
-use sumi_text::{LineIndex, TextEdit, TextRange, TextSize};
+use sumi_text::{Encoding, LineIndex, TextEdit, TextRange, TextSize};
 
 #[test]
 fn every_case_matches_its_snapshot() {
@@ -199,7 +199,7 @@ fn evidence_token(evidence: &ParseEvidence) -> RawIdx {
     }
 }
 
-fn render(diagnostic: &Diagnostic, index: &LineIndex, source: &str, out: &mut String) {
+fn render(diagnostic: &Diagnostic, index: &LineIndex<'_>, source: &str, out: &mut String) {
     writeln!(
         out,
         "{}[{}] {}: {}",
@@ -230,9 +230,9 @@ fn render(diagnostic: &Diagnostic, index: &LineIndex, source: &str, out: &mut St
     }
 }
 
-fn place(index: &LineIndex, source: &str, range: TextRange) -> String {
+fn place(index: &LineIndex<'_>, source: &str, range: TextRange) -> String {
     let at = |offset: TextSize| {
-        let position = index.line_col(offset);
+        let position = index.line_col(offset, Encoding::Utf8);
         format!("{}:{}", position.line + 1, position.col + 1)
     };
     if range.start() == range.end() {
