@@ -9,7 +9,6 @@
     "expression": {
       "patterns": [
         { "include": "#comments" },
-        { "include": "#strings" },
         { "include": "#function-declaration" },
         { "include": "#binding-declaration" },
         { "include": "#type-reference" },
@@ -34,41 +33,6 @@
             "0": { "name": "punctuation.definition.comment.sumi" }
           },
           "end": "$"
-        }
-      ]
-    },
-    "strings": {
-      "patterns": [
-        {
-          "name": "string.quoted.double.sumi",
-          "begin": "\"",
-          "beginCaptures": {
-            "0": { "name": "punctuation.definition.string.begin.sumi" }
-          },
-          "end": "\"|(?=\\r?$)",
-          "endCaptures": {
-            "0": { "name": "punctuation.definition.string.end.sumi" }
-          },
-          "patterns": [
-            { "include": "#escapes" },
-            { "include": "#invalid-escape" }
-          ]
-        }
-      ]
-    },
-    "escapes": {
-      "patterns": [
-        {
-          "name": "constant.character.escape.sumi",
-          "match": "\\\\[nrt\\\\\"0]"
-        }
-      ]
-    },
-    "invalid-escape": {
-      "patterns": [
-        {
-          "name": "invalid.illegal.escape.sumi",
-          "match": "\\\\(?:.|(?=\\r?$))"
         }
       ]
     },
@@ -212,7 +176,7 @@
       "patterns": [
         {
           "name": "invalid.illegal.character.sumi",
-          "match": "[^\\x00-\\x7F]|[#$'@;?\\[\\]\\\\^`~]"
+          "match": "[^\\x00-\\x7F]|[#$'\"@;?\\[\\]\\\\^`~]"
         }
       ]
     }

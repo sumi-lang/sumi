@@ -815,7 +815,7 @@ mod tests {
             Document {
                 generation: 1,
                 version: 1,
-                text: "fn main() = \"😀\"\r\n".into(),
+                text: "fn main() = 😀\r\n".into(),
             },
         )]);
         let mut snapshots = HashMap::from([(
@@ -835,10 +835,10 @@ mod tests {
                 json!({
                     "textDocument": { "uri": uri, "version": 2 },
                     "contentChanges": [
-                        { "range": { "start": { "line": 0, "character": 13 },
-                            "end": { "line": 0, "character": 15 } }, "text": "x" },
-                        { "range": { "start": { "line": 0, "character": 13 },
-                            "end": { "line": 0, "character": 14 } }, "text": "y" }
+                        { "range": { "start": { "line": 0, "character": 12 },
+                            "end": { "line": 0, "character": 14 } }, "text": "x" },
+                        { "range": { "start": { "line": 0, "character": 12 },
+                            "end": { "line": 0, "character": 13 } }, "text": "y" }
                     ]
                 }),
             ),
@@ -854,7 +854,7 @@ mod tests {
             panic!("analysis job")
         };
         assert_eq!(version, 2);
-        assert_eq!(text, "fn main() = \"y\"\r\n");
+        assert_eq!(text, "fn main() = y\r\n");
         assert!(!snapshots.contains_key(uri.as_str()));
     }
 

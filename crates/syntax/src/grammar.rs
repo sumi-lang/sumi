@@ -61,7 +61,6 @@ impl fmt::Display for PrefixOp {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Literal {
     Int,
-    String,
     True,
     False,
 }
@@ -70,7 +69,6 @@ impl Literal {
     pub const fn token(self) -> SyntaxKind {
         match self {
             Self::Int => T::IntLiteral,
-            Self::String => T::StringLiteral,
             Self::True => T::TrueKw,
             Self::False => T::FalseKw,
         }
@@ -90,7 +88,7 @@ const LITERAL_BY_KIND: [Option<Literal>; SyntaxKind::ALL.len()] = {
 };
 
 impl TokenField for Literal {
-    const ALL: &[Self] = &[Self::Int, Self::String, Self::True, Self::False];
+    const ALL: &[Self] = &[Self::Int, Self::True, Self::False];
 
     fn read(first: SyntaxKind, _: Option<SyntaxKind>) -> Option<(Self, bool)> {
         LITERAL_BY_KIND[first as usize].map(|literal| (literal, false))

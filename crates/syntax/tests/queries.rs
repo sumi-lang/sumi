@@ -25,11 +25,11 @@ fn check_covering(source: &str) {
 #[test]
 fn covering_matches_the_exhaustive_reference() {
     check_covering("fn f(a: Int) -> Int {\n    let x = a + 1\n    return x * 2\n}\n");
-    check_covering("// leading\nfn g() {\n    h(1, (2 + 3), \"s\")\n}\n// trailing");
+    check_covering("// leading\nfn g() {\n    h(1, (2 + 3), 4)\n}\n// trailing");
     check_covering("let a = if c { 1 } else { 2 }\nb.c(d)\n");
     check_covering("fn f( {\n    let x = ((1 +\n}\n");
     check_covering("fn ; broken [ let = \n }} )\n");
-    check_covering("€ 'ab' \"open\nfn h() { return }\n");
+    check_covering("€ 'ab'\nfn h() { return }\n");
     check_covering("");
     check_covering("  // just a comment\n\n");
     check_covering(&format!("fn f() = {}1{}", "(".repeat(64), ")".repeat(64)));

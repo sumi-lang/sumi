@@ -4,13 +4,10 @@
 crate::codes! {
     SYNTAX = "syntax";
 
-    /// A string literal reaches the end of its line without a closing `"`.
-    UNTERMINATED_STRING: Error = "unterminated-string";
-
     /// A carriage return not followed by a line feed.
     LONE_CARRIAGE_RETURN: Error = "lone-carriage-return";
 
-    /// A character with no meaning in Sumi source outside a string or comment.
+    /// A character with no meaning in Sumi source outside a comment.
     UNKNOWN_CHARACTER: Error = "unknown-character";
 
     /// Identifier characters attached to an integer literal, as in `1u32`.
@@ -18,9 +15,6 @@ crate::codes! {
 
     /// An integer literal with leading zeros, as in `007`.
     NONCANONICAL_NUMBER: Error = "noncanonical-number";
-
-    /// A string escape other than `\n`, `\r`, `\t`, `\\`, `\"`, or `\0`.
-    UNKNOWN_ESCAPE: Error = "unknown-escape";
 
     /// Punctuation with no role in the language, such as `;`, `[`, or `@`.
     UNKNOWN_PUNCTUATION: Error = "unknown-punctuation";

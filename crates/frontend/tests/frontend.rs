@@ -69,19 +69,6 @@ fn diagnostics_are_globally_sorted_with_stable_ties() {
 }
 
 #[test]
-fn independent_same_token_facts_remain_independent() {
-    let front = parsed(r#"fn f() { "\q\q" }"#);
-    assert_eq!(
-        diagnostic_codes(&front),
-        [codes::UNKNOWN_ESCAPE, codes::UNKNOWN_ESCAPE]
-    );
-    assert_ne!(
-        front.diagnostics()[0].primary,
-        front.diagnostics()[1].primary
-    );
-}
-
-#[test]
 fn leading_zeros_are_fixed_around_a_suffix() {
     let source = "fn f() = 01u32";
     let front = parsed(source);
@@ -98,9 +85,7 @@ fn leading_zeros_are_fixed_around_a_suffix() {
     assert!(front.diagnostics()[1].fix.is_none());
 }
 
-const EXTRA_FRAGMENTS: &[&str] = &[
-    "x", "0", "01u32", "1e", r#""\q""#, "\"open", ";", " ", "\n", "// c", "€",
-];
+const EXTRA_FRAGMENTS: &[&str] = &["x", "0", "01u32", "1e", ";", " ", "\n", "// c", "€"];
 
 fn source() -> impl Strategy<Value = String> {
     let fragments: Vec<&'static str> = SyntaxKind::ALL

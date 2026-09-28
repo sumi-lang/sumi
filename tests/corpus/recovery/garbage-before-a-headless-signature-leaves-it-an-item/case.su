@@ -3,6 +3,6 @@ x g(y: int) {
     y
 }
 fn bare_fn() = 0 + fn
-"s" h(y: int) {
+0 h(y: int) {
     y
 }

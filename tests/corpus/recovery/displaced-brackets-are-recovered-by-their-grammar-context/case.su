@@ -1,5 +1,5 @@
 fn closer_in_discard() {
-    _ = } "a"
+    _ = } 1
     x
 }
 fn opener_in_parens() {

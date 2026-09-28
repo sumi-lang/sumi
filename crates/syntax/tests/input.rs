@@ -362,11 +362,6 @@ fn bare_return_can_end_a_statement() {
 }
 
 #[test]
-fn a_literal_ends_at_the_break_so_the_next_line_is_a_statement() {
-    assert!(has_boundary("let s = \"a\nb\""));
-}
-
-#[test]
 fn error_tokens_end_statements() {
     assert!(has_boundary("€\nx"));
 }

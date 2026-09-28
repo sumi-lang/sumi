@@ -12,7 +12,7 @@ fn main() {
     } else if total >= 100 {
         return
     } else {
-        _ = greet("nobody")
+        _ = greet(0)
     }
 }
 
@@ -35,7 +35,7 @@ fn report(total: int, count: int) -> int {
     -squared
 }
 
-fn greet(name: str) -> str = "hello, {name}\n\t\"quoted\" \\ escaped"
+fn greet(name: int) -> int = name
 
 fn names() -> unit = {}
 

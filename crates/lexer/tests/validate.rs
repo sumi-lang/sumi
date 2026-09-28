@@ -110,8 +110,11 @@ fn errors_locate_the_offending_source_text() {
         &[(2, 2, 3, E::LeadingZero), (2, 4, 7, E::UnknownSuffix)],
     );
     check_error_ranges(
-        r#"Δ "é\q""#,
-        &[(0, 0, 2, E::UnknownCharacter), (2, 6, 8, E::UnknownEscape)],
+        "Δ ;",
+        &[
+            (0, 0, 2, E::UnknownCharacter),
+            (2, 3, 4, E::UnknownPunctuation),
+        ],
     );
     check_error_ranges("0123", &[(0, 0, 1, E::LeadingZero)]);
     check_error_ranges("1u32", &[(0, 1, 4, E::UnknownSuffix)]);
@@ -138,50 +141,4 @@ fn suffixes_are_rejected() {
     check_errors("1_000", &[(0, LexErrorKind::UnknownSuffix)]);
     check_errors("1e5", &[(0, LexErrorKind::UnknownSuffix)]);
     check_errors("1.5", &[]);
-}
-
-#[test]
-fn unterminated_literals_get_only_the_scanner_error() {
-    check_errors("\"a\\q", &[(0, LexErrorKind::UnterminatedString)]);
-}
-
-#[test]
-fn valid_escapes_pass() {
-    check_errors(r#""a\n\r\t\\\"\0b""#, &[]);
-    // A quote needs no escape in a `"…"` literal: there is no `\'`.
-    check_errors(r#""\'""#, &[(0, LexErrorKind::UnknownEscape)]);
-}
-
-#[test]
-fn unknown_escapes_are_reported() {
-    check_errors(r#""a\qb""#, &[(0, LexErrorKind::UnknownEscape)]);
-    check_errors(
-        r#""\q\q""#,
-        &[
-            (0, LexErrorKind::UnknownEscape),
-            (0, LexErrorKind::UnknownEscape),
-        ],
-    );
-}
-
-#[test]
-fn line_literals_get_only_their_unterminated_error() {
-    check_errors(
-        "\"a\\\nb\"",
-        &[
-            (0, LexErrorKind::UnterminatedString),
-            (3, LexErrorKind::UnterminatedString),
-        ],
-    );
-}
-
-#[test]
-fn every_unknown_escape_of_a_literal_is_reported() {
-    check_error_ranges(
-        "\"\\q{x}\\p\"",
-        &[
-            (0, 1, 3, LexErrorKind::UnknownEscape),
-            (0, 6, 8, LexErrorKind::UnknownEscape),
-        ],
-    );
 }

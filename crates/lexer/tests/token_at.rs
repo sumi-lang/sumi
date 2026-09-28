@@ -3,7 +3,7 @@ use sumi_text::TextSize;
 
 #[test]
 fn every_byte_maps_to_the_token_containing_it() {
-    let source = "let x = \"a b\" + 12";
+    let source = "let x = alpha + 12";
     let file = lex(source).expect("test sources fit in u32");
     for offset in 0..source.len() as u32 {
         let index = file

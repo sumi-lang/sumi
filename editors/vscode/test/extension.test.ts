@@ -121,34 +121,6 @@ describe("TextMate grammar", () => {
     expect(scopesAt(lines, 3, "return")).toContain("keyword.control.sumi");
   });
 
-  test("keeps braces and names inside strings as string text", () => {
-    const lines = tokenize(String.raw`"hello, {name}\n\t\"quoted\" \\ escaped"`);
-
-    expect(scopesAt(lines, 0, "name")).toContain("string.quoted.double.sumi");
-    expect(scopesAt(lines, 0, String.raw`\n`)).toContain("constant.character.escape.sumi");
-    expect(scopesAt(lines, 0, String.raw`\"`)).toContain("constant.character.escape.sumi");
-  });
-
-  test("scopes the compiler's string escapes", () => {
-    const lines = tokenize(String.raw`"\n \r \t \\ \" \0"`);
-    const valid = [
-      String.raw`\n`,
-      String.raw`\r`,
-      String.raw`\t`,
-      String.raw`\\`,
-      String.raw`\"`,
-      String.raw`\0`,
-    ];
-    for (const escape of valid) {
-      expect(scopesAt(lines, 0, escape)).toContain("constant.character.escape.sumi");
-    }
-  });
-
-  test("ends an unterminated string at its line", () => {
-    const lines = tokenize('"unterminated\nlet next = 1');
-    expect(scopesAt(lines, 1, "let")).toContain("keyword.declaration.sumi");
-    expect(scopesAt(lines, 1, "next")).toContain("variable.other.definition.sumi");
-  });
 });
 
 const tokenDeclaration = await Bun.file(

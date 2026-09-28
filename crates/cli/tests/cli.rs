@@ -38,8 +38,8 @@ fn source_errors_have_locations_codes_and_failure_status() {
             "case.su:2:5: error[syntax/unknown-character]:",
         ),
         (
-            "fn f() { \"é\" € }",
-            "case.su:1:15: error[syntax/unknown-character]:",
+            "fn f() { é € }",
+            "case.su:1:13: error[syntax/unknown-character]:",
         ),
         (
             "fn f(",

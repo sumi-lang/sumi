@@ -493,7 +493,7 @@ grammar! {
     struct NameRef {}
     tokens { Ident }
 
-    /// `IntLiteral | StringLiteral | 'true' | 'false'`.
+    /// `IntLiteral | 'true' | 'false'`.
     struct LiteralExpr {}
     tokens { value: Literal }
 
