@@ -119,10 +119,10 @@ fn comments_stay_in_their_gaps_and_force_breaks() {
 }
 
 #[test]
-fn closures_and_expression_bodies_keep_their_forms() {
+fn expression_and_block_bodies_keep_their_forms() {
     check(
-        "fn f() = fn(x) = x * 2\nfn g() = fn(x: int) -> int {\n x\n}\nfn h() = {\n 1\n}",
-        "fn f() = fn(x) = x * 2\nfn g() = fn(x: int) -> int {\n    x\n}\nfn h() = {\n    1\n}\n",
+        "fn f() = x * 2\nfn h() = {\n 1\n}",
+        "fn f() = x * 2\nfn h() = {\n    1\n}\n",
     );
     check(
         "fn f() {\n    let x = if c {\n a\n } else { b }\n}",
@@ -188,21 +188,5 @@ fn a_value_hugs_its_binding_line_when_its_head_fits() {
     check(
         "fn compute() -> int = combine(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, ccccccccccccc)",
         "fn compute() -> int = combine(\n    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,\n    bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb,\n    ccccccccccccc,\n)\n",
-    );
-}
-
-#[test]
-fn a_block_bodied_closure_hugs_the_list_it_ends() {
-    check(
-        "fn f() {\n    each(items, fn(item) {\n        visit(item)\n    })\n}",
-        "fn f() {\n    each(items, fn(item) {\n        visit(item)\n    })\n}\n",
-    );
-    check(
-        "fn f() {\n    each(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, fn(item) {\n        visit(item)\n    })\n}",
-        "fn f() {\n    each(\n        aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,\n        bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb,\n        fn(item) {\n            visit(item)\n        },\n    )\n}\n",
-    );
-    check(
-        "fn f() {\n    each(items, // all\n fn(item) {\n        visit(item) // one\n    })\n}",
-        "fn f() {\n    each(\n        items, // all\n        fn(item) {\n            visit(item) // one\n        },\n    )\n}\n",
     );
 }

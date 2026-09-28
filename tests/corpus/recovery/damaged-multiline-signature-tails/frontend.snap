@@ -1,5 +1,5 @@
 == tree ==
-SourceFile! 0..233
+SourceFile! 0..191
   FnItem! 0..21
     Name 0..8 "headless"
     ParamList 8..10 "()"
@@ -35,20 +35,11 @@ SourceFile! 0..233
       CallExpr 159..169
         NameRef 159..167 "survivor"
         ArgList 167..169 "()"
-  FnItem! 170..211
-    Name 173..183 "incomplete"
-    ParamList 183..185 "()"
-    ClosureExpr! 188..211
-      ParamList! 190..192
-        Param 191..192
-          Name 191..192 "x"
-      TypeRef 200..203 "int"
-      NameRef 210..211 "x"
-  FnItem 212..232
-    Name 215..219 "last"
-    ParamList 219..221 "()"
-    TypeRef 225..228 "int"
-    LiteralExpr 231..232 "5"
+  FnItem 170..190
+    Name 173..177 "last"
+    ParamList 177..179 "()"
+    TypeRef 183..186 "int"
+    LiteralExpr 189..190 "5"
 
 == evidence ==
 Expected(FnKw) at 0
@@ -57,7 +48,6 @@ ExpectedType at 49
 ExpectedBody at 49
 ExpectedBody at 92
 ExpectedItem at 92
-Expected(RParen) at 197
 
 == diagnostics ==
 error[syntax/expected-token] 1:1: expected `fn`
@@ -66,29 +56,6 @@ error[syntax/expected-type] 8:1: expected a type
 error[syntax/expected-body] 8:1: expected a body, `{` or `=`
 error[syntax/expected-body] 10:1: expected a body, `{` or `=`
 error[syntax/expected-item] 10:1..10:2 "=": expected a function item
-error[syntax/expected-token] 15:5: expected `)`
-  at 14:21..14:22 "(": opening delimiter is here
-  fix: insert `)`
-    14:23 -> ")"
-
-== fixed (syntax/expected-body, syntax/expected-item, syntax/expected-token, syntax/expected-type remain) ==
-headless()
--> int
-= 1
-other()
-= 2
-fn broken()
-->
-fn survivor() -> int = 3
-fn missing_body()
-=
-fn next() -> int = 4
-fn call_is_not_an_anchor() -> int = 1 +
-    survivor()
-fn incomplete() = fn(x)
-    -> int
-    = x
-fn last() -> int = 5
 
 == formatted ==
 headless() -> int = 1
@@ -99,6 +66,4 @@ fn missing_body()
 =
 fn next() -> int = 4
 fn call_is_not_an_anchor() -> int = 1 + survivor()
-fn incomplete() = fn(x
-    -> int = x
 fn last() -> int = 5

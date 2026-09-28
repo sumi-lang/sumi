@@ -20,7 +20,6 @@ pub const MEMBERS: &[(NodeKind, &str, NodeKind)] = &[
     (N::ForExpr, "start", N::CallExpr),
     (N::ForExpr, "start", N::IfExpr),
     (N::ForExpr, "start", N::ForExpr),
-    (N::ForExpr, "start", N::ClosureExpr),
     (N::ForExpr, "start", N::Block),
     (N::ForExpr, "end", N::NameRef),
     (N::ForExpr, "end", N::LiteralExpr),
@@ -30,7 +29,6 @@ pub const MEMBERS: &[(NodeKind, &str, NodeKind)] = &[
     (N::ForExpr, "end", N::CallExpr),
     (N::ForExpr, "end", N::IfExpr),
     (N::ForExpr, "end", N::ForExpr),
-    (N::ForExpr, "end", N::ClosureExpr),
     (N::ForExpr, "end", N::Block),
 ];
 
@@ -204,7 +202,7 @@ mod tests {
     #[test]
     fn the_witnesses_follow_the_grammar() {
         let witnesses = witnesses();
-        assert_eq!(witnesses.len(), 106);
+        assert_eq!(witnesses.len(), 98);
         assert!(
             witnesses
                 .windows(2)
@@ -227,7 +225,6 @@ mod tests {
             N::CallExpr,
             N::IfExpr,
             N::ForExpr,
-            N::ClosureExpr,
             N::Block,
         ];
         let expected: Vec<_> = [

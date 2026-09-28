@@ -1,5 +1,0 @@
-fn f() {
-    let g = fn h(x) {
-        x
-    }
-}

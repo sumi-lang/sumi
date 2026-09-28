@@ -5,10 +5,7 @@ use sumi_syntax::{ParserInput, SigIdx, SyntaxKind};
 fn named_declaration_heads_are_anchors_independent_of_expression_context() {
     for (source, expected) in [
         ("fn() {} fn named() {}", vec!["named"]),
-        (
-            "fn outer() = fn() = fn nested() {}",
-            vec!["outer", "nested"],
-        ),
+        ("fn outer() = 0 + fn nested() {}", vec!["outer", "nested"]),
         ("fn _() {}", vec!["_"]),
         ("fn\nnamed() {}", vec!["named"]),
         ("fn outer() { fn inner() {} }", vec!["outer"]),

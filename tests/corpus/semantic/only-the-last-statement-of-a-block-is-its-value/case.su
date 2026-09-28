@@ -6,7 +6,6 @@ fn f() -> int {
     {
         k()
     }
-    fn(x) = x
     a + b
     42
 }

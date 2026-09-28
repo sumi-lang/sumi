@@ -38,21 +38,12 @@ fn chain(
         .boxed()
 }
 
-fn param_list(inferred: bool) -> BoxedStrategy<String> {
-    (
-        prop::collection::vec((name(), any::<bool>()), 0..3),
-        any::<bool>(),
-    )
+fn param_list() -> BoxedStrategy<String> {
+    (prop::collection::vec(name(), 0..3), any::<bool>())
         .prop_map(move |(params, trailing)| {
             let params: Vec<String> = params
                 .into_iter()
-                .map(|(param, typed)| {
-                    if typed || !inferred {
-                        format!("{param}: int")
-                    } else {
-                        param
-                    }
-                })
+                .map(|param| format!("{param}: int"))
                 .collect();
             let comma = if trailing && !params.is_empty() {
                 ","
@@ -78,16 +69,6 @@ fn signature_tail(
             (format!("{returns}{body}"), bare)
         })
         .boxed()
-}
-
-/// A closure takes a bare expression body only here, since it absorbs every following operator.
-fn tail_expr(expr: BoxedStrategy<String>) -> BoxedStrategy<String> {
-    let closure =
-        (param_list(true), any::<bool>(), expr.clone()).prop_map(|(params, returns, body)| {
-            let returns = if returns { " -> int" } else { "" };
-            format!("fn{params}{returns} = {body}")
-        });
-    prop_oneof![5 => expr, 1 => closure].boxed()
 }
 
 fn expr() -> BoxedStrategy<String> {
@@ -119,10 +100,6 @@ fn expr() -> BoxedStrategy<String> {
             2 => (name(), expr.clone(), expr.clone(), block(expr.clone()))
                 .prop_map(|(name, start, end, body)| format!("for {name} in {start}..{end} {body}")),
             1 => block(expr.clone()),
-            1 => (param_list(true), signature_tail(block(expr.clone()), expr.clone()))
-                .prop_map(|(params, (tail, bare))| {
-                    if bare { format!("(fn{params}{tail})") } else { format!("fn{params}{tail}") }
-                }),
         ]
         .boxed();
         let unary = prop_oneof![
@@ -143,14 +120,14 @@ fn expr() -> BoxedStrategy<String> {
 fn statement(expr: BoxedStrategy<String>) -> BoxedStrategy<(String, bool)> {
     prop_oneof![
         3 => expr.clone().prop_map(|e| (e, true)),
-        2 => (any::<bool>(), name(), any::<bool>(), tail_expr(expr.clone())).prop_map(|(mutable, name, typed, init)| {
+        2 => (any::<bool>(), name(), any::<bool>(), expr.clone()).prop_map(|(mutable, name, typed, init)| {
             let mutable = if mutable { "mut " } else { "" };
             let ty = if typed { ": int" } else { "" };
             (format!("let {mutable}{name}{ty} = {init}"), false)
         }),
         2 => (expr.clone(), expr.clone()).prop_map(|(target, value)| (format!("{target} = {value}"), false)),
-        1 => tail_expr(expr.clone()).prop_map(|e| (format!("_ = {e}"), false)),
-        1 => prop::option::of(tail_expr(expr)).prop_map(|value| match value {
+        1 => expr.clone().prop_map(|e| (format!("_ = {e}"), false)),
+        1 => prop::option::of(expr).prop_map(|value| match value {
             Some(value) => (format!("return {value}"), false),
             None => ("return".to_owned(), false),
         }),
@@ -180,11 +157,7 @@ fn block(expr: BoxedStrategy<String>) -> BoxedStrategy<String> {
 }
 
 pub fn program() -> BoxedStrategy<String> {
-    let item = (
-        name(),
-        param_list(false),
-        signature_tail(block(expr()), tail_expr(expr())),
-    )
+    let item = (name(), param_list(), signature_tail(block(expr()), expr()))
         .prop_map(|(name, params, (tail, _))| format!("fn {name}{params}{tail}"));
     (any::<bool>(), prop::collection::vec(item, 0..3))
         .prop_map(|(comment, items)| {

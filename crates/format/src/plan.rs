@@ -274,7 +274,7 @@ impl Planner<'_> {
         let els = self.elements(node);
         match kind {
             NodeKind::SourceFile => unreachable!("the root is laid out by source_file"),
-            NodeKind::FnItem | NodeKind::ClosureExpr => self.function(node, &els, level),
+            NodeKind::FnItem => self.function(node, &els, level),
             NodeKind::ParamList | NodeKind::ArgList => self.list(node, &els, level),
             NodeKind::Block => self.block(&els, level),
             NodeKind::LetStmt | NodeKind::AssignStmt | NodeKind::DiscardStmt => {
@@ -418,15 +418,10 @@ impl Planner<'_> {
     }
 
     fn opens_block(&self, node: NodeIdx) -> bool {
-        match self.tree.kind(node) {
-            NodeKind::Block | NodeKind::IfExpr | NodeKind::ForExpr => true,
-            NodeKind::ClosureExpr => self
-                .tree
-                .children(node)
-                .last()
-                .is_some_and(|last| self.tree.kind(last) == NodeKind::Block),
-            _ => false,
-        }
+        matches!(
+            self.tree.kind(node),
+            NodeKind::Block | NodeKind::IfExpr | NodeKind::ForExpr
+        )
     }
 
     fn block(&mut self, els: &[El], level: u32) {

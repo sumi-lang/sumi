@@ -2,22 +2,22 @@ file: rejected
 frontend errors: 0 (see frontend.snap)
 semantic errors: 1
 
-fn damaged@0..56 (int ∈ ∅) -> int ∈ ∅
+fn damaged@0..53 (int ∈ ∅) -> int ∈ ∅
   param x@11..12: int
   result: copy : int @22..25
     value:
-      let f@36..37: ? @32..48
-        initializer: hole : ? @40..48
-      tail: int 2 : int @53..54
+      let f@36..37: ? @32..45
+        initializer: hole : ? @40..45
+      tail: int 2 : int @50..51
 
-fn whole@57..84 (int ∈ ∅) -> int ∈ ∅
-  param x@66..67: int
-  result: copy : int @77..80
-    value: int 3 : int @83..84
+fn whole@54..81 (int ∈ ∅) -> int ∈ ∅
+  param x@63..64: int
+  result: copy : int @74..77
+    value: int 3 : int @80..81
 
 == semantic diagnostics ==
 error[semantic/unsupported]: construct is not supported by scalar checking
-  primary @40..48
+  primary @40..45
 warning[semantic/unused-name]: parameter `x` is never read
-  primary @66..67
-  fix @66 -> "_": prefix the name with `_`
+  primary @63..64
+  fix @63 -> "_": prefix the name with `_`
