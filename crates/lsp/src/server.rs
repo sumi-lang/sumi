@@ -7,7 +7,7 @@ use lsp_types::notification::Notification as _;
 use lsp_types::request::Request as _;
 use lsp_types::{
     CodeAction, CodeActionKind, CodeActionOptions, CodeActionOrCommand, CodeActionParams,
-    CodeActionProviderCapability, DiagnosticRelatedInformation, DiagnosticSeverity,
+    CodeActionProviderCapability, DiagnosticRelatedInformation, DiagnosticSeverity, DiagnosticTag,
     DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
     DocumentFormattingParams, DocumentSymbol, DocumentSymbolParams, DocumentSymbolResponse,
     InitializeParams, InitializeResult, Location, OneOf, OptionalVersionedTextDocumentIdentifier,
@@ -17,7 +17,7 @@ use lsp_types::{
 };
 use serde_json::Value;
 use sumi_frontend::{Diagnostic, Fix, Severity, parse_source};
-use sumi_hir::analyze;
+use sumi_hir::{Dead, DeadCause, analyze};
 
 use crate::position::{Encoding, Positions};
 
@@ -40,6 +40,7 @@ struct ClientFeatures {
     hierarchical_symbols: bool,
     preferred_actions: bool,
     related_information: bool,
+    unnecessary_tags: bool,
 }
 
 struct LspFix {
@@ -155,6 +156,11 @@ fn client_features(params: &InitializeParams) -> ClientFeatures {
             .as_ref()
             .and_then(|capabilities| capabilities.publish_diagnostics.as_ref())
             .is_some_and(|capabilities| capabilities.related_information == Some(true)),
+        unnecessary_tags: text_document
+            .as_ref()
+            .and_then(|capabilities| capabilities.publish_diagnostics.as_ref())
+            .and_then(|capabilities| capabilities.tag_support.as_ref())
+            .is_some_and(|tags| tags.value_set.contains(&DiagnosticTag::UNNECESSARY)),
     }
 }
 
@@ -506,6 +512,7 @@ fn worker(
                     text,
                     encoding,
                     features.related_information,
+                    features.unnecessary_tags,
                 ),
                 Job::Format {
                     id,
@@ -554,6 +561,7 @@ fn analyze_document(
     text: String,
     encoding: Encoding,
     related_information: bool,
+    unnecessary_tags: bool,
 ) -> Outcome {
     let Ok(parsed) = parse_source(text.clone().into_boxed_str()) else {
         return Outcome::Analyzed {
@@ -571,12 +579,29 @@ fn analyze_document(
         .diagnostics()
         .iter()
         .map(|diagnostic| {
-            let converted = diagnostic_to_lsp(&uri, diagnostic, &positions, related_information);
+            let mut converted =
+                diagnostic_to_lsp(&uri, diagnostic, &positions, related_information);
+            // Unreachable code's warning spans exactly the dead statements, so it carries the tag.
+            let after_stop = Dead {
+                range: diagnostic.primary,
+                cause: DeadCause::AfterStop,
+            };
+            if unnecessary_tags && analysis.dead().contains(&after_stop) {
+                converted.tags = Some(vec![DiagnosticTag::UNNECESSARY]);
+            }
             if let Some(fix) = &diagnostic.fix {
                 fixes.push(fix_to_lsp(converted.clone(), fix, &positions));
             }
             converted
         })
+        // A constant condition's warning spans the condition, so its dead code gets its own hint.
+        .chain(
+            analysis
+                .dead()
+                .iter()
+                .filter(|dead| unnecessary_tags && dead.cause != DeadCause::AfterStop)
+                .map(|dead| dead_to_lsp(dead, &positions)),
+        )
         .collect();
     Outcome::Analyzed {
         uri,
@@ -617,6 +642,17 @@ fn diagnostic_to_lsp(
         }),
         tags: None,
         data: None,
+    }
+}
+
+fn dead_to_lsp(dead: &Dead, positions: &Positions<'_>) -> lsp_types::Diagnostic {
+    lsp_types::Diagnostic {
+        range: positions.range(dead.range),
+        severity: Some(DiagnosticSeverity::HINT),
+        source: Some("sumi".into()),
+        message: dead.cause.to_string(),
+        tags: Some(vec![DiagnosticTag::UNNECESSARY]),
+        ..lsp_types::Diagnostic::default()
     }
 }
 
@@ -912,6 +948,7 @@ mod tests {
             "fn duplicate() = 01\nfn duplicate() = missing\n".into(),
             Encoding::Utf16,
             true,
+            false,
         )
         else {
             unreachable!()
@@ -936,6 +973,82 @@ mod tests {
     }
 
     #[test]
+    fn dead_code_is_tagged_unnecessary_over_exactly_its_range() {
+        let text = "fn branch() -> int = if false { 1 } else { 2 }
+fn right(b: bool) -> bool = false && b
+fn body() -> int {
+    let mut total = 0
+    for i in 5..5 {
+        total = total + i
+    }
+    total
+}
+fn after() -> int {
+    return 1
+    let x = 2
+    x
+}
+fn main() -> bool = right(true)";
+        let analyzed = |unnecessary_tags| {
+            let uri: Uri = "file:///dead.su".parse().unwrap();
+            let Outcome::Analyzed { diagnostics, .. } = analyze_document(
+                uri,
+                1,
+                1,
+                text.into(),
+                Encoding::Utf16,
+                false,
+                unnecessary_tags,
+            ) else {
+                unreachable!()
+            };
+            diagnostics
+        };
+        let range = |start: (u32, u32), end: (u32, u32)| {
+            Range::new(Position::new(start.0, start.1), Position::new(end.0, end.1))
+        };
+        let tagged: Vec<_> = analyzed(true)
+            .into_iter()
+            .filter(|diagnostic| diagnostic.tags == Some(vec![DiagnosticTag::UNNECESSARY]))
+            .map(|diagnostic| {
+                (
+                    diagnostic.range,
+                    diagnostic.severity.unwrap(),
+                    diagnostic.message,
+                )
+            })
+            .collect();
+        assert_eq!(
+            tagged,
+            [
+                (
+                    range((11, 4), (12, 5)),
+                    DiagnosticSeverity::WARNING,
+                    "unreachable code".into()
+                ),
+                (
+                    range((0, 30), (0, 35)),
+                    DiagnosticSeverity::HINT,
+                    "this branch never runs".into()
+                ),
+                (
+                    range((1, 37), (1, 38)),
+                    DiagnosticSeverity::HINT,
+                    "the right side never runs".into()
+                ),
+                (
+                    range((4, 18), (6, 5)),
+                    DiagnosticSeverity::HINT,
+                    "the loop body never runs".into()
+                ),
+            ]
+        );
+        let untagged = analyzed(false);
+        assert!(untagged.iter().all(|diagnostic| diagnostic.tags.is_none()
+            && diagnostic.severity != Some(DiagnosticSeverity::HINT)));
+    }
+
+    #[test]
     fn formatting_fixes_and_symbols_are_concrete_and_versioned() {
         let edits = format_document("fn  main()=1", Encoding::Utf16).unwrap();
         assert!(!edits.is_empty());
@@ -954,6 +1067,7 @@ mod tests {
             "fn main() = 01".into(),
             Encoding::Utf16,
             true,
+            false,
         ) else {
             unreachable!()
         };
@@ -1177,6 +1291,7 @@ mod tests {
         assert!(!absent.code_actions);
         assert!(!absent.hierarchical_symbols);
         assert!(!absent.related_information);
+        assert!(!absent.unnecessary_tags);
         assert!(
             capabilities(Encoding::Utf16, absent)
                 .code_action_provider
@@ -1202,6 +1317,7 @@ mod tests {
         assert!(!explicit_false.code_actions);
         assert!(!explicit_false.hierarchical_symbols);
         assert!(!explicit_false.related_information);
+        assert!(!explicit_false.unnecessary_tags);
 
         let enabled: InitializeParams = serde_json::from_value(json!({
             "capabilities": {
@@ -1214,7 +1330,10 @@ mod tests {
                         "isPreferredSupport": true
                     },
                     "documentSymbol": { "hierarchicalDocumentSymbolSupport": true },
-                    "publishDiagnostics": { "relatedInformation": true }
+                    "publishDiagnostics": {
+                        "relatedInformation": true,
+                        "tagSupport": { "valueSet": [1] }
+                    }
                 }
             }
         }))
@@ -1224,6 +1343,7 @@ mod tests {
         assert!(enabled.hierarchical_symbols);
         assert!(enabled.preferred_actions);
         assert!(enabled.related_information);
+        assert!(enabled.unnecessary_tags);
 
         let uri: Uri = "file:///stale.su".parse().unwrap();
         assert!(matches!(
@@ -1236,6 +1356,7 @@ mod tests {
             1,
             "fn duplicate() = 1\nfn duplicate() = 2".into(),
             Encoding::Utf16,
+            false,
             false,
         ) else {
             unreachable!()
@@ -1262,6 +1383,7 @@ mod tests {
                 hierarchical_symbols: false,
                 preferred_actions: false,
                 related_information: false,
+                unnecessary_tags: false,
             },
         )
         .unwrap();
@@ -1339,6 +1461,7 @@ mod tests {
                 "fn main() = 01".into(),
                 Encoding::Utf16,
                 true,
+                false,
             ),
             &documents,
             &mut snapshots,

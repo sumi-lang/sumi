@@ -1,7 +1,8 @@
 use sumi_frontend::{Diagnostic, DiagnosticCode, parse_source};
 use sumi_hir::codes::*;
 use sumi_hir::{
-    Analysis, ArithOp, BinaryOp, CmpOp, Function, FunctionId, Int, NodeId, Op, Ty, analyze,
+    Analysis, ArithOp, BinaryOp, CmpOp, DeadCause, Function, FunctionId, Int, NodeId, Op, Ty,
+    analyze,
 };
 use sumi_test::{check, corpus};
 use sumi_text::TextRange;
@@ -597,6 +598,50 @@ fn large_definition_chains_and_cycles_are_stack_safe() {
             }
         }
     }
+}
+
+#[test]
+fn dead_code_carries_its_range_and_cause() {
+    let a = clean(
+        "fn branch() -> int = if false { 1 } else { 2 }
+fn right(b: bool) -> bool = false && b
+fn body() -> int {
+    let mut total = 0
+    for i in 5..5 {
+        total = total + i
+    }
+    total
+}
+fn after() -> int {
+    return 1
+    let x = 2
+    x
+}
+fn main() -> bool = right(true)",
+    );
+    let dead: Vec<_> = a
+        .dead()
+        .iter()
+        .map(|dead| (text(&a, dead.range), dead.cause))
+        .collect();
+    assert_eq!(
+        dead,
+        [
+            ("{ 1 }", DeadCause::Branch),
+            ("b", DeadCause::RightOperand),
+            ("{\n        total = total + i\n    }", DeadCause::LoopBody),
+            ("let x = 2\n    x", DeadCause::AfterStop),
+        ]
+    );
+}
+
+#[test]
+fn a_file_with_an_error_reports_no_dead_code() {
+    let a = analyzed(
+        "fn f() -> int {\n    return 1\n    true + 1\n}\nfn g() -> int = if false { 1 } else { 2 }",
+    );
+    assert!(!a.is_valid());
+    assert!(a.dead().is_empty());
 }
 
 proptest::proptest! {
