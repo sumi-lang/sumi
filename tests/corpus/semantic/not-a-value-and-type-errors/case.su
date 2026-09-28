@@ -1,4 +1,4 @@
-fn unsupported() {
+fn mutable_use() {
     let mut x = 1
     _ = x
 }

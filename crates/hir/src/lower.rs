@@ -1,5 +1,5 @@
-//! Lowering of one file to the graph: names, structure, and holes. The walk rejects nothing on type
-//! grounds; it fails only on names, syntax, and unsupported constructs, and leaves each as a hole.
+//! Lowering of one file to the graph: names, structure, and holes. Name and syntax failures become
+//! holes rather than graph nodes.
 
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
@@ -1436,16 +1436,6 @@ impl<'a, 's> Builder<'a, 's> {
         }
         valid.then_some(())
     }
-    fn unsupported(&mut self, node: NodeIdx) {
-        self.source.error(
-            node,
-            codes::UNSUPPORTED,
-            "construct is not supported by scalar checking",
-            None,
-        );
-        self.hole(node);
-        self.failed = true;
-    }
     fn enter(&mut self, node: NodeIdx, work: &mut Vec<Work>) {
         use ast::{Expr, Stmt};
 
@@ -1462,7 +1452,7 @@ impl<'a, 's> Builder<'a, 's> {
                     self.hole(node);
                     self.failed = true;
                 }
-                _ => self.unsupported(node),
+                _ => unreachable!("a statement without syntax errors has a clean view"),
             }
             return;
         };
@@ -1852,7 +1842,14 @@ impl<'a, 's> Builder<'a, 's> {
                     }
                     None => {
                         if self.names.contains_key(name) {
-                            self.unsupported(node);
+                            self.source.error(
+                                node,
+                                codes::NOT_A_VALUE,
+                                format!("function `{name}` is not a value"),
+                                None,
+                            );
+                            self.hole(node);
+                            self.failed = true;
                         } else {
                             self.source.error(
                                 node,

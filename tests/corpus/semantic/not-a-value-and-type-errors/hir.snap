@@ -2,7 +2,7 @@ file: rejected
 frontend errors: 0 (see frontend.snap)
 semantic errors: 10
 
-fn unsupported@0..48 () -> unit ∈ unit
+fn mutable_use@0..48 () -> unit ∈ unit
   result: copy : unit @0..48
     value:
       let x@31..32: int @23..36
@@ -69,7 +69,7 @@ fn assignment@376..419 () -> unit ∈ unit
       tail: unit : unit @392..419
 
 == semantic diagnostics ==
-error[semantic/unsupported]: construct is not supported by scalar checking
+error[semantic/not-a-value]: function `mismatch` is not a value
   primary @83..91
 error[semantic/type-mismatch]: expected bool, found int
   primary @118..119

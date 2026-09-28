@@ -40,8 +40,8 @@ sumi_frontend::codes! {
     /// A cycle of calls in which no parameter strictly moves toward a bound.
     UNBOUNDED_RECURSION: Error = "unbounded-recursion";
 
-    /// A construct the checker does not handle; the function is left unchecked.
-    UNSUPPORTED: Error = "unsupported";
+    /// A function name used where a value is required.
+    NOT_A_VALUE: Error = "not-a-value";
 
     /// A parameter or local never read whose name does not begin with `_`, in a function that
     /// lowers whole.

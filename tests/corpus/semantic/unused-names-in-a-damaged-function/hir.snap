@@ -16,7 +16,7 @@ fn whole@54..81 (int ∈ ∅) -> int ∈ ∅
     value: int 3 : int @80..81
 
 == semantic diagnostics ==
-error[semantic/unsupported]: construct is not supported by scalar checking
+error[semantic/not-a-value]: function `whole` is not a value
   primary @40..45
 warning[semantic/unused-name]: parameter `x` is never read
   primary @63..64
