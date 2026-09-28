@@ -1267,27 +1267,12 @@ pub fn run(program: Program<'_>) -> Runs {
 /// Code a reachability warning calls dead computes nothing, whatever the arguments: those warnings
 /// rest on facts that hold beyond the ranges the file's own calls prove.
 fn dead_code_stays_dead(program: Program<'_>) {
-    use sumi_hir::{Machine, Ty, Value, codes};
+    use sumi_hir::{Machine, Ty, Value};
 
     const STEPS: u64 = 1 << 14;
     const TUPLES: usize = 16;
     let analysis = program.analysis();
-    let dead: Vec<TextRange> = analysis
-        .diagnostics()
-        .iter()
-        .flat_map(|diagnostic| {
-            let labels = diagnostic
-                .labels
-                .iter()
-                .filter(|label| label.message.ends_with("never runs"))
-                .map(|label| label.range);
-            match diagnostic.code {
-                code if code == codes::UNREACHABLE_CODE => vec![diagnostic.primary],
-                code if code == codes::CONSTANT_CONDITION => labels.collect(),
-                _ => Vec::new(),
-            }
-        })
-        .collect();
+    let dead = analysis.dead();
     if dead.is_empty() {
         return;
     }
@@ -1324,12 +1309,12 @@ fn dead_code_stays_dead(program: Program<'_>) {
                 }
                 if let Some((node, _)) = machine.latest() {
                     let origin = graph.node(node).origin;
+                    let within = dead.iter().find(|dead| {
+                        dead.range.start() <= origin.start() && origin.end() <= dead.range.end()
+                    });
                     assert!(
-                        !dead
-                            .iter()
-                            .any(|range| range.start() <= origin.start()
-                                && origin.end() <= range.end()),
-                        "f{}({args:?}) computed {node:?} in code a warning calls dead",
+                        within.is_none(),
+                        "f{}({args:?}) computed {node:?} in code a warning calls dead: {within:?}",
                         id.index()
                     );
                 }
