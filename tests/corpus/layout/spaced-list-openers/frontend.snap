@@ -1,42 +1,35 @@
 == tree ==
-SourceFile 0..88
+SourceFile 0..72
   FnItem 0..22
     Name 3..8 "value"
     ParamList 9..11 "()"
     TypeRef 15..18 "int"
     LiteralExpr 21..22 "1"
-  FnItem 23..87
+  FnItem 23..71
     Name 26..32 "caller"
     ParamList 32..34 "()"
     TypeRef 38..41 "int"
-    Block 42..87
+    Block 42..71
       CallExpr 48..56
         NameRef 48..53 "value"
         ArgList 54..56 "()"
-      CallExpr 61..72
-        ParenExpr 61..68
-          NameRef 62..67 "value"
-        ArgList 69..72 "( )"
-      CallExpr 77..85
-        NameRef 77..82 "value"
-        ArgList 83..85 "()"
+      CallExpr 61..69
+        NameRef 61..66 "value"
+        ArgList 67..69 "()"
 
 == evidence ==
 SpacedListOpener at 9
 SpacedListOpener at 54
-SpacedListOpener at 69
-SpacedListOpener at 83
+SpacedListOpener at 67
 
 == diagnostics ==
-error[syntax/spaced-list-opener] 1:10..1:11 "(": opening `(` must be adjacent to the function name or callee
-error[syntax/spaced-list-opener] 3:11..3:12 "(": opening `(` must be adjacent to the function name or callee
-error[syntax/spaced-list-opener] 4:13..4:14 "(": opening `(` must be adjacent to the function name or callee
-error[syntax/spaced-list-opener] 5:11..5:12 "(": opening `(` must be adjacent to the function name or callee
+error[syntax/spaced-list-opener] 1:10..1:11 "(": opening `(` must be adjacent to the function name
+error[syntax/spaced-list-opener] 3:11..3:12 "(": opening `(` must be adjacent to the function name
+error[syntax/spaced-list-opener] 4:11..4:12 "(": opening `(` must be adjacent to the function name
 
 == formatted ==
 fn value() -> int = 1
 fn caller() -> int {
     value()
-    (value)()
     value()
 }

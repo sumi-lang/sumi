@@ -492,6 +492,15 @@ impl<'a> Marker<'_, 'a> {
         completed.node
     }
 
+    /// `completed` must be a direct child.
+    pub(crate) fn completed_kind(&self, completed: &CompletedMarker) -> NodeKind {
+        assert_eq!(
+            completed.parent, self.id,
+            "a completed node belongs to its containing node"
+        );
+        self.builder.nodes[completed.node.to_usize()].kind
+    }
+
     /// `node` must be the child this marker wrapped with `precede`.
     pub(crate) fn wrapped_field(&mut self, node: NodeIdx, field: u8) {
         let child = &self.builder.nodes[node.to_usize()];

@@ -1,4 +1,4 @@
-fn chained() { g()(a, b,) }
+fn inline() { g(a, b,) }
 fn multiline() {
   g(
     a,

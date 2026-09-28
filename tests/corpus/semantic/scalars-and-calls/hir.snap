@@ -2,56 +2,56 @@ file: accepted
 frontend errors: 0 (see frontend.snap)
 semantic errors: 0
 
-fn answer@0..32 () -> int ∈ [42, 42]
+fn answer@0..30 () -> int ∈ [42, 42]
   result: copy : int @15..18
-    value: call twice@33..89 : int @21..32
-      arg[0]: int 21 : int @29..31
+    value: call twice@31..87 : int @21..30
+      arg[0]: int 21 : int @27..29
 
-fn twice@33..89 (int ∈ [21, 21]) -> int ∈ [42, 42]
-  param x@42..43: int
-  result: copy : int @53..56
+fn twice@31..87 (int ∈ [21, 21]) -> int ∈ [42, 42]
+  param x@40..41: int
+  result: copy : int @51..54
     value:
-      let y@67..68: int @63..81
-        initializer: eager * : int @76..81
-          lhs: read x@42..43 : int
-          rhs: int 2 : int @80..81
-      tail: read y@67..68 : int
+      let y@65..66: int @61..79
+        initializer: eager * : int @74..79
+          lhs: read x@40..41 : int
+          rhs: int 2 : int @78..79
+      tail: read y@65..66 : int
 
-fn cafe@90..119 (bool ∈ ∅) -> bool ∈ ∅
-  param e@98..99: bool
-  result: copy : bool @110..114
-    value: not : bool @117..119
-      operand: read e@98..99 : bool
+fn cafe@88..117 (bool ∈ ∅) -> bool ∈ ∅
+  param e@96..97: bool
+  result: copy : bool @108..112
+    value: not : bool @115..117
+      operand: read e@96..97 : bool
 
-fn ignore@120..173 (unit ∈ ∅) -> unit ∈ ∅
-  param x@130..131: unit
-  result: copy : unit @142..146
+fn ignore@118..171 (unit ∈ ∅) -> unit ∈ ∅
+  param x@128..129: unit
+  result: copy : unit @140..144
     value:
-      discard: call answer@0..32 : int @157..165
-      tail: read x@130..131 : unit
+      discard: call answer@0..30 : int @155..163
+      tail: read x@128..129 : unit
 
-fn sub@174..211 (int ∈ [8, 8], int ∈ [3, 3]) -> int ∈ [5, 5]
-  param a@181..182: int
-  param b@189..190: int
-  result: copy : int @200..203
-    value: eager - : int @206..211
-      lhs: read a@181..182 : int
-      rhs: read b@189..190 : int
+fn sub@172..209 (int ∈ [8, 8], int ∈ [3, 3]) -> int ∈ [5, 5]
+  param a@179..180: int
+  param b@187..188: int
+  result: copy : int @198..201
+    value: eager - : int @204..209
+      lhs: read a@179..180 : int
+      rhs: read b@187..188 : int
 
-fn ordered@212..255 () -> int ∈ [-1, -1]
-  result: copy : int @228..231
-    value: eager - : int @234..255
-      lhs: eager - : int @234..251
-        lhs: call sub@174..211 : int @234..243
-          arg[0]: int 8 : int @238..239
-          arg[1]: int 3 : int @241..242
-        rhs: eager * : int @246..251
-          lhs: int 2 : int @246..247
-          rhs: int 1 : int @250..251
-      rhs: int 4 : int @254..255
+fn ordered@210..253 () -> int ∈ [-1, -1]
+  result: copy : int @226..229
+    value: eager - : int @232..253
+      lhs: eager - : int @232..249
+        lhs: call sub@172..209 : int @232..241
+          arg[0]: int 8 : int @236..237
+          arg[1]: int 3 : int @239..240
+        rhs: eager * : int @244..249
+          lhs: int 2 : int @244..245
+          rhs: int 1 : int @248..249
+      rhs: int 4 : int @252..253
 
 == semantic diagnostics ==
 warning[semantic/unused-function]: function `cafe` is never called
-  primary @93..97
+  primary @91..95
 warning[semantic/unused-function]: function `ignore` is never called
-  primary @123..129
+  primary @121..127

@@ -798,7 +798,7 @@ fn expr_bp(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) -> Option<Com
         }
         // `newline`, not `boundary`: parentheses suspend boundaries, but a `(` on a new line is
         // still never a call.
-        if p.at(T::LParen) && !p.newline() {
+        if p.at(T::LParen) && !p.newline() && p.completed_kind(&lhs) == N::NameRef {
             if !p.joint_before() {
                 p.violation(ParseViolationKind::SpacedListOpener, 1);
             }
@@ -857,9 +857,7 @@ fn block_starts_head(p: &Marker<'_, '_>, follow: ExprFollow) -> bool {
         let next = close + 1;
         p.nth(next) == Some(T::LBrace)
             || (follow == ExprFollow::Range && p.nth(next) == Some(T::Dot))
-            || (!p.nth_boundary(next)
-                && ((!p.nth_newline(next) && p.nth(next) == Some(T::LParen))
-                    || binary_op(p, next).is_some()))
+            || (!p.nth_boundary(next) && binary_op(p, next).is_some())
     })
 }
 

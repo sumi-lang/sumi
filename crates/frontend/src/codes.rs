@@ -55,7 +55,7 @@ crate::codes! {
     /// A prefix operator separated from its operand, as in `- x`.
     SPACED_PREFIX_OPERATOR: Error = "spaced-prefix-operator";
 
-    /// A space between a function name or callee and its `(`.
+    /// A space between a function name and its `(`.
     SPACED_LIST_OPENER: Error = "spaced-list-opener";
 
     /// A function item's name on the line after its `fn`.

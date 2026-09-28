@@ -1,6 +1,6 @@
 file: rejected
 frontend errors: 0 (see frontend.snap)
-semantic errors: 13
+semantic errors: 10
 
 fn unsupported@0..48 () -> unit ∈ unit
   result: copy : unit @0..48
@@ -52,32 +52,21 @@ fn unit_sum@289..318 () -> int ∈ ∅
       lhs: unit : ? @312..314
       rhs: int 1 : int @317..318
 
-fn computed_call@319..449 () -> unit ∈ unit
-  result: copy : unit @319..449
-    value:
-      discard: hole : ? @348..447
-        part[0]: hole : ? @358..422
-        part[1]: hole : ? @429..436
-        part[2]: eager + : int @438..446
-          lhs: int 1 : int @438..439
-          rhs: bool true : ? @442..446
-      tail: unit : unit @338..449
+fn condition@319..368 () -> int ∈ ∅
+  result: copy : int @337..340
+    value: if : ? @343..368
+      condition: int 1 : ? @346..347
+      then: int 2 : int @350..351
+      else: bool false : bool @361..366
 
-fn condition@450..499 () -> int ∈ ∅
-  result: copy : int @468..471
-    value: if : ? @474..499
-      condition: int 1 : ? @477..478
-      then: int 2 : int @481..482
-      else: bool false : bool @492..497
-
-fn assignment@500..543 () -> unit ∈ unit
-  result: copy : unit @500..543
+fn assignment@369..412 () -> unit ∈ unit
+  result: copy : unit @369..412
     value:
-      let x@526..527: int @522..531
-        initializer: int 1 : int @530..531
-      discard: hole : ? @536..541
-        part[0]: int 2 : int @540..541
-      tail: unit : unit @516..543
+      let x@395..396: int @391..400
+        initializer: int 1 : int @399..400
+      discard: hole : ? @405..410
+        part[0]: int 2 : int @409..410
+      tail: unit : unit @385..412
 
 == semantic diagnostics ==
 error[semantic/unsupported]: construct is not supported by scalar checking
@@ -101,18 +90,12 @@ error[semantic/type-mismatch]: unit values cannot be compared
   primary @280..288
 error[semantic/type-mismatch]: expected int, found unit
   primary @312..314
-error[semantic/unsupported]: construct is not supported by scalar checking
-  primary @358..422
-error[semantic/unknown-name]: unknown name `missing`
-  primary @429..436
-error[semantic/type-mismatch]: expected int, found bool
-  primary @442..446
 error[semantic/type-mismatch]: if branches are int and bool
-  primary @474..499
-  secondary @481..482: int here
-  secondary @492..497: bool here
+  primary @343..368
+  secondary @350..351: int here
+  secondary @361..366: bool here
 error[semantic/type-mismatch]: expected bool, found int
-  primary @477..478
+  primary @346..347
 error[semantic/immutable-assignment]: cannot assign to immutable local `x`
-  primary @536..537
-  secondary @526..527: declared here
+  primary @405..406
+  secondary @395..396: declared here

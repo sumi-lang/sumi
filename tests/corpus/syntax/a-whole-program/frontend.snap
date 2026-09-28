@@ -1,5 +1,5 @@
 == tree ==
-SourceFile 0..1151
+SourceFile 0..1145
   FnItem 126..451
     Name 129..133 "main"
     ParamList 133..135 "()"
@@ -171,7 +171,7 @@ SourceFile 0..1151
         NameRef 886..891 "items"
       DiscardStmt 896..905
         NameRef 900..905 "visit"
-  FnItem 909..956
+  FnItem 909..950
     Name 912..919 "compose"
     ParamList 919..935
       Param 920..926
@@ -181,66 +181,62 @@ SourceFile 0..1151
         Name 928..929 "g"
         TypeRef 931..934 "int"
     TypeRef 939..942 "int"
-    CallExpr 945..956
-      CallExpr 945..953
-        NameRef 945..950 "adder"
-        ArgList 950..953
-          NameRef 951..952 "f"
-      ArgList 953..956
-        NameRef 954..955 "g"
-  FnItem 958..1002
-    Name 961..966 "adder"
-    ParamList 966..974
-      Param 967..973
-        Name 967..968 "x"
-        TypeRef 970..973 "int"
-    ClosureExpr 977..1002
-      ParamList 979..987
-        Param 980..986
-          Name 980..981 "y"
-          TypeRef 983..986 "int"
-      TypeRef 991..994 "int"
-      BinaryExpr 997..1002
-        NameRef 997..998 "x"
-        NameRef 1001..1002 "y"
-  FnItem 1004..1034
-    Name 1007..1012 "thunk"
-    ParamList 1012..1014 "()"
-    ClosureExpr 1017..1034
-      ParamList 1019..1021 "()"
-      CallExpr 1024..1034
-        NameRef 1024..1028 "work"
-        ArgList 1028..1034
-          LiteralExpr 1029..1030 "1"
-          LiteralExpr 1032..1033 "2"
-  FnItem 1036..1095
-    Name 1039..1043 "work"
-    ParamList 1043..1059
-      Param 1044..1050
-        Name 1044..1045 "a"
-        TypeRef 1047..1050 "int"
-      Param 1052..1058
-        Name 1052..1053 "b"
-        TypeRef 1055..1058 "int"
-    TypeRef 1063..1067 "bool"
-    BinaryExpr 1070..1095
-      BinaryExpr 1070..1086
-        BinaryExpr 1070..1076
-          NameRef 1070..1071 "a"
-          NameRef 1075..1076 "b"
-        BinaryExpr 1080..1086
-          NameRef 1080..1081 "a"
-          NameRef 1085..1086 "b"
-      BinaryExpr 1090..1095
-        NameRef 1090..1091 "a"
-        NameRef 1094..1095 "b"
-  FnItem 1097..1110
-    Name 1100..1105 "empty"
-    ParamList 1105..1107 "()"
-    Block 1108..1110 "{}"
-  FnItem 1112..1150
-    Name 1115..1125 "unit_value"
-    ParamList 1125..1127 "()"
-    TypeRef 1131..1135 "unit"
-    Block 1136..1150
-      ReturnStmt 1142..1148 "return"
+    BinaryExpr 945..950
+      NameRef 945..946 "f"
+      NameRef 949..950 "g"
+  FnItem 952..996
+    Name 955..960 "adder"
+    ParamList 960..968
+      Param 961..967
+        Name 961..962 "x"
+        TypeRef 964..967 "int"
+    ClosureExpr 971..996
+      ParamList 973..981
+        Param 974..980
+          Name 974..975 "y"
+          TypeRef 977..980 "int"
+      TypeRef 985..988 "int"
+      BinaryExpr 991..996
+        NameRef 991..992 "x"
+        NameRef 995..996 "y"
+  FnItem 998..1028
+    Name 1001..1006 "thunk"
+    ParamList 1006..1008 "()"
+    ClosureExpr 1011..1028
+      ParamList 1013..1015 "()"
+      CallExpr 1018..1028
+        NameRef 1018..1022 "work"
+        ArgList 1022..1028
+          LiteralExpr 1023..1024 "1"
+          LiteralExpr 1026..1027 "2"
+  FnItem 1030..1089
+    Name 1033..1037 "work"
+    ParamList 1037..1053
+      Param 1038..1044
+        Name 1038..1039 "a"
+        TypeRef 1041..1044 "int"
+      Param 1046..1052
+        Name 1046..1047 "b"
+        TypeRef 1049..1052 "int"
+    TypeRef 1057..1061 "bool"
+    BinaryExpr 1064..1089
+      BinaryExpr 1064..1080
+        BinaryExpr 1064..1070
+          NameRef 1064..1065 "a"
+          NameRef 1069..1070 "b"
+        BinaryExpr 1074..1080
+          NameRef 1074..1075 "a"
+          NameRef 1079..1080 "b"
+      BinaryExpr 1084..1089
+        NameRef 1084..1085 "a"
+        NameRef 1088..1089 "b"
+  FnItem 1091..1104
+    Name 1094..1099 "empty"
+    ParamList 1099..1101 "()"
+    Block 1102..1104 "{}"
+  FnItem 1106..1144
+    Name 1109..1119 "unit_value"
+    ParamList 1119..1121 "()"
+    TypeRef 1125..1129 "unit"
+    Block 1130..1144
+      ReturnStmt 1136..1142 "return"

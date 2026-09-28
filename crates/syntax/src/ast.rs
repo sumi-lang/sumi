@@ -506,7 +506,7 @@ grammar! {
     struct ParenExpr { inner: Expr }
     tokens { LParen, RParen }
 
-    struct CallExpr { callee: Expr, arg_list: ArgList }
+    struct CallExpr { callee: NameRef, arg_list: ArgList }
 
     /// `'(' (Expr (',' Expr)* ','?)? ')'`.
     struct ArgList { args: [Expr] }

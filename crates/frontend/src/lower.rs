@@ -228,7 +228,7 @@ impl Snapshot<'_> {
             ),
             ParseViolationKind::SpacedListOpener => (
                 codes::SPACED_LIST_OPENER,
-                "opening `(` must be adjacent to the function name or callee",
+                "opening `(` must be adjacent to the function name",
             ),
             ParseViolationKind::FunctionNameOnNextLine => (
                 codes::FUNCTION_NAME_ON_NEXT_LINE,
