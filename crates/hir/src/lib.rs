@@ -17,6 +17,7 @@ use sumi_frontend::{Diagnostic, ParsedSource};
 use sumi_text::TextRange;
 
 pub use check::analyze;
+pub use reachability::{Dead, DeadCause};
 pub use sumi_graph::{
     ArithOp, BinaryOp, Bools, Callable, Callee, CmpOp, FunctionId, Graph, Int, Ints, Machine, May,
     NodeId, Op, Refusal, RegionId, Run, Ty, Value,
@@ -28,6 +29,7 @@ pub struct Analysis {
     settled: typing::Settled,
     functions: Vec<Function>,
     diagnostics: Vec<Diagnostic>,
+    dead: Vec<Dead>,
 }
 
 impl fmt::Debug for Analysis {
@@ -37,6 +39,7 @@ impl fmt::Debug for Analysis {
             .field("graph", &self.graph)
             .field("functions", &self.functions)
             .field("diagnostics", &self.diagnostics)
+            .field("dead", &self.dead)
             .finish_non_exhaustive()
     }
 }
@@ -59,6 +62,11 @@ impl Analysis {
     /// In source order, a syntactic one first at a shared position.
     pub fn diagnostics(&self) -> &[Diagnostic] {
         &self.diagnostics
+    }
+    /// The code the reachability warnings call dead, in source order; empty, like those warnings,
+    /// for a file with an error.
+    pub fn dead(&self) -> &[Dead] {
+        &self.dead
     }
     pub fn is_semantic(diagnostic: &Diagnostic) -> bool {
         diagnostic.code.group == codes::SEMANTIC

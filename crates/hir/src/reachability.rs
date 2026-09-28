@@ -2,6 +2,7 @@
 //! the same way, code after a statement that never completes, and a function no call reaches.
 
 use std::collections::HashSet;
+use std::fmt;
 
 use sumi_graph::{BinaryOp, Bools, Graph, Ints, NodeId, Op, RegionId};
 use sumi_text::TextRange;
@@ -11,6 +12,35 @@ use crate::codes;
 use crate::flows::{self, Arguments};
 use crate::lower::{Header, Lowered, Source, Statement};
 use crate::typing::Typing;
+
+/// Code a reachability warning calls dead: no run reaches it, whatever the arguments.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Dead {
+    pub range: TextRange,
+    pub cause: DeadCause,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DeadCause {
+    /// An `if` branch its condition never selects.
+    Branch,
+    /// The right side of `&&` or `||` its left side always decides.
+    RightOperand,
+    LoopBody,
+    /// The statements after one that never completes, to the end of their block.
+    AfterStop,
+}
+
+impl fmt::Display for DeadCause {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Branch => "this branch never runs",
+            Self::RightOperand => "the right side never runs",
+            Self::LoopBody => "the loop body never runs",
+            Self::AfterStop => "unreachable code",
+        })
+    }
+}
 
 enum Site {
     If {
@@ -41,14 +71,14 @@ struct Condition {
 }
 
 /// `delivered` is the solve over the live call sites' arguments; `headers` redraws the graph with
-/// every argument its parameter's type admits.
+/// every argument its parameter's type admits. Returns the dead code reported, in source order.
 pub(crate) fn warn(
     source: &mut Source<'_>,
     graph: &Graph,
     delivered: &Typing,
     lowered: &Lowered,
     headers: &[Header],
-) {
+) -> Vec<Dead> {
     unused_functions(source, graph, lowered, headers);
     // A site is reported only where the program reaches it and both solves decide it, so whether
     // the second solve runs never changes what is reported.
@@ -110,6 +140,7 @@ pub(crate) fn warn(
         .filter(|(_, decided)| decided.is_some())
         .map(|(condition, _)| condition.value)
         .collect();
+    let mut deads = Vec::new();
     for (condition, &truth) in conditions.iter().zip(&decided) {
         let Some(truth) = truth else {
             continue;
@@ -124,25 +155,27 @@ pub(crate) fn warn(
             Site::If { then, else_ } => (
                 format!("condition is always {truth}"),
                 if truth { else_ } else { Some(then) }
-                    .map(|region| (region_origin(region), "this branch never runs")),
+                    .map(|region| (region_origin(region), DeadCause::Branch)),
             ),
             Site::Left { and, rhs, .. } => (
                 format!("condition is always {truth}"),
-                (truth != and).then(|| (region_origin(rhs), "the right side never runs")),
+                (truth != and).then(|| (region_origin(rhs), DeadCause::RightOperand)),
             ),
             Site::Right { .. } => (format!("condition is always {truth}"), None),
             Site::Range { .. } if truth => continue,
             Site::Range { body } => (
                 "range is always empty".to_owned(),
-                Some((region_origin(body), "the loop body never runs")),
+                Some((region_origin(body), DeadCause::LoopBody)),
             ),
         };
+        let dead = dead.map(|(range, cause)| Dead { range, cause });
         let mut labels: Vec<(TextRange, Box<str>)> = dead
-            .map(|(at, text)| (at, Box::from(text)))
+            .map(|dead| (dead.range, dead.cause.to_string().into()))
             .into_iter()
             .collect();
         labels.extend(operands(graph, facts(condition.value), condition.value));
         source.report(condition.at, codes::CONSTANT_CONDITION, message, labels);
+        deads.extend(dead);
     }
 
     for (index, pair) in statements.windows(2).enumerate() {
@@ -155,13 +188,20 @@ pub(crate) fn warn(
             .take_while(|statement| statement.block == after.block)
             .last()
             .expect("the dead statement is in its block");
+        let dead = Dead {
+            range: TextRange::new(after.range.start(), last.range.end()),
+            cause: DeadCause::AfterStop,
+        };
         source.report(
-            TextRange::new(after.range.start(), last.range.end()),
+            dead.range,
             codes::UNREACHABLE_CODE,
-            "unreachable code",
+            dead.cause.to_string(),
             [(before.range, Box::from("no path continues past this"))],
         );
+        deads.push(dead);
     }
+    deads.sort_by_key(|dead| (dead.range.start(), dead.range.end()));
+    deads
 }
 
 /// A function with parameters that no chain of calls from a parameterless or `_`-named one

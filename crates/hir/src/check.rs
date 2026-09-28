@@ -59,14 +59,16 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     );
     complete(&graph, &typing, &lowered, &failed, &mut functions);
     // A rejected file's holes and dropped bodies distort the ranges these warnings rest on.
-    if !source
+    let dead = if source
         .diagnostics
         .iter()
         .chain(parsed.diagnostics())
         .any(Diagnostic::is_error)
     {
-        reachability::warn(&mut source, &graph, &typing, &lowered, &headers);
-    }
+        Vec::new()
+    } else {
+        reachability::warn(&mut source, &graph, &typing, &lowered, &headers)
+    };
     let mut diagnostics = source.diagnostics;
     diagnostics.splice(0..0, parsed.diagnostics().iter().cloned());
     diagnostics.sort_by_key(|d| d.primary.start());
@@ -76,6 +78,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         settled: typing.settle(),
         functions,
         diagnostics,
+        dead,
     };
     assert!(
         !analysis.is_valid() || analysis.functions.iter().all(|f| f.complete),
