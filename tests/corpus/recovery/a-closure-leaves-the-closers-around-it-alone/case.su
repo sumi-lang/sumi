@@ -1,4 +1,0 @@
-fn f() {
-    g(fn x, b)
-    h(fn x y)
-}

@@ -1543,7 +1543,6 @@ impl<'a, 's> Builder<'a, 's> {
                     work.push(Work::Enter(value.node()));
                 }
             }
-            CleanStmt::Expr(CleanExpr::ClosureExpr(_)) => self.unsupported(node),
         }
     }
     fn assignment_target(&mut self, assignment: Clean<ast::AssignStmt>) -> Option<LocalId> {

@@ -6,9 +6,7 @@ fn main() {
     count = count + 1
     _ = report(total, count)
     if is_even(total) && !is_zero(count) || total < 0 {
-        each(names(), fn(name) {
-            _ = greet(name)
-        })
+        each(names(), greet(0))
     } else if total >= 100 {
         return
     } else {
@@ -46,9 +44,9 @@ fn each(items: unit, visit: unit) {
 
 fn compose(f: int, g: int) -> int = f + g
 
-fn adder(x: int) = fn(y: int) -> int = x + y
+fn adder(x: int) -> int = x
 
-fn thunk() = fn() = work(1, 2)
+fn thunk() = work(1, 2)
 
 fn work(a: int, b: int) -> bool = a != b && a <= b || a > b
 

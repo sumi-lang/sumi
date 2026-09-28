@@ -446,9 +446,9 @@ grammar! {
     struct ParamList { params: [Param] }
     tokens { LParen, Comma?, RParen }
 
-    /// `Name (':' TypeRef)?`; only a closure's parameter may lack the type.
-    struct Param { name: Name, type_ref: Option<TypeRef> }
-    tokens { Colon? }
+    /// `Name ':' TypeRef`.
+    struct Param { name: Name, type_ref: TypeRef }
+    tokens { Colon }
 
     /// A declaring occurrence of a name, `Ident`; a use is a `NameRef`.
     struct Name {}
@@ -485,7 +485,6 @@ grammar! {
         CallExpr,
         IfExpr,
         ForExpr,
-        ClosureExpr,
         Block,
     }
 
@@ -521,9 +520,6 @@ grammar! {
 
     enum ElseBranch as CleanElseBranch { IfExpr, Block }
 
-    /// `'fn' ParamList ('->' ret:TypeRef)? '='? body:Expr`.
-    struct ClosureExpr { param_list: ParamList, ret: Option<TypeRef>, body: Expr }
-    tokens { FnKw, [Minus, Gt]?, Eq? }
 }
 
 #[cfg(test)]

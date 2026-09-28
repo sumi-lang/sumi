@@ -1,9 +1,9 @@
 == tree ==
-SourceFile 0..525
-  FnItem 0..349
+SourceFile 0..492
+  FnItem 0..316
     Name 3..9 "bounds"
     ParamList 9..11 "()"
-    Block 12..349
+    Block 12..316
       ForExpr 18..42
         Name 22..23 "i"
         NameRef 27..32 "lower"
@@ -74,65 +74,56 @@ SourceFile 0..525
           LiteralExpr 278..279 "3"
           Block 280..282 "{}"
         Block 283..285 "{}"
-      ForExpr 290..318
+      ForExpr 290..314
         Name 294..295 "i"
-        ClosureExpr 299..306
-          ParamList 301..303 "()"
-          Block 304..306 "{}"
-        ClosureExpr 308..315
-          ParamList 310..312 "()"
-          Block 313..315 "{}"
-        Block 316..318 "{}"
-      ForExpr 323..347
-        Name 327..328 "i"
-        Block 332..337
-          LiteralExpr 334..335 "2"
-        Block 339..344
-          LiteralExpr 341..342 "7"
-        Block 345..347 "{}"
-  FnItem 351..524
-    Name 354..363 "positions"
-    ParamList 363..365 "()"
-    ForExpr 368..524
-      Name 372..373 "i"
-      LiteralExpr 377..378 "2"
-      LiteralExpr 380..381 "7"
-      Block 382..524
-        LetStmt 388..412
-          Name 392..393 "x"
-          ForExpr 396..412
-            Name 400..401 "j"
-            LiteralExpr 405..406 "0"
-            NameRef 408..409 "i"
-            Block 410..412 "{}"
-        DiscardStmt 417..444
-          CallExpr 421..444
-            NameRef 421..426 "apply"
-            ArgList 426..444
-              ForExpr 427..443
-                Name 431..432 "j"
-                LiteralExpr 436..437 "0"
-                NameRef 439..440 "i"
-                Block 441..443 "{}"
-        IfExpr 449..471
-          ForExpr 452..468
-            Name 456..457 "j"
-            LiteralExpr 461..462 "0"
-            NameRef 464..465 "i"
-            Block 466..468 "{}"
-          Block 469..471 "{}"
-        ParenExpr 476..494
-          ForExpr 477..493
-            Name 481..482 "j"
-            LiteralExpr 486..487 "0"
-            NameRef 489..490 "i"
-            Block 491..493 "{}"
-        ReturnStmt 499..522
-          ForExpr 506..522
-            Name 510..511 "j"
-            LiteralExpr 515..516 "0"
-            NameRef 518..519 "i"
-            Block 520..522 "{}"
+        Block 299..304
+          LiteralExpr 301..302 "2"
+        Block 306..311
+          LiteralExpr 308..309 "7"
+        Block 312..314 "{}"
+  FnItem 318..491
+    Name 321..330 "positions"
+    ParamList 330..332 "()"
+    ForExpr 335..491
+      Name 339..340 "i"
+      LiteralExpr 344..345 "2"
+      LiteralExpr 347..348 "7"
+      Block 349..491
+        LetStmt 355..379
+          Name 359..360 "x"
+          ForExpr 363..379
+            Name 367..368 "j"
+            LiteralExpr 372..373 "0"
+            NameRef 375..376 "i"
+            Block 377..379 "{}"
+        DiscardStmt 384..411
+          CallExpr 388..411
+            NameRef 388..393 "apply"
+            ArgList 393..411
+              ForExpr 394..410
+                Name 398..399 "j"
+                LiteralExpr 403..404 "0"
+                NameRef 406..407 "i"
+                Block 408..410 "{}"
+        IfExpr 416..438
+          ForExpr 419..435
+            Name 423..424 "j"
+            LiteralExpr 428..429 "0"
+            NameRef 431..432 "i"
+            Block 433..435 "{}"
+          Block 436..438 "{}"
+        ParenExpr 443..461
+          ForExpr 444..460
+            Name 448..449 "j"
+            LiteralExpr 453..454 "0"
+            NameRef 456..457 "i"
+            Block 458..460 "{}"
+        ReturnStmt 466..489
+          ForExpr 473..489
+            Name 477..478 "j"
+            LiteralExpr 482..483 "0"
+            NameRef 485..486 "i"
+            Block 487..489 "{}"
 
 == formatted ==
 fn bounds() {
@@ -152,7 +143,6 @@ fn bounds() {
         8
     } {}
     for i in for j in 0..1 {}..for k in 2..3 {} {}
-    for i in fn() {}..fn() {} {}
     for i in {
         2
     }..{

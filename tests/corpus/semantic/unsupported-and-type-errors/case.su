@@ -2,8 +2,8 @@ fn unsupported() {
     let mut x = 1
     _ = x
 }
-fn closure() {
-    let f = fn() = 1
+fn function_value() {
+    let f = mismatch
 }
 fn mismatch() -> bool = 1
 fn branches() -> int = if true {

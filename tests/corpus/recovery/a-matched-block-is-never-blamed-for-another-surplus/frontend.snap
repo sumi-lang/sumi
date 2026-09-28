@@ -32,7 +32,7 @@ ExpectedStatement at 27
 ExpectedItem at 36
 ExpectedStatement at 71
 ExpectedItem at 79
-ExpectedExpression at 112
+ExpectedStatement at 112
 
 == diagnostics ==
 error[syntax/expected-statement] 2:13..2:14 "+": expected a statement
@@ -41,4 +41,4 @@ error[syntax/expected-item] 3:3..3:4 "{": expected a function item
 error[syntax/expected-statement] 5:15..5:16 "+": expected a statement
   at 5:15..5:18 "+ b": skipped while recovering
 error[syntax/expected-item] 6:3..6:4 "{": expected a function item
-error[syntax/expected-expression] 8:8..8:10 "fn": expected an expression
+error[syntax/expected-statement] 8:8..8:10 "fn": expected a statement

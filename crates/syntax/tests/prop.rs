@@ -4,7 +4,7 @@ use proptest::prelude::*;
 use sumi_lexer::lex;
 use sumi_syntax::{ParserInput, SigIdx, SyntaxKind, parse};
 use sumi_test::{
-    Edit, INSERTS, check, delimiter_edited_program, front, non_delimiter_edited_program, program,
+    Edit, check, delimiter_edited_program, front, non_delimiter_edited_program, program,
 };
 
 const EXTRA_FRAGMENTS: &[&str] = &[
@@ -103,25 +103,4 @@ proptest! {
 fn a_duplicated_if_may_take_the_next_lines_block() {
     let source = "fn o() {\n    (e) = if {} {}\n    {} && a / {}\n}\n";
     check::recovery(source, &front(source), 9, Edit::Duplicate);
-}
-
-/// The program generator produces no exposed closures, so these are enumerated by hand.
-#[test]
-fn every_edit_around_an_exposed_closure_recovers_locally() {
-    let edits = [Edit::Delete, Edit::Duplicate, Edit::Swap]
-        .into_iter()
-        .chain(INSERTS.iter().map(|&text| Edit::Insert(text)));
-    for source in [
-        "fn first() = 0\nfn outer() = fn() = fn(x) = x\nfn next() = 2\n",
-        "fn first() = 0\nfn outer() =\n fn(x: int) { x }\nfn next() = 2\n",
-        "fn first()\n= 0\nfn outer()\n= fn(x: int)\n-> int\n= x +\n1\nfn next()\n-> int\n= 2\n",
-        "fn first()\n{}\nfn outer()\n{ if { true }\n{}\nelse\n{} }\nfn next()\n{}\n",
-    ] {
-        let original = front(source);
-        for index in 0..original.input().len() {
-            for edit in edits.clone() {
-                check::recovery(source, &original, index, edit);
-            }
-        }
-    }
 }

@@ -230,7 +230,7 @@ fn fn_item(p: &mut Marker<'_, '_>) {
     }
     if !m.at(T::Ident) && !m.at(T::Underscore) {
         let recovery = m.missing(ParseRecoveryKind::Name);
-        signature_garbage(&mut m, Signature::Item, recovery, |m| {
+        signature_garbage(&mut m, recovery, |m| {
             m.at(T::Ident) || m.at(T::Underscore) || m.at(T::LParen)
         });
     }
@@ -246,65 +246,26 @@ fn fn_item(p: &mut Marker<'_, '_>) {
     } else {
         true
     };
-    signature_tail(&mut m, ExprFollow::Anything, Signature::Item, name_missing);
+    signature_tail(&mut m, name_missing);
     m.complete(N::FnItem);
 }
 
-/// A `fn` with no signature part after it on its line is garbage, not a closure. A name counts as
-/// one: garbage where the list belongs, but a closure was meant.
-fn closure_expr(p: &mut Marker<'_, '_>, follow: ExprFollow) -> CompletedMarker {
-    let next = p.nth(1);
-    let signature_follows = p.nth_newline(1)
-        || next.is_none_or(|next| {
-            matches!(
-                next,
-                T::LParen | T::Ident | T::Underscore | T::Eq | T::LBrace
-            )
-        })
-        || nth_arrow(p, 1);
-    if !signature_follows {
-        let recovery = p.recover_tokens(ParseRecoveryKind::Expression, 1);
-        return skip_token(p, recovery);
-    }
-    let mut m = p.start();
-    m.token();
-    signature_tail(&mut m, follow, Signature::Closure, false);
-    m.complete(N::ClosureExpr)
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Signature {
-    Item,
-    Closure,
-}
-
-fn signature_tail(
-    m: &mut Marker<'_, '_>,
-    follow: ExprFollow,
-    signature: Signature,
-    name_missing: bool,
-) {
-    let first_field = u8::from(signature == Signature::Item);
+fn signature_tail(m: &mut Marker<'_, '_>, name_missing: bool) {
     let allow_list_newline = name_missing;
     if !m.at(T::LParen) || (m.newline() && !allow_list_newline) {
         let recovery = m.missing(ParseRecoveryKind::Token(T::LParen));
-        signature_garbage(m, signature, recovery, |m| {
-            m.at(T::LParen) || nth_arrow(m, 0)
-        });
+        signature_garbage(m, recovery, |m| m.at(T::LParen) || nth_arrow(m, 0));
     }
     let mut complete = false;
     if m.at(T::LParen) && (!m.newline() || allow_list_newline) {
-        match signature {
-            Signature::Item => delimited_list::<Params<true>>(m, first_field),
-            Signature::Closure => delimited_list::<Params<false>>(m, first_field),
-        }
+        delimited_list::<Params>(m, 1);
         complete = true;
     }
     let body_begins =
         |m: &Marker<'_, '_>, complete: bool| m.at(T::LBrace) || at_expression_body(m, complete);
     if !body_begins(m, complete) && !nth_arrow(m, 0) {
         let recovery = m.missing(ParseRecoveryKind::Body);
-        signature_garbage(m, signature, recovery, |m| {
+        signature_garbage(m, recovery, |m| {
             nth_arrow(m, 0) || at_expression_body(m, complete)
         });
     }
@@ -312,20 +273,20 @@ fn signature_tail(
         m.token();
         m.token();
         complete = m.at(T::Ident);
-        type_ref(m, first_field + 1);
+        type_ref(m, 2);
         if !body_begins(m, complete) {
             let recovery = m.missing(ParseRecoveryKind::Body);
-            signature_garbage(m, signature, recovery, |m| at_expression_body(m, complete));
+            signature_garbage(m, recovery, |m| at_expression_body(m, complete));
         }
     }
     if at_expression_body(m, complete) {
         m.token();
-        if let Some(body) = operand_before(m, 0, follow) {
-            m.field(&body, first_field + 2);
+        if let Some(body) = operand_before(m, 0, ExprFollow::Anything) {
+            m.field(&body, 3);
         }
     } else if m.at(T::LBrace) {
         let body = block(m);
-        m.field(&body, first_field + 2);
+        m.field(&body, 3);
     }
 }
 
@@ -349,25 +310,11 @@ fn nth_arrow(m: &Marker<'_, '_>, n: usize) -> bool {
 /// A `{` the stream never pairs, where a signature part was expected, is garbage, not the body.
 fn signature_garbage(
     m: &mut Marker<'_, '_>,
-    signature: Signature,
     recovery: RecoveryHandle,
     resume: impl Fn(&Marker<'_, '_>) -> bool,
 ) {
     let stop = |m: &Marker<'_, '_>| resume(m) || m.newline() || (m.at(T::LBrace) && m.partnered());
-    match signature {
-        Signature::Item => skip_all(m, recovery, stop),
-        Signature::Closure => {
-            let stop = |m: &Marker<'_, '_>| {
-                stop(m)
-                    || m.at(T::Comma)
-                    || m.closes_open_bracket()
-                    || (m.current().is_some_and(is_closer) && m.partnered())
-            };
-            if m.current().is_some() && !stop(m) {
-                skip(m, recovery, stop);
-            }
-        }
-    }
+    skip_all(m, recovery, stop);
 }
 
 /// `_` is a `Name` with a recovery inside: it reads as a name and binds nothing.
@@ -409,9 +356,9 @@ trait ListRule {
     fn tolerated(kind: T) -> bool;
 }
 
-struct Params<const TYPED: bool>;
+struct Params;
 
-impl<const TYPED: bool> ListRule for Params<TYPED> {
+impl ListRule for Params {
     const NODE: N = N::ParamList;
     const PAIR: Pair = Pair::Paren;
     const ELEMENT: ParseRecoveryKind = ParseRecoveryKind::Name;
@@ -424,12 +371,12 @@ impl<const TYPED: bool> ListRule for Params<TYPED> {
     }
 
     fn parse_element(m: &mut Marker<'_, '_>) {
-        param(m, TYPED);
+        param(m);
     }
 
     /// A brace the stream never pairs is garbage in the list, not what follows it.
     fn follows(m: &Marker<'_, '_>) -> bool {
-        ((m.at(T::LBrace) || m.at(T::RBrace)) && m.partnered()) || (!TYPED && m.at(T::Eq))
+        (m.at(T::LBrace) || m.at(T::RBrace)) && m.partnered()
     }
 
     fn tolerated(kind: T) -> bool {
@@ -533,13 +480,13 @@ fn begins_element<R: ListRule>(m: &Marker<'_, '_>) -> bool {
             .is_some_and(|kind| !is_opener(kind) || m.partnered())
 }
 
-fn param(p: &mut Marker<'_, '_>, typed: bool) {
+fn param(p: &mut Marker<'_, '_>) {
     let mut m = p.start();
     name(&mut m);
     if m.at(T::Colon) && !m.boundary() {
         m.token();
         type_ref(&mut m, 1);
-    } else if typed || m.at(T::Ident) {
+    } else {
         m.missing(ParseRecoveryKind::Token(T::Colon));
         if m.at(T::Ident) {
             type_ref(&mut m, 1);
@@ -595,7 +542,7 @@ fn statement(p: &mut Marker<'_, '_>) {
         Some(T::LetKw) => let_stmt(p),
         Some(T::Underscore) => discard_stmt(p),
         Some(T::ReturnKw) => return_stmt(p),
-        // `fn name` where a statement belongs is an item, not a closure missing its list.
+        // A named function where a statement belongs is an item, not a statement.
         Some(T::FnKw)
             if !p.nth_newline(1) && matches!(p.nth(1), Some(T::Ident | T::Underscore)) =>
         {
@@ -909,7 +856,6 @@ fn prefix_or_atom(p: &mut Marker<'_, '_>, follow: ExprFollow) -> Option<Complete
         T::LBrace => block(p),
         T::IfKw => if_expr(p),
         T::ForKw => for_expr(p),
-        T::FnKw => closure_expr(p, follow),
         _ => return None,
     })
 }

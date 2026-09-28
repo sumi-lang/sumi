@@ -89,38 +89,6 @@ fn missing_for_fields_do_not_shift_later_roles() {
 }
 
 #[test]
-fn expression_bodies_and_closures_have_views() {
-    let parsed = Parsed::new("fn twice(x: Int) -> Int = apply(fn(y: Int) -> Int = y * 2, x)\n");
-    let tree = parsed.tree();
-    let item = parsed.item();
-    assert!(!tree.has_error(item.node()));
-    assert_eq!(parsed.text(item.ret(tree).expect("a return type")), "Int");
-    let Some(Expr::CallExpr(call)) = item.body(tree) else {
-        panic!("the body is a call")
-    };
-    let mut args = call.arg_list(tree).expect("arguments").args(tree);
-    let Some(Expr::ClosureExpr(closure)) = args.next() else {
-        panic!("the first argument is a closure")
-    };
-    let params: Vec<_> = closure
-        .param_list(tree)
-        .expect("parameters")
-        .params(tree)
-        .map(|param| parsed.text(param.name(tree).expect("a name")))
-        .collect();
-    assert_eq!(params, ["y"]);
-    assert_eq!(
-        parsed.text(closure.ret(tree).expect("a return type")),
-        "Int"
-    );
-    let Some(Expr::BinaryExpr(body)) = closure.body(tree) else {
-        panic!("the closure body is a product")
-    };
-    assert_eq!(parsed.text(body), "y * 2");
-    assert!(matches!(args.next(), Some(Expr::NameRef(_))));
-}
-
-#[test]
 fn missing_signature_fields_do_not_shift_later_roles() {
     for (source, has_return_type) in [("fn f -> int {}", true), ("fn f() -> {}", false)] {
         let parsed = Parsed::new(source);
@@ -134,23 +102,6 @@ fn missing_signature_fields_do_not_shift_later_roles() {
             has_return_type.then_some("int")
         );
         assert_eq!(parsed.text(item.body(tree).unwrap()), "{}");
-    }
-    for (source, has_return_type) in [
-        ("fn outer() = fn -> int {}", true),
-        ("fn outer() = fn() -> {}", false),
-    ] {
-        let parsed = Parsed::new(source);
-        let tree = parsed.tree();
-        let Some(Expr::ClosureExpr(closure)) = parsed.item().body(tree) else {
-            panic!("a recovered closure");
-        };
-        assert!(tree.has_error(closure.node()));
-        assert_eq!(closure.param_list(tree).is_some(), !has_return_type);
-        assert_eq!(
-            closure.ret(tree).map(|ret| parsed.text(ret)),
-            has_return_type.then_some("int")
-        );
-        assert_eq!(parsed.text(closure.body(tree).unwrap()), "{}");
     }
 }
 
@@ -474,15 +425,6 @@ fn parser_known_roles_survive_recovery() {
     assert!(tree.has_error(binary.node()));
     assert_eq!(parsed.text(binary.lhs(tree).expect("the parsed lhs")), "x");
     assert!(binary.rhs(tree).is_none());
-
-    let parsed = Parsed::new("fn f() { fn + x }");
-    let tree = parsed.tree();
-    let body = block(parsed.item().body(tree));
-    let Some(Stmt::Expr(Expr::BinaryExpr(binary))) = body.stmts(tree).next() else {
-        panic!("one recovered binary expression")
-    };
-    assert!(binary.lhs(tree).is_none());
-    assert_eq!(parsed.text(binary.rhs(tree).expect("the parsed rhs")), "x");
 
     let parsed = Parsed::new("fn f() { x + y + }");
     let tree = parsed.tree();
