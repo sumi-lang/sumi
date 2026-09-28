@@ -3,7 +3,6 @@
 
 use std::collections::HashSet;
 
-use sumi_lexer::LexedFile;
 use sumi_syntax::{
     NodeIdx, NodeKind, ParseEvidence, ParserInput, RawIdx, SigIdx, SyntaxKind, is_bracket,
 };
@@ -414,102 +413,6 @@ fn churn_base(name: &str, source: &str, edits_per_kind: usize, rng: &mut Rng) {
     }
 }
 
-fn is_string(lexed: &LexedFile, index: RawIdx) -> bool {
-    lexed.kind(index) == SyntaxKind::StringLiteral
-}
-
-struct LiteralSample {
-    spread: u64,
-    diags: u64,
-    untouched_disturbed: u64,
-}
-
-fn literal_edit(source: &str, before: &Front, token: RawIdx, opener: bool) -> LiteralSample {
-    let range = before.lexed.range(token);
-    let (start, end) = (range.start().to_usize(), range.end().to_usize());
-    let cut = if opener { start } else { end - 1 };
-    let edited = format!("{}{}", &source[..cut], &source[cut + 1..]);
-    let impact = EditSpan::new(cut, cut + 1, cut);
-    let index = significant_at(before.input(), token);
-    let touched: Vec<RawIdx> = (index.saturating_sub(2)
-        ..=(index + 2).min(before.input().len() - 1))
-        .map(|index| before.input().token(sig(index)))
-        .collect();
-    let after = front(&edited);
-
-    let (untouched, preserved) = preservation(source, before, &touched, impact, &edited, &after);
-    let stood = start..end - 1;
-    let spread = after
-        .lexed
-        .indices()
-        .filter(|&index| is_string(&after.lexed, index))
-        .map(|index| after.lexed.range(index))
-        .filter(|range| {
-            range.start().to_usize() < stood.end && range.end().to_usize() > stood.start
-        })
-        .map(|range| (range.end().to_usize() - range.start().to_usize()) as u64)
-        .max()
-        .unwrap_or(0);
-    LiteralSample {
-        spread,
-        diags: diagnostics(&edited, &after),
-        untouched_disturbed: (untouched - preserved) as u64,
-    }
-}
-
-fn literal_edits(name: &str, source: &str, edits_per_class: usize, rng: &mut Rng) {
-    let before = front(source);
-    assert_eq!(
-        diagnostics(source, &before),
-        0,
-        "the literal corpus must be valid"
-    );
-    let literals: Vec<RawIdx> = before
-        .lexed
-        .indices()
-        .filter(|&index| is_string(&before.lexed, index))
-        .collect();
-    println!(
-        "{name}: {} bytes, {} literals, {} top-level items",
-        source.len(),
-        literals.len(),
-        items(&before).len()
-    );
-    for (label, opener) in [("delete \" closer", false), ("delete \" opener", true)] {
-        let samples: Vec<LiteralSample> = (0..edits_per_class)
-            .map(|_| {
-                let token = literals[rng.below(literals.len())];
-                literal_edit(source, &before, token, opener)
-            })
-            .collect();
-        let stat = |select: fn(&LiteralSample) -> u64| -> (u64, u64, u64) {
-            let values: Vec<u64> = samples.iter().map(select).collect();
-            (
-                percentile_u64(&values, 0.50),
-                percentile_u64(&values, 0.95),
-                *values.iter().max().expect("every class takes samples"),
-            )
-        };
-        let spread = stat(|s| s.spread);
-        let diags = stat(|s| s.diags);
-        let items = stat(|s| s.untouched_disturbed);
-        println!(
-            "  {:<18} n={:<4} spread p50/p95/max {}/{}/{}  diags {}/{}/{}  items_disturbed {}/{}/{}",
-            label,
-            samples.len(),
-            spread.0,
-            spread.1,
-            spread.2,
-            diags.0,
-            diags.1,
-            diags.2,
-            items.0,
-            items.1,
-            items.2,
-        );
-    }
-}
-
 fn main() {
     println!("recovery-scorecard");
     println!();
@@ -527,13 +430,6 @@ fn main() {
     churn_base("clean_8k", &clean_8k, 200, &mut rng);
     churn_base("clean_64k", &clean_64k, 200, &mut rng);
     churn_base("clean_1m", &clean_1m, 50, &mut rng);
-    println!();
-    println!("== Part C: one delimiter deleted inside a literal ==");
-    println!("spread = bytes of the longest literal token left where the edited one stood: how");
-    println!("far the stray delimiter reaches: a literal reaches the end of its line at most.");
-    println!();
-    let mut rng = Rng::new(0x11E4_A15E);
-    literal_edits("clean_64k", &clean_64k, 200, &mut rng);
 }
 
 #[cfg(test)]

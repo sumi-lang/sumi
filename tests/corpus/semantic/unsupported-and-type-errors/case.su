@@ -5,7 +5,6 @@ fn unsupported() {
 fn closure() {
     let f = fn() = 1
 }
-fn literal() = "not scalar"
 fn mismatch() -> bool = 1
 fn branches() -> int = if true {
     1

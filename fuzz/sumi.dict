@@ -1,5 +1,5 @@
 # Every fixed token text, in step with tokens! in crates/lexer/src/kind.rs, and every operator the
-# parser glues, plus a comment start and an escaped string delimiter.
+# parser glues, plus a comment start.
 Underscore="_"
 ElseKw="else"
 FalseKw="false"
@@ -38,4 +38,3 @@ Pipe="|"
 "&&"
 "||"
 "//"
-"\"\\"

@@ -3,7 +3,7 @@
 
 use std::collections::HashSet;
 
-use sumi_lexer::{LexError, LexErrorKind, LexedFile, TokenFlags, canonicalize_number_literal};
+use sumi_lexer::{LexError, LexErrorKind, LexedFile, canonicalize_number_literal};
 use sumi_syntax::{
     Pair, Parse, ParseAnchor, ParseEvidence, ParseRecovery, ParseRecoveryKind, ParseViolation,
     ParseViolationKind, RawTokenRange, SyntaxKind,
@@ -94,11 +94,6 @@ impl Snapshot<'_> {
                     },
                 ),
             ),
-            LexErrorKind::UnterminatedString => (
-                codes::UNTERMINATED_STRING,
-                "unterminated string literal",
-                None,
-            ),
             LexErrorKind::LoneCarriageReturn => (
                 codes::LONE_CARRIAGE_RETURN,
                 "carriage return must be followed by a line feed",
@@ -114,7 +109,6 @@ impl Snapshot<'_> {
                 "literal suffixes are not supported",
                 None,
             ),
-            LexErrorKind::UnknownEscape => (codes::UNKNOWN_ESCAPE, "unknown escape sequence", None),
             LexErrorKind::UnknownPunctuation => (
                 codes::UNKNOWN_PUNCTUATION,
                 "punctuation has no meaning in Sumi source",
@@ -203,19 +197,13 @@ impl Snapshot<'_> {
         recovery: &ParseRecovery,
         sites: &mut HashSet<(Pair, u32)>,
     ) -> Option<Fix> {
-        let lexed = self.lexed;
         let (ParseRecoveryKind::Closer { pair, .. }, ParseAnchor::Gap(gap)) =
             (recovery.kind, recovery.anchor)
         else {
             return None;
         };
         let closer = pair.closer();
-        // Inserted after an unterminated string, the closer becomes string text.
-        let previous = gap.trivia_start().checked_sub(1);
-        if previous.is_some_and(|token| lexed.flags(token).contains(TokenFlags::UNTERMINATED)) {
-            return None;
-        }
-        let at = lexed.boundary(gap.trivia_start());
+        let at = self.lexed.boundary(gap.trivia_start());
         if !sites.insert((pair, at.to_u32())) {
             return None;
         }

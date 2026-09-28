@@ -135,7 +135,6 @@ tokens! {
     TrueKw: keyword "true",
 
     IntLiteral: literal "an integer literal",
-    StringLiteral: literal "a string literal",
 
     LParen: punct '(',
     RParen: punct ')',

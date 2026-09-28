@@ -88,19 +88,6 @@ fn near_misses_stay_idents() {
 }
 
 #[test]
-fn keywords_inside_strings_and_comments_stay_put() {
-    check(
-        "\"fn\" // let\n",
-        &[
-            r#"StringLiteral 0..4 "\"fn\"""#,
-            r#"Whitespace 4..5 " ""#,
-            r#"LineComment 5..11 "// let""#,
-            r#"Newline 11..12 "\n""#,
-        ],
-    );
-}
-
-#[test]
 fn a_lone_underscore_is_its_own_kind() {
     check(
         "_ _x",
@@ -173,20 +160,6 @@ fn slash_star_is_just_punctuation() {
             r#"Star 1..2 "*""#,
             r#"Whitespace 2..3 " ""#,
             r#"Ident 3..4 "x""#,
-        ],
-    );
-}
-
-#[test]
-fn r_without_quote_is_an_ident() {
-    check("r", &[r#"Ident 0..1 "r""#]);
-    check("raw", &[r#"Ident 0..3 "raw""#]);
-    check(
-        "r#x",
-        &[
-            r#"Ident 0..1 "r""#,
-            r##"Error 1..2 "#""##,
-            r#"Ident 2..3 "x""#,
         ],
     );
 }
@@ -292,13 +265,11 @@ fn a_byte_order_mark_is_an_unknown_character() {
 #[test]
 fn literal_kinds() {
     check(
-        r#"0 123 "s""#,
+        "0 123",
         &[
             r#"IntLiteral 0..1 "0""#,
             r#"Whitespace 1..2 " ""#,
             r#"IntLiteral 2..5 "123""#,
-            r#"Whitespace 5..6 " ""#,
-            r#"StringLiteral 6..9 "\"s\"""#,
         ],
     );
 }
@@ -349,50 +320,5 @@ fn number_suffixes_attach() {
     assert_eq!(
         lex("0x1F").unwrap().errors(),
         &[error(0, 1, 4, LexErrorKind::UnknownSuffix)],
-    );
-}
-
-#[test]
-fn an_escaped_quote_never_closes() {
-    check(r#""a\"b""#, &[r#"StringLiteral 0..6 "\"a\\\"b\"""#]);
-}
-
-#[test]
-fn unterminated_string() {
-    check(
-        "\"ab",
-        &[r#"StringLiteral 0..3 "\"ab" TokenFlags(UNTERMINATED)"#],
-    );
-    assert_eq!(
-        lex("\"ab").unwrap().errors(),
-        &[error(0, 0, 3, LexErrorKind::UnterminatedString)],
-    );
-}
-
-#[test]
-fn line_literals_end_at_the_line() {
-    check(
-        "\"a\nb\"",
-        &[
-            r#"StringLiteral 0..2 "\"a" TokenFlags(UNTERMINATED)"#,
-            r#"Newline 2..3 "\n""#,
-            r#"Ident 3..4 "b""#,
-            r#"StringLiteral 4..5 "\"" TokenFlags(UNTERMINATED)"#,
-        ],
-    );
-    assert_eq!(
-        lex("\"a\nb\"").unwrap().errors(),
-        &[
-            error(0, 0, 2, LexErrorKind::UnterminatedString),
-            error(3, 4, 5, LexErrorKind::UnterminatedString),
-        ],
-    );
-    check(
-        "\"a\\\nb",
-        &[
-            r#"StringLiteral 0..3 "\"a\\" TokenFlags(UNTERMINATED)"#,
-            r#"Newline 3..4 "\n""#,
-            r#"Ident 4..5 "b""#,
-        ],
     );
 }

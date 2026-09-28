@@ -1886,10 +1886,6 @@ impl<'a, 's> Builder<'a, 's> {
                     Literal::False => {
                         self.push(node, Op::Bool(false), &[], None);
                     }
-                    Literal::String => {
-                        self.unsupported(node);
-                        return None;
-                    }
                 }
             }
             Finish::Paren(paren) => {

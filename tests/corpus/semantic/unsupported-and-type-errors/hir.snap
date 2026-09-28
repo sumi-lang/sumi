@@ -1,6 +1,6 @@
 file: rejected
 frontend errors: 0 (see frontend.snap)
-semantic errors: 14
+semantic errors: 13
 
 fn unsupported@0..48 () -> unit ∈ unit
   result: copy : unit @0..48
@@ -16,108 +16,103 @@ fn closure@49..86 () -> unit ∈ unit
         initializer: hole : ? @76..84
       tail: unit : unit @62..86
 
-fn literal@87..114 signature: unavailable
-  body: hole : ? @102..114
+fn mismatch@87..112 () -> bool ∈ ∅
+  result: copy : bool @104..108
+    value: int 1 : ? @111..112
 
-fn mismatch@115..140 () -> bool ∈ ∅
-  result: copy : bool @132..136
-    value: int 1 : ? @139..140
+fn branches@113..172 () -> int ∈ [1, 1]
+  result: copy : int @130..133
+    value: if : ? @136..172
+      condition: bool true : bool @139..143
+      then: int 1 : int @150..151
+      else: bool false : bool @165..170
 
-fn branches@141..200 () -> int ∈ [1, 1]
-  result: copy : int @158..161
-    value: if : ? @164..200
-      condition: bool true : bool @167..171
-      then: int 1 : int @178..179
-      else: bool false : bool @193..198
-
-fn missing_else@201..238 () -> unit ∈ unit
-  body: if : unit @221..238
-    condition: bool true : bool @224..228
-    then: int 1 : ? @235..236
+fn missing_else@173..210 () -> unit ∈ unit
+  body: if : unit @193..210
+    condition: bool true : bool @196..200
+    then: int 1 : ? @207..208
     else: unit (implicit)
 
-fn annotation@239..278 () -> unit ∈ unit
-  result: copy : unit @239..278
+fn annotation@211..250 () -> unit ∈ unit
+  result: copy : unit @211..250
     value:
-      let x@265..266: bool @261..276
-        initializer: int 1 : ? @275..276
-      tail: unit : unit @255..278
+      let x@237..238: bool @233..248
+        initializer: int 1 : ? @247..248
+      tail: unit : unit @227..250
 
-fn unit_equality@279..316 () -> bool ∈ ∅
-  result: copy : bool @301..305
-    value: eager == : bool @308..316
-      lhs: unit : unit @308..310
-      rhs: unit : unit @314..316
+fn unit_equality@251..288 () -> bool ∈ ∅
+  result: copy : bool @273..277
+    value: eager == : bool @280..288
+      lhs: unit : unit @280..282
+      rhs: unit : unit @286..288
 
-fn unit_sum@317..346 () -> int ∈ ∅
-  result: copy : int @334..337
-    value: eager + : int @340..346
-      lhs: unit : ? @340..342
-      rhs: int 1 : int @345..346
+fn unit_sum@289..318 () -> int ∈ ∅
+  result: copy : int @306..309
+    value: eager + : int @312..318
+      lhs: unit : ? @312..314
+      rhs: int 1 : int @317..318
 
-fn computed_call@347..477 () -> unit ∈ unit
-  result: copy : unit @347..477
+fn computed_call@319..449 () -> unit ∈ unit
+  result: copy : unit @319..449
     value:
-      discard: hole : ? @376..475
-        part[0]: hole : ? @386..450
-        part[1]: hole : ? @457..464
-        part[2]: eager + : int @466..474
-          lhs: int 1 : int @466..467
-          rhs: bool true : ? @470..474
-      tail: unit : unit @366..477
+      discard: hole : ? @348..447
+        part[0]: hole : ? @358..422
+        part[1]: hole : ? @429..436
+        part[2]: eager + : int @438..446
+          lhs: int 1 : int @438..439
+          rhs: bool true : ? @442..446
+      tail: unit : unit @338..449
 
-fn condition@478..527 () -> int ∈ ∅
-  result: copy : int @496..499
-    value: if : ? @502..527
-      condition: int 1 : ? @505..506
-      then: int 2 : int @509..510
-      else: bool false : bool @520..525
+fn condition@450..499 () -> int ∈ ∅
+  result: copy : int @468..471
+    value: if : ? @474..499
+      condition: int 1 : ? @477..478
+      then: int 2 : int @481..482
+      else: bool false : bool @492..497
 
-fn assignment@528..571 () -> unit ∈ unit
-  result: copy : unit @528..571
+fn assignment@500..543 () -> unit ∈ unit
+  result: copy : unit @500..543
     value:
-      let x@554..555: int @550..559
-        initializer: int 1 : int @558..559
-      discard: hole : ? @564..569
-        part[0]: int 2 : int @568..569
-      tail: unit : unit @544..571
+      let x@526..527: int @522..531
+        initializer: int 1 : int @530..531
+      discard: hole : ? @536..541
+        part[0]: int 2 : int @540..541
+      tail: unit : unit @516..543
 
 == semantic diagnostics ==
 error[semantic/unsupported]: construct is not supported by scalar checking
   primary @76..84
-error[semantic/unsupported]: construct is not supported by scalar checking
-  primary @102..114
 error[semantic/type-mismatch]: expected bool, found int
-  primary @139..140
-  secondary @132..136: declared here
+  primary @111..112
+  secondary @104..108: declared here
 error[semantic/type-mismatch]: if branches are int and bool
-  primary @164..200
-  secondary @178..179: int here
-  secondary @193..198: bool here
+  primary @136..172
+  secondary @150..151: int here
+  secondary @165..170: bool here
 error[semantic/type-mismatch]: expected unit, found int
-  primary @229..238
+  primary @201..210
 warning[semantic/unused-name]: local `x` is never read
-  primary @265..266
-  fix @265 -> "_": prefix the name with `_`
+  primary @237..238
+  fix @237 -> "_": prefix the name with `_`
 error[semantic/type-mismatch]: expected bool, found int
-  primary @275..276
-  secondary @268..272: declared here
+  primary @247..248
+  secondary @240..244: declared here
 error[semantic/type-mismatch]: unit values cannot be compared
-  primary @308..316
+  primary @280..288
 error[semantic/type-mismatch]: expected int, found unit
-  primary @340..342
+  primary @312..314
 error[semantic/unsupported]: construct is not supported by scalar checking
-  primary @386..450
+  primary @358..422
 error[semantic/unknown-name]: unknown name `missing`
-  primary @457..464
+  primary @429..436
 error[semantic/type-mismatch]: expected int, found bool
-  primary @470..474
+  primary @442..446
 error[semantic/type-mismatch]: if branches are int and bool
-  primary @502..527
-  secondary @509..510: int here
-  secondary @520..525: bool here
+  primary @474..499
+  secondary @481..482: int here
+  secondary @492..497: bool here
 error[semantic/type-mismatch]: expected bool, found int
-  primary @505..506
+  primary @477..478
 error[semantic/immutable-assignment]: cannot assign to immutable local `x`
-  primary @564..565
-  secondary @554..555: declared here
+  primary @536..537
+  secondary @526..527: declared here

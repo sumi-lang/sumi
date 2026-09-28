@@ -157,11 +157,10 @@ fn recovered_syntax_is_left_as_written_around_the_damage() {
 fn malformed_sources_format_without_a_defect() {
     for source in [
         "fn f(a:int,b:int)->int{let x=a+b\nreturn x*2}",
-        "fn f() { a // why\n + b }\nfn g() { let s = \"x{ a + b }y\" }",
+        "fn f() { a // why\n + b }\nfn g() { let x = a + b }",
         "fn f() { a==b }\n\u{20ac} ; [",
         "fn f() {\n    let x = a < b < c\n    let y = (\n}\nfn g() { ok(1) }",
         "fn f(a, b,) {}",
-        "\"open",
         "fn f() { ((((( }",
     ] {
         fmt(source);

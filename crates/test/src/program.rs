@@ -11,7 +11,7 @@ fn name() -> BoxedStrategy<String> {
 }
 
 fn literal() -> BoxedStrategy<String> {
-    prop::sample::select(&["0", "42", "1000", "\"s\"", "true", "false"][..])
+    prop::sample::select(&["0", "42", "1000", "true", "false"][..])
         .prop_map(str::to_owned)
         .boxed()
 }

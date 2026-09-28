@@ -97,7 +97,6 @@ impl Lexer<'_> {
                 (SyntaxKind::LineComment, TokenFlags::EMPTY)
             }
             b'0'..=b'9' => (SyntaxKind::IntLiteral, self.scan_number()),
-            b'"' => (SyntaxKind::StringLiteral, self.scan_string()),
             byte if is_ident_start(byte) => {
                 self.scan_ident();
                 (self.classify_ident(start), TokenFlags::EMPTY)
@@ -178,42 +177,6 @@ impl Lexer<'_> {
         }
 
         flags
-    }
-
-    fn scan_string(&mut self) -> TokenFlags {
-        let start = self.position;
-        let errors_before = self.errors.len();
-        self.position += 1;
-        loop {
-            match self.peek_byte() {
-                None | Some(b'\n' | b'\r') => {
-                    // Text after a stray quote is not string content, so its escape errors are
-                    // dropped.
-                    self.errors.truncate(errors_before);
-                    self.error(start..self.position, LexErrorKind::UnterminatedString);
-                    return TokenFlags::UNTERMINATED;
-                }
-                Some(b'"') => {
-                    self.position += 1;
-                    return TokenFlags::EMPTY;
-                }
-                Some(b'\\') => {
-                    let escape_start = self.position;
-                    self.position += 1;
-                    match self.peek_byte() {
-                        Some(b'n' | b'r' | b't' | b'\\' | b'"' | b'0') => self.position += 1,
-                        None | Some(b'\n' | b'\r') => {}
-                        Some(_) => {
-                            self.bump_char();
-                            self.error(escape_start..self.position, LexErrorKind::UnknownEscape);
-                        }
-                    }
-                }
-                // Every stop byte is ASCII, so the byte-wise skip never leaves `position`
-                // mid-character.
-                Some(_) => self.position += 1,
-            }
-        }
     }
 
     fn scan_ident(&mut self) {
@@ -327,12 +290,10 @@ pub struct LexError {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum LexErrorKind {
-    UnterminatedString,
     LoneCarriageReturn,
     UnknownCharacter,
     UnknownSuffix,
     LeadingZero,
-    UnknownEscape,
     UnknownPunctuation,
 }
 

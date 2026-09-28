@@ -6,8 +6,8 @@ use sumi_syntax::SyntaxKind;
 use sumi_test::{Front, check, front};
 
 const EXTRA_FRAGMENTS: &[&str] = &[
-    "x", "foo", "x = y", "0", "123", "1.5", "1e", "0123", "1u32", "\"abc\"", "\"open", ";", "[",
-    " ", "\t", "\n", "\r\n", "\r", "// c", "€",
+    "x", "foo", "x = y", "0", "123", "1.5", "1e", "0123", "1u32", ";", "[", " ", "\t", "\n",
+    "\r\n", "\r", "// c", "€",
 ];
 
 /// Bare soup parses only items; the half wrapped in a body reaches the expression parser, where
