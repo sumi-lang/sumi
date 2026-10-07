@@ -23,13 +23,13 @@ enum Repr {
 /// Limbs least significant first, the last one non-zero.
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct Big {
-    negative: bool,
+    is_negative: bool,
     limbs: Box<[u64]>,
 }
 
 /// Zero is non-negative with no limbs; otherwise the last limb is non-zero.
 struct Parts<'a> {
-    negative: bool,
+    is_negative: bool,
     limbs: Cow<'a, [u64]>,
 }
 
@@ -37,45 +37,45 @@ impl Int {
     fn parts(&self) -> Parts<'_> {
         match &self.0 {
             Repr::Small(0) => Parts {
-                negative: false,
+                is_negative: false,
                 limbs: Cow::Borrowed(&[]),
             },
             Repr::Small(value) => Parts {
-                negative: *value < 0,
+                is_negative: *value < 0,
                 limbs: Cow::Owned(vec![value.unsigned_abs()]),
             },
             Repr::Big(big) => Parts {
-                negative: big.negative,
+                is_negative: big.is_negative,
                 limbs: Cow::Borrowed(&big.limbs),
             },
         }
     }
 
-    fn from_parts(negative: bool, limbs: Vec<u64>) -> Self {
+    fn from_parts(is_negative: bool, limbs: Vec<u64>) -> Self {
         let limbs = trim(limbs);
         match limbs.as_slice() {
             [] => Self(Repr::Small(0)),
-            &[limb] if negative && limb <= 1 << 63 => {
+            &[limb] if is_negative && limb <= 1 << 63 => {
                 // `1 << 63` casts to `i64::MIN`; plain negation overflows.
                 Self(Repr::Small((limb as i64).wrapping_neg()))
             }
-            &[limb] if !negative && limb <= i64::MAX as u64 => Self(Repr::Small(limb as i64)),
+            &[limb] if !is_negative && limb <= i64::MAX as u64 => Self(Repr::Small(limb as i64)),
             _ => Self(Repr::Big(Arc::new(Big {
-                negative,
+                is_negative,
                 limbs: limbs.into_boxed_slice(),
             }))),
         }
     }
 
-    fn combine(&self, rhs: &Self, subtract: bool) -> Self {
+    fn combine(&self, rhs: &Self, should_subtract: bool) -> Self {
         let (a, mut b) = (self.parts(), rhs.parts());
-        b.negative ^= subtract;
-        if a.negative == b.negative {
-            Self::from_parts(a.negative, add_mag(&a.limbs, &b.limbs))
+        b.is_negative ^= should_subtract;
+        if a.is_negative == b.is_negative {
+            Self::from_parts(a.is_negative, add_mag(&a.limbs, &b.limbs))
         } else if cmp_mag(&a.limbs, &b.limbs) == Ordering::Less {
-            Self::from_parts(b.negative, sub_mag(&b.limbs, &a.limbs))
+            Self::from_parts(b.is_negative, sub_mag(&b.limbs, &a.limbs))
         } else {
-            Self::from_parts(a.negative, sub_mag(&a.limbs, &b.limbs))
+            Self::from_parts(a.is_negative, sub_mag(&a.limbs, &b.limbs))
         }
     }
 
@@ -91,8 +91,8 @@ impl Int {
         }
         let (quotient, remainder) = div_rem_mag(&a.limbs, &b.limbs);
         Some((
-            Self::from_parts(a.negative != b.negative, quotient),
-            Self::from_parts(a.negative, remainder),
+            Self::from_parts(a.is_negative != b.is_negative, quotient),
+            Self::from_parts(a.is_negative, remainder),
         ))
     }
 
@@ -167,7 +167,7 @@ impl Mul<&Int> for &Int {
             return product.into();
         }
         let (a, b) = (self.parts(), rhs.parts());
-        Int::from_parts(a.negative != b.negative, mul_mag(&a.limbs, &b.limbs))
+        Int::from_parts(a.is_negative != b.is_negative, mul_mag(&a.limbs, &b.limbs))
     }
 }
 
@@ -180,7 +180,7 @@ impl Neg for &Int {
             return negated.into();
         }
         let parts = self.parts();
-        Int::from_parts(!parts.negative, parts.limbs.into_owned())
+        Int::from_parts(!parts.is_negative, parts.limbs.into_owned())
     }
 }
 
@@ -189,20 +189,20 @@ impl Ord for Int {
         match (&self.0, &other.0) {
             (Repr::Small(a), Repr::Small(b)) => a.cmp(b),
             (Repr::Small(_), Repr::Big(b)) => {
-                if b.negative {
+                if b.is_negative {
                     Ordering::Greater
                 } else {
                     Ordering::Less
                 }
             }
             (Repr::Big(a), Repr::Small(_)) => {
-                if a.negative {
+                if a.is_negative {
                     Ordering::Less
                 } else {
                     Ordering::Greater
                 }
             }
-            (Repr::Big(a), Repr::Big(b)) => match (a.negative, b.negative) {
+            (Repr::Big(a), Repr::Big(b)) => match (a.is_negative, b.is_negative) {
                 (false, true) => Ordering::Greater,
                 (true, false) => Ordering::Less,
                 (false, false) => cmp_mag(&a.limbs, &b.limbs),
@@ -220,9 +220,9 @@ impl PartialOrd for Int {
 
 impl fmt::Display for Int {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let (negative, limbs) = match &self.0 {
+        let (is_negative, limbs) = match &self.0 {
             Repr::Small(value) => return fmt::Display::fmt(value, f),
-            Repr::Big(big) => (big.negative, &big.limbs),
+            Repr::Big(big) => (big.is_negative, &big.limbs),
         };
         let mut groups = Vec::new();
         let mut magnitude = limbs.to_vec();
@@ -235,7 +235,7 @@ impl fmt::Display for Int {
         for group in groups.iter().rev() {
             digits.push_str(&format!("{group:019}"));
         }
-        f.pad_integral(!negative, "", &digits)
+        f.pad_integral(!is_negative, "", &digits)
     }
 }
 
@@ -263,7 +263,7 @@ impl std::error::Error for ParseIntError {}
 impl FromStr for Int {
     type Err = ParseIntError;
     fn from_str(text: &str) -> Result<Self, ParseIntError> {
-        let (negative, digits) = match text.strip_prefix('-') {
+        let (is_negative, digits) = match text.strip_prefix('-') {
             Some(digits) => (true, digits),
             None => (false, text),
         };
@@ -281,7 +281,7 @@ impl FromStr for Int {
             let scale = 10u64.pow(u32::try_from(group.len()).expect("at most 19"));
             magnitude = mul_limb_add(&magnitude, scale, value);
         }
-        Ok(Self::from_parts(negative, magnitude))
+        Ok(Self::from_parts(is_negative, magnitude))
     }
 }
 
@@ -603,16 +603,16 @@ mod tests {
             let (quotient, remainder) = (quotient.parts(), remainder.parts());
             prop_assert_eq!(cmp_mag(&remainder.limbs, &divisor.limbs), Ordering::Less);
             if !remainder.limbs.is_empty() {
-                prop_assert_eq!(remainder.negative, dividend.negative);
+                prop_assert_eq!(remainder.is_negative, dividend.is_negative);
             }
             if !quotient.limbs.is_empty() {
-                prop_assert_eq!(quotient.negative, dividend.negative != divisor.negative);
+                prop_assert_eq!(quotient.is_negative, dividend.is_negative != divisor.is_negative);
             }
         }
 
         #[test]
-        fn digits_round_trip(negative in any::<bool>(), digits in "[1-9][0-9]{0,60}") {
-            let text = if negative { format!("-{digits}") } else { digits };
+        fn digits_round_trip(is_negative in any::<bool>(), digits in "[1-9][0-9]{0,60}") {
+            let text = if is_negative { format!("-{digits}") } else { digits };
             prop_assert_eq!(int(&text).to_string(), text);
         }
     }

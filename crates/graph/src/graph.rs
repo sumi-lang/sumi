@@ -232,7 +232,7 @@ pub struct Region {
     nodes: Range<u32>,
     result: NodeId,
     result_at: TextRange,
-    result_value: bool,
+    result_has_value: bool,
     control: Option<NodeId>,
 }
 
@@ -258,7 +258,7 @@ impl Region {
 
     /// Whether the result supplies an ordinary value when the region is entered.
     pub fn result_has_value(&self) -> bool {
-        self.result_value
+        self.result_has_value
     }
 
     pub fn control(&self) -> Option<NodeId> {
@@ -359,7 +359,7 @@ struct Closed {
     end: u32,
     result: NodeId,
     result_at: TextRange,
-    result_value: bool,
+    result_has_value: bool,
     control: Option<NodeId>,
 }
 
@@ -502,7 +502,7 @@ impl GraphBuilder {
         &mut self,
         region: RegionId,
         result: (NodeId, TextRange),
-        result_value: bool,
+        result_has_value: bool,
         control: Option<NodeId>,
     ) {
         let end = u32::try_from(self.nodes.len()).expect("node count fits u32");
@@ -515,7 +515,7 @@ impl GraphBuilder {
             end,
             result: result.0,
             result_at: result.1,
-            result_value,
+            result_has_value,
             control,
         });
     }
@@ -573,7 +573,7 @@ impl GraphBuilder {
                         nodes: opening.start.expect("a region closed was entered")..closed.end,
                         result: closed.result,
                         result_at: closed.result_at,
-                        result_value: closed.result_value,
+                        result_has_value: closed.result_has_value,
                         control: closed.control,
                     }
                 })

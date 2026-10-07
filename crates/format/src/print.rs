@@ -99,7 +99,7 @@ pub(crate) fn print(
                         return w + comma;
                     }
                     let soft = plan_gap.breaks == Breaks::Soft;
-                    if soft && !group.whole && group.in_tail(k as u32) {
+                    if soft && !group.whole && group.is_in_tail(k as u32) {
                         return w;
                     }
                     if k as u32 >= group.end && soft {
@@ -110,11 +110,11 @@ pub(crate) fn print(
                         if enclosing.is_some_and(|&open| broken[open]) {
                             return w + comma;
                         }
-                        if enclosing.is_some_and(|&open| plan.groups[open].in_tail(k as u32)) {
+                        if enclosing.is_some_and(|&open| plan.groups[open].is_in_tail(k as u32)) {
                             return w;
                         }
                     }
-                    w += if plan_gap.frozen {
+                    w += if plan_gap.is_frozen {
                         flat_trivia_width(k)
                     } else {
                         usize::from(plan_gap.flat == Flat::Space)
@@ -134,7 +134,7 @@ pub(crate) fn print(
                 let opening = plan.gaps[gap];
                 let extra = stack
                     .iter()
-                    .filter(|&&open| broken[open] && plan.groups[open].in_tail(gap as u32))
+                    .filter(|&&open| broken[open] && plan.groups[open].is_in_tail(gap as u32))
                     .count();
                 let indent = (opening.level as usize + extra) * INDENT.len();
                 opening.breaks == Breaks::Soft
@@ -154,7 +154,7 @@ pub(crate) fn print(
         let trivia = trivia_range(gap);
         let input_range = TextRange::new(lexed.boundary(trivia.start), lexed.boundary(trivia.end));
         let input_text = input_range.text(source);
-        let text: &str = if plan_gap.frozen {
+        let text: &str = if plan_gap.is_frozen {
             input_text
         } else {
             let breaks = match plan_gap.breaks {
@@ -179,7 +179,7 @@ pub(crate) fn print(
             let extra = || {
                 stack
                     .iter()
-                    .filter(|&&open| broken[open] && plan.groups[open].in_tail(gap as u32))
+                    .filter(|&&open| broken[open] && plan.groups[open].is_in_tail(gap as u32))
                     .count() as u32
             };
             let indent = |out: &mut String, level: u32| {
@@ -188,13 +188,13 @@ pub(crate) fn print(
                 }
             };
             for (k, comment) in sig.comments.iter().enumerate() {
-                if comment.trailing {
+                if comment.is_trailing {
                     out.push(' ');
                 } else {
                     if gap > 0 || k > 0 {
                         out.push('\n');
                     }
-                    if comment.blank_before {
+                    if comment.has_blank_before {
                         out.push('\n');
                     }
                     indent(&mut out, plan_gap.comment_level());
@@ -209,7 +209,7 @@ pub(crate) fn print(
                 if gap > 0 || !sig.comments.is_empty() {
                     out.push('\n');
                 }
-                if sig.blank_before_token {
+                if sig.has_blank_before_token {
                     out.push('\n');
                 }
                 indent(&mut out, plan_gap.level);

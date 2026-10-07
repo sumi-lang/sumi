@@ -14,7 +14,7 @@ fn analyzed(source: &str) -> Analysis {
 fn clean(source: &str) -> Analysis {
     let analysis = analyzed(source);
     assert!(analysis.is_valid(), "{:?}", analysis.diagnostics());
-    assert!(analysis.functions().iter().all(Function::complete));
+    assert!(analysis.functions().iter().all(Function::is_complete));
     check::semantics(&analysis);
     analysis
 }
@@ -102,7 +102,7 @@ fn completing_paths_do_not_erase_a_live_unit_fallthrough() {
             "expected int, found unit",
             "{source}"
         );
-        assert!(!analysis.functions()[0].complete(), "{source}");
+        assert!(!analysis.functions()[0].is_complete(), "{source}");
         check::semantics(&analysis);
     }
 }
@@ -121,7 +121,7 @@ fn an_inferred_unit_fallthrough_conflicts_with_a_return() {
         semantic(&analysis)[0].message.as_ref(),
         "function result is both unit and int; add a return type annotation"
     );
-    assert!(!analysis.functions()[0].complete());
+    assert!(!analysis.functions()[0].is_complete());
     check::semantics(&analysis);
 }
 
@@ -140,7 +140,7 @@ fn damaged_values_with_completing_inputs_remain_incomplete() {
     ] {
         let analysis = analyzed(source);
         assert!(!analysis.is_valid(), "{source}");
-        assert!(!analysis.functions()[function].complete(), "{source}");
+        assert!(!analysis.functions()[function].is_complete(), "{source}");
         check::semantics(&analysis);
     }
 }
@@ -156,7 +156,7 @@ fn validity_and_completion_are_independent() {
         let source = format!("fn f() -> int = {lhs} + {rhs}");
         let analysis = analyzed(&source);
         assert_eq!(analysis.is_valid(), valid, "{source}");
-        assert_eq!(analysis.functions()[0].complete(), valid, "{source}");
+        assert_eq!(analysis.functions()[0].is_complete(), valid, "{source}");
         check::semantics(&analysis);
     }
 }
@@ -180,7 +180,7 @@ fn damaged_completion_propagates_through_expression_forms() {
     ] {
         let analysis = analyzed(source);
         assert!(!analysis.is_valid(), "{source}");
-        assert!(!analysis.functions()[function].complete(), "{source}");
+        assert!(!analysis.functions()[function].is_complete(), "{source}");
         check::semantics(&analysis);
     }
 }
@@ -331,7 +331,7 @@ fn literals_of_any_size_fold_a_leading_minus() {
     for expr in ["01", "1_000", "1u32"] {
         let a = analyzed(&format!("fn f() -> int = {expr}"));
         assert!(!a.is_valid());
-        assert!(!a.functions()[0].complete());
+        assert!(!a.functions()[0].is_complete());
         assert!(semantic(&a).is_empty());
     }
 }
@@ -472,7 +472,7 @@ fn scalar_operator_type_matrix() {
                 assert!(a.parsed().diagnostics().is_empty(), "{source}");
                 assert_eq!(a.is_valid(), accepted, "{source}");
                 if accepted {
-                    assert!(a.functions()[0].complete());
+                    assert!(a.functions()[0].is_complete());
                     match *self::op(&a, value(&a, 0)) {
                         Op::Binary(found) => assert_eq!(Some(found), eager),
                         Op::And { .. } => assert_eq!(op, "&&"),
@@ -506,7 +506,7 @@ fn binary_requirements_survive_a_failed_operand() {
         let mut actual = codes(&a);
         actual.sort_unstable_by_key(|code| code.name);
         assert_eq!(actual, [TYPE_MISMATCH, UNKNOWN_NAME], "{expression}");
-        assert!(!a.functions()[0].complete());
+        assert!(!a.functions()[0].is_complete());
     }
 }
 
@@ -520,7 +520,7 @@ fn recovery_does_not_expose_functions_or_leak_argument_scopes() {
     let a = analyzed("fn f() {\n let x = absent\n let x = true\n _ = x + 1\n}\n");
     assert_eq!(codes(&a), [UNKNOWN_NAME, TYPE_MISMATCH]);
     let a = analyzed("fn f() -> int {\n _ = absent\n 1\n}\n");
-    assert!(!a.functions()[0].complete());
+    assert!(!a.functions()[0].is_complete());
     clean("fn f() -> int {\n let x =\n 1\n x\n}\n");
 }
 
@@ -571,7 +571,7 @@ fn large_definition_chains_and_cycles_are_stack_safe() {
             let a = analyzed(&source);
             assert_eq!(a.is_valid(), grounded);
             if grounded {
-                assert!(a.functions().iter().all(Function::complete));
+                assert!(a.functions().iter().all(Function::is_complete));
             } else {
                 let recursion = usize::from(!conflict);
                 assert_eq!(
@@ -593,7 +593,7 @@ fn large_definition_chains_and_cycles_are_stack_safe() {
                 assert!(
                     a.functions()
                         .iter()
-                        .all(|f| f.signature().is_none() && !f.complete())
+                        .all(|f| f.signature().is_none() && !f.is_complete())
                 );
             }
         }
@@ -671,7 +671,7 @@ proptest::proptest! {
                 let name = function.name().map(|name| analysis.text(name));
                 let counterpart = other.functions().iter().find(|f| f.name().map(|n| other.text(n)) == name).unwrap();
                 proptest::prop_assert_eq!(function.signature().map(|s| s.result), counterpart.signature().map(|s| s.result));
-                proptest::prop_assert_eq!(function.complete(), counterpart.complete());
+                proptest::prop_assert_eq!(function.is_complete(), counterpart.is_complete());
             }
         }
     }

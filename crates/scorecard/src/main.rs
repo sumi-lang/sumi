@@ -323,7 +323,7 @@ fn churn(
     for i in (0..len).filter(|&i| map(i).is_some()) {
         let j = map(i).expect("filtered to mapped tokens");
         let boundary =
-            before.input().boundary_before(sig(i)) != after.input().boundary_before(sig(j));
+            before.input().has_boundary_before(sig(i)) != after.input().has_boundary_before(sig(j));
         let partner = match before.input().partner(sig(i)) {
             None => after.input().partner(sig(j)).is_some(),
             Some(p) => match map(p.to_usize()) {

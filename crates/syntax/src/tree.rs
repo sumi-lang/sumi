@@ -240,7 +240,7 @@ impl Parse {
             closer: None,
             enclosing_closer: None,
             // The root never completes; `build` closes it below.
-            completed: true,
+            is_completed: true,
         });
         assert_eq!(
             builder.position,
@@ -383,7 +383,7 @@ pub(crate) struct Marker<'p, 'a> {
     /// The nearest closer outside `closer`. Entering an unclosed construct keeps it, so recovery
     /// still has a limit.
     enclosing_closer: Option<SigIdx>,
-    completed: bool,
+    is_completed: bool,
 }
 
 impl<'a> Marker<'_, 'a> {
@@ -418,7 +418,7 @@ impl<'a> Marker<'_, 'a> {
         let limit = self.next_parser_closer();
         let whole = partner.is_some_and(|partner| match limit {
             Some(closer) => partner < closer,
-            None => !self.builder.input.boundary_in(index + 1..partner + 1),
+            None => !self.builder.input.has_boundary_in(index + 1..partner + 1),
         });
         self.token();
         if let Some(partner) = partner.filter(|_| whole) {
@@ -445,7 +445,7 @@ impl<'a> Marker<'_, 'a> {
             open: self.open,
             closer: self.closer,
             enclosing_closer: self.enclosing_closer,
-            completed: false,
+            is_completed: false,
         }
     }
 
@@ -470,7 +470,7 @@ impl<'a> Marker<'_, 'a> {
             open: self.open,
             closer: self.closer,
             enclosing_closer: self.enclosing_closer,
-            completed: false,
+            is_completed: false,
         }
     }
 
@@ -545,7 +545,7 @@ impl<'a> Marker<'_, 'a> {
             first_token,
             end_token,
         });
-        self.completed = true;
+        self.is_completed = true;
         CompletedMarker {
             node,
             first: self.first,
@@ -577,12 +577,12 @@ impl<'a> Marker<'_, 'a> {
         self.current() == Some(kind)
     }
 
-    pub(crate) fn joint(&self) -> bool {
-        self.nth_joint(0)
+    pub(crate) fn is_joint(&self) -> bool {
+        self.is_nth_joint(0)
     }
 
     /// Whether token `n` past the next one is glued to the one after it.
-    pub(crate) fn nth_joint(&self, n: usize) -> bool {
+    pub(crate) fn is_nth_joint(&self, n: usize) -> bool {
         self.builder
             .position
             .checked_add(n as u32)
@@ -597,50 +597,50 @@ impl<'a> Marker<'_, 'a> {
     }
 
     /// Read on the whole input, not the horizon: no token of the shape can start an item.
-    pub(crate) fn at_headless_signature(&self) -> bool {
+    pub(crate) fn is_at_headless_signature(&self) -> bool {
         let position = self.builder.position;
         position.to_usize() < self.builder.input.len()
-            && self.builder.input.headless_signature_at(position)
+            && self.builder.input.is_headless_signature_at(position)
     }
 
-    pub(crate) fn joint_before(&self) -> bool {
+    pub(crate) fn is_joint_before(&self) -> bool {
         self.builder
             .position
             .checked_sub(1)
             .is_some_and(|previous| self.builder.input.is_joint(previous))
     }
 
-    pub(crate) fn newline(&self) -> bool {
-        self.nth_newline(0)
+    pub(crate) fn is_after_newline(&self) -> bool {
+        self.is_nth_after_newline(0)
     }
 
-    pub(crate) fn in_matched_delimiters(&self) -> bool {
+    pub(crate) fn is_in_matched_delimiters(&self) -> bool {
         let index = self.builder.position;
         index.to_usize() < self.builder.input.len()
-            && self.builder.input.in_matched_delimiters(index)
+            && self.builder.input.is_in_matched_delimiters(index)
     }
 
-    pub(crate) fn nth_newline(&self, n: usize) -> bool {
+    pub(crate) fn is_nth_after_newline(&self, n: usize) -> bool {
         self.builder
             .position
             .checked_add(n as u32)
             .is_some_and(|index| {
                 index.to_usize() < self.builder.input.len()
-                    && self.builder.input.newline_before(index)
+                    && self.builder.input.has_newline_before(index)
             })
     }
 
-    pub(crate) fn boundary(&self) -> bool {
-        self.nth_boundary(0)
+    pub(crate) fn is_at_boundary(&self) -> bool {
+        self.is_nth_at_boundary(0)
     }
 
-    pub(crate) fn nth_boundary(&self, n: usize) -> bool {
+    pub(crate) fn is_nth_at_boundary(&self, n: usize) -> bool {
         self.builder
             .position
             .checked_add(n as u32)
             .is_some_and(|index| {
                 index.to_usize() < self.builder.input.len()
-                    && self.builder.input.boundary_before(index)
+                    && self.builder.input.has_boundary_before(index)
             })
     }
 
@@ -650,7 +650,7 @@ impl<'a> Marker<'_, 'a> {
             .is_some_and(crate::grammar::starts_expression)
     }
 
-    pub(crate) fn partnered(&self) -> bool {
+    pub(crate) fn has_partner(&self) -> bool {
         let position = self.builder.position;
         position.to_usize() < self.builder.input.len()
             && self.builder.input.partner(position).is_some()
@@ -718,11 +718,11 @@ impl<'a> Marker<'_, 'a> {
         m
     }
 
-    pub(crate) fn closed(&self) -> bool {
+    pub(crate) fn is_closed(&self) -> bool {
         self.closer.is_some()
     }
 
-    pub(crate) fn closer_ahead(&self) -> bool {
+    pub(crate) fn has_closer_ahead(&self) -> bool {
         self.closer
             .is_some_and(|closer| closer > self.builder.position)
     }
@@ -756,7 +756,7 @@ impl<'a> Marker<'_, 'a> {
 
     /// Attach `kind` unless a statement boundary precedes it; otherwise record it missing.
     pub(crate) fn expect(&mut self, kind: SyntaxKind) -> bool {
-        if self.at(kind) && !self.boundary() {
+        if self.at(kind) && !self.is_at_boundary() {
             self.token();
             true
         } else {
@@ -851,7 +851,7 @@ impl<'a> Marker<'_, 'a> {
 impl Drop for Marker<'_, '_> {
     fn drop(&mut self) {
         // A panic while unwinding aborts and loses the original.
-        if !self.completed && !std::thread::panicking() {
+        if !self.is_completed && !std::thread::panicking() {
             panic!("a started node was dropped without being completed");
         }
     }

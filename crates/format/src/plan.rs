@@ -38,7 +38,7 @@ pub(crate) struct Gap {
     pub(crate) level: u32,
     pub(crate) breaks: Breaks,
     pub(crate) closer: Option<Closer>,
-    pub(crate) frozen: bool,
+    pub(crate) is_frozen: bool,
 }
 
 impl Gap {
@@ -48,7 +48,7 @@ impl Gap {
             level,
             breaks,
             closer,
-            frozen: false,
+            is_frozen: false,
         }
     }
 
@@ -93,7 +93,7 @@ pub(crate) struct Group {
 }
 
 impl Group {
-    pub(crate) fn in_tail(&self, gap: u32) -> bool {
+    pub(crate) fn is_in_tail(&self, gap: u32) -> bool {
         self.tail.is_some_and(|(from, to)| from <= gap && gap < to)
     }
 }
@@ -130,7 +130,7 @@ pub(crate) fn plan(lexed: &LexedFile, parse: &Parse) -> Plan {
     for gap in 0..=n {
         let g = &mut planner.gaps[gap];
         let holds = |kind| holds(lexed, input, gap, kind);
-        if g.frozen {
+        if g.is_frozen {
             g.breaks = if holds(SyntaxKind::Newline) {
                 Breaks::Hard
             } else {
@@ -152,7 +152,7 @@ pub(crate) fn plan(lexed: &LexedFile, parse: &Parse) -> Plan {
             continue;
         }
         let next = planner.gaps[gap + 1];
-        let glued = if next.frozen {
+        let glued = if next.is_frozen {
             input.is_joint(SigIdx::new(gap as u32))
         } else {
             next.flat == Flat::Glue && next.breaks != Breaks::Hard
@@ -165,7 +165,7 @@ pub(crate) fn plan(lexed: &LexedFile, parse: &Parse) -> Plan {
         }
     }
     for sig in 0..n {
-        if planner.layout_comma[sig] && planner.gaps[sig + 1].frozen {
+        if planner.layout_comma[sig] && planner.gaps[sig + 1].is_frozen {
             planner.layout_comma[sig] = false;
         }
     }
@@ -479,11 +479,11 @@ impl Planner<'_> {
             None
         };
         let power = self.power(els);
-        let mut first = true;
+        let mut is_first = true;
         for &el in els {
             if let El::Node(child, child_kind) = el {
-                if first {
-                    first = false;
+                if is_first {
+                    is_first = false;
                     if child_kind == NodeKind::BinaryExpr && self.power_of(child) == power {
                         let child_els = self.elements(child);
                         self.binary(child, &child_els, level, Some(cont));
@@ -546,11 +546,11 @@ impl Planner<'_> {
             }
         }
         for gap in anchors {
-            self.gaps[gap].frozen = true;
+            self.gaps[gap].is_frozen = true;
         }
         for (start, end) in ranges {
             for gap in start + 1..end {
-                self.gaps[gap].frozen = true;
+                self.gaps[gap].is_frozen = true;
             }
             // Recovery reads nothing of a gap but whether it holds a line break, so an edge whose
             // break the rules keep is reindented, not frozen.
@@ -558,7 +558,7 @@ impl Planner<'_> {
                 let kept_break = self.gaps[edge].breaks == Breaks::Hard
                     && holds(lexed, self.input, edge, SyntaxKind::Newline);
                 if !kept_break {
-                    self.gaps[edge].frozen = true;
+                    self.gaps[edge].is_frozen = true;
                 }
             }
         }

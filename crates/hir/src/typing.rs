@@ -71,8 +71,8 @@ impl Typing {
     }
 
     /// Liveness is not a type claim, so no replay reads it.
-    pub fn entry(&mut self, node: NodeId, runnable: bool) {
-        if runnable {
+    pub fn entry(&mut self, node: NodeId, is_runnable: bool) {
+        if is_runnable {
             self.solver.expect(
                 node,
                 &Product {
@@ -148,7 +148,7 @@ impl Typing {
         }
         for (call, edge, solved) in self.solver.edges() {
             if let Edge::Call(claim) = *edge
-                && (solved.types.ty().is_some() || solved.types.unknown())
+                && (solved.types.ty().is_some() || solved.types.is_unknown())
             {
                 replay.learn(call, &solved.types.imported(claim));
             }
@@ -281,13 +281,13 @@ mod tests {
         typing.solve(&cx());
         for node in [hole, call, join] {
             let evidence = typing.evidence(node);
-            assert!(evidence.unknown());
+            assert!(evidence.is_unknown());
             assert_eq!(evidence.ty(), None);
             assert!(!evidence.is_conflict());
         }
         assert_eq!(typing.resolve(literal), Some(Ty::Int));
         let mut replay = typing.replay();
-        assert!(replay.evidence(call).unknown());
+        assert!(replay.evidence(call).is_unknown());
         replay.expect(call, Expected::Ty(Ty::Unit));
         assert_eq!(replay.resolve(call), None);
         assert!(!replay.evidence(call).is_conflict());
@@ -318,14 +318,14 @@ mod tests {
             typing.call(result, downstream, at(30));
             typing.solve(&cx());
             let evidence = typing.evidence(result);
-            assert!(evidence.is_conflict() && !evidence.inherited());
+            assert!(evidence.is_conflict() && !evidence.is_inherited());
             let claims = evidence.claims();
             assert_eq!(claims.len(), 2);
             assert_eq!(claims[0].0, types[0].0);
             assert_eq!(typing.origin(claims[0].1), Some(at(types[0].1)));
             assert_eq!(typing.origin(claims[1].1), Some(at(types[1].1)));
             let downstream = typing.evidence(downstream);
-            assert!(downstream.is_conflict() && downstream.inherited());
+            assert!(downstream.is_conflict() && downstream.is_inherited());
             assert!(
                 downstream
                     .claims()
@@ -366,7 +366,7 @@ mod tests {
         typing.flow(local, call, Edge::Bind);
         typing.solve(&cx());
         let evidence = typing.evidence(call);
-        assert!(evidence.is_conflict() && !evidence.inherited());
+        assert!(evidence.is_conflict() && !evidence.is_inherited());
         assert_eq!(typing.origin(evidence.claims()[0].1), Some(at(2)));
     }
 
@@ -401,14 +401,14 @@ mod tests {
         assert_eq!(typing.resolve(then_branch), Some(Ty::Int));
         assert_eq!(typing.resolve(else_branch), Some(Ty::Bool));
         let evidence = typing.evidence(join);
-        assert!(evidence.is_conflict() && !evidence.inherited());
+        assert!(evidence.is_conflict() && !evidence.is_inherited());
         let origins: Vec<_> = evidence
             .claims()
             .into_iter()
             .map(|(ty, claim)| (ty, typing.origin(claim).unwrap()))
             .collect();
         assert_eq!(origins, [(Ty::Int, at(0)), (Ty::Bool, at(1))]);
-        assert!(typing.evidence(call).inherited());
+        assert!(typing.evidence(call).is_inherited());
         let mut replay = typing.replay();
         assert_eq!(replay.resolve(join), None);
         assert_eq!(replay.resolve(call), None);
@@ -543,6 +543,6 @@ mod tests {
         assert_eq!(settled.resolve(copied), Some(Ty::Int));
         assert_eq!(settled.may(copied).ints, settled.may(literal).ints);
         assert_eq!(settled.resolve(apart), None);
-        assert!(!settled.may(apart).live());
+        assert!(!settled.may(apart).is_live());
     }
 }

@@ -353,12 +353,12 @@ fn declared_children_are_present_as_their_accessors_answer() {
             .find(|child| child.name == name)
             .expect("a declared child")
     };
-    assert!((child("name").present)(tree, item.node()));
-    assert!((child("param_list").present)(tree, item.node()));
-    assert!(!(child("ret").present)(tree, item.node()));
-    assert!((child("body").present)(tree, item.node()));
+    assert!((child("name").is_present)(tree, item.node()));
+    assert!((child("param_list").is_present)(tree, item.node()));
+    assert!(!(child("ret").is_present)(tree, item.node()));
+    assert!((child("body").is_present)(tree, item.node()));
     let param_list = item.param_list(tree).expect("a parameter list").node();
-    assert!(!(child("name").present)(tree, param_list));
+    assert!(!(child("name").is_present)(tree, param_list));
 }
 
 #[test]

@@ -87,7 +87,7 @@ impl Analysis {
         let run = self.graph.run(id);
         Some(Ranges {
             params: run.params().map(|param| self.may(param).clone()).collect(),
-            result: if self.may(run.entry()).live() {
+            result: if self.may(run.entry()).is_live() {
                 self.may(run.result()).clone()
             } else {
                 May::NONE
@@ -203,7 +203,7 @@ impl<'a> Program<'a> {
             }),
             Ty::Bool if may.bools == Bools::from(true) => Some(Value::Bool(true)),
             Ty::Bool if may.bools == Bools::from(false) => Some(Value::Bool(false)),
-            Ty::Unit if may.unit => Some(Value::Unit),
+            Ty::Unit if may.has_unit => Some(Value::Unit),
             _ => None,
         }
     }
@@ -260,7 +260,7 @@ pub struct Function {
     name: Option<TextRange>,
     origin: TextRange,
     signature: Option<Signature>,
-    complete: bool,
+    is_complete: bool,
     depth: Option<u64>,
 }
 
@@ -276,8 +276,8 @@ impl Function {
         self.signature.as_ref()
     }
     /// The body built whole and every value in it resolved.
-    pub fn complete(&self) -> bool {
-        self.complete
+    pub fn is_complete(&self) -> bool {
+        self.is_complete
     }
     /// Most frames a run from here holds at once, the entry included; none when a measure's hull is
     /// unbounded. A valid file's run is finite either way.

@@ -146,7 +146,7 @@ pub struct Ints(Option<Band>);
 struct Band {
     lo: Bound,
     hi: Bound,
-    hole: bool,
+    has_hole: bool,
 }
 
 impl From<Int> for Ints {
@@ -161,7 +161,7 @@ impl Ints {
     pub const ALL: Self = Self(Some(Band {
         lo: Bound::NegInf,
         hi: Bound::PosInf,
-        hole: false,
+        has_hole: false,
     }));
 
     /// The hull of indices in every start-inclusive, end-exclusive range of the two sets.
@@ -172,8 +172,8 @@ impl Ints {
         Self::band(start.lo.clone(), end.hi.pred(), false)
     }
 
-    fn band(mut lo: Bound, mut hi: Bound, hole: bool) -> Self {
-        if hole {
+    fn band(mut lo: Bound, mut hi: Bound, has_hole: bool) -> Self {
+        if has_hole {
             if lo.sign() == Ordering::Equal {
                 lo = lo.succ();
             }
@@ -184,8 +184,8 @@ impl Ints {
         if lo > hi || lo == Bound::PosInf || hi == Bound::NegInf {
             return Self::EMPTY;
         }
-        let hole = hole && lo.sign() == Ordering::Less && hi.sign() == Ordering::Greater;
-        Self(Some(Band { lo, hi, hole }))
+        let has_hole = has_hole && lo.sign() == Ordering::Less && hi.sign() == Ordering::Greater;
+        Self(Some(Band { lo, hi, has_hole }))
     }
 
     #[inline]
@@ -196,7 +196,9 @@ impl Ints {
     #[inline]
     pub fn contains_zero(&self) -> bool {
         self.0.as_ref().is_some_and(|band| {
-            !band.hole && band.lo.sign() != Ordering::Greater && band.hi.sign() != Ordering::Less
+            !band.has_hole
+                && band.lo.sign() != Ordering::Greater
+                && band.hi.sign() != Ordering::Less
         })
     }
 
@@ -237,13 +239,17 @@ impl Ints {
             (_, None) => return false,
             (None, Some(_)) => other.clone(),
             (Some(a), Some(b))
-                if a.lo <= b.lo && b.hi <= a.hi && (!a.hole || !other.contains_zero()) =>
+                if a.lo <= b.lo && b.hi <= a.hi && (!a.has_hole || !other.contains_zero()) =>
             {
                 return false;
             }
             (Some(a), Some(b)) => {
-                let hole = !self.contains_zero() && !other.contains_zero();
-                Self::band(min(&a.lo, &b.lo).clone(), max(&a.hi, &b.hi).clone(), hole)
+                let has_hole = !self.contains_zero() && !other.contains_zero();
+                Self::band(
+                    min(&a.lo, &b.lo).clone(),
+                    max(&a.hi, &b.hi).clone(),
+                    has_hole,
+                )
             }
         };
         let grew = joined != *self;
@@ -252,13 +258,13 @@ impl Ints {
     }
 
     fn without(&self, point: &Bound) -> Self {
-        let Some(Band { lo, hi, hole }) = &self.0 else {
+        let Some(Band { lo, hi, has_hole }) = &self.0 else {
             return Self::EMPTY;
         };
         if lo == point {
-            Self::band(lo.succ(), hi.clone(), *hole)
+            Self::band(lo.succ(), hi.clone(), *has_hole)
         } else if hi == point {
-            Self::band(lo.clone(), hi.pred(), *hole)
+            Self::band(lo.clone(), hi.pred(), *has_hole)
         } else if point.sign() == Ordering::Equal {
             Self::band(lo.clone(), hi.clone(), true)
         } else {
@@ -303,14 +309,14 @@ impl Ints {
     }
 
     fn refine(&self, op: CmpOp, other: &Self) -> Self {
-        let (Some(Band { lo, hi, hole }), Some(b)) = (&self.0, &other.0) else {
+        let (Some(Band { lo, hi, has_hole }), Some(b)) = (&self.0, &other.0) else {
             return Self::EMPTY;
         };
         match op {
-            CmpOp::Lt => Self::band(lo.clone(), min(hi, &b.hi.pred()).clone(), *hole),
-            CmpOp::Le => Self::band(lo.clone(), min(hi, &b.hi).clone(), *hole),
-            CmpOp::Gt => Self::band(max(lo, &b.lo.succ()).clone(), hi.clone(), *hole),
-            CmpOp::Ge => Self::band(max(lo, &b.lo).clone(), hi.clone(), *hole),
+            CmpOp::Lt => Self::band(lo.clone(), min(hi, &b.hi.pred()).clone(), *has_hole),
+            CmpOp::Le => Self::band(lo.clone(), min(hi, &b.hi).clone(), *has_hole),
+            CmpOp::Gt => Self::band(max(lo, &b.lo.succ()).clone(), hi.clone(), *has_hole),
+            CmpOp::Ge => Self::band(max(lo, &b.lo).clone(), hi.clone(), *has_hole),
             CmpOp::Eq => self & other,
             CmpOp::Ne => {
                 if other.is_point() {
@@ -324,7 +330,7 @@ impl Ints {
 
     /// Each endpoint widened outward to a threshold; a point stays exact.
     pub fn round(&self, thresholds: &Thresholds) -> Self {
-        let Some(Band { lo, hi, hole }) = &self.0 else {
+        let Some(Band { lo, hi, has_hole }) = &self.0 else {
             return Self::EMPTY;
         };
         if lo == hi {
@@ -338,7 +344,7 @@ impl Ints {
             Bound::Finite(value) => thresholds.above(value),
             _ => hi.clone(),
         };
-        Self::band(lo, hi, *hole)
+        Self::band(lo, hi, *has_hole)
     }
 }
 
@@ -349,7 +355,7 @@ impl BitAnd<&Ints> for &Ints {
             (Some(a), Some(b)) => Ints::band(
                 max(&a.lo, &b.lo).clone(),
                 min(&a.hi, &b.hi).clone(),
-                a.hole || b.hole,
+                a.has_hole || b.has_hole,
             ),
             _ => Ints::EMPTY,
         }
@@ -361,7 +367,7 @@ impl Neg for &Ints {
     fn neg(self) -> Ints {
         match &self.0 {
             None => Ints::EMPTY,
-            Some(Band { lo, hi, hole }) => Ints::band(-hi, -lo, *hole),
+            Some(Band { lo, hi, has_hole }) => Ints::band(-hi, -lo, *has_hole),
         }
     }
 }
@@ -458,11 +464,11 @@ impl fmt::Display for Ints {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.0 {
             None => f.write_str("∅"),
-            Some(Band { lo, hi, hole }) => {
+            Some(Band { lo, hi, has_hole }) => {
                 let open = if lo.is_finite() { '[' } else { '(' };
                 let close = if hi.is_finite() { ']' } else { ')' };
                 write!(f, "{open}{lo}, {hi}{close}")?;
-                if *hole {
+                if *has_hole {
                     f.write_str(" \\ 0")?;
                 }
                 Ok(())
@@ -567,21 +573,21 @@ impl fmt::Display for Bools {
 pub struct May {
     pub ints: Ints,
     pub bools: Bools,
-    pub unit: bool,
+    pub has_unit: bool,
 }
 
 impl May {
     pub const NONE: Self = Self {
         ints: Ints::EMPTY,
         bools: Bools::EMPTY,
-        unit: false,
+        has_unit: false,
     };
 
     pub fn ints(ints: Ints) -> Self {
         Self {
             ints,
             bools: Bools::EMPTY,
-            unit: false,
+            has_unit: false,
         }
     }
 
@@ -589,12 +595,15 @@ impl May {
         Self {
             ints: Ints::EMPTY,
             bools,
-            unit: false,
+            has_unit: false,
         }
     }
 
-    pub fn of_unit(unit: bool) -> Self {
-        Self { unit, ..Self::NONE }
+    pub fn of_unit(has_unit: bool) -> Self {
+        Self {
+            has_unit,
+            ..Self::NONE
+        }
     }
 
     pub fn every(ty: Ty) -> Self {
@@ -606,17 +615,17 @@ impl May {
     }
 
     #[inline]
-    pub fn live(&self) -> bool {
-        !self.ints.is_empty() || !self.bools.is_empty() || self.unit
+    pub fn is_live(&self) -> bool {
+        !self.ints.is_empty() || !self.bools.is_empty() || self.has_unit
     }
 
     /// True when `self` grew.
     pub fn join(&mut self, other: &Self) -> bool {
         let ints = self.ints.join(&other.ints);
         let bools = self.bools.join(other.bools);
-        let unit = !self.unit && other.unit;
-        self.unit |= other.unit;
-        ints | bools | unit
+        let has_unit = !self.has_unit && other.has_unit;
+        self.has_unit |= other.has_unit;
+        ints | bools | has_unit
     }
 
     pub fn shown(&self, ty: Ty) -> Shown<'_> {
@@ -631,7 +640,7 @@ impl fmt::Display for Shown<'_> {
         match self.1 {
             Ty::Int => write!(f, "{}", self.0.ints),
             Ty::Bool => write!(f, "{}", self.0.bools),
-            Ty::Unit => f.write_str(if self.0.unit { "unit" } else { "∅" }),
+            Ty::Unit => f.write_str(if self.0.has_unit { "unit" } else { "∅" }),
         }
     }
 }
@@ -752,7 +761,7 @@ impl Domain for May {
         Self {
             ints: self.ints.refine(op, &other.ints),
             bools,
-            unit: false,
+            has_unit: false,
         }
     }
 
@@ -772,7 +781,7 @@ mod tests {
         if text == "∅" {
             return Ints::EMPTY;
         }
-        let (band, hole) = match text.strip_suffix(" \\ 0") {
+        let (band, has_hole) = match text.strip_suffix(" \\ 0") {
             Some(band) => (band, true),
             None => (text, false),
         };
@@ -783,7 +792,7 @@ mod tests {
             "inf" => Bound::PosInf,
             _ => Bound::Finite(text.parse().unwrap()),
         };
-        Ints::band(bound(lo), bound(hi), hole)
+        Ints::band(bound(lo), bound(hi), has_hole)
     }
 
     #[test]
@@ -893,9 +902,9 @@ mod tests {
         assert_eq!(Ints::ALL, ints("[-inf, inf]"));
         assert!(Ints::ALL.contains_zero());
         assert_eq!(May::every(Ty::Bool).bools, Bools::BOTH);
-        assert!(May::every(Ty::Unit).unit);
+        assert!(May::every(Ty::Unit).has_unit);
         for ty in Ty::ALL {
-            assert!(May::every(ty).live());
+            assert!(May::every(ty).is_live());
         }
     }
 
@@ -986,8 +995,8 @@ mod tests {
     }
 
     fn band() -> impl Strategy<Value = Ints> {
-        (-20i64..20, 0i64..25, any::<bool>()).prop_map(|(lo, len, hole)| {
-            Ints::band(Bound::finite(lo), Bound::finite(lo + len), hole)
+        (-20i64..20, 0i64..25, any::<bool>()).prop_map(|(lo, len, has_hole)| {
+            Ints::band(Bound::finite(lo), Bound::finite(lo + len), has_hole)
         })
     }
 
@@ -1007,20 +1016,22 @@ mod tests {
     }
 
     fn members(band: &Ints) -> Vec<i64> {
-        let Some(Band { lo, hi, hole }) = &band.0 else {
+        let Some(Band { lo, hi, has_hole }) = &band.0 else {
             return Vec::new();
         };
         let (Bound::Finite(lo), Bound::Finite(hi)) = (lo, hi) else {
             unreachable!("finite test bands");
         };
         let (lo, hi) = (i64::try_from(lo).unwrap(), i64::try_from(hi).unwrap());
-        (lo..=hi).filter(|v| !(*hole && *v == 0)).collect()
+        (lo..=hi).filter(|v| !(*has_hole && *v == 0)).collect()
     }
 
     fn contains(band: &Ints, value: i64) -> bool {
         band.0.as_ref().is_some_and(|band| {
             let value = Bound::finite(value);
-            band.lo <= value && value <= band.hi && !(band.hole && value.sign() == Ordering::Equal)
+            band.lo <= value
+                && value <= band.hi
+                && !(band.has_hole && value.sign() == Ordering::Equal)
         })
     }
 
@@ -1043,16 +1054,16 @@ mod tests {
         ops
     }
 
-    fn member(set: &May, value: &Value) -> bool {
+    fn is_member(set: &May, value: &Value) -> bool {
         match value {
             Value::Int(value) => contains(&set.ints, value.to_string().parse().unwrap()),
             Value::Bool(true) => set.bools.may_true(),
             Value::Bool(false) => set.bools.may_false(),
-            Value::Unit => set.unit,
+            Value::Unit => set.has_unit,
         }
     }
 
-    fn reached(op: &Op, x: &Value, y: &Value) -> bool {
+    fn is_reached(op: &Op, x: &Value, y: &Value) -> bool {
         match *op {
             Op::Refine {
                 op,
@@ -1121,15 +1132,15 @@ mod tests {
                         };
                         let Ok(may) = op.apply::<May>(&[&set_a, &set_b][..arity]);
                         if let Ok(value) = op.apply::<Value>(&[&x, &y][..arity])
-                            && reached(op, &x, &y)
+                            && is_reached(op, &x, &y)
                         {
-                            prop_assert!(member(&may, &value), "{op:?} over {set_a:?}, {set_b:?} ∌ {value} from {x}, {y}");
+                            prop_assert!(is_member(&may, &value), "{op:?} over {set_a:?}, {set_b:?} ∌ {value} from {x}, {y}");
                         }
                     }
                     for and in [false, true] {
                         let Ok(may) = May::lazy(and, &set_a, &set_b);
                         if let Ok(value) = Value::lazy(and, &x, &y) {
-                            prop_assert!(member(&may, &value), "lazy {and} over {set_a:?}, {set_b:?} ∌ {value} from {x}, {y}");
+                            prop_assert!(is_member(&may, &value), "lazy {and} over {set_a:?}, {set_b:?} ∌ {value} from {x}, {y}");
                         }
                     }
                 }

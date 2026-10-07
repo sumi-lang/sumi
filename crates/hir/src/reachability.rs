@@ -85,17 +85,17 @@ pub(crate) fn warn(
     let conditions: Vec<_> = conditions(graph)
         .into_iter()
         .filter(|condition| {
-            delivered.may(condition.parent).live()
+            delivered.may(condition.parent).is_live()
                 && delivered.may(condition.value).bools != Bools::BOTH
-                && !open_on_its_face(graph, condition.value)
+                && !is_open_on_its_face(graph, condition.value)
         })
         .collect();
     let mut statements: Vec<_> = lowered.statements.iter().collect();
     statements.sort_by_key(|statement| (statement.block.to_usize(), statement.range.start()));
     let stops = |[before, after]: [&Statement; 2], typing: &Typing| {
         before.block == after.block
-            && typing.may(before.context).live()
-            && !typing.may(after.context).live()
+            && typing.may(before.context).is_live()
+            && !typing.may(after.context).is_live()
     };
     let stops_delivered: Vec<bool> = statements
         .windows(2)
@@ -129,7 +129,7 @@ pub(crate) fn warn(
         .map(|condition| {
             let facts = facts(condition.value);
             let bools = facts.may(condition.value).bools;
-            (facts.may(condition.parent).live() && bools.may_true() != bools.may_false())
+            (facts.may(condition.parent).is_live() && bools.may_true() != bools.may_false())
                 .then_some(bools.may_true())
         })
         .collect();
@@ -287,7 +287,7 @@ fn closed(graph: &Graph, lowered: &Lowered) -> Vec<bool> {
 
 /// Whether any arguments leave `value` open whatever the solve finds: a parameter read as passed,
 /// or compared with a literal.
-fn open_on_its_face(graph: &Graph, value: NodeId) -> bool {
+fn is_open_on_its_face(graph: &Graph, value: NodeId) -> bool {
     let param = |node: NodeId| matches!(graph.node(node).op, Op::Param { .. });
     let literal = |node: NodeId| matches!(graph.node(node).op, Op::Int(_) | Op::Bool(_));
     match graph.node(value).op {

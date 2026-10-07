@@ -280,7 +280,7 @@ pub(crate) struct Parameter<'s> {
     node: NodeIdx,
     name: Option<(&'s str, NodeIdx)>,
     ty: Option<Ty>,
-    duplicate: bool,
+    is_duplicate: bool,
 }
 
 pub(crate) struct Declarations<'s> {
@@ -348,7 +348,7 @@ pub(crate) fn declare<'s>(
                     node: param.node(),
                     name,
                     ty,
-                    duplicate: first.is_some(),
+                    is_duplicate: first.is_some(),
                 });
             }
         }
@@ -452,11 +452,11 @@ struct Local<'s> {
     name: &'s str,
     declaration: NodeId,
     current: NodeId,
-    mutable: bool,
+    is_mutable: bool,
     completes: bool,
     /// A name beginning with `_` counts as read from its declaration.
-    read: bool,
-    assigned: bool,
+    is_read: bool,
+    is_assigned: bool,
 }
 
 struct RegionState {
@@ -489,7 +489,7 @@ enum Finish {
     Paren(Clean<ast::ParenExpr>),
     Prefix {
         expr: Clean<ast::PrefixExpr>,
-        neg: bool,
+        is_neg: bool,
     },
     Binary {
         expr: Clean<ast::BinaryExpr>,
@@ -511,7 +511,7 @@ enum Partial {
     },
     Prefix {
         node: NodeIdx,
-        neg: bool,
+        is_neg: bool,
         operand: Option<NodeIdx>,
     },
     Binary {
@@ -606,18 +606,18 @@ fn enter_each(work: &mut Vec<Work>, nodes: impl Iterator<Item = NodeIdx>) {
 
 #[derive(Clone, Copy)]
 struct Form {
-    valid: bool,
+    is_valid: bool,
     completes: bool,
 }
 
 impl Form {
     const SCALAR: Self = Self {
-        valid: true,
+        is_valid: true,
         completes: false,
     };
 
-    fn scalar(self) -> bool {
-        self.valid && !self.completes
+    fn is_scalar(self) -> bool {
+        self.is_valid && !self.completes
     }
 }
 
@@ -631,7 +631,7 @@ struct Builder<'a, 's> {
     /// By block, its innermost tail expression once lowered.
     tails: Vec<Option<NodeIdx>>,
     owner: u32,
-    failed: bool,
+    has_failed: bool,
     /// Open regions, innermost last, each with where its refinements begin in `refinements`.
     regions: Vec<(RegionId, usize, NodeId)>,
     /// (local, source version, the node its reads see) for open regions, innermost last.
@@ -682,7 +682,7 @@ impl<'a, 's> Builder<'a, 's> {
             nodes_of: vec![None; nodes],
             tails: vec![None; nodes],
             owner: 0,
-            failed: false,
+            has_failed: false,
             regions: Vec::new(),
             refinements: Vec::new(),
             scopes: Vec::new(),
@@ -704,7 +704,7 @@ impl<'a, 's> Builder<'a, 's> {
     /// Whether the body built whole.
     fn build(&mut self, owner: usize, item: ast::FnItem, parameters: &[Parameter<'s>]) -> bool {
         self.owner = u32::try_from(owner).expect("function count fits u32");
-        self.failed = false;
+        self.has_failed = false;
         self.depth = 0;
         self.regions.clear();
         self.refinements.clear();
@@ -721,17 +721,17 @@ impl<'a, 's> Builder<'a, 's> {
         for (index, param) in parameters.iter().enumerate() {
             let index = u32::try_from(index).expect("parameter count fits u32");
             let name = param.name.map(|(_, node)| self.source.range(node));
-            let ty = param.ty.filter(|_| !param.duplicate);
+            let ty = param.ty.filter(|_| !param.is_duplicate);
             let node = self.push(param.node, Op::Param { index, ty }, &[], name);
-            self.failed |= ty.is_none();
+            self.has_failed |= ty.is_none();
             if let Some((name, _)) = param.name {
                 self.bind(name, node, false);
             } else {
-                self.failed = true;
+                self.has_failed = true;
             }
         }
         let declared = header.result;
-        self.failed |= header.callee.is_none() || matches!(declared, HeaderResult::None);
+        self.has_failed |= header.callee.is_none() || matches!(declared, HeaderResult::None);
         let tree = self.source.tree;
         let region = self.graph.open(entry);
         self.graph.enter(region);
@@ -835,11 +835,11 @@ impl<'a, 's> Builder<'a, 's> {
                     }
                     Work::Return(return_) => self.return_(return_),
                 };
-                self.failed |= built.is_none();
+                self.has_failed |= built.is_none();
             }
             self.work = work;
         }
-        let root = root_node.and_then(|root| self.form(root).valid.then(|| self.node_of(root)));
+        let root = root_node.and_then(|root| self.form(root).is_valid.then(|| self.node_of(root)));
         let body = match root_node {
             Some(root) => self.input(root),
             None => {
@@ -879,9 +879,9 @@ impl<'a, 's> Builder<'a, 's> {
                 let completes = root_node.is_none_or(|root| self.form(root).completes);
                 let fallthrough = root_node
                     .and_then(|root| self.explicit_tail(root))
-                    .filter(|&tail| self.form(tail).scalar())
+                    .filter(|&tail| self.form(tail).is_scalar())
                     .or_else(|| {
-                        root_node.filter(|&root| declared.is_some() && self.form(root).scalar())
+                        root_node.filter(|&root| declared.is_some() && self.form(root).is_scalar())
                     });
                 if (declared.is_some() || completes)
                     && let Some(fallthrough) = fallthrough
@@ -898,7 +898,7 @@ impl<'a, 's> Builder<'a, 's> {
             }
         };
         self.graph.close_run(run, region, value);
-        let whole = !self.failed && root.is_some();
+        let whole = !self.has_failed && root.is_some();
         if whole {
             self.unused();
         }
@@ -906,18 +906,18 @@ impl<'a, 's> Builder<'a, 's> {
     }
     /// Only after a whole build: a walk that stopped early leaves reads unresolved.
     fn unused(&mut self) {
-        if self.locals.iter().all(|local| local.read) {
+        if self.locals.iter().all(|local| local.is_read) {
             return;
         }
         let taken: HashSet<&str, FxBuildHasher> =
             self.locals.iter().map(|local| local.name).collect();
         for local in &self.locals {
-            if local.read {
+            if local.is_read {
                 continue;
             }
             let declaration = self.graph.node(local.declaration);
             let at = declaration.name.expect("a bound local is named");
-            let (kind, reads) = match (&declaration.op, local.assigned) {
+            let (kind, reads) = match (&declaration.op, local.is_assigned) {
                 (Op::Param { .. }, _) => ("parameter", "is never read"),
                 (Op::LoopIndex, _) => ("loop index", "is never read"),
                 (_, false) => ("local", "is never read"),
@@ -925,7 +925,7 @@ impl<'a, 's> Builder<'a, 's> {
             };
             let renamed = format!("_{}", local.name);
             // Renaming onto a name already in use would capture its reads or duplicate it.
-            let free = !local.assigned
+            let free = !local.is_assigned
                 && !self.names.contains_key(renamed.as_str())
                 && !taken.contains(renamed.as_str());
             let mut diagnostic = diagnostic(
@@ -1068,18 +1068,18 @@ impl<'a, 's> Builder<'a, 's> {
         self.mutable_locals
             .truncate(self.scope_mutables[self.depth]);
     }
-    fn bind(&mut self, name: &'s str, node: NodeId, mutable: bool) -> LocalId {
+    fn bind(&mut self, name: &'s str, node: NodeId, is_mutable: bool) -> LocalId {
         let id = LocalId(u32::try_from(self.locals.len()).expect("local count fits u32"));
         self.locals.push(Local {
             name,
             declaration: node,
             current: node,
-            mutable,
+            is_mutable,
             completes: false,
-            read: name.starts_with('_'),
-            assigned: false,
+            is_read: name.starts_with('_'),
+            is_assigned: false,
         });
-        if mutable {
+        if is_mutable {
             self.mutable_locals.push(id);
         }
         self.scopes[self.depth - 1].insert(name, id);
@@ -1108,7 +1108,7 @@ impl<'a, 's> Builder<'a, 's> {
             refinements: self.refinements[keep..]
                 .iter()
                 .copied()
-                .filter(|&(local, _, _)| self.locals[local.index()].mutable)
+                .filter(|&(local, _, _)| self.locals[local.index()].is_mutable)
                 .collect(),
             context,
         }
@@ -1206,7 +1206,7 @@ impl<'a, 's> Builder<'a, 's> {
     }
     fn form(&self, node: NodeIdx) -> Form {
         Form {
-            valid: self.typed(node).is_some(),
+            is_valid: self.typed(node).is_some(),
             completes: self.bottoms[node.to_usize()],
         }
     }
@@ -1522,19 +1522,19 @@ impl<'a, 's> Builder<'a, 's> {
             );
             self.set_version(local, value);
         }
-        let mut valid = self.form(expr.body().node()).valid;
+        let mut is_valid = self.form(expr.body().node()).is_valid;
         for (position, bound) in [expr.start().node(), expr.end().node()]
             .into_iter()
             .enumerate()
         {
             let form = self.form(bound);
-            valid &= form.valid;
+            is_valid &= form.is_valid;
             if form.completes {
                 self.completes_input(node, position);
                 self.bottoms[expr.node().to_usize()] = true;
             }
         }
-        valid.then_some(())
+        is_valid.then_some(())
     }
     fn enter(&mut self, node: NodeIdx, work: &mut Vec<Work>) {
         use ast::{Expr, Stmt};
@@ -1544,16 +1544,16 @@ impl<'a, 's> Builder<'a, 's> {
         let Some(clean) = stmt.and_then(|stmt| stmt.clean(tree, self.source.lexed())) else {
             match stmt {
                 Some(Stmt::Expr(Expr::Block(_))) => {
-                    self.failed = true;
+                    self.has_failed = true;
                     self.block_statements(node, work);
                 }
                 Some(stmt) if tree.has_error(node) => {
-                    self.failed = true;
+                    self.has_failed = true;
                     self.damaged(stmt, work);
                 }
                 _ if tree.has_error(node) => {
                     self.hole(node);
-                    self.failed = true;
+                    self.has_failed = true;
                 }
                 _ => unreachable!("a statement without syntax errors has a clean view"),
             }
@@ -1606,18 +1606,18 @@ impl<'a, 's> Builder<'a, 's> {
                 work.push(Work::Enter(lhs));
             }
             CleanStmt::Expr(CleanExpr::PrefixExpr(expr)) => {
-                let neg = expr.op() == PrefixOp::Neg;
+                let is_neg = expr.op() == PrefixOp::Neg;
                 let peeled = self.source.peel(expr.operand());
-                if neg
+                if is_neg
                     && let Expr::LiteralExpr(literal) = peeled
                     && literal.value(tree, self.source.lexed()) == Some(Literal::Int)
                 {
                     if self.integer(node, literal.node(), true).is_none() {
-                        self.failed = true;
+                        self.has_failed = true;
                     }
                     return;
                 }
-                work.push(Work::Finish(Finish::Prefix { expr, neg }));
+                work.push(Work::Finish(Finish::Prefix { expr, is_neg }));
                 work.push(Work::Enter(expr.operand().node()));
             }
             CleanStmt::Expr(CleanExpr::ParenExpr(paren)) => {
@@ -1674,7 +1674,7 @@ impl<'a, 's> Builder<'a, 's> {
             }
             return None;
         };
-        if !self.locals[local.index()].mutable {
+        if !self.locals[local.index()].is_mutable {
             let declaration = self.locals[local.index()].declaration;
             self.source.error(
                 name.node(),
@@ -1687,7 +1687,7 @@ impl<'a, 's> Builder<'a, 's> {
             );
             return None;
         }
-        self.locals[local.index()].assigned = true;
+        self.locals[local.index()].is_assigned = true;
         Some(local)
     }
     fn return_(&mut self, return_: ast::ReturnStmt) -> Option<()> {
@@ -1716,7 +1716,7 @@ impl<'a, 's> Builder<'a, 's> {
         } else {
             self.returns.push((returned, at));
         }
-        if value.is_none_or(|(_, form)| form.valid) {
+        if value.is_none_or(|(_, form)| form.is_valid) {
             self.bottoms[node.to_usize()] = true;
             Some(())
         } else {
@@ -1735,7 +1735,7 @@ impl<'a, 's> Builder<'a, 's> {
             );
             self.bind(name, hole, binding.mutable(tree, self.source.lexed()));
         }
-        self.failed = true;
+        self.has_failed = true;
     }
     fn block_statements(&mut self, node: NodeIdx, work: &mut Vec<Work>) {
         let tree = self.source.tree;
@@ -1757,7 +1757,7 @@ impl<'a, 's> Builder<'a, 's> {
     fn target(&mut self, node: NodeIdx) -> Option<FunctionId> {
         let name = self.source.text(node);
         if let Some(local) = self.lookup(name) {
-            self.locals[local.index()].read = true;
+            self.locals[local.index()].is_read = true;
             let declaration = self.locals[local.index()].declaration;
             // A binding that failed is reported once, where it failed.
             if self.lowered.typed[declaration.index()] {
@@ -1788,7 +1788,7 @@ impl<'a, 's> Builder<'a, 's> {
         }
     }
     /// `None` for a malformed literal, which the lexer already reported.
-    fn integer(&mut self, origin: NodeIdx, literal: NodeIdx, negative: bool) -> Option<NodeId> {
+    fn integer(&mut self, origin: NodeIdx, literal: NodeIdx, is_negative: bool) -> Option<NodeId> {
         let raw = self.source.tree.first_token(literal);
         if self
             .source
@@ -1804,16 +1804,16 @@ impl<'a, 's> Builder<'a, 's> {
             .text(literal)
             .parse()
             .expect("a well-formed literal is a run of digits");
-        let value = if negative { -&magnitude } else { magnitude };
+        let value = if is_negative { -&magnitude } else { magnitude };
         Some(self.push(origin, Op::Int(value), &[], None))
     }
     fn block(&mut self, node: NodeIdx) -> Option<()> {
         let tree = self.source.tree;
         self.close_scope();
         let mut tail = None;
-        let damaged = tree.has_error(node);
-        let mut valid = !damaged;
-        let mut bottom = false;
+        let is_damaged = tree.has_error(node);
+        let mut is_valid = !is_damaged;
+        let mut is_bottom = false;
         let mut controls = Vec::new();
         let mut children = tree.children(node).peekable();
         while let Some(child) = children.next() {
@@ -1822,17 +1822,17 @@ impl<'a, 's> Builder<'a, 's> {
                 tail = Some(child);
                 controls.push(self.control(child));
                 let form = self.form(child);
-                valid &= form.valid;
-                bottom |= form.completes;
+                is_valid &= form.is_valid;
+                is_bottom |= form.completes;
                 break;
             }
             controls.push(self.control(child));
             let form = self.form(child);
-            if !form.valid {
+            if !form.is_valid {
                 self.node_of(child);
-                valid = false;
+                is_valid = false;
             }
-            bottom |= form.completes;
+            is_bottom |= form.completes;
         }
         self.controls[node.to_usize()] = self.compose_control(node, controls);
         self.tails[node.to_usize()] = tail.map(|tail| self.value_at(tail));
@@ -1843,7 +1843,7 @@ impl<'a, 's> Builder<'a, 's> {
                 let value = self.node_of(tail);
                 self.nodes_of[node.to_usize()] = Some(value);
             }
-            None if damaged => {
+            None if is_damaged => {
                 self.hole(node);
             }
             None => {
@@ -1852,13 +1852,13 @@ impl<'a, 's> Builder<'a, 's> {
                 self.push(node, Op::Unit, &[(context, at)], None);
             }
         }
-        if bottom {
+        if is_bottom {
             self.bottoms[node.to_usize()] = true;
         }
-        if !valid || damaged {
+        if !is_valid || is_damaged {
             return None;
         }
-        if !bottom {
+        if !is_bottom {
             self.typed(node)?;
         }
         Some(())
@@ -1885,7 +1885,7 @@ impl<'a, 's> Builder<'a, 's> {
                 let form = self.form(initializer);
                 self.locals[local.index()].completes = form.completes;
                 self.bottoms[binding.node().to_usize()] = form.completes;
-                if !form.valid || !self.lowered.typed[copy.index()] {
+                if !form.is_valid || !self.lowered.typed[copy.index()] {
                     return None;
                 }
                 if form.completes {
@@ -1915,7 +1915,7 @@ impl<'a, 's> Builder<'a, 's> {
                     self.completes_input(assigned, 0);
                 }
                 let local = target?;
-                if !form.valid || !self.lowered.typed[assigned.index()] {
+                if !form.is_valid || !self.lowered.typed[assigned.index()] {
                     return None;
                 }
                 if !form.completes {
@@ -1929,7 +1929,7 @@ impl<'a, 's> Builder<'a, 's> {
                 self.controls[discard.node().to_usize()] = self.control(value);
                 let form = self.form(value);
                 self.bottoms[discard.node().to_usize()] = form.completes;
-                if !form.valid {
+                if !form.is_valid {
                     return None;
                 }
                 if form.completes {
@@ -1942,7 +1942,7 @@ impl<'a, 's> Builder<'a, 's> {
                 let name = self.source.text(node);
                 match self.lookup(name) {
                     Some(local) => {
-                        self.locals[local.index()].read = true;
+                        self.locals[local.index()].is_read = true;
                         let version = self.locals[local.index()].current;
                         let read = self.current(local);
                         self.nodes_of[node.to_usize()] = Some(read);
@@ -1959,7 +1959,7 @@ impl<'a, 's> Builder<'a, 's> {
                                 None,
                             );
                             self.hole(node);
-                            self.failed = true;
+                            self.has_failed = true;
                         } else {
                             self.source.error(
                                 node,
@@ -1994,7 +1994,7 @@ impl<'a, 's> Builder<'a, 's> {
                 self.controls[paren.node().to_usize()] = self.control(inner);
                 let form = self.form(inner);
                 self.bottoms[paren.node().to_usize()] = form.completes;
-                if !form.valid {
+                if !form.is_valid {
                     return None;
                 }
                 if form.completes {
@@ -2002,12 +2002,12 @@ impl<'a, 's> Builder<'a, 's> {
                 }
                 self.typed(inner)?;
             }
-            Finish::Prefix { expr, neg } => {
+            Finish::Prefix { expr, is_neg } => {
                 let operand = expr.operand().node();
                 let value = self.input(operand);
                 let id = self.push(
                     expr.node(),
-                    if neg { Op::Neg } else { Op::Not },
+                    if is_neg { Op::Neg } else { Op::Not },
                     &[value],
                     None,
                 );
@@ -2032,7 +2032,7 @@ impl<'a, 's> Builder<'a, 's> {
                     self.compose_control(node, [self.control(lhs), self.control(rhs)]);
                 let lhs_form = self.form(lhs);
                 let rhs_form = self.form(rhs);
-                if !lhs_form.valid || !rhs_form.valid {
+                if !lhs_form.is_valid || !rhs_form.is_valid {
                     return None;
                 }
                 if lhs_form.completes || rhs_form.completes {
@@ -2111,7 +2111,7 @@ impl<'a, 's> Builder<'a, 's> {
             Stmt::Expr(Expr::PrefixExpr(prefix)) => match prefix.op(tree, lexed) {
                 Some(op) => Partial::Prefix {
                     node,
-                    neg: op == PrefixOp::Neg,
+                    is_neg: op == PrefixOp::Neg,
                     operand: prefix.operand(tree).map(|operand| operand.node()),
                 },
                 None => return self.holed(node),
@@ -2243,8 +2243,8 @@ impl<'a, 's> Builder<'a, 's> {
                     _ => Op::Copy { declared },
                 };
                 let copy = self.push(node, op, &[value], Some(self.source.range(name_node)));
-                let mutable = binding.mutable(tree, self.source.lexed());
-                let local = self.bind(name, copy, mutable);
+                let is_mutable = binding.mutable(tree, self.source.lexed());
+                let local = self.bind(name, copy, is_mutable);
                 self.controls[node.to_usize()] =
                     initializer.and_then(|initializer| self.control(initializer));
                 let completes =
@@ -2285,9 +2285,13 @@ impl<'a, 's> Builder<'a, 's> {
                     _ => {}
                 }
             }
-            Partial::Prefix { node, neg, operand } => {
+            Partial::Prefix {
+                node,
+                is_neg,
+                operand,
+            } => {
                 let input = self.present(node, operand);
-                let id = self.push(node, if neg { Op::Neg } else { Op::Not }, &[input], None);
+                let id = self.push(node, if is_neg { Op::Neg } else { Op::Not }, &[input], None);
                 self.controls[node.to_usize()] = operand.and_then(|operand| self.control(operand));
                 if operand.is_some_and(|operand| self.form(operand).completes) {
                     self.completes_input(id, 0);
@@ -2374,7 +2378,7 @@ impl<'a, 's> Builder<'a, 's> {
         self.controls[expr.expr.node().to_usize()] =
             self.compose_control(expr.expr.node(), [self.control(lhs), observe]);
         let lhs_form = self.form(lhs);
-        if !lhs_form.valid {
+        if !lhs_form.is_valid {
             return None;
         }
         if lhs_form.completes {
@@ -2383,7 +2387,7 @@ impl<'a, 's> Builder<'a, 's> {
             return Some(());
         }
         self.typed(lhs)?;
-        if !rhs_form.valid {
+        if !rhs_form.is_valid {
             return None;
         }
         if rhs_form.completes {
@@ -2442,20 +2446,20 @@ impl<'a, 's> Builder<'a, 's> {
         if cond_form.completes {
             self.completes_input(id, 0);
         }
-        if !cond_form.valid || !then_form.valid || !else_form.valid {
+        if !cond_form.is_valid || !then_form.is_valid || !else_form.is_valid {
             return None;
         }
         if cond_form.completes || (then_form.completes && else_form.completes) {
             self.bottoms[node.to_usize()] = true;
         } else {
             self.merge_versions(cond, [&then_state, &false_state], self.source.range(node));
-            if then_form.scalar() {
+            if then_form.is_scalar() {
                 self.typed(then_node)?;
             } else {
                 self.refine(cond, false);
             }
             if let Some(else_node) = else_node {
-                if else_form.scalar() {
+                if else_form.is_scalar() {
                     self.typed(else_node)?;
                 } else {
                     self.refine(cond, true);
@@ -2506,22 +2510,22 @@ impl<'a, 's> Builder<'a, 's> {
         let args: Vec<_> = call.arg_list().args(tree).map(|arg| arg.node()).collect();
         let controls: Vec<_> = args.iter().map(|&arg| self.control(arg)).collect();
         self.controls[node.to_usize()] = self.compose_control(node, controls);
-        let mut bottom = false;
-        let mut damaged = false;
+        let mut is_bottom = false;
+        let mut is_damaged = false;
         let first_arg = inputs.len() - args.len();
         for (index, &arg) in args.iter().enumerate() {
             let form = self.form(arg);
-            bottom |= form.completes;
-            damaged |= !form.valid;
+            is_bottom |= form.completes;
+            is_damaged |= !form.is_valid;
             if form.completes {
                 self.completes_input(id, first_arg + index);
             }
         }
         self.inputs = inputs;
-        if bottom {
+        if is_bottom {
             self.bottoms[node.to_usize()] = true;
         }
-        if damaged {
+        if is_damaged {
             return None;
         }
         let (target, function, _) = whole?;
@@ -2531,7 +2535,7 @@ impl<'a, 's> Builder<'a, 's> {
             callee: target,
             context,
         });
-        if bottom {
+        if is_bottom {
             return Some(());
         }
         (!matches!(function.result, HeaderResult::None)).then_some(())

@@ -37,11 +37,11 @@ struct Snapshot {
 
 #[derive(Clone, Copy)]
 struct ClientFeatures {
-    code_actions: bool,
-    hierarchical_symbols: bool,
-    preferred_actions: bool,
-    related_information: bool,
-    unnecessary_tags: bool,
+    has_code_actions: bool,
+    has_hierarchical_symbols: bool,
+    has_preferred_actions: bool,
+    has_related_information: bool,
+    has_unnecessary_tags: bool,
 }
 
 struct LspFix {
@@ -139,25 +139,25 @@ fn client_features(params: &InitializeParams) -> ClientFeatures {
         .as_ref()
         .and_then(|capabilities| capabilities.code_action.as_ref());
     ClientFeatures {
-        code_actions: code_action
+        has_code_actions: code_action
             .is_some_and(|capabilities| capabilities.code_action_literal_support.is_some())
             && workspace
                 .as_ref()
                 .and_then(|capabilities| capabilities.workspace_edit.as_ref())
                 .is_some_and(|capabilities| capabilities.document_changes == Some(true)),
-        hierarchical_symbols: text_document
+        has_hierarchical_symbols: text_document
             .as_ref()
             .and_then(|capabilities| capabilities.document_symbol.as_ref())
             .is_some_and(|capabilities| {
                 capabilities.hierarchical_document_symbol_support == Some(true)
             }),
-        preferred_actions: code_action
+        has_preferred_actions: code_action
             .is_some_and(|capabilities| capabilities.is_preferred_support == Some(true)),
-        related_information: text_document
+        has_related_information: text_document
             .as_ref()
             .and_then(|capabilities| capabilities.publish_diagnostics.as_ref())
             .is_some_and(|capabilities| capabilities.related_information == Some(true)),
-        unnecessary_tags: text_document
+        has_unnecessary_tags: text_document
             .as_ref()
             .and_then(|capabilities| capabilities.publish_diagnostics.as_ref())
             .and_then(|capabilities| capabilities.tag_support.as_ref())
@@ -178,7 +178,7 @@ fn capabilities(encoding: Encoding, features: ClientFeatures) -> ServerCapabilit
                 ..TextDocumentSyncOptions::default()
             },
         )),
-        code_action_provider: features.code_actions.then(|| {
+        code_action_provider: features.has_code_actions.then(|| {
             CodeActionProviderCapability::Options(CodeActionOptions {
                 code_action_kinds: Some(vec![CodeActionKind::QUICKFIX]),
                 ..CodeActionOptions::default()
@@ -200,7 +200,7 @@ fn event_loop(
     let mut documents: HashMap<String, Document> = HashMap::new();
     let mut snapshots: HashMap<String, Snapshot> = HashMap::new();
     let mut next_generation = 1;
-    let mut shutdown = false;
+    let mut is_shut_down = false;
     loop {
         select! {
             recv(connection.receiver) -> message => {
@@ -212,7 +212,7 @@ fn event_loop(
                 };
                 match message {
                     Message::Request(request) => {
-                        if shutdown {
+                        if is_shut_down {
                             connection.sender.send(Response::new_err(
                                 request.id,
                                 ErrorCode::InvalidRequest as i32,
@@ -220,7 +220,7 @@ fn event_loop(
                             ).into())?;
                         } else if request.method == lsp_types::request::Shutdown::METHOD {
                             connection.sender.send(Response::new_ok(request.id, ()).into())?;
-                            shutdown = true;
+                            is_shut_down = true;
                         } else {
                             handle_request(request, &documents, &snapshots, &jobs,
                                 &connection.sender, features)?;
@@ -228,14 +228,14 @@ fn event_loop(
                     }
                     Message::Notification(notification) => {
                         if notification.method == lsp_types::notification::Exit::METHOD {
-                            if shutdown {
+                            if is_shut_down {
                                 return Ok(());
                             }
                             return Err(std::io::Error::other(
                                 "exit notification received before shutdown",
                             ).into());
                         }
-                        if !shutdown {
+                        if !is_shut_down {
                             handle_notification(notification, &mut documents, &mut snapshots, &jobs,
                                 &connection.sender, encoding, &mut next_generation)?;
                         }
@@ -247,7 +247,7 @@ fn event_loop(
                 let Ok(outcome) = outcome else {
                     return Err(std::io::Error::other("analysis worker disconnected").into());
                 };
-                if !shutdown {
+                if !is_shut_down {
                     handle_outcome(outcome, &documents, &mut snapshots, &connection.sender)?;
                 }
             }
@@ -397,7 +397,7 @@ fn handle_request(
             };
             let uri = params.text_document.uri;
             let actions = features
-                .code_actions
+                .has_code_actions
                 .then(|| {
                     documents.get(uri.as_str()).and_then(|document| {
                         snapshots
@@ -412,7 +412,7 @@ fn handle_request(
                                     document.version,
                                     params.range,
                                     &snapshot.fixes,
-                                    features.preferred_actions,
+                                    features.has_preferred_actions,
                                 )
                             })
                     })
@@ -446,7 +446,7 @@ fn queue_document_job(
     uri: Uri,
     documents: &HashMap<String, Document>,
     jobs: &Sender<Job>,
-    format: bool,
+    should_format: bool,
     sender: &Sender<Message>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let Some(document) = documents.get(uri.as_str()) else {
@@ -460,7 +460,7 @@ fn queue_document_job(
         document.version,
         document.text.clone(),
     );
-    jobs.send(if format {
+    jobs.send(if should_format {
         Job::Format {
             id: fields.0,
             uri: fields.1,
@@ -512,8 +512,8 @@ fn worker(
                     version,
                     text,
                     encoding,
-                    features.related_information,
-                    features.unnecessary_tags,
+                    features.has_related_information,
+                    features.has_unnecessary_tags,
                 ),
                 Job::Format {
                     id,
@@ -543,7 +543,7 @@ fn worker(
                         &text,
                         uri,
                         encoding,
-                        features.hierarchical_symbols,
+                        features.has_hierarchical_symbols,
                     ))
                     .unwrap(),
                 },
@@ -561,8 +561,8 @@ fn analyze_document(
     version: i32,
     text: String,
     encoding: Encoding,
-    related_information: bool,
-    unnecessary_tags: bool,
+    has_related_information: bool,
+    has_unnecessary_tags: bool,
 ) -> Outcome {
     let Ok(parsed) = parse_source(text.clone().into_boxed_str()) else {
         return Outcome::Analyzed {
@@ -581,13 +581,13 @@ fn analyze_document(
         .iter()
         .map(|diagnostic| {
             let mut converted =
-                diagnostic_to_lsp(&uri, diagnostic, &positions, related_information);
+                diagnostic_to_lsp(&uri, diagnostic, &positions, has_related_information);
             // Unreachable code's warning spans exactly the dead statements, so it carries the tag.
             let after_stop = Dead {
                 range: diagnostic.primary,
                 cause: DeadCause::AfterStop,
             };
-            if unnecessary_tags && analysis.dead().contains(&after_stop) {
+            if has_unnecessary_tags && analysis.dead().contains(&after_stop) {
                 converted.tags = Some(vec![DiagnosticTag::UNNECESSARY]);
             }
             if let Some(fix) = &diagnostic.fix {
@@ -600,7 +600,7 @@ fn analyze_document(
             analysis
                 .dead()
                 .iter()
-                .filter(|dead| unnecessary_tags && dead.cause != DeadCause::AfterStop)
+                .filter(|dead| has_unnecessary_tags && dead.cause != DeadCause::AfterStop)
                 .map(|dead| dead_to_lsp(dead, &positions)),
         )
         .collect();
@@ -617,7 +617,7 @@ fn diagnostic_to_lsp(
     uri: &Uri,
     diagnostic: &Diagnostic,
     positions: &Positions<'_>,
-    related_information: bool,
+    has_related_information: bool,
 ) -> lsp_types::Diagnostic {
     lsp_types::Diagnostic {
         range: positions.range(diagnostic.primary),
@@ -631,16 +631,18 @@ fn diagnostic_to_lsp(
         code_description: None,
         source: Some("sumi".into()),
         message: diagnostic.message.to_string(),
-        related_information: (related_information && !diagnostic.labels.is_empty()).then(|| {
-            diagnostic
-                .labels
-                .iter()
-                .map(|label| DiagnosticRelatedInformation {
-                    location: Location::new(uri.clone(), positions.range(label.range)),
-                    message: label.message.to_string(),
-                })
-                .collect()
-        }),
+        related_information: (has_related_information && !diagnostic.labels.is_empty()).then(
+            || {
+                diagnostic
+                    .labels
+                    .iter()
+                    .map(|label| DiagnosticRelatedInformation {
+                        location: Location::new(uri.clone(), positions.range(label.range)),
+                        message: label.message.to_string(),
+                    })
+                    .collect()
+            },
+        ),
         tags: None,
         data: None,
     }
@@ -673,7 +675,7 @@ fn code_actions(
     version: i32,
     requested: Range,
     fixes: &[LspFix],
-    preferred_actions: bool,
+    has_preferred_actions: bool,
 ) -> Vec<CodeActionOrCommand> {
     fixes
         .iter()
@@ -694,7 +696,7 @@ fn code_actions(
                 kind: Some(CodeActionKind::QUICKFIX),
                 diagnostics: Some(vec![fix.diagnostic.clone()]),
                 edit: Some(edit),
-                is_preferred: preferred_actions.then_some(true),
+                is_preferred: has_preferred_actions.then_some(true),
                 ..CodeAction::default()
             })
         })
@@ -722,12 +724,12 @@ fn symbols(
     text: &str,
     uri: Uri,
     encoding: Encoding,
-    hierarchical: bool,
+    is_hierarchical: bool,
 ) -> Option<DocumentSymbolResponse> {
     let parsed = parse_source(text.to_owned().into_boxed_str()).ok()?;
     let analysis = analyze(parsed);
     let positions = Positions::new(text, encoding);
-    if hierarchical {
+    if is_hierarchical {
         let symbols = analysis
             .functions()
             .iter()
@@ -990,7 +992,7 @@ fn after() -> int {
     x
 }
 fn main() -> bool = right(true)";
-        let analyzed = |unnecessary_tags| {
+        let analyzed = |has_unnecessary_tags| {
             let uri: Uri = "file:///dead.su".parse().unwrap();
             let Outcome::Analyzed { diagnostics, .. } = analyze_document(
                 uri,
@@ -999,7 +1001,7 @@ fn main() -> bool = right(true)";
                 text.into(),
                 Encoding::Utf16,
                 false,
-                unnecessary_tags,
+                has_unnecessary_tags,
             ) else {
                 unreachable!()
             };
@@ -1289,10 +1291,10 @@ fn main() -> bool = right(true)";
         let absent: InitializeParams =
             serde_json::from_value(json!({ "capabilities": {} })).unwrap();
         let absent = client_features(&absent);
-        assert!(!absent.code_actions);
-        assert!(!absent.hierarchical_symbols);
-        assert!(!absent.related_information);
-        assert!(!absent.unnecessary_tags);
+        assert!(!absent.has_code_actions);
+        assert!(!absent.has_hierarchical_symbols);
+        assert!(!absent.has_related_information);
+        assert!(!absent.has_unnecessary_tags);
         assert!(
             capabilities(Encoding::Utf16, absent)
                 .code_action_provider
@@ -1315,10 +1317,10 @@ fn main() -> bool = right(true)";
         }))
         .unwrap();
         let explicit_false = client_features(&explicit_false);
-        assert!(!explicit_false.code_actions);
-        assert!(!explicit_false.hierarchical_symbols);
-        assert!(!explicit_false.related_information);
-        assert!(!explicit_false.unnecessary_tags);
+        assert!(!explicit_false.has_code_actions);
+        assert!(!explicit_false.has_hierarchical_symbols);
+        assert!(!explicit_false.has_related_information);
+        assert!(!explicit_false.has_unnecessary_tags);
 
         let enabled: InitializeParams = serde_json::from_value(json!({
             "capabilities": {
@@ -1340,11 +1342,11 @@ fn main() -> bool = right(true)";
         }))
         .unwrap();
         let enabled = client_features(&enabled);
-        assert!(enabled.code_actions);
-        assert!(enabled.hierarchical_symbols);
-        assert!(enabled.preferred_actions);
-        assert!(enabled.related_information);
-        assert!(enabled.unnecessary_tags);
+        assert!(enabled.has_code_actions);
+        assert!(enabled.has_hierarchical_symbols);
+        assert!(enabled.has_preferred_actions);
+        assert!(enabled.has_related_information);
+        assert!(enabled.has_unnecessary_tags);
 
         let uri: Uri = "file:///stale.su".parse().unwrap();
         assert!(matches!(
@@ -1380,11 +1382,11 @@ fn main() -> bool = right(true)";
             &jobs,
             &sender,
             ClientFeatures {
-                code_actions: false,
-                hierarchical_symbols: false,
-                preferred_actions: false,
-                related_information: false,
-                unnecessary_tags: false,
+                has_code_actions: false,
+                has_hierarchical_symbols: false,
+                has_preferred_actions: false,
+                has_related_information: false,
+                has_unnecessary_tags: false,
             },
         )
         .unwrap();

@@ -266,7 +266,7 @@ impl<'a> Machine<'a> {
         self.control.push(Control::Eval(from));
     }
 
-    fn tail(&self, mut value: NodeId) -> bool {
+    fn is_tail(&self, mut value: NodeId) -> bool {
         let frame = self.frames.last().expect("a call has a caller");
         for control in self.control[frame.control_base..].iter().rev() {
             match *control {
@@ -568,7 +568,7 @@ impl<'a> Machine<'a> {
                 }) {
                     return Err(Refusal::Depth(node));
                 }
-                if TAIL && self.tail(node) {
+                if TAIL && self.is_tail(node) {
                     let frame = self.frames.last().expect("a call has a caller");
                     for &arg in self.graph.inputs(node) {
                         self.tail_args.push(
@@ -798,14 +798,14 @@ mod tests {
         builder: &mut GraphBuilder,
         entry: NodeId,
         bounds: [NodeId; 2],
-        nested: bool,
+        is_nested: bool,
     ) -> NodeId {
         let zero = push(builder, Op::Int(0.into()), &[]);
         let body = builder.open(entry);
         builder.enter(body);
         let index = push(builder, Op::LoopIndex, &bounds);
         let carry = push(builder, Op::Carry { declaration: zero }, &[zero]);
-        let increment = if nested {
+        let increment = if is_nested {
             let two = push(builder, Op::Int(2.into()), &[]);
             counting_loop(builder, entry, [zero, two], false)
         } else {

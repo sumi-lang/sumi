@@ -35,7 +35,7 @@ fn expression_layout_restores_parent_context_after_malformed_brackets() {
         let input = ParserInput::new(&lexed);
         let actual: Vec<_> = input
             .indices()
-            .map(|index| input.in_expression_delimiters(index))
+            .map(|index| input.is_in_expression_delimiters(index))
             .collect();
         assert_eq!(actual, expected, "{source}");
     }
@@ -44,11 +44,11 @@ fn expression_layout_restores_parent_context_after_malformed_brackets() {
     let input = ParserInput::new(&lexed);
     let newlines: Vec<_> = input
         .indices()
-        .filter(|&i| input.newline_before(i))
+        .filter(|&i| input.has_newline_before(i))
         .collect();
     let boundaries: Vec<_> = input
         .indices()
-        .filter(|&i| input.boundary_before(i))
+        .filter(|&i| input.has_boundary_before(i))
         .collect();
     assert_eq!(newlines, [SigIdx::new(4), SigIdx::new(5), SigIdx::new(7)]);
     assert_eq!(boundaries, [SigIdx::new(4), SigIdx::new(7)]);
@@ -68,7 +68,7 @@ fn expression_layout_uses_the_nearest_opener() {
         let actual: Vec<_> = input
             .indices()
             .filter(|&index| input.get(index) == Some(SyntaxKind::Ident))
-            .map(|index| input.in_expression_delimiters(index))
+            .map(|index| input.is_in_expression_delimiters(index))
             .collect();
         assert_eq!(actual, expected, "{source}");
     }
@@ -98,21 +98,21 @@ fn dump(source: &str) -> Vec<String> {
                 assert!(token > previous, "token indices must increase");
             }
             previous = Some(token);
-            if input.boundary_before(index) {
+            if input.has_boundary_before(index) {
                 assert!(index > SigIdx::new(0), "no boundary before the first token");
-                assert!(input.newline_before(index), "boundaries need a newline");
+                assert!(input.has_newline_before(index), "boundaries need a newline");
             }
             assert_eq!(
-                input.boundary_in(index..index + 1),
-                input.boundary_before(index),
+                input.has_boundary_in(index..index + 1),
+                input.has_boundary_before(index),
                 "prefix sums must agree with the boundary bits"
             );
 
             let mut line = format!("{:?} {:?}", kind, lexed.text(source, token));
-            if input.newline_before(index) {
+            if input.has_newline_before(index) {
                 line.push_str(" newline");
             }
-            if input.boundary_before(index) {
+            if input.has_boundary_before(index) {
                 line.push_str(" boundary");
             }
             if input.is_joint(index) {
@@ -154,7 +154,9 @@ fn has_boundary(source: &str) -> bool {
     dump(source); // invariants
     let lexed = lex(source).expect("test sources fit in u32");
     let input = ParserInput::new(&lexed);
-    input.indices().any(|index| input.boundary_before(index))
+    input
+        .indices()
+        .any(|index| input.has_boundary_before(index))
 }
 
 #[test]
@@ -378,10 +380,10 @@ fn boundary_in_agrees_with_the_boundary_bits() {
         for start in 0..=input.len() as u32 {
             for end in start..=input.len() as u32 {
                 assert_eq!(
-                    input.boundary_in(SigIdx::new(start)..SigIdx::new(end)),
+                    input.has_boundary_in(SigIdx::new(start)..SigIdx::new(end)),
                     SigIdx::new(start)
                         .until(SigIdx::new(end))
-                        .any(|index| input.boundary_before(index)),
+                        .any(|index| input.has_boundary_before(index)),
                     "boundary_in({start}..{end}) for {source:?}"
                 );
             }

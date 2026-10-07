@@ -7,14 +7,14 @@ use sumi_syntax::{ParserInput, SigIdx, SyntaxKind, is_closer};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Comment<'s> {
     pub(crate) text: &'s str,
-    pub(crate) trailing: bool,
-    pub(crate) blank_before: bool,
+    pub(crate) is_trailing: bool,
+    pub(crate) has_blank_before: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct GapSignal<'s> {
     pub(crate) comments: Vec<Comment<'s>>,
-    pub(crate) blank_before_token: bool,
+    pub(crate) has_blank_before_token: bool,
 }
 
 fn retains_blank(input: &ParserInput, gap: usize) -> bool {
@@ -33,7 +33,7 @@ pub(crate) fn signal<'s>(
     gap: usize,
     trivia: impl Iterator<Item = RawIdx>,
 ) -> GapSignal<'s> {
-    let last = gap == input.len();
+    let is_last = gap == input.len();
     let mut comments = Vec::new();
     let mut newlines = 0usize;
     let mut retained = None;
@@ -42,21 +42,21 @@ pub(crate) fn signal<'s>(
         match lexed.kind(raw) {
             SyntaxKind::Newline => newlines += 1,
             SyntaxKind::LineComment => {
-                let first = comments.is_empty();
+                let is_first = comments.is_empty();
                 comments.push(Comment {
                     text: lexed.text(source, raw),
-                    trailing: first && gap > 0 && newlines == 0,
-                    blank_before: newlines >= 2 && !(gap == 0 && first) && retained(),
+                    is_trailing: is_first && gap > 0 && newlines == 0,
+                    has_blank_before: newlines >= 2 && !(gap == 0 && is_first) && retained(),
                 });
                 newlines = 0;
             }
             _ => {}
         }
     }
-    let leading = gap == 0 && comments.is_empty();
+    let is_leading = gap == 0 && comments.is_empty();
     GapSignal {
         comments,
-        blank_before_token: newlines >= 2 && !last && !leading && retained(),
+        has_blank_before_token: newlines >= 2 && !is_last && !is_leading && retained(),
     }
 }
 
