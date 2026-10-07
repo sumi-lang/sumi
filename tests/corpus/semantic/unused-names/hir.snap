@@ -46,8 +46,7 @@ fn loop_index@10:1..16:2 () -> int ∈ [1, +∞)
       discard: after : ? @12:5..14:6
         control: loop : unit @12:5..14:6
         context: entry : ? @10:1..16:2
-      tail: loop value 0 : int @12:5..14:6
-        loop: @12:5..14:6
+      tail: read total@11:13..11:18 (after loop @12:5..14:6) : int
 
 fn assigned@17:1..21:2 () -> int ∈ [4, 4]
   result: copy : int @17:18..17:21

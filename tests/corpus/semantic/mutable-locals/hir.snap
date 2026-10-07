@@ -36,10 +36,8 @@ fn choose@9:1..17:2 (bool ∈ {true, false}) -> int ∈ [2, 3]
           tail: unit : unit @13:12..15:6
       tail: phi x@10:13..10:14 : int @11:9..15:6
         condition: read flag@9:11..9:15 : bool
-        then: assign x@10:13..10:14 : int @12:9..12:14
-          value: int 2 : int @12:13..12:14
-        else: assign x@10:13..10:14 : int @14:9..14:14
-          value: int 3 : int @14:13..14:14
+        then: read x@10:13..10:14 (assigned @12:9..12:14) : int
+        else: read x@10:13..10:14 (assigned @14:9..14:14) : int
 
 fn choices@18:1..18:56 () -> int ∈ [22, 33]
   result: copy : int @18:17..18:20
@@ -66,8 +64,7 @@ fn optional@19:1..25:2 (bool ∈ {true, false}) -> int ∈ [4, 5]
         else: unit (implicit)
       tail: phi x@20:13..20:14 : int @21:9..23:6
         condition: read flag@19:13..19:17 : bool
-        then: assign x@20:13..20:14 : int @22:9..22:14
-          value: int 5 : int @22:13..22:14
+        then: read x@20:13..20:14 (assigned @22:9..22:14) : int
         else: read x@20:13..20:14 : int
 
 fn optionals@26:1..26:62 () -> int ∈ [44, 55]
@@ -102,11 +99,9 @@ fn lazy@27:1..38:2 (bool ∈ {true, false}) -> int ∈ [1, 7]
         condition: read flag@27:9..27:13 : bool
         then: phi x@28:13..28:14 : int @29:9..32:6
           condition: read flag@27:9..27:13 : bool
-          then: assign x@28:13..28:14 : int @30:9..30:14
-            value: int 6 : int @30:13..30:14
+          then: read x@28:13..28:14 (assigned @30:9..30:14) : int
           else: read x@28:13..28:14 : int
-        else: assign x@28:13..28:14 : int @34:9..34:14
-          value: int 7 : int @34:13..34:14
+        else: read x@28:13..28:14 (assigned @34:9..34:14) : int
 
 fn lazies@39:1..39:51 () -> int ∈ [11, 77]
   result: copy : int @39:16..39:19
@@ -139,8 +134,7 @@ fn guarded@40:1..46:2 (int ∈ [0, 2]) -> int ∈ [5, 10]
           condition: eager == : bool @42:12..42:18
             lhs: read x@41:13..41:14 : int
             rhs: int 0 : int @42:17..42:18
-          then: assign x@41:13..41:14 : int @43:9..43:14
-            value: int 1 : int @43:13..43:14
+          then: read x@41:13..41:14 (assigned @43:9..43:14) : int
           else: read x@41:13..41:14 [x == 0 fails@42:12..42:18] : int
 
 fn guardeds@47:1..47:47 () -> int ∈ [10, 20]
@@ -172,8 +166,7 @@ fn returning@48:1..56:2 (bool ∈ {true, false}) -> int ∈ [5, 7]
         rhs: phi x@49:13..49:14 : int @50:9..54:6
           condition: read flag@48:14..48:18 : bool
           then: read x@49:13..49:14 : int
-          else: assign x@49:13..49:14 : int @53:9..53:14
-            value: int 2 : int @53:13..53:14
+          else: read x@49:13..49:14 (assigned @53:9..53:14) : int
     outcome[1]: return : int @51:9..51:17
       payload: int 7 : int @51:16..51:17
 
@@ -204,16 +197,14 @@ fn refined@58:1..62:2 (bool ∈ {true, false}) -> int ∈ [5, 10]
         condition: eager != : bool @61:8..61:14
           lhs: phi x@59:13..59:14 : int @60:9..60:26
             condition: read flag@58:12..58:16 : bool
-            then: assign x@59:13..59:14 : int @60:19..60:24
-              value: int 2 : int @60:23..60:24
+            then: read x@59:13..59:14 (assigned @60:19..60:24) : int
             else: read x@59:13..59:14 : int
           rhs: int 0 : int @61:13..61:14
         then: eager / : int @61:17..61:23
           lhs: int 10 : int @61:17..61:19
           rhs [x != 0 holds@61:8..61:14]: phi x@59:13..59:14 : int @60:9..60:26
             condition: read flag@58:12..58:16 : bool
-            then: assign x@59:13..59:14 : int @60:19..60:24
-              value: int 2 : int @60:23..60:24
+            then: read x@59:13..59:14 (assigned @60:19..60:24) : int
             else: read x@59:13..59:14 : int
         else: int 0 : int @61:33..61:34
 
@@ -233,8 +224,7 @@ fn exact@63:1..67:2 (bool ∈ {true, false}) -> int ∈ [0, 1]
       tail: if : int @66:5..66:26
         condition: phi b@64:13..64:14 : bool @65:9..65:29
           condition: read flag@63:10..63:14 : bool
-          then: assign b@64:13..64:14 : bool @65:19..65:27
-            value: bool true : bool @65:23..65:27
+          then: read b@64:13..64:14 (assigned @65:19..65:27) : bool
           else: read b@64:13..64:14 : bool
         then: int 1 : int @66:12..66:13
         else: int 0 : int @66:23..66:24
@@ -255,18 +245,15 @@ fn exact_read@68:1..72:2 (bool ∈ ∅) -> bool ∈ ∅
       tail: if : bool @71:5..71:26
         condition: phi b@69:13..69:14 : bool @70:9..70:29
           condition: read flag@68:15..68:19 : bool
-          then: assign b@69:13..69:14 : bool @70:19..70:27
-            value: bool true : bool @70:23..70:27
+          then: read b@69:13..69:14 (assigned @70:19..70:27) : bool
           else: read b@69:13..69:14 : bool
         then [is true]: phi b@69:13..69:14 : bool @70:9..70:29
           condition: read flag@68:15..68:19 : bool
-          then: assign b@69:13..69:14 : bool @70:19..70:27
-            value: bool true : bool @70:23..70:27
+          then: read b@69:13..69:14 (assigned @70:19..70:27) : bool
           else: read b@69:13..69:14 : bool
         else [is false]: phi b@69:13..69:14 : bool @70:9..70:29
           condition: read flag@68:15..68:19 : bool
-          then: assign b@69:13..69:14 : bool @70:19..70:27
-            value: bool true : bool @70:23..70:27
+          then: read b@69:13..69:14 (assigned @70:19..70:27) : bool
           else: read b@69:13..69:14 : bool
 
 fn refinements@73:1..74:82 () -> int ∈ [5500, 11011]

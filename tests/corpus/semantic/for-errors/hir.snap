@@ -9,8 +9,7 @@ fn later_iteration@1:1..9:2 () -> int ∈ (-∞, +∞)
         initializer: int 2 : int @2:23..2:24
       let total@3:13..3:18: int @3:5..3:22
         initializer: int 0 : int @3:21..3:22
-      discard: loop value 0 : int @4:5..7:6
-        loop: @4:5..7:6
+      discard: read divisor@2:13..2:20 (after loop @4:5..7:6) : int
       discard: loop : unit @4:5..7:6
         start: int 0 : int @4:14..4:15
         end: int 4 : int @4:17..4:18
@@ -38,8 +37,7 @@ fn later_iteration@1:1..9:2 () -> int ∈ (-∞, +∞)
       discard: after : ? @4:5..7:6
         control: loop : unit @4:5..7:6
         context: entry : ? @1:1..9:2
-      tail: loop value 1 : int @4:5..7:6
-        loop: @4:5..7:6
+      tail: read total@3:13..3:18 (after loop @4:5..7:6) : int
 
 fn empty_path@10:1..14:2 () -> int ∈ ∅
   result: result : int @10:20..10:23
@@ -64,8 +62,7 @@ fn empty_path@10:1..14:2 () -> int ∈ ∅
         context: entry : ? @10:1..14:2
       tail: eager / : int @13:5..13:17
         lhs: int 12 : int @13:5..13:7
-        rhs: loop value 0 : int @12:5..12:34
-          loop: @12:5..12:34
+        rhs: read divisor@11:13..11:20 (after loop @12:5..12:34) : int
 
 fn immutable_index@15:1..17:2 () -> unit ∈ unit
   result: result : unit @15:1..17:2
@@ -150,8 +147,7 @@ fn changed_type@25:1..28:2 () -> unit ∈ unit
     outcome[0]:
       let x@26:13..26:14: ? @26:5..26:18
         initializer: int 1 : int @26:17..26:18
-      discard: loop value 0 : ? @27:5..27:32
-        loop: @27:5..27:32
+      discard: read x@26:13..26:14 (after loop @27:5..27:32) : ?
       discard: after : ? @27:5..27:32
         control: loop : unit @27:5..27:32
         context: entry : ? @25:1..28:2
