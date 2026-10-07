@@ -124,10 +124,10 @@ error[semantic/arity]: expected 2 arguments, found 3
   secondary @6:1..6:37: declared here
 error[semantic/type-mismatch]: expected int, found bool
   primary @8:27..8:31
-  secondary @6:1..6:37: declared here
+  secondary @6:10..6:16: declared here
 error[semantic/type-mismatch]: expected bool, found int
   primary @8:33..8:34
-  secondary @6:1..6:37: declared here
+  secondary @6:18..6:25: declared here
 error[semantic/unknown-name]: unknown name `missing`
   primary @8:36..8:43
 error[semantic/not-callable]: local `typed` is not callable

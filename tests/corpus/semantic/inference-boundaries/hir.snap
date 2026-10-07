@@ -63,7 +63,7 @@ error[semantic/arity]: expected 1 arguments, found 2
   secondary @1:1..1:26: declared here
 error[semantic/type-mismatch]: expected int, found bool
   primary @5:27..5:31
-  secondary @1:1..1:26: declared here
+  secondary @1:9..1:15: declared here
 error[semantic/unknown-name]: unknown name `missing`
   primary @5:33..5:40
 error[semantic/type-mismatch]: expected unit, found int

@@ -12,7 +12,7 @@ use sumi_graph::{
 use sumi_text::TextRange;
 
 use crate::lattice::{Edge, Pair};
-use crate::lower::{Fallthrough, Header, Lowered};
+use crate::lower::{Fallthrough, Header, HeaderResult, Lowered};
 use crate::typing::{Expected, Typing};
 
 /// Where a demanded type was declared.
@@ -47,7 +47,7 @@ struct Demands<'a> {
     graph: &'a Graph,
     typed: &'a [bool],
     fallthroughs: &'a [Option<Fallthrough>],
-    omitted_results: &'a [bool],
+    headers: &'a [Header],
     made: Vec<Demand>,
 }
 
@@ -79,15 +79,18 @@ impl Demands<'_> {
             }
         };
         let written = |at: TextRange| Some(Declared::Written(at));
-        // The function's result holds its body to the declared type, written or not.
-        let result = |at: TextRange| {
-            if self.omitted_results[owner as usize] {
-                Some(Declared::Omitted(at))
+        // What the run's result holds the body to: only there can a declaration be omitted.
+        let held = |at: TextRange| {
+            let omitted = matches!(
+                self.headers[owner as usize].result,
+                HeaderResult::Omitted(_)
+            );
+            Some(if omitted {
+                Declared::Omitted(at)
             } else {
-                Some(Declared::Written(at))
-            }
+                Declared::Written(at)
+            })
         };
-        let is_result = node == graph.run(FunctionId::new(owner as usize)).result();
         let region = |id: RegionId| {
             let region = graph.region(id);
             (region.result_read(), region.result())
@@ -161,7 +164,12 @@ impl Demands<'_> {
             Op::Copy {
                 declared: Some((ty, at)),
             } if value(0) => {
-                let declared = if is_result { result(*at) } else { written(*at) };
+                let run = graph.run(FunctionId::new(owner as usize));
+                let declared = if node == run.result() {
+                    held(*at)
+                } else {
+                    written(*at)
+                };
                 require(reads[0], inputs[0], Expected::Ty(*ty), declared);
             }
             Op::Copy { declared: Some(_) } => {}
@@ -174,12 +182,17 @@ impl Demands<'_> {
             Op::Assign { .. } => {}
             Op::Call(callee) => {
                 let callable = graph.callable(*callee);
-                let declared = graph.node(graph.run(callable.function).entry()).origin;
-                for (index, ((&at, &input), &ty)) in
-                    reads.iter().zip(inputs).zip(&callable.params).enumerate()
+                let params = graph.run(callable.function).params();
+                for (index, (((&at, &input), &ty), param)) in reads
+                    .iter()
+                    .zip(inputs)
+                    .zip(&callable.params)
+                    .zip(params)
+                    .enumerate()
                 {
                     if value(index) {
-                        require(at, input, Expected::Ty(ty), written(declared));
+                        let declared = written(graph.node(param).origin);
+                        require(at, input, Expected::Ty(ty), declared);
                     }
                 }
             }
@@ -192,7 +205,7 @@ impl Demands<'_> {
             Op::Return => {}
             Op::Result { declared } => {
                 let expected = declared.map_or(Expected::Peer(node), |(ty, _)| Expected::Ty(ty));
-                let declared = declared.and_then(|(_, at)| result(at));
+                let declared = declared.and_then(|(_, at)| held(at));
                 if let Some(fallthrough) = fallthrough {
                     require(fallthrough.at, fallthrough.value, expected, declared);
                 } else if value(0) {
@@ -250,7 +263,7 @@ pub(crate) fn draw(
         graph,
         typed: &lowered.typed,
         fallthroughs: &lowered.fallthroughs,
-        omitted_results: &lowered.omitted_results,
+        headers,
         made: Vec::with_capacity(graph.nodes().len() / 2),
     };
 

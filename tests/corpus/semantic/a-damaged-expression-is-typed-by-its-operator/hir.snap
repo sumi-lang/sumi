@@ -125,7 +125,7 @@ error[semantic/type-mismatch]: expected unit, found int
   secondary @8:8..8:20: returns unit, since no result type is written
 error[semantic/type-mismatch]: expected int, found bool
   primary @11:31..11:35
-  secondary @7:1..7:28: declared here
+  secondary @7:10..7:16: declared here
 error[semantic/type-mismatch]: expected bool, found int
   primary @12:24..12:26
   secondary @12:17..12:21: declared here

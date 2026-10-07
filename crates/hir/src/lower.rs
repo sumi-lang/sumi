@@ -48,9 +48,22 @@ pub(crate) struct Header {
 pub(crate) enum HeaderResult {
     /// The declaration is damaged; an omitted annotation is never this.
     None,
-    /// The node is the annotation, or the whole item for a bare block body.
+    /// The node is the annotation.
     Declared(Ty, NodeIdx),
+    /// A block body with no annotation declares `unit`; the node is the parameter list.
+    Omitted(NodeIdx),
     Inferred,
+}
+
+impl HeaderResult {
+    /// The type the body is held to and the node declaring it, written or omitted.
+    fn declared(self) -> Option<(Ty, NodeIdx)> {
+        match self {
+            Self::Declared(ty, node) => Some((ty, node)),
+            Self::Omitted(node) => Some((Ty::Unit, node)),
+            Self::None | Self::Inferred => None,
+        }
+    }
 }
 
 /// A division whose divisor must exclude zero under `context`.
@@ -97,8 +110,6 @@ pub(crate) struct Lowered {
     pub fallthroughs: Vec<Option<Fallthrough>>,
     /// In source order within each block.
     pub statements: Vec<Statement>,
-    /// By function: a `unit` result declared by writing none, held at the parameter list.
-    pub omitted_results: Vec<bool>,
 }
 
 pub(crate) struct Source<'s> {
@@ -331,16 +342,11 @@ pub(crate) fn declare<'s>(
                     .body(tree)
                     .map_or(tree.end_token(item.node()), |e| tree.first_token(e.node()));
                 let mut tokens = source.tokens(tree.end_token(list.node()), end);
-                (tokens.next(), tokens.next())
+                (list, tokens.next(), tokens.next())
             });
             match gap {
-                Some((None, None)) => HeaderResult::Declared(
-                    Ty::Unit,
-                    whole_list
-                        .expect("a gap is measured from a whole list")
-                        .node(),
-                ),
-                Some((Some(SyntaxKind::Eq), None)) => HeaderResult::Inferred,
+                Some((list, None, None)) => HeaderResult::Omitted(list.node()),
+                Some((_, Some(SyntaxKind::Eq), None)) => HeaderResult::Inferred,
                 _ => HeaderResult::None,
             }
         };
@@ -369,14 +375,10 @@ pub(crate) fn lower<'s>(
     declared: &Declarations<'s>,
     graph: GraphBuilder,
 ) -> (Graph, Lowered) {
-    let tree = source.tree;
     let mut builder = Builder::new(source, &declared.headers, &declared.names, graph);
     for (index, (item, params)) in items.iter().zip(&declared.parameters).enumerate() {
         let built = builder.build(index, *item, params);
         builder.lowered.built.push(built);
-        let omitted = matches!(declared.headers[index].result, HeaderResult::Declared(..))
-            && item.ret(tree).is_none();
-        builder.lowered.omitted_results.push(omitted);
     }
     (builder.graph.finish(), builder.lowered)
 }
@@ -653,7 +655,6 @@ impl<'a, 's> Builder<'a, 's> {
                 obligations: Vec::new(),
                 fallthroughs: vec![None; headers.len()],
                 statements: Vec::new(),
-                omitted_results: Vec::with_capacity(headers.len()),
             },
             nodes_of: vec![None; nodes],
             tails: vec![None; nodes],
@@ -834,8 +835,9 @@ impl<'a, 's> Builder<'a, 's> {
         );
         self.regions.pop();
         // A failed parameter does not erase a declared result; the body is still held to it.
+        let declared = declared.declared();
         let value = match (control.is_none() && self.returns.is_empty(), declared) {
-            (true, HeaderResult::Declared(ty, node)) => self.push(
+            (true, Some((ty, node))) => self.push(
                 node,
                 Op::Copy {
                     declared: Some((ty, self.source.range(node))),
@@ -843,16 +845,10 @@ impl<'a, 's> Builder<'a, 's> {
                 &[body],
                 None,
             ),
-            (true, HeaderResult::Inferred | HeaderResult::None) => body.0,
+            (true, None) => body.0,
             (false, declared) => {
-                let node = match declared {
-                    HeaderResult::Declared(_, node) => node,
-                    HeaderResult::Inferred | HeaderResult::None => item_node,
-                };
-                let declared = match declared {
-                    HeaderResult::Declared(ty, node) => Some((ty, self.source.range(node))),
-                    HeaderResult::Inferred | HeaderResult::None => None,
-                };
+                let node = declared.map_or(item_node, |(_, node)| node);
+                let declared = declared.map(|(ty, node)| (ty, self.source.range(node)));
                 let mut outcomes = Vec::with_capacity(self.returns.len() + 1);
                 outcomes.push((fallthrough.unwrap_or(body.0), body.1));
                 outcomes.extend(self.returns.iter().copied());
