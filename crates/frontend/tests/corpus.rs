@@ -12,7 +12,9 @@ use sumi_text::{LineIndex, TextEdit};
 
 #[test]
 fn every_case_matches_its_snapshot() {
-    corpus::check(corpus::Stage::Frontend, snapshot);
+    corpus::check(corpus::Stage::Frontend, |source, stages| {
+        Ok(snapshot(source, stages))
+    });
 }
 
 fn snapshot(source: &str, stages: &[corpus::Stage]) -> String {

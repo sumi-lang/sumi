@@ -14,5 +14,4 @@ fn back_to_a_word = 1234567890123456789 (steps 4, optimized 1, depth 1 of at mos
 fn remainder_keeps_the_sign = -12345678901234567890 (steps 4, optimized 1, depth 1 of at most 1)
 fn ordered = true (steps 8, optimized 1, depth 1 of at most 1)
 fn equal = true (steps 12, optimized 1, depth 1 of at most 1)
-fn through_a_call: takes arguments, not run
 fn wide_argument = 85070591730234615865843651857942052864 (steps 5, optimized 1, depth 2 of at most 2)
