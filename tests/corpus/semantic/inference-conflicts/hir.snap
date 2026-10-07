@@ -86,7 +86,7 @@ error[semantic/type-mismatch]: unit values cannot be compared
   primary @22:19..22:37
 error[semantic/type-mismatch]: if branches are int and bool
   primary @25:18..30:2
-  secondary @26:12..26:15: int here
+  secondary @27:5..27:6: int here
   secondary @29:5..29:9: bool here
 error[semantic/type-mismatch]: expected bool, found int
   primary @32:19..32:28

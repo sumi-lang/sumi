@@ -99,6 +99,16 @@ pub(crate) struct Lowered {
     pub statements: Vec<Statement>,
 }
 
+/// `a`, `a and b`, or `a, b, and c`.
+fn join(types: &[String]) -> String {
+    match types.split_last() {
+        None => String::new(),
+        Some((only, [])) => only.clone(),
+        Some((last, [first])) => format!("{first} and {last}"),
+        Some((last, rest)) => format!("{}, and {last}", rest.join(", ")),
+    }
+}
+
 pub(crate) struct Source<'s> {
     pub parsed: &'s ParsedSource,
     pub tree: &'s SyntaxTree,
@@ -172,22 +182,35 @@ impl<'s> Source<'s> {
         claims: &[(Ty, Claim)],
         message: impl FnOnce(String) -> String,
     ) {
-        let mut claims: Vec<_> = claims
+        let claimed: Vec<_> = claims
             .iter()
             .map(|(ty, claim)| (*ty, typing.origin(*claim)))
             .collect();
-        claims.sort_by_key(|(_, origin)| origin.map(|range| range.start()));
-        let types: Vec<_> = claims.iter().map(|(ty, _)| ty.to_string()).collect();
-        let (last, rest) = types.split_last().expect("a conflict names two types");
-        let joined = if rest.len() == 1 {
-            format!("{} and {last}", rest[0])
-        } else {
-            format!("{}, and {last}", rest.join(", "))
-        };
-        let labels = claims
+        self.conflict_at(at, code, &claimed, message);
+    }
+    /// Types claimed at one origin share a label, since a call delivers all of its callee's.
+    pub fn conflict_at(
+        &mut self,
+        at: TextRange,
+        code: DiagnosticCode,
+        claimed: &[(Ty, Option<TextRange>)],
+        message: impl FnOnce(String) -> String,
+    ) {
+        let mut claimed = claimed.to_vec();
+        claimed.sort_by_key(|(_, origin)| origin.map(|range| range.start()));
+        let types: Vec<_> = claimed.iter().map(|(ty, _)| ty.to_string()).collect();
+        let mut labels: Vec<(TextRange, Vec<String>)> = Vec::new();
+        for (ty, origin) in &claimed {
+            let Some(origin) = origin else { continue };
+            match labels.last_mut() {
+                Some((at, types)) if at == origin => types.push(ty.to_string()),
+                _ => labels.push((*origin, vec![ty.to_string()])),
+            }
+        }
+        let labels = labels
             .into_iter()
-            .filter_map(|(ty, origin)| Some((origin?, format!("{ty} here").into())));
-        self.report(at, code, message(joined), labels);
+            .map(|(at, types)| (at, format!("{} here", join(&types)).into()));
+        self.report(at, code, message(join(&types)), labels);
     }
     fn ty(&mut self, node: ast::TypeRef) -> Option<Ty> {
         if self.tree.has_error(node.node()) {
