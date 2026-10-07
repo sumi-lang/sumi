@@ -250,11 +250,7 @@ impl Planner<'_> {
         self.gaps[gap as usize] = sep;
     }
 
-    fn group(&mut self, first: u32, end: u32, tail: Option<NodeIdx>) {
-        self.push_group(first, end, tail, false);
-    }
-
-    fn push_group(&mut self, first: u32, end: u32, tail: Option<NodeIdx>, whole: bool) {
+    fn group(&mut self, first: u32, end: u32, tail: Option<NodeIdx>, whole: bool) {
         if first < end {
             let tail = tail
                 .map(|tail| (self.first_sig(tail) + 1, self.end_sig(tail)))
@@ -271,12 +267,8 @@ impl Planner<'_> {
     /// A value stays on the `=` line and breaks within. A chain moves whole to the next line
     /// when it fits there, else it stays and breaks at its operators, a trailing block hugging.
     fn value(&mut self, node: NodeIdx, eq: u32, value: NodeIdx, level: u32) {
-        let end = self.end_sig(node);
-        if self.tree.kind(value) == NodeKind::BinaryExpr {
-            self.push_group(eq + 1, end, Some(value), true);
-        } else {
-            self.group(eq + 1, end, Some(value));
-        }
+        let chain = self.tree.kind(value) == NodeKind::BinaryExpr;
+        self.group(eq + 1, self.end_sig(node), Some(value), chain);
         self.node(value, level);
     }
 
@@ -288,6 +280,16 @@ impl Planner<'_> {
         }
         let last = self.tree.children(node).last()?;
         self.opens_block(last).then_some(last)
+    }
+
+    /// Each child one level in, but a hug at the node's own level.
+    fn children_hugging(&mut self, els: &[El], level: u32, hug: Option<NodeIdx>) {
+        for &el in els {
+            if let El::Node(child, _) = el {
+                let child_level = if Some(child) == hug { level } else { level + 1 };
+                self.node(child, child_level);
+            }
+        }
     }
 
     /// `level` is the indentation of the line `node` begins on.
@@ -316,13 +318,8 @@ impl Planner<'_> {
                     _ => Gap::space(level + 1),
                 });
                 let hug = self.hug(node);
-                self.group(self.first_sig(node) + 1, self.end_sig(node), hug);
-                for &el in &els {
-                    if let El::Node(child, _) = el {
-                        let child_level = if Some(child) == hug { level } else { level + 1 };
-                        self.node(child, child_level);
-                    }
-                }
+                self.group(self.first_sig(node) + 1, self.end_sig(node), hug, false);
+                self.children_hugging(&els, level, hug);
             }
             NodeKind::Param => {
                 self.pairs(&els, |_, b| match b {
@@ -433,21 +430,18 @@ impl Planner<'_> {
         }
         let hug = self.hug(node);
         if sound && els.len() > 2 {
-            self.group(self.first_sig(node) + 1, self.end_sig(node), hug);
+            self.group(self.first_sig(node) + 1, self.end_sig(node), hug, false);
         }
-        for &el in els {
-            if let El::Node(child, _) = el {
-                let child_level = if Some(child) == hug { level } else { level + 1 };
-                self.node(child, child_level);
-            }
-        }
+        self.children_hugging(els, level, hug);
     }
 
+    /// Whether `node` ends in a block that hugs what precedes it, through operators and parens.
     fn opens_block(&self, node: NodeIdx) -> bool {
-        matches!(
-            self.tree.kind(node),
-            NodeKind::Block | NodeKind::IfExpr | NodeKind::ForExpr
-        )
+        match self.tree.kind(node) {
+            NodeKind::Block | NodeKind::IfExpr | NodeKind::ForExpr => true,
+            NodeKind::BinaryExpr | NodeKind::ParenExpr => self.hug(node).is_some(),
+            _ => false,
+        }
     }
 
     fn block(&mut self, els: &[El], level: u32) {
@@ -477,13 +471,12 @@ impl Planner<'_> {
             (El::Tok(..), El::Tok(..)) => Gap::glue(cont),
             _ => Gap::space(cont),
         });
-        let hug = match chain {
-            None => {
-                let hug = self.hug(node);
-                self.group(self.first_sig(node) + 1, self.end_sig(node), hug);
-                hug
-            }
-            Some(_) => None,
+        let hug = if chain.is_none() {
+            let hug = self.hug(node);
+            self.group(self.first_sig(node) + 1, self.end_sig(node), hug, false);
+            hug
+        } else {
+            None
         };
         let power = self.power(els);
         let mut first = true;

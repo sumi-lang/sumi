@@ -29,3 +29,20 @@ fn wide(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: int, bbbbbbbbbbbbbbbbbbbbbbbbb
 fn leading() -> int = {
     5
 } + 6
+fn nested_operand() -> int = 1 + 2 * {
+    6
+}
+fn nested_paren() -> int = 1 + ({
+    7
+})
+fn inner_chain(x: bool, a: bool) -> bool = x || a && {
+    false
+}
+fn in_a_broken_list(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: int, bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb: int) -> int {
+    let hugged = pair(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, {
+        let moved = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+        moved
+    })
+    hugged
+}
+fn pair(a: int, b: int) -> int = a + b

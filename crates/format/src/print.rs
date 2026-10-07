@@ -87,22 +87,20 @@ pub(crate) fn print(
             let g = next_group;
             next_group += 1;
             let group = plan.groups[g];
-            // Whether the group fits flat from `start`, measured to its first break: a hard gap,
-            // a soft gap in a tail it does not move whole, or one past its end that an enclosing
-            // group decides.
-            let fits_from = |start: i64| {
+            // Flat width to the group's first break: a hard gap, a soft one in a tail it does
+            // not move whole, or one past its end that an enclosing group decides.
+            let width = || {
                 let mut w = 0usize;
                 let mut k = gap;
                 loop {
                     let plan_gap = plan.gaps[k];
                     let comma = usize::from(plan_gap.closer == Some(Closer::List));
                     if plan_gap.breaks == Breaks::Hard {
-                        w += comma;
-                        break;
+                        return w + comma;
                     }
                     let soft = plan_gap.breaks == Breaks::Soft;
                     if soft && !group.whole && group.in_tail(k as u32) {
-                        break;
+                        return w;
                     }
                     if k as u32 >= group.end && soft {
                         let enclosing = stack
@@ -110,11 +108,10 @@ pub(crate) fn print(
                             .rev()
                             .find(|&&open| plan.groups[open].end > k as u32);
                         if enclosing.is_some_and(|&open| broken[open]) {
-                            w += comma;
-                            break;
+                            return w + comma;
                         }
                         if enclosing.is_some_and(|&open| plan.groups[open].in_tail(k as u32)) {
-                            break;
+                            return w;
                         }
                     }
                     w += if plan_gap.frozen {
@@ -123,34 +120,30 @@ pub(crate) fn print(
                         usize::from(plan_gap.flat == Flat::Space)
                     };
                     if k == n {
-                        break;
+                        return w;
                     }
                     if !plan.layout_comma[k] {
                         w += token_width[k] as usize;
                     }
-                    if start + w as i64 > WIDTH as i64 {
-                        return false;
-                    }
                     k += 1;
                 }
-                start + w as i64 <= WIDTH as i64
             };
-            let decided = forced(&group)
-                || !fits_from(column as i64) && {
-                    // A group that breaks to move whole breaks only when that makes it fit:
-                    // otherwise its inner groups break where they are.
-                    !group.whole || {
-                        let opening = plan.gaps[gap];
-                        let lead = if opening.frozen {
-                            flat_trivia_width(gap)
-                        } else {
-                            usize::from(opening.flat == Flat::Space)
-                        };
-                        let indent = opening.level as usize * INDENT.len();
-                        fits_from(indent as i64 - lead as i64)
-                    }
-                };
-            broken[g] = decided;
+            // A group that moves whole breaks only when that makes it fit: otherwise its inner
+            // groups break where they are.
+            let fits_moved = |w: usize| {
+                let opening = plan.gaps[gap];
+                let extra = stack
+                    .iter()
+                    .filter(|&&open| broken[open] && plan.groups[open].in_tail(gap as u32))
+                    .count();
+                let indent = (opening.level as usize + extra) * INDENT.len();
+                opening.breaks == Breaks::Soft
+                    && indent + w <= WIDTH + usize::from(opening.flat == Flat::Space)
+            };
+            broken[g] = forced(&group) || {
+                let w = width();
+                column + w > WIDTH && (!group.whole || fits_moved(w))
+            };
             stack.push(g);
         }
 
