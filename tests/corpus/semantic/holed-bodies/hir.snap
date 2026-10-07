@@ -38,11 +38,11 @@ fn after@21:1..21:22 () -> bool ∈ {true}
   body: bool true : bool @21:16..21:20
 
 == semantic diagnostics ==
-error[semantic/type-mismatch]: expected bool, found int
-  primary @1:24..4:2
-  secondary @1:19..1:23: declared here
 error[semantic/unknown-name]: unknown name `missing`
   primary @2:9..2:16
+error[semantic/type-mismatch]: expected bool, found int
+  primary @3:5..3:6
+  secondary @1:19..1:23: declared here
 error[semantic/unknown-name]: unknown name `missing`
   primary @6:9..6:16
 error[semantic/type-mismatch]: expected bool, found int

@@ -97,6 +97,8 @@ pub(crate) struct Lowered {
     pub fallthroughs: Vec<Option<Fallthrough>>,
     /// In source order within each block.
     pub statements: Vec<Statement>,
+    /// By region, where its result is read: a block's tail.
+    pub result_reads: Vec<Option<TextRange>>,
 }
 
 pub(crate) struct Source<'s> {
@@ -640,6 +642,7 @@ impl<'a, 's> Builder<'a, 's> {
                 obligations: Vec::new(),
                 fallthroughs: vec![None; headers.len()],
                 statements: Vec::new(),
+                result_reads: Vec::new(),
             },
             nodes_of: vec![None; nodes],
             owner: 0,
@@ -735,8 +738,9 @@ impl<'a, 's> Builder<'a, 's> {
                         continue;
                     }
                     Work::Unused(node) => {
-                        let input = self.input(node);
-                        let unused = self.place(Op::Unused, &[input], input.1, None);
+                        let at = self.source.range(node);
+                        let input = (self.node_of(node), at);
+                        let unused = self.place(Op::Unused, &[input], at, None);
                         if self.form(node).completes {
                             self.completes_input(unused, 0);
                         }
@@ -769,7 +773,8 @@ impl<'a, 's> Builder<'a, 's> {
                     }
                     Work::Pop { region, root } => {
                         self.advance(root);
-                        let result = self.node_of(root);
+                        let (result, at) = self.input(root);
+                        self.result_read(region, at);
                         let fallthrough = self.context();
                         self.graph.close_with_control(
                             region,
@@ -808,6 +813,7 @@ impl<'a, 's> Builder<'a, 's> {
                 (hole, self.source.range(item_node))
             }
         };
+        self.result_read(region, body.1);
         let control = root_node.and_then(|root| self.control(root));
         let fallthrough = control
             .map(|control| self.place(Op::Sequence, &[(control, body.1), body], body.1, None));
@@ -1003,8 +1009,20 @@ impl<'a, 's> Builder<'a, 's> {
             None => self.push(node, Op::Hole, &[], None),
         }
     }
+    fn result_read(&mut self, region: RegionId, at: TextRange) {
+        let reads = &mut self.lowered.result_reads;
+        if reads.len() <= region.index() {
+            reads.resize(region.index() + 1, None);
+        }
+        reads[region.index()] = Some(at);
+    }
+    /// A value and where it is read: a block's at its tail, where the value is written.
     fn input(&mut self, node: NodeIdx) -> (NodeId, TextRange) {
-        (self.node_of(node), self.source.range(node))
+        let mut at = node;
+        while let Some(tail) = self.explicit_tail(at).filter(|&tail| tail != at) {
+            at = tail;
+        }
+        (self.node_of(node), self.source.range(at))
     }
     fn typed(&self, node: NodeIdx) -> Option<NodeId> {
         let id = self.nodes_of[node.to_usize()]?;

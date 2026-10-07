@@ -121,7 +121,7 @@ error[semantic/type-mismatch]: if branches are int and bool
   secondary @5:12..5:13: int here
   secondary @5:23..5:28: bool here
 error[semantic/type-mismatch]: expected unit, found int
-  primary @8:21..10:2
+  primary @9:5..9:11
   secondary @8:1..10:2: declared here
 error[semantic/type-mismatch]: expected int, found bool
   primary @11:31..11:35

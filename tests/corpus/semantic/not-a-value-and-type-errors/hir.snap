@@ -79,7 +79,7 @@ error[semantic/type-mismatch]: if branches are int and bool
   secondary @10:5..10:6: int here
   secondary @12:5..12:10: bool here
 error[semantic/type-mismatch]: expected unit, found int
-  primary @14:29..16:2
+  primary @15:5..15:6
 warning[semantic/unused-name]: local `x` is never read
   primary @18:9..18:10
   fix @18:9 -> "_": prefix the name with `_`
