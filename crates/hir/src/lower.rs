@@ -97,8 +97,6 @@ pub(crate) struct Lowered {
     pub fallthroughs: Vec<Option<Fallthrough>>,
     /// In source order within each block.
     pub statements: Vec<Statement>,
-    /// By region, where its result is read: a block's tail.
-    pub result_reads: Vec<Option<TextRange>>,
 }
 
 pub(crate) struct Source<'s> {
@@ -594,6 +592,8 @@ struct Builder<'a, 's> {
     graph: GraphBuilder,
     lowered: Lowered,
     nodes_of: Vec<Option<NodeId>>,
+    /// By block, its innermost tail expression once lowered.
+    tails: Vec<Option<NodeIdx>>,
     owner: u32,
     failed: bool,
     /// Open regions, innermost last, each with where its refinements begin in `refinements`.
@@ -642,9 +642,9 @@ impl<'a, 's> Builder<'a, 's> {
                 obligations: Vec::new(),
                 fallthroughs: vec![None; headers.len()],
                 statements: Vec::new(),
-                result_reads: Vec::new(),
             },
             nodes_of: vec![None; nodes],
+            tails: vec![None; nodes],
             owner: 0,
             failed: false,
             regions: Vec::new(),
@@ -701,7 +701,6 @@ impl<'a, 's> Builder<'a, 's> {
         self.graph.enter(region);
         self.regions.push((region, 0, entry));
         let root_node = item.body(tree).map(|body| body.node());
-        let explicit_tail = root_node.and_then(|root| self.explicit_tail(root));
         if let Some(root_node) = root_node {
             let mut work = std::mem::take(&mut self.work);
             work.push(Work::Enter(root_node));
@@ -773,8 +772,7 @@ impl<'a, 's> Builder<'a, 's> {
                     }
                     Work::Pop { region, root } => {
                         self.advance(root);
-                        let (result, at) = self.input(root);
-                        self.result_read(region, at);
+                        let result = self.input(root);
                         let fallthrough = self.context();
                         self.graph.close_with_control(
                             region,
@@ -813,13 +811,12 @@ impl<'a, 's> Builder<'a, 's> {
                 (hole, self.source.range(item_node))
             }
         };
-        self.result_read(region, body.1);
         let control = root_node.and_then(|root| self.control(root));
         let fallthrough = control
             .map(|control| self.place(Op::Sequence, &[(control, body.1), body], body.1, None));
         self.graph.close_with_control(
             region,
-            body.0,
+            body,
             root_node.is_none_or(|root| !self.form(root).completes),
             control,
         );
@@ -849,7 +846,8 @@ impl<'a, 's> Builder<'a, 's> {
                 outcomes.extend(self.returns.iter().copied());
                 let result = self.push(node, Op::Result { declared }, &outcomes, None);
                 let completes = root_node.is_none_or(|root| self.form(root).completes);
-                let fallthrough = explicit_tail
+                let fallthrough = root_node
+                    .and_then(|root| self.explicit_tail(root))
                     .filter(|&tail| self.form(tail).scalar())
                     .or_else(|| {
                         root_node.filter(|&root| declared.is_some() && self.form(root).scalar())
@@ -1009,20 +1007,13 @@ impl<'a, 's> Builder<'a, 's> {
             None => self.push(node, Op::Hole, &[], None),
         }
     }
-    fn result_read(&mut self, region: RegionId, at: TextRange) {
-        let reads = &mut self.lowered.result_reads;
-        if reads.len() <= region.index() {
-            reads.resize(region.index() + 1, None);
-        }
-        reads[region.index()] = Some(at);
-    }
     /// A value and where it is read: a block's at its tail, where the value is written.
     fn input(&mut self, node: NodeIdx) -> (NodeId, TextRange) {
-        let mut at = node;
-        while let Some(tail) = self.explicit_tail(at).filter(|&tail| tail != at) {
-            at = tail;
-        }
-        (self.node_of(node), self.source.range(at))
+        (self.node_of(node), self.source.range(self.value_at(node)))
+    }
+    /// The expression a value is read at: a block's tail, through nested blocks.
+    fn value_at(&self, node: NodeIdx) -> NodeIdx {
+        self.explicit_tail(node).unwrap_or(node)
     }
     fn typed(&self, node: NodeIdx) -> Option<NodeId> {
         let id = self.nodes_of[node.to_usize()]?;
@@ -1174,14 +1165,10 @@ impl<'a, 's> Builder<'a, 's> {
     fn context(&self) -> NodeId {
         self.regions.last().expect("a body runs in its region").2
     }
+    /// A lowered block's innermost tail expression, or a non-block expression itself.
     fn explicit_tail(&self, root: NodeIdx) -> Option<NodeIdx> {
         match ast::Expr::cast(self.source.tree, root) {
-            Some(ast::Expr::Block(_)) => self
-                .source
-                .tree
-                .children(root)
-                .last()
-                .filter(|&node| ast::Expr::cast(self.source.tree, node).is_some()),
+            Some(ast::Expr::Block(_)) => self.tails[root.to_usize()],
             Some(_) => Some(root),
             None => None,
         }
@@ -1392,7 +1379,11 @@ impl<'a, 's> Builder<'a, 's> {
             self.input(expr.start().node()),
             self.input(expr.end().node()),
         ];
-        let condition = self.place(Op::Binary(BinaryOp::Cmp(CmpOp::Lt)), &bounds, at, None);
+        let range = TextRange::new(
+            self.source.range(expr.start().node()).start(),
+            self.source.range(expr.end().node()).end(),
+        );
+        let condition = self.place(Op::Binary(BinaryOp::Cmp(CmpOp::Lt)), &bounds, range, None);
         let context = self.context_at(
             expr.body().node(),
             Op::Then,
@@ -1813,6 +1804,7 @@ impl<'a, 's> Builder<'a, 's> {
             bottom |= form.completes;
         }
         self.controls[node.to_usize()] = self.compose_control(node, controls);
+        self.tails[node.to_usize()] = tail.map(|tail| self.value_at(tail));
         // A damaged block may have lost its tail to recovery, so without one it is a hole, not
         // unit.
         match tail {
