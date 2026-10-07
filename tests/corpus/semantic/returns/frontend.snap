@@ -14,33 +14,28 @@ fn nested() -> int {
 }
 fn boundary() -> int = callee() + 1
 fn lazy_skips() -> int {
-    _ =
-        false
-            && {
-                return 6
-                true
-            }
+    _ = false && {
+        return 6
+        true
+    }
     5
 }
 fn lazy_takes() -> int {
-    _ =
+    _ = true && {
+        return 7
         true
-            && {
-                return 7
-                true
-            }
+    }
     8
 }
 fn ordered() -> int {
-    _ =
-        {
-            return 9
-            1
+    _ = {
+        return 9
+        1
+    }
+        + {
+            return 10
+            2
         }
-            + {
-                return 10
-                2
-            }
     11
 }
 fn divide(n: int) -> int {
@@ -75,11 +70,9 @@ fn argument() -> int {
     })
     15
 }
-fn eager_without_tail() -> int =
-    10
-        + {
-            return 16
-        }
+fn eager_without_tail() -> int = 10 + {
+    return 16
+}
 fn choose(b: bool) -> int = if b {
     return 17
 } else {

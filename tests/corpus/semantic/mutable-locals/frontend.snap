@@ -29,18 +29,14 @@ fn optional(flag: bool) -> int {
 fn optionals() -> int = optional(false) * 10 + optional(true)
 fn lazy(flag: bool) -> int {
     let mut x = 1
-    _ =
-        flag
-            && {
-                x = 6
-                true
-            }
-    _ =
-        flag
-            || {
-                x = 7
-                false
-            }
+    _ = flag && {
+        x = 6
+        true
+    }
+    _ = flag || {
+        x = 7
+        false
+    }
     x
 }
 fn lazies() -> int = lazy(false) * 10 + lazy(true)

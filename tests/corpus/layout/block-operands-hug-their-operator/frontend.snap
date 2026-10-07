@@ -1,0 +1,141 @@
+== tree ==
+SourceFile 1:1..32:1
+  FnItem 4:1..11:2
+    Name 4:4..4:8 "lazy"
+    ParamList 4:8..4:20
+      Param 4:9..4:19
+        Name 4:9..4:13 "flag"
+        TypeRef 4:15..4:19 "bool"
+    TypeRef 4:24..4:27 "int"
+    Block 4:28..11:2
+      LetStmt 5:5..5:18
+        Name 5:13..5:14 "x"
+        LiteralExpr 5:17..5:18 "1"
+      DiscardStmt 6:5..9:6
+        BinaryExpr 6:9..9:6
+          NameRef 6:9..6:13 "flag"
+          Block 6:17..9:6
+            AssignStmt 7:9..7:14
+              NameRef 7:9..7:10 "x"
+              LiteralExpr 7:13..7:14 "2"
+            LiteralExpr 8:9..8:13 "true"
+      NameRef 10:5..10:6 "x"
+  FnItem 12:1..15:2
+    Name 12:4..12:7 "sum"
+    ParamList 12:7..12:9 "()"
+    TypeRef 12:13..12:16 "int"
+    BinaryExpr 12:19..15:2
+      LiteralExpr 12:19..12:20 "1"
+      Block 12:23..15:2
+        LetStmt 13:5..13:14
+          Name 13:9..13:10 "a"
+          LiteralExpr 13:13..13:14 "2"
+        NameRef 14:5..14:6 "a"
+  FnItem 16:1..18:3
+    Name 16:4..16:11 "grouped"
+    ParamList 16:11..16:13 "()"
+    TypeRef 16:17..16:20 "int"
+    ParenExpr 16:23..18:3
+      Block 16:24..18:2
+        LiteralExpr 17:5..17:6 "3"
+  FnItem 19:1..21:2
+    Name 19:4..19:11 "chained"
+    ParamList 19:11..19:29
+      Param 19:12..19:19
+        Name 19:12..19:13 "a"
+        TypeRef 19:15..19:19 "bool"
+      Param 19:21..19:28
+        Name 19:21..19:22 "b"
+        TypeRef 19:24..19:28 "bool"
+    TypeRef 19:33..19:37 "bool"
+    BinaryExpr 19:40..21:2
+      BinaryExpr 19:40..19:46
+        NameRef 19:40..19:41 "a"
+        NameRef 19:45..19:46 "b"
+      Block 19:50..21:2
+        LiteralExpr 20:5..20:10 "false"
+  FnItem 22:1..22:59
+    Name 22:4..22:15 "conditional"
+    ParamList 22:15..22:24
+      Param 22:16..22:23
+        Name 22:16..22:17 "a"
+        TypeRef 22:19..22:23 "bool"
+    TypeRef 22:28..22:31 "int"
+    BinaryExpr 22:34..22:59
+      LiteralExpr 22:34..22:35 "1"
+      IfExpr 22:38..22:59
+        NameRef 22:41..22:42 "a"
+        Block 22:43..22:48
+          LiteralExpr 22:45..22:46 "2"
+        Block 22:54..22:59
+          LiteralExpr 22:56..22:57 "3"
+  FnItem 23:1..28:2
+    Name 23:4..23:8 "wide"
+    ParamList 23:8..23:107
+      Param 23:9..23:54
+        Name 23:9..23:49 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        TypeRef 23:51..23:54 "int"
+      Param 23:56..23:106
+        Name 23:56..23:101 "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        TypeRef 23:103..23:106 "int"
+    TypeRef 23:111..23:114 "int"
+    Block 23:115..28:2
+      LetStmt 24:5..26:6
+        Name 24:9..24:14 "value"
+        BinaryExpr 24:17..26:6
+          BinaryExpr 24:17..24:105
+            NameRef 24:17..24:57 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            NameRef 24:60..24:105 "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          Block 24:108..26:6
+            LiteralExpr 25:9..25:10 "4"
+      NameRef 27:5..27:10 "value"
+  FnItem 29:1..31:6
+    Name 29:4..29:11 "leading"
+    ParamList 29:11..29:13 "()"
+    TypeRef 29:17..29:20 "int"
+    BinaryExpr 29:23..31:6
+      Block 29:23..31:2
+        LiteralExpr 30:5..30:6 "5"
+      LiteralExpr 31:5..31:6 "6"
+
+== formatted ==
+// A block, `if`, or `for` ending a binary expression, a parenthesized one, or a binding's value
+// keeps its opener on the line. A chain too wide for its line moves whole to the next when it
+// fits there, else it stays and breaks at its operators, the block still hugging the last.
+fn lazy(flag: bool) -> int {
+    let mut x = 1
+    _ = flag && {
+        x = 2
+        true
+    }
+    x
+}
+fn sum() -> int = 1 + {
+    let a = 2
+    a
+}
+fn grouped() -> int = ({
+    3
+})
+fn chained(a: bool, b: bool) -> bool = a && b || {
+    false
+}
+fn conditional(a: bool) -> int = 1 + if a {
+    2
+} else {
+    3
+}
+fn wide(
+    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: int,
+    bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb: int,
+) -> int {
+    let value =
+        aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb + {
+            4
+        }
+    value
+}
+fn leading() -> int = {
+    5
+}
+    + 6

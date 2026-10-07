@@ -88,6 +88,8 @@ pub(crate) struct Group {
     pub(crate) first: u32,
     pub(crate) end: u32,
     pub(crate) tail: Option<(u32, u32)>,
+    /// Breaks only when its tail, measured through, then fits flat on the next line.
+    pub(crate) whole: bool,
 }
 
 impl Group {
@@ -249,20 +251,43 @@ impl Planner<'_> {
     }
 
     fn group(&mut self, first: u32, end: u32, tail: Option<NodeIdx>) {
+        self.push_group(first, end, tail, false);
+    }
+
+    fn push_group(&mut self, first: u32, end: u32, tail: Option<NodeIdx>, whole: bool) {
         if first < end {
             let tail = tail
                 .map(|tail| (self.first_sig(tail) + 1, self.end_sig(tail)))
                 .filter(|&(from, to)| from < to);
-            self.groups.push(Group { first, end, tail });
+            self.groups.push(Group {
+                first,
+                end,
+                tail,
+                whole,
+            });
         }
     }
 
+    /// A value stays on the `=` line and breaks within. A chain moves whole to the next line
+    /// when it fits there, else it stays and breaks at its operators, a trailing block hugging.
     fn value(&mut self, node: NodeIdx, eq: u32, value: NodeIdx, level: u32) {
-        // A chain is not the tail: it moves whole to the next line before it breaks at its
-        // operators.
-        let chain = self.tree.kind(value) == NodeKind::BinaryExpr;
-        self.group(eq + 1, self.end_sig(node), (!chain).then_some(value));
-        self.node(value, if chain { level + 1 } else { level });
+        let end = self.end_sig(node);
+        if self.tree.kind(value) == NodeKind::BinaryExpr {
+            self.push_group(eq + 1, end, Some(value), true);
+        } else {
+            self.group(eq + 1, end, Some(value));
+        }
+        self.node(value, level);
+    }
+
+    /// The last child when it opens a block: the tail of a sound node's group, laid out at the
+    /// node's own level, since the printer indents it one more when the group breaks.
+    fn hug(&self, node: NodeIdx) -> Option<NodeIdx> {
+        if self.tree.has_error(node) {
+            return None;
+        }
+        let last = self.tree.children(node).last()?;
+        self.opens_block(last).then_some(last)
     }
 
     /// `level` is the indentation of the line `node` begins on.
@@ -290,8 +315,14 @@ impl Planner<'_> {
                     (_, El::Tok(_, SyntaxKind::RParen)) => Gap::soft_glue(level),
                     _ => Gap::space(level + 1),
                 });
-                self.group(self.first_sig(node) + 1, self.end_sig(node), None);
-                self.children(&els, level + 1);
+                let hug = self.hug(node);
+                self.group(self.first_sig(node) + 1, self.end_sig(node), hug);
+                for &el in &els {
+                    if let El::Node(child, _) = el {
+                        let child_level = if Some(child) == hug { level } else { level + 1 };
+                        self.node(child, child_level);
+                    }
+                }
             }
             NodeKind::Param => {
                 self.pairs(&els, |_, b| match b {
@@ -400,12 +431,7 @@ impl Planner<'_> {
                 }
             }
         }
-        // The hug is the tail, which the printer indents one more when the list breaks.
-        let last = els.iter().rev().find_map(|&el| match el {
-            El::Node(child, _) => Some(child),
-            El::Tok(..) => None,
-        });
-        let hug = last.filter(|&last| sound && self.opens_block(last));
+        let hug = self.hug(node);
         if sound && els.len() > 2 {
             self.group(self.first_sig(node) + 1, self.end_sig(node), hug);
         }
@@ -451,9 +477,14 @@ impl Planner<'_> {
             (El::Tok(..), El::Tok(..)) => Gap::glue(cont),
             _ => Gap::space(cont),
         });
-        if chain.is_none() {
-            self.group(self.first_sig(node) + 1, self.end_sig(node), None);
-        }
+        let hug = match chain {
+            None => {
+                let hug = self.hug(node);
+                self.group(self.first_sig(node) + 1, self.end_sig(node), hug);
+                hug
+            }
+            Some(_) => None,
+        };
         let power = self.power(els);
         let mut first = true;
         for &el in els {
@@ -468,7 +499,7 @@ impl Planner<'_> {
                     }
                     self.node(child, level);
                 } else {
-                    self.node(child, cont);
+                    self.node(child, if Some(child) == hug { level } else { cont });
                 }
             }
         }

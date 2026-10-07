@@ -87,9 +87,11 @@ pub(crate) fn print(
             let g = next_group;
             next_group += 1;
             let group = plan.groups[g];
-            broken[g] = forced(&group) || {
+            // Whether the group fits flat from `start`, measured to its first break: a hard gap,
+            // a soft gap in a tail it does not move whole, or one past its end that an enclosing
+            // group decides.
+            let fits_from = |start: i64| {
                 let mut w = 0usize;
-                let mut fits = true;
                 let mut k = gap;
                 loop {
                     let plan_gap = plan.gaps[k];
@@ -99,7 +101,7 @@ pub(crate) fn print(
                         break;
                     }
                     let soft = plan_gap.breaks == Breaks::Soft;
-                    if soft && group.in_tail(k as u32) {
+                    if soft && !group.whole && group.in_tail(k as u32) {
                         break;
                     }
                     if k as u32 >= group.end && soft {
@@ -126,14 +128,29 @@ pub(crate) fn print(
                     if !plan.layout_comma[k] {
                         w += token_width[k] as usize;
                     }
-                    if column + w > WIDTH {
-                        fits = false;
-                        break;
+                    if start + w as i64 > WIDTH as i64 {
+                        return false;
                     }
                     k += 1;
                 }
-                !fits || column + w > WIDTH
+                start + w as i64 <= WIDTH as i64
             };
+            let decided = forced(&group)
+                || !fits_from(column as i64) && {
+                    // A group that breaks to move whole breaks only when that makes it fit:
+                    // otherwise its inner groups break where they are.
+                    !group.whole || {
+                        let opening = plan.gaps[gap];
+                        let lead = if opening.frozen {
+                            flat_trivia_width(gap)
+                        } else {
+                            usize::from(opening.flat == Flat::Space)
+                        };
+                        let indent = opening.level as usize * INDENT.len();
+                        fits_from(indent as i64 - lead as i64)
+                    }
+                };
+            broken[g] = decided;
             stack.push(g);
         }
 
