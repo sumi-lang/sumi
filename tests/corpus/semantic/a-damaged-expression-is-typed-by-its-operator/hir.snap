@@ -1,5 +1,5 @@
 file: rejected
-frontend errors: 17 (see frontend.snap)
+frontend errors: 19 (see frontend.snap)
 semantic errors: 11
 
 fn around_a_hole@1:1..6:2 (bool ∈ ∅) -> int ∈ ∅
@@ -14,12 +14,15 @@ fn around_a_hole@1:1..6:2 (bool ∈ ∅) -> int ∈ ∅
         initializer: lazy and : bool @3:13..3:22
           lhs: read x@2:9..2:10 : ?
           rhs: read flag@1:18..1:22 : bool
-      discard: call count@7:1..7:28 : int @4:26..5:30
-        arg[0]: if : ? @5:5..5:30
-          condition: read y@3:9..3:10 : bool
-          then: int 1 : int @5:12..5:13
-          else: bool false : bool @5:23..5:28
-      tail: hole : ? @4:5..6:2
+      discard: hole : ? @4:5..6:2
+      tail: if : ? @4:5..6:2
+        condition: read flag@1:18..1:22 : bool
+        then: read x@2:9..2:10 : ?
+        else: call count@7:1..7:28 : int @4:26..5:30
+          arg[0]: if : ? @5:5..5:30
+            condition: read y@3:9..3:10 : bool
+            then: int 1 : int @5:12..5:13
+            else: bool false : bool @5:23..5:28
 
 fn count@7:1..7:28 (int ∈ ∅) -> int ∈ ∅
   param n@7:10..7:11: int
@@ -93,6 +96,24 @@ fn empty@28:1..31:2 () -> int ∈ ∅
       discard: hole : ? @29:5..29:7
       discard: hole : ? @30:5..30:8
       tail: hole : ? @28:19..31:2
+
+fn merged@32:1..36:2 (bool ∈ ∅) -> int ∈ ∅
+  param flag@32:11..32:15: bool
+  result: copy : int @32:26..32:29
+    value:
+      let x@33:13..33:14: int @33:5..33:18
+        initializer: int 1 : int @33:17..33:18
+      discard: hole : ? @34:5..36:2
+      tail: if : ? @34:5..36:2
+        condition: read flag@32:11..32:15 : bool
+        then:
+          assignment: assign x@33:13..33:14 : int @34:15..34:20
+            value: int 2 : int @34:19..34:20
+          tail: unit : unit @34:13..34:22
+        else:
+          assignment: assign x@33:13..33:14 : int @34:30..35:6
+            value: read x@33:13..33:14 : int
+          tail: hole : ? @34:28..36:2
 
 == semantic diagnostics ==
 error[semantic/type-mismatch]: expected bool, found int

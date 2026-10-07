@@ -18,6 +18,8 @@ ExpectedExpression at 25:5
 Expected(RParen) at 27:1
 ExpectedExpression at 29:6
 ExpectedExpression at 31:1
+Expected(RParen) at 36:1
+Expected(RBrace) at 37:1
 
 == diagnostics ==
 error[syntax/expected-expression] 3:5: expected an expression
@@ -64,6 +66,14 @@ error[syntax/expected-token] 27:1: expected `)`
     26:6 -> ")"
 error[syntax/expected-expression] 29:6: expected an expression
 error[syntax/expected-expression] 31:1: expected an expression
+error[syntax/expected-token] 36:1: expected `)`
+  at 34:34..34:35 "(": opening delimiter is here
+  fix: insert `)`
+    35:6 -> ")"
+error[syntax/expected-token] 37:1: expected `}`
+  at 32:30..32:31 "{": opening delimiter is here
+  fix: insert `}`
+    36:2 -> "}"
 
 == fixed (syntax/expected-expression, syntax/unspaced-binary-operator remain) ==
 fn around_a_hole(flag: bool) -> int {
@@ -97,6 +107,11 @@ fn empty() -> int {
     ()
     _ =
 }
+fn merged(flag: bool) -> int {
+    let mut x = 1
+    if flag { x = 2 } else { x = (
+    x)
+}}
 
 == formatted ==
 fn around_a_hole(flag: bool) -> int {
@@ -134,4 +149,11 @@ fn annotated(flag: bool) -> bool {
 fn empty() -> int {
     ()
     _ =
+}
+fn merged(flag: bool) -> int {
+    let mut x = 1
+    if flag {
+        x = 2
+    } else {
+        x = (x
 }

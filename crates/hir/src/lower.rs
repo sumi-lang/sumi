@@ -523,12 +523,12 @@ enum Work {
         call: Clean<ast::CallExpr>,
         target: Option<FunctionId>,
     },
-    Branches(Clean<ast::IfExpr>),
+    Branches(Branch),
     LoopBody(Clean<ast::ForExpr>),
     LoopEnd(Box<LoopState>),
     Rhs(LazyOp),
     Join {
-        branch: Clean<ast::IfExpr>,
+        branch: Branch,
         then: RegionId,
         else_: Option<RegionId>,
         contexts: [NodeId; 2],
@@ -547,6 +547,16 @@ enum Work {
         root: NodeIdx,
     },
     Return(ast::ReturnStmt),
+}
+
+/// An `if` by its parts. A part the parser lost stands as the `if` itself, whose node is a hole
+/// by then: its region closes on that hole, and nothing is entered for it.
+#[derive(Clone, Copy)]
+struct Branch {
+    node: NodeIdx,
+    cond: NodeIdx,
+    then: NodeIdx,
+    else_: Option<NodeIdx>,
 }
 
 fn enter_each(work: &mut Vec<Work>, nodes: impl Iterator<Item = NodeIdx>) {
@@ -1277,19 +1287,21 @@ impl<'a, 's> Builder<'a, 's> {
             _ => {}
         }
     }
-    fn branches(&mut self, branch: Clean<ast::IfExpr>, work: &mut Vec<Work>) {
-        let tree = self.source.tree;
-        let cond = branch.condition().node();
+    fn branches(&mut self, branch: Branch, work: &mut Vec<Work>) {
+        let Branch {
+            node,
+            cond,
+            then: then_node,
+            else_: else_node,
+        } = branch;
         self.advance(cond);
-        let then_node = branch.then_branch().node();
-        let else_node = branch.else_branch(tree).map(|e| e.node());
         let parent = self.context();
         let condition = self.input(cond);
         let then_context = self.context_at(then_node, Op::Then, condition, parent);
         let else_context = match else_node {
             Some(else_node) => self.context_at(else_node, Op::Else, condition, parent),
             None if !self.mutable_locals.is_empty() => {
-                self.context_at(branch.node(), Op::Else, condition, parent)
+                self.context_at(node, Op::Else, condition, parent)
             }
             None => parent,
         };
@@ -1307,7 +1319,9 @@ impl<'a, 's> Builder<'a, 's> {
                 region,
                 root: else_node,
             });
-            work.push(Work::Enter(else_node));
+            if else_node != node {
+                work.push(Work::Enter(else_node));
+            }
             work.push(Work::Push {
                 region,
                 guard: (cond, false),
@@ -1317,7 +1331,9 @@ impl<'a, 's> Builder<'a, 's> {
             region: then,
             root: then_node,
         });
-        work.push(Work::Enter(then_node));
+        if then_node != node {
+            work.push(Work::Enter(then_node));
+        }
         work.push(Work::Push {
             region: then,
             guard: (cond, true),
@@ -1519,8 +1535,14 @@ impl<'a, 's> Builder<'a, 's> {
                 work.push(Work::Enter(discard.value().node()));
             }
             CleanStmt::Expr(CleanExpr::IfExpr(branch)) => {
-                work.push(Work::Branches(branch));
-                work.push(Work::Enter(branch.condition().node()));
+                let cond = branch.condition().node();
+                work.push(Work::Branches(Branch {
+                    node,
+                    cond,
+                    then: branch.then_branch().node(),
+                    else_: branch.else_branch(tree).map(|e| e.node()),
+                }));
+                work.push(Work::Enter(cond));
             }
             CleanStmt::Expr(CleanExpr::ForExpr(expr)) => {
                 work.push(Work::LoopBody(expr));
@@ -2067,15 +2089,27 @@ impl<'a, 's> Builder<'a, 's> {
                 None => return self.damaged_let(binding),
             },
             Stmt::Expr(Expr::IfExpr(branch)) => {
-                // Its regions want every part, so it is a hole; what its parts hold is still
-                // checked, as if unconditional.
+                // A lost part stands as the `if` itself, a hole; an `else` keyword without its
+                // block is still an else.
                 self.hole(node);
-                let parts = [
-                    branch.condition(tree).map(|condition| condition.node()),
-                    branch.then_branch(tree).map(|block| block.node()),
-                    branch.else_branch(tree).map(|branch| branch.node()),
-                ];
-                enter_each(work, parts.into_iter().flatten());
+                let cond = branch.condition(tree).map_or(node, |cond| cond.node());
+                let then = branch.then_branch(tree).map_or(node, |block| block.node());
+                let else_ = branch
+                    .else_branch(tree)
+                    .map(|branch| branch.node())
+                    .or_else(|| {
+                        tree.holds(node, lexed, SyntaxKind::ElseKw, None)
+                            .then_some(node)
+                    });
+                work.push(Work::Branches(Branch {
+                    node,
+                    cond,
+                    then,
+                    else_,
+                }));
+                if cond != node {
+                    work.push(Work::Enter(cond));
+                }
                 return;
             }
             Stmt::Expr(Expr::CallExpr(call)) => {
@@ -2328,15 +2362,17 @@ impl<'a, 's> Builder<'a, 's> {
     }
     fn join(
         &mut self,
-        branch: Clean<ast::IfExpr>,
+        branch: Branch,
         then: RegionId,
         else_: Option<RegionId>,
         contexts: [NodeId; 2],
     ) -> Option<()> {
-        let tree = self.source.tree;
-        let cond = branch.condition().node();
-        let then_node = branch.then_branch().node();
-        let else_node = branch.else_branch(tree).map(|e| e.node());
+        let Branch {
+            node,
+            cond,
+            then: then_node,
+            else_: else_node,
+        } = branch;
         let then_state = self.closed(then);
         let false_state = match else_ {
             Some(else_) => self.closed(else_),
@@ -2347,13 +2383,7 @@ impl<'a, 's> Builder<'a, 's> {
         results.extend(else_node.map(|else_node| self.node_of(else_node)));
         let then_form = self.form(then_node);
         let else_form = else_node.map_or(Form::SCALAR, |node| self.form(node));
-        let id = self.push_over(
-            branch.node(),
-            Op::Join { then, else_ },
-            &[condition],
-            None,
-            &results,
-        );
+        let id = self.push_over(node, Op::Join { then, else_ }, &[condition], None, &results);
         let observe = (self.control(then_node).is_some()
             || else_node.is_some_and(|node| self.control(node).is_some()))
         .then(|| {
@@ -2362,16 +2392,12 @@ impl<'a, 's> Builder<'a, 's> {
                     then: Some(then),
                     else_,
                 },
-                &[
-                    condition,
-                    (self.context(), self.source.range(branch.node())),
-                ],
-                self.source.range(branch.node()),
+                &[condition, (self.context(), self.source.range(node))],
+                self.source.range(node),
                 None,
             )
         });
-        self.controls[branch.node().to_usize()] =
-            self.compose_control(branch.node(), [self.control(cond), observe]);
+        self.controls[node.to_usize()] = self.compose_control(node, [self.control(cond), observe]);
         let cond_form = self.form(cond);
         if cond_form.completes {
             self.completes_input(id, 0);
@@ -2380,13 +2406,9 @@ impl<'a, 's> Builder<'a, 's> {
             return None;
         }
         if cond_form.completes || (then_form.completes && else_form.completes) {
-            self.bottoms[branch.node().to_usize()] = true;
+            self.bottoms[node.to_usize()] = true;
         } else {
-            self.merge_versions(
-                cond,
-                [&then_state, &false_state],
-                self.source.range(branch.node()),
-            );
+            self.merge_versions(cond, [&then_state, &false_state], self.source.range(node));
             if then_form.scalar() {
                 self.typed(then_node)?;
             } else {
