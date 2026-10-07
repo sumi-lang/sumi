@@ -23,12 +23,12 @@ fn recovered@4:1..4:28 () -> int ∈ ∅
 
 fn bad_arguments@5:1..5:41 signature: unavailable
   body: call spin@1:1..1:26 : ? @5:22..5:41
-    arg[0]: bool true : ? @5:27..5:31
+    arg[0]: bool true : bool @5:27..5:31
     arg[1]: hole : ? @5:33..5:40
 
 fn bare@6:1..8:2 () -> unit ∈ ∅
   result: copy : unit @6:1..8:2
-    value: int 1 : ? @7:5..7:6
+    value: int 1 : int @7:5..7:6
 
 fn malformed@9:1..11:2 signature: unavailable
   body: int 1 : int @10:5..10:6

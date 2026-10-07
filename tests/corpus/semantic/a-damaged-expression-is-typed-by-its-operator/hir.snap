@@ -6,17 +6,17 @@ fn around_a_hole@1:1..6:2 (bool ∈ ∅) -> int ∈ ∅
   param flag@1:18..1:22: bool
   result: copy : int @1:33..1:36
     value:
-      let x@2:9..2:10: ? @2:5..2:17
+      let x@2:9..2:10: int @2:5..2:17
         initializer: eager + : int @2:14..2:17
           lhs: int 1 : int @2:14..2:15
           rhs: hole : ? @2:14..2:17
       let y@3:9..3:10: bool @3:5..3:22
         initializer: lazy and : bool @3:13..3:22
-          lhs: read x@2:9..2:10 : ?
+          lhs: read x@2:9..2:10 : int
           rhs: read flag@1:18..1:22 : bool
-      tail: if : ? @4:5..6:2
+      tail: if : int @4:5..6:2
         condition: read flag@1:18..1:22 : bool
-        then: read x@2:9..2:10 : ?
+        then: read x@2:9..2:10 : int
         else: call count@7:1..7:28 : int @4:26..5:30
           arg[0]: if : ? @5:5..5:30
             condition: read y@3:9..3:10 : bool
@@ -31,17 +31,17 @@ fn count@7:1..7:28 (int ∈ ∅) -> int ∈ ∅
 fn tail@8:1..10:2 (bool ∈ ∅) -> unit ∈ ∅
   param flag@8:9..8:13: bool
   result: copy : unit @8:1..10:2
-    value: call count@7:1..7:28 : ? @9:5..9:11
+    value: call count@7:1..7:28 : int @9:5..9:11
 
 fn arguments@11:1..11:38 () -> int ∈ ∅
   result: copy : int @11:19..11:22
     value: call count@7:1..7:28 : int @11:25..11:38
-      arg[0]: bool true : ? @11:31..11:35
+      arg[0]: bool true : bool @11:31..11:35
       arg[1]: int 2 : int @11:37..11:38
 
 fn negated@12:1..12:26 () -> bool ∈ ∅
   result: copy : bool @12:17..12:21
-    value: negate : ? @12:24..12:26
+    value: negate : int @12:24..12:26
       operand: hole : ? @12:25..12:26
 
 fn inferred@13:1..13:20 () -> int ∈ ∅
@@ -51,14 +51,14 @@ fn inferred@13:1..13:20 () -> int ∈ ∅
 
 fn caller@14:1..14:33 () -> bool ∈ ∅
   result: copy : bool @14:16..14:20
-    value: call inferred@13:1..13:20 : ? @14:23..14:33
+    value: call inferred@13:1..13:20 : int @14:23..14:33
 
 fn forwarded@15:1..15:24 () -> int ∈ ∅
   body: call count@7:1..7:28 : int @15:18..15:24
 
 fn chained@16:1..16:35 () -> bool ∈ ∅
   result: copy : bool @16:17..16:21
-    value: call forwarded@15:1..15:24 : ? @16:24..16:35
+    value: call forwarded@15:1..15:24 : int @16:24..16:35
 
 fn assigned@17:1..21:2 (bool ∈ ∅) -> unit ∈ ∅
   param flag@17:13..17:17: bool
@@ -84,7 +84,7 @@ fn annotated@22:1..27:2 (bool ∈ ∅) -> bool ∈ ∅
           lhs: int 2 : int @24:22..24:23
           rhs: hole : ? @24:22..24:25
       let z@25:9..25:10: int @25:5..26:6
-        initializer: eager == : ? @25:18..26:6
+        initializer: eager == : bool @25:18..26:6
           lhs: read flag@22:14..22:18 : ?
           rhs: read x@23:9..23:10 : ?
       tail: hole : ? @22:34..27:2

@@ -146,20 +146,20 @@ fn boolean_start@22:1..22:44 () -> unit ∈ ∅
     outcome[0]:
       discard: after : ? @22:22..22:42
         control: loop : unit @22:22..22:42
-          start: bool false : ? @22:31..22:36
+          start: bool false : bool @22:31..22:36
           end: int 3 : int @22:38..22:39
           body:
             let i@22:26..22:27: loop index : int @22:22..22:42
-              start: bool false : ? @22:31..22:36
+              start: bool false : bool @22:31..22:36
               end: int 3 : int @22:38..22:39
             tail: unit : unit @22:40..22:42
         context: entry : ? @22:1..22:44
       tail: loop : unit @22:22..22:42
-        start: bool false : ? @22:31..22:36
+        start: bool false : bool @22:31..22:36
         end: int 3 : int @22:38..22:39
         body:
           let i@22:26..22:27: loop index : int @22:22..22:42
-            start: bool false : ? @22:31..22:36
+            start: bool false : bool @22:31..22:36
             end: int 3 : int @22:38..22:39
           tail: unit : unit @22:40..22:42
 
@@ -169,20 +169,20 @@ fn boolean_end@23:1..23:41 () -> unit ∈ ∅
       discard: after : ? @23:20..23:39
         control: loop : unit @23:20..23:39
           start: int 0 : int @23:29..23:30
-          end: bool true : ? @23:32..23:36
+          end: bool true : bool @23:32..23:36
           body:
             let i@23:24..23:25: loop index : int @23:20..23:39
               start: int 0 : int @23:29..23:30
-              end: bool true : ? @23:32..23:36
+              end: bool true : bool @23:32..23:36
             tail: unit : unit @23:37..23:39
         context: entry : ? @23:1..23:41
       tail: loop : unit @23:20..23:39
         start: int 0 : int @23:29..23:30
-        end: bool true : ? @23:32..23:36
+        end: bool true : bool @23:32..23:36
         body:
           let i@23:24..23:25: loop index : int @23:20..23:39
             start: int 0 : int @23:29..23:30
-            end: bool true : ? @23:32..23:36
+            end: bool true : bool @23:32..23:36
           tail: unit : unit @23:37..23:39
 
 fn nonunit_body@24:1..24:42 () -> unit ∈ unit
@@ -193,19 +193,19 @@ fn nonunit_body@24:1..24:42 () -> unit ∈ unit
           start: int 0 : int @24:30..24:31
           end: int 3 : int @24:33..24:34
           body:
-            let i@24:25..24:26: loop index : ? @24:21..24:40
+            let i@24:25..24:26: loop index : int @24:21..24:40
               start: int 0 : int @24:30..24:31
               end: int 3 : int @24:33..24:34
-            tail: read i@24:25..24:26 : ?
+            tail: read i@24:25..24:26 : int
         context: entry : ? @24:1..24:42
       tail: loop : unit @24:21..24:40
         start: int 0 : int @24:30..24:31
         end: int 3 : int @24:33..24:34
         body:
-          let i@24:25..24:26: loop index : ? @24:21..24:40
+          let i@24:25..24:26: loop index : int @24:21..24:40
             start: int 0 : int @24:30..24:31
             end: int 3 : int @24:33..24:34
-          tail: read i@24:25..24:26 : ?
+          tail: read i@24:25..24:26 : int
 
 fn changed_type@25:1..28:2 () -> unit ∈ unit
   result: result : unit @25:1..28:2

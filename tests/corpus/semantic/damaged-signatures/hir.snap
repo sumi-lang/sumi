@@ -19,9 +19,9 @@ fn untyped@3:1..5:2 signature: unavailable
     tail: hole : ? @3:19..5:2
 
 fn stray_before_params@6:1..8:2 (int ∈ ∅) -> unit ∈ ∅
-  param a@6:26..6:27: ?
+  param a@6:26..6:27: int
   result: copy : unit @6:1..8:2
-    value: read a@6:26..6:27 : ?
+    value: read a@6:26..6:27 : int
 
 fn stray_in_result@9:1..11:2 signature: unavailable
   body: hole : ? @10:5..10:6

@@ -18,7 +18,7 @@ fn function_value@5:1..7:2 () -> unit ∈ unit
 
 fn mismatch@8:1..8:26 () -> bool ∈ ∅
   result: copy : bool @8:18..8:22
-    value: int 1 : ? @8:25..8:26
+    value: int 1 : int @8:25..8:26
 
 fn branches@9:1..13:2 () -> int ∈ [1, 1]
   result: copy : int @9:18..9:21
@@ -30,14 +30,14 @@ fn branches@9:1..13:2 () -> int ∈ [1, 1]
 fn missing_else@14:1..16:2 () -> unit ∈ unit
   body: if : unit @14:21..16:2
     condition: bool true : bool @14:24..14:28
-    then: int 1 : ? @15:5..15:6
+    then: int 1 : int @15:5..15:6
     else: unit (implicit)
 
 fn annotation@17:1..19:2 () -> unit ∈ unit
   result: copy : unit @17:1..19:2
     value:
       let x@18:9..18:10: bool @18:5..18:20
-        initializer: int 1 : ? @18:19..18:20
+        initializer: int 1 : int @18:19..18:20
       tail: unit : unit @17:17..19:2
 
 fn unit_equality@20:1..20:38 () -> bool ∈ ∅
@@ -49,13 +49,13 @@ fn unit_equality@20:1..20:38 () -> bool ∈ ∅
 fn unit_sum@21:1..21:30 () -> int ∈ ∅
   result: copy : int @21:18..21:21
     value: eager + : int @21:24..21:30
-      lhs: unit : ? @21:24..21:26
+      lhs: unit : unit @21:24..21:26
       rhs: int 1 : int @21:29..21:30
 
 fn condition@22:1..22:50 () -> int ∈ ∅
   result: copy : int @22:19..22:22
     value: if : ? @22:25..22:50
-      condition: int 1 : ? @22:28..22:29
+      condition: int 1 : int @22:28..22:29
       then: int 2 : int @22:32..22:33
       else: bool false : bool @22:43..22:48
 
