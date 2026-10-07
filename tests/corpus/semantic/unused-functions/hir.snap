@@ -88,8 +88,6 @@ fn main@20:1..25:2 () -> int ∈ [6, 6]
         else: unit (implicit)
       discard: after : ? @21:5..23:6
         control: observe : ? @21:5..23:6
-          condition: bool false : bool @21:8..21:13
-          then control: unit : unit @21:14..23:6
         context: entry : ? @20:1..25:2
       tail: call used@18:1..18:31 : int @24:5..24:12
         arg[0]: int 3 : int @24:10..24:11
