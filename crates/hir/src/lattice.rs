@@ -199,7 +199,7 @@ pub(crate) enum Pair {
     Outcome,
     Binary(BinaryOp),
     Lazy {
-        and: bool,
+        is_and: bool,
     },
     Then,
     Else,
@@ -329,8 +329,8 @@ impl Lattice for Product {
                 let Ok(combined) = May::binary(op, values, second);
                 combined
             }
-            Pair::Lazy { and } => {
-                let Ok(combined) = May::lazy(and, values, second);
+            Pair::Lazy { is_and } => {
+                let Ok(combined) = May::lazy(is_and, values, second);
                 combined
             }
             Pair::Refine {
@@ -412,7 +412,7 @@ mod tests {
             a.combine(&edge, &b, false, &cx).values.bools,
             Bools::from(false)
         );
-        let edge = Pair::Lazy { and: true };
+        let edge = Pair::Lazy { is_and: true };
         assert_eq!(
             values(May::bool(false))
                 .combine(&edge, &Product::bottom(), false, &cx)

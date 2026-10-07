@@ -537,11 +537,11 @@ enum Partial {
     },
 }
 
-/// `&&` when `and`, else `||`, with its expression.
+/// `&&` when `is_and`, else `||`, with its expression.
 #[derive(Clone, Copy)]
 struct LazyOp {
     expr: Clean<ast::BinaryExpr>,
-    and: bool,
+    is_and: bool,
 }
 
 enum Work {
@@ -1376,19 +1376,19 @@ impl<'a, 's> Builder<'a, 's> {
         });
     }
     fn rhs(&mut self, expr: LazyOp, work: &mut Vec<Work>) {
-        let and = expr.and;
+        let is_and = expr.is_and;
         let lhs = expr.expr.lhs().node();
         self.advance(lhs);
         let rhs = expr.expr.rhs().node();
         let parent = self.context();
         let left = self.input(lhs);
-        let selected = usize::from(!and);
+        let selected = usize::from(!is_and);
         let mut contexts = [parent; 2];
         contexts[selected] =
-            self.context_at(rhs, if and { Op::Then } else { Op::Else }, left, parent);
+            self.context_at(rhs, if is_and { Op::Then } else { Op::Else }, left, parent);
         if !self.mutable_locals.is_empty() {
-            contexts[usize::from(and)] =
-                self.context_at(rhs, if and { Op::Else } else { Op::Then }, left, parent);
+            contexts[usize::from(is_and)] =
+                self.context_at(rhs, if is_and { Op::Else } else { Op::Then }, left, parent);
         }
         let context = contexts[selected];
         let region = self.graph.open(context);
@@ -1401,7 +1401,7 @@ impl<'a, 's> Builder<'a, 's> {
         work.push(Work::Enter(rhs));
         work.push(Work::Push {
             region,
-            guard: (lhs, and),
+            guard: (lhs, is_and),
         });
     }
     fn loop_body(&mut self, expr: Clean<ast::ForExpr>, work: &mut Vec<Work>) {
@@ -1600,7 +1600,7 @@ impl<'a, 's> Builder<'a, 's> {
                     }
                     None => work.push(Work::Rhs(LazyOp {
                         expr,
-                        and: op == sumi_syntax::BinaryOp::And,
+                        is_and: op == sumi_syntax::BinaryOp::And,
                     })),
                 }
                 work.push(Work::Enter(lhs));
@@ -2352,7 +2352,7 @@ impl<'a, 's> Builder<'a, 's> {
         let lhs_input = self.input(lhs);
         let result = self.node_of(rhs_node);
         let rhs_form = self.form(rhs_node);
-        let op = if expr.and {
+        let op = if expr.is_and {
             Op::And { rhs }
         } else {
             Op::Or { rhs }
@@ -2360,7 +2360,7 @@ impl<'a, 's> Builder<'a, 's> {
         let id = self.push_over(expr.expr.node(), op, &[lhs_input], None, &[result]);
         let selected = self.control(rhs_node).map(|_| rhs);
         let observe = selected.map(|region| {
-            let (then, else_) = if expr.and {
+            let (then, else_) = if expr.is_and {
                 (Some(region), None)
             } else {
                 (None, Some(region))
@@ -2391,11 +2391,11 @@ impl<'a, 's> Builder<'a, 's> {
             return None;
         }
         if rhs_form.completes {
-            self.refine(lhs, !expr.and);
+            self.refine(lhs, !expr.is_and);
         } else {
             self.typed(rhs_node)?;
-            let skipped = self.guarded_state(lhs, !expr.and, contexts[usize::from(expr.and)]);
-            let states = if expr.and {
+            let skipped = self.guarded_state(lhs, !expr.is_and, contexts[usize::from(expr.is_and)]);
+            let states = if expr.is_and {
                 [&state, &skipped]
             } else {
                 [&skipped, &state]

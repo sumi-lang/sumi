@@ -47,10 +47,10 @@ enum Site {
         then: RegionId,
         else_: Option<RegionId>,
     },
-    /// The left operand of `&&` when `and`, else of `||`.
+    /// The left operand of `&&` when `is_and`, else of `||`.
     Left {
         operator: NodeId,
-        and: bool,
+        is_and: bool,
         rhs: RegionId,
     },
     Right {
@@ -157,9 +157,9 @@ pub(crate) fn warn(
                 if truth { else_ } else { Some(then) }
                     .map(|region| (region_origin(region), DeadCause::Branch)),
             ),
-            Site::Left { and, rhs, .. } => (
+            Site::Left { is_and, rhs, .. } => (
                 format!("condition is always {truth}"),
-                (truth != and).then(|| (region_origin(rhs), DeadCause::RightOperand)),
+                (truth != is_and).then(|| (region_origin(rhs), DeadCause::RightOperand)),
             ),
             Site::Right { .. } => (format!("condition is always {truth}"), None),
             Site::Range { .. } if truth => continue,
@@ -320,7 +320,7 @@ fn conditions(graph: &Graph) -> Vec<Condition> {
                     at: graph.reads(node)[0],
                     site: Site::Left {
                         operator: node,
-                        and: matches!(op, Op::And { .. }),
+                        is_and: matches!(op, Op::And { .. }),
                         rhs,
                     },
                 });

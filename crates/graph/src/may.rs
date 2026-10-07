@@ -739,8 +739,8 @@ impl Domain for May {
     }
 
     #[inline]
-    fn lazy(and: bool, lhs: &Self, rhs: &Self) -> Result<Self, Infallible> {
-        Ok(Self::bools(if and {
+    fn lazy(is_and: bool, lhs: &Self, rhs: &Self) -> Result<Self, Infallible> {
+        Ok(Self::bools(if is_and {
             lhs.bools.and(rhs.bools)
         } else {
             lhs.bools.or(rhs.bools)
@@ -1137,10 +1137,10 @@ mod tests {
                             prop_assert!(is_member(&may, &value), "{op:?} over {set_a:?}, {set_b:?} ∌ {value} from {x}, {y}");
                         }
                     }
-                    for and in [false, true] {
-                        let Ok(may) = May::lazy(and, &set_a, &set_b);
-                        if let Ok(value) = Value::lazy(and, &x, &y) {
-                            prop_assert!(is_member(&may, &value), "lazy {and} over {set_a:?}, {set_b:?} ∌ {value} from {x}, {y}");
+                    for is_and in [false, true] {
+                        let Ok(may) = May::lazy(is_and, &set_a, &set_b);
+                        if let Ok(value) = Value::lazy(is_and, &x, &y) {
+                            prop_assert!(is_member(&may, &value), "lazy {is_and} over {set_a:?}, {set_b:?} ∌ {value} from {x}, {y}");
                         }
                     }
                 }

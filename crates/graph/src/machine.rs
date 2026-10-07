@@ -19,10 +19,10 @@ enum Control {
         node: NodeId,
         from: NodeId,
     },
-    /// `&&` when `and`, else `||`, once its left operand is in.
+    /// `&&` when `is_and`, else `||`, once its left operand is in.
     Lazy {
         node: NodeId,
-        and: bool,
+        is_and: bool,
         rhs: RegionId,
     },
     Branch {
@@ -58,7 +58,7 @@ enum Control {
     Combine {
         node: NodeId,
         from: NodeId,
-        and: bool,
+        is_and: bool,
     },
     ResumeCaller(NodeId),
     ResumePackedCaller(NodeId),
@@ -366,8 +366,8 @@ impl<'a> Machine<'a> {
                         }
                     }
                     ref op @ (Op::And { rhs } | Op::Or { rhs }) => {
-                        let and = matches!(op, Op::And { .. });
-                        self.control.push(Control::Lazy { node, and, rhs });
+                        let is_and = matches!(op, Op::And { .. });
+                        self.control.push(Control::Lazy { node, is_and, rhs });
                         self.demand(inputs[0]);
                     }
                     Op::Join { then, else_ } => {
@@ -487,13 +487,13 @@ impl<'a> Machine<'a> {
             }
             Control::LoopValue { node, from } => self.fill(node, self.value(from).clone()),
             Control::Apply(node) => return self.compute(node),
-            Control::Lazy { node, and, rhs } => {
+            Control::Lazy { node, is_and, rhs } => {
                 let lhs = self
                     .value(self.graph.inputs(node)[0])
                     .truth()
                     .map_err(|fault| Refusal::of(fault, node))?;
-                if lhs == and {
-                    self.demand_region(rhs, |from| Control::Combine { node, from, and });
+                if lhs == is_and {
+                    self.demand_region(rhs, |from| Control::Combine { node, from, is_and });
                 } else {
                     self.fill(node, Value::Bool(lhs));
                 }
@@ -553,9 +553,9 @@ impl<'a> Machine<'a> {
                 let value = self.value(from).clone();
                 self.fill(node, value);
             }
-            Control::Combine { node, from, and } => {
+            Control::Combine { node, from, is_and } => {
                 let lhs = self.value(self.graph.inputs(node)[0]);
-                let value = Value::lazy(and, lhs, self.value(from))
+                let value = Value::lazy(is_and, lhs, self.value(from))
                     .map_err(|fault| Refusal::of(fault, node))?;
                 self.fill(node, value);
             }

@@ -143,9 +143,9 @@ fn plan<'a>(graph: &Graph, facts: impl Fn(NodeId) -> &'a May) -> Plan {
                 None => Rewrite::Keep,
             },
             ref op @ (Op::And { rhs } | Op::Or { rhs }) if values[0] => {
-                let and = matches!(op, Op::And { .. });
+                let is_and = matches!(op, Op::And { .. });
                 match decided(inputs[0]) {
-                    Some(left) if left != and => Rewrite::Literal(Op::Bool(left)),
+                    Some(left) if left != is_and => Rewrite::Literal(Op::Bool(left)),
                     Some(_) => valued(rhs).map_or(Rewrite::Keep, Rewrite::Alias),
                     None => Rewrite::Keep,
                 }
