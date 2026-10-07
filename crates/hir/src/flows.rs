@@ -30,9 +30,10 @@ pub(crate) enum DemandKind {
     },
     Unused,
     Comparable,
-    /// `actual` is the `if`; `branches` are the results of its two arms.
+    /// `actual` is the `if`; `branches` are the results of its two arms, read at `at`.
     Agree {
         branches: [NodeId; 2],
+        at: [TextRange; 2],
     },
 }
 
@@ -148,8 +149,13 @@ impl Demands<'_> {
                             && graph.region(*then).result_has_value()
                             && graph.region(*else_).result_has_value() =>
                     {
-                        let branches = [region(*then).1, region(*else_).1];
-                        demand(entry.origin, node, DemandKind::Agree { branches });
+                        let (then_at, then_result) = region(*then);
+                        let (else_at, else_result) = region(*else_);
+                        let agree = DemandKind::Agree {
+                            branches: [then_result, else_result],
+                            at: [then_at, else_at],
+                        };
+                        demand(entry.origin, node, agree);
                     }
                     Some(_) => {}
                 }
