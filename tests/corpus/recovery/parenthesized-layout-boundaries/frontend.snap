@@ -48,7 +48,9 @@ error[syntax/expected-token] 11:1: expected `)`
   fix: insert `)`
     10:6 -> ")"
 
-== fixed (syntax/expected-expression remains) ==
+== fixed ==
+remaining: syntax/expected-expression
+
 fn outside() -> int = 1 +
     2
 fn block() -> int = ({

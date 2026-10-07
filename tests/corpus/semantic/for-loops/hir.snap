@@ -2,6 +2,7 @@ file: accepted
 frontend errors: 0 (see frontend.snap)
 semantic errors: 0
 
+== graph ==
 fn sum@1:1..7:2 () -> int ∈ (-∞, +∞)
   result: result : int @1:13..1:16
     outcome[0]:

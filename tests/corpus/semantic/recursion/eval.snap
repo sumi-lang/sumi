@@ -1,7 +1,14 @@
 file: accepted
 optimized: nodes 75 of 192, regions 19 of 39, calls 5 of 17
-fn fib_15 = 610 (steps 16770, optimized 12823, depth 16 of at most 17)
-fn deep = 10000 (steps 100008, optimized 80006, depth 10002 of at most 10002)
-fn dead_steps = 0 (steps 90, optimized 1, depth 12 of at most 12)
-fn ring = 3 (steps 170, optimized 1, depth 22 of at most 22)
-fn dead_arms = 0 (steps 68, optimized 1, depth 8 of at most 8)
+
+== functions ==
+fn fib_15 = 610
+  steps: 16770, optimized steps: 12823, depth: 16, bound: 17
+fn deep = 10000
+  steps: 100008, optimized steps: 80006, depth: 10002, bound: 10002
+fn dead_steps = 0
+  steps: 90, optimized steps: 1, depth: 12, bound: 12
+fn ring = 3
+  steps: 170, optimized steps: 1, depth: 22, bound: 22
+fn dead_arms = 0
+  steps: 68, optimized steps: 1, depth: 8, bound: 8

@@ -2,6 +2,7 @@ file: rejected
 frontend errors: 0 (see frontend.snap)
 semantic errors: 3
 
+== graph ==
 fn probe@1:1..11:2 () -> unit ∈ unit
   result: copy : unit @1:9..1:11
     value:

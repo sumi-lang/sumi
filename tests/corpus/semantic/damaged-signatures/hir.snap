@@ -2,6 +2,7 @@ file: rejected
 frontend errors: 12 (see frontend.snap)
 semantic errors: 3
 
+== graph ==
 fn <missing>@1:1..1:15 (int ∈ ∅) -> unit ∈ ∅
   param a@1:5..1:6: int
   result: copy : unit @1:4..1:12

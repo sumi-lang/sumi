@@ -55,7 +55,9 @@ error[syntax/expected-token] 14:1: expected `}`
   fix: insert `}`
     13:8 -> "}"
 
-== fixed (syntax/expected-expression, syntax/expected-token, syntax/unspaced-binary-operator remain) ==
+== fixed ==
+remaining: syntax/expected-expression, syntax/expected-token, syntax/unspaced-binary-operator
+
 headless()
 {}
 fn missing_condition() = if

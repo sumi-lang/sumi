@@ -1,18 +1,36 @@
 file: accepted
 optimized: nodes 209 of 386, regions 28 of 40, calls 0 of 0
-fn sum = 10 (steps 26, optimized 19, depth 1 of at most 1)
-fn empty = 13 (steps 13, optimized 6, depth 1 of at most 1)
-fn bounds = 234 (steps 35, optimized 22, depth 1 of at most 1)
-fn nested = 145 (steps 53, optimized 46, depth 1 of at most 1)
-fn shadowing = 12 (steps 9, optimized 8, depth 1 of at most 1)
-fn returned = 12 (steps 16, optimized 14, depth 1 of at most 1)
-fn skipped_return = 8 (steps 6, optimized 4, depth 1 of at most 1)
-fn guarded = 0 (steps 72, optimized 53, depth 1 of at most 1)
-fn carried_guard = 0 (steps 65, optimized 50, depth 1 of at most 1)
-fn positive_index = 22 (steps 23, optimized 19, depth 1 of at most 1)
-fn after_assignment = 3 (steps 16, optimized 12, depth 1 of at most 1)
-fn skipped_fault = 11 (steps 6, optimized 4, depth 1 of at most 1)
-fn returning_bound = 17 (steps 2, optimized 2, depth 1 of at most 1)
-fn returning_end = 18 (steps 3, optimized 3, depth 1 of at most 1)
-fn completed_binding = 19 (steps 2, optimized 2, depth 1 of at most 1)
-fn huge_bounds = 300000000000000000000003 (steps 17, optimized 13, depth 1 of at most 1)
+
+== functions ==
+fn sum = 10
+  steps: 26, optimized steps: 19, depth: 1, bound: 1
+fn empty = 13
+  steps: 13, optimized steps: 6, depth: 1, bound: 1
+fn bounds = 234
+  steps: 35, optimized steps: 22, depth: 1, bound: 1
+fn nested = 145
+  steps: 53, optimized steps: 46, depth: 1, bound: 1
+fn shadowing = 12
+  steps: 9, optimized steps: 8, depth: 1, bound: 1
+fn returned = 12
+  steps: 16, optimized steps: 14, depth: 1, bound: 1
+fn skipped_return = 8
+  steps: 6, optimized steps: 4, depth: 1, bound: 1
+fn guarded = 0
+  steps: 72, optimized steps: 53, depth: 1, bound: 1
+fn carried_guard = 0
+  steps: 65, optimized steps: 50, depth: 1, bound: 1
+fn positive_index = 22
+  steps: 23, optimized steps: 19, depth: 1, bound: 1
+fn after_assignment = 3
+  steps: 16, optimized steps: 12, depth: 1, bound: 1
+fn skipped_fault = 11
+  steps: 6, optimized steps: 4, depth: 1, bound: 1
+fn returning_bound = 17
+  steps: 2, optimized steps: 2, depth: 1, bound: 1
+fn returning_end = 18
+  steps: 3, optimized steps: 3, depth: 1, bound: 1
+fn completed_binding = 19
+  steps: 2, optimized steps: 2, depth: 1, bound: 1
+fn huge_bounds = 300000000000000000000003
+  steps: 17, optimized steps: 13, depth: 1, bound: 1

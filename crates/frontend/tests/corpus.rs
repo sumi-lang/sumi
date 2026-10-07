@@ -88,17 +88,13 @@ fn snapshot(source: &str, stages: &[corpus::Stage]) -> String {
         remaining.dedup();
         let mut notes = Vec::new();
         if skipped > 0 {
-            notes.push(format!("{skipped} overlapping edits skipped"));
+            notes.push(format!("overlapping edits skipped: {skipped}"));
         }
         if !remaining.is_empty() {
-            let verb = if remaining.len() == 1 {
-                "remains"
-            } else {
-                "remain"
-            };
-            notes.push(format!("{} {verb}", remaining.join(", ")));
+            notes.push(format!("remaining: {}", remaining.join(", ")));
         }
-        section(&mut out, &titled("fixed", &notes));
+        section(&mut out, "fixed");
+        push_notes(&mut out, &notes);
         push_text(&mut out, &fixed);
     }
 
@@ -119,27 +115,19 @@ fn snapshot(source: &str, stages: &[corpus::Stage]) -> String {
             remaining.dedup();
             let mut notes = Vec::new();
             if formatted.reverted > 0 {
-                let noun = if formatted.reverted == 1 {
-                    "item"
-                } else {
-                    "items"
-                };
-                notes.push(format!("{} {noun} left as written", formatted.reverted));
+                notes.push(format!("left as written: {}", formatted.reverted));
             }
             if !remaining.is_empty() {
-                let verb = if remaining.len() == 1 {
-                    "remains"
-                } else {
-                    "remain"
-                };
-                notes.push(format!("{} {verb}", remaining.join(", ")));
+                notes.push(format!("remaining: {}", remaining.join(", ")));
             }
-            section(&mut out, &titled("formatted", &notes));
+            section(&mut out, "formatted");
+            push_notes(&mut out, &notes);
             push_text(&mut out, &formatted.text);
         }
         Ok(_) => {}
         Err(defect) => {
-            section(&mut out, "formatted (defect)");
+            section(&mut out, "formatted");
+            push_notes(&mut out, &[format!("defect: {defect}")]);
             push_text(&mut out, &defect.rejected);
         }
     }
@@ -153,12 +141,15 @@ fn section(out: &mut String, title: &str) {
     writeln!(out, "== {title} ==").expect("writing to a string");
 }
 
-fn titled(title: &str, notes: &[String]) -> String {
+/// Notes open a section as `key: value` lines, a blank line apart from the text that follows.
+fn push_notes(out: &mut String, notes: &[String]) {
     if notes.is_empty() {
-        title.to_owned()
-    } else {
-        format!("{title} ({})", notes.join("; "))
+        return;
     }
+    for note in notes {
+        writeln!(out, "{note}").expect("writing to a string");
+    }
+    out.push('\n');
 }
 
 fn push_text(out: &mut String, text: &str) {

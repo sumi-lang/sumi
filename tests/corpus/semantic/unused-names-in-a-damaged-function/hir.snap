@@ -2,6 +2,7 @@ file: rejected
 frontend errors: 0 (see frontend.snap)
 semantic errors: 1
 
+== graph ==
 fn damaged@1:1..4:2 (int ∈ ∅) -> int ∈ ∅
   param x@1:12..1:13: int
   result: copy : int @1:23..1:26

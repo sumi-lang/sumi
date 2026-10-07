@@ -24,7 +24,9 @@ error[syntax/binding-name-on-next-line] 3:5..3:10 "plain": binding name must be 
 error[syntax/binding-name-on-next-line] 6:5..6:12 "mutable": binding name must be on the same line as `let`
 error[syntax/binding-name-on-next-line] 8:5..8:14 "commented": binding name must be on the same line as `let`
 
-== formatted (BindingNameOnNextLine remains) ==
+== formatted ==
+remaining: BindingNameOnNextLine
+
 fn bindings() {
     let plain = 1
     let mut mutable = 2

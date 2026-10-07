@@ -1,4 +1,8 @@
 file: accepted
 optimized: nodes 16 of 34, regions 6 of 6, calls 0 of 3
-fn answer = 42 (steps 7, optimized 1, depth 2 of at most 2)
-fn ordered = -1 (steps 12, optimized 1, depth 2 of at most 2)
+
+== functions ==
+fn answer = 42
+  steps: 7, optimized steps: 1, depth: 2, bound: 2
+fn ordered = -1
+  steps: 12, optimized steps: 1, depth: 2, bound: 2

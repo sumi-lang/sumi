@@ -27,7 +27,9 @@ error[syntax/expected-token] 2:8: expected `}`
     2:7 -> "}"
 error[syntax/unexpected-syntax] 5:9..5:10 ")": unexpected syntax in expression
 
-== fixed (syntax/unexpected-syntax remains) ==
+== fixed ==
+remaining: syntax/unexpected-syntax
+
 fn unclosed_block() {
     ({} )
 }

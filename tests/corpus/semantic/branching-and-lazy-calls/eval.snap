@@ -1,4 +1,8 @@
 file: accepted
 optimized: nodes 35 of 65, regions 11 of 14, calls 3 of 6
-fn safe = true (steps 43, optimized 30, depth 6 of at most 6)
-fn spins = unit (steps 30, optimized 1, depth 5 of at most 5)
+
+== functions ==
+fn safe = true
+  steps: 43, optimized steps: 30, depth: 6, bound: 6
+fn spins = unit
+  steps: 30, optimized steps: 1, depth: 5, bound: 5

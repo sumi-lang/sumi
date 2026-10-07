@@ -38,7 +38,9 @@ error[syntax/expected-token] 11:5: expected `)`
   fix: insert `)`
     10:7 -> ")"
 
-== fixed (syntax/expected-expression, syntax/unspaced-binary-operator remain) ==
+== fixed ==
+remaining: syntax/expected-expression, syntax/unspaced-binary-operator
+
 fn empty() {
     ()
     return

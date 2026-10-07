@@ -2,6 +2,7 @@ file: rejected
 frontend errors: 19 (see frontend.snap)
 semantic errors: 11
 
+== graph ==
 fn around_a_hole@1:1..6:2 (bool ∈ ∅) -> int ∈ ∅
   param flag@1:18..1:22: bool
   result: copy : int @1:33..1:36

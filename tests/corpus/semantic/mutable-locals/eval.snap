@@ -1,9 +1,18 @@
 file: accepted
 optimized: nodes 136 of 233, regions 21 of 32, calls 14 of 14
-fn sequence = 9 (steps 9, optimized 1, depth 1 of at most 1)
-fn choices = 32 (steps 16, optimized 11, depth 2 of at most 2)
-fn optionals = 45 (steps 16, optimized 11, depth 2 of at most 2)
-fn lazies = 76 (steps 17, optimized 12, depth 2 of at most 2)
-fn guardeds = 15 (steps 23, optimized 16, depth 2 of at most 2)
-fn returns = 57 (steps 18, optimized 13, depth 2 of at most 2)
-fn refinements = 10501 (steps 50, optimized 33, depth 2 of at most 2)
+
+== functions ==
+fn sequence = 9
+  steps: 9, optimized steps: 1, depth: 1, bound: 1
+fn choices = 32
+  steps: 16, optimized steps: 11, depth: 2, bound: 2
+fn optionals = 45
+  steps: 16, optimized steps: 11, depth: 2, bound: 2
+fn lazies = 76
+  steps: 17, optimized steps: 12, depth: 2, bound: 2
+fn guardeds = 15
+  steps: 23, optimized steps: 16, depth: 2, bound: 2
+fn returns = 57
+  steps: 18, optimized steps: 13, depth: 2, bound: 2
+fn refinements = 10501
+  steps: 50, optimized steps: 33, depth: 2, bound: 2

@@ -42,6 +42,7 @@ fn run(source: &str) -> Result<String, String> {
         after.0, before.0, after.1, before.1, after.2, before.2
     )
     .unwrap();
+    out.push_str("\n== functions ==\n");
     for (id, function) in program.functions() {
         let name = analysis.text(function.name().expect("a valid file names its functions"));
         if !program.signature(id).params.is_empty() {
@@ -62,18 +63,17 @@ fn run(source: &str) -> Result<String, String> {
             }
         };
         assert_eq!(outcome, Ok(value.clone()), "optimized fn {name}");
-        write!(
+        writeln!(
             out,
-            "fn {name} = {value} (steps {}, optimized {}, depth {}",
+            "fn {name} = {value}\n  steps: {}, optimized steps: {}, depth: {}, bound: {}",
             machine.steps(),
             optimized.steps(),
-            machine.max_depth()
+            machine.max_depth(),
+            function
+                .depth_bound()
+                .map_or("none".to_owned(), |bound| bound.to_string())
         )
         .unwrap();
-        match function.depth_bound() {
-            Some(bound) => writeln!(out, " of at most {bound})").unwrap(),
-            None => out.push_str(", unbounded)\n"),
-        }
     }
     Ok(out)
 }
@@ -97,10 +97,14 @@ fn snapshot(source: &str) -> String {
         }
     );
     let shape = Rendering::new(analysis.graph(), source);
+    out.push_str("\n== graph ==\n");
     for (index, function) in analysis.functions().iter().enumerate() {
+        if index > 0 {
+            out.push('\n');
+        }
         write!(
             out,
-            "\nfn {}{}",
+            "fn {}{}",
             function
                 .name()
                 .map_or("<missing>", |name| analysis.text(name)),

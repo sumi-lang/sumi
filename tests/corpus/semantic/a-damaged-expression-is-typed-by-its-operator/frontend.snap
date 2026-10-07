@@ -236,7 +236,9 @@ error[syntax/expected-token] 37:1: expected `}`
   fix: insert `}`
     36:2 -> "}"
 
-== fixed (syntax/expected-expression, syntax/unspaced-binary-operator remain) ==
+== fixed ==
+remaining: syntax/expected-expression, syntax/unspaced-binary-operator
+
 fn around_a_hole(flag: bool) -> int {
     let x = (1 +)
     let y = x && flag

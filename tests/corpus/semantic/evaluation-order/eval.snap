@@ -1,5 +1,10 @@
 file: accepted
 optimized: nodes 18 of 36, regions 4 of 4, calls 3 of 3
-fn left_to_right = 154 (steps 20, optimized 16, depth 2 of at most 2)
-fn operands = 87 (steps 12, optimized 1, depth 1 of at most 1)
-fn truthy = true (steps 6, optimized 1, depth 1 of at most 1)
+
+== functions ==
+fn left_to_right = 154
+  steps: 20, optimized steps: 16, depth: 2, bound: 2
+fn operands = 87
+  steps: 12, optimized steps: 1, depth: 1, bound: 1
+fn truthy = true
+  steps: 6, optimized steps: 1, depth: 1, bound: 1

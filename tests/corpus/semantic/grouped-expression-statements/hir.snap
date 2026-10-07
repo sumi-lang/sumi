@@ -2,6 +2,7 @@ file: rejected
 frontend errors: 0 (see frontend.snap)
 semantic errors: 8
 
+== graph ==
 fn value@1:1..1:22 () -> int ∈ [1, 1]
   result: copy : int @1:15..1:18
     value: int 1 : int @1:21..1:22

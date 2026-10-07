@@ -83,7 +83,9 @@ error[syntax/function-item-on-same-line] 13:24..13:26 "fn": function item must b
 error[syntax/expected-statement] 14:34..14:35 ":": expected a statement
   at 14:34..14:50 ": fn next_e() {}": skipped while recovering
 
-== fixed (syntax/expected-statement, syntax/expected-token, syntax/function-item-on-same-line remain) ==
+== fixed ==
+remaining: syntax/expected-statement, syntax/expected-token, syntax/function-item-on-same-line
+
 fn inner_block() -> int {
     {
         b

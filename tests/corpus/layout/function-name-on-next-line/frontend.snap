@@ -21,7 +21,9 @@ FunctionNameOnNextLine at 4:1
 error[syntax/function-name-on-next-line] 2:1..2:6 "plain": function name must be on the same line as `fn`
 error[syntax/function-name-on-next-line] 4:1..4:10 "commented": function name must be on the same line as `fn`
 
-== formatted (FunctionNameOnNextLine remains) ==
+== formatted ==
+remaining: FunctionNameOnNextLine
+
 fn plain() {}
 fn // why
 commented() {}

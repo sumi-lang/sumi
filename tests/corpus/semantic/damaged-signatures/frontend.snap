@@ -87,7 +87,9 @@ error[syntax/expected-body] 13:1: expected a body, `{` or `=`
 error[syntax/expected-body] 13:26: expected a body, `{` or `=`
   at 13:26..13:27 "=": skipped while recovering
 
-== fixed (syntax/expected-body, syntax/expected-name, syntax/expected-token, syntax/expected-type remain) ==
+== fixed ==
+remaining: syntax/expected-body, syntax/expected-name, syntax/expected-token, syntax/expected-type
+
 fn (a: int) {}
 fn unclosed(a: int)
 fn untyped(a:) -> {

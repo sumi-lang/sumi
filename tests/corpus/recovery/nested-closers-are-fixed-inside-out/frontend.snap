@@ -35,7 +35,9 @@ error[syntax/expected-token] 4:9: expected `)`
 error[syntax/expected-token] 4:9: expected `)`
   at 4:5..4:6 "(": opening delimiter is here
 
-== fixed (syntax/expected-token remains) ==
+== fixed ==
+remaining: syntax/expected-token
+
 fn braces() {
     if true {}
 fn parens() {

@@ -2,6 +2,7 @@ file: rejected
 frontend errors: 3 (see frontend.snap)
 semantic errors: 1
 
+== graph ==
 fn id@1:1..1:13 signature: unavailable
   param x@1:7..1:8: ?
   body: read x@1:7..1:8 : ?

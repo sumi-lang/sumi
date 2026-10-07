@@ -29,7 +29,9 @@ error[syntax/noncanonical-number] 4:5..4:6 "0": integer literal has leading zero
 error[syntax/unknown-suffix] 4:7..4:10 "u32": literal suffixes are not supported
 error[syntax/unknown-suffix] 7:6..7:10 "_000": literal suffixes are not supported
 
-== fixed (syntax/expected-statement, syntax/unknown-suffix remain) ==
+== fixed ==
+remaining: syntax/expected-statement, syntax/unknown-suffix
+
 fn fraction() {
     1.5 }
 fn leading_zero_and_suffix() {

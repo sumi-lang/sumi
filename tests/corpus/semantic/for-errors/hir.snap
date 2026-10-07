@@ -2,6 +2,7 @@ file: rejected
 frontend errors: 0 (see frontend.snap)
 semantic errors: 8
 
+== graph ==
 fn later_iteration@1:1..9:2 () -> int ∈ (-∞, +∞)
   result: result : int @1:25..1:28
     outcome[0]:

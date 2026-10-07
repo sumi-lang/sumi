@@ -2,6 +2,7 @@ file: rejected
 frontend errors: 2 (see frontend.snap)
 semantic errors: 8
 
+== graph ==
 fn spin@1:1..1:26 signature: unavailable
   param x@1:9..1:10: int
   body: call spin@1:1..1:26 : ? @1:19..1:26
