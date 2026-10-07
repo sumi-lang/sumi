@@ -13,3 +13,8 @@ fn each_later_use_is_blamed() -> int = {
     -v
     0
 }
+fn arms_disagree(c: bool) -> int = {
+    let v = k()
+    _ = if v { 1 } else { 2 }
+    if c { v } else { 1 }
+}

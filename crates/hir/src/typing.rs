@@ -490,8 +490,8 @@ mod tests {
         replay.branch(else_branch, local);
         assert_eq!(replay.resolve(refined), Some(Ty::Int));
         replay.expect(refined, Expected::Ty(Ty::Bool));
-        assert_eq!(replay.resolve(refined), Some(Ty::Int));
-        assert_eq!(replay.resolve(local), Some(Ty::Int));
+        assert!(replay.evidence(refined).is_conflict());
+        assert!(replay.evidence(local).is_conflict());
     }
 
     #[test]

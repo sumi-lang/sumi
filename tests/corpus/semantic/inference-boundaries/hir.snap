@@ -1,6 +1,6 @@
 file: rejected
 frontend errors: 2 (see frontend.snap)
-semantic errors: 6
+semantic errors: 8
 
 fn spin@1:1..1:26 signature: unavailable
   param x@1:9..1:10: int
@@ -36,6 +36,22 @@ fn malformed@9:1..11:2 signature: unavailable
 fn intact@12:1..12:19 () -> bool ∈ {true}
   body: bool true : bool @12:15..12:19
 
+fn settled@13:1..19:2 () -> int ∈ [1, 1]
+  body:
+    let x@14:9..14:10: int @14:5..14:14
+      initializer: int 1 : int @14:13..14:14
+    discard: if : unit @15:5..17:6
+      condition: read x@14:9..14:10 : int
+      then:
+        discard: int 0 : int @16:13..16:14
+        tail: unit : unit @15:10..17:6
+      else: unit (implicit)
+    tail: read x@14:9..14:10 : int
+
+fn held_to_settled@20:1..20:41 () -> bool ∈ ∅
+  result: copy : bool @20:25..20:29
+    value: call settled@13:1..19:2 : int @20:32..20:41
+
 == semantic diagnostics ==
 error[semantic/cannot-infer]: cannot infer function result; add a return type annotation
   primary @1:1..1:26
@@ -53,3 +69,8 @@ error[semantic/unknown-name]: unknown name `missing`
 error[semantic/type-mismatch]: expected unit, found int
   primary @6:11..8:2
   secondary @6:1..8:2: declared here
+error[semantic/type-mismatch]: expected bool, found int
+  primary @15:8..15:9
+error[semantic/type-mismatch]: expected bool, found int
+  primary @20:32..20:41
+  secondary @20:25..20:29: declared here

@@ -1,6 +1,6 @@
 file: rejected
 frontend errors: 0 (see frontend.snap)
-semantic errors: 5
+semantic errors: 6
 
 fn k@4:1..4:13 signature: unavailable
   body: call k@4:1..4:13 : ? @4:10..4:13
@@ -26,6 +26,21 @@ fn each_later_use_is_blamed@10:1..15:2 () -> int ∈ [0, 0]
         operand: read v@11:9..11:10 : int
       tail: int 0 : int @14:5..14:6
 
+fn arms_disagree@16:1..20:2 (bool ∈ ∅) -> int ∈ ∅
+  param c@16:18..16:19: bool
+  result: copy : int @16:30..16:33
+    value:
+      let v@17:9..17:10: bool @17:5..17:16
+        initializer: call k@4:1..4:13 : ? @17:13..17:16
+      discard: if : int @18:9..18:30
+        condition: read v@17:9..17:10 : bool
+        then: int 1 : int @18:16..18:17
+        else: int 2 : int @18:27..18:28
+      tail: if : int @19:5..19:26
+        condition: read c@16:18..16:19 : bool
+        then: read v@17:9..17:10 : bool
+        else: int 1 : int @19:23..19:24
+
 == semantic diagnostics ==
 error[semantic/cannot-infer]: cannot infer function result; add a return type annotation
   primary @4:1..4:13
@@ -38,3 +53,6 @@ error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
   primary @13:5..13:7
 error[semantic/type-mismatch]: expected int, found unit
   primary @13:6..13:7
+error[semantic/type-mismatch]: if branches are bool and int
+  primary @19:5..19:26
+  secondary @19:23..19:24: int here

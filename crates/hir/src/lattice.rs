@@ -27,14 +27,15 @@ impl Claim {
         Self(NonZeroU32::new(rank).unwrap())
     }
 
-    /// The claim a replay makes: a demand with no origin, since a replay reports nothing.
-    pub const REPLAYED: Self = Self(NonZeroU32::MAX);
+    /// The claim a replay makes once a demand held: the type is settled from then on, so it is
+    /// no demand, and it has no origin, since a replay reports nothing.
+    pub const REPLAYED: Self = Self(NonZeroU32::new(u32::MAX >> 1).unwrap());
 
     pub fn demanded(self) -> Self {
         Self(self.0 | DEMANDED)
     }
 
-    fn imported(self) -> bool {
+    fn is_imported(self) -> bool {
         self.0.get() & IMPORTED != 0
     }
 
@@ -93,15 +94,19 @@ impl Evidence {
         grew
     }
 
-    /// What a call delivers: the types the class resolves among, each as the call's claim.
+    /// What a call delivers: every claim as the call's, a demand staying one, so the transfer
+    /// is monotone and a callee's demands yield to the caller's facts as its own would.
     pub fn imported(&self, claim: Claim) -> Self {
         let imported = Claim(claim.0 | IMPORTED);
-        let mut evidence = Self::NONE;
-        evidence.claims[0] = self.claims[0].filter(|&claim| claim == UNKNOWN);
-        for (ty, _) in self.types() {
-            evidence.claims[ty as usize] = Some(imported);
+        Self {
+            claims: self.claims.map(|claim| {
+                claim.map(|claim| match claim {
+                    UNKNOWN => claim,
+                    _ if claim.is_demanded() => imported.demanded(),
+                    _ => imported,
+                })
+            }),
         }
-        evidence
     }
 
     pub fn unknown(&self) -> bool {
@@ -142,7 +147,7 @@ impl Evidence {
 
     /// A conflict whose every claim crossed a flow; it is reported where it arose.
     pub fn inherited(&self) -> bool {
-        self.is_conflict() && self.types().all(|(_, claim)| claim.imported())
+        self.is_conflict() && self.types().all(|(_, claim)| claim.is_imported())
     }
 
     /// Every claim, best first.
@@ -490,7 +495,7 @@ mod tests {
         );
         let called = int.transfer(&Edge::Call(Claim::local(7)), false, &cx);
         assert_eq!(called.types.ty(), Some(Ty::Int));
-        assert!(called.types.claims()[0].1.imported());
+        assert!(called.types.claims()[0].1.is_imported());
         assert_eq!(called.types.claims()[0].1.index(), 7);
     }
 
