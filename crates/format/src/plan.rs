@@ -267,8 +267,8 @@ impl Planner<'_> {
     /// A value stays on the `=` line and breaks within. A chain moves whole to the next line
     /// when it fits there, else it stays and breaks at its operators, a trailing block hugging.
     fn value(&mut self, node: NodeIdx, eq: u32, value: NodeIdx, level: u32) {
-        let chain = self.tree.kind(value) == NodeKind::BinaryExpr;
-        self.group(eq + 1, self.end_sig(node), Some(value), chain);
+        let is_chain = self.tree.kind(value) == NodeKind::BinaryExpr;
+        self.group(eq + 1, self.end_sig(node), Some(value), is_chain);
         self.node(value, level);
     }
 
@@ -418,8 +418,8 @@ impl Planner<'_> {
             (El::Tok(_, SyntaxKind::Comma), _) => Gap::soft(level + 1),
             _ => Gap::space(level + 1),
         });
-        let sound = !self.tree.has_error(node);
-        if sound {
+        let is_sound = !self.tree.has_error(node);
+        if is_sound {
             for pair in els.windows(2) {
                 if let (El::Tok(sig, SyntaxKind::Comma), El::Tok(_, SyntaxKind::RParen)) =
                     (pair[0], pair[1])
@@ -429,7 +429,7 @@ impl Planner<'_> {
             }
         }
         let hug = self.hug(node);
-        if sound && els.len() > 2 {
+        if is_sound && els.len() > 2 {
             self.group(self.first_sig(node) + 1, self.end_sig(node), hug, false);
         }
         self.children_hugging(els, level, hug);
@@ -555,9 +555,9 @@ impl Planner<'_> {
             // Recovery reads nothing of a gap but whether it holds a line break, so an edge whose
             // break the rules keep is reindented, not frozen.
             for edge in [start, end] {
-                let kept_break = self.gaps[edge].breaks == Breaks::Hard
+                let keeps_break = self.gaps[edge].breaks == Breaks::Hard
                     && holds(lexed, self.input, edge, SyntaxKind::Newline);
-                if !kept_break {
+                if !keeps_break {
                     self.gaps[edge].is_frozen = true;
                 }
             }

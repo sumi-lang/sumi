@@ -898,11 +898,11 @@ impl<'a, 's> Builder<'a, 's> {
             }
         };
         self.graph.close_run(run, region, value);
-        let whole = !self.has_failed && root.is_some();
-        if whole {
+        let is_whole = !self.has_failed && root.is_some();
+        if is_whole {
             self.unused();
         }
-        whole
+        is_whole
     }
     /// Only after a whole build: a walk that stopped early leaves reads unresolved.
     fn unused(&mut self) {
@@ -925,7 +925,7 @@ impl<'a, 's> Builder<'a, 's> {
             };
             let renamed = format!("_{}", local.name);
             // Renaming onto a name already in use would capture its reads or duplicate it.
-            let free = !local.is_assigned
+            let is_free = !local.is_assigned
                 && !self.names.contains_key(renamed.as_str())
                 && !taken.contains(renamed.as_str());
             let mut diagnostic = diagnostic(
@@ -934,7 +934,7 @@ impl<'a, 's> Builder<'a, 's> {
                 format!("{kind} `{}` {reads}", local.name),
                 [],
             );
-            diagnostic.fix = free.then(|| Fix {
+            diagnostic.fix = is_free.then(|| Fix {
                 message: "prefix the name with `_`".into(),
                 edit: TextEdit::new(TextRange::new(at.start(), at.start()), "_"),
             });
@@ -959,9 +959,9 @@ impl<'a, 's> Builder<'a, 's> {
         name: Option<TextRange>,
         results: &[NodeId],
     ) -> NodeId {
-        let typed = self.follows(&op, inputs, results);
+        let is_typed = self.follows(&op, inputs, results);
         let id = self.graph.push(op, inputs, self.source.range(node), name);
-        self.lowered.typed.push(typed);
+        self.lowered.typed.push(is_typed);
         self.nodes_of[node.to_usize()] = Some(id);
         id
     }
@@ -973,9 +973,9 @@ impl<'a, 's> Builder<'a, 's> {
         origin: TextRange,
         name: Option<TextRange>,
     ) -> NodeId {
-        let typed = self.follows(&op, inputs, &[]);
+        let is_typed = self.follows(&op, inputs, &[]);
         let id = self.graph.push(op, inputs, origin, name);
-        self.lowered.typed.push(typed);
+        self.lowered.typed.push(is_typed);
         id
     }
     fn completes_input(&mut self, node: NodeId, index: usize) {
@@ -1744,10 +1744,10 @@ impl<'a, 's> Builder<'a, 's> {
         let base = work.len();
         let mut children = tree.children(node).peekable();
         while let Some(child) = children.next() {
-            let statement = children.peek().is_some() && ast::Expr::cast(tree, child).is_some();
+            let is_statement = children.peek().is_some() && ast::Expr::cast(tree, child).is_some();
             work.push(Work::Statement { block: node, child });
             work.push(Work::Enter(child));
-            if statement {
+            if is_statement {
                 work.push(Work::Unused(child));
             }
             work.push(Work::Advance(child));
@@ -1817,8 +1817,8 @@ impl<'a, 's> Builder<'a, 's> {
         let mut controls = Vec::new();
         let mut children = tree.children(node).peekable();
         while let Some(child) = children.next() {
-            let expression = ast::Expr::cast(tree, child).is_some();
-            if children.peek().is_none() && expression {
+            let is_expression = ast::Expr::cast(tree, child).is_some();
+            if children.peek().is_none() && is_expression {
                 tail = Some(child);
                 controls.push(self.control(child));
                 let form = self.form(child);

@@ -422,15 +422,15 @@ impl<'a> Machine<'a> {
                     unreachable!()
                 };
                 let loop_ = self.graph.loop_(id);
-                let initial = matches!(control, Control::LoopStart(_));
-                let Value::Int(index) = self.value(if initial {
+                let is_initial = matches!(control, Control::LoopStart(_));
+                let Value::Int(index) = self.value(if is_initial {
                     self.graph.inputs(node)[0]
                 } else {
                     loop_.index
                 }) else {
                     unreachable!()
                 };
-                let index = if initial {
+                let index = if is_initial {
                     index.clone()
                 } else {
                     index + &1.into()
@@ -439,7 +439,7 @@ impl<'a> Machine<'a> {
                     .carried
                     .iter()
                     .map(|&(carry, next)| {
-                        self.value(if initial {
+                        self.value(if is_initial {
                             self.graph.inputs(carry)[0]
                         } else {
                             next

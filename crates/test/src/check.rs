@@ -44,11 +44,11 @@ pub fn lexed(source: &str, file: &LexedFile) {
             );
         }
         if file.kind(index) == SyntaxKind::IntLiteral {
-            let flagged = file.flags(index).contains(TokenFlags::MALFORMED_NUMBER);
+            let is_flagged = file.flags(index).contains(TokenFlags::MALFORMED_NUMBER);
             let has_error = file.errors().iter().any(|error| error.token == index);
             assert_eq!(
-                flagged, has_error,
-                "number {text:?} flagged={flagged} but has-error={has_error}"
+                is_flagged, has_error,
+                "number {text:?} flagged={is_flagged} but has-error={has_error}"
             );
         }
     }
@@ -124,8 +124,8 @@ pub fn input(lexed: &LexedFile, input: &ParserInput) {
 
         if index + 1 < input.end() {
             let next = input.token(index + 1);
-            let adjacent = lexed.range(token).end() == lexed.range(next).start();
-            assert_eq!(input.is_joint(index), adjacent);
+            let is_adjacent = lexed.range(token).end() == lexed.range(next).start();
+            assert_eq!(input.is_joint(index), is_adjacent);
         } else {
             assert!(!input.is_joint(index));
         }
@@ -857,14 +857,14 @@ fn typed(analysis: &Analysis) {
                     } else {
                         continue;
                     }
-                    let then_value = graph.region(*then).result_has_value();
+                    let then_has_value = graph.region(*then).result_has_value();
                     let else_value =
                         else_.is_none_or(|region| graph.region(region).result_has_value());
-                    if !then_value && !else_value {
+                    if !then_has_value && !else_value {
                         assert_eq!(own, None);
                         continue;
                     }
-                    if then_value {
+                    if then_has_value {
                         assert_eq!(ty(graph.region(*then).result()), own);
                     }
                     match else_ {
@@ -1085,9 +1085,9 @@ fn graph(analysis: &Analysis) {
         assert!(region.context.index() < start);
         assert!(result < end);
         for &(s, e) in &spans {
-            let disjoint = end <= s || e <= start;
-            let nested = (s <= start && end <= e) || (start <= s && e <= end);
-            assert!(disjoint || nested);
+            let is_disjoint = end <= s || e <= start;
+            let is_nested = (s <= start && end <= e) || (start <= s && e <= end);
+            assert!(is_disjoint || is_nested);
         }
         spans.push((start, end));
     }

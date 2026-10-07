@@ -83,13 +83,13 @@ fn perturb(source: &str, choices: &[u32]) -> String {
             out.push(',');
         }
 
-        let boundary = gap < n && gap > 0 && input.has_boundary_before(SigIdx::new(gap as u32));
-        let keep = gap == 0 || gap == n || trivia.is_empty();
-        if keep {
+        let has_boundary = gap < n && gap > 0 && input.has_boundary_before(SigIdx::new(gap as u32));
+        let should_keep = gap == 0 || gap == n || trivia.is_empty();
+        if should_keep {
             for &raw in &trivia {
                 out.push_str(lexed.text(source, raw));
             }
-        } else if has_comment || boundary {
+        } else if has_comment || has_boundary {
             let mut is_after_newline = false;
             for &raw in &trivia {
                 match lexed.kind(raw) {

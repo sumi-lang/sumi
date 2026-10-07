@@ -289,15 +289,15 @@ fn dump_region(
         .nodes()
         .filter(|&node| shape.region_of[node.index()] == Some(region))
         .filter(|&node| {
-            let named = graph.node(node).name.is_some();
-            let contextual = matches!(
+            let is_named = graph.node(node).name.is_some();
+            let is_contextual = matches!(
                 graph.node(node).op,
                 Op::Then | Op::Else | Op::Entry | Op::Refine { .. } | Op::Exactly(_)
             );
-            named
+            is_named
                 || matches!(graph.node(node).op, Op::Assign { .. })
                 || (node != result
-                    && !contextual
+                    && !is_contextual
                     && !shape.carried[node.index()]
                     && shape.users[node.index()] == 0)
         })

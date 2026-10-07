@@ -98,11 +98,11 @@ pub(crate) fn print(
                     if plan_gap.breaks == Breaks::Hard {
                         return w + comma;
                     }
-                    let soft = plan_gap.breaks == Breaks::Soft;
-                    if soft && !group.whole && group.is_in_tail(k as u32) {
+                    let is_soft = plan_gap.breaks == Breaks::Soft;
+                    if is_soft && !group.whole && group.is_in_tail(k as u32) {
                         return w;
                     }
-                    if k as u32 >= group.end && soft {
+                    if k as u32 >= group.end && is_soft {
                         let enclosing = stack
                             .iter()
                             .rev()

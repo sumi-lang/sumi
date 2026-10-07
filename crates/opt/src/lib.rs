@@ -165,14 +165,14 @@ fn plan<'a>(graph: &Graph, facts: impl Fn(NodeId) -> &'a May) -> Plan {
             Op::LoopValue { loop_, index } => {
                 let loop_ = graph.loop_(loop_);
                 let carry = loop_.carried[index as usize].0;
-                let empty = !facts(graph.region(loop_.body).context).is_live();
-                (empty && graph.input_values(carry)[0])
+                let is_empty = !facts(graph.region(loop_.body).context).is_live();
+                (is_empty && graph.input_values(carry)[0])
                     .then(|| graph.inputs(carry)[0])
                     .map_or(Rewrite::Keep, Rewrite::Alias)
             }
             _ => Rewrite::Keep,
         };
-        let foldable = matches!(
+        let is_foldable = matches!(
             graph.node(node).op,
             Op::Neg
                 | Op::Not
@@ -185,7 +185,7 @@ fn plan<'a>(graph: &Graph, facts: impl Fn(NodeId) -> &'a May) -> Plan {
                 | Op::LoopValue { .. }
         );
         plan.nodes[node.index()] = match rewrite {
-            Rewrite::Keep if foldable && !returning[node.index()] => {
+            Rewrite::Keep if is_foldable && !returning[node.index()] => {
                 single(facts(node)).map_or(Rewrite::Keep, Rewrite::Literal)
             }
             rewrite => rewrite,

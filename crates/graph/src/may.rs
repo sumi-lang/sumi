@@ -296,12 +296,12 @@ impl Ints {
             CmpOp::Gt => (a.hi > b.lo, a.lo <= b.hi),
             CmpOp::Ge => (a.hi >= b.lo, a.lo < b.hi),
             CmpOp::Eq | CmpOp::Ne => {
-                let equal = !(self & other).is_empty();
-                let unequal = !(self.is_point() && self == other);
+                let may_equal = !(self & other).is_empty();
+                let may_differ = !(self.is_point() && self == other);
                 if op == CmpOp::Eq {
-                    (equal, unequal)
+                    (may_equal, may_differ)
                 } else {
-                    (unequal, equal)
+                    (may_differ, may_equal)
                 }
             }
         };

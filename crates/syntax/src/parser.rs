@@ -173,8 +173,8 @@ fn skip(
     let mut m = p.start();
     m.group();
     while let Some(kind) = m.current() {
-        let closer = is_closer(kind) && m.has_partner();
-        if closer || stop(&m) {
+        let is_at_closer = is_closer(kind) && m.has_partner();
+        if is_at_closer || stop(&m) {
             break;
         }
         m.group();
@@ -589,12 +589,12 @@ fn statement(p: &mut Marker<'_, '_>) {
 fn let_stmt(p: &mut Marker<'_, '_>) {
     let mut m = p.start();
     m.token();
-    let mut split_head = m.is_after_newline();
+    let mut should_split_head = m.is_after_newline();
     if m.at(T::MutKw) {
         m.token();
-        split_head |= m.is_after_newline();
+        should_split_head |= m.is_after_newline();
     }
-    if split_head && m.at(T::Ident) {
+    if should_split_head && m.at(T::Ident) {
         m.violation(ParseViolationKind::BindingNameOnNextLine, 1);
     }
     name(&mut m);
@@ -649,13 +649,13 @@ fn operand_before(
     if let Some(expression) = expr_bp(p, min_bp, follow) {
         return Some(expression);
     }
-    let displaced = !p.is_after_newline() && displaces_expression(p);
-    let recovery = if displaced {
+    let is_displaced = !p.is_after_newline() && displaces_expression(p);
+    let recovery = if is_displaced {
         p.recover_tokens(ParseRecoveryKind::Expression, 1)
     } else {
         p.missing(ParseRecoveryKind::Expression)
     };
-    if !displaced {
+    if !is_displaced {
         return None;
     }
     skip(p, recovery, |p| {
@@ -762,7 +762,7 @@ fn expr_bp(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) -> Option<Com
             was_comparison = false;
             continue;
         }
-        let mut joint_left = p.is_joint_before();
+        let mut is_joint_left = p.is_joint_before();
         if !p.is_after_newline()
             && is_garbage_in_expression(p, follow)
             && !p.is_nth_after_newline(1)
@@ -772,7 +772,7 @@ fn expr_bp(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) -> Option<Com
         {
             let recovery = p.recover_tokens(ParseRecoveryKind::Unexpected, 1);
             skip_token(p, recovery);
-            joint_left = joint_left && p.is_joint_before();
+            is_joint_left = is_joint_left && p.is_joint_before();
         }
         let Some((op, width)) = binary_op(p, 0) else {
             break;
@@ -781,11 +781,11 @@ fn expr_bp(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) -> Option<Com
         if left_bp < min_bp {
             break;
         }
-        if joint_left || p.is_nth_joint(width - 1) {
+        if is_joint_left || p.is_nth_joint(width - 1) {
             p.violation(ParseViolationKind::UnspacedBinaryOperator, width);
         }
-        let chained = was_comparison && op.is_comparison();
-        if chained {
+        let is_chained = was_comparison && op.is_comparison();
+        if is_chained {
             p.violation(ParseViolationKind::ChainedComparison, width);
         }
         let lhs_node = p.completed_node(&lhs);
@@ -798,8 +798,8 @@ fn expr_bp(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) -> Option<Com
         if let Some(rhs) = &rhs {
             m.field(rhs, 1);
         }
-        lhs = m.complete(if chained { N::Error } else { N::BinaryExpr });
-        was_comparison = op.is_comparison() && !chained;
+        lhs = m.complete(if is_chained { N::Error } else { N::BinaryExpr });
+        was_comparison = op.is_comparison() && !is_chained;
     }
     Some(lhs)
 }
@@ -943,13 +943,14 @@ fn if_block(p: &mut Marker<'_, '_>) -> Option<CompletedMarker> {
     if p.at(T::LBrace) {
         return Some(block(p));
     }
-    let displaced = !(p.current().is_none_or(is_closer) || p.at(T::ElseKw) || p.is_after_newline());
-    let recovery = if displaced {
+    let is_displaced =
+        !(p.current().is_none_or(is_closer) || p.at(T::ElseKw) || p.is_after_newline());
+    let recovery = if is_displaced {
         p.recover_tokens(ParseRecoveryKind::Token(T::LBrace), 1)
     } else {
         p.missing(ParseRecoveryKind::Token(T::LBrace))
     };
-    if !displaced {
+    if !is_displaced {
         return None;
     }
     skip(p, recovery, |p| {
