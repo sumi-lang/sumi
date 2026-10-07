@@ -171,6 +171,8 @@ fn snapshot(source: &str) -> String {
 struct Rendering<'a> {
     users: Vec<u32>,
     region_of: Vec<Option<RegionId>>,
+    /// A loop's carry prints with its loop.
+    carried: Vec<bool>,
     lines: LineIndex<'a>,
 }
 
@@ -190,9 +192,16 @@ impl<'a> Rendering<'a> {
                 region_of[node.index()] = Some(region);
             }
         }
+        let mut carried = vec![false; graph.nodes().len()];
+        for id in graph.loop_ids() {
+            for &(header, _) in &graph.loop_(id).carried {
+                carried[header.index()] = true;
+            }
+        }
         Self {
             users,
             region_of,
+            carried,
             lines: LineIndex::new(source),
         }
     }
@@ -287,7 +296,10 @@ fn dump_region(
             );
             named
                 || matches!(graph.node(node).op, Op::Assign { .. })
-                || (node != result && !contextual && shape.users[node.index()] == 0)
+                || (node != result
+                    && !contextual
+                    && !shape.carried[node.index()]
+                    && shape.users[node.index()] == 0)
         })
         .collect();
     let indent = "  ".repeat(depth);
@@ -347,9 +359,6 @@ fn guards(analysis: &Analysis, shape: &Rendering<'_>, mut node: NodeId) -> (Vec<
                 guards.push(format!("is {value}"));
                 node = graph.inputs(node)[0];
             }
-            Op::Assign { declaration } | Op::Carry { declaration } => {
-                return (guards, declaration);
-            }
             _ => return (guards, node),
         }
     }
@@ -370,12 +379,29 @@ fn dump_node(
     } else {
         format!(" [{}]", guards.join(", "))
     };
-    if graph.node(definition).name.is_some() {
+    // A read of a mutable local names the version it reaches, which prints where it is defined.
+    let at = |what: &str| format!(" ({what} {})", shape.at(graph.node(definition).origin));
+    let version = match graph.node(definition).op {
+        Op::Assign { declaration } => Some((declaration, at("assigned"))),
+        Op::Carry { declaration } => Some((declaration, at("carried"))),
+        Op::LoopValue { loop_, index } => {
+            let (header, _) = graph.loop_(loop_).carried[index as usize];
+            let Op::Carry { declaration } = graph.node(header).op else {
+                unreachable!("a loop carries its locals through carry nodes")
+            };
+            Some((declaration, at("after loop")))
+        }
+        _ => graph
+            .node(definition)
+            .name
+            .map(|_| (definition, String::new())),
+    };
+    if let Some((declaration, at)) = version {
         writeln!(
             out,
-            "{}{role}: read {}{guard} : {}",
+            "{}{role}: read {}{at}{guard} : {}",
             "  ".repeat(depth),
-            named(analysis, shape, definition),
+            named(analysis, shape, declaration),
             ty(analysis, node)
         )
         .unwrap();
@@ -484,9 +510,10 @@ fn dump_definition(
                 );
             }
         }
-        Op::Copy { .. } | Op::Assign { .. } | Op::Carry { .. } => {
+        Op::Copy { .. } | Op::Assign { .. } => {
             dump_node(analysis, shape, "value", inputs[0], child, out)
         }
+        Op::Carry { .. } => dump_node(analysis, shape, "initial", inputs[0], child, out),
         Op::LoopIndex => {
             dump_node(analysis, shape, "start", inputs[0], child, out);
             dump_node(analysis, shape, "end", inputs[1], child, out);
@@ -495,24 +522,26 @@ fn dump_definition(
             let loop_ = graph.loop_(*id);
             dump_node(analysis, shape, "start", inputs[0], child, out);
             dump_node(analysis, shape, "end", inputs[1], child, out);
+            for (index, &(header, _)) in loop_.carried.iter().enumerate() {
+                dump_definition(
+                    analysis,
+                    shape,
+                    &format!("carry[{index}]"),
+                    header,
+                    child,
+                    out,
+                );
+            }
             dump_region(analysis, shape, "body", loop_.body, child, out);
             for (index, &(_, next)) in loop_.carried.iter().enumerate() {
                 dump_node(analysis, shape, &format!("next[{index}]"), next, child, out);
             }
         }
-        Op::LoopValue { .. } => {
-            writeln!(
-                out,
-                "{}loop: {}",
-                "  ".repeat(child),
-                shape.at(graph.node(inputs[0]).origin)
-            )
-            .unwrap();
-        }
+        Op::LoopValue { .. } => unreachable!("a loop value reads its local after the loop"),
         Op::Phi { .. } => {
             dump_node(analysis, shape, "condition", inputs[0], child, out);
             for (role, &input) in [("then", &inputs[1]), ("else", &inputs[2])] {
-                if matches!(graph.node(input).op, Op::Assign { .. } | Op::Phi { .. }) {
+                if matches!(graph.node(input).op, Op::Phi { .. }) {
                     dump_definition(analysis, shape, role, input, child, out);
                 } else {
                     dump_node(analysis, shape, role, input, child, out);

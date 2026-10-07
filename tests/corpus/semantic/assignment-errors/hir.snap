@@ -53,7 +53,7 @@ fn mismatch@19:1..23:2 () -> int ∈ ∅
         initializer: int 1 : int @20:17..20:18
       assignment: assign x@20:13..20:14 : ? @21:5..21:13
         value: bool true : ? @21:9..21:13
-      tail: read x@20:13..20:14 : ?
+      tail: read x@20:13..20:14 (assigned @21:5..21:13) : ?
 
 fn damaged_value@24:1..27:2 () -> unit ∈ unit
   result: copy : unit @24:1..27:2
