@@ -42,7 +42,7 @@ warning[semantic/unused-name]: parameter `a` is never read
   primary @1:5..1:6
   fix @1:5 -> "_": prefix the name with `_`
 error[semantic/type-mismatch]: expected unit, found int
-  primary @6:34..8:2
+  primary @7:5..7:6
   secondary @6:1..8:2: declared here
 error[semantic/unknown-name]: unknown name `a`
   primary @10:5..10:6
