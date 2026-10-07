@@ -2,6 +2,7 @@ file: rejected
 frontend errors: 0 (see frontend.snap)
 semantic errors: 3
 
+== graph ==
 fn a@3:1..7:2 signature: unavailable
   body: if : ? @3:10..7:2
     condition: bool true : bool @3:13..3:17

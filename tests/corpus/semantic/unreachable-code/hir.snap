@@ -2,6 +2,7 @@ file: accepted
 frontend errors: 0 (see frontend.snap)
 semantic errors: 0
 
+== graph ==
 fn after_return@1:1..5:2 () -> int ∈ [1, 1]
   result: result : int @1:22..1:25
     outcome[0]:

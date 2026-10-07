@@ -2,6 +2,7 @@ file: rejected
 frontend errors: 1 (see frontend.snap)
 semantic errors: 8
 
+== graph ==
 fn tail_held@1:1..4:2 () -> bool ∈ ∅
   result: copy : bool @1:19..1:23
     value:

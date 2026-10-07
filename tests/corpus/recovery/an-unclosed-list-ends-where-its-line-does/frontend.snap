@@ -56,7 +56,9 @@ error[syntax/expected-token] 10:3: expected `)`
 error[syntax/expected-body] 10:3: expected a body, `{` or `=`
 error[syntax/expected-item] 10:3..10:4 "x": expected a function item
 
-== fixed (syntax/expected-body, syntax/expected-expression, syntax/expected-item remain) ==
+== fixed ==
+remaining: syntax/expected-body, syntax/expected-expression, syntax/expected-item
+
 fn arguments() {
     g(a)
   b

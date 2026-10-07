@@ -2,6 +2,7 @@ file: rejected
 frontend errors: 2 (see frontend.snap)
 semantic errors: 4
 
+== graph ==
 fn damaged@1:1..8:2 () -> unit ∈ ∅
   result: copy : unit @1:11..1:13
     value:

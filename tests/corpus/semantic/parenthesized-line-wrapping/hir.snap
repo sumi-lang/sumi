@@ -2,6 +2,7 @@ file: accepted
 frontend errors: 0 (see frontend.snap)
 semantic errors: 0
 
+== graph ==
 fn add@1:1..1:38 (int ∈ [3, 3], int ∈ [7, 7]) -> int ∈ [10, 10]
   param a@1:8..1:9: int
   param b@1:16..1:17: int

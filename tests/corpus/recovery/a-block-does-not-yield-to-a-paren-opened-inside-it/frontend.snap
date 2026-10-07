@@ -34,7 +34,9 @@ error[syntax/expected-token] 4:8: expected `)`
     4:7 -> ")"
 error[syntax/expected-item] 4:15..4:16 "}": expected a function item
 
-== fixed (syntax/expected-boundary, syntax/unexpected-syntax remain) ==
+== fixed ==
+remaining: syntax/expected-boundary, syntax/unexpected-syntax
+
 fn missing_closer() {
     (a) b) }
 fn block_inside() {

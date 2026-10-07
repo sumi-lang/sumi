@@ -57,7 +57,9 @@ error[syntax/expected-type] 7:17: expected a type
 error[syntax/expected-type] 7:22: expected a type
 error[syntax/expected-type] 8:12: expected a type
 
-== fixed (syntax/expected-body, syntax/expected-expression, syntax/expected-name, syntax/expected-token, syntax/expected-type remain) ==
+== fixed ==
+remaining: syntax/expected-body, syntax/expected-expression, syntax/expected-name, syntax/expected-token, syntax/expected-type
+
 fn initializer() {
     let x =
 }

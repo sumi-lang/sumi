@@ -85,7 +85,9 @@ fn stages(case: &Path) -> Result<Vec<Stage>, String> {
     Ok(stages)
 }
 
-pub fn check(stage: Stage, snapshot: impl Fn(&str, &[Stage]) -> String) {
+/// Checks every case that selects `stage` against its snapshot; a renderer answers `Err` for a
+/// case the stage cannot describe, which fails the case whatever the snapshot says.
+pub fn check(stage: Stage, snapshot: impl Fn(&str, &[Stage]) -> Result<String, String>) {
     let root = root();
     verify(
         &root,
@@ -100,7 +102,7 @@ fn verify(
     root: &Path,
     stage: Stage,
     should_update: bool,
-    snapshot: impl Fn(&str, &[Stage]) -> String,
+    snapshot: impl Fn(&str, &[Stage]) -> Result<String, String>,
 ) -> Result<(), String> {
     let mut cases = Vec::new();
     directories_holding(root, "case.su", &mut cases);
@@ -123,7 +125,16 @@ fn verify(
         }
         selected += 1;
         let source = fs::read_to_string(case.join("case.su")).expect("a case is UTF-8");
-        let actual = snapshot(&source, &stages);
+        let actual = match snapshot(&source, &stages) {
+            Ok(actual) => actual,
+            Err(reason) => {
+                failures.push(format!(
+                    "{}: {reason}",
+                    path.strip_prefix(root).unwrap().display()
+                ));
+                continue;
+            }
+        };
         let expected = match fs::read_to_string(&path) {
             Ok(text) => Some(text),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
@@ -275,7 +286,7 @@ fn selection_is_independent_of_snapshots_and_updates_are_stage_local() {
     fs::create_dir(&case).unwrap();
     fs::write(case.join("case.su"), "source").unwrap();
     fs::write(case.join("stages"), "hir\n").unwrap();
-    let render = |_: &str, _: &[Stage]| "golden\n".to_owned();
+    let render = |_: &str, _: &[Stage]| Ok("golden\n".to_owned());
     for stage in [Stage::Frontend, Stage::Hir] {
         assert!(
             verify(root.path(), stage, false, render)
@@ -328,7 +339,7 @@ fn malformed_metadata_or_orphan_products_fail_even_in_update_mode() {
     fs::create_dir(&case).unwrap();
     fs::write(case.join("case.su"), "source").unwrap();
     fs::write(case.join("stages"), "hri\n").unwrap();
-    let render = |_: &str, _: &[Stage]| "golden\n".to_owned();
+    let render = |_: &str, _: &[Stage]| Ok("golden\n".to_owned());
     assert!(
         verify(root.path(), Stage::Hir, true, render)
             .unwrap_err()
@@ -343,6 +354,21 @@ fn malformed_metadata_or_orphan_products_fail_even_in_update_mode() {
             .unwrap_err()
             .contains("no case beside it")
     );
+}
+
+#[test]
+fn a_refused_case_fails_even_in_update_mode() {
+    let root = tempfile::tempdir().unwrap();
+    let case = root.path().join("example");
+    fs::create_dir(&case).unwrap();
+    fs::write(case.join("case.su"), "source").unwrap();
+    let render = |_: &str, _: &[Stage]| Err("nothing to show".to_owned());
+    assert!(
+        verify(root.path(), Stage::Frontend, true, render)
+            .unwrap_err()
+            .contains("example/frontend.snap: nothing to show")
+    );
+    assert!(!case.join("frontend.snap").exists());
 }
 
 #[test]

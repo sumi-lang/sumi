@@ -2,6 +2,7 @@ file: accepted
 frontend errors: 0 (see frontend.snap)
 semantic errors: 0
 
+== graph ==
 fn even@1:1..5:2 (int ∈ [0, 4]) -> bool ∈ {true, false}
   param n@1:9..1:10: int
   result: copy : bool @1:20..1:24

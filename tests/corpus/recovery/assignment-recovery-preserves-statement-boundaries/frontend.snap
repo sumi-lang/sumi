@@ -66,7 +66,9 @@ error[syntax/expected-statement] 10:11..10:12 "=": expected a statement
 error[syntax/expected-statement] 13:5..13:6 "=": expected a statement
   at 13:5..13:8 "= y": skipped while recovering
 
-== fixed (syntax/expected-boundary, syntax/expected-expression, syntax/expected-statement, syntax/unexpected-syntax remain) ==
+== fixed ==
+remaining: syntax/expected-boundary, syntax/expected-expression, syntax/expected-statement, syntax/unexpected-syntax
+
 fn in_parens() {
     (a) = b) }
 fn missing_rhs() {

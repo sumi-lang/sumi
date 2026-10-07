@@ -2,6 +2,7 @@ file: rejected
 frontend errors: 1 (see frontend.snap)
 semantic errors: 1
 
+== graph ==
 fn malformed@1:1..1:27 () -> int ∈ ∅
   result: copy : int @1:19..1:22
     value: hole : ? @1:25..1:27

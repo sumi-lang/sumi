@@ -18,7 +18,9 @@ error[syntax/expected-token] 3:1: expected `)`
   fix: insert `)`
     2:7 -> ")"
 
-== fixed (syntax/expected-expression, syntax/unexpected-syntax remain) ==
+== fixed ==
+remaining: syntax/expected-expression, syntax/unexpected-syntax
+
 fn f() {
     (g)
 ()) }

@@ -2,6 +2,7 @@ file: accepted
 frontend errors: 0 (see frontend.snap)
 semantic errors: 0
 
+== graph ==
 fn dead_branch@1:1..5:2 () -> int ∈ [2, 2]
   result: copy : int @1:21..1:24
     value: if : int @1:27..5:2

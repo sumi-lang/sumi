@@ -2,6 +2,7 @@ file: rejected
 frontend errors: 0 (see frontend.snap)
 semantic errors: 17
 
+== graph ==
 fn divide_by_zero@1:1..1:41 () -> int ∈ ∅
   result: copy : int @1:24..1:27
     value: eager / : int @1:30..1:41

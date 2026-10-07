@@ -78,7 +78,9 @@ error[syntax/expected-token] 14:18: expected `}`
   fix: insert `}`
     14:17 -> "}"
 
-== fixed (syntax/expected-expression, syntax/expected-item, syntax/expected-statement, syntax/expected-token remain) ==
+== fixed ==
+remaining: syntax/expected-expression, syntax/expected-item, syntax/expected-statement, syntax/expected-token
+
 fn item_in_garbage() { : { fn g() {} }}
 fn item_in_garbage_in_parens() {
     ({ : { fn g() {} }} )

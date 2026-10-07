@@ -12,7 +12,7 @@ use sumi_text::{LineIndex, TextRange};
 
 #[test]
 fn selected_cases_match_their_snapshots() {
-    corpus::check(corpus::Stage::Hir, |source, _| snapshot(source));
+    corpus::check(corpus::Stage::Hir, |source, _| Ok(snapshot(source)));
 }
 
 #[test]
@@ -20,10 +20,10 @@ fn selected_cases_run_as_their_snapshots_say() {
     corpus::check(corpus::Stage::Eval, |source, _| run(source));
 }
 
-fn run(source: &str) -> String {
+fn run(source: &str) -> Result<String, String> {
     let analysis = analyze(parse_source(source.into()).unwrap());
     let Some(program) = analysis.program() else {
-        return "file: rejected (see hir.snap); nothing runs\n".to_owned();
+        return Err("a rejected case runs nothing; drop `eval` from its stages".to_owned());
     };
     let mut out = "file: accepted\n".to_owned();
     let compiled = program.compile();
@@ -42,10 +42,10 @@ fn run(source: &str) -> String {
         after.0, before.0, after.1, before.1, after.2, before.2
     )
     .unwrap();
+    out.push_str("\n== functions ==\n");
     for (id, function) in program.functions() {
         let name = analysis.text(function.name().expect("a valid file names its functions"));
         if !program.signature(id).params.is_empty() {
-            writeln!(out, "fn {name}: takes arguments, not run").unwrap();
             continue;
         }
         let mut machine = program.machine(id, &[]);
@@ -63,20 +63,19 @@ fn run(source: &str) -> String {
             }
         };
         assert_eq!(outcome, Ok(value.clone()), "optimized fn {name}");
-        write!(
+        writeln!(
             out,
-            "fn {name} = {value} (steps {}, optimized {}, depth {}",
+            "fn {name} = {value}\n  steps: {}, optimized steps: {}, depth: {}, bound: {}",
             machine.steps(),
             optimized.steps(),
-            machine.max_depth()
+            machine.max_depth(),
+            function
+                .depth_bound()
+                .map_or("none".to_owned(), |bound| bound.to_string())
         )
         .unwrap();
-        match function.depth_bound() {
-            Some(bound) => writeln!(out, " of at most {bound})").unwrap(),
-            None => out.push_str(", unbounded)\n"),
-        }
     }
-    out
+    Ok(out)
 }
 
 fn snapshot(source: &str) -> String {
@@ -98,10 +97,14 @@ fn snapshot(source: &str) -> String {
         }
     );
     let shape = Rendering::new(analysis.graph(), source);
+    out.push_str("\n== graph ==\n");
     for (index, function) in analysis.functions().iter().enumerate() {
+        if index > 0 {
+            out.push('\n');
+        }
         write!(
             out,
-            "\nfn {}{}",
+            "fn {}{}",
             function
                 .name()
                 .map_or("<missing>", |name| analysis.text(name)),

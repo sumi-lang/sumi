@@ -29,7 +29,9 @@ error[syntax/expected-token] 4:23: expected `)`
 error[syntax/expected-item] 4:24..4:25 ")": expected a function item
   at 4:24..4:27 ") }": skipped while recovering
 
-== fixed (syntax/expected-boundary, syntax/expected-item, syntax/expected-token remain) ==
+== fixed ==
+remaining: syntax/expected-boundary, syntax/expected-item, syntax/expected-token
+
 fn f() {
     (
         {

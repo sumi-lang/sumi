@@ -46,7 +46,9 @@ error[syntax/expected-token] 10:8: expected `}`
   fix: insert `}`
     10:8 -> "}"
 
-== fixed (syntax/expected-expression, syntax/expected-statement, syntax/expected-token, syntax/unexpected-syntax remain) ==
+== fixed ==
+remaining: syntax/expected-expression, syntax/expected-statement, syntax/expected-token, syntax/unexpected-syntax
+
 fn closer_in_discard() {
     _ = } 1
     x

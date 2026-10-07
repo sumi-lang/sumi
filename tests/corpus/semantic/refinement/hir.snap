@@ -2,6 +2,7 @@ file: accepted
 frontend errors: 0 (see frontend.snap)
 semantic errors: 0
 
+== graph ==
 fn clamp@1:1..9:2 (int ∈ [-5, 20] \ 0) -> int ∈ [0, 9]
   param n@1:10..1:11: int
   result: copy : int @1:21..1:24

@@ -48,7 +48,9 @@ error[syntax/chained-comparison] 5:11..5:12 ">": comparison operators cannot be 
 error[syntax/unspaced-binary-operator] 6:14..6:15 "<": binary operator must have spaces on both sides
 error[syntax/unspaced-binary-operator] 7:15..7:16 "<": binary operator must have spaces on both sides
 
-== formatted (ChainedComparison, UnspacedBinaryOperator remain) ==
+== formatted ==
+remaining: ChainedComparison, UnspacedBinaryOperator
+
 // A `<` glued to the name before it is reserved for type arguments, so
 // every glued comparison stays an error until it becomes an unclosed list.
 fn f() {

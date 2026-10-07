@@ -22,6 +22,8 @@ error[syntax/expected-token] 2:13: expected `)`
   fix: insert `)`
     2:12 -> ")"
 
-== fixed (syntax/expected-expression, syntax/expected-token, syntax/unexpected-syntax remain) ==
+== fixed ==
+remaining: syntax/expected-expression, syntax/expected-token, syntax/unexpected-syntax
+
 fn f() {
     g(:(, b) }

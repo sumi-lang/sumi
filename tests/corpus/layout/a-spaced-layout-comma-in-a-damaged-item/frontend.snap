@@ -19,7 +19,9 @@ error[syntax/expected-token] 1:6: expected `)`
   fix: insert `)`
     1:5 -> ")"
 
-== fixed (syntax/expected-name remains) ==
+== fixed ==
+remaining: syntax/expected-name
+
 fn () { g(b ,)}
 
 == formatted ==
