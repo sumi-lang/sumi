@@ -281,9 +281,15 @@ fn dump_region(
         .filter(|&node| shape.region_of[node.index()] == Some(region))
         .filter(|&node| {
             let named = graph.node(node).name.is_some();
+            // A carry is the loop's, printed with it.
             let contextual = matches!(
                 graph.node(node).op,
-                Op::Then | Op::Else | Op::Entry | Op::Refine { .. } | Op::Exactly(_)
+                Op::Then
+                    | Op::Else
+                    | Op::Entry
+                    | Op::Refine { .. }
+                    | Op::Exactly(_)
+                    | Op::Carry { .. }
             );
             named
                 || matches!(graph.node(node).op, Op::Assign { .. })
@@ -347,9 +353,6 @@ fn guards(analysis: &Analysis, shape: &Rendering<'_>, mut node: NodeId) -> (Vec<
                 guards.push(format!("is {value}"));
                 node = graph.inputs(node)[0];
             }
-            Op::Assign { declaration } | Op::Carry { declaration } => {
-                return (guards, declaration);
-            }
             _ => return (guards, node),
         }
     }
@@ -370,12 +373,23 @@ fn dump_node(
     } else {
         format!(" [{}]", guards.join(", "))
     };
-    if graph.node(definition).name.is_some() {
+    // A read of a mutable local names the version it reaches, whose value its own statement shows.
+    let version = match graph.node(definition).op {
+        Op::Assign { declaration } => Some((declaration, "assigned")),
+        Op::Carry { declaration } => Some((declaration, "carried")),
+        _ => graph.node(definition).name.map(|_| (definition, "")),
+    };
+    if let Some((declaration, version)) = version {
+        let at = if version.is_empty() {
+            String::new()
+        } else {
+            format!(" ({version} {})", shape.at(graph.node(definition).origin))
+        };
         writeln!(
             out,
-            "{}{role}: read {}{guard} : {}",
+            "{}{role}: read {}{at}{guard} : {}",
             "  ".repeat(depth),
-            named(analysis, shape, definition),
+            named(analysis, shape, declaration),
             ty(analysis, node)
         )
         .unwrap();
@@ -484,9 +498,10 @@ fn dump_definition(
                 );
             }
         }
-        Op::Copy { .. } | Op::Assign { .. } | Op::Carry { .. } => {
+        Op::Copy { .. } | Op::Assign { .. } => {
             dump_node(analysis, shape, "value", inputs[0], child, out)
         }
+        Op::Carry { .. } => dump_node(analysis, shape, "initial", inputs[0], child, out),
         Op::LoopIndex => {
             dump_node(analysis, shape, "start", inputs[0], child, out);
             dump_node(analysis, shape, "end", inputs[1], child, out);
@@ -495,6 +510,16 @@ fn dump_definition(
             let loop_ = graph.loop_(*id);
             dump_node(analysis, shape, "start", inputs[0], child, out);
             dump_node(analysis, shape, "end", inputs[1], child, out);
+            for (index, &(header, _)) in loop_.carried.iter().enumerate() {
+                dump_definition(
+                    analysis,
+                    shape,
+                    &format!("carry[{index}]"),
+                    header,
+                    child,
+                    out,
+                );
+            }
             dump_region(analysis, shape, "body", loop_.body, child, out);
             for (index, &(_, next)) in loop_.carried.iter().enumerate() {
                 dump_node(analysis, shape, &format!("next[{index}]"), next, child, out);

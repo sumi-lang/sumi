@@ -14,23 +14,27 @@ fn later_iteration@1:1..9:2 () -> int ∈ (-∞, +∞)
       discard: loop : unit @4:5..7:6
         start: int 0 : int @4:14..4:15
         end: int 4 : int @4:17..4:18
+        carry[0]: carry divisor@2:13..2:20 : int @4:5..7:6
+          initial: read divisor@2:13..2:20 : int
+        carry[1]: carry total@3:13..3:18 : int @4:5..7:6
+          initial: read total@3:13..3:18 : int
         body:
           let i@4:9..4:10: loop index : int @4:5..7:6
             start: int 0 : int @4:14..4:15
             end: int 4 : int @4:17..4:18
           assignment: assign total@3:13..3:18 : int @5:9..5:37
             value: eager + : int @5:17..5:37
-              lhs: read total@3:13..3:18 : int
+              lhs: read total@3:13..3:18 (carried @4:5..7:6) : int
               rhs: eager / : int @5:25..5:37
                 lhs: int 12 : int @5:25..5:27
-                rhs: read divisor@2:13..2:20 : int
+                rhs: read divisor@2:13..2:20 (carried @4:5..7:6) : int
           assignment: assign divisor@2:13..2:20 : int @6:9..6:30
             value: eager - : int @6:19..6:30
-              lhs: read divisor@2:13..2:20 : int
+              lhs: read divisor@2:13..2:20 (carried @4:5..7:6) : int
               rhs: int 1 : int @6:29..6:30
           tail: unit : unit @4:19..7:6
-        next[0]: read divisor@2:13..2:20 : int
-        next[1]: read total@3:13..3:18 : int
+        next[0]: read divisor@2:13..2:20 (assigned @6:9..6:30) : int
+        next[1]: read total@3:13..3:18 (assigned @5:9..5:37) : int
       discard: after : ? @4:5..7:6
         control: loop : unit @4:5..7:6
         context: entry : ? @1:1..9:2
@@ -45,15 +49,16 @@ fn empty_path@10:1..14:2 () -> int ∈ ∅
       discard: loop : unit @12:5..12:34
         start: int 3 : int @12:14..12:15
         end: int 3 : int @12:17..12:18
+        carry[0]: carry divisor@11:13..11:20 : int @12:5..12:34
+          initial: read divisor@11:13..11:20 : int
         body:
           let i@12:9..12:10: loop index : int @12:5..12:34
             start: int 3 : int @12:14..12:15
             end: int 3 : int @12:17..12:18
-          discard: read divisor@11:13..11:20 : int
           assignment: assign divisor@11:13..11:20 : int @12:21..12:32
             value: int 2 : int @12:31..12:32
           tail: unit : unit @12:19..12:34
-        next[0]: read divisor@11:13..11:20 : int
+        next[0]: read divisor@11:13..11:20 (assigned @12:21..12:32) : int
       discard: after : ? @12:5..12:34
         control: loop : unit @12:5..12:34
         context: entry : ? @10:1..14:2
@@ -153,15 +158,16 @@ fn changed_type@25:1..28:2 () -> unit ∈ unit
       tail: loop : unit @27:5..27:32
         start: int 0 : int @27:14..27:15
         end: int 3 : int @27:17..27:18
+        carry[0]: carry x@26:13..26:14 : ? @27:5..27:32
+          initial: read x@26:13..26:14 : ?
         body:
           let i@27:9..27:10: loop index : int @27:5..27:32
             start: int 0 : int @27:14..27:15
             end: int 3 : int @27:17..27:18
-          discard: read x@26:13..26:14 : ?
           assignment: assign x@26:13..26:14 : ? @27:21..27:30
             value: bool false : ? @27:25..27:30
           tail: unit : unit @27:19..27:32
-        next[0]: read x@26:13..26:14 : ?
+        next[0]: read x@26:13..26:14 (assigned @27:21..27:30) : ?
 
 == semantic diagnostics ==
 warning[semantic/unused-name]: loop index `i` is never read

@@ -13,10 +13,10 @@ fn sequence@1:1..8:2 () -> int ∈ [9, 9]
           rhs: int 2 : int @3:13..3:14
       assignment: assign x@2:13..2:14 : int @5:9..5:18
         value: eager * : int @5:13..5:18
-          lhs: read x@2:13..2:14 : int
+          lhs: read x@2:13..2:14 (assigned @3:5..3:14) : int
           rhs: int 3 : int @5:17..5:18
       discard: unit : unit @4:5..6:6
-      tail: read x@2:13..2:14 : int
+      tail: read x@2:13..2:14 (assigned @5:9..5:18) : int
 
 fn choose@9:1..17:2 (bool ∈ {true, false}) -> int ∈ [2, 3]
   param flag@9:11..9:15: bool

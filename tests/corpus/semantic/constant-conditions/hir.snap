@@ -94,16 +94,18 @@ fn empty@31:1..37:2 () -> int ∈ [0, 0]
       discard: loop : unit @33:5..35:6
         start: int 5 : int @33:14..33:15
         end: int 5 : int @33:17..33:18
+        carry[0]: carry total@32:13..32:18 : int @33:5..35:6
+          initial: read total@32:13..32:18 : int
         body:
           let i@33:9..33:10: loop index : int @33:5..35:6
             start: int 5 : int @33:14..33:15
             end: int 5 : int @33:17..33:18
           assignment: assign total@32:13..32:18 : int @34:9..34:26
             value: eager + : int @34:17..34:26
-              lhs: read total@32:13..32:18 : int
+              lhs: read total@32:13..32:18 (carried @33:5..35:6) : int
               rhs: read i@33:9..33:10 : int
           tail: unit : unit @33:19..35:6
-        next[0]: read total@32:13..32:18 : int
+        next[0]: read total@32:13..32:18 (assigned @34:9..34:26) : int
       discard: after : ? @33:5..35:6
         control: loop : unit @33:5..35:6
         context: entry : ? @31:1..37:2
@@ -118,6 +120,8 @@ fn index@38:1..46:2 () -> int ∈ [0, 0]
       discard: loop : unit @40:5..44:6
         start: int 0 : int @40:14..40:15
         end: int 10 : int @40:17..40:19
+        carry[0]: carry total@39:13..39:18 : int @40:5..44:6
+          initial: read total@39:13..39:18 : int
         body:
           let i@40:9..40:10: loop index : int @40:5..44:6
             start: int 0 : int @40:14..40:15
@@ -128,7 +132,7 @@ fn index@38:1..46:2 () -> int ∈ [0, 0]
               rhs: int 20 : int @41:16..41:18
             then: assign total@39:13..39:18 : int @42:13..42:22
               value: int 1 : int @42:21..42:22
-            else: read total@39:13..39:18 : int
+            else: read total@39:13..39:18 (carried @40:5..44:6) : int
           tail: if : unit @41:9..43:10
             condition: eager > : bool @41:12..41:18
               lhs: read i@40:9..40:10 : int
@@ -144,7 +148,7 @@ fn index@38:1..46:2 () -> int ∈ [0, 0]
             rhs: int 20 : int @41:16..41:18
           then: assign total@39:13..39:18 : int @42:13..42:22
             value: int 1 : int @42:21..42:22
-          else: read total@39:13..39:18 : int
+          else: read total@39:13..39:18 (carried @40:5..44:6) : int
       discard: after : ? @40:5..44:6
         control: loop : unit @40:5..44:6
         context: entry : ? @38:1..46:2
