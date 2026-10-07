@@ -21,8 +21,8 @@ pub trait Domain: Clone {
     fn neg(&self) -> Result<Self, Self::Fault>;
     fn not(&self) -> Result<Self, Self::Fault>;
     fn binary(op: BinaryOp, lhs: &Self, rhs: &Self) -> Result<Self, Self::Fault>;
-    /// `&&` when `and`, else `||`. The short circuit is the graph's, so both operands have run.
-    fn lazy(and: bool, lhs: &Self, rhs: &Self) -> Result<Self, Self::Fault>;
+    /// `&&` when `is_and`, else `||`. The short circuit is the graph's, so both operands have run.
+    fn lazy(is_and: bool, lhs: &Self, rhs: &Self) -> Result<Self, Self::Fault>;
     /// `self` narrowed to where `self op other` (`other op self` unless `local_is_lhs`) is `sense`.
     fn refine(&self, op: CmpOp, local_is_lhs: bool, sense: bool, other: &Self) -> Self;
     /// `self` narrowed to where it is `value`.
@@ -157,10 +157,10 @@ impl Domain for Value {
         })
     }
 
-    fn lazy(and: bool, lhs: &Self, rhs: &Self) -> Result<Self, Fault> {
+    fn lazy(is_and: bool, lhs: &Self, rhs: &Self) -> Result<Self, Fault> {
         match (lhs, rhs) {
             (Self::Bool(lhs), Self::Bool(rhs)) => {
-                Ok(Self::Bool(if and { *lhs && *rhs } else { *lhs || *rhs }))
+                Ok(Self::Bool(if is_and { *lhs && *rhs } else { *lhs || *rhs }))
             }
             _ => Err(Fault::Type),
         }

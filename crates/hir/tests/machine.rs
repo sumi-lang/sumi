@@ -72,7 +72,7 @@ struct Gen<'a> {
     fresh: usize,
     /// The bool is whether `n` is positive in that arm.
     arm: Option<(Recursion, bool)>,
-    owed: bool,
+    is_owed: bool,
     /// The cap is two per arm, one when the call passes `n` along; otherwise a run goes
     /// exponential.
     calls: u32,
@@ -187,7 +187,7 @@ impl Gen<'_> {
     }
 
     fn recursive_call(&mut self, recursion: Recursion, fuel: u32) -> String {
-        self.owed = false;
+        self.is_owed = false;
         self.calls += 1;
         let params = self.functions[recursion.callee].params.clone();
         let first = if recursion.step == 0 {
@@ -286,7 +286,7 @@ impl Gen<'_> {
             && self.functions[recursion.callee].result == Kind::Int
             && fuel > 0
             && self.calls < if recursion.step == 0 { 1 } else { 2 }
-            && self.rng.chance(1, if self.owed { 3 } else { 4 })
+            && self.rng.chance(1, if self.is_owed { 3 } else { 4 })
         {
             let call = self.recursive_call(recursion, fuel - 1);
             return if self.rng.chance(1, 2) {
@@ -343,7 +343,7 @@ impl Gen<'_> {
             && self.functions[recursion.callee].result == Kind::Bool
             && fuel > 0
             && self.calls < if recursion.step == 0 { 1 } else { 2 }
-            && self.rng.chance(1, if self.owed { 3 } else { 4 })
+            && self.rng.chance(1, if self.is_owed { 3 } else { 4 })
         {
             let call = self.recursive_call(recursion, fuel - 1);
             return if self.rng.chance(1, 2) {
@@ -508,10 +508,10 @@ impl Gen<'_> {
             Some(recursion) => {
                 let base = self.expr(result, 2);
                 self.arm = Some((recursion, recursion.base >= 0));
-                self.owed = true;
+                self.is_owed = true;
                 self.calls = 0;
                 let mut arm = self.expr(result, 3);
-                if self.owed {
+                if self.is_owed {
                     let call = self.recursive_call(recursion, 1);
                     arm = format!("{{\nlet r0 = {call}\n{arm}\n}}");
                 }
@@ -622,7 +622,7 @@ fn program(seed: u64) -> String {
             scope: Vec::new(),
             fresh: 0,
             arm: None,
-            owed: false,
+            is_owed: false,
             calls: 0,
         };
         let names = ["n", "a", "b"];

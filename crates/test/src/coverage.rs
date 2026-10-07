@@ -43,7 +43,7 @@ enum Check {
 struct Witness {
     parent: NodeKind,
     name: String,
-    optional: bool,
+    is_optional: bool,
     check: Check,
 }
 
@@ -52,8 +52,8 @@ fn witnesses() -> Vec<Witness> {
         parent.children().iter().map(move |child| Witness {
             parent,
             name: child.name.to_owned(),
-            optional: child.optional,
-            check: Check::Declared(child.present),
+            is_optional: child.is_optional,
+            check: Check::Declared(child.is_present),
         })
     });
     // A read value's witnesses are its variants, each optional: the node reads one of them.
@@ -66,29 +66,29 @@ fn witnesses() -> Vec<Witness> {
                     TokenRule::Kind {
                         first,
                         glued,
-                        optional,
+                        is_optional,
                     } => vec![Witness {
                         parent,
                         name: rule.to_string(),
-                        optional,
+                        is_optional,
                         check: Check::Tokens(first, glued),
                     }],
                     TokenRule::Flag { kind, .. } => vec![Witness {
                         parent,
                         name: rule.to_string(),
-                        optional: true,
+                        is_optional: true,
                         check: Check::Tokens(kind, None),
                     }],
                     TokenRule::Field {
                         variants,
                         variant,
-                        present,
+                        is_present: present,
                         ..
                     } => (0..variants)
                         .map(|index| Witness {
                             parent,
                             name: variant(index),
-                            optional: true,
+                            is_optional: true,
                             check: Check::Variant(present, index),
                         })
                         .collect(),
@@ -105,7 +105,7 @@ fn witnesses() -> Vec<Witness> {
         Witness {
             parent,
             name: format!("{field}: {kind:?}"),
-            optional: true,
+            is_optional: true,
             check: Check::Member(slot, kind),
         }
     });
@@ -114,7 +114,7 @@ fn witnesses() -> Vec<Witness> {
     witnesses
 }
 
-fn present(lexed: &LexedFile, tree: &SyntaxTree, node: NodeIdx, check: Check) -> bool {
+fn is_present(lexed: &LexedFile, tree: &SyntaxTree, node: NodeIdx, check: Check) -> bool {
     match check {
         Check::Declared(present) => present(tree, node),
         Check::Member(slot, kind) => tree
@@ -161,7 +161,7 @@ impl Coverage {
                 if witness.parent != kind {
                     continue;
                 }
-                if present(lexed, tree, node, witness.check) {
+                if is_present(lexed, tree, node, witness.check) {
                     self.present[index] = true;
                 } else {
                     self.absent[index] = true;
@@ -184,7 +184,7 @@ impl Coverage {
             if !self.present[index] {
                 missing.push(format!("{parent:?} never has {name}"));
             }
-            if witness.optional && !self.absent[index] {
+            if witness.is_optional && !self.absent[index] {
                 missing.push(format!("{parent:?} never lacks {name}"));
             }
         }

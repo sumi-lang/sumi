@@ -35,7 +35,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
             name: header.name,
             origin: source.range(header.item),
             signature: None,
-            complete: false,
+            is_complete: false,
             depth: None,
         })
         .collect();
@@ -81,7 +81,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         dead,
     };
     assert!(
-        !analysis.is_valid() || analysis.functions.iter().all(|f| f.complete),
+        !analysis.is_valid() || analysis.functions.iter().all(|f| f.is_complete),
         "incomplete semantic analysis without an error"
     );
     analysis
@@ -200,8 +200,8 @@ fn signatures(
         if let (HeaderResult::Inferred, Some(evidence), None) = (header.result, evidence, result)
             && lowered.built[index]
             && !failed[index]
-            && !evidence.unknown()
-            && !evidence.inherited()
+            && !evidence.is_unknown()
+            && !evidence.is_inherited()
         {
             if evidence.is_conflict() {
                 source.conflict(
@@ -237,7 +237,7 @@ fn divisions(
             continue;
         }
         let divisor = typing.may(obligation.divisor);
-        if !typing.may(obligation.context).live() || !divisor.ints.contains_zero() {
+        if !typing.may(obligation.context).is_live() || !divisor.ints.contains_zero() {
             continue;
         }
         let message = if divisor.ints.is_zero() {
@@ -314,10 +314,10 @@ pub(crate) fn explain(
             Op::LoopValue { loop_, index } => {
                 let loop_ = graph.loop_(loop_);
                 let (header, next) = loop_.carried[index as usize];
-                if typing.may(loop_.empty).live() {
+                if typing.may(loop_.empty).is_live() {
                     follow(&mut queue, graph.inputs(header)[0], 1);
                 }
-                if typing.may(loop_.continuation).live() {
+                if typing.may(loop_.continuation).is_live() {
                     follow(&mut queue, next, 1);
                 }
             }
@@ -327,7 +327,7 @@ pub(crate) fn explain(
                     .zip(&contexts)
                     .zip(&graph.input_values(node)[1..])
                 {
-                    if has_value && typing.may(context).live() {
+                    if has_value && typing.may(context).is_live() {
                         follow(&mut queue, value, 1);
                     }
                 }
@@ -344,7 +344,7 @@ pub(crate) fn explain(
             Op::Join { then, else_ } => {
                 for region in std::iter::once(then).chain(else_) {
                     let region = graph.region(region);
-                    if region.result_has_value() && typing.may(region.context).live() {
+                    if region.result_has_value() && typing.may(region.context).is_live() {
                         follow(&mut queue, region.result(), 1);
                     }
                 }
@@ -354,7 +354,7 @@ pub(crate) fn explain(
                 follow(&mut queue, graph.run(function).result(), 1);
             }
             Op::Return => {
-                if graph.input_values(node)[0] && typing.may(inputs[1]).live() {
+                if graph.input_values(node)[0] && typing.may(inputs[1]).is_live() {
                     follow(&mut queue, inputs[0], 0);
                 }
             }
@@ -365,7 +365,7 @@ pub(crate) fn explain(
                 }
                 for &returned in &inputs[1..] {
                     let returned_inputs = graph.inputs(returned);
-                    if graph.input_values(returned)[0] && typing.may(returned_inputs[1]).live() {
+                    if graph.input_values(returned)[0] && typing.may(returned_inputs[1]).is_live() {
                         follow(&mut queue, returned_inputs[0], 1);
                     }
                 }
@@ -384,7 +384,7 @@ pub(crate) fn explain(
                     if labels.len() >= LABELS {
                         break;
                     }
-                    if !typing.may(call.context).live() {
+                    if !typing.may(call.context).is_live() {
                         continue;
                     }
                     let arg = graph.inputs(call.node)[index as usize];
@@ -453,7 +453,7 @@ fn complete(
             continue;
         }
         let run = graph.run(FunctionId::new(index));
-        let complete = run.nodes().all(|node| match graph.node(node).op {
+        let is_complete = run.nodes().all(|node| match graph.node(node).op {
             // No value, so nothing to resolve.
             Op::Entry
             | Op::Then
@@ -479,6 +479,6 @@ fn complete(
             }
             _ => typing.resolve(node).is_some(),
         });
-        functions[index].complete = complete;
+        functions[index].is_complete = is_complete;
     }
 }

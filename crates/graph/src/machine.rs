@@ -19,10 +19,10 @@ enum Control {
         node: NodeId,
         from: NodeId,
     },
-    /// `&&` when `and`, else `||`, once its left operand is in.
+    /// `&&` when `is_and`, else `||`, once its left operand is in.
     Lazy {
         node: NodeId,
-        and: bool,
+        is_and: bool,
         rhs: RegionId,
     },
     Branch {
@@ -58,7 +58,7 @@ enum Control {
     Combine {
         node: NodeId,
         from: NodeId,
-        and: bool,
+        is_and: bool,
     },
     ResumeCaller(NodeId),
     ResumePackedCaller(NodeId),
@@ -266,7 +266,7 @@ impl<'a> Machine<'a> {
         self.control.push(Control::Eval(from));
     }
 
-    fn tail(&self, mut value: NodeId) -> bool {
+    fn is_tail(&self, mut value: NodeId) -> bool {
         let frame = self.frames.last().expect("a call has a caller");
         for control in self.control[frame.control_base..].iter().rev() {
             match *control {
@@ -366,8 +366,8 @@ impl<'a> Machine<'a> {
                         }
                     }
                     ref op @ (Op::And { rhs } | Op::Or { rhs }) => {
-                        let and = matches!(op, Op::And { .. });
-                        self.control.push(Control::Lazy { node, and, rhs });
+                        let is_and = matches!(op, Op::And { .. });
+                        self.control.push(Control::Lazy { node, is_and, rhs });
                         self.demand(inputs[0]);
                     }
                     Op::Join { then, else_ } => {
@@ -422,15 +422,15 @@ impl<'a> Machine<'a> {
                     unreachable!()
                 };
                 let loop_ = self.graph.loop_(id);
-                let initial = matches!(control, Control::LoopStart(_));
-                let Value::Int(index) = self.value(if initial {
+                let is_initial = matches!(control, Control::LoopStart(_));
+                let Value::Int(index) = self.value(if is_initial {
                     self.graph.inputs(node)[0]
                 } else {
                     loop_.index
                 }) else {
                     unreachable!()
                 };
-                let index = if initial {
+                let index = if is_initial {
                     index.clone()
                 } else {
                     index + &1.into()
@@ -439,7 +439,7 @@ impl<'a> Machine<'a> {
                     .carried
                     .iter()
                     .map(|&(carry, next)| {
-                        self.value(if initial {
+                        self.value(if is_initial {
                             self.graph.inputs(carry)[0]
                         } else {
                             next
@@ -487,13 +487,13 @@ impl<'a> Machine<'a> {
             }
             Control::LoopValue { node, from } => self.fill(node, self.value(from).clone()),
             Control::Apply(node) => return self.compute(node),
-            Control::Lazy { node, and, rhs } => {
+            Control::Lazy { node, is_and, rhs } => {
                 let lhs = self
                     .value(self.graph.inputs(node)[0])
                     .truth()
                     .map_err(|fault| Refusal::of(fault, node))?;
-                if lhs == and {
-                    self.demand_region(rhs, |from| Control::Combine { node, from, and });
+                if lhs == is_and {
+                    self.demand_region(rhs, |from| Control::Combine { node, from, is_and });
                 } else {
                     self.fill(node, Value::Bool(lhs));
                 }
@@ -553,9 +553,9 @@ impl<'a> Machine<'a> {
                 let value = self.value(from).clone();
                 self.fill(node, value);
             }
-            Control::Combine { node, from, and } => {
+            Control::Combine { node, from, is_and } => {
                 let lhs = self.value(self.graph.inputs(node)[0]);
-                let value = Value::lazy(and, lhs, self.value(from))
+                let value = Value::lazy(is_and, lhs, self.value(from))
                     .map_err(|fault| Refusal::of(fault, node))?;
                 self.fill(node, value);
             }
@@ -568,7 +568,7 @@ impl<'a> Machine<'a> {
                 }) {
                     return Err(Refusal::Depth(node));
                 }
-                if TAIL && self.tail(node) {
+                if TAIL && self.is_tail(node) {
                     let frame = self.frames.last().expect("a call has a caller");
                     for &arg in self.graph.inputs(node) {
                         self.tail_args.push(
@@ -798,14 +798,14 @@ mod tests {
         builder: &mut GraphBuilder,
         entry: NodeId,
         bounds: [NodeId; 2],
-        nested: bool,
+        is_nested: bool,
     ) -> NodeId {
         let zero = push(builder, Op::Int(0.into()), &[]);
         let body = builder.open(entry);
         builder.enter(body);
         let index = push(builder, Op::LoopIndex, &bounds);
         let carry = push(builder, Op::Carry { declaration: zero }, &[zero]);
-        let increment = if nested {
+        let increment = if is_nested {
             let two = push(builder, Op::Int(2.into()), &[]);
             counting_loop(builder, entry, [zero, two], false)
         } else {

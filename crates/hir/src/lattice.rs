@@ -109,7 +109,7 @@ impl Evidence {
         }
     }
 
-    pub fn unknown(&self) -> bool {
+    pub fn is_unknown(&self) -> bool {
         self.claims[0] == Some(UNKNOWN)
     }
 
@@ -132,7 +132,7 @@ impl Evidence {
 
     /// The type claimed, if exactly one is and no hole decided the class.
     pub fn ty(&self) -> Option<Ty> {
-        if self.unknown() {
+        if self.is_unknown() {
             return None;
         }
         let mut types = self.types();
@@ -142,11 +142,11 @@ impl Evidence {
 
     /// Never for a class a hole decided: the claims beside the unknown are not a disagreement.
     pub fn is_conflict(&self) -> bool {
-        !self.unknown() && self.types().count() > 1
+        !self.is_unknown() && self.types().count() > 1
     }
 
     /// A conflict whose every claim crossed a flow; it is reported where it arose.
-    pub fn inherited(&self) -> bool {
+    pub fn is_inherited(&self) -> bool {
         self.is_conflict() && self.types().all(|(_, claim)| claim.is_imported())
     }
 
@@ -199,7 +199,7 @@ pub(crate) enum Pair {
     Outcome,
     Binary(BinaryOp),
     Lazy {
-        and: bool,
+        is_and: bool,
     },
     Then,
     Else,
@@ -298,7 +298,7 @@ impl Lattice for Product {
                 inverted
             }
             Edge::Exactly(value) => values.exactly(value),
-            Edge::Enter => May::of_unit(values.live()),
+            Edge::Enter => May::of_unit(values.is_live()),
         };
         Self { types, values }
     }
@@ -329,8 +329,8 @@ impl Lattice for Product {
                 let Ok(combined) = May::binary(op, values, second);
                 combined
             }
-            Pair::Lazy { and } => {
-                let Ok(combined) = May::lazy(and, values, second);
+            Pair::Lazy { is_and } => {
+                let Ok(combined) = May::lazy(is_and, values, second);
                 combined
             }
             Pair::Refine {
@@ -338,18 +338,18 @@ impl Lattice for Product {
                 local_is_lhs,
                 sense,
             } => values.refine(op, local_is_lhs, sense, second),
-            Pair::Then => May::of_unit(values.bools.may_true() && second.live()),
-            Pair::Else => May::of_unit(values.bools.may_false() && second.live()),
+            Pair::Then => May::of_unit(values.bools.may_true() && second.is_live()),
+            Pair::Else => May::of_unit(values.bools.may_false() && second.is_live()),
             Pair::Range => May::ints(Ints::range(&values.ints, &second.ints)),
             Pair::Branch | Pair::Forward | Pair::Outcome => {
-                if second.live() {
+                if second.is_live() {
                     values.clone()
                 } else {
                     May::NONE
                 }
             }
             Pair::Argument | Pair::Backedge => {
-                if second.live() {
+                if second.is_live() {
                     rounded(values, cyclic, cx)
                 } else {
                     May::NONE
@@ -412,7 +412,7 @@ mod tests {
             a.combine(&edge, &b, false, &cx).values.bools,
             Bools::from(false)
         );
-        let edge = Pair::Lazy { and: true };
+        let edge = Pair::Lazy { is_and: true };
         assert_eq!(
             values(May::bool(false))
                 .combine(&edge, &Product::bottom(), false, &cx)

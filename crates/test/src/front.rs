@@ -77,18 +77,18 @@ impl Front {
             for child in tree.children(item) {
                 if tree.kind(child) == NodeKind::Block && !moved.contains(&tree.first_token(child))
                 {
-                    let mut after_touched = false;
+                    let mut is_after_touched = false;
                     for statement in tree.children(child) {
                         let opens_block =
                             self.lexed.kind(tree.first_token(statement)) == SyntaxKind::LBrace;
-                        let taken = after_touched
+                        let taken = is_after_touched
                             && opens_block
                             && !covers(statement)
                             && takeable(statement);
                         if !taken {
                             nodes.push(statement);
                         }
-                        after_touched = covers(statement);
+                        is_after_touched = covers(statement);
                     }
                 }
             }

@@ -59,9 +59,9 @@ pub struct Child {
     pub name: &'static str,
     /// The field slot of a single child; `None` for a repeated one.
     pub slot: Option<u8>,
-    pub optional: bool,
+    pub is_optional: bool,
     /// The accessor's answer for `node`; `false` on a node of another kind.
-    pub present: fn(&SyntaxTree, NodeIdx) -> bool,
+    pub is_present: fn(&SyntaxTree, NodeIdx) -> bool,
 }
 
 /// A token a rule holds itself.
@@ -71,7 +71,7 @@ pub enum TokenRule {
     Kind {
         first: SyntaxKind,
         glued: Option<SyntaxKind>,
-        optional: bool,
+        is_optional: bool,
     },
     /// Whether the node holds `kind`, read under `name`.
     Flag {
@@ -86,7 +86,7 @@ pub enum TokenRule {
         /// Whether a value is read at a token of the first kind, and spans the glued one.
         reads: fn(SyntaxKind, Option<SyntaxKind>) -> Option<bool>,
         /// Whether `node` reads the variant at the index; `false` on a node of another kind.
-        present: fn(&SyntaxTree, &LexedFile, NodeIdx, usize) -> bool,
+        is_present: fn(&SyntaxTree, &LexedFile, NodeIdx, usize) -> bool,
     },
 }
 
@@ -145,8 +145,8 @@ macro_rules! grammar {
         grammar!(@fields $name [$($slot)* ()] [$($child)* Child {
             name: stringify!($field),
             slot: Some(count!($($slot)*)),
-            optional: true,
-            present: |tree, node| {
+            is_optional: true,
+            is_present: |tree, node| {
                 $name::cast(tree, node).is_some_and(|view| view.$field(tree).is_some())
             },
         },] [$($required)*] [$($by)*] [$($index)*] [$($tokens)*] $($($rest)*)?);
@@ -170,8 +170,8 @@ macro_rules! grammar {
         grammar!(@fields $name [$($slot)*] [$($child)* Child {
             name: stringify!($field),
             slot: None,
-            optional: true,
-            present: |tree, node| {
+            is_optional: true,
+            is_present: |tree, node| {
                 $name::cast(tree, node).is_some_and(|view| view.$field(tree).next().is_some())
             },
         },] [$($required)*] [$($by)*] [$($index)*] [$($tokens)*] $($($rest)*)?);
@@ -195,8 +195,8 @@ macro_rules! grammar {
         grammar!(@fields $name [$($slot)* ()] [$($child)* Child {
             name: stringify!($field),
             slot: Some(count!($($slot)*)),
-            optional: false,
-            present: |tree, node| {
+            is_optional: false,
+            is_present: |tree, node| {
                 $name::cast(tree, node).is_some_and(|view| view.$field(tree).is_some())
             },
         },] [$($required)* $ty,] [$($by)* (child $field)] [$($next)*] [$($tokens)*]
@@ -236,7 +236,7 @@ macro_rules! grammar {
         grammar!(@tokens $name [$($token)* TokenRule::Kind {
             first: SyntaxKind::$first,
             glued: Some(SyntaxKind::$glued),
-            optional: false,
+            is_optional: false,
         },] [$($required)*] [$($by)*] [$($index)*] $($($rest)*)?);
     };
     (@tokens $name:ident [$($token:tt)*] [$($required:tt)*] [$($by:tt)*] [$($index:tt)*]
@@ -244,7 +244,7 @@ macro_rules! grammar {
         grammar!(@tokens $name [$($token)* TokenRule::Kind {
             first: SyntaxKind::$first,
             glued: Some(SyntaxKind::$glued),
-            optional: true,
+            is_optional: true,
         },] [$($required)*] [$($by)*] [$($index)*] $($($rest)*)?);
     };
     (@tokens $name:ident [$($token:tt)*] [$($required:tt)*] [$($by:tt)*] [$($index:tt)*]
@@ -252,7 +252,7 @@ macro_rules! grammar {
         grammar!(@tokens $name [$($token)* TokenRule::Kind {
             first: SyntaxKind::$kind,
             glued: None,
-            optional: true,
+            is_optional: true,
         },] [$($required)*] [$($by)*] [$($index)*] $($($rest)*)?);
     };
     (@tokens $name:ident [$($token:tt)*] [$($required:tt)*] [$($by:tt)*] [$($index:tt)*]
@@ -260,7 +260,7 @@ macro_rules! grammar {
         grammar!(@tokens $name [$($token)* TokenRule::Kind {
             first: SyntaxKind::$kind,
             glued: None,
-            optional: false,
+            is_optional: false,
         },] [$($required)*] [$($by)*] [$($index)*] $($($rest)*)?);
     };
     (@tokens $name:ident [$($token:tt)*] [$($required:tt)*] [$($by:tt)*] [$index:tt $($next:tt)*]
@@ -303,7 +303,7 @@ macro_rules! grammar {
             variants: <$ty as TokenField>::ALL.len(),
             variant: |index| <$ty as TokenField>::ALL[index].to_string(),
             reads: |first, glued| <$ty as TokenField>::read(first, glued).map(|(_, spans)| spans),
-            present: |tree, lexed, node, index| {
+            is_present: |tree, lexed, node, index| {
                 $name::cast(tree, node).is_some_and(|view| {
                     view.$field(tree, lexed) == Some(<$ty as TokenField>::ALL[index])
                 })
@@ -546,7 +546,7 @@ mod tests {
         }
         assert_eq!(NodeKind::FnItem.children()[2].name, "ret");
         assert_eq!(NodeKind::FnItem.children()[2].slot, Some(2));
-        assert!(NodeKind::FnItem.children()[2].optional);
+        assert!(NodeKind::FnItem.children()[2].is_optional);
     }
 
     #[test]
@@ -559,7 +559,7 @@ mod tests {
             TokenRule::Kind {
                 first: SyntaxKind::LetKw,
                 glued: None,
-                optional: false
+                is_optional: false
             }
         ));
         assert!(matches!(
@@ -573,7 +573,7 @@ mod tests {
             colon,
             TokenRule::Kind {
                 first: SyntaxKind::Colon,
-                optional: true,
+                is_optional: true,
                 ..
             }
         ));
@@ -586,7 +586,7 @@ mod tests {
             TokenRule::Kind {
                 first: SyntaxKind::Minus,
                 glued: Some(SyntaxKind::Gt),
-                optional: true
+                is_optional: true
             }
         ));
         assert_eq!(arrow.to_string(), "'->'");

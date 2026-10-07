@@ -96,7 +96,7 @@ pub fn check(stage: Stage, snapshot: impl Fn(&str, &[Stage]) -> String) {
 fn verify(
     root: &Path,
     stage: Stage,
-    update: bool,
+    should_update: bool,
     snapshot: impl Fn(&str, &[Stage]) -> String,
 ) -> Result<(), String> {
     let mut cases = Vec::new();
@@ -129,7 +129,7 @@ fn verify(
         if expected.as_deref() == Some(actual.as_str()) {
             continue;
         }
-        if update {
+        if should_update {
             fs::write(&path, &actual).expect("snapshots are writable");
         } else {
             failures.push(format!(

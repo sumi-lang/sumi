@@ -83,22 +83,22 @@ fn perturb(source: &str, choices: &[u32]) -> String {
             out.push(',');
         }
 
-        let boundary = gap < n && gap > 0 && input.boundary_before(SigIdx::new(gap as u32));
-        let keep = gap == 0 || gap == n || trivia.is_empty();
-        if keep {
+        let has_boundary = gap < n && gap > 0 && input.has_boundary_before(SigIdx::new(gap as u32));
+        let should_keep = gap == 0 || gap == n || trivia.is_empty();
+        if should_keep {
             for &raw in &trivia {
                 out.push_str(lexed.text(source, raw));
             }
-        } else if has_comment || boundary {
-            let mut after_newline = false;
+        } else if has_comment || has_boundary {
+            let mut is_after_newline = false;
             for &raw in &trivia {
                 match lexed.kind(raw) {
                     SyntaxKind::Whitespace => {
-                        out.push_str(&whitespace(choice, after_newline));
+                        out.push_str(&whitespace(choice, is_after_newline));
                     }
                     SyntaxKind::Newline => {
                         out.push_str(lexed.text(source, raw));
-                        after_newline = true;
+                        is_after_newline = true;
                     }
                     _ => out.push_str(lexed.text(source, raw)),
                 }
@@ -133,9 +133,9 @@ fn perturb(source: &str, choices: &[u32]) -> String {
     out
 }
 
-fn whitespace(choice: u32, indentation: bool) -> String {
+fn whitespace(choice: u32, is_indentation: bool) -> String {
     let bits = (choice >> 8) & 0xf;
-    let count = if indentation {
+    let count = if is_indentation {
         (bits % 9) as usize
     } else {
         1 + (bits % 3) as usize

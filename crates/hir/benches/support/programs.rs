@@ -90,7 +90,7 @@ pub fn validate(shape: &str, size: usize, analysis: &Analysis) {
             analysis
                 .functions()
                 .iter()
-                .all(|function| function.signature().is_none() && !function.complete())
+                .all(|function| function.signature().is_none() && !function.is_complete())
         );
         return;
     }
@@ -105,7 +105,7 @@ pub fn validate(shape: &str, size: usize, analysis: &Analysis) {
     let graph = analysis.graph();
     for (index, function) in analysis.functions().iter().enumerate() {
         assert_eq!(function.signature().unwrap().result, Ty::Int);
-        assert!(function.complete());
+        assert!(function.is_complete());
         let result = graph.run(sumi_hir::FunctionId::new(index)).result();
         assert_eq!(analysis.ty(result), Some(Ty::Int));
     }

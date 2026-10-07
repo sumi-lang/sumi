@@ -86,7 +86,7 @@ fn plan<'a>(graph: &Graph, facts: impl Fn(NodeId) -> &'a May) -> Plan {
     };
     for exit in &mut plan.exits {
         if let Some(control) = exit.control
-            && !facts(control).live()
+            && !facts(control).is_live()
         {
             exit.result = control;
             exit.value = false;
@@ -105,8 +105,8 @@ fn plan<'a>(graph: &Graph, facts: impl Fn(NodeId) -> &'a May) -> Plan {
         let inputs = graph.inputs(node);
         let values = graph.input_values(node);
         let rewrite = match graph.node(node).op {
-            Op::Sequence | Op::Loop(_) if !facts(inputs[0]).live() => Rewrite::Alias(inputs[0]),
-            Op::Loop(_) if !facts(inputs[1]).live() => Rewrite::Replace(Op::Sequence),
+            Op::Sequence | Op::Loop(_) if !facts(inputs[0]).is_live() => Rewrite::Alias(inputs[0]),
+            Op::Loop(_) if !facts(inputs[1]).is_live() => Rewrite::Replace(Op::Sequence),
             Op::Copy { .. } | Op::Assign { .. } | Op::Refine { .. } | Op::Exactly(_)
                 if values[0] =>
             {
@@ -143,16 +143,16 @@ fn plan<'a>(graph: &Graph, facts: impl Fn(NodeId) -> &'a May) -> Plan {
                 None => Rewrite::Keep,
             },
             ref op @ (Op::And { rhs } | Op::Or { rhs }) if values[0] => {
-                let and = matches!(op, Op::And { .. });
+                let is_and = matches!(op, Op::And { .. });
                 match decided(inputs[0]) {
-                    Some(left) if left != and => Rewrite::Literal(Op::Bool(left)),
+                    Some(left) if left != is_and => Rewrite::Literal(Op::Bool(left)),
                     Some(_) => valued(rhs).map_or(Rewrite::Keep, Rewrite::Alias),
                     None => Rewrite::Keep,
                 }
             }
             // The loop is its statement's control, so its bounds' returns run when it does.
             Op::Loop(id)
-                if !facts(graph.region(graph.loop_(id).body).context).live()
+                if !facts(graph.region(graph.loop_(id).body).context).is_live()
                     && !graph
                         .loop_(id)
                         .carried
@@ -165,14 +165,14 @@ fn plan<'a>(graph: &Graph, facts: impl Fn(NodeId) -> &'a May) -> Plan {
             Op::LoopValue { loop_, index } => {
                 let loop_ = graph.loop_(loop_);
                 let carry = loop_.carried[index as usize].0;
-                let empty = !facts(graph.region(loop_.body).context).live();
-                (empty && graph.input_values(carry)[0])
+                let is_empty = !facts(graph.region(loop_.body).context).is_live();
+                (is_empty && graph.input_values(carry)[0])
                     .then(|| graph.inputs(carry)[0])
                     .map_or(Rewrite::Keep, Rewrite::Alias)
             }
             _ => Rewrite::Keep,
         };
-        let foldable = matches!(
+        let is_foldable = matches!(
             graph.node(node).op,
             Op::Neg
                 | Op::Not
@@ -185,7 +185,7 @@ fn plan<'a>(graph: &Graph, facts: impl Fn(NodeId) -> &'a May) -> Plan {
                 | Op::LoopValue { .. }
         );
         plan.nodes[node.index()] = match rewrite {
-            Rewrite::Keep if foldable && !returning[node.index()] => {
+            Rewrite::Keep if is_foldable && !returning[node.index()] => {
                 single(facts(node)).map_or(Rewrite::Keep, Rewrite::Literal)
             }
             rewrite => rewrite,
@@ -203,10 +203,12 @@ fn plan<'a>(graph: &Graph, facts: impl Fn(NodeId) -> &'a May) -> Plan {
 fn single(may: &May) -> Option<Op> {
     let bools = may.bools;
     match (may.ints.lo(), may.ints.hi()) {
-        (Some(lo), Some(hi)) if lo == hi && bools.is_empty() && !may.unit => Some(Op::Int(lo)),
+        (Some(lo), Some(hi)) if lo == hi && bools.is_empty() && !may.has_unit => Some(Op::Int(lo)),
         _ if !may.ints.is_empty() => None,
-        _ if bools.may_true() != bools.may_false() && !may.unit => Some(Op::Bool(bools.may_true())),
-        _ if bools.is_empty() && may.unit => Some(Op::Unit),
+        _ if bools.may_true() != bools.may_false() && !may.has_unit => {
+            Some(Op::Bool(bools.may_true()))
+        }
+        _ if bools.is_empty() && may.has_unit => Some(Op::Unit),
         _ => None,
     }
 }

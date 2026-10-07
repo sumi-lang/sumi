@@ -50,16 +50,16 @@ impl ParserInput {
 
         // Boundaries and anchors need to know which openers are ever closed, so they wait for the
         // second pass.
-        let mut newline = false;
+        let mut is_after_newline = false;
         let mut sig_at_or_after = Vec::with_capacity(lexed.end().to_usize() + 1);
         for (raw, kind) in lexed.indices().zip(lexed.kinds()) {
             sig_at_or_after.push(SigIdx::new(build.slots.len() as u32));
             if kind.is_trivia() {
-                newline |= kind == SyntaxKind::Newline;
+                is_after_newline |= kind == SyntaxKind::Newline;
                 continue;
             }
-            build.push(kind, raw, newline);
-            newline = false;
+            build.push(kind, raw, is_after_newline);
+            is_after_newline = false;
         }
         sig_at_or_after.push(SigIdx::new(build.slots.len() as u32));
 
@@ -77,7 +77,7 @@ impl ParserInput {
                 slots[index].flags |= BOUNDARY_BEFORE;
                 boundaries.push(SigIdx::new(index as u32));
             }
-            if matched == 0 && item_anchor_at(&slots, index) {
+            if matched == 0 && is_item_anchor_at(&slots, index) {
                 item_anchors.push(SigIdx::new(index as u32));
             }
             match bracket(slot.kind) {
@@ -162,31 +162,31 @@ impl ParserInput {
         self.slots[index.to_usize()].flags & JOINT != 0
     }
 
-    pub fn newline_before(&self, index: SigIdx) -> bool {
+    pub fn has_newline_before(&self, index: SigIdx) -> bool {
         self.slots[index.to_usize()].flags & NEWLINE_BEFORE != 0
     }
 
     /// The nearest opener enclosing `index` is matched and does not enclose statements; a bracket
     /// at `index` does not enclose itself.
-    pub fn in_expression_delimiters(&self, index: SigIdx) -> bool {
+    pub fn is_in_expression_delimiters(&self, index: SigIdx) -> bool {
         self.slots[index.to_usize()].flags & IN_EXPRESSION_DELIMITERS != 0
     }
 
     /// Some matched pair encloses `index`; a bracket at `index` does not enclose itself.
-    pub fn in_matched_delimiters(&self, index: SigIdx) -> bool {
+    pub fn is_in_matched_delimiters(&self, index: SigIdx) -> bool {
         self.slots[index.to_usize()].flags & IN_MATCHED_DELIMITERS != 0
     }
 
-    pub fn boundary_before(&self, index: SigIdx) -> bool {
+    pub fn has_boundary_before(&self, index: SigIdx) -> bool {
         self.slots[index.to_usize()].flags & BOUNDARY_BEFORE != 0
     }
 
     /// A signature missing its `fn` begins at `index`.
-    pub fn headless_signature_at(&self, index: SigIdx) -> bool {
-        headless_signature_at(&self.slots, index.to_usize())
+    pub fn is_headless_signature_at(&self, index: SigIdx) -> bool {
+        is_headless_signature_at(&self.slots, index.to_usize())
     }
 
-    /// [`boundary_before`](Self::boundary_before) as if a line break stood before `index`.
+    /// [`has_boundary_before`](Self::has_boundary_before) as if a line break stood before `index`.
     pub fn would_end_statement(&self, index: SigIdx) -> bool {
         would_end_statement_at(&self.slots, index.to_usize())
     }
@@ -198,7 +198,7 @@ impl ParserInput {
     }
 
     /// A boundary before any token in `range`, its first included.
-    pub fn boundary_in(&self, range: Range<SigIdx>) -> bool {
+    pub fn has_boundary_in(&self, range: Range<SigIdx>) -> bool {
         let first = self
             .boundaries
             .partition_point(|&boundary| boundary < range.start);
@@ -242,7 +242,7 @@ struct Build {
 }
 
 impl Build {
-    fn push(&mut self, kind: SyntaxKind, raw: RawIdx, newline: bool) {
+    fn push(&mut self, kind: SyntaxKind, raw: RawIdx, is_after_newline: bool) {
         if let Some(last) = self.slots.last_mut()
             && last.token + 1 == raw
         {
@@ -259,7 +259,7 @@ impl Build {
         };
         self.slots.push(Slot {
             kind,
-            flags: if newline { NEWLINE_BEFORE } else { 0 },
+            flags: if is_after_newline { NEWLINE_BEFORE } else { 0 },
             token: raw,
             partner,
         });
@@ -286,19 +286,20 @@ impl Build {
 
 /// No matched pair may enclose `index`. A headless signature after a boundary counts because
 /// nothing else at file level looks like one.
-fn item_anchor_at(slots: &[Slot], index: usize) -> bool {
+fn is_item_anchor_at(slots: &[Slot], index: usize) -> bool {
     if starts_item(slots[index].kind) {
         // `_` is an invalid name but still marks a declaration head.
         return slots
             .get(index + 1)
             .is_some_and(|next| matches!(next.kind, SyntaxKind::Ident | SyntaxKind::Underscore));
     }
-    (index == 0 || slots[index].flags & BOUNDARY_BEFORE != 0) && headless_signature_at(slots, index)
+    (index == 0 || slots[index].flags & BOUNDARY_BEFORE != 0)
+        && is_headless_signature_at(slots, index)
 }
 
 /// This matches exactly what the parser takes after the list; anything looser promises an item that
 /// then parses as garbage.
-fn headless_signature_at(slots: &[Slot], index: usize) -> bool {
+fn is_headless_signature_at(slots: &[Slot], index: usize) -> bool {
     let kind = |index: usize| slots.get(index).map(|slot| slot.kind);
     let arrow = |index: usize| {
         kind(index) == Some(SyntaxKind::Minus)

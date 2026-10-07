@@ -44,11 +44,11 @@ pub fn lexed(source: &str, file: &LexedFile) {
             );
         }
         if file.kind(index) == SyntaxKind::IntLiteral {
-            let flagged = file.flags(index).contains(TokenFlags::MALFORMED_NUMBER);
+            let is_flagged = file.flags(index).contains(TokenFlags::MALFORMED_NUMBER);
             let has_error = file.errors().iter().any(|error| error.token == index);
             assert_eq!(
-                flagged, has_error,
-                "number {text:?} flagged={flagged} but has-error={has_error}"
+                is_flagged, has_error,
+                "number {text:?} flagged={is_flagged} but has-error={has_error}"
             );
         }
     }
@@ -70,20 +70,20 @@ pub fn input(lexed: &LexedFile, input: &ParserInput) {
 
     let mut remaining_boundaries = input
         .indices()
-        .filter(|&i| input.boundary_before(i))
+        .filter(|&i| input.has_boundary_before(i))
         .count();
-    assert!(!input.boundary_in(input.end()..input.end()));
+    assert!(!input.has_boundary_in(input.end()..input.end()));
     for index in input.indices() {
-        assert!(!input.boundary_in(index..index));
+        assert!(!input.has_boundary_in(index..index));
         assert_eq!(
-            input.boundary_in(index..index + 1),
-            input.boundary_before(index)
+            input.has_boundary_in(index..index + 1),
+            input.has_boundary_before(index)
         );
         assert_eq!(
-            input.boundary_in(index..input.end()),
+            input.has_boundary_in(index..input.end()),
             remaining_boundaries != 0
         );
-        remaining_boundaries -= usize::from(input.boundary_before(index));
+        remaining_boundaries -= usize::from(input.has_boundary_before(index));
     }
 
     let mut previous: Option<RawIdx> = None;
@@ -92,13 +92,13 @@ pub fn input(lexed: &LexedFile, input: &ParserInput) {
     for index in input.indices() {
         let token = input.token(index);
         let kind = input.get(index).expect("indices below len are present");
-        assert_eq!(input.in_matched_delimiters(index), !open.is_empty());
+        assert_eq!(input.is_in_matched_delimiters(index), !open.is_empty());
         let context = layout_open.last().is_some_and(|&opener| {
             let pair = input.get(opener).and_then(bracket);
             pair.is_some_and(|(pair, _)| !pair.encloses_statements())
                 && input.partner(opener).is_some()
         });
-        assert_eq!(input.in_expression_delimiters(index), context);
+        assert_eq!(input.is_in_expression_delimiters(index), context);
         if sumi_syntax::is_opener(kind) {
             layout_open.push(index);
         } else if let Some(partner) = input.partner(index).filter(|&p| p < index) {
@@ -120,19 +120,19 @@ pub fn input(lexed: &LexedFile, input: &ParserInput) {
         for j in skipped {
             assert!(lexed.kind(j).is_trivia(), "token {j:?} was dropped");
         }
-        assert_eq!(input.newline_before(index), newline);
+        assert_eq!(input.has_newline_before(index), newline);
 
         if index + 1 < input.end() {
             let next = input.token(index + 1);
-            let adjacent = lexed.range(token).end() == lexed.range(next).start();
-            assert_eq!(input.is_joint(index), adjacent);
+            let is_adjacent = lexed.range(token).end() == lexed.range(next).start();
+            assert_eq!(input.is_joint(index), is_adjacent);
         } else {
             assert!(!input.is_joint(index));
         }
 
-        if input.boundary_before(index) {
+        if input.has_boundary_before(index) {
             assert!(index > SigIdx::new(0), "no boundary before the first token");
-            assert!(input.newline_before(index), "boundaries need a newline");
+            assert!(input.has_newline_before(index), "boundaries need a newline");
         }
 
         if let Some(partner) = input.partner(index) {
@@ -196,12 +196,12 @@ pub fn widening(source: &str, lexed: &LexedFile, input: &ParserInput) {
         assert_eq!(input.token(index), widened_input.token(index));
         assert_eq!(input.is_joint(index), widened_input.is_joint(index));
         assert_eq!(
-            input.newline_before(index),
-            widened_input.newline_before(index)
+            input.has_newline_before(index),
+            widened_input.has_newline_before(index)
         );
         assert_eq!(
-            input.boundary_before(index),
-            widened_input.boundary_before(index)
+            input.has_boundary_before(index),
+            widened_input.has_boundary_before(index)
         );
     }
 }
@@ -219,7 +219,7 @@ pub fn tree(tree: &SyntaxTree, lexed: &LexedFile) {
         .filter(|&i| item_starts.contains(&input.token(i)))
     {
         assert!(
-            !input.in_matched_delimiters(index),
+            !input.is_in_matched_delimiters(index),
             "root item starts inside a matched pair"
         );
     }
@@ -264,7 +264,7 @@ pub fn tree(tree: &SyntaxTree, lexed: &LexedFile) {
             let kind = tree.kind(node);
             for child in kind.children() {
                 assert!(
-                    child.optional || (child.present)(tree, node),
+                    child.is_optional || (child.is_present)(tree, node),
                     "{kind:?} {node:?} has no error but lacks its `{}`",
                     child.name
                 );
@@ -274,8 +274,8 @@ pub fn tree(tree: &SyntaxTree, lexed: &LexedFile) {
                     TokenRule::Kind {
                         first,
                         glued,
-                        optional,
-                    } => optional || tree.holds(node, lexed, first, glued),
+                        is_optional,
+                    } => is_optional || tree.holds(node, lexed, first, glued),
                     TokenRule::Flag { .. } => true,
                     TokenRule::Field { reads, .. } => tree
                         .own_pairs(node, lexed)
@@ -284,10 +284,10 @@ pub fn tree(tree: &SyntaxTree, lexed: &LexedFile) {
                 assert!(held, "{kind:?} {node:?} has no error but lacks its {rule}");
             }
             // And the converse: the grammar declares every token the rule holds.
-            let mut spanned = false;
+            let mut is_spanned = false;
             for (first, glued) in tree.own_pairs(node, lexed) {
-                if spanned {
-                    spanned = false;
+                if is_spanned {
+                    is_spanned = false;
                     continue;
                 }
                 let declared = kind.tokens().iter().find_map(|rule| match *rule {
@@ -303,7 +303,7 @@ pub fn tree(tree: &SyntaxTree, lexed: &LexedFile) {
                 let Some(spans) = declared else {
                     panic!("{kind:?} {node:?} holds {first:?}, which no rule of its kind declares");
                 };
-                spanned = spans;
+                is_spanned = spans;
             }
         }
 
@@ -553,7 +553,7 @@ pub fn diagnostics(parsed: &ParsedSource) {
                 let rank = after
                     .indices()
                     .take_while(|&token| token < raw)
-                    .filter(|&token| kept(after.kind(token)))
+                    .filter(|&token| is_kept(after.kind(token)))
                     .count();
                 let mut tokens = preserved(&after, &fixed);
                 tokens.remove(rank);
@@ -584,14 +584,14 @@ pub fn diagnostics(parsed: &ParsedSource) {
     tree(reparsed.parse().tree(), reparsed.lexed());
 }
 
-fn kept(kind: SyntaxKind) -> bool {
+fn is_kept(kind: SyntaxKind) -> bool {
     !kind.is_trivia() || kind == SyntaxKind::LineComment
 }
 
 fn preserved(lexed: &LexedFile, source: &str) -> Vec<(SyntaxKind, String)> {
     lexed
         .indices()
-        .filter(|&index| kept(lexed.kind(index)))
+        .filter(|&index| is_kept(lexed.kind(index)))
         .map(|index| (lexed.kind(index), lexed.text(source, index).to_owned()))
         .collect()
 }
@@ -630,7 +630,7 @@ pub fn semantics(analysis: &Analysis) {
                 analysis.ranges(FunctionId::new(index)),
                 reversed.ranges(FunctionId::new(count - 1 - index))
             );
-            assert_eq!(a.complete(), b.complete());
+            assert_eq!(a.is_complete(), b.is_complete());
         }
         graph(&reversed);
     }
@@ -712,7 +712,7 @@ fn typed(analysis: &Analysis) {
     use sumi_hir::{BinaryOp, CmpOp, FunctionId, NodeId, Op, Ty};
     let graph = analysis.graph();
     for (index, function) in analysis.functions().iter().enumerate() {
-        if !function.complete() {
+        if !function.is_complete() {
             continue;
         }
         let signature = function
@@ -857,14 +857,14 @@ fn typed(analysis: &Analysis) {
                     } else {
                         continue;
                     }
-                    let then_value = graph.region(*then).result_has_value();
+                    let then_has_value = graph.region(*then).result_has_value();
                     let else_value =
                         else_.is_none_or(|region| graph.region(region).result_has_value());
-                    if !then_value && !else_value {
+                    if !then_has_value && !else_value {
                         assert_eq!(own, None);
                         continue;
                     }
-                    if then_value {
+                    if then_has_value {
                         assert_eq!(ty(graph.region(*then).result()), own);
                     }
                     match else_ {
@@ -1085,9 +1085,9 @@ fn graph(analysis: &Analysis) {
         assert!(region.context.index() < start);
         assert!(result < end);
         for &(s, e) in &spans {
-            let disjoint = end <= s || e <= start;
-            let nested = (s <= start && end <= e) || (start <= s && e <= end);
-            assert!(disjoint || nested);
+            let is_disjoint = end <= s || e <= start;
+            let is_nested = (s <= start && end <= e) || (start <= s && e <= end);
+            assert!(is_disjoint || is_nested);
         }
         spans.push((start, end));
     }
@@ -1125,7 +1125,7 @@ pub fn run(program: Program<'_>) -> Runs {
         match value {
             Value::Int(value) => contains(&may.ints, value),
             Value::Bool(value) => admits(may.bools, *value),
-            Value::Unit => may.unit,
+            Value::Unit => may.has_unit,
         }
     }
     fn points(ints: &Ints) -> Vec<Int> {
@@ -1164,7 +1164,7 @@ pub fn run(program: Program<'_>) -> Runs {
     for (id, _) in program.functions() {
         let signature = program.signature(id);
         let ranges = program.ranges(id);
-        if !ranges.params.iter().all(|may| may.live()) {
+        if !ranges.params.iter().all(|may| may.is_live()) {
             continue;
         }
         let mut tuples: Vec<Vec<Value>> = vec![Vec::new()];
@@ -1347,13 +1347,13 @@ fn optimized(compiled: &Compiled<'_>) {
         let inputs = graph.inputs(node);
         if matches!(op, Op::Sequence) {
             assert!(
-                compiled.may(inputs[0]).live(),
+                compiled.may(inputs[0]).is_live(),
                 "{node:?} keeps a continuation after control that never completes"
             );
         }
         if matches!(op, Op::Loop(_)) {
             assert!(
-                inputs.iter().all(|&bound| compiled.may(bound).live()),
+                inputs.iter().all(|&bound| compiled.may(bound).is_live()),
                 "{node:?} keeps a loop body after a bound that never completes"
             );
         }
@@ -1391,7 +1391,7 @@ fn optimized(compiled: &Compiled<'_>) {
         assert!(context(graph.region(region).context));
         let exit = graph.region(region);
         if let Some(control) = exit.control()
-            && !compiled.may(control).live()
+            && !compiled.may(control).is_live()
         {
             assert_eq!(exit.result(), control);
             assert!(!exit.result_has_value());

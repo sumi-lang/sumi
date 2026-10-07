@@ -44,10 +44,10 @@ impl Failure {
                 Reason::Moves {
                     param,
                     direction,
-                    bounded,
+                    is_bounded,
                 } => {
                     let (moves, side) = direction.words();
-                    let unbounded = if bounded {
+                    let unbounded = if is_bounded {
                         String::new()
                     } else {
                         format!(", which is unbounded {side}")
@@ -73,7 +73,7 @@ pub(crate) enum Reason {
     Moves {
         param: TextRange,
         direction: Direction,
-        bounded: bool,
+        is_bounded: bool,
     },
     Passes {
         param: TextRange,
@@ -130,7 +130,7 @@ fn moves(offset: &Ints, direction: Direction) -> Option<bool> {
     }
 }
 
-fn bounded(band: &Ints, direction: Direction) -> bool {
+fn is_bounded(band: &Ints, direction: Direction) -> bool {
     band.is_empty()
         || match direction {
             Direction::Decreasing => band.lo().is_some(),
@@ -150,7 +150,7 @@ pub(crate) fn check(
     let live: Vec<&lower::Call> = lowered
         .calls
         .iter()
-        .filter(|call| typing.may(call.context).live())
+        .filter(|call| typing.may(call.context).is_live())
         .collect();
     let arcs: Vec<(u32, u32)> = live
         .iter()
@@ -276,11 +276,11 @@ pub(crate) fn check(
                     })
                     .collect::<Option<_>>()
                     .expect("every call was checked while propagating");
-                let bounded = members
+                let is_bounded = members
                     .iter()
                     .enumerate()
-                    .all(|(m, _)| bounded(band(m, choice[m]), direction));
-                if bounded && lax_edges_are_acyclic(members.len(), &inside, &strict) {
+                    .all(|(m, _)| is_bounded(band(m, choice[m]), direction));
+                if is_bounded && lax_edges_are_acyclic(members.len(), &inside, &strict) {
                     found = Some((choice, strict.iter().any(|s| !s)));
                     break 'directions;
                 }
@@ -293,7 +293,7 @@ pub(crate) fn check(
             Some((choice, lax)) => {
                 let mut lo: Option<Int> = None;
                 let mut hi: Option<Int> = None;
-                let mut finite = true;
+                let mut is_finite = true;
                 for (m, &param) in choice.iter().enumerate() {
                     let band = band(m, param);
                     if band.is_empty() {
@@ -304,10 +304,10 @@ pub(crate) fn check(
                             lo = Some(lo.map_or(l.clone(), |lo| lo.min(l)));
                             hi = Some(hi.map_or(h.clone(), |hi| hi.max(h)));
                         }
-                        _ => finite = false,
+                        _ => is_finite = false,
                     }
                 }
-                chain[c] = match (finite, lo, hi) {
+                chain[c] = match (is_finite, lo, hi) {
                     (true, Some(lo), Some(hi)) => {
                         let values = &(&hi - &lo) + &1.into();
                         i64::try_from(&values)
@@ -335,7 +335,7 @@ pub(crate) fn check(
                                 Reason::Moves {
                                     param: param(call.to, j),
                                     direction: *direction,
-                                    bounded: bounded(band(call.to, j), *direction),
+                                    is_bounded: is_bounded(band(call.to, j), *direction),
                                 }
                             } else {
                                 Reason::Passes {
@@ -365,7 +365,7 @@ pub(crate) fn check(
                                     direction,
                                     // No choice held, so no bound is at issue; the label says only
                                     // where the argument moves.
-                                    bounded: true,
+                                    is_bounded: true,
                                 })
                             });
                             let reason = strict.unwrap_or_else(|| {
@@ -481,7 +481,7 @@ fn delta(
                     Op::Phi { contexts, .. } => {
                         let live = |index: usize| {
                             graph.input_values(node)[index + 1]
-                                && typing.may(contexts[index]).live()
+                                && typing.may(contexts[index]).is_live()
                         };
                         match (live(0), live(1)) {
                             (true, true) => {
@@ -522,7 +522,7 @@ fn delta(
                     } => {
                         // An arm that cannot run contributes no value.
                         let (then, otherwise) = (graph.region(then), graph.region(else_));
-                        let live = |context| typing.may(context).live();
+                        let live = |context| typing.may(context).is_live();
                         match (
                             then.result_has_value() && live(then.context),
                             otherwise.result_has_value() && live(otherwise.context),

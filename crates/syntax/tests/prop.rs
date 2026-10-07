@@ -66,7 +66,7 @@ proptest! {
         prop_assume!(input.partner(SigIdx::new(1)) == Some(input.end() - 1));
         for index in input.indices() {
             prop_assert!(
-                !input.boundary_before(index),
+                !input.has_boundary_before(index),
                 "boundary before token {:?} in {:?}", index, source
             );
         }

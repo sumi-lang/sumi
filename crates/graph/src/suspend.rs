@@ -74,8 +74,8 @@ impl Layout {
         produced[run.slot(call)] = true;
         let mut roots = Vec::new();
         let mut repeating = Vec::new();
-        let region = |region: RegionId, control: bool| {
-            if control {
+        let region = |region: RegionId, wants_control: bool| {
+            if wants_control {
                 graph.region(region).control()
             } else {
                 Some(graph.region(region).result())

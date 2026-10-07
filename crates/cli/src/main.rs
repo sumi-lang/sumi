@@ -129,8 +129,8 @@ fn run(path: &Path) -> Result<ExitCode, String> {
 }
 
 fn fmt(args: &[OsString]) -> Result<ExitCode, String> {
-    let check_only = args[0] == "--check";
-    let paths = if check_only { &args[1..] } else { args };
+    let is_check_only = args[0] == "--check";
+    let paths = if is_check_only { &args[1..] } else { args };
     if paths.is_empty() {
         return Err(USAGE.to_owned());
     }
@@ -152,14 +152,14 @@ fn fmt(args: &[OsString]) -> Result<ExitCode, String> {
             continue;
         }
         would_change = true;
-        if check_only {
+        if is_check_only {
             println!("{}", path.display());
         } else {
             fs::write(path, formatted)
                 .map_err(|error| format!("{}: error[cli/input]: {error}", path.display()))?;
         }
     }
-    Ok(if check_only && would_change {
+    Ok(if is_check_only && would_change {
         ExitCode::FAILURE
     } else {
         ExitCode::SUCCESS

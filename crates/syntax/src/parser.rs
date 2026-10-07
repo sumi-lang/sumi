@@ -136,7 +136,7 @@ pub const MAX_DEPTH: u32 = 256;
 
 fn source_file(p: &mut Marker<'_, '_>) {
     let item_candidate = |p: &Marker<'_, '_>| {
-        (p.at(T::FnKw) || begins_headless_item(p)) && !p.in_matched_delimiters()
+        (p.at(T::FnKw) || begins_headless_item(p)) && !p.is_in_matched_delimiters()
     };
     let mut item_ends_here = false;
     for anchor in 0..=p.item_anchor_count() {
@@ -144,7 +144,7 @@ fn source_file(p: &mut Marker<'_, '_>) {
         if anchor > 0 {
             // An anchor is an item's head, with or without its `fn`.
             let has_fn = p.at(T::FnKw);
-            if item_ends_here && has_fn && !p.newline() {
+            if item_ends_here && has_fn && !p.is_after_newline() {
                 p.violation(ParseViolationKind::FunctionItemOnSameLine, 1);
             }
             fn_item(p);
@@ -173,8 +173,8 @@ fn skip(
     let mut m = p.start();
     m.group();
     while let Some(kind) = m.current() {
-        let closer = is_closer(kind) && m.partnered();
-        if closer || stop(&m) {
+        let is_at_closer = is_closer(kind) && m.has_partner();
+        if is_at_closer || stop(&m) {
             break;
         }
         m.group();
@@ -196,9 +196,9 @@ fn skip_statement_garbage(p: &mut Marker<'_, '_>, recovery: RecoveryHandle) -> C
     let mut m = p.start();
     m.group_inside();
     while !(m.current().is_none()
-        || m.boundary()
+        || m.is_at_boundary()
         || m.current().is_some_and(introduces_statement)
-        || (m.at(T::RBrace) && !m.closer_ahead())
+        || (m.at(T::RBrace) && !m.has_closer_ahead())
         || m.closes_open_bracket())
     {
         m.group_inside();
@@ -234,52 +234,53 @@ fn fn_item(p: &mut Marker<'_, '_>) {
             m.at(T::Ident) || m.at(T::Underscore) || m.at(T::LParen)
         });
     }
-    let name_missing = if m.at(T::Ident) || m.at(T::Underscore) {
-        if has_fn && m.at(T::Ident) && m.newline() {
+    let is_name_missing = if m.at(T::Ident) || m.at(T::Underscore) {
+        if has_fn && m.at(T::Ident) && m.is_after_newline() {
             m.violation(ParseViolationKind::FunctionNameOnNextLine, 1);
         }
         name(&mut m);
-        if m.at(T::LParen) && !m.newline() && !m.joint_before() {
+        if m.at(T::LParen) && !m.is_after_newline() && !m.is_joint_before() {
             m.violation(ParseViolationKind::SpacedListOpener, 1);
         }
         false
     } else {
         true
     };
-    signature_tail(&mut m, name_missing);
+    signature_tail(&mut m, is_name_missing);
     m.complete(N::FnItem);
 }
 
-fn signature_tail(m: &mut Marker<'_, '_>, name_missing: bool) {
-    let allow_list_newline = name_missing;
-    if !m.at(T::LParen) || (m.newline() && !allow_list_newline) {
+fn signature_tail(m: &mut Marker<'_, '_>, is_name_missing: bool) {
+    let allow_list_newline = is_name_missing;
+    if !m.at(T::LParen) || (m.is_after_newline() && !allow_list_newline) {
         let recovery = m.missing(ParseRecoveryKind::Token(T::LParen));
-        signature_garbage(m, recovery, |m| m.at(T::LParen) || nth_arrow(m, 0));
+        signature_garbage(m, recovery, |m| m.at(T::LParen) || is_nth_arrow(m, 0));
     }
-    let mut complete = false;
-    if m.at(T::LParen) && (!m.newline() || allow_list_newline) {
+    let mut is_complete = false;
+    if m.at(T::LParen) && (!m.is_after_newline() || allow_list_newline) {
         delimited_list::<Params>(m, 1);
-        complete = true;
+        is_complete = true;
     }
-    let body_begins =
-        |m: &Marker<'_, '_>, complete: bool| m.at(T::LBrace) || at_expression_body(m, complete);
-    if !body_begins(m, complete) && !nth_arrow(m, 0) {
+    let body_begins = |m: &Marker<'_, '_>, is_complete: bool| {
+        m.at(T::LBrace) || is_at_expression_body(m, is_complete)
+    };
+    if !body_begins(m, is_complete) && !is_nth_arrow(m, 0) {
         let recovery = m.missing(ParseRecoveryKind::Body);
         signature_garbage(m, recovery, |m| {
-            nth_arrow(m, 0) || at_expression_body(m, complete)
+            is_nth_arrow(m, 0) || is_at_expression_body(m, is_complete)
         });
     }
-    if nth_arrow(m, 0) {
+    if is_nth_arrow(m, 0) {
         m.token();
         m.token();
-        complete = m.at(T::Ident);
+        is_complete = m.at(T::Ident);
         type_ref(m, 2);
-        if !body_begins(m, complete) {
+        if !body_begins(m, is_complete) {
             let recovery = m.missing(ParseRecoveryKind::Body);
-            signature_garbage(m, recovery, |m| at_expression_body(m, complete));
+            signature_garbage(m, recovery, |m| is_at_expression_body(m, is_complete));
         }
     }
-    if at_expression_body(m, complete) {
+    if is_at_expression_body(m, is_complete) {
         m.token();
         if let Some(body) = operand_before(m, 0, ExprFollow::Anything) {
             m.field(&body, 3);
@@ -294,17 +295,17 @@ fn signature_tail(m: &mut Marker<'_, '_>, name_missing: bool) {
 fn begins_headless_item(m: &Marker<'_, '_>) -> bool {
     m.previous()
         .is_none_or(|previous| can_end_statement(previous) && previous != T::ReturnKw)
-        && m.at_headless_signature()
+        && m.is_at_headless_signature()
 }
 
-/// `complete`: a signature part stands right before. Elsewhere in a signature a `=` is garbage, so
+/// `is_complete`: a signature part stands right before. Elsewhere in a signature a `=` is garbage, so
 /// it never makes an expression body of what follows it.
-fn at_expression_body(m: &Marker<'_, '_>, complete: bool) -> bool {
-    complete && m.at(T::Eq) && m.nth(1).is_some_and(starts_expression) && !nth_arrow(m, 1)
+fn is_at_expression_body(m: &Marker<'_, '_>, is_complete: bool) -> bool {
+    is_complete && m.at(T::Eq) && m.nth(1).is_some_and(starts_expression) && !is_nth_arrow(m, 1)
 }
 
-fn nth_arrow(m: &Marker<'_, '_>, n: usize) -> bool {
-    m.nth(n) == Some(T::Minus) && m.nth_joint(n) && m.nth(n + 1) == Some(T::Gt)
+fn is_nth_arrow(m: &Marker<'_, '_>, n: usize) -> bool {
+    m.nth(n) == Some(T::Minus) && m.is_nth_joint(n) && m.nth(n + 1) == Some(T::Gt)
 }
 
 /// A `{` the stream never pairs, where a signature part was expected, is garbage, not the body.
@@ -313,7 +314,9 @@ fn signature_garbage(
     recovery: RecoveryHandle,
     resume: impl Fn(&Marker<'_, '_>) -> bool,
 ) {
-    let stop = |m: &Marker<'_, '_>| resume(m) || m.newline() || (m.at(T::LBrace) && m.partnered());
+    let stop = |m: &Marker<'_, '_>| {
+        resume(m) || m.is_after_newline() || (m.at(T::LBrace) && m.has_partner())
+    };
     skip_all(m, recovery, stop);
 }
 
@@ -353,7 +356,7 @@ trait ListRule {
     fn parse_element(m: &mut Marker<'_, '_>);
     fn follows(m: &Marker<'_, '_>) -> bool;
     /// Whether this kind may follow an element with no `,` before it.
-    fn tolerated(kind: T) -> bool;
+    fn is_tolerated(kind: T) -> bool;
 }
 
 struct Params;
@@ -376,10 +379,10 @@ impl ListRule for Params {
 
     /// A brace the stream never pairs is garbage in the list, not what follows it.
     fn follows(m: &Marker<'_, '_>) -> bool {
-        (m.at(T::LBrace) || m.at(T::RBrace)) && m.partnered()
+        (m.at(T::LBrace) || m.at(T::RBrace)) && m.has_partner()
     }
 
-    fn tolerated(kind: T) -> bool {
+    fn is_tolerated(kind: T) -> bool {
         kind == T::LBrace
     }
 }
@@ -404,7 +407,7 @@ impl ListRule for Args {
         m.at(T::RBrace)
     }
 
-    fn tolerated(_: T) -> bool {
+    fn is_tolerated(_: T) -> bool {
         false
     }
 }
@@ -426,7 +429,7 @@ fn delimited_list<R: ListRule>(p: &mut Marker<'_, '_>, field: u8) {
                 m.missing_closer(R::PAIR);
                 break;
             }
-            Some(_) if !m.closed() && R::follows(&m) && !displaced_closer(&m) => {
+            Some(_) if !m.is_closed() && R::follows(&m) && !is_displaced_closer(&m) => {
                 m.missing_closer(R::PAIR);
                 break;
             }
@@ -435,7 +438,7 @@ fn delimited_list<R: ListRule>(p: &mut Marker<'_, '_>, field: u8) {
                 m.token();
             }
             // Parsed as an element, an unpaired opener would take the closer with it.
-            Some(kind) if is_opener(kind) && !m.partnered() && m.nth(1) == Some(close) => {
+            Some(kind) if is_opener(kind) && !m.has_partner() && m.nth(1) == Some(close) => {
                 let recovery = m.recover_tokens(R::ELEMENT, 1);
                 skip_token(&mut m, recovery);
             }
@@ -445,7 +448,7 @@ fn delimited_list<R: ListRule>(p: &mut Marker<'_, '_>, field: u8) {
                 skip(&mut m, recovery, |m| {
                     m.at(T::Comma)
                         || m.at(close)
-                        || (!m.closed() && (m.boundary() || R::follows(m)))
+                        || (!m.is_closed() && (m.is_at_boundary() || R::follows(m)))
                         || (R::RESUMES_AT_ELEMENT && begins_element::<R>(m))
                 });
                 // The garbage stood where an element should, so no `,` is missing.
@@ -456,7 +459,7 @@ fn delimited_list<R: ListRule>(p: &mut Marker<'_, '_>, field: u8) {
         }
         // A list the stream closes owns every boundary through its closer; only an unclosed one
         // ends at its line.
-        if !m.closed() && m.boundary() {
+        if !m.is_closed() && m.is_at_boundary() {
             m.missing_closer(R::PAIR);
             break;
         }
@@ -464,7 +467,7 @@ fn delimited_list<R: ListRule>(p: &mut Marker<'_, '_>, field: u8) {
             m.token();
         } else if !m
             .current()
-            .is_none_or(|kind| is_closer(kind) || starts_item(kind) || R::tolerated(kind))
+            .is_none_or(|kind| is_closer(kind) || starts_item(kind) || R::is_tolerated(kind))
         {
             m.missing(ParseRecoveryKind::Token(T::Comma));
         }
@@ -477,13 +480,13 @@ fn delimited_list<R: ListRule>(p: &mut Marker<'_, '_>, field: u8) {
 fn begins_element<R: ListRule>(m: &Marker<'_, '_>) -> bool {
     R::starts_element(m)
         && m.current()
-            .is_some_and(|kind| !is_opener(kind) || m.partnered())
+            .is_some_and(|kind| !is_opener(kind) || m.has_partner())
 }
 
 fn param(p: &mut Marker<'_, '_>) {
     let mut m = p.start();
     name(&mut m);
-    if m.at(T::Colon) && !m.boundary() {
+    if m.at(T::Colon) && !m.is_at_boundary() {
         m.token();
         type_ref(&mut m, 1);
     } else {
@@ -503,7 +506,7 @@ fn block(p: &mut Marker<'_, '_>) -> CompletedMarker {
                 m.missing_closer(Pair::Brace);
                 break;
             }
-            Some(T::RBrace) if !m.closer_ahead() => {
+            Some(T::RBrace) if !m.has_closer_ahead() => {
                 m.token();
                 break;
             }
@@ -516,8 +519,10 @@ fn block(p: &mut Marker<'_, '_>) -> CompletedMarker {
                 statement(&mut m);
                 let failed = m.recovered_since(recovery);
                 let ends = m.current().is_none()
-                    || m.boundary()
-                    || (m.at(T::RBrace) && !m.closer_ahead() && !(failed && displaced_closer(&m)))
+                    || m.is_at_boundary()
+                    || (m.at(T::RBrace)
+                        && !m.has_closer_ahead()
+                        && !(failed && is_displaced_closer(&m)))
                     || m.closes_open_bracket();
                 if !ends {
                     // After a failed statement, an expression start on its line is ambiguous with
@@ -544,7 +549,7 @@ fn statement(p: &mut Marker<'_, '_>) {
         Some(T::ReturnKw) => return_stmt(p),
         // A named function where a statement belongs is an item, not a statement.
         Some(T::FnKw)
-            if !p.nth_newline(1) && matches!(p.nth(1), Some(T::Ident | T::Underscore)) =>
+            if !p.is_nth_after_newline(1) && matches!(p.nth(1), Some(T::Ident | T::Underscore)) =>
         {
             let recovery = p.recover_tokens(ParseRecoveryKind::Statement, 1);
             skip_statement_garbage(p, recovery);
@@ -562,7 +567,7 @@ fn statement(p: &mut Marker<'_, '_>) {
         _ => {
             let recovery = p.recovery_checkpoint();
             if let Some(lhs) = expr_bp(p, 0, ExprFollow::Anything) {
-                if !p.recovered_since(recovery) && p.at(T::Eq) && !p.boundary() {
+                if !p.recovered_since(recovery) && p.at(T::Eq) && !p.is_at_boundary() {
                     let lhs_node = p.completed_node(&lhs);
                     let mut m = p.precede(lhs);
                     m.token();
@@ -584,16 +589,16 @@ fn statement(p: &mut Marker<'_, '_>) {
 fn let_stmt(p: &mut Marker<'_, '_>) {
     let mut m = p.start();
     m.token();
-    let mut split_head = m.newline();
+    let mut should_split_head = m.is_after_newline();
     if m.at(T::MutKw) {
         m.token();
-        split_head |= m.newline();
+        should_split_head |= m.is_after_newline();
     }
-    if split_head && m.at(T::Ident) {
+    if should_split_head && m.at(T::Ident) {
         m.violation(ParseViolationKind::BindingNameOnNextLine, 1);
     }
     name(&mut m);
-    if m.at(T::Colon) && !m.boundary() {
+    if m.at(T::Colon) && !m.is_at_boundary() {
         m.token();
         type_ref(&mut m, 1);
     }
@@ -619,7 +624,7 @@ fn discard_stmt(p: &mut Marker<'_, '_>) {
 fn return_stmt(p: &mut Marker<'_, '_>) {
     let mut m = p.start();
     m.token();
-    if !m.boundary()
+    if !m.is_at_boundary()
         && m.starts_expression()
         && let Some(value) = operand(&mut m)
     {
@@ -644,19 +649,19 @@ fn operand_before(
     if let Some(expression) = expr_bp(p, min_bp, follow) {
         return Some(expression);
     }
-    let displaced = !p.newline() && displaces_expression(p);
-    let recovery = if displaced {
+    let is_displaced = !p.is_after_newline() && displaces_expression(p);
+    let recovery = if is_displaced {
         p.recover_tokens(ParseRecoveryKind::Expression, 1)
     } else {
         p.missing(ParseRecoveryKind::Expression)
     };
-    if !displaced {
+    if !is_displaced {
         return None;
     }
     skip(p, recovery, |p| {
-        p.newline() || p.at(T::Comma) || begins_statement(p)
+        p.is_after_newline() || p.at(T::Comma) || begins_statement(p)
     });
-    if !p.newline() && begins_expression(p) {
+    if !p.is_after_newline() && begins_expression(p) {
         expr_bp(p, min_bp, follow)
     } else {
         None
@@ -670,7 +675,7 @@ fn closes_expression_bracket(kind: T) -> bool {
 /// An opener the stream never closes began nothing and is garbage like the rest.
 fn begins_expression(p: &Marker<'_, '_>) -> bool {
     p.current()
-        .is_some_and(|kind| starts_expression(kind) && (!is_opener(kind) || p.partnered()))
+        .is_some_and(|kind| starts_expression(kind) && (!is_opener(kind) || p.has_partner()))
 }
 
 fn begins_statement(p: &Marker<'_, '_>) -> bool {
@@ -682,16 +687,16 @@ fn displaces_expression(p: &Marker<'_, '_>) -> bool {
         if p.closes_open_bracket() {
             return false;
         }
-        return displaced_closer(p)
-            || (p.current().is_some_and(closes_expression_bracket) && !p.partnered());
+        return is_displaced_closer(p)
+            || (p.current().is_some_and(closes_expression_bracket) && !p.has_partner());
     }
     p.current()
         .is_some_and(|kind| kind == T::Error || !(starts_statement(kind) || kind == T::Comma))
 }
 
 /// Asked only after the enclosing construct has taken its own expected closer.
-fn displaced_closer(p: &Marker<'_, '_>) -> bool {
-    if !p.current().is_some_and(is_closer) || p.nth_newline(1) {
+fn is_displaced_closer(p: &Marker<'_, '_>) -> bool {
+    if !p.current().is_some_and(is_closer) || p.is_nth_after_newline(1) {
         return false;
     }
     if binary_op(p, 1).is_some() {
@@ -705,7 +710,7 @@ fn displaced_closer(p: &Marker<'_, '_>) -> bool {
     })
 }
 
-fn garbage_in_expression(p: &Marker<'_, '_>, follow: ExprFollow) -> bool {
+fn is_garbage_in_expression(p: &Marker<'_, '_>, follow: ExprFollow) -> bool {
     p.at(T::Error)
         || (p.current().is_some_and(closes_expression_bracket) && !p.closes_open_bracket())
         || (follow == ExprFollow::Anything && p.at(T::LBrace))
@@ -730,11 +735,11 @@ fn expr_bp(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) -> Option<Com
         return None;
     }
     let mut lhs = prefix_or_atom(p, follow)?;
-    let mut comparison = false;
+    let mut was_comparison = false;
     loop {
         // The stream has applied the newline rule: a leading operator is no boundary, and a glued
         // `-` or a `(` on a new line is one.
-        if p.boundary() {
+        if p.is_at_boundary() {
             break;
         }
         if follow == ExprFollow::Block && p.at(T::LBrace) {
@@ -743,10 +748,10 @@ fn expr_bp(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) -> Option<Com
         if follow == ExprFollow::Range && p.at(T::Dot) {
             break;
         }
-        // `newline`, not `boundary`: parentheses suspend boundaries, but a `(` on a new line is
+        // `is_after_newline`, not `is_at_boundary`: parentheses suspend boundaries, but a `(` on a new line is
         // still never a call.
-        if p.at(T::LParen) && !p.newline() && p.completed_kind(&lhs) == N::NameRef {
-            if !p.joint_before() {
+        if p.at(T::LParen) && !p.is_after_newline() && p.completed_kind(&lhs) == N::NameRef {
+            if !p.is_joint_before() {
                 p.violation(ParseViolationKind::SpacedListOpener, 1);
             }
             let callee = p.completed_node(&lhs);
@@ -754,20 +759,20 @@ fn expr_bp(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) -> Option<Com
             m.wrapped_field(callee, 0);
             delimited_list::<Args>(&mut m, 1);
             lhs = m.complete(N::CallExpr);
-            comparison = false;
+            was_comparison = false;
             continue;
         }
-        let mut joint_left = p.joint_before();
-        if !p.newline()
-            && garbage_in_expression(p, follow)
-            && !p.nth_newline(1)
+        let mut is_joint_left = p.is_joint_before();
+        if !p.is_after_newline()
+            && is_garbage_in_expression(p, follow)
+            && !p.is_nth_after_newline(1)
             && (binary_op(p, 1).is_some()
                 || p.nth(1)
                     .is_some_and(|next| is_closer(next) || next == T::Comma))
         {
             let recovery = p.recover_tokens(ParseRecoveryKind::Unexpected, 1);
             skip_token(p, recovery);
-            joint_left = joint_left && p.joint_before();
+            is_joint_left = is_joint_left && p.is_joint_before();
         }
         let Some((op, width)) = binary_op(p, 0) else {
             break;
@@ -776,11 +781,11 @@ fn expr_bp(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) -> Option<Com
         if left_bp < min_bp {
             break;
         }
-        if joint_left || p.nth_joint(width - 1) {
+        if is_joint_left || p.is_nth_joint(width - 1) {
             p.violation(ParseViolationKind::UnspacedBinaryOperator, width);
         }
-        let chained = comparison && op.is_comparison();
-        if chained {
+        let is_chained = was_comparison && op.is_comparison();
+        if is_chained {
             p.violation(ParseViolationKind::ChainedComparison, width);
         }
         let lhs_node = p.completed_node(&lhs);
@@ -793,8 +798,8 @@ fn expr_bp(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) -> Option<Com
         if let Some(rhs) = &rhs {
             m.field(rhs, 1);
         }
-        lhs = m.complete(if chained { N::Error } else { N::BinaryExpr });
-        comparison = op.is_comparison() && !chained;
+        lhs = m.complete(if is_chained { N::Error } else { N::BinaryExpr });
+        was_comparison = op.is_comparison() && !is_chained;
     }
     Some(lhs)
 }
@@ -804,7 +809,7 @@ fn block_starts_head(p: &Marker<'_, '_>, follow: ExprFollow) -> bool {
         let next = close + 1;
         p.nth(next) == Some(T::LBrace)
             || (follow == ExprFollow::Range && p.nth(next) == Some(T::Dot))
-            || (!p.nth_boundary(next) && binary_op(p, next).is_some())
+            || (!p.is_nth_at_boundary(next) && binary_op(p, next).is_some())
     })
 }
 
@@ -812,7 +817,7 @@ fn block_starts_head(p: &Marker<'_, '_>, follow: ExprFollow) -> bool {
 fn too_deep(p: &mut Marker<'_, '_>, ahead: u32) -> Option<CompletedMarker> {
     (p.depth() + ahead >= MAX_DEPTH).then(|| {
         let recovery = p.recover_tokens(ParseRecoveryKind::NestingTooDeep, 1);
-        skip(p, recovery, |p| p.boundary() || p.at(T::Comma))
+        skip(p, recovery, |p| p.is_at_boundary() || p.at(T::Comma))
     })
 }
 
@@ -830,7 +835,7 @@ fn prefix_or_atom(p: &mut Marker<'_, '_>, follow: ExprFollow) -> Option<Complete
         _ if is_prefix_operator(kind) => {
             let mut m = p.start();
             // A missing operand is reported below, not as spacing.
-            if !m.joint() && m.nth(1).is_some_and(starts_expression) {
+            if !m.is_joint() && m.nth(1).is_some_and(starts_expression) {
                 m.violation(ParseViolationKind::SpacedPrefixOperator, 1);
             }
             m.token();
@@ -896,7 +901,7 @@ fn for_expr(p: &mut Marker<'_, '_>) -> CompletedMarker {
 
 fn range(p: &mut Marker<'_, '_>) -> (Option<CompletedMarker>, Option<CompletedMarker>) {
     let start = operand_before(p, 0, ExprFollow::Range);
-    if p.at(T::Dot) && p.nth(1) == Some(T::Dot) && !p.joint() {
+    if p.at(T::Dot) && p.nth(1) == Some(T::Dot) && !p.is_joint() {
         p.recover_tokens(ParseRecoveryKind::Unexpected, 2);
     }
     if p.at(T::Dot) {
@@ -938,17 +943,21 @@ fn if_block(p: &mut Marker<'_, '_>) -> Option<CompletedMarker> {
     if p.at(T::LBrace) {
         return Some(block(p));
     }
-    let displaced = !(p.current().is_none_or(is_closer) || p.at(T::ElseKw) || p.newline());
-    let recovery = if displaced {
+    let is_displaced =
+        !(p.current().is_none_or(is_closer) || p.at(T::ElseKw) || p.is_after_newline());
+    let recovery = if is_displaced {
         p.recover_tokens(ParseRecoveryKind::Token(T::LBrace), 1)
     } else {
         p.missing(ParseRecoveryKind::Token(T::LBrace))
     };
-    if !displaced {
+    if !is_displaced {
         return None;
     }
     skip(p, recovery, |p| {
-        p.at(T::LBrace) || p.current().is_some_and(is_closer) || p.at(T::ElseKw) || p.newline()
+        p.at(T::LBrace)
+            || p.current().is_some_and(is_closer)
+            || p.at(T::ElseKw)
+            || p.is_after_newline()
     });
     if p.at(T::LBrace) {
         Some(block(p))
@@ -960,6 +969,10 @@ fn if_block(p: &mut Marker<'_, '_>) -> Option<CompletedMarker> {
 /// The width is in tokens. A `-` is subtraction whatever its spacing; the caller checks the
 /// spacing.
 fn binary_op(p: &Marker<'_, '_>, n: usize) -> Option<(BinaryOp, usize)> {
-    let glued = if p.nth_joint(n) { p.nth(n + 1) } else { None };
+    let glued = if p.is_nth_joint(n) {
+        p.nth(n + 1)
+    } else {
+        None
+    };
     binary_operator(p.nth(n)?, glued)
 }
