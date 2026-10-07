@@ -1,8 +1,10 @@
 //! Single-file scalar semantic analysis. The immutable syntax frontend is unchanged.
 //!
 //! Analysis retains successful typed bodies and independent diagnostics, not a
-//! rejected-body IR. Handles are relative to their program or body, not persistent
-//! identities. All source locations refer to the owned snapshot.
+//! rejected-body IR: a body the parser recovered in is checked around the
+//! damage, and only its diagnostics are kept. Handles are relative to their
+//! program or body, not persistent identities. All source locations refer to
+//! the owned snapshot.
 
 mod check;
 mod solver;

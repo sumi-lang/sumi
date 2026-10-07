@@ -1,6 +1,6 @@
 file: rejected
 frontend errors: 0 (see frontend.snap)
-semantic errors: 7
+semantic errors: 8
 
 fn f@0..85 () -> int
   body: unavailable
@@ -18,5 +18,7 @@ error[semantic/unsupported]: construct is not supported by scalar checking
   primary @57..66
 error[semantic/unknown-name]: unknown name `a`
   primary @71..72
+error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
+  primary @71..76
 error[semantic/unknown-name]: unknown name `b`
   primary @75..76

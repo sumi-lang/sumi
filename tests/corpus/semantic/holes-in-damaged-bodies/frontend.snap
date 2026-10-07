@@ -1,0 +1,190 @@
+== tree ==
+SourceFile! 0..429
+  FnItem! 0..140
+    Name 3..16 "around_a_hole"
+    ParamList 16..28
+      Param 17..27
+        Name 17..21 "flag"
+        TypeRef 23..27 "bool"
+    TypeRef 32..35 "int"
+    Block! 36..140
+      LetStmt! 42..54
+        Name 46..47 "x"
+        ParenExpr! 50..54
+          BinaryExpr! 51..54
+            LiteralExpr 51..52 "1"
+      LetStmt 59..76
+        Name 63..64 "y"
+        BinaryExpr 67..76
+          NameRef 67..68 "x"
+          NameRef 72..76 "flag"
+      IfExpr! 81..140
+        NameRef 84..88 "flag"
+        Block 89..94
+          NameRef 91..92 "x"
+        Block! 100..140
+          CallExpr! 102..138
+            NameRef 102..107 "count"
+            ArgList! 107..138
+              IfExpr 113..138
+                NameRef 116..117 "y"
+                Block 118..123
+                  LiteralExpr 120..121 "1"
+                Block 129..138
+                  LiteralExpr 131..136 "false"
+  FnItem 141..168
+    Name 144..149 "count"
+    ParamList 149..157
+      Param 150..156
+        Name 150..151 "n"
+        TypeRef 153..156 "int"
+    TypeRef 161..164 "int"
+    NameRef 167..168 "n"
+  FnItem! 169..199
+    Name 172..182 "typed_hole"
+    ParamList 182..184 "()"
+    Block! 185..199
+      CallExpr! 191..197
+        NameRef 191..196 "count"
+        ArgList! 196..197 "("
+  FnItem! 200..258
+    Name 203..217 "missing_branch"
+    ParamList 217..229
+      Param 218..228
+        Name 218..222 "flag"
+        TypeRef 224..228 "bool"
+    TypeRef 233..237 "bool"
+    IfExpr! 240..258
+      NameRef 243..247 "flag"
+      Block 248..253
+        LiteralExpr 250..251 "1"
+  FnItem! 259..278
+    Name 262..270 "inferred"
+    ParamList 270..272 "()"
+    BinaryExpr! 275..278
+      LiteralExpr 275..276 "1"
+  FnItem 279..311
+    Name 282..288 "caller"
+    ParamList 288..290 "()"
+    TypeRef 294..298 "bool"
+    CallExpr 301..311
+      NameRef 301..309 "inferred"
+      ArgList 309..311 "()"
+  FnItem! 312..390
+    Name 315..321 "locals"
+    ParamList 321..333
+      Param 322..332
+        Name 322..326 "flag"
+        TypeRef 328..332 "bool"
+    Block! 334..390
+      LetStmt! 340..347
+        Name 344..345 "f"
+      LetStmt 352..364
+        Name 356..357 "g"
+        NameRef 360..364 "flag"
+      DiscardStmt 369..376
+        CallExpr 373..376
+          NameRef 373..374 "f"
+          ArgList 374..376 "()"
+      DiscardStmt 381..388
+        CallExpr 385..388
+          NameRef 385..386 "g"
+          ArgList 386..388 "()"
+  FnItem! 391..428
+    Name 394..403 "arguments"
+    ParamList 403..405 "()"
+    TypeRef 409..412 "int"
+    CallExpr! 415..428
+      NameRef 415..420 "count"
+      ArgList! 420..428
+        LiteralExpr 421..425 "true"
+        LiteralExpr 427..428 "2"
+
+== evidence ==
+ExpectedExpression at 59
+Expected(RParen) at 59
+Expected(RParen) at 139
+Expected(RBrace) at 141
+Expected(RParen) at 198
+Expected(LBrace) at 259
+ExpectedExpression at 279
+ExpectedExpression at 352
+Expected(RParen) at 429
+
+== diagnostics ==
+error[syntax/expected-expression] 3:5: expected an expression
+error[syntax/expected-token] 3:5: expected `)`
+  at 2:13..2:14 "(": opening delimiter is here
+  fix (safe): insert `)`
+    2:17 -> ")"
+error[syntax/expected-token] 6:1: expected `)`
+  at 4:31..4:32 "(": opening delimiter is here
+  fix (safe): insert `)`
+    5:30 -> ")"
+error[syntax/expected-token] 7:1: expected `}`
+  at 1:37..1:38 "{": opening delimiter is here
+  fix (safe): insert `}`
+    6:2 -> "}"
+error[syntax/expected-token] 10:1: expected `)`
+  at 9:10..9:11 "(": opening delimiter is here
+  fix (safe): insert `)`
+    9:11 -> ")"
+error[syntax/expected-token] 12:1: expected `{`
+error[syntax/expected-expression] 13:1: expected an expression
+error[syntax/expected-expression] 16:5: expected an expression
+error[syntax/expected-token] 21:1: expected `)`
+  at 20:30..20:31 "(": opening delimiter is here
+  fix (safe): insert `)`
+    20:38 -> ")"
+
+== fixed (syntax/expected-expression, syntax/expected-token, syntax/unspaced-binary-operator remain) ==
+fn around_a_hole(flag: bool) -> int {
+    let x = (1 +)
+    let y = x && flag
+    if flag { x } else { count(
+    if y { 1 } else { false })
+}}
+fn count(n: int) -> int = n
+fn typed_hole() {
+    count()
+}
+fn missing_branch(flag: bool) -> bool = if flag { 1 } else
+fn inferred() = 1 +
+fn caller() -> bool = inferred()
+fn locals(flag: bool) {
+    let f =
+    let g = flag
+    _ = f()
+    _ = g()
+}
+fn arguments() -> int = count(true, 2)
+
+== formatted ==
+fn around_a_hole(flag: bool) -> int {
+    let x = (1 +
+    let y = x && flag
+    if flag {
+        x
+    } else {
+        count(if y {
+                1
+            } else {
+                false
+            }
+}
+fn count(n: int) -> int = n
+fn typed_hole() {
+    count(
+}
+fn missing_branch(flag: bool) -> bool = if flag {
+    1
+} else
+fn inferred() = 1 +
+fn caller() -> bool = inferred()
+fn locals(flag: bool) {
+    let f =
+    let g = flag
+    _ = f()
+    _ = g()
+}
+fn arguments() -> int = count(true, 2

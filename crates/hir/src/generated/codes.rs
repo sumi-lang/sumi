@@ -4,10 +4,13 @@
 
 use sumi_diagnostics::{DiagnosticCode, DiagnosticGroup};
 
-/// Reported by semantic checking over every function whose syntax is
-/// complete: names, the scalar types `int`, `bool`, and `unit`, and calls.
-/// A function with a syntax error in its body is not checked, and every
-/// code here is an error.
+/// Reported by semantic checking over every function: names, the scalar
+/// types `int`, `bool`, and `unit`, and calls. Where the parser recovered,
+/// a name is undeclared, or a construct is unsupported, the construct is a
+/// hole, typed as far as the syntax around it decides and unknown
+/// otherwise; the rest of the function is checked around it, nothing is
+/// blamed on a guess about what the hole might have been, and the function
+/// does not run. Every code here is an error.
 pub const SEMANTIC: DiagnosticGroup = DiagnosticGroup::new("semantic");
 
 /// A type reference naming none of `int`, `bool`, and `unit`.
@@ -47,8 +50,8 @@ pub const CANNOT_INFER: DiagnosticCode = DiagnosticCode::new(SEMANTIC, "cannot-i
 pub const INTEGER_RANGE: DiagnosticCode = DiagnosticCode::new(SEMANTIC, "integer-range");
 
 /// A construct scalar checking does not handle yet, such as a closure, a
-/// string literal, or a call through anything but a function name. The
-/// function is left unchecked.
+/// string literal, or a call through anything but a function name. Its
+/// type is unknown, and the function does not run.
 pub const UNSUPPORTED: DiagnosticCode = DiagnosticCode::new(SEMANTIC, "unsupported");
 
 /// Every code of the group, in declaration order.

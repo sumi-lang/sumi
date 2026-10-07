@@ -14,7 +14,7 @@ fn typed@65..101 signature: unavailable
 fn spaced@102..125 signature: unavailable
   body: unavailable
 
-fn operand@126..153 signature: unavailable
+fn operand@126..153 () -> int
   body: unavailable
 
 fn next@154..174 () -> int

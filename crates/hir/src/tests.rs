@@ -754,12 +754,7 @@ fn scalar_operator_type_matrix() {
 
 #[test]
 fn binary_requirements_survive_a_failed_operand() {
-    for expression in [
-        "missing + true",
-        "missing < false",
-        "1 && missing",
-        "missing == {}",
-    ] {
+    for expression in ["missing + true", "missing < false", "1 && missing"] {
         let a = check(&format!("fn f() {{ _ = {expression} }}"));
         let mut actual = codes(&a);
         actual.sort_unstable_by_key(|code| code.name());
@@ -1058,4 +1053,59 @@ proptest::proptest! {
         }
         for function in &a.functions { if function.body().is_some() { invariant(&a, function); } }
     }
+}
+
+#[test]
+fn holes_are_typed_around_and_the_unknown_absorbs() {
+    // A hole whose type nothing decides satisfies every demand, however
+    // its uses disagree, and nothing it reaches is reported either.
+    for body in [
+        "let x =\n _ = x + 1\n _ = x && true\n _ = x == {}",
+        "_ = missing == {}",
+        "let x: mystery = true\n _ = x + 1\n _ = x && true",
+    ] {
+        let a = check(&format!("fn f() {{\n {body}\n}}"));
+        assert!(!a.is_valid(), "{body}");
+        assert!(
+            !codes(&a).contains(&TYPE_MISMATCH),
+            "{body}: {:?}",
+            a.diagnostics
+        );
+    }
+    // A hole whose type the syntax around it decides is held to it.
+    // The `let` ends the unclosed parenthesis; `x` is an int whatever
+    // the parenthesis was going to hold.
+    let a = check("fn f() -> bool {\n let x = (1 +\n let y = x && true\n y\n}");
+    assert_eq!(codes(&a), [TYPE_MISMATCH]);
+    let a = check("fn f() { _ = (missing + 1) && true }");
+    assert_eq!(codes(&a), [TYPE_MISMATCH, UNKNOWN_NAME]);
+    let a = check("fn f() -> int = count(\nfn count(n: int) -> int = n\nfn g() -> bool = f()");
+    assert_eq!(codes(&a), [TYPE_MISMATCH]);
+    assert!(a.functions[0].signature().is_some());
+    // An unknown result crosses calls without a complaint anywhere, and
+    // absorbs the demands on what it reaches there too.
+    let a = check("fn f() = missing\nfn g() {\n let x = f()\n _ = x + 1\n _ = x && true\n}");
+    assert_eq!(codes(&a), [UNKNOWN_NAME]);
+    let a = check("fn f() = missing\nfn g() = f()\nfn h() -> int = g()");
+    assert_eq!(codes(&a), [UNKNOWN_NAME]);
+    assert!(a.functions[..2].iter().all(|f| f.signature().is_none()));
+    assert!(a.functions[2].body().is_none());
+    // Damage deep in one branch leaves the rest of the `if` checked.
+    let a = check("fn f(c: bool) -> int = if c { true } else { 1 + * 2 }");
+    assert_eq!(codes(&a), [TYPE_MISMATCH]);
+    assert_eq!(&*a.diagnostics[0].message, "if branches are bool and int");
+    // An `else` missing its block is still an else.
+    let a = check("fn f(c: bool) -> int = if c { 1 } else");
+    assert!(a.diagnostics.is_empty(), "{:?}", a.diagnostics);
+    let a = check("fn f(c: bool) -> bool = if c { 1 } else");
+    assert_eq!(codes(&a), [TYPE_MISMATCH]);
+    // An unclosed argument list is not the wrong length, but its arguments
+    // are held to their parameters up to the first garbage.
+    let a = check("fn f(a: int, b: bool) {}\nfn g() { _ = f(true, 1\n}");
+    assert_eq!(codes(&a), [TYPE_MISMATCH, TYPE_MISMATCH]);
+    let a = check("fn f(a: int, b: bool) {}\nfn g() { _ = f(1 ; true) }");
+    assert!(!codes(&a).contains(&TYPE_MISMATCH), "{:?}", a.diagnostics);
+    // A duplicate parameter's uses are ambiguous, so unknown.
+    let a = check("fn f(x: int, x: bool) -> bool = x && x");
+    assert_eq!(codes(&a), [DUPLICATE_NAME]);
 }

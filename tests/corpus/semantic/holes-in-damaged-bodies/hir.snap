@@ -1,0 +1,51 @@
+file: rejected
+frontend errors: 9 (see frontend.snap)
+semantic errors: 7
+
+fn around_a_hole@0..140 (bool) -> int
+  body: unavailable
+
+fn count@141..168 (int) -> int
+  param n@150..151: int
+  body: read n@150..151 : int @167..168
+
+fn typed_hole@169..199 () -> unit
+  body: unavailable
+
+fn missing_branch@200..258 (bool) -> bool
+  body: unavailable
+
+fn inferred@259..278 () -> int
+  body: unavailable
+
+fn caller@279..311 () -> bool
+  body: unavailable
+
+fn locals@312..390 (bool) -> unit
+  body: unavailable
+
+fn arguments@391..428 () -> int
+  body: unavailable
+
+== semantic diagnostics ==
+error[semantic/type-mismatch]: expected bool, found int
+  primary @67..68
+error[semantic/type-mismatch]: if branches are int and bool
+  primary @113..138
+  secondary @120..121: int here
+  secondary @131..136: bool here
+error[semantic/type-mismatch]: expected unit, found int
+  primary @185..199
+  secondary @169..199: declared here
+error[semantic/type-mismatch]: expected bool, found int
+  primary @240..258
+  secondary @233..237: declared here
+error[semantic/type-mismatch]: expected bool, found int
+  primary @301..311
+  secondary @294..298: declared here
+error[semantic/not-callable]: local `g` is not callable
+  primary @385..386
+  secondary @356..357: declared here
+error[semantic/type-mismatch]: expected int, found bool
+  primary @421..425
+  secondary @141..168: declared here

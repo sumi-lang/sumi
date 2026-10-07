@@ -469,10 +469,13 @@ error[syntax/chained-comparison] 1:16..1:17 "<": comparison operators cannot be 
 
 ## semantic
 
-Reported by semantic checking over every function whose syntax is
-complete: names, the scalar types `int`, `bool`, and `unit`, and calls.
-A function with a syntax error in its body is not checked, and every
-code here is an error.
+Reported by semantic checking over every function: names, the scalar
+types `int`, `bool`, and `unit`, and calls. Where the parser recovered,
+a name is undeclared, or a construct is unsupported, the construct is a
+hole, typed as far as the syntax around it decides and unknown
+otherwise; the rest of the function is checked around it, nothing is
+blamed on a guess about what the hole might have been, and the function
+does not run. Every code here is an error.
 
 ### `semantic/unknown-type`
 
@@ -559,27 +562,35 @@ error[semantic/duplicate-name]: duplicate function `duplicate`
 A call whose callee is a parameter or binding. Only function items are
 callable, since every local holds a scalar.
 
-Shown by [`tests/corpus/semantic/signature-and-call-errors`](../../../tests/corpus/semantic/signature-and-call-errors/case.sumi):
+Shown by [`tests/corpus/semantic/holes-in-damaged-bodies`](../../../tests/corpus/semantic/holes-in-damaged-bodies/case.sumi):
 
 ```sumi
-fn duplicate() {}
-fn duplicate() {}
-fn ambiguous() = duplicate()
-fn unknown(x: mystery) {}
-fn suppressed() = unknown(absent)
-fn typed(x: int, b: bool) -> int = x
-fn wrong() -> int = typed(true, 1, missing)
-fn hidden() -> int {
-    let typed = 1
-    typed()
+fn around_a_hole(flag: bool) -> int {
+    let x = (1 +
+    let y = x && flag
+    if flag { x } else { count(
+    if y { 1 } else { false }
 }
-fn broken_result(x: mystery) -> int = true
+fn count(n: int) -> int = n
+fn typed_hole() {
+    count(
+}
+fn missing_branch(flag: bool) -> bool = if flag { 1 } else
+fn inferred() = 1 +
+fn caller() -> bool = inferred()
+fn locals(flag: bool) {
+    let f =
+    let g = flag
+    _ = f()
+    _ = g()
+}
+fn arguments() -> int = count(true, 2
 ```
 
 ```text
-error[semantic/not-callable]: local `typed` is not callable
-  primary @249..254
-  secondary @235..240: declared here
+error[semantic/not-callable]: local `g` is not callable
+  primary @385..386
+  secondary @356..357: declared here
 ```
 
 ### `semantic/arity`
@@ -724,8 +735,8 @@ error[semantic/integer-range]: integer literal is outside signed 64-bit range
 ### `semantic/unsupported`
 
 A construct scalar checking does not handle yet, such as a closure, a
-string literal, or a call through anything but a function name. The
-function is left unchecked.
+string literal, or a call through anything but a function name. Its
+type is unknown, and the function does not run.
 
 Shown by [`tests/corpus/diagnostics/grouped-expression-statements`](../../../tests/corpus/diagnostics/grouped-expression-statements/case.sumi):
 

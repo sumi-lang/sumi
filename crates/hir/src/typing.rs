@@ -21,6 +21,10 @@
 //! when a conflict is reported, so making a claim never computes a span and
 //! joining or transferring evidence never touches memory beyond the class.
 //!
+//! A hole claims the unknown: a fact beside the types, which crosses every
+//! flow and makes whatever class holds it resolve to nothing, so a demand
+//! on it is never a disagreement. See [`Evidence`].
+//!
 //! Equality is local to a declaration; flows never unify caller and callee,
 //! so a caller's demands never decide a callee's result. Signatures are read
 //! off result classes after one solve, and depend on no declaration order.
@@ -44,11 +48,17 @@ use crate::solver::{Lattice, Solver, Var};
 pub(crate) struct Claim(NonZeroU32);
 
 const IMPORTED: u32 = 1 << 31;
+/// The first word of an [`Evidence`] when a hole decided the class: the
+/// best rank there is, which no claim takes, so a join keeps it over any
+/// claim of the first type.
+const UNKNOWN: u32 = 1;
+/// The rank of the first claim, after the unknown.
+const FIRST: u32 = UNKNOWN + 1;
 
 impl Claim {
     /// The claim made `index` claims into the walk.
     fn local(index: usize) -> Self {
-        let rank = u32::try_from(index + 1).expect("claim count fits u32");
+        let rank = u32::try_from(index).expect("claim count fits u32") + FIRST;
         assert!(rank < IMPORTED, "claim count fits below the imported bit");
         Self(NonZeroU32::new(rank).unwrap())
     }
@@ -62,30 +72,63 @@ impl Claim {
     }
 
     fn index(self) -> usize {
-        ((self.0.get() & !IMPORTED) - 1) as usize
+        ((self.0.get() & !IMPORTED) - FIRST) as usize
     }
 }
 
 /// The evidence on a class: for each scalar type, the best claim that the
-/// class has it. No claim is unresolved, one is solved, and more than one is
-/// a conflict, kept rather than retracted so its report can name every side.
+/// class has it, or the fact that the class holds a value no one can type.
+/// No claim is unresolved, one type is solved, and more than one is a
+/// conflict, kept rather than retracted so its report can name every side.
+///
+/// The unknown is claimed by a hole: an expression the parser could not
+/// complete, a name nothing declares, or a construct checking does not
+/// handle. It is a fact, so it survives a replay, and it crosses calls and
+/// branches like any claim, so everything a hole decides is undetermined in
+/// turn. A class holding it resolves to no type, and a demand on no type is
+/// never a disagreement: the hole is reported once, where it is, and
+/// nothing is blamed on a guess about what it might have been. A hole whose
+/// type is certain, an operator missing an operand or a call missing an
+/// argument, claims that type instead and is held to it.
+///
+/// One word per type, zero for no claim, and the unknown as the reserved
+/// best rank in the first, which the join that keeps the best claim keeps
+/// for free: three words, which the solver copies on every join and replay.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Evidence {
-    claims: [Option<Claim>; Ty::ALL.len()],
+    words: [u32; Ty::ALL.len()],
 }
 
 impl Evidence {
     fn single(ty: Ty, claim: Claim) -> Self {
         let mut evidence = Self::bottom();
-        evidence.claims[ty as usize] = Some(claim);
+        evidence.words[ty as usize] = claim.0.get();
         evidence
     }
 
-    /// The one type claimed, if exactly one is.
+    fn hole() -> Self {
+        let mut evidence = Self::bottom();
+        evidence.words[0] = UNKNOWN;
+        evidence
+    }
+
+    fn types(&self) -> impl Iterator<Item = (Ty, Claim)> + '_ {
+        Ty::ALL
+            .iter()
+            .zip(&self.words)
+            .filter(|(_, word)| **word > UNKNOWN)
+            .map(|(ty, word)| (*ty, Claim(NonZeroU32::new(*word).unwrap())))
+    }
+
+    /// The one type claimed, if exactly one is and nothing unknown joined
+    /// it.
     pub fn ty(&self) -> Option<Ty> {
+        if self.unknown() {
+            return None;
+        }
         let mut found = None;
-        for (ty, claim) in Ty::ALL.iter().zip(&self.claims) {
-            if claim.is_some() {
+        for (ty, word) in Ty::ALL.iter().zip(&self.words) {
+            if *word != 0 {
                 if found.is_some() {
                     return None;
                 }
@@ -95,23 +138,25 @@ impl Evidence {
         found
     }
 
+    /// Whether a hole decided this class: it resolves to no type, and
+    /// nothing about it is reported.
+    pub fn unknown(&self) -> bool {
+        self.words[0] == UNKNOWN
+    }
+
     pub fn is_conflict(&self) -> bool {
-        self.claims.iter().filter(|claim| claim.is_some()).count() > 1
+        self.types().count() > 1
     }
 
     /// Whether this is a conflict whose every claim arrived through a flow:
     /// it was already a conflict where it came from, and is reported there.
     pub fn inherited(&self) -> bool {
-        self.is_conflict() && self.claims.iter().flatten().all(|claim| claim.imported())
+        self.is_conflict() && self.types().all(|(_, claim)| claim.imported())
     }
 
     /// Every type claimed and the claim behind it, best first.
     pub fn claims(&self) -> Vec<(Ty, Claim)> {
-        let mut claims: Vec<_> = Ty::ALL
-            .iter()
-            .zip(&self.claims)
-            .filter_map(|(ty, claim)| claim.map(|claim| (*ty, claim)))
-            .collect();
+        let mut claims: Vec<_> = self.types().collect();
         claims.sort_by_key(|(_, claim)| *claim);
         claims
     }
@@ -131,17 +176,15 @@ impl Lattice for Evidence {
 
     fn bottom() -> Self {
         Self {
-            claims: [None; Ty::ALL.len()],
+            words: [0; Ty::ALL.len()],
         }
     }
 
     fn join(&mut self, other: &Self) -> bool {
         let mut grew = false;
-        for (mine, theirs) in self.claims.iter_mut().zip(&other.claims) {
-            if let Some(claim) = theirs
-                && mine.is_none_or(|existing| *claim < existing)
-            {
-                *mine = Some(*claim);
+        for (mine, theirs) in self.words.iter_mut().zip(&other.words) {
+            if *theirs != 0 && (*mine == 0 || *theirs < *mine) {
+                *mine = *theirs;
                 grew = true;
             }
         }
@@ -152,9 +195,12 @@ impl Lattice for Evidence {
         match *edge {
             Edge::Branch => *self,
             Edge::Call(call) => {
-                let imported = Claim(call.0 | IMPORTED);
+                let imported = call.0.get() | IMPORTED;
                 Self {
-                    claims: self.claims.map(|claim| claim.map(|_| imported)),
+                    words: self.words.map(|word| match word {
+                        0 | UNKNOWN => word,
+                        _ => imported,
+                    }),
                 }
             }
         }
@@ -221,6 +267,12 @@ impl Typing {
         self.solver.known(Evidence::single(ty, claim))
     }
 
+    /// A class a hole decides: it resolves to no type, and neither does
+    /// anything it reaches.
+    pub fn unknown(&mut self) -> Var {
+        self.solver.known(Evidence::hole())
+    }
+
     /// The class of the call at `node` whose callee's result class is
     /// `result`.
     pub fn call(&mut self, result: Var, node: NodeIdx) -> Var {
@@ -260,15 +312,18 @@ impl Typing {
     }
 
     /// The same classes carrying only what is known on their own account:
-    /// facts, and the calls whose callee result is solved. Replaying demands
-    /// on it one at a time, in source order, blames a disagreement on the
-    /// first demand that raised it. An unresolved or conflicted callee
-    /// delivers nothing: it is reported at its declaration. A branch is
+    /// facts, and the calls whose callee result is solved or unknown.
+    /// Replaying demands on it one at a time, in source order, blames a
+    /// disagreement on the first demand that raised it. An unresolved or
+    /// conflicted callee delivers nothing: it is reported at its
+    /// declaration. A branch is
     /// settled by [`Replay::branch`] when its `if` comes up in that order,
     /// since what it delivers is shaped by the demands before it.
     pub fn replay(&self) -> Replay {
         Replay(self.solver.replay(|evidence, edge| match edge {
-            Edge::Call(_) => evidence.ty().is_some().then(|| evidence.transfer(edge)),
+            Edge::Call(_) => {
+                (evidence.ty().is_some() || evidence.unknown()).then(|| evidence.transfer(edge))
+            }
             Edge::Branch => None,
         }))
     }
@@ -438,6 +493,37 @@ mod tests {
             replay.evidence(join).claims(),
             typing.evidence(join).claims()
         );
+    }
+
+    #[test]
+    fn the_unknown_outranks_every_claim_and_crosses_every_flow() {
+        let mut typing = typing();
+        let hole = typing.unknown();
+        let literal = typing.known(Ty::Int, at(0));
+        // Joined with a type, the class stays unknown: no demand on it is a
+        // disagreement, and nothing about it is a conflict to report.
+        typing.expect(hole, Expected::Class(literal), at(1));
+        typing.expect(hole, Expected::Ty(Ty::Bool), at(2));
+        let evidence = *typing.evidence(hole);
+        assert!(evidence.unknown());
+        assert_eq!(evidence.ty(), None);
+        assert!(!evidence.is_conflict());
+        // A call delivers it, relabeled like any claim would be, and a
+        // branch delivers it as it is.
+        let call = typing.call(hole, at(3));
+        let join = typing.fresh();
+        typing.branch(hole, join);
+        typing.solve();
+        assert!(typing.evidence(call).unknown());
+        assert!(typing.evidence(join).unknown());
+        // It is a fact: a replay keeps it, and a replayed demand changes
+        // nothing.
+        let mut replay = typing.replay();
+        assert!(replay.evidence(hole).unknown());
+        assert!(replay.evidence(call).unknown());
+        replay.expect(hole, Expected::Ty(Ty::Unit));
+        assert_eq!(replay.resolve(hole), None);
+        assert!(!replay.evidence(hole).is_conflict());
     }
 
     #[test]
