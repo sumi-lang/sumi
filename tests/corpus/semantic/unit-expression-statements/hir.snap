@@ -98,11 +98,11 @@ error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
 error[semantic/type-mismatch]: expected int, found bool
   primary @36:9..36:13
 error[semantic/type-mismatch]: expected unit, found int
-  primary @37:13..39:6
+  primary @38:9..38:10
 error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
   primary @43:5..46:6
 error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
   primary @44:9..44:16
 error[semantic/type-mismatch]: expected unit, found int
-  primary @49:25..51:2
+  primary @50:5..50:12
   secondary @49:1..51:2: declared here

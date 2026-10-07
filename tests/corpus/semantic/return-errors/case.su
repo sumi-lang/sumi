@@ -37,3 +37,11 @@ fn unreachable_tail() -> int {
     return 1
     false
 }
+fn block_after_return(x: bool) -> int {
+    if x {
+        return 1
+    }
+    {
+        true
+    }
+}

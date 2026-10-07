@@ -6,7 +6,7 @@ use std::collections::HashSet;
 
 use rustc_hash::FxBuildHasher;
 use sumi_graph::{
-    BinaryOp, CmpOp, Domain, Graph, Int, May, Node, NodeId, Op, Thresholds, Ty, Value,
+    BinaryOp, CmpOp, Domain, Graph, Int, May, Node, NodeId, Op, RegionId, Thresholds, Ty, Value,
 };
 use sumi_text::TextRange;
 
@@ -68,9 +68,9 @@ impl Demands<'_> {
                 demand(at, actual, DemandKind::Type { expected, declared });
             }
         };
-        let region = |region| {
-            let region = graph.region(region);
-            (graph.node(region.context).origin, region.result())
+        let region = |id: RegionId| {
+            let region = graph.region(id);
+            (region.result_read(), region.result())
         };
         match &entry.op {
             Op::Neg if value(0) => require(reads[0], inputs[0], Expected::Ty(Ty::Int), None),

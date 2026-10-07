@@ -385,7 +385,7 @@ fn emit(graph: &Graph, plan: &Plan, kept: &[bool]) -> Optimized {
                 let close = |builder: &mut GraphBuilder, new: RegionId| {
                     builder.close_with_control(
                         new,
-                        map(exit.result),
+                        (map(exit.result), old.result_read()),
                         exit.value,
                         exit.control.map(map),
                     );

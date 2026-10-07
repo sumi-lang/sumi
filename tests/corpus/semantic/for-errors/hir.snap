@@ -194,7 +194,7 @@ warning[semantic/unused-name]: loop index `i` is never read
 error[semantic/type-mismatch]: expected int, found bool
   primary @23:32..23:36
 error[semantic/type-mismatch]: expected unit, found int
-  primary @24:35..24:40
+  primary @24:37..24:38
 warning[semantic/unused-name]: local `x` is assigned but never read
   primary @26:13..26:14
 warning[semantic/unused-name]: loop index `i` is never read
