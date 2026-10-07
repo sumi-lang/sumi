@@ -88,6 +88,9 @@ pub(crate) struct Lowered {
     pub typed: Vec<bool>,
     /// Whole calls only, in definition order.
     pub calls: Vec<Call>,
+    /// Every typed call and its callee, whole or not: the result flows into a call missing an
+    /// argument too.
+    pub called: Vec<(NodeId, FunctionId)>,
     /// (context, callee) of every call whose callee has a whole parameter list, whole call or not.
     pub entered: Vec<(NodeId, FunctionId)>,
     pub obligations: Vec<Obligation>,
@@ -456,6 +459,46 @@ enum Finish {
         expr: Clean<ast::BinaryExpr>,
         op: BinaryOp,
     },
+    Partial(Partial),
+}
+
+/// An expression the parser recovered in, lowered from the children it has. Its operator or
+/// callee decides its type, so the context around it is still checked; what is missing is a hole.
+enum Partial {
+    Discard {
+        node: NodeIdx,
+        value: NodeIdx,
+    },
+    Paren {
+        node: NodeIdx,
+        inner: NodeIdx,
+    },
+    Prefix {
+        node: NodeIdx,
+        neg: bool,
+        operand: Option<NodeIdx>,
+    },
+    Binary {
+        node: NodeIdx,
+        op: BinaryOp,
+        lhs: Option<NodeIdx>,
+        rhs: Option<NodeIdx>,
+    },
+    Call {
+        node: NodeIdx,
+        target: Option<FunctionId>,
+        /// The arguments before any garbage: the ones whose position is reliable.
+        args: Vec<NodeIdx>,
+    },
+    Assign {
+        node: NodeIdx,
+        target: Option<LocalId>,
+        value: Option<NodeIdx>,
+    },
+    /// A binding with an initializer: it still takes its name, typed by what it has.
+    Let {
+        binding: ast::LetStmt,
+    },
 }
 
 /// `&&` when `and`, else `||`, with its expression.
@@ -480,12 +523,12 @@ enum Work {
         call: Clean<ast::CallExpr>,
         target: Option<FunctionId>,
     },
-    Branches(Clean<ast::IfExpr>),
+    Branches(Branch),
     LoopBody(Clean<ast::ForExpr>),
     LoopEnd(Box<LoopState>),
     Rhs(LazyOp),
     Join {
-        branch: Clean<ast::IfExpr>,
+        branch: Branch,
         then: RegionId,
         else_: Option<RegionId>,
         contexts: [NodeId; 2],
@@ -503,7 +546,17 @@ enum Work {
         region: RegionId,
         root: NodeIdx,
     },
-    Return(Clean<ast::ReturnStmt>),
+    Return(ast::ReturnStmt),
+}
+
+/// An `if` by its parts. A part the parser lost stands as the `if` itself, whose node is a hole
+/// by then: its region closes on that hole, and nothing is entered for it.
+#[derive(Clone, Copy)]
+struct Branch {
+    node: NodeIdx,
+    cond: NodeIdx,
+    then: NodeIdx,
+    else_: Option<NodeIdx>,
 }
 
 fn enter_each(work: &mut Vec<Work>, nodes: impl Iterator<Item = NodeIdx>) {
@@ -582,6 +635,7 @@ impl<'a, 's> Builder<'a, 's> {
                 built: Vec::with_capacity(headers.len()),
                 typed: Vec::with_capacity(nodes),
                 calls: Vec::new(),
+                called: Vec::new(),
                 entered: Vec::new(),
                 obligations: Vec::new(),
                 fallthroughs: vec![None; headers.len()],
@@ -911,18 +965,18 @@ impl<'a, 's> Builder<'a, 's> {
             Op::Carry { declaration } => typed(declaration),
             Op::Result { declared: None } => inputs.iter().all(|&(input, _)| typed(input)),
             Op::Param { ty, .. } => ty.is_some(),
+            // An operator's result has its type whatever its operands; a call has its callee's
+            // whatever its arguments.
+            Op::Neg | Op::Not | Op::Binary(_) | Op::And { .. } | Op::Or { .. } => true,
             Op::Call(callee) => {
                 let function = self.graph.callable(callee).function;
-                self.whole(callee, inputs)
-                    && !matches!(self.headers[function.index()].result, HeaderResult::None)
+                !matches!(self.headers[function.index()].result, HeaderResult::None)
             }
             Op::Assign { declaration } => typed(declaration) && typed(inputs[0].0),
             Op::Phi { declaration, .. } => {
                 typed(declaration) && inputs.iter().all(|&(input, _)| typed(input))
             }
-            Op::And { .. } | Op::Or { .. } | Op::Join { .. } => {
-                typed(inputs[0].0) && results.iter().all(|&result| typed(result))
-            }
+            Op::Join { .. } => typed(inputs[0].0) && results.iter().all(|&result| typed(result)),
             _ => inputs.iter().all(|&(input, _)| typed(input)),
         }
     }
@@ -1233,19 +1287,21 @@ impl<'a, 's> Builder<'a, 's> {
             _ => {}
         }
     }
-    fn branches(&mut self, branch: Clean<ast::IfExpr>, work: &mut Vec<Work>) {
-        let tree = self.source.tree;
-        let cond = branch.condition().node();
+    fn branches(&mut self, branch: Branch, work: &mut Vec<Work>) {
+        let Branch {
+            node,
+            cond,
+            then: then_node,
+            else_: else_node,
+        } = branch;
         self.advance(cond);
-        let then_node = branch.then_branch().node();
-        let else_node = branch.else_branch(tree).map(|e| e.node());
         let parent = self.context();
         let condition = self.input(cond);
         let then_context = self.context_at(then_node, Op::Then, condition, parent);
         let else_context = match else_node {
             Some(else_node) => self.context_at(else_node, Op::Else, condition, parent),
             None if !self.mutable_locals.is_empty() => {
-                self.context_at(branch.node(), Op::Else, condition, parent)
+                self.context_at(node, Op::Else, condition, parent)
             }
             None => parent,
         };
@@ -1263,7 +1319,9 @@ impl<'a, 's> Builder<'a, 's> {
                 region,
                 root: else_node,
             });
-            work.push(Work::Enter(else_node));
+            if else_node != node {
+                work.push(Work::Enter(else_node));
+            }
             work.push(Work::Push {
                 region,
                 guard: (cond, false),
@@ -1273,7 +1331,9 @@ impl<'a, 's> Builder<'a, 's> {
             region: then,
             root: then_node,
         });
-        work.push(Work::Enter(then_node));
+        if then_node != node {
+            work.push(Work::Enter(then_node));
+        }
         work.push(Work::Push {
             region: then,
             guard: (cond, true),
@@ -1443,10 +1503,13 @@ impl<'a, 's> Builder<'a, 's> {
         let stmt = Stmt::cast(tree, node);
         let Some(clean) = stmt.and_then(|stmt| stmt.clean(tree, self.source.lexed())) else {
             match stmt {
-                Some(Stmt::LetStmt(binding)) => self.damaged_let(binding),
                 Some(Stmt::Expr(Expr::Block(_))) => {
                     self.failed = true;
                     self.block_statements(node, work);
+                }
+                Some(stmt) if tree.has_error(node) => {
+                    self.failed = true;
+                    self.damaged(stmt, work);
                 }
                 _ if tree.has_error(node) => {
                     self.hole(node);
@@ -1462,7 +1525,7 @@ impl<'a, 's> Builder<'a, 's> {
                 work.push(Work::Enter(binding.initializer().node()));
             }
             CleanStmt::AssignStmt(assignment) => {
-                let target = self.assignment_target(assignment);
+                let target = self.assignment_target(assignment.target());
                 work.push(Work::Finish(Finish::Assign { assignment, target }));
                 work.push(Work::Enter(assignment.value().node()));
             }
@@ -1472,8 +1535,14 @@ impl<'a, 's> Builder<'a, 's> {
                 work.push(Work::Enter(discard.value().node()));
             }
             CleanStmt::Expr(CleanExpr::IfExpr(branch)) => {
-                work.push(Work::Branches(branch));
-                work.push(Work::Enter(branch.condition().node()));
+                let cond = branch.condition().node();
+                work.push(Work::Branches(Branch {
+                    node,
+                    cond,
+                    then: branch.then_branch().node(),
+                    else_: branch.else_branch(tree).map(|e| e.node()),
+                }));
+                work.push(Work::Enter(cond));
             }
             CleanStmt::Expr(CleanExpr::ForExpr(expr)) => {
                 work.push(Work::LoopBody(expr));
@@ -1527,7 +1596,7 @@ impl<'a, 's> Builder<'a, 's> {
                 work.push(Work::Finish(Finish::Literal(literal)));
             }
             CleanStmt::ReturnStmt(return_) => {
-                work.push(Work::Return(return_));
+                work.push(Work::Return(return_.view()));
                 if let Some(value) = return_.value(tree) {
                     work.push(Work::Advance(value.node()));
                     work.push(Work::Enter(value.node()));
@@ -1535,8 +1604,8 @@ impl<'a, 's> Builder<'a, 's> {
             }
         }
     }
-    fn assignment_target(&mut self, assignment: Clean<ast::AssignStmt>) -> Option<LocalId> {
-        let target = self.source.peel(assignment.target());
+    fn assignment_target(&mut self, target: ast::Expr) -> Option<LocalId> {
+        let target = self.source.peel(target);
         let ast::Expr::NameRef(name) = target else {
             self.source.error(
                 target.node(),
@@ -1581,7 +1650,7 @@ impl<'a, 's> Builder<'a, 's> {
         self.locals[local.index()].assigned = true;
         Some(local)
     }
-    fn return_(&mut self, return_: Clean<ast::ReturnStmt>) -> Option<()> {
+    fn return_(&mut self, return_: ast::ReturnStmt) -> Option<()> {
         let node = return_.node();
         let at = self.source.range(node);
         let value = return_.value(self.source.tree);
@@ -1946,8 +2015,290 @@ impl<'a, 's> Builder<'a, 's> {
                     });
                 }
             }
+            Finish::Partial(partial) => {
+                self.partial(partial);
+                return None;
+            }
         }
         Some(())
+    }
+    /// A statement or expression the parser recovered in. Its children are lowered for what they
+    /// hold, and it is lowered from them where its kind decides its type: an operator's result,
+    /// a callee's, or a discard's or parentheses' value. A branch or a loop is a hole, since its
+    /// regions want every part, and so is a name or a literal.
+    fn damaged(&mut self, stmt: ast::Stmt, work: &mut Vec<Work>) {
+        use ast::{Expr, Stmt};
+
+        let tree = self.source.tree;
+        let lexed = self.source.lexed();
+        let node = stmt.node();
+        let partial = match stmt {
+            Stmt::DiscardStmt(discard) => match discard.value(tree) {
+                Some(value) => Partial::Discard {
+                    node,
+                    value: value.node(),
+                },
+                None => return self.holed(node),
+            },
+            Stmt::AssignStmt(assign) => {
+                let target = match assign.target(tree) {
+                    Some(target) => self.assignment_target(target),
+                    None => None,
+                };
+                Partial::Assign {
+                    node,
+                    target,
+                    value: assign.value(tree).map(|value| value.node()),
+                }
+            }
+            Stmt::ReturnStmt(return_) => {
+                let Some(value) = return_.value(tree) else {
+                    return self.holed(node);
+                };
+                work.push(Work::Return(return_));
+                work.push(Work::Advance(value.node()));
+                work.push(Work::Enter(value.node()));
+                return;
+            }
+            Stmt::Expr(Expr::ParenExpr(paren)) => match paren.inner(tree) {
+                Some(inner) => Partial::Paren {
+                    node,
+                    inner: inner.node(),
+                },
+                None => return self.holed(node),
+            },
+            Stmt::Expr(Expr::PrefixExpr(prefix)) => match prefix.op(tree, lexed) {
+                Some(op) => Partial::Prefix {
+                    node,
+                    neg: op == PrefixOp::Neg,
+                    operand: prefix.operand(tree).map(|operand| operand.node()),
+                },
+                None => return self.holed(node),
+            },
+            Stmt::Expr(Expr::BinaryExpr(binary)) => match binary.op(tree, lexed).and_then(eager) {
+                Some(op) => Partial::Binary {
+                    node,
+                    op,
+                    lhs: binary.lhs(tree).map(|lhs| lhs.node()),
+                    rhs: binary.rhs(tree).map(|rhs| rhs.node()),
+                },
+                None => return self.holed(node),
+            },
+            Stmt::LetStmt(binding) => match binding.initializer(tree) {
+                Some(_) => Partial::Let { binding },
+                None => return self.damaged_let(binding),
+            },
+            Stmt::Expr(Expr::IfExpr(branch)) => {
+                // A lost part stands as the `if` itself, which `node_of` holes on demand; an
+                // `else` keyword without its block is still an else.
+                let cond = branch.condition(tree).map_or(node, |cond| cond.node());
+                let then = branch.then_branch(tree).map_or(node, |block| block.node());
+                let else_ = branch
+                    .else_branch(tree)
+                    .map(|branch| branch.node())
+                    .or_else(|| {
+                        tree.holds(node, lexed, SyntaxKind::ElseKw, None)
+                            .then_some(node)
+                    });
+                work.push(Work::Branches(Branch {
+                    node,
+                    cond,
+                    then,
+                    else_,
+                }));
+                if cond != node {
+                    work.push(Work::Enter(cond));
+                }
+                return;
+            }
+            Stmt::Expr(Expr::CallExpr(call)) => {
+                let target = match call.callee(tree) {
+                    Some(callee) => self.target(callee.node()),
+                    None => None,
+                };
+                let mut args = Vec::new();
+                if let Some(list) = call.arg_list(tree) {
+                    for child in tree.children(list.node()) {
+                        let Some(arg) = Expr::cast(tree, child) else {
+                            break;
+                        };
+                        args.push(arg.node());
+                    }
+                }
+                Partial::Call { node, target, args }
+            }
+            Stmt::Expr(_) => return self.holed(node),
+        };
+        match &partial {
+            Partial::Let { binding } => {
+                let initializer = binding
+                    .initializer(tree)
+                    .map(|initializer| initializer.node());
+                work.push(Work::Finish(Finish::Partial(partial)));
+                if let Some(initializer) = initializer {
+                    work.push(Work::Enter(initializer));
+                }
+            }
+            Partial::Discard { value: child, .. } | Partial::Paren { inner: child, .. } => {
+                let child = *child;
+                work.push(Work::Finish(Finish::Partial(partial)));
+                work.push(Work::Enter(child));
+            }
+            Partial::Prefix { operand: child, .. } | Partial::Assign { value: child, .. } => {
+                let child = *child;
+                work.push(Work::Finish(Finish::Partial(partial)));
+                if let Some(child) = child {
+                    work.push(Work::Enter(child));
+                }
+            }
+            Partial::Binary { lhs, rhs, .. } => {
+                let (lhs, rhs) = (*lhs, *rhs);
+                work.push(Work::Finish(Finish::Partial(partial)));
+                if let Some(rhs) = rhs {
+                    work.push(Work::Enter(rhs));
+                }
+                if let Some(lhs) = lhs {
+                    work.push(Work::Advance(lhs));
+                    work.push(Work::Enter(lhs));
+                }
+            }
+            Partial::Call { args, .. } => {
+                let args = args.clone();
+                work.push(Work::Finish(Finish::Partial(partial)));
+                enter_each(work, args.into_iter());
+            }
+        }
+    }
+    fn holed(&mut self, node: NodeIdx) {
+        self.hole(node);
+    }
+    /// A child's value, or a hole at `node` for a missing one.
+    fn present(&mut self, node: NodeIdx, child: Option<NodeIdx>) -> (NodeId, TextRange) {
+        match child {
+            Some(child) => self.input(child),
+            None => (self.hole(node), self.source.range(node)),
+        }
+    }
+    fn partial(&mut self, partial: Partial) {
+        match partial {
+            Partial::Let { binding } => {
+                let tree = self.source.tree;
+                let node = binding.node();
+                let initializer = binding
+                    .initializer(tree)
+                    .map(|initializer| initializer.node());
+                let value = self.present(node, initializer);
+                let annotation = binding.type_ref(tree);
+                let declared = annotation.and_then(|annotation| {
+                    let ty = self.source.ty(annotation)?;
+                    Some((ty, self.source.range(annotation.node())))
+                });
+                let Some((name, name_node)) = self.source.name(binding.name(tree)) else {
+                    self.hole(node);
+                    return;
+                };
+                let op = match (annotation, declared) {
+                    (Some(_), None) => Op::Hole,
+                    _ => Op::Copy { declared },
+                };
+                let copy = self.push(node, op, &[value], Some(self.source.range(name_node)));
+                let mutable = binding.mutable(tree, self.source.lexed());
+                let local = self.bind(name, copy, mutable);
+                self.controls[node.to_usize()] =
+                    initializer.and_then(|initializer| self.control(initializer));
+                let completes =
+                    initializer.is_some_and(|initializer| self.form(initializer).completes);
+                self.locals[local.index()].completes = completes;
+                self.bottoms[node.to_usize()] = completes;
+                if completes {
+                    self.completes_input(copy, 0);
+                }
+            }
+            Partial::Discard { node, value } | Partial::Paren { node, inner: value } => {
+                let id = self.node_of(value);
+                self.nodes_of[node.to_usize()] = Some(id);
+                self.controls[node.to_usize()] = self.control(value);
+                self.bottoms[node.to_usize()] = self.form(value).completes;
+            }
+            Partial::Assign {
+                node,
+                target,
+                value,
+            } => {
+                let input = self.present(node, value);
+                let op = match target {
+                    Some(local) => Op::Assign {
+                        declaration: self.locals[local.index()].declaration,
+                    },
+                    None => Op::Hole,
+                };
+                let assigned = self.push(node, op, &[input], None);
+                self.controls[node.to_usize()] = value.and_then(|value| self.control(value));
+                let completes = value.is_some_and(|value| self.form(value).completes);
+                self.bottoms[node.to_usize()] = completes;
+                match (target, completes) {
+                    (_, true) => self.completes_input(assigned, 0),
+                    (Some(local), false) if self.lowered.typed[assigned.index()] => {
+                        self.set_version(local, assigned);
+                    }
+                    _ => {}
+                }
+            }
+            Partial::Prefix { node, neg, operand } => {
+                let input = self.present(node, operand);
+                let id = self.push(node, if neg { Op::Neg } else { Op::Not }, &[input], None);
+                self.controls[node.to_usize()] = operand.and_then(|operand| self.control(operand));
+                if operand.is_some_and(|operand| self.form(operand).completes) {
+                    self.completes_input(id, 0);
+                    self.bottoms[node.to_usize()] = true;
+                }
+            }
+            Partial::Binary { node, op, lhs, rhs } => {
+                let inputs = [self.present(node, lhs), self.present(node, rhs)];
+                let id = self.push(node, Op::Binary(op), &inputs, None);
+                let controls =
+                    [lhs, rhs].map(|operand| operand.and_then(|operand| self.control(operand)));
+                self.controls[node.to_usize()] = self.compose_control(node, controls);
+                for (index, operand) in [lhs, rhs].into_iter().enumerate() {
+                    if operand.is_some_and(|operand| self.form(operand).completes) {
+                        self.completes_input(id, index);
+                        self.bottoms[node.to_usize()] = true;
+                    }
+                }
+            }
+            Partial::Call { node, target, args } => {
+                let context = self.context();
+                let callee: Option<(FunctionId, &Header, Callee)> = target.and_then(|target| {
+                    let function = &self.headers[target.index()];
+                    Some((target, function, function.callee?))
+                });
+                if let Some((target, ..)) = callee {
+                    self.lowered.entered.push((context, target));
+                }
+                let mut inputs = std::mem::take(&mut self.inputs);
+                inputs.clear();
+                for &arg in &args {
+                    inputs.push(self.input(arg));
+                }
+                // A damaged list is not yet the wrong length.
+                let op = callee.map_or(Op::Hole, |(.., id)| Op::Call(id));
+                let id = self.push(node, op, &inputs, None);
+                if let Some((target, ..)) = callee
+                    && self.lowered.typed[id.index()]
+                {
+                    self.lowered.called.push((id, target));
+                }
+                self.inputs = inputs;
+                let controls: Vec<_> = args.iter().map(|&arg| self.control(arg)).collect();
+                self.controls[node.to_usize()] = self.compose_control(node, controls);
+                for (index, &arg) in args.iter().enumerate() {
+                    if self.form(arg).completes {
+                        self.completes_input(id, index);
+                        self.bottoms[node.to_usize()] = true;
+                    }
+                }
+            }
+        }
     }
     fn lazy(&mut self, expr: LazyOp, rhs: RegionId, contexts: [NodeId; 2]) -> Option<()> {
         let lhs = expr.expr.lhs().node();
@@ -2010,15 +2361,17 @@ impl<'a, 's> Builder<'a, 's> {
     }
     fn join(
         &mut self,
-        branch: Clean<ast::IfExpr>,
+        branch: Branch,
         then: RegionId,
         else_: Option<RegionId>,
         contexts: [NodeId; 2],
     ) -> Option<()> {
-        let tree = self.source.tree;
-        let cond = branch.condition().node();
-        let then_node = branch.then_branch().node();
-        let else_node = branch.else_branch(tree).map(|e| e.node());
+        let Branch {
+            node,
+            cond,
+            then: then_node,
+            else_: else_node,
+        } = branch;
         let then_state = self.closed(then);
         let false_state = match else_ {
             Some(else_) => self.closed(else_),
@@ -2029,13 +2382,7 @@ impl<'a, 's> Builder<'a, 's> {
         results.extend(else_node.map(|else_node| self.node_of(else_node)));
         let then_form = self.form(then_node);
         let else_form = else_node.map_or(Form::SCALAR, |node| self.form(node));
-        let id = self.push_over(
-            branch.node(),
-            Op::Join { then, else_ },
-            &[condition],
-            None,
-            &results,
-        );
+        let id = self.push_over(node, Op::Join { then, else_ }, &[condition], None, &results);
         let observe = (self.control(then_node).is_some()
             || else_node.is_some_and(|node| self.control(node).is_some()))
         .then(|| {
@@ -2044,16 +2391,12 @@ impl<'a, 's> Builder<'a, 's> {
                     then: Some(then),
                     else_,
                 },
-                &[
-                    condition,
-                    (self.context(), self.source.range(branch.node())),
-                ],
-                self.source.range(branch.node()),
+                &[condition, (self.context(), self.source.range(node))],
+                self.source.range(node),
                 None,
             )
         });
-        self.controls[branch.node().to_usize()] =
-            self.compose_control(branch.node(), [self.control(cond), observe]);
+        self.controls[node.to_usize()] = self.compose_control(node, [self.control(cond), observe]);
         let cond_form = self.form(cond);
         if cond_form.completes {
             self.completes_input(id, 0);
@@ -2062,13 +2405,9 @@ impl<'a, 's> Builder<'a, 's> {
             return None;
         }
         if cond_form.completes || (then_form.completes && else_form.completes) {
-            self.bottoms[branch.node().to_usize()] = true;
+            self.bottoms[node.to_usize()] = true;
         } else {
-            self.merge_versions(
-                cond,
-                [&then_state, &false_state],
-                self.source.range(branch.node()),
-            );
+            self.merge_versions(cond, [&then_state, &false_state], self.source.range(node));
             if then_form.scalar() {
                 self.typed(then_node)?;
             } else {
@@ -2118,6 +2457,11 @@ impl<'a, 's> Builder<'a, 's> {
         let whole = callee.filter(|&(.., id)| self.whole(id, &inputs));
         let op = callee.map_or(Op::Hole, |(.., id)| Op::Call(id));
         let id = self.push(node, op, &inputs, None);
+        if let Some((target, ..)) = callee
+            && self.lowered.typed[id.index()]
+        {
+            self.lowered.called.push((id, target));
+        }
         let args: Vec<_> = call.arg_list().args(tree).map(|arg| arg.node()).collect();
         let controls: Vec<_> = args.iter().map(|&arg| self.control(arg)).collect();
         self.controls[node.to_usize()] = self.compose_control(node, controls);

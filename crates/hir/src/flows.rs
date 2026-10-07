@@ -492,16 +492,16 @@ pub(crate) fn draw(
             typing.flow(context, entry, Edge::Enter);
         }
     }
-    for call in &lowered.calls {
-        let run = graph.run(call.callee);
-        if arguments == Arguments::Delivered {
+    if arguments == Arguments::Delivered {
+        for call in &lowered.calls {
+            let run = graph.run(call.callee);
             for (&arg, param) in graph.inputs(call.node).iter().zip(run.params()) {
                 typing.derive(arg, call.context, param, Pair::Argument);
             }
         }
-        if typed(call.node) {
-            typing.call(run.result(), call.node, graph.node(call.node).origin);
-        }
+    }
+    for &(call, callee) in &lowered.called {
+        typing.call(graph.run(callee).result(), call, graph.node(call).origin);
     }
     let demands = demands.made;
     for demand in &demands {

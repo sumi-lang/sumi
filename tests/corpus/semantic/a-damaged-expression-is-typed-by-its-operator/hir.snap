@@ -1,0 +1,147 @@
+file: rejected
+frontend errors: 19 (see frontend.snap)
+semantic errors: 11
+
+fn around_a_hole@1:1..6:2 (bool ∈ ∅) -> int ∈ ∅
+  param flag@1:18..1:22: bool
+  result: copy : int @1:33..1:36
+    value:
+      let x@2:9..2:10: ? @2:5..2:17
+        initializer: eager + : int @2:14..2:17
+          lhs: int 1 : int @2:14..2:15
+          rhs: hole : ? @2:14..2:17
+      let y@3:9..3:10: bool @3:5..3:22
+        initializer: lazy and : bool @3:13..3:22
+          lhs: read x@2:9..2:10 : ?
+          rhs: read flag@1:18..1:22 : bool
+      tail: if : ? @4:5..6:2
+        condition: read flag@1:18..1:22 : bool
+        then: read x@2:9..2:10 : ?
+        else: call count@7:1..7:28 : int @4:26..5:30
+          arg[0]: if : ? @5:5..5:30
+            condition: read y@3:9..3:10 : bool
+            then: int 1 : int @5:12..5:13
+            else: bool false : bool @5:23..5:28
+
+fn count@7:1..7:28 (int ∈ ∅) -> int ∈ ∅
+  param n@7:10..7:11: int
+  result: copy : int @7:21..7:24
+    value: read n@7:10..7:11 : int
+
+fn tail@8:1..10:2 (bool ∈ ∅) -> unit ∈ ∅
+  param flag@8:9..8:13: bool
+  result: copy : unit @8:1..10:2
+    value: call count@7:1..7:28 : ? @9:5..9:11
+
+fn arguments@11:1..11:38 () -> int ∈ ∅
+  result: copy : int @11:19..11:22
+    value: call count@7:1..7:28 : int @11:25..11:38
+      arg[0]: bool true : ? @11:31..11:35
+      arg[1]: int 2 : int @11:37..11:38
+
+fn negated@12:1..12:26 () -> bool ∈ ∅
+  result: copy : bool @12:17..12:21
+    value: negate : ? @12:24..12:26
+      operand: hole : ? @12:25..12:26
+
+fn inferred@13:1..13:20 () -> int ∈ ∅
+  body: eager + : int @13:17..13:20
+    lhs: int 1 : int @13:17..13:18
+    rhs: hole : ? @13:17..13:20
+
+fn caller@14:1..14:33 () -> bool ∈ ∅
+  result: copy : bool @14:16..14:20
+    value: call inferred@13:1..13:20 : ? @14:23..14:33
+
+fn forwarded@15:1..15:24 () -> int ∈ ∅
+  body: call count@7:1..7:28 : int @15:18..15:24
+
+fn chained@16:1..16:35 () -> bool ∈ ∅
+  result: copy : bool @16:17..16:21
+    value: call forwarded@15:1..15:24 : ? @16:24..16:35
+
+fn assigned@17:1..21:2 (bool ∈ ∅) -> unit ∈ ∅
+  param flag@17:13..17:17: bool
+  result: copy : unit @17:1..21:2
+    value:
+      let x@18:13..18:14: ? @18:5..18:18
+        initializer: int 1 : int @18:17..18:18
+      assignment: assign x@18:13..18:14 : ? @19:5..19:11
+        value: not : ? @19:9..19:11
+          operand: hole : ? @19:10..19:11
+      tail: hole : ? @17:25..21:2
+
+fn annotated@22:1..27:2 (bool ∈ ∅) -> bool ∈ ∅
+  param flag@22:14..22:18: ?
+  result: copy : bool @22:29..22:33
+    value:
+      let x@23:9..23:10: ? @23:5..23:21
+        initializer: eager + : int @23:18..23:21
+          lhs: int 1 : int @23:18..23:19
+          rhs: hole : ? @23:18..23:21
+      let y@24:9..24:10: hole : ? @24:5..24:25
+        part[0]: eager + : int @24:22..24:25
+          lhs: int 2 : int @24:22..24:23
+          rhs: hole : ? @24:22..24:25
+      let z@25:9..25:10: int @25:5..26:6
+        initializer: eager == : ? @25:18..26:6
+          lhs: read flag@22:14..22:18 : ?
+          rhs: read x@23:9..23:10 : ?
+      tail: hole : ? @22:34..27:2
+
+fn empty@28:1..31:2 () -> int ∈ ∅
+  result: copy : int @28:15..28:18
+    value:
+      discard: hole : ? @29:5..29:7
+      discard: hole : ? @30:5..30:8
+      tail: hole : ? @28:19..31:2
+
+fn merged@32:1..36:2 (bool ∈ ∅) -> int ∈ ∅
+  param flag@32:11..32:15: bool
+  result: copy : int @32:26..32:29
+    value:
+      let x@33:13..33:14: int @33:5..33:18
+        initializer: int 1 : int @33:17..33:18
+      tail: if : ? @34:5..36:2
+        condition: read flag@32:11..32:15 : bool
+        then:
+          assignment: assign x@33:13..33:14 : int @34:15..34:20
+            value: int 2 : int @34:19..34:20
+          tail: unit : unit @34:13..34:22
+        else:
+          assignment: assign x@33:13..33:14 : int @34:30..35:6
+            value: read x@33:13..33:14 : int
+          tail: hole : ? @34:28..36:2
+
+== semantic diagnostics ==
+error[semantic/type-mismatch]: expected bool, found int
+  primary @3:13..3:14
+error[semantic/type-mismatch]: if branches are int and bool
+  primary @5:5..5:30
+  secondary @5:12..5:13: int here
+  secondary @5:23..5:28: bool here
+error[semantic/type-mismatch]: expected unit, found int
+  primary @8:21..10:2
+  secondary @8:1..10:2: declared here
+error[semantic/type-mismatch]: expected int, found bool
+  primary @11:31..11:35
+  secondary @7:1..7:28: declared here
+error[semantic/type-mismatch]: expected bool, found int
+  primary @12:24..12:26
+  secondary @12:17..12:21: declared here
+error[semantic/type-mismatch]: expected bool, found int
+  primary @14:23..14:33
+  secondary @14:16..14:20: declared here
+error[semantic/type-mismatch]: expected bool, found int
+  primary @16:24..16:35
+  secondary @16:17..16:21: declared here
+error[semantic/type-mismatch]: expected int, found bool
+  primary @19:9..19:11
+  secondary @18:13..18:14: declared here
+error[semantic/unknown-type]: unknown type `mystery`
+  primary @24:12..24:19
+error[semantic/type-mismatch]: expected int, found bool
+  primary @25:18..26:6
+  secondary @25:12..25:15: declared here
+error[semantic/type-mismatch]: expected bool, found int
+  primary @25:26..26:6
