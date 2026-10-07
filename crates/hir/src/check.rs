@@ -184,10 +184,11 @@ fn signatures(
             let params = graph.callable(callee).params.clone();
             functions[index].signature = Some(Signature { params, result });
         }
-        // A failed demand, or the callee this inherits from, already reports it.
+        // A failed demand, a hole, or the callee this inherits from, already reports it.
         if let (HeaderResult::Inferred, Some(evidence), None) = (header.result, evidence, result)
             && lowered.built[index]
             && !failed[index]
+            && !evidence.unknown()
             && !evidence.inherited()
         {
             if evidence.is_conflict() {

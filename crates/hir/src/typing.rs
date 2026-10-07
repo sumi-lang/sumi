@@ -20,6 +20,7 @@ pub(crate) struct Typing {
     solver: Solver<Product>,
     origins: Vec<TextRange>,
     facts: Vec<(NodeId, Ty, Claim)>,
+    unknowns: Vec<NodeId>,
     /// Unioned in the replay rather than delivered like a call: a demand on the alias must reach
     /// its provider, whose type a branch may settle only later.
     aliased: Vec<(NodeId, NodeId)>,
@@ -31,6 +32,7 @@ impl Typing {
             solver: Solver::with_classes(nodes),
             origins: Vec::with_capacity(nodes),
             facts: Vec::with_capacity(nodes),
+            unknowns: Vec::new(),
             aliased: Vec::with_capacity(nodes / 8),
         }
     }
@@ -60,6 +62,12 @@ impl Typing {
         class.types.join(&Evidence::single(ty, claim));
         class.values.join(&value);
         self.facts.push((node, ty, claim));
+    }
+
+    /// A hole decided `node`'s type: a fact, so a replay keeps it, and every call delivers it.
+    pub fn unknown(&mut self, node: NodeId) {
+        self.solver.class_mut(node).types.join(&Evidence::UNKNOWN);
+        self.unknowns.push(node);
     }
 
     /// Liveness is not a type claim, so no replay reads it.
@@ -126,15 +134,19 @@ impl Typing {
         self.solver.solve(thresholds);
     }
 
-    /// A conflicted callee delivers nothing: it is reported at its declaration.
+    /// A conflicted callee delivers nothing: it is reported at its declaration. An unknown one
+    /// delivers the unknown, so its callers are held to nothing.
     pub fn replay(&self) -> Replay {
         let mut replay = Replay::new(self.solver.classes());
         for &(node, ty, claim) in &self.facts {
             replay.learn(node, &Evidence::single(ty, claim));
         }
+        for &node in &self.unknowns {
+            replay.learn(node, &Evidence::UNKNOWN);
+        }
         for (call, edge, solved) in self.solver.edges() {
             if let Edge::Call(claim) = *edge
-                && solved.types.ty().is_some()
+                && (solved.types.ty().is_some() || solved.types.unknown())
             {
                 replay.learn(call, &solved.types.imported(claim));
             }
@@ -253,6 +265,30 @@ mod tests {
     #[test]
     fn a_fact_is_three_words() {
         assert_eq!(size_of::<(NodeId, Ty, Claim)>(), 12);
+    }
+
+    #[test]
+    fn the_unknown_outranks_every_claim_and_every_call_delivers_it() {
+        let (mut typing, [hole, literal, call, join]) = classes();
+        typing.unknown(hole);
+        typing.literal(literal, Ty::Int, May::int(&1.into()), at(0));
+        typing.expect(hole, Expected::Ty(Ty::Int), at(1));
+        typing.expect(hole, Expected::Ty(Ty::Bool), at(2));
+        typing.call(hole, call, at(3));
+        typing.derive(hole, literal, join, Pair::Branch);
+        typing.solve(&cx());
+        for node in [hole, call, join] {
+            let evidence = typing.evidence(node);
+            assert!(evidence.unknown());
+            assert_eq!(evidence.ty(), None);
+            assert!(!evidence.is_conflict());
+        }
+        assert_eq!(typing.resolve(literal), Some(Ty::Int));
+        let mut replay = typing.replay();
+        assert!(replay.evidence(call).unknown());
+        replay.expect(call, Expected::Ty(Ty::Unit));
+        assert_eq!(replay.resolve(call), None);
+        assert!(!replay.evidence(call).is_conflict());
     }
 
     #[test]

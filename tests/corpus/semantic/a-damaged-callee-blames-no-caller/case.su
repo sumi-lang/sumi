@@ -1,0 +1,11 @@
+fn damaged() = missing
+fn uses(flag: bool) {
+    let x = damaged()
+    _ = x + 1
+    _ = x && flag
+}
+fn forwards() = damaged()
+fn declared() -> int = damaged()
+fn chained() -> bool = forwards()
+fn branched(flag: bool) -> bool = if flag { damaged() } else { 1 }
+fn intact() -> int = 3
