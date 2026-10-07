@@ -2,9 +2,9 @@ file: rejected
 frontend errors: 0 (see frontend.snap)
 semantic errors: 4
 
-fn or_name@1:1..1:42 () -> bool ∈ ∅
+fn or_name@1:1..1:42 () -> bool ∈ {true}
   result: copy : bool @1:17..1:21
-    value: lazy or : ? @1:24..1:42
+    value: lazy or : bool @1:24..1:42
       lhs: bool true : bool @1:24..1:28
       rhs: hole : ? @1:32..1:42
 

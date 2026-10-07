@@ -36,7 +36,7 @@ fn twice@7:1..7:37 (int ∈ [1, 1], bool ∈ {true}) -> int ∈ ∅
 
 fn wrong@8:1..8:44 () -> int ∈ ∅
   result: copy : int @8:15..8:18
-    value: call typed@6:1..6:37 : ? @8:21..8:44
+    value: call typed@6:1..6:37 : int @8:21..8:44
       arg[0]: bool true : ? @8:27..8:31
       arg[1]: int 1 : ? @8:33..8:34
       arg[2]: hole : ? @8:36..8:43
@@ -62,7 +62,7 @@ fn scaled@14:1..14:33 (int ∈ ∅) -> int ∈ ∅
 
 fn extra@15:1..15:33 () -> int ∈ ∅
   result: copy : int @15:15..15:18
-    value: call scaled@14:1..14:33 : ? @15:21..15:33
+    value: call scaled@14:1..14:33 : int @15:21..15:33
       arg[0]: int 3 : int @15:28..15:29
       arg[1]: int 4 : int @15:31..15:32
 
@@ -71,9 +71,9 @@ fn twice_named@16:1..19:2 (int ∈ ∅, bool ∈ ∅) -> unit ∈ ∅
   param x@16:24..16:25: ?
   result: copy : unit @16:1..19:2
     value:
-      discard: not : ? @17:9..17:11
+      discard: not : bool @17:9..17:11
         operand: read x@16:24..16:25 : ?
-      discard: negate : ? @18:9..18:11
+      discard: negate : int @18:9..18:11
         operand: read x@16:24..16:25 : ?
       tail: unit : unit @16:33..19:2
 

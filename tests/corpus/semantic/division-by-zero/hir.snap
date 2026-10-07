@@ -192,7 +192,7 @@ fn arity@47:1..47:34 (int ∈ ∅) -> int ∈ ∅
 
 fn wrong_arity@48:1..48:38 () -> int ∈ ∅
   result: copy : int @48:21..48:24
-    value: call arity@47:1..47:34 : ? @48:27..48:38
+    value: call arity@47:1..47:34 : int @48:27..48:38
       arg[0]: int 0 : int @48:33..48:34
       arg[1]: int 1 : int @48:36..48:37
 

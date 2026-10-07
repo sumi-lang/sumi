@@ -1,6 +1,6 @@
 file: rejected
 frontend errors: 0 (see frontend.snap)
-semantic errors: 6
+semantic errors: 7
 
 fn f@1:1..11:2 () -> int ∈ [42, 42]
   result: copy : int @1:11..1:14
@@ -11,7 +11,7 @@ fn f@1:1..11:2 () -> int ∈ [42, 42]
         then: hole : ? @4:9..4:12
         else: unit (implicit)
       discard: hole : ? @7:9..7:12
-      discard: eager + : ? @9:5..9:10
+      discard: eager + : int @9:5..9:10
         lhs: hole : ? @9:5..9:6
         rhs: hole : ? @9:9..9:10
       tail: int 42 : int @10:5..10:7
@@ -27,5 +27,7 @@ error[semantic/unknown-name]: unknown function `k`
   primary @7:9..7:10
 error[semantic/unknown-name]: unknown name `a`
   primary @9:5..9:6
+error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
+  primary @9:5..9:10
 error[semantic/unknown-name]: unknown name `b`
   primary @9:9..9:10

@@ -8,10 +8,11 @@ fn damaged@1:1..8:2 () -> unit ∈ ∅
       let x@2:9..2:10: bool @2:5..2:17
         initializer: bool true : bool @2:13..2:17
       let x@3:9..3:10: hole : ? @3:5..3:12
-      discard: eager + : ? @4:9..4:14
+      discard: eager + : int @4:9..4:14
         lhs: read x@3:9..3:10 : ?
         rhs: int 1 : int @4:13..4:14
-      let y@5:9..5:10: hole : ? @5:5..5:15
+      let y@5:9..5:10: int @5:5..5:15
+        initializer: int 1 : int @5:14..5:15
       discard: hole : ? @7:9..7:16
       tail: hole : ? @1:14..8:2
 
@@ -38,12 +39,12 @@ fn rebound@14:1..22:2 () -> unit ∈ unit
         rhs: int 1 : int @17:13..17:14
       let x@18:9..18:10: hole : ? @18:5..18:23
         part[0]: int 1 : int @18:22..18:23
-      discard: eager + : ? @19:9..19:14
+      discard: eager + : int @19:9..19:14
         lhs: read x@18:9..18:10 : ?
         rhs: int 1 : int @19:13..19:14
       let x@20:9..20:10: ? @20:5..20:19
         initializer: hole : ? @20:13..20:19
-      discard: eager + : ? @21:9..21:14
+      discard: eager + : int @21:9..21:14
         lhs: read x@20:9..20:10 : ?
         rhs: int 1 : int @21:13..21:14
       tail: unit : unit @14:14..22:2
