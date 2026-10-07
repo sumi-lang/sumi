@@ -6,7 +6,8 @@ use std::collections::HashSet;
 
 use rustc_hash::FxBuildHasher;
 use sumi_graph::{
-    BinaryOp, CmpOp, Domain, Graph, Int, May, Node, NodeId, Op, RegionId, Thresholds, Ty, Value,
+    BinaryOp, CmpOp, Domain, FunctionId, Graph, Int, May, Node, NodeId, Op, RegionId, Thresholds,
+    Ty, Value,
 };
 use sumi_text::TextRange;
 
@@ -14,10 +15,18 @@ use crate::lattice::{Edge, Pair};
 use crate::lower::{Fallthrough, Header, Lowered};
 use crate::typing::{Expected, Typing};
 
+/// Where a demanded type was declared.
+#[derive(Clone, Copy)]
+pub(crate) enum Declared {
+    Written(TextRange),
+    /// A result left unwritten, which declares `unit` at the parameter list.
+    Omitted(TextRange),
+}
+
 pub(crate) enum DemandKind {
     Type {
         expected: Expected,
-        declared: Option<TextRange>,
+        declared: Option<Declared>,
     },
     Unused,
     Comparable,
@@ -38,6 +47,7 @@ struct Demands<'a> {
     graph: &'a Graph,
     typed: &'a [bool],
     fallthroughs: &'a [Option<Fallthrough>],
+    omitted_results: &'a [bool],
     made: Vec<Demand>,
 }
 
@@ -68,6 +78,16 @@ impl Demands<'_> {
                 demand(at, actual, DemandKind::Type { expected, declared });
             }
         };
+        let written = |at: TextRange| Some(Declared::Written(at));
+        // The function's result holds its body to the declared type, written or not.
+        let result = |at: TextRange| {
+            if self.omitted_results[owner as usize] {
+                Some(Declared::Omitted(at))
+            } else {
+                Some(Declared::Written(at))
+            }
+        };
+        let is_result = node == graph.run(FunctionId::new(owner as usize)).result();
         let region = |id: RegionId| {
             let region = graph.region(id);
             (region.result_read(), region.result())
@@ -140,13 +160,16 @@ impl Demands<'_> {
             }
             Op::Copy {
                 declared: Some((ty, at)),
-            } if value(0) => require(reads[0], inputs[0], Expected::Ty(*ty), Some(*at)),
+            } if value(0) => {
+                let declared = if is_result { result(*at) } else { written(*at) };
+                require(reads[0], inputs[0], Expected::Ty(*ty), declared);
+            }
             Op::Copy { declared: Some(_) } => {}
             Op::Assign { declaration } if value(0) => require(
                 reads[0],
                 inputs[0],
                 Expected::Peer(*declaration),
-                graph.node(*declaration).name,
+                graph.node(*declaration).name.and_then(written),
             ),
             Op::Assign { .. } => {}
             Op::Call(callee) => {
@@ -156,7 +179,7 @@ impl Demands<'_> {
                     reads.iter().zip(inputs).zip(&callable.params).enumerate()
                 {
                     if value(index) {
-                        require(at, input, Expected::Ty(ty), Some(declared));
+                        require(at, input, Expected::Ty(ty), written(declared));
                     }
                 }
             }
@@ -169,18 +192,14 @@ impl Demands<'_> {
             Op::Return => {}
             Op::Result { declared } => {
                 let expected = declared.map_or(Expected::Peer(node), |(ty, _)| Expected::Ty(ty));
+                let declared = declared.and_then(|(_, at)| result(at));
                 if let Some(fallthrough) = fallthrough {
-                    require(
-                        fallthrough.at,
-                        fallthrough.value,
-                        expected,
-                        declared.map(|(_, at)| at),
-                    );
+                    require(fallthrough.at, fallthrough.value, expected, declared);
                 } else if value(0) {
-                    require(reads[0], inputs[0], expected, declared.map(|(_, at)| at));
+                    require(reads[0], inputs[0], expected, declared);
                 }
                 for (&at, &input) in reads[1..].iter().zip(&inputs[1..]) {
-                    require(at, input, expected, declared.map(|(_, at)| at));
+                    require(at, input, expected, declared);
                 }
             }
             Op::Int(_)
@@ -231,6 +250,7 @@ pub(crate) fn draw(
         graph,
         typed: &lowered.typed,
         fallthroughs: &lowered.fallthroughs,
+        omitted_results: &lowered.omitted_results,
         made: Vec::with_capacity(graph.nodes().len() / 2),
     };
 

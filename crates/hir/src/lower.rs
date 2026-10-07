@@ -97,6 +97,8 @@ pub(crate) struct Lowered {
     pub fallthroughs: Vec<Option<Fallthrough>>,
     /// In source order within each block.
     pub statements: Vec<Statement>,
+    /// By function: a `unit` result declared by writing none, held at the parameter list.
+    pub omitted_results: Vec<bool>,
 }
 
 pub(crate) struct Source<'s> {
@@ -332,7 +334,12 @@ pub(crate) fn declare<'s>(
                 (tokens.next(), tokens.next())
             });
             match gap {
-                Some((None, None)) => HeaderResult::Declared(Ty::Unit, item.node()),
+                Some((None, None)) => HeaderResult::Declared(
+                    Ty::Unit,
+                    whole_list
+                        .expect("a gap is measured from a whole list")
+                        .node(),
+                ),
                 Some((Some(SyntaxKind::Eq), None)) => HeaderResult::Inferred,
                 _ => HeaderResult::None,
             }
@@ -362,10 +369,14 @@ pub(crate) fn lower<'s>(
     declared: &Declarations<'s>,
     graph: GraphBuilder,
 ) -> (Graph, Lowered) {
+    let tree = source.tree;
     let mut builder = Builder::new(source, &declared.headers, &declared.names, graph);
     for (index, (item, params)) in items.iter().zip(&declared.parameters).enumerate() {
         let built = builder.build(index, *item, params);
         builder.lowered.built.push(built);
+        let omitted = matches!(declared.headers[index].result, HeaderResult::Declared(..))
+            && item.ret(tree).is_none();
+        builder.lowered.omitted_results.push(omitted);
     }
     (builder.graph.finish(), builder.lowered)
 }
@@ -642,6 +653,7 @@ impl<'a, 's> Builder<'a, 's> {
                 obligations: Vec::new(),
                 fallthroughs: vec![None; headers.len()],
                 statements: Vec::new(),
+                omitted_results: Vec::with_capacity(headers.len()),
             },
             nodes_of: vec![None; nodes],
             tails: vec![None; nodes],

@@ -27,7 +27,7 @@ fn bad_arguments@5:1..5:41 signature: unavailable
     arg[1]: hole : ? @5:33..5:40
 
 fn bare@6:1..8:2 () -> unit ∈ ∅
-  result: copy : unit @6:1..8:2
+  result: copy : unit @6:8..6:10
     value: int 1 : int @7:5..7:6
 
 fn malformed@9:1..11:2 signature: unavailable
@@ -68,7 +68,7 @@ error[semantic/unknown-name]: unknown name `missing`
   primary @5:33..5:40
 error[semantic/type-mismatch]: expected unit, found int
   primary @7:5..7:6
-  secondary @6:1..8:2: declared here
+  secondary @6:8..6:10: returns unit, since no result type is written
 error[semantic/type-mismatch]: expected bool, found int
   primary @15:8..15:9
 error[semantic/type-mismatch]: expected bool, found int

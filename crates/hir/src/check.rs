@@ -8,7 +8,7 @@ use sumi_syntax::ast::{self, View};
 use sumi_text::TextRange;
 
 use crate::codes;
-use crate::flows::{Demand, DemandKind};
+use crate::flows::{Declared, Demand, DemandKind};
 use crate::lower::{self, Call, HeaderResult, Lowered, Source};
 use crate::typing::{Expected, Replay, Typing};
 use crate::{Analysis, Function, Ints, Signature, flows};
@@ -114,7 +114,12 @@ fn holds(source: &mut Source<'_>, typing: &Typing, replay: &mut Replay, demand: 
             };
             match (actual, expected_ty) {
                 (Some(actual), Some(expected)) if actual != expected => {
-                    let related = declared.map(|at| (at, "declared here"));
+                    let related = declared.map(|declared| match declared {
+                        Declared::Written(at) => (at, "declared here"),
+                        Declared::Omitted(at) => {
+                            (at, "returns unit, since no result type is written")
+                        }
+                    });
                     source.type_mismatch(demand.at, expected, actual, related);
                 }
                 _ => {

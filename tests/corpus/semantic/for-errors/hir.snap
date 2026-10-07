@@ -65,7 +65,7 @@ fn empty_path@10:1..14:2 () -> int ∈ ∅
         rhs: read divisor@11:13..11:20 (after loop @12:5..12:34) : int
 
 fn immutable_index@15:1..17:2 () -> unit ∈ unit
-  result: result : unit @15:1..17:2
+  result: result : unit @15:19..15:21
     outcome[0]:
       discard: after : ? @16:5..16:28
         control: loop : unit @16:5..16:28
@@ -98,7 +98,7 @@ fn index_scope@18:1..21:2 () -> int ∈ ∅
       tail: hole : ? @20:5..20:6
 
 fn boolean_start@22:1..22:44 () -> unit ∈ ∅
-  result: result : unit @22:1..22:44
+  result: result : unit @22:17..22:19
     outcome[0]:
       discard: after : ? @22:22..22:42
         control: loop : unit @22:22..22:42
@@ -113,7 +113,7 @@ fn boolean_start@22:1..22:44 () -> unit ∈ ∅
           tail: unit : unit @22:40..22:42
 
 fn boolean_end@23:1..23:41 () -> unit ∈ ∅
-  result: result : unit @23:1..23:41
+  result: result : unit @23:15..23:17
     outcome[0]:
       discard: after : ? @23:20..23:39
         control: loop : unit @23:20..23:39
@@ -128,7 +128,7 @@ fn boolean_end@23:1..23:41 () -> unit ∈ ∅
           tail: unit : unit @23:37..23:39
 
 fn nonunit_body@24:1..24:42 () -> unit ∈ unit
-  result: result : unit @24:1..24:42
+  result: result : unit @24:16..24:18
     outcome[0]:
       discard: after : ? @24:21..24:40
         control: loop : unit @24:21..24:40
@@ -143,7 +143,7 @@ fn nonunit_body@24:1..24:42 () -> unit ∈ unit
           tail: read i@24:25..24:26 : int
 
 fn changed_type@25:1..28:2 () -> unit ∈ unit
-  result: result : unit @25:1..28:2
+  result: result : unit @25:16..25:18
     outcome[0]:
       let x@26:13..26:14: ? @26:5..26:18
         initializer: int 1 : int @26:17..26:18

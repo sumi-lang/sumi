@@ -130,7 +130,7 @@ fn three@49:1..49:29 () -> int ∈ [0, +∞)
       arg[0]: int 3 : int @49:27..49:28
 
 fn bare@50:1..53:2 () -> unit ∈ unit
-  result: result : unit @50:1..53:2
+  result: result : unit @50:8..50:10
     outcome[0]:
       discard: int 1 : int @52:9..52:10
       tail: unit : unit @50:11..53:2

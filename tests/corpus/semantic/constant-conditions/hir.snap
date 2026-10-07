@@ -190,7 +190,7 @@ fn redundants@60:1..60:43 () -> bool ∈ {true}
       arg[0]: bool false : bool @60:37..60:42
 
 fn block_bounds@61:1..63:2 () -> unit ∈ unit
-  result: result : unit @61:1..63:2
+  result: result : unit @61:16..61:18
     outcome[0]:
       discard: after : ? @62:5..62:30
         control: loop : unit @62:5..62:30

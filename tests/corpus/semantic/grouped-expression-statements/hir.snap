@@ -23,7 +23,7 @@ fn sequence@2:1..23:2 () -> int ∈ [4, 4]
       tail: read action@20:9..20:15 : int
 
 fn separate@24:1..28:2 () -> unit ∈ unit
-  result: copy : unit @24:1..28:2
+  result: copy : unit @24:12..24:14
     value:
       discard: hole : ? @25:5..25:10
       discard: call value@1:1..1:22 : int @26:6..26:13

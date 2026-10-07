@@ -3,11 +3,11 @@ frontend errors: 0 (see frontend.snap)
 semantic errors: 7
 
 fn target@1:1..1:15 () -> unit ∈ unit
-  result: copy : unit @1:1..1:15
+  result: copy : unit @1:10..1:12
     value: unit : unit @1:13..1:15
 
 fn immutable_local@2:1..5:2 () -> unit ∈ unit
-  result: copy : unit @2:1..5:2
+  result: copy : unit @2:19..2:21
     value:
       let x@3:9..3:10: int @3:5..3:14
         initializer: int 1 : int @3:13..3:14
@@ -17,14 +17,14 @@ fn immutable_local@2:1..5:2 () -> unit ∈ unit
 
 fn immutable_param@6:1..8:2 (int ∈ ∅) -> unit ∈ ∅
   param x@6:20..6:21: int
-  result: copy : unit @6:1..8:2
+  result: copy : unit @6:19..6:27
     value:
       discard: hole : ? @7:5..7:10
         part[0]: int 2 : int @7:9..7:10
       tail: unit : unit @6:28..8:2
 
 fn expression_target@9:1..12:2 () -> unit ∈ unit
-  result: copy : unit @9:1..12:2
+  result: copy : unit @9:21..9:23
     value:
       let x@10:13..10:14: int @10:5..10:18
         initializer: int 1 : int @10:17..10:18
@@ -33,14 +33,14 @@ fn expression_target@9:1..12:2 () -> unit ∈ unit
       tail: unit : unit @9:24..12:2
 
 fn function_target@13:1..15:2 () -> unit ∈ unit
-  result: copy : unit @13:1..15:2
+  result: copy : unit @13:19..13:21
     value:
       discard: hole : ? @14:5..14:15
         part[0]: int 1 : int @14:14..14:15
       tail: unit : unit @13:22..15:2
 
 fn unknown_target@16:1..18:2 () -> unit ∈ unit
-  result: copy : unit @16:1..18:2
+  result: copy : unit @16:18..16:20
     value:
       discard: hole : ? @17:5..17:16
         part[0]: int 1 : int @17:15..17:16
@@ -56,7 +56,7 @@ fn mismatch@19:1..23:2 () -> int ∈ ∅
       tail: read x@20:13..20:14 (assigned @21:5..21:13) : ?
 
 fn damaged_value@24:1..27:2 () -> unit ∈ unit
-  result: copy : unit @24:1..27:2
+  result: copy : unit @24:17..24:19
     value:
       let x@25:13..25:14: int @25:5..25:18
         initializer: int 1 : int @25:17..25:18
