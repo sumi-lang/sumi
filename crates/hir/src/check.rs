@@ -152,12 +152,8 @@ fn holds(source: &mut Source<'_>, typing: &Typing, replay: &mut Replay, demand: 
             );
         }
         DemandKind::Agree { branches, at } => {
-            // Each arm is blamed where its value is read, whatever its claim's own origin.
-            let arms: Vec<_> = branches
-                .iter()
-                .zip(at)
-                .filter_map(|(&branch, at)| Some((replay.resolve(branch)?, Some(at))))
-                .collect();
+            // An arm is labeled where its value is read, whatever its claim's own origin.
+            let [then, else_] = [0, 1].map(|arm| replay.resolve(branches[arm]).zip(Some(at[arm])));
             for branch in branches {
                 replay.branch(branch, actual_class);
             }
@@ -166,16 +162,16 @@ fn holds(source: &mut Source<'_>, typing: &Typing, replay: &mut Replay, demand: 
                 return true;
             }
             let message = |types| format!("if branches are {types}");
-            if arms.len() == 2 && arms[0].0 != arms[1].0 {
-                source.conflict_at(demand.at, codes::TYPE_MISMATCH, &arms, message);
-            } else {
-                source.conflict(
-                    demand.at,
-                    codes::TYPE_MISMATCH,
-                    typing,
-                    &evidence.claims(),
-                    message,
-                );
+            let claims = evidence.claims();
+            match (then, else_) {
+                // The arms alone made the conflict; a third type has come in by aliasing.
+                (Some((then, then_at)), Some((else_, else_at)))
+                    if then != else_ && claims.len() == 2 =>
+                {
+                    let arms = vec![(then, Some(then_at)), (else_, Some(else_at))];
+                    source.conflict_at(demand.at, codes::TYPE_MISMATCH, arms, message);
+                }
+                _ => source.conflict(demand.at, codes::TYPE_MISMATCH, typing, &claims, message),
             }
         }
     }

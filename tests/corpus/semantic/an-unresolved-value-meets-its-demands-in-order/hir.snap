@@ -55,4 +55,5 @@ error[semantic/type-mismatch]: expected int, found unit
   primary @13:6..13:7
 error[semantic/type-mismatch]: if branches are bool and int
   primary @19:5..19:26
+  secondary @19:12..19:13: bool here
   secondary @19:23..19:24: int here
