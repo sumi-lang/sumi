@@ -58,3 +58,9 @@ fn uncalled(n: int) -> int = if false {
 fn main() -> int = repeated(1) + defensive(3) + index()
 fn skips() -> bool = skipped(true)
 fn redundants() -> bool = redundant(false)
+fn block_bounds() {
+    for _i in { 4 }..{ 4 } {}
+}
+fn lazy_block() -> bool = 1 <= 2 && {
+    true
+}

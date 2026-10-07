@@ -189,6 +189,29 @@ fn redundants@60:1..60:43 () -> bool ∈ {true}
     value: call redundant@29:1..29:42 : bool @60:27..60:43
       arg[0]: bool false : bool @60:37..60:42
 
+fn block_bounds@61:1..63:2 () -> unit ∈ unit
+  result: result : unit @61:1..63:2
+    outcome[0]:
+      discard: after : ? @62:5..62:30
+        control: loop : unit @62:5..62:30
+        context: entry : ? @61:1..63:2
+      tail: loop : unit @62:5..62:30
+        start: int 4 : int @62:17..62:18
+        end: int 4 : int @62:24..62:25
+        body:
+          let _i@62:9..62:11: loop index : int @62:5..62:30
+            start: int 4 : int @62:17..62:18
+            end: int 4 : int @62:24..62:25
+          tail: unit : unit @62:28..62:30
+
+fn lazy_block@64:1..66:2 () -> bool ∈ {true}
+  result: copy : bool @64:20..64:24
+    value: lazy and : bool @64:27..66:2
+      lhs: eager <= : bool @64:27..64:33
+        lhs: int 1 : int @64:27..64:28
+        rhs: int 2 : int @64:32..64:33
+      rhs: bool true : bool @65:5..65:9
+
 == semantic diagnostics ==
 warning[semantic/constant-condition]: condition is always false
   primary @1:26..1:31
@@ -221,3 +244,10 @@ warning[semantic/constant-condition]: condition is always true
   secondary @50:8..52:2: this branch never runs
 warning[semantic/unused-function]: function `uncalled` is never called
   primary @53:4..53:12
+warning[semantic/constant-condition]: range is always empty
+  primary @62:15..62:27
+  secondary @62:28..62:30: the loop body never runs
+warning[semantic/constant-condition]: condition is always true
+  primary @64:27..64:33
+warning[semantic/constant-condition]: condition is always true
+  primary @65:5..65:9

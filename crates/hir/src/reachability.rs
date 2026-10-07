@@ -329,7 +329,7 @@ fn conditions(graph: &Graph) -> Vec<Condition> {
                     conditions.push(Condition {
                         value: region.result(),
                         parent: region.context,
-                        at: graph.node(region.context).origin,
+                        at: region.result_read(),
                         site: Site::Right { operator: node },
                     });
                 }
@@ -341,11 +341,10 @@ fn conditions(graph: &Graph) -> Vec<Condition> {
                     unreachable!("a loop body's context reads its condition and parent")
                 };
                 if graph.input_values(condition).iter().all(|&value| value) {
-                    let reads = graph.reads(condition);
                     conditions.push(Condition {
                         value: condition,
                         parent,
-                        at: TextRange::new(reads[0].start(), reads[1].end()),
+                        at: graph.node(condition).origin,
                         site: Site::Range { body },
                     });
                 }

@@ -231,6 +231,7 @@ pub struct Region {
     pub context: NodeId,
     nodes: Range<u32>,
     result: NodeId,
+    result_at: TextRange,
     result_value: bool,
     control: Option<NodeId>,
 }
@@ -248,6 +249,11 @@ impl Region {
 
     pub fn result(&self) -> NodeId {
         self.result
+    }
+
+    /// Where the result is read: a block's tail, or the expression itself.
+    pub fn result_read(&self) -> TextRange {
+        self.result_at
     }
 
     /// Whether the result supplies an ordinary value when the region is entered.
@@ -343,8 +349,18 @@ struct Opening {
     context: NodeId,
     /// The first node's index once entered.
     start: Option<u32>,
-    /// The end, result, whether it supplies a value, and control once closed.
-    closed: Option<(u32, NodeId, bool, Option<NodeId>)>,
+    closed: Option<Closed>,
+}
+
+/// A region's end in node order, its result and where it is read, whether the result supplies a
+/// value, and its control.
+#[derive(Debug)]
+struct Closed {
+    end: u32,
+    result: NodeId,
+    result_at: TextRange,
+    result_value: bool,
+    control: Option<NodeId>,
 }
 
 #[derive(Debug)]
@@ -476,7 +492,8 @@ impl GraphBuilder {
     }
 
     /// The region must have been entered.
-    pub fn close(&mut self, region: RegionId, result: NodeId) {
+    /// `result` is the node and where it is read.
+    pub fn close(&mut self, region: RegionId, result: (NodeId, TextRange)) {
         self.close_with_control(region, result, true, None);
     }
 
@@ -484,7 +501,7 @@ impl GraphBuilder {
     pub fn close_with_control(
         &mut self,
         region: RegionId,
-        result: NodeId,
+        result: (NodeId, TextRange),
         result_value: bool,
         control: Option<NodeId>,
     ) {
@@ -494,7 +511,13 @@ impl GraphBuilder {
             opening.start.is_some(),
             "a region is entered before it closes"
         );
-        opening.closed = Some((end, result, result_value, control));
+        opening.closed = Some(Closed {
+            end,
+            result: result.0,
+            result_at: result.1,
+            result_value,
+            control,
+        });
     }
 
     pub fn context(&self, region: RegionId) -> NodeId {
@@ -544,14 +567,14 @@ impl GraphBuilder {
                 .regions
                 .into_iter()
                 .map(|opening| {
-                    let (end, result, result_value, control) =
-                        opening.closed.expect("a region opened is closed");
+                    let closed = opening.closed.expect("a region opened is closed");
                     Region {
                         context: opening.context,
-                        nodes: opening.start.expect("a region closed was entered")..end,
-                        result,
-                        result_value,
-                        control,
+                        nodes: opening.start.expect("a region closed was entered")..closed.end,
+                        result: closed.result,
+                        result_at: closed.result_at,
+                        result_value: closed.result_value,
+                        control: closed.control,
                     }
                 })
                 .collect(),
@@ -605,7 +628,7 @@ mod tests {
             None,
         );
         builder.complete_input(sum, 1);
-        builder.close_with_control(region, sum, false, None);
+        builder.close_with_control(region, (sum, at(0)), false, None);
         let graph = builder.finish();
 
         assert_eq!(graph.inputs(sum), [one, one]);
@@ -638,7 +661,7 @@ mod tests {
             at(3),
             None,
         );
-        builder.close(region, sum);
+        builder.close(region, (sum, at(0)));
         let copy = builder.push(Op::Copy { declared: None }, &[(sum, at(3))], at(4), None);
         builder.close_run(run, region, copy);
         let graph = builder.finish();
@@ -690,7 +713,7 @@ mod tests {
         );
         let region = builder.open(entry);
         builder.enter(region);
-        builder.close(region, param);
+        builder.close(region, (param, at(0)));
         builder.close_run(run, region, param);
         let graph = builder.finish();
         assert_eq!(graph.region(region).nodes().len(), 0);
@@ -713,7 +736,7 @@ mod tests {
         let mut builder = GraphBuilder::new(1);
         let entry = builder.push(Op::Entry, &[], at(0), None);
         let region = builder.open(entry);
-        builder.close(region, entry);
+        builder.close(region, (entry, at(0)));
     }
 
     #[test]
@@ -744,7 +767,7 @@ mod tests {
         let entry = builder.push(Op::Entry, &[], at(0), None);
         let region = builder.open(entry);
         builder.enter(region);
-        builder.close(region, entry);
+        builder.close(region, (entry, at(0)));
         builder.close_run(run, region, entry);
         let _again = builder.open_run(function);
     }

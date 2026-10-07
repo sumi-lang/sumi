@@ -278,9 +278,9 @@ fn refinements@73:1..74:82 () -> int ∈ [5500, 11011]
 
 == semantic diagnostics ==
 warning[semantic/constant-condition]: condition is always true
-  primary @29:17..32:6
+  primary @31:9..31:13
 warning[semantic/constant-condition]: condition is always false
-  primary @33:17..36:6
+  primary @35:9..35:14
 warning[semantic/constant-condition]: condition is always true
   primary @61:8..61:14
   secondary @61:31..61:36: this branch never runs
