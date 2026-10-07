@@ -19,3 +19,13 @@ fn assigned(flag: bool) {
     x = !(
     _ = x
 }
+fn annotated(flag: bool) -> bool {
+    let x: int = 1 +
+    let y: mystery = 2 +
+    let z: int = flag == (
+    x
+}
+fn empty() -> int {
+    ()
+    _ =
+}

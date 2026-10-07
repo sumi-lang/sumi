@@ -1,6 +1,6 @@
 file: rejected
-frontend errors: 12 (see frontend.snap)
-semantic errors: 8
+frontend errors: 17 (see frontend.snap)
+semantic errors: 11
 
 fn around_a_hole@1:1..6:2 (bool ∈ ∅) -> int ∈ ∅
   param flag@1:18..1:22: bool
@@ -69,6 +69,31 @@ fn assigned@17:1..21:2 (bool ∈ ∅) -> unit ∈ ∅
           operand: hole : ? @19:10..19:11
       tail: hole : ? @17:25..21:2
 
+fn annotated@22:1..27:2 (bool ∈ ∅) -> bool ∈ ∅
+  param flag@22:14..22:18: ?
+  result: copy : bool @22:29..22:33
+    value:
+      let x@23:9..23:10: ? @23:5..23:21
+        initializer: eager + : int @23:18..23:21
+          lhs: int 1 : int @23:18..23:19
+          rhs: hole : ? @23:18..23:21
+      let y@24:9..24:10: hole : ? @24:5..24:25
+        part[0]: eager + : int @24:22..24:25
+          lhs: int 2 : int @24:22..24:23
+          rhs: hole : ? @24:22..24:25
+      let z@25:9..25:10: int @25:5..26:6
+        initializer: eager == : ? @25:18..26:6
+          lhs: read flag@22:14..22:18 : ?
+          rhs: read x@23:9..23:10 : ?
+      tail: hole : ? @22:34..27:2
+
+fn empty@28:1..31:2 () -> int ∈ ∅
+  result: copy : int @28:15..28:18
+    value:
+      discard: hole : ? @29:5..29:7
+      discard: hole : ? @30:5..30:8
+      tail: hole : ? @28:19..31:2
+
 == semantic diagnostics ==
 error[semantic/type-mismatch]: expected bool, found int
   primary @3:13..3:14
@@ -94,3 +119,10 @@ error[semantic/type-mismatch]: expected bool, found int
 error[semantic/type-mismatch]: expected int, found bool
   primary @19:9..19:11
   secondary @18:13..18:14: declared here
+error[semantic/unknown-type]: unknown type `mystery`
+  primary @24:12..24:19
+error[semantic/type-mismatch]: expected int, found bool
+  primary @25:18..26:6
+  secondary @25:12..25:15: declared here
+error[semantic/type-mismatch]: expected bool, found int
+  primary @25:26..26:6

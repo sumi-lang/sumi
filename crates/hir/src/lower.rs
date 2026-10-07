@@ -489,7 +489,6 @@ enum Partial {
         target: Option<FunctionId>,
         /// The arguments before any garbage: the ones whose position is reliable.
         args: Vec<NodeIdx>,
-        closed: bool,
     },
     Assign {
         node: NodeIdx,
@@ -2085,24 +2084,15 @@ impl<'a, 's> Builder<'a, 's> {
                     None => None,
                 };
                 let mut args = Vec::new();
-                let closed = match call.arg_list(tree) {
-                    Some(list) => {
-                        for child in tree.children(list.node()) {
-                            let Some(arg) = Expr::cast(tree, child) else {
-                                break;
-                            };
-                            args.push(arg.node());
-                        }
-                        !tree.has_error(list.node())
+                if let Some(list) = call.arg_list(tree) {
+                    for child in tree.children(list.node()) {
+                        let Some(arg) = Expr::cast(tree, child) else {
+                            break;
+                        };
+                        args.push(arg.node());
                     }
-                    None => false,
-                };
-                Partial::Call {
-                    node,
-                    target,
-                    args,
-                    closed,
                 }
+                Partial::Call { node, target, args }
             }
             Stmt::Expr(_) => return self.holed(node),
         };
@@ -2243,12 +2233,7 @@ impl<'a, 's> Builder<'a, 's> {
                     }
                 }
             }
-            Partial::Call {
-                node,
-                target,
-                args,
-                closed,
-            } => {
+            Partial::Call { node, target, args } => {
                 let context = self.context();
                 let callee: Option<(FunctionId, &Header, Callee)> = target.and_then(|target| {
                     let function = &self.headers[target.index()];
@@ -2262,19 +2247,7 @@ impl<'a, 's> Builder<'a, 's> {
                 for &arg in &args {
                     inputs.push(self.input(arg));
                 }
-                // An unclosed list is not yet the wrong length.
-                if closed
-                    && let Some((_, function, id)) = callee
-                    && let arity = self.graph.callable(id).params.len()
-                    && args.len() != arity
-                {
-                    self.source.error(
-                        node,
-                        codes::ARITY,
-                        format!("expected {arity} arguments, found {}", args.len()),
-                        Some((self.source.range(function.item), "declared here")),
-                    );
-                }
+                // A damaged list is not yet the wrong length.
                 let op = callee.map_or(Op::Hole, |(.., id)| Op::Call(id));
                 let id = self.push(node, op, &inputs, None);
                 if let Some((target, ..)) = callee

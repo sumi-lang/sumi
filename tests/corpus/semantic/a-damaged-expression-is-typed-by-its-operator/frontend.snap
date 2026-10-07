@@ -13,6 +13,11 @@ ExpectedExpression at 14:1
 Expected(RParen) at 16:1
 ExpectedExpression at 20:5
 Expected(RParen) at 20:5
+ExpectedExpression at 24:5
+ExpectedExpression at 25:5
+Expected(RParen) at 27:1
+ExpectedExpression at 29:6
+ExpectedExpression at 31:1
 
 == diagnostics ==
 error[syntax/expected-expression] 3:5: expected an expression
@@ -51,6 +56,14 @@ error[syntax/expected-token] 20:5: expected `)`
   at 19:10..19:11 "(": opening delimiter is here
   fix: insert `)`
     19:11 -> ")"
+error[syntax/expected-expression] 24:5: expected an expression
+error[syntax/expected-expression] 25:5: expected an expression
+error[syntax/expected-token] 27:1: expected `)`
+  at 25:26..25:27 "(": opening delimiter is here
+  fix: insert `)`
+    26:6 -> ")"
+error[syntax/expected-expression] 29:6: expected an expression
+error[syntax/expected-expression] 31:1: expected an expression
 
 == fixed (syntax/expected-expression, syntax/unspaced-binary-operator remain) ==
 fn around_a_hole(flag: bool) -> int {
@@ -73,6 +86,16 @@ fn assigned(flag: bool) {
     let mut x = 1
     x = !()
     _ = x
+}
+fn annotated(flag: bool) -> bool {
+    let x: int = 1 +
+    let y: mystery = 2 +
+    let z: int = flag == (
+    x)
+}
+fn empty() -> int {
+    ()
+    _ =
 }
 
 == formatted ==
@@ -102,4 +125,13 @@ fn assigned(flag: bool) {
     let mut x = 1
     x = !(
     _ = x
+}
+fn annotated(flag: bool) -> bool {
+    let x: int = 1 +
+    let y: mystery = 2 +
+    let z: int = flag == (x
+}
+fn empty() -> int {
+    ()
+    _ =
 }
