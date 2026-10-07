@@ -75,34 +75,19 @@ fn tail_requires_unit@49:1..51:2 () -> unit ∈ ∅
     value: call value@1:1..1:22 : int @50:5..50:12
 
 == semantic diagnostics ==
-error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
-  primary @18:5..18:6
-error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
-  primary @19:5..19:8
-error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
-  primary @20:5..20:10
-error[semantic/unused-value]: unused value of type bool; use `_ =` to discard it
-  primary @21:5..21:9
-error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
-  primary @22:5..22:12
-error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
-  primary @23:5..23:14
-error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
-  primary @24:5..26:6
-error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
-  primary @27:5..31:6
-error[semantic/unknown-name]: unknown name `missing`
-  primary @35:5..35:12
-error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
-  primary @36:5..36:13
-error[semantic/type-mismatch]: expected int, found bool
-  primary @36:9..36:13
-error[semantic/type-mismatch]: expected unit, found int
-  primary @38:9..38:10
-error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
-  primary @43:5..46:6
-error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
-  primary @44:9..44:16
-error[semantic/type-mismatch]: expected unit, found int
-  primary @50:5..50:12
-  secondary @49:22..49:24: returns unit, since no result type is written
+error[semantic/unused-value] 18:5..18:6 "x": unused value of type int; use `_ =` to discard it
+error[semantic/unused-value] 19:5..19:8 "(x)": unused value of type int; use `_ =` to discard it
+error[semantic/unused-value] 20:5..20:10 "1 + 2": unused value of type int; use `_ =` to discard it
+error[semantic/unused-value] 21:5..21:9 "true": unused value of type bool; use `_ =` to discard it
+error[semantic/unused-value] 22:5..22:12 "value()": unused value of type int; use `_ =` to discard it
+error[semantic/unused-value] 23:5..23:14 "(value())": unused value of type int; use `_ =` to discard it
+error[semantic/unused-value] 24:5..26:6 "{\n        1\n    }": unused value of type int; use `_ =` to discard it
+error[semantic/unused-value] 27:5..31:6 "if true {\n        1\n    } else {\n        2\n    }": unused value of type int; use `_ =` to discard it
+error[semantic/unknown-name] 35:5..35:12 "missing": unknown name `missing`
+error[semantic/unused-value] 36:5..36:13 "1 + true": unused value of type int; use `_ =` to discard it
+error[semantic/type-mismatch] 36:9..36:13 "true": expected int, found bool
+error[semantic/type-mismatch] 38:9..38:10 "1": expected unit, found int
+error[semantic/unused-value] 43:5..46:6 "{\n        value()\n        2\n    }": unused value of type int; use `_ =` to discard it
+error[semantic/unused-value] 44:9..44:16 "value()": unused value of type int; use `_ =` to discard it
+error[semantic/type-mismatch] 50:5..50:12 "value()": expected unit, found int
+  at 49:22..49:24 "()": returns unit, since no result type is written

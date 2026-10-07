@@ -65,20 +65,13 @@ fn damaged_value@24:1..27:2 () -> unit ∈ unit
       tail: unit : unit @24:20..27:2
 
 == semantic diagnostics ==
-error[semantic/immutable-assignment]: cannot assign to immutable local `x`
-  primary @4:5..4:6
-  secondary @3:9..3:10: declared here
-error[semantic/immutable-assignment]: cannot assign to immutable local `x`
-  primary @7:5..7:6
-  secondary @6:20..6:21: declared here
-error[semantic/invalid-assignment-target]: assignment target must be a mutable local name
-  primary @11:6..11:11
-error[semantic/invalid-assignment-target]: function `target` is not assignable
-  primary @14:5..14:11
-error[semantic/unknown-name]: unknown name `missing`
-  primary @17:5..17:12
-error[semantic/type-mismatch]: expected int, found bool
-  primary @21:9..21:13
-  secondary @20:13..20:14: declared here
-error[semantic/unknown-name]: unknown name `absent`
-  primary @26:9..26:15
+error[semantic/immutable-assignment] 4:5..4:6 "x": cannot assign to immutable local `x`
+  at 3:9..3:10 "x": declared here
+error[semantic/immutable-assignment] 7:5..7:6 "x": cannot assign to immutable local `x`
+  at 6:20..6:21 "x": declared here
+error[semantic/invalid-assignment-target] 11:6..11:11 "x + 1": assignment target must be a mutable local name
+error[semantic/invalid-assignment-target] 14:5..14:11 "target": function `target` is not assignable
+error[semantic/unknown-name] 17:5..17:12 "missing": unknown name `missing`
+error[semantic/type-mismatch] 21:9..21:13 "true": expected int, found bool
+  at 20:13..20:14 "x": declared here
+error[semantic/unknown-name] 26:9..26:15 "absent": unknown name `absent`

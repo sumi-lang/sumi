@@ -38,13 +38,10 @@ fn intact@16:1..16:23 () -> int ∈ [3, 3]
     value: int 3 : int @16:22..16:23
 
 == semantic diagnostics ==
-warning[semantic/unused-name]: parameter `a` is never read
-  primary @1:5..1:6
-  fix @1:5 -> "_": prefix the name with `_`
-error[semantic/type-mismatch]: expected unit, found int
-  primary @7:5..7:6
-  secondary @6:25..6:33: returns unit, since no result type is written
-error[semantic/unknown-name]: unknown name `a`
-  primary @10:5..10:6
-error[semantic/unknown-name]: unknown name `a`
-  primary @14:5..14:6
+warning[semantic/unused-name] 1:5..1:6 "a": parameter `a` is never read
+  fix: prefix the name with `_`
+    1:5 -> "_"
+error[semantic/type-mismatch] 7:5..7:6 "a": expected unit, found int
+  at 6:25..6:33 "(a: int)": returns unit, since no result type is written
+error[semantic/unknown-name] 10:5..10:6 "a": unknown name `a`
+error[semantic/unknown-name] 14:5..14:6 "a": unknown name `a`

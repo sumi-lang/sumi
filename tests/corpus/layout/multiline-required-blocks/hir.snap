@@ -45,19 +45,13 @@ fn grouped@28:1..31:4 () -> unit ∈ unit
     else: unit : unit @31:1..31:3
 
 == semantic diagnostics ==
-warning[semantic/unused-function]: function `choose` is never called
-  primary @1:4..1:10
-warning[semantic/constant-condition]: condition is always true
-  primary @12:36..12:40
-  secondary @15:1..15:6: this branch never runs
-warning[semantic/constant-condition]: condition is always true
-  primary @16:35..19:10
-  secondary @21:6..24:6: this branch never runs
-warning[semantic/constant-condition]: condition is always true
-  primary @16:38..16:42
-  secondary @19:1..19:10: this branch never runs
-warning[semantic/constant-condition]: condition is always true
-  primary @25:31..26:12
-warning[semantic/constant-condition]: condition is always true
-  primary @28:20..28:26
-  secondary @31:1..31:3: this branch never runs
+warning[semantic/unused-function] 1:4..1:10 "choose": function `choose` is never called
+warning[semantic/constant-condition] 12:36..12:40 "true": condition is always true
+  at 15:1..15:6 "{ 2 }": this branch never runs
+warning[semantic/constant-condition] 16:35..19:10 "if true\n{ true }\nelse\n{ false }": condition is always true
+  at 21:6..24:6 "if false\n{ 2 }\nelse\n{ 3 }": this branch never runs
+warning[semantic/constant-condition] 16:38..16:42 "true": condition is always true
+  at 19:1..19:10 "{ false }": this branch never runs
+warning[semantic/constant-condition] 25:31..26:12 "{ true }\n    && true": condition is always true
+warning[semantic/constant-condition] 28:20..28:26 "(true)": condition is always true
+  at 31:1..31:3 "{}": this branch never runs

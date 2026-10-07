@@ -193,15 +193,11 @@ fn dead_else@54:1..58:2 () -> int ∈ [7, 7]
         rhs: int 0 : int @57:9..57:10
 
 == semantic diagnostics ==
-warning[semantic/constant-condition]: condition is always false
-  primary @1:24..1:29
-  secondary @1:33..1:43: the right side never runs
-warning[semantic/constant-condition]: condition is always false
-  primary @2:30..2:35
-  secondary @2:36..4:2: this branch never runs
-warning[semantic/constant-condition]: condition is always false
-  primary @7:30..7:35
-  secondary @7:36..13:2: this branch never runs
-warning[semantic/constant-condition]: condition is always true
-  primary @54:28..54:32
-  secondary @56:8..58:2: this branch never runs
+warning[semantic/constant-condition] 1:24..1:29 "false": condition is always false
+  at 1:33..1:43 "1 / 0 == 0": the right side never runs
+warning[semantic/constant-condition] 2:30..2:35 "false": condition is always false
+  at 2:36..4:2 "{\n    1 / 0\n}": this branch never runs
+warning[semantic/constant-condition] 7:30..7:35 "false": condition is always false
+  at 7:36..13:2 "{\n    if true {\n        1 / 0\n    } else {\n        2\n    }\n}": this branch never runs
+warning[semantic/constant-condition] 54:28..54:32 "true": condition is always true
+  at 56:8..58:2 "{\n    1 / 0\n}": this branch never runs

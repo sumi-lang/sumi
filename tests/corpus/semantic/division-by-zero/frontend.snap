@@ -1,4 +1,4 @@
-tree: see hir.snap
+tree: omitted
 
 == formatted ==
 fn divide_by_zero() -> int = 1 / (2 - 2)

@@ -38,21 +38,13 @@ fn after@21:1..21:22 () -> bool ∈ {true}
   body: bool true : bool @21:16..21:20
 
 == semantic diagnostics ==
-error[semantic/unknown-name]: unknown name `missing`
-  primary @2:9..2:16
-error[semantic/type-mismatch]: expected bool, found int
-  primary @3:5..3:6
-  secondary @1:19..1:23: declared here
-error[semantic/unknown-name]: unknown name `missing`
-  primary @6:9..6:16
-error[semantic/type-mismatch]: expected bool, found int
-  primary @9:23..9:33
-  secondary @9:16..9:20: declared here
-error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
-  primary @11:5..14:6
-error[semantic/unknown-name]: unknown name `missing`
-  primary @12:13..12:20
-error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
-  primary @18:5..18:6
-error[semantic/unknown-name]: unknown name `missing`
-  primary @20:17..20:24
+error[semantic/unknown-name] 2:9..2:16 "missing": unknown name `missing`
+error[semantic/type-mismatch] 3:5..3:6 "1": expected bool, found int
+  at 1:19..1:23 "bool": declared here
+error[semantic/unknown-name] 6:9..6:16 "missing": unknown name `missing`
+error[semantic/type-mismatch] 9:23..9:33 "inferred()": expected bool, found int
+  at 9:16..9:20 "bool": declared here
+error[semantic/unused-value] 11:5..14:6 "{\n        _ = missing\n        5\n    }": unused value of type int; use `_ =` to discard it
+error[semantic/unknown-name] 12:13..12:20 "missing": unknown name `missing`
+error[semantic/unused-value] 18:5..18:6 "5": unused value of type int; use `_ =` to discard it
+error[semantic/unknown-name] 20:17..20:24 "missing": unknown name `missing`

@@ -330,60 +330,43 @@ fn through_result@103:1..103:50 () -> int ∈ ∅
       rhs: call returned_zero@100:1..102:2 : int @103:35..103:50
 
 == semantic diagnostics ==
-error[semantic/division-by-zero]: division by zero
-  primary @1:30..1:41
-  secondary @1:35..1:40: is 0
-error[semantic/division-by-zero]: division by zero
-  primary @2:33..2:38
-  secondary @2:37..2:38: is 0
-error[semantic/division-by-zero]: division by zero
-  primary @3:34..3:41
-  secondary @4:47..4:48: argument is 0
-error[semantic/division-by-zero]: divisor may be zero
-  primary @5:26..5:33
-  secondary @6:33..6:38: argument may be 0: [-3, 3]
-  secondary @49:32..49:33: argument is 0
-  secondary @53:10..53:11: argument is 0
-  secondary @56:10..56:11: argument is 0
-error[semantic/division-by-zero]: division by zero
-  primary @12:9..12:14
-  secondary @12:13..12:14: is 0
-error[semantic/division-by-zero]: divisor may be zero
-  primary @26:9..26:16
-  secondary @29:43..29:44: argument is 0
-error[semantic/division-by-zero]: division by zero
-  primary @30:29..30:36
-  secondary @31:32..31:33: argument is 0
-  secondary @31:45..31:46: argument is 0
-  secondary @31:58..31:59: argument is 0
-  secondary @31:71..31:72: argument is 0
-error[semantic/division-by-zero]: division by zero
-  primary @37:9..37:16
-  secondary @33:13..33:14: is 0
-error[semantic/division-by-zero]: division by zero
-  primary @42:5..42:12
-  secondary @41:30..41:36: is 0 under this guard
-  secondary @46:40..46:41: argument is 0
-error[semantic/arity]: expected 1 arguments, found 2
-  primary @48:27..48:38
-  secondary @47:1..47:34: declared here
-error[semantic/division-by-zero]: division by zero
-  primary @70:5..70:12
-  secondary @62:13..62:14: is 0
-error[semantic/division-by-zero]: division by zero
-  primary @72:29..72:35
-  secondary @76:17..76:18: argument is 0
-error[semantic/unknown-name]: unknown name `absent`
-  primary @75:8..75:14
-error[semantic/division-by-zero]: division by zero
-  primary @87:30..87:55
-  secondary @83:16..83:17: is 0
-error[semantic/division-by-zero]: division by zero
-  primary @93:28..93:52
-  secondary @89:5..89:6: is 0
-error[semantic/division-by-zero]: division by zero
-  primary @95:5..99:10
-  secondary @98:13..98:14: is 0
-error[semantic/division-by-zero]: division by zero
-  primary @103:30..103:50
-  secondary @101:12..101:13: is 0
+error[semantic/division-by-zero] 1:30..1:41 "1 / (2 - 2)": division by zero
+  at 1:35..1:40 "2 - 2": is 0
+error[semantic/division-by-zero] 2:33..2:38 "7 % 0": division by zero
+  at 2:37..2:38 "0": is 0
+error[semantic/division-by-zero] 3:34..3:41 "100 / n": division by zero
+  at 4:47..4:48 "0": argument is 0
+error[semantic/division-by-zero] 5:26..5:33 "100 / d": divisor may be zero
+  at 6:33..6:38 "k - 3": argument may be 0: [-3, 3]
+  at 49:32..49:33 "k": argument is 0
+  at 53:10..53:11 "z": argument is 0
+  at 56:10..56:11 "k": argument is 0
+error[semantic/division-by-zero] 12:9..12:14 "a / 0": division by zero
+  at 12:13..12:14 "0": is 0
+error[semantic/division-by-zero] 26:9..26:16 "100 / m": divisor may be zero
+  at 29:43..29:44 "0": argument is 0
+error[semantic/division-by-zero] 30:29..30:36 "100 / d": division by zero
+  at 31:32..31:33 "0": argument is 0
+  at 31:45..31:46 "0": argument is 0
+  at 31:58..31:59 "0": argument is 0
+  at 31:71..31:72 "0": argument is 0
+error[semantic/division-by-zero] 37:9..37:16 "100 / z": division by zero
+  at 33:13..33:14 "0": is 0
+error[semantic/division-by-zero] 42:5..42:12 "100 / d": division by zero
+  at 41:30..41:36 "d == 0": is 0 under this guard
+  at 46:40..46:41 "0": argument is 0
+error[semantic/arity] 48:27..48:38 "arity(0, 1)": expected 1 arguments, found 2
+  at 47:1..47:34 "fn arity(d: int) -> int = 100 / d": declared here
+error[semantic/division-by-zero] 70:5..70:12 "100 / h": division by zero
+  at 62:13..62:14 "0": is 0
+error[semantic/division-by-zero] 72:29..72:35 "10 / n": division by zero
+  at 76:17..76:18 "x": argument is 0
+error[semantic/unknown-name] 75:8..75:14 "absent": unknown name `absent`
+error[semantic/division-by-zero] 87:30..87:55 "10 / returning_zero(true)": division by zero
+  at 83:16..83:17 "0": is 0
+error[semantic/division-by-zero] 93:28..93:52 "10 / selected_zero(true)": division by zero
+  at 89:5..89:6 "0": is 0
+error[semantic/division-by-zero] 95:5..99:10 "10\n        / {\n            _ = 1\n            0\n        }": division by zero
+  at 98:13..98:14 "0": is 0
+error[semantic/division-by-zero] 103:30..103:50 "10 / returned_zero()": division by zero
+  at 101:12..101:13 "0": is 0

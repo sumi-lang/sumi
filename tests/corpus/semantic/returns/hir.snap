@@ -190,48 +190,34 @@ fn choose@72:1..76:2 (bool ∈ ∅) -> int ∈ ∅
       payload: int 17 : int @73:12..73:14
 
 == semantic diagnostics ==
-warning[semantic/unreachable-code]: unreachable code
-  primary @3:5..3:6
-  secondary @2:5..2:13: no path continues past this
-warning[semantic/unused-name]: local `unused` is never read
-  primary @6:9..6:15
-  fix @6:9 -> "_": prefix the name with `_`
-warning[semantic/unreachable-code]: unreachable code
-  primary @8:9..8:10
-  secondary @7:9..7:17: no path continues past this
-warning[semantic/unreachable-code]: unreachable code
-  primary @10:5..10:6
-  secondary @6:5..9:6: no path continues past this
-warning[semantic/constant-condition]: condition is always false
-  primary @14:9..14:14
-  secondary @14:18..17:6: the right side never runs
-warning[semantic/constant-condition]: condition is always true
-  primary @21:9..21:13
-warning[semantic/unreachable-code]: unreachable code
-  primary @23:9..23:13
-  secondary @22:9..22:17: no path continues past this
-warning[semantic/unreachable-code]: unreachable code
-  primary @25:5..25:6
-  secondary @21:5..24:6: no path continues past this
-warning[semantic/unreachable-code]: unreachable code
-  primary @30:9..30:10
-  secondary @29:9..29:17: no path continues past this
-warning[semantic/unreachable-code]: unreachable code
-  primary @35:5..35:7
-  secondary @28:5..34:6: no path continues past this
-warning[semantic/unused-function]: function `divide` is never called
-  primary @37:4..37:10
-warning[semantic/unreachable-code]: unreachable code
-  primary @52:5..52:10
-  secondary @51:5..51:11: no path continues past this
-warning[semantic/unreachable-code]: unreachable code
-  primary @56:5..57:18
-  secondary @55:5..55:14: no path continues past this
-warning[semantic/unused-name]: local `unused` is never read
-  primary @64:9..64:15
-  fix @64:9 -> "_": prefix the name with `_`
-warning[semantic/unreachable-code]: unreachable code
-  primary @67:5..67:7
-  secondary @64:5..66:7: no path continues past this
-warning[semantic/unused-function]: function `choose` is never called
-  primary @72:4..72:10
+warning[semantic/unreachable-code] 3:5..3:6 "9": unreachable code
+  at 2:5..2:13 "return 4": no path continues past this
+warning[semantic/unused-name] 6:9..6:15 "unused": local `unused` is never read
+  fix: prefix the name with `_`
+    6:9 -> "_"
+warning[semantic/unreachable-code] 8:9..8:10 "0": unreachable code
+  at 7:9..7:17 "return 3": no path continues past this
+warning[semantic/unreachable-code] 10:5..10:6 "8": unreachable code
+  at 6:5..9:6 "let unused = {\n        return 3\n        0\n    }": no path continues past this
+warning[semantic/constant-condition] 14:9..14:14 "false": condition is always false
+  at 14:18..17:6 "{\n        return 6\n        true\n    }": the right side never runs
+warning[semantic/constant-condition] 21:9..21:13 "true": condition is always true
+warning[semantic/unreachable-code] 23:9..23:13 "true": unreachable code
+  at 22:9..22:17 "return 7": no path continues past this
+warning[semantic/unreachable-code] 25:5..25:6 "8": unreachable code
+  at 21:5..24:6 "_ = true && {\n        return 7\n        true\n    }": no path continues past this
+warning[semantic/unreachable-code] 30:9..30:10 "1": unreachable code
+  at 29:9..29:17 "return 9": no path continues past this
+warning[semantic/unreachable-code] 35:5..35:7 "11": unreachable code
+  at 28:5..34:6 "_ = {\n        return 9\n        1\n    } + {\n        return 10\n        2\n    }": no path continues past this
+warning[semantic/unused-function] 37:4..37:10 "divide": function `divide` is never called
+warning[semantic/unreachable-code] 52:5..52:10 "_ = 1": unreachable code
+  at 51:5..51:11 "return": no path continues past this
+warning[semantic/unreachable-code] 56:5..57:18 "_ = 1 / 0\n    dead_checks()": unreachable code
+  at 55:5..55:14 "return 12": no path continues past this
+warning[semantic/unused-name] 64:9..64:15 "unused": local `unused` is never read
+  fix: prefix the name with `_`
+    64:9 -> "_"
+warning[semantic/unreachable-code] 67:5..67:7 "15": unreachable code
+  at 64:5..66:7 "let unused = id({\n        return 14\n    })": no path continues past this
+warning[semantic/unused-function] 72:4..72:10 "choose": function `choose` is never called

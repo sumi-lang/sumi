@@ -43,5 +43,4 @@ fn innermosts@17:1..17:38 () -> int ∈ [18, 18]
       arg[0]: int 5 : int @17:36..17:37
 
 == semantic diagnostics ==
-warning[semantic/unused-function]: function `shadow` is never called
-  primary @1:4..1:10
+warning[semantic/unused-function] 1:4..1:10 "shadow": function `shadow` is never called

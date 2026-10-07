@@ -64,12 +64,9 @@ fn discards@33:1..36:2 () -> unit ∈ unit
       tail: unit : unit @33:15..36:2
 
 == semantic diagnostics ==
-warning[semantic/constant-condition]: condition is always true
-  primary @6:21..6:25
-  secondary @8:8..10:2: this branch never runs
-warning[semantic/constant-condition]: condition is always false
-  primary @11:27..11:32
-  secondary @11:33..13:2: this branch never runs
-warning[semantic/constant-condition]: condition is always false
-  primary @18:8..18:13
-  secondary @18:14..20:6: this branch never runs
+warning[semantic/constant-condition] 6:21..6:25 "true": condition is always true
+  at 8:8..10:2 "{\n    recursive()\n}": this branch never runs
+warning[semantic/constant-condition] 11:27..11:32 "false": condition is always false
+  at 11:33..13:2 "{\n    inferred()\n}": this branch never runs
+warning[semantic/constant-condition] 18:8..18:13 "false": condition is always false
+  at 18:14..20:6 "{\n        _ = boolean()\n    }": this branch never runs

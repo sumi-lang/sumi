@@ -115,26 +115,19 @@ fn pings@26:1..26:28 () -> int ∈ ∅
       arg[0]: int 3 : int @26:26..26:27
 
 == semantic diagnostics ==
-error[semantic/unbounded-recursion]: recursion in `forever` has no argument that moves toward a bound on every call
-  primary @1:4..1:11
-  secondary @1:29..1:43: argument increases `n`, which is unbounded above
-error[semantic/unbounded-recursion]: recursion in `fall` has no argument that moves toward a bound on every call
-  primary @3:4..3:8
-  secondary @6:5..6:16: argument decreases `n`, which is unbounded below
-error[semantic/unbounded-recursion]: recursion in `swap` has no argument that moves toward a bound on every call
-  primary @9:4..9:8
-  secondary @9:34..9:44: argument passes `a` along
-error[semantic/unbounded-recursion]: recursion in `spin` has no argument that moves toward a bound on every call
-  primary @11:4..11:8
-  secondary @11:20..11:26: no argument is a parameter moved by a constant
-error[semantic/unbounded-recursion]: recursion in `both` has no argument that moves toward a bound on every call
-  primary @12:4..12:8
-  secondary @12:34..12:52: argument increases `a`, which is unbounded above
-error[semantic/unbounded-recursion]: recursion in `either` has no argument that moves toward a bound on every call
-  primary @14:4..14:10
-  secondary @20:9..20:22: argument decreases `n`
-  secondary @20:25..20:38: argument increases `n`
-error[semantic/unbounded-recursion]: recursion between `ping` and `pong` has no argument that moves toward a bound on every call
-  primary @24:4..24:8
-  secondary @24:26..24:33: argument passes `n` along
-  secondary @25:26..25:33: argument passes `n` along
+error[semantic/unbounded-recursion] 1:4..1:11 "forever": recursion in `forever` has no argument that moves toward a bound on every call
+  at 1:29..1:43 "forever(n + 1)": argument increases `n`, which is unbounded above
+error[semantic/unbounded-recursion] 3:4..3:8 "fall": recursion in `fall` has no argument that moves toward a bound on every call
+  at 6:5..6:16 "fall(n - 1)": argument decreases `n`, which is unbounded below
+error[semantic/unbounded-recursion] 9:4..9:8 "swap": recursion in `swap` has no argument that moves toward a bound on every call
+  at 9:34..9:44 "swap(b, a)": argument passes `a` along
+error[semantic/unbounded-recursion] 11:4..11:8 "spin": recursion in `spin` has no argument that moves toward a bound on every call
+  at 11:20..11:26 "spin()": no argument is a parameter moved by a constant
+error[semantic/unbounded-recursion] 12:4..12:8 "both": recursion in `both` has no argument that moves toward a bound on every call
+  at 12:34..12:52 "both(a + 1, b + 1)": argument increases `a`, which is unbounded above
+error[semantic/unbounded-recursion] 14:4..14:10 "either": recursion in `either` has no argument that moves toward a bound on every call
+  at 20:9..20:22 "either(n - 1)": argument decreases `n`
+  at 20:25..20:38 "either(n + 1)": argument increases `n`
+error[semantic/unbounded-recursion] 24:4..24:8 "ping": recursion between `ping` and `pong` has no argument that moves toward a bound on every call
+  at 24:26..24:33 "pong(n)": argument passes `n` along
+  at 25:26..25:33 "ping(n)": argument passes `n` along

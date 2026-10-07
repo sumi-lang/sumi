@@ -9,5 +9,4 @@ fn unclosed@1:1..3:6 () -> int ∈ [1, 1]
       tail: int 1 : int @3:5..3:6
 
 == semantic diagnostics ==
-error[semantic/unknown-name]: unknown name `missing`
-  primary @2:9..2:16
+error[semantic/unknown-name] 2:9..2:16 "missing": unknown name `missing`

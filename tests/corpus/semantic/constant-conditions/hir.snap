@@ -213,41 +213,27 @@ fn lazy_block@64:1..66:2 () -> bool ∈ {true}
       rhs: bool true : bool @65:5..65:9
 
 == semantic diagnostics ==
-warning[semantic/constant-condition]: condition is always false
-  primary @1:26..1:31
-  secondary @1:32..3:2: this branch never runs
-warning[semantic/constant-condition]: condition is always false
-  primary @8:8..8:14
-  secondary @8:15..10:6: this branch never runs
-  secondary @7:13..7:14: is 5
-warning[semantic/constant-condition]: condition is always true
-  primary @17:12..17:17
-  secondary @16:8..16:13: ∈ [1, +∞) under this guard
-warning[semantic/constant-condition]: condition is always false
-  primary @28:31..28:36
-  secondary @28:40..28:41: the right side never runs
-warning[semantic/constant-condition]: condition is always true
-  primary @29:38..29:42
-warning[semantic/constant-condition]: condition is always true
-  primary @30:22..30:26
-warning[semantic/constant-condition]: condition is always true
-  primary @30:30..30:34
-warning[semantic/constant-condition]: range is always empty
-  primary @33:14..33:18
-  secondary @33:19..35:6: the loop body never runs
-warning[semantic/constant-condition]: condition is always false
-  primary @41:12..41:18
-  secondary @41:19..43:10: this branch never runs
-  secondary @40:9..40:10: ∈ [0, 9] on a loop iteration
-warning[semantic/constant-condition]: condition is always true
-  primary @48:25..48:33
-  secondary @50:8..52:2: this branch never runs
-warning[semantic/unused-function]: function `uncalled` is never called
-  primary @53:4..53:12
-warning[semantic/constant-condition]: range is always empty
-  primary @62:15..62:27
-  secondary @62:28..62:30: the loop body never runs
-warning[semantic/constant-condition]: condition is always true
-  primary @64:27..64:33
-warning[semantic/constant-condition]: condition is always true
-  primary @65:5..65:9
+warning[semantic/constant-condition] 1:26..1:31 "false": condition is always false
+  at 1:32..3:2 "{\n    1\n}": this branch never runs
+warning[semantic/constant-condition] 8:8..8:14 "x > 10": condition is always false
+  at 8:15..10:6 "{\n        1\n    }": this branch never runs
+  at 7:13..7:14 "5": is 5
+warning[semantic/constant-condition] 17:12..17:17 "n > 0": condition is always true
+  at 16:8..16:13 "n > 0": ∈ [1, +∞) under this guard
+warning[semantic/constant-condition] 28:31..28:36 "false": condition is always false
+  at 28:40..28:41 "b": the right side never runs
+warning[semantic/constant-condition] 29:38..29:42 "true": condition is always true
+warning[semantic/constant-condition] 30:22..30:26 "true": condition is always true
+warning[semantic/constant-condition] 30:30..30:34 "true": condition is always true
+warning[semantic/constant-condition] 33:14..33:18 "5..5": range is always empty
+  at 33:19..35:6 "{\n        total = total + i\n    }": the loop body never runs
+warning[semantic/constant-condition] 41:12..41:18 "i > 20": condition is always false
+  at 41:19..43:10 "{\n            total = 1\n        }": this branch never runs
+  at 40:9..40:10 "i": ∈ [0, 9] on a loop iteration
+warning[semantic/constant-condition] 48:25..48:33 "always()": condition is always true
+  at 50:8..52:2 "{\n    2\n}": this branch never runs
+warning[semantic/unused-function] 53:4..53:12 "uncalled": function `uncalled` is never called
+warning[semantic/constant-condition] 62:15..62:27 "{ 4 }..{ 4 }": range is always empty
+  at 62:28..62:30 "{}": the loop body never runs
+warning[semantic/constant-condition] 64:27..64:33 "1 <= 2": condition is always true
+warning[semantic/constant-condition] 65:5..65:9 "true": condition is always true

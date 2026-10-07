@@ -135,34 +135,7 @@ fn snapshot(source: &str) -> String {
     if !semantic.is_empty() {
         out.push_str("\n== semantic diagnostics ==\n");
         for diagnostic in semantic {
-            writeln!(
-                out,
-                "{}[{}]: {}\n  primary {}",
-                diagnostic.code.severity,
-                diagnostic.code,
-                diagnostic.message,
-                shape.at(diagnostic.primary)
-            )
-            .unwrap();
-            for label in &diagnostic.labels {
-                writeln!(
-                    out,
-                    "  secondary {}: {}",
-                    shape.at(label.range),
-                    label.message
-                )
-                .unwrap();
-            }
-            if let Some(fix) = &diagnostic.fix {
-                writeln!(
-                    out,
-                    "  fix {} -> {:?}: {}",
-                    shape.at(fix.edit.range()),
-                    fix.edit.replacement(),
-                    fix.message
-                )
-                .unwrap();
-            }
+            corpus::diagnostic(diagnostic, &shape.lines, source, &mut out);
         }
     }
     out

@@ -69,33 +69,23 @@ fn assignment@23:1..26:2 () -> unit ∈ unit
       tail: unit : unit @23:17..26:2
 
 == semantic diagnostics ==
-error[semantic/not-a-value]: function `mismatch` is not a value
-  primary @6:13..6:21
-error[semantic/type-mismatch]: expected bool, found int
-  primary @8:25..8:26
-  secondary @8:18..8:22: declared here
-error[semantic/type-mismatch]: if branches are int and bool
-  primary @9:24..13:2
-  secondary @10:5..10:6: int here
-  secondary @12:5..12:10: bool here
-error[semantic/type-mismatch]: expected unit, found int
-  primary @15:5..15:6
-warning[semantic/unused-name]: local `x` is never read
-  primary @18:9..18:10
-  fix @18:9 -> "_": prefix the name with `_`
-error[semantic/type-mismatch]: expected bool, found int
-  primary @18:19..18:20
-  secondary @18:12..18:16: declared here
-error[semantic/type-mismatch]: unit values cannot be compared
-  primary @20:30..20:38
-error[semantic/type-mismatch]: expected int, found unit
-  primary @21:24..21:26
-error[semantic/type-mismatch]: if branches are int and bool
-  primary @22:25..22:50
-  secondary @22:32..22:33: int here
-  secondary @22:43..22:48: bool here
-error[semantic/type-mismatch]: expected bool, found int
-  primary @22:28..22:29
-error[semantic/immutable-assignment]: cannot assign to immutable local `x`
-  primary @25:5..25:6
-  secondary @24:9..24:10: declared here
+error[semantic/not-a-value] 6:13..6:21 "mismatch": function `mismatch` is not a value
+error[semantic/type-mismatch] 8:25..8:26 "1": expected bool, found int
+  at 8:18..8:22 "bool": declared here
+error[semantic/type-mismatch] 9:24..13:2 "if true {\n    1\n} else {\n    false\n}": if branches are int and bool
+  at 10:5..10:6 "1": int here
+  at 12:5..12:10 "false": bool here
+error[semantic/type-mismatch] 15:5..15:6 "1": expected unit, found int
+warning[semantic/unused-name] 18:9..18:10 "x": local `x` is never read
+  fix: prefix the name with `_`
+    18:9 -> "_"
+error[semantic/type-mismatch] 18:19..18:20 "1": expected bool, found int
+  at 18:12..18:16 "bool": declared here
+error[semantic/type-mismatch] 20:30..20:38 "{} == {}": unit values cannot be compared
+error[semantic/type-mismatch] 21:24..21:26 "{}": expected int, found unit
+error[semantic/type-mismatch] 22:25..22:50 "if 1 { 2 } else { false }": if branches are int and bool
+  at 22:32..22:33 "2": int here
+  at 22:43..22:48 "false": bool here
+error[semantic/type-mismatch] 22:28..22:29 "1": expected bool, found int
+error[semantic/immutable-assignment] 25:5..25:6 "x": cannot assign to immutable local `x`
+  at 24:9..24:10 "x": declared here

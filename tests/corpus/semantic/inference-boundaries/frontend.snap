@@ -1,4 +1,81 @@
-tree: see hir.snap
+== tree ==
+SourceFile! 1:1..21:1
+  FnItem 1:1..1:26
+    Name 1:4..1:8 "spin"
+    ParamList 1:8..1:16
+      Param 1:9..1:15
+        Name 1:9..1:10 "x"
+        TypeRef 1:12..1:15 "int"
+    CallExpr 1:19..1:26
+      NameRef 1:19..1:23 "spin"
+      ArgList 1:23..1:26
+        NameRef 1:24..1:25 "x"
+  FnItem 2:1..2:31
+    Name 2:4..2:12 "consumer"
+    ParamList 2:12..2:14 "()"
+    TypeRef 2:18..2:21 "int"
+    CallExpr 2:24..2:31
+      NameRef 2:24..2:28 "spin"
+      ArgList 2:28..2:31
+        LiteralExpr 2:29..2:30 "1"
+  FnItem 3:1..3:28
+    Name 3:4..3:12 "grounded"
+    ParamList 3:12..3:14 "()"
+    BinaryExpr 3:17..3:28
+      CallExpr 3:17..3:24
+        NameRef 3:17..3:21 "spin"
+        ArgList 3:21..3:24
+          LiteralExpr 3:22..3:23 "1"
+      LiteralExpr 3:27..3:28 "1"
+  FnItem 4:1..4:28
+    Name 4:4..4:13 "recovered"
+    ParamList 4:13..4:15 "()"
+    CallExpr 4:18..4:28
+      NameRef 4:18..4:26 "grounded"
+      ArgList 4:26..4:28 "()"
+  FnItem 5:1..5:41
+    Name 5:4..5:17 "bad_arguments"
+    ParamList 5:17..5:19 "()"
+    CallExpr 5:22..5:41
+      NameRef 5:22..5:26 "spin"
+      ArgList 5:26..5:41
+        LiteralExpr 5:27..5:31 "true"
+        NameRef 5:33..5:40 "missing"
+  FnItem 6:1..8:2
+    Name 6:4..6:8 "bare"
+    ParamList 6:8..6:10 "()"
+    Block 6:11..8:2
+      LiteralExpr 7:5..7:6 "1"
+  FnItem! 9:1..11:2
+    Name 9:4..9:13 "malformed"
+    ParamList 9:13..9:15 "()"
+    Error! 9:19..9:20 "="
+    Block 9:21..11:2
+      LiteralExpr 10:5..10:6 "1"
+  FnItem 12:1..12:19
+    Name 12:4..12:10 "intact"
+    ParamList 12:10..12:12 "()"
+    LiteralExpr 12:15..12:19 "true"
+  FnItem 13:1..19:2
+    Name 13:4..13:11 "settled"
+    ParamList 13:11..13:13 "()"
+    Block 13:16..19:2
+      LetStmt 14:5..14:14
+        Name 14:9..14:10 "x"
+        LiteralExpr 14:13..14:14 "1"
+      IfExpr 15:5..17:6
+        NameRef 15:8..15:9 "x"
+        Block 15:10..17:6
+          DiscardStmt 16:9..16:14
+            LiteralExpr 16:13..16:14 "0"
+      NameRef 18:5..18:6 "x"
+  FnItem 20:1..20:41
+    Name 20:4..20:19 "held_to_settled"
+    ParamList 20:19..20:21 "()"
+    TypeRef 20:25..20:29 "bool"
+    CallExpr 20:32..20:41
+      NameRef 20:32..20:39 "settled"
+      ArgList 20:39..20:41 "()"
 
 == evidence ==
 ExpectedType at 9:19

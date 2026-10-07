@@ -68,7 +68,5 @@ fn spins@18:1..18:21 () -> unit ∈ unit
     arg[0]: int 3 : int @18:19..18:20
 
 == semantic diagnostics ==
-warning[semantic/constant-condition]: condition is always false
-  primary @11:21..11:42
-warning[semantic/unused-function]: function `maybe` is never called
-  primary @12:4..12:9
+warning[semantic/constant-condition] 11:21..11:42 "false && (1 / 0 == 0)": condition is always false
+warning[semantic/unused-function] 12:4..12:9 "maybe": function `maybe` is never called

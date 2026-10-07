@@ -1,4 +1,4 @@
-tree: see hir.snap
+tree: omitted
 
 == formatted ==
 fn later_iteration() -> int {

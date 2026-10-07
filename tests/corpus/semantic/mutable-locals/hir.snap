@@ -277,14 +277,10 @@ fn refinements@73:1..74:82 () -> int ∈ [5500, 11011]
         arg[0]: bool true : bool @74:77..74:81
 
 == semantic diagnostics ==
-warning[semantic/constant-condition]: condition is always true
-  primary @31:9..31:13
-warning[semantic/constant-condition]: condition is always false
-  primary @35:9..35:14
-warning[semantic/constant-condition]: condition is always true
-  primary @61:8..61:14
-  secondary @61:31..61:36: this branch never runs
-  secondary @59:17..59:18: is 1
-  secondary @60:23..60:24: is 2
-warning[semantic/unused-function]: function `exact_read` is never called
-  primary @68:4..68:14
+warning[semantic/constant-condition] 31:9..31:13 "true": condition is always true
+warning[semantic/constant-condition] 35:9..35:14 "false": condition is always false
+warning[semantic/constant-condition] 61:8..61:14 "x != 0": condition is always true
+  at 61:31..61:36 "{ 0 }": this branch never runs
+  at 59:17..59:18 "1": is 1
+  at 60:23..60:24 "2": is 2
+warning[semantic/unused-function] 68:4..68:14 "exact_read": function `exact_read` is never called

@@ -96,18 +96,11 @@ fn main@20:1..25:2 () -> int ∈ [6, 6]
         arg[0]: int 1 : int @22:31..22:32
 
 == semantic diagnostics ==
-warning[semantic/unused-function]: function `uncalled` is never called
-  primary @1:4..1:12
-warning[semantic/unused-function]: function `only_from_uncalled` is only called from functions never called
-  primary @2:4..2:22
-warning[semantic/unused-function]: function `caller_of_it` is never called
-  primary @3:4..3:16
-warning[semantic/unused-function]: function `countdown` is only called by itself
-  primary @4:4..4:13
-warning[semantic/unused-function]: function `ping` is only called from functions never called
-  primary @9:4..9:8
-warning[semantic/unused-function]: function `pong` is only called from functions never called
-  primary @14:4..14:8
-warning[semantic/constant-condition]: condition is always false
-  primary @21:8..21:13
-  secondary @21:14..23:6: this branch never runs
+warning[semantic/unused-function] 1:4..1:12 "uncalled": function `uncalled` is never called
+warning[semantic/unused-function] 2:4..2:22 "only_from_uncalled": function `only_from_uncalled` is only called from functions never called
+warning[semantic/unused-function] 3:4..3:16 "caller_of_it": function `caller_of_it` is never called
+warning[semantic/unused-function] 4:4..4:13 "countdown": function `countdown` is only called by itself
+warning[semantic/unused-function] 9:4..9:8 "ping": function `ping` is only called from functions never called
+warning[semantic/unused-function] 14:4..14:8 "pong": function `pong` is only called from functions never called
+warning[semantic/constant-condition] 21:8..21:13 "false": condition is always false
+  at 21:14..23:6 "{\n        return in_dead_branch(1)\n    }": this branch never runs

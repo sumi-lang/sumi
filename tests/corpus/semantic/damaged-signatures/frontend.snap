@@ -1,4 +1,56 @@
-tree: see hir.snap
+== tree ==
+SourceFile! 1:1..17:1
+  FnItem! 1:1..1:15
+    ParamList 1:4..1:12
+      Param 1:5..1:11
+        Name 1:5..1:6 "a"
+        TypeRef 1:8..1:11 "int"
+    Block 1:13..1:15 "{}"
+  FnItem! 2:1..2:19
+    Name 2:4..2:12 "unclosed"
+    ParamList! 2:12..2:19
+      Param 2:13..2:19
+        Name 2:13..2:14 "a"
+        TypeRef 2:16..2:19 "int"
+  FnItem! 3:1..5:2
+    Name 3:4..3:11 "untyped"
+    ParamList! 3:11..3:15
+      Param! 3:12..3:14
+        Name 3:12..3:13 "a"
+    Block! 3:19..5:2
+      LetStmt! 4:5..4:15
+        Name 4:9..4:10 "x"
+        LiteralExpr 4:14..4:15 "1"
+  FnItem! 6:1..8:2
+    Name 6:4..6:23 "stray_before_params"
+    Error! 6:23..6:24 "="
+    ParamList 6:25..6:33
+      Param 6:26..6:32
+        Name 6:26..6:27 "a"
+        TypeRef 6:29..6:32 "int"
+    Block 6:34..8:2
+      NameRef 7:5..7:6 "a"
+  FnItem! 9:1..11:2
+    Name 9:4..9:19 "stray_in_result"
+    ParamList 9:19..9:21 "()"
+    Error! 9:25..9:30 "= int"
+    Block 9:31..11:2
+      NameRef 10:5..10:6 "a"
+  FnItem! 12:1..12:25
+    Name 12:4..12:19 "stray_signature"
+    Error! 12:20..12:25 "x = 1"
+  FnItem! 13:1..15:2
+    Name 13:4..13:23 "stray_before_result"
+    ParamList 13:23..13:25 "()"
+    Error! 13:26..13:27 "="
+    TypeRef 13:31..13:34 "int"
+    Block 13:35..15:2
+      NameRef 14:5..14:6 "a"
+  FnItem 16:1..16:23
+    Name 16:4..16:10 "intact"
+    ParamList 16:10..16:12 "()"
+    TypeRef 16:16..16:19 "int"
+    LiteralExpr 16:22..16:23 "3"
 
 == evidence ==
 ExpectedName at 1:4

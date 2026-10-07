@@ -42,18 +42,12 @@ fn arms_disagree@16:1..20:2 (bool ∈ ∅) -> int ∈ ∅
         else: int 1 : int @19:23..19:24
 
 == semantic diagnostics ==
-error[semantic/cannot-infer]: cannot infer function result; add a return type annotation
-  primary @4:1..4:13
-error[semantic/unbounded-recursion]: recursion in `k` has no argument that moves toward a bound on every call
-  primary @4:4..4:5
-  secondary @4:10..4:13: no argument is a parameter moved by a constant
-error[semantic/type-mismatch]: expected bool, found unit
-  primary @8:8..8:9
-error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
-  primary @13:5..13:7
-error[semantic/type-mismatch]: expected int, found unit
-  primary @13:6..13:7
-error[semantic/type-mismatch]: if branches are bool and int
-  primary @19:5..19:26
-  secondary @19:12..19:13: bool here
-  secondary @19:23..19:24: int here
+error[semantic/cannot-infer] 4:1..4:13 "fn k() = k()": cannot infer function result; add a return type annotation
+error[semantic/unbounded-recursion] 4:4..4:5 "k": recursion in `k` has no argument that moves toward a bound on every call
+  at 4:10..4:13 "k()": no argument is a parameter moved by a constant
+error[semantic/type-mismatch] 8:8..8:9 "v": expected bool, found unit
+error[semantic/unused-value] 13:5..13:7 "-v": unused value of type int; use `_ =` to discard it
+error[semantic/type-mismatch] 13:6..13:7 "v": expected int, found unit
+error[semantic/type-mismatch] 19:5..19:26 "if c { v } else { 1 }": if branches are bool and int
+  at 19:12..19:13 "v": bool here
+  at 19:23..19:24 "1": int here

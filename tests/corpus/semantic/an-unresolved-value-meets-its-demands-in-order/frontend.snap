@@ -1,4 +1,4 @@
-tree: see hir.snap
+tree: omitted
 
 == formatted ==
 // `k` never settles, so `v` has no type of its own: the first demand on

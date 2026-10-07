@@ -33,13 +33,9 @@ fn independent@13:1..13:29 () -> int ∈ [42, 42]
     value: int 42 : int @13:27..13:29
 
 == semantic diagnostics ==
-error[semantic/unknown-name]: unknown name `missing_or`
-  primary @1:32..1:42
-error[semantic/type-mismatch]: expected bool, found int
-  primary @2:34..2:35
-error[semantic/unknown-name]: unknown name `missing_then`
-  primary @4:5..4:17
-error[semantic/type-mismatch]: if branches are int and bool
-  primary @8:25..12:2
-  secondary @9:5..9:6: int here
-  secondary @11:5..11:10: bool here
+error[semantic/unknown-name] 1:32..1:42 "missing_or": unknown name `missing_or`
+error[semantic/type-mismatch] 2:34..2:35 "1": expected bool, found int
+error[semantic/unknown-name] 4:5..4:17 "missing_then": unknown name `missing_then`
+error[semantic/type-mismatch] 8:25..12:2 "if true {\n    1\n} else {\n    false\n}": if branches are int and bool
+  at 9:5..9:6 "1": int here
+  at 11:5..11:10 "false": bool here
