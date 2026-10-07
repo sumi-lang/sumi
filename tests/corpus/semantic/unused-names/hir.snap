@@ -43,18 +43,6 @@ fn loop_index@10:1..16:2 () -> int ∈ [1, +∞)
         next[0]: read total@11:13..11:18 : int
       discard: after : ? @12:5..14:6
         control: loop : unit @12:5..14:6
-          start: int 0 : int @12:14..12:15
-          end: int 3 : int @12:17..12:18
-          body:
-            let i@12:9..12:10: loop index : int @12:5..14:6
-              start: int 0 : int @12:14..12:15
-              end: int 3 : int @12:17..12:18
-            assignment: assign total@11:13..11:18 : int @13:9..13:26
-              value: eager + : int @13:17..13:26
-                lhs: read total@11:13..11:18 : int
-                rhs: int 1 : int @13:25..13:26
-            tail: unit : unit @12:19..14:6
-          next[0]: read total@11:13..11:18 : int
         context: entry : ? @10:1..16:2
       tail: loop value 0 : int @12:5..14:6
         loop: @12:5..14:6

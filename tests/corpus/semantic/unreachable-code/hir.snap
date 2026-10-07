@@ -7,7 +7,6 @@ fn after_return@1:1..5:2 () -> int ∈ [1, 1]
     outcome[0]:
       discard: after : ? @2:5..2:13
         control: return : int @2:5..2:13
-          payload: int 1 : int @2:12..2:13
         context: entry : ? @1:1..5:2
       let x@3:9..3:10: int @3:5..3:14
         initializer: int 2 : int @3:13..3:14
@@ -24,8 +23,6 @@ fn after_decided_if@6:1..11:2 () -> int ∈ [1, 1]
         else: unit (implicit)
       discard: after : ? @7:5..9:6
         control: observe : ? @7:5..9:6
-          condition: bool true : bool @7:8..7:12
-          then control: unit : unit @7:13..9:6
         context: entry : ? @6:1..11:2
       tail: int 2 : int @10:5..10:6
     outcome[1]: return : int @8:9..8:17
@@ -41,9 +38,6 @@ fn after_both_branches@12:1..19:2 (bool ∈ {true}) -> int ∈ [1, 1]
         else: unit : unit @15:12..17:6
       discard: after : ? @13:5..17:6
         control: observe : ? @13:5..17:6
-          condition: read b@12:24..12:25 : bool
-          then control: unit : unit @13:10..15:6
-          else control: unit : unit @15:12..17:6
         context: entry : ? @12:1..19:2
       tail: int 3 : int @18:5..18:6
     outcome[1]: return : int @14:9..14:17
@@ -69,16 +63,8 @@ fn after_guarded@20:1..28:2 (int ∈ [-1, 1] \ 0) -> int ∈ [0, 1]
         else: unit (implicit)
       discard: after : ? @24:5..26:6
         control: observe : ? @24:5..26:6
-          condition: eager <= : bool @24:8..24:14
-            lhs: read n@20:18..20:19 [n > 0 fails@21:8..21:13] : int
-            rhs: int 0 : int @24:13..24:14
-          then control: unit : unit @24:15..26:6
         context: after : ? @21:5..23:6
           control: observe : ? @21:5..23:6
-            condition: eager > : bool @21:8..21:13
-              lhs: read n@20:18..20:19 : int
-              rhs: int 0 : int @21:12..21:13
-            then control: unit : unit @21:14..23:6
           context: entry : ? @20:1..28:2
       tail: read n@20:18..20:19 [n <= 0 fails@24:8..24:14, n > 0 fails@21:8..21:13] : int
     outcome[1]: return : int @22:9..22:17
@@ -91,7 +77,6 @@ fn nested@29:1..35:2 () -> int ∈ [1, 1]
     outcome[0]:
       discard: after : ? @31:9..31:17
         control: return : int @31:9..31:17
-          payload: int 1 : int @31:16..31:17
         context: entry : ? @29:1..35:2
       discard: int 2 : int @32:9..32:10
       tail: int 3 : int @34:5..34:6
@@ -110,10 +95,6 @@ fn by_callers@36:1..41:2 (int ∈ [4, 4]) -> int ∈ [4, 4]
         else: unit (implicit)
       discard: after : ? @37:5..39:6
         control: observe : ? @37:5..39:6
-          condition: eager < : bool @37:8..37:13
-            lhs: read n@36:15..36:16 : int
-            rhs: int 0 : int @37:12..37:13
-          then control: unit : unit @37:14..39:6
         context: entry : ? @36:1..41:2
       tail: read n@36:15..36:16 [n < 0 fails@37:8..37:13] : int
     outcome[1]: return : int @38:9..38:17

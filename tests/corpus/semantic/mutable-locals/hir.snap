@@ -166,12 +166,6 @@ fn returning@48:1..56:2 (bool ∈ {true, false}) -> int ∈ [5, 7]
           tail: unit : unit @52:12..54:6
       discard: after : ? @50:5..54:6
         control: observe : ? @50:9..54:6
-          condition: read flag@48:14..48:18 : bool
-          then control: unit : unit @50:17..52:6
-          else control:
-            assignment: assign x@49:13..49:14 : int @53:9..53:14
-              value: int 2 : int @53:13..53:14
-            tail: unit : unit @52:12..54:6
         context: entry : ? @48:1..56:2
       tail: eager / : int @55:5..55:11
         lhs: int 10 : int @55:5..55:7

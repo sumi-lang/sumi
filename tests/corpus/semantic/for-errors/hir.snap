@@ -33,25 +33,6 @@ fn later_iteration@1:1..9:2 () -> int ∈ (-∞, +∞)
         next[1]: read total@3:13..3:18 : int
       discard: after : ? @4:5..7:6
         control: loop : unit @4:5..7:6
-          start: int 0 : int @4:14..4:15
-          end: int 4 : int @4:17..4:18
-          body:
-            let i@4:9..4:10: loop index : int @4:5..7:6
-              start: int 0 : int @4:14..4:15
-              end: int 4 : int @4:17..4:18
-            assignment: assign total@3:13..3:18 : int @5:9..5:37
-              value: eager + : int @5:17..5:37
-                lhs: read total@3:13..3:18 : int
-                rhs: eager / : int @5:25..5:37
-                  lhs: int 12 : int @5:25..5:27
-                  rhs: read divisor@2:13..2:20 : int
-            assignment: assign divisor@2:13..2:20 : int @6:9..6:30
-              value: eager - : int @6:19..6:30
-                lhs: read divisor@2:13..2:20 : int
-                rhs: int 1 : int @6:29..6:30
-            tail: unit : unit @4:19..7:6
-          next[0]: read divisor@2:13..2:20 : int
-          next[1]: read total@3:13..3:18 : int
         context: entry : ? @1:1..9:2
       tail: loop value 1 : int @4:5..7:6
         loop: @4:5..7:6
@@ -75,17 +56,6 @@ fn empty_path@10:1..14:2 () -> int ∈ ∅
         next[0]: read divisor@11:13..11:20 : int
       discard: after : ? @12:5..12:34
         control: loop : unit @12:5..12:34
-          start: int 3 : int @12:14..12:15
-          end: int 3 : int @12:17..12:18
-          body:
-            let i@12:9..12:10: loop index : int @12:5..12:34
-              start: int 3 : int @12:14..12:15
-              end: int 3 : int @12:17..12:18
-            discard: read divisor@11:13..11:20 : int
-            assignment: assign divisor@11:13..11:20 : int @12:21..12:32
-              value: int 2 : int @12:31..12:32
-            tail: unit : unit @12:19..12:34
-          next[0]: read divisor@11:13..11:20 : int
         context: entry : ? @10:1..14:2
       tail: eager / : int @13:5..13:17
         lhs: int 12 : int @13:5..13:7
@@ -97,15 +67,6 @@ fn immutable_index@15:1..17:2 () -> unit ∈ unit
     outcome[0]:
       discard: after : ? @16:5..16:28
         control: loop : unit @16:5..16:28
-          start: int 0 : int @16:14..16:15
-          end: int 3 : int @16:17..16:18
-          body:
-            let i@16:9..16:10: loop index : int @16:5..16:28
-              start: int 0 : int @16:14..16:15
-              end: int 3 : int @16:17..16:18
-            discard: hole : ? @16:21..16:26
-              part[0]: int 2 : int @16:25..16:26
-            tail: unit : unit @16:19..16:28
         context: entry : ? @15:1..17:2
       tail: loop : unit @16:5..16:28
         start: int 0 : int @16:14..16:15
@@ -131,13 +92,6 @@ fn index_scope@18:1..21:2 () -> int ∈ ∅
           tail: unit : unit @19:19..19:21
       discard: after : ? @19:5..19:21
         control: loop : unit @19:5..19:21
-          start: int 0 : int @19:14..19:15
-          end: int 3 : int @19:17..19:18
-          body:
-            let i@19:9..19:10: loop index : int @19:5..19:21
-              start: int 0 : int @19:14..19:15
-              end: int 3 : int @19:17..19:18
-            tail: unit : unit @19:19..19:21
         context: entry : ? @18:1..21:2
       tail: hole : ? @20:5..20:6
 
@@ -146,13 +100,6 @@ fn boolean_start@22:1..22:44 () -> unit ∈ ∅
     outcome[0]:
       discard: after : ? @22:22..22:42
         control: loop : unit @22:22..22:42
-          start: bool false : bool @22:31..22:36
-          end: int 3 : int @22:38..22:39
-          body:
-            let i@22:26..22:27: loop index : int @22:22..22:42
-              start: bool false : bool @22:31..22:36
-              end: int 3 : int @22:38..22:39
-            tail: unit : unit @22:40..22:42
         context: entry : ? @22:1..22:44
       tail: loop : unit @22:22..22:42
         start: bool false : bool @22:31..22:36
@@ -168,13 +115,6 @@ fn boolean_end@23:1..23:41 () -> unit ∈ ∅
     outcome[0]:
       discard: after : ? @23:20..23:39
         control: loop : unit @23:20..23:39
-          start: int 0 : int @23:29..23:30
-          end: bool true : bool @23:32..23:36
-          body:
-            let i@23:24..23:25: loop index : int @23:20..23:39
-              start: int 0 : int @23:29..23:30
-              end: bool true : bool @23:32..23:36
-            tail: unit : unit @23:37..23:39
         context: entry : ? @23:1..23:41
       tail: loop : unit @23:20..23:39
         start: int 0 : int @23:29..23:30
@@ -190,13 +130,6 @@ fn nonunit_body@24:1..24:42 () -> unit ∈ unit
     outcome[0]:
       discard: after : ? @24:21..24:40
         control: loop : unit @24:21..24:40
-          start: int 0 : int @24:30..24:31
-          end: int 3 : int @24:33..24:34
-          body:
-            let i@24:25..24:26: loop index : int @24:21..24:40
-              start: int 0 : int @24:30..24:31
-              end: int 3 : int @24:33..24:34
-            tail: read i@24:25..24:26 : int
         context: entry : ? @24:1..24:42
       tail: loop : unit @24:21..24:40
         start: int 0 : int @24:30..24:31
@@ -216,17 +149,6 @@ fn changed_type@25:1..28:2 () -> unit ∈ unit
         loop: @27:5..27:32
       discard: after : ? @27:5..27:32
         control: loop : unit @27:5..27:32
-          start: int 0 : int @27:14..27:15
-          end: int 3 : int @27:17..27:18
-          body:
-            let i@27:9..27:10: loop index : int @27:5..27:32
-              start: int 0 : int @27:14..27:15
-              end: int 3 : int @27:17..27:18
-            discard: read x@26:13..26:14 : ?
-            assignment: assign x@26:13..26:14 : ? @27:21..27:30
-              value: bool false : ? @27:25..27:30
-            tail: unit : unit @27:19..27:32
-          next[0]: read x@26:13..26:14 : ?
         context: entry : ? @25:1..28:2
       tail: loop : unit @27:5..27:32
         start: int 0 : int @27:14..27:15

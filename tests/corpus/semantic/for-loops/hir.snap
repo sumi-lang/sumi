@@ -22,18 +22,6 @@ fn sum@1:1..7:2 () -> int ∈ (-∞, +∞)
         next[0]: read total@2:13..2:18 : int
       discard: after : ? @3:5..5:6
         control: loop : unit @3:5..5:6
-          start: int -2 : int @3:14..3:16
-          end: int 4 : int @3:18..3:19
-          body:
-            let i@3:9..3:10: loop index : int @3:5..5:6
-              start: int -2 : int @3:14..3:16
-              end: int 4 : int @3:18..3:19
-            assignment: assign total@2:13..2:18 : int @4:9..4:26
-              value: eager + : int @4:17..4:26
-                lhs: read total@2:13..2:18 : int
-                rhs: read i@3:9..3:10 : int
-            tail: unit : unit @3:20..5:6
-          next[0]: read total@2:13..2:18 : int
         context: entry : ? @1:1..7:2
       tail: loop value 0 : int @3:5..5:6
         loop: @3:5..5:6
@@ -69,30 +57,8 @@ fn empty@8:1..13:2 () -> int ∈ [13, 13]
         next[0]: read total@9:13..9:18 : int
       discard: after : ? @11:5..11:32
         control: loop : unit @11:5..11:32
-          start: int 9 : int @11:14..11:15
-          end: int 2 : int @11:17..11:18
-          body:
-            let i@11:9..11:10: loop index : int @11:5..11:32
-              start: int 9 : int @11:14..11:15
-              end: int 2 : int @11:17..11:18
-            discard: read total@9:13..9:18 : int
-            assignment: assign total@9:13..9:18 : int @11:21..11:30
-              value: int 1 : int @11:29..11:30
-            tail: unit : unit @11:19..11:32
-          next[0]: read total@9:13..9:18 : int
         context: after : ? @10:5..10:32
           control: loop : unit @10:5..10:32
-            start: int 4 : int @10:14..10:15
-            end: int 4 : int @10:17..10:18
-            body:
-              let i@10:9..10:10: loop index : int @10:5..10:32
-                start: int 4 : int @10:14..10:15
-                end: int 4 : int @10:17..10:18
-              discard: read total@9:13..9:18 : int
-              assignment: assign total@9:13..9:18 : int @10:21..10:30
-                value: int 0 : int @10:29..10:30
-              tail: unit : unit @10:19..10:32
-            next[0]: read total@9:13..9:18 : int
           context: entry : ? @8:1..13:2
       tail: loop value 0 : int @11:5..11:32
         loop: @11:5..11:32
@@ -135,24 +101,6 @@ fn bounds@14:1..24:2 () -> int ∈ [2, +∞)
         next[1]: read total@16:13..16:18 : int
       discard: after : ? @17:5..22:6
         control: loop : unit @17:5..22:6
-          start: read n@15:13..15:14 : int
-          end: read n@15:13..15:14 : int
-          body:
-            let i@17:9..17:10: loop index : int @17:5..22:6
-              start: read n@15:13..15:14 : int
-              end: read n@15:13..15:14 : int
-            discard: read n@15:13..15:14 : int
-            assignment: assign total@16:13..16:18 : int @20:9..20:31
-              value: eager + : int @20:17..20:31
-                lhs: eager * : int @20:17..20:27
-                  lhs: read total@16:13..16:18 : int
-                  rhs: int 10 : int @20:25..20:27
-                rhs: read i@17:9..17:10 : int
-            assignment: assign n@15:13..15:14 : int @21:9..21:14
-              value: int 0 : int @21:13..21:14
-            tail: unit : unit @19:13..22:6
-          next[0]: read n@15:13..15:14 : int
-          next[1]: read total@16:13..16:18 : int
         context: entry : ? @14:1..24:2
       tail: loop value 1 : int @17:5..22:6
         loop: @17:5..22:6
@@ -173,22 +121,6 @@ fn nested@25:1..33:2 () -> int ∈ [11, +∞)
             loop: @28:9..30:10
           discard: after : ? @28:9..30:10
             control: loop : unit @28:9..30:10
-              start: int 0 : int @28:18..28:19
-              end: read i@27:9..27:10 : int
-              body:
-                let j@28:13..28:14: loop index : int @28:9..30:10
-                  start: int 0 : int @28:18..28:19
-                  end: read i@27:9..27:10 : int
-                assignment: assign total@26:13..26:18 : int @29:13..29:39
-                  value: eager + : int @29:21..29:39
-                    lhs: eager + : int @29:21..29:35
-                      lhs: read total@26:13..26:18 : int
-                      rhs: eager * : int @29:29..29:35
-                        lhs: read i@27:9..27:10 : int
-                        rhs: int 10 : int @29:33..29:35
-                    rhs: read j@28:13..28:14 : int
-                tail: unit : unit @28:23..30:10
-              next[0]: read total@26:13..26:18 : int
             context: then : ? @27:19..31:6
           tail: loop : unit @28:9..30:10
             start: int 0 : int @28:18..28:19
@@ -211,52 +143,6 @@ fn nested@25:1..33:2 () -> int ∈ [11, +∞)
           loop: @28:9..30:10
       discard: after : ? @27:5..31:6
         control: loop : unit @27:5..31:6
-          start: int 1 : int @27:14..27:15
-          end: int 4 : int @27:17..27:18
-          body:
-            let i@27:9..27:10: loop index : int @27:5..31:6
-              start: int 1 : int @27:14..27:15
-              end: int 4 : int @27:17..27:18
-            discard: loop value 0 : int @28:9..30:10
-              loop: @28:9..30:10
-            discard: after : ? @28:9..30:10
-              control: loop : unit @28:9..30:10
-                start: int 0 : int @28:18..28:19
-                end: read i@27:9..27:10 : int
-                body:
-                  let j@28:13..28:14: loop index : int @28:9..30:10
-                    start: int 0 : int @28:18..28:19
-                    end: read i@27:9..27:10 : int
-                  assignment: assign total@26:13..26:18 : int @29:13..29:39
-                    value: eager + : int @29:21..29:39
-                      lhs: eager + : int @29:21..29:35
-                        lhs: read total@26:13..26:18 : int
-                        rhs: eager * : int @29:29..29:35
-                          lhs: read i@27:9..27:10 : int
-                          rhs: int 10 : int @29:33..29:35
-                      rhs: read j@28:13..28:14 : int
-                  tail: unit : unit @28:23..30:10
-                next[0]: read total@26:13..26:18 : int
-              context: then : ? @27:19..31:6
-            tail: loop : unit @28:9..30:10
-              start: int 0 : int @28:18..28:19
-              end: read i@27:9..27:10 : int
-              body:
-                let j@28:13..28:14: loop index : int @28:9..30:10
-                  start: int 0 : int @28:18..28:19
-                  end: read i@27:9..27:10 : int
-                assignment: assign total@26:13..26:18 : int @29:13..29:39
-                  value: eager + : int @29:21..29:39
-                    lhs: eager + : int @29:21..29:35
-                      lhs: read total@26:13..26:18 : int
-                      rhs: eager * : int @29:29..29:35
-                        lhs: read i@27:9..27:10 : int
-                        rhs: int 10 : int @29:33..29:35
-                    rhs: read j@28:13..28:14 : int
-                tail: unit : unit @28:23..30:10
-              next[0]: read total@26:13..26:18 : int
-          next[0]: loop value 0 : int @28:9..30:10
-            loop: @28:9..30:10
         context: entry : ? @25:1..33:2
       tail: loop value 0 : int @27:5..31:6
         loop: @27:5..31:6
@@ -286,23 +172,6 @@ fn shadowing@34:1..41:2 () -> int ∈ [12, 12]
         next[0]: read i@35:13..35:14 : int
       discard: after : ? @36:5..39:6
         control: loop : unit @36:5..39:6
-          start: read i@35:13..35:14 : int
-          end: int 15 : int @36:17..36:19
-          body:
-            let i@36:9..36:10: loop index : int @36:5..39:6
-              start: read i@35:13..35:14 : int
-              end: int 15 : int @36:17..36:19
-            discard: read i@35:13..35:14 : int
-            let i@37:17..37:18: int @37:9..37:26
-              initializer: eager + : int @37:21..37:26
-                lhs: read i@36:9..36:10 : int
-                rhs: int 1 : int @37:25..37:26
-            assignment: assign i@37:17..37:18 : int @38:9..38:18
-              value: eager * : int @38:13..38:18
-                lhs: read i@37:17..37:18 : int
-                rhs: int 2 : int @38:17..38:18
-            tail: unit : unit @36:20..39:6
-          next[0]: read i@35:13..35:14 : int
         context: entry : ? @34:1..41:2
       tail: read i@35:13..35:14 : int
 
@@ -318,10 +187,6 @@ fn returned@42:1..47:2 () -> int ∈ [12, 99]
             end: int 7 : int @43:17..43:18
           discard: after : ? @44:9..44:35
             control: observe : ? @44:9..44:35
-              condition: eager == : bool @44:12..44:18
-                lhs: read i@43:9..43:10 : int
-                rhs: int 4 : int @44:17..44:18
-              then control: unit : unit @44:19..44:35
             context: then : ? @43:19..45:6
           tail: if : unit @44:9..44:35
             condition: eager == : bool @44:12..44:18
@@ -331,25 +196,6 @@ fn returned@42:1..47:2 () -> int ∈ [12, 99]
             else: unit (implicit)
       discard: after : ? @43:5..45:6
         control: loop : unit @43:5..45:6
-          start: int 2 : int @43:14..43:15
-          end: int 7 : int @43:17..43:18
-          body:
-            let i@43:9..43:10: loop index : int @43:5..45:6
-              start: int 2 : int @43:14..43:15
-              end: int 7 : int @43:17..43:18
-            discard: after : ? @44:9..44:35
-              control: observe : ? @44:9..44:35
-                condition: eager == : bool @44:12..44:18
-                  lhs: read i@43:9..43:10 : int
-                  rhs: int 4 : int @44:17..44:18
-                then control: unit : unit @44:19..44:35
-              context: then : ? @43:19..45:6
-            tail: if : unit @44:9..44:35
-              condition: eager == : bool @44:12..44:18
-                lhs: read i@43:9..43:10 : int
-                rhs: int 4 : int @44:17..44:18
-              then: unit : unit @44:19..44:35
-              else: unit (implicit)
         context: entry : ? @42:1..47:2
       tail: int 99 : int @46:5..46:7
     outcome[1]: return : int @44:21..44:33
@@ -370,13 +216,6 @@ fn skipped_return@48:1..51:2 () -> int ∈ [8, 8]
           tail: unit : unit @49:19..49:31
       discard: after : ? @49:5..49:31
         control: loop : unit @49:5..49:31
-          start: int 4 : int @49:14..49:15
-          end: int 2 : int @49:17..49:18
-          body:
-            let i@49:9..49:10: loop index : int @49:5..49:31
-              start: int 4 : int @49:14..49:15
-              end: int 2 : int @49:17..49:18
-            tail: unit : unit @49:19..49:31
         context: entry : ? @48:1..51:2
       tail: int 8 : int @50:5..50:6
     outcome[1]: return : int @49:21..49:29
@@ -431,47 +270,6 @@ fn guarded@52:1..58:2 () -> int ∈ (-∞, +∞)
           else: read total@53:13..53:18 : int
       discard: after : ? @54:5..56:6
         control: loop : unit @54:5..56:6
-          start: int -3 : int @54:14..54:16
-          end: int 4 : int @54:18..54:19
-          body:
-            let i@54:9..54:10: loop index : int @54:5..56:6
-              start: int -3 : int @54:14..54:16
-              end: int 4 : int @54:18..54:19
-            discard: phi total@53:13..53:18 : int @55:9..55:45
-              condition: eager != : bool @55:12..55:18
-                lhs: read i@54:9..54:10 : int
-                rhs: int 0 : int @55:17..55:18
-              then: assign total@53:13..53:18 : int @55:21..55:43
-                value: eager + : int @55:29..55:43
-                  lhs: read total@53:13..53:18 : int
-                  rhs: eager / : int @55:37..55:43
-                    lhs: int 12 : int @55:37..55:39
-                    rhs: read i@54:9..54:10 [i != 0 holds@55:12..55:18] : int
-              else: read total@53:13..53:18 : int
-            tail: if : unit @55:9..55:45
-              condition: eager != : bool @55:12..55:18
-                lhs: read i@54:9..54:10 : int
-                rhs: int 0 : int @55:17..55:18
-              then:
-                assignment: assign total@53:13..53:18 : int @55:21..55:43
-                  value: eager + : int @55:29..55:43
-                    lhs: read total@53:13..53:18 : int
-                    rhs: eager / : int @55:37..55:43
-                      lhs: int 12 : int @55:37..55:39
-                      rhs: read i@54:9..54:10 [i != 0 holds@55:12..55:18] : int
-                tail: unit : unit @55:19..55:45
-              else: unit (implicit)
-          next[0]: phi total@53:13..53:18 : int @55:9..55:45
-            condition: eager != : bool @55:12..55:18
-              lhs: read i@54:9..54:10 : int
-              rhs: int 0 : int @55:17..55:18
-            then: assign total@53:13..53:18 : int @55:21..55:43
-              value: eager + : int @55:29..55:43
-                lhs: read total@53:13..53:18 : int
-                rhs: eager / : int @55:37..55:43
-                  lhs: int 12 : int @55:37..55:39
-                  rhs: read i@54:9..54:10 [i != 0 holds@55:12..55:18] : int
-            else: read total@53:13..53:18 : int
         context: entry : ? @52:1..58:2
       tail: loop value 0 : int @54:5..56:6
         loop: @54:5..56:6
@@ -535,53 +333,6 @@ fn carried_guard@59:1..67:2 () -> int ∈ (-∞, +∞)
           else: read total@61:13..61:18 : int
       discard: after : ? @62:5..65:6
         control: loop : unit @62:5..65:6
-          start: int 0 : int @62:14..62:15
-          end: int 5 : int @62:17..62:18
-          body:
-            let i@62:9..62:10: loop index : int @62:5..65:6
-              start: int 0 : int @62:14..62:15
-              end: int 5 : int @62:17..62:18
-            discard: phi total@61:13..61:18 : int @63:9..63:57
-              condition: eager != : bool @63:12..63:24
-                lhs: read divisor@60:13..60:20 : int
-                rhs: int 0 : int @63:23..63:24
-              then: assign total@61:13..61:18 : int @63:27..63:55
-                value: eager + : int @63:35..63:55
-                  lhs: read total@61:13..61:18 : int
-                  rhs: eager / : int @63:43..63:55
-                    lhs: int 12 : int @63:43..63:45
-                    rhs: read divisor@60:13..60:20 [divisor != 0 holds@63:12..63:24] : int
-              else: read total@61:13..61:18 : int
-            discard: if : unit @63:9..63:57
-              condition: eager != : bool @63:12..63:24
-                lhs: read divisor@60:13..60:20 : int
-                rhs: int 0 : int @63:23..63:24
-              then:
-                assignment: assign total@61:13..61:18 : int @63:27..63:55
-                  value: eager + : int @63:35..63:55
-                    lhs: read total@61:13..61:18 : int
-                    rhs: eager / : int @63:43..63:55
-                      lhs: int 12 : int @63:43..63:45
-                      rhs: read divisor@60:13..60:20 [divisor != 0 holds@63:12..63:24] : int
-                tail: unit : unit @63:25..63:57
-              else: unit (implicit)
-            assignment: assign divisor@60:13..60:20 : int @64:9..64:30
-              value: eager - : int @64:19..64:30
-                lhs: read divisor@60:13..60:20 : int
-                rhs: int 1 : int @64:29..64:30
-            tail: unit : unit @62:19..65:6
-          next[0]: read divisor@60:13..60:20 : int
-          next[1]: phi total@61:13..61:18 : int @63:9..63:57
-            condition: eager != : bool @63:12..63:24
-              lhs: read divisor@60:13..60:20 : int
-              rhs: int 0 : int @63:23..63:24
-            then: assign total@61:13..61:18 : int @63:27..63:55
-              value: eager + : int @63:35..63:55
-                lhs: read total@61:13..61:18 : int
-                rhs: eager / : int @63:43..63:55
-                  lhs: int 12 : int @63:43..63:45
-                  rhs: read divisor@60:13..60:20 [divisor != 0 holds@63:12..63:24] : int
-            else: read total@61:13..61:18 : int
         context: entry : ? @59:1..67:2
       tail: loop value 1 : int @62:5..65:6
         loop: @62:5..65:6
@@ -608,20 +359,6 @@ fn positive_index@68:1..72:2 () -> int ∈ [4, +∞)
         next[0]: read total@69:13..69:18 : int
       discard: after : ? @70:5..70:45
         control: loop : unit @70:5..70:45
-          start: int 1 : int @70:14..70:15
-          end: int 4 : int @70:17..70:18
-          body:
-            let i@70:9..70:10: loop index : int @70:5..70:45
-              start: int 1 : int @70:14..70:15
-              end: int 4 : int @70:17..70:18
-            assignment: assign total@69:13..69:18 : int @70:21..70:43
-              value: eager + : int @70:29..70:43
-                lhs: read total@69:13..69:18 : int
-                rhs: eager / : int @70:37..70:43
-                  lhs: int 12 : int @70:37..70:39
-                  rhs: read i@70:9..70:10 : int
-            tail: unit : unit @70:19..70:45
-          next[0]: read total@69:13..69:18 : int
         context: entry : ? @68:1..72:2
       tail: loop value 0 : int @70:5..70:45
         loop: @70:5..70:45
@@ -645,17 +382,6 @@ fn after_assignment@73:1..77:2 () -> int ∈ [3, 6]
         next[0]: read divisor@74:13..74:20 : int
       discard: after : ? @75:5..75:34
         control: loop : unit @75:5..75:34
-          start: int 2 : int @75:14..75:15
-          end: int 5 : int @75:17..75:18
-          body:
-            let i@75:9..75:10: loop index : int @75:5..75:34
-              start: int 2 : int @75:14..75:15
-              end: int 5 : int @75:17..75:18
-            discard: read divisor@74:13..74:20 : int
-            assignment: assign divisor@74:13..74:20 : int @75:21..75:32
-              value: read i@75:9..75:10 : int
-            tail: unit : unit @75:19..75:34
-          next[0]: read divisor@74:13..74:20 : int
         context: entry : ? @73:1..77:2
       tail: eager / : int @76:5..76:17
         lhs: int 12 : int @76:5..76:7
@@ -678,16 +404,6 @@ fn skipped_fault@78:1..81:2 () -> int ∈ [11, 11]
           tail: unit : unit @79:19..79:32
       discard: after : ? @79:5..79:32
         control: loop : unit @79:5..79:32
-          start: int 3 : int @79:14..79:15
-          end: int 3 : int @79:17..79:18
-          body:
-            let i@79:9..79:10: loop index : int @79:5..79:32
-              start: int 3 : int @79:14..79:15
-              end: int 3 : int @79:17..79:18
-            discard: eager / : int @79:25..79:30
-              lhs: int 1 : int @79:25..79:26
-              rhs: int 0 : int @79:29..79:30
-            tail: unit : unit @79:19..79:32
         context: entry : ? @78:1..81:2
       tail: int 11 : int @80:5..80:7
 
@@ -696,19 +412,8 @@ fn returning_bound@82:1..84:2 () -> int ∈ [17, 17]
     outcome[0]:
       discard: after : ? @83:5..83:33
         control: loop : unit @83:5..83:33
-          start: sequence : unit @83:14..83:27
-            before: return : int @83:16..83:25
-              payload: int 17 : int @83:23..83:25
-            value: unit : unit @83:14..83:27
-          end: int 3 : int @83:29..83:30
-          body:
-            let i@83:9..83:10: loop index : int @83:5..83:33
-              start: unit : unit @83:14..83:27
-              end: int 3 : int @83:29..83:30
-            tail: unit : unit @83:31..83:33
         context: after : ? @83:16..83:25
           control: return : int @83:16..83:25
-            payload: int 17 : int @83:23..83:25
           context: entry : ? @82:1..84:2
       tail: loop : unit @83:5..83:33
         start: sequence : unit @83:14..83:27
@@ -729,19 +434,8 @@ fn returning_end@85:1..87:2 () -> int ∈ [18, 18]
     outcome[0]:
       discard: after : ? @86:5..86:40
         control: loop : unit @86:5..86:40
-          start: int 0 : int @86:14..86:15
-          end: sequence : unit @86:17..86:30
-            before: return : int @86:19..86:28
-              payload: int 18 : int @86:26..86:28
-            value: unit : unit @86:17..86:30
-          body:
-            let i@86:9..86:10: loop index : int @86:5..86:40
-              start: int 0 : int @86:14..86:15
-              end: unit : unit @86:17..86:30
-            tail: bool false : bool @86:33..86:38
         context: after : ? @86:19..86:28
           control: return : int @86:19..86:28
-            payload: int 18 : int @86:26..86:28
           context: entry : ? @85:1..87:2
       tail: loop : unit @86:5..86:40
         start: int 0 : int @86:14..86:15
@@ -783,24 +477,8 @@ fn completed_binding@88:1..95:2 () -> int ∈ [19, 19]
             else: unit (implicit)
       discard: after : ? @91:5..93:6
         control: loop : unit @91:5..93:6
-          start: int 0 : int @91:14..91:15
-          end: int 2 : int @91:17..91:18
-          body:
-            let i@91:9..91:10: loop index : int @91:5..93:6
-              start: int 0 : int @91:14..91:15
-              end: int 2 : int @91:17..91:18
-            tail: if : unit @92:9..92:44
-              condition: eager == : bool @92:12..92:26
-                lhs: read value@89:13..89:18 : bool
-                rhs: read value@89:13..89:18 : bool
-              then:
-                assignment: assign value@89:13..89:18 : bool @92:29..92:42
-                  value: bool false : bool @92:37..92:42
-                tail: unit : unit @92:27..92:44
-              else: unit (implicit)
         context: after : ? @89:26..89:35
           control: return : int @89:26..89:35
-            payload: int 19 : int @89:33..89:35
           context: entry : ? @88:1..95:2
       tail: int 23 : int @94:5..94:7
     outcome[1]: return : int @89:26..89:35
@@ -826,18 +504,6 @@ fn huge_bounds@96:1..102:2 () -> int ∈ [100000000000000000000000, +∞)
         next[0]: read total@97:13..97:18 : int
       discard: after : ? @98:5..100:6
         control: loop : unit @98:5..100:6
-          start: int 100000000000000000000000 : int @98:14..98:38
-          end: int 100000000000000000000003 : int @98:40..98:64
-          body:
-            let i@98:9..98:10: loop index : int @98:5..100:6
-              start: int 100000000000000000000000 : int @98:14..98:38
-              end: int 100000000000000000000003 : int @98:40..98:64
-            assignment: assign total@97:13..97:18 : int @99:9..99:26
-              value: eager + : int @99:17..99:26
-                lhs: read total@97:13..97:18 : int
-                rhs: read i@98:9..98:10 : int
-            tail: unit : unit @98:65..100:6
-          next[0]: read total@97:13..97:18 : int
         context: entry : ? @96:1..102:2
       tail: loop value 0 : int @98:5..100:6
         loop: @98:5..100:6

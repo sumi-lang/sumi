@@ -391,7 +391,8 @@ fn dump_node(
     );
 }
 
-fn dump_definition(
+/// The line naming `node`'s operation, type, and position, without its inputs.
+fn dump_header(
     analysis: &Analysis,
     shape: &Rendering<'_>,
     role: &str,
@@ -399,10 +400,7 @@ fn dump_definition(
     depth: usize,
     out: &mut String,
 ) {
-    let graph = analysis.graph();
-    let indent = "  ".repeat(depth);
-    let inputs = graph.inputs(node);
-    let entry = graph.node(node);
+    let entry = analysis.graph().node(node);
     let operation = match &entry.op {
         Op::Int(value) => format!("int {value}"),
         Op::Bool(value) => format!("bool {value}"),
@@ -445,11 +443,26 @@ fn dump_definition(
     };
     writeln!(
         out,
-        "{indent}{role}: {operation} : {} {}",
+        "{}{role}: {operation} : {} {}",
+        "  ".repeat(depth),
         ty(analysis, node),
         shape.at(entry.origin)
     )
     .unwrap();
+}
+
+fn dump_definition(
+    analysis: &Analysis,
+    shape: &Rendering<'_>,
+    role: &str,
+    node: NodeId,
+    depth: usize,
+    out: &mut String,
+) {
+    dump_header(analysis, shape, role, node, depth, out);
+    let graph = analysis.graph();
+    let inputs = graph.inputs(node);
+    let entry = graph.node(node);
     let child = depth + 1;
     match &entry.op {
         Op::Int(_)
@@ -544,8 +557,9 @@ fn dump_definition(
                 dump_region(analysis, shape, "else control", *else_, child, out);
             }
         }
+        // The control is a statement of its own; the continuation names it.
         Op::After => {
-            dump_node(analysis, shape, "control", inputs[0], child, out);
+            dump_header(analysis, shape, "control", inputs[0], child, out);
             dump_node(analysis, shape, "context", inputs[1], child, out);
         }
         Op::Result { .. } => {

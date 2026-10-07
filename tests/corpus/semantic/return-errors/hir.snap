@@ -17,11 +17,8 @@ fn declared@4:1..10:2 () -> int ∈ ∅
         else: unit (implicit)
       discard: after : ? @8:5..8:16
         control: return : bool @8:5..8:16
-          payload: bool true : bool @8:12..8:16
         context: after : ? @5:5..7:6
           control: observe : ? @5:5..7:6
-            condition: bool true : bool @5:8..5:12
-            then control: unit : unit @5:13..7:6
           context: entry : ? @4:1..10:2
       tail: int 1 : int @9:5..9:6
     outcome[1]: return : bool @6:9..6:21
@@ -38,8 +35,6 @@ fn inferred@11:1..16:2 signature: unavailable
         else: unit (implicit)
       discard: after : ? @12:5..14:6
         control: observe : ? @12:5..14:6
-          condition: bool true : bool @12:8..12:12
-          then control: unit : unit @12:13..14:6
         context: entry : ? @11:1..16:2
       tail: bool false : bool @15:5..15:10
     outcome[1]: return : ? @13:9..13:17
@@ -50,7 +45,6 @@ fn unreachable@17:1..21:2 () -> int ∈ [1, 1]
     outcome[0]:
       discard: after : ? @18:5..18:13
         control: return : int @18:5..18:13
-          payload: int 1 : int @18:12..18:13
         context: entry : ? @17:1..21:2
       discard: eager + : int @19:5..19:23
         lhs: hole : ? @19:5..19:11
@@ -70,8 +64,6 @@ fn sequence_type@22:1..27:2 () -> int ∈ ∅
         else: unit (implicit)
       discard: after : ? @23:5..25:6
         control: observe : ? @23:5..25:6
-          condition: bool false : bool @23:8..23:13
-          then control: unit : unit @23:14..25:6
         context: entry : ? @22:1..27:2
       tail: bool true : bool @26:5..26:9
     outcome[1]: return : int @24:9..24:17
@@ -87,9 +79,6 @@ fn branch_type@28:1..35:2 () -> int ∈ [3, 3]
           else: int 2 : int @32:9..32:10
       discard: after : ? @29:5..33:6
         control: observe : ? @29:19..33:6
-          condition: bool false : bool @29:22..29:27
-          then control: unit : unit @29:28..31:6
-          else control: int 2 : int @32:9..32:10
         context: entry : ? @28:1..35:2
       tail: int 3 : int @34:5..34:6
     outcome[1]: return : int @30:9..30:17
@@ -100,7 +89,6 @@ fn unreachable_tail@36:1..39:2 () -> int ∈ [1, 1]
     outcome[0]:
       discard: after : ? @37:5..37:13
         control: return : int @37:5..37:13
-          payload: int 1 : int @37:12..37:13
         context: entry : ? @36:1..39:2
       tail: bool false : bool @38:5..38:10
     outcome[1]: return : int @37:5..37:13

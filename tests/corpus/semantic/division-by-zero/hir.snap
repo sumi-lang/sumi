@@ -282,8 +282,6 @@ fn returning_zero@81:1..86:2 (bool ∈ {true}) -> int ∈ [0, 0]
         else: unit (implicit)
       discard: after : ? @82:5..84:6
         control: observe : ? @82:5..84:6
-          condition: read b@81:19..81:20 : bool
-          then control: unit : unit @82:10..84:6
         context: entry : ? @81:1..86:2
       tail: int 1 : int @85:5..85:6
     outcome[1]: return : int @83:9..83:17
