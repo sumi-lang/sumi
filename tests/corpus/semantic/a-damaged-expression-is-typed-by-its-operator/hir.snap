@@ -14,7 +14,6 @@ fn around_a_hole@1:1..6:2 (bool ∈ ∅) -> int ∈ ∅
         initializer: lazy and : bool @3:13..3:22
           lhs: read x@2:9..2:10 : ?
           rhs: read flag@1:18..1:22 : bool
-      discard: hole : ? @4:5..6:2
       tail: if : ? @4:5..6:2
         condition: read flag@1:18..1:22 : bool
         then: read x@2:9..2:10 : ?
@@ -103,7 +102,6 @@ fn merged@32:1..36:2 (bool ∈ ∅) -> int ∈ ∅
     value:
       let x@33:13..33:14: int @33:5..33:18
         initializer: int 1 : int @33:17..33:18
-      discard: hole : ? @34:5..36:2
       tail: if : ? @34:5..36:2
         condition: read flag@32:11..32:15 : bool
         then:

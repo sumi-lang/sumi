@@ -2089,9 +2089,8 @@ impl<'a, 's> Builder<'a, 's> {
                 None => return self.damaged_let(binding),
             },
             Stmt::Expr(Expr::IfExpr(branch)) => {
-                // A lost part stands as the `if` itself, a hole; an `else` keyword without its
-                // block is still an else.
-                self.hole(node);
+                // A lost part stands as the `if` itself, which `node_of` holes on demand; an
+                // `else` keyword without its block is still an else.
                 let cond = branch.condition(tree).map_or(node, |cond| cond.node());
                 let then = branch.then_branch(tree).map_or(node, |block| block.node());
                 let else_ = branch
