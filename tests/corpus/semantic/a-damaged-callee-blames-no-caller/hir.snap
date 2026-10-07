@@ -1,0 +1,50 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 2
+
+fn damaged@1:1..1:23 signature: unavailable
+  body: hole : ? @1:16..1:23
+
+fn uses@2:1..6:2 (bool ∈ ∅) -> unit ∈ ∅
+  param flag@2:9..2:13: bool
+  result: copy : unit @2:1..6:2
+    value:
+      let x@3:9..3:10: ? @3:5..3:22
+        initializer: call damaged@1:1..1:23 : ? @3:13..3:22
+      discard: eager + : int @4:9..4:14
+        lhs: read x@3:9..3:10 : ?
+        rhs: int 1 : int @4:13..4:14
+      discard: lazy and : bool @5:9..5:18
+        lhs: read x@3:9..3:10 : ?
+        rhs: read flag@2:9..2:13 : bool
+      tail: unit : unit @2:21..6:2
+
+fn forwards@7:1..7:26 signature: unavailable
+  body: call damaged@1:1..1:23 : ? @7:17..7:26
+
+fn declared@8:1..8:33 () -> int ∈ ∅
+  result: copy : int @8:18..8:21
+    value: call damaged@1:1..1:23 : ? @8:24..8:33
+
+fn chained@9:1..9:34 () -> bool ∈ ∅
+  result: copy : bool @9:17..9:21
+    value: call forwards@7:1..7:26 : ? @9:24..9:34
+
+fn branched@10:1..10:67 (bool ∈ ∅) -> bool ∈ ∅
+  param flag@10:13..10:17: bool
+  result: copy : bool @10:28..10:32
+    value: if : ? @10:35..10:67
+      condition: read flag@10:13..10:17 : bool
+      then: call damaged@1:1..1:23 : ? @10:45..10:54
+      else: int 1 : int @10:64..10:65
+
+fn intact@11:1..11:23 () -> int ∈ [3, 3]
+  result: copy : int @11:16..11:19
+    value: int 3 : int @11:22..11:23
+
+== semantic diagnostics ==
+error[semantic/unknown-name]: unknown name `missing`
+  primary @1:16..1:23
+error[semantic/type-mismatch]: expected bool, found int
+  primary @10:35..10:67
+  secondary @10:28..10:32: declared here

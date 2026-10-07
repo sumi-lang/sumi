@@ -244,6 +244,10 @@ pub(crate) fn draw(
             let inputs = graph.inputs(node);
             demands.of(owner, node, entry, inputs, graph.reads(node));
             if !typed(node) {
+                // A result a hole decided is unknown to every caller, not empty.
+                if node == run.result() {
+                    typing.unknown(node);
+                }
                 continue;
             }
             let origin = entry.origin;

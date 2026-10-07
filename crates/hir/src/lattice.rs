@@ -14,10 +14,14 @@ use crate::solver::{Carry, Lattice};
 pub(crate) struct Claim(NonZeroU32);
 
 const IMPORTED: u32 = 1 << 31;
+/// In the first slot when a hole decided the class: the best rank there is, which no claim takes,
+/// so the join that keeps the best claim keeps it over any claim of the first type.
+const UNKNOWN: Claim = Claim(NonZeroU32::new(1).unwrap());
+const FIRST: u32 = 2;
 
 impl Claim {
     pub fn local(index: usize) -> Self {
-        let rank = u32::try_from(index + 1).expect("claim count fits u32");
+        let rank = u32::try_from(index).expect("claim count fits u32") + FIRST;
         assert!(rank < IMPORTED, "claim count fits below the imported bit");
         Self(NonZeroU32::new(rank).unwrap())
     }
@@ -30,11 +34,13 @@ impl Claim {
     }
 
     pub fn index(self) -> usize {
-        ((self.0.get() & !IMPORTED) - 1) as usize
+        ((self.0.get() & !IMPORTED) - FIRST) as usize
     }
 }
 
-/// Per scalar type, the best claim that the class has it.
+/// Per scalar type, the best claim that the class has it, or the fact that a hole decided it. A
+/// class holding the unknown resolves to no type, so no demand on it disagrees, and it crosses
+/// every flow a claim does, so nothing a hole reaches is blamed for what the hole might have been.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Evidence {
     claims: [Option<Claim>; Ty::ALL.len()],
@@ -51,6 +57,12 @@ const _: () = {
 impl Evidence {
     pub const NONE: Self = Self {
         claims: [None; Ty::ALL.len()],
+    };
+
+    pub const UNKNOWN: Self = {
+        let mut evidence = Self::NONE;
+        evidence.claims[0] = Some(UNKNOWN);
+        evidence
     };
 
     pub fn single(ty: Ty, claim: Claim) -> Self {
@@ -75,12 +87,28 @@ impl Evidence {
     pub fn imported(&self, claim: Claim) -> Self {
         let imported = Claim(claim.0 | IMPORTED);
         Self {
-            claims: self.claims.map(|claim| claim.map(|_| imported)),
+            claims: self
+                .claims
+                .map(|claim| claim.map(|claim| if claim == UNKNOWN { claim } else { imported })),
         }
     }
 
-    /// The type claimed, if exactly one is.
+    pub fn unknown(&self) -> bool {
+        self.claims[0] == Some(UNKNOWN)
+    }
+
+    fn types(&self) -> impl Iterator<Item = (Ty, Claim)> + '_ {
+        Ty::ALL
+            .iter()
+            .zip(&self.claims)
+            .filter_map(|(ty, claim)| claim.filter(|&claim| claim != UNKNOWN).map(|c| (*ty, c)))
+    }
+
+    /// The type claimed, if exactly one is and no hole decided the class.
     pub fn ty(&self) -> Option<Ty> {
+        if self.unknown() {
+            return None;
+        }
         let mut found = None;
         for (ty, claim) in Ty::ALL.iter().zip(&self.claims) {
             if claim.is_some() {
@@ -93,22 +121,19 @@ impl Evidence {
         found
     }
 
+    /// Never for a class a hole decided: the claims beside the unknown are not a disagreement.
     pub fn is_conflict(&self) -> bool {
-        self.claims.iter().filter(|claim| claim.is_some()).count() > 1
+        !self.unknown() && self.types().count() > 1
     }
 
     /// A conflict whose every claim crossed a flow; it is reported where it arose.
     pub fn inherited(&self) -> bool {
-        self.is_conflict() && self.claims.iter().flatten().all(|claim| claim.imported())
+        self.is_conflict() && self.types().all(|(_, claim)| claim.imported())
     }
 
     /// Every claim, best first.
     pub fn claims(&self) -> Vec<(Ty, Claim)> {
-        let mut claims: Vec<_> = Ty::ALL
-            .iter()
-            .zip(&self.claims)
-            .filter_map(|(ty, claim)| claim.map(|claim| (*ty, claim)))
-            .collect();
+        let mut claims: Vec<_> = self.types().collect();
         claims.sort_by_key(|(_, claim)| *claim);
         claims
     }
