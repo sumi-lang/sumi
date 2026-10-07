@@ -10,3 +10,11 @@ fn malformed() -> = {
     1
 }
 fn intact() = true
+fn settled() = {
+    let x = 1
+    if x {
+        _ = 0
+    }
+    x
+}
+fn held_to_settled() -> bool = settled()

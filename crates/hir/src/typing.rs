@@ -102,10 +102,12 @@ impl Typing {
         }
     }
 
+    /// A demand types a class nothing else does and yields to a fact or a flow, so a wrong read
+    /// is blamed in the replay without unsettling what it read.
     pub fn expect(&mut self, node: NodeId, expected: Expected, origin: TextRange) {
         match expected {
             Expected::Ty(ty) => {
-                let claim = self.claim(origin);
+                let claim = self.claim(origin).demanded();
                 self.solver
                     .class_mut(node)
                     .types
@@ -334,39 +336,38 @@ mod tests {
     }
 
     #[test]
-    fn a_claim_of_the_classs_own_makes_a_conflict_local() {
-        let (mut typing, [conflicted, call]) = classes();
-        typing.known(conflicted, Ty::Int, at(0));
-        typing.expect(conflicted, Expected::Ty(Ty::Bool), at(1));
-        typing.call(conflicted, call, at(2));
+    fn a_demand_yields_to_a_fact_and_a_call_imports_only_what_resolves() {
+        let (mut typing, [fact, call, empty]) = classes();
+        typing.known(fact, Ty::Int, at(0));
+        typing.expect(fact, Expected::Ty(Ty::Bool), at(1));
+        typing.call(fact, call, at(2));
         typing.expect(call, Expected::Ty(Ty::Unit), at(3));
+        typing.expect(empty, Expected::Ty(Ty::Bool), at(4));
         typing.solve(&cx());
-        let evidence = typing.evidence(call);
-        assert!(evidence.is_conflict() && !evidence.inherited());
-        let claims = evidence.claims();
-        assert_eq!(claims.len(), 3);
-        assert_eq!(
-            (claims[0].0, typing.origin(claims[0].1)),
-            (Ty::Unit, Some(at(3)))
-        );
-        assert!(
-            claims[1..]
-                .iter()
-                .all(|(_, claim)| typing.origin(*claim) == Some(at(2)))
-        );
-    }
-
-    #[test]
-    fn a_local_claim_outranks_an_earlier_imported_one() {
-        let (mut typing, [provider, call]) = classes();
-        typing.known(provider, Ty::Int, at(0));
-        typing.call(provider, call, at(1));
-        typing.expect(call, Expected::Ty(Ty::Int), at(2));
-        typing.solve(&cx());
+        for node in [fact, call] {
+            let evidence = typing.evidence(node);
+            assert!(!evidence.is_conflict());
+            assert_eq!(evidence.ty(), Some(Ty::Int));
+            assert_eq!(evidence.claims().len(), 1);
+        }
         assert_eq!(
             typing.origin(typing.evidence(call).claims()[0].1),
             Some(at(2))
         );
+        assert_eq!(typing.resolve(empty), Some(Ty::Bool));
+    }
+
+    #[test]
+    fn a_local_claim_outranks_an_earlier_imported_one() {
+        let (mut typing, [provider, call, local]) = classes();
+        typing.known(provider, Ty::Int, at(0));
+        typing.call(provider, call, at(1));
+        typing.known(local, Ty::Bool, at(2));
+        typing.flow(local, call, Edge::Bind);
+        typing.solve(&cx());
+        let evidence = typing.evidence(call);
+        assert!(evidence.is_conflict() && !evidence.inherited());
+        assert_eq!(typing.origin(evidence.claims()[0].1), Some(at(2)));
     }
 
     #[test]
@@ -503,7 +504,7 @@ mod tests {
         typing.flow(unknown_call, bound_call, Edge::Bind);
         typing.solve(&cx());
         assert_eq!(typing.may(binding).ints, typing.may(literal).ints);
-        assert!(typing.evidence(binding).is_conflict());
+        assert_eq!(typing.resolve(binding), Some(Ty::Int));
         assert_eq!(typing.resolve(literal), Some(Ty::Int));
         assert_eq!(typing.resolve(bound_call), None);
         let mut replay = typing.replay();

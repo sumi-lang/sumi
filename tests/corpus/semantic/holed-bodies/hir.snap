@@ -6,7 +6,7 @@ fn tail_held@1:1..4:2 () -> bool ∈ ∅
   result: copy : bool @1:19..1:23
     value:
       discard: hole : ? @2:9..2:16
-      tail: int 1 : ? @3:5..3:6
+      tail: int 1 : int @3:5..3:6
 
 fn inferred@5:1..8:2 () -> int ∈ [1, 1]
   body:
@@ -15,7 +15,7 @@ fn inferred@5:1..8:2 () -> int ∈ [1, 1]
 
 fn caller@9:1..9:33 () -> bool ∈ ∅
   result: copy : bool @9:16..9:20
-    value: call inferred@5:1..8:2 : ? @9:23..9:33
+    value: call inferred@5:1..8:2 : int @9:23..9:33
 
 fn statements@10:1..16:2 () -> int ∈ [0, 0]
   result: copy : int @10:20..10:23

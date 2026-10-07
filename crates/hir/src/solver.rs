@@ -124,7 +124,7 @@ impl<L: Lattice> Solver<L> {
         &self.evidence[node.index()]
     }
 
-    /// A fact about `node` or a demand on it alike; which one is not recorded.
+    /// Evidence about `node`, joined; what it means to the lattice is the lattice's to say.
     pub fn expect(&mut self, node: NodeId, evidence: &L) {
         self.evidence[node.index()].join(evidence);
     }

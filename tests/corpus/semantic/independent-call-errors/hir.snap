@@ -15,10 +15,10 @@ fn probe@1:1..11:2 () -> unit ∈ unit
         initializer: hole : ? @3:13..9:6
           part[0]: eager + : int @6:13..6:21
             lhs: read x@5:17..5:18 : int
-            rhs: bool true : ? @6:17..6:21
+            rhs: bool true : bool @6:17..6:21
           part[1]: eager + : int @8:9..8:18
             lhs: read x@2:9..2:10 : int
-            rhs: bool false : ? @8:13..8:18
+            rhs: bool false : bool @8:13..8:18
       tail: unit : unit @1:12..11:2
 
 fn intact@12:1..12:23 () -> int ∈ [3, 3]

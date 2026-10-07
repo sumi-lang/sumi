@@ -8,12 +8,13 @@ use sumi_graph::{BinaryOp, CmpOp, Domain, Ints, May, Thresholds, Ty};
 
 use crate::solver::{Carry, Lattice};
 
-/// A claim that a class has a type, as its rank: its one-based index in the walk, with `IMPORTED`
-/// set once it crossed a flow. Lower wins.
+/// A claim that a class has a type, as its rank: its one-based index in the walk, `IMPORTED` once
+/// it crossed a flow, `DEMANDED` when a read asked for it. Lower wins: a demand yields to the rest.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct Claim(NonZeroU32);
 
-const IMPORTED: u32 = 1 << 31;
+const DEMANDED: u32 = 1 << 31;
+const IMPORTED: u32 = 1 << 30;
 /// In the first slot when a hole decided the class: the best rank there is, which no claim takes,
 /// so the join that keeps the best claim keeps it over any claim of the first type.
 const UNKNOWN: Claim = Claim(NonZeroU32::new(1).unwrap());
@@ -22,19 +23,28 @@ const FIRST: u32 = 2;
 impl Claim {
     pub fn local(index: usize) -> Self {
         let rank = u32::try_from(index).expect("claim count fits u32") + FIRST;
-        assert!(rank < IMPORTED, "claim count fits below the imported bit");
+        assert!(rank < IMPORTED, "claim count fits below the flag bits");
         Self(NonZeroU32::new(rank).unwrap())
     }
 
-    /// The claim a replay makes: no origin, since a replay reports nothing.
-    pub const REPLAYED: Self = Self(NonZeroU32::MAX);
+    /// The claim a replay makes once a demand held: the type is settled from then on, so it is
+    /// no demand, and it has no origin, since a replay reports nothing.
+    pub const REPLAYED: Self = Self(NonZeroU32::new(u32::MAX >> 1).unwrap());
 
-    fn imported(self) -> bool {
+    pub fn demanded(self) -> Self {
+        Self(self.0 | DEMANDED)
+    }
+
+    fn is_imported(self) -> bool {
         self.0.get() & IMPORTED != 0
     }
 
+    fn is_demanded(self) -> bool {
+        self.0.get() & DEMANDED != 0
+    }
+
     pub fn index(self) -> usize {
-        ((self.0.get() & !IMPORTED) - FIRST) as usize
+        ((self.0.get() & !(DEMANDED | IMPORTED)) - FIRST) as usize
     }
 }
 
@@ -84,12 +94,18 @@ impl Evidence {
         grew
     }
 
+    /// What a call delivers: every claim as the call's, a demand staying one, so the transfer
+    /// is monotone and a callee's demands yield to the caller's facts as its own would.
     pub fn imported(&self, claim: Claim) -> Self {
         let imported = Claim(claim.0 | IMPORTED);
         Self {
-            claims: self
-                .claims
-                .map(|claim| claim.map(|claim| if claim == UNKNOWN { claim } else { imported })),
+            claims: self.claims.map(|claim| {
+                claim.map(|claim| match claim {
+                    UNKNOWN => claim,
+                    _ if claim.is_demanded() => imported.demanded(),
+                    _ => imported,
+                })
+            }),
         }
     }
 
@@ -97,11 +113,21 @@ impl Evidence {
         self.claims[0] == Some(UNKNOWN)
     }
 
+    /// The types the class resolves among: demands count only where nothing else claims a type.
     fn types(&self) -> impl Iterator<Item = (Ty, Claim)> + '_ {
+        let demands_only = self
+            .claims
+            .iter()
+            .flatten()
+            .all(|claim| *claim == UNKNOWN || claim.is_demanded());
         Ty::ALL
             .iter()
             .zip(&self.claims)
-            .filter_map(|(ty, claim)| claim.filter(|&claim| claim != UNKNOWN).map(|c| (*ty, c)))
+            .filter_map(move |(ty, claim)| {
+                claim
+                    .filter(|&claim| claim != UNKNOWN && (demands_only || !claim.is_demanded()))
+                    .map(|claim| (*ty, claim))
+            })
     }
 
     /// The type claimed, if exactly one is and no hole decided the class.
@@ -109,16 +135,9 @@ impl Evidence {
         if self.unknown() {
             return None;
         }
-        let mut found = None;
-        for (ty, claim) in Ty::ALL.iter().zip(&self.claims) {
-            if claim.is_some() {
-                if found.is_some() {
-                    return None;
-                }
-                found = Some(*ty);
-            }
-        }
-        found
+        let mut types = self.types();
+        let (ty, _) = types.next()?;
+        types.next().is_none().then_some(ty)
     }
 
     /// Never for a class a hole decided: the claims beside the unknown are not a disagreement.
@@ -128,7 +147,7 @@ impl Evidence {
 
     /// A conflict whose every claim crossed a flow; it is reported where it arose.
     pub fn inherited(&self) -> bool {
-        self.is_conflict() && self.types().all(|(_, claim)| claim.imported())
+        self.is_conflict() && self.types().all(|(_, claim)| claim.is_imported())
     }
 
     /// Every claim, best first.
@@ -476,7 +495,7 @@ mod tests {
         );
         let called = int.transfer(&Edge::Call(Claim::local(7)), false, &cx);
         assert_eq!(called.types.ty(), Some(Ty::Int));
-        assert!(called.types.claims()[0].1.imported());
+        assert!(called.types.claims()[0].1.is_imported());
         assert_eq!(called.types.claims()[0].1.index(), 7);
     }
 

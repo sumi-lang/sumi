@@ -54,10 +54,10 @@ fn failed_expressions@34:1..41:2 () -> unit ∈ unit
       discard: hole : ? @35:5..35:12
       discard: eager + : int @36:5..36:13
         lhs: int 1 : int @36:5..36:6
-        rhs: bool true : ? @36:9..36:13
+        rhs: bool true : bool @36:9..36:13
       discard: if : unit @37:5..39:6
         condition: bool true : bool @37:8..37:12
-        then: int 1 : ? @38:9..38:10
+        then: int 1 : int @38:9..38:10
         else: unit (implicit)
       discard: int 0 : int @40:9..40:10
       tail: unit : unit @34:25..41:2
@@ -72,7 +72,7 @@ fn nested_failure@42:1..48:2 () -> unit ∈ unit
 
 fn tail_requires_unit@49:1..51:2 () -> unit ∈ ∅
   result: copy : unit @49:1..51:2
-    value: call value@1:1..1:22 : ? @50:5..50:12
+    value: call value@1:1..1:22 : int @50:5..50:12
 
 == semantic diagnostics ==
 error[semantic/unused-value]: unused value of type int; use `_ =` to discard it

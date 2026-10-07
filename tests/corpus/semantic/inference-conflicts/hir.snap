@@ -20,7 +20,7 @@ fn consumer@11:1..11:27 () -> int ∈ [1, 1]
 
 fn mismatch@12:1..12:34 () -> bool ∈ ∅
   result: copy : bool @12:18..12:22
-    value: call integer@23:1..23:17 : ? @12:25..12:34
+    value: call integer@23:1..23:17 : int @12:25..12:34
 
 fn branch@13:1..17:2 signature: unavailable
   body: if : ? @13:15..17:2
@@ -58,7 +58,7 @@ fn annotated@25:1..30:2 signature: unavailable
 fn held@31:1..34:2 () -> bool ∈ ∅
   body:
     let x@32:9..32:10: bool @32:5..32:28
-      initializer: call integer@23:1..23:17 : ? @32:19..32:28
+      initializer: call integer@23:1..23:17 : int @32:19..32:28
     tail: read x@32:9..32:10 : bool
 
 fn relay@35:1..35:17 signature: unavailable

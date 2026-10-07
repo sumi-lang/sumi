@@ -12,7 +12,7 @@ fn and_type@2:1..2:35 () -> bool ∈ {false}
   result: copy : bool @2:18..2:22
     value: lazy and : bool @2:25..2:35
       lhs: bool false : bool @2:25..2:30
-      rhs: int 1 : ? @2:34..2:35
+      rhs: int 1 : int @2:34..2:35
 
 fn then_name@3:1..7:2 () -> int ∈ ∅
   result: copy : int @3:19..3:22
