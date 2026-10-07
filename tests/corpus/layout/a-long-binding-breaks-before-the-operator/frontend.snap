@@ -20,7 +20,6 @@ error[syntax/unspaced-binary-operator] 4:88..4:89 "+": binary operator must have
 // The binding overflows the width, so the formatter breaks it before the
 // `+`, and the glued operator is still reported.
 fn f() {
-    let result =
-        aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-            + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+    let result = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 }

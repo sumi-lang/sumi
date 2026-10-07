@@ -42,9 +42,8 @@ fn by_callers(n: int) -> int {
     }
     n
 }
-fn in_expression() -> int =
-    {
-        return 1
-    }
-        + 2
+fn in_expression() -> int = {
+    return 1
+}
+    + 2
 fn main() -> int = after_both_branches(true) + after_guarded(1) + after_guarded(-1) + by_callers(4)

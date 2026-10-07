@@ -1,0 +1,48 @@
+// A block, `if`, or `for` ending a binary expression, a parenthesized one, or a binding's value
+// keeps its opener on the line. A chain too wide for its line moves whole to the next when it
+// fits there, else it stays and breaks at its operators, the block still hugging the last.
+fn lazy(flag: bool) -> int {
+    let mut x = 1
+    _ = flag && {
+        x = 2
+        true
+    }
+    x
+}
+fn sum() -> int = 1 + {
+    let a = 2
+    a
+}
+fn grouped() -> int = ({
+    3
+})
+fn chained(a: bool, b: bool) -> bool = a && b || {
+    false
+}
+fn conditional(a: bool) -> int = 1 + if a { 2 } else { 3 }
+fn wide(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: int, bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb: int) -> int {
+    let value = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb + {
+        4
+    }
+    value
+}
+fn leading() -> int = {
+    5
+} + 6
+fn nested_operand() -> int = 1 + 2 * {
+    6
+}
+fn nested_paren() -> int = 1 + ({
+    7
+})
+fn inner_chain(x: bool, a: bool) -> bool = x || a && {
+    false
+}
+fn in_a_broken_list(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: int, bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb: int) -> int {
+    let hugged = pair(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, {
+        let moved = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+        moved
+    })
+    hugged
+}
+fn pair(a: int, b: int) -> int = a + b
