@@ -31,19 +31,11 @@ fn separate@24:1..28:2 () -> unit ∈ unit
       tail: unit : unit @24:15..28:2
 
 == semantic diagnostics ==
-error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
-  primary @3:5..3:12
-error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
-  primary @4:5..4:14
-error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
-  primary @5:5..5:16
-error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
-  primary @6:5..12:6
-error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
-  primary @13:5..19:6
-error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
-  primary @21:5..21:14
-error[semantic/not-a-value]: function `value` is not a value
-  primary @25:5..25:10
-error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
-  primary @26:5..26:14
+error[semantic/unused-value] 3:5..3:12 "value()": unused value of type int; use `_ =` to discard it
+error[semantic/unused-value] 4:5..4:14 "(value())": unused value of type int; use `_ =` to discard it
+error[semantic/unused-value] 5:5..5:16 "((value()))": unused value of type int; use `_ =` to discard it
+error[semantic/unused-value] 6:5..12:6 "(\n        if true {\n            1\n        } else {\n            2\n        }\n    )": unused value of type int; use `_ =` to discard it
+error[semantic/unused-value] 13:5..19:6 "(\n        (\n            {\n                3\n            }\n        )\n    )": unused value of type int; use `_ =` to discard it
+error[semantic/unused-value] 21:5..21:14 "(value())": unused value of type int; use `_ =` to discard it
+error[semantic/not-a-value] 25:5..25:10 "value": function `value` is not a value
+error[semantic/unused-value] 26:5..26:14 "(value())": unused value of type int; use `_ =` to discard it

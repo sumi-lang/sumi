@@ -49,7 +49,5 @@ fn leading@17:1..18:8 () -> int ∈ [-1, -1]
       rhs: int 2 : int @18:7..18:8
 
 == semantic diagnostics ==
-warning[semantic/constant-condition]: condition is always true
-  primary @7:25..8:6
-warning[semantic/constant-condition]: condition is always true
-  primary @9:5..9:9
+warning[semantic/constant-condition] 7:25..8:6 "1 <= // continue after the comment\n    2": condition is always true
+warning[semantic/constant-condition] 9:5..9:9 "true": condition is always true

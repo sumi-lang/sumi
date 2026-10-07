@@ -4,11 +4,11 @@
 use std::fmt::Write as _;
 
 use sumi_format::format;
-use sumi_frontend::{Diagnostic, parse_source};
+use sumi_frontend::parse_source;
 use sumi_lexer::LexedFile;
 use sumi_syntax::{NodeIdx, ParseAnchor, ParseEvidence, RawIdx, SyntaxTree};
 use sumi_test::{check, corpus, evidence_name};
-use sumi_text::{LineIndex, TextEdit, TextRange};
+use sumi_text::{LineIndex, TextEdit};
 
 #[test]
 fn every_case_matches_its_snapshot() {
@@ -49,7 +49,7 @@ fn snapshot(source: &str, stages: &[corpus::Stage]) -> String {
     if !parsed.diagnostics().is_empty() {
         section(&mut out, "diagnostics");
         for diagnostic in parsed.diagnostics() {
-            render(diagnostic, &index, source, &mut out);
+            corpus::diagnostic(diagnostic, &index, source, &mut out);
         }
     }
 
@@ -201,45 +201,5 @@ fn evidence_token(evidence: &ParseEvidence) -> RawIdx {
             ParseAnchor::Tokens(range) => range.start(),
         },
         ParseEvidence::Violation(violation) => violation.range.start(),
-    }
-}
-
-fn render(diagnostic: &Diagnostic, index: &LineIndex<'_>, source: &str, out: &mut String) {
-    writeln!(
-        out,
-        "{}[{}] {}: {}",
-        diagnostic.code.severity,
-        diagnostic.code,
-        place(index, source, diagnostic.primary),
-        diagnostic.message
-    )
-    .expect("writing to a string");
-    for label in &diagnostic.labels {
-        writeln!(
-            out,
-            "  at {}: {}",
-            place(index, source, label.range),
-            label.message
-        )
-        .expect("writing to a string");
-    }
-    if let Some(fix) = &diagnostic.fix {
-        writeln!(out, "  fix: {}", fix.message).expect("writing to a string");
-        writeln!(
-            out,
-            "    {} -> {:?}",
-            place(index, source, fix.edit.range()),
-            fix.edit.replacement()
-        )
-        .expect("writing to a string");
-    }
-}
-
-fn place(index: &LineIndex<'_>, source: &str, range: TextRange) -> String {
-    let at = index.display_range(range);
-    if range.start() == range.end() {
-        at.to_string()
-    } else {
-        format!("{at} {:?}", range.text(source))
     }
 }

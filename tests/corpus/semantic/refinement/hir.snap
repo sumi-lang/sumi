@@ -238,7 +238,5 @@ fn negated_wrappeds@69:1..69:71 () -> int ∈ [2, 20]
         arg[0]: int 5 : int @69:69..69:70
 
 == semantic diagnostics ==
-warning[semantic/constant-condition]: condition is always true
-  primary @28:22..28:32
-warning[semantic/constant-condition]: condition is always true
-  primary @28:36..28:47
+warning[semantic/constant-condition] 28:22..28:32 "flag(true)": condition is always true
+warning[semantic/constant-condition] 28:36..28:47 "flag(false)": condition is always true

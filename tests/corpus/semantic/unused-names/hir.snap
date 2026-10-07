@@ -106,26 +106,21 @@ fn caller@35:1..35:92 () -> int ∈ [18, 18]
         arg[0]: int 6 : int @35:90..35:91
 
 == semantic diagnostics ==
-warning[semantic/unused-name]: parameter `n` is never read
-  primary @1:14..1:15
-  fix @1:14 -> "_": prefix the name with `_`
-warning[semantic/unused-name]: local `x` is never read
-  primary @3:9..3:10
-  fix @3:9 -> "_": prefix the name with `_`
-warning[semantic/unused-function]: function `silenced` is never called
-  primary @6:4..6:12
-warning[semantic/unused-name]: loop index `i` is never read
-  primary @12:9..12:10
-  fix @12:9 -> "_": prefix the name with `_`
-warning[semantic/unused-name]: local `x` is assigned but never read
-  primary @18:13..18:14
-warning[semantic/unused-name]: local `x` is never read
-  primary @23:9..23:10
-  fix @23:9 -> "_": prefix the name with `_`
-warning[semantic/constant-condition]: condition is always false
-  primary @27:34..27:39
-  secondary @27:40..29:2: this branch never runs
-warning[semantic/unused-name]: parameter `x` is never read
-  primary @32:16..32:17
-warning[semantic/unused-name]: parameter `six` is never read
-  primary @34:19..34:22
+warning[semantic/unused-name] 1:14..1:15 "n": parameter `n` is never read
+  fix: prefix the name with `_`
+    1:14 -> "_"
+warning[semantic/unused-name] 3:9..3:10 "x": local `x` is never read
+  fix: prefix the name with `_`
+    3:9 -> "_"
+warning[semantic/unused-function] 6:4..6:12 "silenced": function `silenced` is never called
+warning[semantic/unused-name] 12:9..12:10 "i": loop index `i` is never read
+  fix: prefix the name with `_`
+    12:9 -> "_"
+warning[semantic/unused-name] 18:13..18:14 "x": local `x` is assigned but never read
+warning[semantic/unused-name] 23:9..23:10 "x": local `x` is never read
+  fix: prefix the name with `_`
+    23:9 -> "_"
+warning[semantic/constant-condition] 27:34..27:39 "false": condition is always false
+  at 27:40..29:2 "{\n    n\n}": this branch never runs
+warning[semantic/unused-name] 32:16..32:17 "x": parameter `x` is never read
+warning[semantic/unused-name] 34:19..34:22 "six": parameter `six` is never read

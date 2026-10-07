@@ -114,34 +114,23 @@ fn merged@32:1..36:2 (bool ∈ ∅) -> int ∈ ∅
           tail: hole : ? @34:28..36:2
 
 == semantic diagnostics ==
-error[semantic/type-mismatch]: expected bool, found int
-  primary @3:13..3:14
-error[semantic/type-mismatch]: if branches are int and bool
-  primary @5:5..5:30
-  secondary @5:12..5:13: int here
-  secondary @5:23..5:28: bool here
-error[semantic/type-mismatch]: expected unit, found int
-  primary @9:5..9:11
-  secondary @8:8..8:20: returns unit, since no result type is written
-error[semantic/type-mismatch]: expected int, found bool
-  primary @11:31..11:35
-  secondary @7:10..7:16: declared here
-error[semantic/type-mismatch]: expected bool, found int
-  primary @12:24..12:26
-  secondary @12:17..12:21: declared here
-error[semantic/type-mismatch]: expected bool, found int
-  primary @14:23..14:33
-  secondary @14:16..14:20: declared here
-error[semantic/type-mismatch]: expected bool, found int
-  primary @16:24..16:35
-  secondary @16:17..16:21: declared here
-error[semantic/type-mismatch]: expected int, found bool
-  primary @19:9..19:11
-  secondary @18:13..18:14: declared here
-error[semantic/unknown-type]: unknown type `mystery`
-  primary @24:12..24:19
-error[semantic/type-mismatch]: expected int, found bool
-  primary @25:18..26:6
-  secondary @25:12..25:15: declared here
-error[semantic/type-mismatch]: expected bool, found int
-  primary @25:26..26:6
+error[semantic/type-mismatch] 3:13..3:14 "x": expected bool, found int
+error[semantic/type-mismatch] 5:5..5:30 "if y { 1 } else { false }": if branches are int and bool
+  at 5:12..5:13 "1": int here
+  at 5:23..5:28 "false": bool here
+error[semantic/type-mismatch] 9:5..9:11 "count(": expected unit, found int
+  at 8:8..8:20 "(flag: bool)": returns unit, since no result type is written
+error[semantic/type-mismatch] 11:31..11:35 "true": expected int, found bool
+  at 7:10..7:16 "n: int": declared here
+error[semantic/type-mismatch] 12:24..12:26 "-(": expected bool, found int
+  at 12:17..12:21 "bool": declared here
+error[semantic/type-mismatch] 14:23..14:33 "inferred()": expected bool, found int
+  at 14:16..14:20 "bool": declared here
+error[semantic/type-mismatch] 16:24..16:35 "forwarded()": expected bool, found int
+  at 16:17..16:21 "bool": declared here
+error[semantic/type-mismatch] 19:9..19:11 "!(": expected int, found bool
+  at 18:13..18:14 "x": declared here
+error[semantic/unknown-type] 24:12..24:19 "mystery": unknown type `mystery`
+error[semantic/type-mismatch] 25:18..26:6 "flag == (\n    x": expected int, found bool
+  at 25:12..25:15 "int": declared here
+error[semantic/type-mismatch] 25:26..26:6 "(\n    x": expected bool, found int

@@ -50,11 +50,7 @@ fn rebound@14:1..22:2 () -> unit ∈ unit
       tail: unit : unit @14:14..22:2
 
 == semantic diagnostics ==
-error[semantic/unknown-name]: unknown name `missing`
-  primary @7:9..7:16
-error[semantic/unknown-type]: unknown type `mystery`
-  primary @11:12..11:19
-error[semantic/unknown-type]: unknown type `mystery`
-  primary @18:12..18:19
-error[semantic/unknown-name]: unknown name `absent`
-  primary @20:13..20:19
+error[semantic/unknown-name] 7:9..7:16 "missing": unknown name `missing`
+error[semantic/unknown-type] 11:12..11:19 "mystery": unknown type `mystery`
+error[semantic/unknown-type] 18:12..18:19 "mystery": unknown type `mystery`
+error[semantic/unknown-name] 20:13..20:19 "absent": unknown name `absent`

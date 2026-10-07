@@ -51,7 +51,5 @@ fn ordered@12:1..12:44 () -> int ∈ [-1, -1]
       rhs: int 4 : int @12:43..12:44
 
 == semantic diagnostics ==
-warning[semantic/unused-function]: function `cafe` is never called
-  primary @6:4..6:8
-warning[semantic/unused-function]: function `ignore` is never called
-  primary @7:4..7:10
+warning[semantic/unused-function] 6:4..6:8 "cafe": function `cafe` is never called
+warning[semantic/unused-function] 7:4..7:10 "ignore": function `ignore` is never called

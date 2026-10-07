@@ -65,29 +65,21 @@ fn relay@35:1..35:17 signature: unavailable
   body: call a@1:1..5:2 : ? @35:14..35:17
 
 == semantic diagnostics ==
-error[semantic/cannot-infer]: function result is both int and bool; add a return type annotation
-  primary @1:1..5:2
-  secondary @2:5..2:6: int here
-  secondary @4:5..4:8: bool here
-error[semantic/cannot-infer]: function result is both bool and int; add a return type annotation
-  primary @6:1..10:2
-  secondary @7:5..7:9: bool here
-  secondary @9:5..9:8: int here
-error[semantic/type-mismatch]: expected bool, found int
-  primary @12:25..12:34
-  secondary @12:18..12:22: declared here
-error[semantic/type-mismatch]: if branches are int and bool
-  primary @13:15..17:2
-  secondary @14:5..14:14: int here
-  secondary @16:5..16:10: bool here
-error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
-  primary @19:5..19:14
-error[semantic/type-mismatch]: unit values cannot be compared
-  primary @22:19..22:37
-error[semantic/type-mismatch]: if branches are int and bool
-  primary @25:18..30:2
-  secondary @27:5..27:6: int here
-  secondary @29:5..29:9: bool here
-error[semantic/type-mismatch]: expected bool, found int
-  primary @32:19..32:28
-  secondary @32:12..32:16: declared here
+error[semantic/cannot-infer] 1:1..5:2 "fn a() = if true {\n    1\n} else {\n    b()\n}": function result is both int and bool; add a return type annotation
+  at 2:5..2:6 "1": int here
+  at 4:5..4:8 "b()": bool here
+error[semantic/cannot-infer] 6:1..10:2 "fn b() = if true {\n    true\n} else {\n    a()\n}": function result is both bool and int; add a return type annotation
+  at 7:5..7:9 "true": bool here
+  at 9:5..9:8 "a()": int here
+error[semantic/type-mismatch] 12:25..12:34 "integer()": expected bool, found int
+  at 12:18..12:22 "bool": declared here
+error[semantic/type-mismatch] 13:15..17:2 "if true {\n    integer()\n} else {\n    false\n}": if branches are int and bool
+  at 14:5..14:14 "integer()": int here
+  at 16:5..16:10 "false": bool here
+error[semantic/unused-value] 19:5..19:14 "integer()": unused value of type int; use `_ =` to discard it
+error[semantic/type-mismatch] 22:19..22:37 "empty() == empty()": unit values cannot be compared
+error[semantic/type-mismatch] 25:18..30:2 "if true {\n    let x: int = 1\n    x\n} else {\n    true\n}": if branches are int and bool
+  at 27:5..27:6 "x": int here
+  at 29:5..29:9 "true": bool here
+error[semantic/type-mismatch] 32:19..32:28 "integer()": expected bool, found int
+  at 32:12..32:16 "bool": declared here

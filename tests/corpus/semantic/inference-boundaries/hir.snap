@@ -53,24 +53,16 @@ fn held_to_settled@20:1..20:41 () -> bool ∈ ∅
     value: call settled@13:1..19:2 : int @20:32..20:41
 
 == semantic diagnostics ==
-error[semantic/cannot-infer]: cannot infer function result; add a return type annotation
-  primary @1:1..1:26
-error[semantic/unbounded-recursion]: recursion in `spin` has no argument that moves toward a bound on every call
-  primary @1:4..1:8
-  secondary @1:19..1:26: argument passes `x` along
-error[semantic/arity]: expected 1 arguments, found 2
-  primary @5:22..5:41
-  secondary @1:1..1:26: declared here
-error[semantic/type-mismatch]: expected int, found bool
-  primary @5:27..5:31
-  secondary @1:9..1:15: declared here
-error[semantic/unknown-name]: unknown name `missing`
-  primary @5:33..5:40
-error[semantic/type-mismatch]: expected unit, found int
-  primary @7:5..7:6
-  secondary @6:8..6:10: returns unit, since no result type is written
-error[semantic/type-mismatch]: expected bool, found int
-  primary @15:8..15:9
-error[semantic/type-mismatch]: expected bool, found int
-  primary @20:32..20:41
-  secondary @20:25..20:29: declared here
+error[semantic/cannot-infer] 1:1..1:26 "fn spin(x: int) = spin(x)": cannot infer function result; add a return type annotation
+error[semantic/unbounded-recursion] 1:4..1:8 "spin": recursion in `spin` has no argument that moves toward a bound on every call
+  at 1:19..1:26 "spin(x)": argument passes `x` along
+error[semantic/arity] 5:22..5:41 "spin(true, missing)": expected 1 arguments, found 2
+  at 1:1..1:26 "fn spin(x: int) = spin(x)": declared here
+error[semantic/type-mismatch] 5:27..5:31 "true": expected int, found bool
+  at 1:9..1:15 "x: int": declared here
+error[semantic/unknown-name] 5:33..5:40 "missing": unknown name `missing`
+error[semantic/type-mismatch] 7:5..7:6 "1": expected unit, found int
+  at 6:8..6:10 "()": returns unit, since no result type is written
+error[semantic/type-mismatch] 15:8..15:9 "x": expected bool, found int
+error[semantic/type-mismatch] 20:32..20:41 "settled()": expected bool, found int
+  at 20:25..20:29 "bool": declared here

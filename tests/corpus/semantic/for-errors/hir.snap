@@ -166,40 +166,31 @@ fn changed_type@25:1..28:2 () -> unit ∈ unit
         next[0]: read x@26:13..26:14 (assigned @27:21..27:30) : ?
 
 == semantic diagnostics ==
-warning[semantic/unused-name]: loop index `i` is never read
-  primary @4:9..4:10
-  fix @4:9 -> "_": prefix the name with `_`
-error[semantic/division-by-zero]: divisor may be zero
-  primary @5:25..5:37
-  secondary @4:5..7:6: may be 0 on a loop iteration: (-∞, 2]
-warning[semantic/unused-name]: loop index `i` is never read
-  primary @12:9..12:10
-  fix @12:9 -> "_": prefix the name with `_`
-error[semantic/division-by-zero]: division by zero
-  primary @13:5..13:17
-  secondary @11:23..11:24: is 0
-error[semantic/immutable-assignment]: cannot assign to immutable local `i`
-  primary @16:21..16:22
-  secondary @16:9..16:10: declared here
-error[semantic/unknown-name]: unknown name `i`
-  primary @20:5..20:6
-warning[semantic/unused-name]: loop index `i` is never read
-  primary @22:26..22:27
-  fix @22:26 -> "_": prefix the name with `_`
-error[semantic/type-mismatch]: expected int, found bool
-  primary @22:31..22:36
-warning[semantic/unused-name]: loop index `i` is never read
-  primary @23:24..23:25
-  fix @23:24 -> "_": prefix the name with `_`
-error[semantic/type-mismatch]: expected int, found bool
-  primary @23:32..23:36
-error[semantic/type-mismatch]: expected unit, found int
-  primary @24:37..24:38
-warning[semantic/unused-name]: local `x` is assigned but never read
-  primary @26:13..26:14
-warning[semantic/unused-name]: loop index `i` is never read
-  primary @27:9..27:10
-  fix @27:9 -> "_": prefix the name with `_`
-error[semantic/type-mismatch]: expected int, found bool
-  primary @27:25..27:30
-  secondary @26:13..26:14: declared here
+warning[semantic/unused-name] 4:9..4:10 "i": loop index `i` is never read
+  fix: prefix the name with `_`
+    4:9 -> "_"
+error[semantic/division-by-zero] 5:25..5:37 "12 / divisor": divisor may be zero
+  at 4:5..7:6 "for i in 0..4 {\n        total = total + 12 / divisor\n        divisor = divisor - 1\n    }": may be 0 on a loop iteration: (-∞, 2]
+warning[semantic/unused-name] 12:9..12:10 "i": loop index `i` is never read
+  fix: prefix the name with `_`
+    12:9 -> "_"
+error[semantic/division-by-zero] 13:5..13:17 "12 / divisor": division by zero
+  at 11:23..11:24 "0": is 0
+error[semantic/immutable-assignment] 16:21..16:22 "i": cannot assign to immutable local `i`
+  at 16:9..16:10 "i": declared here
+error[semantic/unknown-name] 20:5..20:6 "i": unknown name `i`
+warning[semantic/unused-name] 22:26..22:27 "i": loop index `i` is never read
+  fix: prefix the name with `_`
+    22:26 -> "_"
+error[semantic/type-mismatch] 22:31..22:36 "false": expected int, found bool
+warning[semantic/unused-name] 23:24..23:25 "i": loop index `i` is never read
+  fix: prefix the name with `_`
+    23:24 -> "_"
+error[semantic/type-mismatch] 23:32..23:36 "true": expected int, found bool
+error[semantic/type-mismatch] 24:37..24:38 "i": expected unit, found int
+warning[semantic/unused-name] 26:13..26:14 "x": local `x` is assigned but never read
+warning[semantic/unused-name] 27:9..27:10 "i": loop index `i` is never read
+  fix: prefix the name with `_`
+    27:9 -> "_"
+error[semantic/type-mismatch] 27:25..27:30 "false": expected int, found bool
+  at 26:13..26:14 "x": declared here

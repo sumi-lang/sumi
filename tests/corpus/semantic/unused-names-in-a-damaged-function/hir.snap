@@ -16,8 +16,7 @@ fn whole@5:1..5:28 (int ∈ ∅) -> int ∈ ∅
     value: int 3 : int @5:27..5:28
 
 == semantic diagnostics ==
-error[semantic/not-a-value]: function `whole` is not a value
-  primary @2:13..2:18
-warning[semantic/unused-name]: parameter `x` is never read
-  primary @5:10..5:11
-  fix @5:10 -> "_": prefix the name with `_`
+error[semantic/not-a-value] 2:13..2:18 "whole": function `whole` is not a value
+warning[semantic/unused-name] 5:10..5:11 "x": parameter `x` is never read
+  fix: prefix the name with `_`
+    5:10 -> "_"

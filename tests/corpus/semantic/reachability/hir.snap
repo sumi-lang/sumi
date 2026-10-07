@@ -65,27 +65,20 @@ fn plain@22:1..24:2 () -> unit ∈ unit
     tail: unit : unit @22:14..24:2
 
 == semantic diagnostics ==
-warning[semantic/constant-condition]: condition is always false
-  primary @1:30..1:35
-  secondary @1:36..3:2: this branch never runs
-warning[semantic/constant-condition]: condition is always false
-  primary @6:25..6:30
-  secondary @6:34..6:43: the right side never runs
-warning[semantic/constant-condition]: condition is always true
-  primary @8:25..8:29
-  secondary @14:8..16:2: this branch never runs
-warning[semantic/constant-condition]: condition is always false
-  primary @9:8..9:13
-  secondary @9:14..11:6: this branch never runs
-warning[semantic/unused-function]: function `uncalled` is never called
-  primary @17:4..17:12
-warning[semantic/unused-function]: function `uncalled_unit` is never called
-  primary @20:4..20:17
-warning[semantic/unused-name]: parameter `u` is never read
-  primary @20:18..20:19
-  fix @20:18 -> "_": prefix the name with `_`
-warning[semantic/unused-function]: function `constant_uncalled` is never called
-  primary @21:4..21:21
-warning[semantic/unused-name]: parameter `n` is never read
-  primary @21:22..21:23
-  fix @21:22 -> "_": prefix the name with `_`
+warning[semantic/constant-condition] 1:30..1:35 "false": condition is always false
+  at 1:36..3:2 "{\n    1\n}": this branch never runs
+warning[semantic/constant-condition] 6:25..6:30 "false": condition is always false
+  at 6:34..6:43 "absent(1)": the right side never runs
+warning[semantic/constant-condition] 8:25..8:29 "true": condition is always true
+  at 14:8..16:2 "{\n    3\n}": this branch never runs
+warning[semantic/constant-condition] 9:8..9:13 "false": condition is always false
+  at 9:14..11:6 "{\n        1\n    }": this branch never runs
+warning[semantic/unused-function] 17:4..17:12 "uncalled": function `uncalled` is never called
+warning[semantic/unused-function] 20:4..20:17 "uncalled_unit": function `uncalled_unit` is never called
+warning[semantic/unused-name] 20:18..20:19 "u": parameter `u` is never read
+  fix: prefix the name with `_`
+    20:18 -> "_"
+warning[semantic/unused-function] 21:4..21:21 "constant_uncalled": function `constant_uncalled` is never called
+warning[semantic/unused-name] 21:22..21:23 "n": parameter `n` is never read
+  fix: prefix the name with `_`
+    21:22 -> "_"

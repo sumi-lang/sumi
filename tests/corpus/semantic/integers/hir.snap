@@ -100,13 +100,9 @@ fn wide_argument@19:1..19:64 () -> int ∈ [850705917302346158658436518579420528
       arg[0]: int 9223372036854775808 : int @19:44..19:63
 
 == semantic diagnostics ==
-warning[semantic/constant-condition]: condition is always true
-  primary @15:5..15:46
-warning[semantic/constant-condition]: condition is always true
-  primary @15:50..15:93
-warning[semantic/constant-condition]: condition is always true
-  primary @17:5..17:51
-  secondary @17:5..17:28: is 9223372036854775808
-warning[semantic/constant-condition]: condition is always true
-  primary @17:55..17:101
-  secondary @17:55..17:78: is 9223372036854775807
+warning[semantic/constant-condition] 15:5..15:46 "9223372036854775807 < 9223372036854775808": condition is always true
+warning[semantic/constant-condition] 15:50..15:93 "-9223372036854775809 < -9223372036854775808": condition is always true
+warning[semantic/constant-condition] 17:5..17:51 "9223372036854775807 + 1 == 9223372036854775808": condition is always true
+  at 17:5..17:28 "9223372036854775807 + 1": is 9223372036854775808
+warning[semantic/constant-condition] 17:55..17:101 "9223372036854775808 - 1 != 9223372036854775808": condition is always true
+  at 17:55..17:78 "9223372036854775808 - 1": is 9223372036854775807

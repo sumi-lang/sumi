@@ -5,6 +5,9 @@ use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use sumi_frontend::Diagnostic;
+use sumi_text::{LineIndex, TextRange};
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Stage {
     Frontend,
@@ -169,6 +172,48 @@ fn verify(
         stage.update(),
         failures.join("\n")
     ))
+}
+
+/// One diagnostic as every stage's snapshot spells it: the primary line, a line per label, and the
+/// fix with its edit.
+pub fn diagnostic(diagnostic: &Diagnostic, index: &LineIndex<'_>, source: &str, out: &mut String) {
+    writeln!(
+        out,
+        "{}[{}] {}: {}",
+        diagnostic.code.severity,
+        diagnostic.code,
+        place(index, source, diagnostic.primary),
+        diagnostic.message
+    )
+    .expect("writing to a string");
+    for label in &diagnostic.labels {
+        writeln!(
+            out,
+            "  at {}: {}",
+            place(index, source, label.range),
+            label.message
+        )
+        .expect("writing to a string");
+    }
+    if let Some(fix) = &diagnostic.fix {
+        writeln!(out, "  fix: {}", fix.message).expect("writing to a string");
+        writeln!(
+            out,
+            "    {} -> {:?}",
+            place(index, source, fix.edit.range()),
+            fix.edit.replacement()
+        )
+        .expect("writing to a string");
+    }
+}
+
+fn place(index: &LineIndex<'_>, source: &str, range: TextRange) -> String {
+    let at = index.display_range(range);
+    if range.start() == range.end() {
+        at.to_string()
+    } else {
+        format!("{at} {:?}", range.text(source))
+    }
 }
 
 fn diff(expected: &str, actual: &str) -> String {

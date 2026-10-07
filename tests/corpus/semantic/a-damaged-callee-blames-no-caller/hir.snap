@@ -43,8 +43,6 @@ fn intact@11:1..11:23 () -> int ∈ [3, 3]
     value: int 3 : int @11:22..11:23
 
 == semantic diagnostics ==
-error[semantic/unknown-name]: unknown name `missing`
-  primary @1:16..1:23
-error[semantic/type-mismatch]: expected bool, found int
-  primary @10:35..10:67
-  secondary @10:28..10:32: declared here
+error[semantic/unknown-name] 1:16..1:23 "missing": unknown name `missing`
+error[semantic/type-mismatch] 10:35..10:67 "if flag { damaged() } else { 1 }": expected bool, found int
+  at 10:28..10:32 "bool": declared here

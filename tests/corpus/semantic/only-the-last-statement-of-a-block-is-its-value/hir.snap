@@ -17,17 +17,10 @@ fn f@1:1..11:2 () -> int ∈ [42, 42]
       tail: int 42 : int @10:5..10:7
 
 == semantic diagnostics ==
-error[semantic/unknown-name]: unknown function `g`
-  primary @2:5..2:6
-error[semantic/unknown-name]: unknown name `c`
-  primary @3:8..3:9
-error[semantic/unknown-name]: unknown function `h`
-  primary @4:9..4:10
-error[semantic/unknown-name]: unknown function `k`
-  primary @7:9..7:10
-error[semantic/unknown-name]: unknown name `a`
-  primary @9:5..9:6
-error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
-  primary @9:5..9:10
-error[semantic/unknown-name]: unknown name `b`
-  primary @9:9..9:10
+error[semantic/unknown-name] 2:5..2:6 "g": unknown function `g`
+error[semantic/unknown-name] 3:8..3:9 "c": unknown name `c`
+error[semantic/unknown-name] 4:9..4:10 "h": unknown function `h`
+error[semantic/unknown-name] 7:9..7:10 "k": unknown function `k`
+error[semantic/unknown-name] 9:5..9:6 "a": unknown name `a`
+error[semantic/unused-value] 9:5..9:10 "a + b": unused value of type int; use `_ =` to discard it
+error[semantic/unknown-name] 9:9..9:10 "b": unknown name `b`

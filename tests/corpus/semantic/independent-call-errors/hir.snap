@@ -26,9 +26,6 @@ fn intact@12:1..12:23 () -> int ∈ [3, 3]
     value: int 3 : int @12:22..12:23
 
 == semantic diagnostics ==
-error[semantic/unknown-name]: unknown function `missing`
-  primary @3:13..3:20
-error[semantic/type-mismatch]: expected int, found bool
-  primary @6:17..6:21
-error[semantic/type-mismatch]: expected int, found bool
-  primary @8:13..8:18
+error[semantic/unknown-name] 3:13..3:20 "missing": unknown function `missing`
+error[semantic/type-mismatch] 6:17..6:21 "true": expected int, found bool
+error[semantic/type-mismatch] 8:13..8:18 "false": expected int, found bool
