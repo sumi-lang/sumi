@@ -151,7 +151,13 @@ fn holds(source: &mut Source<'_>, typing: &Typing, replay: &mut Replay, demand: 
                 [],
             );
         }
-        DemandKind::Agree { branches } => {
+        DemandKind::Agree { branches, at } => {
+            // Each arm is blamed where its value is read, whatever its claim's own origin.
+            let arms: Vec<_> = branches
+                .iter()
+                .zip(at)
+                .filter_map(|(&branch, at)| Some((replay.resolve(branch)?, Some(at))))
+                .collect();
             for branch in branches {
                 replay.branch(branch, actual_class);
             }
@@ -159,13 +165,18 @@ fn holds(source: &mut Source<'_>, typing: &Typing, replay: &mut Replay, demand: 
             if !evidence.is_conflict() {
                 return true;
             }
-            source.conflict(
-                demand.at,
-                codes::TYPE_MISMATCH,
-                typing,
-                &evidence.claims(),
-                |types| format!("if branches are {types}"),
-            );
+            let message = |types| format!("if branches are {types}");
+            if arms.len() == 2 && arms[0].0 != arms[1].0 {
+                source.conflict_at(demand.at, codes::TYPE_MISMATCH, &arms, message);
+            } else {
+                source.conflict(
+                    demand.at,
+                    codes::TYPE_MISMATCH,
+                    typing,
+                    &evidence.claims(),
+                    message,
+                );
+            }
         }
     }
     false

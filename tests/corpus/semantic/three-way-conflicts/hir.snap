@@ -24,15 +24,12 @@ fn c@13:1..17:2 signature: unavailable
 error[semantic/cannot-infer]: function result is both int, bool, and unit; add a return type annotation
   primary @3:1..7:2
   secondary @4:5..4:6: int here
-  secondary @6:5..6:8: bool here
-  secondary @6:5..6:8: unit here
+  secondary @6:5..6:8: bool and unit here
 error[semantic/cannot-infer]: function result is both bool, int, and unit; add a return type annotation
   primary @8:1..12:2
   secondary @9:5..9:9: bool here
-  secondary @11:5..11:8: int here
-  secondary @11:5..11:8: unit here
+  secondary @11:5..11:8: int and unit here
 error[semantic/cannot-infer]: function result is both unit, int, and bool; add a return type annotation
   primary @13:1..17:2
   secondary @14:5..14:7: unit here
-  secondary @16:5..16:8: int here
-  secondary @16:5..16:8: bool here
+  secondary @16:5..16:8: int and bool here
