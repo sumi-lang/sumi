@@ -89,7 +89,7 @@ pub(crate) struct Group {
     pub(crate) end: u32,
     pub(crate) tail: Option<(u32, u32)>,
     /// Breaks only when its tail, measured through, then fits flat on the next line.
-    pub(crate) whole: bool,
+    pub(crate) is_whole: bool,
 }
 
 impl Group {
@@ -250,7 +250,7 @@ impl Planner<'_> {
         self.gaps[gap as usize] = sep;
     }
 
-    fn group(&mut self, first: u32, end: u32, tail: Option<NodeIdx>, whole: bool) {
+    fn group(&mut self, first: u32, end: u32, tail: Option<NodeIdx>, is_whole: bool) {
         if first < end {
             let tail = tail
                 .map(|tail| (self.first_sig(tail) + 1, self.end_sig(tail)))
@@ -259,7 +259,7 @@ impl Planner<'_> {
                 first,
                 end,
                 tail,
-                whole,
+                is_whole,
             });
         }
     }

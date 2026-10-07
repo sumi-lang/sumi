@@ -99,7 +99,7 @@ pub(crate) fn print(
                         return w + comma;
                     }
                     let is_soft = plan_gap.breaks == Breaks::Soft;
-                    if is_soft && !group.whole && group.is_in_tail(k as u32) {
+                    if is_soft && !group.is_whole && group.is_in_tail(k as u32) {
                         return w;
                     }
                     if k as u32 >= group.end && is_soft {
@@ -142,7 +142,7 @@ pub(crate) fn print(
             };
             broken[g] = forced(&group) || {
                 let w = width();
-                column + w > WIDTH && (!group.whole || fits_moved(w))
+                column + w > WIDTH && (!group.is_whole || fits_moved(w))
             };
             stack.push(g);
         }

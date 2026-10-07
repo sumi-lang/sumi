@@ -82,11 +82,11 @@ impl Demands<'_> {
         let written = |at: TextRange| Some(Declared::Written(at));
         // What the run's result holds the body to: only there can a declaration be omitted.
         let held = |at: TextRange| {
-            let omitted = matches!(
+            let is_omitted = matches!(
                 self.headers[owner as usize].result,
                 HeaderResult::Omitted(_)
             );
-            Some(if omitted {
+            Some(if is_omitted {
                 Declared::Omitted(at)
             } else {
                 Declared::Written(at)
