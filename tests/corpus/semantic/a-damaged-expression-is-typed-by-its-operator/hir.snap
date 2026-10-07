@@ -30,7 +30,7 @@ fn count@7:1..7:28 (int ∈ ∅) -> int ∈ ∅
 
 fn tail@8:1..10:2 (bool ∈ ∅) -> unit ∈ ∅
   param flag@8:9..8:13: bool
-  result: copy : unit @8:1..10:2
+  result: copy : unit @8:8..8:20
     value: call count@7:1..7:28 : int @9:5..9:11
 
 fn arguments@11:1..11:38 () -> int ∈ ∅
@@ -62,7 +62,7 @@ fn chained@16:1..16:35 () -> bool ∈ ∅
 
 fn assigned@17:1..21:2 (bool ∈ ∅) -> unit ∈ ∅
   param flag@17:13..17:17: bool
-  result: copy : unit @17:1..21:2
+  result: copy : unit @17:12..17:24
     value:
       let x@18:13..18:14: ? @18:5..18:18
         initializer: int 1 : int @18:17..18:18
@@ -122,10 +122,10 @@ error[semantic/type-mismatch]: if branches are int and bool
   secondary @5:23..5:28: bool here
 error[semantic/type-mismatch]: expected unit, found int
   primary @9:5..9:11
-  secondary @8:1..10:2: declared here
+  secondary @8:8..8:20: returns unit, since no result type is written
 error[semantic/type-mismatch]: expected int, found bool
   primary @11:31..11:35
-  secondary @7:1..7:28: declared here
+  secondary @7:10..7:16: declared here
 error[semantic/type-mismatch]: expected bool, found int
   primary @12:24..12:26
   secondary @12:17..12:21: declared here

@@ -3,7 +3,7 @@ frontend errors: 0 (see frontend.snap)
 semantic errors: 3
 
 fn probe@1:1..11:2 () -> unit ∈ unit
-  result: copy : unit @1:1..11:2
+  result: copy : unit @1:9..1:11
     value:
       let x@2:9..2:10: int @2:5..2:14
         initializer: int 1 : int @2:13..2:14

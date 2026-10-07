@@ -3,11 +3,11 @@ frontend errors: 0 (see frontend.snap)
 semantic errors: 16
 
 fn duplicate@1:1..1:18 () -> unit ∈ unit
-  result: copy : unit @1:1..1:18
+  result: copy : unit @1:13..1:15
     value: unit : unit @1:16..1:18
 
 fn duplicate@2:1..2:18 () -> unit ∈ unit
-  result: copy : unit @2:1..2:18
+  result: copy : unit @2:13..2:15
     value: unit : unit @2:16..2:18
 
 fn ambiguous@3:1..3:29 signature: unavailable
@@ -15,7 +15,7 @@ fn ambiguous@3:1..3:29 signature: unavailable
 
 fn unknown@4:1..4:26 signature: unavailable
   param x@4:12..4:13: ?
-  result: copy : unit @4:1..4:26
+  result: copy : unit @4:11..4:23
     value: unit : unit @4:24..4:26
 
 fn suppressed@5:1..5:34 signature: unavailable
@@ -69,7 +69,7 @@ fn extra@15:1..15:33 () -> int ∈ ∅
 fn twice_named@16:1..19:2 (int ∈ ∅, bool ∈ ∅) -> unit ∈ ∅
   param x@16:16..16:17: int
   param x@16:24..16:25: ?
-  result: copy : unit @16:1..19:2
+  result: copy : unit @16:15..16:32
     value:
       discard: not : bool @17:9..17:11
         operand: read x@16:24..16:25 : ?
@@ -124,10 +124,10 @@ error[semantic/arity]: expected 2 arguments, found 3
   secondary @6:1..6:37: declared here
 error[semantic/type-mismatch]: expected int, found bool
   primary @8:27..8:31
-  secondary @6:1..6:37: declared here
+  secondary @6:10..6:16: declared here
 error[semantic/type-mismatch]: expected bool, found int
   primary @8:33..8:34
-  secondary @6:1..6:37: declared here
+  secondary @6:18..6:25: declared here
 error[semantic/unknown-name]: unknown name `missing`
   primary @8:36..8:43
 error[semantic/not-callable]: local `typed` is not callable

@@ -4,7 +4,7 @@ semantic errors: 3
 
 fn <missing>@1:1..1:15 (int ∈ ∅) -> unit ∈ ∅
   param a@1:5..1:6: int
-  result: copy : unit @1:1..1:15
+  result: copy : unit @1:4..1:12
     value: unit : unit @1:13..1:15
 
 fn unclosed@2:1..2:19 signature: unavailable
@@ -20,7 +20,7 @@ fn untyped@3:1..5:2 signature: unavailable
 
 fn stray_before_params@6:1..8:2 (int ∈ ∅) -> unit ∈ ∅
   param a@6:26..6:27: int
-  result: copy : unit @6:1..8:2
+  result: copy : unit @6:25..6:33
     value: read a@6:26..6:27 : int
 
 fn stray_in_result@9:1..11:2 signature: unavailable
@@ -43,7 +43,7 @@ warning[semantic/unused-name]: parameter `a` is never read
   fix @1:5 -> "_": prefix the name with `_`
 error[semantic/type-mismatch]: expected unit, found int
   primary @7:5..7:6
-  secondary @6:1..8:2: declared here
+  secondary @6:25..6:33: returns unit, since no result type is written
 error[semantic/unknown-name]: unknown name `a`
   primary @10:5..10:6
 error[semantic/unknown-name]: unknown name `a`

@@ -7,7 +7,7 @@ fn damaged@1:1..1:23 signature: unavailable
 
 fn uses@2:1..6:2 (bool ∈ ∅) -> unit ∈ ∅
   param flag@2:9..2:13: bool
-  result: copy : unit @2:1..6:2
+  result: copy : unit @2:8..2:20
     value:
       let x@3:9..3:10: ? @3:5..3:22
         initializer: call damaged@1:1..1:23 : ? @3:13..3:22

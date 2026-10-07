@@ -57,7 +57,7 @@ fn chained@28:1..32:2 () -> int ∈ [2, 2]
     tail: read x@30:9..30:10 : int
 
 fn discards@33:1..36:2 () -> unit ∈ unit
-  result: copy : unit @33:1..36:2
+  result: copy : unit @33:12..33:14
     value:
       discard: call empty@27:1..27:16 : unit @34:5..34:12
       discard: int 1 : int @35:9..35:10

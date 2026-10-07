@@ -29,7 +29,7 @@ fn branch@13:1..17:2 signature: unavailable
     else: bool false : bool @16:5..16:10
 
 fn unused@18:1..21:2 () -> unit ∈ unit
-  result: copy : unit @18:1..21:2
+  result: copy : unit @18:10..18:12
     value:
       discard: call integer@23:1..23:17 : int @19:5..19:14
       discard: int 1 : int @20:9..20:10

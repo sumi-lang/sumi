@@ -7,7 +7,7 @@ fn value@1:1..1:22 () -> int ∈ [1, 1]
     value: int 1 : int @1:21..1:22
 
 fn action@2:1..2:15 () -> unit ∈ unit
-  result: copy : unit @2:1..2:15
+  result: copy : unit @2:10..2:12
     value: unit : unit @2:13..2:15
 
 fn accepted@3:1..15:2 () -> int ∈ [1, 1]
@@ -49,7 +49,7 @@ fn rejected@16:1..33:2 () -> int ∈ [0, 0]
       tail: int 0 : int @32:5..32:6
 
 fn failed_expressions@34:1..41:2 () -> unit ∈ unit
-  result: copy : unit @34:1..41:2
+  result: copy : unit @34:22..34:24
     value:
       discard: hole : ? @35:5..35:12
       discard: eager + : int @36:5..36:13
@@ -63,7 +63,7 @@ fn failed_expressions@34:1..41:2 () -> unit ∈ unit
       tail: unit : unit @34:25..41:2
 
 fn nested_failure@42:1..48:2 () -> unit ∈ unit
-  result: copy : unit @42:1..48:2
+  result: copy : unit @42:18..42:20
     value:
       discard: call value@1:1..1:22 : int @44:9..44:16
       discard: int 2 : int @45:9..45:10
@@ -71,7 +71,7 @@ fn nested_failure@42:1..48:2 () -> unit ∈ unit
       tail: unit : unit @42:21..48:2
 
 fn tail_requires_unit@49:1..51:2 () -> unit ∈ ∅
-  result: copy : unit @49:1..51:2
+  result: copy : unit @49:22..49:24
     value: call value@1:1..1:22 : int @50:5..50:12
 
 == semantic diagnostics ==
@@ -105,4 +105,4 @@ error[semantic/unused-value]: unused value of type int; use `_ =` to discard it
   primary @44:9..44:16
 error[semantic/type-mismatch]: expected unit, found int
   primary @50:5..50:12
-  secondary @49:1..51:2: declared here
+  secondary @49:22..49:24: returns unit, since no result type is written

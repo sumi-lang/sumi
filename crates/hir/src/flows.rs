@@ -6,18 +6,27 @@ use std::collections::HashSet;
 
 use rustc_hash::FxBuildHasher;
 use sumi_graph::{
-    BinaryOp, CmpOp, Domain, Graph, Int, May, Node, NodeId, Op, RegionId, Thresholds, Ty, Value,
+    BinaryOp, CmpOp, Domain, FunctionId, Graph, Int, May, Node, NodeId, Op, RegionId, Thresholds,
+    Ty, Value,
 };
 use sumi_text::TextRange;
 
 use crate::lattice::{Edge, Pair};
-use crate::lower::{Fallthrough, Header, Lowered};
+use crate::lower::{Fallthrough, Header, HeaderResult, Lowered};
 use crate::typing::{Expected, Typing};
+
+/// Where a demanded type was declared.
+#[derive(Clone, Copy)]
+pub(crate) enum Declared {
+    Written(TextRange),
+    /// A result left unwritten, which declares `unit` at the parameter list.
+    Omitted(TextRange),
+}
 
 pub(crate) enum DemandKind {
     Type {
         expected: Expected,
-        declared: Option<TextRange>,
+        declared: Option<Declared>,
     },
     Unused,
     Comparable,
@@ -38,6 +47,7 @@ struct Demands<'a> {
     graph: &'a Graph,
     typed: &'a [bool],
     fallthroughs: &'a [Option<Fallthrough>],
+    headers: &'a [Header],
     made: Vec<Demand>,
 }
 
@@ -67,6 +77,19 @@ impl Demands<'_> {
             if typed(actual) && expected != Expected::Peer(actual) {
                 demand(at, actual, DemandKind::Type { expected, declared });
             }
+        };
+        let written = |at: TextRange| Some(Declared::Written(at));
+        // What the run's result holds the body to: only there can a declaration be omitted.
+        let held = |at: TextRange| {
+            let omitted = matches!(
+                self.headers[owner as usize].result,
+                HeaderResult::Omitted(_)
+            );
+            Some(if omitted {
+                Declared::Omitted(at)
+            } else {
+                Declared::Written(at)
+            })
         };
         let region = |id: RegionId| {
             let region = graph.region(id);
@@ -140,23 +163,36 @@ impl Demands<'_> {
             }
             Op::Copy {
                 declared: Some((ty, at)),
-            } if value(0) => require(reads[0], inputs[0], Expected::Ty(*ty), Some(*at)),
+            } if value(0) => {
+                let run = graph.run(FunctionId::new(owner as usize));
+                let declared = if node == run.result() {
+                    held(*at)
+                } else {
+                    written(*at)
+                };
+                require(reads[0], inputs[0], Expected::Ty(*ty), declared);
+            }
             Op::Copy { declared: Some(_) } => {}
             Op::Assign { declaration } if value(0) => require(
                 reads[0],
                 inputs[0],
                 Expected::Peer(*declaration),
-                graph.node(*declaration).name,
+                graph.node(*declaration).name.and_then(written),
             ),
             Op::Assign { .. } => {}
             Op::Call(callee) => {
                 let callable = graph.callable(*callee);
-                let declared = graph.node(graph.run(callable.function).entry()).origin;
-                for (index, ((&at, &input), &ty)) in
-                    reads.iter().zip(inputs).zip(&callable.params).enumerate()
+                let params = graph.run(callable.function).params();
+                for (index, (((&at, &input), &ty), param)) in reads
+                    .iter()
+                    .zip(inputs)
+                    .zip(&callable.params)
+                    .zip(params)
+                    .enumerate()
                 {
                     if value(index) {
-                        require(at, input, Expected::Ty(ty), Some(declared));
+                        let declared = written(graph.node(param).origin);
+                        require(at, input, Expected::Ty(ty), declared);
                     }
                 }
             }
@@ -169,18 +205,14 @@ impl Demands<'_> {
             Op::Return => {}
             Op::Result { declared } => {
                 let expected = declared.map_or(Expected::Peer(node), |(ty, _)| Expected::Ty(ty));
+                let declared = declared.and_then(|(_, at)| held(at));
                 if let Some(fallthrough) = fallthrough {
-                    require(
-                        fallthrough.at,
-                        fallthrough.value,
-                        expected,
-                        declared.map(|(_, at)| at),
-                    );
+                    require(fallthrough.at, fallthrough.value, expected, declared);
                 } else if value(0) {
-                    require(reads[0], inputs[0], expected, declared.map(|(_, at)| at));
+                    require(reads[0], inputs[0], expected, declared);
                 }
                 for (&at, &input) in reads[1..].iter().zip(&inputs[1..]) {
-                    require(at, input, expected, declared.map(|(_, at)| at));
+                    require(at, input, expected, declared);
                 }
             }
             Op::Int(_)
@@ -231,6 +263,7 @@ pub(crate) fn draw(
         graph,
         typed: &lowered.typed,
         fallthroughs: &lowered.fallthroughs,
+        headers,
         made: Vec::with_capacity(graph.nodes().len() / 2),
     };
 
