@@ -1,4 +1,13 @@
-tree: see hir.snap
+== tree ==
+SourceFile! 1:1..4:1
+  FnItem! 1:1..3:6
+    Name 1:4..1:12 "unclosed"
+    ParamList 1:12..1:14 "()"
+    TypeRef 1:18..1:21 "int"
+    Block! 1:22..3:6
+      DiscardStmt 2:5..2:16
+        NameRef 2:9..2:16 "missing"
+      LiteralExpr 3:5..3:6 "1"
 
 == evidence ==
 Expected(RBrace) at 4:1

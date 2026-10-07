@@ -1,4 +1,69 @@
-tree: see hir.snap
+== tree ==
+SourceFile! 1:1..23:1
+  FnItem! 1:1..8:2
+    Name 1:4..1:11 "damaged"
+    ParamList 1:11..1:13 "()"
+    Block! 1:14..8:2
+      LetStmt 2:5..2:17
+        Name 2:9..2:10 "x"
+        LiteralExpr 2:13..2:17 "true"
+      LetStmt! 3:5..3:12
+        Name 3:9..3:10 "x"
+      DiscardStmt 4:5..4:14
+        BinaryExpr 4:9..4:14
+          NameRef 4:9..4:10 "x"
+          LiteralExpr 4:13..4:14 "1"
+      LetStmt! 5:5..5:15
+        Name 5:9..5:10 "y"
+        LiteralExpr 5:14..5:15 "1"
+      DiscardStmt 6:5..6:10
+        NameRef 6:9..6:10 "y"
+      DiscardStmt 7:5..7:16
+        NameRef 7:9..7:16 "missing"
+  FnItem 9:1..9:23
+    Name 9:4..9:10 "intact"
+    ParamList 9:10..9:12 "()"
+    TypeRef 9:16..9:19 "int"
+    LiteralExpr 9:22..9:23 "3"
+  FnItem 10:1..13:2
+    Name 10:4..10:16 "unknown_type"
+    ParamList 10:16..10:18 "()"
+    Block 10:19..13:2
+      LetStmt 11:5..11:23
+        Name 11:9..11:10 "z"
+        TypeRef 11:12..11:19 "mystery"
+        LiteralExpr 11:22..11:23 "1"
+      DiscardStmt 12:5..12:10
+        NameRef 12:9..12:10 "z"
+  FnItem 14:1..22:2
+    Name 14:4..14:11 "rebound"
+    ParamList 14:11..14:13 "()"
+    Block 14:14..22:2
+      LetStmt 15:5..15:17
+        Name 15:9..15:10 "x"
+        LiteralExpr 15:13..15:17 "true"
+      LetStmt 16:5..16:18
+        Name 16:13..16:14 "x"
+        LiteralExpr 16:17..16:18 "1"
+      DiscardStmt 17:5..17:14
+        BinaryExpr 17:9..17:14
+          NameRef 17:9..17:10 "x"
+          LiteralExpr 17:13..17:14 "1"
+      LetStmt 18:5..18:23
+        Name 18:9..18:10 "x"
+        TypeRef 18:12..18:19 "mystery"
+        LiteralExpr 18:22..18:23 "1"
+      DiscardStmt 19:5..19:14
+        BinaryExpr 19:9..19:14
+          NameRef 19:9..19:10 "x"
+          LiteralExpr 19:13..19:14 "1"
+      LetStmt 20:5..20:19
+        Name 20:9..20:10 "x"
+        NameRef 20:13..20:19 "absent"
+      DiscardStmt 21:5..21:14
+        BinaryExpr 21:9..21:14
+          NameRef 21:9..21:10 "x"
+          LiteralExpr 21:13..21:14 "1"
 
 == evidence ==
 ExpectedExpression at 4:5

@@ -1,4 +1,55 @@
-tree: see hir.snap
+== tree ==
+SourceFile! 1:1..22:1
+  FnItem 1:1..4:2
+    Name 1:4..1:13 "tail_held"
+    ParamList 1:13..1:15 "()"
+    TypeRef 1:19..1:23 "bool"
+    Block 1:24..4:2
+      DiscardStmt 2:5..2:16
+        NameRef 2:9..2:16 "missing"
+      LiteralExpr 3:5..3:6 "1"
+  FnItem 5:1..8:2
+    Name 5:4..5:12 "inferred"
+    ParamList 5:12..5:14 "()"
+    Block 5:17..8:2
+      DiscardStmt 6:5..6:16
+        NameRef 6:9..6:16 "missing"
+      LiteralExpr 7:5..7:6 "1"
+  FnItem 9:1..9:33
+    Name 9:4..9:10 "caller"
+    ParamList 9:10..9:12 "()"
+    TypeRef 9:16..9:20 "bool"
+    CallExpr 9:23..9:33
+      NameRef 9:23..9:31 "inferred"
+      ArgList 9:31..9:33 "()"
+  FnItem 10:1..16:2
+    Name 10:4..10:14 "statements"
+    ParamList 10:14..10:16 "()"
+    TypeRef 10:20..10:23 "int"
+    Block 10:24..16:2
+      Block 11:5..14:6
+        DiscardStmt 12:9..12:20
+          NameRef 12:13..12:20 "missing"
+        LiteralExpr 13:9..13:10 "5"
+      LiteralExpr 15:5..15:6 "0"
+  FnItem! 17:1..19:2
+    Name 17:4..17:11 "damaged"
+    ParamList 17:11..17:13 "()"
+    TypeRef 17:17..17:20 "int"
+    Block! 17:21..19:2
+      LiteralExpr 18:5..18:6 "5"
+      Error! 18:7..18:8 ")"
+  FnItem 20:1..20:25
+    Name 20:4..20:11 "grouped"
+    ParamList 20:11..20:13 "()"
+    ParenExpr 20:16..20:25
+      NameRef 20:17..20:24 "missing"
+  FnItem 21:1..21:22
+    Name 21:4..21:9 "after"
+    ParamList 21:9..21:11 "()"
+    ParenExpr 21:14..21:22
+      ParenExpr 21:15..21:21
+        LiteralExpr 21:16..21:20 "true"
 
 == evidence ==
 ExpectedStatement at 18:7

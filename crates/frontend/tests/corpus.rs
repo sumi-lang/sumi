@@ -21,9 +21,11 @@ fn snapshot(source: &str, stages: &[corpus::Stage]) -> String {
     let parse = parsed.parse();
     let index = LineIndex::new(source);
     let mut out = String::new();
-    // A hir case gets no tree golden, so a case whose parse is the point does not select hir.
-    if stages.contains(&corpus::Stage::Hir) {
-        out.push_str("tree: see hir.snap\n");
+    // A hir case keeps its tree only where the parser recovered: hir.snap anchors the graph by
+    // range, so a case whose parse is the point does not select hir.
+    let has_tree = !stages.contains(&corpus::Stage::Hir) || !parse.evidence().is_empty();
+    if !has_tree {
+        out.push_str("tree: omitted\n");
     } else {
         section(&mut out, "tree");
         check::tree(parse.tree(), lexed);

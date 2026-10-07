@@ -1,4 +1,165 @@
-tree: see hir.snap
+== tree ==
+SourceFile! 1:1..37:1
+  FnItem! 1:1..6:2
+    Name 1:4..1:17 "around_a_hole"
+    ParamList 1:17..1:29
+      Param 1:18..1:28
+        Name 1:18..1:22 "flag"
+        TypeRef 1:24..1:28 "bool"
+    TypeRef 1:33..1:36 "int"
+    Block! 1:37..6:2
+      LetStmt! 2:5..2:17
+        Name 2:9..2:10 "x"
+        ParenExpr! 2:13..2:17
+          BinaryExpr! 2:14..2:17
+            LiteralExpr 2:14..2:15 "1"
+      LetStmt 3:5..3:22
+        Name 3:9..3:10 "y"
+        BinaryExpr 3:13..3:22
+          NameRef 3:13..3:14 "x"
+          NameRef 3:18..3:22 "flag"
+      IfExpr! 4:5..6:2
+        NameRef 4:8..4:12 "flag"
+        Block 4:13..4:18
+          NameRef 4:15..4:16 "x"
+        Block! 4:24..6:2
+          CallExpr! 4:26..5:30
+            NameRef 4:26..4:31 "count"
+            ArgList! 4:31..5:30
+              IfExpr 5:5..5:30
+                NameRef 5:8..5:9 "y"
+                Block 5:10..5:15
+                  LiteralExpr 5:12..5:13 "1"
+                Block 5:21..5:30
+                  LiteralExpr 5:23..5:28 "false"
+  FnItem 7:1..7:28
+    Name 7:4..7:9 "count"
+    ParamList 7:9..7:17
+      Param 7:10..7:16
+        Name 7:10..7:11 "n"
+        TypeRef 7:13..7:16 "int"
+    TypeRef 7:21..7:24 "int"
+    NameRef 7:27..7:28 "n"
+  FnItem! 8:1..10:2
+    Name 8:4..8:8 "tail"
+    ParamList 8:8..8:20
+      Param 8:9..8:19
+        Name 8:9..8:13 "flag"
+        TypeRef 8:15..8:19 "bool"
+    Block! 8:21..10:2
+      CallExpr! 9:5..9:11
+        NameRef 9:5..9:10 "count"
+        ArgList! 9:10..9:11 "("
+  FnItem! 11:1..11:38
+    Name 11:4..11:13 "arguments"
+    ParamList 11:13..11:15 "()"
+    TypeRef 11:19..11:22 "int"
+    CallExpr! 11:25..11:38
+      NameRef 11:25..11:30 "count"
+      ArgList! 11:30..11:38
+        LiteralExpr 11:31..11:35 "true"
+        LiteralExpr 11:37..11:38 "2"
+  FnItem! 12:1..12:26
+    Name 12:4..12:11 "negated"
+    ParamList 12:11..12:13 "()"
+    TypeRef 12:17..12:21 "bool"
+    PrefixExpr! 12:24..12:26
+      ParenExpr! 12:25..12:26 "("
+  FnItem! 13:1..13:20
+    Name 13:4..13:12 "inferred"
+    ParamList 13:12..13:14 "()"
+    BinaryExpr! 13:17..13:20
+      LiteralExpr 13:17..13:18 "1"
+  FnItem 14:1..14:33
+    Name 14:4..14:10 "caller"
+    ParamList 14:10..14:12 "()"
+    TypeRef 14:16..14:20 "bool"
+    CallExpr 14:23..14:33
+      NameRef 14:23..14:31 "inferred"
+      ArgList 14:31..14:33 "()"
+  FnItem! 15:1..15:24
+    Name 15:4..15:13 "forwarded"
+    ParamList 15:13..15:15 "()"
+    CallExpr! 15:18..15:24
+      NameRef 15:18..15:23 "count"
+      ArgList! 15:23..15:24 "("
+  FnItem 16:1..16:35
+    Name 16:4..16:11 "chained"
+    ParamList 16:11..16:13 "()"
+    TypeRef 16:17..16:21 "bool"
+    CallExpr 16:24..16:35
+      NameRef 16:24..16:33 "forwarded"
+      ArgList 16:33..16:35 "()"
+  FnItem! 17:1..21:2
+    Name 17:4..17:12 "assigned"
+    ParamList 17:12..17:24
+      Param 17:13..17:23
+        Name 17:13..17:17 "flag"
+        TypeRef 17:19..17:23 "bool"
+    Block! 17:25..21:2
+      LetStmt 18:5..18:18
+        Name 18:13..18:14 "x"
+        LiteralExpr 18:17..18:18 "1"
+      AssignStmt! 19:5..19:11
+        NameRef 19:5..19:6 "x"
+        PrefixExpr! 19:9..19:11
+          ParenExpr! 19:10..19:11 "("
+      DiscardStmt 20:5..20:10
+        NameRef 20:9..20:10 "x"
+  FnItem! 22:1..27:2
+    Name 22:4..22:13 "annotated"
+    ParamList 22:13..22:25
+      Param 22:14..22:24
+        Name 22:14..22:18 "flag"
+        TypeRef 22:20..22:24 "bool"
+    TypeRef 22:29..22:33 "bool"
+    Block! 22:34..27:2
+      LetStmt! 23:5..23:21
+        Name 23:9..23:10 "x"
+        TypeRef 23:12..23:15 "int"
+        BinaryExpr! 23:18..23:21
+          LiteralExpr 23:18..23:19 "1"
+      LetStmt! 24:5..24:25
+        Name 24:9..24:10 "y"
+        TypeRef 24:12..24:19 "mystery"
+        BinaryExpr! 24:22..24:25
+          LiteralExpr 24:22..24:23 "2"
+      LetStmt! 25:5..26:6
+        Name 25:9..25:10 "z"
+        TypeRef 25:12..25:15 "int"
+        BinaryExpr! 25:18..26:6
+          NameRef 25:18..25:22 "flag"
+          ParenExpr! 25:26..26:6
+            NameRef 26:5..26:6 "x"
+  FnItem! 28:1..31:2
+    Name 28:4..28:9 "empty"
+    ParamList 28:9..28:11 "()"
+    TypeRef 28:15..28:18 "int"
+    Block! 28:19..31:2
+      ParenExpr! 29:5..29:7 "()"
+      DiscardStmt! 30:5..30:8 "_ ="
+  FnItem! 32:1..36:2
+    Name 32:4..32:10 "merged"
+    ParamList 32:10..32:22
+      Param 32:11..32:21
+        Name 32:11..32:15 "flag"
+        TypeRef 32:17..32:21 "bool"
+    TypeRef 32:26..32:29 "int"
+    Block! 32:30..36:2
+      LetStmt 33:5..33:18
+        Name 33:13..33:14 "x"
+        LiteralExpr 33:17..33:18 "1"
+      IfExpr! 34:5..36:2
+        NameRef 34:8..34:12 "flag"
+        Block 34:13..34:22
+          AssignStmt 34:15..34:20
+            NameRef 34:15..34:16 "x"
+            LiteralExpr 34:19..34:20 "2"
+        Block! 34:28..36:2
+          AssignStmt! 34:30..35:6
+            NameRef 34:30..34:31 "x"
+            ParenExpr! 34:34..35:6
+              NameRef 35:5..35:6 "x"
 
 == evidence ==
 ExpectedExpression at 3:5
