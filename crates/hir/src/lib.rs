@@ -14,7 +14,7 @@ mod typing;
 use std::fmt;
 
 use sumi_frontend::{Diagnostic, ParsedSource};
-use sumi_text::TextRange;
+use sumi_text::{TextRange, TextSize};
 
 pub use check::analyze;
 pub use reachability::{Dead, DeadCause};
@@ -28,6 +28,7 @@ pub struct Analysis {
     graph: Graph,
     settled: typing::Settled,
     functions: Vec<Function>,
+    bindings: Vec<Binding>,
     diagnostics: Vec<Diagnostic>,
     dead: Vec<Dead>,
 }
@@ -38,6 +39,7 @@ impl fmt::Debug for Analysis {
             .field("parsed", &self.parsed)
             .field("graph", &self.graph)
             .field("functions", &self.functions)
+            .field("bindings", &self.bindings)
             .field("diagnostics", &self.diagnostics)
             .field("dead", &self.dead)
             .finish_non_exhaustive()
@@ -80,6 +82,21 @@ impl Analysis {
     }
     pub fn function(&self, id: FunctionId) -> &Function {
         &self.functions[id.index()]
+    }
+    /// Every local a body declares, in declaration order; a failed body keeps those it reached.
+    pub fn bindings(&self) -> &[Binding] {
+        &self.bindings
+    }
+    /// The locals a name at `offset` can read, in declaration order, without those a later
+    /// binding of the same name shadows there.
+    pub fn visible_at(&self, offset: TextSize) -> Vec<&Binding> {
+        let mut visible: Vec<&Binding> = Vec::new();
+        for binding in self.bindings.iter().filter(|b| b.is_visible_at(offset)) {
+            let name = self.text(binding.name);
+            visible.retain(|earlier| self.text(earlier.name) != name);
+            visible.push(binding);
+        }
+        visible
     }
     /// None for a function without a signature.
     pub fn ranges(&self, id: FunctionId) -> Option<Ranges> {
@@ -283,6 +300,57 @@ impl Function {
     /// unbounded. A valid file's run is finite either way.
     pub fn depth_bound(&self) -> Option<u64> {
         self.depth
+    }
+}
+
+/// A local a body declares: a parameter, a `let`, or a `for` index.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Binding {
+    name: TextRange,
+    kind: BindingKind,
+    declaration: NodeId,
+    visible: TextRange,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BindingKind {
+    Param,
+    Let { is_mutable: bool },
+    LoopIndex,
+}
+
+impl Binding {
+    pub(crate) fn new(
+        name: TextRange,
+        kind: BindingKind,
+        declaration: NodeId,
+        visible: TextRange,
+    ) -> Self {
+        Self {
+            name,
+            kind,
+            declaration,
+            visible,
+        }
+    }
+    pub fn name(&self) -> TextRange {
+        self.name
+    }
+    pub fn kind(&self) -> BindingKind {
+        self.kind
+    }
+    /// The node that carries the name and, through `Analysis::ty`, the binding's type.
+    pub fn declaration(&self) -> NodeId {
+        self.declaration
+    }
+    /// Where a read resolves to this binding or to one shadowing it: after the declaration, up to
+    /// the closing brace of the enclosing block, or, past an unclosed one, up to the next
+    /// significant token or one past the source's end. Empty for a name nothing can read yet.
+    pub fn visible(&self) -> TextRange {
+        self.visible
+    }
+    pub fn is_visible_at(&self, offset: TextSize) -> bool {
+        self.visible.start() <= offset && offset < self.visible.end()
     }
 }
 

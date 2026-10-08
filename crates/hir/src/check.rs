@@ -77,6 +77,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         graph,
         settled: typing.settle(),
         functions,
+        bindings: lowered.bindings,
         diagnostics,
         dead,
     };
