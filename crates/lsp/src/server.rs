@@ -12,22 +12,24 @@ use lsp_types::{
     DiagnosticTag, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
     DidOpenTextDocumentParams, DocumentFormattingParams, DocumentSymbol, DocumentSymbolParams,
     DocumentSymbolResponse, GotoDefinitionParams, Hover, HoverContents, HoverParams,
-    HoverProviderCapability, InitializeParams, InitializeResult, InsertTextFormat, Location,
-    MarkupContent, MarkupKind, OneOf, OptionalVersionedTextDocumentIdentifier, Position,
-    PositionEncodingKind, PrepareRenameResponse, PublishDiagnosticsParams, Range, ReferenceParams,
-    RenameOptions, RenameParams, ServerCapabilities, ServerInfo, SymbolInformation, SymbolKind,
-    TextDocumentEdit, TextDocumentPositionParams, TextDocumentSyncCapability, TextDocumentSyncKind,
+    HoverProviderCapability, InitializeParams, InitializeResult, InlayHint, InlayHintKind,
+    InlayHintLabel, InlayHintParams, InsertTextFormat, Location, MarkupContent, MarkupKind, OneOf,
+    OptionalVersionedTextDocumentIdentifier, Position, PositionEncodingKind, PrepareRenameResponse,
+    PublishDiagnosticsParams, Range, ReferenceParams, RenameOptions, RenameParams,
+    ServerCapabilities, ServerInfo, SymbolInformation, SymbolKind, TextDocumentEdit,
+    TextDocumentPositionParams, TextDocumentSyncCapability, TextDocumentSyncKind,
     TextDocumentSyncOptions, TextEdit, Uri, WorkspaceEdit,
 };
 use serde_json::Value;
 use sumi_frontend::{Diagnostic, Fix, ParsedSource, Severity, parse_source};
 use sumi_hir::{
-    Analysis, BindingKind, Dead, DeadCause, FunctionId, Occurrence, Signature, Symbol, Ty, analyze,
+    Analysis, BindingKind, Dead, DeadCause, FunctionId, Occurrence, Op, Signature, Symbol, Ty,
+    analyze,
 };
 use sumi_lexer::{Fixed, LexedFile, RawIdx, SyntaxKind, lex};
 use sumi_syntax::ast::{self, AstNode, View};
 use sumi_syntax::{NodeKind, SyntaxTree, starts_statement};
-use sumi_text::{Encoding, TextSize};
+use sumi_text::{Encoding, TextRange, TextSize};
 
 use crate::position::Positions;
 
@@ -76,6 +78,7 @@ enum Query {
         new_name: String,
     },
     Hover(Position),
+    InlayHints(Range),
 }
 
 enum Job {
@@ -235,6 +238,7 @@ fn capabilities(encoding: Encoding, features: ClientFeatures) -> ServerCapabilit
         document_formatting_provider: Some(OneOf::Left(true)),
         document_symbol_provider: Some(OneOf::Left(true)),
         hover_provider: Some(HoverProviderCapability::Simple(true)),
+        inlay_hint_provider: Some(OneOf::Left(true)),
         references_provider: Some(OneOf::Left(true)),
         rename_provider: Some(OneOf::Right(RenameOptions {
             prepare_provider: Some(true),
@@ -549,6 +553,24 @@ fn handle_request(
                 sender,
             )?;
         }
+        lsp_types::request::InlayHintRequest::METHOD => {
+            let params: InlayHintParams = match serde_json::from_value(request.params) {
+                Ok(params) => params,
+                Err(error) => {
+                    invalid_params(sender, request.id, error)?;
+                    return Ok(());
+                }
+            };
+            let query = Query::InlayHints(params.range);
+            queue_query(
+                request.id,
+                params.text_document.uri,
+                query,
+                documents,
+                jobs,
+                sender,
+            )?;
+        }
         lsp_types::request::CodeActionRequest::METHOD => {
             let params: CodeActionParams = match serde_json::from_value(request.params) {
                 Ok(params) => params,
@@ -772,6 +794,7 @@ fn answer(
         Query::Hover(position) => {
             serde_json::to_value(hover(analysis, position, encoding, features.has_markdown))
         }
+        Query::InlayHints(range) => serde_json::to_value(inlay_hints(analysis, range, encoding)),
     };
     Ok(value.expect("a response serializes"))
 }
@@ -1405,6 +1428,81 @@ fn hover(
         contents: HoverContents::Markup(MarkupContent { kind, value }),
         range: Some(positions(analysis, encoding).range(occurrence.range)),
     })
+}
+
+/// The inferred type after a `let` without one, as an edit that writes it in, and the parameter
+/// name before a call argument that is not already that name.
+fn inlay_hints(analysis: &Analysis, requested: Range, encoding: Encoding) -> Vec<InlayHint> {
+    let positions = positions(analysis, encoding);
+    let tree = analysis.parsed().parse().tree();
+    let lexed = analysis.parsed().lexed();
+    let start = offset_at(analysis, requested.start, encoding).unwrap_or(TextSize::new(0));
+    let end = offset_at(analysis, requested.end, encoding).unwrap_or(lexed.source_len());
+    let is_wanted = |range: TextRange| start <= range.end() && range.start() <= end;
+    let hint = |offset: TextSize, label: String, kind: InlayHintKind| InlayHint {
+        position: positions.position(offset),
+        label: InlayHintLabel::String(label),
+        kind: Some(kind),
+        text_edits: None,
+        tooltip: None,
+        padding_left: None,
+        padding_right: Some(kind == InlayHintKind::PARAMETER),
+        data: None,
+    };
+    let types = analysis.bindings().iter().filter_map(|binding| {
+        let node = analysis.graph().node(binding.declaration());
+        if !matches!(node.op, Op::Copy { declared: None })
+            || !matches!(binding.kind(), BindingKind::Let { .. })
+            || !is_wanted(binding.name())
+        {
+            return None;
+        }
+        // A `let` whose colon lost its type is a hole, except where the parser could still read
+        // an initializer, so the colon is checked in the syntax.
+        let statement = tree.covering(lexed.token_at(node.origin.start())?);
+        if tree.holds(statement, lexed, SyntaxKind::Colon, None) {
+            return None;
+        }
+        let ty = analysis.ty(binding.declaration())?;
+        let at = binding.name().end();
+        let mut hint = hint(at, format!(": {ty}"), InlayHintKind::TYPE);
+        hint.text_edits = Some(vec![TextEdit::new(
+            Range::new(hint.position, hint.position),
+            format!(": {ty}"),
+        )]);
+        Some(hint)
+    });
+    let params = tree.nodes().flat_map(|node| {
+        let call = ast::CallExpr::cast(tree, node)
+            .filter(|call| is_wanted(tree.byte_range(call.node(), lexed)));
+        let callee = call.and_then(|call| call.callee(tree));
+        let target = callee.and_then(|callee| {
+            match analysis.symbol_at(tree.byte_range(callee.node(), lexed).start())? {
+                Occurrence {
+                    symbol: Symbol::Function(id),
+                    ..
+                } => Some(id),
+                _ => None,
+            }
+        });
+        let args = call
+            .and_then(|call| call.arg_list(tree))
+            .into_iter()
+            .flat_map(|list| list.args(tree));
+        target
+            .into_iter()
+            .flat_map(|id| analysis.params(id))
+            .zip(args)
+            .filter_map(|(param, arg)| {
+                let name = analysis.text(param?.name());
+                let at = tree.byte_range(arg.node(), lexed);
+                (is_wanted(at) && analysis.text(at) != name)
+                    .then(|| hint(at.start(), format!("{name}:"), InlayHintKind::PARAMETER))
+            })
+    });
+    let mut hints: Vec<_> = types.chain(params).collect();
+    hints.sort_by_key(|hint| hint.position);
+    hints
 }
 
 fn handle_outcome(
@@ -2349,6 +2447,80 @@ fn main() -> int {
             ),
             "fn double(x: int) -> int"
         );
+    }
+
+    #[test]
+    fn protocol_serves_inlay_hints_for_a_range() {
+        let (client, server_thread) = start(json!({}));
+        let uri = "file:///hints.su";
+        open(
+            &client,
+            uri,
+            "fn double(x: int) -> int = x + x\nfn main() -> int {\n    let y = double(2)\n    y\n}\n",
+        );
+        let whole = json!({
+            "textDocument": { "uri": uri },
+            "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 5, "character": 0 } }
+        });
+        let hints = request(&client, 1, "textDocument/inlayHint", whole).unwrap();
+        let labels: Vec<_> = hints
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|hint| hint["label"].as_str().unwrap().to_owned())
+            .collect();
+        assert_eq!(labels, [": int", "x:"]);
+        let error = request(&client, 2, "textDocument/inlayHint", json!({})).unwrap_err();
+        assert_eq!(error.code, ErrorCode::InvalidParams as i32);
+        stop(client, server_thread);
+    }
+
+    #[test]
+    fn inlay_hints_write_inferred_types_and_name_call_arguments() {
+        let text = "fn add(a: int, b: int) -> int = a + b
+fn main() -> int {
+    let x = add(1, 2)
+    let y: int = x
+    let b = 3
+    add(x, b)
+}
+";
+        let at = |line, character| Position::new(line, character);
+        let whole = Range::new(at(0, 0), at(7, 0));
+        let analysis = analyzed(text);
+        let hints = inlay_hints(&analysis, whole, Encoding::Utf16);
+        let shown: Vec<_> = hints
+            .iter()
+            .map(|hint| {
+                let InlayHintLabel::String(label) = &hint.label else {
+                    unreachable!()
+                };
+                (hint.position, label.as_str(), hint.kind.unwrap())
+            })
+            .collect();
+        assert_eq!(
+            shown,
+            [
+                (at(2, 9), ": int", InlayHintKind::TYPE),
+                (at(2, 16), "a:", InlayHintKind::PARAMETER),
+                (at(2, 19), "b:", InlayHintKind::PARAMETER),
+                (at(4, 9), ": int", InlayHintKind::TYPE),
+                (at(5, 8), "a:", InlayHintKind::PARAMETER),
+            ]
+        );
+        let edit = &hints[0].text_edits.as_ref().unwrap()[0];
+        assert_eq!(edit.range, Range::new(at(2, 9), at(2, 9)));
+        assert_eq!(edit.new_text, ": int");
+        assert_eq!(hints[1].padding_right, Some(true));
+        assert_eq!(hints[0].padding_right, Some(false));
+        let some = inlay_hints(&analysis, Range::new(at(4, 0), at(5, 0)), Encoding::Utf16);
+        assert_eq!(some.len(), 1);
+        let broken = inlay_hints(
+            &analyzed("fn f() = {\n    let x = \n    let y : = 1\n    g(1)\n}"),
+            whole,
+            Encoding::Utf16,
+        );
+        assert_eq!(broken.len(), 0);
     }
 
     #[test]
