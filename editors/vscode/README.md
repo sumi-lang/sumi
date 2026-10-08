@@ -8,8 +8,9 @@ The extension provides:
 - syntax highlighting for the compiler's current keywords, declarations, operators, literals, and
   comments;
 - comment, bracket, indentation, and auto-closing configuration;
-- syntax and semantic diagnostics, quick fixes, formatting, document symbols, and completion of
-  the names, keywords, and types in scope through `sumi-lsp`.
+- syntax and semantic diagnostics, quick fixes, formatting, document symbols, completion of the
+  names, keywords, and types in scope, go to definition, find references, and rename through
+  `sumi-lsp`.
 
 The extension includes `sumi-lsp` on supported platforms. Set `sumi.server.path` to use a custom
 server or to provide one on another platform.
