@@ -15,14 +15,14 @@ insert/delimiter        10000     4821    1.00000   1.00000   1.00000
 insert/non-delim        10000     4845    1.00000   1.00000   1.00000
 
 class                  diags_mean diags_p95  skipped_mean skipped_p95  evidence_mean evidence_p95
-delete/delimiter            1.957         5        41.133         244          1.957            5
-delete/non-delim            0.977         2        13.209          73          0.977            2
-duplicate/delimiter         1.712         4        35.381         213          1.712            4
-duplicate/non-delim         1.608         3         9.155          38          1.608            3
-swap/delimiter              1.670         4        25.081         146          1.670            4
-swap/non-delim              1.678         4        17.197          91          1.677            4
-insert/delimiter            1.914         5        28.910         175          1.914            5
-insert/non-delim            1.423         3        14.982          84          1.419            3
+delete/delimiter            1.942         4        41.125         244          1.942            4
+delete/non-delim            0.979         2        13.547          76          0.979            2
+duplicate/delimiter         1.701         4        35.346         213          1.701            4
+duplicate/non-delim         1.602         3         9.158          38          1.602            3
+swap/delimiter              1.671         4        25.523         148          1.671            4
+swap/non-delim              1.677         4        17.452          93          1.676            4
+insert/delimiter            1.903         5        28.976         175          1.903            5
+insert/non-delim            1.419         3        15.020          85          1.415            3
 
 == Part B: delimiter-breaking churn over clean corpora ==
 churn = original significant tokens (edit site excluded) whose partner()
