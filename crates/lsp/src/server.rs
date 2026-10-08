@@ -11,15 +11,15 @@ use lsp_types::{
     CompletionOptions, CompletionParams, DiagnosticRelatedInformation, DiagnosticSeverity,
     DiagnosticTag, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
     DidOpenTextDocumentParams, DocumentFormattingParams, DocumentSymbol, DocumentSymbolParams,
-    DocumentSymbolResponse, InitializeParams, InitializeResult, InsertTextFormat, Location, OneOf,
-    OptionalVersionedTextDocumentIdentifier, Position, PositionEncodingKind,
-    PublishDiagnosticsParams, Range, ServerCapabilities, ServerInfo, SymbolInformation, SymbolKind,
-    TextDocumentEdit, TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions,
-    TextEdit, Uri, WorkspaceEdit,
+    DocumentSymbolResponse, GotoDefinitionParams, InitializeParams, InitializeResult,
+    InsertTextFormat, Location, OneOf, OptionalVersionedTextDocumentIdentifier, Position,
+    PositionEncodingKind, PublishDiagnosticsParams, Range, ReferenceParams, ServerCapabilities,
+    ServerInfo, SymbolInformation, SymbolKind, TextDocumentEdit, TextDocumentSyncCapability,
+    TextDocumentSyncKind, TextDocumentSyncOptions, TextEdit, Uri, WorkspaceEdit,
 };
 use serde_json::Value;
 use sumi_frontend::{Diagnostic, Fix, Severity, parse_source};
-use sumi_hir::{Analysis, BindingKind, Dead, DeadCause, Signature, Ty, analyze};
+use sumi_hir::{Analysis, BindingKind, Dead, DeadCause, Occurrence, Signature, Ty, analyze};
 use sumi_lexer::{Fixed, LexedFile, RawIdx, SyntaxKind};
 use sumi_syntax::ast::{self, AstNode, View};
 use sumi_syntax::{NodeKind, SyntaxTree, starts_statement};
@@ -61,6 +61,11 @@ enum Query {
     Format,
     Symbols,
     Complete(Position),
+    Definition(Position),
+    References {
+        position: Position,
+        has_declaration: bool,
+    },
 }
 
 enum Job {
@@ -200,8 +205,10 @@ fn capabilities(encoding: Encoding, features: ClientFeatures) -> ServerCapabilit
             resolve_provider: Some(false),
             ..CompletionOptions::default()
         }),
+        definition_provider: Some(OneOf::Left(true)),
         document_formatting_provider: Some(OneOf::Left(true)),
         document_symbol_provider: Some(OneOf::Left(true)),
+        references_provider: Some(OneOf::Left(true)),
         ..ServerCapabilities::default()
     }
 }
@@ -410,6 +417,47 @@ fn handle_request(
                 sender,
             )?;
         }
+        lsp_types::request::GotoDefinition::METHOD => {
+            let params: GotoDefinitionParams = match serde_json::from_value(request.params) {
+                Ok(params) => params,
+                Err(error) => {
+                    invalid_params(sender, request.id, error)?;
+                    return Ok(());
+                }
+            };
+            let at = params.text_document_position_params;
+            let query = Query::Definition(at.position);
+            queue_query(
+                request.id,
+                at.text_document.uri,
+                query,
+                documents,
+                jobs,
+                sender,
+            )?;
+        }
+        lsp_types::request::References::METHOD => {
+            let params: ReferenceParams = match serde_json::from_value(request.params) {
+                Ok(params) => params,
+                Err(error) => {
+                    invalid_params(sender, request.id, error)?;
+                    return Ok(());
+                }
+            };
+            let at = params.text_document_position;
+            let query = Query::References {
+                position: at.position,
+                has_declaration: params.context.include_declaration,
+            };
+            queue_query(
+                request.id,
+                at.text_document.uri,
+                query,
+                documents,
+                jobs,
+                sender,
+            )?;
+        }
         lsp_types::request::CodeActionRequest::METHOD => {
             let params: CodeActionParams = match serde_json::from_value(request.params) {
                 Ok(params) => params,
@@ -563,6 +611,13 @@ fn answer(
         Query::Complete(position) => {
             serde_json::to_value(complete(text, position, encoding, features.has_snippets))
         }
+        Query::Definition(position) => {
+            serde_json::to_value(definition(text, uri, position, encoding))
+        }
+        Query::References {
+            position,
+            has_declaration,
+        } => serde_json::to_value(references(text, uri, position, encoding, has_declaration)),
     };
     value.expect("a response serializes")
 }
@@ -940,7 +995,6 @@ fn complete(
     })
 }
 
-/// The locals visible at `offset`, then every function, each with its type.
 fn values(analysis: &Analysis, offset: TextSize, has_snippets: bool) -> Vec<CompletionItem> {
     let text = analysis.parsed().source();
     let mut items: Vec<_> = analysis
@@ -989,6 +1043,45 @@ fn values(analysis: &Analysis, offset: TextSize, has_snippets: bool) -> Vec<Comp
         })
     }));
     items
+}
+
+/// The analysis and the name at `position`, or nothing where no name resolves.
+fn symbol_at(text: &str, position: Position, encoding: Encoding) -> Option<(Analysis, Occurrence)> {
+    let positions = Positions::new(text, encoding);
+    let offset = TextSize::new(u32::try_from(positions.offset(position)?).ok()?);
+    let analysis = analyze(parse_source(text.to_owned().into_boxed_str()).ok()?);
+    let occurrence = analysis.symbol_at(offset)?;
+    Some((analysis, occurrence))
+}
+
+fn definition(text: &str, uri: Uri, position: Position, encoding: Encoding) -> Option<Location> {
+    let (analysis, occurrence) = symbol_at(text, position, encoding)?;
+    let declared = analysis.declaration(occurrence.symbol)?;
+    Some(Location::new(
+        uri,
+        Positions::new(text, encoding).range(declared),
+    ))
+}
+
+fn references(
+    text: &str,
+    uri: Uri,
+    position: Position,
+    encoding: Encoding,
+    has_declaration: bool,
+) -> Option<Vec<Location>> {
+    let (analysis, occurrence) = symbol_at(text, position, encoding)?;
+    let positions = Positions::new(text, encoding);
+    let declared = analysis
+        .declaration(occurrence.symbol)
+        .filter(|_| has_declaration);
+    Some(
+        declared
+            .into_iter()
+            .chain(analysis.references_of(occurrence.symbol))
+            .map(|range| Location::new(uri.clone(), positions.range(range)))
+            .collect(),
+    )
 }
 
 fn handle_outcome(
@@ -1601,6 +1694,69 @@ fn body(c: bool) -> int {
         let zero = list.items.iter().find(|item| item.label == "zero").unwrap();
         assert_eq!(zero.insert_text.as_deref(), Some("zero()"));
         assert_eq!(zero.insert_text_format, None);
+    }
+
+    #[test]
+    fn protocol_serves_definition_and_references() {
+        let (client, server_thread) = start(json!({}));
+        let uri = "file:///navigate.su";
+        open(
+            &client,
+            uri,
+            "fn double(x: int) -> int = x + x\nfn main() -> int = double(2)\n",
+        );
+        let at = |line, character| json!({ "textDocument": { "uri": uri }, "position": { "line": line, "character": character } });
+        let definition = request(&client, 1, "textDocument/definition", at(1, 22)).unwrap();
+        assert_eq!(
+            definition["range"]["start"],
+            json!({ "line": 0, "character": 3 })
+        );
+        let mut references = at(0, 5);
+        references["context"] = json!({ "includeDeclaration": true });
+        let references = request(&client, 2, "textDocument/references", references).unwrap();
+        assert_eq!(references.as_array().unwrap().len(), 2);
+        assert_eq!(
+            request(&client, 3, "textDocument/definition", at(1, 0)).unwrap(),
+            Value::Null
+        );
+        for method in ["textDocument/definition", "textDocument/references"] {
+            let error = request(&client, 4, method, json!({})).unwrap_err();
+            assert_eq!(error.code, ErrorCode::InvalidParams as i32);
+        }
+        stop(client, server_thread);
+    }
+
+    #[test]
+    fn definition_and_references_follow_the_symbol_under_the_cursor() {
+        let text = "fn double(x: int) -> int = x + x\nfn main() -> int {\n    let x = double(2)\n    x\n}\n";
+        let uri: Uri = "file:///refs.su".parse().unwrap();
+        let at = |line, character| Position::new(line, character);
+        let range = |line, start, end| Range::new(at(line, start), at(line, end));
+        let definition = |position| definition(text, uri.clone(), position, Encoding::Utf16);
+        let references = |position, has_declaration| {
+            references(
+                text,
+                uri.clone(),
+                position,
+                Encoding::Utf16,
+                has_declaration,
+            )
+            .map(|locations| locations.iter().map(|l| l.range).collect::<Vec<_>>())
+        };
+        let param = definition(at(0, 27)).unwrap();
+        assert_eq!(param.uri, uri);
+        assert_eq!(param.range, range(0, 10, 11));
+        assert_eq!(definition(at(0, 32)).unwrap().range, range(0, 10, 11));
+        assert_eq!(definition(at(3, 5)).unwrap().range, range(2, 8, 9));
+        assert_eq!(definition(at(2, 14)).unwrap().range, range(0, 3, 9));
+        assert_eq!(references(at(0, 5), false).unwrap(), [range(2, 12, 18)]);
+        assert_eq!(
+            references(at(2, 14), true).unwrap(),
+            [range(0, 3, 9), range(2, 12, 18)]
+        );
+        assert_eq!(definition(at(0, 20)), None);
+        assert_eq!(references(at(1, 0), true), None);
+        assert_eq!(definition(at(9, 0)), None);
     }
 
     #[test]
