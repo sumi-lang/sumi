@@ -56,6 +56,13 @@ struct LspFix {
     edit: TextEdit,
 }
 
+/// A request answered from one document's text.
+enum Query {
+    Format,
+    Symbols,
+    Complete(Position),
+}
+
 enum Job {
     Analyze {
         uri: Uri,
@@ -63,27 +70,13 @@ enum Job {
         version: i32,
         text: String,
     },
-    Format {
+    Query {
         id: RequestId,
         uri: Uri,
         generation: u64,
         version: i32,
         text: String,
-    },
-    Symbols {
-        id: RequestId,
-        uri: Uri,
-        generation: u64,
-        version: i32,
-        text: String,
-    },
-    Complete {
-        id: RequestId,
-        uri: Uri,
-        generation: u64,
-        version: i32,
-        text: String,
-        position: Position,
+        query: Query,
     },
 }
 
@@ -384,14 +377,8 @@ fn handle_request(
                     return Ok(());
                 }
             };
-            queue_document_job(
-                request.id,
-                params.text_document.uri,
-                documents,
-                jobs,
-                true,
-                sender,
-            )?;
+            let uri = params.text_document.uri;
+            queue_query(request.id, uri, Query::Format, documents, jobs, sender)?;
         }
         lsp_types::request::DocumentSymbolRequest::METHOD => {
             let params: DocumentSymbolParams = match serde_json::from_value(request.params) {
@@ -401,14 +388,8 @@ fn handle_request(
                     return Ok(());
                 }
             };
-            queue_document_job(
-                request.id,
-                params.text_document.uri,
-                documents,
-                jobs,
-                false,
-                sender,
-            )?;
+            let uri = params.text_document.uri;
+            queue_query(request.id, uri, Query::Symbols, documents, jobs, sender)?;
         }
         lsp_types::request::Completion::METHOD => {
             let params: CompletionParams = match serde_json::from_value(request.params) {
@@ -418,19 +399,16 @@ fn handle_request(
                     return Ok(());
                 }
             };
-            let uri = params.text_document_position.text_document.uri;
-            let Some(document) = documents.get(uri.as_str()) else {
-                sender.send(Response::new_ok(request.id, Value::Null).into())?;
-                return Ok(());
-            };
-            jobs.send(Job::Complete {
-                id: request.id,
-                uri,
-                generation: document.generation,
-                version: document.version,
-                text: document.text.clone(),
-                position: params.text_document_position.position,
-            })?;
+            let at = params.text_document_position;
+            let query = Query::Complete(at.position);
+            queue_query(
+                request.id,
+                at.text_document.uri,
+                query,
+                documents,
+                jobs,
+                sender,
+            )?;
         }
         lsp_types::request::CodeActionRequest::METHOD => {
             let params: CodeActionParams = match serde_json::from_value(request.params) {
@@ -486,41 +464,26 @@ fn invalid_params(
     sender.send(Response::new_err(id, ErrorCode::InvalidParams as i32, error.to_string()).into())
 }
 
-fn queue_document_job(
+/// Null for a document the client never opened.
+fn queue_query(
     id: RequestId,
     uri: Uri,
+    query: Query,
     documents: &HashMap<String, Document>,
     jobs: &Sender<Job>,
-    should_format: bool,
     sender: &Sender<Message>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let Some(document) = documents.get(uri.as_str()) else {
         sender.send(Response::new_ok(id, Value::Null).into())?;
         return Ok(());
     };
-    let fields = (
+    jobs.send(Job::Query {
         id,
         uri,
-        document.generation,
-        document.version,
-        document.text.clone(),
-    );
-    jobs.send(if should_format {
-        Job::Format {
-            id: fields.0,
-            uri: fields.1,
-            generation: fields.2,
-            version: fields.3,
-            text: fields.4,
-        }
-    } else {
-        Job::Symbols {
-            id: fields.0,
-            uri: fields.1,
-            generation: fields.2,
-            version: fields.3,
-            text: fields.4,
-        }
+        generation: document.generation,
+        version: document.version,
+        text: document.text.clone(),
+        query,
     })?;
     Ok(())
 }
@@ -560,57 +523,19 @@ fn worker(
                     features.has_related_information,
                     features.has_unnecessary_tags,
                 ),
-                Job::Format {
+                Job::Query {
                     id,
                     uri,
                     generation,
                     version,
                     text,
-                } => Outcome::Response {
-                    id,
-                    uri,
-                    generation,
-                    version,
-                    result: serde_json::to_value(format_document(&text, encoding)).unwrap(),
-                },
-                Job::Symbols {
-                    id,
-                    uri,
-                    generation,
-                    version,
-                    text,
+                    query,
                 } => Outcome::Response {
                     id,
                     uri: uri.clone(),
                     generation,
                     version,
-                    result: serde_json::to_value(symbols(
-                        &text,
-                        uri,
-                        encoding,
-                        features.has_hierarchical_symbols,
-                    ))
-                    .unwrap(),
-                },
-                Job::Complete {
-                    id,
-                    uri,
-                    generation,
-                    version,
-                    text,
-                    position,
-                } => Outcome::Response {
-                    id,
-                    uri,
-                    generation,
-                    version,
-                    result: serde_json::to_value(complete(
-                        &text,
-                        position,
-                        encoding,
-                        features.has_snippets,
-                    ))
-                    .unwrap(),
+                    result: answer(&text, uri, query, encoding, features),
                 },
             };
             if outcomes.send(outcome).is_err() {
@@ -618,6 +543,28 @@ fn worker(
             }
         }
     }
+}
+
+fn answer(
+    text: &str,
+    uri: Uri,
+    query: Query,
+    encoding: Encoding,
+    features: ClientFeatures,
+) -> Value {
+    let value = match query {
+        Query::Format => serde_json::to_value(format_document(text, encoding)),
+        Query::Symbols => serde_json::to_value(symbols(
+            text,
+            uri,
+            encoding,
+            features.has_hierarchical_symbols,
+        )),
+        Query::Complete(position) => {
+            serde_json::to_value(complete(text, position, encoding, features.has_snippets))
+        }
+    };
+    value.expect("a response serializes")
 }
 
 fn analyze_document(
