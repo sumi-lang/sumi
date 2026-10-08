@@ -11,8 +11,9 @@ use lsp_types::{
     CompletionOptions, CompletionParams, DiagnosticRelatedInformation, DiagnosticSeverity,
     DiagnosticTag, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
     DidOpenTextDocumentParams, DocumentFormattingParams, DocumentSymbol, DocumentSymbolParams,
-    DocumentSymbolResponse, GotoDefinitionParams, InitializeParams, InitializeResult,
-    InsertTextFormat, Location, OneOf, OptionalVersionedTextDocumentIdentifier, Position,
+    DocumentSymbolResponse, GotoDefinitionParams, Hover, HoverContents, HoverParams,
+    HoverProviderCapability, InitializeParams, InitializeResult, InsertTextFormat, Location,
+    MarkupContent, MarkupKind, OneOf, OptionalVersionedTextDocumentIdentifier, Position,
     PositionEncodingKind, PrepareRenameResponse, PublishDiagnosticsParams, Range, ReferenceParams,
     RenameOptions, RenameParams, ServerCapabilities, ServerInfo, SymbolInformation, SymbolKind,
     TextDocumentEdit, TextDocumentPositionParams, TextDocumentSyncCapability, TextDocumentSyncKind,
@@ -21,7 +22,7 @@ use lsp_types::{
 use serde_json::Value;
 use sumi_frontend::{Diagnostic, Fix, ParsedSource, Severity, parse_source};
 use sumi_hir::{
-    Analysis, BindingKind, Dead, DeadCause, Occurrence, Signature, Symbol, Ty, analyze,
+    Analysis, BindingKind, Dead, DeadCause, FunctionId, Occurrence, Signature, Symbol, Ty, analyze,
 };
 use sumi_lexer::{Fixed, LexedFile, RawIdx, SyntaxKind, lex};
 use sumi_syntax::ast::{self, AstNode, View};
@@ -47,6 +48,7 @@ struct Snapshot {
 struct ClientFeatures {
     has_code_actions: bool,
     has_hierarchical_symbols: bool,
+    has_markdown: bool,
     has_preferred_actions: bool,
     has_related_information: bool,
     has_snippets: bool,
@@ -73,6 +75,7 @@ enum Query {
         position: Position,
         new_name: String,
     },
+    Hover(Position),
 }
 
 enum Job {
@@ -181,6 +184,11 @@ fn client_features(params: &InitializeParams) -> ClientFeatures {
             .is_some_and(|capabilities| {
                 capabilities.hierarchical_document_symbol_support == Some(true)
             }),
+        has_markdown: text_document
+            .as_ref()
+            .and_then(|capabilities| capabilities.hover.as_ref())
+            .and_then(|capabilities| capabilities.content_format.as_ref())
+            .is_some_and(|formats| formats.contains(&MarkupKind::Markdown)),
         has_preferred_actions: code_action
             .is_some_and(|capabilities| capabilities.is_preferred_support == Some(true)),
         has_related_information: text_document
@@ -226,6 +234,7 @@ fn capabilities(encoding: Encoding, features: ClientFeatures) -> ServerCapabilit
         definition_provider: Some(OneOf::Left(true)),
         document_formatting_provider: Some(OneOf::Left(true)),
         document_symbol_provider: Some(OneOf::Left(true)),
+        hover_provider: Some(HoverProviderCapability::Simple(true)),
         references_provider: Some(OneOf::Left(true)),
         rename_provider: Some(OneOf::Right(RenameOptions {
             prepare_provider: Some(true),
@@ -521,6 +530,25 @@ fn handle_request(
                 sender,
             )?;
         }
+        lsp_types::request::HoverRequest::METHOD => {
+            let params: HoverParams = match serde_json::from_value(request.params) {
+                Ok(params) => params,
+                Err(error) => {
+                    invalid_params(sender, request.id, error)?;
+                    return Ok(());
+                }
+            };
+            let at = params.text_document_position_params;
+            let query = Query::Hover(at.position);
+            queue_query(
+                request.id,
+                at.text_document.uri,
+                query,
+                documents,
+                jobs,
+                sender,
+            )?;
+        }
         lsp_types::request::CodeActionRequest::METHOD => {
             let params: CodeActionParams = match serde_json::from_value(request.params) {
                 Ok(params) => params,
@@ -740,6 +768,9 @@ fn answer(
         }
         Query::Rename { position, new_name } => {
             serde_json::to_value(rename(analysis, uri, position, encoding, &new_name)?)
+        }
+        Query::Hover(position) => {
+            serde_json::to_value(hover(analysis, position, encoding, features.has_markdown))
         }
     };
     Ok(value.expect("a response serializes"))
@@ -1288,6 +1319,92 @@ fn rename(
         changes: Some(HashMap::from([(uri, edits)])),
         ..WorkspaceEdit::default()
     }))
+}
+
+/// `fn name(x: int) -> int`, or `fn name` for a declaration without a signature.
+fn signature_line(analysis: &Analysis, id: FunctionId) -> String {
+    let name = analysis
+        .function(id)
+        .name()
+        .map_or("_", |name| analysis.text(name));
+    let Some(Signature { params, result }) = analysis.function(id).signature() else {
+        return format!("fn {name}");
+    };
+    let params: Vec<_> = analysis
+        .params(id)
+        .zip(params)
+        .map(|(binding, ty)| {
+            let binding = binding.expect("a signature's parameters are named");
+            format!("{}: {ty}", analysis.text(binding.name()))
+        })
+        .collect();
+    format!("fn {name}({}) -> {result}", params.join(", "))
+}
+
+/// A function in a valid file also shows what its live call sites pass and what it returns;
+/// a rejected file's holes distort those, as they do the reachability warnings.
+fn hover(
+    analysis: &Analysis,
+    position: Position,
+    encoding: Encoding,
+    has_markdown: bool,
+) -> Option<Hover> {
+    let occurrence = symbol_at(analysis, position, encoding)?;
+    let mut proved = Vec::new();
+    let declaration = match occurrence.symbol {
+        Symbol::Local(id) => {
+            let binding = analysis.binding(id);
+            let name = analysis.text(binding.name());
+            let ty = analysis
+                .ty(binding.declaration())
+                .map(|ty| format!(": {ty}"))
+                .unwrap_or_default();
+            match binding.kind() {
+                BindingKind::Param => format!("{name}{ty}"),
+                BindingKind::Let { is_mutable: false } => format!("let {name}{ty}"),
+                BindingKind::Let { is_mutable: true } => format!("let mut {name}{ty}"),
+                BindingKind::LoopIndex => format!("for {name}{ty}"),
+            }
+        }
+        Symbol::Function(id) => {
+            if let Some(program) = analysis.program() {
+                let signature = program.signature(id);
+                let ranges = program.ranges(id);
+                let params = analysis
+                    .params(id)
+                    .zip(&*signature.params)
+                    .zip(&*ranges.params);
+                for ((binding, ty), may) in params {
+                    let binding = binding.expect("a signature's parameters are named");
+                    if may.is_live() {
+                        let name = analysis.text(binding.name());
+                        proved.push(format!("{name} ∈ {}", may.shown(*ty)));
+                    }
+                }
+                if ranges.result.is_live() {
+                    proved.push(format!(
+                        "result ∈ {}",
+                        ranges.result.shown(signature.result)
+                    ));
+                }
+            }
+            signature_line(analysis, id)
+        }
+    };
+    let (kind, value) = if has_markdown {
+        let mut value = format!("```sumi\n{declaration}\n```");
+        if !proved.is_empty() {
+            value.push_str(&format!("\n\n```\n{}\n```", proved.join("\n")));
+        }
+        (MarkupKind::Markdown, value)
+    } else {
+        let lines: Vec<_> = std::iter::once(declaration).chain(proved).collect();
+        (MarkupKind::PlainText, lines.join("\n"))
+    };
+    Some(Hover {
+        contents: HoverContents::Markup(MarkupContent { kind, value }),
+        range: Some(positions(analysis, encoding).range(occurrence.range)),
+    })
 }
 
 fn handle_outcome(
@@ -2144,6 +2261,97 @@ fn main() -> int = f()",
     }
 
     #[test]
+    fn protocol_hovers_in_markdown() {
+        let (client, server_thread) = start(json!({
+            "textDocument": { "hover": { "contentFormat": ["markdown", "plaintext"] } }
+        }));
+        let uri = "file:///hover.su";
+        open(
+            &client,
+            uri,
+            "fn double(x: int) -> int = x + x\nfn main() -> int = double(2)\n",
+        );
+        let at = |line, character| json!({ "textDocument": { "uri": uri }, "position": { "line": line, "character": character } });
+        let hover = request(&client, 1, "textDocument/hover", at(1, 22)).unwrap();
+        assert_eq!(hover["contents"]["kind"], "markdown");
+        assert_eq!(
+            hover["contents"]["value"],
+            "```sumi\nfn double(x: int) -> int\n```\n\n```\nx ∈ [2, 2]\nresult ∈ [4, 4]\n```"
+        );
+        assert_eq!(
+            request(&client, 2, "textDocument/hover", at(1, 0)).unwrap(),
+            Value::Null
+        );
+        let error = request(&client, 3, "textDocument/hover", json!({})).unwrap_err();
+        assert_eq!(error.code, ErrorCode::InvalidParams as i32);
+        stop(client, server_thread);
+    }
+
+    #[test]
+    fn hover_shows_the_declaration_and_what_the_analysis_proved() {
+        let text = "fn double(x: int) -> int = x + x
+fn main() -> int {
+    let mut total = double(2)
+    for i in 0..3 {
+        total = total + i
+    }
+    total
+}
+";
+        let at = |line, character| Position::new(line, character);
+        let analysis = analyzed(text);
+        let hover =
+            |position, has_markdown| hover(&analysis, position, Encoding::Utf16, has_markdown);
+        let value = |hover: Hover| match hover.contents {
+            HoverContents::Markup(MarkupContent { value, .. }) => value,
+            _ => unreachable!(),
+        };
+        let double = hover(at(2, 22), true).unwrap();
+        assert_eq!(double.range, Some(Range::new(at(2, 20), at(2, 26))));
+        assert_eq!(
+            value(double),
+            "```sumi\nfn double(x: int) -> int\n```\n\n```\nx ∈ [2, 2]\nresult ∈ [4, 4]\n```"
+        );
+        assert_eq!(value(hover(at(0, 10), false).unwrap()), "x: int");
+        assert_eq!(
+            value(hover(at(2, 12), false).unwrap()),
+            "let mut total: int"
+        );
+        assert_eq!(value(hover(at(4, 24), false).unwrap()), "for i: int");
+        assert_eq!(hover(at(1, 0), false), None);
+        assert_eq!(
+            value(hover(at(1, 3), false).unwrap()),
+            "fn main() -> int\nresult ∈ [4, +∞)"
+        );
+        let broken = "fn f(a: int, : int) = 1\nfn g() = f(1, 2)";
+        assert_eq!(
+            value(
+                super::hover(
+                    &analyzed(broken),
+                    Position::new(1, 9),
+                    Encoding::Utf16,
+                    false
+                )
+                .unwrap()
+            ),
+            "fn f"
+        );
+        let rejected = "fn double(x: int) -> int = x + x\nfn main() -> int = double(2) + missing";
+        assert_eq!(
+            value(
+                super::hover(
+                    &analyzed(rejected),
+                    Position::new(1, 20),
+                    Encoding::Utf16,
+                    false
+                )
+                .unwrap()
+            ),
+            "fn double(x: int) -> int"
+        );
+    }
+
+    #[test]
     fn completion_survives_recovery() {
         let keywords = ["_", "false", "for", "if", "let", "return", "true"];
         let values = |locals: &[&str], has_else: bool| -> Vec<String> {
@@ -2333,6 +2541,7 @@ fn main() -> int = f()",
             ClientFeatures {
                 has_code_actions: false,
                 has_hierarchical_symbols: false,
+                has_markdown: false,
                 has_preferred_actions: false,
                 has_related_information: false,
                 has_snippets: false,
