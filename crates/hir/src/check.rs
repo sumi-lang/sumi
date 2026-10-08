@@ -78,6 +78,8 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         settled: typing.settle(),
         functions,
         bindings: lowered.bindings,
+        references: lowered.references,
+        unresolved: lowered.unresolved,
         diagnostics,
         dead,
     };

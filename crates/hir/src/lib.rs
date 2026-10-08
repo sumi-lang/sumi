@@ -29,6 +29,8 @@ pub struct Analysis {
     settled: typing::Settled,
     functions: Vec<Function>,
     bindings: Vec<Binding>,
+    references: Vec<Occurrence>,
+    unresolved: Vec<TextRange>,
     diagnostics: Vec<Diagnostic>,
     dead: Vec<Dead>,
 }
@@ -40,6 +42,8 @@ impl fmt::Debug for Analysis {
             .field("graph", &self.graph)
             .field("functions", &self.functions)
             .field("bindings", &self.bindings)
+            .field("references", &self.references)
+            .field("unresolved", &self.unresolved)
             .field("diagnostics", &self.diagnostics)
             .field("dead", &self.dead)
             .finish_non_exhaustive()
@@ -86,6 +90,63 @@ impl Analysis {
     /// Every local a body declares, in declaration order; a failed body keeps those it reached.
     pub fn bindings(&self) -> &[Binding] {
         &self.bindings
+    }
+    pub fn binding(&self, id: BindingId) -> &Binding {
+        &self.bindings[id.index()]
+    }
+    /// Every name that resolved to a local or a function, in source order; a declaration is not
+    /// among them.
+    pub fn references(&self) -> &[Occurrence] {
+        &self.references
+    }
+    /// Names where the parser recovered that denote nothing known: a declaration under the same
+    /// recovery may bind them, so a reference to a symbol of that name may be missing. In source
+    /// order.
+    pub fn unresolved(&self) -> &[TextRange] {
+        &self.unresolved
+    }
+    /// A symbol's declared name; none for a function whose declaration lost its name.
+    pub fn declaration(&self, symbol: Symbol) -> Option<TextRange> {
+        match symbol {
+            Symbol::Local(id) => Some(self.binding(id).name),
+            Symbol::Function(id) => self.function(id).name,
+        }
+    }
+    /// The declaration or reference at `offset`, which may sit at either end of the name.
+    pub fn symbol_at(&self, offset: TextSize) -> Option<Occurrence> {
+        let covers = |range: TextRange| range.start() <= offset && offset <= range.end();
+        let declarations = self
+            .bindings
+            .iter()
+            .enumerate()
+            .map(|(index, binding)| Occurrence {
+                range: binding.name,
+                symbol: Symbol::Local(BindingId::new(index)),
+            })
+            .chain(
+                self.functions
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(index, function)| {
+                        Some(Occurrence {
+                            range: function.name?,
+                            symbol: Symbol::Function(FunctionId::new(index)),
+                        })
+                    }),
+            );
+        let reference = self
+            .references
+            .partition_point(|occurrence| occurrence.range.end() < offset);
+        declarations
+            .chain(self.references.get(reference).copied())
+            .find(|occurrence| covers(occurrence.range))
+    }
+    /// Every reference to `symbol`, in source order.
+    pub fn references_of(&self, symbol: Symbol) -> impl Iterator<Item = TextRange> + '_ {
+        self.references
+            .iter()
+            .filter(move |occurrence| occurrence.symbol == symbol)
+            .map(|occurrence| occurrence.range)
     }
     /// The locals a name at `offset` can read, in declaration order, without those a later
     /// binding of the same name shadows there.
@@ -301,6 +362,33 @@ impl Function {
     pub fn depth_bound(&self) -> Option<u64> {
         self.depth
     }
+}
+
+/// A binding's index in `Analysis::bindings`; an ID from one analysis names nothing in another.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BindingId(u32);
+
+impl BindingId {
+    pub fn new(index: usize) -> Self {
+        Self(u32::try_from(index).expect("binding count fits u32"))
+    }
+    pub fn index(self) -> usize {
+        self.0 as usize
+    }
+}
+
+/// What a name in a body denotes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Symbol {
+    Local(BindingId),
+    Function(FunctionId),
+}
+
+/// A name in the source and the symbol it denotes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Occurrence {
+    pub range: TextRange,
+    pub symbol: Symbol,
 }
 
 /// A local a body declares: a parameter, a `let`, or a `for` index.
