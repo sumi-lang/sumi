@@ -12,4 +12,6 @@ serde_json = "1.0.145"
 sumi-format = { path = "../format" }
 sumi-frontend = { path = "../frontend" }
 sumi-hir = { path = "../hir" }
+sumi-lexer = { path = "../lexer" }
+sumi-syntax = { path = "../syntax" }
 sumi-text = { path = "../text" }

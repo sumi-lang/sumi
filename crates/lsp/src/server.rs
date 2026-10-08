@@ -7,18 +7,23 @@ use lsp_types::notification::Notification as _;
 use lsp_types::request::Request as _;
 use lsp_types::{
     CodeAction, CodeActionKind, CodeActionOptions, CodeActionOrCommand, CodeActionParams,
-    CodeActionProviderCapability, DiagnosticRelatedInformation, DiagnosticSeverity, DiagnosticTag,
-    DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
-    DocumentFormattingParams, DocumentSymbol, DocumentSymbolParams, DocumentSymbolResponse,
-    InitializeParams, InitializeResult, Location, OneOf, OptionalVersionedTextDocumentIdentifier,
-    PositionEncodingKind, PublishDiagnosticsParams, Range, ServerCapabilities, ServerInfo,
-    SymbolInformation, SymbolKind, TextDocumentEdit, TextDocumentSyncCapability,
-    TextDocumentSyncKind, TextDocumentSyncOptions, TextEdit, Uri, WorkspaceEdit,
+    CodeActionProviderCapability, CompletionItem, CompletionItemKind, CompletionList,
+    CompletionOptions, CompletionParams, DiagnosticRelatedInformation, DiagnosticSeverity,
+    DiagnosticTag, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
+    DidOpenTextDocumentParams, DocumentFormattingParams, DocumentSymbol, DocumentSymbolParams,
+    DocumentSymbolResponse, InitializeParams, InitializeResult, InsertTextFormat, Location, OneOf,
+    OptionalVersionedTextDocumentIdentifier, Position, PositionEncodingKind,
+    PublishDiagnosticsParams, Range, ServerCapabilities, ServerInfo, SymbolInformation, SymbolKind,
+    TextDocumentEdit, TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions,
+    TextEdit, Uri, WorkspaceEdit,
 };
 use serde_json::Value;
 use sumi_frontend::{Diagnostic, Fix, Severity, parse_source};
-use sumi_hir::{Dead, DeadCause, analyze};
-use sumi_text::Encoding;
+use sumi_hir::{Analysis, BindingKind, Dead, DeadCause, Signature, Ty, analyze};
+use sumi_lexer::{Fixed, LexedFile, RawIdx, SyntaxKind};
+use sumi_syntax::ast::{self, AstNode, View};
+use sumi_syntax::{NodeKind, SyntaxTree, starts_statement};
+use sumi_text::{Encoding, TextSize};
 
 use crate::position::Positions;
 
@@ -41,6 +46,7 @@ struct ClientFeatures {
     has_hierarchical_symbols: bool,
     has_preferred_actions: bool,
     has_related_information: bool,
+    has_snippets: bool,
     has_unnecessary_tags: bool,
 }
 
@@ -70,6 +76,14 @@ enum Job {
         generation: u64,
         version: i32,
         text: String,
+    },
+    Complete {
+        id: RequestId,
+        uri: Uri,
+        generation: u64,
+        version: i32,
+        text: String,
+        position: Position,
     },
 }
 
@@ -157,6 +171,11 @@ fn client_features(params: &InitializeParams) -> ClientFeatures {
             .as_ref()
             .and_then(|capabilities| capabilities.publish_diagnostics.as_ref())
             .is_some_and(|capabilities| capabilities.related_information == Some(true)),
+        has_snippets: text_document
+            .as_ref()
+            .and_then(|capabilities| capabilities.completion.as_ref())
+            .and_then(|capabilities| capabilities.completion_item.as_ref())
+            .is_some_and(|capabilities| capabilities.snippet_support == Some(true)),
         has_unnecessary_tags: text_document
             .as_ref()
             .and_then(|capabilities| capabilities.publish_diagnostics.as_ref())
@@ -183,6 +202,10 @@ fn capabilities(encoding: Encoding, features: ClientFeatures) -> ServerCapabilit
                 code_action_kinds: Some(vec![CodeActionKind::QUICKFIX]),
                 ..CodeActionOptions::default()
             })
+        }),
+        completion_provider: Some(CompletionOptions {
+            resolve_provider: Some(false),
+            ..CompletionOptions::default()
         }),
         document_formatting_provider: Some(OneOf::Left(true)),
         document_symbol_provider: Some(OneOf::Left(true)),
@@ -387,6 +410,28 @@ fn handle_request(
                 sender,
             )?;
         }
+        lsp_types::request::Completion::METHOD => {
+            let params: CompletionParams = match serde_json::from_value(request.params) {
+                Ok(params) => params,
+                Err(error) => {
+                    invalid_params(sender, request.id, error)?;
+                    return Ok(());
+                }
+            };
+            let uri = params.text_document_position.text_document.uri;
+            let Some(document) = documents.get(uri.as_str()) else {
+                sender.send(Response::new_ok(request.id, Value::Null).into())?;
+                return Ok(());
+            };
+            jobs.send(Job::Complete {
+                id: request.id,
+                uri,
+                generation: document.generation,
+                version: document.version,
+                text: document.text.clone(),
+                position: params.text_document_position.position,
+            })?;
+        }
         lsp_types::request::CodeActionRequest::METHOD => {
             let params: CodeActionParams = match serde_json::from_value(request.params) {
                 Ok(params) => params,
@@ -544,6 +589,26 @@ fn worker(
                         uri,
                         encoding,
                         features.has_hierarchical_symbols,
+                    ))
+                    .unwrap(),
+                },
+                Job::Complete {
+                    id,
+                    uri,
+                    generation,
+                    version,
+                    text,
+                    position,
+                } => Outcome::Response {
+                    id,
+                    uri,
+                    generation,
+                    version,
+                    result: serde_json::to_value(complete(
+                        &text,
+                        position,
+                        encoding,
+                        features.has_snippets,
                     ))
                     .unwrap(),
                 },
@@ -768,6 +833,215 @@ fn symbols(
             .collect();
         Some(DocumentSymbolResponse::Flat(symbols))
     }
+}
+
+/// What a name typed at a position can be.
+enum Context {
+    /// A comment, a literal, or a declaration taking a new name.
+    Nothing,
+    /// Between items.
+    Items,
+    /// After `:` or `->`.
+    Types,
+    /// A single keyword the grammar admits next.
+    Keyword(Fixed),
+    /// An expression or a statement, with `else` when an `if`'s block just closed.
+    Values { has_else: bool },
+}
+
+fn context(lexed: &LexedFile, tree: &SyntaxTree, offset: TextSize) -> Context {
+    let significant = |until: RawIdx| {
+        RawIdx::new(0)
+            .until(until)
+            .rev()
+            .find(|&index| !lexed.kind(index).is_trivia())
+    };
+    let adjacent =
+        |left: RawIdx, right: RawIdx| lexed.range(left).end() == lexed.range(right).start();
+    let is_word = |kind: SyntaxKind| kind == SyntaxKind::Ident || is_keyword(kind);
+    let Some(before) = offset
+        .to_u32()
+        .checked_sub(1)
+        .and_then(|offset| lexed.token_at(TextSize::new(offset)))
+    else {
+        return Context::Items;
+    };
+    let kind = lexed.kind(before);
+    let (gap_end, previous) = if is_word(kind) {
+        (before, significant(before))
+    } else if kind.is_trivia() {
+        if kind == SyntaxKind::LineComment {
+            return Context::Nothing;
+        }
+        (before + 1, significant(before))
+    } else if kind == SyntaxKind::IntLiteral || kind == SyntaxKind::Error {
+        return Context::Nothing;
+    } else {
+        (before, Some(before))
+    };
+    let Some(previous) = previous else {
+        return Context::Items;
+    };
+    // A whole item ends at its closing brace or at the line break after its last token; one the
+    // parser recovered in is still being typed, whatever its last token.
+    let has_line_break = (previous + 1)
+        .until(gap_end)
+        .any(|index| lexed.kind(index) == SyntaxKind::Newline);
+    let at_item_level = ast::SourceFile::cast(tree, tree.root())
+        .expect("the root is a file")
+        .items(tree)
+        .any(|item| {
+            let node = item.node();
+            previous + 1 == tree.end_token(node)
+                && !tree.has_error(node)
+                && (lexed.kind(previous) == SyntaxKind::RBrace || has_line_break)
+        });
+    let is_inside = |kinds: &[NodeKind]| {
+        tree.nodes().any(|node| {
+            kinds.contains(&tree.kind(node))
+                && tree.first_token(node) <= previous
+                && previous < tree.end_token(node)
+        })
+    };
+    let earlier = significant(previous);
+    match lexed.kind(previous) {
+        SyntaxKind::FnKw | SyntaxKind::ForKw | SyntaxKind::MutKw => Context::Nothing,
+        SyntaxKind::LetKw => Context::Keyword(Fixed::MutKw),
+        SyntaxKind::Colon => Context::Types,
+        SyntaxKind::Gt
+            if earlier.is_some_and(|earlier| {
+                lexed.kind(earlier) == SyntaxKind::Minus && adjacent(earlier, previous)
+            }) =>
+        {
+            Context::Types
+        }
+        SyntaxKind::Ident
+            if earlier.is_some_and(|earlier| lexed.kind(earlier) == SyntaxKind::ForKw) =>
+        {
+            Context::Keyword(Fixed::InKw)
+        }
+        _ if is_inside(&[NodeKind::ParamList, NodeKind::TypeRef]) => Context::Nothing,
+        _ if at_item_level => Context::Items,
+        _ => Context::Values {
+            has_else: lexed.kind(previous) == SyntaxKind::RBrace
+                && tree.nodes().any(|node| {
+                    ast::IfExpr::cast(tree, node).is_some_and(|branch| {
+                        branch.else_branch(tree).is_none()
+                            && branch
+                                .then_branch(tree)
+                                .is_some_and(|then| tree.end_token(then.node()) == previous + 1)
+                    })
+                }),
+        },
+    }
+}
+
+fn is_keyword(kind: SyntaxKind) -> bool {
+    kind.text()
+        .is_some_and(|text| SyntaxKind::from_keyword(text) == Some(kind))
+}
+
+fn complete(
+    text: &str,
+    position: Position,
+    encoding: Encoding,
+    has_snippets: bool,
+) -> Option<CompletionList> {
+    let positions = Positions::new(text, encoding);
+    let offset = TextSize::new(u32::try_from(positions.offset(position)?).ok()?);
+    let parsed = parse_source(text.to_owned().into_boxed_str()).ok()?;
+    let analysis = analyze(parsed);
+    let lexed = analysis.parsed().lexed();
+    let tree = analysis.parsed().parse().tree();
+    let keyword = |fixed: Fixed| CompletionItem {
+        label: fixed.text().into(),
+        kind: Some(CompletionItemKind::KEYWORD),
+        sort_text: Some(format!("2{}", fixed.text())),
+        ..CompletionItem::default()
+    };
+    let items = match context(lexed, tree, offset) {
+        Context::Nothing => Vec::new(),
+        Context::Items => vec![keyword(Fixed::FnKw)],
+        Context::Types => Ty::ALL
+            .iter()
+            .map(|ty| CompletionItem {
+                label: ty.as_str().into(),
+                kind: Some(CompletionItemKind::STRUCT),
+                ..CompletionItem::default()
+            })
+            .collect(),
+        Context::Keyword(fixed) => vec![keyword(fixed)],
+        Context::Values { has_else } => {
+            let mut items = values(&analysis, offset, has_snippets);
+            items.extend(
+                SyntaxKind::ALL
+                    .iter()
+                    .filter_map(|kind| kind.fixed())
+                    .filter(|fixed| {
+                        is_keyword(fixed.kind())
+                            && (starts_statement(fixed.kind())
+                                || (has_else && *fixed == Fixed::ElseKw))
+                    })
+                    .map(keyword),
+            );
+            items
+        }
+    };
+    Some(CompletionList {
+        is_incomplete: false,
+        items,
+    })
+}
+
+/// The locals visible at `offset`, then every function, each with its type.
+fn values(analysis: &Analysis, offset: TextSize, has_snippets: bool) -> Vec<CompletionItem> {
+    let text = analysis.parsed().source();
+    let mut items: Vec<_> = analysis
+        .visible_at(offset)
+        .into_iter()
+        .map(|binding| {
+            let name = binding.name().text(text);
+            let ty = analysis.ty(binding.declaration()).map(|ty| ty.as_str());
+            let detail = match (binding.kind(), ty) {
+                (BindingKind::Let { is_mutable: true }, Some(ty)) => Some(format!("mut {ty}")),
+                (BindingKind::Let { is_mutable: true }, None) => Some("mut".into()),
+                (_, ty) => ty.map(String::from),
+            };
+            CompletionItem {
+                label: name.into(),
+                kind: Some(CompletionItemKind::VARIABLE),
+                detail,
+                sort_text: Some(format!("0{name}")),
+                ..CompletionItem::default()
+            }
+        })
+        .collect();
+    items.extend(analysis.functions().iter().filter_map(|function| {
+        let name = function.name()?.text(text);
+        let signature = function.signature();
+        let (insert_text, insert_text_format) = match signature {
+            Some(Signature { params, .. }) if params.is_empty() => {
+                (Some(format!("{name}()")), None)
+            }
+            Some(_) if has_snippets => {
+                (Some(format!("{name}($0)")), Some(InsertTextFormat::SNIPPET))
+            }
+            _ => (None, None),
+        };
+        Some(CompletionItem {
+            label: name.into(),
+            kind: Some(CompletionItemKind::FUNCTION),
+            detail: signature.map(|Signature { params, result }| {
+                let params: Vec<_> = params.iter().map(|ty| ty.as_str()).collect();
+                format!("fn({}) -> {result}", params.join(", "))
+            }),
+            insert_text,
+            insert_text_format,
+            sort_text: Some(format!("1{name}")),
+            ..CompletionItem::default()
+        })
+    }));
+    items
 }
 
 fn handle_outcome(
@@ -1286,6 +1560,186 @@ fn main() -> bool = right(true)";
         server_thread.join().unwrap();
     }
 
+    fn labels(text: &str, line: u32, character: u32, has_snippets: bool) -> Vec<String> {
+        let list = complete(
+            text,
+            Position::new(line, character),
+            Encoding::Utf16,
+            has_snippets,
+        )
+        .unwrap();
+        let mut items = list.items;
+        items.sort_by(|a, b| a.sort_text.cmp(&b.sort_text));
+        items.into_iter().map(|item| item.label).collect()
+    }
+
+    #[test]
+    fn completion_offers_what_the_position_admits() {
+        let text = "fn add(a: int, b: int) -> int = a + b
+fn body(c: bool) -> int {
+    let c = if c { 1 } else { 0 }
+    let mut total = 0
+    for i in 0..c {
+        if i > 1 { total = 1 }
+        total = total + i
+    }
+    // total
+    tot
+}
+";
+        let statement_keywords = ["_", "false", "for", "if", "let", "return", "true"];
+        let values = |locals: &[&str], has_else: bool| -> Vec<String> {
+            let mut locals = locals.to_vec();
+            locals.sort_unstable();
+            let mut keywords = statement_keywords.to_vec();
+            if has_else {
+                keywords.push("else");
+            }
+            keywords.sort_unstable();
+            locals
+                .into_iter()
+                .chain(["add", "body"])
+                .chain(keywords)
+                .map(String::from)
+                .collect()
+        };
+        assert_eq!(labels(text, 0, 0, false), ["fn"]);
+        assert_eq!(labels(text, 11, 0, false), ["fn"]);
+        assert_eq!(labels(text, 1, 3, false), Vec::<String>::new());
+        assert_eq!(labels(text, 1, 8, false), Vec::<String>::new());
+        assert_eq!(labels(text, 1, 16, false), Vec::<String>::new());
+        assert_eq!(labels(text, 1, 24, false), Vec::<String>::new());
+        assert_eq!(labels(text, 2, 8, false), ["mut"]);
+        assert_eq!(labels(text, 4, 8, false), Vec::<String>::new());
+        assert_eq!(labels(text, 4, 10, false), ["in"]);
+        assert_eq!(labels(text, 1, 11, false), ["int", "bool", "unit"]);
+        assert_eq!(labels(text, 1, 23, false), ["int", "bool", "unit"]);
+        assert_eq!(labels(text, 8, 9, false), Vec::<String>::new());
+        assert_eq!(labels(text, 3, 21, false), Vec::<String>::new());
+        assert_eq!(labels(text, 2, 15, false), values(&["c"], false));
+        assert_eq!(labels(text, 2, 22, false), values(&["c"], false));
+        assert_eq!(
+            labels(text, 5, 30, false),
+            values(&["c", "total", "i"], true)
+        );
+        assert_eq!(
+            labels(text, 6, 24, false),
+            values(&["c", "total", "i"], false)
+        );
+        assert_eq!(labels(text, 8, 0, false), values(&["c", "total"], false));
+        assert_eq!(labels(text, 9, 7, false), values(&["c", "total"], false));
+
+        let list = complete(text, Position::new(9, 7), Encoding::Utf16, true).unwrap();
+        let item = |label: &str| list.items.iter().find(|item| item.label == label).unwrap();
+        assert_eq!(item("total").detail.as_deref(), Some("mut int"));
+        assert_eq!(item("c").detail.as_deref(), Some("int"));
+        assert_eq!(item("c").kind, Some(CompletionItemKind::VARIABLE));
+        assert_eq!(item("add").detail.as_deref(), Some("fn(int, int) -> int"));
+        assert_eq!(item("add").insert_text.as_deref(), Some("add($0)"));
+        assert_eq!(
+            item("add").insert_text_format,
+            Some(InsertTextFormat::SNIPPET)
+        );
+        assert_eq!(item("body").insert_text.as_deref(), Some("body($0)"));
+        let list = complete(text, Position::new(9, 7), Encoding::Utf16, false).unwrap();
+        let add = list.items.iter().find(|item| item.label == "add").unwrap();
+        assert_eq!(add.insert_text, None);
+        let list = complete(
+            "fn zero() = 0\nfn f() = ze",
+            Position::new(1, 10),
+            Encoding::Utf16,
+            false,
+        )
+        .unwrap();
+        let zero = list.items.iter().find(|item| item.label == "zero").unwrap();
+        assert_eq!(zero.insert_text.as_deref(), Some("zero()"));
+        assert_eq!(zero.insert_text_format, None);
+    }
+
+    #[test]
+    fn completion_survives_recovery() {
+        let keywords = ["_", "false", "for", "if", "let", "return", "true"];
+        let values = |locals: &[&str], has_else: bool| -> Vec<String> {
+            let mut keywords = keywords.to_vec();
+            if has_else {
+                keywords.push("else");
+            }
+            keywords.sort_unstable();
+            locals
+                .iter()
+                .copied()
+                .chain(["f"])
+                .chain(keywords)
+                .map(String::from)
+                .collect()
+        };
+        let text = "fn f(x: int) -> int {\n    let y = \n    let z = x +\n    ";
+        assert_eq!(labels(text, 3, 4, false), values(&["x", "y", "z"], false));
+        let text = "fn f(x: int) -> int {\n    if x > 0 { x }\n    ";
+        assert_eq!(labels(text, 2, 4, false), values(&["x"], true));
+        assert_eq!(
+            labels("fn f(x: int) -> int = ", 0, 22, false),
+            values(&["x"], false)
+        );
+        assert_eq!(labels("fn f(", 0, 5, false), Vec::<String>::new());
+        assert_eq!(labels("fn f(a: int, ", 0, 13, false), Vec::<String>::new());
+        assert_eq!(labels("fn f(a: int) ", 0, 13, false), Vec::<String>::new());
+        assert_eq!(
+            labels("fn f(a: int) -> int ", 0, 20, false),
+            Vec::<String>::new()
+        );
+        let text = "fn f() = {\n    if true { let q = 1 } \n}";
+        assert_eq!(labels(text, 1, 26, false), values(&[], true));
+        assert_eq!(labels(text, 1, 24, false), values(&["q"], false));
+        assert_eq!(labels("", 0, 0, false), ["fn"]);
+        assert_eq!(
+            complete("", Position::new(3, 0), Encoding::Utf16, false),
+            None
+        );
+    }
+
+    #[test]
+    fn protocol_completes_with_the_client_snippet_support() {
+        let (client, server_thread) = start(json!({
+            "textDocument": { "completion": { "completionItem": { "snippetSupport": true } } }
+        }));
+        let uri = "file:///complete.su";
+        open(
+            &client,
+            uri,
+            "fn double(x: int) -> int = x + x\nfn main() -> int {\n    let total = 1\n    tot\n}\n",
+        );
+        let at =
+            json!({ "textDocument": { "uri": uri }, "position": { "line": 3, "character": 7 } });
+        let list = request(&client, 1, "textDocument/completion", at).unwrap();
+        let labels: Vec<_> = list["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item["label"].as_str().unwrap().to_owned())
+            .collect();
+        assert!(labels.contains(&"total".to_owned()));
+        let double = list["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["label"] == "double")
+            .unwrap();
+        assert_eq!(double["insertText"], "double($0)");
+        assert_eq!(double["insertTextFormat"], 2);
+        let unopened = json!({
+            "textDocument": { "uri": "file:///other.su" },
+            "position": { "line": 0, "character": 0 }
+        });
+        assert_eq!(
+            request(&client, 2, "textDocument/completion", unopened).unwrap(),
+            Value::Null
+        );
+        let error = request(&client, 3, "textDocument/completion", json!({})).unwrap_err();
+        assert_eq!(error.code, ErrorCode::InvalidParams as i32);
+        stop(client, server_thread);
+    }
+
     #[test]
     fn client_capabilities_control_response_shapes() {
         let absent: InitializeParams =
@@ -1294,12 +1748,11 @@ fn main() -> bool = right(true)";
         assert!(!absent.has_code_actions);
         assert!(!absent.has_hierarchical_symbols);
         assert!(!absent.has_related_information);
+        assert!(!absent.has_snippets);
         assert!(!absent.has_unnecessary_tags);
-        assert!(
-            capabilities(Encoding::Utf16, absent)
-                .code_action_provider
-                .is_none()
-        );
+        let offered = capabilities(Encoding::Utf16, absent);
+        assert!(offered.code_action_provider.is_none());
+        assert!(offered.completion_provider.is_some());
 
         let explicit_false: InitializeParams = serde_json::from_value(json!({
             "capabilities": {
@@ -1310,6 +1763,7 @@ fn main() -> bool = right(true)";
                             "codeActionKind": { "valueSet": ["quickfix"] }
                         }
                     },
+                    "completion": { "completionItem": { "snippetSupport": false } },
                     "documentSymbol": { "hierarchicalDocumentSymbolSupport": false },
                     "publishDiagnostics": { "relatedInformation": false }
                 }
@@ -1320,6 +1774,7 @@ fn main() -> bool = right(true)";
         assert!(!explicit_false.has_code_actions);
         assert!(!explicit_false.has_hierarchical_symbols);
         assert!(!explicit_false.has_related_information);
+        assert!(!explicit_false.has_snippets);
         assert!(!explicit_false.has_unnecessary_tags);
 
         let enabled: InitializeParams = serde_json::from_value(json!({
@@ -1332,6 +1787,7 @@ fn main() -> bool = right(true)";
                         },
                         "isPreferredSupport": true
                     },
+                    "completion": { "completionItem": { "snippetSupport": true } },
                     "documentSymbol": { "hierarchicalDocumentSymbolSupport": true },
                     "publishDiagnostics": {
                         "relatedInformation": true,
@@ -1346,6 +1802,7 @@ fn main() -> bool = right(true)";
         assert!(enabled.has_hierarchical_symbols);
         assert!(enabled.has_preferred_actions);
         assert!(enabled.has_related_information);
+        assert!(enabled.has_snippets);
         assert!(enabled.has_unnecessary_tags);
 
         let uri: Uri = "file:///stale.su".parse().unwrap();
@@ -1386,6 +1843,7 @@ fn main() -> bool = right(true)";
                 has_hierarchical_symbols: false,
                 has_preferred_actions: false,
                 has_related_information: false,
+                has_snippets: false,
                 has_unnecessary_tags: false,
             },
         )
@@ -1521,6 +1979,76 @@ fn main() -> bool = right(true)";
             .send(Notification::new("exit".into(), Value::Null).into())
             .unwrap();
         assert!(server_thread.join().unwrap().is_err());
+    }
+
+    /// A server over an in-memory connection, initialized with `capabilities`.
+    fn start(capabilities: Value) -> (Connection, thread::JoinHandle<()>) {
+        let (server, client) = Connection::memory();
+        let server_thread = thread::spawn(move || run(server).unwrap());
+        let params = json!({ "capabilities": capabilities });
+        client
+            .sender
+            .send(Request::new(0.into(), "initialize".into(), params).into())
+            .unwrap();
+        let Message::Response(_) = receive(&client) else {
+            panic!("initialize response")
+        };
+        client
+            .sender
+            .send(Notification::new("initialized".into(), json!({})).into())
+            .unwrap();
+        (client, server_thread)
+    }
+
+    fn stop(client: Connection, server_thread: thread::JoinHandle<()>) {
+        client
+            .sender
+            .send(Request::new(99.into(), "shutdown".into(), Value::Null).into())
+            .unwrap();
+        let Message::Response(_) = receive(&client) else {
+            panic!("shutdown response")
+        };
+        client
+            .sender
+            .send(Notification::new("exit".into(), Value::Null).into())
+            .unwrap();
+        drop(client);
+        server_thread.join().unwrap();
+    }
+
+    fn notify(client: &Connection, method: &str, params: Value) {
+        client
+            .sender
+            .send(Notification::new(method.into(), params).into())
+            .unwrap();
+    }
+
+    fn open(client: &Connection, uri: &str, text: &str) -> PublishDiagnosticsParams {
+        notify(
+            client,
+            "textDocument/didOpen",
+            json!({
+                "textDocument": { "uri": uri, "languageId": "sumi", "version": 1, "text": text }
+            }),
+        );
+        receive_diagnostics(client)
+    }
+
+    fn request(
+        client: &Connection,
+        id: i32,
+        method: &str,
+        params: Value,
+    ) -> Result<Value, lsp_server::ResponseError> {
+        client
+            .sender
+            .send(Request::new(id.into(), method.into(), params).into())
+            .unwrap();
+        let Message::Response(response) = receive(client) else {
+            panic!("response to {method}")
+        };
+        assert_eq!(response.id, RequestId::from(id));
+        response.response_result
     }
 
     fn receive(client: &Connection) -> Message {
