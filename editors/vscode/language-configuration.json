@@ -18,5 +18,11 @@
     "increaseIndentPattern": "^.*[({]\\s*(?://.*)?$",
     "decreaseIndentPattern": "^\\s*[)}]"
   },
-  "wordPattern": "[A-Za-z_][A-Za-z0-9_]*|[0-9]+"
+  "wordPattern": "[A-Za-z_][A-Za-z0-9_]*|[0-9]+",
+  "onEnterRules": [
+    {
+      "beforeText": "^\\s*//(?!/).*\\S.*$",
+      "action": { "indent": "none", "appendText": "// " }
+    }
+  ]
 }

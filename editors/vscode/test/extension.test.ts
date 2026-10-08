@@ -84,6 +84,18 @@ describe("extension contributions", () => {
       ["(", ")"],
     ]);
   });
+
+  test("continues a whole-line comment on Enter, not a trailing or an empty one", async () => {
+    const configuration = await Bun.file(path.join(root, "language-configuration.json")).json();
+    const [rule] = configuration.onEnterRules;
+    const before = new RegExp(rule.beforeText);
+    expect(before.test("    // a note")).toBeTrue();
+    expect(before.test("// a note")).toBeTrue();
+    expect(before.test("let x = 1 // c")).toBeFalse();
+    expect(before.test("    //")).toBeFalse();
+    expect(before.test("    // ")).toBeFalse();
+    expect(rule.action).toEqual({ indent: "none", appendText: "// " });
+  });
 });
 
 describe("TextMate grammar", () => {
