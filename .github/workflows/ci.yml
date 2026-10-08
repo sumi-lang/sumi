@@ -65,6 +65,9 @@ jobs:
   coverage:
     name: Coverage
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # Branch coverage is nightly-only in cargo-llvm-cov.
@@ -86,6 +89,7 @@ jobs:
       - uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           files: lcov.info
+          use_oidc: true
           override_branch: ${{ github.event_name == 'pull_request' && format('pr{0}:{1}', github.event.number, github.head_ref) || github.ref_name }}
           override_pr: ${{ github.event.number }}
           fail_ci_if_error: true
