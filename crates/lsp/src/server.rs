@@ -10,10 +10,11 @@ use lsp_types::{
     CodeActionProviderCapability, CompletionItem, CompletionItemKind, CompletionList,
     CompletionOptions, CompletionParams, DiagnosticRelatedInformation, DiagnosticSeverity,
     DiagnosticTag, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
-    DidOpenTextDocumentParams, DocumentFormattingParams, DocumentSymbol, DocumentSymbolParams,
-    DocumentSymbolResponse, GotoDefinitionParams, Hover, HoverContents, HoverParams,
-    HoverProviderCapability, InitializeParams, InitializeResult, InlayHint, InlayHintKind,
-    InlayHintLabel, InlayHintParams, InsertTextFormat, Location, MarkupContent, MarkupKind, OneOf,
+    DidOpenTextDocumentParams, DocumentFormattingParams, DocumentHighlight, DocumentHighlightKind,
+    DocumentHighlightParams, DocumentSymbol, DocumentSymbolParams, DocumentSymbolResponse,
+    GotoDefinitionParams, Hover, HoverContents, HoverParams, HoverProviderCapability,
+    InitializeParams, InitializeResult, InlayHint, InlayHintKind, InlayHintLabel, InlayHintParams,
+    InsertTextFormat, Location, MarkupContent, MarkupKind, OneOf,
     OptionalVersionedTextDocumentIdentifier, Position, PositionEncodingKind, PrepareRenameResponse,
     PublishDiagnosticsParams, Range, ReferenceParams, RenameOptions, RenameParams,
     ServerCapabilities, ServerInfo, SymbolInformation, SymbolKind, TextDocumentEdit,
@@ -79,6 +80,7 @@ enum Query {
     },
     Hover(Position),
     InlayHints(Range),
+    Highlight(Position),
 }
 
 enum Job {
@@ -235,6 +237,7 @@ fn capabilities(encoding: Encoding, features: ClientFeatures) -> ServerCapabilit
             ..CompletionOptions::default()
         }),
         definition_provider: Some(OneOf::Left(true)),
+        document_highlight_provider: Some(OneOf::Left(true)),
         document_formatting_provider: Some(OneOf::Left(true)),
         document_symbol_provider: Some(OneOf::Left(true)),
         hover_provider: Some(HoverProviderCapability::Simple(true)),
@@ -571,6 +574,25 @@ fn handle_request(
                 sender,
             )?;
         }
+        lsp_types::request::DocumentHighlightRequest::METHOD => {
+            let params: DocumentHighlightParams = match serde_json::from_value(request.params) {
+                Ok(params) => params,
+                Err(error) => {
+                    invalid_params(sender, request.id, error)?;
+                    return Ok(());
+                }
+            };
+            let at = params.text_document_position_params;
+            let query = Query::Highlight(at.position);
+            queue_query(
+                request.id,
+                at.text_document.uri,
+                query,
+                documents,
+                jobs,
+                sender,
+            )?;
+        }
         lsp_types::request::CodeActionRequest::METHOD => {
             let params: CodeActionParams = match serde_json::from_value(request.params) {
                 Ok(params) => params,
@@ -795,6 +817,7 @@ fn answer(
             serde_json::to_value(hover(analysis, position, encoding, features.has_markdown))
         }
         Query::InlayHints(range) => serde_json::to_value(inlay_hints(analysis, range, encoding)),
+        Query::Highlight(position) => serde_json::to_value(highlight(analysis, position, encoding)),
     };
     Ok(value.expect("a response serializes"))
 }
@@ -1253,6 +1276,39 @@ fn references(
             .into_iter()
             .chain(analysis.references_of(occurrence.symbol))
             .map(|range| Location::new(uri.clone(), positions.range(range)))
+            .collect(),
+    )
+}
+
+/// Every occurrence of the symbol under the cursor, its declaration and assignments as writes.
+fn highlight(
+    analysis: &Analysis,
+    position: Position,
+    encoding: Encoding,
+) -> Option<Vec<DocumentHighlight>> {
+    let occurrence = symbol_at(analysis, position, encoding)?;
+    let positions = positions(analysis, encoding);
+    let highlight = |range, is_write| DocumentHighlight {
+        range: positions.range(range),
+        kind: Some(if is_write {
+            DocumentHighlightKind::WRITE
+        } else {
+            DocumentHighlightKind::READ
+        }),
+    };
+    let declared = analysis
+        .declaration(occurrence.symbol)
+        .map(|range| highlight(range, true));
+    Some(
+        declared
+            .into_iter()
+            .chain(
+                analysis
+                    .references()
+                    .iter()
+                    .filter(|reference| reference.symbol == occurrence.symbol)
+                    .map(|reference| highlight(reference.range, reference.is_write)),
+            )
             .collect(),
     )
 }
@@ -2131,6 +2187,49 @@ fn body(c: bool) -> int {
         let zero = list.items.iter().find(|item| item.label == "zero").unwrap();
         assert_eq!(zero.insert_text.as_deref(), Some("zero()"));
         assert_eq!(zero.insert_text_format, None);
+    }
+
+    #[test]
+    fn highlights_every_occurrence_with_its_access() {
+        let text =
+            "fn main() -> int {\n    let mut total = 1\n    total = total + 1\n    total\n}\n";
+        let analysis = analyzed(text);
+        let at = |line, character| Position::new(line, character);
+        let range = |line, start, end| Range::new(at(line, start), at(line, end));
+        let shown: Vec<_> = highlight(&analysis, at(2, 12), Encoding::Utf16)
+            .unwrap()
+            .into_iter()
+            .map(|highlight| (highlight.range, highlight.kind.unwrap()))
+            .collect();
+        assert_eq!(
+            shown,
+            [
+                (range(1, 12, 17), DocumentHighlightKind::WRITE),
+                (range(2, 4, 9), DocumentHighlightKind::WRITE),
+                (range(2, 12, 17), DocumentHighlightKind::READ),
+                (range(3, 4, 9), DocumentHighlightKind::READ),
+            ]
+        );
+        assert_eq!(highlight(&analysis, at(0, 0), Encoding::Utf16), None);
+    }
+
+    #[test]
+    fn protocol_highlights_a_symbol() {
+        let (client, server_thread) = start(json!({}));
+        let uri = "file:///highlight.su";
+        open(&client, uri, "fn double(x: int) -> int = x + x\n");
+        let at = |line, character| json!({ "textDocument": { "uri": uri }, "position": { "line": line, "character": character } });
+        let highlights = request(&client, 1, "textDocument/documentHighlight", at(0, 27)).unwrap();
+        let kinds: Vec<_> = highlights
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|highlight| highlight["kind"].as_u64().unwrap())
+            .collect();
+        assert_eq!(kinds, [3, 2, 2]);
+        let error = request(&client, 2, "textDocument/documentHighlight", json!({})).unwrap_err();
+        assert_eq!(error.code, ErrorCode::InvalidParams as i32);
+        stop(client, server_thread);
     }
 
     #[test]
