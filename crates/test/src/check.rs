@@ -634,6 +634,37 @@ fn bindings(analysis: &Analysis) {
     }
 }
 
+/// Every reference reads the symbol's own name, a local one inside the binding's visible range,
+/// and is what `symbol_at` finds there; references come in source order without overlap.
+fn references(analysis: &Analysis) {
+    let references = analysis.references();
+    for pair in references.windows(2) {
+        assert!(pair[0].range.end() <= pair[1].range.start(), "{pair:?}");
+    }
+    for occurrence in references {
+        let declared = analysis
+            .declaration(occurrence.symbol)
+            .expect("a reference resolves only to a named declaration");
+        assert_eq!(
+            analysis.text(occurrence.range),
+            analysis.text(declared),
+            "{occurrence:?}"
+        );
+        if let sumi_hir::Symbol::Local(id) = occurrence.symbol {
+            let visible = analysis.binding(id).visible();
+            assert!(
+                visible.start() <= occurrence.range.start()
+                    && occurrence.range.end() <= visible.end(),
+                "{occurrence:?} outside {visible:?}"
+            );
+        }
+        assert_eq!(
+            analysis.symbol_at(occurrence.range.start()),
+            Some(*occurrence)
+        );
+    }
+}
+
 pub fn semantics(analysis: &Analysis) {
     use sumi_hir::FunctionId;
     let source = analysis.parsed().source();
@@ -677,6 +708,7 @@ pub fn semantics(analysis: &Analysis) {
         !analysis.diagnostics().iter().any(|d| d.is_error())
     );
     bindings(analysis);
+    references(analysis);
     let reachability = [
         sumi_hir::codes::CONSTANT_CONDITION,
         sumi_hir::codes::UNREACHABLE_CODE,

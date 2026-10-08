@@ -9,7 +9,7 @@ use sumi_frontend::{DiagnosticCode, Fix, Label};
 use sumi_graph::{GraphBuilder, Loop};
 use sumi_lexer::{LexedFile, RawIdx, SyntaxKind, TokenFlags};
 use sumi_syntax::{
-    Literal, NodeIdx, PrefixOp, SyntaxTree,
+    Literal, NodeIdx, NodeKind, PrefixOp, SyntaxTree,
     ast::{self, AstNode, Clean, CleanExpr, CleanStmt, View},
 };
 use sumi_text::{TextEdit, TextRange, TextSize};
@@ -109,6 +109,11 @@ pub(crate) struct Lowered {
     pub obligations: Vec<Obligation>,
     pub fallthroughs: Vec<Option<Fallthrough>>,
     pub bindings: Vec<Binding>,
+    /// In source order once `lower` returns.
+    pub references: Vec<Occurrence>,
+    /// Names under a hole that a declaration under the same hole may bind, so nothing resolves
+    /// them; in source order once `lower` returns.
+    pub unresolved: Vec<TextRange>,
     /// In source order within each block.
     pub statements: Vec<Statement>,
 }
@@ -404,7 +409,15 @@ pub(crate) fn lower<'s>(
         let built = builder.build(index, *item, params);
         builder.lowered.built.push(built);
     }
-    (builder.graph.finish(), builder.lowered)
+    let mut lowered = builder.lowered;
+    lowered
+        .references
+        .sort_unstable_by_key(|occurrence| occurrence.range.start());
+    lowered.references.dedup();
+    lowered
+        .unresolved
+        .sort_unstable_by_key(|range| range.start());
+    (builder.graph.finish(), lowered)
 }
 
 /// The syntax's operator in the graph's vocabulary, which has no lazy operator.
@@ -451,6 +464,7 @@ impl LocalId {
 
 struct Local<'s> {
     name: &'s str,
+    binding: BindingId,
     declaration: NodeId,
     current: NodeId,
     is_mutable: bool,
@@ -680,6 +694,8 @@ impl<'a, 's> Builder<'a, 's> {
                 obligations: Vec::new(),
                 fallthroughs: vec![None; headers.len()],
                 bindings: Vec::new(),
+                references: Vec::new(),
+                unresolved: Vec::new(),
                 statements: Vec::new(),
             },
             nodes_of: vec![None; nodes],
@@ -1122,12 +1138,14 @@ impl<'a, 's> Builder<'a, 's> {
         let is_mutable = matches!(kind, BindingKind::Let { is_mutable: true });
         let end = self.scope_ends[self.depth - 1];
         let from = from.min(end);
+        let binding = BindingId::new(self.lowered.bindings.len());
         self.lowered
             .bindings
             .push(Binding::new(range, kind, node, TextRange::new(from, end)));
         let id = LocalId(u32::try_from(self.locals.len()).expect("local count fits u32"));
         self.locals.push(Local {
             name,
+            binding,
             declaration: node,
             current: node,
             is_mutable,
@@ -1232,6 +1250,12 @@ impl<'a, 's> Builder<'a, 's> {
             );
             self.set_version(local, phi);
         }
+    }
+    fn refer(&mut self, node: NodeIdx, symbol: Symbol) {
+        self.lowered.references.push(Occurrence {
+            range: self.source.range(node),
+            symbol,
+        });
     }
     fn lookup(&self, name: &str) -> Option<LocalId> {
         // An empty scope is common and would cost a hash to find nothing in.
@@ -1617,7 +1641,7 @@ impl<'a, 's> Builder<'a, 's> {
                     self.damaged(stmt, work);
                 }
                 _ if tree.has_error(node) => {
-                    self.hole(node);
+                    self.holed(node);
                     self.has_failed = true;
                 }
                 _ => unreachable!("a statement without syntax errors has a clean view"),
@@ -1722,7 +1746,10 @@ impl<'a, 's> Builder<'a, 's> {
         };
         let text = self.source.text(name.node());
         let Some(local) = self.lookup(text) else {
-            if self.names.contains_key(text) {
+            if let Some(named) = self.names.get(text) {
+                if let Named::Function(id) = named {
+                    self.refer(name.node(), Symbol::Function(*id));
+                }
                 self.source.error(
                     name.node(),
                     codes::INVALID_ASSIGNMENT_TARGET,
@@ -1739,6 +1766,10 @@ impl<'a, 's> Builder<'a, 's> {
             }
             return None;
         };
+        self.refer(
+            name.node(),
+            Symbol::Local(self.locals[local.index()].binding),
+        );
         if !self.locals[local.index()].is_mutable {
             let declaration = self.locals[local.index()].declaration;
             self.source.error(
@@ -1826,6 +1857,7 @@ impl<'a, 's> Builder<'a, 's> {
     fn target(&mut self, node: NodeIdx) -> Option<FunctionId> {
         let name = self.source.text(node);
         if let Some(local) = self.lookup(name) {
+            self.refer(node, Symbol::Local(self.locals[local.index()].binding));
             self.locals[local.index()].is_read = true;
             let declaration = self.locals[local.index()].declaration;
             // A binding that failed is reported once, where it failed.
@@ -1843,7 +1875,11 @@ impl<'a, 's> Builder<'a, 's> {
             return None;
         }
         match self.names.get(name) {
-            Some(Named::Function(target)) => Some(*target),
+            Some(Named::Function(target)) => {
+                let target = *target;
+                self.refer(node, Symbol::Function(target));
+                Some(target)
+            }
             Some(Named::Ambiguous(_)) => None,
             None => {
                 self.source.error(
@@ -2020,6 +2056,7 @@ impl<'a, 's> Builder<'a, 's> {
                 let name = self.source.text(node);
                 match self.lookup(name) {
                     Some(local) => {
+                        self.refer(node, Symbol::Local(self.locals[local.index()].binding));
                         self.locals[local.index()].is_read = true;
                         let version = self.locals[local.index()].current;
                         let read = self.current(local);
@@ -2029,7 +2066,10 @@ impl<'a, 's> Builder<'a, 's> {
                         self.lowered.typed[read.index()].then_some(())?;
                     }
                     None => {
-                        if self.names.contains_key(name) {
+                        if let Some(named) = self.names.get(name) {
+                            if let Named::Function(id) = named {
+                                self.refer(node, Symbol::Function(*id));
+                            }
                             self.source.error(
                                 node,
                                 codes::NOT_A_VALUE,
@@ -2288,8 +2328,35 @@ impl<'a, 's> Builder<'a, 's> {
             }
         }
     }
+    /// A hole still resolves the names under it, so an editor finds them; one a declaration
+    /// under the hole may bind is left unresolved, since that binding was never made.
     fn holed(&mut self, node: NodeIdx) {
         self.hole(node);
+        let tree = self.source.tree;
+        let subtree = || {
+            let end =
+                node.to_u32() + u32::try_from(tree.subtree_len(node)).expect("node count fits u32");
+            node.until(NodeIdx::new(end))
+        };
+        let declared: HashSet<&str, FxBuildHasher> = subtree()
+            .filter(|&inner| tree.kind(inner) == NodeKind::Name)
+            .map(|inner| self.source.text(inner))
+            .collect();
+        for inner in subtree() {
+            if tree.kind(inner) != NodeKind::NameRef {
+                continue;
+            }
+            let name = self.source.text(inner);
+            if declared.contains(name) {
+                self.lowered.unresolved.push(self.source.range(inner));
+                continue;
+            }
+            if let Some(local) = self.lookup(name) {
+                self.refer(inner, Symbol::Local(self.locals[local.index()].binding));
+            } else if let Some(Named::Function(id)) = self.names.get(name) {
+                self.refer(inner, Symbol::Function(*id));
+            }
+        }
     }
     /// A child's value, or a hole at `node` for a missing one.
     fn present(&mut self, node: NodeIdx, child: Option<NodeIdx>) -> (NodeId, TextRange) {

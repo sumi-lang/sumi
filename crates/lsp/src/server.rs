@@ -11,16 +11,19 @@ use lsp_types::{
     CompletionOptions, CompletionParams, DiagnosticRelatedInformation, DiagnosticSeverity,
     DiagnosticTag, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
     DidOpenTextDocumentParams, DocumentFormattingParams, DocumentSymbol, DocumentSymbolParams,
-    DocumentSymbolResponse, InitializeParams, InitializeResult, InsertTextFormat, Location, OneOf,
-    OptionalVersionedTextDocumentIdentifier, Position, PositionEncodingKind,
-    PublishDiagnosticsParams, Range, ServerCapabilities, ServerInfo, SymbolInformation, SymbolKind,
-    TextDocumentEdit, TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions,
-    TextEdit, Uri, WorkspaceEdit,
+    DocumentSymbolResponse, GotoDefinitionParams, InitializeParams, InitializeResult,
+    InsertTextFormat, Location, OneOf, OptionalVersionedTextDocumentIdentifier, Position,
+    PositionEncodingKind, PrepareRenameResponse, PublishDiagnosticsParams, Range, ReferenceParams,
+    RenameOptions, RenameParams, ServerCapabilities, ServerInfo, SymbolInformation, SymbolKind,
+    TextDocumentEdit, TextDocumentPositionParams, TextDocumentSyncCapability, TextDocumentSyncKind,
+    TextDocumentSyncOptions, TextEdit, Uri, WorkspaceEdit,
 };
 use serde_json::Value;
-use sumi_frontend::{Diagnostic, Fix, Severity, parse_source};
-use sumi_hir::{Analysis, BindingKind, Dead, DeadCause, Signature, Ty, analyze};
-use sumi_lexer::{Fixed, LexedFile, RawIdx, SyntaxKind};
+use sumi_frontend::{Diagnostic, Fix, ParsedSource, Severity, parse_source};
+use sumi_hir::{
+    Analysis, BindingKind, Dead, DeadCause, Occurrence, Signature, Symbol, Ty, analyze,
+};
+use sumi_lexer::{Fixed, LexedFile, RawIdx, SyntaxKind, lex};
 use sumi_syntax::ast::{self, AstNode, View};
 use sumi_syntax::{NodeKind, SyntaxTree, starts_statement};
 use sumi_text::{Encoding, TextSize};
@@ -56,6 +59,22 @@ struct LspFix {
     edit: TextEdit,
 }
 
+enum Query {
+    Format,
+    Symbols,
+    Complete(Position),
+    Definition(Position),
+    References {
+        position: Position,
+        has_declaration: bool,
+    },
+    PrepareRename(Position),
+    Rename {
+        position: Position,
+        new_name: String,
+    },
+}
+
 enum Job {
     Analyze {
         uri: Uri,
@@ -63,28 +82,24 @@ enum Job {
         version: i32,
         text: String,
     },
-    Format {
+    Close {
+        uri: Uri,
+    },
+    Query {
         id: RequestId,
         uri: Uri,
         generation: u64,
         version: i32,
         text: String,
+        query: Query,
     },
-    Symbols {
-        id: RequestId,
-        uri: Uri,
-        generation: u64,
-        version: i32,
-        text: String,
-    },
-    Complete {
-        id: RequestId,
-        uri: Uri,
-        generation: u64,
-        version: i32,
-        text: String,
-        position: Position,
-    },
+}
+
+/// A document's analysis as the client last sent it, kept for the queries that follow.
+struct Analyzed {
+    generation: u64,
+    version: i32,
+    analysis: Analysis,
 }
 
 enum Outcome {
@@ -100,7 +115,8 @@ enum Outcome {
         uri: Uri,
         generation: u64,
         version: i32,
-        result: Value,
+        /// An `Err` is the request's failure message.
+        result: Result<Value, String>,
     },
 }
 
@@ -207,8 +223,14 @@ fn capabilities(encoding: Encoding, features: ClientFeatures) -> ServerCapabilit
             resolve_provider: Some(false),
             ..CompletionOptions::default()
         }),
+        definition_provider: Some(OneOf::Left(true)),
         document_formatting_provider: Some(OneOf::Left(true)),
         document_symbol_provider: Some(OneOf::Left(true)),
+        references_provider: Some(OneOf::Left(true)),
+        rename_provider: Some(OneOf::Right(RenameOptions {
+            prepare_provider: Some(true),
+            work_done_progress_options: Default::default(),
+        })),
         ..ServerCapabilities::default()
     }
 }
@@ -360,6 +382,7 @@ fn handle_notification(
             let uri = params.text_document.uri;
             documents.remove(uri.as_str());
             snapshots.remove(uri.as_str());
+            jobs.send(Job::Close { uri: uri.clone() })?;
             publish(sender, uri, None, Vec::new())?;
         }
         _ => {}
@@ -384,14 +407,8 @@ fn handle_request(
                     return Ok(());
                 }
             };
-            queue_document_job(
-                request.id,
-                params.text_document.uri,
-                documents,
-                jobs,
-                true,
-                sender,
-            )?;
+            let uri = params.text_document.uri;
+            queue_query(request.id, uri, Query::Format, documents, jobs, sender)?;
         }
         lsp_types::request::DocumentSymbolRequest::METHOD => {
             let params: DocumentSymbolParams = match serde_json::from_value(request.params) {
@@ -401,14 +418,8 @@ fn handle_request(
                     return Ok(());
                 }
             };
-            queue_document_job(
-                request.id,
-                params.text_document.uri,
-                documents,
-                jobs,
-                false,
-                sender,
-            )?;
+            let uri = params.text_document.uri;
+            queue_query(request.id, uri, Query::Symbols, documents, jobs, sender)?;
         }
         lsp_types::request::Completion::METHOD => {
             let params: CompletionParams = match serde_json::from_value(request.params) {
@@ -418,19 +429,97 @@ fn handle_request(
                     return Ok(());
                 }
             };
-            let uri = params.text_document_position.text_document.uri;
-            let Some(document) = documents.get(uri.as_str()) else {
-                sender.send(Response::new_ok(request.id, Value::Null).into())?;
-                return Ok(());
+            let at = params.text_document_position;
+            let query = Query::Complete(at.position);
+            queue_query(
+                request.id,
+                at.text_document.uri,
+                query,
+                documents,
+                jobs,
+                sender,
+            )?;
+        }
+        lsp_types::request::GotoDefinition::METHOD => {
+            let params: GotoDefinitionParams = match serde_json::from_value(request.params) {
+                Ok(params) => params,
+                Err(error) => {
+                    invalid_params(sender, request.id, error)?;
+                    return Ok(());
+                }
             };
-            jobs.send(Job::Complete {
-                id: request.id,
-                uri,
-                generation: document.generation,
-                version: document.version,
-                text: document.text.clone(),
-                position: params.text_document_position.position,
-            })?;
+            let at = params.text_document_position_params;
+            let query = Query::Definition(at.position);
+            queue_query(
+                request.id,
+                at.text_document.uri,
+                query,
+                documents,
+                jobs,
+                sender,
+            )?;
+        }
+        lsp_types::request::References::METHOD => {
+            let params: ReferenceParams = match serde_json::from_value(request.params) {
+                Ok(params) => params,
+                Err(error) => {
+                    invalid_params(sender, request.id, error)?;
+                    return Ok(());
+                }
+            };
+            let at = params.text_document_position;
+            let query = Query::References {
+                position: at.position,
+                has_declaration: params.context.include_declaration,
+            };
+            queue_query(
+                request.id,
+                at.text_document.uri,
+                query,
+                documents,
+                jobs,
+                sender,
+            )?;
+        }
+        lsp_types::request::PrepareRenameRequest::METHOD => {
+            let at: TextDocumentPositionParams = match serde_json::from_value(request.params) {
+                Ok(params) => params,
+                Err(error) => {
+                    invalid_params(sender, request.id, error)?;
+                    return Ok(());
+                }
+            };
+            let query = Query::PrepareRename(at.position);
+            queue_query(
+                request.id,
+                at.text_document.uri,
+                query,
+                documents,
+                jobs,
+                sender,
+            )?;
+        }
+        lsp_types::request::Rename::METHOD => {
+            let params: RenameParams = match serde_json::from_value(request.params) {
+                Ok(params) => params,
+                Err(error) => {
+                    invalid_params(sender, request.id, error)?;
+                    return Ok(());
+                }
+            };
+            let at = params.text_document_position;
+            let query = Query::Rename {
+                position: at.position,
+                new_name: params.new_name,
+            };
+            queue_query(
+                request.id,
+                at.text_document.uri,
+                query,
+                documents,
+                jobs,
+                sender,
+            )?;
         }
         lsp_types::request::CodeActionRequest::METHOD => {
             let params: CodeActionParams = match serde_json::from_value(request.params) {
@@ -486,41 +575,26 @@ fn invalid_params(
     sender.send(Response::new_err(id, ErrorCode::InvalidParams as i32, error.to_string()).into())
 }
 
-fn queue_document_job(
+/// Null for a document the client never opened.
+fn queue_query(
     id: RequestId,
     uri: Uri,
+    query: Query,
     documents: &HashMap<String, Document>,
     jobs: &Sender<Job>,
-    should_format: bool,
     sender: &Sender<Message>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let Some(document) = documents.get(uri.as_str()) else {
         sender.send(Response::new_ok(id, Value::Null).into())?;
         return Ok(());
     };
-    let fields = (
+    jobs.send(Job::Query {
         id,
         uri,
-        document.generation,
-        document.version,
-        document.text.clone(),
-    );
-    jobs.send(if should_format {
-        Job::Format {
-            id: fields.0,
-            uri: fields.1,
-            generation: fields.2,
-            version: fields.3,
-            text: fields.4,
-        }
-    } else {
-        Job::Symbols {
-            id: fields.0,
-            uri: fields.1,
-            generation: fields.2,
-            version: fields.3,
-            text: fields.4,
-        }
+        generation: document.generation,
+        version: document.version,
+        text: document.text.clone(),
+        query,
     })?;
     Ok(())
 }
@@ -531,6 +605,7 @@ fn worker(
     encoding: Encoding,
     features: ClientFeatures,
 ) {
+    let mut analyses: HashMap<String, Analyzed> = HashMap::new();
     while let Ok(job) = jobs.recv() {
         let mut batch = vec![job];
         batch.extend(jobs.try_iter());
@@ -551,66 +626,44 @@ fn worker(
                     generation,
                     version,
                     text,
-                } => analyze_document(
-                    uri,
-                    generation,
-                    version,
-                    text,
-                    encoding,
-                    features.has_related_information,
-                    features.has_unnecessary_tags,
-                ),
-                Job::Format {
-                    id,
-                    uri,
-                    generation,
-                    version,
-                    text,
-                } => Outcome::Response {
-                    id,
-                    uri,
-                    generation,
-                    version,
-                    result: serde_json::to_value(format_document(&text, encoding)).unwrap(),
+                } => match analysis_of(&mut analyses, &uri, generation, version, text) {
+                    Some(analysis) => report(
+                        analysis,
+                        uri,
+                        generation,
+                        version,
+                        encoding,
+                        features.has_related_information,
+                        features.has_unnecessary_tags,
+                    ),
+                    None => Outcome::Analyzed {
+                        uri,
+                        generation,
+                        version,
+                        diagnostics: Vec::new(),
+                        fixes: Vec::new(),
+                    },
                 },
-                Job::Symbols {
+                Job::Close { uri } => {
+                    analyses.remove(uri.as_str());
+                    continue;
+                }
+                Job::Query {
                     id,
                     uri,
                     generation,
                     version,
                     text,
+                    query,
                 } => Outcome::Response {
                     id,
                     uri: uri.clone(),
                     generation,
                     version,
-                    result: serde_json::to_value(symbols(
-                        &text,
-                        uri,
-                        encoding,
-                        features.has_hierarchical_symbols,
-                    ))
-                    .unwrap(),
-                },
-                Job::Complete {
-                    id,
-                    uri,
-                    generation,
-                    version,
-                    text,
-                    position,
-                } => Outcome::Response {
-                    id,
-                    uri,
-                    generation,
-                    version,
-                    result: serde_json::to_value(complete(
-                        &text,
-                        position,
-                        encoding,
-                        features.has_snippets,
-                    ))
-                    .unwrap(),
+                    result: match analysis_of(&mut analyses, &uri, generation, version, text) {
+                        Some(analysis) => answer(analysis, uri, query, encoding, features),
+                        None => Ok(Value::Null),
+                    },
                 },
             };
             if outcomes.send(outcome).is_err() {
@@ -620,26 +673,98 @@ fn worker(
     }
 }
 
-fn analyze_document(
-    uri: Uri,
+/// The analysis of the document as the client holds it, computed once per version; none for a
+/// source too large to analyze.
+fn analysis_of<'a>(
+    analyses: &'a mut HashMap<String, Analyzed>,
+    uri: &Uri,
     generation: u64,
     version: i32,
     text: String,
+) -> Option<&'a Analysis> {
+    let key = uri.as_str();
+    let is_current = analyses
+        .get(key)
+        .is_some_and(|kept| kept.generation == generation && kept.version == version);
+    if !is_current {
+        analyses.remove(key);
+        let analysis = analyze(parse_source(text.into_boxed_str()).ok()?);
+        analyses.insert(
+            key.to_owned(),
+            Analyzed {
+                generation,
+                version,
+                analysis,
+            },
+        );
+    }
+    analyses.get(key).map(|kept| &kept.analysis)
+}
+
+fn answer(
+    analysis: &Analysis,
+    uri: Uri,
+    query: Query,
+    encoding: Encoding,
+    features: ClientFeatures,
+) -> Result<Value, String> {
+    let value = match query {
+        Query::Format => serde_json::to_value(format_document(analysis.parsed(), encoding)),
+        Query::Symbols => serde_json::to_value(symbols(
+            analysis,
+            uri,
+            encoding,
+            features.has_hierarchical_symbols,
+        )),
+        Query::Complete(position) => serde_json::to_value(complete(
+            analysis,
+            position,
+            encoding,
+            features.has_snippets,
+        )),
+        Query::Definition(position) => {
+            serde_json::to_value(definition(analysis, uri, position, encoding))
+        }
+        Query::References {
+            position,
+            has_declaration,
+        } => serde_json::to_value(references(
+            analysis,
+            uri,
+            position,
+            encoding,
+            has_declaration,
+        )),
+        Query::PrepareRename(position) => {
+            serde_json::to_value(prepare_rename(analysis, position, encoding))
+        }
+        Query::Rename { position, new_name } => {
+            serde_json::to_value(rename(analysis, uri, position, encoding, &new_name)?)
+        }
+    };
+    Ok(value.expect("a response serializes"))
+}
+
+fn positions(analysis: &Analysis, encoding: Encoding) -> Positions<'_> {
+    Positions::new(analysis.parsed().source(), encoding)
+}
+
+/// None for a position past the document.
+fn offset_at(analysis: &Analysis, position: Position, encoding: Encoding) -> Option<TextSize> {
+    let offset = positions(analysis, encoding).offset(position)?;
+    Some(TextSize::new(u32::try_from(offset).ok()?))
+}
+
+fn report(
+    analysis: &Analysis,
+    uri: Uri,
+    generation: u64,
+    version: i32,
     encoding: Encoding,
     has_related_information: bool,
     has_unnecessary_tags: bool,
 ) -> Outcome {
-    let Ok(parsed) = parse_source(text.clone().into_boxed_str()) else {
-        return Outcome::Analyzed {
-            uri,
-            generation,
-            version,
-            diagnostics: Vec::new(),
-            fixes: Vec::new(),
-        };
-    };
-    let analysis = analyze(parsed);
-    let positions = Positions::new(&text, encoding);
+    let positions = positions(analysis, encoding);
     let mut fixes = Vec::new();
     let diagnostics = analysis
         .diagnostics()
@@ -772,8 +897,8 @@ fn ranges_touch(left: Range, right: Range) -> bool {
     left.start <= right.end && right.start <= left.end
 }
 
-fn format_document(text: &str, encoding: Encoding) -> Option<Vec<TextEdit>> {
-    let parsed = parse_source(text.to_owned().into_boxed_str()).ok()?;
+fn format_document(parsed: &ParsedSource, encoding: Encoding) -> Option<Vec<TextEdit>> {
+    let text = parsed.source();
     let formatted = sumi_format::format(text, parsed.lexed(), parsed.parse()).ok()?;
     let positions = Positions::new(text, encoding);
     Some(
@@ -786,14 +911,13 @@ fn format_document(text: &str, encoding: Encoding) -> Option<Vec<TextEdit>> {
 }
 
 fn symbols(
-    text: &str,
+    analysis: &Analysis,
     uri: Uri,
     encoding: Encoding,
     is_hierarchical: bool,
-) -> Option<DocumentSymbolResponse> {
-    let parsed = parse_source(text.to_owned().into_boxed_str()).ok()?;
-    let analysis = analyze(parsed);
-    let positions = Positions::new(text, encoding);
+) -> DocumentSymbolResponse {
+    let text = analysis.parsed().source();
+    let positions = positions(analysis, encoding);
     if is_hierarchical {
         let symbols = analysis
             .functions()
@@ -813,7 +937,7 @@ fn symbols(
                 })
             })
             .collect();
-        Some(DocumentSymbolResponse::Nested(symbols))
+        DocumentSymbolResponse::Nested(symbols)
     } else {
         let symbols = analysis
             .functions()
@@ -831,7 +955,7 @@ fn symbols(
                 })
             })
             .collect();
-        Some(DocumentSymbolResponse::Flat(symbols))
+        DocumentSymbolResponse::Flat(symbols)
     }
 }
 
@@ -942,15 +1066,12 @@ fn is_keyword(kind: SyntaxKind) -> bool {
 }
 
 fn complete(
-    text: &str,
+    analysis: &Analysis,
     position: Position,
     encoding: Encoding,
     has_snippets: bool,
 ) -> Option<CompletionList> {
-    let positions = Positions::new(text, encoding);
-    let offset = TextSize::new(u32::try_from(positions.offset(position)?).ok()?);
-    let parsed = parse_source(text.to_owned().into_boxed_str()).ok()?;
-    let analysis = analyze(parsed);
+    let offset = offset_at(analysis, position, encoding)?;
     let lexed = analysis.parsed().lexed();
     let tree = analysis.parsed().parse().tree();
     let keyword = |fixed: Fixed| CompletionItem {
@@ -972,7 +1093,7 @@ fn complete(
             .collect(),
         Context::Keyword(fixed) => vec![keyword(fixed)],
         Context::Values { has_else } => {
-            let mut items = values(&analysis, offset, has_snippets);
+            let mut items = values(analysis, offset, has_snippets);
             items.extend(
                 SyntaxKind::ALL
                     .iter()
@@ -993,7 +1114,6 @@ fn complete(
     })
 }
 
-/// The locals visible at `offset`, then every function, each with its type.
 fn values(analysis: &Analysis, offset: TextSize, has_snippets: bool) -> Vec<CompletionItem> {
     let text = analysis.parsed().source();
     let mut items: Vec<_> = analysis
@@ -1044,6 +1164,132 @@ fn values(analysis: &Analysis, offset: TextSize, has_snippets: bool) -> Vec<Comp
     items
 }
 
+fn symbol_at(analysis: &Analysis, position: Position, encoding: Encoding) -> Option<Occurrence> {
+    analysis.symbol_at(offset_at(analysis, position, encoding)?)
+}
+
+fn definition(
+    analysis: &Analysis,
+    uri: Uri,
+    position: Position,
+    encoding: Encoding,
+) -> Option<Location> {
+    let occurrence = symbol_at(analysis, position, encoding)?;
+    let declared = analysis.declaration(occurrence.symbol)?;
+    Some(Location::new(
+        uri,
+        positions(analysis, encoding).range(declared),
+    ))
+}
+
+fn references(
+    analysis: &Analysis,
+    uri: Uri,
+    position: Position,
+    encoding: Encoding,
+    has_declaration: bool,
+) -> Option<Vec<Location>> {
+    let occurrence = symbol_at(analysis, position, encoding)?;
+    let positions = positions(analysis, encoding);
+    let declared = analysis
+        .declaration(occurrence.symbol)
+        .filter(|_| has_declaration);
+    Some(
+        declared
+            .into_iter()
+            .chain(analysis.references_of(occurrence.symbol))
+            .map(|range| Location::new(uri.clone(), positions.range(range)))
+            .collect(),
+    )
+}
+
+/// None where no name is, or for a function whose declaration lost its name.
+fn prepare_rename(
+    analysis: &Analysis,
+    position: Position,
+    encoding: Encoding,
+) -> Option<PrepareRenameResponse> {
+    let occurrence = symbol_at(analysis, position, encoding)?;
+    analysis.declaration(occurrence.symbol)?;
+    let range = positions(analysis, encoding).range(occurrence.range);
+    Some(PrepareRenameResponse::Range(range))
+}
+
+/// `Err` names what stops the rename: a new name that is no name, a symbol whose name two
+/// functions share or appears where the parser recovered, so an occurrence may be missing, or a
+/// new name that already denotes something at an occurrence of the symbol, so a read would
+/// silently change meaning.
+fn rename(
+    analysis: &Analysis,
+    uri: Uri,
+    position: Position,
+    encoding: Encoding,
+    new_name: &str,
+) -> Result<Option<WorkspaceEdit>, String> {
+    let is_name = lex(new_name)
+        .is_ok_and(|lexed| lexed.len() == 1 && lexed.kind(RawIdx::new(0)) == SyntaxKind::Ident);
+    if !is_name {
+        return Err(format!("`{new_name}` is not a name"));
+    }
+    let Some(occurrence) = symbol_at(analysis, position, encoding) else {
+        return Ok(None);
+    };
+    let Some(declared) = analysis.declaration(occurrence.symbol) else {
+        return Ok(None);
+    };
+    let old_name = analysis.text(declared);
+    if old_name == new_name {
+        return Ok(None);
+    }
+    let named = |name: &str| {
+        analysis
+            .functions()
+            .iter()
+            .filter(|function| {
+                function
+                    .name()
+                    .is_some_and(|range| analysis.text(range) == name)
+            })
+            .count()
+    };
+    if matches!(occurrence.symbol, Symbol::Function(_)) && named(old_name) > 1 {
+        return Err(format!("two functions are named `{old_name}`"));
+    }
+    if analysis
+        .unresolved()
+        .iter()
+        .any(|range| analysis.text(*range) == old_name)
+    {
+        return Err(format!(
+            "`{old_name}` also appears where the parser recovered; fix the syntax first"
+        ));
+    }
+    if named(new_name) > 0 {
+        return Err(format!("a function is already named `{new_name}`"));
+    }
+    let occurrences = || std::iter::once(declared).chain(analysis.references_of(occurrence.symbol));
+    let same: Vec<_> = analysis
+        .bindings()
+        .iter()
+        .filter(|binding| binding.name() != declared && analysis.text(binding.name()) == new_name)
+        .collect();
+    let is_shadowed = occurrences().any(|range| {
+        same.iter()
+            .any(|binding| binding.is_visible_at(range.start()))
+    });
+    if is_shadowed {
+        return Err(format!("`{new_name}` is already in scope here"));
+    }
+    let positions = positions(analysis, encoding);
+    let edits = occurrences()
+        .map(|range| TextEdit::new(positions.range(range), new_name.into()))
+        .collect();
+    Ok(Some(WorkspaceEdit {
+        changes: Some(HashMap::from([(uri, edits)])),
+        ..WorkspaceEdit::default()
+    }))
+}
+
 fn handle_outcome(
     outcome: Outcome,
     documents: &HashMap<String, Document>,
@@ -1082,7 +1328,15 @@ fn handle_outcome(
             if documents.get(uri.as_str()).is_some_and(|document| {
                 document.generation == generation && document.version == version
             }) {
-                sender.send(Response::new_ok(id, result).into())?;
+                sender.send(
+                    match result {
+                        Ok(result) => Response::new_ok(id, result),
+                        Err(message) => {
+                            Response::new_err(id, ErrorCode::RequestFailed as i32, message)
+                        }
+                    }
+                    .into(),
+                )?;
             } else {
                 sender.send(
                     Response::new_err(
@@ -1218,11 +1472,11 @@ mod tests {
         let uri: Uri = "file:///test.su".parse().unwrap();
         let Outcome::Analyzed {
             diagnostics, fixes, ..
-        } = analyze_document(
+        } = report(
+            &analyzed("fn duplicate() = 01\nfn duplicate() = missing\n"),
             uri,
             1,
             7,
-            "fn duplicate() = 01\nfn duplicate() = missing\n".into(),
             Encoding::Utf16,
             true,
             false,
@@ -1268,11 +1522,11 @@ fn after() -> int {
 fn main() -> bool = right(true)";
         let analyzed = |has_unnecessary_tags| {
             let uri: Uri = "file:///dead.su".parse().unwrap();
-            let Outcome::Analyzed { diagnostics, .. } = analyze_document(
+            let Outcome::Analyzed { diagnostics, .. } = report(
+                &analyzed(text),
                 uri,
                 1,
                 1,
-                text.into(),
                 Encoding::Utf16,
                 false,
                 has_unnecessary_tags,
@@ -1327,21 +1581,24 @@ fn main() -> bool = right(true)";
 
     #[test]
     fn formatting_fixes_and_symbols_are_concrete_and_versioned() {
-        let edits = format_document("fn  main()=1", Encoding::Utf16).unwrap();
+        let edits = format_document(analyzed("fn  main()=1").parsed(), Encoding::Utf16).unwrap();
         assert!(!edits.is_empty());
         let uri: Uri = "file:///test.su".parse().unwrap();
-        let DocumentSymbolResponse::Nested(symbols) =
-            symbols("fn main() = {", uri.clone(), Encoding::Utf16, true).unwrap()
-        else {
+        let DocumentSymbolResponse::Nested(symbols) = symbols(
+            &analyzed("fn main() = {"),
+            uri.clone(),
+            Encoding::Utf16,
+            true,
+        ) else {
             panic!("nested symbols")
         };
         assert_eq!(symbols[0].name, "main");
 
-        let Outcome::Analyzed { fixes, .. } = analyze_document(
+        let Outcome::Analyzed { fixes, .. } = report(
+            &analyzed("fn main() = 01"),
             uri.clone(),
             1,
             4,
-            "fn main() = 01".into(),
             Encoding::Utf16,
             true,
             false,
@@ -1560,9 +1817,13 @@ fn main() -> bool = right(true)";
         server_thread.join().unwrap();
     }
 
+    fn analyzed(text: &str) -> Analysis {
+        analyze(parse_source(text.into()).unwrap())
+    }
+
     fn labels(text: &str, line: u32, character: u32, has_snippets: bool) -> Vec<String> {
         let list = complete(
-            text,
+            &analyzed(text),
             Position::new(line, character),
             Encoding::Utf16,
             has_snippets,
@@ -1629,7 +1890,8 @@ fn body(c: bool) -> int {
         assert_eq!(labels(text, 8, 0, false), values(&["c", "total"], false));
         assert_eq!(labels(text, 9, 7, false), values(&["c", "total"], false));
 
-        let list = complete(text, Position::new(9, 7), Encoding::Utf16, true).unwrap();
+        let analysis = analyzed(text);
+        let list = complete(&analysis, Position::new(9, 7), Encoding::Utf16, true).unwrap();
         let item = |label: &str| list.items.iter().find(|item| item.label == label).unwrap();
         assert_eq!(item("total").detail.as_deref(), Some("mut int"));
         assert_eq!(item("c").detail.as_deref(), Some("int"));
@@ -1641,11 +1903,11 @@ fn body(c: bool) -> int {
             Some(InsertTextFormat::SNIPPET)
         );
         assert_eq!(item("body").insert_text.as_deref(), Some("body($0)"));
-        let list = complete(text, Position::new(9, 7), Encoding::Utf16, false).unwrap();
+        let list = complete(&analysis, Position::new(9, 7), Encoding::Utf16, false).unwrap();
         let add = list.items.iter().find(|item| item.label == "add").unwrap();
         assert_eq!(add.insert_text, None);
         let list = complete(
-            "fn zero() = 0\nfn f() = ze",
+            &analyzed("fn zero() = 0\nfn f() = ze"),
             Position::new(1, 10),
             Encoding::Utf16,
             false,
@@ -1654,6 +1916,231 @@ fn body(c: bool) -> int {
         let zero = list.items.iter().find(|item| item.label == "zero").unwrap();
         assert_eq!(zero.insert_text.as_deref(), Some("zero()"));
         assert_eq!(zero.insert_text_format, None);
+    }
+
+    #[test]
+    fn protocol_serves_definition_and_references() {
+        let (client, server_thread) = start(json!({}));
+        let uri = "file:///navigate.su";
+        open(
+            &client,
+            uri,
+            "fn double(x: int) -> int = x + x\nfn main() -> int = double(2)\n",
+        );
+        let at = |line, character| json!({ "textDocument": { "uri": uri }, "position": { "line": line, "character": character } });
+        let definition = request(&client, 1, "textDocument/definition", at(1, 22)).unwrap();
+        assert_eq!(
+            definition["range"]["start"],
+            json!({ "line": 0, "character": 3 })
+        );
+        let mut references = at(0, 5);
+        references["context"] = json!({ "includeDeclaration": true });
+        let references = request(&client, 2, "textDocument/references", references).unwrap();
+        assert_eq!(references.as_array().unwrap().len(), 2);
+        assert_eq!(
+            request(&client, 3, "textDocument/definition", at(1, 0)).unwrap(),
+            Value::Null
+        );
+        for method in ["textDocument/definition", "textDocument/references"] {
+            let error = request(&client, 4, method, json!({})).unwrap_err();
+            assert_eq!(error.code, ErrorCode::InvalidParams as i32);
+        }
+        stop(client, server_thread);
+    }
+
+    #[test]
+    fn definition_and_references_follow_the_symbol_under_the_cursor() {
+        let text = "fn double(x: int) -> int = x + x\nfn main() -> int {\n    let x = double(2)\n    x\n}\n";
+        let uri: Uri = "file:///refs.su".parse().unwrap();
+        let at = |line, character| Position::new(line, character);
+        let range = |line, start, end| Range::new(at(line, start), at(line, end));
+        let analysis = analyzed(text);
+        let definition = |position| definition(&analysis, uri.clone(), position, Encoding::Utf16);
+        let references = |position, has_declaration| {
+            references(
+                &analysis,
+                uri.clone(),
+                position,
+                Encoding::Utf16,
+                has_declaration,
+            )
+            .map(|locations| locations.iter().map(|l| l.range).collect::<Vec<_>>())
+        };
+        let param = definition(at(0, 27)).unwrap();
+        assert_eq!(param.uri, uri);
+        assert_eq!(param.range, range(0, 10, 11));
+        assert_eq!(definition(at(0, 32)).unwrap().range, range(0, 10, 11));
+        assert_eq!(definition(at(3, 5)).unwrap().range, range(2, 8, 9));
+        assert_eq!(definition(at(2, 14)).unwrap().range, range(0, 3, 9));
+        assert_eq!(references(at(0, 5), false).unwrap(), [range(2, 12, 18)]);
+        assert_eq!(
+            references(at(2, 14), true).unwrap(),
+            [range(0, 3, 9), range(2, 12, 18)]
+        );
+        assert_eq!(definition(at(0, 20)), None);
+        assert_eq!(references(at(1, 0), true), None);
+        assert_eq!(definition(at(9, 0)), None);
+    }
+
+    #[test]
+    fn protocol_renames_and_reports_a_refusal() {
+        let (client, server_thread) = start(json!({}));
+        let uri = "file:///rename.su";
+        open(
+            &client,
+            uri,
+            "fn double(x: int) -> int = x + x\nfn main() -> int = double(2)\n",
+        );
+        let at = |line, character| json!({ "textDocument": { "uri": uri }, "position": { "line": line, "character": character } });
+        let prepared = request(&client, 1, "textDocument/prepareRename", at(0, 11)).unwrap();
+        assert_eq!(prepared["start"], json!({ "line": 0, "character": 10 }));
+        let mut rename = at(0, 11);
+        rename["newName"] = json!("n");
+        let edit = request(&client, 2, "textDocument/rename", rename).unwrap();
+        assert_eq!(edit["changes"][uri].as_array().unwrap().len(), 3);
+        let mut refused = at(0, 11);
+        refused["newName"] = json!("main");
+        let error = request(&client, 3, "textDocument/rename", refused).unwrap_err();
+        assert_eq!(error.code, ErrorCode::RequestFailed as i32);
+        assert_eq!(error.message, "a function is already named `main`");
+        assert_eq!(
+            request(&client, 4, "textDocument/prepareRename", at(1, 0)).unwrap(),
+            Value::Null
+        );
+        for method in ["textDocument/prepareRename", "textDocument/rename"] {
+            let error = request(&client, 5, method, json!({})).unwrap_err();
+            assert_eq!(error.code, ErrorCode::InvalidParams as i32);
+        }
+        stop(client, server_thread);
+    }
+
+    #[test]
+    fn rename_carries_every_occurrence_and_refuses_a_name_that_changes_meaning() {
+        let text = "fn double(x: int) -> int = x + x
+fn main() -> int {
+    let x = double(2)
+    let y = 1
+    x + y
+}
+";
+        let uri: Uri = "file:///rename.su".parse().unwrap();
+        let at = |line, character| Position::new(line, character);
+        let range = |line, start, end| Range::new(at(line, start), at(line, end));
+        let analysis = analyzed(text);
+        let rename = |position, new_name| {
+            rename(&analysis, uri.clone(), position, Encoding::Utf16, new_name)
+        };
+        let edits = |edit: WorkspaceEdit| {
+            let mut edits = edit.changes.unwrap().remove(&uri).unwrap();
+            edits.sort_by_key(|edit| (edit.range.start.line, edit.range.start.character));
+            edits
+                .into_iter()
+                .map(|edit| (edit.range, edit.new_text))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            prepare_rename(&analysis, at(0, 28), Encoding::Utf16),
+            Some(PrepareRenameResponse::Range(range(0, 27, 28)))
+        );
+        assert_eq!(prepare_rename(&analysis, at(0, 20), Encoding::Utf16), None);
+        assert_eq!(
+            edits(rename(at(0, 28), "n").unwrap().unwrap()),
+            [
+                (range(0, 10, 11), "n".into()),
+                (range(0, 27, 28), "n".into()),
+                (range(0, 31, 32), "n".into()),
+            ]
+        );
+        assert_eq!(
+            edits(rename(at(0, 3), "twice").unwrap().unwrap()),
+            [
+                (range(0, 3, 9), "twice".into()),
+                (range(2, 12, 18), "twice".into())
+            ]
+        );
+        assert_eq!(rename(at(0, 28), "x"), Ok(None));
+        assert_eq!(rename(at(1, 0), "n"), Ok(None));
+        assert_eq!(rename(at(0, 28), "1n"), Err("`1n` is not a name".into()));
+        assert_eq!(rename(at(0, 28), "let"), Err("`let` is not a name".into()));
+        assert_eq!(rename(at(0, 28), "a b"), Err("`a b` is not a name".into()));
+        assert_eq!(
+            rename(at(0, 28), "main"),
+            Err("a function is already named `main`".into())
+        );
+        assert_eq!(
+            rename(at(2, 8), "y"),
+            Err("`y` is already in scope here".into())
+        );
+        assert_eq!(
+            rename(at(3, 8), "x"),
+            Err("`x` is already in scope here".into())
+        );
+        assert!(rename(at(0, 28), "y").unwrap().is_some());
+
+        let recovered = analyzed(
+            "fn f(n: int) -> int {
+    for n in 0.. { n + 1 }
+    n
+}",
+        );
+        assert_eq!(
+            super::rename(&recovered, uri.clone(), at(0, 5), Encoding::Utf16, "m"),
+            Err("`n` also appears where the parser recovered; fix the syntax first".into())
+        );
+        assert!(
+            super::rename(&recovered, uri.clone(), at(0, 3), Encoding::Utf16, "g")
+                .unwrap()
+                .is_some()
+        );
+        let twins = analyzed(
+            "fn f() = 1
+fn f() = 2
+fn main() -> int = f()",
+        );
+        assert_eq!(
+            super::rename(&twins, uri.clone(), at(0, 3), Encoding::Utf16, "g"),
+            Err("two functions are named `f`".into())
+        );
+        assert_eq!(
+            super::rename(&twins, uri.clone(), at(1, 3), Encoding::Utf16, "g"),
+            Err("two functions are named `f`".into())
+        );
+    }
+
+    #[test]
+    fn protocol_reuses_the_analysis_across_edits_and_drops_it_on_close() {
+        let (client, server_thread) = start(json!({}));
+        let uri = "file:///reuse.su";
+        assert_eq!(open(&client, uri, "fn main() -> int = 1").version, Some(1));
+        let at = |line, character| json!({ "textDocument": { "uri": uri }, "position": { "line": line, "character": character } });
+        for (version, text) in [
+            (2, "fn main() -> int = main()"),
+            (3, "fn main() -> int = 1"),
+        ] {
+            notify(
+                &client,
+                "textDocument/didChange",
+                json!({
+                    "textDocument": { "uri": uri, "version": version },
+                    "contentChanges": [{ "text": text }]
+                }),
+            );
+            assert_eq!(receive_diagnostics(&client).version, Some(version));
+            let definition = request(&client, version, "textDocument/definition", at(0, 4));
+            assert_eq!(definition.unwrap()["range"]["start"]["character"], 3);
+        }
+        notify(
+            &client,
+            "textDocument/didClose",
+            json!({ "textDocument": { "uri": uri } }),
+        );
+        assert_eq!(receive_diagnostics(&client).version, None);
+        assert_eq!(open(&client, uri, "fn main() -> int = 1").version, Some(1));
+        assert_eq!(
+            request(&client, 4, "textDocument/definition", at(0, 4)).unwrap()["range"]["end"]["character"],
+            7
+        );
+        stop(client, server_thread);
     }
 
     #[test]
@@ -1693,7 +2180,7 @@ fn body(c: bool) -> int {
         assert_eq!(labels(text, 1, 24, false), values(&["q"], false));
         assert_eq!(labels("", 0, 0, false), ["fn"]);
         assert_eq!(
-            complete("", Position::new(3, 0), Encoding::Utf16, false),
+            complete(&analyzed(""), Position::new(3, 0), Encoding::Utf16, false),
             None
         );
     }
@@ -1807,14 +2294,19 @@ fn body(c: bool) -> int {
 
         let uri: Uri = "file:///stale.su".parse().unwrap();
         assert!(matches!(
-            symbols("fn main() = 1", uri.clone(), Encoding::Utf16, false),
-            Some(DocumentSymbolResponse::Flat(_))
+            symbols(
+                &analyzed("fn main() = 1"),
+                uri.clone(),
+                Encoding::Utf16,
+                false
+            ),
+            DocumentSymbolResponse::Flat(_)
         ));
-        let Outcome::Analyzed { diagnostics, .. } = analyze_document(
+        let Outcome::Analyzed { diagnostics, .. } = report(
+            &analyzed("fn duplicate() = 1\nfn duplicate() = 2"),
             uri,
             1,
             1,
-            "fn duplicate() = 1\nfn duplicate() = 2".into(),
             Encoding::Utf16,
             false,
             false,
@@ -1904,6 +2396,7 @@ fn body(c: bool) -> int {
         else {
             panic!("old analysis")
         };
+        assert!(matches!(queued.recv().unwrap(), Job::Close { .. }));
         let Job::Analyze {
             generation: new_generation,
             ..
@@ -1915,11 +2408,11 @@ fn body(c: bool) -> int {
         let _cleared = receiver.recv().unwrap();
 
         handle_outcome(
-            analyze_document(
+            report(
+                &analyzed("fn main() = 01"),
                 uri.clone(),
                 old_generation,
                 old_version,
-                "fn main() = 01".into(),
                 Encoding::Utf16,
                 true,
                 false,
@@ -1938,7 +2431,7 @@ fn body(c: bool) -> int {
                 uri,
                 generation: old_generation,
                 version: old_version,
-                result: json!([]),
+                result: Ok(json!([])),
             },
             &documents,
             &mut snapshots,

@@ -138,6 +138,52 @@ suite("Sumi extension", () => {
     assert.equal(double.insertText.value, "double($0)");
   });
 
+  test("follows a name to its definition, its references, and a rename", async () => {
+    const document = await openSaved(
+      "navigation.su",
+      "fn double(x: int) -> int = x + x\nfn main() -> int {\n    let x = double(2)\n    x\n}\n",
+    );
+    await waitForDiagnostics(document.uri, (diagnostics) => diagnostics.length === 0, "clean source");
+    const definitions = await vscode.commands.executeCommand<vscode.Location[]>(
+      "vscode.executeDefinitionProvider",
+      document.uri,
+      new vscode.Position(2, 14),
+    );
+    assert.equal(definitions.length, 1);
+    assert.deepEqual(definitions[0].range, new vscode.Range(0, 3, 0, 9));
+    const references = await vscode.commands.executeCommand<vscode.Location[]>(
+      "vscode.executeReferenceProvider",
+      document.uri,
+      new vscode.Position(0, 5),
+    );
+    assert.deepEqual(
+      references.map((location) => location.range),
+      [new vscode.Range(0, 3, 0, 9), new vscode.Range(2, 12, 2, 18)],
+    );
+    const rename = await vscode.commands.executeCommand<vscode.WorkspaceEdit>(
+      "vscode.executeDocumentRenameProvider",
+      document.uri,
+      new vscode.Position(0, 27),
+      "n",
+    );
+    assert.equal(await vscode.workspace.applyEdit(rename), true);
+    assert.equal(
+      document.getText(),
+      "fn double(n: int) -> int = n + n\nfn main() -> int {\n    let x = double(2)\n    x\n}\n",
+    );
+    await assert.rejects(
+      async () =>
+        vscode.commands.executeCommand(
+          "vscode.executeDocumentRenameProvider",
+          document.uri,
+          new vscode.Position(0, 27),
+          "main",
+        ),
+      /already named `main`/,
+      "a rename to a function's name is refused with its reason",
+    );
+  });
+
   test("returns recovered symbols for incomplete input", async () => {
     const document = await openSaved("incomplete.su", "fn unfinished() = {");
     const diagnostics = await waitForDiagnostics(

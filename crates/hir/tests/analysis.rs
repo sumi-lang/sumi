@@ -1,8 +1,8 @@
 use sumi_frontend::{Diagnostic, DiagnosticCode, parse_source};
 use sumi_hir::codes::*;
 use sumi_hir::{
-    Analysis, ArithOp, BinaryOp, BindingKind, CmpOp, DeadCause, Function, FunctionId, Int, NodeId,
-    Op, Ty, analyze,
+    Analysis, ArithOp, BinaryOp, BindingId, BindingKind, CmpOp, DeadCause, Function, FunctionId,
+    Int, NodeId, Op, Symbol, Ty, analyze,
 };
 use sumi_test::{check, corpus};
 use sumi_text::{TextRange, TextSize};
@@ -812,4 +812,120 @@ fn a_cut_short_let_before_the_next_item_is_visible_up_to_it() {
 fn debug_output_lists_the_tables() {
     let shown = format!("{:?}", clean("fn f(x: int) -> int = x"));
     assert!(shown.contains("bindings: ["));
+}
+
+#[test]
+fn references_resolve_reads_calls_and_assignments_to_their_symbol() {
+    let source = "fn double(x: int) -> int = x + x
+fn body(c: bool) -> int {
+    let c = if c { 1 } else { 0 }
+    let mut total = double(c)
+    for i in 0..c {
+        total = total + i
+    }
+    total
+}";
+    let a = clean(source);
+    let at = |needle: &str, occurrence: usize| {
+        let mut from = 0;
+        for _ in 0..occurrence {
+            from = source[from..].find(needle).unwrap() + from + needle.len();
+        }
+        let start = source[from..].find(needle).unwrap() + from;
+        TextSize::new(start as u32)
+    };
+    let symbol = |needle: &str, occurrence: usize| {
+        let offset = at(needle, occurrence);
+        a.symbol_at(offset)
+            .unwrap_or_else(|| panic!("no symbol at {offset:?} for {needle:?}"))
+    };
+    let param_x = symbol("x", 0);
+    assert_eq!(param_x.symbol, Symbol::Local(BindingId::new(0)));
+    assert_eq!(symbol("x + x", 0).symbol, param_x.symbol);
+    let end_of_x = TextSize::new(at("x + x", 0).to_u32() + 1);
+    assert_eq!(a.symbol_at(end_of_x).unwrap().symbol, param_x.symbol);
+    assert_eq!(a.declaration(param_x.symbol), Some(param_x.range));
+    let reads: Vec<_> = a
+        .references_of(param_x.symbol)
+        .map(|range| range.start().to_u32())
+        .collect();
+    assert_eq!(reads, [at("x + x", 0).to_u32(), at("x", 2).to_u32()]);
+    let param_c = symbol("c: bool", 0).symbol;
+    let let_c = symbol("c = if", 0);
+    assert_eq!(let_c.symbol, Symbol::Local(BindingId::new(2)));
+    assert_eq!(symbol("c { 1 }", 0).symbol, param_c);
+    assert_eq!(symbol("c)", 0).symbol, let_c.symbol);
+    assert_eq!(symbol("c {", 1).symbol, let_c.symbol);
+    assert_eq!(a.references_of(param_c).count(), 1);
+    assert_eq!(a.references_of(let_c.symbol).count(), 2);
+    let double = symbol("double(c)", 0);
+    assert_eq!(double.symbol, Symbol::Function(FunctionId::new(0)));
+    assert_eq!(symbol("double(x", 0).range.start().to_u32(), 3);
+    assert_eq!(
+        a.declaration(double.symbol).map(|r| r.start().to_u32()),
+        Some(3)
+    );
+    let total = symbol("total = double", 0).symbol;
+    assert_eq!(a.references_of(total).count(), 3);
+    assert_eq!(symbol("total = total", 0).symbol, total);
+    assert_eq!(a.symbol_at(at("->", 0)), None);
+    assert_eq!(a.symbol_at(at("0..c", 0)), None);
+    let starts: Vec<_> = a.references().iter().map(|o| o.range.start()).collect();
+    assert!(starts.windows(2).all(|pair| pair[0] < pair[1]));
+    assert_eq!(starts.len(), 10);
+}
+
+#[test]
+fn references_survive_errors() {
+    let a = analyzed("fn f(x: int) -> int {\n    x = 1\n    g(x)\n    x(1)\n}");
+    assert!(!a.is_valid());
+    let x = Symbol::Local(BindingId::new(0));
+    assert_eq!(a.references_of(x).count(), 3);
+    assert_eq!(
+        a.references()
+            .iter()
+            .filter(|o| matches!(o.symbol, Symbol::Function(_)))
+            .count(),
+        0
+    );
+
+    let a = analyzed("fn g() = 1\nfn f(n: int) -> int {\n    let h = g\n    g = 2\n    h + n\n}");
+    let g = Symbol::Function(FunctionId::new(0));
+    assert_eq!(a.references_of(g).count(), 2);
+
+    let source = "fn g() = 1\nfn f(n: int) -> int {\n    let mut t = 0\n    for i in 0.. { t = t + n + g() }\n    let y = n && \n    t\n}";
+    let a = analyzed(source);
+    assert!(!a.is_valid());
+    let n = Symbol::Local(BindingId::new(0));
+    let loop_n = source.find("+ n").unwrap() + 2;
+    let and_n = source.find("= n &&").unwrap() + 2;
+    let texts: Vec<_> = a
+        .references_of(n)
+        .map(|range| range.start().to_usize())
+        .collect();
+    assert_eq!(texts, [loop_n, and_n]);
+    assert_eq!(a.references_of(g).count(), 1);
+    let i = source.find("{ t = t").unwrap();
+    assert_eq!(
+        a.symbol_at(TextSize::new(i as u32 + 2)).map(|o| o.symbol),
+        Some(Symbol::Local(BindingId::new(1)))
+    );
+    assert_eq!(
+        a.symbol_at(TextSize::new(source.find("for i").unwrap() as u32 + 4)),
+        None
+    );
+    assert_eq!(a.unresolved(), []);
+
+    let source = "fn f(n: int) -> int {\n    for n in 0.. { n + 1 }\n    n\n}";
+    let a = analyzed(source);
+    let n = Symbol::Local(BindingId::new(0));
+    assert_eq!(a.references_of(n).count(), 1);
+    let inner = source.find("n + 1").unwrap() as u32;
+    assert_eq!(
+        a.unresolved(),
+        [TextRange::new(
+            TextSize::new(inner),
+            TextSize::new(inner + 1)
+        )]
+    );
 }

@@ -5,6 +5,9 @@
 - Complete the names in scope: the locals a position can read with their types, every function
   with its signature as a call snippet, the keywords the grammar admits there, and the types after
   `:` and `->`. Completion keeps working in a function whose block is not closed yet.
+- Go to the definition of a local or a function, find its references, and rename it across them.
+  A rename is refused when the new name is not a name, is a function's name, or is a local already
+  in scope at one of the occurrences.
 
 ## 0.3.0
 
