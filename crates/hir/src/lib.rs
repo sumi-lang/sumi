@@ -94,6 +94,14 @@ impl Analysis {
     pub fn binding(&self, id: BindingId) -> &Binding {
         &self.bindings[id.index()]
     }
+    /// A function's parameters by position; one without a name is absent.
+    pub fn params(&self, id: FunctionId) -> impl ExactSizeIterator<Item = Option<&Binding>> {
+        self.graph.run(id).params().map(|node| {
+            self.bindings
+                .iter()
+                .find(|binding| binding.declaration == node)
+        })
+    }
     /// Every name that resolved to a local or a function, in source order; a declaration is not
     /// among them.
     pub fn references(&self) -> &[Occurrence] {

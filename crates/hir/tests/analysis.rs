@@ -929,3 +929,21 @@ fn references_survive_errors() {
         )]
     );
 }
+
+#[test]
+fn params_come_by_position_without_an_unnamed_one() {
+    let a = clean("fn f(a: int, b: bool) -> int = if b { a } else { 0 }\nfn g() = 1");
+    let names: Vec<_> = a
+        .params(FunctionId::new(0))
+        .map(|param| param.map(|binding| text(&a, binding.name())))
+        .collect();
+    assert_eq!(names, [Some("a"), Some("b")]);
+    assert_eq!(a.params(FunctionId::new(1)).len(), 0);
+
+    let a = analyzed("fn f(a: int, a: bool, : int) -> int = 1");
+    let names: Vec<_> = a
+        .params(FunctionId::new(0))
+        .map(|param| param.map(|binding| text(&a, binding.name())))
+        .collect();
+    assert_eq!(names, [Some("a"), Some("a")]);
+}
