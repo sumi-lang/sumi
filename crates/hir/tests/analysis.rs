@@ -865,9 +865,15 @@ fn body(c: bool) -> int {
         a.declaration(double.symbol).map(|r| r.start().to_u32()),
         Some(3)
     );
-    let total = symbol("total = double", 0).symbol;
-    assert_eq!(a.references_of(total).count(), 3);
-    assert_eq!(symbol("total = total", 0).symbol, total);
+    let total = symbol("total = double", 0);
+    assert!(total.is_write);
+    assert_eq!(a.references_of(total.symbol).count(), 3);
+    let assigned = symbol("total = total", 0);
+    assert_eq!(assigned.symbol, total.symbol);
+    assert!(assigned.is_write);
+    assert!(!symbol("total + i", 0).is_write);
+    assert!(!double.is_write);
+    assert!(symbol("double(x", 0).is_write);
     assert_eq!(a.symbol_at(at("->", 0)), None);
     assert_eq!(a.symbol_at(at("0..c", 0)), None);
     let starts: Vec<_> = a.references().iter().map(|o| o.range.start()).collect();
