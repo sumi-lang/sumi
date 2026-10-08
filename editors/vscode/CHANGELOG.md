@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Highlight every occurrence of the name under the cursor, its declaration and assignments as
+  writes and its reads as reads.
+
 ## 0.4.0
 
 - Complete the names in scope: the locals a position can read with their types, every function
