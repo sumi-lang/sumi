@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 jobs:
   fuzz:
@@ -35,15 +36,17 @@ jobs:
           key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
           restore-keys: fuzz-corpus-${{ matrix.target }}-
       - run: cargo run --locked -p sumi-test --bin fuzz-seed -- ${{ matrix.target }}
-      # Safe Rust needs no sanitizer, and a sanitizer needs nightly.
+      # Safe Rust needs no sanitizer, and a sanitizer needs nightly. The log is what the issue
+      # below quotes.
       - name: Fuzz
-        run: >
-          cargo fuzz run -s none ${{ matrix.target }} --
-          -dict=fuzz/sumi.dict
-          -max_len=4096
-          -max_total_time=$(( 60 * ${{ inputs.minutes || 10 }} ))
-          -timeout=10
-          -rss_limit_mb=2048
+        run: |
+          set -o pipefail
+          cargo fuzz run -s none ${{ matrix.target }} -- \
+            -dict=fuzz/sumi.dict \
+            -max_len=4096 \
+            -max_total_time=$(( 60 * ${{ inputs.minutes || 10 }} )) \
+            -timeout=10 \
+            -rss_limit_mb=2048 2>&1 | tee fuzz.log
       # The corpus that led to a finding is the one a fix replays, so save on failure too.
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: always()
@@ -55,3 +58,12 @@ jobs:
         with:
           name: fuzz-artifacts-${{ matrix.target }}
           path: fuzz/artifacts/${{ matrix.target }}/
+      # One issue per target and panic site: a finding that lands on an open one is a comment there.
+      - name: Open or update the issue for the finding
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TARGET: ${{ matrix.target }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: .github/workflows/fuzz-issue.sh fuzz.log
