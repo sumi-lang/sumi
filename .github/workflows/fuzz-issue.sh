@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Opens or updates the issue for a fuzz finding from the target's log: `TARGET`, `RUN_URL`,
-# `GH_TOKEN`, and `GH_REPO` name the target, the run, and where the issue goes.
+# `GH_TOKEN`, and `GH_REPO` name the target, the run, and where the issue goes. A second argument
+# is `fuzz-shrink.sh`'s decoded shrink to quote; `DRY_RUN` prints the issue instead of filing it.
 set -euo pipefail
 
 log="$1"
+shrunk="${2:-}"
 summary="$(grep -m1 -oE '^SUMMARY: libFuzzer: .*' "$log" | sed 's/SUMMARY: libFuzzer: //' || true)"
 artifact="$(grep -m1 -oE 'Test unit written to [^ ]+' "$log" | sed 's#.*/##' || true)"
 message="$(grep -A1 -m1 'panicked at' "$log" | tail -n +2 || true)"
@@ -44,6 +46,12 @@ $excerpt
 
 </details>
 
+$(if [ -n "$shrunk" ] && [ -s "$shrunk" ]; then
+  printf '%s\n' "**Shrinks to** (\`tmin\`; it keeps a crash, not always this one, so the assertion it trips is shown):" "" '```text'
+  cat "$shrunk"
+  printf '%s\n' '```' ""
+fi)
+
 To reproduce and shrink, with the artifact under \`fuzz/artifacts/$TARGET/\`:
 
 \`\`\`sh
@@ -59,6 +67,10 @@ BODY
 
 # A list, not a search, and the oldest match: the index lags an issue another target opened or
 # closed moments ago.
+if [ -n "${DRY_RUN:-}" ]; then
+  printf 'TITLE: %s\n\n%s\n' "$title" "$body"
+  exit 0
+fi
 number="$(gh issue list --state open --label bug --limit 200 --json number,title \
   --jq "[.[] | select(.title == \"$title\") | .number] | min // empty")"
 if [ -n "$number" ]; then
