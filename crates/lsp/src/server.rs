@@ -19,7 +19,7 @@ use lsp_types::{
     TextDocumentSyncOptions, TextEdit, Uri, WorkspaceEdit,
 };
 use serde_json::Value;
-use sumi_frontend::{Diagnostic, Fix, Severity, parse_source};
+use sumi_frontend::{Diagnostic, Fix, ParsedSource, Severity, parse_source};
 use sumi_hir::{
     Analysis, BindingKind, Dead, DeadCause, Occurrence, Signature, Symbol, Ty, analyze,
 };
@@ -59,7 +59,6 @@ struct LspFix {
     edit: TextEdit,
 }
 
-/// A request answered from one document's text.
 enum Query {
     Format,
     Symbols,
@@ -83,6 +82,9 @@ enum Job {
         version: i32,
         text: String,
     },
+    Close {
+        uri: Uri,
+    },
     Query {
         id: RequestId,
         uri: Uri,
@@ -91,6 +93,13 @@ enum Job {
         text: String,
         query: Query,
     },
+}
+
+/// A document's analysis as the client last sent it, kept for the queries that follow.
+struct Analyzed {
+    generation: u64,
+    version: i32,
+    analysis: Analysis,
 }
 
 enum Outcome {
@@ -373,6 +382,7 @@ fn handle_notification(
             let uri = params.text_document.uri;
             documents.remove(uri.as_str());
             snapshots.remove(uri.as_str());
+            jobs.send(Job::Close { uri: uri.clone() })?;
             publish(sender, uri, None, Vec::new())?;
         }
         _ => {}
@@ -595,6 +605,7 @@ fn worker(
     encoding: Encoding,
     features: ClientFeatures,
 ) {
+    let mut analyses: HashMap<String, Analyzed> = HashMap::new();
     while let Ok(job) = jobs.recv() {
         let mut batch = vec![job];
         batch.extend(jobs.try_iter());
@@ -615,15 +626,28 @@ fn worker(
                     generation,
                     version,
                     text,
-                } => analyze_document(
-                    uri,
-                    generation,
-                    version,
-                    text,
-                    encoding,
-                    features.has_related_information,
-                    features.has_unnecessary_tags,
-                ),
+                } => match analysis_of(&mut analyses, &uri, generation, version, text) {
+                    Some(analysis) => report(
+                        analysis,
+                        uri,
+                        generation,
+                        version,
+                        encoding,
+                        features.has_related_information,
+                        features.has_unnecessary_tags,
+                    ),
+                    None => Outcome::Analyzed {
+                        uri,
+                        generation,
+                        version,
+                        diagnostics: Vec::new(),
+                        fixes: Vec::new(),
+                    },
+                },
+                Job::Close { uri } => {
+                    analyses.remove(uri.as_str());
+                    continue;
+                }
                 Job::Query {
                     id,
                     uri,
@@ -636,7 +660,10 @@ fn worker(
                     uri: uri.clone(),
                     generation,
                     version,
-                    result: answer(&text, uri, query, encoding, features),
+                    result: match analysis_of(&mut analyses, &uri, generation, version, text) {
+                        Some(analysis) => answer(analysis, uri, query, encoding, features),
+                        None => Ok(Value::Null),
+                    },
                 },
             };
             if outcomes.send(outcome).is_err() {
@@ -646,61 +673,98 @@ fn worker(
     }
 }
 
+/// The analysis of the document as the client holds it, computed once per version; none for a
+/// source too large to analyze.
+fn analysis_of<'a>(
+    analyses: &'a mut HashMap<String, Analyzed>,
+    uri: &Uri,
+    generation: u64,
+    version: i32,
+    text: String,
+) -> Option<&'a Analysis> {
+    let key = uri.as_str();
+    let is_current = analyses
+        .get(key)
+        .is_some_and(|kept| kept.generation == generation && kept.version == version);
+    if !is_current {
+        analyses.remove(key);
+        let analysis = analyze(parse_source(text.into_boxed_str()).ok()?);
+        analyses.insert(
+            key.to_owned(),
+            Analyzed {
+                generation,
+                version,
+                analysis,
+            },
+        );
+    }
+    analyses.get(key).map(|kept| &kept.analysis)
+}
+
 fn answer(
-    text: &str,
+    analysis: &Analysis,
     uri: Uri,
     query: Query,
     encoding: Encoding,
     features: ClientFeatures,
 ) -> Result<Value, String> {
     let value = match query {
-        Query::Format => serde_json::to_value(format_document(text, encoding)),
+        Query::Format => serde_json::to_value(format_document(analysis.parsed(), encoding)),
         Query::Symbols => serde_json::to_value(symbols(
-            text,
+            analysis,
             uri,
             encoding,
             features.has_hierarchical_symbols,
         )),
-        Query::Complete(position) => {
-            serde_json::to_value(complete(text, position, encoding, features.has_snippets))
-        }
+        Query::Complete(position) => serde_json::to_value(complete(
+            analysis,
+            position,
+            encoding,
+            features.has_snippets,
+        )),
         Query::Definition(position) => {
-            serde_json::to_value(definition(text, uri, position, encoding))
+            serde_json::to_value(definition(analysis, uri, position, encoding))
         }
         Query::References {
             position,
             has_declaration,
-        } => serde_json::to_value(references(text, uri, position, encoding, has_declaration)),
+        } => serde_json::to_value(references(
+            analysis,
+            uri,
+            position,
+            encoding,
+            has_declaration,
+        )),
         Query::PrepareRename(position) => {
-            serde_json::to_value(prepare_rename(text, position, encoding))
+            serde_json::to_value(prepare_rename(analysis, position, encoding))
         }
         Query::Rename { position, new_name } => {
-            serde_json::to_value(rename(text, uri, position, encoding, &new_name)?)
+            serde_json::to_value(rename(analysis, uri, position, encoding, &new_name)?)
         }
     };
     Ok(value.expect("a response serializes"))
 }
 
-fn analyze_document(
+fn positions(analysis: &Analysis, encoding: Encoding) -> Positions<'_> {
+    Positions::new(analysis.parsed().source(), encoding)
+}
+
+/// None for a position past the document.
+fn offset_at(analysis: &Analysis, position: Position, encoding: Encoding) -> Option<TextSize> {
+    let offset = positions(analysis, encoding).offset(position)?;
+    Some(TextSize::new(u32::try_from(offset).ok()?))
+}
+
+fn report(
+    analysis: &Analysis,
     uri: Uri,
     generation: u64,
     version: i32,
-    text: String,
     encoding: Encoding,
     has_related_information: bool,
     has_unnecessary_tags: bool,
 ) -> Outcome {
-    let Ok(parsed) = parse_source(text.clone().into_boxed_str()) else {
-        return Outcome::Analyzed {
-            uri,
-            generation,
-            version,
-            diagnostics: Vec::new(),
-            fixes: Vec::new(),
-        };
-    };
-    let analysis = analyze(parsed);
-    let positions = Positions::new(&text, encoding);
+    let positions = positions(analysis, encoding);
     let mut fixes = Vec::new();
     let diagnostics = analysis
         .diagnostics()
@@ -833,8 +897,8 @@ fn ranges_touch(left: Range, right: Range) -> bool {
     left.start <= right.end && right.start <= left.end
 }
 
-fn format_document(text: &str, encoding: Encoding) -> Option<Vec<TextEdit>> {
-    let parsed = parse_source(text.to_owned().into_boxed_str()).ok()?;
+fn format_document(parsed: &ParsedSource, encoding: Encoding) -> Option<Vec<TextEdit>> {
+    let text = parsed.source();
     let formatted = sumi_format::format(text, parsed.lexed(), parsed.parse()).ok()?;
     let positions = Positions::new(text, encoding);
     Some(
@@ -847,14 +911,13 @@ fn format_document(text: &str, encoding: Encoding) -> Option<Vec<TextEdit>> {
 }
 
 fn symbols(
-    text: &str,
+    analysis: &Analysis,
     uri: Uri,
     encoding: Encoding,
     is_hierarchical: bool,
-) -> Option<DocumentSymbolResponse> {
-    let parsed = parse_source(text.to_owned().into_boxed_str()).ok()?;
-    let analysis = analyze(parsed);
-    let positions = Positions::new(text, encoding);
+) -> DocumentSymbolResponse {
+    let text = analysis.parsed().source();
+    let positions = positions(analysis, encoding);
     if is_hierarchical {
         let symbols = analysis
             .functions()
@@ -874,7 +937,7 @@ fn symbols(
                 })
             })
             .collect();
-        Some(DocumentSymbolResponse::Nested(symbols))
+        DocumentSymbolResponse::Nested(symbols)
     } else {
         let symbols = analysis
             .functions()
@@ -892,7 +955,7 @@ fn symbols(
                 })
             })
             .collect();
-        Some(DocumentSymbolResponse::Flat(symbols))
+        DocumentSymbolResponse::Flat(symbols)
     }
 }
 
@@ -1003,15 +1066,12 @@ fn is_keyword(kind: SyntaxKind) -> bool {
 }
 
 fn complete(
-    text: &str,
+    analysis: &Analysis,
     position: Position,
     encoding: Encoding,
     has_snippets: bool,
 ) -> Option<CompletionList> {
-    let positions = Positions::new(text, encoding);
-    let offset = TextSize::new(u32::try_from(positions.offset(position)?).ok()?);
-    let parsed = parse_source(text.to_owned().into_boxed_str()).ok()?;
-    let analysis = analyze(parsed);
+    let offset = offset_at(analysis, position, encoding)?;
     let lexed = analysis.parsed().lexed();
     let tree = analysis.parsed().parse().tree();
     let keyword = |fixed: Fixed| CompletionItem {
@@ -1033,7 +1093,7 @@ fn complete(
             .collect(),
         Context::Keyword(fixed) => vec![keyword(fixed)],
         Context::Values { has_else } => {
-            let mut items = values(&analysis, offset, has_snippets);
+            let mut items = values(analysis, offset, has_snippets);
             items.extend(
                 SyntaxKind::ALL
                     .iter()
@@ -1104,33 +1164,33 @@ fn values(analysis: &Analysis, offset: TextSize, has_snippets: bool) -> Vec<Comp
     items
 }
 
-/// The analysis and the name at `position`, or nothing where no name resolves.
-fn symbol_at(text: &str, position: Position, encoding: Encoding) -> Option<(Analysis, Occurrence)> {
-    let positions = Positions::new(text, encoding);
-    let offset = TextSize::new(u32::try_from(positions.offset(position)?).ok()?);
-    let analysis = analyze(parse_source(text.to_owned().into_boxed_str()).ok()?);
-    let occurrence = analysis.symbol_at(offset)?;
-    Some((analysis, occurrence))
+fn symbol_at(analysis: &Analysis, position: Position, encoding: Encoding) -> Option<Occurrence> {
+    analysis.symbol_at(offset_at(analysis, position, encoding)?)
 }
 
-fn definition(text: &str, uri: Uri, position: Position, encoding: Encoding) -> Option<Location> {
-    let (analysis, occurrence) = symbol_at(text, position, encoding)?;
+fn definition(
+    analysis: &Analysis,
+    uri: Uri,
+    position: Position,
+    encoding: Encoding,
+) -> Option<Location> {
+    let occurrence = symbol_at(analysis, position, encoding)?;
     let declared = analysis.declaration(occurrence.symbol)?;
     Some(Location::new(
         uri,
-        Positions::new(text, encoding).range(declared),
+        positions(analysis, encoding).range(declared),
     ))
 }
 
 fn references(
-    text: &str,
+    analysis: &Analysis,
     uri: Uri,
     position: Position,
     encoding: Encoding,
     has_declaration: bool,
 ) -> Option<Vec<Location>> {
-    let (analysis, occurrence) = symbol_at(text, position, encoding)?;
-    let positions = Positions::new(text, encoding);
+    let occurrence = symbol_at(analysis, position, encoding)?;
+    let positions = positions(analysis, encoding);
     let declared = analysis
         .declaration(occurrence.symbol)
         .filter(|_| has_declaration);
@@ -1143,15 +1203,15 @@ fn references(
     )
 }
 
-/// The name to rename, when one is under the cursor and has a declaration to carry the change.
+/// None where no name is, or for a function whose declaration lost its name.
 fn prepare_rename(
-    text: &str,
+    analysis: &Analysis,
     position: Position,
     encoding: Encoding,
 ) -> Option<PrepareRenameResponse> {
-    let (analysis, occurrence) = symbol_at(text, position, encoding)?;
+    let occurrence = symbol_at(analysis, position, encoding)?;
     analysis.declaration(occurrence.symbol)?;
-    let range = Positions::new(text, encoding).range(occurrence.range);
+    let range = positions(analysis, encoding).range(occurrence.range);
     Some(PrepareRenameResponse::Range(range))
 }
 
@@ -1160,7 +1220,7 @@ fn prepare_rename(
 /// new name that already denotes something at an occurrence of the symbol, so a read would
 /// silently change meaning.
 fn rename(
-    text: &str,
+    analysis: &Analysis,
     uri: Uri,
     position: Position,
     encoding: Encoding,
@@ -1171,7 +1231,7 @@ fn rename(
     if !is_name {
         return Err(format!("`{new_name}` is not a name"));
     }
-    let Some((analysis, occurrence)) = symbol_at(text, position, encoding) else {
+    let Some(occurrence) = symbol_at(analysis, position, encoding) else {
         return Ok(None);
     };
     let Some(declared) = analysis.declaration(occurrence.symbol) else {
@@ -1220,7 +1280,7 @@ fn rename(
     if is_shadowed {
         return Err(format!("`{new_name}` is already in scope here"));
     }
-    let positions = Positions::new(text, encoding);
+    let positions = positions(analysis, encoding);
     let edits = occurrences()
         .map(|range| TextEdit::new(positions.range(range), new_name.into()))
         .collect();
@@ -1412,11 +1472,11 @@ mod tests {
         let uri: Uri = "file:///test.su".parse().unwrap();
         let Outcome::Analyzed {
             diagnostics, fixes, ..
-        } = analyze_document(
+        } = report(
+            &analyzed("fn duplicate() = 01\nfn duplicate() = missing\n"),
             uri,
             1,
             7,
-            "fn duplicate() = 01\nfn duplicate() = missing\n".into(),
             Encoding::Utf16,
             true,
             false,
@@ -1462,11 +1522,11 @@ fn after() -> int {
 fn main() -> bool = right(true)";
         let analyzed = |has_unnecessary_tags| {
             let uri: Uri = "file:///dead.su".parse().unwrap();
-            let Outcome::Analyzed { diagnostics, .. } = analyze_document(
+            let Outcome::Analyzed { diagnostics, .. } = report(
+                &analyzed(text),
                 uri,
                 1,
                 1,
-                text.into(),
                 Encoding::Utf16,
                 false,
                 has_unnecessary_tags,
@@ -1521,21 +1581,24 @@ fn main() -> bool = right(true)";
 
     #[test]
     fn formatting_fixes_and_symbols_are_concrete_and_versioned() {
-        let edits = format_document("fn  main()=1", Encoding::Utf16).unwrap();
+        let edits = format_document(analyzed("fn  main()=1").parsed(), Encoding::Utf16).unwrap();
         assert!(!edits.is_empty());
         let uri: Uri = "file:///test.su".parse().unwrap();
-        let DocumentSymbolResponse::Nested(symbols) =
-            symbols("fn main() = {", uri.clone(), Encoding::Utf16, true).unwrap()
-        else {
+        let DocumentSymbolResponse::Nested(symbols) = symbols(
+            &analyzed("fn main() = {"),
+            uri.clone(),
+            Encoding::Utf16,
+            true,
+        ) else {
             panic!("nested symbols")
         };
         assert_eq!(symbols[0].name, "main");
 
-        let Outcome::Analyzed { fixes, .. } = analyze_document(
+        let Outcome::Analyzed { fixes, .. } = report(
+            &analyzed("fn main() = 01"),
             uri.clone(),
             1,
             4,
-            "fn main() = 01".into(),
             Encoding::Utf16,
             true,
             false,
@@ -1754,9 +1817,13 @@ fn main() -> bool = right(true)";
         server_thread.join().unwrap();
     }
 
+    fn analyzed(text: &str) -> Analysis {
+        analyze(parse_source(text.into()).unwrap())
+    }
+
     fn labels(text: &str, line: u32, character: u32, has_snippets: bool) -> Vec<String> {
         let list = complete(
-            text,
+            &analyzed(text),
             Position::new(line, character),
             Encoding::Utf16,
             has_snippets,
@@ -1823,7 +1890,8 @@ fn body(c: bool) -> int {
         assert_eq!(labels(text, 8, 0, false), values(&["c", "total"], false));
         assert_eq!(labels(text, 9, 7, false), values(&["c", "total"], false));
 
-        let list = complete(text, Position::new(9, 7), Encoding::Utf16, true).unwrap();
+        let analysis = analyzed(text);
+        let list = complete(&analysis, Position::new(9, 7), Encoding::Utf16, true).unwrap();
         let item = |label: &str| list.items.iter().find(|item| item.label == label).unwrap();
         assert_eq!(item("total").detail.as_deref(), Some("mut int"));
         assert_eq!(item("c").detail.as_deref(), Some("int"));
@@ -1835,11 +1903,11 @@ fn body(c: bool) -> int {
             Some(InsertTextFormat::SNIPPET)
         );
         assert_eq!(item("body").insert_text.as_deref(), Some("body($0)"));
-        let list = complete(text, Position::new(9, 7), Encoding::Utf16, false).unwrap();
+        let list = complete(&analysis, Position::new(9, 7), Encoding::Utf16, false).unwrap();
         let add = list.items.iter().find(|item| item.label == "add").unwrap();
         assert_eq!(add.insert_text, None);
         let list = complete(
-            "fn zero() = 0\nfn f() = ze",
+            &analyzed("fn zero() = 0\nfn f() = ze"),
             Position::new(1, 10),
             Encoding::Utf16,
             false,
@@ -1886,10 +1954,11 @@ fn body(c: bool) -> int {
         let uri: Uri = "file:///refs.su".parse().unwrap();
         let at = |line, character| Position::new(line, character);
         let range = |line, start, end| Range::new(at(line, start), at(line, end));
-        let definition = |position| definition(text, uri.clone(), position, Encoding::Utf16);
+        let analysis = analyzed(text);
+        let definition = |position| definition(&analysis, uri.clone(), position, Encoding::Utf16);
         let references = |position, has_declaration| {
             references(
-                text,
+                &analysis,
                 uri.clone(),
                 position,
                 Encoding::Utf16,
@@ -1957,8 +2026,10 @@ fn main() -> int {
         let uri: Uri = "file:///rename.su".parse().unwrap();
         let at = |line, character| Position::new(line, character);
         let range = |line, start, end| Range::new(at(line, start), at(line, end));
-        let rename =
-            |position, new_name| rename(text, uri.clone(), position, Encoding::Utf16, new_name);
+        let analysis = analyzed(text);
+        let rename = |position, new_name| {
+            rename(&analysis, uri.clone(), position, Encoding::Utf16, new_name)
+        };
         let edits = |edit: WorkspaceEdit| {
             let mut edits = edit.changes.unwrap().remove(&uri).unwrap();
             edits.sort_by_key(|edit| (edit.range.start.line, edit.range.start.character));
@@ -1968,10 +2039,10 @@ fn main() -> int {
                 .collect::<Vec<_>>()
         };
         assert_eq!(
-            prepare_rename(text, at(0, 28), Encoding::Utf16),
+            prepare_rename(&analysis, at(0, 28), Encoding::Utf16),
             Some(PrepareRenameResponse::Range(range(0, 27, 28)))
         );
-        assert_eq!(prepare_rename(text, at(0, 20), Encoding::Utf16), None);
+        assert_eq!(prepare_rename(&analysis, at(0, 20), Encoding::Utf16), None);
         assert_eq!(
             edits(rename(at(0, 28), "n").unwrap().unwrap()),
             [
@@ -2006,30 +2077,70 @@ fn main() -> int {
         );
         assert!(rename(at(0, 28), "y").unwrap().is_some());
 
-        let recovered = "fn f(n: int) -> int {
+        let recovered = analyzed(
+            "fn f(n: int) -> int {
     for n in 0.. { n + 1 }
     n
-}";
+}",
+        );
         assert_eq!(
-            super::rename(recovered, uri.clone(), at(0, 5), Encoding::Utf16, "m"),
+            super::rename(&recovered, uri.clone(), at(0, 5), Encoding::Utf16, "m"),
             Err("`n` also appears where the parser recovered; fix the syntax first".into())
         );
         assert!(
-            super::rename(recovered, uri.clone(), at(0, 3), Encoding::Utf16, "g")
+            super::rename(&recovered, uri.clone(), at(0, 3), Encoding::Utf16, "g")
                 .unwrap()
                 .is_some()
         );
-        let twins = "fn f() = 1
+        let twins = analyzed(
+            "fn f() = 1
 fn f() = 2
-fn main() -> int = f()";
+fn main() -> int = f()",
+        );
         assert_eq!(
-            super::rename(twins, uri.clone(), at(0, 3), Encoding::Utf16, "g"),
+            super::rename(&twins, uri.clone(), at(0, 3), Encoding::Utf16, "g"),
             Err("two functions are named `f`".into())
         );
         assert_eq!(
-            super::rename(twins, uri.clone(), at(1, 3), Encoding::Utf16, "g"),
+            super::rename(&twins, uri.clone(), at(1, 3), Encoding::Utf16, "g"),
             Err("two functions are named `f`".into())
         );
+    }
+
+    #[test]
+    fn protocol_reuses_the_analysis_across_edits_and_drops_it_on_close() {
+        let (client, server_thread) = start(json!({}));
+        let uri = "file:///reuse.su";
+        assert_eq!(open(&client, uri, "fn main() -> int = 1").version, Some(1));
+        let at = |line, character| json!({ "textDocument": { "uri": uri }, "position": { "line": line, "character": character } });
+        for (version, text) in [
+            (2, "fn main() -> int = main()"),
+            (3, "fn main() -> int = 1"),
+        ] {
+            notify(
+                &client,
+                "textDocument/didChange",
+                json!({
+                    "textDocument": { "uri": uri, "version": version },
+                    "contentChanges": [{ "text": text }]
+                }),
+            );
+            assert_eq!(receive_diagnostics(&client).version, Some(version));
+            let definition = request(&client, version, "textDocument/definition", at(0, 4));
+            assert_eq!(definition.unwrap()["range"]["start"]["character"], 3);
+        }
+        notify(
+            &client,
+            "textDocument/didClose",
+            json!({ "textDocument": { "uri": uri } }),
+        );
+        assert_eq!(receive_diagnostics(&client).version, None);
+        assert_eq!(open(&client, uri, "fn main() -> int = 1").version, Some(1));
+        assert_eq!(
+            request(&client, 4, "textDocument/definition", at(0, 4)).unwrap()["range"]["end"]["character"],
+            7
+        );
+        stop(client, server_thread);
     }
 
     #[test]
@@ -2069,7 +2180,7 @@ fn main() -> int = f()";
         assert_eq!(labels(text, 1, 24, false), values(&["q"], false));
         assert_eq!(labels("", 0, 0, false), ["fn"]);
         assert_eq!(
-            complete("", Position::new(3, 0), Encoding::Utf16, false),
+            complete(&analyzed(""), Position::new(3, 0), Encoding::Utf16, false),
             None
         );
     }
@@ -2183,14 +2294,19 @@ fn main() -> int = f()";
 
         let uri: Uri = "file:///stale.su".parse().unwrap();
         assert!(matches!(
-            symbols("fn main() = 1", uri.clone(), Encoding::Utf16, false),
-            Some(DocumentSymbolResponse::Flat(_))
+            symbols(
+                &analyzed("fn main() = 1"),
+                uri.clone(),
+                Encoding::Utf16,
+                false
+            ),
+            DocumentSymbolResponse::Flat(_)
         ));
-        let Outcome::Analyzed { diagnostics, .. } = analyze_document(
+        let Outcome::Analyzed { diagnostics, .. } = report(
+            &analyzed("fn duplicate() = 1\nfn duplicate() = 2"),
             uri,
             1,
             1,
-            "fn duplicate() = 1\nfn duplicate() = 2".into(),
             Encoding::Utf16,
             false,
             false,
@@ -2280,6 +2396,7 @@ fn main() -> int = f()";
         else {
             panic!("old analysis")
         };
+        assert!(matches!(queued.recv().unwrap(), Job::Close { .. }));
         let Job::Analyze {
             generation: new_generation,
             ..
@@ -2291,11 +2408,11 @@ fn main() -> int = f()";
         let _cleared = receiver.recv().unwrap();
 
         handle_outcome(
-            analyze_document(
+            report(
+                &analyzed("fn main() = 01"),
                 uri.clone(),
                 old_generation,
                 old_version,
-                "fn main() = 01".into(),
                 Encoding::Utf16,
                 true,
                 false,
