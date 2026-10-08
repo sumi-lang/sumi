@@ -184,6 +184,39 @@ suite("Sumi extension", () => {
     );
   });
 
+  test("hovers a name and hints inferred types and argument names", async () => {
+    const document = await openSaved(
+      "hover.su",
+      "fn double(x: int) -> int = x + x\nfn main() -> int {\n    let y = double(2)\n    y\n}\n",
+    );
+    await waitForDiagnostics(document.uri, (diagnostics) => diagnostics.length === 0, "clean source");
+    const hovers = await vscode.commands.executeCommand<vscode.Hover[]>(
+      "vscode.executeHoverProvider",
+      document.uri,
+      new vscode.Position(2, 14),
+    );
+    assert.equal(hovers.length, 1);
+    const content = hovers[0].contents[0];
+    assert.ok(content instanceof vscode.MarkdownString);
+    assert.equal(
+      content.value,
+      "```sumi\nfn double(x: int) -> int\n```\n\n```\nx ∈ [2, 2]\nresult ∈ [4, 4]\n```",
+    );
+    assert.deepEqual(hovers[0].range, new vscode.Range(2, 12, 2, 18));
+    const hints = await vscode.commands.executeCommand<vscode.InlayHint[]>(
+      "vscode.executeInlayHintProvider",
+      document.uri,
+      new vscode.Range(0, 0, 5, 0),
+    );
+    assert.deepEqual(
+      hints.map((hint) => [hint.position.line, hint.position.character, hint.label, hint.kind]),
+      [
+        [2, 9, ": int", vscode.InlayHintKind.Type],
+        [2, 19, "x:", vscode.InlayHintKind.Parameter],
+      ],
+    );
+  });
+
   test("returns recovered symbols for incomplete input", async () => {
     const document = await openSaved("incomplete.su", "fn unfinished() = {");
     const diagnostics = await waitForDiagnostics(

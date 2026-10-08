@@ -8,6 +8,10 @@
 - Go to the definition of a local or a function, find its references, and rename it across them.
   A rename is refused when the new name is not a name, is a function's name, or is a local already
   in scope at one of the occurrences.
+- Hover a name for its declaration and type; a function also shows the values the analysis proved
+  its call sites pass and it returns.
+- Show the inferred type after a `let` without one, with an edit that writes it in, and the
+  parameter name before a call argument that is not already that name.
 
 ## 0.3.0
 

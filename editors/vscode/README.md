@@ -9,8 +9,8 @@ The extension provides:
   comments;
 - comment, bracket, indentation, and auto-closing configuration;
 - syntax and semantic diagnostics, quick fixes, formatting, document symbols, completion of the
-  names, keywords, and types in scope, go to definition, find references, and rename through
-  `sumi-lsp`.
+  names, keywords, and types in scope, go to definition, find references, rename, hover, and inlay
+  hints through `sumi-lsp`.
 
 The extension includes `sumi-lsp` on supported platforms. Set `sumi.server.path` to use a custom
 server or to provide one on another platform.

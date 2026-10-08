@@ -929,3 +929,22 @@ fn references_survive_errors() {
         )]
     );
 }
+
+#[test]
+fn params_come_by_position_with_a_hole_for_an_unnamed_one() {
+    let a = clean("fn f(a: int, b: bool) -> int = if b { a } else { 0 }\nfn g() = 1");
+    let names: Vec<_> = a
+        .params(FunctionId::new(0))
+        .map(|param| param.map(|binding| text(&a, binding.name())))
+        .collect();
+    assert_eq!(names, [Some("a"), Some("b")]);
+    assert_eq!(a.params(FunctionId::new(1)).len(), 0);
+
+    let a = analyzed("fn f(a: int, _: bool, a: int) -> int = 1");
+    assert!(a.function(FunctionId::new(0)).signature().is_none());
+    let names: Vec<_> = a
+        .params(FunctionId::new(0))
+        .map(|param| param.map(|binding| text(&a, binding.name())))
+        .collect();
+    assert_eq!(names, [Some("a"), None, Some("a")]);
+}

@@ -11,22 +11,25 @@ use lsp_types::{
     CompletionOptions, CompletionParams, DiagnosticRelatedInformation, DiagnosticSeverity,
     DiagnosticTag, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
     DidOpenTextDocumentParams, DocumentFormattingParams, DocumentSymbol, DocumentSymbolParams,
-    DocumentSymbolResponse, GotoDefinitionParams, InitializeParams, InitializeResult,
-    InsertTextFormat, Location, OneOf, OptionalVersionedTextDocumentIdentifier, Position,
-    PositionEncodingKind, PrepareRenameResponse, PublishDiagnosticsParams, Range, ReferenceParams,
-    RenameOptions, RenameParams, ServerCapabilities, ServerInfo, SymbolInformation, SymbolKind,
-    TextDocumentEdit, TextDocumentPositionParams, TextDocumentSyncCapability, TextDocumentSyncKind,
+    DocumentSymbolResponse, GotoDefinitionParams, Hover, HoverContents, HoverParams,
+    HoverProviderCapability, InitializeParams, InitializeResult, InlayHint, InlayHintKind,
+    InlayHintLabel, InlayHintParams, InsertTextFormat, Location, MarkupContent, MarkupKind, OneOf,
+    OptionalVersionedTextDocumentIdentifier, Position, PositionEncodingKind, PrepareRenameResponse,
+    PublishDiagnosticsParams, Range, ReferenceParams, RenameOptions, RenameParams,
+    ServerCapabilities, ServerInfo, SymbolInformation, SymbolKind, TextDocumentEdit,
+    TextDocumentPositionParams, TextDocumentSyncCapability, TextDocumentSyncKind,
     TextDocumentSyncOptions, TextEdit, Uri, WorkspaceEdit,
 };
 use serde_json::Value;
 use sumi_frontend::{Diagnostic, Fix, ParsedSource, Severity, parse_source};
 use sumi_hir::{
-    Analysis, BindingKind, Dead, DeadCause, Occurrence, Signature, Symbol, Ty, analyze,
+    Analysis, BindingKind, Dead, DeadCause, FunctionId, Occurrence, Op, Signature, Symbol, Ty,
+    analyze,
 };
 use sumi_lexer::{Fixed, LexedFile, RawIdx, SyntaxKind, lex};
 use sumi_syntax::ast::{self, AstNode, View};
 use sumi_syntax::{NodeKind, SyntaxTree, starts_statement};
-use sumi_text::{Encoding, TextSize};
+use sumi_text::{Encoding, TextRange, TextSize};
 
 use crate::position::Positions;
 
@@ -47,6 +50,7 @@ struct Snapshot {
 struct ClientFeatures {
     has_code_actions: bool,
     has_hierarchical_symbols: bool,
+    has_markdown: bool,
     has_preferred_actions: bool,
     has_related_information: bool,
     has_snippets: bool,
@@ -73,6 +77,8 @@ enum Query {
         position: Position,
         new_name: String,
     },
+    Hover(Position),
+    InlayHints(Range),
 }
 
 enum Job {
@@ -181,6 +187,11 @@ fn client_features(params: &InitializeParams) -> ClientFeatures {
             .is_some_and(|capabilities| {
                 capabilities.hierarchical_document_symbol_support == Some(true)
             }),
+        has_markdown: text_document
+            .as_ref()
+            .and_then(|capabilities| capabilities.hover.as_ref())
+            .and_then(|capabilities| capabilities.content_format.as_ref())
+            .is_some_and(|formats| formats.contains(&MarkupKind::Markdown)),
         has_preferred_actions: code_action
             .is_some_and(|capabilities| capabilities.is_preferred_support == Some(true)),
         has_related_information: text_document
@@ -226,6 +237,8 @@ fn capabilities(encoding: Encoding, features: ClientFeatures) -> ServerCapabilit
         definition_provider: Some(OneOf::Left(true)),
         document_formatting_provider: Some(OneOf::Left(true)),
         document_symbol_provider: Some(OneOf::Left(true)),
+        hover_provider: Some(HoverProviderCapability::Simple(true)),
+        inlay_hint_provider: Some(OneOf::Left(true)),
         references_provider: Some(OneOf::Left(true)),
         rename_provider: Some(OneOf::Right(RenameOptions {
             prepare_provider: Some(true),
@@ -521,6 +534,43 @@ fn handle_request(
                 sender,
             )?;
         }
+        lsp_types::request::HoverRequest::METHOD => {
+            let params: HoverParams = match serde_json::from_value(request.params) {
+                Ok(params) => params,
+                Err(error) => {
+                    invalid_params(sender, request.id, error)?;
+                    return Ok(());
+                }
+            };
+            let at = params.text_document_position_params;
+            let query = Query::Hover(at.position);
+            queue_query(
+                request.id,
+                at.text_document.uri,
+                query,
+                documents,
+                jobs,
+                sender,
+            )?;
+        }
+        lsp_types::request::InlayHintRequest::METHOD => {
+            let params: InlayHintParams = match serde_json::from_value(request.params) {
+                Ok(params) => params,
+                Err(error) => {
+                    invalid_params(sender, request.id, error)?;
+                    return Ok(());
+                }
+            };
+            let query = Query::InlayHints(params.range);
+            queue_query(
+                request.id,
+                params.text_document.uri,
+                query,
+                documents,
+                jobs,
+                sender,
+            )?;
+        }
         lsp_types::request::CodeActionRequest::METHOD => {
             let params: CodeActionParams = match serde_json::from_value(request.params) {
                 Ok(params) => params,
@@ -741,6 +791,10 @@ fn answer(
         Query::Rename { position, new_name } => {
             serde_json::to_value(rename(analysis, uri, position, encoding, &new_name)?)
         }
+        Query::Hover(position) => {
+            serde_json::to_value(hover(analysis, position, encoding, features.has_markdown))
+        }
+        Query::InlayHints(range) => serde_json::to_value(inlay_hints(analysis, range, encoding)),
     };
     Ok(value.expect("a response serializes"))
 }
@@ -1288,6 +1342,167 @@ fn rename(
         changes: Some(HashMap::from([(uri, edits)])),
         ..WorkspaceEdit::default()
     }))
+}
+
+/// `fn name(x: int) -> int`, or `fn name` for a declaration without a signature.
+fn signature_line(analysis: &Analysis, id: FunctionId) -> String {
+    let name = analysis
+        .function(id)
+        .name()
+        .map_or("_", |name| analysis.text(name));
+    let Some(Signature { params, result }) = analysis.function(id).signature() else {
+        return format!("fn {name}");
+    };
+    let params: Vec<_> = analysis
+        .params(id)
+        .zip(params)
+        .map(|(binding, ty)| {
+            let binding = binding.expect("a signature's parameters are named");
+            format!("{}: {ty}", analysis.text(binding.name()))
+        })
+        .collect();
+    format!("fn {name}({}) -> {result}", params.join(", "))
+}
+
+/// A function in a valid file also shows what its live call sites pass and what it returns;
+/// a rejected file's holes distort those, as they do the reachability warnings.
+fn hover(
+    analysis: &Analysis,
+    position: Position,
+    encoding: Encoding,
+    has_markdown: bool,
+) -> Option<Hover> {
+    let occurrence = symbol_at(analysis, position, encoding)?;
+    let mut proved = Vec::new();
+    let declaration = match occurrence.symbol {
+        Symbol::Local(id) => {
+            let binding = analysis.binding(id);
+            let name = analysis.text(binding.name());
+            let ty = analysis
+                .ty(binding.declaration())
+                .map(|ty| format!(": {ty}"))
+                .unwrap_or_default();
+            match binding.kind() {
+                BindingKind::Param => format!("{name}{ty}"),
+                BindingKind::Let { is_mutable: false } => format!("let {name}{ty}"),
+                BindingKind::Let { is_mutable: true } => format!("let mut {name}{ty}"),
+                BindingKind::LoopIndex => format!("for {name}{ty}"),
+            }
+        }
+        Symbol::Function(id) => {
+            if let Some(program) = analysis.program() {
+                let signature = program.signature(id);
+                let ranges = program.ranges(id);
+                let params = analysis
+                    .params(id)
+                    .zip(&*signature.params)
+                    .zip(&*ranges.params);
+                for ((binding, ty), may) in params {
+                    let binding = binding.expect("a signature's parameters are named");
+                    if may.is_live() {
+                        let name = analysis.text(binding.name());
+                        proved.push(format!("{name} ∈ {}", may.shown(*ty)));
+                    }
+                }
+                if ranges.result.is_live() {
+                    proved.push(format!(
+                        "result ∈ {}",
+                        ranges.result.shown(signature.result)
+                    ));
+                }
+            }
+            signature_line(analysis, id)
+        }
+    };
+    let (kind, value) = if has_markdown {
+        let mut value = format!("```sumi\n{declaration}\n```");
+        if !proved.is_empty() {
+            value.push_str(&format!("\n\n```\n{}\n```", proved.join("\n")));
+        }
+        (MarkupKind::Markdown, value)
+    } else {
+        let lines: Vec<_> = std::iter::once(declaration).chain(proved).collect();
+        (MarkupKind::PlainText, lines.join("\n"))
+    };
+    Some(Hover {
+        contents: HoverContents::Markup(MarkupContent { kind, value }),
+        range: Some(positions(analysis, encoding).range(occurrence.range)),
+    })
+}
+
+/// The inferred type after a `let` without one, as an edit that writes it in, and the parameter
+/// name before a call argument that is not already that name.
+fn inlay_hints(analysis: &Analysis, requested: Range, encoding: Encoding) -> Vec<InlayHint> {
+    let positions = positions(analysis, encoding);
+    let tree = analysis.parsed().parse().tree();
+    let lexed = analysis.parsed().lexed();
+    let start = offset_at(analysis, requested.start, encoding).unwrap_or(TextSize::new(0));
+    let end = offset_at(analysis, requested.end, encoding).unwrap_or(lexed.source_len());
+    let is_wanted = |range: TextRange| start <= range.end() && range.start() <= end;
+    let hint = |offset: TextSize, label: String, kind: InlayHintKind| InlayHint {
+        position: positions.position(offset),
+        label: InlayHintLabel::String(label),
+        kind: Some(kind),
+        text_edits: None,
+        tooltip: None,
+        padding_left: None,
+        padding_right: Some(kind == InlayHintKind::PARAMETER),
+        data: None,
+    };
+    let types = analysis.bindings().iter().filter_map(|binding| {
+        let node = analysis.graph().node(binding.declaration());
+        if !matches!(node.op, Op::Copy { declared: None })
+            || !matches!(binding.kind(), BindingKind::Let { .. })
+            || !is_wanted(binding.name())
+        {
+            return None;
+        }
+        // A `let` whose colon lost its type is a hole, except where the parser could still read
+        // an initializer, so the colon is checked in the syntax.
+        let statement = tree.covering(lexed.token_at(node.origin.start())?);
+        if tree.holds(statement, lexed, SyntaxKind::Colon, None) {
+            return None;
+        }
+        let ty = analysis.ty(binding.declaration())?;
+        let at = binding.name().end();
+        let mut hint = hint(at, format!(": {ty}"), InlayHintKind::TYPE);
+        hint.text_edits = Some(vec![TextEdit::new(
+            Range::new(hint.position, hint.position),
+            format!(": {ty}"),
+        )]);
+        Some(hint)
+    });
+    let params = tree.nodes().flat_map(|node| {
+        let call = ast::CallExpr::cast(tree, node)
+            .filter(|call| is_wanted(tree.byte_range(call.node(), lexed)));
+        let callee = call.and_then(|call| call.callee(tree));
+        let target = callee.and_then(|callee| {
+            match analysis.symbol_at(tree.byte_range(callee.node(), lexed).start())? {
+                Occurrence {
+                    symbol: Symbol::Function(id),
+                    ..
+                } => Some(id),
+                _ => None,
+            }
+        });
+        let args = call
+            .and_then(|call| call.arg_list(tree))
+            .into_iter()
+            .flat_map(|list| list.args(tree));
+        target
+            .into_iter()
+            .flat_map(|id| analysis.params(id))
+            .zip(args)
+            .filter_map(|(param, arg)| {
+                let name = analysis.text(param?.name());
+                let at = tree.byte_range(arg.node(), lexed);
+                (is_wanted(at) && analysis.text(at) != name)
+                    .then(|| hint(at.start(), format!("{name}:"), InlayHintKind::PARAMETER))
+            })
+    });
+    let mut hints: Vec<_> = types.chain(params).collect();
+    hints.sort_by_key(|hint| hint.position);
+    hints
 }
 
 fn handle_outcome(
@@ -2144,6 +2359,171 @@ fn main() -> int = f()",
     }
 
     #[test]
+    fn protocol_hovers_in_markdown() {
+        let (client, server_thread) = start(json!({
+            "textDocument": { "hover": { "contentFormat": ["markdown", "plaintext"] } }
+        }));
+        let uri = "file:///hover.su";
+        open(
+            &client,
+            uri,
+            "fn double(x: int) -> int = x + x\nfn main() -> int = double(2)\n",
+        );
+        let at = |line, character| json!({ "textDocument": { "uri": uri }, "position": { "line": line, "character": character } });
+        let hover = request(&client, 1, "textDocument/hover", at(1, 22)).unwrap();
+        assert_eq!(hover["contents"]["kind"], "markdown");
+        assert_eq!(
+            hover["contents"]["value"],
+            "```sumi\nfn double(x: int) -> int\n```\n\n```\nx ∈ [2, 2]\nresult ∈ [4, 4]\n```"
+        );
+        assert_eq!(
+            request(&client, 2, "textDocument/hover", at(1, 0)).unwrap(),
+            Value::Null
+        );
+        let error = request(&client, 3, "textDocument/hover", json!({})).unwrap_err();
+        assert_eq!(error.code, ErrorCode::InvalidParams as i32);
+        stop(client, server_thread);
+    }
+
+    #[test]
+    fn hover_shows_the_declaration_and_what_the_analysis_proved() {
+        let text = "fn double(x: int) -> int = x + x
+fn main() -> int {
+    let mut total = double(2)
+    for i in 0..3 {
+        total = total + i
+    }
+    total
+}
+";
+        let at = |line, character| Position::new(line, character);
+        let analysis = analyzed(text);
+        let hover =
+            |position, has_markdown| hover(&analysis, position, Encoding::Utf16, has_markdown);
+        let value = |hover: Hover| match hover.contents {
+            HoverContents::Markup(MarkupContent { value, .. }) => value,
+            _ => unreachable!(),
+        };
+        let double = hover(at(2, 22), true).unwrap();
+        assert_eq!(double.range, Some(Range::new(at(2, 20), at(2, 26))));
+        assert_eq!(
+            value(double),
+            "```sumi\nfn double(x: int) -> int\n```\n\n```\nx ∈ [2, 2]\nresult ∈ [4, 4]\n```"
+        );
+        assert_eq!(value(hover(at(0, 10), false).unwrap()), "x: int");
+        assert_eq!(
+            value(hover(at(2, 12), false).unwrap()),
+            "let mut total: int"
+        );
+        assert_eq!(value(hover(at(4, 24), false).unwrap()), "for i: int");
+        assert_eq!(hover(at(1, 0), false), None);
+        assert_eq!(
+            value(hover(at(1, 3), false).unwrap()),
+            "fn main() -> int\nresult ∈ [4, +∞)"
+        );
+        let broken = "fn f(a: int, : int) = 1\nfn g() = f(1, 2)";
+        assert_eq!(
+            value(
+                super::hover(
+                    &analyzed(broken),
+                    Position::new(1, 9),
+                    Encoding::Utf16,
+                    false
+                )
+                .unwrap()
+            ),
+            "fn f"
+        );
+        let rejected = "fn double(x: int) -> int = x + x\nfn main() -> int = double(2) + missing";
+        assert_eq!(
+            value(
+                super::hover(
+                    &analyzed(rejected),
+                    Position::new(1, 20),
+                    Encoding::Utf16,
+                    false
+                )
+                .unwrap()
+            ),
+            "fn double(x: int) -> int"
+        );
+    }
+
+    #[test]
+    fn protocol_serves_inlay_hints_for_a_range() {
+        let (client, server_thread) = start(json!({}));
+        let uri = "file:///hints.su";
+        open(
+            &client,
+            uri,
+            "fn double(x: int) -> int = x + x\nfn main() -> int {\n    let y = double(2)\n    y\n}\n",
+        );
+        let whole = json!({
+            "textDocument": { "uri": uri },
+            "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 5, "character": 0 } }
+        });
+        let hints = request(&client, 1, "textDocument/inlayHint", whole).unwrap();
+        let labels: Vec<_> = hints
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|hint| hint["label"].as_str().unwrap().to_owned())
+            .collect();
+        assert_eq!(labels, [": int", "x:"]);
+        let error = request(&client, 2, "textDocument/inlayHint", json!({})).unwrap_err();
+        assert_eq!(error.code, ErrorCode::InvalidParams as i32);
+        stop(client, server_thread);
+    }
+
+    #[test]
+    fn inlay_hints_write_inferred_types_and_name_call_arguments() {
+        let text = "fn add(a: int, b: int) -> int = a + b
+fn main() -> int {
+    let x = add(1, 2)
+    let y: int = x
+    let b = 3
+    add(x, b)
+}
+";
+        let at = |line, character| Position::new(line, character);
+        let whole = Range::new(at(0, 0), at(7, 0));
+        let analysis = analyzed(text);
+        let hints = inlay_hints(&analysis, whole, Encoding::Utf16);
+        let shown: Vec<_> = hints
+            .iter()
+            .map(|hint| {
+                let InlayHintLabel::String(label) = &hint.label else {
+                    unreachable!()
+                };
+                (hint.position, label.as_str(), hint.kind.unwrap())
+            })
+            .collect();
+        assert_eq!(
+            shown,
+            [
+                (at(2, 9), ": int", InlayHintKind::TYPE),
+                (at(2, 16), "a:", InlayHintKind::PARAMETER),
+                (at(2, 19), "b:", InlayHintKind::PARAMETER),
+                (at(4, 9), ": int", InlayHintKind::TYPE),
+                (at(5, 8), "a:", InlayHintKind::PARAMETER),
+            ]
+        );
+        let edit = &hints[0].text_edits.as_ref().unwrap()[0];
+        assert_eq!(edit.range, Range::new(at(2, 9), at(2, 9)));
+        assert_eq!(edit.new_text, ": int");
+        assert_eq!(hints[1].padding_right, Some(true));
+        assert_eq!(hints[0].padding_right, Some(false));
+        let some = inlay_hints(&analysis, Range::new(at(4, 0), at(5, 0)), Encoding::Utf16);
+        assert_eq!(some.len(), 1);
+        let broken = inlay_hints(
+            &analyzed("fn f() = {\n    let x = \n    let y : = 1\n    g(1)\n}"),
+            whole,
+            Encoding::Utf16,
+        );
+        assert_eq!(broken.len(), 0);
+    }
+
+    #[test]
     fn completion_survives_recovery() {
         let keywords = ["_", "false", "for", "if", "let", "return", "true"];
         let values = |locals: &[&str], has_else: bool| -> Vec<String> {
@@ -2333,6 +2713,7 @@ fn main() -> int = f()",
             ClientFeatures {
                 has_code_actions: false,
                 has_hierarchical_symbols: false,
+                has_markdown: false,
                 has_preferred_actions: false,
                 has_related_information: false,
                 has_snippets: false,

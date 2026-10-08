@@ -94,6 +94,18 @@ impl Analysis {
     pub fn binding(&self, id: BindingId) -> &Binding {
         &self.bindings[id.index()]
     }
+    /// A function's parameters by position; one without a name is absent.
+    pub fn params(&self, id: FunctionId) -> impl ExactSizeIterator<Item = Option<&Binding>> {
+        self.graph.run(id).params().map(|node| {
+            // Bindings are declared in node order, so the node's binding is where it would sort.
+            let index = self
+                .bindings
+                .partition_point(|binding| binding.declaration.index() < node.index());
+            self.bindings
+                .get(index)
+                .filter(|binding| binding.declaration == node)
+        })
+    }
     /// Every name that resolved to a local or a function, in source order; a declaration is not
     /// among them.
     pub fn references(&self) -> &[Occurrence] {
@@ -115,7 +127,13 @@ impl Analysis {
     /// The declaration or reference at `offset`, which may sit at either end of the name.
     pub fn symbol_at(&self, offset: TextSize) -> Option<Occurrence> {
         let covers = |range: TextRange| range.start() <= offset && offset <= range.end();
-        let declarations = self
+        let reference = self
+            .references
+            .partition_point(|occurrence| occurrence.range.end() < offset);
+        if let Some(occurrence) = self.references.get(reference).filter(|o| covers(o.range)) {
+            return Some(*occurrence);
+        }
+        let mut declarations = self
             .bindings
             .iter()
             .enumerate()
@@ -134,12 +152,7 @@ impl Analysis {
                         })
                     }),
             );
-        let reference = self
-            .references
-            .partition_point(|occurrence| occurrence.range.end() < offset);
-        declarations
-            .chain(self.references.get(reference).copied())
-            .find(|occurrence| covers(occurrence.range))
+        declarations.find(|occurrence| covers(occurrence.range))
     }
     /// Every reference to `symbol`, in source order.
     pub fn references_of(&self, symbol: Symbol) -> impl Iterator<Item = TextRange> + '_ {

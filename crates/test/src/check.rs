@@ -601,6 +601,19 @@ fn preserved(lexed: &LexedFile, source: &str) -> Vec<(SyntaxKind, String)> {
 fn bindings(analysis: &Analysis) {
     let graph = analysis.graph();
     let lexed = analysis.parsed().lexed();
+    for pair in analysis.bindings().windows(2) {
+        assert!(
+            pair[0].declaration().index() < pair[1].declaration().index(),
+            "{pair:?}"
+        );
+    }
+    for (index, function) in analysis.functions().iter().enumerate() {
+        let id = sumi_hir::FunctionId::new(index);
+        assert!(
+            function.signature().is_none() || analysis.params(id).all(|param| param.is_some()),
+            "a signature over an unnamed parameter in function {index}"
+        );
+    }
     for binding in analysis.bindings() {
         assert_eq!(graph.node(binding.declaration()).name, Some(binding.name()));
         let visible = binding.visible();
