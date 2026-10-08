@@ -909,6 +909,10 @@ fn range(p: &mut Marker<'_, '_>) -> (Option<CompletedMarker>, Option<CompletedMa
         p.expect(T::Dot);
     } else {
         p.missing(ParseRecoveryKind::RangeOperator);
+        // A boundary here means the end was never written: what follows is the next statement.
+        if p.is_at_boundary() {
+            return (start, None);
+        }
     }
     (start, operand_before(p, 0, ExprFollow::Block))
 }

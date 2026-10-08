@@ -1,0 +1,6 @@
+fn main() -> int {
+    let mut total = 0
+    for i in 0
+    total = total + i
+    total
+}
