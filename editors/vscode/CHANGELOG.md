@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
 
 - Complete the names in scope: the locals a position can read with their types, every function
   with its signature as a call snippet, the keywords the grammar admits there, and the types after
@@ -12,6 +12,7 @@
   its call sites pass and it returns.
 - Show the inferred type after a `let` without one, with an edit that writes it in, and the
   parameter name before a call argument that is not already that name.
+- Keep the statement after a `for` header that still lacks its `..` intact while it is typed.
 
 ## 0.3.0
 
