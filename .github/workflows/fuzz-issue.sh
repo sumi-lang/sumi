@@ -4,11 +4,16 @@
 set -euo pipefail
 
 log="$1"
-location="$(grep -oE 'panicked at [^ ]+:[0-9]+' "$log" | head -1 | sed 's/panicked at //' || true)"
 summary="$(grep -m1 -oE '^SUMMARY: libFuzzer: .*' "$log" | sed 's/SUMMARY: libFuzzer: //' || true)"
 artifact="$(grep -m1 -oE 'Test unit written to [^ ]+' "$log" | sed 's#.*/##' || true)"
-if [ -n "$location" ]; then
-  what="panic at $location"
+message="$(grep -A1 -m1 'panicked at' "$log" | tail -n +2 || true)"
+# The panic site is the shared invariant check, which every bug of a layer fails, so the title
+# is the message's shape: its numbers, quoted source, and `Some(..)` wrappers dropped.
+shape="$(printf '%s' "$message" \
+  | sed -E 's/"[^"]*"//g; s/Some\(([A-Za-z]+)\)/\1/g; s/[0-9]+/N/g; s/  +/ /g; s/ +$//' \
+  | cut -c1-120)"
+if [ -n "$shape" ]; then
+  what="$shape"
 elif [ -n "$summary" ]; then
   what="$summary"
 else
@@ -16,7 +21,6 @@ else
 fi
 title="fuzz($TARGET): $what"
 
-message="$(grep -A1 -m1 'panicked at' "$log" | tail -n +2 || true)"
 excerpt="$(sed -n '/panicked at/,/^evidence:/p' "$log" | head -60 || true)"
 if [ -z "$excerpt" ]; then
   excerpt="$(grep -E '^(==[0-9]+== |SUMMARY|ALARM|MS: )' "$log" | head -20 || true)"
@@ -47,7 +51,9 @@ cargo fuzz run -s none $TARGET fuzz/artifacts/$TARGET/${artifact:-<artifact>}
 cargo fuzz tmin -s none $TARGET fuzz/artifacts/$TARGET/${artifact:-<artifact>}
 \`\`\`
 
-Keep the shrunk input as a corpus case under \`tests/corpus/\` with the fix.
+Keep the shrunk input as a corpus case under \`tests/corpus/\` with the fix. A later finding
+whose message has this shape is a comment below; it may be a different bug, so read each before
+closing.
 BODY
 )"
 
