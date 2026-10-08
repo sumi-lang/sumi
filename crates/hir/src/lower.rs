@@ -12,7 +12,7 @@ use sumi_syntax::{
     Literal, NodeIdx, PrefixOp, SyntaxTree,
     ast::{self, AstNode, Clean, CleanExpr, CleanStmt, View},
 };
-use sumi_text::{TextEdit, TextRange};
+use sumi_text::{TextEdit, TextRange, TextSize};
 
 use crate::codes;
 use crate::lattice::Claim;
@@ -108,6 +108,7 @@ pub(crate) struct Lowered {
     pub entered: Vec<(NodeId, FunctionId)>,
     pub obligations: Vec<Obligation>,
     pub fallthroughs: Vec<Option<Fallthrough>>,
+    pub bindings: Vec<Binding>,
     /// In source order within each block.
     pub statements: Vec<Statement>,
 }
@@ -636,8 +637,9 @@ struct Builder<'a, 's> {
     regions: Vec<(RegionId, usize, NodeId)>,
     /// (local, source version, the node its reads see) for open regions, innermost last.
     refinements: Vec<(LocalId, NodeId, NodeId)>,
-    /// The first `depth` scopes are open, innermost last.
+    /// The first `depth` scopes are open, innermost last, each ending where its block does.
     scopes: Vec<Scope<'s>>,
+    scope_ends: Vec<TextSize>,
     scope_mutables: Vec<usize>,
     depth: usize,
     locals: Vec<Local<'s>>,
@@ -677,6 +679,7 @@ impl<'a, 's> Builder<'a, 's> {
                 entered: Vec::new(),
                 obligations: Vec::new(),
                 fallthroughs: vec![None; headers.len()],
+                bindings: Vec::new(),
                 statements: Vec::new(),
             },
             nodes_of: vec![None; nodes],
@@ -686,6 +689,7 @@ impl<'a, 's> Builder<'a, 's> {
             regions: Vec::new(),
             refinements: Vec::new(),
             scopes: Vec::new(),
+            scope_ends: Vec::new(),
             scope_mutables: Vec::new(),
             depth: 0,
             locals: Vec::new(),
@@ -710,12 +714,21 @@ impl<'a, 's> Builder<'a, 's> {
         self.refinements.clear();
         self.locals.clear();
         self.mutable_locals.clear();
-        self.open_scope();
+        let header = &self.headers[owner];
+        let item_node = header.item;
+        let tree = self.source.tree;
+        let root_node = item.body(tree).map(|body| body.node());
+        let body_range = match root_node {
+            Some(root) => TextRange::new(self.source.range(root).start(), self.scope_end(root)),
+            None => {
+                let end = tree.end_token(item_node);
+                TextRange::new(self.source.lexed().boundary(end), self.start_after(end))
+            }
+        };
+        self.open_scope(body_range.end());
         self.undo.clear();
         self.version_stack.clear();
         self.returns.clear();
-        let header = &self.headers[owner];
-        let item_node = header.item;
         let run = self.graph.open_run(FunctionId::new(owner));
         let entry = self.push(item_node, Op::Entry, &[], None);
         for (index, param) in parameters.iter().enumerate() {
@@ -724,19 +737,17 @@ impl<'a, 's> Builder<'a, 's> {
             let ty = param.ty.filter(|_| !param.is_duplicate);
             let node = self.push(param.node, Op::Param { index, ty }, &[], name);
             self.has_failed |= ty.is_none();
-            if let Some((name, _)) = param.name {
-                self.bind(name, node, false);
+            if let (Some((name, _)), Some(range)) = (param.name, name) {
+                self.bind(name, node, BindingKind::Param, range, body_range.start());
             } else {
                 self.has_failed = true;
             }
         }
         let declared = header.result;
         self.has_failed |= header.callee.is_none() || matches!(declared, HeaderResult::None);
-        let tree = self.source.tree;
         let region = self.graph.open(entry);
         self.graph.enter(region);
         self.regions.push((region, 0, entry));
-        let root_node = item.body(tree).map(|body| body.node());
         if let Some(root_node) = root_node {
             let mut work = std::mem::take(&mut self.work);
             work.push(Work::Enter(root_node));
@@ -1053,12 +1064,42 @@ impl<'a, 's> Builder<'a, 's> {
     fn hole(&mut self, node: NodeIdx) -> NodeId {
         self.push(node, Op::Hole, &[], None)
     }
-    fn open_scope(&mut self) {
+    /// Where a scope bounded by `node` ends: after its own closing brace, or, for a node without
+    /// one, where the next significant token starts, so a name typed after an unclosed block
+    /// still sees its locals.
+    fn scope_end(&self, node: NodeIdx) -> TextSize {
+        let lexed = self.source.lexed();
+        let tree = self.source.tree;
+        let end = tree.end_token(node);
+        if tree.holds(node, lexed, SyntaxKind::RBrace, None) {
+            lexed.boundary(end)
+        } else {
+            self.start_after(end)
+        }
+    }
+    fn significant_after(&self, from: RawIdx) -> Option<RawIdx> {
+        let lexed = self.source.lexed();
+        from.until(lexed.end())
+            .find(|&index| !lexed.kind(index).is_trivia())
+    }
+    /// One past the source's end, so an offset at the end is before it.
+    fn past_end(&self) -> TextSize {
+        TextSize::new(self.source.lexed().source_len().to_u32() + 1)
+    }
+    /// Where the first significant token at or after `from` starts, or past the end.
+    fn start_after(&self, from: RawIdx) -> TextSize {
+        let lexed = self.source.lexed();
+        self.significant_after(from)
+            .map_or(self.past_end(), |index| lexed.boundary(index))
+    }
+    fn open_scope(&mut self, end: TextSize) {
         if self.depth == self.scopes.len() {
             self.scopes.push(Scope::default());
+            self.scope_ends.push(end);
             self.scope_mutables.push(self.mutable_locals.len());
         } else {
             self.scopes[self.depth].clear();
+            self.scope_ends[self.depth] = end;
             self.scope_mutables[self.depth] = self.mutable_locals.len();
         }
         self.depth += 1;
@@ -1068,7 +1109,22 @@ impl<'a, 's> Builder<'a, 's> {
         self.mutable_locals
             .truncate(self.scope_mutables[self.depth]);
     }
-    fn bind(&mut self, name: &'s str, node: NodeId, is_mutable: bool) -> LocalId {
+    /// `from` is where reads of the name start to see it, within the innermost open scope, which
+    /// bounds them.
+    fn bind(
+        &mut self,
+        name: &'s str,
+        node: NodeId,
+        kind: BindingKind,
+        range: TextRange,
+        from: TextSize,
+    ) -> LocalId {
+        let is_mutable = matches!(kind, BindingKind::Let { is_mutable: true });
+        let end = self.scope_ends[self.depth - 1];
+        let from = from.min(end);
+        self.lowered
+            .bindings
+            .push(Binding::new(range, kind, node, TextRange::new(from, end)));
         let id = LocalId(u32::try_from(self.locals.len()).expect("local count fits u32"));
         self.locals.push(Local {
             name,
@@ -1427,9 +1483,12 @@ impl<'a, 's> Builder<'a, 's> {
             .push((self.undo.len(), self.locals.len()));
         self.regions.push((region, self.refinements.len(), context));
         self.graph.enter(region);
-        self.open_scope();
+        let body = expr.body().node();
+        let body_range = TextRange::new(self.source.range(body).start(), self.scope_end(body));
+        self.open_scope(body_range.end());
         let name = expr.name().node();
-        let index = self.place(Op::LoopIndex, &bounds, at, Some(self.source.range(name)));
+        let name_range = self.source.range(name);
+        let index = self.place(Op::LoopIndex, &bounds, at, Some(name_range));
         for (position, bound) in [expr.start().node(), expr.end().node()]
             .into_iter()
             .enumerate()
@@ -1439,7 +1498,13 @@ impl<'a, 's> Builder<'a, 's> {
                 self.completes_input(index, position);
             }
         }
-        self.bind(self.source.text(name), index, false);
+        self.bind(
+            self.source.text(name),
+            index,
+            BindingKind::LoopIndex,
+            name_range,
+            body_range.start(),
+        );
         let mut carried = Vec::with_capacity(self.mutable_locals.len());
         for position in 0..self.mutable_locals.len() {
             let local = self.mutable_locals[position];
@@ -1727,19 +1792,23 @@ impl<'a, 's> Builder<'a, 's> {
     fn damaged_let(&mut self, binding: ast::LetStmt) {
         let tree = self.source.tree;
         if let Some((name, name_node)) = self.source.name(binding.name(tree)) {
-            let hole = self.push(
-                binding.node(),
-                Op::Hole,
-                &[],
-                Some(self.source.range(name_node)),
+            let name_range = self.source.range(name_node);
+            let hole = self.push(binding.node(), Op::Hole, &[], Some(name_range));
+            self.bind(
+                name,
+                hole,
+                BindingKind::Let {
+                    is_mutable: binding.mutable(tree, self.source.lexed()),
+                },
+                name_range,
+                self.source.range(binding.node()).end(),
             );
-            self.bind(name, hole, binding.mutable(tree, self.source.lexed()));
         }
         self.has_failed = true;
     }
     fn block_statements(&mut self, node: NodeIdx, work: &mut Vec<Work>) {
         let tree = self.source.tree;
-        self.open_scope();
+        self.open_scope(self.scope_end(node));
         work.push(Work::Block(node));
         let base = work.len();
         let mut children = tree.children(node).peekable();
@@ -1878,8 +1947,17 @@ impl<'a, 's> Builder<'a, 's> {
                     (Some(_), None) => Op::Hole,
                     _ => Op::Copy { declared },
                 };
-                let copy = self.push(binding.node(), op, &[value], Some(self.source.range(name)));
-                let local = self.bind(self.source.text(name), copy, binding.mutable());
+                let name_range = self.source.range(name);
+                let copy = self.push(binding.node(), op, &[value], Some(name_range));
+                let local = self.bind(
+                    self.source.text(name),
+                    copy,
+                    BindingKind::Let {
+                        is_mutable: binding.mutable(),
+                    },
+                    name_range,
+                    self.source.range(binding.node()).end(),
+                );
                 let initializer = binding.initializer().node();
                 self.controls[binding.node().to_usize()] = self.control(initializer);
                 let form = self.form(initializer);
@@ -2242,9 +2320,16 @@ impl<'a, 's> Builder<'a, 's> {
                     (Some(_), None) => Op::Hole,
                     _ => Op::Copy { declared },
                 };
-                let copy = self.push(node, op, &[value], Some(self.source.range(name_node)));
+                let name_range = self.source.range(name_node);
+                let copy = self.push(node, op, &[value], Some(name_range));
                 let is_mutable = binding.mutable(tree, self.source.lexed());
-                let local = self.bind(name, copy, is_mutable);
+                let local = self.bind(
+                    name,
+                    copy,
+                    BindingKind::Let { is_mutable },
+                    name_range,
+                    self.source.range(node).end(),
+                );
                 self.controls[node.to_usize()] =
                     initializer.and_then(|initializer| self.control(initializer));
                 let completes =

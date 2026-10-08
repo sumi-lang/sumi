@@ -596,6 +596,44 @@ fn preserved(lexed: &LexedFile, source: &str) -> Vec<(SyntaxKind, String)> {
         .collect()
 }
 
+/// Every binding names the node that carries its name, and is visible only after it, inside the
+/// function that declares it, overrunning the function only across trivia.
+fn bindings(analysis: &Analysis) {
+    let graph = analysis.graph();
+    let lexed = analysis.parsed().lexed();
+    for binding in analysis.bindings() {
+        assert_eq!(graph.node(binding.declaration()).name, Some(binding.name()));
+        let visible = binding.visible();
+        assert!(binding.name().end() <= visible.start());
+        let origin = analysis
+            .functions()
+            .iter()
+            .map(|function| function.origin())
+            .find(|origin| {
+                origin.start() <= binding.name().start() && binding.name().end() <= origin.end()
+            })
+            .unwrap_or_else(|| panic!("a binding outside every function: {binding:?}"));
+        let mut overrun = lexed.token_at(origin.end());
+        while let Some(index) = overrun.filter(|&index| lexed.range(index).start() < visible.end())
+        {
+            assert!(
+                lexed.kind(index).is_trivia(),
+                "{binding:?} runs past {origin:?}"
+            );
+            overrun = index.checked_add(1).filter(|&next| next < lexed.end());
+        }
+        let text = analysis.text(binding.name());
+        assert!(
+            visible.start() >= visible.end()
+                || analysis
+                    .visible_at(visible.start())
+                    .iter()
+                    .any(|other| analysis.text(other.name()) == text),
+            "a binding shadowed where it is declared: {binding:?}"
+        );
+    }
+}
+
 pub fn semantics(analysis: &Analysis) {
     use sumi_hir::FunctionId;
     let source = analysis.parsed().source();
@@ -638,6 +676,7 @@ pub fn semantics(analysis: &Analysis) {
         analysis.is_valid(),
         !analysis.diagnostics().iter().any(|d| d.is_error())
     );
+    bindings(analysis);
     let reachability = [
         sumi_hir::codes::CONSTANT_CONDITION,
         sumi_hir::codes::UNREACHABLE_CODE,

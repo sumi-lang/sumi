@@ -1,11 +1,11 @@
 use sumi_frontend::{Diagnostic, DiagnosticCode, parse_source};
 use sumi_hir::codes::*;
 use sumi_hir::{
-    Analysis, ArithOp, BinaryOp, CmpOp, DeadCause, Function, FunctionId, Int, NodeId, Op, Ty,
-    analyze,
+    Analysis, ArithOp, BinaryOp, BindingKind, CmpOp, DeadCause, Function, FunctionId, Int, NodeId,
+    Op, Ty, analyze,
 };
 use sumi_test::{check, corpus};
-use sumi_text::TextRange;
+use sumi_text::{TextRange, TextSize};
 
 fn analyzed(source: &str) -> Analysis {
     analyze(parse_source(source.into()).unwrap())
@@ -687,4 +687,129 @@ proptest::proptest! {
     fn arbitrary_source_has_diagnostic_backed_acceptance(source in ".{0,256}") {
         check::semantics(&analyzed(&source));
     }
+}
+
+fn visible_names(analysis: &Analysis, offset: usize) -> Vec<&str> {
+    analysis
+        .visible_at(TextSize::new(offset as u32))
+        .into_iter()
+        .map(|binding| analysis.text(binding.name()))
+        .collect()
+}
+
+#[test]
+fn bindings_are_visible_after_their_declaration_to_the_end_of_their_block() {
+    let source = "fn f(a: int, b: bool) -> int {
+    let a = if b { a } else { 0 }
+    let mut total = 0
+    for i in 0..a {
+        let step = i * 2
+        total = total + step
+    }
+    total
+}";
+    let a = clean(source);
+    let kinds: Vec<_> = a
+        .bindings()
+        .iter()
+        .map(|b| (text(&a, b.name()), b.kind()))
+        .collect();
+    assert_eq!(
+        kinds,
+        [
+            ("a", BindingKind::Param),
+            ("b", BindingKind::Param),
+            ("a", BindingKind::Let { is_mutable: false }),
+            ("total", BindingKind::Let { is_mutable: true }),
+            ("i", BindingKind::LoopIndex),
+            ("step", BindingKind::Let { is_mutable: false }),
+        ]
+    );
+    let param_a = &a.bindings()[0];
+    let let_a = &a.bindings()[2];
+    assert_eq!(a.ty(param_a.declaration()), Some(Ty::Int));
+    assert_eq!(a.ty(a.bindings()[1].declaration()), Some(Ty::Bool));
+    assert_eq!(a.ty(let_a.declaration()), Some(Ty::Int));
+    assert_eq!(a.ty(a.bindings()[4].declaration()), Some(Ty::Int));
+    assert_eq!(
+        param_a.visible(),
+        TextRange::new(TextSize::new(29), TextSize::new(source.len() as u32))
+    );
+    assert_eq!(
+        visible_names(&a, source.find("-> int").unwrap()),
+        Vec::<&str>::new()
+    );
+    let initializer_a = source.find("{ a }").unwrap() + 2;
+    assert_eq!(visible_names(&a, initializer_a), ["a", "b"]);
+    let shadowed = a.visible_at(TextSize::new(initializer_a as u32));
+    assert_eq!(shadowed[0].kind(), BindingKind::Param);
+    let after_let = source.find("let mut total").unwrap();
+    assert_eq!(visible_names(&a, after_let), ["b", "a"]);
+    assert_eq!(
+        a.visible_at(TextSize::new(after_let as u32))[1].kind(),
+        BindingKind::Let { is_mutable: false }
+    );
+    assert_eq!(
+        visible_names(&a, source.find("0..a").unwrap()),
+        ["b", "a", "total"]
+    );
+    let in_loop = source.find("total = total").unwrap();
+    assert_eq!(visible_names(&a, in_loop), ["b", "a", "total", "i", "step"]);
+    let after_loop = source.find("    }\n").unwrap() + 5;
+    assert_eq!(visible_names(&a, after_loop), ["b", "a", "total"]);
+    let tail = source.rfind("total").unwrap();
+    assert_eq!(visible_names(&a, tail), ["b", "a", "total"]);
+    assert_eq!(visible_names(&a, source.len()), Vec::<&str>::new());
+    for binding in a.bindings() {
+        assert_eq!(
+            a.graph().node(binding.declaration()).name,
+            Some(binding.name())
+        );
+    }
+}
+
+#[test]
+fn bindings_survive_recovery_and_a_missing_body() {
+    let source = "fn f(x: int) -> int {\n    let y = \n    let z = x +\n    ";
+    let a = analyzed(source);
+    assert!(!a.is_valid());
+    let names: Vec<_> = a.bindings().iter().map(|b| text(&a, b.name())).collect();
+    assert_eq!(names, ["x", "y", "z"]);
+    let y = &a.bindings()[1];
+    let let_y = source.find("let y =").unwrap();
+    assert_eq!(y.visible().start().to_usize(), let_y + 7);
+    assert_eq!(visible_names(&a, let_y + 6), ["x"]);
+    assert_eq!(visible_names(&a, source.find("x +").unwrap()), ["x", "y"]);
+    assert_eq!(visible_names(&a, source.len()), ["x", "y", "z"]);
+
+    let source = "fn f(x: int) -> int {\n    if x > 0 { x }\n    ";
+    let a = analyzed(source);
+    assert_eq!(visible_names(&a, source.len()), ["x"]);
+
+    let source = "fn f(x: int) -> int = ";
+    let a = analyzed(source);
+    assert_eq!(visible_names(&a, 5), Vec::<&str>::new());
+    assert_eq!(visible_names(&a, source.len()), ["x"]);
+    assert_eq!(visible_names(&a, source.len() - 1), ["x"]);
+    let a = analyzed("fn f(x: int) -> int");
+    assert_eq!(a.bindings()[0].visible().start().to_usize(), 19);
+    assert_eq!(visible_names(&a, 19), ["x"]);
+}
+
+#[test]
+fn a_cut_short_let_before_the_next_item_is_visible_up_to_it() {
+    let a = analyzed("fn f() = {\n    let x =\nfn g() = x");
+    let x = &a.bindings()[0];
+    assert_eq!(
+        x.visible(),
+        TextRange::new(TextSize::new(22), TextSize::new(23))
+    );
+    assert_eq!(visible_names(&a, 22), ["x"]);
+    assert_eq!(visible_names(&a, 23), Vec::<&str>::new());
+}
+
+#[test]
+fn debug_output_lists_the_tables() {
+    let shown = format!("{:?}", clean("fn f(x: int) -> int = x"));
+    assert!(shown.contains("bindings: ["));
 }

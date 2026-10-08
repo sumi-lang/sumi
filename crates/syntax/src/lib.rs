@@ -11,7 +11,7 @@ mod tree;
 pub use ast::NodeKind;
 pub use grammar::{
     ArithOp, BinaryOp, CmpOp, Fixed, Literal, Pair, PrefixOp, Side, SyntaxKind, TokenField,
-    binary_operator, bracket, is_bracket, is_closer, is_opener,
+    binary_operator, bracket, is_bracket, is_closer, is_opener, starts_statement,
 };
 pub use index::{NodeIdx, SigIdx};
 pub use input::ParserInput;

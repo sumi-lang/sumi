@@ -6,3 +6,4 @@
 # everyone who runs the test benefits from these saved cases.
 cc 28ad01650030d4fcf9269312b8ed1f20c49d5330b760eaf20bfb278ce7d3a747 # shrinks to choices = [(0, 2, 0)]
 cc 43220f93e71b6f36192ae8685eafb71eb40ce45f792de7bd51fd9c98f1da0b08 # shrinks to tokens = ["}", "fn", "(", "unit", "fn", ",", "unit"]
+cc 66cbeea0e6b16e5c0badd0f171e2b52645b7751ea62ddd57aa906eb0fe592b79 # shrinks to tokens = ["let", "int", "\n", "int"]

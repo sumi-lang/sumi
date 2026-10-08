@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Complete the names in scope: the locals a position can read with their types, every function
+  with its signature as a call snippet, the keywords the grammar admits there, and the types after
+  `:` and `->`. Completion keeps working in a function whose block is not closed yet.
+
 ## 0.3.0
 
 - Report warnings beside errors: a name nothing reads, with a quick fix that prefixes it with `_`;

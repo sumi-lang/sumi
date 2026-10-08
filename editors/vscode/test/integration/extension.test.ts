@@ -107,6 +107,37 @@ suite("Sumi extension", () => {
     assertDiagnostic(semantic, "semantic/unknown-name", 12, 19);
   });
 
+  test("completes the names in scope", async () => {
+    const document = await openSaved(
+      "completion.su",
+      "fn double(x: int) -> int = x + x\nfn main() -> int {\n    let total = 1\n    tot\n}\n",
+    );
+    await waitForDiagnostics(
+      document.uri,
+      (diagnostics) => hasCode(diagnostics, "semantic/unknown-name"),
+      "completion diagnostic",
+    );
+    const completions = await vscode.commands.executeCommand<vscode.CompletionList>(
+      "vscode.executeCompletionItemProvider",
+      document.uri,
+      new vscode.Position(3, 7),
+    );
+    const labels = completions.items.map((item) =>
+      typeof item.label === "string" ? item.label : item.label.label,
+    );
+    assert.ok(labels.includes("total"), `the local is offered: ${labels.join(", ")}`);
+    assert.ok(labels.includes("double"), `the function is offered: ${labels.join(", ")}`);
+    assert.ok(labels.includes("let"), `a statement keyword is offered: ${labels.join(", ")}`);
+    const double = completions.items.find(
+      (item) => (typeof item.label === "string" ? item.label : item.label.label) === "double",
+    );
+    assert.ok(double);
+    assert.equal(double.kind, vscode.CompletionItemKind.Function);
+    assert.equal(double.detail, "fn(int) -> int");
+    assert.ok(double.insertText instanceof vscode.SnippetString, "a call inserts as a snippet");
+    assert.equal(double.insertText.value, "double($0)");
+  });
+
   test("returns recovered symbols for incomplete input", async () => {
     const document = await openSaved("incomplete.su", "fn unfinished() = {");
     const diagnostics = await waitForDiagnostics(
