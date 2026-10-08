@@ -13,14 +13,17 @@ use lsp_types::{
     DidOpenTextDocumentParams, DocumentFormattingParams, DocumentSymbol, DocumentSymbolParams,
     DocumentSymbolResponse, GotoDefinitionParams, InitializeParams, InitializeResult,
     InsertTextFormat, Location, OneOf, OptionalVersionedTextDocumentIdentifier, Position,
-    PositionEncodingKind, PublishDiagnosticsParams, Range, ReferenceParams, ServerCapabilities,
-    ServerInfo, SymbolInformation, SymbolKind, TextDocumentEdit, TextDocumentSyncCapability,
-    TextDocumentSyncKind, TextDocumentSyncOptions, TextEdit, Uri, WorkspaceEdit,
+    PositionEncodingKind, PrepareRenameResponse, PublishDiagnosticsParams, Range, ReferenceParams,
+    RenameOptions, RenameParams, ServerCapabilities, ServerInfo, SymbolInformation, SymbolKind,
+    TextDocumentEdit, TextDocumentPositionParams, TextDocumentSyncCapability, TextDocumentSyncKind,
+    TextDocumentSyncOptions, TextEdit, Uri, WorkspaceEdit,
 };
 use serde_json::Value;
 use sumi_frontend::{Diagnostic, Fix, Severity, parse_source};
-use sumi_hir::{Analysis, BindingKind, Dead, DeadCause, Occurrence, Signature, Ty, analyze};
-use sumi_lexer::{Fixed, LexedFile, RawIdx, SyntaxKind};
+use sumi_hir::{
+    Analysis, BindingKind, Dead, DeadCause, Occurrence, Signature, Symbol, Ty, analyze,
+};
+use sumi_lexer::{Fixed, LexedFile, RawIdx, SyntaxKind, lex};
 use sumi_syntax::ast::{self, AstNode, View};
 use sumi_syntax::{NodeKind, SyntaxTree, starts_statement};
 use sumi_text::{Encoding, TextSize};
@@ -66,6 +69,11 @@ enum Query {
         position: Position,
         has_declaration: bool,
     },
+    PrepareRename(Position),
+    Rename {
+        position: Position,
+        new_name: String,
+    },
 }
 
 enum Job {
@@ -98,7 +106,8 @@ enum Outcome {
         uri: Uri,
         generation: u64,
         version: i32,
-        result: Value,
+        /// An `Err` is the request's failure message.
+        result: Result<Value, String>,
     },
 }
 
@@ -209,6 +218,10 @@ fn capabilities(encoding: Encoding, features: ClientFeatures) -> ServerCapabilit
         document_formatting_provider: Some(OneOf::Left(true)),
         document_symbol_provider: Some(OneOf::Left(true)),
         references_provider: Some(OneOf::Left(true)),
+        rename_provider: Some(OneOf::Right(RenameOptions {
+            prepare_provider: Some(true),
+            work_done_progress_options: Default::default(),
+        })),
         ..ServerCapabilities::default()
     }
 }
@@ -458,6 +471,46 @@ fn handle_request(
                 sender,
             )?;
         }
+        lsp_types::request::PrepareRenameRequest::METHOD => {
+            let at: TextDocumentPositionParams = match serde_json::from_value(request.params) {
+                Ok(params) => params,
+                Err(error) => {
+                    invalid_params(sender, request.id, error)?;
+                    return Ok(());
+                }
+            };
+            let query = Query::PrepareRename(at.position);
+            queue_query(
+                request.id,
+                at.text_document.uri,
+                query,
+                documents,
+                jobs,
+                sender,
+            )?;
+        }
+        lsp_types::request::Rename::METHOD => {
+            let params: RenameParams = match serde_json::from_value(request.params) {
+                Ok(params) => params,
+                Err(error) => {
+                    invalid_params(sender, request.id, error)?;
+                    return Ok(());
+                }
+            };
+            let at = params.text_document_position;
+            let query = Query::Rename {
+                position: at.position,
+                new_name: params.new_name,
+            };
+            queue_query(
+                request.id,
+                at.text_document.uri,
+                query,
+                documents,
+                jobs,
+                sender,
+            )?;
+        }
         lsp_types::request::CodeActionRequest::METHOD => {
             let params: CodeActionParams = match serde_json::from_value(request.params) {
                 Ok(params) => params,
@@ -599,7 +652,7 @@ fn answer(
     query: Query,
     encoding: Encoding,
     features: ClientFeatures,
-) -> Value {
+) -> Result<Value, String> {
     let value = match query {
         Query::Format => serde_json::to_value(format_document(text, encoding)),
         Query::Symbols => serde_json::to_value(symbols(
@@ -618,8 +671,14 @@ fn answer(
             position,
             has_declaration,
         } => serde_json::to_value(references(text, uri, position, encoding, has_declaration)),
+        Query::PrepareRename(position) => {
+            serde_json::to_value(prepare_rename(text, position, encoding))
+        }
+        Query::Rename { position, new_name } => {
+            serde_json::to_value(rename(text, uri, position, encoding, &new_name)?)
+        }
     };
-    value.expect("a response serializes")
+    Ok(value.expect("a response serializes"))
 }
 
 fn analyze_document(
@@ -1084,6 +1143,93 @@ fn references(
     )
 }
 
+/// The name to rename, when one is under the cursor and has a declaration to carry the change.
+fn prepare_rename(
+    text: &str,
+    position: Position,
+    encoding: Encoding,
+) -> Option<PrepareRenameResponse> {
+    let (analysis, occurrence) = symbol_at(text, position, encoding)?;
+    analysis.declaration(occurrence.symbol)?;
+    let range = Positions::new(text, encoding).range(occurrence.range);
+    Some(PrepareRenameResponse::Range(range))
+}
+
+/// `Err` names what stops the rename: a new name that is no name, a symbol whose name two
+/// functions share or appears where the parser recovered, so an occurrence may be missing, or a
+/// new name that already denotes something at an occurrence of the symbol, so a read would
+/// silently change meaning.
+fn rename(
+    text: &str,
+    uri: Uri,
+    position: Position,
+    encoding: Encoding,
+    new_name: &str,
+) -> Result<Option<WorkspaceEdit>, String> {
+    let is_name = lex(new_name)
+        .is_ok_and(|lexed| lexed.len() == 1 && lexed.kind(RawIdx::new(0)) == SyntaxKind::Ident);
+    if !is_name {
+        return Err(format!("`{new_name}` is not a name"));
+    }
+    let Some((analysis, occurrence)) = symbol_at(text, position, encoding) else {
+        return Ok(None);
+    };
+    let Some(declared) = analysis.declaration(occurrence.symbol) else {
+        return Ok(None);
+    };
+    let old_name = analysis.text(declared);
+    if old_name == new_name {
+        return Ok(None);
+    }
+    let named = |name: &str| {
+        analysis
+            .functions()
+            .iter()
+            .filter(|function| {
+                function
+                    .name()
+                    .is_some_and(|range| analysis.text(range) == name)
+            })
+            .count()
+    };
+    if matches!(occurrence.symbol, Symbol::Function(_)) && named(old_name) > 1 {
+        return Err(format!("two functions are named `{old_name}`"));
+    }
+    if analysis
+        .unresolved()
+        .iter()
+        .any(|range| analysis.text(*range) == old_name)
+    {
+        return Err(format!(
+            "`{old_name}` also appears where the parser recovered; fix the syntax first"
+        ));
+    }
+    if named(new_name) > 0 {
+        return Err(format!("a function is already named `{new_name}`"));
+    }
+    let occurrences = || std::iter::once(declared).chain(analysis.references_of(occurrence.symbol));
+    let same: Vec<_> = analysis
+        .bindings()
+        .iter()
+        .filter(|binding| binding.name() != declared && analysis.text(binding.name()) == new_name)
+        .collect();
+    let is_shadowed = occurrences().any(|range| {
+        same.iter()
+            .any(|binding| binding.is_visible_at(range.start()))
+    });
+    if is_shadowed {
+        return Err(format!("`{new_name}` is already in scope here"));
+    }
+    let positions = Positions::new(text, encoding);
+    let edits = occurrences()
+        .map(|range| TextEdit::new(positions.range(range), new_name.into()))
+        .collect();
+    Ok(Some(WorkspaceEdit {
+        changes: Some(HashMap::from([(uri, edits)])),
+        ..WorkspaceEdit::default()
+    }))
+}
+
 fn handle_outcome(
     outcome: Outcome,
     documents: &HashMap<String, Document>,
@@ -1122,7 +1268,15 @@ fn handle_outcome(
             if documents.get(uri.as_str()).is_some_and(|document| {
                 document.generation == generation && document.version == version
             }) {
-                sender.send(Response::new_ok(id, result).into())?;
+                sender.send(
+                    match result {
+                        Ok(result) => Response::new_ok(id, result),
+                        Err(message) => {
+                            Response::new_err(id, ErrorCode::RequestFailed as i32, message)
+                        }
+                    }
+                    .into(),
+                )?;
             } else {
                 sender.send(
                     Response::new_err(
@@ -1760,6 +1914,125 @@ fn body(c: bool) -> int {
     }
 
     #[test]
+    fn protocol_renames_and_reports_a_refusal() {
+        let (client, server_thread) = start(json!({}));
+        let uri = "file:///rename.su";
+        open(
+            &client,
+            uri,
+            "fn double(x: int) -> int = x + x\nfn main() -> int = double(2)\n",
+        );
+        let at = |line, character| json!({ "textDocument": { "uri": uri }, "position": { "line": line, "character": character } });
+        let prepared = request(&client, 1, "textDocument/prepareRename", at(0, 11)).unwrap();
+        assert_eq!(prepared["start"], json!({ "line": 0, "character": 10 }));
+        let mut rename = at(0, 11);
+        rename["newName"] = json!("n");
+        let edit = request(&client, 2, "textDocument/rename", rename).unwrap();
+        assert_eq!(edit["changes"][uri].as_array().unwrap().len(), 3);
+        let mut refused = at(0, 11);
+        refused["newName"] = json!("main");
+        let error = request(&client, 3, "textDocument/rename", refused).unwrap_err();
+        assert_eq!(error.code, ErrorCode::RequestFailed as i32);
+        assert_eq!(error.message, "a function is already named `main`");
+        assert_eq!(
+            request(&client, 4, "textDocument/prepareRename", at(1, 0)).unwrap(),
+            Value::Null
+        );
+        for method in ["textDocument/prepareRename", "textDocument/rename"] {
+            let error = request(&client, 5, method, json!({})).unwrap_err();
+            assert_eq!(error.code, ErrorCode::InvalidParams as i32);
+        }
+        stop(client, server_thread);
+    }
+
+    #[test]
+    fn rename_carries_every_occurrence_and_refuses_a_name_that_changes_meaning() {
+        let text = "fn double(x: int) -> int = x + x
+fn main() -> int {
+    let x = double(2)
+    let y = 1
+    x + y
+}
+";
+        let uri: Uri = "file:///rename.su".parse().unwrap();
+        let at = |line, character| Position::new(line, character);
+        let range = |line, start, end| Range::new(at(line, start), at(line, end));
+        let rename =
+            |position, new_name| rename(text, uri.clone(), position, Encoding::Utf16, new_name);
+        let edits = |edit: WorkspaceEdit| {
+            let mut edits = edit.changes.unwrap().remove(&uri).unwrap();
+            edits.sort_by_key(|edit| (edit.range.start.line, edit.range.start.character));
+            edits
+                .into_iter()
+                .map(|edit| (edit.range, edit.new_text))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            prepare_rename(text, at(0, 28), Encoding::Utf16),
+            Some(PrepareRenameResponse::Range(range(0, 27, 28)))
+        );
+        assert_eq!(prepare_rename(text, at(0, 20), Encoding::Utf16), None);
+        assert_eq!(
+            edits(rename(at(0, 28), "n").unwrap().unwrap()),
+            [
+                (range(0, 10, 11), "n".into()),
+                (range(0, 27, 28), "n".into()),
+                (range(0, 31, 32), "n".into()),
+            ]
+        );
+        assert_eq!(
+            edits(rename(at(0, 3), "twice").unwrap().unwrap()),
+            [
+                (range(0, 3, 9), "twice".into()),
+                (range(2, 12, 18), "twice".into())
+            ]
+        );
+        assert_eq!(rename(at(0, 28), "x"), Ok(None));
+        assert_eq!(rename(at(1, 0), "n"), Ok(None));
+        assert_eq!(rename(at(0, 28), "1n"), Err("`1n` is not a name".into()));
+        assert_eq!(rename(at(0, 28), "let"), Err("`let` is not a name".into()));
+        assert_eq!(rename(at(0, 28), "a b"), Err("`a b` is not a name".into()));
+        assert_eq!(
+            rename(at(0, 28), "main"),
+            Err("a function is already named `main`".into())
+        );
+        assert_eq!(
+            rename(at(2, 8), "y"),
+            Err("`y` is already in scope here".into())
+        );
+        assert_eq!(
+            rename(at(3, 8), "x"),
+            Err("`x` is already in scope here".into())
+        );
+        assert!(rename(at(0, 28), "y").unwrap().is_some());
+
+        let recovered = "fn f(n: int) -> int {
+    for n in 0.. { n + 1 }
+    n
+}";
+        assert_eq!(
+            super::rename(recovered, uri.clone(), at(0, 5), Encoding::Utf16, "m"),
+            Err("`n` also appears where the parser recovered; fix the syntax first".into())
+        );
+        assert!(
+            super::rename(recovered, uri.clone(), at(0, 3), Encoding::Utf16, "g")
+                .unwrap()
+                .is_some()
+        );
+        let twins = "fn f() = 1
+fn f() = 2
+fn main() -> int = f()";
+        assert_eq!(
+            super::rename(twins, uri.clone(), at(0, 3), Encoding::Utf16, "g"),
+            Err("two functions are named `f`".into())
+        );
+        assert_eq!(
+            super::rename(twins, uri.clone(), at(1, 3), Encoding::Utf16, "g"),
+            Err("two functions are named `f`".into())
+        );
+    }
+
+    #[test]
     fn completion_survives_recovery() {
         let keywords = ["_", "false", "for", "if", "let", "return", "true"];
         let values = |locals: &[&str], has_else: bool| -> Vec<String> {
@@ -2041,7 +2314,7 @@ fn body(c: bool) -> int {
                 uri,
                 generation: old_generation,
                 version: old_version,
-                result: json!([]),
+                result: Ok(json!([])),
             },
             &documents,
             &mut snapshots,
