@@ -283,8 +283,8 @@ impl<'a> Program<'a> {
     }
     /// Evaluate within `ranges(function).params`, without the machine's observable trace.
     pub fn evaluate(self, function: FunctionId, args: &[Value]) -> Value {
-        self.check_arguments(function, args);
-        self.known(function).unwrap_or_else(|| {
+        let result = self.check_arguments(function, args).result;
+        self.known(function, result).unwrap_or_else(|| {
             finish(Machine::new(
                 self.analysis.graph(),
                 function,
@@ -301,10 +301,10 @@ impl<'a> Program<'a> {
         }
     }
     /// The result when the analysis proved it a single value.
-    fn known(self, function: FunctionId) -> Option<Value> {
+    fn known(self, function: FunctionId, result: Ty) -> Option<Value> {
         let run = self.analysis.graph.run(function);
         let may = self.analysis.may(run.result());
-        match self.signature(function).result {
+        match result {
             Ty::Int => may.ints.lo().zip(may.ints.hi()).and_then(|(lo, hi)| {
                 // Singleton detection stays constant-time even for large interval endpoints.
                 (i64::try_from(&lo).is_ok() && lo == hi).then_some(Value::Int(lo))
