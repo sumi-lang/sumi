@@ -315,11 +315,8 @@ fn marks(graph: &Graph, plan: &Plan) -> Vec<bool> {
 fn emit(graph: &Graph, plan: &Plan, kept: &[bool]) -> Optimized {
     let regions = kept_regions(graph, plan, kept);
     let mut builder = GraphBuilder::new(kept.iter().filter(|&&kept| kept).count());
-    for _ in graph.runs() {
-        builder.function();
-    }
-    for callable in graph.callables() {
-        builder.declare(callable.function, callable.params.clone());
+    for run in graph.runs() {
+        builder.function(run.param_types().map(Box::from));
     }
     let mut new_of: Vec<Option<NodeId>> = vec![None; graph.nodes().len()];
     let mut new_region: Vec<Option<RegionId>> = vec![None; regions.len()];

@@ -17,9 +17,16 @@ pub struct Run {
     arity: u32,
     region: RegionId,
     result: NodeId,
+    params: Option<Box<[Ty]>>,
 }
 
 impl Run {
+    /// The parameter types a call is held to: one per parameter node, present when the declared
+    /// list is whole and every type resolved.
+    pub fn param_types(&self) -> Option<&[Ty]> {
+        self.params.as_deref()
+    }
+
     pub fn nodes(&self) -> impl ExactSizeIterator<Item = NodeId> + use<> {
         (self.nodes.start as usize..self.nodes.end as usize).map(NodeId::new)
     }
@@ -89,23 +96,6 @@ impl std::fmt::Debug for RegionId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "r{}", self.index())
     }
-}
-
-/// A function a call may be held to: one with a whole parameter list. An ID from one graph names
-/// nothing in another.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Callee(u32);
-
-impl Callee {
-    fn index(self) -> usize {
-        self.0 as usize
-    }
-}
-
-#[derive(Debug)]
-pub struct Callable {
-    pub function: FunctionId,
-    pub params: Box<[Ty]>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -194,8 +184,9 @@ pub enum Op {
     Result {
         declared: Option<Ty>,
     },
-    /// The inputs are the arguments as written, which may not match the callee's arity.
-    Call(Callee),
+    /// A call to a function whose run has parameter types; the inputs are the arguments as
+    /// written, which may not match its arity.
+    Call(FunctionId),
 }
 
 impl Op {
@@ -537,7 +528,6 @@ pub struct Graph {
     store: Store,
     regions: Vec<Region>,
     runs: Vec<Run>,
-    callables: Vec<Callable>,
 }
 
 impl Graph {
@@ -627,15 +617,6 @@ impl Graph {
         (carry, next)
     }
 
-    pub fn callable(&self, callee: Callee) -> &Callable {
-        &self.callables[callee.index()]
-    }
-
-    /// In declaration order.
-    pub fn callables(&self) -> &[Callable] {
-        &self.callables
-    }
-
     /// Indexed by function ID.
     pub fn runs(&self) -> &[Run] {
         &self.runs
@@ -683,9 +664,18 @@ struct Closed {
 
 #[derive(Debug)]
 enum Slot {
-    Declared,
-    Open,
+    Declared(Option<Box<[Ty]>>),
+    Open(Option<Box<[Ty]>>),
     Closed(Run),
+}
+
+impl Slot {
+    fn param_types(&self) -> Option<&[Ty]> {
+        match self {
+            Self::Declared(params) | Self::Open(params) => params.as_deref(),
+            Self::Closed(run) => run.param_types(),
+        }
+    }
 }
 
 /// A run between `open_run` and `close_run`.
@@ -703,7 +693,6 @@ pub struct GraphBuilder {
     store: Store,
     regions: Vec<Opening>,
     runs: Vec<Slot>,
-    callables: Vec<Callable>,
 }
 
 impl GraphBuilder {
@@ -721,26 +710,20 @@ impl GraphBuilder {
             store: Store::with_capacity(nodes),
             regions: Vec::new(),
             runs: Vec::new(),
-            callables: Vec::new(),
         }
     }
 
-    /// The next function, in declaration order.
-    pub fn function(&mut self) -> FunctionId {
+    /// The next function, in declaration order; `params` is its whole parameter list, every type
+    /// resolved, or none.
+    pub fn function(&mut self, params: Option<Box<[Ty]>>) -> FunctionId {
         let function = FunctionId::new(self.runs.len());
-        self.runs.push(Slot::Declared);
+        self.runs.push(Slot::Declared(params));
         function
     }
 
-    pub fn callable(&self, callee: Callee) -> &Callable {
-        &self.callables[callee.index()]
-    }
-
-    /// `params` is `function`'s whole parameter list, one type per parameter node of its run.
-    pub fn declare(&mut self, function: FunctionId, params: Box<[Ty]>) -> Callee {
-        let callee = Callee(u32::try_from(self.callables.len()).expect("function count fits u32"));
-        self.callables.push(Callable { function, params });
-        callee
+    /// As [`Run::param_types`], whether or not the run has opened or closed.
+    pub fn param_types(&self, function: FunctionId) -> Option<&[Ty]> {
+        self.runs[function.index()].param_types()
     }
 
     /// `references` must be the form `op` names.
@@ -814,18 +797,18 @@ impl GraphBuilder {
     /// run opens once.
     pub fn open_run(&mut self, function: FunctionId) -> OpenRun {
         let slot = &mut self.runs[function.index()];
-        assert!(
-            matches!(slot, Slot::Declared),
-            "a function's run opens once"
-        );
-        *slot = Slot::Open;
+        let Slot::Declared(params) = std::mem::replace(slot, Slot::Open(None)) else {
+            panic!("a function's run opens once")
+        };
+        *slot = Slot::Open(params);
         OpenRun {
             function,
             start: u32::try_from(self.store.nodes.len()).expect("node count fits u32"),
         }
     }
 
-    /// `region` is the body's, already closed.
+    /// `region` is the body's, already closed; a run with parameter types has one parameter node
+    /// per type.
     pub fn close_run(&mut self, run: OpenRun, region: RegionId, result: NodeId) {
         let end = u32::try_from(self.store.nodes.len()).expect("node count fits u32");
         let arity = self.store.nodes[run.start as usize..]
@@ -833,11 +816,20 @@ impl GraphBuilder {
             .skip(1)
             .take_while(|node| matches!(node.op, Op::Param { .. }))
             .count();
-        self.runs[run.function.index()] = Slot::Closed(Run {
+        let slot = &mut self.runs[run.function.index()];
+        let Slot::Open(params) = std::mem::replace(slot, Slot::Open(None)) else {
+            unreachable!("a run closes once, after it opens")
+        };
+        assert!(
+            params.as_ref().is_none_or(|params| params.len() == arity),
+            "a parameter node per parameter type"
+        );
+        *slot = Slot::Closed(Run {
             nodes: run.start..end,
             arity: u32::try_from(arity).expect("parameter count fits u32"),
             region,
             result,
+            params,
         });
     }
 
@@ -864,11 +856,10 @@ impl GraphBuilder {
                 .into_iter()
                 .map(|slot| match slot {
                     Slot::Closed(run) => run,
-                    Slot::Open => panic!("a run opened is closed"),
-                    Slot::Declared => panic!("a function declared has a run"),
+                    Slot::Open(_) => panic!("a run opened is closed"),
+                    Slot::Declared(_) => panic!("a function declared has a run"),
                 })
                 .collect(),
-            callables: self.callables,
         }
     }
 }
@@ -914,7 +905,7 @@ mod tests {
     #[test]
     fn runs_and_regions_follow_the_protocol() {
         let mut builder = GraphBuilder::new(8);
-        let function = builder.function();
+        let function = builder.function(None);
         let run = builder.open_run(function);
         let entry = builder.push(Op::Entry, [], References::None);
         let param = builder.push(
@@ -969,7 +960,7 @@ mod tests {
     #[test]
     fn an_empty_region_reads_an_outer_definition() {
         let mut builder = GraphBuilder::new(2);
-        let function = builder.function();
+        let function = builder.function(None);
         let run = builder.open_run(function);
         let entry = builder.push(Op::Entry, [], References::None);
         let param = builder.push(
@@ -1012,7 +1003,7 @@ mod tests {
     #[should_panic(expected = "a run opened is closed")]
     fn an_open_run_does_not_finish() {
         let mut builder = GraphBuilder::new(1);
-        let function = builder.function();
+        let function = builder.function(None);
         let run = builder.open_run(function);
         builder.push(Op::Entry, [], References::None);
         drop(run);
@@ -1023,7 +1014,7 @@ mod tests {
     #[should_panic(expected = "a function declared has a run")]
     fn a_function_without_a_run_does_not_finish() {
         let mut builder = GraphBuilder::new(0);
-        builder.function();
+        builder.function(None);
         builder.finish();
     }
 
@@ -1031,7 +1022,7 @@ mod tests {
     #[should_panic(expected = "a function's run opens once")]
     fn a_run_opens_once() {
         let mut builder = GraphBuilder::new(2);
-        let function = builder.function();
+        let function = builder.function(None);
         let run = builder.open_run(function);
         let entry = builder.push(Op::Entry, [], References::None);
         let region = builder.open(entry);

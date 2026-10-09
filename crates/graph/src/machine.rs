@@ -376,8 +376,7 @@ impl<'a> Machine<'a> {
                         self.control.push(Control::Phi(node));
                         self.demand(inputs[0]);
                     }
-                    Op::Call(callee) => {
-                        let function = self.graph.callable(callee).function;
+                    Op::Call(function) => {
                         self.control.push(Control::Enter { node, function });
                         for &arg in inputs.iter().rev() {
                             self.demand(arg);
@@ -723,9 +722,9 @@ mod tests {
         for (start, end, expected) in [(2, 2, 29), (4, 2, 29), (2, 5, 92)] {
             for returning in [false, true] {
                 let mut builder = GraphBuilder::new(400);
-                let leaf = builder.function();
-                let caller = builder.function();
-                let callee = builder.declare(leaf, Box::new([crate::Ty::Int]));
+                let leaf = builder.function(Some(Box::new([crate::Ty::Int])));
+                let caller = builder.function(None);
+                let callee = leaf;
                 let run = builder.open_run(leaf);
                 let entry = push(&mut builder, Op::Entry, &[]);
                 let param = push(
@@ -848,7 +847,7 @@ mod tests {
     #[test]
     fn nested_loops_reset_only_their_body_and_use_mathematical_bounds() {
         let mut builder = GraphBuilder::new(40);
-        let function = builder.function();
+        let function = builder.function(None);
         let run = builder.open_run(function);
         let entry = push(&mut builder, Op::Entry, &[]);
         let region = builder.open(entry);
@@ -896,7 +895,7 @@ mod tests {
             [Op::Int(0.into()), Op::Hole],
         ] {
             let mut builder = GraphBuilder::new(20);
-            let function = builder.function();
+            let function = builder.function(None);
             let run = builder.open_run(function);
             let entry = push(&mut builder, Op::Entry, &[]);
             let region = builder.open(entry);
@@ -927,8 +926,11 @@ mod tests {
     fn tail_reuse_preserves_the_logical_depth_limit() {
         for tail in [false, true] {
             let mut builder = GraphBuilder::new(8);
-            let functions = [builder.function(), builder.function()];
-            let callees = functions.map(|function| builder.declare(function, Box::new([])));
+            let functions = [
+                builder.function(Some(Box::new([]))),
+                builder.function(Some(Box::new([]))),
+            ];
+            let callees = functions;
             for (index, function) in functions.into_iter().enumerate() {
                 let run = builder.open_run(function);
                 let entry = push(&mut builder, Op::Entry, &[]);
@@ -970,7 +972,7 @@ mod tests {
     #[test]
     fn root_return_overrides_tail() {
         let mut builder = GraphBuilder::new(5);
-        let function = builder.function();
+        let function = builder.function(None);
         let run = builder.open_run(function);
         let entry = push(&mut builder, Op::Entry, &[]);
         let region = builder.open(entry);
@@ -996,9 +998,9 @@ mod tests {
     #[test]
     fn callee_return_resumes_caller_computation() {
         let mut builder = GraphBuilder::new(10);
-        let callee = builder.function();
-        let caller = builder.function();
-        let callable = builder.declare(callee, Box::new([]));
+        let callee = builder.function(Some(Box::new([])));
+        let caller = builder.function(None);
+        let callable = callee;
 
         let run = builder.open_run(callee);
         let entry = push(&mut builder, Op::Entry, &[]);
@@ -1039,7 +1041,7 @@ mod tests {
     #[test]
     fn observe_demands_only_selected_control() {
         let mut builder = GraphBuilder::new(9);
-        let function = builder.function();
+        let function = builder.function(None);
         let run = builder.open_run(function);
         let entry = push(&mut builder, Op::Entry, &[]);
         let then = builder.open(entry);
@@ -1078,7 +1080,7 @@ mod tests {
     #[test]
     fn phi_demands_only_its_selected_version() {
         let mut builder = GraphBuilder::new(9);
-        let function = builder.function();
+        let function = builder.function(None);
         let run = builder.open_run(function);
         let entry = push(&mut builder, Op::Entry, &[]);
         let region = builder.open(entry);
@@ -1114,7 +1116,7 @@ mod tests {
     #[test]
     fn sequence_continues_after_an_unselected_return() {
         let mut builder = GraphBuilder::new(7);
-        let function = builder.function();
+        let function = builder.function(None);
         let run = builder.open_run(function);
         let entry = push(&mut builder, Op::Entry, &[]);
         let then = builder.open(entry);
@@ -1148,7 +1150,7 @@ mod tests {
     #[test]
     fn nested_payload_return_wins() {
         let mut builder = GraphBuilder::new(6);
-        let function = builder.function();
+        let function = builder.function(None);
         let run = builder.open_run(function);
         let entry = push(&mut builder, Op::Entry, &[]);
         let region = builder.open(entry);
@@ -1176,9 +1178,9 @@ mod tests {
     fn suspended_shared_values_preserve_steps_and_depth() {
         for padding in [0, 300] {
             let mut builder = GraphBuilder::new(padding + 10);
-            let leaf = builder.function();
-            let caller = builder.function();
-            let callee = builder.declare(leaf, Box::new([crate::Ty::Int; 2]));
+            let leaf = builder.function(Some(Box::new([crate::Ty::Int; 2])));
+            let caller = builder.function(None);
+            let callee = leaf;
             let run = builder.open_run(leaf);
             let entry = push(&mut builder, Op::Entry, &[]);
             let params = [0, 1].map(|index| {

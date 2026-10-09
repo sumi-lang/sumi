@@ -1213,31 +1213,35 @@ fn values(analysis: &Analysis, offset: TextSize, has_snippets: bool) -> Vec<Comp
             }
         })
         .collect();
-    items.extend(analysis.functions().iter().filter_map(|function| {
-        let name = function.name()?.text(text);
-        let signature = function.signature();
-        let (insert_text, insert_text_format) = match signature {
-            Some(Signature { params, .. }) if params.is_empty() => {
-                (Some(format!("{name}()")), None)
-            }
-            Some(_) if has_snippets => {
-                (Some(format!("{name}($0)")), Some(InsertTextFormat::SNIPPET))
-            }
-            _ => (None, None),
-        };
-        Some(CompletionItem {
-            label: name.into(),
-            kind: Some(CompletionItemKind::FUNCTION),
-            detail: signature.map(|Signature { params, result }| {
-                let params: Vec<_> = params.iter().map(|ty| ty.as_str()).collect();
-                format!("fn({}) -> {result}", params.join(", "))
+    items.extend(
+        analysis
+            .functions()
+            .iter()
+            .enumerate()
+            .filter_map(|(index, function)| {
+                let name = function.name()?.text(text);
+                let signature = analysis.signature(FunctionId::new(index));
+                let (insert_text, insert_text_format) = match signature {
+                    Some(Signature { params: [], .. }) => (Some(format!("{name}()")), None),
+                    Some(_) if has_snippets => {
+                        (Some(format!("{name}($0)")), Some(InsertTextFormat::SNIPPET))
+                    }
+                    _ => (None, None),
+                };
+                Some(CompletionItem {
+                    label: name.into(),
+                    kind: Some(CompletionItemKind::FUNCTION),
+                    detail: signature.map(|Signature { params, result }| {
+                        let params: Vec<_> = params.iter().map(|ty| ty.as_str()).collect();
+                        format!("fn({}) -> {result}", params.join(", "))
+                    }),
+                    insert_text,
+                    insert_text_format,
+                    sort_text: Some(format!("1{name}")),
+                    ..CompletionItem::default()
+                })
             }),
-            insert_text,
-            insert_text_format,
-            sort_text: Some(format!("1{name}")),
-            ..CompletionItem::default()
-        })
-    }));
+    );
     items
 }
 
@@ -1406,7 +1410,7 @@ fn signature_line(analysis: &Analysis, id: FunctionId) -> String {
         .function(id)
         .name()
         .map_or("_", |name| analysis.text(name));
-    let Some(Signature { params, result }) = analysis.function(id).signature() else {
+    let Some(Signature { params, result }) = analysis.signature(id) else {
         return format!("fn {name}");
     };
     let params: Vec<_> = analysis
@@ -1451,7 +1455,7 @@ fn hover(
                 let ranges = program.ranges(id);
                 let params = analysis
                     .params(id)
-                    .zip(&*signature.params)
+                    .zip(signature.params)
                     .zip(&*ranges.params);
                 for ((binding, ty), may) in params {
                     let binding = binding.expect("a signature's parameters are named");

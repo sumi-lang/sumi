@@ -606,10 +606,10 @@ fn bindings(analysis: &Analysis) {
             "{pair:?}"
         );
     }
-    for (index, function) in analysis.functions().iter().enumerate() {
+    for index in 0..analysis.functions().len() {
         let id = sumi_hir::FunctionId::new(index);
         assert!(
-            function.signature().is_none() || analysis.params(id).all(|param| param.is_some()),
+            analysis.signature(id).is_none() || analysis.params(id).all(|param| param.is_some()),
             "a signature over an unnamed parameter in function {index}"
         );
     }
@@ -709,7 +709,10 @@ pub fn semantics(analysis: &Analysis) {
                 a.name().map(|name| analysis.text(name)),
                 b.name().map(|name| reversed.text(name))
             );
-            assert_eq!(a.signature(), b.signature());
+            assert_eq!(
+                analysis.signature(FunctionId::new(index)),
+                reversed.signature(FunctionId::new(count - 1 - index))
+            );
             assert_eq!(
                 analysis.ranges(FunctionId::new(index)),
                 reversed.ranges(FunctionId::new(count - 1 - index))
@@ -801,8 +804,8 @@ fn typed(analysis: &Analysis) {
         if !function.is_complete() {
             continue;
         }
-        let signature = function
-            .signature()
+        let signature = analysis
+            .signature(FunctionId::new(index))
             .expect("a complete function has a signature");
         let run = graph.run(FunctionId::new(index));
         let ty = |node: NodeId| analysis.ty(node);
@@ -963,15 +966,12 @@ fn typed(analysis: &Analysis) {
                     }
                 }
                 Op::Call(callee) => {
-                    let callable = graph.callable(*callee);
                     let signature = analysis
-                        .function(callable.function)
-                        .signature()
+                        .signature(*callee)
                         .expect("a called function has a signature");
-                    assert_eq!(signature.params, callable.params);
                     assert_eq!(own, Some(signature.result));
-                    assert_eq!(inputs.len(), callable.params.len());
-                    for (index, (&input, &param)) in inputs.iter().zip(&callable.params).enumerate()
+                    assert_eq!(inputs.len(), signature.params.len());
+                    for (index, (&input, &param)) in inputs.iter().zip(signature.params).enumerate()
                     {
                         if values[index] {
                             assert_eq!(ty(input), Some(param));
@@ -1067,15 +1067,16 @@ fn graph(analysis: &Analysis) {
         }
     }
     typed(analysis);
-    // A callable's parameters are its run's, a repeated name's type kept in the signature alone.
-    for callable in graph.callables() {
-        let run = graph.run(callable.function);
-        assert_eq!(callable.params.len(), run.params().len());
-        for (param, &declared) in run.params().zip(&callable.params) {
+    // A parameter node carries its declared type or none, a repeated name's kept by the run alone.
+    for run in graph.runs() {
+        let Some(types) = run.param_types() else {
+            continue;
+        };
+        for (param, &declared) in run.params().zip(types) {
             let Op::Param { index, ty } = graph.node(param).op else {
                 panic!("a run's parameters are parameter nodes")
             };
-            assert_eq!(callable.params[index as usize], declared);
+            assert_eq!(types[index as usize], declared);
             assert!(ty.is_none_or(|ty| ty == declared));
         }
     }
@@ -1272,7 +1273,7 @@ pub fn run(program: Program<'_>) -> Runs {
             continue;
         }
         let mut tuples: Vec<Vec<Value>> = vec![Vec::new()];
-        for (may, &ty) in ranges.params.iter().zip(&signature.params) {
+        for (may, &ty) in ranges.params.iter().zip(signature.params) {
             let values: Vec<Value> = match ty {
                 Ty::Int => points(&may.ints).into_iter().map(Value::Int).collect(),
                 Ty::Bool => [true, false]
@@ -1383,7 +1384,7 @@ fn dead_code_stays_dead(program: Program<'_>) {
     let graph = analysis.graph();
     for (id, _) in program.functions() {
         let mut tuples: Vec<Vec<Value>> = vec![Vec::new()];
-        for &ty in &program.signature(id).params {
+        for &ty in program.signature(id).params {
             let values: Vec<Value> = match ty {
                 Ty::Int => [-9, -1, 0, 1, 9]
                     .into_iter()

@@ -1,7 +1,7 @@
 use std::fmt::Write;
 
 use sumi_frontend::{ParsedSource, parse_source};
-use sumi_hir::{Analysis, Ty};
+use sumi_hir::{Analysis, FunctionId, Ty};
 
 const SHAPES: [&str; 6] = [
     "inferred-reverse",
@@ -90,7 +90,10 @@ pub fn validate(shape: &str, size: usize, analysis: &Analysis) {
             analysis
                 .functions()
                 .iter()
-                .all(|function| function.signature().is_none() && !function.is_complete())
+                .enumerate()
+                .all(|(index, function)| {
+                    analysis.signature(FunctionId::new(index)).is_none() && !function.is_complete()
+                })
         );
         return;
     }
@@ -104,7 +107,10 @@ pub fn validate(shape: &str, size: usize, analysis: &Analysis) {
     }
     let graph = analysis.graph();
     for (index, function) in analysis.functions().iter().enumerate() {
-        assert_eq!(function.signature().unwrap().result, Ty::Int);
+        assert_eq!(
+            analysis.signature(FunctionId::new(index)).unwrap().result,
+            Ty::Int
+        );
         assert!(function.is_complete());
         let result = graph.run(sumi_hir::FunctionId::new(index)).result();
         assert_eq!(analysis.ty(result), Some(Ty::Int));
