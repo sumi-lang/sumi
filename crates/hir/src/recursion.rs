@@ -474,13 +474,14 @@ fn delta(
                 let inputs = graph.inputs(node);
                 result = match graph.node(node).op {
                     Op::Param { index, .. } => Some((index, Ints::from(Int::from(0)))),
-                    Op::Copy { .. } | Op::Assign { .. } | Op::Refine { .. } | Op::Exactly(_) => {
+                    Op::Copy { .. } | Op::Assign | Op::Refine { .. } | Op::Exactly(_) => {
                         next = Some(inputs[0]);
                         continue;
                     }
-                    Op::Phi { contexts, .. } => {
+                    Op::Phi => {
+                        let contexts = graph.phi_contexts(node);
                         let live = |index: usize| {
-                            graph.input_values(node)[index + 1]
+                            graph.input_roles(node)[index + 1].is_value()
                                 && typing.may(contexts[index]).is_live()
                         };
                         match (live(0), live(1)) {

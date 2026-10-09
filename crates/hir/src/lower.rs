@@ -6,7 +6,7 @@ use std::collections::{HashMap, HashSet};
 
 use rustc_hash::FxBuildHasher;
 use sumi_frontend::{DiagnosticCode, Fix, Label};
-use sumi_graph::{GraphBuilder, Loop};
+use sumi_graph::{Carried, GraphBuilder, References};
 use sumi_lexer::{LexedFile, RawIdx, SyntaxKind, TokenFlags};
 use sumi_syntax::{
     Literal, NodeIdx, NodeKind, PrefixOp, SyntaxTree,
@@ -975,7 +975,7 @@ impl<'a, 's> Builder<'a, 's> {
         inputs: &[(NodeId, TextRange)],
         name: Option<TextRange>,
     ) -> NodeId {
-        self.push_over(node, op, inputs, name, &[])
+        self.push_over(node, op, inputs, References::None, name, &[])
     }
     /// `results` are those of the regions `op` holds.
     fn push_over(
@@ -983,11 +983,14 @@ impl<'a, 's> Builder<'a, 's> {
         node: NodeIdx,
         op: Op,
         inputs: &[(NodeId, TextRange)],
+        references: References<'_>,
         name: Option<TextRange>,
         results: &[NodeId],
     ) -> NodeId {
-        let is_typed = self.follows(&op, inputs, results);
-        let id = self.graph.push(op, inputs, self.source.range(node), name);
+        let is_typed = self.follows(&op, inputs, references, results);
+        let id = self
+            .graph
+            .push(op, inputs, references, self.source.range(node), name);
         self.lowered.typed.push(is_typed);
         self.nodes_of[node.to_usize()] = Some(id);
         id
@@ -1000,8 +1003,18 @@ impl<'a, 's> Builder<'a, 's> {
         origin: TextRange,
         name: Option<TextRange>,
     ) -> NodeId {
-        let is_typed = self.follows(&op, inputs, &[]);
-        let id = self.graph.push(op, inputs, origin, name);
+        self.place_with(op, inputs, References::None, origin, name)
+    }
+    fn place_with(
+        &mut self,
+        op: Op,
+        inputs: &[(NodeId, TextRange)],
+        references: References<'_>,
+        origin: TextRange,
+        name: Option<TextRange>,
+    ) -> NodeId {
+        let is_typed = self.follows(&op, inputs, references, &[]);
+        let id = self.graph.push(op, inputs, references, origin, name);
         self.lowered.typed.push(is_typed);
         id
     }
@@ -1010,8 +1023,18 @@ impl<'a, 's> Builder<'a, 's> {
     }
     /// Whether a node of `op` over `inputs`, and over the regions with `results`, carries a value
     /// the typing follows.
-    fn follows(&self, op: &Op, inputs: &[(NodeId, TextRange)], results: &[NodeId]) -> bool {
+    fn follows(
+        &self,
+        op: &Op,
+        inputs: &[(NodeId, TextRange)],
+        references: References<'_>,
+        results: &[NodeId],
+    ) -> bool {
         let typed = |node: NodeId| self.lowered.typed[node.index()];
+        let declaration = || match references {
+            References::Version(declaration) | References::Phi { declaration, .. } => declaration,
+            _ => unreachable!("a version names its declaration"),
+        };
         match *op {
             Op::Hole | Op::Unused => false,
             Op::Entry
@@ -1023,8 +1046,8 @@ impl<'a, 's> Builder<'a, 's> {
             | Op::After
             | Op::Result { declared: Some(_) }
             | Op::Copy { declared: Some(_) } => true,
-            Op::Loop(_) | Op::LoopIndex => true,
-            Op::Carry { declaration } => typed(declaration),
+            Op::Loop { .. } | Op::LoopIndex => true,
+            Op::Carry => typed(declaration()),
             Op::Result { declared: None } => inputs.iter().all(|&(input, _)| typed(input)),
             Op::Param { ty, .. } => ty.is_some(),
             // An operator's result has its type whatever its operands; a call has its callee's
@@ -1034,10 +1057,8 @@ impl<'a, 's> Builder<'a, 's> {
                 let function = self.graph.callable(callee).function;
                 !matches!(self.headers[function.index()].result, HeaderResult::None)
             }
-            Op::Assign { declaration } => typed(declaration) && typed(inputs[0].0),
-            Op::Phi { declaration, .. } => {
-                typed(declaration) && inputs.iter().all(|&(input, _)| typed(input))
-            }
+            Op::Assign => typed(declaration()) && typed(inputs[0].0),
+            Op::Phi => typed(declaration()) && inputs.iter().all(|&(input, _)| typed(input)),
             Op::Join { .. } => typed(inputs[0].0) && results.iter().all(|&result| typed(result)),
             _ => inputs.iter().all(|&(input, _)| typed(input)),
         }
@@ -1239,12 +1260,13 @@ impl<'a, 's> Builder<'a, 's> {
                 (true_value, self.graph.node(true_value).origin),
                 (false_value, self.graph.node(false_value).origin),
             ];
-            let phi = self.place(
-                Op::Phi {
+            let phi = self.place_with(
+                Op::Phi,
+                &inputs,
+                References::Phi {
                     declaration,
                     contexts: [states[0].context, states[1].context],
                 },
-                &inputs,
                 at,
                 None,
             );
@@ -1538,9 +1560,10 @@ impl<'a, 's> Builder<'a, 's> {
             }
             let initial = self.current(local);
             let declaration = self.locals[local.index()].declaration;
-            let header = self.place(
-                Op::Carry { declaration },
+            let header = self.place_with(
+                Op::Carry,
                 &[(initial, self.graph.node(initial).origin)],
+                References::Version(declaration),
                 at,
                 None,
             );
@@ -1580,13 +1603,16 @@ impl<'a, 's> Builder<'a, 's> {
                 (header, body.changes[position].2)
             })
             .collect();
-        let id = self.graph.push_loop(Loop {
-            body: region,
+        let carried_nodes: Vec<NodeId> = next
+            .iter()
+            .flat_map(|&(header, next)| [header, next])
+            .collect();
+        let references = References::Loop {
             index,
-            carried: next.clone().into_boxed_slice(),
             continuation: body.context,
             empty,
-        });
+            carried: Carried::new(&carried_nodes),
+        };
         let at = self.source.range(expr.node());
         let bounds = [expr.start().node(), expr.end().node()].map(|bound| {
             let (value, at) = self.input(bound);
@@ -1595,18 +1621,26 @@ impl<'a, 's> Builder<'a, 's> {
             });
             (value, at)
         });
-        let node = self.push(expr.node(), Op::Loop(id), &bounds, None);
+        let node = self.push_over(
+            expr.node(),
+            Op::Loop { body: region },
+            &bounds,
+            references,
+            None,
+            &[],
+        );
         self.controls[expr.node().to_usize()] = Some(node);
-        for (position, ((local, header), (_, next))) in carried.into_iter().zip(next).enumerate() {
+        for ((local, header), (_, next)) in carried.into_iter().zip(next) {
             if header == next {
                 continue;
             }
-            let value = self.place(
-                Op::LoopValue {
-                    loop_: id,
-                    index: u32::try_from(position).expect("carried local count fits u32"),
-                },
+            let value = self.place_with(
+                Op::LoopValue,
                 &[(node, at)],
+                References::LoopValue {
+                    carry: header,
+                    next,
+                },
                 at,
                 None,
             );
@@ -2018,13 +2052,13 @@ impl<'a, 's> Builder<'a, 's> {
                 let value = assignment.value().node();
                 let input = self.input(value);
                 let assigned = match target {
-                    Some(local) => self.push(
+                    Some(local) => self.push_over(
                         node,
-                        Op::Assign {
-                            declaration: self.locals[local.index()].declaration,
-                        },
+                        Op::Assign,
                         &[input],
+                        References::Version(self.locals[local.index()].declaration),
                         None,
+                        &[],
                     ),
                     None => self.push(node, Op::Hole, &[input], None),
                 };
@@ -2433,13 +2467,17 @@ impl<'a, 's> Builder<'a, 's> {
                 value,
             } => {
                 let input = self.present(node, value);
-                let op = match target {
-                    Some(local) => Op::Assign {
-                        declaration: self.locals[local.index()].declaration,
-                    },
-                    None => Op::Hole,
+                let assigned = match target {
+                    Some(local) => self.push_over(
+                        node,
+                        Op::Assign,
+                        &[input],
+                        References::Version(self.locals[local.index()].declaration),
+                        None,
+                        &[],
+                    ),
+                    None => self.push(node, Op::Hole, &[input], None),
                 };
-                let assigned = self.push(node, op, &[input], None);
                 self.controls[node.to_usize()] = value.and_then(|value| self.control(value));
                 let completes = value.is_some_and(|value| self.form(value).completes);
                 self.bottoms[node.to_usize()] = completes;
@@ -2523,7 +2561,14 @@ impl<'a, 's> Builder<'a, 's> {
         } else {
             Op::Or { rhs }
         };
-        let id = self.push_over(expr.expr.node(), op, &[lhs_input], None, &[result]);
+        let id = self.push_over(
+            expr.expr.node(),
+            op,
+            &[lhs_input],
+            References::None,
+            None,
+            &[result],
+        );
         let selected = self.control(rhs_node).map(|_| rhs);
         let observe = selected.map(|region| {
             let (then, else_) = if expr.is_and {
@@ -2593,7 +2638,14 @@ impl<'a, 's> Builder<'a, 's> {
         results.extend(else_node.map(|else_node| self.node_of(else_node)));
         let then_form = self.form(then_node);
         let else_form = else_node.map_or(Form::SCALAR, |node| self.form(node));
-        let id = self.push_over(node, Op::Join { then, else_ }, &[condition], None, &results);
+        let id = self.push_over(
+            node,
+            Op::Join { then, else_ },
+            &[condition],
+            References::None,
+            None,
+            &results,
+        );
         let observe = (self.control(then_node).is_some()
             || else_node.is_some_and(|node| self.control(node).is_some()))
         .then(|| {

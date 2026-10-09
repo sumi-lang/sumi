@@ -128,6 +128,7 @@ fn timing(c: &mut Criterion) {
     suspended_frames(c);
     singleton_entry(c);
     workload(c, "big-int");
+    workload(c, "loops");
 }
 
 fn memory(c: &mut Criterion) {

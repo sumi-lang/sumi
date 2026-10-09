@@ -307,30 +307,30 @@ pub(crate) fn explain(
             Op::Int(_) | Op::Neg | Op::Binary(_) => {
                 labels.push((entry.origin, describe(&may.ints, "").into()));
             }
-            Op::Copy { .. } | Op::Assign { .. } => follow(&mut queue, inputs[0], 0),
-            Op::LoopIndex | Op::Carry { .. } => {
+            Op::Copy { .. } | Op::Assign => follow(&mut queue, inputs[0], 0),
+            Op::LoopIndex | Op::Carry => {
                 labels.push((
                     entry.name.unwrap_or(entry.origin),
                     describe(&may.ints, " on a loop iteration").into(),
                 ));
             }
-            Op::LoopValue { loop_, index } => {
-                let loop_ = graph.loop_(loop_);
-                let (header, next) = loop_.carried[index as usize];
-                if typing.may(loop_.empty).is_live() {
+            Op::LoopValue => {
+                let (header, next) = graph.carry(node);
+                let [continuation, empty] = graph.loop_contexts(inputs[0]);
+                if typing.may(empty).is_live() {
                     follow(&mut queue, graph.inputs(header)[0], 1);
                 }
-                if typing.may(loop_.continuation).is_live() {
+                if typing.may(continuation).is_live() {
                     follow(&mut queue, next, 1);
                 }
             }
-            Op::Phi { contexts, .. } => {
-                for ((&value, &context), &has_value) in inputs[1..]
+            Op::Phi => {
+                for ((&value, context), &role) in inputs[1..]
                     .iter()
-                    .zip(&contexts)
-                    .zip(&graph.input_values(node)[1..])
+                    .zip(graph.phi_contexts(node))
+                    .zip(&graph.input_roles(node)[1..])
                 {
-                    if has_value && typing.may(context).is_live() {
+                    if role.is_value() && typing.may(context).is_live() {
                         follow(&mut queue, value, 1);
                     }
                 }
@@ -357,18 +357,20 @@ pub(crate) fn explain(
                 follow(&mut queue, graph.run(function).result(), 1);
             }
             Op::Return => {
-                if graph.input_values(node)[0] && typing.may(inputs[1]).is_live() {
+                if graph.input_roles(node)[0].is_value() && typing.may(inputs[1]).is_live() {
                     follow(&mut queue, inputs[0], 0);
                 }
             }
             Op::Sequence => follow(&mut queue, inputs[1], 0),
             Op::Result { .. } => {
-                if graph.input_values(node)[0] {
+                if graph.input_roles(node)[0].is_value() {
                     follow(&mut queue, inputs[0], 0);
                 }
                 for &returned in &inputs[1..] {
                     let returned_inputs = graph.inputs(returned);
-                    if graph.input_values(returned)[0] && typing.may(returned_inputs[1]).is_live() {
+                    if graph.input_roles(returned)[0].is_value()
+                        && typing.may(returned_inputs[1]).is_live()
+                    {
                         follow(&mut queue, returned_inputs[0], 1);
                     }
                 }
@@ -402,7 +404,7 @@ pub(crate) fn explain(
             }
             Op::Bool(_)
             | Op::Unit
-            | Op::Loop(_)
+            | Op::Loop { .. }
             | Op::Unused
             | Op::Hole
             | Op::Not
@@ -471,7 +473,7 @@ fn complete(
                 .signature
                 .as_ref()
                 .is_some_and(|signature| Some(signature.result) == typing.resolve(node)),
-            _ if graph.input_values(node).iter().any(|&value| !value) => true,
+            _ if !graph.input_roles(node).iter().all(|role| role.is_value()) => true,
             Op::Join {
                 then,
                 else_: Some(else_),

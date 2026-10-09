@@ -808,7 +808,11 @@ fn typed(analysis: &Analysis) {
             let entry = graph.node(node);
             let own = ty(node);
             let inputs = graph.inputs(node);
-            let values = graph.input_values(node);
+            let values: Vec<bool> = graph
+                .input_roles(node)
+                .iter()
+                .map(|role| role.is_value())
+                .collect();
             match &entry.op {
                 Op::Entry
                 | Op::Then
@@ -828,19 +832,19 @@ fn typed(analysis: &Analysis) {
                         }
                     }
                 }
-                Op::Carry { declaration } => {
-                    assert_eq!(own, ty(*declaration));
+                Op::Carry => {
+                    assert_eq!(own, ty(graph.declaration(node)));
                     assert_eq!(own, ty(inputs[0]));
                 }
-                Op::Loop(id) => {
+                Op::Loop { body } => {
                     assert_eq!(own, Some(Ty::Unit));
-                    let body = graph.region(graph.loop_(*id).body);
+                    let body = graph.region(*body);
                     if values.iter().all(|&value| value) && body.result_has_value() {
                         assert_eq!(ty(body.result()), Some(Ty::Unit));
                     }
                 }
-                Op::LoopValue { loop_, index } => {
-                    let (header, next) = graph.loop_(*loop_).carried[*index as usize];
+                Op::LoopValue => {
+                    let (header, next) = graph.carry(node);
                     assert_eq!(own, ty(header));
                     assert_eq!(own, ty(next));
                 }
@@ -910,17 +914,14 @@ fn typed(analysis: &Analysis) {
                         assert_eq!(own, Some(*declared));
                     }
                 }
-                Op::Assign { declaration } => {
-                    assert_eq!(own, ty(*declaration));
+                Op::Assign => {
+                    assert_eq!(own, ty(graph.declaration(node)));
                     if values[0] {
                         assert_eq!(ty(inputs[0]), own);
                     }
                 }
-                Op::Phi {
-                    declaration,
-                    contexts: _,
-                } => {
-                    assert_eq!(own, ty(*declaration));
+                Op::Phi => {
+                    assert_eq!(own, ty(graph.declaration(node)));
                     if values[0] {
                         assert_eq!(ty(inputs[0]), Some(Ty::Bool));
                     }
@@ -983,7 +984,7 @@ fn typed(analysis: &Analysis) {
 }
 
 fn graph(analysis: &Analysis) {
-    use sumi_hir::{NodeId, Op};
+    use sumi_hir::{Op, References, Role};
     let graph = analysis.graph();
     for id in graph.node_ids() {
         let node = graph.node(id);
@@ -996,18 +997,18 @@ fn graph(analysis: &Analysis) {
             Op::Unit
             | Op::Unused
             | Op::Copy { .. }
-            | Op::Assign { .. }
-            | Op::Carry { .. }
-            | Op::LoopValue { .. }
+            | Op::Assign
+            | Op::Carry
+            | Op::LoopValue
             | Op::Neg
             | Op::Not
             | Op::Exactly(_) => Some(1),
-            Op::Phi { .. } => Some(3),
+            Op::Phi => Some(3),
             Op::And { .. } | Op::Or { .. } | Op::Join { .. } => Some(1),
             Op::Observe { .. } => Some(2),
             Op::Binary(_)
             | Op::LoopIndex
-            | Op::Loop(_)
+            | Op::Loop { .. }
             | Op::Refine { .. }
             | Op::Then
             | Op::Else
@@ -1049,7 +1050,7 @@ fn graph(analysis: &Analysis) {
                     | Op::Sequence
                     | Op::Observe { .. }
                     | Op::After
-            ) && graph.input_values(id).iter().all(|&value| value)
+            ) && graph.input_roles(id).iter().all(|role| role.is_value())
                 && !matches!(
                     node.op,
                     Op::Join {
@@ -1115,41 +1116,58 @@ fn graph(analysis: &Analysis) {
             owner[node.index()] = Some(index);
         }
     }
+    // Every reference precedes its node in its run, and holds the kind of node its role names.
     for node in graph.node_ids() {
-        let check = |reference: NodeId| {
-            assert!(reference.index() < node.index());
+        let op = &graph.node(node).op;
+        let operands = graph.inputs(node).len();
+        let references = &graph.edges(node)[operands..];
+        let roles = &graph.roles(node)[operands..];
+        for (&reference, &role) in references.iter().zip(roles) {
+            assert!(reference.index() < node.index(), "{role:?} of {node:?}");
             assert_eq!(owner[reference.index()], owner[node.index()]);
-        };
-        match &graph.node(node).op {
-            Op::Assign { declaration } | Op::Carry { declaration } => check(*declaration),
-            Op::Phi {
-                declaration,
-                contexts,
-            } => {
-                check(*declaration);
-                contexts.iter().copied().for_each(check);
+            let referenced = &graph.node(reference).op;
+            match role {
+                Role::Value | Role::Completes => panic!("an operand is no reference"),
+                Role::Declaration => assert!(graph.node(reference).name.is_some()),
+                Role::Context => assert!(matches!(
+                    referenced,
+                    Op::Entry | Op::Then | Op::Else | Op::After
+                )),
+                Role::Index => assert!(matches!(referenced, Op::LoopIndex)),
+                Role::Carry => assert!(matches!(referenced, Op::Carry)),
+                Role::Next => {}
             }
-            _ => {}
+        }
+        let fits = match (op, graph.references(node)) {
+            (Op::Assign | Op::Carry, References::Version(_))
+            | (Op::Phi, References::Phi { .. })
+            | (Op::Loop { .. }, References::Loop { .. })
+            | (Op::LoopValue, References::LoopValue { .. }) => true,
+            (Op::Assign | Op::Carry | Op::Phi | Op::Loop { .. } | Op::LoopValue, _) => false,
+            (_, references) => references == References::None,
+        };
+        assert!(fits, "{op:?} names {:?}", graph.references(node));
+    }
+    for node in graph.node_ids() {
+        let Op::Loop { body } = graph.node(node).op else {
+            continue;
+        };
+        let nodes: Vec<_> = graph.region(body).nodes().collect();
+        let index = graph.loop_index(node);
+        assert!(nodes.contains(&index));
+        for (header, next) in graph.carried(node) {
+            assert!(nodes.contains(&header));
+            assert_eq!(graph.inputs(header).len(), 1);
+            assert!(graph.inputs(header)[0].index() < index.index());
+            assert!(next.index() < node.index());
         }
     }
-    for id in graph.loop_ids() {
-        let loop_ = graph.loop_(id);
-        let body = graph.region(loop_.body);
-        let nodes: Vec<_> = body.nodes().collect();
-        assert!(nodes.contains(&loop_.index));
-        assert!(matches!(graph.node(loop_.index).op, Op::LoopIndex));
-        assert_eq!(
-            owner[loop_.index.index()],
-            owner[loop_.continuation.index()]
-        );
-        assert_eq!(owner[loop_.index.index()], owner[loop_.empty.index()]);
-        for &(header, next) in &loop_.carried {
-            assert!(nodes.contains(&header));
-            assert!(matches!(graph.node(header).op, Op::Carry { .. }));
-            assert_eq!(owner[header.index()], owner[next.index()]);
-            assert_eq!(owner[header.index()], owner[loop_.index.index()]);
-            assert_eq!(graph.inputs(header).len(), 1);
-            assert!(graph.inputs(header)[0].index() < loop_.index.index());
+    for node in graph.node_ids() {
+        if matches!(graph.node(node).op, Op::LoopValue) {
+            let (header, next) = graph.carry(node);
+            let loop_ = graph.inputs(node)[0];
+            assert!(matches!(graph.node(loop_).op, Op::Loop { .. }));
+            assert!(graph.carried(loop_).any(|pair| pair == (header, next)));
         }
     }
     let mut spans: Vec<(usize, usize)> = Vec::new();
@@ -1435,7 +1453,7 @@ fn optimized(compiled: &Compiled<'_>) {
                 "{node:?} keeps a continuation after control that never completes"
             );
         }
-        if matches!(op, Op::Loop(_)) {
+        if matches!(op, Op::Loop { .. }) {
             assert!(
                 inputs.iter().all(|&bound| compiled.may(bound).is_live()),
                 "{node:?} keeps a loop body after a bound that never completes"
@@ -1443,8 +1461,8 @@ fn optimized(compiled: &Compiled<'_>) {
         }
         let dropped = match op {
             Op::Unused => true,
-            Op::Copy { .. } | Op::Assign { .. } | Op::Refine { .. } | Op::Exactly(_) => {
-                graph.input_values(node)[0]
+            Op::Copy { .. } | Op::Assign | Op::Refine { .. } | Op::Exactly(_) => {
+                graph.input_roles(node)[0].is_value()
             }
             _ => false,
         };

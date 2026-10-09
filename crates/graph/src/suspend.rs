@@ -1,7 +1,7 @@
 //! Call-continuation liveness for consuming runs. A layout applies only to its exact pending stack.
 
 use super::Control;
-use crate::{Graph, NodeId, Op, RegionId, Run};
+use crate::{Graph, NodeId, Op, RegionId, Role, Run};
 
 const WORK: usize = 65_536;
 
@@ -161,38 +161,28 @@ impl Layout {
                     continue;
                 }
                 seen[slot] = true;
-                let inputs = graph.inputs(node);
-                if roots.len() + inputs.len() > *budget {
+                let edges = graph.edges(node);
+                if roots.len() + edges.len() > *budget {
                     return None;
                 }
-                roots.extend_from_slice(inputs);
-                match graph.node(node).op {
-                    Op::Loop(id) => {
-                        let loop_ = graph.loop_(id);
-                        roots.push(loop_.index);
-                        roots.extend(
-                            loop_
-                                .carried
-                                .iter()
-                                .flat_map(|&(carry, next)| [carry, next]),
-                        );
-                        roots.extend(region(loop_.body, false));
-                        roots.extend(region(loop_.body, true));
+                // Declarations and contexts hold no value a later read takes.
+                roots.extend(
+                    edges
+                        .iter()
+                        .zip(graph.roles(node))
+                        .filter(|(_, role)| !matches!(role, Role::Declaration | Role::Context))
+                        .map(|(&edge, _)| edge),
+                );
+                let op = &graph.node(node).op;
+                let wants_control = matches!(op, Op::Observe { .. });
+                for owned in op.regions() {
+                    roots.extend(region(owned, wants_control));
+                    if matches!(op, Op::Loop { .. }) {
+                        roots.extend(region(owned, true));
                     }
-                    Op::LoopValue { loop_, index } => {
-                        roots.push(graph.loop_(loop_).carried[index as usize].0);
-                    }
-                    Op::Join { then, else_ } => {
-                        roots.extend(region(then, false));
-                        roots.extend(else_.and_then(|r| region(r, false)));
-                    }
-                    Op::Observe { then, else_ } => {
-                        roots.extend(then.and_then(|r| region(r, true)));
-                        roots.extend(else_.and_then(|r| region(r, true)));
-                    }
-                    Op::And { rhs } | Op::Or { rhs } => roots.extend(region(rhs, false)),
-                    Op::Result { .. } => roots.extend(region(run.region(), true)),
-                    _ => {}
+                }
+                if matches!(op, Op::Result { .. }) {
+                    roots.extend(region(run.region(), true));
                 }
                 if roots.len() > *budget {
                     return None;

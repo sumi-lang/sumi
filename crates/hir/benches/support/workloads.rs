@@ -4,6 +4,7 @@ use sumi_hir::{Analysis, Value};
 pub const CASES: &[(&str, &str, i64)] = &[
     ("fibonacci", include_str!("programs/fibonacci.su"), 6765),
     ("big-int", include_str!("programs/big-int.su"), 100),
+    ("loops", include_str!("programs/loops.su"), 2_955_050),
 ];
 
 pub fn parse(source: &str) -> ParsedSource {

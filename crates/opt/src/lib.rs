@@ -1,7 +1,7 @@
 //! The middle end: rewrites a proven graph into a smaller one that computes the same values, for
 //! whichever backend runs it. The result is a graph like the analysis's, contexts and all.
 
-use sumi_graph::{FunctionId, Graph, GraphBuilder, Loop, LoopId, May, NodeId, Op, RegionId};
+use sumi_graph::{FunctionId, Graph, GraphBuilder, May, NodeId, Op, References, RegionId, Role};
 
 /// A rewritten graph and the node of the original each of its nodes computes.
 pub struct Optimized {
@@ -27,7 +27,7 @@ enum Rewrite {
     Keep,
     Alias(NodeId),
     Literal(Op),
-    // The replacement retains the original input edges and their order.
+    // The replacement retains the original operands and their order, and no reference.
     Replace(Op),
 }
 
@@ -55,6 +55,14 @@ impl Plan {
             node = to;
         }
         node
+    }
+
+    /// The edges the node keeps: all of them, or a replacement's operands alone.
+    fn edges<'a>(&self, graph: &'a Graph, node: NodeId) -> &'a [NodeId] {
+        match self.nodes[node.index()] {
+            Rewrite::Replace(_) => graph.inputs(node),
+            _ => graph.edges(node),
+        }
     }
 
     fn literal(&self, node: NodeId) -> Option<&Op> {
@@ -103,19 +111,20 @@ fn plan<'a>(graph: &Graph, facts: impl Fn(NodeId) -> &'a May) -> Plan {
     let returning = returning(graph);
     for node in graph.node_ids() {
         let inputs = graph.inputs(node);
-        let values = graph.input_values(node);
+        let roles = graph.input_roles(node);
+        let value = |index: usize| roles[index].is_value();
         let rewrite = match graph.node(node).op {
-            Op::Sequence | Op::Loop(_) if !facts(inputs[0]).is_live() => Rewrite::Alias(inputs[0]),
-            Op::Loop(_) if !facts(inputs[1]).is_live() => Rewrite::Replace(Op::Sequence),
-            Op::Copy { .. } | Op::Assign { .. } | Op::Refine { .. } | Op::Exactly(_)
-                if values[0] =>
-            {
+            Op::Sequence | Op::Loop { .. } if !facts(inputs[0]).is_live() => {
+                Rewrite::Alias(inputs[0])
+            }
+            Op::Loop { .. } if !facts(inputs[1]).is_live() => Rewrite::Replace(Op::Sequence),
+            Op::Copy { .. } | Op::Assign | Op::Refine { .. } | Op::Exactly(_) if value(0) => {
                 Rewrite::Alias(inputs[0])
             }
             // A branch its condition always takes runs wherever its parent does.
-            Op::Then if values[0] && decided(inputs[0]) == Some(true) => Rewrite::Alias(inputs[1]),
-            Op::Else if values[0] && decided(inputs[0]) == Some(false) => Rewrite::Alias(inputs[1]),
-            Op::Join { then, else_ } if values[0] => {
+            Op::Then if value(0) && decided(inputs[0]) == Some(true) => Rewrite::Alias(inputs[1]),
+            Op::Else if value(0) && decided(inputs[0]) == Some(false) => Rewrite::Alias(inputs[1]),
+            Op::Join { then, else_ } if value(0) => {
                 let to = match (decided(inputs[0]), else_) {
                     (Some(true), _) => valued(then),
                     (Some(false), Some(else_)) => valued(else_),
@@ -123,16 +132,16 @@ fn plan<'a>(graph: &Graph, facts: impl Fn(NodeId) -> &'a May) -> Plan {
                 };
                 to.map_or(Rewrite::Keep, Rewrite::Alias)
             }
-            Op::Phi { .. } if values[0] => match decided(inputs[0]) {
+            Op::Phi if value(0) => match decided(inputs[0]) {
                 Some(truth) => {
                     let taken = if truth { 1 } else { 2 };
-                    values[taken]
+                    value(taken)
                         .then_some(inputs[taken])
                         .map_or(Rewrite::Keep, Rewrite::Alias)
                 }
                 None => Rewrite::Keep,
             },
-            Op::Observe { then, else_ } if values[0] => match decided(inputs[0]) {
+            Op::Observe { then, else_ } if value(0) => match decided(inputs[0]) {
                 Some(truth) => {
                     let taken = if truth { then } else { else_ };
                     match taken.and_then(|region| plan.exits[region.index()].control) {
@@ -142,7 +151,7 @@ fn plan<'a>(graph: &Graph, facts: impl Fn(NodeId) -> &'a May) -> Plan {
                 }
                 None => Rewrite::Keep,
             },
-            ref op @ (Op::And { rhs } | Op::Or { rhs }) if values[0] => {
+            ref op @ (Op::And { rhs } | Op::Or { rhs }) if value(0) => {
                 let is_and = matches!(op, Op::And { .. });
                 match decided(inputs[0]) {
                     Some(left) if left != is_and => Rewrite::Literal(Op::Bool(left)),
@@ -151,22 +160,22 @@ fn plan<'a>(graph: &Graph, facts: impl Fn(NodeId) -> &'a May) -> Plan {
                 }
             }
             // The loop is its statement's control, so its bounds' returns run when it does.
-            Op::Loop(id)
-                if !facts(graph.region(graph.loop_(id).body).context).is_live()
+            Op::Loop { body }
+                if !facts(graph.region(body).context).is_live()
                     && !graph
-                        .loop_(id)
-                        .carried
-                        .iter()
-                        .any(|&(carry, _)| returning[graph.inputs(carry)[0].index()])
+                        .carried(node)
+                        .any(|(carry, _)| returning[graph.inputs(carry)[0].index()])
                     && !inputs.iter().any(|&bound| returning[bound.index()]) =>
             {
                 Rewrite::Literal(Op::Unit)
             }
-            Op::LoopValue { loop_, index } => {
-                let loop_ = graph.loop_(loop_);
-                let carry = loop_.carried[index as usize].0;
-                let is_empty = !facts(graph.region(loop_.body).context).is_live();
-                (is_empty && graph.input_values(carry)[0])
+            Op::LoopValue => {
+                let (carry, _) = graph.carry(node);
+                let Op::Loop { body } = graph.node(inputs[0]).op else {
+                    unreachable!("a loop value reads its loop")
+                };
+                let is_empty = !facts(graph.region(body).context).is_live();
+                (is_empty && graph.input_roles(carry)[0].is_value())
                     .then(|| graph.inputs(carry)[0])
                     .map_or(Rewrite::Keep, Rewrite::Alias)
             }
@@ -179,10 +188,10 @@ fn plan<'a>(graph: &Graph, facts: impl Fn(NodeId) -> &'a May) -> Plan {
                 | Op::Binary(_)
                 | Op::Call(_)
                 | Op::Join { .. }
-                | Op::Phi { .. }
+                | Op::Phi
                 | Op::And { .. }
                 | Op::Or { .. }
-                | Op::LoopValue { .. }
+                | Op::LoopValue
         );
         plan.nodes[node.index()] = match rewrite {
             Rewrite::Keep if is_foldable && !returning[node.index()] => {
@@ -223,14 +232,12 @@ fn returning(graph: &Graph) -> Vec<bool> {
         let region = |region: RegionId| reads(graph.region(region).result());
         let own = match graph.node(node).op {
             Op::Return | Op::Sequence | Op::Observe { .. } | Op::Result { .. } => true,
-            Op::Loop(id) => {
-                let loop_ = graph.loop_(id);
-                graph.region(loop_.body).control().is_some()
-                    || region(loop_.body)
-                    || loop_
-                        .carried
-                        .iter()
-                        .any(|&(carry, next)| reads(graph.inputs(carry)[0]) || reads(next))
+            Op::Loop { body } => {
+                graph.region(body).control().is_some()
+                    || region(body)
+                    || graph
+                        .carried(node)
+                        .any(|(carry, next)| reads(graph.inputs(carry)[0]) || reads(next))
             }
             Op::Join { then, else_ } => region(then) || else_.is_some_and(region),
             Op::And { rhs } | Op::Or { rhs } => region(rhs),
@@ -249,16 +256,6 @@ fn is_context(op: &Op) -> bool {
     matches!(op, Op::Entry | Op::Then | Op::Else | Op::After)
 }
 
-fn owned(op: &Op, graph: &Graph) -> Vec<RegionId> {
-    match *op {
-        Op::Join { then, else_ } => [Some(then), else_].into_iter().flatten().collect(),
-        Op::Observe { then, else_ } => [then, else_].into_iter().flatten().collect(),
-        Op::And { rhs } | Op::Or { rhs } => vec![rhs],
-        Op::Loop(id) => vec![graph.loop_(id).body],
-        _ => Vec::new(),
-    }
-}
-
 fn kept_regions(graph: &Graph, plan: &Plan, kept: &[bool]) -> Vec<bool> {
     let mut regions = vec![false; graph.region_ids().len()];
     for run in graph.runs() {
@@ -268,15 +265,15 @@ fn kept_regions(graph: &Graph, plan: &Plan, kept: &[bool]) -> Vec<bool> {
         .node_ids()
         .filter(|&node| kept[node.index()] && plan.literal(node).is_none())
     {
-        for region in owned(plan.op(graph, node), graph) {
+        for region in plan.op(graph, node).regions() {
             regions[region.index()] = true;
         }
     }
     regions
 }
 
-/// What survives: whatever a run's result can demand, and the contexts and declarations the
-/// survivors name, which keep the graph as well formed as the analysis's.
+/// What survives: whatever a run's result can demand, and every node the survivors reference,
+/// which keeps the graph as well formed as the analysis's.
 fn marks(graph: &Graph, plan: &Plan) -> Vec<bool> {
     let mut kept = vec![false; graph.nodes().len()];
     let mut stack: Vec<NodeId> = Vec::new();
@@ -301,33 +298,14 @@ fn marks(graph: &Graph, plan: &Plan) -> Vec<bool> {
         if plan.literal(node).is_some() {
             continue;
         }
-        let inputs = graph.inputs(node);
-        match *plan.op(graph, node) {
+        let op = plan.op(graph, node);
+        match *op {
             Op::Unused | Op::Int(_) | Op::Bool(_) | Op::Hole => {}
-            Op::Result { .. } => stack.push(inputs[0]),
-            Op::Phi {
-                declaration,
-                contexts,
-            } => {
-                stack.extend_from_slice(inputs);
-                stack.push(declaration);
-                stack.extend(contexts);
-            }
-            Op::Assign { declaration } | Op::Carry { declaration } => {
-                stack.extend_from_slice(inputs);
-                stack.push(declaration);
-            }
-            Op::Loop(id) => {
-                let loop_ = graph.loop_(id);
-                stack.extend_from_slice(inputs);
-                stack.extend([loop_.index, loop_.continuation, loop_.empty]);
-                for &(carry, next) in &loop_.carried {
-                    stack.extend([carry, next]);
-                }
-            }
-            _ => stack.extend_from_slice(inputs),
+            // Explicit returns reach the result only through a kept control.
+            Op::Result { .. } => stack.push(graph.inputs(node)[0]),
+            _ => stack.extend_from_slice(plan.edges(graph, node)),
         }
-        for owned in owned(plan.op(graph, node), graph) {
+        for owned in op.regions() {
             region(&mut stack, owned);
         }
     }
@@ -345,7 +323,6 @@ fn emit(graph: &Graph, plan: &Plan, kept: &[bool]) -> Optimized {
     }
     let mut new_of: Vec<Option<NodeId>> = vec![None; graph.nodes().len()];
     let mut new_region: Vec<Option<RegionId>> = vec![None; regions.len()];
-    let mut new_loop: Vec<Option<LoopId>> = vec![None; graph.loop_ids().len()];
     let mut origins = Vec::new();
     let mut run_regions: Vec<Vec<RegionId>> = vec![Vec::new(); graph.runs().len()];
     for region in graph.region_ids().filter(|region| regions[region.index()]) {
@@ -358,6 +335,9 @@ fn emit(graph: &Graph, plan: &Plan, kept: &[bool]) -> Optimized {
         run_regions[run].push(region);
     }
 
+    let mut inputs = Vec::new();
+    let mut completes = Vec::new();
+    let mut carried = Vec::new();
     for (index, run) in graph.runs().iter().enumerate() {
         let open = builder.open_run(FunctionId::new(index));
         let first = run.entry().index();
@@ -424,68 +404,27 @@ fn emit(graph: &Graph, plan: &Plan, kept: &[bool]) -> Optimized {
                     Op::Unit => &[(context, entry.origin)],
                     _ => &[],
                 };
-                new_of[at] = Some(builder.push(literal.clone(), inputs, entry.origin, None));
+                new_of[at] = Some(builder.push(
+                    literal.clone(),
+                    inputs,
+                    References::None,
+                    entry.origin,
+                    None,
+                ));
                 origins.push(node);
                 continue;
             }
-            let op = match plan.op(graph, node).clone() {
-                Op::Join { then, else_ } => Op::Join {
-                    then: new_region[then.index()].unwrap(),
-                    else_: else_.map(|region| new_region[region.index()].unwrap()),
-                },
-                Op::Observe { then, else_ } => Op::Observe {
-                    then: then.map(|region| new_region[region.index()].unwrap()),
-                    else_: else_.map(|region| new_region[region.index()].unwrap()),
-                },
-                Op::And { rhs } => Op::And {
-                    rhs: new_region[rhs.index()].unwrap(),
-                },
-                Op::Or { rhs } => Op::Or {
-                    rhs: new_region[rhs.index()].unwrap(),
-                },
-                Op::Loop(id) => {
-                    let loop_ = graph.loop_(id);
-                    let new = builder.push_loop(Loop {
-                        body: new_region[loop_.body.index()].unwrap(),
-                        index: map(loop_.index),
-                        carried: loop_
-                            .carried
-                            .iter()
-                            .map(|&(carry, next)| (map(carry), map(next)))
-                            .collect(),
-                        continuation: map(loop_.continuation),
-                        empty: map(loop_.empty),
-                    });
-                    new_loop[id.index()] = Some(new);
-                    Op::Loop(new)
-                }
-                Op::LoopValue { loop_, index } => Op::LoopValue {
-                    loop_: new_loop[loop_.index()].unwrap(),
-                    index,
-                },
-                Op::Phi {
-                    declaration,
-                    contexts,
-                } => Op::Phi {
-                    declaration: map(declaration),
-                    contexts: contexts.map(map),
-                },
-                Op::Assign { declaration } => Op::Assign {
-                    declaration: map(declaration),
-                },
-                Op::Carry { declaration } => Op::Carry {
-                    declaration: map(declaration),
-                },
-                op => op,
-            };
+            let op = plan.op(graph, node).clone().with_regions(|region| {
+                new_region[region.index()].expect("a kept op's regions are kept")
+            });
             let returns = matches!(op, Op::Result { .. });
-            let mut inputs = Vec::new();
-            let mut completes = Vec::new();
-            for (position, ((&input, &read), &value)) in graph
+            inputs.clear();
+            completes.clear();
+            for (position, ((&input, &read), &role)) in graph
                 .inputs(node)
                 .iter()
                 .zip(graph.reads(node))
-                .zip(graph.input_values(node))
+                .zip(graph.input_roles(node))
                 .enumerate()
             {
                 let new = match new_of[plan.target(input).index()] {
@@ -494,13 +433,17 @@ fn emit(graph: &Graph, plan: &Plan, kept: &[bool]) -> Optimized {
                     None if returns && position > 0 => continue,
                     None => panic!("{input:?}, an input of kept {node:?}, is kept"),
                 };
-                if !value {
+                if role == Role::Completes {
                     completes.push(inputs.len());
                 }
                 inputs.push((new, read));
             }
-            let new = builder.push(op, &inputs, entry.origin, entry.name);
-            for position in completes {
+            let references = match plan.nodes[node.index()] {
+                Rewrite::Replace(_) => References::None,
+                _ => graph.references(node).map(&mut carried, map),
+            };
+            let new = builder.push(op, &inputs, references, entry.origin, entry.name);
+            for &position in &completes {
                 builder.complete_input(new, position);
             }
             new_of[at] = Some(new);
