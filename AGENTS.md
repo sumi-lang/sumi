@@ -15,7 +15,7 @@ You're in the core repository for Sumi, a novel statically typed general-purpose
 - `sumi-syntax`: the parser, the flat tree and its reprint, parse evidence, recovery, and the node vocabulary with its typed views. On `sumi-lexer`.
 - `sumi-format`: `format` and its contract `rep`. On `sumi-syntax`.
 - `sumi-frontend`: the diagnostic type every later phase reports with, and `parse_source`, which owns the source and lowers the lexer's and parser's evidence into diagnostics. On `sumi-syntax`.
-- `sumi-graph`: what a program means apart from whether it is valid: the scalar types, `Int`, the `Graph`, the may-domain, and the concrete `Machine`. On `sumi-text` only; nothing here depends on the checker.
+- `sumi-graph`: what a program means apart from whether it is valid: the scalar types, `Int`, the `Graph`, the may-domain, and the concrete `Machine`. Depends on nothing, and nothing here depends on the checker; where a node comes from in the source is `sumi-hir`'s `Spans`.
 - `sumi-opt`: the middle end: `optimize` rewrites a proven graph into a smaller, equally well-formed one that computes the same values, and maps each node to the one it came from, whose facts a backend reads. On `sumi-graph` only; it reads no diagnostic.
 - `sumi-hir`: semantic checking: `analyze` builds the graph and decides what is wrong with it, and `Program`, the proof that a file is valid, compiles it through `sumi-opt` and runs it. On `sumi-frontend`, `sumi-graph`, and `sumi-opt`.
 - `sumi-cli`: the `sumi` driver. On `sumi-frontend` and `sumi-hir` to check and run, and on `sumi-lexer`, `sumi-syntax`, and `sumi-format` to format, which reads no diagnostic.

@@ -670,11 +670,6 @@ impl<'a> Machine<'a> {
 mod tests {
     use super::*;
     use crate::{ArithOp, BinaryOp, Carried, GraphBuilder};
-    use sumi_text::{TextRange, TextSize};
-
-    fn at() -> TextRange {
-        TextRange::new(TextSize::new(0), TextSize::new(0))
-    }
 
     fn push(builder: &mut GraphBuilder, op: Op, inputs: &[NodeId]) -> NodeId {
         refer(builder, op, inputs, References::None)
@@ -686,8 +681,7 @@ mod tests {
         inputs: &[NodeId],
         references: References<'_>,
     ) -> NodeId {
-        let inputs = inputs.iter().map(|&node| (node, at())).collect::<Vec<_>>();
-        builder.push(op, &inputs, references, at(), None)
+        builder.push(op, inputs.iter().copied(), references)
     }
 
     /// A loop over `body` with `index`, both contexts `context`, carrying `carried`.
@@ -744,7 +738,7 @@ mod tests {
                 );
                 let region = builder.open(entry);
                 builder.enter(region);
-                builder.close(region, (param, at()));
+                builder.close(region, param);
                 builder.close_run(run, region, param);
                 let run = builder.open_run(caller);
                 let entry = push(&mut builder, Op::Entry, &[]);
@@ -765,7 +759,7 @@ mod tests {
                 let next = push(&mut builder, Op::Call(callee), &[ca]);
                 let unit = push(&mut builder, Op::Unit, &[entry]);
                 let control = returning.then(|| push(&mut builder, Op::Return, &[index, entry]));
-                builder.close_with_control(body, (unit, at()), true, control);
+                builder.close_with_control(body, unit, true, control);
                 let loop_node = loop_(
                     &mut builder,
                     body,
@@ -787,7 +781,7 @@ mod tests {
                     Op::Binary(BinaryOp::Arith(ArithOp::Add)),
                     &[tens, vb],
                 );
-                builder.close(region, (result, at()));
+                builder.close(region, result);
                 builder.close_run(run, region, result);
                 let graph = builder.finish();
                 let mut stepped = Machine::new(&graph, caller, &[], None);
@@ -846,7 +840,7 @@ mod tests {
             &[carry, increment],
         );
         let unit = push(builder, Op::Unit, &[entry]);
-        builder.close(body, (unit, at()));
+        builder.close(body, unit);
         let node = loop_(builder, body, bounds, index, entry, &[(carry, next)]);
         loop_value(builder, node, (carry, next))
     }
@@ -870,7 +864,7 @@ mod tests {
             &[],
         );
         let result = counting_loop(&mut builder, entry, [start, end], true);
-        builder.close(region, (result, at()));
+        builder.close(region, result);
         builder.close_run(run, region, result);
         let graph = builder.finish();
         let mut stepped = Machine::new(&graph, function, &[], None);
@@ -909,7 +903,7 @@ mod tests {
             builder.enter(region);
             let bounds = ops.clone().map(|op| push(&mut builder, op, &[]));
             let result = counting_loop(&mut builder, entry, bounds, false);
-            builder.close(region, (result, at()));
+            builder.close(region, result);
             builder.close_run(run, region, result);
             let graph = builder.finish();
             let loop_node = graph.inputs(result)[0];
@@ -951,7 +945,7 @@ mod tests {
                         &[call, one],
                     )
                 };
-                builder.close(region, (result, at()));
+                builder.close(region, result);
                 builder.close_run(run, region, result);
             }
             let graph = builder.finish();
@@ -989,7 +983,7 @@ mod tests {
             Op::Result { declared: None },
             &[tail, return_],
         );
-        builder.close_with_control(region, (tail, at()), false, Some(return_));
+        builder.close_with_control(region, tail, false, Some(return_));
         builder.close_run(run, region, result);
         let graph = builder.finish();
 
@@ -1018,7 +1012,7 @@ mod tests {
             Op::Result { declared: None },
             &[tail, return_],
         );
-        builder.close_with_control(region, (tail, at()), false, Some(return_));
+        builder.close_with_control(region, tail, false, Some(return_));
         builder.close_run(run, region, result);
 
         let run = builder.open_run(caller);
@@ -1032,7 +1026,7 @@ mod tests {
             Op::Binary(BinaryOp::Arith(ArithOp::Add)),
             &[call, one],
         );
-        builder.close(region, (sum, at()));
+        builder.close(region, sum);
         builder.close_run(run, region, sum);
         let graph = builder.finish();
 
@@ -1053,11 +1047,11 @@ mod tests {
         builder.enter(then);
         let selected = push(&mut builder, Op::Int(3.into()), &[]);
         let selected_return = push(&mut builder, Op::Return, &[selected, entry]);
-        builder.close_with_control(then, (selected, at()), false, Some(selected_return));
+        builder.close_with_control(then, selected, false, Some(selected_return));
         builder.enter(else_);
         let unselected = push(&mut builder, Op::Int(8.into()), &[]);
         let unselected_return = push(&mut builder, Op::Return, &[unselected, entry]);
-        builder.close_with_control(else_, (unselected, at()), false, Some(unselected_return));
+        builder.close_with_control(else_, unselected, false, Some(unselected_return));
         let region = builder.open(entry);
         builder.enter(region);
         let condition = push(&mut builder, Op::Bool(true), &[]);
@@ -1071,7 +1065,7 @@ mod tests {
         );
         let tail = push(&mut builder, Op::Int(1.into()), &[]);
         let result = push(&mut builder, Op::Result { declared: None }, &[tail]);
-        builder.close_with_control(region, (tail, at()), false, Some(observe));
+        builder.close_with_control(region, tail, false, Some(observe));
         builder.close_run(run, region, result);
         let graph = builder.finish();
 
@@ -1107,7 +1101,7 @@ mod tests {
             Op::Binary(BinaryOp::Arith(ArithOp::Add)),
             &[from_true, from_false],
         );
-        builder.close(region, (sum, at()));
+        builder.close(region, sum);
         builder.close_run(run, region, sum);
         let graph = builder.finish();
 
@@ -1127,7 +1121,7 @@ mod tests {
         builder.enter(then);
         let payload = push(&mut builder, Op::Int(3.into()), &[]);
         let return_ = push(&mut builder, Op::Return, &[payload, entry]);
-        builder.close_with_control(then, (payload, at()), false, Some(return_));
+        builder.close_with_control(then, payload, false, Some(return_));
         let region = builder.open(entry);
         builder.enter(region);
         let condition = push(&mut builder, Op::Bool(false), &[]);
@@ -1141,7 +1135,7 @@ mod tests {
         );
         let tail = push(&mut builder, Op::Int(1.into()), &[]);
         let sequence = push(&mut builder, Op::Sequence, &[observe, tail]);
-        builder.close(region, (sequence, at()));
+        builder.close(region, sequence);
         builder.close_run(run, region, sequence);
         let graph = builder.finish();
 
@@ -1168,7 +1162,7 @@ mod tests {
             Op::Result { declared: None },
             &[tail, inner, outer],
         );
-        builder.close_with_control(region, (tail, at()), false, Some(outer));
+        builder.close_with_control(region, tail, false, Some(outer));
         builder.close_run(run, region, result);
         let graph = builder.finish();
 
@@ -1204,7 +1198,7 @@ mod tests {
                 Op::Binary(BinaryOp::Arith(ArithOp::Sub)),
                 &params,
             );
-            builder.close(region, (difference, at()));
+            builder.close(region, difference);
             builder.close_run(run, region, difference);
             let run = builder.open_run(caller);
             let entry = push(&mut builder, Op::Entry, &[]);
@@ -1230,7 +1224,7 @@ mod tests {
                 Op::Binary(BinaryOp::Arith(ArithOp::Add)),
                 &[square, inner],
             );
-            builder.close(region, (result, at()));
+            builder.close(region, result);
             builder.close_run(run, region, result);
             let graph = builder.finish();
             for bound in [Some(1), Some(2), Some(8), None] {

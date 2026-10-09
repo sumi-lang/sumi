@@ -16,6 +16,7 @@ use sumi_text::{TextEdit, TextRange, TextSize};
 
 use crate::codes;
 use crate::lattice::Claim;
+use crate::spans::{Spans, SpansBuilder};
 use crate::typing::Typing;
 use crate::*;
 
@@ -403,12 +404,14 @@ pub(crate) fn lower<'s>(
     items: &[ast::FnItem],
     declared: &Declarations<'s>,
     graph: GraphBuilder,
-) -> (Graph, Lowered) {
+) -> (Graph, Spans, Lowered) {
     let mut builder = Builder::new(source, &declared.headers, &declared.names, graph);
     for (index, (item, params)) in items.iter().zip(&declared.parameters).enumerate() {
         let built = builder.build(index, *item, params);
         builder.lowered.built.push(built);
     }
+    let graph = builder.graph.finish();
+    let spans = builder.spans.finish(&graph);
     let mut lowered = builder.lowered;
     lowered
         .references
@@ -417,7 +420,7 @@ pub(crate) fn lower<'s>(
     lowered
         .unresolved
         .sort_unstable_by_key(|range| range.start());
-    (builder.graph.finish(), lowered)
+    (graph, spans, lowered)
 }
 
 /// The syntax's operator in the graph's vocabulary, which has no lazy operator.
@@ -641,6 +644,7 @@ struct Builder<'a, 's> {
     headers: &'a [Header],
     names: &'a NameMap<'s, Named>,
     graph: GraphBuilder,
+    spans: SpansBuilder,
     lowered: Lowered,
     nodes_of: Vec<Option<NodeId>>,
     /// By block, its innermost tail expression once lowered.
@@ -685,6 +689,7 @@ impl<'a, 's> Builder<'a, 's> {
             headers,
             names,
             graph,
+            spans: SpansBuilder::new(nodes),
             lowered: Lowered {
                 built: Vec::with_capacity(headers.len()),
                 typed: Vec::with_capacity(nodes),
@@ -839,10 +844,11 @@ impl<'a, 's> Builder<'a, 's> {
                         let fallthrough = self.context();
                         self.graph.close_with_control(
                             region,
-                            result,
+                            result.0,
                             !self.form(root).completes,
                             self.control(root),
                         );
+                        self.spans.close(region, result.1);
                         let (_, keep, _) = self
                             .regions
                             .pop()
@@ -879,30 +885,37 @@ impl<'a, 's> Builder<'a, 's> {
             .map(|control| self.place(Op::Sequence, &[(control, body.1), body], body.1, None));
         self.graph.close_with_control(
             region,
-            body,
+            body.0,
             root_node.is_none_or(|root| !self.form(root).completes),
             control,
         );
+        self.spans.close(region, body.1);
         self.regions.pop();
         // A failed parameter does not erase a declared result; the body is still held to it.
         let declared = declared.declared();
         let value = match (control.is_none() && self.returns.is_empty(), declared) {
-            (true, Some((ty, node))) => self.push(
-                node,
-                Op::Copy {
-                    declared: Some((ty, self.source.range(node))),
-                },
-                &[body],
-                None,
-            ),
+            (true, Some((ty, node))) => {
+                let copy = self.push(node, Op::Copy { declared: Some(ty) }, &[body], None);
+                self.annotate(copy, node);
+                copy
+            }
             (true, None) => body.0,
             (false, declared) => {
                 let node = declared.map_or(item_node, |(_, node)| node);
-                let declared = declared.map(|(ty, node)| (ty, self.source.range(node)));
                 let mut outcomes = Vec::with_capacity(self.returns.len() + 1);
                 outcomes.push((fallthrough.unwrap_or(body.0), body.1));
                 outcomes.extend(self.returns.iter().copied());
-                let result = self.push(node, Op::Result { declared }, &outcomes, None);
+                let result = self.push(
+                    node,
+                    Op::Result {
+                        declared: declared.map(|(ty, _)| ty),
+                    },
+                    &outcomes,
+                    None,
+                );
+                if let Some((_, annotation)) = declared {
+                    self.annotate(result, annotation);
+                }
                 let completes = root_node.is_none_or(|root| self.form(root).completes);
                 let fallthrough = root_node
                     .and_then(|root| self.explicit_tail(root))
@@ -943,7 +956,10 @@ impl<'a, 's> Builder<'a, 's> {
                 continue;
             }
             let declaration = self.graph.node(local.declaration);
-            let at = declaration.name.expect("a bound local is named");
+            let at = self
+                .spans
+                .name(local.declaration)
+                .expect("a bound local is named");
             let (kind, reads) = match (&declaration.op, local.is_assigned) {
                 (Op::Param { .. }, _) => ("parameter", "is never read"),
                 (Op::LoopIndex, _) => ("loop index", "is never read"),
@@ -987,11 +1003,14 @@ impl<'a, 's> Builder<'a, 's> {
         name: Option<TextRange>,
         results: &[NodeId],
     ) -> NodeId {
-        let is_typed = self.follows(&op, inputs, references, results);
-        let id = self
-            .graph
-            .push(op, inputs, references, self.source.range(node), name);
-        self.lowered.typed.push(is_typed);
+        let id = self.place_over(
+            op,
+            inputs,
+            references,
+            self.source.range(node),
+            name,
+            results,
+        );
         self.nodes_of[node.to_usize()] = Some(id);
         id
     }
@@ -1013,10 +1032,30 @@ impl<'a, 's> Builder<'a, 's> {
         origin: TextRange,
         name: Option<TextRange>,
     ) -> NodeId {
-        let is_typed = self.follows(&op, inputs, references, &[]);
-        let id = self.graph.push(op, inputs, references, origin, name);
+        self.place_over(op, inputs, references, origin, name, &[])
+    }
+    /// Each input is a node and where it is read.
+    fn place_over(
+        &mut self,
+        op: Op,
+        inputs: &[(NodeId, TextRange)],
+        references: References<'_>,
+        origin: TextRange,
+        name: Option<TextRange>,
+        results: &[NodeId],
+    ) -> NodeId {
+        let is_typed = self.follows(&op, inputs, references, results);
+        let id = self
+            .graph
+            .push(op, inputs.iter().map(|&(input, _)| input), references);
+        self.spans
+            .push(origin, name, inputs.iter().map(|&(_, read)| read));
         self.lowered.typed.push(is_typed);
         id
+    }
+    /// The type annotation `node`, the last pushed, is declared with.
+    fn annotate(&mut self, node: NodeId, annotation: NodeIdx) {
+        self.spans.annotate(node, self.source.range(annotation));
     }
     fn completes_input(&mut self, node: NodeId, index: usize) {
         self.graph.complete_input(node, index);
@@ -1257,8 +1296,8 @@ impl<'a, 's> Builder<'a, 's> {
             let declaration = self.locals[local.index()].declaration;
             let inputs = [
                 condition,
-                (true_value, self.graph.node(true_value).origin),
-                (false_value, self.graph.node(false_value).origin),
+                (true_value, self.spans.origin(true_value)),
+                (false_value, self.spans.origin(false_value)),
             ];
             let phi = self.place_with(
                 Op::Phi,
@@ -1562,7 +1601,7 @@ impl<'a, 's> Builder<'a, 's> {
             let declaration = self.locals[local.index()].declaration;
             let header = self.place_with(
                 Op::Carry,
-                &[(initial, self.graph.node(initial).origin)],
+                &[(initial, self.spans.origin(initial))],
                 References::Version(declaration),
                 at,
                 None,
@@ -1812,9 +1851,8 @@ impl<'a, 's> Builder<'a, 's> {
                 name.node(),
                 codes::IMMUTABLE_ASSIGNMENT,
                 format!("cannot assign to immutable local `{text}`"),
-                self.graph
-                    .node(declaration)
-                    .name
+                self.spans
+                    .name(declaration)
                     .map(|range| (range, "declared here")),
             );
             return None;
@@ -1906,9 +1944,8 @@ impl<'a, 's> Builder<'a, 's> {
                     node,
                     codes::NOT_CALLABLE,
                     format!("local `{name}` is not callable"),
-                    self.graph
-                        .node(declaration)
-                        .name
+                    self.spans
+                        .name(declaration)
                         .map(|range| (range, "declared here")),
                 );
             }
@@ -2015,16 +2052,16 @@ impl<'a, 's> Builder<'a, 's> {
                 let name = binding.name().node();
                 let value = self.input(binding.initializer().node());
                 let annotation = binding.type_ref(tree);
-                let declared = annotation.and_then(|annotation| {
-                    let ty = self.source.ty(annotation)?;
-                    Some((ty, self.source.range(annotation.node())))
-                });
+                let declared = annotation.and_then(|annotation| self.source.ty(annotation));
                 let op = match (annotation, declared) {
                     (Some(_), None) => Op::Hole,
                     _ => Op::Copy { declared },
                 };
                 let name_range = self.source.range(name);
                 let copy = self.push(binding.node(), op, &[value], Some(name_range));
+                if let (Some(annotation), Some(_)) = (annotation, declared) {
+                    self.annotate(copy, annotation.node());
+                }
                 let local = self.bind(
                     self.source.text(name),
                     copy,
@@ -2423,10 +2460,7 @@ impl<'a, 's> Builder<'a, 's> {
                     .map(|initializer| initializer.node());
                 let value = self.present(node, initializer);
                 let annotation = binding.type_ref(tree);
-                let declared = annotation.and_then(|annotation| {
-                    let ty = self.source.ty(annotation)?;
-                    Some((ty, self.source.range(annotation.node())))
-                });
+                let declared = annotation.and_then(|annotation| self.source.ty(annotation));
                 let Some((name, name_node)) = self.source.name(binding.name(tree)) else {
                     self.hole(node);
                     return;
@@ -2437,6 +2471,9 @@ impl<'a, 's> Builder<'a, 's> {
                 };
                 let name_range = self.source.range(name_node);
                 let copy = self.push(node, op, &[value], Some(name_range));
+                if let (Some(annotation), Some(_)) = (annotation, declared) {
+                    self.annotate(copy, annotation.node());
+                }
                 let is_mutable = binding.mutable(tree, self.source.lexed());
                 let local = self.bind(
                     name,

@@ -10,6 +10,7 @@ use sumi_text::TextRange;
 use crate::codes;
 use crate::flows::{Declared, Demand, DemandKind};
 use crate::lower::{self, Call, HeaderResult, Lowered, Source};
+use crate::spans::Spans;
 use crate::typing::{Expected, Replay, Typing};
 use crate::{Analysis, Function, Ints, Signature, flows};
 use crate::{reachability, recursion};
@@ -23,10 +24,15 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         .collect();
     let mut graph = GraphBuilder::new(tree.len());
     let declared = lower::declare(&mut source, &items, &mut graph);
-    let (graph, lowered) = lower::lower(&mut source, &items, &declared, graph);
+    let (graph, spans, lowered) = lower::lower(&mut source, &items, &declared, graph);
     let headers = declared.headers;
-    let (mut typing, thresholds, demands) =
-        flows::draw(&graph, &lowered, &headers, flows::Arguments::Delivered);
+    let (mut typing, thresholds, demands) = flows::draw(
+        &graph,
+        &spans,
+        &lowered,
+        &headers,
+        flows::Arguments::Delivered,
+    );
     typing.solve(&thresholds);
     let failed = replay(&mut source, &typing, &demands, headers.len());
     let mut functions: Vec<Function> = headers
@@ -48,10 +54,11 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         &failed,
         &mut functions,
     );
-    divisions(&mut source, &graph, &typing, &lowered, &failed);
+    divisions(&mut source, &graph, &spans, &typing, &lowered, &failed);
     bounds(
         &mut source,
         &graph,
+        &spans,
         &typing,
         &lowered,
         &failed,
@@ -67,7 +74,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     {
         Vec::new()
     } else {
-        reachability::warn(&mut source, &graph, &typing, &lowered, &headers)
+        reachability::warn(&mut source, &graph, &spans, &typing, &lowered, &headers)
     };
     let mut diagnostics = source.diagnostics;
     diagnostics.splice(0..0, parsed.diagnostics().iter().cloned());
@@ -75,6 +82,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     let analysis = Analysis {
         parsed,
         graph,
+        spans,
         settled: typing.settle(),
         functions,
         bindings: lowered.bindings,
@@ -231,6 +239,7 @@ fn signatures(
 fn divisions(
     source: &mut Source<'_>,
     graph: &Graph,
+    spans: &Spans,
     typing: &Typing,
     lowered: &Lowered,
     failed: &[bool],
@@ -250,6 +259,7 @@ fn divisions(
         };
         let labels = explain(
             graph,
+            spans,
             typing,
             Some(&lowered.calls),
             obligation.divisor,
@@ -275,6 +285,7 @@ fn divisions(
 /// whose integers `relevant` rejects. A parameter leads to its callers' arguments only with `calls`.
 pub(crate) fn explain(
     graph: &Graph,
+    spans: &Spans,
     typing: &Typing,
     calls: Option<&[Call]>,
     start: NodeId,
@@ -305,12 +316,12 @@ pub(crate) fn explain(
         };
         match entry.op {
             Op::Int(_) | Op::Neg | Op::Binary(_) => {
-                labels.push((entry.origin, describe(&may.ints, "").into()));
+                labels.push((spans.origin(node), describe(&may.ints, "").into()));
             }
             Op::Copy { .. } | Op::Assign => follow(&mut queue, inputs[0], 0),
             Op::LoopIndex | Op::Carry => {
                 labels.push((
-                    entry.name.unwrap_or(entry.origin),
+                    spans.name(node).unwrap_or(spans.origin(node)),
                     describe(&may.ints, " on a loop iteration").into(),
                 ));
             }
@@ -338,7 +349,7 @@ pub(crate) fn explain(
             Op::Refine { .. } => {
                 if may.ints != typing.may(inputs[0]).ints {
                     labels.push((
-                        entry.origin,
+                        spans.origin(node),
                         describe(&may.ints, " under this guard").into(),
                     ));
                 }
@@ -396,7 +407,7 @@ pub(crate) fn explain(
                     let delivered = typing.may(arg);
                     if relevant(&delivered.ints) {
                         labels.push((
-                            graph.reads(call.node)[index as usize],
+                            spans.reads(call.node)[index as usize],
                             format!("argument {}", describe(&delivered.ints, "")).into(),
                         ));
                     }
@@ -425,6 +436,7 @@ pub(crate) fn explain(
 fn bounds(
     source: &mut Source<'_>,
     graph: &Graph,
+    spans: &Spans,
     typing: &Typing,
     lowered: &Lowered,
     failed: &[bool],
@@ -435,7 +447,7 @@ fn bounds(
         .zip(&lowered.built)
         .map(|(&failed, &built)| failed || !built)
         .collect();
-    let recursion = recursion::check(graph, lowered, typing, &out_of_scope);
+    let recursion = recursion::check(graph, spans, lowered, typing, &out_of_scope);
     for failure in recursion.failures {
         let diagnostic = failure.report(functions, source.parsed.source());
         source.diagnostics.push(diagnostic);

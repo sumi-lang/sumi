@@ -367,7 +367,7 @@ fn emit(graph: &Graph, plan: &Plan, kept: &[bool]) -> Optimized {
                 let close = |builder: &mut GraphBuilder, new: RegionId| {
                     builder.close_with_control(
                         new,
-                        (map(exit.result), old.result_read()),
+                        map(exit.result),
                         exit.value,
                         exit.control.map(map),
                     );
@@ -397,20 +397,14 @@ fn emit(graph: &Graph, plan: &Plan, kept: &[bool]) -> Optimized {
             let map = |node: NodeId| {
                 new_of[plan.target(node).index()].expect("what a kept node names is kept")
             };
-            let entry = graph.node(node);
             if let Some(literal) = plan.literal(node) {
                 let context = *contexts.last().expect("a node runs in its run's region");
-                let inputs: &[_] = match literal {
-                    Op::Unit => &[(context, entry.origin)],
+                let inputs: &[NodeId] = match literal {
+                    Op::Unit => &[context],
                     _ => &[],
                 };
-                new_of[at] = Some(builder.push(
-                    literal.clone(),
-                    inputs,
-                    References::None,
-                    entry.origin,
-                    None,
-                ));
+                new_of[at] =
+                    Some(builder.push(literal.clone(), inputs.iter().copied(), References::None));
                 origins.push(node);
                 continue;
             }
@@ -420,10 +414,9 @@ fn emit(graph: &Graph, plan: &Plan, kept: &[bool]) -> Optimized {
             let returns = matches!(op, Op::Result { .. });
             inputs.clear();
             completes.clear();
-            for (position, ((&input, &read), &role)) in graph
+            for (position, (&input, &role)) in graph
                 .inputs(node)
                 .iter()
-                .zip(graph.reads(node))
                 .zip(graph.input_roles(node))
                 .enumerate()
             {
@@ -436,13 +429,13 @@ fn emit(graph: &Graph, plan: &Plan, kept: &[bool]) -> Optimized {
                 if role == Role::Completes {
                     completes.push(inputs.len());
                 }
-                inputs.push((new, read));
+                inputs.push(new);
             }
             let references = match plan.nodes[node.index()] {
                 Rewrite::Replace(_) => References::None,
                 _ => graph.references(node).map(&mut carried, map),
             };
-            let new = builder.push(op, &inputs, references, entry.origin, entry.name);
+            let new = builder.push(op, inputs.iter().copied(), references);
             for &position in &completes {
                 builder.complete_input(new, position);
             }
