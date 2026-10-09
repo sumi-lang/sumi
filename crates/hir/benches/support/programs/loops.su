@@ -1,0 +1,12 @@
+fn triangle(n: int) -> int {
+    let mut total = 0
+    for i in 0..n {
+        let mut row = 0
+        for j in 0..i {
+            if j % 3 != 0 { row = row + j } else { row = row - 1 }
+        }
+        total = total + row
+    }
+    total
+}
+fn main() -> int = triangle(300)
