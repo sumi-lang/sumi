@@ -297,7 +297,11 @@ impl<'a> Carried<'a> {
     }
 
     pub fn iter(self) -> impl DoubleEndedIterator<Item = (NodeId, NodeId)> + ExactSizeIterator {
-        self.0.chunks_exact(2).map(|pair| (pair[0], pair[1]))
+        self.0
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|&[carry, next]| (carry, next))
     }
 }
 
