@@ -7,7 +7,7 @@ The extension provides:
 - `.su` file recognition;
 - syntax highlighting for the compiler's current keywords, declarations, operators, literals, and
   comments;
-- comment, bracket, indentation, and auto-closing configuration;
+- comment, bracket, indentation, auto-closing, and comment-continuation configuration;
 - syntax and semantic diagnostics, quick fixes, formatting, document symbols, completion of the
   names, keywords, and types in scope, go to definition, find references, rename, hover, inlay
   hints, and highlighting of a name's occurrences through `sumi-lsp`.

@@ -239,6 +239,17 @@ suite("Sumi extension", () => {
     );
   });
 
+  test("continues a comment on Enter", async () => {
+    const document = await openSaved("comment.su", "fn main() -> int {\n    // a note\n    1\n}\n");
+    const editor = await vscode.window.showTextDocument(document);
+    editor.selection = new vscode.Selection(1, 13, 1, 13);
+    await vscode.commands.executeCommand("type", { text: "\n" });
+    assert.equal(document.lineAt(2).text, "    // ");
+    editor.selection = new vscode.Selection(3, 5, 3, 5);
+    await vscode.commands.executeCommand("type", { text: "\n" });
+    assert.equal(document.lineAt(4).text, "    ");
+  });
+
   test("returns recovered symbols for incomplete input", async () => {
     const document = await openSaved("incomplete.su", "fn unfinished() = {");
     const diagnostics = await waitForDiagnostics(

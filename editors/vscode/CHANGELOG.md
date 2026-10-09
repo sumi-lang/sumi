@@ -4,6 +4,7 @@
 
 - Highlight every occurrence of the name under the cursor, its declaration and assignments as
   writes and its reads as reads.
+- Continue a comment line on Enter with `//`, unless the comment is empty or follows code.
 
 ## 0.4.0
 
