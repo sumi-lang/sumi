@@ -13,7 +13,8 @@ The extension provides:
   hints, and highlighting of a name's occurrences through `sumi-lsp`.
 
 The extension includes `sumi-lsp` on supported platforms. Set `sumi.server.path` to use a custom
-server or to provide one on another platform.
+server or to provide one on another platform; the server restarts when the setting changes, and
+**Sumi: Restart Language Server** restarts it at any time.
 
 ## License
 
