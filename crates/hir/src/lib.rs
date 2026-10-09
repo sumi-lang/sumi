@@ -140,6 +140,7 @@ impl Analysis {
             .map(|(index, binding)| Occurrence {
                 range: binding.name,
                 symbol: Symbol::Local(BindingId::new(index)),
+                is_write: true,
             })
             .chain(
                 self.functions
@@ -149,6 +150,7 @@ impl Analysis {
                         Some(Occurrence {
                             range: function.name?,
                             symbol: Symbol::Function(FunctionId::new(index)),
+                            is_write: true,
                         })
                     }),
             );
@@ -397,11 +399,13 @@ pub enum Symbol {
     Function(FunctionId),
 }
 
-/// A name in the source and the symbol it denotes.
+/// A name in the source and the symbol it denotes; a declaration or an assignment target writes
+/// it, a read does not.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Occurrence {
     pub range: TextRange,
     pub symbol: Symbol,
+    pub is_write: bool,
 }
 
 /// A local a body declares: a parameter, a `let`, or a `for` index.

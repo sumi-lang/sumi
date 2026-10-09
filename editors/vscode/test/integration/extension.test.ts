@@ -217,6 +217,28 @@ suite("Sumi extension", () => {
     );
   });
 
+  test("highlights the occurrences of a name", async () => {
+    const document = await openSaved(
+      "highlight.su",
+      "fn main() -> int {\n    let mut total = 1\n    total = total + 1\n    total\n}\n",
+    );
+    await waitForDiagnostics(document.uri, (diagnostics) => diagnostics.length === 0, "clean source");
+    const highlights = await vscode.commands.executeCommand<vscode.DocumentHighlight[]>(
+      "vscode.executeDocumentHighlights",
+      document.uri,
+      new vscode.Position(3, 6),
+    );
+    assert.deepEqual(
+      highlights.map((highlight) => [highlight.range.start.line, highlight.kind]),
+      [
+        [1, vscode.DocumentHighlightKind.Write],
+        [2, vscode.DocumentHighlightKind.Write],
+        [2, vscode.DocumentHighlightKind.Read],
+        [3, vscode.DocumentHighlightKind.Read],
+      ],
+    );
+  });
+
   test("returns recovered symbols for incomplete input", async () => {
     const document = await openSaved("incomplete.su", "fn unfinished() = {");
     const diagnostics = await waitForDiagnostics(

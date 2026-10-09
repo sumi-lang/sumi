@@ -1251,10 +1251,11 @@ impl<'a, 's> Builder<'a, 's> {
             self.set_version(local, phi);
         }
     }
-    fn refer(&mut self, node: NodeIdx, symbol: Symbol) {
+    fn refer(&mut self, node: NodeIdx, symbol: Symbol, is_write: bool) {
         self.lowered.references.push(Occurrence {
             range: self.source.range(node),
             symbol,
+            is_write,
         });
     }
     fn lookup(&self, name: &str) -> Option<LocalId> {
@@ -1748,7 +1749,7 @@ impl<'a, 's> Builder<'a, 's> {
         let Some(local) = self.lookup(text) else {
             if let Some(named) = self.names.get(text) {
                 if let Named::Function(id) = named {
-                    self.refer(name.node(), Symbol::Function(*id));
+                    self.refer(name.node(), Symbol::Function(*id), true);
                 }
                 self.source.error(
                     name.node(),
@@ -1769,6 +1770,7 @@ impl<'a, 's> Builder<'a, 's> {
         self.refer(
             name.node(),
             Symbol::Local(self.locals[local.index()].binding),
+            true,
         );
         if !self.locals[local.index()].is_mutable {
             let declaration = self.locals[local.index()].declaration;
@@ -1857,7 +1859,11 @@ impl<'a, 's> Builder<'a, 's> {
     fn target(&mut self, node: NodeIdx) -> Option<FunctionId> {
         let name = self.source.text(node);
         if let Some(local) = self.lookup(name) {
-            self.refer(node, Symbol::Local(self.locals[local.index()].binding));
+            self.refer(
+                node,
+                Symbol::Local(self.locals[local.index()].binding),
+                false,
+            );
             self.locals[local.index()].is_read = true;
             let declaration = self.locals[local.index()].declaration;
             // A binding that failed is reported once, where it failed.
@@ -1877,7 +1883,7 @@ impl<'a, 's> Builder<'a, 's> {
         match self.names.get(name) {
             Some(Named::Function(target)) => {
                 let target = *target;
-                self.refer(node, Symbol::Function(target));
+                self.refer(node, Symbol::Function(target), false);
                 Some(target)
             }
             Some(Named::Ambiguous(_)) => None,
@@ -2056,7 +2062,11 @@ impl<'a, 's> Builder<'a, 's> {
                 let name = self.source.text(node);
                 match self.lookup(name) {
                     Some(local) => {
-                        self.refer(node, Symbol::Local(self.locals[local.index()].binding));
+                        self.refer(
+                            node,
+                            Symbol::Local(self.locals[local.index()].binding),
+                            false,
+                        );
                         self.locals[local.index()].is_read = true;
                         let version = self.locals[local.index()].current;
                         let read = self.current(local);
@@ -2068,7 +2078,7 @@ impl<'a, 's> Builder<'a, 's> {
                     None => {
                         if let Some(named) = self.names.get(name) {
                             if let Named::Function(id) = named {
-                                self.refer(node, Symbol::Function(*id));
+                                self.refer(node, Symbol::Function(*id), false);
                             }
                             self.source.error(
                                 node,
@@ -2352,9 +2362,13 @@ impl<'a, 's> Builder<'a, 's> {
                 continue;
             }
             if let Some(local) = self.lookup(name) {
-                self.refer(inner, Symbol::Local(self.locals[local.index()].binding));
+                self.refer(
+                    inner,
+                    Symbol::Local(self.locals[local.index()].binding),
+                    false,
+                );
             } else if let Some(Named::Function(id)) = self.names.get(name) {
-                self.refer(inner, Symbol::Function(*id));
+                self.refer(inner, Symbol::Function(*id), false);
             }
         }
     }
