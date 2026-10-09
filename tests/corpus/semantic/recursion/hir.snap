@@ -7,7 +7,7 @@ fn fib@1:1..5:2 (int ∈ [0, 15]) -> int ∈ [0, +∞)
   param n@1:8..1:9: int
   result: copy : int @1:19..1:22
     value: if : int @1:25..5:2
-      condition: eager < : bool @1:28..1:33
+      scrutinee: eager < : bool @1:28..1:33
         lhs: read n@1:8..1:9 : int
         rhs: int 2 : int @1:32..1:33
       then: read n@1:8..1:9 [n < 2 holds@1:28..1:33] : int
@@ -30,7 +30,7 @@ fn count@7:1..11:2 (int ∈ [0, 10000]) -> int ∈ [0, +∞)
   param n@7:10..7:11: int
   result: copy : int @7:21..7:24
     value: if : int @7:27..11:2
-      condition: eager == : bool @7:30..7:36
+      scrutinee: eager == : bool @7:30..7:36
         lhs: read n@7:10..7:11 : int
         rhs: int 0 : int @7:35..7:36
       then: int 0 : int @8:5..8:6
@@ -50,7 +50,7 @@ fn dead_step@13:1..21:2 (int ∈ [0, 10]) -> int ∈ [0, 0]
   param n@13:14..13:15: int
   result: copy : int @13:25..13:28
     value: if : int @13:31..21:2
-      condition: eager > : bool @13:34..13:39
+      scrutinee: eager > : bool @13:34..13:39
         lhs: read n@13:14..13:15 : int
         rhs: int 0 : int @13:38..13:39
       then: call dead_step@13:1..21:2 : int @14:5..14:21
@@ -58,7 +58,7 @@ fn dead_step@13:1..21:2 (int ∈ [0, 10]) -> int ∈ [0, 0]
           lhs: read n@13:14..13:15 [n > 0 holds@13:34..13:39] : int
           rhs: int 1 : int @14:19..14:20
       else: if : int @16:5..20:6
-        condition: bool false : bool @16:8..16:13
+        scrutinee: bool false : bool @16:8..16:13
         then: call dead_step@13:1..21:2 : int @17:9..17:25
           arg[0]: eager + : int @17:19..17:24
             lhs: read n@13:14..13:15 [n > 0 fails@13:34..13:39] : int
@@ -76,7 +76,7 @@ fn r0@23:1..27:2 (int ∈ [1, 1], int ∈ [2, 2], int ∈ [0, 20]) -> int ∈ [3
   param c@23:23..23:24: int
   result: copy : int @23:34..23:37
     value: if : int @23:40..27:2
-      condition: eager > : bool @23:43..23:48
+      scrutinee: eager > : bool @23:43..23:48
         lhs: read c@23:23..23:24 : int
         rhs: int 0 : int @23:47..23:48
       then: call r3@38:1..42:2 : int @24:5..24:20
@@ -95,7 +95,7 @@ fn r1@28:1..32:2 (int ∈ [1, 1], int ∈ [2, 2], int ∈ [0, 18]) -> int ∈ [3
   param c@28:23..28:24: int
   result: copy : int @28:34..28:37
     value: if : int @28:40..32:2
-      condition: eager > : bool @28:43..28:48
+      scrutinee: eager > : bool @28:43..28:48
         lhs: read c@28:23..28:24 : int
         rhs: int 0 : int @28:47..28:48
       then: call r4@43:1..47:2 : int @29:5..29:20
@@ -114,7 +114,7 @@ fn r2@33:1..37:2 (int ∈ [1, 1], int ∈ [2, 2], int ∈ [0, 16]) -> int ∈ [3
   param c@33:23..33:24: int
   result: copy : int @33:34..33:37
     value: if : int @33:40..37:2
-      condition: eager > : bool @33:43..33:48
+      scrutinee: eager > : bool @33:43..33:48
         lhs: read c@33:23..33:24 : int
         rhs: int 0 : int @33:47..33:48
       then: call r5@48:1..52:2 : int @34:5..34:20
@@ -133,7 +133,7 @@ fn r3@38:1..42:2 (int ∈ [2, 2], int ∈ [1, 1], int ∈ [0, 19]) -> int ∈ [3
   param c@38:23..38:24: int
   result: copy : int @38:34..38:37
     value: if : int @38:40..42:2
-      condition: eager > : bool @38:43..38:48
+      scrutinee: eager > : bool @38:43..38:48
         lhs: read c@38:23..38:24 : int
         rhs: int 0 : int @38:47..38:48
       then: call r1@28:1..32:2 : int @39:5..39:20
@@ -152,7 +152,7 @@ fn r4@43:1..47:2 (int ∈ [2, 2], int ∈ [1, 1], int ∈ [0, 17]) -> int ∈ [3
   param c@43:23..43:24: int
   result: copy : int @43:34..43:37
     value: if : int @43:40..47:2
-      condition: eager > : bool @43:43..43:48
+      scrutinee: eager > : bool @43:43..43:48
         lhs: read c@43:23..43:24 : int
         rhs: int 0 : int @43:47..43:48
       then: call r2@33:1..37:2 : int @44:5..44:20
@@ -171,7 +171,7 @@ fn r5@48:1..52:2 (int ∈ [2, 2], int ∈ [1, 1], int ∈ [0, 15]) -> int ∈ [3
   param c@48:23..48:24: int
   result: copy : int @48:34..48:37
     value: if : int @48:40..52:2
-      condition: eager > : bool @48:43..48:48
+      scrutinee: eager > : bool @48:43..48:48
         lhs: read c@48:23..48:24 : int
         rhs: int 0 : int @48:47..48:48
       then: call r0@23:1..27:2 : int @49:5..49:20
@@ -195,13 +195,13 @@ fn dead_arm@54:1..62:2 (int ∈ [0, 6]) -> int ∈ [0, 0]
   param n@54:13..54:14: int
   result: copy : int @54:24..54:27
     value: if : int @54:30..62:2
-      condition: eager == : bool @54:33..54:39
+      scrutinee: eager == : bool @54:33..54:39
         lhs: read n@54:13..54:14 : int
         rhs: int 0 : int @54:38..54:39
       then: int 0 : int @55:5..55:6
       else: call dead_arm@54:1..62:2 : int @57:5..61:7
         arg[0]: if : int @57:14..61:6
-          condition: bool true : bool @57:17..57:21
+          scrutinee: bool true : bool @57:17..57:21
           then: eager - : int @58:9..58:14
             lhs: read n@54:13..54:14 [n == 0 fails@54:33..54:39] : int
             rhs: int 1 : int @58:13..58:14

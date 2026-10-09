@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use crate::{ArithOp, BinaryOp, CmpOp, Decl, DeclId, FieldName, Int, Names, Op, Ty};
+use crate::{ArithOp, BinaryOp, Case, CmpOp, Decl, DeclId, FieldName, Int, Names, Op, Ty, Unions};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Fault {
@@ -30,12 +30,19 @@ pub trait Domain: Clone {
     /// A value of `decl` from its fields, in declaration order.
     fn make(decl: DeclId, fields: Vec<Self>) -> Self;
     /// The field `name` of `self`, which faults on a value with no such field.
-    fn field(&self, name: FieldName, decls: &[Decl]) -> Result<Self, Self::Fault>;
+    fn field(&self, name: FieldName, decls: &[Decl], unions: &Unions) -> Result<Self, Self::Fault>;
+    /// `self` narrowed to the values of `ty`.
+    fn narrow(&self, ty: Ty, unions: &Unions) -> Self;
 }
 
 impl Op {
     /// Panics unless `self` is a data operator; the rest are the reader's to evaluate.
-    pub fn apply<D: Domain>(&self, inputs: &[&D], decls: &[Decl]) -> Result<D, D::Fault> {
+    pub fn apply<D: Domain>(
+        &self,
+        inputs: &[&D],
+        decls: &[Decl],
+        unions: &Unions,
+    ) -> Result<D, D::Fault> {
         Ok(match self {
             Self::Int(value) => D::int(value),
             Self::Bool(value) => D::bool(*value),
@@ -46,11 +53,12 @@ impl Op {
                 sense,
             } => inputs[0].refine(*op, *local_is_lhs, *sense, inputs[1]),
             Self::Exactly(value) => inputs[0].exactly(*value),
+            Self::Narrow(ty) => inputs[0].narrow(*ty, unions),
             Self::Neg => inputs[0].neg()?,
             Self::Not => inputs[0].not()?,
             Self::Binary(op) => D::binary(*op, inputs[0], inputs[1])?,
             Self::Make(decl) => D::make(*decl, inputs.iter().map(|&input| input.clone()).collect()),
-            Self::Field(name) => inputs[0].field(*name, decls)?,
+            Self::Field(name) => inputs[0].field(*name, decls, unions)?,
             Self::Param { .. }
             | Self::LoopIndex
             | Self::Carry
@@ -62,9 +70,8 @@ impl Op {
             | Self::And { .. }
             | Self::Or { .. }
             | Self::Entry
-            | Self::Then
-            | Self::Else
-            | Self::Join { .. }
+            | Self::Arm(_)
+            | Self::Switch { .. }
             | Self::Return
             | Self::Sequence
             | Self::Observe { .. }
@@ -102,6 +109,16 @@ impl Value {
     pub fn truth(&self) -> Result<bool, Fault> {
         match self {
             Self::Bool(value) => Ok(*value),
+            _ => Err(Fault::Type),
+        }
+    }
+
+    /// Whether `case` selects `self`; a case of another type faults.
+    pub fn selects(&self, case: Case, unions: &Unions) -> Result<bool, Fault> {
+        match (case, self) {
+            (Case::Bool(wanted), Self::Bool(value)) => Ok(*value == wanted),
+            (Case::Is(ty), Self::Decl(decl, _)) => Ok(unions.admits(ty, *decl)),
+            (Case::Not(ty), Self::Decl(decl, _)) => Ok(!unions.admits(ty, *decl)),
             _ => Err(Fault::Type),
         }
     }
@@ -204,7 +221,7 @@ impl Domain for Value {
         Self::Decl(decl, fields.into_boxed_slice())
     }
 
-    fn field(&self, name: FieldName, decls: &[Decl]) -> Result<Self, Fault> {
+    fn field(&self, name: FieldName, decls: &[Decl], _: &Unions) -> Result<Self, Fault> {
         match self {
             Self::Decl(decl, fields) => decls[decl.index()]
                 .index_of(name)
@@ -212,5 +229,9 @@ impl Domain for Value {
                 .ok_or(Fault::Type),
             _ => Err(Fault::Type),
         }
+    }
+
+    fn narrow(&self, _: Ty, _: &Unions) -> Self {
+        self.clone()
     }
 }

@@ -16,7 +16,7 @@ fn guarded@1:1..1:43 () -> bool ∈ {false}
 fn dead_branch@2:1..6:2 () -> int ∈ [1, 1]
   result: copy : int @2:21..2:24
     value: if : int @2:27..6:2
-      condition: bool false : bool @2:30..2:35
+      scrutinee: bool false : bool @2:30..2:35
       then: eager / : int @3:5..3:10
         lhs: int 1 : int @3:5..3:6
         rhs: int 0 : int @3:9..3:10
@@ -25,9 +25,9 @@ fn dead_branch@2:1..6:2 () -> int ∈ [1, 1]
 fn nested_dead@7:1..15:2 () -> int ∈ [3, 3]
   result: copy : int @7:21..7:24
     value: if : int @7:27..15:2
-      condition: bool false : bool @7:30..7:35
+      scrutinee: bool false : bool @7:30..7:35
       then: if : int @8:5..12:6
-        condition: bool true : bool @8:8..8:12
+        scrutinee: bool true : bool @8:8..8:12
         then: eager / : int @9:9..9:14
           lhs: int 1 : int @9:9..9:10
           rhs: int 0 : int @9:13..9:14
@@ -39,7 +39,7 @@ fn safe@16:1..20:2 (int ∈ [10, 10], int ∈ [-3, 3]) -> int ∈ [-10, 10]
   param d@16:17..16:18: int
   result: copy : int @16:28..16:31
     value: if : int @16:34..20:2
-      condition: eager != : bool @16:37..16:43
+      scrutinee: eager != : bool @16:37..16:43
         lhs: read d@16:17..16:18 : int
         rhs: int 0 : int @16:42..16:43
       then: eager / : int @17:5..17:10
@@ -65,7 +65,7 @@ fn positive@22:1..26:2 (int ∈ [-7, 7] \ 0) -> int ∈ [-1, 100] \ 0
   param d@22:13..22:14: int
   result: copy : int @22:24..22:27
     value: if : int @22:30..26:2
-      condition: eager > : bool @22:33..22:38
+      scrutinee: eager > : bool @22:33..22:38
         lhs: read d@22:13..22:14 : int
         rhs: int 0 : int @22:37..22:38
       then: eager / : int @23:5..23:12
@@ -85,7 +85,7 @@ fn nonzero@28:1..32:2 (int ∈ [-9, 0]) -> int ∈ [0, 8]
   param d@28:12..28:13: int
   result: copy : int @28:23..28:26
     value: if : int @28:29..32:2
-      condition: eager == : bool @28:32..28:38
+      scrutinee: eager == : bool @28:32..28:38
         lhs: read d@28:12..28:13 : int
         rhs: int 0 : int @28:37..28:38
       then: int 0 : int @29:5..29:6
@@ -120,7 +120,7 @@ fn even@36:1..40:2 (int ∈ [0, 10]) -> bool ∈ {true, false}
   param n@36:9..36:10: int
   result: copy : bool @36:20..36:24
     value: if : bool @36:27..40:2
-      condition: eager == : bool @36:30..36:36
+      scrutinee: eager == : bool @36:30..36:36
         lhs: read n@36:9..36:10 : int
         rhs: int 0 : int @36:35..36:36
       then: bool true : bool @37:5..37:9
@@ -133,7 +133,7 @@ fn odd@41:1..45:2 (int ∈ [0, 9]) -> bool ∈ {true, false}
   param n@41:8..41:9: int
   result: copy : bool @41:19..41:23
     value: if : bool @41:26..45:2
-      condition: eager == : bool @41:29..41:35
+      scrutinee: eager == : bool @41:29..41:35
         lhs: read n@41:8..41:9 : int
         rhs: int 0 : int @41:34..41:35
       then: bool false : bool @42:5..42:10
@@ -161,7 +161,7 @@ fn bounded@48:1..52:2 (int ∈ [-3, 5]) -> int ∈ [-100, 100]
   param d@48:12..48:13: int
   result: copy : int @48:23..48:26
     value: if : int @48:29..52:2
-      condition: lazy and : bool @48:32..48:49
+      scrutinee: lazy and : bool @48:32..48:49
         lhs: eager != : bool @48:32..48:38
           lhs: read d@48:12..48:13 : int
           rhs: int 0 : int @48:37..48:38
@@ -187,7 +187,7 @@ fn boundeds@53:1..53:61 () -> int ∈ [-300, 300]
 fn dead_else@54:1..58:2 () -> int ∈ [7, 7]
   result: copy : int @54:19..54:22
     value: if : int @54:25..58:2
-      condition: bool true : bool @54:28..54:32
+      scrutinee: bool true : bool @54:28..54:32
       then: int 7 : int @55:5..55:6
       else: eager / : int @57:5..57:10
         lhs: int 1 : int @57:5..57:6

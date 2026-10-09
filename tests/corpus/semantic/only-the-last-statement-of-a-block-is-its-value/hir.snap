@@ -8,7 +8,7 @@ fn f@1:1..11:2 () -> int ∈ [42, 42]
     value:
       discard: hole : ? @2:5..2:8
       discard: if : ? @3:5..5:6
-        condition: hole : ? @3:8..3:9
+        scrutinee: hole : ? @3:8..3:9
         then: hole : ? @4:9..4:12
         else: unit (implicit)
       discard: hole : ? @7:9..7:12

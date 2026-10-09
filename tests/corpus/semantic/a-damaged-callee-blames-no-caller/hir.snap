@@ -35,7 +35,7 @@ fn branched@10:1..10:67 (bool ∈ ∅) -> bool ∈ ∅
   param flag@10:13..10:17: bool
   result: copy : bool @10:28..10:32
     value: if : ? @10:35..10:67
-      condition: read flag@10:13..10:17 : bool
+      scrutinee: read flag@10:13..10:17 : bool
       then: call damaged@1:1..1:23 : ? @10:45..10:54
       else: int 1 : int @10:64..10:65
 

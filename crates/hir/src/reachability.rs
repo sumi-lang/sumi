@@ -308,6 +308,15 @@ fn is_open_on_its_face(graph: &Graph, value: NodeId) -> bool {
     }
 }
 
+fn is_boolean(graph: &Graph, arms: sumi_graph::Arms) -> bool {
+    arms.iter().all(|arm| {
+        matches!(
+            graph.case(graph.region(arm).context),
+            sumi_graph::Case::Bool(_)
+        )
+    })
+}
+
 fn conditions(graph: &Graph, spans: &Spans) -> Vec<Condition> {
     let mut conditions = Vec::new();
     let parent = |region: RegionId| graph.inputs(graph.region(region).context)[1];
@@ -315,12 +324,18 @@ fn conditions(graph: &Graph, spans: &Spans) -> Vec<Condition> {
         let inputs = graph.inputs(node);
         let value = |index: usize| graph.input_roles(node)[index].is_value();
         match graph.node(node).op {
-            Op::Join { then, else_ } if value(0) => conditions.push(Condition {
-                value: inputs[0],
-                parent: parent(then),
-                at: spans.reads(node)[0],
-                site: Site::If { then, else_ },
-            }),
+            Op::Switch { arms } if value(0) && is_boolean(graph, arms) => {
+                let then = arms.iter().next().expect("a switch has an arm");
+                conditions.push(Condition {
+                    value: inputs[0],
+                    parent: parent(then),
+                    at: spans.reads(node)[0],
+                    site: Site::If {
+                        then,
+                        else_: arms.iter().nth(1),
+                    },
+                });
+            }
             ref op @ (Op::And { rhs } | Op::Or { rhs }) if value(0) => {
                 conditions.push(Condition {
                     value: inputs[0],

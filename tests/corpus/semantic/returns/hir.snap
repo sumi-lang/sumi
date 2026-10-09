@@ -39,7 +39,7 @@ fn lazy_skips@13:1..19:2 () -> int ∈ [5, 5]
         rhs:
           discard: after : ? @15:9..15:17
             control: return : int @15:9..15:17
-            context: then : ? @14:18..17:6
+            context: arm then : ? @14:18..17:6
           tail: bool true : bool @16:9..16:13
       discard: after : ? @14:5..17:6
         control: observe : ? @14:9..17:6
@@ -56,7 +56,7 @@ fn lazy_takes@20:1..26:2 () -> int ∈ [7, 7]
         rhs:
           discard: after : ? @22:9..22:17
             control: return : int @22:9..22:17
-            context: then : ? @21:17..24:6
+            context: arm then : ? @21:17..24:6
           tail: bool true : bool @23:9..23:13
       discard: after : ? @21:5..24:6
         control: observe : ? @21:9..24:6
@@ -89,7 +89,7 @@ fn divide@37:1..42:2 (int ∈ ∅) -> int ∈ ∅
   result: result : int @37:22..37:25
     outcome[0]:
       discard: if : unit @38:5..40:6
-        condition: eager == : bool @38:8..38:14
+        scrutinee: eager == : bool @38:8..38:14
           lhs: read n@37:11..37:12 : int
           rhs: int 0 : int @38:13..38:14
         then: unit : unit @38:15..40:6
@@ -108,7 +108,7 @@ fn count@43:1..48:2 (int ∈ [0, 3]) -> int ∈ [0, +∞)
   result: result : int @43:21..43:24
     outcome[0]:
       discard: if : unit @44:5..46:6
-        condition: eager == : bool @44:8..44:14
+        scrutinee: eager == : bool @44:8..44:14
           lhs: read n@43:10..43:11 : int
           rhs: int 0 : int @44:13..44:14
         then: unit : unit @44:15..46:6
@@ -184,7 +184,7 @@ fn choose@72:1..76:2 (bool ∈ ∅) -> int ∈ ∅
   param b@72:11..72:12: bool
   result: result : int @72:23..72:26
     outcome[0]: if : int @72:29..76:2
-      condition: read b@72:11..72:12 : bool
+      scrutinee: read b@72:11..72:12 : bool
       then: unit : unit @72:34..74:2
       else: int 18 : int @75:5..75:7
     outcome[1]: return : int @73:5..73:14

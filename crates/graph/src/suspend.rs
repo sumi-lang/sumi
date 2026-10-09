@@ -127,16 +127,14 @@ impl Layout {
                     roots.extend(region(rhs, false));
                     node
                 }
-                Control::Branch { node, then, else_ } => {
+                Control::Branch { node, arms } => {
                     roots.push(graph.inputs(node)[0]);
-                    roots.extend(region(then, false));
-                    roots.extend(else_.and_then(|r| region(r, false)));
+                    roots.extend(arms.iter().filter_map(|arm| region(arm, false)));
                     node
                 }
-                Control::Observe { node, then, else_ } => {
+                Control::Observe { node, arms } => {
                     roots.push(graph.inputs(node)[0]);
-                    roots.extend(then.and_then(|r| region(r, true)));
-                    roots.extend(else_.and_then(|r| region(r, true)));
+                    roots.extend(arms.iter().filter_map(|arm| region(arm, true)));
                     node
                 }
                 Control::CompleteObserve(node) => node,

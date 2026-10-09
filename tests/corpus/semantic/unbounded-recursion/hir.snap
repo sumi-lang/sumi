@@ -20,7 +20,7 @@ fn fall@3:1..7:2 (int ∈ (-∞, 5]) -> int ∈ ∅
   param n@3:9..3:10: int
   result: copy : int @3:20..3:23
     value: if : int @3:26..7:2
-      condition: eager > : bool @3:29..3:36
+      scrutinee: eager > : bool @3:29..3:36
         lhs: read n@3:9..3:10 : int
         rhs: int 100 : int @3:33..3:36
       then: int 0 : int @4:5..4:6
@@ -74,12 +74,12 @@ fn either@14:1..22:2 (int ∈ [-1, 11]) -> int ∈ [0, 0]
   param n@14:11..14:12: int
   result: copy : int @14:22..14:25
     value: if : int @14:28..22:2
-      condition: eager > : bool @14:31..14:37
+      scrutinee: eager > : bool @14:31..14:37
         lhs: read n@14:11..14:12 : int
         rhs: int 10 : int @14:35..14:37
       then: int 0 : int @15:5..15:6
       else: if : int @17:5..21:6
-        condition: eager < : bool @17:8..17:13
+        scrutinee: eager < : bool @17:8..17:13
           lhs: read n@14:11..14:12 [n > 10 fails@14:31..14:37] : int
           rhs: int 0 : int @17:12..17:13
         then: int 0 : int @18:9..18:10

@@ -11,8 +11,8 @@ use std::fmt;
 use std::num::NonZeroU32;
 
 pub use graph::{
-    Carried, Decl, Graph, GraphBuilder, Node, NodeId, Op, OpenRun, References, Region, RegionId,
-    Role, Run,
+    Arms, Carried, Case, Decl, Graph, GraphBuilder, Node, NodeId, Op, OpenRun, References, Region,
+    RegionId, Role, Run, Unions,
 };
 pub use int::{Int, OutOfRange, ParseIntError};
 pub use machine::{Machine, Refusal};
@@ -90,8 +90,8 @@ impl BinaryOp {
     }
 }
 
-/// A type: a scalar or a declared one, packed into one word so a node holding one stays four.
-/// Match on [`kind`](Self::kind).
+/// A type: a scalar, a declared one, or a union of declared ones, packed into one word so a node
+/// holding one stays four. Match on [`kind`](Self::kind).
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Ty(NonZeroU32);
 
@@ -101,6 +101,7 @@ pub enum TyKind {
     Bool,
     Unit,
     Decl(DeclId),
+    Union(UnionId),
 }
 
 impl Ty {
@@ -108,13 +109,23 @@ impl Ty {
     pub const BOOL: Self = Self(NonZeroU32::new(2).unwrap());
     pub const UNIT: Self = Self(NonZeroU32::new(3).unwrap());
     const FIRST_DECL: u32 = 4;
+    const UNION: u32 = 1 << 31;
     pub const SCALARS: [Self; 3] = [Self::INT, Self::BOOL, Self::UNIT];
 
     pub fn decl(id: DeclId) -> Self {
         let packed =
             id.0.checked_add(Self::FIRST_DECL)
                 .expect("declared type count fits u32");
+        assert!(
+            packed < Self::UNION,
+            "declared type count fits below the union bit"
+        );
         Self(NonZeroU32::new(packed).expect("a declared type packs above the scalars"))
+    }
+
+    pub fn union(id: UnionId) -> Self {
+        assert!(id.0 < Self::UNION, "union count fits below the union bit");
+        Self(NonZeroU32::new(id.0 | Self::UNION).expect("the union bit is set"))
     }
 
     pub fn kind(self) -> TyKind {
@@ -122,11 +133,14 @@ impl Ty {
             Self::INT => TyKind::Int,
             Self::BOOL => TyKind::Bool,
             Self::UNIT => TyKind::Unit,
+            Self(packed) if packed.get() & Self::UNION != 0 => {
+                TyKind::Union(UnionId(packed.get() & !Self::UNION))
+            }
             Self(packed) => TyKind::Decl(DeclId(packed.get() - Self::FIRST_DECL)),
         }
     }
 
-    /// The declared type this is, if not a scalar.
+    /// The declared type this is, if not a scalar or a union.
     pub fn as_decl(self) -> Option<DeclId> {
         match self.kind() {
             TyKind::Decl(id) => Some(id),
@@ -134,13 +148,18 @@ impl Ty {
         }
     }
 
-    /// The scalar's name; none for a declared type, whose name is the source's.
+    /// Whether values of the type are declared ones: of one declared type or a union of them.
+    pub fn is_declared(self) -> bool {
+        matches!(self.kind(), TyKind::Decl(_) | TyKind::Union(_))
+    }
+
+    /// The scalar's name; none for a declared type or a union, which the source names.
     pub fn scalar_name(self) -> Option<&'static str> {
         Some(match self.kind() {
             TyKind::Int => "int",
             TyKind::Bool => "bool",
             TyKind::Unit => "unit",
-            TyKind::Decl(_) => return None,
+            TyKind::Decl(_) | TyKind::Union(_) => return None,
         })
     }
 
@@ -159,27 +178,52 @@ impl fmt::Debug for Ty {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.kind() {
             TyKind::Decl(id) => write!(f, "Decl({})", id.index()),
+            TyKind::Union(id) => write!(f, "Union({})", id.index()),
             scalar => write!(f, "{scalar:?}"),
         }
     }
 }
 
-/// A type as the source names it.
+/// A type as the source names it: a union as its members joined by ` | `.
 pub struct ShownTy<'a>(Ty, &'a dyn Names);
 
 impl fmt::Display for ShownTy<'_> {
     fn fmt(&self, f: &'_ mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0.kind() {
             TyKind::Decl(id) => f.write_str(self.1.decl(id)),
+            TyKind::Union(id) => {
+                for (index, member) in self.1.members(id).iter().enumerate() {
+                    if index > 0 {
+                        f.write_str(" | ")?;
+                    }
+                    f.write_str(self.1.decl(*member))?;
+                }
+                Ok(())
+            }
             _ => f.write_str(self.0.scalar_name().expect("a scalar has a name")),
         }
     }
 }
 
-/// What the source calls a declared type and its fields.
+/// What the source calls a declared type and its fields, and what a union holds.
 pub trait Names {
     fn decl(&self, id: DeclId) -> &str;
     fn field(&self, name: FieldName) -> &str;
+    fn members(&self, id: UnionId) -> &[DeclId];
+}
+
+/// A union's index in its table; an ID from one analysis names nothing in another.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct UnionId(u32);
+
+impl UnionId {
+    pub fn new(index: usize) -> Self {
+        Self(u32::try_from(index).expect("union count fits u32"))
+    }
+
+    pub fn index(self) -> usize {
+        self.0 as usize
+    }
 }
 
 /// A declared type's index in its file, in declaration order; an ID from one analysis names

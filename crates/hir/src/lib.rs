@@ -21,9 +21,9 @@ pub use check::analyze;
 pub use reachability::{Dead, DeadCause};
 pub use spans::Spans;
 pub use sumi_graph::{
-    ArithOp, BinaryOp, Bools, Carried, CmpOp, Decl, DeclId, Decls, FieldName, Fields, FunctionId,
-    Graph, Int, Ints, Machine, May, Names, NodeId, Op, References, Refusal, RegionId, Role, Run,
-    Shown, ShownTy, ShownValue, Ty, TyKind, Value,
+    ArithOp, Arms, BinaryOp, Bools, Carried, Case, CmpOp, Decl, DeclId, Decls, FieldName, Fields,
+    FunctionId, Graph, Int, Ints, Machine, May, Names, NodeId, Op, References, Refusal, RegionId,
+    Role, Run, Shown, ShownTy, ShownValue, Ty, TyKind, UnionId, Unions, Value,
 };
 
 pub struct Analysis {
@@ -435,6 +435,10 @@ impl Names for Analysis {
 
     fn field(&self, name: FieldName) -> &str {
         &self.field_names[name.index()]
+    }
+
+    fn members(&self, id: UnionId) -> &[DeclId] {
+        self.graph.unions().get(id)
     }
 }
 

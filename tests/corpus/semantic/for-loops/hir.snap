@@ -126,7 +126,7 @@ fn nested@25:1..33:2 () -> int ∈ [11, +∞)
           discard: read total@26:13..26:18 (after loop @28:9..30:10) : int
           discard: after : ? @28:9..30:10
             control: loop : unit @28:9..30:10
-            context: then : ? @27:19..31:6
+            context: arm then : ? @27:19..31:6
           tail: loop : unit @28:9..30:10
             start: int 0 : int @28:18..28:19
             end: read i@27:9..27:10 : int
@@ -193,9 +193,9 @@ fn returned@42:1..47:2 () -> int ∈ [12, 99]
             end: int 7 : int @43:17..43:18
           discard: after : ? @44:9..44:35
             control: observe : ? @44:9..44:35
-            context: then : ? @43:19..45:6
+            context: arm then : ? @43:19..45:6
           tail: if : unit @44:9..44:35
-            condition: eager == : bool @44:12..44:18
+            scrutinee: eager == : bool @44:12..44:18
               lhs: read i@43:9..43:10 : int
               rhs: int 4 : int @44:17..44:18
             then: unit : unit @44:19..44:35
@@ -242,13 +242,13 @@ fn guarded@52:1..58:2 () -> int ∈ (-∞, +∞)
             start: int -3 : int @54:14..54:16
             end: int 4 : int @54:18..54:19
           discard: phi total@53:13..53:18 : int @55:9..55:45
-            condition: eager != : bool @55:12..55:18
+            scrutinee: eager != : bool @55:12..55:18
               lhs: read i@54:9..54:10 : int
               rhs: int 0 : int @55:17..55:18
             then: read total@53:13..53:18 (assigned @55:21..55:43) : int
             else: read total@53:13..53:18 (carried @54:5..56:6) : int
           tail: if : unit @55:9..55:45
-            condition: eager != : bool @55:12..55:18
+            scrutinee: eager != : bool @55:12..55:18
               lhs: read i@54:9..54:10 : int
               rhs: int 0 : int @55:17..55:18
             then:
@@ -261,7 +261,7 @@ fn guarded@52:1..58:2 () -> int ∈ (-∞, +∞)
               tail: unit : unit @55:19..55:45
             else: unit (implicit)
         next[0]: phi total@53:13..53:18 : int @55:9..55:45
-          condition: eager != : bool @55:12..55:18
+          scrutinee: eager != : bool @55:12..55:18
             lhs: read i@54:9..54:10 : int
             rhs: int 0 : int @55:17..55:18
           then: read total@53:13..53:18 (assigned @55:21..55:43) : int
@@ -291,13 +291,13 @@ fn carried_guard@59:1..67:2 () -> int ∈ (-∞, +∞)
             start: int 0 : int @62:14..62:15
             end: int 5 : int @62:17..62:18
           discard: phi total@61:13..61:18 : int @63:9..63:57
-            condition: eager != : bool @63:12..63:24
+            scrutinee: eager != : bool @63:12..63:24
               lhs: read divisor@60:13..60:20 (carried @62:5..65:6) : int
               rhs: int 0 : int @63:23..63:24
             then: read total@61:13..61:18 (assigned @63:27..63:55) : int
             else: read total@61:13..61:18 (carried @62:5..65:6) : int
           discard: if : unit @63:9..63:57
-            condition: eager != : bool @63:12..63:24
+            scrutinee: eager != : bool @63:12..63:24
               lhs: read divisor@60:13..60:20 (carried @62:5..65:6) : int
               rhs: int 0 : int @63:23..63:24
             then:
@@ -316,7 +316,7 @@ fn carried_guard@59:1..67:2 () -> int ∈ (-∞, +∞)
           tail: unit : unit @62:19..65:6
         next[0]: read divisor@60:13..60:20 (assigned @64:9..64:30) : int
         next[1]: phi total@61:13..61:18 : int @63:9..63:57
-          condition: eager != : bool @63:12..63:24
+          scrutinee: eager != : bool @63:12..63:24
             lhs: read divisor@60:13..60:20 (carried @62:5..65:6) : int
             rhs: int 0 : int @63:23..63:24
           then: read total@61:13..61:18 (assigned @63:27..63:55) : int
@@ -446,7 +446,7 @@ fn completed_binding@88:1..95:2 () -> int ∈ [19, 19]
     outcome[0]:
       let value@89:13..89:18: bool @89:5..90:40
         initializer: if : ? @89:21..90:40
-          condition: bool false : bool @90:9..90:14
+          scrutinee: bool false : bool @90:9..90:14
           then: bool true : bool @90:19..90:23
           else: bool false : bool @90:33..90:38
       discard: loop : unit @91:5..93:6
@@ -457,7 +457,7 @@ fn completed_binding@88:1..95:2 () -> int ∈ [19, 19]
             start: int 0 : int @91:14..91:15
             end: int 2 : int @91:17..91:18
           tail: if : unit @92:9..92:44
-            condition: eager == : bool @92:12..92:26
+            scrutinee: eager == : bool @92:12..92:26
               lhs: read value@89:13..89:18 : bool
               rhs: read value@89:13..89:18 : bool
             then:

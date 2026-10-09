@@ -7,7 +7,7 @@ fn climb@1:1..5:2 (int ∈ [0, 107]) -> int ∈ [101, 107]
   param n@1:10..1:11: int
   result: copy : int @1:21..1:24
     value: if : int @1:27..5:2
-      condition: eager > : bool @1:30..1:37
+      scrutinee: eager > : bool @1:30..1:37
         lhs: read n@1:10..1:11 : int
         rhs: int 100 : int @1:34..1:37
       then: read n@1:10..1:11 [n > 100 holds@1:30..1:37] : int
@@ -25,7 +25,7 @@ fn descend@7:1..11:2 (int ∈ [-2, 50]) -> int ∈ [-2, 2]
   param n@7:12..7:13: int
   result: copy : int @7:23..7:26
     value: if : int @7:29..11:2
-      condition: eager < : bool @7:32..7:37
+      scrutinee: eager < : bool @7:32..7:37
         lhs: read n@7:12..7:13 : int
         rhs: int 3 : int @7:36..7:37
       then: read n@7:12..7:13 [n < 3 holds@7:32..7:37] : int
@@ -44,7 +44,7 @@ fn lapped@13:1..17:2 (int ∈ [0, 1000], int ∈ [0, 1000]) -> int ∈ [0, 1000]
   param m@13:19..13:20: int
   result: copy : int @13:30..13:33
     value: if : int @13:36..17:2
-      condition: eager < : bool @13:39..13:44
+      scrutinee: eager < : bool @13:39..13:44
         lhs: read n@13:11..13:12 : int
         rhs: read m@13:19..13:20 : int
       then: call lapped@13:1..17:2 : int @14:5..14:25
@@ -66,7 +66,7 @@ fn rise@19:1..23:2 (int ∈ [0, 7]) -> int ∈ [6, 7]
   param n@19:9..19:10: int
   result: copy : int @19:20..19:23
     value: if : int @19:26..23:2
-      condition: eager > : bool @19:29..19:34
+      scrutinee: eager > : bool @19:29..19:34
         lhs: read n@19:9..19:10 : int
         rhs: int 5 : int @19:33..19:34
       then: read n@19:9..19:10 [n > 5 holds@19:29..19:34] : int
@@ -80,7 +80,7 @@ fn upto@24:1..28:2 (int ∈ [0, 11], int ∈ [9, 10]) -> int ∈ [10, 11]
   param k@24:17..24:18: int
   result: copy : int @24:28..24:31
     value: if : int @24:34..28:2
-      condition: eager > : bool @24:37..24:42
+      scrutinee: eager > : bool @24:37..24:42
         lhs: read n@24:9..24:10 : int
         rhs: read k@24:17..24:18 : int
       then: read n@24:9..24:10 [n > k holds@24:37..24:42] : int
@@ -108,7 +108,7 @@ fn compared@31:1..35:2 (int ∈ [1, 2]) -> int ∈ [0, 0]
   param a@31:13..31:14: int
   result: copy : int @31:24..31:27
     value: if : int @31:30..35:2
-      condition: eager == : bool @31:33..31:49
+      scrutinee: eager == : bool @31:33..31:49
         lhs: call same@30:1..30:27 : int @31:33..31:44
           arg[0]: eager * : int @31:38..31:43
             lhs: read a@31:13..31:14 : int
@@ -129,7 +129,7 @@ fn climb_compared@37:1..41:2 (int ∈ [1, 2]) -> int ∈ [0, 0]
   param a@37:19..37:20: int
   result: copy : int @37:30..37:33
     value: if : int @37:36..41:2
-      condition: eager == : bool @37:39..37:56
+      scrutinee: eager == : bool @37:39..37:56
         lhs: call climb@1:1..5:2 : int @37:39..37:51
           arg[0]: eager * : int @37:45..37:50
             lhs: read a@37:19..37:20 : int
@@ -169,7 +169,7 @@ fn relay@43:1..58:2 (int ∈ [0, 107]) -> int ∈ [101, 107]
       let i@52:9..52:10: int @52:5..52:19
         initializer: read h@51:9..51:10 : int
       tail: if : int @53:5..57:6
-        condition: eager > : bool @53:8..53:15
+        scrutinee: eager > : bool @53:8..53:15
           lhs: read i@52:9..52:10 : int
           rhs: int 100 : int @53:12..53:15
         then: read i@52:9..52:10 [i > 100 holds@53:8..53:15] : int

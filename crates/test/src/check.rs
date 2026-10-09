@@ -813,7 +813,7 @@ fn fixes(analysis: &Analysis) {
 }
 
 fn typed(analysis: &Analysis) {
-    use sumi_hir::{BinaryOp, CmpOp, FunctionId, NodeId, Op, Ty};
+    use sumi_hir::{BinaryOp, Case, CmpOp, FunctionId, NodeId, Op, Ty};
     let graph = analysis.graph();
     for (index, function) in analysis.functions().iter().enumerate() {
         if !function.is_complete() {
@@ -835,8 +835,7 @@ fn typed(analysis: &Analysis) {
                 .collect();
             match &entry.op {
                 Op::Entry
-                | Op::Then
-                | Op::Else
+                | Op::Arm(_)
                 | Op::Return
                 | Op::Sequence
                 | Op::Observe { .. }
@@ -943,7 +942,16 @@ fn typed(analysis: &Analysis) {
                 Op::Phi => {
                     assert_eq!(own, ty(graph.declaration(node)));
                     if values[0] {
-                        assert_eq!(ty(inputs[0]), Some(Ty::BOOL));
+                        let contexts = graph.phi_contexts(node);
+                        assert_eq!(contexts.len() + 1, inputs.len());
+                        if contexts
+                            .iter()
+                            .all(|&context| matches!(graph.case(context), Case::Bool(_)))
+                        {
+                            assert_eq!(ty(inputs[0]), Some(Ty::BOOL));
+                        } else {
+                            assert!(ty(inputs[0]).is_some_and(Ty::is_declared));
+                        }
                     }
                     for (index, &input) in inputs[1..].iter().enumerate() {
                         if values[index + 1] {
@@ -956,30 +964,39 @@ fn typed(analysis: &Analysis) {
                         assert_eq!(own, ty(inputs[0]));
                     }
                 }
-                Op::Join { then, else_ } => {
-                    if values[0] {
-                        assert_eq!(ty(inputs[0]), Some(Ty::BOOL));
-                    } else {
+                Op::Switch { arms } => {
+                    if !values[0] {
                         continue;
                     }
-                    let then_has_value = graph.region(*then).result_has_value();
-                    let else_value =
-                        else_.is_none_or(|region| graph.region(region).result_has_value());
-                    if !then_has_value && !else_value {
+                    let cases: Vec<Case> = arms
+                        .iter()
+                        .map(|arm| graph.case(graph.region(arm).context))
+                        .collect();
+                    let is_boolean = cases.iter().all(|case| matches!(case, Case::Bool(_)));
+                    if is_boolean {
+                        assert_eq!(ty(inputs[0]), Some(Ty::BOOL));
+                    } else {
+                        assert!(ty(inputs[0]).is_some_and(Ty::is_declared));
+                    }
+                    let is_total = !is_boolean
+                        || (cases.contains(&Case::Bool(true))
+                            && cases.contains(&Case::Bool(false)));
+                    let valued: Vec<_> = arms
+                        .iter()
+                        .map(|arm| graph.region(arm))
+                        .filter(|region| region.result_has_value())
+                        .collect();
+                    if !is_total {
+                        assert_eq!(own, Some(Ty::UNIT));
+                    } else if valued.is_empty() {
                         assert_eq!(own, None);
                         continue;
                     }
-                    if then_has_value {
-                        assert_eq!(ty(graph.region(*then).result()), own);
-                    }
-                    match else_ {
-                        Some(else_) if graph.region(*else_).result_has_value() => {
-                            assert_eq!(ty(graph.region(*else_).result()), own)
-                        }
-                        Some(_) => {}
-                        None => assert_eq!(own, Some(Ty::UNIT)),
+                    for region in valued {
+                        assert_eq!(ty(region.result()), own);
                     }
                 }
+                Op::Narrow(ty) => assert_eq!(own, Some(*ty)),
                 Op::Call(callee) => {
                     let signature = analysis
                         .signature(*callee)
@@ -1039,19 +1056,18 @@ fn graph(analysis: &Analysis) {
             | Op::Neg
             | Op::Not
             | Op::Exactly(_) => Some(1),
-            Op::Phi => Some(3),
-            Op::And { .. } | Op::Or { .. } | Op::Join { .. } => Some(1),
+            Op::Phi => Some(1 + graph.phi_contexts(id).len()),
+            Op::And { .. } | Op::Or { .. } | Op::Switch { .. } => Some(1),
             Op::Observe { .. } => Some(2),
             Op::Binary(_)
             | Op::LoopIndex
             | Op::Loop { .. }
             | Op::Refine { .. }
-            | Op::Then
-            | Op::Else
+            | Op::Arm(_)
             | Op::Return
             | Op::Sequence
             | Op::After => Some(2),
-            Op::Field(_) => Some(1),
+            Op::Field(_) | Op::Narrow(_) => Some(1),
             Op::Make(decl) => Some(graph.decl(decl).fields().len()),
             Op::Hole | Op::Call(_) | Op::Result { .. } => None,
         };
@@ -1059,14 +1075,11 @@ fn graph(analysis: &Analysis) {
             assert_eq!(inputs.len(), arity);
         }
         for (index, &input) in inputs.iter().enumerate() {
-            if matches!(
-                graph.node(input).op,
-                Op::Entry | Op::Then | Op::Else | Op::After
-            ) {
+            if matches!(graph.node(input).op, Op::Entry | Op::Arm(_) | Op::After) {
                 assert!(matches!(
                     (&node.op, index),
                     (Op::Unit, 0)
-                        | (Op::Then | Op::Else | Op::Return | Op::Observe { .. }, 1)
+                        | (Op::Arm(_) | Op::Return | Op::Observe { .. }, 1)
                         | (Op::After, 0 | 1)
                 ));
             }
@@ -1081,21 +1094,11 @@ fn graph(analysis: &Analysis) {
             assert!(!matches!(node.op, Op::Hole));
             if !matches!(
                 node.op,
-                Op::Entry
-                    | Op::Then
-                    | Op::Else
-                    | Op::Unused
-                    | Op::Sequence
-                    | Op::Observe { .. }
-                    | Op::After
+                Op::Entry | Op::Arm(_) | Op::Unused | Op::Sequence | Op::Observe { .. } | Op::After
             ) && graph.input_roles(id).iter().all(|role| role.is_value())
                 && !matches!(
                     node.op,
-                    Op::Join {
-                        then,
-                        else_: Some(else_),
-                    } if !graph.region(then).result_has_value()
-                        && !graph.region(else_).result_has_value()
+                    Op::Switch { arms } if arms.iter().all(|arm| !graph.region(arm).result_has_value())
                 )
             {
                 assert!(analysis.ty(id).is_some());
@@ -1168,10 +1171,7 @@ fn graph(analysis: &Analysis) {
             match role {
                 Role::Value | Role::Completes => panic!("an operand is no reference"),
                 Role::Declaration => assert!(analysis.spans().name(reference).is_some()),
-                Role::Context => assert!(matches!(
-                    referenced,
-                    Op::Entry | Op::Then | Op::Else | Op::After
-                )),
+                Role::Context => assert!(matches!(referenced, Op::Entry | Op::Arm(_) | Op::After)),
                 Role::Index => assert!(matches!(referenced, Op::LoopIndex)),
                 Role::Carry => assert!(matches!(referenced, Op::Carry)),
                 Role::Next => {}
@@ -1215,7 +1215,7 @@ fn graph(analysis: &Analysis) {
         let result = region.result().index();
         assert!(!matches!(
             graph.node(region.result()).op,
-            Op::Entry | Op::Then | Op::Else | Op::Unused
+            Op::Entry | Op::Arm(_) | Op::Unused
         ));
         assert_eq!(owner[region.context.index()], owner[result]);
         assert!(owner[result].is_some());
@@ -1287,13 +1287,22 @@ pub fn run(program: Program<'_>) -> Runs {
                 .map(Value::Bool)
                 .collect(),
             TyKind::Unit => vec![Value::Unit],
+            TyKind::Union(id) => graph
+                .unions()
+                .get(id)
+                .iter()
+                .flat_map(|&decl| values_within(graph, Ty::decl(decl), may))
+                .take(TUPLES)
+                .collect(),
             TyKind::Decl(decl) => {
                 let fields = graph.decl(decl).fields();
                 let facts: Vec<May> = match may.decls.get(decl) {
                     None => return Vec::new(),
                     Some(Fields::Any) => fields
                         .iter()
-                        .map(|&(_, ty)| May::every(ty.expect("a run type's fields resolved")))
+                        .map(|&(_, ty)| {
+                            May::every(ty.expect("a run type's fields resolved"), graph.unions())
+                        })
                         .collect(),
                     Some(Fields::Known(facts)) => facts.to_vec(),
                 };
@@ -1462,6 +1471,13 @@ fn dead_code_stays_dead(program: Program<'_>) {
                 .collect(),
             TyKind::Bool => vec![Value::Bool(true), Value::Bool(false)],
             TyKind::Unit => vec![Value::Unit],
+            TyKind::Union(id) => graph
+                .unions()
+                .get(id)
+                .iter()
+                .flat_map(|&decl| some_values(graph, Ty::decl(decl)))
+                .take(TUPLES)
+                .collect(),
             TyKind::Decl(decl) => {
                 let mut tuples: Vec<Vec<Value>> = vec![Vec::new()];
                 for &(_, field) in graph.decl(decl).fields() {
@@ -1537,12 +1553,7 @@ fn optimized(compiled: &Compiled<'_>) {
     use sumi_hir::Op;
 
     let graph = compiled.graph();
-    let context = |node| {
-        matches!(
-            graph.node(node).op,
-            Op::Entry | Op::Then | Op::Else | Op::After
-        )
-    };
+    let context = |node| matches!(graph.node(node).op, Op::Entry | Op::Arm(_) | Op::After);
     let mut origins = HashSet::new();
     for node in graph.node_ids() {
         assert!(
@@ -1566,7 +1577,7 @@ fn optimized(compiled: &Compiled<'_>) {
         }
         let dropped = match op {
             Op::Unused => true,
-            Op::Copy { .. } | Op::Assign | Op::Refine { .. } | Op::Exactly(_) => {
+            Op::Copy { .. } | Op::Assign | Op::Refine { .. } | Op::Exactly(_) | Op::Narrow(_) => {
                 graph.input_roles(node)[0].is_value()
             }
             _ => false,
@@ -1574,7 +1585,7 @@ fn optimized(compiled: &Compiled<'_>) {
         assert!(!dropped, "an optimized graph holds {op:?}");
         let contexts: &[NodeId] = match op {
             Op::Return | Op::Observe { .. } => &inputs[1..],
-            Op::Unit | Op::Then | Op::Else | Op::After => &inputs[inputs.len() - 1..],
+            Op::Unit | Op::Arm(_) | Op::After => &inputs[inputs.len() - 1..],
             _ => &[],
         };
         assert!(
@@ -1619,7 +1630,7 @@ fn optimized(compiled: &Compiled<'_>) {
         let mut at = named;
         while at != held {
             at = match graph.node(at).op {
-                Op::Then | Op::Else | Op::After => graph.inputs(at)[1],
+                Op::Arm(_) | Op::After => graph.inputs(at)[1],
                 _ => panic!("{node:?} names {named:?}, outside the region holding it"),
             };
         }

@@ -18,14 +18,14 @@ fn and_type@2:1..2:35 () -> bool ∈ {false}
 fn then_name@3:1..7:2 () -> int ∈ ∅
   result: copy : int @3:19..3:22
     value: if : ? @3:25..7:2
-      condition: bool false : bool @3:28..3:33
+      scrutinee: bool false : bool @3:28..3:33
       then: hole : ? @4:5..4:17
       else: int 1 : int @6:5..6:6
 
 fn else_type@8:1..12:2 () -> int ∈ [1, 1]
   result: copy : int @8:19..8:22
     value: if : ? @8:25..12:2
-      condition: bool true : bool @8:28..8:32
+      scrutinee: bool true : bool @8:28..8:32
       then: int 1 : int @9:5..9:6
       else: bool false : bool @11:5..11:10
 

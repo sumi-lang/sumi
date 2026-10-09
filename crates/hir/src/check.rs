@@ -161,8 +161,8 @@ fn holds(
 ) -> bool {
     let actual_class = demand.actual;
     let actual = replay.resolve(actual_class);
-    match demand.kind {
-        DemandKind::Field(name) => {
+    match &demand.kind {
+        &DemandKind::Field(name) => {
             let Some(ty) = actual else {
                 return true;
             };
@@ -187,13 +187,13 @@ fn holds(
                 declared.map(|(range, message)| (range, Box::from(message))),
             );
         }
-        DemandKind::Type { expected, declared } => {
+        &DemandKind::Type { expected, declared } => {
             let expected_ty = match expected {
                 Expected::Ty(ty) => Some(ty),
                 Expected::Peer(peer) => replay.resolve(peer),
             };
             match (actual, expected_ty) {
-                (Some(actual), Some(expected)) if actual != expected => {
+                (Some(actual), Some(expected)) if !graph.unions().fits(actual, expected) => {
                     let related = declared.map(|declared| match declared {
                         Declared::Written(at) => (at, "declared here"),
                         Declared::Omitted(at) => {
@@ -224,7 +224,7 @@ fn holds(
             }
         },
         DemandKind::Comparable => {
-            let Some(ty) = actual.filter(|ty| *ty == Ty::UNIT || ty.as_decl().is_some()) else {
+            let Some(ty) = actual.filter(|ty| *ty == Ty::UNIT || ty.is_declared()) else {
                 return true;
             };
             source.report(
@@ -236,29 +236,56 @@ fn holds(
         }
         DemandKind::Agree { branches, at } => {
             // An arm is labeled where its value is read, whatever its claim's own origin.
-            let [then, else_] = [0, 1].map(|arm| replay.resolve(branches[arm]).zip(Some(at[arm])));
-            for branch in branches {
+            let arms: Vec<Option<(Ty, TextRange)>> = branches
+                .iter()
+                .zip(at)
+                .map(|(&branch, &at)| replay.resolve(branch).zip(Some(at)))
+                .collect();
+            for &branch in branches {
                 replay.branch(branch, actual_class);
             }
             let evidence = *replay.evidence(actual_class);
             if !evidence.is_conflict() {
                 return true;
             }
-            let message = |types| format!("if branches are {types}");
+            let what = if is_boolean_switch(graph, actual_class) {
+                "if branches"
+            } else {
+                "match arms"
+            };
+            let message = |types| format!("{what} are {types}");
             let claims = evidence.claims();
-            match (then, else_) {
-                // The arms alone made the conflict; a third type has come in by aliasing.
-                (Some((then, then_at)), Some((else_, else_at)))
-                    if then != else_ && claims.len() == 2 =>
-                {
-                    let arms = vec![(then, Some(then_at)), (else_, Some(else_at))];
-                    source.conflict_at(demand.at, codes::TYPE_MISMATCH, arms, message);
-                }
-                _ => source.conflict(demand.at, codes::TYPE_MISMATCH, typing, &claims, message),
+            let resolved: Vec<(Ty, Option<TextRange>)> = arms
+                .iter()
+                .flatten()
+                .map(|&(ty, at)| (ty, Some(at)))
+                .collect();
+            let mut distinct: Vec<Ty> = resolved.iter().map(|&(ty, _)| ty).collect();
+            distinct.sort_unstable();
+            distinct.dedup();
+            // The arms alone made the conflict; another type has come in by aliasing otherwise.
+            if resolved.len() == arms.len() && distinct.len() == claims.len() && distinct.len() > 1
+            {
+                source.conflict_at(demand.at, codes::TYPE_MISMATCH, resolved, message);
+            } else {
+                source.conflict(demand.at, codes::TYPE_MISMATCH, typing, &claims, message);
             }
         }
     }
     false
+}
+
+/// Whether the switch at `node` selects on a boolean.
+fn is_boolean_switch(graph: &Graph, node: NodeId) -> bool {
+    match graph.node(node).op {
+        Op::Switch { arms } => arms.iter().all(|arm| {
+            matches!(
+                graph.case(graph.region(arm).context),
+                sumi_graph::Case::Bool(_)
+            )
+        }),
+        _ => false,
+    }
 }
 
 fn signatures(
@@ -407,7 +434,7 @@ pub(crate) fn explain(
                 }
             }
             Op::Phi => {
-                for ((&value, context), &role) in inputs[1..]
+                for ((&value, &context), &role) in inputs[1..]
                     .iter()
                     .zip(graph.phi_contexts(node))
                     .zip(&graph.input_roles(node)[1..])
@@ -426,14 +453,15 @@ pub(crate) fn explain(
                 }
                 follow(&mut queue, inputs[0], 1);
             }
-            Op::Join { then, else_ } => {
-                for region in std::iter::once(then).chain(else_) {
-                    let region = graph.region(region);
+            Op::Switch { arms } => {
+                for arm in arms.iter() {
+                    let region = graph.region(arm);
                     if region.result_has_value() && typing.may(region.context).is_live() {
                         follow(&mut queue, region.result(), 1);
                     }
                 }
             }
+            Op::Narrow(_) => follow(&mut queue, inputs[0], 0),
             Op::Call(callee) => {
                 let function = callee;
                 follow(&mut queue, graph.run(function).result(), 1);
@@ -495,8 +523,7 @@ pub(crate) fn explain(
             | Op::Or { .. }
             | Op::Exactly(_)
             | Op::Entry
-            | Op::Then
-            | Op::Else
+            | Op::Arm(_)
             | Op::Observe { .. }
             | Op::After => {}
         }
@@ -544,25 +571,16 @@ fn complete(
         let run = graph.run(FunctionId::new(index));
         let is_complete = run.nodes().all(|node| match graph.node(node).op {
             // No value, so nothing to resolve.
-            Op::Entry
-            | Op::Then
-            | Op::Else
-            | Op::Unused
-            | Op::Sequence
-            | Op::Observe { .. }
-            | Op::After => true,
+            Op::Entry | Op::Arm(_) | Op::Unused | Op::Sequence | Op::Observe { .. } | Op::After => {
+                true
+            }
             Op::Hole => false,
             // A caller's demand can resolve the call without the callee resolving.
             Op::Call(callee) => functions[callee.index()]
                 .result
                 .is_some_and(|result| Some(result) == typing.resolve(node)),
             _ if !graph.input_roles(node).iter().all(|role| role.is_value()) => true,
-            Op::Join {
-                then,
-                else_: Some(else_),
-            } if !graph.region(then).result_has_value()
-                && !graph.region(else_).result_has_value() =>
-            {
+            Op::Switch { arms } if arms.iter().all(|arm| !graph.region(arm).result_has_value()) => {
                 true
             }
             _ => typing.resolve(node).is_some(),

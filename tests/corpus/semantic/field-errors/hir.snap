@@ -97,7 +97,7 @@ fn holey@17:1..17:34 () -> Holey ∈ ∅
 fn branches@18:1..18:52 signature: unavailable
   param c@18:13..18:14: bool
   body: if : ? @18:24..18:52
-    condition: read c@18:13..18:14 : bool
+    scrutinee: read c@18:13..18:14 : bool
     then: call origin@3:1..3:41 : Point @18:31..18:39
     else: int 1 : int @18:49..18:50
 

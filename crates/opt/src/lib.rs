@@ -1,7 +1,9 @@
 //! The middle end: rewrites a proven graph into a smaller one that computes the same values, for
 //! whichever backend runs it. The result is a graph like the analysis's, contexts and all.
 
-use sumi_graph::{FunctionId, Graph, GraphBuilder, May, NodeId, Op, References, RegionId, Role};
+use sumi_graph::{
+    Arms, Case, FunctionId, Graph, GraphBuilder, May, NodeId, Op, References, RegionId, Role,
+};
 
 /// A rewritten graph and the node of the original each of its nodes computes.
 pub struct Optimized {
@@ -100,9 +102,36 @@ fn plan<'a>(graph: &Graph, facts: impl Fn(NodeId) -> &'a May) -> Plan {
             exit.value = false;
         }
     }
-    let decided = |node: NodeId| {
-        let bools = facts(node).bools;
-        (bools.may_true() != bools.may_false()).then_some(bools.may_true())
+    let unions = graph.unions();
+    // Whether the case selects the scrutinee: for every value, for none, or undecided.
+    let decided = |scrutinee: NodeId, case: Case| {
+        let fact = facts(scrutinee);
+        if fact.must_select(case, unions) {
+            Some(true)
+        } else if !fact.may_select(case, unions) {
+            Some(false)
+        } else {
+            None
+        }
+    };
+    // The arm taken, when the facts decide it: the first whose case always selects, past those
+    // whose case never does.
+    let taken = |scrutinee: NodeId, contexts: &mut dyn Iterator<Item = NodeId>| {
+        for (index, context) in contexts.enumerate() {
+            match decided(scrutinee, graph.case(context)) {
+                Some(true) => return Some(Some(index)),
+                Some(false) => continue,
+                None => return None,
+            }
+        }
+        Some(None)
+    };
+    let taken_arm = |scrutinee: NodeId, arms: Arms| {
+        taken(
+            scrutinee,
+            &mut arms.iter().map(|arm| graph.region(arm).context),
+        )
+        .map(|index| index.map(|index| arms.iter().nth(index).expect("an arm taken exists")))
     };
     let valued = |region: RegionId| {
         let exit = &plan.exits[region.index()];
@@ -118,42 +147,36 @@ fn plan<'a>(graph: &Graph, facts: impl Fn(NodeId) -> &'a May) -> Plan {
                 Rewrite::Alias(inputs[0])
             }
             Op::Loop { .. } if !facts(inputs[1]).is_live() => Rewrite::Replace(Op::Sequence),
-            Op::Copy { .. } | Op::Assign | Op::Refine { .. } | Op::Exactly(_) if value(0) => {
+            Op::Copy { .. } | Op::Assign | Op::Refine { .. } | Op::Exactly(_) | Op::Narrow(_)
+                if value(0) =>
+            {
                 Rewrite::Alias(inputs[0])
             }
-            // A branch its condition always takes runs wherever its parent does.
-            Op::Then if value(0) && decided(inputs[0]) == Some(true) => Rewrite::Alias(inputs[1]),
-            Op::Else if value(0) && decided(inputs[0]) == Some(false) => Rewrite::Alias(inputs[1]),
-            Op::Join { then, else_ } if value(0) => {
-                let to = match (decided(inputs[0]), else_) {
-                    (Some(true), _) => valued(then),
-                    (Some(false), Some(else_)) => valued(else_),
-                    _ => None,
-                };
-                to.map_or(Rewrite::Keep, Rewrite::Alias)
+            // An arm its case always selects runs wherever its parent does.
+            Op::Arm(case) if value(0) && decided(inputs[0], case) == Some(true) => {
+                Rewrite::Alias(inputs[1])
             }
-            Op::Phi if value(0) => match decided(inputs[0]) {
-                Some(truth) => {
-                    let taken = if truth { 1 } else { 2 };
-                    value(taken)
-                        .then_some(inputs[taken])
-                        .map_or(Rewrite::Keep, Rewrite::Alias)
-                }
-                None => Rewrite::Keep,
+            Op::Switch { arms } if value(0) => match taken_arm(inputs[0], arms) {
+                Some(Some(arm)) => valued(arm).map_or(Rewrite::Keep, Rewrite::Alias),
+                Some(None) | None => Rewrite::Keep,
             },
-            Op::Observe { then, else_ } if value(0) => match decided(inputs[0]) {
-                Some(truth) => {
-                    let taken = if truth { then } else { else_ };
-                    match taken.and_then(|region| plan.exits[region.index()].control) {
-                        Some(control) => Rewrite::Alias(control),
-                        None => Rewrite::Literal(Op::Unit),
-                    }
+            Op::Phi if value(0) => {
+                match taken(inputs[0], &mut graph.phi_contexts(node).iter().copied()) {
+                    Some(Some(index)) if value(1 + index) => Rewrite::Alias(inputs[1 + index]),
+                    _ => Rewrite::Keep,
                 }
+            }
+            Op::Observe { arms } if value(0) => match taken_arm(inputs[0], arms) {
+                Some(taken) => match taken.and_then(|arm| plan.exits[arm.index()].control) {
+                    Some(control) => Rewrite::Alias(control),
+                    None => Rewrite::Literal(Op::Unit),
+                },
                 None => Rewrite::Keep,
             },
             ref op @ (Op::And { rhs } | Op::Or { rhs }) if value(0) => {
                 let is_and = matches!(op, Op::And { .. });
-                match decided(inputs[0]) {
+                let left = decided(inputs[0], Case::Bool(true));
+                match left {
                     Some(left) if left != is_and => Rewrite::Literal(Op::Bool(left)),
                     Some(_) => valued(rhs).map_or(Rewrite::Keep, Rewrite::Alias),
                     None => Rewrite::Keep,
@@ -188,7 +211,7 @@ fn plan<'a>(graph: &Graph, facts: impl Fn(NodeId) -> &'a May) -> Plan {
                 | Op::Binary(_)
                 | Op::Call(_)
                 | Op::Field(_)
-                | Op::Join { .. }
+                | Op::Switch { .. }
                 | Op::Phi
                 | Op::And { .. }
                 | Op::Or { .. }
@@ -243,7 +266,7 @@ fn returning(graph: &Graph) -> Vec<bool> {
                         .carried(node)
                         .any(|(carry, next)| reads(graph.inputs(carry)[0]) || reads(next))
             }
-            Op::Join { then, else_ } => region(then) || else_.is_some_and(region),
+            Op::Switch { arms } => arms.iter().any(region),
             Op::And { rhs } | Op::Or { rhs } => region(rhs),
             _ => false,
         };
@@ -257,7 +280,7 @@ fn returning(graph: &Graph) -> Vec<bool> {
 }
 
 fn is_context(op: &Op) -> bool {
-    matches!(op, Op::Entry | Op::Then | Op::Else | Op::After)
+    matches!(op, Op::Entry | Op::Arm(_) | Op::After)
 }
 
 fn kept_regions(graph: &Graph, plan: &Plan, kept: &[bool]) -> Vec<bool> {
@@ -325,6 +348,15 @@ fn emit(graph: &Graph, plan: &Plan, kept: &[bool]) -> Optimized {
     }
     let mut new_of: Vec<Option<NodeId>> = vec![None; graph.nodes().len()];
     let mut new_region: Vec<Option<RegionId>> = vec![None; regions.len()];
+    // A switch's arms open together, so they stay consecutive.
+    let mut arms_of: Vec<Option<Arms>> = vec![None; regions.len()];
+    for node in graph.node_ids() {
+        if let Op::Switch { arms } | Op::Observe { arms } = graph.node(node).op {
+            for arm in arms.iter() {
+                arms_of[arm.index()] = Some(arms);
+            }
+        }
+    }
     let mut origins = Vec::new();
     let mut run_regions: Vec<Vec<RegionId>> = vec![Vec::new(); graph.runs().len()];
     for region in graph.region_ids().filter(|region| regions[region.index()]) {
@@ -376,7 +408,22 @@ fn emit(graph: &Graph, plan: &Plan, kept: &[bool]) -> Optimized {
                 };
                 if order == 1 {
                     let context = map(old.context);
-                    let new = builder.open(context);
+                    let new = match arms_of[region.index()] {
+                        Some(arms) => {
+                            if arms.iter().next() == Some(region) {
+                                let contexts: Vec<NodeId> = arms
+                                    .iter()
+                                    .map(|arm| map(graph.region(arm).context))
+                                    .collect();
+                                let opened = builder.open_arms(&contexts);
+                                for (arm, new) in arms.iter().zip(opened.iter()) {
+                                    new_region[arm.index()] = Some(new);
+                                }
+                            }
+                            new_region[region.index()].expect("an arm opens with its first")
+                        }
+                        None => builder.open(context),
+                    };
                     builder.enter(new);
                     new_region[region.index()] = Some(new);
                     if old.nodes().len() == 0 {

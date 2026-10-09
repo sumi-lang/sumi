@@ -7,7 +7,9 @@ use std::convert::Infallible;
 use std::fmt;
 use std::ops::{Add, BitAnd, Div, Mul, Neg, Rem, Sub};
 
-use crate::{ArithOp, BinaryOp, CmpOp, Decl, DeclId, Domain, FieldName, Int, Names, Ty, TyKind};
+use crate::{
+    ArithOp, BinaryOp, Case, CmpOp, Decl, DeclId, Domain, FieldName, Int, Names, Ty, TyKind, Unions,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Bound {
@@ -736,12 +738,49 @@ impl May {
         }
     }
 
-    pub fn every(ty: Ty) -> Self {
+    pub fn every(ty: Ty, unions: &Unions) -> Self {
         match ty.kind() {
             TyKind::Int => Self::ints(Ints::ALL),
             TyKind::Bool => Self::bools(Bools::BOTH),
             TyKind::Unit => Self::of_unit(true),
             TyKind::Decl(decl) => Self::decl(decl, Fields::Any),
+            TyKind::Union(id) => Self {
+                decls: unions
+                    .get(id)
+                    .iter()
+                    .map(|&decl| (decl, Fields::Any))
+                    .collect(),
+                ..Self::NONE
+            },
+        }
+    }
+
+    /// Whether `case` selects every value here, and there is one.
+    pub fn must_select(&self, case: Case, unions: &Unions) -> bool {
+        match case {
+            Case::Bool(wanted) => self.bools == Bools::from(wanted),
+            Case::Is(ty) => {
+                !self.decls.is_empty() && self.decls.iter().all(|(decl, _)| unions.admits(ty, decl))
+            }
+            Case::Not(ty) => {
+                !self.decls.is_empty()
+                    && self.decls.iter().all(|(decl, _)| !unions.admits(ty, decl))
+            }
+        }
+    }
+
+    /// Whether `case` may select a value here.
+    pub fn may_select(&self, case: Case, unions: &Unions) -> bool {
+        match case {
+            Case::Bool(wanted) => {
+                if wanted {
+                    self.bools.may_true()
+                } else {
+                    self.bools.may_false()
+                }
+            }
+            Case::Is(ty) => self.decls.iter().any(|(decl, _)| unions.admits(ty, decl)),
+            Case::Not(ty) => self.decls.iter().any(|(decl, _)| !unions.admits(ty, decl)),
         }
     }
 
@@ -789,22 +828,49 @@ impl fmt::Display for Shown<'_> {
             TyKind::Int => write!(f, "{}", self.0.ints),
             TyKind::Bool => write!(f, "{}", self.0.bools),
             TyKind::Unit => f.write_str(if self.0.has_unit { "unit" } else { "∅" }),
-            TyKind::Decl(decl) => {
-                let name = self.2.decl(decl);
-                match self.0.decls.get(decl) {
-                    None => f.write_str("∅"),
-                    Some(Fields::Any) => write!(f, "{name}(..)"),
-                    Some(Fields::Known(fields)) => {
-                        write!(f, "{name}(")?;
-                        for (index, field) in fields.iter().enumerate() {
-                            if index > 0 {
-                                f.write_str(", ")?;
-                            }
-                            write!(f, "{}", field.shown_whole(self.2))?;
-                        }
-                        f.write_str(")")
-                    }
+            TyKind::Decl(decl) => self.0.shown_decl(decl, self.2, f),
+            TyKind::Union(id) => {
+                let members = self.2.members(id);
+                let present: Vec<DeclId> = members
+                    .iter()
+                    .copied()
+                    .filter(|&decl| self.0.decls.get(decl).is_some())
+                    .collect();
+                if present.is_empty() {
+                    return f.write_str("∅");
                 }
+                for (index, &decl) in present.iter().enumerate() {
+                    if index > 0 {
+                        f.write_str(" ∪ ")?;
+                    }
+                    self.0.shown_decl(decl, self.2, f)?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+impl May {
+    fn shown_decl(
+        &self,
+        decl: DeclId,
+        names: &dyn Names,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
+        let name = names.decl(decl);
+        match self.decls.get(decl) {
+            None => f.write_str("∅"),
+            Some(Fields::Any) => write!(f, "{name}(..)"),
+            Some(Fields::Known(fields)) => {
+                write!(f, "{name}(")?;
+                for (index, field) in fields.iter().enumerate() {
+                    if index > 0 {
+                        f.write_str(", ")?;
+                    }
+                    write!(f, "{}", field.shown_whole(names))?;
+                }
+                f.write_str(")")
             }
         }
     }
@@ -974,7 +1040,7 @@ impl Domain for May {
 
     /// The field over every declared type reaching `self`; one without the field contributes
     /// nothing, and an unresolved field type nothing of a type's every value.
-    fn field(&self, name: FieldName, decls: &[Decl]) -> Result<Self, Infallible> {
+    fn field(&self, name: FieldName, decls: &[Decl], unions: &Unions) -> Result<Self, Infallible> {
         let mut result = Self::NONE;
         for (decl, fields) in self.decls.iter() {
             let decl = &decls[decl.index()];
@@ -987,12 +1053,24 @@ impl Domain for May {
                 }
                 Fields::Any => {
                     if let (_, Some(ty)) = decl.fields()[index] {
-                        result.join(&Self::every(ty));
+                        result.join(&Self::every(ty, unions));
                     }
                 }
             }
         }
         Ok(result)
+    }
+
+    fn narrow(&self, ty: Ty, unions: &Unions) -> Self {
+        Self {
+            decls: self
+                .decls
+                .iter()
+                .filter(|&(decl, _)| unions.admits(ty, decl))
+                .map(|(decl, fields)| (decl, fields.clone()))
+                .collect(),
+            ..Self::NONE
+        }
     }
 }
 
@@ -1012,7 +1090,13 @@ mod tests {
         fn field(&self, name: FieldName) -> &str {
             ["x", "y"][name.index()]
         }
+
+        fn members(&self, _: crate::UnionId) -> &[DeclId] {
+            &[]
+        }
     }
+
+    const NO_UNIONS: Unions = Unions::new();
 
     fn ints(text: &str) -> Ints {
         if text == "∅" {
@@ -1138,15 +1222,15 @@ mod tests {
     fn every_value_of_a_type_is_admitted() {
         assert_eq!(Ints::ALL, ints("[-inf, inf]"));
         assert!(Ints::ALL.contains_zero());
-        assert_eq!(May::every(Ty::BOOL).bools, Bools::BOTH);
-        assert!(May::every(Ty::UNIT).has_unit);
+        assert_eq!(May::every(Ty::BOOL, &NO_UNIONS).bools, Bools::BOTH);
+        assert!(May::every(Ty::UNIT, &NO_UNIONS).has_unit);
         for ty in Ty::SCALARS {
-            assert!(May::every(ty).is_live());
+            assert!(May::every(ty, &NO_UNIONS).is_live());
         }
         let point = DeclId::new(0);
-        assert!(May::every(Ty::decl(point)).is_live());
+        assert!(May::every(Ty::decl(point), &NO_UNIONS).is_live());
         assert_eq!(
-            May::every(Ty::decl(point)).decls.get(point),
+            May::every(Ty::decl(point), &NO_UNIONS).decls.get(point),
             Some(&Fields::Any)
         );
     }
@@ -1329,13 +1413,13 @@ mod tests {
             (y, Some(Ty::BOOL)),
         ]))];
         let made = May::make(point, vec![May::int(&3.into()), May::bool(true)]);
-        assert_eq!(made.field(x, &decls), Ok(May::int(&3.into())));
-        assert_eq!(made.field(y, &decls), Ok(May::bool(true)));
+        assert_eq!(made.field(x, &decls, &NO_UNIONS), Ok(May::int(&3.into())));
+        assert_eq!(made.field(y, &decls, &NO_UNIONS), Ok(May::bool(true)));
         assert_eq!(
-            May::every(Ty::decl(point)).field(x, &decls),
+            May::every(Ty::decl(point), &NO_UNIONS).field(x, &decls, &NO_UNIONS),
             Ok(May::ints(Ints::ALL))
         );
-        assert_eq!(May::NONE.field(x, &decls), Ok(May::NONE));
+        assert_eq!(May::NONE.field(x, &decls, &NO_UNIONS), Ok(May::NONE));
         let mut joined = made.clone();
         assert!(joined.join(&May::make(
             point,
@@ -1346,7 +1430,7 @@ mod tests {
             joined.shown(Ty::decl(point), &NoNames).to_string(),
             "Point([3, 5], {true})"
         );
-        assert!(joined.join(&May::every(Ty::decl(point))));
+        assert!(joined.join(&May::every(Ty::decl(point), &NO_UNIONS)));
         assert_eq!(joined.decls.get(point), Some(&Fields::Any));
         assert_eq!(
             joined.shown(Ty::decl(point), &NoNames).to_string(),
@@ -1358,12 +1442,15 @@ mod tests {
             &Value::make(point, vec![Value::Int(3.into()), Value::Bool(true)])
         ));
         assert!(!is_member(&made, &value));
-        assert_eq!(value.field(x, &decls), Ok(Value::Int(4.into())));
+        assert_eq!(value.field(x, &decls, &NO_UNIONS), Ok(Value::Int(4.into())));
         assert_eq!(
-            value.field(FieldName::new(2), &decls),
+            value.field(FieldName::new(2), &decls, &NO_UNIONS),
             Err(crate::Fault::Type)
         );
-        assert_eq!(Value::Unit.field(x, &decls), Err(crate::Fault::Type));
+        assert_eq!(
+            Value::Unit.field(x, &decls, &NO_UNIONS),
+            Err(crate::Fault::Type)
+        );
         assert_eq!(value.shown(&NoNames).to_string(), "Point(4, true)");
     }
 
@@ -1434,8 +1521,8 @@ mod tests {
                             Op::Neg | Op::Not | Op::Exactly(_) => 1,
                             _ => 2,
                         };
-                        let Ok(may) = op.apply::<May>(&[&set_a, &set_b][..arity], &[]);
-                        if let Ok(value) = op.apply::<Value>(&[&x, &y][..arity], &[])
+                        let Ok(may) = op.apply::<May>(&[&set_a, &set_b][..arity], &[], &NO_UNIONS);
+                        if let Ok(value) = op.apply::<Value>(&[&x, &y][..arity], &[], &NO_UNIONS)
                             && is_reached(op, &x, &y)
                         {
                             prop_assert!(is_member(&may, &value), "{op:?} over {set_a:?}, {set_b:?} ∌ {value:?} from {x:?}, {y:?}");

@@ -6,7 +6,7 @@ use std::collections::{HashMap, HashSet};
 
 use rustc_hash::FxBuildHasher;
 use sumi_frontend::{DiagnosticCode, Fix, Label};
-use sumi_graph::{Carried, Decl, DeclId, FieldName, GraphBuilder, References, ShownTy};
+use sumi_graph::{Arms, Carried, Case, Decl, DeclId, FieldName, GraphBuilder, References, ShownTy};
 use sumi_lexer::{LexedFile, RawIdx, SyntaxKind, TokenFlags};
 use sumi_syntax::{
     Literal, NodeIdx, NodeKind, PrefixOp, SyntaxTree,
@@ -165,6 +165,8 @@ pub(crate) struct Source<'s> {
     field_ids: NameMap<'s, FieldName>,
     /// Type names resolved outside a body.
     pub references: Vec<Occurrence>,
+    /// The graph's, kept here to name them; the builder interns them.
+    pub unions: sumi_graph::Unions,
 }
 
 impl<'s> Source<'s> {
@@ -178,6 +180,7 @@ impl<'s> Source<'s> {
             field_names: Vec::new(),
             field_ids: NameMap::default(),
             references: Vec::new(),
+            unions: sumi_graph::Unions::new(),
         }
     }
     pub fn show(&self, ty: Ty) -> ShownTy<'_> {
@@ -192,6 +195,10 @@ impl sumi_graph::Names for Source<'_> {
 
     fn field(&self, name: FieldName) -> &str {
         self.field_names[name.index()]
+    }
+
+    fn members(&self, id: sumi_graph::UnionId) -> &[DeclId] {
+        self.unions.get(id)
     }
 }
 
@@ -823,15 +830,17 @@ enum Work {
     LoopBody(Clean<ast::ForExpr>),
     LoopEnd(Box<LoopState>),
     Rhs(LazyOp),
+    /// `arms` are the then region, then the else region if written; `contexts` gate the true
+    /// and false sides, the false one the parent when nothing needs it.
     Join {
         branch: Branch,
-        then: RegionId,
-        else_: Option<RegionId>,
+        arms: Arms,
         contexts: [NodeId; 2],
     },
+    /// `arms` is the right operand's region alone.
     Lazy {
         expr: LazyOp,
-        rhs: RegionId,
+        arms: Arms,
         contexts: [NodeId; 2],
     },
     Push {
@@ -1022,15 +1031,14 @@ impl<'a, 's> Builder<'a, 's> {
                     Work::Call { call, target } => self.call(call, target),
                     Work::Join {
                         branch,
-                        then,
-                        else_,
+                        arms,
                         contexts,
-                    } => self.join(branch, then, else_, contexts),
+                    } => self.join(branch, arms, contexts),
                     Work::Lazy {
                         expr,
-                        rhs,
+                        arms,
                         contexts,
-                    } => self.lazy(expr, rhs, contexts),
+                    } => self.lazy(expr, arms, contexts),
                     Work::Enter(node) => {
                         self.enter(node, &mut work);
                         continue;
@@ -1320,8 +1328,7 @@ impl<'a, 's> Builder<'a, 's> {
         match *op {
             Op::Hole | Op::Unused => false,
             Op::Entry
-            | Op::Then
-            | Op::Else
+            | Op::Arm(_)
             | Op::Return
             | Op::Sequence
             | Op::Observe { .. }
@@ -1342,7 +1349,7 @@ impl<'a, 's> Builder<'a, 's> {
             Op::Make(_) => true,
             Op::Assign => typed(declaration()) && typed(inputs[0].0),
             Op::Phi => typed(declaration()) && inputs.iter().all(|&(input, _)| typed(input)),
-            Op::Join { .. } => typed(inputs[0].0) && results.iter().all(|&result| typed(result)),
+            Op::Switch { .. } => typed(inputs[0].0) && results.iter().all(|&result| typed(result)),
             _ => inputs.iter().all(|&(input, _)| typed(input)),
         }
     }
@@ -1562,7 +1569,7 @@ impl<'a, 's> Builder<'a, 's> {
                 &inputs,
                 References::Phi {
                     declaration,
-                    contexts: [states[0].context, states[1].context],
+                    contexts: &[states[0].context, states[1].context],
                 },
                 at,
                 None,
@@ -1733,21 +1740,26 @@ impl<'a, 's> Builder<'a, 's> {
         self.advance(cond);
         let parent = self.context();
         let condition = self.input(cond);
-        let then_context = self.context_at(then_node, Op::Then, condition, parent);
+        let on_true = Op::Arm(Case::Bool(true));
+        let on_false = Op::Arm(Case::Bool(false));
+        let then_context = self.context_at(then_node, on_true, condition, parent);
         let else_context = match else_node {
-            Some(else_node) => self.context_at(else_node, Op::Else, condition, parent),
+            Some(else_node) => self.context_at(else_node, on_false, condition, parent),
             None if !self.mutable_locals.is_empty() => {
-                self.context_at(node, Op::Else, condition, parent)
+                self.context_at(node, on_false, condition, parent)
             }
             None => parent,
         };
         let contexts = [then_context, else_context];
-        let then = self.graph.open(then_context);
-        let else_ = else_node.map(|_| self.graph.open(else_context));
+        let arms = match else_node {
+            Some(_) => self.graph.open_arms(&contexts),
+            None => self.graph.open_arms(&contexts[..1]),
+        };
+        let then = arms.iter().next().expect("a switch has its then arm");
+        let else_ = arms.iter().nth(1);
         work.push(Work::Join {
             branch,
-            then,
-            else_,
+            arms,
             contexts,
         });
         if let (Some(else_node), Some(region)) = (else_node, else_) {
@@ -1784,17 +1796,17 @@ impl<'a, 's> Builder<'a, 's> {
         let left = self.input(lhs);
         let selected = usize::from(!is_and);
         let mut contexts = [parent; 2];
-        contexts[selected] =
-            self.context_at(rhs, if is_and { Op::Then } else { Op::Else }, left, parent);
+        contexts[selected] = self.context_at(rhs, Op::Arm(Case::Bool(is_and)), left, parent);
         if !self.mutable_locals.is_empty() {
             contexts[usize::from(is_and)] =
-                self.context_at(rhs, if is_and { Op::Else } else { Op::Then }, left, parent);
+                self.context_at(rhs, Op::Arm(Case::Bool(!is_and)), left, parent);
         }
         let context = contexts[selected];
-        let region = self.graph.open(context);
+        let arms = self.graph.open_arms(&[context]);
+        let region = arms.iter().next().expect("the right operand has its arm");
         work.push(Work::Lazy {
             expr,
-            rhs: region,
+            arms,
             contexts,
         });
         work.push(Work::Pop { region, root: rhs });
@@ -1817,11 +1829,16 @@ impl<'a, 's> Builder<'a, 's> {
         let condition = self.place(Op::Binary(BinaryOp::Cmp(CmpOp::Lt)), &bounds, range, None);
         let context = self.context_at(
             expr.body().node(),
-            Op::Then,
+            Op::Arm(Case::Bool(true)),
             (condition, at),
             self.context(),
         );
-        let empty = self.context_at(expr.node(), Op::Else, (condition, at), self.context());
+        let empty = self.context_at(
+            expr.node(),
+            Op::Arm(Case::Bool(false)),
+            (condition, at),
+            self.context(),
+        );
         let region = self.graph.open(context);
         self.version_stack
             .push((self.undo.len(), self.locals.len()));
@@ -3015,9 +3032,10 @@ impl<'a, 's> Builder<'a, 's> {
             }
         }
     }
-    fn lazy(&mut self, expr: LazyOp, rhs: RegionId, contexts: [NodeId; 2]) -> Option<()> {
+    fn lazy(&mut self, expr: LazyOp, arms: Arms, contexts: [NodeId; 2]) -> Option<()> {
         let lhs = expr.expr.lhs().node();
         let rhs_node = expr.expr.rhs().node();
+        let rhs = arms.iter().next().expect("the right operand has its arm");
         let state = self.closed(rhs);
         let lhs_input = self.input(lhs);
         let result = self.node_of(rhs_node);
@@ -3035,15 +3053,9 @@ impl<'a, 's> Builder<'a, 's> {
             None,
             &[result],
         );
-        let selected = self.control(rhs_node).map(|_| rhs);
-        let observe = selected.map(|region| {
-            let (then, else_) = if expr.is_and {
-                (Some(region), None)
-            } else {
-                (None, Some(region))
-            };
+        let observe = self.control(rhs_node).map(|_| {
             self.place(
-                Op::Observe { then, else_ },
+                Op::Observe { arms },
                 &[
                     lhs_input,
                     (self.context(), self.source.range(expr.expr.node())),
@@ -3081,19 +3093,15 @@ impl<'a, 's> Builder<'a, 's> {
         }
         Some(())
     }
-    fn join(
-        &mut self,
-        branch: Branch,
-        then: RegionId,
-        else_: Option<RegionId>,
-        contexts: [NodeId; 2],
-    ) -> Option<()> {
+    fn join(&mut self, branch: Branch, arms: Arms, contexts: [NodeId; 2]) -> Option<()> {
         let Branch {
             node,
             cond,
             then: then_node,
             else_: else_node,
         } = branch;
+        let then = arms.iter().next().expect("a switch has its then arm");
+        let else_ = arms.iter().nth(1);
         let then_state = self.closed(then);
         let false_state = match else_ {
             Some(else_) => self.closed(else_),
@@ -3106,7 +3114,7 @@ impl<'a, 's> Builder<'a, 's> {
         let else_form = else_node.map_or(Form::SCALAR, |node| self.form(node));
         let id = self.push_over(
             node,
-            Op::Join { then, else_ },
+            Op::Switch { arms },
             &[condition],
             References::None,
             None,
@@ -3116,10 +3124,7 @@ impl<'a, 's> Builder<'a, 's> {
             || else_node.is_some_and(|node| self.control(node).is_some()))
         .then(|| {
             self.place(
-                Op::Observe {
-                    then: Some(then),
-                    else_,
-                },
+                Op::Observe { arms },
                 &[condition, (self.context(), self.source.range(node))],
                 self.source.range(node),
                 None,

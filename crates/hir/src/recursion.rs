@@ -457,11 +457,21 @@ fn delta(
 ) -> Option<(u32, Ints)> {
     let may = |node: NodeId| &typing.may(node).ints;
     enum Frame {
-        AddLhs { lhs: NodeId, rhs: NodeId },
-        AddRhs { lhs: NodeId },
-        Sub { rhs: NodeId },
-        Then { otherwise: NodeId },
-        Else { then: (u32, Ints) },
+        AddLhs {
+            lhs: NodeId,
+            rhs: NodeId,
+        },
+        AddRhs {
+            lhs: NodeId,
+        },
+        Sub {
+            rhs: NodeId,
+        },
+        /// The arms left to take, and the measure of those taken.
+        Arms {
+            rest: Vec<NodeId>,
+            taken: Option<(u32, Ints)>,
+        },
         Memo(NodeId),
     }
     let mut frames: Vec<Frame> = Vec::new();
@@ -482,28 +492,32 @@ fn delta(
                     }
                     Op::Phi => {
                         let contexts = graph.phi_contexts(node);
-                        let live = |index: usize| {
-                            graph.input_roles(node)[index + 1].is_value()
-                                && typing.may(contexts[index]).is_live()
-                        };
-                        match (live(0), live(1)) {
-                            (true, true) => {
-                                frames.push(Frame::Then {
-                                    otherwise: inputs[2],
+                        // An arm that cannot run contributes no value.
+                        let mut live: Vec<NodeId> = inputs[1..]
+                            .iter()
+                            .zip(contexts)
+                            .zip(&graph.input_roles(node)[1..])
+                            .filter(|((_, context), role)| {
+                                role.is_value() && typing.may(**context).is_live()
+                            })
+                            .map(|((&value, _), _)| value)
+                            .collect();
+                        live.reverse();
+                        match live.pop() {
+                            Some(first) => {
+                                frames.push(Frame::Arms {
+                                    rest: live,
+                                    taken: None,
                                 });
-                                next = Some(inputs[1]);
+                                next = Some(first);
                                 continue;
                             }
-                            (true, false) => {
-                                next = Some(inputs[1]);
-                                continue;
-                            }
-                            (false, true) => {
-                                next = Some(inputs[2]);
-                                continue;
-                            }
-                            (false, false) => None,
+                            None => None,
                         }
+                    }
+                    Op::Narrow(_) => {
+                        next = Some(inputs[0]);
+                        continue;
                     }
                     Op::Binary(BinaryOp::Arith(ArithOp::Add)) => {
                         frames.push(Frame::AddLhs {
@@ -518,34 +532,27 @@ fn delta(
                         next = Some(inputs[0]);
                         continue;
                     }
-                    Op::Join {
-                        then,
-                        else_: Some(else_),
-                        ..
-                    } => {
+                    Op::Switch { arms } => {
                         // An arm that cannot run contributes no value.
-                        let (then, otherwise) = (graph.region(then), graph.region(else_));
-                        let live = |context| typing.may(context).is_live();
-                        match (
-                            then.result_has_value() && live(then.context),
-                            otherwise.result_has_value() && live(otherwise.context),
-                        ) {
-                            (true, true) => {
-                                frames.push(Frame::Then {
-                                    otherwise: otherwise.result(),
+                        let mut live: Vec<NodeId> = arms
+                            .iter()
+                            .map(|arm| graph.region(arm))
+                            .filter(|region| {
+                                region.result_has_value() && typing.may(region.context).is_live()
+                            })
+                            .map(|region| region.result())
+                            .collect();
+                        live.reverse();
+                        match live.pop() {
+                            Some(first) => {
+                                frames.push(Frame::Arms {
+                                    rest: live,
+                                    taken: None,
                                 });
-                                next = Some(then.result());
+                                next = Some(first);
                                 continue;
                             }
-                            (true, false) => {
-                                next = Some(then.result());
-                                continue;
-                            }
-                            (false, true) => {
-                                next = Some(otherwise.result());
-                                continue;
-                            }
-                            (false, false) => None,
+                            None => None,
                         }
                     }
                     _ => None,
@@ -565,21 +572,26 @@ fn delta(
             },
             Frame::AddRhs { lhs } => result = result.take().map(|(p, c)| (p, may(lhs) + &c)),
             Frame::Sub { rhs } => result = result.take().map(|(p, c)| (p, &c - may(rhs))),
-            Frame::Then { otherwise } => match result.take() {
-                Some(then) => {
-                    frames.push(Frame::Else { then });
-                    next = Some(otherwise);
-                }
-                None => result = None,
-            },
-            Frame::Else { then: (p, mut c) } => {
-                result = match result.take() {
-                    Some((q, d)) if p == q => {
+            Frame::Arms { mut rest, taken } => {
+                let joined = match (taken, result.take()) {
+                    (None, Some(arm)) => Some(arm),
+                    (Some((p, mut c)), Some((q, d))) if p == q => {
                         c.join(&d);
                         Some((p, c))
                     }
                     _ => None,
                 };
+                match (joined, rest.pop()) {
+                    (None, _) => result = None,
+                    (Some(taken), None) => result = Some(taken),
+                    (Some(taken), Some(arm)) => {
+                        frames.push(Frame::Arms {
+                            rest,
+                            taken: Some(taken),
+                        });
+                        next = Some(arm);
+                    }
+                }
             }
             Frame::Memo(node) => {
                 memo.insert(node, result.clone());

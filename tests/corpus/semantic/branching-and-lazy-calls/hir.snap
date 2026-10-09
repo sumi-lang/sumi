@@ -7,7 +7,7 @@ fn even@1:1..5:2 (int ∈ [0, 4]) -> bool ∈ {true, false}
   param n@1:9..1:10: int
   result: copy : bool @1:20..1:24
     value: if : bool @1:27..5:2
-      condition: eager == : bool @1:30..1:36
+      scrutinee: eager == : bool @1:30..1:36
         lhs: read n@1:9..1:10 : int
         rhs: int 0 : int @1:35..1:36
       then: bool true : bool @2:5..2:9
@@ -20,7 +20,7 @@ fn odd@6:1..10:2 (int ∈ [0, 3]) -> bool ∈ {true, false}
   param n@6:8..6:9: int
   result: copy : bool @6:19..6:23
     value: if : bool @6:26..10:2
-      condition: eager == : bool @6:29..6:35
+      scrutinee: eager == : bool @6:29..6:35
         lhs: read n@6:8..6:9 : int
         rhs: int 0 : int @6:34..6:35
       then: bool false : bool @7:5..7:10
@@ -45,7 +45,7 @@ fn safe@11:1..11:53 () -> bool ∈ {true, false}
 fn maybe@12:1..14:2 (bool ∈ ∅) -> unit ∈ ∅
   param b@12:10..12:11: bool
   body: if : unit @12:21..14:2
-    condition: read b@12:10..12:11 : bool
+    scrutinee: read b@12:10..12:11 : bool
     then:
       discard: call safe@11:1..11:53 : bool @13:9..13:15
       tail: unit : unit @12:26..14:2
@@ -55,7 +55,7 @@ fn spin@15:1..17:2 (int ∈ [0, 3]) -> unit ∈ unit
   param n@15:9..15:10: int
   result: copy : unit @15:20..15:24
     value: if : unit @15:27..17:2
-      condition: eager > : bool @15:30..15:35
+      scrutinee: eager > : bool @15:30..15:35
         lhs: read n@15:9..15:10 : int
         rhs: int 0 : int @15:34..15:35
       then: call spin@15:1..17:2 : unit @16:5..16:16

@@ -5,13 +5,13 @@ semantic errors: 8
 == graph ==
 fn a@1:1..5:2 signature: unavailable
   body: if : ? @1:10..5:2
-    condition: bool true : bool @1:13..1:17
+    scrutinee: bool true : bool @1:13..1:17
     then: int 1 : int @2:5..2:6
     else: call b@6:1..10:2 : ? @4:5..4:8
 
 fn b@6:1..10:2 signature: unavailable
   body: if : ? @6:10..10:2
-    condition: bool true : bool @6:13..6:17
+    scrutinee: bool true : bool @6:13..6:17
     then: bool true : bool @7:5..7:9
     else: call a@1:1..5:2 : ? @9:5..9:8
 
@@ -25,7 +25,7 @@ fn mismatch@12:1..12:34 () -> bool ∈ ∅
 
 fn branch@13:1..17:2 signature: unavailable
   body: if : ? @13:15..17:2
-    condition: bool true : bool @13:18..13:22
+    scrutinee: bool true : bool @13:18..13:22
     then: call integer@23:1..23:17 : int @14:5..14:14
     else: bool false : bool @16:5..16:10
 
@@ -49,7 +49,7 @@ fn empty@24:1..24:16 () -> unit ∈ unit
 
 fn annotated@25:1..30:2 signature: unavailable
   body: if : ? @25:18..30:2
-    condition: bool true : bool @25:21..25:25
+    scrutinee: bool true : bool @25:21..25:25
     then:
       let x@26:9..26:10: int @26:5..26:19
         initializer: int 1 : int @26:18..26:19

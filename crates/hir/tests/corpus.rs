@@ -5,7 +5,8 @@ use std::fmt::Write as _;
 
 use sumi_frontend::parse_source;
 use sumi_hir::{
-    Analysis, ArithOp, BinaryOp, CmpOp, FunctionId, Graph, Names, NodeId, Op, RegionId, analyze,
+    Analysis, ArithOp, Arms, BinaryOp, Case, CmpOp, FunctionId, Graph, Names, NodeId, Op, RegionId,
+    analyze,
 };
 use sumi_test::corpus;
 use sumi_text::{LineIndex, TextRange};
@@ -271,7 +272,7 @@ fn dump_region(
             let is_named = analysis.spans().name(node).is_some();
             let is_contextual = matches!(
                 graph.node(node).op,
-                Op::Then | Op::Else | Op::Entry | Op::Refine { .. } | Op::Exactly(_)
+                Op::Arm(_) | Op::Entry | Op::Refine { .. } | Op::Exactly(_)
             );
             is_named
                 || matches!(graph.node(node).op, Op::Assign)
@@ -430,9 +431,9 @@ fn dump_header(
         Op::Or { .. } => "lazy or".into(),
         Op::Refine { .. } | Op::Exactly(_) => unreachable!("a narrowed read reads its definition"),
         Op::Entry => "entry".into(),
-        Op::Then => "then".into(),
-        Op::Else => "else".into(),
-        Op::Join { .. } => "if".into(),
+        Op::Arm(case) => format!("arm {}", role_of(analysis, *case)),
+        Op::Narrow(ty) => format!("narrow to {}", analysis.show(*ty)),
+        Op::Switch { arms } => switch_name(analysis, *arms).into(),
         Op::Call(callee) => {
             let function = analysis.function(*callee);
             format!(
@@ -475,13 +476,7 @@ fn dump_definition(
     let entry = graph.node(node);
     let child = depth + 1;
     match &entry.op {
-        Op::Int(_)
-        | Op::Bool(_)
-        | Op::Param { .. }
-        | Op::Unit
-        | Op::Entry
-        | Op::Then
-        | Op::Else => {}
+        Op::Int(_) | Op::Bool(_) | Op::Param { .. } | Op::Unit | Op::Entry | Op::Arm(_) => {}
         Op::Hole => {
             for (index, &input) in inputs.iter().enumerate() {
                 dump_node(
@@ -526,12 +521,13 @@ fn dump_definition(
         }
         Op::LoopValue => unreachable!("a loop value reads its local after the loop"),
         Op::Phi => {
-            dump_node(analysis, shape, "condition", inputs[0], child, out);
-            for (role, &input) in [("then", &inputs[1]), ("else", &inputs[2])] {
+            dump_node(analysis, shape, "scrutinee", inputs[0], child, out);
+            for (&context, &input) in graph.phi_contexts(node).iter().zip(&inputs[1..]) {
+                let role = role_of(analysis, graph.case(context));
                 if matches!(graph.node(input).op, Op::Phi) {
-                    dump_definition(analysis, shape, role, input, child, out);
+                    dump_definition(analysis, shape, &role, input, child, out);
                 } else {
-                    dump_node(analysis, shape, role, input, child, out);
+                    dump_node(analysis, shape, &role, input, child, out);
                 }
             }
         }
@@ -546,12 +542,15 @@ fn dump_definition(
             dump_region(analysis, shape, "rhs", *rhs, child, out);
         }
         Op::Refine { .. } | Op::Exactly(_) => unreachable!("a narrowed read reads its definition"),
-        Op::Join { then, else_, .. } => {
-            dump_node(analysis, shape, "condition", inputs[0], child, out);
-            dump_region(analysis, shape, "then", *then, child, out);
-            match else_ {
-                Some(else_) => dump_region(analysis, shape, "else", *else_, child, out),
-                None => writeln!(out, "{}else: unit (implicit)", "  ".repeat(child)).unwrap(),
+        Op::Narrow(_) => dump_node(analysis, shape, "scrutinee", inputs[0], child, out),
+        Op::Switch { arms } => {
+            dump_node(analysis, shape, "scrutinee", inputs[0], child, out);
+            for arm in arms.iter() {
+                let role = role_of(analysis, graph.case(graph.region(arm).context));
+                dump_region(analysis, shape, &role, arm, child, out);
+            }
+            if !is_total(graph, *arms) {
+                writeln!(out, "{}else: unit (implicit)", "  ".repeat(child)).unwrap();
             }
         }
         Op::Call(_) => {
@@ -564,13 +563,11 @@ fn dump_definition(
             dump_node(analysis, shape, "before", inputs[0], child, out);
             dump_node(analysis, shape, "value", inputs[1], child, out);
         }
-        Op::Observe { then, else_ } => {
-            dump_node(analysis, shape, "condition", inputs[0], child, out);
-            if let Some(then) = then {
-                dump_region(analysis, shape, "then control", *then, child, out);
-            }
-            if let Some(else_) = else_ {
-                dump_region(analysis, shape, "else control", *else_, child, out);
+        Op::Observe { arms } => {
+            dump_node(analysis, shape, "scrutinee", inputs[0], child, out);
+            for arm in arms.iter() {
+                let role = role_of(analysis, graph.case(graph.region(arm).context));
+                dump_region(analysis, shape, &format!("{role} control"), arm, child, out);
             }
         }
         // The control is a statement of its own; the continuation names it.
@@ -590,6 +587,40 @@ fn dump_definition(
                 );
             }
         }
+    }
+}
+
+/// A boolean arm is `then` or `else`; a member arm is the type, a rest arm `_`.
+fn role_of(analysis: &Analysis, case: Case) -> String {
+    match case {
+        Case::Bool(true) => "then".into(),
+        Case::Bool(false) => "else".into(),
+        Case::Is(ty) => analysis.show(ty).to_string(),
+        Case::Not(_) => "_".into(),
+    }
+}
+
+fn is_total(graph: &Graph, arms: Arms) -> bool {
+    let cases: Vec<Case> = arms
+        .iter()
+        .map(|arm| graph.case(graph.region(arm).context))
+        .collect();
+    if cases.iter().all(|case| matches!(case, Case::Bool(_))) {
+        cases.contains(&Case::Bool(true)) && cases.contains(&Case::Bool(false))
+    } else {
+        true
+    }
+}
+
+fn switch_name(analysis: &Analysis, arms: Arms) -> &'static str {
+    let graph = analysis.graph();
+    if arms
+        .iter()
+        .all(|arm| matches!(graph.case(graph.region(arm).context), Case::Bool(_)))
+    {
+        "if"
+    } else {
+        "match"
     }
 }
 

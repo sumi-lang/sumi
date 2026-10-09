@@ -7,7 +7,7 @@
 use std::num::NonZeroU32;
 use std::ops::Range;
 
-use crate::{BinaryOp, CmpOp, DeclId, FieldName, FunctionId, Int, Ty};
+use crate::{BinaryOp, CmpOp, DeclId, FieldName, FunctionId, Int, Ty, TyKind, UnionId};
 
 /// A declared type: its fields by name, in declaration order, each with its type when that
 /// resolved.
@@ -33,6 +33,126 @@ impl Decl {
     /// The field types a construction is held to, present when every one resolved.
     pub fn field_types(&self) -> Option<Box<[Ty]>> {
         self.fields.iter().map(|&(_, ty)| ty).collect()
+    }
+}
+
+/// The unions by ID: each a sorted set of two or more declared types, interned, so equal sets
+/// share an ID.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Unions(Vec<Box<[DeclId]>>);
+
+impl Unions {
+    pub const fn new() -> Self {
+        Self(Vec::new())
+    }
+
+    pub fn get(&self, id: UnionId) -> &[DeclId] {
+        &self.0[id.index()]
+    }
+
+    /// The ID of the union of `members`, minted if new; `members` need not be sorted or distinct.
+    /// None for fewer than two distinct members, which are no union.
+    pub fn intern(&mut self, members: impl IntoIterator<Item = DeclId>) -> Option<UnionId> {
+        let mut members: Vec<DeclId> = members.into_iter().collect();
+        members.sort_unstable();
+        members.dedup();
+        if members.len() < 2 {
+            return None;
+        }
+        let members = members.into_boxed_slice();
+        let index = self
+            .0
+            .iter()
+            .position(|union| *union == members)
+            .unwrap_or_else(|| {
+                self.0.push(members);
+                self.0.len() - 1
+            });
+        Some(UnionId::new(index))
+    }
+
+    /// The declared types `ty` admits: a union's members, or the declared type itself.
+    pub fn members(&self, ty: Ty) -> &[DeclId] {
+        match ty.kind() {
+            TyKind::Union(id) => self.get(id),
+            TyKind::Decl(_) | TyKind::Int | TyKind::Bool | TyKind::Unit => &[],
+        }
+    }
+
+    /// Whether a value of the declared type `decl` is one of `ty`.
+    pub fn admits(&self, ty: Ty, decl: DeclId) -> bool {
+        ty.as_decl() == Some(decl) || self.members(ty).contains(&decl)
+    }
+
+    /// Whether every value of `actual` is one of `expected`.
+    pub fn fits(&self, actual: Ty, expected: Ty) -> bool {
+        if actual == expected {
+            return true;
+        }
+        match actual.kind() {
+            TyKind::Decl(decl) => self.admits(expected, decl),
+            TyKind::Union(id) => self.get(id).iter().all(|&decl| self.admits(expected, decl)),
+            TyKind::Int | TyKind::Bool | TyKind::Unit => false,
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+/// What an arm of a switch selects of the scrutinee.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Case {
+    Bool(bool),
+    /// A value of the type, or of a member of it.
+    Is(Ty),
+    /// A value of no member of the type: the arm after every other.
+    Not(Ty),
+}
+
+/// A switch's arms: the regions `open_arms` opened together, so they are consecutive.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Arms {
+    first: RegionId,
+    len: u32,
+}
+
+impl Arms {
+    pub fn iter(self) -> impl DoubleEndedIterator<Item = RegionId> + ExactSizeIterator {
+        let first = self.first.index();
+        (first..first + self.len as usize).map(RegionId::new)
+    }
+
+    pub fn len(self) -> usize {
+        self.len as usize
+    }
+
+    pub fn is_empty(self) -> bool {
+        self.len == 0
+    }
+
+    /// `self` over the regions `map` gives, which keeps them consecutive.
+    pub fn map(self, mut map: impl FnMut(RegionId) -> RegionId) -> Self {
+        if self.len == 0 {
+            return self;
+        }
+        let first = map(self.first);
+        for (offset, region) in self.iter().enumerate().skip(1) {
+            debug_assert_eq!(
+                map(region).index(),
+                first.index() + offset,
+                "arms stay consecutive"
+            );
+        }
+        Self {
+            first,
+            len: self.len,
+        }
     }
 }
 
@@ -161,9 +281,9 @@ pub enum Op {
     /// A carried local's final value, including on zero trips: its input is the loop node, its
     /// references the carry and its next value.
     LoopValue,
-    /// A mutable local's value after a conditional fork. Inputs are the condition, true value,
-    /// and false value; the references are the local's declaration, then the contexts that gate
-    /// the true and false values in the abstract domain.
+    /// A mutable local's value after a switch. Inputs are the scrutinee, then a value per arm; the
+    /// references are the local's declaration, then the arm context that gates each value, whose
+    /// case selects it.
     Phi,
     Neg,
     Not,
@@ -183,26 +303,27 @@ pub enum Op {
     },
     /// A read of a boolean local narrowed to one value.
     Exactly(bool),
+    /// Its input's values of the type: the binding of a switch arm.
+    Narrow(Ty),
     /// An expression statement: no value itself.
     Unused,
     Entry,
-    /// A branch's context: the inputs are the condition, then the enclosing context.
-    Then,
-    Else,
-    /// The input is the condition; the value is the run branch's result, or unit without `else_`.
-    Join {
-        then: RegionId,
-        else_: Option<RegionId>,
+    /// An arm's context: the inputs are the scrutinee, then the enclosing context; live where the
+    /// case selects the scrutinee.
+    Arm(Case),
+    /// The input is the scrutinee; the value is the first arm's result whose case selects it, or
+    /// unit when none does.
+    Switch {
+        arms: Arms,
     },
     /// Completes the current function with its first input; the second is its analysis context.
     Return,
     /// Evaluates its first input for control, then yields its second.
     Sequence,
-    /// The inputs are the condition and analysis context. Observes only the selected region's
-    /// control projection and yields unit if it falls through.
+    /// The inputs are the scrutinee and analysis context. Observes only the selected arm's control
+    /// projection and yields unit if it falls through, or when no arm's case selects.
     Observe {
-        then: Option<RegionId>,
-        else_: Option<RegionId>,
+        arms: Arms,
     },
     /// A continuation context after the control in its first input, inside its second input.
     After,
@@ -223,26 +344,23 @@ pub enum Op {
 impl Op {
     /// The regions the op runs itself.
     pub fn regions(&self) -> impl Iterator<Item = RegionId> + use<> {
-        let [first, second] = match *self {
-            Self::Join { then, else_ } => [Some(then), else_],
-            Self::Observe { then, else_ } => [then, else_],
-            Self::And { rhs } | Self::Or { rhs } => [Some(rhs), None],
-            Self::Loop { body } => [Some(body), None],
-            _ => [None, None],
+        let (arms, single) = match *self {
+            Self::Switch { arms } | Self::Observe { arms } => (Some(arms), None),
+            Self::And { rhs } | Self::Or { rhs } => (None, Some(rhs)),
+            Self::Loop { body } => (None, Some(body)),
+            _ => (None, None),
         };
-        [first, second].into_iter().flatten()
+        arms.into_iter().flat_map(Arms::iter).chain(single)
     }
 
-    /// The op with each region it runs replaced.
+    /// The op with each region it runs replaced; a switch's arms stay consecutive.
     pub fn with_regions(self, mut map: impl FnMut(RegionId) -> RegionId) -> Self {
         match self {
-            Self::Join { then, else_ } => Self::Join {
-                then: map(then),
-                else_: else_.map(&mut map),
+            Self::Switch { arms } => Self::Switch {
+                arms: arms.map(map),
             },
-            Self::Observe { then, else_ } => Self::Observe {
-                then: then.map(&mut map),
-                else_: else_.map(&mut map),
+            Self::Observe { arms } => Self::Observe {
+                arms: arms.map(map),
             },
             Self::And { rhs } => Self::And { rhs: map(rhs) },
             Self::Or { rhs } => Self::Or { rhs: map(rhs) },
@@ -284,10 +402,10 @@ pub enum References<'a> {
     None,
     /// `Assign` and `Carry`: the declaration of the local the version is of.
     Version(NodeId),
-    /// `Phi`: the local's declaration, then the contexts gating the true and false values.
+    /// `Phi`: the local's declaration, then the arm context gating each value.
     Phi {
         declaration: NodeId,
-        contexts: [NodeId; 2],
+        contexts: &'a [NodeId],
     },
     /// `Loop`: the index, the context live after an iteration, the context live when no
     /// iteration runs, and the carried locals.
@@ -349,10 +467,15 @@ impl References<'_> {
             Self::Phi {
                 declaration,
                 contexts,
-            } => References::Phi {
-                declaration: map(declaration),
-                contexts: contexts.map(&mut map),
-            },
+            } => {
+                let declaration = map(declaration);
+                carried.clear();
+                carried.extend(contexts.iter().map(|&node| map(node)));
+                References::Phi {
+                    declaration,
+                    contexts: carried,
+                }
+            }
             Self::Loop {
                 index,
                 continuation,
@@ -403,8 +526,10 @@ impl References<'_> {
                 declaration,
                 contexts,
             } => {
-                edges.extend([declaration, contexts[0], contexts[1]]);
-                roles.extend([Role::Declaration, Role::Context, Role::Context]);
+                edges.push(declaration);
+                roles.push(Role::Declaration);
+                edges.extend_from_slice(contexts);
+                roles.extend(contexts.iter().map(|_| Role::Context));
             }
             Self::Loop {
                 index,
@@ -434,13 +559,13 @@ impl References<'_> {
         match (edges, roles) {
             ([], []) => References::None,
             (&[declaration], [Role::Declaration]) => References::Version(declaration),
-            (&[declaration, then, else_], [Role::Declaration, Role::Context, Role::Context]) => {
+            (&[carry, next], [Role::Carry, Role::Next]) => References::LoopValue { carry, next },
+            ([declaration, contexts @ ..], [Role::Declaration, Role::Context, ..]) => {
                 References::Phi {
-                    declaration,
-                    contexts: [then, else_],
+                    declaration: *declaration,
+                    contexts,
                 }
             }
-            (&[carry, next], [Role::Carry, Role::Next]) => References::LoopValue { carry, next },
             (
                 [index, continuation, empty, carried @ ..],
                 [Role::Index, Role::Context, Role::Context, ..],
@@ -560,6 +685,7 @@ pub struct Graph {
     regions: Vec<Region>,
     runs: Vec<Run>,
     decls: Vec<Decl>,
+    unions: Unions,
 }
 
 impl Graph {
@@ -609,12 +735,27 @@ impl Graph {
         }
     }
 
-    /// The contexts gating a `Phi`'s true and false values.
-    pub fn phi_contexts(&self, id: NodeId) -> [NodeId; 2] {
+    /// The arm contexts gating a `Phi`'s values, one per value.
+    pub fn phi_contexts(&self, id: NodeId) -> &[NodeId] {
         let References::Phi { contexts, .. } = self.references(id) else {
             unreachable!("{id:?} is no phi")
         };
         contexts
+    }
+
+    /// The case of the arm `context` is in: itself, or the arm a continuation context follows.
+    pub fn case(&self, mut context: NodeId) -> Case {
+        loop {
+            match self.node(context).op {
+                Op::Arm(case) => return case,
+                Op::After => context = self.inputs(context)[1],
+                ref op => unreachable!("{context:?} is {op:?}, in no arm"),
+            }
+        }
+    }
+
+    pub fn unions(&self) -> &Unions {
+        &self.unions
     }
 
     /// A `Loop`'s index node.
@@ -735,6 +876,7 @@ pub struct GraphBuilder {
     regions: Vec<Opening>,
     runs: Vec<Slot>,
     decls: Vec<Decl>,
+    unions: Unions,
 }
 
 impl GraphBuilder {
@@ -753,7 +895,17 @@ impl GraphBuilder {
             regions: Vec::new(),
             runs: Vec::new(),
             decls: Vec::new(),
+            unions: Unions::default(),
         }
+    }
+
+    /// The union of `members`, interned; see [`Unions::intern`].
+    pub fn union(&mut self, members: impl IntoIterator<Item = DeclId>) -> Option<Ty> {
+        self.unions.intern(members).map(Ty::union)
+    }
+
+    pub fn unions(&self) -> &Unions {
+        &self.unions
     }
 
     /// The declared types in declaration order, so `DeclId::new(i)` is the `i`th; the field types
@@ -813,6 +965,18 @@ impl GraphBuilder {
             closed: None,
         });
         id
+    }
+
+    /// A switch's arms, one region per context, opened together so they stay consecutive.
+    pub fn open_arms(&mut self, contexts: &[NodeId]) -> Arms {
+        let first = RegionId::new(self.regions.len());
+        for &context in contexts {
+            self.open(context);
+        }
+        Arms {
+            first,
+            len: u32::try_from(contexts.len()).expect("arm count fits u32"),
+        }
     }
 
     pub fn enter(&mut self, region: RegionId) {
@@ -895,6 +1059,7 @@ impl GraphBuilder {
     pub fn finish(self) -> Graph {
         Graph {
             decls: self.decls,
+            unions: self.unions,
             store: self.store,
             regions: self
                 .regions

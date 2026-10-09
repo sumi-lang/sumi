@@ -270,6 +270,8 @@ mod tests {
         Context {
             thresholds: Default::default(),
             decls: Box::new([]),
+            unions: Default::default(),
+            cases: Box::new([]),
         }
     }
 

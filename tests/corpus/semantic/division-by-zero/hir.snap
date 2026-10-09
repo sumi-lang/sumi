@@ -75,7 +75,7 @@ fn statements@8:1..18:2 () -> int ∈ [18, 18]
           rhs: int 0 : int @12:18..12:19
         rhs: bool true : bool @12:23..12:27
       tail: if : int @13:5..17:6
-        condition: eager > : bool @13:8..13:13
+        scrutinee: eager > : bool @13:8..13:13
           lhs: read a@11:9..11:10 : int
           rhs: read b@10:9..10:10 : int
         then: eager - : int @14:9..14:14
@@ -90,12 +90,12 @@ fn inner_guard@19:1..28:2 (int ∈ [0, 1], int ∈ [0, 5]) -> int ∈ [0, 100]
   param m@19:24..19:25: int
   result: copy : int @19:35..19:38
     value: if : int @20:5..27:6
-      condition: eager > : bool @20:8..20:13
+      scrutinee: eager > : bool @20:8..20:13
         lhs: read n@19:16..19:17 : int
         rhs: int 0 : int @20:12..20:13
       then:
         discard: if : unit @21:9..23:10
-          condition: eager != : bool @21:12..21:18
+          scrutinee: eager != : bool @21:12..21:18
             lhs: read m@19:24..19:25 : int
             rhs: int 0 : int @21:17..21:18
           then:
@@ -148,7 +148,7 @@ fn compared@32:1..39:2 (int ∈ [1, 1]) -> int ∈ ∅
       let z@33:9..33:10: int @33:5..33:14
         initializer: int 0 : int @33:13..33:14
       tail: if : int @34:5..38:6
-        condition: eager == : bool @34:8..34:14
+        scrutinee: eager == : bool @34:8..34:14
           lhs: read d@32:13..32:14 : int
           rhs: read z@33:9..33:10 : int
         then: int 1 : int @35:9..35:10
@@ -165,7 +165,7 @@ fn fixed@41:1..45:2 (int ∈ [-5, 5]) -> int ∈ [1, 1]
   param d@41:10..41:11: int
   result: copy : int @41:21..41:24
     value: if : int @41:27..45:2
-      condition: eager == : bool @41:30..41:36
+      scrutinee: eager == : bool @41:30..41:36
         lhs: read d@41:10..41:11 : int
         rhs: int 0 : int @41:35..41:36
       then: eager / : int @42:5..42:12
@@ -220,7 +220,7 @@ fn guarded@55:1..59:2 (int ∈ [0, 0]) -> int ∈ [-100, 100] \ 0
   param k@55:12..55:13: int
   result: copy : int @55:23..55:26
     value: if : int @55:29..59:2
-      condition: eager == : bool @55:32..55:38
+      scrutinee: eager == : bool @55:32..55:38
         lhs: read k@55:12..55:13 : int
         rhs: int 0 : int @55:37..55:38
       then: call half@5:1..5:33 : int @56:5..56:12
@@ -268,7 +268,7 @@ fn under_a_hole@73:1..80:2 () -> int ∈ ∅
       let x@74:9..74:10: int @74:5..74:14
         initializer: int 0 : int @74:13..74:14
       tail: if : ? @75:5..79:6
-        condition: hole : ? @75:8..75:14
+        scrutinee: hole : ? @75:8..75:14
         then: call divides@72:1..72:35 : int @76:9..76:19
           arg[0]: read x@74:9..74:10 : int
         else: int 1 : int @78:9..78:10
@@ -278,7 +278,7 @@ fn returning_zero@81:1..86:2 (bool ∈ {true}) -> int ∈ [0, 0]
   result: result : int @81:31..81:34
     outcome[0]:
       discard: if : unit @82:5..84:6
-        condition: read b@81:19..81:20 : bool
+        scrutinee: read b@81:19..81:20 : bool
         then: unit : unit @82:10..84:6
         else: unit (implicit)
       discard: after : ? @82:5..84:6
@@ -299,7 +299,7 @@ fn selected_zero@88:1..92:2 (bool ∈ {true}) -> int ∈ [0, 0]
   param b@88:18..88:19: bool
   result: copy : int @88:30..88:33
     value: if : int @88:36..92:2
-      condition: read b@88:18..88:19 : bool
+      scrutinee: read b@88:18..88:19 : bool
       then: int 0 : int @89:5..89:6
       else: int 1 : int @91:5..91:6
 

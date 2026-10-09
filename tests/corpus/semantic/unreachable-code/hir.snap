@@ -19,7 +19,7 @@ fn after_decided_if@6:1..11:2 () -> int ∈ [1, 1]
   result: result : int @6:26..6:29
     outcome[0]:
       discard: if : unit @7:5..9:6
-        condition: bool true : bool @7:8..7:12
+        scrutinee: bool true : bool @7:8..7:12
         then: unit : unit @7:13..9:6
         else: unit (implicit)
       discard: after : ? @7:5..9:6
@@ -34,7 +34,7 @@ fn after_both_branches@12:1..19:2 (bool ∈ {true}) -> int ∈ [1, 1]
   result: result : int @12:36..12:39
     outcome[0]:
       discard: if : ? @13:5..17:6
-        condition: read b@12:24..12:25 : bool
+        scrutinee: read b@12:24..12:25 : bool
         then: unit : unit @13:10..15:6
         else: unit : unit @15:12..17:6
       discard: after : ? @13:5..17:6
@@ -51,13 +51,13 @@ fn after_guarded@20:1..28:2 (int ∈ [-1, 1] \ 0) -> int ∈ [0, 1]
   result: result : int @20:29..20:32
     outcome[0]:
       discard: if : unit @21:5..23:6
-        condition: eager > : bool @21:8..21:13
+        scrutinee: eager > : bool @21:8..21:13
           lhs: read n@20:18..20:19 : int
           rhs: int 0 : int @21:12..21:13
         then: unit : unit @21:14..23:6
         else: unit (implicit)
       discard: if : unit @24:5..26:6
-        condition: eager <= : bool @24:8..24:14
+        scrutinee: eager <= : bool @24:8..24:14
           lhs: read n@20:18..20:19 [n > 0 fails@21:8..21:13] : int
           rhs: int 0 : int @24:13..24:14
         then: unit : unit @24:15..26:6
@@ -89,7 +89,7 @@ fn by_callers@36:1..41:2 (int ∈ [4, 4]) -> int ∈ [4, 4]
   result: result : int @36:26..36:29
     outcome[0]:
       discard: if : unit @37:5..39:6
-        condition: eager < : bool @37:8..37:13
+        scrutinee: eager < : bool @37:8..37:13
           lhs: read n@36:15..36:16 : int
           rhs: int 0 : int @37:12..37:13
         then: unit : unit @37:14..39:6

@@ -5,7 +5,8 @@
 use std::num::NonZeroU32;
 
 use sumi_graph::{
-    BinaryOp, CmpOp, Decl, DeclId, Domain, FieldName, Ints, May, Thresholds, Ty, TyKind,
+    BinaryOp, Case, CmpOp, Decl, DeclId, Domain, FieldName, Ints, May, Thresholds, Ty, TyKind,
+    Unions,
 };
 
 use crate::solver::{Carry, Lattice};
@@ -62,12 +63,14 @@ pub(crate) struct Evidence {
     decls: [Option<(DeclId, Claim)>; 2],
 }
 
+/// A claim is of a scalar or a declared type; a union is never claimed, only resolved to.
 fn scalar_slot(ty: Ty) -> Result<usize, DeclId> {
     match ty.kind() {
         TyKind::Int => Ok(0),
         TyKind::Bool => Ok(1),
         TyKind::Unit => Ok(2),
         TyKind::Decl(decl) => Err(decl),
+        TyKind::Union(_) => unreachable!("a union is resolved to, never claimed"),
     }
 }
 
@@ -262,6 +265,8 @@ pub(crate) enum Edge {
     Enter,
     /// A read of the field from its base, whatever declared type reaches it.
     Field(FieldName),
+    /// An arm's binding: the values of the type among the scrutinee's.
+    Narrow(Ty),
 }
 
 impl Edge {
@@ -272,7 +277,7 @@ impl Edge {
 }
 
 /// A flow from two providers. The second of `Binary`, `Lazy`, and `Refine` is the other operand;
-/// of `Branch`, `Forward`, `Then`, `Else`, and `Argument`, the context that gates them.
+/// of `Branch`, `Forward`, `Arm`, and `Argument`, the context that gates them.
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Pair {
     Refine {
@@ -287,8 +292,8 @@ pub(crate) enum Pair {
     Lazy {
         is_and: bool,
     },
-    Then,
-    Else,
+    /// An arm context from its scrutinee and parent; the case is `Context::cases[index]`.
+    Arm(u16),
     Argument,
     Backedge,
     Range,
@@ -313,10 +318,13 @@ pub(crate) struct Product {
     pub values: May,
 }
 
-/// What every transfer reads: the thresholds, and the declared types a field read goes through.
+/// What every transfer reads: the thresholds, the declared types a field read goes through, the
+/// unions a case admits, and the cases the `Arm` pairs index.
 pub(crate) struct Context {
     pub thresholds: Thresholds,
     pub decls: Box<[Decl]>,
+    pub unions: Unions,
+    pub cases: Box<[Case]>,
 }
 
 /// Every value cycle crosses a call, an argument, or a loop backedge; rounding there keeps every
@@ -356,7 +364,9 @@ impl Lattice for Product {
             | Edge::Enter
             | Edge::Exactly(_) => Carry::Nothing,
             Edge::Neg => Carry::Grows,
-            Edge::Call(_) | Edge::Bind | Edge::Values | Edge::Field(_) => Carry::Passes,
+            Edge::Call(_) | Edge::Bind | Edge::Values | Edge::Field(_) | Edge::Narrow(_) => {
+                Carry::Passes
+            }
         }
     }
 
@@ -370,7 +380,7 @@ impl Lattice for Product {
     /// A gating context carries nothing of its own.
     fn carries_pair(pair: &Pair) -> [Carry; 2] {
         match pair {
-            Pair::Lazy { .. } | Pair::Then | Pair::Else => [Carry::Nothing; 2],
+            Pair::Lazy { .. } | Pair::Arm(_) => [Carry::Nothing; 2],
             Pair::Binary(BinaryOp::Arith(_)) => [Carry::Grows; 2],
             Pair::Binary(BinaryOp::Cmp(_)) => [Carry::Nothing; 2],
             Pair::Refine { .. } | Pair::Range => [Carry::Passes; 2],
@@ -385,7 +395,7 @@ impl Lattice for Product {
             Edge::Call(claim) => self.types.imported(claim),
             Edge::Bind | Edge::Types | Edge::TypeBind | Edge::Exactly(_) | Edge::Peer => self.types,
             Edge::Field(name) => self.types.field(name, &cx.decls),
-            Edge::Values | Edge::Neg | Edge::Not | Edge::Enter => Evidence::NONE,
+            Edge::Values | Edge::Neg | Edge::Not | Edge::Enter | Edge::Narrow(_) => Evidence::NONE,
         };
         let values = &self.values;
         let values = match *edge {
@@ -404,9 +414,10 @@ impl Lattice for Product {
             Edge::Exactly(value) => values.exactly(value),
             Edge::Enter => May::of_unit(values.is_live()),
             Edge::Field(name) => {
-                let Ok(field) = values.field(name, &cx.decls);
+                let Ok(field) = values.field(name, &cx.decls, &cx.unions);
                 field
             }
+            Edge::Narrow(ty) => values.narrow(ty, &cx.unions),
         };
         Self { types, values }
     }
@@ -425,8 +436,7 @@ impl Lattice for Product {
             Pair::Outcome => Evidence::NONE,
             Pair::Binary(_)
             | Pair::Lazy { .. }
-            | Pair::Then
-            | Pair::Else
+            | Pair::Arm(_)
             | Pair::Argument
             | Pair::Backedge
             | Pair::Range => Evidence::NONE,
@@ -446,8 +456,10 @@ impl Lattice for Product {
                 local_is_lhs,
                 sense,
             } => values.refine(op, local_is_lhs, sense, second),
-            Pair::Then => May::of_unit(values.bools.may_true() && second.is_live()),
-            Pair::Else => May::of_unit(values.bools.may_false() && second.is_live()),
+            Pair::Arm(case) => {
+                let case = cx.cases[usize::from(case)];
+                May::of_unit(values.may_select(case, &cx.unions) && second.is_live())
+            }
             Pair::Range => May::ints(Ints::range(&values.ints, &second.ints)),
             Pair::Branch | Pair::Forward | Pair::Outcome => {
                 if second.is_live() {
@@ -526,6 +538,8 @@ mod tests {
         let cx = Context {
             thresholds: [15, 2].map(Int::from).into_iter().collect(),
             decls: Box::new([]),
+            unions: Unions::new(),
+            cases: Box::new([Case::Bool(true), Case::Bool(false)]),
         };
         let a = values(band(4, 13));
         let b = values(May::int(&2.into()));
@@ -568,13 +582,15 @@ mod tests {
         let cx = Context {
             thresholds: Thresholds::default(),
             decls: Box::new([]),
+            unions: Unions::new(),
+            cases: Box::new([Case::Bool(true), Case::Bool(false)]),
         };
         let live = values(May::unit());
         let dead = Product::bottom();
         let cond = values(May::bool(false));
-        assert_eq!(cond.combine(&Pair::Then, &live, false, &cx), dead);
-        assert_eq!(cond.combine(&Pair::Else, &live, false, &cx), live);
-        assert_eq!(cond.combine(&Pair::Else, &dead, false, &cx), dead);
+        assert_eq!(cond.combine(&Pair::Arm(0), &live, false, &cx), dead);
+        assert_eq!(cond.combine(&Pair::Arm(1), &live, false, &cx), live);
+        assert_eq!(cond.combine(&Pair::Arm(1), &dead, false, &cx), dead);
         let value = values(May::int(&3.into()));
         assert_eq!(value.combine(&Pair::Branch, &live, false, &cx), value);
         assert_eq!(value.combine(&Pair::Branch, &dead, false, &cx), dead);
@@ -589,6 +605,8 @@ mod tests {
         let cx = Context {
             thresholds: Thresholds::default(),
             decls: Box::new([]),
+            unions: Unions::new(),
+            cases: Box::new([Case::Bool(true), Case::Bool(false)]),
         };
         let int = Product {
             types: Evidence::single(Ty::INT, Claim::local(3)),
@@ -635,6 +653,8 @@ mod tests {
         let cx = Context {
             thresholds: Thresholds::default(),
             decls: Box::new([]),
+            unions: Unions::new(),
+            cases: Box::new([Case::Bool(true), Case::Bool(false)]),
         };
         assert_eq!(
             flag.transfer(&Edge::Exactly(false), false, &cx)
