@@ -305,15 +305,15 @@ fn conditions(graph: &Graph) -> Vec<Condition> {
     let parent = |region: RegionId| graph.inputs(graph.region(region).context)[1];
     for node in graph.node_ids() {
         let inputs = graph.inputs(node);
-        let values = graph.input_values(node);
+        let value = |index: usize| graph.input_roles(node)[index].is_value();
         match graph.node(node).op {
-            Op::Join { then, else_ } if values[0] => conditions.push(Condition {
+            Op::Join { then, else_ } if value(0) => conditions.push(Condition {
                 value: inputs[0],
                 parent: parent(then),
                 at: graph.reads(node)[0],
                 site: Site::If { then, else_ },
             }),
-            ref op @ (Op::And { rhs } | Op::Or { rhs }) if values[0] => {
+            ref op @ (Op::And { rhs } | Op::Or { rhs }) if value(0) => {
                 conditions.push(Condition {
                     value: inputs[0],
                     parent: parent(rhs),
@@ -334,13 +334,16 @@ fn conditions(graph: &Graph) -> Vec<Condition> {
                     });
                 }
             }
-            Op::Loop(id) => {
-                let body = graph.loop_(id).body;
+            Op::Loop { body } => {
                 let context = graph.region(body).context;
                 let [condition, parent] = *graph.inputs(context) else {
                     unreachable!("a loop body's context reads its condition and parent")
                 };
-                if graph.input_values(condition).iter().all(|&value| value) {
+                if graph
+                    .input_roles(condition)
+                    .iter()
+                    .all(|role| role.is_value())
+                {
                     conditions.push(Condition {
                         value: condition,
                         parent,
@@ -360,7 +363,7 @@ fn operands(graph: &Graph, typing: &Typing, value: NodeId) -> Vec<(TextRange, Bo
     let Op::Binary(BinaryOp::Cmp(_)) = graph.node(value).op else {
         return Vec::new();
     };
-    if !graph.input_values(value).iter().all(|&value| value) {
+    if !graph.input_roles(value).iter().all(|role| role.is_value()) {
         return Vec::new();
     }
     let mut labels = Vec::new();

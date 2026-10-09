@@ -169,9 +169,11 @@ impl<'a> Rendering<'a> {
             }
         }
         let mut carried = vec![false; graph.nodes().len()];
-        for id in graph.loop_ids() {
-            for &(header, _) in &graph.loop_(id).carried {
-                carried[header.index()] = true;
+        for node in graph.node_ids() {
+            if matches!(graph.node(node).op, Op::Loop { .. }) {
+                for (header, _) in graph.carried(node) {
+                    carried[header.index()] = true;
+                }
             }
         }
         Self {
@@ -271,7 +273,7 @@ fn dump_region(
                 Op::Then | Op::Else | Op::Entry | Op::Refine { .. } | Op::Exactly(_)
             );
             is_named
-                || matches!(graph.node(node).op, Op::Assign { .. })
+                || matches!(graph.node(node).op, Op::Assign)
                 || (node != result
                     && !is_contextual
                     && !shape.carried[node.index()]
@@ -303,7 +305,7 @@ fn dump_region(
                 let role = format!("let {}", named(analysis, shape, node));
                 dump_definition(analysis, shape, &role, node, depth + 1, out);
             }
-            (None, Op::Assign { .. }) => {
+            (None, Op::Assign) => {
                 dump_definition(analysis, shape, "assignment", node, depth + 1, out)
             }
             (None, Op::Unused) => {
@@ -358,14 +360,11 @@ fn dump_node(
     // A read of a mutable local names the version it reaches, which prints where it is defined.
     let at = |what: &str| format!(" ({what} {})", shape.at(graph.node(definition).origin));
     let version = match graph.node(definition).op {
-        Op::Assign { declaration } => Some((declaration, at("assigned"))),
-        Op::Carry { declaration } => Some((declaration, at("carried"))),
-        Op::LoopValue { loop_, index } => {
-            let (header, _) = graph.loop_(loop_).carried[index as usize];
-            let Op::Carry { declaration } = graph.node(header).op else {
-                unreachable!("a loop carries its locals through carry nodes")
-            };
-            Some((declaration, at("after loop")))
+        Op::Assign => Some((graph.declaration(definition), at("assigned"))),
+        Op::Carry => Some((graph.declaration(definition), at("carried"))),
+        Op::LoopValue => {
+            let (header, _) = graph.carry(definition);
+            Some((graph.declaration(header), at("after loop")))
         }
         _ => graph
             .node(definition)
@@ -402,7 +401,8 @@ fn dump_header(
     depth: usize,
     out: &mut String,
 ) {
-    let entry = analysis.graph().node(node);
+    let graph = analysis.graph();
+    let entry = graph.node(node);
     let operation = match &entry.op {
         Op::Int(value) => format!("int {value}"),
         Op::Bool(value) => format!("bool {value}"),
@@ -411,12 +411,12 @@ fn dump_header(
         Op::Unused => unreachable!("nothing reads a statement; dump_region discards its input"),
         Op::Hole => "hole".into(),
         Op::Copy { .. } => "copy".into(),
-        Op::Assign { declaration } => format!("assign {}", named(analysis, shape, *declaration)),
-        Op::Phi { declaration, .. } => format!("phi {}", named(analysis, shape, *declaration)),
+        Op::Assign => format!("assign {}", named(analysis, shape, graph.declaration(node))),
+        Op::Phi => format!("phi {}", named(analysis, shape, graph.declaration(node))),
         Op::LoopIndex => "loop index".into(),
-        Op::Carry { declaration } => format!("carry {}", named(analysis, shape, *declaration)),
-        Op::Loop(_) => "loop".into(),
-        Op::LoopValue { index, .. } => format!("loop value {index}"),
+        Op::Carry => format!("carry {}", named(analysis, shape, graph.declaration(node))),
+        Op::Loop { .. } => "loop".into(),
+        Op::LoopValue => "loop value".into(),
         Op::Neg => "negate".into(),
         Op::Not => "not".into(),
         Op::Binary(op) => format!("eager {}", operator(*op)),
@@ -486,19 +486,16 @@ fn dump_definition(
                 );
             }
         }
-        Op::Copy { .. } | Op::Assign { .. } => {
-            dump_node(analysis, shape, "value", inputs[0], child, out)
-        }
-        Op::Carry { .. } => dump_node(analysis, shape, "initial", inputs[0], child, out),
+        Op::Copy { .. } | Op::Assign => dump_node(analysis, shape, "value", inputs[0], child, out),
+        Op::Carry => dump_node(analysis, shape, "initial", inputs[0], child, out),
         Op::LoopIndex => {
             dump_node(analysis, shape, "start", inputs[0], child, out);
             dump_node(analysis, shape, "end", inputs[1], child, out);
         }
-        Op::Loop(id) => {
-            let loop_ = graph.loop_(*id);
+        Op::Loop { body } => {
             dump_node(analysis, shape, "start", inputs[0], child, out);
             dump_node(analysis, shape, "end", inputs[1], child, out);
-            for (index, &(header, _)) in loop_.carried.iter().enumerate() {
+            for (index, (header, _)) in graph.carried(node).enumerate() {
                 dump_definition(
                     analysis,
                     shape,
@@ -508,16 +505,16 @@ fn dump_definition(
                     out,
                 );
             }
-            dump_region(analysis, shape, "body", loop_.body, child, out);
-            for (index, &(_, next)) in loop_.carried.iter().enumerate() {
+            dump_region(analysis, shape, "body", *body, child, out);
+            for (index, (_, next)) in graph.carried(node).enumerate() {
                 dump_node(analysis, shape, &format!("next[{index}]"), next, child, out);
             }
         }
-        Op::LoopValue { .. } => unreachable!("a loop value reads its local after the loop"),
-        Op::Phi { .. } => {
+        Op::LoopValue => unreachable!("a loop value reads its local after the loop"),
+        Op::Phi => {
             dump_node(analysis, shape, "condition", inputs[0], child, out);
             for (role, &input) in [("then", &inputs[1]), ("else", &inputs[2])] {
-                if matches!(graph.node(input).op, Op::Phi { .. }) {
+                if matches!(graph.node(input).op, Op::Phi) {
                     dump_definition(analysis, shape, role, input, child, out);
                 } else {
                     dump_node(analysis, shape, role, input, child, out);

@@ -63,7 +63,7 @@ impl Demands<'_> {
     ) {
         let graph = self.graph;
         let typed = |node: NodeId| self.typed[node.index()];
-        let value = |index: usize| graph.input_values(node)[index];
+        let value = |index: usize| graph.input_roles(node)[index].is_value();
         let fallthrough = self.fallthroughs[owner as usize];
         let made = &mut self.made;
         let mut demand = |at: TextRange, actual: NodeId, kind: DemandKind| {
@@ -160,10 +160,9 @@ impl Demands<'_> {
                     Some(_) => {}
                 }
             }
-            Op::Loop(id) => {
-                let body = graph.loop_(*id).body;
-                let (at, result) = region(body);
-                if value(0) && value(1) && graph.region(body).result_has_value() {
+            Op::Loop { body } => {
+                let (at, result) = region(*body);
+                if value(0) && value(1) && graph.region(*body).result_has_value() {
                     require(at, result, Expected::Ty(Ty::Unit), None);
                 }
             }
@@ -179,13 +178,16 @@ impl Demands<'_> {
                 require(reads[0], inputs[0], Expected::Ty(*ty), declared);
             }
             Op::Copy { declared: Some(_) } => {}
-            Op::Assign { declaration } if value(0) => require(
-                reads[0],
-                inputs[0],
-                Expected::Peer(*declaration),
-                graph.node(*declaration).name.and_then(written),
-            ),
-            Op::Assign { .. } => {}
+            Op::Assign if value(0) => {
+                let declaration = graph.declaration(node);
+                require(
+                    reads[0],
+                    inputs[0],
+                    Expected::Peer(declaration),
+                    graph.node(declaration).name.and_then(written),
+                )
+            }
+            Op::Assign => {}
             Op::Call(callee) => {
                 let callable = graph.callable(*callee);
                 let params = graph.run(callable.function).params();
@@ -227,10 +229,10 @@ impl Demands<'_> {
             | Op::Unit
             | Op::Hole
             | Op::Copy { declared: None }
-            | Op::Phi { .. }
+            | Op::Phi
             | Op::LoopIndex
-            | Op::Carry { .. }
-            | Op::LoopValue { .. }
+            | Op::Carry
+            | Op::LoopValue
             | Op::Refine { .. }
             | Op::Exactly(_)
             | Op::Entry
@@ -352,7 +354,7 @@ pub(crate) fn draw(
                     };
                     for (region, value) in regions.into_iter().zip(values) {
                         let region = graph.region(region);
-                        if !graph.input_values(node)[0] || !value {
+                        if !graph.input_roles(node)[0].is_value() || !value {
                             continue;
                         }
                         typing.derive(region.result(), region.context, node, pair);
@@ -376,24 +378,21 @@ pub(crate) fn draw(
                     }
                 }
                 Op::Copy { declared: None } => typing.flow(inputs[0], node, Edge::Bind),
-                Op::Assign { declaration } => {
-                    typing.flow(*declaration, node, Edge::TypeBind);
-                    if graph.input_values(node)[0] {
+                Op::Assign => {
+                    typing.flow(graph.declaration(node), node, Edge::TypeBind);
+                    if graph.input_roles(node)[0].is_value() {
                         typing.flow(inputs[0], node, Edge::Values);
                     }
                 }
-                Op::Phi {
-                    declaration,
-                    contexts,
-                } => {
-                    typing.flow(*declaration, node, Edge::TypeBind);
-                    if graph.input_values(node)[0] {
-                        for ((&value, &context), has_value) in inputs[1..]
+                Op::Phi => {
+                    typing.flow(graph.declaration(node), node, Edge::TypeBind);
+                    if graph.input_roles(node)[0].is_value() {
+                        for ((&value, context), role) in inputs[1..]
                             .iter()
-                            .zip(contexts)
-                            .zip(&graph.input_values(node)[1..])
+                            .zip(graph.phi_contexts(node))
+                            .zip(&graph.input_roles(node)[1..])
                         {
-                            if *has_value {
+                            if role.is_value() {
                                 typing.derive(value, context, node, Pair::Outcome);
                             }
                         }
@@ -403,30 +402,30 @@ pub(crate) fn draw(
                     typing.known(node, Ty::Int, entry.name.unwrap_or(origin));
                     typing.derive(inputs[0], inputs[1], node, Pair::Range);
                 }
-                Op::Carry { declaration } => {
-                    typing.flow(*declaration, node, Edge::TypeBind);
+                Op::Carry => {
+                    typing.flow(graph.declaration(node), node, Edge::TypeBind);
                 }
-                Op::Loop(id) => {
-                    let loop_ = graph.loop_(*id);
+                Op::Loop { body } => {
+                    let [continuation, empty] = graph.loop_contexts(node);
                     typing.known(node, Ty::Unit, origin);
-                    typing.flow(loop_.empty, node, Edge::Enter);
-                    typing.flow(loop_.continuation, node, Edge::Enter);
-                    for &(header, next) in &loop_.carried {
+                    typing.flow(empty, node, Edge::Enter);
+                    typing.flow(continuation, node, Edge::Enter);
+                    for (header, next) in graph.carried(node) {
                         typing.derive(
                             graph.inputs(header)[0],
-                            graph.region(loop_.body).context,
+                            graph.region(*body).context,
                             header,
                             Pair::Outcome,
                         );
-                        typing.derive(next, loop_.continuation, header, Pair::Backedge);
+                        typing.derive(next, continuation, header, Pair::Backedge);
                     }
                 }
-                Op::LoopValue { loop_, index } => {
-                    let loop_ = graph.loop_(*loop_);
-                    let (header, next) = loop_.carried[*index as usize];
+                Op::LoopValue => {
+                    let (header, next) = graph.carry(node);
+                    let [continuation, empty] = graph.loop_contexts(inputs[0]);
                     typing.flow(header, node, Edge::TypeBind);
-                    typing.derive(graph.inputs(header)[0], loop_.empty, node, Pair::Outcome);
-                    typing.derive(next, loop_.continuation, node, Pair::Outcome);
+                    typing.derive(graph.inputs(header)[0], empty, node, Pair::Outcome);
+                    typing.derive(next, continuation, node, Pair::Outcome);
                 }
                 Op::Neg => {
                     typing.known(node, Ty::Int, origin);
@@ -447,7 +446,7 @@ pub(crate) fn draw(
                         }
                     }
                 }
-                Op::And { rhs } | Op::Or { rhs } if graph.input_values(node)[0] => {
+                Op::And { rhs } | Op::Or { rhs } if graph.input_roles(node)[0].is_value() => {
                     typing.known(node, Ty::Bool, origin);
                     let region = graph.region(*rhs);
                     let rhs = region.result();
@@ -459,7 +458,7 @@ pub(crate) fn draw(
                     }
                 }
                 Op::And { .. } | Op::Or { .. } => {}
-                Op::Return if graph.input_values(node)[0] => {
+                Op::Return if graph.input_roles(node)[0].is_value() => {
                     typing.flow(inputs[0], node, Edge::Types)
                 }
                 Op::Return => {}
@@ -497,7 +496,7 @@ pub(crate) fn draw(
                     } else {
                         Edge::Bind
                     };
-                    if graph.input_values(node)[0] {
+                    if graph.input_roles(node)[0].is_value() {
                         typing.flow(inputs[0], node, edge);
                     }
                     for &returned in &inputs[1..] {

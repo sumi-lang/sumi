@@ -19,8 +19,8 @@ use sumi_text::{TextRange, TextSize};
 pub use check::analyze;
 pub use reachability::{Dead, DeadCause};
 pub use sumi_graph::{
-    ArithOp, BinaryOp, Bools, Callable, Callee, CmpOp, FunctionId, Graph, Int, Ints, Machine, May,
-    NodeId, Op, Refusal, RegionId, Run, Ty, Value,
+    ArithOp, BinaryOp, Bools, Callable, Callee, Carried, CmpOp, FunctionId, Graph, Int, Ints,
+    Machine, May, NodeId, Op, References, Refusal, RegionId, Role, Run, Ty, Value,
 };
 
 pub struct Analysis {

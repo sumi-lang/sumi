@@ -757,7 +757,7 @@ fn a_loop_value_the_facts_pin_is_a_literal() {
             .graph()
             .nodes()
             .iter()
-            .any(|node| matches!(node.op, sumi_hir::Op::LoopValue { .. }))
+            .any(|node| matches!(node.op, sumi_hir::Op::LoopValue))
     );
     check::run(program);
 }
@@ -837,7 +837,7 @@ fn callers() -> int = carried(true) + carried(false)",
     }
     assert!(!compiled.graph().nodes().iter().any(|node| matches!(
         node.op,
-        sumi_hir::Op::Loop(_) | sumi_hir::Op::Carry { .. } | sumi_hir::Op::LoopValue { .. }
+        sumi_hir::Op::Loop { .. } | sumi_hir::Op::Carry | sumi_hir::Op::LoopValue
     )));
     check::run(program);
 }

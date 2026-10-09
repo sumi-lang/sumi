@@ -1,7 +1,7 @@
 //! The machine: the graph evaluated in the concrete domain by demand from a function's result. It
 //! refuses rather than fails: no [`Refusal`] arises on a graph the checker proved.
 
-use crate::{Domain, Fault, FunctionId, Graph, NodeId, Op, RegionId, Run, Value};
+use crate::{Domain, Fault, FunctionId, Graph, NodeId, Op, References, RegionId, Run, Value};
 
 #[path = "suspend.rs"]
 mod suspend;
@@ -273,10 +273,8 @@ impl<'a> Machine<'a> {
                 Control::Take { node, from } if from == value => value = node,
                 Control::Return(from) if from == value => return true,
                 Control::Apply(node)
-                    if matches!(
-                        self.graph.node(node).op,
-                        Op::Copy { .. } | Op::Assign { .. }
-                    ) && self.graph.inputs(node)[0] == value =>
+                    if matches!(self.graph.node(node).op, Op::Copy { .. } | Op::Assign)
+                        && self.graph.inputs(node)[0] == value =>
                 {
                     value = node
                 }
@@ -314,17 +312,17 @@ impl<'a> Machine<'a> {
                 }
                 let inputs = self.graph.inputs(node);
                 match self.graph.node(node).op {
-                    Op::Param { .. } | Op::LoopIndex | Op::Carry { .. } => {
+                    Op::Param { .. } | Op::LoopIndex | Op::Carry => {
                         unreachable!("parameters and loop headers are bound on entry")
                     }
-                    Op::Loop(_) => {
+                    Op::Loop { .. } => {
                         self.control.push(Control::LoopBounds(node));
                         for &input in inputs.iter().rev() {
                             self.demand(input);
                         }
                     }
-                    Op::LoopValue { loop_, index } => {
-                        let from = self.graph.loop_(loop_).carried[index as usize].0;
+                    Op::LoopValue => {
+                        let (from, _) = self.graph.carry(node);
                         self.control.push(Control::LoopValue { node, from });
                         self.demand(inputs[0]);
                     }
@@ -374,7 +372,7 @@ impl<'a> Machine<'a> {
                         self.control.push(Control::Branch { node, then, else_ });
                         self.demand(inputs[0]);
                     }
-                    Op::Phi { .. } => {
+                    Op::Phi => {
                         self.control.push(Control::Phi(node));
                         self.demand(inputs[0]);
                     }
@@ -408,25 +406,29 @@ impl<'a> Machine<'a> {
                 ) {
                     return Err(Refusal::Type(node));
                 }
-                let Op::Loop(id) = self.graph.node(node).op else {
-                    unreachable!()
-                };
                 self.control.push(Control::LoopStart(node));
-                for &(carry, _) in self.graph.loop_(id).carried.iter().rev() {
+                for (carry, _) in self.graph.carried(node).rev() {
                     self.control
                         .push(Control::Eval(self.graph.inputs(carry)[0]));
                 }
             }
             Control::LoopStart(node) | Control::LoopRebind(node) => {
-                let Op::Loop(id) = self.graph.node(node).op else {
+                let Op::Loop { body } = self.graph.node(node).op else {
                     unreachable!()
                 };
-                let loop_ = self.graph.loop_(id);
+                let References::Loop {
+                    index: loop_index,
+                    carried,
+                    ..
+                } = self.graph.references(node)
+                else {
+                    unreachable!("a loop names its index and carries")
+                };
                 let is_initial = matches!(control, Control::LoopStart(_));
                 let Value::Int(index) = self.value(if is_initial {
                     self.graph.inputs(node)[0]
                 } else {
-                    loop_.index
+                    loop_index
                 }) else {
                     unreachable!()
                 };
@@ -435,10 +437,9 @@ impl<'a> Machine<'a> {
                 } else {
                     index + &1.into()
                 };
-                let values: Vec<_> = loop_
-                    .carried
+                let values: Vec<_> = carried
                     .iter()
-                    .map(|&(carry, next)| {
+                    .map(|(carry, next)| {
                         self.value(if is_initial {
                             self.graph.inputs(carry)[0]
                         } else {
@@ -447,11 +448,11 @@ impl<'a> Machine<'a> {
                         .clone()
                     })
                     .collect();
-                for body_node in self.graph.region(loop_.body).nodes() {
+                for body_node in self.graph.region(body).nodes() {
                     let slot = self.index(body_node);
                     self.slots[slot] = None;
                 }
-                for (&(carry, _), value) in loop_.carried.iter().zip(values) {
+                for ((carry, _), value) in carried.iter().zip(values) {
                     let slot = self.index(carry);
                     self.slots[slot] = Some(value);
                 }
@@ -459,13 +460,13 @@ impl<'a> Machine<'a> {
                     unreachable!()
                 };
                 let more = index < *end;
-                let slot = self.index(loop_.index);
+                let slot = self.index(loop_index);
                 self.slots[slot] = Some(Value::Int(index));
                 if more {
                     self.control.push(Control::LoopNext(node));
                     self.control
-                        .push(Control::Eval(self.graph.region(loop_.body).result()));
-                    if let Some(control) = self.graph.region(loop_.body).control() {
+                        .push(Control::Eval(self.graph.region(body).result()));
+                    if let Some(control) = self.graph.region(body).control() {
                         self.demand(control);
                     }
                 } else {
@@ -473,15 +474,14 @@ impl<'a> Machine<'a> {
                 }
             }
             Control::LoopNext(node) => {
-                let Op::Loop(id) = self.graph.node(node).op else {
+                let Op::Loop { body } = self.graph.node(node).op else {
                     unreachable!()
                 };
-                let loop_ = self.graph.loop_(id);
-                if self.value(self.graph.region(loop_.body).result()) != &Value::Unit {
+                if self.value(self.graph.region(body).result()) != &Value::Unit {
                     return Err(Refusal::Type(node));
                 }
                 self.control.push(Control::LoopRebind(node));
-                for &(_, next) in loop_.carried.iter().rev() {
+                for (_, next) in self.graph.carried(node).rev() {
                     self.demand(next);
                 }
             }
@@ -669,7 +669,7 @@ impl<'a> Machine<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ArithOp, BinaryOp, GraphBuilder};
+    use crate::{ArithOp, BinaryOp, Carried, GraphBuilder};
     use sumi_text::{TextRange, TextSize};
 
     fn at() -> TextRange {
@@ -677,8 +677,51 @@ mod tests {
     }
 
     fn push(builder: &mut GraphBuilder, op: Op, inputs: &[NodeId]) -> NodeId {
+        refer(builder, op, inputs, References::None)
+    }
+
+    fn refer(
+        builder: &mut GraphBuilder,
+        op: Op,
+        inputs: &[NodeId],
+        references: References<'_>,
+    ) -> NodeId {
         let inputs = inputs.iter().map(|&node| (node, at())).collect::<Vec<_>>();
-        builder.push(op, &inputs, at(), None)
+        builder.push(op, &inputs, references, at(), None)
+    }
+
+    /// A loop over `body` with `index`, both contexts `context`, carrying `carried`.
+    fn loop_(
+        builder: &mut GraphBuilder,
+        body: RegionId,
+        bounds: [NodeId; 2],
+        index: NodeId,
+        context: NodeId,
+        carried: &[(NodeId, NodeId)],
+    ) -> NodeId {
+        let carried: Vec<NodeId> = carried
+            .iter()
+            .flat_map(|&(carry, next)| [carry, next])
+            .collect();
+        let references = References::Loop {
+            index,
+            continuation: context,
+            empty: context,
+            carried: Carried::new(&carried),
+        };
+        refer(builder, Op::Loop { body }, &bounds, references)
+    }
+
+    fn loop_value(builder: &mut GraphBuilder, loop_: NodeId, carried: (NodeId, NodeId)) -> NodeId {
+        refer(
+            builder,
+            Op::LoopValue,
+            &[loop_],
+            References::LoopValue {
+                carry: carried.0,
+                next: carried.1,
+            },
+        )
     }
 
     #[test]
@@ -717,36 +760,22 @@ mod tests {
                 let body = builder.open(entry);
                 builder.enter(body);
                 let index = push(&mut builder, Op::LoopIndex, &[start, end]);
-                let ca = push(&mut builder, Op::Carry { declaration: a }, &[a]);
-                let cb = push(&mut builder, Op::Carry { declaration: b }, &[b]);
+                let ca = refer(&mut builder, Op::Carry, &[a], References::Version(a));
+                let cb = refer(&mut builder, Op::Carry, &[b], References::Version(b));
                 let next = push(&mut builder, Op::Call(callee), &[ca]);
                 let unit = push(&mut builder, Op::Unit, &[entry]);
                 let control = returning.then(|| push(&mut builder, Op::Return, &[index, entry]));
                 builder.close_with_control(body, (unit, at()), true, control);
-                let id = builder.push_loop(crate::Loop {
+                let loop_node = loop_(
+                    &mut builder,
                     body,
+                    [start, end],
                     index,
-                    carried: Box::new([(ca, cb), (cb, next)]),
-                    continuation: entry,
-                    empty: entry,
-                });
-                let loop_node = push(&mut builder, Op::Loop(id), &[start, end]);
-                let va = push(
-                    &mut builder,
-                    Op::LoopValue {
-                        loop_: id,
-                        index: 0,
-                    },
-                    &[loop_node],
+                    entry,
+                    &[(ca, cb), (cb, next)],
                 );
-                let vb = push(
-                    &mut builder,
-                    Op::LoopValue {
-                        loop_: id,
-                        index: 1,
-                    },
-                    &[loop_node],
-                );
+                let va = loop_value(&mut builder, loop_node, (ca, cb));
+                let vb = loop_value(&mut builder, loop_node, (cb, next));
                 let ten = push(&mut builder, Op::Int(10.into()), &[]);
                 let tens = push(
                     &mut builder,
@@ -804,7 +833,7 @@ mod tests {
         let body = builder.open(entry);
         builder.enter(body);
         let index = push(builder, Op::LoopIndex, &bounds);
-        let carry = push(builder, Op::Carry { declaration: zero }, &[zero]);
+        let carry = refer(builder, Op::Carry, &[zero], References::Version(zero));
         let increment = if is_nested {
             let two = push(builder, Op::Int(2.into()), &[]);
             counting_loop(builder, entry, [zero, two], false)
@@ -818,22 +847,8 @@ mod tests {
         );
         let unit = push(builder, Op::Unit, &[entry]);
         builder.close(body, (unit, at()));
-        let id = builder.push_loop(crate::Loop {
-            body,
-            index,
-            carried: Box::new([(carry, next)]),
-            continuation: entry,
-            empty: entry,
-        });
-        let node = push(builder, Op::Loop(id), &bounds);
-        push(
-            builder,
-            Op::LoopValue {
-                loop_: id,
-                index: 0,
-            },
-            &[node],
-        )
+        let node = loop_(builder, body, bounds, index, entry, &[(carry, next)]);
+        loop_value(builder, node, (carry, next))
     }
 
     #[test]
@@ -1081,22 +1096,12 @@ mod tests {
         let hole = push(&mut builder, Op::Hole, &[]);
         let yes = push(&mut builder, Op::Bool(true), &[]);
         let no = push(&mut builder, Op::Bool(false), &[]);
-        let from_true = push(
-            &mut builder,
-            Op::Phi {
-                declaration,
-                contexts: [entry; 2],
-            },
-            &[yes, seven, hole],
-        );
-        let from_false = push(
-            &mut builder,
-            Op::Phi {
-                declaration,
-                contexts: [entry; 2],
-            },
-            &[no, hole, nine],
-        );
+        let phi = References::Phi {
+            declaration,
+            contexts: [entry; 2],
+        };
+        let from_true = refer(&mut builder, Op::Phi, &[yes, seven, hole], phi);
+        let from_false = refer(&mut builder, Op::Phi, &[no, hole, nine], phi);
         let sum = push(
             &mut builder,
             Op::Binary(BinaryOp::Arith(ArithOp::Add)),

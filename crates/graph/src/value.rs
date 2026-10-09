@@ -35,7 +35,7 @@ impl Op {
         Ok(match self {
             Self::Int(value) => D::int(value),
             Self::Bool(value) => D::bool(*value),
-            Self::Copy { .. } | Self::Assign { .. } => inputs[0].clone(),
+            Self::Copy { .. } | Self::Assign => inputs[0].clone(),
             Self::Refine {
                 op,
                 local_is_lhs,
@@ -47,9 +47,9 @@ impl Op {
             Self::Binary(op) => D::binary(*op, inputs[0], inputs[1])?,
             Self::Param { .. }
             | Self::LoopIndex
-            | Self::Carry { .. }
-            | Self::Loop(_)
-            | Self::LoopValue { .. }
+            | Self::Carry
+            | Self::Loop { .. }
+            | Self::LoopValue
             | Self::Unit
             | Self::Unused
             | Self::Hole
@@ -64,7 +64,7 @@ impl Op {
             | Self::Observe { .. }
             | Self::After
             | Self::Result { .. }
-            | Self::Phi { .. }
+            | Self::Phi
             | Self::Call(_) => unreachable!("{self:?} is not a data operator"),
         })
     }
