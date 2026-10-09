@@ -9,6 +9,7 @@ mod lower;
 mod reachability;
 mod recursion;
 mod solver;
+mod spans;
 mod typing;
 
 use std::fmt;
@@ -18,6 +19,7 @@ use sumi_text::{TextRange, TextSize};
 
 pub use check::analyze;
 pub use reachability::{Dead, DeadCause};
+pub use spans::Spans;
 pub use sumi_graph::{
     ArithOp, BinaryOp, Bools, Callable, Callee, Carried, CmpOp, FunctionId, Graph, Int, Ints,
     Machine, May, NodeId, Op, References, Refusal, RegionId, Role, Run, Ty, Value,
@@ -26,6 +28,7 @@ pub use sumi_graph::{
 pub struct Analysis {
     parsed: ParsedSource,
     graph: Graph,
+    spans: Spans,
     settled: typing::Settled,
     functions: Vec<Function>,
     bindings: Vec<Binding>,
@@ -57,6 +60,10 @@ impl Analysis {
     /// Every body is in it, holed ones too.
     pub fn graph(&self) -> &Graph {
         &self.graph
+    }
+    /// Where the graph's nodes and regions come from.
+    pub fn spans(&self) -> &Spans {
+        &self.spans
     }
     /// None for a node that is no value, or whose class conflicted.
     pub fn ty(&self, node: NodeId) -> Option<Ty> {

@@ -13,6 +13,7 @@ use sumi_text::TextRange;
 
 use crate::lattice::{Edge, Pair};
 use crate::lower::{Fallthrough, Header, HeaderResult, Lowered};
+use crate::spans::Spans;
 use crate::typing::{Expected, Typing};
 
 /// Where a demanded type was declared.
@@ -46,6 +47,7 @@ pub(crate) struct Demand {
 
 struct Demands<'a> {
     graph: &'a Graph,
+    spans: &'a Spans,
     typed: &'a [bool],
     fallthroughs: &'a [Option<Fallthrough>],
     headers: &'a [Header],
@@ -92,10 +94,8 @@ impl Demands<'_> {
                 Declared::Written(at)
             })
         };
-        let region = |id: RegionId| {
-            let region = graph.region(id);
-            (region.result_read(), region.result())
-        };
+        let spans = self.spans;
+        let region = |id: RegionId| (spans.result_read(id), graph.region(id).result());
         match &entry.op {
             Op::Neg if value(0) => require(reads[0], inputs[0], Expected::Ty(Ty::Int), None),
             Op::Not if value(0) => require(reads[0], inputs[0], Expected::Ty(Ty::Bool), None),
@@ -111,7 +111,7 @@ impl Demands<'_> {
                             require(at, input, Expected::Peer(operand), None);
                         }
                     }
-                    demand(entry.origin, operand, DemandKind::Comparable);
+                    demand(spans.origin(node), operand, DemandKind::Comparable);
                 }
             }
             Op::Binary(_) => {
@@ -155,7 +155,7 @@ impl Demands<'_> {
                             branches: [then_result, else_result],
                             at: [then_at, else_at],
                         };
-                        demand(entry.origin, node, agree);
+                        demand(spans.origin(node), node, agree);
                     }
                     Some(_) => {}
                 }
@@ -166,14 +166,15 @@ impl Demands<'_> {
                     require(at, result, Expected::Ty(Ty::Unit), None);
                 }
             }
-            Op::Copy {
-                declared: Some((ty, at)),
-            } if value(0) => {
+            Op::Copy { declared: Some(ty) } if value(0) => {
+                let at = spans
+                    .annotation(node)
+                    .expect("a copy declared with a type has its annotation");
                 let run = graph.run(FunctionId::new(owner as usize));
                 let declared = if node == run.result() {
-                    held(*at)
+                    held(at)
                 } else {
-                    written(*at)
+                    written(at)
                 };
                 require(reads[0], inputs[0], Expected::Ty(*ty), declared);
             }
@@ -184,7 +185,7 @@ impl Demands<'_> {
                     reads[0],
                     inputs[0],
                     Expected::Peer(declaration),
-                    graph.node(declaration).name.and_then(written),
+                    spans.name(declaration).and_then(written),
                 )
             }
             Op::Assign => {}
@@ -199,7 +200,7 @@ impl Demands<'_> {
                     .enumerate()
                 {
                     if value(index) {
-                        let declared = written(graph.node(param).origin);
+                        let declared = written(spans.origin(param));
                         require(at, input, Expected::Ty(ty), declared);
                     }
                 }
@@ -212,8 +213,14 @@ impl Demands<'_> {
             Op::Return if value(0) => require(reads[0], inputs[0], Expected::Peer(node), None),
             Op::Return => {}
             Op::Result { declared } => {
-                let expected = declared.map_or(Expected::Peer(node), |(ty, _)| Expected::Ty(ty));
-                let declared = declared.and_then(|(_, at)| held(at));
+                let expected = declared.map_or(Expected::Peer(node), Expected::Ty);
+                let declared = declared.and_then(|_| {
+                    held(
+                        spans
+                            .annotation(node)
+                            .expect("a result declared with a type has its annotation"),
+                    )
+                });
                 if let Some(fallthrough) = fallthrough {
                     require(fallthrough.at, fallthrough.value, expected, declared);
                 } else if value(0) {
@@ -258,6 +265,7 @@ pub(crate) enum Arguments {
 /// walk gave no value has a class nothing flows into.
 pub(crate) fn draw(
     graph: &Graph,
+    spans: &Spans,
     lowered: &Lowered,
     headers: &[Header],
     arguments: Arguments,
@@ -269,6 +277,7 @@ pub(crate) fn draw(
     let mut folded: Vec<Option<Int>> = Vec::new();
     let mut demands = Demands {
         graph,
+        spans,
         typed: &lowered.typed,
         fallthroughs: &lowered.fallthroughs,
         headers,
@@ -283,7 +292,7 @@ pub(crate) fn draw(
         for node in run.nodes() {
             let entry = graph.node(node);
             let inputs = graph.inputs(node);
-            demands.of(owner, node, entry, inputs, graph.reads(node));
+            demands.of(owner, node, entry, inputs, spans.reads(node));
             if !typed(node) {
                 // A result a hole decided is unknown to every caller, not empty.
                 if node == run.result() {
@@ -291,7 +300,7 @@ pub(crate) fn draw(
                 }
                 continue;
             }
-            let origin = entry.origin;
+            let origin = spans.origin(node);
             let constant = |index: usize| folded[run.slot(inputs[index])].as_ref();
             let mut folds = None;
             match &entry.op {
@@ -301,7 +310,7 @@ pub(crate) fn draw(
                 }
                 Op::Bool(value) => typing.literal(node, Ty::Bool, May::bool(*value), origin),
                 Op::Param { ty: Some(ty), .. } => {
-                    let origin = entry.name.unwrap_or(origin);
+                    let origin = spans.name(node).unwrap_or(origin);
                     match arguments {
                         Arguments::Delivered => typing.known(node, *ty, origin),
                         Arguments::Any => typing.literal(node, *ty, May::every(*ty), origin),
@@ -369,10 +378,11 @@ pub(crate) fn draw(
                     typing.known(node, Ty::Unit, origin);
                     typing.flow(inputs[0], node, Edge::Enter);
                 }
-                Op::Copy {
-                    declared: Some((ty, at)),
-                } => {
-                    typing.known(node, *ty, *at);
+                Op::Copy { declared: Some(ty) } => {
+                    let at = spans
+                        .annotation(node)
+                        .expect("a copy declared with a type has its annotation");
+                    typing.known(node, *ty, at);
                     if typed(inputs[0]) {
                         typing.flow(inputs[0], node, Edge::Values);
                     }
@@ -399,7 +409,7 @@ pub(crate) fn draw(
                     }
                 }
                 Op::LoopIndex => {
-                    typing.known(node, Ty::Int, entry.name.unwrap_or(origin));
+                    typing.known(node, Ty::Int, spans.name(node).unwrap_or(origin));
                     typing.derive(inputs[0], inputs[1], node, Pair::Range);
                 }
                 Op::Carry => {
@@ -488,8 +498,11 @@ pub(crate) fn draw(
                 }
                 Op::After => typing.derive(inputs[1], inputs[0], node, Pair::Branch),
                 Op::Result { declared } => {
-                    if let Some((ty, at)) = declared {
-                        typing.known(node, *ty, *at);
+                    if let Some(ty) = declared {
+                        let at = spans
+                            .annotation(node)
+                            .expect("a result declared with a type has its annotation");
+                        typing.known(node, *ty, at);
                     }
                     let edge = if declared.is_some() {
                         Edge::Values
@@ -539,7 +552,7 @@ pub(crate) fn draw(
         }
     }
     for &(call, callee) in &lowered.called {
-        typing.call(graph.run(callee).result(), call, graph.node(call).origin);
+        typing.call(graph.run(callee).result(), call, spans.origin(call));
     }
     let demands = demands.made;
     for demand in &demands {

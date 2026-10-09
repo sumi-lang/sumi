@@ -196,9 +196,9 @@ fn ty(analysis: &Analysis, node: NodeId) -> String {
 }
 
 fn named(analysis: &Analysis, shape: &Rendering<'_>, node: NodeId) -> String {
-    match analysis.graph().node(node).name {
+    match analysis.spans().name(node) {
         Some(name) => format!("{}{}", analysis.text(name), shape.at(name)),
-        None => format!("<unnamed>{}", shape.at(analysis.graph().node(node).origin)),
+        None => format!("<unnamed>{}", shape.at(analysis.spans().origin(node))),
     }
 }
 
@@ -219,12 +219,11 @@ fn dump(analysis: &Analysis, shape: &Rendering<'_>, function: FunctionId, out: &
     if result == graph.region(region).result() {
         dump_region(analysis, shape, "body", region, 1, out);
     } else if matches!(graph.node(result).op, Op::Result { .. }) {
-        let node = graph.node(result);
         writeln!(
             out,
             "  result: result : {} {}",
             ty(analysis, result),
-            shape.at(node.origin)
+            shape.at(analysis.spans().origin(result))
         )
         .unwrap();
         dump_region(analysis, shape, "outcome[0]", region, 2, out);
@@ -239,12 +238,11 @@ fn dump(analysis: &Analysis, shape: &Rendering<'_>, function: FunctionId, out: &
             );
         }
     } else {
-        let node = graph.node(result);
         writeln!(
             out,
             "  result: copy : {} {}",
             ty(analysis, result),
-            shape.at(node.origin)
+            shape.at(analysis.spans().origin(result))
         )
         .unwrap();
         dump_region(analysis, shape, "value", region, 2, out);
@@ -267,7 +265,7 @@ fn dump_region(
         .nodes()
         .filter(|&node| shape.region_of[node.index()] == Some(region))
         .filter(|&node| {
-            let is_named = graph.node(node).name.is_some();
+            let is_named = analysis.spans().name(node).is_some();
             let is_contextual = matches!(
                 graph.node(node).op,
                 Op::Then | Op::Else | Op::Entry | Op::Refine { .. } | Op::Exactly(_)
@@ -287,14 +285,14 @@ fn dump_region(
     }
     writeln!(out, "{indent}{role}:").unwrap();
     for node in statements {
-        match (graph.node(node).name, &graph.node(node).op) {
+        match (analysis.spans().name(node), &graph.node(node).op) {
             (Some(_), Op::Copy { .. }) => {
                 writeln!(
                     out,
                     "{indent}  let {}: {} {}",
                     named(analysis, shape, node),
                     ty(analysis, node),
-                    shape.at(graph.node(node).origin)
+                    shape.at(analysis.spans().origin(node))
                 )
                 .unwrap();
                 let initializer = graph.inputs(node)[0];
@@ -324,7 +322,7 @@ fn guards(analysis: &Analysis, shape: &Rendering<'_>, mut node: NodeId) -> (Vec<
     loop {
         match graph.node(node).op {
             Op::Refine { sense, .. } => {
-                let origin = graph.node(node).origin;
+                let origin = analysis.spans().origin(node);
                 guards.push(format!(
                     "{} {}{}",
                     analysis.text(origin),
@@ -358,7 +356,12 @@ fn dump_node(
         format!(" [{}]", guards.join(", "))
     };
     // A read of a mutable local names the version it reaches, which prints where it is defined.
-    let at = |what: &str| format!(" ({what} {})", shape.at(graph.node(definition).origin));
+    let at = |what: &str| {
+        format!(
+            " ({what} {})",
+            shape.at(analysis.spans().origin(definition))
+        )
+    };
     let version = match graph.node(definition).op {
         Op::Assign => Some((graph.declaration(definition), at("assigned"))),
         Op::Carry => Some((graph.declaration(definition), at("carried"))),
@@ -366,9 +369,9 @@ fn dump_node(
             let (header, _) = graph.carry(definition);
             Some((graph.declaration(header), at("after loop")))
         }
-        _ => graph
-            .node(definition)
-            .name
+        _ => analysis
+            .spans()
+            .name(definition)
             .map(|_| (definition, String::new())),
     };
     if let Some((declaration, at)) = version {
@@ -448,7 +451,7 @@ fn dump_header(
         "{}{role}: {operation} : {} {}",
         "  ".repeat(depth),
         ty(analysis, node),
-        shape.at(entry.origin)
+        shape.at(analysis.spans().origin(node))
     )
     .unwrap();
 }

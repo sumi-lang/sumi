@@ -599,7 +599,6 @@ fn preserved(lexed: &LexedFile, source: &str) -> Vec<(SyntaxKind, String)> {
 /// Every binding names the node that carries its name, and is visible only after it, inside the
 /// function that declares it, overrunning the function only across trivia.
 fn bindings(analysis: &Analysis) {
-    let graph = analysis.graph();
     let lexed = analysis.parsed().lexed();
     for pair in analysis.bindings().windows(2) {
         assert!(
@@ -615,7 +614,10 @@ fn bindings(analysis: &Analysis) {
         );
     }
     for binding in analysis.bindings() {
-        assert_eq!(graph.node(binding.declaration()).name, Some(binding.name()));
+        assert_eq!(
+            analysis.spans().name(binding.declaration()),
+            Some(binding.name())
+        );
         let visible = binding.visible();
         assert!(binding.name().end() <= visible.start());
         let origin = analysis
@@ -910,7 +912,7 @@ fn typed(analysis: &Analysis) {
                     if values[0] {
                         assert_eq!(own, ty(inputs[0]));
                     }
-                    if let Some((declared, _)) = declared {
+                    if let Some(declared) = declared {
                         assert_eq!(own, Some(*declared));
                     }
                 }
@@ -1033,7 +1035,7 @@ fn graph(analysis: &Analysis) {
                 ));
             }
         }
-        if node.name.is_some() {
+        if analysis.spans().name(id).is_some() {
             assert!(matches!(
                 node.op,
                 Op::Param { .. } | Op::Copy { .. } | Op::Hole | Op::LoopIndex
@@ -1128,7 +1130,7 @@ fn graph(analysis: &Analysis) {
             let referenced = &graph.node(reference).op;
             match role {
                 Role::Value | Role::Completes => panic!("an operand is no reference"),
-                Role::Declaration => assert!(graph.node(reference).name.is_some()),
+                Role::Declaration => assert!(analysis.spans().name(reference).is_some()),
                 Role::Context => assert!(matches!(
                     referenced,
                     Op::Entry | Op::Then | Op::Else | Op::After
@@ -1410,7 +1412,7 @@ fn dead_code_stays_dead(program: Program<'_>) {
                     break;
                 }
                 if let Some((node, _)) = machine.latest() {
-                    let origin = graph.node(node).origin;
+                    let origin = program.analysis().spans().origin(node);
                     let within = dead.iter().find(|dead| {
                         dead.range.start() <= origin.start() && origin.end() <= dead.range.end()
                     });

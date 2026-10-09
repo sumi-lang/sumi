@@ -8,6 +8,7 @@ use sumi_text::TextRange;
 
 use crate::lower::{self, Lowered};
 use crate::solver::components;
+use crate::spans::Spans;
 use crate::typing::Typing;
 use crate::{ArithOp, BinaryOp, Function, FunctionId, Graph, Int, Ints, NodeId, Op, codes};
 
@@ -142,6 +143,7 @@ fn is_bounded(band: &Ints, direction: Direction) -> bool {
 /// is skipped, since its calls may be missing.
 pub(crate) fn check(
     graph: &Graph,
+    spans: &Spans,
     lowered: &Lowered,
     typing: &Typing,
     failed: &[bool],
@@ -225,7 +227,7 @@ pub(crate) fn check(
             inside.push(Call {
                 from,
                 to,
-                origin: graph.node(call.node).origin,
+                origin: spans.origin(call.node),
                 offsets,
             });
         }
@@ -322,8 +324,8 @@ pub(crate) fn check(
             None => {
                 chain[c] = None;
                 let param = |member: usize, j: usize| {
-                    let node = graph.node(param_node(member, j));
-                    node.name.unwrap_or(node.origin)
+                    let node = param_node(member, j);
+                    spans.name(node).unwrap_or(spans.origin(node))
                 };
                 let labels = match &agreed {
                     Some((direction, choice, strict)) => inside

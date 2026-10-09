@@ -1515,7 +1515,8 @@ fn inlay_hints(analysis: &Analysis, requested: Range, encoding: Encoding) -> Vec
         }
         // A `let` whose colon lost its type is a hole, except where the parser could still read
         // an initializer, so the colon is checked in the syntax.
-        let statement = tree.covering(lexed.token_at(node.origin.start())?);
+        let origin = analysis.spans().origin(binding.declaration());
+        let statement = tree.covering(lexed.token_at(origin.start())?);
         if tree.holds(statement, lexed, SyntaxKind::Colon, None) {
             return None;
         }

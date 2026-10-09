@@ -7,8 +7,6 @@
 use std::num::NonZeroU32;
 use std::ops::Range;
 
-use sumi_text::TextRange;
-
 use crate::{BinaryOp, CmpOp, FunctionId, Int, Ty};
 
 /// A function's nodes: the entry, then one per parameter, then its body region's, then the
@@ -124,10 +122,10 @@ pub enum Op {
     Unit,
     /// Its type is whatever its context asks.
     Hole,
-    /// The input under a `let` name or a declared result; `declared` is the annotation's type and
-    /// range, and the copy has that type whatever flows in.
+    /// The input under a `let` name or a declared result; `declared` is the annotation's type,
+    /// and the copy has that type whatever flows in.
     Copy {
-        declared: Option<(Ty, TextRange)>,
+        declared: Option<Ty>,
     },
     /// A mutable local's next SSA version: its input is the assigned value, its reference the
     /// local's declaration.
@@ -191,9 +189,10 @@ pub enum Op {
     },
     /// A continuation context after the control in its first input, inside its second input.
     After,
-    /// The first input is the ordinary body result; the rest are explicit returns.
+    /// The first input is the ordinary body result; the rest are explicit returns; `declared` is
+    /// the result annotation's type.
     Result {
-        declared: Option<(Ty, TextRange)>,
+        declared: Option<Ty>,
     },
     /// The inputs are the arguments as written, which may not match the callee's arity.
     Call(Callee),
@@ -367,16 +366,6 @@ impl References<'_> {
         }
     }
 
-    fn len(&self) -> usize {
-        match self {
-            Self::None => 0,
-            Self::Version(_) => 1,
-            Self::Phi { .. } => 3,
-            Self::Loop { carried, .. } => 3 + carried.nodes().len(),
-            Self::LoopValue { .. } => 2,
-        }
-    }
-
     fn encode(&self, edges: &mut Vec<NodeId>, roles: &mut Vec<Role>) {
         match *self {
             Self::None => {}
@@ -445,20 +434,16 @@ pub struct Node {
     pub op: Op,
     edges: Range<u32>,
     operands: u32,
-    pub origin: TextRange,
-    pub name: Option<TextRange>,
 }
 
-const _: () = assert!(size_of::<Node>() == 56, "nodes stay seven words");
+const _: () = assert!(size_of::<Node>() == 32, "nodes stay four words");
 
-/// The nodes with their edges, shared by the builder and the finished graph. `reads` is parallel
-/// to `edges` and meaningful for operands alone; a reference's entry is its node's origin.
+/// The nodes with their edges, shared by the builder and the finished graph.
 #[derive(Debug, Default)]
 struct Store {
     nodes: Vec<Node>,
     edges: Vec<NodeId>,
     roles: Vec<Role>,
-    reads: Vec<TextRange>,
 }
 
 impl Store {
@@ -467,7 +452,6 @@ impl Store {
             nodes: Vec::with_capacity(nodes),
             edges: Vec::with_capacity(nodes),
             roles: Vec::with_capacity(nodes),
-            reads: Vec::with_capacity(nodes),
         }
     }
 
@@ -487,39 +471,24 @@ impl Store {
         References::decode(&self.edges[range.clone()], &self.roles[range])
     }
 
-    fn reads(&self, id: NodeId) -> &[TextRange] {
-        &self.reads[self.operands(id)]
-    }
-
     fn push(
         &mut self,
         op: Op,
-        inputs: &[(NodeId, TextRange)],
+        inputs: impl IntoIterator<Item = NodeId>,
         references: References<'_>,
-        origin: TextRange,
-        name: Option<TextRange>,
     ) -> NodeId {
         assert!(references.fits(&op), "{op:?} names {references:?}");
         let start = u32::try_from(self.edges.len()).expect("edge count fits u32");
-        let count = inputs.len() + references.len();
-        self.edges.reserve(count);
-        self.roles.reserve(count);
-        self.reads.reserve(count);
-        for &(input, read) in inputs {
-            self.edges.push(input);
-            self.roles.push(Role::Value);
-            self.reads.push(read);
-        }
+        self.edges.extend(inputs);
+        let operands = self.edges.len() - start as usize;
+        self.roles.resize(self.edges.len(), Role::Value);
         references.encode(&mut self.edges, &mut self.roles);
-        self.reads.resize(self.edges.len(), origin);
         let end = u32::try_from(self.edges.len()).expect("edge count fits u32");
         let id = NodeId::new(self.nodes.len());
         self.nodes.push(Node {
             op,
             edges: start..end,
-            operands: u32::try_from(inputs.len()).expect("operand count fits u32"),
-            origin,
-            name,
+            operands: u32::try_from(operands).expect("operand count fits u32"),
         });
         id
     }
@@ -530,7 +499,6 @@ pub struct Region {
     pub context: NodeId,
     nodes: Range<u32>,
     result: NodeId,
-    result_at: TextRange,
     result_has_value: bool,
     control: Option<NodeId>,
 }
@@ -548,11 +516,6 @@ impl Region {
 
     pub fn result(&self) -> NodeId {
         self.result
-    }
-
-    /// Where the result is read: a block's tail, or the expression itself.
-    pub fn result_read(&self) -> TextRange {
-        self.result_at
     }
 
     /// Whether the result supplies an ordinary value when the region is entered.
@@ -596,12 +559,6 @@ impl Graph {
     /// Parallel to `inputs`: `Value` or `Completes` each.
     pub fn input_roles(&self, id: NodeId) -> &[Role] {
         &self.store.roles[self.store.operands(id)]
-    }
-
-    /// Where `id` reads each input, parallel to `inputs`: the read's range, not the
-    /// definition's.
-    pub fn reads(&self, id: NodeId) -> &[TextRange] {
-        self.store.reads(id)
     }
 
     /// The nodes `id`'s op names but does not read.
@@ -710,13 +667,12 @@ struct Opening {
     closed: Option<Closed>,
 }
 
-/// A region's end in node order, its result and where it is read, whether the result supplies a
-/// value, and its control.
+/// A region's end in node order, its result, whether the result supplies a value, and its
+/// control.
 #[derive(Debug)]
 struct Closed {
     end: u32,
     result: NodeId,
-    result_at: TextRange,
     result_has_value: bool,
     control: Option<NodeId>,
 }
@@ -783,16 +739,14 @@ impl GraphBuilder {
         callee
     }
 
-    /// Each input is a node and where it is read; `references` must be the form `op` names.
+    /// `references` must be the form `op` names.
     pub fn push(
         &mut self,
         op: Op,
-        inputs: &[(NodeId, TextRange)],
+        inputs: impl IntoIterator<Item = NodeId>,
         references: References<'_>,
-        origin: TextRange,
-        name: Option<TextRange>,
     ) -> NodeId {
-        self.store.push(op, inputs, references, origin, name)
+        self.store.push(op, inputs, references)
     }
 
     /// Marks an input as structurally completing the current function instead of yielding a value.
@@ -822,8 +776,7 @@ impl GraphBuilder {
     }
 
     /// The region must have been entered.
-    /// `result` is the node and where it is read.
-    pub fn close(&mut self, region: RegionId, result: (NodeId, TextRange)) {
+    pub fn close(&mut self, region: RegionId, result: NodeId) {
         self.close_with_control(region, result, true, None);
     }
 
@@ -831,7 +784,7 @@ impl GraphBuilder {
     pub fn close_with_control(
         &mut self,
         region: RegionId,
-        result: (NodeId, TextRange),
+        result: NodeId,
         result_has_value: bool,
         control: Option<NodeId>,
     ) {
@@ -843,8 +796,7 @@ impl GraphBuilder {
         );
         opening.closed = Some(Closed {
             end,
-            result: result.0,
-            result_at: result.1,
+            result,
             result_has_value,
             control,
         });
@@ -898,7 +850,6 @@ impl GraphBuilder {
                         context: opening.context,
                         nodes: opening.start.expect("a region closed was entered")..closed.end,
                         result: closed.result,
-                        result_at: closed.result_at,
                         result_has_value: closed.result_has_value,
                         control: closed.control,
                     }
@@ -922,11 +873,6 @@ impl GraphBuilder {
 mod tests {
     use super::*;
     use crate::ArithOp;
-    use sumi_text::TextSize;
-
-    fn at(offset: u32) -> TextRange {
-        TextRange::new(TextSize::new(offset), TextSize::new(offset + 1))
-    }
 
     #[test]
     fn ids_are_one_word_with_room_for_none() {
@@ -943,19 +889,17 @@ mod tests {
     #[test]
     fn value_completion_belongs_to_reads_and_region_results() {
         let mut builder = GraphBuilder::new(3);
-        let entry = builder.push(Op::Entry, &[], References::None, at(0), None);
+        let entry = builder.push(Op::Entry, [], References::None);
         let region = builder.open(entry);
         builder.enter(region);
-        let one = builder.push(Op::Int(1.into()), &[], References::None, at(1), None);
+        let one = builder.push(Op::Int(1.into()), [], References::None);
         let sum = builder.push(
             Op::Binary(BinaryOp::Arith(ArithOp::Add)),
-            &[(one, at(2)), (one, at(3))],
+            [one, one],
             References::None,
-            at(4),
-            None,
         );
         builder.complete_input(sum, 1);
-        builder.close_with_control(region, (sum, at(0)), false, None);
+        builder.close_with_control(region, sum, false, None);
         let graph = builder.finish();
 
         assert_eq!(graph.inputs(sum), [one, one]);
@@ -968,36 +912,26 @@ mod tests {
         let mut builder = GraphBuilder::new(8);
         let function = builder.function();
         let run = builder.open_run(function);
-        let entry = builder.push(Op::Entry, &[], References::None, at(0), None);
+        let entry = builder.push(Op::Entry, [], References::None);
         let param = builder.push(
             Op::Param {
                 index: 0,
                 ty: Some(Ty::Int),
             },
-            &[],
+            [],
             References::None,
-            at(1),
-            Some(at(1)),
         );
         let region = builder.open(entry);
         assert_eq!(builder.context(region), entry);
         builder.enter(region);
-        let one = builder.push(Op::Int(1.into()), &[], References::None, at(2), None);
+        let one = builder.push(Op::Int(1.into()), [], References::None);
         let sum = builder.push(
             Op::Binary(BinaryOp::Arith(ArithOp::Add)),
-            &[(param, at(5)), (one, at(2))],
+            [param, one],
             References::None,
-            at(3),
-            None,
         );
-        builder.close(region, (sum, at(0)));
-        let copy = builder.push(
-            Op::Copy { declared: None },
-            &[(sum, at(3))],
-            References::None,
-            at(4),
-            None,
-        );
+        builder.close(region, sum);
+        let copy = builder.push(Op::Copy { declared: None }, [sum], References::None);
         builder.close_run(run, region, copy);
         let graph = builder.finish();
         assert_eq!(graph.nodes().len(), 5);
@@ -1017,11 +951,8 @@ mod tests {
         );
         assert_eq!(graph.inputs(sum), [param, one]);
         assert_eq!(graph.input_roles(sum), [Role::Value, Role::Value]);
-        assert_eq!(graph.reads(sum), [at(5), at(2)]);
         assert_eq!(graph.inputs(entry), []);
         assert_eq!(graph.input_roles(entry), []);
-        assert_eq!(graph.reads(entry), []);
-        assert_eq!(graph.node(param).name, Some(at(1)));
         let region = graph.region(region);
         assert_eq!(region.context, entry);
         assert_eq!(region.nodes().collect::<Vec<_>>(), [one, sum]);
@@ -1036,20 +967,18 @@ mod tests {
         let mut builder = GraphBuilder::new(2);
         let function = builder.function();
         let run = builder.open_run(function);
-        let entry = builder.push(Op::Entry, &[], References::None, at(0), None);
+        let entry = builder.push(Op::Entry, [], References::None);
         let param = builder.push(
             Op::Param {
                 index: 0,
                 ty: Some(Ty::Int),
             },
-            &[],
+            [],
             References::None,
-            at(1),
-            Some(at(1)),
         );
         let region = builder.open(entry);
         builder.enter(region);
-        builder.close(region, (param, at(0)));
+        builder.close(region, param);
         builder.close_run(run, region, param);
         let graph = builder.finish();
         assert_eq!(graph.region(region).nodes().len(), 0);
@@ -1061,7 +990,7 @@ mod tests {
     #[should_panic(expected = "a region opened is closed")]
     fn an_open_region_does_not_finish() {
         let mut builder = GraphBuilder::new(1);
-        let entry = builder.push(Op::Entry, &[], References::None, at(0), None);
+        let entry = builder.push(Op::Entry, [], References::None);
         builder.open(entry);
         builder.finish();
     }
@@ -1070,9 +999,9 @@ mod tests {
     #[should_panic(expected = "a region is entered before it closes")]
     fn a_region_closes_only_entered() {
         let mut builder = GraphBuilder::new(1);
-        let entry = builder.push(Op::Entry, &[], References::None, at(0), None);
+        let entry = builder.push(Op::Entry, [], References::None);
         let region = builder.open(entry);
-        builder.close(region, (entry, at(0)));
+        builder.close(region, entry);
     }
 
     #[test]
@@ -1081,7 +1010,7 @@ mod tests {
         let mut builder = GraphBuilder::new(1);
         let function = builder.function();
         let run = builder.open_run(function);
-        builder.push(Op::Entry, &[], References::None, at(0), None);
+        builder.push(Op::Entry, [], References::None);
         drop(run);
         builder.finish();
     }
@@ -1100,10 +1029,10 @@ mod tests {
         let mut builder = GraphBuilder::new(2);
         let function = builder.function();
         let run = builder.open_run(function);
-        let entry = builder.push(Op::Entry, &[], References::None, at(0), None);
+        let entry = builder.push(Op::Entry, [], References::None);
         let region = builder.open(entry);
         builder.enter(region);
-        builder.close(region, (entry, at(0)));
+        builder.close(region, entry);
         builder.close_run(run, region, entry);
         let _again = builder.open_run(function);
     }

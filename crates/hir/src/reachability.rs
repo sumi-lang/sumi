@@ -11,6 +11,7 @@ use crate::check::explain;
 use crate::codes;
 use crate::flows::{self, Arguments};
 use crate::lower::{Header, Lowered, Source, Statement};
+use crate::spans::Spans;
 use crate::typing::Typing;
 
 /// Code a reachability warning calls dead: no run reaches it, whatever the arguments.
@@ -75,6 +76,7 @@ struct Condition {
 pub(crate) fn warn(
     source: &mut Source<'_>,
     graph: &Graph,
+    spans: &Spans,
     delivered: &Typing,
     lowered: &Lowered,
     headers: &[Header],
@@ -82,7 +84,7 @@ pub(crate) fn warn(
     unused_functions(source, graph, lowered, headers);
     // A site is reported only where the program reaches it and both solves decide it, so whether
     // the second solve runs never changes what is reported.
-    let conditions: Vec<_> = conditions(graph)
+    let conditions: Vec<_> = conditions(graph, spans)
         .into_iter()
         .filter(|condition| {
             delivered.may(condition.parent).is_live()
@@ -115,7 +117,7 @@ pub(crate) fn warn(
             .zip(&stops_delivered)
             .any(|(pair, &stops)| stops && open(pair[1].context)))
     .then(|| {
-        let (mut any, thresholds, _) = flows::draw(graph, lowered, headers, Arguments::Any);
+        let (mut any, thresholds, _) = flows::draw(graph, spans, lowered, headers, Arguments::Any);
         any.solve(&thresholds);
         any
     });
@@ -150,7 +152,7 @@ pub(crate) fn warn(
         {
             continue;
         }
-        let region_origin = |region: RegionId| graph.node(graph.region(region).context).origin;
+        let region_origin = |region: RegionId| spans.origin(graph.region(region).context);
         let (message, dead) = match condition.site {
             Site::If { then, else_ } => (
                 format!("condition is always {truth}"),
@@ -173,7 +175,12 @@ pub(crate) fn warn(
             .map(|dead| (dead.range, dead.cause.to_string().into()))
             .into_iter()
             .collect();
-        labels.extend(operands(graph, facts(condition.value), condition.value));
+        labels.extend(operands(
+            graph,
+            spans,
+            facts(condition.value),
+            condition.value,
+        ));
         source.report(condition.at, codes::CONSTANT_CONDITION, message, labels);
         deads.extend(dead);
     }
@@ -300,7 +307,7 @@ fn is_open_on_its_face(graph: &Graph, value: NodeId) -> bool {
     }
 }
 
-fn conditions(graph: &Graph) -> Vec<Condition> {
+fn conditions(graph: &Graph, spans: &Spans) -> Vec<Condition> {
     let mut conditions = Vec::new();
     let parent = |region: RegionId| graph.inputs(graph.region(region).context)[1];
     for node in graph.node_ids() {
@@ -310,14 +317,14 @@ fn conditions(graph: &Graph) -> Vec<Condition> {
             Op::Join { then, else_ } if value(0) => conditions.push(Condition {
                 value: inputs[0],
                 parent: parent(then),
-                at: graph.reads(node)[0],
+                at: spans.reads(node)[0],
                 site: Site::If { then, else_ },
             }),
             ref op @ (Op::And { rhs } | Op::Or { rhs }) if value(0) => {
                 conditions.push(Condition {
                     value: inputs[0],
                     parent: parent(rhs),
-                    at: graph.reads(node)[0],
+                    at: spans.reads(node)[0],
                     site: Site::Left {
                         operator: node,
                         is_and: matches!(op, Op::And { .. }),
@@ -329,7 +336,7 @@ fn conditions(graph: &Graph) -> Vec<Condition> {
                     conditions.push(Condition {
                         value: region.result(),
                         parent: region.context,
-                        at: region.result_read(),
+                        at: spans.result_read(rhs),
                         site: Site::Right { operator: node },
                     });
                 }
@@ -347,7 +354,7 @@ fn conditions(graph: &Graph) -> Vec<Condition> {
                     conditions.push(Condition {
                         value: condition,
                         parent,
-                        at: graph.node(condition).origin,
+                        at: spans.origin(condition),
                         site: Site::Range { body },
                     });
                 }
@@ -359,7 +366,12 @@ fn conditions(graph: &Graph) -> Vec<Condition> {
 }
 
 /// Where a comparison's integer operands get their ranges; a literal operand says it itself.
-fn operands(graph: &Graph, typing: &Typing, value: NodeId) -> Vec<(TextRange, Box<str>)> {
+fn operands(
+    graph: &Graph,
+    spans: &Spans,
+    typing: &Typing,
+    value: NodeId,
+) -> Vec<(TextRange, Box<str>)> {
     let Op::Binary(BinaryOp::Cmp(_)) = graph.node(value).op else {
         return Vec::new();
     };
@@ -373,6 +385,7 @@ fn operands(graph: &Graph, typing: &Typing, value: NodeId) -> Vec<(TextRange, Bo
         }
         labels.extend(explain(
             graph,
+            spans,
             typing,
             None,
             operand,

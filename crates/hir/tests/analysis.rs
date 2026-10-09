@@ -416,11 +416,11 @@ fn syntax_diagnostics_are_preserved_and_always_reject() {
 fn source_origins_are_utf8_byte_ranges() {
     let a = clean("// café\nfn f(e: int) -> int = e + 1");
     let sum = value(&a, 0);
-    let origin = a.graph().node(sum).origin;
+    let origin = a.spans().origin(sum);
     assert_eq!(text(&a, origin), "e + 1");
     let e = a.graph().inputs(sum)[0];
     assert!(matches!(op(&a, e), Op::Param { index: 0, .. }));
-    assert_eq!(text(&a, a.graph().node(e).name.unwrap()), "e");
+    assert_eq!(text(&a, a.spans().name(e).unwrap()), "e");
     let a = analyzed("// café\nfn f() -> int = absent");
     assert_eq!(
         semantic(&a)[0].primary.start().to_usize(),
@@ -761,10 +761,7 @@ fn bindings_are_visible_after_their_declaration_to_the_end_of_their_block() {
     assert_eq!(visible_names(&a, tail), ["b", "a", "total"]);
     assert_eq!(visible_names(&a, source.len()), Vec::<&str>::new());
     for binding in a.bindings() {
-        assert_eq!(
-            a.graph().node(binding.declaration()).name,
-            Some(binding.name())
-        );
+        assert_eq!(a.spans().name(binding.declaration()), Some(binding.name()));
     }
 }
 
