@@ -5,6 +5,8 @@
 - Highlight every occurrence of the name under the cursor, its declaration and assignments as
   writes and its reads as reads.
 - Continue a comment line on Enter with `//`, unless the comment is empty or follows code.
+- Add **Sumi: Restart Language Server**, and restart the server when `sumi.server.path` changes
+  instead of asking for a window reload.
 
 ## 0.4.0
 

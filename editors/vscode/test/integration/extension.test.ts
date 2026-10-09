@@ -250,6 +250,39 @@ suite("Sumi extension", () => {
     assert.equal(document.lineAt(4).text, "    ");
   });
 
+  test("restarts the server on command and when its path changes", async () => {
+    const document = await openSaved("restart.su", "fn main() = 1");
+    await waitForDiagnostics(document.uri, (diagnostics) => diagnostics.length === 0, "clean source");
+    await vscode.commands.executeCommand("sumi.restartServer");
+    await replace(document, "fn main() = 01");
+    await waitForDiagnostics(
+      document.uri,
+      (diagnostics) => hasCode(diagnostics, "syntax/noncanonical-number"),
+      "diagnostics after the restart command",
+    );
+
+    const extension = vscode.extensions.getExtension("sumi-lang.sumi-language");
+    assert.ok(extension);
+    const executable = process.platform === "win32" ? "sumi-lsp.exe" : "sumi-lsp";
+    const server = path.join(extension.extensionPath, "server", executable);
+    const configuration = vscode.workspace.getConfiguration("sumi.server");
+    await configuration.update("path", server, vscode.ConfigurationTarget.Global);
+    try {
+      await replace(document, "fn main() = 1");
+      await waitForDiagnostics(document.uri, (diagnostics) => diagnostics.length === 0, "after the path change");
+      await replace(document, "fn main() = missing");
+      await waitForDiagnostics(
+        document.uri,
+        (diagnostics) => hasCode(diagnostics, "semantic/unknown-name"),
+        "diagnostics from the configured server",
+      );
+    } finally {
+      await configuration.update("path", undefined, vscode.ConfigurationTarget.Global);
+    }
+    await replace(document, "fn main() = 1");
+    await waitForDiagnostics(document.uri, (diagnostics) => diagnostics.length === 0, "after the path reset");
+  });
+
   test("returns recovered symbols for incomplete input", async () => {
     const document = await openSaved("incomplete.su", "fn unfinished() = {");
     const diagnostics = await waitForDiagnostics(

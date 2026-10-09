@@ -42,10 +42,17 @@
         "sumi.server.path": {
           "type": "string",
           "default": "",
-          "description": "Path to a custom sumi-lsp executable. The bundled server is used when this is empty. Reload the window after changing it."
+          "description": "Path to a custom sumi-lsp executable. The bundled server is used when this is empty. The server restarts when this changes."
         }
       }
     },
+    "commands": [
+      {
+        "command": "sumi.restartServer",
+        "title": "Restart Language Server",
+        "category": "Sumi"
+      }
+    ],
     "languages": [
       {
         "id": "sumi",

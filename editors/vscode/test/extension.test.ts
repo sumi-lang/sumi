@@ -66,6 +66,9 @@ describe("extension contributions", () => {
     expect(manifest.contributes.configuration.properties["sumi.server.path"].default).toBe("");
     expect(manifest.icon).toBe("images/icon.png");
     expect(manifest.contributes.snippets).toBeUndefined();
+    expect(manifest.contributes.commands).toEqual([
+      { command: "sumi.restartServer", title: "Restart Language Server", category: "Sumi" },
+    ]);
     expect(manifest.contributes.languages[0].extensions).toEqual([".su"]);
     expect(manifest.contributes.languages[0].icon).toEqual({
       light: "./images/file-icon-light.svg",
