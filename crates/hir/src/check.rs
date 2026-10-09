@@ -12,7 +12,7 @@ use crate::flows::{Declared, Demand, DemandKind};
 use crate::lower::{self, Call, HeaderResult, Lowered, Source};
 use crate::spans::Spans;
 use crate::typing::{Expected, Replay, Typing};
-use crate::{Analysis, Function, Ints, Signature, flows};
+use crate::{Analysis, Function, Ints, flows};
 use crate::{reachability, recursion};
 
 pub fn analyze(parsed: ParsedSource) -> Analysis {
@@ -40,7 +40,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         .map(|header| Function {
             name: header.name,
             origin: source.range(header.item),
-            signature: None,
+            result: None,
             is_complete: false,
             depth: None,
         })
@@ -203,9 +203,8 @@ fn signatures(
         let evidence =
             (!matches!(header.result, HeaderResult::None)).then(|| *typing.evidence(run.result()));
         let result = evidence.and_then(|evidence| evidence.ty());
-        if let (Some(callee), Some(result)) = (header.callee, result) {
-            let params = graph.callable(callee).params.clone();
-            functions[index].signature = Some(Signature { params, result });
+        if run.param_types().is_some() {
+            functions[index].result = result;
         }
         // A failed demand, a hole, or the callee this inherits from, already reports it.
         if let (HeaderResult::Inferred, Some(evidence), None) = (header.result, evidence, result)
@@ -364,7 +363,7 @@ pub(crate) fn explain(
                 }
             }
             Op::Call(callee) => {
-                let function = graph.callable(callee).function;
+                let function = callee;
                 follow(&mut queue, graph.run(function).result(), 1);
             }
             Op::Return => {
@@ -466,7 +465,7 @@ fn complete(
     functions: &mut [Function],
 ) {
     for index in 0..functions.len() {
-        if failed[index] || !lowered.built[index] || functions[index].signature.is_none() {
+        if failed[index] || !lowered.built[index] || functions[index].result.is_none() {
             continue;
         }
         let run = graph.run(FunctionId::new(index));
@@ -481,10 +480,9 @@ fn complete(
             | Op::After => true,
             Op::Hole => false,
             // A caller's demand can resolve the call without the callee resolving.
-            Op::Call(callee) => functions[graph.callable(callee).function.index()]
-                .signature
-                .as_ref()
-                .is_some_and(|signature| Some(signature.result) == typing.resolve(node)),
+            Op::Call(callee) => functions[callee.index()]
+                .result
+                .is_some_and(|result| Some(result) == typing.resolve(node)),
             _ if !graph.input_roles(node).iter().all(|role| role.is_value()) => true,
             Op::Join {
                 then,

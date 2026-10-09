@@ -379,10 +379,8 @@ fn token_gaps_ignore_trivia_without_losing_semantics() {
     let a = clean(
         "fn inferred() // header\n = 7\nfn unit() // header\n {}\nfn local() = { let\tvalue = 3\n -value }\nfn boolean() = !false",
     );
-    let results: Vec<_> = a
-        .functions()
-        .iter()
-        .map(|f| f.signature().unwrap().result)
+    let results: Vec<_> = (0..a.functions().len())
+        .map(|index| a.signature(FunctionId::new(index)).unwrap().result)
         .collect();
     assert_eq!(results, [Ty::Int, Ty::Unit, Ty::Int, Ty::Bool]);
     assert!(
@@ -394,7 +392,7 @@ fn token_gaps_ignore_trivia_without_losing_semantics() {
 
     let a = clean("fn f() = { let\tmut\tvalue = 3\n value }");
     assert!(a.parsed().diagnostics().is_empty());
-    assert_eq!(a.functions()[0].signature().unwrap().result, Ty::Int);
+    assert_eq!(a.signature(FunctionId::new(0)).unwrap().result, Ty::Int);
 }
 
 #[test]
@@ -590,11 +588,9 @@ fn large_definition_chains_and_cycles_are_stack_safe() {
                         .iter()
                         .all(|d| d.code == CANNOT_INFER || d.code == UNBOUNDED_RECURSION)
                 );
-                assert!(
-                    a.functions()
-                        .iter()
-                        .all(|f| f.signature().is_none() && !f.is_complete())
-                );
+                assert!(a.functions().iter().enumerate().all(|(index, f)| {
+                    a.signature(FunctionId::new(index)).is_none() && !f.is_complete()
+                }));
             }
         }
     }
@@ -667,10 +663,13 @@ proptest::proptest! {
         order.sort_by_key(|&i| choices[i].2);
         let b = analyzed(&order.iter().map(|&i| definitions[i].as_str()).collect::<Vec<_>>().join("\n"));
         for (analysis, other) in [(&a, &b), (&b, &a)] {
-            for function in analysis.functions() {
+            for (index, function) in analysis.functions().iter().enumerate() {
                 let name = function.name().map(|name| analysis.text(name));
-                let counterpart = other.functions().iter().find(|f| f.name().map(|n| other.text(n)) == name).unwrap();
-                proptest::prop_assert_eq!(function.signature().map(|s| s.result), counterpart.signature().map(|s| s.result));
+                let (counterpart_index, counterpart) = other.functions().iter().enumerate().find(|(_, f)| f.name().map(|n| other.text(n)) == name).unwrap();
+                proptest::prop_assert_eq!(
+                    analysis.signature(FunctionId::new(index)).map(|s| s.result),
+                    other.signature(FunctionId::new(counterpart_index)).map(|s| s.result)
+                );
                 proptest::prop_assert_eq!(function.is_complete(), counterpart.is_complete());
             }
         }
@@ -944,7 +943,7 @@ fn params_come_by_position_with_a_hole_for_an_unnamed_one() {
     assert_eq!(a.params(FunctionId::new(1)).len(), 0);
 
     let a = analyzed("fn f(a: int, _: bool, a: int) -> int = 1");
-    assert!(a.function(FunctionId::new(0)).signature().is_none());
+    assert!(a.signature(FunctionId::new(0)).is_none());
     let names: Vec<_> = a
         .params(FunctionId::new(0))
         .map(|param| param.map(|binding| text(&a, binding.name())))

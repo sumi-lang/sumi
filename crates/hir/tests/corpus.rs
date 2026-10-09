@@ -112,7 +112,7 @@ fn snapshot(source: &str) -> String {
         )
         .unwrap();
         match (
-            function.signature(),
+            analysis.signature(FunctionId::new(index)),
             analysis.ranges(FunctionId::new(index)),
         ) {
             (Some(signature), Some(ranges)) => {
@@ -431,7 +431,7 @@ fn dump_header(
         Op::Else => "else".into(),
         Op::Join { .. } => "if".into(),
         Op::Call(callee) => {
-            let function = analysis.function(analysis.graph().callable(*callee).function);
+            let function = analysis.function(*callee);
             format!(
                 "call {}{}",
                 function

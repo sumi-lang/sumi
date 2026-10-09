@@ -39,8 +39,6 @@ impl Named {
 #[derive(Clone, Copy)]
 pub(crate) struct Header {
     pub name: Option<TextRange>,
-    /// `None` when the parameter list is not whole.
-    pub callee: Option<Callee>,
     pub result: HeaderResult,
     pub item: NodeIdx,
 }
@@ -308,27 +306,6 @@ pub(crate) fn declare<'s>(
     let mut headers = Vec::with_capacity(items.len());
     for item in items {
         let name = source.name(item.name(tree));
-        let id = graph.function();
-        if let Some((name, node)) = name {
-            match names.entry(name) {
-                Entry::Occupied(mut entry) => {
-                    let first = items[entry.get().first().index()]
-                        .name(tree)
-                        .expect("a named function has a name")
-                        .node();
-                    source.error(
-                        node,
-                        codes::DUPLICATE_NAME,
-                        format!("duplicate function `{name}`"),
-                        Some((source.range(first), "declared here")),
-                    );
-                    *entry.get_mut() = Named::Ambiguous(entry.get().first());
-                }
-                Entry::Vacant(entry) => {
-                    entry.insert(Named::Function(id));
-                }
-            }
-        }
         let list = item.param_list(tree);
         let whole_list = list.filter(|list| !tree.has_error(list.node()));
         let mut params: Vec<Parameter> = Vec::new();
@@ -381,12 +358,31 @@ pub(crate) fn declare<'s>(
             }
         };
         // A whole list has every parameter typed, a repeated name aside.
-        let callee = whole_list
-            .and_then(|_| params.iter().map(|p| p.ty).collect::<Option<Box<[Ty]>>>())
-            .map(|types| graph.declare(id, types));
+        let types =
+            whole_list.and_then(|_| params.iter().map(|p| p.ty).collect::<Option<Box<[Ty]>>>());
+        let id = graph.function(types);
+        if let Some((name, node)) = name {
+            match names.entry(name) {
+                Entry::Occupied(mut entry) => {
+                    let first = items[entry.get().first().index()]
+                        .name(tree)
+                        .expect("a named function has a name")
+                        .node();
+                    source.error(
+                        node,
+                        codes::DUPLICATE_NAME,
+                        format!("duplicate function `{name}`"),
+                        Some((source.range(first), "declared here")),
+                    );
+                    *entry.get_mut() = Named::Ambiguous(entry.get().first());
+                }
+                Entry::Vacant(entry) => {
+                    entry.insert(Named::Function(id));
+                }
+            }
+        }
         headers.push(Header {
             name: name.map(|(_, node)| source.range(node)),
-            callee,
             result,
             item: item.node(),
         });
@@ -765,7 +761,8 @@ impl<'a, 's> Builder<'a, 's> {
             }
         }
         let declared = header.result;
-        self.has_failed |= header.callee.is_none() || matches!(declared, HeaderResult::None);
+        self.has_failed |= self.graph.param_types(FunctionId::new(owner)).is_none()
+            || matches!(declared, HeaderResult::None);
         let region = self.graph.open(entry);
         self.graph.enter(region);
         self.regions.push((region, 0, entry));
@@ -1092,8 +1089,7 @@ impl<'a, 's> Builder<'a, 's> {
             // An operator's result has its type whatever its operands; a call has its callee's
             // whatever its arguments.
             Op::Neg | Op::Not | Op::Binary(_) | Op::And { .. } | Op::Or { .. } => true,
-            Op::Call(callee) => {
-                let function = self.graph.callable(callee).function;
+            Op::Call(function) => {
                 !matches!(self.headers[function.index()].result, HeaderResult::None)
             }
             Op::Assign => typed(declaration()) && typed(inputs[0].0),
@@ -1103,11 +1099,22 @@ impl<'a, 's> Builder<'a, 's> {
         }
     }
     /// A whole call has an argument per parameter, none a hole.
-    fn whole(&self, callee: Callee, inputs: &[(NodeId, TextRange)]) -> bool {
-        self.graph.callable(callee).params.len() == inputs.len()
+    fn whole(&self, callee: FunctionId, inputs: &[(NodeId, TextRange)]) -> bool {
+        self.arity(callee) == inputs.len()
             && inputs
                 .iter()
                 .all(|&(input, _)| self.lowered.typed[input.index()])
+    }
+    /// The function a call to `target` is held to: one with parameter types.
+    fn callee(&self, target: Option<FunctionId>) -> Option<(FunctionId, &'a Header)> {
+        let target = target.filter(|&target| self.graph.param_types(target).is_some())?;
+        Some((target, &self.headers[target.index()]))
+    }
+    fn arity(&self, callee: FunctionId) -> usize {
+        self.graph
+            .param_types(callee)
+            .expect("a callee has parameter types")
+            .len()
     }
     fn context_at(
         &mut self,
@@ -2554,11 +2561,8 @@ impl<'a, 's> Builder<'a, 's> {
             }
             Partial::Call { node, target, args } => {
                 let context = self.context();
-                let callee: Option<(FunctionId, &Header, Callee)> = target.and_then(|target| {
-                    let function = &self.headers[target.index()];
-                    Some((target, function, function.callee?))
-                });
-                if let Some((target, ..)) = callee {
+                let callee = self.callee(target);
+                if let Some((target, _)) = callee {
                     self.lowered.entered.push((context, target));
                 }
                 let mut inputs = std::mem::take(&mut self.inputs);
@@ -2567,9 +2571,9 @@ impl<'a, 's> Builder<'a, 's> {
                     inputs.push(self.input(arg));
                 }
                 // A damaged list is not yet the wrong length.
-                let op = callee.map_or(Op::Hole, |(.., id)| Op::Call(id));
+                let op = callee.map_or(Op::Hole, |(id, _)| Op::Call(id));
                 let id = self.push(node, op, &inputs, None);
-                if let Some((target, ..)) = callee
+                if let Some((target, _)) = callee
                     && self.lowered.typed[id.index()]
                 {
                     self.lowered.called.push((id, target));
@@ -2728,11 +2732,8 @@ impl<'a, 's> Builder<'a, 's> {
         let context = self.context();
         let tree = self.source.tree;
         let node = call.node();
-        let callee: Option<(FunctionId, &Header, Callee)> = target.and_then(|target| {
-            let function = &self.headers[target.index()];
-            Some((target, function, function.callee?))
-        });
-        if let Some((target, ..)) = callee {
+        let callee = self.callee(target);
+        if let Some((target, _)) = callee {
             self.lowered.entered.push((context, target));
         }
         // Every argument is read, arity aside: the typing holds each to its parameter.
@@ -2743,8 +2744,8 @@ impl<'a, 's> Builder<'a, 's> {
             count += 1;
             inputs.push(self.input(arg.node()));
         }
-        if let Some((_, function, id)) = callee
-            && let arity = self.graph.callable(id).params.len()
+        if let Some((id, function)) = callee
+            && let arity = self.arity(id)
             && count != arity
         {
             self.source.error(
@@ -2754,10 +2755,10 @@ impl<'a, 's> Builder<'a, 's> {
                 Some((self.source.range(function.item), "declared here")),
             );
         }
-        let whole = callee.filter(|&(.., id)| self.whole(id, &inputs));
-        let op = callee.map_or(Op::Hole, |(.., id)| Op::Call(id));
+        let whole = callee.filter(|&(id, _)| self.whole(id, &inputs));
+        let op = callee.map_or(Op::Hole, |(id, _)| Op::Call(id));
         let id = self.push(node, op, &inputs, None);
-        if let Some((target, ..)) = callee
+        if let Some((target, _)) = callee
             && self.lowered.typed[id.index()]
         {
             self.lowered.called.push((id, target));
@@ -2783,7 +2784,7 @@ impl<'a, 's> Builder<'a, 's> {
         if is_damaged {
             return None;
         }
-        let (target, function, _) = whole?;
+        let (target, function) = whole?;
         self.lowered.calls.push(Call {
             node: id,
             caller: FunctionId::new(self.owner as usize),

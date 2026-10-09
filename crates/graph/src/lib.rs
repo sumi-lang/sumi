@@ -10,8 +10,8 @@ mod value;
 use std::fmt;
 
 pub use graph::{
-    Callable, Callee, Carried, Graph, GraphBuilder, Node, NodeId, Op, OpenRun, References, Region,
-    RegionId, Role, Run,
+    Carried, Graph, GraphBuilder, Node, NodeId, Op, OpenRun, References, Region, RegionId, Role,
+    Run,
 };
 pub use int::{Int, OutOfRange, ParseIntError};
 pub use machine::{Machine, Refusal};

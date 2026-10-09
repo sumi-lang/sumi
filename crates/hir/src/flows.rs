@@ -189,14 +189,14 @@ impl Demands<'_> {
                 )
             }
             Op::Assign => {}
-            Op::Call(callee) => {
-                let callable = graph.callable(*callee);
-                let params = graph.run(callable.function).params();
+            Op::Call(function) => {
+                let run = graph.run(*function);
+                let types = run.param_types().expect("a callee has parameter types");
                 for (index, (((&at, &input), &ty), param)) in reads
                     .iter()
                     .zip(inputs)
-                    .zip(&callable.params)
-                    .zip(params)
+                    .zip(types)
+                    .zip(run.params())
                     .enumerate()
                 {
                     if value(index) {
@@ -285,7 +285,6 @@ pub(crate) fn draw(
     };
 
     for (index, run) in graph.runs().iter().enumerate() {
-        let header = &headers[index];
         let owner = u32::try_from(index).expect("function count fits u32");
         folded.clear();
         folded.resize(run.nodes().len(), None);
@@ -320,7 +319,7 @@ pub(crate) fn draw(
                 Op::Param { ty: None, .. } | Op::Hole | Op::Unused => {}
                 Op::Entry => typing.entry(
                     node,
-                    header.callee.is_some()
+                    run.param_types().is_some()
                         && (arguments == Arguments::Any || run.params().len() == 0),
                 ),
                 // An untyped condition decides nothing; the context is live as its parent is.

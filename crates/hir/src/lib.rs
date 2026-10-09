@@ -21,8 +21,8 @@ pub use check::analyze;
 pub use reachability::{Dead, DeadCause};
 pub use spans::Spans;
 pub use sumi_graph::{
-    ArithOp, BinaryOp, Bools, Callable, Callee, Carried, CmpOp, FunctionId, Graph, Int, Ints,
-    Machine, May, NodeId, Op, References, Refusal, RegionId, Role, Run, Ty, Value,
+    ArithOp, BinaryOp, Bools, Carried, CmpOp, FunctionId, Graph, Int, Ints, Machine, May, NodeId,
+    Op, References, Refusal, RegionId, Role, Run, Ty, Value,
 };
 
 pub struct Analysis {
@@ -181,9 +181,17 @@ impl Analysis {
         }
         visible
     }
+    /// Present when the declaration resolved: the parameter list is whole and the result's type
+    /// known. It says nothing of the body.
+    pub fn signature(&self, id: FunctionId) -> Option<Signature<'_>> {
+        Some(Signature {
+            params: self.graph.run(id).param_types()?,
+            result: self.function(id).result?,
+        })
+    }
     /// None for a function without a signature.
     pub fn ranges(&self, id: FunctionId) -> Option<Ranges> {
-        self.function(id).signature.as_ref()?;
+        self.signature(id)?;
         let run = self.graph.run(id);
         Some(Ranges {
             params: run.params().map(|param| self.may(param).clone()).collect(),
@@ -216,9 +224,9 @@ impl<'a> Program<'a> {
     pub fn function(self, id: FunctionId) -> &'a Function {
         self.analysis.function(id)
     }
-    pub fn signature(self, id: FunctionId) -> &'a Signature {
-        self.function(id)
-            .signature()
+    pub fn signature(self, id: FunctionId) -> Signature<'a> {
+        self.analysis
+            .signature(id)
             .expect("a valid file's functions have signatures")
     }
     pub fn ranges(self, id: FunctionId) -> Ranges {
@@ -250,13 +258,13 @@ impl<'a> Program<'a> {
             })
             .map(|(id, _)| id)
     }
-    fn check_arguments(self, function: FunctionId, args: &[Value]) -> &'a Signature {
+    fn check_arguments(self, function: FunctionId, args: &[Value]) -> Signature<'a> {
         let signature = self.signature(function);
         assert!(
             args.len() == signature.params.len()
                 && args
                     .iter()
-                    .zip(&signature.params)
+                    .zip(signature.params)
                     .all(|(arg, &param)| arg.ty() == param),
             "arguments must match the signature"
         );
@@ -359,7 +367,8 @@ impl<'a> Compiled<'a> {
 pub struct Function {
     name: Option<TextRange>,
     origin: TextRange,
-    signature: Option<Signature>,
+    /// Resolved only for a function with parameter types.
+    result: Option<Ty>,
     is_complete: bool,
     depth: Option<u64>,
 }
@@ -370,10 +379,6 @@ impl Function {
     }
     pub fn origin(&self) -> TextRange {
         self.origin
-    }
-    /// Present when the declaration resolved; it says nothing of the body.
-    pub fn signature(&self) -> Option<&Signature> {
-        self.signature.as_ref()
     }
     /// The body built whole and every value in it resolved.
     pub fn is_complete(&self) -> bool {
@@ -474,8 +479,9 @@ pub struct Ranges {
     pub result: May,
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub struct Signature {
-    pub params: Box<[Ty]>,
+/// A function's declared parameter types, the graph's, and its result type.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Signature<'a> {
+    pub params: &'a [Ty],
     pub result: Ty,
 }
