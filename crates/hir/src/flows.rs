@@ -6,13 +6,13 @@ use std::collections::HashSet;
 
 use rustc_hash::FxBuildHasher;
 use sumi_graph::{
-    BinaryOp, CmpOp, Domain, FunctionId, Graph, Int, May, Node, NodeId, Op, RegionId, Thresholds,
-    Ty, Value,
+    BinaryOp, CmpOp, Domain, FieldName, FunctionId, Graph, Int, May, Node, NodeId, Op, RegionId,
+    Thresholds, Ty, Value,
 };
 use sumi_text::TextRange;
 
-use crate::lattice::{Edge, Pair};
-use crate::lower::{Fallthrough, Header, HeaderResult, Lowered};
+use crate::lattice::{Context, Edge, Many, Pair};
+use crate::lower::{Fallthrough, Header, HeaderResult, Lowered, TypeHeader};
 use crate::spans::Spans;
 use crate::typing::{Expected, Typing};
 
@@ -36,6 +36,8 @@ pub(crate) enum DemandKind {
         branches: [NodeId; 2],
         at: [TextRange; 2],
     },
+    /// `actual` is the base of a read of the field.
+    Field(FieldName),
 }
 
 pub(crate) struct Demand {
@@ -51,6 +53,7 @@ struct Demands<'a> {
     typed: &'a [bool],
     fallthroughs: &'a [Option<Fallthrough>],
     headers: &'a [Header],
+    types: &'a [TypeHeader],
     made: Vec<Demand>,
 }
 
@@ -97,8 +100,8 @@ impl Demands<'_> {
         let spans = self.spans;
         let region = |id: RegionId| (spans.result_read(id), graph.region(id).result());
         match &entry.op {
-            Op::Neg if value(0) => require(reads[0], inputs[0], Expected::Ty(Ty::Int), None),
-            Op::Not if value(0) => require(reads[0], inputs[0], Expected::Ty(Ty::Bool), None),
+            Op::Neg if value(0) => require(reads[0], inputs[0], Expected::Ty(Ty::INT), None),
+            Op::Not if value(0) => require(reads[0], inputs[0], Expected::Ty(Ty::BOOL), None),
             Op::Neg | Op::Not => {}
             Op::Binary(BinaryOp::Cmp(CmpOp::Eq | CmpOp::Ne)) => {
                 if let Some(operand) = inputs
@@ -117,30 +120,30 @@ impl Demands<'_> {
             Op::Binary(_) => {
                 for (index, (&at, &input)) in reads.iter().zip(inputs).enumerate() {
                     if value(index) {
-                        require(at, input, Expected::Ty(Ty::Int), None);
+                        require(at, input, Expected::Ty(Ty::INT), None);
                     }
                 }
             }
             Op::And { rhs } | Op::Or { rhs } => {
                 if value(0) {
-                    require(reads[0], inputs[0], Expected::Ty(Ty::Bool), None);
+                    require(reads[0], inputs[0], Expected::Ty(Ty::BOOL), None);
                 }
                 let rhs_region = *rhs;
                 let (at, rhs) = region(rhs_region);
                 if graph.region(rhs_region).result_has_value() {
-                    require(at, rhs, Expected::Ty(Ty::Bool), None);
+                    require(at, rhs, Expected::Ty(Ty::BOOL), None);
                 }
             }
             Op::Join { then, else_ } => {
                 if value(0) {
-                    require(reads[0], inputs[0], Expected::Ty(Ty::Bool), None);
+                    require(reads[0], inputs[0], Expected::Ty(Ty::BOOL), None);
                 }
                 match else_ {
                     None => {
                         let then_region = *then;
                         let (at, result) = region(then_region);
                         if value(0) && graph.region(then_region).result_has_value() {
-                            require(at, result, Expected::Ty(Ty::Unit), None);
+                            require(at, result, Expected::Ty(Ty::UNIT), None);
                         }
                     }
                     Some(else_)
@@ -163,7 +166,7 @@ impl Demands<'_> {
             Op::Loop { body } => {
                 let (at, result) = region(*body);
                 if value(0) && value(1) && graph.region(*body).result_has_value() {
-                    require(at, result, Expected::Ty(Ty::Unit), None);
+                    require(at, result, Expected::Ty(Ty::UNIT), None);
                 }
             }
             Op::Copy { declared: Some(ty) } if value(0) => {
@@ -203,6 +206,24 @@ impl Demands<'_> {
                         let declared = written(spans.origin(param));
                         require(at, input, Expected::Ty(ty), declared);
                     }
+                }
+            }
+            Op::Make(decl) => {
+                let fields = graph.decl(*decl).fields();
+                let names = &self.types[decl.index()].fields;
+                for (index, (((&at, &input), &(_, ty)), &name)) in
+                    reads.iter().zip(inputs).zip(fields).zip(names).enumerate()
+                {
+                    if value(index)
+                        && let Some(ty) = ty
+                    {
+                        require(at, input, Expected::Ty(ty), written(name));
+                    }
+                }
+            }
+            Op::Field(name) => {
+                if value(0) && typed(inputs[0]) {
+                    demand(spans.origin(node), inputs[0], DemandKind::Field(*name));
                 }
             }
             Op::Unused => {
@@ -268,8 +289,9 @@ pub(crate) fn draw(
     spans: &Spans,
     lowered: &Lowered,
     headers: &[Header],
+    types: &[TypeHeader],
     arguments: Arguments,
-) -> (Typing, Thresholds, Vec<Demand>) {
+) -> (Typing, Context, Vec<Demand>) {
     let mut typing = Typing::for_nodes(graph.nodes().len());
     let typed = |node: NodeId| lowered.typed[node.index()];
     let mut constants: Vec<Int> = Vec::new();
@@ -281,6 +303,7 @@ pub(crate) fn draw(
         typed: &lowered.typed,
         fallthroughs: &lowered.fallthroughs,
         headers,
+        types,
         made: Vec::with_capacity(graph.nodes().len() / 2),
     };
 
@@ -304,10 +327,10 @@ pub(crate) fn draw(
             let mut folds = None;
             match &entry.op {
                 Op::Int(value) => {
-                    typing.literal(node, Ty::Int, May::int(value), origin);
+                    typing.literal(node, Ty::INT, May::int(value), origin);
                     folds = Some(value.clone());
                 }
-                Op::Bool(value) => typing.literal(node, Ty::Bool, May::bool(*value), origin),
+                Op::Bool(value) => typing.literal(node, Ty::BOOL, May::bool(*value), origin),
                 Op::Param { ty: Some(ty), .. } => {
                     let origin = spans.name(node).unwrap_or(origin);
                     match arguments {
@@ -369,12 +392,12 @@ pub(crate) fn draw(
                     }
                 }
                 Op::Join { then, else_: None } => {
-                    typing.known(node, Ty::Unit, origin);
+                    typing.known(node, Ty::UNIT, origin);
                     let parent = graph.inputs(graph.region(*then).context)[1];
                     typing.flow(parent, node, Edge::Enter);
                 }
                 Op::Unit => {
-                    typing.known(node, Ty::Unit, origin);
+                    typing.known(node, Ty::UNIT, origin);
                     typing.flow(inputs[0], node, Edge::Enter);
                 }
                 Op::Copy { declared: Some(ty) } => {
@@ -408,7 +431,7 @@ pub(crate) fn draw(
                     }
                 }
                 Op::LoopIndex => {
-                    typing.known(node, Ty::Int, spans.name(node).unwrap_or(origin));
+                    typing.known(node, Ty::INT, spans.name(node).unwrap_or(origin));
                     typing.derive(inputs[0], inputs[1], node, Pair::Range);
                 }
                 Op::Carry => {
@@ -416,7 +439,7 @@ pub(crate) fn draw(
                 }
                 Op::Loop { body } => {
                     let [continuation, empty] = graph.loop_contexts(node);
-                    typing.known(node, Ty::Unit, origin);
+                    typing.known(node, Ty::UNIT, origin);
                     typing.flow(empty, node, Edge::Enter);
                     typing.flow(continuation, node, Edge::Enter);
                     for (header, next) in graph.carried(node) {
@@ -437,12 +460,12 @@ pub(crate) fn draw(
                     typing.derive(next, continuation, node, Pair::Outcome);
                 }
                 Op::Neg => {
-                    typing.known(node, Ty::Int, origin);
+                    typing.known(node, Ty::INT, origin);
                     typing.flow(inputs[0], node, Edge::Neg);
                     folds = constant(0).map(|value| -value);
                 }
                 Op::Not => {
-                    typing.known(node, Ty::Bool, origin);
+                    typing.known(node, Ty::BOOL, origin);
                     typing.flow(inputs[0], node, Edge::Not);
                 }
                 Op::Binary(op) => {
@@ -450,13 +473,15 @@ pub(crate) fn draw(
                     typing.derive(inputs[0], inputs[1], node, Pair::Binary(*op));
                     if let (Some(lhs), Some(rhs)) = (constant(0), constant(1)) {
                         let (lhs, rhs) = (Value::Int(lhs.clone()), Value::Int(rhs.clone()));
-                        if let Ok(Value::Int(value)) = Op::Binary(*op).apply(&[&lhs, &rhs]) {
+                        if let Ok(Value::Int(value)) =
+                            Op::Binary(*op).apply(&[&lhs, &rhs], graph.decls())
+                        {
                             folds = Some(value);
                         }
                     }
                 }
                 Op::And { rhs } | Op::Or { rhs } if graph.input_roles(node)[0].is_value() => {
-                    typing.known(node, Ty::Bool, origin);
+                    typing.known(node, Ty::BOOL, origin);
                     let region = graph.region(*rhs);
                     let rhs = region.result();
                     let is_and = matches!(entry.op, Op::And { .. });
@@ -525,6 +550,17 @@ pub(crate) fn draw(
                         );
                     }
                 }
+                Op::Make(decl) => match inputs.split_first() {
+                    Some((&first, others)) => {
+                        typing.known(node, Ty::decl(*decl), origin);
+                        typing.derive_many(first, others, node, Many::Make(*decl));
+                    }
+                    // A value with no fields is a literal.
+                    None => {
+                        typing.literal(node, Ty::decl(*decl), May::make(*decl, Vec::new()), origin)
+                    }
+                },
+                Op::Field(name) => typing.flow(inputs[0], node, Edge::Field(*name)),
                 // Drawn once every run is passed; the callee's run may come later.
                 Op::Call(_) => {}
             }
@@ -559,5 +595,9 @@ pub(crate) fn draw(
             typing.expect(demand.actual, expected, demand.at);
         }
     }
-    (typing, constants.into_iter().collect(), demands)
+    let cx = Context {
+        thresholds: constants.into_iter().collect::<Thresholds>(),
+        decls: graph.decls().into(),
+    };
+    (typing, cx, demands)
 }

@@ -287,11 +287,15 @@ impl<'a> Machine<'a> {
     /// `node` is a data operator whose inputs are all in.
     fn compute(&mut self, node: NodeId) -> Result<(), Refusal> {
         let op = &self.graph.node(node).op;
+        let decls = self.graph.decls();
         let value = match *self.graph.inputs(node) {
-            [] => op.apply(&[]),
-            [a] => op.apply(&[self.value(a)]),
-            [a, b] => op.apply(&[self.value(a), self.value(b)]),
-            _ => unreachable!("a data operator has at most two inputs"),
+            [] => op.apply(&[], decls),
+            [a] => op.apply(&[self.value(a)], decls),
+            [a, b] => op.apply(&[self.value(a), self.value(b)], decls),
+            ref inputs => {
+                let inputs: Vec<&Value> = inputs.iter().map(|&input| self.value(input)).collect();
+                op.apply(&inputs, decls)
+            }
         };
         let value = value.map_err(|fault| Refusal::of(fault, node))?;
         self.fill(node, value);
@@ -722,7 +726,7 @@ mod tests {
         for (start, end, expected) in [(2, 2, 29), (4, 2, 29), (2, 5, 92)] {
             for returning in [false, true] {
                 let mut builder = GraphBuilder::new(400);
-                let leaf = builder.function(Some(Box::new([crate::Ty::Int])));
+                let leaf = builder.function(Some(Box::new([crate::Ty::INT])));
                 let caller = builder.function(None);
                 let callee = leaf;
                 let run = builder.open_run(leaf);
@@ -731,7 +735,7 @@ mod tests {
                     &mut builder,
                     Op::Param {
                         index: 0,
-                        ty: Some(crate::Ty::Int),
+                        ty: Some(crate::Ty::INT),
                     },
                     &[],
                 );
@@ -1178,7 +1182,7 @@ mod tests {
     fn suspended_shared_values_preserve_steps_and_depth() {
         for padding in [0, 300] {
             let mut builder = GraphBuilder::new(padding + 10);
-            let leaf = builder.function(Some(Box::new([crate::Ty::Int; 2])));
+            let leaf = builder.function(Some(Box::new([crate::Ty::INT; 2])));
             let caller = builder.function(None);
             let callee = leaf;
             let run = builder.open_run(leaf);
@@ -1188,7 +1192,7 @@ mod tests {
                     &mut builder,
                     Op::Param {
                         index,
-                        ty: Some(crate::Ty::Int),
+                        ty: Some(crate::Ty::INT),
                     },
                     &[],
                 )

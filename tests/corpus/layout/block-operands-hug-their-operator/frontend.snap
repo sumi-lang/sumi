@@ -148,16 +148,18 @@ SourceFile 1:1..49:1
         CallExpr 42:18..45:7
           NameRef 42:18..42:22 "pair"
           ArgList 42:22..45:7
-            BinaryExpr 42:23..42:117
-              NameRef 42:23..42:67 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-              NameRef 42:70..42:117 "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-            Block 42:119..45:6
-              LetStmt 43:9..43:107
-                Name 43:13..43:18 "moved"
-                BinaryExpr 43:21..43:107
-                  NameRef 43:21..43:62 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-                  NameRef 43:65..43:107 "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-              NameRef 44:9..44:14 "moved"
+            Arg 42:23..42:117
+              BinaryExpr 42:23..42:117
+                NameRef 42:23..42:67 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                NameRef 42:70..42:117 "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            Arg 42:119..45:6
+              Block 42:119..45:6
+                LetStmt 43:9..43:107
+                  Name 43:13..43:18 "moved"
+                  BinaryExpr 43:21..43:107
+                    NameRef 43:21..43:62 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                    NameRef 43:65..43:107 "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                NameRef 44:9..44:14 "moved"
       NameRef 46:5..46:11 "hugged"
   FnItem 48:1..48:39
     Name 48:4..48:8 "pair"

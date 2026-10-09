@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use crate::{ArithOp, BinaryOp, CmpOp, Int, Op, Ty};
+use crate::{ArithOp, BinaryOp, CmpOp, Decl, DeclId, FieldName, Int, Names, Op, Ty};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Fault {
@@ -27,11 +27,15 @@ pub trait Domain: Clone {
     fn refine(&self, op: CmpOp, local_is_lhs: bool, sense: bool, other: &Self) -> Self;
     /// `self` narrowed to where it is `value`.
     fn exactly(&self, value: bool) -> Self;
+    /// A value of `decl` from its fields, in declaration order.
+    fn make(decl: DeclId, fields: Vec<Self>) -> Self;
+    /// The field `name` of `self`, which faults on a value with no such field.
+    fn field(&self, name: FieldName, decls: &[Decl]) -> Result<Self, Self::Fault>;
 }
 
 impl Op {
     /// Panics unless `self` is a data operator; the rest are the reader's to evaluate.
-    pub fn apply<D: Domain>(&self, inputs: &[&D]) -> Result<D, D::Fault> {
+    pub fn apply<D: Domain>(&self, inputs: &[&D], decls: &[Decl]) -> Result<D, D::Fault> {
         Ok(match self {
             Self::Int(value) => D::int(value),
             Self::Bool(value) => D::bool(*value),
@@ -45,6 +49,8 @@ impl Op {
             Self::Neg => inputs[0].neg()?,
             Self::Not => inputs[0].not()?,
             Self::Binary(op) => D::binary(*op, inputs[0], inputs[1])?,
+            Self::Make(decl) => D::make(*decl, inputs.iter().map(|&input| input.clone()).collect()),
+            Self::Field(name) => inputs[0].field(*name, decls)?,
             Self::Param { .. }
             | Self::LoopIndex
             | Self::Carry
@@ -75,15 +81,22 @@ pub enum Value {
     Int(Int),
     Bool(bool),
     Unit,
+    /// Its fields in declaration order.
+    Decl(DeclId, Box<[Value]>),
 }
 
 impl Value {
     pub fn ty(&self) -> Ty {
         match self {
-            Self::Int(_) => Ty::Int,
-            Self::Bool(_) => Ty::Bool,
-            Self::Unit => Ty::Unit,
+            Self::Int(_) => Ty::INT,
+            Self::Bool(_) => Ty::BOOL,
+            Self::Unit => Ty::UNIT,
+            Self::Decl(decl, _) => Ty::decl(*decl),
         }
+    }
+
+    pub fn shown<'a>(&'a self, names: &'a dyn Names) -> ShownValue<'a> {
+        ShownValue(self, names)
     }
 
     pub fn truth(&self) -> Result<bool, Fault> {
@@ -94,12 +107,25 @@ impl Value {
     }
 }
 
-impl fmt::Display for Value {
+/// A value as the source would write it.
+pub struct ShownValue<'a>(&'a Value, &'a dyn Names);
+
+impl fmt::Display for ShownValue<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Int(value) => write!(f, "{value}"),
-            Self::Bool(value) => write!(f, "{value}"),
-            Self::Unit => f.write_str("unit"),
+        match self.0 {
+            Value::Int(value) => write!(f, "{value}"),
+            Value::Bool(value) => write!(f, "{value}"),
+            Value::Unit => f.write_str("unit"),
+            Value::Decl(decl, fields) => {
+                write!(f, "{}(", self.1.decl(*decl))?;
+                for (index, field) in fields.iter().enumerate() {
+                    if index > 0 {
+                        f.write_str(", ")?;
+                    }
+                    write!(f, "{}", field.shown(self.1))?;
+                }
+                f.write_str(")")
+            }
         }
     }
 }
@@ -172,5 +198,19 @@ impl Domain for Value {
 
     fn exactly(&self, _: bool) -> Self {
         self.clone()
+    }
+
+    fn make(decl: DeclId, fields: Vec<Self>) -> Self {
+        Self::Decl(decl, fields.into_boxed_slice())
+    }
+
+    fn field(&self, name: FieldName, decls: &[Decl]) -> Result<Self, Fault> {
+        match self {
+            Self::Decl(decl, fields) => decls[decl.index()]
+                .index_of(name)
+                .map(|index| fields[index].clone())
+                .ok_or(Fault::Type),
+            _ => Err(Fault::Type),
+        }
     }
 }

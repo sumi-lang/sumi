@@ -5,7 +5,7 @@ use std::fmt::Write as _;
 
 use sumi_frontend::parse_source;
 use sumi_hir::{
-    Analysis, ArithOp, BinaryOp, CmpOp, FunctionId, Graph, NodeId, Op, RegionId, analyze,
+    Analysis, ArithOp, BinaryOp, CmpOp, FunctionId, Graph, Names, NodeId, Op, RegionId, analyze,
 };
 use sumi_test::corpus;
 use sumi_text::{LineIndex, TextRange};
@@ -65,7 +65,8 @@ fn run(source: &str) -> Result<String, String> {
         assert_eq!(outcome, Ok(value.clone()), "optimized fn {name}");
         writeln!(
             out,
-            "fn {name} = {value}\n  steps: {}, optimized steps: {}, depth: {}, bound: {}",
+            "fn {name} = {}\n  steps: {}, optimized steps: {}, depth: {}, bound: {}",
+            value.shown(&analysis),
             machine.steps(),
             optimized.steps(),
             machine.max_depth(),
@@ -120,14 +121,16 @@ fn snapshot(source: &str) -> String {
                     .params
                     .iter()
                     .zip(&ranges.params)
-                    .map(|(ty, may)| format!("{ty} ∈ {}", may.shown(*ty)))
+                    .map(|(ty, may)| {
+                        format!("{} ∈ {}", analysis.show(*ty), may.shown(*ty, &analysis))
+                    })
                     .collect::<Vec<_>>()
                     .join(", ");
                 writeln!(
                     out,
                     " ({params}) -> {} ∈ {}",
-                    signature.result,
-                    ranges.result.shown(signature.result)
+                    analysis.show(signature.result),
+                    ranges.result.shown(signature.result, &analysis)
                 )
                 .unwrap();
             }
@@ -192,7 +195,7 @@ impl<'a> Rendering<'a> {
 fn ty(analysis: &Analysis, node: NodeId) -> String {
     analysis
         .ty(node)
-        .map_or_else(|| "?".to_owned(), |ty| ty.to_string())
+        .map_or_else(|| "?".to_owned(), |ty| analysis.show(ty).to_string())
 }
 
 fn named(analysis: &Analysis, shape: &Rendering<'_>, node: NodeId) -> String {
@@ -445,6 +448,8 @@ fn dump_header(
         Op::Observe { .. } => "observe".into(),
         Op::After => "after".into(),
         Op::Result { .. } => "result".into(),
+        Op::Make(decl) => format!("make {}", Names::decl(analysis, *decl)),
+        Op::Field(name) => format!("field {}", Names::field(analysis, *name)),
     };
     writeln!(
         out,
@@ -490,6 +495,12 @@ fn dump_definition(
             }
         }
         Op::Copy { .. } | Op::Assign => dump_node(analysis, shape, "value", inputs[0], child, out),
+        Op::Field(_) => dump_node(analysis, shape, "base", inputs[0], child, out),
+        Op::Make(decl) => {
+            for (field, &input) in analysis.decl(*decl).fields().iter().zip(inputs) {
+                dump_node(analysis, shape, field.text(), input, child, out);
+            }
+        }
         Op::Carry => dump_node(analysis, shape, "initial", inputs[0], child, out),
         Op::LoopIndex => {
             dump_node(analysis, shape, "start", inputs[0], child, out);

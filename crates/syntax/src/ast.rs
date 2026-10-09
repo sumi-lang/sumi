@@ -436,7 +436,9 @@ macro_rules! grammar {
 }
 
 grammar! {
-    struct SourceFile { items: [FnItem] }
+    struct SourceFile { items: [Item] }
+
+    enum Item as CleanItem { FnItem, TypeItem }
 
     /// `'fn' Name ParamList ('->' ret:TypeRef)? '='? body:Expr`.
     struct FnItem { name: Name, param_list: ParamList, ret: Option<TypeRef>, body: Expr }
@@ -448,6 +450,18 @@ grammar! {
 
     /// `Name ':' TypeRef`.
     struct Param { name: Name, type_ref: TypeRef }
+    tokens { Colon }
+
+    /// `'type' Name FieldList`.
+    struct TypeItem { name: Name, field_list: FieldList }
+    tokens { TypeKw }
+
+    /// `'{' (Field (',' Field)* ','?)? '}'`.
+    struct FieldList { fields: [Field] }
+    tokens { LBrace, Comma?, RBrace }
+
+    /// `Name ':' TypeRef`.
+    struct Field { name: Name, type_ref: TypeRef }
     tokens { Colon }
 
     /// A declaring occurrence of a name, `Ident`; a use is a `NameRef`.
@@ -483,6 +497,7 @@ grammar! {
         BinaryExpr,
         ParenExpr,
         CallExpr,
+        FieldExpr,
         IfExpr,
         ForExpr,
         Block,
@@ -507,9 +522,17 @@ grammar! {
 
     struct CallExpr { callee: NameRef, arg_list: ArgList }
 
-    /// `'(' (Expr (',' Expr)* ','?)? ')'`.
-    struct ArgList { args: [Expr] }
+    /// `'(' (Arg (',' Arg)* ','?)? ')'`.
+    struct ArgList { args: [Arg] }
     tokens { LParen, Comma?, RParen }
+
+    /// `(label:NameRef ':')? value:Expr`.
+    struct Arg { label: Option<NameRef>, value: Expr }
+    tokens { Colon? }
+
+    /// `base:Expr '.' field:NameRef`.
+    struct FieldExpr { base: Expr, field: NameRef }
+    tokens { Dot }
 
     /// `'if' condition:Expr then_branch:Block ('else' else_branch:ElseBranch)?`.
     struct IfExpr { condition: Expr, then_branch: Block, else_branch: Option<ElseBranch> }
@@ -520,6 +543,20 @@ grammar! {
 
     enum ElseBranch as CleanElseBranch { IfExpr, Block }
 
+}
+
+impl ArgList {
+    /// The value of every argument that has one, in source order.
+    pub fn values<'t>(self, tree: &'t SyntaxTree) -> impl Iterator<Item = Expr> + 't {
+        self.args(tree).filter_map(move |arg| arg.value(tree))
+    }
+}
+
+impl Clean<ArgList> {
+    /// The value of every argument that has one, in source order.
+    pub fn values<'t>(self, tree: &'t SyntaxTree) -> impl Iterator<Item = Expr> + 't {
+        self.view.values(tree)
+    }
 }
 
 #[cfg(test)]

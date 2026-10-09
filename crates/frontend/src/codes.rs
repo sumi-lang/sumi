@@ -61,7 +61,7 @@ crate::codes! {
     /// A function item's name on the line after its `fn`.
     FUNCTION_NAME_ON_NEXT_LINE: Error = "function-name-on-next-line";
 
-    /// A function item beginning on the line where the previous one ended.
+    /// An item beginning on the line where the previous one ended.
     FUNCTION_ITEM_ON_SAME_LINE: Error = "function-item-on-same-line";
 
     /// A binding's name on the line after its `let`.

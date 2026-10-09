@@ -1,10 +1,12 @@
-//! The [`Lattice`] the solver carries: per class, the best claim of each scalar type and the
-//! [`May`] values, crossing the same [`Edge`]s and [`Pair`]s. Calls, arguments, and loop backedges
-//! round cyclic integer flows to thresholds, so every ascending chain is finite.
+//! The [`Lattice`] the solver carries: per class, the best claim of each type and the [`May`]
+//! values, crossing the same [`Edge`]s, [`Pair`]s, and [`Many`]s. Calls, arguments, and loop
+//! backedges round cyclic integer flows to thresholds, so every ascending chain is finite.
 
 use std::num::NonZeroU32;
 
-use sumi_graph::{BinaryOp, CmpOp, Domain, Ints, May, Thresholds, Ty};
+use sumi_graph::{
+    BinaryOp, CmpOp, Decl, DeclId, Domain, FieldName, Ints, May, Thresholds, Ty, TyKind,
+};
 
 use crate::solver::{Carry, Lattice};
 
@@ -48,42 +50,53 @@ impl Claim {
     }
 }
 
-/// Per scalar type, the best claim that the class has it, or the fact that a hole decided it. A
-/// class holding the unknown resolves to no type, so no demand on it disagrees, and it crosses
-/// every flow a claim does, so nothing a hole reaches is blamed for what the hole might have been.
+/// Per type, the best claim that the class has it, or the fact that a hole decided it. A class
+/// holding the unknown resolves to no type, so no demand on it disagrees, and it crosses every
+/// flow a claim does, so nothing a hole reaches is blamed for what the hole might have been.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Evidence {
-    claims: [Option<Claim>; Ty::ALL.len()],
+    /// By scalar, in `Ty::SCALARS` order.
+    scalars: [Option<Claim>; Ty::SCALARS.len()],
+    /// The best claim of each declared type, at most two: a class rarely claims one, and a
+    /// second shows a conflict whatever a third would add, so the evidence stays a copy.
+    decls: [Option<(DeclId, Claim)>; 2],
 }
 
-const _: () = {
-    let mut index = 0;
-    while index < Ty::ALL.len() {
-        assert!(Ty::ALL[index] as usize == index);
-        index += 1;
+fn scalar_slot(ty: Ty) -> Result<usize, DeclId> {
+    match ty.kind() {
+        TyKind::Int => Ok(0),
+        TyKind::Bool => Ok(1),
+        TyKind::Unit => Ok(2),
+        TyKind::Decl(decl) => Err(decl),
     }
-};
+}
 
 impl Evidence {
     pub const NONE: Self = Self {
-        claims: [None; Ty::ALL.len()],
+        scalars: [None; Ty::SCALARS.len()],
+        decls: [None; 2],
     };
 
     pub const UNKNOWN: Self = {
         let mut evidence = Self::NONE;
-        evidence.claims[0] = Some(UNKNOWN);
+        evidence.scalars[0] = Some(UNKNOWN);
         evidence
     };
 
+    #[inline]
     pub fn single(ty: Ty, claim: Claim) -> Self {
         let mut evidence = Self::NONE;
-        evidence.claims[ty as usize] = Some(claim);
+        match scalar_slot(ty) {
+            Ok(slot) => evidence.scalars[slot] = Some(claim),
+            Err(decl) => evidence.decls[0] = Some((decl, claim)),
+        }
         evidence
     }
 
+    #[inline]
     pub fn join(&mut self, other: &Self) -> bool {
         let mut grew = false;
-        for (mine, theirs) in self.claims.iter_mut().zip(&other.claims) {
+        for (mine, theirs) in self.scalars.iter_mut().zip(&other.scalars) {
             if let Some(claim) = theirs
                 && mine.is_none_or(|existing| *claim < existing)
             {
@@ -91,46 +104,117 @@ impl Evidence {
                 grew = true;
             }
         }
+        if other.decls[0].is_some() {
+            for (decl, claim) in other.decls.into_iter().flatten() {
+                grew |= self.offer(decl, claim);
+            }
+        }
         grew
+    }
+
+    /// `join` with one claim. True if it grew.
+    #[inline]
+    pub fn claim(&mut self, ty: Ty, claim: Claim) -> bool {
+        match scalar_slot(ty) {
+            Ok(slot) => {
+                let mine = &mut self.scalars[slot];
+                if mine.is_none_or(|existing| claim < existing) {
+                    *mine = Some(claim);
+                    return true;
+                }
+                false
+            }
+            Err(decl) => self.offer(decl, claim),
+        }
+    }
+
+    /// Keeps `claim` for `decl` if it beats the one held, or in a free slot. True if it did.
+    fn offer(&mut self, decl: DeclId, claim: Claim) -> bool {
+        for slot in &mut self.decls {
+            match slot {
+                Some((held, best)) if *held == decl => {
+                    if claim < *best {
+                        *best = claim;
+                        return true;
+                    }
+                    return false;
+                }
+                Some(_) => {}
+                None => {
+                    *slot = Some((decl, claim));
+                    return true;
+                }
+            }
+        }
+        false
     }
 
     /// What a call delivers: every claim as the call's, a demand staying one, so the transfer
     /// is monotone and a callee's demands yield to the caller's facts as its own would.
     pub fn imported(&self, claim: Claim) -> Self {
         let imported = Claim(claim.0 | IMPORTED);
+        let relabel = |claim: Claim| match claim {
+            UNKNOWN => claim,
+            _ if claim.is_demanded() => imported.demanded(),
+            _ => imported,
+        };
         Self {
-            claims: self.claims.map(|claim| {
-                claim.map(|claim| match claim {
-                    UNKNOWN => claim,
-                    _ if claim.is_demanded() => imported.demanded(),
-                    _ => imported,
-                })
-            }),
+            scalars: self.scalars.map(|claim| claim.map(relabel)),
+            decls: self
+                .decls
+                .map(|slot| slot.map(|(decl, claim)| (decl, relabel(claim)))),
         }
     }
 
+    /// What a read of field `name` delivers: each claim of a declared type with the field becomes
+    /// a claim of the field's type, and the rest claim nothing, which the demand on the read
+    /// reports.
+    pub fn field(&self, name: FieldName, decls: &[Decl]) -> Self {
+        let mut evidence = Self::NONE;
+        if self.is_unknown() {
+            evidence.scalars[0] = Some(UNKNOWN);
+        }
+        for (decl, claim) in self.decl_claims() {
+            let decl = &decls[decl.index()];
+            if let Some(index) = decl.index_of(name)
+                && let (_, Some(ty)) = decl.fields()[index]
+            {
+                evidence.join(&Self::single(ty, claim));
+            }
+        }
+        evidence
+    }
+
     pub fn is_unknown(&self) -> bool {
-        self.claims[0] == Some(UNKNOWN)
+        self.scalars[0] == Some(UNKNOWN)
+    }
+
+    fn decl_claims(&self) -> impl Iterator<Item = (DeclId, Claim)> + '_ {
+        self.decls.iter().flatten().copied()
+    }
+
+    fn entries(&self) -> impl Iterator<Item = (Ty, Claim)> + '_ {
+        let scalars = Ty::SCALARS
+            .iter()
+            .zip(&self.scalars)
+            .filter_map(|(ty, claim)| claim.map(|claim| (*ty, claim)));
+        let decls = self
+            .decl_claims()
+            .map(|(decl, claim)| (Ty::decl(decl), claim));
+        scalars.chain(decls)
     }
 
     /// The types the class resolves among: demands count only where nothing else claims a type.
     fn types(&self) -> impl Iterator<Item = (Ty, Claim)> + '_ {
         let demands_only = self
-            .claims
-            .iter()
-            .flatten()
-            .all(|claim| *claim == UNKNOWN || claim.is_demanded());
-        Ty::ALL
-            .iter()
-            .zip(&self.claims)
-            .filter_map(move |(ty, claim)| {
-                claim
-                    .filter(|&claim| claim != UNKNOWN && (demands_only || !claim.is_demanded()))
-                    .map(|claim| (*ty, claim))
-            })
+            .entries()
+            .all(|(_, claim)| claim == UNKNOWN || claim.is_demanded());
+        self.entries()
+            .filter(move |&(_, claim)| claim != UNKNOWN && (demands_only || !claim.is_demanded()))
     }
 
     /// The type claimed, if exactly one is and no hole decided the class.
+    #[inline]
     pub fn ty(&self) -> Option<Ty> {
         if self.is_unknown() {
             return None;
@@ -176,6 +260,8 @@ pub(crate) enum Edge {
     Neg,
     Not,
     Enter,
+    /// A read of the field from its base, whatever declared type reaches it.
+    Field(FieldName),
 }
 
 impl Edge {
@@ -215,20 +301,29 @@ impl Pair {
     }
 }
 
+/// A flow from every field of a construction, in declaration order.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Many {
+    Make(DeclId),
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Product {
     pub types: Evidence,
     pub values: May,
 }
 
+/// What every transfer reads: the thresholds, and the declared types a field read goes through.
+pub(crate) struct Context {
+    pub thresholds: Thresholds,
+    pub decls: Box<[Decl]>,
+}
+
 /// Every value cycle crosses a call, an argument, or a loop backedge; rounding there keeps every
 /// ascending chain finite.
-fn rounded(values: &May, cyclic: bool, cx: &Thresholds) -> May {
+fn rounded(values: &May, cyclic: bool, cx: &Context) -> May {
     if cyclic {
-        May {
-            ints: values.ints.round(cx),
-            ..values.clone()
-        }
+        values.rounded(&cx.thresholds)
     } else {
         values.clone()
     }
@@ -237,7 +332,8 @@ fn rounded(values: &May, cyclic: bool, cx: &Thresholds) -> May {
 impl Lattice for Product {
     type Edge = Edge;
     type Pair = Pair;
-    type Context = Thresholds;
+    type Many = Many;
+    type Context = Context;
 
     fn bottom() -> Self {
         Self {
@@ -260,7 +356,14 @@ impl Lattice for Product {
             | Edge::Enter
             | Edge::Exactly(_) => Carry::Nothing,
             Edge::Neg => Carry::Grows,
-            Edge::Call(_) | Edge::Bind | Edge::Values => Carry::Passes,
+            Edge::Call(_) | Edge::Bind | Edge::Values | Edge::Field(_) => Carry::Passes,
+        }
+    }
+
+    /// Every field passes into the value made.
+    fn carries_many(many: &Many) -> Carry {
+        match many {
+            Many::Make(_) => Carry::Passes,
         }
     }
 
@@ -277,10 +380,11 @@ impl Lattice for Product {
         }
     }
 
-    fn transfer(&self, edge: &Edge, cyclic: bool, cx: &Thresholds) -> Self {
+    fn transfer(&self, edge: &Edge, cyclic: bool, cx: &Context) -> Self {
         let types = match *edge {
             Edge::Call(claim) => self.types.imported(claim),
             Edge::Bind | Edge::Types | Edge::TypeBind | Edge::Exactly(_) | Edge::Peer => self.types,
+            Edge::Field(name) => self.types.field(name, &cx.decls),
             Edge::Values | Edge::Neg | Edge::Not | Edge::Enter => Evidence::NONE,
         };
         let values = &self.values;
@@ -299,6 +403,10 @@ impl Lattice for Product {
             }
             Edge::Exactly(value) => values.exactly(value),
             Edge::Enter => May::of_unit(values.is_live()),
+            Edge::Field(name) => {
+                let Ok(field) = values.field(name, &cx.decls);
+                field
+            }
         };
         Self { types, values }
     }
@@ -311,7 +419,7 @@ impl Lattice for Product {
         matches!(pair, Pair::Argument | Pair::Backedge)
     }
 
-    fn combine(&self, pair: &Pair, other: &Self, cyclic: bool, cx: &Thresholds) -> Self {
+    fn combine(&self, pair: &Pair, other: &Self, cyclic: bool, cx: &Context) -> Self {
         let types = match *pair {
             Pair::Refine { .. } | Pair::Branch | Pair::Forward => self.types,
             Pair::Outcome => Evidence::NONE,
@@ -359,6 +467,19 @@ impl Lattice for Product {
         Self { types, values }
     }
 
+    /// The value made is a fact of its own type, so only the fields' values flow.
+    fn combine_many(&self, many: &Many, others: &[&Self], cyclic: bool, cx: &Context) -> Self {
+        let Many::Make(decl) = *many;
+        let fields = std::iter::once(self)
+            .chain(others.iter().copied())
+            .map(|field| rounded(&field.values, cyclic, cx))
+            .collect();
+        Self {
+            types: Evidence::NONE,
+            values: May::make(decl, fields),
+        }
+    }
+
     /// Types never widen, so only the values narrow.
     fn narrow(&mut self, exact: &Self) -> bool {
         if self.values == exact.values {
@@ -394,15 +515,18 @@ mod tests {
     }
 
     #[test]
-    fn evidence_is_three_words_and_an_edge_two() {
-        assert_eq!(size_of::<Evidence>(), 12);
+    fn evidence_is_seven_words_and_an_edge_two() {
+        assert_eq!(size_of::<Evidence>(), 28);
         assert_eq!(size_of::<Option<Claim>>(), 4);
         assert_eq!(size_of::<Edge>(), 8);
     }
 
     #[test]
     fn transfers_derive_and_only_cyclic_interprocedural_flows_round() {
-        let cx = [15, 2].map(Int::from).into_iter().collect::<Thresholds>();
+        let cx = Context {
+            thresholds: [15, 2].map(Int::from).into_iter().collect(),
+            decls: Box::new([]),
+        };
         let a = values(band(4, 13));
         let b = values(May::int(&2.into()));
         let edge = Pair::Binary(BinaryOp::Arith(ArithOp::Mul));
@@ -441,7 +565,10 @@ mod tests {
 
     #[test]
     fn contexts_gate_branches_arguments_and_entries() {
-        let cx = Thresholds::default();
+        let cx = Context {
+            thresholds: Thresholds::default(),
+            decls: Box::new([]),
+        };
         let live = values(May::unit());
         let dead = Product::bottom();
         let cond = values(May::bool(false));
@@ -459,9 +586,12 @@ mod tests {
 
     #[test]
     fn types_cross_aliasing_edges_and_are_relabeled_by_calls() {
-        let cx = Thresholds::default();
+        let cx = Context {
+            thresholds: Thresholds::default(),
+            decls: Box::new([]),
+        };
         let int = Product {
-            types: Evidence::single(Ty::Int, Claim::local(3)),
+            types: Evidence::single(Ty::INT, Claim::local(3)),
             values: May::int(&1.into()),
         };
         let live = values(May::unit());
@@ -494,7 +624,7 @@ mod tests {
             Evidence::NONE
         );
         let called = int.transfer(&Edge::Call(Claim::local(7)), false, &cx);
-        assert_eq!(called.types.ty(), Some(Ty::Int));
+        assert_eq!(called.types.ty(), Some(Ty::INT));
         assert!(called.types.claims()[0].1.is_imported());
         assert_eq!(called.types.claims()[0].1.index(), 7);
     }
@@ -502,7 +632,10 @@ mod tests {
     #[test]
     fn a_boolean_read_is_narrowed_to_its_guard() {
         let flag = values(May::bools(Bools::BOTH));
-        let cx = Thresholds::default();
+        let cx = Context {
+            thresholds: Thresholds::default(),
+            decls: Box::new([]),
+        };
         assert_eq!(
             flag.transfer(&Edge::Exactly(false), false, &cx)
                 .values

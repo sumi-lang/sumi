@@ -16,4 +16,5 @@ SourceFile 1:1..6:1
       CallExpr 4:5..4:13
         NameRef 4:5..4:10 "print"
         ArgList 4:10..4:13
-          NameRef 4:11..4:12 "x"
+          Arg 4:11..4:12
+            NameRef 4:11..4:12 "x"

@@ -1,0 +1,19 @@
+type Point { x: int, y: int }
+type Holey { v: Nope }
+fn origin() -> Point = Point(x: 0, y: 0)
+fn unknown(p: Point) -> int = p.z
+fn scalar(n: int) -> int = n.x
+fn missing() -> Point = Point(x: 1)
+fn twice() -> Point = Point(x: 1, x: 2, y: 3)
+fn unlabeled() -> Point = Point(1, y: 2)
+fn extra() -> Point = Point(x: 1, y: 2, z: 3)
+fn labeled() -> int = unknown(p: origin())
+fn value() -> Point = Point
+fn assigned() { Point = 1 }
+fn mismatched() -> Point = Point(x: true, y: 0)
+fn annotated() { let _p: Point = 1 }
+fn compared(a: Point, b: Point) -> bool = a == b
+fn unused() { Point(x: 1, y: 2) }
+fn holey() -> Holey = Holey(v: 1)
+fn branches(c: bool) = if c { origin() } else { 1 }
+fn chained() -> int = origin().z.w

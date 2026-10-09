@@ -10,7 +10,7 @@ use sumi_text::TextRange;
 use crate::check::explain;
 use crate::codes;
 use crate::flows::{self, Arguments};
-use crate::lower::{Header, Lowered, Source, Statement};
+use crate::lower::{Header, Lowered, Source, Statement, TypeHeader};
 use crate::spans::Spans;
 use crate::typing::Typing;
 
@@ -80,6 +80,7 @@ pub(crate) fn warn(
     delivered: &Typing,
     lowered: &Lowered,
     headers: &[Header],
+    types: &[TypeHeader],
 ) -> Vec<Dead> {
     unused_functions(source, graph, lowered, headers);
     // A site is reported only where the program reaches it and both solves decide it, so whether
@@ -117,8 +118,8 @@ pub(crate) fn warn(
             .zip(&stops_delivered)
             .any(|(pair, &stops)| stops && open(pair[1].context)))
     .then(|| {
-        let (mut any, thresholds, _) = flows::draw(graph, spans, lowered, headers, Arguments::Any);
-        any.solve(&thresholds);
+        let (mut any, cx, _) = flows::draw(graph, spans, lowered, headers, types, Arguments::Any);
+        any.solve(&cx);
         any
     });
     let facts = |node: NodeId| match &any {

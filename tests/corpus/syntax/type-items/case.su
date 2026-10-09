@@ -1,0 +1,10 @@
+type Unit {}
+type Point { x: int, y: int }
+type Flag { on: bool, }
+type Pair {
+    first: Point,
+    second: Point,
+}
+type Tall {
+  a: int
+  , b: int }

@@ -1,0 +1,88 @@
+== tree ==
+SourceFile 1:1..7:1
+  FnItem 1:1..1:28
+    Name 1:4..1:5 "f"
+    ParamList 1:5..1:15
+      Param 1:6..1:14
+        Name 1:6..1:7 "p"
+        TypeRef 1:9..1:14 "Point"
+    TypeRef 1:19..1:22 "int"
+    FieldExpr 1:25..1:28
+      NameRef 1:25..1:26 "p"
+      NameRef 1:27..1:28 "x"
+  FnItem 2:1..2:51
+    Name 2:4..2:5 "g"
+    ParamList 2:5..2:14
+      Param 2:6..2:13
+        Name 2:6..2:7 "p"
+        TypeRef 2:9..2:13 "Pair"
+    TypeRef 2:18..2:21 "int"
+    BinaryExpr 2:24..2:51
+      FieldExpr 2:24..2:33
+        FieldExpr 2:24..2:31
+          NameRef 2:24..2:25 "p"
+          NameRef 2:26..2:31 "first"
+        NameRef 2:32..2:33 "x"
+      BinaryExpr 2:36..2:51
+        PrefixExpr 2:36..2:47
+          FieldExpr 2:37..2:47
+            FieldExpr 2:37..2:45
+              NameRef 2:37..2:38 "p"
+              NameRef 2:39..2:45 "second"
+            NameRef 2:46..2:47 "y"
+        LiteralExpr 2:50..2:51 "2"
+  FnItem 3:1..3:25
+    Name 3:4..3:5 "h"
+    ParamList 3:5..3:7 "()"
+    TypeRef 3:11..3:14 "int"
+    FieldExpr 3:17..3:25
+      CallExpr 3:17..3:23
+        NameRef 3:17..3:21 "make"
+        ArgList 3:21..3:23 "()"
+      NameRef 3:24..3:25 "x"
+  FnItem 4:1..4:41
+    Name 4:4..4:5 "i"
+    ParamList 4:5..4:7 "()"
+    Block 4:8..4:41
+      ForExpr 4:10..4:39
+        Name 4:14..4:15 "n"
+        FieldExpr 4:19..4:23
+          NameRef 4:19..4:20 "p"
+          NameRef 4:21..4:23 "lo"
+        FieldExpr 4:25..4:29
+          NameRef 4:25..4:26 "p"
+          NameRef 4:27..4:29 "hi"
+        Block 4:30..4:39
+          DiscardStmt 4:32..4:37
+            NameRef 4:36..4:37 "n"
+  FnItem 5:1..5:32
+    Name 5:4..5:5 "j"
+    ParamList 5:5..5:7 "()"
+    TypeRef 5:11..5:15 "bool"
+    BinaryExpr 5:18..5:32
+      FieldExpr 5:18..5:24
+        ParenExpr 5:18..5:21
+          NameRef 5:19..5:20 "p"
+        NameRef 5:22..5:24 "ok"
+      FieldExpr 5:28..5:32
+        NameRef 5:28..5:29 "q"
+        NameRef 5:30..5:32 "ok"
+  FnItem 6:1..6:20
+    Name 6:4..6:5 "k"
+    ParamList 6:5..6:7 "()"
+    TypeRef 6:11..6:14 "int"
+    FieldExpr 6:17..6:20
+      LiteralExpr 6:17..6:18 "1"
+      NameRef 6:19..6:20 "x"
+
+== formatted ==
+fn f(p: Point) -> int = p.x
+fn g(p: Pair) -> int = p.first.x + -p.second.y * 2
+fn h() -> int = make().x
+fn i() {
+    for n in p.lo..p.hi {
+        _ = n
+    }
+}
+fn j() -> bool = (p).ok && q.ok
+fn k() -> int = 1.x

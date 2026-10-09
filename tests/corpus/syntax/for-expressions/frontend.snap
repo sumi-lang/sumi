@@ -100,11 +100,12 @@ SourceFile 1:1..20:1
           CallExpr 15:9..15:32
             NameRef 15:9..15:14 "apply"
             ArgList 15:14..15:32
-              ForExpr 15:15..15:31
-                Name 15:19..15:20 "j"
-                LiteralExpr 15:24..15:25 "0"
-                NameRef 15:27..15:28 "i"
-                Block 15:29..15:31 "{}"
+              Arg 15:15..15:31
+                ForExpr 15:15..15:31
+                  Name 15:19..15:20 "j"
+                  LiteralExpr 15:24..15:25 "0"
+                  NameRef 15:27..15:28 "i"
+                  Block 15:29..15:31 "{}"
         IfExpr 16:5..16:27
           ForExpr 16:8..16:24
             Name 16:12..16:13 "j"

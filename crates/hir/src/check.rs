@@ -12,7 +12,7 @@ use crate::flows::{Declared, Demand, DemandKind};
 use crate::lower::{self, Call, HeaderResult, Lowered, Source};
 use crate::spans::Spans;
 use crate::typing::{Expected, Replay, Typing};
-use crate::{Analysis, Function, Ints, flows};
+use crate::{Analysis, FieldDecl, Function, Ints, TypeDecl, flows};
 use crate::{reachability, recursion};
 
 pub fn analyze(parsed: ParsedSource) -> Analysis {
@@ -22,19 +22,28 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         .unwrap()
         .items(tree)
         .collect();
+    let functions: Vec<_> = items
+        .iter()
+        .filter_map(|item| match item {
+            ast::Item::FnItem(item) => Some(*item),
+            ast::Item::TypeItem(_) => None,
+        })
+        .collect();
     let mut graph = GraphBuilder::new(tree.len());
     let declared = lower::declare(&mut source, &items, &mut graph);
-    let (graph, spans, lowered) = lower::lower(&mut source, &items, &declared, graph);
+    let (graph, spans, lowered) = lower::lower(&mut source, &functions, &declared, graph);
     let headers = declared.headers;
-    let (mut typing, thresholds, demands) = flows::draw(
+    let types = declared.types;
+    let (mut typing, cx, demands) = flows::draw(
         &graph,
         &spans,
         &lowered,
         &headers,
+        &types,
         flows::Arguments::Delivered,
     );
-    typing.solve(&thresholds);
-    let failed = replay(&mut source, &typing, &demands, headers.len());
+    typing.solve(&cx);
+    let failed = replay(&mut source, &graph, &typing, &demands, headers.len());
     let mut functions: Vec<Function> = headers
         .iter()
         .map(|header| Function {
@@ -74,8 +83,34 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     {
         Vec::new()
     } else {
-        reachability::warn(&mut source, &graph, &spans, &typing, &lowered, &headers)
+        reachability::warn(
+            &mut source,
+            &graph,
+            &spans,
+            &typing,
+            &lowered,
+            &headers,
+            &types,
+        )
     };
+    let decls = types
+        .iter()
+        .zip(&source.decls)
+        .map(|(header, names)| TypeDecl {
+            name: header.name,
+            origin: source.range(header.item),
+            fields: names
+                .fields
+                .iter()
+                .zip(&header.fields)
+                .map(|(&(name, _), &range)| FieldDecl {
+                    name: range,
+                    text: name.into(),
+                })
+                .collect(),
+        })
+        .collect();
+    let field_names = source.field_names.iter().map(|&name| name.into()).collect();
     let mut diagnostics = source.diagnostics;
     diagnostics.splice(0..0, parsed.diagnostics().iter().cloned());
     diagnostics.sort_by_key(|d| d.primary.start());
@@ -85,6 +120,8 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         spans,
         settled: typing.settle(),
         functions,
+        decls,
+        field_names,
         bindings: lowered.bindings,
         references: lowered.references,
         unresolved: lowered.unresolved,
@@ -100,6 +137,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
 
 fn replay(
     source: &mut Source<'_>,
+    graph: &Graph,
     typing: &Typing,
     demands: &[Demand],
     functions: usize,
@@ -107,17 +145,48 @@ fn replay(
     let mut replay = typing.replay();
     let mut failed = vec![false; functions];
     for demand in demands {
-        if !holds(source, typing, &mut replay, demand) {
+        if !holds(source, graph, typing, &mut replay, demand) {
             failed[demand.owner as usize] = true;
         }
     }
     failed
 }
 
-fn holds(source: &mut Source<'_>, typing: &Typing, replay: &mut Replay, demand: &Demand) -> bool {
+fn holds(
+    source: &mut Source<'_>,
+    graph: &Graph,
+    typing: &Typing,
+    replay: &mut Replay,
+    demand: &Demand,
+) -> bool {
     let actual_class = demand.actual;
     let actual = replay.resolve(actual_class);
     match demand.kind {
+        DemandKind::Field(name) => {
+            let Some(ty) = actual else {
+                return true;
+            };
+            if let Some(decl) = ty.as_decl()
+                && graph.decl(decl).index_of(name).is_some()
+            {
+                return true;
+            }
+            let declared = ty.as_decl().and_then(|decl| {
+                let decl = &source.decls[decl.index()];
+                decl.name_node
+                    .map(|node| (source.range(node), "declared here"))
+            });
+            source.report(
+                demand.at,
+                codes::UNKNOWN_FIELD,
+                format!(
+                    "`{}` has no field `{}`",
+                    source.show(ty),
+                    source.field_names[name.index()]
+                ),
+                declared.map(|(range, message)| (range, Box::from(message))),
+            );
+        }
         DemandKind::Type { expected, declared } => {
             let expected_ty = match expected {
                 Expected::Ty(ty) => Some(ty),
@@ -140,25 +209,28 @@ fn holds(source: &mut Source<'_>, typing: &Typing, replay: &mut Replay, demand: 
             }
         }
         DemandKind::Unused => match actual {
-            Some(ty) if ty != Ty::Unit => source.report(
+            Some(ty) if ty != Ty::UNIT => source.report(
                 demand.at,
                 codes::UNUSED_VALUE,
-                format!("unused value of type {ty}; use `_ =` to discard it"),
+                format!(
+                    "unused value of type {}; use `_ =` to discard it",
+                    source.show(ty)
+                ),
                 [],
             ),
             _ => {
-                replay.expect(actual_class, Expected::Ty(Ty::Unit));
+                replay.expect(actual_class, Expected::Ty(Ty::UNIT));
                 return true;
             }
         },
         DemandKind::Comparable => {
-            if actual != Some(Ty::Unit) {
+            let Some(ty) = actual.filter(|ty| *ty == Ty::UNIT || ty.as_decl().is_some()) else {
                 return true;
-            }
+            };
             source.report(
                 demand.at,
                 codes::TYPE_MISMATCH,
-                "unit values cannot be compared",
+                format!("{} values cannot be compared", source.show(ty)),
                 [],
             );
         }
@@ -201,7 +273,7 @@ fn signatures(
     for (index, header) in headers.iter().enumerate() {
         let run = graph.run(FunctionId::new(index));
         let evidence =
-            (!matches!(header.result, HeaderResult::None)).then(|| *typing.evidence(run.result()));
+            (!matches!(header.result, HeaderResult::None)).then(|| typing.evidence(run.result()));
         let result = evidence.and_then(|evidence| evidence.ty());
         if run.param_types().is_some() {
             functions[index].result = result;
@@ -314,7 +386,7 @@ pub(crate) fn explain(
             }
         };
         match entry.op {
-            Op::Int(_) | Op::Neg | Op::Binary(_) => {
+            Op::Int(_) | Op::Neg | Op::Binary(_) | Op::Field(_) => {
                 labels.push((spans.origin(node), describe(&may.ints, "").into()));
             }
             Op::Copy { .. } | Op::Assign => follow(&mut queue, inputs[0], 0),
@@ -414,6 +486,7 @@ pub(crate) fn explain(
             }
             Op::Bool(_)
             | Op::Unit
+            | Op::Make(_)
             | Op::Loop { .. }
             | Op::Unused
             | Op::Hole

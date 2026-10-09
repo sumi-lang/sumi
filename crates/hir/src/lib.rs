@@ -21,8 +21,9 @@ pub use check::analyze;
 pub use reachability::{Dead, DeadCause};
 pub use spans::Spans;
 pub use sumi_graph::{
-    ArithOp, BinaryOp, Bools, Carried, CmpOp, FunctionId, Graph, Int, Ints, Machine, May, NodeId,
-    Op, References, Refusal, RegionId, Role, Run, Ty, Value,
+    ArithOp, BinaryOp, Bools, Carried, CmpOp, Decl, DeclId, Decls, FieldName, Fields, FunctionId,
+    Graph, Int, Ints, Machine, May, Names, NodeId, Op, References, Refusal, RegionId, Role, Run,
+    Shown, ShownTy, ShownValue, Ty, TyKind, Value,
 };
 
 pub struct Analysis {
@@ -31,6 +32,9 @@ pub struct Analysis {
     spans: Spans,
     settled: typing::Settled,
     functions: Vec<Function>,
+    decls: Vec<TypeDecl>,
+    /// By field name ID.
+    field_names: Vec<Box<str>>,
     bindings: Vec<Binding>,
     references: Vec<Occurrence>,
     unresolved: Vec<TextRange>,
@@ -68,6 +72,16 @@ impl Analysis {
     /// None for a node that is no value, or whose class conflicted.
     pub fn ty(&self, node: NodeId) -> Option<Ty> {
         self.settled.resolve(node)
+    }
+    pub fn show(&self, ty: Ty) -> ShownTy<'_> {
+        ty.shown(self)
+    }
+    /// In declaration order; the graph's table of the same types holds their field types.
+    pub fn decls(&self) -> &[TypeDecl] {
+        &self.decls
+    }
+    pub fn decl(&self, id: DeclId) -> &TypeDecl {
+        &self.decls[id.index()]
     }
     fn may(&self, node: NodeId) -> &May {
         self.settled.may(node)
@@ -124,11 +138,12 @@ impl Analysis {
     pub fn unresolved(&self) -> &[TextRange] {
         &self.unresolved
     }
-    /// A symbol's declared name; none for a function whose declaration lost its name.
+    /// A symbol's declared name; none for an item whose declaration lost its name.
     pub fn declaration(&self, symbol: Symbol) -> Option<TextRange> {
         match symbol {
             Symbol::Local(id) => Some(self.binding(id).name),
             Symbol::Function(id) => self.function(id).name,
+            Symbol::Type(id) => self.decl(id).name,
         }
     }
     /// The declaration or reference at `offset`, which may sit at either end of the name.
@@ -160,7 +175,14 @@ impl Analysis {
                             is_write: true,
                         })
                     }),
-            );
+            )
+            .chain(self.decls.iter().enumerate().filter_map(|(index, decl)| {
+                Some(Occurrence {
+                    range: decl.name?,
+                    symbol: Symbol::Type(DeclId::new(index)),
+                    is_write: true,
+                })
+            }));
         declarations.find(|occurrence| covers(occurrence.range))
     }
     /// Every reference to `symbol`, in source order.
@@ -300,18 +322,18 @@ impl<'a> Program<'a> {
             optimized: sumi_opt::optimize(self.analysis.graph(), |node| self.analysis.may(node)),
         }
     }
-    /// The result when the analysis proved it a single value.
+    /// The result when the analysis proved it a single scalar.
     fn known(self, function: FunctionId, result: Ty) -> Option<Value> {
         let run = self.analysis.graph.run(function);
         let may = self.analysis.may(run.result());
-        match result {
-            Ty::Int => may.ints.lo().zip(may.ints.hi()).and_then(|(lo, hi)| {
+        match result.kind() {
+            TyKind::Int => may.ints.lo().zip(may.ints.hi()).and_then(|(lo, hi)| {
                 // Singleton detection stays constant-time even for large interval endpoints.
                 (i64::try_from(&lo).is_ok() && lo == hi).then_some(Value::Int(lo))
             }),
-            Ty::Bool if may.bools == Bools::from(true) => Some(Value::Bool(true)),
-            Ty::Bool if may.bools == Bools::from(false) => Some(Value::Bool(false)),
-            Ty::Unit if may.has_unit => Some(Value::Unit),
+            TyKind::Bool if may.bools == Bools::from(true) => Some(Value::Bool(true)),
+            TyKind::Bool if may.bools == Bools::from(false) => Some(Value::Bool(false)),
+            TyKind::Unit if may.has_unit => Some(Value::Unit),
             _ => None,
         }
     }
@@ -404,11 +426,60 @@ impl BindingId {
     }
 }
 
-/// What a name in a body denotes.
+impl Names for Analysis {
+    fn decl(&self, id: DeclId) -> &str {
+        self.decl(id)
+            .name
+            .map_or("<missing>", |name| self.text(name))
+    }
+
+    fn field(&self, name: FieldName) -> &str {
+        &self.field_names[name.index()]
+    }
+}
+
+/// A declared type as the source wrote it; its field types are the graph's.
+#[derive(Debug)]
+pub struct TypeDecl {
+    name: Option<TextRange>,
+    origin: TextRange,
+    fields: Vec<FieldDecl>,
+}
+
+impl TypeDecl {
+    pub fn name(&self) -> Option<TextRange> {
+        self.name
+    }
+    pub fn origin(&self) -> TextRange {
+        self.origin
+    }
+    /// In declaration order, parallel to the graph's.
+    pub fn fields(&self) -> &[FieldDecl] {
+        &self.fields
+    }
+}
+
+#[derive(Debug)]
+pub struct FieldDecl {
+    name: TextRange,
+    text: Box<str>,
+}
+
+impl FieldDecl {
+    pub fn name(&self) -> TextRange {
+        self.name
+    }
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+}
+
+/// What a name in a body or a signature denotes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Symbol {
     Local(BindingId),
     Function(FunctionId),
+    Type(DeclId),
 }
 
 /// A name in the source and the symbol it denotes; a declaration or an assignment target writes

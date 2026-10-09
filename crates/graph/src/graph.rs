@@ -7,7 +7,34 @@
 use std::num::NonZeroU32;
 use std::ops::Range;
 
-use crate::{BinaryOp, CmpOp, FunctionId, Int, Ty};
+use crate::{BinaryOp, CmpOp, DeclId, FieldName, FunctionId, Int, Ty};
+
+/// A declared type: its fields by name, in declaration order, each with its type when that
+/// resolved.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Decl {
+    fields: Box<[(FieldName, Option<Ty>)]>,
+}
+
+impl Decl {
+    pub fn new(fields: Box<[(FieldName, Option<Ty>)]>) -> Self {
+        Self { fields }
+    }
+
+    pub fn fields(&self) -> &[(FieldName, Option<Ty>)] {
+        &self.fields
+    }
+
+    /// The position of the field called `name`.
+    pub fn index_of(&self, name: FieldName) -> Option<usize> {
+        self.fields.iter().position(|&(field, _)| field == name)
+    }
+
+    /// The field types a construction is held to, present when every one resolved.
+    pub fn field_types(&self) -> Option<Box<[Ty]>> {
+        self.fields.iter().map(|&(_, ty)| ty).collect()
+    }
+}
 
 /// A function's nodes: the entry, then one per parameter, then its body region's, then the
 /// declared-result copy if any.
@@ -187,6 +214,10 @@ pub enum Op {
     /// A call to a function whose run has parameter types; the inputs are the arguments as
     /// written, which may not match its arity.
     Call(FunctionId),
+    /// A value of the declared type over its inputs, one per field in declaration order.
+    Make(DeclId),
+    /// The field so named of its input, whatever declared type reaches it.
+    Field(FieldName),
 }
 
 impl Op {
@@ -528,11 +559,21 @@ pub struct Graph {
     store: Store,
     regions: Vec<Region>,
     runs: Vec<Run>,
+    decls: Vec<Decl>,
 }
 
 impl Graph {
     pub fn node(&self, id: NodeId) -> &Node {
         &self.store.nodes[id.index()]
+    }
+
+    /// Indexed by declared type ID.
+    pub fn decls(&self) -> &[Decl] {
+        &self.decls
+    }
+
+    pub fn decl(&self, id: DeclId) -> &Decl {
+        &self.decls[id.index()]
     }
 
     /// The operands, then the references.
@@ -693,6 +734,7 @@ pub struct GraphBuilder {
     store: Store,
     regions: Vec<Opening>,
     runs: Vec<Slot>,
+    decls: Vec<Decl>,
 }
 
 impl GraphBuilder {
@@ -710,7 +752,23 @@ impl GraphBuilder {
             store: Store::with_capacity(nodes),
             regions: Vec::new(),
             runs: Vec::new(),
+            decls: Vec::new(),
         }
+    }
+
+    /// The declared types in declaration order, so `DeclId::new(i)` is the `i`th; the field types
+    /// name them the same way.
+    pub fn declare(&mut self, decls: impl IntoIterator<Item = Decl>) {
+        assert!(self.decls.is_empty(), "the types are declared once");
+        self.decls.extend(decls);
+    }
+
+    pub fn decl(&self, id: DeclId) -> &Decl {
+        &self.decls[id.index()]
+    }
+
+    pub fn decls(&self) -> &[Decl] {
+        &self.decls
     }
 
     /// The next function, in declaration order; `params` is its whole parameter list, every type
@@ -836,6 +894,7 @@ impl GraphBuilder {
     /// Every region opened must be closed, and every function's run opened and closed.
     pub fn finish(self) -> Graph {
         Graph {
+            decls: self.decls,
             store: self.store,
             regions: self
                 .regions
@@ -911,7 +970,7 @@ mod tests {
         let param = builder.push(
             Op::Param {
                 index: 0,
-                ty: Some(Ty::Int),
+                ty: Some(Ty::INT),
             },
             [],
             References::None,
@@ -966,7 +1025,7 @@ mod tests {
         let param = builder.push(
             Op::Param {
                 index: 0,
-                ty: Some(Ty::Int),
+                ty: Some(Ty::INT),
             },
             [],
             References::None,

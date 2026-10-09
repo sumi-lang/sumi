@@ -1,4 +1,4 @@
-//! What a program means apart from whether it is valid: the scalar types, `Int`, the `Graph`, its
+//! What a program means apart from whether it is valid: the types, `Int`, the `Graph`, its
 //! domains, and the `Machine`. Nothing here depends on the checker.
 
 mod graph;
@@ -8,15 +8,16 @@ mod may;
 mod value;
 
 use std::fmt;
+use std::num::NonZeroU32;
 
 pub use graph::{
-    Carried, Graph, GraphBuilder, Node, NodeId, Op, OpenRun, References, Region, RegionId, Role,
-    Run,
+    Carried, Decl, Graph, GraphBuilder, Node, NodeId, Op, OpenRun, References, Region, RegionId,
+    Role, Run,
 };
 pub use int::{Int, OutOfRange, ParseIntError};
 pub use machine::{Machine, Refusal};
-pub use may::{Bools, Ints, May, Thresholds};
-pub use value::{Domain, Fault, Value};
+pub use may::{Bools, Decls, Fields, Ints, May, Shown, Thresholds};
+pub use value::{Domain, Fault, ShownValue, Value};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ArithOp {
@@ -83,38 +84,131 @@ pub enum BinaryOp {
 impl BinaryOp {
     pub fn result(self) -> Ty {
         match self {
-            Self::Cmp(_) => Ty::Bool,
-            Self::Arith(_) => Ty::Int,
+            Self::Cmp(_) => Ty::BOOL,
+            Self::Arith(_) => Ty::INT,
         }
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Ty {
+/// A type: a scalar or a declared one, packed into one word so a node holding one stays four.
+/// Match on [`kind`](Self::kind).
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Ty(NonZeroU32);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum TyKind {
     Int,
     Bool,
     Unit,
+    Decl(DeclId),
 }
 
 impl Ty {
-    pub const ALL: [Self; 3] = [Self::Int, Self::Bool, Self::Unit];
+    pub const INT: Self = Self(NonZeroU32::new(1).unwrap());
+    pub const BOOL: Self = Self(NonZeroU32::new(2).unwrap());
+    pub const UNIT: Self = Self(NonZeroU32::new(3).unwrap());
+    const FIRST_DECL: u32 = 4;
+    pub const SCALARS: [Self; 3] = [Self::INT, Self::BOOL, Self::UNIT];
 
-    pub fn as_str(self) -> &'static str {
+    pub fn decl(id: DeclId) -> Self {
+        let packed =
+            id.0.checked_add(Self::FIRST_DECL)
+                .expect("declared type count fits u32");
+        Self(NonZeroU32::new(packed).expect("a declared type packs above the scalars"))
+    }
+
+    pub fn kind(self) -> TyKind {
         match self {
-            Self::Int => "int",
-            Self::Bool => "bool",
-            Self::Unit => "unit",
+            Self::INT => TyKind::Int,
+            Self::BOOL => TyKind::Bool,
+            Self::UNIT => TyKind::Unit,
+            Self(packed) => TyKind::Decl(DeclId(packed.get() - Self::FIRST_DECL)),
         }
     }
 
-    pub fn from_name(name: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|ty| ty.as_str() == name)
+    /// The declared type this is, if not a scalar.
+    pub fn as_decl(self) -> Option<DeclId> {
+        match self.kind() {
+            TyKind::Decl(id) => Some(id),
+            _ => None,
+        }
+    }
+
+    /// The scalar's name; none for a declared type, whose name is the source's.
+    pub fn scalar_name(self) -> Option<&'static str> {
+        Some(match self.kind() {
+            TyKind::Int => "int",
+            TyKind::Bool => "bool",
+            TyKind::Unit => "unit",
+            TyKind::Decl(_) => return None,
+        })
+    }
+
+    pub fn scalar(name: &str) -> Option<Self> {
+        Self::SCALARS
+            .into_iter()
+            .find(|ty| ty.scalar_name() == Some(name))
+    }
+
+    pub fn shown(self, names: &dyn Names) -> ShownTy<'_> {
+        ShownTy(self, names)
     }
 }
 
-impl fmt::Display for Ty {
+impl fmt::Debug for Ty {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
+        match self.kind() {
+            TyKind::Decl(id) => write!(f, "Decl({})", id.index()),
+            scalar => write!(f, "{scalar:?}"),
+        }
+    }
+}
+
+/// A type as the source names it.
+pub struct ShownTy<'a>(Ty, &'a dyn Names);
+
+impl fmt::Display for ShownTy<'_> {
+    fn fmt(&self, f: &'_ mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.0.kind() {
+            TyKind::Decl(id) => f.write_str(self.1.decl(id)),
+            _ => f.write_str(self.0.scalar_name().expect("a scalar has a name")),
+        }
+    }
+}
+
+/// What the source calls a declared type and its fields.
+pub trait Names {
+    fn decl(&self, id: DeclId) -> &str;
+    fn field(&self, name: FieldName) -> &str;
+}
+
+/// A declared type's index in its file, in declaration order; an ID from one analysis names
+/// nothing in another.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct DeclId(u32);
+
+impl DeclId {
+    pub fn new(index: usize) -> Self {
+        Self(u32::try_from(index).expect("declared type count fits u32"))
+    }
+
+    pub fn index(self) -> usize {
+        self.0 as usize
+    }
+}
+
+/// A field name, one per distinct spelling in the file, so a read names a field of whatever type
+/// reaches it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct FieldName(u32);
+
+impl FieldName {
+    pub fn new(index: usize) -> Self {
+        Self(u32::try_from(index).expect("field name count fits u32"))
+    }
+
+    pub fn index(self) -> usize {
+        self.0 as usize
     }
 }
 

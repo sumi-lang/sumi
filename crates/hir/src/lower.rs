@@ -6,7 +6,7 @@ use std::collections::{HashMap, HashSet};
 
 use rustc_hash::FxBuildHasher;
 use sumi_frontend::{DiagnosticCode, Fix, Label};
-use sumi_graph::{Carried, GraphBuilder, References};
+use sumi_graph::{Carried, Decl, DeclId, FieldName, GraphBuilder, References, ShownTy};
 use sumi_lexer::{LexedFile, RawIdx, SyntaxKind, TokenFlags};
 use sumi_syntax::{
     Literal, NodeIdx, NodeKind, PrefixOp, SyntaxTree,
@@ -25,15 +25,26 @@ type NameMap<'s, V> = HashMap<&'s str, V, FxBuildHasher>;
 #[derive(Clone, Copy)]
 enum Named {
     Function(FunctionId),
-    Ambiguous(FunctionId),
+    Type(DeclId),
+    /// Declared more than once, so a use of it is reported nowhere but at the declarations.
+    Ambiguous,
 }
 
-impl Named {
-    fn first(self) -> FunctionId {
-        match self {
-            Self::Function(id) | Self::Ambiguous(id) => id,
-        }
-    }
+/// What a call names.
+#[derive(Clone, Copy)]
+enum Target {
+    Function(FunctionId),
+    Type(DeclId),
+    /// Reported where it was resolved, or ambiguous.
+    Unknown,
+}
+
+/// A declared type as the source wrote it; the graph holds its field types.
+pub(crate) struct TypeHeader {
+    pub name: Option<TextRange>,
+    pub item: NodeIdx,
+    /// Per field in declaration order, its name's range.
+    pub fields: Vec<TextRange>,
 }
 
 #[derive(Clone, Copy)]
@@ -59,7 +70,7 @@ impl HeaderResult {
     fn declared(self) -> Option<(Ty, NodeIdx)> {
         match self {
             Self::Declared(ty, node) => Some((ty, node)),
-            Self::Omitted(node) => Some((Ty::Unit, node)),
+            Self::Omitted(node) => Some((Ty::UNIT, node)),
             Self::None | Self::Inferred => None,
         }
     }
@@ -127,10 +138,33 @@ fn join(types: &[String]) -> String {
     }
 }
 
+/// A declared type by name, with its fields by name; both resolve names while lowering.
+pub(crate) struct DeclNames<'s> {
+    pub name: &'s str,
+    pub name_node: Option<NodeIdx>,
+    /// Per field in declaration order.
+    pub fields: Vec<(&'s str, NodeIdx)>,
+}
+
+impl DeclNames<'_> {
+    fn index_of(&self, name: &str) -> Option<usize> {
+        self.fields.iter().position(|&(field, _)| field == name)
+    }
+}
+
 pub(crate) struct Source<'s> {
     pub parsed: &'s ParsedSource,
     pub tree: &'s SyntaxTree,
     pub diagnostics: Vec<Diagnostic>,
+    /// By declared type ID.
+    pub decls: Vec<DeclNames<'s>>,
+    /// None for a name declared more than once, which resolves to nothing, like a function's.
+    type_names: NameMap<'s, Option<DeclId>>,
+    /// By field name ID.
+    pub field_names: Vec<&'s str>,
+    field_ids: NameMap<'s, FieldName>,
+    /// Type names resolved outside a body.
+    pub references: Vec<Occurrence>,
 }
 
 impl<'s> Source<'s> {
@@ -139,7 +173,35 @@ impl<'s> Source<'s> {
             parsed,
             tree: parsed.parse().tree(),
             diagnostics: Vec::new(),
+            decls: Vec::new(),
+            type_names: NameMap::default(),
+            field_names: Vec::new(),
+            field_ids: NameMap::default(),
+            references: Vec::new(),
         }
+    }
+    pub fn show(&self, ty: Ty) -> ShownTy<'_> {
+        ty.shown(self)
+    }
+}
+
+impl sumi_graph::Names for Source<'_> {
+    fn decl(&self, id: DeclId) -> &str {
+        self.decls[id.index()].name
+    }
+
+    fn field(&self, name: FieldName) -> &str {
+        self.field_names[name.index()]
+    }
+}
+
+impl<'s> Source<'s> {
+    /// The ID of the field name `text`, minted on first sight.
+    fn field_name(&mut self, text: &'s str) -> FieldName {
+        *self.field_ids.entry(text).or_insert_with(|| {
+            self.field_names.push(text);
+            FieldName::new(self.field_names.len() - 1)
+        })
     }
     pub fn lexed(&self) -> &'s LexedFile {
         self.parsed.lexed()
@@ -187,7 +249,11 @@ impl<'s> Source<'s> {
         self.report(
             at,
             codes::TYPE_MISMATCH,
-            format!("expected {expected}, found {actual}"),
+            format!(
+                "expected {}, found {}",
+                self.show(expected),
+                self.show(actual)
+            ),
             related,
         );
     }
@@ -216,13 +282,17 @@ impl<'s> Source<'s> {
     ) {
         assert!(claimed.len() >= 2, "a conflict names two types");
         claimed.sort_by_key(|(_, origin)| origin.map(|range| (range.start(), range.end())));
-        let types: Vec<_> = claimed.iter().map(|(ty, _)| ty.to_string()).collect();
+        let types: Vec<_> = claimed
+            .iter()
+            .map(|(ty, _)| self.show(*ty).to_string())
+            .collect();
         let mut labels: Vec<(TextRange, Vec<String>)> = Vec::new();
         for (ty, origin) in &claimed {
             let Some(origin) = origin else { continue };
+            let ty = self.show(*ty).to_string();
             match labels.last_mut() {
-                Some((labeled, types)) if labeled == origin => types.push(ty.to_string()),
-                _ => labels.push((*origin, vec![ty.to_string()])),
+                Some((labeled, types)) if labeled == origin => types.push(ty),
+                _ => labels.push((*origin, vec![ty])),
             }
         }
         let labels = labels
@@ -235,16 +305,25 @@ impl<'s> Source<'s> {
             return None;
         }
         let name = self.text(node.node());
-        let ty = Ty::from_name(name);
-        if ty.is_none() {
-            self.error(
-                node.node(),
-                codes::UNKNOWN_TYPE,
-                format!("unknown type `{name}`"),
-                None,
-            );
+        if let Some(ty) = Ty::scalar(name) {
+            return Some(ty);
         }
-        ty
+        if let Some(&decl) = self.type_names.get(name) {
+            let decl = decl?;
+            self.references.push(Occurrence {
+                range: self.range(node.node()),
+                symbol: Symbol::Type(decl),
+                is_write: false,
+            });
+            return Some(Ty::decl(decl));
+        }
+        self.error(
+            node.node(),
+            codes::UNKNOWN_TYPE,
+            format!("unknown type `{name}`"),
+            None,
+        );
+        None
     }
     fn tokens(&self, start: RawIdx, end: RawIdx) -> impl Iterator<Item = SyntaxKind> + '_ {
         start
@@ -290,21 +369,139 @@ pub(crate) struct Parameter<'s> {
 
 pub(crate) struct Declarations<'s> {
     pub headers: Vec<Header>,
+    pub types: Vec<TypeHeader>,
     names: NameMap<'s, Named>,
     parameters: Vec<Vec<Parameter<'s>>>,
 }
 
-/// In item order, so a `FunctionId` indexes `items`.
+/// Takes an item's name for `named`, reporting a second declaration of it.
+fn claim_name<'s>(
+    source: &mut Source<'s>,
+    names: &mut NameMap<'s, Named>,
+    declared_at: &mut NameMap<'s, NodeIdx>,
+    (name, node): (&'s str, NodeIdx),
+    named: Named,
+    what: &str,
+) {
+    match names.entry(name) {
+        Entry::Occupied(mut entry) => {
+            let first = declared_at[name];
+            source.error(
+                node,
+                codes::DUPLICATE_NAME,
+                format!("duplicate {what} `{name}`"),
+                Some((source.range(first), "declared here")),
+            );
+            *entry.get_mut() = Named::Ambiguous;
+        }
+        Entry::Vacant(entry) => {
+            entry.insert(named);
+            declared_at.insert(name, node);
+        }
+    }
+}
+
+/// The type items first, so a signature names any of them; the function items in their own order,
+/// so a `FunctionId` indexes them.
 pub(crate) fn declare<'s>(
     source: &mut Source<'s>,
-    items: &[ast::FnItem],
+    items: &[ast::Item],
     graph: &mut GraphBuilder,
 ) -> Declarations<'s> {
     let tree = source.tree;
     let mut names: NameMap<Named> = NameMap::with_capacity_and_hasher(items.len(), FxBuildHasher);
+    let mut declared_at: NameMap<NodeIdx> = NameMap::default();
+    let type_items: Vec<ast::TypeItem> = items
+        .iter()
+        .filter_map(|item| match item {
+            ast::Item::TypeItem(item) => Some(*item),
+            ast::Item::FnItem(_) => None,
+        })
+        .collect();
+    for (index, item) in type_items.iter().enumerate() {
+        let name = source.name(item.name(tree));
+        let decl = DeclId::new(index);
+        if let Some((text, node)) = name {
+            if Ty::scalar(text).is_some() {
+                source.error(
+                    node,
+                    codes::DUPLICATE_NAME,
+                    format!("`{text}` is a built-in type"),
+                    None,
+                );
+            } else {
+                claim_name(
+                    source,
+                    &mut names,
+                    &mut declared_at,
+                    (text, node),
+                    Named::Type(decl),
+                    "type",
+                );
+                let resolved = match names.get(text) {
+                    Some(Named::Type(_)) => Some(decl),
+                    _ => None,
+                };
+                source.type_names.insert(text, resolved);
+            }
+        }
+        source.decls.push(DeclNames {
+            name: name.map_or("<missing>", |(name, _)| name),
+            name_node: name.map(|(_, node)| node),
+            fields: Vec::new(),
+        });
+    }
+    let mut types = Vec::with_capacity(type_items.len());
+    let mut decls: Vec<Vec<(FieldName, Option<Ty>)>> = Vec::with_capacity(type_items.len());
+    for (index, item) in type_items.iter().enumerate() {
+        let mut fields: Vec<(&'s str, NodeIdx)> = Vec::new();
+        let mut field_types: Vec<(FieldName, Option<Ty>)> = Vec::new();
+        let mut ranges = Vec::new();
+        if let Some(list) = item.field_list(tree) {
+            for field in list.fields(tree) {
+                // A field without a type is a syntax error the parser already reported.
+                let ty = field.type_ref(tree).and_then(|ty| source.ty(ty));
+                let Some((name, node)) = source.name(field.name(tree)) else {
+                    continue;
+                };
+                if let Some(&(_, first)) = fields.iter().find(|&&(earlier, _)| earlier == name) {
+                    source.error(
+                        node,
+                        codes::DUPLICATE_NAME,
+                        format!("duplicate field `{name}`"),
+                        Some((source.range(first), "declared here")),
+                    );
+                    continue;
+                }
+                fields.push((name, node));
+                field_types.push((source.field_name(name), ty));
+                ranges.push(source.range(node));
+            }
+        }
+        source.decls[index].fields = fields;
+        decls.push(field_types);
+        types.push(TypeHeader {
+            name: source.decls[index].name_node.map(|node| source.range(node)),
+            item: item.node(),
+            fields: ranges,
+        });
+    }
+    unfold_recursive_types(source, &mut decls);
+    graph.declare(
+        decls
+            .into_iter()
+            .map(|fields| Decl::new(fields.into_boxed_slice())),
+    );
+    let items: Vec<ast::FnItem> = items
+        .iter()
+        .filter_map(|item| match item {
+            ast::Item::FnItem(item) => Some(*item),
+            ast::Item::TypeItem(_) => None,
+        })
+        .collect();
     let mut parameters = Vec::with_capacity(items.len());
     let mut headers = Vec::with_capacity(items.len());
-    for item in items {
+    for item in &items {
         let name = source.name(item.name(tree));
         let list = item.param_list(tree);
         let whole_list = list.filter(|list| !tree.has_error(list.node()));
@@ -361,25 +558,15 @@ pub(crate) fn declare<'s>(
         let types =
             whole_list.and_then(|_| params.iter().map(|p| p.ty).collect::<Option<Box<[Ty]>>>());
         let id = graph.function(types);
-        if let Some((name, node)) = name {
-            match names.entry(name) {
-                Entry::Occupied(mut entry) => {
-                    let first = items[entry.get().first().index()]
-                        .name(tree)
-                        .expect("a named function has a name")
-                        .node();
-                    source.error(
-                        node,
-                        codes::DUPLICATE_NAME,
-                        format!("duplicate function `{name}`"),
-                        Some((source.range(first), "declared here")),
-                    );
-                    *entry.get_mut() = Named::Ambiguous(entry.get().first());
-                }
-                Entry::Vacant(entry) => {
-                    entry.insert(Named::Function(id));
-                }
-            }
+        if let Some(name) = name {
+            claim_name(
+                source,
+                &mut names,
+                &mut declared_at,
+                name,
+                Named::Function(id),
+                "function",
+            );
         }
         headers.push(Header {
             name: name.map(|(_, node)| source.range(node)),
@@ -390,8 +577,60 @@ pub(crate) fn declare<'s>(
     }
     Declarations {
         headers,
+        types,
         names,
         parameters,
+    }
+}
+
+/// A type holding its own values through fields never finishes: each such field loses its type,
+/// so the table the graph takes is finite in depth.
+fn unfold_recursive_types(source: &mut Source<'_>, decls: &mut [Vec<(FieldName, Option<Ty>)>]) {
+    let reaches = |decls: &[Vec<(FieldName, Option<Ty>)>], from: DeclId, target: DeclId| {
+        let mut seen = vec![false; decls.len()];
+        let mut stack = vec![from];
+        while let Some(decl) = stack.pop() {
+            if decl == target {
+                return true;
+            }
+            if std::mem::replace(&mut seen[decl.index()], true) {
+                continue;
+            }
+            stack.extend(
+                decls[decl.index()]
+                    .iter()
+                    .filter_map(|&(_, ty)| ty.and_then(Ty::as_decl)),
+            );
+        }
+        false
+    };
+    let mut cut: Vec<(DeclId, usize)> = Vec::new();
+    for index in 0..decls.len() {
+        let decl = DeclId::new(index);
+        for (field, &(_, ty)) in decls[index].iter().enumerate() {
+            if let Some(through) = ty.and_then(Ty::as_decl)
+                && reaches(decls, through, decl)
+            {
+                cut.push((decl, field));
+            }
+        }
+    }
+    for &(decl, field) in &cut {
+        let names = &source.decls[decl.index()];
+        let (field_name, field_node) = names.fields[field];
+        let at = names.name_node.unwrap_or(field_node);
+        source.error(
+            at,
+            codes::RECURSIVE_TYPE,
+            format!(
+                "type `{}` holds itself through field `{field_name}`",
+                names.name
+            ),
+            Some((source.range(field_node), "this field")),
+        );
+    }
+    for (decl, field) in cut {
+        decls[decl.index()][field].1 = None;
     }
 }
 
@@ -409,6 +648,7 @@ pub(crate) fn lower<'s>(
     let graph = builder.graph.finish();
     let spans = builder.spans.finish(&graph);
     let mut lowered = builder.lowered;
+    lowered.references.append(&mut source.references);
     lowered
         .references
         .sort_unstable_by_key(|occurrence| occurrence.range.start());
@@ -509,6 +749,7 @@ enum Finish {
         expr: Clean<ast::BinaryExpr>,
         op: BinaryOp,
     },
+    Field(Clean<ast::FieldExpr>),
     Partial(Partial),
 }
 
@@ -536,9 +777,14 @@ enum Partial {
     },
     Call {
         node: NodeIdx,
-        target: Option<FunctionId>,
+        target: Target,
         /// The arguments before any garbage: the ones whose position is reliable.
         args: Vec<NodeIdx>,
+    },
+    Field {
+        node: NodeIdx,
+        base: Option<NodeIdx>,
+        name: Option<FieldName>,
     },
     Assign {
         node: NodeIdx,
@@ -571,7 +817,7 @@ enum Work {
     },
     Call {
         call: Clean<ast::CallExpr>,
-        target: Option<FunctionId>,
+        target: Target,
     },
     Branches(Branch),
     LoopBody(Clean<ast::ForExpr>),
@@ -1092,6 +1338,8 @@ impl<'a, 's> Builder<'a, 's> {
             Op::Call(function) => {
                 !matches!(self.headers[function.index()].result, HeaderResult::None)
             }
+            // A construction has its type whatever its fields.
+            Op::Make(_) => true,
             Op::Assign => typed(declaration()) && typed(inputs[0].0),
             Op::Phi => typed(declaration()) && inputs.iter().all(|&(input, _)| typed(input)),
             Op::Join { .. } => typed(inputs[0].0) && results.iter().all(|&result| typed(result)),
@@ -1106,8 +1354,11 @@ impl<'a, 's> Builder<'a, 's> {
                 .all(|&(input, _)| self.lowered.typed[input.index()])
     }
     /// The function a call to `target` is held to: one with parameter types.
-    fn callee(&self, target: Option<FunctionId>) -> Option<(FunctionId, &'a Header)> {
-        let target = target.filter(|&target| self.graph.param_types(target).is_some())?;
+    fn callee(&self, target: Target) -> Option<(FunctionId, &'a Header)> {
+        let Target::Function(target) = target else {
+            return None;
+        };
+        self.graph.param_types(target)?;
         Some((target, &self.headers[target.index()]))
     }
     fn arity(&self, callee: FunctionId) -> usize {
@@ -1797,7 +2048,11 @@ impl<'a, 's> Builder<'a, 's> {
             CleanStmt::Expr(CleanExpr::CallExpr(call)) => {
                 let target = self.target(call.callee().node());
                 work.push(Work::Call { call, target });
-                enter_each(work, call.arg_list().args(tree).map(|arg| arg.node()));
+                enter_each(work, call.arg_list().values(tree).map(|arg| arg.node()));
+            }
+            CleanStmt::Expr(CleanExpr::FieldExpr(expr)) => {
+                work.push(Work::Finish(Finish::Field(expr)));
+                work.push(Work::Enter(expr.base().node()));
             }
             CleanStmt::Expr(CleanExpr::NameRef(name)) => {
                 work.push(Work::Finish(Finish::NameRef(name)));
@@ -1828,13 +2083,21 @@ impl<'a, 's> Builder<'a, 's> {
         let text = self.source.text(name.node());
         let Some(local) = self.lookup(text) else {
             if let Some(named) = self.names.get(text) {
-                if let Named::Function(id) = named {
-                    self.refer(name.node(), Symbol::Function(*id), true);
-                }
+                let what = match *named {
+                    Named::Function(id) => {
+                        self.refer(name.node(), Symbol::Function(id), true);
+                        "function"
+                    }
+                    Named::Type(id) => {
+                        self.refer(name.node(), Symbol::Type(id), true);
+                        "type"
+                    }
+                    Named::Ambiguous => "name",
+                };
                 self.source.error(
                     name.node(),
                     codes::INVALID_ASSIGNMENT_TARGET,
-                    format!("function `{text}` is not assignable"),
+                    format!("{what} `{text}` is not assignable"),
                     None,
                 );
             } else {
@@ -1935,7 +2198,7 @@ impl<'a, 's> Builder<'a, 's> {
         }
         work[base..].reverse();
     }
-    fn target(&mut self, node: NodeIdx) -> Option<FunctionId> {
+    fn target(&mut self, node: NodeIdx) -> Target {
         let name = self.source.text(node);
         if let Some(local) = self.lookup(name) {
             self.refer(
@@ -1956,15 +2219,20 @@ impl<'a, 's> Builder<'a, 's> {
                         .map(|range| (range, "declared here")),
                 );
             }
-            return None;
+            return Target::Unknown;
         }
         match self.names.get(name) {
             Some(Named::Function(target)) => {
                 let target = *target;
                 self.refer(node, Symbol::Function(target), false);
-                Some(target)
+                Target::Function(target)
             }
-            Some(Named::Ambiguous(_)) => None,
+            Some(Named::Type(decl)) => {
+                let decl = *decl;
+                self.refer(node, Symbol::Type(decl), false);
+                Target::Type(decl)
+            }
+            Some(Named::Ambiguous) => Target::Unknown,
             None => {
                 self.source.error(
                     node,
@@ -1972,7 +2240,7 @@ impl<'a, 's> Builder<'a, 's> {
                     format!("unknown function `{name}`"),
                     None,
                 );
-                None
+                Target::Unknown
             }
         }
     }
@@ -2155,13 +2423,21 @@ impl<'a, 's> Builder<'a, 's> {
                     }
                     None => {
                         if let Some(named) = self.names.get(name) {
-                            if let Named::Function(id) = named {
-                                self.refer(node, Symbol::Function(*id), false);
-                            }
+                            let what = match *named {
+                                Named::Function(id) => {
+                                    self.refer(node, Symbol::Function(id), false);
+                                    "function"
+                                }
+                                Named::Type(id) => {
+                                    self.refer(node, Symbol::Type(id), false);
+                                    "type"
+                                }
+                                Named::Ambiguous => "name",
+                            };
                             self.source.error(
                                 node,
                                 codes::NOT_A_VALUE,
-                                format!("function `{name}` is not a value"),
+                                format!("{what} `{name}` is not a value"),
                                 None,
                             );
                             self.hole(node);
@@ -2262,12 +2538,135 @@ impl<'a, 's> Builder<'a, 's> {
                     });
                 }
             }
+            Finish::Field(expr) => {
+                let node = expr.node();
+                let base = expr.base().node();
+                let input = self.input(base);
+                let name = self
+                    .source
+                    .field_name(self.source.text(expr.field().node()));
+                let id = self.push(node, Op::Field(name), &[input], None);
+                self.controls[node.to_usize()] = self.control(base);
+                let form = self.form(base);
+                self.bottoms[node.to_usize()] = form.completes;
+                if !form.is_valid {
+                    return None;
+                }
+                if form.completes {
+                    self.completes_input(id, 0);
+                    return Some(());
+                }
+                self.typed(base)?;
+            }
             Finish::Partial(partial) => {
                 self.partial(partial);
                 return None;
             }
         }
         Some(())
+    }
+    /// A construction: its arguments are its type's fields by label, read in declaration order.
+    fn construct(&mut self, call: Clean<ast::CallExpr>, decl: DeclId) -> Option<()> {
+        let tree = self.source.tree;
+        let node = call.node();
+        let fields = self.source.decls[decl.index()].fields.len();
+        let type_name = self.source.decls[decl.index()].name;
+        let declared = self.source.decls[decl.index()]
+            .name_node
+            .map(|name| (self.source.range(name), "declared here"));
+        let mut given: Vec<Option<(NodeIdx, NodeIdx)>> = vec![None; fields];
+        // A type with a field of no type is reported at its declaration.
+        let mut is_damaged = self.graph.decl(decl).field_types().is_none();
+        let mut values = Vec::new();
+        for arg in call.arg_list().args(tree) {
+            let Some(value) = arg.value(tree) else {
+                continue;
+            };
+            values.push(value.node());
+            let Some(label) = arg.label(tree) else {
+                self.source.error(
+                    value.node(),
+                    codes::UNLABELED_FIELD,
+                    format!("a value of `{type_name}` names each field: `field: value`"),
+                    declared,
+                );
+                is_damaged = true;
+                continue;
+            };
+            let field = self.source.text(label.node());
+            match self.source.decls[decl.index()].index_of(field) {
+                None => {
+                    self.source.error(
+                        label.node(),
+                        codes::UNKNOWN_FIELD,
+                        format!("type `{type_name}` has no field `{field}`"),
+                        declared,
+                    );
+                    is_damaged = true;
+                }
+                Some(index) => match given[index] {
+                    Some((_, first)) => {
+                        self.source.error(
+                            label.node(),
+                            codes::DUPLICATE_FIELD,
+                            format!("field `{field}` is given twice"),
+                            Some((self.source.range(first), "first given here")),
+                        );
+                        is_damaged = true;
+                    }
+                    None => given[index] = Some((value.node(), label.node())),
+                },
+            }
+        }
+        let missing: Vec<&str> = given
+            .iter()
+            .enumerate()
+            .filter(|(_, given)| given.is_none())
+            .map(|(index, _)| self.source.decls[decl.index()].fields[index].0)
+            .collect();
+        if !missing.is_empty() {
+            let names: Vec<String> = missing.iter().map(|name| format!("`{name}`")).collect();
+            let what = if names.len() == 1 { "field" } else { "fields" };
+            self.source.error(
+                node,
+                codes::MISSING_FIELD,
+                format!("missing {what} {} of `{type_name}`", join(&names)),
+                declared,
+            );
+            is_damaged = true;
+        }
+        let ordered: Vec<NodeIdx> = if is_damaged {
+            values
+        } else {
+            given
+                .iter()
+                .map(|given| given.expect("every field given").0)
+                .collect()
+        };
+        let mut inputs = std::mem::take(&mut self.inputs);
+        inputs.clear();
+        for &value in &ordered {
+            inputs.push(self.input(value));
+        }
+        let op = if is_damaged { Op::Hole } else { Op::Make(decl) };
+        let id = self.push(node, op, &inputs, None);
+        self.inputs = inputs;
+        let controls: Vec<_> = ordered.iter().map(|&value| self.control(value)).collect();
+        self.controls[node.to_usize()] = self.compose_control(node, controls);
+        let mut is_bottom = false;
+        let mut is_valid = true;
+        for (index, &value) in ordered.iter().enumerate() {
+            let form = self.form(value);
+            is_bottom |= form.completes;
+            is_valid &= form.is_valid;
+            if form.completes {
+                self.completes_input(id, index);
+            }
+        }
+        if is_bottom {
+            self.bottoms[node.to_usize()] = true;
+        }
+        (is_valid && !is_damaged).then_some(())
     }
     /// A statement or expression the parser recovered in. Its children are lowered for what they
     /// hold, and it is lowered from them where its kind decides its type: an operator's result,
@@ -2361,18 +2760,31 @@ impl<'a, 's> Builder<'a, 's> {
             Stmt::Expr(Expr::CallExpr(call)) => {
                 let target = match call.callee(tree) {
                     Some(callee) => self.target(callee.node()),
-                    None => None,
+                    None => Target::Unknown,
                 };
                 let mut args = Vec::new();
                 if let Some(list) = call.arg_list(tree) {
                     for child in tree.children(list.node()) {
-                        let Some(arg) = Expr::cast(tree, child) else {
+                        let Some(value) =
+                            ast::Arg::cast(tree, child).and_then(|arg| arg.value(tree))
+                        else {
                             break;
                         };
-                        args.push(arg.node());
+                        args.push(value.node());
                     }
                 }
                 Partial::Call { node, target, args }
+            }
+            Stmt::Expr(Expr::FieldExpr(expr)) => {
+                let name = expr
+                    .field(tree)
+                    .filter(|field| !tree.has_error(field.node()))
+                    .map(|field| self.source.field_name(self.source.text(field.node())));
+                Partial::Field {
+                    node,
+                    base: expr.base(tree).map(|base| base.node()),
+                    name,
+                }
             }
             Stmt::Expr(_) => return self.holed(node),
         };
@@ -2391,7 +2803,9 @@ impl<'a, 's> Builder<'a, 's> {
                 work.push(Work::Finish(Finish::Partial(partial)));
                 work.push(Work::Enter(child));
             }
-            Partial::Prefix { operand: child, .. } | Partial::Assign { value: child, .. } => {
+            Partial::Prefix { operand: child, .. }
+            | Partial::Assign { value: child, .. }
+            | Partial::Field { base: child, .. } => {
                 let child = *child;
                 work.push(Work::Finish(Finish::Partial(partial)));
                 if let Some(child) = child {
@@ -2559,6 +2973,16 @@ impl<'a, 's> Builder<'a, 's> {
                     }
                 }
             }
+            Partial::Field { node, base, name } => {
+                let input = self.present(node, base);
+                let op = name.map_or(Op::Hole, Op::Field);
+                let id = self.push(node, op, &[input], None);
+                self.controls[node.to_usize()] = base.and_then(|base| self.control(base));
+                if base.is_some_and(|base| self.form(base).completes) {
+                    self.completes_input(id, 0);
+                    self.bottoms[node.to_usize()] = true;
+                }
+            }
             Partial::Call { node, target, args } => {
                 let context = self.context();
                 let callee = self.callee(target);
@@ -2570,7 +2994,8 @@ impl<'a, 's> Builder<'a, 's> {
                 for &arg in &args {
                     inputs.push(self.input(arg));
                 }
-                // A damaged list is not yet the wrong length.
+                // A damaged list is not yet the wrong length, and its labels are not yet in
+                // order.
                 let op = callee.map_or(Op::Hole, |(id, _)| Op::Call(id));
                 let id = self.push(node, op, &inputs, None);
                 if let Some((target, _)) = callee
@@ -2728,7 +3153,10 @@ impl<'a, 's> Builder<'a, 's> {
         self.typed(cond)?;
         Some(())
     }
-    fn call(&mut self, call: Clean<ast::CallExpr>, target: Option<FunctionId>) -> Option<()> {
+    fn call(&mut self, call: Clean<ast::CallExpr>, target: Target) -> Option<()> {
+        if let Target::Type(decl) = target {
+            return self.construct(call, decl);
+        }
         let context = self.context();
         let tree = self.source.tree;
         let node = call.node();
@@ -2740,9 +3168,26 @@ impl<'a, 's> Builder<'a, 's> {
         let mut inputs = std::mem::take(&mut self.inputs);
         inputs.clear();
         let mut count = 0;
+        let mut is_labeled = false;
         for arg in call.arg_list().args(tree) {
+            let Some(value) = arg.value(tree) else {
+                continue;
+            };
+            // A label on an argument to a name that resolved to nothing is reported there.
+            if let Some(label) = arg.label(tree)
+                && let Target::Function(function) = target
+            {
+                let item = self.headers[function.index()].item;
+                self.source.error(
+                    label.node(),
+                    codes::LABELED_ARGUMENT,
+                    "a function's arguments take no labels",
+                    Some((self.source.range(item), "declared here")),
+                );
+                is_labeled = true;
+            }
             count += 1;
-            inputs.push(self.input(arg.node()));
+            inputs.push(self.input(value.node()));
         }
         if let Some((id, function)) = callee
             && let arity = self.arity(id)
@@ -2755,7 +3200,7 @@ impl<'a, 's> Builder<'a, 's> {
                 Some((self.source.range(function.item), "declared here")),
             );
         }
-        let whole = callee.filter(|&(id, _)| self.whole(id, &inputs));
+        let whole = callee.filter(|&(id, _)| !is_labeled && self.whole(id, &inputs));
         let op = callee.map_or(Op::Hole, |(id, _)| Op::Call(id));
         let id = self.push(node, op, &inputs, None);
         if let Some((target, _)) = callee
@@ -2763,7 +3208,7 @@ impl<'a, 's> Builder<'a, 's> {
         {
             self.lowered.called.push((id, target));
         }
-        let args: Vec<_> = call.arg_list().args(tree).map(|arg| arg.node()).collect();
+        let args: Vec<_> = call.arg_list().values(tree).map(|arg| arg.node()).collect();
         let controls: Vec<_> = args.iter().map(|&arg| self.control(arg)).collect();
         self.controls[node.to_usize()] = self.compose_control(node, controls);
         let mut is_bottom = false;

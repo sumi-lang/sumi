@@ -8,8 +8,10 @@ SourceFile! 1:1..7:1
         NameRef 2:5..2:6 "g"
         ArgList! 2:6..3:3
           Error! 2:7..2:9 ":{"
-          NameRef 2:10..2:11 "a"
-          NameRef 3:1..3:2 "b"
+          Arg 2:10..2:11
+            NameRef 2:10..2:11 "a"
+          Arg 3:1..3:2
+            NameRef 3:1..3:2 "b"
   FnItem! 5:1..6:11
     Name 5:4..5:14 "parameters"
     ParamList! 5:14..6:8

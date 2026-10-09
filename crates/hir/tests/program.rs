@@ -610,14 +610,20 @@ a + 1
 
 #[test]
 fn values_display_as_source_spells_them() {
-    assert_eq!(int(-7).to_string(), "-7");
+    let analysis = analyze(parse_source("type Point { x: int, y: bool }".into()).unwrap());
+    let shown = |value: &Value| value.shown(&analysis).to_string();
+    assert_eq!(shown(&int(-7)), "-7");
     assert_eq!(
-        Value::Int("-9223372036854775809".parse().unwrap()).to_string(),
+        shown(&Value::Int("-9223372036854775809".parse().unwrap())),
         "-9223372036854775809"
     );
-    assert_eq!(Value::Bool(true).to_string(), "true");
-    assert_eq!(Value::Unit.to_string(), "unit");
-    assert_eq!(Value::Unit.ty(), Ty::Unit);
+    assert_eq!(shown(&Value::Bool(true)), "true");
+    assert_eq!(shown(&Value::Unit), "unit");
+    assert_eq!(Value::Unit.ty(), Ty::UNIT);
+    let point = sumi_hir::DeclId::new(0);
+    let value = Value::Decl(point, Box::new([int(3), Value::Bool(false)]));
+    assert_eq!(shown(&value), "Point(3, false)");
+    assert_eq!(value.ty(), Ty::decl(point));
 }
 
 #[test]
@@ -840,4 +846,23 @@ fn callers() -> int = carried(true) + carried(false)",
         sumi_hir::Op::Loop { .. } | sumi_hir::Op::Carry | sumi_hir::Op::LoopValue
     )));
     check::run(program);
+}
+
+/// Every case the corpus evaluates also runs inside the parameter sets the analysis proved, held
+/// to its claims, on the analysis's graph and again optimized.
+#[test]
+fn evaluated_corpus_cases_run_within_their_claims() {
+    use sumi_test::corpus;
+    let mut ran = 0;
+    for case in corpus::cases() {
+        let stages = std::fs::read_to_string(case.join("stages")).unwrap_or_default();
+        if !stages.lines().any(|stage| stage == "eval") {
+            continue;
+        }
+        let source = std::fs::read_to_string(case.join("case.su")).expect("a case is UTF-8");
+        let analysis = analysis(&source);
+        check::run(analysis.program().expect("an evaluated case is accepted"));
+        ran += 1;
+    }
+    assert!(ran > 0, "no case selects eval");
 }

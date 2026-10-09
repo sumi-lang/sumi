@@ -52,10 +52,10 @@ Expected(RBrace) at 6:1
 Expected(RBrace) at 10:1
 Expected(RBrace) at 10:1
 Expected(RBrace) at 12:7
-FunctionItemOnSameLine at 12:7
+ItemOnSameLine at 12:7
 ExpectedStatement at 13:22
 Expected(RBrace) at 13:24
-FunctionItemOnSameLine at 13:24
+ItemOnSameLine at 13:24
 ExpectedStatement at 14:34
 
 == diagnostics ==
@@ -73,13 +73,13 @@ error[syntax/expected-token] 12:7: expected `}`
   at 11:24..11:25 "{": opening delimiter is here
   fix: insert `}`
     12:6 -> "}"
-error[syntax/function-item-on-same-line] 12:7..12:9 "fn": function item must begin on a new line
+error[syntax/function-item-on-same-line] 12:7..12:9 "fn": item must begin on a new line
 error[syntax/expected-statement] 13:22..13:23 ":": expected a statement
 error[syntax/expected-token] 13:24: expected `}`
   at 13:20..13:21 "{": opening delimiter is here
   fix: insert `}`
     13:23 -> "}"
-error[syntax/function-item-on-same-line] 13:24..13:26 "fn": function item must begin on a new line
+error[syntax/function-item-on-same-line] 13:24..13:26 "fn": item must begin on a new line
 error[syntax/expected-statement] 14:34..14:35 ":": expected a statement
   at 14:34..14:50 ": fn next_e() {}": skipped while recovering
 

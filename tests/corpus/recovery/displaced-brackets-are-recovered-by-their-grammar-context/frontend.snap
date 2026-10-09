@@ -24,9 +24,11 @@ SourceFile! 1:1..12:1
       CallExpr! 9:5..10:9
         NameRef 9:5..9:6 "g"
         ArgList! 9:6..10:9
-          NameRef 9:7..9:8 "a"
-          Block! 10:3..10:8
-            Error! 10:5..10:8 "% b"
+          Arg 9:7..9:8
+            NameRef 9:7..9:8 "a"
+          Arg! 10:3..10:8
+            Block! 10:3..10:8
+              Error! 10:5..10:8 "% b"
 
 == evidence ==
 ExpectedExpression at 2:9

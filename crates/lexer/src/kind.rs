@@ -133,6 +133,7 @@ tokens! {
     MutKw: keyword "mut",
     ReturnKw: keyword "return",
     TrueKw: keyword "true",
+    TypeKw: keyword "type",
 
     IntLiteral: literal "an integer literal",
 

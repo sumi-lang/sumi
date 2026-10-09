@@ -187,6 +187,7 @@ fn plan<'a>(graph: &Graph, facts: impl Fn(NodeId) -> &'a May) -> Plan {
                 | Op::Not
                 | Op::Binary(_)
                 | Op::Call(_)
+                | Op::Field(_)
                 | Op::Join { .. }
                 | Op::Phi
                 | Op::And { .. }
@@ -208,8 +209,11 @@ fn plan<'a>(graph: &Graph, facts: impl Fn(NodeId) -> &'a May) -> Plan {
     plan
 }
 
-/// The literal for the one value `may` holds, if it holds one.
+/// The literal for the one value `may` holds, if it holds one; a declared value has no literal.
 fn single(may: &May) -> Option<Op> {
+    if !may.decls.is_empty() {
+        return None;
+    }
     let bools = may.bools;
     match (may.ints.lo(), may.ints.hi()) {
         (Some(lo), Some(hi)) if lo == hi && bools.is_empty() && !may.has_unit => Some(Op::Int(lo)),
@@ -315,6 +319,7 @@ fn marks(graph: &Graph, plan: &Plan) -> Vec<bool> {
 fn emit(graph: &Graph, plan: &Plan, kept: &[bool]) -> Optimized {
     let regions = kept_regions(graph, plan, kept);
     let mut builder = GraphBuilder::new(kept.iter().filter(|&&kept| kept).count());
+    builder.declare(graph.decls().iter().cloned());
     for run in graph.runs() {
         builder.function(run.param_types().map(Box::from));
     }

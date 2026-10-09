@@ -14,7 +14,8 @@ SourceFile! 1:1..7:1
         CallExpr! 5:5..5:10
           NameRef 5:5..5:6 "g"
           ArgList! 5:6..5:10
-            PrefixExpr! 5:7..5:8 "-"
+            Arg! 5:7..5:8
+              PrefixExpr! 5:7..5:8 "-"
         NameRef 5:14..5:15 "x"
 
 == evidence ==

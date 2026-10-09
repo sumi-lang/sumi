@@ -7,8 +7,10 @@ SourceFile 1:1..8:1
       CallExpr 1:15..1:23
         NameRef 1:15..1:16 "g"
         ArgList 1:16..1:23
-          NameRef 1:17..1:18 "a"
-          NameRef 1:20..1:21 "b"
+          Arg 1:17..1:18
+            NameRef 1:17..1:18 "a"
+          Arg 1:20..1:21
+            NameRef 1:20..1:21 "b"
   FnItem 2:1..7:2
     Name 2:4..2:13 "multiline"
     ParamList 2:13..2:15 "()"
@@ -16,8 +18,10 @@ SourceFile 1:1..8:1
       CallExpr 3:3..6:4
         NameRef 3:3..3:4 "g"
         ArgList 3:4..6:4
-          NameRef 4:5..4:6 "a"
-          NameRef 5:5..5:6 "b"
+          Arg 4:5..4:6
+            NameRef 4:5..4:6 "a"
+          Arg 5:5..5:6
+            NameRef 5:5..5:6 "b"
 
 == formatted ==
 fn inline() {

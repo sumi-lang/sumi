@@ -211,7 +211,7 @@ pub fn tree(tree: &SyntaxTree, lexed: &LexedFile) {
     let root = tree.root();
     let item_starts: HashSet<_> = tree
         .children(root)
-        .filter(|&node| tree.kind(node) == NodeKind::FnItem)
+        .filter(|&node| matches!(tree.kind(node), NodeKind::FnItem | NodeKind::TypeItem))
         .map(|node| tree.first_token(node))
         .collect();
     for index in input
@@ -411,12 +411,12 @@ pub fn recovery(source: &str, original: &Front, index: usize, edit: Edit) {
         let tree = after.parse.tree();
         let survivors: HashSet<_> = tree
             .children(tree.root())
-            .filter(|&node| tree.kind(node) == NodeKind::FnItem)
+            .filter(|&node| matches!(tree.kind(node), NodeKind::FnItem | NodeKind::TypeItem))
             .map(|node| (after.node_span(node), after.shape(&edited, node)))
             .collect();
         let tree = original.parse.tree();
         for item in tree.children(tree.root()).filter(|&node| {
-            tree.kind(node) == NodeKind::FnItem
+            matches!(tree.kind(node), NodeKind::FnItem | NodeKind::TypeItem)
                 && !touched
                     .iter()
                     .any(|&token| tree.first_token(node) <= token && token < tree.end_token(node))
@@ -709,13 +709,28 @@ pub fn semantics(analysis: &Analysis) {
                 a.name().map(|name| analysis.text(name)),
                 b.name().map(|name| reversed.text(name))
             );
+            // Declared types are numbered in declaration order, so they compare by name.
+            let shown = |analysis: &Analysis, id: FunctionId| {
+                let signature = analysis.signature(id)?;
+                let ranges = analysis.ranges(id)?;
+                let params: Vec<String> = signature
+                    .params
+                    .iter()
+                    .zip(&*ranges.params)
+                    .map(|(&ty, may)| {
+                        format!("{} ∈ {}", analysis.show(ty), may.shown(ty, analysis))
+                    })
+                    .collect();
+                Some(format!(
+                    "({}) -> {} ∈ {}",
+                    params.join(", "),
+                    analysis.show(signature.result),
+                    ranges.result.shown(signature.result, analysis)
+                ))
+            };
             assert_eq!(
-                analysis.signature(FunctionId::new(index)),
-                reversed.signature(FunctionId::new(count - 1 - index))
-            );
-            assert_eq!(
-                analysis.ranges(FunctionId::new(index)),
-                reversed.ranges(FunctionId::new(count - 1 - index))
+                shown(analysis, FunctionId::new(index)),
+                shown(&reversed, FunctionId::new(count - 1 - index))
             );
             assert_eq!(a.is_complete(), b.is_complete());
         }
@@ -828,12 +843,12 @@ fn typed(analysis: &Analysis) {
                 | Op::After
                 | Op::Result { .. } => continue,
                 Op::Hole => panic!("a hole in a complete function"),
-                Op::Int(_) => assert_eq!(own, Some(Ty::Int)),
+                Op::Int(_) => assert_eq!(own, Some(Ty::INT)),
                 Op::LoopIndex => {
-                    assert_eq!(own, Some(Ty::Int));
+                    assert_eq!(own, Some(Ty::INT));
                     for (position, &input) in inputs.iter().enumerate() {
                         if values[position] {
-                            assert_eq!(ty(input), Some(Ty::Int));
+                            assert_eq!(ty(input), Some(Ty::INT));
                         }
                     }
                 }
@@ -842,10 +857,10 @@ fn typed(analysis: &Analysis) {
                     assert_eq!(own, ty(inputs[0]));
                 }
                 Op::Loop { body } => {
-                    assert_eq!(own, Some(Ty::Unit));
+                    assert_eq!(own, Some(Ty::UNIT));
                     let body = graph.region(*body);
                     if values.iter().all(|&value| value) && body.result_has_value() {
-                        assert_eq!(ty(body.result()), Some(Ty::Unit));
+                        assert_eq!(ty(body.result()), Some(Ty::UNIT));
                     }
                 }
                 Op::LoopValue => {
@@ -853,11 +868,11 @@ fn typed(analysis: &Analysis) {
                     assert_eq!(own, ty(header));
                     assert_eq!(own, ty(next));
                 }
-                Op::Bool(_) => assert_eq!(own, Some(Ty::Bool)),
-                Op::Unit => assert_eq!(own, Some(Ty::Unit)),
+                Op::Bool(_) => assert_eq!(own, Some(Ty::BOOL)),
+                Op::Unit => assert_eq!(own, Some(Ty::UNIT)),
                 Op::Unused => {
                     if values[0] {
-                        assert_eq!(ty(inputs[0]), Some(Ty::Unit));
+                        assert_eq!(ty(inputs[0]), Some(Ty::UNIT));
                     }
                     assert_eq!(own, None);
                     continue;
@@ -868,15 +883,15 @@ fn typed(analysis: &Analysis) {
                 }
                 Op::Neg => {
                     if values[0] {
-                        assert_eq!(ty(inputs[0]), Some(Ty::Int));
+                        assert_eq!(ty(inputs[0]), Some(Ty::INT));
                     }
-                    assert_eq!(own, Some(Ty::Int));
+                    assert_eq!(own, Some(Ty::INT));
                 }
                 Op::Not => {
                     if values[0] {
-                        assert_eq!(ty(inputs[0]), Some(Ty::Bool));
+                        assert_eq!(ty(inputs[0]), Some(Ty::BOOL));
                     }
-                    assert_eq!(own, Some(Ty::Bool));
+                    assert_eq!(own, Some(Ty::BOOL));
                 }
                 Op::Binary(op) => {
                     assert_eq!(own, Some(op.result()));
@@ -884,7 +899,7 @@ fn typed(analysis: &Analysis) {
                         BinaryOp::Cmp(CmpOp::Eq | CmpOp::Ne) => {
                             for (index, &input) in inputs.iter().enumerate() {
                                 if values[index] {
-                                    assert!(matches!(ty(input), Some(Ty::Int | Ty::Bool)));
+                                    assert!(matches!(ty(input), Some(Ty::INT | Ty::BOOL)));
                                 }
                             }
                             if values.iter().all(|&value| value) {
@@ -894,7 +909,7 @@ fn typed(analysis: &Analysis) {
                         _ => {
                             for (index, &input) in inputs.iter().enumerate() {
                                 if values[index] {
-                                    assert_eq!(ty(input), Some(Ty::Int));
+                                    assert_eq!(ty(input), Some(Ty::INT));
                                 }
                             }
                         }
@@ -902,13 +917,13 @@ fn typed(analysis: &Analysis) {
                 }
                 Op::And { rhs } | Op::Or { rhs } => {
                     if values[0] {
-                        assert_eq!(own, Some(Ty::Bool));
-                        assert_eq!(ty(inputs[0]), Some(Ty::Bool));
+                        assert_eq!(own, Some(Ty::BOOL));
+                        assert_eq!(ty(inputs[0]), Some(Ty::BOOL));
                     } else {
                         assert_eq!(own, None);
                     }
                     if graph.region(*rhs).result_has_value() {
-                        assert_eq!(ty(graph.region(*rhs).result()), Some(Ty::Bool));
+                        assert_eq!(ty(graph.region(*rhs).result()), Some(Ty::BOOL));
                     }
                 }
                 Op::Copy { declared } => {
@@ -928,7 +943,7 @@ fn typed(analysis: &Analysis) {
                 Op::Phi => {
                     assert_eq!(own, ty(graph.declaration(node)));
                     if values[0] {
-                        assert_eq!(ty(inputs[0]), Some(Ty::Bool));
+                        assert_eq!(ty(inputs[0]), Some(Ty::BOOL));
                     }
                     for (index, &input) in inputs[1..].iter().enumerate() {
                         if values[index + 1] {
@@ -943,7 +958,7 @@ fn typed(analysis: &Analysis) {
                 }
                 Op::Join { then, else_ } => {
                     if values[0] {
-                        assert_eq!(ty(inputs[0]), Some(Ty::Bool));
+                        assert_eq!(ty(inputs[0]), Some(Ty::BOOL));
                     } else {
                         continue;
                     }
@@ -962,7 +977,7 @@ fn typed(analysis: &Analysis) {
                             assert_eq!(ty(graph.region(*else_).result()), own)
                         }
                         Some(_) => {}
-                        None => assert_eq!(own, Some(Ty::Unit)),
+                        None => assert_eq!(own, Some(Ty::UNIT)),
                     }
                 }
                 Op::Call(callee) => {
@@ -976,6 +991,25 @@ fn typed(analysis: &Analysis) {
                         if values[index] {
                             assert_eq!(ty(input), Some(param));
                         }
+                    }
+                }
+                Op::Make(decl) => {
+                    assert_eq!(own, Some(Ty::decl(*decl)));
+                    let fields = graph.decl(*decl).fields();
+                    assert_eq!(inputs.len(), fields.len());
+                    for (index, (&input, &(_, field))) in inputs.iter().zip(fields).enumerate() {
+                        assert!(field.is_some(), "a made type's fields resolved");
+                        if values[index] {
+                            assert_eq!(ty(input), field);
+                        }
+                    }
+                }
+                Op::Field(name) => {
+                    if values[0] {
+                        let base = ty(inputs[0]).expect("a read base has a type");
+                        let decl = graph.decl(base.as_decl().expect("a field of a declared type"));
+                        let index = decl.index_of(*name).expect("a read field exists");
+                        assert_eq!(own, decl.fields()[index].1);
                     }
                 }
             }
@@ -1017,6 +1051,8 @@ fn graph(analysis: &Analysis) {
             | Op::Return
             | Op::Sequence
             | Op::After => Some(2),
+            Op::Field(_) => Some(1),
+            Op::Make(decl) => Some(graph.decl(decl).fields().len()),
             Op::Hole | Op::Call(_) | Op::Result { .. } => None,
         };
         if let Some(arity) = arity {
@@ -1205,7 +1241,7 @@ pub struct Runs {
 }
 
 pub fn run(program: Program<'_>) -> Runs {
-    use sumi_hir::{Bools, Int, Ints, May, Ty, Value};
+    use sumi_hir::{Bools, Fields, Graph, Int, Ints, May, Ty, TyKind, Value};
 
     const STEPS: u64 = 1 << 17;
     /// The step budget is not enough: squaring along a recursion doubles the width every frame, and
@@ -1231,6 +1267,56 @@ pub fn run(program: Program<'_>) -> Runs {
             Value::Int(value) => contains(&may.ints, value),
             Value::Bool(value) => admits(may.bools, *value),
             Value::Unit => may.has_unit,
+            Value::Decl(decl, values) => match may.decls.get(*decl) {
+                None => false,
+                Some(Fields::Any) => true,
+                Some(Fields::Known(fields)) => fields
+                    .iter()
+                    .zip(values)
+                    .all(|(field, value)| holds(field, value)),
+            },
+        }
+    }
+    /// Some values of `ty` within `may`, every field of a declared type taken from its fact.
+    fn values_within(graph: &Graph, ty: Ty, may: &May) -> Vec<Value> {
+        match ty.kind() {
+            TyKind::Int => points(&may.ints).into_iter().map(Value::Int).collect(),
+            TyKind::Bool => [true, false]
+                .into_iter()
+                .filter(|&b| admits(may.bools, b))
+                .map(Value::Bool)
+                .collect(),
+            TyKind::Unit => vec![Value::Unit],
+            TyKind::Decl(decl) => {
+                let fields = graph.decl(decl).fields();
+                let facts: Vec<May> = match may.decls.get(decl) {
+                    None => return Vec::new(),
+                    Some(Fields::Any) => fields
+                        .iter()
+                        .map(|&(_, ty)| May::every(ty.expect("a run type's fields resolved")))
+                        .collect(),
+                    Some(Fields::Known(facts)) => facts.to_vec(),
+                };
+                let mut tuples: Vec<Vec<Value>> = vec![Vec::new()];
+                for (&(_, ty), fact) in fields.iter().zip(&facts) {
+                    let values = values_within(graph, ty.expect("resolved"), fact);
+                    tuples = tuples
+                        .iter()
+                        .flat_map(|tuple| {
+                            values.iter().map(|value| {
+                                let mut tuple = tuple.clone();
+                                tuple.push(value.clone());
+                                tuple
+                            })
+                        })
+                        .take(TUPLES)
+                        .collect();
+                }
+                tuples
+                    .into_iter()
+                    .map(|fields| Value::Decl(decl, fields.into_boxed_slice()))
+                    .collect()
+            }
         }
     }
     fn points(ints: &Ints) -> Vec<Int> {
@@ -1274,15 +1360,7 @@ pub fn run(program: Program<'_>) -> Runs {
         }
         let mut tuples: Vec<Vec<Value>> = vec![Vec::new()];
         for (may, &ty) in ranges.params.iter().zip(signature.params) {
-            let values: Vec<Value> = match ty {
-                Ty::Int => points(&may.ints).into_iter().map(Value::Int).collect(),
-                Ty::Bool => [true, false]
-                    .into_iter()
-                    .filter(|&b| admits(may.bools, b))
-                    .map(Value::Bool)
-                    .collect(),
-                Ty::Unit => vec![Value::Unit],
-            };
+            let values = values_within(program.analysis().graph(), ty, may);
             assert!(!values.is_empty(), "a live parameter has values");
             tuples = tuples
                 .iter()
@@ -1306,7 +1384,7 @@ pub fn run(program: Program<'_>) -> Runs {
                 if let Some((node, value)) = machine.latest() {
                     assert!(
                         holds(program.may(node), value),
-                        "f{}({args:?}) computed {value} at {node:?}, outside {:?}",
+                        "f{}({args:?}) computed {value:?} at {node:?}, outside {:?}",
                         id.index(),
                         program.may(node)
                     );
@@ -1340,7 +1418,7 @@ pub fn run(program: Program<'_>) -> Runs {
                 if let Some((node, value)) = optimized.latest() {
                     assert!(
                         holds(compiled.may(node), value),
-                        "optimized f{}({args:?}) computed {value} at {node:?}, from {:?}, \
+                        "optimized f{}({args:?}) computed {value:?} at {node:?}, from {:?}, \
                          outside {:?}",
                         id.index(),
                         compiled.origin(node),
@@ -1360,7 +1438,7 @@ pub fn run(program: Program<'_>) -> Runs {
             assert_eq!(value.ty(), signature.result);
             assert!(
                 holds(&ranges.result, &value),
-                "f{}({args:?}) = {value} outside its result set",
+                "f{}({args:?}) = {value:?} outside its result set",
                 id.index()
             );
         }
@@ -1372,10 +1450,41 @@ pub fn run(program: Program<'_>) -> Runs {
 /// Code a reachability warning calls dead computes nothing, whatever the arguments: those warnings
 /// rest on facts that hold beyond the ranges the file's own calls prove.
 fn dead_code_stays_dead(program: Program<'_>) {
-    use sumi_hir::{Machine, Ty, Value};
+    use sumi_hir::{Machine, Ty, TyKind, Value};
 
     const STEPS: u64 = 1 << 14;
     const TUPLES: usize = 16;
+    fn some_values(graph: &sumi_hir::Graph, ty: Ty) -> Vec<Value> {
+        match ty.kind() {
+            TyKind::Int => [-9, -1, 0, 1, 9]
+                .into_iter()
+                .map(|value| Value::Int(value.into()))
+                .collect(),
+            TyKind::Bool => vec![Value::Bool(true), Value::Bool(false)],
+            TyKind::Unit => vec![Value::Unit],
+            TyKind::Decl(decl) => {
+                let mut tuples: Vec<Vec<Value>> = vec![Vec::new()];
+                for &(_, field) in graph.decl(decl).fields() {
+                    let values = some_values(graph, field.expect("a run type's fields resolved"));
+                    tuples = tuples
+                        .iter()
+                        .flat_map(|tuple| {
+                            values.iter().map(|value| {
+                                let mut tuple = tuple.clone();
+                                tuple.push(value.clone());
+                                tuple
+                            })
+                        })
+                        .take(TUPLES)
+                        .collect();
+                }
+                tuples
+                    .into_iter()
+                    .map(|fields| Value::Decl(decl, fields.into_boxed_slice()))
+                    .collect()
+            }
+        }
+    }
     let analysis = program.analysis();
     let dead = analysis.dead();
     if dead.is_empty() {
@@ -1385,14 +1494,7 @@ fn dead_code_stays_dead(program: Program<'_>) {
     for (id, _) in program.functions() {
         let mut tuples: Vec<Vec<Value>> = vec![Vec::new()];
         for &ty in program.signature(id).params {
-            let values: Vec<Value> = match ty {
-                Ty::Int => [-9, -1, 0, 1, 9]
-                    .into_iter()
-                    .map(|value| Value::Int(value.into()))
-                    .collect(),
-                Ty::Bool => vec![Value::Bool(true), Value::Bool(false)],
-                Ty::Unit => vec![Value::Unit],
-            };
+            let values = some_values(graph, ty);
             tuples = tuples
                 .iter()
                 .flat_map(|tuple| {

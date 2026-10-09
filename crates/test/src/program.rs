@@ -38,6 +38,32 @@ fn chain(
         .boxed()
 }
 
+fn type_item() -> BoxedStrategy<String> {
+    let field = (name(), prop::sample::select(&["int", "bool", "P"][..]))
+        .prop_map(|(name, ty)| format!("{name}: {ty}"));
+    (
+        prop::sample::select(&["P", "Q"][..]),
+        prop::collection::vec(field, 0..3),
+        any::<bool>(),
+        any::<bool>(),
+    )
+        .prop_map(|(name, fields, trailing, multiline)| {
+            let comma = if trailing && !fields.is_empty() {
+                ","
+            } else {
+                ""
+            };
+            if fields.is_empty() {
+                format!("type {name} {{}}")
+            } else if multiline {
+                format!("type {name} {{\n  {}{comma}\n}}", fields.join(",\n  "))
+            } else {
+                format!("type {name} {{ {}{comma} }}", fields.join(", "))
+            }
+        })
+        .boxed()
+}
+
 fn param_list() -> BoxedStrategy<String> {
     (prop::collection::vec(name(), 0..3), any::<bool>())
         .prop_map(move |(params, trailing)| {
@@ -83,8 +109,20 @@ fn expr() -> BoxedStrategy<String> {
             4 => name(),
             4 => literal(),
             1 => expr.clone().prop_map(|e| format!("({e})")),
-            1 => (name(), prop::collection::vec(expr.clone(), 0..3), any::<bool>(), any::<bool>())
+            2 => (
+                name(),
+                prop::collection::vec((prop::option::of(name()), expr.clone()), 0..3),
+                any::<bool>(),
+                any::<bool>(),
+            )
                 .prop_map(|(callee, args, trailing, multiline)| {
+                    let args: Vec<String> = args
+                        .into_iter()
+                        .map(|(label, value)| match label {
+                            Some(label) => format!("{label}: {value}"),
+                            None => value,
+                        })
+                        .collect();
                     let comma = if trailing && !args.is_empty() { "," } else { "" };
                     if multiline && !args.is_empty() {
                         format!("{callee}(\n  {}{comma}\n)", args.join(",\n  "))
@@ -92,6 +130,8 @@ fn expr() -> BoxedStrategy<String> {
                         format!("{callee}({}{comma})", args.join(", "))
                     }
                 }),
+            1 => (name(), prop::collection::vec(name(), 1..3))
+                .prop_map(|(base, fields)| format!("{base}.{}", fields.join("."))),
             1 => (expr.clone(), block(expr.clone()), prop::option::of(otherwise))
                 .prop_map(|(condition, then, otherwise)| match otherwise {
                     Some(otherwise) => format!("if {condition} {then} else {otherwise}"),
@@ -157,8 +197,9 @@ fn block(expr: BoxedStrategy<String>) -> BoxedStrategy<String> {
 }
 
 pub fn program() -> BoxedStrategy<String> {
-    let item = (name(), param_list(), signature_tail(block(expr()), expr()))
+    let function = (name(), param_list(), signature_tail(block(expr()), expr()))
         .prop_map(|(name, params, (tail, _))| format!("fn {name}{params}{tail}"));
+    let item = prop_oneof![3 => function, 1 => type_item()];
     (any::<bool>(), prop::collection::vec(item, 0..3))
         .prop_map(|(comment, items)| {
             let mut text = if comment {

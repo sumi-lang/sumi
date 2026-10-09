@@ -4,13 +4,14 @@ sumi_frontend::codes! {
     /// A function with a syntax error in its body reports nothing here.
     SEMANTIC = "semantic";
 
-    /// A type reference naming none of `int`, `bool`, and `unit`.
+    /// A type reference naming no declared type and none of `int`, `bool`, and `unit`.
     UNKNOWN_TYPE: Error = "unknown-type";
 
     /// A name with no declaration in scope.
     UNKNOWN_NAME: Error = "unknown-name";
 
-    /// Two functions in a file, or two parameters of a function, with the same name.
+    /// Two items in a file, two parameters of a function, or two fields of a type with the same
+    /// name, or an item named like a built-in type.
     DUPLICATE_NAME: Error = "duplicate-name";
 
     /// A call whose callee is a parameter or binding.
@@ -40,8 +41,26 @@ sumi_frontend::codes! {
     /// A cycle of calls in which no parameter strictly moves toward a bound.
     UNBOUNDED_RECURSION: Error = "unbounded-recursion";
 
-    /// A function name used where a value is required.
+    /// A function or type name used where a value is required.
     NOT_A_VALUE: Error = "not-a-value";
+
+    /// A field read or label naming no field of the type it is applied to.
+    UNKNOWN_FIELD: Error = "unknown-field";
+
+    /// A construction leaving a field of its type without a value.
+    MISSING_FIELD: Error = "missing-field";
+
+    /// A construction giving one field twice.
+    DUPLICATE_FIELD: Error = "duplicate-field";
+
+    /// A construction argument without a field label.
+    UNLABELED_FIELD: Error = "unlabeled-field";
+
+    /// A function call argument with a label.
+    LABELED_ARGUMENT: Error = "labeled-argument";
+
+    /// A type holding a value of its own type through its fields.
+    RECURSIVE_TYPE: Error = "recursive-type";
 
     /// A parameter or local never read whose name does not begin with `_`, in a function that
     /// lowers whole.

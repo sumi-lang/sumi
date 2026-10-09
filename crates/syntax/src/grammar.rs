@@ -125,7 +125,7 @@ pub fn can_end_statement(kind: SyntaxKind) -> bool {
 }
 
 pub fn starts_item(kind: SyntaxKind) -> bool {
-    kind == T::FnKw
+    matches!(kind, T::FnKw | T::TypeKw)
 }
 
 /// A glued prefix operator opens an operand, so it continues nothing.

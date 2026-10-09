@@ -26,12 +26,13 @@ SourceFile! 1:1..37:1
           CallExpr! 4:26..5:30
             NameRef 4:26..4:31 "count"
             ArgList! 4:31..5:30
-              IfExpr 5:5..5:30
-                NameRef 5:8..5:9 "y"
-                Block 5:10..5:15
-                  LiteralExpr 5:12..5:13 "1"
-                Block 5:21..5:30
-                  LiteralExpr 5:23..5:28 "false"
+              Arg 5:5..5:30
+                IfExpr 5:5..5:30
+                  NameRef 5:8..5:9 "y"
+                  Block 5:10..5:15
+                    LiteralExpr 5:12..5:13 "1"
+                  Block 5:21..5:30
+                    LiteralExpr 5:23..5:28 "false"
   FnItem 7:1..7:28
     Name 7:4..7:9 "count"
     ParamList 7:9..7:17
@@ -57,8 +58,10 @@ SourceFile! 1:1..37:1
     CallExpr! 11:25..11:38
       NameRef 11:25..11:30 "count"
       ArgList! 11:30..11:38
-        LiteralExpr 11:31..11:35 "true"
-        LiteralExpr 11:37..11:38 "2"
+        Arg 11:31..11:35
+          LiteralExpr 11:31..11:35 "true"
+        Arg 11:37..11:38
+          LiteralExpr 11:37..11:38 "2"
   FnItem! 12:1..12:26
     Name 12:4..12:11 "negated"
     ParamList 12:11..12:13 "()"

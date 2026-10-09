@@ -1159,11 +1159,19 @@ fn complete(
     };
     let items = match context(lexed, tree, offset) {
         Context::Nothing => Vec::new(),
-        Context::Items => vec![keyword(Fixed::FnKw)],
-        Context::Types => Ty::ALL
+        Context::Items => vec![keyword(Fixed::FnKw), keyword(Fixed::TypeKw)],
+        Context::Types => Ty::SCALARS
             .iter()
-            .map(|ty| CompletionItem {
-                label: ty.as_str().into(),
+            .map(|ty| ty.scalar_name().expect("a scalar has a name").to_owned())
+            .chain(
+                analysis
+                    .decls()
+                    .iter()
+                    .filter_map(|decl| decl.name())
+                    .map(|name| analysis.text(name).to_owned()),
+            )
+            .map(|label| CompletionItem {
+                label,
                 kind: Some(CompletionItemKind::STRUCT),
                 ..CompletionItem::default()
             })
@@ -1198,11 +1206,13 @@ fn values(analysis: &Analysis, offset: TextSize, has_snippets: bool) -> Vec<Comp
         .into_iter()
         .map(|binding| {
             let name = binding.name().text(text);
-            let ty = analysis.ty(binding.declaration()).map(|ty| ty.as_str());
+            let ty = analysis
+                .ty(binding.declaration())
+                .map(|ty| analysis.show(ty).to_string());
             let detail = match (binding.kind(), ty) {
                 (BindingKind::Let { is_mutable: true }, Some(ty)) => Some(format!("mut {ty}")),
                 (BindingKind::Let { is_mutable: true }, None) => Some("mut".into()),
-                (_, ty) => ty.map(String::from),
+                (_, ty) => ty,
             };
             CompletionItem {
                 label: name.into(),
@@ -1232,8 +1242,11 @@ fn values(analysis: &Analysis, offset: TextSize, has_snippets: bool) -> Vec<Comp
                     label: name.into(),
                     kind: Some(CompletionItemKind::FUNCTION),
                     detail: signature.map(|Signature { params, result }| {
-                        let params: Vec<_> = params.iter().map(|ty| ty.as_str()).collect();
-                        format!("fn({}) -> {result}", params.join(", "))
+                        let params: Vec<_> = params
+                            .iter()
+                            .map(|&ty| analysis.show(ty).to_string())
+                            .collect();
+                        format!("fn({}) -> {}", params.join(", "), analysis.show(result))
                     }),
                     insert_text,
                     insert_text_format,
@@ -1418,10 +1431,14 @@ fn signature_line(analysis: &Analysis, id: FunctionId) -> String {
         .zip(params)
         .map(|(binding, ty)| {
             let binding = binding.expect("a signature's parameters are named");
-            format!("{}: {ty}", analysis.text(binding.name()))
+            format!("{}: {}", analysis.text(binding.name()), analysis.show(*ty))
         })
         .collect();
-    format!("fn {name}({}) -> {result}", params.join(", "))
+    format!(
+        "fn {name}({}) -> {}",
+        params.join(", "),
+        analysis.show(result)
+    )
 }
 
 /// A function in a valid file also shows what its live call sites pass and what it returns;
@@ -1440,7 +1457,7 @@ fn hover(
             let name = analysis.text(binding.name());
             let ty = analysis
                 .ty(binding.declaration())
-                .map(|ty| format!(": {ty}"))
+                .map(|ty| format!(": {}", analysis.show(ty)))
                 .unwrap_or_default();
             match binding.kind() {
                 BindingKind::Param => format!("{name}{ty}"),
@@ -1461,17 +1478,32 @@ fn hover(
                     let binding = binding.expect("a signature's parameters are named");
                     if may.is_live() {
                         let name = analysis.text(binding.name());
-                        proved.push(format!("{name} ∈ {}", may.shown(*ty)));
+                        proved.push(format!("{name} ∈ {}", may.shown(*ty, analysis)));
                     }
                 }
                 if ranges.result.is_live() {
                     proved.push(format!(
                         "result ∈ {}",
-                        ranges.result.shown(signature.result)
+                        ranges.result.shown(signature.result, analysis)
                     ));
                 }
             }
             signature_line(analysis, id)
+        }
+        Symbol::Type(id) => {
+            let decl = analysis.decl(id);
+            let name = decl.name().map_or("<missing>", |name| analysis.text(name));
+            let graph = analysis.graph();
+            let fields: Vec<String> = decl
+                .fields()
+                .iter()
+                .zip(graph.decl(id).fields())
+                .map(|(field, &(_, ty))| {
+                    let ty = ty.map_or("?".to_owned(), |ty| analysis.show(ty).to_string());
+                    format!("{}: {ty}", field.text())
+                })
+                .collect();
+            format!("type {name} {{ {} }}", fields.join(", "))
         }
     };
     let (kind, value) = if has_markdown {
@@ -1526,10 +1558,11 @@ fn inlay_hints(analysis: &Analysis, requested: Range, encoding: Encoding) -> Vec
         }
         let ty = analysis.ty(binding.declaration())?;
         let at = binding.name().end();
-        let mut hint = hint(at, format!(": {ty}"), InlayHintKind::TYPE);
+        let shown = format!(": {}", analysis.show(ty));
+        let mut hint = hint(at, shown.clone(), InlayHintKind::TYPE);
         hint.text_edits = Some(vec![TextEdit::new(
             Range::new(hint.position, hint.position),
-            format!(": {ty}"),
+            shown,
         )]);
         Some(hint)
     });
@@ -1549,7 +1582,7 @@ fn inlay_hints(analysis: &Analysis, requested: Range, encoding: Encoding) -> Vec
         let args = call
             .and_then(|call| call.arg_list(tree))
             .into_iter()
-            .flat_map(|list| list.args(tree));
+            .flat_map(|list| list.values(tree));
         target
             .into_iter()
             .flat_map(|id| analysis.params(id))
@@ -2140,8 +2173,8 @@ fn body(c: bool) -> int {
                 .map(String::from)
                 .collect()
         };
-        assert_eq!(labels(text, 0, 0, false), ["fn"]);
-        assert_eq!(labels(text, 11, 0, false), ["fn"]);
+        assert_eq!(labels(text, 0, 0, false), ["fn", "type"]);
+        assert_eq!(labels(text, 11, 0, false), ["fn", "type"]);
         assert_eq!(labels(text, 1, 3, false), Vec::<String>::new());
         assert_eq!(labels(text, 1, 8, false), Vec::<String>::new());
         assert_eq!(labels(text, 1, 16, false), Vec::<String>::new());
@@ -2662,7 +2695,7 @@ fn main() -> int {
         let text = "fn f() = {\n    if true { let q = 1 } \n}";
         assert_eq!(labels(text, 1, 26, false), values(&[], true));
         assert_eq!(labels(text, 1, 24, false), values(&["q"], false));
-        assert_eq!(labels("", 0, 0, false), ["fn"]);
+        assert_eq!(labels("", 0, 0, false), ["fn", "type"]);
         assert_eq!(
             complete(&analyzed(""), Position::new(3, 0), Encoding::Utf16, false),
             None

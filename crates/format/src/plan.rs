@@ -304,6 +304,19 @@ impl Planner<'_> {
             NodeKind::FnItem => self.function(node, &els, level),
             NodeKind::ParamList | NodeKind::ArgList => self.list(node, &els, level),
             NodeKind::Block => self.block(&els, level),
+            NodeKind::FieldList => {
+                self.pairs(&els, |a, b| match (a, b) {
+                    (El::Tok(_, SyntaxKind::LBrace), El::Tok(_, SyntaxKind::RBrace)) => {
+                        Gap::closer(Closer::Block, level, Breaks::Never)
+                    }
+                    (_, El::Tok(_, SyntaxKind::RBrace)) => {
+                        Gap::closer(Closer::Block, level, Breaks::Hard)
+                    }
+                    (_, El::Tok(_, SyntaxKind::Comma)) => Gap::glue(level + 1),
+                    _ => Gap::hard(level + 1),
+                });
+                self.children(&els, level + 1);
+            }
             NodeKind::LetStmt | NodeKind::AssignStmt | NodeKind::DiscardStmt => {
                 self.binding(node, &els, level);
             }
@@ -321,18 +334,18 @@ impl Planner<'_> {
                 self.group(self.first_sig(node) + 1, self.end_sig(node), hug, false);
                 self.children_hugging(&els, level, hug);
             }
-            NodeKind::Param => {
+            NodeKind::Param | NodeKind::Field | NodeKind::Arg => {
                 self.pairs(&els, |_, b| match b {
                     El::Tok(_, SyntaxKind::Colon) => Gap::glue(level),
                     _ => Gap::space(level),
                 });
                 self.children(&els, level);
             }
-            NodeKind::PrefixExpr | NodeKind::CallExpr => {
+            NodeKind::PrefixExpr | NodeKind::CallExpr | NodeKind::FieldExpr => {
                 self.pairs(&els, |_, _| Gap::glue(level));
                 self.children(&els, level);
             }
-            NodeKind::ReturnStmt | NodeKind::IfExpr => {
+            NodeKind::ReturnStmt | NodeKind::IfExpr | NodeKind::TypeItem => {
                 self.pairs(&els, |_, _| Gap::space(level));
                 self.children(&els, level);
             }
@@ -439,7 +452,7 @@ impl Planner<'_> {
     fn opens_block(&self, node: NodeIdx) -> bool {
         match self.tree.kind(node) {
             NodeKind::Block | NodeKind::IfExpr | NodeKind::ForExpr => true,
-            NodeKind::BinaryExpr | NodeKind::ParenExpr => self.hug(node).is_some(),
+            NodeKind::BinaryExpr | NodeKind::ParenExpr | NodeKind::Arg => self.hug(node).is_some(),
             _ => false,
         }
     }
