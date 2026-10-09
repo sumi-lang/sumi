@@ -7,6 +7,8 @@
 - Continue a comment line on Enter with `//`, unless the comment is empty or follows code.
 - Add **Sumi: Restart Language Server**, and restart the server when `sumi.server.path` changes
   instead of asking for a window reload.
+- Show the server in the status bar while it starts, and when it fails to start or crashes five
+  times in three minutes, with a restart a click away there and in the notification.
 
 ## 0.4.0
 
