@@ -283,6 +283,33 @@ suite("Sumi extension", () => {
     await waitForDiagnostics(document.uri, (diagnostics) => diagnostics.length === 0, "after the path reset");
   });
 
+  test("recovers by restart after a server that cannot start or keeps crashing", async () => {
+    const document = await openSaved("crash.su", "fn main() = 1");
+    await waitForDiagnostics(document.uri, (diagnostics) => diagnostics.length === 0, "clean source");
+    const extension = vscode.extensions.getExtension("sumi-lang.sumi-language");
+    assert.ok(extension);
+    const server = path.join(extension.extensionPath, "server", "sumi-lsp");
+    const crashing = path.join(workspace, "crashing-server.sh");
+    fs.writeFileSync(crashing, `#!/bin/sh\n"${server}" &\nsleep 1\nkill $!\nwait\n`, { mode: 0o755 });
+    const configuration = vscode.workspace.getConfiguration("sumi.server");
+    try {
+      await configuration.update("path", path.join(workspace, "missing-server"), vscode.ConfigurationTarget.Global);
+      await vscode.commands.executeCommand("sumi.restartServer");
+      await configuration.update("path", crashing, vscode.ConfigurationTarget.Global);
+      await vscode.commands.executeCommand("sumi.restartServer");
+      await new Promise((resolve) => setTimeout(resolve, 7_000));
+    } finally {
+      await configuration.update("path", undefined, vscode.ConfigurationTarget.Global);
+    }
+    await vscode.commands.executeCommand("sumi.restartServer");
+    await replace(document, "fn main() = 01");
+    await waitForDiagnostics(
+      document.uri,
+      (diagnostics) => hasCode(diagnostics, "syntax/noncanonical-number"),
+      "diagnostics after recovering",
+    );
+  });
+
   test("returns recovered symbols for incomplete input", async () => {
     const document = await openSaved("incomplete.su", "fn unfinished() = {");
     const diagnostics = await waitForDiagnostics(

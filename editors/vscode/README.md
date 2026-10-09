@@ -14,7 +14,8 @@ The extension provides:
 
 The extension includes `sumi-lsp` on supported platforms. Set `sumi.server.path` to use a custom
 server or to provide one on another platform; the server restarts when the setting changes, and
-**Sumi: Restart Language Server** restarts it at any time.
+**Sumi: Restart Language Server** restarts it at any time. A server that fails to start or crashes
+repeatedly is reported in the status bar and a notification, each with a restart a click away.
 
 ## License
 
