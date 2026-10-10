@@ -109,7 +109,11 @@ suite("Sumi extension", () => {
 
   test("provides complete compiler highlighting", async () => {
     const document = await openSaved("semantic-tokens.su", "fn double(x: int) -> int = x + x\n");
-    await waitForDiagnostics(document.uri, (diagnostics) => diagnostics.length === 0, "clean source");
+    await waitForDiagnostics(
+      document.uri,
+      (diagnostics) => hasCode(diagnostics, "semantic/unused-function"),
+      "semantic analysis before refined highlighting",
+    );
     const legend = await vscode.commands.executeCommand<vscode.SemanticTokensLegend>(
       "vscode.provideDocumentSemanticTokensLegend", document.uri,
     );
