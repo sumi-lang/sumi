@@ -107,6 +107,47 @@ suite("Sumi extension", () => {
     assertDiagnostic(semantic, "semantic/unknown-name", 12, 19);
   });
 
+  test("provides complete compiler highlighting", async () => {
+    const document = await openSaved("semantic-tokens.su", "fn double(x: int) -> int = x + x\n");
+    await waitForDiagnostics(document.uri, (diagnostics) => diagnostics.length === 0, "clean source");
+    const legend = await vscode.commands.executeCommand<vscode.SemanticTokensLegend>(
+      "vscode.provideDocumentSemanticTokensLegend", document.uri,
+    );
+    assert.deepEqual(legend.tokenTypes, [
+      "function", "parameter", "variable", "keyword", "type", "number", "comment",
+      "operator", "boolean", "punctuation", "invalid",
+    ]);
+    assert.deepEqual(legend.tokenModifiers, ["declaration", "readonly"]);
+    const tokens = await vscode.commands.executeCommand<vscode.SemanticTokens>(
+      "vscode.provideDocumentSemanticTokens", document.uri,
+    );
+    assert.deepEqual(Array.from(tokens.data), [
+      0, 0, 2, 3, 0,
+      0, 3, 6, 0, 1,
+      0, 6, 1, 9, 0,
+      0, 1, 1, 1, 3,
+      0, 1, 1, 7, 0,
+      0, 2, 3, 4, 0,
+      0, 3, 1, 9, 0,
+      0, 2, 1, 7, 0,
+      0, 1, 1, 7, 0,
+      0, 2, 3, 4, 0,
+      0, 4, 1, 7, 0,
+      0, 2, 1, 1, 2,
+      0, 2, 1, 7, 0,
+      0, 2, 1, 1, 2,
+    ]);
+  });
+
+  test("matches brackets outside comments", async () => {
+    const document = await openSaved("brackets.su", "fn main() -> int {\n    // } ) {\n    1\n}\n");
+    const editor = await vscode.window.showTextDocument(document);
+    await waitForDiagnostics(document.uri, (diagnostics) => diagnostics.length === 0, "bracket source");
+    editor.selection = new vscode.Selection(0, 17, 0, 17);
+    await vscode.commands.executeCommand("editor.action.jumpToBracket");
+    assert.equal(editor.selection.active.line, 3, "the comment's closing brace is ignored");
+  });
+
   test("completes the names in scope", async () => {
     const document = await openSaved(
       "completion.su",
