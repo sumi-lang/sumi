@@ -202,7 +202,7 @@ mod tests {
     #[test]
     fn the_witnesses_follow_the_grammar() {
         let witnesses = witnesses();
-        assert_eq!(witnesses.len(), 114);
+        assert_eq!(witnesses.len(), 132);
         assert!(
             witnesses
                 .windows(2)

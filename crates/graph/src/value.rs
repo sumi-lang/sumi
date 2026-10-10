@@ -119,6 +119,7 @@ impl Value {
             (Case::Bool(wanted), Self::Bool(value)) => Ok(*value == wanted),
             (Case::Is(ty), Self::Decl(decl, _)) => Ok(unions.admits(ty, *decl)),
             (Case::Not(ty), Self::Decl(decl, _)) => Ok(!unions.admits(ty, *decl)),
+            (Case::Any, Self::Decl(..)) => Ok(true),
             _ => Err(Fault::Type),
         }
     }

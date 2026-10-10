@@ -38,6 +38,10 @@ pub(crate) enum DemandKind {
     },
     /// `actual` is the base of a read of the field.
     Field(FieldName),
+    /// `actual` is a `match` scrutinee, which holds a declared value.
+    Matched,
+    /// `actual` is a `match` scrutinee, among whose type's members the arm's type is.
+    Member(Ty),
 }
 
 pub(crate) struct Demand {
@@ -135,8 +139,22 @@ impl Demands<'_> {
                 }
             }
             Op::Switch { arms } => {
+                let expect = |ty| DemandKind::Type {
+                    expected: Expected::Ty(ty),
+                    declared: None,
+                };
                 if value(0) && is_boolean(graph, *arms) {
-                    require(reads[0], inputs[0], Expected::Ty(Ty::BOOL), None);
+                    if typed(inputs[0]) {
+                        demand(reads[0], inputs[0], expect(Ty::BOOL));
+                    }
+                } else if value(0) && typed(inputs[0]) {
+                    demand(reads[0], inputs[0], DemandKind::Matched);
+                    for arm in arms.iter() {
+                        let context = graph.region(arm).context;
+                        if let Case::Is(ty) = graph.case(context) {
+                            demand(spans.origin(context), inputs[0], DemandKind::Member(ty));
+                        }
+                    }
                 }
                 let valued: Vec<RegionId> = arms
                     .iter()
@@ -147,7 +165,9 @@ impl Demands<'_> {
                     // What falls through is unit, so every arm is.
                     for arm in valued {
                         let (at, result) = region(arm);
-                        require(at, result, Expected::Ty(Ty::UNIT), None);
+                        if typed(result) {
+                            demand(at, result, expect(Ty::UNIT));
+                        }
                     }
                 } else if typed(node) && valued.len() == arms.len() {
                     let branches: Vec<_> = valued.iter().map(|&arm| region(arm)).collect();
@@ -284,7 +304,7 @@ fn is_total(graph: &Graph, arms: Arms) -> bool {
             match case {
                 Case::Bool(true) => on_true = true,
                 Case::Bool(false) => on_false = true,
-                Case::Is(_) | Case::Not(_) => {}
+                Case::Is(_) | Case::Not(_) | Case::Any => {}
             }
         }
         on_true && on_false
@@ -312,7 +332,7 @@ pub(crate) fn draw(
     types: &[TypeHeader],
     arguments: Arguments,
 ) -> (Typing, Context, Vec<Demand>) {
-    let mut typing = Typing::for_nodes(graph.nodes().len());
+    let mut typing = Typing::for_nodes(graph.nodes().len(), graph.unions().clone());
     let typed = |node: NodeId| lowered.typed[node.index()];
     let mut constants: Vec<Int> = Vec::new();
     let mut cases: Vec<Case> = Vec::new();

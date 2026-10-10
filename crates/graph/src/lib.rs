@@ -184,7 +184,8 @@ impl fmt::Debug for Ty {
     }
 }
 
-/// A type as the source names it: a union as its members joined by ` | `.
+/// A type as the source names it: a union as its members joined by ` | `, in name order, which
+/// no declaration order changes.
 pub struct ShownTy<'a>(Ty, &'a dyn Names);
 
 impl fmt::Display for ShownTy<'_> {
@@ -192,13 +193,10 @@ impl fmt::Display for ShownTy<'_> {
         match self.0.kind() {
             TyKind::Decl(id) => f.write_str(self.1.decl(id)),
             TyKind::Union(id) => {
-                for (index, member) in self.1.members(id).iter().enumerate() {
-                    if index > 0 {
-                        f.write_str(" | ")?;
-                    }
-                    f.write_str(self.1.decl(*member))?;
-                }
-                Ok(())
+                let mut names: Vec<&str> =
+                    self.1.members(id).iter().map(|&m| self.1.decl(m)).collect();
+                names.sort_unstable();
+                f.write_str(&names.join(" | "))
             }
             _ => f.write_str(self.0.scalar_name().expect("a scalar has a name")),
         }

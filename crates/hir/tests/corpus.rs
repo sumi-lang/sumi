@@ -596,7 +596,7 @@ fn role_of(analysis: &Analysis, case: Case) -> String {
         Case::Bool(true) => "then".into(),
         Case::Bool(false) => "else".into(),
         Case::Is(ty) => analysis.show(ty).to_string(),
-        Case::Not(_) => "_".into(),
+        Case::Not(_) | Case::Any => "_".into(),
     }
 }
 

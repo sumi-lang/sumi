@@ -39,8 +39,7 @@ fn chain(
 }
 
 fn type_item() -> BoxedStrategy<String> {
-    let field = (name(), prop::sample::select(&["int", "bool", "P"][..]))
-        .prop_map(|(name, ty)| format!("{name}: {ty}"));
+    let field = (name(), type_text()).prop_map(|(name, ty)| format!("{name}: {ty}"));
     (
         prop::sample::select(&["P", "Q"][..]),
         prop::collection::vec(field, 0..3),
@@ -64,12 +63,21 @@ fn type_item() -> BoxedStrategy<String> {
         .boxed()
 }
 
+fn type_text() -> BoxedStrategy<String> {
+    prop::sample::select(&["int", "bool", "P", "P | Q", "P | Q | int"][..])
+        .prop_map(str::to_owned)
+        .boxed()
+}
+
 fn param_list() -> BoxedStrategy<String> {
-    (prop::collection::vec(name(), 0..3), any::<bool>())
+    (
+        prop::collection::vec((name(), type_text()), 0..3),
+        any::<bool>(),
+    )
         .prop_map(move |(params, trailing)| {
             let params: Vec<String> = params
                 .into_iter()
-                .map(|param| format!("{param}: int"))
+                .map(|(param, ty)| format!("{param}: {ty}"))
                 .collect();
             let comma = if trailing && !params.is_empty() {
                 ","
@@ -89,9 +97,9 @@ fn signature_tail(
         2 => block.prop_map(|body| (format!(" {body}"), false)),
         1 => body.prop_map(|body| (format!(" = {body}"), true)),
     ];
-    (any::<bool>(), body)
+    (prop::option::of(type_text()), body)
         .prop_map(|(returns, (body, bare))| {
-            let returns = if returns { " -> int" } else { "" };
+            let returns = returns.map_or(String::new(), |ty| format!(" -> {ty}"));
             (format!("{returns}{body}"), bare)
         })
         .boxed()
@@ -132,6 +140,36 @@ fn expr() -> BoxedStrategy<String> {
                 }),
             1 => (name(), prop::collection::vec(name(), 1..3))
                 .prop_map(|(base, fields)| format!("{base}.{}", fields.join("."))),
+            2 => (
+                expr.clone(),
+                prop::collection::vec(
+                    (prop::sample::select(&["P", "Q"][..]), prop::option::of(name()), expr.clone()),
+                    0..3,
+                ),
+                prop::option::of(expr.clone()),
+                any::<bool>(),
+                any::<bool>(),
+            )
+                .prop_map(|(scrutinee, arms, rest, trailing, multiline)| {
+                    let mut arms: Vec<String> = arms
+                        .into_iter()
+                        .map(|(member, binding, value)| match binding {
+                            Some(binding) => format!("{member}({binding}) => {value}"),
+                            None => format!("{member} => {value}"),
+                        })
+                        .collect();
+                    if let Some(rest) = rest {
+                        arms.push(format!("_ => {rest}"));
+                    }
+                    let comma = if trailing && !arms.is_empty() { "," } else { "" };
+                    if arms.is_empty() {
+                        format!("match {scrutinee} {{}}")
+                    } else if multiline {
+                        format!("match {scrutinee} {{\n  {}{comma}\n}}", arms.join(",\n  "))
+                    } else {
+                        format!("match {scrutinee} {{ {}{comma} }}", arms.join(", "))
+                    }
+                }),
             1 => (expr.clone(), block(expr.clone()), prop::option::of(otherwise))
                 .prop_map(|(condition, then, otherwise)| match otherwise {
                     Some(otherwise) => format!("if {condition} {then} else {otherwise}"),
@@ -160,9 +198,9 @@ fn expr() -> BoxedStrategy<String> {
 fn statement(expr: BoxedStrategy<String>) -> BoxedStrategy<(String, bool)> {
     prop_oneof![
         3 => expr.clone().prop_map(|e| (e, true)),
-        2 => (any::<bool>(), name(), any::<bool>(), expr.clone()).prop_map(|(mutable, name, typed, init)| {
+        2 => (any::<bool>(), name(), prop::option::of(type_text()), expr.clone()).prop_map(|(mutable, name, typed, init)| {
             let mutable = if mutable { "mut " } else { "" };
-            let ty = if typed { ": int" } else { "" };
+            let ty = typed.map_or(String::new(), |ty| format!(": {ty}"));
             (format!("let {mutable}{name}{ty} = {init}"), false)
         }),
         2 => (expr.clone(), expr.clone()).prop_map(|(target, value)| (format!("{target} = {value}"), false)),

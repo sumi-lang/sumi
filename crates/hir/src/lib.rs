@@ -35,6 +35,8 @@ pub struct Analysis {
     decls: Vec<TypeDecl>,
     /// By field name ID.
     field_names: Vec<Box<str>>,
+    /// The graph's, and those inference minted.
+    unions: Unions,
     bindings: Vec<Binding>,
     references: Vec<Occurrence>,
     unresolved: Vec<TextRange>,
@@ -82,6 +84,10 @@ impl Analysis {
     }
     pub fn decl(&self, id: DeclId) -> &TypeDecl {
         &self.decls[id.index()]
+    }
+    /// Every union a type here names, the graph's and those inference minted.
+    pub fn unions(&self) -> &Unions {
+        &self.unions
     }
     fn may(&self, node: NodeId) -> &May {
         self.settled.may(node)
@@ -287,7 +293,7 @@ impl<'a> Program<'a> {
                 && args
                     .iter()
                     .zip(signature.params)
-                    .all(|(arg, &param)| arg.ty() == param),
+                    .all(|(arg, &param)| self.analysis.unions.fits(arg.ty(), param)),
             "arguments must match the signature"
         );
         signature
@@ -438,7 +444,7 @@ impl Names for Analysis {
     }
 
     fn members(&self, id: UnionId) -> &[DeclId] {
-        self.graph.unions().get(id)
+        self.unions.get(id)
     }
 }
 
@@ -495,7 +501,7 @@ pub struct Occurrence {
     pub is_write: bool,
 }
 
-/// A local a body declares: a parameter, a `let`, or a `for` index.
+/// A local a body declares: a parameter, a `let`, a `for` index, or a `match` arm's binding.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Binding {
     name: TextRange,
@@ -507,8 +513,12 @@ pub struct Binding {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BindingKind {
     Param,
-    Let { is_mutable: bool },
+    Let {
+        is_mutable: bool,
+    },
     LoopIndex,
+    /// A `match` arm's binding of the narrowed scrutinee.
+    Arm,
 }
 
 impl Binding {

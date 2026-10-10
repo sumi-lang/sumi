@@ -766,6 +766,7 @@ impl May {
                 !self.decls.is_empty()
                     && self.decls.iter().all(|(decl, _)| !unions.admits(ty, decl))
             }
+            Case::Any => !self.decls.is_empty(),
         }
     }
 
@@ -781,6 +782,7 @@ impl May {
             }
             Case::Is(ty) => self.decls.iter().any(|(decl, _)| unions.admits(ty, decl)),
             Case::Not(ty) => self.decls.iter().any(|(decl, _)| !unions.admits(ty, decl)),
+            Case::Any => !self.decls.is_empty(),
         }
     }
 
@@ -831,11 +833,12 @@ impl fmt::Display for Shown<'_> {
             TyKind::Decl(decl) => self.0.shown_decl(decl, self.2, f),
             TyKind::Union(id) => {
                 let members = self.2.members(id);
-                let present: Vec<DeclId> = members
+                let mut present: Vec<DeclId> = members
                     .iter()
                     .copied()
                     .filter(|&decl| self.0.decls.get(decl).is_some())
                     .collect();
+                present.sort_by_key(|&decl| self.2.decl(decl));
                 if present.is_empty() {
                     return f.write_str("∅");
                 }

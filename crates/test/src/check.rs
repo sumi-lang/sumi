@@ -824,6 +824,11 @@ fn typed(analysis: &Analysis) {
             .expect("a complete function has a signature");
         let run = graph.run(FunctionId::new(index));
         let ty = |node: NodeId| analysis.ty(node);
+        // A value of a member flows into a union: the types fit, not agree.
+        let fits = |actual: Option<Ty>, expected: Option<Ty>| match (actual, expected) {
+            (Some(actual), Some(expected)) => analysis.unions().fits(actual, expected),
+            (actual, expected) => actual == expected,
+        };
         for node in run.nodes() {
             let entry = graph.node(node);
             let own = ty(node);
@@ -927,7 +932,7 @@ fn typed(analysis: &Analysis) {
                 }
                 Op::Copy { declared } => {
                     if values[0] {
-                        assert_eq!(own, ty(inputs[0]));
+                        assert!(fits(ty(inputs[0]), own));
                     }
                     if let Some(declared) = declared {
                         assert_eq!(own, Some(*declared));
@@ -936,7 +941,7 @@ fn typed(analysis: &Analysis) {
                 Op::Assign => {
                     assert_eq!(own, ty(graph.declaration(node)));
                     if values[0] {
-                        assert_eq!(ty(inputs[0]), own);
+                        assert!(fits(ty(inputs[0]), own));
                     }
                 }
                 Op::Phi => {
@@ -955,7 +960,7 @@ fn typed(analysis: &Analysis) {
                     }
                     for (index, &input) in inputs[1..].iter().enumerate() {
                         if values[index + 1] {
-                            assert_eq!(ty(input), own);
+                            assert!(fits(ty(input), own));
                         }
                     }
                 }
@@ -993,7 +998,7 @@ fn typed(analysis: &Analysis) {
                         continue;
                     }
                     for region in valued {
-                        assert_eq!(ty(region.result()), own);
+                        assert!(fits(ty(region.result()), own));
                     }
                 }
                 Op::Narrow(ty) => assert_eq!(own, Some(*ty)),
@@ -1006,18 +1011,20 @@ fn typed(analysis: &Analysis) {
                     for (index, (&input, &param)) in inputs.iter().zip(signature.params).enumerate()
                     {
                         if values[index] {
-                            assert_eq!(ty(input), Some(param));
+                            let actual = ty(input).expect("a read argument has a type");
+                            assert!(analysis.unions().fits(actual, param));
                         }
                     }
                 }
+                // A peer typed as a union widens the class to it.
                 Op::Make(decl) => {
-                    assert_eq!(own, Some(Ty::decl(*decl)));
+                    assert!(fits(Some(Ty::decl(*decl)), own));
                     let fields = graph.decl(*decl).fields();
                     assert_eq!(inputs.len(), fields.len());
                     for (index, (&input, &(_, field))) in inputs.iter().zip(fields).enumerate() {
                         assert!(field.is_some(), "a made type's fields resolved");
                         if values[index] {
-                            assert_eq!(ty(input), field);
+                            assert!(fits(ty(input), field));
                         }
                     }
                 }
@@ -1087,7 +1094,7 @@ fn graph(analysis: &Analysis) {
         if analysis.spans().name(id).is_some() {
             assert!(matches!(
                 node.op,
-                Op::Param { .. } | Op::Copy { .. } | Op::Hole | Op::LoopIndex
+                Op::Param { .. } | Op::Copy { .. } | Op::Hole | Op::LoopIndex | Op::Narrow(_)
             ));
         }
         if analysis.is_valid() {
@@ -1444,7 +1451,12 @@ pub fn run(program: Program<'_>) -> Runs {
             assert!(optimized.max_depth() <= machine.max_depth());
             assert_eq!(compiled.machine(id, &args).run(), Ok(value.clone()));
             assert_eq!(compiled.evaluate(id, &args), value);
-            assert_eq!(value.ty(), signature.result);
+            assert!(
+                program
+                    .analysis()
+                    .unions()
+                    .fits(value.ty(), signature.result)
+            );
             assert!(
                 holds(&ranges.result, &value),
                 "f{}({args:?}) = {value:?} outside its result set",

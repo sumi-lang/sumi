@@ -30,6 +30,8 @@ pub enum DeadCause {
     LoopBody,
     /// The statements after one that never completes, to the end of their block.
     AfterStop,
+    /// A `match` arm no value the scrutinee may hold selects.
+    Arm,
 }
 
 impl fmt::Display for DeadCause {
@@ -39,6 +41,7 @@ impl fmt::Display for DeadCause {
             Self::RightOperand => "the right side never runs",
             Self::LoopBody => "the loop body never runs",
             Self::AfterStop => "unreachable code",
+            Self::Arm => "this arm never runs",
         })
     }
 }
@@ -104,6 +107,20 @@ pub(crate) fn warn(
         .windows(2)
         .map(|pair| stops([pair[0], pair[1]], delivered))
         .collect();
+    // (arm context, parent) of each arm of a `match` the delivered solve never selects.
+    let arms: Vec<(NodeId, NodeId)> = graph
+        .node_ids()
+        .filter_map(|node| match graph.node(node).op {
+            Op::Switch { arms } if !is_boolean(graph, arms) => Some(arms),
+            _ => None,
+        })
+        .flat_map(|arms| arms.iter())
+        .map(|arm| graph.region(arm).context)
+        .map(|context| (context, graph.inputs(context)[1]))
+        .filter(|&(context, parent)| {
+            delivered.may(parent).is_live() && !delivered.may(context).is_live()
+        })
+        .collect();
     let closed = closed(graph, lowered);
     // Runs are contiguous in declaration order.
     let open = |node: NodeId| {
@@ -113,6 +130,7 @@ pub(crate) fn warn(
             - 1]
     };
     let any = (conditions.iter().any(|condition| open(condition.value))
+        || arms.iter().any(|&(context, _)| open(context))
         || statements
             .windows(2)
             .zip(&stops_delivered)
@@ -184,6 +202,23 @@ pub(crate) fn warn(
         ));
         source.report(condition.at, codes::CONSTANT_CONDITION, message, labels);
         deads.extend(dead);
+    }
+
+    for (context, parent) in arms {
+        if !facts(context).may(parent).is_live() || facts(context).may(context).is_live() {
+            continue;
+        }
+        let dead = Dead {
+            range: spans.origin(context),
+            cause: DeadCause::Arm,
+        };
+        source.report(
+            dead.range,
+            codes::UNREACHABLE_CODE,
+            dead.cause.to_string(),
+            [],
+        );
+        deads.push(dead);
     }
 
     for (index, pair) in statements.windows(2).enumerate() {

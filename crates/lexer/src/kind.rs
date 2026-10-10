@@ -130,6 +130,7 @@ tokens! {
     IfKw: keyword "if",
     InKw: keyword "in",
     LetKw: keyword "let",
+    MatchKw: keyword "match",
     MutKw: keyword "mut",
     ReturnKw: keyword "return",
     TrueKw: keyword "true",

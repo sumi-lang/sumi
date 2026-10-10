@@ -62,6 +62,12 @@ sumi_frontend::codes! {
     /// A type holding a value of its own type through its fields.
     RECURSIVE_TYPE: Error = "recursive-type";
 
+    /// A union member naming a scalar type.
+    INVALID_UNION_MEMBER: Error = "invalid-union-member";
+
+    /// A `match` with no arm for a member its scrutinee may hold, whatever the arguments.
+    NON_EXHAUSTIVE_MATCH: Error = "non-exhaustive-match";
+
     /// A parameter or local never read whose name does not begin with `_`, in a function that
     /// lowers whole.
     UNUSED_NAME: Warning = "unused-name";

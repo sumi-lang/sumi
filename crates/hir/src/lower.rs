@@ -6,7 +6,9 @@ use std::collections::{HashMap, HashSet};
 
 use rustc_hash::FxBuildHasher;
 use sumi_frontend::{DiagnosticCode, Fix, Label};
-use sumi_graph::{Arms, Carried, Case, Decl, DeclId, FieldName, GraphBuilder, References, ShownTy};
+use sumi_graph::{
+    Arms, Carried, Case, Decl, DeclId, FieldName, GraphBuilder, References, ShownTy, UnionId,
+};
 use sumi_lexer::{LexedFile, RawIdx, SyntaxKind, TokenFlags};
 use sumi_syntax::{
     Literal, NodeIdx, NodeKind, PrefixOp, SyntaxTree,
@@ -129,7 +131,7 @@ pub(crate) struct Lowered {
 }
 
 /// `a`, `a and b`, or `a, b, and c`.
-fn join(types: &[String]) -> String {
+pub(crate) fn join(types: &[String]) -> String {
     match types.split_last() {
         None => unreachable!("a list of types names one"),
         Some((only, [])) => only.clone(),
@@ -197,7 +199,7 @@ impl sumi_graph::Names for Source<'_> {
         self.field_names[name.index()]
     }
 
-    fn members(&self, id: sumi_graph::UnionId) -> &[DeclId] {
+    fn members(&self, id: UnionId) -> &[DeclId] {
         self.unions.get(id)
     }
 }
@@ -307,7 +309,62 @@ impl<'s> Source<'s> {
             .map(|(origin, types)| (origin, format!("{} here", join(&types)).into()));
         self.report(at, code, message(join(&types)), labels);
     }
-    fn ty(&mut self, node: ast::TypeRef) -> Option<Ty> {
+    fn ty(&mut self, node: ast::Type) -> Option<Ty> {
+        let union = match node {
+            ast::Type::TypeRef(name) => return self.named_ty(name),
+            ast::Type::UnionType(union) => union,
+        };
+        if self.tree.has_error(union.node()) {
+            return None;
+        }
+        // Nested to the left: the leftmost name is deepest.
+        let mut names = vec![union.rhs(self.tree)];
+        let mut lhs = union.lhs(self.tree);
+        while let Some(ast::Type::UnionType(inner)) = lhs {
+            names.push(inner.rhs(self.tree));
+            lhs = inner.lhs(self.tree);
+        }
+        if let Some(ast::Type::TypeRef(first)) = lhs {
+            names.push(Some(first));
+        }
+        names.reverse();
+        let mut members = Vec::new();
+        let mut is_valid = true;
+        for member in names {
+            let Some(member) = member else {
+                is_valid = false;
+                continue;
+            };
+            match self.named_ty(member).map(|ty| (ty, ty.as_decl())) {
+                Some((_, Some(decl))) => members.push(decl),
+                Some((ty, None)) => {
+                    self.error(
+                        member.node(),
+                        codes::INVALID_UNION_MEMBER,
+                        format!(
+                            "`{}` is no declared type, so no member of a union",
+                            self.show(ty)
+                        ),
+                        None,
+                    );
+                    is_valid = false;
+                }
+                None => is_valid = false,
+            }
+        }
+        if !is_valid {
+            return None;
+        }
+        Some(self.union_of(&members))
+    }
+    /// The union of `members`, or the one member there is.
+    fn union_of(&mut self, members: &[DeclId]) -> Ty {
+        match self.unions.intern(members.iter().copied()) {
+            Some(id) => Ty::union(id),
+            None => Ty::decl(members[0]),
+        }
+    }
+    fn named_ty(&mut self, node: ast::TypeRef) -> Option<Ty> {
         if self.tree.has_error(node.node()) {
             return None;
         }
@@ -652,6 +709,7 @@ pub(crate) fn lower<'s>(
         let built = builder.build(index, *item, params);
         builder.lowered.built.push(built);
     }
+    builder.graph.set_unions(builder.source.unions.clone());
     let graph = builder.graph.finish();
     let spans = builder.spans.finish(&graph);
     let mut lowered = builder.lowered;
@@ -804,6 +862,9 @@ enum Partial {
     },
 }
 
+/// An arm, its case, and the name and type its pattern binds.
+type ArmCase = (Clean<ast::MatchArm>, Case, Option<(NodeIdx, Ty)>);
+
 /// `&&` when `is_and`, else `||`, with its expression.
 #[derive(Clone, Copy)]
 struct LazyOp {
@@ -827,6 +888,20 @@ enum Work {
         target: Target,
     },
     Branches(Branch),
+    /// A `match` once its scrutinee is in: it opens the arms.
+    Arms(Clean<ast::MatchExpr>),
+    Switch {
+        expr: Clean<ast::MatchExpr>,
+        arms: Arms,
+    },
+    /// Enters an arm's region, binding the narrowed scrutinee under `binding`'s name.
+    PushArm {
+        region: RegionId,
+        scrutinee: NodeIdx,
+        arm: NodeIdx,
+        binding: Option<(NodeIdx, Ty)>,
+    },
+    CloseScope,
     LoopBody(Clean<ast::ForExpr>),
     LoopEnd(Box<LoopState>),
     Rhs(LazyOp),
@@ -1068,6 +1143,41 @@ impl<'a, 's> Builder<'a, 's> {
                         self.branches(branch, &mut work);
                         continue;
                     }
+                    Work::Arms(expr) => {
+                        self.arms(expr, &mut work);
+                        continue;
+                    }
+                    Work::Switch { expr, arms } => self.switch(expr, arms),
+                    Work::PushArm {
+                        region,
+                        scrutinee,
+                        arm,
+                        binding,
+                    } => {
+                        self.version_stack
+                            .push((self.undo.len(), self.locals.len()));
+                        self.regions.push((
+                            region,
+                            self.refinements.len(),
+                            self.graph.context(region),
+                        ));
+                        self.graph.enter(region);
+                        self.open_scope(self.scope_end(arm));
+                        if let Some((name, ty)) = binding {
+                            let at = self.source.range(name);
+                            let input = self.input(scrutinee);
+                            let narrow = self.push(name, Op::Narrow(ty), &[input], Some(at));
+                            let from = at.end();
+                            let text = self.source.text(name);
+                            let local = self.bind(text, narrow, BindingKind::Arm, at, from);
+                            self.locals[local.index()].completes = self.form(scrutinee).completes;
+                        }
+                        continue;
+                    }
+                    Work::CloseScope => {
+                        self.close_scope();
+                        continue;
+                    }
                     Work::LoopBody(expr) => {
                         self.loop_body(expr, &mut work);
                         continue;
@@ -1213,6 +1323,7 @@ impl<'a, 's> Builder<'a, 's> {
                 .expect("a bound local is named");
             let (kind, reads) = match (&declaration.op, local.is_assigned) {
                 (Op::Param { .. }, _) => ("parameter", "is never read"),
+                (Op::Narrow(_), _) => ("binding", "is never read"),
                 (Op::LoopIndex, _) => ("loop index", "is never read"),
                 (_, false) => ("local", "is never read"),
                 (_, true) => ("local", "is assigned but never read"),
@@ -1527,7 +1638,7 @@ impl<'a, 's> Builder<'a, 's> {
         self.refinements.truncate(keep);
         state
     }
-    fn merge_versions(&mut self, condition: NodeIdx, states: [&RegionState; 2], at: TextRange) {
+    fn merge_versions(&mut self, condition: NodeIdx, states: &[&RegionState], at: TextRange) {
         let condition = self.input(condition);
         let mut changed: Vec<_> = states
             .iter()
@@ -1536,40 +1647,44 @@ impl<'a, 's> Builder<'a, 's> {
         changed.sort_unstable_by_key(|local| local.index());
         changed.dedup();
         for local in changed {
-            let values = states.map(|state| {
-                if let Ok(index) = state
-                    .changes
-                    .binary_search_by_key(&local.index(), |&(local, _, _)| local.index())
-                {
-                    let (_, version, value) = state.changes[index];
-                    (version, value)
-                } else {
-                    let version = self.locals[local.index()].current;
-                    let value = state
-                        .refinements
-                        .iter()
-                        .rev()
-                        .find(|&&(id, source, _)| id == local && source == version)
-                        .map_or_else(|| self.current(local), |&(_, _, value)| value);
-                    (version, value)
-                }
-            });
-            if values[0].0 == values[1].0 {
+            let values: Vec<(NodeId, NodeId)> = states
+                .iter()
+                .map(|state| {
+                    if let Ok(index) = state
+                        .changes
+                        .binary_search_by_key(&local.index(), |&(local, _, _)| local.index())
+                    {
+                        let (_, version, value) = state.changes[index];
+                        (version, value)
+                    } else {
+                        let version = self.locals[local.index()].current;
+                        let value = state
+                            .refinements
+                            .iter()
+                            .rev()
+                            .find(|&&(id, source, _)| id == local && source == version)
+                            .map_or_else(|| self.current(local), |&(_, _, value)| value);
+                        (version, value)
+                    }
+                })
+                .collect();
+            if values.iter().all(|&(version, _)| version == values[0].0) {
                 continue;
             }
-            let [true_value, false_value] = values.map(|(_, value)| value);
             let declaration = self.locals[local.index()].declaration;
-            let inputs = [
-                condition,
-                (true_value, self.spans.origin(true_value)),
-                (false_value, self.spans.origin(false_value)),
-            ];
+            let mut inputs = vec![condition];
+            inputs.extend(
+                values
+                    .iter()
+                    .map(|&(_, value)| (value, self.spans.origin(value))),
+            );
+            let contexts: Vec<NodeId> = states.iter().map(|state| state.context).collect();
             let phi = self.place_with(
                 Op::Phi,
                 &inputs,
                 References::Phi {
                     declaration,
-                    contexts: &[states[0].context, states[1].context],
+                    contexts: &contexts,
                 },
                 at,
                 None,
@@ -2070,6 +2185,10 @@ impl<'a, 's> Builder<'a, 's> {
             CleanStmt::Expr(CleanExpr::FieldExpr(expr)) => {
                 work.push(Work::Finish(Finish::Field(expr)));
                 work.push(Work::Enter(expr.base().node()));
+            }
+            CleanStmt::Expr(CleanExpr::MatchExpr(expr)) => {
+                work.push(Work::Arms(expr));
+                work.push(Work::Enter(expr.scrutinee().node()));
             }
             CleanStmt::Expr(CleanExpr::NameRef(name)) => {
                 work.push(Work::Finish(Finish::NameRef(name)));
@@ -3089,7 +3208,7 @@ impl<'a, 's> Builder<'a, 's> {
             } else {
                 [&skipped, &state]
             };
-            self.merge_versions(lhs, states, self.source.range(expr.expr.node()));
+            self.merge_versions(lhs, &states, self.source.range(expr.expr.node()));
         }
         Some(())
     }
@@ -3141,7 +3260,7 @@ impl<'a, 's> Builder<'a, 's> {
         if cond_form.completes || (then_form.completes && else_form.completes) {
             self.bottoms[node.to_usize()] = true;
         } else {
-            self.merge_versions(cond, [&then_state, &false_state], self.source.range(node));
+            self.merge_versions(cond, &[&then_state, &false_state], self.source.range(node));
             if then_form.is_scalar() {
                 self.typed(then_node)?;
             } else {
@@ -3156,6 +3275,162 @@ impl<'a, 's> Builder<'a, 's> {
             }
         }
         self.typed(cond)?;
+        Some(())
+    }
+    /// A `match`'s arms by case: a member pattern names a declared type and binds a value of it; a
+    /// rest pattern takes what the arms before leave. A pattern naming no type leaves a hole.
+    fn arms(&mut self, expr: Clean<ast::MatchExpr>, work: &mut Vec<Work>) {
+        let tree = self.source.tree;
+        let node = expr.node();
+        let scrutinee = expr.scrutinee().node();
+        self.advance(scrutinee);
+        let parent = self.context();
+        let input = self.input(scrutinee);
+        let mut named: Vec<DeclId> = Vec::new();
+        let mut cases: Vec<ArmCase> = Vec::new();
+        let mut is_valid = true;
+        for arm in expr.arm_list().arms(tree) {
+            let arm = arm
+                .clean(tree, self.source.lexed())
+                .expect("a clean match has clean arms");
+            let pattern = arm
+                .pattern()
+                .clean(tree, self.source.lexed())
+                .expect("a clean arm has a clean pattern");
+            let (case, binding) = match pattern {
+                ast::CleanPattern::RestPattern(_) => (
+                    if named.is_empty() {
+                        Case::Any
+                    } else {
+                        Case::Not(self.source.union_of(&named))
+                    },
+                    None,
+                ),
+                ast::CleanPattern::MemberPattern(pattern) => {
+                    let member = pattern.member().node();
+                    let name = self.source.text(member);
+                    match self.names.get(name).copied() {
+                        Some(Named::Type(decl)) => {
+                            self.refer(member, Symbol::Type(decl), false);
+                            named.push(decl);
+                            let binding = pattern
+                                .binding(tree)
+                                .map(|name| (name.node(), Ty::decl(decl)));
+                            (Case::Is(Ty::decl(decl)), binding)
+                        }
+                        Some(Named::Function(id)) => {
+                            self.refer(member, Symbol::Function(id), false);
+                            self.source.error(
+                                member,
+                                codes::UNKNOWN_TYPE,
+                                format!("`{name}` is a function, not a type"),
+                                None,
+                            );
+                            is_valid = false;
+                            continue;
+                        }
+                        Some(Named::Ambiguous) => {
+                            is_valid = false;
+                            continue;
+                        }
+                        None => {
+                            self.source.error(
+                                member,
+                                codes::UNKNOWN_TYPE,
+                                format!("unknown type `{name}`"),
+                                None,
+                            );
+                            is_valid = false;
+                            continue;
+                        }
+                    }
+                }
+            };
+            cases.push((arm, case, binding));
+        }
+        if !is_valid {
+            self.push(node, Op::Hole, &[input], None);
+            self.controls[node.to_usize()] = self.control(scrutinee);
+            self.has_failed = true;
+            return;
+        }
+        let contexts: Vec<NodeId> = cases
+            .iter()
+            .map(|&(arm, case, _)| self.context_at(arm.node(), Op::Arm(case), input, parent))
+            .collect();
+        let arms = self.graph.open_arms(&contexts);
+        work.push(Work::Switch { expr, arms });
+        for (&(arm, _, binding), region) in cases.iter().zip(arms.iter()).rev() {
+            let value = arm.value().node();
+            work.push(Work::CloseScope);
+            work.push(Work::Pop {
+                region,
+                root: value,
+            });
+            work.push(Work::Enter(value));
+            work.push(Work::PushArm {
+                region,
+                scrutinee,
+                arm: arm.node(),
+                binding,
+            });
+        }
+    }
+    fn switch(&mut self, expr: Clean<ast::MatchExpr>, arms: Arms) -> Option<()> {
+        let tree = self.source.tree;
+        let node = expr.node();
+        let at = self.source.range(node);
+        let scrutinee = expr.scrutinee().node();
+        let states: Vec<RegionState> = arms.iter().map(|arm| self.closed(arm)).collect();
+        let input = self.input(scrutinee);
+        let values: Vec<NodeIdx> = expr
+            .arm_list()
+            .arms(tree)
+            .filter_map(|arm| arm.value(tree))
+            .map(|value| value.node())
+            .collect();
+        let results: Vec<NodeId> = values.iter().map(|&value| self.node_of(value)).collect();
+        let forms: Vec<Form> = values.iter().map(|&value| self.form(value)).collect();
+        let id = self.push_over(
+            node,
+            Op::Switch { arms },
+            &[input],
+            References::None,
+            None,
+            &results,
+        );
+        let observe = values
+            .iter()
+            .any(|&value| self.control(value).is_some())
+            .then(|| {
+                self.place(
+                    Op::Observe { arms },
+                    &[input, (self.context(), at)],
+                    at,
+                    None,
+                )
+            });
+        self.controls[node.to_usize()] =
+            self.compose_control(node, [self.control(scrutinee), observe]);
+        let scrutinee_form = self.form(scrutinee);
+        if scrutinee_form.completes {
+            self.completes_input(id, 0);
+        }
+        if !scrutinee_form.is_valid || forms.iter().any(|form| !form.is_valid) {
+            return None;
+        }
+        if scrutinee_form.completes || forms.iter().all(|form| form.completes) {
+            self.bottoms[node.to_usize()] = true;
+        } else {
+            let states: Vec<&RegionState> = states.iter().collect();
+            self.merge_versions(scrutinee, &states, at);
+            for (&value, form) in values.iter().zip(&forms) {
+                if form.is_scalar() {
+                    self.typed(value)?;
+                }
+            }
+        }
+        self.typed(scrutinee)?;
         Some(())
     }
     fn call(&mut self, call: Clean<ast::CallExpr>, target: Target) -> Option<()> {

@@ -1,0 +1,71 @@
+tree: omitted
+
+== formatted ==
+type Circle {
+    radius: int
+}
+type Square {
+    side: int
+}
+type Dot {}
+
+fn area(shape: Circle | Square | Dot) -> int = match shape {
+    Circle(c) => 3 * c.radius * c.radius,
+    Square(s) => s.side * s.side,
+    Dot => 0,
+}
+fn big(shape: Circle | Square) -> bool = match shape {
+    Circle(c) => c.radius > 10,
+    _ => false,
+}
+fn pick(flag: bool) -> Circle | Square = if flag {
+    Circle(radius: 2)
+} else {
+    Square(side: 3)
+}
+fn inferred(flag: bool) = if flag {
+    Circle(radius: 1)
+} else {
+    Dot()
+}
+fn widened(c: Circle) -> Circle | Square = c
+fn main() -> int = area(pick(true)) + area(pick(false)) + area(Dot())
+fn rebound() -> int {
+    let mut shape: Circle | Square = Circle(radius: 1)
+    shape = Square(side: 4)
+    area(shape)
+}
+fn counted(shape: Circle | Square) -> int {
+    let mut n = 0
+    match shape {
+        Circle(c) => {
+            n = c.radius
+        },
+        Square(s) => {
+            n = s.side * 2
+        },
+    }
+    n
+}
+fn sized() -> int = counted(Square(side: 5)) + counted(Circle(radius: 7))
+fn ratio(shape: Circle | Square) -> int = match shape {
+    Circle(c) => if c.radius != 0 {
+        100 / c.radius
+    } else {
+        0
+    },
+    Square(s) => s.side,
+}
+fn unit_arms(shape: Circle | Dot) {
+    match shape {
+        Circle(c) => {
+            _ = c.radius
+        },
+        Dot => {}
+    }
+}
+fn narrow(c: Circle) -> int = match c {
+    Circle(x) => x.radius,
+    _ => 0
+}
+fn reached() -> int = narrow(Circle(radius: 9))

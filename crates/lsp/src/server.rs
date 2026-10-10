@@ -1460,7 +1460,7 @@ fn hover(
                 .map(|ty| format!(": {}", analysis.show(ty)))
                 .unwrap_or_default();
             match binding.kind() {
-                BindingKind::Param => format!("{name}{ty}"),
+                BindingKind::Param | BindingKind::Arm => format!("{name}{ty}"),
                 BindingKind::Let { is_mutable: false } => format!("let {name}{ty}"),
                 BindingKind::Let { is_mutable: true } => format!("let mut {name}{ty}"),
                 BindingKind::LoopIndex => format!("for {name}{ty}"),
@@ -2157,7 +2157,7 @@ fn body(c: bool) -> int {
     tot
 }
 ";
-        let statement_keywords = ["_", "false", "for", "if", "let", "return", "true"];
+        let statement_keywords = ["_", "false", "for", "if", "let", "match", "return", "true"];
         let values = |locals: &[&str], has_else: bool| -> Vec<String> {
             let mut locals = locals.to_vec();
             locals.sort_unstable();
@@ -2662,7 +2662,7 @@ fn main() -> int {
 
     #[test]
     fn completion_survives_recovery() {
-        let keywords = ["_", "false", "for", "if", "let", "return", "true"];
+        let keywords = ["_", "false", "for", "if", "let", "match", "return", "true"];
         let values = |locals: &[&str], has_else: bool| -> Vec<String> {
             let mut keywords = keywords.to_vec();
             if has_else {

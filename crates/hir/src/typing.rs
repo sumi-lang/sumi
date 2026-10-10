@@ -4,7 +4,9 @@
 
 use sumi_text::TextRange;
 
-use sumi_graph::{Domain, May, NodeId, Ty};
+use std::cell::RefCell;
+
+use sumi_graph::{Domain, May, NodeId, Ty, Unions};
 
 use crate::lattice::{Claim, Context, Edge, Evidence, Many, Pair, Product};
 use crate::solver::Solver;
@@ -18,6 +20,8 @@ pub(crate) enum Expected {
 
 pub(crate) struct Typing {
     solver: Solver<Product>,
+    /// The graph's, and those resolving a class's declared-type claims mints.
+    unions: RefCell<Unions>,
     origins: Vec<TextRange>,
     facts: Vec<(NodeId, Ty, Claim)>,
     unknowns: Vec<NodeId>,
@@ -27,9 +31,10 @@ pub(crate) struct Typing {
 }
 
 impl Typing {
-    pub fn for_nodes(nodes: usize) -> Self {
+    pub fn for_nodes(nodes: usize, unions: Unions) -> Self {
         Self {
             solver: Solver::with_classes(nodes),
+            unions: RefCell::new(unions),
             origins: Vec::with_capacity(nodes),
             facts: Vec::with_capacity(nodes),
             unknowns: Vec::new(),
@@ -130,7 +135,12 @@ impl Typing {
     }
 
     pub fn resolve(&self, node: NodeId) -> Option<Ty> {
-        self.evidence(node).ty()
+        self.evidence(node).ty(&mut self.unions.borrow_mut())
+    }
+
+    /// Whether every value of `actual` is one of `expected`.
+    pub fn fits(&self, actual: Ty, expected: Ty) -> bool {
+        self.unions.borrow().fits(actual, expected)
     }
 
     pub fn solve(&mut self, cx: &Context) {
@@ -139,8 +149,8 @@ impl Typing {
 
     /// A conflicted callee delivers nothing: it is reported at its declaration. An unknown one
     /// delivers the unknown, so its callers are held to nothing.
-    pub fn replay(&self) -> Replay {
-        let mut replay = Replay::new(self.solver.classes());
+    pub fn replay(&self) -> Replay<'_> {
+        let mut replay = Replay::new(self.solver.classes(), &self.unions);
         for &(node, ty, claim) in &self.facts {
             replay.claim(node, ty, claim);
         }
@@ -149,7 +159,8 @@ impl Typing {
         }
         for (call, edge, solved) in self.solver.edges() {
             if let Edge::Call(claim) = *edge
-                && (solved.types.ty().is_some() || solved.types.is_unknown())
+                && (solved.types.ty(&mut self.unions.borrow_mut()).is_some()
+                    || solved.types.is_unknown())
             {
                 replay.learn(call, &solved.types.imported(claim));
             }
@@ -160,37 +171,58 @@ impl Typing {
         replay
     }
 
+    /// Every class resolved, so nothing mints a union after.
     pub fn settle(self) -> Settled {
-        Settled(self.solver.into_evidence().into_boxed_slice())
+        let mut unions = self.unions.into_inner();
+        let classes = self.solver.into_evidence();
+        let types = classes
+            .iter()
+            .map(|class| class.types.ty(&mut unions))
+            .collect();
+        Settled {
+            types,
+            values: classes.into_iter().map(|class| class.values).collect(),
+            unions,
+        }
     }
 }
 
-pub(crate) struct Settled(Box<[Product]>);
+pub(crate) struct Settled {
+    types: Box<[Option<Ty>]>,
+    values: Box<[May]>,
+    unions: Unions,
+}
 
 impl Settled {
     pub fn resolve(&self, node: NodeId) -> Option<Ty> {
-        self.0[node.index()].types.ty()
+        self.types[node.index()]
     }
 
     pub fn may(&self, node: NodeId) -> &May {
-        &self.0[node.index()].values
+        &self.values[node.index()]
+    }
+
+    pub fn unions(&self) -> &Unions {
+        &self.unions
     }
 }
 
 /// Handed the demands one at a time in node order, it blames a disagreement on the first that
 /// raised it.
-pub(crate) struct Replay {
+pub(crate) struct Replay<'a> {
     parent: Vec<u32>,
     size: Vec<u32>,
     evidence: Vec<Evidence>,
+    unions: &'a RefCell<Unions>,
 }
 
-impl Replay {
-    fn new(classes: usize) -> Self {
+impl<'a> Replay<'a> {
+    fn new(classes: usize, unions: &'a RefCell<Unions>) -> Self {
         Self {
             parent: (0..classes as u32).collect(),
             size: vec![1; classes],
             evidence: vec![Evidence::NONE; classes],
+            unions,
         }
     }
 
@@ -233,14 +265,14 @@ impl Replay {
     }
 
     pub fn resolve(&self, node: NodeId) -> Option<Ty> {
-        self.evidence(node).ty()
+        self.evidence(node).ty(&mut self.unions.borrow_mut())
     }
 
-    /// `join` is the `if`; `branch` delivers what it is so far, so this is called when the `if`
-    /// comes up among the demands.
+    /// `join` is the switch; `branch` delivers what it is so far, so this is called when the
+    /// switch comes up among the demands.
     pub fn branch(&mut self, branch: NodeId, join: NodeId) {
-        let evidence = *self.evidence(branch);
-        if evidence.ty().is_some() {
+        let evidence = self.evidence(branch).clone();
+        if self.resolve(branch).is_some() {
             self.learn(join, &evidence);
         }
     }
@@ -263,7 +295,10 @@ mod tests {
     }
 
     fn classes<const N: usize>() -> (Typing, [NodeId; N]) {
-        (Typing::for_nodes(N), std::array::from_fn(NodeId::new))
+        (
+            Typing::for_nodes(N, Unions::new()),
+            std::array::from_fn(NodeId::new),
+        )
     }
 
     fn cx() -> Context {
@@ -293,7 +328,7 @@ mod tests {
         for node in [hole, call, join] {
             let evidence = typing.evidence(node);
             assert!(evidence.is_unknown());
-            assert_eq!(evidence.ty(), None);
+            assert_eq!(evidence.ty(&mut Unions::new()), None);
             assert!(!evidence.is_conflict());
         }
         assert_eq!(typing.resolve(literal), Some(Ty::INT));
@@ -358,7 +393,7 @@ mod tests {
         for node in [fact, call] {
             let evidence = typing.evidence(node);
             assert!(!evidence.is_conflict());
-            assert_eq!(evidence.ty(), Some(Ty::INT));
+            assert_eq!(evidence.ty(&mut Unions::new()), Some(Ty::INT));
             assert_eq!(evidence.claims().len(), 1);
         }
         assert_eq!(
@@ -527,7 +562,7 @@ mod tests {
     #[test]
     fn reads_aliasing_one_local_stay_one_step_from_its_root() {
         const READS: usize = 1000;
-        let mut typing = Typing::for_nodes(READS + 1);
+        let mut typing = Typing::for_nodes(READS + 1, Unions::new());
         let local = NodeId::new(0);
         for read in 1..=READS {
             typing.flow(local, NodeId::new(read), Edge::Exactly(true));

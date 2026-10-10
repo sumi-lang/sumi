@@ -3,7 +3,7 @@
 //! expression the conflict left undetermined satisfies every later demand silently.
 
 use sumi_frontend::{Diagnostic, ParsedSource};
-use sumi_graph::{FunctionId, Graph, GraphBuilder, NodeId, Op, Ty};
+use sumi_graph::{DeclId, FunctionId, Graph, GraphBuilder, NodeId, Op, Ty};
 use sumi_syntax::ast::{self, View};
 use sumi_text::TextRange;
 
@@ -64,6 +64,15 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         &mut functions,
     );
     divisions(&mut source, &graph, &spans, &typing, &lowered, &failed);
+    exhaustive(
+        &mut source,
+        &graph,
+        &spans,
+        &lowered,
+        &headers,
+        &types,
+        &failed,
+    );
     bounds(
         &mut source,
         &graph,
@@ -111,6 +120,8 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         })
         .collect();
     let field_names = source.field_names.iter().map(|&name| name.into()).collect();
+    let settled = typing.settle();
+    let unions = settled.unions().clone();
     let mut diagnostics = source.diagnostics;
     diagnostics.splice(0..0, parsed.diagnostics().iter().cloned());
     diagnostics.sort_by_key(|d| d.primary.start());
@@ -118,10 +129,11 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         parsed,
         graph,
         spans,
-        settled: typing.settle(),
+        settled,
         functions,
         decls,
         field_names,
+        unions,
         bindings: lowered.bindings,
         references: lowered.references,
         unresolved: lowered.unresolved,
@@ -187,13 +199,42 @@ fn holds(
                 declared.map(|(range, message)| (range, Box::from(message))),
             );
         }
+        DemandKind::Matched => {
+            let Some(ty) = actual.filter(|ty| !ty.is_declared()) else {
+                return true;
+            };
+            source.report(
+                demand.at,
+                codes::TYPE_MISMATCH,
+                format!(
+                    "cannot match on {} values; `match` takes a value of a declared type",
+                    source.show(ty)
+                ),
+                [],
+            );
+        }
+        &DemandKind::Member(member) => {
+            let Some(ty) = actual.filter(|ty| ty.is_declared() && !typing.fits(member, *ty)) else {
+                return true;
+            };
+            source.report(
+                demand.at,
+                codes::TYPE_MISMATCH,
+                format!(
+                    "`{}` is no member of `{}`",
+                    source.show(member),
+                    source.show(ty)
+                ),
+                [],
+            );
+        }
         &DemandKind::Type { expected, declared } => {
             let expected_ty = match expected {
                 Expected::Ty(ty) => Some(ty),
                 Expected::Peer(peer) => replay.resolve(peer),
             };
             match (actual, expected_ty) {
-                (Some(actual), Some(expected)) if !graph.unions().fits(actual, expected) => {
+                (Some(actual), Some(expected)) if !typing.fits(actual, expected) => {
                     let related = declared.map(|declared| match declared {
                         Declared::Written(at) => (at, "declared here"),
                         Declared::Omitted(at) => {
@@ -244,7 +285,7 @@ fn holds(
             for &branch in branches {
                 replay.branch(branch, actual_class);
             }
-            let evidence = *replay.evidence(actual_class);
+            let evidence = replay.evidence(actual_class).clone();
             if !evidence.is_conflict() {
                 return true;
             }
@@ -301,7 +342,7 @@ fn signatures(
         let run = graph.run(FunctionId::new(index));
         let evidence =
             (!matches!(header.result, HeaderResult::None)).then(|| typing.evidence(run.result()));
-        let result = evidence.and_then(|evidence| evidence.ty());
+        let result = evidence.and_then(|_| typing.resolve(run.result()));
         if run.param_types().is_some() {
             functions[index].result = result;
         }
@@ -331,6 +372,70 @@ fn signatures(
                 );
             }
         }
+    }
+}
+
+/// A `match` covers every member its scrutinee may hold whatever the arguments: the solve with
+/// every parameter at every value of its type decides, so no caller changes the verdict.
+fn exhaustive(
+    source: &mut Source<'_>,
+    graph: &Graph,
+    spans: &Spans,
+    lowered: &Lowered,
+    headers: &[lower::Header],
+    types: &[lower::TypeHeader],
+    failed: &[bool],
+) {
+    let mut switches: Vec<(NodeId, sumi_graph::Arms)> = Vec::new();
+    for (index, run) in graph.runs().iter().enumerate() {
+        if failed[index] || !lowered.built[index] {
+            continue;
+        }
+        for node in run.nodes() {
+            if let Op::Switch { arms } = graph.node(node).op
+                && !is_boolean_switch(graph, node)
+                && graph.input_roles(node)[0].is_value()
+            {
+                switches.push((node, arms));
+            }
+        }
+    }
+    if switches.is_empty() {
+        return;
+    }
+    let (mut any, cx, _) =
+        flows::draw(graph, spans, lowered, headers, types, flows::Arguments::Any);
+    any.solve(&cx);
+    let unions = graph.unions();
+    for (node, arms) in switches {
+        let scrutinee = graph.inputs(node)[0];
+        let fact = any.may(scrutinee);
+        let mut missing: Vec<DeclId> = Vec::new();
+        for (decl, _) in fact.decls.iter() {
+            let covered = arms
+                .iter()
+                .any(|arm| match graph.case(graph.region(arm).context) {
+                    sumi_graph::Case::Is(ty) => unions.admits(ty, decl),
+                    sumi_graph::Case::Not(_) | sumi_graph::Case::Any => true,
+                    sumi_graph::Case::Bool(_) => false,
+                });
+            if !covered {
+                missing.push(decl);
+            }
+        }
+        if missing.is_empty() {
+            continue;
+        }
+        let names: Vec<String> = missing
+            .iter()
+            .map(|&decl| format!("`{}`", source.decls[decl.index()].name))
+            .collect();
+        source.report(
+            spans.origin(node),
+            codes::NON_EXHAUSTIVE_MATCH,
+            format!("match has no arm for {}", lower::join(&names)),
+            [],
+        );
     }
 }
 

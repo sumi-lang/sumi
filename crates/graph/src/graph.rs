@@ -111,8 +111,10 @@ pub enum Case {
     Bool(bool),
     /// A value of the type, or of a member of it.
     Is(Ty),
-    /// A value of no member of the type: the arm after every other.
+    /// A value of no member of the type: a rest arm after arms naming them.
     Not(Ty),
+    /// Any declared value: a rest arm after none.
+    Any,
 }
 
 /// A switch's arms: the regions `open_arms` opened together, so they are consecutive.
@@ -906,6 +908,11 @@ impl GraphBuilder {
 
     pub fn unions(&self) -> &Unions {
         &self.unions
+    }
+
+    /// The unions the ops name, which must cover every `Ty::union` pushed.
+    pub fn set_unions(&mut self, unions: Unions) {
+        self.unions = unions;
     }
 
     /// The declared types in declaration order, so `DeclId::new(i)` is the `i`th; the field types

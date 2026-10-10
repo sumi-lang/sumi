@@ -1,0 +1,12 @@
+fn n(x: A | B) -> int = match x { A(a) => a.n, B => 0 }
+fn m(x: A | B) -> int {
+    match x {
+        A(a) => a.n,
+        _ => 0,
+    }
+}
+fn nested(x: A | B) -> int = match x { A(a) => match a.n { _ => 1 }, _ => { let k = 2
+    k } }
+fn stmt(x: A | B) { match x { A => {}, B => {} } }
+fn empty(x: A) -> int = match x {}
+fn chained(x: A) -> int = match x { A(a) => a, }.n

@@ -1,0 +1,214 @@
+== tree ==
+SourceFile! 1:1..15:1
+  FnItem! 1:1..1:24
+    Name 1:4..1:5 "a"
+    ParamList! 1:5..1:13
+      Param! 1:6..1:12
+        Name 1:6..1:7 "x"
+        UnionType! 1:9..1:12
+          TypeRef 1:9..1:10 "A"
+    TypeRef 1:17..1:20 "int"
+    LiteralExpr 1:23..1:24 "1"
+  FnItem! 2:1..2:28
+    Name 2:4..2:5 "b"
+    ParamList! 2:5..2:17
+      Param! 2:6..2:16
+        Name 2:6..2:7 "x"
+        UnionType! 2:9..2:16
+          UnionType! 2:9..2:12
+            TypeRef 2:9..2:10 "A"
+          TypeRef 2:15..2:16 "B"
+    TypeRef 2:21..2:24 "int"
+    LiteralExpr 2:27..2:28 "2"
+  FnItem! 3:1..3:12
+    Name 3:4..3:5 "c"
+    ParamList 3:5..3:7 "()"
+    TypeRef 3:11..3:12 "A"
+  Error! 4:1..4:8 "| B = 3"
+  FnItem! 5:1..5:41
+    Name 5:4..5:5 "d"
+    ParamList 5:5..5:11
+      Param 5:6..5:10
+        Name 5:6..5:7 "x"
+        TypeRef 5:9..5:10 "A"
+    TypeRef 5:15..5:18 "int"
+    MatchExpr! 5:21..5:41
+      NameRef 5:27..5:28 "x"
+      ArmList! 5:29..5:41
+        MatchArm! 5:31..5:39
+          MemberPattern 5:31..5:35
+            NameRef 5:31..5:32 "A"
+            Name 5:33..5:34 "a"
+          FieldExpr 5:36..5:39
+            NameRef 5:36..5:37 "a"
+            NameRef 5:38..5:39 "n"
+  FnItem! 6:1..6:41
+    Name 6:4..6:5 "e"
+    ParamList 6:5..6:11
+      Param 6:6..6:10
+        Name 6:6..6:7 "x"
+        TypeRef 6:9..6:10 "A"
+    TypeRef 6:15..6:18 "int"
+    MatchExpr! 6:21..6:41
+      NameRef 6:27..6:28 "x"
+      ArmList! 6:29..6:41
+        MatchArm! 6:31..6:39
+          MemberPattern! 6:31..6:34
+            NameRef 6:31..6:32 "A"
+            Name 6:33..6:34 "a"
+          LiteralExpr 6:38..6:39 "1"
+  FnItem! 7:1..7:40
+    Name 7:4..7:5 "f"
+    ParamList 7:5..7:11
+      Param 7:6..7:10
+        Name 7:6..7:7 "x"
+        TypeRef 7:9..7:10 "A"
+    TypeRef 7:15..7:18 "int"
+    MatchExpr! 7:21..7:40
+      NameRef 7:27..7:28 "x"
+      ArmList! 7:29..7:40
+        MatchArm! 7:31..7:38
+          MemberPattern! 7:31..7:33
+            NameRef 7:31..7:32 "A"
+          LiteralExpr 7:37..7:38 "1"
+  FnItem! 8:1..8:37
+    Name 8:4..8:5 "g"
+    ParamList 8:5..8:11
+      Param 8:6..8:10
+        Name 8:6..8:7 "x"
+        TypeRef 8:9..8:10 "A"
+    TypeRef 8:15..8:18 "int"
+    MatchExpr! 8:21..8:37
+      NameRef 8:27..8:28 "x"
+      ArmList! 8:29..8:37
+        Error! 8:31..8:35 "=> 1"
+  FnItem! 9:1..9:28
+    Name 9:4..9:5 "h"
+    ParamList 9:5..9:11
+      Param 9:6..9:10
+        Name 9:6..9:7 "x"
+        TypeRef 9:9..9:10 "A"
+    TypeRef 9:15..9:18 "int"
+    MatchExpr! 9:21..9:28
+      NameRef 9:27..9:28 "x"
+  FnItem! 10:1..10:37
+    Name 10:4..10:5 "i"
+    ParamList 10:5..10:11
+      Param 10:6..10:10
+        Name 10:6..10:7 "x"
+        TypeRef 10:9..10:10 "A"
+    TypeRef 10:15..10:18 "int"
+    MatchExpr! 10:21..10:37
+      ArmList 10:27..10:37
+        MatchArm 10:29..10:35
+          MemberPattern 10:29..10:30
+            NameRef 10:29..10:30 "A"
+          LiteralExpr 10:34..10:35 "1"
+  FnItem! 11:1..11:46
+    Name 11:4..11:5 "j"
+    ParamList 11:5..11:11
+      Param 11:6..11:10
+        Name 11:6..11:7 "x"
+        TypeRef 11:9..11:10 "A"
+    TypeRef 11:15..11:18 "int"
+    MatchExpr! 11:21..11:46
+      NameRef 11:27..11:28 "x"
+      ArmList! 11:29..11:46
+        MatchArm! 11:31..11:35
+          MemberPattern 11:31..11:32
+            NameRef 11:31..11:32 "A"
+        MatchArm 11:38..11:44
+          MemberPattern 11:38..11:39
+            NameRef 11:38..11:39 "B"
+          LiteralExpr 11:43..11:44 "2"
+  FnItem 12:1..13:4
+    Name 12:4..12:5 "k"
+    ParamList 12:5..12:11
+      Param 12:6..12:10
+        Name 12:6..12:7 "x"
+        TypeRef 12:9..12:10 "A"
+    TypeRef 12:15..12:18 "int"
+    MatchExpr 12:21..13:4
+      NameRef 12:27..12:28 "x"
+      ArmList 12:29..13:4
+        MatchArm 12:31..13:2
+          MemberPattern 12:31..12:32
+            NameRef 12:31..12:32 "A"
+          LiteralExpr 13:1..13:2 "1"
+  FnItem! 14:1..14:42
+    Name 14:4..14:5 "l"
+    ParamList 14:5..14:11
+      Param 14:6..14:10
+        Name 14:6..14:7 "x"
+        TypeRef 14:9..14:10 "A"
+    TypeRef 14:15..14:18 "int"
+    MatchExpr! 14:21..14:42
+      NameRef 14:27..14:28 "x"
+      ArmList! 14:29..14:42
+        MatchArm! 14:31..14:40
+          MemberPattern! 14:31..14:35
+            NameRef 14:31..14:32 "A"
+            Name! 14:33..14:34 "_"
+          LiteralExpr 14:39..14:40 "1"
+
+== evidence ==
+ExpectedType at 1:12
+ExpectedType at 2:13
+ExpectedBody at 4:1
+ExpectedItem at 4:1
+ExpectedArmArrow at 5:36
+Expected(RParen) at 6:35
+ExpectedName at 7:34
+Expected(RParen) at 7:34
+ExpectedName at 8:31
+Expected(LBrace) at 10:1
+ExpectedExpression at 10:27
+ExpectedExpression at 11:36
+ExpectedName at 14:33
+
+== diagnostics ==
+error[syntax/expected-type] 1:12: expected a type
+error[syntax/expected-type] 2:13: expected a type
+error[syntax/expected-body] 4:1: expected a body, `{` or `=`
+error[syntax/expected-item] 4:1..4:2 "|": expected a function item
+  at 4:1..4:8 "| B = 3": skipped while recovering
+error[syntax/expected-token] 5:36: expected `=>`
+error[syntax/expected-token] 6:35: expected `)`
+error[syntax/expected-name] 7:34: expected a name
+error[syntax/expected-token] 7:34: expected `)`
+error[syntax/expected-name] 8:31..8:32 "=": expected a name
+  at 8:31..8:35 "=> 1": skipped while recovering
+error[syntax/expected-token] 10:1: expected `{`
+error[syntax/expected-expression] 10:27: expected an expression
+error[syntax/expected-expression] 11:36: expected an expression
+error[syntax/expected-name] 14:33..14:34 "_": expected a name
+
+== formatted ==
+fn a(x: A |) -> int = 1
+fn b(x: A | | B) -> int = 2
+fn c() -> A
+| B = 3
+fn d(x: A) -> int = match x {
+    A(a) a.n
+}
+fn e(x: A) -> int = match x {
+    A(a => 1
+}
+fn f(x: A) -> int = match x {
+    A( => 1
+}
+fn g(x: A) -> int = match x { => 1 }
+fn h(x: A) -> int = match x
+fn i(x: A) -> int = match {
+    A => 1
+}
+fn j(x: A) -> int = match x {
+    A => ,
+    B => 2
+}
+fn k(x: A) -> int = match x {
+    A => 1
+}
+fn l(x: A) -> int = match x {
+    A(_) => 1
+}

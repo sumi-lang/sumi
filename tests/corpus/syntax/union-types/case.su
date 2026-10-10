@@ -1,0 +1,6 @@
+type A { n: int }
+type B { b: bool }
+type Holder { inner: A | B, flag: bool }
+fn pick(x: A | B, y: int) -> A | B | Holder = x
+fn keep() { let z: A | B = pick(A(n: 1), 2) }
+fn or(a: bool, b: bool) -> bool = a || b

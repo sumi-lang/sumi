@@ -54,23 +54,27 @@ impl Claim {
 /// Per type, the best claim that the class has it, or the fact that a hole decided it. A class
 /// holding the unknown resolves to no type, so no demand on it disagrees, and it crosses every
 /// flow a claim does, so nothing a hole reaches is blamed for what the hole might have been.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Evidence {
     /// By scalar, in `Ty::SCALARS` order.
     scalars: [Option<Claim>; Ty::SCALARS.len()],
-    /// The best claim of each declared type, at most two: a class rarely claims one, and a
-    /// second shows a conflict whatever a third would add, so the evidence stays a copy.
-    decls: [Option<(DeclId, Claim)>; 2],
+    /// The best claim of each declared type or union: two inline, since a class rarely claims
+    /// one, and the rest behind a thin pointer, since every one is a member of the union the class
+    /// resolves to.
+    decls: [Option<(Ty, Claim)>; 2],
+    more: Option<Box<MoreClaims>>,
 }
 
-/// A claim is of a scalar or a declared type; a union is never claimed, only resolved to.
-fn scalar_slot(ty: Ty) -> Result<usize, DeclId> {
+/// Behind a thin pointer so the evidence stays small.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct MoreClaims(Vec<(Ty, Claim)>);
+
+fn scalar_slot(ty: Ty) -> Result<usize, Ty> {
     match ty.kind() {
         TyKind::Int => Ok(0),
         TyKind::Bool => Ok(1),
         TyKind::Unit => Ok(2),
-        TyKind::Decl(decl) => Err(decl),
-        TyKind::Union(_) => unreachable!("a union is resolved to, never claimed"),
+        TyKind::Decl(_) | TyKind::Union(_) => Err(ty),
     }
 }
 
@@ -78,6 +82,7 @@ impl Evidence {
     pub const NONE: Self = Self {
         scalars: [None; Ty::SCALARS.len()],
         decls: [None; 2],
+        more: None,
     };
 
     pub const UNKNOWN: Self = {
@@ -108,7 +113,7 @@ impl Evidence {
             }
         }
         if other.decls[0].is_some() {
-            for (decl, claim) in other.decls.into_iter().flatten() {
+            for (decl, claim) in other.decl_claims() {
                 grew |= self.offer(decl, claim);
             }
         }
@@ -132,7 +137,7 @@ impl Evidence {
     }
 
     /// Keeps `claim` for `decl` if it beats the one held, or in a free slot. True if it did.
-    fn offer(&mut self, decl: DeclId, claim: Claim) -> bool {
+    fn offer(&mut self, decl: Ty, claim: Claim) -> bool {
         for slot in &mut self.decls {
             match slot {
                 Some((held, best)) if *held == decl => {
@@ -149,7 +154,20 @@ impl Evidence {
                 }
             }
         }
-        false
+        let more = &mut self.more.get_or_insert_with(Box::default).0;
+        match more.iter_mut().find(|(held, _)| *held == decl) {
+            Some((_, best)) => {
+                if claim < *best {
+                    *best = claim;
+                    return true;
+                }
+                false
+            }
+            None => {
+                more.push((decl, claim));
+                true
+            }
+        }
     }
 
     /// What a call delivers: every claim as the call's, a demand staying one, so the transfer
@@ -166,18 +184,29 @@ impl Evidence {
             decls: self
                 .decls
                 .map(|slot| slot.map(|(decl, claim)| (decl, relabel(claim)))),
+            more: self.more.as_ref().map(|more| {
+                Box::new(MoreClaims(
+                    more.0
+                        .iter()
+                        .map(|&(decl, claim)| (decl, relabel(claim)))
+                        .collect(),
+                ))
+            }),
         }
     }
 
     /// What a read of field `name` delivers: each claim of a declared type with the field becomes
-    /// a claim of the field's type, and the rest claim nothing, which the demand on the read
-    /// reports.
+    /// a claim of the field's type, and the rest, a union among them, claim nothing, which the
+    /// demand on the read reports.
     pub fn field(&self, name: FieldName, decls: &[Decl]) -> Self {
         let mut evidence = Self::NONE;
         if self.is_unknown() {
             evidence.scalars[0] = Some(UNKNOWN);
         }
-        for (decl, claim) in self.decl_claims() {
+        for (ty, claim) in self.decl_claims() {
+            let Some(decl) = ty.as_decl() else {
+                continue;
+            };
             let decl = &decls[decl.index()];
             if let Some(index) = decl.index_of(name)
                 && let (_, Some(ty)) = decl.fields()[index]
@@ -192,8 +221,12 @@ impl Evidence {
         self.scalars[0] == Some(UNKNOWN)
     }
 
-    fn decl_claims(&self) -> impl Iterator<Item = (DeclId, Claim)> + '_ {
-        self.decls.iter().flatten().copied()
+    fn decl_claims(&self) -> impl Iterator<Item = (Ty, Claim)> + '_ {
+        let more = self
+            .more
+            .as_deref()
+            .map_or(&[][..], |more| more.0.as_slice());
+        self.decls.iter().flatten().chain(more).copied()
     }
 
     fn entries(&self) -> impl Iterator<Item = (Ty, Claim)> + '_ {
@@ -201,10 +234,7 @@ impl Evidence {
             .iter()
             .zip(&self.scalars)
             .filter_map(|(ty, claim)| claim.map(|claim| (*ty, claim)));
-        let decls = self
-            .decl_claims()
-            .map(|(decl, claim)| (Ty::decl(decl), claim));
-        scalars.chain(decls)
+        scalars.chain(self.decl_claims())
     }
 
     /// The types the class resolves among: demands count only where nothing else claims a type.
@@ -216,20 +246,39 @@ impl Evidence {
             .filter(move |&(_, claim)| claim != UNKNOWN && (demands_only || !claim.is_demanded()))
     }
 
-    /// The type claimed, if exactly one is and no hole decided the class.
+    /// The type claimed: the one claim, or the union of claims that are all of declared types,
+    /// which `unions` interns. None for a class a hole decided or a conflict.
     #[inline]
-    pub fn ty(&self) -> Option<Ty> {
+    pub fn ty(&self, unions: &mut Unions) -> Option<Ty> {
         if self.is_unknown() {
             return None;
         }
         let mut types = self.types();
         let (ty, _) = types.next()?;
-        types.next().is_none().then_some(ty)
+        if types.next().is_none() {
+            return Some(ty);
+        }
+        if !self.types().all(|(ty, _)| ty.is_declared()) {
+            return None;
+        }
+        let mut members: Vec<DeclId> = Vec::new();
+        for (ty, _) in self.types() {
+            match ty.kind() {
+                TyKind::Decl(decl) => members.push(decl),
+                TyKind::Union(id) => members.extend_from_slice(unions.get(id)),
+                TyKind::Int | TyKind::Bool | TyKind::Unit => unreachable!("declared types only"),
+            }
+        }
+        let union = unions.intern(members.iter().copied());
+        Some(union.map_or_else(|| Ty::decl(members[0]), Ty::union))
     }
 
     /// Never for a class a hole decided: the claims beside the unknown are not a disagreement.
+    /// Claims of declared types alone are not one either: they are a union.
     pub fn is_conflict(&self) -> bool {
-        !self.is_unknown() && self.types().count() > 1
+        !self.is_unknown()
+            && self.types().count() > 1
+            && !self.types().all(|(ty, _)| ty.is_declared())
     }
 
     /// A conflict whose every claim crossed a flow; it is reported where it arose.
@@ -393,7 +442,9 @@ impl Lattice for Product {
     fn transfer(&self, edge: &Edge, cyclic: bool, cx: &Context) -> Self {
         let types = match *edge {
             Edge::Call(claim) => self.types.imported(claim),
-            Edge::Bind | Edge::Types | Edge::TypeBind | Edge::Exactly(_) | Edge::Peer => self.types,
+            Edge::Bind | Edge::Types | Edge::TypeBind | Edge::Exactly(_) | Edge::Peer => {
+                self.types.clone()
+            }
             Edge::Field(name) => self.types.field(name, &cx.decls),
             Edge::Values | Edge::Neg | Edge::Not | Edge::Enter | Edge::Narrow(_) => Evidence::NONE,
         };
@@ -432,7 +483,7 @@ impl Lattice for Product {
 
     fn combine(&self, pair: &Pair, other: &Self, cyclic: bool, cx: &Context) -> Self {
         let types = match *pair {
-            Pair::Refine { .. } | Pair::Branch | Pair::Forward => self.types,
+            Pair::Refine { .. } | Pair::Branch | Pair::Forward => self.types.clone(),
             Pair::Outcome => Evidence::NONE,
             Pair::Binary(_)
             | Pair::Lazy { .. }
@@ -527,8 +578,8 @@ mod tests {
     }
 
     #[test]
-    fn evidence_is_seven_words_and_an_edge_two() {
-        assert_eq!(size_of::<Evidence>(), 28);
+    fn evidence_is_five_words_and_an_edge_two() {
+        assert_eq!(size_of::<Evidence>(), 40);
         assert_eq!(size_of::<Option<Claim>>(), 4);
         assert_eq!(size_of::<Edge>(), 8);
     }
@@ -642,7 +693,7 @@ mod tests {
             Evidence::NONE
         );
         let called = int.transfer(&Edge::Call(Claim::local(7)), false, &cx);
-        assert_eq!(called.types.ty(), Some(Ty::INT));
+        assert_eq!(called.types.ty(&mut Unions::new()), Some(Ty::INT));
         assert!(called.types.claims()[0].1.is_imported());
         assert_eq!(called.types.claims()[0].1.index(), 7);
     }

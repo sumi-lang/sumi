@@ -304,7 +304,7 @@ impl Planner<'_> {
             NodeKind::FnItem => self.function(node, &els, level),
             NodeKind::ParamList | NodeKind::ArgList => self.list(node, &els, level),
             NodeKind::Block => self.block(&els, level),
-            NodeKind::FieldList => {
+            NodeKind::FieldList | NodeKind::ArmList => {
                 self.pairs(&els, |a, b| match (a, b) {
                     (El::Tok(_, SyntaxKind::LBrace), El::Tok(_, SyntaxKind::RBrace)) => {
                         Gap::closer(Closer::Block, level, Breaks::Never)
@@ -334,6 +334,17 @@ impl Planner<'_> {
                 self.group(self.first_sig(node) + 1, self.end_sig(node), hug, false);
                 self.children_hugging(&els, level, hug);
             }
+            NodeKind::MatchArm => {
+                self.pairs(&els, |a, b| match (a, b) {
+                    (El::Tok(_, SyntaxKind::Eq), El::Tok(_, SyntaxKind::Gt)) => Gap::glue(level),
+                    _ => Gap::space(level),
+                });
+                self.children(&els, level);
+            }
+            NodeKind::MemberPattern => {
+                self.pairs(&els, |_, _| Gap::glue(level));
+                self.children(&els, level);
+            }
             NodeKind::Param | NodeKind::Field | NodeKind::Arg => {
                 self.pairs(&els, |_, b| match b {
                     El::Tok(_, SyntaxKind::Colon) => Gap::glue(level),
@@ -345,7 +356,11 @@ impl Planner<'_> {
                 self.pairs(&els, |_, _| Gap::glue(level));
                 self.children(&els, level);
             }
-            NodeKind::ReturnStmt | NodeKind::IfExpr | NodeKind::TypeItem => {
+            NodeKind::ReturnStmt
+            | NodeKind::IfExpr
+            | NodeKind::MatchExpr
+            | NodeKind::TypeItem
+            | NodeKind::UnionType => {
                 self.pairs(&els, |_, _| Gap::space(level));
                 self.children(&els, level);
             }
@@ -362,6 +377,7 @@ impl Planner<'_> {
             | NodeKind::TypeRef
             | NodeKind::NameRef
             | NodeKind::LiteralExpr
+            | NodeKind::RestPattern
             | NodeKind::Error => {
                 self.pairs(&els, |_, _| Gap::space(level));
                 self.children(&els, level);
@@ -451,7 +467,7 @@ impl Planner<'_> {
     /// Whether `node` ends in a block that hugs what precedes it, through operators and parens.
     fn opens_block(&self, node: NodeIdx) -> bool {
         match self.tree.kind(node) {
-            NodeKind::Block | NodeKind::IfExpr | NodeKind::ForExpr => true,
+            NodeKind::Block | NodeKind::IfExpr | NodeKind::MatchExpr | NodeKind::ForExpr => true,
             NodeKind::BinaryExpr | NodeKind::ParenExpr | NodeKind::Arg => self.hug(node).is_some(),
             _ => false,
         }

@@ -1,0 +1,125 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 11
+
+== graph ==
+fn missing@5:1..8:2 (Circle | Dot | Square ∈ ∅) -> int ∈ ∅
+  param shape@5:12..5:17: Circle | Dot | Square
+  result: copy : int @5:45..5:48
+    value: match : int @5:51..8:2
+      scrutinee: read shape@5:12..5:17 : Circle | Dot | Square
+      Circle:
+        let c@6:12..6:13: narrow to Circle : Circle @6:12..6:13
+          scrutinee: read shape@5:12..5:17 : Circle | Dot | Square
+        tail: field radius : int @6:18..6:26
+          base: read c@6:12..6:13 : Circle
+      Square: int 1 : int @7:15..7:16
+
+fn scalar@9:1..9:46 (int ∈ ∅) -> int ∈ ∅
+  param n@9:11..9:12: int
+  result: copy : int @9:22..9:25
+    value: match : int @9:28..9:46
+      scrutinee: read n@9:11..9:12 : int
+      _: int 1 : int @9:43..9:44
+
+fn foreign@10:1..14:2 (Circle | Square ∈ ∅) -> int ∈ ∅
+  param shape@10:12..10:17: Circle | Square
+  result: copy : int @10:39..10:42
+    value: match : int @10:45..14:2
+      scrutinee: read shape@10:12..10:17 : Circle | Square
+      Circle:
+        let c@11:12..11:13: narrow to Circle : Circle @11:12..11:13
+          scrutinee: read shape@10:12..10:17 : Circle | Square
+        tail: field radius : int @11:18..11:26
+          base: read c@11:12..11:13 : Circle
+      Dot: int 0 : int @12:12..12:13
+      _: int 1 : int @13:10..13:11
+
+fn unknown@15:1..15:77 (Circle ∈ ∅) -> int ∈ ∅
+  param shape@15:12..15:17: Circle
+  result: copy : int @15:30..15:33
+    value: hole : ? @15:36..15:77
+      part[0]: read shape@15:12..15:17 : Circle
+
+fn function@16:1..16:72 (Circle ∈ ∅) -> int ∈ ∅
+  param shape@16:13..16:18: Circle
+  result: copy : int @16:31..16:34
+    value: hole : ? @16:37..16:72
+      part[0]: read shape@16:13..16:18 : Circle
+
+fn disagree@17:1..17:99 (Circle | Square ∈ ∅) -> int ∈ ∅
+  param shape@17:13..17:18: Circle | Square
+  result: copy : int @17:40..17:43
+    value: match : ? @17:46..17:99
+      scrutinee: read shape@17:13..17:18 : Circle | Square
+      Circle:
+        let c@17:67..17:68: narrow to Circle : Circle @17:67..17:68
+          scrutinee: read shape@17:13..17:18 : Circle | Square
+        tail: field radius : int @17:73..17:81
+          base: read c@17:67..17:68 : Circle
+      Square: bool true : bool @17:93..17:97
+
+fn bad_union@18:1..18:41 signature: unavailable
+  param x@18:14..18:15: ?
+  result: copy : int @18:34..18:37
+    value: int 1 : int @18:40..18:41
+
+fn field@19:1..19:55 (Circle | Square ∈ ∅) -> int ∈ ∅
+  param shape@19:10..19:15: Circle | Square
+  result: copy : int @19:37..19:40
+    value: field radius : int @19:43..19:55
+      base: read shape@19:10..19:15 : Circle | Square
+
+fn dead@20:1..20:83 (Circle ∈ ∅) -> int ∈ ∅
+  param c@20:9..20:10: Circle
+  result: copy : int @20:23..20:26
+    value: match : int @20:29..20:83
+      scrutinee: read c@20:9..20:10 : Circle
+      Circle:
+        let x@20:46..20:47: narrow to Circle : Circle @20:46..20:47
+          scrutinee: read c@20:9..20:10 : Circle
+        tail: field radius : int @20:52..20:60
+          base: read x@20:46..20:47 : Circle
+      Square: int 2 : int @20:72..20:73
+      _: int 3 : int @20:80..20:81
+
+fn compared@21:1..21:69 (Circle | Square ∈ ∅, Circle | Square ∈ ∅) -> bool ∈ ∅
+  param a@21:13..21:14: Circle | Square
+  param b@21:33..21:34: Circle | Square
+  result: copy : bool @21:56..21:60
+    value: eager == : bool @21:63..21:69
+      lhs: read a@21:13..21:14 : Circle | Square
+      rhs: read b@21:33..21:34 : Circle | Square
+
+fn narrowed_wrongly@22:1..22:62 (Circle | Square ∈ ∅) -> Circle ∈ ∅
+  param shape@22:21..22:26: Circle | Square
+  result: copy : Circle @22:48..22:54
+    value: read shape@22:21..22:26 : Circle | Square
+
+fn unused@23:1..23:65 (Circle ∈ ∅) -> int ∈ ∅
+  param shape@23:11..23:16: Circle
+  result: copy : int @23:29..23:32
+    value: match : int @23:35..23:65
+      scrutinee: read shape@23:11..23:16 : Circle
+      Circle:
+        let c@23:56..23:57: narrow to Circle : Circle @23:56..23:57
+          scrutinee: read shape@23:11..23:16 : Circle
+        tail: int 1 : int @23:62..23:63
+
+== semantic diagnostics ==
+error[semantic/non-exhaustive-match] 5:51..8:2 "match shape {\n    Circle(c) => c.radius,\n    Square => 1,\n}": match has no arm for `Dot`
+error[semantic/type-mismatch] 9:34..9:35 "n": cannot match on int values; `match` takes a value of a declared type
+error[semantic/type-mismatch] 12:5..12:13 "Dot => 0": `Dot` is no member of `Circle | Square`
+error[semantic/unknown-type] 15:50..15:54 "Blob": unknown type `Blob`
+error[semantic/unknown-type] 16:51..16:57 "scalar": `scalar` is a function, not a type
+error[semantic/type-mismatch] 17:46..17:99 "match shape { Circle(c) => c.radius, Square => true }": expected int, found bool
+  at 17:40..17:43 "int": declared here
+error[semantic/invalid-union-member] 18:17..18:20 "int": `int` is no declared type, so no member of a union
+error[semantic/unknown-field] 19:43..19:55 "shape.radius": `Circle | Square` has no field `radius`
+error[semantic/type-mismatch] 20:62..20:73 "Square => 2": `Square` is no member of `Circle`
+error[semantic/type-mismatch] 21:63..21:69 "a == b": Circle | Square values cannot be compared
+error[semantic/type-mismatch] 22:57..22:62 "shape": expected Circle, found Circle | Square
+  at 22:48..22:54 "Circle": declared here
+warning[semantic/unused-name] 23:56..23:57 "c": binding `c` is never read
+  fix: prefix the name with `_`
+    23:56 -> "_"
