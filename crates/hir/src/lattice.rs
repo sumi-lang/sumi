@@ -54,7 +54,7 @@ impl Claim {
 /// Per type, the best claim that the class has it, or the fact that a hole decided it. A class
 /// holding the unknown resolves to no type, so no demand on it disagrees, and it crosses every
 /// flow a claim does, so nothing a hole reaches is blamed for what the hole might have been.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub(crate) struct Evidence {
     /// By scalar, in `Ty::SCALARS` order.
     scalars: [Option<Claim>; Ty::SCALARS.len()],
@@ -68,6 +68,20 @@ pub(crate) struct Evidence {
 /// Behind a thin pointer so the evidence stays small.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct MoreClaims(Vec<(Ty, Claim)>);
+
+impl Clone for Evidence {
+    #[inline(always)]
+    fn clone(&self) -> Self {
+        Self {
+            scalars: self.scalars,
+            decls: self.decls,
+            more: match &self.more {
+                None => None,
+                Some(more) => Some(more.clone()),
+            },
+        }
+    }
+}
 
 fn scalar_slot(ty: Ty) -> Result<usize, Ty> {
     match ty.kind() {

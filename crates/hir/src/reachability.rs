@@ -136,7 +136,15 @@ pub(crate) fn warn(
             .zip(&stops_delivered)
             .any(|(pair, &stops)| stops && open(pair[1].context)))
     .then(|| {
-        let (mut any, cx, _) = flows::draw(graph, spans, lowered, headers, types, Arguments::Any);
+        let (mut any, cx, _) = flows::draw(
+            graph,
+            spans,
+            lowered,
+            headers,
+            types,
+            Arguments::Any,
+            source.unions.clone(),
+        );
         any.solve(&cx);
         any
     });

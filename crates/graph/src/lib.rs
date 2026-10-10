@@ -207,7 +207,8 @@ impl fmt::Display for ShownTy<'_> {
 pub trait Names {
     fn decl(&self, id: DeclId) -> &str;
     fn field(&self, name: FieldName) -> &str;
-    fn members(&self, id: UnionId) -> &[DeclId];
+    /// Owned, so a table behind a cell can answer.
+    fn members(&self, id: UnionId) -> Vec<DeclId>;
 }
 
 /// A union's index in its table; an ID from one analysis names nothing in another.

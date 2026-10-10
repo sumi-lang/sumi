@@ -150,6 +150,7 @@ impl Analysis {
             Symbol::Local(id) => Some(self.binding(id).name),
             Symbol::Function(id) => self.function(id).name,
             Symbol::Type(id) => self.decl(id).name,
+            Symbol::Field(id, index) => Some(self.decl(id).fields()[index as usize].name),
         }
     }
     /// The declaration or reference at `offset`, which may sit at either end of the name.
@@ -188,6 +189,16 @@ impl Analysis {
                     symbol: Symbol::Type(DeclId::new(index)),
                     is_write: true,
                 })
+            }))
+            .chain(self.decls.iter().enumerate().flat_map(|(index, decl)| {
+                decl.fields()
+                    .iter()
+                    .enumerate()
+                    .map(move |(position, field)| Occurrence {
+                        range: field.name,
+                        symbol: Symbol::Field(DeclId::new(index), position as u32),
+                        is_write: true,
+                    })
             }));
         declarations.find(|occurrence| covers(occurrence.range))
     }
@@ -443,8 +454,8 @@ impl Names for Analysis {
         &self.field_names[name.index()]
     }
 
-    fn members(&self, id: UnionId) -> &[DeclId] {
-        self.unions.get(id)
+    fn members(&self, id: UnionId) -> Vec<DeclId> {
+        self.unions.get(id).to_vec()
     }
 }
 
@@ -490,6 +501,8 @@ pub enum Symbol {
     Local(BindingId),
     Function(FunctionId),
     Type(DeclId),
+    /// A field of the type, by position.
+    Field(DeclId, u32),
 }
 
 /// A name in the source and the symbol it denotes; a declaration or an assignment target writes

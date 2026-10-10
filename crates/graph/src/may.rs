@@ -1094,8 +1094,8 @@ mod tests {
             ["x", "y"][name.index()]
         }
 
-        fn members(&self, _: crate::UnionId) -> &[DeclId] {
-            &[]
+        fn members(&self, _: crate::UnionId) -> Vec<DeclId> {
+            Vec::new()
         }
     }
 

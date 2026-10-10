@@ -2,12 +2,14 @@
 //! on a type, and a demand per typed read. Demands are joined into the evidence last, in node
 //! order, the order the verdict pass replays them in.
 
+use std::cell::RefCell;
 use std::collections::HashSet;
+use std::rc::Rc;
 
 use rustc_hash::FxBuildHasher;
 use sumi_graph::{
     Arms, BinaryOp, Case, CmpOp, Domain, FieldName, FunctionId, Graph, Int, May, Node, NodeId, Op,
-    RegionId, Thresholds, Ty, Value,
+    RegionId, Thresholds, Ty, Unions, Value,
 };
 use sumi_text::TextRange;
 
@@ -156,24 +158,23 @@ impl Demands<'_> {
                         }
                     }
                 }
-                let valued: Vec<RegionId> = arms
-                    .iter()
-                    .filter(|&arm| graph.region(arm).result_has_value())
-                    .collect();
+                let valued = || {
+                    arms.iter()
+                        .filter(|&arm| graph.region(arm).result_has_value())
+                };
                 if !value(0) {
                 } else if !is_total(graph, *arms) {
                     // What falls through is unit, so every arm is.
-                    for arm in valued {
+                    for arm in valued() {
                         let (at, result) = region(arm);
                         if typed(result) {
                             demand(at, result, expect(Ty::UNIT));
                         }
                     }
-                } else if typed(node) && valued.len() == arms.len() {
-                    let branches: Vec<_> = valued.iter().map(|&arm| region(arm)).collect();
+                } else if typed(node) && valued().count() == arms.len() {
                     let agree = DemandKind::Agree {
-                        at: branches.iter().map(|&(at, _)| at).collect(),
-                        branches: branches.iter().map(|&(_, result)| result).collect(),
+                        at: valued().map(|arm| region(arm).0).collect(),
+                        branches: valued().map(|arm| region(arm).1).collect(),
                     };
                     demand(spans.origin(node), node, agree);
                 }
@@ -331,8 +332,9 @@ pub(crate) fn draw(
     headers: &[Header],
     types: &[TypeHeader],
     arguments: Arguments,
+    unions: Rc<RefCell<Unions>>,
 ) -> (Typing, Context, Vec<Demand>) {
-    let mut typing = Typing::for_nodes(graph.nodes().len(), graph.unions().clone());
+    let mut typing = Typing::for_nodes(graph.nodes().len(), unions);
     let typed = |node: NodeId| lowered.typed[node.index()];
     let mut constants: Vec<Int> = Vec::new();
     let mut cases: Vec<Case> = Vec::new();

@@ -1,8 +1,10 @@
 //! Lowering of one file to the graph: names, structure, and holes. Name and syntax failures become
 //! holes rather than graph nodes.
 
+use std::cell::RefCell;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 use rustc_hash::FxBuildHasher;
 use sumi_frontend::{DiagnosticCode, Fix, Label};
@@ -128,6 +130,8 @@ pub(crate) struct Lowered {
     pub unresolved: Vec<TextRange>,
     /// In source order within each block.
     pub statements: Vec<Statement>,
+    /// Each field read and its name's range; which field it names is the typing's to say.
+    pub field_reads: Vec<(NodeId, TextRange)>,
 }
 
 /// `a`, `a and b`, or `a, b, and c`.
@@ -167,8 +171,9 @@ pub(crate) struct Source<'s> {
     field_ids: NameMap<'s, FieldName>,
     /// Type names resolved outside a body.
     pub references: Vec<Occurrence>,
-    /// The graph's, kept here to name them; the builder interns them.
-    pub unions: sumi_graph::Unions,
+    /// Written unions interned here, then the typing's, which mints those inference resolves to,
+    /// so every union a message names is in it.
+    pub unions: Rc<RefCell<sumi_graph::Unions>>,
 }
 
 impl<'s> Source<'s> {
@@ -182,7 +187,7 @@ impl<'s> Source<'s> {
             field_names: Vec::new(),
             field_ids: NameMap::default(),
             references: Vec::new(),
-            unions: sumi_graph::Unions::new(),
+            unions: Rc::new(RefCell::new(sumi_graph::Unions::new())),
         }
     }
     pub fn show(&self, ty: Ty) -> ShownTy<'_> {
@@ -199,8 +204,8 @@ impl sumi_graph::Names for Source<'_> {
         self.field_names[name.index()]
     }
 
-    fn members(&self, id: UnionId) -> &[DeclId] {
-        self.unions.get(id)
+    fn members(&self, id: UnionId) -> Vec<DeclId> {
+        self.unions.borrow().get(id).to_vec()
     }
 }
 
@@ -359,7 +364,7 @@ impl<'s> Source<'s> {
     }
     /// The union of `members`, or the one member there is.
     fn union_of(&mut self, members: &[DeclId]) -> Ty {
-        match self.unions.intern(members.iter().copied()) {
+        match self.unions.borrow_mut().intern(members.iter().copied()) {
             Some(id) => Ty::union(id),
             None => Ty::decl(members[0]),
         }
@@ -709,7 +714,9 @@ pub(crate) fn lower<'s>(
         let built = builder.build(index, *item, params);
         builder.lowered.built.push(built);
     }
-    builder.graph.set_unions(builder.source.unions.clone());
+    builder
+        .graph
+        .set_unions(builder.source.unions.borrow().clone());
     let graph = builder.graph.finish();
     let spans = builder.spans.finish(&graph);
     let mut lowered = builder.lowered;
@@ -1028,6 +1035,7 @@ impl<'a, 's> Builder<'a, 's> {
                 references: Vec::new(),
                 unresolved: Vec::new(),
                 statements: Vec::new(),
+                field_reads: Vec::new(),
             },
             nodes_of: vec![None; nodes],
             tails: vec![None; nodes],
@@ -2682,6 +2690,9 @@ impl<'a, 's> Builder<'a, 's> {
                     .source
                     .field_name(self.source.text(expr.field().node()));
                 let id = self.push(node, Op::Field(name), &[input], None);
+                self.lowered
+                    .field_reads
+                    .push((id, self.source.range(expr.field().node())));
                 self.controls[node.to_usize()] = self.control(base);
                 let form = self.form(base);
                 self.bottoms[node.to_usize()] = form.completes;
@@ -2750,7 +2761,10 @@ impl<'a, 's> Builder<'a, 's> {
                         );
                         is_damaged = true;
                     }
-                    None => given[index] = Some((value.node(), label.node())),
+                    None => {
+                        self.refer(label.node(), Symbol::Field(decl, index as u32), false);
+                        given[index] = Some((value.node(), label.node()));
+                    }
                 },
             }
         }

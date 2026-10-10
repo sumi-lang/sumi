@@ -12,7 +12,7 @@ use crate::flows::{Declared, Demand, DemandKind};
 use crate::lower::{self, Call, HeaderResult, Lowered, Source};
 use crate::spans::Spans;
 use crate::typing::{Expected, Replay, Typing};
-use crate::{Analysis, FieldDecl, Function, Ints, TypeDecl, flows};
+use crate::{Analysis, FieldDecl, Function, Ints, Occurrence, Symbol, TypeDecl, flows};
 use crate::{reachability, recursion};
 
 pub fn analyze(parsed: ParsedSource) -> Analysis {
@@ -41,6 +41,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         &headers,
         &types,
         flows::Arguments::Delivered,
+        source.unions.clone(),
     );
     typing.solve(&cx);
     let failed = replay(&mut source, &graph, &typing, &demands, headers.len());
@@ -122,6 +123,21 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     let field_names = source.field_names.iter().map(|&name| name.into()).collect();
     let settled = typing.settle();
     let unions = settled.unions().clone();
+    let mut references = lowered.references;
+    for &(node, range) in &lowered.field_reads {
+        let base = graph.inputs(node)[0];
+        if let Some(decl) = settled.resolve(base).and_then(Ty::as_decl)
+            && let Op::Field(name) = graph.node(node).op
+            && let Some(index) = graph.decl(decl).index_of(name)
+        {
+            references.push(Occurrence {
+                range,
+                symbol: Symbol::Field(decl, index as u32),
+                is_write: false,
+            });
+        }
+    }
+    references.sort_unstable_by_key(|occurrence| occurrence.range.start());
     let mut diagnostics = source.diagnostics;
     diagnostics.splice(0..0, parsed.diagnostics().iter().cloned());
     diagnostics.sort_by_key(|d| d.primary.start());
@@ -135,7 +151,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         field_names,
         unions,
         bindings: lowered.bindings,
-        references: lowered.references,
+        references,
         unresolved: lowered.unresolved,
         diagnostics,
         dead,
@@ -403,8 +419,15 @@ fn exhaustive(
     if switches.is_empty() {
         return;
     }
-    let (mut any, cx, _) =
-        flows::draw(graph, spans, lowered, headers, types, flows::Arguments::Any);
+    let (mut any, cx, _) = flows::draw(
+        graph,
+        spans,
+        lowered,
+        headers,
+        types,
+        flows::Arguments::Any,
+        source.unions.clone(),
+    );
     any.solve(&cx);
     let unions = graph.unions();
     for (node, arms) in switches {

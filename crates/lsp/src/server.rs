@@ -1391,6 +1391,15 @@ fn rename(
             "`{old_name}` also appears where the parser recovered; fix the syntax first"
         ));
     }
+    if let Symbol::Field(id, _) = occurrence.symbol
+        && analysis
+            .decl(id)
+            .fields()
+            .iter()
+            .any(|field| field.text() == new_name)
+    {
+        return Err(format!("a field is already named `{new_name}`"));
+    }
     if named(new_name) > 0 {
         return Err(format!("a function is already named `{new_name}`"));
     }
@@ -1504,6 +1513,14 @@ fn hover(
                 })
                 .collect();
             format!("type {name} {{ {} }}", fields.join(", "))
+        }
+        Symbol::Field(id, index) => {
+            let decl = analysis.decl(id);
+            let field = &decl.fields()[index as usize];
+            let ty = analysis.graph().decl(id).fields()[index as usize].1;
+            let ty = ty.map_or("?".to_owned(), |ty| analysis.show(ty).to_string());
+            let owner = decl.name().map_or("<missing>", |name| analysis.text(name));
+            format!("{owner}.{}: {ty}", field.text())
         }
     };
     let (kind, value) = if has_markdown {
@@ -2520,6 +2537,54 @@ fn main() -> int = f()",
         let error = request(&client, 3, "textDocument/hover", json!({})).unwrap_err();
         assert_eq!(error.code, ErrorCode::InvalidParams as i32);
         stop(client, server_thread);
+    }
+
+    #[test]
+    fn fields_hover_and_rename_through_declarations_labels_and_reads() {
+        let text = "type Point { x: int, y: int }
+fn origin() -> Point = Point(x: 1, y: 2)
+fn sum(p: Point) -> int = p.x + p.y
+fn main() -> int = sum(origin())
+";
+        let uri: Uri = "file:///fields.su".parse().unwrap();
+        let at = |line, character| Position::new(line, character);
+        let range = |line, start, end| Range::new(at(line, start), at(line, end));
+        let analysis = analyzed(text);
+        let value = |hover: Hover| match hover.contents {
+            HoverContents::Markup(MarkupContent { value, .. }) => value,
+            _ => unreachable!(),
+        };
+        assert_eq!(
+            value(hover(&analysis, at(2, 28), Encoding::Utf16, false).unwrap()),
+            "Point.x: int"
+        );
+        let rename = |position, new_name| {
+            rename(&analysis, uri.clone(), position, Encoding::Utf16, new_name)
+        };
+        let mut edits = rename(at(0, 13), "z")
+            .unwrap()
+            .unwrap()
+            .changes
+            .unwrap()
+            .remove(&uri)
+            .unwrap();
+        edits.sort_by_key(|edit| (edit.range.start.line, edit.range.start.character));
+        let edits: Vec<_> = edits
+            .into_iter()
+            .map(|edit| (edit.range, edit.new_text))
+            .collect();
+        assert_eq!(
+            edits,
+            [
+                (range(0, 13, 14), "z".into()),
+                (range(1, 29, 30), "z".into()),
+                (range(2, 28, 29), "z".into()),
+            ]
+        );
+        assert_eq!(
+            rename(at(2, 28), "y"),
+            Err("a field is already named `y`".into())
+        );
     }
 
     #[test]

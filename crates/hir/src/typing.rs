@@ -5,6 +5,7 @@
 use sumi_text::TextRange;
 
 use std::cell::RefCell;
+use std::rc::Rc;
 
 use sumi_graph::{Domain, May, NodeId, Ty, Unions};
 
@@ -20,8 +21,9 @@ pub(crate) enum Expected {
 
 pub(crate) struct Typing {
     solver: Solver<Product>,
-    /// The graph's, and those resolving a class's declared-type claims mints.
-    unions: RefCell<Unions>,
+    /// The graph's, and those resolving a class's declared-type claims mints; shared with whatever
+    /// names types in messages.
+    unions: Rc<RefCell<Unions>>,
     origins: Vec<TextRange>,
     facts: Vec<(NodeId, Ty, Claim)>,
     unknowns: Vec<NodeId>,
@@ -31,10 +33,10 @@ pub(crate) struct Typing {
 }
 
 impl Typing {
-    pub fn for_nodes(nodes: usize, unions: Unions) -> Self {
+    pub fn for_nodes(nodes: usize, unions: Rc<RefCell<Unions>>) -> Self {
         Self {
             solver: Solver::with_classes(nodes),
-            unions: RefCell::new(unions),
+            unions,
             origins: Vec::with_capacity(nodes),
             facts: Vec::with_capacity(nodes),
             unknowns: Vec::new(),
@@ -173,12 +175,12 @@ impl Typing {
 
     /// Every class resolved, so nothing mints a union after.
     pub fn settle(self) -> Settled {
-        let mut unions = self.unions.into_inner();
         let classes = self.solver.into_evidence();
         let types = classes
             .iter()
-            .map(|class| class.types.ty(&mut unions))
+            .map(|class| class.types.ty(&mut self.unions.borrow_mut()))
             .collect();
+        let unions = self.unions.borrow().clone();
         Settled {
             types,
             values: classes.into_iter().map(|class| class.values).collect(),
@@ -296,7 +298,7 @@ mod tests {
 
     fn classes<const N: usize>() -> (Typing, [NodeId; N]) {
         (
-            Typing::for_nodes(N, Unions::new()),
+            Typing::for_nodes(N, Rc::default()),
             std::array::from_fn(NodeId::new),
         )
     }
@@ -562,7 +564,7 @@ mod tests {
     #[test]
     fn reads_aliasing_one_local_stay_one_step_from_its_root() {
         const READS: usize = 1000;
-        let mut typing = Typing::for_nodes(READS + 1, Unions::new());
+        let mut typing = Typing::for_nodes(READS + 1, Rc::default());
         let local = NodeId::new(0);
         for read in 1..=READS {
             typing.flow(local, NodeId::new(read), Edge::Exactly(true));
