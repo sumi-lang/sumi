@@ -273,8 +273,14 @@ fn signature_tail(m: &mut Marker<'_, '_>, is_name_missing: bool) {
     if is_nth_arrow(m, 0) {
         m.token();
         m.token();
+        if !m.at(T::Ident) {
+            let recovery = m.missing(ParseRecoveryKind::Type);
+            signature_garbage(m, recovery, |m| m.at(T::Ident));
+        }
         is_complete = m.at(T::Ident);
-        type_ref(m, 2);
+        if is_complete {
+            type_ref(m, 2);
+        }
         if !body_begins(m, is_complete) {
             let recovery = m.missing(ParseRecoveryKind::Body);
             signature_garbage(m, recovery, |m| is_at_expression_body(m, is_complete));

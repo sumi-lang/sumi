@@ -12,7 +12,8 @@ SourceFile! 1:1..11:1
   FnItem! 4:1..6:2
     Name 4:4..4:5 "g"
     ParamList 4:5..4:7 "()"
-    Error! 4:11..4:16 "= int"
+    Error! 4:11..4:12 "="
+    TypeRef 4:13..4:16 "int"
     Block 4:17..6:2
       NameRef 5:5..5:6 "a"
   FnItem! 7:1..7:11
@@ -29,7 +30,6 @@ SourceFile! 1:1..11:1
 == evidence ==
 Expected(LParen) at 1:5
 ExpectedType at 4:11
-ExpectedBody at 4:11
 Expected(LParen) at 7:6
 ExpectedBody at 8:1
 ExpectedBody at 8:8
@@ -38,8 +38,7 @@ ExpectedBody at 8:8
 error[syntax/expected-token] 1:5: expected `(`
   at 1:5..1:6 "=": skipped while recovering
 error[syntax/expected-type] 4:11: expected a type
-error[syntax/expected-body] 4:11: expected a body, `{` or `=`
-  at 4:11..4:16 "= int": skipped while recovering
+  at 4:11..4:12 "=": skipped while recovering
 error[syntax/expected-token] 7:6: expected `(`
   at 7:6..7:11 "x = 1": skipped while recovering
 error[syntax/expected-body] 8:1: expected a body, `{` or `=`

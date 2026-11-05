@@ -1,5 +1,5 @@
 file: rejected
-frontend errors: 12 (see frontend.snap)
+frontend errors: 11 (see frontend.snap)
 semantic errors: 3
 
 == graph ==
@@ -24,8 +24,9 @@ fn stray_before_params@6:1..8:2 (int ∈ ∅) -> unit ∈ ∅
   result: copy : unit @6:25..6:33
     value: read a@6:26..6:27 : int
 
-fn stray_in_result@9:1..11:2 signature: unavailable
-  body: hole : ? @10:5..10:6
+fn stray_in_result@9:1..11:2 () -> int ∈ ∅
+  result: copy : int @9:27..9:30
+    value: hole : ? @10:5..10:6
 
 fn stray_signature@12:1..12:25 signature: unavailable
   body: hole : ? @12:1..12:25
