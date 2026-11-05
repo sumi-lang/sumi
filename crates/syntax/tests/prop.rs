@@ -104,3 +104,13 @@ fn a_duplicated_if_may_take_the_next_lines_block() {
     let source = "fn o() {\n    (e) = if {} {}\n    {} && a / {}\n}\n";
     check::recovery(source, &front(source), 9, Edit::Duplicate);
 }
+
+#[test]
+fn a_duplicated_arrow_keeps_the_body_after_a_multiline_return_type() {
+    for source in [
+        "fn f()->\ni{{k}}",
+        "fn f() ->\n i {\n    { k() }\ntue(x)=x\n   \n6}\n",
+    ] {
+        check::recovery(source, &front(source), 5, Edit::Duplicate);
+    }
+}

@@ -33,7 +33,8 @@ SourceFile! 1:1..17:1
   FnItem! 9:1..11:2
     Name 9:4..9:19 "stray_in_result"
     ParamList 9:19..9:21 "()"
-    Error! 9:25..9:30 "= int"
+    Error! 9:25..9:26 "="
+    TypeRef 9:27..9:30 "int"
     Block 9:31..11:2
       NameRef 10:5..10:6 "a"
   FnItem! 12:1..12:25
@@ -61,7 +62,6 @@ ExpectedType at 3:19
 ExpectedType at 4:12
 Expected(LParen) at 6:23
 ExpectedType at 9:25
-ExpectedBody at 9:25
 Expected(LParen) at 12:20
 ExpectedBody at 13:1
 ExpectedBody at 13:26
@@ -79,8 +79,7 @@ error[syntax/expected-type] 4:12: expected a type
 error[syntax/expected-token] 6:23: expected `(`
   at 6:23..6:24 "=": skipped while recovering
 error[syntax/expected-type] 9:25: expected a type
-error[syntax/expected-body] 9:25: expected a body, `{` or `=`
-  at 9:25..9:30 "= int": skipped while recovering
+  at 9:25..9:26 "=": skipped while recovering
 error[syntax/expected-token] 12:20: expected `(`
   at 12:20..12:25 "x = 1": skipped while recovering
 error[syntax/expected-body] 13:1: expected a body, `{` or `=`

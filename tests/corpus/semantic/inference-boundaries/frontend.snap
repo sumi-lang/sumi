@@ -79,9 +79,7 @@ SourceFile! 1:1..21:1
 
 == evidence ==
 ExpectedType at 9:19
-ExpectedBody at 9:19
 
 == diagnostics ==
 error[syntax/expected-type] 9:19: expected a type
-error[syntax/expected-body] 9:19: expected a body, `{` or `=`
   at 9:19..9:20 "=": skipped while recovering
