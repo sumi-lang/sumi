@@ -251,6 +251,7 @@ impl<'a> Machine<'a> {
             .expect("an input is evaluated before its reader")
     }
 
+    #[inline(always)]
     fn fill(&mut self, node: NodeId, value: Value) {
         let index = self.index(node);
         self.slots[index] = Some(value);
@@ -261,7 +262,7 @@ impl<'a> Machine<'a> {
     fn open(&mut self, function: FunctionId) -> usize {
         let run = self.graph.run(function);
         let base = self.slots.len();
-        self.slots.resize(base + run.nodes().len(), None);
+        self.slots.resize_with(base + run.nodes().len(), || None);
         let control_base = self.control.len();
         let depth = self.frames.last().map_or(1, |frame| frame.depth + 1);
         self.frames.push(Frame {
@@ -494,7 +495,8 @@ impl<'a> Machine<'a> {
                     .collect();
                 for body_node in self.graph.region(body).nodes() {
                     let slot = self.index(body_node);
-                    self.slots[slot] = None;
+                    // Taking clears the tag without copying an empty slot's unused payload.
+                    drop(self.slots[slot].take());
                 }
                 for ((carry, _), value) in carried.iter().zip(values) {
                     let slot = self.index(carry);
@@ -625,7 +627,7 @@ impl<'a> Machine<'a> {
                     self.offset = frame.base.wrapping_sub(frame.run.entry().index());
                     self.max_depth = self.max_depth.max(frame.depth);
                     self.slots
-                        .resize(frame.base + frame.run.nodes().len(), None);
+                        .resize_with(frame.base + frame.run.nodes().len(), || None);
                     bind(
                         &mut self.slots[frame.base..],
                         frame.run,
@@ -693,7 +695,7 @@ impl<'a> Machine<'a> {
                     let caller = self.frames.last().unwrap();
                     let layout = self.suspensions.saved(node);
                     self.slots
-                        .resize(caller.base + caller.run.nodes().len(), None);
+                        .resize_with(caller.base + caller.run.nodes().len(), || None);
                     for (packed, &slot) in layout.iter().enumerate().rev() {
                         let value = self.slots[caller.base + packed].take();
                         self.slots[caller.base + slot] = value;

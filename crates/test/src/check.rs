@@ -1313,12 +1313,12 @@ pub fn run(program: Program<'_>) -> Runs {
             Value::Int(value) => contains(&may.ints, value),
             Value::Bool(value) => admits(may.bools, *value),
             Value::Unit => may.has_unit,
-            Value::Decl(decl, values) => match may.decls.get(*decl) {
+            Value::Decl(record) => match may.decls.get(record.decl()) {
                 None => false,
                 Some(Fields::Any) => true,
                 Some(Fields::Known(fields)) => fields
                     .iter()
-                    .zip(values)
+                    .zip(record.fields().iter())
                     .all(|(field, value)| holds(field, value)),
             },
         }
@@ -1369,7 +1369,7 @@ pub fn run(program: Program<'_>) -> Runs {
                 }
                 tuples
                     .into_iter()
-                    .map(|fields| Value::Decl(decl, fields.into_boxed_slice()))
+                    .map(|fields| Value::record(decl, fields))
                     .collect()
             }
         }
@@ -1547,7 +1547,7 @@ fn dead_code_stays_dead(program: Program<'_>) {
                 }
                 tuples
                     .into_iter()
-                    .map(|fields| Value::Decl(decl, fields.into_boxed_slice()))
+                    .map(|fields| Value::record(decl, fields))
                     .collect()
             }
         }

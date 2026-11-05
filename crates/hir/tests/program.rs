@@ -621,7 +621,7 @@ fn values_display_as_source_spells_them() {
     assert_eq!(shown(&Value::Unit), "unit");
     assert_eq!(Value::Unit.ty(), Ty::UNIT);
     let point = sumi_hir::DeclId::new(0);
-    let value = Value::Decl(point, Box::new([int(3), Value::Bool(false)]));
+    let value = Value::record(point, vec![int(3), Value::Bool(false)]);
     assert_eq!(shown(&value), "Point(3, false)");
     assert_eq!(value.ty(), Ty::decl(point));
 }

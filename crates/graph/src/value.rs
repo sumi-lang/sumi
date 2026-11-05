@@ -1,6 +1,7 @@
-//! The domains a graph is read in; `Value` is the concrete one, a scalar per type.
+//! The domains a graph is read in; `Value` is the concrete one.
 
 use std::fmt;
+use std::sync::Arc;
 
 use crate::{ArithOp, BinaryOp, Case, CmpOp, Decl, DeclId, FieldName, Int, Names, Op, Ty, Unions};
 
@@ -88,17 +89,43 @@ pub enum Value {
     Int(Int),
     Bool(bool),
     Unit,
-    /// Its fields in declaration order.
-    Decl(DeclId, Box<[Value]>),
+    Decl(Record),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Record(Arc<RecordData>);
+
+#[derive(Debug, PartialEq, Eq)]
+struct RecordData {
+    decl: DeclId,
+    fields: Box<[Value]>,
+}
+
+impl Record {
+    pub fn decl(&self) -> DeclId {
+        self.0.decl
+    }
+
+    /// The fields in declaration order.
+    pub fn fields(&self) -> &[Value] {
+        &self.0.fields
+    }
 }
 
 impl Value {
+    pub fn record(decl: DeclId, fields: Vec<Value>) -> Self {
+        Self::Decl(Record(Arc::new(RecordData {
+            decl,
+            fields: fields.into_boxed_slice(),
+        })))
+    }
+
     pub fn ty(&self) -> Ty {
         match self {
             Self::Int(_) => Ty::INT,
             Self::Bool(_) => Ty::BOOL,
             Self::Unit => Ty::UNIT,
-            Self::Decl(decl, _) => Ty::decl(*decl),
+            Self::Decl(record) => Ty::decl(record.decl()),
         }
     }
 
@@ -117,8 +144,8 @@ impl Value {
     pub fn selects(&self, case: Case, unions: &Unions) -> Result<bool, Fault> {
         match (case, self) {
             (Case::Bool(wanted), Self::Bool(value)) => Ok(*value == wanted),
-            (Case::Is(_) | Case::Not(_) | Case::Any, Self::Decl(decl, _)) => {
-                Ok(case.selects_decl(*decl, unions))
+            (Case::Is(_) | Case::Not(_) | Case::Any, Self::Decl(record)) => {
+                Ok(case.selects_decl(record.decl(), unions))
             }
             _ => Err(Fault::Type),
         }
@@ -134,9 +161,9 @@ impl fmt::Display for ShownValue<'_> {
             Value::Int(value) => write!(f, "{value}"),
             Value::Bool(value) => write!(f, "{value}"),
             Value::Unit => f.write_str("unit"),
-            Value::Decl(decl, fields) => {
-                write!(f, "{}(", self.1.decl(*decl))?;
-                for (index, field) in fields.iter().enumerate() {
+            Value::Decl(record) => {
+                write!(f, "{}(", self.1.decl(record.decl()))?;
+                for (index, field) in record.fields().iter().enumerate() {
                     if index > 0 {
                         f.write_str(", ")?;
                     }
@@ -219,14 +246,14 @@ impl Domain for Value {
     }
 
     fn make(decl: DeclId, fields: Vec<Self>) -> Self {
-        Self::Decl(decl, fields.into_boxed_slice())
+        Self::record(decl, fields)
     }
 
     fn field(&self, name: FieldName, decls: &[Decl], _: &Unions) -> Result<Self, Fault> {
         match self {
-            Self::Decl(decl, fields) => decls[decl.index()]
+            Self::Decl(record) => decls[record.decl().index()]
                 .index_of(name)
-                .map(|index| fields[index].clone())
+                .map(|index| record.fields()[index].clone())
                 .ok_or(Fault::Type),
             _ => Err(Fault::Type),
         }
@@ -234,5 +261,16 @@ impl Domain for Value {
 
     fn narrow(&self, _: Ty, _: &Unions) -> Self {
         self.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn value_slots_stay_two_words() {
+        assert_eq!(size_of::<Value>(), 16);
+        assert_eq!(size_of::<Option<Value>>(), 16);
     }
 }

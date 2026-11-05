@@ -17,7 +17,7 @@ pub use graph::{
 pub use int::{Int, OutOfRange, ParseIntError};
 pub use machine::{Machine, Refusal};
 pub use may::{Bools, Decls, Fields, Ints, May, Shown, Thresholds};
-pub use value::{Domain, Fault, ShownValue, Value};
+pub use value::{Domain, Fault, Record, ShownValue, Value};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ArithOp {

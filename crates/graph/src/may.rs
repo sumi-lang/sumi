@@ -1420,12 +1420,12 @@ mod tests {
             Value::Bool(true) => set.bools.may_true(),
             Value::Bool(false) => set.bools.may_false(),
             Value::Unit => set.has_unit,
-            Value::Decl(decl, values) => match set.decls.get(*decl) {
+            Value::Decl(record) => match set.decls.get(record.decl()) {
                 None => false,
                 Some(Fields::Any) => true,
                 Some(Fields::Known(fields)) => fields
                     .iter()
-                    .zip(values)
+                    .zip(record.fields().iter())
                     .all(|(field, value)| is_member(field, value)),
             },
         }

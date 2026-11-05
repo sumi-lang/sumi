@@ -5,6 +5,7 @@ pub const CASES: &[(&str, &str, i64)] = &[
     ("fibonacci", include_str!("programs/fibonacci.su"), 6765),
     ("big-int", include_str!("programs/big-int.su"), 100),
     ("loops", include_str!("programs/loops.su"), 2_955_050),
+    ("records", include_str!("programs/records.su"), 2_002_000),
 ];
 
 pub fn parse(source: &str) -> ParsedSource {
