@@ -44,7 +44,14 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         source.unions.clone(),
     );
     typing.solve(&cx);
-    let failed = replay(&mut source, &graph, &typing, &demands, headers.len());
+    let failed = replay(
+        &mut source,
+        &graph,
+        &spans,
+        &typing,
+        &demands,
+        headers.len(),
+    );
     let mut functions: Vec<Function> = headers
         .iter()
         .map(|header| Function {
@@ -169,6 +176,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
 fn replay(
     source: &mut Source<'_>,
     graph: &Graph,
+    spans: &Spans,
     typing: &Typing,
     demands: &[Demand],
     functions: usize,
@@ -176,7 +184,7 @@ fn replay(
     let mut replay = typing.replay();
     let mut failed = vec![false; functions];
     for demand in demands {
-        if !holds(source, graph, typing, &mut replay, demand) {
+        if !holds(source, graph, spans, typing, &mut replay, demand) {
             failed[demand.owner as usize] = true;
         }
     }
@@ -186,6 +194,7 @@ fn replay(
 fn holds(
     source: &mut Source<'_>,
     graph: &Graph,
+    spans: &Spans,
     typing: &Typing,
     replay: &mut Replay,
     demand: &Demand,
@@ -294,15 +303,18 @@ fn holds(
                 [],
             );
         }
-        DemandKind::Agree { branches, at } => {
+        DemandKind::Agree(regions) => {
             // An arm is labeled where its value is read, whatever its claim's own origin.
-            let arms: Vec<Option<(Ty, TextRange)>> = branches
+            let arms: Vec<Option<(Ty, TextRange)>> = regions
                 .iter()
-                .zip(at)
-                .map(|(&branch, &at)| replay.resolve(branch).zip(Some(at)))
+                .map(|region| {
+                    replay
+                        .resolve(graph.region(region).result())
+                        .map(|ty| (ty, spans.result_read(region)))
+                })
                 .collect();
-            for &branch in branches {
-                replay.branch(branch, actual_class);
+            for region in regions.iter() {
+                replay.branch(graph.region(region).result(), actual_class);
             }
             let evidence = replay.evidence(actual_class).clone();
             if !evidence.is_conflict() {

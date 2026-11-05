@@ -33,11 +33,8 @@ pub(crate) enum DemandKind {
     },
     Unused,
     Comparable,
-    /// `actual` is the switch; `branches` are the results of its arms, read at `at`.
-    Agree {
-        branches: Box<[NodeId]>,
-        at: Box<[TextRange]>,
-    },
+    /// `actual` is the switch whose arms must agree.
+    Agree(Arms),
     /// `actual` is the base of a read of the field.
     Field(FieldName),
     /// `actual` is a `match` scrutinee, which holds a declared value.
@@ -173,11 +170,7 @@ impl Demands<'_> {
                         }
                     }
                 } else if typed(node) && valued().count() == arms.len() {
-                    let agree = DemandKind::Agree {
-                        at: valued().map(|arm| region(arm).0).collect(),
-                        branches: valued().map(|arm| region(arm).1).collect(),
-                    };
-                    demand(spans.origin(node), node, agree);
+                    demand(spans.origin(node), node, DemandKind::Agree(*arms));
                 }
             }
             Op::Loop { body } => {
