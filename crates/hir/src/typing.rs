@@ -1,6 +1,7 @@
-//! The checker's [`Solver`]: one class per graph node, at the node's index, carrying a [`Product`].
-//! Flows never merge classes, so a caller's demands never reach its callee and signatures are read
-//! off result classes after one solve, in any declaration order.
+//! The checker's [`Solver`]s: one class per graph node, at the node's index, its type claims in
+//! one and its values in the other, each fed the flows that deliver to it. Flows never merge
+//! classes, so a caller's demands never reach its callee and signatures are read off result
+//! classes after one solve, in any declaration order.
 
 use sumi_text::TextRange;
 
@@ -9,7 +10,7 @@ use std::rc::Rc;
 
 use sumi_graph::{Domain, May, NodeId, Ty, Unions};
 
-use crate::lattice::{Claim, Context, Edge, Evidence, Many, Pair, Product};
+use crate::lattice::{Claim, Context, Edge, Evidence, Many, Pair};
 use crate::solver::Solver;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -20,7 +21,8 @@ pub(crate) enum Expected {
 }
 
 pub(crate) struct Typing {
-    solver: Solver<Product>,
+    types: Solver<Evidence>,
+    values: Solver<May>,
     /// The graph's, and those resolving a class's declared-type claims mints; shared with whatever
     /// names types in messages.
     unions: Rc<RefCell<Unions>>,
@@ -35,7 +37,8 @@ pub(crate) struct Typing {
 impl Typing {
     pub fn for_nodes(nodes: usize, unions: Rc<RefCell<Unions>>) -> Self {
         Self {
-            solver: Solver::with_classes(nodes),
+            types: Solver::with_classes(nodes),
+            values: Solver::with_classes(nodes),
             unions,
             origins: Vec::with_capacity(nodes),
             facts: Vec::with_capacity(nodes),
@@ -65,28 +68,23 @@ impl Typing {
 
     fn fact(&mut self, node: NodeId, ty: Ty, value: May, origin: TextRange) {
         let claim = self.claim(origin);
-        let class = self.solver.class_mut(node);
-        class.types.claim(ty, claim);
-        class.values.join(&value);
+        self.types.class_mut(node).claim(ty, claim);
+        if value.is_live() {
+            self.values.class_mut(node).join(&value);
+        }
         self.facts.push((node, ty, claim));
     }
 
     /// A hole decided `node`'s type: a fact, so a replay keeps it, and every call delivers it.
     pub fn unknown(&mut self, node: NodeId) {
-        self.solver.class_mut(node).types.join(&Evidence::UNKNOWN);
+        self.types.class_mut(node).join(&Evidence::UNKNOWN);
         self.unknowns.push(node);
     }
 
     /// Liveness is not a type claim, so no replay reads it.
     pub fn entry(&mut self, node: NodeId, is_runnable: bool) {
         if is_runnable {
-            self.solver.expect(
-                node,
-                &Product {
-                    types: Evidence::NONE,
-                    values: May::unit(),
-                },
-            );
+            self.values.expect(node, &May::unit());
         }
     }
 
@@ -96,21 +94,29 @@ impl Typing {
     }
 
     pub fn flow(&mut self, provider: NodeId, consumer: NodeId, edge: Edge) {
-        self.solver.flow(provider, consumer, edge);
+        if edge.delivers_types() {
+            self.types.flow(provider, consumer, edge);
+        }
+        if edge.delivers_values() {
+            self.values.flow(provider, consumer, edge);
+        }
         if edge.aliases() {
             self.aliased.push((consumer, provider));
         }
     }
 
     pub fn derive(&mut self, first: NodeId, second: NodeId, consumer: NodeId, pair: Pair) {
-        self.solver.derive(first, second, consumer, pair);
+        if pair.delivers_types() {
+            self.types.derive(first, second, consumer, pair);
+        }
+        self.values.derive(first, second, consumer, pair);
         if pair.aliases() {
             self.aliased.push((consumer, first));
         }
     }
 
     pub fn derive_many(&mut self, first: NodeId, others: &[NodeId], consumer: NodeId, many: Many) {
-        self.solver.derive_many(first, others, consumer, many);
+        self.values.derive_many(first, others, consumer, many);
     }
 
     /// A demand types a class nothing else does and yields to a fact or a flow, so a wrong read
@@ -119,21 +125,21 @@ impl Typing {
         match expected {
             Expected::Ty(ty) => {
                 let claim = self.claim(origin).demanded();
-                self.solver.class_mut(node).types.claim(ty, claim);
+                self.types.class_mut(node).claim(ty, claim);
             }
             Expected::Peer(peer) => {
-                self.solver.flow(node, peer, Edge::Peer);
-                self.solver.flow(peer, node, Edge::Peer);
+                self.types.flow(node, peer, Edge::Peer);
+                self.types.flow(peer, node, Edge::Peer);
             }
         }
     }
 
     pub fn evidence(&self, node: NodeId) -> &Evidence {
-        &self.solver.evidence(node).types
+        self.types.evidence(node)
     }
 
     pub fn may(&self, node: NodeId) -> &May {
-        &self.solver.evidence(node).values
+        self.values.evidence(node)
     }
 
     pub fn resolve(&self, node: NodeId) -> Option<Ty> {
@@ -146,25 +152,25 @@ impl Typing {
     }
 
     pub fn solve(&mut self, cx: &Context) {
-        self.solver.solve(cx);
+        self.types.solve(cx);
+        self.values.solve(cx);
     }
 
     /// A conflicted callee delivers nothing: it is reported at its declaration. An unknown one
     /// delivers the unknown, so its callers are held to nothing.
     pub fn replay(&self) -> Replay<'_> {
-        let mut replay = Replay::new(self.solver.classes(), &self.unions);
+        let mut replay = Replay::new(self.types.classes(), &self.unions);
         for &(node, ty, claim) in &self.facts {
             replay.claim(node, ty, claim);
         }
         for &node in &self.unknowns {
             replay.learn(node, &Evidence::UNKNOWN);
         }
-        for (call, edge, solved) in self.solver.edges() {
+        for (call, edge, solved) in self.types.edges() {
             if let Edge::Call(claim) = *edge
-                && (solved.types.ty(&mut self.unions.borrow_mut()).is_some()
-                    || solved.types.is_unknown())
+                && (solved.ty(&mut self.unions.borrow_mut()).is_some() || solved.is_unknown())
             {
-                replay.learn(call, &solved.types.imported(claim));
+                replay.learn(call, &solved.imported(claim));
             }
         }
         for &(alias, of) in &self.aliased {
@@ -175,15 +181,16 @@ impl Typing {
 
     /// Every class resolved, so nothing mints a union after.
     pub fn settle(self) -> Settled {
-        let classes = self.solver.into_evidence();
-        let types = classes
+        let types = self
+            .types
+            .into_evidence()
             .iter()
-            .map(|class| class.types.ty(&mut self.unions.borrow_mut()))
+            .map(|class| class.ty(&mut self.unions.borrow_mut()))
             .collect();
         let unions = self.unions.borrow().clone();
         Settled {
             types,
-            values: classes.into_iter().map(|class| class.values).collect(),
+            values: self.values.into_evidence().into_boxed_slice(),
             unions,
         }
     }

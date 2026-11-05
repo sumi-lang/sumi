@@ -125,9 +125,10 @@ pub struct Arms {
 }
 
 impl Arms {
+    #[inline]
     pub fn iter(self) -> impl DoubleEndedIterator<Item = RegionId> + ExactSizeIterator {
-        let first = self.first.index();
-        (first..first + self.len as usize).map(RegionId::new)
+        let first = self.first.0.get();
+        (first..first + self.len).map(|raw| RegionId(NonZeroU32::new(raw).unwrap()))
     }
 
     pub fn len(self) -> usize {
@@ -212,10 +213,12 @@ impl Run {
 pub struct NodeId(NonZeroU32);
 
 impl NodeId {
+    #[inline]
     pub fn new(index: usize) -> Self {
         Self(NonZeroU32::new(u32::try_from(index + 1).expect("node count fits u32")).unwrap())
     }
 
+    #[inline]
     pub fn index(self) -> usize {
         (self.0.get() - 1) as usize
     }
@@ -232,10 +235,12 @@ impl std::fmt::Debug for NodeId {
 pub struct RegionId(NonZeroU32);
 
 impl RegionId {
+    #[inline]
     fn new(index: usize) -> Self {
         Self(NonZeroU32::new(u32::try_from(index + 1).expect("region count fits u32")).unwrap())
     }
 
+    #[inline]
     pub fn index(self) -> usize {
         (self.0.get() - 1) as usize
     }
@@ -613,6 +618,7 @@ impl Store {
         node.edges.start as usize..node.edges.end as usize
     }
 
+    #[inline]
     fn operands(&self, id: NodeId) -> Range<usize> {
         let node = &self.nodes[id.index()];
         node.edges.start as usize..node.edges.start as usize + node.operands as usize
@@ -691,6 +697,7 @@ pub struct Graph {
 }
 
 impl Graph {
+    #[inline]
     pub fn node(&self, id: NodeId) -> &Node {
         &self.store.nodes[id.index()]
     }
@@ -715,11 +722,13 @@ impl Graph {
     }
 
     /// The operands: the edges the node reads a value, or a completion, from.
+    #[inline]
     pub fn inputs(&self, id: NodeId) -> &[NodeId] {
         &self.store.edges[self.store.operands(id)]
     }
 
     /// Parallel to `inputs`: `Value` or `Completes` each.
+    #[inline]
     pub fn input_roles(&self, id: NodeId) -> &[Role] {
         &self.store.roles[self.store.operands(id)]
     }
@@ -746,6 +755,7 @@ impl Graph {
     }
 
     /// The case of the arm `context` is in: itself, or the arm a continuation context follows.
+    #[inline]
     pub fn case(&self, mut context: NodeId) -> Case {
         loop {
             match self.node(context).op {
@@ -823,6 +833,7 @@ impl Graph {
         (0..self.regions.len()).map(RegionId::new)
     }
 
+    #[inline]
     pub fn region(&self, id: RegionId) -> &Region {
         &self.regions[id.index()]
     }
@@ -882,10 +893,12 @@ pub struct GraphBuilder {
 }
 
 impl GraphBuilder {
+    #[inline]
     pub fn node(&self, id: NodeId) -> &Node {
         &self.store.nodes[id.index()]
     }
 
+    #[inline]
     pub fn inputs(&self, id: NodeId) -> &[NodeId] {
         &self.store.edges[self.store.operands(id)]
     }

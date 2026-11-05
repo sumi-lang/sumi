@@ -5,6 +5,7 @@
 use std::cmp::{Ordering, max, min};
 use std::convert::Infallible;
 use std::fmt;
+use std::mem::ManuallyDrop;
 use std::ops::{Add, BitAnd, Div, Mul, Neg, Rem, Sub};
 
 use crate::{
@@ -612,7 +613,23 @@ impl Fields {
 /// by type, one entry each. Most nodes hold none, so the list sits behind a thin pointer and a
 /// fact without one copies a word.
 #[derive(Debug, Default, PartialEq, Eq)]
-pub struct Decls(Option<Box<Entries>>);
+pub struct Decls(Option<ManuallyDrop<Box<Entries>>>);
+
+/// The entries drop behind a cold call, so a fact's drop glue is not recursive and inlines to a
+/// null check.
+impl Drop for Decls {
+    #[inline(always)]
+    fn drop(&mut self) {
+        if let Some(entries) = self.0.take() {
+            drop_entries(ManuallyDrop::into_inner(entries));
+        }
+    }
+}
+
+#[inline(never)]
+fn drop_entries(entries: Box<Entries>) {
+    drop(entries);
+}
 
 /// Behind a thin pointer so a fact without declared values copies a word.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -623,7 +640,7 @@ impl Clone for Decls {
     fn clone(&self) -> Self {
         match &self.0 {
             None => Self(None),
-            Some(entries) => Self(Some(entries.clone())),
+            Some(entries) => Self(Some(ManuallyDrop::new((**entries).clone()))),
         }
     }
 }
@@ -632,7 +649,7 @@ impl Decls {
     pub const EMPTY: Self = Self(None);
 
     fn entries(&self) -> &[(DeclId, Fields)] {
-        self.0.as_deref().map_or(&[], |entries| &entries.0)
+        self.0.as_ref().map_or(&[], |entries| &entries.0)
     }
 
     #[inline]
@@ -659,7 +676,7 @@ impl Decls {
         };
         let mine = &mut self
             .0
-            .get_or_insert_with(|| Box::new(Entries(Vec::new())))
+            .get_or_insert_with(|| ManuallyDrop::new(Box::new(Entries(Vec::new()))))
             .0;
         let mut grew = false;
         for (decl, fields) in &theirs.0 {
@@ -678,7 +695,7 @@ impl Decls {
 impl FromIterator<(DeclId, Fields)> for Decls {
     fn from_iter<I: IntoIterator<Item = (DeclId, Fields)>>(entries: I) -> Self {
         let entries: Vec<_> = entries.into_iter().collect();
-        Self((!entries.is_empty()).then(|| Box::new(Entries(entries))))
+        Self((!entries.is_empty()).then(|| ManuallyDrop::new(Box::new(Entries(entries)))))
     }
 }
 

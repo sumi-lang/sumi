@@ -9,7 +9,7 @@ use sumi_graph::NodeId;
 
 /// `join` is commutative, associative, and idempotent with identity `bottom`; `transfer` and
 /// `combine` are monotone; ascending chains are finite, or `solve` may not end.
-pub trait Lattice: Clone + Eq {
+pub(crate) trait Lattice: Clone + Eq {
     /// An edge from one provider.
     type Edge;
     /// An edge from two providers.
@@ -17,6 +17,11 @@ pub trait Lattice: Clone + Eq {
     /// An edge from any number of providers, each crossing it alike.
     type Many;
     type Context;
+
+    /// Whether a flow can widen, so classes settle one strongly connected component at a time,
+    /// providers first. A lattice whose chains are short converges as fast on one worklist over
+    /// every flow and skips finding the components.
+    const WIDENS: bool = true;
 
     fn bottom() -> Self;
 
@@ -68,7 +73,7 @@ pub trait Lattice: Clone + Eq {
 
 /// What a provider's evidence can do crossing an edge, least first.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Carry {
+pub(crate) enum Carry {
     /// Nothing of the provider's, or only something finite, such as a boolean.
     Nothing,
     /// A copy, a narrowing, or a gate: never more than the provider holds.
@@ -135,7 +140,7 @@ impl<L: Lattice> Flow<L> {
     }
 }
 
-pub struct Solver<L: Lattice> {
+pub(crate) struct Solver<L: Lattice> {
     evidence: Vec<L>,
     flows: Vec<Flow<L>>,
     others: Others,
@@ -311,6 +316,28 @@ impl<L: Lattice> Solver<L> {
                 outgoing.head[provider] = NonZeroU32::new(link);
                 arcs.push((provider as u32, consumer as u32));
             }
+        }
+        if !L::WIDENS {
+            let mut queued = vec![false; n];
+            let mut queue = VecDeque::new();
+            let bottom = L::bottom();
+            for (class, head) in outgoing.head.iter().enumerate() {
+                if head.is_some() && self.evidence[class] != bottom {
+                    queued[class] = true;
+                    queue.push_back(class);
+                }
+            }
+            while let Some(provider) = queue.pop_front() {
+                queued[provider] = false;
+                for index in outgoing.of(provider) {
+                    let consumer = self.flows[index].consumer.index();
+                    if self.deliver(index, false, cx) && !queued[consumer] {
+                        queued[consumer] = true;
+                        queue.push_back(consumer);
+                    }
+                }
+            }
+            return;
         }
         let components = self::components(n, &arcs);
         let count = components.count();
@@ -805,7 +832,7 @@ mod tests {
     #[test]
     fn a_flow_is_five_words() {
         assert!(size_of::<crate::lattice::Pair>() <= 4);
-        assert_eq!(size_of::<Flow<crate::lattice::Product>>(), 20);
+        assert_eq!(size_of::<Flow<crate::lattice::Evidence>>(), 20);
     }
 
     #[test]

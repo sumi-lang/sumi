@@ -1004,6 +1004,8 @@ struct Builder<'a, 's> {
     reads_of: Vec<Option<(LocalId, NodeId)>>,
     work: Vec<Work>,
     inputs: Vec<(NodeId, TextRange)>,
+    merge_values: Vec<(NodeId, NodeId)>,
+    merge_contexts: Vec<NodeId>,
     controls: Vec<Option<NodeId>>,
     bottoms: Vec<bool>,
     returns: Vec<(NodeId, TextRange)>,
@@ -1055,6 +1057,8 @@ impl<'a, 's> Builder<'a, 's> {
             reads_of: vec![None; nodes],
             work: Vec::new(),
             inputs: Vec::new(),
+            merge_values: Vec::new(),
+            merge_contexts: Vec::new(),
             controls: vec![None; nodes],
             bottoms: vec![false; nodes],
             returns: Vec::new(),
@@ -1654,39 +1658,42 @@ impl<'a, 's> Builder<'a, 's> {
             .collect();
         changed.sort_unstable_by_key(|local| local.index());
         changed.dedup();
+        let mut values = std::mem::take(&mut self.merge_values);
+        let mut inputs = std::mem::take(&mut self.inputs);
+        let mut contexts = std::mem::take(&mut self.merge_contexts);
         for local in changed {
-            let values: Vec<(NodeId, NodeId)> = states
-                .iter()
-                .map(|state| {
-                    if let Ok(index) = state
-                        .changes
-                        .binary_search_by_key(&local.index(), |&(local, _, _)| local.index())
-                    {
-                        let (_, version, value) = state.changes[index];
-                        (version, value)
-                    } else {
-                        let version = self.locals[local.index()].current;
-                        let value = state
-                            .refinements
-                            .iter()
-                            .rev()
-                            .find(|&&(id, source, _)| id == local && source == version)
-                            .map_or_else(|| self.current(local), |&(_, _, value)| value);
-                        (version, value)
-                    }
-                })
-                .collect();
+            values.clear();
+            values.extend(states.iter().map(|state| {
+                if let Ok(index) = state
+                    .changes
+                    .binary_search_by_key(&local.index(), |&(local, _, _)| local.index())
+                {
+                    let (_, version, value) = state.changes[index];
+                    (version, value)
+                } else {
+                    let version = self.locals[local.index()].current;
+                    let value = state
+                        .refinements
+                        .iter()
+                        .rev()
+                        .find(|&&(id, source, _)| id == local && source == version)
+                        .map_or_else(|| self.current(local), |&(_, _, value)| value);
+                    (version, value)
+                }
+            }));
             if values.iter().all(|&(version, _)| version == values[0].0) {
                 continue;
             }
             let declaration = self.locals[local.index()].declaration;
-            let mut inputs = vec![condition];
+            inputs.clear();
+            inputs.push(condition);
             inputs.extend(
                 values
                     .iter()
                     .map(|&(_, value)| (value, self.spans.origin(value))),
             );
-            let contexts: Vec<NodeId> = states.iter().map(|state| state.context).collect();
+            contexts.clear();
+            contexts.extend(states.iter().map(|state| state.context));
             let phi = self.place_with(
                 Op::Phi,
                 &inputs,
@@ -1699,6 +1706,9 @@ impl<'a, 's> Builder<'a, 's> {
             );
             self.set_version(local, phi);
         }
+        self.merge_values = values;
+        self.inputs = inputs;
+        self.merge_contexts = contexts;
     }
     fn refer(&mut self, node: NodeIdx, symbol: Symbol, is_write: bool) {
         self.lowered.references.push(Occurrence {

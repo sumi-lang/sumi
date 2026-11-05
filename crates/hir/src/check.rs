@@ -124,6 +124,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     let settled = typing.settle();
     let unions = settled.unions().clone();
     let mut references = lowered.references;
+    let sorted = references.len();
     for &(node, range) in &lowered.field_reads {
         let base = graph.inputs(node)[0];
         if let Some(decl) = settled.resolve(base).and_then(Ty::as_decl)
@@ -137,7 +138,9 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
             });
         }
     }
-    references.sort_unstable_by_key(|occurrence| occurrence.range.start());
+    if references.len() > sorted {
+        references.sort_unstable_by_key(|occurrence| occurrence.range.start());
+    }
     let mut diagnostics = source.diagnostics;
     diagnostics.splice(0..0, parsed.diagnostics().iter().cloned());
     diagnostics.sort_by_key(|d| d.primary.start());

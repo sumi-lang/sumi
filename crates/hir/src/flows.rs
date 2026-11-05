@@ -145,7 +145,8 @@ impl Demands<'_> {
                     expected: Expected::Ty(ty),
                     declared: None,
                 };
-                if value(0) && is_boolean(graph, *arms) {
+                let selection = selection(graph, *arms);
+                if value(0) && selection.boolean {
                     if typed(inputs[0]) {
                         demand(reads[0], inputs[0], expect(Ty::BOOL));
                     }
@@ -163,7 +164,7 @@ impl Demands<'_> {
                         .filter(|&arm| graph.region(arm).result_has_value())
                 };
                 if !value(0) {
-                } else if !is_total(graph, *arms) {
+                } else if !selection.total {
                     // What falls through is unit, so every arm is.
                     for arm in valued() {
                         let (at, result) = region(arm);
@@ -290,28 +291,31 @@ impl Demands<'_> {
 }
 
 /// Whether every arm's case is a boolean.
-fn is_boolean(graph: &Graph, arms: Arms) -> bool {
-    arms.iter()
-        .all(|arm| matches!(graph.case(graph.region(arm).context), Case::Bool(_)))
+/// What a switch's arms select on, read once per switch.
+#[derive(Clone, Copy)]
+struct Selection {
+    /// Every arm is a boolean.
+    boolean: bool,
+    /// Some arm takes every scrutinee: both booleans, or members, which the checker holds to cover
+    /// the scrutinee's type, so the switch never falls through to unit.
+    total: bool,
 }
 
-/// Whether some arm takes every scrutinee: both booleans, or members, which the checker holds to
-/// cover the scrutinee's type, so the switch never falls through to unit.
-fn is_total(graph: &Graph, arms: Arms) -> bool {
-    let mut cases = arms.iter().map(|arm| graph.case(graph.region(arm).context));
-    if is_boolean(graph, arms) {
-        let (mut on_true, mut on_false) = (false, false);
-        for case in cases {
-            match case {
-                Case::Bool(true) => on_true = true,
-                Case::Bool(false) => on_false = true,
-                Case::Is(_) | Case::Not(_) | Case::Any => {}
-            }
+fn selection(graph: &Graph, arms: Arms) -> Selection {
+    let (mut boolean, mut on_true, mut on_false) = (true, false, false);
+    for arm in arms.iter() {
+        match graph.case(graph.region(arm).context) {
+            Case::Bool(true) => on_true = true,
+            Case::Bool(false) => on_false = true,
+            Case::Is(_) | Case::Not(_) | Case::Any => boolean = false,
         }
+    }
+    let total = if boolean {
         on_true && on_false
     } else {
-        cases.next().is_some()
-    }
+        !arms.is_empty()
+    };
+    Selection { boolean, total }
 }
 
 /// Where a parameter's values come from.
@@ -394,6 +398,9 @@ pub(crate) fn draw(
                 Op::Arm(_) if !typed(inputs[0]) => {
                     typing.flow(inputs[1], node, Edge::Values);
                 }
+                Op::Arm(Case::Bool(wanted)) => {
+                    typing.derive(inputs[0], inputs[1], node, Pair::Bool(*wanted));
+                }
                 Op::Arm(case) => {
                     let index = cases
                         .iter()
@@ -424,7 +431,7 @@ pub(crate) fn draw(
                     typing.known(node, *ty, origin);
                     typing.flow(inputs[0], node, Edge::Narrow(*ty));
                 }
-                Op::Switch { arms } if is_total(graph, *arms) => {
+                Op::Switch { arms } if selection(graph, *arms).total => {
                     let valued = arms
                         .iter()
                         .filter(|&arm| graph.region(arm).result_has_value())
@@ -562,21 +569,12 @@ pub(crate) fn draw(
                             Edge::Values,
                         );
                     }
-                    if !is_total(graph, *arms) {
+                    if !selection(graph, *arms).total {
                         let first = arms.iter().next().expect("an observe has an arm");
                         let Case::Bool(taken) = graph.case(graph.region(first).context) else {
                             unreachable!("a partial switch is boolean")
                         };
-                        let other = Case::Bool(!taken);
-                        let index = cases
-                            .iter()
-                            .position(|known| *known == other)
-                            .unwrap_or_else(|| {
-                                cases.push(other);
-                                cases.len() - 1
-                            });
-                        let index = u16::try_from(index).expect("distinct case count fits u16");
-                        typing.derive(inputs[0], inputs[1], node, Pair::Arm(index));
+                        typing.derive(inputs[0], inputs[1], node, Pair::Bool(!taken));
                     }
                 }
                 Op::After => typing.derive(inputs[1], inputs[0], node, Pair::Branch),

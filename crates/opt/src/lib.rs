@@ -372,6 +372,7 @@ fn emit(graph: &Graph, plan: &Plan, kept: &[bool]) -> Optimized {
     let mut inputs = Vec::new();
     let mut completes = Vec::new();
     let mut carried = Vec::new();
+    let mut arm_contexts: Vec<NodeId> = Vec::new();
     for (index, run) in graph.runs().iter().enumerate() {
         let open = builder.open_run(FunctionId::new(index));
         let first = run.entry().index();
@@ -411,11 +412,10 @@ fn emit(graph: &Graph, plan: &Plan, kept: &[bool]) -> Optimized {
                     let new = match arms_of[region.index()] {
                         Some(arms) => {
                             if arms.iter().next() == Some(region) {
-                                let contexts: Vec<NodeId> = arms
-                                    .iter()
-                                    .map(|arm| map(graph.region(arm).context))
-                                    .collect();
-                                let opened = builder.open_arms(&contexts);
+                                arm_contexts.clear();
+                                arm_contexts
+                                    .extend(arms.iter().map(|arm| map(graph.region(arm).context)));
+                                let opened = builder.open_arms(&arm_contexts);
                                 for (arm, new) in arms.iter().zip(opened.iter()) {
                                     new_region[arm.index()] = Some(new);
                                 }
