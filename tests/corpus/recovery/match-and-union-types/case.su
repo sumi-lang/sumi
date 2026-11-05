@@ -1,0 +1,14 @@
+fn a(x: A |) -> int = 1
+fn b(x: A | | B) -> int = 2
+fn c() -> A
+| B = 3
+fn d(x: A) -> int = match x { A(a) a.n }
+fn e(x: A) -> int = match x { A(a => 1 }
+fn f(x: A) -> int = match x { A( => 1 }
+fn g(x: A) -> int = match x { => 1 }
+fn h(x: A) -> int = match x
+fn i(x: A) -> int = match { A => 1 }
+fn j(x: A) -> int = match x { A => , B => 2 }
+fn k(x: A) -> int = match x { A =>
+1 }
+fn l(x: A) -> int = match x { A(_) => 1 }

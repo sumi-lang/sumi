@@ -25,7 +25,7 @@ fn countdown@4:1..8:2 (int ∈ ∅) -> int ∈ ∅
   param n@4:14..4:15: int
   result: copy : int @4:25..4:28
     value: if : int @4:31..8:2
-      condition: eager <= : bool @4:34..4:40
+      scrutinee: eager <= : bool @4:34..4:40
         lhs: read n@4:14..4:15 : int
         rhs: int 0 : int @4:39..4:40
       then: int 0 : int @5:5..5:6
@@ -38,7 +38,7 @@ fn ping@9:1..13:2 (int ∈ ∅) -> int ∈ ∅
   param n@9:9..9:10: int
   result: copy : int @9:20..9:23
     value: if : int @9:26..13:2
-      condition: eager <= : bool @9:29..9:35
+      scrutinee: eager <= : bool @9:29..9:35
         lhs: read n@9:9..9:10 : int
         rhs: int 0 : int @9:34..9:35
       then: int 0 : int @10:5..10:6
@@ -84,7 +84,7 @@ fn main@20:1..25:2 () -> int ∈ [6, 6]
   result: result : int @20:14..20:17
     outcome[0]:
       discard: if : unit @21:5..23:6
-        condition: bool false : bool @21:8..21:13
+        scrutinee: bool false : bool @21:8..21:13
         then: unit : unit @21:14..23:6
         else: unit (implicit)
       discard: after : ? @21:5..23:6

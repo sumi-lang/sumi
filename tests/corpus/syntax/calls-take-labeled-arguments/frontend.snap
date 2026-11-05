@@ -1,0 +1,62 @@
+== tree ==
+SourceFile 1:1..9:1
+  FnItem 1:1..1:29
+    Name 1:4..1:5 "f"
+    ParamList 1:5..1:7 "()"
+    Block 1:8..1:29
+      CallExpr 1:10..1:27
+        NameRef 1:10..1:11 "g"
+        ArgList 1:11..1:27
+          Arg 1:12..1:16
+            NameRef 1:12..1:13 "x"
+            LiteralExpr 1:15..1:16 "1"
+          Arg 1:18..1:26
+            NameRef 1:18..1:19 "y"
+            BinaryExpr 1:21..1:26
+              NameRef 1:21..1:22 "a"
+              LiteralExpr 1:25..1:26 "2"
+  FnItem 2:1..2:23
+    Name 2:4..2:5 "h"
+    ParamList 2:5..2:7 "()"
+    Block 2:8..2:23
+      CallExpr 2:10..2:21
+        NameRef 2:10..2:11 "g"
+        ArgList 2:11..2:21
+          Arg 2:12..2:13
+            LiteralExpr 2:12..2:13 "1"
+          Arg 2:15..2:19
+            NameRef 2:15..2:16 "y"
+            LiteralExpr 2:18..2:19 "2"
+  FnItem 3:1..8:2
+    Name 3:4..3:5 "k"
+    ParamList 3:5..3:7 "()"
+    Block 3:8..8:2
+      CallExpr 4:5..7:6
+        NameRef 4:5..4:6 "g"
+        ArgList 4:6..7:6
+          Arg 5:9..5:13
+            NameRef 5:9..5:10 "x"
+            LiteralExpr 5:12..5:13 "1"
+          Arg 6:9..6:33
+            NameRef 6:9..6:10 "y"
+            IfExpr 6:12..6:33
+              NameRef 6:15..6:16 "a"
+              Block 6:17..6:22
+                LiteralExpr 6:19..6:20 "2"
+              Block 6:28..6:33
+                LiteralExpr 6:30..6:31 "3"
+
+== formatted ==
+fn f() {
+    g(x: 1, y: a + 2)
+}
+fn h() {
+    g(1, y: 2)
+}
+fn k() {
+    g(x: 1, y: if a {
+        2
+    } else {
+        3
+    })
+}

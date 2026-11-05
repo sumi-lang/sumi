@@ -5,19 +5,19 @@ semantic errors: 3
 == graph ==
 fn a@3:1..7:2 signature: unavailable
   body: if : ? @3:10..7:2
-    condition: bool true : bool @3:13..3:17
+    scrutinee: bool true : bool @3:13..3:17
     then: int 1 : int @4:5..4:6
     else: call b@8:1..12:2 : ? @6:5..6:8
 
 fn b@8:1..12:2 signature: unavailable
   body: if : ? @8:10..12:2
-    condition: bool true : bool @8:13..8:17
+    scrutinee: bool true : bool @8:13..8:17
     then: bool true : bool @9:5..9:9
     else: call c@13:1..17:2 : ? @11:5..11:8
 
 fn c@13:1..17:2 signature: unavailable
   body: if : ? @13:10..17:2
-    condition: bool true : bool @13:13..13:17
+    scrutinee: bool true : bool @13:13..13:17
     then: unit : unit @14:5..14:7
     else: call a@3:1..7:2 : ? @16:5..16:8
 

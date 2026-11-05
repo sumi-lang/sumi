@@ -1,0 +1,221 @@
+file: accepted
+frontend errors: 0 (see frontend.snap)
+semantic errors: 0
+
+== graph ==
+fn score@5:1..5:67 (A | B | C ∈ A() ∪ B() ∪ C()) -> int ∈ [1, 3]
+  param x@5:10..5:11: A | B | C
+  result: copy : int @5:27..5:30
+    value: match : int @5:33..5:67
+      scrutinee: read x@5:10..5:11 : A | B | C
+      A: int 1 : int @5:48..5:49
+      B: int 2 : int @5:56..5:57
+      _: int 3 : int @5:64..5:65
+
+fn duplicate@6:1..13:2 (A | B | C ∈ A() ∪ B() ∪ C()) -> int ∈ [1, 3]
+  param x@6:14..6:15: A | B | C
+  result: copy : int @6:31..6:34
+    value: match : int @6:37..13:2
+      scrutinee: read x@6:14..6:15 : A | B | C
+      A: int 1 : int @7:10..7:11
+      A: eager / : int @8:10..8:15
+        lhs: int 1 : int @8:10..8:11
+        rhs: int 0 : int @8:14..8:15
+      B: int 2 : int @9:10..9:11
+      _: int 3 : int @10:10..10:11
+      _: eager / : int @11:10..11:15
+        lhs: int 1 : int @11:10..11:11
+        rhs: int 0 : int @11:14..11:15
+      C: eager / : int @12:10..12:15
+        lhs: int 1 : int @12:10..12:11
+        rhs: int 0 : int @12:14..12:15
+
+fn rest_first@14:1..14:80 (A | B | C ∈ A() ∪ B() ∪ C()) -> int ∈ [4, 4]
+  param x@14:15..14:16: A | B | C
+  result: copy : int @14:32..14:35
+    value: match : int @14:38..14:80
+      scrutinee: read x@14:15..14:16 : A | B | C
+      _: int 4 : int @14:53..14:54
+      A: eager / : int @14:61..14:66
+        lhs: int 1 : int @14:61..14:62
+        rhs: int 0 : int @14:65..14:66
+      _: eager / : int @14:73..14:78
+        lhs: int 1 : int @14:73..14:74
+        rhs: int 0 : int @14:77..14:78
+
+fn mutate@15:1..26:2 (A | B | C ∈ A() ∪ B() ∪ C()) -> int ∈ [4, 7]
+  param x@15:11..15:12: A | B | C
+  result: result : int @15:28..15:31
+    outcome[0]:
+      let n@16:13..16:14: int @16:5..16:18
+        initializer: int 1 : int @16:17..16:18
+      discard: match : unit @17:5..23:6
+        scrutinee: read x@15:11..15:12 : A | B | C
+        A: unit : unit @18:14..18:26
+        A:
+          assignment: assign n@16:13..16:14 : int @19:16..19:25
+            value: eager / : int @19:20..19:25
+              lhs: int 1 : int @19:20..19:21
+              rhs: int 0 : int @19:24..19:25
+          tail: unit : unit @19:14..19:27
+        B:
+          assignment: assign n@16:13..16:14 : int @20:16..20:21
+            value: int 2 : int @20:20..20:21
+          tail: unit : unit @20:14..20:23
+        _:
+          assignment: assign n@16:13..16:14 : int @21:16..21:21
+            value: int 3 : int @21:20..21:21
+          tail: unit : unit @21:14..21:23
+        C: unit : unit @22:14..22:30
+      discard: if : unit @24:5..24:27
+        scrutinee: eager == : bool @24:8..24:14
+          lhs: phi n@16:13..16:14 : int @17:5..23:6
+            scrutinee: read x@15:11..15:12 : A | B | C
+            A: read n@16:13..16:14 : int
+            A: read n@16:13..16:14 (assigned @19:16..19:25) : int
+            B: read n@16:13..16:14 (assigned @20:16..20:21) : int
+            _: read n@16:13..16:14 (assigned @21:16..21:21) : int
+            C: read n@16:13..16:14 : int
+          rhs: int 0 : int @24:13..24:14
+        then: unit : unit @24:15..24:27
+        else: unit (implicit)
+      discard: after : ? @24:5..24:27
+        control: observe : ? @24:5..24:27
+        context: after : ? @17:5..23:6
+          control: observe : ? @17:5..23:6
+          context: entry : ? @15:1..26:2
+      tail: eager / : int @25:5..25:11
+        lhs: int 12 : int @25:5..25:7
+        rhs [n == 0 fails@24:8..24:14]: phi n@16:13..16:14 : int @17:5..23:6
+          scrutinee: read x@15:11..15:12 : A | B | C
+          A: read n@16:13..16:14 : int
+          A: read n@16:13..16:14 (assigned @19:16..19:25) : int
+          B: read n@16:13..16:14 (assigned @20:16..20:21) : int
+          _: read n@16:13..16:14 (assigned @21:16..21:21) : int
+          C: read n@16:13..16:14 : int
+    outcome[1]: return : int @18:16..18:24
+      payload: int 7 : int @18:23..18:24
+    outcome[2]: return : int @22:16..22:28
+      payload: eager / : int @22:23..22:28
+        lhs: int 1 : int @22:23..22:24
+        rhs: int 0 : int @22:27..22:28
+    outcome[3]: return : int @24:17..24:25
+      payload: int 0 : int @24:24..24:25
+
+fn nested@27:1..35:2 (A | B | C ∈ A() ∪ B() ∪ C(), bool ∈ {true, false}) -> int ∈ [0, 20]
+  param x@27:11..27:12: A | B | C
+  param flag@27:25..27:29: bool
+  result: result : int @27:40..27:43
+    outcome[0]:
+      let n@28:13..28:14: int @28:5..28:18
+        initializer: int 0 : int @28:17..28:18
+      discard: phi n@28:13..28:14 : int @29:5..29:29
+        scrutinee: read flag@27:25..27:29 : bool
+        then: read n@28:13..28:14 (assigned @29:15..29:27) : int
+        else: read n@28:13..28:14 : int
+      discard: if : unit @29:5..29:29
+        scrutinee: read flag@27:25..27:29 : bool
+        then:
+          assignment: assign n@28:13..28:14 : int @29:15..29:27
+            value: call score@5:1..5:67 : int @29:19..29:27
+              arg[0]: read x@27:11..27:12 : A | B | C
+          tail: unit : unit @29:13..29:29
+        else: unit (implicit)
+      discard: after : ? @30:5..34:6
+        control: observe : ? @30:5..34:6
+        context: entry : ? @27:1..35:2
+      tail: match : int @30:5..34:6
+        scrutinee: read x@27:11..27:12 : A | B | C
+        A: if : int @31:14..31:39
+          scrutinee: read flag@27:25..27:29 : bool
+          then: phi n@28:13..28:14 : int @29:5..29:29
+            scrutinee: read flag@27:25..27:29 : bool
+            then: read n@28:13..28:14 (assigned @29:15..29:27) : int
+            else: read n@28:13..28:14 : int
+          else: int 10 : int @31:35..31:37
+        _:
+          discard: if : unit @32:16..32:38
+            scrutinee: not : bool @32:19..32:24
+              operand: read flag@27:25..27:29 : bool
+            then: unit : unit @32:25..32:38
+            else: unit (implicit)
+          discard: after : ? @32:16..32:38
+            control: observe : ? @32:16..32:38
+            context: arm _ : ? @32:9..33:16
+          tail: phi n@28:13..28:14 : int @29:5..29:29
+            scrutinee: read flag@27:25..27:29 : bool
+            then: read n@28:13..28:14 (assigned @29:15..29:27) : int
+            else: read n@28:13..28:14 : int
+    outcome[1]: return : int @32:27..32:36
+      payload: int 20 : int @32:34..32:36
+
+fn main@36:1..36:56 () -> int ∈ [3, 9]
+  result: copy : int @36:14..36:17
+    value: eager + : int @36:20..36:56
+      lhs: eager + : int @36:20..36:43
+        lhs: call score@5:1..5:67 : int @36:20..36:30
+          arg[0]: make A : A @36:26..36:29
+        rhs: call score@5:1..5:67 : int @36:33..36:43
+          arg[0]: make B : B @36:39..36:42
+      rhs: call score@5:1..5:67 : int @36:46..36:56
+        arg[0]: make C : C @36:52..36:55
+
+fn duplicates@37:1..37:74 () -> int ∈ [3, 9]
+  result: copy : int @37:20..37:23
+    value: eager + : int @37:26..37:74
+      lhs: eager + : int @37:26..37:57
+        lhs: call duplicate@6:1..13:2 : int @37:26..37:40
+          arg[0]: make A : A @37:36..37:39
+        rhs: call duplicate@6:1..13:2 : int @37:43..37:57
+          arg[0]: make B : B @37:53..37:56
+      rhs: call duplicate@6:1..13:2 : int @37:60..37:74
+        arg[0]: make C : C @37:70..37:73
+
+fn rest@38:1..38:71 () -> int ∈ [12, 12]
+  result: copy : int @38:14..38:17
+    value: eager + : int @38:20..38:71
+      lhs: eager + : int @38:20..38:53
+        lhs: call rest_first@14:1..14:80 : int @38:20..38:35
+          arg[0]: make A : A @38:31..38:34
+        rhs: call rest_first@14:1..14:80 : int @38:38..38:53
+          arg[0]: make B : B @38:49..38:52
+      rhs: call rest_first@14:1..14:80 : int @38:56..38:71
+        arg[0]: make C : C @38:67..38:70
+
+fn mutations@39:1..39:64 () -> int ∈ [12, 21]
+  result: copy : int @39:19..39:22
+    value: eager + : int @39:25..39:64
+      lhs: eager + : int @39:25..39:50
+        lhs: call mutate@15:1..26:2 : int @39:25..39:36
+          arg[0]: make A : A @39:32..39:35
+        rhs: call mutate@15:1..26:2 : int @39:39..39:50
+          arg[0]: make B : B @39:46..39:49
+      rhs: call mutate@15:1..26:2 : int @39:53..39:64
+        arg[0]: make C : C @39:60..39:63
+
+fn nesting@40:1..40:81 () -> int ∈ [0, 60]
+  result: copy : int @40:17..40:20
+    value: eager + : int @40:23..40:81
+      lhs: eager + : int @40:23..40:60
+        lhs: call nested@27:1..35:2 : int @40:23..40:40
+          arg[0]: make A : A @40:30..40:33
+          arg[1]: bool true : bool @40:35..40:39
+        rhs: call nested@27:1..35:2 : int @40:43..40:60
+          arg[0]: make B : B @40:50..40:53
+          arg[1]: bool true : bool @40:55..40:59
+      rhs: call nested@27:1..35:2 : int @40:63..40:81
+        arg[0]: make C : C @40:70..40:73
+        arg[1]: bool false : bool @40:75..40:80
+
+== semantic diagnostics ==
+warning[semantic/unreachable-code] 8:5..8:15 "A => 1 / 0": this arm never runs
+warning[semantic/unreachable-code] 11:5..11:15 "_ => 1 / 0": this arm never runs
+warning[semantic/unreachable-code] 12:5..12:15 "C => 1 / 0": this arm never runs
+warning[semantic/unreachable-code] 14:56..14:66 "A => 1 / 0": this arm never runs
+warning[semantic/unreachable-code] 14:68..14:78 "_ => 1 / 0": this arm never runs
+warning[semantic/unreachable-code] 19:9..19:27 "A => { n = 1 / 0 }": this arm never runs
+warning[semantic/unreachable-code] 22:9..22:30 "C => { return 1 / 0 }": this arm never runs
+warning[semantic/constant-condition] 24:8..24:14 "n == 0": condition is always false
+  at 24:15..24:27 "{ return 0 }": this branch never runs
+  at 20:20..20:21 "2": is 2
+  at 21:20..21:21 "3": is 3

@@ -1,11 +1,30 @@
 //! The machine: the graph evaluated in the concrete domain by demand from a function's result. It
 //! refuses rather than fails: no [`Refusal`] arises on a graph the checker proved.
 
-use crate::{Domain, Fault, FunctionId, Graph, NodeId, Op, References, RegionId, Run, Value};
+use crate::{Arms, Domain, Fault, FunctionId, Graph, NodeId, Op, References, RegionId, Run, Value};
 
 #[path = "suspend.rs"]
 mod suspend;
 use suspend::Suspensions;
+
+/// What `selected` tries: an arm region, by its context, or an arm context itself.
+#[derive(Clone, Copy)]
+enum Candidate {
+    Region(RegionId),
+    Context(NodeId),
+}
+
+impl From<RegionId> for Candidate {
+    fn from(region: RegionId) -> Self {
+        Self::Region(region)
+    }
+}
+
+impl From<NodeId> for Candidate {
+    fn from(context: NodeId) -> Self {
+        Self::Context(context)
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Control {
@@ -27,8 +46,7 @@ enum Control {
     },
     Branch {
         node: NodeId,
-        then: RegionId,
-        else_: Option<RegionId>,
+        arms: Arms,
     },
     Phi(NodeId),
     Sequence {
@@ -37,8 +55,7 @@ enum Control {
     },
     Observe {
         node: NodeId,
-        then: Option<RegionId>,
-        else_: Option<RegionId>,
+        arms: Arms,
     },
     CompleteObserve(NodeId),
     ResultBody {
@@ -234,6 +251,7 @@ impl<'a> Machine<'a> {
             .expect("an input is evaluated before its reader")
     }
 
+    #[inline(always)]
     fn fill(&mut self, node: NodeId, value: Value) {
         let index = self.index(node);
         self.slots[index] = Some(value);
@@ -244,7 +262,7 @@ impl<'a> Machine<'a> {
     fn open(&mut self, function: FunctionId) -> usize {
         let run = self.graph.run(function);
         let base = self.slots.len();
-        self.slots.resize(base + run.nodes().len(), None);
+        self.slots.resize_with(base + run.nodes().len(), || None);
         let control_base = self.control.len();
         let depth = self.frames.last().map_or(1, |frame| frame.depth + 1);
         self.frames.push(Frame {
@@ -260,6 +278,30 @@ impl<'a> Machine<'a> {
     }
 
     /// Evaluate `region`'s result, then `take` it.
+    /// The first of `candidates` whose case selects `scrutinee`: arm regions, by their context,
+    /// or arm contexts themselves.
+    fn selected<T: Copy + Into<Candidate>>(
+        &self,
+        node: NodeId,
+        scrutinee: &Value,
+        candidates: impl Iterator<Item = T>,
+    ) -> Result<Option<T>, Refusal> {
+        for candidate in candidates {
+            let context = match candidate.into() {
+                Candidate::Region(region) => self.graph.region(region).context,
+                Candidate::Context(context) => context,
+            };
+            let case = self.graph.case(context);
+            if scrutinee
+                .selects(case, self.graph.unions())
+                .map_err(|fault| Refusal::of(fault, node))?
+            {
+                return Ok(Some(candidate));
+            }
+        }
+        Ok(None)
+    }
+
     fn demand_region(&mut self, region: RegionId, take: impl FnOnce(NodeId) -> Control) {
         let from = self.graph.region(region).result();
         self.control.push(take(from));
@@ -287,11 +329,15 @@ impl<'a> Machine<'a> {
     /// `node` is a data operator whose inputs are all in.
     fn compute(&mut self, node: NodeId) -> Result<(), Refusal> {
         let op = &self.graph.node(node).op;
+        let (decls, unions) = (self.graph.decls(), self.graph.unions());
         let value = match *self.graph.inputs(node) {
-            [] => op.apply(&[]),
-            [a] => op.apply(&[self.value(a)]),
-            [a, b] => op.apply(&[self.value(a), self.value(b)]),
-            _ => unreachable!("a data operator has at most two inputs"),
+            [] => op.apply(&[], decls, unions),
+            [a] => op.apply(&[self.value(a)], decls, unions),
+            [a, b] => op.apply(&[self.value(a), self.value(b)], decls, unions),
+            ref inputs => {
+                let inputs: Vec<&Value> = inputs.iter().map(|&input| self.value(input)).collect();
+                op.apply(&inputs, decls, unions)
+            }
         };
         let value = value.map_err(|fault| Refusal::of(fault, node))?;
         self.fill(node, value);
@@ -327,7 +373,7 @@ impl<'a> Machine<'a> {
                         self.demand(inputs[0]);
                     }
                     Op::Hole => return Err(Refusal::Hole(node)),
-                    Op::Entry | Op::Then | Op::Else | Op::Unused => {
+                    Op::Entry | Op::Arm(_) | Op::Unused => {
                         unreachable!("a context or a statement is not a value")
                     }
                     Op::After => unreachable!("a continuation context is not a value"),
@@ -343,8 +389,8 @@ impl<'a> Machine<'a> {
                         });
                         self.demand(inputs[0]);
                     }
-                    Op::Observe { then, else_ } => {
-                        self.control.push(Control::Observe { node, then, else_ });
+                    Op::Observe { arms } => {
+                        self.control.push(Control::Observe { node, arms });
                         self.demand(inputs[0]);
                     }
                     Op::Result { .. } => {
@@ -368,8 +414,8 @@ impl<'a> Machine<'a> {
                         self.control.push(Control::Lazy { node, is_and, rhs });
                         self.demand(inputs[0]);
                     }
-                    Op::Join { then, else_ } => {
-                        self.control.push(Control::Branch { node, then, else_ });
+                    Op::Switch { arms } => {
+                        self.control.push(Control::Branch { node, arms });
                         self.demand(inputs[0]);
                     }
                     Op::Phi => {
@@ -449,7 +495,8 @@ impl<'a> Machine<'a> {
                     .collect();
                 for body_node in self.graph.region(body).nodes() {
                     let slot = self.index(body_node);
-                    self.slots[slot] = None;
+                    // Taking clears the tag without copying an empty slot's unused payload.
+                    drop(self.slots[slot].take());
                 }
                 for ((carry, _), value) in carried.iter().zip(values) {
                     let slot = self.index(carry);
@@ -497,25 +544,25 @@ impl<'a> Machine<'a> {
                     self.fill(node, Value::Bool(lhs));
                 }
             }
-            Control::Branch { node, then, else_ } => {
-                let condition = self
-                    .value(self.graph.inputs(node)[0])
-                    .truth()
-                    .map_err(|fault| Refusal::of(fault, node))?;
-                let take = |from| Control::Take { node, from };
-                match (condition, else_) {
-                    (true, _) => self.demand_region(then, take),
-                    (false, Some(else_)) => self.demand_region(else_, take),
-                    (false, None) => self.fill(node, Value::Unit),
+            Control::Branch { node, arms } => {
+                let scrutinee = self.value(self.graph.inputs(node)[0]);
+                let selected = self.selected(node, scrutinee, arms.iter())?;
+                match selected {
+                    Some(arm) => self.demand_region(arm, |from| Control::Take { node, from }),
+                    None => self.fill(node, Value::Unit),
                 }
             }
             Control::Phi(node) => {
                 let inputs = self.graph.inputs(node);
-                let condition = self
-                    .value(inputs[0])
-                    .truth()
-                    .map_err(|fault| Refusal::of(fault, node))?;
-                let from = inputs[if condition { 1 } else { 2 }];
+                let scrutinee = self.value(inputs[0]);
+                let contexts = self.graph.phi_contexts(node);
+                let selected = self.selected(node, scrutinee, contexts.iter().copied())?;
+                let Some(index) = selected.and_then(|context| {
+                    contexts.iter().position(|&candidate| candidate == context)
+                }) else {
+                    return Err(Refusal::Type(node));
+                };
+                let from = inputs[1 + index];
                 self.control.push(Control::Take { node, from });
                 self.demand(from);
             }
@@ -523,14 +570,10 @@ impl<'a> Machine<'a> {
                 self.control.push(Control::Take { node, from: value });
                 self.demand(value);
             }
-            Control::Observe { node, then, else_ } => {
-                let condition = self
-                    .value(self.graph.inputs(node)[0])
-                    .truth()
-                    .map_err(|fault| Refusal::of(fault, node))?;
-                let region = if condition { then } else { else_ };
-                if let Some(control) = region.and_then(|region| self.graph.region(region).control())
-                {
+            Control::Observe { node, arms } => {
+                let scrutinee = self.value(self.graph.inputs(node)[0]);
+                let selected = self.selected(node, scrutinee, arms.iter())?;
+                if let Some(control) = selected.and_then(|arm| self.graph.region(arm).control()) {
                     self.control.push(Control::CompleteObserve(node));
                     self.demand(control);
                 } else {
@@ -584,7 +627,7 @@ impl<'a> Machine<'a> {
                     self.offset = frame.base.wrapping_sub(frame.run.entry().index());
                     self.max_depth = self.max_depth.max(frame.depth);
                     self.slots
-                        .resize(frame.base + frame.run.nodes().len(), None);
+                        .resize_with(frame.base + frame.run.nodes().len(), || None);
                     bind(
                         &mut self.slots[frame.base..],
                         frame.run,
@@ -652,7 +695,7 @@ impl<'a> Machine<'a> {
                     let caller = self.frames.last().unwrap();
                     let layout = self.suspensions.saved(node);
                     self.slots
-                        .resize(caller.base + caller.run.nodes().len(), None);
+                        .resize_with(caller.base + caller.run.nodes().len(), || None);
                     for (packed, &slot) in layout.iter().enumerate().rev() {
                         let value = self.slots[caller.base + packed].take();
                         self.slots[caller.base + slot] = value;
@@ -668,7 +711,7 @@ impl<'a> Machine<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ArithOp, BinaryOp, Carried, GraphBuilder};
+    use crate::{ArithOp, BinaryOp, Carried, Case, GraphBuilder};
 
     fn push(builder: &mut GraphBuilder, op: Op, inputs: &[NodeId]) -> NodeId {
         refer(builder, op, inputs, References::None)
@@ -722,7 +765,7 @@ mod tests {
         for (start, end, expected) in [(2, 2, 29), (4, 2, 29), (2, 5, 92)] {
             for returning in [false, true] {
                 let mut builder = GraphBuilder::new(400);
-                let leaf = builder.function(Some(Box::new([crate::Ty::Int])));
+                let leaf = builder.function(Some(Box::new([crate::Ty::INT])));
                 let caller = builder.function(None);
                 let callee = leaf;
                 let run = builder.open_run(leaf);
@@ -731,7 +774,7 @@ mod tests {
                     &mut builder,
                     Op::Param {
                         index: 0,
-                        ty: Some(crate::Ty::Int),
+                        ty: Some(crate::Ty::INT),
                     },
                     &[],
                 );
@@ -1044,8 +1087,15 @@ mod tests {
         let function = builder.function(None);
         let run = builder.open_run(function);
         let entry = push(&mut builder, Op::Entry, &[]);
-        let then = builder.open(entry);
-        let else_ = builder.open(entry);
+        let condition = push(&mut builder, Op::Bool(true), &[]);
+        let on_true = push(&mut builder, Op::Arm(Case::Bool(true)), &[condition, entry]);
+        let on_false = push(
+            &mut builder,
+            Op::Arm(Case::Bool(false)),
+            &[condition, entry],
+        );
+        let arms = builder.open_arms(&[on_true, on_false]);
+        let [then, else_] = [arms.iter().next().unwrap(), arms.iter().nth(1).unwrap()];
         builder.enter(then);
         let selected = push(&mut builder, Op::Int(3.into()), &[]);
         let selected_return = push(&mut builder, Op::Return, &[selected, entry]);
@@ -1056,15 +1106,7 @@ mod tests {
         builder.close_with_control(else_, unselected, false, Some(unselected_return));
         let region = builder.open(entry);
         builder.enter(region);
-        let condition = push(&mut builder, Op::Bool(true), &[]);
-        let observe = push(
-            &mut builder,
-            Op::Observe {
-                then: Some(then),
-                else_: Some(else_),
-            },
-            &[condition, entry],
-        );
+        let observe = push(&mut builder, Op::Observe { arms }, &[condition, entry]);
         let tail = push(&mut builder, Op::Int(1.into()), &[]);
         let result = push(&mut builder, Op::Result { declared: None }, &[tail]);
         builder.close_with_control(region, tail, false, Some(observe));
@@ -1092,9 +1134,11 @@ mod tests {
         let hole = push(&mut builder, Op::Hole, &[]);
         let yes = push(&mut builder, Op::Bool(true), &[]);
         let no = push(&mut builder, Op::Bool(false), &[]);
+        let on_true = push(&mut builder, Op::Arm(Case::Bool(true)), &[yes, entry]);
+        let on_false = push(&mut builder, Op::Arm(Case::Bool(false)), &[yes, entry]);
         let phi = References::Phi {
             declaration,
-            contexts: [entry; 2],
+            contexts: &[on_true, on_false],
         };
         let from_true = refer(&mut builder, Op::Phi, &[yes, seven, hole], phi);
         let from_false = refer(&mut builder, Op::Phi, &[no, hole, nine], phi);
@@ -1119,22 +1163,17 @@ mod tests {
         let function = builder.function(None);
         let run = builder.open_run(function);
         let entry = push(&mut builder, Op::Entry, &[]);
-        let then = builder.open(entry);
+        let condition = push(&mut builder, Op::Bool(false), &[]);
+        let on_true = push(&mut builder, Op::Arm(Case::Bool(true)), &[condition, entry]);
+        let arms = builder.open_arms(&[on_true]);
+        let then = arms.iter().next().unwrap();
         builder.enter(then);
         let payload = push(&mut builder, Op::Int(3.into()), &[]);
         let return_ = push(&mut builder, Op::Return, &[payload, entry]);
         builder.close_with_control(then, payload, false, Some(return_));
         let region = builder.open(entry);
         builder.enter(region);
-        let condition = push(&mut builder, Op::Bool(false), &[]);
-        let observe = push(
-            &mut builder,
-            Op::Observe {
-                then: Some(then),
-                else_: None,
-            },
-            &[condition, entry],
-        );
+        let observe = push(&mut builder, Op::Observe { arms }, &[condition, entry]);
         let tail = push(&mut builder, Op::Int(1.into()), &[]);
         let sequence = push(&mut builder, Op::Sequence, &[observe, tail]);
         builder.close(region, sequence);
@@ -1178,7 +1217,7 @@ mod tests {
     fn suspended_shared_values_preserve_steps_and_depth() {
         for padding in [0, 300] {
             let mut builder = GraphBuilder::new(padding + 10);
-            let leaf = builder.function(Some(Box::new([crate::Ty::Int; 2])));
+            let leaf = builder.function(Some(Box::new([crate::Ty::INT; 2])));
             let caller = builder.function(None);
             let callee = leaf;
             let run = builder.open_run(leaf);
@@ -1188,7 +1227,7 @@ mod tests {
                     &mut builder,
                     Op::Param {
                         index,
-                        ty: Some(crate::Ty::Int),
+                        ty: Some(crate::Ty::INT),
                     },
                     &[],
                 )

@@ -1,12 +1,16 @@
-//! The values that may reach a node, one set per scalar type, and the may-domain over them.
-//! Reachability is no separate bit: a node with every set empty is unreachable.
+//! The values that may reach a node, one set per scalar type and one per declared type, and the
+//! may-domain over them. Reachability is no separate bit: a node with every set empty is
+//! unreachable.
 
 use std::cmp::{Ordering, max, min};
 use std::convert::Infallible;
 use std::fmt;
+use std::mem::ManuallyDrop;
 use std::ops::{Add, BitAnd, Div, Mul, Neg, Rem, Sub};
 
-use crate::{ArithOp, BinaryOp, CmpOp, Domain, Int, Ty};
+use crate::{
+    ArithOp, BinaryOp, Case, CmpOp, Decl, DeclId, Domain, FieldName, Int, Names, Ty, TyKind, Unions,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Bound {
@@ -569,11 +573,150 @@ impl fmt::Display for Bools {
     }
 }
 
+/// What the fields of a declared type's values may hold.
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Fields {
+    /// Every value of the type.
+    Any,
+    /// Per field in declaration order.
+    Known(Box<[May]>),
+}
+
+impl Fields {
+    fn join(&mut self, other: &Self) -> bool {
+        match (&mut *self, other) {
+            (Self::Any, _) => false,
+            (_, Self::Any) => {
+                *self = Self::Any;
+                true
+            }
+            (Self::Known(mine), Self::Known(theirs)) => {
+                debug_assert_eq!(mine.len(), theirs.len(), "one type's fields");
+                let mut grew = false;
+                for (mine, theirs) in mine.iter_mut().zip(theirs) {
+                    grew |= mine.join(theirs);
+                }
+                grew
+            }
+        }
+    }
+
+    fn map(&self, mut f: impl FnMut(&May) -> May) -> Self {
+        match self {
+            Self::Any => Self::Any,
+            Self::Known(fields) => Self::Known(fields.iter().map(&mut f).collect()),
+        }
+    }
+}
+
+/// The declared types whose values may reach a node, each with what its fields may hold; sorted
+/// by type, one entry each. Most nodes hold none, so the list sits behind a thin pointer and a
+/// fact without one copies a word.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Decls(Option<ManuallyDrop<Box<Entries>>>);
+
+/// The entries drop behind a cold call, so a fact's drop glue is not recursive and inlines to a
+/// null check.
+impl Drop for Decls {
+    #[inline(always)]
+    fn drop(&mut self) {
+        if let Some(entries) = self.0.take() {
+            drop_entries(ManuallyDrop::into_inner(entries));
+        }
+    }
+}
+
+#[inline(never)]
+fn drop_entries(entries: Box<Entries>) {
+    drop(entries);
+}
+
+/// Behind a thin pointer so a fact without declared values copies a word.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Entries(Vec<(DeclId, Fields)>);
+
+impl Clone for Decls {
+    #[inline(always)]
+    fn clone(&self) -> Self {
+        match &self.0 {
+            None => Self(None),
+            Some(entries) => Self(Some(ManuallyDrop::new((**entries).clone()))),
+        }
+    }
+}
+
+impl Decls {
+    pub const EMPTY: Self = Self(None);
+
+    fn entries(&self) -> &[(DeclId, Fields)] {
+        self.0.as_ref().map_or(&[], |entries| &entries.0)
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_none()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (DeclId, &Fields)> {
+        self.entries().iter().map(|(decl, fields)| (*decl, fields))
+    }
+
+    /// What the fields of `decl`'s values hold, if any reach the node.
+    pub fn get(&self, decl: DeclId) -> Option<&Fields> {
+        let entries = self.entries();
+        entries
+            .binary_search_by_key(&decl, |&(decl, _)| decl)
+            .ok()
+            .map(|index| &entries[index].1)
+    }
+
+    fn join(&mut self, other: &Self) -> bool {
+        let Some(theirs) = &other.0 else {
+            return false;
+        };
+        let mine = &mut self
+            .0
+            .get_or_insert_with(|| ManuallyDrop::new(Box::new(Entries(Vec::new()))))
+            .0;
+        let mut grew = false;
+        for (decl, fields) in &theirs.0 {
+            match mine.binary_search_by_key(decl, |&(decl, _)| decl) {
+                Ok(index) => grew |= mine[index].1.join(fields),
+                Err(index) => {
+                    mine.insert(index, (*decl, fields.clone()));
+                    grew = true;
+                }
+            }
+        }
+        grew
+    }
+}
+
+impl FromIterator<(DeclId, Fields)> for Decls {
+    fn from_iter<I: IntoIterator<Item = (DeclId, Fields)>>(entries: I) -> Self {
+        let entries: Vec<_> = entries.into_iter().collect();
+        Self((!entries.is_empty()).then(|| ManuallyDrop::new(Box::new(Entries(entries)))))
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub struct May {
     pub ints: Ints,
     pub bools: Bools,
     pub has_unit: bool,
+    pub decls: Decls,
+}
+
+impl Clone for May {
+    #[inline(always)]
+    fn clone(&self) -> Self {
+        Self {
+            ints: self.ints.clone(),
+            bools: self.bools,
+            has_unit: self.has_unit,
+            decls: self.decls.clone(),
+        }
+    }
 }
 
 impl May {
@@ -581,24 +724,23 @@ impl May {
         ints: Ints::EMPTY,
         bools: Bools::EMPTY,
         has_unit: false,
+        decls: Decls::EMPTY,
     };
 
+    #[inline]
     pub fn ints(ints: Ints) -> Self {
-        Self {
-            ints,
-            bools: Bools::EMPTY,
-            has_unit: false,
-        }
+        Self { ints, ..Self::NONE }
     }
 
+    #[inline]
     pub fn bools(bools: Bools) -> Self {
         Self {
-            ints: Ints::EMPTY,
             bools,
-            has_unit: false,
+            ..Self::NONE
         }
     }
 
+    #[inline]
     pub fn of_unit(has_unit: bool) -> Self {
         Self {
             has_unit,
@@ -606,41 +748,184 @@ impl May {
         }
     }
 
-    pub fn every(ty: Ty) -> Self {
-        match ty {
-            Ty::Int => Self::ints(Ints::ALL),
-            Ty::Bool => Self::bools(Bools::BOTH),
-            Ty::Unit => Self::of_unit(true),
+    pub fn decl(decl: DeclId, fields: Fields) -> Self {
+        Self {
+            decls: std::iter::once((decl, fields)).collect(),
+            ..Self::NONE
+        }
+    }
+
+    pub fn every(ty: Ty, unions: &Unions) -> Self {
+        match ty.kind() {
+            TyKind::Int => Self::ints(Ints::ALL),
+            TyKind::Bool => Self::bools(Bools::BOTH),
+            TyKind::Unit => Self::of_unit(true),
+            TyKind::Decl(decl) => Self::decl(decl, Fields::Any),
+            TyKind::Union(id) => Self {
+                decls: unions
+                    .get(id)
+                    .iter()
+                    .map(|&decl| (decl, Fields::Any))
+                    .collect(),
+                ..Self::NONE
+            },
+        }
+    }
+
+    /// Whether `case` selects every value here, and there is one.
+    pub fn must_select(&self, case: Case, unions: &Unions) -> bool {
+        match case {
+            Case::Bool(wanted) => self.bools == Bools::from(wanted),
+            Case::Is(_) | Case::Not(_) | Case::Any => {
+                !self.decls.is_empty()
+                    && self
+                        .decls
+                        .iter()
+                        .all(|(decl, _)| case.selects_decl(decl, unions))
+            }
+        }
+    }
+
+    /// Whether `case` may select a value here.
+    pub fn may_select(&self, case: Case, unions: &Unions) -> bool {
+        match case {
+            Case::Bool(wanted) => {
+                if wanted {
+                    self.bools.may_true()
+                } else {
+                    self.bools.may_false()
+                }
+            }
+            Case::Is(_) | Case::Not(_) | Case::Any => self
+                .decls
+                .iter()
+                .any(|(decl, _)| case.selects_decl(decl, unions)),
         }
     }
 
     #[inline]
     pub fn is_live(&self) -> bool {
-        !self.ints.is_empty() || !self.bools.is_empty() || self.has_unit
+        !self.ints.is_empty() || !self.bools.is_empty() || self.has_unit || !self.decls.is_empty()
     }
 
     /// True when `self` grew.
+    #[inline]
     pub fn join(&mut self, other: &Self) -> bool {
         let ints = self.ints.join(&other.ints);
         let bools = self.bools.join(other.bools);
         let has_unit = !self.has_unit && other.has_unit;
         self.has_unit |= other.has_unit;
-        ints | bools | has_unit
+        let decls = !other.decls.is_empty() && self.decls.join(&other.decls);
+        ints | bools | has_unit | decls
     }
 
-    pub fn shown(&self, ty: Ty) -> Shown<'_> {
-        Shown(self, ty)
+    /// The integers rounded to `thresholds`, through every field.
+    pub fn rounded(&self, thresholds: &Thresholds) -> Self {
+        Self {
+            ints: self.ints.round(thresholds),
+            bools: self.bools,
+            has_unit: self.has_unit,
+            decls: self
+                .decls
+                .iter()
+                .map(|(decl, fields)| (decl, fields.map(|field| field.rounded(thresholds))))
+                .collect(),
+        }
+    }
+
+    pub fn shown<'a>(&'a self, ty: Ty, names: &'a dyn Names) -> Shown<'a> {
+        Shown(self, ty, names)
     }
 }
 
-pub struct Shown<'a>(&'a May, Ty);
+/// A fact as `Ty` reads it: the values of that type among them.
+pub struct Shown<'a>(&'a May, Ty, &'a dyn Names);
 
 impl fmt::Display for Shown<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.1 {
-            Ty::Int => write!(f, "{}", self.0.ints),
-            Ty::Bool => write!(f, "{}", self.0.bools),
-            Ty::Unit => f.write_str(if self.0.has_unit { "unit" } else { "∅" }),
+        match self.1.kind() {
+            TyKind::Int => write!(f, "{}", self.0.ints),
+            TyKind::Bool => write!(f, "{}", self.0.bools),
+            TyKind::Unit => f.write_str(if self.0.has_unit { "unit" } else { "∅" }),
+            TyKind::Decl(decl) => self.0.shown_decl(decl, self.2, f),
+            TyKind::Union(id) => {
+                let members = self.2.members(id);
+                let mut present: Vec<DeclId> = members
+                    .iter()
+                    .copied()
+                    .filter(|&decl| self.0.decls.get(decl).is_some())
+                    .collect();
+                present.sort_by_key(|&decl| self.2.decl(decl));
+                if present.is_empty() {
+                    return f.write_str("∅");
+                }
+                for (index, &decl) in present.iter().enumerate() {
+                    if index > 0 {
+                        f.write_str(" ∪ ")?;
+                    }
+                    self.0.shown_decl(decl, self.2, f)?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+impl May {
+    fn shown_decl(
+        &self,
+        decl: DeclId,
+        names: &dyn Names,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
+        let name = names.decl(decl);
+        match self.decls.get(decl) {
+            None => f.write_str("∅"),
+            Some(Fields::Any) => write!(f, "{name}(..)"),
+            Some(Fields::Known(fields)) => {
+                write!(f, "{name}(")?;
+                for (index, field) in fields.iter().enumerate() {
+                    if index > 0 {
+                        f.write_str(", ")?;
+                    }
+                    write!(f, "{}", field.shown_whole(names))?;
+                }
+                f.write_str(")")
+            }
+        }
+    }
+}
+
+impl May {
+    /// Every nonempty set, for a fact whose type is not at hand.
+    fn shown_whole<'a>(&'a self, names: &'a dyn Names) -> ShownWhole<'a> {
+        ShownWhole(self, names)
+    }
+}
+
+struct ShownWhole<'a>(&'a May, &'a dyn Names);
+
+impl fmt::Display for ShownWhole<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut parts: Vec<String> = Vec::new();
+        if !self.0.ints.is_empty() {
+            parts.push(self.0.ints.to_string());
+        }
+        if !self.0.bools.is_empty() {
+            parts.push(self.0.bools.to_string());
+        }
+        if self.0.has_unit {
+            parts.push("unit".to_owned());
+        }
+        let mut decls: Vec<DeclId> = self.0.decls.iter().map(|(decl, _)| decl).collect();
+        decls.sort_by_key(|&decl| self.1.decl(decl));
+        for decl in decls {
+            parts.push(self.0.shown(Ty::decl(decl), self.1).to_string());
+        }
+        if parts.is_empty() {
+            f.write_str("∅")
+        } else {
+            f.write_str(&parts.join(" ∪ "))
         }
     }
 }
@@ -762,6 +1047,7 @@ impl Domain for May {
             ints: self.ints.refine(op, &other.ints),
             bools,
             has_unit: false,
+            decls: self.decls.clone(),
         }
     }
 
@@ -769,13 +1055,75 @@ impl Domain for May {
     fn exactly(&self, value: bool) -> Self {
         Self::bools(self.bools & Bools::from(value))
     }
+
+    fn make(decl: DeclId, fields: Vec<Self>) -> Self {
+        Self::decl(decl, Fields::Known(fields.into_boxed_slice()))
+    }
+
+    /// The field over every declared type reaching `self`; one without the field contributes
+    /// nothing, and an unresolved field type nothing of a type's every value.
+    fn field(&self, name: FieldName, decls: &[Decl], unions: &Unions) -> Result<Self, Infallible> {
+        let mut result = Self::NONE;
+        for (decl, fields) in self.decls.iter() {
+            let decl = &decls[decl.index()];
+            let Some(index) = decl.index_of(name) else {
+                continue;
+            };
+            match fields {
+                Fields::Known(fields) => {
+                    result.join(&fields[index]);
+                }
+                Fields::Any => {
+                    if let (_, Some(ty)) = decl.fields()[index] {
+                        result.join(&Self::every(ty, unions));
+                    }
+                }
+            }
+        }
+        Ok(result)
+    }
+
+    fn narrow(&self, ty: Ty, unions: &Unions) -> Self {
+        match ty.kind() {
+            TyKind::Int => Self::ints(self.ints.clone()),
+            TyKind::Bool => Self::bools(self.bools),
+            TyKind::Unit => Self::of_unit(self.has_unit),
+            TyKind::Decl(_) | TyKind::Union(_) => Self {
+                decls: self
+                    .decls
+                    .iter()
+                    .filter(|&(decl, _)| unions.admits(ty, decl))
+                    .map(|(decl, fields)| (decl, fields.clone()))
+                    .collect(),
+                ..Self::NONE
+            },
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Op, Value};
+    use crate::{FieldName, Op, Value};
     use proptest::prelude::*;
+
+    struct NoNames;
+
+    impl Names for NoNames {
+        fn decl(&self, id: DeclId) -> &str {
+            ["Point", "Pair"][id.index()]
+        }
+
+        fn field(&self, name: FieldName) -> &str {
+            ["x", "y"][name.index()]
+        }
+
+        fn members(&self, _: crate::UnionId) -> Vec<DeclId> {
+            Vec::new()
+        }
+    }
+
+    const NO_UNIONS: Unions = Unions::new();
 
     fn ints(text: &str) -> Ints {
         if text == "∅" {
@@ -901,11 +1249,17 @@ mod tests {
     fn every_value_of_a_type_is_admitted() {
         assert_eq!(Ints::ALL, ints("[-inf, inf]"));
         assert!(Ints::ALL.contains_zero());
-        assert_eq!(May::every(Ty::Bool).bools, Bools::BOTH);
-        assert!(May::every(Ty::Unit).has_unit);
-        for ty in Ty::ALL {
-            assert!(May::every(ty).is_live());
+        assert_eq!(May::every(Ty::BOOL, &NO_UNIONS).bools, Bools::BOTH);
+        assert!(May::every(Ty::UNIT, &NO_UNIONS).has_unit);
+        for ty in Ty::SCALARS {
+            assert!(May::every(ty, &NO_UNIONS).is_live());
         }
+        let point = DeclId::new(0);
+        assert!(May::every(Ty::decl(point), &NO_UNIONS).is_live());
+        assert_eq!(
+            May::every(Ty::decl(point), &NO_UNIONS).decls.get(point),
+            Some(&Fields::Any)
+        );
     }
 
     #[test]
@@ -972,10 +1326,16 @@ mod tests {
         assert_eq!(Bools::BOTH.eq(Bools::from(true)), Bools::BOTH);
         assert_eq!(Bools::from(true).eq(Bools::from(true)), Bools::from(true));
         assert_eq!(Bools::BOTH.to_string(), "{true, false}");
-        assert_eq!(May::unit().shown(Ty::Unit).to_string(), "unit");
-        assert_eq!(May::NONE.shown(Ty::Unit).to_string(), "∅");
-        assert_eq!(May::bool(true).shown(Ty::Bool).to_string(), "{true}");
-        assert_eq!(May::int(&5.into()).shown(Ty::Int).to_string(), "[5, 5]");
+        assert_eq!(May::unit().shown(Ty::UNIT, &NoNames).to_string(), "unit");
+        assert_eq!(May::NONE.shown(Ty::UNIT, &NoNames).to_string(), "∅");
+        assert_eq!(
+            May::bool(true).shown(Ty::BOOL, &NoNames).to_string(),
+            "{true}"
+        );
+        assert_eq!(
+            May::int(&5.into()).shown(Ty::INT, &NoNames).to_string(),
+            "[5, 5]"
+        );
     }
 
     #[test]
@@ -1060,7 +1420,65 @@ mod tests {
             Value::Bool(true) => set.bools.may_true(),
             Value::Bool(false) => set.bools.may_false(),
             Value::Unit => set.has_unit,
+            Value::Decl(record) => match set.decls.get(record.decl()) {
+                None => false,
+                Some(Fields::Any) => true,
+                Some(Fields::Known(fields)) => fields
+                    .iter()
+                    .zip(record.fields().iter())
+                    .all(|(field, value)| is_member(field, value)),
+            },
         }
+    }
+
+    #[test]
+    fn fields_are_made_read_and_joined() {
+        let point = DeclId::new(0);
+        let (x, y) = (FieldName::new(0), FieldName::new(1));
+        let decls = [Decl::new(Box::new([
+            (x, Some(Ty::INT)),
+            (y, Some(Ty::BOOL)),
+        ]))];
+        let made = May::make(point, vec![May::int(&3.into()), May::bool(true)]);
+        assert_eq!(made.field(x, &decls, &NO_UNIONS), Ok(May::int(&3.into())));
+        assert_eq!(made.field(y, &decls, &NO_UNIONS), Ok(May::bool(true)));
+        assert_eq!(
+            May::every(Ty::decl(point), &NO_UNIONS).field(x, &decls, &NO_UNIONS),
+            Ok(May::ints(Ints::ALL))
+        );
+        assert_eq!(May::NONE.field(x, &decls, &NO_UNIONS), Ok(May::NONE));
+        let mut joined = made.clone();
+        assert!(joined.join(&May::make(
+            point,
+            vec![May::int(&5.into()), May::bool(true)]
+        )));
+        assert!(!joined.join(&made));
+        assert_eq!(
+            joined.shown(Ty::decl(point), &NoNames).to_string(),
+            "Point([3, 5], {true})"
+        );
+        assert!(joined.join(&May::every(Ty::decl(point), &NO_UNIONS)));
+        assert_eq!(joined.decls.get(point), Some(&Fields::Any));
+        assert_eq!(
+            joined.shown(Ty::decl(point), &NoNames).to_string(),
+            "Point(..)"
+        );
+        let value = Value::make(point, vec![Value::Int(4.into()), Value::Bool(true)]);
+        assert!(is_member(
+            &made,
+            &Value::make(point, vec![Value::Int(3.into()), Value::Bool(true)])
+        ));
+        assert!(!is_member(&made, &value));
+        assert_eq!(value.field(x, &decls, &NO_UNIONS), Ok(Value::Int(4.into())));
+        assert_eq!(
+            value.field(FieldName::new(2), &decls, &NO_UNIONS),
+            Err(crate::Fault::Type)
+        );
+        assert_eq!(
+            Value::Unit.field(x, &decls, &NO_UNIONS),
+            Err(crate::Fault::Type)
+        );
+        assert_eq!(value.shown(&NoNames).to_string(), "Point(4, true)");
     }
 
     fn is_reached(op: &Op, x: &Value, y: &Value) -> bool {
@@ -1130,17 +1548,17 @@ mod tests {
                             Op::Neg | Op::Not | Op::Exactly(_) => 1,
                             _ => 2,
                         };
-                        let Ok(may) = op.apply::<May>(&[&set_a, &set_b][..arity]);
-                        if let Ok(value) = op.apply::<Value>(&[&x, &y][..arity])
+                        let Ok(may) = op.apply::<May>(&[&set_a, &set_b][..arity], &[], &NO_UNIONS);
+                        if let Ok(value) = op.apply::<Value>(&[&x, &y][..arity], &[], &NO_UNIONS)
                             && is_reached(op, &x, &y)
                         {
-                            prop_assert!(is_member(&may, &value), "{op:?} over {set_a:?}, {set_b:?} ∌ {value} from {x}, {y}");
+                            prop_assert!(is_member(&may, &value), "{op:?} over {set_a:?}, {set_b:?} ∌ {value:?} from {x:?}, {y:?}");
                         }
                     }
                     for is_and in [false, true] {
                         let Ok(may) = May::lazy(is_and, &set_a, &set_b);
                         if let Ok(value) = Value::lazy(is_and, &x, &y) {
-                            prop_assert!(is_member(&may, &value), "lazy {is_and} over {set_a:?}, {set_b:?} ∌ {value} from {x}, {y}");
+                            prop_assert!(is_member(&may, &value), "lazy {is_and} over {set_a:?}, {set_b:?} ∌ {value:?} from {x:?}, {y:?}");
                         }
                     }
                 }

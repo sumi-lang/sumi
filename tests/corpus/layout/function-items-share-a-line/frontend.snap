@@ -22,12 +22,12 @@ SourceFile 1:1..4:1
     Block 3:15..3:17 "{}"
 
 == evidence ==
-FunctionItemOnSameLine at 1:14
-FunctionItemOnSameLine at 2:16
+ItemOnSameLine at 1:14
+ItemOnSameLine at 2:16
 
 == diagnostics ==
-error[syntax/function-item-on-same-line] 1:14..1:16 "fn": function item must begin on a new line
-error[syntax/function-item-on-same-line] 2:16..2:18 "fn": function item must begin on a new line
+error[syntax/function-item-on-same-line] 1:14..1:16 "fn": item must begin on a new line
+error[syntax/function-item-on-same-line] 2:16..2:18 "fn": item must begin on a new line
 
 == formatted ==
 fn first() {}

@@ -35,7 +35,10 @@ impl Parsed {
         let mut items = file.items(tree);
         let item = items.next().expect("one item");
         assert!(items.next().is_none(), "exactly one item");
-        item
+        match item {
+            sumi_syntax::ast::Item::FnItem(item) => item,
+            sumi_syntax::ast::Item::TypeItem(_) => panic!("a function item"),
+        }
     }
 }
 

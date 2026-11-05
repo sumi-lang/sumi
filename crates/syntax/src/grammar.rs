@@ -104,7 +104,10 @@ impl fmt::Display for Literal {
 pub fn starts_expression(kind: SyntaxKind) -> bool {
     is_literal(kind)
         || is_prefix_operator(kind)
-        || matches!(kind, T::Ident | T::IfKw | T::ForKw | T::LParen | T::LBrace)
+        || matches!(
+            kind,
+            T::Ident | T::IfKw | T::ForKw | T::MatchKw | T::LParen | T::LBrace
+        )
 }
 
 /// Statement starters that are not expression starters.
@@ -125,7 +128,7 @@ pub fn can_end_statement(kind: SyntaxKind) -> bool {
 }
 
 pub fn starts_item(kind: SyntaxKind) -> bool {
-    kind == T::FnKw
+    matches!(kind, T::FnKw | T::TypeKw)
 }
 
 /// A glued prefix operator opens an operand, so it continues nothing.

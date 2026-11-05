@@ -1,0 +1,20 @@
+type Point { x: int, y: int }
+type Pair { first: Point, second: Point }
+type Nothing {}
+
+fn pair(n: int) -> Pair | Nothing = if n % 2 == 0 {
+    Pair(first: Point(x: n, y: n + 1), second: Point(x: n + 2, y: n + 3))
+} else { Nothing() }
+fn sum(value: Pair | Nothing) -> int = match value {
+    Pair(p) => p.first.x + p.first.y + p.second.x + p.second.y,
+    Nothing => 0,
+}
+fn main() -> int {
+    let mut total = 0
+    for i in 0..1000 {
+        let p = pair(i)
+        let saved = p
+        total = total + sum(saved) + sum(p)
+    }
+    total
+}

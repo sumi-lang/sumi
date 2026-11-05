@@ -1,0 +1,31 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 4
+
+== graph ==
+fn Point@5:1..5:22 () -> int ∈ [1, 1]
+  result: copy : int @5:15..5:18
+    value: int 1 : int @5:21..5:22
+
+fn f@6:1..6:30 signature: unavailable
+  body: hole : ? @6:19..6:30
+    part[0]: int 1 : int @6:28..6:29
+
+fn g@7:1..7:24 () -> int ∈ ∅
+  result: copy : int @7:11..7:14
+    value: hole : ? @7:17..7:24
+
+fn h@8:1..8:28 signature: unavailable
+  param p@8:6..8:7: ?
+  result: copy : int @8:19..8:22
+    value: field x : ? @8:25..8:28
+      base: read p@8:6..8:7 : ?
+
+== semantic diagnostics ==
+error[semantic/duplicate-name] 2:6..2:11 "Point": duplicate type `Point`
+  at 1:6..1:11 "Point": declared here
+error[semantic/duplicate-name] 3:6..3:9 "int": `int` is a built-in type
+error[semantic/duplicate-name] 4:20..4:21 "a": duplicate field `a`
+  at 4:12..4:13 "a": declared here
+error[semantic/duplicate-name] 5:4..5:9 "Point": duplicate function `Point`
+  at 1:6..1:11 "Point": declared here

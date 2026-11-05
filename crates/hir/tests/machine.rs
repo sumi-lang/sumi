@@ -49,6 +49,33 @@ impl Rng {
 enum Kind {
     Int,
     Bool,
+    /// `type R { a: int, b: bool }`, declared at the top of every program.
+    Rec,
+    /// `R | S`, with `type S { c: int }` declared beside `R`.
+    Shape,
+}
+
+impl Kind {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Int => "int",
+            Self::Bool => "bool",
+            Self::Rec => "R",
+            Self::Shape => "R | S",
+        }
+    }
+
+    fn pick(rng: &mut Rng, is_first: bool) -> Self {
+        if is_first || rng.chance(4, 5) {
+            Self::Int
+        } else if rng.chance(1, 2) {
+            Self::Bool
+        } else if rng.chance(1, 2) {
+            Self::Rec
+        } else {
+            Self::Shape
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -106,11 +133,13 @@ const GUARDS_ELSE: &[&str] = &[
 
 impl Gen<'_> {
     fn fresh(&mut self, kind: Kind) -> String {
-        let name = format!(
-            "{}{}",
-            if kind == Kind::Int { "v" } else { "p" },
-            self.fresh
-        );
+        let prefix = match kind {
+            Kind::Int => "v",
+            Kind::Bool => "p",
+            Kind::Rec => "r",
+            Kind::Shape => "s",
+        };
+        let name = format!("{prefix}{}", self.fresh);
         self.fresh += 1;
         name
     }
@@ -155,6 +184,19 @@ impl Gen<'_> {
         match kind {
             Kind::Int => self.rng.between(-9, 9).to_string(),
             Kind::Bool => self.rng.pick(&["true", "false"]).to_string(),
+            Kind::Rec => {
+                let a = self.literal(Kind::Int);
+                let b = self.literal(Kind::Bool);
+                format!("R(a: {a}, b: {b})")
+            }
+            Kind::Shape => {
+                if self.rng.chance(1, 2) {
+                    self.literal(Kind::Rec)
+                } else {
+                    let c = self.literal(Kind::Int);
+                    format!("S(c: {c})")
+                }
+            }
         }
     }
 
@@ -162,6 +204,118 @@ impl Gen<'_> {
         match kind {
             Kind::Int => self.int(fuel),
             Kind::Bool => self.bool(fuel),
+            Kind::Rec => self.rec(fuel),
+            Kind::Shape => self.shape(fuel),
+        }
+    }
+
+    /// A `match` over a shape local yielding `kind`, if one is in scope: each arm reads its
+    /// binding's field, so the binding is used and the arm's type is the field's.
+    fn matched(&mut self, kind: Kind, fuel: u32) -> Option<String> {
+        let shapes = self.locals(Kind::Shape);
+        if shapes.is_empty() {
+            return None;
+        }
+        let shape = self.rng.pick(&shapes).clone();
+        let (r, s) = (self.fresh(Kind::Rec), self.fresh(Kind::Shape));
+        let (on_r, on_s) = match kind {
+            Kind::Int => (format!("{r}.a"), format!("{s}.c")),
+            Kind::Bool => (
+                format!("{r}.b"),
+                format!("{s}.c > {}", self.literal(Kind::Int)),
+            ),
+            Kind::Rec => (
+                r.clone(),
+                format!("R(a: {s}.c, b: {})", self.literal(Kind::Bool)),
+            ),
+            Kind::Shape => (r.clone(), s.clone()),
+        };
+        let rest = if fuel > 0 && self.rng.chance(1, 3) {
+            let value = self.expr(kind, fuel - 1);
+            format!(", _ => {value}")
+        } else {
+            String::new()
+        };
+        Some(format!(
+            "match {shape} {{ R({r}) => {on_r}, S({s}) => {on_s}{rest} }}"
+        ))
+    }
+
+    fn shape(&mut self, fuel: u32) -> String {
+        if fuel == 0 {
+            return self.leaf(Kind::Shape);
+        }
+        match self.rng.below(8) {
+            0 | 1 => self.rec(fuel - 1),
+            2 => {
+                let c = self.operand(Kind::Int, fuel - 1);
+                format!("S(c: {c})")
+            }
+            3 => {
+                let condition = self.bool(fuel - 1);
+                let then = self.shape(fuel - 1);
+                let otherwise = self.shape(fuel - 1);
+                format!("if {condition} {{ {then} }} else {{ {otherwise} }}")
+            }
+            4 => self.block(Kind::Shape, fuel - 1),
+            5 => self
+                .matched(Kind::Shape, fuel - 1)
+                .unwrap_or_else(|| self.leaf(Kind::Shape)),
+            6 => {
+                let callable = self.callable(Kind::Shape);
+                if callable.is_empty() {
+                    self.leaf(Kind::Shape)
+                } else {
+                    let callee = *self.rng.pick(&callable);
+                    self.call(callee, fuel - 1)
+                }
+            }
+            _ => self.leaf(Kind::Shape),
+        }
+    }
+
+    /// A read of the field of `kind` from a record local, if one is in scope.
+    fn field(&mut self, kind: Kind) -> Option<String> {
+        let records = self.locals(Kind::Rec);
+        if records.is_empty() {
+            return None;
+        }
+        let record = self.rng.pick(&records).clone();
+        let field = if kind == Kind::Int { "a" } else { "b" };
+        Some(format!("{record}.{field}"))
+    }
+
+    fn rec(&mut self, fuel: u32) -> String {
+        if fuel == 0 {
+            return self.leaf(Kind::Rec);
+        }
+        match self.rng.below(8) {
+            0..=2 => {
+                let a = self.operand(Kind::Int, fuel - 1);
+                let b = self.operand(Kind::Bool, fuel - 1);
+                if self.rng.chance(1, 2) {
+                    format!("R(a: {a}, b: {b})")
+                } else {
+                    format!("R(b: {b}, a: {a})")
+                }
+            }
+            3 => {
+                let condition = self.bool(fuel - 1);
+                let then = self.rec(fuel - 1);
+                let otherwise = self.rec(fuel - 1);
+                format!("if {condition} {{ {then} }} else {{ {otherwise} }}")
+            }
+            4 => self.block(Kind::Rec, fuel - 1),
+            5 => {
+                let callable = self.callable(Kind::Rec);
+                if callable.is_empty() {
+                    self.leaf(Kind::Rec)
+                } else {
+                    let callee = *self.rng.pick(&callable);
+                    self.call(callee, fuel - 1)
+                }
+            }
+            _ => self.leaf(Kind::Rec),
         }
     }
 
@@ -300,13 +454,17 @@ impl Gen<'_> {
         if fuel == 0 {
             return self.leaf(Kind::Int);
         }
-        match self.rng.below(10) {
+        match self.rng.below(11) {
             0 | 1 => {
                 let lhs = self.operand(Kind::Int, fuel - 1);
                 let rhs = self.operand(Kind::Int, fuel - 1);
                 let op = self.rng.pick(&["+", "-", "*"]);
                 format!("{lhs} {op} {rhs}")
             }
+            10 => self
+                .field(Kind::Int)
+                .or_else(|| self.matched(Kind::Int, fuel - 1))
+                .unwrap_or_else(|| self.leaf(Kind::Int)),
             2 => {
                 let operand = self.operand(Kind::Int, fuel - 1);
                 format!("-{operand}")
@@ -357,13 +515,17 @@ impl Gen<'_> {
         if fuel == 0 {
             return self.leaf(Kind::Bool);
         }
-        match self.rng.below(9) {
+        match self.rng.below(10) {
             0 | 1 => {
                 let lhs = self.operand(Kind::Int, fuel - 1);
                 let rhs = self.operand(Kind::Int, fuel - 1);
                 let op = self.rng.pick(&["<", "<=", ">", ">=", "==", "!="]);
                 format!("{lhs} {op} {rhs}")
             }
+            9 => self
+                .field(Kind::Bool)
+                .or_else(|| self.matched(Kind::Bool, fuel - 1))
+                .unwrap_or_else(|| self.leaf(Kind::Bool)),
             2 => {
                 let lhs = self.operand(Kind::Bool, fuel - 1);
                 let rhs = self.operand(Kind::Bool, fuel - 1);
@@ -410,17 +572,13 @@ impl Gen<'_> {
                     format!("for {name} in {start}..{end} {{ _ = {body} }}")
                 }
                 0..=2 => {
-                    let kind = if self.rng.chance(3, 4) {
-                        Kind::Int
-                    } else {
-                        Kind::Bool
-                    };
+                    let kind = Kind::pick(&mut self.rng, false);
                     let value = self.expr(kind, fuel);
                     // The recursive call refers to `n` literally; a shadowed local would break it.
                     let bindings: Vec<String> = self
                         .locals(kind)
                         .into_iter()
-                        .filter(|name| name.starts_with(['v', 'p']))
+                        .filter(|name| name.starts_with(['v', 'p', 'r', 's']))
                         .collect();
                     let name = if !bindings.is_empty() && self.rng.chance(1, 4) {
                         self.rng.pick(&bindings).clone()
@@ -544,17 +702,11 @@ fn program(seed: u64) -> String {
         // The last function takes no parameters, so it is live and runs even when no call reaches
         // the others.
         let arity = if last { 0 } else { rng.between(0, 2) as usize };
-        let params: Vec<Kind> = (0..arity)
-            .map(|i| {
-                if i == 0 || rng.chance(4, 5) {
-                    Kind::Int
-                } else {
-                    Kind::Bool
-                }
-            })
-            .collect();
+        let params: Vec<Kind> = (0..arity).map(|i| Kind::pick(&mut rng, i == 0)).collect();
         let result = if rng.chance(1, 4) {
             Kind::Bool
+        } else if rng.chance(1, 6) {
+            Kind::Rec
         } else {
             Kind::Int
         };
@@ -587,16 +739,12 @@ fn program(seed: u64) -> String {
         if mutual {
             let partner_arity = rng.between(1, 2) as usize;
             let params: Vec<Kind> = (0..partner_arity)
-                .map(|i| {
-                    if i == 0 || rng.chance(4, 5) {
-                        Kind::Int
-                    } else {
-                        Kind::Bool
-                    }
-                })
+                .map(|i| Kind::pick(&mut rng, i == 0))
                 .collect();
             let result = if rng.chance(1, 4) {
                 Kind::Bool
+            } else if rng.chance(1, 6) {
+                Kind::Rec
             } else {
                 Kind::Int
             };
@@ -612,7 +760,7 @@ fn program(seed: u64) -> String {
             index += 1;
         }
     }
-    let mut text = String::new();
+    let mut text = String::from("type R { a: int, b: bool }\ntype S { c: int }\n");
     for current in 0..functions.len() {
         let signature = &functions[current];
         let mut body = Gen {
@@ -632,18 +780,10 @@ fn program(seed: u64) -> String {
             .enumerate()
             .map(|(i, &kind)| {
                 body.scope.push((names[i].to_owned(), kind, false));
-                format!(
-                    "{}: {}",
-                    names[i],
-                    if kind == Kind::Int { "int" } else { "bool" }
-                )
+                format!("{}: {}", names[i], kind.name())
             })
             .collect();
-        let result = if signature.result == Kind::Int {
-            "int"
-        } else {
-            "bool"
-        };
+        let result = signature.result.name();
         let body = body.body();
         text.push_str(&format!(
             "fn f{current}({}) -> {result}{body}\n",
@@ -657,6 +797,14 @@ fn runs_of(source: &str) -> Option<Runs> {
     let analysis = std::panic::catch_unwind(|| analyze(parse_source(source.into()).unwrap()))
         .unwrap_or_else(|_| panic!("analysis panicked for:\n{source}"));
     analysis.program().map(check::run)
+}
+
+#[test]
+fn corpus_programs_run_within_their_claims() {
+    for case in sumi_test::corpus::cases() {
+        let source = std::fs::read_to_string(case.join("case.su")).unwrap();
+        runs_of(&source);
+    }
 }
 
 /// No shrinking: a shrunk seed draws an unrelated program.
@@ -797,6 +945,8 @@ fn most_generated_programs_are_accepted_and_run_to_the_end() {
     let mut returning = 0usize;
     let mut mutating = 0usize;
     let mut looping = 0usize;
+    let mut recording = 0usize;
+    let mut matching = 0usize;
     let mut runs = Runs::default();
     for seed in 0..seeds {
         let source = program(seed);
@@ -805,11 +955,13 @@ fn most_generated_programs_are_accepted_and_run_to_the_end() {
             accepted += 1;
             returning += usize::from(source_returns != 0 && outcome.finished != 0);
             looping += usize::from(source.contains("for ") && outcome.finished != 0);
+            recording += usize::from(source.contains(".a") && outcome.finished != 0);
+            matching += usize::from(source.contains("match ") && outcome.finished != 0);
             mutating += usize::from(
                 source.contains("let mut ")
                     && source.lines().any(|line| {
                         let line = line.trim_start();
-                        line.starts_with(['v', 'p']) && line.contains(" = ")
+                        line.starts_with(['v', 'p', 'r', 's']) && line.contains(" = ")
                     })
                     && outcome.finished != 0,
             );
@@ -825,6 +977,11 @@ fn most_generated_programs_are_accepted_and_run_to_the_end() {
         mutating, 0,
         "no accepted mutation-bearing program ran to the end"
     );
+    assert_ne!(
+        recording, 0,
+        "no accepted record-reading program ran to the end"
+    );
+    assert_ne!(matching, 0, "no accepted matching program ran to the end");
     assert_ne!(
         looping, 0,
         "no accepted loop-bearing program ran to the end"

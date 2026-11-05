@@ -41,6 +41,8 @@ pub enum ParseRecoveryKind {
     Token(T),
     /// `..`, which the lexer yields as two joint `.` tokens.
     RangeOperator,
+    /// `=>`, which the lexer yields as joint `=` and `>` tokens.
+    ArmArrow,
     /// The anchor is the gap where the closer is missing.
     Closer {
         pair: Pair,
@@ -67,7 +69,7 @@ pub enum ParseViolationKind {
     SpacedPrefixOperator,
     SpacedListOpener,
     FunctionNameOnNextLine,
-    FunctionItemOnSameLine,
+    ItemOnSameLine,
     BindingNameOnNextLine,
     ChainedComparison,
 }
@@ -136,23 +138,24 @@ pub const MAX_DEPTH: u32 = 256;
 
 fn source_file(p: &mut Marker<'_, '_>) {
     let item_candidate = |p: &Marker<'_, '_>| {
-        (p.at(T::FnKw) || begins_headless_item(p)) && !p.is_in_matched_delimiters()
+        (p.current().is_some_and(starts_item) || begins_headless_item(p))
+            && !p.is_in_matched_delimiters()
     };
     let mut item_ends_here = false;
     for anchor in 0..=p.item_anchor_count() {
         p.set_limit(p.item_anchor(anchor));
         if anchor > 0 {
-            // An anchor is an item's head, with or without its `fn`.
-            let has_fn = p.at(T::FnKw);
-            if item_ends_here && has_fn && !p.is_after_newline() {
-                p.violation(ParseViolationKind::FunctionItemOnSameLine, 1);
+            // An anchor is an item's head, with or without its keyword.
+            let has_keyword = p.current().is_some_and(starts_item);
+            if item_ends_here && has_keyword && !p.is_after_newline() {
+                p.violation(ParseViolationKind::ItemOnSameLine, 1);
             }
-            fn_item(p);
-            item_ends_here = has_fn;
+            item(p);
+            item_ends_here = has_keyword;
         }
         while p.current().is_some() {
             if item_candidate(p) {
-                fn_item(p);
+                item(p);
                 item_ends_here = false;
             } else {
                 let recovery = p.recover_tokens(ParseRecoveryKind::Item, 1);
@@ -218,6 +221,36 @@ fn skip_all(
     while p.current().is_some() && !stop(p) {
         skip(p, recovery, &stop);
     }
+}
+
+fn item(p: &mut Marker<'_, '_>) {
+    if p.at(T::TypeKw) {
+        type_item(p);
+    } else {
+        fn_item(p);
+    }
+}
+
+fn type_item(p: &mut Marker<'_, '_>) {
+    let mut m = p.start();
+    m.token();
+    if !m.at(T::Ident) && !m.at(T::Underscore) {
+        let recovery = m.missing(ParseRecoveryKind::Name);
+        signature_garbage(&mut m, recovery, |m| {
+            m.at(T::Ident) || m.at(T::Underscore) || m.at(T::LBrace)
+        });
+    }
+    if m.at(T::Ident) || m.at(T::Underscore) {
+        name(&mut m);
+    }
+    if !m.at(T::LBrace) {
+        let recovery = m.missing(ParseRecoveryKind::Token(T::LBrace));
+        signature_garbage(&mut m, recovery, |m| m.at(T::LBrace));
+    }
+    if m.at(T::LBrace) {
+        delimited_list::<Fields>(&mut m, 1);
+    }
+    m.complete(N::TypeItem);
 }
 
 fn fn_item(p: &mut Marker<'_, '_>) {
@@ -328,29 +361,49 @@ fn signature_garbage(
 
 /// `_` is a `Name` with a recovery inside: it reads as a name and binds nothing.
 fn name(p: &mut Marker<'_, '_>) {
+    name_in(p, 0);
+}
+
+fn name_in(p: &mut Marker<'_, '_>, field: u8) {
     if p.at(T::Ident) {
         let name = leaf(p, N::Name);
-        p.field(&name, 0);
+        p.field(&name, field);
     } else if p.at(T::Underscore) {
         let mut m = p.start();
         m.recover_tokens(ParseRecoveryKind::Name, 1);
         m.token();
         let name = m.complete(N::Name);
-        p.field(&name, 0);
+        p.field(&name, field);
     } else {
         p.missing(ParseRecoveryKind::Name);
     }
 }
 
+/// A type: a name, or names joined by `|`, which is never the `||` operator's first token.
 fn type_ref(p: &mut Marker<'_, '_>, field: u8) {
-    if p.at(T::Ident) {
-        let mut m = p.start();
-        m.token();
-        let ty = m.complete(N::TypeRef);
-        p.field(&ty, field);
-    } else {
+    if !p.at(T::Ident) {
         p.missing(ParseRecoveryKind::Type);
+        return;
     }
+    let mut lhs = leaf(p, N::TypeRef);
+    while is_union_bar(p) {
+        let lhs_node = p.completed_node(&lhs);
+        let mut m = p.precede(lhs);
+        m.wrapped_field(lhs_node, 0);
+        m.token();
+        if m.at(T::Ident) {
+            let rhs = leaf(&mut m, N::TypeRef);
+            m.field(&rhs, 1);
+        } else {
+            m.missing(ParseRecoveryKind::Type);
+        }
+        lhs = m.complete(N::UnionType);
+    }
+    p.field(&lhs, field);
+}
+
+fn is_union_bar(p: &Marker<'_, '_>) -> bool {
+    p.at(T::Pipe) && !p.is_at_boundary() && !(p.is_joint() && p.nth(1) == Some(T::Pipe))
 }
 
 trait ListRule {
@@ -380,7 +433,7 @@ impl ListRule for Params {
     }
 
     fn parse_element(m: &mut Marker<'_, '_>) {
-        param(m);
+        typed_name(m, N::Param);
     }
 
     /// A brace the stream never pairs is garbage in the list, not what follows it.
@@ -390,6 +443,56 @@ impl ListRule for Params {
 
     fn is_tolerated(kind: T) -> bool {
         kind == T::LBrace
+    }
+}
+
+struct Fields;
+
+impl ListRule for Fields {
+    const NODE: N = N::FieldList;
+    const PAIR: Pair = Pair::Brace;
+    const ELEMENT: ParseRecoveryKind = ParseRecoveryKind::Name;
+    const RESUMES_AT_ELEMENT: bool = true;
+
+    fn starts_element(m: &Marker<'_, '_>) -> bool {
+        m.at(T::Ident) || m.at(T::Underscore)
+    }
+
+    fn parse_element(m: &mut Marker<'_, '_>) {
+        typed_name(m, N::Field);
+    }
+
+    fn follows(_: &Marker<'_, '_>) -> bool {
+        false
+    }
+
+    fn is_tolerated(_: T) -> bool {
+        false
+    }
+}
+
+struct ArmsRule;
+
+impl ListRule for ArmsRule {
+    const NODE: N = N::ArmList;
+    const PAIR: Pair = Pair::Brace;
+    const ELEMENT: ParseRecoveryKind = ParseRecoveryKind::Name;
+    const RESUMES_AT_ELEMENT: bool = true;
+
+    fn starts_element(m: &Marker<'_, '_>) -> bool {
+        m.at(T::Ident) || m.at(T::Underscore)
+    }
+
+    fn parse_element(m: &mut Marker<'_, '_>) {
+        match_arm(m);
+    }
+
+    fn follows(_: &Marker<'_, '_>) -> bool {
+        false
+    }
+
+    fn is_tolerated(_: T) -> bool {
+        false
     }
 }
 
@@ -406,7 +509,7 @@ impl ListRule for Args {
     }
 
     fn parse_element(m: &mut Marker<'_, '_>) {
-        operand(m);
+        arg(m);
     }
 
     fn follows(m: &Marker<'_, '_>) -> bool {
@@ -489,7 +592,8 @@ fn begins_element<R: ListRule>(m: &Marker<'_, '_>) -> bool {
             .is_some_and(|kind| !is_opener(kind) || m.has_partner())
 }
 
-fn param(p: &mut Marker<'_, '_>) {
+/// A `Param` or a `Field`: `Name ':' TypeRef`.
+fn typed_name(p: &mut Marker<'_, '_>, kind: N) {
     let mut m = p.start();
     name(&mut m);
     if m.at(T::Colon) && !m.is_at_boundary() {
@@ -501,7 +605,20 @@ fn param(p: &mut Marker<'_, '_>) {
             type_ref(&mut m, 1);
         }
     }
-    m.complete(N::Param);
+    m.complete(kind);
+}
+
+fn arg(p: &mut Marker<'_, '_>) {
+    let mut m = p.start();
+    if m.at(T::Ident) && m.nth(1) == Some(T::Colon) {
+        let label = leaf(&mut m, N::NameRef);
+        m.field(&label, 0);
+        m.token();
+    }
+    if let Some(value) = operand(&mut m) {
+        m.field(&value, 1);
+    }
+    m.complete(N::Arg);
 }
 
 fn block(p: &mut Marker<'_, '_>) -> CompletedMarker {
@@ -553,8 +670,8 @@ fn statement(p: &mut Marker<'_, '_>) {
         Some(T::LetKw) => let_stmt(p),
         Some(T::Underscore) => discard_stmt(p),
         Some(T::ReturnKw) => return_stmt(p),
-        // A named function where a statement belongs is an item, not a statement.
-        Some(T::FnKw)
+        // A named function or type where a statement belongs is an item, not a statement.
+        Some(T::FnKw | T::TypeKw)
             if !p.is_nth_after_newline(1) && matches!(p.nth(1), Some(T::Ident | T::Underscore)) =>
         {
             let recovery = p.recover_tokens(ParseRecoveryKind::Statement, 1);
@@ -751,6 +868,17 @@ fn expr_bp(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) -> Option<Com
         if follow == ExprFollow::Block && p.at(T::LBrace) {
             break;
         }
+        if p.at(T::Dot) && p.nth(1) == Some(T::Ident) {
+            let base = p.completed_node(&lhs);
+            let mut m = p.precede(lhs);
+            m.wrapped_field(base, 0);
+            m.token();
+            let field = leaf(&mut m, N::NameRef);
+            m.field(&field, 1);
+            lhs = m.complete(N::FieldExpr);
+            was_comparison = false;
+            continue;
+        }
         if follow == ExprFollow::Range && p.at(T::Dot) {
             break;
         }
@@ -866,6 +994,7 @@ fn prefix_or_atom(p: &mut Marker<'_, '_>, follow: ExprFollow) -> Option<Complete
         }
         T::LBrace => block(p),
         T::IfKw => if_expr(p),
+        T::MatchKw => match_expr(p),
         T::ForKw => for_expr(p),
         _ => return None,
     })
@@ -947,6 +1076,54 @@ fn if_expr(p: &mut Marker<'_, '_>) -> CompletedMarker {
         }
     }
     m.complete(N::IfExpr)
+}
+
+fn match_expr(p: &mut Marker<'_, '_>) -> CompletedMarker {
+    let mut m = p.start();
+    m.token();
+    if let Some(scrutinee) = operand_before(&mut m, 0, ExprFollow::Block) {
+        m.field(&scrutinee, 0);
+    }
+    if m.at(T::LBrace) {
+        delimited_list::<ArmsRule>(&mut m, 1);
+    } else {
+        m.missing(ParseRecoveryKind::Token(T::LBrace));
+    }
+    m.complete(N::MatchExpr)
+}
+
+/// `Pattern '=>' Expr`; a pattern is `_` or a member name with an optional `(binding)`.
+fn match_arm(p: &mut Marker<'_, '_>) {
+    let mut m = p.start();
+    if m.at(T::Underscore) {
+        let rest = leaf(&mut m, N::RestPattern);
+        m.field(&rest, 0);
+    } else {
+        let mut pattern = m.start();
+        let member = leaf(&mut pattern, N::NameRef);
+        pattern.field(&member, 0);
+        if pattern.at(T::LParen) && !pattern.is_after_newline() {
+            pattern.token();
+            name_in(&mut pattern, 1);
+            if pattern.at(T::RParen) {
+                pattern.token();
+            } else {
+                pattern.missing(ParseRecoveryKind::Token(T::RParen));
+            }
+        }
+        let pattern = pattern.complete(N::MemberPattern);
+        m.field(&pattern, 0);
+    }
+    if m.at(T::Eq) && m.is_joint() && m.nth(1) == Some(T::Gt) {
+        m.token();
+        m.token();
+    } else {
+        m.missing(ParseRecoveryKind::ArmArrow);
+    }
+    if let Some(value) = operand(&mut m) {
+        m.field(&value, 1);
+    }
+    m.complete(N::MatchArm);
 }
 
 fn if_block(p: &mut Marker<'_, '_>) -> Option<CompletedMarker> {

@@ -1,0 +1,24 @@
+file: accepted
+optimized: nodes 70 of 197, regions 16 of 16, calls 4 of 5
+
+== functions ==
+fn first = 1
+  steps: 2, optimized steps: 2, depth: 1, bound: 1
+fn forward = 4
+  steps: 2, optimized steps: 2, depth: 1, bound: 1
+fn branches = 16
+  steps: 11, optimized steps: 10, depth: 2, bound: 2
+fn mutation = 212
+  steps: 15, optimized steps: 1, depth: 1, bound: 1
+fn mixed_returns = 76
+  steps: 25, optimized steps: 11, depth: 2, bound: 2
+fn nested = 11
+  steps: 2, optimized steps: 2, depth: 1, bound: 1
+fn argument = 15
+  steps: 2, optimized steps: 2, depth: 1, bound: 1
+fn loop_return = 17
+  steps: 4, optimized steps: 4, depth: 1, bound: 1
+fn flag = true
+  steps: 5, optimized steps: 1, depth: 1, bound: 1
+fn done = unit
+  steps: 4, optimized steps: 1, depth: 1, bound: 1

@@ -1,0 +1,140 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 17
+
+== graph ==
+fn origin@3:1..3:41 () -> Point ∈ Point([0, 0], [0, 0])
+  result: copy : Point @3:16..3:21
+    value: make Point : Point @3:24..3:41
+      x: int 0 : int @3:33..3:34
+      y: int 0 : int @3:39..3:40
+
+fn unknown@4:1..4:34 (Point ∈ ∅) -> int ∈ ∅
+  param p@4:12..4:13: Point
+  result: copy : int @4:25..4:28
+    value: field z : int @4:31..4:34
+      base: read p@4:12..4:13 : Point
+
+fn scalar@5:1..5:31 (int ∈ ∅) -> int ∈ ∅
+  param n@5:11..5:12: int
+  result: copy : int @5:22..5:25
+    value: field x : int @5:28..5:31
+      base: read n@5:11..5:12 : int
+
+fn missing@6:1..6:36 () -> Point ∈ ∅
+  result: copy : Point @6:17..6:22
+    value: hole : ? @6:25..6:36
+      part[0]: int 1 : int @6:34..6:35
+
+fn twice@7:1..7:46 () -> Point ∈ ∅
+  result: copy : Point @7:15..7:20
+    value: hole : ? @7:23..7:46
+      part[0]: int 1 : int @7:32..7:33
+      part[1]: int 2 : int @7:38..7:39
+      part[2]: int 3 : int @7:44..7:45
+
+fn unlabeled@8:1..8:41 () -> Point ∈ ∅
+  result: copy : Point @8:19..8:24
+    value: hole : ? @8:27..8:41
+      part[0]: int 1 : int @8:33..8:34
+      part[1]: int 2 : int @8:39..8:40
+
+fn extra@9:1..9:46 () -> Point ∈ ∅
+  result: copy : Point @9:15..9:20
+    value: hole : ? @9:23..9:46
+      part[0]: int 1 : int @9:32..9:33
+      part[1]: int 2 : int @9:38..9:39
+      part[2]: int 3 : int @9:44..9:45
+
+fn labeled@10:1..10:43 () -> int ∈ ∅
+  result: copy : int @10:17..10:20
+    value: call unknown@4:1..4:34 : int @10:23..10:43
+      arg[0]: call origin@3:1..3:41 : Point @10:34..10:42
+
+fn value@11:1..11:28 () -> Point ∈ ∅
+  result: copy : Point @11:15..11:20
+    value: hole : ? @11:23..11:28
+
+fn assigned@12:1..12:28 () -> unit ∈ unit
+  result: copy : unit @12:12..12:14
+    value:
+      discard: hole : ? @12:17..12:26
+        part[0]: int 1 : int @12:25..12:26
+      tail: unit : unit @12:15..12:28
+
+fn mismatched@13:1..13:48 () -> Point ∈ Point(∅, [0, 0])
+  result: copy : Point @13:20..13:25
+    value: make Point : Point @13:28..13:48
+      x: bool true : bool @13:37..13:41
+      y: int 0 : int @13:46..13:47
+
+fn annotated@14:1..14:37 () -> unit ∈ unit
+  result: copy : unit @14:13..14:15
+    value:
+      let _p@14:22..14:24: Point @14:18..14:35
+        initializer: int 1 : int @14:34..14:35
+      tail: unit : unit @14:16..14:37
+
+fn compared@15:1..15:49 (Point ∈ ∅, Point ∈ ∅) -> bool ∈ ∅
+  param a@15:13..15:14: Point
+  param b@15:23..15:24: Point
+  result: copy : bool @15:36..15:40
+    value: eager == : bool @15:43..15:49
+      lhs: read a@15:13..15:14 : Point
+      rhs: read b@15:23..15:24 : Point
+
+fn unused@16:1..16:34 () -> unit ∈ ∅
+  result: copy : unit @16:10..16:12
+    value: make Point : Point @16:15..16:32
+      x: int 1 : int @16:24..16:25
+      y: int 2 : int @16:30..16:31
+
+fn holey@17:1..17:34 () -> Holey ∈ ∅
+  result: copy : Holey @17:15..17:20
+    value: hole : ? @17:23..17:34
+      part[0]: int 1 : int @17:32..17:33
+
+fn branches@18:1..18:52 signature: unavailable
+  param c@18:13..18:14: bool
+  body: if : ? @18:24..18:52
+    scrutinee: read c@18:13..18:14 : bool
+    then: call origin@3:1..3:41 : Point @18:31..18:39
+    else: int 1 : int @18:49..18:50
+
+fn chained@19:1..19:35 () -> int ∈ ∅
+  result: copy : int @19:17..19:20
+    value: field w : int @19:23..19:35
+      base: field z : ? @19:23..19:33
+        base: call origin@3:1..3:41 : Point @19:23..19:31
+
+== semantic diagnostics ==
+error[semantic/unknown-type] 2:17..2:21 "Nope": unknown type `Nope`
+error[semantic/unknown-field] 4:31..4:34 "p.z": `Point` has no field `z`
+  at 1:6..1:11 "Point": declared here
+error[semantic/unknown-field] 5:28..5:31 "n.x": `int` has no field `x`
+error[semantic/missing-field] 6:25..6:36 "Point(x: 1)": missing field `y` of `Point`
+  at 1:6..1:11 "Point": declared here
+error[semantic/duplicate-field] 7:35..7:36 "x": field `x` is given twice
+  at 7:29..7:30 "x": first given here
+error[semantic/missing-field] 8:27..8:41 "Point(1, y: 2)": missing field `x` of `Point`
+  at 1:6..1:11 "Point": declared here
+error[semantic/unlabeled-field] 8:33..8:34 "1": a value of `Point` names each field: `field: value`
+  at 1:6..1:11 "Point": declared here
+error[semantic/unknown-field] 9:41..9:42 "z": type `Point` has no field `z`
+  at 1:6..1:11 "Point": declared here
+error[semantic/labeled-argument] 10:31..10:32 "p": a function's arguments take no labels
+  at 4:1..4:34 "fn unknown(p: Point) -> int = p.z": declared here
+error[semantic/not-a-value] 11:23..11:28 "Point": type `Point` is not a value
+error[semantic/invalid-assignment-target] 12:17..12:22 "Point": type `Point` is not assignable
+error[semantic/type-mismatch] 13:37..13:41 "true": expected int, found bool
+  at 1:14..1:15 "x": declared here
+error[semantic/type-mismatch] 14:34..14:35 "1": expected Point, found int
+  at 14:26..14:31 "Point": declared here
+error[semantic/type-mismatch] 15:43..15:49 "a == b": Point values cannot be compared
+error[semantic/type-mismatch] 16:15..16:32 "Point(x: 1, y: 2)": expected unit, found Point
+  at 16:10..16:12 "()": returns unit, since no result type is written
+error[semantic/type-mismatch] 18:24..18:52 "if c { origin() } else { 1 }": if branches are Point and int
+  at 18:31..18:39 "origin()": Point here
+  at 18:49..18:50 "1": int here
+error[semantic/unknown-field] 19:23..19:33 "origin().z": `Point` has no field `z`
+  at 1:6..1:11 "Point": declared here

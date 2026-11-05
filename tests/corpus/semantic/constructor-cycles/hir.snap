@@ -1,0 +1,184 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 6
+
+== graph ==
+fn integer@7:1..11:2 () -> Number ∈ Number(∅)
+  result: result : Number @7:17..7:23
+    outcome[0]:
+      let a@8:13..8:14: Number @8:5..8:29
+        initializer: make Number : Number @8:17..8:29
+          x: int 1 : int @8:27..8:28
+      discard: loop : unit @9:5..9:39
+        start: int 0 : int @9:14..9:15
+        end: int 1 : int @9:17..9:18
+        carry[0]: carry a@8:13..8:14 : Number @9:5..9:39
+          initial: read a@8:13..8:14 : Number
+        body:
+          let i@9:9..9:10: loop index : int @9:5..9:39
+            start: int 0 : int @9:14..9:15
+            end: int 1 : int @9:17..9:18
+          assignment: assign a@8:13..8:14 : Number @9:21..9:37
+            value: make Number : Number @9:25..9:37
+              x: read a@8:13..8:14 (carried @9:5..9:39) : Number
+          tail: unit : unit @9:19..9:39
+        next[0]: read a@8:13..8:14 (assigned @9:21..9:37) : Number
+      discard: after : ? @9:5..9:39
+        control: loop : unit @9:5..9:39
+        context: entry : ? @7:1..11:2
+      tail: read a@8:13..8:14 (after loop @9:5..9:39) : Number
+
+fn boolean@12:1..16:2 () -> Flag ∈ Flag(∅)
+  result: result : Flag @12:17..12:21
+    outcome[0]:
+      let a@13:13..13:14: Flag @13:5..13:30
+        initializer: make Flag : Flag @13:17..13:30
+          x: bool true : bool @13:25..13:29
+      discard: loop : unit @14:5..14:37
+        start: int 0 : int @14:14..14:15
+        end: int 1 : int @14:17..14:18
+        carry[0]: carry a@13:13..13:14 : Flag @14:5..14:37
+          initial: read a@13:13..13:14 : Flag
+        body:
+          let i@14:9..14:10: loop index : int @14:5..14:37
+            start: int 0 : int @14:14..14:15
+            end: int 1 : int @14:17..14:18
+          assignment: assign a@13:13..13:14 : Flag @14:21..14:35
+            value: make Flag : Flag @14:25..14:35
+              x: read a@13:13..13:14 (carried @14:5..14:37) : Flag
+          tail: unit : unit @14:19..14:37
+        next[0]: read a@13:13..13:14 (assigned @14:21..14:35) : Flag
+      discard: after : ? @14:5..14:37
+        control: loop : unit @14:5..14:37
+        context: entry : ? @12:1..16:2
+      tail: read a@13:13..13:14 (after loop @14:5..14:37) : Flag
+
+fn unit@17:1..21:2 () -> Empty ∈ Empty(∅)
+  result: result : Empty @17:14..17:19
+    outcome[0]:
+      let a@18:13..18:14: Empty @18:5..18:29
+        initializer: make Empty : Empty @18:17..18:29
+          x: unit : unit @18:26..18:28
+      discard: loop : unit @19:5..19:38
+        start: int 0 : int @19:14..19:15
+        end: int 1 : int @19:17..19:18
+        carry[0]: carry a@18:13..18:14 : Empty @19:5..19:38
+          initial: read a@18:13..18:14 : Empty
+        body:
+          let i@19:9..19:10: loop index : int @19:5..19:38
+            start: int 0 : int @19:14..19:15
+            end: int 1 : int @19:17..19:18
+          assignment: assign a@18:13..18:14 : Empty @19:21..19:36
+            value: make Empty : Empty @19:25..19:36
+              x: read a@18:13..18:14 (carried @19:5..19:38) : Empty
+          tail: unit : unit @19:19..19:38
+        next[0]: read a@18:13..18:14 (assigned @19:21..19:36) : Empty
+      discard: after : ? @19:5..19:38
+        control: loop : unit @19:5..19:38
+        context: entry : ? @17:1..21:2
+      tail: read a@18:13..18:14 (after loop @19:5..19:38) : Empty
+
+fn record@22:1..26:2 () -> Pair ∈ Pair(∅, Number([0, 0]))
+  result: result : Pair @22:16..22:20
+    outcome[0]:
+      let a@23:13..23:14: Pair @23:5..23:62
+        initializer: make Pair : Pair @23:17..23:62
+          left: make Number : Number @23:28..23:40
+            x: int 1 : int @23:38..23:39
+          right: make Number : Number @23:49..23:61
+            x: int 2 : int @23:59..23:60
+      discard: loop : unit @24:5..24:61
+        start: int 0 : int @24:14..24:15
+        end: int 1 : int @24:17..24:18
+        carry[0]: carry a@23:13..23:14 : Pair @24:5..24:61
+          initial: read a@23:13..23:14 : Pair
+        body:
+          let i@24:9..24:10: loop index : int @24:5..24:61
+            start: int 0 : int @24:14..24:15
+            end: int 1 : int @24:17..24:18
+          assignment: assign a@23:13..23:14 : Pair @24:21..24:59
+            value: make Pair : Pair @24:25..24:59
+              left: read a@23:13..23:14 (carried @24:5..24:61) : Pair
+              right: make Number : Number @24:46..24:58
+                x: read i@24:9..24:10 : int
+          tail: unit : unit @24:19..24:61
+        next[0]: read a@23:13..23:14 (assigned @24:21..24:59) : Pair
+      discard: after : ? @24:5..24:61
+        control: loop : unit @24:5..24:61
+        context: entry : ? @22:1..26:2
+      tail: read a@23:13..23:14 (after loop @24:5..24:61) : Pair
+
+fn union@27:1..31:2 () -> Choice ∈ Choice(∅)
+  result: result : Choice @27:15..27:21
+    outcome[0]:
+      let a@28:13..28:14: Choice @28:5..28:44
+        initializer: make Choice : Choice @28:17..28:44
+          value: make Number : Number @28:31..28:43
+            x: int 1 : int @28:41..28:42
+      discard: loop : unit @29:5..29:43
+        start: int 0 : int @29:14..29:15
+        end: int 1 : int @29:17..29:18
+        carry[0]: carry a@28:13..28:14 : Choice @29:5..29:43
+          initial: read a@28:13..28:14 : Choice
+        body:
+          let i@29:9..29:10: loop index : int @29:5..29:43
+            start: int 0 : int @29:14..29:15
+            end: int 1 : int @29:17..29:18
+          assignment: assign a@28:13..28:14 : Choice @29:21..29:41
+            value: make Choice : Choice @29:25..29:41
+              value: read a@28:13..28:14 (carried @29:5..29:43) : Choice
+          tail: unit : unit @29:19..29:43
+        next[0]: read a@28:13..28:14 (assigned @29:21..29:41) : Choice
+      discard: after : ? @29:5..29:43
+        control: loop : unit @29:5..29:43
+        context: entry : ? @27:1..31:2
+      tail: read a@28:13..28:14 (after loop @29:5..29:43) : Choice
+
+fn recur@32:1..32:92 (Number ∈ Number([1, 1]), int ∈ [0, 1]) -> Number ∈ Number([1, 1])
+  param a@32:10..32:11: Number
+  param n@32:21..32:22: int
+  result: copy : Number @32:32..32:38
+    value: if : Number @32:41..32:92
+      scrutinee: eager == : bool @32:44..32:50
+        lhs: read n@32:21..32:22 : int
+        rhs: int 0 : int @32:49..32:50
+      then: read a@32:10..32:11 : Number
+      else: call recur@32:1..32:92 : Number @32:64..32:90
+        arg[0]: make Number : Number @32:70..32:82
+          x: read a@32:10..32:11 : Number
+        arg[1]: eager - : int @32:84..32:89
+          lhs: read n@32:21..32:22 [n == 0 fails@32:44..32:50] : int
+          rhs: int 1 : int @32:88..32:89
+
+fn main@33:1..33:45 () -> Number ∈ Number([1, 1])
+  result: copy : Number @33:14..33:20
+    value: call recur@32:1..32:92 : Number @33:23..33:45
+      arg[0]: make Number : Number @33:29..33:41
+        x: int 1 : int @33:39..33:40
+      arg[1]: int 1 : int @33:43..33:44
+
+== semantic diagnostics ==
+warning[semantic/unused-name] 9:9..9:10 "i": loop index `i` is never read
+  fix: prefix the name with `_`
+    9:9 -> "_"
+error[semantic/type-mismatch] 9:35..9:36 "a": expected int, found Number
+  at 1:15..1:16 "x": declared here
+warning[semantic/unused-name] 14:9..14:10 "i": loop index `i` is never read
+  fix: prefix the name with `_`
+    14:9 -> "_"
+error[semantic/type-mismatch] 14:33..14:34 "a": expected bool, found Flag
+  at 2:13..2:14 "x": declared here
+warning[semantic/unused-name] 19:9..19:10 "i": loop index `i` is never read
+  fix: prefix the name with `_`
+    19:9 -> "_"
+error[semantic/type-mismatch] 19:34..19:35 "a": expected unit, found Empty
+  at 3:14..3:15 "x": declared here
+error[semantic/type-mismatch] 24:36..24:37 "a": expected Number, found Pair
+  at 4:13..4:17 "left": declared here
+warning[semantic/unused-name] 29:9..29:10 "i": loop index `i` is never read
+  fix: prefix the name with `_`
+    29:9 -> "_"
+error[semantic/type-mismatch] 29:39..29:40 "a": expected Flag | Number, found Choice
+  at 5:15..5:20 "value": declared here
+error[semantic/type-mismatch] 32:80..32:81 "a": expected int, found Number
+  at 1:15..1:16 "x": declared here

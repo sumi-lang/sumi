@@ -26,7 +26,7 @@ fn choose@9:1..17:2 (bool ∈ {true, false}) -> int ∈ [2, 3]
       let x@10:13..10:14: int @10:5..10:18
         initializer: int 1 : int @10:17..10:18
       discard: if : unit @11:9..15:6
-        condition: read flag@9:11..9:15 : bool
+        scrutinee: read flag@9:11..9:15 : bool
         then:
           assignment: assign x@10:13..10:14 : int @12:9..12:14
             value: int 2 : int @12:13..12:14
@@ -36,7 +36,7 @@ fn choose@9:1..17:2 (bool ∈ {true, false}) -> int ∈ [2, 3]
             value: int 3 : int @14:13..14:14
           tail: unit : unit @13:12..15:6
       tail: phi x@10:13..10:14 : int @11:9..15:6
-        condition: read flag@9:11..9:15 : bool
+        scrutinee: read flag@9:11..9:15 : bool
         then: read x@10:13..10:14 (assigned @12:9..12:14) : int
         else: read x@10:13..10:14 (assigned @14:9..14:14) : int
 
@@ -57,14 +57,14 @@ fn optional@19:1..25:2 (bool ∈ {true, false}) -> int ∈ [4, 5]
       let x@20:13..20:14: int @20:5..20:18
         initializer: int 4 : int @20:17..20:18
       discard: if : unit @21:9..23:6
-        condition: read flag@19:13..19:17 : bool
+        scrutinee: read flag@19:13..19:17 : bool
         then:
           assignment: assign x@20:13..20:14 : int @22:9..22:14
             value: int 5 : int @22:13..22:14
           tail: unit : unit @21:17..23:6
         else: unit (implicit)
       tail: phi x@20:13..20:14 : int @21:9..23:6
-        condition: read flag@19:13..19:17 : bool
+        scrutinee: read flag@19:13..19:17 : bool
         then: read x@20:13..20:14 (assigned @22:9..22:14) : int
         else: read x@20:13..20:14 : int
 
@@ -97,9 +97,9 @@ fn lazy@27:1..38:2 (bool ∈ {true, false}) -> int ∈ [1, 7]
             value: int 7 : int @34:13..34:14
           tail: bool false : bool @35:9..35:14
       tail: phi x@28:13..28:14 : int @33:9..36:6
-        condition: read flag@27:9..27:13 : bool
+        scrutinee: read flag@27:9..27:13 : bool
         then: phi x@28:13..28:14 : int @29:9..32:6
-          condition: read flag@27:9..27:13 : bool
+          scrutinee: read flag@27:9..27:13 : bool
           then: read x@28:13..28:14 (assigned @30:9..30:14) : int
           else: read x@28:13..28:14 : int
         else: read x@28:13..28:14 (assigned @34:9..34:14) : int
@@ -121,7 +121,7 @@ fn guarded@40:1..46:2 (int ∈ [0, 2]) -> int ∈ [5, 10]
       let x@41:13..41:14: int @41:5..41:18
         initializer: read n@40:12..40:13 : int
       discard: if : unit @42:9..44:6
-        condition: eager == : bool @42:12..42:18
+        scrutinee: eager == : bool @42:12..42:18
           lhs: read x@41:13..41:14 : int
           rhs: int 0 : int @42:17..42:18
         then:
@@ -132,7 +132,7 @@ fn guarded@40:1..46:2 (int ∈ [0, 2]) -> int ∈ [5, 10]
       tail: eager / : int @45:5..45:11
         lhs: int 10 : int @45:5..45:7
         rhs: phi x@41:13..41:14 : int @42:9..44:6
-          condition: eager == : bool @42:12..42:18
+          scrutinee: eager == : bool @42:12..42:18
             lhs: read x@41:13..41:14 : int
             rhs: int 0 : int @42:17..42:18
           then: read x@41:13..41:14 (assigned @43:9..43:14) : int
@@ -153,7 +153,7 @@ fn returning@48:1..56:2 (bool ∈ {true, false}) -> int ∈ [5, 7]
       let x@49:13..49:14: int @49:5..49:18
         initializer: int 0 : int @49:17..49:18
       discard: if : unit @50:9..54:6
-        condition: read flag@48:14..48:18 : bool
+        scrutinee: read flag@48:14..48:18 : bool
         then: unit : unit @50:17..52:6
         else:
           assignment: assign x@49:13..49:14 : int @53:9..53:14
@@ -165,7 +165,7 @@ fn returning@48:1..56:2 (bool ∈ {true, false}) -> int ∈ [5, 7]
       tail: eager / : int @55:5..55:11
         lhs: int 10 : int @55:5..55:7
         rhs: phi x@49:13..49:14 : int @50:9..54:6
-          condition: read flag@48:14..48:18 : bool
+          scrutinee: read flag@48:14..48:18 : bool
           then: read x@49:13..49:14 : int
           else: read x@49:13..49:14 (assigned @53:9..53:14) : int
     outcome[1]: return : int @51:9..51:17
@@ -188,23 +188,23 @@ fn refined@58:1..62:2 (bool ∈ {true, false}) -> int ∈ [5, 10]
       let x@59:13..59:14: int @59:5..59:18
         initializer: int 1 : int @59:17..59:18
       discard: if : unit @60:9..60:26
-        condition: read flag@58:12..58:16 : bool
+        scrutinee: read flag@58:12..58:16 : bool
         then:
           assignment: assign x@59:13..59:14 : int @60:19..60:24
             value: int 2 : int @60:23..60:24
           tail: unit : unit @60:17..60:26
         else: unit (implicit)
       tail: if : int @61:5..61:36
-        condition: eager != : bool @61:8..61:14
+        scrutinee: eager != : bool @61:8..61:14
           lhs: phi x@59:13..59:14 : int @60:9..60:26
-            condition: read flag@58:12..58:16 : bool
+            scrutinee: read flag@58:12..58:16 : bool
             then: read x@59:13..59:14 (assigned @60:19..60:24) : int
             else: read x@59:13..59:14 : int
           rhs: int 0 : int @61:13..61:14
         then: eager / : int @61:17..61:23
           lhs: int 10 : int @61:17..61:19
           rhs [x != 0 holds@61:8..61:14]: phi x@59:13..59:14 : int @60:9..60:26
-            condition: read flag@58:12..58:16 : bool
+            scrutinee: read flag@58:12..58:16 : bool
             then: read x@59:13..59:14 (assigned @60:19..60:24) : int
             else: read x@59:13..59:14 : int
         else: int 0 : int @61:33..61:34
@@ -216,15 +216,15 @@ fn exact@63:1..67:2 (bool ∈ {true, false}) -> int ∈ [0, 1]
       let b@64:13..64:14: bool @64:5..64:22
         initializer: bool false : bool @64:17..64:22
       discard: if : unit @65:9..65:29
-        condition: read flag@63:10..63:14 : bool
+        scrutinee: read flag@63:10..63:14 : bool
         then:
           assignment: assign b@64:13..64:14 : bool @65:19..65:27
             value: bool true : bool @65:23..65:27
           tail: unit : unit @65:17..65:29
         else: unit (implicit)
       tail: if : int @66:5..66:26
-        condition: phi b@64:13..64:14 : bool @65:9..65:29
-          condition: read flag@63:10..63:14 : bool
+        scrutinee: phi b@64:13..64:14 : bool @65:9..65:29
+          scrutinee: read flag@63:10..63:14 : bool
           then: read b@64:13..64:14 (assigned @65:19..65:27) : bool
           else: read b@64:13..64:14 : bool
         then: int 1 : int @66:12..66:13
@@ -237,23 +237,23 @@ fn exact_read@68:1..72:2 (bool ∈ ∅) -> bool ∈ ∅
       let b@69:13..69:14: bool @69:5..69:22
         initializer: bool false : bool @69:17..69:22
       discard: if : unit @70:9..70:29
-        condition: read flag@68:15..68:19 : bool
+        scrutinee: read flag@68:15..68:19 : bool
         then:
           assignment: assign b@69:13..69:14 : bool @70:19..70:27
             value: bool true : bool @70:23..70:27
           tail: unit : unit @70:17..70:29
         else: unit (implicit)
       tail: if : bool @71:5..71:26
-        condition: phi b@69:13..69:14 : bool @70:9..70:29
-          condition: read flag@68:15..68:19 : bool
+        scrutinee: phi b@69:13..69:14 : bool @70:9..70:29
+          scrutinee: read flag@68:15..68:19 : bool
           then: read b@69:13..69:14 (assigned @70:19..70:27) : bool
           else: read b@69:13..69:14 : bool
         then [is true]: phi b@69:13..69:14 : bool @70:9..70:29
-          condition: read flag@68:15..68:19 : bool
+          scrutinee: read flag@68:15..68:19 : bool
           then: read b@69:13..69:14 (assigned @70:19..70:27) : bool
           else: read b@69:13..69:14 : bool
         else [is false]: phi b@69:13..69:14 : bool @70:9..70:29
-          condition: read flag@68:15..68:19 : bool
+          scrutinee: read flag@68:15..68:19 : bool
           then: read b@69:13..69:14 (assigned @70:19..70:27) : bool
           else: read b@69:13..69:14 : bool
 

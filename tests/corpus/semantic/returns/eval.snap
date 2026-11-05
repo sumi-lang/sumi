@@ -1,5 +1,5 @@
 file: accepted
-optimized: nodes 90 of 196, regions 22 of 26, calls 2 of 5
+optimized: nodes 80 of 196, regions 19 of 26, calls 2 of 5
 
 == functions ==
 fn callee = 4

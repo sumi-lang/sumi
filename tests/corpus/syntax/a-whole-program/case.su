@@ -35,6 +35,13 @@ fn report(total: int, count: int) -> int {
 
 fn greet(name: int) -> int = name
 
+type Point {
+    x: int,
+    y: int,
+}
+
+fn shift(p: Point, dx: int) -> Point = Point(x: p.x + dx, y: p.y)
+
 fn names() -> unit = {}
 
 fn each(items: unit, visit: unit) {

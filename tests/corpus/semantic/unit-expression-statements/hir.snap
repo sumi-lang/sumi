@@ -22,7 +22,7 @@ fn accepted@3:1..15:2 () -> int ∈ [1, 1]
       discard: call action@2:1..2:15 : unit @8:6..8:14
       discard: unit : unit @9:5..9:7
       discard: if : unit @10:5..10:15
-        condition: bool true : bool @10:8..10:12
+        scrutinee: bool true : bool @10:8..10:12
         then: unit : unit @10:13..10:15
         else: unit (implicit)
       discard: call value@1:1..1:22 : int @11:9..11:16
@@ -44,7 +44,7 @@ fn rejected@16:1..33:2 () -> int ∈ [0, 0]
       discard: call value@1:1..1:22 : int @23:6..23:13
       discard: int 1 : int @25:9..25:10
       discard: if : int @27:5..31:6
-        condition: bool true : bool @27:8..27:12
+        scrutinee: bool true : bool @27:8..27:12
         then: int 1 : int @28:9..28:10
         else: int 2 : int @30:9..30:10
       tail: int 0 : int @32:5..32:6
@@ -57,7 +57,7 @@ fn failed_expressions@34:1..41:2 () -> unit ∈ unit
         lhs: int 1 : int @36:5..36:6
         rhs: bool true : bool @36:9..36:13
       discard: if : unit @37:5..39:6
-        condition: bool true : bool @37:8..37:12
+        scrutinee: bool true : bool @37:8..37:12
         then: int 1 : int @38:9..38:10
         else: unit (implicit)
       discard: int 0 : int @40:9..40:10

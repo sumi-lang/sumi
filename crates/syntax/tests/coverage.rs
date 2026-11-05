@@ -39,7 +39,7 @@ fn the_corpus_covers_the_grammar() {
 #[test]
 fn generated_programs_cover_the_grammar() {
     let mut coverage = Coverage::new();
-    for source in Programs::new(0).take(256) {
+    for source in Programs::new(0).take(512) {
         record(&mut coverage, &source);
     }
     assert_covered(&coverage, "the program generator");

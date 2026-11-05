@@ -1,0 +1,43 @@
+tree: omitted
+
+== formatted ==
+type Point {
+    x: int,
+    y: int
+}
+type Segment {
+    from: Point,
+    to: Point
+}
+type Nothing {}
+
+fn origin() -> Point = Point(x: 0, y: 0)
+fn shift(p: Point, dx: int) -> Point = Point(x: p.x + dx, y: p.y)
+fn length(s: Segment) -> int = s.to.x - s.from.x
+fn main() -> int {
+    let s = Segment(from: origin(), to: shift(origin(), 5))
+    length(s) + s.to.y
+}
+fn nothing() -> Nothing = Nothing()
+fn swapped(p: Point) -> Point = Point(y: p.x, x: p.y)
+fn farthest(a: Point, b: Point) -> Point {
+    let mut far = a
+    if b.x > a.x {
+        far = b
+    }
+    far
+}
+fn walk() -> int {
+    let mut p = origin()
+    for i in 0..4 {
+        p = shift(p, i)
+    }
+    p.x
+}
+fn ratio(p: Point) -> int = if p.y != 0 {
+    p.x / p.y
+} else {
+    0
+}
+fn inferred() = Point(x: 1, y: 2).x
+fn passed() -> int = swapped(Point(x: 3, y: 4)).x

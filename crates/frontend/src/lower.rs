@@ -148,6 +148,7 @@ impl Snapshot<'_> {
                 format!("expected {}", kind.describe()).into(),
             ),
             ParseRecoveryKind::RangeOperator => (codes::EXPECTED_TOKEN, "expected `..`".into()),
+            ParseRecoveryKind::ArmArrow => (codes::EXPECTED_TOKEN, "expected `=>`".into()),
             ParseRecoveryKind::Closer { pair, .. } => (
                 codes::EXPECTED_TOKEN,
                 format!("expected {}", pair.closer().kind().describe()).into(),
@@ -234,9 +235,9 @@ impl Snapshot<'_> {
                 codes::FUNCTION_NAME_ON_NEXT_LINE,
                 "function name must be on the same line as `fn`",
             ),
-            ParseViolationKind::FunctionItemOnSameLine => (
+            ParseViolationKind::ItemOnSameLine => (
                 codes::FUNCTION_ITEM_ON_SAME_LINE,
-                "function item must begin on a new line",
+                "item must begin on a new line",
             ),
             ParseViolationKind::BindingNameOnNextLine => (
                 codes::BINDING_NAME_ON_NEXT_LINE,

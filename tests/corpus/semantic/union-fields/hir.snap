@@ -1,0 +1,67 @@
+file: accepted
+frontend errors: 0 (see frontend.snap)
+semantic errors: 0
+
+== graph ==
+fn read@6:1..6:74 (Container ∈ Container(A([3, 5]) ∪ B([4, 4]))) -> int ∈ [3, 5]
+  param c@6:9..6:10: Container
+  result: copy : int @6:26..6:29
+    value: match : int @6:32..6:74
+      scrutinee: field value : A | B @6:38..6:45
+        base: read c@6:9..6:10 : Container
+      A:
+        let a@6:50..6:51: narrow to A : A @6:50..6:51
+          scrutinee: field value : A | B @6:38..6:45
+            base: read c@6:9..6:10 : Container
+        tail: field n : int @6:56..6:59
+          base: read a@6:50..6:51 : A
+      B:
+        let b@6:63..6:64: narrow to B : B @6:63..6:64
+          scrutinee: field value : A | B @6:38..6:45
+            base: read c@6:9..6:10 : Container
+        tail: field n : int @6:69..6:72
+          base: read b@6:63..6:64 : B
+
+fn outer@7:1..7:83 (Outer ∈ Outer(B([6, 6]) ∪ Container(A([5, 5])))) -> int ∈ [3, 6]
+  param o@7:10..7:11: Outer
+  result: copy : int @7:23..7:26
+    value: match : int @7:29..7:83
+      scrutinee: field inner : B | Container @7:35..7:42
+        base: read o@7:10..7:11 : Outer
+      Container:
+        let c@7:55..7:56: narrow to Container : Container @7:55..7:56
+          scrutinee: field inner : B | Container @7:35..7:42
+            base: read o@7:10..7:11 : Outer
+        tail: call read@6:1..6:74 : int @7:61..7:68
+          arg[0]: read c@7:55..7:56 : Container
+      B:
+        let b@7:72..7:73: narrow to B : B @7:72..7:73
+          scrutinee: field inner : B | Container @7:35..7:42
+            base: read o@7:10..7:11 : Outer
+        tail: field n : int @7:78..7:81
+          base: read b@7:72..7:73 : B
+
+fn main@8:1..8:85 () -> int ∈ [6, 10]
+  result: copy : int @8:14..8:17
+    value: eager + : int @8:20..8:85
+      lhs: call read@6:1..6:74 : int @8:20..8:51
+        arg[0]: make Container : Container @8:25..8:50
+          value: make A : A @8:42..8:49
+            n: int 3 : int @8:47..8:48
+      rhs: call read@6:1..6:74 : int @8:54..8:85
+        arg[0]: make Container : Container @8:59..8:84
+          value: make B : B @8:76..8:83
+            n: int 4 : int @8:81..8:82
+
+fn nested@9:1..9:99 () -> int ∈ [6, 12]
+  result: copy : int @9:16..9:19
+    value: eager + : int @9:22..9:99
+      lhs: call outer@7:1..7:83 : int @9:22..9:68
+        arg[0]: make Outer : Outer @9:28..9:67
+          inner: make Container : Container @9:41..9:66
+            value: make A : A @9:58..9:65
+              n: int 5 : int @9:63..9:64
+      rhs: call outer@7:1..7:83 : int @9:71..9:99
+        arg[0]: make Outer : Outer @9:77..9:98
+          inner: make B : B @9:90..9:97
+            n: int 6 : int @9:95..9:96

@@ -10,7 +10,7 @@ use sumi_text::TextRange;
 use crate::check::explain;
 use crate::codes;
 use crate::flows::{self, Arguments};
-use crate::lower::{Header, Lowered, Source, Statement};
+use crate::lower::{Header, Lowered, Source, Statement, TypeHeader};
 use crate::spans::Spans;
 use crate::typing::Typing;
 
@@ -30,6 +30,8 @@ pub enum DeadCause {
     LoopBody,
     /// The statements after one that never completes, to the end of their block.
     AfterStop,
+    /// A `match` arm no value the scrutinee may hold selects.
+    Arm,
 }
 
 impl fmt::Display for DeadCause {
@@ -39,6 +41,7 @@ impl fmt::Display for DeadCause {
             Self::RightOperand => "the right side never runs",
             Self::LoopBody => "the loop body never runs",
             Self::AfterStop => "unreachable code",
+            Self::Arm => "this arm never runs",
         })
     }
 }
@@ -80,6 +83,7 @@ pub(crate) fn warn(
     delivered: &Typing,
     lowered: &Lowered,
     headers: &[Header],
+    types: &[TypeHeader],
 ) -> Vec<Dead> {
     unused_functions(source, graph, lowered, headers);
     // A site is reported only where the program reaches it and both solves decide it, so whether
@@ -103,6 +107,20 @@ pub(crate) fn warn(
         .windows(2)
         .map(|pair| stops([pair[0], pair[1]], delivered))
         .collect();
+    // (arm context, parent) of each arm of a `match` the delivered solve never selects.
+    let arms: Vec<(NodeId, NodeId)> = graph
+        .node_ids()
+        .filter_map(|node| match graph.node(node).op {
+            Op::Switch { arms } if !is_boolean(graph, arms) => Some(arms),
+            _ => None,
+        })
+        .flat_map(|arms| arms.iter())
+        .map(|arm| graph.region(arm).context)
+        .map(|context| (context, graph.inputs(context)[1]))
+        .filter(|&(context, parent)| {
+            delivered.may(parent).is_live() && !delivered.may(context).is_live()
+        })
+        .collect();
     let closed = closed(graph, lowered);
     // Runs are contiguous in declaration order.
     let open = |node: NodeId| {
@@ -112,13 +130,22 @@ pub(crate) fn warn(
             - 1]
     };
     let any = (conditions.iter().any(|condition| open(condition.value))
+        || arms.iter().any(|&(context, _)| open(context))
         || statements
             .windows(2)
             .zip(&stops_delivered)
             .any(|(pair, &stops)| stops && open(pair[1].context)))
     .then(|| {
-        let (mut any, thresholds, _) = flows::draw(graph, spans, lowered, headers, Arguments::Any);
-        any.solve(&thresholds);
+        let (mut any, cx, _) = flows::draw(
+            graph,
+            spans,
+            lowered,
+            headers,
+            types,
+            Arguments::Any,
+            source.unions.clone(),
+        );
+        any.solve(&cx);
         any
     });
     let facts = |node: NodeId| match &any {
@@ -183,6 +210,23 @@ pub(crate) fn warn(
         ));
         source.report(condition.at, codes::CONSTANT_CONDITION, message, labels);
         deads.extend(dead);
+    }
+
+    for (context, parent) in arms {
+        if !facts(context).may(parent).is_live() || facts(context).may(context).is_live() {
+            continue;
+        }
+        let dead = Dead {
+            range: spans.origin(context),
+            cause: DeadCause::Arm,
+        };
+        source.report(
+            dead.range,
+            codes::UNREACHABLE_CODE,
+            dead.cause.to_string(),
+            [],
+        );
+        deads.push(dead);
     }
 
     for (index, pair) in statements.windows(2).enumerate() {
@@ -307,6 +351,15 @@ fn is_open_on_its_face(graph: &Graph, value: NodeId) -> bool {
     }
 }
 
+fn is_boolean(graph: &Graph, arms: sumi_graph::Arms) -> bool {
+    arms.iter().all(|arm| {
+        matches!(
+            graph.case(graph.region(arm).context),
+            sumi_graph::Case::Bool(_)
+        )
+    })
+}
+
 fn conditions(graph: &Graph, spans: &Spans) -> Vec<Condition> {
     let mut conditions = Vec::new();
     let parent = |region: RegionId| graph.inputs(graph.region(region).context)[1];
@@ -314,12 +367,18 @@ fn conditions(graph: &Graph, spans: &Spans) -> Vec<Condition> {
         let inputs = graph.inputs(node);
         let value = |index: usize| graph.input_roles(node)[index].is_value();
         match graph.node(node).op {
-            Op::Join { then, else_ } if value(0) => conditions.push(Condition {
-                value: inputs[0],
-                parent: parent(then),
-                at: spans.reads(node)[0],
-                site: Site::If { then, else_ },
-            }),
+            Op::Switch { arms } if value(0) && is_boolean(graph, arms) => {
+                let then = arms.iter().next().expect("a switch has an arm");
+                conditions.push(Condition {
+                    value: inputs[0],
+                    parent: parent(then),
+                    at: spans.reads(node)[0],
+                    site: Site::If {
+                        then,
+                        else_: arms.iter().nth(1),
+                    },
+                });
+            }
             ref op @ (Op::And { rhs } | Op::Or { rhs }) if value(0) => {
                 conditions.push(Condition {
                     value: inputs[0],

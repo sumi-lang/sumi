@@ -6,7 +6,7 @@ semantic errors: 0
 fn dead_branch@1:1..5:2 () -> int ∈ [2, 2]
   result: copy : int @1:21..1:24
     value: if : int @1:27..5:2
-      condition: bool false : bool @1:30..1:35
+      scrutinee: bool false : bool @1:30..1:35
       then: int 1 : int @2:5..2:6
       else: int 2 : int @4:5..4:6
 
@@ -27,9 +27,9 @@ fn absent@7:1..7:34 (int ∈ ∅) -> bool ∈ ∅
 fn nested@8:1..16:2 () -> int ∈ [2, 2]
   result: copy : int @8:16..8:19
     value: if : int @8:22..16:2
-      condition: bool true : bool @8:25..8:29
+      scrutinee: bool true : bool @8:25..8:29
       then: if : int @9:5..13:6
-        condition: bool false : bool @9:8..9:13
+        scrutinee: bool false : bool @9:8..9:13
         then: int 1 : int @10:9..10:10
         else: int 2 : int @12:9..12:10
       else: int 3 : int @15:5..15:6

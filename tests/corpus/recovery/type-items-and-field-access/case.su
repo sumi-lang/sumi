@@ -1,0 +1,13 @@
+type
+type {}
+type Missing
+type Garbage junk { x: int }
+type NoColon { x int, y: }
+type Unclosed { x: int
+fn f() { type Inner { a: int } }
+fn g() { p. }
+fn h() { p.1 }
+fn i() { g(x:) }
+fn j() { p
+.x }
+fn k() { p . x }

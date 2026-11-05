@@ -24,13 +24,13 @@ fn mismatch@8:1..8:26 () -> bool ∈ ∅
 fn branches@9:1..13:2 () -> int ∈ [1, 1]
   result: copy : int @9:18..9:21
     value: if : ? @9:24..13:2
-      condition: bool true : bool @9:27..9:31
+      scrutinee: bool true : bool @9:27..9:31
       then: int 1 : int @10:5..10:6
       else: bool false : bool @12:5..12:10
 
 fn missing_else@14:1..16:2 () -> unit ∈ unit
   body: if : unit @14:21..16:2
-    condition: bool true : bool @14:24..14:28
+    scrutinee: bool true : bool @14:24..14:28
     then: int 1 : int @15:5..15:6
     else: unit (implicit)
 
@@ -56,7 +56,7 @@ fn unit_sum@21:1..21:30 () -> int ∈ ∅
 fn condition@22:1..22:50 () -> int ∈ ∅
   result: copy : int @22:19..22:22
     value: if : ? @22:25..22:50
-      condition: int 1 : int @22:28..22:29
+      scrutinee: int 1 : int @22:28..22:29
       then: int 2 : int @22:32..22:33
       else: bool false : bool @22:43..22:48
 

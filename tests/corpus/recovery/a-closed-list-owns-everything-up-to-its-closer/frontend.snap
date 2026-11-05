@@ -27,7 +27,8 @@ SourceFile! 1:1..8:1
         NameRef 6:5..6:6 "g"
         ArgList! 6:6..6:13
           Error! 6:7..6:9 "fn"
-          NameRef 6:11..6:12 "b"
+          Arg 6:11..6:12
+            NameRef 6:11..6:12 "b"
 
 == evidence ==
 ExpectedType at 1:21

@@ -2,17 +2,19 @@
 //! on a type, and a demand per typed read. Demands are joined into the evidence last, in node
 //! order, the order the verdict pass replays them in.
 
-use std::collections::HashSet;
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 use rustc_hash::FxBuildHasher;
 use sumi_graph::{
-    BinaryOp, CmpOp, Domain, FunctionId, Graph, Int, May, Node, NodeId, Op, RegionId, Thresholds,
-    Ty, Value,
+    Arms, BinaryOp, Case, CmpOp, Domain, FieldName, FunctionId, Graph, Int, May, Node, NodeId, Op,
+    RegionId, Thresholds, Ty, Unions, Value,
 };
 use sumi_text::TextRange;
 
-use crate::lattice::{Edge, Pair};
-use crate::lower::{Fallthrough, Header, HeaderResult, Lowered};
+use crate::lattice::{Arm, Context, Edge, Many, Pair};
+use crate::lower::{Fallthrough, Header, HeaderResult, Lowered, TypeHeader};
 use crate::spans::Spans;
 use crate::typing::{Expected, Typing};
 
@@ -31,11 +33,14 @@ pub(crate) enum DemandKind {
     },
     Unused,
     Comparable,
-    /// `actual` is the `if`; `branches` are the results of its two arms, read at `at`.
-    Agree {
-        branches: [NodeId; 2],
-        at: [TextRange; 2],
-    },
+    /// `actual` is the switch whose arms must agree.
+    Agree(Arms),
+    /// `actual` is the base of a read of the field.
+    Field(FieldName),
+    /// `actual` is a `match` scrutinee, which holds a declared value.
+    Matched,
+    /// `actual` is a `match` scrutinee, among whose type's members the arm's type is.
+    Member(Ty),
 }
 
 pub(crate) struct Demand {
@@ -51,6 +56,7 @@ struct Demands<'a> {
     typed: &'a [bool],
     fallthroughs: &'a [Option<Fallthrough>],
     headers: &'a [Header],
+    types: &'a [TypeHeader],
     made: Vec<Demand>,
 }
 
@@ -97,8 +103,8 @@ impl Demands<'_> {
         let spans = self.spans;
         let region = |id: RegionId| (spans.result_read(id), graph.region(id).result());
         match &entry.op {
-            Op::Neg if value(0) => require(reads[0], inputs[0], Expected::Ty(Ty::Int), None),
-            Op::Not if value(0) => require(reads[0], inputs[0], Expected::Ty(Ty::Bool), None),
+            Op::Neg if value(0) => require(reads[0], inputs[0], Expected::Ty(Ty::INT), None),
+            Op::Not if value(0) => require(reads[0], inputs[0], Expected::Ty(Ty::BOOL), None),
             Op::Neg | Op::Not => {}
             Op::Binary(BinaryOp::Cmp(CmpOp::Eq | CmpOp::Ne)) => {
                 if let Some(operand) = inputs
@@ -117,53 +123,60 @@ impl Demands<'_> {
             Op::Binary(_) => {
                 for (index, (&at, &input)) in reads.iter().zip(inputs).enumerate() {
                     if value(index) {
-                        require(at, input, Expected::Ty(Ty::Int), None);
+                        require(at, input, Expected::Ty(Ty::INT), None);
                     }
                 }
             }
             Op::And { rhs } | Op::Or { rhs } => {
                 if value(0) {
-                    require(reads[0], inputs[0], Expected::Ty(Ty::Bool), None);
+                    require(reads[0], inputs[0], Expected::Ty(Ty::BOOL), None);
                 }
                 let rhs_region = *rhs;
                 let (at, rhs) = region(rhs_region);
                 if graph.region(rhs_region).result_has_value() {
-                    require(at, rhs, Expected::Ty(Ty::Bool), None);
+                    require(at, rhs, Expected::Ty(Ty::BOOL), None);
                 }
             }
-            Op::Join { then, else_ } => {
-                if value(0) {
-                    require(reads[0], inputs[0], Expected::Ty(Ty::Bool), None);
-                }
-                match else_ {
-                    None => {
-                        let then_region = *then;
-                        let (at, result) = region(then_region);
-                        if value(0) && graph.region(then_region).result_has_value() {
-                            require(at, result, Expected::Ty(Ty::Unit), None);
+            Op::Switch { arms } => {
+                let expect = |ty| DemandKind::Type {
+                    expected: Expected::Ty(ty),
+                    declared: None,
+                };
+                let selection = selection(graph, *arms);
+                if value(0) && selection.boolean {
+                    if typed(inputs[0]) {
+                        demand(reads[0], inputs[0], expect(Ty::BOOL));
+                    }
+                } else if value(0) && typed(inputs[0]) {
+                    demand(reads[0], inputs[0], DemandKind::Matched);
+                    for arm in arms.iter() {
+                        let context = graph.region(arm).context;
+                        if let Case::Is(ty) = graph.case(context) {
+                            demand(spans.origin(context), inputs[0], DemandKind::Member(ty));
                         }
                     }
-                    Some(else_)
-                        if typed(node)
-                            && value(0)
-                            && graph.region(*then).result_has_value()
-                            && graph.region(*else_).result_has_value() =>
-                    {
-                        let (then_at, then_result) = region(*then);
-                        let (else_at, else_result) = region(*else_);
-                        let agree = DemandKind::Agree {
-                            branches: [then_result, else_result],
-                            at: [then_at, else_at],
-                        };
-                        demand(spans.origin(node), node, agree);
+                }
+                let valued = || {
+                    arms.iter()
+                        .filter(|&arm| graph.region(arm).result_has_value())
+                };
+                if !value(0) {
+                } else if !selection.total {
+                    // What falls through is unit, so every arm is.
+                    for arm in valued() {
+                        let (at, result) = region(arm);
+                        if typed(result) {
+                            demand(at, result, expect(Ty::UNIT));
+                        }
                     }
-                    Some(_) => {}
+                } else if typed(node) && valued().count() == arms.len() {
+                    demand(spans.origin(node), node, DemandKind::Agree(*arms));
                 }
             }
             Op::Loop { body } => {
                 let (at, result) = region(*body);
                 if value(0) && value(1) && graph.region(*body).result_has_value() {
-                    require(at, result, Expected::Ty(Ty::Unit), None);
+                    require(at, result, Expected::Ty(Ty::UNIT), None);
                 }
             }
             Op::Copy { declared: Some(ty) } if value(0) => {
@@ -205,6 +218,24 @@ impl Demands<'_> {
                     }
                 }
             }
+            Op::Make(decl) => {
+                let fields = graph.decl(*decl).fields();
+                let names = &self.types[decl.index()].fields;
+                for (index, (((&at, &input), &(_, ty)), &name)) in
+                    reads.iter().zip(inputs).zip(fields).zip(names).enumerate()
+                {
+                    if value(index)
+                        && let Some(ty) = ty
+                    {
+                        require(at, input, Expected::Ty(ty), written(name));
+                    }
+                }
+            }
+            Op::Field(name) => {
+                if value(0) && typed(inputs[0]) {
+                    demand(spans.origin(node), inputs[0], DemandKind::Field(*name));
+                }
+            }
             Op::Unused => {
                 if value(0) && typed(inputs[0]) {
                     demand(reads[0], inputs[0], DemandKind::Unused);
@@ -242,14 +273,41 @@ impl Demands<'_> {
             | Op::LoopValue
             | Op::Refine { .. }
             | Op::Exactly(_)
+            | Op::Narrow(_)
             | Op::Entry
-            | Op::Then
-            | Op::Else
+            | Op::Arm(_)
             | Op::Sequence
             | Op::Observe { .. }
             | Op::After => {}
         }
     }
+}
+
+/// What a switch's arms select on, read once per switch.
+#[derive(Clone, Copy)]
+struct Selection {
+    /// Every arm is a boolean.
+    boolean: bool,
+    /// Some arm takes every scrutinee: both booleans, or members, which the checker holds to cover
+    /// the scrutinee's type, so the switch never falls through to unit.
+    total: bool,
+}
+
+fn selection(graph: &Graph, arms: Arms) -> Selection {
+    let (mut boolean, mut on_true, mut on_false) = (true, false, false);
+    for arm in arms.iter() {
+        match graph.case(graph.region(arm).context) {
+            Case::Bool(true) => on_true = true,
+            Case::Bool(false) => on_false = true,
+            Case::Is(_) | Case::Not(_) | Case::Any => boolean = false,
+        }
+    }
+    let total = if boolean {
+        on_true && on_false
+    } else {
+        !arms.is_empty()
+    };
+    Selection { boolean, total }
 }
 
 /// Where a parameter's values come from.
@@ -268,11 +326,42 @@ pub(crate) fn draw(
     spans: &Spans,
     lowered: &Lowered,
     headers: &[Header],
+    types: &[TypeHeader],
     arguments: Arguments,
-) -> (Typing, Thresholds, Vec<Demand>) {
-    let mut typing = Typing::for_nodes(graph.nodes().len());
+    unions: Rc<RefCell<Unions>>,
+) -> (Typing, Context, Vec<Demand>) {
+    let mut typing = Typing::for_nodes(graph.nodes().len(), unions);
     let typed = |node: NodeId| lowered.typed[node.index()];
     let mut constants: Vec<Int> = Vec::new();
+    let mut cases: Vec<Arm> = Vec::new();
+    let mut case_ids: HashMap<Arm, u16, FxBuildHasher> = HashMap::default();
+    let mut arm_cases: HashMap<NodeId, u16, FxBuildHasher> = HashMap::default();
+    for entry in graph.nodes() {
+        let Op::Switch { arms } = entry.op else {
+            continue;
+        };
+        if selection(graph, arms).boolean {
+            continue;
+        }
+        let mut previous = None;
+        let mut seen: HashSet<Case, FxBuildHasher> = HashSet::default();
+        for region in arms.iter() {
+            let context = graph.region(region).context;
+            let arm = Arm {
+                case: graph.case(context),
+                previous,
+            };
+            let index = *case_ids.entry(arm).or_insert_with(|| {
+                let index = u16::try_from(cases.len()).expect("distinct arm count fits u16");
+                cases.push(arm);
+                index
+            });
+            arm_cases.insert(context, index);
+            if seen.insert(arm.case) {
+                previous = Some(index);
+            }
+        }
+    }
     let mut seen: HashSet<Int, FxBuildHasher> = HashSet::default();
     let mut folded: Vec<Option<Int>> = Vec::new();
     let mut demands = Demands {
@@ -281,6 +370,7 @@ pub(crate) fn draw(
         typed: &lowered.typed,
         fallthroughs: &lowered.fallthroughs,
         headers,
+        types,
         made: Vec::with_capacity(graph.nodes().len() / 2),
     };
 
@@ -304,15 +394,17 @@ pub(crate) fn draw(
             let mut folds = None;
             match &entry.op {
                 Op::Int(value) => {
-                    typing.literal(node, Ty::Int, May::int(value), origin);
+                    typing.literal(node, Ty::INT, May::int(value), origin);
                     folds = Some(value.clone());
                 }
-                Op::Bool(value) => typing.literal(node, Ty::Bool, May::bool(*value), origin),
+                Op::Bool(value) => typing.literal(node, Ty::BOOL, May::bool(*value), origin),
                 Op::Param { ty: Some(ty), .. } => {
                     let origin = spans.name(node).unwrap_or(origin);
                     match arguments {
                         Arguments::Delivered => typing.known(node, *ty, origin),
-                        Arguments::Any => typing.literal(node, *ty, May::every(*ty), origin),
+                        Arguments::Any => {
+                            typing.literal(node, *ty, May::every(*ty, graph.unions()), origin)
+                        }
                     }
                 }
                 // No value to type.
@@ -322,17 +414,15 @@ pub(crate) fn draw(
                     run.param_types().is_some()
                         && (arguments == Arguments::Any || run.params().len() == 0),
                 ),
-                // An untyped condition decides nothing; the context is live as its parent is.
-                Op::Then | Op::Else if !typed(inputs[0]) => {
+                // An untyped scrutinee decides nothing; the context is live as its parent is.
+                Op::Arm(_) if !typed(inputs[0]) => {
                     typing.flow(inputs[1], node, Edge::Values);
                 }
-                Op::Then | Op::Else => {
-                    let edge = if matches!(entry.op, Op::Then) {
-                        Pair::Then
-                    } else {
-                        Pair::Else
-                    };
-                    typing.derive(inputs[0], inputs[1], node, edge);
+                Op::Arm(Case::Bool(wanted)) => {
+                    typing.derive(inputs[0], inputs[1], node, Pair::Bool(*wanted));
+                }
+                Op::Arm(_) => {
+                    typing.derive(inputs[0], inputs[1], node, Pair::Arm(arm_cases[&node]));
                 }
                 Op::Refine {
                     op,
@@ -349,32 +439,37 @@ pub(crate) fn draw(
                     },
                 ),
                 Op::Exactly(value) => typing.flow(inputs[0], node, Edge::Exactly(*value)),
-                Op::Join {
-                    then,
-                    else_: Some(else_),
-                } => {
-                    let regions = [*then, *else_];
-                    let values = regions.map(|region| graph.region(region).result_has_value());
-                    let pair = if values.into_iter().filter(|&value| value).count() == 1 {
+                Op::Narrow(ty) => {
+                    typing.known(node, *ty, origin);
+                    typing.flow(inputs[0], node, Edge::Narrow(*ty));
+                }
+                Op::Switch { arms } if selection(graph, *arms).total => {
+                    let valued = arms
+                        .iter()
+                        .filter(|&arm| graph.region(arm).result_has_value())
+                        .count();
+                    let pair = if valued == 1 {
                         Pair::Forward
                     } else {
                         Pair::Branch
                     };
-                    for (region, value) in regions.into_iter().zip(values) {
-                        let region = graph.region(region);
-                        if !graph.input_roles(node)[0].is_value() || !value {
+                    for arm in arms.iter() {
+                        let region = graph.region(arm);
+                        if !graph.input_roles(node)[0].is_value() || !region.result_has_value() {
                             continue;
                         }
                         typing.derive(region.result(), region.context, node, pair);
                     }
                 }
-                Op::Join { then, else_: None } => {
-                    typing.known(node, Ty::Unit, origin);
-                    let parent = graph.inputs(graph.region(*then).context)[1];
+                // What falls through is unit, and so is every arm.
+                Op::Switch { arms } => {
+                    typing.known(node, Ty::UNIT, origin);
+                    let first = arms.iter().next().expect("a switch has an arm");
+                    let parent = graph.inputs(graph.region(first).context)[1];
                     typing.flow(parent, node, Edge::Enter);
                 }
                 Op::Unit => {
-                    typing.known(node, Ty::Unit, origin);
+                    typing.known(node, Ty::UNIT, origin);
                     typing.flow(inputs[0], node, Edge::Enter);
                 }
                 Op::Copy { declared: Some(ty) } => {
@@ -396,7 +491,7 @@ pub(crate) fn draw(
                 Op::Phi => {
                     typing.flow(graph.declaration(node), node, Edge::TypeBind);
                     if graph.input_roles(node)[0].is_value() {
-                        for ((&value, context), role) in inputs[1..]
+                        for ((&value, &context), role) in inputs[1..]
                             .iter()
                             .zip(graph.phi_contexts(node))
                             .zip(&graph.input_roles(node)[1..])
@@ -408,7 +503,7 @@ pub(crate) fn draw(
                     }
                 }
                 Op::LoopIndex => {
-                    typing.known(node, Ty::Int, spans.name(node).unwrap_or(origin));
+                    typing.known(node, Ty::INT, spans.name(node).unwrap_or(origin));
                     typing.derive(inputs[0], inputs[1], node, Pair::Range);
                 }
                 Op::Carry => {
@@ -416,7 +511,7 @@ pub(crate) fn draw(
                 }
                 Op::Loop { body } => {
                     let [continuation, empty] = graph.loop_contexts(node);
-                    typing.known(node, Ty::Unit, origin);
+                    typing.known(node, Ty::UNIT, origin);
                     typing.flow(empty, node, Edge::Enter);
                     typing.flow(continuation, node, Edge::Enter);
                     for (header, next) in graph.carried(node) {
@@ -437,12 +532,12 @@ pub(crate) fn draw(
                     typing.derive(next, continuation, node, Pair::Outcome);
                 }
                 Op::Neg => {
-                    typing.known(node, Ty::Int, origin);
+                    typing.known(node, Ty::INT, origin);
                     typing.flow(inputs[0], node, Edge::Neg);
                     folds = constant(0).map(|value| -value);
                 }
                 Op::Not => {
-                    typing.known(node, Ty::Bool, origin);
+                    typing.known(node, Ty::BOOL, origin);
                     typing.flow(inputs[0], node, Edge::Not);
                 }
                 Op::Binary(op) => {
@@ -450,13 +545,15 @@ pub(crate) fn draw(
                     typing.derive(inputs[0], inputs[1], node, Pair::Binary(*op));
                     if let (Some(lhs), Some(rhs)) = (constant(0), constant(1)) {
                         let (lhs, rhs) = (Value::Int(lhs.clone()), Value::Int(rhs.clone()));
-                        if let Ok(Value::Int(value)) = Op::Binary(*op).apply(&[&lhs, &rhs]) {
+                        if let Ok(Value::Int(value)) =
+                            Op::Binary(*op).apply(&[&lhs, &rhs], graph.decls(), graph.unions())
+                        {
                             folds = Some(value);
                         }
                     }
                 }
                 Op::And { rhs } | Op::Or { rhs } if graph.input_roles(node)[0].is_value() => {
-                    typing.known(node, Ty::Bool, origin);
+                    typing.known(node, Ty::BOOL, origin);
                     let region = graph.region(*rhs);
                     let rhs = region.result();
                     let is_and = matches!(entry.op, Op::And { .. });
@@ -472,27 +569,24 @@ pub(crate) fn draw(
                 }
                 Op::Return => {}
                 Op::Sequence => typing.derive(inputs[1], inputs[0], node, Pair::Branch),
-                Op::Observe { then, else_ } => {
-                    let parent = inputs[1];
-                    if let Some(region) = then {
-                        let region = graph.region(*region);
+                // Live where a selected arm's control is, or where no arm selects: the parent
+                // gated by the complement of the arms, which for a partial boolean switch is the
+                // other boolean.
+                Op::Observe { arms } => {
+                    for arm in arms.iter() {
+                        let region = graph.region(arm);
                         typing.flow(
                             region.control().unwrap_or(region.context),
                             node,
                             Edge::Values,
                         );
-                    } else {
-                        typing.derive(inputs[0], parent, node, Pair::Then);
                     }
-                    if let Some(region) = else_ {
-                        let region = graph.region(*region);
-                        typing.flow(
-                            region.control().unwrap_or(region.context),
-                            node,
-                            Edge::Values,
-                        );
-                    } else {
-                        typing.derive(inputs[0], parent, node, Pair::Else);
+                    if !selection(graph, *arms).total {
+                        let first = arms.iter().next().expect("an observe has an arm");
+                        let Case::Bool(taken) = graph.case(graph.region(first).context) else {
+                            unreachable!("a partial switch is boolean")
+                        };
+                        typing.derive(inputs[0], inputs[1], node, Pair::Bool(!taken));
                     }
                 }
                 Op::After => typing.derive(inputs[1], inputs[0], node, Pair::Branch),
@@ -525,6 +619,17 @@ pub(crate) fn draw(
                         );
                     }
                 }
+                Op::Make(decl) => match inputs.split_first() {
+                    Some((&first, others)) => {
+                        typing.known(node, Ty::decl(*decl), origin);
+                        typing.derive_many(first, others, node, Many::Make(*decl));
+                    }
+                    // A value with no fields is a literal.
+                    None => {
+                        typing.literal(node, Ty::decl(*decl), May::make(*decl, Vec::new()), origin)
+                    }
+                },
+                Op::Field(name) => typing.flow(inputs[0], node, Edge::Field(*name)),
                 // Drawn once every run is passed; the callee's run may come later.
                 Op::Call(_) => {}
             }
@@ -559,5 +664,11 @@ pub(crate) fn draw(
             typing.expect(demand.actual, expected, demand.at);
         }
     }
-    (typing, constants.into_iter().collect(), demands)
+    let cx = Context {
+        thresholds: constants.into_iter().collect::<Thresholds>(),
+        decls: graph.decls().into(),
+        unions: graph.unions().clone(),
+        cases: cases.into_boxed_slice(),
+    };
+    (typing, cx, demands)
 }

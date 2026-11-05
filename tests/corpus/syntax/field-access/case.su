@@ -1,0 +1,6 @@
+fn f(p: Point) -> int = p.x
+fn g(p: Pair) -> int = p.first.x + -p.second.y * 2
+fn h() -> int = make().x
+fn i() { for n in p.lo..p.hi { _ = n } }
+fn j() -> bool = (p).ok && q.ok
+fn k() -> int = 1.x

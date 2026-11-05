@@ -1,0 +1,14 @@
+file: accepted
+optimized: nodes 129 of 196, regions 29 of 34, calls 13 of 16
+
+== functions ==
+fn main = 6
+  steps: 18, optimized steps: 14, depth: 2, bound: 2
+fn duplicates = 6
+  steps: 18, optimized steps: 14, depth: 2, bound: 2
+fn rest = 12
+  steps: 18, optimized steps: 1, depth: 2, bound: 2
+fn mutations = 17
+  steps: 37, optimized steps: 28, depth: 2, bound: 2
+fn nesting = 23
+  steps: 38, optimized steps: 33, depth: 3, bound: 3

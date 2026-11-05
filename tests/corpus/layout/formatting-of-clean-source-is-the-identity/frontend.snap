@@ -7,4 +7,5 @@ SourceFile 1:1..4:1
       CallExpr 2:5..2:9
         NameRef 2:5..2:6 "f"
         ArgList 2:6..2:9
-          LiteralExpr 2:7..2:8 "1"
+          Arg 2:7..2:8
+            LiteralExpr 2:7..2:8 "1"

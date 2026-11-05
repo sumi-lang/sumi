@@ -1,0 +1,23 @@
+type Circle { radius: int }
+type Square { side: int }
+type Dot {}
+
+fn missing(shape: Circle | Square | Dot) -> int = match shape {
+    Circle(c) => c.radius,
+    Square => 1,
+}
+fn scalar(n: int) -> int = match n { _ => 1 }
+fn foreign(shape: Circle | Square) -> int = match shape {
+    Circle(c) => c.radius,
+    Dot => 0,
+    _ => 1,
+}
+fn unknown(shape: Circle) -> int = match shape { Blob(b) => 1, Circle => 2 }
+fn function(shape: Circle) -> int = match shape { scalar => 1, _ => 2 }
+fn disagree(shape: Circle | Square) -> int = match shape { Circle(c) => c.radius, Square => true }
+fn bad_union(x: int | Circle) -> int = 1
+fn field(shape: Circle | Square) -> int = shape.radius
+fn dead(c: Circle) -> int = match c { Circle(x) => x.radius, Square => 2, _ => 3 }
+fn compared(a: Circle | Square, b: Circle | Square) -> bool = a == b
+fn narrowed_wrongly(shape: Circle | Square) -> Circle = shape
+fn unused(shape: Circle) -> int = match shape { Circle(c) => 1 }

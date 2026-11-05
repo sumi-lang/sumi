@@ -8,9 +8,11 @@ SourceFile! 1:1..4:1
         NameRef 2:5..2:6 "g"
         ArgList! 2:6..2:15
           Error! 2:7..2:8 ":"
-          ParenExpr 2:8..2:11
-            NameRef 2:9..2:10 "x"
-          NameRef 2:13..2:14 "y"
+          Arg 2:8..2:11
+            ParenExpr 2:8..2:11
+              NameRef 2:9..2:10 "x"
+          Arg 2:13..2:14
+            NameRef 2:13..2:14 "y"
 
 == evidence ==
 ExpectedExpression at 2:7

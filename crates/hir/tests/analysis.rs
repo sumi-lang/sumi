@@ -382,7 +382,7 @@ fn token_gaps_ignore_trivia_without_losing_semantics() {
     let results: Vec<_> = (0..a.functions().len())
         .map(|index| a.signature(FunctionId::new(index)).unwrap().result)
         .collect();
-    assert_eq!(results, [Ty::Int, Ty::Unit, Ty::Int, Ty::Bool]);
+    assert_eq!(results, [Ty::INT, Ty::UNIT, Ty::INT, Ty::BOOL]);
     assert!(
         body(&a, 2)
             .into_iter()
@@ -392,7 +392,7 @@ fn token_gaps_ignore_trivia_without_losing_semantics() {
 
     let a = clean("fn f() = { let\tmut\tvalue = 3\n value }");
     assert!(a.parsed().diagnostics().is_empty());
-    assert_eq!(a.signature(FunctionId::new(0)).unwrap().result, Ty::Int);
+    assert_eq!(a.signature(FunctionId::new(0)).unwrap().result, Ty::INT);
 }
 
 #[test]
@@ -726,10 +726,10 @@ fn bindings_are_visible_after_their_declaration_to_the_end_of_their_block() {
     );
     let param_a = &a.bindings()[0];
     let let_a = &a.bindings()[2];
-    assert_eq!(a.ty(param_a.declaration()), Some(Ty::Int));
-    assert_eq!(a.ty(a.bindings()[1].declaration()), Some(Ty::Bool));
-    assert_eq!(a.ty(let_a.declaration()), Some(Ty::Int));
-    assert_eq!(a.ty(a.bindings()[4].declaration()), Some(Ty::Int));
+    assert_eq!(a.ty(param_a.declaration()), Some(Ty::INT));
+    assert_eq!(a.ty(a.bindings()[1].declaration()), Some(Ty::BOOL));
+    assert_eq!(a.ty(let_a.declaration()), Some(Ty::INT));
+    assert_eq!(a.ty(a.bindings()[4].declaration()), Some(Ty::INT));
     assert_eq!(
         param_a.visible(),
         TextRange::new(TextSize::new(29), TextSize::new(source.len() as u32))

@@ -9,12 +9,19 @@ use sumi_graph::NodeId;
 
 /// `join` is commutative, associative, and idempotent with identity `bottom`; `transfer` and
 /// `combine` are monotone; ascending chains are finite, or `solve` may not end.
-pub trait Lattice: Clone + Eq {
+pub(crate) trait Lattice: Clone + Eq {
     /// An edge from one provider.
     type Edge;
     /// An edge from two providers.
     type Pair;
+    /// An edge from any number of providers, each crossing it alike.
+    type Many;
     type Context;
+
+    /// Whether a flow can widen, so classes settle one strongly connected component at a time,
+    /// providers first. A lattice whose chains are short converges as fast on one worklist over
+    /// every flow and skips finding the components.
+    const WIDENS: bool = true;
 
     fn bottom() -> Self;
 
@@ -26,6 +33,9 @@ pub trait Lattice: Clone + Eq {
 
     /// What the first provider's evidence, then the second's, can do crossing `pair`.
     fn carries_pair(pair: &Self::Pair) -> [Carry; 2];
+
+    /// What each provider's evidence can do crossing `many`.
+    fn carries_many(many: &Self::Many) -> Carry;
 
     /// `cyclic`: the flow is on a cycle that can grow, so a lattice with infinite chains widens
     /// here. When the provider is `bottom` the result is `bottom`.
@@ -47,6 +57,15 @@ pub trait Lattice: Clone + Eq {
     /// `bottom`.
     fn combine(&self, pair: &Self::Pair, other: &Self, cyclic: bool, cx: &Self::Context) -> Self;
 
+    /// `transfer` from `self` and `others` in order; it reads `cyclic`.
+    fn combine_many(
+        &self,
+        many: &Self::Many,
+        others: &[&Self],
+        cyclic: bool,
+        cx: &Self::Context,
+    ) -> Self;
+
     /// `exact`: the class recomputed with no flow cyclic, from what it held before its component
     /// was taken and its inward flows. True if changed.
     fn narrow(&mut self, exact: &Self) -> bool;
@@ -54,7 +73,7 @@ pub trait Lattice: Clone + Eq {
 
 /// What a provider's evidence can do crossing an edge, least first.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Carry {
+pub(crate) enum Carry {
     /// Nothing of the provider's, or only something finite, such as a boolean.
     Nothing,
     /// A copy, a narrowing, or a gate: never more than the provider holds.
@@ -74,37 +93,57 @@ struct Flow<L: Lattice> {
 
 enum Shape<L: Lattice> {
     Edge(L::Edge),
-    Pair { second: NodeId, pair: L::Pair },
+    Pair {
+        second: NodeId,
+        pair: L::Pair,
+    },
+    /// `others` indexes the solver's lists: the providers after the first.
+    Many {
+        others: u32,
+        many: L::Many,
+    },
 }
+
+/// The providers after the first of each `Many` flow, by its index.
+type Others = Vec<Box<[NodeId]>>;
 
 impl<L: Lattice> Flow<L> {
     /// Each provider with what its evidence can do crossing this flow, the first first.
-    fn providers(&self) -> impl Iterator<Item = (Carry, NodeId)> + use<L> {
-        let (first, second) = match &self.shape {
-            Shape::Edge(edge) => (L::carries(edge), None),
+    fn providers<'a>(&'a self, lists: &'a Others) -> impl Iterator<Item = (Carry, NodeId)> + 'a {
+        let (first, second, others, of_others) = match &self.shape {
+            Shape::Edge(edge) => (L::carries(edge), None, &[][..], Carry::Nothing),
             Shape::Pair { second, pair } => {
                 let [first, of_second] = L::carries_pair(pair);
-                (first, Some((of_second, *second)))
+                (first, Some((of_second, *second)), &[][..], Carry::Nothing)
+            }
+            Shape::Many { others, many } => {
+                let carry = L::carries_many(many);
+                (carry, None, &lists[*others as usize][..], carry)
             }
         };
-        std::iter::once((first, self.first)).chain(second)
+        std::iter::once((first, self.first))
+            .chain(second)
+            .chain(others.iter().map(move |&other| (of_others, other)))
     }
 
     fn widens(&self) -> bool {
         match &self.shape {
             Shape::Edge(edge) => L::widens(edge),
             Shape::Pair { pair, .. } => L::widens_pair(pair),
+            Shape::Many { .. } => true,
         }
     }
 
-    fn grows(&self) -> bool {
-        self.providers().any(|(carry, _)| carry == Carry::Grows)
+    fn grows(&self, lists: &Others) -> bool {
+        self.providers(lists)
+            .any(|(carry, _)| carry == Carry::Grows)
     }
 }
 
-pub struct Solver<L: Lattice> {
+pub(crate) struct Solver<L: Lattice> {
     evidence: Vec<L>,
     flows: Vec<Flow<L>>,
+    others: Others,
 }
 
 impl<L: Lattice> Solver<L> {
@@ -113,6 +152,7 @@ impl<L: Lattice> Solver<L> {
         Self {
             evidence: vec![L::bottom(); n],
             flows: Vec::with_capacity(n),
+            others: Vec::new(),
         }
     }
 
@@ -150,6 +190,22 @@ impl<L: Lattice> Solver<L> {
         });
     }
 
+    pub fn derive_many(
+        &mut self,
+        first: NodeId,
+        others: &[NodeId],
+        consumer: NodeId,
+        many: L::Many,
+    ) {
+        let list = u32::try_from(self.others.len()).expect("flow count fits u32");
+        self.others.push(others.into());
+        self.flows.push(Flow {
+            consumer,
+            first,
+            shape: Shape::Many { others: list, many },
+        });
+    }
+
     pub fn into_evidence(self) -> Vec<L> {
         self.evidence
     }
@@ -158,7 +214,7 @@ impl<L: Lattice> Solver<L> {
     pub fn edges(&self) -> impl Iterator<Item = (NodeId, &L::Edge, &L)> {
         self.flows.iter().filter_map(|flow| match &flow.shape {
             Shape::Edge(edge) => Some((flow.consumer, edge, self.evidence(flow.first))),
-            Shape::Pair { .. } => None,
+            Shape::Pair { .. } | Shape::Many { .. } => None,
         })
     }
 
@@ -182,6 +238,13 @@ impl<L: Lattice> Solver<L> {
         match &flow.shape {
             Shape::Edge(edge) => first.transfer(edge, cyclic, cx),
             Shape::Pair { second, pair } => first.combine(pair, self.evidence(*second), cyclic, cx),
+            Shape::Many { others, many } => {
+                let others: Vec<&L> = self.others[*others as usize]
+                    .iter()
+                    .map(|&other| self.evidence(other))
+                    .collect();
+                first.combine_many(many, &others, cyclic, cx)
+            }
         }
     }
 
@@ -246,13 +309,35 @@ impl<L: Lattice> Solver<L> {
         let mut arcs = Vec::with_capacity(self.flows.len());
         for (index, flow) in self.flows.iter().enumerate().rev() {
             let consumer = flow.consumer.index();
-            for (_, provider) in flow.providers() {
+            for (_, provider) in flow.providers(&self.others) {
                 let provider = provider.index();
                 outgoing.links.push((index as u32, outgoing.head[provider]));
                 let link = u32::try_from(outgoing.links.len()).expect("flow count fits u32");
                 outgoing.head[provider] = NonZeroU32::new(link);
                 arcs.push((provider as u32, consumer as u32));
             }
+        }
+        if !L::WIDENS {
+            let mut queued = vec![false; n];
+            let mut queue = VecDeque::new();
+            let bottom = L::bottom();
+            for (class, head) in outgoing.head.iter().enumerate() {
+                if head.is_some() && self.evidence[class] != bottom {
+                    queued[class] = true;
+                    queue.push_back(class);
+                }
+            }
+            while let Some(provider) = queue.pop_front() {
+                queued[provider] = false;
+                for index in outgoing.of(provider) {
+                    let consumer = self.flows[index].consumer.index();
+                    if self.deliver(index, false, cx) && !queued[consumer] {
+                        queued[consumer] = true;
+                        queue.push_back(consumer);
+                    }
+                }
+            }
+            return;
         }
         let components = self::components(n, &arcs);
         let count = components.count();
@@ -262,7 +347,7 @@ impl<L: Lattice> Solver<L> {
             let component = components.of[consumer as usize];
             if components.of[provider as usize] == component {
                 inside[component as usize] = true;
-                grows_in[component as usize] |= self.flows[index as usize].grows();
+                grows_in[component as usize] |= self.flows[index as usize].grows(&self.others);
             }
         }
         // Cycles of values are SCCs of the carrying arcs alone: a cycle closed through an arc that
@@ -284,7 +369,7 @@ impl<L: Lattice> Solver<L> {
                 if local[consumer] == NEVER {
                     continue;
                 }
-                for (carry, provider) in flow.providers() {
+                for (carry, provider) in flow.providers(&self.others) {
                     let provider = provider.index();
                     if carry >= Carry::Passes && components.of[provider] == components.of[consumer]
                     {
@@ -302,7 +387,7 @@ impl<L: Lattice> Solver<L> {
                 .collect();
             let mut climbs = vec![false; components.count()];
             let carried = |flow: &Flow<L>, value: u32, least: Carry| {
-                flow.providers()
+                flow.providers(&self.others)
                     .any(|(carry, p)| carry >= least && values[p.index()] == value)
             };
             for flow in &self.flows {
@@ -627,6 +712,7 @@ mod tests {
         type Edge = ();
         type Pair = ();
         type Context = ();
+        type Many = std::convert::Infallible;
 
         fn bottom() -> Self {
             Self(0)
@@ -640,6 +726,14 @@ mod tests {
 
         fn carries((): &()) -> Carry {
             Carry::Passes
+        }
+
+        fn carries_many(many: &Self::Many) -> Carry {
+            match *many {}
+        }
+
+        fn combine_many(&self, many: &Self::Many, _: &[&Self], _: bool, _: &Self::Context) -> Self {
+            match *many {}
         }
 
         fn carries_pair((): &()) -> [Carry; 2] {
@@ -679,6 +773,7 @@ mod tests {
         type Edge = i64;
         type Pair = Infallible;
         type Context = ();
+        type Many = std::convert::Infallible;
 
         fn bottom() -> Self {
             Self::new(i64::MIN, i64::MAX)
@@ -697,6 +792,14 @@ mod tests {
             } else {
                 Carry::Grows
             }
+        }
+
+        fn carries_many(many: &Self::Many) -> Carry {
+            match *many {}
+        }
+
+        fn combine_many(&self, many: &Self::Many, _: &[&Self], _: bool, _: &Self::Context) -> Self {
+            match *many {}
         }
 
         fn carries_pair(never: &Infallible) -> [Carry; 2] {
@@ -729,7 +832,7 @@ mod tests {
     #[test]
     fn a_flow_is_five_words() {
         assert!(size_of::<crate::lattice::Pair>() <= 4);
-        assert_eq!(size_of::<Flow<crate::lattice::Product>>(), 20);
+        assert_eq!(size_of::<Flow<crate::lattice::Evidence>>(), 20);
     }
 
     #[test]
@@ -759,6 +862,7 @@ mod tests {
         type Edge = ();
         type Pair = Infallible;
         type Context = ();
+        type Many = std::convert::Infallible;
 
         fn bottom() -> Self {
             Self {
@@ -776,6 +880,14 @@ mod tests {
 
         fn carries((): &()) -> Carry {
             Carry::Grows
+        }
+
+        fn carries_many(many: &Self::Many) -> Carry {
+            match *many {}
+        }
+
+        fn combine_many(&self, many: &Self::Many, _: &[&Self], _: bool, _: &Self::Context) -> Self {
+            match *many {}
         }
 
         fn carries_pair(never: &Infallible) -> [Carry; 2] {
@@ -815,6 +927,7 @@ mod tests {
         type Edge = HullEdge;
         type Pair = Infallible;
         type Context = ();
+        type Many = std::convert::Infallible;
 
         fn bottom() -> Self {
             Self {
@@ -836,6 +949,14 @@ mod tests {
                 HullEdge::Add(k) if *k != 0 => Carry::Grows,
                 _ => Carry::Passes,
             }
+        }
+
+        fn carries_many(many: &Self::Many) -> Carry {
+            match *many {}
+        }
+
+        fn combine_many(&self, many: &Self::Many, _: &[&Self], _: bool, _: &Self::Context) -> Self {
+            match *many {}
         }
 
         fn carries_pair(never: &Infallible) -> [Carry; 2] {
@@ -1048,6 +1169,7 @@ mod tests {
                         Shape::Pair { second, pair: () } => {
                             first.combine(&(), &expected[second.index()], false, &())
                         }
+                        Shape::Many { many, .. } => match many {},
                     };
                     changed |= expected[flow.consumer.index()].join(&evidence);
                 }

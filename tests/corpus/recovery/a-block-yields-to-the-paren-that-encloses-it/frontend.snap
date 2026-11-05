@@ -13,7 +13,8 @@ SourceFile! 1:1..6:1
       CallExpr 5:5..5:9
         NameRef 5:5..5:6 "g"
         ArgList 5:6..5:9
-          NameRef 5:7..5:8 "a"
+          Arg 5:7..5:8
+            NameRef 5:7..5:8 "a"
       Error! 5:9..5:10 ")"
 
 == evidence ==

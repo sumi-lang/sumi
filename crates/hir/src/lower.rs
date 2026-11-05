@@ -1,12 +1,16 @@
 //! Lowering of one file to the graph: names, structure, and holes. Name and syntax failures become
 //! holes rather than graph nodes.
 
+use std::cell::RefCell;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 use rustc_hash::FxBuildHasher;
 use sumi_frontend::{DiagnosticCode, Fix, Label};
-use sumi_graph::{Carried, GraphBuilder, References};
+use sumi_graph::{
+    Arms, Carried, Case, Decl, DeclId, FieldName, GraphBuilder, References, ShownTy, UnionId,
+};
 use sumi_lexer::{LexedFile, RawIdx, SyntaxKind, TokenFlags};
 use sumi_syntax::{
     Literal, NodeIdx, NodeKind, PrefixOp, SyntaxTree,
@@ -25,15 +29,26 @@ type NameMap<'s, V> = HashMap<&'s str, V, FxBuildHasher>;
 #[derive(Clone, Copy)]
 enum Named {
     Function(FunctionId),
-    Ambiguous(FunctionId),
+    Type(DeclId),
+    /// Declared more than once, so a use of it is reported nowhere but at the declarations.
+    Ambiguous,
 }
 
-impl Named {
-    fn first(self) -> FunctionId {
-        match self {
-            Self::Function(id) | Self::Ambiguous(id) => id,
-        }
-    }
+/// What a call names.
+#[derive(Clone, Copy)]
+enum Target {
+    Function(FunctionId),
+    Type(DeclId),
+    /// Reported where it was resolved, or ambiguous.
+    Unknown,
+}
+
+/// A declared type as the source wrote it; the graph holds its field types.
+pub(crate) struct TypeHeader {
+    pub name: Option<TextRange>,
+    pub item: NodeIdx,
+    /// Per field in declaration order, its name's range.
+    pub fields: Vec<TextRange>,
 }
 
 #[derive(Clone, Copy)]
@@ -59,7 +74,7 @@ impl HeaderResult {
     fn declared(self) -> Option<(Ty, NodeIdx)> {
         match self {
             Self::Declared(ty, node) => Some((ty, node)),
-            Self::Omitted(node) => Some((Ty::Unit, node)),
+            Self::Omitted(node) => Some((Ty::UNIT, node)),
             Self::None | Self::Inferred => None,
         }
     }
@@ -115,10 +130,12 @@ pub(crate) struct Lowered {
     pub unresolved: Vec<TextRange>,
     /// In source order within each block.
     pub statements: Vec<Statement>,
+    /// Each field read and its name's range; which field it names is the typing's to say.
+    pub field_reads: Vec<(NodeId, TextRange)>,
 }
 
 /// `a`, `a and b`, or `a, b, and c`.
-fn join(types: &[String]) -> String {
+pub(crate) fn join(types: &[String]) -> String {
     match types.split_last() {
         None => unreachable!("a list of types names one"),
         Some((only, [])) => only.clone(),
@@ -127,10 +144,36 @@ fn join(types: &[String]) -> String {
     }
 }
 
+/// A declared type by name, with its fields by name; both resolve names while lowering.
+pub(crate) struct DeclNames<'s> {
+    pub name: &'s str,
+    pub name_node: Option<NodeIdx>,
+    /// Per field in declaration order.
+    pub fields: Vec<(&'s str, NodeIdx)>,
+}
+
+impl DeclNames<'_> {
+    fn index_of(&self, name: &str) -> Option<usize> {
+        self.fields.iter().position(|&(field, _)| field == name)
+    }
+}
+
 pub(crate) struct Source<'s> {
     pub parsed: &'s ParsedSource,
     pub tree: &'s SyntaxTree,
     pub diagnostics: Vec<Diagnostic>,
+    /// By declared type ID.
+    pub decls: Vec<DeclNames<'s>>,
+    /// None for a name declared more than once, which resolves to nothing, like a function's.
+    type_names: NameMap<'s, Option<DeclId>>,
+    /// By field name ID.
+    pub field_names: Vec<&'s str>,
+    field_ids: NameMap<'s, FieldName>,
+    /// Type names resolved outside a body.
+    pub references: Vec<Occurrence>,
+    /// Written unions interned here, then the typing's, which mints those inference resolves to,
+    /// so every union a message names is in it.
+    pub unions: Rc<RefCell<sumi_graph::Unions>>,
 }
 
 impl<'s> Source<'s> {
@@ -139,7 +182,40 @@ impl<'s> Source<'s> {
             parsed,
             tree: parsed.parse().tree(),
             diagnostics: Vec::new(),
+            decls: Vec::new(),
+            type_names: NameMap::default(),
+            field_names: Vec::new(),
+            field_ids: NameMap::default(),
+            references: Vec::new(),
+            unions: Rc::new(RefCell::new(sumi_graph::Unions::new())),
         }
+    }
+    pub fn show(&self, ty: Ty) -> ShownTy<'_> {
+        ty.shown(self)
+    }
+}
+
+impl sumi_graph::Names for Source<'_> {
+    fn decl(&self, id: DeclId) -> &str {
+        self.decls[id.index()].name
+    }
+
+    fn field(&self, name: FieldName) -> &str {
+        self.field_names[name.index()]
+    }
+
+    fn members(&self, id: UnionId) -> Vec<DeclId> {
+        self.unions.borrow().get(id).to_vec()
+    }
+}
+
+impl<'s> Source<'s> {
+    /// The ID of the field name `text`, minted on first sight.
+    fn field_name(&mut self, text: &'s str) -> FieldName {
+        *self.field_ids.entry(text).or_insert_with(|| {
+            self.field_names.push(text);
+            FieldName::new(self.field_names.len() - 1)
+        })
     }
     pub fn lexed(&self) -> &'s LexedFile {
         self.parsed.lexed()
@@ -187,7 +263,11 @@ impl<'s> Source<'s> {
         self.report(
             at,
             codes::TYPE_MISMATCH,
-            format!("expected {expected}, found {actual}"),
+            format!(
+                "expected {}, found {}",
+                self.show(expected),
+                self.show(actual)
+            ),
             related,
         );
     }
@@ -216,13 +296,17 @@ impl<'s> Source<'s> {
     ) {
         assert!(claimed.len() >= 2, "a conflict names two types");
         claimed.sort_by_key(|(_, origin)| origin.map(|range| (range.start(), range.end())));
-        let types: Vec<_> = claimed.iter().map(|(ty, _)| ty.to_string()).collect();
+        let types: Vec<_> = claimed
+            .iter()
+            .map(|(ty, _)| self.show(*ty).to_string())
+            .collect();
         let mut labels: Vec<(TextRange, Vec<String>)> = Vec::new();
         for (ty, origin) in &claimed {
             let Some(origin) = origin else { continue };
+            let ty = self.show(*ty).to_string();
             match labels.last_mut() {
-                Some((labeled, types)) if labeled == origin => types.push(ty.to_string()),
-                _ => labels.push((*origin, vec![ty.to_string()])),
+                Some((labeled, types)) if labeled == origin => types.push(ty),
+                _ => labels.push((*origin, vec![ty])),
             }
         }
         let labels = labels
@@ -230,21 +314,85 @@ impl<'s> Source<'s> {
             .map(|(origin, types)| (origin, format!("{} here", join(&types)).into()));
         self.report(at, code, message(join(&types)), labels);
     }
-    fn ty(&mut self, node: ast::TypeRef) -> Option<Ty> {
+    fn ty(&mut self, node: ast::Type) -> Option<Ty> {
+        let union = match node {
+            ast::Type::TypeRef(name) => return self.named_ty(name),
+            ast::Type::UnionType(union) => union,
+        };
+        if self.tree.has_error(union.node()) {
+            return None;
+        }
+        // Nested to the left: the leftmost name is deepest.
+        let mut names = vec![union.rhs(self.tree)];
+        let mut lhs = union.lhs(self.tree);
+        while let Some(ast::Type::UnionType(inner)) = lhs {
+            names.push(inner.rhs(self.tree));
+            lhs = inner.lhs(self.tree);
+        }
+        if let Some(ast::Type::TypeRef(first)) = lhs {
+            names.push(Some(first));
+        }
+        names.reverse();
+        let mut members = Vec::new();
+        let mut is_valid = true;
+        for member in names {
+            let Some(member) = member else {
+                is_valid = false;
+                continue;
+            };
+            match self.named_ty(member).map(|ty| (ty, ty.as_decl())) {
+                Some((_, Some(decl))) => members.push(decl),
+                Some((ty, None)) => {
+                    self.error(
+                        member.node(),
+                        codes::INVALID_UNION_MEMBER,
+                        format!(
+                            "`{}` is no declared type, so no member of a union",
+                            self.show(ty)
+                        ),
+                        None,
+                    );
+                    is_valid = false;
+                }
+                None => is_valid = false,
+            }
+        }
+        if !is_valid {
+            return None;
+        }
+        Some(self.union_of(&members))
+    }
+    /// The union of `members`, or the one member there is.
+    fn union_of(&mut self, members: &[DeclId]) -> Ty {
+        match self.unions.borrow_mut().intern(members.iter().copied()) {
+            Some(id) => Ty::union(id),
+            None => Ty::decl(members[0]),
+        }
+    }
+    fn named_ty(&mut self, node: ast::TypeRef) -> Option<Ty> {
         if self.tree.has_error(node.node()) {
             return None;
         }
         let name = self.text(node.node());
-        let ty = Ty::from_name(name);
-        if ty.is_none() {
-            self.error(
-                node.node(),
-                codes::UNKNOWN_TYPE,
-                format!("unknown type `{name}`"),
-                None,
-            );
+        if let Some(ty) = Ty::scalar(name) {
+            return Some(ty);
         }
-        ty
+        if let Some(&decl) = self.type_names.get(name) {
+            let decl = decl?;
+            self.references.push(Occurrence {
+                range: self.range(node.node()),
+                symbol: Symbol::Type(decl),
+                is_write: false,
+            });
+            return Some(Ty::decl(decl));
+        }
+        self.error(
+            node.node(),
+            codes::UNKNOWN_TYPE,
+            format!("unknown type `{name}`"),
+            None,
+        );
+        None
     }
     fn tokens(&self, start: RawIdx, end: RawIdx) -> impl Iterator<Item = SyntaxKind> + '_ {
         start
@@ -290,21 +438,139 @@ pub(crate) struct Parameter<'s> {
 
 pub(crate) struct Declarations<'s> {
     pub headers: Vec<Header>,
+    pub types: Vec<TypeHeader>,
     names: NameMap<'s, Named>,
     parameters: Vec<Vec<Parameter<'s>>>,
 }
 
-/// In item order, so a `FunctionId` indexes `items`.
+/// Takes an item's name for `named`, reporting a second declaration of it.
+fn claim_name<'s>(
+    source: &mut Source<'s>,
+    names: &mut NameMap<'s, Named>,
+    declared_at: &mut NameMap<'s, NodeIdx>,
+    (name, node): (&'s str, NodeIdx),
+    named: Named,
+    what: &str,
+) {
+    match names.entry(name) {
+        Entry::Occupied(mut entry) => {
+            let first = declared_at[name];
+            source.error(
+                node,
+                codes::DUPLICATE_NAME,
+                format!("duplicate {what} `{name}`"),
+                Some((source.range(first), "declared here")),
+            );
+            *entry.get_mut() = Named::Ambiguous;
+        }
+        Entry::Vacant(entry) => {
+            entry.insert(named);
+            declared_at.insert(name, node);
+        }
+    }
+}
+
+/// The type items first, so a signature names any of them; the function items in their own order,
+/// so a `FunctionId` indexes them.
 pub(crate) fn declare<'s>(
     source: &mut Source<'s>,
-    items: &[ast::FnItem],
+    items: &[ast::Item],
     graph: &mut GraphBuilder,
 ) -> Declarations<'s> {
     let tree = source.tree;
     let mut names: NameMap<Named> = NameMap::with_capacity_and_hasher(items.len(), FxBuildHasher);
+    let mut declared_at: NameMap<NodeIdx> = NameMap::default();
+    let type_items: Vec<ast::TypeItem> = items
+        .iter()
+        .filter_map(|item| match item {
+            ast::Item::TypeItem(item) => Some(*item),
+            ast::Item::FnItem(_) => None,
+        })
+        .collect();
+    for (index, item) in type_items.iter().enumerate() {
+        let name = source.name(item.name(tree));
+        let decl = DeclId::new(index);
+        if let Some((text, node)) = name {
+            if Ty::scalar(text).is_some() {
+                source.error(
+                    node,
+                    codes::DUPLICATE_NAME,
+                    format!("`{text}` is a built-in type"),
+                    None,
+                );
+            } else {
+                claim_name(
+                    source,
+                    &mut names,
+                    &mut declared_at,
+                    (text, node),
+                    Named::Type(decl),
+                    "type",
+                );
+                let resolved = match names.get(text) {
+                    Some(Named::Type(_)) => Some(decl),
+                    _ => None,
+                };
+                source.type_names.insert(text, resolved);
+            }
+        }
+        source.decls.push(DeclNames {
+            name: name.map_or("<missing>", |(name, _)| name),
+            name_node: name.map(|(_, node)| node),
+            fields: Vec::new(),
+        });
+    }
+    let mut types = Vec::with_capacity(type_items.len());
+    let mut decls: Vec<Vec<(FieldName, Option<Ty>)>> = Vec::with_capacity(type_items.len());
+    for (index, item) in type_items.iter().enumerate() {
+        let mut fields: Vec<(&'s str, NodeIdx)> = Vec::new();
+        let mut field_types: Vec<(FieldName, Option<Ty>)> = Vec::new();
+        let mut ranges = Vec::new();
+        if let Some(list) = item.field_list(tree) {
+            for field in list.fields(tree) {
+                // A field without a type is a syntax error the parser already reported.
+                let ty = field.type_ref(tree).and_then(|ty| source.ty(ty));
+                let Some((name, node)) = source.name(field.name(tree)) else {
+                    continue;
+                };
+                if let Some(&(_, first)) = fields.iter().find(|&&(earlier, _)| earlier == name) {
+                    source.error(
+                        node,
+                        codes::DUPLICATE_NAME,
+                        format!("duplicate field `{name}`"),
+                        Some((source.range(first), "declared here")),
+                    );
+                    continue;
+                }
+                fields.push((name, node));
+                field_types.push((source.field_name(name), ty));
+                ranges.push(source.range(node));
+            }
+        }
+        source.decls[index].fields = fields;
+        decls.push(field_types);
+        types.push(TypeHeader {
+            name: source.decls[index].name_node.map(|node| source.range(node)),
+            item: item.node(),
+            fields: ranges,
+        });
+    }
+    unfold_recursive_types(source, &mut decls);
+    graph.declare(
+        decls
+            .into_iter()
+            .map(|fields| Decl::new(fields.into_boxed_slice())),
+    );
+    let items: Vec<ast::FnItem> = items
+        .iter()
+        .filter_map(|item| match item {
+            ast::Item::FnItem(item) => Some(*item),
+            ast::Item::TypeItem(_) => None,
+        })
+        .collect();
     let mut parameters = Vec::with_capacity(items.len());
     let mut headers = Vec::with_capacity(items.len());
-    for item in items {
+    for item in &items {
         let name = source.name(item.name(tree));
         let list = item.param_list(tree);
         let whole_list = list.filter(|list| !tree.has_error(list.node()));
@@ -361,25 +627,15 @@ pub(crate) fn declare<'s>(
         let types =
             whole_list.and_then(|_| params.iter().map(|p| p.ty).collect::<Option<Box<[Ty]>>>());
         let id = graph.function(types);
-        if let Some((name, node)) = name {
-            match names.entry(name) {
-                Entry::Occupied(mut entry) => {
-                    let first = items[entry.get().first().index()]
-                        .name(tree)
-                        .expect("a named function has a name")
-                        .node();
-                    source.error(
-                        node,
-                        codes::DUPLICATE_NAME,
-                        format!("duplicate function `{name}`"),
-                        Some((source.range(first), "declared here")),
-                    );
-                    *entry.get_mut() = Named::Ambiguous(entry.get().first());
-                }
-                Entry::Vacant(entry) => {
-                    entry.insert(Named::Function(id));
-                }
-            }
+        if let Some(name) = name {
+            claim_name(
+                source,
+                &mut names,
+                &mut declared_at,
+                name,
+                Named::Function(id),
+                "function",
+            );
         }
         headers.push(Header {
             name: name.map(|(_, node)| source.range(node)),
@@ -390,8 +646,68 @@ pub(crate) fn declare<'s>(
     }
     Declarations {
         headers,
+        types,
         names,
         parameters,
+    }
+}
+
+/// A type holding its own values through fields never finishes: each such field loses its type,
+/// so the table the graph takes is finite in depth.
+fn unfold_recursive_types(source: &mut Source<'_>, decls: &mut [Vec<(FieldName, Option<Ty>)>]) {
+    let unions = source.unions.borrow();
+    let members = |ty: Ty| {
+        ty.as_decl()
+            .into_iter()
+            .chain(unions.members(ty).iter().copied())
+    };
+    let reaches = |decls: &[Vec<(FieldName, Option<Ty>)>], from: Ty, target: DeclId| {
+        let mut seen = vec![false; decls.len()];
+        let mut stack: Vec<DeclId> = members(from).collect();
+        while let Some(decl) = stack.pop() {
+            if decl == target {
+                return true;
+            }
+            if std::mem::replace(&mut seen[decl.index()], true) {
+                continue;
+            }
+            stack.extend(
+                decls[decl.index()]
+                    .iter()
+                    .filter_map(|&(_, ty)| ty)
+                    .flat_map(members),
+            );
+        }
+        false
+    };
+    let mut cut: Vec<(DeclId, usize)> = Vec::new();
+    for index in 0..decls.len() {
+        let decl = DeclId::new(index);
+        for (field, &(_, ty)) in decls[index].iter().enumerate() {
+            if let Some(through) = ty.filter(|ty| ty.is_declared())
+                && reaches(decls, through, decl)
+            {
+                cut.push((decl, field));
+            }
+        }
+    }
+    drop(unions);
+    for &(decl, field) in &cut {
+        let names = &source.decls[decl.index()];
+        let (field_name, field_node) = names.fields[field];
+        let at = names.name_node.unwrap_or(field_node);
+        source.error(
+            at,
+            codes::RECURSIVE_TYPE,
+            format!(
+                "type `{}` holds itself through field `{field_name}`",
+                names.name
+            ),
+            Some((source.range(field_node), "this field")),
+        );
+    }
+    for (decl, field) in cut {
+        decls[decl.index()][field].1 = None;
     }
 }
 
@@ -406,9 +722,13 @@ pub(crate) fn lower<'s>(
         let built = builder.build(index, *item, params);
         builder.lowered.built.push(built);
     }
+    builder
+        .graph
+        .set_unions(builder.source.unions.borrow().clone());
     let graph = builder.graph.finish();
     let spans = builder.spans.finish(&graph);
     let mut lowered = builder.lowered;
+    lowered.references.append(&mut source.references);
     lowered
         .references
         .sort_unstable_by_key(|occurrence| occurrence.range.start());
@@ -509,6 +829,7 @@ enum Finish {
         expr: Clean<ast::BinaryExpr>,
         op: BinaryOp,
     },
+    Field(Clean<ast::FieldExpr>),
     Partial(Partial),
 }
 
@@ -536,9 +857,14 @@ enum Partial {
     },
     Call {
         node: NodeIdx,
-        target: Option<FunctionId>,
+        target: Target,
         /// The arguments before any garbage: the ones whose position is reliable.
         args: Vec<NodeIdx>,
+    },
+    Field {
+        node: NodeIdx,
+        base: Option<NodeIdx>,
+        name: Option<FieldName>,
     },
     Assign {
         node: NodeIdx,
@@ -550,6 +876,9 @@ enum Partial {
         binding: ast::LetStmt,
     },
 }
+
+/// An arm, its case, and the name and type its pattern binds.
+type ArmCase = (Clean<ast::MatchArm>, Case, Option<(NodeIdx, Ty)>);
 
 /// `&&` when `is_and`, else `||`, with its expression.
 #[derive(Clone, Copy)]
@@ -571,21 +900,37 @@ enum Work {
     },
     Call {
         call: Clean<ast::CallExpr>,
-        target: Option<FunctionId>,
+        target: Target,
     },
     Branches(Branch),
+    /// A `match` once its scrutinee is in: it opens the arms.
+    Arms(Clean<ast::MatchExpr>),
+    Switch {
+        expr: Clean<ast::MatchExpr>,
+        arms: Arms,
+    },
+    /// Enters an arm's region, binding the narrowed scrutinee under `binding`'s name.
+    PushArm {
+        region: RegionId,
+        scrutinee: NodeIdx,
+        arm: NodeIdx,
+        binding: Option<(NodeIdx, Ty)>,
+    },
+    CloseScope,
     LoopBody(Clean<ast::ForExpr>),
     LoopEnd(Box<LoopState>),
     Rhs(LazyOp),
+    /// `arms` are the then region, then the else region if written; `contexts` gate the true
+    /// and false sides, the false one the parent when nothing needs it.
     Join {
         branch: Branch,
-        then: RegionId,
-        else_: Option<RegionId>,
+        arms: Arms,
         contexts: [NodeId; 2],
     },
+    /// `arms` is the right operand's region alone.
     Lazy {
         expr: LazyOp,
-        rhs: RegionId,
+        arms: Arms,
         contexts: [NodeId; 2],
     },
     Push {
@@ -625,11 +970,6 @@ struct Form {
 }
 
 impl Form {
-    const SCALAR: Self = Self {
-        is_valid: true,
-        completes: false,
-    };
-
     fn is_scalar(self) -> bool {
         self.is_valid && !self.completes
     }
@@ -667,6 +1007,8 @@ struct Builder<'a, 's> {
     reads_of: Vec<Option<(LocalId, NodeId)>>,
     work: Vec<Work>,
     inputs: Vec<(NodeId, TextRange)>,
+    merge_values: Vec<(NodeId, NodeId)>,
+    merge_contexts: Vec<NodeId>,
     controls: Vec<Option<NodeId>>,
     bottoms: Vec<bool>,
     returns: Vec<(NodeId, TextRange)>,
@@ -698,6 +1040,7 @@ impl<'a, 's> Builder<'a, 's> {
                 references: Vec::new(),
                 unresolved: Vec::new(),
                 statements: Vec::new(),
+                field_reads: Vec::new(),
             },
             nodes_of: vec![None; nodes],
             tails: vec![None; nodes],
@@ -717,6 +1060,8 @@ impl<'a, 's> Builder<'a, 's> {
             reads_of: vec![None; nodes],
             work: Vec::new(),
             inputs: Vec::new(),
+            merge_values: Vec::new(),
+            merge_contexts: Vec::new(),
             controls: vec![None; nodes],
             bottoms: vec![false; nodes],
             returns: Vec::new(),
@@ -776,15 +1121,14 @@ impl<'a, 's> Builder<'a, 's> {
                     Work::Call { call, target } => self.call(call, target),
                     Work::Join {
                         branch,
-                        then,
-                        else_,
+                        arms,
                         contexts,
-                    } => self.join(branch, then, else_, contexts),
+                    } => self.join(branch, arms, contexts),
                     Work::Lazy {
                         expr,
-                        rhs,
+                        arms,
                         contexts,
-                    } => self.lazy(expr, rhs, contexts),
+                    } => self.lazy(expr, arms, contexts),
                     Work::Enter(node) => {
                         self.enter(node, &mut work);
                         continue;
@@ -812,6 +1156,41 @@ impl<'a, 's> Builder<'a, 's> {
                     }
                     Work::Branches(branch) => {
                         self.branches(branch, &mut work);
+                        continue;
+                    }
+                    Work::Arms(expr) => {
+                        self.arms(expr, &mut work);
+                        continue;
+                    }
+                    Work::Switch { expr, arms } => self.matched(expr, arms),
+                    Work::PushArm {
+                        region,
+                        scrutinee,
+                        arm,
+                        binding,
+                    } => {
+                        self.version_stack
+                            .push((self.undo.len(), self.locals.len()));
+                        self.regions.push((
+                            region,
+                            self.refinements.len(),
+                            self.graph.context(region),
+                        ));
+                        self.graph.enter(region);
+                        self.open_scope(self.scope_end(arm));
+                        if let Some((name, ty)) = binding {
+                            let at = self.source.range(name);
+                            let input = self.input(scrutinee);
+                            let narrow = self.push(name, Op::Narrow(ty), &[input], Some(at));
+                            let from = at.end();
+                            let text = self.source.text(name);
+                            let local = self.bind(text, narrow, BindingKind::Arm, at, from);
+                            self.locals[local.index()].completes = self.form(scrutinee).completes;
+                        }
+                        continue;
+                    }
+                    Work::CloseScope => {
+                        self.close_scope();
                         continue;
                     }
                     Work::LoopBody(expr) => {
@@ -959,6 +1338,7 @@ impl<'a, 's> Builder<'a, 's> {
                 .expect("a bound local is named");
             let (kind, reads) = match (&declaration.op, local.is_assigned) {
                 (Op::Param { .. }, _) => ("parameter", "is never read"),
+                (Op::Narrow(_), _) => ("binding", "is never read"),
                 (Op::LoopIndex, _) => ("loop index", "is never read"),
                 (_, false) => ("local", "is never read"),
                 (_, true) => ("local", "is assigned but never read"),
@@ -1074,8 +1454,7 @@ impl<'a, 's> Builder<'a, 's> {
         match *op {
             Op::Hole | Op::Unused => false,
             Op::Entry
-            | Op::Then
-            | Op::Else
+            | Op::Arm(_)
             | Op::Return
             | Op::Sequence
             | Op::Observe { .. }
@@ -1092,9 +1471,11 @@ impl<'a, 's> Builder<'a, 's> {
             Op::Call(function) => {
                 !matches!(self.headers[function.index()].result, HeaderResult::None)
             }
+            // A construction has its type whatever its fields.
+            Op::Make(_) => true,
             Op::Assign => typed(declaration()) && typed(inputs[0].0),
             Op::Phi => typed(declaration()) && inputs.iter().all(|&(input, _)| typed(input)),
-            Op::Join { .. } => typed(inputs[0].0) && results.iter().all(|&result| typed(result)),
+            Op::Switch { .. } => typed(inputs[0].0) && results.iter().all(|&result| typed(result)),
             _ => inputs.iter().all(|&(input, _)| typed(input)),
         }
     }
@@ -1106,8 +1487,11 @@ impl<'a, 's> Builder<'a, 's> {
                 .all(|&(input, _)| self.lowered.typed[input.index()])
     }
     /// The function a call to `target` is held to: one with parameter types.
-    fn callee(&self, target: Option<FunctionId>) -> Option<(FunctionId, &'a Header)> {
-        let target = target.filter(|&target| self.graph.param_types(target).is_some())?;
+    fn callee(&self, target: Target) -> Option<(FunctionId, &'a Header)> {
+        let Target::Function(target) = target else {
+            return None;
+        };
+        self.graph.param_types(target)?;
         Some((target, &self.headers[target.index()]))
     }
     fn arity(&self, callee: FunctionId) -> usize {
@@ -1269,7 +1653,7 @@ impl<'a, 's> Builder<'a, 's> {
         self.refinements.truncate(keep);
         state
     }
-    fn merge_versions(&mut self, condition: NodeIdx, states: [&RegionState; 2], at: TextRange) {
+    fn merge_versions(&mut self, condition: NodeIdx, states: &[&RegionState], at: TextRange) {
         let condition = self.input(condition);
         let mut changed: Vec<_> = states
             .iter()
@@ -1277,8 +1661,12 @@ impl<'a, 's> Builder<'a, 's> {
             .collect();
         changed.sort_unstable_by_key(|local| local.index());
         changed.dedup();
+        let mut values = std::mem::take(&mut self.merge_values);
+        let mut inputs = std::mem::take(&mut self.inputs);
+        let mut contexts = std::mem::take(&mut self.merge_contexts);
         for local in changed {
-            let values = states.map(|state| {
+            values.clear();
+            values.extend(states.iter().map(|state| {
                 if let Ok(index) = state
                     .changes
                     .binary_search_by_key(&local.index(), |&(local, _, _)| local.index())
@@ -1295,29 +1683,35 @@ impl<'a, 's> Builder<'a, 's> {
                         .map_or_else(|| self.current(local), |&(_, _, value)| value);
                     (version, value)
                 }
-            });
-            if values[0].0 == values[1].0 {
+            }));
+            if values.iter().all(|&(version, _)| version == values[0].0) {
                 continue;
             }
-            let [true_value, false_value] = values.map(|(_, value)| value);
             let declaration = self.locals[local.index()].declaration;
-            let inputs = [
-                condition,
-                (true_value, self.spans.origin(true_value)),
-                (false_value, self.spans.origin(false_value)),
-            ];
+            inputs.clear();
+            inputs.push(condition);
+            inputs.extend(
+                values
+                    .iter()
+                    .map(|&(_, value)| (value, self.spans.origin(value))),
+            );
+            contexts.clear();
+            contexts.extend(states.iter().map(|state| state.context));
             let phi = self.place_with(
                 Op::Phi,
                 &inputs,
                 References::Phi {
                     declaration,
-                    contexts: [states[0].context, states[1].context],
+                    contexts: &contexts,
                 },
                 at,
                 None,
             );
             self.set_version(local, phi);
         }
+        self.merge_values = values;
+        self.inputs = inputs;
+        self.merge_contexts = contexts;
     }
     fn refer(&mut self, node: NodeIdx, symbol: Symbol, is_write: bool) {
         self.lowered.references.push(Occurrence {
@@ -1482,21 +1876,26 @@ impl<'a, 's> Builder<'a, 's> {
         self.advance(cond);
         let parent = self.context();
         let condition = self.input(cond);
-        let then_context = self.context_at(then_node, Op::Then, condition, parent);
+        let on_true = Op::Arm(Case::Bool(true));
+        let on_false = Op::Arm(Case::Bool(false));
+        let then_context = self.context_at(then_node, on_true, condition, parent);
         let else_context = match else_node {
-            Some(else_node) => self.context_at(else_node, Op::Else, condition, parent),
+            Some(else_node) => self.context_at(else_node, on_false, condition, parent),
             None if !self.mutable_locals.is_empty() => {
-                self.context_at(node, Op::Else, condition, parent)
+                self.context_at(node, on_false, condition, parent)
             }
             None => parent,
         };
         let contexts = [then_context, else_context];
-        let then = self.graph.open(then_context);
-        let else_ = else_node.map(|_| self.graph.open(else_context));
+        let arms = match else_node {
+            Some(_) => self.graph.open_arms(&contexts),
+            None => self.graph.open_arms(&contexts[..1]),
+        };
+        let then = arms.iter().next().expect("a switch has its then arm");
+        let else_ = arms.iter().nth(1);
         work.push(Work::Join {
             branch,
-            then,
-            else_,
+            arms,
             contexts,
         });
         if let (Some(else_node), Some(region)) = (else_node, else_) {
@@ -1533,17 +1932,17 @@ impl<'a, 's> Builder<'a, 's> {
         let left = self.input(lhs);
         let selected = usize::from(!is_and);
         let mut contexts = [parent; 2];
-        contexts[selected] =
-            self.context_at(rhs, if is_and { Op::Then } else { Op::Else }, left, parent);
+        contexts[selected] = self.context_at(rhs, Op::Arm(Case::Bool(is_and)), left, parent);
         if !self.mutable_locals.is_empty() {
             contexts[usize::from(is_and)] =
-                self.context_at(rhs, if is_and { Op::Else } else { Op::Then }, left, parent);
+                self.context_at(rhs, Op::Arm(Case::Bool(!is_and)), left, parent);
         }
         let context = contexts[selected];
-        let region = self.graph.open(context);
+        let arms = self.graph.open_arms(&[context]);
+        let region = arms.iter().next().expect("the right operand has its arm");
         work.push(Work::Lazy {
             expr,
-            rhs: region,
+            arms,
             contexts,
         });
         work.push(Work::Pop { region, root: rhs });
@@ -1566,11 +1965,16 @@ impl<'a, 's> Builder<'a, 's> {
         let condition = self.place(Op::Binary(BinaryOp::Cmp(CmpOp::Lt)), &bounds, range, None);
         let context = self.context_at(
             expr.body().node(),
-            Op::Then,
+            Op::Arm(Case::Bool(true)),
             (condition, at),
             self.context(),
         );
-        let empty = self.context_at(expr.node(), Op::Else, (condition, at), self.context());
+        let empty = self.context_at(
+            expr.node(),
+            Op::Arm(Case::Bool(false)),
+            (condition, at),
+            self.context(),
+        );
         let region = self.graph.open(context);
         self.version_stack
             .push((self.undo.len(), self.locals.len()));
@@ -1797,7 +2201,15 @@ impl<'a, 's> Builder<'a, 's> {
             CleanStmt::Expr(CleanExpr::CallExpr(call)) => {
                 let target = self.target(call.callee().node());
                 work.push(Work::Call { call, target });
-                enter_each(work, call.arg_list().args(tree).map(|arg| arg.node()));
+                enter_each(work, call.arg_list().values(tree).map(|arg| arg.node()));
+            }
+            CleanStmt::Expr(CleanExpr::FieldExpr(expr)) => {
+                work.push(Work::Finish(Finish::Field(expr)));
+                work.push(Work::Enter(expr.base().node()));
+            }
+            CleanStmt::Expr(CleanExpr::MatchExpr(expr)) => {
+                work.push(Work::Arms(expr));
+                work.push(Work::Enter(expr.scrutinee().node()));
             }
             CleanStmt::Expr(CleanExpr::NameRef(name)) => {
                 work.push(Work::Finish(Finish::NameRef(name)));
@@ -1828,13 +2240,21 @@ impl<'a, 's> Builder<'a, 's> {
         let text = self.source.text(name.node());
         let Some(local) = self.lookup(text) else {
             if let Some(named) = self.names.get(text) {
-                if let Named::Function(id) = named {
-                    self.refer(name.node(), Symbol::Function(*id), true);
-                }
+                let what = match *named {
+                    Named::Function(id) => {
+                        self.refer(name.node(), Symbol::Function(id), true);
+                        "function"
+                    }
+                    Named::Type(id) => {
+                        self.refer(name.node(), Symbol::Type(id), true);
+                        "type"
+                    }
+                    Named::Ambiguous => "name",
+                };
                 self.source.error(
                     name.node(),
                     codes::INVALID_ASSIGNMENT_TARGET,
-                    format!("function `{text}` is not assignable"),
+                    format!("{what} `{text}` is not assignable"),
                     None,
                 );
             } else {
@@ -1935,7 +2355,7 @@ impl<'a, 's> Builder<'a, 's> {
         }
         work[base..].reverse();
     }
-    fn target(&mut self, node: NodeIdx) -> Option<FunctionId> {
+    fn target(&mut self, node: NodeIdx) -> Target {
         let name = self.source.text(node);
         if let Some(local) = self.lookup(name) {
             self.refer(
@@ -1956,15 +2376,20 @@ impl<'a, 's> Builder<'a, 's> {
                         .map(|range| (range, "declared here")),
                 );
             }
-            return None;
+            return Target::Unknown;
         }
         match self.names.get(name) {
             Some(Named::Function(target)) => {
                 let target = *target;
                 self.refer(node, Symbol::Function(target), false);
-                Some(target)
+                Target::Function(target)
             }
-            Some(Named::Ambiguous(_)) => None,
+            Some(Named::Type(decl)) => {
+                let decl = *decl;
+                self.refer(node, Symbol::Type(decl), false);
+                Target::Type(decl)
+            }
+            Some(Named::Ambiguous) => Target::Unknown,
             None => {
                 self.source.error(
                     node,
@@ -1972,7 +2397,7 @@ impl<'a, 's> Builder<'a, 's> {
                     format!("unknown function `{name}`"),
                     None,
                 );
-                None
+                Target::Unknown
             }
         }
     }
@@ -2155,13 +2580,21 @@ impl<'a, 's> Builder<'a, 's> {
                     }
                     None => {
                         if let Some(named) = self.names.get(name) {
-                            if let Named::Function(id) = named {
-                                self.refer(node, Symbol::Function(*id), false);
-                            }
+                            let what = match *named {
+                                Named::Function(id) => {
+                                    self.refer(node, Symbol::Function(id), false);
+                                    "function"
+                                }
+                                Named::Type(id) => {
+                                    self.refer(node, Symbol::Type(id), false);
+                                    "type"
+                                }
+                                Named::Ambiguous => "name",
+                            };
                             self.source.error(
                                 node,
                                 codes::NOT_A_VALUE,
-                                format!("function `{name}` is not a value"),
+                                format!("{what} `{name}` is not a value"),
                                 None,
                             );
                             self.hole(node);
@@ -2262,12 +2695,141 @@ impl<'a, 's> Builder<'a, 's> {
                     });
                 }
             }
+            Finish::Field(expr) => {
+                let node = expr.node();
+                let base = expr.base().node();
+                let input = self.input(base);
+                let name = self
+                    .source
+                    .field_name(self.source.text(expr.field().node()));
+                let id = self.push(node, Op::Field(name), &[input], None);
+                self.lowered
+                    .field_reads
+                    .push((id, self.source.range(expr.field().node())));
+                self.controls[node.to_usize()] = self.control(base);
+                let form = self.form(base);
+                self.bottoms[node.to_usize()] = form.completes;
+                if !form.is_valid {
+                    return None;
+                }
+                if form.completes {
+                    self.completes_input(id, 0);
+                    return Some(());
+                }
+                self.typed(base)?;
+            }
             Finish::Partial(partial) => {
                 self.partial(partial);
                 return None;
             }
         }
         Some(())
+    }
+    /// Fields are stored in declaration order; argument controls run in source order.
+    fn construct(&mut self, call: Clean<ast::CallExpr>, decl: DeclId) -> Option<()> {
+        let tree = self.source.tree;
+        let node = call.node();
+        let fields = self.source.decls[decl.index()].fields.len();
+        let type_name = self.source.decls[decl.index()].name;
+        let declared = self.source.decls[decl.index()]
+            .name_node
+            .map(|name| (self.source.range(name), "declared here"));
+        let mut given: Vec<Option<(NodeIdx, NodeIdx)>> = vec![None; fields];
+        // A type with a field of no type is reported at its declaration.
+        let mut is_damaged = self.graph.decl(decl).field_types().is_none();
+        let mut values = Vec::new();
+        for arg in call.arg_list().args(tree) {
+            let Some(value) = arg.value(tree) else {
+                continue;
+            };
+            values.push(value.node());
+            let Some(label) = arg.label(tree) else {
+                self.source.error(
+                    value.node(),
+                    codes::UNLABELED_FIELD,
+                    format!("a value of `{type_name}` names each field: `field: value`"),
+                    declared,
+                );
+                is_damaged = true;
+                continue;
+            };
+            let field = self.source.text(label.node());
+            match self.source.decls[decl.index()].index_of(field) {
+                None => {
+                    self.source.error(
+                        label.node(),
+                        codes::UNKNOWN_FIELD,
+                        format!("type `{type_name}` has no field `{field}`"),
+                        declared,
+                    );
+                    is_damaged = true;
+                }
+                Some(index) => match given[index] {
+                    Some((_, first)) => {
+                        self.source.error(
+                            label.node(),
+                            codes::DUPLICATE_FIELD,
+                            format!("field `{field}` is given twice"),
+                            Some((self.source.range(first), "first given here")),
+                        );
+                        is_damaged = true;
+                    }
+                    None => {
+                        self.refer(label.node(), Symbol::Field(decl, index as u32), false);
+                        given[index] = Some((value.node(), label.node()));
+                    }
+                },
+            }
+        }
+        let missing: Vec<&str> = given
+            .iter()
+            .enumerate()
+            .filter(|(_, given)| given.is_none())
+            .map(|(index, _)| self.source.decls[decl.index()].fields[index].0)
+            .collect();
+        if !missing.is_empty() {
+            let names: Vec<String> = missing.iter().map(|name| format!("`{name}`")).collect();
+            let what = if names.len() == 1 { "field" } else { "fields" };
+            self.source.error(
+                node,
+                codes::MISSING_FIELD,
+                format!("missing {what} {} of `{type_name}`", join(&names)),
+                declared,
+            );
+            is_damaged = true;
+        }
+        let controls: Vec<_> = values.iter().map(|&value| self.control(value)).collect();
+        let ordered: Vec<NodeIdx> = if is_damaged {
+            values
+        } else {
+            given
+                .iter()
+                .map(|given| given.expect("every field given").0)
+                .collect()
+        };
+        let mut inputs = std::mem::take(&mut self.inputs);
+        inputs.clear();
+        for &value in &ordered {
+            inputs.push(self.input(value));
+        }
+        let op = if is_damaged { Op::Hole } else { Op::Make(decl) };
+        let id = self.push(node, op, &inputs, None);
+        self.inputs = inputs;
+        self.controls[node.to_usize()] = self.compose_control(node, controls);
+        let mut is_bottom = false;
+        let mut is_valid = true;
+        for (index, &value) in ordered.iter().enumerate() {
+            let form = self.form(value);
+            is_bottom |= form.completes;
+            is_valid &= form.is_valid;
+            if form.completes {
+                self.completes_input(id, index);
+            }
+        }
+        if is_bottom {
+            self.bottoms[node.to_usize()] = true;
+        }
+        (is_valid && !is_damaged).then_some(())
     }
     /// A statement or expression the parser recovered in. Its children are lowered for what they
     /// hold, and it is lowered from them where its kind decides its type: an operator's result,
@@ -2361,18 +2923,31 @@ impl<'a, 's> Builder<'a, 's> {
             Stmt::Expr(Expr::CallExpr(call)) => {
                 let target = match call.callee(tree) {
                     Some(callee) => self.target(callee.node()),
-                    None => None,
+                    None => Target::Unknown,
                 };
                 let mut args = Vec::new();
                 if let Some(list) = call.arg_list(tree) {
                     for child in tree.children(list.node()) {
-                        let Some(arg) = Expr::cast(tree, child) else {
+                        let Some(value) =
+                            ast::Arg::cast(tree, child).and_then(|arg| arg.value(tree))
+                        else {
                             break;
                         };
-                        args.push(arg.node());
+                        args.push(value.node());
                     }
                 }
                 Partial::Call { node, target, args }
+            }
+            Stmt::Expr(Expr::FieldExpr(expr)) => {
+                let name = expr
+                    .field(tree)
+                    .filter(|field| !tree.has_error(field.node()))
+                    .map(|field| self.source.field_name(self.source.text(field.node())));
+                Partial::Field {
+                    node,
+                    base: expr.base(tree).map(|base| base.node()),
+                    name,
+                }
             }
             Stmt::Expr(_) => return self.holed(node),
         };
@@ -2391,7 +2966,9 @@ impl<'a, 's> Builder<'a, 's> {
                 work.push(Work::Finish(Finish::Partial(partial)));
                 work.push(Work::Enter(child));
             }
-            Partial::Prefix { operand: child, .. } | Partial::Assign { value: child, .. } => {
+            Partial::Prefix { operand: child, .. }
+            | Partial::Assign { value: child, .. }
+            | Partial::Field { base: child, .. } => {
                 let child = *child;
                 work.push(Work::Finish(Finish::Partial(partial)));
                 if let Some(child) = child {
@@ -2559,6 +3136,16 @@ impl<'a, 's> Builder<'a, 's> {
                     }
                 }
             }
+            Partial::Field { node, base, name } => {
+                let input = self.present(node, base);
+                let op = name.map_or(Op::Hole, Op::Field);
+                let id = self.push(node, op, &[input], None);
+                self.controls[node.to_usize()] = base.and_then(|base| self.control(base));
+                if base.is_some_and(|base| self.form(base).completes) {
+                    self.completes_input(id, 0);
+                    self.bottoms[node.to_usize()] = true;
+                }
+            }
             Partial::Call { node, target, args } => {
                 let context = self.context();
                 let callee = self.callee(target);
@@ -2570,7 +3157,8 @@ impl<'a, 's> Builder<'a, 's> {
                 for &arg in &args {
                     inputs.push(self.input(arg));
                 }
-                // A damaged list is not yet the wrong length.
+                // A damaged list is not yet the wrong length, and its labels are not yet in
+                // order.
                 let op = callee.map_or(Op::Hole, |(id, _)| Op::Call(id));
                 let id = self.push(node, op, &inputs, None);
                 if let Some((target, _)) = callee
@@ -2590,9 +3178,10 @@ impl<'a, 's> Builder<'a, 's> {
             }
         }
     }
-    fn lazy(&mut self, expr: LazyOp, rhs: RegionId, contexts: [NodeId; 2]) -> Option<()> {
+    fn lazy(&mut self, expr: LazyOp, arms: Arms, contexts: [NodeId; 2]) -> Option<()> {
         let lhs = expr.expr.lhs().node();
         let rhs_node = expr.expr.rhs().node();
+        let rhs = arms.iter().next().expect("the right operand has its arm");
         let state = self.closed(rhs);
         let lhs_input = self.input(lhs);
         let result = self.node_of(rhs_node);
@@ -2610,15 +3199,9 @@ impl<'a, 's> Builder<'a, 's> {
             None,
             &[result],
         );
-        let selected = self.control(rhs_node).map(|_| rhs);
-        let observe = selected.map(|region| {
-            let (then, else_) = if expr.is_and {
-                (Some(region), None)
-            } else {
-                (None, Some(region))
-            };
+        let observe = self.control(rhs_node).map(|_| {
             self.place(
-                Op::Observe { then, else_ },
+                Op::Observe { arms },
                 &[
                     lhs_input,
                     (self.context(), self.source.range(expr.expr.node())),
@@ -2652,83 +3235,218 @@ impl<'a, 's> Builder<'a, 's> {
             } else {
                 [&skipped, &state]
             };
-            self.merge_versions(lhs, states, self.source.range(expr.expr.node()));
+            self.merge_versions(lhs, &states, self.source.range(expr.expr.node()));
         }
         Some(())
     }
-    fn join(
-        &mut self,
-        branch: Branch,
-        then: RegionId,
-        else_: Option<RegionId>,
-        contexts: [NodeId; 2],
-    ) -> Option<()> {
+    fn join(&mut self, branch: Branch, arms: Arms, contexts: [NodeId; 2]) -> Option<()> {
         let Branch {
             node,
             cond,
             then: then_node,
             else_: else_node,
         } = branch;
+        let then = arms.iter().next().expect("a switch has its then arm");
+        let else_ = arms.iter().nth(1);
         let then_state = self.closed(then);
         let false_state = match else_ {
             Some(else_) => self.closed(else_),
             None => self.guarded_state(cond, false, contexts[1]),
         };
-        let condition = self.input(cond);
-        let mut results = vec![self.node_of(then_node)];
-        results.extend(else_node.map(|else_node| self.node_of(else_node)));
-        let then_form = self.form(then_node);
-        let else_form = else_node.map_or(Form::SCALAR, |node| self.form(node));
+        let values = [then_node, else_node.unwrap_or(then_node)];
+        self.switch(
+            node,
+            cond,
+            arms,
+            &values[..arms.len()],
+            &[&then_state, &false_state],
+        )?;
+        if !self.form(node).completes {
+            if self.form(then_node).completes {
+                self.refine(cond, false);
+            }
+            if else_node.is_some_and(|node| self.form(node).completes) {
+                self.refine(cond, true);
+            }
+        }
+        Some(())
+    }
+    /// A `match`'s arms by case: a member pattern names a declared type and binds a value of it; a
+    /// rest pattern takes what the arms before leave. A pattern naming no type leaves a hole.
+    fn arms(&mut self, expr: Clean<ast::MatchExpr>, work: &mut Vec<Work>) {
+        let tree = self.source.tree;
+        let node = expr.node();
+        let scrutinee = expr.scrutinee().node();
+        self.advance(scrutinee);
+        let parent = self.context();
+        let input = self.input(scrutinee);
+        let mut named: Vec<DeclId> = Vec::new();
+        let mut cases: Vec<ArmCase> = Vec::new();
+        let mut is_valid = true;
+        for arm in expr.arm_list().arms(tree) {
+            let arm = arm
+                .clean(tree, self.source.lexed())
+                .expect("a clean match has clean arms");
+            let pattern = arm
+                .pattern()
+                .clean(tree, self.source.lexed())
+                .expect("a clean arm has a clean pattern");
+            let (case, binding) = match pattern {
+                ast::CleanPattern::RestPattern(_) => (
+                    if named.is_empty() {
+                        Case::Any
+                    } else {
+                        Case::Not(self.source.union_of(&named))
+                    },
+                    None,
+                ),
+                ast::CleanPattern::MemberPattern(pattern) => {
+                    let member = pattern.member().node();
+                    let name = self.source.text(member);
+                    match self.names.get(name).copied() {
+                        Some(Named::Type(decl)) => {
+                            self.refer(member, Symbol::Type(decl), false);
+                            named.push(decl);
+                            let binding = pattern
+                                .binding(tree)
+                                .map(|name| (name.node(), Ty::decl(decl)));
+                            (Case::Is(Ty::decl(decl)), binding)
+                        }
+                        Some(Named::Function(id)) => {
+                            self.refer(member, Symbol::Function(id), false);
+                            self.source.error(
+                                member,
+                                codes::UNKNOWN_TYPE,
+                                format!("`{name}` is a function, not a type"),
+                                None,
+                            );
+                            is_valid = false;
+                            continue;
+                        }
+                        Some(Named::Ambiguous) => {
+                            is_valid = false;
+                            continue;
+                        }
+                        None => {
+                            self.source.error(
+                                member,
+                                codes::UNKNOWN_TYPE,
+                                format!("unknown type `{name}`"),
+                                None,
+                            );
+                            is_valid = false;
+                            continue;
+                        }
+                    }
+                }
+            };
+            cases.push((arm, case, binding));
+        }
+        if cases.is_empty() && is_valid {
+            self.source
+                .error(node, codes::NON_EXHAUSTIVE_MATCH, "match has no arms", None);
+            is_valid = false;
+        }
+        if !is_valid {
+            self.push(node, Op::Hole, &[input], None);
+            self.controls[node.to_usize()] = self.control(scrutinee);
+            self.has_failed = true;
+            return;
+        }
+        let contexts: Vec<NodeId> = cases
+            .iter()
+            .map(|&(arm, case, _)| self.context_at(arm.node(), Op::Arm(case), input, parent))
+            .collect();
+        let arms = self.graph.open_arms(&contexts);
+        work.push(Work::Switch { expr, arms });
+        for (&(arm, _, binding), region) in cases.iter().zip(arms.iter()).rev() {
+            let value = arm.value().node();
+            work.push(Work::CloseScope);
+            work.push(Work::Pop {
+                region,
+                root: value,
+            });
+            work.push(Work::Enter(value));
+            work.push(Work::PushArm {
+                region,
+                scrutinee,
+                arm: arm.node(),
+                binding,
+            });
+        }
+    }
+    fn matched(&mut self, expr: Clean<ast::MatchExpr>, arms: Arms) -> Option<()> {
+        let tree = self.source.tree;
+        let states: Vec<RegionState> = arms.iter().map(|arm| self.closed(arm)).collect();
+        let states: Vec<&RegionState> = states.iter().collect();
+        let values: Vec<NodeIdx> = expr
+            .arm_list()
+            .arms(tree)
+            .filter_map(|arm| arm.value(tree))
+            .map(|value| value.node())
+            .collect();
+        self.switch(expr.node(), expr.scrutinee().node(), arms, &values, &states)
+    }
+    fn switch(
+        &mut self,
+        node: NodeIdx,
+        scrutinee: NodeIdx,
+        arms: Arms,
+        values: &[NodeIdx],
+        states: &[&RegionState],
+    ) -> Option<()> {
+        let at = self.source.range(node);
+        let input = self.input(scrutinee);
+        let results: Vec<NodeId> = values.iter().map(|&value| self.node_of(value)).collect();
+        let is_valid = values.iter().all(|&value| self.form(value).is_valid);
+        // An omitted `else` contributes a state but no value, so the switch can fall through.
+        let completes =
+            states.len() == values.len() && values.iter().all(|&value| self.form(value).completes);
         let id = self.push_over(
             node,
-            Op::Join { then, else_ },
-            &[condition],
+            Op::Switch { arms },
+            &[input],
             References::None,
             None,
             &results,
         );
-        let observe = (self.control(then_node).is_some()
-            || else_node.is_some_and(|node| self.control(node).is_some()))
-        .then(|| {
-            self.place(
-                Op::Observe {
-                    then: Some(then),
-                    else_,
-                },
-                &[condition, (self.context(), self.source.range(node))],
-                self.source.range(node),
-                None,
-            )
-        });
-        self.controls[node.to_usize()] = self.compose_control(node, [self.control(cond), observe]);
-        let cond_form = self.form(cond);
-        if cond_form.completes {
+        let observe = values
+            .iter()
+            .any(|&value| self.control(value).is_some())
+            .then(|| {
+                self.place(
+                    Op::Observe { arms },
+                    &[input, (self.context(), at)],
+                    at,
+                    None,
+                )
+            });
+        self.controls[node.to_usize()] =
+            self.compose_control(node, [self.control(scrutinee), observe]);
+        let scrutinee_form = self.form(scrutinee);
+        if scrutinee_form.completes {
             self.completes_input(id, 0);
         }
-        if !cond_form.is_valid || !then_form.is_valid || !else_form.is_valid {
+        if !scrutinee_form.is_valid || !is_valid {
             return None;
         }
-        if cond_form.completes || (then_form.completes && else_form.completes) {
+        if scrutinee_form.completes || completes {
             self.bottoms[node.to_usize()] = true;
         } else {
-            self.merge_versions(cond, [&then_state, &false_state], self.source.range(node));
-            if then_form.is_scalar() {
-                self.typed(then_node)?;
-            } else {
-                self.refine(cond, false);
-            }
-            if let Some(else_node) = else_node {
-                if else_form.is_scalar() {
-                    self.typed(else_node)?;
-                } else {
-                    self.refine(cond, true);
+            self.merge_versions(scrutinee, states, at);
+            for &value in values {
+                if self.form(value).is_scalar() {
+                    self.typed(value)?;
                 }
             }
         }
-        self.typed(cond)?;
+        self.typed(scrutinee)?;
         Some(())
     }
-    fn call(&mut self, call: Clean<ast::CallExpr>, target: Option<FunctionId>) -> Option<()> {
+    fn call(&mut self, call: Clean<ast::CallExpr>, target: Target) -> Option<()> {
+        if let Target::Type(decl) = target {
+            return self.construct(call, decl);
+        }
         let context = self.context();
         let tree = self.source.tree;
         let node = call.node();
@@ -2740,9 +3458,26 @@ impl<'a, 's> Builder<'a, 's> {
         let mut inputs = std::mem::take(&mut self.inputs);
         inputs.clear();
         let mut count = 0;
+        let mut is_labeled = false;
         for arg in call.arg_list().args(tree) {
+            let Some(value) = arg.value(tree) else {
+                continue;
+            };
+            // A label on an argument to a name that resolved to nothing is reported there.
+            if let Some(label) = arg.label(tree)
+                && let Target::Function(function) = target
+            {
+                let item = self.headers[function.index()].item;
+                self.source.error(
+                    label.node(),
+                    codes::LABELED_ARGUMENT,
+                    "a function's arguments take no labels",
+                    Some((self.source.range(item), "declared here")),
+                );
+                is_labeled = true;
+            }
             count += 1;
-            inputs.push(self.input(arg.node()));
+            inputs.push(self.input(value.node()));
         }
         if let Some((id, function)) = callee
             && let arity = self.arity(id)
@@ -2755,7 +3490,7 @@ impl<'a, 's> Builder<'a, 's> {
                 Some((self.source.range(function.item), "declared here")),
             );
         }
-        let whole = callee.filter(|&(id, _)| self.whole(id, &inputs));
+        let whole = callee.filter(|&(id, _)| !is_labeled && self.whole(id, &inputs));
         let op = callee.map_or(Op::Hole, |(id, _)| Op::Call(id));
         let id = self.push(node, op, &inputs, None);
         if let Some((target, _)) = callee
@@ -2763,7 +3498,7 @@ impl<'a, 's> Builder<'a, 's> {
         {
             self.lowered.called.push((id, target));
         }
-        let args: Vec<_> = call.arg_list().args(tree).map(|arg| arg.node()).collect();
+        let args: Vec<_> = call.arg_list().values(tree).map(|arg| arg.node()).collect();
         let controls: Vec<_> = args.iter().map(|&arg| self.control(arg)).collect();
         self.controls[node.to_usize()] = self.compose_control(node, controls);
         let mut is_bottom = false;

@@ -1,0 +1,26 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 3
+
+== graph ==
+fn empty@3:1..3:35 (A ∈ ∅) -> int ∈ ∅
+  param a@3:10..3:11: A
+  result: copy : int @3:19..3:22
+    value: hole : ? @3:25..3:35
+      part[0]: read a@3:10..3:11 : A
+
+fn inferred@4:1..4:29 signature: unavailable
+  body: hole : ? @4:17..4:29
+    part[0]: make A : A @4:23..4:26
+
+fn returning@5:1..5:46 () -> int ∈ [1, 1]
+  result: result : int @5:19..5:22
+    outcome[0]: hole : ? @5:25..5:46
+      part[0]: unit : unit @5:31..5:43
+    outcome[1]: return : int @5:33..5:41
+      payload: int 1 : int @5:40..5:41
+
+== semantic diagnostics ==
+error[semantic/non-exhaustive-match] 3:25..3:35 "match a {}": match has no arms
+error[semantic/non-exhaustive-match] 4:17..4:29 "match A() {}": match has no arms
+error[semantic/non-exhaustive-match] 5:25..5:46 "match { return 1 } {}": match has no arms

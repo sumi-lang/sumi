@@ -15,14 +15,14 @@ fn explicit@5:1..5:31 () -> int ∈ [1, 1]
 
 fn recursive@6:1..10:2 () -> int ∈ [1, 1]
   body: if : int @6:18..10:2
-    condition: bool true : bool @6:21..6:25
+    scrutinee: bool true : bool @6:21..6:25
     then: int 1 : int @7:5..7:6
     else: call recursive@6:1..10:2 : int @9:5..9:16
 
 fn anchored@11:1..15:2 () -> int ∈ [1, 1]
   result: copy : int @11:18..11:21
     value: if : int @11:24..15:2
-      condition: bool false : bool @11:27..11:32
+      scrutinee: bool false : bool @11:27..11:32
       then: call inferred@16:1..16:27 : int @12:5..12:15
       else: int 1 : int @14:5..14:6
 
@@ -32,7 +32,7 @@ fn inferred@16:1..16:27 () -> int ∈ [1, 1]
 fn integer@17:1..22:2 () -> int ∈ [1, 1]
   body:
     discard: if : unit @18:5..20:6
-      condition: bool false : bool @18:8..18:13
+      scrutinee: bool false : bool @18:8..18:13
       then:
         discard: call boolean@23:1..26:2 : bool @19:13..19:22
         tail: unit : unit @18:14..20:6

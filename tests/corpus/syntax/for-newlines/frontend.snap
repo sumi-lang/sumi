@@ -16,7 +16,8 @@ SourceFile! 1:1..18:1
           CallExpr 6:9..6:15
             NameRef 6:9..6:12 "use"
             ArgList 6:12..6:15
-              NameRef 6:13..6:14 "i"
+              Arg 6:13..6:14
+                NameRef 6:13..6:14 "i"
       ForExpr 8:5..9:14
         Name 8:9..8:10 "j"
         PrefixExpr 8:14..8:16
@@ -34,7 +35,8 @@ SourceFile! 1:1..18:1
           CallExpr 12:7..12:13
             NameRef 12:7..12:10 "use"
             ArgList 12:10..12:13
-              NameRef 12:11..12:12 "k"
+              Arg 12:11..12:12
+                NameRef 12:11..12:12 "k"
       ForExpr! 13:5..13:22
         Name 13:9..13:10 "m"
         LiteralExpr 13:14..13:15 "0"
@@ -48,7 +50,8 @@ SourceFile! 1:1..18:1
         CallExpr 16:17..16:28
           NameRef 16:17..16:22 "limit"
           ArgList 16:22..16:28
-            NameRef 16:23..16:27 "next"
+            Arg 16:23..16:27
+              NameRef 16:23..16:27 "next"
         Block 16:29..16:31 "{}"
 
 == evidence ==

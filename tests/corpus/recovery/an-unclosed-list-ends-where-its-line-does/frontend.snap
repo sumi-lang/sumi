@@ -7,7 +7,8 @@ SourceFile! 1:1..12:1
       CallExpr! 2:5..2:8
         NameRef 2:5..2:6 "g"
         ArgList! 2:6..2:8
-          NameRef 2:7..2:8 "a"
+          Arg 2:7..2:8
+            NameRef 2:7..2:8 "a"
       NameRef 3:3..3:4 "b"
   FnItem! 5:1..8:2
     Name 5:4..5:18 "prefix_operand"
@@ -17,7 +18,8 @@ SourceFile! 1:1..12:1
         NameRef 6:5..6:6 "g"
         ArgList! 6:6..6:10
           Error! 6:7..6:8 "*"
-          NameRef 6:9..6:10 "a"
+          Arg 6:9..6:10
+            NameRef 6:9..6:10 "a"
       NameRef 7:3..7:4 "b"
   FnItem! 9:1..9:21
     Name 9:4..9:14 "parameters"

@@ -1,0 +1,18 @@
+tree: omitted
+
+== formatted ==
+type Point {
+    x: int
+}
+type Point {
+    z: int
+}
+type int {}
+type Dup {
+    a: int,
+    a: bool
+}
+fn Point() -> int = 1
+fn f() -> Point = Point(x: 1)
+fn g() -> int = Point()
+fn h(p: Point) -> int = p.x

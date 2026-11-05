@@ -109,11 +109,11 @@ pub fn validate(shape: &str, size: usize, analysis: &Analysis) {
     for (index, function) in analysis.functions().iter().enumerate() {
         assert_eq!(
             analysis.signature(FunctionId::new(index)).unwrap().result,
-            Ty::Int
+            Ty::INT
         );
         assert!(function.is_complete());
         let result = graph.run(sumi_hir::FunctionId::new(index)).result();
-        assert_eq!(analysis.ty(result), Some(Ty::Int));
+        assert_eq!(analysis.ty(result), Some(Ty::INT));
     }
     if shape == "nested-mutation" {
         let program = analysis.program().unwrap();

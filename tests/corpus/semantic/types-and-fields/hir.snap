@@ -1,0 +1,148 @@
+file: accepted
+frontend errors: 0 (see frontend.snap)
+semantic errors: 0
+
+== graph ==
+fn origin@5:1..5:41 () -> Point ∈ Point([0, 0], [0, 0])
+  result: copy : Point @5:16..5:21
+    value: make Point : Point @5:24..5:41
+      x: int 0 : int @5:33..5:34
+      y: int 0 : int @5:39..5:40
+
+fn shift@6:1..6:66 (Point ∈ Point([0, +∞), [0, 0]), int ∈ [0, 5]) -> Point ∈ Point([0, +∞), [0, 0])
+  param p@6:10..6:11: Point
+  param dx@6:20..6:22: int
+  result: copy : Point @6:32..6:37
+    value: make Point : Point @6:40..6:66
+      x: eager + : int @6:49..6:57
+        lhs: field x : int @6:49..6:52
+          base: read p@6:10..6:11 : Point
+        rhs: read dx@6:20..6:22 : int
+      y: field y : int @6:62..6:65
+        base: read p@6:10..6:11 : Point
+
+fn length@7:1..7:49 (Segment ∈ Segment(Point([0, 0], [0, 0]), Point([0, +∞), [0, 0]))) -> int ∈ [0, +∞)
+  param s@7:11..7:12: Segment
+  result: copy : int @7:26..7:29
+    value: eager - : int @7:32..7:49
+      lhs: field x : int @7:32..7:38
+        base: field to : Point @7:32..7:36
+          base: read s@7:11..7:12 : Segment
+      rhs: field x : int @7:41..7:49
+        base: field from : Point @7:41..7:47
+          base: read s@7:11..7:12 : Segment
+
+fn main@8:1..11:2 () -> int ∈ [0, +∞)
+  result: copy : int @8:14..8:17
+    value:
+      let s@9:9..9:10: Segment @9:5..9:60
+        initializer: make Segment : Segment @9:13..9:60
+          from: call origin@5:1..5:41 : Point @9:27..9:35
+          to: call shift@6:1..6:66 : Point @9:41..9:59
+            arg[0]: call origin@5:1..5:41 : Point @9:47..9:55
+            arg[1]: int 5 : int @9:57..9:58
+      tail: eager + : int @10:5..10:23
+        lhs: call length@7:1..7:49 : int @10:5..10:14
+          arg[0]: read s@9:9..9:10 : Segment
+        rhs: field y : int @10:17..10:23
+          base: field to : Point @10:17..10:21
+            base: read s@9:9..9:10 : Segment
+
+fn nothing@12:1..12:36 () -> Nothing ∈ Nothing()
+  result: copy : Nothing @12:17..12:24
+    value: make Nothing : Nothing @12:27..12:36
+
+fn swapped@13:1..13:54 (Point ∈ Point([3, 3], [4, 4])) -> Point ∈ Point([4, 4], [3, 3])
+  param p@13:12..13:13: Point
+  result: copy : Point @13:25..13:30
+    value: make Point : Point @13:33..13:54
+      x: field y : int @13:50..13:53
+        base: read p@13:12..13:13 : Point
+      y: field x : int @13:42..13:45
+        base: read p@13:12..13:13 : Point
+
+fn farthest@14:1..20:2 (Point ∈ ∅, Point ∈ ∅) -> Point ∈ ∅
+  param a@14:13..14:14: Point
+  param b@14:23..14:24: Point
+  result: copy : Point @14:36..14:41
+    value:
+      let far@15:13..15:16: Point @15:5..15:20
+        initializer: read a@14:13..14:14 : Point
+      discard: if : unit @16:5..18:6
+        scrutinee: eager > : bool @16:8..16:17
+          lhs: field x : int @16:8..16:11
+            base: read b@14:23..14:24 : Point
+          rhs: field x : int @16:14..16:17
+            base: read a@14:13..14:14 : Point
+        then:
+          assignment: assign far@15:13..15:16 : Point @17:9..17:16
+            value: read b@14:23..14:24 : Point
+          tail: unit : unit @16:18..18:6
+        else: unit (implicit)
+      tail: phi far@15:13..15:16 : Point @16:5..18:6
+        scrutinee: eager > : bool @16:8..16:17
+          lhs: field x : int @16:8..16:11
+            base: read b@14:23..14:24 : Point
+          rhs: field x : int @16:14..16:17
+            base: read a@14:13..14:14 : Point
+        then: read far@15:13..15:16 (assigned @17:9..17:16) : Point
+        else: read far@15:13..15:16 : Point
+
+fn walk@21:1..27:2 () -> int ∈ [0, +∞)
+  result: result : int @21:14..21:17
+    outcome[0]:
+      let p@22:13..22:14: Point @22:5..22:25
+        initializer: call origin@5:1..5:41 : Point @22:17..22:25
+      discard: loop : unit @23:5..25:6
+        start: int 0 : int @23:14..23:15
+        end: int 4 : int @23:17..23:18
+        carry[0]: carry p@22:13..22:14 : Point @23:5..25:6
+          initial: read p@22:13..22:14 : Point
+        body:
+          let i@23:9..23:10: loop index : int @23:5..25:6
+            start: int 0 : int @23:14..23:15
+            end: int 4 : int @23:17..23:18
+          assignment: assign p@22:13..22:14 : Point @24:9..24:24
+            value: call shift@6:1..6:66 : Point @24:13..24:24
+              arg[0]: read p@22:13..22:14 (carried @23:5..25:6) : Point
+              arg[1]: read i@23:9..23:10 : int
+          tail: unit : unit @23:19..25:6
+        next[0]: read p@22:13..22:14 (assigned @24:9..24:24) : Point
+      discard: after : ? @23:5..25:6
+        control: loop : unit @23:5..25:6
+        context: entry : ? @21:1..27:2
+      tail: field x : int @26:5..26:8
+        base: read p@22:13..22:14 (after loop @23:5..25:6) : Point
+
+fn ratio@28:1..28:65 (Point ∈ ∅) -> int ∈ ∅
+  param p@28:10..28:11: Point
+  result: copy : int @28:23..28:26
+    value: if : int @28:29..28:65
+      scrutinee: eager != : bool @28:32..28:40
+        lhs: field y : int @28:32..28:35
+          base: read p@28:10..28:11 : Point
+        rhs: int 0 : int @28:39..28:40
+      then: eager / : int @28:43..28:52
+        lhs: field x : int @28:43..28:46
+          base: read p@28:10..28:11 : Point
+        rhs: field y : int @28:49..28:52
+          base: read p@28:10..28:11 : Point
+      else: int 0 : int @28:62..28:63
+
+fn inferred@29:1..29:36 () -> int ∈ [1, 1]
+  body: field x : int @29:17..29:36
+    base: make Point : Point @29:17..29:34
+      x: int 1 : int @29:26..29:27
+      y: int 2 : int @29:32..29:33
+
+fn passed@30:1..30:50 () -> int ∈ [4, 4]
+  result: copy : int @30:16..30:19
+    value: field x : int @30:22..30:50
+      base: call swapped@13:1..13:54 : Point @30:22..30:48
+        arg[0]: make Point : Point @30:30..30:47
+          x: int 3 : int @30:39..30:40
+          y: int 4 : int @30:45..30:46
+
+== semantic diagnostics ==
+warning[semantic/unused-function] 14:4..14:12 "farthest": function `farthest` is never called
+warning[semantic/unused-function] 28:4..28:9 "ratio": function `ratio` is never called

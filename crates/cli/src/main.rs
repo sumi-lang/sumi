@@ -123,7 +123,7 @@ fn run(path: &Path) -> Result<ExitCode, String> {
     let compiled = program.compile();
     match compiled.evaluate(main, &[]) {
         Value::Unit => {}
-        value => println!("{value}"),
+        value => println!("{}", value.shown(&analysis)),
     }
     Ok(ExitCode::SUCCESS)
 }

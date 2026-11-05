@@ -1,0 +1,157 @@
+== tree ==
+SourceFile 1:1..13:1
+  FnItem 1:1..1:56
+    Name 1:4..1:5 "n"
+    ParamList 1:5..1:15
+      Param 1:6..1:14
+        Name 1:6..1:7 "x"
+        UnionType 1:9..1:14
+          TypeRef 1:9..1:10 "A"
+          TypeRef 1:13..1:14 "B"
+    TypeRef 1:19..1:22 "int"
+    MatchExpr 1:25..1:56
+      NameRef 1:31..1:32 "x"
+      ArmList 1:33..1:56
+        MatchArm 1:35..1:46
+          MemberPattern 1:35..1:39
+            NameRef 1:35..1:36 "A"
+            Name 1:37..1:38 "a"
+          FieldExpr 1:43..1:46
+            NameRef 1:43..1:44 "a"
+            NameRef 1:45..1:46 "n"
+        MatchArm 1:48..1:54
+          MemberPattern 1:48..1:49
+            NameRef 1:48..1:49 "B"
+          LiteralExpr 1:53..1:54 "0"
+  FnItem 2:1..7:2
+    Name 2:4..2:5 "m"
+    ParamList 2:5..2:15
+      Param 2:6..2:14
+        Name 2:6..2:7 "x"
+        UnionType 2:9..2:14
+          TypeRef 2:9..2:10 "A"
+          TypeRef 2:13..2:14 "B"
+    TypeRef 2:19..2:22 "int"
+    Block 2:23..7:2
+      MatchExpr 3:5..6:6
+        NameRef 3:11..3:12 "x"
+        ArmList 3:13..6:6
+          MatchArm 4:9..4:20
+            MemberPattern 4:9..4:13
+              NameRef 4:9..4:10 "A"
+              Name 4:11..4:12 "a"
+            FieldExpr 4:17..4:20
+              NameRef 4:17..4:18 "a"
+              NameRef 4:19..4:20 "n"
+          MatchArm 5:9..5:15
+            RestPattern 5:9..5:10 "_"
+            LiteralExpr 5:14..5:15 "0"
+  FnItem 8:1..9:10
+    Name 8:4..8:10 "nested"
+    ParamList 8:10..8:20
+      Param 8:11..8:19
+        Name 8:11..8:12 "x"
+        UnionType 8:14..8:19
+          TypeRef 8:14..8:15 "A"
+          TypeRef 8:18..8:19 "B"
+    TypeRef 8:24..8:27 "int"
+    MatchExpr 8:30..9:10
+      NameRef 8:36..8:37 "x"
+      ArmList 8:38..9:10
+        MatchArm 8:40..8:68
+          MemberPattern 8:40..8:44
+            NameRef 8:40..8:41 "A"
+            Name 8:42..8:43 "a"
+          MatchExpr 8:48..8:68
+            FieldExpr 8:54..8:57
+              NameRef 8:54..8:55 "a"
+              NameRef 8:56..8:57 "n"
+            ArmList 8:58..8:68
+              MatchArm 8:60..8:66
+                RestPattern 8:60..8:61 "_"
+                LiteralExpr 8:65..8:66 "1"
+        MatchArm 8:70..9:8
+          RestPattern 8:70..8:71 "_"
+          Block 8:75..9:8
+            LetStmt 8:77..8:86
+              Name 8:81..8:82 "k"
+              LiteralExpr 8:85..8:86 "2"
+            NameRef 9:5..9:6 "k"
+  FnItem 10:1..10:51
+    Name 10:4..10:8 "stmt"
+    ParamList 10:8..10:18
+      Param 10:9..10:17
+        Name 10:9..10:10 "x"
+        UnionType 10:12..10:17
+          TypeRef 10:12..10:13 "A"
+          TypeRef 10:16..10:17 "B"
+    Block 10:19..10:51
+      MatchExpr 10:21..10:49
+        NameRef 10:27..10:28 "x"
+        ArmList 10:29..10:49
+          MatchArm 10:31..10:38
+            MemberPattern 10:31..10:32
+              NameRef 10:31..10:32 "A"
+            Block 10:36..10:38 "{}"
+          MatchArm 10:40..10:47
+            MemberPattern 10:40..10:41
+              NameRef 10:40..10:41 "B"
+            Block 10:45..10:47 "{}"
+  FnItem 11:1..11:35
+    Name 11:4..11:9 "empty"
+    ParamList 11:9..11:15
+      Param 11:10..11:14
+        Name 11:10..11:11 "x"
+        TypeRef 11:13..11:14 "A"
+    TypeRef 11:19..11:22 "int"
+    MatchExpr 11:25..11:35
+      NameRef 11:31..11:32 "x"
+      ArmList 11:33..11:35 "{}"
+  FnItem 12:1..12:51
+    Name 12:4..12:11 "chained"
+    ParamList 12:11..12:17
+      Param 12:12..12:16
+        Name 12:12..12:13 "x"
+        TypeRef 12:15..12:16 "A"
+    TypeRef 12:21..12:24 "int"
+    FieldExpr 12:27..12:51
+      MatchExpr 12:27..12:49
+        NameRef 12:33..12:34 "x"
+        ArmList 12:35..12:49
+          MatchArm 12:37..12:46
+            MemberPattern 12:37..12:41
+              NameRef 12:37..12:38 "A"
+              Name 12:39..12:40 "a"
+            NameRef 12:45..12:46 "a"
+      NameRef 12:50..12:51 "n"
+
+== formatted ==
+fn n(x: A | B) -> int = match x {
+    A(a) => a.n,
+    B => 0
+}
+fn m(x: A | B) -> int {
+    match x {
+        A(a) => a.n,
+        _ => 0,
+    }
+}
+fn nested(x: A | B) -> int = match x {
+    A(a) => match a.n {
+        _ => 1
+    },
+    _ => {
+        let k = 2
+        k
+    }
+}
+fn stmt(x: A | B) {
+    match x {
+        A => {},
+        B => {}
+    }
+}
+fn empty(x: A) -> int = match x {}
+fn chained(x: A) -> int = match x {
+    A(a) => a,
+}.n

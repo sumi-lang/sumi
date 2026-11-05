@@ -1,0 +1,31 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 3
+
+== graph ==
+fn end@7:1..7:37 (Chain ∈ ∅) -> int ∈ ∅
+  param c@7:8..7:9: Chain
+  result: copy : int @7:21..7:24
+    value: field end : int @7:27..7:37
+      base: field next : Link @7:27..7:33
+        base: read c@7:8..7:9 : Chain
+
+fn make@8:1..8:47 () -> Chain ∈ Chain(Link([3, 3]))
+  result: copy : Chain @8:14..8:19
+    value: make Chain : Chain @8:22..8:47
+      next: make Link : Link @8:34..8:46
+        end: int 3 : int @8:44..8:45
+
+fn me@9:1..9:29 (Me ∈ ∅) -> bool ∈ ∅
+  param m@9:7..9:8: Me
+  result: copy : bool @9:17..9:21
+    value: field tag : bool @9:24..9:29
+      base: read m@9:7..9:8 : Me
+
+== semantic diagnostics ==
+error[semantic/recursive-type] 1:6..1:7 "A": type `A` holds itself through field `b`
+  at 1:10..1:11 "b": this field
+error[semantic/recursive-type] 2:6..2:7 "B": type `B` holds itself through field `a`
+  at 2:10..2:11 "a": this field
+error[semantic/recursive-type] 3:6..3:8 "Me": type `Me` holds itself through field `me`
+  at 3:11..3:13 "me": this field

@@ -1159,11 +1159,19 @@ fn complete(
     };
     let items = match context(lexed, tree, offset) {
         Context::Nothing => Vec::new(),
-        Context::Items => vec![keyword(Fixed::FnKw)],
-        Context::Types => Ty::ALL
+        Context::Items => vec![keyword(Fixed::FnKw), keyword(Fixed::TypeKw)],
+        Context::Types => Ty::SCALARS
             .iter()
-            .map(|ty| CompletionItem {
-                label: ty.as_str().into(),
+            .map(|ty| ty.scalar_name().expect("a scalar has a name").to_owned())
+            .chain(
+                analysis
+                    .decls()
+                    .iter()
+                    .filter_map(|decl| decl.name())
+                    .map(|name| analysis.text(name).to_owned()),
+            )
+            .map(|label| CompletionItem {
+                label,
                 kind: Some(CompletionItemKind::STRUCT),
                 ..CompletionItem::default()
             })
@@ -1198,11 +1206,13 @@ fn values(analysis: &Analysis, offset: TextSize, has_snippets: bool) -> Vec<Comp
         .into_iter()
         .map(|binding| {
             let name = binding.name().text(text);
-            let ty = analysis.ty(binding.declaration()).map(|ty| ty.as_str());
+            let ty = analysis
+                .ty(binding.declaration())
+                .map(|ty| analysis.show(ty).to_string());
             let detail = match (binding.kind(), ty) {
                 (BindingKind::Let { is_mutable: true }, Some(ty)) => Some(format!("mut {ty}")),
                 (BindingKind::Let { is_mutable: true }, None) => Some("mut".into()),
-                (_, ty) => ty.map(String::from),
+                (_, ty) => ty,
             };
             CompletionItem {
                 label: name.into(),
@@ -1232,8 +1242,11 @@ fn values(analysis: &Analysis, offset: TextSize, has_snippets: bool) -> Vec<Comp
                     label: name.into(),
                     kind: Some(CompletionItemKind::FUNCTION),
                     detail: signature.map(|Signature { params, result }| {
-                        let params: Vec<_> = params.iter().map(|ty| ty.as_str()).collect();
-                        format!("fn({}) -> {result}", params.join(", "))
+                        let params: Vec<_> = params
+                            .iter()
+                            .map(|&ty| analysis.show(ty).to_string())
+                            .collect();
+                        format!("fn({}) -> {}", params.join(", "), analysis.show(result))
                     }),
                     insert_text,
                     insert_text_format,
@@ -1329,10 +1342,7 @@ fn prepare_rename(
     Some(PrepareRenameResponse::Range(range))
 }
 
-/// `Err` names what stops the rename: a new name that is no name, a symbol whose name two
-/// functions share or appears where the parser recovered, so an occurrence may be missing, or a
-/// new name that already denotes something at an occurrence of the symbol, so a read would
-/// silently change meaning.
+/// Renames refuse ambiguous or recovered occurrences and names that collide or change resolution.
 fn rename(
     analysis: &Analysis,
     uri: Uri,
@@ -1355,19 +1365,25 @@ fn rename(
     if old_name == new_name {
         return Ok(None);
     }
-    let named = |name: &str| {
+    let items = || {
         analysis
             .functions()
             .iter()
-            .filter(|function| {
-                function
-                    .name()
-                    .is_some_and(|range| analysis.text(range) == name)
-            })
-            .count()
+            .filter_map(|function| function.name().map(|name| ("function", name)))
+            .chain(
+                analysis
+                    .decls()
+                    .iter()
+                    .filter_map(|decl| decl.name().map(|name| ("type", name))),
+            )
     };
-    if matches!(occurrence.symbol, Symbol::Function(_)) && named(old_name) > 1 {
-        return Err(format!("two functions are named `{old_name}`"));
+    if matches!(occurrence.symbol, Symbol::Function(_) | Symbol::Type(_))
+        && items()
+            .filter(|&(_, range)| analysis.text(range) == old_name)
+            .count()
+            > 1
+    {
+        return Err(format!("multiple declarations are named `{old_name}`"));
     }
     if analysis
         .unresolved()
@@ -1378,21 +1394,37 @@ fn rename(
             "`{old_name}` also appears where the parser recovered; fix the syntax first"
         ));
     }
-    if named(new_name) > 0 {
-        return Err(format!("a function is already named `{new_name}`"));
-    }
     let occurrences = || std::iter::once(declared).chain(analysis.references_of(occurrence.symbol));
-    let same: Vec<_> = analysis
-        .bindings()
-        .iter()
-        .filter(|binding| binding.name() != declared && analysis.text(binding.name()) == new_name)
-        .collect();
-    let is_shadowed = occurrences().any(|range| {
-        same.iter()
-            .any(|binding| binding.is_visible_at(range.start()))
-    });
-    if is_shadowed {
-        return Err(format!("`{new_name}` is already in scope here"));
+    if let Symbol::Field(id, _) = occurrence.symbol {
+        if analysis
+            .decl(id)
+            .fields()
+            .iter()
+            .any(|field| field.text() == new_name)
+        {
+            return Err(format!("a field is already named `{new_name}`"));
+        }
+    } else {
+        if matches!(occurrence.symbol, Symbol::Type(_)) && Ty::scalar(new_name).is_some() {
+            return Err(format!("`{new_name}` is a built-in type"));
+        }
+        if let Some((kind, _)) = items().find(|&(_, range)| analysis.text(range) == new_name) {
+            return Err(format!("a {kind} is already named `{new_name}`"));
+        }
+        let same: Vec<_> = analysis
+            .bindings()
+            .iter()
+            .filter(|binding| {
+                binding.name() != declared && analysis.text(binding.name()) == new_name
+            })
+            .collect();
+        let is_shadowed = occurrences().any(|range| {
+            same.iter()
+                .any(|binding| binding.is_visible_at(range.start()))
+        });
+        if is_shadowed {
+            return Err(format!("`{new_name}` is already in scope here"));
+        }
     }
     let positions = positions(analysis, encoding);
     let edits = occurrences()
@@ -1418,10 +1450,14 @@ fn signature_line(analysis: &Analysis, id: FunctionId) -> String {
         .zip(params)
         .map(|(binding, ty)| {
             let binding = binding.expect("a signature's parameters are named");
-            format!("{}: {ty}", analysis.text(binding.name()))
+            format!("{}: {}", analysis.text(binding.name()), analysis.show(*ty))
         })
         .collect();
-    format!("fn {name}({}) -> {result}", params.join(", "))
+    format!(
+        "fn {name}({}) -> {}",
+        params.join(", "),
+        analysis.show(result)
+    )
 }
 
 /// A function in a valid file also shows what its live call sites pass and what it returns;
@@ -1440,10 +1476,10 @@ fn hover(
             let name = analysis.text(binding.name());
             let ty = analysis
                 .ty(binding.declaration())
-                .map(|ty| format!(": {ty}"))
+                .map(|ty| format!(": {}", analysis.show(ty)))
                 .unwrap_or_default();
             match binding.kind() {
-                BindingKind::Param => format!("{name}{ty}"),
+                BindingKind::Param | BindingKind::Arm => format!("{name}{ty}"),
                 BindingKind::Let { is_mutable: false } => format!("let {name}{ty}"),
                 BindingKind::Let { is_mutable: true } => format!("let mut {name}{ty}"),
                 BindingKind::LoopIndex => format!("for {name}{ty}"),
@@ -1461,17 +1497,40 @@ fn hover(
                     let binding = binding.expect("a signature's parameters are named");
                     if may.is_live() {
                         let name = analysis.text(binding.name());
-                        proved.push(format!("{name} ∈ {}", may.shown(*ty)));
+                        proved.push(format!("{name} ∈ {}", may.shown(*ty, analysis)));
                     }
                 }
                 if ranges.result.is_live() {
                     proved.push(format!(
                         "result ∈ {}",
-                        ranges.result.shown(signature.result)
+                        ranges.result.shown(signature.result, analysis)
                     ));
                 }
             }
             signature_line(analysis, id)
+        }
+        Symbol::Type(id) => {
+            let decl = analysis.decl(id);
+            let name = decl.name().map_or("<missing>", |name| analysis.text(name));
+            let graph = analysis.graph();
+            let fields: Vec<String> = decl
+                .fields()
+                .iter()
+                .zip(graph.decl(id).fields())
+                .map(|(field, &(_, ty))| {
+                    let ty = ty.map_or("?".to_owned(), |ty| analysis.show(ty).to_string());
+                    format!("{}: {ty}", field.text())
+                })
+                .collect();
+            format!("type {name} {{ {} }}", fields.join(", "))
+        }
+        Symbol::Field(id, index) => {
+            let decl = analysis.decl(id);
+            let field = &decl.fields()[index as usize];
+            let ty = analysis.graph().decl(id).fields()[index as usize].1;
+            let ty = ty.map_or("?".to_owned(), |ty| analysis.show(ty).to_string());
+            let owner = decl.name().map_or("<missing>", |name| analysis.text(name));
+            format!("{owner}.{}: {ty}", field.text())
         }
     };
     let (kind, value) = if has_markdown {
@@ -1526,10 +1585,11 @@ fn inlay_hints(analysis: &Analysis, requested: Range, encoding: Encoding) -> Vec
         }
         let ty = analysis.ty(binding.declaration())?;
         let at = binding.name().end();
-        let mut hint = hint(at, format!(": {ty}"), InlayHintKind::TYPE);
+        let shown = format!(": {}", analysis.show(ty));
+        let mut hint = hint(at, shown.clone(), InlayHintKind::TYPE);
         hint.text_edits = Some(vec![TextEdit::new(
             Range::new(hint.position, hint.position),
-            format!(": {ty}"),
+            shown,
         )]);
         Some(hint)
     });
@@ -1549,7 +1609,7 @@ fn inlay_hints(analysis: &Analysis, requested: Range, encoding: Encoding) -> Vec
         let args = call
             .and_then(|call| call.arg_list(tree))
             .into_iter()
-            .flat_map(|list| list.args(tree));
+            .flat_map(|list| list.values(tree));
         target
             .into_iter()
             .flat_map(|id| analysis.params(id))
@@ -2124,7 +2184,7 @@ fn body(c: bool) -> int {
     tot
 }
 ";
-        let statement_keywords = ["_", "false", "for", "if", "let", "return", "true"];
+        let statement_keywords = ["_", "false", "for", "if", "let", "match", "return", "true"];
         let values = |locals: &[&str], has_else: bool| -> Vec<String> {
             let mut locals = locals.to_vec();
             locals.sort_unstable();
@@ -2140,8 +2200,8 @@ fn body(c: bool) -> int {
                 .map(String::from)
                 .collect()
         };
-        assert_eq!(labels(text, 0, 0, false), ["fn"]);
-        assert_eq!(labels(text, 11, 0, false), ["fn"]);
+        assert_eq!(labels(text, 0, 0, false), ["fn", "type"]);
+        assert_eq!(labels(text, 11, 0, false), ["fn", "type"]);
         assert_eq!(labels(text, 1, 3, false), Vec::<String>::new());
         assert_eq!(labels(text, 1, 8, false), Vec::<String>::new());
         assert_eq!(labels(text, 1, 16, false), Vec::<String>::new());
@@ -2418,11 +2478,11 @@ fn main() -> int = f()",
         );
         assert_eq!(
             super::rename(&twins, uri.clone(), at(0, 3), Encoding::Utf16, "g"),
-            Err("two functions are named `f`".into())
+            Err("multiple declarations are named `f`".into())
         );
         assert_eq!(
             super::rename(&twins, uri.clone(), at(1, 3), Encoding::Utf16, "g"),
-            Err("two functions are named `f`".into())
+            Err("multiple declarations are named `f`".into())
         );
     }
 
@@ -2487,6 +2547,132 @@ fn main() -> int = f()",
         let error = request(&client, 3, "textDocument/hover", json!({})).unwrap_err();
         assert_eq!(error.code, ErrorCode::InvalidParams as i32);
         stop(client, server_thread);
+    }
+
+    #[test]
+    fn rename_respects_type_and_field_namespaces() {
+        let text = "type A { value: int }
+type B {}
+fn make(n: int) -> A = A(value: n)
+fn read(a: A) -> int = a.value
+fn main() -> int = read(make(3))
+";
+        let uri: Uri = "file:///types.su".parse().unwrap();
+        let analysis = analyzed(text);
+        assert!(analysis.is_valid());
+        let renamed = |line, character, new_name| {
+            rename(
+                &analysis,
+                uri.clone(),
+                Position::new(line, character),
+                Encoding::Utf16,
+                new_name,
+            )
+        };
+        for (line, character, new_name, message) in [
+            (0, 5, "B", "a type is already named `B`"),
+            (0, 5, "make", "a function is already named `make`"),
+            (2, 3, "B", "a type is already named `B`"),
+            (2, 8, "A", "a type is already named `A`"),
+            (0, 5, "int", "`int` is a built-in type"),
+            (0, 5, "bool", "`bool` is a built-in type"),
+            (0, 5, "unit", "`unit` is a built-in type"),
+        ] {
+            assert_eq!(renamed(line, character, new_name), Err(message.into()));
+        }
+        for (line, character, new_name, count) in [
+            (0, 5, "Point", 4),
+            (0, 9, "B", 3),
+            (0, 9, "make", 3),
+            (0, 9, "n", 3),
+            (0, 9, "a", 3),
+            (0, 9, "int", 3),
+        ] {
+            let mut edits = renamed(line, character, new_name)
+                .unwrap()
+                .unwrap()
+                .changes
+                .unwrap()
+                .remove(&uri)
+                .unwrap();
+            assert_eq!(edits.len(), count);
+            edits.sort_by_key(|edit| {
+                std::cmp::Reverse((edit.range.start.line, edit.range.start.character))
+            });
+            let mut changed = text.to_owned();
+            for edit in edits {
+                let start = offset_at(&analysis, edit.range.start, Encoding::Utf16).unwrap();
+                let end = offset_at(&analysis, edit.range.end, Encoding::Utf16).unwrap();
+                changed.replace_range(start.to_usize()..end.to_usize(), &edit.new_text);
+            }
+            let changed = analyzed(&changed);
+            assert!(changed.is_valid(), "{:?}", changed.diagnostics());
+        }
+        for (text, line, character) in [
+            ("type A {}\ntype A {}", 0, 5),
+            ("type A {}\ntype A {}", 1, 5),
+            ("type A {}\nfn A() = 1", 0, 5),
+            ("type A {}\nfn A() = 1", 1, 3),
+        ] {
+            assert_eq!(
+                rename(
+                    &analyzed(text),
+                    uri.clone(),
+                    Position::new(line, character),
+                    Encoding::Utf16,
+                    "Fresh"
+                ),
+                Err("multiple declarations are named `A`".into()),
+            );
+        }
+    }
+
+    #[test]
+    fn fields_hover_and_rename_through_declarations_labels_and_reads() {
+        let text = "type Point { x: int, y: int }
+fn origin() -> Point = Point(x: 1, y: 2)
+fn sum(p: Point) -> int = p.x + p.y
+fn main() -> int = sum(origin())
+";
+        let uri: Uri = "file:///fields.su".parse().unwrap();
+        let at = |line, character| Position::new(line, character);
+        let range = |line, start, end| Range::new(at(line, start), at(line, end));
+        let analysis = analyzed(text);
+        let value = |hover: Hover| match hover.contents {
+            HoverContents::Markup(MarkupContent { value, .. }) => value,
+            _ => unreachable!(),
+        };
+        assert_eq!(
+            value(hover(&analysis, at(2, 28), Encoding::Utf16, false).unwrap()),
+            "Point.x: int"
+        );
+        let rename = |position, new_name| {
+            rename(&analysis, uri.clone(), position, Encoding::Utf16, new_name)
+        };
+        let mut edits = rename(at(0, 13), "z")
+            .unwrap()
+            .unwrap()
+            .changes
+            .unwrap()
+            .remove(&uri)
+            .unwrap();
+        edits.sort_by_key(|edit| (edit.range.start.line, edit.range.start.character));
+        let edits: Vec<_> = edits
+            .into_iter()
+            .map(|edit| (edit.range, edit.new_text))
+            .collect();
+        assert_eq!(
+            edits,
+            [
+                (range(0, 13, 14), "z".into()),
+                (range(1, 29, 30), "z".into()),
+                (range(2, 28, 29), "z".into()),
+            ]
+        );
+        assert_eq!(
+            rename(at(2, 28), "y"),
+            Err("a field is already named `y`".into())
+        );
     }
 
     #[test]
@@ -2629,7 +2815,7 @@ fn main() -> int {
 
     #[test]
     fn completion_survives_recovery() {
-        let keywords = ["_", "false", "for", "if", "let", "return", "true"];
+        let keywords = ["_", "false", "for", "if", "let", "match", "return", "true"];
         let values = |locals: &[&str], has_else: bool| -> Vec<String> {
             let mut keywords = keywords.to_vec();
             if has_else {
@@ -2662,7 +2848,7 @@ fn main() -> int {
         let text = "fn f() = {\n    if true { let q = 1 } \n}";
         assert_eq!(labels(text, 1, 26, false), values(&[], true));
         assert_eq!(labels(text, 1, 24, false), values(&["q"], false));
-        assert_eq!(labels("", 0, 0, false), ["fn"]);
+        assert_eq!(labels("", 0, 0, false), ["fn", "type"]);
         assert_eq!(
             complete(&analyzed(""), Position::new(3, 0), Encoding::Utf16, false),
             None

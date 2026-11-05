@@ -21,9 +21,11 @@ SourceFile! 1:1..16:1
           CallExpr! 8:13..9:22
             NameRef 8:13..8:14 "g"
             ArgList! 8:14..9:22
-              NameRef 9:17..9:18 "a"
+              Arg 9:17..9:18
+                NameRef 9:17..9:18 "a"
               Error! 9:19..9:20 "}"
-              NameRef 9:21..9:22 "x"
+              Arg 9:21..9:22
+                NameRef 9:21..9:22 "x"
   FnItem! 11:1..15:2
     Name 11:4..11:20 "closer_in_parens"
     ParamList 11:20..11:22 "()"

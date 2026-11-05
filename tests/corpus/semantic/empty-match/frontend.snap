@@ -1,0 +1,10 @@
+tree: omitted
+
+== formatted ==
+type A {}
+
+fn empty(a: A) -> int = match a {}
+fn inferred() = match A() {}
+fn returning() -> int = match {
+    return 1
+} {}

@@ -1,0 +1,148 @@
+== tree ==
+SourceFile! 1:1..14:1
+  TypeItem! 1:1..1:5 "type"
+  TypeItem! 2:1..2:8
+    FieldList 2:6..2:8 "{}"
+  TypeItem! 3:1..3:13
+    Name 3:6..3:13 "Missing"
+  TypeItem! 4:1..4:29
+    Name 4:6..4:13 "Garbage"
+    Error! 4:14..4:18 "junk"
+    FieldList 4:19..4:29
+      Field 4:21..4:27
+        Name 4:21..4:22 "x"
+        TypeRef 4:24..4:27 "int"
+  TypeItem! 5:1..5:27
+    Name 5:6..5:13 "NoColon"
+    FieldList! 5:14..5:27
+      Field! 5:16..5:21
+        Name 5:16..5:17 "x"
+        TypeRef 5:18..5:21 "int"
+      Field! 5:23..5:25
+        Name 5:23..5:24 "y"
+  TypeItem! 6:1..6:23
+    Name 6:6..6:14 "Unclosed"
+    FieldList! 6:15..6:23
+      Field 6:17..6:23
+        Name 6:17..6:18 "x"
+        TypeRef 6:20..6:23 "int"
+  FnItem! 7:1..7:33
+    Name 7:4..7:5 "f"
+    ParamList 7:5..7:7 "()"
+    Block! 7:8..7:33
+      Error! 7:10..7:31 "type Inner { a: int }"
+  FnItem! 8:1..8:14
+    Name 8:4..8:5 "g"
+    ParamList 8:5..8:7 "()"
+    Block! 8:8..8:14
+      NameRef 8:10..8:11 "p"
+      Error! 8:11..8:12 "."
+  FnItem! 9:1..9:15
+    Name 9:4..9:5 "h"
+    ParamList 9:5..9:7 "()"
+    Block! 9:8..9:15
+      NameRef 9:10..9:11 "p"
+      Error! 9:11..9:13 ".1"
+  FnItem! 10:1..10:17
+    Name 10:4..10:5 "i"
+    ParamList 10:5..10:7 "()"
+    Block! 10:8..10:17
+      CallExpr! 10:10..10:15
+        NameRef 10:10..10:11 "g"
+        ArgList! 10:11..10:15
+          Arg! 10:12..10:14
+            NameRef 10:12..10:13 "x"
+  FnItem! 11:1..12:5
+    Name 11:4..11:5 "j"
+    ParamList 11:5..11:7 "()"
+    Block! 11:8..12:5
+      NameRef 11:10..11:11 "p"
+      Error! 12:1..12:3 ".x"
+  FnItem 13:1..13:17
+    Name 13:4..13:5 "k"
+    ParamList 13:5..13:7 "()"
+    Block 13:8..13:17
+      FieldExpr 13:10..13:15
+        NameRef 13:10..13:11 "p"
+        NameRef 13:14..13:15 "x"
+
+== evidence ==
+ExpectedName at 2:1
+Expected(LBrace) at 2:1
+ExpectedName at 2:6
+Expected(LBrace) at 4:1
+Expected(LBrace) at 4:14
+Expected(Colon) at 5:18
+ExpectedType at 5:26
+Expected(RBrace) at 7:1
+ExpectedStatement at 7:10
+Unexpected at 8:11
+ExpectedStatement at 9:11
+ExpectedExpression at 10:14
+ExpectedStatement at 12:1
+
+== diagnostics ==
+error[syntax/expected-name] 2:1: expected a name
+error[syntax/expected-token] 2:1: expected `{`
+error[syntax/expected-name] 2:6: expected a name
+error[syntax/expected-token] 4:1: expected `{`
+error[syntax/expected-token] 4:14: expected `{`
+  at 4:14..4:18 "junk": skipped while recovering
+error[syntax/expected-token] 5:18: expected `:`
+error[syntax/expected-type] 5:26: expected a type
+error[syntax/expected-token] 7:1: expected `}`
+  at 6:15..6:16 "{": opening delimiter is here
+  fix: insert `}`
+    6:23 -> "}"
+error[syntax/expected-statement] 7:10..7:14 "type": expected a statement
+  at 7:10..7:31 "type Inner { a: int }": skipped while recovering
+error[syntax/unexpected-syntax] 8:11..8:12 ".": unexpected syntax in expression
+error[syntax/expected-statement] 9:11..9:12 ".": expected a statement
+  at 9:11..9:13 ".1": skipped while recovering
+error[syntax/expected-expression] 10:14: expected an expression
+error[syntax/expected-statement] 12:1..12:2 ".": expected a statement
+  at 12:1..12:3 ".x": skipped while recovering
+
+== fixed ==
+remaining: syntax/expected-expression, syntax/expected-name, syntax/expected-statement, syntax/expected-token, syntax/expected-type, syntax/unexpected-syntax
+
+type
+type {}
+type Missing
+type Garbage junk { x: int }
+type NoColon { x int, y: }
+type Unclosed { x: int}
+fn f() { type Inner { a: int } }
+fn g() { p. }
+fn h() { p.1 }
+fn i() { g(x:) }
+fn j() { p
+.x }
+fn k() { p . x }
+
+== formatted ==
+type
+type {}
+type Missing
+type Garbage junk {
+    x: int
+}
+type NoColon {
+    x int,
+    y: }
+type Unclosed {
+    x: int
+fn f() { type Inner { a: int } }
+fn g() {
+    p. }
+fn h() {
+    p.1 }
+fn i() {
+    g(x:)
+}
+fn j() {
+    p
+    .x }
+fn k() {
+    p.x
+}

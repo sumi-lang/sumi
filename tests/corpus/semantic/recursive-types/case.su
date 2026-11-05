@@ -1,0 +1,9 @@
+type A { b: B, n: int }
+type B { a: A }
+type Me { me: Me, tag: bool }
+type Chain { next: Link }
+type Link { end: int }
+
+fn end(c: Chain) -> int = c.next.end
+fn make() -> Chain = Chain(next: Link(end: 3))
+fn me(m: Me) -> bool = m.tag

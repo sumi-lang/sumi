@@ -61,7 +61,7 @@ fn significant_in(input: &ParserInput, start: RawIdx, end: RawIdx) -> u64 {
 fn items(front: &Front) -> Vec<NodeIdx> {
     let tree = front.parse.tree();
     tree.children(tree.root())
-        .filter(|&node| tree.kind(node) == NodeKind::FnItem)
+        .filter(|&node| matches!(tree.kind(node), NodeKind::FnItem | NodeKind::TypeItem))
         .collect()
 }
 

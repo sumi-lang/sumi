@@ -14,7 +14,7 @@ fn sequence@2:1..23:2 () -> int ∈ [4, 4]
       discard: call value@1:1..1:22 : int @4:6..4:13
       discard: call value@1:1..1:22 : int @5:7..5:14
       discard: if : int @7:9..11:10
-        condition: bool true : bool @7:12..7:16
+        scrutinee: bool true : bool @7:12..7:16
         then: int 1 : int @8:13..8:14
         else: int 2 : int @10:13..10:14
       discard: int 3 : int @16:17..16:18

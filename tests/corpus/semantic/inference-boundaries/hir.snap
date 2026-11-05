@@ -42,7 +42,7 @@ fn settled@13:1..19:2 () -> int ∈ [1, 1]
     let x@14:9..14:10: int @14:5..14:14
       initializer: int 1 : int @14:13..14:14
     discard: if : unit @15:5..17:6
-      condition: read x@14:9..14:10 : int
+      scrutinee: read x@14:9..14:10 : int
       then:
         discard: int 0 : int @16:13..16:14
         tail: unit : unit @15:10..17:6
