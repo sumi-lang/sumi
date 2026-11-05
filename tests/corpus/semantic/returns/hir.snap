@@ -190,6 +190,30 @@ fn choose@72:1..76:2 (bool ∈ ∅) -> int ∈ ∅
     outcome[1]: return : int @73:5..73:14
       payload: int 17 : int @73:12..73:14
 
+fn lazy_or_skips@77:1..79:2 () -> bool ∈ {true}
+  result: result : bool @77:23..77:27
+    outcome[0]:
+      discard: after : ? @78:5..78:29
+        control: observe : ? @78:5..78:29
+        context: entry : ? @77:1..79:2
+      tail: lazy or : bool @78:5..78:29
+        lhs: bool true : bool @78:5..78:9
+        rhs: unit : unit @78:13..78:29
+    outcome[1]: return : bool @78:15..78:27
+      payload: bool false : bool @78:22..78:27
+
+fn lazy_or_takes@80:1..82:2 () -> bool ∈ {true}
+  result: result : bool @80:23..80:27
+    outcome[0]:
+      discard: after : ? @81:5..81:29
+        control: observe : ? @81:5..81:29
+        context: entry : ? @80:1..82:2
+      tail: lazy or : bool @81:5..81:29
+        lhs: bool false : bool @81:5..81:10
+        rhs: unit : unit @81:14..81:29
+    outcome[1]: return : bool @81:16..81:27
+      payload: bool true : bool @81:23..81:27
+
 == semantic diagnostics ==
 warning[semantic/unreachable-code] 3:5..3:6 "9": unreachable code
   at 2:5..2:13 "return 4": no path continues past this
@@ -222,3 +246,6 @@ warning[semantic/unused-name] 64:9..64:15 "unused": local `unused` is never read
 warning[semantic/unreachable-code] 67:5..67:7 "15": unreachable code
   at 64:5..66:7 "let unused = id({\n        return 14\n    })": no path continues past this
 warning[semantic/unused-function] 72:4..72:10 "choose": function `choose` is never called
+warning[semantic/constant-condition] 78:5..78:9 "true": condition is always true
+  at 78:13..78:29 "{ return false }": the right side never runs
+warning[semantic/constant-condition] 81:5..81:10 "false": condition is always false

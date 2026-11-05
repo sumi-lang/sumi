@@ -78,3 +78,13 @@ fn choose(b: bool) -> int = if b {
 } else {
     18
 }
+fn lazy_or_skips() -> bool {
+    true || {
+        return false
+    }
+}
+fn lazy_or_takes() -> bool {
+    false || {
+        return true
+    }
+}
