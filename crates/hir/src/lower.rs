@@ -655,9 +655,15 @@ pub(crate) fn declare<'s>(
 /// A type holding its own values through fields never finishes: each such field loses its type,
 /// so the table the graph takes is finite in depth.
 fn unfold_recursive_types(source: &mut Source<'_>, decls: &mut [Vec<(FieldName, Option<Ty>)>]) {
-    let reaches = |decls: &[Vec<(FieldName, Option<Ty>)>], from: DeclId, target: DeclId| {
+    let unions = source.unions.borrow();
+    let members = |ty: Ty| {
+        ty.as_decl()
+            .into_iter()
+            .chain(unions.members(ty).iter().copied())
+    };
+    let reaches = |decls: &[Vec<(FieldName, Option<Ty>)>], from: Ty, target: DeclId| {
         let mut seen = vec![false; decls.len()];
-        let mut stack = vec![from];
+        let mut stack: Vec<DeclId> = members(from).collect();
         while let Some(decl) = stack.pop() {
             if decl == target {
                 return true;
@@ -668,7 +674,8 @@ fn unfold_recursive_types(source: &mut Source<'_>, decls: &mut [Vec<(FieldName, 
             stack.extend(
                 decls[decl.index()]
                     .iter()
-                    .filter_map(|&(_, ty)| ty.and_then(Ty::as_decl)),
+                    .filter_map(|&(_, ty)| ty)
+                    .flat_map(members),
             );
         }
         false
@@ -677,13 +684,14 @@ fn unfold_recursive_types(source: &mut Source<'_>, decls: &mut [Vec<(FieldName, 
     for index in 0..decls.len() {
         let decl = DeclId::new(index);
         for (field, &(_, ty)) in decls[index].iter().enumerate() {
-            if let Some(through) = ty.and_then(Ty::as_decl)
+            if let Some(through) = ty.filter(|ty| ty.is_declared())
                 && reaches(decls, through, decl)
             {
                 cut.push((decl, field));
             }
         }
     }
+    drop(unions);
     for &(decl, field) in &cut {
         let names = &source.decls[decl.index()];
         let (field_name, field_node) = names.fields[field];

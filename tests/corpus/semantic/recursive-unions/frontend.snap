@@ -1,0 +1,31 @@
+tree: omitted
+
+== formatted ==
+type End {}
+type Node {
+    next: Node | End
+}
+type A {
+    next: B | End
+}
+type B {
+    next: A
+}
+type C {
+    next: D
+}
+type D {
+    next: E | End
+}
+type E {
+    next: C
+}
+
+fn main() -> int {
+    let mut n: Node | End = End()
+    for i in 0..3 {
+        n = Node(next: n)
+    }
+    _ = n
+    0
+}

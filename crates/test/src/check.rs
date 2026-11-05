@@ -1043,9 +1043,48 @@ fn typed(analysis: &Analysis) {
     }
 }
 
+fn acyclic_fields(graph: &sumi_hir::Graph) {
+    let mut remaining = vec![0; graph.decls().len()];
+    let mut owners = vec![Vec::new(); graph.decls().len()];
+    for (owner, decl) in graph.decls().iter().enumerate() {
+        for &(_, ty) in decl.fields() {
+            let Some(ty) = ty else { continue };
+            for member in ty
+                .as_decl()
+                .into_iter()
+                .chain(graph.unions().members(ty).iter().copied())
+            {
+                remaining[owner] += 1;
+                owners[member.index()].push(owner);
+            }
+        }
+    }
+    let mut ready: Vec<usize> = remaining
+        .iter()
+        .enumerate()
+        .filter_map(|(index, &count)| (count == 0).then_some(index))
+        .collect();
+    let mut finished = 0;
+    while let Some(decl) = ready.pop() {
+        finished += 1;
+        for &owner in &owners[decl] {
+            remaining[owner] -= 1;
+            if remaining[owner] == 0 {
+                ready.push(owner);
+            }
+        }
+    }
+    assert_eq!(
+        finished,
+        graph.decls().len(),
+        "declared fields contain a type cycle"
+    );
+}
+
 fn graph(analysis: &Analysis) {
     use sumi_hir::{Op, References, Role};
     let graph = analysis.graph();
+    acyclic_fields(graph);
     for id in graph.node_ids() {
         let node = graph.node(id);
         let inputs = graph.inputs(id);

@@ -1,0 +1,42 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 6
+
+== graph ==
+fn main@9:1..14:2 () -> int ∈ [0, 0]
+  result: result : int @9:14..9:17
+    outcome[0]:
+      let n@10:13..10:14: End | Node @10:5..10:34
+        initializer: make End : End @10:29..10:34
+      discard: loop : unit @11:5..11:40
+        start: int 0 : int @11:14..11:15
+        end: int 3 : int @11:17..11:18
+        carry[0]: carry n@10:13..10:14 : End | Node @11:5..11:40
+          initial: read n@10:13..10:14 : End | Node
+        body:
+          let i@11:9..11:10: loop index : int @11:5..11:40
+            start: int 0 : int @11:14..11:15
+            end: int 3 : int @11:17..11:18
+          assignment: assign n@10:13..10:14 : ? @11:21..11:38
+            value: hole : ? @11:25..11:38
+              part[0]: read n@10:13..10:14 (carried @11:5..11:40) : End | Node
+          tail: unit : unit @11:19..11:40
+        next[0]: read n@10:13..10:14 (carried @11:5..11:40) : End | Node
+      discard: after : ? @11:5..11:40
+        control: loop : unit @11:5..11:40
+        context: entry : ? @9:1..14:2
+      tail: int 0 : int @13:5..13:6
+
+== semantic diagnostics ==
+error[semantic/recursive-type] 2:6..2:10 "Node": type `Node` holds itself through field `next`
+  at 2:13..2:17 "next": this field
+error[semantic/recursive-type] 3:6..3:7 "A": type `A` holds itself through field `next`
+  at 3:10..3:14 "next": this field
+error[semantic/recursive-type] 4:6..4:7 "B": type `B` holds itself through field `next`
+  at 4:10..4:14 "next": this field
+error[semantic/recursive-type] 5:6..5:7 "C": type `C` holds itself through field `next`
+  at 5:10..5:14 "next": this field
+error[semantic/recursive-type] 6:6..6:7 "D": type `D` holds itself through field `next`
+  at 6:10..6:14 "next": this field
+error[semantic/recursive-type] 7:6..7:7 "E": type `E` holds itself through field `next`
+  at 7:10..7:14 "next": this field
