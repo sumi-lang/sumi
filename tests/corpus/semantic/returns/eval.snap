@@ -1,5 +1,5 @@
 file: accepted
-optimized: nodes 71 of 172, regions 17 of 22, calls 2 of 5
+optimized: nodes 80 of 196, regions 19 of 26, calls 2 of 5
 
 == functions ==
 fn callee = 4
@@ -26,3 +26,7 @@ fn argument = 14
   steps: 2, optimized steps: 2, depth: 1, bound: 1
 fn eager_without_tail = 16
   steps: 2, optimized steps: 2, depth: 1, bound: 1
+fn lazy_or_skips = true
+  steps: 5, optimized steps: 4, depth: 1, bound: 1
+fn lazy_or_takes = true
+  steps: 3, optimized steps: 2, depth: 1, bound: 1

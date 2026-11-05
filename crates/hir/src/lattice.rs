@@ -330,6 +330,7 @@ pub(crate) enum Edge {
     TypeBind,
     Values,
     Exactly(bool),
+    ShortCircuit(bool),
     /// One operand of `==` or `!=` typing the other.
     Peer,
     Neg,
@@ -357,7 +358,12 @@ impl Edge {
             | Self::Exactly(_)
             | Self::Peer
             | Self::Field(_) => true,
-            Self::Values | Self::Neg | Self::Not | Self::Enter | Self::Narrow(_) => false,
+            Self::Values
+            | Self::Neg
+            | Self::Not
+            | Self::Enter
+            | Self::ShortCircuit(_)
+            | Self::Narrow(_) => false,
         }
     }
 
@@ -491,7 +497,12 @@ impl Lattice for Evidence {
                 self.clone()
             }
             Edge::Field(name) => self.field(name, &cx.decls),
-            Edge::Values | Edge::Neg | Edge::Not | Edge::Enter | Edge::Narrow(_) => Self::NONE,
+            Edge::Values
+            | Edge::Neg
+            | Edge::Not
+            | Edge::Enter
+            | Edge::ShortCircuit(_)
+            | Edge::Narrow(_) => Self::NONE,
         }
     }
 
@@ -548,6 +559,7 @@ impl Lattice for May {
             | Edge::TypeBind
             | Edge::Not
             | Edge::Enter
+            | Edge::ShortCircuit(_)
             | Edge::Exactly(_) => Carry::Nothing,
             Edge::Neg => Carry::Grows,
             Edge::Call(_) | Edge::Bind | Edge::Values | Edge::Field(_) | Edge::Narrow(_) => {
@@ -589,7 +601,7 @@ impl Lattice for May {
                 let Ok(inverted) = self.not();
                 inverted
             }
-            Edge::Exactly(value) => self.exactly(value),
+            Edge::Exactly(value) | Edge::ShortCircuit(value) => self.exactly(value),
             Edge::Enter => Self::of_unit(self.is_live()),
             Edge::Field(name) => {
                 let Ok(field) = self.field(name, &cx.decls, &cx.unions);
@@ -778,7 +790,12 @@ mod tests {
         assert!(!Edge::TypeBind.delivers_values());
         assert_eq!(one.transfer(&Edge::Types, false, &cx), May::NONE);
         assert_eq!(int.combine(&Pair::Branch, &Evidence::NONE, false, &cx), int);
-        for edge in [Edge::Values, Edge::Neg, Edge::Enter] {
+        for edge in [
+            Edge::Values,
+            Edge::Neg,
+            Edge::Enter,
+            Edge::ShortCircuit(false),
+        ] {
             assert!(!edge.delivers_types());
             assert_eq!(int.transfer(&edge, false, &cx), Evidence::NONE);
         }

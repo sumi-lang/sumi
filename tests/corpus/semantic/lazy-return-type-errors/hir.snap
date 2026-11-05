@@ -1,0 +1,64 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 6
+
+== graph ==
+fn a@1:1..1:29 () -> int ∈ ∅
+  result: result : int @1:9..1:12
+    outcome[0]:
+      discard: after : ? @1:13..1:28
+        control: observe : ? @1:13..1:28
+        context: entry : ? @1:1..1:29
+      tail: lazy and : bool @1:13..1:28
+        lhs: int 5 : int @1:13..1:14
+        rhs: unit : unit @1:18..1:28
+    outcome[1]: return : int @1:19..1:27
+      payload: int 7 : int @1:26..1:27
+
+fn or_return@2:1..4:2 () -> int ∈ ∅
+  result: result : int @2:19..2:22
+    outcome[0]:
+      discard: after : ? @3:5..3:22
+        control: observe : ? @3:5..3:22
+        context: entry : ? @2:1..4:2
+      tail: lazy or : bool @3:5..3:22
+        lhs: int 5 : int @3:5..3:6
+        rhs: unit : unit @3:10..3:22
+    outcome[1]: return : int @3:12..3:20
+      payload: int 7 : int @3:19..3:20
+
+fn unit_left@5:1..7:2 () -> bool ∈ ∅
+  result: result : bool @5:19..5:23
+    outcome[0]:
+      discard: after : ? @6:5..6:26
+        control: observe : ? @6:5..6:26
+        context: entry : ? @5:1..7:2
+      tail: lazy and : bool @6:5..6:26
+        lhs: unit : unit @6:5..6:7
+        rhs: unit : unit @6:11..6:26
+    outcome[1]: return : bool @6:13..6:24
+      payload: bool true : bool @6:20..6:24
+
+fn bound_left@8:1..11:2 () -> bool ∈ ∅
+  result: result : bool @8:20..8:24
+    outcome[0]:
+      let x@9:9..9:10: int @9:5..9:14
+        initializer: int 5 : int @9:13..9:14
+      discard: after : ? @10:5..10:25
+        control: observe : ? @10:5..10:25
+        context: entry : ? @8:1..11:2
+      tail: lazy or : bool @10:5..10:25
+        lhs: read x@9:9..9:10 : int
+        rhs: unit : unit @10:10..10:25
+    outcome[1]: return : bool @10:12..10:23
+      payload: bool true : bool @10:19..10:23
+
+== semantic diagnostics ==
+error[semantic/type-mismatch] 1:13..1:14 "5": expected bool, found int
+error[semantic/type-mismatch] 1:13..1:28 "5 && {return 7}": expected int, found bool
+  at 1:9..1:12 "int": declared here
+error[semantic/type-mismatch] 3:5..3:6 "5": expected bool, found int
+error[semantic/type-mismatch] 3:5..3:22 "5 || { return 7 }": expected int, found bool
+  at 2:19..2:22 "int": declared here
+error[semantic/type-mismatch] 6:5..6:7 "{}": expected bool, found unit
+error[semantic/type-mismatch] 10:5..10:6 "x": expected bool, found int

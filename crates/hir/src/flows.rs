@@ -560,7 +560,7 @@ pub(crate) fn draw(
                     if region.result_has_value() {
                         typing.derive(inputs[0], rhs, node, Pair::Lazy { is_and });
                     } else {
-                        typing.flow(inputs[0], node, Edge::Exactly(!is_and));
+                        typing.flow(inputs[0], node, Edge::ShortCircuit(!is_and));
                     }
                 }
                 Op::And { .. } | Op::Or { .. } => {}

@@ -1,0 +1,66 @@
+== tree ==
+SourceFile! 1:1..8:1
+  FnItem! 1:1..2:7
+    Name 1:4..1:5 "f"
+    ParamList 1:5..1:7 "()"
+    Error! 1:10..1:11 ">"
+    TypeRef 2:1..2:2 "i"
+    Block 2:2..2:7
+      Block 2:3..2:6
+        NameRef 2:4..2:5 "k"
+  FnItem! 3:1..4:8
+    Name 3:4..3:14 "expression"
+    ParamList 3:14..3:16 "()"
+    Error! 3:20..3:21 ">"
+    TypeRef 4:1..4:4 "int"
+    LiteralExpr 4:7..4:8 "1"
+  FnItem! 5:1..5:18
+    Name 5:4..5:11 "missing"
+    ParamList 5:11..5:13 "()"
+    Error! 5:17..5:18 ">"
+  FnItem 6:1..6:18
+    Name 6:4..6:12 "survivor"
+    ParamList 6:12..6:14 "()"
+    LiteralExpr 6:17..6:18 "2"
+  FnItem! 7:1..7:22
+    Name 7:4..7:9 "block"
+    ParamList 7:9..7:11 "()"
+    Error! 7:15..7:16 ">"
+    Block 7:17..7:22
+      Block 7:18..7:21
+        NameRef 7:19..7:20 "k"
+
+== evidence ==
+ExpectedType at 1:10
+ExpectedType at 3:20
+ExpectedType at 5:17
+ExpectedBody at 6:1
+ExpectedType at 7:15
+
+== diagnostics ==
+error[syntax/expected-type] 1:10: expected a type
+  at 1:10..1:11 ">": skipped while recovering
+error[syntax/expected-type] 3:20: expected a type
+  at 3:20..3:21 ">": skipped while recovering
+error[syntax/expected-type] 5:17: expected a type
+  at 5:17..5:18 ">": skipped while recovering
+error[syntax/expected-body] 6:1: expected a body, `{` or `=`
+error[syntax/expected-type] 7:15: expected a type
+  at 7:15..7:16 ">": skipped while recovering
+
+== formatted ==
+fn f() -> >
+i {
+    {
+        k
+    }
+}
+fn expression() -> >
+int = 1
+fn missing() -> >
+fn survivor() = 2
+fn block() -> > {
+    {
+        k
+    }
+}
