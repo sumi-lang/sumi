@@ -1,0 +1,9 @@
+type Container { value: A | B }
+type A { n: int }
+type B { n: int }
+type Outer { inner: Container | B }
+
+fn read(c: Container) -> int = match c.value { A(a) => a.n, B(b) => b.n }
+fn outer(o: Outer) -> int = match o.inner { Container(c) => read(c), B(b) => b.n }
+fn main() -> int = read(Container(value: A(n: 3))) + read(Container(value: B(n: 4)))
+fn nested() -> int = outer(Outer(inner: Container(value: A(n: 5)))) + outer(Outer(inner: B(n: 6)))

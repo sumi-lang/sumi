@@ -917,7 +917,9 @@ impl fmt::Display for ShownWhole<'_> {
         if self.0.has_unit {
             parts.push("unit".to_owned());
         }
-        for (decl, _) in self.0.decls.iter() {
+        let mut decls: Vec<DeclId> = self.0.decls.iter().map(|(decl, _)| decl).collect();
+        decls.sort_by_key(|&decl| self.1.decl(decl));
+        for decl in decls {
             parts.push(self.0.shown(Ty::decl(decl), self.1).to_string());
         }
         if parts.is_empty() {
