@@ -136,6 +136,16 @@ describe("TextMate grammar", () => {
     expect(scopesAt(lines, 3, "return")).toContain("keyword.control.sumi");
   });
 
+  test("scopes type declarations and match without matching keyword prefixes", () => {
+    const lines = tokenize(
+      "type Point { x: int }\nmatch point { Point(p) => p.x }\nlet typename = matched",
+    );
+    expect(scopesAt(lines, 0, "type")).toContain("keyword.declaration.sumi");
+    expect(scopesAt(lines, 0, "Point")).toContain("entity.name.type.sumi");
+    expect(scopesAt(lines, 1, "match")).toContain("keyword.control.sumi");
+    expect(scopesAt(lines, 2, "typename")).toContain("variable.other.definition.sumi");
+    expect(scopesAt(lines, 2, "matched")).toContain("variable.other.readwrite.sumi");
+  });
 });
 
 const tokenDeclaration = await Bun.file(
@@ -150,7 +160,9 @@ const punctuation = [...tokenDeclaration.matchAll(/^\s+\w+: punct '(.)',$/gm)].m
 
 describe("compiler vocabulary synchronization", () => {
   test("reads every keyword and punctuation from the lexer declaration", () => {
-    expect(keywords).toEqual(["_", "else", "false", "fn", "for", "if", "in", "let", "mut", "return", "true"]);
+    expect(keywords).toEqual([
+      "_", "else", "false", "fn", "for", "if", "in", "let", "match", "mut", "return", "true", "type",
+    ]);
     expect(punctuation).toEqual([
       "(",
       ")",
@@ -174,7 +186,9 @@ describe("compiler vocabulary synchronization", () => {
   });
 
   test.each(keywords)("scopes the compiler keyword %s", (keyword) => {
-    expect(scopesAt(tokenize(keyword), 0, keyword).length).toBeGreaterThan(1);
+    const scopes = scopesAt(tokenize(keyword), 0, keyword);
+    expect(scopes.length).toBeGreaterThan(1);
+    expect(scopes).not.toContain("variable.other.readwrite.sumi");
   });
 
   test.each(punctuation)("scopes the compiler punctuation %s", (punctuation) => {

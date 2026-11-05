@@ -10,6 +10,7 @@
       "patterns": [
         { "include": "#comments" },
         { "include": "#function-declaration" },
+        { "include": "#type-declaration" },
         { "include": "#binding-declaration" },
         { "include": "#type-reference" },
         { "include": "#invalid-number" },
@@ -63,6 +64,17 @@
         }
       ]
     },
+    "type-declaration": {
+      "patterns": [
+        {
+          "match": "\\b(type)([ \\t]+)((?!_\\b)[A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": { "name": "keyword.declaration.sumi" },
+            "3": { "name": "entity.name.type.sumi" }
+          }
+        }
+      ]
+    },
     "binding-declaration": {
       "patterns": [
         {
@@ -90,11 +102,11 @@
       "patterns": [
         {
           "name": "keyword.control.sumi",
-          "match": "\\b(?:else|for|if|in|return)\\b"
+          "match": "\\b(?:else|for|if|in|match|return)\\b"
         },
         {
           "name": "keyword.declaration.sumi",
-          "match": "\\b(?:fn|let)\\b"
+          "match": "\\b(?:fn|let|type)\\b"
         },
         {
           "name": "storage.modifier.sumi",
