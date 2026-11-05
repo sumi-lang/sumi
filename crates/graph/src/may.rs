@@ -1084,14 +1084,19 @@ impl Domain for May {
     }
 
     fn narrow(&self, ty: Ty, unions: &Unions) -> Self {
-        Self {
-            decls: self
-                .decls
-                .iter()
-                .filter(|&(decl, _)| unions.admits(ty, decl))
-                .map(|(decl, fields)| (decl, fields.clone()))
-                .collect(),
-            ..Self::NONE
+        match ty.kind() {
+            TyKind::Int => Self::ints(self.ints.clone()),
+            TyKind::Bool => Self::bools(self.bools),
+            TyKind::Unit => Self::of_unit(self.has_unit),
+            TyKind::Decl(_) | TyKind::Union(_) => Self {
+                decls: self
+                    .decls
+                    .iter()
+                    .filter(|&(decl, _)| unions.admits(ty, decl))
+                    .map(|(decl, fields)| (decl, fields.clone()))
+                    .collect(),
+                ..Self::NONE
+            },
         }
     }
 }

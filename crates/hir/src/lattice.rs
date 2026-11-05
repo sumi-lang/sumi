@@ -645,12 +645,20 @@ impl Lattice for May {
         }
     }
 
-    /// The value made is a fact of its own type, so only the fields' values flow.
+    /// Field types bound nesting even in ill-typed cycles, which integer rounding cannot bound.
     fn combine_many(&self, many: &Many, others: &[&Self], cyclic: bool, cx: &Context) -> Self {
         let Many::Make(decl) = *many;
         let fields = std::iter::once(self)
             .chain(others.iter().copied())
-            .map(|field| rounded(field, cyclic, cx))
+            .zip(cx.decls[decl.index()].fields())
+            .map(|(field, &(_, ty))| {
+                let field = ty.map_or(Self::NONE, |ty| field.narrow(ty, &cx.unions));
+                if cyclic {
+                    field.rounded(&cx.thresholds)
+                } else {
+                    field
+                }
+            })
             .collect();
         May::make(decl, fields)
     }

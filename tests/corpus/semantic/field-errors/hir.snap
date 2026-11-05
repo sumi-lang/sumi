@@ -62,7 +62,7 @@ fn assigned@12:1..12:28 () -> unit ∈ unit
         part[0]: int 1 : int @12:25..12:26
       tail: unit : unit @12:15..12:28
 
-fn mismatched@13:1..13:48 () -> Point ∈ Point({true}, [0, 0])
+fn mismatched@13:1..13:48 () -> Point ∈ Point(∅, [0, 0])
   result: copy : Point @13:20..13:25
     value: make Point : Point @13:28..13:48
       x: bool true : bool @13:37..13:41

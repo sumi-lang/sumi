@@ -1,0 +1,33 @@
+type Number { x: int }
+type Flag { x: bool }
+type Empty { x: unit }
+type Pair { left: Number, right: Number }
+type Choice { value: Number | Flag }
+
+fn integer() -> Number {
+    let mut a = Number(x: 1)
+    for i in 0..1 { a = Number(x: a) }
+    a
+}
+fn boolean() -> Flag {
+    let mut a = Flag(x: true)
+    for i in 0..1 { a = Flag(x: a) }
+    a
+}
+fn unit() -> Empty {
+    let mut a = Empty(x: {})
+    for i in 0..1 { a = Empty(x: a) }
+    a
+}
+fn record() -> Pair {
+    let mut a = Pair(left: Number(x: 1), right: Number(x: 2))
+    for i in 0..1 { a = Pair(left: a, right: Number(x: i)) }
+    a
+}
+fn union() -> Choice {
+    let mut a = Choice(value: Number(x: 1))
+    for i in 0..1 { a = Choice(value: a) }
+    a
+}
+fn recur(a: Number, n: int) -> Number = if n == 0 { a } else { recur(Number(x: a), n - 1) }
+fn main() -> Number = recur(Number(x: 1), 1)
