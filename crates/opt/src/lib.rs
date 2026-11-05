@@ -1,9 +1,7 @@
 //! The middle end: rewrites a proven graph into a smaller one that computes the same values, for
 //! whichever backend runs it. The result is a graph like the analysis's, contexts and all.
 
-use sumi_graph::{
-    Arms, Case, FunctionId, Graph, GraphBuilder, May, NodeId, Op, References, RegionId, Role,
-};
+use sumi_graph::{Arms, Case, Graph, May, NodeId, Op, Operand, Rebuild, References, RegionId};
 
 /// A rewritten graph and the node of the original each of its nodes computes.
 pub struct Optimized {
@@ -72,6 +70,23 @@ impl Plan {
             Rewrite::Literal(op) => Some(op),
             _ => None,
         }
+    }
+
+    fn operands<'a>(
+        &'a self,
+        graph: &'a Graph,
+        node: NodeId,
+        kept: &'a [bool],
+    ) -> impl Iterator<Item = Operand> + 'a {
+        let returns = matches!(self.op(graph, node), Op::Result { .. });
+        graph
+            .operands(node)
+            .enumerate()
+            .filter_map(move |(position, input)| {
+                // Explicit returns survive only when a retained control reaches them.
+                (!returns || position == 0 || kept[self.target(input.node()).index()])
+                    .then_some(input)
+            })
     }
 
     fn exit(&self, region: RegionId) -> &Exit {
@@ -341,163 +356,76 @@ fn marks(graph: &Graph, plan: &Plan) -> Vec<bool> {
 
 fn emit(graph: &Graph, plan: &Plan, kept: &[bool]) -> Optimized {
     let regions = kept_regions(graph, plan, kept);
-    let mut builder = GraphBuilder::new(kept.iter().filter(|&&kept| kept).count());
-    builder.declare(graph.decls().iter().cloned());
-    builder.set_unions(graph.unions().clone());
-    for run in graph.runs() {
-        builder.function(run.param_types().map(Box::from));
-    }
-    let mut new_of: Vec<Option<NodeId>> = vec![None; graph.nodes().len()];
-    let mut new_region: Vec<Option<RegionId>> = vec![None; regions.len()];
-    // A switch's arms open together, so they stay consecutive.
-    let mut arms_of: Vec<Option<Arms>> = vec![None; regions.len()];
-    for node in graph.node_ids() {
-        if let Op::Switch { arms } | Op::Observe { arms } = graph.node(node).op {
-            for arm in arms.iter() {
-                arms_of[arm.index()] = Some(arms);
+    let nodes = || graph.node_ids().filter(|node| kept[node.index()]);
+    let mut contextual = false;
+    let edges = nodes()
+        .map(|node| match &plan.nodes[node.index()] {
+            Rewrite::Literal(Op::Unit) => {
+                contextual = true;
+                1
             }
+            Rewrite::Literal(_) => 0,
+            Rewrite::Replace(_) => graph.inputs(node).len(),
+            _ if matches!(graph.node(node).op, Op::Result { .. }) => {
+                plan.operands(graph, node, kept).count()
+            }
+            _ => graph.edges(node).len(),
+        })
+        .sum();
+    let mut rebuild = Rebuild::new(graph, kept, &regions, edges, |node| plan.target(node));
+    let mut ordered = Vec::new();
+    for id in graph.region_ids().filter(|id| regions[id.index()]) {
+        let exit = plan.exit(id);
+        rebuild.region(id, exit.result, exit.value, exit.control);
+        if contextual && graph.region(id).nodes().len() != 0 {
+            ordered.push(id);
         }
     }
-    let mut origins = Vec::new();
-    let mut run_regions: Vec<Vec<RegionId>> = vec![Vec::new(); graph.runs().len()];
-    for region in graph.region_ids().filter(|region| regions[region.index()]) {
-        let context = graph.region(region).context.index();
-        // Runs are contiguous in declaration order.
-        let run = graph
-            .runs()
-            .partition_point(|run| run.entry().index() <= context)
-            - 1;
-        run_regions[run].push(region);
-    }
-
-    let mut inputs = Vec::new();
-    let mut completes = Vec::new();
-    let mut carried = Vec::new();
-    let mut arm_contexts: Vec<NodeId> = Vec::new();
-    for (index, run) in graph.runs().iter().enumerate() {
-        let open = builder.open_run(FunctionId::new(index));
-        let first = run.entry().index();
-        let end = first + run.nodes().len();
-        // (where, whether it closes or enters there, region), in the order the builder takes. An
-        // empty region closes as it enters, so a sibling entered at the same place stays innermost.
-        let mut events: Vec<(usize, u8, RegionId)> = Vec::new();
-        for &region in &run_regions[index] {
-            let start = graph.region(region).start();
-            let stop = start + graph.region(region).nodes().len();
-            events.push((start, 1, region));
-            if stop > start {
-                events.push((stop, 0, region));
+    ordered.sort_by_key(|&id| {
+        let region = graph.region(id);
+        (
+            region.start(),
+            std::cmp::Reverse(region.nodes().len()),
+            id.index(),
+        )
+    });
+    let mut regions = ordered.into_iter().peekable();
+    let mut enclosing: Vec<RegionId> = Vec::new();
+    for node in nodes() {
+        while enclosing.last().is_some_and(|&id| {
+            let region = graph.region(id);
+            region.start() + region.nodes().len() <= node.index()
+        }) {
+            enclosing.pop();
+        }
+        while let Some(id) = regions.next_if(|&id| graph.region(id).start() <= node.index()) {
+            let region = graph.region(id);
+            if region.start() + region.nodes().len() > node.index() {
+                enclosing.push(id);
             }
         }
-        events.sort_by_key(|&(at, order, region)| (at, order, region.index()));
-        let mut events = events.into_iter().peekable();
-        // The contexts of the regions open here, innermost last.
-        let mut contexts: Vec<NodeId> = Vec::new();
-        for at in first..=end {
-            while let Some((_, order, region)) = events.next_if(|&(event, _, _)| event == at) {
-                let map = |node: NodeId| {
-                    new_of[plan.target(node).index()].expect("a kept region's nodes are kept")
-                };
-                let old = graph.region(region);
-                let exit = plan.exit(region);
-                let close = |builder: &mut GraphBuilder, new: RegionId| {
-                    builder.close_with_control(
-                        new,
-                        map(exit.result),
-                        exit.value,
-                        exit.control.map(map),
-                    );
-                };
-                if order == 1 {
-                    let context = map(old.context);
-                    let new = match arms_of[region.index()] {
-                        Some(arms) => {
-                            if arms.iter().next() == Some(region) {
-                                arm_contexts.clear();
-                                arm_contexts
-                                    .extend(arms.iter().map(|arm| map(graph.region(arm).context)));
-                                let opened = builder.open_arms(&arm_contexts);
-                                for (arm, new) in arms.iter().zip(opened.iter()) {
-                                    new_region[arm.index()] = Some(new);
-                                }
-                            }
-                            new_region[region.index()].expect("an arm opens with its first")
-                        }
-                        None => builder.open(context),
-                    };
-                    builder.enter(new);
-                    new_region[region.index()] = Some(new);
-                    if old.nodes().len() == 0 {
-                        close(&mut builder, new);
-                    } else {
-                        contexts.push(context);
-                    }
-                } else {
-                    close(
-                        &mut builder,
-                        new_region[region.index()].expect("a region closes after it opens"),
-                    );
-                    contexts.pop();
-                }
-            }
-            if at == end || !kept[at] {
-                continue;
-            }
-            let node = NodeId::new(at);
-            let map = |node: NodeId| {
-                new_of[plan.target(node).index()].expect("what a kept node names is kept")
-            };
-            if let Some(literal) = plan.literal(node) {
-                let context = *contexts.last().expect("a node runs in its run's region");
-                let inputs: &[NodeId] = match literal {
-                    Op::Unit => &[context],
-                    _ => &[],
-                };
-                new_of[at] =
-                    Some(builder.push(literal.clone(), inputs.iter().copied(), References::None));
-                origins.push(node);
-                continue;
-            }
-            let op = plan.op(graph, node).clone().with_regions(|region| {
-                new_region[region.index()].expect("a kept op's regions are kept")
+        if let Some(literal) = plan.literal(node) {
+            let context = matches!(literal, Op::Unit).then(|| {
+                graph
+                    .region(*enclosing.last().expect("a literal has an enclosing region"))
+                    .context
             });
-            let returns = matches!(op, Op::Result { .. });
-            inputs.clear();
-            completes.clear();
-            for (position, (&input, &role)) in graph
-                .inputs(node)
-                .iter()
-                .zip(graph.input_roles(node))
-                .enumerate()
-            {
-                let new = match new_of[plan.target(input).index()] {
-                    Some(new) => new,
-                    // A return no kept control reaches never runs.
-                    None if returns && position > 0 => continue,
-                    None => panic!("{input:?}, an input of kept {node:?}, is kept"),
-                };
-                if role == Role::Completes {
-                    completes.push(inputs.len());
-                }
-                inputs.push(new);
-            }
-            let references = match plan.nodes[node.index()] {
-                Rewrite::Replace(_) => References::None,
-                _ => graph.references(node).map(&mut carried, map),
-            };
-            let new = builder.push(op, inputs.iter().copied(), references);
-            for &position in &completes {
-                builder.complete_input(new, position);
-            }
-            new_of[at] = Some(new);
-            origins.push(node);
+            rebuild.push(
+                node,
+                literal.clone(),
+                context.map(Operand::Value),
+                References::None,
+            );
+            continue;
         }
-        let result = new_of[plan.target(run.result()).index()].expect("a run's result is kept");
-        let region = new_region[run.region().index()].expect("a run's region is kept");
-        builder.close_run(open, region, result);
+        let op = plan.op(graph, node);
+        let inputs = plan.operands(graph, node, kept);
+        let references = match plan.nodes[node.index()] {
+            Rewrite::Replace(_) => References::None,
+            _ => graph.references(node),
+        };
+        rebuild.push(node, op.clone(), inputs, references);
     }
-    Optimized {
-        graph: builder.finish(),
-        origins: origins.into_boxed_slice(),
-    }
+    let (graph, origins) = rebuild.finish();
+    Optimized { graph, origins }
 }

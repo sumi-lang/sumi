@@ -13,13 +13,25 @@ const SHAPES: [&str; 6] = [
 ];
 
 pub fn source(shape: &str, size: usize) -> String {
+    generate(shape, size, false)
+}
+
+pub fn variable_source(shape: &str, size: usize) -> String {
+    assert!(matches!(shape, "branches" | "nested-mutation"));
+    generate(shape, size, true)
+}
+
+fn generate(shape: &str, size: usize, variable: bool) -> String {
     assert!(SHAPES.contains(&shape));
     if shape == "nested-mutation" {
         let mut source = String::from("fn mutate(b: bool) -> int {\nlet mut x = 0\n");
         for _ in 0..size {
             source.push_str("if b { if b { x = x + 1 } else { x = x + 2 } } else { x = x + 3 }\n");
         }
-        source.push_str("x }\nfn main() -> int = mutate(true)");
+        source.push_str("x }");
+        if !variable {
+            source.push_str("\nfn main() -> int = mutate(true)");
+        }
         return source;
     }
     if shape.starts_with("caller-") {
@@ -42,14 +54,19 @@ pub fn source(shape: &str, size: usize) -> String {
 
     let mut declarations = Vec::with_capacity(size);
     for i in 0..size {
-        let mut declaration = format!("fn f{i}() = ");
+        let params = if variable { "b: bool" } else { "" };
+        let mut declaration = format!("fn f{i}({params}) = ");
         if shape == "branches" {
             declaration.push_str("{ let x0 = 1\n");
             for j in 1..16 {
+                let condition = if variable {
+                    "b".into()
+                } else {
+                    format!("x{} > {j}", j - 1)
+                };
                 writeln!(
                     declaration,
-                    "let x{j} = if x{} > {j} {{ {j} }} else {{ x{} + 1 }}",
-                    j - 1,
+                    "let x{j} = if {condition} {{ {j} }} else {{ x{} + 1 }}",
                     j - 1
                 )
                 .unwrap();
