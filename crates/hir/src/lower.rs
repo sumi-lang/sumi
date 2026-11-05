@@ -2725,7 +2725,7 @@ impl<'a, 's> Builder<'a, 's> {
         }
         Some(())
     }
-    /// A construction: its arguments are its type's fields by label, read in declaration order.
+    /// Fields are stored in declaration order; argument controls run in source order.
     fn construct(&mut self, call: Clean<ast::CallExpr>, decl: DeclId) -> Option<()> {
         let tree = self.source.tree;
         let node = call.node();
@@ -2798,6 +2798,7 @@ impl<'a, 's> Builder<'a, 's> {
             );
             is_damaged = true;
         }
+        let controls: Vec<_> = values.iter().map(|&value| self.control(value)).collect();
         let ordered: Vec<NodeIdx> = if is_damaged {
             values
         } else {
@@ -2814,7 +2815,6 @@ impl<'a, 's> Builder<'a, 's> {
         let op = if is_damaged { Op::Hole } else { Op::Make(decl) };
         let id = self.push(node, op, &inputs, None);
         self.inputs = inputs;
-        let controls: Vec<_> = ordered.iter().map(|&value| self.control(value)).collect();
         self.controls[node.to_usize()] = self.compose_control(node, controls);
         let mut is_bottom = false;
         let mut is_valid = true;

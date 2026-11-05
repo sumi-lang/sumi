@@ -1,0 +1,254 @@
+file: accepted
+frontend errors: 0 (see frontend.snap)
+semantic errors: 0
+
+== graph ==
+fn first@5:1..8:2 () -> int ∈ [1, 1]
+  result: result : int @5:15..5:18
+    outcome[0]:
+      discard: make A : A @6:9..6:44
+        x: unit : unit @6:31..6:43
+        y: unit : unit @6:14..6:26
+      discard: after : ? @6:5..6:44
+        control: sequence : int @6:9..6:44
+        context: after : ? @6:33..6:41
+          control: return : int @6:33..6:41
+          context: after : ? @6:16..6:24
+            control: return : int @6:16..6:24
+            context: entry : ? @5:1..8:2
+      tail: int 3 : int @7:5..7:6
+    outcome[1]: return : int @6:16..6:24
+      payload: int 1 : int @6:23..6:24
+    outcome[2]: return : int @6:33..6:41
+      payload: int 2 : int @6:40..6:41
+
+fn forward@9:1..12:2 () -> int ∈ [4, 4]
+  result: result : int @9:17..9:20
+    outcome[0]:
+      discard: make A : A @10:9..10:44
+        x: unit : unit @10:14..10:26
+        y: unit : unit @10:31..10:43
+      discard: after : ? @10:5..10:44
+        control: sequence : int @10:9..10:44
+        context: after : ? @10:33..10:41
+          control: return : int @10:33..10:41
+          context: after : ? @10:16..10:24
+            control: return : int @10:16..10:24
+            context: entry : ? @9:1..12:2
+      tail: int 6 : int @11:5..11:6
+    outcome[1]: return : int @10:16..10:24
+      payload: int 4 : int @10:23..10:24
+    outcome[2]: return : int @10:33..10:41
+      payload: int 5 : int @10:40..10:41
+
+fn conditional@13:1..17:2 (bool ∈ {true, false}) -> int ∈ [7, 9]
+  param stop@13:16..13:20: bool
+  result: result : int @13:31..13:34
+    outcome[0]:
+      discard: if : unit @14:16..14:36
+        scrutinee: read stop@13:16..13:20 : bool
+        then: unit : unit @14:24..14:36
+        else: unit (implicit)
+      discard: make A : A @14:9..15:30
+        x: unit : unit @15:17..15:29
+        y: int 8 : int @15:9..15:10
+      discard: after : ? @14:5..15:30
+        control: sequence : int @14:9..15:30
+        context: after : ? @15:19..15:27
+          control: return : int @15:19..15:27
+          context: after : ? @14:16..14:36
+            control: observe : ? @14:16..14:36
+            context: entry : ? @13:1..17:2
+      tail: int 10 : int @16:5..16:7
+    outcome[1]: return : int @14:26..14:34
+      payload: int 7 : int @14:33..14:34
+    outcome[2]: return : int @15:19..15:27
+      payload: int 9 : int @15:26..15:27
+
+fn branches@18:1..18:62 () -> int ∈ [14, 18]
+  result: copy : int @18:18..18:21
+    value: eager + : int @18:24..18:62
+      lhs: call conditional@13:1..17:2 : int @18:24..18:41
+        arg[0]: bool true : bool @18:36..18:40
+      rhs: call conditional@13:1..17:2 : int @18:44..18:62
+        arg[0]: bool false : bool @18:56..18:61
+
+fn mutation@19:1..25:2 () -> int ∈ [212, 212]
+  result: copy : int @19:18..19:21
+    value:
+      let n@20:13..20:14: int @20:5..20:18
+        initializer: int 0 : int @20:17..20:18
+      assignment: assign n@20:13..20:14 : int @21:20..21:25
+        value: int 1 : int @21:24..21:25
+      assignment: assign n@20:13..20:14 : int @22:19..22:24
+        value: int 2 : int @22:23..22:24
+      let a@21:9..21:10: A @21:5..23:13
+        initializer: make A : A @21:13..23:13
+          x: read n@20:13..20:14 (assigned @22:19..22:24) : int
+          y: read n@20:13..20:14 (assigned @21:20..21:25) : int
+      tail: eager + : int @24:5..24:29
+        lhs: eager + : int @24:5..24:25
+          lhs: eager * : int @24:5..24:14
+            lhs: field x : int @24:5..24:8
+              base: read a@21:9..21:10 : A
+            rhs: int 100 : int @24:11..24:14
+          rhs: eager * : int @24:17..24:25
+            lhs: field y : int @24:17..24:20
+              base: read a@21:9..21:10 : A
+            rhs: int 10 : int @24:23..24:25
+        rhs: read n@20:13..20:14 (assigned @22:19..22:24) : int
+
+fn mixed@26:1..33:2 (bool ∈ {true, false}) -> int ∈ [5, 71]
+  param stop@26:10..26:14: bool
+  result: result : int @26:25..26:28
+    outcome[0]:
+      let n@27:13..27:14: int @27:5..27:18
+        initializer: int 0 : int @27:17..27:18
+      assignment: assign n@27:13..27:14 : int @28:20..28:25
+        value: int 5 : int @28:24..28:25
+      discard: if : unit @29:9..29:29
+        scrutinee: read stop@26:10..26:14 : bool
+        then: unit : unit @29:17..29:29
+        else: unit (implicit)
+      discard: after : ? @29:9..29:29
+        control: observe : ? @29:9..29:29
+        context: entry : ? @26:1..33:2
+      assignment: assign n@27:13..27:14 : int @30:19..30:28
+        value: eager + : int @30:23..30:28
+          lhs: read n@27:13..27:14 (assigned @28:20..28:25) : int
+          rhs: int 1 : int @30:27..30:28
+      let a@28:9..28:10: A @28:5..31:13
+        initializer: make A : A @28:13..31:13
+          x: read n@27:13..27:14 (assigned @30:19..30:28) : int
+          y: read n@27:13..27:14 (assigned @28:20..28:25) : int
+      tail: eager + : int @32:5..32:23
+        lhs: eager + : int @32:5..32:19
+          lhs: eager * : int @32:5..32:13
+            lhs: field x : int @32:5..32:8
+              base: read a@28:9..28:10 : A
+            rhs: int 10 : int @32:11..32:13
+          rhs: field y : int @32:16..32:19
+            base: read a@28:9..28:10 : A
+        rhs: read n@27:13..27:14 (assigned @30:19..30:28) : int
+    outcome[1]: return : int @29:19..29:27
+      payload: read n@27:13..27:14 (assigned @28:20..28:25) : int
+
+fn mixed_returns@34:1..34:55 () -> int ∈ [10, 142]
+  result: copy : int @34:23..34:26
+    value: eager + : int @34:29..34:55
+      lhs: call mixed@26:1..33:2 : int @34:29..34:40
+        arg[0]: bool true : bool @34:35..34:39
+      rhs: call mixed@26:1..33:2 : int @34:43..34:55
+        arg[0]: bool false : bool @34:49..34:54
+
+fn nested@35:1..38:2 () -> int ∈ [11, 11]
+  result: result : int @35:16..35:19
+    outcome[0]:
+      discard: make Outer : Outer @36:9..36:74
+        z: unit : unit @36:60..36:73
+        a: make A : A @36:18..36:55
+          x: unit : unit @36:41..36:54
+          y: unit : unit @36:23..36:36
+      discard: after : ? @36:5..36:74
+        control: sequence : int @36:9..36:74
+        context: after : ? @36:62..36:71
+          control: return : int @36:62..36:71
+          context: after : ? @36:18..36:55
+            control: sequence : int @36:18..36:55
+            context: after : ? @36:43..36:52
+              control: return : int @36:43..36:52
+              context: after : ? @36:25..36:34
+                control: return : int @36:25..36:34
+                context: entry : ? @35:1..38:2
+      tail: int 14 : int @37:5..37:7
+    outcome[1]: return : int @36:25..36:34
+      payload: int 11 : int @36:32..36:34
+    outcome[2]: return : int @36:43..36:52
+      payload: int 12 : int @36:50..36:52
+    outcome[3]: return : int @36:62..36:71
+      payload: int 13 : int @36:69..36:71
+
+fn take@39:1..39:33 (A ∈ ∅) -> int ∈ ∅
+  param a@39:9..39:10: A
+  result: copy : int @39:18..39:21
+    value: eager + : int @39:24..39:33
+      lhs: field x : int @39:24..39:27
+        base: read a@39:9..39:10 : A
+      rhs: field y : int @39:30..39:33
+        base: read a@39:9..39:10 : A
+
+fn argument@40:1..40:67 () -> int ∈ [15, 15]
+  result: result : int @40:18..40:21
+    outcome[0]:
+      discard: after : ? @40:29..40:66
+        control: sequence : int @40:29..40:66
+        context: after : ? @40:54..40:63
+          control: return : int @40:54..40:63
+          context: after : ? @40:36..40:45
+            control: return : int @40:36..40:45
+            context: entry : ? @40:1..40:67
+      tail: call take@39:1..39:33 : int @40:24..40:67
+        arg[0]: make A : A @40:29..40:66
+          x: unit : unit @40:52..40:65
+          y: unit : unit @40:34..40:47
+    outcome[1]: return : int @40:36..40:45
+      payload: int 15 : int @40:43..40:45
+    outcome[2]: return : int @40:54..40:63
+      payload: int 16 : int @40:61..40:63
+
+fn loop_return@41:1..45:2 () -> int ∈ [17, 17]
+  result: result : int @41:21..41:24
+    outcome[0]:
+      discard: loop : unit @42:16..42:43
+        start: int 0 : int @42:25..42:26
+        end: int 2 : int @42:28..42:29
+        body:
+          let i@42:20..42:21: loop index : int @42:16..42:43
+            start: int 0 : int @42:25..42:26
+            end: int 2 : int @42:28..42:29
+          tail: unit : unit @42:30..42:43
+      discard: make A : A @42:9..43:31
+        x: unit : unit @43:17..43:30
+        y: int 0 : int @43:9..43:10
+      discard: after : ? @42:5..43:31
+        control: sequence : int @42:9..43:31
+        context: after : ? @43:19..43:28
+          control: return : int @43:19..43:28
+          context: after : ? @42:16..42:43
+            control: loop : unit @42:16..42:43
+            context: entry : ? @41:1..45:2
+      tail: int 19 : int @44:5..44:7
+    outcome[1]: return : int @42:32..42:41
+      payload: int 17 : int @42:39..42:41
+    outcome[2]: return : int @43:19..43:28
+      payload: int 18 : int @43:26..43:28
+
+fn flag@46:1..46:53 () -> bool ∈ {true}
+  result: copy : bool @46:14..46:18
+    value: field flag : bool @46:21..46:53
+      base: make State : State @46:21..46:48
+        flag: bool true : bool @46:43..46:47
+        done: unit : unit @46:33..46:35
+
+fn done@47:1..47:46 () -> unit ∈ unit
+  body: field done : unit @47:13..47:46
+    base: make State : State @47:13..47:41
+      flag: bool false : bool @47:25..47:30
+      done: unit : unit @47:38..47:40
+
+== semantic diagnostics ==
+warning[semantic/unreachable-code] 7:5..7:6 "3": unreachable code
+  at 6:5..6:44 "_ = A(y: { return 1 }, x: { return 2 })": no path continues past this
+warning[semantic/unreachable-code] 11:5..11:6 "6": unreachable code
+  at 10:5..10:44 "_ = A(x: { return 4 }, y: { return 5 })": no path continues past this
+warning[semantic/unreachable-code] 16:5..16:7 "10": unreachable code
+  at 14:5..15:30 "_ = A(y: { if stop { return 7 }\n        8 }, x: { return 9 })": no path continues past this
+warning[semantic/unreachable-code] 37:5..37:7 "14": unreachable code
+  at 36:5..36:74 "_ = Outer(a: A(y: { return 11 }, x: { return 12 }), z: { return 13 })": no path continues past this
+warning[semantic/unused-name] 42:20..42:21 "i": loop index `i` is never read
+  fix: prefix the name with `_`
+    42:20 -> "_"
+warning[semantic/unreachable-code] 43:9..43:10 "0": unreachable code
+  at 42:16..42:43 "for i in 0..2 { return 17 }": no path continues past this
+warning[semantic/unreachable-code] 44:5..44:7 "19": unreachable code
+  at 42:5..43:31 "_ = A(y: { for i in 0..2 { return 17 }\n        0 }, x: { return 18 })": no path continues past this

@@ -1,0 +1,47 @@
+type A { x: int, y: int }
+type Outer { z: int, a: A }
+type State { flag: bool, done: unit }
+
+fn first() -> int {
+    _ = A(y: { return 1 }, x: { return 2 })
+    3
+}
+fn forward() -> int {
+    _ = A(x: { return 4 }, y: { return 5 })
+    6
+}
+fn conditional(stop: bool) -> int {
+    _ = A(y: { if stop { return 7 }
+        8 }, x: { return 9 })
+    10
+}
+fn branches() -> int = conditional(true) + conditional(false)
+fn mutation() -> int {
+    let mut n = 0
+    let a = A(y: { n = 1
+        n }, x: { n = 2
+        n })
+    a.x * 100 + a.y * 10 + n
+}
+fn mixed(stop: bool) -> int {
+    let mut n = 0
+    let a = A(y: { n = 5
+        if stop { return n }
+        n }, x: { n = n + 1
+        n })
+    a.x * 10 + a.y + n
+}
+fn mixed_returns() -> int = mixed(true) + mixed(false)
+fn nested() -> int {
+    _ = Outer(a: A(y: { return 11 }, x: { return 12 }), z: { return 13 })
+    14
+}
+fn take(a: A) -> int = a.x + a.y
+fn argument() -> int = take(A(y: { return 15 }, x: { return 16 }))
+fn loop_return() -> int {
+    _ = A(y: { for i in 0..2 { return 17 }
+        0 }, x: { return 18 })
+    19
+}
+fn flag() -> bool = State(done: {}, flag: true).flag
+fn done() = State(flag: false, done: {}).done
