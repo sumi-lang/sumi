@@ -776,14 +776,13 @@ impl May {
     pub fn must_select(&self, case: Case, unions: &Unions) -> bool {
         match case {
             Case::Bool(wanted) => self.bools == Bools::from(wanted),
-            Case::Is(ty) => {
-                !self.decls.is_empty() && self.decls.iter().all(|(decl, _)| unions.admits(ty, decl))
-            }
-            Case::Not(ty) => {
+            Case::Is(_) | Case::Not(_) | Case::Any => {
                 !self.decls.is_empty()
-                    && self.decls.iter().all(|(decl, _)| !unions.admits(ty, decl))
+                    && self
+                        .decls
+                        .iter()
+                        .all(|(decl, _)| case.selects_decl(decl, unions))
             }
-            Case::Any => !self.decls.is_empty(),
         }
     }
 
@@ -797,9 +796,10 @@ impl May {
                     self.bools.may_false()
                 }
             }
-            Case::Is(ty) => self.decls.iter().any(|(decl, _)| unions.admits(ty, decl)),
-            Case::Not(ty) => self.decls.iter().any(|(decl, _)| !unions.admits(ty, decl)),
-            Case::Any => !self.decls.is_empty(),
+            Case::Is(_) | Case::Not(_) | Case::Any => self
+                .decls
+                .iter()
+                .any(|(decl, _)| case.selects_decl(decl, unions)),
         }
     }
 

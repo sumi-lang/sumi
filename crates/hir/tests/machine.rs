@@ -799,6 +799,14 @@ fn runs_of(source: &str) -> Option<Runs> {
     analysis.program().map(check::run)
 }
 
+#[test]
+fn corpus_programs_run_within_their_claims() {
+    for case in sumi_test::corpus::cases() {
+        let source = std::fs::read_to_string(case.join("case.su")).unwrap();
+        runs_of(&source);
+    }
+}
+
 /// No shrinking: a shrunk seed draws an unrelated program.
 fn config() -> ProptestConfig {
     ProptestConfig {

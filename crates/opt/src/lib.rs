@@ -343,6 +343,7 @@ fn emit(graph: &Graph, plan: &Plan, kept: &[bool]) -> Optimized {
     let regions = kept_regions(graph, plan, kept);
     let mut builder = GraphBuilder::new(kept.iter().filter(|&&kept| kept).count());
     builder.declare(graph.decls().iter().cloned());
+    builder.set_unions(graph.unions().clone());
     for run in graph.runs() {
         builder.function(run.param_types().map(Box::from));
     }

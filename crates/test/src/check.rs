@@ -1565,6 +1565,10 @@ fn optimized(compiled: &Compiled<'_>) {
     use sumi_hir::Op;
 
     let graph = compiled.graph();
+    assert_eq!(
+        graph.unions(),
+        compiled.program().analysis().graph().unions()
+    );
     let context = |node| matches!(graph.node(node).op, Op::Entry | Op::Arm(_) | Op::After);
     let mut origins = HashSet::new();
     for node in graph.node_ids() {

@@ -962,11 +962,6 @@ struct Form {
 }
 
 impl Form {
-    const SCALAR: Self = Self {
-        is_valid: true,
-        completes: false,
-    };
-
     fn is_scalar(self) -> bool {
         self.is_valid && !self.completes
     }
@@ -1159,7 +1154,7 @@ impl<'a, 's> Builder<'a, 's> {
                         self.arms(expr, &mut work);
                         continue;
                     }
-                    Work::Switch { expr, arms } => self.switch(expr, arms),
+                    Work::Switch { expr, arms } => self.matched(expr, arms),
                     Work::PushArm {
                         region,
                         scrutinee,
@@ -3250,55 +3245,22 @@ impl<'a, 's> Builder<'a, 's> {
             Some(else_) => self.closed(else_),
             None => self.guarded_state(cond, false, contexts[1]),
         };
-        let condition = self.input(cond);
-        let mut results = vec![self.node_of(then_node)];
-        results.extend(else_node.map(|else_node| self.node_of(else_node)));
-        let then_form = self.form(then_node);
-        let else_form = else_node.map_or(Form::SCALAR, |node| self.form(node));
-        let id = self.push_over(
+        let values = [then_node, else_node.unwrap_or(then_node)];
+        self.switch(
             node,
-            Op::Switch { arms },
-            &[condition],
-            References::None,
-            None,
-            &results,
-        );
-        let observe = (self.control(then_node).is_some()
-            || else_node.is_some_and(|node| self.control(node).is_some()))
-        .then(|| {
-            self.place(
-                Op::Observe { arms },
-                &[condition, (self.context(), self.source.range(node))],
-                self.source.range(node),
-                None,
-            )
-        });
-        self.controls[node.to_usize()] = self.compose_control(node, [self.control(cond), observe]);
-        let cond_form = self.form(cond);
-        if cond_form.completes {
-            self.completes_input(id, 0);
-        }
-        if !cond_form.is_valid || !then_form.is_valid || !else_form.is_valid {
-            return None;
-        }
-        if cond_form.completes || (then_form.completes && else_form.completes) {
-            self.bottoms[node.to_usize()] = true;
-        } else {
-            self.merge_versions(cond, &[&then_state, &false_state], self.source.range(node));
-            if then_form.is_scalar() {
-                self.typed(then_node)?;
-            } else {
+            cond,
+            arms,
+            &values[..arms.len()],
+            &[&then_state, &false_state],
+        )?;
+        if !self.form(node).completes {
+            if self.form(then_node).completes {
                 self.refine(cond, false);
             }
-            if let Some(else_node) = else_node {
-                if else_form.is_scalar() {
-                    self.typed(else_node)?;
-                } else {
-                    self.refine(cond, true);
-                }
+            if else_node.is_some_and(|node| self.form(node).completes) {
+                self.refine(cond, true);
             }
         }
-        self.typed(cond)?;
         Some(())
     }
     /// A `match`'s arms by case: a member pattern names a declared type and binds a value of it; a
@@ -3372,6 +3334,11 @@ impl<'a, 's> Builder<'a, 's> {
             };
             cases.push((arm, case, binding));
         }
+        if cases.is_empty() && is_valid {
+            self.source
+                .error(node, codes::NON_EXHAUSTIVE_MATCH, "match has no arms", None);
+            is_valid = false;
+        }
         if !is_valid {
             self.push(node, Op::Hole, &[input], None);
             self.controls[node.to_usize()] = self.control(scrutinee);
@@ -3400,21 +3367,33 @@ impl<'a, 's> Builder<'a, 's> {
             });
         }
     }
-    fn switch(&mut self, expr: Clean<ast::MatchExpr>, arms: Arms) -> Option<()> {
+    fn matched(&mut self, expr: Clean<ast::MatchExpr>, arms: Arms) -> Option<()> {
         let tree = self.source.tree;
-        let node = expr.node();
-        let at = self.source.range(node);
-        let scrutinee = expr.scrutinee().node();
         let states: Vec<RegionState> = arms.iter().map(|arm| self.closed(arm)).collect();
-        let input = self.input(scrutinee);
+        let states: Vec<&RegionState> = states.iter().collect();
         let values: Vec<NodeIdx> = expr
             .arm_list()
             .arms(tree)
             .filter_map(|arm| arm.value(tree))
             .map(|value| value.node())
             .collect();
+        self.switch(expr.node(), expr.scrutinee().node(), arms, &values, &states)
+    }
+    fn switch(
+        &mut self,
+        node: NodeIdx,
+        scrutinee: NodeIdx,
+        arms: Arms,
+        values: &[NodeIdx],
+        states: &[&RegionState],
+    ) -> Option<()> {
+        let at = self.source.range(node);
+        let input = self.input(scrutinee);
         let results: Vec<NodeId> = values.iter().map(|&value| self.node_of(value)).collect();
-        let forms: Vec<Form> = values.iter().map(|&value| self.form(value)).collect();
+        let is_valid = values.iter().all(|&value| self.form(value).is_valid);
+        // An omitted `else` contributes a state but no value, so the switch can fall through.
+        let completes =
+            states.len() == values.len() && values.iter().all(|&value| self.form(value).completes);
         let id = self.push_over(
             node,
             Op::Switch { arms },
@@ -3440,16 +3419,15 @@ impl<'a, 's> Builder<'a, 's> {
         if scrutinee_form.completes {
             self.completes_input(id, 0);
         }
-        if !scrutinee_form.is_valid || forms.iter().any(|form| !form.is_valid) {
+        if !scrutinee_form.is_valid || !is_valid {
             return None;
         }
-        if scrutinee_form.completes || forms.iter().all(|form| form.completes) {
+        if scrutinee_form.completes || completes {
             self.bottoms[node.to_usize()] = true;
         } else {
-            let states: Vec<&RegionState> = states.iter().collect();
-            self.merge_versions(scrutinee, &states, at);
-            for (&value, form) in values.iter().zip(&forms) {
-                if form.is_scalar() {
+            self.merge_versions(scrutinee, states, at);
+            for &value in values {
+                if self.form(value).is_scalar() {
                     self.typed(value)?;
                 }
             }

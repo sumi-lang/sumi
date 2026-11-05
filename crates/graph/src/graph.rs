@@ -106,7 +106,7 @@ impl Unions {
 }
 
 /// What an arm of a switch selects of the scrutinee.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Case {
     Bool(bool),
     /// A value of the type, or of a member of it.
@@ -115,6 +115,17 @@ pub enum Case {
     Not(Ty),
     /// Any declared value: a rest arm after none.
     Any,
+}
+
+impl Case {
+    pub fn selects_decl(self, decl: DeclId, unions: &Unions) -> bool {
+        match self {
+            Self::Bool(_) => false,
+            Self::Is(ty) => unions.admits(ty, decl),
+            Self::Not(ty) => !unions.admits(ty, decl),
+            Self::Any => true,
+        }
+    }
 }
 
 /// A switch's arms: the regions `open_arms` opened together, so they are consecutive.

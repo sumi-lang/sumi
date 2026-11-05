@@ -386,7 +386,7 @@ pub(crate) enum Pair {
     /// A boolean arm context from its condition and parent: live where the condition may be the
     /// boolean.
     Bool(bool),
-    /// An arm context from its scrutinee and parent; the case is `Context::cases[index]`.
+    /// An arm context from its scrutinee and parent; `Context::cases[index]` excludes earlier arms.
     Arm(u16),
     Argument,
     Backedge,
@@ -411,13 +411,37 @@ pub(crate) enum Many {
     Make(DeclId),
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct Arm {
+    pub case: Case,
+    pub previous: Option<u16>,
+}
+
 /// What every transfer reads: the thresholds, the declared types a field read goes through, the
 /// unions a case admits, and the cases the `Arm` pairs index.
 pub(crate) struct Context {
     pub thresholds: Thresholds,
     pub decls: Box<[Decl]>,
     pub unions: Unions,
-    pub cases: Box<[Case]>,
+    pub cases: Box<[Arm]>,
+}
+
+impl Context {
+    fn selects(&self, index: u16, decl: DeclId) -> bool {
+        let arm = self.cases[usize::from(index)];
+        if !arm.case.selects_decl(decl, &self.unions) {
+            return false;
+        }
+        let mut previous = arm.previous;
+        while let Some(index) = previous {
+            let arm = self.cases[usize::from(index)];
+            if arm.case.selects_decl(decl, &self.unions) {
+                return false;
+            }
+            previous = arm.previous;
+        }
+        true
+    }
 }
 
 /// Every value cycle crosses a call, an argument, or a loop backedge; rounding there keeps every
@@ -600,10 +624,9 @@ impl Lattice for May {
             } => self.refine(op, local_is_lhs, sense, second),
             Pair::Bool(true) => Self::of_unit(self.bools.may_true() && second.is_live()),
             Pair::Bool(false) => Self::of_unit(self.bools.may_false() && second.is_live()),
-            Pair::Arm(case) => {
-                let case = cx.cases[usize::from(case)];
-                Self::of_unit(self.may_select(case, &cx.unions) && second.is_live())
-            }
+            Pair::Arm(case) => Self::of_unit(
+                second.is_live() && self.decls.iter().any(|(decl, _)| cx.selects(case, decl)),
+            ),
             Pair::Range => Self::ints(Ints::range(&self.ints, &second.ints)),
             Pair::Branch | Pair::Forward | Pair::Outcome => {
                 if second.is_live() {
@@ -671,7 +694,7 @@ mod tests {
             thresholds: [15, 2].map(Int::from).into_iter().collect(),
             decls: Box::new([]),
             unions: Unions::new(),
-            cases: Box::new([Case::Bool(true), Case::Bool(false)]),
+            cases: Box::new([]),
         };
         let a = band(4, 13);
         let b = May::int(&2.into());
@@ -705,7 +728,7 @@ mod tests {
             thresholds: Thresholds::default(),
             decls: Box::new([]),
             unions: Unions::new(),
-            cases: Box::new([Case::Bool(true), Case::Bool(false)]),
+            cases: Box::new([]),
         };
         let live = May::unit();
         let dead = May::NONE;
@@ -728,7 +751,7 @@ mod tests {
             thresholds: Thresholds::default(),
             decls: Box::new([]),
             unions: Unions::new(),
-            cases: Box::new([Case::Bool(true), Case::Bool(false)]),
+            cases: Box::new([]),
         };
         let int = Evidence::single(Ty::INT, Claim::local(3));
         let one = May::int(&1.into());
@@ -770,7 +793,7 @@ mod tests {
             thresholds: Thresholds::default(),
             decls: Box::new([]),
             unions: Unions::new(),
-            cases: Box::new([Case::Bool(true), Case::Bool(false)]),
+            cases: Box::new([]),
         };
         assert_eq!(
             flag.transfer(&Edge::Exactly(false), false, &cx).bools,

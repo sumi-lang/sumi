@@ -1,0 +1,40 @@
+type A {}
+type B {}
+type C {}
+
+fn score(x: A | B | C) -> int = match x { A => 1, B => 2, _ => 3 }
+fn duplicate(x: A | B | C) -> int = match x {
+    A => 1,
+    A => 1 / 0,
+    B => 2,
+    _ => 3,
+    _ => 1 / 0,
+    C => 1 / 0,
+}
+fn rest_first(x: A | B | C) -> int = match x { _ => 4, A => 1 / 0, _ => 1 / 0 }
+fn mutate(x: A | B | C) -> int {
+    let mut n = 1
+    match x {
+        A => { return 7 },
+        A => { n = 1 / 0 },
+        B => { n = 2 },
+        _ => { n = 3 },
+        C => { return 1 / 0 },
+    }
+    if n == 0 { return 0 }
+    12 / n
+}
+fn nested(x: A | B | C, flag: bool) -> int {
+    let mut n = 0
+    if flag { n = score(x) }
+    match x {
+        A => if flag { n } else { 10 },
+        _ => { if !flag { return 20 }
+            n },
+    }
+}
+fn main() -> int = score(A()) + score(B()) + score(C())
+fn duplicates() -> int = duplicate(A()) + duplicate(B()) + duplicate(C())
+fn rest() -> int = rest_first(A()) + rest_first(B()) + rest_first(C())
+fn mutations() -> int = mutate(A()) + mutate(B()) + mutate(C())
+fn nesting() -> int = nested(A(), true) + nested(B(), true) + nested(C(), false)

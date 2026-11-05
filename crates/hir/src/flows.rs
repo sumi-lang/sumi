@@ -3,7 +3,7 @@
 //! order, the order the verdict pass replays them in.
 
 use std::cell::RefCell;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use rustc_hash::FxBuildHasher;
@@ -13,7 +13,7 @@ use sumi_graph::{
 };
 use sumi_text::TextRange;
 
-use crate::lattice::{Context, Edge, Many, Pair};
+use crate::lattice::{Arm, Context, Edge, Many, Pair};
 use crate::lower::{Fallthrough, Header, HeaderResult, Lowered, TypeHeader};
 use crate::spans::Spans;
 use crate::typing::{Expected, Typing};
@@ -290,7 +290,6 @@ impl Demands<'_> {
     }
 }
 
-/// Whether every arm's case is a boolean.
 /// What a switch's arms select on, read once per switch.
 #[derive(Clone, Copy)]
 struct Selection {
@@ -341,7 +340,35 @@ pub(crate) fn draw(
     let mut typing = Typing::for_nodes(graph.nodes().len(), unions);
     let typed = |node: NodeId| lowered.typed[node.index()];
     let mut constants: Vec<Int> = Vec::new();
-    let mut cases: Vec<Case> = Vec::new();
+    let mut cases: Vec<Arm> = Vec::new();
+    let mut case_ids: HashMap<Arm, u16, FxBuildHasher> = HashMap::default();
+    let mut arm_cases: HashMap<NodeId, u16, FxBuildHasher> = HashMap::default();
+    for entry in graph.nodes() {
+        let Op::Switch { arms } = entry.op else {
+            continue;
+        };
+        if selection(graph, arms).boolean {
+            continue;
+        }
+        let mut previous = None;
+        let mut seen: HashSet<Case, FxBuildHasher> = HashSet::default();
+        for region in arms.iter() {
+            let context = graph.region(region).context;
+            let arm = Arm {
+                case: graph.case(context),
+                previous,
+            };
+            let index = *case_ids.entry(arm).or_insert_with(|| {
+                let index = u16::try_from(cases.len()).expect("distinct arm count fits u16");
+                cases.push(arm);
+                index
+            });
+            arm_cases.insert(context, index);
+            if seen.insert(arm.case) {
+                previous = Some(index);
+            }
+        }
+    }
     let mut seen: HashSet<Int, FxBuildHasher> = HashSet::default();
     let mut folded: Vec<Option<Int>> = Vec::new();
     let mut demands = Demands {
@@ -401,16 +428,8 @@ pub(crate) fn draw(
                 Op::Arm(Case::Bool(wanted)) => {
                     typing.derive(inputs[0], inputs[1], node, Pair::Bool(*wanted));
                 }
-                Op::Arm(case) => {
-                    let index = cases
-                        .iter()
-                        .position(|known| known == case)
-                        .unwrap_or_else(|| {
-                            cases.push(*case);
-                            cases.len() - 1
-                        });
-                    let index = u16::try_from(index).expect("distinct case count fits u16");
-                    typing.derive(inputs[0], inputs[1], node, Pair::Arm(index));
+                Op::Arm(_) => {
+                    typing.derive(inputs[0], inputs[1], node, Pair::Arm(arm_cases[&node]));
                 }
                 Op::Refine {
                     op,
