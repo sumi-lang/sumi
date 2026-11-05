@@ -1,0 +1,24 @@
+tree: omitted
+
+== formatted ==
+fn a() -> int {
+    5 && {
+        return 7
+    }
+}
+fn or_return() -> int {
+    5 || {
+        return 7
+    }
+}
+fn unit_left() -> bool {
+    {} && {
+        return true
+    }
+}
+fn bound_left() -> bool {
+    let x = 5
+    x || {
+        return true
+    }
+}

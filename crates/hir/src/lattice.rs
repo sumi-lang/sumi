@@ -171,6 +171,7 @@ pub(crate) enum Edge {
     TypeBind,
     Values,
     Exactly(bool),
+    ShortCircuit(bool),
     /// One operand of `==` or `!=` typing the other.
     Peer,
     Neg,
@@ -258,6 +259,7 @@ impl Lattice for Product {
             | Edge::TypeBind
             | Edge::Not
             | Edge::Enter
+            | Edge::ShortCircuit(_)
             | Edge::Exactly(_) => Carry::Nothing,
             Edge::Neg => Carry::Grows,
             Edge::Call(_) | Edge::Bind | Edge::Values => Carry::Passes,
@@ -281,7 +283,9 @@ impl Lattice for Product {
         let types = match *edge {
             Edge::Call(claim) => self.types.imported(claim),
             Edge::Bind | Edge::Types | Edge::TypeBind | Edge::Exactly(_) | Edge::Peer => self.types,
-            Edge::Values | Edge::Neg | Edge::Not | Edge::Enter => Evidence::NONE,
+            Edge::Values | Edge::Neg | Edge::Not | Edge::Enter | Edge::ShortCircuit(_) => {
+                Evidence::NONE
+            }
         };
         let values = &self.values;
         let values = match *edge {
@@ -297,7 +301,7 @@ impl Lattice for Product {
                 let Ok(inverted) = values.not();
                 inverted
             }
-            Edge::Exactly(value) => values.exactly(value),
+            Edge::Exactly(value) | Edge::ShortCircuit(value) => values.exactly(value),
             Edge::Enter => May::of_unit(values.is_live()),
         };
         Self { types, values }
