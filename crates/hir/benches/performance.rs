@@ -104,11 +104,22 @@ fn singleton_entry(c: &mut Criterion) {
     group.finish();
 }
 
-fn optimize(c: &mut Criterion, shape: &str, size: usize) {
-    let analysis = analyze(programs::parse(&programs::source(shape, size)));
+fn optimize(c: &mut Criterion, shape: &str, size: usize, variable: bool) {
+    let source = if variable {
+        programs::variable_source(shape, size)
+    } else {
+        programs::source(shape, size)
+    };
+    let analysis = analyze(programs::parse(&source));
     let program = analysis.program().unwrap();
+    let name = if variable {
+        assert!(program.compile().graph().nodes().len() > size);
+        format!("{shape}-variable")
+    } else {
+        shape.into()
+    };
     let mut group = c.benchmark_group("opt/optimize");
-    group.bench_function(BenchmarkId::new(shape, size), |b| {
+    group.bench_function(BenchmarkId::new(name, size), |b| {
         b.iter(|| black_box(program).compile());
     });
     group.finish();
@@ -121,8 +132,10 @@ fn timing(c: &mut Criterion) {
     analyze_case(c, "nested-mutation", 1024);
     analyze_case(c, "caller-guards", 1024);
     analyze_case(c, "caller-arithmetic-guards", 1024);
-    optimize(c, "branches", 1024);
-    optimize(c, "nested-mutation", 1024);
+    optimize(c, "branches", 1024, false);
+    optimize(c, "nested-mutation", 1024, false);
+    optimize(c, "branches", 1024, true);
+    optimize(c, "nested-mutation", 1024, true);
     workload(c, "fibonacci");
     tail_recursion(c);
     suspended_frames(c);
@@ -133,6 +146,10 @@ fn timing(c: &mut Criterion) {
 }
 
 fn memory(c: &mut Criterion) {
+    optimize(c, "branches", 1024, false);
+    optimize(c, "nested-mutation", 1024, false);
+    optimize(c, "branches", 1024, true);
+    optimize(c, "nested-mutation", 1024, true);
     analyze_case(c, "nested-mutation", 1024);
     suspended_frames(c);
     singleton_entry(c);

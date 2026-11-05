@@ -9,6 +9,9 @@ use std::ops::Range;
 
 use crate::{BinaryOp, CmpOp, DeclId, FieldName, FunctionId, Int, Ty, TyKind, UnionId};
 
+mod rebuild;
+pub use rebuild::Rebuild;
+
 /// A declared type: its fields by name, in declaration order, each with its type when that
 /// resolved.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -413,6 +416,21 @@ impl Role {
     }
 }
 
+/// A node's read of an ordinary value or a completion of its function.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Operand {
+    Value(NodeId),
+    Completes(NodeId),
+}
+
+impl Operand {
+    pub fn node(self) -> NodeId {
+        match self {
+            Self::Value(node) | Self::Completes(node) => node,
+        }
+    }
+}
+
 /// The nodes an op names but does not read, in the form its variant states; the builder stores
 /// them as edges by role and the graph reads them back.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -473,50 +491,6 @@ impl<'a> Carried<'a> {
 }
 
 impl References<'_> {
-    /// `self` over the nodes `map` gives; `carried` holds a loop's mapped carries.
-    pub fn map<'b>(
-        self,
-        carried: &'b mut Vec<NodeId>,
-        mut map: impl FnMut(NodeId) -> NodeId,
-    ) -> References<'b> {
-        match self {
-            Self::None => References::None,
-            Self::Version(declaration) => References::Version(map(declaration)),
-            Self::Phi {
-                declaration,
-                contexts,
-            } => {
-                let declaration = map(declaration);
-                carried.clear();
-                carried.extend(contexts.iter().map(|&node| map(node)));
-                References::Phi {
-                    declaration,
-                    contexts: carried,
-                }
-            }
-            Self::Loop {
-                index,
-                continuation,
-                empty,
-                carried: nodes,
-            } => {
-                let (index, continuation, empty) = (map(index), map(continuation), map(empty));
-                carried.clear();
-                carried.extend(nodes.nodes().iter().map(|&node| map(node)));
-                References::Loop {
-                    index,
-                    continuation,
-                    empty,
-                    carried: Carried::new(carried),
-                }
-            }
-            Self::LoopValue { carry, next } => References::LoopValue {
-                carry: map(carry),
-                next: map(next),
-            },
-        }
-    }
-
     /// Whether `op` names what `self` holds.
     fn fits(&self, op: &Op) -> bool {
         match (op, self) {
@@ -533,20 +507,25 @@ impl References<'_> {
         }
     }
 
-    fn encode(&self, edges: &mut Vec<NodeId>, roles: &mut Vec<Role>) {
+    fn encode(
+        &self,
+        edges: &mut Vec<NodeId>,
+        roles: &mut Vec<Role>,
+        mut map: impl FnMut(NodeId) -> NodeId,
+    ) {
         match *self {
             Self::None => {}
             Self::Version(declaration) => {
-                edges.push(declaration);
+                edges.push(map(declaration));
                 roles.push(Role::Declaration);
             }
             Self::Phi {
                 declaration,
                 contexts,
             } => {
-                edges.push(declaration);
+                edges.push(map(declaration));
                 roles.push(Role::Declaration);
-                edges.extend_from_slice(contexts);
+                edges.extend(contexts.iter().copied().map(map));
                 roles.extend(contexts.iter().map(|_| Role::Context));
             }
             Self::Loop {
@@ -555,9 +534,9 @@ impl References<'_> {
                 empty,
                 carried,
             } => {
-                edges.extend([index, continuation, empty]);
+                edges.extend([index, continuation, empty].map(&mut map));
                 roles.extend([Role::Index, Role::Context, Role::Context]);
-                edges.extend_from_slice(carried.nodes());
+                edges.extend(carried.nodes().iter().copied().map(map));
                 roles.extend(
                     [Role::Carry, Role::Next]
                         .into_iter()
@@ -566,7 +545,7 @@ impl References<'_> {
                 );
             }
             Self::LoopValue { carry, next } => {
-                edges.extend([carry, next]);
+                edges.extend([carry, next].map(map));
                 roles.extend([Role::Carry, Role::Next]);
             }
         }
@@ -644,15 +623,21 @@ impl Store {
     fn push(
         &mut self,
         op: Op,
-        inputs: impl IntoIterator<Item = NodeId>,
+        inputs: impl IntoIterator<Item = Operand>,
         references: References<'_>,
+        mut map: impl FnMut(NodeId) -> NodeId,
     ) -> NodeId {
         assert!(references.fits(&op), "{op:?} names {references:?}");
         let start = u32::try_from(self.edges.len()).expect("edge count fits u32");
-        self.edges.extend(inputs);
+        for input in inputs {
+            self.edges.push(map(input.node()));
+            self.roles.push(match input {
+                Operand::Value(_) => Role::Value,
+                Operand::Completes(_) => Role::Completes,
+            });
+        }
         let operands = self.edges.len() - start as usize;
-        self.roles.resize(self.edges.len(), Role::Value);
-        references.encode(&mut self.edges, &mut self.roles);
+        references.encode(&mut self.edges, &mut self.roles, map);
         let end = u32::try_from(self.edges.len()).expect("edge count fits u32");
         let id = NodeId::new(self.nodes.len());
         self.nodes.push(Node {
@@ -742,6 +727,17 @@ impl Graph {
     #[inline]
     pub fn input_roles(&self, id: NodeId) -> &[Role] {
         &self.store.roles[self.store.operands(id)]
+    }
+
+    pub fn operands(&self, id: NodeId) -> impl ExactSizeIterator<Item = Operand> + '_ {
+        self.inputs(id)
+            .iter()
+            .zip(self.input_roles(id))
+            .map(|(&node, role)| match role {
+                Role::Value => Operand::Value(node),
+                Role::Completes => Operand::Completes(node),
+                _ => unreachable!("operands precede references"),
+            })
     }
 
     /// The nodes `id`'s op names but does not read.
@@ -974,7 +970,12 @@ impl GraphBuilder {
         inputs: impl IntoIterator<Item = NodeId>,
         references: References<'_>,
     ) -> NodeId {
-        self.store.push(op, inputs, references)
+        self.store.push(
+            op,
+            inputs.into_iter().map(Operand::Value),
+            references,
+            std::convert::identity,
+        )
     }
 
     /// Marks an input as structurally completing the current function instead of yielding a value.

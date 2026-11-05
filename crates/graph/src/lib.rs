@@ -11,8 +11,8 @@ use std::fmt;
 use std::num::NonZeroU32;
 
 pub use graph::{
-    Arms, Carried, Case, Decl, Graph, GraphBuilder, Node, NodeId, Op, OpenRun, References, Region,
-    RegionId, Role, Run, Unions,
+    Arms, Carried, Case, Decl, Graph, GraphBuilder, Node, NodeId, Op, OpenRun, Operand, Rebuild,
+    References, Region, RegionId, Role, Run, Unions,
 };
 pub use int::{Int, OutOfRange, ParseIntError};
 pub use machine::{Machine, Refusal};

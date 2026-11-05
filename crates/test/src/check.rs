@@ -1082,9 +1082,88 @@ fn acyclic_fields(graph: &sumi_hir::Graph) {
 }
 
 fn graph(analysis: &Analysis) {
-    use sumi_hir::{Op, References, Role};
+    use sumi_hir::{Op, Role};
     let graph = analysis.graph();
+    graph_shape(graph);
     acyclic_fields(graph);
+    for id in graph.node_ids() {
+        let node = graph.node(id);
+        if analysis.spans().name(id).is_some() {
+            assert!(matches!(
+                node.op,
+                Op::Param { .. } | Op::Copy { .. } | Op::Hole | Op::LoopIndex | Op::Narrow(_)
+            ));
+        }
+        if analysis.is_valid() {
+            assert!(!matches!(node.op, Op::Hole));
+            if !matches!(
+                node.op,
+                Op::Entry | Op::Arm(_) | Op::Unused | Op::Sequence | Op::Observe { .. } | Op::After
+            ) && graph.input_roles(id).iter().all(|role| role.is_value())
+                && !matches!(
+                    node.op,
+                    Op::Switch { arms } if arms.iter().all(|arm| !graph.region(arm).result_has_value())
+                )
+            {
+                assert!(analysis.ty(id).is_some());
+            }
+        }
+    }
+    typed(analysis);
+    // A parameter node carries its declared type or none, a repeated name's kept by the run alone.
+    for run in graph.runs() {
+        let Some(types) = run.param_types() else {
+            continue;
+        };
+        for (param, &declared) in run.params().zip(types) {
+            let Op::Param { index, ty } = graph.node(param).op else {
+                panic!("a run's parameters are parameter nodes")
+            };
+            assert_eq!(types[index as usize], declared);
+            assert!(ty.is_none_or(|ty| ty == declared));
+        }
+    }
+    assert_eq!(graph.runs().len(), analysis.functions().len());
+    for function in graph.runs() {
+        let mut run = function.nodes();
+        assert_eq!(run.next(), Some(function.entry()));
+        for param in function.params() {
+            assert_eq!(run.next(), Some(param));
+        }
+        let region = graph.region(function.region());
+        for node in region.nodes() {
+            assert_eq!(run.next(), Some(node));
+        }
+        match run.next() {
+            None => assert_eq!(function.result(), region.result()),
+            Some(copy) => {
+                assert_eq!(copy, function.result());
+                match graph.node(copy).op {
+                    Op::Copy { .. } => assert_eq!(graph.inputs(copy), [region.result()]),
+                    Op::Result { .. } => {
+                        let outcome = graph.inputs(copy)[0];
+                        assert!(
+                            outcome == region.result()
+                                || matches!(graph.node(outcome).op, Op::Sequence)
+                        );
+                    }
+                    _ => panic!("a run ends in its result wrapper"),
+                }
+                assert_eq!(run.next(), None);
+            }
+        }
+    }
+    for node in graph.node_ids() {
+        for (&edge, &role) in graph.edges(node).iter().zip(graph.roles(node)) {
+            if role == Role::Declaration {
+                assert!(analysis.spans().name(edge).is_some());
+            }
+        }
+    }
+}
+
+fn graph_shape(graph: &sumi_hir::Graph) {
+    use sumi_hir::{Op, References, Role};
     for id in graph.node_ids() {
         let node = graph.node(id);
         let inputs = graph.inputs(id);
@@ -1130,78 +1209,32 @@ fn graph(analysis: &Analysis) {
                 ));
             }
         }
-        if analysis.spans().name(id).is_some() {
-            assert!(matches!(
-                node.op,
-                Op::Param { .. } | Op::Copy { .. } | Op::Hole | Op::LoopIndex | Op::Narrow(_)
-            ));
-        }
-        if analysis.is_valid() {
-            assert!(!matches!(node.op, Op::Hole));
-            if !matches!(
-                node.op,
-                Op::Entry | Op::Arm(_) | Op::Unused | Op::Sequence | Op::Observe { .. } | Op::After
-            ) && graph.input_roles(id).iter().all(|role| role.is_value())
-                && !matches!(
-                    node.op,
-                    Op::Switch { arms } if arms.iter().all(|arm| !graph.region(arm).result_has_value())
-                )
-            {
-                assert!(analysis.ty(id).is_some());
-            }
-        }
-    }
-    typed(analysis);
-    // A parameter node carries its declared type or none, a repeated name's kept by the run alone.
-    for run in graph.runs() {
-        let Some(types) = run.param_types() else {
-            continue;
-        };
-        for (param, &declared) in run.params().zip(types) {
-            let Op::Param { index, ty } = graph.node(param).op else {
-                panic!("a run's parameters are parameter nodes")
-            };
-            assert_eq!(types[index as usize], declared);
-            assert!(ty.is_none_or(|ty| ty == declared));
-        }
     }
     let mut owner = vec![None; graph.nodes().len()];
-    assert_eq!(graph.runs().len(), analysis.functions().len());
-    for (index, function) in graph.runs().iter().enumerate() {
-        let mut run = function.nodes();
-        assert_eq!(run.next(), Some(function.entry()));
-        assert!(matches!(graph.node(function.entry()).op, Op::Entry));
-        for (position, param) in function.params().enumerate() {
-            assert_eq!(run.next(), Some(param));
+    let mut next = 0;
+    for (index, run) in graph.runs().iter().enumerate() {
+        assert_eq!(run.entry().index(), next);
+        assert!(matches!(graph.node(run.entry()).op, Op::Entry));
+        for (position, param) in run.params().enumerate() {
             assert!(
                 matches!(graph.node(param).op, Op::Param { index, .. } if index as usize == position)
             );
         }
-        let region = graph.region(function.region());
-        assert_eq!(region.context, function.entry());
-        for node in region.nodes() {
-            assert_eq!(run.next(), Some(node));
-        }
-        match run.next() {
-            None => assert_eq!(function.result(), region.result()),
-            Some(copy) => {
-                assert_eq!(copy, function.result());
-                match graph.node(copy).op {
-                    Op::Copy { .. } => assert_eq!(graph.inputs(copy), [region.result()]),
-                    Op::Result { .. } => {
-                        let outcome = graph.inputs(copy)[0];
-                        assert!(
-                            outcome == region.result()
-                                || matches!(graph.node(outcome).op, Op::Sequence)
-                        );
-                    }
-                    _ => panic!("a run ends in its result wrapper"),
-                }
-                assert_eq!(run.next(), None);
-            }
-        }
-        for node in function.nodes() {
+        for node in run.nodes() {
+            assert_eq!(node.index(), next);
+            next += 1;
             owner[node.index()] = Some(index);
+        }
+        assert_eq!(owner[run.result().index()], Some(index));
+        let region = graph.region(run.region());
+        assert_eq!(region.context, run.entry());
+        assert!(region.start() >= run.entry().index() + 1 + run.params().len());
+        assert!(region.start() + region.nodes().len() <= next);
+    }
+    assert_eq!(next, graph.nodes().len());
+    for node in graph.node_ids() {
+        for &edge in graph.edges(node) {
+            assert_eq!(owner[edge.index()], owner[node.index()]);
         }
     }
     // Every reference precedes its node in its run, and holds the kind of node its role names.
@@ -1212,11 +1245,10 @@ fn graph(analysis: &Analysis) {
         let roles = &graph.roles(node)[operands..];
         for (&reference, &role) in references.iter().zip(roles) {
             assert!(reference.index() < node.index(), "{role:?} of {node:?}");
-            assert_eq!(owner[reference.index()], owner[node.index()]);
             let referenced = &graph.node(reference).op;
             match role {
                 Role::Value | Role::Completes => panic!("an operand is no reference"),
-                Role::Declaration => assert!(analysis.spans().name(reference).is_some()),
+                Role::Declaration => {}
                 Role::Context => assert!(matches!(referenced, Op::Entry | Op::Arm(_) | Op::After)),
                 Role::Index => assert!(matches!(referenced, Op::LoopIndex)),
                 Role::Carry => assert!(matches!(referenced, Op::Carry)),
@@ -1604,6 +1636,7 @@ fn optimized(compiled: &Compiled<'_>) {
     use sumi_hir::Op;
 
     let graph = compiled.graph();
+    graph_shape(graph);
     assert_eq!(
         graph.unions(),
         compiled.program().analysis().graph().unions()
