@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::thread;
 
 use crossbeam_channel::{Receiver, Sender, select, unbounded};
@@ -16,9 +17,10 @@ use lsp_types::{
     InitializeParams, InitializeResult, InlayHint, InlayHintKind, InlayHintLabel, InlayHintParams,
     InsertTextFormat, Location, MarkupContent, MarkupKind, OneOf,
     OptionalVersionedTextDocumentIdentifier, Position, PositionEncodingKind, PrepareRenameResponse,
-    PublishDiagnosticsParams, Range, ReferenceParams, RenameOptions, RenameParams,
-    ServerCapabilities, ServerInfo, SymbolInformation, SymbolKind, TextDocumentEdit,
-    TextDocumentPositionParams, TextDocumentSyncCapability, TextDocumentSyncKind,
+    PublishDiagnosticsParams, Range, ReferenceParams, RenameOptions, RenameParams, SemanticTokens,
+    SemanticTokensDeltaParams, SemanticTokensFullOptions, SemanticTokensOptions,
+    SemanticTokensParams, ServerCapabilities, ServerInfo, SymbolInformation, SymbolKind,
+    TextDocumentEdit, TextDocumentPositionParams, TextDocumentSyncCapability, TextDocumentSyncKind,
     TextDocumentSyncOptions, TextEdit, Uri, WorkspaceEdit,
 };
 use serde_json::Value;
@@ -32,19 +34,21 @@ use sumi_syntax::ast::{self, AstNode, View};
 use sumi_syntax::{NodeKind, SyntaxTree, starts_statement};
 use sumi_text::{Encoding, TextRange, TextSize};
 
-use crate::position::Positions;
+use crate::{highlight, position::Positions};
 
 #[derive(Clone)]
 struct Document {
     generation: u64,
     version: i32,
     text: String,
+    tokens: Option<Arc<SemanticTokens>>,
 }
 
 struct Snapshot {
     generation: u64,
     version: i32,
     fixes: Vec<LspFix>,
+    tokens: SemanticTokens,
 }
 
 #[derive(Clone, Copy)]
@@ -56,6 +60,7 @@ struct ClientFeatures {
     has_related_information: bool,
     has_snippets: bool,
     has_unnecessary_tags: bool,
+    has_token_refresh: bool,
 }
 
 struct LspFix {
@@ -110,6 +115,13 @@ struct Analyzed {
     analysis: Analysis,
 }
 
+struct TokenRequest {
+    id: RequestId,
+    uri: Uri,
+    document: Document,
+    previous_result_id: Option<String>,
+}
+
 enum Outcome {
     Analyzed {
         uri: Uri,
@@ -117,6 +129,7 @@ enum Outcome {
         version: i32,
         diagnostics: Vec<lsp_types::Diagnostic>,
         fixes: Vec<LspFix>,
+        tokens: SemanticTokens,
     },
     Response {
         id: RequestId,
@@ -125,6 +138,14 @@ enum Outcome {
         version: i32,
         /// An `Err` is the request's failure message.
         result: Result<Value, String>,
+    },
+    Tokens {
+        id: RequestId,
+        uri: Uri,
+        generation: u64,
+        version: i32,
+        previous_result_id: Option<String>,
+        tokens: Option<SemanticTokens>,
     },
 }
 
@@ -150,10 +171,21 @@ fn run(connection: Connection) -> Result<(), Box<dyn std::error::Error + Send + 
     connection.initialize_finish(initialize_id, serde_json::to_value(result)?)?;
 
     let (jobs_tx, jobs_rx) = unbounded();
+    let (tokens_tx, tokens_rx) = unbounded();
     let (outcomes_tx, outcomes_rx) = unbounded();
+    let syntax_outcomes = outcomes_tx.clone();
+    let syntax_worker = thread::spawn(move || token_worker(tokens_rx, syntax_outcomes, encoding));
     let worker = thread::spawn(move || worker(jobs_rx, outcomes_tx, encoding, features));
-    let result = event_loop(&connection, jobs_tx, outcomes_rx, encoding, features);
+    let result = event_loop(
+        &connection,
+        jobs_tx,
+        tokens_tx,
+        outcomes_rx,
+        encoding,
+        features,
+    );
     worker.join().expect("analysis worker does not panic");
+    syntax_worker.join().expect("syntax worker does not panic");
     result
 }
 
@@ -210,6 +242,10 @@ fn client_features(params: &InitializeParams) -> ClientFeatures {
             .and_then(|capabilities| capabilities.publish_diagnostics.as_ref())
             .and_then(|capabilities| capabilities.tag_support.as_ref())
             .is_some_and(|tags| tags.value_set.contains(&DiagnosticTag::UNNECESSARY)),
+        has_token_refresh: workspace
+            .as_ref()
+            .and_then(|capabilities| capabilities.semantic_tokens.as_ref())
+            .is_some_and(|tokens| tokens.refresh_support == Some(true)),
     }
 }
 
@@ -240,6 +276,14 @@ fn capabilities(encoding: Encoding, features: ClientFeatures) -> ServerCapabilit
         document_highlight_provider: Some(OneOf::Left(true)),
         document_formatting_provider: Some(OneOf::Left(true)),
         document_symbol_provider: Some(OneOf::Left(true)),
+        semantic_tokens_provider: Some(
+            SemanticTokensOptions {
+                legend: highlight::legend(),
+                full: Some(SemanticTokensFullOptions::Delta { delta: Some(true) }),
+                ..SemanticTokensOptions::default()
+            }
+            .into(),
+        ),
         hover_provider: Some(HoverProviderCapability::Simple(true)),
         inlay_hint_provider: Some(OneOf::Left(true)),
         references_provider: Some(OneOf::Left(true)),
@@ -254,6 +298,7 @@ fn capabilities(encoding: Encoding, features: ClientFeatures) -> ServerCapabilit
 fn event_loop(
     connection: &Connection,
     jobs: Sender<Job>,
+    token_jobs: Sender<TokenRequest>,
     outcomes: Receiver<Outcome>,
     encoding: Encoding,
     features: ClientFeatures,
@@ -283,7 +328,7 @@ fn event_loop(
                             connection.sender.send(Response::new_ok(request.id, ()).into())?;
                             is_shut_down = true;
                         } else {
-                            handle_request(request, &documents, &snapshots, &jobs,
+                            handle_request(request, &mut documents, &snapshots, &jobs, &token_jobs,
                                 &connection.sender, features)?;
                         }
                     }
@@ -309,7 +354,8 @@ fn event_loop(
                     return Err(std::io::Error::other("analysis worker disconnected").into());
                 };
                 if !is_shut_down {
-                    handle_outcome(outcome, &documents, &mut snapshots, &connection.sender)?;
+                    handle_outcome(outcome, &mut documents, &mut snapshots, &connection.sender,
+                        features.has_token_refresh)?;
                 }
             }
         }
@@ -337,6 +383,7 @@ fn handle_notification(
                 generation: *next_generation,
                 version: item.version,
                 text: item.text,
+                tokens: None,
             };
             *next_generation += 1;
             jobs.send(Job::Analyze {
@@ -408,13 +455,55 @@ fn handle_notification(
 
 fn handle_request(
     request: Request,
-    documents: &HashMap<String, Document>,
+    documents: &mut HashMap<String, Document>,
     snapshots: &HashMap<String, Snapshot>,
     jobs: &Sender<Job>,
+    token_jobs: &Sender<TokenRequest>,
     sender: &Sender<Message>,
     features: ClientFeatures,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     match request.method.as_str() {
+        lsp_types::request::SemanticTokensFullRequest::METHOD
+        | lsp_types::request::SemanticTokensFullDeltaRequest::METHOD => {
+            let params =
+                if request.method == lsp_types::request::SemanticTokensFullDeltaRequest::METHOD {
+                    serde_json::from_value::<SemanticTokensDeltaParams>(request.params)
+                        .map(|params| (params.text_document.uri, Some(params.previous_result_id)))
+                } else {
+                    serde_json::from_value::<SemanticTokensParams>(request.params)
+                        .map(|params| (params.text_document.uri, None))
+                };
+            let (uri, previous_result_id) = match params {
+                Ok(params) => params,
+                Err(error) => {
+                    invalid_params(sender, request.id, error)?;
+                    return Ok(());
+                }
+            };
+            if let Some(document) = documents.get_mut(uri.as_str()) {
+                if let Some(snapshot) = snapshots.get(uri.as_str()).filter(|snapshot| {
+                    snapshot.generation == document.generation
+                        && snapshot.version == document.version
+                }) {
+                    let result = token_response(
+                        document,
+                        snapshot.tokens.clone(),
+                        previous_result_id.as_deref(),
+                        true,
+                    );
+                    sender.send(Response::new_ok(request.id, result).into())?;
+                } else {
+                    token_jobs.send(TokenRequest {
+                        id: request.id,
+                        uri,
+                        document: document.clone(),
+                        previous_result_id,
+                    })?;
+                }
+            } else {
+                sender.send(Response::new_ok(request.id, Value::Null).into())?;
+            }
+        }
         lsp_types::request::Formatting::METHOD => {
             let params: DocumentFormattingParams = match serde_json::from_value(request.params) {
                 Ok(params) => params,
@@ -714,6 +803,7 @@ fn worker(
                         version,
                         diagnostics: Vec::new(),
                         fixes: Vec::new(),
+                        tokens: SemanticTokens::default(),
                     },
                 },
                 Job::Close { uri } => {
@@ -826,6 +916,48 @@ fn positions(analysis: &Analysis, encoding: Encoding) -> Positions<'_> {
     Positions::new(analysis.parsed().source(), encoding)
 }
 
+fn token_worker(jobs: Receiver<TokenRequest>, outcomes: Sender<Outcome>, encoding: Encoding) {
+    while let Ok(job) = jobs.recv() {
+        let mut batch = vec![job];
+        batch.extend(jobs.try_iter());
+        let latest: HashMap<_, _> = batch
+            .iter()
+            .map(|job| {
+                (
+                    job.uri.as_str().to_owned(),
+                    (job.document.generation, job.document.version),
+                )
+            })
+            .collect();
+        for TokenRequest {
+            id,
+            uri,
+            document,
+            previous_result_id,
+        } in batch
+        {
+            // A newer queued version makes this reply ContentModified at the event loop.
+            let tokens = (latest[uri.as_str()] == (document.generation, document.version))
+                .then(|| parse_source(document.text.into_boxed_str()).ok())
+                .flatten()
+                .map(|parsed| highlight::tokens(&parsed, None, encoding));
+            if outcomes
+                .send(Outcome::Tokens {
+                    id,
+                    uri,
+                    generation: document.generation,
+                    version: document.version,
+                    previous_result_id,
+                    tokens,
+                })
+                .is_err()
+            {
+                return;
+            }
+        }
+    }
+}
+
 /// None for a position past the document.
 fn offset_at(analysis: &Analysis, position: Position, encoding: Encoding) -> Option<TextSize> {
     let offset = positions(analysis, encoding).offset(position)?;
@@ -877,6 +1009,7 @@ fn report(
         version,
         diagnostics,
         fixes,
+        tokens: highlight::tokens(analysis.parsed(), Some(analysis), encoding),
     }
 }
 
@@ -1566,11 +1699,27 @@ fn inlay_hints(analysis: &Analysis, requested: Range, encoding: Encoding) -> Vec
     hints
 }
 
+fn token_response(
+    document: &mut Document,
+    mut tokens: SemanticTokens,
+    previous_result_id: Option<&str>,
+    refined: bool,
+) -> lsp_types::SemanticTokensFullDeltaResult {
+    tokens.result_id = Some(format!(
+        "{}:{}:{refined}",
+        document.generation, document.version
+    ));
+    let result = highlight::delta(document.tokens.as_deref(), &tokens, previous_result_id);
+    document.tokens = Some(Arc::new(tokens));
+    result
+}
+
 fn handle_outcome(
     outcome: Outcome,
-    documents: &HashMap<String, Document>,
+    documents: &mut HashMap<String, Document>,
     snapshots: &mut HashMap<String, Snapshot>,
     sender: &Sender<Message>,
+    has_token_refresh: bool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     match outcome {
         Outcome::Analyzed {
@@ -1579,6 +1728,7 @@ fn handle_outcome(
             version,
             diagnostics,
             fixes,
+            tokens,
         } => {
             if documents.get(uri.as_str()).is_some_and(|document| {
                 document.generation == generation && document.version == version
@@ -1590,9 +1740,50 @@ fn handle_outcome(
                         generation,
                         version,
                         fixes,
+                        tokens,
                     },
                 );
+                if has_token_refresh {
+                    sender.send(
+                        Request::new(
+                            format!("tokens:{generation}:{version}").into(),
+                            lsp_types::request::SemanticTokensRefresh::METHOD.into(),
+                            (),
+                        )
+                        .into(),
+                    )?;
+                }
             }
+        }
+        Outcome::Tokens {
+            id,
+            uri,
+            generation,
+            version,
+            previous_result_id,
+            tokens,
+        } => {
+            let response = if let Some(document) = documents
+                .get_mut(uri.as_str())
+                .filter(|document| document.generation == generation && document.version == version)
+            {
+                let snapshot = snapshots.get(uri.as_str()).filter(|snapshot| {
+                    snapshot.generation == generation && snapshot.version == version
+                });
+                let refined = snapshot.is_some();
+                let tokens = snapshot.map(|snapshot| snapshot.tokens.clone()).or(tokens);
+                let result = tokens.map(|tokens| {
+                    token_response(document, tokens, previous_result_id.as_deref(), refined)
+                });
+                Response::new_ok(id, result)
+            } else {
+                Response::new_err(
+                    id,
+                    ErrorCode::ContentModified as i32,
+                    "document changed while computing the response".into(),
+                )
+            };
+            sender.send(response.into())?;
         }
         Outcome::Response {
             id,
@@ -1659,6 +1850,7 @@ mod tests {
                 generation: 1,
                 version: 1,
                 text: "fn main() = 😀\r\n".into(),
+                tokens: None,
             },
         )]);
         let mut snapshots = HashMap::from([(
@@ -1667,6 +1859,7 @@ mod tests {
                 generation: 1,
                 version: 1,
                 fixes: Vec::new(),
+                tokens: SemanticTokens::default(),
             },
         )]);
         let (jobs, queued) = unbounded();
@@ -1710,6 +1903,7 @@ mod tests {
                 generation: 1,
                 version: 1,
                 text: "a😀\r\n".into(),
+                tokens: None,
             },
         )]);
         let mut snapshots = HashMap::new();
@@ -2216,6 +2410,382 @@ fn body(c: bool) -> int {
             ]
         );
         assert_eq!(highlight(&analysis, at(0, 0), Encoding::Utf16), None);
+    }
+
+    #[test]
+    fn protocol_semantic_tokens_follow_bindings_and_edits() {
+        for encoding in ["utf-8", "utf-16"] {
+            let (client, server_thread) = start(json!({
+                "general": { "positionEncodings": [encoding] }
+            }));
+            let uri = "file:///tokens.su";
+            open(
+                &client,
+                uri,
+                "// 😀\r\nfn f(p: int) -> int {\r\n    let x = p\r\n    let mut y = x\r\n    for x in 0..2 { y = y + x }\r\n    f(y) + x + missing\r\n}\r\n",
+            );
+            let params = json!({ "textDocument": { "uri": uri } });
+            let result = request(
+                &client,
+                1,
+                "textDocument/semanticTokens/full",
+                params.clone(),
+            )
+            .unwrap();
+            let tokens: SemanticTokens = serde_json::from_value(result).unwrap();
+            let mut line = 0;
+            let mut column = 0;
+            let decoded: Vec<_> = tokens
+                .data
+                .iter()
+                .map(|token| {
+                    line += token.delta_line;
+                    column = if token.delta_line == 0 {
+                        column + token.delta_start
+                    } else {
+                        token.delta_start
+                    };
+                    (
+                        line,
+                        column,
+                        token.length,
+                        token.token_type,
+                        token.token_modifiers_bitset,
+                    )
+                })
+                .collect();
+            assert_eq!(
+                decoded[0],
+                (0, 0, if encoding == "utf-8" { 7 } else { 5 }, 6, 0)
+            );
+            assert_eq!(
+                decoded
+                    .into_iter()
+                    .filter(|token| token.3 < 3)
+                    .collect::<Vec<_>>(),
+                [
+                    (1, 3, 1, 0, 1),
+                    (1, 5, 1, 1, 3),
+                    (2, 8, 1, 2, 3),
+                    (2, 12, 1, 1, 2),
+                    (3, 12, 1, 2, 1),
+                    (3, 16, 1, 2, 2),
+                    (4, 8, 1, 2, 3),
+                    (4, 20, 1, 2, 0),
+                    (4, 24, 1, 2, 0),
+                    (4, 28, 1, 2, 2),
+                    (5, 4, 1, 0, 0),
+                    (5, 6, 1, 2, 0),
+                    (5, 11, 1, 2, 2),
+                    (5, 15, 7, 2, 0),
+                ]
+            );
+            notify(
+                &client,
+                "textDocument/didChange",
+                json!({
+                    "textDocument": { "uri": uri, "version": 2 },
+                    "contentChanges": [{ "text": "fn main() = missing(\n" }]
+                }),
+            );
+            receive_diagnostics(&client);
+            let result = request(
+                &client,
+                2,
+                "textDocument/semanticTokens/full",
+                params.clone(),
+            )
+            .unwrap();
+            assert_eq!(
+                result["data"],
+                json!([
+                    0, 0, 2, 3, 0, 0, 3, 4, 0, 1, 0, 4, 1, 9, 0, 0, 1, 1, 9, 0, 0, 2, 1, 7, 0, 0,
+                    2, 7, 0, 0, 0, 7, 1, 9, 0,
+                ])
+            );
+            notify(
+                &client,
+                "textDocument/didChange",
+                json!({
+                    "textDocument": { "uri": uri, "version": 3 },
+                    "contentChanges": [{ "text": "😀 x\r\n\r\tα y\n  z" }]
+                }),
+            );
+            receive_diagnostics(&client);
+            let result = request(
+                &client,
+                3,
+                "textDocument/semanticTokens/full",
+                params.clone(),
+            )
+            .unwrap();
+            let (emoji, alpha) = if encoding == "utf-8" { (4, 2) } else { (2, 1) };
+            let expected = [
+                [0, 0, emoji, 10, 0],
+                [0, emoji + 1, 1, 2, 0],
+                [2, 1, alpha, 10, 0],
+                [0, alpha + 1, 1, 2, 0],
+                [1, 2, 1, 2, 0],
+            ];
+            assert_eq!(result["data"], json!(expected.concat()));
+            notify(
+                &client,
+                "textDocument/didChange",
+                json!({
+                    "textDocument": { "uri": uri, "version": 4 },
+                    "contentChanges": [{ "text": "" }]
+                }),
+            );
+            receive_diagnostics(&client);
+            let result = request(&client, 4, "textDocument/semanticTokens/full", params).unwrap();
+            assert_eq!(result["data"], json!([]));
+            let error =
+                request(&client, 5, "textDocument/semanticTokens/full", json!({})).unwrap_err();
+            assert_eq!(error.code, ErrorCode::InvalidParams as i32);
+            stop(client, server_thread);
+        }
+    }
+
+    fn apply_token_delta(previous: &Value, delta: &Value) -> Value {
+        let mut data = previous["data"].as_array().unwrap().clone();
+        for edit in delta["edits"].as_array().unwrap().iter().rev() {
+            let start = edit["start"].as_u64().unwrap() as usize;
+            let end = start + edit["deleteCount"].as_u64().unwrap() as usize;
+            let inserted = edit["data"].as_array().cloned().unwrap_or_default();
+            data.splice(start..end, inserted);
+        }
+        json!({ "resultId": delta["resultId"], "data": data })
+    }
+
+    #[test]
+    fn protocol_token_deltas_reconstruct_full_results_and_recover_missing_bases() {
+        let (client, server_thread) = start(json!({}));
+        let uri = "file:///delta.su";
+        open(&client, uri, "fn main() = true\nfn other() = 42\n");
+        let at = json!({ "textDocument": { "uri": uri } });
+        let mut previous =
+            request(&client, 1, "textDocument/semanticTokens/full", at.clone()).unwrap();
+        for (index, text) in [
+            "fn main() = false\nfn other() = 42\n",
+            "fn main() = false\nfn other() = 42\n",
+            "// 😀\r\nfn main() = false\rfn other() = 42\n",
+            "fn main() = 123 + 456\nfn other() = 42\n",
+            "fn main() = 123\n",
+            "",
+            "fn main() = true\n",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            notify(
+                &client,
+                "textDocument/didChange",
+                json!({
+                    "textDocument": { "uri": uri, "version": index + 2 },
+                    "contentChanges": [{ "text": text }]
+                }),
+            );
+            receive_diagnostics(&client);
+            let delta = request(
+                &client,
+                2,
+                "textDocument/semanticTokens/full/delta",
+                json!({
+                    "textDocument": { "uri": uri }, "previousResultId": previous["resultId"]
+                }),
+            )
+            .unwrap();
+            let reconstructed = apply_token_delta(&previous, &delta);
+            let full = request(&client, 3, "textDocument/semanticTokens/full", at.clone()).unwrap();
+            assert_eq!(reconstructed, full);
+            if index == 0 {
+                assert!(delta.to_string().len() < full.to_string().len());
+            } else if index == 1 {
+                assert_eq!(delta["edits"], json!([]));
+            }
+            previous = full;
+        }
+        let fallback = request(
+            &client,
+            4,
+            "textDocument/semanticTokens/full/delta",
+            json!({
+                "textDocument": { "uri": uri }, "previousResultId": "expired"
+            }),
+        )
+        .unwrap();
+        assert_eq!(fallback, previous);
+        notify(
+            &client,
+            "textDocument/didClose",
+            json!({ "textDocument": { "uri": uri } }),
+        );
+        receive_diagnostics(&client);
+        open(&client, uri, "fn main() = true\n");
+        let reopened = request(
+            &client,
+            5,
+            "textDocument/semanticTokens/full/delta",
+            json!({
+                "textDocument": { "uri": uri }, "previousResultId": previous["resultId"]
+            }),
+        )
+        .unwrap();
+        assert_eq!(reopened["data"], previous["data"]);
+        assert_ne!(reopened["resultId"], previous["resultId"]);
+        stop(client, server_thread);
+    }
+
+    #[test]
+    fn tokens_are_available_before_checking_and_refresh_afterwards() {
+        let (server, client) = Connection::memory();
+        let params: InitializeParams = serde_json::from_value(json!({
+            "capabilities": { "workspace": { "semanticTokens": { "refreshSupport": true } } }
+        }))
+        .unwrap();
+        let features = client_features(&params);
+        let (jobs, pending_analysis) = unbounded();
+        let (token_jobs, pending_tokens) = unbounded();
+        let (outcomes, received_outcomes) = unbounded();
+        let token_outcomes = outcomes.clone();
+        let syntax =
+            thread::spawn(move || token_worker(pending_tokens, token_outcomes, Encoding::Utf16));
+        let server_thread = thread::spawn(move || {
+            event_loop(
+                &server,
+                jobs,
+                token_jobs,
+                received_outcomes,
+                Encoding::Utf16,
+                features,
+            )
+            .unwrap();
+        });
+        let uri = "file:///pending.su";
+        let text = "fn f(p: int) = p + 01 // 😀\r\n";
+        notify(
+            &client,
+            "textDocument/didOpen",
+            json!({
+                "textDocument": { "uri": uri, "languageId": "sumi", "version": 1, "text": text }
+            }),
+        );
+        let at = json!({ "textDocument": { "uri": uri } });
+        let first = request(&client, 1, "textDocument/semanticTokens/full", at.clone()).unwrap();
+        assert_eq!(
+            first["data"],
+            json!([
+                0, 0, 2, 3, 0, 0, 3, 1, 0, 1, 0, 1, 1, 9, 0, 0, 1, 1, 1, 3, 0, 1, 1, 7, 0, 0, 2, 3,
+                4, 0, 0, 3, 1, 9, 0, 0, 2, 1, 7, 0, 0, 2, 1, 2, 0, 0, 2, 1, 7, 0, 0, 2, 2, 10, 0,
+                0, 3, 5, 6, 0,
+            ])
+        );
+        let Job::Analyze {
+            uri,
+            generation,
+            version,
+            text,
+        } = pending_analysis.recv().unwrap()
+        else {
+            panic!("pending analysis");
+        };
+        outcomes
+            .send(report(
+                &analyzed(&text),
+                uri.clone(),
+                generation,
+                version,
+                Encoding::Utf16,
+                false,
+                false,
+            ))
+            .unwrap();
+        receive_diagnostics(&client);
+        let Message::Request(refresh) = receive(&client) else {
+            panic!("token refresh")
+        };
+        assert_eq!(refresh.method, "workspace/semanticTokens/refresh");
+        client
+            .sender
+            .send(Response::new_ok(refresh.id, ()).into())
+            .unwrap();
+        let mut expected = first.clone();
+        expected["data"][43] = json!(1);
+        expected["data"][44] = json!(2);
+        expected["resultId"] = json!(format!("{generation}:{version}:true"));
+        let delta = request(
+            &client,
+            4,
+            "textDocument/semanticTokens/full/delta",
+            json!({
+                "textDocument": { "uri": uri }, "previousResultId": first["resultId"]
+            }),
+        )
+        .unwrap();
+        assert_eq!(apply_token_delta(&first, &delta), expected);
+        assert_eq!(
+            request(&client, 2, "textDocument/semanticTokens/full", at).unwrap(),
+            expected
+        );
+        outcomes
+            .send(Outcome::Tokens {
+                id: 3.into(),
+                uri: uri.clone(),
+                generation,
+                version,
+                previous_result_id: None,
+                tokens: Some(serde_json::from_value(first).unwrap()),
+            })
+            .unwrap();
+        let Message::Response(response) = receive(&client) else {
+            panic!("late syntax response")
+        };
+        assert_eq!(response.response_result.unwrap(), expected);
+        let text = "fn f(p: int) = p";
+        notify(
+            &client,
+            "textDocument/didChange",
+            json!({
+                "textDocument": { "uri": uri, "version": 2 },
+                "contentChanges": [{ "text": text }]
+            }),
+        );
+        let _pending = pending_analysis.recv().unwrap();
+        outcomes
+            .send(report(
+                &analyzed(text),
+                uri.clone(),
+                generation,
+                2,
+                Encoding::Utf16,
+                false,
+                false,
+            ))
+            .unwrap();
+        receive_diagnostics(&client);
+        let Message::Request(refresh) = receive(&client) else {
+            panic!("pending token refresh")
+        };
+        assert_eq!(refresh.method, "workspace/semanticTokens/refresh");
+        client
+            .sender
+            .send(Response::new_ok(refresh.id, ()).into())
+            .unwrap();
+        let result = request(
+            &client,
+            5,
+            "textDocument/semanticTokens/full",
+            json!({ "textDocument": { "uri": uri } }),
+        )
+        .unwrap();
+        let tokens: SemanticTokens = serde_json::from_value(result).unwrap();
+        let reference = tokens.data.last().unwrap();
+        assert_eq!(
+            (reference.token_type, reference.token_modifiers_bitset),
+            (1, 2)
+        );
+        stop(client, server_thread);
+        syntax.join().unwrap();
     }
 
     #[test]
@@ -2808,11 +3378,13 @@ fn main() -> int {
     fn malformed_request_params_return_an_error() {
         let (sender, receiver) = unbounded();
         let (jobs, _) = unbounded();
+        let (token_jobs, _) = unbounded();
         handle_request(
             Request::new(1.into(), "textDocument/formatting".into(), json!({})),
-            &HashMap::new(),
+            &mut HashMap::new(),
             &HashMap::new(),
             &jobs,
+            &token_jobs,
             &sender,
             ClientFeatures {
                 has_code_actions: false,
@@ -2822,6 +3394,7 @@ fn main() -> int {
                 has_related_information: false,
                 has_snippets: false,
                 has_unnecessary_tags: false,
+                has_token_refresh: false,
             },
         )
         .unwrap();
@@ -2902,25 +3475,28 @@ fn main() -> int {
                 true,
                 false,
             ),
-            &documents,
+            &mut documents,
             &mut snapshots,
             &sender,
+            false,
         )
         .unwrap();
         assert!(receiver.try_recv().is_err());
         assert!(!snapshots.contains_key(uri.as_str()));
 
         handle_outcome(
-            Outcome::Response {
+            Outcome::Tokens {
                 id: 2.into(),
                 uri,
                 generation: old_generation,
                 version: old_version,
-                result: Ok(json!([])),
+                previous_result_id: None,
+                tokens: Some(SemanticTokens::default()),
             },
-            &documents,
+            &mut documents,
             &mut snapshots,
             &sender,
+            false,
         )
         .unwrap();
         let Message::Response(response) = receiver.recv().unwrap() else {
