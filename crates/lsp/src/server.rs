@@ -1342,10 +1342,7 @@ fn prepare_rename(
     Some(PrepareRenameResponse::Range(range))
 }
 
-/// `Err` names what stops the rename: a new name that is no name, a symbol whose name two
-/// functions share or appears where the parser recovered, so an occurrence may be missing, or a
-/// new name that already denotes something at an occurrence of the symbol, so a read would
-/// silently change meaning.
+/// Renames refuse ambiguous or recovered occurrences and names that collide or change resolution.
 fn rename(
     analysis: &Analysis,
     uri: Uri,
@@ -1368,19 +1365,25 @@ fn rename(
     if old_name == new_name {
         return Ok(None);
     }
-    let named = |name: &str| {
+    let items = || {
         analysis
             .functions()
             .iter()
-            .filter(|function| {
-                function
-                    .name()
-                    .is_some_and(|range| analysis.text(range) == name)
-            })
-            .count()
+            .filter_map(|function| function.name().map(|name| ("function", name)))
+            .chain(
+                analysis
+                    .decls()
+                    .iter()
+                    .filter_map(|decl| decl.name().map(|name| ("type", name))),
+            )
     };
-    if matches!(occurrence.symbol, Symbol::Function(_)) && named(old_name) > 1 {
-        return Err(format!("two functions are named `{old_name}`"));
+    if matches!(occurrence.symbol, Symbol::Function(_) | Symbol::Type(_))
+        && items()
+            .filter(|&(_, range)| analysis.text(range) == old_name)
+            .count()
+            > 1
+    {
+        return Err(format!("multiple declarations are named `{old_name}`"));
     }
     if analysis
         .unresolved()
@@ -1391,30 +1394,37 @@ fn rename(
             "`{old_name}` also appears where the parser recovered; fix the syntax first"
         ));
     }
-    if let Symbol::Field(id, _) = occurrence.symbol
-        && analysis
+    let occurrences = || std::iter::once(declared).chain(analysis.references_of(occurrence.symbol));
+    if let Symbol::Field(id, _) = occurrence.symbol {
+        if analysis
             .decl(id)
             .fields()
             .iter()
             .any(|field| field.text() == new_name)
-    {
-        return Err(format!("a field is already named `{new_name}`"));
-    }
-    if named(new_name) > 0 {
-        return Err(format!("a function is already named `{new_name}`"));
-    }
-    let occurrences = || std::iter::once(declared).chain(analysis.references_of(occurrence.symbol));
-    let same: Vec<_> = analysis
-        .bindings()
-        .iter()
-        .filter(|binding| binding.name() != declared && analysis.text(binding.name()) == new_name)
-        .collect();
-    let is_shadowed = occurrences().any(|range| {
-        same.iter()
-            .any(|binding| binding.is_visible_at(range.start()))
-    });
-    if is_shadowed {
-        return Err(format!("`{new_name}` is already in scope here"));
+        {
+            return Err(format!("a field is already named `{new_name}`"));
+        }
+    } else {
+        if matches!(occurrence.symbol, Symbol::Type(_)) && Ty::scalar(new_name).is_some() {
+            return Err(format!("`{new_name}` is a built-in type"));
+        }
+        if let Some((kind, _)) = items().find(|&(_, range)| analysis.text(range) == new_name) {
+            return Err(format!("a {kind} is already named `{new_name}`"));
+        }
+        let same: Vec<_> = analysis
+            .bindings()
+            .iter()
+            .filter(|binding| {
+                binding.name() != declared && analysis.text(binding.name()) == new_name
+            })
+            .collect();
+        let is_shadowed = occurrences().any(|range| {
+            same.iter()
+                .any(|binding| binding.is_visible_at(range.start()))
+        });
+        if is_shadowed {
+            return Err(format!("`{new_name}` is already in scope here"));
+        }
     }
     let positions = positions(analysis, encoding);
     let edits = occurrences()
@@ -2468,11 +2478,11 @@ fn main() -> int = f()",
         );
         assert_eq!(
             super::rename(&twins, uri.clone(), at(0, 3), Encoding::Utf16, "g"),
-            Err("two functions are named `f`".into())
+            Err("multiple declarations are named `f`".into())
         );
         assert_eq!(
             super::rename(&twins, uri.clone(), at(1, 3), Encoding::Utf16, "g"),
-            Err("two functions are named `f`".into())
+            Err("multiple declarations are named `f`".into())
         );
     }
 
@@ -2537,6 +2547,84 @@ fn main() -> int = f()",
         let error = request(&client, 3, "textDocument/hover", json!({})).unwrap_err();
         assert_eq!(error.code, ErrorCode::InvalidParams as i32);
         stop(client, server_thread);
+    }
+
+    #[test]
+    fn rename_respects_type_and_field_namespaces() {
+        let text = "type A { value: int }
+type B {}
+fn make(n: int) -> A = A(value: n)
+fn read(a: A) -> int = a.value
+fn main() -> int = read(make(3))
+";
+        let uri: Uri = "file:///types.su".parse().unwrap();
+        let analysis = analyzed(text);
+        assert!(analysis.is_valid());
+        let renamed = |line, character, new_name| {
+            rename(
+                &analysis,
+                uri.clone(),
+                Position::new(line, character),
+                Encoding::Utf16,
+                new_name,
+            )
+        };
+        for (line, character, new_name, message) in [
+            (0, 5, "B", "a type is already named `B`"),
+            (0, 5, "make", "a function is already named `make`"),
+            (2, 3, "B", "a type is already named `B`"),
+            (2, 8, "A", "a type is already named `A`"),
+            (0, 5, "int", "`int` is a built-in type"),
+            (0, 5, "bool", "`bool` is a built-in type"),
+            (0, 5, "unit", "`unit` is a built-in type"),
+        ] {
+            assert_eq!(renamed(line, character, new_name), Err(message.into()));
+        }
+        for (line, character, new_name, count) in [
+            (0, 5, "Point", 4),
+            (0, 9, "B", 3),
+            (0, 9, "make", 3),
+            (0, 9, "n", 3),
+            (0, 9, "a", 3),
+            (0, 9, "int", 3),
+        ] {
+            let mut edits = renamed(line, character, new_name)
+                .unwrap()
+                .unwrap()
+                .changes
+                .unwrap()
+                .remove(&uri)
+                .unwrap();
+            assert_eq!(edits.len(), count);
+            edits.sort_by_key(|edit| {
+                std::cmp::Reverse((edit.range.start.line, edit.range.start.character))
+            });
+            let mut changed = text.to_owned();
+            for edit in edits {
+                let start = offset_at(&analysis, edit.range.start, Encoding::Utf16).unwrap();
+                let end = offset_at(&analysis, edit.range.end, Encoding::Utf16).unwrap();
+                changed.replace_range(start.to_usize()..end.to_usize(), &edit.new_text);
+            }
+            let changed = analyzed(&changed);
+            assert!(changed.is_valid(), "{:?}", changed.diagnostics());
+        }
+        for (text, line, character) in [
+            ("type A {}\ntype A {}", 0, 5),
+            ("type A {}\ntype A {}", 1, 5),
+            ("type A {}\nfn A() = 1", 0, 5),
+            ("type A {}\nfn A() = 1", 1, 3),
+        ] {
+            assert_eq!(
+                rename(
+                    &analyzed(text),
+                    uri.clone(),
+                    Position::new(line, character),
+                    Encoding::Utf16,
+                    "Fresh"
+                ),
+                Err("multiple declarations are named `A`".into()),
+            );
+        }
     }
 
     #[test]
