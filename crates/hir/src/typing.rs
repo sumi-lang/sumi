@@ -1,7 +1,4 @@
-//! The checker's [`Solver`]s: one class per graph node, at the node's index, its type claims in
-//! one and its values in the other, each fed the flows that deliver to it. Flows never merge
-//! classes, so a caller's demands never reach its callee and signatures are read off result
-//! classes after one solve, in any declaration order.
+//! Type claims and value evidence, built together and solved before diagnostic replay.
 
 use sumi_text::TextRange;
 
@@ -11,7 +8,7 @@ use std::rc::Rc;
 use sumi_graph::{Domain, May, NodeId, Ty, Unions};
 
 use crate::lattice::{Claim, Context, Edge, Evidence, Many, Pair};
-use crate::solver::Solver;
+use crate::solver::Builder;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Expected {
@@ -20,9 +17,20 @@ pub(crate) enum Expected {
     Peer(NodeId),
 }
 
+pub(crate) struct Drawing<'g> {
+    types: Builder<'g, Evidence>,
+    values: Builder<'g, May>,
+    claims: Claims,
+}
+
 pub(crate) struct Typing {
-    types: Solver<Evidence>,
-    values: Solver<May>,
+    types: Vec<Evidence>,
+    values: Vec<May>,
+    claims: Claims,
+}
+
+struct Claims {
+    calls: Vec<(NodeId, NodeId, Claim)>,
     /// The graph's, and those resolving a class's declared-type claims mints; shared with whatever
     /// names types in messages.
     unions: Rc<RefCell<Unions>>,
@@ -34,28 +42,26 @@ pub(crate) struct Typing {
     aliased: Vec<(NodeId, NodeId)>,
 }
 
-impl Typing {
+impl<'g> Drawing<'g> {
     pub fn for_nodes(nodes: usize, unions: Rc<RefCell<Unions>>) -> Self {
         Self {
-            types: Solver::with_classes(nodes),
-            values: Solver::with_classes(nodes),
-            unions,
-            origins: Vec::with_capacity(nodes),
-            facts: Vec::with_capacity(nodes),
-            unknowns: Vec::new(),
-            aliased: Vec::with_capacity(nodes / 8),
+            types: Builder::with_classes(nodes),
+            values: Builder::with_classes(nodes),
+            claims: Claims {
+                calls: Vec::new(),
+                unions,
+                origins: Vec::with_capacity(nodes),
+                facts: Vec::with_capacity(nodes),
+                unknowns: Vec::new(),
+                aliased: Vec::with_capacity(nodes / 8),
+            },
         }
     }
 
     fn claim(&mut self, origin: TextRange) -> Claim {
-        let claim = Claim::local(self.origins.len());
-        self.origins.push(origin);
+        let claim = Claim::local(self.claims.origins.len());
+        self.claims.origins.push(origin);
         claim
-    }
-
-    /// None for a replay's own claims.
-    pub fn origin(&self, claim: Claim) -> Option<TextRange> {
-        self.origins.get(claim.index()).copied()
     }
 
     pub fn known(&mut self, node: NodeId, ty: Ty, origin: TextRange) {
@@ -72,13 +78,13 @@ impl Typing {
         if value.is_live() {
             self.values.class_mut(node).join(&value);
         }
-        self.facts.push((node, ty, claim));
+        self.claims.facts.push((node, ty, claim));
     }
 
     /// A hole decided `node`'s type: a fact, so a replay keeps it, and every call delivers it.
     pub fn unknown(&mut self, node: NodeId) {
         self.types.class_mut(node).join(&Evidence::UNKNOWN);
-        self.unknowns.push(node);
+        self.claims.unknowns.push(node);
     }
 
     /// Liveness is not a type claim, so no replay reads it.
@@ -94,6 +100,9 @@ impl Typing {
     }
 
     pub fn flow(&mut self, provider: NodeId, consumer: NodeId, edge: Edge) {
+        if let Edge::Call(claim) = edge {
+            self.claims.calls.push((provider, consumer, claim));
+        }
         if edge.delivers_types() {
             self.types.flow(provider, consumer, edge);
         }
@@ -101,7 +110,7 @@ impl Typing {
             self.values.flow(provider, consumer, edge);
         }
         if edge.aliases() {
-            self.aliased.push((consumer, provider));
+            self.claims.aliased.push((consumer, provider));
         }
     }
 
@@ -111,11 +120,17 @@ impl Typing {
         }
         self.values.derive(first, second, consumer, pair);
         if pair.aliases() {
-            self.aliased.push((consumer, first));
+            self.claims.aliased.push((consumer, first));
         }
     }
 
-    pub fn derive_many(&mut self, first: NodeId, others: &[NodeId], consumer: NodeId, many: Many) {
+    pub fn derive_many(
+        &mut self,
+        first: NodeId,
+        others: &'g [NodeId],
+        consumer: NodeId,
+        many: Many,
+    ) {
         self.values.derive_many(first, others, consumer, many);
     }
 
@@ -134,46 +149,55 @@ impl Typing {
         }
     }
 
+    pub fn solve(self, cx: &Context) -> Typing {
+        Typing {
+            types: self.types.solve(cx),
+            values: self.values.solve(cx),
+            claims: self.claims,
+        }
+    }
+}
+
+impl Typing {
+    /// None for a replay's own claims.
+    pub fn origin(&self, claim: Claim) -> Option<TextRange> {
+        self.claims.origins.get(claim.index()).copied()
+    }
+
     pub fn evidence(&self, node: NodeId) -> &Evidence {
-        self.types.evidence(node)
+        &self.types[node.index()]
     }
 
     pub fn may(&self, node: NodeId) -> &May {
-        self.values.evidence(node)
+        &self.values[node.index()]
     }
 
     pub fn resolve(&self, node: NodeId) -> Option<Ty> {
-        self.evidence(node).ty(&mut self.unions.borrow_mut())
+        self.evidence(node).ty(&mut self.claims.unions.borrow_mut())
     }
 
     /// Whether every value of `actual` is one of `expected`.
     pub fn fits(&self, actual: Ty, expected: Ty) -> bool {
-        self.unions.borrow().fits(actual, expected)
-    }
-
-    pub fn solve(&mut self, cx: &Context) {
-        self.types.solve(cx);
-        self.values.solve(cx);
+        self.claims.unions.borrow().fits(actual, expected)
     }
 
     /// A conflicted callee delivers nothing: it is reported at its declaration. An unknown one
     /// delivers the unknown, so its callers are held to nothing.
     pub fn replay(&self) -> Replay<'_> {
-        let mut replay = Replay::new(self.types.classes(), &self.unions);
-        for &(node, ty, claim) in &self.facts {
+        let mut replay = Replay::new(self.types.len(), &self.claims.unions);
+        for &(node, ty, claim) in &self.claims.facts {
             replay.claim(node, ty, claim);
         }
-        for &node in &self.unknowns {
+        for &node in &self.claims.unknowns {
             replay.learn(node, &Evidence::UNKNOWN);
         }
-        for (call, edge, solved) in self.types.edges() {
-            if let Edge::Call(claim) = *edge
-                && (solved.ty(&mut self.unions.borrow_mut()).is_some() || solved.is_unknown())
-            {
+        for &(provider, call, claim) in &self.claims.calls {
+            let solved = self.evidence(provider);
+            if solved.ty(&mut self.claims.unions.borrow_mut()).is_some() || solved.is_unknown() {
                 replay.learn(call, &solved.imported(claim));
             }
         }
-        for &(alias, of) in &self.aliased {
+        for &(alias, of) in &self.claims.aliased {
             replay.union(alias, of);
         }
         replay
@@ -183,14 +207,13 @@ impl Typing {
     pub fn settle(self) -> Settled {
         let types = self
             .types
-            .into_evidence()
             .iter()
-            .map(|class| class.ty(&mut self.unions.borrow_mut()))
+            .map(|class| class.ty(&mut self.claims.unions.borrow_mut()))
             .collect();
-        let unions = self.unions.borrow().clone();
+        let unions = self.claims.unions.borrow().clone();
         Settled {
             types,
-            values: self.values.into_evidence().into_boxed_slice(),
+            values: self.values.into_boxed_slice(),
             unions,
         }
     }
@@ -303,9 +326,9 @@ mod tests {
         TextRange::new(TextSize::new(offset), TextSize::new(offset + 1))
     }
 
-    fn classes<const N: usize>() -> (Typing, [NodeId; N]) {
+    fn classes<const N: usize>() -> (Drawing<'static>, [NodeId; N]) {
         (
-            Typing::for_nodes(N, Rc::default()),
+            Drawing::for_nodes(N, Rc::default()),
             std::array::from_fn(NodeId::new),
         )
     }
@@ -333,7 +356,7 @@ mod tests {
         typing.expect(hole, Expected::Ty(Ty::BOOL), at(2));
         typing.call(hole, call, at(3));
         typing.derive(hole, literal, join, Pair::Branch);
-        typing.solve(&cx());
+        let typing = typing.solve(&cx());
         for node in [hole, call, join] {
             let evidence = typing.evidence(node);
             assert!(evidence.is_unknown());
@@ -353,7 +376,7 @@ mod tests {
         let (mut typing, [provider, call]) = classes();
         typing.call(provider, call, at(0));
         typing.expect(call, Expected::Ty(Ty::INT), at(1));
-        typing.solve(&cx());
+        let typing = typing.solve(&cx());
         assert_eq!(typing.resolve(provider), None);
         assert_eq!(typing.resolve(call), Some(Ty::INT));
     }
@@ -371,7 +394,7 @@ mod tests {
                 typing.flow(literal, result, Edge::Bind);
             }
             typing.call(result, downstream, at(30));
-            typing.solve(&cx());
+            let typing = typing.solve(&cx());
             let evidence = typing.evidence(result);
             assert!(evidence.is_conflict() && !evidence.is_inherited());
             let claims = evidence.claims();
@@ -398,7 +421,7 @@ mod tests {
         typing.call(fact, call, at(2));
         typing.expect(call, Expected::Ty(Ty::UNIT), at(3));
         typing.expect(empty, Expected::Ty(Ty::BOOL), at(4));
-        typing.solve(&cx());
+        let typing = typing.solve(&cx());
         for node in [fact, call] {
             let evidence = typing.evidence(node);
             assert!(!evidence.is_conflict());
@@ -419,7 +442,7 @@ mod tests {
         typing.call(provider, call, at(1));
         typing.known(local, Ty::BOOL, at(2));
         typing.flow(local, call, Edge::Bind);
-        typing.solve(&cx());
+        let typing = typing.solve(&cx());
         let evidence = typing.evidence(call);
         assert!(evidence.is_conflict() && !evidence.is_inherited());
         assert_eq!(typing.origin(evidence.claims()[0].1), Some(at(2)));
@@ -431,13 +454,12 @@ mod tests {
         typing.literal(x, Ty::INT, May::int(&5.into()), at(0));
         typing.literal(y, Ty::INT, May::int(&9.into()), at(1));
         typing.expect(x, Expected::Peer(y), at(2));
-        typing.solve(&cx());
+        typing.known(known, Ty::BOOL, at(3));
+        typing.expect(unknown, Expected::Peer(known), at(4));
+        let typing = typing.solve(&cx());
         assert_eq!(typing.resolve(x), Some(Ty::INT));
         assert_eq!(typing.may(x), &May::int(&5.into()));
         assert_eq!(typing.may(y), &May::int(&9.into()));
-        typing.known(known, Ty::BOOL, at(3));
-        typing.expect(unknown, Expected::Peer(known), at(4));
-        typing.solve(&cx());
         assert_eq!(typing.resolve(unknown), Some(Ty::BOOL));
         assert!(!typing.evidence(unknown).is_conflict());
     }
@@ -452,7 +474,7 @@ mod tests {
         typing.derive(else_branch, live, join, Pair::Branch);
         typing.call(join, call, at(2));
         let cx = cx();
-        typing.solve(&cx);
+        let typing = typing.solve(&cx);
         assert_eq!(typing.resolve(then_branch), Some(Ty::INT));
         assert_eq!(typing.resolve(else_branch), Some(Ty::BOOL));
         let evidence = typing.evidence(join);
@@ -486,7 +508,7 @@ mod tests {
         typing.literal(else_branch, Ty::INT, May::int(&2.into()), at(1));
         typing.derive(then_branch, dead, join, Pair::Branch);
         typing.derive(else_branch, live, join, Pair::Branch);
-        typing.solve(&cx());
+        let typing = typing.solve(&cx());
         assert_eq!(typing.resolve(join), Some(Ty::INT));
         assert_eq!(typing.may(join), &May::int(&2.into()));
     }
@@ -515,7 +537,7 @@ mod tests {
         typing.call(literal, literal_call, at(6));
         typing.flow(literal, refined, Edge::Exactly(true));
         let cx = cx();
-        typing.solve(&cx);
+        let typing = typing.solve(&cx);
         let mut replay = typing.replay();
         assert_eq!(replay.resolve(literal), Some(Ty::INT));
         assert_eq!(replay.resolve(demanded), None);
@@ -538,7 +560,7 @@ mod tests {
         typing.derive(then_branch, live, local, Pair::Branch);
         typing.derive(else_branch, live, local, Pair::Branch);
         typing.flow(local, refined, Edge::Exactly(true));
-        typing.solve(&cx());
+        let typing = typing.solve(&cx());
         let mut replay = typing.replay();
         assert_eq!(replay.resolve(refined), None);
         replay.branch(then_branch, local);
@@ -557,7 +579,7 @@ mod tests {
         typing.expect(binding, Expected::Ty(Ty::BOOL), at(1));
         typing.call(unknown, unknown_call, at(2));
         typing.flow(unknown_call, bound_call, Edge::Bind);
-        typing.solve(&cx());
+        let typing = typing.solve(&cx());
         assert_eq!(typing.may(binding).ints, typing.may(literal).ints);
         assert_eq!(typing.resolve(binding), Some(Ty::INT));
         assert_eq!(typing.resolve(literal), Some(Ty::INT));
@@ -571,12 +593,12 @@ mod tests {
     #[test]
     fn reads_aliasing_one_local_stay_one_step_from_its_root() {
         const READS: usize = 1000;
-        let mut typing = Typing::for_nodes(READS + 1, Rc::default());
+        let mut typing = Drawing::for_nodes(READS + 1, Rc::default());
         let local = NodeId::new(0);
         for read in 1..=READS {
             typing.flow(local, NodeId::new(read), Edge::Exactly(true));
         }
-        typing.solve(&cx());
+        let typing = typing.solve(&cx());
         let mut replay = typing.replay();
         let root = replay.root(local);
         for class in 0..=READS {
@@ -592,7 +614,7 @@ mod tests {
         let (mut typing, [literal, copied, apart]) = classes();
         typing.literal(literal, Ty::INT, May::int(&5.into()), at(0));
         typing.flow(literal, copied, Edge::Bind);
-        typing.solve(&cx());
+        let typing = typing.solve(&cx());
         let settled = typing.settle();
         assert_eq!(settled.resolve(literal), Some(Ty::INT));
         assert_eq!(settled.resolve(copied), Some(Ty::INT));

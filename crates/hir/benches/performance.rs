@@ -132,6 +132,7 @@ fn timing(c: &mut Criterion) {
     analyze_case(c, "nested-mutation", 1024);
     analyze_case(c, "caller-guards", 1024);
     analyze_case(c, "caller-arithmetic-guards", 1024);
+    analyze_case(c, "records", 256);
     optimize(c, "branches", 1024, false);
     optimize(c, "nested-mutation", 1024, false);
     optimize(c, "branches", 1024, true);
@@ -151,6 +152,7 @@ fn memory(c: &mut Criterion) {
     optimize(c, "branches", 1024, true);
     optimize(c, "nested-mutation", 1024, true);
     analyze_case(c, "nested-mutation", 1024);
+    analyze_case(c, "records", 256);
     suspended_frames(c);
     singleton_entry(c);
     workload(c, "big-int");

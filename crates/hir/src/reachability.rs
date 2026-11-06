@@ -136,7 +136,7 @@ pub(crate) fn warn(
             .zip(&stops_delivered)
             .any(|(pair, &stops)| stops && open(pair[1].context)))
     .then(|| {
-        let (mut any, cx, _) = flows::draw(
+        let (any, cx, _) = flows::draw(
             graph,
             spans,
             lowered,
@@ -145,8 +145,7 @@ pub(crate) fn warn(
             Arguments::Any,
             source.unions.clone(),
         );
-        any.solve(&cx);
-        any
+        any.solve(&cx)
     });
     let facts = |node: NodeId| match &any {
         Some(any) if open(node) => any,

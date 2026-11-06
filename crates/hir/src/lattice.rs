@@ -528,7 +528,13 @@ impl Lattice for Evidence {
         }
     }
 
-    fn combine_many(&self, _: &Many, _: &[&Self], _: bool, _: &Context) -> Self {
+    fn combine_many<'a>(
+        &'a self,
+        _: &Many,
+        _: impl Iterator<Item = &'a Self>,
+        _: bool,
+        _: &Context,
+    ) -> Self {
         Self::NONE
     }
 
@@ -658,10 +664,16 @@ impl Lattice for May {
     }
 
     /// Field types bound nesting even in ill-typed cycles, which integer rounding cannot bound.
-    fn combine_many(&self, many: &Many, others: &[&Self], cyclic: bool, cx: &Context) -> Self {
+    fn combine_many<'a>(
+        &'a self,
+        many: &Many,
+        others: impl Iterator<Item = &'a Self>,
+        cyclic: bool,
+        cx: &Context,
+    ) -> Self {
         let Many::Make(decl) = *many;
         let fields = std::iter::once(self)
-            .chain(others.iter().copied())
+            .chain(others)
             .zip(cx.decls[decl.index()].fields())
             .map(|(field, &(_, ty))| {
                 let field = ty.map_or(Self::NONE, |ty| field.narrow(ty, &cx.unions));

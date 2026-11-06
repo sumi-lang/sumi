@@ -3,6 +3,7 @@
 
 mod check;
 pub mod codes;
+mod dependency;
 mod flows;
 mod lattice;
 mod lower;

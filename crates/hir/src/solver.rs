@@ -1,11 +1,14 @@
-//! A monotone framework: a join-semilattice payload per class and directed flows with a transfer
-//! per edge, settled one strongly connected component at a time, providers first. Evidence never
-//! flows back and is never retracted; a conflict is a lattice element like any other.
+//! A monotone solver over directed flows. Growing value cycles widen and narrow before their
+//! evidence reaches downstream dependency components.
 
 use std::collections::VecDeque;
-use std::num::NonZeroU32;
 
 use sumi_graph::NodeId;
+
+use crate::dependency::Rows;
+
+mod schedule;
+use schedule::{Growth, Schedule};
 
 /// `join` is commutative, associative, and idempotent with identity `bottom`; `transfer` and
 /// `combine` are monotone; ascending chains are finite, or `solve` may not end.
@@ -58,10 +61,10 @@ pub(crate) trait Lattice: Clone + Eq {
     fn combine(&self, pair: &Self::Pair, other: &Self, cyclic: bool, cx: &Self::Context) -> Self;
 
     /// `transfer` from `self` and `others` in order; it reads `cyclic`.
-    fn combine_many(
-        &self,
+    fn combine_many<'a>(
+        &'a self,
         many: &Self::Many,
-        others: &[&Self],
+        others: impl Iterator<Item = &'a Self>,
         cyclic: bool,
         cx: &Self::Context,
     ) -> Self;
@@ -93,23 +96,21 @@ struct Flow<L: Lattice> {
 
 enum Shape<L: Lattice> {
     Edge(L::Edge),
-    Pair {
-        second: NodeId,
-        pair: L::Pair,
-    },
-    /// `others` indexes the solver's lists: the providers after the first.
-    Many {
-        others: u32,
-        many: L::Many,
-    },
+    Pair { second: NodeId, pair: L::Pair },
+    Many { others: u32, many: L::Many },
 }
 
-/// The providers after the first of each `Many` flow, by its index.
-type Others = Vec<Box<[NodeId]>>;
+struct Flows<'g, L: Lattice> {
+    entries: Vec<Flow<L>>,
+    others: Vec<&'g [NodeId]>,
+}
 
 impl<L: Lattice> Flow<L> {
-    /// Each provider with what its evidence can do crossing this flow, the first first.
-    fn providers<'a>(&'a self, lists: &'a Others) -> impl Iterator<Item = (Carry, NodeId)> + 'a {
+    #[inline(always)]
+    fn providers<'a>(
+        &'a self,
+        lists: &'a [&[NodeId]],
+    ) -> impl Iterator<Item = (Carry, NodeId)> + 'a {
         let (first, second, others, of_others) = match &self.shape {
             Shape::Edge(edge) => (L::carries(edge), None, &[][..], Carry::Nothing),
             Shape::Pair { second, pair } => {
@@ -118,12 +119,33 @@ impl<L: Lattice> Flow<L> {
             }
             Shape::Many { others, many } => {
                 let carry = L::carries_many(many);
-                (carry, None, &lists[*others as usize][..], carry)
+                (carry, None, lists[*others as usize], carry)
             }
         };
         std::iter::once((first, self.first))
             .chain(second)
             .chain(others.iter().map(move |&other| (of_others, other)))
+    }
+
+    fn carry_from(&self, provider: usize) -> Carry {
+        match &self.shape {
+            Shape::Edge(edge) => L::carries(edge),
+            Shape::Pair { second, pair } => {
+                let [first, last] = L::carries_pair(pair);
+                let first = if self.first.index() == provider {
+                    first
+                } else {
+                    Carry::Nothing
+                };
+                let last = if second.index() == provider {
+                    last
+                } else {
+                    Carry::Nothing
+                };
+                first.max(last)
+            }
+            Shape::Many { many, .. } => L::carries_many(many),
+        }
     }
 
     fn widens(&self) -> bool {
@@ -133,49 +155,35 @@ impl<L: Lattice> Flow<L> {
             Shape::Many { .. } => true,
         }
     }
-
-    fn grows(&self, lists: &Others) -> bool {
-        self.providers(lists)
-            .any(|(carry, _)| carry == Carry::Grows)
-    }
 }
 
-pub(crate) struct Solver<L: Lattice> {
-    evidence: Vec<L>,
-    flows: Vec<Flow<L>>,
-    others: Others,
+pub(crate) struct Builder<'g, L: Lattice> {
+    initial: Vec<L>,
+    flows: Flows<'g, L>,
 }
 
-impl<L: Lattice> Solver<L> {
-    /// `n` is the graph's node count: class `i` is node `i`.
+impl<'g, L: Lattice> Builder<'g, L> {
+    /// Class `i` is graph node `i`; operand slices belong to that graph.
     pub fn with_classes(n: usize) -> Self {
         Self {
-            evidence: vec![L::bottom(); n],
-            flows: Vec::with_capacity(n),
-            others: Vec::new(),
+            initial: vec![L::bottom(); n],
+            flows: Flows {
+                entries: Vec::with_capacity(n),
+                others: Vec::new(),
+            },
         }
     }
 
-    pub fn classes(&self) -> usize {
-        self.evidence.len()
-    }
-
-    pub fn evidence(&self, node: NodeId) -> &L {
-        &self.evidence[node.index()]
-    }
-
-    /// Evidence about `node`, joined; what it means to the lattice is the lattice's to say.
     pub fn expect(&mut self, node: NodeId, evidence: &L) {
-        self.evidence[node.index()].join(evidence);
+        self.initial[node.index()].join(evidence);
     }
 
-    /// [`expect`](Self::expect) joined in place, for a lattice built of parts.
     pub fn class_mut(&mut self, node: NodeId) -> &mut L {
-        &mut self.evidence[node.index()]
+        &mut self.initial[node.index()]
     }
 
     pub fn flow(&mut self, provider: NodeId, consumer: NodeId, edge: L::Edge) {
-        self.flows.push(Flow {
+        self.flows.entries.push(Flow {
             consumer,
             first: provider,
             shape: Shape::Edge(edge),
@@ -183,7 +191,7 @@ impl<L: Lattice> Solver<L> {
     }
 
     pub fn derive(&mut self, first: NodeId, second: NodeId, consumer: NodeId, pair: L::Pair) {
-        self.flows.push(Flow {
+        self.flows.entries.push(Flow {
             consumer,
             first,
             shape: Shape::Pair { second, pair },
@@ -193,509 +201,259 @@ impl<L: Lattice> Solver<L> {
     pub fn derive_many(
         &mut self,
         first: NodeId,
-        others: &[NodeId],
+        others: &'g [NodeId],
         consumer: NodeId,
         many: L::Many,
     ) {
-        let list = u32::try_from(self.others.len()).expect("flow count fits u32");
-        self.others.push(others.into());
-        self.flows.push(Flow {
+        let list = u32::try_from(self.flows.others.len()).expect("flow count fits u32");
+        self.flows.others.push(others);
+        self.flows.entries.push(Flow {
             consumer,
             first,
             shape: Shape::Many { others: list, many },
         });
     }
 
-    pub fn into_evidence(self) -> Vec<L> {
-        self.evidence
+    fn freeze(self) -> (Solver<'g, L>, Vec<L>) {
+        let outgoing = Rows::new(self.initial.len(), || {
+            self.flows
+                .entries
+                .iter()
+                .enumerate()
+                .flat_map(|(index, flow)| {
+                    flow.providers(&self.flows.others)
+                        .map(move |(_, provider)| (provider.index(), index as u32))
+                })
+        });
+        let schedule = L::WIDENS.then(|| Schedule::new(&self.flows, &outgoing));
+        (
+            Solver {
+                flows: self.flows,
+                outgoing,
+                schedule,
+            },
+            self.initial,
+        )
     }
 
-    /// Each one-provider flow's consumer, edge, and provider's evidence.
-    pub fn edges(&self) -> impl Iterator<Item = (NodeId, &L::Edge, &L)> {
-        self.flows.iter().filter_map(|flow| match &flow.shape {
-            Shape::Edge(edge) => Some((flow.consumer, edge, self.evidence(flow.first))),
-            Shape::Pair { .. } | Shape::Many { .. } => None,
-        })
-    }
-
-    /// A two-provider flow counts once, under its first provider.
-    fn inward(&self, index: usize, provider: usize, of: &[u32], component: u32) -> Option<usize> {
-        let flow = &self.flows[index];
-        let consumer = flow.consumer.index();
-        if of[consumer] != component {
-            return None;
+    pub fn solve(self, cx: &L::Context) -> Vec<L> {
+        if self.flows.entries.is_empty() {
+            return self.initial;
         }
-        let first = flow.first.index();
-        if first != provider && of[first] == component {
-            return None;
-        }
-        Some(consumer)
+        let (solver, mut evidence) = self.freeze();
+        solver.solve(&mut evidence, &mut Workspace::default(), cx);
+        evidence
     }
+}
 
-    fn delivery(&self, index: usize, cyclic: bool, cx: &L::Context) -> L {
-        let flow = &self.flows[index];
-        let first = self.evidence(flow.first);
+struct Solver<'g, L: Lattice> {
+    flows: Flows<'g, L>,
+    outgoing: Rows,
+    schedule: Option<Schedule>,
+}
+
+impl<L: Lattice> Solver<'_, L> {
+    fn solve(&self, evidence: &mut [L], workspace: &mut Workspace<L>, cx: &L::Context) {
+        let mut run = Run {
+            flows: &self.flows,
+            evidence,
+            cx,
+        };
+        let Some(schedule) = &self.schedule else {
+            run.ascend(
+                &self.outgoing,
+                0..self.outgoing.len() as u32,
+                |_| true,
+                &[],
+                &mut workspace.work,
+            );
+            return;
+        };
+        let components = &schedule.components;
+        let cyclic = schedule
+            .growth
+            .as_ref()
+            .map_or(&[][..], |growth| &growth.flows);
+        for component in (0..components.count()).rev() {
+            let members = components.members(component);
+            let inside = |node: usize| components.of[node] as usize == component;
+            if schedule.cyclic[component] {
+                if let Some(growth) = schedule
+                    .growth
+                    .as_ref()
+                    .filter(|growth| members.iter().any(|&member| growth.nodes[member as usize]))
+                {
+                    workspace.external.clear();
+                    workspace.external.extend(
+                        members
+                            .iter()
+                            .map(|&node| run.evidence[node as usize].clone()),
+                    );
+                    run.ascend(
+                        &self.outgoing,
+                        members.iter().copied(),
+                        inside,
+                        cyclic,
+                        &mut workspace.work,
+                    );
+                    run.narrow(growth, members, &workspace.external);
+                }
+                run.ascend(
+                    &self.outgoing,
+                    members.iter().copied(),
+                    inside,
+                    cyclic,
+                    &mut workspace.work,
+                );
+            }
+            for &member in members {
+                let member = member as usize;
+                let outgoing = self.outgoing.get(member);
+                if outgoing.is_empty() || run.evidence[member] == L::bottom() {
+                    continue;
+                }
+                for &index in outgoing {
+                    let index = index as usize;
+                    if !schedule.cyclic[component]
+                        || !inside(self.flows.entries[index].consumer.index())
+                    {
+                        run.deliver(index, false);
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct Run<'a, 'g, L: Lattice> {
+    flows: &'a Flows<'g, L>,
+    evidence: &'a mut [L],
+    cx: &'a L::Context,
+}
+
+impl<L: Lattice> Run<'_, '_, L> {
+    fn delivery(&self, index: usize, cyclic: bool) -> L {
+        let flow = &self.flows.entries[index];
+        let first = &self.evidence[flow.first.index()];
         match &flow.shape {
-            Shape::Edge(edge) => first.transfer(edge, cyclic, cx),
-            Shape::Pair { second, pair } => first.combine(pair, self.evidence(*second), cyclic, cx),
+            Shape::Edge(edge) => first.transfer(edge, cyclic, self.cx),
+            Shape::Pair { second, pair } => {
+                first.combine(pair, &self.evidence[second.index()], cyclic, self.cx)
+            }
             Shape::Many { others, many } => {
-                let others: Vec<&L> = self.others[*others as usize]
+                let others = self.flows.others[*others as usize]
                     .iter()
-                    .map(|&other| self.evidence(other))
-                    .collect();
-                first.combine_many(many, &others, cyclic, cx)
+                    .map(|other| &self.evidence[other.index()]);
+                first.combine_many(many, others, cyclic, self.cx)
             }
         }
     }
 
-    /// A cyclic delivery the consumer already holds is not rounded, so a value that only passes
-    /// through a growing component stays exact.
-    fn deliver(&mut self, index: usize, cyclic: bool, cx: &L::Context) -> bool {
-        let consumer = self.flows[index].consumer.index();
-        let exact = self.delivery(index, false, cx);
-        if !cyclic || !self.flows[index].widens() {
+    // An exact delivery already held by the consumer must not widen a merely passing value.
+    fn deliver(&mut self, index: usize, cyclic: bool) -> bool {
+        let flow = &self.flows.entries[index];
+        let consumer = flow.consumer.index();
+        let exact = self.delivery(index, false);
+        if !cyclic || !flow.widens() {
             return self.evidence[consumer].join(&exact);
         }
         let mut probe = self.evidence[consumer].clone();
         if !probe.join(&exact) {
             return false;
         }
-        let rounded = self.delivery(index, true, cx);
+        let rounded = self.delivery(index, true);
         self.evidence[consumer].join(&rounded)
     }
 
     fn ascend(
         &mut self,
-        outgoing: &Outgoing,
-        members: impl IntoIterator<Item = usize>,
-        (of, component, cyclic): (&[u32], u32, &[bool]),
-        queued: &mut [bool],
-        queue: &mut VecDeque<usize>,
-        cx: &L::Context,
+        outgoing: &Rows,
+        members: impl IntoIterator<Item = u32>,
+        accepts: impl Fn(usize) -> bool,
+        cyclic: &[bool],
+        work: &mut Worklist,
     ) {
+        work.queued.resize(self.evidence.len(), false);
         let bottom = L::bottom();
         for member in members {
-            if outgoing.head[member].is_some() && self.evidence[member] != bottom {
-                queued[member] = true;
-                queue.push_back(member);
+            let member = member as usize;
+            if !outgoing.get(member).is_empty() && self.evidence[member] != bottom {
+                work.push(member);
             }
         }
-        while let Some(provider) = queue.pop_front() {
-            queued[provider] = false;
-            for index in outgoing.of(provider) {
-                let consumer = self.flows[index].consumer.index();
-                if of[consumer] != component {
-                    continue;
-                }
-                let cyclic = cyclic.get(index).is_some_and(|&cyclic| cyclic);
-                if self.deliver(index, cyclic, cx) && !queued[consumer] {
-                    queued[consumer] = true;
-                    queue.push_back(consumer);
-                }
-            }
-        }
-    }
-
-    pub fn solve(&mut self, cx: &L::Context) {
-        let n = self.evidence.len();
-        if self.flows.is_empty() {
-            return;
-        }
-        // Prepending in reverse keeps each provider's flows in order.
-        let mut outgoing = Outgoing {
-            head: vec![None; n],
-            links: Vec::with_capacity(self.flows.len()),
-        };
-        let mut arcs = Vec::with_capacity(self.flows.len());
-        for (index, flow) in self.flows.iter().enumerate().rev() {
-            let consumer = flow.consumer.index();
-            for (_, provider) in flow.providers(&self.others) {
-                let provider = provider.index();
-                outgoing.links.push((index as u32, outgoing.head[provider]));
-                let link = u32::try_from(outgoing.links.len()).expect("flow count fits u32");
-                outgoing.head[provider] = NonZeroU32::new(link);
-                arcs.push((provider as u32, consumer as u32));
-            }
-        }
-        if !L::WIDENS {
-            let mut queued = vec![false; n];
-            let mut queue = VecDeque::new();
-            let bottom = L::bottom();
-            for (class, head) in outgoing.head.iter().enumerate() {
-                if head.is_some() && self.evidence[class] != bottom {
-                    queued[class] = true;
-                    queue.push_back(class);
-                }
-            }
-            while let Some(provider) = queue.pop_front() {
-                queued[provider] = false;
-                for index in outgoing.of(provider) {
-                    let consumer = self.flows[index].consumer.index();
-                    if self.deliver(index, false, cx) && !queued[consumer] {
-                        queued[consumer] = true;
-                        queue.push_back(consumer);
-                    }
-                }
-            }
-            return;
-        }
-        let components = self::components(n, &arcs);
-        let count = components.count();
-        let mut inside = vec![false; count];
-        let mut grows_in = vec![false; count];
-        for (&(provider, consumer), &(index, _)) in arcs.iter().zip(&outgoing.links) {
-            let component = components.of[consumer as usize];
-            if components.of[provider as usize] == component {
-                inside[component as usize] = true;
-                grows_in[component as usize] |= self.flows[index as usize].grows(&self.others);
-            }
-        }
-        // Cycles of values are SCCs of the carrying arcs alone: a cycle closed through an arc that
-        // carries nothing must not widen. One that climbs lies in a component a growing flow is
-        // inside, so only those components' members get a value, `NEVER` marking the rest.
-        const NEVER: u32 = u32::MAX;
-        let values = grows_in.contains(&true).then(|| {
-            let mut local = vec![NEVER; n];
-            let mut numbered = 0u32;
-            for component in (0..count).filter(|&component| grows_in[component]) {
-                for &member in components.members(component) {
-                    local[member as usize] = numbered;
-                    numbered += 1;
-                }
-            }
-            let mut carrying: Vec<(u32, u32)> = Vec::new();
-            for flow in &self.flows {
-                let consumer = flow.consumer.index();
-                if local[consumer] == NEVER {
-                    continue;
-                }
-                for (carry, provider) in flow.providers(&self.others) {
-                    let provider = provider.index();
-                    if carry >= Carry::Passes && components.of[provider] == components.of[consumer]
-                    {
-                        carrying.push((local[provider], local[consumer]));
-                    }
-                }
-            }
-            let components = self::components(numbered as usize, &carrying);
-            let values: Vec<u32> = local
-                .iter()
-                .map(|&local| match local {
-                    NEVER => NEVER,
-                    local => components.of[local as usize],
-                })
-                .collect();
-            let mut climbs = vec![false; components.count()];
-            let carried = |flow: &Flow<L>, value: u32, least: Carry| {
-                flow.providers(&self.others)
-                    .any(|(carry, p)| carry >= least && values[p.index()] == value)
-            };
-            for flow in &self.flows {
-                let value = values[flow.consumer.index()];
-                if value != NEVER && carried(flow, value, Carry::Grows) {
-                    climbs[value as usize] = true;
-                }
-            }
-            let cyclic: Vec<bool> = self
-                .flows
-                .iter()
-                .map(|flow| {
-                    let value = values[flow.consumer.index()];
-                    value != NEVER && climbs[value as usize] && carried(flow, value, Carry::Passes)
-                })
-                .collect();
-            (values, climbs, cyclic)
-        });
-        let cyclic: &[bool] = values.as_ref().map_or(&[], |(_, _, cyclic)| cyclic);
-        let mut growing = vec![false; count];
-        for (&(provider, consumer), &(index, _)) in arcs.iter().zip(&outgoing.links) {
-            let component = components.of[consumer as usize];
-            if components.of[provider as usize] == component
-                && cyclic.get(index as usize).is_some_and(|&cyclic| cyclic)
-            {
-                growing[component as usize] = true;
-            }
-        }
-        drop(arcs);
-        let any_grows = growing.contains(&true);
-        let bottom = L::bottom();
-        let mut queued = vec![false; n];
-        let mut queue = VecDeque::new();
-        let mut position = vec![0u32; if any_grows { n } else { 0 }];
-        let mut external: Vec<L> = Vec::new();
-        let mut incoming_start: Vec<u32> = Vec::new();
-        let mut incoming: Vec<u32> = Vec::new();
-        let mut preorder: Vec<u32> = Vec::new();
-        let mut reached: Vec<bool> = Vec::new();
-        let mut at = components.order.len();
-        while at > 0 {
-            at -= 1;
-            let class = components.order[at] as usize;
-            let current = components.of[class];
-            if !inside[current as usize] {
-                if outgoing.head[class].is_none() || self.evidence[class] == bottom {
-                    continue;
-                }
-                for index in outgoing.of(class) {
-                    self.deliver(index, false, cx);
-                }
-                continue;
-            }
-            // Reached at its last member: members are contiguous in `order`.
-            let members = components.members(current as usize);
-            at -= members.len() - 1;
-            let grows = growing[current as usize];
-            if grows {
-                external.clear();
-                external.extend(
-                    members
-                        .iter()
-                        .map(|&member| self.evidence[member as usize].clone()),
-                );
-            }
-            self.ascend(
-                &outgoing,
-                members.iter().map(|&member| member as usize),
-                (&components.of, current, cyclic),
-                &mut queued,
-                &mut queue,
-                cx,
-            );
-            // Narrowed in preorder from the root, each reading those already narrowed, so one pass
-            // tightens along every acyclic path.
-            if grows {
-                let (values, climbing, _) = values
-                    .as_ref()
-                    .expect("a growing component has a climbing cycle");
-                let climbs = |member: usize| climbing[values[member] as usize];
-                for (position_of, &member) in members.iter().enumerate() {
-                    position[member as usize] = position_of as u32;
-                }
-                incoming_start.clear();
-                incoming_start.resize(members.len() + 2, 0);
-                let mut inward = 0;
-                for &provider in members {
-                    for index in outgoing.of(provider as usize) {
-                        if let Some(consumer) =
-                            self.inward(index, provider as usize, &components.of, current)
-                        {
-                            incoming_start[position[consumer] as usize + 2] += 1;
-                            inward += 1;
-                        }
-                    }
-                }
-                for i in 0..=members.len() {
-                    incoming_start[i + 1] += incoming_start[i];
-                }
-                incoming.clear();
-                incoming.resize(inward, 0);
-                for &provider in members {
-                    for index in outgoing.of(provider as usize) {
-                        if let Some(consumer) =
-                            self.inward(index, provider as usize, &components.of, current)
-                        {
-                            let slot = &mut incoming_start[position[consumer] as usize + 1];
-                            incoming[*slot as usize] = index as u32;
-                            *slot += 1;
-                        }
-                    }
-                }
-                preorder.clear();
-                reached.clear();
-                reached.resize(members.len(), false);
-                let root = members.len() - 1;
-                reached[root] = true;
-                preorder.push(root as u32);
-                let mut at = 0;
-                while at < preorder.len() {
-                    let member = members[preorder[at] as usize] as usize;
-                    at += 1;
-                    for index in outgoing.of(member) {
-                        let consumer = self.flows[index].consumer.index();
-                        if components.of[consumer] != current {
-                            continue;
-                        }
-                        let consumer = position[consumer] as usize;
-                        if !reached[consumer] {
-                            reached[consumer] = true;
-                            preorder.push(consumer as u32);
-                        }
-                    }
-                }
-                for _ in 0..NARROWING_PASSES {
-                    let mut moved = false;
-                    for &position_of in &preorder {
-                        let position_of = position_of as usize;
-                        if !climbs(members[position_of] as usize) {
-                            continue;
-                        }
-                        let mut exact = external[position_of].clone();
-                        for &index in &incoming[incoming_start[position_of] as usize
-                            ..incoming_start[position_of + 1] as usize]
-                        {
-                            exact.join(&self.delivery(index as usize, false, cx));
-                        }
-                        moved |= self.evidence[members[position_of] as usize].narrow(&exact);
-                    }
-                    if !moved {
-                        break;
-                    }
-                }
-                // A descent cannot leave a fixpoint of copies, so members that never climb restart
-                // from outside, where an ascent is exact.
-                for (position_of, &member) in members.iter().enumerate() {
-                    if !climbs(member as usize) {
-                        self.evidence[member as usize] = external[position_of].clone();
-                    }
-                }
-                self.ascend(
-                    &outgoing,
-                    members.iter().map(|&member| member as usize),
-                    (&components.of, current, cyclic),
-                    &mut queued,
-                    &mut queue,
-                    cx,
-                );
-            }
-            for &member in members {
-                let member = member as usize;
-                if outgoing.head[member].is_none() || self.evidence[member] == bottom {
-                    continue;
-                }
-                for index in outgoing.of(member) {
-                    let component = components.of[self.flows[index].consumer.index()];
-                    if component == current {
-                        continue;
-                    }
-                    self.deliver(index, false, cx);
-                }
-            }
-        }
-    }
-}
-
-/// Links are one-based; a two-provider flow is listed under both providers.
-struct Outgoing {
-    head: Vec<Option<NonZeroU32>>,
-    links: Vec<(u32, Option<NonZeroU32>)>,
-}
-
-impl Outgoing {
-    fn of(&self, provider: usize) -> impl Iterator<Item = usize> + '_ {
-        let mut link = self.head[provider];
-        std::iter::from_fn(move || {
-            let (index, next) = self.links[link?.get() as usize - 1];
-            link = next;
-            Some(index as usize)
-        })
-    }
-}
-
-/// Numbered in completion order: a component completes before any that reaches it.
-pub(crate) struct Components {
-    pub of: Vec<u32>,
-    /// Every node, grouped by component in completion order.
-    order: Vec<u32>,
-    start: Vec<u32>,
-}
-
-impl Components {
-    pub fn count(&self) -> usize {
-        self.start.len() - 1
-    }
-
-    pub fn members(&self, component: usize) -> &[u32] {
-        &self.order[self.start[component] as usize..self.start[component + 1] as usize]
-    }
-}
-
-pub(crate) fn components(n: usize, arcs: &[(u32, u32)]) -> Components {
-    // Rows are counted and filled one slot to the right, so the fill leaves the row starts in
-    // place.
-    let mut start = vec![0u32; n + 2];
-    for &(from, _) in arcs {
-        start[from as usize + 2] += 1;
-    }
-    for i in 0..=n {
-        start[i + 1] += start[i];
-    }
-    let mut targets = vec![0u32; arcs.len()];
-    for &(from, to) in arcs {
-        targets[start[from as usize + 1] as usize] = to;
-        start[from as usize + 1] += 1;
-    }
-    let adjacent = |node: usize| &targets[start[node] as usize..start[node + 1] as usize];
-    // A slot holds the visit index while open, then the component. Completed nodes give their index
-    // back, so a component is above every open index.
-    let mut slot = vec![0u32; n];
-    let mut index = 1u32;
-    let mut component = u32::try_from(n)
-        .expect("class count fits u32")
-        .wrapping_sub(1);
-    let mut order = Vec::with_capacity(n);
-    let mut group_start = Vec::with_capacity(n + 1);
-    group_start.push(0);
-    let mut open: Vec<u32> = Vec::new();
-    let mut work: Vec<(u32, u32, bool)> = Vec::new();
-    for root in 0..n {
-        if slot[root] != 0 {
-            continue;
-        }
-        slot[root] = index;
-        index += 1;
-        work.push((root as u32, 0, true));
-        while let Some(&mut (node, ref mut position, ref mut is_root)) = work.last_mut() {
-            let node = node as usize;
-            if let Some(&next) = adjacent(node).get(*position as usize) {
-                let next = next as usize;
-                *position += 1;
-                if slot[next] == 0 {
-                    slot[next] = index;
-                    index += 1;
-                    work.push((next as u32, 0, true));
-                } else if slot[next] < slot[node] {
-                    slot[node] = slot[next];
-                    *is_root = false;
-                }
-                continue;
-            }
-            let (node, _, is_root) = work.pop().expect("the frame just read");
-            let node = node as usize;
-            if is_root {
-                index -= 1;
-                while let Some(&member) = open.last()
-                    && slot[node] <= slot[member as usize]
+        while let Some(provider) = work.pop() {
+            for &index in outgoing.get(provider) {
+                let index = index as usize;
+                let consumer = self.flows.entries[index].consumer.index();
+                if accepts(consumer)
+                    && self.deliver(index, cyclic.get(index).copied().unwrap_or(false))
                 {
-                    open.pop();
-                    slot[member as usize] = component;
-                    order.push(member);
-                    index -= 1;
+                    work.push(consumer);
                 }
-                slot[node] = component;
-                order.push(node as u32);
-                group_start.push(order.len() as u32);
-                component = component.wrapping_sub(1);
-            } else {
-                open.push(node as u32);
-            }
-            if let Some(&mut (parent, _, ref mut parent_is_root)) = work.last_mut()
-                && slot[node] < slot[parent as usize]
-            {
-                slot[parent as usize] = slot[node];
-                *parent_is_root = false;
             }
         }
     }
-    let last = u32::try_from(n)
-        .expect("class count fits u32")
-        .wrapping_sub(1);
-    for slot in &mut slot {
-        *slot = last - *slot;
+
+    fn narrow(&mut self, growth: &Growth, members: &[u32], external: &[L]) {
+        for _ in 0..NARROWING_PASSES {
+            let mut changed = false;
+            for (&member, outside) in members.iter().zip(external) {
+                let member = member as usize;
+                if !growth.nodes[member] {
+                    continue;
+                }
+                let mut exact = outside.clone();
+                for &index in growth.incoming.get(member) {
+                    exact.join(&self.delivery(index as usize, false));
+                }
+                changed |= self.evidence[member].narrow(&exact);
+            }
+            if !changed {
+                break;
+            }
+        }
+        // Copy cycles retain stale evidence under descent; restarting them makes ascent exact.
+        for (&member, outside) in members.iter().zip(external) {
+            let member = member as usize;
+            if !growth.nodes[member] {
+                self.evidence[member] = outside.clone();
+            }
+        }
     }
-    Components {
-        of: slot,
-        order,
-        start: group_start,
+}
+
+struct Workspace<L> {
+    work: Worklist,
+    external: Vec<L>,
+}
+
+impl<L> Default for Workspace<L> {
+    fn default() -> Self {
+        Self {
+            work: Worklist::default(),
+            external: Vec::new(),
+        }
+    }
+}
+
+#[derive(Default)]
+struct Worklist {
+    queued: Vec<bool>,
+    pending: VecDeque<usize>,
+}
+
+impl Worklist {
+    fn push(&mut self, node: usize) {
+        if !self.queued[node] {
+            self.queued[node] = true;
+            self.pending.push_back(node);
+        }
+    }
+
+    fn pop(&mut self) -> Option<usize> {
+        let node = self.pending.pop_front()?;
+        self.queued[node] = false;
+        Some(node)
     }
 }
 
@@ -706,13 +464,15 @@ mod tests {
     use super::*;
 
     #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-    struct Set(u8);
+    struct Set<const WIDENS: bool = true>(u8);
 
-    impl Lattice for Set {
+    impl<const WIDENS: bool> Lattice for Set<WIDENS> {
         type Edge = ();
         type Pair = ();
         type Context = ();
-        type Many = std::convert::Infallible;
+        type Many = ();
+
+        const WIDENS: bool = WIDENS;
 
         fn bottom() -> Self {
             Self(0)
@@ -728,12 +488,18 @@ mod tests {
             Carry::Passes
         }
 
-        fn carries_many(many: &Self::Many) -> Carry {
-            match *many {}
+        fn carries_many((): &()) -> Carry {
+            Carry::Passes
         }
 
-        fn combine_many(&self, many: &Self::Many, _: &[&Self], _: bool, _: &Self::Context) -> Self {
-            match *many {}
+        fn combine_many<'a>(
+            &'a self,
+            (): &(),
+            others: impl Iterator<Item = &'a Self>,
+            _: bool,
+            (): &(),
+        ) -> Self {
+            Self(others.fold(self.0, |bits, other| bits | other.0))
         }
 
         fn carries_pair((): &()) -> [Carry; 2] {
@@ -798,7 +564,13 @@ mod tests {
             match *many {}
         }
 
-        fn combine_many(&self, many: &Self::Many, _: &[&Self], _: bool, _: &Self::Context) -> Self {
+        fn combine_many<'a>(
+            &'a self,
+            many: &Self::Many,
+            _: impl Iterator<Item = &'a Self>,
+            _: bool,
+            _: &Self::Context,
+        ) -> Self {
             match *many {}
         }
 
@@ -825,31 +597,14 @@ mod tests {
         }
     }
 
-    fn classes<L: Lattice, const N: usize>() -> (Solver<L>, [NodeId; N]) {
-        (Solver::with_classes(N), std::array::from_fn(NodeId::new))
+    fn classes<'g, L: Lattice, const N: usize>() -> (Builder<'g, L>, [NodeId; N]) {
+        (Builder::with_classes(N), std::array::from_fn(NodeId::new))
     }
 
     #[test]
     fn a_flow_is_five_words() {
         assert!(size_of::<crate::lattice::Pair>() <= 4);
         assert_eq!(size_of::<Flow<crate::lattice::Evidence>>(), 20);
-    }
-
-    #[test]
-    fn components_follow_the_arcs() {
-        let components = components(5, &[(0, 1), (1, 2), (2, 0), (1, 3), (4, 4)]);
-        let component = &components.of;
-        assert_eq!(component[0], component[1]);
-        assert_eq!(component[1], component[2]);
-        assert_ne!(component[0], component[3]);
-        assert_ne!(component[0], component[4]);
-        assert!(component[3] < component[0]);
-        assert_eq!(components.count(), 3);
-        let mut cycle = components.members(component[0] as usize).to_vec();
-        cycle.sort_unstable();
-        assert_eq!(cycle, [0, 1, 2]);
-        assert_eq!(components.members(component[3] as usize), [3]);
-        assert_eq!(components.members(component[4] as usize), [4]);
     }
 
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -886,7 +641,13 @@ mod tests {
             match *many {}
         }
 
-        fn combine_many(&self, many: &Self::Many, _: &[&Self], _: bool, _: &Self::Context) -> Self {
+        fn combine_many<'a>(
+            &'a self,
+            many: &Self::Many,
+            _: impl Iterator<Item = &'a Self>,
+            _: bool,
+            _: &Self::Context,
+        ) -> Self {
             match *many {}
         }
 
@@ -925,9 +686,9 @@ mod tests {
 
     impl Lattice for Hull {
         type Edge = HullEdge;
-        type Pair = Infallible;
+        type Pair = ();
         type Context = ();
-        type Many = std::convert::Infallible;
+        type Many = ();
 
         fn bottom() -> Self {
             Self {
@@ -951,20 +712,33 @@ mod tests {
             }
         }
 
-        fn carries_many(many: &Self::Many) -> Carry {
-            match *many {}
+        fn carries_many((): &()) -> Carry {
+            Carry::Passes
         }
 
-        fn combine_many(&self, many: &Self::Many, _: &[&Self], _: bool, _: &Self::Context) -> Self {
-            match *many {}
+        fn combine_many<'a>(
+            &'a self,
+            (): &(),
+            others: impl Iterator<Item = &'a Self>,
+            cyclic: bool,
+            (): &(),
+        ) -> Self {
+            let mut result = *self;
+            for other in others {
+                result.join(other);
+            }
+            if cyclic && result.lo <= result.hi {
+                result.hi = i64::MAX;
+            }
+            result
         }
 
-        fn carries_pair(never: &Infallible) -> [Carry; 2] {
-            match *never {}
+        fn carries_pair((): &()) -> [Carry; 2] {
+            [Carry::Passes; 2]
         }
 
-        fn combine(&self, never: &Infallible, _: &Self, _: bool, (): &()) -> Self {
-            match *never {}
+        fn combine(&self, (): &(), other: &Self, cyclic: bool, (): &()) -> Self {
+            self.combine_many(&(), std::iter::once(other), cyclic, &())
         }
 
         fn transfer(&self, edge: &HullEdge, cyclic: bool, (): &()) -> Self {
@@ -1014,11 +788,11 @@ mod tests {
             for (provider, consumer, edge) in flows {
                 solver.flow(provider, consumer, edge);
             }
-            solver.solve(&());
-            assert_eq!(*solver.evidence(x), Hull { lo: 0, hi: 107 });
-            assert_eq!(*solver.evidence(capped), Hull { lo: 0, hi: 100 });
-            assert_eq!(*solver.evidence(stepped), Hull { lo: 7, hi: 107 });
-            assert_eq!(*solver.evidence(downstream), Hull { lo: 1, hi: 108 });
+            let solver = solver.solve(&());
+            assert_eq!(solver[x.index()], Hull { lo: 0, hi: 107 });
+            assert_eq!(solver[capped.index()], Hull { lo: 0, hi: 100 });
+            assert_eq!(solver[stepped.index()], Hull { lo: 7, hi: 107 });
+            assert_eq!(solver[downstream.index()], Hull { lo: 1, hi: 108 });
         }
     }
 
@@ -1028,14 +802,86 @@ mod tests {
         solver.expect(x, &Hull { lo: 0, hi: 0 });
         solver.flow(x, stepped, HullEdge::Add(1));
         solver.flow(stepped, x, HullEdge::Add(0));
-        solver.solve(&());
+        let solver = solver.solve(&());
         assert_eq!(
-            *solver.evidence(x),
+            solver[x.index()],
             Hull {
                 lo: 0,
                 hi: i64::MAX
             }
         );
+    }
+
+    #[test]
+    fn frozen_topology_and_workspace_accept_independent_seeds() {
+        let [x, capped, stepped, copied, downstream] = std::array::from_fn(NodeId::new);
+        let operands = [capped, stepped, stepped];
+        let build = || {
+            let mut builder = Builder::<Hull>::with_classes(5);
+            builder.derive_many(x, &operands, x, ());
+            builder.flow(x, capped, HullEdge::Cap(100));
+            builder.flow(capped, stepped, HullEdge::Add(7));
+            builder.flow(x, copied, HullEdge::Add(0));
+            builder.flow(copied, copied, HullEdge::Add(0));
+            builder.flow(copied, x, HullEdge::Inert);
+            builder.flow(copied, downstream, HullEdge::Add(1));
+            builder
+        };
+        let (solver, mut evidence) = build().freeze();
+        let mut workspace = Workspace::default();
+        for seed in [0, 30, -10, 200] {
+            evidence.fill(Hull::bottom());
+            let initial = Hull { lo: seed, hi: seed };
+            evidence[x.index()] = initial;
+            solver.solve(&mut evidence, &mut workspace, &());
+            let mut fresh = build();
+            fresh.expect(x, &initial);
+            assert_eq!(evidence, fresh.solve(&()));
+        }
+        evidence.fill(Hull::bottom());
+        solver.solve(&mut evidence, &mut workspace, &());
+        assert!(evidence.iter().all(|value| *value == Hull::bottom()));
+    }
+
+    #[test]
+    fn narrowing_reads_multi_provider_flows_with_external_first_providers() {
+        for many in [false, true] {
+            let (mut solver, [seed, x, capped, stepped, downstream]) = classes::<Hull, 5>();
+            solver.expect(seed, &Hull { lo: 0, hi: 0 });
+            let others = [capped, stepped, stepped];
+            if many {
+                solver.derive_many(seed, &others, x, ());
+            } else {
+                solver.derive(seed, stepped, x, ());
+            }
+            solver.flow(x, capped, HullEdge::Cap(100));
+            solver.flow(capped, stepped, HullEdge::Add(7));
+            solver.flow(x, downstream, HullEdge::Add(1));
+            let solver = solver.solve(&());
+            assert_eq!(solver[x.index()], Hull { lo: 0, hi: 107 });
+            assert_eq!(solver[capped.index()], Hull { lo: 0, hi: 100 });
+            assert_eq!(solver[stepped.index()], Hull { lo: 7, hi: 107 });
+            assert_eq!(solver[downstream.index()], Hull { lo: 1, hi: 108 });
+        }
+    }
+
+    #[test]
+    fn self_dependencies_widen_only_when_they_grow() {
+        let (mut solver, [growing, copied]) = classes::<Hull, 2>();
+        for node in [growing, copied] {
+            solver.expect(node, &Hull { lo: 0, hi: 0 });
+        }
+        solver.flow(growing, growing, HullEdge::Add(1));
+        solver.flow(copied, copied, HullEdge::Add(0));
+        let solver = solver.solve(&());
+        assert_eq!(
+            solver[growing.index()],
+            Hull {
+                lo: 0,
+                hi: i64::MAX
+            }
+        );
+        assert_eq!(solver[copied.index()], Hull { lo: 0, hi: 0 });
     }
 
     #[test]
@@ -1052,11 +898,11 @@ mod tests {
         solver.flow(first, second, HullEdge::Add(0));
         solver.flow(second, first, HullEdge::Add(0));
         solver.flow(second, x, HullEdge::Inert);
-        solver.solve(&());
-        assert_eq!(*solver.evidence(passed), Hull { lo: 4, hi: 9 });
-        assert_eq!(*solver.evidence(x), Hull { lo: 0, hi: 107 });
-        assert_eq!(*solver.evidence(first), Hull { lo: 0, hi: 107 });
-        assert_eq!(*solver.evidence(second), Hull { lo: 0, hi: 107 });
+        let solver = solver.solve(&());
+        assert_eq!(solver[passed.index()], Hull { lo: 4, hi: 9 });
+        assert_eq!(solver[x.index()], Hull { lo: 0, hi: 107 });
+        assert_eq!(solver[first.index()], Hull { lo: 0, hi: 107 });
+        assert_eq!(solver[second.index()], Hull { lo: 0, hi: 107 });
     }
 
     #[test]
@@ -1073,10 +919,10 @@ mod tests {
         solver.flow(b, c, ());
         solver.flow(c, b, ());
         solver.flow(c, d, ());
-        solver.solve(&());
-        assert!(!solver.evidence(a).cyclic);
-        assert!(solver.evidence(b).cyclic && solver.evidence(c).cyclic);
-        assert_eq!(solver.evidence(d).set, 1);
+        let solver = solver.solve(&());
+        assert!(!solver[a.index()].cyclic);
+        assert!(solver[b.index()].cyclic && solver[c.index()].cyclic);
+        assert_eq!(solver[d.index()].set, 1);
     }
 
     #[test]
@@ -1085,9 +931,9 @@ mod tests {
         solver.flow(a, b, ());
         solver.expect(a, &Set(1));
         solver.expect(a, &Set(2));
-        solver.solve(&());
-        assert_eq!(*solver.evidence(a), Set(3));
-        assert_eq!(*solver.evidence(b), Set(3));
+        let solver = solver.solve(&());
+        assert_eq!(solver[a.index()], Set(3));
+        assert_eq!(solver[b.index()], Set(3));
     }
 
     #[test]
@@ -1095,9 +941,9 @@ mod tests {
         let (mut solver, [provider, consumer]) = classes::<Set, 2>();
         solver.flow(provider, consumer, ());
         solver.expect(consumer, &Set(1));
-        solver.solve(&());
-        assert_eq!(*solver.evidence(provider), Set::bottom());
-        assert_eq!(*solver.evidence(consumer), Set(1));
+        let solver = solver.solve(&());
+        assert_eq!(solver[provider.index()], Set::bottom());
+        assert_eq!(solver[consumer.index()], Set(1));
     }
 
     #[test]
@@ -1107,20 +953,25 @@ mod tests {
         solver.flow(x, y, 100);
         solver.expect(x, &Interval::new(5, 20));
         solver.expect(y, &Interval::new(130, 140));
-        solver.solve(&());
-        assert_eq!(*solver.evidence(x), Interval::new(5, 10));
-        assert!(solver.evidence(y).is_empty());
+        let solver = solver.solve(&());
+        assert_eq!(solver[x.index()], Interval::new(5, 10));
+        assert!(solver[y.index()].is_empty());
     }
 
     fn constraint() -> impl proptest::strategy::Strategy<Value = (u8, usize, usize)> {
-        (0u8..3, 0usize..8, 0usize..8)
+        (0u8..4, 0usize..8, 0usize..8)
     }
 
-    fn apply(solver: &mut Solver<Set>, vars: &[NodeId], (kind, a, b): (u8, usize, usize)) {
+    fn apply<'g, const W: bool>(
+        solver: &mut Builder<'g, Set<W>>,
+        vars: &'g [NodeId],
+        (kind, a, b): (u8, usize, usize),
+    ) {
         match kind {
             0 => solver.expect(vars[a], &Set(1 << (b % 3))),
             1 => solver.flow(vars[a], vars[b], ()),
-            _ => solver.derive(vars[a], vars[b], vars[(b + 1) % 8], ()),
+            2 => solver.derive(vars[a], vars[b], vars[(b + 1) % 8], ()),
+            _ => solver.derive_many(vars[a], &vars[a.min(b)..=a.max(b)], vars[(b + 1) % 8], ()),
         }
     }
 
@@ -1134,7 +985,7 @@ mod tests {
             for &c in &constraints {
                 apply(&mut ordered, &vars, c);
             }
-            ordered.solve(&());
+            let ordered = ordered.solve(&());
             let mut permuted = constraints.clone();
             let mut state = seed;
             for i in (1..permuted.len()).rev() {
@@ -1145,9 +996,9 @@ mod tests {
             for &c in &permuted {
                 apply(&mut shuffled, &shuffled_vars, c);
             }
-            shuffled.solve(&());
+            let shuffled = shuffled.solve(&());
             for (&a, &b) in vars.iter().zip(&shuffled_vars) {
-                proptest::prop_assert_eq!(ordered.evidence(a), shuffled.evidence(b));
+                proptest::prop_assert_eq!(&ordered[a.index()], &shuffled[b.index()]);
             }
         }
 
@@ -1159,17 +1010,21 @@ mod tests {
             for &c in &constraints {
                 apply(&mut solver, &vars, c);
             }
-            let mut expected = solver.evidence.clone();
+            let mut expected = solver.initial.clone();
             loop {
                 let mut changed = false;
-                for flow in &solver.flows {
+                for flow in &solver.flows.entries {
                     let first = expected[flow.first.index()];
                     let evidence = match flow.shape {
                         Shape::Edge(()) => first.transfer(&(), false, &()),
                         Shape::Pair { second, pair: () } => {
                             first.combine(&(), &expected[second.index()], false, &())
                         }
-                        Shape::Many { many, .. } => match many {},
+                        Shape::Many { others, many: () } => {
+                            let others = solver.flows.others[others as usize].iter()
+                                .map(|node| &expected[node.index()]);
+                            first.combine_many(&(), others, false, &())
+                        },
                     };
                     changed |= expected[flow.consumer.index()].join(&evidence);
                 }
@@ -1177,9 +1032,15 @@ mod tests {
                     break;
                 }
             }
-            solver.solve(&());
+            let (mut finite, finite_vars) = classes::<Set<false>, 8>();
+            for &constraint in &constraints {
+                apply(&mut finite, &finite_vars, constraint);
+            }
+            let finite = finite.solve(&());
+            let solver = solver.solve(&());
             for &var in &vars {
-                proptest::prop_assert_eq!(*solver.evidence(var), expected[var.index()]);
+                proptest::prop_assert_eq!(solver[var.index()], expected[var.index()]);
+                proptest::prop_assert_eq!(finite[var.index()].0, expected[var.index()].0);
             }
         }
     }

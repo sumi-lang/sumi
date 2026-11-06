@@ -16,7 +16,7 @@ use sumi_text::TextRange;
 use crate::lattice::{Arm, Context, Edge, Many, Pair};
 use crate::lower::{Fallthrough, Header, HeaderResult, Lowered, TypeHeader};
 use crate::spans::Spans;
-use crate::typing::{Expected, Typing};
+use crate::typing::{Drawing, Expected};
 
 /// Where a demanded type was declared.
 #[derive(Clone, Copy)]
@@ -321,16 +321,16 @@ pub(crate) enum Arguments {
 
 /// The thresholds are every integer the file spells or folds from constants, each once. A node the
 /// walk gave no value has a class nothing flows into.
-pub(crate) fn draw(
-    graph: &Graph,
+pub(crate) fn draw<'g>(
+    graph: &'g Graph,
     spans: &Spans,
     lowered: &Lowered,
     headers: &[Header],
     types: &[TypeHeader],
     arguments: Arguments,
     unions: Rc<RefCell<Unions>>,
-) -> (Typing, Context, Vec<Demand>) {
-    let mut typing = Typing::for_nodes(graph.nodes().len(), unions);
+) -> (Drawing<'g>, Context, Vec<Demand>) {
+    let mut typing = Drawing::for_nodes(graph.nodes().len(), unions);
     let typed = |node: NodeId| lowered.typed[node.index()];
     let mut constants: Vec<Int> = Vec::new();
     let mut cases: Vec<Arm> = Vec::new();
