@@ -6,8 +6,8 @@ use std::collections::HashMap;
 use sumi_frontend::Diagnostic;
 use sumi_text::TextRange;
 
+use crate::dependency::{Components, Rows};
 use crate::lower::{self, Lowered};
-use crate::solver::components;
 use crate::spans::Spans;
 use crate::typing::Typing;
 use crate::{ArithOp, BinaryOp, Function, FunctionId, Graph, Int, Ints, NodeId, Op, codes};
@@ -154,29 +154,18 @@ pub(crate) fn check(
         .iter()
         .filter(|call| typing.may(call.context).is_live())
         .collect();
-    let arcs: Vec<(u32, u32)> = live
-        .iter()
-        .map(|call| (call.caller.index() as u32, call.callee.index() as u32))
-        .collect();
-    let components = components(count_functions, &arcs);
+    let edges = Rows::new(count_functions, || {
+        live.iter()
+            .map(|call| (call.caller.index(), call.callee.index() as u32))
+    });
+    let mut components = Components::new(&edges, |node| node as usize);
+    components.sort_members();
     let component = &components.of;
     let count = components.count();
-    let mut grouped: Vec<usize> = (0..count_functions).collect();
-    grouped.sort_by_key(|&function| component[function]);
-    let mut group_start = vec![0; count + 1];
-    for &c in component {
-        group_start[c as usize + 1] += 1;
-    }
-    for c in 0..count {
-        group_start[c + 1] += group_start[c];
-    }
     let mut position = vec![0; count_functions];
     for c in 0..count {
-        for (index, &function) in grouped[group_start[c]..group_start[c + 1]]
-            .iter()
-            .enumerate()
-        {
-            position[function] = index;
+        for (index, &function) in components.members(c).iter().enumerate() {
+            position[function as usize] = index;
         }
     }
     let mut internal = vec![Vec::new(); count];
@@ -201,8 +190,8 @@ pub(crate) fn check(
         if internal[c].is_empty() {
             continue;
         }
-        let members = &grouped[group_start[c]..group_start[c + 1]];
-        if members.iter().any(|&function| failed[function]) {
+        let members = components.members(c);
+        if members.iter().any(|&function| failed[function as usize]) {
             chain[c] = None;
             continue;
         }
@@ -231,10 +220,15 @@ pub(crate) fn check(
                 offsets,
             });
         }
-        let arity = |member: usize| graph.run(FunctionId::new(members[member])).params().len();
+        let arity = |member: usize| {
+            graph
+                .run(FunctionId::new(members[member] as usize))
+                .params()
+                .len()
+        };
         let param_node = |member: usize, param: usize| {
             graph
-                .run(FunctionId::new(members[member]))
+                .run(FunctionId::new(members[member] as usize))
                 .params()
                 .nth(param)
                 .expect("a parameter of the member")
@@ -382,7 +376,10 @@ pub(crate) fn check(
                         .collect(),
                 };
                 failures.push(Failure {
-                    members: members.iter().map(|&f| FunctionId::new(f)).collect(),
+                    members: members
+                        .iter()
+                        .map(|&f| FunctionId::new(f as usize))
+                        .collect(),
                     labels,
                 });
             }

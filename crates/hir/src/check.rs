@@ -34,7 +34,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     let (graph, spans, lowered) = lower::lower(&mut source, &functions, &declared, graph);
     let headers = declared.headers;
     let types = declared.types;
-    let (mut typing, cx, demands) = flows::draw(
+    let (typing, cx, demands) = flows::draw(
         &graph,
         &spans,
         &lowered,
@@ -43,7 +43,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         flows::Arguments::Delivered,
         source.unions.clone(),
     );
-    typing.solve(&cx);
+    let typing = typing.solve(&cx);
     let failed = replay(
         &mut source,
         &graph,
@@ -434,7 +434,7 @@ fn exhaustive(
     if switches.is_empty() {
         return;
     }
-    let (mut any, cx, _) = flows::draw(
+    let (any, cx, _) = flows::draw(
         graph,
         spans,
         lowered,
@@ -443,7 +443,7 @@ fn exhaustive(
         flows::Arguments::Any,
         source.unions.clone(),
     );
-    any.solve(&cx);
+    let any = any.solve(&cx);
     let unions = graph.unions();
     for (node, arms) in switches {
         let scrutinee = graph.inputs(node)[0];

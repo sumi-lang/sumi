@@ -3,13 +3,14 @@ use std::fmt::Write;
 use sumi_frontend::{ParsedSource, parse_source};
 use sumi_hir::{Analysis, FunctionId, Ty};
 
-const SHAPES: [&str; 6] = [
+const SHAPES: [&str; 7] = [
     "inferred-reverse",
     "unresolved-cycle",
     "branches",
     "nested-mutation",
     "caller-guards",
     "caller-arithmetic-guards",
+    "records",
 ];
 
 pub fn source(shape: &str, size: usize) -> String {
@@ -23,6 +24,27 @@ pub fn variable_source(shape: &str, size: usize) -> String {
 
 fn generate(shape: &str, size: usize, variable: bool) -> String {
     assert!(SHAPES.contains(&shape));
+    if shape == "records" {
+        let mut source = String::from("type P { x: int, y: int, flag: bool }\n");
+        for i in 0..size {
+            writeln!(
+                source,
+                "fn f{i}(n: int) -> int {{\nlet p0 = P(x: n, y: n, flag: true)"
+            )
+            .unwrap();
+            for j in 1..32 {
+                writeln!(
+                    source,
+                    "let p{j} = P(x: p{}.x, y: p{}.y + 1, flag: true)",
+                    j - 1,
+                    j - 1
+                )
+                .unwrap();
+            }
+            source.push_str("p31.y\n}\n");
+        }
+        return source;
+    }
     if shape == "nested-mutation" {
         let mut source = String::from("fn mutate(b: bool) -> int {\nlet mut x = 0\n");
         for _ in 0..size {
