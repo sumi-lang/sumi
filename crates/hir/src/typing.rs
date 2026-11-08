@@ -1,319 +1,965 @@
-//! Type claims and value evidence, built together and solved before diagnostic replay.
-
-use sumi_text::TextRange;
+//! Type checking of one file: a class per node, joined where a value passes between nodes
+//! unchanged, and every read checked in node order, so a disagreement is blamed on the first read
+//! that raised it, and a class the conflict left undetermined satisfies every later read silently.
+//! A function imports its callees' result types, so functions are checked callees first, and a
+//! recursive group is iterated to a fixed point before it is reported.
 
 use std::cell::RefCell;
+use std::collections::VecDeque;
 use std::rc::Rc;
 
-use sumi_graph::{Domain, May, NodeId, Ty, Unions};
+use sumi_graph::{
+    Arms, BinaryOp, Case, CmpOp, DeclId, FieldName, FunctionId, Graph, May, NodeId, Op, RegionId,
+    Ty, TyKind, Unions,
+};
+use sumi_text::TextRange;
 
-use crate::lattice::{Claim, Context, Edge, Evidence, Many, Pair};
-use crate::solver::Builder;
+use crate::Function;
+use crate::codes;
+use crate::dependency::{Components, Rows};
+use crate::flows::{Values, selection};
+use crate::lower::{Header, HeaderResult, Lowered, Source, TypeHeader};
+use crate::spans::Spans;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Expected {
-    Ty(Ty),
-    /// Each learns the other's types and nothing of its values.
-    Peer(NodeId),
-}
-
-pub(crate) struct Drawing<'g> {
-    types: Builder<'g, Evidence>,
-    values: Builder<'g, May>,
-    claims: Claims,
-}
-
+/// What the analysis settled about every node: its type and the values that may reach it.
 pub(crate) struct Typing {
-    types: Vec<Evidence>,
-    values: Vec<May>,
-    claims: Claims,
-}
-
-struct Claims {
-    calls: Vec<(NodeId, NodeId, Claim)>,
-    /// The graph's, and those resolving a class's declared-type claims mints; shared with whatever
-    /// names types in messages.
-    unions: Rc<RefCell<Unions>>,
-    origins: Vec<TextRange>,
-    facts: Vec<(NodeId, Ty, Claim)>,
-    unknowns: Vec<NodeId>,
-    /// Unioned in the replay rather than delivered like a call: a demand on the alias must reach
-    /// its provider, whose type a branch may settle only later.
-    aliased: Vec<(NodeId, NodeId)>,
-}
-
-impl<'g> Drawing<'g> {
-    pub fn for_nodes(nodes: usize, unions: Rc<RefCell<Unions>>) -> Self {
-        Self {
-            types: Builder::with_classes(nodes),
-            values: Builder::with_classes(nodes),
-            claims: Claims {
-                calls: Vec::new(),
-                unions,
-                origins: Vec::with_capacity(nodes),
-                facts: Vec::with_capacity(nodes),
-                unknowns: Vec::new(),
-                aliased: Vec::with_capacity(nodes / 8),
-            },
-        }
-    }
-
-    fn claim(&mut self, origin: TextRange) -> Claim {
-        let claim = Claim::local(self.claims.origins.len());
-        self.claims.origins.push(origin);
-        claim
-    }
-
-    pub fn known(&mut self, node: NodeId, ty: Ty, origin: TextRange) {
-        self.fact(node, ty, May::NONE, origin);
-    }
-
-    pub fn literal(&mut self, node: NodeId, ty: Ty, value: May, origin: TextRange) {
-        self.fact(node, ty, value, origin);
-    }
-
-    fn fact(&mut self, node: NodeId, ty: Ty, value: May, origin: TextRange) {
-        let claim = self.claim(origin);
-        self.types.class_mut(node).claim(ty, claim);
-        if value.is_live() {
-            self.values.class_mut(node).join(&value);
-        }
-        self.claims.facts.push((node, ty, claim));
-    }
-
-    /// A hole decided `node`'s type: a fact, so a replay keeps it, and every call delivers it.
-    pub fn unknown(&mut self, node: NodeId) {
-        self.types.class_mut(node).join(&Evidence::UNKNOWN);
-        self.claims.unknowns.push(node);
-    }
-
-    /// Liveness is not a type claim, so no replay reads it.
-    pub fn entry(&mut self, node: NodeId, is_runnable: bool) {
-        if is_runnable {
-            self.values.expect(node, &May::unit());
-        }
-    }
-
-    pub fn call(&mut self, result: NodeId, call: NodeId, origin: TextRange) {
-        let claim = self.claim(origin);
-        self.flow(result, call, Edge::Call(claim));
-    }
-
-    pub fn flow(&mut self, provider: NodeId, consumer: NodeId, edge: Edge) {
-        if let Edge::Call(claim) = edge {
-            self.claims.calls.push((provider, consumer, claim));
-        }
-        if edge.delivers_types() {
-            self.types.flow(provider, consumer, edge);
-        }
-        if edge.delivers_values() {
-            self.values.flow(provider, consumer, edge);
-        }
-        if edge.aliases() {
-            self.claims.aliased.push((consumer, provider));
-        }
-    }
-
-    pub fn derive(&mut self, first: NodeId, second: NodeId, consumer: NodeId, pair: Pair) {
-        if pair.delivers_types() {
-            self.types.derive(first, second, consumer, pair);
-        }
-        self.values.derive(first, second, consumer, pair);
-        if pair.aliases() {
-            self.claims.aliased.push((consumer, first));
-        }
-    }
-
-    pub fn derive_many(
-        &mut self,
-        first: NodeId,
-        others: &'g [NodeId],
-        consumer: NodeId,
-        many: Many,
-    ) {
-        self.values.derive_many(first, others, consumer, many);
-    }
-
-    /// A demand types a class nothing else does and yields to a fact or a flow, so a wrong read
-    /// is blamed in the replay without unsettling what it read.
-    pub fn expect(&mut self, node: NodeId, expected: Expected, origin: TextRange) {
-        match expected {
-            Expected::Ty(ty) => {
-                let claim = self.claim(origin).demanded();
-                self.types.class_mut(node).claim(ty, claim);
-            }
-            Expected::Peer(peer) => {
-                self.types.flow(node, peer, Edge::Peer);
-                self.types.flow(peer, node, Edge::Peer);
-            }
-        }
-    }
-
-    pub fn solve(self, cx: &Context) -> Typing {
-        Typing {
-            types: self.types.solve(cx),
-            values: self.values.solve(cx),
-            claims: self.claims,
-        }
-    }
+    types: Box<[Option<Ty>]>,
+    values: Values,
 }
 
 impl Typing {
-    /// None for a replay's own claims.
-    pub fn origin(&self, claim: Claim) -> Option<TextRange> {
-        self.claims.origins.get(claim.index()).copied()
+    pub fn new(types: Box<[Option<Ty>]>, values: Values) -> Self {
+        Self { types, values }
     }
 
-    pub fn evidence(&self, node: NodeId) -> &Evidence {
-        &self.types[node.index()]
-    }
-
-    pub fn may(&self, node: NodeId) -> &May {
-        &self.values[node.index()]
-    }
-
-    pub fn resolve(&self, node: NodeId) -> Option<Ty> {
-        self.evidence(node).ty(&mut self.claims.unions.borrow_mut())
-    }
-
-    /// Whether every value of `actual` is one of `expected`.
-    pub fn fits(&self, actual: Ty, expected: Ty) -> bool {
-        self.claims.unions.borrow().fits(actual, expected)
-    }
-
-    /// A conflicted callee delivers nothing: it is reported at its declaration. An unknown one
-    /// delivers the unknown, so its callers are held to nothing.
-    pub fn replay(&self) -> Replay<'_> {
-        let mut replay = Replay::new(self.types.len(), &self.claims.unions);
-        for &(node, ty, claim) in &self.claims.facts {
-            replay.claim(node, ty, claim);
-        }
-        for &node in &self.claims.unknowns {
-            replay.learn(node, &Evidence::UNKNOWN);
-        }
-        for &(provider, call, claim) in &self.claims.calls {
-            let solved = self.evidence(provider);
-            if solved.ty(&mut self.claims.unions.borrow_mut()).is_some() || solved.is_unknown() {
-                replay.learn(call, &solved.imported(claim));
-            }
-        }
-        for &(alias, of) in &self.claims.aliased {
-            replay.union(alias, of);
-        }
-        replay
-    }
-
-    /// Every class resolved, so nothing mints a union after.
-    pub fn settle(self) -> Settled {
-        let types = self
-            .types
-            .iter()
-            .map(|class| class.ty(&mut self.claims.unions.borrow_mut()))
-            .collect();
-        let unions = self.claims.unions.borrow().clone();
-        Settled {
-            types,
-            values: self.values.into_boxed_slice(),
-            unions,
-        }
-    }
-}
-
-pub(crate) struct Settled {
-    types: Box<[Option<Ty>]>,
-    values: Box<[May]>,
-    unions: Unions,
-}
-
-impl Settled {
+    /// None for a node that is no value, whose class conflicted, or that only a hole decided.
     pub fn resolve(&self, node: NodeId) -> Option<Ty> {
         self.types[node.index()]
     }
 
     pub fn may(&self, node: NodeId) -> &May {
-        &self.values[node.index()]
+        self.values.may(node)
     }
 
-    pub fn unions(&self) -> &Unions {
-        &self.unions
+    pub fn values(&self) -> &Values {
+        &self.values
     }
 }
 
-/// Handed the demands one at a time in node order, it blames a disagreement on the first that
-/// raised it.
-pub(crate) struct Replay<'a> {
-    parent: Vec<u32>,
-    size: Vec<u32>,
-    evidence: Vec<Evidence>,
-    unions: &'a RefCell<Unions>,
+/// The checked types by node and, by function, whether a read in its body failed.
+pub(crate) struct Checked {
+    pub types: Box<[Option<Ty>]>,
+    pub failed: Vec<bool>,
 }
 
-impl<'a> Replay<'a> {
-    fn new(classes: usize, unions: &'a RefCell<Unions>) -> Self {
-        Self {
-            parent: (0..classes as u32).collect(),
-            size: vec![1; classes],
-            evidence: vec![Evidence::NONE; classes],
-            unions,
+/// Checks every body, fills each function's result type, and reports what disagrees.
+pub(crate) fn check(
+    source: &mut Source<'_>,
+    graph: &Graph,
+    spans: &Spans,
+    lowered: &Lowered,
+    headers: &[Header],
+    types: &[TypeHeader],
+    functions: &mut [Function],
+) -> Checked {
+    let count = graph.runs().len();
+    let caller_of = |node: NodeId| {
+        graph
+            .runs()
+            .partition_point(|run| run.entry().index() <= node.index())
+            - 1
+    };
+    let calls = Rows::new(count, || {
+        lowered
+            .called
+            .iter()
+            .map(|&(call, callee)| (caller_of(call), callee.index() as u32))
+    });
+    let components = Components::new(&calls, |function| function as usize);
+    // By callee, the callers in its own component.
+    let callers = Rows::new(count, || {
+        lowered.called.iter().filter_map(|&(call, callee)| {
+            let caller = caller_of(call);
+            (components.of[caller] == components.of[callee.index()])
+                .then_some((callee.index(), caller as u32))
+        })
+    });
+    let unions = source.unions.clone();
+    let mut checker = Checker {
+        source,
+        graph,
+        spans,
+        lowered,
+        headers,
+        types,
+        unions,
+        parent: (0..graph.nodes().len() as u32).collect(),
+        sets: vec![Set::default(); graph.nodes().len()],
+        exports: vec![None; count],
+        failed: vec![false; count],
+        component: components.of.clone(),
+        current: 0,
+    };
+    // Components are numbered successors first, so every callee outside a group is checked
+    // before the group imports its result.
+    for component in 0..components.count() {
+        let members = components.members(component);
+        if members
+            .iter()
+            .any(|&member| !callers.get(member as usize).is_empty())
+        {
+            checker.settle(members, &callers);
+        }
+        for &member in members {
+            let function = FunctionId::new(member as usize);
+            checker.walk(function, Some(&mut functions[function.index()]));
+        }
+    }
+    let types = (0..graph.nodes().len())
+        .map(|node| checker.resolve(NodeId::new(node)))
+        .collect();
+    Checked {
+        types,
+        failed: checker.failed,
+    }
+}
+
+/// Most walks of a recursive group's member while the group settles: a result moves only when a
+/// type reaches it, out of the few a body names, so a group still moving past this is reported as is.
+const WALKS: usize = 16;
+
+/// The bit of a rank crossing a call: a claim the class holds on a callee's say-so.
+const IMPORTED: u32 = 1 << 31;
+/// The rank of a type a read demanded and the class accepted: imported, since the class holds it
+/// on the read's say-so, and with no origin, since nothing reports it.
+const DEMANDED: u32 = u32::MAX;
+
+/// A claim that a class has a type; the lowest rank is the earliest claim in the walk, every
+/// local claim ranking before every imported one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Member {
+    ty: Ty,
+    rank: u32,
+    origin: Option<TextRange>,
+}
+
+/// The types a class holds, each with its earliest claim. A class a hole decided is unknown: with
+/// no claim beside it, it resolves to no type and no read of it disagrees.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct Set {
+    is_unknown: bool,
+    /// Two inline, since a class rarely holds more; the rest spill.
+    inline: [Option<Member>; 2],
+    more: Vec<Member>,
+}
+
+impl Set {
+    fn members(&self) -> impl Iterator<Item = Member> + '_ {
+        self.inline.iter().flatten().chain(&self.more).copied()
+    }
+
+    /// Keeps `member` if its type is new or it outranks the claim held for the type.
+    fn offer(&mut self, member: Member) {
+        for slot in &mut self.inline {
+            match slot {
+                Some(held) if held.ty == member.ty => {
+                    if member.rank < held.rank {
+                        *held = member;
+                    }
+                    return;
+                }
+                Some(_) => {}
+                None => {
+                    *slot = Some(member);
+                    return;
+                }
+            }
+        }
+        match self.more.iter_mut().find(|held| held.ty == member.ty) {
+            Some(held) => {
+                if member.rank < held.rank {
+                    *held = member;
+                }
+            }
+            None => self.more.push(member),
         }
     }
 
-    fn root(&self, node: NodeId) -> usize {
+    fn absorb(&mut self, other: Set) {
+        self.is_unknown |= other.is_unknown;
+        for member in other.members() {
+            self.offer(member);
+        }
+    }
+
+    /// The types the class resolves among: a claim outranks the unknown, which outranks a
+    /// demanded type, so a read never widens what it read and a holed class answers no read.
+    fn types(&self) -> impl Iterator<Item = Member> + '_ {
+        let demanded_only =
+            !self.is_unknown && self.members().all(|member| member.rank == DEMANDED);
+        self.members()
+            .filter(move |member| demanded_only || member.rank != DEMANDED)
+    }
+
+    /// The type claimed: the one claim, or the union of claims that are all of declared types,
+    /// which `unions` interns. None for a conflict, or a class only a hole or reads decided.
+    fn ty(&self, unions: &mut Unions) -> Option<Ty> {
+        let mut types = self.types();
+        let first = types.next()?;
+        if types.next().is_none() {
+            return Some(first.ty);
+        }
+        if !self.types().all(|member| member.ty.is_declared()) {
+            return None;
+        }
+        let mut decls: Vec<DeclId> = Vec::new();
+        for member in self.types() {
+            match member.ty.kind() {
+                TyKind::Decl(decl) => decls.push(decl),
+                TyKind::Union(id) => decls.extend_from_slice(unions.get(id)),
+                TyKind::Int | TyKind::Bool | TyKind::Unit => unreachable!("declared types only"),
+            }
+        }
+        let union = unions.intern(decls.iter().copied());
+        Some(union.map_or_else(|| Ty::decl(decls[0]), Ty::union))
+    }
+
+    /// Never for claims of declared types alone, which are a union.
+    fn is_conflict(&self) -> bool {
+        self.types().nth(1).is_some() && !self.types().all(|member| member.ty.is_declared())
+    }
+
+    /// A conflict one call delivered whole: it is reported at the callee.
+    fn is_inherited(&self) -> bool {
+        self.is_conflict()
+            && self.types().all(|member| member.rank & IMPORTED != 0)
+            && self
+                .types()
+                .map(|member| member.rank)
+                .all(|rank| rank == self.types().next().map_or(rank, |first| first.rank))
+    }
+
+    /// Every claim the class resolves among, earliest first.
+    fn claims(&self) -> Vec<(Ty, Option<TextRange>)> {
+        let mut members: Vec<Member> = self.types().collect();
+        members.sort_by_key(|member| member.rank);
+        members
+            .into_iter()
+            .map(|member| (member.ty, member.origin))
+            .collect()
+    }
+}
+
+/// What a function's result delivers to its calls.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct Export {
+    is_unknown: bool,
+    /// Sorted, so equal sets compare equal.
+    types: Vec<Ty>,
+}
+
+impl Export {
+    fn is_conflict(&self) -> bool {
+        self.types.len() > 1 && !self.types.iter().all(|ty| ty.is_declared())
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Expected {
+    Ty(Ty),
+    /// Each learns the other's type.
+    Peer(NodeId),
+}
+
+/// Where a demanded type was declared.
+#[derive(Clone, Copy)]
+enum Declared {
+    Written(TextRange),
+    /// A result left unwritten, which declares `unit` at the parameter list.
+    Omitted(TextRange),
+}
+
+struct Checker<'a, 's> {
+    source: &'a mut Source<'s>,
+    graph: &'a Graph,
+    spans: &'a Spans,
+    lowered: &'a Lowered,
+    headers: &'a [Header],
+    types: &'a [TypeHeader],
+    unions: Rc<RefCell<Unions>>,
+    parent: Vec<u32>,
+    /// By class root.
+    sets: Vec<Set>,
+    /// By function, once a walk of it settled its result.
+    exports: Vec<Option<Export>>,
+    failed: Vec<bool>,
+    /// By function, its recursive group; `current` is the walked function's.
+    component: Vec<u32>,
+    current: u32,
+}
+
+impl Checker<'_, '_> {
+    fn typed(&self, node: NodeId) -> bool {
+        self.lowered.typed[node.index()]
+    }
+
+    fn root(&mut self, node: NodeId) -> usize {
         let mut id = node.index();
         while self.parent[id] as usize != id {
-            id = self.parent[id] as usize;
+            let parent = self.parent[id] as usize;
+            self.parent[id] = self.parent[parent];
+            id = parent;
         }
         id
     }
 
-    fn learn(&mut self, node: NodeId, evidence: &Evidence) {
+    fn set(&mut self, node: NodeId) -> &Set {
         let root = self.root(node);
-        self.evidence[root].join(evidence);
+        &self.sets[root]
     }
 
-    fn claim(&mut self, node: NodeId, ty: Ty, claim: Claim) {
+    fn claim(&mut self, node: NodeId, member: Member) {
         let root = self.root(node);
-        self.evidence[root].claim(ty, claim);
+        self.sets[root].offer(member);
     }
 
-    fn union(&mut self, a: NodeId, b: NodeId) {
+    fn fact(&mut self, node: NodeId, ty: Ty, origin: TextRange) {
+        self.claim(
+            node,
+            Member {
+                ty,
+                rank: node.index() as u32,
+                origin: Some(origin),
+            },
+        );
+    }
+
+    fn alias(&mut self, a: NodeId, b: NodeId) {
         let (a, b) = (self.root(a), self.root(b));
         if a == b {
             return;
         }
-        let (root, absorbed) = if self.size[a] >= self.size[b] {
-            (a, b)
-        } else {
-            (b, a)
+        self.parent[b] = a as u32;
+        let absorbed = std::mem::take(&mut self.sets[b]);
+        self.sets[a].absorb(absorbed);
+    }
+
+    fn resolve(&mut self, node: NodeId) -> Option<Ty> {
+        let root = self.root(node);
+        self.sets[root].ty(&mut self.unions.borrow_mut())
+    }
+
+    fn fits(&self, actual: Ty, expected: Ty) -> bool {
+        self.unions.borrow().fits(actual, expected)
+    }
+
+    /// A callee settled outside the caller's recursive group delivers the unknown when it
+    /// conflicted, since that is reported at the callee; one inside delivers what it holds, so
+    /// the group's members blame their own part of a shared conflict alike, whatever their order.
+    fn import(&mut self, call: NodeId, callee: FunctionId) {
+        let Some(export) = self.exports[callee.index()].clone() else {
+            return;
         };
-        self.parent[absorbed] = root as u32;
-        self.size[root] += self.size[absorbed];
-        let evidence = std::mem::replace(&mut self.evidence[absorbed], Evidence::NONE);
-        self.evidence[root].join(&evidence);
-    }
-
-    pub fn evidence(&self, node: NodeId) -> &Evidence {
-        &self.evidence[self.root(node)]
-    }
-
-    pub fn resolve(&self, node: NodeId) -> Option<Ty> {
-        self.evidence(node).ty(&mut self.unions.borrow_mut())
-    }
-
-    /// `join` is the switch; `branch` delivers what it is so far, so this is called when the
-    /// switch comes up among the demands.
-    pub fn branch(&mut self, branch: NodeId, join: NodeId) {
-        let evidence = self.evidence(branch).clone();
-        if self.resolve(branch).is_some() {
-            self.learn(join, &evidence);
+        let root = self.root(call);
+        if self.component[callee.index()] != self.current && export.is_conflict() {
+            self.sets[root].is_unknown = true;
+            return;
+        }
+        let origin = Some(self.spans.origin(call));
+        let rank = call.index() as u32 | IMPORTED;
+        self.sets[root].is_unknown |= export.is_unknown;
+        for ty in export.types {
+            self.sets[root].offer(Member { ty, rank, origin });
         }
     }
 
-    pub fn expect(&mut self, node: NodeId, expected: Expected) {
-        match expected {
-            Expected::Ty(ty) => self.claim(node, ty, Claim::REPLAYED),
-            Expected::Peer(peer) => self.union(node, peer),
+    /// Each claim of a declared type with the field becomes a claim of the field's type; the rest,
+    /// a union among them, deliver nothing, which the read's demand reports.
+    fn field(&mut self, read: NodeId, base: NodeId, name: FieldName) {
+        let base = self.set(base).clone();
+        let root = self.root(read);
+        self.sets[root].is_unknown |= base.is_unknown;
+        for member in base.members() {
+            let Some(decl) = member.ty.as_decl() else {
+                continue;
+            };
+            let decl = self.graph.decl(decl);
+            if let Some(index) = decl.index_of(name)
+                && let (_, Some(ty)) = decl.fields()[index]
+            {
+                self.sets[root].offer(Member { ty, ..member });
+            }
         }
+    }
+
+    /// Delivers what `from` resolves among to `to`, one way; a type a read demanded of `from`
+    /// arrives as `from`'s own claim, read at `at`.
+    fn deliver(&mut self, from: NodeId, to: NodeId, at: TextRange) {
+        let source = self.set(from).clone();
+        let root = self.root(to);
+        self.sets[root].is_unknown |= source.is_unknown;
+        for member in source.types() {
+            let member = if member.rank == DEMANDED {
+                Member {
+                    ty: member.ty,
+                    rank: from.index() as u32,
+                    origin: Some(at),
+                }
+            } else {
+                member
+            };
+            self.sets[root].offer(member);
+        }
+    }
+
+    /// Walks a recursive group, muted, until no member's result changes; a change re-walks the
+    /// member's callers in the group.
+    fn settle(&mut self, members: &[u32], callers: &Rows) {
+        let mark = self.source.diagnostics.len();
+        let mut queued = vec![false; self.exports.len()];
+        let mut queue: VecDeque<u32> = members.iter().copied().collect();
+        for &member in members {
+            queued[member as usize] = true;
+        }
+        let mut budget = members.len() * WALKS;
+        while let Some(member) = queue.pop_front() {
+            queued[member as usize] = false;
+            let before = self.exports[member as usize].take();
+            let after = self.walk(FunctionId::new(member as usize), None);
+            budget = budget.saturating_sub(1);
+            if before.as_ref() == Some(&after) || budget == 0 {
+                continue;
+            }
+            for &caller in callers.get(member as usize) {
+                if !queued[caller as usize] {
+                    queued[caller as usize] = true;
+                    queue.push_back(caller);
+                }
+            }
+        }
+        self.source.diagnostics.truncate(mark);
+    }
+
+    fn reset(&mut self, function: FunctionId) {
+        for node in self.graph.run(function).nodes() {
+            self.parent[node.index()] = node.index() as u32;
+            self.sets[node.index()] = Set::default();
+        }
+    }
+
+    /// One pass over the body, reporting and filling `function` when given. Returns what the
+    /// result delivers to calls, which `exports` keeps.
+    fn walk(&mut self, owner: FunctionId, function: Option<&mut Function>) -> Export {
+        self.reset(owner);
+        self.current = self.component[owner.index()];
+        let run = self.graph.run(owner);
+        let mut held = true;
+        for node in run.nodes() {
+            if self.typed(node) {
+                self.facts(owner, node);
+            } else if node == run.result() {
+                let root = self.root(node);
+                self.sets[root].is_unknown = true;
+            }
+            held &= self.demands(owner, node);
+        }
+        let result = self.set(run.result()).clone();
+        if let Some(function) = function {
+            self.failed[owner.index()] = !held;
+            self.signature(owner, &result, function);
+        }
+        let mut types: Vec<Ty> = result.types().map(|member| member.ty).collect();
+        types.sort_unstable();
+        let export = Export {
+            is_unknown: result.is_unknown,
+            types,
+        };
+        self.exports[owner.index()] = Some(export.clone());
+        export
+    }
+
+    /// A failed read, a hole, or the call this inherits from, already reports what a result that
+    /// resolves to nothing lacks.
+    fn signature(&mut self, owner: FunctionId, result: &Set, function: &mut Function) {
+        let header = self.headers[owner.index()];
+        let run = self.graph.run(owner);
+        let resolved = if matches!(header.result, HeaderResult::None) {
+            None
+        } else {
+            result.ty(&mut self.unions.borrow_mut())
+        };
+        if run.param_types().is_some() {
+            function.result = resolved;
+        }
+        if !matches!(header.result, HeaderResult::Inferred)
+            || resolved.is_some()
+            || !self.lowered.built[owner.index()]
+            || self.failed[owner.index()]
+            || result.is_inherited()
+        {
+            return;
+        }
+        if result.is_conflict() {
+            self.source.conflict_at(
+                self.source.range(header.item),
+                codes::CANNOT_INFER,
+                result.claims(),
+                |types| format!("function result is both {types}; add a return type annotation"),
+            );
+        } else if !result.is_unknown {
+            self.source.error(
+                header.item,
+                codes::CANNOT_INFER,
+                "cannot infer function result; add a return type annotation",
+                None,
+            );
+        }
+    }
+
+    /// What the node knows of its own type and the class it shares.
+    fn facts(&mut self, owner: FunctionId, node: NodeId) {
+        let graph = self.graph;
+        let spans = self.spans;
+        let inputs = graph.inputs(node);
+        let origin = spans.origin(node);
+        let value = |index: usize| graph.input_roles(node)[index].is_value();
+        let annotation = || {
+            spans
+                .annotation(node)
+                .expect("a node declared with a type has its annotation")
+        };
+        match &graph.node(node).op {
+            Op::Int(_) => self.fact(node, Ty::INT, origin),
+            Op::Bool(_) => self.fact(node, Ty::BOOL, origin),
+            Op::Param { ty: Some(ty), .. } => {
+                self.fact(node, *ty, spans.name(node).unwrap_or(origin));
+            }
+            Op::Param { ty: None, .. }
+            | Op::Hole
+            | Op::Unused
+            | Op::Entry
+            | Op::Arm(_)
+            | Op::Observe { .. }
+            | Op::After
+            | Op::Return => {}
+            Op::Refine { .. } | Op::Exactly(_) => self.alias(node, inputs[0]),
+            Op::Narrow(ty) => self.fact(node, *ty, origin),
+            // Arms that agree deliver their type when the switch's demand checks them.
+            Op::Switch { arms } if selection(graph, *arms).total => {
+                let mut valued = arms
+                    .iter()
+                    .map(|arm| graph.region(arm))
+                    .filter(|region| region.result_has_value());
+                if let (true, Some(region), None) = (value(0), valued.next(), valued.next()) {
+                    self.alias(node, region.result());
+                }
+            }
+            // What falls through is unit, and so is every arm.
+            Op::Switch { .. } => self.fact(node, Ty::UNIT, origin),
+            Op::Unit | Op::Loop { .. } => self.fact(node, Ty::UNIT, origin),
+            Op::Copy { declared: Some(ty) } => self.fact(node, *ty, annotation()),
+            Op::Copy { declared: None } => self.alias(node, inputs[0]),
+            Op::Assign | Op::Phi | Op::Carry => self.alias(node, graph.declaration(node)),
+            Op::LoopIndex => self.fact(node, Ty::INT, spans.name(node).unwrap_or(origin)),
+            Op::LoopValue => {
+                let (header, _) = graph.carry(node);
+                self.alias(node, header);
+            }
+            Op::Neg => self.fact(node, Ty::INT, origin),
+            Op::Not => self.fact(node, Ty::BOOL, origin),
+            Op::Binary(op) => self.fact(node, op.result(), origin),
+            Op::And { .. } | Op::Or { .. } => {
+                if value(0) {
+                    self.fact(node, Ty::BOOL, origin);
+                }
+            }
+            Op::Sequence => {
+                if self.typed(inputs[1]) {
+                    self.alias(node, inputs[1]);
+                }
+            }
+            Op::Result { declared: Some(ty) } => self.fact(node, *ty, annotation()),
+            // An inferred result joins its outcomes, each a peer of the others: a conflict among
+            // them is the function's to report, not any one outcome's.
+            Op::Result { declared: None } => {
+                if let Some(fallthrough) = self.lowered.fallthroughs[owner.index()] {
+                    self.deliver(fallthrough.value, node, fallthrough.at);
+                } else if value(0) {
+                    self.deliver(inputs[0], node, spans.reads(node)[0]);
+                }
+                for (&returned, &at) in inputs[1..].iter().zip(&spans.reads(node)[1..]) {
+                    self.deliver(returned, node, at);
+                }
+            }
+            Op::Make(decl) => self.fact(node, Ty::decl(*decl), origin),
+            Op::Field(name) => self.field(node, inputs[0], *name),
+            Op::Call(callee) => self.import(node, *callee),
+        }
+    }
+
+    /// What the node reads must hold; false if a read failed.
+    fn demands(&mut self, owner: FunctionId, node: NodeId) -> bool {
+        let graph = self.graph;
+        let spans = self.spans;
+        let inputs = graph.inputs(node);
+        let reads = spans.reads(node);
+        let value = |index: usize| graph.input_roles(node)[index].is_value();
+        let written = |at: TextRange| Some(Declared::Written(at));
+        // What the run's result holds the body to: only there can a declaration be omitted.
+        let is_omitted = matches!(self.headers[owner.index()].result, HeaderResult::Omitted(_));
+        let held = |at: TextRange| {
+            Some(if is_omitted {
+                Declared::Omitted(at)
+            } else {
+                Declared::Written(at)
+            })
+        };
+        let annotation = || {
+            spans
+                .annotation(node)
+                .expect("a node declared with a type has its annotation")
+        };
+        let region = |id: RegionId| (spans.result_read(id), graph.region(id).result());
+        let mut ok = true;
+        match &graph.node(node).op {
+            Op::Neg if value(0) => {
+                ok &= self.require(reads[0], inputs[0], Expected::Ty(Ty::INT), None);
+            }
+            Op::Not if value(0) => {
+                ok &= self.require(reads[0], inputs[0], Expected::Ty(Ty::BOOL), None);
+            }
+            Op::Neg | Op::Not => {}
+            Op::Binary(BinaryOp::Cmp(CmpOp::Eq | CmpOp::Ne)) => {
+                let operand = inputs.iter().enumerate().find_map(|(index, &input)| {
+                    (value(index) && self.typed(input)).then_some(input)
+                });
+                if let Some(operand) = operand {
+                    for (index, (&at, &input)) in reads.iter().zip(inputs).enumerate() {
+                        if value(index) {
+                            ok &= self.require(at, input, Expected::Peer(operand), None);
+                        }
+                    }
+                    ok &= self.comparable(spans.origin(node), operand);
+                }
+            }
+            Op::Binary(_) => {
+                for (index, (&at, &input)) in reads.iter().zip(inputs).enumerate() {
+                    if value(index) {
+                        ok &= self.require(at, input, Expected::Ty(Ty::INT), None);
+                    }
+                }
+            }
+            Op::And { rhs } | Op::Or { rhs } => {
+                if value(0) {
+                    ok &= self.require(reads[0], inputs[0], Expected::Ty(Ty::BOOL), None);
+                }
+                let (at, result) = region(*rhs);
+                if graph.region(*rhs).result_has_value() {
+                    ok &= self.require(at, result, Expected::Ty(Ty::BOOL), None);
+                }
+            }
+            Op::Switch { arms } => {
+                let selection = selection(graph, *arms);
+                if value(0) && selection.boolean {
+                    ok &= self.require(reads[0], inputs[0], Expected::Ty(Ty::BOOL), None);
+                } else if value(0) && self.typed(inputs[0]) {
+                    ok &= self.matched(reads[0], inputs[0]);
+                    for arm in arms.iter() {
+                        let context = graph.region(arm).context;
+                        if let Case::Is(ty) = graph.case(context) {
+                            ok &= self.member(spans.origin(context), inputs[0], ty);
+                        }
+                    }
+                }
+                let valued = || {
+                    arms.iter()
+                        .filter(|&arm| graph.region(arm).result_has_value())
+                };
+                if !value(0) {
+                } else if !selection.total {
+                    // What falls through is unit, so every arm is.
+                    for arm in valued() {
+                        let (at, result) = region(arm);
+                        ok &= self.require(at, result, Expected::Ty(Ty::UNIT), None);
+                    }
+                } else if self.typed(node) && valued().count() > 1 {
+                    ok &= self.agree(spans.origin(node), node, *arms, selection.boolean);
+                }
+            }
+            Op::Loop { body } => {
+                let (at, result) = region(*body);
+                if value(0) && value(1) && graph.region(*body).result_has_value() {
+                    ok &= self.require(at, result, Expected::Ty(Ty::UNIT), None);
+                }
+            }
+            Op::Copy { declared: Some(ty) } if value(0) => {
+                let at = annotation();
+                let run = graph.run(owner);
+                let declared = if node == run.result() {
+                    held(at)
+                } else {
+                    written(at)
+                };
+                ok &= self.require(reads[0], inputs[0], Expected::Ty(*ty), declared);
+            }
+            Op::Copy { declared: Some(_) } => {}
+            Op::Assign if value(0) => {
+                let declaration = graph.declaration(node);
+                ok &= self.require(
+                    reads[0],
+                    inputs[0],
+                    Expected::Peer(declaration),
+                    spans.name(declaration).and_then(written),
+                );
+            }
+            Op::Assign => {}
+            Op::Call(function) => {
+                let run = graph.run(*function);
+                let types = run.param_types().expect("a callee has parameter types");
+                for (index, (((&at, &input), &ty), param)) in reads
+                    .iter()
+                    .zip(inputs)
+                    .zip(types)
+                    .zip(run.params())
+                    .enumerate()
+                {
+                    if value(index) {
+                        let declared = written(spans.origin(param));
+                        ok &= self.require(at, input, Expected::Ty(ty), declared);
+                    }
+                }
+            }
+            Op::Make(decl) => {
+                let fields = graph.decl(*decl).fields();
+                let names = &self.types[decl.index()].fields;
+                for (index, (((&at, &input), &(_, ty)), &name)) in
+                    reads.iter().zip(inputs).zip(fields).zip(names).enumerate()
+                {
+                    if value(index)
+                        && let Some(ty) = ty
+                    {
+                        ok &= self.require(at, input, Expected::Ty(ty), written(name));
+                    }
+                }
+            }
+            Op::Field(name) => {
+                if value(0) && self.typed(inputs[0]) {
+                    ok &= self.has_field(spans.origin(node), inputs[0], *name);
+                }
+            }
+            Op::Unused => {
+                if value(0) && self.typed(inputs[0]) {
+                    ok &= self.unused(reads[0], inputs[0]);
+                }
+            }
+            Op::Return if value(0) => {
+                ok &= self.require(reads[0], inputs[0], Expected::Peer(node), None);
+            }
+            Op::Return => {}
+            Op::Result { declared: Some(ty) } => {
+                let expected = Expected::Ty(*ty);
+                let declared = held(annotation());
+                if let Some(fallthrough) = self.lowered.fallthroughs[owner.index()] {
+                    ok &= self.require(fallthrough.at, fallthrough.value, expected, declared);
+                } else if value(0) {
+                    ok &= self.require(reads[0], inputs[0], expected, declared);
+                }
+                for (&at, &input) in reads[1..].iter().zip(&inputs[1..]) {
+                    ok &= self.require(at, input, expected, declared);
+                }
+            }
+            Op::Int(_)
+            | Op::Bool(_)
+            | Op::Param { .. }
+            | Op::Unit
+            | Op::Hole
+            | Op::Copy { declared: None }
+            | Op::Result { declared: None }
+            | Op::Phi
+            | Op::LoopIndex
+            | Op::Carry
+            | Op::LoopValue
+            | Op::Refine { .. }
+            | Op::Exactly(_)
+            | Op::Narrow(_)
+            | Op::Entry
+            | Op::Arm(_)
+            | Op::Sequence
+            | Op::Observe { .. }
+            | Op::After => {}
+        }
+        ok
+    }
+
+    /// A read of `actual` as `expected`: a disagreement is reported and changes nothing, so a
+    /// wrong read is blamed without unsettling what it read; otherwise the class accepts it.
+    fn require(
+        &mut self,
+        at: TextRange,
+        actual: NodeId,
+        expected: Expected,
+        declared: Option<Declared>,
+    ) -> bool {
+        if !self.typed(actual) || expected == Expected::Peer(actual) {
+            return true;
+        }
+        let actual_ty = self.resolve(actual);
+        let expected_ty = match expected {
+            Expected::Ty(ty) => Some(ty),
+            Expected::Peer(peer) => self.resolve(peer),
+        };
+        if let (Some(actual_ty), Some(expected_ty)) = (actual_ty, expected_ty)
+            && !self.fits(actual_ty, expected_ty)
+        {
+            let related = declared.map(|declared| match declared {
+                Declared::Written(at) => (at, "declared here"),
+                Declared::Omitted(at) => (at, "returns unit, since no result type is written"),
+            });
+            self.source
+                .type_mismatch(at, expected_ty, actual_ty, related);
+            return false;
+        }
+        let demanded = |ty| Member {
+            ty,
+            rank: DEMANDED,
+            origin: None,
+        };
+        // Peers typed on both sides fit and stay apart, since a value fits a wider type without
+        // becoming it; one typed side types the other; two untyped ones are one class until
+        // either is typed.
+        match (expected, actual_ty, expected_ty) {
+            (Expected::Ty(ty), _, _) => self.claim(actual, demanded(ty)),
+            (Expected::Peer(_), Some(_), Some(_)) => {}
+            (Expected::Peer(_), None, Some(ty)) => self.claim(actual, demanded(ty)),
+            (Expected::Peer(peer), Some(ty), None) => self.claim(peer, demanded(ty)),
+            (Expected::Peer(peer), None, None) => self.alias(actual, peer),
+        }
+        true
+    }
+
+    fn unused(&mut self, at: TextRange, actual: NodeId) -> bool {
+        match self.resolve(actual) {
+            Some(ty) if ty != Ty::UNIT => {
+                let message = format!(
+                    "unused value of type {}; use `_ =` to discard it",
+                    self.source.show(ty)
+                );
+                self.source.report(at, codes::UNUSED_VALUE, message, []);
+                false
+            }
+            _ => self.require(at, actual, Expected::Ty(Ty::UNIT), None),
+        }
+    }
+
+    fn comparable(&mut self, at: TextRange, operand: NodeId) -> bool {
+        let Some(ty) = self
+            .resolve(operand)
+            .filter(|ty| *ty == Ty::UNIT || ty.is_declared())
+        else {
+            return true;
+        };
+        let message = format!("{} values cannot be compared", self.source.show(ty));
+        self.source.report(at, codes::TYPE_MISMATCH, message, []);
+        false
+    }
+
+    fn matched(&mut self, at: TextRange, scrutinee: NodeId) -> bool {
+        let Some(ty) = self.resolve(scrutinee).filter(|ty| !ty.is_declared()) else {
+            return true;
+        };
+        let message = format!(
+            "cannot match on {} values; `match` takes a value of a declared type",
+            self.source.show(ty)
+        );
+        self.source.report(at, codes::TYPE_MISMATCH, message, []);
+        false
+    }
+
+    fn member(&mut self, at: TextRange, scrutinee: NodeId, member: Ty) -> bool {
+        let Some(ty) = self
+            .resolve(scrutinee)
+            .filter(|ty| ty.is_declared() && !self.fits(member, *ty))
+        else {
+            return true;
+        };
+        let message = format!(
+            "`{}` is no member of `{}`",
+            self.source.show(member),
+            self.source.show(ty)
+        );
+        self.source.report(at, codes::TYPE_MISMATCH, message, []);
+        false
+    }
+
+    fn has_field(&mut self, at: TextRange, base: NodeId, name: FieldName) -> bool {
+        let Some(ty) = self.resolve(base) else {
+            return true;
+        };
+        if let Some(decl) = ty.as_decl()
+            && self.graph.decl(decl).index_of(name).is_some()
+        {
+            return true;
+        }
+        let declared = ty.as_decl().and_then(|decl| {
+            let decl = &self.source.decls[decl.index()];
+            decl.name_node
+                .map(|node| (self.source.range(node), Box::from("declared here")))
+        });
+        let message = format!(
+            "`{}` has no field `{}`",
+            self.source.show(ty),
+            self.source.field_names[name.index()]
+        );
+        self.source
+            .report(at, codes::UNKNOWN_FIELD, message, declared);
+        false
+    }
+
+    /// The valued arms deliver their types to the switch; a conflict among them is reported at
+    /// the switch, labeled where each arm's value is read when the arms alone made it.
+    fn agree(&mut self, at: TextRange, switch: NodeId, arms: Arms, is_boolean: bool) -> bool {
+        let graph = self.graph;
+        let valued: Vec<RegionId> = arms
+            .iter()
+            .filter(|&arm| graph.region(arm).result_has_value())
+            .collect();
+        let resolved: Vec<(Ty, Option<TextRange>)> = valued
+            .iter()
+            .filter_map(|&region| {
+                let ty = self.resolve(graph.region(region).result())?;
+                Some((ty, Some(self.spans.result_read(region))))
+            })
+            .collect();
+        for &region in &valued {
+            self.deliver(
+                graph.region(region).result(),
+                switch,
+                self.spans.result_read(region),
+            );
+        }
+        let set = self.set(switch).clone();
+        if !set.is_conflict() || set.is_inherited() {
+            return true;
+        }
+        let what = if is_boolean {
+            "if branches"
+        } else {
+            "match arms"
+        };
+        let message = |types: String| format!("{what} are {types}");
+        let claims = set.claims();
+        let mut distinct: Vec<Ty> = resolved.iter().map(|&(ty, _)| ty).collect();
+        distinct.sort_unstable();
+        distinct.dedup();
+        // The arms alone made the conflict; another type has come in by aliasing otherwise.
+        if resolved.len() == valued.len() && distinct.len() == claims.len() && distinct.len() > 1 {
+            self.source
+                .conflict_at(at, codes::TYPE_MISMATCH, resolved, message);
+        } else {
+            self.source
+                .conflict_at(at, codes::TYPE_MISMATCH, claims, message);
+        }
+        false
     }
 }
 
@@ -326,300 +972,91 @@ mod tests {
         TextRange::new(TextSize::new(offset), TextSize::new(offset + 1))
     }
 
-    fn classes<const N: usize>() -> (Drawing<'static>, [NodeId; N]) {
-        (
-            Drawing::for_nodes(N, Rc::default()),
-            std::array::from_fn(NodeId::new),
-        )
-    }
-
-    fn cx() -> Context {
-        Context {
-            thresholds: Default::default(),
-            decls: Box::new([]),
-            unions: Default::default(),
-            cases: Box::new([]),
+    fn member(ty: Ty, rank: u32) -> Member {
+        Member {
+            ty,
+            rank,
+            origin: Some(at(rank & !IMPORTED)),
         }
     }
 
     #[test]
-    fn a_fact_is_three_words() {
-        assert_eq!(size_of::<(NodeId, Ty, Claim)>(), 12);
-    }
-
-    #[test]
-    fn the_unknown_outranks_every_claim_and_every_call_delivers_it() {
-        let (mut typing, [hole, literal, call, join]) = classes();
-        typing.unknown(hole);
-        typing.literal(literal, Ty::INT, May::int(&1.into()), at(0));
-        typing.expect(hole, Expected::Ty(Ty::INT), at(1));
-        typing.expect(hole, Expected::Ty(Ty::BOOL), at(2));
-        typing.call(hole, call, at(3));
-        typing.derive(hole, literal, join, Pair::Branch);
-        let typing = typing.solve(&cx());
-        for node in [hole, call, join] {
-            let evidence = typing.evidence(node);
-            assert!(evidence.is_unknown());
-            assert_eq!(evidence.ty(&mut Unions::new()), None);
-            assert!(!evidence.is_conflict());
-        }
-        assert_eq!(typing.resolve(literal), Some(Ty::INT));
-        let mut replay = typing.replay();
-        assert!(replay.evidence(call).is_unknown());
-        replay.expect(call, Expected::Ty(Ty::UNIT));
-        assert_eq!(replay.resolve(call), None);
-        assert!(!replay.evidence(call).is_conflict());
-    }
-
-    #[test]
-    fn calls_never_export_consumer_demands() {
-        let (mut typing, [provider, call]) = classes();
-        typing.call(provider, call, at(0));
-        typing.expect(call, Expected::Ty(Ty::INT), at(1));
-        let typing = typing.solve(&cx());
-        assert_eq!(typing.resolve(provider), None);
-        assert_eq!(typing.resolve(call), Some(Ty::INT));
-    }
-
-    #[test]
-    fn conflicts_keep_their_earliest_origins() {
-        for reverse in [false, true] {
-            let (mut typing, [result, downstream, first, second]) = classes();
-            let mut types = [(Ty::INT, 10), (Ty::BOOL, 20)];
-            if reverse {
-                types.reverse();
-            }
-            for (literal, (ty, offset)) in [first, second].into_iter().zip(types) {
-                typing.known(literal, ty, at(offset));
-                typing.flow(literal, result, Edge::Bind);
-            }
-            typing.call(result, downstream, at(30));
-            let typing = typing.solve(&cx());
-            let evidence = typing.evidence(result);
-            assert!(evidence.is_conflict() && !evidence.is_inherited());
-            let claims = evidence.claims();
-            assert_eq!(claims.len(), 2);
-            assert_eq!(claims[0].0, types[0].0);
-            assert_eq!(typing.origin(claims[0].1), Some(at(types[0].1)));
-            assert_eq!(typing.origin(claims[1].1), Some(at(types[1].1)));
-            let downstream = typing.evidence(downstream);
-            assert!(downstream.is_conflict() && downstream.is_inherited());
-            assert!(
-                downstream
-                    .claims()
-                    .iter()
-                    .all(|(_, c)| typing.origin(*c) == Some(at(30)))
-            );
-        }
-    }
-
-    #[test]
-    fn a_demand_yields_to_a_fact_and_a_call_imports_only_what_resolves() {
-        let (mut typing, [fact, call, empty]) = classes();
-        typing.known(fact, Ty::INT, at(0));
-        typing.expect(fact, Expected::Ty(Ty::BOOL), at(1));
-        typing.call(fact, call, at(2));
-        typing.expect(call, Expected::Ty(Ty::UNIT), at(3));
-        typing.expect(empty, Expected::Ty(Ty::BOOL), at(4));
-        let typing = typing.solve(&cx());
-        for node in [fact, call] {
-            let evidence = typing.evidence(node);
-            assert!(!evidence.is_conflict());
-            assert_eq!(evidence.ty(&mut Unions::new()), Some(Ty::INT));
-            assert_eq!(evidence.claims().len(), 1);
-        }
+    fn a_set_keeps_the_earliest_claim_of_each_type() {
+        let mut set = Set::default();
+        set.offer(member(Ty::INT, 5));
+        set.offer(member(Ty::INT, 2));
+        set.offer(member(Ty::INT, 9));
+        set.offer(member(Ty::BOOL, 7));
+        set.offer(member(Ty::UNIT, 8));
+        set.offer(member(Ty::UNIT, 1));
         assert_eq!(
-            typing.origin(typing.evidence(call).claims()[0].1),
-            Some(at(2))
-        );
-        assert_eq!(typing.resolve(empty), Some(Ty::BOOL));
-    }
-
-    #[test]
-    fn a_local_claim_outranks_an_earlier_imported_one() {
-        let (mut typing, [provider, call, local]) = classes();
-        typing.known(provider, Ty::INT, at(0));
-        typing.call(provider, call, at(1));
-        typing.known(local, Ty::BOOL, at(2));
-        typing.flow(local, call, Edge::Bind);
-        let typing = typing.solve(&cx());
-        let evidence = typing.evidence(call);
-        assert!(evidence.is_conflict() && !evidence.is_inherited());
-        assert_eq!(typing.origin(evidence.claims()[0].1), Some(at(2)));
-    }
-
-    #[test]
-    fn peers_share_types_but_not_values() {
-        let (mut typing, [x, y, unknown, known]) = classes();
-        typing.literal(x, Ty::INT, May::int(&5.into()), at(0));
-        typing.literal(y, Ty::INT, May::int(&9.into()), at(1));
-        typing.expect(x, Expected::Peer(y), at(2));
-        typing.known(known, Ty::BOOL, at(3));
-        typing.expect(unknown, Expected::Peer(known), at(4));
-        let typing = typing.solve(&cx());
-        assert_eq!(typing.resolve(x), Some(Ty::INT));
-        assert_eq!(typing.may(x), &May::int(&5.into()));
-        assert_eq!(typing.may(y), &May::int(&9.into()));
-        assert_eq!(typing.resolve(unknown), Some(Ty::BOOL));
-        assert!(!typing.evidence(unknown).is_conflict());
-    }
-
-    #[test]
-    fn branches_decide_their_if_and_keep_their_origins() {
-        let (mut typing, [live, then_branch, else_branch, join, call]) = classes();
-        typing.entry(live, true);
-        typing.known(then_branch, Ty::INT, at(0));
-        typing.known(else_branch, Ty::BOOL, at(1));
-        typing.derive(then_branch, live, join, Pair::Branch);
-        typing.derive(else_branch, live, join, Pair::Branch);
-        typing.call(join, call, at(2));
-        let cx = cx();
-        let typing = typing.solve(&cx);
-        assert_eq!(typing.resolve(then_branch), Some(Ty::INT));
-        assert_eq!(typing.resolve(else_branch), Some(Ty::BOOL));
-        let evidence = typing.evidence(join);
-        assert!(evidence.is_conflict() && !evidence.is_inherited());
-        let origins: Vec<_> = evidence
-            .claims()
-            .into_iter()
-            .map(|(ty, claim)| (ty, typing.origin(claim).unwrap()))
-            .collect();
-        assert_eq!(origins, [(Ty::INT, at(0)), (Ty::BOOL, at(1))]);
-        assert!(typing.evidence(call).is_inherited());
-        let mut replay = typing.replay();
-        assert_eq!(replay.resolve(join), None);
-        assert_eq!(replay.resolve(call), None);
-        replay.branch(then_branch, join);
-        assert_eq!(replay.resolve(join), Some(Ty::INT));
-        replay.branch(else_branch, join);
-        assert!(replay.evidence(join).is_conflict());
-        assert_eq!(
-            replay.evidence(join).claims(),
-            typing.evidence(join).claims()
-        );
-    }
-
-    #[test]
-    fn a_dead_branch_delivers_no_values() {
-        let (mut typing, [dead, live, then_branch, else_branch, join]) = classes();
-        typing.entry(dead, false);
-        typing.entry(live, true);
-        typing.literal(then_branch, Ty::INT, May::int(&1.into()), at(0));
-        typing.literal(else_branch, Ty::INT, May::int(&2.into()), at(1));
-        typing.derive(then_branch, dead, join, Pair::Branch);
-        typing.derive(else_branch, live, join, Pair::Branch);
-        let typing = typing.solve(&cx());
-        assert_eq!(typing.resolve(join), Some(Ty::INT));
-        assert_eq!(typing.may(join), &May::int(&2.into()));
-    }
-
-    #[test]
-    fn replay_keeps_facts_solved_calls_and_refined_reads_only() {
-        let (
-            mut typing,
+            set.claims(),
             [
-                literal,
-                demanded,
-                unknown,
-                unknown_call,
-                conflict,
-                conflict_call,
-                literal_call,
-                refined,
-            ],
-        ) = classes();
-        typing.known(literal, Ty::INT, at(0));
-        typing.expect(demanded, Expected::Ty(Ty::BOOL), at(1));
-        typing.call(unknown, unknown_call, at(2));
-        typing.expect(conflict, Expected::Ty(Ty::BOOL), at(3));
-        typing.expect(conflict, Expected::Ty(Ty::UNIT), at(4));
-        typing.call(conflict, conflict_call, at(5));
-        typing.call(literal, literal_call, at(6));
-        typing.flow(literal, refined, Edge::Exactly(true));
-        let cx = cx();
-        let typing = typing.solve(&cx);
-        let mut replay = typing.replay();
-        assert_eq!(replay.resolve(literal), Some(Ty::INT));
-        assert_eq!(replay.resolve(demanded), None);
-        assert_eq!(replay.resolve(unknown_call), None);
-        assert_eq!(replay.resolve(conflict_call), None);
-        assert_eq!(replay.resolve(literal_call), Some(Ty::INT));
-        assert_eq!(replay.resolve(refined), Some(Ty::INT));
-        replay.expect(demanded, Expected::Peer(literal));
-        assert_eq!(replay.resolve(demanded), Some(Ty::INT));
-        replay.expect(unknown_call, Expected::Ty(Ty::BOOL));
-        assert_eq!(replay.resolve(unknown_call), Some(Ty::BOOL));
+                (Ty::UNIT, Some(at(1))),
+                (Ty::INT, Some(at(2))),
+                (Ty::BOOL, Some(at(7)))
+            ]
+        );
+        assert!(set.is_conflict());
+        assert_eq!(set.ty(&mut Unions::new()), None);
     }
 
     #[test]
-    fn a_refined_read_of_a_branch_bound_local_resolves_with_its_if() {
-        let (mut typing, [live, then_branch, else_branch, local, refined]) = classes();
-        typing.entry(live, true);
-        typing.known(then_branch, Ty::INT, at(0));
-        typing.known(else_branch, Ty::INT, at(1));
-        typing.derive(then_branch, live, local, Pair::Branch);
-        typing.derive(else_branch, live, local, Pair::Branch);
-        typing.flow(local, refined, Edge::Exactly(true));
-        let typing = typing.solve(&cx());
-        let mut replay = typing.replay();
-        assert_eq!(replay.resolve(refined), None);
-        replay.branch(then_branch, local);
-        replay.branch(else_branch, local);
-        assert_eq!(replay.resolve(refined), Some(Ty::INT));
-        replay.expect(refined, Expected::Ty(Ty::BOOL));
-        assert!(replay.evidence(refined).is_conflict());
-        assert!(replay.evidence(local).is_conflict());
+    fn declared_claims_resolve_to_their_union_and_scalars_conflict() {
+        let (a, b) = (DeclId::new(0), DeclId::new(1));
+        let mut unions = Unions::new();
+        let mut set = Set::default();
+        set.offer(member(Ty::decl(a), 1));
+        assert_eq!(set.ty(&mut unions), Some(Ty::decl(a)));
+        set.offer(member(Ty::decl(b), 2 | IMPORTED));
+        assert!(!set.is_conflict());
+        let union = set.ty(&mut unions).expect("two declared types are a union");
+        assert_eq!(unions.members(union), [a, b]);
+        set.offer(Member {
+            ty: Ty::INT,
+            rank: DEMANDED,
+            origin: None,
+        });
+        assert_eq!(set.ty(&mut unions), Some(union));
+        assert_eq!(set.claims().len(), 2);
+        set.offer(member(Ty::INT, 3 | IMPORTED));
+        assert!(set.is_conflict());
+        assert_eq!(set.ty(&mut unions), None);
     }
 
     #[test]
-    fn a_let_copies_its_initializer_and_is_one_with_it_in_the_replay() {
-        let (mut typing, [literal, binding, unknown, unknown_call, bound_call]) = classes();
-        typing.literal(literal, Ty::INT, May::int(&5.into()), at(0));
-        typing.flow(literal, binding, Edge::Bind);
-        typing.expect(binding, Expected::Ty(Ty::BOOL), at(1));
-        typing.call(unknown, unknown_call, at(2));
-        typing.flow(unknown_call, bound_call, Edge::Bind);
-        let typing = typing.solve(&cx());
-        assert_eq!(typing.may(binding).ints, typing.may(literal).ints);
-        assert_eq!(typing.resolve(binding), Some(Ty::INT));
-        assert_eq!(typing.resolve(literal), Some(Ty::INT));
-        assert_eq!(typing.resolve(bound_call), None);
-        let mut replay = typing.replay();
-        assert_eq!(replay.resolve(binding), Some(Ty::INT));
-        replay.expect(bound_call, Expected::Ty(Ty::BOOL));
-        assert_eq!(replay.resolve(unknown_call), Some(Ty::BOOL));
+    fn a_claim_outranks_the_unknown_which_outranks_a_demand() {
+        let mut set = Set::default();
+        set.offer(member(Ty::INT, 4 | IMPORTED));
+        set.offer(member(Ty::BOOL, 4 | IMPORTED));
+        assert!(set.is_conflict());
+        let mut other = Set {
+            is_unknown: true,
+            ..Set::default()
+        };
+        assert_eq!(other.ty(&mut Unions::new()), None);
+        other.offer(Member {
+            ty: Ty::BOOL,
+            rank: DEMANDED,
+            origin: None,
+        });
+        assert_eq!(other.ty(&mut Unions::new()), None);
+        other.offer(member(Ty::UNIT, 1));
+        assert_eq!(other.ty(&mut Unions::new()), Some(Ty::UNIT));
+        set.absorb(other);
+        assert!(set.is_unknown && set.is_conflict());
+        assert_eq!(set.claims().len(), 3);
     }
 
     #[test]
-    fn reads_aliasing_one_local_stay_one_step_from_its_root() {
-        const READS: usize = 1000;
-        let mut typing = Drawing::for_nodes(READS + 1, Rc::default());
-        let local = NodeId::new(0);
-        for read in 1..=READS {
-            typing.flow(local, NodeId::new(read), Edge::Exactly(true));
+    fn a_set_spills_past_two_types_without_losing_any() {
+        let mut set = Set::default();
+        for index in 0..5u32 {
+            set.offer(member(Ty::decl(DeclId::new(index as usize)), 10 - index));
         }
-        let typing = typing.solve(&cx());
-        let mut replay = typing.replay();
-        let root = replay.root(local);
-        for class in 0..=READS {
-            let parent = replay.parent[class] as usize;
-            assert!(parent == root || parent == class && class == root);
-        }
-        replay.expect(local, Expected::Ty(Ty::INT));
-        assert_eq!(replay.resolve(NodeId::new(READS)), Some(Ty::INT));
-    }
-
-    #[test]
-    fn settled_evidence_is_read_by_class() {
-        let (mut typing, [literal, copied, apart]) = classes();
-        typing.literal(literal, Ty::INT, May::int(&5.into()), at(0));
-        typing.flow(literal, copied, Edge::Bind);
-        let typing = typing.solve(&cx());
-        let settled = typing.settle();
-        assert_eq!(settled.resolve(literal), Some(Ty::INT));
-        assert_eq!(settled.resolve(copied), Some(Ty::INT));
-        assert_eq!(settled.may(copied).ints, settled.may(literal).ints);
-        assert_eq!(settled.resolve(apart), None);
-        assert!(!settled.may(apart).is_live());
+        set.offer(member(Ty::decl(DeclId::new(4)), 1));
+        let claims = set.claims();
+        assert_eq!(claims.len(), 5);
+        assert_eq!(claims[0], (Ty::decl(DeclId::new(4)), Some(at(1))));
     }
 }

@@ -1,0 +1,143 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 4
+
+== graph ==
+fn wide@8:1..8:39 (Circle | Square ∈ Circle([1, 1])) -> int ∈ [1, 1]
+  param s@8:9..8:10: Circle | Square
+  result: copy : int @8:32..8:35
+    value: int 1 : int @8:38..8:39
+
+fn narrow@9:1..9:32 (Circle ∈ Circle([1, 1])) -> int ∈ [2, 2]
+  param c@9:11..9:12: Circle
+  result: copy : int @9:25..9:28
+    value: int 2 : int @9:31..9:32
+
+fn both@10:1..14:2 () -> int ∈ [2, 2]
+  result: copy : int @10:14..10:17
+    value:
+      let c@11:9..11:10: Circle @11:5..11:30
+        initializer: make Circle : Circle @11:13..11:30
+          radius: int 1 : int @11:28..11:29
+      discard: call wide@8:1..8:39 : int @12:9..12:16
+        arg[0]: read c@11:9..11:10 : Circle
+      tail: call narrow@9:1..9:32 : int @13:5..13:14
+        arg[0]: read c@11:9..11:10 : Circle
+
+fn field_as_bool@15:1..17:2 (Circle ∈ ∅) -> unit ∈ ∅
+  param p@15:18..15:19: Circle
+  result: copy : unit @15:17..15:28
+    value:
+      discard: lazy and : bool @16:9..16:25
+        lhs: field radius : int @16:9..16:17
+          base: read p@15:18..15:19 : Circle
+        rhs: bool true : bool @16:21..16:25
+      tail: unit : unit @15:29..17:2
+
+fn returning_arm@18:1..24:2 (Circle | Square ∈ ∅) -> int ∈ ∅
+  param s@18:18..18:19: Circle | Square
+  result: result : int @18:41..18:44
+    outcome[0]:
+      let r@19:9..19:10: int @19:5..22:6
+        initializer: match : int @19:13..22:6
+          scrutinee: read s@18:18..18:19 : Circle | Square
+          Circle:
+            let c@20:16..20:17: narrow to Circle : Circle @20:16..20:17
+              scrutinee: read s@18:18..18:19 : Circle | Square
+            tail: field radius : int @20:22..20:30
+              base: read c@20:16..20:17 : Circle
+          Square:
+            let q@21:16..21:17: narrow to Square : Square @21:16..21:17
+              scrutinee: read s@18:18..18:19 : Circle | Square
+            tail: unit : unit @21:22..21:39
+      discard: after : ? @19:5..22:6
+        control: observe : ? @19:13..22:6
+        context: entry : ? @18:1..24:2
+      tail: read r@19:9..19:10 : int
+    outcome[1]: return : int @21:24..21:37
+      payload: field side : int @21:31..21:37
+        base: read q@21:16..21:17 : Square
+
+fn disagreeing_arms@25:1..32:2 (Circle | Dot | Square ∈ ∅) -> int ∈ ∅
+  param s@25:21..25:22: Circle | Dot | Square
+  result: result : int @25:50..25:53
+    outcome[0]:
+      let r@26:9..26:10: ? @26:5..30:6
+        initializer: match : ? @26:13..30:6
+          scrutinee: read s@25:21..25:22 : Circle | Dot | Square
+          Circle:
+            let c@27:16..27:17: narrow to Circle : Circle @27:16..27:17
+              scrutinee: read s@25:21..25:22 : Circle | Dot | Square
+            tail: field radius : int @27:22..27:30
+              base: read c@27:16..27:17 : Circle
+          Square: unit : unit @28:19..28:31
+          Dot: bool true : bool @29:16..29:20
+      discard: after : ? @26:5..30:6
+        control: observe : ? @26:13..30:6
+        context: entry : ? @25:1..32:2
+      tail: read r@26:9..26:10 : ?
+    outcome[1]: return : int @28:21..28:29
+      payload: int 2 : int @28:28..28:29
+
+fn flag@33:1..33:25 () -> bool ∈ {true}
+  result: copy : bool @33:14..33:18
+    value: bool true : bool @33:21..33:25
+
+fn mixed_calls@34:1..34:75 signature: unavailable
+  param c@34:16..34:17: bool
+  body: if : ? @34:27..34:75
+    scrutinee: read c@34:16..34:17 : bool
+    then: call wide@8:1..8:39 : int @34:34..34:57
+      arg[0]: make Circle : Circle @34:39..34:56
+        radius: int 1 : int @34:54..34:55
+    else: call flag@33:1..33:25 : bool @34:67..34:73
+
+fn assigned_stays_narrow@35:1..40:2 () -> int ∈ [2, 2]
+  result: copy : int @35:31..35:34
+    value:
+      let c@36:9..36:10: Circle @36:5..36:30
+        initializer: make Circle : Circle @36:13..36:30
+          radius: int 1 : int @36:28..36:29
+      let s@37:13..37:14: Circle | Square @37:5..37:49
+        initializer: make Square : Square @37:34..37:49
+          side: int 2 : int @37:47..37:48
+      assignment: assign s@37:13..37:14 : Circle | Square @38:5..38:10
+        value: read c@36:9..36:10 : Circle
+      tail: eager + : int @39:5..39:23
+        lhs: field radius : int @39:5..39:13
+          base: read c@36:9..36:10 : Circle
+        rhs: call wide@8:1..8:39 : int @39:16..39:23
+          arg[0]: read s@37:13..37:14 (assigned @38:5..38:10) : Circle | Square
+
+fn bad@41:1..41:43 signature: unavailable
+  param c@41:8..41:9: bool
+  body: if : ? @41:19..41:43
+    scrutinee: read c@41:8..41:9 : bool
+    then: int 1 : int @41:26..41:27
+    else: bool true : bool @41:37..41:41
+
+fn user@42:1..42:46 (bool ∈ ∅) -> int ∈ ∅
+  param c@42:9..42:10: bool
+  body: if : int @42:20..42:46
+    scrutinee: read c@42:9..42:10 : bool
+    then: call bad@41:1..41:43 : ? @42:27..42:33
+      arg[0]: read c@42:9..42:10 [is true] : bool
+    else: int 1 : int @42:43..42:44
+
+== semantic diagnostics ==
+warning[semantic/unused-name] 8:9..8:10 "s": parameter `s` is never read
+  fix: prefix the name with `_`
+    8:9 -> "_"
+warning[semantic/unused-name] 9:11..9:12 "c": parameter `c` is never read
+  fix: prefix the name with `_`
+    9:11 -> "_"
+error[semantic/type-mismatch] 16:9..16:17 "p.radius": expected bool, found int
+error[semantic/type-mismatch] 26:13..30:6 "match s {\n        Circle(c) => c.radius,\n        Square => { return 2 },\n        Dot => true,\n    }": match arms are int and bool
+  at 27:22..27:30 "c.radius": int here
+  at 29:16..29:20 "true": bool here
+error[semantic/type-mismatch] 34:27..34:75 "if c { wide(Circle(radius: 1)) } else { flag() }": if branches are int and bool
+  at 34:34..34:57 "wide(Circle(radius: 1))": int here
+  at 34:67..34:73 "flag()": bool here
+error[semantic/type-mismatch] 41:19..41:43 "if c { 1 } else { true }": if branches are int and bool
+  at 41:26..41:27 "1": int here
+  at 41:37..41:41 "true": bool here

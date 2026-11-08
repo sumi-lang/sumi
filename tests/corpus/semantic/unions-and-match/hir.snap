@@ -85,7 +85,7 @@ fn rebound@18:1..22:2 () -> int ∈ [0, 16]
         initializer: make Circle : Circle @19:38..19:55
           radius: int 1 : int @19:53..19:54
       assignment: assign shape@19:13..19:18 : Circle | Square @20:5..20:28
-        value: make Square : Circle | Square @20:13..20:28
+        value: make Square : Square @20:13..20:28
           side: int 4 : int @20:26..20:27
       tail: call area@5:1..9:2 : int @21:5..21:16
         arg[0]: read shape@19:13..19:18 (assigned @20:5..20:28) : Circle | Square

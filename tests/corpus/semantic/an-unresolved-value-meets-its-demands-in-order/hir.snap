@@ -9,22 +9,22 @@ fn k@4:1..4:13 signature: unavailable
 fn later_use_is_blamed@5:1..9:2 () -> int ∈ ∅
   result: copy : int @5:29..5:32
     value:
-      let v@6:9..6:10: bool @6:5..6:16
-        initializer: call k@4:1..4:13 : ? @6:13..6:16
-      discard: read v@6:9..6:10 : bool
+      let v@6:9..6:10: unit @6:5..6:16
+        initializer: call k@4:1..4:13 : unit @6:13..6:16
+      discard: read v@6:9..6:10 : unit
       tail: if : int @8:5..8:26
-        scrutinee: read v@6:9..6:10 : bool
+        scrutinee: read v@6:9..6:10 : unit
         then: int 1 : int @8:12..8:13
         else: int 2 : int @8:23..8:24
 
 fn each_later_use_is_blamed@10:1..15:2 () -> int ∈ [0, 0]
   result: copy : int @10:34..10:37
     value:
-      let v@11:9..11:10: int @11:5..11:16
-        initializer: call k@4:1..4:13 : ? @11:13..11:16
-      discard: read v@11:9..11:10 : int
+      let v@11:9..11:10: unit @11:5..11:16
+        initializer: call k@4:1..4:13 : unit @11:13..11:16
+      discard: read v@11:9..11:10 : unit
       discard: negate : int @13:5..13:7
-        operand: read v@11:9..11:10 : int
+        operand: read v@11:9..11:10 : unit
       tail: int 0 : int @14:5..14:6
 
 fn arms_disagree@16:1..20:2 (bool ∈ ∅) -> int ∈ ∅
@@ -32,12 +32,12 @@ fn arms_disagree@16:1..20:2 (bool ∈ ∅) -> int ∈ ∅
   result: copy : int @16:30..16:33
     value:
       let v@17:9..17:10: bool @17:5..17:16
-        initializer: call k@4:1..4:13 : ? @17:13..17:16
+        initializer: call k@4:1..4:13 : bool @17:13..17:16
       discard: if : int @18:9..18:30
         scrutinee: read v@17:9..17:10 : bool
         then: int 1 : int @18:16..18:17
         else: int 2 : int @18:27..18:28
-      tail: if : int @19:5..19:26
+      tail: if : ? @19:5..19:26
         scrutinee: read c@16:18..16:19 : bool
         then: read v@17:9..17:10 : bool
         else: int 1 : int @19:23..19:24

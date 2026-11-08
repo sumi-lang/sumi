@@ -1,0 +1,65 @@
+tree: omitted
+
+== formatted ==
+// A read that holds settles an untyped class but never widens a typed one, a
+// field read has its field's type, arms that disagree are reported however many
+// of their peers return instead, two well-typed callees still disagree, and a
+// caller is never blamed for a callee already reported.
+type Circle {
+    radius: int
+}
+type Square {
+    side: int
+}
+type Dot {}
+fn wide(s: Circle | Square) -> int = 1
+fn narrow(c: Circle) -> int = 2
+fn both() -> int {
+    let c = Circle(radius: 1)
+    _ = wide(c)
+    narrow(c)
+}
+fn field_as_bool(p: Circle) {
+    _ = p.radius && true
+}
+fn returning_arm(s: Circle | Square) -> int {
+    let r = match s {
+        Circle(c) => c.radius,
+        Square(q) => {
+            return q.side
+        },
+    }
+    r
+}
+fn disagreeing_arms(s: Circle | Square | Dot) -> int {
+    let r = match s {
+        Circle(c) => c.radius,
+        Square => {
+            return 2
+        },
+        Dot => true,
+    }
+    r
+}
+fn flag() -> bool = true
+fn mixed_calls(c: bool) = if c {
+    wide(Circle(radius: 1))
+} else {
+    flag()
+}
+fn assigned_stays_narrow() -> int {
+    let c = Circle(radius: 1)
+    let mut s: Circle | Square = Square(side: 2)
+    s = c
+    c.radius + wide(s)
+}
+fn bad(c: bool) = if c {
+    1
+} else {
+    true
+}
+fn user(c: bool) = if c {
+    bad(c)
+} else {
+    1
+}

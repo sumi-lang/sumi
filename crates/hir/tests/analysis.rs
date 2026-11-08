@@ -583,10 +583,17 @@ fn large_definition_chains_and_cycles_are_stack_safe() {
                         .count(),
                     recursion
                 );
+                // Arms that disagree are blamed at their `if`; a result nothing grounds, at its
+                // function.
+                let expected = if conflict {
+                    TYPE_MISMATCH
+                } else {
+                    CANNOT_INFER
+                };
                 assert!(
                     semantic(&a)
                         .iter()
-                        .all(|d| d.code == CANNOT_INFER || d.code == UNBOUNDED_RECURSION)
+                        .all(|d| d.code == expected || d.code == UNBOUNDED_RECURSION)
                 );
                 assert!(a.functions().iter().enumerate().all(|(index, f)| {
                     a.signature(FunctionId::new(index)).is_none() && !f.is_complete()

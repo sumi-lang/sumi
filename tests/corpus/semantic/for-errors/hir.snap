@@ -146,25 +146,25 @@ fn nonunit_body@24:1..24:42 () -> unit ∈ unit
 fn changed_type@25:1..28:2 () -> unit ∈ unit
   result: result : unit @25:16..25:18
     outcome[0]:
-      let x@26:13..26:14: ? @26:5..26:18
+      let x@26:13..26:14: int @26:5..26:18
         initializer: int 1 : int @26:17..26:18
-      discard: read x@26:13..26:14 (after loop @27:5..27:32) : ?
+      discard: read x@26:13..26:14 (after loop @27:5..27:32) : int
       discard: after : ? @27:5..27:32
         control: loop : unit @27:5..27:32
         context: entry : ? @25:1..28:2
       tail: loop : unit @27:5..27:32
         start: int 0 : int @27:14..27:15
         end: int 3 : int @27:17..27:18
-        carry[0]: carry x@26:13..26:14 : ? @27:5..27:32
-          initial: read x@26:13..26:14 : ?
+        carry[0]: carry x@26:13..26:14 : int @27:5..27:32
+          initial: read x@26:13..26:14 : int
         body:
           let i@27:9..27:10: loop index : int @27:5..27:32
             start: int 0 : int @27:14..27:15
             end: int 3 : int @27:17..27:18
-          assignment: assign x@26:13..26:14 : ? @27:21..27:30
-            value: bool false : ? @27:25..27:30
+          assignment: assign x@26:13..26:14 : int @27:21..27:30
+            value: bool false : bool @27:25..27:30
           tail: unit : unit @27:19..27:32
-        next[0]: read x@26:13..26:14 (assigned @27:21..27:30) : ?
+        next[0]: read x@26:13..26:14 (assigned @27:21..27:30) : int
 
 == semantic diagnostics ==
 warning[semantic/unused-name] 4:9..4:10 "i": loop index `i` is never read
