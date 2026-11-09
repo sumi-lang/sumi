@@ -87,6 +87,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
             &any,
         )
     };
+    drop(any);
     let decls = types
         .iter()
         .zip(&source.decls)

@@ -129,16 +129,12 @@ pub(crate) fn warn(
             .partition_point(|run| run.entry().index() <= node.index())
             - 1]
     };
-    let any = (conditions.iter().any(|condition| open(condition.value))
-        || arms.iter().any(|&(context, _)| open(context))
-        || statements
-            .windows(2)
-            .zip(&stops_delivered)
-            .any(|(pair, &stops)| stops && open(pair[1].context)))
-    .then(|| any.get());
-    let facts = |node: NodeId| match any {
-        Some(any) if open(node) => any,
-        _ => delivered.values(),
+    let facts = |node: NodeId| {
+        if open(node) {
+            any.get()
+        } else {
+            delivered.values()
+        }
     };
 
     let decided: Vec<Option<bool>> = conditions
