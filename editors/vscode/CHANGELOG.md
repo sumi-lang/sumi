@@ -2,8 +2,8 @@
 
 ## Unreleased
 
-- Highlight code from the compiler's recovered syntax and resolved symbols, including parameters
-  and readonly bindings, even while a program is incomplete. Semantic highlighting is enabled by
+- Highlight code from the compiler's recovered syntax and resolved symbols, including parameters,
+  readonly bindings, declared types, and fields, even while a program is incomplete. Semantic highlighting is enabled by
   default; without the server or with it disabled, only comments remain highlighted.
 - Highlight every occurrence of the name under the cursor, its declaration and assignments as
   writes and its reads as reads.

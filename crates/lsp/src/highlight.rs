@@ -23,6 +23,7 @@ enum Kind {
     Boolean,
     Punctuation,
     Invalid,
+    Property,
 }
 
 const DECLARATION: u32 = 1 << 0;
@@ -42,6 +43,7 @@ pub(crate) fn legend() -> SemanticTokensLegend {
             SemanticTokenType::new("boolean"),
             SemanticTokenType::new("punctuation"),
             SemanticTokenType::new("invalid"),
+            SemanticTokenType::PROPERTY,
         ],
         token_modifiers: vec![
             SemanticTokenModifier::DECLARATION,
@@ -100,12 +102,26 @@ pub(crate) fn tokens(
                 Kind::Function,
                 DECLARATION,
             ),
+            NodeKind::TypeItem => name(
+                ast::TypeItem::cast(tree, node)
+                    .and_then(|item| item.name(tree))
+                    .map(|name| name.node()),
+                Kind::Type,
+                DECLARATION,
+            ),
             NodeKind::Param => name(
                 ast::Param::cast(tree, node)
                     .and_then(|param| param.name(tree))
                     .map(|name| name.node()),
                 Kind::Parameter,
                 DECLARATION | READONLY,
+            ),
+            NodeKind::Field => name(
+                ast::Field::cast(tree, node)
+                    .and_then(|field| field.name(tree))
+                    .map(|name| name.node()),
+                Kind::Property,
+                DECLARATION,
             ),
             NodeKind::LetStmt => {
                 let binding = ast::LetStmt::cast(tree, node).unwrap();
@@ -127,12 +143,40 @@ pub(crate) fn tokens(
                 Kind::Variable,
                 DECLARATION | READONLY,
             ),
+            NodeKind::MemberPattern => {
+                let pattern = ast::MemberPattern::cast(tree, node).unwrap();
+                name(
+                    pattern.member(tree).map(|member| member.node()),
+                    Kind::Type,
+                    0,
+                );
+                name(
+                    pattern.binding(tree).map(|name| name.node()),
+                    Kind::Variable,
+                    DECLARATION | READONLY,
+                );
+            }
             NodeKind::TypeRef => name(Some(node), Kind::Type, 0),
+            // A constructor call reads as a function until the analysis resolves its callee.
             NodeKind::CallExpr => name(
                 ast::CallExpr::cast(tree, node)
                     .and_then(|call| call.callee(tree))
                     .map(|callee| callee.node()),
                 Kind::Function,
+                0,
+            ),
+            NodeKind::Arg => name(
+                ast::Arg::cast(tree, node)
+                    .and_then(|arg| arg.label(tree))
+                    .map(|label| label.node()),
+                Kind::Property,
+                0,
+            ),
+            NodeKind::FieldExpr => name(
+                ast::FieldExpr::cast(tree, node)
+                    .and_then(|expr| expr.field(tree))
+                    .map(|field| field.node()),
+                Kind::Property,
                 0,
             ),
             _ => {}
@@ -142,12 +186,14 @@ pub(crate) fn tokens(
         for reference in analysis.references() {
             let style = match reference.symbol {
                 Symbol::Function(_) => (Kind::Function, 0),
+                Symbol::Type(_) => (Kind::Type, 0),
+                Symbol::Field(..) => (Kind::Property, 0),
                 Symbol::Local(id) => match analysis.binding(id).kind() {
                     BindingKind::Param => (Kind::Parameter, READONLY),
                     BindingKind::Let { is_mutable: true } => (Kind::Variable, 0),
-                    BindingKind::Let { is_mutable: false } | BindingKind::LoopIndex => {
-                        (Kind::Variable, READONLY)
-                    }
+                    BindingKind::Let { is_mutable: false }
+                    | BindingKind::LoopIndex
+                    | BindingKind::Arm => (Kind::Variable, READONLY),
                 },
             };
             let token = lexed.token_at(reference.range.start()).unwrap();
@@ -231,4 +277,102 @@ pub(crate) fn delta(
         result_id: current.result_id.clone(),
         edits,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use sumi_frontend::parse_source;
+    use sumi_hir::analyze;
+    use sumi_text::Encoding;
+
+    use super::{DECLARATION, Kind, READONLY, tokens};
+
+    const TYPES: &str = "type Point { x: int, y: int }
+type Unit {}
+fn origin() -> Point = Point(x: 1, y: 2)
+fn pick(v: Point | Unit) -> int = match v { Point(p) => p.x, Unit => 0 }
+fn main() -> int = pick(origin())
+";
+
+    /// Every named token as its text, kind, and modifiers, in source order.
+    fn names(text: &str, refined: bool) -> Vec<(&str, u32, u32)> {
+        let parsed = parse_source(text.into()).unwrap();
+        let analysis = refined.then(|| analyze(parsed.clone()));
+        let lines: Vec<&str> = text.lines().collect();
+        let (mut line, mut column) = (0, 0);
+        tokens(&parsed, analysis.as_ref(), Encoding::Utf8)
+            .data
+            .into_iter()
+            .filter_map(|token| {
+                line += token.delta_line as usize;
+                column = if token.delta_line == 0 {
+                    column + token.delta_start as usize
+                } else {
+                    token.delta_start as usize
+                };
+                let named = [
+                    Kind::Function,
+                    Kind::Parameter,
+                    Kind::Variable,
+                    Kind::Type,
+                    Kind::Property,
+                ];
+                named
+                    .iter()
+                    .any(|&kind| kind as u32 == token.token_type)
+                    .then(|| {
+                        let text = &lines[line][column..column + token.length as usize];
+                        (text, token.token_type, token.token_modifiers_bitset)
+                    })
+            })
+            .collect()
+    }
+
+    #[test]
+    fn declared_types_fields_and_arms_are_named_before_and_after_analysis() {
+        let (function, parameter, variable, ty, property) = (
+            Kind::Function as u32,
+            Kind::Parameter as u32,
+            Kind::Variable as u32,
+            Kind::Type as u32,
+            Kind::Property as u32,
+        );
+        let refined = names(TYPES, true);
+        assert_eq!(
+            refined,
+            [
+                ("Point", ty, DECLARATION),
+                ("x", property, DECLARATION),
+                ("int", ty, 0),
+                ("y", property, DECLARATION),
+                ("int", ty, 0),
+                ("Unit", ty, DECLARATION),
+                ("origin", function, DECLARATION),
+                ("Point", ty, 0),
+                ("Point", ty, 0),
+                ("x", property, 0),
+                ("y", property, 0),
+                ("pick", function, DECLARATION),
+                ("v", parameter, DECLARATION | READONLY),
+                ("Point", ty, 0),
+                ("Unit", ty, 0),
+                ("int", ty, 0),
+                ("v", parameter, READONLY),
+                ("Point", ty, 0),
+                ("p", variable, DECLARATION | READONLY),
+                ("p", variable, READONLY),
+                ("x", property, 0),
+                ("Unit", ty, 0),
+                ("main", function, DECLARATION),
+                ("int", ty, 0),
+                ("pick", function, 0),
+                ("origin", function, 0),
+            ]
+        );
+        let mut syntactic = refined.clone();
+        syntactic[8] = ("Point", function, 0);
+        syntactic[16] = ("v", variable, 0);
+        syntactic[19] = ("p", variable, 0);
+        assert_eq!(names(TYPES, false), syntactic);
+    }
 }
