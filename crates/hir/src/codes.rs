@@ -20,11 +20,17 @@ sumi_frontend::codes! {
     /// A call whose argument count differs from the callee's parameter count.
     ARITY: Error = "arity";
 
-    /// An assignment whose target is not a local name.
+    /// An assignment target or `mut` argument that is no place: a name, or a field under one.
     INVALID_ASSIGNMENT_TARGET: Error = "invalid-assignment-target";
 
-    /// An assignment to a parameter or a local declared without `mut`.
+    /// A place under a parameter or a local declared without `mut`.
     IMMUTABLE_ASSIGNMENT: Error = "immutable-assignment";
+
+    /// An argument written `mut` to a field or a parameter that is not, or without it to one that is.
+    MUT_ARGUMENT: Error = "mut-argument";
+
+    /// Two `mut` arguments of one call that name one place, or one a part of the other.
+    OVERLAPPING_PLACES: Error = "overlapping-places";
 
     /// An expression of one type where another is required.
     TYPE_MISMATCH: Error = "type-mismatch";

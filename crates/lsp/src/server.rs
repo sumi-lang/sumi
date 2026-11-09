@@ -1393,7 +1393,7 @@ fn values(analysis: &Analysis, offset: TextSize, has_snippets: bool) -> Vec<Comp
                 Some(CompletionItem {
                     label: name.into(),
                     kind: Some(CompletionItemKind::FUNCTION),
-                    detail: signature.map(|Signature { params, result }| {
+                    detail: signature.map(|Signature { params, result, .. }| {
                         let params: Vec<_> = params
                             .iter()
                             .map(|&ty| analysis.show(ty).to_string())
@@ -1651,7 +1651,7 @@ fn signature_line(analysis: &Analysis, id: FunctionId) -> String {
     } else {
         format!("{name}<{}>", type_params.join(", "))
     };
-    let Some(Signature { params, result }) = analysis.signature(id) else {
+    let Some(Signature { params, result, .. }) = analysis.signature(id) else {
         return format!("fn {name}");
     };
     let params: Vec<_> = analysis
@@ -1659,7 +1659,12 @@ fn signature_line(analysis: &Analysis, id: FunctionId) -> String {
         .zip(params)
         .map(|(binding, ty)| {
             let binding = binding.expect("a signature's parameters are named");
-            format!("{}: {}", analysis.text(binding.name()), analysis.show(*ty))
+            let mutable = match binding.kind() {
+                BindingKind::Param { is_mutable: true } => "mut ",
+                _ => "",
+            };
+            let name = analysis.text(binding.name());
+            format!("{mutable}{name}: {}", analysis.show(*ty))
         })
         .collect();
     format!(
@@ -1688,7 +1693,10 @@ fn hover(
                 .map(|ty| format!(": {}", analysis.show(ty)))
                 .unwrap_or_default();
             match binding.kind() {
-                BindingKind::Param | BindingKind::Arm => format!("{name}{ty}"),
+                BindingKind::Param { is_mutable: true } => format!("mut {name}{ty}"),
+                BindingKind::Param { is_mutable: false } | BindingKind::Arm => {
+                    format!("{name}{ty}")
+                }
                 BindingKind::Let { is_mutable: false } => format!("let {name}{ty}"),
                 BindingKind::Let { is_mutable: true } => format!("let mut {name}{ty}"),
                 BindingKind::LoopIndex => format!("for {name}{ty}"),

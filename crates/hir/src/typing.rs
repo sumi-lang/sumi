@@ -15,7 +15,7 @@ use sumi_text::TextRange;
 
 use crate::codes;
 use crate::flows::{Values, selection};
-use crate::lower::{Declarations, HeaderResult, Lowered, Order, Params, Source};
+use crate::lower::{Declarations, HeaderResult, Lowered, Order, Params, RESULT, Source};
 use crate::spans::SpansBuilder;
 
 /// What the analysis settled about every node: its type and the values that may reach it.
@@ -366,6 +366,16 @@ impl Checker<'_, '_> {
             .group(self.declared.headers[function.index()].generic)
     }
 
+    /// The function `node` calls, where that returns a product.
+    fn product(&self, node: NodeId) -> Option<FunctionId> {
+        let Op::Call(callee) = self.graph.node(node).op else {
+            return None;
+        };
+        self.declared.headers[callee.index()]
+            .product
+            .map(|_| callee)
+    }
+
     /// The position of the field `name` in `decl`, with its type when that resolved.
     fn field_of(&mut self, decl: DeclId, name: FieldName) -> Option<(usize, Option<Ty>)> {
         let fields = self.source.fields(decl);
@@ -432,12 +442,20 @@ impl Checker<'_, '_> {
         }
     }
 
-    /// Delivers what `from` resolves among to `to`, one way; a type a read demanded of `from`
-    /// arrives as `from`'s own claim, read at `at`.
+    /// Delivers what `from` resolves among to `to`, one way.
     fn deliver(&mut self, from: NodeId, to: NodeId, at: TextRange) {
-        let source = self.set(from).clone();
+        let delivered = self.delivered(from, at);
         let root = self.types.root(to);
-        self.types.sets[root].is_unknown |= source.is_unknown;
+        self.types.sets[root].absorb(delivered);
+    }
+
+    /// What `from` resolves among; a type a read demanded of it is its own claim, read at `at`.
+    fn delivered(&mut self, from: NodeId, at: TextRange) -> Set {
+        let source = self.set(from).clone();
+        let mut delivered = Set {
+            is_unknown: source.is_unknown,
+            ..Set::default()
+        };
         for member in source.types() {
             let member = if member.rank == DEMANDED {
                 Member {
@@ -448,8 +466,38 @@ impl Checker<'_, '_> {
             } else {
                 member
             };
-            self.types.sets[root].offer(member);
+            delivered.offer(member);
         }
+        delivered
+    }
+
+    /// The function's result as its exits give it: joined like an inferred result's outcomes
+    /// where each exit returns it inside a product.
+    fn result(&mut self, owner: FunctionId, result: NodeId) -> Set {
+        let header = self.declared.headers[owner.index()];
+        if header.product.is_none() {
+            return self.set(result).clone();
+        }
+        let mut joined = Set::default();
+        // A declared result is the function's whatever its exits, each of which is held to it.
+        if let Some((ty, annotation)) = header.result.declared() {
+            joined.offer(Member {
+                ty,
+                rank: result.index() as u32,
+                origin: Some(self.source.range(annotation)),
+            });
+            return joined;
+        }
+        for index in 0..self.lowered.exits[owner.index()].len() {
+            let (exit, at) = self.lowered.exits[owner.index()][index];
+            if self.typed(exit) {
+                let delivered = self.delivered(exit, at);
+                joined.absorb(delivered);
+            } else {
+                joined.is_unknown = true;
+            }
+        }
+        joined
     }
 
     /// Reports and settles the built bodies of `group`, whose members infer their results from one
@@ -565,7 +613,7 @@ impl Checker<'_, '_> {
         if !self.typed(result) {
             self.unknown(result);
         }
-        let result = self.set(result).clone();
+        let result = self.result(owner, result);
         if is_final {
             let index = owner.index();
             if self.types.failed.len() <= index {
@@ -600,6 +648,9 @@ impl Checker<'_, '_> {
         };
         if self.graph.param_types(owner).is_some() {
             self.types.results[owner.index()] = resolved;
+        }
+        if let (Some(product), Some(resolved)) = (header.product, resolved) {
+            self.source.set_result(product, resolved);
         }
         if !matches!(header.result, HeaderResult::Inferred)
             || resolved.is_some()
@@ -702,8 +753,17 @@ impl Checker<'_, '_> {
                 }
             }
             Op::Make(decl) => self.fact(node, Ty::decl(*decl), origin),
-            Op::Field(name) => self.field(node, inputs[0], *name),
-            Op::Call(callee) => self.import(node, *callee),
+            // A product's result is its function's, which a call imports.
+            Op::Field(name) => match self.product(inputs[0]) {
+                Some(callee) if *name == self.source.field_name(RESULT) => {
+                    self.import(node, callee);
+                }
+                _ => self.field(node, inputs[0], *name),
+            },
+            Op::Call(callee) => match self.declared.headers[callee.index()].product {
+                Some(product) => self.fact(node, Ty::decl(product), origin),
+                None => self.import(node, *callee),
+            },
         }
     }
 
@@ -805,7 +865,9 @@ impl Checker<'_, '_> {
             }
             Op::Copy { declared: Some(ty) } if value(0) => {
                 let at = annotation();
-                let declared = if self.types.result == Some(node) {
+                let exits = &self.lowered.exits[owner.index()];
+                let is_result = exits.iter().any(|&(exit, _)| exit == node);
+                let declared = if is_result || self.types.result == Some(node) {
                     held(at)
                 } else {
                     written(at)

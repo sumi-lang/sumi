@@ -29,10 +29,16 @@ pub(super) enum Named {
     Ambiguous,
 }
 
+/// The field of a function's product that holds its result, which no parameter can be named.
+pub(crate) const RESULT: &str = "return";
+
 #[derive(Clone, Copy)]
 pub(crate) struct Header {
     pub name: Option<TextRange>,
     pub result: HeaderResult,
+    /// What a function with `mut` parameters returns: its result, then each one's final value
+    /// under its name. A call reads the fields apart.
+    pub product: Option<DeclId>,
     pub item: NodeIdx,
     /// The item's instance at its own type parameters, which every symbol of the function names;
     /// itself for that instance.
@@ -67,6 +73,15 @@ pub(crate) struct Parameter<'s> {
     pub(super) name: Option<(&'s str, NodeIdx)>,
     pub(super) ty: Option<Ty>,
     pub(super) is_duplicate: bool,
+    pub(super) is_mut: bool,
+}
+
+impl<'s> Parameter<'s> {
+    /// The name of a `mut` parameter the function's product holds a field for.
+    pub fn out(&self) -> Option<&'s str> {
+        let (name, _) = self.name.filter(|_| self.is_mut && !self.is_duplicate)?;
+        Some(name)
+    }
 }
 
 pub(super) struct FnItem<'s> {
@@ -467,6 +482,7 @@ fn header<'s>(
                 name,
                 ty,
                 is_duplicate: first.is_some(),
+                is_mut: param.mutable(tree, source.lexed()),
             });
         }
     }
@@ -493,10 +509,30 @@ fn header<'s>(
     };
     // A whole list has every parameter typed, a repeated name aside.
     let types = whole_list.and_then(|_| params.iter().map(|p| p.ty).collect::<Option<Box<[Ty]>>>());
+    let has_outs = types.is_some() && params.iter().any(|param| param.out().is_some());
+    let product = has_outs.then(|| {
+        let decl = source.declare(
+            name.map_or("<missing>", |(name, _)| name),
+            None,
+            item.node(),
+        );
+        let mut names = vec![(RESULT, item.node())];
+        let declared = result.declared().map(|(ty, _)| ty);
+        let mut fields = vec![(source.field_name(RESULT), declared)];
+        for param in &params {
+            if let (Some(_), Some(name)) = (param.out(), param.name) {
+                names.push(name);
+                fields.push((source.field_name(name.0), param.ty));
+            }
+        }
+        source.define(decl, names, fields, Vec::new());
+        decl
+    });
     let id = graph.function(types);
     let header = Header {
         name: name.map(|(_, node)| source.range(node)),
         result,
+        product,
         item: item.node(),
         generic: id,
     };

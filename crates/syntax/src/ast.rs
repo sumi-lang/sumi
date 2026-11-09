@@ -7,7 +7,7 @@ use std::hash::Hash;
 
 use sumi_lexer::LexedFile;
 
-use crate::grammar::{BinaryOp, Literal, PrefixOp, SyntaxKind, TokenField};
+use crate::grammar::{AssignOp, BinaryOp, Literal, PrefixOp, SyntaxKind, TokenField};
 use crate::index::NodeIdx;
 use crate::tree::SyntaxTree;
 
@@ -458,9 +458,9 @@ grammar! {
     struct ParamList { params: [Param] }
     tokens { LParen, Comma?, RParen }
 
-    /// `Name ':' Type`.
+    /// `'mut'? Name ':' Type`.
     struct Param { name: Name, type_ref: Type }
-    tokens { Colon }
+    tokens { mutable: MutKw?, Colon }
 
     /// `'type' Name TypeParamList? FieldList`.
     struct TypeItem { name: Name, type_params: Option<TypeParamList>, field_list: FieldList }
@@ -501,8 +501,9 @@ grammar! {
     struct LetStmt { name: Name, type_ref: Option<Type>, initializer: Expr }
     tokens { LetKw, mutable: MutKw?, Colon?, Eq }
 
+    /// `target:Expr AssignOp value:Expr`.
     struct AssignStmt { target: Expr, value: Expr }
-    tokens { Eq }
+    tokens { op: AssignOp }
 
     struct DiscardStmt { value: Expr }
     tokens { Underscore, Eq }
@@ -548,9 +549,9 @@ grammar! {
     struct ArgList { args: [Arg] }
     tokens { LParen, Comma?, RParen }
 
-    /// `(label:NameRef ':')? value:Expr`.
+    /// `(label:NameRef ':')? 'mut'? value:Expr`.
     struct Arg { label: Option<NameRef>, value: Expr }
-    tokens { Colon? }
+    tokens { Colon?, mutable: MutKw? }
 
     /// `base:Expr '.' field:NameRef`.
     struct FieldExpr { base: Expr, field: NameRef }

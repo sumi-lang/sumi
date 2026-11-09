@@ -1,0 +1,22 @@
+file: accepted
+optimized: nodes 159 of 419, regions 22 of 29, calls 8 of 12
+
+== functions ==
+fn fields = 307
+  steps: 36, optimized steps: 1, depth: 1, bound: 1
+fn calls = 3044
+  steps: 104, optimized steps: 61, depth: 3, bound: 3
+fn reads_beside = 13
+  steps: 18, optimized steps: 1, depth: 2, bound: 2
+fn through_a_loop = 63
+  steps: 80, optimized steps: 65, depth: 2, bound: 2
+fn counted = 50
+  steps: 99, optimized steps: 68, depth: 7, bound: 7
+fn generic = 38
+  steps: 53, optimized steps: 1, depth: 2, bound: 2
+fn guarded = 45
+  steps: 16, optimized steps: 1, depth: 1, bound: 1
+fn compound = 216
+  steps: 40, optimized steps: 1, depth: 1, bound: 1
+fn once = 15
+  steps: 16, optimized steps: 1, depth: 1, bound: 1

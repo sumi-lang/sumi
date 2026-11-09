@@ -1,0 +1,106 @@
+type Point {
+    x: int,
+    y: int,
+}
+type Line {
+    from: Point,
+    to: Point,
+}
+type Box<T> {
+    value: T,
+}
+fn shift(mut p: Point, dx: int) {
+    p.x = p.x + dx
+}
+fn swap<T>(mut a: T, mut b: T) {
+    let t = a
+    a = b
+    b = t
+}
+fn take(mut p: Point) -> int {
+    let old = p.x
+    p.x = 0
+    if old > 100 {
+        return 100
+    }
+    old
+}
+fn pick(mut p: Point, c: bool) = if c {
+    take(mut p)
+} else {
+    p.y
+}
+fn drain(mut n: int) -> int = if n <= 0 {
+    0
+} else {
+    n = n - 1
+    1 + drain(mut n)
+}
+fn refill<T>(mut b: Box<T>, with: T) -> T {
+    let old = b.value
+    b.value = with
+    old
+}
+fn fields() -> int {
+    let mut l = Line(from: Point(x: 0, y: 0), to: Point(x: 3, y: 4))
+    l.to.y = 7
+    (l.from).x = l.to.x
+    l.from.x * 100 + l.from.y * 10 + l.to.y
+}
+fn calls() -> int {
+    let mut l = Line(from: Point(x: 0, y: 0), to: Point(x: 3, y: 4))
+    shift(mut l.from, 2)
+    swap(mut l.from, mut l.to)
+    let got = take(mut l.from)
+    got * 1000 + l.from.x * 100 + l.from.y * 10 + l.to.x + pick(mut l.to, true)
+}
+fn reads_beside() -> int {
+    let mut p = Point(x: 4, y: 9)
+    shift(mut p, p.y)
+    p.x
+}
+fn through_a_loop() -> int {
+    let mut p = Point(x: 0, y: 0)
+    for i in 0..4 {
+        shift(mut p, i)
+        if i == 2 {
+            p.y = p.x
+        }
+    }
+    p.x * 10 + p.y
+}
+fn counted() -> int {
+    let mut n = 5
+    let steps = drain(mut n)
+    steps * 10 + n
+}
+fn generic() -> int {
+    let mut b = Box(value: 3)
+    let mut flag = Box(value: true)
+    let old = refill(mut b, 8)
+    let was = refill(mut flag, false)
+    let mut c = Box(value: old)
+    swap(mut b, mut c)
+    if was && !flag.value { b.value * 10 + c.value } else { 0 }
+}
+fn guarded() -> int {
+    let mut p = Point(x: 0, y: 5)
+    p.x = 4
+    100 / p.x + 100 / p.y
+}
+fn compound() -> int {
+    let mut p = Point(x: 10, y: 3)
+    let mut n = 2
+    p.x += 5
+    p.x -= n
+    n *= p.y
+    p.x /= n
+    p.y %= 2
+    p.x * 100 + p.y * 10 + n
+}
+fn once() -> int {
+    let mut p = Point(x: 1, y: 1)
+    p.x += { p.x = 10
+        5 }
+    p.x
+}

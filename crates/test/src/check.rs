@@ -1020,7 +1020,7 @@ fn typed(analysis: &Analysis) {
                     let signature = analysis
                         .signature(*callee)
                         .expect("a called function has a signature");
-                    assert_eq!(own, Some(signature.result));
+                    assert_eq!(own, Some(signature.returned()));
                     assert_eq!(inputs.len(), signature.params.len());
                     for (index, (&input, &param)) in inputs.iter().zip(signature.params).enumerate()
                     {
@@ -1053,7 +1053,7 @@ fn typed(analysis: &Analysis) {
             }
             assert!(own.is_some() || values.iter().any(|&value| !value));
         }
-        assert_eq!(ty(run.result()), Some(signature.result));
+        assert_eq!(ty(run.result()), Some(signature.returned()));
     }
 }
 
@@ -1552,10 +1552,15 @@ pub fn run(program: Program<'_>) -> Runs {
                 program
                     .analysis()
                     .unions()
-                    .fits(value.ty(), signature.result)
+                    .fits(value.ty(), signature.returned())
             );
+            // What a function with `mut` parameters returns holds its result first.
+            let result = match (&value, signature.product) {
+                (Value::Decl(returned), Some(_)) => &returned.fields()[0],
+                _ => &value,
+            };
             assert!(
-                holds(&ranges.result, &value),
+                holds(&ranges.result, result),
                 "f{}({args:?}) = {value:?} outside its result set",
                 id.index()
             );

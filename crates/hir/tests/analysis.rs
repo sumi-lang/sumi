@@ -723,8 +723,8 @@ fn bindings_are_visible_after_their_declaration_to_the_end_of_their_block() {
     assert_eq!(
         kinds,
         [
-            ("a", BindingKind::Param),
-            ("b", BindingKind::Param),
+            ("a", BindingKind::Param { is_mutable: false }),
+            ("b", BindingKind::Param { is_mutable: false }),
             ("a", BindingKind::Let { is_mutable: false }),
             ("total", BindingKind::Let { is_mutable: true }),
             ("i", BindingKind::LoopIndex),
@@ -748,7 +748,7 @@ fn bindings_are_visible_after_their_declaration_to_the_end_of_their_block() {
     let initializer_a = source.find("{ a }").unwrap() + 2;
     assert_eq!(visible_names(&a, initializer_a), ["a", "b"]);
     let shadowed = a.visible_at(TextSize::new(initializer_a as u32));
-    assert_eq!(shadowed[0].kind(), BindingKind::Param);
+    assert_eq!(shadowed[0].kind(), BindingKind::Param { is_mutable: false });
     let after_let = source.find("let mut total").unwrap();
     assert_eq!(visible_names(&a, after_let), ["b", "a"]);
     assert_eq!(
@@ -956,4 +956,50 @@ fn params_come_by_position_with_a_hole_for_an_unnamed_one() {
         .map(|param| param.map(|binding| text(&a, binding.name())))
         .collect();
     assert_eq!(names, [Some("a"), None, Some("a")]);
+}
+
+#[test]
+fn a_product_is_no_name_of_the_source() {
+    let source = "type P { x: int }
+fn take(mut p: P) -> int {
+    let old = p.x
+    p.x = 0
+    old
+}
+fn main() -> int {
+    let mut q = P(x: 4)
+    take(mut q)
+}";
+    let a = clean(source);
+    // Only names answer: no offset in the function is its product's field.
+    for offset in 0..source.len() {
+        let found = a.symbol_at(TextSize::new(offset as u32));
+        assert!(
+            !matches!(found, Some(o) if text(&a, o.range).len() > 4),
+            "{offset}: {found:?}"
+        );
+    }
+    let take = FunctionId::new(0);
+    let signature = a.signature(take).unwrap();
+    assert_eq!(signature.result, Ty::INT);
+    assert_eq!(signature.returned(), Ty::decl(signature.product.unwrap()));
+    // The proved result is the function's own, not what it returns with its parameters.
+    let ranges = a.ranges(take).unwrap();
+    assert_eq!(ranges.result.shown(Ty::INT, &a).to_string(), "[4, 4]");
+}
+
+#[test]
+fn a_declared_result_survives_a_damaged_body_beside_mut_parameters() {
+    let a = analyzed(
+        "fn g(mut x: int, z: Missing) -> int { let y = \n}\nfn h(mut x: int) -> int { let y = \n}",
+    );
+    assert_eq!(a.signature(FunctionId::new(0)).map(|s| s.result), None);
+    assert_eq!(
+        a.signature(FunctionId::new(1)).map(|s| s.result),
+        Some(Ty::INT)
+    );
+    // A `mut` parameter is one whatever became of its neighbours.
+    assert!(!codes(&a).contains(&IMMUTABLE_ASSIGNMENT));
+    let kinds: Vec<_> = a.bindings().iter().map(|b| b.kind()).collect();
+    assert_eq!(kinds[0], BindingKind::Param { is_mutable: true });
 }

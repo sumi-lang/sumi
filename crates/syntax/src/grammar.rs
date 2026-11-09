@@ -131,11 +131,13 @@ pub fn starts_item(kind: SyntaxKind) -> bool {
     matches!(kind, T::FnKw | T::TypeKw)
 }
 
-/// A glued prefix operator opens an operand, so it continues nothing.
+/// A glued prefix operator opens an operand, so it continues nothing; nor does an assignment's
+/// operator, which follows its target on one line.
 pub fn continues_statement(kind: SyntaxKind, glued: Option<SyntaxKind>) -> bool {
     kind == T::ElseKw
         || match binary_operator(kind, glued) {
             Some((_, 2)) => true,
+            Some(_) if AssignOp::read(kind, glued).is_some() => false,
             Some(_) => glued.is_none() || !is_prefix_operator(kind),
             None => false,
         }
@@ -342,6 +344,49 @@ impl BinaryOp {
 
     pub fn is_comparison(self) -> bool {
         matches!(self, Self::Cmp(_))
+    }
+}
+
+/// What an assignment does with its value: sets its place to it, or to the place's own value
+/// and it under an arithmetic operator, whose token `=` is glued to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum AssignOp {
+    Set,
+    Arith(ArithOp),
+}
+
+impl TokenField for AssignOp {
+    const ALL: &[Self] = &[
+        Self::Set,
+        Self::Arith(ArithOp::Add),
+        Self::Arith(ArithOp::Sub),
+        Self::Arith(ArithOp::Mul),
+        Self::Arith(ArithOp::Div),
+        Self::Arith(ArithOp::Rem),
+    ];
+
+    fn read(first: SyntaxKind, glued: Option<SyntaxKind>) -> Option<(Self, bool)> {
+        if first == SyntaxKind::Eq {
+            return Some((Self::Set, false));
+        }
+        match binary_operator(first, None)? {
+            (BinaryOp::Arith(op), _) if glued == Some(SyntaxKind::Eq) => {
+                Some((Self::Arith(op), true))
+            }
+            _ => None,
+        }
+    }
+}
+
+impl fmt::Display for AssignOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Set => f.write_str("`=`"),
+            Self::Arith(op) => {
+                let (first, _) = BinaryOp::Arith(*op).tokens();
+                write!(f, "`{}=`", first.text())
+            }
+        }
     }
 }
 
