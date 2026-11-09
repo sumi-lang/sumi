@@ -1,0 +1,4 @@
+type B<A> { value: A }
+fn id<T>(x: T) -> T = x
+fn main() -> int = id<int>(1)
+type T3<A> { next: B<B<B<A

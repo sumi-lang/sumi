@@ -138,7 +138,6 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         references.sort_unstable_by_key(|occurrence| occurrence.range.start());
     }
     let mut diagnostics = source.diagnostics;
-    diagnostics.splice(0..0, parsed.diagnostics().iter().cloned());
     diagnostics.sort_by_key(|d| d.primary.start());
     // Two instances of one generic function may each prove the same of its body: of those that
     // start together, each is kept once.
@@ -159,6 +158,8 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         }
         diagnostics = kept;
     }
+    diagnostics.splice(0..0, parsed.diagnostics().iter().cloned());
+    diagnostics.sort_by_key(|d| d.primary.start());
     let analysis = Analysis {
         parsed,
         graph,
