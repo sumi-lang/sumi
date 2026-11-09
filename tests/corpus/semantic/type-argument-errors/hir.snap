@@ -1,6 +1,6 @@
 file: rejected
 frontend errors: 0 (see frontend.snap)
-semantic errors: 23
+semantic errors: 20
 
 == graph ==
 fn id<T>@7:1..7:24 (T ∈ ∅) -> T ∈ ∅
@@ -52,18 +52,18 @@ fn unknown_head@15:1..15:45 signature: unavailable
 fn calls@16:1..26:2 () -> int ∈ ∅
   result: copy : int @16:15..16:18
     value:
-      let a@17:9..17:10: ? @17:5..17:18
-        initializer: hole : ? @17:13..17:18
-          part[0]: int 1 : int @17:16..17:17
+      let a@17:9..17:10: int @17:5..17:18
+        initializer: call id@7:1..7:24 : int @17:13..17:18
+          arg[0]: int 1 : int @17:16..17:17
       let b@18:9..18:10: ? @18:5..18:28
         initializer: hole : ? @18:13..18:28
           part[0]: int 1 : int @18:26..18:27
       let c@19:9..19:10: ? @19:5..19:26
         initializer: hole : ? @19:13..19:26
           part[0]: int 1 : int @19:24..19:25
-      let d@20:9..20:10: ? @20:5..20:26
-        initializer: hole : ? @20:13..20:26
-          part[0]: int 1 : int @20:24..20:25
+      let d@20:9..20:10: Box<int> @20:5..20:26
+        initializer: make Box : Box<int> @20:13..20:26
+          value: int 1 : int @20:24..20:25
       let e@21:9..21:10: ? @21:5..21:29
         initializer: hole : ? @21:13..21:29
           part[0]: int 1 : int @21:27..21:28
@@ -78,7 +78,7 @@ fn calls@16:1..26:2 () -> int ∈ ∅
           part[0]: int 1 : int @24:27..24:28
       tail: eager + : int @25:5..25:14
         lhs: eager + : int @25:5..25:10
-          lhs: read a@17:9..17:10 : ?
+          lhs: read a@17:9..17:10 : int
           rhs: read b@18:9..18:10 : ?
         rhs: read c@19:9..19:10 : ?
 
@@ -103,15 +103,15 @@ fn mismatched@31:1..36:2 () -> int ∈ [1, 1]
       tail: call id@7:1..7:24 : int @35:5..35:15
         arg[0]: read a@32:9..32:10 : bool
 
-fn id<bool>@7:1..7:24 (bool ∈ ∅) -> bool ∈ ∅
-  param x@7:10..7:11: bool
-  result: copy : bool @7:19..7:20
-    value: read x@7:10..7:11 : bool
-
 fn id<int>@7:1..7:24 (int ∈ [1, 1]) -> int ∈ [1, 1]
   param x@7:10..7:11: int
   result: copy : int @7:19..7:20
     value: read x@7:10..7:11 : int
+
+fn id<bool>@7:1..7:24 (bool ∈ ∅) -> bool ∈ ∅
+  param x@7:10..7:11: bool
+  result: copy : bool @7:19..7:20
+    value: read x@7:10..7:11 : bool
 
 == semantic diagnostics ==
 error[semantic/type-arguments] 9:12..9:15 "Box": expected 1 type arguments, found 0
@@ -125,22 +125,16 @@ error[semantic/type-arguments] 13:19..13:20 "T": `T` takes no type arguments
 error[semantic/unknown-type] 14:28..14:35 "Missing": unknown type `Missing`
 error[semantic/unknown-type] 15:20..15:27 "Missing": unknown type `Missing`
 error[semantic/unknown-type] 15:28..15:32 "Lost": unknown type `Lost`
-error[semantic/type-arguments] 17:13..17:15 "id": expected 1 type arguments, found 0
-  at 7:4..7:6 "id": declared here
 error[semantic/type-arguments] 18:15..18:25 "<int, int>": expected 1 type arguments, found 2
   at 7:4..7:6 "id": declared here
 error[semantic/type-arguments] 19:18..19:23 "<int>": expected 0 type arguments, found 1
   at 8:4..8:9 "plain": declared here
-error[semantic/type-arguments] 20:13..20:16 "Box": expected 1 type arguments, found 0
-  at 1:6..1:9 "Box": declared here
 error[semantic/type-arguments] 21:18..21:23 "<int>": expected 0 type arguments, found 1
   at 4:6..4:11 "Point": declared here
 error[semantic/unknown-type] 22:16..22:23 "Missing": unknown type `Missing`
 error[semantic/unknown-type] 23:17..23:24 "Missing": unknown type `Missing`
 error[semantic/unknown-name] 24:13..24:20 "missing": unknown function `missing`
 error[semantic/unknown-type] 24:21..24:25 "Lost": unknown type `Lost`
-error[semantic/type-arguments] 28:5..28:8 "Box": expected 1 type arguments, found 0
-  at 1:6..1:9 "Box": declared here
 error[semantic/type-arguments] 29:10..29:15 "<int>": expected 0 type arguments, found 1
   at 4:6..4:11 "Point": declared here
 error[semantic/type-mismatch] 32:22..32:23 "1": expected bool, found int

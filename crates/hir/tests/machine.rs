@@ -216,11 +216,18 @@ impl Gen<'_> {
     /// back, or a helper whose result only its own arguments bound.
     fn generic(&mut self, kind: Kind, fuel: u32) -> String {
         let value = self.expr(kind, fuel);
-        let name = kind.name();
+        // A shape's member decides its own type, not the union the value is used as, and a
+        // value that returns first decides none.
+        let decides = kind != Kind::Shape && !value.contains("return");
+        let args = if decides && self.rng.chance(1, 2) {
+            String::new()
+        } else {
+            format!("<{}>", kind.name())
+        };
         match self.rng.below(if kind == Kind::Int { 6 } else { 3 }) {
-            0 => format!("pass<{name}>({value})"),
-            1 => format!("wrap<{name}>({value}).g"),
-            2 => format!("G<{name}>(g: {value}).g"),
+            0 => format!("pass{args}({value})"),
+            1 => format!("wrap{args}({value}).g"),
+            2 => format!("G{args}(g: {value}).g"),
             3 => {
                 let other = self.expr(Kind::Int, fuel);
                 format!("least({value}, {other})")
@@ -787,7 +794,7 @@ fn program(seed: u64) -> String {
     }
     let mut text = String::from(
         "type R { a: int, b: bool }\ntype S { c: int }\ntype G<T> { g: T }\n\
-         fn pass<T>(x: T) -> T = x\nfn wrap<T>(x: T) -> G<T> = G<T>(g: x)\n\
+         fn pass<T>(x: T) -> T = x\nfn wrap<T>(x: T) -> G<T> = G(g: x)\n\
          fn least(a: int, b: int) -> int = if a < b { a } else { b }\n\
          fn size(a: int) -> int = if a < 0 { -a } else { a }\n",
     );

@@ -1,8 +1,9 @@
 //! Type checking of one file: a class per node, joined where a value passes between nodes
 //! unchanged, and every read checked in node order, so a disagreement is blamed on the first read
 //! that raised it, and a class the conflict left undetermined satisfies every later read silently.
-//! A body is checked once it is built, before the next is lowered: after the callees whose
-//! inferred results it reads, and with its group where those infer their results from one another.
+//! A body is checked as it is built, so lowering reads the type of what it has built: after the
+//! callees whose inferred results it reads, and again with its group where those infer theirs
+//! from one another.
 
 use std::collections::VecDeque;
 
@@ -42,6 +43,15 @@ impl Typing {
     }
 }
 
+/// What lowering reads of the type of a node it has built.
+pub(crate) enum Read {
+    Ty(Ty),
+    /// Left undetermined by what is reported elsewhere, or by a result yet to settle.
+    Unknown,
+    /// Claimed by nothing: the node yields no value.
+    Unclaimed,
+}
+
 /// The checked types by node and, by function, its result type and whether a read in its body
 /// failed.
 pub(crate) struct Checked {
@@ -65,6 +75,16 @@ pub(crate) struct Types {
     failed: Vec<bool>,
     /// The group of the function being walked.
     current: u32,
+    /// The result of the body being walked, once it is built.
+    result: Option<NodeId>,
+    /// The first node of the body being built that no walk has reached.
+    next: usize,
+    /// Whether every read of the walk beside the body being built held.
+    held: bool,
+    /// Whether the walk beside the body being built reports and settles it, not its group.
+    is_final: bool,
+    /// Whether the body being built read a result its group has yet to settle.
+    is_pending: bool,
 }
 
 impl Types {
@@ -74,6 +94,15 @@ impl Types {
             exports: vec![None; items],
             ..Self::default()
         }
+    }
+
+    /// Whether the walk beside the body being built has reached `node`, which then must not change.
+    pub fn has_walked(&self, node: NodeId) -> bool {
+        node.index() < self.next
+    }
+
+    pub fn is_pending(&self) -> bool {
+        self.is_pending
     }
 
     fn root(&mut self, node: NodeId) -> usize {
@@ -232,7 +261,7 @@ impl Set {
 
 /// What a function's result delivers to its calls.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub(crate) struct Export {
+struct Export {
     is_unknown: bool,
     /// Sorted, so equal sets compare equal.
     types: Vec<Ty>,
@@ -311,6 +340,17 @@ impl Checker<'_, '_> {
         self.types.sets[a].absorb(absorbed);
     }
 
+    /// The type of a node of the body being built, walked as far as the last node built.
+    pub fn read(&mut self, owner: FunctionId, node: NodeId) -> Read {
+        self.advance(owner);
+        let params = self.source.params;
+        let set = self.set(node);
+        if set.is_unknown || set.is_conflict(params) {
+            return Read::Unknown;
+        }
+        self.resolve(node).map_or(Read::Unclaimed, Read::Ty)
+    }
+
     fn resolve(&mut self, node: NodeId) -> Option<Ty> {
         let root = self.types.root(node);
         self.types.sets[root].ty(&mut self.source.unions.borrow_mut(), self.source.params)
@@ -334,7 +374,7 @@ impl Checker<'_, '_> {
     }
 
     /// The callee's declared result, or what its item's walk inferred, at the callee's type
-    /// arguments. A conflict inferred outside the caller's group is the unknown: it is reported there.
+    /// arguments. A conflict inferred outside the caller's group is the unknown, reported there.
     fn import(&mut self, call: NodeId, callee: FunctionId) {
         let header = self.declared.headers[callee.index()];
         let origin = Some(self.spans.origin(call));
@@ -347,6 +387,11 @@ impl Checker<'_, '_> {
         let is_grouped = self.order.group(item) == self.types.current;
         let Some(export) = self.types.exports[item.index()].clone() else {
             assert!(is_grouped, "an item outside the group is settled");
+            // Beside the body, lowering must not take what the call has so far for its type.
+            if self.types.result.is_none() {
+                self.types.is_pending = true;
+                self.unknown(call);
+            }
             return;
         };
         if !is_grouped && export.is_conflict(self.source.params) {
@@ -358,8 +403,9 @@ impl Checker<'_, '_> {
         }
         let params = &self.declared.type_args[item.index()];
         let args = &self.declared.type_args[callee.index()];
+        let at = self.spans.origin(call);
         for ty in export.types {
-            match self.source.substitute(ty, params, args) {
+            match self.source.substitute(ty, params, args, at) {
                 Some(ty) => self.claim(call, Member { ty, rank, origin }),
                 None => self.unknown(call),
             }
@@ -406,31 +452,29 @@ impl Checker<'_, '_> {
         }
     }
 
-    /// Reports and settles the built bodies of `group`. Members that infer their results from one
-    /// another are first walked, muted, until none changes: a change re-walks its callers among them.
+    /// Reports and settles the built bodies of `group`, whose members infer their results from one
+    /// another: each is walked, muted, until none changes, a change re-walking its callers there.
     pub fn settle(&mut self, group: usize) {
         let order = self.order;
         let members = order.members(group);
-        if order.is_recursive(group) {
-            let mut queued = vec![false; self.types.exports.len()];
-            let mut queue: VecDeque<u32> = members.iter().copied().collect();
-            for &member in members {
-                queued[member as usize] = true;
+        let mut queued = vec![false; self.types.exports.len()];
+        let mut queue: VecDeque<u32> = members.iter().copied().collect();
+        for &member in members {
+            queued[member as usize] = true;
+        }
+        let mut budget = members.len() * WALKS;
+        while let Some(member) = queue.pop_front() {
+            queued[member as usize] = false;
+            let before = self.types.exports[member as usize].take();
+            let after = self.walk(FunctionId::new(member as usize), false);
+            budget = budget.saturating_sub(1);
+            if before.as_ref() == Some(&after) || budget == 0 {
+                continue;
             }
-            let mut budget = members.len() * WALKS;
-            while let Some(member) = queue.pop_front() {
-                queued[member as usize] = false;
-                let before = self.types.exports[member as usize].take();
-                let after = self.walk(FunctionId::new(member as usize), false);
-                budget = budget.saturating_sub(1);
-                if before.as_ref() == Some(&after) || budget == 0 {
-                    continue;
-                }
-                for &caller in order.callers(member as usize) {
-                    if !queued[caller as usize] {
-                        queued[caller as usize] = true;
-                        queue.push_back(caller);
-                    }
+            for &caller in order.callers(member as usize) {
+                if !queued[caller as usize] {
+                    queued[caller as usize] = true;
+                    queue.push_back(caller);
                 }
             }
         }
@@ -450,48 +494,98 @@ impl Checker<'_, '_> {
 
     /// One pass over a built body, reporting and settling the function when `is_final`. Returns
     /// what the result delivers to calls.
-    pub fn walk(&mut self, owner: FunctionId, is_final: bool) -> Export {
+    fn walk(&mut self, owner: FunctionId, is_final: bool) -> Export {
         let run = self.graph.run(owner);
-        let built = self.graph.nodes().len();
-        self.types.parent.resize(built, 0);
-        self.types.sets.resize(built, Set::default());
+        self.grow();
         for node in run.nodes() {
             self.types.parent[node.index()] = node.index() as u32;
             self.types.sets[node.index()] = Set::default();
         }
         self.types.current = self.group(owner);
+        self.types.result = Some(run.result());
+        self.types.held = true;
         self.reporting(is_final, |checker| {
-            let mut held = true;
             for node in run.nodes() {
-                if checker.typed(node) {
-                    checker.facts(owner, node);
-                } else if node == run.result() {
-                    checker.unknown(node);
-                }
-                held &= checker.demands(owner, node);
+                checker.visit(owner, node);
             }
-            let result = checker.set(run.result()).clone();
-            if is_final {
-                let index = owner.index();
-                if checker.types.failed.len() <= index {
-                    checker.types.failed.resize(index + 1, false);
-                    checker.types.results.resize(index + 1, None);
-                }
-                checker.types.failed[index] = !held;
-                checker.signature(owner, &result);
-            }
-            let mut types: Vec<Ty> = result.types().map(|member| member.ty).collect();
-            types.sort_unstable();
-            let export = Export {
-                is_unknown: result.is_unknown,
-                types,
-            };
-            // An instance delivers what its item's own walk settled.
-            if checker.declared.headers[owner.index()].generic == owner {
-                checker.types.exports[owner.index()] = Some(export.clone());
-            }
-            export
+            checker.finish(owner, run.result(), is_final)
         })
+    }
+
+    /// A class of its own for every node built that has none.
+    fn grow(&mut self) {
+        for node in self.types.parent.len()..self.graph.nodes().len() {
+            self.types.parent.push(node as u32);
+            self.types.sets.push(Set::default());
+        }
+    }
+
+    /// Begins the walk beside the body `owner`'s run is about to hold, which reports and settles
+    /// the function when `is_final`.
+    pub fn open(&mut self, owner: FunctionId, is_final: bool) {
+        self.types.current = self.group(owner);
+        self.types.result = None;
+        self.types.next = self.graph.nodes().len();
+        self.types.held = true;
+        self.types.is_final = is_final;
+        self.types.is_pending = false;
+    }
+
+    /// Walks the nodes built since the last call. A node is walked once nothing built later
+    /// changes what the walk reads of it: here, where a later node or the body's end asks.
+    fn advance(&mut self, owner: FunctionId) {
+        self.grow();
+        let end = self.graph.nodes().len();
+        let next = std::mem::replace(&mut self.types.next, end);
+        self.reporting(self.types.is_final, |checker| {
+            for node in next..end {
+                checker.visit(owner, NodeId::new(node));
+            }
+        });
+    }
+
+    /// Ends a final walk [`open`](Self::open) began, once the run is closed with `result`.
+    pub fn close(&mut self, owner: FunctionId, result: NodeId) {
+        self.types.result = Some(result);
+        self.advance(owner);
+        self.reporting(true, |checker| checker.finish(owner, result, true));
+    }
+
+    fn visit(&mut self, owner: FunctionId, node: NodeId) {
+        if self.typed(node) {
+            self.facts(owner, node);
+        }
+        let held = self.demands(owner, node);
+        self.types.held &= held;
+    }
+
+    /// What a walk leaves of the function: what its result delivers and, when `is_final`,
+    /// whether a read failed and the result's type.
+    fn finish(&mut self, owner: FunctionId, result: NodeId, is_final: bool) -> Export {
+        if !self.typed(result) {
+            self.unknown(result);
+        }
+        let result = self.set(result).clone();
+        if is_final {
+            let index = owner.index();
+            if self.types.failed.len() <= index {
+                self.types.failed.resize(index + 1, false);
+                self.types.results.resize(index + 1, None);
+            }
+            self.types.failed[index] = !self.types.held;
+            self.signature(owner, &result);
+        }
+        let mut types: Vec<Ty> = result.types().map(|member| member.ty).collect();
+        types.sort_unstable();
+        let export = Export {
+            is_unknown: result.is_unknown,
+            types,
+        };
+        // An instance delivers what its item's own walk settled.
+        if self.declared.headers[owner.index()].generic == owner {
+            self.types.exports[owner.index()] = Some(export.clone());
+        }
+        export
     }
 
     /// A failed read, a hole, or the call this inherits from, already reports what a result that
@@ -711,7 +805,7 @@ impl Checker<'_, '_> {
             }
             Op::Copy { declared: Some(ty) } if value(0) => {
                 let at = annotation();
-                let declared = if node == graph.run(owner).result() {
+                let declared = if self.types.result == Some(node) {
                     held(at)
                 } else {
                     written(at)

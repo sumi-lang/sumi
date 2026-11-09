@@ -15,6 +15,7 @@ use sumi_syntax::{
 };
 use sumi_text::TextRange;
 
+use super::body::GenericCall;
 use super::source::{NameMap, Params, Source, TypeItem};
 use crate::codes;
 use crate::dependency::{Components, Rows};
@@ -85,7 +86,7 @@ pub(crate) struct Declarations<'s> {
     /// By function item, which its ID as a function indexes.
     pub(super) items: Vec<FnItem<'s>>,
     instances: HashMap<(FunctionId, Rc<[Ty]>), FunctionId, FxBuildHasher>,
-    /// The calls no instance is made for: each would be at a type that grows without end.
+    /// The calls no instance's body makes: each would be at a type that grows without end.
     pub(super) unbounded: HashSet<NodeIdx, FxBuildHasher>,
 }
 
@@ -427,7 +428,6 @@ pub(crate) fn declare<'s>(
         });
     }
     source.scope.clear();
-    declarations.unbounded = unbounded_calls(source, &declarations);
     declarations
 }
 
@@ -744,57 +744,53 @@ fn drop_growing_fields(source: &mut Source<'_>, resolved: &[Vec<Option<ast::Type
     }
 }
 
-/// The calls that would have no last instance: each passes a type parameter of its function on
-/// inside a larger type, around a cycle of calls.
-fn unbounded_calls(
+/// Marks the calls that would have no last instance: each passes a type parameter of its function
+/// on inside a larger type, around a cycle of `calls`, those of every generic function's own body.
+pub(super) fn unbounded_calls(
     source: &mut Source<'_>,
-    declarations: &Declarations<'_>,
-) -> HashSet<NodeIdx, FxBuildHasher> {
+    declarations: &mut Declarations<'_>,
+    calls: &[GenericCall],
+) {
     let tree = source.tree;
-    let items = &declarations.items;
-    let (first, count) = param_offsets(items.iter().map(|item| item.params.len()));
+    let (first, count) = param_offsets(declarations.items.iter().map(|item| item.params.len()));
     let mut passed: Vec<Passed> = Vec::new();
-    let mut calls: Vec<NodeIdx> = Vec::new();
-    for (caller, item) in items.iter().enumerate() {
-        if item.params.is_empty() {
-            continue;
-        }
-        for call in under(source, item.item.node()) {
-            let Some(call) = ast::CallExpr::cast(tree, call) else {
-                continue;
-            };
-            let callee = call.callee(tree).map(|callee| source.head(callee.node()));
-            let Some(Named::Function(callee)) =
-                callee.and_then(|name| declarations.names.get(name))
-            else {
-                continue;
-            };
-            let Some(list) = call.type_args(tree) else {
-                continue;
-            };
-            if list.args(tree).count() != items[callee.index()].params.len() {
-                continue;
-            }
-            passed_on(source, list, &item.params, |param, position, grows| {
+    let mut sites: Vec<(&GenericCall, usize)> = Vec::new();
+    for call in calls {
+        let params = &declarations.type_args[call.caller.index()];
+        for (position, &arg) in call.args.iter().enumerate() {
+            for (param, &ty) in params.iter().enumerate() {
+                let decl = ty.as_decl().expect("a type parameter is a declared type");
+                if !source.mentions(arg, decl) {
+                    continue;
+                }
                 passed.push(Passed {
-                    from: first[caller] + param,
-                    to: first[callee.index()] + position,
-                    grows,
+                    from: first[call.caller.index()] + param,
+                    to: first[call.callee.index()] + position,
+                    grows: (arg != ty).then_some(call.call.node()),
                 });
-                calls.push(call.node());
-            });
+                sites.push((call, position));
+            }
         }
     }
-    let mut unbounded = HashSet::default();
-    for (index, arg) in growing(count, &passed) {
-        if unbounded.insert(calls[index]) {
+    for (index, _) in growing(count, &passed) {
+        let (call, position) = sites[index];
+        if declarations.unbounded.insert(call.call.node()) {
             let message = format!(
                 "type argument `{}` grows with every call around this cycle, so the calls have no \
                  last instance",
-                source.text(arg)
+                source.show(call.args[position])
             );
-            source.error(arg, codes::POLYMORPHIC_RECURSION, message, None);
+            // The argument where it is written, else the name whose arguments decide it.
+            let written = call.call.type_args(tree);
+            let written = written.and_then(|list| list.args(tree).nth(position));
+            let at = written.map(|arg| arg.node());
+            let at = at.or(call.call.callee(tree).map(|callee| callee.node()));
+            source.error(
+                at.unwrap_or(call.call.node()),
+                codes::POLYMORPHIC_RECURSION,
+                message,
+                None,
+            );
         }
     }
-    unbounded
 }

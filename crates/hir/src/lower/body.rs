@@ -2,7 +2,7 @@
 //! of mutable locals, regions and their contexts, and holes where the syntax or a name failed. The
 //! parser bounds nesting, so the walk's depth is bounded with it.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use rustc_hash::FxBuildHasher;
 use sumi_frontend::Fix;
@@ -17,13 +17,13 @@ use sumi_syntax::{
 };
 use sumi_text::{TextEdit, TextRange, TextSize};
 
-use super::declare::{Declarations, Header, HeaderResult, Named, Order};
+use super::declare::{Declarations, HeaderResult, Named, Order, unbounded_calls};
 use super::source::{NameMap, Source};
 use super::versions::{Refinement, RegionState, Versions};
 use super::{Call, Fallthrough, Lowered, Obligation, Statement, diagnostic, join};
 use crate::codes;
 use crate::spans::{Spans, SpansBuilder};
-use crate::typing::{Checked, Checker, Types};
+use crate::typing::{Checked, Checker, Read, Types};
 use crate::{Binding, BindingId, BindingKind, Occurrence, Symbol};
 
 /// Every function's body with its types, the instances of the generic ones among them. The items
@@ -37,15 +37,19 @@ pub(crate) fn lower<'s>(
     let items = declared.items.len();
     let mut builder = Builder::new(source, declared, graph, order);
     for group in 0..builder.order.groups() {
+        let is_recursive = builder.order.is_recursive(group);
         for member in 0..builder.order.members(group).len() {
-            builder.build(builder.order.members(group)[member] as usize);
+            builder.build(builder.order.members(group)[member] as usize, !is_recursive);
         }
-        builder.checker().settle(group);
+        if is_recursive {
+            builder.checker().settle(group);
+        }
     }
+    let generic_calls = std::mem::take(&mut builder.generic_calls);
+    unbounded_calls(builder.source, &mut builder.declared, &generic_calls);
     let mut index = items;
     while index < builder.declared.headers.len() {
-        builder.build(index);
-        builder.checker().walk(FunctionId::new(index), true);
+        builder.build(index, true);
         index += 1;
     }
     builder.source.scope.clear();
@@ -107,6 +111,14 @@ fn arith(op: sumi_syntax::ArithOp) -> ArithOp {
     }
 }
 
+/// How a message says a value decides nothing yet.
+fn pending_text(value: Decides) -> &'static str {
+    match value {
+        Decides::Pending => " while a result of this recursion is still inferred",
+        _ => "",
+    }
+}
+
 /// What a call names.
 #[derive(Clone, Copy)]
 enum Target {
@@ -114,6 +126,39 @@ enum Target {
     Type(DeclId),
     /// Reported where it was resolved, or ambiguous.
     Unknown,
+}
+
+/// What a call names once its type argument list is read.
+#[derive(Clone, Copy)]
+enum Applied {
+    Function(FunctionId),
+    Type(DeclId),
+    /// A generic function named with no type arguments, which its arguments decide.
+    Inferred(FunctionId),
+    /// A generic type named with no type arguments, which its fields' values decide.
+    InferredType(DeclId),
+    Unknown,
+}
+
+/// What a value decides of a type parameter read from its type.
+#[derive(Clone, Copy)]
+enum Decides {
+    Ty(Ty),
+    /// Nothing, as what it failed at is reported elsewhere.
+    Failed,
+    /// Nothing until a result its recursion infers has settled.
+    Pending,
+    /// Nothing: it yields no value.
+    Nothing,
+}
+
+/// A call from a generic function's own body to a generic function, at the type arguments it
+/// names or its arguments decide.
+pub(super) struct GenericCall {
+    pub caller: FunctionId,
+    pub callee: FunctionId,
+    pub call: ast::CallExpr,
+    pub args: Vec<Ty>,
 }
 
 /// A local's index in the body's `locals`, and in its versions.
@@ -195,6 +240,10 @@ struct Builder<'a, 's> {
     lowered: Lowered,
     order: Order,
     types: Types,
+    generic_calls: Vec<GenericCall>,
+    /// By the name a generic item's own body leaves without type arguments, those it decided
+    /// there, which its instances take at their own.
+    decided: HashMap<NodeIdx, Vec<Ty>, FxBuildHasher>,
     /// By syntax node, the graph node it built, which refinement reads by the condition's syntax.
     nodes_of: Vec<Option<NodeId>>,
     /// By syntax node, whether it completes; a condition's operand is read by its syntax.
@@ -237,6 +286,8 @@ impl<'a, 's> Builder<'a, 's> {
             graph,
             spans: SpansBuilder::new(nodes),
             order,
+            generic_calls: Vec::new(),
+            decided: HashMap::default(),
             lowered: Lowered {
                 built: vec![false; functions],
                 typed: Vec::with_capacity(nodes),
@@ -284,7 +335,45 @@ impl<'a, 's> Builder<'a, 's> {
         }
     }
 
-    fn build(&mut self, owner: usize) {
+    /// What `value` decides of a type parameter read from its type, as the typing has it where
+    /// the body has got to.
+    fn decides(&mut self, value: &Value) -> Decides {
+        if !value.is_valid {
+            return Decides::Failed;
+        }
+        let owner = FunctionId::new(self.owner as usize);
+        match self.checker().read(owner, value.node) {
+            Read::Ty(ty) => Decides::Ty(ty),
+            Read::Unknown if self.types.is_pending() => Decides::Pending,
+            Read::Unknown => Decides::Failed,
+            Read::Unclaimed => Decides::Nothing,
+        }
+    }
+
+    /// Keeps the type arguments the name at `at` decided, for the instances of a generic item
+    /// whose own body this is.
+    fn decide(&mut self, at: NodeIdx, args: &[Ty]) {
+        if !self.declared.items[self.owner as usize].params.is_empty() {
+            self.decided.insert(at, args.to_vec());
+        }
+    }
+
+    /// In an instance's body, the type arguments its item's own body decided for the name at `at`,
+    /// at the instance's own; none where that body decided none, which it reported.
+    fn decided(&mut self, at: NodeIdx) -> Option<Vec<Ty>> {
+        let decided = self.decided.get(&at)?;
+        let item = self.declared.headers[self.owner as usize].generic;
+        let params = &self.declared.type_args[item.index()];
+        let args = &self.declared.type_args[self.owner as usize];
+        let range = self.source.range(at);
+        let own = decided.iter();
+        own.map(|&ty| self.source.substitute(ty, params, args, range))
+            .collect()
+    }
+
+    /// Builds the body of `owner` beside the walk of its types, which reports and settles it when
+    /// `is_final`.
+    fn build(&mut self, owner: usize, is_final: bool) {
         self.owner = u32::try_from(owner).expect("function count fits u32");
         self.has_failed = false;
         self.depth = 0;
@@ -328,6 +417,7 @@ impl<'a, 's> Builder<'a, 's> {
         };
         self.open_scope(body_range.end());
         self.returns.clear();
+        self.checker().open(FunctionId::new(owner), is_final);
         let run = self.graph.open_run(FunctionId::new(owner));
         let entry = self.push(item_node, Op::Entry, &[], None);
         for index in 0..self.declared.parameters[owner].len() {
@@ -417,6 +507,9 @@ impl<'a, 's> Builder<'a, 's> {
         self.graph.close_run(run, region, value);
         let is_whole = !self.has_failed && root_node.is_some() && body.is_valid;
         self.lowered.built[owner] = is_whole;
+        if is_final {
+            self.checker().close(FunctionId::new(owner), value);
+        }
         if is_whole && !self.source.is_muted {
             self.unused();
         }
@@ -540,10 +633,12 @@ impl<'a, 's> Builder<'a, 's> {
 
     /// The type annotation `node`, the last pushed, is declared with.
     fn annotate(&mut self, node: NodeId, annotation: NodeIdx) {
+        debug_assert!(!self.types.has_walked(node), "{node:?} is walked");
         self.spans.annotate(node, self.source.range(annotation));
     }
 
     fn completes_input(&mut self, node: NodeId, index: usize) {
+        debug_assert!(!self.types.has_walked(node), "{node:?} is walked");
         self.graph.complete_input(node, index);
     }
 
@@ -601,15 +696,6 @@ impl<'a, 's> Builder<'a, 's> {
             && inputs
                 .iter()
                 .all(|&(input, _)| self.lowered.typed[input.index()])
-    }
-
-    /// The function a call to `target` is held to: one with parameter types.
-    fn callee(&self, target: Target) -> Option<(FunctionId, Header)> {
-        let Target::Function(target) = target else {
-            return None;
-        };
-        self.graph.param_types(target)?;
-        Some((target, self.declared.headers[target.index()]))
     }
 
     fn arity(&self, callee: FunctionId) -> usize {
@@ -1817,7 +1903,12 @@ impl<'a, 's> Builder<'a, 's> {
                             self.refer(member, Symbol::Type(item), false);
                             let at = self.source.range(member);
                             let type_args = pattern.type_args(tree);
-                            let Some(decl) = self.source.apply(item, type_args, at, false) else {
+                            let decl = if type_args.is_none() && self.source.is_generic(item) {
+                                self.infer_member(member, item, &scrutinee)
+                            } else {
+                                self.source.apply(item, type_args, at, false)
+                            };
+                            let Some(decl) = decl else {
                                 is_valid = false;
                                 continue;
                             };
@@ -1891,6 +1982,54 @@ impl<'a, 's> Builder<'a, 's> {
         }
         let states: Vec<&RegionState> = states.iter().collect();
         self.switch(node, &scrutinee, arms, &values, &states)
+    }
+
+    /// The instance of the generic type `item` an arm names without type arguments: the one
+    /// member of the scrutinee's type that is an instance of it.
+    fn infer_member(&mut self, member: NodeIdx, item: DeclId, scrutinee: &Value) -> Option<DeclId> {
+        let at = self.source.range(member);
+        if self.source.is_muted {
+            let args = self.decided(member)?;
+            return self.source.instantiate(item, args, at);
+        }
+        let name = self.source.decls[item.index()].name;
+        let ty = match self.decides(scrutinee) {
+            Decides::Ty(ty) => ty,
+            Decides::Failed => return None,
+            read => {
+                let message = format!(
+                    "the type matched does not decide which `{name}` this is{}; write its type \
+                     arguments",
+                    pending_text(read)
+                );
+                self.source
+                    .error(member, codes::TYPE_ARGUMENTS, message, None);
+                return None;
+            }
+        };
+        let members = self.source.decls_of(ty).into_iter();
+        let mut instances = members.filter(|&decl| self.source.decls[decl.index()].item == item);
+        match (instances.next(), instances.next()) {
+            (Some(decl), None) => {
+                let args = self.source.decls[decl.index()].args.clone();
+                self.decide(member, &args);
+                Some(decl)
+            }
+            (first, _) => {
+                let found = if first.is_some() {
+                    "more than one"
+                } else {
+                    "no"
+                };
+                let message = format!(
+                    "`{}` holds {found} `{name}`; write its type arguments",
+                    self.source.show(ty)
+                );
+                self.source
+                    .error(member, codes::TYPE_ARGUMENTS, message, None);
+                None
+            }
+        }
     }
 
     /// A switch over `scrutinee`: `values` are the arms' results, each with the state its region
@@ -2201,48 +2340,191 @@ impl<'a, 's> Builder<'a, 's> {
         }
     }
 
-    /// The instance a call names: its target at the type arguments after the callee, one per type
-    /// parameter. A call that names none is reported here and has no target.
+    /// What a call names once its type argument list is read: its target at the list's types,
+    /// one per type parameter. A call that names none is reported here.
     fn applied(
         &mut self,
         call: ast::CallExpr,
         callee: NodeIdx,
         target: Target,
         damaged: bool,
-    ) -> Target {
+    ) -> Applied {
         let tree = self.source.tree;
         let list = call.type_args(tree);
         let at = self.source.range(callee);
         match target {
             Target::Unknown => {
                 self.source.type_args(list);
-                Target::Unknown
+                Applied::Unknown
+            }
+            Target::Type(item) if list.is_none() && self.source.is_generic(item) => {
+                Applied::InferredType(item)
             }
             Target::Type(item) => match self.source.apply(item, list, at, damaged) {
-                Some(decl) => Target::Type(decl),
-                None => Target::Unknown,
+                Some(decl) => Applied::Type(decl),
+                None => Applied::Unknown,
             },
             Target::Function(generic) => {
-                let (given, args) = self.source.type_args(list);
                 let expected = self.declared.items[generic.index()].params.len();
+                if list.is_none() && expected > 0 {
+                    return Applied::Inferred(generic);
+                }
+                let (given, args) = self.source.type_args(list);
                 let declared = self.declared.headers[generic.index()].name;
                 let takes = self
                     .source
                     .takes(expected, given, list, at, declared, damaged);
                 if !takes {
-                    return Target::Unknown;
+                    return Applied::Unknown;
                 }
                 if expected == 0 {
-                    return target;
+                    return Applied::Function(generic);
                 }
-                let Some(args) = args.filter(|_| !self.declared.unbounded.contains(&call.node()))
-                else {
-                    return Target::Unknown;
-                };
-                let instance = self
-                    .declared
-                    .instance(self.source, &mut self.graph, generic, args);
-                instance.map_or(Target::Unknown, Target::Function)
+                let instance = args.and_then(|args| self.instance(call, generic, args));
+                instance.map_or(Applied::Unknown, Applied::Function)
+            }
+        }
+    }
+
+    /// The instance of `generic` the call names at `args`; none for a call marked as having no
+    /// last instance.
+    fn instance(
+        &mut self,
+        call: ast::CallExpr,
+        generic: FunctionId,
+        args: Vec<Ty>,
+    ) -> Option<FunctionId> {
+        if self.declared.unbounded.contains(&call.node()) {
+            return None;
+        }
+        let caller = self.declared.headers[self.owner as usize].generic;
+        if caller.index() == self.owner as usize
+            && !self.declared.items[caller.index()].params.is_empty()
+        {
+            self.generic_calls.push(GenericCall {
+                caller,
+                callee: generic,
+                call,
+                args: args.clone(),
+            });
+        }
+        self.declared
+            .instance(self.source, &mut self.graph, generic, args)
+    }
+
+    /// Reports the type parameters of `name` that `bound` leaves open, unless a value that
+    /// failed may be what would have decided them.
+    fn undecided(
+        &mut self,
+        at: NodeIdx,
+        name: &str,
+        params: &[&'s str],
+        bound: &[Option<Ty>],
+        values: &[Decides],
+        declared: Option<TextRange>,
+    ) {
+        if values.iter().any(|read| matches!(read, Decides::Failed)) {
+            return;
+        }
+        let open: Vec<String> = params
+            .iter()
+            .zip(bound)
+            .filter(|(_, bound)| bound.is_none())
+            .map(|(param, _)| format!("`{param}`"))
+            .collect();
+        let what = if open.len() == 1 {
+            "type parameter"
+        } else {
+            "type parameters"
+        };
+        let pending = values.iter().find(|read| matches!(read, Decides::Pending));
+        let message = format!(
+            "the arguments do not decide {what} {} of `{name}`{}; write its type arguments",
+            join(&open),
+            pending.map_or("", |&read| pending_text(read)),
+        );
+        self.source.error(
+            at,
+            codes::TYPE_ARGUMENTS,
+            message,
+            declared.map(|declared| (declared, "declared here")),
+        );
+    }
+
+    /// The instance of `generic` its arguments decide, one per parameter: each type parameter is
+    /// the type of the first argument whose parameter names it.
+    fn infer_call(
+        &mut self,
+        call: ast::CallExpr,
+        callee: NodeIdx,
+        generic: FunctionId,
+        args: &[(ast::Arg, Value)],
+    ) -> Option<FunctionId> {
+        if self.source.is_muted {
+            let args = self.decided(callee)?;
+            return self.instance(call, generic, args);
+        }
+        let patterns = self.graph.param_types(generic)?.to_vec();
+        let values: Vec<Decides> = args.iter().map(|(_, value)| self.decides(value)).collect();
+        let params = self.declared.type_args[generic.index()].clone();
+        let mut bound = vec![None; params.len()];
+        for (&pattern, &value) in patterns.iter().zip(&values) {
+            if let Decides::Ty(actual) = value {
+                self.source.bind(pattern, actual, &params, &mut bound);
+            }
+        }
+        match bound.iter().copied().collect::<Option<Vec<Ty>>>() {
+            Some(args) => {
+                self.decide(callee, &args);
+                self.instance(call, generic, args)
+            }
+            None => {
+                let names = self.declared.items[generic.index()].params.clone();
+                let name = self.source.text(callee);
+                let declared = self.declared.headers[generic.index()].name;
+                self.undecided(callee, name, &names, &bound, &values, declared);
+                None
+            }
+        }
+    }
+
+    /// The instance of the type `item` the values given its fields decide, one per field.
+    fn infer_fields(
+        &mut self,
+        callee: NodeIdx,
+        item: DeclId,
+        given: &[Option<(Value, NodeIdx)>],
+    ) -> Option<DeclId> {
+        let at = self.source.range(callee);
+        if self.source.is_muted {
+            let args = self.decided(callee)?;
+            return self.source.instantiate(item, args, at);
+        }
+        let params = self.source.decls[item.index()].args.clone();
+        let mut bound = vec![None; params.len()];
+        let mut values = Vec::with_capacity(given.len());
+        for (field, given) in given.iter().enumerate() {
+            let (value, _) = given.expect("every field given");
+            let value = self.decides(&value);
+            if let (Some(pattern), Decides::Ty(actual)) = (self.source.fields(item)[field].1, value)
+            {
+                self.source.bind(pattern, actual, &params, &mut bound);
+            }
+            values.push(value);
+        }
+        match bound.iter().copied().collect::<Option<Vec<Ty>>>() {
+            Some(args) => {
+                self.decide(callee, &args);
+                self.source.instantiate(item, args, at)
+            }
+            None => {
+                let names = self.source.type_items[item.index()].params.clone();
+                let name = self.source.decls[item.index()].name;
+                let declared = self.source.decls[item.index()]
+                    .name_node
+                    .map(|node| self.source.range(node));
+                self.undecided(callee, name, &names, &bound, &values, declared);
+                None
             }
         }
     }
@@ -2252,12 +2534,13 @@ impl<'a, 's> Builder<'a, 's> {
     fn call(&mut self, call: ast::CallExpr, damaged: bool) -> Value {
         let tree = self.source.tree;
         let node = call.node();
-        let target = match call.callee(tree) {
-            Some(callee) => {
-                let target = self.target(callee.node());
-                self.applied(call, callee.node(), target, damaged)
+        let name = call.callee(tree).map(|callee| callee.node());
+        let applied = match name {
+            Some(name) => {
+                let target = self.target(name);
+                self.applied(call, name, target, damaged)
             }
-            None => Target::Unknown,
+            None => Applied::Unknown,
         };
         // The arguments before any garbage: the ones whose position is reliable.
         let mut args: Vec<(ast::Arg, Value)> = Vec::new();
@@ -2273,22 +2556,28 @@ impl<'a, 's> Builder<'a, 's> {
                 args.push((arg, value));
             }
         }
-        if let Target::Type(decl) = target
-            && !damaged
-        {
-            return self.construct(call, decl, &args);
+        match applied {
+            Applied::Type(decl) if !damaged => return self.construct(call, decl, false, &args),
+            Applied::InferredType(item) if !damaged => {
+                return self.construct(call, item, true, &args);
+            }
+            _ => {}
         }
         let context = self.context();
-        let callee = self.callee(target);
-        if let Some((target, _)) = callee {
-            self.lowered.entered.push((context, target));
-        }
+        // The function named, whose parameter list its every instance shares.
+        let named = match applied {
+            Applied::Function(function) | Applied::Inferred(function) => Some(function),
+            _ => None,
+        };
+        let arity = named
+            .and_then(|function| self.graph.param_types(function))
+            .map(<[Ty]>::len);
         let mut is_labeled = false;
         if !damaged {
             for (arg, _) in &args {
                 // A label on an argument to a name that resolved to nothing is reported there.
                 if let Some(label) = arg.label(tree)
-                    && let Target::Function(function) = target
+                    && let Some(function) = named
                 {
                     let item = self.declared.headers[function.index()].item;
                     self.source.error(
@@ -2300,24 +2589,36 @@ impl<'a, 's> Builder<'a, 's> {
                     is_labeled = true;
                 }
             }
-            if let Some((id, function)) = callee
-                && let arity = self.arity(id)
+            if let (Some(function), Some(arity)) = (named, arity)
                 && args.len() != arity
             {
+                let item = self.declared.headers[function.index()].item;
                 self.source.error(
                     node,
                     codes::ARITY,
                     format!("expected {arity} arguments, found {}", args.len()),
-                    Some((self.source.range(function.item), "declared here")),
+                    Some((self.source.range(item), "declared here")),
                 );
             }
         }
+        let target = match (applied, name) {
+            (Applied::Function(function), _) => Some(function),
+            (Applied::Inferred(generic), Some(name)) if !damaged && arity == Some(args.len()) => {
+                self.infer_call(call, name, generic, &args)
+            }
+            _ => None,
+        };
+        // The function the call is held to: one with parameter types.
+        let callee = target.filter(|&function| self.graph.param_types(function).is_some());
+        if let Some(target) = callee {
+            self.lowered.entered.push((context, target));
+        }
         let inputs: Vec<(NodeId, TextRange)> =
             args.iter().map(|(_, value)| value.input()).collect();
-        let whole = callee.filter(|&(id, _)| !damaged && !is_labeled && self.whole(id, &inputs));
-        let op = callee.map_or(Op::Hole, |(id, _)| Op::Call(id));
+        let whole = callee.filter(|&id| !damaged && !is_labeled && self.whole(id, &inputs));
+        let op = callee.map_or(Op::Hole, Op::Call);
         let id = self.push(node, op, &inputs, None);
-        if let Some((target, _)) = callee
+        if let Some(target) = callee
             && self.is_typed(id)
         {
             self.lowered.called.push((id, target));
@@ -2339,7 +2640,7 @@ impl<'a, 's> Builder<'a, 's> {
             self.fail();
             return value;
         }
-        let Some((target, function)) = whole else {
+        let Some(target) = whole else {
             self.fail();
             return value;
         };
@@ -2349,17 +2650,20 @@ impl<'a, 's> Builder<'a, 's> {
             callee: target,
             context,
         });
-        if !completes && matches!(function.result, HeaderResult::None) {
+        let result = self.declared.headers[target.index()].result;
+        if !completes && matches!(result, HeaderResult::None) {
             self.fail();
         }
         value
     }
 
-    /// Fields are stored in declaration order; argument controls run in source order.
+    /// Fields are stored in declaration order; argument controls run in source order. `decl` is the
+    /// generic item when `is_inferred`: the fields' values decide its instance.
     fn construct(
         &mut self,
         call: ast::CallExpr,
         decl: DeclId,
+        is_inferred: bool,
         args: &[(ast::Arg, Value)],
     ) -> Value {
         let tree = self.source.tree;
@@ -2429,6 +2733,14 @@ impl<'a, 's> Builder<'a, 's> {
             );
             is_damaged = true;
         }
+        let instance = match call.callee(tree) {
+            Some(callee) if is_inferred && !is_damaged => {
+                self.infer_fields(callee.node(), decl, &given)
+            }
+            _ => Some(decl),
+        };
+        is_damaged |= instance.is_none();
+        let decl = instance.unwrap_or(decl);
         let ordered: Vec<Value> = if is_damaged {
             args.iter().map(|&(_, value)| value).collect()
         } else {

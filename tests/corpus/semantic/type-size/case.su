@@ -1,0 +1,39 @@
+type Pair<A, B> {
+    first: A,
+    second: B,
+}
+type T0<A> {
+    next: T1<Pair<A, A>>,
+}
+type T1<A> {
+    next: T2<Pair<A, A>>,
+}
+type T2<A> {
+    next: T3<Pair<A, A>>,
+}
+type T3<A> {
+    next: T4<Pair<A, A>>,
+}
+type T4<A> {
+    next: T5<Pair<A, A>>,
+}
+type T5<A> {
+    next: T6<Pair<A, A>>,
+}
+type T6<A> {
+    next: T7<Pair<A, A>>,
+}
+type T7<A> {
+    next: T8<Pair<A, A>>,
+}
+type T8<A> {
+    next: T9<Pair<A, A>>,
+}
+type T9<A> {
+    next: T10<Pair<A, A>>,
+}
+type T10<A> {
+    next: T11<Pair<A, A>>,
+}
+type T11<A> {}
+fn main(t: T0<int>) -> int = 0
