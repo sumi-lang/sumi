@@ -373,13 +373,15 @@ impl Checker<'_, '_> {
         }
     }
 
-    /// Each claim of a declared type with the field becomes a claim of the field's type, or the
-    /// unknown when that type is damaged; the rest deliver nothing, which the read's demand reports.
+    /// The read claims the field's type for each declared type its base resolves among, however the
+    /// base came by it, or the unknown when that type is damaged; the read's demand reports the rest.
     fn field(&mut self, read: NodeId, base: NodeId, name: FieldName) {
         let base = self.set(base).clone();
+        let origin = Some(self.spans.origin(read));
+        let rank = read.index() as u32;
         let root = self.root(read);
         self.sets[root].is_unknown |= base.is_unknown;
-        for member in base.members() {
+        for member in base.types() {
             let Some(decl) = member.ty.as_decl() else {
                 continue;
             };
@@ -388,7 +390,7 @@ impl Checker<'_, '_> {
                 continue;
             };
             match decl.fields()[index].1 {
-                Some(ty) => self.sets[root].offer(Member { ty, ..member }),
+                Some(ty) => self.sets[root].offer(Member { ty, rank, origin }),
                 None => self.sets[root].is_unknown = true,
             }
         }

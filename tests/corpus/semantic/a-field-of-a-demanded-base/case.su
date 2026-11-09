@@ -1,0 +1,24 @@
+// `k` never settles, so `r` has no type of its own until a read asks one of
+// it. A field read of `r` after that has the field's type as its own claim:
+// it disagrees with a later read, and with another arm, like any other value.
+type Point { x: int }
+fn k() = k()
+fn takes(p: Point) -> int = p.x
+fn misread() -> bool {
+    let r = k()
+    _ = takes(r)
+    r.x
+}
+fn disagree(c: bool) -> int {
+    let r = k()
+    _ = takes(r)
+    if c { r.x } else { true }
+}
+fn inferred(c: bool) = {
+    let r = k()
+    _ = takes(r)
+    if c {
+        return r.x
+    }
+    true
+}

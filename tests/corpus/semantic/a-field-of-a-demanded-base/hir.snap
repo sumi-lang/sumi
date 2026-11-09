@@ -1,0 +1,70 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 5
+
+== graph ==
+fn k@5:1..5:13 signature: unavailable
+  body: call k@5:1..5:13 : ? @5:10..5:13
+
+fn takes@6:1..6:32 (Point ∈ ∅) -> int ∈ ∅
+  param p@6:10..6:11: Point
+  result: copy : int @6:23..6:26
+    value: field x : int @6:29..6:32
+      base: read p@6:10..6:11 : Point
+
+fn misread@7:1..11:2 () -> bool ∈ ∅
+  result: copy : bool @7:17..7:21
+    value:
+      let r@8:9..8:10: Point @8:5..8:16
+        initializer: call k@5:1..5:13 : Point @8:13..8:16
+      discard: call takes@6:1..6:32 : int @9:9..9:17
+        arg[0]: read r@8:9..8:10 : Point
+      tail: field x : int @10:5..10:8
+        base: read r@8:9..8:10 : Point
+
+fn disagree@12:1..16:2 (bool ∈ ∅) -> int ∈ ∅
+  param c@12:13..12:14: bool
+  result: copy : int @12:25..12:28
+    value:
+      let r@13:9..13:10: Point @13:5..13:16
+        initializer: call k@5:1..5:13 : Point @13:13..13:16
+      discard: call takes@6:1..6:32 : int @14:9..14:17
+        arg[0]: read r@13:9..13:10 : Point
+      tail: if : ? @15:5..15:31
+        scrutinee: read c@12:13..12:14 : bool
+        then: field x : int @15:12..15:15
+          base: read r@13:9..13:10 : Point
+        else: bool true : bool @15:25..15:29
+
+fn inferred@17:1..24:2 signature: unavailable
+  param c@17:13..17:14: bool
+  result: result : ? @17:1..24:2
+    outcome[0]:
+      let r@18:9..18:10: Point @18:5..18:16
+        initializer: call k@5:1..5:13 : Point @18:13..18:16
+      discard: call takes@6:1..6:32 : int @19:9..19:17
+        arg[0]: read r@18:9..18:10 : Point
+      discard: if : unit @20:5..22:6
+        scrutinee: read c@17:13..17:14 : bool
+        then: unit : unit @20:10..22:6
+        else: unit (implicit)
+      discard: after : ? @20:5..22:6
+        control: observe : ? @20:5..22:6
+        context: entry : ? @17:1..24:2
+      tail: bool true : bool @23:5..23:9
+    outcome[1]: return : int @21:9..21:19
+      payload: field x : int @21:16..21:19
+        base: read r@18:9..18:10 : Point
+
+== semantic diagnostics ==
+error[semantic/cannot-infer] 5:1..5:13 "fn k() = k()": cannot infer function result; add a return type annotation
+error[semantic/unbounded-recursion] 5:4..5:5 "k": recursion in `k` has no argument that moves toward a bound on every call
+  at 5:10..5:13 "k()": no argument is a parameter moved by a constant
+error[semantic/type-mismatch] 10:5..10:8 "r.x": expected bool, found int
+  at 7:17..7:21 "bool": declared here
+error[semantic/type-mismatch] 15:5..15:31 "if c { r.x } else { true }": if branches are int and bool
+  at 15:12..15:15 "r.x": int here
+  at 15:25..15:29 "true": bool here
+error[semantic/cannot-infer] 17:1..24:2 "fn inferred(c: bool) = {\n    let r = k()\n    _ = takes(r)\n    if c {\n        return r.x\n    }\n    true\n}": function result is both int and bool; add a return type annotation
+  at 21:9..21:19 "return r.x": int here
+  at 23:5..23:9 "true": bool here
