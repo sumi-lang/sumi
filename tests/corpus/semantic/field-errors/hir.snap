@@ -12,13 +12,13 @@ fn origin@3:1..3:41 () -> Point ∈ Point([0, 0], [0, 0])
 fn unknown@4:1..4:34 (Point ∈ ∅) -> int ∈ ∅
   param p@4:12..4:13: Point
   result: copy : int @4:25..4:28
-    value: field z : int @4:31..4:34
+    value: field z : ? @4:31..4:34
       base: read p@4:12..4:13 : Point
 
 fn scalar@5:1..5:31 (int ∈ ∅) -> int ∈ ∅
   param n@5:11..5:12: int
   result: copy : int @5:22..5:25
-    value: field x : int @5:28..5:31
+    value: field x : ? @5:28..5:31
       base: read n@5:11..5:12 : int
 
 fn missing@6:1..6:36 () -> Point ∈ ∅
@@ -103,7 +103,7 @@ fn branches@18:1..18:52 signature: unavailable
 
 fn chained@19:1..19:35 () -> int ∈ ∅
   result: copy : int @19:17..19:20
-    value: field w : int @19:23..19:35
+    value: field w : ? @19:23..19:35
       base: field z : ? @19:23..19:33
         base: call origin@3:1..3:41 : Point @19:23..19:31
 

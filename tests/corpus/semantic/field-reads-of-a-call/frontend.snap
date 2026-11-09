@@ -1,0 +1,59 @@
+tree: omitted
+
+== formatted ==
+// A field read's type is the read's own claim, not the call's its base came from:
+// two fields of one result that disagree are a conflict here. A read already
+// reported, by its own demand or where its base's conflict arose, is unknown, so
+// nothing after it is blamed again.
+type Point {
+    x: int,
+    y: bool
+}
+type A {
+    n: int
+}
+type B {
+    n: bool
+}
+fn make() -> Point = Point(x: 1, y: true)
+fn fields_disagree(c: bool) -> int {
+    let r = make()
+    if c {
+        r.x
+    } else {
+        r.y
+    }
+}
+fn pick(c: bool) = {
+    if c {
+        return A(n: 1)
+    }
+    B(n: true)
+}
+fn of_a_union(c: bool) -> int {
+    let r = pick(c)
+    if c {
+        r.n
+    } else {
+        r.n
+    }
+}
+fn conflicted(k: int) = {
+    if k == 1 {
+        return A(n: 1)
+    }
+    if k == 2 {
+        return B(n: true)
+    }
+    if k > 5 {
+        _ = of_a_conflict(k - 1)
+    }
+    0
+}
+fn of_a_conflict(k: int) = conflicted(k).n
+fn takes(p: Point) -> int = p.x
+fn of_a_demanded_conflict(k: int) = {
+    let r = conflicted(k)
+    _ = takes(r)
+    r.x
+}
