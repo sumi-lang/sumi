@@ -285,26 +285,18 @@ impl Checker<'_, '_> {
         self.lowered.typed[node.index()]
     }
 
-    fn params(&self) -> Params {
-        self.source.params
-    }
-
-    fn root(&mut self, node: NodeId) -> usize {
-        self.types.root(node)
-    }
-
     fn set(&mut self, node: NodeId) -> &Set {
-        let root = self.root(node);
+        let root = self.types.root(node);
         &self.types.sets[root]
     }
 
     fn claim(&mut self, node: NodeId, member: Member) {
-        let root = self.root(node);
+        let root = self.types.root(node);
         self.types.sets[root].offer(member);
     }
 
     fn unknown(&mut self, node: NodeId) {
-        let root = self.root(node);
+        let root = self.types.root(node);
         self.types.sets[root].is_unknown = true;
     }
 
@@ -320,7 +312,7 @@ impl Checker<'_, '_> {
     }
 
     fn alias(&mut self, a: NodeId, b: NodeId) {
-        let (a, b) = (self.root(a), self.root(b));
+        let (a, b) = (self.types.root(a), self.types.root(b));
         if a == b {
             return;
         }
@@ -332,7 +324,7 @@ impl Checker<'_, '_> {
     /// The type of a node a walk has reached; none for a conflict, or a class only a hole or
     /// reads decided.
     pub fn resolve(&mut self, node: NodeId) -> Option<Ty> {
-        let root = self.root(node);
+        let root = self.types.root(node);
         self.types.sets[root].ty(&mut self.source.unions.borrow_mut(), self.source.params)
     }
 
@@ -370,7 +362,7 @@ impl Checker<'_, '_> {
         let Some(export) = self.types.exports[item.index()].clone() else {
             return;
         };
-        if self.order.group(item) != self.types.current && export.is_conflict(self.params()) {
+        if self.order.group(item) != self.types.current && export.is_conflict(self.source.params) {
             self.unknown(call);
             return;
         }
@@ -391,7 +383,7 @@ impl Checker<'_, '_> {
     /// read reported elsewhere is unknown, so nothing after it is blamed: by its own demand, by
     /// the base's conflict where that arose, or at the field's damaged type.
     fn field(&mut self, read: NodeId, base: NodeId, name: FieldName) {
-        let params = self.params();
+        let params = self.source.params;
         let set = self.set(base);
         let (is_unknown, is_conflict) = (set.is_unknown, set.is_conflict(params));
         let resolved = self.resolve(base);
@@ -411,7 +403,7 @@ impl Checker<'_, '_> {
     /// arrives as `from`'s own claim, read at `at`.
     fn deliver(&mut self, from: NodeId, to: NodeId, at: TextRange) {
         let source = self.set(from).clone();
-        let root = self.root(to);
+        let root = self.types.root(to);
         self.types.sets[root].is_unknown |= source.is_unknown;
         for member in source.types() {
             let member = if member.rank == DEMANDED {
@@ -486,14 +478,14 @@ impl Checker<'_, '_> {
     /// Begins the walk of the body `owner`'s run is about to hold.
     pub fn open(&mut self, owner: FunctionId) {
         self.types.current = self.group(owner);
-        self.types.next = self.graph.node_count();
+        self.types.next = self.graph.nodes().len();
         self.types.held = true;
     }
 
     /// Walks the nodes built since the last call. A node is walked once nothing built later
     /// changes what the walk reads of it: here, where a later node or the body's end asks.
     pub fn advance(&mut self, owner: FunctionId, is_final: bool) {
-        let end = self.graph.node_count();
+        let end = self.graph.nodes().len();
         for node in self.types.parent.len()..end {
             self.types.parent.push(node as u32);
             self.types.sets.push(Set::default());
@@ -556,7 +548,7 @@ impl Checker<'_, '_> {
     /// resolves to nothing lacks.
     fn signature(&mut self, owner: FunctionId, result: &Set) {
         let header = self.declared.headers[owner.index()];
-        let params = self.params();
+        let params = self.source.params;
         let resolved = if matches!(header.result, HeaderResult::None) {
             None
         } else {
@@ -935,7 +927,7 @@ impl Checker<'_, '_> {
     }
 
     fn matched(&mut self, at: TextRange, scrutinee: NodeId) -> bool {
-        let params = self.params();
+        let params = self.source.params;
         let Some(ty) = self.resolve(scrutinee).filter(|&ty| !params.joins(ty)) else {
             return true;
         };
@@ -1009,7 +1001,7 @@ impl Checker<'_, '_> {
             self.deliver(result, switch, self.spans.result_read(region));
         }
         let set = self.set(switch).clone();
-        if !set.is_conflict(self.params()) || set.is_inherited(self.params()) {
+        if !set.is_conflict(self.source.params) || set.is_inherited(self.source.params) {
             return true;
         }
         let what = if is_boolean {
