@@ -176,6 +176,10 @@ struct Builder<'a, 's> {
     /// The mutable locals of the open scopes, in declaration order.
     mutable_locals: Vec<LocalId>,
     returns: Vec<(NodeId, TextRange)>,
+    /// Scratch a version merge fills, kept across merges.
+    merge_values: Vec<(NodeId, NodeId)>,
+    merge_inputs: Vec<(NodeId, TextRange)>,
+    merge_contexts: Vec<NodeId>,
 }
 
 impl<'a, 's> Builder<'a, 's> {
@@ -220,6 +224,9 @@ impl<'a, 's> Builder<'a, 's> {
             versions: Versions::new(),
             mutable_locals: Vec::new(),
             returns: Vec::new(),
+            merge_values: Vec::new(),
+            merge_inputs: Vec::new(),
+            merge_contexts: Vec::new(),
         }
     }
 
@@ -739,9 +746,9 @@ impl<'a, 's> Builder<'a, 's> {
             .collect();
         changed.sort_unstable_by_key(|local| local.index());
         changed.dedup();
-        let mut values: Vec<(NodeId, NodeId)> = Vec::new();
-        let mut inputs: Vec<(NodeId, TextRange)> = Vec::new();
-        let mut contexts: Vec<NodeId> = Vec::new();
+        let mut values = std::mem::take(&mut self.merge_values);
+        let mut inputs = std::mem::take(&mut self.merge_inputs);
+        let mut contexts = std::mem::take(&mut self.merge_contexts);
         for local in changed {
             values.clear();
             values.extend(states.iter().map(|state| {
@@ -787,6 +794,9 @@ impl<'a, 's> Builder<'a, 's> {
             );
             self.versions.set(local, phi);
         }
+        self.merge_values = values;
+        self.merge_inputs = inputs;
+        self.merge_contexts = contexts;
     }
 
     fn refer(&mut self, node: NodeIdx, symbol: Symbol, is_write: bool) {
@@ -849,8 +859,16 @@ impl<'a, 's> Builder<'a, 's> {
         self.reads_of[name.node().to_usize()]
     }
 
-    /// Narrow the locals `cond` compares, for `cond` holding in `sense`.
+    /// Narrow the locals `cond` compares, for `cond` holding in `sense`. Operands are taken in
+    /// source order off a stack, since a chain of `&&` nests as deep as it is long.
     fn refine(&mut self, cond: NodeIdx, sense: bool) {
+        let mut pending = vec![(cond, sense)];
+        while let Some((cond, sense)) = pending.pop() {
+            self.refine_one(cond, sense, &mut pending);
+        }
+    }
+
+    fn refine_one(&mut self, cond: NodeIdx, sense: bool, pending: &mut Vec<(NodeIdx, bool)>) {
         use sumi_syntax::BinaryOp::*;
 
         if self.bottoms[cond.to_usize()] {
@@ -866,7 +884,7 @@ impl<'a, 's> Builder<'a, 's> {
         let node = expr.node();
         match expr {
             ast::CleanExpr::PrefixExpr(prefix) => match prefix.op() {
-                PrefixOp::Not => self.refine(prefix.operand().node(), !sense),
+                PrefixOp::Not => pending.push((prefix.operand().node(), !sense)),
                 PrefixOp::Neg => {}
             },
             ast::CleanExpr::BinaryExpr(binary) => {
@@ -875,12 +893,12 @@ impl<'a, 's> Builder<'a, 's> {
                 let op = binary.op();
                 match op {
                     And if sense => {
-                        self.refine(lhs, sense);
-                        self.refine(rhs, sense);
+                        pending.push((rhs, sense));
+                        pending.push((lhs, sense));
                     }
                     Or if !sense => {
-                        self.refine(lhs, sense);
-                        self.refine(rhs, sense);
+                        pending.push((rhs, sense));
+                        pending.push((lhs, sense));
                     }
                     Cmp(op) => {
                         let op = cmp(op);
@@ -926,13 +944,50 @@ impl<'a, 's> Builder<'a, 's> {
 
     /// A statement or expression, from the children it has. One the parser recovered in is
     /// lowered where its kind decides its type and is a hole otherwise; either way the body fails.
+    /// An operator's or field's left operand is lowered first, off a stack of the operators and
+    /// fields it is under: the parser nests such a chain as deep as it is long.
     fn lower(&mut self, node: NodeIdx) -> Value {
+        let mut chain = Vec::new();
+        let mut leaf = node;
+        while let Some(left) = self.left_operand(leaf) {
+            chain.push(leaf);
+            leaf = left;
+        }
+        let mut value = self.lower_one(leaf, None);
+        while let Some(link) = chain.pop() {
+            value = self.lower_one(link, Some(value));
+        }
+        value
+    }
+
+    /// The operand `node` lowers before anything of its own: an operator's or a field's left side.
+    fn left_operand(&self, node: NodeIdx) -> Option<NodeIdx> {
+        use ast::{Expr, Stmt};
+
+        let tree = self.source.tree;
+        match Stmt::cast(tree, node)? {
+            Stmt::Expr(Expr::BinaryExpr(expr)) => {
+                let op = expr.op(tree, self.source.lexed())?;
+                if eager(op).is_none() && tree.has_error(node) {
+                    return None;
+                }
+                expr.lhs(tree).map(|lhs| lhs.node())
+            }
+            Stmt::Expr(Expr::FieldExpr(expr)) => expr.base(tree).map(|base| base.node()),
+            _ => None,
+        }
+    }
+
+    /// `left` is the lowered left operand `left_operand` named, when there is one.
+    fn lower_one(&mut self, node: NodeIdx, left: Option<Value>) -> Value {
         use ast::{Expr, Stmt};
 
         let tree = self.source.tree;
         let damaged = tree.has_error(node);
         let Some(stmt) = Stmt::cast(tree, node) else {
-            debug_assert!(damaged, "a statement without syntax errors has a view");
+            if !damaged {
+                unreachable!("a statement without syntax errors has a view");
+            }
             return self.holed(node);
         };
         if damaged {
@@ -958,9 +1013,9 @@ impl<'a, 's> Builder<'a, 's> {
             Stmt::Expr(Expr::BinaryExpr(expr)) => match expr.op(tree, self.source.lexed()) {
                 None => self.holed(node),
                 Some(op) => match eager(op) {
-                    Some(op) => self.binary(expr, op, damaged),
+                    Some(op) => self.binary(expr, op, damaged, left),
                     None if damaged => self.holed(node),
-                    None => self.lazy(expr, op == sumi_syntax::BinaryOp::And),
+                    None => self.lazy(expr, op == sumi_syntax::BinaryOp::And, left),
                 },
             },
             Stmt::Expr(Expr::PrefixExpr(expr)) => self.prefix(expr, damaged),
@@ -969,7 +1024,7 @@ impl<'a, 's> Builder<'a, 's> {
                 self.through(node, inner, damaged)
             }
             Stmt::Expr(Expr::CallExpr(call)) => self.call(call, damaged),
-            Stmt::Expr(Expr::FieldExpr(expr)) => self.field(expr, damaged),
+            Stmt::Expr(Expr::FieldExpr(expr)) => self.field(expr, damaged, left),
         }
     }
 
@@ -1177,14 +1232,14 @@ impl<'a, 's> Builder<'a, 's> {
         let damaged = tree.has_error(node);
         let range = self.source.range(node);
         self.open_scope(self.scope_end(node));
-        let children: Vec<NodeIdx> = tree.children(node).collect();
-        let mut controls = Vec::with_capacity(children.len());
+        let mut children = tree.children(node).peekable();
+        let mut controls = Vec::new();
         let mut tail: Option<Value> = None;
         let mut is_valid = !damaged;
         let mut is_bottom = false;
-        for (position, &child) in children.iter().enumerate() {
+        while let Some(child) = children.next() {
             let is_expression = ast::Expr::cast(tree, child).is_some();
-            let is_tail = is_expression && position + 1 == children.len();
+            let is_tail = is_expression && children.peek().is_none();
             self.lowered.statements.push(Statement {
                 block: node,
                 range: self.source.range(child),
@@ -1361,14 +1416,19 @@ impl<'a, 's> Builder<'a, 's> {
         self.value(node, id, operand.control, operand.completes)
     }
 
-    fn binary(&mut self, expr: ast::BinaryExpr, op: BinaryOp, damaged: bool) -> Value {
+    /// `lhs` is the lowered left operand, when the operator has one.
+    fn binary(
+        &mut self,
+        expr: ast::BinaryExpr,
+        op: BinaryOp,
+        damaged: bool,
+        lhs: Option<Value>,
+    ) -> Value {
         let tree = self.source.tree;
         let node = expr.node();
-        let lhs = expr.lhs(tree).map(|lhs| {
-            let value = self.lower(lhs.node());
-            self.advance(&value);
-            value
-        });
+        if let Some(lhs) = &lhs {
+            self.advance(lhs);
+        }
         let rhs = expr.rhs(tree).map(|rhs| self.lower(rhs.node()));
         let lhs = self.present(node, lhs);
         let rhs = self.present(node, rhs);
@@ -1396,14 +1456,15 @@ impl<'a, 's> Builder<'a, 's> {
         self.value(node, id, control, completes)
     }
 
-    fn lazy(&mut self, expr: ast::BinaryExpr, is_and: bool) -> Value {
+    /// `lhs` is the lowered left operand, which a whole operator has.
+    fn lazy(&mut self, expr: ast::BinaryExpr, is_and: bool, lhs: Option<Value>) -> Value {
         let tree = self.source.tree;
         let node = expr.node();
         let at = self.source.range(node);
         let whole = "a whole operator has its operands";
         let lhs_node = expr.lhs(tree).expect(whole).node();
         let rhs_node = expr.rhs(tree).expect(whole).node();
-        let lhs = self.lower(lhs_node);
+        let lhs = lhs.expect(whole);
         self.advance(&lhs);
         let parent = self.context();
         let left = lhs.input();
@@ -1520,7 +1581,8 @@ impl<'a, 's> Builder<'a, 's> {
             &values[..arms.len()],
             &[&then_state, &false_state],
         );
-        if !result.completes {
+        // A switch that failed narrows nothing after it.
+        if result.is_valid && !result.completes {
             if then.completes {
                 self.refine(cond, false);
             }
@@ -2162,18 +2224,20 @@ impl<'a, 's> Builder<'a, 's> {
         self.value(node, id, control, completes)
     }
 
-    fn field(&mut self, expr: ast::FieldExpr, damaged: bool) -> Value {
+    /// `base` is the lowered base, when the read has one.
+    fn field(&mut self, expr: ast::FieldExpr, damaged: bool, base: Option<Value>) -> Value {
         let tree = self.source.tree;
         let node = expr.node();
         let field = expr
             .field(tree)
             .filter(|field| !tree.has_error(field.node()));
         let name = field.map(|field| self.source.field_name(self.source.text(field.node())));
-        let base = expr.base(tree).map(|base| self.lower(base.node()));
         let base = self.present(node, base);
         let op = name.map_or(Op::Hole, Op::Field);
         let id = self.push(node, op, &[base.input()], None);
-        if let Some(field) = field {
+        if let Some(field) = field
+            && !damaged
+        {
             self.lowered
                 .field_reads
                 .push((id, self.source.range(field.node())));

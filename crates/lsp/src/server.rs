@@ -151,8 +151,8 @@ fn run(connection: Connection) -> Result<(), Box<dyn std::error::Error + Send + 
 
     let (jobs_tx, jobs_rx) = unbounded();
     let (outcomes_tx, outcomes_rx) = unbounded();
-    // Parsing and lowering recurse as deep as the parser's nesting limit; the deepest tree takes
-    // under a megabyte in a debug build.
+    // Parsing and lowering recurse as deep as the parser's nesting limit, and no deeper on a chain
+    // of operators or fields; the deepest tree takes under a megabyte in a debug build.
     let worker = thread::Builder::new()
         .name("sumi-analysis".into())
         .stack_size(8 << 20)
