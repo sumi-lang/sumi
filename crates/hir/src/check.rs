@@ -1,8 +1,6 @@
 //! Semantic checking of one file, over the graph lowering built: the types, then the values over
 //! them, then the verdicts that read both.
 
-use std::collections::HashSet;
-
 use sumi_frontend::{Diagnostic, ParsedSource};
 use sumi_graph::{DeclId, FunctionId, Graph, GraphBuilder, NodeId, Op, Ty};
 use sumi_syntax::ast::{self, View};
@@ -132,12 +130,28 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     if references.len() > sorted {
         references.sort_unstable_by_key(|occurrence| occurrence.range.start());
     }
-    // Two instances of one generic function may each prove the same of its body.
-    let mut reported = HashSet::new();
     let mut diagnostics = source.diagnostics;
-    diagnostics.retain(|diagnostic| reported.insert(diagnostic.clone()));
     diagnostics.splice(0..0, parsed.diagnostics().iter().cloned());
     diagnostics.sort_by_key(|d| d.primary.start());
+    // Two instances of one generic function may each prove the same of its body: of those that
+    // start together, each is kept once.
+    let has_instances = headers
+        .iter()
+        .enumerate()
+        .any(|(index, header)| header.generic.index() != index);
+    if has_instances {
+        let mut kept: Vec<Diagnostic> = Vec::with_capacity(diagnostics.len());
+        for diagnostic in diagnostics {
+            let together = kept
+                .iter()
+                .rev()
+                .take_while(|earlier| earlier.primary.start() == diagnostic.primary.start());
+            if !together.into_iter().any(|earlier| *earlier == diagnostic) {
+                kept.push(diagnostic);
+            }
+        }
+        diagnostics = kept;
+    }
     let analysis = Analysis {
         parsed,
         graph,

@@ -320,9 +320,15 @@ pub(crate) fn declare<'s>(
         instances: HashMap::default(),
         unbounded: HashSet::default(),
     };
+    // Most functions take no type parameter, and share the one list of none.
+    let no_args: Rc<[Ty]> = Rc::from([]);
     for (item, scope) in fn_items.iter().zip(fn_scopes) {
         let name = source.name(item.name(tree));
-        let args: Rc<[Ty]> = scope.iter().map(|&(_, ty)| ty).collect();
+        let args: Rc<[Ty]> = if scope.is_empty() {
+            no_args.clone()
+        } else {
+            scope.iter().map(|&(_, ty)| ty).collect()
+        };
         source.scope = scope;
         let (header, parameters) = header(source, graph, *item);
         let id = header.generic;
