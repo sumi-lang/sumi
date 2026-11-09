@@ -1,0 +1,53 @@
+== tree ==
+SourceFile! 1:1..7:1
+  FnItem! 1:1..6:2
+    Name 1:4..1:5 "f"
+    ParamList 1:5..1:7 "()"
+    Block! 1:8..6:2
+      DiscardStmt! 2:5..3:26
+        BinaryExpr! 2:9..3:26
+          NameRef 2:9..2:10 "a"
+          BinaryExpr! 3:10..3:26
+            MatchExpr! 3:10..3:22
+              NameRef 3:10..3:11 "b"
+              ArmList 3:12..3:22
+                MatchArm 3:14..3:20
+                  MemberPattern 3:14..3:15
+                    NameRef 3:14..3:15 "P"
+                  LiteralExpr 3:19..3:20 "0"
+            LiteralExpr 3:25..3:26 "1"
+      DiscardStmt! 4:5..5:10
+        BinaryExpr! 4:9..5:10
+          ForExpr! 4:9..4:36
+            Name 4:13..4:14 "x"
+            MatchExpr! 4:18..4:30
+              NameRef 4:18..4:19 "a"
+              ArmList 4:20..4:30
+                MatchArm 4:22..4:28
+                  MemberPattern 4:22..4:23
+                    NameRef 4:22..4:23 "P"
+                  LiteralExpr 4:27..4:28 "0"
+            NameRef 4:32..4:33 "b"
+            Block 4:34..4:36 "{}"
+          NameRef 5:9..5:10 "c"
+
+== evidence ==
+Expected(MatchKw) at 3:10
+Expected(MatchKw) at 4:18
+
+== diagnostics ==
+error[syntax/expected-token] 3:10: expected `match`
+error[syntax/expected-token] 4:18: expected `match`
+
+== formatted ==
+fn f() {
+    _ = a
+        || b {
+            P => 0
+        }
+            % 1
+    _ = for x in a {
+        P => 0
+    }..b {}
+        % c
+}

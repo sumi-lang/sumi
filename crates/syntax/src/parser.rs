@@ -1010,6 +1010,21 @@ fn expr_bp(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) -> Option<Com
         if follow == ExprFollow::Block && p.at(T::LBrace) {
             break;
         }
+        // Arms after an operand are a `match` that lost its keyword. A head's `{` is excluded: there
+        // they may be the arms of the `match` the head belongs to.
+        if p.at(T::LBrace)
+            && !p.is_after_newline()
+            && p.nth_partner(0).is_some_and(|close| holds_arm(p, close))
+        {
+            let scrutinee = p.completed_node(&lhs);
+            let mut m = p.precede(lhs);
+            m.missing_before(ParseRecoveryKind::Token(T::MatchKw));
+            m.wrapped_field(scrutinee, 0);
+            delimited_list::<ArmsRule>(&mut m, 1);
+            lhs = m.complete(N::MatchExpr);
+            was_comparison = false;
+            continue;
+        }
         if p.at(T::Dot) && p.nth(1) == Some(T::Ident) {
             let base = p.completed_node(&lhs);
             let mut m = p.precede(lhs);

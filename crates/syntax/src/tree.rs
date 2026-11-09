@@ -802,6 +802,12 @@ impl<'a> Marker<'_, 'a> {
         self.record_recovery(kind, anchor)
     }
 
+    /// A missing token in the gap before this node's first token.
+    pub(crate) fn missing_before(&mut self, kind: ParseRecoveryKind) -> RecoveryHandle {
+        let anchor = ParseAnchor::Gap(self.builder.raw_gap(self.start));
+        self.record_recovery(kind, anchor)
+    }
+
     /// This node's first token is the opener of `pair`.
     pub(crate) fn missing_closer(&mut self, pair: Pair) -> RecoveryHandle {
         let opener = self.builder.raw_range(self.start, self.start + 1);
