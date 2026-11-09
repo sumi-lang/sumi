@@ -122,9 +122,16 @@ struct Local<'s> {
 /// A `let` binds after its initializer, so the initializer reads any outer binding of the name.
 type Scope<'s> = NameMap<'s, LocalId>;
 
-/// What holds where a chain of one lazy operator goes on to its next operand: `refinements`, for
-/// every operand before `last`, built outside any operand's region. `last` adds its own when
-/// another operand follows it.
+/// A whole node that lowers its left operand before anything of its own.
+enum Link {
+    /// `&&` when the flag is set, else `||`.
+    Lazy(ast::BinaryExpr, bool),
+    Eager(ast::BinaryExpr, BinaryOp),
+    Field(ast::FieldExpr),
+}
+
+/// What holds where a chain of one lazy operator goes on to another operand: the refinements of
+/// every operand before `last`, built outside any operand's region.
 struct Guard {
     /// `&&`, whose next operand runs where the chain so far is true; `||`, where it is false.
     is_and: bool,
@@ -957,61 +964,89 @@ impl<'a, 's> Builder<'a, 's> {
     /// An operator's or field's left operand is lowered first, off a stack of the operators and
     /// fields it is under: the parser nests such a chain as deep as it is long.
     fn lower(&mut self, node: NodeIdx) -> Value {
+        self.lower_guarded(node).0
+    }
+
+    /// `lower`, with what holds after the chain of one lazy operator the value came off, for an
+    /// operator of that kind around it to go on from.
+    fn lower_guarded(&mut self, node: NodeIdx) -> (Value, Option<Guard>) {
         let mut chain = Vec::new();
         let mut leaf = node;
-        while let Some(left) = self.left_operand(leaf) {
-            chain.push(leaf);
+        while let Some((left, link)) = self.link(leaf) {
+            chain.push(link);
             leaf = left;
         }
-        let mut value = self.lower_one(leaf, None);
-        let mut guard = None;
+        // Parentheses hand on the guard of the chain inside them.
+        let (mut value, mut guard) = match self.parenthesized(leaf) {
+            Some(inner) => {
+                let (value, guard) = self.lower_guarded(inner);
+                (self.through(leaf, value, false), guard)
+            }
+            None => (self.lower_one(leaf), None),
+        };
         while let Some(link) = chain.pop() {
-            value = match self.lazy_operator(link) {
-                Some((expr, is_and)) => {
-                    let (value, held) = self.lazy(expr, is_and, value, guard.take());
+            let before = guard.take();
+            value = match link {
+                Link::Lazy(expr, is_and) => {
+                    let (value, held) = self.lazy(expr, is_and, value, before);
                     guard = Some(held);
                     value
                 }
-                None => {
-                    guard = None;
-                    self.lower_one(link, Some(value))
+                Link::Eager(expr, op) => {
+                    let damaged = self.is_damaged(expr.node());
+                    self.binary(expr, op, damaged, Some(value))
+                }
+                Link::Field(expr) => {
+                    let damaged = self.is_damaged(expr.node());
+                    self.field(expr, damaged, Some(value))
                 }
             };
         }
-        value
+        (value, guard)
     }
 
-    /// A whole `&&` or `||`, which `lower` takes along its chain; `&&` when the flag is set.
-    fn lazy_operator(&self, node: NodeIdx) -> Option<(ast::BinaryExpr, bool)> {
-        let tree = self.source.tree;
-        let ast::Stmt::Expr(ast::Expr::BinaryExpr(expr)) = ast::Stmt::cast(tree, node)? else {
-            return None;
-        };
-        let op = expr.op(tree, self.source.lexed())?;
-        (eager(op).is_none() && !tree.has_error(node))
-            .then_some((expr, op == sumi_syntax::BinaryOp::And))
-    }
-
-    /// The operand `node` lowers before anything of its own: an operator's or a field's left side.
-    fn left_operand(&self, node: NodeIdx) -> Option<NodeIdx> {
+    /// `node` as a link of a chain, with the left operand it lowers before anything of its own.
+    fn link(&self, node: NodeIdx) -> Option<(NodeIdx, Link)> {
         use ast::{Expr, Stmt};
 
         let tree = self.source.tree;
         match Stmt::cast(tree, node)? {
             Stmt::Expr(Expr::BinaryExpr(expr)) => {
                 let op = expr.op(tree, self.source.lexed())?;
-                if eager(op).is_none() && tree.has_error(node) {
-                    return None;
+                let left = expr.lhs(tree)?.node();
+                match eager(op) {
+                    Some(op) => Some((left, Link::Eager(expr, op))),
+                    None if tree.has_error(node) => None,
+                    None => Some((left, Link::Lazy(expr, op == sumi_syntax::BinaryOp::And))),
                 }
-                expr.lhs(tree).map(|lhs| lhs.node())
             }
-            Stmt::Expr(Expr::FieldExpr(expr)) => expr.base(tree).map(|base| base.node()),
+            Stmt::Expr(Expr::FieldExpr(expr)) => Some((expr.base(tree)?.node(), Link::Field(expr))),
             _ => None,
         }
     }
 
-    /// `left` is the lowered left operand `left_operand` named, when there is one.
-    fn lower_one(&mut self, node: NodeIdx, left: Option<Value>) -> Value {
+    /// What whole parentheses hold.
+    fn parenthesized(&self, node: NodeIdx) -> Option<NodeIdx> {
+        let tree = self.source.tree;
+        let ast::Expr::ParenExpr(paren) = ast::Expr::cast(tree, node)? else {
+            return None;
+        };
+        (!tree.has_error(node))
+            .then(|| paren.inner(tree))?
+            .map(|inner| inner.node())
+    }
+
+    /// Whether the parser recovered in `node`, which fails the body.
+    fn is_damaged(&mut self, node: NodeIdx) -> bool {
+        let damaged = self.source.tree.has_error(node);
+        if damaged {
+            self.fail();
+        }
+        damaged
+    }
+
+    /// A node that is no link of a chain: one with no left operand to lower first.
+    fn lower_one(&mut self, node: NodeIdx) -> Value {
         use ast::{Expr, Stmt};
 
         let tree = self.source.tree;
@@ -1028,10 +1063,13 @@ impl<'a, 's> Builder<'a, 's> {
         match stmt {
             Stmt::LetStmt(binding) => self.let_(binding, damaged),
             Stmt::AssignStmt(assignment) => self.assign(assignment, damaged),
-            Stmt::DiscardStmt(discard) => {
-                let value = discard.value(tree).map(|value| value.node());
-                self.through(node, value, damaged)
-            }
+            Stmt::DiscardStmt(discard) => match discard.value(tree) {
+                Some(value) => {
+                    let value = self.lower(value.node());
+                    self.through(node, value, damaged)
+                }
+                None => self.holed(node),
+            },
             Stmt::ReturnStmt(return_) => self.return_(return_, damaged),
             Stmt::Expr(Expr::Block(_)) => self.block(node),
             Stmt::Expr(Expr::IfExpr(branch)) => self.if_(branch),
@@ -1042,21 +1080,23 @@ impl<'a, 's> Builder<'a, 's> {
             Stmt::Expr(Expr::MatchExpr(expr)) => self.match_(expr),
             Stmt::Expr(Expr::NameRef(name)) => self.name_ref(name),
             Stmt::Expr(Expr::LiteralExpr(literal)) => self.literal(literal),
-            Stmt::Expr(Expr::BinaryExpr(expr)) => match expr.op(tree, self.source.lexed()) {
-                None => self.holed(node),
-                Some(op) => match eager(op) {
-                    Some(op) => self.binary(expr, op, damaged, left),
-                    None if damaged => self.holed(node),
-                    None => unreachable!("a whole lazy operator is lowered along its chain"),
-                },
-            },
-            Stmt::Expr(Expr::PrefixExpr(expr)) => self.prefix(expr, damaged),
-            Stmt::Expr(Expr::ParenExpr(paren)) => {
-                let inner = paren.inner(tree).map(|inner| inner.node());
-                self.through(node, inner, damaged)
+            // A lazy operator here lost a part to recovery: a whole one is a link of a chain.
+            Stmt::Expr(Expr::BinaryExpr(expr)) => {
+                match expr.op(tree, self.source.lexed()).and_then(eager) {
+                    Some(op) => self.binary(expr, op, damaged, None),
+                    None => self.holed(node),
+                }
             }
+            Stmt::Expr(Expr::PrefixExpr(expr)) => self.prefix(expr, damaged),
+            Stmt::Expr(Expr::ParenExpr(paren)) => match paren.inner(tree) {
+                Some(inner) => {
+                    let value = self.lower(inner.node());
+                    self.through(node, value, damaged)
+                }
+                None => self.holed(node),
+            },
             Stmt::Expr(Expr::CallExpr(call)) => self.call(call, damaged),
-            Stmt::Expr(Expr::FieldExpr(expr)) => self.field(expr, damaged, left),
+            Stmt::Expr(Expr::FieldExpr(expr)) => self.field(expr, damaged, None),
         }
     }
 
@@ -1203,11 +1243,7 @@ impl<'a, 's> Builder<'a, 's> {
     }
 
     /// A discard or parentheses: the value is the child's, read at `node`.
-    fn through(&mut self, node: NodeIdx, child: Option<NodeIdx>, damaged: bool) -> Value {
-        let Some(child) = child else {
-            return self.holed(node);
-        };
-        let value = self.lower(child);
+    fn through(&mut self, node: NodeIdx, value: Value, damaged: bool) -> Value {
         self.nodes_of[node.to_usize()] = Some(value.node);
         self.bottoms[node.to_usize()] = value.completes;
         if damaged || !value.is_valid {
@@ -1488,9 +1524,8 @@ impl<'a, 's> Builder<'a, 's> {
         self.value(node, id, control, completes)
     }
 
-    /// `lhs` is the lowered left operand, and `chain` what the operator before it in its chain
-    /// held. The right operand's guard is built here, outside its region, so the next operator of
-    /// the chain holds the same nodes again rather than narrowing every operand before it anew.
+    /// `chain` is what held for the operator before it in its chain. The right operand's guard is
+    /// built outside its region, so the next operator of the chain holds the same nodes again.
     fn lazy(
         &mut self,
         expr: ast::BinaryExpr,
@@ -1505,22 +1540,16 @@ impl<'a, 's> Builder<'a, 's> {
         let lhs_node = expr.lhs(tree).expect(whole).node();
         let rhs_node = expr.rhs(tree).expect(whole).node();
         self.advance(&lhs);
-        let refinements = match chain {
-            Some(mut guard) if guard.is_and == is_and => {
-                let mark = self.versions.mark();
+        let mark = self.versions.mark();
+        match chain {
+            // The operand before narrows on top of those before it, which hold while it does.
+            Some(guard) if guard.is_and == is_and => {
                 self.versions.hold(&guard.refinements);
-                let own = self.versions.mark();
                 self.refine(guard.last, is_and);
-                guard.refinements.append(&mut self.versions.take(own));
-                self.versions.release(mark);
-                guard.refinements
             }
-            _ => {
-                let mark = self.versions.mark();
-                self.refine(lhs_node, is_and);
-                self.versions.take(mark)
-            }
-        };
+            _ => self.refine(lhs_node, is_and),
+        }
+        let refinements = self.versions.take(mark);
         let parent = self.context();
         let left = lhs.input();
         let selected = usize::from(!is_and);

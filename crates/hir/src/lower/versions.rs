@@ -141,14 +141,9 @@ impl Versions {
         self.refinements.split_off(mark)
     }
 
-    /// Holds `refinements` again, in their order, until the region closes or `release`.
+    /// Holds `refinements` again, in their order, until the region closes or they are taken.
     pub fn hold(&mut self, refinements: &[Refinement]) {
         self.refinements.extend_from_slice(refinements);
-    }
-
-    /// Drops the refinements since `mark`.
-    pub fn release(&mut self, mark: usize) {
-        self.refinements.truncate(mark);
     }
 
     fn state(&self, changed: &[LocalId], since: usize, context: NodeId) -> RegionState {
@@ -242,8 +237,10 @@ mod tests {
         let mark = versions.mark();
         versions.hold(&guard);
         versions.refine(x, node(1), node(6));
-        assert_eq!(versions.take(mark + guard.len()), [(x, node(1), node(6))]);
-        versions.release(mark);
+        assert_eq!(
+            versions.take(mark),
+            [(x, node(1), node(5)), (x, node(1), node(6))]
+        );
         assert_eq!(versions.read(x), node(1));
     }
 }
