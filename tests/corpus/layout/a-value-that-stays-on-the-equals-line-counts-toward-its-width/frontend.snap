@@ -1,0 +1,62 @@
+== tree ==
+SourceFile 1:1..10:1
+  FnItem 4:1..9:2
+    Name 4:4..4:5 "a"
+    ParamList 4:5..4:7 "()"
+    Block 4:8..9:2
+      BinaryExpr 5:5..8:6
+        BinaryExpr 5:5..5:128
+          NameRef 5:5..5:65 "pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp"
+          NameRef 5:68..5:128 "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq"
+        IfExpr 5:131..8:6
+          NameRef 5:134..5:135 "c"
+          Block 5:136..8:6
+            AssignStmt 6:9..6:228
+              BinaryExpr 6:9..6:95
+                NameRef 6:9..6:51 "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                NameRef 6:55..6:95 "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+              BinaryExpr 6:98..6:228
+                BinaryExpr 6:98..6:194
+                  BinaryExpr 6:98..6:146
+                    NameRef 6:98..6:99 "a"
+                    BinaryExpr 6:102..6:146
+                      NameRef 6:102..6:142 "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                      NameRef 6:145..6:146 "a"
+                  BinaryExpr 6:150..6:194
+                    NameRef 6:150..6:190 "cccccccccccccccccccccccccccccccccccccccc"
+                    NameRef 6:193..6:194 "a"
+                NameRef 6:198..6:228 "dddddddddddddddddddddddddddddd"
+            AssignStmt 7:9..7:157
+              BinaryExpr 7:9..7:24
+                NameRef 7:9..7:14 "short"
+                NameRef 7:18..7:24 "target"
+              BinaryExpr 7:27..7:157
+                BinaryExpr 7:27..7:123
+                  BinaryExpr 7:27..7:75
+                    NameRef 7:27..7:28 "a"
+                    BinaryExpr 7:31..7:75
+                      NameRef 7:31..7:71 "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                      NameRef 7:74..7:75 "a"
+                  BinaryExpr 7:79..7:123
+                    NameRef 7:79..7:119 "cccccccccccccccccccccccccccccccccccccccc"
+                    NameRef 7:122..7:123 "a"
+                NameRef 7:127..7:157 "dddddddddddddddddddddddddddddd"
+
+== formatted ==
+// A value too long to move whole stays on its `=` line and breaks within,
+// so what stands before the `=` is fitted with the value's first operand
+// beside it, also where a broken group encloses the statement.
+fn a() {
+    pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
+        + qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq
+        + if c {
+            xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+                && yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy = a
+                - bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb * a
+                && cccccccccccccccccccccccccccccccccccccccc + a
+                || dddddddddddddddddddddddddddddd
+            short && target = a - bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb * a
+                && cccccccccccccccccccccccccccccccccccccccc + a
+                || dddddddddddddddddddddddddddddd
+        }
+}

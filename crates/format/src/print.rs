@@ -92,6 +92,8 @@ pub(crate) fn print(
             let width = || {
                 let mut w = 0usize;
                 let mut k = gap;
+                // The tail of a group past this one that opened in passing and may stay.
+                let mut staying: Option<(u32, u32)> = None;
                 loop {
                     let plan_gap = plan.gaps[k];
                     let comma = usize::from(plan_gap.closer == Some(Closer::List));
@@ -102,7 +104,24 @@ pub(crate) fn print(
                     if is_soft && !group.is_whole && group.is_in_tail(k as u32) {
                         return w;
                     }
-                    if k as u32 >= group.end && is_soft {
+                    if is_soft
+                        && staying.is_some_and(|(from, to)| from <= k as u32 && (k as u32) < to)
+                    {
+                        return w;
+                    }
+                    // A group that moves whole only where that makes it fit may stay on this
+                    // line, so its opening gap ends nothing: its first break is in its tail.
+                    let opens_whole = || {
+                        let later = plan.groups.partition_point(|later| later.first < k as u32);
+                        plan.groups[later..]
+                            .iter()
+                            .take_while(|later| later.first == k as u32)
+                            .find(|later| later.is_whole)
+                    };
+                    if k as u32 >= group.end && is_soft && staying.is_none() {
+                        staying = opens_whole().and_then(|whole| whole.tail);
+                    }
+                    if k as u32 >= group.end && is_soft && staying.is_none() {
                         let enclosing = stack
                             .iter()
                             .rev()
