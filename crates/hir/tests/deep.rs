@@ -67,17 +67,52 @@ fn long_operator_chains_lower_without_overflowing() {
         20_000,
         " + true }\n",
     ));
-}
-
-#[test]
-fn long_lazy_chains_lower_without_overflowing() {
-    // Literals narrow nothing: a chain of one local is narrowed again under every operator.
     analyzes(chained(
         "fn main() -> int { if true",
         " && true",
-        1_000,
+        4_000,
         " { 1 } else { true } }\n",
     ));
+}
+
+/// The graph nodes per lazy operator of a valid body that branches on `condition`.
+fn nodes_per_operator(head: &str, condition: &str, operators: usize) -> usize {
+    let source = format!("{head} if {condition} {{ 1 }} else {{ 2 }} }}\n");
+    let analysis = analyze(parse_source(source.into()).unwrap());
+    assert!(analysis.is_valid());
+    analysis.graph().nodes().len() / operators
+}
+
+#[test]
+fn a_long_lazy_chain_narrows_each_operand_once() {
+    const OPERATORS: usize = 4_000;
+    let chain = |operand: &str, link: &str| chained(operand, link, OPERATORS, "");
+    for (head, condition) in [
+        ("fn main(a: bool) -> int {", chain("a", " && a")),
+        ("fn main(a: bool) -> int {", chain("a", " || a")),
+        ("fn main(a: int) -> int {", chain("a > 0", " && a > 0")),
+        (
+            "fn main(p: bool) -> int { let mut a = p\n",
+            chain("a", " && a"),
+        ),
+    ] {
+        // Narrowing every operand before it under each operator takes half as many as there are.
+        assert!(nodes_per_operator(head, &condition, OPERATORS) < 16);
+    }
+}
+
+#[test]
+fn parentheses_hand_a_lazy_chain_on() {
+    const LEVELS: usize = 60;
+    const GROUP: usize = 60;
+    let group = chained("a", " && a", GROUP - 1, "");
+    let mut condition = group.clone();
+    for _ in 1..LEVELS {
+        condition = format!("({condition}) && {group}");
+    }
+    // Narrowing what the parentheses hold again at every level takes a multiple of the levels.
+    let head = "fn main(a: bool) -> int {";
+    assert!(nodes_per_operator(head, &condition, LEVELS * GROUP) < 16);
 }
 
 #[test]

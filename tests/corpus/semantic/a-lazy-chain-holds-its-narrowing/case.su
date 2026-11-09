@@ -1,0 +1,24 @@
+// Each operand of a lazy chain runs where every operand before it decided the
+// chain goes on: a division is safe by an operand two or three before it, first
+// or not, and a local an operand assigns is merged with what the skipped side saw.
+fn guarded(x: int) -> bool = x != 0 && 100 / x > 1 && 100 / x < 60 && 7 / x != 1
+fn later(x: int, y: int) -> bool = y > 5 && x != 0 && 100 / x > 1 && 100 / x < y
+fn either(x: int) -> bool = x == 0 || 100 / x > 50 || 100 / x < 0 || 3 / x == 1
+fn grouped(x: int, y: int) -> bool = (y > 5 && x != 0) && 100 / x > 1 && 100 / x < y
+fn counted(a: bool, b: bool) -> int {
+    let mut n = 0
+    let all = a && {
+        n = n + 1
+        b
+    } && {
+        n = n + 10
+        a
+    } && b
+    if all { n } else { 0 - n }
+}
+fn hit(held: bool, score: int) -> int = if held { score } else { 0 }
+fn narrowed() -> int = hit(guarded(2), 1) + hit(guarded(0), 10) + hit(guarded(7), 100)
+fn second() -> int = hit(later(4, 30), 1) + hit(later(0, 30), 10) + hit(later(4, 3), 100)
+fn skipped() -> int = hit(either(0), 1) + hit(either(5), 10) + hit(either(3), 100)
+fn through_parentheses() -> int = hit(grouped(4, 30), 1) + hit(grouped(0, 30), 10)
+fn assigned() -> int = counted(true, true) + counted(true, false) + counted(false, true)

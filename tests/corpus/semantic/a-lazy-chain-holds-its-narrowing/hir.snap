@@ -1,0 +1,257 @@
+file: accepted
+frontend errors: 0 (see frontend.snap)
+semantic errors: 0
+
+== graph ==
+fn guarded@4:1..4:81 (int ∈ [0, 7]) -> bool ∈ {true, false}
+  param x@4:12..4:13: int
+  result: copy : bool @4:23..4:27
+    value: lazy and : bool @4:30..4:81
+      lhs: lazy and : bool @4:30..4:67
+        lhs: lazy and : bool @4:30..4:51
+          lhs: eager != : bool @4:30..4:36
+            lhs: read x@4:12..4:13 : int
+            rhs: int 0 : int @4:35..4:36
+          rhs: eager > : bool @4:40..4:51
+            lhs: eager / : int @4:40..4:47
+              lhs: int 100 : int @4:40..4:43
+              rhs: read x@4:12..4:13 [x != 0 holds@4:30..4:36] : int
+            rhs: int 1 : int @4:50..4:51
+        rhs: eager < : bool @4:55..4:67
+          lhs: eager / : int @4:55..4:62
+            lhs: int 100 : int @4:55..4:58
+            rhs: read x@4:12..4:13 [x != 0 holds@4:30..4:36] : int
+          rhs: int 60 : int @4:65..4:67
+      rhs: eager != : bool @4:71..4:81
+        lhs: eager / : int @4:71..4:76
+          lhs: int 7 : int @4:71..4:72
+          rhs: read x@4:12..4:13 [x != 0 holds@4:30..4:36] : int
+        rhs: int 1 : int @4:80..4:81
+
+fn later@5:1..5:81 (int ∈ [0, 4], int ∈ [3, 30]) -> bool ∈ {true, false}
+  param x@5:10..5:11: int
+  param y@5:18..5:19: int
+  result: copy : bool @5:29..5:33
+    value: lazy and : bool @5:36..5:81
+      lhs: lazy and : bool @5:36..5:66
+        lhs: lazy and : bool @5:36..5:51
+          lhs: eager > : bool @5:36..5:41
+            lhs: read y@5:18..5:19 : int
+            rhs: int 5 : int @5:40..5:41
+          rhs: eager != : bool @5:45..5:51
+            lhs: read x@5:10..5:11 : int
+            rhs: int 0 : int @5:50..5:51
+        rhs: eager > : bool @5:55..5:66
+          lhs: eager / : int @5:55..5:62
+            lhs: int 100 : int @5:55..5:58
+            rhs: read x@5:10..5:11 [x != 0 holds@5:45..5:51] : int
+          rhs: int 1 : int @5:65..5:66
+      rhs: eager < : bool @5:70..5:81
+        lhs: eager / : int @5:70..5:77
+          lhs: int 100 : int @5:70..5:73
+          rhs: read x@5:10..5:11 [x != 0 holds@5:45..5:51] : int
+        rhs: read y@5:18..5:19 [y > 5 holds@5:36..5:41] : int
+
+fn either@6:1..6:80 (int ∈ [0, 5]) -> bool ∈ {true, false}
+  param x@6:11..6:12: int
+  result: copy : bool @6:22..6:26
+    value: lazy or : bool @6:29..6:80
+      lhs: lazy or : bool @6:29..6:66
+        lhs: lazy or : bool @6:29..6:51
+          lhs: eager == : bool @6:29..6:35
+            lhs: read x@6:11..6:12 : int
+            rhs: int 0 : int @6:34..6:35
+          rhs: eager > : bool @6:39..6:51
+            lhs: eager / : int @6:39..6:46
+              lhs: int 100 : int @6:39..6:42
+              rhs: read x@6:11..6:12 [x == 0 fails@6:29..6:35] : int
+            rhs: int 50 : int @6:49..6:51
+        rhs: eager < : bool @6:55..6:66
+          lhs: eager / : int @6:55..6:62
+            lhs: int 100 : int @6:55..6:58
+            rhs: read x@6:11..6:12 [x == 0 fails@6:29..6:35] : int
+          rhs: int 0 : int @6:65..6:66
+      rhs: eager == : bool @6:70..6:80
+        lhs: eager / : int @6:70..6:75
+          lhs: int 3 : int @6:70..6:71
+          rhs: read x@6:11..6:12 [x == 0 fails@6:29..6:35] : int
+        rhs: int 1 : int @6:79..6:80
+
+fn grouped@7:1..7:85 (int ∈ [0, 4], int ∈ [30, 30]) -> bool ∈ {true, false}
+  param x@7:12..7:13: int
+  param y@7:20..7:21: int
+  result: copy : bool @7:31..7:35
+    value: lazy and : bool @7:38..7:85
+      lhs: lazy and : bool @7:38..7:70
+        lhs: lazy and : bool @7:39..7:54
+          lhs: eager > : bool @7:39..7:44
+            lhs: read y@7:20..7:21 : int
+            rhs: int 5 : int @7:43..7:44
+          rhs: eager != : bool @7:48..7:54
+            lhs: read x@7:12..7:13 : int
+            rhs: int 0 : int @7:53..7:54
+        rhs: eager > : bool @7:59..7:70
+          lhs: eager / : int @7:59..7:66
+            lhs: int 100 : int @7:59..7:62
+            rhs: read x@7:12..7:13 [x != 0 holds@7:48..7:54] : int
+          rhs: int 1 : int @7:69..7:70
+      rhs: eager < : bool @7:74..7:85
+        lhs: eager / : int @7:74..7:81
+          lhs: int 100 : int @7:74..7:77
+          rhs: read x@7:12..7:13 [x != 0 holds@7:48..7:54] : int
+        rhs: read y@7:20..7:21 [y > 5 holds@7:39..7:44] : int
+
+fn counted@8:1..18:2 (bool ∈ {true, false}, bool ∈ {true, false}) -> int ∈ [-11, 11]
+  param a@8:12..8:13: bool
+  param b@8:21..8:22: bool
+  result: copy : int @8:33..8:36
+    value:
+      let n@9:13..9:14: int @9:5..9:18
+        initializer: int 0 : int @9:17..9:18
+      let all@10:9..10:12: bool @10:5..16:11
+        initializer: lazy and : bool @10:15..16:11
+          lhs: lazy and : bool @10:15..16:6
+            lhs: lazy and : bool @10:15..13:6
+              lhs: read a@8:12..8:13 : bool
+              rhs:
+                assignment: assign n@9:13..9:14 : int @11:9..11:18
+                  value: eager + : int @11:13..11:18
+                    lhs: read n@9:13..9:14 : int
+                    rhs: int 1 : int @11:17..11:18
+                tail: read b@8:21..8:22 : bool
+            rhs:
+              assignment: assign n@9:13..9:14 : int @14:9..14:19
+                value: eager + : int @14:13..14:19
+                  lhs: phi n@9:13..9:14 : int @10:15..13:6
+                    scrutinee: read a@8:12..8:13 : bool
+                    then: read n@9:13..9:14 (assigned @11:9..11:18) : int
+                    else: read n@9:13..9:14 : int
+                  rhs: int 10 : int @14:17..14:19
+              tail: read a@8:12..8:13 [is true] : bool
+          rhs: read b@8:21..8:22 : bool
+      tail: if : int @17:5..17:32
+        scrutinee: read all@10:9..10:12 : bool
+        then: phi n@9:13..9:14 : int @10:15..16:6
+          scrutinee: lazy and : bool @10:15..13:6
+            lhs: read a@8:12..8:13 : bool
+            rhs:
+              assignment: assign n@9:13..9:14 : int @11:9..11:18
+                value: eager + : int @11:13..11:18
+                  lhs: read n@9:13..9:14 : int
+                  rhs: int 1 : int @11:17..11:18
+              tail: read b@8:21..8:22 : bool
+          then: read n@9:13..9:14 (assigned @14:9..14:19) : int
+          else: phi n@9:13..9:14 : int @10:15..13:6
+            scrutinee: read a@8:12..8:13 : bool
+            then: read n@9:13..9:14 (assigned @11:9..11:18) : int
+            else: read n@9:13..9:14 : int
+        else: eager - : int @17:25..17:30
+          lhs: int 0 : int @17:25..17:26
+          rhs: phi n@9:13..9:14 : int @10:15..16:6
+            scrutinee: lazy and : bool @10:15..13:6
+              lhs: read a@8:12..8:13 : bool
+              rhs:
+                assignment: assign n@9:13..9:14 : int @11:9..11:18
+                  value: eager + : int @11:13..11:18
+                    lhs: read n@9:13..9:14 : int
+                    rhs: int 1 : int @11:17..11:18
+                tail: read b@8:21..8:22 : bool
+            then: read n@9:13..9:14 (assigned @14:9..14:19) : int
+            else: phi n@9:13..9:14 : int @10:15..13:6
+              scrutinee: read a@8:12..8:13 : bool
+              then: read n@9:13..9:14 (assigned @11:9..11:18) : int
+              else: read n@9:13..9:14 : int
+
+fn hit@19:1..19:69 (bool ∈ {true, false}, int ∈ [1, 100]) -> int ∈ [0, 100]
+  param held@19:8..19:12: bool
+  param score@19:20..19:25: int
+  result: copy : int @19:35..19:38
+    value: if : int @19:41..19:69
+      scrutinee: read held@19:8..19:12 : bool
+      then: read score@19:20..19:25 : int
+      else: int 0 : int @19:66..19:67
+
+fn narrowed@20:1..20:87 () -> int ∈ [0, 300]
+  result: copy : int @20:18..20:21
+    value: eager + : int @20:24..20:87
+      lhs: eager + : int @20:24..20:64
+        lhs: call hit@19:1..19:69 : int @20:24..20:42
+          arg[0]: call guarded@4:1..4:81 : bool @20:28..20:38
+            arg[0]: int 2 : int @20:36..20:37
+          arg[1]: int 1 : int @20:40..20:41
+        rhs: call hit@19:1..19:69 : int @20:45..20:64
+          arg[0]: call guarded@4:1..4:81 : bool @20:49..20:59
+            arg[0]: int 0 : int @20:57..20:58
+          arg[1]: int 10 : int @20:61..20:63
+      rhs: call hit@19:1..19:69 : int @20:67..20:87
+        arg[0]: call guarded@4:1..4:81 : bool @20:71..20:81
+          arg[0]: int 7 : int @20:79..20:80
+        arg[1]: int 100 : int @20:83..20:86
+
+fn second@21:1..21:90 () -> int ∈ [0, 300]
+  result: copy : int @21:16..21:19
+    value: eager + : int @21:22..21:90
+      lhs: eager + : int @21:22..21:66
+        lhs: call hit@19:1..19:69 : int @21:22..21:42
+          arg[0]: call later@5:1..5:81 : bool @21:26..21:38
+            arg[0]: int 4 : int @21:32..21:33
+            arg[1]: int 30 : int @21:35..21:37
+          arg[1]: int 1 : int @21:40..21:41
+        rhs: call hit@19:1..19:69 : int @21:45..21:66
+          arg[0]: call later@5:1..5:81 : bool @21:49..21:61
+            arg[0]: int 0 : int @21:55..21:56
+            arg[1]: int 30 : int @21:58..21:60
+          arg[1]: int 10 : int @21:63..21:65
+      rhs: call hit@19:1..19:69 : int @21:69..21:90
+        arg[0]: call later@5:1..5:81 : bool @21:73..21:84
+          arg[0]: int 4 : int @21:79..21:80
+          arg[1]: int 3 : int @21:82..21:83
+        arg[1]: int 100 : int @21:86..21:89
+
+fn skipped@22:1..22:83 () -> int ∈ [0, 300]
+  result: copy : int @22:17..22:20
+    value: eager + : int @22:23..22:83
+      lhs: eager + : int @22:23..22:61
+        lhs: call hit@19:1..19:69 : int @22:23..22:40
+          arg[0]: call either@6:1..6:80 : bool @22:27..22:36
+            arg[0]: int 0 : int @22:34..22:35
+          arg[1]: int 1 : int @22:38..22:39
+        rhs: call hit@19:1..19:69 : int @22:43..22:61
+          arg[0]: call either@6:1..6:80 : bool @22:47..22:56
+            arg[0]: int 5 : int @22:54..22:55
+          arg[1]: int 10 : int @22:58..22:60
+      rhs: call hit@19:1..19:69 : int @22:64..22:83
+        arg[0]: call either@6:1..6:80 : bool @22:68..22:77
+          arg[0]: int 3 : int @22:75..22:76
+        arg[1]: int 100 : int @22:79..22:82
+
+fn through_parentheses@23:1..23:83 () -> int ∈ [0, 200]
+  result: copy : int @23:29..23:32
+    value: eager + : int @23:35..23:83
+      lhs: call hit@19:1..19:69 : int @23:35..23:57
+        arg[0]: call grouped@7:1..7:85 : bool @23:39..23:53
+          arg[0]: int 4 : int @23:47..23:48
+          arg[1]: int 30 : int @23:50..23:52
+        arg[1]: int 1 : int @23:55..23:56
+      rhs: call hit@19:1..19:69 : int @23:60..23:83
+        arg[0]: call grouped@7:1..7:85 : bool @23:64..23:78
+          arg[0]: int 0 : int @23:72..23:73
+          arg[1]: int 30 : int @23:75..23:77
+        arg[1]: int 10 : int @23:80..23:82
+
+fn assigned@24:1..24:89 () -> int ∈ [-33, 33]
+  result: copy : int @24:18..24:21
+    value: eager + : int @24:24..24:89
+      lhs: eager + : int @24:24..24:66
+        lhs: call counted@8:1..18:2 : int @24:24..24:43
+          arg[0]: bool true : bool @24:32..24:36
+          arg[1]: bool true : bool @24:38..24:42
+        rhs: call counted@8:1..18:2 : int @24:46..24:66
+          arg[0]: bool true : bool @24:54..24:58
+          arg[1]: bool false : bool @24:60..24:65
+      rhs: call counted@8:1..18:2 : int @24:69..24:89
+        arg[0]: bool false : bool @24:77..24:82
+        arg[1]: bool true : bool @24:84..24:88
+
+== semantic diagnostics ==
+warning[semantic/constant-condition] 15:9..15:10 "a": condition is always true

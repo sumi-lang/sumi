@@ -1,0 +1,14 @@
+file: accepted
+optimized: nodes 169 of 218, regions 29 of 30, calls 25 of 25
+
+== functions ==
+fn narrowed = 1
+  steps: 67, optimized steps: 52, depth: 2, bound: 2
+fn second = 1
+  steps: 57, optimized steps: 45, depth: 2, bound: 2
+fn skipped = 101
+  steps: 66, optimized steps: 51, depth: 2, bound: 2
+fn through_parentheses = 1
+  steps: 42, optimized steps: 26, depth: 2, bound: 2
+fn assigned = 10
+  steps: 56, optimized steps: 38, depth: 2, bound: 2

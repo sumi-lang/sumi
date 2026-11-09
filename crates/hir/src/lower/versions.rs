@@ -5,13 +5,16 @@ use sumi_graph::NodeId;
 
 use super::body::LocalId;
 
+/// A local, the version of it a guard narrows, and the node reads of that version see.
+pub(super) type Refinement = (LocalId, NodeId, NodeId);
+
 pub(super) struct Versions {
     /// By local, the version its reads see outside any refinement.
     current: Vec<NodeId>,
     /// By local; only a mutable's refinements are a region's state, since no other is merged.
     is_mutable: Vec<bool>,
-    /// (local, source version, the node its reads see) in open regions, innermost last.
-    refinements: Vec<(LocalId, NodeId, NodeId)>,
+    /// In open regions, innermost last.
+    refinements: Vec<Refinement>,
     /// Versions replaced inside open regions, with the ones they replaced, innermost last.
     undo: Vec<(LocalId, NodeId)>,
     /// Open forks, innermost last.
@@ -31,7 +34,7 @@ struct Fork {
 /// and the node its reads saw at the close, and the refinements of mutables that held inside.
 pub(super) struct RegionState {
     pub changes: Vec<(LocalId, NodeId, NodeId)>,
-    pub refinements: Vec<(LocalId, NodeId, NodeId)>,
+    pub refinements: Vec<Refinement>,
     pub context: NodeId,
 }
 
@@ -133,6 +136,16 @@ impl Versions {
         state
     }
 
+    /// The refinements since `mark`, taken out to hold again wherever their guard does.
+    pub fn take(&mut self, mark: usize) -> Vec<Refinement> {
+        self.refinements.split_off(mark)
+    }
+
+    /// Holds `refinements` again, in their order, until the region closes or they are taken.
+    pub fn hold(&mut self, refinements: &[Refinement]) {
+        self.refinements.extend_from_slice(refinements);
+    }
+
     fn state(&self, changed: &[LocalId], since: usize, context: NodeId) -> RegionState {
         RegionState {
             changes: changed
@@ -202,6 +215,32 @@ mod tests {
         let state = versions.guarded(mark, node(9));
         assert!(state.changes.is_empty());
         assert_eq!(state.refinements, [(x, node(1), node(5))]);
+        assert_eq!(versions.read(x), node(1));
+    }
+
+    #[test]
+    fn a_guard_taken_out_holds_again_in_each_region_it_guards() {
+        let mut versions = Versions::new();
+        let x = versions.declare(node(1), true);
+        let mark = versions.mark();
+        versions.refine(x, node(1), node(5));
+        let guard = versions.take(mark);
+        assert_eq!(versions.read(x), node(1));
+        for context in [node(8), node(9)] {
+            versions.fork();
+            versions.hold(&guard);
+            assert_eq!(versions.read(x), node(5));
+            let state = versions.join(context);
+            assert_eq!(state.refinements, guard);
+            assert_eq!(versions.read(x), node(1));
+        }
+        let mark = versions.mark();
+        versions.hold(&guard);
+        versions.refine(x, node(1), node(6));
+        assert_eq!(
+            versions.take(mark),
+            [(x, node(1), node(5)), (x, node(1), node(6))]
+        );
         assert_eq!(versions.read(x), node(1));
     }
 }
