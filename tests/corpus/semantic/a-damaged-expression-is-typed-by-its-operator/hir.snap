@@ -65,18 +65,18 @@ fn assigned@17:1..21:2 (bool ∈ ∅) -> unit ∈ ∅
   param flag@17:13..17:17: bool
   result: copy : unit @17:12..17:24
     value:
-      let x@18:13..18:14: ? @18:5..18:18
+      let x@18:13..18:14: int @18:5..18:18
         initializer: int 1 : int @18:17..18:18
-      assignment: assign x@18:13..18:14 : ? @19:5..19:11
-        value: not : ? @19:9..19:11
+      assignment: assign x@18:13..18:14 : int @19:5..19:11
+        value: not : bool @19:9..19:11
           operand: hole : ? @19:10..19:11
       tail: hole : ? @17:25..21:2
 
 fn annotated@22:1..27:2 (bool ∈ ∅) -> bool ∈ ∅
-  param flag@22:14..22:18: ?
+  param flag@22:14..22:18: bool
   result: copy : bool @22:29..22:33
     value:
-      let x@23:9..23:10: ? @23:5..23:21
+      let x@23:9..23:10: int @23:5..23:21
         initializer: eager + : int @23:18..23:21
           lhs: int 1 : int @23:18..23:19
           rhs: hole : ? @23:18..23:21
@@ -86,8 +86,8 @@ fn annotated@22:1..27:2 (bool ∈ ∅) -> bool ∈ ∅
           rhs: hole : ? @24:22..24:25
       let z@25:9..25:10: int @25:5..26:6
         initializer: eager == : bool @25:18..26:6
-          lhs: read flag@22:14..22:18 : ?
-          rhs: read x@23:9..23:10 : ?
+          lhs: read flag@22:14..22:18 : bool
+          rhs: read x@23:9..23:10 : int
       tail: hole : ? @22:34..27:2
 
 fn empty@28:1..31:2 () -> int ∈ ∅

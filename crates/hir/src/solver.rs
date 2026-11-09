@@ -178,10 +178,6 @@ impl<'g, L: Lattice> Builder<'g, L> {
         self.initial[node.index()].join(evidence);
     }
 
-    pub fn class_mut(&mut self, node: NodeId) -> &mut L {
-        &mut self.initial[node.index()]
-    }
-
     pub fn flow(&mut self, provider: NodeId, consumer: NodeId, edge: L::Edge) {
         self.flows.entries.push(Flow {
             consumer,
@@ -604,7 +600,7 @@ mod tests {
     #[test]
     fn a_flow_is_five_words() {
         assert!(size_of::<crate::lattice::Pair>() <= 4);
-        assert_eq!(size_of::<Flow<crate::lattice::Evidence>>(), 20);
+        assert_eq!(size_of::<Flow<sumi_graph::May>>(), 20);
     }
 
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]

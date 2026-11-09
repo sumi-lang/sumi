@@ -31,7 +31,7 @@ pub struct Analysis {
     parsed: ParsedSource,
     graph: Graph,
     spans: Spans,
-    settled: typing::Settled,
+    typing: typing::Typing,
     functions: Vec<Function>,
     decls: Vec<TypeDecl>,
     /// By field name ID.
@@ -72,9 +72,9 @@ impl Analysis {
     pub fn spans(&self) -> &Spans {
         &self.spans
     }
-    /// None for a node that is no value, or whose class conflicted.
+    /// None for a node that is no value, whose class conflicted, or that only a hole decided.
     pub fn ty(&self, node: NodeId) -> Option<Ty> {
-        self.settled.resolve(node)
+        self.typing.resolve(node)
     }
     pub fn show(&self, ty: Ty) -> ShownTy<'_> {
         ty.shown(self)
@@ -91,7 +91,7 @@ impl Analysis {
         &self.unions
     }
     fn may(&self, node: NodeId) -> &May {
-        self.settled.may(node)
+        self.typing.may(node)
     }
     /// In source order, a syntactic one first at a shared position.
     pub fn diagnostics(&self) -> &[Diagnostic] {

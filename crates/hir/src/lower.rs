@@ -19,9 +19,7 @@ use sumi_syntax::{
 use sumi_text::{TextEdit, TextRange, TextSize};
 
 use crate::codes;
-use crate::lattice::Claim;
 use crate::spans::{Spans, SpansBuilder};
-use crate::typing::Typing;
 use crate::*;
 
 type NameMap<'s, V> = HashMap<&'s str, V, FxBuildHasher>;
@@ -270,20 +268,6 @@ impl<'s> Source<'s> {
             ),
             related,
         );
-    }
-    pub fn conflict(
-        &mut self,
-        at: TextRange,
-        code: DiagnosticCode,
-        typing: &Typing,
-        claims: &[(Ty, Claim)],
-        message: impl FnOnce(String) -> String,
-    ) {
-        let claimed = claims
-            .iter()
-            .map(|(ty, claim)| (*ty, typing.origin(*claim)))
-            .collect();
-        self.conflict_at(at, code, claimed, message);
     }
     /// `message` receives the two or more claimed types joined as a list, in source order. Types
     /// claimed at one origin share a label, since a call delivers all of its callee's.

@@ -50,11 +50,11 @@ fn unknown_target@16:1..18:2 () -> unit ∈ unit
 fn mismatch@19:1..23:2 () -> int ∈ ∅
   result: copy : int @19:18..19:21
     value:
-      let x@20:13..20:14: ? @20:5..20:18
+      let x@20:13..20:14: int @20:5..20:18
         initializer: int 1 : int @20:17..20:18
-      assignment: assign x@20:13..20:14 : ? @21:5..21:13
-        value: bool true : ? @21:9..21:13
-      tail: read x@20:13..20:14 (assigned @21:5..21:13) : ?
+      assignment: assign x@20:13..20:14 : int @21:5..21:13
+        value: bool true : bool @21:9..21:13
+      tail: read x@20:13..20:14 (assigned @21:5..21:13) : int
 
 fn damaged_value@24:1..27:2 () -> unit ∈ unit
   result: copy : unit @24:17..24:19

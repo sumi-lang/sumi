@@ -66,10 +66,10 @@ fn relay@35:1..35:17 signature: unavailable
   body: call a@1:1..5:2 : ? @35:14..35:17
 
 == semantic diagnostics ==
-error[semantic/cannot-infer] 1:1..5:2 "fn a() = if true {\n    1\n} else {\n    b()\n}": function result is both int and bool; add a return type annotation
+error[semantic/type-mismatch] 1:10..5:2 "if true {\n    1\n} else {\n    b()\n}": if branches are int and bool
   at 2:5..2:6 "1": int here
   at 4:5..4:8 "b()": bool here
-error[semantic/cannot-infer] 6:1..10:2 "fn b() = if true {\n    true\n} else {\n    a()\n}": function result is both bool and int; add a return type annotation
+error[semantic/type-mismatch] 6:10..10:2 "if true {\n    true\n} else {\n    a()\n}": if branches are bool and int
   at 7:5..7:9 "true": bool here
   at 9:5..9:8 "a()": int here
 error[semantic/type-mismatch] 12:25..12:34 "integer()": expected bool, found int

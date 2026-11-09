@@ -445,7 +445,7 @@ fn completed_binding@88:1..95:2 () -> int ∈ [19, 19]
   result: result : int @88:27..88:30
     outcome[0]:
       let value@89:13..89:18: bool @89:5..90:40
-        initializer: if : ? @89:21..90:40
+        initializer: if : bool @89:21..90:40
           scrutinee: bool false : bool @90:9..90:14
           then: bool true : bool @90:19..90:23
           else: bool false : bool @90:33..90:38

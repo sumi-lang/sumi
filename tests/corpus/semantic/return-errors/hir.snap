@@ -38,8 +38,8 @@ fn inferred@11:1..16:2 signature: unavailable
         control: observe : ? @12:5..14:6
         context: entry : ? @11:1..16:2
       tail: bool false : bool @15:5..15:10
-    outcome[1]: return : ? @13:9..13:17
-      payload: int 1 : ? @13:16..13:17
+    outcome[1]: return : int @13:9..13:17
+      payload: int 1 : int @13:16..13:17
 
 fn unreachable@17:1..21:2 () -> int ∈ [1, 1]
   result: result : int @17:21..17:24
@@ -118,7 +118,7 @@ error[semantic/type-mismatch] 6:9..6:21 "return false": expected int, found bool
 error[semantic/type-mismatch] 8:5..8:16 "return true": expected int, found bool
   at 4:18..4:21 "int": declared here
 error[semantic/cannot-infer] 11:1..16:2 "fn inferred() = {\n    if true {\n        return 1\n    }\n    false\n}": function result is both int and bool; add a return type annotation
-  at 13:16..13:17 "1": int here
+  at 13:9..13:17 "return 1": int here
   at 15:5..15:10 "false": bool here
 error[semantic/unknown-name] 19:5..19:11 "absent": unknown name `absent`
 error[semantic/unused-value] 19:5..19:23 "absent + missing()": unused value of type int; use `_ =` to discard it

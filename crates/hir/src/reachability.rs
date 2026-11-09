@@ -9,8 +9,8 @@ use sumi_text::TextRange;
 
 use crate::check::explain;
 use crate::codes;
-use crate::flows::{self, Arguments};
-use crate::lower::{Header, Lowered, Source, Statement, TypeHeader};
+use crate::flows::{self, Arguments, Values};
+use crate::lower::{Header, Lowered, Source, Statement};
 use crate::spans::Spans;
 use crate::typing::Typing;
 
@@ -74,8 +74,8 @@ struct Condition {
     site: Site,
 }
 
-/// `delivered` is the solve over the live call sites' arguments; `headers` redraws the graph with
-/// every argument its parameter's type admits. Returns the dead code reported, in source order.
+/// `delivered` is the solve over the live call sites' arguments; a site it leaves open is decided
+/// by a solve with every argument its parameter admits. Returns the dead code reported, in order.
 pub(crate) fn warn(
     source: &mut Source<'_>,
     graph: &Graph,
@@ -83,7 +83,6 @@ pub(crate) fn warn(
     delivered: &Typing,
     lowered: &Lowered,
     headers: &[Header],
-    types: &[TypeHeader],
 ) -> Vec<Dead> {
     unused_functions(source, graph, lowered, headers);
     // A site is reported only where the program reaches it and both solves decide it, so whether
@@ -98,14 +97,14 @@ pub(crate) fn warn(
         .collect();
     let mut statements: Vec<_> = lowered.statements.iter().collect();
     statements.sort_by_key(|statement| (statement.block.to_usize(), statement.range.start()));
-    let stops = |[before, after]: [&Statement; 2], typing: &Typing| {
+    let stops = |[before, after]: [&Statement; 2], typing: &Values| {
         before.block == after.block
             && typing.may(before.context).is_live()
             && !typing.may(after.context).is_live()
     };
     let stops_delivered: Vec<bool> = statements
         .windows(2)
-        .map(|pair| stops([pair[0], pair[1]], delivered))
+        .map(|pair| stops([pair[0], pair[1]], delivered.values()))
         .collect();
     // (arm context, parent) of each arm of a `match` the delivered solve never selects.
     let arms: Vec<(NodeId, NodeId)> = graph
@@ -135,21 +134,10 @@ pub(crate) fn warn(
             .windows(2)
             .zip(&stops_delivered)
             .any(|(pair, &stops)| stops && open(pair[1].context)))
-    .then(|| {
-        let (any, cx, _) = flows::draw(
-            graph,
-            spans,
-            lowered,
-            headers,
-            types,
-            Arguments::Any,
-            source.unions.clone(),
-        );
-        any.solve(&cx)
-    });
+    .then(|| flows::draw(graph, lowered, Arguments::Any).solve());
     let facts = |node: NodeId| match &any {
         Some(any) if open(node) => any,
-        _ => delivered,
+        _ => delivered.values(),
     };
 
     let decided: Vec<Option<bool>> = conditions
@@ -427,7 +415,7 @@ fn conditions(graph: &Graph, spans: &Spans) -> Vec<Condition> {
 fn operands(
     graph: &Graph,
     spans: &Spans,
-    typing: &Typing,
+    typing: &Values,
     value: NodeId,
 ) -> Vec<(TextRange, Box<str>)> {
     let Op::Binary(BinaryOp::Cmp(_)) = graph.node(value).op else {

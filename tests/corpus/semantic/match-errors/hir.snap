@@ -112,8 +112,9 @@ error[semantic/type-mismatch] 9:34..9:35 "n": cannot match on int values; `match
 error[semantic/type-mismatch] 12:5..12:13 "Dot => 0": `Dot` is no member of `Circle | Square`
 error[semantic/unknown-type] 15:50..15:54 "Blob": unknown type `Blob`
 error[semantic/unknown-type] 16:51..16:57 "scalar": `scalar` is a function, not a type
-error[semantic/type-mismatch] 17:46..17:99 "match shape { Circle(c) => c.radius, Square => true }": expected int, found bool
-  at 17:40..17:43 "int": declared here
+error[semantic/type-mismatch] 17:46..17:99 "match shape { Circle(c) => c.radius, Square => true }": match arms are int and bool
+  at 17:73..17:81 "c.radius": int here
+  at 17:93..17:97 "true": bool here
 error[semantic/invalid-union-member] 18:17..18:20 "int": `int` is no declared type, so no member of a union
 error[semantic/unknown-field] 19:43..19:55 "shape.radius": `Circle | Square` has no field `radius`
 error[semantic/type-mismatch] 20:62..20:73 "Square => 2": `Square` is no member of `Circle`
