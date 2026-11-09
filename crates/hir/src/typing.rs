@@ -373,8 +373,8 @@ impl Checker<'_, '_> {
         }
     }
 
-    /// Each claim of a declared type with the field becomes a claim of the field's type; the rest,
-    /// a union among them, deliver nothing, which the read's demand reports.
+    /// Each claim of a declared type with the field becomes a claim of the field's type, or the
+    /// unknown when that type is damaged; the rest deliver nothing, which the read's demand reports.
     fn field(&mut self, read: NodeId, base: NodeId, name: FieldName) {
         let base = self.set(base).clone();
         let root = self.root(read);
@@ -384,10 +384,12 @@ impl Checker<'_, '_> {
                 continue;
             };
             let decl = self.graph.decl(decl);
-            if let Some(index) = decl.index_of(name)
-                && let (_, Some(ty)) = decl.fields()[index]
-            {
-                self.sets[root].offer(Member { ty, ..member });
+            let Some(index) = decl.index_of(name) else {
+                continue;
+            };
+            match decl.fields()[index].1 {
+                Some(ty) => self.sets[root].offer(Member { ty, ..member }),
+                None => self.sets[root].is_unknown = true,
             }
         }
     }
