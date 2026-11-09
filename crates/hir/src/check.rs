@@ -7,7 +7,7 @@ use sumi_syntax::ast::{self, View};
 use sumi_text::TextRange;
 
 use crate::codes;
-use crate::flows::Values;
+use crate::flows::{AnyValues, Values};
 use crate::lower::{self, Call, Lowered, Source};
 use crate::spans::Spans;
 use crate::typing::{self, Typing};
@@ -52,11 +52,12 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         &types,
         &mut functions,
     );
-    let values = flows::draw(&graph, &lowered, flows::Arguments::Delivered).solve();
+    let values = Values::delivered(&graph, &lowered);
+    let any = AnyValues::new(&graph, &lowered);
     let typing = Typing::new(checked.types, values);
     let failed = checked.failed;
     divisions(&mut source, &graph, &spans, &typing, &lowered, &failed);
-    exhaustive(&mut source, &graph, &spans, &lowered, &failed);
+    exhaustive(&mut source, &graph, &spans, &lowered, &failed, &any);
     bounds(
         &mut source,
         &graph,
@@ -76,8 +77,17 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     {
         Vec::new()
     } else {
-        reachability::warn(&mut source, &graph, &spans, &typing, &lowered, &headers)
+        reachability::warn(
+            &mut source,
+            &graph,
+            &spans,
+            &typing,
+            &lowered,
+            &headers,
+            &any,
+        )
     };
+    drop(any);
     let decls = types
         .iter()
         .zip(&source.decls)
@@ -148,6 +158,7 @@ fn exhaustive(
     spans: &Spans,
     lowered: &Lowered,
     failed: &[bool],
+    any: &AnyValues<'_>,
 ) {
     let mut switches: Vec<(NodeId, sumi_graph::Arms)> = Vec::new();
     for (index, run) in graph.runs().iter().enumerate() {
@@ -166,7 +177,7 @@ fn exhaustive(
     if switches.is_empty() {
         return;
     }
-    let any = flows::draw(graph, lowered, flows::Arguments::Any).solve();
+    let any = any.get();
     let unions = graph.unions();
     for (node, arms) in switches {
         let scrutinee = graph.inputs(node)[0];

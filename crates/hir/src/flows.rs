@@ -1,6 +1,7 @@
 //! The value flows drawn from the graph: a class per node and a flow per edge a value crosses,
 //! solved to the values that may reach each node.
 
+use std::cell::OnceCell;
 use std::collections::{HashMap, HashSet};
 
 use rustc_hash::FxBuildHasher;
@@ -14,20 +15,36 @@ use crate::solver::Builder;
 pub(crate) struct Values(Box<[May]>);
 
 impl Values {
+    /// The solve over the live call sites' arguments; a function no live call site enters is dead.
+    pub fn delivered(graph: &Graph, lowered: &Lowered) -> Self {
+        solve(graph, lowered, Arguments::Delivered)
+    }
+
     pub fn may(&self, node: NodeId) -> &May {
         &self.0[node.index()]
     }
 }
 
-/// The flows of one file, ready to solve.
-pub(crate) struct Drawing<'g> {
-    values: Builder<'g, May>,
-    cx: Context,
+/// The solve with every value of each parameter's type, in every function with a whole header,
+/// made the first time it is read, so the verdicts that need it share one.
+pub(crate) struct AnyValues<'g> {
+    graph: &'g Graph,
+    lowered: &'g Lowered,
+    values: OnceCell<Values>,
 }
 
-impl Drawing<'_> {
-    pub fn solve(self) -> Values {
-        Values(self.values.solve(&self.cx).into_boxed_slice())
+impl<'g> AnyValues<'g> {
+    pub fn new(graph: &'g Graph, lowered: &'g Lowered) -> Self {
+        Self {
+            graph,
+            lowered,
+            values: OnceCell::new(),
+        }
+    }
+
+    pub fn get(&self) -> &Values {
+        self.values
+            .get_or_init(|| solve(self.graph, self.lowered, Arguments::Any))
     }
 }
 
@@ -58,19 +75,15 @@ pub(crate) fn selection(graph: &Graph, arms: Arms) -> Selection {
     Selection { boolean, total }
 }
 
-/// Where a parameter's values come from.
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Arguments {
-    /// The live call sites' arguments; a function no live call site enters is dead.
+enum Arguments {
     Delivered,
-    /// Every value of the parameter's type, in every function with a whole header.
     Any,
 }
 
-/// The thresholds are every integer the file spells or folds from constants, each once. A node the
-/// walk gave no value has a class nothing flows into.
-pub(crate) fn draw<'g>(graph: &'g Graph, lowered: &Lowered, arguments: Arguments) -> Drawing<'g> {
-    let mut values: Builder<'g, May> = Builder::with_classes(graph.nodes().len());
+fn solve(graph: &Graph, lowered: &Lowered, arguments: Arguments) -> Values {
+    // A node the walk gives no value has a class nothing flows into.
+    let mut values: Builder<'_, May> = Builder::with_classes(graph.nodes().len());
     let typed = |node: NodeId| lowered.typed[node.index()];
     let mut constants: Vec<Int> = Vec::new();
     let mut cases: Vec<Arm> = Vec::new();
@@ -318,10 +331,11 @@ pub(crate) fn draw<'g>(graph: &'g Graph, lowered: &Lowered, arguments: Arguments
         values.flow(graph.run(callee).result(), call, Edge::Call);
     }
     let cx = Context {
+        // Every integer the file spells or folds from constants, each once.
         thresholds: constants.into_iter().collect::<Thresholds>(),
         decls: graph.decls().into(),
         unions: graph.unions().clone(),
         cases: cases.into_boxed_slice(),
     };
-    Drawing { values, cx }
+    Values(values.solve(&cx).into_boxed_slice())
 }

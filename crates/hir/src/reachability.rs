@@ -9,7 +9,7 @@ use sumi_text::TextRange;
 
 use crate::check::explain;
 use crate::codes;
-use crate::flows::{self, Arguments, Values};
+use crate::flows::{AnyValues, Values};
 use crate::lower::{Header, Lowered, Source, Statement};
 use crate::spans::Spans;
 use crate::typing::Typing;
@@ -75,7 +75,7 @@ struct Condition {
 }
 
 /// `delivered` is the solve over the live call sites' arguments; a site it leaves open is decided
-/// by a solve with every argument its parameter admits. Returns the dead code reported, in order.
+/// by `any`, read only then. Returns the dead code reported, in order.
 pub(crate) fn warn(
     source: &mut Source<'_>,
     graph: &Graph,
@@ -83,6 +83,7 @@ pub(crate) fn warn(
     delivered: &Typing,
     lowered: &Lowered,
     headers: &[Header],
+    any: &AnyValues<'_>,
 ) -> Vec<Dead> {
     unused_functions(source, graph, lowered, headers);
     // A site is reported only where the program reaches it and both solves decide it, so whether
@@ -128,16 +129,12 @@ pub(crate) fn warn(
             .partition_point(|run| run.entry().index() <= node.index())
             - 1]
     };
-    let any = (conditions.iter().any(|condition| open(condition.value))
-        || arms.iter().any(|&(context, _)| open(context))
-        || statements
-            .windows(2)
-            .zip(&stops_delivered)
-            .any(|(pair, &stops)| stops && open(pair[1].context)))
-    .then(|| flows::draw(graph, lowered, Arguments::Any).solve());
-    let facts = |node: NodeId| match &any {
-        Some(any) if open(node) => any,
-        _ => delivered.values(),
+    let facts = |node: NodeId| {
+        if open(node) {
+            any.get()
+        } else {
+            delivered.values()
+        }
     };
 
     let decided: Vec<Option<bool>> = conditions
