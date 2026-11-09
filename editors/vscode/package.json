@@ -36,6 +36,26 @@
     "lsp"
   ],
   "contributes": {
+    "configurationDefaults": {
+      "[sumi]": {
+        "editor.semanticHighlighting.enabled": true
+      }
+    },
+    "semanticTokenTypes": [
+      { "id": "boolean", "superType": "keyword", "description": "A boolean literal" },
+      { "id": "punctuation", "description": "A delimiter or separator" },
+      { "id": "invalid", "description": "A malformed token" }
+    ],
+    "semanticTokenScopes": [
+      {
+        "language": "sumi",
+        "scopes": {
+          "boolean": ["constant.language.boolean.sumi"],
+          "punctuation": ["punctuation.sumi"],
+          "invalid": ["invalid.illegal.sumi"]
+        }
+      }
+    ],
     "configuration": {
       "title": "Sumi",
       "properties": {
