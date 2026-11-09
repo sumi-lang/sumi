@@ -141,7 +141,7 @@ impl SpansBuilder {
     }
 
     /// `graph` is the one built alongside.
-    pub fn finish(self, graph: &Graph) -> Spans {
+    pub fn finish(mut self, graph: &Graph) -> Spans {
         assert_eq!(
             self.nodes.nodes.len(),
             graph.nodes().len(),
@@ -152,6 +152,9 @@ impl SpansBuilder {
             graph.region_ids().len(),
             "a result read per region"
         );
+        self.nodes.nodes.shrink_to_fit();
+        self.nodes.reads.shrink_to_fit();
+        self.nodes.annotations.shrink_to_fit();
         Spans {
             nodes: self.nodes,
             result_reads: self
