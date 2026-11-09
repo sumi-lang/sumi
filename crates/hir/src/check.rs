@@ -138,10 +138,9 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         references.sort_unstable_by_key(|occurrence| occurrence.range.start());
     }
     let mut diagnostics = source.diagnostics;
-    diagnostics.splice(0..0, parsed.diagnostics().iter().cloned());
     diagnostics.sort_by_key(|d| d.primary.start());
     // Two instances of one generic function may each prove the same of its body: of those that
-    // start together, each is kept once. The parser's are its own, repeated or not.
+    // start together, each is kept once.
     let has_instances = headers
         .iter()
         .enumerate()
@@ -153,14 +152,14 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
                 .iter()
                 .rev()
                 .take_while(|earlier| earlier.primary.start() == diagnostic.primary.start());
-            if !Analysis::is_semantic(&diagnostic)
-                || !together.into_iter().any(|earlier| *earlier == diagnostic)
-            {
+            if !together.into_iter().any(|earlier| *earlier == diagnostic) {
                 kept.push(diagnostic);
             }
         }
         diagnostics = kept;
     }
+    diagnostics.splice(0..0, parsed.diagnostics().iter().cloned());
+    diagnostics.sort_by_key(|d| d.primary.start());
     let analysis = Analysis {
         parsed,
         graph,
