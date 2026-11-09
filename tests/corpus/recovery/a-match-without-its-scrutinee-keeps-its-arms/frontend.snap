@@ -1,0 +1,34 @@
+== tree ==
+SourceFile! 1:1..6:1
+  FnItem! 1:1..5:2
+    Name 1:4..1:5 "f"
+    ParamList 1:5..1:7 "()"
+    Block! 1:8..5:2
+      DiscardStmt! 2:5..3:11
+        BinaryExpr! 2:9..3:11
+          MatchExpr! 2:9..2:25
+            ArmList 2:15..2:25
+              MatchArm 2:17..2:23
+                MemberPattern 2:17..2:18
+                  NameRef 2:17..2:18 "P"
+                NameRef 2:22..2:23 "b"
+          NameRef 3:10..3:11 "c"
+      Block 4:5..4:10
+        NameRef 4:7..4:8 "d"
+
+== evidence ==
+ExpectedExpression at 2:15
+
+== diagnostics ==
+error[syntax/expected-expression] 2:15: expected an expression
+
+== formatted ==
+fn f() {
+    _ = match {
+        P => b
+    }
+        || c
+    {
+        d
+    }
+}

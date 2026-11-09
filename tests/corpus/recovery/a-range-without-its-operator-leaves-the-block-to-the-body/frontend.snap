@@ -1,0 +1,36 @@
+== tree ==
+SourceFile! 1:1..9:1
+  FnItem! 1:1..8:2
+    Name 1:4..1:5 "f"
+    ParamList 1:5..1:7 "()"
+    Block! 1:8..8:2
+      DiscardStmt! 2:5..4:11
+        BinaryExpr! 2:9..4:11
+          BinaryExpr! 2:9..3:24
+            LiteralExpr 2:9..2:10 "0"
+            ForExpr! 3:9..3:24
+              Name 3:13..3:14 "x"
+              FieldExpr 3:18..3:21
+                NameRef 3:18..3:19 "a"
+                NameRef 3:20..3:21 "b"
+              Block 3:22..3:24 "{}"
+          NameRef 4:10..4:11 "c"
+      BinaryExpr 5:5..6:10
+        Block 5:5..5:7 "{}"
+        NameRef 6:9..6:10 "d"
+      AssignStmt 7:5..7:10
+        NameRef 7:5..7:6 "e"
+        NameRef 7:9..7:10 "f"
+
+== evidence ==
+ExpectedRangeOperator at 3:22
+
+== diagnostics ==
+error[syntax/expected-token] 3:22: expected `..`
+
+== formatted ==
+fn f() {
+    _ = 0 / for x in a.b {} <= c
+    {} % d
+    e = f
+}
