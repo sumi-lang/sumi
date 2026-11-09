@@ -22,7 +22,7 @@ fn read@6:1..6:74 (Container ∈ Container(A([3, 5]) ∪ B([4, 4]))) -> int ∈ 
         tail: field n : int @6:69..6:72
           base: read b@6:63..6:64 : B
 
-fn outer@7:1..7:83 (Outer ∈ Outer(B([6, 6]) ∪ Container(A([5, 5])))) -> int ∈ [3, 6]
+fn outer@7:1..7:83 (Outer ∈ Outer(B([6, 6]) ∪ Container(A([5, 5])))) -> int ∈ [5, 6]
   param o@7:10..7:11: Outer
   result: copy : int @7:23..7:26
     value: match : int @7:29..7:83
@@ -41,7 +41,7 @@ fn outer@7:1..7:83 (Outer ∈ Outer(B([6, 6]) ∪ Container(A([5, 5])))) -> int 
         tail: field n : int @7:78..7:81
           base: read b@7:72..7:73 : B
 
-fn main@8:1..8:85 () -> int ∈ [6, 10]
+fn main@8:1..8:85 () -> int ∈ [7, 7]
   result: copy : int @8:14..8:17
     value: eager + : int @8:20..8:85
       lhs: call read@6:1..6:74 : int @8:20..8:51
@@ -53,7 +53,7 @@ fn main@8:1..8:85 () -> int ∈ [6, 10]
           value: make B : B @8:76..8:83
             n: int 4 : int @8:81..8:82
 
-fn nested@9:1..9:99 () -> int ∈ [6, 12]
+fn nested@9:1..9:99 () -> int ∈ [11, 11]
   result: copy : int @9:16..9:19
     value: eager + : int @9:22..9:99
       lhs: call outer@7:1..7:83 : int @9:22..9:68

@@ -11,6 +11,7 @@ mod reachability;
 mod recursion;
 mod solver;
 mod spans;
+mod summary;
 mod typing;
 
 use std::fmt;

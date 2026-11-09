@@ -21,7 +21,7 @@ fn shift@6:1..6:66 (Point ∈ Point([0, +∞), [0, 0]), int ∈ [0, 5]) -> Point
       y: field y : int @6:62..6:65
         base: read p@6:10..6:11 : Point
 
-fn length@7:1..7:49 (Segment ∈ Segment(Point([0, 0], [0, 0]), Point([0, +∞), [0, 0]))) -> int ∈ [0, +∞)
+fn length@7:1..7:49 (Segment ∈ Segment(Point([0, 0], [0, 0]), Point([5, 5], [0, 0]))) -> int ∈ [5, 5]
   param s@7:11..7:12: Segment
   result: copy : int @7:26..7:29
     value: eager - : int @7:32..7:49
@@ -32,7 +32,7 @@ fn length@7:1..7:49 (Segment ∈ Segment(Point([0, 0], [0, 0]), Point([0, +∞),
         base: field from : Point @7:41..7:47
           base: read s@7:11..7:12 : Segment
 
-fn main@8:1..11:2 () -> int ∈ [0, +∞)
+fn main@8:1..11:2 () -> int ∈ [5, 5]
   result: copy : int @8:14..8:17
     value:
       let s@9:9..9:10: Segment @9:5..9:60

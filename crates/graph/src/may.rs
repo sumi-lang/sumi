@@ -312,7 +312,8 @@ impl Ints {
         Bools::of(may_true, may_false)
     }
 
-    fn refine(&self, op: CmpOp, other: &Self) -> Self {
+    /// The members that stand in `op` to some member of `other`.
+    pub fn refine(&self, op: CmpOp, other: &Self) -> Self {
         let (Some(Band { lo, hi, has_hole }), Some(b)) = (&self.0, &other.0) else {
             return Self::EMPTY;
         };
@@ -817,6 +818,33 @@ impl May {
         self.has_unit |= other.has_unit;
         let decls = !other.decls.is_empty() && self.decls.join(&other.decls);
         ints | bools | has_unit | decls
+    }
+
+    /// The values in both: a declared value stays where each of its fields holds some value.
+    pub fn meet(&self, other: &Self) -> Self {
+        let decls = self.decls.iter().filter_map(|(decl, mine)| {
+            let fields = match (mine, other.decls.get(decl)?) {
+                (Fields::Any, fields) | (fields, Fields::Any) => fields.clone(),
+                (Fields::Known(mine), Fields::Known(theirs)) => {
+                    let fields: Box<[Self]> = mine
+                        .iter()
+                        .zip(theirs)
+                        .map(|(mine, theirs)| mine.meet(theirs))
+                        .collect();
+                    if !fields.iter().all(Self::is_live) {
+                        return None;
+                    }
+                    Fields::Known(fields)
+                }
+            };
+            Some((decl, fields))
+        });
+        Self {
+            ints: &self.ints & &other.ints,
+            bools: self.bools & other.bools,
+            has_unit: self.has_unit && other.has_unit,
+            decls: decls.collect(),
+        }
     }
 
     /// The integers rounded to `thresholds`, through every field.

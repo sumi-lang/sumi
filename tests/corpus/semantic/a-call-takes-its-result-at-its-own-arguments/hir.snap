@@ -1,0 +1,308 @@
+file: accepted
+frontend errors: 0 (see frontend.snap)
+semantic errors: 0
+
+== graph ==
+fn id<T>@9:1..9:24 (T ∈ ∅) -> T ∈ ∅
+  param x@9:10..9:11: T
+  result: copy : T @9:19..9:20
+    value: read x@9:10..9:11 : T
+
+fn least@10:1..14:2 (int ∈ [-50, 500] \ 0, int ∈ [2, 900]) -> int ∈ [-50, 500] \ 0
+  param a@10:10..10:11: int
+  param b@10:18..10:19: int
+  result: copy : int @10:29..10:32
+    value: if : int @10:35..14:2
+      scrutinee: eager < : bool @10:38..10:43
+        lhs: read a@10:10..10:11 : int
+        rhs: read b@10:18..10:19 : int
+      then: read a@10:10..10:11 [a < b holds@10:38..10:43] : int
+      else: read b@10:18..10:19 [a < b fails@10:38..10:43] : int
+
+fn most@15:1..19:2 (int ∈ [-7, 1] \ 0, int ∈ [-50, 9] \ 0) -> int ∈ [-7, 9] \ 0
+  param a@15:9..15:10: int
+  param b@15:17..15:18: int
+  result: copy : int @15:28..15:31
+    value: if : int @15:34..19:2
+      scrutinee: eager > : bool @15:37..15:42
+        lhs: read a@15:9..15:10 : int
+        rhs: read b@15:17..15:18 : int
+      then: read a@15:9..15:10 [a > b holds@15:37..15:42] : int
+      else: read b@15:17..15:18 [a > b fails@15:37..15:42] : int
+
+fn size@20:1..24:2 (int ∈ [-40, -3]) -> int ∈ [3, 40]
+  param a@20:9..20:10: int
+  result: copy : int @20:20..20:23
+    value: if : int @20:26..24:2
+      scrutinee: eager < : bool @20:29..20:34
+        lhs: read a@20:9..20:10 : int
+        rhs: int 0 : int @20:33..20:34
+      then: negate : int @21:5..21:7
+        operand: read a@20:9..20:10 [a < 0 holds@20:29..20:34] : int
+      else: read a@20:9..20:10 [a < 0 fails@20:29..20:34] : int
+
+fn clamp@25:1..25:67 (int ∈ [-50, 50] \ 0, int ∈ [1, 1], int ∈ [9, 9]) -> int ∈ [1, 9]
+  param x@25:10..25:11: int
+  param lo@25:18..25:20: int
+  param hi@25:27..25:29: int
+  result: copy : int @25:39..25:42
+    value: call most@15:1..19:2 : int @25:45..25:67
+      arg[0]: read lo@25:18..25:20 : int
+      arg[1]: call least@10:1..14:2 : int @25:54..25:66
+        arg[0]: read x@25:10..25:11 : int
+        arg[1]: read hi@25:27..25:29 : int
+
+fn next@26:1..26:31 (int ∈ [1, 11]) -> int ∈ [2, 12]
+  param n@26:9..26:10: int
+  result: copy : int @26:20..26:23
+    value: eager + : int @26:26..26:31
+      lhs: read n@26:9..26:10 : int
+      rhs: int 1 : int @26:30..26:31
+
+fn scaled@27:1..27:47 (int ∈ [2, 2], int ∈ [5, 5]) -> int ∈ [1, 1]
+  param n@27:11..27:12: int
+  param by@27:19..27:21: int
+  result: copy : int @27:31..27:34
+    value: eager - : int @27:37..27:47
+      lhs: eager * : int @27:37..27:42
+        lhs: read n@27:11..27:12 : int
+        rhs: int 3 : int @27:41..27:42
+      rhs: read by@27:19..27:21 : int
+
+fn unwrap_or<T>@28:1..31:2 (Box<T> | None ∈ ∅, T ∈ ∅) -> T ∈ ∅
+  param v@28:17..28:18: Box<T> | None
+  param fallback@28:35..28:43: T
+  result: copy : T @28:51..28:52
+    value: match : T @28:55..31:2
+      scrutinee: read v@28:17..28:18 : Box<T> | None
+      Box<T>:
+        let b@29:12..29:13: narrow to Box<T> : Box<T> @29:12..29:13
+          scrutinee: read v@28:17..28:18 : Box<T> | None
+        tail: field value : T @29:18..29:25
+          base: read b@29:12..29:13 : Box<T>
+      None: read fallback@28:35..28:43 : T
+
+fn mirrored@32:1..32:55 (Point ∈ Point([0, 7], [0, 5])) -> Point ∈ Point([0, 5], [0, 7])
+  param p@32:13..32:14: Point
+  result: copy : Point @32:26..32:31
+    value: make Point : Point @32:34..32:55
+      x: field y : int @32:43..32:46
+        base: read p@32:13..32:14 : Point
+      y: field x : int @32:51..32:54
+        base: read p@32:13..32:14 : Point
+
+fn early@33:1..38:2 (int ∈ [3, 30]) -> int ∈ [3, 10]
+  param n@33:10..33:11: int
+  result: result : int @33:21..33:24
+    outcome[0]:
+      discard: if : unit @34:5..36:6
+        scrutinee: eager > : bool @34:8..34:14
+          lhs: read n@33:10..33:11 : int
+          rhs: int 10 : int @34:12..34:14
+        then: unit : unit @34:15..36:6
+        else: unit (implicit)
+      discard: after : ? @34:5..36:6
+        control: observe : ? @34:5..36:6
+        context: entry : ? @33:1..38:2
+      tail: read n@33:10..33:11 [n > 10 fails@34:8..34:14] : int
+    outcome[1]: return : int @35:9..35:18
+      payload: int 10 : int @35:16..35:18
+
+fn counted@39:1..45:2 (int ∈ [3, 8]) -> int ∈ [1, +∞)
+  param n@39:12..39:13: int
+  result: result : int @39:23..39:26
+    outcome[0]:
+      let total@40:13..40:18: int @40:5..40:22
+        initializer: int 0 : int @40:21..40:22
+      discard: loop : unit @41:5..43:6
+        start: int 0 : int @41:14..41:15
+        end: read n@39:12..39:13 : int
+        carry[0]: carry total@40:13..40:18 : int @41:5..43:6
+          initial: read total@40:13..40:18 : int
+        body:
+          let i@41:9..41:10: loop index : int @41:5..43:6
+            start: int 0 : int @41:14..41:15
+            end: read n@39:12..39:13 : int
+          assignment: assign total@40:13..40:18 : int @42:9..42:26
+            value: eager + : int @42:17..42:26
+              lhs: read total@40:13..40:18 (carried @41:5..43:6) : int
+              rhs: int 1 : int @42:25..42:26
+          tail: unit : unit @41:19..43:6
+        next[0]: read total@40:13..40:18 (assigned @42:9..42:26) : int
+      discard: after : ? @41:5..43:6
+        control: loop : unit @41:5..43:6
+        context: entry : ? @39:1..45:2
+      tail: read total@40:13..40:18 (after loop @41:5..43:6) : int
+
+fn down@46:1..50:2 (int ∈ [0, 9]) -> int ∈ [0, 0]
+  param n@46:9..46:10: int
+  result: copy : int @46:20..46:23
+    value: if : int @46:26..50:2
+      scrutinee: eager <= : bool @46:29..46:35
+        lhs: read n@46:9..46:10 : int
+        rhs: int 0 : int @46:34..46:35
+      then: int 0 : int @47:5..47:6
+      else: call down@46:1..50:2 : int @49:5..49:16
+        arg[0]: eager - : int @49:10..49:15
+          lhs: read n@46:9..46:10 [n <= 0 fails@46:29..46:35] : int
+          rhs: int 1 : int @49:14..49:15
+
+fn far@51:1..51:94 () -> int ∈ [1545, 1545]
+  result: copy : int @51:13..51:16
+    value: eager + : int @51:19..51:94
+      lhs: eager + : int @51:19..51:77
+        lhs: eager + : int @51:19..51:65
+          lhs: eager + : int @51:19..51:50
+            lhs: call id@9:1..9:24 : int @51:19..51:32
+              arg[0]: int 1000 : int @51:27..51:31
+            rhs: call least@10:1..14:2 : int @51:35..51:50
+              arg[0]: int 500 : int @51:41..51:44
+              arg[1]: int 900 : int @51:46..51:49
+          rhs: call most@15:1..19:2 : int @51:53..51:65
+            arg[0]: int -7 : int @51:58..51:60
+            arg[1]: int -9 : int @51:62..51:64
+        rhs: call size@20:1..24:2 : int @51:68..51:77
+          arg[0]: int -40 : int @51:73..51:76
+      rhs: call next@26:1..26:31 : int @51:80..51:94
+        arg[0]: call next@26:1..26:31 : int @51:85..51:93
+          arg[0]: int 10 : int @51:90..51:92
+
+fn identities@52:1..52:62 () -> int ∈ [5, 5]
+  result: copy : int @52:20..52:23
+    value: eager + : int @52:26..52:62
+      lhs: eager / : int @52:26..52:42
+        lhs: int 100 : int @52:26..52:29
+        rhs: call id@9:1..9:24 : int @52:32..52:42
+          arg[0]: int 4 : int @52:40..52:41
+      rhs: eager / : int @52:45..52:62
+        lhs: int 100 : int @52:45..52:48
+        rhs: call id@9:1..9:24 : int @52:51..52:62
+          arg[0]: int -5 : int @52:59..52:61
+
+fn selections@53:1..53:96 () -> int ∈ [82, 82]
+  result: copy : int @53:20..53:23
+    value: eager + : int @53:26..53:96
+      lhs: eager + : int @53:26..53:63
+        lhs: eager / : int @53:26..53:43
+          lhs: int 100 : int @53:26..53:29
+          rhs: call least@10:1..14:2 : int @53:32..53:43
+            arg[0]: int 3 : int @53:38..53:39
+            arg[1]: int 8 : int @53:41..53:42
+        rhs: eager / : int @53:46..53:63
+          lhs: int 100 : int @53:46..53:49
+          rhs: call most@15:1..19:2 : int @53:52..53:63
+            arg[0]: int -2 : int @53:57..53:59
+            arg[1]: int 6 : int @53:61..53:62
+      rhs: eager / : int @53:66..53:96
+        lhs: int 100 : int @53:66..53:69
+        rhs: eager + : int @53:73..53:95
+          lhs: call size@20:1..24:2 : int @53:73..53:91
+            arg[0]: call least@10:1..14:2 : int @53:78..53:90
+              arg[0]: int -3 : int @53:84..53:86
+              arg[1]: int 2 : int @53:88..53:89
+          rhs: int 0 : int @53:94..53:95
+
+fn composed@54:1..54:97 () -> int ∈ [211, 211]
+  result: copy : int @54:18..54:21
+    value: eager + : int @54:24..54:97
+      lhs: eager + : int @54:24..54:70
+        lhs: eager / : int @54:24..54:45
+          lhs: int 100 : int @54:24..54:27
+          rhs: call clamp@25:1..25:67 : int @54:30..54:45
+            arg[0]: int 50 : int @54:36..54:38
+            arg[1]: int 1 : int @54:40..54:41
+            arg[2]: int 9 : int @54:43..54:44
+        rhs: eager / : int @54:48..54:70
+          lhs: int 100 : int @54:48..54:51
+          rhs: call clamp@25:1..25:67 : int @54:54..54:70
+            arg[0]: int -50 : int @54:60..54:63
+            arg[1]: int 1 : int @54:65..54:66
+            arg[2]: int 9 : int @54:68..54:69
+      rhs: eager / : int @54:73..54:97
+        lhs: int 100 : int @54:73..54:76
+        rhs: call scaled@27:1..27:47 : int @54:79..54:97
+          arg[0]: call next@26:1..26:31 : int @54:86..54:93
+            arg[0]: int 1 : int @54:91..54:92
+          arg[1]: int 5 : int @54:95..54:96
+
+fn members@55:1..55:100 () -> int ∈ [75, 75]
+  result: copy : int @55:17..55:20
+    value: eager + : int @55:23..55:100
+      lhs: eager / : int @55:23..55:66
+        lhs: int 100 : int @55:23..55:26
+        rhs: call unwrap_or@28:1..31:2 : int @55:29..55:66
+          arg[0]: make Box : Box<int> @55:44..55:62
+            value: int 4 : int @55:60..55:61
+          arg[1]: int 0 : int @55:64..55:65
+      rhs: eager / : int @55:69..55:100
+        lhs: int 100 : int @55:69..55:72
+        rhs: call unwrap_or@28:1..31:2 : int @55:75..55:100
+          arg[0]: make None : None @55:90..55:96
+          arg[1]: int 2 : int @55:98..55:99
+
+fn fields@56:1..56:89 () -> int ∈ [27, 27]
+  result: copy : int @56:16..56:19
+    value: eager + : int @56:22..56:89
+      lhs: eager / : int @56:22..56:57
+        lhs: int 100 : int @56:22..56:25
+        rhs: field x : int @56:28..56:57
+          base: call mirrored@32:1..32:55 : Point @56:28..56:55
+            arg[0]: make Point : Point @56:37..56:54
+              x: int 0 : int @56:46..56:47
+              y: int 5 : int @56:52..56:53
+      rhs: field y : int @56:60..56:89
+        base: call mirrored@32:1..32:55 : Point @56:60..56:87
+          arg[0]: make Point : Point @56:69..56:86
+            x: int 7 : int @56:78..56:79
+            y: int 0 : int @56:84..56:85
+
+fn returns@57:1..57:55 () -> int ∈ [20, 43]
+  result: copy : int @57:17..57:20
+    value: eager + : int @57:23..57:55
+      lhs: eager / : int @57:23..57:37
+        lhs: int 100 : int @57:23..57:26
+        rhs: call early@33:1..38:2 : int @57:29..57:37
+          arg[0]: int 3 : int @57:35..57:36
+      rhs: eager / : int @57:40..57:55
+        lhs: int 100 : int @57:40..57:43
+        rhs: call early@33:1..38:2 : int @57:46..57:55
+          arg[0]: int 30 : int @57:52..57:54
+
+fn carried@58:1..58:46 () -> int ∈ [2, +∞)
+  result: copy : int @58:17..58:20
+    value: eager + : int @58:23..58:46
+      lhs: call counted@39:1..45:2 : int @58:23..58:33
+        arg[0]: int 3 : int @58:31..58:32
+      rhs: call counted@39:1..45:2 : int @58:36..58:46
+        arg[0]: int 8 : int @58:44..58:45
+
+fn recursive@59:1..59:42 () -> int ∈ [0, 0]
+  result: copy : int @59:19..59:22
+    value: eager + : int @59:25..59:42
+      lhs: call down@46:1..50:2 : int @59:25..59:32
+        arg[0]: int 2 : int @59:30..59:31
+      rhs: call down@46:1..50:2 : int @59:35..59:42
+        arg[0]: int 9 : int @59:40..59:41
+
+fn id<int>@9:1..9:24 (int ∈ [-5, 1000] \ 0) -> int ∈ [-5, 1000] \ 0
+  param x@9:10..9:11: int
+  result: copy : int @9:19..9:20
+    value: read x@9:10..9:11 : int
+
+fn unwrap_or<int>@28:1..31:2 (Box<int> | None ∈ Box<int>([4, 4]) ∪ None(), int ∈ [0, 2]) -> int ∈ [0, 4]
+  param v@28:17..28:18: Box<int> | None
+  param fallback@28:35..28:43: int
+  result: copy : int @28:51..28:52
+    value: match : int @28:55..31:2
+      scrutinee: read v@28:17..28:18 : Box<int> | None
+      Box<int>:
+        let b@29:12..29:13: narrow to Box<int> : Box<int> @29:12..29:13
+          scrutinee: read v@28:17..28:18 : Box<int> | None
+        tail: field value : int @29:18..29:25
+          base: read b@29:12..29:13 : Box<int>
+      None: read fallback@28:35..28:43 : int
+
+== semantic diagnostics ==
+warning[semantic/unused-name] 41:9..41:10 "i": loop index `i` is never read
+  fix: prefix the name with `_`
+    41:9 -> "_"

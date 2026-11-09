@@ -149,7 +149,7 @@ fn nested@27:1..35:2 (A | B | C ∈ A() ∪ B() ∪ C(), bool ∈ {true, false})
     outcome[1]: return : int @32:27..32:36
       payload: int 20 : int @32:34..32:36
 
-fn main@36:1..36:56 () -> int ∈ [3, 9]
+fn main@36:1..36:56 () -> int ∈ [6, 9]
   result: copy : int @36:14..36:17
     value: eager + : int @36:20..36:56
       lhs: eager + : int @36:20..36:43

@@ -119,7 +119,7 @@ fn counted@23:1..30:2 (Circle | Square ∈ Circle([7, 7]) ∪ Square([5, 5])) ->
         Circle: read n@24:13..24:14 (assigned @26:24..26:36) : int
         Square: read n@24:13..24:14 (assigned @27:24..27:38) : int
 
-fn sized@31:1..31:74 () -> int ∈ [14, 20]
+fn sized@31:1..31:74 () -> int ∈ [17, 17]
   result: copy : int @31:15..31:18
     value: eager + : int @31:21..31:74
       lhs: call counted@23:1..30:2 : int @31:21..31:45

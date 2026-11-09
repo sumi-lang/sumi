@@ -212,14 +212,25 @@ impl Gen<'_> {
         }
     }
 
-    /// A value of `kind` through an instance of the generic prelude, which hands it back.
+    /// A value of `kind` through the prelude: an instance of a generic function that hands it
+    /// back, or a helper whose result only its own arguments bound.
     fn generic(&mut self, kind: Kind, fuel: u32) -> String {
         let value = self.expr(kind, fuel);
         let name = kind.name();
-        match self.rng.below(3) {
+        match self.rng.below(if kind == Kind::Int { 6 } else { 3 }) {
             0 => format!("pass<{name}>({value})"),
             1 => format!("wrap<{name}>({value}).g"),
-            _ => format!("G<{name}>(g: {value}).g"),
+            2 => format!("G<{name}>(g: {value}).g"),
+            3 => {
+                let other = self.expr(Kind::Int, fuel);
+                format!("least({value}, {other})")
+            }
+            4 => format!("size({value})"),
+            // The divisor is at least one only as `size` bounds its result at this call.
+            _ => {
+                let dividend = self.operand(Kind::Int, fuel);
+                format!("({dividend} / (size({value}) + 1))")
+            }
         }
     }
 
@@ -776,7 +787,9 @@ fn program(seed: u64) -> String {
     }
     let mut text = String::from(
         "type R { a: int, b: bool }\ntype S { c: int }\ntype G<T> { g: T }\n\
-         fn pass<T>(x: T) -> T = x\nfn wrap<T>(x: T) -> G<T> = G<T>(g: x)\n",
+         fn pass<T>(x: T) -> T = x\nfn wrap<T>(x: T) -> G<T> = G<T>(g: x)\n\
+         fn least(a: int, b: int) -> int = if a < b { a } else { b }\n\
+         fn size(a: int) -> int = if a < 0 { -a } else { a }\n",
     );
     for current in 0..functions.len() {
         let signature = &functions[current];

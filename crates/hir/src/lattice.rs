@@ -2,11 +2,15 @@
 //! arguments, and loop backedges round cyclic integer flows to thresholds, so every ascending chain
 //! is finite.
 
+use std::rc::Rc;
+
 use sumi_graph::{
-    BinaryOp, Case, CmpOp, Decl, DeclId, Domain, FieldName, Ints, May, Thresholds, Unions,
+    BinaryOp, Case, CmpOp, Decl, DeclId, Domain, FieldName, FunctionId, Ints, May, Thresholds,
+    Unions,
 };
 
 use crate::solver::{Carry, Lattice};
+use crate::summary::{Sym, Types};
 
 /// A flow from one provider.
 #[derive(Clone, Copy, Debug)]
@@ -51,10 +55,13 @@ pub(crate) enum Pair {
     Range,
 }
 
-/// A flow from every field of a construction, in declaration order.
+/// A flow from several providers in order.
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Many {
+    /// Every field of a construction, in declaration order.
     Make(DeclId),
+    /// The callee's result, then the call's arguments: the result as those arguments decide it.
+    Call(FunctionId),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -70,6 +77,8 @@ pub(crate) struct Context {
     pub decls: Box<[Decl]>,
     pub unions: Unions,
     pub cases: Box<[Arm]>,
+    /// By function, its result as its parameters decide it.
+    pub results: Rc<[Sym]>,
 }
 
 impl Context {
@@ -123,10 +132,12 @@ impl Lattice for May {
         }
     }
 
-    /// Every field passes into the value made.
-    fn carries_many(many: &Many) -> Carry {
+    /// Every field passes into the value made; a result passes into its call, which an argument
+    /// may raise as far as the result reaches.
+    fn carries_many(many: &Many) -> [Carry; 2] {
         match many {
-            Many::Make(_) => Carry::Passes,
+            Many::Make(_) => [Carry::Passes; 2],
+            Many::Call(_) => [Carry::Passes, Carry::Grows],
         }
     }
 
@@ -217,7 +228,19 @@ impl Lattice for May {
         cyclic: bool,
         cx: &Context,
     ) -> Self {
-        let Many::Make(decl) = *many;
+        let decl = match *many {
+            Many::Make(decl) => decl,
+            Many::Call(callee) => {
+                let args: Vec<&Self> = others.collect();
+                let types = Types {
+                    decls: &cx.decls,
+                    unions: &cx.unions,
+                };
+                let allowed = cx.results[callee.index()].among(&args, types);
+                let result = allowed.map_or_else(|| self.clone(), |allowed| self.meet(&allowed));
+                return rounded(&result, cyclic, cx);
+            }
+        };
         let fields = std::iter::once(self)
             .chain(others)
             .zip(cx.decls[decl.index()].fields())
@@ -272,6 +295,7 @@ mod tests {
             decls: Box::new([]),
             unions: Unions::new(),
             cases: Box::new([]),
+            results: Rc::from([]),
         };
         let a = band(4, 13);
         let b = May::int(&2.into());
@@ -304,6 +328,7 @@ mod tests {
             decls: Box::new([]),
             unions: Unions::new(),
             cases: Box::new([]),
+            results: Rc::from([]),
         };
         let live = May::unit();
         let dead = May::NONE;
@@ -328,6 +353,7 @@ mod tests {
             decls: Box::new([]),
             unions: Unions::new(),
             cases: Box::new([]),
+            results: Rc::from([]),
         };
         assert_eq!(
             flag.transfer(&Edge::Exactly(false), false, &cx).bools,

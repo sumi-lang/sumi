@@ -1,11 +1,11 @@
 file: accepted
-optimized: nodes 73 of 102, regions 14 of 15, calls 6 of 7
+optimized: nodes 63 of 102, regions 14 of 15, calls 2 of 7
 
 == functions ==
 fn origin = Point(0, 0)
   steps: 4, optimized steps: 3, depth: 1, bound: 1
 fn main = 5
-  steps: 30, optimized steps: 22, depth: 2, bound: 2
+  steps: 30, optimized steps: 1, depth: 2, bound: 2
 fn nothing = Nothing()
   steps: 2, optimized steps: 1, depth: 1, bound: 1
 fn walk = 6

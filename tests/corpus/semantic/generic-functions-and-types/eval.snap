@@ -1,5 +1,5 @@
 file: accepted
-optimized: nodes 82 of 122, regions 24 of 26, calls 9 of 15
+optimized: nodes 67 of 122, regions 24 of 26, calls 3 of 15
 
 == functions ==
 fn nested = 7
@@ -7,10 +7,10 @@ fn nested = 7
 fn swapped = Pair<bool, int>(true, 20)
   steps: 9, optimized steps: 7, depth: 2, bound: 2
 fn fallbacks = 42
-  steps: 34, optimized steps: 12, depth: 3, bound: 3
+  steps: 34, optimized steps: 1, depth: 3, bound: 3
 fn shared = 9
-  steps: 18, optimized steps: 11, depth: 3, bound: 3
+  steps: 18, optimized steps: 1, depth: 3, bound: 3
 fn flags = true
   steps: 9, optimized steps: 1, depth: 3, bound: 3
 fn generic_entry<T> = 3
-  steps: 4, optimized steps: 2, depth: 2, bound: 2
+  steps: 4, optimized steps: 1, depth: 2, bound: 2

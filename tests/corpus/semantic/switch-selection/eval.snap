@@ -1,9 +1,9 @@
 file: accepted
-optimized: nodes 129 of 196, regions 29 of 34, calls 13 of 16
+optimized: nodes 128 of 196, regions 29 of 34, calls 12 of 16
 
 == functions ==
 fn main = 6
-  steps: 18, optimized steps: 14, depth: 2, bound: 2
+  steps: 18, optimized steps: 11, depth: 2, bound: 2
 fn duplicates = 6
   steps: 18, optimized steps: 14, depth: 2, bound: 2
 fn rest = 12

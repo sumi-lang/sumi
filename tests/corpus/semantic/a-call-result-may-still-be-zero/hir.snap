@@ -1,0 +1,63 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 2
+
+== graph ==
+fn least@1:1..5:2 (int ∈ [0, 7], int ∈ [5, 5]) -> int ∈ [0, 5]
+  param a@1:10..1:11: int
+  param b@1:18..1:19: int
+  result: copy : int @1:29..1:32
+    value: if : int @1:35..5:2
+      scrutinee: eager < : bool @1:38..1:43
+        lhs: read a@1:10..1:11 : int
+        rhs: read b@1:18..1:19 : int
+      then: read a@1:10..1:11 [a < b holds@1:38..1:43] : int
+      else: read b@1:18..1:19 [a < b fails@1:38..1:43] : int
+
+fn size@6:1..10:2 (int ∈ [0, 3]) -> int ∈ [0, 3]
+  param a@6:9..6:10: int
+  result: copy : int @6:20..6:23
+    value: if : int @6:26..10:2
+      scrutinee: eager < : bool @6:29..6:34
+        lhs: read a@6:9..6:10 : int
+        rhs: int 0 : int @6:33..6:34
+      then: negate : int @7:5..7:7
+        operand: read a@6:9..6:10 [a < 0 holds@6:29..6:34] : int
+      else: read a@6:9..6:10 [a < 0 fails@6:29..6:34] : int
+
+fn at_this_call@11:1..11:65 () -> int ∈ ∅
+  result: copy : int @11:22..11:25
+    value: eager + : int @11:28..11:65
+      lhs: eager / : int @11:28..11:45
+        lhs: int 100 : int @11:28..11:31
+        rhs: call least@1:1..5:2 : int @11:34..11:45
+          arg[0]: int 0 : int @11:40..11:41
+          arg[1]: int 5 : int @11:43..11:44
+      rhs: eager / : int @11:48..11:65
+        lhs: int 100 : int @11:48..11:51
+        rhs: call least@1:1..5:2 : int @11:54..11:65
+          arg[0]: int 7 : int @11:60..11:61
+          arg[1]: int 5 : int @11:63..11:64
+
+fn within_its_bounds@12:1..12:52 (int ∈ [0, 3]) -> int ∈ [33, 100]
+  param n@12:22..12:23: int
+  result: copy : int @12:33..12:36
+    value: eager / : int @12:39..12:52
+      lhs: int 100 : int @12:39..12:42
+      rhs: call size@6:1..10:2 : int @12:45..12:52
+        arg[0]: read n@12:22..12:23 : int
+
+fn bounded@13:1..13:66 () -> int ∈ [66, 200]
+  result: copy : int @13:17..13:20
+    value: eager + : int @13:23..13:66
+      lhs: call within_its_bounds@12:1..12:52 : int @13:23..13:43
+        arg[0]: int 3 : int @13:41..13:42
+      rhs: call within_its_bounds@12:1..12:52 : int @13:46..13:66
+        arg[0]: int 0 : int @13:64..13:65
+
+== semantic diagnostics ==
+error[semantic/division-by-zero] 11:28..11:45 "100 / least(0, 5)": division by zero
+  at 1:38..1:43 "a < b": may be 0 under this guard: [0, 4]
+  at 11:40..11:41 "0": argument is 0
+error[semantic/division-by-zero] 12:39..12:52 "100 / size(n)": divisor may be zero
+  at 12:50..12:51 "n": argument may be 0: [0, 3]
