@@ -1,0 +1,26 @@
+// Each operand of a lazy chain runs where every operand before it decided the
+// chain goes on: the divisions are safe only by that, in every later operand,
+// and a local an operand assigns is merged with what the skipped side saw.
+fn guarded(x: int) -> bool = x != 0 && 100 / x > 1 && 100 / x < 60 && x != 7
+fn either(x: int) -> bool = x == 0 || 100 / x > 50 || 100 / x < 0 || x == 3
+fn counted(a: bool, b: bool) -> int {
+    let mut n = 0
+    let all = a && {
+        n = n + 1
+        b
+    } && {
+        n = n + 10
+        a
+    } && b
+    if all { n } else { 0 - n }
+}
+fn narrowed() -> int {
+    let mut hits = 0
+    if guarded(2) { hits = hits + 1 }
+    if guarded(0) { hits = hits + 10 }
+    if guarded(7) { hits = hits + 100 }
+    if either(0) { hits = hits + 1000 }
+    if either(5) { hits = hits + 10000 }
+    hits
+}
+fn assigned() -> int = counted(true, true) + counted(true, false) + counted(false, true)
