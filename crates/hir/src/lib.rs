@@ -487,11 +487,15 @@ pub struct TypeDecl {
     name: Option<TextRange>,
     origin: TextRange,
     fields: Vec<FieldDecl>,
+    is_param: bool,
     generic: DeclId,
     type_args: Box<[Ty]>,
 }
 
 impl TypeDecl {
+    pub fn is_param(&self) -> bool {
+        self.is_param
+    }
     pub fn name(&self) -> Option<TextRange> {
         self.name
     }

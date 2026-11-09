@@ -193,7 +193,7 @@ pub(crate) fn tokens(
         for reference in analysis.references() {
             let style = match reference.symbol {
                 Symbol::Function(_) => (Kind::Function, 0),
-                Symbol::Type(id) if analysis.unions().is_param(id) => (Kind::TypeParameter, 0),
+                Symbol::Type(id) if analysis.decl(id).is_param() => (Kind::TypeParameter, 0),
                 Symbol::Type(_) => (Kind::Type, 0),
                 Symbol::Field(..) => (Kind::Property, 0),
                 Symbol::Local(id) => match analysis.binding(id).kind() {

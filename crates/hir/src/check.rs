@@ -53,7 +53,15 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     let typing = Typing::new(checked.types, values);
     let failed = checked.failed;
     divisions(&mut source, &graph, &spans, &typing, &lowered, &failed);
-    exhaustive(&mut source, &graph, &spans, &lowered, &failed, &any);
+    exhaustive(
+        &mut source,
+        &graph,
+        &spans,
+        &lowered,
+        &headers,
+        &failed,
+        &any,
+    );
     bounds(
         &mut source,
         &graph,
@@ -87,7 +95,9 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     let decls: Vec<TypeDecl> = source
         .decls
         .iter()
-        .map(|names| TypeDecl {
+        .enumerate()
+        .map(|(index, names)| TypeDecl {
+            is_param: source.params.holds(DeclId::new(index)),
             name: names.name_node.map(|node| source.range(node)),
             origin: source.range(names.origin),
             fields: names
@@ -157,12 +167,15 @@ fn exhaustive(
     graph: &Graph,
     spans: &Spans,
     lowered: &Lowered,
+    headers: &[lower::Header],
     failed: &[bool],
     any: &AnyValues<'_>,
 ) {
     let mut switches: Vec<(NodeId, sumi_graph::Arms)> = Vec::new();
     for (index, run) in graph.runs().iter().enumerate() {
-        if failed[index] || !lowered.built[index] {
+        // An instance's arms are its item's, which answers for them at its own parameters.
+        let is_instance = headers[index].generic.index() != index;
+        if failed[index] || !lowered.built[index] || is_instance {
             continue;
         }
         for node in run.nodes() {

@@ -12,7 +12,7 @@ use sumi_text::TextRange;
 
 pub(crate) use body::lower;
 pub(crate) use declare::{Header, HeaderResult, declare};
-pub(crate) use source::{Source, diagnostic};
+pub(crate) use source::{Params, Source, diagnostic};
 
 use crate::{Binding, Occurrence};
 

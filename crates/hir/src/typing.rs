@@ -18,7 +18,7 @@ use crate::Function;
 use crate::codes;
 use crate::dependency::{Components, Rows};
 use crate::flows::{Values, selection};
-use crate::lower::{Header, HeaderResult, Lowered, Source};
+use crate::lower::{Header, HeaderResult, Lowered, Params, Source};
 use crate::spans::Spans;
 
 /// What the analysis settled about every node: its type and the values that may reach it.
@@ -84,6 +84,7 @@ pub(crate) fn check(
         })
     });
     let unions = source.unions.clone();
+    let params = source.params;
     let mut checker = Checker {
         source,
         graph,
@@ -91,6 +92,7 @@ pub(crate) fn check(
         lowered,
         headers,
         unions,
+        params,
         parent: (0..graph.nodes().len() as u32).collect(),
         sets: vec![Set::default(); graph.nodes().len()],
         exports: vec![None; count],
@@ -206,13 +208,13 @@ impl Set {
 
     /// The type claimed: the one claim, or the union of claims that are all of types a union
     /// holds, which `unions` interns. None for a conflict, or a class only a hole or reads decided.
-    fn ty(&self, unions: &mut Unions) -> Option<Ty> {
+    fn ty(&self, unions: &mut Unions, params: Params) -> Option<Ty> {
         let mut types = self.types();
         let first = types.next()?;
         if types.next().is_none() {
             return Some(first.ty);
         }
-        if !self.types().all(|member| unions.joins(member.ty)) {
+        if !self.types().all(|member| params.joins(member.ty)) {
             return None;
         }
         let mut decls: Vec<DeclId> = Vec::new();
@@ -228,13 +230,13 @@ impl Set {
     }
 
     /// Never for claims of types a union holds alone, which are a union.
-    fn is_conflict(&self, unions: &Unions) -> bool {
-        self.types().nth(1).is_some() && !self.types().all(|member| unions.joins(member.ty))
+    fn is_conflict(&self, params: Params) -> bool {
+        self.types().nth(1).is_some() && !self.types().all(|member| params.joins(member.ty))
     }
 
     /// A conflict one call delivered whole: it is reported at the callee.
-    fn is_inherited(&self, unions: &Unions) -> bool {
-        self.is_conflict(unions)
+    fn is_inherited(&self, params: Params) -> bool {
+        self.is_conflict(params)
             && self.types().all(|member| member.rank & IMPORTED != 0)
             && self
                 .types()
@@ -262,8 +264,8 @@ struct Export {
 }
 
 impl Export {
-    fn is_conflict(&self, unions: &Unions) -> bool {
-        self.types.len() > 1 && !self.types.iter().all(|&ty| unions.joins(ty))
+    fn is_conflict(&self, params: Params) -> bool {
+        self.types.len() > 1 && !self.types.iter().all(|&ty| params.joins(ty))
     }
 }
 
@@ -289,6 +291,7 @@ struct Checker<'a, 's> {
     lowered: &'a Lowered,
     headers: &'a [Header],
     unions: Rc<RefCell<Unions>>,
+    params: Params,
     parent: Vec<u32>,
     /// By class root.
     sets: Vec<Set>,
@@ -348,7 +351,7 @@ impl Checker<'_, '_> {
 
     fn resolve(&mut self, node: NodeId) -> Option<Ty> {
         let root = self.root(node);
-        self.sets[root].ty(&mut self.unions.borrow_mut())
+        self.sets[root].ty(&mut self.unions.borrow_mut(), self.params)
     }
 
     fn fits(&self, actual: Ty, expected: Ty) -> bool {
@@ -363,9 +366,7 @@ impl Checker<'_, '_> {
             return;
         };
         let root = self.root(call);
-        if self.component[callee.index()] != self.current
-            && export.is_conflict(&self.unions.borrow())
-        {
+        if self.component[callee.index()] != self.current && export.is_conflict(self.params) {
             self.sets[root].is_unknown = true;
             return;
         }
@@ -381,9 +382,9 @@ impl Checker<'_, '_> {
     /// read reported elsewhere is unknown, so nothing after it is blamed: by its own demand, by
     /// the base's conflict where that arose, or at the field's damaged type.
     fn field(&mut self, read: NodeId, base: NodeId, name: FieldName) {
-        let unions = self.unions.clone();
+        let params = self.params;
         let set = self.set(base);
-        let (is_unknown, is_conflict) = (set.is_unknown, set.is_conflict(&unions.borrow()));
+        let (is_unknown, is_conflict) = (set.is_unknown, set.is_conflict(params));
         let resolved = self.resolve(base);
         let field = resolved.and_then(Ty::as_decl).and_then(|decl| {
             let decl = self.graph.decl(decl);
@@ -492,7 +493,7 @@ impl Checker<'_, '_> {
         let resolved = if matches!(header.result, HeaderResult::None) {
             None
         } else {
-            result.ty(&mut self.unions.borrow_mut())
+            result.ty(&mut self.unions.borrow_mut(), self.params)
         };
         if run.param_types().is_some() {
             function.result = resolved;
@@ -501,11 +502,11 @@ impl Checker<'_, '_> {
             || resolved.is_some()
             || !self.lowered.built[owner.index()]
             || self.failed[owner.index()]
-            || result.is_inherited(&self.unions.borrow())
+            || result.is_inherited(self.params)
         {
             return;
         }
-        if result.is_conflict(&self.unions.borrow()) {
+        if result.is_conflict(self.params) {
             self.source.conflict_at(
                 self.source.range(header.item),
                 codes::CANNOT_INFER,
@@ -875,11 +876,8 @@ impl Checker<'_, '_> {
     }
 
     fn matched(&mut self, at: TextRange, scrutinee: NodeId) -> bool {
-        let unions = self.unions.clone();
-        let Some(ty) = self
-            .resolve(scrutinee)
-            .filter(|&ty| !unions.borrow().joins(ty))
-        else {
+        let params = self.params;
+        let Some(ty) = self.resolve(scrutinee).filter(|&ty| !params.joins(ty)) else {
             return true;
         };
         let message = format!(
@@ -953,11 +951,7 @@ impl Checker<'_, '_> {
             );
         }
         let set = self.set(switch).clone();
-        let is_reported = {
-            let unions = self.unions.borrow();
-            set.is_conflict(&unions) && !set.is_inherited(&unions)
-        };
-        if !is_reported {
+        if !set.is_conflict(self.params) || set.is_inherited(self.params) {
             return true;
         }
         let what = if is_boolean {
@@ -1016,8 +1010,8 @@ mod tests {
                 (Ty::BOOL, Some(at(7)))
             ]
         );
-        assert!(set.is_conflict(&Unions::new()));
-        assert_eq!(set.ty(&mut Unions::new()), None);
+        assert!(set.is_conflict(Params::default()));
+        assert_eq!(set.ty(&mut Unions::new(), Params::default()), None);
     }
 
     #[test]
@@ -1026,21 +1020,23 @@ mod tests {
         let mut unions = Unions::new();
         let mut set = Set::default();
         set.offer(member(Ty::decl(a), 1));
-        assert_eq!(set.ty(&mut unions), Some(Ty::decl(a)));
+        assert_eq!(set.ty(&mut unions, Params::default()), Some(Ty::decl(a)));
         set.offer(member(Ty::decl(b), 2 | IMPORTED));
-        assert!(!set.is_conflict(&unions));
-        let union = set.ty(&mut unions).expect("two declared types are a union");
+        assert!(!set.is_conflict(Params::default()));
+        let union = set
+            .ty(&mut unions, Params::default())
+            .expect("two declared types are a union");
         assert_eq!(unions.members(union), [a, b]);
         set.offer(Member {
             ty: Ty::INT,
             rank: DEMANDED,
             origin: None,
         });
-        assert_eq!(set.ty(&mut unions), Some(union));
+        assert_eq!(set.ty(&mut unions, Params::default()), Some(union));
         assert_eq!(set.claims().len(), 2);
         set.offer(member(Ty::INT, 3 | IMPORTED));
-        assert!(set.is_conflict(&unions));
-        assert_eq!(set.ty(&mut unions), None);
+        assert!(set.is_conflict(Params::default()));
+        assert_eq!(set.ty(&mut unions, Params::default()), None);
     }
 
     #[test]
@@ -1048,22 +1044,25 @@ mod tests {
         let mut set = Set::default();
         set.offer(member(Ty::INT, 4 | IMPORTED));
         set.offer(member(Ty::BOOL, 4 | IMPORTED));
-        assert!(set.is_conflict(&Unions::new()));
+        assert!(set.is_conflict(Params::default()));
         let mut other = Set {
             is_unknown: true,
             ..Set::default()
         };
-        assert_eq!(other.ty(&mut Unions::new()), None);
+        assert_eq!(other.ty(&mut Unions::new(), Params::default()), None);
         other.offer(Member {
             ty: Ty::BOOL,
             rank: DEMANDED,
             origin: None,
         });
-        assert_eq!(other.ty(&mut Unions::new()), None);
+        assert_eq!(other.ty(&mut Unions::new(), Params::default()), None);
         other.offer(member(Ty::UNIT, 1));
-        assert_eq!(other.ty(&mut Unions::new()), Some(Ty::UNIT));
+        assert_eq!(
+            other.ty(&mut Unions::new(), Params::default()),
+            Some(Ty::UNIT)
+        );
         set.absorb(other);
-        assert!(set.is_unknown && set.is_conflict(&Unions::new()));
+        assert!(set.is_unknown && set.is_conflict(Params::default()));
         assert_eq!(set.claims().len(), 3);
     }
 

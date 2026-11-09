@@ -1134,10 +1134,15 @@ fn symbols(
 ) -> DocumentSymbolResponse {
     let text = analysis.parsed().source();
     let positions = positions(analysis, encoding);
+    // An instance of a generic function is its item, which is listed once.
+    let items = analysis
+        .functions()
+        .iter()
+        .enumerate()
+        .filter(|&(index, function)| function.generic() == FunctionId::new(index))
+        .map(|(_, function)| function);
     if is_hierarchical {
-        let symbols = analysis
-            .functions()
-            .iter()
+        let symbols = items
             .filter_map(|function| {
                 let name = function.name()?;
                 #[allow(deprecated)]
@@ -1155,9 +1160,7 @@ fn symbols(
             .collect();
         DocumentSymbolResponse::Nested(symbols)
     } else {
-        let symbols = analysis
-            .functions()
-            .iter()
+        let symbols = items
             .filter_map(|function| {
                 let name = function.name()?;
                 #[allow(deprecated)]
@@ -1303,10 +1306,16 @@ fn complete(
             .iter()
             .map(|ty| ty.scalar_name().expect("a scalar has a name").to_owned())
             .chain(
+                // A type item once, whatever its instances; a type parameter is in scope only
+                // inside its item.
                 analysis
                     .decls()
                     .iter()
-                    .filter_map(|decl| decl.name())
+                    .enumerate()
+                    .filter(|&(index, decl)| {
+                        decl.generic() == DeclId::new(index) && !decl.is_param()
+                    })
+                    .filter_map(|(_, decl)| decl.name())
                     .map(|name| analysis.text(name).to_owned()),
             )
             .map(|label| CompletionItem {
@@ -1508,25 +1517,39 @@ fn rename(
     if old_name == new_name {
         return Ok(None);
     }
-    // The items and the type parameters, each once: an instance is declared where its item is.
+    // The items, each once with its range: an instance is declared where its item is, and a type
+    // parameter is no item.
     let items = || {
         let functions = analysis.functions().iter().enumerate();
         let decls = analysis.decls().iter().enumerate();
         functions
             .filter(|&(index, function)| function.generic() == FunctionId::new(index))
-            .filter_map(|(_, function)| function.name().map(|name| ("function", name)))
+            .filter_map(|(_, function)| Some(("function", function.name()?, function.origin())))
             .chain(
                 decls
-                    .filter(|&(index, decl)| decl.generic() == DeclId::new(index))
-                    .filter_map(|(_, decl)| decl.name().map(|name| ("type", name))),
+                    .filter(|&(index, decl)| {
+                        decl.generic() == DeclId::new(index) && !decl.is_param()
+                    })
+                    .filter_map(|(_, decl)| Some(("type", decl.name()?, decl.origin()))),
             )
     };
-    // Two items may each declare a type parameter of one name.
-    let is_param = matches!(occurrence.symbol, Symbol::Type(id) if analysis.unions().is_param(id));
+    let within = |item: TextRange, range: TextRange| {
+        item.start() <= range.start() && range.end() <= item.end()
+    };
+    // The type parameters, each with the range of the item that declares it.
+    let params = || {
+        let params = analysis.decls().iter().filter(|decl| decl.is_param());
+        params.filter_map(|decl| {
+            let name = decl.name()?;
+            let (_, _, item) = items().find(|&(_, _, item)| within(item, name))?;
+            Some((name, item))
+        })
+    };
+    let is_param = matches!(occurrence.symbol, Symbol::Type(id) if analysis.decl(id).is_param());
     if matches!(occurrence.symbol, Symbol::Function(_) | Symbol::Type(_))
         && !is_param
         && items()
-            .filter(|&(_, range)| analysis.text(range) == old_name)
+            .filter(|&(_, range, _)| analysis.text(range) == old_name)
             .count()
             > 1
     {
@@ -1555,8 +1578,39 @@ fn rename(
         if matches!(occurrence.symbol, Symbol::Type(_)) && Ty::scalar(new_name).is_some() {
             return Err(format!("`{new_name}` is a built-in type"));
         }
-        if let Some((kind, _)) = items().find(|&(_, range)| analysis.text(range) == new_name) {
-            return Err(format!("a {kind} is already named `{new_name}`"));
+        let named = |range: TextRange| analysis.text(range) == new_name;
+        if is_param {
+            // The name is taken where the parameter's own item declares or names it; any other
+            // item may use it.
+            let own = params()
+                .find(|&(name, _)| name == declared)
+                .map(|(_, item)| item);
+            if params().any(|(name, item)| Some(item) == own && named(name)) {
+                return Err(format!("a type parameter is already named `{new_name}`"));
+            }
+            let is_named_inside = |index: usize| {
+                let mut uses = analysis.references_of(Symbol::Type(DeclId::new(index)));
+                uses.any(|range| own.is_some_and(|own| within(own, range)))
+            };
+            let decls = analysis.decls().iter().enumerate();
+            let is_captured = decls
+                .filter(|&(index, decl)| decl.generic() == DeclId::new(index) && !decl.is_param())
+                .any(|(index, decl)| decl.name().is_some_and(named) && is_named_inside(index));
+            if is_captured {
+                return Err(format!("a type is already named `{new_name}`"));
+            }
+        } else {
+            if let Some((kind, ..)) = items().find(|&(_, range, _)| named(range)) {
+                return Err(format!("a {kind} is already named `{new_name}`"));
+            }
+            // A type parameter of the name hides the type inside the item that declares it.
+            let is_hidden = matches!(occurrence.symbol, Symbol::Type(_))
+                && params().any(|(name, item)| {
+                    named(name) && occurrences().any(|range| within(item, range))
+                });
+            if is_hidden {
+                return Err(format!("a type parameter is already named `{new_name}`"));
+            }
         }
         let same: Vec<_> = analysis
             .bindings()
@@ -1664,9 +1718,7 @@ fn hover(
             }
             signature_line(analysis, id)
         }
-        Symbol::Type(id) if analysis.unions().is_param(id) => {
-            analysis.show(Ty::decl(id)).to_string()
-        }
+        Symbol::Type(id) if analysis.decl(id).is_param() => analysis.show(Ty::decl(id)).to_string(),
         Symbol::Type(id) => {
             let decl = analysis.decl(id);
             let name = analysis.show(Ty::decl(id));
@@ -3311,8 +3363,51 @@ fn main() -> int = id<Box<int>>(Box<int>(value: id<int>(1))).value
         );
         assert_eq!(
             rename(at(0, 5), "T"),
-            Err("a type is already named `T`".into())
+            Err("a type parameter is already named `T`".into())
         );
+    }
+
+    #[test]
+    fn a_type_parameters_name_is_taken_only_inside_its_item() {
+        let text = "type Cell<T> { value: T }
+fn a<T>(x: T) -> T = x
+fn b<U, V>(y: U, z: Cell<V>) -> U = y
+fn main() -> int = a<int>(1) + b<int, int>(2, Cell<int>(value: 3))
+";
+        let uri: Uri = "file:///scopes.su".parse().unwrap();
+        let at = |line, character| Position::new(line, character);
+        let analysis = analyzed(text);
+        let rename = |position, new_name: &str| {
+            rename(&analysis, uri.clone(), position, Encoding::Utf16, new_name)
+                .map(|edits| edits.unwrap().changes.unwrap().remove(&uri).unwrap().len())
+        };
+        assert_eq!(rename(at(1, 5), "U"), Ok(3));
+        assert_eq!(rename(at(1, 5), "Cell"), Ok(3));
+        assert_eq!(rename(at(1, 3), "U"), Ok(2));
+        assert_eq!(
+            rename(at(2, 5), "V"),
+            Err("a type parameter is already named `V`".into())
+        );
+        assert_eq!(
+            rename(at(2, 8), "Cell"),
+            Err("a type is already named `Cell`".into())
+        );
+        assert_eq!(
+            rename(at(0, 5), "V"),
+            Err("a type parameter is already named `V`".into())
+        );
+        // `b` names `Cell` and declares a `U`, which would hide it there.
+        assert_eq!(
+            rename(at(0, 5), "U"),
+            Err("a type parameter is already named `U`".into())
+        );
+        assert_eq!(rename(at(0, 5), "W"), Ok(3));
+        let symbols = symbols(&analysis, uri.clone(), Encoding::Utf16, false);
+        let DocumentSymbolResponse::Flat(symbols) = symbols else {
+            panic!("a flat list")
+        };
+        let names: Vec<_> = symbols.iter().map(|symbol| symbol.name.as_str()).collect();
+        assert_eq!(names, ["a", "b", "main"]);
     }
 
     #[test]

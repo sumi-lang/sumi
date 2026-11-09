@@ -7,7 +7,7 @@ use std::collections::hash_map::Entry;
 use std::rc::Rc;
 
 use rustc_hash::FxBuildHasher;
-use sumi_graph::{DeclId, FieldName, FunctionId, GraphBuilder, Ty, Unions};
+use sumi_graph::{DeclId, FieldName, FunctionId, GraphBuilder, Ty};
 use sumi_lexer::SyntaxKind;
 use sumi_syntax::{
     NodeIdx, NodeKind,
@@ -15,7 +15,7 @@ use sumi_syntax::{
 };
 use sumi_text::TextRange;
 
-use super::source::{NameMap, Source, TypeItem};
+use super::source::{NameMap, Params, Source, TypeItem};
 use crate::codes;
 use crate::dependency::{Components, Rows};
 
@@ -260,26 +260,24 @@ pub(crate) fn declare<'s>(
         .iter()
         .map(|item| declare_params(source, item.type_params(tree)))
         .collect();
-    *source.unions.borrow_mut() =
-        Unions::with_params(first_param, source.decls.len() - first_param.index());
+    source.params = Params::new(first_param, source.decls.len() - first_param.index());
 
     source.type_items = type_scopes
         .iter()
         .map(|scope| TypeItem {
             params: scope.iter().map(|&(name, _)| name).collect(),
             field_types: Vec::new(),
-            recursive: Vec::new(),
         })
         .collect();
-    // What each field's type names, where it resolved: a field without a type holds nothing.
-    let mut mentions: Vec<Vec<Vec<DeclId>>> = Vec::with_capacity(type_items.len());
+    // Per type item and field, its type as written where that resolved: one without a type holds
+    // nothing and names no instance.
+    let mut resolved: Vec<Vec<Option<ast::Type>>> = Vec::with_capacity(type_items.len());
     for (index, (item, scope)) in type_items.iter().zip(&type_scopes).enumerate() {
-        let params = source.type_items[index].params.clone();
         source.scope.clone_from(scope);
         let mut fields: Vec<(&'s str, NodeIdx)> = Vec::new();
         let mut field_types: Vec<(FieldName, Option<Ty>)> = Vec::new();
         let mut written: Vec<Option<ast::Type>> = Vec::new();
-        let mut named: Vec<Vec<DeclId>> = Vec::new();
+        let mut typed: Vec<Option<ast::Type>> = Vec::new();
         if let Some(list) = item.field_list(tree) {
             for field in list.fields(tree) {
                 // A field without a type is a syntax error the parser already reported.
@@ -300,20 +298,17 @@ pub(crate) fn declare<'s>(
                 fields.push((name, node));
                 field_types.push((source.field_name(name), ty));
                 written.push(annotation);
-                named.push(match (annotation, ty) {
-                    (Some(annotation), Some(_)) => source.mentions(annotation.node(), &params),
-                    _ => Vec::new(),
-                });
+                typed.push(annotation.filter(|_| ty.is_some()));
             }
         }
-        source.type_items[index].recursive = vec![false; fields.len()];
         source.type_items[index].field_types = written;
         let args = scope.iter().map(|&(_, ty)| ty).collect();
         source.define(DeclId::new(index), fields, field_types, args);
-        mentions.push(named);
+        resolved.push(typed);
     }
     source.scope.clear();
-    drop_recursive_fields(source, &mentions);
+    drop_recursive_fields(source, &resolved);
+    drop_growing_fields(source, &resolved);
     source.settle();
 
     let mut declarations = Declarations {
@@ -429,10 +424,97 @@ fn header<'s>(
     (header, params)
 }
 
+/// The nodes of the syntax under `root`, itself first.
+fn under(source: &Source<'_>, root: NodeIdx) -> impl Iterator<Item = NodeIdx> + use<> {
+    let len = u32::try_from(source.tree.subtree_len(root)).expect("node count fits u32");
+    root.until(NodeIdx::new(root.to_u32() + len))
+}
+
+/// What a value of the type `ty` holds: the type items into `items`, and into `own` the positions
+/// in `params`, each through every type argument the item it is passed to holds.
+fn held(
+    source: &Source<'_>,
+    ty: ast::Type,
+    params: &[&str],
+    holds: &[Vec<bool>],
+    items: &mut Vec<DeclId>,
+    own: &mut Vec<usize>,
+) {
+    let tree = source.tree;
+    // A union nests to the left as deep as it is long; only a type argument is entered.
+    let mut rest = Some(ty);
+    while let Some(ty) = rest.take() {
+        let named = match ty {
+            ast::Type::TypeRef(named) => Some(named),
+            ast::Type::UnionType(union) => {
+                rest = union.lhs(tree);
+                union.rhs(tree)
+            }
+        };
+        let Some(named) = named else { continue };
+        let name = source.head(named.node());
+        if let Some(position) = params.iter().position(|&param| param == name) {
+            own.push(position);
+            continue;
+        }
+        let Some(&Some(item)) = source.type_names.get(name) else {
+            continue;
+        };
+        items.push(item);
+        let args = named
+            .type_args(tree)
+            .into_iter()
+            .flat_map(|list| list.args(tree));
+        for (position, arg) in args.enumerate() {
+            if holds[item.index()].get(position) == Some(&true) {
+                held(source, arg, params, holds, items, own);
+            }
+        }
+    }
+}
+
 /// A type holding its own values through fields never finishes: each such field loses its type in
-/// every instance, so the table the graph takes is finite in depth. `mentions` is, per type item
-/// and field, the type items the field's type names.
-fn drop_recursive_fields(source: &mut Source<'_>, mentions: &[Vec<Vec<DeclId>>]) {
+/// every instance, so the table the graph takes is finite in depth.
+fn drop_recursive_fields(source: &mut Source<'_>, resolved: &[Vec<Option<ast::Type>>]) {
+    let params = |item: usize| source.type_items[item].params.clone();
+    // Per type item and parameter, whether a value of the item holds one of the parameter.
+    let mut holds: Vec<Vec<bool>> = (0..resolved.len())
+        .map(|item| vec![false; params(item).len()])
+        .collect();
+    let mut grew = true;
+    while std::mem::take(&mut grew) {
+        for (item, fields) in resolved.iter().enumerate() {
+            let (mut items, mut own) = (Vec::new(), Vec::new());
+            for &field in fields.iter().flatten() {
+                held(source, field, &params(item), &holds, &mut items, &mut own);
+            }
+            for position in own {
+                grew |= !std::mem::replace(&mut holds[item][position], true);
+            }
+        }
+    }
+    // Per type item and field, the type items a value of the field holds.
+    let mentions: Vec<Vec<Vec<DeclId>>> = resolved
+        .iter()
+        .enumerate()
+        .map(|(item, fields)| {
+            let held_by = |field: &Option<ast::Type>| {
+                let mut items = Vec::new();
+                if let Some(field) = *field {
+                    held(
+                        source,
+                        field,
+                        &params(item),
+                        &holds,
+                        &mut items,
+                        &mut Vec::new(),
+                    );
+                }
+                items
+            };
+            fields.iter().map(held_by).collect()
+        })
+        .collect();
     let reaches = |from: &[DeclId], target: DeclId| {
         let mut seen = vec![false; mentions.len()];
         let mut stack: Vec<DeclId> = from.to_vec();
@@ -469,40 +551,136 @@ fn drop_recursive_fields(source: &mut Source<'_>, mentions: &[Vec<Vec<DeclId>>])
             ),
             Some((source.range(field_node), "this field")),
         );
-        source.type_items[decl.index()].recursive[field] = true;
         source.drop_field_type(decl, field);
     }
 }
 
-/// The calls that would have no last instance. A call inside a generic function passes each of its
-/// type parameters on, as written or inside a larger type; around a cycle of calls that passes one
-/// on inside a larger type even once, the type grows with every turn.
+/// A type parameter passed on in a type argument: to parameter `to` from parameter `from`, both
+/// counted over every item's, with the argument where it is passed inside a larger type.
+struct Passed {
+    from: usize,
+    to: usize,
+    grows: Option<NodeIdx>,
+}
+
+/// Each parameter of `params` a type argument of `list` names: its position in `params`, the
+/// argument's position, and the argument where it is more than the parameter.
+fn passed_on(
+    source: &Source<'_>,
+    list: ast::TypeArgList,
+    params: &[&str],
+    mut pass: impl FnMut(usize, usize, Option<NodeIdx>),
+) {
+    let tree = source.tree;
+    for (position, arg) in list.args(tree).enumerate() {
+        let arg = arg.node();
+        for inner in under(source, arg) {
+            if tree.kind(inner) != NodeKind::TypeRef {
+                continue;
+            }
+            let name = source.head(inner);
+            if let Some(param) = params.iter().position(|&param| param == name) {
+                let grows = inner != arg || tree.subtree_len(arg) > 1;
+                pass(param, position, grows.then_some(arg));
+            }
+        }
+    }
+}
+
+/// The passes with no last instance, by index: around a cycle that passes a parameter on inside a
+/// larger type even once, the type grows with every turn.
+fn growing(count: usize, passed: &[Passed]) -> impl Iterator<Item = (usize, NodeIdx)> + '_ {
+    let rows = Rows::new(count, || {
+        passed.iter().map(|pass| (pass.from, pass.to as u32))
+    });
+    let components = Components::new(&rows, |to| to as usize);
+    passed.iter().enumerate().filter_map(move |(index, pass)| {
+        let arg = pass.grows?;
+        (components.of[pass.from] == components.of[pass.to]).then_some((index, arg))
+    })
+}
+
+/// Per item, the count of type parameters of the items before it.
+fn param_offsets(counts: impl Iterator<Item = usize>) -> (Vec<usize>, usize) {
+    let mut total = 0;
+    let offsets = counts
+        .map(|count| {
+            total += count;
+            total - count
+        })
+        .collect();
+    (offsets, total)
+}
+
+/// A field whose type names an instance that grows around a cycle of type items has no last
+/// instance to settle, whether or not a value holds it, so it loses its type like a recursive one.
+fn drop_growing_fields(source: &mut Source<'_>, resolved: &[Vec<Option<ast::Type>>]) {
+    let tree = source.tree;
+    let (first, count) = param_offsets(source.type_items.iter().map(|item| item.params.len()));
+    let mut passed: Vec<Passed> = Vec::new();
+    let mut sites: Vec<(DeclId, usize)> = Vec::new();
+    for (item, fields) in resolved.iter().enumerate() {
+        let params = &source.type_items[item].params;
+        if params.is_empty() {
+            continue;
+        }
+        for (field, annotation) in fields.iter().enumerate() {
+            let typed = annotation.filter(|_| source.has_field_type(DeclId::new(item), field));
+            let Some(annotation) = typed else { continue };
+            for named in under(source, annotation.node()) {
+                let Some(named) = ast::TypeRef::cast(tree, named) else {
+                    continue;
+                };
+                let name = source.head(named.node());
+                let applied = source.type_names.get(name).copied().flatten();
+                let (Some(applied), false) = (applied, params.contains(&name)) else {
+                    continue;
+                };
+                let Some(list) = named.type_args(tree) else {
+                    continue;
+                };
+                passed_on(source, list, params, |param, position, grows| {
+                    passed.push(Passed {
+                        from: first[item] + param,
+                        to: first[applied.index()] + position,
+                        grows,
+                    });
+                    sites.push((DeclId::new(item), field));
+                });
+            }
+        }
+    }
+    let mut reported: HashSet<NodeIdx, FxBuildHasher> = HashSet::default();
+    for (index, arg) in growing(count, &passed) {
+        let (decl, field) = sites[index];
+        if reported.insert(arg) {
+            let message = format!(
+                "type argument `{}` grows with every type around this cycle, so the types have no \
+                 last instance",
+                source.text(arg)
+            );
+            source.error(arg, codes::POLYMORPHIC_RECURSION, message, None);
+        }
+        source.drop_field_type(decl, field);
+    }
+}
+
+/// The calls that would have no last instance: each passes a type parameter of its function on
+/// inside a larger type, around a cycle of calls.
 fn unbounded_calls(
     source: &mut Source<'_>,
     declarations: &Declarations<'_>,
 ) -> HashSet<NodeIdx, FxBuildHasher> {
-    struct Passed {
-        from: usize,
-        to: u32,
-        /// The argument, when the parameter is passed inside a larger type.
-        grows: Option<NodeIdx>,
-        call: NodeIdx,
-    }
     let tree = source.tree;
-    let mut first: Vec<usize> = Vec::with_capacity(declarations.items.len() + 1);
-    let mut count = 0;
-    for item in &declarations.items {
-        first.push(count);
-        count += item.params.len();
-    }
+    let items = &declarations.items;
+    let (first, count) = param_offsets(items.iter().map(|item| item.params.len()));
     let mut passed: Vec<Passed> = Vec::new();
-    for (caller, item) in declarations.items.iter().enumerate() {
+    let mut calls: Vec<NodeIdx> = Vec::new();
+    for (caller, item) in items.iter().enumerate() {
         if item.params.is_empty() {
             continue;
         }
-        let node = item.item.node();
-        let end = node.to_u32() + u32::try_from(tree.subtree_len(node)).expect("node count");
-        for call in node.until(NodeIdx::new(end)) {
+        for call in under(source, item.item.node()) {
             let Some(call) = ast::CallExpr::cast(tree, call) else {
                 continue;
             };
@@ -512,45 +690,25 @@ fn unbounded_calls(
             else {
                 continue;
             };
-            let args: Vec<ast::Type> = call
-                .type_args(tree)
-                .map(|list| list.args(tree).collect())
-                .unwrap_or_default();
-            if args.len() != declarations.items[callee.index()].params.len() {
+            let Some(list) = call.type_args(tree) else {
+                continue;
+            };
+            if list.args(tree).count() != items[callee.index()].params.len() {
                 continue;
             }
-            for (position, arg) in args.iter().enumerate() {
-                let arg = arg.node();
-                let end = arg.to_u32() + u32::try_from(tree.subtree_len(arg)).expect("node count");
-                for inner in arg.until(NodeIdx::new(end)) {
-                    if tree.kind(inner) != NodeKind::TypeRef {
-                        continue;
-                    }
-                    let name = source.head(inner);
-                    let Some(param) = item.params.iter().position(|&param| param == name) else {
-                        continue;
-                    };
-                    passed.push(Passed {
-                        from: first[caller] + param,
-                        to: (first[callee.index()] + position) as u32,
-                        grows: (inner != arg || tree.subtree_len(arg) > 1).then_some(arg),
-                        call: call.node(),
-                    });
-                }
-            }
+            passed_on(source, list, &item.params, |param, position, grows| {
+                passed.push(Passed {
+                    from: first[caller] + param,
+                    to: first[callee.index()] + position,
+                    grows,
+                });
+                calls.push(call.node());
+            });
         }
     }
-    let rows = Rows::new(count, || passed.iter().map(|pass| (pass.from, pass.to)));
-    let components = Components::new(&rows, |to| to as usize);
     let mut unbounded = HashSet::default();
-    for pass in &passed {
-        let Some(arg) = pass.grows else {
-            continue;
-        };
-        if components.of[pass.from] != components.of[pass.to as usize] {
-            continue;
-        }
-        if unbounded.insert(pass.call) {
+    for (index, arg) in growing(count, &passed) {
+        if unbounded.insert(calls[index]) {
             let message = format!(
                 "type argument `{}` grows with every call around this cycle, so the calls have no \
                  last instance",

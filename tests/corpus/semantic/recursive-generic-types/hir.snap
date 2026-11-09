@@ -1,17 +1,30 @@
 file: rejected
 frontend errors: 0 (see frontend.snap)
-semantic errors: 5
+semantic errors: 7
 
 == graph ==
-fn main@23:1..23:96 () -> int ∈ [1, 1]
-  result: copy : int @23:14..23:17
-    value: field value : int @23:20..23:96
-      base: field value : Box<int> @23:20..23:90
-        base: field value : Box<Box<int>> @23:20..23:84
-          base: make Fine : Fine<int> @23:20..23:78
-            value: make Box : Box<Box<int>> @23:37..23:77
-              value: make Box : Box<int> @23:58..23:76
-                value: int 1 : int @23:74..23:75
+fn main@37:1..37:96 () -> int ∈ [1, 1]
+  result: copy : int @37:14..37:17
+    value: field value : int @37:20..37:96
+      base: field value : Box<int> @37:20..37:90
+        base: field value : Box<Box<int>> @37:20..37:84
+          base: make Fine : Fine<int> @37:20..37:78
+            value: make Box : Box<Box<int>> @37:37..37:77
+              value: make Box : Box<int> @37:58..37:76
+                value: int 1 : int @37:74..37:75
+
+fn user@38:1..38:82 (User ∈ ∅, Tagged<int> ∈ ∅, Nested<int> ∈ ∅) -> int ∈ ∅
+  param u@38:9..38:10: User
+  param t@38:18..38:19: Tagged<int>
+  param n@38:34..38:35: Nested<int>
+  result: copy : int @38:53..38:56
+    value: eager + : int @38:59..38:82
+      lhs: field raw : int @38:59..38:67
+        base: field id : Id<User> @38:59..38:63
+          base: read u@38:9..38:10 : User
+      rhs: field raw : int @38:70..38:82
+        base: field friend : Id<Box<User>> @38:70..38:78
+          base: read u@38:9..38:10 : User
 
 == semantic diagnostics ==
 error[semantic/recursive-type] 4:6..4:10 "Node": type `Node` holds itself through field `next`
@@ -24,3 +37,11 @@ error[semantic/recursive-type] 14:6..14:10 "Left": type `Left` holds itself thro
   at 15:5..15:10 "right": this field
 error[semantic/recursive-type] 17:6..17:11 "Right": type `Right` holds itself through field `left`
   at 18:5..18:9 "left": this field
+error[semantic/polymorphic-recursion] 31:20..31:26 "Box<T>": type argument `Box<T>` grows with every type around this cycle, so the types have no last instance
+error[semantic/invalid-union-member] 35:28..35:29 "T": `T` is a type parameter, so no member of a union
+warning[semantic/unused-name] 38:18..38:19 "t": parameter `t` is never read
+  fix: prefix the name with `_`
+    38:18 -> "_"
+warning[semantic/unused-name] 38:34..38:35 "n": parameter `n` is never read
+  fix: prefix the name with `_`
+    38:34 -> "_"

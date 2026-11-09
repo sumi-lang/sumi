@@ -1,6 +1,14 @@
 fn divide<T>(_x: T, d: int) -> int = 100 / d
 fn forever<T>(x: T) -> int = forever<T>(x)
+type Box<T> {
+    value: T,
+}
+type None {}
+fn partial<T>(v: Box<T> | None) -> int = match v {
+    None => 0,
+}
 fn main() -> int {
+    let _p = partial<int>(None()) + partial<bool>(None())
     let a = divide<int>(1, 0) + divide<bool>(true, 0) + divide<unit>({}, 5)
     a + forever<int>(1)
 }

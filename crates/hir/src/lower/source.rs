@@ -6,10 +6,10 @@ use std::rc::Rc;
 
 use rustc_hash::FxBuildHasher;
 use sumi_frontend::{Diagnostic, DiagnosticCode, Label, ParsedSource};
-use sumi_graph::{DeclId, FieldName, ShownTy, Ty, UnionId};
+use sumi_graph::{DeclId, FieldName, ShownTy, Ty, TyKind, UnionId};
 use sumi_lexer::{LexedFile, RawIdx, SyntaxKind};
 use sumi_syntax::{
-    NodeIdx, NodeKind, SyntaxTree,
+    NodeIdx, SyntaxTree,
     ast::{self, AstNode, View},
 };
 use sumi_text::TextRange;
@@ -26,6 +26,38 @@ type Fields = Box<[(FieldName, Option<Ty>)]>;
 /// The most instances of generic types and functions one file may name: instances multiply
 /// with each generic item that names another at two types of its own.
 pub(crate) const MAX_INSTANCES: usize = 1 << 16;
+
+/// The declared types that are type parameters, which hold one range of IDs. A union holds values
+/// of none of them.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct Params {
+    first: u32,
+    end: u32,
+}
+
+impl Params {
+    pub(super) fn new(first: DeclId, count: usize) -> Self {
+        let first = u32::try_from(first.index()).expect("declared type count fits u32");
+        let count = u32::try_from(count).expect("declared type count fits u32");
+        Self {
+            first,
+            end: first + count,
+        }
+    }
+
+    pub fn holds(self, decl: DeclId) -> bool {
+        (self.first as usize..self.end as usize).contains(&decl.index())
+    }
+
+    /// Whether a union may hold values of `ty`: no scalar's, and no type parameter's.
+    pub fn joins(self, ty: Ty) -> bool {
+        match ty.kind() {
+            TyKind::Decl(decl) => !self.holds(decl),
+            TyKind::Union(_) => true,
+            TyKind::Int | TyKind::Bool | TyKind::Unit => false,
+        }
+    }
+}
 
 /// A declared type by name, with its fields by name; both resolve names while lowering. A type
 /// parameter is one with no fields.
@@ -55,8 +87,6 @@ pub(crate) struct TypeItem<'s> {
     pub params: Vec<&'s str>,
     /// Per field of the item's declared type, its type as written.
     pub field_types: Vec<Option<ast::Type>>,
-    /// Per field, whether its type holds the item itself, so no instance has it.
-    pub recursive: Vec<bool>,
 }
 
 pub(crate) struct Source<'s> {
@@ -66,6 +96,7 @@ pub(crate) struct Source<'s> {
     /// By declared type ID: the type items first, each as its instance at its own parameters,
     /// then every type parameter, then the other instances as they are named.
     pub decls: Vec<DeclNames<'s>>,
+    pub params: Params,
     /// By type item, which its ID as a declared type indexes.
     pub(super) type_items: Vec<TypeItem<'s>>,
     /// By declared type ID, the fields the graph takes; none for an instance not yet settled.
@@ -99,6 +130,7 @@ impl<'s> Source<'s> {
             tree: parsed.parse().tree(),
             diagnostics: Vec::new(),
             decls: Vec::new(),
+            params: Params::default(),
             type_items: Vec::new(),
             fields: Vec::new(),
             instances: HashMap::default(),
@@ -171,16 +203,6 @@ impl<'s> Source<'s> {
             .find(|&&(param, _)| param == name)
             .map(|&(_, ty)| ty)
     }
-    /// The type items `ty` names anywhere in it, a name of `params` aside.
-    pub(super) fn mentions(&self, ty: NodeIdx, params: &[&str]) -> Vec<DeclId> {
-        let end = ty.to_u32() + u32::try_from(self.tree.subtree_len(ty)).expect("node count");
-        ty.until(NodeIdx::new(end))
-            .filter(|&node| self.tree.kind(node) == NodeKind::TypeRef)
-            .map(|node| self.head(node))
-            .filter(|name| !params.contains(name))
-            .filter_map(|name| self.type_names.get(name).copied().flatten())
-            .collect()
-    }
     /// Declares a type of no instance: an item's own, or a type parameter.
     pub(super) fn declare(
         &mut self,
@@ -218,6 +240,12 @@ impl<'s> Source<'s> {
         entry.args = args;
         self.fields[decl.index()] = Some(fields.into());
     }
+    /// Whether a field of an item's own type has its type.
+    pub(super) fn has_field_type(&self, decl: DeclId, field: usize) -> bool {
+        self.fields[decl.index()]
+            .as_ref()
+            .is_some_and(|fields| fields[field].1.is_some())
+    }
     /// A field loses its type where the declaration is reported for it.
     pub(super) fn drop_field_type(&mut self, decl: DeclId, field: usize) {
         self.fields[decl.index()]
@@ -240,9 +268,8 @@ impl<'s> Source<'s> {
             .map(|fields| fields.expect("every instance is settled"))
             .collect()
     }
-    /// Resolves the fields of every instance named since the last call, and of those their fields
-    /// name in turn: off a stack, since a chain of generic types is as deep as it is long. Every
-    /// type item is defined by then.
+    /// Resolves the fields of every instance named since the last call, off a stack: a chain of
+    /// generic types is as deep as it is long. Every type item is defined by then.
     pub(super) fn settle(&mut self) {
         while let Some(decl) = self.unsettled.pop() {
             let (item, args) = {
@@ -256,13 +283,16 @@ impl<'s> Source<'s> {
             let own = self.fields[item.index()]
                 .clone()
                 .expect("an item's own type is settled where it is declared");
+            // A field with no type at the item's own parameters has none in any instance.
             let fields = own
                 .iter()
                 .enumerate()
-                .map(|(index, &(name, _))| {
-                    let info = &self.type_items[item.index()];
-                    let written = info.field_types[index].filter(|_| !info.recursive[index]);
-                    (name, written.and_then(|ty| self.ty(ty)))
+                .map(|(index, &(name, ty))| {
+                    let written = self.type_items[item.index()].field_types[index];
+                    (
+                        name,
+                        written.filter(|_| ty.is_some()).and_then(|ty| self.ty(ty)),
+                    )
                 })
                 .collect();
             self.scope = scope;
@@ -413,7 +443,7 @@ impl<'s> Source<'s> {
                 continue;
             };
             match ty.as_decl() {
-                Some(decl) if self.unions.borrow().joins(ty) => members.push(decl),
+                Some(decl) if self.params.joins(ty) => members.push(decl),
                 Some(_) => {
                     self.error(
                         member.node(),
@@ -525,25 +555,37 @@ impl<'s> Source<'s> {
     ) -> Option<DeclId> {
         let (given, args) = self.type_args(list);
         let expected = self.type_items[item.index()].params.len();
-        if given != expected && is_damaged {
-            return None;
-        }
-        if given != expected {
-            let declared = self.decls[item.index()]
-                .name_node
-                .map(|node| (self.range(node), Box::from("declared here")));
-            self.report(
-                list.map_or(at, |list| self.range(list.node())),
-                codes::TYPE_ARGUMENTS,
-                format!("expected {expected} type arguments, found {given}"),
-                declared,
-            );
+        let declared = self.decls[item.index()]
+            .name_node
+            .map(|node| self.range(node));
+        if !self.takes(expected, given, list, at, declared, is_damaged) {
             return None;
         }
         if expected == 0 {
             return Some(item);
         }
         self.instantiate(item, args?)
+    }
+    /// Whether `given` type arguments are the `expected` ones of an item declared at `declared`;
+    /// reported at `list`, or at `at` where none is written, unless the parser recovered there.
+    pub(super) fn takes(
+        &mut self,
+        expected: usize,
+        given: usize,
+        list: Option<ast::TypeArgList>,
+        at: TextRange,
+        declared: Option<TextRange>,
+        is_damaged: bool,
+    ) -> bool {
+        if given != expected && !is_damaged {
+            self.report(
+                list.map_or(at, |list| self.range(list.node())),
+                codes::TYPE_ARGUMENTS,
+                format!("expected {expected} type arguments, found {given}"),
+                declared.map(|declared| (declared, Box::from("declared here"))),
+            );
+        }
+        given == expected
     }
     pub(super) fn tokens(
         &self,

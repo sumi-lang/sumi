@@ -2188,17 +2188,11 @@ impl<'a, 's> Builder<'a, 's> {
             Target::Function(generic) => {
                 let (given, args) = self.source.type_args(list);
                 let expected = self.declared.items[generic.index()].params.len();
-                if given != expected && damaged {
-                    return Target::Unknown;
-                }
-                if given != expected {
-                    let header = self.declared.headers[generic.index()];
-                    self.source.report(
-                        list.map_or(at, |list| self.source.range(list.node())),
-                        codes::TYPE_ARGUMENTS,
-                        format!("expected {expected} type arguments, found {given}"),
-                        header.name.map(|name| (name, Box::from("declared here"))),
-                    );
+                let declared = self.declared.headers[generic.index()].name;
+                let takes = self
+                    .source
+                    .takes(expected, given, list, at, declared, damaged);
+                if !takes {
                     return Target::Unknown;
                 }
                 if expected == 0 {

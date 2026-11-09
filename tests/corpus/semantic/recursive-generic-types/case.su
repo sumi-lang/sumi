@@ -20,4 +20,19 @@ type Right<T> {
 type Fine<T> {
     value: Box<Box<T>>,
 }
+type Id<T> {
+    raw: int,
+}
+type User {
+    id: Id<User>,
+    friend: Id<Box<User>>,
+}
+type Tagged<T> {
+    tag: Id<Tagged<Box<T>>>,
+}
+type Nested<T> {
+    head: T,
+    rest: Nested<Box<T>> | T,
+}
 fn main() -> int = Fine<int>(value: Box<Box<int>>(value: Box<int>(value: 1))).value.value.value
+fn user(u: User, t: Tagged<int>, n: Nested<int>) -> int = u.id.raw + u.friend.raw

@@ -71,7 +71,7 @@ sumi_frontend::codes! {
     /// A type or function named with other than one type argument per type parameter it declares.
     TYPE_ARGUMENTS: Error = "type-arguments";
 
-    /// A type argument that grows with every call around a cycle of generic functions.
+    /// A type argument that grows around a cycle of generic functions, or of generic types.
     POLYMORPHIC_RECURSION: Error = "polymorphic-recursion";
 
     /// A file naming more instances of its generic types and functions than the limit.
