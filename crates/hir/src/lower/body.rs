@@ -17,7 +17,7 @@ use sumi_syntax::{
 };
 use sumi_text::{TextEdit, TextRange, TextSize};
 
-use super::declare::{Declarations, Header, HeaderResult, Named, Order};
+use super::declare::{Declarations, Header, HeaderResult, Named, Order, unbounded_calls};
 use super::source::{NameMap, Source};
 use super::versions::{Refinement, RegionState, Versions};
 use super::{Call, Fallthrough, Lowered, Obligation, Statement, diagnostic, join};
@@ -47,6 +47,8 @@ pub(crate) fn lower<'s>(
             builder.checker().settle(&members);
         }
     }
+    let generic_calls = std::mem::take(&mut builder.generic_calls);
+    unbounded_calls(builder.source, &mut builder.declared, &generic_calls);
     let mut index = items;
     while index < builder.declared.headers.len() {
         builder.build(index, true);
@@ -115,8 +117,24 @@ fn arith(op: sumi_syntax::ArithOp) -> ArithOp {
 enum Target {
     Function(FunctionId),
     Type(DeclId),
+    /// A generic function named with no type arguments, which its arguments decide.
+    Generic(FunctionId),
+    /// A generic type named with no type arguments, which its fields' values decide.
+    GenericType(DeclId),
     /// Reported where it was resolved, or ambiguous.
     Unknown,
+}
+
+/// A call from a generic function's own body to a generic function, at the type arguments it
+/// names or its arguments decide.
+pub(super) struct GenericCall {
+    pub caller: FunctionId,
+    pub callee: FunctionId,
+    pub call: NodeIdx,
+    /// The callee's name, where a type argument that grows is reported unless `list` writes it.
+    pub at: NodeIdx,
+    pub list: Option<ast::TypeArgList>,
+    pub args: Vec<Ty>,
 }
 
 /// A local's index in the body's `locals`, and in its versions.
@@ -198,6 +216,7 @@ struct Builder<'a, 's> {
     lowered: Lowered,
     order: Order,
     types: Types,
+    generic_calls: Vec<GenericCall>,
     /// By syntax node, the graph node it built, which refinement reads by the condition's syntax.
     nodes_of: Vec<Option<NodeId>>,
     /// By syntax node, whether it completes; a condition's operand is read by its syntax.
@@ -205,6 +224,8 @@ struct Builder<'a, 's> {
     /// The local and underlying version read by each name reference.
     reads_of: Vec<Option<(LocalId, NodeId)>>,
     owner: u32,
+    /// Whether the walk beside this body reports and settles it.
+    is_final: bool,
     has_failed: bool,
     /// Open regions with their contexts, innermost last.
     regions: Vec<(RegionId, NodeId)>,
@@ -240,6 +261,7 @@ impl<'a, 's> Builder<'a, 's> {
             graph,
             spans: SpansBuilder::new(nodes),
             order,
+            generic_calls: Vec::new(),
             lowered: Lowered {
                 built: vec![false; functions],
                 typed: Vec::with_capacity(nodes),
@@ -258,6 +280,7 @@ impl<'a, 's> Builder<'a, 's> {
             bottoms: vec![false; nodes],
             reads_of: vec![None; nodes],
             owner: 0,
+            is_final: true,
             has_failed: false,
             regions: Vec::new(),
             scopes: Vec::new(),
@@ -287,9 +310,19 @@ impl<'a, 's> Builder<'a, 's> {
         }
     }
 
+    /// The type of a node already built, as the typing has it where the body has got to.
+    fn ty(&mut self, node: NodeId) -> Option<Ty> {
+        let owner = FunctionId::new(self.owner as usize);
+        let is_final = self.is_final;
+        let mut checker = self.checker();
+        checker.advance(owner, is_final);
+        checker.resolve(node)
+    }
+
     /// Builds the body of `owner` and walks its types; `is_final` unless its group settles them.
     fn build(&mut self, owner: usize, is_final: bool) {
         self.owner = u32::try_from(owner).expect("function count fits u32");
+        self.is_final = is_final;
         self.has_failed = false;
         self.depth = 0;
         self.regions.clear();
@@ -1826,7 +1859,12 @@ impl<'a, 's> Builder<'a, 's> {
                             self.refer(member, Symbol::Type(item), false);
                             let at = self.source.range(member);
                             let type_args = pattern.type_args(tree);
-                            let Some(decl) = self.source.apply(item, type_args, at, false) else {
+                            let decl = if type_args.is_none() && self.source.is_generic(item) {
+                                self.infer_member(member, item, &scrutinee)
+                            } else {
+                                self.source.apply(item, type_args, at, false)
+                            };
+                            let Some(decl) = decl else {
                                 is_valid = false;
                                 continue;
                             };
@@ -1900,6 +1938,49 @@ impl<'a, 's> Builder<'a, 's> {
         }
         let states: Vec<&RegionState> = states.iter().collect();
         self.switch(node, &scrutinee, arms, &values, &states)
+    }
+
+    /// The instance of the generic type `item` an arm names without type arguments: the one
+    /// member of the scrutinee's type that is an instance of it.
+    fn infer_member(&mut self, member: NodeIdx, item: DeclId, scrutinee: &Value) -> Option<DeclId> {
+        if !scrutinee.is_valid {
+            return None;
+        }
+        let name = self.source.decls[item.index()].name;
+        let Some(ty) = self.ty(scrutinee.node) else {
+            self.source.error(
+                member,
+                codes::TYPE_ARGUMENTS,
+                format!("the type matched does not decide which `{name}` this is; write its type arguments"),
+                None,
+            );
+            return None;
+        };
+        let mut instances = self
+            .source
+            .members(ty)
+            .into_iter()
+            .filter(|&decl| self.source.decls[decl.index()].item == item);
+        match (instances.next(), instances.next()) {
+            (Some(decl), None) => Some(decl),
+            (first, _) => {
+                let found = if first.is_some() {
+                    "more than one"
+                } else {
+                    "no"
+                };
+                self.source.error(
+                    member,
+                    codes::TYPE_ARGUMENTS,
+                    format!(
+                        "`{}` holds {found} `{name}`; write its type arguments",
+                        self.source.show(ty)
+                    ),
+                    None,
+                );
+                None
+            }
+        }
     }
 
     /// A switch over `scrutinee`: `values` are the arms' results, each with the state its region
@@ -2227,13 +2308,22 @@ impl<'a, 's> Builder<'a, 's> {
                 self.source.type_args(list);
                 Target::Unknown
             }
+            Target::Generic(_) | Target::GenericType(_) => {
+                unreachable!("a name resolves to an item, generic or not")
+            }
+            Target::Type(item) if list.is_none() && self.source.is_generic(item) => {
+                Target::GenericType(item)
+            }
             Target::Type(item) => match self.source.apply(item, list, at, damaged) {
                 Some(decl) => Target::Type(decl),
                 None => Target::Unknown,
             },
             Target::Function(generic) => {
-                let (given, args) = self.source.type_args(list);
                 let expected = self.declared.items[generic.index()].params.len();
+                if list.is_none() && expected > 0 {
+                    return Target::Generic(generic);
+                }
+                let (given, args) = self.source.type_args(list);
                 let declared = self.declared.headers[generic.index()].name;
                 let takes = self
                     .source
@@ -2244,14 +2334,191 @@ impl<'a, 's> Builder<'a, 's> {
                 if expected == 0 {
                     return target;
                 }
-                let Some(args) = args.filter(|_| !self.declared.unbounded.contains(&call.node()))
-                else {
-                    return Target::Unknown;
-                };
-                let instance = self
-                    .declared
-                    .instance(self.source, &mut self.graph, generic, args);
-                instance.map_or(Target::Unknown, Target::Function)
+                match args {
+                    Some(args) => self.instance(call, callee, generic, args),
+                    None => Target::Unknown,
+                }
+            }
+        }
+    }
+
+    /// The instance of `generic` the call names at `args`; none for a call marked as having no
+    /// last instance.
+    fn instance(
+        &mut self,
+        call: ast::CallExpr,
+        callee: NodeIdx,
+        generic: FunctionId,
+        args: Vec<Ty>,
+    ) -> Target {
+        if self.declared.unbounded.contains(&call.node()) {
+            return Target::Unknown;
+        }
+        let caller = self.declared.headers[self.owner as usize].generic;
+        if caller.index() == self.owner as usize
+            && !self.declared.items[caller.index()].params.is_empty()
+        {
+            self.generic_calls.push(GenericCall {
+                caller,
+                callee: generic,
+                call: call.node(),
+                at: callee,
+                list: call.type_args(self.source.tree),
+                args: args.clone(),
+            });
+        }
+        let instance = self
+            .declared
+            .instance(self.source, &mut self.graph, generic, args);
+        instance.map_or(Target::Unknown, Target::Function)
+    }
+
+    /// The type of each argument a type parameter can be read from: none for one that failed.
+    fn arg_types(&mut self, args: &[(ast::Arg, Value)]) -> Vec<Option<Ty>> {
+        args.iter()
+            .map(|(_, value)| {
+                if value.is_valid {
+                    self.ty(value.node)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    /// Reports the type parameters of `name` that `bound` leaves open, unless an argument that
+    /// failed may be what would have decided them. One that never yields a value decides nothing.
+    fn undecided(
+        &mut self,
+        at: NodeIdx,
+        name: &str,
+        params: &[&'s str],
+        bound: &[Option<Ty>],
+        args: &[(ast::Arg, Value)],
+        declared: Option<TextRange>,
+    ) {
+        if args.iter().any(|(_, value)| !value.is_valid) {
+            return;
+        }
+        let open: Vec<String> = params
+            .iter()
+            .zip(bound)
+            .filter(|(_, bound)| bound.is_none())
+            .map(|(param, _)| format!("`{param}`"))
+            .collect();
+        let what = if open.len() == 1 {
+            "type parameter"
+        } else {
+            "type parameters"
+        };
+        self.source.error(
+            at,
+            codes::TYPE_ARGUMENTS,
+            format!(
+                "the arguments do not decide {what} {} of `{name}`; write its type arguments",
+                join(&open)
+            ),
+            declared.map(|declared| (declared, "declared here")),
+        );
+    }
+
+    /// The instance of `generic` its arguments decide: each type parameter is the type of the
+    /// first argument whose parameter names it.
+    fn infer_call(
+        &mut self,
+        call: ast::CallExpr,
+        callee: NodeIdx,
+        generic: FunctionId,
+        args: &[(ast::Arg, Value)],
+        damaged: bool,
+    ) -> Target {
+        let Some(patterns) = self.graph.param_types(generic).map(<[Ty]>::to_vec) else {
+            // Reported at the declaration; the call is held to nothing.
+            return Target::Function(generic);
+        };
+        let header = self.declared.headers[generic.index()];
+        if damaged {
+            return Target::Unknown;
+        }
+        if args.len() != patterns.len() {
+            self.source.error(
+                call.node(),
+                codes::ARITY,
+                format!(
+                    "expected {} arguments, found {}",
+                    patterns.len(),
+                    args.len()
+                ),
+                Some((self.source.range(header.item), "declared here")),
+            );
+            return Target::Unknown;
+        }
+        let types = self.arg_types(args);
+        let params = self.declared.type_args[generic.index()].clone();
+        let mut bound = vec![None; params.len()];
+        for (&pattern, &actual) in patterns.iter().zip(&types) {
+            if let Some(actual) = actual {
+                self.source.bind(pattern, actual, &params, &mut bound);
+            }
+        }
+        match bound.iter().copied().collect::<Option<Vec<Ty>>>() {
+            Some(args) => self.instance(call, callee, generic, args),
+            None => {
+                let names = self.declared.items[generic.index()].params.clone();
+                let name = self.source.text(callee);
+                self.undecided(callee, name, &names, &bound, args, header.name);
+                Target::Unknown
+            }
+        }
+    }
+
+    /// The instance of the type `item` the values of its fields decide.
+    fn infer_construction(
+        &mut self,
+        callee: NodeIdx,
+        item: DeclId,
+        args: &[(ast::Arg, Value)],
+        damaged: bool,
+    ) -> Target {
+        if damaged {
+            return Target::Unknown;
+        }
+        let tree = self.source.tree;
+        let types = self.arg_types(args);
+        let params = self.source.decls[item.index()].args.clone();
+        let mut bound = vec![None; params.len()];
+        let mut given = vec![false; self.source.decls[item.index()].fields.len()];
+        let mut is_whole = true;
+        for ((arg, _), &actual) in args.iter().zip(&types) {
+            let field = arg.label(tree).and_then(|label| {
+                let label = self.source.text(label.node());
+                self.source.decls[item.index()].index_of(label)
+            });
+            let Some(field) = field else {
+                is_whole = false;
+                continue;
+            };
+            is_whole &= !std::mem::replace(&mut given[field], true);
+            if let (Some(pattern), Some(actual)) = (self.source.fields(item)[field].1, actual) {
+                self.source.bind(pattern, actual, &params, &mut bound);
+            }
+        }
+        is_whole &= given.iter().all(|&given| given);
+        match bound.iter().copied().collect::<Option<Vec<Ty>>>() {
+            Some(args) => self
+                .source
+                .instantiate(item, args)
+                .map_or(Target::Unknown, Target::Type),
+            // A value that does not give each field once is reported as that, at the item.
+            None if !is_whole => Target::Type(item),
+            None => {
+                let names = self.source.type_items[item.index()].params.clone();
+                let name = self.source.decls[item.index()].name;
+                let declared = self.source.decls[item.index()]
+                    .name_node
+                    .map(|node| self.source.range(node));
+                self.undecided(callee, name, &names, &bound, args, declared);
+                Target::Unknown
             }
         }
     }
@@ -2282,6 +2549,15 @@ impl<'a, 's> Builder<'a, 's> {
                 args.push((arg, value));
             }
         }
+        let target = match (target, call.callee(tree)) {
+            (Target::Generic(generic), Some(callee)) => {
+                self.infer_call(call, callee.node(), generic, &args, damaged)
+            }
+            (Target::GenericType(item), Some(callee)) => {
+                self.infer_construction(callee.node(), item, &args, damaged)
+            }
+            (target, _) => target,
+        };
         if let Target::Type(decl) = target
             && !damaged
         {

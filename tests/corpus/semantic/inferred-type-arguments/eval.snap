@@ -1,0 +1,24 @@
+file: accepted
+optimized: nodes 137 of 227, regions 42 of 44, calls 10 of 31
+
+== functions ==
+fn later = Box<int>(9)
+  steps: 6, optimized steps: 4, depth: 2, bound: 2
+fn parsed = 9
+  steps: 1, optimized steps: 1, depth: 1, bound: 1
+fn nested = 7
+  steps: 9, optimized steps: 1, depth: 2, bound: 2
+fn swapped = Pair<bool, int>(true, 20)
+  steps: 9, optimized steps: 7, depth: 2, bound: 2
+fn fallbacks = 64
+  steps: 40, optimized steps: 1, depth: 3, bound: 3
+fn shared = 18
+  steps: 27, optimized steps: 1, depth: 3, bound: 3
+fn flags = true
+  steps: 9, optimized steps: 1, depth: 3, bound: 3
+fn mixed = 7
+  steps: 12, optimized steps: 1, depth: 2, bound: 2
+fn members = 6
+  steps: 21, optimized steps: 1, depth: 2, bound: 2
+fn counted = 5
+  steps: 69, optimized steps: 56, depth: 5, bound: 5

@@ -1,0 +1,45 @@
+type Box<T> {
+    value: T,
+}
+type Pair<A, B> {
+    first: A,
+    second: B,
+}
+type None {}
+fn id<T>(x: T) -> T = x
+fn swap<A, B>(p: Pair<A, B>) -> Pair<B, A> = Pair(first: p.second, second: p.first)
+fn unwrap_or<T>(v: Box<T> | None, fallback: T) -> T = match v {
+    Box(b) => b.value,
+    None => fallback,
+}
+fn twice<T>(x: T) -> Pair<T, T> {
+    let same = id(x)
+    Pair(first: same, second: x)
+}
+fn boxed<T>(x: T) = Box(value: x)
+fn later() = id(boxed(parsed()))
+fn parsed() = 9
+fn nested() -> int = id(Box(value: boxed(7))).value.value
+fn swapped() -> Pair<bool, int> = swap(Pair(first: 20, second: true))
+fn fallbacks() -> int {
+    let p = swapped()
+    let n = unwrap_or(Box(value: id(p.second)), 0)
+    let m = unwrap_or<int>(None(), 22)
+    let k = unwrap_or(None(), m)
+    if id(p.first) { n + m + k } else { 0 }
+}
+fn shared() -> int = twice(4).first + twice(5).second + later().value
+fn flags() -> bool = twice(true).first
+fn mixed() -> int = id<int>(id(3)) + id(id<int>(4))
+fn narrowed(v: Box<int> | Box<bool> | None) -> int = match v {
+    Box<int>(b) => b.value,
+    Box<bool> => 1,
+    None => 0,
+}
+fn members() -> int = narrowed(Box(value: 5)) + narrowed(Box(value: true)) + narrowed(None())
+fn down<T>(x: T, n: int) -> int = if n <= 0 {
+    0
+} else {
+    1 + down(x, n - 1)
+}
+fn counted() -> int = down(true, 3) + down(Box(value: 1), 2)

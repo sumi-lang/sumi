@@ -1,0 +1,104 @@
+type B<A> {
+    value: A,
+}
+type T0<A> {
+    next: T1<B<B<B<B<B<B<B<B<A>>>>>>>>>,
+}
+type T1<A> {
+    next: T2<B<B<B<B<B<B<B<B<A>>>>>>>>>,
+}
+type T2<A> {
+    next: T3<B<B<B<B<B<B<B<B<A>>>>>>>>>,
+}
+type T3<A> {
+    next: T4<B<B<B<B<B<B<B<B<A>>>>>>>>>,
+}
+type T4<A> {
+    next: T5<B<B<B<B<B<B<B<B<A>>>>>>>>>,
+}
+type T5<A> {
+    next: T6<B<B<B<B<B<B<B<B<A>>>>>>>>>,
+}
+type T6<A> {
+    next: T7<B<B<B<B<B<B<B<B<A>>>>>>>>>,
+}
+type T7<A> {
+    next: T8<B<B<B<B<B<B<B<B<A>>>>>>>>>,
+}
+type T8<A> {
+    next: T9<B<B<B<B<B<B<B<B<A>>>>>>>>>,
+}
+type T9<A> {
+    next: T10<B<B<B<B<B<B<B<B<A>>>>>>>>>,
+}
+type T10<A> {
+    next: T11<B<B<B<B<B<B<B<B<A>>>>>>>>>,
+}
+type T11<A> {
+    next: T12<B<B<B<B<B<B<B<B<A>>>>>>>>>,
+}
+type T12<A> {
+    next: T13<B<B<B<B<B<B<B<B<A>>>>>>>>>,
+}
+type T13<A> {
+    next: T14<B<B<B<B<B<B<B<B<A>>>>>>>>>,
+}
+type T14<A> {
+    next: T15<B<B<B<B<B<B<B<B<A>>>>>>>>>,
+}
+type T15<A> {
+    next: T16<B<B<B<B<B<B<B<B<A>>>>>>>>>,
+}
+type T16<A> {
+    next: T17<B<B<B<B<B<B<B<B<A>>>>>>>>>,
+}
+type T17<A> {
+    next: T18<B<B<B<B<B<B<B<B<A>>>>>>>>>,
+}
+type T18<A> {
+    next: T19<B<B<B<B<B<B<B<B<A>>>>>>>>>,
+}
+type T19<A> {
+    next: T20<B<B<B<B<B<B<B<B<A>>>>>>>>>,
+}
+type T20<A> {
+    next: T21<B<B<B<B<B<B<B<B<A>>>>>>>>>,
+}
+type T21<A> {
+    next: T22<B<B<B<B<B<B<B<B<A>>>>>>>>>,
+}
+type T22<A> {
+    next: T23<B<B<B<B<B<B<B<B<A>>>>>>>>>,
+}
+type T23<A> {
+    next: T24<B<B<B<B<B<B<B<B<A>>>>>>>>>,
+}
+type T24<A> {
+    next: T25<B<B<B<B<B<B<B<B<A>>>>>>>>>,
+}
+type T25<A> {
+    next: T26<B<B<B<B<B<B<B<B<A>>>>>>>>>,
+}
+type T26<A> {
+    next: T27<B<B<B<B<B<B<B<B<A>>>>>>>>>,
+}
+type T27<A> {
+    next: T28<B<B<B<B<B<B<B<B<A>>>>>>>>>,
+}
+type T28<A> {
+    next: T29<B<B<B<B<B<B<B<B<A>>>>>>>>>,
+}
+type T29<A> {
+    next: T30<B<B<B<B<B<B<B<B<A>>>>>>>>>,
+}
+type T30<A> {
+    next: T31<B<B<B<B<B<B<B<B<A>>>>>>>>>,
+}
+type T31<A> {
+    next: T32<B<B<B<B<B<B<B<B<A>>>>>>>>>,
+}
+type T32<A> {
+    next: T33<B<B<B<B<B<B<B<B<A>>>>>>>>>,
+}
+type T33<A> {}
+fn main(t: T0<int>) -> int = 0

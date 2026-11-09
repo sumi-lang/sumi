@@ -27,6 +27,11 @@ type Fields = Box<[(FieldName, Option<Ty>)]>;
 /// with each generic item that names another at two types of its own.
 pub(crate) const MAX_INSTANCES: usize = 1 << 16;
 
+/// The deepest type arguments nest in an instance, about what the parser lets a type be written
+/// at: arguments a call decides nest with every value built from the last, so nothing else
+/// bounds them, and every walk over a type is as deep as it nests.
+pub(crate) const MAX_TYPE_DEPTH: u32 = 256;
+
 /// The declared types that are type parameters, which hold one range of IDs. A union holds values
 /// of none of them.
 #[derive(Clone, Copy, Default)]
@@ -74,6 +79,8 @@ pub(crate) struct DeclNames<'s> {
     pub item: DeclId,
     /// The type arguments of an instance of a generic item.
     pub args: Rc<[Ty]>,
+    /// How deep the type arguments nest: one more than the deepest of them.
+    depth: u32,
 }
 
 impl DeclNames<'_> {
@@ -106,6 +113,8 @@ pub(crate) struct Source<'s> {
     unsettled: Vec<DeclId>,
     /// The instances declared so far, of types and of functions.
     pub(super) instance_count: usize,
+    /// Whether an instance past the depth limit is reported, which one report covers.
+    is_too_deep: bool,
     /// The type parameters in scope, each with the type it stands for.
     pub(super) scope: Vec<(&'s str, Ty)>,
     /// Whether what is resolved now repeats, at other types, what was reported and recorded at a
@@ -136,6 +145,7 @@ impl<'s> Source<'s> {
             instances: HashMap::default(),
             unsettled: Vec::new(),
             instance_count: 0,
+            is_too_deep: false,
             scope: Vec::new(),
             is_muted: false,
             type_names: NameMap::default(),
@@ -203,6 +213,10 @@ impl<'s> Source<'s> {
             .find(|&&(param, _)| param == name)
             .map(|&(_, ty)| ty)
     }
+    /// Whether the type item `item` declares type parameters.
+    pub(super) fn is_generic(&self, item: DeclId) -> bool {
+        !self.type_items[item.index()].params.is_empty()
+    }
     /// Declares a type of no instance: an item's own, or a type parameter.
     pub(super) fn declare(
         &mut self,
@@ -218,6 +232,7 @@ impl<'s> Source<'s> {
             fields: Rc::from([]),
             item: id,
             args: Rc::from([]),
+            depth: 0,
         });
         self.fields.push(Some(Box::from([])));
         id
@@ -311,7 +326,20 @@ impl<'s> Source<'s> {
         }
         let own = &self.decls[item.index()];
         let name = own.name;
-        if !self.count_instance(self.range(own.name_node.unwrap_or(own.origin)), name) {
+        let at = self.range(own.name_node.unwrap_or(own.origin));
+        let depth = 1 + args.iter().map(|&arg| self.depth(arg)).max().unwrap_or(0);
+        if depth > MAX_TYPE_DEPTH {
+            if !std::mem::replace(&mut self.is_too_deep, true) {
+                let message = format!(
+                    "an instance of `{name}` nests its type arguments more than {MAX_TYPE_DEPTH} \
+                     deep"
+                );
+                self.diagnostics
+                    .push(diagnostic(at, codes::TYPE_DEPTH, message, []));
+            }
+            return None;
+        }
+        if !self.count_instance(at, name) {
             return None;
         }
         let decl = DeclId::new(self.decls.len());
@@ -323,11 +351,51 @@ impl<'s> Source<'s> {
             fields: own.fields.clone(),
             item,
             args: args.clone(),
+            depth,
         });
         self.fields.push(None);
         self.unsettled.push(decl);
         self.instances.insert((item, args), decl);
         Some(decl)
+    }
+    /// The declared types a value of `ty` may be: itself, or a union's members.
+    pub fn members(&self, ty: Ty) -> Vec<DeclId> {
+        match ty.kind() {
+            TyKind::Decl(decl) => vec![decl],
+            TyKind::Union(id) => self.unions.borrow().get(id).to_vec(),
+            TyKind::Int | TyKind::Bool | TyKind::Unit => Vec::new(),
+        }
+    }
+    /// Binds each type parameter of `params` that `pattern` names to what `actual` holds in its
+    /// place; a parameter keeps its first binding, and a later one that differs is a mismatch at
+    /// the instance the bindings name.
+    pub(super) fn bind(&self, pattern: Ty, actual: Ty, params: &[Ty], bound: &mut [Option<Ty>]) {
+        if let Some(position) = params.iter().position(|&param| param == pattern) {
+            bound[position].get_or_insert(actual);
+            return;
+        }
+        for pattern in self.members(pattern) {
+            let pattern = &self.decls[pattern.index()];
+            for actual in self.members(actual) {
+                let actual = &self.decls[actual.index()];
+                if actual.item != pattern.item {
+                    continue;
+                }
+                for (&pattern, &actual) in pattern.args.iter().zip(actual.args.iter()) {
+                    self.bind(pattern, actual, params, bound);
+                }
+            }
+        }
+    }
+    /// Whether a value of `ty` is, or is an instance at, the declared type `decl`.
+    pub(super) fn mentions(&self, ty: Ty, decl: DeclId) -> bool {
+        self.members(ty).into_iter().any(|member| {
+            member == decl
+                || self.decls[member.index()]
+                    .args
+                    .iter()
+                    .any(|&arg| self.mentions(arg, decl))
+        })
     }
     /// `ty` with each type parameter of `params` replaced by the type of `args` at its position;
     /// none past the limit on instances.
@@ -360,6 +428,13 @@ impl<'s> Source<'s> {
             .map(|&arg| self.substitute(arg, params, args))
             .collect();
         self.instantiate(item, own?).map(Ty::decl)
+    }
+    fn depth(&self, ty: Ty) -> u32 {
+        let depths = self.members(ty).into_iter();
+        depths
+            .map(|member| self.decls[member.index()].depth)
+            .max()
+            .unwrap_or(0)
     }
     /// Counts one more instance, of the generic item `name` declared at `at`; false past the limit.
     pub(super) fn count_instance(&mut self, at: TextRange, name: &str) -> bool {

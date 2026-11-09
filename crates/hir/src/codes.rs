@@ -68,7 +68,8 @@ sumi_frontend::codes! {
     /// A `match` with no arm for a member its scrutinee may hold, whatever the arguments.
     NON_EXHAUSTIVE_MATCH: Error = "non-exhaustive-match";
 
-    /// A type or function named with other than one type argument per type parameter it declares.
+    /// A type or function named with other than one type argument per type parameter it declares,
+    /// or with none where its arguments, or the type an arm matches, do not decide them.
     TYPE_ARGUMENTS: Error = "type-arguments";
 
     /// A type argument that grows around a cycle of generic functions, or of generic types.
@@ -76,6 +77,9 @@ sumi_frontend::codes! {
 
     /// A file naming more instances of its generic types and functions than the limit.
     TOO_MANY_INSTANCES: Error = "too-many-instances";
+
+    /// An instance of a generic type whose type arguments nest deeper than the limit.
+    TYPE_DEPTH: Error = "type-depth";
 
     /// A parameter or local never read whose name does not begin with `_`, in a function that
     /// lowers whole.
