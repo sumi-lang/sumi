@@ -1,0 +1,173 @@
+== tree ==
+SourceFile! 1:1..16:1
+  TypeItem 1:1..1:20
+    Name 1:6..1:11 "Point"
+    FieldList 1:12..1:20
+      Field 1:14..1:18
+        Name 1:14..1:15 "x"
+        TypeRef 1:17..1:18 "i"
+  TypeItem! 2:1..2:16
+    Name 2:6..2:10 "Bare"
+    FieldList! 2:11..2:16
+      Field! 2:13..2:14
+        Name 2:13..2:14 "y"
+  TypeItem 3:1..3:33
+    Name 3:6..3:10 "Loop"
+    FieldList 3:11..3:33
+      Field 3:13..3:23
+        Name 3:13..3:17 "next"
+        TypeRef 3:19..3:23 "Loop"
+      Field 3:25..3:31
+        Name 3:25..3:26 "v"
+        TypeRef 3:28..3:31 "int"
+  FnItem 4:1..4:28
+    Name 4:4..4:5 "h"
+    ParamList 4:5..4:15
+      Param 4:6..4:14
+        Name 4:6..4:7 "p"
+        TypeRef 4:9..4:14 "Point"
+    TypeRef 4:19..4:22 "int"
+    FieldExpr 4:25..4:28
+      NameRef 4:25..4:26 "p"
+      NameRef 4:27..4:28 "x"
+  FnItem 5:1..5:31
+    Name 5:4..5:8 "bare"
+    ParamList 5:8..5:17
+      Param 5:9..5:16
+        Name 5:9..5:10 "b"
+        TypeRef 5:12..5:16 "Bare"
+    TypeRef 5:21..5:25 "bool"
+    FieldExpr 5:28..5:31
+      NameRef 5:28..5:29 "b"
+      NameRef 5:30..5:31 "y"
+  FnItem 6:1..6:34
+    Name 6:4..6:7 "cut"
+    ParamList 6:7..6:16
+      Param 6:8..6:15
+        Name 6:8..6:9 "l"
+        TypeRef 6:11..6:15 "Loop"
+    TypeRef 6:20..6:23 "int"
+    FieldExpr 6:26..6:34
+      FieldExpr 6:26..6:32
+        NameRef 6:26..6:27 "l"
+        NameRef 6:28..6:32 "next"
+      NameRef 6:33..6:34 "v"
+  FnItem 7:1..7:62
+    Name 7:4..7:8 "both"
+    ParamList 7:8..7:27
+      Param 7:9..7:17
+        Name 7:9..7:10 "p"
+        TypeRef 7:12..7:17 "Point"
+      Param 7:19..7:26
+        Name 7:19..7:20 "b"
+        TypeRef 7:22..7:26 "Bare"
+    TypeRef 7:31..7:34 "int"
+    IfExpr 7:37..7:62
+      FieldExpr 7:40..7:43
+        NameRef 7:40..7:41 "b"
+        NameRef 7:42..7:43 "y"
+      Block 7:44..7:51
+        FieldExpr 7:46..7:49
+          NameRef 7:46..7:47 "p"
+          NameRef 7:48..7:49 "x"
+      Block 7:57..7:62
+        LiteralExpr 7:59..7:60 "0"
+  FnItem 8:1..11:2
+    Name 8:4..8:9 "bound"
+    ParamList 8:9..8:19
+      Param 8:10..8:18
+        Name 8:10..8:11 "p"
+        TypeRef 8:13..8:18 "Point"
+    TypeRef 8:23..8:26 "int"
+    Block 8:27..11:2
+      LetStmt 9:5..9:21
+        Name 9:9..9:10 "x"
+        TypeRef 9:12..9:15 "int"
+        FieldExpr 9:18..9:21
+          NameRef 9:18..9:19 "p"
+          NameRef 9:20..9:21 "x"
+      BinaryExpr 10:5..10:10
+        NameRef 10:5..10:6 "x"
+        LiteralExpr 10:9..10:10 "1"
+  FnItem 12:1..12:47
+    Name 12:4..12:10 "passed"
+    ParamList 12:10..12:20
+      Param 12:11..12:19
+        Name 12:11..12:12 "p"
+        TypeRef 12:14..12:19 "Point"
+    TypeRef 12:24..12:27 "int"
+    BinaryExpr 12:30..12:47
+      CallExpr 12:30..12:34
+        NameRef 12:30..12:31 "h"
+        ArgList 12:31..12:34
+          Arg 12:32..12:33
+            NameRef 12:32..12:33 "p"
+      CallExpr 12:37..12:47
+        NameRef 12:37..12:42 "takes"
+        ArgList 12:42..12:47
+          Arg 12:43..12:46
+            FieldExpr 12:43..12:46
+              NameRef 12:43..12:44 "p"
+              NameRef 12:45..12:46 "x"
+  FnItem 13:1..13:28
+    Name 13:4..13:9 "takes"
+    ParamList 13:9..13:17
+      Param 13:10..13:16
+        Name 13:10..13:11 "n"
+        TypeRef 13:13..13:16 "int"
+    TypeRef 13:21..13:24 "int"
+    NameRef 13:27..13:28 "n"
+  FnItem 14:1..14:28
+    Name 14:4..14:12 "inferred"
+    ParamList 14:12..14:22
+      Param 14:13..14:21
+        Name 14:13..14:14 "p"
+        TypeRef 14:16..14:21 "Point"
+    FieldExpr 14:25..14:28
+      NameRef 14:25..14:26 "p"
+      NameRef 14:27..14:28 "x"
+  FnItem 15:1..15:43
+    Name 15:4..15:11 "through"
+    ParamList 15:11..15:21
+      Param 15:12..15:20
+        Name 15:12..15:13 "p"
+        TypeRef 15:15..15:20 "Point"
+    TypeRef 15:25..15:29 "bool"
+    CallExpr 15:32..15:43
+      NameRef 15:32..15:40 "inferred"
+      ArgList 15:40..15:43
+        Arg 15:41..15:42
+          NameRef 15:41..15:42 "p"
+
+== evidence ==
+Expected(Colon) at 2:15
+
+== diagnostics ==
+error[syntax/expected-token] 2:15: expected `:`
+
+== formatted ==
+type Point {
+    x: i
+}
+type Bare {
+    y }
+type Loop {
+    next: Loop,
+    v: int
+}
+fn h(p: Point) -> int = p.x
+fn bare(b: Bare) -> bool = b.y
+fn cut(l: Loop) -> int = l.next.v
+fn both(p: Point, b: Bare) -> int = if b.y {
+    p.x
+} else {
+    0
+}
+fn bound(p: Point) -> int {
+    let x: int = p.x
+    x + 1
+}
+fn passed(p: Point) -> int = h(p) + takes(p.x)
+fn takes(n: int) -> int = n
+fn inferred(p: Point) = p.x
+fn through(p: Point) -> bool = inferred(p)

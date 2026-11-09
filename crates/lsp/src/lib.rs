@@ -1,3 +1,4 @@
+mod highlight;
 mod position;
 mod server;
 
