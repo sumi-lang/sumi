@@ -3,7 +3,7 @@ frontend errors: 0 (see frontend.snap)
 semantic errors: 0
 
 == graph ==
-fn pair@1:1..1:44 (int ∈ [1, +∞), int ∈ [2, +∞)) -> int ∈ [12, +∞)
+fn pair@1:1..1:44 (int ∈ [1, 12], int ∈ [2, 34]) -> int ∈ [12, 154]
   param a@1:9..1:10: int
   param b@1:17..1:18: int
   result: copy : int @1:28..1:31
@@ -13,7 +13,7 @@ fn pair@1:1..1:44 (int ∈ [1, +∞), int ∈ [2, +∞)) -> int ∈ [12, +∞)
         rhs: int 10 : int @1:38..1:40
       rhs: read b@1:17..1:18 : int
 
-fn left_to_right@2:1..2:57 () -> int ∈ [12, +∞)
+fn left_to_right@2:1..2:57 () -> int ∈ [154, 154]
   result: copy : int @2:23..2:26
     value: call pair@1:1..1:44 : int @2:29..2:57
       arg[0]: call pair@1:1..1:44 : int @2:34..2:44

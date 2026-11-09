@@ -39,7 +39,7 @@ fn nonzero@11:1..15:2 (int ∈ [-2, 2]) -> int ∈ [-2, 2] \ 0
       then: read d@11:12..11:13 [d != 0 holds@11:32..11:38] : int
       else: int 1 : int @14:5..14:6
 
-fn nonzeros@16:1..16:61 () -> int ∈ [-6, 6]
+fn nonzeros@16:1..16:61 () -> int ∈ [0, 4]
   result: copy : int @16:18..16:21
     value: eager + : int @16:24..16:61
       lhs: eager + : int @16:24..16:48
@@ -67,7 +67,7 @@ fn both@17:1..21:2 (int ∈ [-1, 3] \ 0, int ∈ [4, 5]) -> int ∈ [0, 8]
         rhs: read b@17:17..17:18 [b > 0 holds@17:46..17:51] : int
       else: int 0 : int @20:5..20:6
 
-fn boths@22:1..22:45 () -> int ∈ [0, 16]
+fn boths@22:1..22:45 () -> int ∈ [0, 7]
   result: copy : int @22:15..22:18
     value: eager + : int @22:21..22:45
       lhs: call both@17:1..21:2 : int @22:21..22:32
@@ -105,7 +105,7 @@ fn negated@29:1..33:2 (int ∈ [1, 7]) -> int ∈ [3, 7]
       then: read n@29:12..29:13 [n < 3 fails@29:34..29:39] : int
       else: int 3 : int @32:5..32:6
 
-fn negateds@34:1..34:47 () -> int ∈ [6, 14]
+fn negateds@34:1..34:47 () -> int ∈ [6, 10]
   result: copy : int @34:18..34:21
     value: eager + : int @34:24..34:47
       lhs: call negated@29:1..33:2 : int @34:24..34:34
@@ -127,7 +127,7 @@ fn between@35:1..39:2 (int ∈ [-3, 50] \ 0) -> int ∈ [0, 9]
       then: read n@35:12..35:13 [n < 10 holds@35:41..35:47, n > 0 holds@35:32..35:37] : int
       else: int 0 : int @38:5..38:6
 
-fn betweens@40:1..40:62 () -> int ∈ [0, 27]
+fn betweens@40:1..40:62 () -> int ∈ [0, 5]
   result: copy : int @40:18..40:21
     value: eager + : int @40:24..40:62
       lhs: eager + : int @40:24..40:48
@@ -152,7 +152,7 @@ fn outside@41:1..45:2 (int ∈ [-3, 50] \ 0) -> int ∈ [0, 9]
       then: int 0 : int @42:5..42:6
       else: read n@41:12..41:13 [n > 9 fails@41:41..41:46, n < 1 fails@41:32..41:37] : int
 
-fn outsides@46:1..46:62 () -> int ∈ [0, 27]
+fn outsides@46:1..46:62 () -> int ∈ [0, 5]
   result: copy : int @46:18..46:21
     value: eager + : int @46:24..46:62
       lhs: eager + : int @46:24..46:48
@@ -183,7 +183,7 @@ fn inner@47:1..56:2 (int ∈ [0, 1], int ∈ [-5, 5]) -> int ∈ [-5, 5]
         tail: int 0 : int @52:9..52:10
       else: read m@47:18..47:19 : int
 
-fn inners@57:1..57:62 () -> int ∈ [-15, 15]
+fn inners@57:1..57:62 () -> int ∈ [-5, 5]
   result: copy : int @57:16..57:19
     value: eager + : int @57:22..57:62
       lhs: eager + : int @57:22..57:47

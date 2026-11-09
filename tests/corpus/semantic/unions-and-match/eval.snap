@@ -1,5 +1,5 @@
 file: accepted
-optimized: nodes 98 of 147, regions 28 of 32, calls 8 of 9
+optimized: nodes 92 of 147, regions 28 of 32, calls 6 of 9
 
 == functions ==
 fn main = 21
@@ -7,6 +7,6 @@ fn main = 21
 fn rebound = 16
   steps: 11, optimized steps: 7, depth: 2, bound: 2
 fn sized = 17
-  steps: 20, optimized steps: 11, depth: 2, bound: 2
+  steps: 20, optimized steps: 1, depth: 2, bound: 2
 fn reached = 9
   steps: 8, optimized steps: 1, depth: 2, bound: 2

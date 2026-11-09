@@ -10,6 +10,7 @@ use crate::codes;
 use crate::flows::{AnyValues, Values};
 use crate::lower::{self, Call, Lowered, Source};
 use crate::spans::Spans;
+use crate::summary::Summaries;
 use crate::typing::{self, Typing};
 use crate::{Analysis, FieldDecl, Function, Ints, Occurrence, Symbol, TypeDecl, flows};
 use crate::{reachability, recursion};
@@ -46,10 +47,16 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         &headers,
         &mut functions,
     );
-    let values = Values::delivered(&graph, &lowered);
-    let any = AnyValues::new(&graph, &lowered);
-    let typing = Typing::new(checked.types, values);
     let failed = checked.failed;
+    let sound = failed
+        .iter()
+        .zip(&lowered.built)
+        .map(|(&failed, &built)| built && !failed);
+    let sound: Vec<bool> = sound.collect();
+    let summaries = Summaries::new(&graph, &lowered, &sound);
+    let values = Values::delivered(&graph, &lowered, &summaries);
+    let any = AnyValues::new(&graph, &lowered, &summaries);
+    let typing = Typing::new(checked.types, values);
     divisions(&mut source, &graph, &spans, &typing, &lowered, &failed);
     exhaustive(
         &mut source,

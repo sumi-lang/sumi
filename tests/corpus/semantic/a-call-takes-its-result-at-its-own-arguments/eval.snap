@@ -1,0 +1,22 @@
+file: accepted
+optimized: nodes 109 of 264, regions 33 of 37, calls 5 of 29
+
+== functions ==
+fn far = 1545
+  steps: 39, optimized steps: 1, depth: 2, bound: 2
+fn identities = 5
+  steps: 12, optimized steps: 1, depth: 2, bound: 2
+fn selections = 82
+  steps: 39, optimized steps: 1, depth: 2, bound: 2
+fn composed = 211
+  steps: 50, optimized steps: 1, depth: 3, bound: 3
+fn members = 75
+  steps: 19, optimized steps: 1, depth: 2, bound: 2
+fn fields = 27
+  steps: 22, optimized steps: 1, depth: 2, bound: 2
+fn returns = 43
+  steps: 20, optimized steps: 11, depth: 2, bound: 2
+fn carried = 11
+  steps: 64, optimized steps: 50, depth: 2, bound: 2
+fn recursive = 0
+  steps: 104, optimized steps: 1, depth: 11, bound: 11

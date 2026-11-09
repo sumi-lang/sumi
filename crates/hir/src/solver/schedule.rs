@@ -94,7 +94,7 @@ impl Growth {
                 let flow = &flows.entries[index as usize];
                 let consumer = flow.consumer.index();
                 (dependencies.of[provider] == dependencies.of[consumer]
-                    && flow.carry_from(provider) >= Carry::Passes)
+                    && flow.carry_from(provider, &flows.others) >= Carry::Passes)
                     .then_some(consumer)
             },
             scratch,

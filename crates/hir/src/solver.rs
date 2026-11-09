@@ -37,8 +37,8 @@ pub(crate) trait Lattice: Clone + Eq {
     /// What the first provider's evidence, then the second's, can do crossing `pair`.
     fn carries_pair(pair: &Self::Pair) -> [Carry; 2];
 
-    /// What each provider's evidence can do crossing `many`.
-    fn carries_many(many: &Self::Many) -> Carry;
+    /// What the first provider's evidence, then each other's, can do crossing `many`.
+    fn carries_many(many: &Self::Many) -> [Carry; 2];
 
     /// `cyclic`: the flow is on a cycle that can grow, so a lattice with infinite chains widens
     /// here. When the provider is `bottom` the result is `bottom`.
@@ -118,8 +118,8 @@ impl<L: Lattice> Flow<L> {
                 (first, Some((of_second, *second)), &[][..], Carry::Nothing)
             }
             Shape::Many { others, many } => {
-                let carry = L::carries_many(many);
-                (carry, None, lists[*others as usize], carry)
+                let [first, of_others] = L::carries_many(many);
+                (first, None, lists[*others as usize], of_others)
             }
         };
         std::iter::once((first, self.first))
@@ -127,7 +127,7 @@ impl<L: Lattice> Flow<L> {
             .chain(others.iter().map(move |&other| (of_others, other)))
     }
 
-    fn carry_from(&self, provider: usize) -> Carry {
+    fn carry_from(&self, provider: usize, lists: &[&[NodeId]]) -> Carry {
         match &self.shape {
             Shape::Edge(edge) => L::carries(edge),
             Shape::Pair { second, pair } => {
@@ -144,7 +144,18 @@ impl<L: Lattice> Flow<L> {
                 };
                 first.max(last)
             }
-            Shape::Many { many, .. } => L::carries_many(many),
+            Shape::Many { others, many } => {
+                let [first, of_others] = L::carries_many(many);
+                let first = if self.first.index() == provider {
+                    first
+                } else {
+                    Carry::Nothing
+                };
+                let is_other = lists[*others as usize]
+                    .iter()
+                    .any(|other| other.index() == provider);
+                first.max(if is_other { of_others } else { Carry::Nothing })
+            }
         }
     }
 
@@ -484,8 +495,8 @@ mod tests {
             Carry::Passes
         }
 
-        fn carries_many((): &()) -> Carry {
-            Carry::Passes
+        fn carries_many((): &()) -> [Carry; 2] {
+            [Carry::Passes; 2]
         }
 
         fn combine_many<'a>(
@@ -556,7 +567,7 @@ mod tests {
             }
         }
 
-        fn carries_many(many: &Self::Many) -> Carry {
+        fn carries_many(many: &Self::Many) -> [Carry; 2] {
             match *many {}
         }
 
@@ -633,7 +644,7 @@ mod tests {
             Carry::Grows
         }
 
-        fn carries_many(many: &Self::Many) -> Carry {
+        fn carries_many(many: &Self::Many) -> [Carry; 2] {
             match *many {}
         }
 
@@ -708,8 +719,8 @@ mod tests {
             }
         }
 
-        fn carries_many((): &()) -> Carry {
-            Carry::Passes
+        fn carries_many((): &()) -> [Carry; 2] {
+            [Carry::Passes; 2]
         }
 
         fn combine_many<'a>(

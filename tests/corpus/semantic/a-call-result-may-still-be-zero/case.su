@@ -1,0 +1,13 @@
+fn least(a: int, b: int) -> int = if a < b {
+    a
+} else {
+    b
+}
+fn size(a: int) -> int = if a < 0 {
+    -a
+} else {
+    a
+}
+fn at_this_call() -> int = 100 / least(0, 5) + 100 / least(7, 5)
+fn within_its_bounds(n: int) -> int = 100 / size(n)
+fn bounded() -> int = within_its_bounds(3) + within_its_bounds(0)

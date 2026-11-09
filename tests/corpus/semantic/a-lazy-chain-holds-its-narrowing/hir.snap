@@ -171,7 +171,7 @@ fn hit@19:1..19:69 (bool ∈ {true, false}, int ∈ [1, 100]) -> int ∈ [0, 100
       then: read score@19:20..19:25 : int
       else: int 0 : int @19:66..19:67
 
-fn narrowed@20:1..20:87 () -> int ∈ [0, 300]
+fn narrowed@20:1..20:87 () -> int ∈ [0, 111]
   result: copy : int @20:18..20:21
     value: eager + : int @20:24..20:87
       lhs: eager + : int @20:24..20:64
@@ -188,7 +188,7 @@ fn narrowed@20:1..20:87 () -> int ∈ [0, 300]
           arg[0]: int 7 : int @20:79..20:80
         arg[1]: int 100 : int @20:83..20:86
 
-fn second@21:1..21:90 () -> int ∈ [0, 300]
+fn second@21:1..21:90 () -> int ∈ [0, 111]
   result: copy : int @21:16..21:19
     value: eager + : int @21:22..21:90
       lhs: eager + : int @21:22..21:66
@@ -208,7 +208,7 @@ fn second@21:1..21:90 () -> int ∈ [0, 300]
           arg[1]: int 3 : int @21:82..21:83
         arg[1]: int 100 : int @21:86..21:89
 
-fn skipped@22:1..22:83 () -> int ∈ [0, 300]
+fn skipped@22:1..22:83 () -> int ∈ [0, 111]
   result: copy : int @22:17..22:20
     value: eager + : int @22:23..22:83
       lhs: eager + : int @22:23..22:61
@@ -225,7 +225,7 @@ fn skipped@22:1..22:83 () -> int ∈ [0, 300]
           arg[0]: int 3 : int @22:75..22:76
         arg[1]: int 100 : int @22:79..22:82
 
-fn through_parentheses@23:1..23:83 () -> int ∈ [0, 200]
+fn through_parentheses@23:1..23:83 () -> int ∈ [0, 11]
   result: copy : int @23:29..23:32
     value: eager + : int @23:35..23:83
       lhs: call hit@19:1..19:69 : int @23:35..23:57

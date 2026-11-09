@@ -1,9 +1,9 @@
 file: accepted
-optimized: nodes 18 of 36, regions 4 of 4, calls 3 of 3
+optimized: nodes 12 of 36, regions 4 of 4, calls 0 of 3
 
 == functions ==
 fn left_to_right = 154
-  steps: 20, optimized steps: 16, depth: 2, bound: 2
+  steps: 20, optimized steps: 1, depth: 2, bound: 2
 fn operands = 87
   steps: 12, optimized steps: 1, depth: 1, bound: 1
 fn truthy = true

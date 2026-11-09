@@ -10,14 +10,15 @@ use sumi_graph::{Arms, Case, Domain, Graph, Int, May, NodeId, Op, Thresholds, Va
 use crate::lattice::{Arm, Context, Edge, Many, Pair};
 use crate::lower::Lowered;
 use crate::solver::Builder;
+use crate::summary::Summaries;
 
 /// The values that may reach each node, from one solve.
 pub(crate) struct Values(Box<[May]>);
 
 impl Values {
     /// The solve over the live call sites' arguments; a function no live call site enters is dead.
-    pub fn delivered(graph: &Graph, lowered: &Lowered) -> Self {
-        solve(graph, lowered, Arguments::Delivered)
+    pub fn delivered(graph: &Graph, lowered: &Lowered, summaries: &Summaries) -> Self {
+        solve(graph, lowered, summaries, Arguments::Delivered)
     }
 
     pub fn may(&self, node: NodeId) -> &May {
@@ -30,21 +31,23 @@ impl Values {
 pub(crate) struct AnyValues<'g> {
     graph: &'g Graph,
     lowered: &'g Lowered,
+    summaries: &'g Summaries,
     values: OnceCell<Values>,
 }
 
 impl<'g> AnyValues<'g> {
-    pub fn new(graph: &'g Graph, lowered: &'g Lowered) -> Self {
+    pub fn new(graph: &'g Graph, lowered: &'g Lowered, summaries: &'g Summaries) -> Self {
         Self {
             graph,
             lowered,
+            summaries,
             values: OnceCell::new(),
         }
     }
 
     pub fn get(&self) -> &Values {
         self.values
-            .get_or_init(|| solve(self.graph, self.lowered, Arguments::Any))
+            .get_or_init(|| solve(self.graph, self.lowered, self.summaries, Arguments::Any))
     }
 }
 
@@ -81,7 +84,7 @@ enum Arguments {
     Any,
 }
 
-fn solve(graph: &Graph, lowered: &Lowered, arguments: Arguments) -> Values {
+fn solve(graph: &Graph, lowered: &Lowered, summaries: &Summaries, arguments: Arguments) -> Values {
     // A node the walk gives no value has a class nothing flows into.
     let mut values: Builder<'_, May> = Builder::with_classes(graph.nodes().len());
     let typed = |node: NodeId| lowered.typed[node.index()];
@@ -328,7 +331,13 @@ fn solve(graph: &Graph, lowered: &Lowered, arguments: Arguments) -> Values {
         }
     }
     for &(call, callee) in &lowered.called {
-        values.flow(graph.run(callee).result(), call, Edge::Call);
+        let result = graph.run(callee).result();
+        match summaries.callee(call) {
+            Some(callee) => {
+                values.derive_many(result, graph.inputs(call), call, Many::Call(callee));
+            }
+            None => values.flow(result, call, Edge::Call),
+        }
     }
     let cx = Context {
         // Every integer the file spells or folds from constants, each once.
@@ -336,6 +345,7 @@ fn solve(graph: &Graph, lowered: &Lowered, arguments: Arguments) -> Values {
         decls: graph.decls().into(),
         unions: graph.unions().clone(),
         cases: cases.into_boxed_slice(),
+        results: summaries.results(),
     };
     Values(values.solve(&cx).into_boxed_slice())
 }

@@ -1,8 +1,8 @@
 file: accepted
-optimized: nodes 37 of 45, regions 8 of 8, calls 5 of 5
+optimized: nodes 20 of 45, regions 8 of 8, calls 0 of 5
 
 == functions ==
 fn main = 7
-  steps: 20, optimized steps: 15, depth: 2, bound: 2
+  steps: 20, optimized steps: 1, depth: 2, bound: 2
 fn nested = 11
-  steps: 26, optimized steps: 19, depth: 3, bound: 3
+  steps: 26, optimized steps: 1, depth: 3, bound: 3

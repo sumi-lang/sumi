@@ -1,0 +1,59 @@
+type Box<T> {
+    value: T,
+}
+type None {}
+type Point {
+    x: int,
+    y: int,
+}
+fn id<T>(x: T) -> T = x
+fn least(a: int, b: int) -> int = if a < b {
+    a
+} else {
+    b
+}
+fn most(a: int, b: int) -> int = if a > b {
+    a
+} else {
+    b
+}
+fn size(a: int) -> int = if a < 0 {
+    -a
+} else {
+    a
+}
+fn clamp(x: int, lo: int, hi: int) -> int = most(lo, least(x, hi))
+fn next(n: int) -> int = n + 1
+fn scaled(n: int, by: int) -> int = n * 3 - by
+fn unwrap_or<T>(v: Box<T> | None, fallback: T) -> T = match v {
+    Box<T>(b) => b.value,
+    None => fallback,
+}
+fn mirrored(p: Point) -> Point = Point(x: p.y, y: p.x)
+fn early(n: int) -> int {
+    if n > 10 {
+        return 10
+    }
+    n
+}
+fn counted(n: int) -> int {
+    let mut total = 0
+    for i in 0..n {
+        total = total + 1
+    }
+    total
+}
+fn down(n: int) -> int = if n <= 0 {
+    0
+} else {
+    down(n - 1)
+}
+fn far() -> int = id<int>(1000) + least(500, 900) + most(-7, -9) + size(-40) + next(next(10))
+fn identities() -> int = 100 / id<int>(4) + 100 / id<int>(-5)
+fn selections() -> int = 100 / least(3, 8) + 100 / most(-2, 6) + 100 / (size(least(-3, 2)) + 0)
+fn composed() -> int = 100 / clamp(50, 1, 9) + 100 / clamp(-50, 1, 9) + 100 / scaled(next(1), 5)
+fn members() -> int = 100 / unwrap_or<int>(Box<int>(value: 4), 0) + 100 / unwrap_or<int>(None(), 2)
+fn fields() -> int = 100 / mirrored(Point(x: 0, y: 5)).x + mirrored(Point(x: 7, y: 0)).y
+fn returns() -> int = 100 / early(3) + 100 / early(30)
+fn carried() -> int = counted(3) + counted(8)
+fn recursive() -> int = down(2) + down(9)

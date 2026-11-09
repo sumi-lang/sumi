@@ -62,7 +62,7 @@ fn swapped@21:1..21:92 () -> Pair<bool, int> ∈ Pair<bool, int>({true}, [20, 20
         first: int 20 : int @21:74..21:76
         second: bool true : bool @21:86..21:90
 
-fn fallbacks@22:1..27:2 () -> int ∈ [0, 44]
+fn fallbacks@22:1..27:2 () -> int ∈ [42, 42]
   result: copy : int @22:19..22:22
     value:
       let p@23:9..23:10: Pair<bool, int> @23:5..23:22
@@ -87,7 +87,7 @@ fn fallbacks@22:1..27:2 () -> int ∈ [0, 44]
           rhs: read m@25:9..25:10 : int
         else: int 0 : int @26:43..26:44
 
-fn shared@28:1..28:64 () -> int ∈ [7, 25]
+fn shared@28:1..28:64 () -> int ∈ [9, 9]
   result: copy : int @28:16..28:19
     value: eager + : int @28:22..28:64
       lhs: field first : int @28:22..28:41
@@ -103,7 +103,7 @@ fn flags@29:1..29:45 () -> bool ∈ {true}
       base: call twice@15:1..18:2 : Pair<bool, bool> @29:22..29:39
         arg[0]: bool true : bool @29:34..29:38
 
-fn generic_entry<T>@30:1..30:42 () -> int ∈ [3, 20]
+fn generic_entry<T>@30:1..30:42 () -> int ∈ [3, 3]
   result: copy : int @30:26..30:29
     value: call id@9:1..9:24 : int @30:32..30:42
       arg[0]: int 3 : int @30:40..30:41
@@ -132,7 +132,7 @@ fn swap<int, bool>@10:1..10:90 (Pair<int, bool> ∈ Pair<int, bool>([20, 20], {t
       second: field first : int @10:82..10:89
         base: read p@10:15..10:16 : Pair<int, bool>
 
-fn unwrap_or<int>@11:1..14:2 (Box<int> | None ∈ Box<int>([3, 20]) ∪ None(), int ∈ [0, 22]) -> int ∈ [0, 22]
+fn unwrap_or<int>@11:1..14:2 (Box<int> | None ∈ Box<int>([20, 20]) ∪ None(), int ∈ [0, 22]) -> int ∈ [0, 22]
   param v@11:17..11:18: Box<int> | None
   param fallback@11:35..11:43: int
   result: copy : int @11:51..11:52
@@ -155,7 +155,7 @@ fn id<bool>@9:1..9:24 (bool ∈ {true}) -> bool ∈ {true}
   result: copy : bool @9:19..9:20
     value: read x@9:10..9:11 : bool
 
-fn twice<int>@15:1..18:2 (int ∈ [4, 5]) -> Pair<int, int> ∈ Pair<int, int>([3, 20], [4, 5])
+fn twice<int>@15:1..18:2 (int ∈ [4, 5]) -> Pair<int, int> ∈ Pair<int, int>([4, 5], [4, 5])
   param x@15:13..15:14: int
   result: copy : Pair<int, int> @15:22..15:32
     value:
@@ -176,3 +176,7 @@ fn twice<bool>@15:1..18:2 (bool ∈ {true}) -> Pair<bool, bool> ∈ Pair<bool, b
       tail: make Pair : Pair<bool, bool> @17:5..17:39
         first: read same@16:9..16:13 : bool
         second: read x@15:13..15:14 : bool
+
+== semantic diagnostics ==
+warning[semantic/constant-condition] 26:8..26:25 "id<bool>(p.first)": condition is always true
+  at 26:41..26:46 "{ 0 }": this branch never runs
