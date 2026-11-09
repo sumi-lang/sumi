@@ -151,7 +151,13 @@ fn run(connection: Connection) -> Result<(), Box<dyn std::error::Error + Send + 
 
     let (jobs_tx, jobs_rx) = unbounded();
     let (outcomes_tx, outcomes_rx) = unbounded();
-    let worker = thread::spawn(move || worker(jobs_rx, outcomes_tx, encoding, features));
+    // Parsing and lowering recurse as deep as the parser's nesting limit; the deepest tree takes
+    // under a megabyte in a debug build.
+    let worker = thread::Builder::new()
+        .name("sumi-analysis".into())
+        .stack_size(8 << 20)
+        .spawn(move || worker(jobs_rx, outcomes_tx, encoding, features))
+        .expect("the analysis worker spawns");
     let result = event_loop(&connection, jobs_tx, outcomes_rx, encoding, features);
     worker.join().expect("analysis worker does not panic");
     result
