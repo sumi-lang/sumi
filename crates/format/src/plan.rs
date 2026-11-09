@@ -123,6 +123,7 @@ pub(crate) fn plan(lexed: &LexedFile, parse: &Parse) -> Plan {
         groups: Vec::new(),
         layout_comma: vec![false; n],
         pool: Vec::new(),
+        todo: Vec::new(),
     };
     planner.source_file();
     planner.freeze(lexed, parse);
@@ -194,6 +195,9 @@ struct Planner<'a> {
     groups: Vec<Group>,
     layout_comma: Vec<bool>,
     pool: Vec<Vec<El>>,
+    /// Each node with the level of the line it begins on. The walk keeps its place here and not
+    /// on the call stack, since a chain the parser nests leftward is as deep as it is long.
+    todo: Vec<(NodeIdx, u32)>,
 }
 
 impl Planner<'_> {
@@ -269,7 +273,7 @@ impl Planner<'_> {
     fn value(&mut self, node: NodeIdx, eq: u32, value: NodeIdx, level: u32) {
         let is_chain = self.tree.kind(value) == NodeKind::BinaryExpr;
         self.group(eq + 1, self.end_sig(node), Some(value), is_chain);
-        self.node(value, level);
+        self.visit(value, level);
     }
 
     /// The last child when it opens a block: the tail of a sound node's group, laid out at the
@@ -287,12 +291,23 @@ impl Planner<'_> {
         for &el in els {
             if let El::Node(child, _) = el {
                 let child_level = if Some(child) == hug { level } else { level + 1 };
-                self.node(child, child_level);
+                self.visit(child, child_level);
             }
         }
     }
 
-    /// `level` is the indentation of the line `node` begins on.
+    fn visit(&mut self, node: NodeIdx, level: u32) {
+        self.todo.push((node, level));
+    }
+
+    /// A node is laid out before its children. Among siblings the order is free, since they
+    /// share no gap.
+    fn run(&mut self) {
+        while let Some((node, level)) = self.todo.pop() {
+            self.node(node, level);
+        }
+    }
+
     fn node(&mut self, node: NodeIdx, level: u32) {
         let kind = self.tree.kind(node);
         if kind == NodeKind::Error {
@@ -320,7 +335,7 @@ impl Planner<'_> {
             NodeKind::LetStmt | NodeKind::AssignStmt | NodeKind::DiscardStmt => {
                 self.binding(node, &els, level);
             }
-            NodeKind::BinaryExpr => self.binary(node, &els, level, None),
+            NodeKind::BinaryExpr => self.binary(node, &els, level),
             NodeKind::ParenExpr => {
                 self.pairs(&els, |a, b| match (a, b) {
                     (El::Tok(_, SyntaxKind::LParen), El::Tok(_, SyntaxKind::RParen)) => {
@@ -396,7 +411,7 @@ impl Planner<'_> {
     fn children(&mut self, els: &[El], level: u32) {
         for &el in els {
             if let El::Node(child, _) = el {
-                self.node(child, level);
+                self.visit(child, level);
             }
         }
     }
@@ -409,8 +424,9 @@ impl Planner<'_> {
             self.set(gap, Gap::hard(0));
         }
         for item in items {
-            self.node(item, 0);
+            self.visit(item, 0);
         }
+        self.run();
     }
 
     fn function(&mut self, node: NodeIdx, els: &[El], level: u32) {
@@ -431,7 +447,7 @@ impl Planner<'_> {
                 El::Tok(sig, SyntaxKind::Eq) => eq = Some(sig),
                 El::Node(child, _) => match eq {
                     Some(eq) => self.value(node, eq, child, level),
-                    None => self.node(child, level),
+                    None => self.visit(child, level),
                 },
                 El::Tok(..) => {}
             }
@@ -493,38 +509,45 @@ impl Planner<'_> {
         self.head_and_value(node, els, level);
     }
 
-    fn binary(&mut self, node: NodeIdx, els: &[El], level: u32, chain: Option<u32>) {
-        let cont = chain.unwrap_or(level + 1);
+    fn binary(&mut self, node: NodeIdx, els: &[El], level: u32) {
+        let cont = level + 1;
+        let hug = self.hug(node);
+        self.group(self.first_sig(node) + 1, self.end_sig(node), hug, false);
+        let mut chained = self.operator(els, level, cont, hug);
+        while let Some(link) = chained {
+            let els = self.elements(link);
+            chained = self.operator(&els, level, cont, None);
+            self.release(els);
+        }
+    }
+
+    /// Lays out one operator of a chain that continues at `cont`. Its left operand comes back
+    /// when it carries the chain on, as an operator of the same binding power does.
+    fn operator(
+        &mut self,
+        els: &[El],
+        level: u32,
+        cont: u32,
+        hug: Option<NodeIdx>,
+    ) -> Option<NodeIdx> {
         self.pairs(els, |a, b| match (a, b) {
             (El::Node(..), El::Tok(..)) => Gap::soft(cont),
             (El::Tok(..), El::Tok(..)) => Gap::glue(cont),
             _ => Gap::space(cont),
         });
-        let hug = if chain.is_none() {
-            let hug = self.hug(node);
-            self.group(self.first_sig(node) + 1, self.end_sig(node), hug, false);
-            hug
-        } else {
-            None
-        };
-        let power = self.power(els);
-        let mut is_first = true;
-        for &el in els {
-            if let El::Node(child, child_kind) = el {
-                if is_first {
-                    is_first = false;
-                    if child_kind == NodeKind::BinaryExpr && self.power_of(child) == power {
-                        let child_els = self.elements(child);
-                        self.binary(child, &child_els, level, Some(cont));
-                        self.release(child_els);
-                        continue;
-                    }
-                    self.node(child, level);
-                } else {
-                    self.node(child, if Some(child) == hug { level } else { cont });
-                }
-            }
+        let mut operands = els.iter().filter_map(|el| match *el {
+            El::Node(child, kind) => Some((child, kind)),
+            El::Tok(..) => None,
+        });
+        let (lhs, kind) = operands.next()?;
+        for (child, _) in operands {
+            self.visit(child, if Some(child) == hug { level } else { cont });
         }
+        if kind == NodeKind::BinaryExpr && self.power_of(lhs) == self.power(els) {
+            return Some(lhs);
+        }
+        self.visit(lhs, level);
+        None
     }
 
     fn power(&self, els: &[El]) -> Option<u8> {
