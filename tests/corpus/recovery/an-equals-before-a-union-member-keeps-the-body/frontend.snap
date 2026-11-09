@@ -1,0 +1,94 @@
+== tree ==
+SourceFile! 1:1..12:1
+  FnItem! 5:1..5:42
+    Name 5:4..5:7 "foo"
+    ParamList 5:7..5:17
+      Param 5:8..5:16
+        Name 5:8..5:9 "b"
+        UnionType 5:11..5:16
+          TypeRef 5:11..5:12 "P"
+          TypeRef 5:15..5:16 "Q"
+    UnionType! 5:21..5:34
+      UnionType 5:21..5:26
+        TypeRef 5:21..5:22 "P"
+        TypeRef 5:25..5:26 "Q"
+      Error! 5:29..5:30 "="
+      TypeRef 5:31..5:34 "int"
+    Block 5:35..5:42
+      NameRef 5:37..5:40 "foo"
+  FnItem! 7:1..7:42
+    Name 7:4..7:7 "mid"
+    ParamList 7:7..7:17
+      Param 7:8..7:16
+        Name 7:8..7:9 "b"
+        UnionType 7:11..7:16
+          TypeRef 7:11..7:12 "P"
+          TypeRef 7:15..7:16 "Q"
+    UnionType! 7:21..7:34
+      UnionType! 7:21..7:28
+        TypeRef 7:21..7:22 "P"
+        Error! 7:25..7:26 "="
+        TypeRef 7:27..7:28 "Q"
+      TypeRef 7:31..7:34 "int"
+    Block 7:35..7:42
+      NameRef 7:37..7:40 "mid"
+  FnItem! 9:1..9:29
+    Name 9:4..9:7 "bar"
+    ParamList 9:7..9:15
+      Param 9:8..9:14
+        Name 9:8..9:9 "x"
+        TypeRef 9:11..9:14 "int"
+    UnionType! 9:19..9:22
+      TypeRef 9:19..9:20 "P"
+    CallExpr 9:25..9:29
+      NameRef 9:25..9:26 "g"
+      ArgList 9:26..9:29
+        Arg 9:27..9:28
+          NameRef 9:27..9:28 "x"
+  FnItem! 11:1..11:47
+    Name 11:4..11:7 "baz"
+    ParamList 11:7..11:16
+      Param 11:8..11:15
+        Name 11:8..11:9 "c"
+        TypeRef 11:11..11:15 "bool"
+    UnionType! 11:20..11:23
+      TypeRef 11:20..11:21 "P"
+    IfExpr 11:26..11:47
+      NameRef 11:29..11:30 "c"
+      Block 11:31..11:36
+        NameRef 11:33..11:34 "a"
+      Block 11:42..11:47
+        NameRef 11:44..11:45 "b"
+
+== evidence ==
+ExpectedType at 5:29
+ExpectedType at 7:25
+ExpectedType at 9:23
+ExpectedType at 11:24
+
+== diagnostics ==
+error[syntax/expected-type] 5:29..5:30 "=": expected a type
+error[syntax/expected-type] 7:25..7:26 "=": expected a type
+error[syntax/expected-type] 9:23: expected a type
+error[syntax/expected-type] 11:24: expected a type
+
+== formatted ==
+// A `=` between a union's `|` and a name stands before that member where
+// another `|` or the body's `{` follows the name, so the block is still the
+// body. Before an expression that is a body of its own, the `=` begins it,
+// and the union lacks its member.
+fn foo(b: P | Q) -> P | Q | = int {
+    foo
+}
+
+fn mid(b: P | Q) -> P | = Q | int {
+    mid
+}
+
+fn bar(x: int) -> P | = g(x)
+
+fn baz(c: bool) -> P | = if c {
+    a
+} else {
+    b
+}

@@ -31,7 +31,7 @@ SourceFile! 1:1..23:1
             TypeRef 9:31..9:35 "bool"
     TypeRef! 9:41..9:45
       TypeArgList! 9:44..9:45 "<"
-    Error! 9:46..9:49 "= x"
+    NameRef 9:48..9:49 "x"
   FnItem! 11:1..11:41
     Name 11:4..11:14 "separators"
     TypeParamList! 11:14..11:19
@@ -105,7 +105,6 @@ Expected(Gt) at 7:13
 ExpectedName at 9:13
 ExpectedType at 9:29
 Expected(Gt) at 9:46
-ExpectedBody at 9:46
 Expected(Comma) at 11:17
 Expected(Comma) at 11:32
 Expected(Gt) at 13:18
@@ -124,8 +123,6 @@ error[syntax/expected-token] 7:13: expected `>`
 error[syntax/expected-name] 9:13: expected a name
 error[syntax/expected-type] 9:29: expected a type
 error[syntax/expected-token] 9:46: expected `>`
-error[syntax/expected-body] 9:46: expected a body, `{` or `=`
-  at 9:46..9:49 "= x": skipped while recovering
 error[syntax/expected-token] 11:17: expected `,`
 error[syntax/expected-token] 11:32: expected `,`
 error[syntax/expected-token] 13:18: expected `>`

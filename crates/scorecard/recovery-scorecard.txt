@@ -16,13 +16,13 @@ insert/non-delim        10000     4744    1.00000   1.00000   1.00000
 
 class                  diags_mean diags_p95  skipped_mean skipped_p95  evidence_mean evidence_p95
 delete/delimiter            2.425         6        45.312         268          2.425            6
-delete/non-delim            1.549         5        14.742          64          1.549            5
+delete/non-delim            1.543         5        14.641          62          1.543            5
 duplicate/delimiter         2.438         7        42.736         255          2.438            7
-duplicate/non-delim         2.184         6        14.232          55          2.184            6
+duplicate/non-delim         2.177         6        14.072          52          2.177            6
 swap/delimiter              2.543         7        31.277         183          2.543            7
-swap/non-delim              2.351         6        19.924         110          2.348            6
-insert/delimiter            2.772         8        40.438         238          2.772            8
-insert/non-delim            1.982         6        17.071          85          1.978            6
+swap/non-delim              2.347         6        19.839         110          2.344            6
+insert/delimiter            2.771         8        40.345         238          2.771            8
+insert/non-delim            1.980         6        16.991          85          1.977            6
 
 == Part B: delimiter-breaking churn over clean corpora ==
 churn = original significant tokens (edit site excluded) whose partner()
