@@ -70,14 +70,24 @@ fn long_operator_chains_lower_without_overflowing() {
 }
 
 #[test]
-fn long_lazy_chains_lower_without_overflowing() {
-    // Literals narrow nothing: a chain of one local is narrowed again under every operator.
-    analyzes(chained(
-        "fn main() -> int { if true",
-        " && true",
-        1_000,
-        " { 1 } else { true } }\n",
-    ));
+fn a_long_lazy_chain_narrows_each_operand_once() {
+    const OPERATORS: usize = 4_000;
+    for (parameter, operand, link) in [
+        ("bool", "a", " && a"),
+        ("bool", "a", " || a"),
+        ("int", "a > 0", " && a > 0"),
+    ] {
+        let source = chained(
+            &format!("fn main(a: {parameter}) -> int {{ if {operand}"),
+            link,
+            OPERATORS,
+            " { 1 } else { 2 } }\n",
+        );
+        let analysis = analyze(parse_source(source.into()).unwrap());
+        assert!(analysis.is_valid());
+        // Narrowing every operand before it under each operator is half the square of this.
+        assert!(analysis.graph().nodes().len() < 16 * OPERATORS);
+    }
 }
 
 #[test]

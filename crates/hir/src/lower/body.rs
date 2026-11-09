@@ -19,7 +19,7 @@ use sumi_text::{TextEdit, TextRange, TextSize};
 
 use super::declare::{Declarations, Header, HeaderResult, Named, Parameter};
 use super::source::{NameMap, Source};
-use super::versions::{RegionState, Versions};
+use super::versions::{Refinement, RegionState, Versions};
 use super::{Call, Fallthrough, Lowered, Obligation, Statement, diagnostic, join};
 use crate::codes;
 use crate::spans::{Spans, SpansBuilder};
@@ -121,6 +121,16 @@ struct Local<'s> {
 
 /// A `let` binds after its initializer, so the initializer reads any outer binding of the name.
 type Scope<'s> = NameMap<'s, LocalId>;
+
+/// What holds where a chain of one lazy operator goes on to its next operand: `refinements`, for
+/// every operand before `last`, built outside any operand's region. `last` adds its own when
+/// another operand follows it.
+struct Guard {
+    /// `&&`, whose next operand runs where the chain so far is true; `||`, where it is false.
+    is_and: bool,
+    refinements: Vec<Refinement>,
+    last: NodeIdx,
+}
 
 /// An arm, its case, and the name and type its pattern binds.
 type ArmCase = (ast::MatchArm, Case, Option<(NodeIdx, Ty)>);
@@ -954,10 +964,32 @@ impl<'a, 's> Builder<'a, 's> {
             leaf = left;
         }
         let mut value = self.lower_one(leaf, None);
+        let mut guard = None;
         while let Some(link) = chain.pop() {
-            value = self.lower_one(link, Some(value));
+            value = match self.lazy_operator(link) {
+                Some((expr, is_and)) => {
+                    let (value, held) = self.lazy(expr, is_and, value, guard.take());
+                    guard = Some(held);
+                    value
+                }
+                None => {
+                    guard = None;
+                    self.lower_one(link, Some(value))
+                }
+            };
         }
         value
+    }
+
+    /// A whole `&&` or `||`, which `lower` takes along its chain; `&&` when the flag is set.
+    fn lazy_operator(&self, node: NodeIdx) -> Option<(ast::BinaryExpr, bool)> {
+        let tree = self.source.tree;
+        let ast::Stmt::Expr(ast::Expr::BinaryExpr(expr)) = ast::Stmt::cast(tree, node)? else {
+            return None;
+        };
+        let op = expr.op(tree, self.source.lexed())?;
+        (eager(op).is_none() && !tree.has_error(node))
+            .then_some((expr, op == sumi_syntax::BinaryOp::And))
     }
 
     /// The operand `node` lowers before anything of its own: an operator's or a field's left side.
@@ -1015,7 +1047,7 @@ impl<'a, 's> Builder<'a, 's> {
                 Some(op) => match eager(op) {
                     Some(op) => self.binary(expr, op, damaged, left),
                     None if damaged => self.holed(node),
-                    None => self.lazy(expr, op == sumi_syntax::BinaryOp::And, left),
+                    None => unreachable!("a whole lazy operator is lowered along its chain"),
                 },
             },
             Stmt::Expr(Expr::PrefixExpr(expr)) => self.prefix(expr, damaged),
@@ -1456,16 +1488,39 @@ impl<'a, 's> Builder<'a, 's> {
         self.value(node, id, control, completes)
     }
 
-    /// `lhs` is the lowered left operand, which a whole operator has.
-    fn lazy(&mut self, expr: ast::BinaryExpr, is_and: bool, lhs: Option<Value>) -> Value {
+    /// `lhs` is the lowered left operand, and `chain` what the operator before it in its chain
+    /// held. The right operand's guard is built here, outside its region, so the next operator of
+    /// the chain holds the same nodes again rather than narrowing every operand before it anew.
+    fn lazy(
+        &mut self,
+        expr: ast::BinaryExpr,
+        is_and: bool,
+        lhs: Value,
+        chain: Option<Guard>,
+    ) -> (Value, Guard) {
         let tree = self.source.tree;
         let node = expr.node();
         let at = self.source.range(node);
         let whole = "a whole operator has its operands";
         let lhs_node = expr.lhs(tree).expect(whole).node();
         let rhs_node = expr.rhs(tree).expect(whole).node();
-        let lhs = lhs.expect(whole);
         self.advance(&lhs);
+        let refinements = match chain {
+            Some(mut guard) if guard.is_and == is_and => {
+                let mark = self.versions.mark();
+                self.versions.hold(&guard.refinements);
+                let own = self.versions.mark();
+                self.refine(guard.last, is_and);
+                guard.refinements.append(&mut self.versions.take(own));
+                self.versions.release(mark);
+                guard.refinements
+            }
+            _ => {
+                let mark = self.versions.mark();
+                self.refine(lhs_node, is_and);
+                self.versions.take(mark)
+            }
+        };
         let parent = self.context();
         let left = lhs.input();
         let selected = usize::from(!is_and);
@@ -1477,9 +1532,15 @@ impl<'a, 's> Builder<'a, 's> {
         }
         let arms = self.graph.open_arms(&[contexts[selected]]);
         let region = arms.iter().next().expect("the right operand has its arm");
-        let (rhs, state) = self.region(region, Some((lhs_node, is_and)), |this| {
-            this.lower(rhs_node)
-        });
+        self.enter_region(region);
+        self.versions.hold(&refinements);
+        let rhs = self.lower(rhs_node);
+        let state = self.leave_region(region, &rhs);
+        let held = Guard {
+            is_and,
+            refinements,
+            last: rhs_node,
+        };
         let op = if is_and {
             Op::And { rhs: region }
         } else {
@@ -1496,22 +1557,14 @@ impl<'a, 's> Builder<'a, 's> {
         });
         let control = self.compose_control(at, [lhs.control, observe]);
         let mut value = self.value(node, id, control, false);
-        if !lhs.is_valid {
+        if !lhs.is_valid || (!lhs.completes && !rhs.is_valid) {
             self.fail();
-            return value;
-        }
-        if lhs.completes {
+        } else if lhs.completes {
             self.completes_input(id, 0);
             self.bottoms[node.to_usize()] = true;
             value.completes = true;
             value.has_scalar_tail = false;
-            return value;
-        }
-        if !rhs.is_valid {
-            self.fail();
-            return value;
-        }
-        if rhs.completes {
+        } else if rhs.completes {
             self.refine(lhs_node, !is_and);
         } else {
             let skipped = self.guarded_state(lhs_node, !is_and, contexts[usize::from(is_and)]);
@@ -1522,7 +1575,7 @@ impl<'a, 's> Builder<'a, 's> {
             };
             self.merge_versions(left, &states, at);
         }
-        value
+        (value, held)
     }
 
     /// An `if` by its parts. A part the parser lost stands as the `if` itself, which is a hole by
