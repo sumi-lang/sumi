@@ -37,19 +37,15 @@ pub(crate) fn lower<'s>(
     let items = declared.items.len();
     let mut builder = Builder::new(source, declared, graph, order);
     for group in 0..builder.order.groups() {
-        let is_recursive = builder.order.is_recursive(group);
         for member in 0..builder.order.members(group).len() {
-            let member = builder.order.members(group)[member];
-            builder.build(member as usize, !is_recursive);
+            builder.build(builder.order.members(group)[member] as usize);
         }
-        if is_recursive {
-            let members = builder.order.members(group).to_vec();
-            builder.checker().settle(&members);
-        }
+        builder.checker().settle(group);
     }
     let mut index = items;
     while index < builder.declared.headers.len() {
-        builder.build(index, true);
+        builder.build(index);
+        builder.checker().walk(FunctionId::new(index), true);
         index += 1;
     }
     builder.source.scope.clear();
@@ -66,6 +62,7 @@ pub(crate) fn lower<'s>(
     let spans = builder.spans.finish(&graph);
     let declared = builder.declared;
     let mut lowered = builder.lowered;
+    lowered.calls.sort_by_key(|call| call.caller.index());
     lowered.references.append(&mut source.references);
     lowered
         .references
@@ -287,8 +284,7 @@ impl<'a, 's> Builder<'a, 's> {
         }
     }
 
-    /// Builds the body of `owner` and walks its types; `is_final` unless its group settles them.
-    fn build(&mut self, owner: usize, is_final: bool) {
+    fn build(&mut self, owner: usize) {
         self.owner = u32::try_from(owner).expect("function count fits u32");
         self.has_failed = false;
         self.depth = 0;
@@ -332,7 +328,6 @@ impl<'a, 's> Builder<'a, 's> {
         };
         self.open_scope(body_range.end());
         self.returns.clear();
-        self.checker().open(FunctionId::new(owner));
         let run = self.graph.open_run(FunctionId::new(owner));
         let entry = self.push(item_node, Op::Entry, &[], None);
         for index in 0..self.declared.parameters[owner].len() {
@@ -422,8 +417,6 @@ impl<'a, 's> Builder<'a, 's> {
         self.graph.close_run(run, region, value);
         let is_whole = !self.has_failed && root_node.is_some() && body.is_valid;
         self.lowered.built[owner] = is_whole;
-        self.checker()
-            .close(FunctionId::new(owner), value, is_final);
         if is_whole && !self.source.is_muted {
             self.unused();
         }
@@ -547,12 +540,10 @@ impl<'a, 's> Builder<'a, 's> {
 
     /// The type annotation `node`, the last pushed, is declared with.
     fn annotate(&mut self, node: NodeId, annotation: NodeIdx) {
-        debug_assert!(!self.types.has_walked(node), "{node:?} is walked");
         self.spans.annotate(node, self.source.range(annotation));
     }
 
     fn completes_input(&mut self, node: NodeId, index: usize) {
-        debug_assert!(!self.types.has_walked(node), "{node:?} is walked");
         self.graph.complete_input(node, index);
     }
 

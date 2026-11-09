@@ -117,7 +117,8 @@ impl Analysis {
     pub fn function(&self, id: FunctionId) -> &Function {
         &self.functions[id.index()]
     }
-    /// Every local a body declares, in declaration order; a failed body keeps those it reached.
+    /// Every local a body declares, by the node that declares it, so in declaration order within
+    /// a function; a failed body keeps those it reached.
     pub fn bindings(&self) -> &[Binding] {
         &self.bindings
     }
