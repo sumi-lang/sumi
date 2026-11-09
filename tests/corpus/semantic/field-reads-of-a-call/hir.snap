@@ -1,0 +1,123 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 4
+
+== graph ==
+fn make@8:1..8:42 () -> Point ∈ Point([1, 1], {true})
+  result: copy : Point @8:14..8:19
+    value: make Point : Point @8:22..8:42
+      x: int 1 : int @8:31..8:32
+      y: bool true : bool @8:37..8:41
+
+fn fields_disagree@9:1..12:2 (bool ∈ ∅) -> int ∈ ∅
+  param c@9:20..9:21: bool
+  result: copy : int @9:32..9:35
+    value:
+      let r@10:9..10:10: Point @10:5..10:19
+        initializer: call make@8:1..8:42 : Point @10:13..10:19
+      tail: if : ? @11:5..11:30
+        scrutinee: read c@9:20..9:21 : bool
+        then: field x : int @11:12..11:15
+          base: read r@10:9..10:10 : Point
+        else: field y : bool @11:25..11:28
+          base: read r@10:9..10:10 : Point
+
+fn pick@13:1..18:2 (bool ∈ ∅) -> A | B ∈ ∅
+  param c@13:9..13:10: bool
+  result: result : A | B @13:1..18:2
+    outcome[0]:
+      discard: if : unit @14:5..16:6
+        scrutinee: read c@13:9..13:10 : bool
+        then: unit : unit @14:10..16:6
+        else: unit (implicit)
+      discard: after : ? @14:5..16:6
+        control: observe : ? @14:5..16:6
+        context: entry : ? @13:1..18:2
+      tail: make B : B @17:5..17:15
+        n: bool true : bool @17:10..17:14
+    outcome[1]: return : A @15:9..15:23
+      payload: make A : A @15:16..15:23
+        n: int 1 : int @15:21..15:22
+
+fn of_a_union@19:1..22:2 (bool ∈ ∅) -> int ∈ ∅
+  param c@19:15..19:16: bool
+  result: copy : int @19:27..19:30
+    value:
+      let r@20:9..20:10: A | B @20:5..20:20
+        initializer: call pick@13:1..18:2 : A | B @20:13..20:20
+          arg[0]: read c@19:15..19:16 : bool
+      tail: if : ? @21:5..21:30
+        scrutinee: read c@19:15..19:16 : bool
+        then: field n : ? @21:12..21:15
+          base: read r@20:9..20:10 : A | B
+        else: field n : ? @21:25..21:28
+          base: read r@20:9..20:10 : A | B
+
+fn conflicted@23:1..34:2 signature: unavailable
+  param k@23:15..23:16: int
+  result: result : ? @23:1..34:2
+    outcome[0]:
+      discard: if : unit @24:5..26:6
+        scrutinee: eager == : bool @24:8..24:14
+          lhs: read k@23:15..23:16 : int
+          rhs: int 1 : int @24:13..24:14
+        then: unit : unit @24:15..26:6
+        else: unit (implicit)
+      discard: if : unit @27:5..29:6
+        scrutinee: eager == : bool @27:8..27:14
+          lhs: read k@23:15..23:16 [k == 1 fails@24:8..24:14] : int
+          rhs: int 2 : int @27:13..27:14
+        then: unit : unit @27:15..29:6
+        else: unit (implicit)
+      discard: if : unit @30:5..32:6
+        scrutinee: eager > : bool @30:8..30:13
+          lhs: read k@23:15..23:16 [k == 2 fails@27:8..27:14, k == 1 fails@24:8..24:14] : int
+          rhs: int 5 : int @30:12..30:13
+        then:
+          discard: call of_a_conflict@35:1..35:43 : ? @31:13..31:33
+            arg[0]: eager - : int @31:27..31:32
+              lhs: read k@23:15..23:16 [k > 5 holds@30:8..30:13, k == 2 fails@27:8..27:14, k == 1 fails@24:8..24:14] : int
+              rhs: int 1 : int @31:31..31:32
+          tail: unit : unit @30:14..32:6
+        else: unit (implicit)
+      tail: int 0 : int @33:5..33:6
+    outcome[1]: return : A @25:9..25:23
+      payload: make A : A @25:16..25:23
+        n: int 1 : int @25:21..25:22
+    outcome[2]: return : B @28:9..28:26
+      payload: make B : B @28:16..28:26
+        n: bool true : bool @28:21..28:25
+
+fn of_a_conflict@35:1..35:43 signature: unavailable
+  param k@35:18..35:19: int
+  body: field n : ? @35:28..35:43
+    base: call conflicted@23:1..34:2 : ? @35:28..35:41
+      arg[0]: read k@35:18..35:19 : int
+
+fn takes@36:1..36:32 (Point ∈ ∅) -> int ∈ ∅
+  param p@36:10..36:11: Point
+  result: copy : int @36:23..36:26
+    value: field x : int @36:29..36:32
+      base: read p@36:10..36:11 : Point
+
+fn of_a_demanded_conflict@37:1..41:2 signature: unavailable
+  param k@37:27..37:28: int
+  body:
+    let r@38:9..38:10: ? @38:5..38:26
+      initializer: call conflicted@23:1..34:2 : ? @38:13..38:26
+        arg[0]: read k@37:27..37:28 : int
+    discard: call takes@36:1..36:32 : int @39:9..39:17
+      arg[0]: read r@38:9..38:10 : ?
+    tail: field x : ? @40:5..40:8
+      base: read r@38:9..38:10 : ?
+
+== semantic diagnostics ==
+error[semantic/type-mismatch] 11:5..11:30 "if c { r.x } else { r.y }": if branches are int and bool
+  at 11:12..11:15 "r.x": int here
+  at 11:25..11:28 "r.y": bool here
+error[semantic/unknown-field] 21:12..21:15 "r.n": `A | B` has no field `n`
+error[semantic/unknown-field] 21:25..21:28 "r.n": `A | B` has no field `n`
+error[semantic/cannot-infer] 23:1..34:2 "fn conflicted(k: int) = {\n    if k == 1 {\n        return A(n: 1)\n    }\n    if k == 2 {\n        return B(n: true)\n    }\n    if k > 5 {\n        _ = of_a_conflict(k - 1)\n    }\n    0\n}": function result is both A, B, and int; add a return type annotation
+  at 25:9..25:23 "return A(n: 1)": A here
+  at 28:9..28:26 "return B(n: true)": B here
+  at 33:5..33:6 "0": int here

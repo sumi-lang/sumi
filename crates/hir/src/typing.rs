@@ -373,24 +373,23 @@ impl Checker<'_, '_> {
         }
     }
 
-    /// Each claim of a declared type with the field becomes a claim of the field's type, or the
-    /// unknown when that type is damaged; the rest deliver nothing, which the read's demand reports.
+    /// The read claims its field's type where its base resolves to one declared type with it. A
+    /// read reported elsewhere is unknown, so nothing after it is blamed: by its own demand, by
+    /// the base's conflict where that arose, or at the field's damaged type.
     fn field(&mut self, read: NodeId, base: NodeId, name: FieldName) {
-        let base = self.set(base).clone();
-        let root = self.root(read);
-        self.sets[root].is_unknown |= base.is_unknown;
-        for member in base.members() {
-            let Some(decl) = member.ty.as_decl() else {
-                continue;
-            };
+        let set = self.set(base);
+        let (is_unknown, is_conflict) = (set.is_unknown, set.is_conflict());
+        let resolved = self.resolve(base);
+        let field = resolved.and_then(Ty::as_decl).and_then(|decl| {
             let decl = self.graph.decl(decl);
-            let Some(index) = decl.index_of(name) else {
-                continue;
-            };
-            match decl.fields()[index].1 {
-                Some(ty) => self.sets[root].offer(Member { ty, ..member }),
-                None => self.sets[root].is_unknown = true,
-            }
+            Some(decl.fields()[decl.index_of(name)?].1)
+        });
+        if let Some(Some(ty)) = field {
+            self.fact(read, ty, self.spans.origin(read));
+        }
+        if is_unknown || is_conflict || (resolved.is_some() && !matches!(field, Some(Some(_)))) {
+            let root = self.root(read);
+            self.sets[root].is_unknown = true;
         }
     }
 
