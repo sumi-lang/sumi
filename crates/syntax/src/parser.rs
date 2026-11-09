@@ -310,10 +310,13 @@ fn signature_tail(m: &mut Marker<'_, '_>, is_name_missing: bool) {
             let recovery = m.missing(ParseRecoveryKind::Type);
             signature_garbage(m, recovery, |m| m.at(T::Ident));
         }
-        is_complete = m.at(T::Ident);
-        if is_complete {
+        // A type the parser recovered in is no whole part, so a `=` after it begins no body.
+        let recovery = m.recovery_checkpoint();
+        let has_type = m.at(T::Ident);
+        if has_type {
             type_ref(m, 2);
         }
+        is_complete = has_type && !m.recovered_since(recovery);
         if !body_begins(m, is_complete) {
             let recovery = m.missing(ParseRecoveryKind::Body);
             signature_garbage(m, recovery, |m| is_at_expression_body(m, is_complete));
