@@ -1,0 +1,72 @@
+== tree ==
+SourceFile 1:1..15:1
+  FnItem 4:1..14:2
+    Name 4:4..4:9 "calls"
+    ParamList 4:9..4:17
+      Param 4:10..4:16
+        Name 4:10..4:11 "x"
+        TypeRef 4:13..4:16 "int"
+    TypeRef 4:21..4:24 "int"
+    Block 4:25..14:2
+      LetStmt 5:5..7:9
+        Name 5:9..5:15 "broken"
+        CallExpr 5:18..7:9
+          NameRef 5:18..5:20 "id"
+          TypeArgList 5:20..7:6
+            TypeRef 6:9..6:12 "int"
+          ArgList 7:6..7:9
+            Arg 7:7..7:8
+              NameRef 7:7..7:8 "x"
+      LetStmt 8:5..9:9
+        Name 8:9..8:15 "closed"
+        CallExpr 8:18..9:9
+          NameRef 8:18..8:20 "id"
+          TypeArgList 8:20..9:6
+            TypeRef 8:21..8:24 "int"
+          ArgList 9:6..9:9
+            Arg 9:7..9:8
+              NameRef 9:7..9:8 "x"
+      LetStmt 10:5..10:29
+        Name 10:9..10:15 "spaced"
+        CallExpr 10:18..10:29
+          NameRef 10:18..10:20 "id"
+          TypeArgList 10:20..10:25
+            TypeRef 10:21..10:24 "int"
+          ArgList 10:26..10:29
+            Arg 10:27..10:28
+              NameRef 10:27..10:28 "x"
+      LetStmt 11:5..11:19
+        Name 11:9..11:13 "less"
+        BinaryExpr 11:16..11:19
+          NameRef 11:16..11:17 "a"
+          NameRef 11:18..11:19 "b"
+      BinaryExpr 12:5..12:10
+        NameRef 12:5..12:6 "c"
+        ParenExpr 12:7..12:10
+          NameRef 12:8..12:9 "x"
+      BinaryExpr 13:5..13:20
+        NameRef 13:5..13:11 "broken"
+        NameRef 13:14..13:20 "closed"
+
+== evidence ==
+SpacedListOpener at 10:26
+UnspacedBinaryOperator at 11:17
+UnspacedBinaryOperator at 12:6
+
+== diagnostics ==
+error[syntax/spaced-list-opener] 10:26..10:27 "(": opening `(` must be adjacent to the function name
+error[syntax/unspaced-binary-operator] 11:17..11:18 "<": binary operator must have spaces on both sides
+error[syntax/unspaced-binary-operator] 12:6..12:7 ">": binary operator must have spaces on both sides
+
+== formatted ==
+// A name's `<` opens type arguments in an expression only when the `>` that
+// closes them and the call's `(` follow with no statement boundary between;
+// a line break that ends no statement is no boundary.
+fn calls(x: int) -> int {
+    let broken = id<int>(x)
+    let closed = id<int>(x)
+    let spaced = id<int>(x)
+    let less = a < b
+    c > (x)
+    broken + closed
+}

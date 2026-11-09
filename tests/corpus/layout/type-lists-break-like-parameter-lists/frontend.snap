@@ -1,0 +1,145 @@
+== tree ==
+SourceFile 1:1..13:1
+  TypeItem 3:1..3:40
+    Name 3:6..3:10 "Pair"
+    TypeParamList 3:10..3:16
+      Name 3:11..3:12 "A"
+      Name 3:13..3:14 "B"
+    FieldList 3:17..3:40
+      Field 3:19..3:27
+        Name 3:19..3:24 "first"
+        TypeRef 3:26..3:27 "A"
+      Field 3:29..3:38
+        Name 3:29..3:35 "second"
+        TypeRef 3:37..3:38 "B"
+  FnItem 5:1..5:97
+    Name 5:4..5:8 "fits"
+    TypeParamList 5:8..5:17
+      Name 5:10..5:11 "A"
+      Name 5:14..5:15 "B"
+    ParamList 5:17..5:35
+      Param 5:18..5:34
+        Name 5:18..5:19 "a"
+        TypeRef 5:21..5:34
+          TypeArgList 5:25..5:34
+            TypeRef 5:27..5:28 "A"
+            TypeRef 5:30..5:31 "B"
+    TypeRef 5:39..5:50
+      TypeArgList 5:43..5:50
+        TypeRef 5:44..5:45 "B"
+        TypeRef 5:48..5:49 "A"
+    CallExpr 5:53..5:97
+      NameRef 5:53..5:57 "Pair"
+      TypeArgList 5:57..5:63
+        TypeRef 5:58..5:59 "B"
+        TypeRef 5:61..5:62 "A"
+      ArgList 5:63..5:97
+        Arg 5:64..5:79
+          NameRef 5:64..5:69 "first"
+          FieldExpr 5:71..5:79
+            NameRef 5:71..5:72 "a"
+            NameRef 5:73..5:79 "second"
+        Arg 5:81..5:96
+          NameRef 5:81..5:87 "second"
+          FieldExpr 5:89..5:96
+            NameRef 5:89..5:90 "a"
+            NameRef 5:91..5:96 "first"
+  FnItem 7:1..7:106
+    Name 7:4..7:19 "long_parameters"
+    TypeParamList 7:19..7:101
+      Name 7:20..7:38 "FirstTypeParameter"
+      Name 7:40..7:59 "SecondTypeParameter"
+      Name 7:61..7:79 "ThirdTypeParameter"
+      Name 7:81..7:100 "FourthTypeParameter"
+    ParamList 7:101..7:103 "()"
+    Block 7:104..7:106 "{}"
+  FnItem 9:1..12:2
+    Name 9:4..9:18 "long_arguments"
+    ParamList 9:18..9:106
+      Param 9:19..9:105
+        Name 9:19..9:23 "pair"
+        TypeRef 9:25..9:105
+          TypeArgList 9:29..9:105
+            TypeRef 9:30..9:66
+              TypeArgList 9:34..9:66
+                TypeRef 9:35..9:49
+                  TypeArgList 9:39..9:49
+                    TypeRef 9:40..9:43 "int"
+                    TypeRef 9:45..9:48 "int"
+                TypeRef 9:51..9:65
+                  TypeArgList 9:55..9:65
+                    TypeRef 9:56..9:59 "int"
+                    TypeRef 9:61..9:64 "int"
+            TypeRef 9:68..9:104
+              TypeArgList 9:72..9:104
+                TypeRef 9:73..9:87
+                  TypeArgList 9:77..9:87
+                    TypeRef 9:78..9:81 "int"
+                    TypeRef 9:83..9:86 "int"
+                TypeRef 9:89..9:103
+                  TypeArgList 9:93..9:103
+                    TypeRef 9:94..9:97 "int"
+                    TypeRef 9:99..9:102 "int"
+    TypeRef 9:110..9:113 "int"
+    Block 9:114..12:2
+      LetStmt 10:5..10:105
+        Name 10:9..10:16 "swapped"
+        CallExpr 10:19..10:105
+          NameRef 10:19..10:23 "fits"
+          TypeArgList 10:23..10:99
+            TypeRef 10:24..10:60
+              TypeArgList 10:28..10:60
+                TypeRef 10:29..10:43
+                  TypeArgList 10:33..10:43
+                    TypeRef 10:34..10:37 "int"
+                    TypeRef 10:39..10:42 "int"
+                TypeRef 10:45..10:59
+                  TypeArgList 10:49..10:59
+                    TypeRef 10:50..10:53 "int"
+                    TypeRef 10:55..10:58 "int"
+            TypeRef 10:62..10:98
+              TypeArgList 10:66..10:98
+                TypeRef 10:67..10:81
+                  TypeArgList 10:71..10:81
+                    TypeRef 10:72..10:75 "int"
+                    TypeRef 10:77..10:80 "int"
+                TypeRef 10:83..10:97
+                  TypeArgList 10:87..10:97
+                    TypeRef 10:88..10:91 "int"
+                    TypeRef 10:93..10:96 "int"
+          ArgList 10:99..10:105
+            Arg 10:100..10:104
+              NameRef 10:100..10:104 "pair"
+      FieldExpr 11:5..11:30
+        FieldExpr 11:5..11:24
+          FieldExpr 11:5..11:18
+            NameRef 11:5..11:12 "swapped"
+            NameRef 11:13..11:18 "first"
+          NameRef 11:19..11:24 "first"
+        NameRef 11:25..11:30 "first"
+
+== formatted ==
+// A type list that fits stays on its line with no comma before its `>`; one
+// that does not breaks after its `<` and each comma, and takes one.
+type Pair<A, B> {
+    first: A,
+    second: B
+}
+
+fn fits<A, B>(a: Pair<A, B>) -> Pair<B, A> = Pair<B, A>(first: a.second, second: a.first)
+
+fn long_parameters<
+    FirstTypeParameter,
+    SecondTypeParameter,
+    ThirdTypeParameter,
+    FourthTypeParameter,
+>() {}
+
+fn long_arguments(
+    pair: Pair<Pair<Pair<int, int>, Pair<int, int>>, Pair<Pair<int, int>, Pair<int, int>>>,
+) -> int {
+    let swapped = fits<Pair<Pair<int, int>, Pair<int, int>>, Pair<Pair<int, int>, Pair<int, int>>>(
+        pair,
+    )
+    swapped.first.first.first
+}

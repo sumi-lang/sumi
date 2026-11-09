@@ -1,0 +1,12 @@
+// A type list that fits stays on its line with no comma before its `>`; one
+// that does not breaks after its `<` and each comma, and takes one.
+type Pair<A,B,> { first: A, second: B }
+
+fn fits< A , B >(a: Pair< A, B, >) -> Pair<B , A> = Pair<B, A>(first: a.second, second: a.first)
+
+fn long_parameters<FirstTypeParameter, SecondTypeParameter, ThirdTypeParameter, FourthTypeParameter>() {}
+
+fn long_arguments(pair: Pair<Pair<Pair<int, int>, Pair<int, int>>, Pair<Pair<int, int>, Pair<int, int>>>) -> int {
+    let swapped = fits<Pair<Pair<int, int>, Pair<int, int>>, Pair<Pair<int, int>, Pair<int, int>>>(pair)
+    swapped.first.first.first
+}

@@ -440,9 +440,19 @@ grammar! {
 
     enum Item as CleanItem { FnItem, TypeItem }
 
-    /// `'fn' Name ParamList ('->' ret:Type)? '='? body:Expr`.
-    struct FnItem { name: Name, param_list: ParamList, ret: Option<Type>, body: Expr }
+    /// `'fn' Name TypeParamList? ParamList ('->' ret:Type)? '='? body:Expr`.
+    struct FnItem {
+        name: Name,
+        type_params: Option<TypeParamList>,
+        param_list: ParamList,
+        ret: Option<Type>,
+        body: Expr,
+    }
     tokens { FnKw, [Minus, Gt]?, Eq? }
+
+    /// `'<' (Name (',' Name)* ','?)? '>'`: the type parameters an item's head declares.
+    struct TypeParamList { params: [Name] }
+    tokens { Lt, Comma?, Gt }
 
     /// `'(' (Param (',' Param)* ','?)? ')'`.
     struct ParamList { params: [Param] }
@@ -452,8 +462,8 @@ grammar! {
     struct Param { name: Name, type_ref: Type }
     tokens { Colon }
 
-    /// `'type' Name FieldList`.
-    struct TypeItem { name: Name, field_list: FieldList }
+    /// `'type' Name TypeParamList? FieldList`.
+    struct TypeItem { name: Name, type_params: Option<TypeParamList>, field_list: FieldList }
     tokens { TypeKw }
 
     /// `'{' (Field (',' Field)* ','?)? '}'`.
@@ -470,9 +480,13 @@ grammar! {
 
     enum Type as CleanType { TypeRef, UnionType }
 
-    /// `Ident`.
-    struct TypeRef {}
+    /// `Ident TypeArgList?`.
+    struct TypeRef { type_args: Option<TypeArgList> }
     tokens { Ident }
+
+    /// `'<' (Type (',' Type)* ','?)? '>'`, its `<` glued to the name before it.
+    struct TypeArgList { args: [Type] }
+    tokens { Lt, Comma?, Gt }
 
     /// `lhs:Type '|' rhs:TypeRef`: a union nests to the left, like a chain of operators.
     struct UnionType { lhs: Type, rhs: TypeRef }
@@ -527,7 +541,8 @@ grammar! {
     struct ParenExpr { inner: Expr }
     tokens { LParen, RParen }
 
-    struct CallExpr { callee: NameRef, arg_list: ArgList }
+    /// `callee:NameRef TypeArgList? ArgList`.
+    struct CallExpr { callee: NameRef, type_args: Option<TypeArgList>, arg_list: ArgList }
 
     /// `'(' (Arg (',' Arg)* ','?)? ')'`.
     struct ArgList { args: [Arg] }
@@ -564,8 +579,9 @@ grammar! {
 
     enum Pattern as CleanPattern { MemberPattern, RestPattern }
 
-    /// `member:NameRef ('(' binding:Name ')')?`: a value of the member type, bound if named.
-    struct MemberPattern { member: NameRef, binding: Option<Name> }
+    /// `member:NameRef TypeArgList? ('(' binding:Name ')')?`: a value of the member type, bound if
+    /// named.
+    struct MemberPattern { member: NameRef, type_args: Option<TypeArgList>, binding: Option<Name> }
     tokens { LParen?, RParen? }
 
     /// `'_'`: every value the arms before leave.
@@ -610,9 +626,9 @@ mod tests {
             let many = kind.children().iter().filter(|c| c.slot.is_none()).count();
             assert!(many == 0 || kind.children().len() == 1, "{kind:?}");
         }
-        assert_eq!(NodeKind::FnItem.children()[2].name, "ret");
-        assert_eq!(NodeKind::FnItem.children()[2].slot, Some(2));
-        assert!(NodeKind::FnItem.children()[2].is_optional);
+        assert_eq!(NodeKind::FnItem.children()[3].name, "ret");
+        assert_eq!(NodeKind::FnItem.children()[3].slot, Some(3));
+        assert!(NodeKind::FnItem.children()[3].is_optional);
     }
 
     #[test]

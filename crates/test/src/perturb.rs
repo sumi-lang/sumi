@@ -32,8 +32,13 @@ fn perturb(source: &str, choices: &[u32]) -> String {
     // comma is layout to `rep`, so it comes or goes.
     let mut closers: Vec<Option<bool>> = vec![None; n + 1];
     for node in tree.nodes() {
-        if !matches!(tree.kind(node), NodeKind::ArgList | NodeKind::ParamList)
-            || tree.has_error(node)
+        if !matches!(
+            tree.kind(node),
+            NodeKind::ArgList
+                | NodeKind::ParamList
+                | NodeKind::TypeParamList
+                | NodeKind::TypeArgList
+        ) || tree.has_error(node)
             || tree.children(node).next().is_none()
         {
             continue;

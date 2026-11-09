@@ -227,6 +227,14 @@ impl Snapshot<'_> {
                 codes::SPACED_PREFIX_OPERATOR,
                 "prefix operator must be adjacent to its operand",
             ),
+            ParseViolationKind::SpacedListOpener
+                if self.lexed.kind(violation.range.start()) == SyntaxKind::Lt =>
+            {
+                (
+                    codes::SPACED_LIST_OPENER,
+                    "opening `<` must be adjacent to the name before it",
+                )
+            }
             ParseViolationKind::SpacedListOpener => (
                 codes::SPACED_LIST_OPENER,
                 "opening `(` must be adjacent to the function name",

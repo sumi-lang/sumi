@@ -1,5 +1,5 @@
 == tree ==
-SourceFile 1:1..65:1
+SourceFile 1:1..73:1
   FnItem 3:1..15:2
     Name 3:4..3:8 "main"
     ParamList 3:8..3:10 "()"
@@ -271,3 +271,52 @@ SourceFile 1:1..65:1
     TypeRef 62:20..62:24 "unit"
     Block 62:25..64:2
       ReturnStmt 63:5..63:11 "return"
+  TypeItem 66:1..68:2
+    Name 66:6..66:9 "Box"
+    TypeParamList 66:9..66:12
+      Name 66:10..66:11 "T"
+    FieldList 66:13..68:2
+      Field 67:5..67:13
+        Name 67:5..67:10 "value"
+        TypeRef 67:12..67:13 "T"
+  FnItem 70:1..70:46
+    Name 70:4..70:8 "wrap"
+    TypeParamList 70:8..70:11
+      Name 70:9..70:10 "T"
+    ParamList 70:11..70:17
+      Param 70:12..70:16
+        Name 70:12..70:13 "x"
+        TypeRef 70:15..70:16 "T"
+    TypeRef 70:21..70:27
+      TypeArgList 70:24..70:27
+        TypeRef 70:25..70:26 "T"
+    CallExpr 70:30..70:46
+      NameRef 70:30..70:33 "Box"
+      TypeArgList 70:33..70:36
+        TypeRef 70:34..70:35 "T"
+      ArgList 70:36..70:46
+        Arg 70:37..70:45
+          NameRef 70:37..70:42 "value"
+          NameRef 70:44..70:45 "x"
+  FnItem 72:1..72:62
+    Name 72:4..72:10 "unwrap"
+    ParamList 72:10..72:23
+      Param 72:11..72:22
+        Name 72:11..72:12 "b"
+        TypeRef 72:14..72:22
+          TypeArgList 72:17..72:22
+            TypeRef 72:18..72:21 "int"
+    TypeRef 72:27..72:30 "int"
+    FieldExpr 72:33..72:62
+      FieldExpr 72:33..72:56
+        CallExpr 72:33..72:50
+          NameRef 72:33..72:37 "wrap"
+          TypeArgList 72:37..72:47
+            TypeRef 72:38..72:46
+              TypeArgList 72:41..72:46
+                TypeRef 72:42..72:45 "int"
+          ArgList 72:47..72:50
+            Arg 72:48..72:49
+              NameRef 72:48..72:49 "b"
+        NameRef 72:51..72:56 "value"
+      NameRef 72:57..72:62 "value"

@@ -35,13 +35,16 @@ pub fn rep<'s>(source: &'s str, lexed: &LexedFile, parse: &Parse) -> Rep<'s> {
 
     let mut erased = vec![false; n];
     for node in tree.nodes() {
-        if matches!(tree.kind(node), NodeKind::ArgList | NodeKind::ParamList)
-            && !tree.has_error(node)
-        {
+        let closer = match tree.kind(node) {
+            NodeKind::ArgList | NodeKind::ParamList => SyntaxKind::RParen,
+            NodeKind::TypeParamList | NodeKind::TypeArgList => SyntaxKind::Gt,
+            _ => continue,
+        };
+        if !tree.has_error(node) {
             let end = end_sig(node) as usize;
             if end >= first_sig(node) as usize + 3
                 && input.get(SigIdx::new(end as u32 - 2)) == Some(SyntaxKind::Comma)
-                && input.get(SigIdx::new(end as u32 - 1)) == Some(SyntaxKind::RParen)
+                && input.get(SigIdx::new(end as u32 - 1)) == Some(closer)
             {
                 erased[end - 2] = true;
             }

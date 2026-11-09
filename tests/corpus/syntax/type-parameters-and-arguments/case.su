@@ -1,0 +1,27 @@
+// Type parameters follow an item's name; type arguments follow the name of a
+// type, a callee, or a match member. Either list may be empty and may end in
+// a comma.
+type Box<T> {
+    value: T,
+}
+
+type Pair<A, B,> {
+    first: A,
+    second: Box<B>,
+}
+
+type Empty<> {}
+
+fn id<T>(x: T) -> T = x
+
+fn pair<A, B>(a: A, b: B) -> Pair<A, B> = Pair<A, B>(first: a, second: Box<B>(value: b))
+
+fn plain<>() -> int = id<int,>(1)
+
+fn nested(p: Pair<Box<int>, Box<int> | Empty<>>) -> int {
+    let b: Box<int> | Empty<> = p.second.value
+    match b {
+        Box<int>(inner) => inner.value,
+        Empty<> => plain<>() + id<Box<Box<int>>>(Box<Box<int>>(value: Box<int>(value: 2))).value.value,
+    }
+}

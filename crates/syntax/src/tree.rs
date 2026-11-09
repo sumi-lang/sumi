@@ -670,6 +670,16 @@ impl<'a> Marker<'_, 'a> {
             .map(|offset| offset as usize)
     }
 
+    /// The offset from the next token of the `>` closing the type list it opens.
+    pub(crate) fn type_list_closer(&self) -> Option<usize> {
+        let position = self.builder.position;
+        if position.to_usize() >= self.builder.input.len() {
+            return None;
+        }
+        let closer = self.builder.input.type_list_closer(position)?;
+        Some((closer.to_u32() - position.to_u32()) as usize)
+    }
+
     /// Whether the next token closes this `pair` construct: paired with its opener, or an orphan,
     /// since recovery may have skipped the paired one.
     pub(crate) fn owns_closer(&self, pair: Pair) -> bool {

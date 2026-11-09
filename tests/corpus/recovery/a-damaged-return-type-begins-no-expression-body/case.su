@@ -1,3 +1,5 @@
 // A `=` after a return type the parser recovered in is garbage like any
 // other in a signature, so the block after it is still the body.
 fn foo(b: P | Q) -> P | Q | = int { foo }
+
+fn bar() -> Box< = int { bar }

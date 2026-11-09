@@ -1,5 +1,5 @@
 == tree ==
-SourceFile! 1:1..4:1
+SourceFile! 1:1..6:1
   FnItem! 3:1..3:42
     Name 3:4..3:7 "foo"
     ParamList 3:7..3:17
@@ -15,19 +15,36 @@ SourceFile! 1:1..4:1
     Error! 3:29..3:34 "= int"
     Block 3:35..3:42
       NameRef 3:37..3:40 "foo"
+  FnItem! 5:1..5:31
+    Name 5:4..5:7 "bar"
+    ParamList 5:7..5:9 "()"
+    TypeRef! 5:13..5:17
+      TypeArgList! 5:16..5:17 "<"
+    Error! 5:18..5:23 "= int"
+    Block 5:24..5:31
+      NameRef 5:26..5:29 "bar"
 
 == evidence ==
 ExpectedType at 3:29
 ExpectedBody at 3:29
+Expected(Gt) at 5:18
+ExpectedBody at 5:18
 
 == diagnostics ==
 error[syntax/expected-type] 3:29: expected a type
 error[syntax/expected-body] 3:29: expected a body, `{` or `=`
   at 3:29..3:34 "= int": skipped while recovering
+error[syntax/expected-token] 5:18: expected `>`
+error[syntax/expected-body] 5:18: expected a body, `{` or `=`
+  at 5:18..5:23 "= int": skipped while recovering
 
 == formatted ==
 // A `=` after a return type the parser recovered in is garbage like any
 // other in a signature, so the block after it is still the body.
 fn foo(b: P | Q) -> P | Q | = int {
     foo
+}
+
+fn bar() -> Box< = int {
+    bar
 }

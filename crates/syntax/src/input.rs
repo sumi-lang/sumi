@@ -1,7 +1,7 @@
 //! The parser's token stream: the significant tokens of a lexed file, with jointness, bracket
-//! partners, statement boundaries, and item anchors precomputed. A line break ends a statement iff
-//! no closed pair that does not enclose statements surrounds it, the token before it can end one,
-//! and the token after it cannot continue one.
+//! partners, type lists, statement boundaries, and item anchors precomputed. A line break ends a
+//! statement iff no closed pair that does not enclose statements surrounds it, the token before it
+//! can end one, and the token after it cannot continue one.
 
 use std::num::NonZeroU32;
 use std::ops::Range;
@@ -35,6 +35,9 @@ pub struct ParserInput {
     /// Tokens with a boundary before them, ascending.
     boundaries: Box<[SigIdx]>,
     item_anchors: Box<[SigIdx]>,
+    /// Each `<` glued after a name with the `>` that closes it, by opener: between them stand only
+    /// names, `,`, `|`, and lists like it, and no statement boundary.
+    type_lists: Box<[(SigIdx, SigIdx)]>,
     /// One entry per raw index, plus a final entry past the end of the buffer.
     sig_at_or_after: Box<[SigIdx]>,
 }
@@ -70,12 +73,31 @@ impl ParserInput {
         let mut item_anchors: Vec<SigIdx> = Vec::new();
         let mut matched = 0usize;
         let mut context = 0u8;
+        // The `<` tokens that may yet open a type list, innermost last.
+        let mut angles: Vec<SigIdx> = Vec::new();
+        let mut type_lists: Vec<(SigIdx, SigIdx)> = Vec::new();
         for index in 0..slots.len() {
             let slot = slots[index];
             slots[index].flags |= context | (u8::from(matched != 0) * IN_MATCHED_DELIMITERS);
             if slot.flags & NEWLINE_BEFORE != 0 && would_end_statement_at(&slots, index) {
                 slots[index].flags |= BOUNDARY_BEFORE;
                 boundaries.push(SigIdx::new(index as u32));
+                angles.clear();
+            }
+            let follows_name = || {
+                index > 0
+                    && slots[index - 1].kind == SyntaxKind::Ident
+                    && slots[index - 1].flags & JOINT != 0
+            };
+            match slot.kind {
+                SyntaxKind::Lt if follows_name() => angles.push(SigIdx::new(index as u32)),
+                SyntaxKind::Gt => {
+                    if let Some(opener) = angles.pop() {
+                        type_lists.push((opener, SigIdx::new(index as u32)));
+                    }
+                }
+                SyntaxKind::Ident | SyntaxKind::Comma | SyntaxKind::Pipe => {}
+                _ => angles.clear(),
             }
             if matched == 0 && is_item_anchor_at(&slots, index) {
                 item_anchors.push(SigIdx::new(index as u32));
@@ -105,6 +127,10 @@ impl ParserInput {
             slots: slots.into_boxed_slice(),
             boundaries: boundaries.into_boxed_slice(),
             item_anchors: item_anchors.into_boxed_slice(),
+            type_lists: {
+                type_lists.sort_unstable();
+                type_lists.into_boxed_slice()
+            },
             sig_at_or_after: sig_at_or_after.into_boxed_slice(),
         }
     }
@@ -213,6 +239,14 @@ impl ParserInput {
             .map(|partner| SigIdx::new(partner.get() - 1))
     }
 
+    /// The `>` closing the type list the `<` at `index` opens.
+    pub fn type_list_closer(&self, index: SigIdx) -> Option<SigIdx> {
+        self.type_lists
+            .binary_search_by_key(&index, |&(opener, _)| opener)
+            .ok()
+            .map(|found| self.type_lists[found].1)
+    }
+
     /// Tokens beginning `fn name` or a headless signature outside every matched pair, ascending;
     /// not every item has one.
     pub fn item_anchors(&self) -> &[SigIdx] {
@@ -306,10 +340,13 @@ fn is_headless_signature_at(slots: &[Slot], index: usize) -> bool {
             && slots[index].flags & JOINT != 0
             && kind(index + 1) == Some(SyntaxKind::Gt)
     };
-    kind(index) == Some(SyntaxKind::Ident)
-        && kind(index + 1) == Some(SyntaxKind::LParen)
-        && slots[index + 1].flags & NEWLINE_BEFORE == 0
-        && slots[index + 1].partner.is_some_and(|partner| {
+    if kind(index) != Some(SyntaxKind::Ident) {
+        return false;
+    }
+    let list = index + 1 + type_params_len(slots, index + 1);
+    kind(list) == Some(SyntaxKind::LParen)
+        && slots[list].flags & NEWLINE_BEFORE == 0
+        && slots[list].partner.is_some_and(|partner| {
             // The partner is the closer plus one, so this is the token after the list.
             let after = partner.get() as usize;
             match kind(after) {
@@ -320,6 +357,32 @@ fn is_headless_signature_at(slots: &[Slot], index: usize) -> bool {
                 _ => arrow(after),
             }
         })
+}
+
+/// The length in tokens of the type parameter list at `index`, glued to the name before it and
+/// closed on its line; zero for none.
+fn type_params_len(slots: &[Slot], index: usize) -> usize {
+    let on_line = |index: usize| {
+        slots
+            .get(index)
+            .filter(|slot| slot.flags & NEWLINE_BEFORE == 0)
+            .map(|slot| slot.kind)
+    };
+    if on_line(index) != Some(SyntaxKind::Lt) || slots[index - 1].flags & JOINT == 0 {
+        return 0;
+    }
+    let mut end = index + 1;
+    while matches!(
+        on_line(end),
+        Some(SyntaxKind::Ident | SyntaxKind::Comma | SyntaxKind::Underscore)
+    ) {
+        end += 1;
+    }
+    if on_line(end) == Some(SyntaxKind::Gt) {
+        end + 1 - index
+    } else {
+        0
+    }
 }
 
 fn would_end_statement_if(slots: &[Slot], index: usize, glued: Option<SyntaxKind>) -> bool {

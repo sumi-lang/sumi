@@ -242,13 +242,14 @@ fn type_item(p: &mut Marker<'_, '_>) {
     }
     if m.at(T::Ident) || m.at(T::Underscore) {
         name(&mut m);
+        type_params(&mut m);
     }
     if !m.at(T::LBrace) {
         let recovery = m.missing(ParseRecoveryKind::Token(T::LBrace));
         signature_garbage(&mut m, recovery, |m| m.at(T::LBrace));
     }
     if m.at(T::LBrace) {
-        delimited_list::<Fields>(&mut m, 1);
+        delimited_list::<Fields>(&mut m, 2);
     }
     m.complete(N::TypeItem);
 }
@@ -272,6 +273,7 @@ fn fn_item(p: &mut Marker<'_, '_>) {
             m.violation(ParseViolationKind::FunctionNameOnNextLine, 1);
         }
         name(&mut m);
+        type_params(&mut m);
         if m.at(T::LParen) && !m.is_after_newline() && !m.is_joint_before() {
             m.violation(ParseViolationKind::SpacedListOpener, 1);
         }
@@ -291,7 +293,7 @@ fn signature_tail(m: &mut Marker<'_, '_>, is_name_missing: bool) {
     }
     let mut is_complete = false;
     if m.at(T::LParen) && (!m.is_after_newline() || allow_list_newline) {
-        delimited_list::<Params>(m, 1);
+        delimited_list::<Params>(m, 2);
         is_complete = true;
     }
     let body_begins = |m: &Marker<'_, '_>, is_complete: bool| {
@@ -314,7 +316,7 @@ fn signature_tail(m: &mut Marker<'_, '_>, is_name_missing: bool) {
         let recovery = m.recovery_checkpoint();
         let has_type = m.at(T::Ident);
         if has_type {
-            type_ref(m, 2);
+            type_ref(m, 3);
         }
         is_complete = has_type && !m.recovered_since(recovery);
         if !body_begins(m, is_complete) {
@@ -325,11 +327,11 @@ fn signature_tail(m: &mut Marker<'_, '_>, is_name_missing: bool) {
     if is_at_expression_body(m, is_complete) {
         m.token();
         if let Some(body) = operand_before(m, 0, ExprFollow::Anything) {
-            m.field(&body, 3);
+            m.field(&body, 4);
         }
     } else if m.at(T::LBrace) {
         let body = block(m);
-        m.field(&body, 3);
+        m.field(&body, 4);
     }
 }
 
@@ -368,41 +370,159 @@ fn name(p: &mut Marker<'_, '_>) {
 }
 
 fn name_in(p: &mut Marker<'_, '_>, field: u8) {
-    if p.at(T::Ident) {
-        let name = leaf(p, N::Name);
+    if let Some(name) = bare_name(p) {
         p.field(&name, field);
+    }
+}
+
+/// A name in no field of its parent.
+fn bare_name(p: &mut Marker<'_, '_>) -> Option<CompletedMarker> {
+    if p.at(T::Ident) {
+        Some(leaf(p, N::Name))
     } else if p.at(T::Underscore) {
         let mut m = p.start();
         m.recover_tokens(ParseRecoveryKind::Name, 1);
         m.token();
-        let name = m.complete(N::Name);
-        p.field(&name, field);
+        Some(m.complete(N::Name))
     } else {
         p.missing(ParseRecoveryKind::Name);
+        None
     }
 }
 
-/// A type: a name, or names joined by `|`, which is never the `||` operator's first token.
 fn type_ref(p: &mut Marker<'_, '_>, field: u8) {
+    if let Some(ty) = ty(p) {
+        p.field(&ty, field);
+    }
+}
+
+/// A type in no field of its parent: a name with its arguments, or such names joined by `|`, which
+/// is never the `||` operator's first token.
+fn ty(p: &mut Marker<'_, '_>) -> Option<CompletedMarker> {
     if !p.at(T::Ident) {
         p.missing(ParseRecoveryKind::Type);
-        return;
+        return None;
     }
-    let mut lhs = leaf(p, N::TypeRef);
+    let mut lhs = named_type(p);
     while is_union_bar(p) {
         let lhs_node = p.completed_node(&lhs);
         let mut m = p.precede(lhs);
         m.wrapped_field(lhs_node, 0);
         m.token();
         if m.at(T::Ident) {
-            let rhs = leaf(&mut m, N::TypeRef);
+            let rhs = named_type(&mut m);
             m.field(&rhs, 1);
         } else {
             m.missing(ParseRecoveryKind::Type);
         }
         lhs = m.complete(N::UnionType);
     }
-    p.field(&lhs, field);
+    Some(lhs)
+}
+
+fn named_type(p: &mut Marker<'_, '_>) -> CompletedMarker {
+    let mut m = p.start();
+    m.token();
+    type_args(&mut m, 0);
+    m.complete(N::TypeRef)
+}
+
+/// The type parameters after an item's name, where a `<` begins nothing else.
+fn type_params(p: &mut Marker<'_, '_>) {
+    if opens_type_list(p) {
+        type_list(p, N::TypeParamList, 1);
+    }
+}
+
+/// The type arguments after a name, where a `<` begins nothing else.
+fn type_args(p: &mut Marker<'_, '_>, field: u8) {
+    if opens_type_list(p) {
+        type_list(p, N::TypeArgList, field);
+    }
+}
+
+fn opens_type_list(p: &mut Marker<'_, '_>) -> bool {
+    let opens = p.at(T::Lt) && !p.is_after_newline();
+    if opens && !p.is_joint_before() {
+        p.violation(ParseViolationKind::SpacedListOpener, 1);
+    }
+    opens
+}
+
+/// A type past the nesting limit, skipped through the lists it opens, so those around it still
+/// close.
+fn skip_deep_type(p: &mut Marker<'_, '_>) {
+    let recovery = p.recover_tokens(ParseRecoveryKind::NestingTooDeep, 1);
+    let mut m = p.start();
+    m.token();
+    let mut open = 0u32;
+    while !m.is_at_boundary() {
+        match m.current() {
+            Some(T::Lt) => open += 1,
+            Some(T::Gt) if open > 0 => open -= 1,
+            Some(T::Ident | T::Pipe) => {}
+            Some(T::Comma) if open > 0 => {}
+            _ => break,
+        }
+        m.token();
+    }
+    let skipped = m.covered_range();
+    m.skipped(recovery, skipped);
+    m.complete(N::Error);
+}
+
+/// A `TypeParamList` or a `TypeArgList`, from its `<`. No pair of the stream closes it, so it ends
+/// at its `>` or before the first token that neither begins nor separates its elements.
+fn type_list(p: &mut Marker<'_, '_>, kind: N, field: u8) {
+    let is_params = kind == N::TypeParamList;
+    let element = if is_params {
+        ParseRecoveryKind::Name
+    } else {
+        ParseRecoveryKind::Type
+    };
+    let starts_element = |m: &Marker<'_, '_>| m.at(T::Ident) || (is_params && m.at(T::Underscore));
+    let mut m = p.start();
+    m.token();
+    loop {
+        if m.is_at_boundary() {
+            m.missing(ParseRecoveryKind::Token(T::Gt));
+            break;
+        }
+        match m.current() {
+            Some(T::Gt) => {
+                m.token();
+                break;
+            }
+            Some(T::Comma) => {
+                m.missing(element);
+                m.token();
+                continue;
+            }
+            Some(_) if starts_element(&m) => {
+                if is_params {
+                    bare_name(&mut m);
+                } else if m.depth() + 2 >= MAX_DEPTH {
+                    skip_deep_type(&mut m);
+                } else {
+                    ty(&mut m);
+                }
+            }
+            _ => {
+                m.missing(ParseRecoveryKind::Token(T::Gt));
+                break;
+            }
+        }
+        if m.is_at_boundary() {
+            continue;
+        }
+        if m.at(T::Comma) {
+            m.token();
+        } else if starts_element(&m) {
+            m.missing(ParseRecoveryKind::Token(T::Comma));
+        }
+    }
+    let list = m.complete(kind);
+    p.field(&list, field);
 }
 
 fn is_union_bar(p: &Marker<'_, '_>) -> bool {
@@ -885,16 +1005,21 @@ fn expr_bp(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) -> Option<Com
         if follow == ExprFollow::Range && p.at(T::Dot) {
             break;
         }
-        // `is_after_newline`, not `is_at_boundary`: parentheses suspend boundaries, but a `(` on a new line is
-        // still never a call.
-        if p.at(T::LParen) && !p.is_after_newline() && p.completed_kind(&lhs) == N::NameRef {
-            if !p.is_joint_before() {
-                p.violation(ParseViolationKind::SpacedListOpener, 1);
-            }
+        if p.completed_kind(&lhs) == N::NameRef && (begins_call(p) || begins_type_args(p)) {
             let callee = p.completed_node(&lhs);
             let mut m = p.precede(lhs);
             m.wrapped_field(callee, 0);
-            delimited_list::<Args>(&mut m, 1);
+            if m.at(T::Lt) {
+                type_list(&mut m, N::TypeArgList, 1);
+            }
+            if begins_call(&m) {
+                if !m.is_joint_before() {
+                    m.violation(ParseViolationKind::SpacedListOpener, 1);
+                }
+                delimited_list::<Args>(&mut m, 2);
+            } else {
+                m.missing(ParseRecoveryKind::Token(T::LParen));
+            }
             lhs = m.complete(N::CallExpr);
             was_comparison = false;
             continue;
@@ -939,6 +1064,20 @@ fn expr_bp(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) -> Option<Com
         was_comparison = op.is_comparison() && !is_chained;
     }
     Some(lhs)
+}
+
+/// `is_after_newline`, not `is_at_boundary`: parentheses suspend boundaries, but a `(` on a new line
+/// is still never a call.
+fn begins_call(p: &Marker<'_, '_>) -> bool {
+    p.at(T::LParen) && !p.is_after_newline()
+}
+
+/// A `<` after a name is a comparison unless a type list runs from it to a call's `(`.
+fn begins_type_args(p: &Marker<'_, '_>) -> bool {
+    p.at(T::Lt)
+        && p.type_list_closer().is_some_and(|closer| {
+            p.nth(closer + 1) == Some(T::LParen) && !p.is_nth_after_newline(closer + 1)
+        })
 }
 
 fn block_starts_head(p: &Marker<'_, '_>, follow: ExprFollow) -> bool {
@@ -1095,7 +1234,8 @@ fn match_expr(p: &mut Marker<'_, '_>) -> CompletedMarker {
     m.complete(N::MatchExpr)
 }
 
-/// `Pattern '=>' Expr`; a pattern is `_` or a member name with an optional `(binding)`.
+/// `Pattern '=>' Expr`; a pattern is `_` or a member name with optional type arguments and
+/// `(binding)`.
 fn match_arm(p: &mut Marker<'_, '_>) {
     let mut m = p.start();
     if m.at(T::Underscore) {
@@ -1105,9 +1245,10 @@ fn match_arm(p: &mut Marker<'_, '_>) {
         let mut pattern = m.start();
         let member = leaf(&mut pattern, N::NameRef);
         pattern.field(&member, 0);
+        type_args(&mut pattern, 1);
         if pattern.at(T::LParen) && !pattern.is_after_newline() {
             pattern.token();
-            name_in(&mut pattern, 1);
+            name_in(&mut pattern, 2);
             if pattern.at(T::RParen) {
                 pattern.token();
             } else {
