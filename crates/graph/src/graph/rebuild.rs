@@ -136,6 +136,7 @@ impl<'a, F: Fn(NodeId) -> NodeId> Rebuild<'a, F> {
             store: self.store,
             regions: self.regions,
             runs,
+            built: self.source.built.clone(),
             decls: self.source.decls.clone(),
             unions: self.source.unions.clone(),
         };

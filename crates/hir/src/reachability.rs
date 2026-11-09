@@ -131,13 +131,7 @@ pub(crate) fn warn(
         })
         .collect();
     let closed = closed(graph, lowered);
-    // Runs are contiguous in declaration order.
-    let open = |node: NodeId| {
-        !closed[graph
-            .runs()
-            .partition_point(|run| run.entry().index() <= node.index())
-            - 1]
-    };
+    let open = |node: NodeId| !closed[graph.owner(node).index()];
     let facts = |node: NodeId| {
         if open(node) {
             any.get()

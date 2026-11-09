@@ -1224,10 +1224,16 @@ fn graph_shape(graph: &sumi_hir::Graph) {
             }
         }
     }
+    // The runs tile the nodes in the order they were built, which `owner` reads back.
     let mut owner = vec![None; graph.nodes().len()];
     let mut next = 0;
-    for (index, run) in graph.runs().iter().enumerate() {
+    let mut built: Vec<usize> = (0..graph.runs().len()).collect();
+    built.sort_unstable_by_key(|&index| graph.runs()[index].entry().index());
+    for index in built {
+        let run = &graph.runs()[index];
         assert_eq!(run.entry().index(), next);
+        assert_eq!(graph.owner(run.entry()).index(), index);
+        assert_eq!(graph.owner(run.result()).index(), index);
         assert!(matches!(graph.node(run.entry()).op, Op::Entry));
         for (position, param) in run.params().enumerate() {
             assert!(

@@ -1,25 +1,22 @@
 //! Type checking of one file: a class per node, joined where a value passes between nodes
 //! unchanged, and every read checked in node order, so a disagreement is blamed on the first read
 //! that raised it, and a class the conflict left undetermined satisfies every later read silently.
-//! A function imports its callees' result types, so functions are checked callees first, and a
-//! recursive group is iterated to a fixed point before it is reported.
+//! A body is checked as lowering builds it, so lowering reads the type of what it has built. A
+//! function imports the result types its callees infer, so those are built first, and a group
+//! that infers its results from one another is iterated to a fixed point before it is reported.
 
-use std::cell::RefCell;
 use std::collections::VecDeque;
-use std::rc::Rc;
 
 use sumi_graph::{
-    Arms, BinaryOp, Case, CmpOp, DeclId, FieldName, FunctionId, Graph, May, NodeId, Op, RegionId,
-    Ty, TyKind, Unions,
+    Arms, BinaryOp, Case, CmpOp, DeclId, FieldName, FunctionId, GraphBuilder, May, NodeId, Op,
+    Operand, RegionId, Ty, TyKind, Unions,
 };
 use sumi_text::TextRange;
 
-use crate::Function;
 use crate::codes;
-use crate::dependency::{Components, Rows};
 use crate::flows::{Values, selection};
-use crate::lower::{Header, HeaderResult, Lowered, Params, Source};
-use crate::spans::Spans;
+use crate::lower::{Declarations, HeaderResult, Lowered, Order, Params, Source};
+use crate::spans::SpansBuilder;
 
 /// What the analysis settled about every node: its type and the values that may reach it.
 pub(crate) struct Typing {
@@ -46,86 +43,74 @@ impl Typing {
     }
 }
 
-/// The checked types by node and, by function, whether a read in its body failed.
+/// The checked types by node and, by function, its result type and whether a read in its body
+/// failed.
 pub(crate) struct Checked {
     pub types: Box<[Option<Ty>]>,
+    /// Resolved only for a function with parameter types.
+    pub results: Vec<Option<Ty>>,
     pub failed: Vec<bool>,
 }
 
-/// Checks every body, fills each function's result type, and reports what disagrees.
-pub(crate) fn check(
-    source: &mut Source<'_>,
-    graph: &Graph,
-    spans: &Spans,
-    lowered: &Lowered,
-    headers: &[Header],
-    functions: &mut [Function],
-) -> Checked {
-    let count = graph.runs().len();
-    let caller_of = |node: NodeId| {
-        graph
-            .runs()
-            .partition_point(|run| run.entry().index() <= node.index())
-            - 1
-    };
-    let calls = Rows::new(count, || {
-        lowered
-            .called
-            .iter()
-            .map(|&(call, callee)| (caller_of(call), callee.index() as u32))
-    });
-    let components = Components::new(&calls, |function| function as usize);
-    // By callee, the callers in its own component.
-    let callers = Rows::new(count, || {
-        lowered.called.iter().filter_map(|&(call, callee)| {
-            let caller = caller_of(call);
-            (components.of[caller] == components.of[callee.index()])
-                .then_some((callee.index(), caller as u32))
-        })
-    });
-    let unions = source.unions.clone();
-    let params = source.params;
-    let mut checker = Checker {
-        source,
-        graph,
-        spans,
-        lowered,
-        headers,
-        unions,
-        params,
-        parent: (0..graph.nodes().len() as u32).collect(),
-        sets: vec![Set::default(); graph.nodes().len()],
-        exports: vec![None; count],
-        failed: vec![false; count],
-        component: components.of.clone(),
-        current: 0,
-    };
-    // Components are numbered successors first, so every callee outside a group is checked
-    // before the group imports its result.
-    for component in 0..components.count() {
-        let members = components.members(component);
-        if members
-            .iter()
-            .any(|&member| !callers.get(member as usize).is_empty())
-        {
-            checker.settle(members, &callers);
-        }
-        for &member in members {
-            let function = FunctionId::new(member as usize);
-            // An instance's body disagrees only where its item's does, at its own parameters.
-            let mark = checker.source.diagnostics.len();
-            checker.walk(function, Some(&mut functions[function.index()]));
-            if headers[function.index()].generic.index() != function.index() {
-                checker.source.diagnostics.truncate(mark);
-            }
+/// The classes of every node checked so far and what each function's result delivers; a
+/// [`Checker`] reads and extends it beside the graph under construction.
+#[derive(Default)]
+pub(crate) struct Types {
+    parent: Vec<u32>,
+    /// By class root.
+    sets: Vec<Set>,
+    /// By function item, once a walk of it settled its result.
+    exports: Vec<Option<Export>>,
+    /// By function.
+    results: Vec<Option<Ty>>,
+    failed: Vec<bool>,
+    /// The group of the function being walked.
+    current: u32,
+    /// The first node of the body being built that no walk has reached.
+    next: usize,
+    /// Whether every read of the walk so far held.
+    held: bool,
+}
+
+impl Types {
+    /// `items` is the count of function items.
+    pub fn new(items: usize) -> Self {
+        Self {
+            exports: vec![None; items],
+            ..Self::default()
         }
     }
-    let types = (0..graph.nodes().len())
-        .map(|node| checker.resolve(NodeId::new(node)))
-        .collect();
-    Checked {
-        types,
-        failed: checker.failed,
+
+    /// Whether a walk of the body being built has reached `node`, after which it must not change.
+    pub fn has_walked(&self, node: NodeId) -> bool {
+        node.index() < self.next
+    }
+
+    fn root(&mut self, node: NodeId) -> usize {
+        let mut id = node.index();
+        while self.parent[id] as usize != id {
+            let parent = self.parent[id] as usize;
+            self.parent[id] = self.parent[parent];
+            id = parent;
+        }
+        id
+    }
+
+    /// `functions` is the count of them, and `source` the one every body was checked against.
+    pub fn finish(mut self, source: &Source<'_>, functions: usize) -> Checked {
+        let types = (0..self.parent.len())
+            .map(|node| {
+                let root = self.root(NodeId::new(node));
+                self.sets[root].ty(&mut source.unions.borrow_mut(), source.params)
+            })
+            .collect();
+        self.results.resize(functions, None);
+        self.failed.resize(functions, false);
+        Checked {
+            types,
+            results: self.results,
+            failed: self.failed,
+        }
     }
 }
 
@@ -284,23 +269,15 @@ enum Declared {
     Omitted(TextRange),
 }
 
-struct Checker<'a, 's> {
-    source: &'a mut Source<'s>,
-    graph: &'a Graph,
-    spans: &'a Spans,
-    lowered: &'a Lowered,
-    headers: &'a [Header],
-    unions: Rc<RefCell<Unions>>,
-    params: Params,
-    parent: Vec<u32>,
-    /// By class root.
-    sets: Vec<Set>,
-    /// By function, once a walk of it settled its result.
-    exports: Vec<Option<Export>>,
-    failed: Vec<bool>,
-    /// By function, its recursive group; `current` is the walked function's.
-    component: Vec<u32>,
-    current: u32,
+/// One reading of the graph under construction: every borrow a walk needs, made anew for each.
+pub(crate) struct Checker<'a, 's> {
+    pub types: &'a mut Types,
+    pub source: &'a mut Source<'s>,
+    pub graph: &'a GraphBuilder,
+    pub spans: &'a SpansBuilder,
+    pub lowered: &'a Lowered,
+    pub declared: &'a Declarations<'s>,
+    pub order: &'a Order,
 }
 
 impl Checker<'_, '_> {
@@ -308,24 +285,27 @@ impl Checker<'_, '_> {
         self.lowered.typed[node.index()]
     }
 
+    fn params(&self) -> Params {
+        self.source.params
+    }
+
     fn root(&mut self, node: NodeId) -> usize {
-        let mut id = node.index();
-        while self.parent[id] as usize != id {
-            let parent = self.parent[id] as usize;
-            self.parent[id] = self.parent[parent];
-            id = parent;
-        }
-        id
+        self.types.root(node)
     }
 
     fn set(&mut self, node: NodeId) -> &Set {
         let root = self.root(node);
-        &self.sets[root]
+        &self.types.sets[root]
     }
 
     fn claim(&mut self, node: NodeId, member: Member) {
         let root = self.root(node);
-        self.sets[root].offer(member);
+        self.types.sets[root].offer(member);
+    }
+
+    fn unknown(&mut self, node: NodeId) {
+        let root = self.root(node);
+        self.types.sets[root].is_unknown = true;
     }
 
     fn fact(&mut self, node: NodeId, ty: Ty, origin: TextRange) {
@@ -344,37 +324,66 @@ impl Checker<'_, '_> {
         if a == b {
             return;
         }
-        self.parent[b] = a as u32;
-        let absorbed = std::mem::take(&mut self.sets[b]);
-        self.sets[a].absorb(absorbed);
+        self.types.parent[b] = a as u32;
+        let absorbed = std::mem::take(&mut self.types.sets[b]);
+        self.types.sets[a].absorb(absorbed);
     }
 
-    fn resolve(&mut self, node: NodeId) -> Option<Ty> {
+    /// The type of a node a walk has reached; none for a conflict, or a class only a hole or
+    /// reads decided.
+    pub fn resolve(&mut self, node: NodeId) -> Option<Ty> {
         let root = self.root(node);
-        self.sets[root].ty(&mut self.unions.borrow_mut(), self.params)
+        self.types.sets[root].ty(&mut self.source.unions.borrow_mut(), self.source.params)
     }
 
     fn fits(&self, actual: Ty, expected: Ty) -> bool {
-        self.unions.borrow().fits(actual, expected)
+        self.source.unions.borrow().fits(actual, expected)
     }
 
-    /// A callee settled outside the caller's recursive group delivers the unknown when it
-    /// conflicted, since that is reported at the callee; one inside delivers what it holds, so
-    /// the group's members blame their own part of a shared conflict alike, whatever their order.
+    /// The group of `function`'s item among those that infer their results from one another.
+    fn group(&self, function: FunctionId) -> u32 {
+        self.order
+            .group(self.declared.headers[function.index()].generic)
+    }
+
+    /// The position of the field `name` in `decl`, with its type when that resolved.
+    fn field_of(&mut self, decl: DeclId, name: FieldName) -> Option<(usize, Option<Ty>)> {
+        let fields = self.source.fields(decl);
+        let index = fields.iter().position(|&(field, _)| field == name)?;
+        Some((index, fields[index].1))
+    }
+
+    /// A declared result is the call's type whatever the callee's body. An inferred one is what
+    /// the item's own walk settled, at the callee's type arguments. An item settled outside the
+    /// caller's group delivers the unknown when it conflicted, since that is reported there; one
+    /// inside delivers what it holds, so the group's members blame their own part of a shared
+    /// conflict alike, whatever their order.
     fn import(&mut self, call: NodeId, callee: FunctionId) {
-        let Some(export) = self.exports[callee.index()].clone() else {
-            return;
-        };
-        let root = self.root(call);
-        if self.component[callee.index()] != self.current && export.is_conflict(self.params) {
-            self.sets[root].is_unknown = true;
-            return;
-        }
+        let header = self.declared.headers[callee.index()];
         let origin = Some(self.spans.origin(call));
         let rank = call.index() as u32 | IMPORTED;
-        self.sets[root].is_unknown |= export.is_unknown;
+        if let Some((ty, _)) = header.result.declared() {
+            self.claim(call, Member { ty, rank, origin });
+            return;
+        }
+        let item = header.generic;
+        let Some(export) = self.types.exports[item.index()].clone() else {
+            return;
+        };
+        if self.order.group(item) != self.types.current && export.is_conflict(self.params()) {
+            self.unknown(call);
+            return;
+        }
+        if export.is_unknown {
+            self.unknown(call);
+        }
+        let params = &self.declared.type_args[item.index()];
+        let args = &self.declared.type_args[callee.index()];
         for ty in export.types {
-            self.sets[root].offer(Member { ty, rank, origin });
+            match self.source.substitute(ty, params, args) {
+                Some(ty) => self.claim(call, Member { ty, rank, origin }),
+                None => self.unknown(call),
+            }
         }
     }
 
@@ -382,20 +391,19 @@ impl Checker<'_, '_> {
     /// read reported elsewhere is unknown, so nothing after it is blamed: by its own demand, by
     /// the base's conflict where that arose, or at the field's damaged type.
     fn field(&mut self, read: NodeId, base: NodeId, name: FieldName) {
-        let params = self.params;
+        let params = self.params();
         let set = self.set(base);
         let (is_unknown, is_conflict) = (set.is_unknown, set.is_conflict(params));
         let resolved = self.resolve(base);
-        let field = resolved.and_then(Ty::as_decl).and_then(|decl| {
-            let decl = self.graph.decl(decl);
-            Some(decl.fields()[decl.index_of(name)?].1)
-        });
+        let field = resolved
+            .and_then(Ty::as_decl)
+            .and_then(|decl| self.field_of(decl, name))
+            .map(|(_, ty)| ty);
         if let Some(Some(ty)) = field {
             self.fact(read, ty, self.spans.origin(read));
         }
         if is_unknown || is_conflict || (resolved.is_some() && !matches!(field, Some(Some(_)))) {
-            let root = self.root(read);
-            self.sets[root].is_unknown = true;
+            self.unknown(read);
         }
     }
 
@@ -404,7 +412,7 @@ impl Checker<'_, '_> {
     fn deliver(&mut self, from: NodeId, to: NodeId, at: TextRange) {
         let source = self.set(from).clone();
         let root = self.root(to);
-        self.sets[root].is_unknown |= source.is_unknown;
+        self.types.sets[root].is_unknown |= source.is_unknown;
         for member in source.types() {
             let member = if member.rank == DEMANDED {
                 Member {
@@ -415,15 +423,14 @@ impl Checker<'_, '_> {
             } else {
                 member
             };
-            self.sets[root].offer(member);
+            self.types.sets[root].offer(member);
         }
     }
 
-    /// Walks a recursive group, muted, until no member's result changes; a change re-walks the
-    /// member's callers in the group.
-    fn settle(&mut self, members: &[u32], callers: &Rows) {
-        let mark = self.source.diagnostics.len();
-        let mut queued = vec![false; self.exports.len()];
+    /// Walks a group of built bodies, muted, until no member's result changes, then reports each;
+    /// a change re-walks the member's callers in the group.
+    pub fn settle(&mut self, members: &[u32]) {
+        let mut queued = vec![false; self.types.exports.len()];
         let mut queue: VecDeque<u32> = members.iter().copied().collect();
         for &member in members {
             queued[member as usize] = true;
@@ -431,49 +438,106 @@ impl Checker<'_, '_> {
         let mut budget = members.len() * WALKS;
         while let Some(member) = queue.pop_front() {
             queued[member as usize] = false;
-            let before = self.exports[member as usize].take();
-            let after = self.walk(FunctionId::new(member as usize), None);
+            let before = self.types.exports[member as usize].take();
+            let after = self.walk(FunctionId::new(member as usize), false);
             budget = budget.saturating_sub(1);
             if before.as_ref() == Some(&after) || budget == 0 {
                 continue;
             }
-            for &caller in callers.get(member as usize) {
+            for &caller in self.order.callers(member as usize) {
                 if !queued[caller as usize] {
                     queued[caller as usize] = true;
                     queue.push_back(caller);
                 }
             }
         }
-        self.source.diagnostics.truncate(mark);
-    }
-
-    fn reset(&mut self, function: FunctionId) {
-        for node in self.graph.run(function).nodes() {
-            self.parent[node.index()] = node.index() as u32;
-            self.sets[node.index()] = Set::default();
+        for &member in members {
+            self.walk(FunctionId::new(member as usize), true);
         }
     }
 
-    /// One pass over the body, reporting and filling `function` when given. Returns what the
-    /// result delivers to calls, which `exports` keeps.
-    fn walk(&mut self, owner: FunctionId, function: Option<&mut Function>) -> Export {
-        self.reset(owner);
-        self.current = self.component[owner.index()];
+    /// Runs `walk` with its reports kept only when `is_final`.
+    fn reporting<T>(&mut self, is_final: bool, walk: impl FnOnce(&mut Self) -> T) -> T {
+        let was_muted = self.source.is_muted;
+        self.source.is_muted |= !is_final;
+        let result = walk(self);
+        self.source.is_muted = was_muted;
+        result
+    }
+
+    /// One pass over a built body, reporting and settling the function when `is_final`. Returns
+    /// what the result delivers to calls.
+    fn walk(&mut self, owner: FunctionId, is_final: bool) -> Export {
         let run = self.graph.run(owner);
-        let mut held = true;
         for node in run.nodes() {
-            if self.typed(node) {
-                self.facts(owner, node);
-            } else if node == run.result() {
-                let root = self.root(node);
-                self.sets[root].is_unknown = true;
-            }
-            held &= self.demands(owner, node);
+            self.types.parent[node.index()] = node.index() as u32;
+            self.types.sets[node.index()] = Set::default();
         }
-        let result = self.set(run.result()).clone();
-        if let Some(function) = function {
-            self.failed[owner.index()] = !held;
-            self.signature(owner, &result, function);
+        self.types.current = self.group(owner);
+        self.types.held = true;
+        self.reporting(is_final, |checker| {
+            for node in run.nodes() {
+                checker.visit(owner, node);
+            }
+            checker.finish(owner, run.result(), is_final)
+        })
+    }
+
+    /// Begins the walk of the body `owner`'s run is about to hold.
+    pub fn open(&mut self, owner: FunctionId) {
+        self.types.current = self.group(owner);
+        self.types.next = self.graph.node_count();
+        self.types.held = true;
+    }
+
+    /// Walks the nodes built since the last call. A node is walked once nothing built later
+    /// changes what the walk reads of it: here, where a later node or the body's end asks.
+    pub fn advance(&mut self, owner: FunctionId, is_final: bool) {
+        let end = self.graph.node_count();
+        for node in self.types.parent.len()..end {
+            self.types.parent.push(node as u32);
+            self.types.sets.push(Set::default());
+        }
+        let next = std::mem::replace(&mut self.types.next, end);
+        self.reporting(is_final, |checker| {
+            for node in next..end {
+                checker.visit(owner, NodeId::new(node));
+            }
+        });
+    }
+
+    /// Ends the walk [`open`](Self::open) began, once the run is closed with `result`: the
+    /// function is settled when `is_final`, and otherwise left to its group's.
+    pub fn close(&mut self, owner: FunctionId, result: NodeId, is_final: bool) {
+        self.advance(owner, is_final);
+        if is_final {
+            self.reporting(true, |checker| checker.finish(owner, result, true));
+        }
+    }
+
+    fn visit(&mut self, owner: FunctionId, node: NodeId) {
+        if self.typed(node) {
+            self.facts(owner, node);
+        }
+        let held = self.demands(owner, node);
+        self.types.held &= held;
+    }
+
+    /// What the walk leaves of the function: what its result delivers and, when `is_final`,
+    /// whether a read failed and the result's type.
+    fn finish(&mut self, owner: FunctionId, result: NodeId, is_final: bool) -> Export {
+        if !self.typed(result) {
+            self.unknown(result);
+        }
+        let result = self.set(result).clone();
+        if is_final {
+            let index = owner.index();
+            if self.types.failed.len() <= index {
+                self.types.failed.resize(index + 1, false);
+                self.types.results.resize(index + 1, None);
+            }
+            self.types.failed[index] = !self.types.held;
+            self.signature(owner, &result);
         }
         let mut types: Vec<Ty> = result.types().map(|member| member.ty).collect();
         types.sort_unstable();
@@ -481,32 +545,35 @@ impl Checker<'_, '_> {
             is_unknown: result.is_unknown,
             types,
         };
-        self.exports[owner.index()] = Some(export.clone());
+        // An instance delivers what its item's own walk settled.
+        if self.declared.headers[owner.index()].generic == owner {
+            self.types.exports[owner.index()] = Some(export.clone());
+        }
         export
     }
 
     /// A failed read, a hole, or the call this inherits from, already reports what a result that
     /// resolves to nothing lacks.
-    fn signature(&mut self, owner: FunctionId, result: &Set, function: &mut Function) {
-        let header = self.headers[owner.index()];
-        let run = self.graph.run(owner);
+    fn signature(&mut self, owner: FunctionId, result: &Set) {
+        let header = self.declared.headers[owner.index()];
+        let params = self.params();
         let resolved = if matches!(header.result, HeaderResult::None) {
             None
         } else {
-            result.ty(&mut self.unions.borrow_mut(), self.params)
+            result.ty(&mut self.source.unions.borrow_mut(), params)
         };
-        if run.param_types().is_some() {
-            function.result = resolved;
+        if self.graph.param_types(owner).is_some() {
+            self.types.results[owner.index()] = resolved;
         }
         if !matches!(header.result, HeaderResult::Inferred)
             || resolved.is_some()
             || !self.lowered.built[owner.index()]
-            || self.failed[owner.index()]
-            || result.is_inherited(self.params)
+            || self.types.failed[owner.index()]
+            || result.is_inherited(params)
         {
             return;
         }
-        if result.is_conflict(self.params) {
+        if result.is_conflict(params) {
             self.source.conflict_at(
                 self.source.range(header.item),
                 codes::CANNOT_INFER,
@@ -552,13 +619,13 @@ impl Checker<'_, '_> {
             Op::Refine { .. } | Op::Exactly(_) => self.alias(node, inputs[0]),
             Op::Narrow(ty) => self.fact(node, *ty, origin),
             // Arms that agree deliver their type when the switch's demand checks them.
-            Op::Switch { arms } if selection(graph, *arms).total => {
-                let mut valued = arms
-                    .iter()
-                    .map(|arm| graph.region(arm))
-                    .filter(|region| region.result_has_value());
-                if let (true, Some(region), None) = (value(0), valued.next(), valued.next()) {
-                    self.alias(node, region.result());
+            Op::Switch { arms } if selection(graph.cases(*arms)).total => {
+                let mut valued = arms.iter().filter_map(|arm| match graph.result(arm) {
+                    Operand::Value(result) => Some(result),
+                    Operand::Completes(_) => None,
+                });
+                if let (true, Some(result), None) = (value(0), valued.next(), valued.next()) {
+                    self.alias(node, result);
                 }
             }
             // What falls through is unit, and so is every arm.
@@ -613,7 +680,10 @@ impl Checker<'_, '_> {
         let value = |index: usize| graph.input_roles(node)[index].is_value();
         let written = |at: TextRange| Some(Declared::Written(at));
         // What the run's result holds the body to: only there can a declaration be omitted.
-        let is_omitted = matches!(self.headers[owner.index()].result, HeaderResult::Omitted(_));
+        let is_omitted = matches!(
+            self.declared.headers[owner.index()].result,
+            HeaderResult::Omitted(_)
+        );
         let held = |at: TextRange| {
             Some(if is_omitted {
                 Declared::Omitted(at)
@@ -626,7 +696,8 @@ impl Checker<'_, '_> {
                 .annotation(node)
                 .expect("a node declared with a type has its annotation")
         };
-        let region = |id: RegionId| (spans.result_read(id), graph.region(id).result());
+        let region = |id: RegionId| (spans.result_read(id), graph.result(id).node());
+        let has_value = |id: RegionId| matches!(graph.result(id), Operand::Value(_));
         let mut ok = true;
         match &graph.node(node).op {
             Op::Neg if value(0) => {
@@ -661,27 +732,24 @@ impl Checker<'_, '_> {
                     ok &= self.require(reads[0], inputs[0], Expected::Ty(Ty::BOOL), None);
                 }
                 let (at, result) = region(*rhs);
-                if graph.region(*rhs).result_has_value() {
+                if has_value(*rhs) {
                     ok &= self.require(at, result, Expected::Ty(Ty::BOOL), None);
                 }
             }
             Op::Switch { arms } => {
-                let selection = selection(graph, *arms);
+                let selection = selection(graph.cases(*arms));
                 if value(0) && selection.boolean {
                     ok &= self.require(reads[0], inputs[0], Expected::Ty(Ty::BOOL), None);
                 } else if value(0) && self.typed(inputs[0]) {
                     ok &= self.matched(reads[0], inputs[0]);
                     for arm in arms.iter() {
-                        let context = graph.region(arm).context;
+                        let context = graph.context(arm);
                         if let Case::Is(ty) = graph.case(context) {
                             ok &= self.member(spans.origin(context), inputs[0], ty);
                         }
                     }
                 }
-                let valued = || {
-                    arms.iter()
-                        .filter(|&arm| graph.region(arm).result_has_value())
-                };
+                let valued = || arms.iter().filter(|&arm| has_value(arm));
                 if !value(0) {
                 } else if !selection.total {
                     // What falls through is unit, so every arm is.
@@ -695,18 +763,16 @@ impl Checker<'_, '_> {
             }
             Op::Loop { body } => {
                 let (at, result) = region(*body);
-                if value(0) && value(1) && graph.region(*body).result_has_value() {
+                if value(0) && value(1) && has_value(*body) {
                     ok &= self.require(at, result, Expected::Ty(Ty::UNIT), None);
                 }
             }
             Op::Copy { declared: Some(ty) } if value(0) => {
                 let at = annotation();
-                let run = graph.run(owner);
-                let declared = if node == run.result() {
-                    held(at)
-                } else {
-                    written(at)
-                };
+                // A function's result alone is declared at its header.
+                let header = self.declared.headers[owner.index()].result.declared();
+                let is_result = header.is_some_and(|(_, node)| self.source.range(node) == at);
+                let declared = if is_result { held(at) } else { written(at) };
                 ok &= self.require(reads[0], inputs[0], Expected::Ty(*ty), declared);
             }
             Op::Copy { declared: Some(_) } => {}
@@ -721,33 +787,26 @@ impl Checker<'_, '_> {
             }
             Op::Assign => {}
             Op::Call(function) => {
-                let run = graph.run(*function);
-                let types = run.param_types().expect("a callee has parameter types");
-                for (index, (((&at, &input), &ty), param)) in reads
-                    .iter()
-                    .zip(inputs)
-                    .zip(types)
-                    .zip(run.params())
-                    .enumerate()
+                let types = graph
+                    .param_types(*function)
+                    .expect("a callee has parameter types");
+                let params = &self.declared.parameters[function.index()];
+                for (index, (((&at, &input), &ty), param)) in
+                    reads.iter().zip(inputs).zip(types).zip(params).enumerate()
                 {
                     if value(index) {
-                        let declared = written(spans.origin(param));
+                        let declared = written(self.source.range(param.node));
                         ok &= self.require(at, input, Expected::Ty(ty), declared);
                     }
                 }
             }
             Op::Make(decl) => {
-                let fields = graph.decl(*decl).fields();
                 let names = self.source.decls[decl.index()].fields.clone();
-                for (index, (((&at, &input), &(_, ty)), &(_, name))) in reads
-                    .iter()
-                    .zip(inputs)
-                    .zip(fields)
-                    .zip(names.iter())
-                    .enumerate()
+                for (index, ((&at, &input), &(_, name))) in
+                    reads.iter().zip(inputs).zip(names.iter()).enumerate()
                 {
                     if value(index)
-                        && let Some(ty) = ty
+                        && let (_, Some(ty)) = self.source.fields(*decl)[index]
                     {
                         let declared = written(self.source.range(name));
                         ok &= self.require(at, input, Expected::Ty(ty), declared);
@@ -876,7 +935,7 @@ impl Checker<'_, '_> {
     }
 
     fn matched(&mut self, at: TextRange, scrutinee: NodeId) -> bool {
-        let params = self.params;
+        let params = self.params();
         let Some(ty) = self.resolve(scrutinee).filter(|&ty| !params.joins(ty)) else {
             return true;
         };
@@ -909,7 +968,7 @@ impl Checker<'_, '_> {
             return true;
         };
         if let Some(decl) = ty.as_decl()
-            && self.graph.decl(decl).index_of(name).is_some()
+            && self.field_of(decl, name).is_some()
         {
             return true;
         }
@@ -932,26 +991,25 @@ impl Checker<'_, '_> {
     /// the switch, labeled where each arm's value is read when the arms alone made it.
     fn agree(&mut self, at: TextRange, switch: NodeId, arms: Arms, is_boolean: bool) -> bool {
         let graph = self.graph;
-        let valued: Vec<RegionId> = arms
+        let valued: Vec<(RegionId, NodeId)> = arms
             .iter()
-            .filter(|&arm| graph.region(arm).result_has_value())
+            .filter_map(|arm| match graph.result(arm) {
+                Operand::Value(result) => Some((arm, result)),
+                Operand::Completes(_) => None,
+            })
             .collect();
         let resolved: Vec<(Ty, Option<TextRange>)> = valued
             .iter()
-            .filter_map(|&region| {
-                let ty = self.resolve(graph.region(region).result())?;
+            .filter_map(|&(region, result)| {
+                let ty = self.resolve(result)?;
                 Some((ty, Some(self.spans.result_read(region))))
             })
             .collect();
-        for &region in &valued {
-            self.deliver(
-                graph.region(region).result(),
-                switch,
-                self.spans.result_read(region),
-            );
+        for &(region, result) in &valued {
+            self.deliver(result, switch, self.spans.result_read(region));
         }
         let set = self.set(switch).clone();
-        if !set.is_conflict(self.params) || set.is_inherited(self.params) {
+        if !set.is_conflict(self.params()) || set.is_inherited(self.params()) {
             return true;
         }
         let what = if is_boolean {

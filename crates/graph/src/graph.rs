@@ -620,6 +620,31 @@ impl Store {
         References::decode(&self.edges[range.clone()], &self.roles[range])
     }
 
+    fn declaration(&self, id: NodeId) -> NodeId {
+        match self.references(id) {
+            References::Version(declaration) | References::Phi { declaration, .. } => declaration,
+            _ => unreachable!("{id:?} is no version of a local"),
+        }
+    }
+
+    fn carry(&self, id: NodeId) -> (NodeId, NodeId) {
+        let References::LoopValue { carry, next } = self.references(id) else {
+            unreachable!("{id:?} is no loop value")
+        };
+        (carry, next)
+    }
+
+    #[inline]
+    fn case(&self, mut context: NodeId) -> Case {
+        loop {
+            match self.nodes[context.index()].op {
+                Op::Arm(case) => return case,
+                Op::After => context = self.edges[self.operands(context)][1],
+                ref op => unreachable!("{context:?} is {op:?}, in no arm"),
+            }
+        }
+    }
+
     fn push(
         &mut self,
         op: Op,
@@ -688,6 +713,8 @@ pub struct Graph {
     store: Store,
     regions: Vec<Region>,
     runs: Vec<Run>,
+    /// The functions in the order of their runs' nodes.
+    built: Box<[FunctionId]>,
     decls: Vec<Decl>,
     unions: Unions,
 }
@@ -747,10 +774,7 @@ impl Graph {
 
     /// The declaration an `Assign`, `Carry`, or `Phi` is a version of.
     pub fn declaration(&self, id: NodeId) -> NodeId {
-        match self.references(id) {
-            References::Version(declaration) | References::Phi { declaration, .. } => declaration,
-            _ => unreachable!("{id:?} is no version of a local"),
-        }
+        self.store.declaration(id)
     }
 
     /// The arm contexts gating a `Phi`'s values, one per value.
@@ -763,14 +787,13 @@ impl Graph {
 
     /// The case of the arm `context` is in: itself, or the arm a continuation context follows.
     #[inline]
-    pub fn case(&self, mut context: NodeId) -> Case {
-        loop {
-            match self.node(context).op {
-                Op::Arm(case) => return case,
-                Op::After => context = self.inputs(context)[1],
-                ref op => unreachable!("{context:?} is {op:?}, in no arm"),
-            }
-        }
+    pub fn case(&self, context: NodeId) -> Case {
+        self.store.case(context)
+    }
+
+    /// The case of each arm, in arm order.
+    pub fn cases(&self, arms: Arms) -> impl Iterator<Item = Case> + '_ {
+        arms.iter().map(|arm| self.case(self.region(arm).context))
     }
 
     pub fn unions(&self) -> &Unions {
@@ -812,15 +835,21 @@ impl Graph {
 
     /// The carry a `LoopValue` reads and its next value.
     pub fn carry(&self, id: NodeId) -> (NodeId, NodeId) {
-        let References::LoopValue { carry, next } = self.references(id) else {
-            unreachable!("{id:?} is no loop value")
-        };
-        (carry, next)
+        self.store.carry(id)
     }
 
-    /// Indexed by function ID.
+    /// Indexed by function ID; their nodes lie in the order the runs were built, which need not
+    /// be this one.
     pub fn runs(&self) -> &[Run] {
         &self.runs
+    }
+
+    /// The function whose run holds `node`.
+    pub fn owner(&self, node: NodeId) -> FunctionId {
+        let index = self
+            .built
+            .partition_point(|&function| self.run(function).entry().index() <= node.index());
+        self.built[index - 1]
     }
 
     pub fn run(&self, id: FunctionId) -> &Run {
@@ -908,6 +937,60 @@ impl GraphBuilder {
     #[inline]
     pub fn inputs(&self, id: NodeId) -> &[NodeId] {
         &self.store.edges[self.store.operands(id)]
+    }
+
+    /// Parallel to `inputs`; an input completes once [`complete_input`](Self::complete_input)
+    /// says so.
+    #[inline]
+    pub fn input_roles(&self, id: NodeId) -> &[Role] {
+        &self.store.roles[self.store.operands(id)]
+    }
+
+    /// As [`Graph::declaration`].
+    pub fn declaration(&self, id: NodeId) -> NodeId {
+        self.store.declaration(id)
+    }
+
+    /// As [`Graph::carry`].
+    pub fn carry(&self, id: NodeId) -> (NodeId, NodeId) {
+        self.store.carry(id)
+    }
+
+    /// As [`Graph::case`].
+    #[inline]
+    pub fn case(&self, context: NodeId) -> Case {
+        self.store.case(context)
+    }
+
+    /// The case of each arm, in arm order.
+    pub fn cases(&self, arms: Arms) -> impl Iterator<Item = Case> + '_ {
+        arms.iter().map(|arm| self.case(self.context(arm)))
+    }
+
+    /// The result of a region already closed, as a value or as what completes in its place.
+    pub fn result(&self, region: RegionId) -> Operand {
+        let closed = self.regions[region.index()]
+            .closed
+            .as_ref()
+            .expect("a region read is closed");
+        if closed.result_has_value {
+            Operand::Value(closed.result)
+        } else {
+            Operand::Completes(closed.result)
+        }
+    }
+
+    /// The run of a function already built.
+    pub fn run(&self, function: FunctionId) -> &Run {
+        match &self.runs[function.index()] {
+            Slot::Closed(run) => run,
+            Slot::Declared(_) | Slot::Open(_) => panic!("a run read is closed"),
+        }
+    }
+
+    /// The count of nodes pushed.
+    pub fn node_count(&self) -> usize {
+        self.store.nodes.len()
     }
 
     /// `nodes` is the count to expect.
@@ -1089,10 +1172,22 @@ impl GraphBuilder {
 
     /// Every region opened must be closed, and every function's run opened and closed.
     pub fn finish(self) -> Graph {
+        let runs: Vec<Run> = self
+            .runs
+            .into_iter()
+            .map(|slot| match slot {
+                Slot::Closed(run) => run,
+                Slot::Open(_) => panic!("a run opened is closed"),
+                Slot::Declared(_) => panic!("a function declared has a run"),
+            })
+            .collect();
+        let mut built: Box<[FunctionId]> = (0..runs.len()).map(FunctionId::new).collect();
+        built.sort_unstable_by_key(|function| runs[function.index()].nodes.start);
         Graph {
             decls: self.decls,
             unions: self.unions,
             store: self.store,
+            built,
             regions: self
                 .regions
                 .into_iter()
@@ -1107,15 +1202,7 @@ impl GraphBuilder {
                     }
                 })
                 .collect(),
-            runs: self
-                .runs
-                .into_iter()
-                .map(|slot| match slot {
-                    Slot::Closed(run) => run,
-                    Slot::Open(_) => panic!("a run opened is closed"),
-                    Slot::Declared(_) => panic!("a function declared has a run"),
-                })
-                .collect(),
+            runs,
         }
     }
 }

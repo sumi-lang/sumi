@@ -110,7 +110,7 @@ pub(crate) struct Source<'s> {
     pub(super) scope: Vec<(&'s str, Ty)>,
     /// Whether what is resolved now repeats, at other types, what was reported and recorded at a
     /// generic item's own parameters.
-    pub(super) is_muted: bool,
+    pub is_muted: bool,
     /// None for a name declared more than once, which resolves to nothing, like a function's.
     pub(super) type_names: NameMap<'s, Option<DeclId>>,
     /// By field name ID.
@@ -328,6 +328,38 @@ impl<'s> Source<'s> {
         self.unsettled.push(decl);
         self.instances.insert((item, args), decl);
         Some(decl)
+    }
+    /// `ty` with each type parameter of `params` replaced by the type of `args` at its position;
+    /// none past the limit on instances.
+    pub fn substitute(&mut self, ty: Ty, params: &[Ty], args: &[Ty]) -> Option<Ty> {
+        match ty.kind() {
+            _ if params.is_empty() => Some(ty),
+            TyKind::Int | TyKind::Bool | TyKind::Unit => Some(ty),
+            TyKind::Decl(decl) => self.substitute_decl(decl, params, args),
+            TyKind::Union(id) => {
+                let members = self.unions.borrow().get(id).to_vec();
+                let members: Option<Vec<DeclId>> = members
+                    .into_iter()
+                    .map(|member| self.substitute_decl(member, params, args)?.as_decl())
+                    .collect();
+                Some(self.union_of(&members?))
+            }
+        }
+    }
+    fn substitute_decl(&mut self, decl: DeclId, params: &[Ty], args: &[Ty]) -> Option<Ty> {
+        if let Some(position) = params.iter().position(|&param| param == Ty::decl(decl)) {
+            return Some(args[position]);
+        }
+        let names = &self.decls[decl.index()];
+        if names.args.is_empty() {
+            return Some(Ty::decl(decl));
+        }
+        let (item, own) = (names.item, names.args.clone());
+        let own: Option<Vec<Ty>> = own
+            .iter()
+            .map(|&arg| self.substitute(arg, params, args))
+            .collect();
+        self.instantiate(item, own?).map(Ty::decl)
     }
     /// Counts one more instance, of the generic item `name` declared at `at`; false past the limit.
     pub(super) fn count_instance(&mut self, at: TextRange, name: &str) -> bool {

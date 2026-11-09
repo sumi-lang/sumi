@@ -11,7 +11,7 @@ use crate::flows::{AnyValues, Values};
 use crate::lower::{self, Call, Lowered, Source};
 use crate::spans::Spans;
 use crate::summary::Summaries;
-use crate::typing::{self, Typing};
+use crate::typing::Typing;
 use crate::{Analysis, FieldDecl, Function, Ints, Occurrence, Symbol, TypeDecl, flows};
 use crate::{reachability, recursion};
 
@@ -24,29 +24,22 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         .collect();
     let mut graph = GraphBuilder::new(tree.len());
     let declared = lower::declare(&mut source, &items, &mut graph);
-    let (graph, spans, lowered, declared) = lower::lower(&mut source, declared, graph);
+    let (graph, spans, lowered, declared, checked) = lower::lower(&mut source, declared, graph);
     let headers = declared.headers;
     let mut functions: Vec<Function> = headers
         .iter()
         .zip(&declared.type_args)
-        .map(|(header, type_args)| Function {
+        .zip(&checked.results)
+        .map(|((header, type_args), &result)| Function {
             name: header.name,
             origin: source.range(header.item),
             generic: header.generic,
             type_args: type_args.iter().copied().collect(),
-            result: None,
+            result,
             is_complete: false,
             depth: None,
         })
         .collect();
-    let checked = typing::check(
-        &mut source,
-        &graph,
-        &spans,
-        &lowered,
-        &headers,
-        &mut functions,
-    );
     let failed = checked.failed;
     let sound = failed
         .iter()
@@ -201,7 +194,7 @@ fn exhaustive(
         }
         for node in run.nodes() {
             if let Op::Switch { arms } = graph.node(node).op
-                && !flows::selection(graph, arms).boolean
+                && !flows::selection(graph.cases(arms)).boolean
                 && graph.input_roles(node)[0].is_value()
             {
                 switches.push((node, arms));
@@ -400,12 +393,7 @@ pub(crate) fn explain(
                 let Some(calls) = calls else {
                     continue;
                 };
-                // Runs are contiguous in declaration order.
-                let callee = graph
-                    .runs()
-                    .partition_point(|run| run.entry().index() <= node.index())
-                    - 1;
-                let callee = FunctionId::new(callee);
+                let callee = graph.owner(node);
                 for call in calls.iter().filter(|call| call.callee == callee) {
                     if labels.len() >= LABELS {
                         break;
