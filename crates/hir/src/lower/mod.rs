@@ -4,6 +4,7 @@
 mod body;
 mod declare;
 mod source;
+mod versions;
 
 use sumi_graph::{FunctionId, NodeId};
 use sumi_syntax::NodeIdx;

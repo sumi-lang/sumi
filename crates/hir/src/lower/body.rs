@@ -19,6 +19,7 @@ use sumi_text::{TextEdit, TextRange, TextSize};
 
 use super::declare::{Declarations, Header, HeaderResult, Named, Parameter};
 use super::source::{NameMap, Source};
+use super::versions::{RegionState, Versions};
 use super::{Call, Fallthrough, Lowered, Obligation, Statement, diagnostic, join};
 use crate::codes;
 use crate::spans::{Spans, SpansBuilder};
@@ -94,11 +95,16 @@ enum Target {
     Unknown,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-struct LocalId(u32);
+/// A local's index in the body's `locals`, and in its versions.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct LocalId(u32);
 
 impl LocalId {
-    fn index(self) -> usize {
+    pub fn new(index: usize) -> Self {
+        Self(u32::try_from(index).expect("local count fits u32"))
+    }
+
+    pub fn index(self) -> usize {
         self.0 as usize
     }
 }
@@ -107,18 +113,10 @@ struct Local<'s> {
     name: &'s str,
     binding: BindingId,
     declaration: NodeId,
-    current: NodeId,
-    is_mutable: bool,
     completes: bool,
     /// A name beginning with `_` counts as read from its declaration.
     is_read: bool,
     is_assigned: bool,
-}
-
-struct RegionState {
-    changes: Vec<(LocalId, NodeId, NodeId)>,
-    refinements: Vec<(LocalId, NodeId, NodeId)>,
-    context: NodeId,
 }
 
 /// A `let` binds after its initializer, so the initializer reads any outer binding of the name.
@@ -166,20 +164,17 @@ struct Builder<'a, 's> {
     reads_of: Vec<Option<(LocalId, NodeId)>>,
     owner: u32,
     has_failed: bool,
-    /// Open regions, innermost last, each with where its refinements begin in `refinements`.
-    regions: Vec<(RegionId, usize, NodeId)>,
-    /// (local, source version, the node its reads see) for open regions, innermost last.
-    refinements: Vec<(LocalId, NodeId, NodeId)>,
+    /// Open regions with their contexts, innermost last.
+    regions: Vec<(RegionId, NodeId)>,
     /// The first `depth` scopes are open, innermost last, each ending where its block does.
     scopes: Vec<Scope<'s>>,
     scope_ends: Vec<TextSize>,
     scope_mutables: Vec<usize>,
     depth: usize,
     locals: Vec<Local<'s>>,
+    versions: Versions,
+    /// The mutable locals of the open scopes, in declaration order.
     mutable_locals: Vec<LocalId>,
-    undo: Vec<(LocalId, NodeId)>,
-    /// (undo length, local count) for open regions, innermost last.
-    version_stack: Vec<(usize, usize)>,
     returns: Vec<(NodeId, TextRange)>,
 }
 
@@ -217,15 +212,13 @@ impl<'a, 's> Builder<'a, 's> {
             owner: 0,
             has_failed: false,
             regions: Vec::new(),
-            refinements: Vec::new(),
             scopes: Vec::new(),
             scope_ends: Vec::new(),
             scope_mutables: Vec::new(),
             depth: 0,
             locals: Vec::new(),
+            versions: Versions::new(),
             mutable_locals: Vec::new(),
-            undo: Vec::new(),
-            version_stack: Vec::new(),
             returns: Vec::new(),
         }
     }
@@ -235,8 +228,8 @@ impl<'a, 's> Builder<'a, 's> {
         self.has_failed = false;
         self.depth = 0;
         self.regions.clear();
-        self.refinements.clear();
         self.locals.clear();
+        self.versions.clear();
         self.mutable_locals.clear();
         let header = &self.headers[owner];
         let item_node = header.item;
@@ -250,8 +243,6 @@ impl<'a, 's> Builder<'a, 's> {
             }
         };
         self.open_scope(body_range.end());
-        self.undo.clear();
-        self.version_stack.clear();
         self.returns.clear();
         let run = self.graph.open_run(FunctionId::new(owner));
         let entry = self.push(item_node, Op::Entry, &[], None);
@@ -272,7 +263,7 @@ impl<'a, 's> Builder<'a, 's> {
             || matches!(declared, HeaderResult::None);
         let region = self.graph.open(entry);
         self.graph.enter(region);
-        self.regions.push((region, 0, entry));
+        self.regions.push((region, entry));
         let body = match root_node {
             Some(root) => self.lower(root),
             None => self.hole_value(item_node),
@@ -672,13 +663,16 @@ impl<'a, 's> Builder<'a, 's> {
         self.lowered
             .bindings
             .push(Binding::new(range, kind, node, TextRange::new(from, end)));
-        let id = LocalId(u32::try_from(self.locals.len()).expect("local count fits u32"));
+        let id = self.versions.declare(node, is_mutable);
+        debug_assert_eq!(
+            id.index(),
+            self.locals.len(),
+            "a local's versions are its own"
+        );
         self.locals.push(Local {
             name,
             binding,
             declaration: node,
-            current: node,
-            is_mutable,
             completes: false,
             is_read: name.starts_with('_'),
             is_assigned: false,
@@ -690,50 +684,17 @@ impl<'a, 's> Builder<'a, 's> {
         id
     }
 
-    fn set_version(&mut self, local: LocalId, version: NodeId) {
-        if let Some(&(_, count)) = self.version_stack.last()
-            && local.index() < count
-        {
-            self.undo.push((local, self.locals[local.index()].current));
-        }
-        self.locals[local.index()].current = version;
-    }
-
-    fn region_state(&self, changed: &[LocalId], keep: usize, context: NodeId) -> RegionState {
-        RegionState {
-            changes: changed
-                .iter()
-                .map(|&local| {
-                    (
-                        local,
-                        self.locals[local.index()].current,
-                        self.current(local),
-                    )
-                })
-                .collect(),
-            refinements: self.refinements[keep..]
-                .iter()
-                .copied()
-                .filter(|&(local, _, _)| self.locals[local.index()].is_mutable)
-                .collect(),
-            context,
-        }
-    }
-
+    /// The state of a guard that opens no region: what its refinements make of the versions.
     fn guarded_state(&mut self, condition: NodeIdx, sense: bool, context: NodeId) -> RegionState {
-        let keep = self.refinements.len();
+        let mark = self.versions.mark();
         self.refine(condition, sense);
-        let state = self.region_state(&[], keep, context);
-        self.refinements.truncate(keep);
-        state
+        self.versions.guarded(mark, context)
     }
 
     /// Opens `region` for lowering: versions assigned inside it are undone when it closes.
     fn enter_region(&mut self, region: RegionId) {
-        self.version_stack
-            .push((self.undo.len(), self.locals.len()));
-        self.regions
-            .push((region, self.refinements.len(), self.graph.context(region)));
+        self.versions.fork();
+        self.regions.push((region, self.graph.context(region)));
         self.graph.enter(region);
     }
 
@@ -744,20 +705,10 @@ impl<'a, 's> Builder<'a, 's> {
         self.graph
             .close_with_control(region, result.node, !result.completes, result.control);
         self.spans.close(region, result.at);
-        let (_, keep, _) = self
-            .regions
+        self.regions
             .pop()
             .expect("a region opened before it closes");
-        let (mark, _) = self.version_stack.pop().expect("a region fork has a mark");
-        let mut changed: Vec<_> = self.undo[mark..].iter().map(|&(local, _)| local).collect();
-        changed.sort_unstable_by_key(|local| local.index());
-        changed.dedup();
-        let state = self.region_state(&changed, keep, fallthrough);
-        for (local, version) in self.undo.drain(mark..).rev() {
-            self.locals[local.index()].current = version;
-        }
-        self.refinements.truncate(keep);
-        state
+        self.versions.join(fallthrough)
     }
 
     /// Lowers `root` inside `region`, guarded by the condition holding in `sense` when given.
@@ -801,13 +752,13 @@ impl<'a, 's> Builder<'a, 's> {
                     let (_, version, value) = state.changes[index];
                     (version, value)
                 } else {
-                    let version = self.locals[local.index()].current;
+                    let version = self.versions.version(local);
                     let value = state
                         .refinements
                         .iter()
                         .rev()
                         .find(|&&(id, source, _)| id == local && source == version)
-                        .map_or_else(|| self.current(local), |&(_, _, value)| value);
+                        .map_or_else(|| self.versions.read(local), |&(_, _, value)| value);
                     (version, value)
                 }
             }));
@@ -834,7 +785,7 @@ impl<'a, 's> Builder<'a, 's> {
                 at,
                 None,
             );
-            self.set_version(local, phi);
+            self.versions.set(local, phi);
         }
     }
 
@@ -855,17 +806,8 @@ impl<'a, 's> Builder<'a, 's> {
             .find_map(|scope| scope.get(name).copied())
     }
 
-    fn current(&self, local: LocalId) -> NodeId {
-        let version = self.locals[local.index()].current;
-        self.refinements
-            .iter()
-            .rev()
-            .find(|&&(refined, source, _)| refined == local && source == version)
-            .map_or(version, |&(_, _, node)| node)
-    }
-
     fn context(&self) -> NodeId {
-        self.regions.last().expect("a body runs in its region").2
+        self.regions.last().expect("a body runs in its region").1
     }
 
     fn compose_control(
@@ -894,7 +836,7 @@ impl<'a, 's> Builder<'a, 's> {
         self.regions
             .last_mut()
             .expect("a body runs in its region")
-            .2 = after;
+            .1 = after;
     }
 
     /// The scope is as it was when the read was built: a region is entered right after its
@@ -945,10 +887,10 @@ impl<'a, 's> Builder<'a, 's> {
                         for (side, other, local_is_lhs) in [(lhs, rhs, true), (rhs, lhs, false)] {
                             if let (Some((local, version)), Some(_), Some(value)) =
                                 (self.read(side), self.typed(side), self.typed(other))
-                                && self.locals[local.index()].current == version
+                                && self.versions.version(local) == version
                             {
                                 let inputs = [
-                                    (self.current(local), self.source.range(side)),
+                                    (self.versions.read(local), self.source.range(side)),
                                     (value, self.source.range(other)),
                                 ];
                                 let read = self.place(
@@ -961,7 +903,7 @@ impl<'a, 's> Builder<'a, 's> {
                                     self.source.range(node),
                                     None,
                                 );
-                                self.refinements.push((local, version, read));
+                                self.versions.refine(local, version, read);
                             }
                         }
                     }
@@ -970,12 +912,12 @@ impl<'a, 's> Builder<'a, 's> {
             }
             ast::CleanExpr::NameRef(_) => {
                 if let Some((local, version)) = self.read(node)
-                    && self.locals[local.index()].current == version
+                    && self.versions.version(local) == version
                 {
                     let at = self.source.range(node);
-                    let inputs = [(self.current(local), at)];
+                    let inputs = [(self.versions.read(local), at)];
                     let read = self.place(Op::Exactly(sense), &inputs, at, None);
-                    self.refinements.push((local, version, read));
+                    self.versions.refine(local, version, read);
                 }
             }
             _ => {}
@@ -1165,7 +1107,7 @@ impl<'a, 's> Builder<'a, 's> {
         } else if let Some(local) = target
             && self.is_typed(assigned)
         {
-            self.set_version(local, assigned);
+            self.versions.set(local, assigned);
         }
         if damaged || target.is_none() || !value.is_valid || !self.is_typed(assigned) {
             self.fail();
@@ -1335,8 +1277,8 @@ impl<'a, 's> Builder<'a, 's> {
             false,
         );
         self.locals[local.index()].is_read = true;
-        let version = self.locals[local.index()].current;
-        let read = self.current(local);
+        let version = self.versions.version(local);
+        let read = self.versions.read(local);
         self.nodes_of[node.to_usize()] = Some(read);
         self.reads_of[node.to_usize()] = Some((local, version));
         let completes = self.locals[local.index()].completes;
@@ -1822,7 +1764,7 @@ impl<'a, 's> Builder<'a, 's> {
             if self.locals[local.index()].completes {
                 continue;
             }
-            let initial = self.current(local);
+            let initial = self.versions.read(local);
             let declaration = self.locals[local.index()].declaration;
             let header = self.place_with(
                 Op::Carry,
@@ -1831,7 +1773,7 @@ impl<'a, 's> Builder<'a, 's> {
                 at,
                 None,
             );
-            self.set_version(local, header);
+            self.versions.set(local, header);
             carried.push((local, header));
         }
         let body = self.lower(body_node);
@@ -1886,7 +1828,7 @@ impl<'a, 's> Builder<'a, 's> {
                 at,
                 None,
             );
-            self.set_version(local, value);
+            self.versions.set(local, value);
         }
         let mut is_valid = body.is_valid;
         let mut completes = false;
@@ -1950,7 +1892,7 @@ impl<'a, 's> Builder<'a, 's> {
             Symbol::Local(self.locals[local.index()].binding),
             true,
         );
-        if !self.locals[local.index()].is_mutable {
+        if !self.versions.is_mutable(local) {
             let declaration = self.locals[local.index()].declaration;
             self.source.error(
                 name.node(),
