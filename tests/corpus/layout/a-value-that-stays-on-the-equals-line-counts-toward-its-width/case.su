@@ -1,0 +1,9 @@
+// A value too long to move whole stays on its `=` line and breaks within,
+// so what stands before the `=` is fitted with the value's first operand
+// beside it, also where a broken group encloses the statement.
+fn a() {
+    pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp + qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq + if c {
+        xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx && yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy = a - bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb * a && cccccccccccccccccccccccccccccccccccccccc + a || dddddddddddddddddddddddddddddd
+        short && target = a - bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb * a && cccccccccccccccccccccccccccccccccccccccc + a || dddddddddddddddddddddddddddddd
+    }
+}
