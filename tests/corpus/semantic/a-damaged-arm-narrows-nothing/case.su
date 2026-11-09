@@ -1,0 +1,11 @@
+// A branch that returns narrows its condition for what follows, but not when the
+// switch it belongs to failed on a damaged arm: nothing after it is held to a guard
+// the switch could not stand for.
+fn narrows(x: int) -> int {
+    if x > 0 { return 1 } else { 2 }
+    x
+}
+fn damaged(x: int) -> int {
+    if x > 0 { return 1 } else { 2 ) }
+    x
+}

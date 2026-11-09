@@ -1,0 +1,65 @@
+== tree ==
+SourceFile! 1:1..12:1
+  FnItem 4:1..7:2
+    Name 4:4..4:11 "narrows"
+    ParamList 4:11..4:19
+      Param 4:12..4:18
+        Name 4:12..4:13 "x"
+        TypeRef 4:15..4:18 "int"
+    TypeRef 4:23..4:26 "int"
+    Block 4:27..7:2
+      IfExpr 5:5..5:37
+        BinaryExpr 5:8..5:13
+          NameRef 5:8..5:9 "x"
+          LiteralExpr 5:12..5:13 "0"
+        Block 5:14..5:26
+          ReturnStmt 5:16..5:24
+            LiteralExpr 5:23..5:24 "1"
+        Block 5:32..5:37
+          LiteralExpr 5:34..5:35 "2"
+      NameRef 6:5..6:6 "x"
+  FnItem! 8:1..11:2
+    Name 8:4..8:11 "damaged"
+    ParamList 8:11..8:19
+      Param 8:12..8:18
+        Name 8:12..8:13 "x"
+        TypeRef 8:15..8:18 "int"
+    TypeRef 8:23..8:26 "int"
+    Block! 8:27..11:2
+      IfExpr! 9:5..9:39
+        BinaryExpr 9:8..9:13
+          NameRef 9:8..9:9 "x"
+          LiteralExpr 9:12..9:13 "0"
+        Block 9:14..9:26
+          ReturnStmt 9:16..9:24
+            LiteralExpr 9:23..9:24 "1"
+        Block! 9:32..9:39
+          LiteralExpr 9:34..9:35 "2"
+          Error! 9:36..9:37 ")"
+      NameRef 10:5..10:6 "x"
+
+== evidence ==
+Unexpected at 9:36
+
+== diagnostics ==
+error[syntax/unexpected-syntax] 9:36..9:37 ")": unexpected syntax in expression
+
+== formatted ==
+// A branch that returns narrows its condition for what follows, but not when the
+// switch it belongs to failed on a damaged arm: nothing after it is held to a guard
+// the switch could not stand for.
+fn narrows(x: int) -> int {
+    if x > 0 {
+        return 1
+    } else {
+        2
+    }
+    x
+}
+fn damaged(x: int) -> int {
+    if x > 0 {
+        return 1
+    } else {
+        2 ) }
+    x
+}

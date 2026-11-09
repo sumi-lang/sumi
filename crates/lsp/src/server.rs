@@ -175,7 +175,13 @@ fn run(connection: Connection) -> Result<(), Box<dyn std::error::Error + Send + 
     let (outcomes_tx, outcomes_rx) = unbounded();
     let syntax_outcomes = outcomes_tx.clone();
     let syntax_worker = thread::spawn(move || token_worker(tokens_rx, syntax_outcomes, encoding));
-    let worker = thread::spawn(move || worker(jobs_rx, outcomes_tx, encoding, features));
+    // Parsing and lowering recurse as deep as the parser's nesting limit, and no deeper on a chain
+    // of operators or fields; the deepest tree takes under a megabyte in a debug build.
+    let worker = thread::Builder::new()
+        .name("sumi-analysis".into())
+        .stack_size(8 << 20)
+        .spawn(move || worker(jobs_rx, outcomes_tx, encoding, features))
+        .expect("the analysis worker spawns");
     let result = event_loop(
         &connection,
         jobs_tx,
