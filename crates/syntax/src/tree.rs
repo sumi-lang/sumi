@@ -732,6 +732,12 @@ impl<'a> Marker<'_, 'a> {
         self.closer.is_some()
     }
 
+    /// Whether a line break comes after this node's first token, up to the next one, which exists.
+    pub(crate) fn spans_lines(&self) -> bool {
+        (self.start.to_u32() + 1..=self.builder.position.to_u32())
+            .any(|index| self.builder.input.has_newline_before(SigIdx::new(index)))
+    }
+
     pub(crate) fn has_closer_ahead(&self) -> bool {
         self.closer
             .is_some_and(|closer| closer > self.builder.position)

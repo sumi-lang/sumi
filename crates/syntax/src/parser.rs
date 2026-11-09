@@ -781,11 +781,13 @@ fn block(p: &mut Marker<'_, '_>) -> CompletedMarker {
                 let recovery = m.recovery_checkpoint();
                 statement(&mut m);
                 let failed = m.recovered_since(recovery);
+                // A one-line block shows where it ends; across lines, its closer after a failed
+                // statement may be one an edit displaced.
                 let ends = m.current().is_none()
                     || m.is_at_boundary()
                     || (m.at(T::RBrace)
                         && !m.has_closer_ahead()
-                        && !(failed && is_displaced_closer(&m)))
+                        && !(failed && m.spans_lines() && is_displaced_closer(&m)))
                     || m.closes_open_bracket();
                 if !ends {
                     // After a failed statement, an expression start on its line is ambiguous with
@@ -1100,10 +1102,24 @@ fn begins_type_args(p: &Marker<'_, '_>) -> bool {
 fn block_starts_head(p: &Marker<'_, '_>, follow: ExprFollow) -> bool {
     p.nth_partner(0).is_some_and(|close| {
         let next = close + 1;
-        p.nth(next) == Some(T::LBrace)
-            || (follow == ExprFollow::Range && p.nth(next) == Some(T::Dot))
-            || (!p.is_nth_at_boundary(next) && binary_op(p, next).is_some())
+        !holds_arm(p, close)
+            && (p.nth(next) == Some(T::LBrace)
+                || (follow == ExprFollow::Range && p.nth(next) == Some(T::Dot))
+                || (!p.is_nth_at_boundary(next) && binary_op(p, next).is_some()))
     })
+}
+
+/// Whether the `{` next, closed `close` tokens on, holds a `=>` of its own: those are a match's
+/// arms, whose scrutinee is missing, and no block's statements write one.
+fn holds_arm(p: &Marker<'_, '_>, close: usize) -> bool {
+    let mut n = 1;
+    while n < close {
+        if p.nth(n) == Some(T::Eq) && p.is_nth_joint(n) && p.nth(n + 1) == Some(T::Gt) {
+            return true;
+        }
+        n = p.nth_partner(n).filter(|&partner| partner > n).unwrap_or(n) + 1;
+    }
+    false
 }
 
 /// `ahead`: the nodes the caller opens before the next expression.
@@ -1203,8 +1219,9 @@ fn range(p: &mut Marker<'_, '_>) -> (Option<CompletedMarker>, Option<CompletedMa
         p.expect(T::Dot);
     } else {
         p.missing(ParseRecoveryKind::RangeOperator);
-        // A boundary here means the end was never written: what follows is the next statement.
-        if p.is_at_boundary() {
+        // A boundary or a `{` here means the end was never written: what follows is the next
+        // statement, or the body, which `block_starts_head` would take for the end.
+        if p.is_at_boundary() || p.at(T::LBrace) {
             return (start, None);
         }
     }

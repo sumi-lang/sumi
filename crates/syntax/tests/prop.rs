@@ -122,3 +122,21 @@ fn a_duplicated_arrow_keeps_the_body_after_a_multiline_return_type() {
         check::recovery(source, &front(source), 5, Edit::Duplicate);
     }
 }
+
+#[test]
+fn a_range_without_its_operator_leaves_the_block_to_the_body() {
+    let source = "fn f() {\n    _ = 0\n      / for x in a..b {}\n      <= c\n    {}\n      % d\n    e = f\n}\n";
+    check::recovery(source, &front(source), 13, Edit::Delete);
+}
+
+#[test]
+fn a_failed_statement_leaves_its_blocks_closer_before_an_equals() {
+    let source = "fn f() {\n    _ = match a {\n        _ => {\n            if a { b } = 1\n        }\n    }\n    { c }\n}\n";
+    check::recovery(source, &front(source), 17, Edit::Insert(","));
+}
+
+#[test]
+fn a_match_without_its_scrutinee_keeps_its_arms() {
+    let source = "fn f() {\n    _ = match a { P => b }\n      || c\n    { d }\n}\n";
+    check::recovery(source, &front(source), 8, Edit::Delete);
+}

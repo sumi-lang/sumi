@@ -1,0 +1,40 @@
+== tree ==
+SourceFile! 1:1..9:1
+  FnItem! 1:1..8:2
+    Name 1:4..1:5 "f"
+    ParamList 1:5..1:7 "()"
+    Block! 1:8..8:2
+      DiscardStmt! 2:5..6:6
+        MatchExpr! 2:9..6:6
+          NameRef 2:15..2:16 "a"
+          ArmList! 2:17..6:6
+            MatchArm! 3:9..5:10
+              RestPattern 3:9..3:10 "_"
+              Block! 3:14..5:10
+                IfExpr! 4:13..4:25
+                  NameRef 4:16..4:17 "a"
+                  Block! 4:18..4:25
+                    Error! 4:20..4:23 ", b"
+                Error! 4:26..4:29 "= 1"
+      Block 7:5..7:10
+        NameRef 7:7..7:8 "c"
+
+== evidence ==
+ExpectedStatement at 4:20
+
+== diagnostics ==
+error[syntax/expected-statement] 4:20..4:21 ",": expected a statement
+  at 4:20..4:23 ", b": skipped while recovering
+  at 4:26..4:29 "= 1": skipped while recovering
+
+== formatted ==
+fn f() {
+    _ = match a {
+        _ => {
+            if a { , b } = 1
+        }
+    }
+    {
+        c
+    }
+}
