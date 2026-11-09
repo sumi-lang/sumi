@@ -107,6 +107,15 @@ pub(crate) struct Plan {
     pub(crate) layout_comma: Vec<bool>,
 }
 
+/// A node to lay out. `level` is the indentation of the line it begins on; `chain` is the
+/// continuation level of the operator chain it carries on as a left operand.
+#[derive(Clone, Copy)]
+struct Visit {
+    node: NodeIdx,
+    level: u32,
+    chain: Option<u32>,
+}
+
 #[derive(Clone, Copy)]
 enum El {
     Tok(u32, SyntaxKind),
@@ -123,6 +132,7 @@ pub(crate) fn plan(lexed: &LexedFile, parse: &Parse) -> Plan {
         groups: Vec::new(),
         layout_comma: vec![false; n],
         pool: Vec::new(),
+        todo: Vec::new(),
     };
     planner.source_file();
     planner.freeze(lexed, parse);
@@ -194,6 +204,9 @@ struct Planner<'a> {
     groups: Vec<Group>,
     layout_comma: Vec<bool>,
     pool: Vec<Vec<El>>,
+    /// Nodes yet to lay out. The walk keeps its place here and not on the call stack, since a
+    /// chain the parser nests leftward is as deep as it is long.
+    todo: Vec<Visit>,
 }
 
 impl Planner<'_> {
@@ -269,7 +282,7 @@ impl Planner<'_> {
     fn value(&mut self, node: NodeIdx, eq: u32, value: NodeIdx, level: u32) {
         let is_chain = self.tree.kind(value) == NodeKind::BinaryExpr;
         self.group(eq + 1, self.end_sig(node), Some(value), is_chain);
-        self.node(value, level);
+        self.visit(value, level);
     }
 
     /// The last child when it opens a block: the tail of a sound node's group, laid out at the
@@ -287,13 +300,27 @@ impl Planner<'_> {
         for &el in els {
             if let El::Node(child, _) = el {
                 let child_level = if Some(child) == hug { level } else { level + 1 };
-                self.node(child, child_level);
+                self.visit(child, child_level);
             }
         }
     }
 
-    /// `level` is the indentation of the line `node` begins on.
-    fn node(&mut self, node: NodeIdx, level: u32) {
+    fn visit(&mut self, node: NodeIdx, level: u32) {
+        self.todo.push(Visit {
+            node,
+            level,
+            chain: None,
+        });
+    }
+
+    /// The order is free: a gap lies between two elements of one node, which alone sets it.
+    fn run(&mut self) {
+        while let Some(visit) = self.todo.pop() {
+            self.node(visit);
+        }
+    }
+
+    fn node(&mut self, Visit { node, level, chain }: Visit) {
         let kind = self.tree.kind(node);
         if kind == NodeKind::Error {
             return;
@@ -320,7 +347,7 @@ impl Planner<'_> {
             NodeKind::LetStmt | NodeKind::AssignStmt | NodeKind::DiscardStmt => {
                 self.binding(node, &els, level);
             }
-            NodeKind::BinaryExpr => self.binary(node, &els, level, None),
+            NodeKind::BinaryExpr => self.binary(node, &els, level, chain),
             NodeKind::ParenExpr => {
                 self.pairs(&els, |a, b| match (a, b) {
                     (El::Tok(_, SyntaxKind::LParen), El::Tok(_, SyntaxKind::RParen)) => {
@@ -396,7 +423,7 @@ impl Planner<'_> {
     fn children(&mut self, els: &[El], level: u32) {
         for &el in els {
             if let El::Node(child, _) = el {
-                self.node(child, level);
+                self.visit(child, level);
             }
         }
     }
@@ -409,8 +436,9 @@ impl Planner<'_> {
             self.set(gap, Gap::hard(0));
         }
         for item in items {
-            self.node(item, 0);
+            self.visit(item, 0);
         }
+        self.run();
     }
 
     fn function(&mut self, node: NodeIdx, els: &[El], level: u32) {
@@ -431,7 +459,7 @@ impl Planner<'_> {
                 El::Tok(sig, SyntaxKind::Eq) => eq = Some(sig),
                 El::Node(child, _) => match eq {
                     Some(eq) => self.value(node, eq, child, level),
-                    None => self.node(child, level),
+                    None => self.visit(child, level),
                 },
                 El::Tok(..) => {}
             }
@@ -514,14 +542,16 @@ impl Planner<'_> {
                 if is_first {
                     is_first = false;
                     if child_kind == NodeKind::BinaryExpr && self.power_of(child) == power {
-                        let child_els = self.elements(child);
-                        self.binary(child, &child_els, level, Some(cont));
-                        self.release(child_els);
+                        self.todo.push(Visit {
+                            node: child,
+                            level,
+                            chain: Some(cont),
+                        });
                         continue;
                     }
-                    self.node(child, level);
+                    self.visit(child, level);
                 } else {
-                    self.node(child, if Some(child) == hug { level } else { cont });
+                    self.visit(child, if Some(child) == hug { level } else { cont });
                 }
             }
         }
