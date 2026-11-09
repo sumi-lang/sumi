@@ -7,7 +7,7 @@ use std::hash::Hash;
 
 use sumi_lexer::LexedFile;
 
-use crate::grammar::{BinaryOp, Literal, PrefixOp, SyntaxKind, TokenField};
+use crate::grammar::{AssignOp, BinaryOp, Literal, PrefixOp, SyntaxKind, TokenField};
 use crate::index::NodeIdx;
 use crate::tree::SyntaxTree;
 
@@ -501,8 +501,9 @@ grammar! {
     struct LetStmt { name: Name, type_ref: Option<Type>, initializer: Expr }
     tokens { LetKw, mutable: MutKw?, Colon?, Eq }
 
+    /// `target:Expr AssignOp value:Expr`.
     struct AssignStmt { target: Expr, value: Expr }
-    tokens { Eq }
+    tokens { op: AssignOp }
 
     struct DiscardStmt { value: Expr }
     tokens { Underscore, Eq }

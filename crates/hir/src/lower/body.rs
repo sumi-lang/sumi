@@ -1425,6 +1425,42 @@ impl<'a, 's> Builder<'a, 's> {
             .and_then(|target| self.place_of(target).ok());
         let value = assignment.value(tree).map(|value| self.lower(value.node()));
         let value = self.present(node, value);
+        // The place's own value under the operator, read once the value is in.
+        let value = match (&place, assignment.op(tree, self.source.lexed())) {
+            (Some(place), Some(sumi_syntax::AssignOp::Arith(op))) if !value.completes => {
+                let held = self.read_place(place);
+                // What is no integer is reported once, as the operand it is; what failed, where
+                // it did.
+                match self.decides(&held) {
+                    Decides::Ty(ty) if ty != Ty::INT => {
+                        self.source.type_mismatch(held.range, Ty::INT, ty, None);
+                        self.fail();
+                        return self.hole_value(node);
+                    }
+                    Decides::Failed => {
+                        self.fail();
+                        return self.hole_value(node);
+                    }
+                    _ => {}
+                }
+                let op = BinaryOp::Arith(arith(op));
+                let id = self.place(Op::Binary(op), &[held.input(), value.input()], at, None);
+                if value.is_valid && matches!(op, BinaryOp::Arith(ArithOp::Div | ArithOp::Rem)) {
+                    self.lowered.obligations.push(Obligation {
+                        owner: self.owner,
+                        node,
+                        divisor: value.node,
+                        context: self.context(),
+                    });
+                }
+                Value {
+                    node: id,
+                    is_valid: value.is_valid && held.is_valid,
+                    ..value
+                }
+            }
+            _ => value,
+        };
         // A value that returns first is assigned to nothing.
         let assigned = match &place {
             Some(place) if value.completes => {

@@ -6,9 +6,9 @@ use sumi_lexer::RawIdx;
 
 use crate::ast::NodeKind as N;
 use crate::grammar::{
-    BinaryOp, PREFIX_BP, Pair, Side, SyntaxKind as T, binary_operator, bracket, can_end_statement,
-    introduces_statement, is_closer, is_literal, is_opener, is_prefix_operator, starts_expression,
-    starts_item, starts_statement,
+    AssignOp, BinaryOp, PREFIX_BP, Pair, Side, SyntaxKind as T, TokenField, binary_operator,
+    bracket, can_end_statement, introduces_statement, is_closer, is_literal, is_opener,
+    is_prefix_operator, starts_expression, starts_item, starts_statement,
 };
 use crate::input::ParserInput;
 use crate::tree::{CompletedMarker, Marker, Parse, RecoveryHandle};
@@ -840,10 +840,13 @@ fn statement(p: &mut Marker<'_, '_>) {
         _ => {
             let recovery = p.recovery_checkpoint();
             if let Some(lhs) = expr_bp(p, 0, ExprFollow::Anything) {
-                if !p.recovered_since(recovery) && p.at(T::Eq) && !p.is_at_boundary() {
+                let width = assign_op(p).filter(|_| !p.is_at_boundary());
+                if let (false, Some(width)) = (p.recovered_since(recovery), width) {
                     let lhs_node = p.completed_node(&lhs);
                     let mut m = p.precede(lhs);
-                    m.token();
+                    for _ in 0..width {
+                        m.token();
+                    }
                     let value = operand(&mut m);
                     m.wrapped_field(lhs_node, 0);
                     if let Some(value) = &value {
@@ -1375,13 +1378,26 @@ fn if_block(p: &mut Marker<'_, '_>) -> Option<CompletedMarker> {
     }
 }
 
-/// The width is in tokens. A `-` is subtraction whatever its spacing; the caller checks the
-/// spacing.
+/// The width is in tokens. A `-` is subtraction whatever its spacing, which the caller checks;
+/// an operator `=` is glued to is an assignment's, and none.
 fn binary_op(p: &Marker<'_, '_>, n: usize) -> Option<(BinaryOp, usize)> {
     let glued = if p.is_nth_joint(n) {
         p.nth(n + 1)
     } else {
         None
     };
+    if matches!(
+        AssignOp::read(p.nth(n)?, glued),
+        Some((AssignOp::Arith(_), _))
+    ) {
+        return None;
+    }
     binary_operator(p.nth(n)?, glued)
+}
+
+/// The width in tokens of the assignment operator a statement's expression is followed by.
+fn assign_op(p: &Marker<'_, '_>) -> Option<usize> {
+    let glued = if p.is_nth_joint(0) { p.nth(1) } else { None };
+    let (_, is_glued) = AssignOp::read(p.current()?, glued)?;
+    Some(1 + usize::from(is_glued))
 }

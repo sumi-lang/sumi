@@ -405,6 +405,87 @@ fn guarded@86:1..90:2 () -> int ∈ [45, 45]
           rhs: field y : int @89:23..89:26
             base: read p@87:13..87:14 (assigned @88:5..88:12) : Point
 
+fn compound@91:1..100:2 () -> int ∈ [216, 216]
+  result: copy : int @91:18..91:21
+    value:
+      let p@92:13..92:14: Point @92:5..92:35
+        initializer: make Point : Point @92:17..92:35
+          x: int 10 : int @92:26..92:28
+          y: int 3 : int @92:33..92:34
+      let n@93:13..93:14: int @93:5..93:18
+        initializer: int 2 : int @93:17..93:18
+      assignment: assign p@92:13..92:14 : Point @94:5..94:13
+        value: make Point : Point @94:5..94:13
+          x: eager + : int @94:5..94:13
+            lhs: field x : int @94:5..94:8
+              base: read p@92:13..92:14 : Point
+            rhs: int 5 : int @94:12..94:13
+          y: field y : int @94:5..94:6
+            base: read p@92:13..92:14 : Point
+      assignment: assign p@92:13..92:14 : Point @95:5..95:13
+        value: make Point : Point @95:5..95:13
+          x: eager - : int @95:5..95:13
+            lhs: field x : int @95:5..95:8
+              base: read p@92:13..92:14 (assigned @94:5..94:13) : Point
+            rhs: read n@93:13..93:14 : int
+          y: field y : int @95:5..95:6
+            base: read p@92:13..92:14 (assigned @94:5..94:13) : Point
+      assignment: assign n@93:13..93:14 : int @96:5..96:13
+        value: eager * : int @96:5..96:13
+          lhs: read n@93:13..93:14 : int
+          rhs: field y : int @96:10..96:13
+            base: read p@92:13..92:14 (assigned @95:5..95:13) : Point
+      assignment: assign p@92:13..92:14 : Point @97:5..97:13
+        value: make Point : Point @97:5..97:13
+          x: eager / : int @97:5..97:13
+            lhs: field x : int @97:5..97:8
+              base: read p@92:13..92:14 (assigned @95:5..95:13) : Point
+            rhs: read n@93:13..93:14 (assigned @96:5..96:13) : int
+          y: field y : int @97:5..97:6
+            base: read p@92:13..92:14 (assigned @95:5..95:13) : Point
+      assignment: assign p@92:13..92:14 : Point @98:5..98:13
+        value: make Point : Point @98:5..98:13
+          x: field x : int @98:5..98:6
+            base: read p@92:13..92:14 (assigned @97:5..97:13) : Point
+          y: eager % : int @98:5..98:13
+            lhs: field y : int @98:5..98:8
+              base: read p@92:13..92:14 (assigned @97:5..97:13) : Point
+            rhs: int 2 : int @98:12..98:13
+      tail: eager + : int @99:5..99:29
+        lhs: eager + : int @99:5..99:25
+          lhs: eager * : int @99:5..99:14
+            lhs: field x : int @99:5..99:8
+              base: read p@92:13..92:14 (assigned @98:5..98:13) : Point
+            rhs: int 100 : int @99:11..99:14
+          rhs: eager * : int @99:17..99:25
+            lhs: field y : int @99:17..99:20
+              base: read p@92:13..92:14 (assigned @98:5..98:13) : Point
+            rhs: int 10 : int @99:23..99:25
+        rhs: read n@93:13..93:14 (assigned @96:5..96:13) : int
+
+fn once@101:1..106:2 () -> int ∈ [15, 15]
+  result: copy : int @101:14..101:17
+    value:
+      let p@102:13..102:14: Point @102:5..102:34
+        initializer: make Point : Point @102:17..102:34
+          x: int 1 : int @102:26..102:27
+          y: int 1 : int @102:32..102:33
+      assignment: assign p@102:13..102:14 : Point @103:14..103:22
+        value: make Point : Point @103:14..103:22
+          x: int 10 : int @103:20..103:22
+          y: field y : int @103:14..103:15
+            base: read p@102:13..102:14 : Point
+      assignment: assign p@102:13..102:14 : Point @103:5..104:12
+        value: make Point : Point @103:5..104:12
+          x: eager + : int @103:5..104:12
+            lhs: field x : int @103:5..103:8
+              base: read p@102:13..102:14 (assigned @103:14..103:22) : Point
+            rhs: int 5 : int @104:9..104:10
+          y: field y : int @103:5..103:6
+            base: read p@102:13..102:14 (assigned @103:14..103:22) : Point
+      tail: field x : int @105:5..105:8
+        base: read p@102:13..102:14 (assigned @103:5..104:12) : Point
+
 fn swap<Point>@15:1..19:2 (Point ∈ Point([2, 2], [0, 0]), Point ∈ Point([3, 3], [4, 4])) -> unit ∈ unit
   param a@15:16..15:17: Point
   param b@15:26..15:27: Point
