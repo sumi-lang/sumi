@@ -43,6 +43,15 @@ impl Typing {
     }
 }
 
+/// What lowering reads of the type of a node it has built.
+pub(crate) enum Read {
+    Ty(Ty),
+    /// Left undetermined by what is reported elsewhere, or by a result yet to settle.
+    Unknown,
+    /// Claimed by nothing: the node yields no value.
+    Unclaimed,
+}
+
 /// The checked types by node and, by function, its result type and whether a read in its body
 /// failed.
 pub(crate) struct Checked {
@@ -72,6 +81,10 @@ pub(crate) struct Types {
     next: usize,
     /// Whether every read of the walk beside the body being built held.
     held: bool,
+    /// Whether the walk beside the body being built reports and settles it, not its group.
+    is_final: bool,
+    /// Whether the body being built read a result its group has yet to settle.
+    is_pending: bool,
 }
 
 impl Types {
@@ -83,9 +96,13 @@ impl Types {
         }
     }
 
-    /// Whether the walk beside the body being built has reached `node`, which must not change after.
+    /// Whether the walk beside the body being built has reached `node`, which then must not change.
     pub fn has_walked(&self, node: NodeId) -> bool {
         node.index() < self.next
+    }
+
+    pub fn is_pending(&self) -> bool {
+        self.is_pending
     }
 
     fn root(&mut self, node: NodeId) -> usize {
@@ -323,9 +340,18 @@ impl Checker<'_, '_> {
         self.types.sets[a].absorb(absorbed);
     }
 
-    /// The type of a node a walk has reached; none for a conflict, or a class only a hole or
-    /// reads decided.
-    pub fn resolve(&mut self, node: NodeId) -> Option<Ty> {
+    /// The type of a node of the body being built, walked as far as the last node built.
+    pub fn read(&mut self, owner: FunctionId, node: NodeId) -> Read {
+        self.advance(owner);
+        let params = self.source.params;
+        let set = self.set(node);
+        if set.is_unknown || set.is_conflict(params) {
+            return Read::Unknown;
+        }
+        self.resolve(node).map_or(Read::Unclaimed, Read::Ty)
+    }
+
+    fn resolve(&mut self, node: NodeId) -> Option<Ty> {
         let root = self.types.root(node);
         self.types.sets[root].ty(&mut self.source.unions.borrow_mut(), self.source.params)
     }
@@ -348,7 +374,7 @@ impl Checker<'_, '_> {
     }
 
     /// The callee's declared result, or what its item's walk inferred, at the callee's type
-    /// arguments. A conflict inferred outside the caller's group is the unknown: it is reported there.
+    /// arguments. A conflict inferred outside the caller's group is the unknown, reported there.
     fn import(&mut self, call: NodeId, callee: FunctionId) {
         let header = self.declared.headers[callee.index()];
         let origin = Some(self.spans.origin(call));
@@ -361,6 +387,11 @@ impl Checker<'_, '_> {
         let is_grouped = self.order.group(item) == self.types.current;
         let Some(export) = self.types.exports[item.index()].clone() else {
             assert!(is_grouped, "an item outside the group is settled");
+            // Beside the body, lowering must not take what the call has so far for its type.
+            if self.types.result.is_none() {
+                self.types.is_pending = true;
+                self.unknown(call);
+            }
             return;
         };
         if !is_grouped && export.is_conflict(self.source.params) {
@@ -372,8 +403,9 @@ impl Checker<'_, '_> {
         }
         let params = &self.declared.type_args[item.index()];
         let args = &self.declared.type_args[callee.index()];
+        let at = self.spans.origin(call);
         for ty in export.types {
-            match self.source.substitute(ty, params, args) {
+            match self.source.substitute(ty, params, args, at) {
                 Some(ty) => self.claim(call, Member { ty, rank, origin }),
                 None => self.unknown(call),
             }
@@ -488,32 +520,34 @@ impl Checker<'_, '_> {
         }
     }
 
-    /// Begins the walk beside the body `owner`'s run is about to hold.
-    pub fn open(&mut self, owner: FunctionId) {
+    /// Begins the walk beside the body `owner`'s run is about to hold, which reports and settles
+    /// the function when `is_final`.
+    pub fn open(&mut self, owner: FunctionId, is_final: bool) {
         self.types.current = self.group(owner);
         self.types.result = None;
         self.types.next = self.graph.nodes().len();
         self.types.held = true;
+        self.types.is_final = is_final;
+        self.types.is_pending = false;
     }
 
     /// Walks the nodes built since the last call. A node is walked once nothing built later
     /// changes what the walk reads of it: here, where a later node or the body's end asks.
-    pub fn advance(&mut self, owner: FunctionId, is_final: bool) {
+    fn advance(&mut self, owner: FunctionId) {
         self.grow();
         let end = self.graph.nodes().len();
         let next = std::mem::replace(&mut self.types.next, end);
-        self.reporting(is_final, |checker| {
+        self.reporting(self.types.is_final, |checker| {
             for node in next..end {
                 checker.visit(owner, NodeId::new(node));
             }
         });
     }
 
-    /// Ends the walk [`open`](Self::open) began, once the run is closed with `result`, reporting
-    /// and settling the function. A body its group settles is not closed.
+    /// Ends a final walk [`open`](Self::open) began, once the run is closed with `result`.
     pub fn close(&mut self, owner: FunctionId, result: NodeId) {
         self.types.result = Some(result);
-        self.advance(owner, true);
+        self.advance(owner);
         self.reporting(true, |checker| checker.finish(owner, result, true));
     }
 

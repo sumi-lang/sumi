@@ -43,3 +43,12 @@ fn down<T>(x: T, n: int) -> int = if n <= 0 {
     1 + down(x, n - 1)
 }
 fn counted() -> int = down(true, 3) + down(Box(value: 1), 2)
+fn either<U>(v: Box<U> | Box<int>) -> int = match v {
+    Box<int>(b) => b.value,
+    _ => 0,
+}
+fn through<T>(v: Box<T> | Box<int>, n: int) -> int = either(v) + down(v, n)
+fn unions() -> int {
+    let v: Box<bool> | Box<int> = Box(value: true)
+    through(Box(value: true), 2) + through<bool>(Box(value: 6), 1) + either(v)
+}

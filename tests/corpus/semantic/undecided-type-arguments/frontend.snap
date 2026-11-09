@@ -67,6 +67,40 @@ fn arms(v: Box<int> | Box<bool> | None, w: Pair<int, int> | None, n: int) -> int
     }
     a + b + c
 }
+fn either<U>(v: Box<U> | Box<int>) -> int = 0
+fn held_as_it_stands() -> int = either(Box(value: 1))
+fn conflicted(c: bool) = if c {
+    1
+} else {
+    true
+}
+fn echoes() -> int = id(conflicted(true))
+fn count(n: int) = if n <= 0 {
+    0
+} else {
+    id(count(n - 1))
+}
+fn partly(n: int) = if n <= 0 {
+    None()
+} else {
+    id(if n == 1 {
+        Box(value: 0)
+    } else {
+        partly(n - 1)
+    })
+}
+fn matched<T>(x: T, n: int) = if n <= 0 {
+    Box(value: x)
+} else {
+    match matched(x, n - 1) {
+        Box(b) => Box(value: b.value),
+    }
+}
+fn recursions() -> int {
+    _ = partly(2)
+    _ = matched(true, 3)
+    count(3)
+}
 fn grow<T>(x: T, n: int) -> int = if n == 0 {
     0
 } else {

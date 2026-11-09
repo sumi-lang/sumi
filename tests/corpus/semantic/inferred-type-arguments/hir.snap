@@ -184,6 +184,48 @@ fn counted@45:1..45:61 () -> int ∈ [0, +∞)
           value: int 1 : int @45:55..45:56
         arg[1]: int 2 : int @45:59..45:60
 
+fn either<U>@46:1..49:2 (Box<U> | Box<int> ∈ ∅) -> int ∈ ∅
+  param v@46:14..46:15: Box<U> | Box<int>
+  result: copy : int @46:39..46:42
+    value: match : int @46:45..49:2
+      scrutinee: read v@46:14..46:15 : Box<U> | Box<int>
+      Box<int>:
+        let b@47:14..47:15: narrow to Box<int> : Box<int> @47:14..47:15
+          scrutinee: read v@46:14..46:15 : Box<U> | Box<int>
+        tail: field value : int @47:20..47:27
+          base: read b@47:14..47:15 : Box<int>
+      _: int 0 : int @48:10..48:11
+
+fn through<T>@50:1..50:76 (Box<T> | Box<int> ∈ ∅, int ∈ ∅) -> int ∈ ∅
+  param v@50:15..50:16: Box<T> | Box<int>
+  param n@50:37..50:38: int
+  result: copy : int @50:48..50:51
+    value: eager + : int @50:54..50:76
+      lhs: call either@46:1..49:2 : int @50:54..50:63
+        arg[0]: read v@50:15..50:16 : Box<T> | Box<int>
+      rhs: call down@40:1..44:2 : int @50:66..50:76
+        arg[0]: read v@50:15..50:16 : Box<T> | Box<int>
+        arg[1]: read n@50:37..50:38 : int
+
+fn unions@51:1..54:2 () -> int ∈ [0, +∞)
+  result: copy : int @51:16..51:19
+    value:
+      let v@52:9..52:10: Box<bool> | Box<int> @52:5..52:51
+        initializer: make Box : Box<bool> @52:35..52:51
+          value: bool true : bool @52:46..52:50
+      tail: eager + : int @53:5..53:79
+        lhs: eager + : int @53:5..53:67
+          lhs: call through@50:1..50:76 : int @53:5..53:33
+            arg[0]: make Box : Box<bool> @53:13..53:29
+              value: bool true : bool @53:24..53:28
+            arg[1]: int 2 : int @53:31..53:32
+          rhs: call through@50:1..50:76 : int @53:36..53:67
+            arg[0]: make Box : Box<int> @53:50..53:63
+              value: int 6 : int @53:61..53:62
+            arg[1]: int 1 : int @53:65..53:66
+        rhs: call either@46:1..49:2 : int @53:70..53:79
+          arg[0]: read v@52:9..52:10 : Box<bool> | Box<int>
+
 fn id<T>@9:1..9:24 (T ∈ ∅) -> T ∈ ∅
   param x@9:10..9:11: T
   result: copy : T @9:19..9:20
@@ -288,6 +330,75 @@ fn down<Box<int>>@40:1..44:2 (Box<int> ∈ Box<int>([1, 1]), int ∈ [0, 2]) -> 
         lhs: int 1 : int @43:5..43:6
         rhs: call down@40:1..44:2 : int @43:9..43:23
           arg[0]: read x@40:12..40:13 : Box<int>
+          arg[1]: eager - : int @43:17..43:22
+            lhs: read n@40:18..40:19 [n <= 0 fails@40:38..40:44] : int
+            rhs: int 1 : int @43:21..43:22
+
+fn either<T>@46:1..49:2 (Box<T> | Box<int> ∈ ∅) -> int ∈ ∅
+  param v@46:14..46:15: Box<T> | Box<int>
+  result: copy : int @46:39..46:42
+    value: match : int @46:45..49:2
+      scrutinee: read v@46:14..46:15 : Box<T> | Box<int>
+      Box<int>:
+        let b@47:14..47:15: narrow to Box<int> : Box<int> @47:14..47:15
+          scrutinee: read v@46:14..46:15 : Box<T> | Box<int>
+        tail: field value : int @47:20..47:27
+          base: read b@47:14..47:15 : Box<int>
+      _: int 0 : int @48:10..48:11
+
+fn down<Box<T> | Box<int>>@40:1..44:2 (Box<T> | Box<int> ∈ ∅, int ∈ ∅) -> int ∈ ∅
+  param x@40:12..40:13: Box<T> | Box<int>
+  param n@40:18..40:19: int
+  result: copy : int @40:29..40:32
+    value: if : int @40:35..44:2
+      scrutinee: eager <= : bool @40:38..40:44
+        lhs: read n@40:18..40:19 : int
+        rhs: int 0 : int @40:43..40:44
+      then: int 0 : int @41:5..41:6
+      else: eager + : int @43:5..43:23
+        lhs: int 1 : int @43:5..43:6
+        rhs: call down@40:1..44:2 : int @43:9..43:23
+          arg[0]: read x@40:12..40:13 : Box<T> | Box<int>
+          arg[1]: eager - : int @43:17..43:22
+            lhs: read n@40:18..40:19 [n <= 0 fails@40:38..40:44] : int
+            rhs: int 1 : int @43:21..43:22
+
+fn through<bool>@50:1..50:76 (Box<bool> | Box<int> ∈ Box<bool>({true}) ∪ Box<int>([6, 6]), int ∈ [1, 2]) -> int ∈ [0, +∞)
+  param v@50:15..50:16: Box<bool> | Box<int>
+  param n@50:37..50:38: int
+  result: copy : int @50:48..50:51
+    value: eager + : int @50:54..50:76
+      lhs: call either@46:1..49:2 : int @50:54..50:63
+        arg[0]: read v@50:15..50:16 : Box<bool> | Box<int>
+      rhs: call down@40:1..44:2 : int @50:66..50:76
+        arg[0]: read v@50:15..50:16 : Box<bool> | Box<int>
+        arg[1]: read n@50:37..50:38 : int
+
+fn either<bool>@46:1..49:2 (Box<bool> | Box<int> ∈ Box<bool>({true}) ∪ Box<int>([6, 6])) -> int ∈ [0, 6]
+  param v@46:14..46:15: Box<bool> | Box<int>
+  result: copy : int @46:39..46:42
+    value: match : int @46:45..49:2
+      scrutinee: read v@46:14..46:15 : Box<bool> | Box<int>
+      Box<int>:
+        let b@47:14..47:15: narrow to Box<int> : Box<int> @47:14..47:15
+          scrutinee: read v@46:14..46:15 : Box<bool> | Box<int>
+        tail: field value : int @47:20..47:27
+          base: read b@47:14..47:15 : Box<int>
+      _: int 0 : int @48:10..48:11
+
+fn down<Box<bool> | Box<int>>@40:1..44:2 (Box<bool> | Box<int> ∈ Box<bool>({true}) ∪ Box<int>([6, 6]), int ∈ [0, 2]) -> int ∈ [0, +∞)
+  param x@40:12..40:13: Box<bool> | Box<int>
+  param n@40:18..40:19: int
+  result: copy : int @40:29..40:32
+    value: if : int @40:35..44:2
+      scrutinee: eager <= : bool @40:38..40:44
+        lhs: read n@40:18..40:19 : int
+        rhs: int 0 : int @40:43..40:44
+      then: int 0 : int @41:5..41:6
+      else: eager + : int @43:5..43:23
+        lhs: int 1 : int @43:5..43:6
+        rhs: call down@40:1..44:2 : int @43:9..43:23
+          arg[0]: read x@40:12..40:13 : Box<bool> | Box<int>
           arg[1]: eager - : int @43:17..43:22
             lhs: read n@40:18..40:19 [n <= 0 fails@40:38..40:44] : int
             rhs: int 1 : int @43:21..43:22

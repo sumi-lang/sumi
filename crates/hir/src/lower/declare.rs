@@ -745,13 +745,13 @@ fn drop_growing_fields(source: &mut Source<'_>, resolved: &[Vec<Option<ast::Type
 }
 
 /// Marks the calls that would have no last instance: each passes a type parameter of its function
-/// on inside a larger type, around a cycle of calls. `calls` are those every generic function's
-/// own body makes, so an instance's body makes none of the ones marked.
+/// on inside a larger type, around a cycle of `calls`, those of every generic function's own body.
 pub(super) fn unbounded_calls(
     source: &mut Source<'_>,
     declarations: &mut Declarations<'_>,
     calls: &[GenericCall],
 ) {
+    let tree = source.tree;
     let (first, count) = param_offsets(declarations.items.iter().map(|item| item.params.len()));
     let mut passed: Vec<Passed> = Vec::new();
     let mut sites: Vec<(&GenericCall, usize)> = Vec::new();
@@ -766,7 +766,7 @@ pub(super) fn unbounded_calls(
                 passed.push(Passed {
                     from: first[call.caller.index()] + param,
                     to: first[call.callee.index()] + position,
-                    grows: (arg != ty).then_some(call.at),
+                    grows: (arg != ty).then_some(call.call.node()),
                 });
                 sites.push((call, position));
             }
@@ -774,17 +774,23 @@ pub(super) fn unbounded_calls(
     }
     for (index, _) in growing(count, &passed) {
         let (call, position) = sites[index];
-        if declarations.unbounded.insert(call.call) {
+        if declarations.unbounded.insert(call.call.node()) {
             let message = format!(
                 "type argument `{}` grows with every call around this cycle, so the calls have no \
                  last instance",
                 source.show(call.args[position])
             );
-            let written = call
-                .list
-                .and_then(|list| list.args(source.tree).nth(position));
-            let at = written.map_or(call.at, |arg| arg.node());
-            source.error(at, codes::POLYMORPHIC_RECURSION, message, None);
+            // The argument where it is written, else the name whose arguments decide it.
+            let written = call.call.type_args(tree);
+            let written = written.and_then(|list| list.args(tree).nth(position));
+            let at = written.map(|arg| arg.node());
+            let at = at.or(call.call.callee(tree).map(|callee| callee.node()));
+            source.error(
+                at.unwrap_or(call.call.node()),
+                codes::POLYMORPHIC_RECURSION,
+                message,
+                None,
+            );
         }
     }
 }

@@ -1,0 +1,16 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 2
+
+== graph ==
+fn main@39:1..39:31 (T0<int> ∈ ∅) -> int ∈ ∅
+  param t@39:9..39:10: T0<int>
+  result: copy : int @39:24..39:27
+    value: int 0 : int @39:30..39:31
+
+== semantic diagnostics ==
+error[semantic/type-size] 33:15..33:19 "Pair": this instance of `Pair` names more than 1024 types in its type arguments
+error[semantic/type-size] 36:15..36:19 "Pair": this instance of `Pair` names more than 1024 types in its type arguments
+warning[semantic/unused-name] 39:9..39:10 "t": parameter `t` is never read
+  fix: prefix the name with `_`
+    39:9 -> "_"

@@ -1,5 +1,5 @@
 file: accepted
-optimized: nodes 137 of 227, regions 42 of 44, calls 10 of 31
+optimized: nodes 210 of 318, regions 60 of 62, calls 18 of 40
 
 == functions ==
 fn later = Box<int>(9)
@@ -22,3 +22,5 @@ fn members = 6
   steps: 21, optimized steps: 1, depth: 2, bound: 2
 fn counted = 5
   steps: 69, optimized steps: 56, depth: 5, bound: 5
+fn unions = 9
+  steps: 73, optimized steps: 53, depth: 5, bound: 5

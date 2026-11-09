@@ -78,8 +78,8 @@ sumi_frontend::codes! {
     /// A file naming more instances of its generic types and functions than the limit.
     TOO_MANY_INSTANCES: Error = "too-many-instances";
 
-    /// An instance of a generic type whose type arguments nest deeper than the limit.
-    TYPE_DEPTH: Error = "type-depth";
+    /// An instance of a generic type whose type arguments name more types than the limit.
+    TYPE_SIZE: Error = "type-size";
 
     /// A parameter or local never read whose name does not begin with `_`, in a function that
     /// lowers whole.

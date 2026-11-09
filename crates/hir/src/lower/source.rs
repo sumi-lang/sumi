@@ -1,7 +1,7 @@
 //! What lowering reads and reports against: the file, its declared names, and its diagnostics.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use rustc_hash::FxBuildHasher;
@@ -12,7 +12,7 @@ use sumi_syntax::{
     NodeIdx, SyntaxTree,
     ast::{self, AstNode, View},
 };
-use sumi_text::TextRange;
+use sumi_text::{TextRange, TextSize};
 
 use super::join;
 use crate::codes;
@@ -27,10 +27,9 @@ type Fields = Box<[(FieldName, Option<Ty>)]>;
 /// with each generic item that names another at two types of its own.
 pub(crate) const MAX_INSTANCES: usize = 1 << 16;
 
-/// The deepest type arguments nest in an instance, about what the parser lets a type be written
-/// at: arguments a call decides nest with every value built from the last, so nothing else
-/// bounds them, and every walk over a type is as deep as it nests.
-pub(crate) const MAX_TYPE_DEPTH: u32 = 256;
+/// The most declared types an instance's type arguments name, counted as written out: arguments a
+/// use decides grow with every value built from the last, and every walk over a type visits each.
+pub(crate) const MAX_TYPE_SIZE: u32 = 1 << 10;
 
 /// The declared types that are type parameters, which hold one range of IDs. A union holds values
 /// of none of them.
@@ -79,8 +78,8 @@ pub(crate) struct DeclNames<'s> {
     pub item: DeclId,
     /// The type arguments of an instance of a generic item.
     pub args: Rc<[Ty]>,
-    /// How deep the type arguments nest: one more than the deepest of them.
-    depth: u32,
+    /// The declared types the type written out names: itself and those of its type arguments.
+    size: u32,
 }
 
 impl DeclNames<'_> {
@@ -113,8 +112,8 @@ pub(crate) struct Source<'s> {
     unsettled: Vec<DeclId>,
     /// The instances declared so far, of types and of functions.
     pub(super) instance_count: usize,
-    /// Whether an instance past the depth limit is reported, which one report covers.
-    is_too_deep: bool,
+    /// Where an instance past the size limit is reported.
+    too_large: HashSet<TextSize, FxBuildHasher>,
     /// The type parameters in scope, each with the type it stands for.
     pub(super) scope: Vec<(&'s str, Ty)>,
     /// Whether what is resolved now repeats, at other types, what was reported and recorded at a
@@ -145,7 +144,7 @@ impl<'s> Source<'s> {
             instances: HashMap::default(),
             unsettled: Vec::new(),
             instance_count: 0,
-            is_too_deep: false,
+            too_large: HashSet::default(),
             scope: Vec::new(),
             is_muted: false,
             type_names: NameMap::default(),
@@ -232,7 +231,7 @@ impl<'s> Source<'s> {
             fields: Rc::from([]),
             item: id,
             args: Rc::from([]),
-            depth: 0,
+            size: 1,
         });
         self.fields.push(Some(Box::from([])));
         id
@@ -317,29 +316,35 @@ impl<'s> Source<'s> {
             self.decls[decl.index()].fields = self.decls[item.index()].fields.clone();
         }
     }
-    /// The instance of the generic `item` at `args`, declared on first use; none past the limit
-    /// on instances, which is reported once.
-    pub(super) fn instantiate(&mut self, item: DeclId, args: Vec<Ty>) -> Option<DeclId> {
+    /// The instance of the generic `item` at `args`, declared on first use; none past a limit on
+    /// instances, which is reported: one too large at `at`, which names it.
+    pub(super) fn instantiate(
+        &mut self,
+        item: DeclId,
+        args: Vec<Ty>,
+        at: TextRange,
+    ) -> Option<DeclId> {
         let args: Rc<[Ty]> = args.into();
         if let Some(&decl) = self.instances.get(&(item, args.clone())) {
             return Some(decl);
         }
         let own = &self.decls[item.index()];
         let name = own.name;
-        let at = self.range(own.name_node.unwrap_or(own.origin));
-        let depth = 1 + args.iter().map(|&arg| self.depth(arg)).max().unwrap_or(0);
-        if depth > MAX_TYPE_DEPTH {
-            if !std::mem::replace(&mut self.is_too_deep, true) {
+        let sizes = args.iter().map(|&arg| self.size(arg));
+        let size = sizes.fold(1u32, u32::saturating_add);
+        if size > MAX_TYPE_SIZE {
+            // Every instance of the item whose syntax `at` is in names one there.
+            if self.too_large.insert(at.start()) {
                 let message = format!(
-                    "an instance of `{name}` nests its type arguments more than {MAX_TYPE_DEPTH} \
-                     deep"
+                    "this instance of `{name}` names more than {MAX_TYPE_SIZE} types in its type \
+                     arguments"
                 );
                 self.diagnostics
-                    .push(diagnostic(at, codes::TYPE_DEPTH, message, []));
+                    .push(diagnostic(at, codes::TYPE_SIZE, message, []));
             }
             return None;
         }
-        if !self.count_instance(at, name) {
+        if !self.count_instance(self.range(own.name_node.unwrap_or(own.origin)), name) {
             return None;
         }
         let decl = DeclId::new(self.decls.len());
@@ -351,7 +356,7 @@ impl<'s> Source<'s> {
             fields: own.fields.clone(),
             item,
             args: args.clone(),
-            depth,
+            size,
         });
         self.fields.push(None);
         self.unsettled.push(decl);
@@ -359,62 +364,96 @@ impl<'s> Source<'s> {
         Some(decl)
     }
     /// The declared types a value of `ty` may be: itself, or a union's members.
-    pub fn members(&self, ty: Ty) -> Vec<DeclId> {
+    pub(super) fn decls_of(&self, ty: Ty) -> Vec<DeclId> {
         match ty.kind() {
             TyKind::Decl(decl) => vec![decl],
             TyKind::Union(id) => self.unions.borrow().get(id).to_vec(),
             TyKind::Int | TyKind::Bool | TyKind::Unit => Vec::new(),
         }
     }
+    fn size(&self, ty: Ty) -> u32 {
+        let sizes = self.decls_of(ty).into_iter();
+        sizes
+            .map(|member| self.decls[member.index()].size)
+            .fold(0, u32::saturating_add)
+    }
     /// Binds each type parameter of `params` that `pattern` names to what `actual` holds in its
-    /// place; a parameter keeps its first binding, and a later one that differs is a mismatch at
-    /// the instance the bindings name.
+    /// place, where one member of each is of an item; a parameter keeps its first binding.
     pub(super) fn bind(&self, pattern: Ty, actual: Ty, params: &[Ty], bound: &mut [Option<Ty>]) {
         if let Some(position) = params.iter().position(|&param| param == pattern) {
             bound[position].get_or_insert(actual);
             return;
         }
-        for pattern in self.members(pattern) {
-            let pattern = &self.decls[pattern.index()];
-            for actual in self.members(actual) {
-                let actual = &self.decls[actual.index()];
-                if actual.item != pattern.item {
-                    continue;
+        let (patterns, actuals) = (self.decls_of(pattern), self.decls_of(actual));
+        let item = |decl: &DeclId| self.decls[decl.index()].item;
+        // The members that name a parameter: the rest are held as they stand or not at all.
+        let open: Vec<DeclId> = patterns
+            .iter()
+            .copied()
+            .filter(|&member| {
+                let mut params = params.iter().filter_map(|param| param.as_decl());
+                params.any(|param| self.mentions(Ty::decl(member), param))
+            })
+            .collect();
+        for member in &open {
+            let held = if actuals.contains(member) {
+                Some(member)
+            } else {
+                let mut others = open.iter().filter(|other| {
+                    item(other) == item(member) && *other != member && !actuals.contains(other)
+                });
+                let mut held = actuals
+                    .iter()
+                    .filter(|held| item(held) == item(member) && !patterns.contains(held));
+                match (others.next(), held.next(), held.next()) {
+                    (None, Some(held), None) => Some(held),
+                    _ => None,
                 }
-                for (&pattern, &actual) in pattern.args.iter().zip(actual.args.iter()) {
-                    self.bind(pattern, actual, params, bound);
-                }
+            };
+            let Some(held) = held else { continue };
+            let (member, held) = (&self.decls[member.index()], &self.decls[held.index()]);
+            for (&pattern, &actual) in member.args.iter().zip(held.args.iter()) {
+                self.bind(pattern, actual, params, bound);
             }
         }
     }
     /// Whether a value of `ty` is, or is an instance at, the declared type `decl`.
     pub(super) fn mentions(&self, ty: Ty, decl: DeclId) -> bool {
-        self.members(ty).into_iter().any(|member| {
-            member == decl
-                || self.decls[member.index()]
-                    .args
-                    .iter()
-                    .any(|&arg| self.mentions(arg, decl))
-        })
+        let mut rest = vec![ty];
+        while let Some(ty) = rest.pop() {
+            for member in self.decls_of(ty) {
+                if member == decl {
+                    return true;
+                }
+                rest.extend(self.decls[member.index()].args.iter().copied());
+            }
+        }
+        false
     }
     /// `ty` with each type parameter of `params` replaced by the type of `args` at its position;
-    /// none past the limit on instances.
-    pub fn substitute(&mut self, ty: Ty, params: &[Ty], args: &[Ty]) -> Option<Ty> {
+    /// none past a limit on instances, reported as [`instantiate`](Self::instantiate) does.
+    pub fn substitute(&mut self, ty: Ty, params: &[Ty], args: &[Ty], at: TextRange) -> Option<Ty> {
         match ty.kind() {
             _ if params.is_empty() => Some(ty),
             TyKind::Int | TyKind::Bool | TyKind::Unit => Some(ty),
-            TyKind::Decl(decl) => self.substitute_decl(decl, params, args),
+            TyKind::Decl(decl) => self.substitute_decl(decl, params, args, at),
             TyKind::Union(id) => {
                 let members = self.unions.borrow().get(id).to_vec();
                 let members: Option<Vec<DeclId>> = members
                     .into_iter()
-                    .map(|member| self.substitute_decl(member, params, args)?.as_decl())
+                    .map(|member| self.substitute_decl(member, params, args, at)?.as_decl())
                     .collect();
                 Some(self.union_of(&members?))
             }
         }
     }
-    fn substitute_decl(&mut self, decl: DeclId, params: &[Ty], args: &[Ty]) -> Option<Ty> {
+    fn substitute_decl(
+        &mut self,
+        decl: DeclId,
+        params: &[Ty],
+        args: &[Ty],
+        at: TextRange,
+    ) -> Option<Ty> {
         if let Some(position) = params.iter().position(|&param| param == Ty::decl(decl)) {
             return Some(args[position]);
         }
@@ -425,16 +464,9 @@ impl<'s> Source<'s> {
         let (item, own) = (names.item, names.args.clone());
         let own: Option<Vec<Ty>> = own
             .iter()
-            .map(|&arg| self.substitute(arg, params, args))
+            .map(|&arg| self.substitute(arg, params, args, at))
             .collect();
-        self.instantiate(item, own?).map(Ty::decl)
-    }
-    fn depth(&self, ty: Ty) -> u32 {
-        let depths = self.members(ty).into_iter();
-        depths
-            .map(|member| self.decls[member.index()].depth)
-            .max()
-            .unwrap_or(0)
+        self.instantiate(item, own?, at).map(Ty::decl)
     }
     /// Counts one more instance, of the generic item `name` declared at `at`; false past the limit.
     pub(super) fn count_instance(&mut self, at: TextRange, name: &str) -> bool {
@@ -671,7 +703,7 @@ impl<'s> Source<'s> {
         if expected == 0 {
             return Some(item);
         }
-        self.instantiate(item, args?)
+        self.instantiate(item, args?, at)
     }
     /// Whether `given` type arguments are the `expected` ones of an item declared at `declared`;
     /// reported at `list`, or at `at` where none is written, unless the parser recovered there.
