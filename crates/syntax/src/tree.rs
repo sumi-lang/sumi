@@ -801,12 +801,18 @@ impl<'a> Marker<'_, 'a> {
         self.builder.recoveries.len() > checkpoint.0 as usize
     }
 
+    /// The recovery since `checkpoint` anchored furthest on, the last recorded among ties; one
+    /// anchored before a node parsed earlier is recorded after that node's own.
     pub(crate) fn latest_recovery_since(
         &self,
         checkpoint: RecoveryCheckpoint,
     ) -> Option<RecoveryHandle> {
-        self.recovered_since(checkpoint)
-            .then(|| RecoveryHandle(self.builder.recoveries.len() - 1))
+        (checkpoint.0 as usize..self.builder.recoveries.len())
+            .max_by_key(|&index| match self.builder.recoveries[index].anchor {
+                ParseAnchor::Gap(gap) => gap.trivia_end(),
+                ParseAnchor::Tokens(range) => range.start(),
+            })
+            .map(RecoveryHandle)
     }
 
     pub(crate) fn missing(&mut self, kind: ParseRecoveryKind) -> RecoveryHandle {

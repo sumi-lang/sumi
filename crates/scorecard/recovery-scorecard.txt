@@ -16,12 +16,12 @@ insert/non-delim        10000     4744    1.00000   1.00000   1.00000
 
 class                  diags_mean diags_p95  skipped_mean skipped_p95  evidence_mean evidence_p95
 delete/delimiter            2.380         6        44.530         266          2.380            6
-delete/non-delim            1.494         5        14.292          59          1.494            5
-duplicate/delimiter         2.408         7        42.008         248          2.408            7
-duplicate/non-delim         2.173         6        14.020          51          2.173            6
-swap/delimiter              2.446         6        30.831         182          2.446            6
-swap/non-delim              2.333         6        19.553         105          2.329            6
-insert/delimiter            2.740         8        39.404         227          2.740            8
+delete/non-delim            1.494         5        14.312          59          1.494            5
+duplicate/delimiter         2.408         7        42.009         248          2.408            7
+duplicate/non-delim         2.173         6        14.021          51          2.173            6
+swap/delimiter              2.445         6        30.994         182          2.445            6
+swap/non-delim              2.333         6        19.554         105          2.330            6
+insert/delimiter            2.740         8        39.410         227          2.740            8
 insert/non-delim            1.981         6        16.894          84          1.977            6
 
 == Part B: delimiter-breaking churn over clean corpora ==
