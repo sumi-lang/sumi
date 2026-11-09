@@ -106,6 +106,14 @@ fn a_duplicated_if_may_take_the_next_lines_block() {
 }
 
 #[test]
+fn an_equals_before_a_union_member_keeps_the_body() {
+    let source = "fn foo(b: P | Q) -> P | Q | int { foo }\n";
+    for member in [13, 15] {
+        check::recovery(source, &front(source), member, Edit::Insert("="));
+    }
+}
+
+#[test]
 fn a_duplicated_arrow_keeps_the_body_after_a_multiline_return_type() {
     for source in [
         "fn f()->\ni{{k}}",

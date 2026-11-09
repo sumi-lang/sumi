@@ -391,6 +391,10 @@ fn type_ref(p: &mut Marker<'_, '_>, field: u8) {
         let mut m = p.precede(lhs);
         m.wrapped_field(lhs_node, 0);
         m.token();
+        if is_before_displaced_member(&m) {
+            let recovery = m.recover_tokens(ParseRecoveryKind::Type, 1);
+            skip_token(&mut m, recovery);
+        }
         if m.at(T::Ident) {
             let rhs = leaf(&mut m, N::TypeRef);
             m.field(&rhs, 1);
@@ -400,6 +404,22 @@ fn type_ref(p: &mut Marker<'_, '_>, field: u8) {
         lhs = m.complete(N::UnionType);
     }
     p.field(&lhs, field);
+}
+
+/// A `=` after a union's bar stands before the member when a name follows it and, on the same
+/// line, what follows a member and no expression: another bar, or the block of a body.
+fn is_before_displaced_member(p: &Marker<'_, '_>) -> bool {
+    let continues_type = match p.nth(2) {
+        Some(T::LBrace) => p.nth_partner(2).is_some(),
+        Some(T::Pipe) => !(p.is_nth_joint(2) && p.nth(3) == Some(T::Pipe)),
+        _ => false,
+    };
+    p.at(T::Eq)
+        && !p.is_after_newline()
+        && p.nth(1) == Some(T::Ident)
+        && continues_type
+        && !p.is_nth_after_newline(1)
+        && !p.is_nth_after_newline(2)
 }
 
 fn is_union_bar(p: &Marker<'_, '_>) -> bool {

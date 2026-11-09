@@ -1,0 +1,25 @@
+// A `=` between a union's `|` and a name stands before that member where
+// another `|` or the body's `{` follows the name on its line, so the block
+// is still the body. Before an expression that is a body of its own, the
+// `=` begins it and the union lacks its member; so it does where a line
+// break stands in the shape, or nothing closes the block.
+fn foo(b: P | Q) -> P | Q | = int { foo }
+
+fn mid(b: P | Q) -> P | = Q | int { mid }
+
+fn bar(x: int) -> P | = g(x)
+
+fn baz(c: bool) -> P | = if c { a } else { b }
+
+fn either(a: bool, b: bool) -> P | = a || b
+
+fn broken(x: int) -> P | = x
+{ broken }
+
+fn below(x: int) -> P |
+= x { below }
+
+fn wrapped(x: int) -> P | =
+x { wrapped }
+
+fn open(x: int) -> P | = x {
