@@ -349,6 +349,10 @@ fn is_nth_arrow(m: &Marker<'_, '_>, n: usize) -> bool {
     m.nth(n) == Some(T::Minus) && m.is_nth_joint(n) && m.nth(n + 1) == Some(T::Gt)
 }
 
+fn is_nth_arm_arrow(m: &Marker<'_, '_>, n: usize) -> bool {
+    m.nth(n) == Some(T::Eq) && m.is_nth_joint(n) && m.nth(n + 1) == Some(T::Gt)
+}
+
 /// A `{` the stream never pairs, where a signature part was expected, is garbage, not the body.
 fn signature_garbage(
     m: &mut Marker<'_, '_>,
@@ -781,13 +785,11 @@ fn block(p: &mut Marker<'_, '_>) -> CompletedMarker {
                 let recovery = m.recovery_checkpoint();
                 statement(&mut m);
                 let failed = m.recovered_since(recovery);
-                // A one-line block shows where it ends; across lines, its closer after a failed
-                // statement may be one an edit displaced.
                 let ends = m.current().is_none()
                     || m.is_at_boundary()
                     || (m.at(T::RBrace)
                         && !m.has_closer_ahead()
-                        && !(failed && m.spans_lines() && is_displaced_closer(&m)))
+                        && !(failed && is_displaced_closer(&m)))
                     || m.closes_open_bracket();
                 if !ends {
                     // After a failed statement, an expression start on its line is ambiguous with
@@ -961,7 +963,11 @@ fn displaces_expression(p: &Marker<'_, '_>) -> bool {
 
 /// Asked only after the enclosing construct has taken its own expected closer.
 fn is_displaced_closer(p: &Marker<'_, '_>) -> bool {
-    if !p.current().is_some_and(is_closer) || p.is_nth_after_newline(1) {
+    let Some((pair, Side::Close)) = p.current().and_then(bracket) else {
+        return false;
+    };
+    // An edit that moves no bracket leaves the pairing whole, and its closers where they belong.
+    if p.is_nth_after_newline(1) || !p.is_damaged_closer(pair) {
         return false;
     }
     if binary_op(p, 1).is_some() {
@@ -1102,10 +1108,10 @@ fn begins_type_args(p: &Marker<'_, '_>) -> bool {
 fn block_starts_head(p: &Marker<'_, '_>, follow: ExprFollow) -> bool {
     p.nth_partner(0).is_some_and(|close| {
         let next = close + 1;
-        !holds_arm(p, close)
-            && (p.nth(next) == Some(T::LBrace)
-                || (follow == ExprFollow::Range && p.nth(next) == Some(T::Dot))
-                || (!p.is_nth_at_boundary(next) && binary_op(p, next).is_some()))
+        (p.nth(next) == Some(T::LBrace)
+            || (follow == ExprFollow::Range && p.nth(next) == Some(T::Dot))
+            || (!p.is_nth_at_boundary(next) && binary_op(p, next).is_some()))
+            && !holds_arm(p, close)
     })
 }
 
@@ -1114,7 +1120,7 @@ fn block_starts_head(p: &Marker<'_, '_>, follow: ExprFollow) -> bool {
 fn holds_arm(p: &Marker<'_, '_>, close: usize) -> bool {
     let mut n = 1;
     while n < close {
-        if p.nth(n) == Some(T::Eq) && p.is_nth_joint(n) && p.nth(n + 1) == Some(T::Gt) {
+        if is_nth_arm_arrow(p, n) {
             return true;
         }
         n = p.nth_partner(n).filter(|&partner| partner > n).unwrap_or(n) + 1;
@@ -1219,8 +1225,8 @@ fn range(p: &mut Marker<'_, '_>) -> (Option<CompletedMarker>, Option<CompletedMa
         p.expect(T::Dot);
     } else {
         p.missing(ParseRecoveryKind::RangeOperator);
-        // A boundary or a `{` here means the end was never written: what follows is the next
-        // statement, or the body, which `block_starts_head` would take for the end.
+        // Without the operator, a boundary ends the header and a `{` is the body: an end taken
+        // from either would take the next statement, or the body, with it.
         if p.is_at_boundary() || p.at(T::LBrace) {
             return (start, None);
         }
@@ -1292,7 +1298,7 @@ fn match_arm(p: &mut Marker<'_, '_>) {
         let pattern = pattern.complete(N::MemberPattern);
         m.field(&pattern, 0);
     }
-    if m.at(T::Eq) && m.is_joint() && m.nth(1) == Some(T::Gt) {
+    if is_nth_arm_arrow(&m, 0) {
         m.token();
         m.token();
     } else {
