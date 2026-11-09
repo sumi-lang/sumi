@@ -1,0 +1,76 @@
+file: rejected
+frontend errors: 1 (see frontend.snap)
+semantic errors: 2
+
+== graph ==
+fn h@4:1..4:28 (Point ∈ ∅) -> int ∈ ∅
+  param p@4:6..4:7: Point
+  result: copy : int @4:19..4:22
+    value: field x : ? @4:25..4:28
+      base: read p@4:6..4:7 : Point
+
+fn bare@5:1..5:31 (Bare ∈ ∅) -> bool ∈ ∅
+  param b@5:9..5:10: Bare
+  result: copy : bool @5:21..5:25
+    value: field y : ? @5:28..5:31
+      base: read b@5:9..5:10 : Bare
+
+fn cut@6:1..6:34 (Loop ∈ ∅) -> int ∈ ∅
+  param l@6:8..6:9: Loop
+  result: copy : int @6:20..6:23
+    value: field v : ? @6:26..6:34
+      base: field next : ? @6:26..6:32
+        base: read l@6:8..6:9 : Loop
+
+fn both@7:1..7:62 (Point ∈ ∅, Bare ∈ ∅) -> int ∈ ∅
+  param p@7:9..7:10: Point
+  param b@7:19..7:20: Bare
+  result: copy : int @7:31..7:34
+    value: if : int @7:37..7:62
+      scrutinee: field y : ? @7:40..7:43
+        base: read b@7:19..7:20 : Bare
+      then: field x : ? @7:46..7:49
+        base: read p@7:9..7:10 : Point
+      else: int 0 : int @7:59..7:60
+
+fn bound@8:1..11:2 (Point ∈ ∅) -> int ∈ ∅
+  param p@8:10..8:11: Point
+  result: copy : int @8:23..8:26
+    value:
+      let x@9:9..9:10: int @9:5..9:21
+        initializer: field x : ? @9:18..9:21
+          base: read p@8:10..8:11 : Point
+      tail: eager + : int @10:5..10:10
+        lhs: read x@9:9..9:10 : int
+        rhs: int 1 : int @10:9..10:10
+
+fn passed@12:1..12:47 (Point ∈ ∅) -> int ∈ ∅
+  param p@12:11..12:12: Point
+  result: copy : int @12:24..12:27
+    value: eager + : int @12:30..12:47
+      lhs: call h@4:1..4:28 : int @12:30..12:34
+        arg[0]: read p@12:11..12:12 : Point
+      rhs: call takes@13:1..13:28 : int @12:37..12:47
+        arg[0]: field x : ? @12:43..12:46
+          base: read p@12:11..12:12 : Point
+
+fn takes@13:1..13:28 (int ∈ ∅) -> int ∈ ∅
+  param n@13:10..13:11: int
+  result: copy : int @13:21..13:24
+    value: read n@13:10..13:11 : int
+
+fn inferred@14:1..14:28 signature: unavailable
+  param p@14:13..14:14: Point
+  body: field x : ? @14:25..14:28
+    base: read p@14:13..14:14 : Point
+
+fn through@15:1..15:43 (Point ∈ ∅) -> bool ∈ ∅
+  param p@15:12..15:13: Point
+  result: copy : bool @15:25..15:29
+    value: call inferred@14:1..14:28 : ? @15:32..15:43
+      arg[0]: read p@15:12..15:13 : Point
+
+== semantic diagnostics ==
+error[semantic/unknown-type] 1:17..1:18 "i": unknown type `i`
+error[semantic/recursive-type] 3:6..3:10 "Loop": type `Loop` holds itself through field `next`
+  at 3:13..3:17 "next": this field

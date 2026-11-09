@@ -1,0 +1,15 @@
+type Point { x: i }
+type Bare { y }
+type Loop { next: Loop, v: int }
+fn h(p: Point) -> int = p.x
+fn bare(b: Bare) -> bool = b.y
+fn cut(l: Loop) -> int = l.next.v
+fn both(p: Point, b: Bare) -> int = if b.y { p.x } else { 0 }
+fn bound(p: Point) -> int {
+    let x: int = p.x
+    x + 1
+}
+fn passed(p: Point) -> int = h(p) + takes(p.x)
+fn takes(n: int) -> int = n
+fn inferred(p: Point) = p.x
+fn through(p: Point) -> bool = inferred(p)
