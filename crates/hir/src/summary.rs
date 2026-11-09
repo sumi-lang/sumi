@@ -197,7 +197,11 @@ impl Form {
             if held.is_empty() {
                 return None;
             }
-            values = &values + &(&Ints::from(Int::from(*coefficient)) * &held);
+            values = match coefficient {
+                1 => &values + &held,
+                -1 => &values - &held,
+                _ => &values + &(&Ints::from(Int::from(*coefficient)) * &held),
+            };
         }
         Some(values)
     }
@@ -341,6 +345,11 @@ impl Bounds {
         }
     }
 
+    fn reads_params(&self) -> bool {
+        let mut forms = self.lo.iter().chain(&self.hi);
+        !self.needs.is_empty() || forms.any(|form| !form.terms.is_empty())
+    }
+
     fn paths(&self) -> Vec<&Path> {
         let mut paths: Vec<&Path> = self
             .lo
@@ -387,10 +396,10 @@ impl Bounds {
             Some(form) => form.among(args, cx)?,
             None => Ints::ALL,
         };
-        for form in &self.lo {
+        for form in self.lo.iter().filter(|form| Some(*form) != exact) {
             band = band.refine(CmpOp::Ge, &form.among(args, cx)?);
         }
-        for form in &self.hi {
+        for form in self.hi.iter().filter(|form| Some(*form) != exact) {
             band = band.refine(CmpOp::Le, &form.among(args, cx)?);
         }
         (!band.is_empty()).then_some(band)
@@ -686,8 +695,22 @@ impl Sym {
         })
     }
 
+    fn reads_params(&self) -> bool {
+        match self {
+            Self::None | Self::Any => false,
+            Self::Same(_) => true,
+            Self::Int(cases) => cases.cases.iter().any(Bounds::reads_params),
+            Self::Made(made) => made
+                .iter()
+                .any(|(_, fields)| fields.iter().any(Self::reads_params)),
+        }
+    }
+
     /// A callee's value where its parameters hold `args`, as the caller's parameters decide them.
     fn at(&self, args: &[&Self], cx: Types<'_>) -> Self {
+        if !self.reads_params() {
+            return self.clone();
+        }
         match self {
             Self::None => Self::None,
             Self::Any => Self::Any,
@@ -803,7 +826,7 @@ impl Summaries {
     /// `sound[function]`: every node of the body has its type.
     pub fn new(graph: &Graph, lowered: &Lowered, sound: &[bool]) -> Self {
         // A whole call between sound functions: its arguments are its callee's parameters.
-        let calls: HashMap<NodeId, FunctionId, FxBuildHasher> = lowered
+        let mut calls: HashMap<NodeId, FunctionId, FxBuildHasher> = lowered
             .calls
             .iter()
             .filter(|call| {
@@ -854,6 +877,8 @@ impl Summaries {
                 results[member as usize] = result;
             }
         }
+        // A result that reads no parameter is at every call what the callee's own fact holds.
+        calls.retain(|_, callee| results[callee.index()].reads_params());
         Self {
             results: results.into(),
             calls,
