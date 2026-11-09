@@ -1,94 +1,148 @@
 == tree ==
-SourceFile! 1:1..12:1
-  FnItem! 5:1..5:42
-    Name 5:4..5:7 "foo"
-    ParamList 5:7..5:17
-      Param 5:8..5:16
-        Name 5:8..5:9 "b"
-        UnionType 5:11..5:16
-          TypeRef 5:11..5:12 "P"
-          TypeRef 5:15..5:16 "Q"
-    UnionType! 5:21..5:34
-      UnionType 5:21..5:26
-        TypeRef 5:21..5:22 "P"
-        TypeRef 5:25..5:26 "Q"
-      Error! 5:29..5:30 "="
-      TypeRef 5:31..5:34 "int"
-    Block 5:35..5:42
-      NameRef 5:37..5:40 "foo"
-  FnItem! 7:1..7:42
-    Name 7:4..7:7 "mid"
-    ParamList 7:7..7:17
-      Param 7:8..7:16
-        Name 7:8..7:9 "b"
-        UnionType 7:11..7:16
-          TypeRef 7:11..7:12 "P"
-          TypeRef 7:15..7:16 "Q"
-    UnionType! 7:21..7:34
-      UnionType! 7:21..7:28
-        TypeRef 7:21..7:22 "P"
-        Error! 7:25..7:26 "="
-        TypeRef 7:27..7:28 "Q"
-      TypeRef 7:31..7:34 "int"
-    Block 7:35..7:42
-      NameRef 7:37..7:40 "mid"
-  FnItem! 9:1..9:29
-    Name 9:4..9:7 "bar"
-    ParamList 9:7..9:15
-      Param 9:8..9:14
-        Name 9:8..9:9 "x"
-        TypeRef 9:11..9:14 "int"
-    UnionType! 9:19..9:22
-      TypeRef 9:19..9:20 "P"
-    CallExpr 9:25..9:29
-      NameRef 9:25..9:26 "g"
-      ArgList 9:26..9:29
-        Arg 9:27..9:28
-          NameRef 9:27..9:28 "x"
-  FnItem! 11:1..11:47
-    Name 11:4..11:7 "baz"
-    ParamList 11:7..11:16
-      Param 11:8..11:15
-        Name 11:8..11:9 "c"
-        TypeRef 11:11..11:15 "bool"
-    UnionType! 11:20..11:23
-      TypeRef 11:20..11:21 "P"
-    IfExpr 11:26..11:47
-      NameRef 11:29..11:30 "c"
-      Block 11:31..11:36
-        NameRef 11:33..11:34 "a"
-      Block 11:42..11:47
-        NameRef 11:44..11:45 "b"
+SourceFile! 1:1..26:1
+  FnItem! 6:1..6:42
+    Name 6:4..6:7 "foo"
+    ParamList 6:7..6:17
+      Param 6:8..6:16
+        Name 6:8..6:9 "b"
+        UnionType 6:11..6:16
+          TypeRef 6:11..6:12 "P"
+          TypeRef 6:15..6:16 "Q"
+    UnionType! 6:21..6:34
+      UnionType 6:21..6:26
+        TypeRef 6:21..6:22 "P"
+        TypeRef 6:25..6:26 "Q"
+      Error! 6:29..6:30 "="
+      TypeRef 6:31..6:34 "int"
+    Block 6:35..6:42
+      NameRef 6:37..6:40 "foo"
+  FnItem! 8:1..8:42
+    Name 8:4..8:7 "mid"
+    ParamList 8:7..8:17
+      Param 8:8..8:16
+        Name 8:8..8:9 "b"
+        UnionType 8:11..8:16
+          TypeRef 8:11..8:12 "P"
+          TypeRef 8:15..8:16 "Q"
+    UnionType! 8:21..8:34
+      UnionType! 8:21..8:28
+        TypeRef 8:21..8:22 "P"
+        Error! 8:25..8:26 "="
+        TypeRef 8:27..8:28 "Q"
+      TypeRef 8:31..8:34 "int"
+    Block 8:35..8:42
+      NameRef 8:37..8:40 "mid"
+  FnItem! 10:1..10:29
+    Name 10:4..10:7 "bar"
+    ParamList 10:7..10:15
+      Param 10:8..10:14
+        Name 10:8..10:9 "x"
+        TypeRef 10:11..10:14 "int"
+    UnionType! 10:19..10:22
+      TypeRef 10:19..10:20 "P"
+    CallExpr 10:25..10:29
+      NameRef 10:25..10:26 "g"
+      ArgList 10:26..10:29
+        Arg 10:27..10:28
+          NameRef 10:27..10:28 "x"
+  FnItem! 12:1..12:47
+    Name 12:4..12:7 "baz"
+    ParamList 12:7..12:16
+      Param 12:8..12:15
+        Name 12:8..12:9 "c"
+        TypeRef 12:11..12:15 "bool"
+    UnionType! 12:20..12:23
+      TypeRef 12:20..12:21 "P"
+    IfExpr 12:26..12:47
+      NameRef 12:29..12:30 "c"
+      Block 12:31..12:36
+        NameRef 12:33..12:34 "a"
+      Block 12:42..12:47
+        NameRef 12:44..12:45 "b"
+  FnItem! 14:1..14:44
+    Name 14:4..14:10 "either"
+    ParamList 14:10..14:28
+      Param 14:11..14:18
+        Name 14:11..14:12 "a"
+        TypeRef 14:14..14:18 "bool"
+      Param 14:20..14:27
+        Name 14:20..14:21 "b"
+        TypeRef 14:23..14:27 "bool"
+    UnionType! 14:32..14:35
+      TypeRef 14:32..14:33 "P"
+    BinaryExpr 14:38..14:44
+      NameRef 14:38..14:39 "a"
+      NameRef 14:43..14:44 "b"
+  FnItem! 16:1..16:29
+    Name 16:4..16:10 "broken"
+    ParamList 16:10..16:18
+      Param 16:11..16:17
+        Name 16:11..16:12 "x"
+        TypeRef 16:14..16:17 "int"
+    UnionType! 16:22..16:25
+      TypeRef 16:22..16:23 "P"
+    NameRef 16:28..16:29 "x"
+  Error! 17:1..17:11 "{ broken }"
+  FnItem! 19:1..20:4
+    Name 19:4..19:9 "below"
+    ParamList 19:9..19:17
+      Param 19:10..19:16
+        Name 19:10..19:11 "x"
+        TypeRef 19:13..19:16 "int"
+    UnionType! 19:21..19:24
+      TypeRef 19:21..19:22 "P"
+    NameRef 20:3..20:4 "x"
+  Error! 20:5..20:14 "{ below }"
+  FnItem! 22:1..23:2
+    Name 22:4..22:11 "wrapped"
+    ParamList 22:11..22:19
+      Param 22:12..22:18
+        Name 22:12..22:13 "x"
+        TypeRef 22:15..22:18 "int"
+    UnionType! 22:23..22:26
+      TypeRef 22:23..22:24 "P"
+    NameRef 23:1..23:2 "x"
+  Error! 23:3..23:14 "{ wrapped }"
+  FnItem! 25:1..25:27
+    Name 25:4..25:8 "open"
+    ParamList 25:8..25:16
+      Param 25:9..25:15
+        Name 25:9..25:10 "x"
+        TypeRef 25:12..25:15 "int"
+    UnionType! 25:20..25:23
+      TypeRef 25:20..25:21 "P"
+    NameRef 25:26..25:27 "x"
+  Error! 25:28..25:29 "{"
 
 == evidence ==
-ExpectedType at 5:29
-ExpectedType at 7:25
-ExpectedType at 9:23
-ExpectedType at 11:24
+ExpectedType at 6:29
+ExpectedType at 8:25
+ExpectedType at 10:23
+ExpectedType at 12:24
+ExpectedType at 14:36
+ExpectedType at 16:26
+ExpectedItem at 17:1
+ExpectedType at 20:1
+ExpectedItem at 20:5
+ExpectedType at 22:27
+ExpectedItem at 23:3
+ExpectedType at 25:24
+ExpectedItem at 25:28
 
 == diagnostics ==
-error[syntax/expected-type] 5:29..5:30 "=": expected a type
-error[syntax/expected-type] 7:25..7:26 "=": expected a type
-error[syntax/expected-type] 9:23: expected a type
-error[syntax/expected-type] 11:24: expected a type
-
-== formatted ==
-// A `=` between a union's `|` and a name stands before that member where
-// another `|` or the body's `{` follows the name, so the block is still the
-// body. Before an expression that is a body of its own, the `=` begins it,
-// and the union lacks its member.
-fn foo(b: P | Q) -> P | Q | = int {
-    foo
-}
-
-fn mid(b: P | Q) -> P | = Q | int {
-    mid
-}
-
-fn bar(x: int) -> P | = g(x)
-
-fn baz(c: bool) -> P | = if c {
-    a
-} else {
-    b
-}
+error[syntax/expected-type] 6:29..6:30 "=": expected a type
+error[syntax/expected-type] 8:25..8:26 "=": expected a type
+error[syntax/expected-type] 10:23: expected a type
+error[syntax/expected-type] 12:24: expected a type
+error[syntax/expected-type] 14:36: expected a type
+error[syntax/expected-type] 16:26: expected a type
+error[syntax/expected-item] 17:1..17:2 "{": expected a function item
+  at 17:1..17:11 "{ broken }": skipped while recovering
+error[syntax/expected-type] 20:1: expected a type
+error[syntax/expected-item] 20:5..20:6 "{": expected a function item
+  at 20:5..20:14 "{ below }": skipped while recovering
+error[syntax/expected-type] 22:27: expected a type
+error[syntax/expected-item] 23:3..23:4 "{": expected a function item
+  at 23:3..23:14 "{ wrapped }": skipped while recovering
+error[syntax/expected-type] 25:24: expected a type
+error[syntax/expected-item] 25:28..25:29 "{": expected a function item
