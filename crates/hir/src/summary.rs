@@ -825,6 +825,11 @@ impl Summaries {
             decls: graph.decls(),
             unions: graph.unions(),
         };
+        // A result no such call takes is read by nothing.
+        let mut is_called = vec![false; count];
+        for callee in calls.values() {
+            is_called[callee.index()] = true;
+        }
         let mut results = vec![Sym::Any; count];
         // Components are numbered callees first. A call inside one takes nothing of its callee, so
         // a recursive group's results are the same in whatever order its members are passed.
@@ -834,7 +839,7 @@ impl Summaries {
                 .iter()
                 .map(|&member| {
                     let member = member as usize;
-                    if !sound[member] {
+                    if !sound[member] || !is_called[member] {
                         return Sym::Any;
                     }
                     let known = |call: NodeId| {
