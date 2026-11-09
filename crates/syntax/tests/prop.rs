@@ -131,8 +131,11 @@ fn a_range_without_its_operator_leaves_the_block_to_the_body() {
 
 #[test]
 fn a_failed_statement_leaves_its_blocks_closer_before_an_equals() {
-    let source = "fn f() {\n    _ = match a {\n        _ => {\n            if a { b } = 1\n        }\n    }\n    { c }\n}\n";
-    check::recovery(source, &front(source), 17, Edit::Insert(","));
+    let one_line = "fn f() {\n    _ = match a {\n        _ => {\n            if a { b } = 1\n        }\n    }\n    { c }\n}\n";
+    let split = "fn f() {\n    _ = match a {\n        _ => {\n            if a {\n                b\n            } = 1\n        }\n    }\n    { c }\n}\n";
+    check::recovery(one_line, &front(one_line), 17, Edit::Insert(","));
+    check::recovery(one_line, &front(one_line), 18, Edit::Insert("="));
+    check::recovery(split, &front(split), 18, Edit::Insert(","));
 }
 
 #[test]

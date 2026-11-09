@@ -732,10 +732,22 @@ impl<'a> Marker<'_, 'a> {
         self.closer.is_some()
     }
 
-    /// Whether a line break comes after this node's first token, up to the next one, which exists.
-    pub(crate) fn spans_lines(&self) -> bool {
-        (self.start.to_u32() + 1..=self.builder.position.to_u32())
-            .any(|index| self.builder.input.has_newline_before(SigIdx::new(index)))
+    /// Whether the stream's pairing shows bracket damage at the next token, a `pair` closer: it
+    /// is partnered with nothing, encloses an opener partnered with nothing, or precedes a `pair`
+    /// closer partnered with nothing before the next item.
+    pub(crate) fn is_damaged_closer(&self, pair: Pair) -> bool {
+        let input = &self.builder.input;
+        let position = self.builder.position;
+        let encloses_orphan = input
+            .partner(position)
+            .is_none_or(|opener| input.has_orphan_opener_in(opener + 1..position));
+        let after = position + 1;
+        let anchors = input.item_anchors();
+        let next_item = anchors
+            .get(anchors.partition_point(|&anchor| anchor < after))
+            .copied()
+            .unwrap_or(input.end());
+        encloses_orphan || (after < next_item && input.has_orphan_closer_in(pair, after..next_item))
     }
 
     pub(crate) fn has_closer_ahead(&self) -> bool {

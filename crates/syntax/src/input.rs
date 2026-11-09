@@ -35,6 +35,10 @@ pub struct ParserInput {
     /// Tokens with a boundary before them, ascending.
     boundaries: Box<[SigIdx]>,
     item_anchors: Box<[SigIdx]>,
+    /// Closers the stream partners with nothing, ascending, by pair.
+    orphan_closers: [Box<[SigIdx]>; Pair::ALL.len()],
+    /// Openers of either pair the stream partners with nothing, ascending.
+    orphan_openers: Box<[SigIdx]>,
     /// Each `<` glued after a name with the `>` that closes it, by opener: between them stand only
     /// names, `,`, `|`, and lists like it, and no statement boundary.
     type_lists: Box<[(SigIdx, SigIdx)]>,
@@ -71,6 +75,8 @@ impl ParserInput {
         let Build { mut slots, .. } = build;
         let mut boundaries = Vec::new();
         let mut item_anchors: Vec<SigIdx> = Vec::new();
+        let mut orphan_closers: [Vec<SigIdx>; Pair::ALL.len()] = Default::default();
+        let mut orphan_openers = Vec::new();
         let mut matched = 0usize;
         let mut context = 0u8;
         // The `<` tokens that may yet open a type list, innermost last.
@@ -108,15 +114,19 @@ impl ParserInput {
                         * IN_EXPRESSION_DELIMITERS;
                     if slot.partner.is_some() {
                         matched += 1;
+                    } else {
+                        orphan_openers.push(SigIdx::new(index as u32));
                     }
                 }
-                Some((_, Side::Close)) => {
+                Some((pair, Side::Close)) => {
                     if let Some(partner) = slot.partner {
                         // The opener's bit is its parent's context, so restoring it also discards
                         // unmatched inner openers.
                         let opener = (partner.get() - 1) as usize;
                         context = slots[opener].flags & IN_EXPRESSION_DELIMITERS;
                         matched -= 1;
+                    } else {
+                        orphan_closers[pair.index()].push(SigIdx::new(index as u32));
                     }
                 }
                 None => {}
@@ -127,6 +137,8 @@ impl ParserInput {
             slots: slots.into_boxed_slice(),
             boundaries: boundaries.into_boxed_slice(),
             item_anchors: item_anchors.into_boxed_slice(),
+            orphan_closers: orphan_closers.map(Vec::into_boxed_slice),
+            orphan_openers: orphan_openers.into_boxed_slice(),
             type_lists: {
                 type_lists.sort_unstable();
                 type_lists.into_boxed_slice()
@@ -233,6 +245,16 @@ impl ParserInput {
             .is_some_and(|&boundary| boundary < range.end)
     }
 
+    /// A `pair` closer the stream partners with nothing among the tokens in `range`.
+    pub fn has_orphan_closer_in(&self, pair: Pair, range: Range<SigIdx>) -> bool {
+        any_in(&self.orphan_closers[pair.index()], range)
+    }
+
+    /// An opener the stream partners with nothing among the tokens in `range`.
+    pub fn has_orphan_opener_in(&self, range: Range<SigIdx>) -> bool {
+        any_in(&self.orphan_openers, range)
+    }
+
     pub fn partner(&self, index: SigIdx) -> Option<SigIdx> {
         self.slots[index.to_usize()]
             .partner
@@ -259,6 +281,12 @@ impl ParserInput {
 }
 
 /// Per pair, the position in `openers` of its innermost opener, plus one.
+/// `sorted` ascends.
+fn any_in(sorted: &[SigIdx], range: Range<SigIdx>) -> bool {
+    let first = sorted.partition_point(|&index| index < range.start);
+    sorted.get(first).is_some_and(|&index| index < range.end)
+}
+
 type Tops = [Option<NonZeroU32>; Pair::ALL.len()];
 
 /// An opener still open, with `tops` as it stood below it: a closer matches the innermost opener of
